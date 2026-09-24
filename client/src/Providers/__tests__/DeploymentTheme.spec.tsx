@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { RecoilRoot } from 'recoil';
-import { dataService } from 'librechat-data-provider';
 import { act, render, waitFor } from '@testing-library/react';
+import { QueryKeys, dataService } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TStartupConfig } from 'librechat-data-provider';
 import { useGetStartupConfig } from '~/data-provider';
@@ -162,6 +162,55 @@ describe('DeploymentTheme', () => {
       expect(root().style.getPropertyValue('--surface-primary')).toBe('99 99 99'),
     );
     expect(root().dataset.theme).not.toBe('clickhouse');
+  });
+
+  const replaceConfig = (theme?: ConfigTheme) =>
+    act(() => {
+      queryClient.setQueryData([QueryKeys.startupConfig, false, 'default'], configWith(theme));
+    });
+
+  it('restores the stored theme when the deployment theme is withdrawn', async () => {
+    const before = snapshotStorage();
+    serveTheme('clickhouse');
+    renderTheme(queryClient);
+    await waitFor(() => expect(root().dataset.theme).toBe('clickhouse'));
+
+    replaceConfig();
+
+    await waitFor(() => expect(root().dataset.theme).toBe('stored'));
+    expect(root().style.getPropertyValue('--accent-primary')).toBe('1 2 3');
+    expect(snapshotStorage()).toEqual(before);
+  });
+
+  it('restores a legacy stored color map when the deployment theme is withdrawn', async () => {
+    localStorage.removeItem('theme-definition');
+    localStorage.setItem('theme-colors', JSON.stringify({ 'rgb-accent-primary': '7 8 9' }));
+    localStorage.setItem('theme-name', 'legacy-colors');
+    localStorage.setItem('theme-source', 'legacy');
+    const before = snapshotStorage();
+    serveTheme('clickhouse');
+    renderTheme(queryClient);
+    await waitFor(() => expect(root().dataset.theme).toBe('clickhouse'));
+
+    replaceConfig();
+
+    await waitFor(() => expect(root().dataset.theme).toBe('legacy-colors'));
+    expect(root().style.getPropertyValue('--accent-primary')).toBe('7 8 9');
+    expect(snapshotStorage()).toEqual(before);
+  });
+
+  it('falls back to the environment colors when the deployment theme is withdrawn', async () => {
+    mockGetThemeFromEnv.mockReturnValue({ 'rgb-surface-primary': '99 99 99' });
+    serveTheme('clickhouse');
+    renderTheme(queryClient);
+    await waitFor(() => expect(root().dataset.theme).toBe('clickhouse'));
+
+    replaceConfig();
+
+    await waitFor(() =>
+      expect(root().style.getPropertyValue('--surface-primary')).toBe('99 99 99'),
+    );
+    expect(root().dataset.theme).not.toBe('stored');
   });
 
   it('picks up the theme after the auth flow removes the startup config query', async () => {

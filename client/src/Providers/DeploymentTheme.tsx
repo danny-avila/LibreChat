@@ -5,10 +5,11 @@ import {
   ThemeProvider,
   clickHouseTheme,
   libreChatTheme,
+  fromLegacyTheme,
   validateThemeDefinition,
 } from '@librechat/client';
+import type { IThemeRGB, ThemeDefinition } from '@librechat/client';
 import type { TInterfaceConfig } from 'librechat-data-provider';
-import type { ThemeDefinition } from '@librechat/client';
 import type { ComponentProps } from 'react';
 import { getThemeFromEnv } from '~/utils/getThemeFromEnv';
 import { useGetStartupConfig } from '~/data-provider';
@@ -47,6 +48,41 @@ export function resolveDeploymentTheme(theme: DeploymentThemeValue): ThemeDefini
   return definition;
 }
 
+const parseStored = (key: string): unknown => {
+  const raw = localStorage.getItem(key);
+  return raw ? JSON.parse(raw) : undefined;
+};
+
+const isValidDefinition = (value: unknown): value is ThemeDefinition =>
+  typeof value === 'object' &&
+  value !== null &&
+  validateThemeDefinition(value as ThemeDefinition).length === 0;
+
+/**
+ * The user's own theme, read the way `ThemeProvider` reads it on mount: the stored
+ * definition, else the legacy color map. The deployment theme is never persisted,
+ * so storage still holds this while the deployment theme is applied.
+ */
+export function readStoredTheme(): ThemeDefinition | undefined {
+  try {
+    const definition = parseStored('theme-definition');
+    if (isValidDefinition(definition)) {
+      return definition;
+    }
+    const colors = parseStored('theme-colors');
+    if (typeof colors !== 'object' || colors === null) {
+      return undefined;
+    }
+    const legacy = fromLegacyTheme(
+      colors as IThemeRGB,
+      localStorage.getItem('theme-name') ?? 'custom',
+    );
+    return isValidDefinition(legacy) ? legacy : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Supplies the deployment theme from the startup config to `ThemeProvider`.
  * Precedence: high-contrast modes (inside the provider), then `interface.theme`,
@@ -71,9 +107,24 @@ export default function DeploymentTheme({ children }: { children: React.ReactNod
     deploymentThemeApplied.current = true;
   }
 
+  /**
+   * Clearing the prop would leave the provider on the LibreChat palette, so a
+   * deployment theme that goes away hands the provider the user's stored theme,
+   * unless the build-time colors outrank it.
+   */
+  const fallbackDefinition = useMemo(
+    () =>
+      !themeDefinition && deploymentThemeApplied.current && !envTheme
+        ? readStoredTheme()
+        : undefined,
+    [themeDefinition, envTheme],
+  );
+
+  const activeDefinition = themeDefinition ?? fallbackDefinition;
+
   const props: Omit<ComponentProps<typeof ThemeProvider>, 'children'> = {
     ...(envTheme && { initialTheme: 'system', themeRGB: envTheme }),
-    ...(themeDefinition && { themeDefinition }),
+    ...(activeDefinition && { themeDefinition: activeDefinition }),
     ...(deploymentThemeApplied.current && { persistThemeDefinition: false }),
   };
 
