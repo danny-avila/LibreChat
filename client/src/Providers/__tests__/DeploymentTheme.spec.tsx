@@ -182,8 +182,8 @@ describe('DeploymentTheme', () => {
     expect(snapshotStorage()).toEqual(before);
   });
 
-  it('restores a legacy stored color map when the deployment theme is withdrawn', async () => {
-    localStorage.removeItem('theme-definition');
+  it('restores a legacy color map behind a corrupt stored definition when the deployment theme is withdrawn', async () => {
+    localStorage.setItem('theme-definition', '{not json');
     localStorage.setItem('theme-colors', JSON.stringify({ 'rgb-accent-primary': '7 8 9' }));
     localStorage.setItem('theme-name', 'legacy-colors');
     localStorage.setItem('theme-source', 'legacy');

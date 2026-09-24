@@ -48,9 +48,14 @@ export function resolveDeploymentTheme(theme: DeploymentThemeValue): ThemeDefini
   return definition;
 }
 
+/** A corrupt entry reads as absent, so the next storage adapter still gets its turn. */
 const parseStored = (key: string): unknown => {
-  const raw = localStorage.getItem(key);
-  return raw ? JSON.parse(raw) : undefined;
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? JSON.parse(raw) : undefined;
+  } catch {
+    return undefined;
+  }
 };
 
 const isValidDefinition = (value: unknown): value is ThemeDefinition =>
