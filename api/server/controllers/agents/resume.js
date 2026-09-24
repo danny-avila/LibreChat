@@ -51,6 +51,7 @@ const {
   recoverTurnMessageReference,
   applyForcedRetention,
   applyForcedTemporaryRequest,
+  persistForcedTemporaryMetadata,
   announceReply,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
@@ -1847,6 +1848,11 @@ const ResumeAgentController = async (req, res, next, initializeClient, addTitle)
   let pausePersistenceFailed = false;
   let pausePersistenceFailureFinalized = false;
   try {
+    await persistForcedTemporaryMetadata(
+      req,
+      { streamId, createdAt: job.createdAt },
+      GenerationJobManager,
+    );
     if (userSubmittedPaths.length > 0) {
       job.metadata.userSubmittedPaths = userSubmittedPaths;
     }
