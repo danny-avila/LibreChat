@@ -12,19 +12,48 @@ The lockfile is the executable version boundary.
 
 ## Support profile
 
-| Area                            | Supported behavior                                                                                                          |
-| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| App resource                    | A tool-linked `ui://` resource with `text/html;profile=mcp-app`, supplied as UTF-8 `text` or base64 `blob`                  |
-| MCP connection                  | Standard shared sessions when Apps are off; profile-separated per-user, MCP OAuth, and direct OpenID sessions when on       |
-| View operations                 | Same-server tool calls, resource reads, resource and template listing, text messages, policy-controlled links, and logging  |
-| Visibility                      | Model, App, dual-visible, and omitted visibility follow the MCP Apps visibility rules                                       |
-| Rendering                       | Settled Apps render once in a message-owned area below the response; legacy inline HTML keeps its existing adapter          |
-| History                         | A stored settled result replays its input, unchanged result, and App document while its originating server binding is valid |
-| Search and public share         | Search results do not load Apps; public shares omit UI resources and retain ordinary transcript and tool text               |
-| Unsupported connection profiles | OBO, Graph-token placeholders, and request-body credential placeholders do not offer an interactive App View                |
+| Area                            | Supported behavior                                                                                                                         |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| App resource                    | A tool-linked `ui://` resource with `text/html;profile=mcp-app`, supplied as UTF-8 `text` or base64 `blob`                                 |
+| MCP connection                  | Standard shared sessions when Apps are off; profile-separated per-user, MCP OAuth, and direct OpenID sessions when on                      |
+| View operations                 | Same-server tool calls, resource reads, resource and template listing, text messages, policy-controlled links, and logging                 |
+| Visibility                      | Model, App, dual-visible, and omitted visibility follow the MCP Apps visibility rules                                                      |
+| Rendering                       | Settled Apps show inert placeholders in a message-owned area; legacy inline HTML keeps its adapter                                         |
+| History                         | A stored settled result retains its input, unchanged result, and App document; the user explicitly opens its View after binding validation |
+| Search and public share         | Search results do not load Apps; public shares omit UI resources and retain ordinary transcript and tool text                              |
+| Unsupported connection profiles | OBO, Graph-token placeholders, and request-body credential placeholders do not offer an interactive App View                               |
 
 Optional draft features such as sampling, downloads, App-provided tools, state restoration, external
 View URLs, and partial tool input are outside this profile.
+
+## Interactive View authority
+
+An App attachment displays an inert **Open app** placeholder until the authenticated viewer
+activates it. Merely opening or restoring a conversation does not create a sandbox iframe,
+validate a persisted binding, or let an App issue follow-up requests. The default limit is three Apps open
+concurrently across the host view (`maxActiveViews`, range 1–32); close one to open another. Closing an App tears down its
+bridge, cancels pending approval and in-flight authenticated resource operations; reopening starts
+a fresh session and does not restore its previous in-View state. Keyboard focus moves to the new
+Close/Open control after a user-initiated transition, including the in-dialog Stop app control.
+
+Opening an App permits its own resource reads and declared link policy, but does not approve actions
+on the user's behalf. Each App-initiated tool call displays the originating server, tool name and
+complete arguments in a host-owned confirmation; App-initiated chat text shows the complete text
+and requires a separate **Send message**. An approved App message contains only that text: files,
+manual skills, and quotes staged for the user's next composer message are neither submitted nor
+drained. The confirmation warns that the resulting model response may use the conversation's
+selected agent and tools. Those selections remain available to the turn; removing them would also
+change subsequent tool availability. Once chat accepts an approved turn, a later App abort cannot
+undo it and is not reported as a failed submission. An explicit empty file override
+prevents a blank App message from becoming submittable just because a draft file exists. Rejecting an action or an App aborting its own pending approval request pauses further
+action requests from that View until it is closed and reopened. The dialog also provides a Close
+app and stop requests control for an App that repeatedly asks.
+Navigating away or closing the App does not execute a pending action. Tool arguments and message
+previews exceeding `maxActionPreviewChars` (default 16,384; range 1–131,072 UTF-16 characters)
+fail closed; they are never silently truncated for approval. The existing authenticated same-server binding
+and visibility checks remain in effect. A user who directly calls their own API can still invoke
+an allowed tool: this is a consent boundary for embedded App code, not an independent authorization
+mechanism for authenticated API clients.
 
 Set `mcpSettings.apps: true` to enable MCP Apps and legacy inline HTML. When the field is omitted,
 new MCP Apps stay disabled while existing legacy inline HTML remains enabled for upgrade
@@ -54,6 +83,8 @@ mcpAppSandbox:
   maxPersistedAppBytes: 2097152
   maxPersistedMessageBytes: 8388608
   maxAdmissionRequestsPerMinute: 480
+  maxActiveViews: 3
+  maxActionPreviewChars: 16384
 ```
 
 These positive-integer settings come only from the base deployment configuration; role, group, and
@@ -149,8 +180,8 @@ and on every later App operation. Changing the server owner, effective endpoint,
 custom variables, or configuration generation invalidates existing Views; routine OAuth or bearer
 credential refresh does not. Invalidated and older unbound App attachments remain unavailable and
 never bind by server name to a replacement configuration. The host does not live-revoke a document
-that is already loaded: a remount or page reload validates before loading it again, and every later
-App operation validates independently.
+that is already loaded: reopening an App after close or page reload validates before loading it,
+and every later App operation validates independently.
 
 Validation of stored inline HTML compares the binding with the current local admitted server target;
 it does not connect to the MCP server. A matching persisted document can therefore render while its
@@ -226,7 +257,7 @@ node --test e2e/mcp-apps/server.test.mjs
 node e2e/mcp-apps/run.mjs
 ```
 
-The Playwright E2E workflow runs these checks on eligible pull requests, the nightly schedule, and manual dispatch, regardless of codegraph selection. Its required `e2e` gate fails if this dedicated job fails. The runner verifies that enabled, disabled, omitted-policy, and quota phases each executed passing browser tests; a successful Playwright exit with only skipped tests does not pass. CI uploads separate reports for each phase and preserves failing traces and screenshots.
+The Playwright E2E workflow runs these checks on eligible pull requests (including same-repository bot branches, but not untrusted external forks), the nightly schedule, and manual dispatch, regardless of codegraph selection. Its required `e2e` gate fails if this dedicated job fails. The runner verifies that enabled, disabled, omitted-policy, and quota phases each executed passing browser tests; a successful Playwright exit with only skipped tests does not pass. CI uploads separate reports for each phase and preserves failing traces and screenshots.
 
 The runner builds the client with the chat at `http://127.0.0.1:3080` and the Sandbox Proxy at
 `http://localhost:3080`. Those URLs reach the same disposable LibreChat process but have distinct

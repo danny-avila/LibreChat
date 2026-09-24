@@ -10,6 +10,10 @@ import {
   excludedKeys,
   DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
   DEFAULT_MCP_APP_PERSISTED_BYTES,
+  DEFAULT_MCP_APP_MAX_ACTIVE_VIEWS,
+  DEFAULT_MCP_APP_ACTION_PREVIEW_CHARS,
+  MAX_MCP_APP_ACTIVE_VIEWS,
+  MAX_MCP_APP_ACTION_PREVIEW_CHARS,
   MAX_MCP_APP_PERSISTED_BYTES,
   resolveMCPAppRateLimits,
   resolveMCPAppsPolicy,
@@ -1683,6 +1687,8 @@ describe('MCP Apps configuration', () => {
         legacyHtmlEnabled: true,
         maxPersistedAppBytes: DEFAULT_MCP_APP_PERSISTED_BYTES,
         maxAdmissionRequestsPerMinute: DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
+        maxActiveViews: DEFAULT_MCP_APP_MAX_ACTIVE_VIEWS,
+        maxActionPreviewChars: DEFAULT_MCP_APP_ACTION_PREVIEW_CHARS,
       },
     ],
     [
@@ -1692,6 +1698,8 @@ describe('MCP Apps configuration', () => {
         legacyHtmlEnabled: true,
         maxPersistedAppBytes: DEFAULT_MCP_APP_PERSISTED_BYTES,
         maxAdmissionRequestsPerMinute: DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
+        maxActiveViews: DEFAULT_MCP_APP_MAX_ACTIVE_VIEWS,
+        maxActionPreviewChars: DEFAULT_MCP_APP_ACTION_PREVIEW_CHARS,
       },
     ],
     [
@@ -1701,6 +1709,8 @@ describe('MCP Apps configuration', () => {
         legacyHtmlEnabled: false,
         maxPersistedAppBytes: DEFAULT_MCP_APP_PERSISTED_BYTES,
         maxAdmissionRequestsPerMinute: DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
+        maxActiveViews: DEFAULT_MCP_APP_MAX_ACTIVE_VIEWS,
+        maxActionPreviewChars: DEFAULT_MCP_APP_ACTION_PREVIEW_CHARS,
       },
     ],
   ])('resolves raw apps value %s to the effective policy', (value, expected) => {
@@ -1713,6 +1723,8 @@ describe('MCP Apps configuration', () => {
       maxPersistedAppBytes: DEFAULT_MCP_APP_PERSISTED_BYTES,
       maxPersistedMessageBytes: 12 * 1024 * 1024,
       maxAdmissionRequestsPerMinute: DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
+      maxActiveViews: DEFAULT_MCP_APP_MAX_ACTIVE_VIEWS,
+      maxActionPreviewChars: DEFAULT_MCP_APP_ACTION_PREVIEW_CHARS,
     });
     expect(
       configSchema.parse({
@@ -1723,6 +1735,8 @@ describe('MCP Apps configuration', () => {
           maxPersistedAppBytes: 2048,
           maxPersistedMessageBytes: 1024 * 1024,
           maxAdmissionRequestsPerMinute: 480,
+          maxActiveViews: 7,
+          maxActionPreviewChars: 32768,
           url: 'https://mcp-sandbox.example.com/api/mcp/sandbox',
         },
       }).mcpAppSandbox,
@@ -1732,6 +1746,8 @@ describe('MCP Apps configuration', () => {
       maxPersistedAppBytes: 2048,
       maxPersistedMessageBytes: 1024 * 1024,
       maxAdmissionRequestsPerMinute: 480,
+      maxActiveViews: 7,
+      maxActionPreviewChars: 32768,
       url: 'https://mcp-sandbox.example.com/api/mcp/sandbox',
     });
     for (const mcpAppSandbox of [
@@ -1749,6 +1765,12 @@ describe('MCP Apps configuration', () => {
       { maxAdmissionRequestsPerMinute: 0 },
       { maxAdmissionRequestsPerMinute: 1.5 },
       { maxAdmissionRequestsPerMinute: Number.MAX_SAFE_INTEGER + 1 },
+      { maxActiveViews: 0 },
+      { maxActiveViews: 1.5 },
+      { maxActiveViews: MAX_MCP_APP_ACTIVE_VIEWS + 1 },
+      { maxActionPreviewChars: 0 },
+      { maxActionPreviewChars: 1.5 },
+      { maxActionPreviewChars: MAX_MCP_APP_ACTION_PREVIEW_CHARS + 1 },
       { url: '/api/mcp/sandbox' },
       { url: 'ftp://mcp-sandbox.example.com/api/mcp/sandbox' },
     ]) {
@@ -1764,12 +1786,16 @@ describe('MCP Apps configuration', () => {
         2048,
         480,
         'https://mcp-sandbox.example.com/api/mcp/sandbox',
+        7,
+        32768,
       ),
     ).toEqual({
       enabled: true,
       legacyHtmlEnabled: true,
       maxPersistedAppBytes: 2048,
       maxAdmissionRequestsPerMinute: 480,
+      maxActiveViews: 7,
+      maxActionPreviewChars: 32768,
       sandboxUrl: 'https://mcp-sandbox.example.com/api/mcp/sandbox',
     });
   });

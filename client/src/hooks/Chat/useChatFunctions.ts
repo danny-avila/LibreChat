@@ -313,12 +313,12 @@ export default function useChatFunctions({
     text = text.trim();
     /**
      * Attached files make an otherwise empty draft submittable, e.g. replying
-     * to an agent that asked for a document upload. Replayed turns (regenerate,
-     * or save-and-submit carrying `overrideFiles`) reuse stored attachments that
-     * aren't in the compose `files` map, so count those too and never re-block a
-     * regenerate of an already-validated file-only turn.
+     * to an agent that asked for a document upload. When a caller supplies
+     * `overrideFiles`, that array is authoritative, even when empty. A text-only
+     * App action must not become submittable just because the user has staged
+     * a file for a different, unsent composer message.
      */
-    const replayFileCount = overrideFiles?.length ?? 0;
+    const availableFileCount = overrideFiles == null ? (files?.size ?? 0) : overrideFiles.length;
     /** A compaction sends no text: it replays the branch, like a regenerate,
      *  with the response placeholder parented onto the leaf. */
     const regenerateShaped = isRegenerate || compact;
@@ -326,7 +326,7 @@ export default function useChatFunctions({
       !!isSubmitting ||
       jotaiStore.get(revealedQueuedTurnFamily(immutableConversation?.conversationId ?? '')) !=
         null ||
-      (!regenerateShaped && !isSubmittableMessage(text, (files?.size ?? 0) + replayFileCount))
+      (!regenerateShaped && !isSubmittableMessage(text, availableFileCount))
     ) {
       return false;
     }

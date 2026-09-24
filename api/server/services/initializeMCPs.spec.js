@@ -157,6 +157,8 @@ describe('initializeMCPs', () => {
           legacyHtmlEnabled: true,
           maxPersistedAppBytes: 1048576,
           maxAdmissionRequestsPerMinute: 240,
+          maxActiveViews: 3,
+          maxActionPreviewChars: 16384,
         },
       );
     });
@@ -180,6 +182,8 @@ describe('initializeMCPs', () => {
           legacyHtmlEnabled: true,
           maxPersistedAppBytes: 1048576,
           maxAdmissionRequestsPerMinute: 240,
+          maxActiveViews: 3,
+          maxActionPreviewChars: 16384,
         },
       );
     });
@@ -202,6 +206,8 @@ describe('initializeMCPs', () => {
           legacyHtmlEnabled: true,
           maxPersistedAppBytes: 1048576,
           maxAdmissionRequestsPerMinute: 240,
+          maxActiveViews: 3,
+          maxActionPreviewChars: 16384,
         },
       );
     });
@@ -214,6 +220,8 @@ describe('initializeMCPs', () => {
           legacyHtmlEnabled: true,
           maxPersistedAppBytes: 1048576,
           maxAdmissionRequestsPerMinute: 240,
+          maxActiveViews: 3,
+          maxActionPreviewChars: 16384,
         },
       ],
       [
@@ -223,6 +231,8 @@ describe('initializeMCPs', () => {
           legacyHtmlEnabled: false,
           maxPersistedAppBytes: 1048576,
           maxAdmissionRequestsPerMinute: 240,
+          maxActiveViews: 3,
+          maxActionPreviewChars: 16384,
         },
       ],
     ])('normalizes the startup MCP Apps policy for apps=%s', async (apps, expected) => {
@@ -250,6 +260,8 @@ describe('initializeMCPs', () => {
         legacyHtmlEnabled: true,
         maxPersistedAppBytes: 1048576,
         maxAdmissionRequestsPerMinute: 480,
+        maxActiveViews: 3,
+        maxActionPreviewChars: 16384,
         sandboxUrl: 'https://mcp-sandbox.example.com/api/mcp/sandbox',
       });
     });
@@ -288,6 +300,8 @@ describe('initializeMCPs', () => {
           legacyHtmlEnabled: true,
           maxPersistedAppBytes: 1048576,
           maxAdmissionRequestsPerMinute: 240,
+          maxActiveViews: 3,
+          maxActionPreviewChars: 16384,
         },
       });
     });

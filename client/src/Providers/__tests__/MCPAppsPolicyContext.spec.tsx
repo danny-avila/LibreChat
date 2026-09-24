@@ -1,3 +1,4 @@
+import React from 'react';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { useQuery, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TStartupConfig } from 'librechat-data-provider';
@@ -21,8 +22,11 @@ function LimitsProbe() {
 }
 
 function SandboxPolicyProbe() {
-  const { sandboxUrl, maxAdmissionRequestsPerMinute } = useMCPAppsPolicy();
-  return <output>{`${sandboxUrl ?? 'none'}:${maxAdmissionRequestsPerMinute ?? 'none'}`}</output>;
+  const { sandboxUrl, maxAdmissionRequestsPerMinute, maxActiveViews, maxActionPreviewChars } =
+    useMCPAppsPolicy();
+  return (
+    <output>{`${sandboxUrl ?? 'none'}:${maxAdmissionRequestsPerMinute ?? 'none'}:${maxActiveViews ?? 'none'}:${maxActionPreviewChars ?? 'none'}`}</output>
+  );
 }
 
 function CachedPolicyProvider({ children }: { children: React.ReactNode }) {
@@ -103,6 +107,8 @@ describe('MCPAppsPolicyProvider', () => {
               legacyHtmlEnabled: true,
               sandboxUrl: 'https://mcp-sandbox.example.com/api/mcp/sandbox',
               maxAdmissionRequestsPerMinute: 480,
+              maxActiveViews: 7,
+              maxActionPreviewChars: 32768,
             },
           } as TStartupConfig
         }
@@ -113,8 +119,62 @@ describe('MCPAppsPolicyProvider', () => {
     );
 
     expect(
-      screen.getByText('https://mcp-sandbox.example.com/api/mcp/sandbox:480'),
+      screen.getByText('https://mcp-sandbox.example.com/api/mcp/sandbox:480:7:32768'),
     ).toBeInTheDocument();
+  });
+
+  it('falls back to bounded policy values when a published startup payload is malformed', () => {
+    render(
+      <MCPAppsPolicyProvider
+        ready
+        startupConfig={
+          {
+            mcpApps: {
+              enabled: true,
+              legacyHtmlEnabled: true,
+              maxActiveViews: Infinity,
+              maxActionPreviewChars: 0,
+            },
+          } as TStartupConfig
+        }
+      >
+        <SandboxPolicyProbe />
+      </MCPAppsPolicyProvider>,
+    );
+    expect(screen.getByText('none:none:3:16384')).toBeInTheDocument();
+  });
+
+  it('keeps App capacity in an isolated per-host Jotai store', () => {
+    function Reserve({ label }: { label: string }) {
+      const { reserveView } = useMCPAppsHost();
+      const [accepted, setAccepted] = React.useState(false);
+      return (
+        <>
+          <button onClick={() => setAccepted(reserveView(label))}>{label}</button>
+          <output>{`${label}:${accepted}`}</output>
+        </>
+      );
+    }
+    const config = {
+      mcpApps: { enabled: true, legacyHtmlEnabled: true, maxActiveViews: 1 },
+    } as TStartupConfig;
+    render(
+      <>
+        <MCPAppsPolicyProvider ready userId="alice" startupConfig={config}>
+          <Reserve label="first" />
+        </MCPAppsPolicyProvider>
+        <MCPAppsPolicyProvider ready userId="bob" startupConfig={config}>
+          <Reserve label="second" />
+        </MCPAppsPolicyProvider>
+      </>,
+    );
+    // Each provider owns its own capacity; the other user's View remains independent.
+    act(() => {
+      screen.getByRole('button', { name: 'first' }).click();
+      screen.getByRole('button', { name: 'second' }).click();
+    });
+    expect(screen.getByText('first:true')).toBeInTheDocument();
+    expect(screen.getByText('second:true')).toBeInTheDocument();
   });
 
   it('tracks the startup cache without exposing pending, missing, or malformed policy', async () => {

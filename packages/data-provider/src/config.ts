@@ -2501,6 +2501,10 @@ export type TMCPAppsPolicy = {
   maxPersistedAppBytes?: number;
   /** Shared per-user ceiling applied before principal-scoped MCP App admission. */
   maxAdmissionRequestsPerMinute?: number;
+  /** Maximum simultaneously opened App views per authenticated host. */
+  maxActiveViews?: number;
+  /** Maximum UTF-16 characters displayed for an App-requested action before denying it. */
+  maxActionPreviewChars?: number;
   /** Deployment-owned dedicated Sandbox Proxy URL published to authenticated clients. */
   sandboxUrl?: string;
 };
@@ -2511,12 +2515,18 @@ export const MAX_MCP_APP_MESSAGE_BYTES: number = 12 * 1024 * 1024;
 export const DEFAULT_MCP_APP_PERSISTED_BYTES = 1024 * 1024;
 export const MAX_MCP_APP_PERSISTED_BYTES = 4 * 1024 * 1024;
 export const DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE = 240;
+export const DEFAULT_MCP_APP_MAX_ACTIVE_VIEWS = 3;
+export const MAX_MCP_APP_ACTIVE_VIEWS = 32;
+export const DEFAULT_MCP_APP_ACTION_PREVIEW_CHARS = 16_384;
+export const MAX_MCP_APP_ACTION_PREVIEW_CHARS = 131_072;
 
 export const DEFAULT_MCP_APPS_POLICY: TMCPAppsPolicy = {
   enabled: false,
   legacyHtmlEnabled: false,
   maxPersistedAppBytes: DEFAULT_MCP_APP_PERSISTED_BYTES,
   maxAdmissionRequestsPerMinute: DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
+  maxActiveViews: DEFAULT_MCP_APP_MAX_ACTIVE_VIEWS,
+  maxActionPreviewChars: DEFAULT_MCP_APP_ACTION_PREVIEW_CHARS,
 };
 
 export function resolveMCPAppsPolicy(
@@ -2525,6 +2535,8 @@ export function resolveMCPAppsPolicy(
   maxPersistedAppBytes = DEFAULT_MCP_APP_PERSISTED_BYTES,
   maxAdmissionRequestsPerMinute = DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
   sandboxUrl?: string,
+  maxActiveViews = DEFAULT_MCP_APP_MAX_ACTIVE_VIEWS,
+  maxActionPreviewChars = DEFAULT_MCP_APP_ACTION_PREVIEW_CHARS,
 ): TMCPAppsPolicy {
   return {
     enabled: value === true,
@@ -2532,6 +2544,8 @@ export function resolveMCPAppsPolicy(
     ...(cspLimits != null ? { cspLimits: resolveMCPAppCspLimits(cspLimits) } : {}),
     maxPersistedAppBytes,
     maxAdmissionRequestsPerMinute,
+    maxActiveViews,
+    maxActionPreviewChars,
     ...(sandboxUrl !== undefined ? { sandboxUrl } : {}),
   };
 }
@@ -3207,6 +3221,18 @@ export const configSchema = z.object({
         .positive()
         .max(Number.MAX_SAFE_INTEGER)
         .default(DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE),
+      maxActiveViews: z
+        .number()
+        .int()
+        .positive()
+        .max(MAX_MCP_APP_ACTIVE_VIEWS)
+        .default(DEFAULT_MCP_APP_MAX_ACTIVE_VIEWS),
+      maxActionPreviewChars: z
+        .number()
+        .int()
+        .positive()
+        .max(MAX_MCP_APP_ACTION_PREVIEW_CHARS)
+        .default(DEFAULT_MCP_APP_ACTION_PREVIEW_CHARS),
     })
     .default({}),
   mcpSettings: z

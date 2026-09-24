@@ -323,6 +323,8 @@ router.get('/', async function (req, res) {
         appConfig?.mcpAppSandbox?.maxPersistedAppBytes,
         appConfig?.mcpAppSandbox?.maxAdmissionRequestsPerMinute,
         appConfig?.mcpAppSandbox?.url,
+        appConfig?.mcpAppSandbox?.maxActiveViews,
+        appConfig?.mcpAppSandbox?.maxActionPreviewChars,
       ),
       ...(codeEnvironmentMoveVersion != null ? { codeEnvironmentMoveVersion } : {}),
       ...(cloudFront ? { cloudFront } : {}),

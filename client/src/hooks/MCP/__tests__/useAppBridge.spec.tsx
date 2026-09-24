@@ -24,6 +24,7 @@ type RequestHandler = (
   extra: ReturnType<typeof requestExtra>,
 ) => Promise<unknown>;
 const mockAsk = jest.fn();
+const mockApproveAction = jest.fn();
 
 class FakeAppBridge {
   static instances: FakeAppBridge[] = [];
@@ -130,6 +131,8 @@ jest.mock('~/hooks', () => ({
     key === 'com_ui_mcp_app_frame_title' ? `MCP App: ${values?.[0] ?? ''}` : key,
 }));
 
+const mockPreviewLimit = jest.fn((): number | undefined => undefined);
+
 jest.mock('~/Providers', () => ({
   useOptionalMessagesOperations: () => ({ ask: mockAsk }),
   useIsMessagesViewReadOnly: jest.fn(() => false),
@@ -137,6 +140,7 @@ jest.mock('~/Providers', () => ({
     enabled: true,
     legacyHtmlEnabled: true,
     cspLimits: { maxSourcesPerDirective: 32, maxSerializedLength: 4096 },
+    maxActionPreviewChars: mockPreviewLimit(),
   }),
 }));
 
@@ -201,7 +205,12 @@ function BridgeFrameHarness({ resource, userId }: { resource: UIResource; userId
 function mountBridge(
   resource: UIResource,
   client: QueryClient,
-  callbacks: { onFailed?: () => void; onTeardown?: () => void; userId?: string } = {},
+  callbacks: {
+    onFailed?: () => void;
+    onTeardown?: () => void;
+    userId?: string;
+    withoutApproval?: boolean;
+  } = {},
 ) {
   const iframe = document.createElement('iframe');
   iframe.setAttribute('data-sandbox-url', SANDBOX_URL);
@@ -220,6 +229,7 @@ function mountBridge(
         toolArgs: { q: 1 },
         toolResult: { content: [] },
         userId: callbacks.userId,
+        onRequestAction: callbacks.withoutApproval ? undefined : mockApproveAction,
         attempt: 0,
         onSizeChanged: jest.fn(),
         onLoaded: jest.fn(),
@@ -252,6 +262,8 @@ describe('useAppBridge', () => {
     );
     mockReadOnly.mockReturnValue(false);
     mockAsk.mockReset();
+    mockApproveAction.mockReset().mockResolvedValue(true);
+    mockPreviewLimit.mockReturnValue(undefined);
     mockFetchHtml.mockResolvedValue({ html: '<p>app</p>' });
     mockValidateBinding.mockResolvedValue();
     client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -938,6 +950,21 @@ describe('useAppBridge', () => {
       expect(openSpy).not.toHaveBeenCalled();
     });
 
+    it('refuses an otherwise allowed link after View disposal', async () => {
+      mockFetchHtml.mockResolvedValue({
+        html: '<p>app</p>',
+        csp: { connectDomains: ['https://api.example.com'] },
+      });
+      const { view } = mountBridge(makeResource(), client);
+      await flush();
+      const bridge = latest();
+      view.unmount();
+      await expect(
+        bridge.onopenlink?.({ url: 'https://api.example.com/x' }, requestExtra()),
+      ).resolves.toEqual({ isError: true });
+      expect(openSpy).not.toHaveBeenCalled();
+    });
+
     it('reports cancellation and thrown browser failures', async () => {
       mockFetchHtml.mockResolvedValue({
         html: '<p>app</p>',
@@ -980,16 +1007,215 @@ describe('useAppBridge', () => {
         'binding-demo',
         'next',
         { q: 2 },
-        extra.signal,
+        expect.any(AbortSignal),
       );
       expect(mockReadResource).toHaveBeenCalledWith(
         'demo',
         'binding-demo',
         'ui://detail',
-        extra.signal,
+        expect.any(AbortSignal),
       );
-      expect(mockListResources).toHaveBeenCalledWith('demo', 'binding-demo', 'a', extra.signal);
-      expect(mockListTemplates).toHaveBeenCalledWith('demo', 'binding-demo', 'b', extra.signal);
+      expect(mockListResources).toHaveBeenCalledWith(
+        'demo',
+        'binding-demo',
+        'a',
+        expect.any(AbortSignal),
+      );
+      expect(mockListTemplates).toHaveBeenCalledWith(
+        'demo',
+        'binding-demo',
+        'b',
+        expect.any(AbortSignal),
+      );
+    });
+
+    it('aborts active resource operations and denies new requests after View disposal', async () => {
+      mockReadResource.mockResolvedValue({ contents: [] });
+      mockListResources.mockResolvedValue({ resources: [] });
+      mockListTemplates.mockResolvedValue({ resourceTemplates: [] });
+      const { view } = mountBridge(makeResource(), client);
+      await flush();
+      const bridge = latest();
+      await bridge.onreadresource?.({ uri: 'ui://detail' }, requestExtra());
+      await bridge.onlistresources?.({ cursor: 'a' }, requestExtra());
+      await bridge.onlistresourcetemplates?.({ cursor: 'b' }, requestExtra());
+      const readSignal = mockReadResource.mock.calls[0][3];
+      const resourcesSignal = mockListResources.mock.calls[0][3];
+      const templatesSignal = mockListTemplates.mock.calls[0][3];
+      expect(readSignal?.aborted).toBe(false);
+      view.unmount();
+      expect(readSignal?.aborted).toBe(true);
+      expect(resourcesSignal?.aborted).toBe(true);
+      expect(templatesSignal?.aborted).toBe(true);
+      await expect(
+        bridge.onreadresource?.({ uri: 'ui://detail' }, requestExtra()),
+      ).rejects.toMatchObject({ name: 'AbortError' });
+      await expect(bridge.onlistresources?.({ cursor: 'a' }, requestExtra())).rejects.toMatchObject(
+        { name: 'AbortError' },
+      );
+      await expect(
+        bridge.onlistresourcetemplates?.({ cursor: 'b' }, requestExtra()),
+      ).rejects.toMatchObject({ name: 'AbortError' });
+      expect(mockReadResource).toHaveBeenCalledTimes(1);
+      expect(mockListResources).toHaveBeenCalledTimes(1);
+      expect(mockListTemplates).toHaveBeenCalledTimes(1);
+    });
+
+    it('denies App tool and message actions without a host approval control', async () => {
+      const view = mountBridge(makeResource(), client, { withoutApproval: true });
+      await flush();
+      // A caller outside an active host View has no approval authority.
+      const bridge = latest();
+      expect(await bridge.oncalltool?.({ name: 'next', arguments: {} }, requestExtra())).toEqual({
+        content: [],
+        isError: true,
+      });
+      expect(
+        await bridge.onmessage?.({ content: [{ type: 'text', text: 'submit' }] }, requestExtra()),
+      ).toEqual({ isError: true });
+      expect(mockApproveAction).not.toHaveBeenCalled();
+      expect(mockCallTool).not.toHaveBeenCalled();
+      expect(mockAsk).not.toHaveBeenCalled();
+      view.view.unmount();
+    });
+
+    it('submits only approved App text without draining staged composer context', async () => {
+      let grant: ((allowed: boolean) => void) | undefined;
+      mockApproveAction.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            grant = resolve;
+          }),
+      );
+      const { view } = mountBridge(makeResource(), client);
+      await flush();
+      const pending = latest().onmessage?.(
+        {
+          content: [
+            { type: 'text', text: 'approved' },
+            { type: 'text', text: 'message' },
+          ],
+        },
+        requestExtra(),
+      );
+      await flush();
+      expect(mockApproveAction).toHaveBeenCalledWith(
+        { kind: 'message', serverName: 'demo', text: 'approved\nmessage' },
+        expect.any(AbortSignal),
+      );
+      expect(mockAsk).not.toHaveBeenCalled();
+      grant?.(true);
+      await expect(pending).resolves.toEqual({});
+      expect(mockAsk).toHaveBeenCalledTimes(1);
+      expect(mockAsk).toHaveBeenCalledWith(
+        { text: 'approved\nmessage' },
+        { overrideFiles: [], overrideManualSkills: [], overrideQuotes: [] },
+      );
+      view.unmount();
+    });
+
+    it('acknowledges an accepted turn even when the App aborts immediately afterward', async () => {
+      const { view } = mountBridge(makeResource(), client);
+      await flush();
+      const controller = new AbortController();
+      mockAsk.mockImplementationOnce(() => {
+        controller.abort();
+        return undefined;
+      });
+      const result = await latest().onmessage?.(
+        { content: [{ type: 'text', text: 'approved turn' }] },
+        { signal: controller.signal },
+      );
+      expect(mockApproveAction).toHaveBeenCalledTimes(1);
+      expect(mockAsk).toHaveBeenCalledTimes(1);
+      expect(result).toEqual({});
+      view.unmount();
+    });
+
+    it('does not ask for approval for a whitespace-only App message', async () => {
+      const { view } = mountBridge(makeResource(), client);
+      await flush();
+      const result = await latest().onmessage?.(
+        { content: [{ type: 'text', text: '  ' }] },
+        requestExtra(),
+      );
+      expect(result).toEqual({ isError: true });
+      expect(mockApproveAction).not.toHaveBeenCalled();
+      expect(mockAsk).not.toHaveBeenCalled();
+      view.unmount();
+    });
+
+    it('uses the published preview limit for both tool arguments and chat messages', async () => {
+      mockCallTool.mockResolvedValue({ content: [] });
+      mockPreviewLimit.mockReturnValue(10);
+      const { view } = mountBridge(makeResource(), client);
+      await flush();
+      const bridge = latest();
+      expect(
+        await bridge.oncalltool?.({ name: 'next', arguments: { query: 42 } }, requestExtra()),
+      ).toEqual({ content: [], isError: true });
+      expect(
+        await bridge.onmessage?.(
+          { content: [{ type: 'text', text: 'more than ten' }] },
+          requestExtra(),
+        ),
+      ).toEqual({ isError: true });
+      expect(mockApproveAction).not.toHaveBeenCalled();
+      await bridge.oncalltool?.({ name: 'next', arguments: { q: 2 } }, requestExtra());
+      await bridge.onmessage?.({ content: [{ type: 'text', text: 'ten chars!' }] }, requestExtra());
+      expect(mockApproveAction).toHaveBeenCalledTimes(2);
+      expect(mockCallTool).toHaveBeenCalledTimes(1);
+      expect(mockAsk).toHaveBeenCalledTimes(1);
+      view.unmount();
+    });
+
+    it('waits for permission and executes the exact arguments shown to the host once', async () => {
+      let grant: ((allowed: boolean) => void) | undefined;
+      mockApproveAction.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            grant = resolve;
+          }),
+      );
+      const { view } = mountBridge(makeResource(), client);
+      await flush();
+      const args = { q: 2 };
+      const request = latest().oncalltool?.({ name: 'next', arguments: args }, requestExtra());
+      await flush();
+      expect(mockApproveAction).toHaveBeenCalledWith(
+        { kind: 'tool', serverName: 'demo', toolName: 'next', argumentsText: '{"q":2}' },
+        expect.any(AbortSignal),
+      );
+      args.q = 42;
+      expect(mockCallTool).not.toHaveBeenCalled();
+      grant?.(true);
+      await request;
+      expect(mockCallTool).toHaveBeenCalledWith(
+        'demo',
+        'binding-demo',
+        'next',
+        { q: 2 },
+        expect.any(AbortSignal),
+      );
+      view.unmount();
+    });
+
+    it('does not run a tool if approval settles after View disposal', async () => {
+      let grant: ((allowed: boolean) => void) | undefined;
+      mockApproveAction.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            grant = resolve;
+          }),
+      );
+      const { view } = mountBridge(makeResource(), client);
+      await flush();
+      const request = latest().oncalltool?.({ name: 'next', arguments: {} }, requestExtra());
+      await flush();
+      view.unmount();
+      grant?.(true);
+      await expect(request).resolves.toEqual({ content: [], isError: true });
+      expect(mockCallTool).not.toHaveBeenCalled();
     });
 
     it('reports unsupported or rejected message delivery as an error', async () => {
@@ -1008,6 +1234,36 @@ describe('useAppBridge', () => {
   });
 
   describe('teardown', () => {
+    it('revokes pending tool approval before awaiting App-controlled teardown', async () => {
+      let grant: ((allowed: boolean) => void) | undefined;
+      let finishTeardown: (() => void) | undefined;
+      mockApproveAction.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            grant = resolve;
+          }),
+      );
+      const { view } = mountBridge(makeResource(), client);
+      await flush();
+      const bridge = latest();
+      await bridge.oninitialized?.();
+      bridge.teardownResource = jest.fn(
+        () =>
+          new Promise<Record<string, never>>((resolve) => {
+            finishTeardown = () => resolve({});
+          }),
+      );
+      const pending = bridge.oncalltool?.({ name: 'next', arguments: { id: 1 } }, requestExtra());
+      await flush();
+      bridge.emit('requestteardown');
+      grant?.(true);
+      await expect(pending).resolves.toEqual({ content: [], isError: true });
+      expect(mockCallTool).not.toHaveBeenCalled();
+      finishTeardown?.();
+      await flush();
+      view.unmount();
+    });
+
     it('does not deliver an awaited teardown completion after the View was disposed', async () => {
       const onTeardown = jest.fn();
       const mounted = mountBridge(makeResource(), client, { onTeardown });
