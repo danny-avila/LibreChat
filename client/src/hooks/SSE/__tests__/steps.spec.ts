@@ -435,6 +435,28 @@ describe('steps', () => {
       expect(reannounced.content).toEqual(streamed.content);
     });
 
+    it('keeps a completed call intact when its step is announced again', () => {
+      const { message } = runToolCall(createResponse());
+      const closed = applyRunStepClosed(
+        message,
+        search,
+        {
+          id: search.id,
+          index: 1,
+          type: StepTypes.TOOL_CALLS,
+          status: 'completed',
+          created_at: 1_000,
+          closed_at: 1_250,
+        },
+        0,
+      ) as TMessage;
+
+      const replayed = applyToolCallsStep(closed, search, 0);
+
+      expect(replayed.toolCallId).toBe('call-1');
+      expect(replayed.message.content).toEqual(closed.content);
+    });
+
     it('keeps streamed args when the completion omits them', () => {
       const opened = applyToolCallsStep(createResponse(), search, 0).message;
       const streamed = applyToolCallDelta(opened, search, argsDelta(search.id, '{}'), 'call-1', 0);
@@ -569,6 +591,23 @@ describe('steps', () => {
       expect(collided).toBe(result);
       warn.mockRestore();
     });
+
+    it('writes the URL of the first streamed image part into a new slot', () => {
+      const result = updateContent(createResponse(), 0, {
+        type: ContentTypes.IMAGE_URL,
+        image_url: 'https://x/first.png',
+      } as Agents.MessageContentComplex);
+      const repeated = updateContent(result, 0, {
+        type: ContentTypes.IMAGE_URL,
+        image_url: 'https://x/other.png',
+      } as Agents.MessageContentComplex);
+
+      expect(result.content?.[0]).toEqual({
+        type: ContentTypes.IMAGE_URL,
+        image_url: 'https://x/first.png',
+      });
+      expect(repeated.content).toEqual(result.content);
+    });
   });
 
   describe('agent updates', () => {
@@ -643,6 +682,45 @@ describe('steps', () => {
       expect(
         finalizeSummaries(settled as TMessage, { id: summarize.id, agentId: 'a' }, 1),
       ).toBeUndefined();
+    });
+
+    it('carries agent and group metadata onto the finalized summary', () => {
+      const parallel = messageStep('step-summary-p', 1, {
+        agentId: 'agent-b',
+        groupId: 2,
+        summary: summarize.summary,
+      });
+      const opened = applySummaryStep(createResponse(), parallel, 0);
+
+      const settled = finalizeSummaries(
+        opened,
+        {
+          id: parallel.id,
+          agentId: 'agent-b',
+          summary: {
+            type: ContentTypes.SUMMARY,
+            content: [{ type: ContentTypes.TEXT, text: 'done' }],
+          } as SummaryContentPart,
+        },
+        1,
+      ) as TMessage;
+      const reattributed = finalizeSummaries(
+        applySummaryStep(createResponse(), parallel, 0),
+        {
+          id: parallel.id,
+          agentId: 'agent-b',
+          summary: { type: ContentTypes.SUMMARY, content: [], agentId: 'agent-c', groupId: 3 },
+        } as Agents.SummarizeCompleteEvent,
+        1,
+      ) as TMessage;
+
+      expect(settled.content?.[1]).toMatchObject({
+        summarizing: false,
+        agentId: 'agent-b',
+        groupId: 2,
+        content: [{ type: ContentTypes.TEXT, text: 'done' }],
+      });
+      expect(reattributed.content?.[1]).toMatchObject({ agentId: 'agent-c', groupId: 3 });
     });
 
     it('keeps a failed round in its slot instead of splicing it out', () => {

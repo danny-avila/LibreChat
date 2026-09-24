@@ -284,10 +284,11 @@ export function updateContent(
   } else if (contentType === ContentTypes.IMAGE_URL && 'image_url' in contentPart) {
     const currentContent = updatedContent[index] as {
       type: ContentTypes.IMAGE_URL;
-      image_url: string;
+      image_url?: string;
     };
     updatedContent[index] = {
       ...currentContent,
+      image_url: currentContent.image_url ?? contentPart.image_url,
     };
   } else if (contentType === ContentTypes.SUMMARY) {
     const currentSummary = updatedContent[index] as SummaryContentPart | undefined;

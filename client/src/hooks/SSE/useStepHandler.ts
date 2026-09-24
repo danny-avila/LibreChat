@@ -757,7 +757,9 @@ export default function useStepHandler({
         }
 
         if (!runStep || !responseMessageId) {
-          console.warn('No run step or runId found for completed tool call event');
+          const buffer = pendingDeltaBuffer.current.get(stepId) ?? [];
+          buffer.push({ event: StepEvents.ON_RUN_STEP_COMPLETED, data: stepEvent.data });
+          pendingDeltaBuffer.current.set(stepId, buffer);
           return;
         }
 
