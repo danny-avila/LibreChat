@@ -453,6 +453,123 @@ describe('agent trigger delivery methods', () => {
     ).resolves.toEqual({ status: 'live', leaseUntil: renewedUntil });
   });
 
+  describe('expediteAgentTriggerDeliveries', () => {
+    const background = { id: 'background-tool-completion', type: 'internal' };
+    const later = new Date(START.getTime() + 30_000);
+    const capable = {
+      workerId: 'background-capable-worker',
+      claimToken: 'background-capable-claim',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+      workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2],
+    };
+    const waiting = (overrides: Partial<Parameters<typeof enqueueInput>[0]> = {}) =>
+      methods.enqueueAgentTriggerDelivery(
+        enqueueInput({
+          orderingKey: `background-lane-${counter + 1}`,
+          envelope: { event: { source: background } },
+          requiredWorkerCapability:
+            AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
+          availableAt: later,
+          ...overrides,
+        }),
+      );
+
+    it('makes a deferred delivery claimable now once its result is durable', async () => {
+      const target = await waiting();
+      const sibling = await waiting();
+      await expect(methods.claimNextAgentTriggerDelivery(capable)).resolves.toBeNull();
+
+      await expect(
+        methods.expediteAgentTriggerDeliveries({
+          deliveryKeys: [target.delivery.deliveryKey],
+          sourceIds: [background.id],
+          now: START,
+        }),
+      ).resolves.toBe(1);
+
+      await expect(methods.claimNextAgentTriggerDelivery(capable)).resolves.toMatchObject({
+        id: target.delivery.id,
+      });
+      await expect(
+        methods.claimNextAgentTriggerDelivery({ ...capable, claimToken: 'second-claim' }),
+      ).resolves.toBeNull();
+      const untouched = await Delivery.findById(sibling.delivery.id).lean();
+      expect(untouched?.availableAt).toEqual(later);
+    });
+
+    it("moves only the principal's waiting rows from the named sources", async () => {
+      const user = new mongoose.Types.ObjectId();
+      const mine = await waiting({ user });
+      const otherUser = await waiting();
+      const otherSource = await waiting({
+        user,
+        envelope: { event: { source: { id: 'agent-queued-turn', type: 'internal' } } },
+      });
+      const external = await waiting({
+        user,
+        envelope: { event: { source: { id: background.id, type: 'webhook' } } },
+      });
+      const due = await waiting({ user, availableAt: START });
+
+      await expect(
+        methods.expediteAgentTriggerDeliveries({ user, sourceIds: [background.id], now: START }),
+      ).resolves.toBe(1);
+
+      const rows = await Delivery.find({
+        _id: {
+          $in: [mine, otherUser, otherSource, external, due].map((row) => row.delivery.id),
+        },
+      }).lean();
+      const availableAt = new Map(rows.map((row) => [String(row._id), row.availableAt]));
+      expect(availableAt.get(mine.delivery.id)).toEqual(START);
+      expect(availableAt.get(otherUser.delivery.id)).toEqual(later);
+      expect(availableAt.get(otherSource.delivery.id)).toEqual(later);
+      expect(availableAt.get(external.delivery.id)).toEqual(later);
+      expect(availableAt.get(due.delivery.id)).toEqual(START);
+    });
+
+    it('leaves a delivery a worker currently holds untouched', async () => {
+      const user = new mongoose.Types.ObjectId();
+      const held = await waiting({ user, availableAt: START });
+      const claim = await methods.claimNextAgentTriggerDelivery(capable);
+      expect(claim).toMatchObject({ id: held.delivery.id });
+      const before = await Delivery.findById(held.delivery.id).lean();
+
+      await expect(
+        methods.expediteAgentTriggerDeliveries({
+          user,
+          sourceIds: [background.id],
+          now: new Date(START.getTime() - 60_000),
+        }),
+      ).resolves.toBe(0);
+
+      const after = await Delivery.findById(held.delivery.id).lean();
+      expect(after?.status).toBe(before?.status);
+      expect(after?.availableAt).toEqual(before?.availableAt);
+    });
+
+    it('refuses an unbounded or malformed selection', async () => {
+      await expect(
+        methods.expediteAgentTriggerDeliveries({ sourceIds: [background.id], now: START }),
+      ).rejects.toThrow(TypeError);
+      await expect(
+        methods.expediteAgentTriggerDeliveries({
+          user: new mongoose.Types.ObjectId(),
+          sourceIds: [],
+          now: START,
+        }),
+      ).rejects.toThrow(TypeError);
+      await expect(
+        methods.expediteAgentTriggerDeliveries({
+          deliveryKeys: ['trigger_x'],
+          sourceIds: [background.id],
+          now: new Date(Number.NaN),
+        }),
+      ).rejects.toThrow(TypeError);
+    });
+  });
+
   it('persists one private background result receipt independently of message rows', async () => {
     const source = { id: 'background-tool-completion', type: 'internal' };
     const queued = await methods.enqueueAgentTriggerDelivery(
@@ -2466,6 +2583,18 @@ describe('agent trigger delivery methods', () => {
         expect.objectContaining({ key: { laneCleanupPendingAt: 1 }, sparse: true }),
       ]),
     );
+  });
+
+  it("indexes a user's waiting deliveries for settle-time expediting", async () => {
+    const deliveryIndexes = await Delivery.collection.indexes();
+    const userIndex = deliveryIndexes.find(
+      (index) =>
+        JSON.stringify(index.key) === JSON.stringify({ user: 1, status: 1, availableAt: 1 }),
+    );
+    expect(userIndex).toBeDefined();
+    /** A sparse index would skip every row the expedite and listing reads need. */
+    expect(userIndex?.sparse).toBeUndefined();
+    expect(userIndex?.partialFilterExpression).toBeUndefined();
   });
 
   it('publishes an idempotent replay on its persisted ordering lane', async () => {

@@ -12,6 +12,7 @@ import type { AgentTriggerEnqueueOptions } from './triggers/delivery';
 import { boundedSubagentTaskResult } from './subagentTaskRouting';
 import { createAgentTriggerEnvelope } from './triggers/envelope';
 import { AgentTriggerExecutionError } from './triggers/host';
+import { waitingRetryAfter } from './triggers/backoff';
 
 const WAKEUP_ADMISSION_DELAY_MS = 250;
 /** SDK tasks time out after 30 minutes; this grace covers terminal persistence. */
@@ -137,6 +138,12 @@ function isParentActive(job: GenerationState | null): boolean {
     job?.status === 'requires_action' ||
     job?.metadata?.terminalPersistencePending === true
   );
+}
+
+/** A running or approval-paused parent can stay busy for hours; one that has
+ * settled and is only finishing terminal persistence clears within moments. */
+function isParentWorking(job: GenerationState | null): boolean {
+  return job?.status === 'running' || job?.status === 'requires_action';
 }
 
 function sameTenant(actual: string | undefined, expected: string | undefined): boolean {
@@ -616,7 +623,9 @@ export function createSubagentCompletionWakeupResolver({
         code: 'PARENT_NOT_READY',
         retryable: true,
         status: 409,
-        retryAfter: '1',
+        retryAfter: isParentWorking(parentJob)
+          ? waitingRetryAfter(envelope.receivedAt, now())
+          : '1',
         deferWithoutAttempt: true,
       });
     }
@@ -700,7 +709,7 @@ export function createSubagentCompletionWakeupResolver({
           code: 'CHILD_NOT_READY',
           retryable: true,
           status: 409,
-          retryAfter: '1',
+          retryAfter: waitingRetryAfter(envelope.receivedAt, now()),
           deferWithoutAttempt: true,
         });
       }

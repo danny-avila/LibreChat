@@ -24,6 +24,7 @@ import type { AgentTriggerEnqueueOptions } from './triggers/delivery';
 import { BACKGROUND_TOOL_PRODUCER_LEASE_MS } from './backgroundCompletion';
 import { createAgentTriggerEnvelope } from './triggers/envelope';
 import { AgentTriggerExecutionError } from './triggers/host';
+import { waitingRetryAfter } from './triggers/backoff';
 import { truncateMiddle } from '~/utils';
 
 const WAKEUP_ADMISSION_DELAY_MS = 250;
@@ -150,6 +151,12 @@ function isParentActive(job: GenerationState | null): boolean {
     job?.status === 'requires_action' ||
     job?.metadata?.terminalPersistencePending === true
   );
+}
+
+/** A running or approval-paused parent can stay busy for hours; one that has
+ * settled and is only finishing terminal persistence clears within moments. */
+function isParentWorking(job: GenerationState | null): boolean {
+  return job?.status === 'running' || job?.status === 'requires_action';
 }
 
 function timestamp(message: Pick<IMessage, 'createdAt'>): number {
@@ -288,7 +295,7 @@ export function createBackgroundToolCompletionWakeupResolver({
         code: 'PARENT_NOT_READY',
         retryable: true,
         status: 409,
-        retryAfter: '1',
+        retryAfter: isParentWorking(parentJob) ? waitingRetryAfter(envelope.receivedAt) : '1',
         deferWithoutAttempt: true,
       });
     }
@@ -526,7 +533,7 @@ export function createBackgroundToolCompletionWakeupResolver({
       code: 'BACKGROUND_TOOL_RESULT_NOT_READY',
       retryable: true,
       status: 409,
-      retryAfter: '1',
+      retryAfter: waitingRetryAfter(envelope.receivedAt),
       deferWithoutAttempt: true,
     });
   };

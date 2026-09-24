@@ -1,3 +1,4 @@
+import { context, ROOT_CONTEXT } from '@opentelemetry/api';
 import type {
   AgentTriggerDeliveryFailure,
   AgentTriggerDeliveryRecord,
@@ -89,6 +90,54 @@ describe('createAgentTriggerDeliveryEngine', () => {
       result: successResult(),
       settledAt: START,
     });
+  });
+
+  it.each([
+    ['honours a longer requested wait', '30', 30_000],
+    ['keeps the default re-check for a shorter request', '1', 5_000],
+    ['keeps the default re-check without a request', undefined, 5_000],
+  ])('%s for a readiness deferral', async (_label, retryAfter, expectedDelayMs) => {
+    const store = storeWith();
+    const dispatch = jest.fn(async () => {
+      throw new AgentTriggerExecutionError('The parent generation has not settled yet.', {
+        mode: 'continue',
+        certainty: 'definite',
+        code: 'PARENT_NOT_READY',
+        retryable: true,
+        deferWithoutAttempt: true,
+        ...(retryAfter != null && { retryAfter }),
+      });
+    });
+    const engine = createAgentTriggerDeliveryEngine(
+      { store, dispatch, now: () => START, workerId: 'worker-1' },
+      { concurrency: 1 },
+    );
+
+    await engine.runTick();
+
+    expect(store.defer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        availableAt: new Date(START.getTime() + expectedDelayMs),
+      }),
+    );
+    expect(store.retry).not.toHaveBeenCalled();
+  });
+
+  it('runs each claim pass under the root trace context', async () => {
+    const withContext = jest.spyOn(context, 'with');
+    const store = storeWith({ claimNext: jest.fn(async () => null) });
+    const engine = createAgentTriggerDeliveryEngine(
+      { store, dispatch: jest.fn(async () => successResult()), now: () => START },
+      { concurrency: 1 },
+    );
+
+    try {
+      await engine.runTick();
+      expect(withContext).toHaveBeenCalledWith(ROOT_CONTEXT, expect.any(Function));
+      expect(store.claimNext).toHaveBeenCalled();
+    } finally {
+      withContext.mockRestore();
+    }
   });
 
   it('persists generation identity when a bound continuation starts', async () => {

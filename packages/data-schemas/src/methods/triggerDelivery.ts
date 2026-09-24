@@ -246,6 +246,16 @@ export interface AgentEventActorReceiptStorageMetrics {
   deadDeliveries: number;
 }
 
+/** Selects deferred internal deliveries whose readiness condition just changed. */
+export interface ExpediteAgentTriggerDeliveriesInput {
+  sourceIds: readonly string[];
+  /** Exact deliveries, e.g. the one whose result just became durable. */
+  deliveryKeys?: readonly string[];
+  /** Every matching delivery of one principal, e.g. after one of its generations settled. */
+  user?: string | Types.ObjectId;
+  now: Date;
+}
+
 export interface AgentTriggerDeliveryMethods {
   ensureAgentTriggerDeliveryIndexes: () => Promise<void>;
   enqueueAgentTriggerDelivery: (
@@ -307,6 +317,7 @@ export interface AgentTriggerDeliveryMethods {
     sourceId: string;
     now: Date;
   }) => Promise<AgentTriggerProducerLeaseStatus>;
+  expediteAgentTriggerDeliveries: (input: ExpediteAgentTriggerDeliveriesInput) => Promise<number>;
   persistAgentBackgroundToolResult: (
     input: PersistAgentBackgroundToolResultInput,
   ) => Promise<boolean>;
@@ -2287,6 +2298,42 @@ export function createAgentTriggerDeliveryMethods(
       : { status: 'expired', leaseUntil: delivery.producerLeaseUntil };
   }
 
+  /** Pulls deferred deliveries back to `now` when the condition they were
+   * waiting on has changed, so a waiting delivery can back off without delaying
+   * the moment it becomes deliverable. Only unclaimed rows move: a delivery that
+   * a worker currently holds, or one already due, is left alone. */
+  async function expediteAgentTriggerDeliveries(
+    input: ExpediteAgentTriggerDeliveriesInput,
+  ): Promise<number> {
+    const deliveryKeys = input.deliveryKeys ?? [];
+    if (
+      input.sourceIds.length === 0 ||
+      input.sourceIds.some((id) => id.length === 0 || id.length > 256) ||
+      deliveryKeys.some((key) => key.length === 0 || key.length > 256) ||
+      (deliveryKeys.length === 0 && input.user == null) ||
+      !(input.now instanceof Date) ||
+      !Number.isFinite(input.now.getTime())
+    ) {
+      throw new TypeError('Invalid agent trigger delivery expedite');
+    }
+    const result = await Delivery().updateMany(
+      {
+        'envelope.event.source.type': 'internal',
+        'envelope.event.source.id': { $in: [...input.sourceIds] },
+        ...(deliveryKeys.length > 0 && { deliveryKey: { $in: [...deliveryKeys] } }),
+        ...(input.user != null && { user: input.user }),
+        availableAt: { $gt: input.now },
+        leaseBy: { $exists: false },
+        $or: [
+          { status: { $in: ['pending', 'capability_pending'] } },
+          { status: 'leased', capabilityStatus: 'pending', capabilityLeaseBy: { $exists: false } },
+        ],
+      },
+      { $set: { availableAt: input.now, claimAvailableAt: input.now } },
+    );
+    return result.modifiedCount;
+  }
+
   /** Stores terminal output on the pre-admitted delivery before attempting the
    * parent-message projection. The first terminal receipt wins; exact retries
    * are idempotent and conflicting rewrites fail closed. */
@@ -4049,6 +4096,7 @@ export function createAgentTriggerDeliveryMethods(
     retireAgentTriggerDelivery,
     renewAgentTriggerDeliveryProducerLease,
     getAgentTriggerDeliveryProducerLease,
+    expediteAgentTriggerDeliveries,
     persistAgentBackgroundToolResult,
     getAgentBackgroundToolResult,
     getAgentBackgroundToolResultClaim,
