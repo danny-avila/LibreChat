@@ -118,6 +118,8 @@ test.describe('chat context', () => {
   test('a second conversation pane streams its own reply to the same message @scenario:added-conversation-streams-alongside-the-main-reply', async ({
     page,
   }) => {
+    const width = page.viewportSize()?.width ?? 0;
+    test.skip(width < 768, 'the multi-conversation control is hidden below md');
     test.setTimeout(90_000);
     const label = uniqueLabel('added');
     await openMockChat(page);
