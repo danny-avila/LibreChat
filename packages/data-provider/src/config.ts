@@ -2160,6 +2160,7 @@ export function resolveTraceViewerConfig(
 export enum RetentionMode {
   ALL = 'all',
   TEMPORARY = 'temporary',
+  EPHEMERAL = 'ephemeral',
 }
 
 const themeModeSchema = z
@@ -2185,6 +2186,14 @@ export const themeDefinitionSchema = z
   .strict();
 
 export type TThemeDefinitionConfig = z.infer<typeof themeDefinitionSchema>;
+
+/** Retention modes that apply expiration deadlines to all data, not just user-marked temporary chats. */
+export const isAllDataRetention = (mode?: RetentionMode | null): boolean =>
+  mode === RetentionMode.ALL || mode === RetentionMode.EPHEMERAL;
+
+/** Whether the retention mode forces every conversation to be temporary, overriding the per-chat toggle. */
+export const isForcedTemporaryRetention = (mode?: RetentionMode | null): boolean =>
+  mode === RetentionMode.EPHEMERAL;
 
 export const interfaceSchema = z
   .object({

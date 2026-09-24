@@ -10,6 +10,8 @@ const {
 const {
   toPendingSteer,
   getViolationInfo,
+  applyForcedTemporaryRequest,
+  resolveResumableRetention,
   buildMessageFiles,
   getReferencedQuotes,
   resolveTitleTiming,
@@ -724,6 +726,7 @@ function rejectMissingTriggerParentMessageId(res, generationProtocolVersion) {
  * Returns streamId immediately, client subscribes separately via SSE.
  */
 const ResumableAgentController = async (req, res, next, initializeClient, addTitle) => {
+  applyForcedTemporaryRequest(req);
   const startupTelemetry = getAgentStartupTelemetry(req);
   let generationProtocolVersion = negotiateNewGenerationProtocol(req);
   const {
@@ -1638,24 +1641,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         agent_id: endpointOption.agent_id ?? req.body?.agent_id,
         // Persist temporary-chat state so a HITL resume keeps the resumed response
         // non-persisted instead of trusting the resume request to re-send the flag.
-        isTemporary:
-          req._agentEventBindingRetention?.isTemporary ??
-          req.resolvedConversation?.isTemporary ??
-          req.body?.isTemporary,
-        ...((req._agentEventBindingRetention?.expiredAt ?? req.resolvedConversation?.expiredAt) !=
-          null && {
-          retentionExpiresAt: new Date(
-            req._agentEventBindingRetention?.expiredAt ?? req.resolvedConversation.expiredAt,
-          ).toISOString(),
-        }),
-        ...((req._agentEventBindingRetention?.expiredAt ?? req.resolvedConversation?.expiredAt) ==
-          null &&
-          req.config?.interfaceConfig?.retentionMode === 'all' && {
-            retentionExpiresAt: createChatExpirationDate(
-              req.config.interfaceConfig,
-              req.resolvedConversation?.isTemporary ?? req.body?.isTemporary,
-            ).toISOString(),
-          }),
+        ...resolveResumableRetention(req, createChatExpirationDate),
         ...(agentEventDelivery != null && {
           agentEventDeliveryKey: agentEventDelivery.deliveryKey,
           ...(internalDetachedCompletion == null
