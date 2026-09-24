@@ -1,3 +1,4 @@
+import type { ResolvedAgentInstructionPrompt } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { RunConfig } from '@librechat/agents';
 import type { LangfuseTraceContext, LangfuseTraceUser } from './identity';
@@ -42,6 +43,10 @@ type LangfuseExportPlan =
       publicKey: string;
       secretKey: string;
     };
+const PROMPT_SOURCE_ATTRIBUTE = 'librechat.prompt.source';
+const PROMPT_NAME_ATTRIBUTE = 'librechat.prompt.name';
+const PROMPT_VERSION_ATTRIBUTE = 'librechat.prompt.version';
+const PROMPT_CACHE_ATTRIBUTE = 'librechat.prompt.cached';
 const TENANT_EXPORT_ATTRIBUTE = 'librechat.langfuse.tenant_export.enabled';
 const TENANT_DESTINATION_ATTRIBUTE = 'librechat.langfuse.destination';
 const CENTRAL_EXPORT_ATTRIBUTE = 'librechat.langfuse.central_export.enabled';
@@ -252,6 +257,7 @@ export function buildLangfuseConfig({
   centralTraceExportEnabled = true,
   user,
   traceContext,
+  prompt,
 }: {
   appConfig?: AppConfig;
   runId?: string;
@@ -266,12 +272,24 @@ export function buildLangfuseConfig({
   user?: LangfuseTraceUser;
   /** Request values `langfuse.trace.conversationMetadataFields` may export. */
   traceContext?: LangfuseTraceContext;
+  /** Resolved prompt identity. Export requires `langfuse.trace.promptMetadata`. */
+  prompt?: ResolvedAgentInstructionPrompt;
 } = {}): LangfuseRunConfig {
   const normalizedTenantId = normalizeString(tenantId);
   const config = appConfig?.langfuse;
 
   const langfuse: LangfuseRunConfigWithTraceAttributes = {
     deterministicTraceId: true,
+    ...(prompt && config?.trace?.promptMetadata === true
+      ? {
+          librechatTraceAttributes: {
+            [PROMPT_SOURCE_ATTRIBUTE]: prompt.source,
+            [PROMPT_NAME_ATTRIBUTE]: prompt.name,
+            [PROMPT_VERSION_ATTRIBUTE]: prompt.version,
+            [PROMPT_CACHE_ATTRIBUTE]: prompt.cached === true,
+          },
+        }
+      : {}),
   };
   const traceUserId = resolveLangfuseTraceUserId(config?.trace, user);
   if (traceUserId != null) {

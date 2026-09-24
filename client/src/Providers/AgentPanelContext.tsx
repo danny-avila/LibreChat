@@ -36,9 +36,11 @@ export function useAgentPanelContext() {
 export function AgentPanelProvider({
   children,
   observeToolAuthorization = true,
+  promptsEditorMode,
 }: {
   children: React.ReactNode;
   observeToolAuthorization?: boolean;
+  promptsEditorMode: AgentPanelContextType['promptsEditorMode'];
 }) {
   const localize = useLocalize();
   const location = useLocation();
@@ -199,6 +201,7 @@ export function AgentPanelProvider({
     regularTools,
     agentsConfig,
     startupConfig,
+    promptsEditorMode,
     mcpServersMap,
     mcpToolsLoading,
     setActivePanel,

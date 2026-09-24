@@ -10,6 +10,7 @@ const {
   ACTION_CREDENTIAL_REFRESH_MESSAGE,
   buildActionOAuthTokenDeleteQueries,
   blockFilteredActionProjection,
+  redactAgentInstructionPromptFallback,
 } = require('@librechat/api');
 const {
   Permissions,
@@ -263,7 +264,7 @@ router.post(
         }
       }
 
-      res.json([updatedAgent, updatedAction]);
+      res.json([redactAgentInstructionPromptFallback(updatedAgent), updatedAction]);
     } catch (error) {
       const message = 'Trouble updating the Agent Action';
       logger.error(message, error);

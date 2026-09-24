@@ -197,6 +197,10 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  createPromptUseChecker: jest.fn(() => jest.fn()),
+  createLangfusePromptProvider: jest.fn(() => ({ resolve: jest.fn() })),
+  resolveLangfusePromptDestinations: jest.fn().mockResolvedValue([]),
+  createAgentInstructionPromptResolver: jest.fn(() => ({ resolve: jest.fn() })),
   /* Provisioning moved into this package; the controllers build the callback from it. */
   createProvisionFilesCallback: () => async () => {},
   createAgentExecutionContext: (context) => context,

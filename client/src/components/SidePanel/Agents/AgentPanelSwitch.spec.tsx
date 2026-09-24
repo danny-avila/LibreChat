@@ -3,20 +3,25 @@ import { RecoilRoot } from 'recoil';
 import { render } from '@testing-library/react';
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
+import { PromptsEditorMode } from '~/common';
 import store from '~/store';
 
 const mockObserveToolAuthorization = jest.fn();
+const mockPromptsEditorMode = jest.fn();
 const mockSetCurrentAgentId = jest.fn();
 
 jest.mock('~/Providers/AgentPanelContext', () => ({
   AgentPanelProvider: ({
     children,
     observeToolAuthorization,
+    promptsEditorMode,
   }: {
     children: React.ReactNode;
     observeToolAuthorization: boolean;
+    promptsEditorMode: PromptsEditorMode;
   }) => {
     mockObserveToolAuthorization(observeToolAuthorization);
+    mockPromptsEditorMode(promptsEditorMode);
     return children;
   },
   useAgentPanelContext: () => ({
@@ -29,10 +34,14 @@ jest.mock('./Version/VersionPanel', () => () => null);
 
 import AgentPanelSwitch from './AgentPanelSwitch';
 
-function renderWithConversation(conversation?: TConversation) {
+function renderWithConversation(
+  conversation?: TConversation,
+  promptsEditorMode = PromptsEditorMode.SIMPLE,
+) {
   return render(
     <RecoilRoot
       initializeState={({ set }) => {
+        set(store.promptsEditorMode, promptsEditorMode);
         if (conversation != null) {
           set(store.conversationByIndex(0), conversation);
         }
@@ -67,5 +76,10 @@ describe('AgentPanelSwitch authorization observers', () => {
       agent_id: 'ephemeral',
     } as TConversation);
     expect(mockObserveToolAuthorization).toHaveBeenLastCalledWith(false);
+  });
+
+  it('injects the app-global prompt editor preference into the agent provider', () => {
+    renderWithConversation(undefined, PromptsEditorMode.ADVANCED);
+    expect(mockPromptsEditorMode).toHaveBeenLastCalledWith(PromptsEditorMode.ADVANCED);
   });
 });

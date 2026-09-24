@@ -30,7 +30,7 @@ function sendError(
 }
 
 function mapCreateStatus(status: number): Parameters<typeof mapAgentManagementError>[0] {
-  if (status === 400 || status === 409) {
+  if (status === 400 || status === 409 || status === 422) {
     return 'invalid_request';
   }
   if (status === 401 || status === 403) {

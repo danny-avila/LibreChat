@@ -759,5 +759,34 @@ describe('AgentPanel - Update Agent Toast Messages', () => {
         });
       });
     });
+
+    it('shows localized prompt copy for a typed prompt update failure', async () => {
+      const { mockUseGetAgentByIdQuery, mockUpdateAgent } = setupMocks();
+      mockAgentQuery(mockUseGetAgentByIdQuery, {
+        name: 'Test Agent',
+        version: 1,
+      });
+      mockUpdateAgent.mockRejectedValue(
+        Object.assign(new Error('Request failed with status code 404'), {
+          response: {
+            data: {
+              error: {
+                type: 'agent_instruction_prompt',
+                code: 'not_found',
+              },
+            },
+          },
+        }),
+      );
+
+      await renderAndSubmitForm();
+
+      await waitFor(() =>
+        expect(mockShowToast).toHaveBeenCalledWith({
+          message: 'com_agents_prompt_load_error',
+          status: 'error',
+        }),
+      );
+    });
   });
 });

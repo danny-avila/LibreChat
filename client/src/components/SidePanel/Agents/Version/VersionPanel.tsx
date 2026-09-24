@@ -54,6 +54,7 @@ export default function VersionPanel() {
       name: agentWithVersions.name,
       description: agentWithVersions.description,
       instructions: agentWithVersions.instructions,
+      instruction_prompt: agentWithVersions.instruction_prompt,
       artifacts: agentWithVersions.artifacts,
       capabilities: agentWithVersions.capabilities,
       tools: agentWithVersions.tools,

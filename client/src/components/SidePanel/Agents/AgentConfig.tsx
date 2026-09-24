@@ -5,6 +5,7 @@ import { ResolvedProviderIcon } from '~/components/Endpoints/ResolvedProviderIco
 import AgentCategorySelector from './AgentCategorySelector';
 import { useLocalize, useAgentCapabilities } from '~/hooks';
 import { useAgentFileEntries } from './Tools/hooks';
+import { Panel, PromptsEditorMode } from '~/common';
 import { useAgentPanelContext } from '~/Providers';
 import { useProviderIcon } from '~/hooks/Endpoint';
 import ToolsSection from './Tools/ToolsSection';
@@ -12,14 +13,14 @@ import { validateEmail, cn } from '~/utils';
 import Instructions from './Instructions';
 import FileContext from './FileContext';
 import AgentAvatar from './AgentAvatar';
-import { Panel } from '~/common';
 
 const fieldClass = 'h-9';
 
 export default function AgentConfig() {
   const localize = useLocalize();
   const methods = useFormContext<AgentForm>();
-  const { setActivePanel, endpointsConfig, agentsConfig } = useAgentPanelContext();
+  const { setActivePanel, endpointsConfig, agentsConfig, promptsEditorMode } =
+    useAgentPanelContext();
   const { contextEnabled } = useAgentCapabilities(agentsConfig?.capabilities);
 
   const {
@@ -143,7 +144,7 @@ export default function AgentConfig() {
       </div>
 
       {/* INSTRUCTIONS */}
-      <Instructions />
+      <Instructions advancedPromptsEnabled={promptsEditorMode === PromptsEditorMode.ADVANCED} />
 
       {/* TOOLS — unified built-ins / tools / actions / mcp / skills */}
       <ToolsSection agentId={agent_id} />

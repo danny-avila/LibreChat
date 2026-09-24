@@ -531,6 +531,22 @@ export const getRole = (roleName: string) => `${roles()}/${encodeURIComponent(ro
 export const updatePromptPermissions = (roleName: string) => `${getRole(roleName)}/prompts`;
 export const updateMemoryPermissions = (roleName: string) => `${getRole(roleName)}/memories`;
 export const updateAgentPermissions = (roleName: string) => `${getRole(roleName)}/agents`;
+
+export const previewAgentInstructionPrompt = (
+  name: string,
+  version?: number,
+  destinationId?: string,
+) => {
+  const params = new URLSearchParams({ name });
+  if (version != null) {
+    params.set('version', String(version));
+  }
+  if (destinationId != null) {
+    params.set('destinationId', destinationId);
+  }
+  return `${agents({ path: 'instruction-prompts/langfuse' })}?${params.toString()}`;
+};
+
 export const updatePeoplePickerPermissions = (roleName: string) =>
   `${getRole(roleName)}/people-picker`;
 export const updateMCPServersPermissions = (roleName: string) => `${getRole(roleName)}/mcp-servers`;

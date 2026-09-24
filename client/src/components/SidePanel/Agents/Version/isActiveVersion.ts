@@ -18,6 +18,7 @@ export const isActiveVersion = (
     const versionIndex = versions.findIndex(
       (v) =>
         v.name === version.name &&
+        isEqual(v.instruction_prompt ?? null, version.instruction_prompt ?? null) &&
         v.instructions === version.instructions &&
         v.artifacts === version.artifacts,
     );
@@ -26,6 +27,10 @@ export const isActiveVersion = (
 
   const matchesName = version.name === currentAgent.name;
   const matchesDescription = version.description === currentAgent.description;
+  const matchesInstructionPrompt = isEqual(
+    version.instruction_prompt ?? null,
+    currentAgent.instruction_prompt ?? null,
+  );
   const matchesInstructions = version.instructions === currentAgent.instructions;
   const matchesArtifacts = version.artifacts === currentAgent.artifacts;
   const matchesEdges = edgesMatch(version.edges, currentAgent.edges);
@@ -61,6 +66,7 @@ export const isActiveVersion = (
     matchesArtifacts &&
     matchesEdges &&
     toolsMatch() &&
-    capabilitiesMatch()
+    capabilitiesMatch() &&
+    matchesInstructionPrompt
   );
 };

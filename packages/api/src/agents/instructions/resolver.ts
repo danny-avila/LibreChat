@@ -1,0 +1,347 @@
+import { AgentCapabilities, PermissionBits } from 'librechat-data-provider';
+import type {
+  AgentInstructionPrompt,
+  ResolvedAgentInstructionPrompt,
+} from 'librechat-data-provider';
+import type { AppConfig } from '@librechat/data-schemas';
+import type { RequestRoleCache } from '../../middleware/access';
+
+export type AgentInstructionPromptResult = ResolvedAgentInstructionPrompt & {
+  prompt: string;
+  /** Opaque routing identity returned by providers that support destination binding. */
+  destinationId?: string;
+};
+
+export type AgentInstructionPromptContext = {
+  userId: string;
+  role?: string;
+  appConfig?: AppConfig;
+  signal?: AbortSignal;
+  roleCache?: RequestRoleCache;
+};
+
+export class AgentInstructionPromptError extends Error {
+  public readonly status: number;
+
+  constructor(
+    public readonly code:
+      | 'access_denied'
+      | 'invalid_response'
+      | 'not_configured'
+      | 'not_found'
+      | 'retrieval_failed'
+      | 'unsupported_type',
+    message: string,
+    public readonly statusCode: number,
+    public readonly retryable = false,
+  ) {
+    super(message);
+    this.name = 'AgentInstructionPromptError';
+    this.status = statusCode;
+  }
+}
+
+export interface AgentInstructionPromptProvider {
+  resolve(
+    reference: AgentInstructionPrompt,
+    context: AgentInstructionPromptContext,
+  ): Promise<AgentInstructionPromptResult>;
+}
+
+export function assertAgentInstructionPromptsEnabled(appConfig?: AppConfig): void {
+  const capabilities = appConfig?.endpoints?.agents?.capabilities;
+  if (!capabilities?.includes(AgentCapabilities.instruction_prompts)) {
+    throw new AgentInstructionPromptError(
+      'not_configured',
+      'Agent instruction prompt references are not enabled for this deployment',
+      409,
+      true,
+    );
+  }
+}
+
+type LibreChatPromptGroup = {
+  name?: string | null;
+  productionId?: string | { toString(): string } | null;
+};
+
+type LibreChatPrompt = {
+  _id?: string;
+  prompt: string;
+  type?: string;
+  createdAt?: string | Date;
+};
+
+export interface AgentInstructionPromptResolverDeps {
+  getLibreChatPromptPermissions: (input: {
+    userId: string;
+    role?: string;
+    promptId: string;
+  }) => Promise<number>;
+  canUseLibreChatPrompts: (input: {
+    userId: string;
+    role?: string;
+    roleCache?: RequestRoleCache;
+  }) => Promise<boolean>;
+  getLibreChatPromptGroup: (promptId: string) => Promise<LibreChatPromptGroup | null>;
+  getLibreChatPrompts: (promptId: string) => Promise<LibreChatPrompt[]>;
+  langfuse: AgentInstructionPromptProvider;
+}
+
+function timeOf(prompt: LibreChatPrompt): number {
+  if (prompt.createdAt == null) {
+    return 0;
+  }
+  const value = new Date(prompt.createdAt).getTime();
+  return Number.isFinite(value) ? value : 0;
+}
+
+function sortPrompts(prompts: LibreChatPrompt[]): LibreChatPrompt[] {
+  return [...prompts].sort((left, right) => {
+    const byTime = timeOf(left) - timeOf(right);
+    if (byTime !== 0) {
+      return byTime;
+    }
+    return String(left._id ?? '').localeCompare(String(right._id ?? ''));
+  });
+}
+
+export function createAgentInstructionPromptResolver(
+  deps: AgentInstructionPromptResolverDeps,
+): AgentInstructionPromptProvider {
+  return {
+    async resolve(reference, context) {
+      if (reference.source === 'langfuse') {
+        return deps.langfuse.resolve(reference, context);
+      }
+
+      const [canUsePrompts, permissions] = await Promise.all([
+        deps.canUseLibreChatPrompts({
+          userId: context.userId,
+          role: context.role,
+          roleCache: context.roleCache,
+        }),
+        deps.getLibreChatPromptPermissions({
+          userId: context.userId,
+          role: context.role,
+          promptId: reference.promptId,
+        }),
+      ]);
+      if (!canUsePrompts) {
+        throw new AgentInstructionPromptError('access_denied', 'Prompt use is disabled', 403);
+      }
+      if ((permissions & PermissionBits.VIEW) !== PermissionBits.VIEW) {
+        throw new AgentInstructionPromptError(
+          'access_denied',
+          'You no longer have access to the selected LibreChat prompt',
+          403,
+        );
+      }
+
+      const [group, records] = await Promise.all([
+        deps.getLibreChatPromptGroup(reference.promptId),
+        deps.getLibreChatPrompts(reference.promptId),
+      ]);
+      if (!group) {
+        throw new AgentInstructionPromptError(
+          'not_found',
+          'The selected LibreChat prompt no longer exists',
+          404,
+        );
+      }
+
+      if (!Array.isArray(records)) {
+        throw new AgentInstructionPromptError(
+          'retrieval_failed',
+          'LibreChat could not retrieve the selected prompt',
+          502,
+          true,
+        );
+      }
+      const prompts = sortPrompts(records);
+      const selectedId =
+        reference.versionId ?? (group.productionId == null ? '' : String(group.productionId));
+      const selectedIndex = prompts.findIndex((prompt) => String(prompt._id) === selectedId);
+      const selected = prompts[selectedIndex];
+      const version = reference.version ?? selectedIndex + 1;
+      if (!selected) {
+        throw new AgentInstructionPromptError(
+          'not_found',
+          reference.version == null
+            ? 'The deployed LibreChat prompt version no longer exists'
+            : `LibreChat prompt version ${version} no longer exists`,
+          404,
+        );
+      }
+      if (selected.type != null && selected.type !== 'text') {
+        throw new AgentInstructionPromptError(
+          'unsupported_type',
+          'Agent instructions require a LibreChat text prompt',
+          422,
+        );
+      }
+      if (selected.prompt.trim() === '') {
+        throw new AgentInstructionPromptError(
+          'invalid_response',
+          'The selected LibreChat prompt is empty',
+          422,
+        );
+      }
+
+      return {
+        prompt: selected.prompt,
+        source: 'librechat',
+        name: group.name?.trim() || reference.name,
+        version,
+      };
+    },
+  };
+}
+
+export async function resolveAgentInstructionPrompt({
+  agent,
+  context,
+  resolver,
+}: {
+  agent: {
+    instructions?: string | null;
+    instruction_prompt?: AgentInstructionPrompt | null;
+    resolved_instruction_prompt?: ResolvedAgentInstructionPrompt;
+  };
+  context: AgentInstructionPromptContext;
+  resolver?: AgentInstructionPromptProvider;
+}): Promise<void> {
+  const reference = agent.instruction_prompt;
+  if (!reference) {
+    return;
+  }
+  if (!resolver) {
+    throw new AgentInstructionPromptError(
+      'not_configured',
+      'Agent instruction prompt resolution is not configured',
+      503,
+      true,
+    );
+  }
+
+  const { prompt, ...resolution } = await resolver.resolve(reference, context);
+  agent.instructions = prompt;
+  agent.resolved_instruction_prompt = resolution;
+}
+
+/**
+ * Keep a resolved snapshot in `instructions` for rolling-deployment
+ * compatibility while preserving the reference used by prompt-aware nodes.
+ */
+export async function persistAgentInstructionPromptFallback({
+  agent,
+  context,
+  existingInstructionPrompt,
+  resolver,
+}: {
+  agent: {
+    instructions?: string | null;
+    instruction_prompt?: AgentInstructionPrompt | null;
+  };
+  existingInstructionPrompt?: AgentInstructionPrompt | null;
+  context: AgentInstructionPromptContext;
+  resolver?: AgentInstructionPromptProvider;
+}): Promise<void> {
+  if (agent.instruction_prompt === null) {
+    if (existingInstructionPrompt != null && agent.instructions === undefined) {
+      agent.instructions = '';
+    }
+    return;
+  }
+  let reference: AgentInstructionPrompt | null | undefined = agent.instruction_prompt;
+  if (reference === undefined && agent.instructions !== undefined) {
+    reference = existingInstructionPrompt;
+  }
+  if (!reference) {
+    return;
+  }
+  assertAgentInstructionPromptsEnabled(context.appConfig);
+  if (!resolver) {
+    throw new AgentInstructionPromptError(
+      'not_configured',
+      'Agent instruction prompt resolution is not configured',
+      503,
+      true,
+    );
+  }
+
+  const { prompt, destinationId } = await resolver.resolve(reference, context);
+  agent.instructions = prompt;
+  agent.instruction_prompt =
+    reference.source === 'langfuse' && destinationId != null
+      ? {
+          ...reference,
+          destinationId,
+        }
+      : reference;
+}
+export async function prepareAgentInstructionPromptRestore<
+  T extends {
+    instructions?: string | null;
+    instruction_prompt?: AgentInstructionPrompt | null;
+  },
+>({
+  version,
+  context,
+  resolver,
+}: {
+  version: T | null | undefined;
+  context: AgentInstructionPromptContext;
+  resolver?: AgentInstructionPromptProvider;
+}): Promise<{
+  version: T | null | undefined;
+  restoreOverrides?: Pick<T, 'instructions' | 'instruction_prompt'>;
+}> {
+  if (version?.instruction_prompt == null) {
+    return { version };
+  }
+  const restoreOverrides = {
+    instructions: version.instructions,
+    instruction_prompt: version.instruction_prompt,
+  } as Pick<T, 'instructions' | 'instruction_prompt'>;
+  await persistAgentInstructionPromptFallback({
+    agent: restoreOverrides,
+    context,
+    resolver,
+  });
+  return {
+    version: { ...version, ...restoreOverrides },
+    restoreOverrides,
+  };
+}
+
+/**
+ * Compatibility snapshots remain persisted for old execution nodes, but prompt-backed
+ * instructions are not part of editor-facing projections because prompt authorization
+ * is evaluated only when the reference is resolved.
+ */
+export function redactAgentInstructionPromptFallback<T>(agent: T): T {
+  if (agent == null || typeof agent !== 'object') {
+    return agent;
+  }
+  const source = agent as Record<string, unknown>;
+  const versions = Array.isArray(source.versions)
+    ? source.versions.map(redactAgentInstructionPromptFallback)
+    : source.versions;
+  const hasSnapshot = source.instruction_prompt != null && 'instructions' in source;
+  if (!hasSnapshot && versions === source.versions) {
+    return agent;
+  }
+  const redacted = { ...source };
+  if (hasSnapshot) {
+    delete redacted.instructions;
+  }
+  if (Array.isArray(source.versions)) {
+    redacted.versions = versions;
+  }
+  return redacted as T;
+}
+
+export function redactAgentInstructionPromptFallbacks<T>(agents: T[]): T[] {
+  return agents.map(redactAgentInstructionPromptFallback);
+}

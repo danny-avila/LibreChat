@@ -17,6 +17,10 @@ const agentSchema: Schema<IAgent> = new Schema<IAgent>(
     instructions: {
       type: String,
     },
+    instruction_prompt: {
+      type: Schema.Types.Mixed,
+      default: undefined,
+    },
     avatar: {
       type: Schema.Types.Mixed,
       default: undefined,

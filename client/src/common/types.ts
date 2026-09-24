@@ -213,6 +213,7 @@ export type AgentPanelContextType = {
   setCurrentAgentId: React.Dispatch<React.SetStateAction<string | undefined>>;
   agent_id?: string;
   startupConfig?: t.TStartupConfig | null;
+  promptsEditorMode: PromptsEditorMode;
   agentsConfig?: t.TAgentsEndpoint | null;
   endpointsConfig?: t.TEndpointsConfig | null;
   /** Pre-computed MCP server information indexed by server key */
