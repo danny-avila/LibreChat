@@ -2162,8 +2162,34 @@ export enum RetentionMode {
   TEMPORARY = 'temporary',
 }
 
+const themeModeSchema = z
+  .object({
+    colors: z.record(z.string().regex(/^rgb-/), z.string().regex(/^\d{1,3} \d{1,3} \d{1,3}$/)),
+    appearance: z.record(z.string()),
+    brands: z.record(z.string()),
+  })
+  .partial()
+  .strict();
+
+/**
+ * Shape of an inline deployment theme. Token names and value ranges are checked
+ * by the client registry (`validateThemeDefinition`), which owns the token list.
+ */
+export const themeDefinitionSchema = z
+  .object({
+    version: z.literal(1),
+    name: z.string().trim().min(1),
+    modes: z.object({ light: themeModeSchema, dark: themeModeSchema }).partial().strict(),
+    brands: z.record(z.string()).optional(),
+  })
+  .strict();
+
+export type TThemeDefinitionConfig = z.infer<typeof themeDefinitionSchema>;
+
 export const interfaceSchema = z
   .object({
+    /** A bundled theme name or an inline theme definition applied to every user. */
+    theme: z.union([z.string().trim().min(1), themeDefinitionSchema]).optional(),
     privacyPolicy: z
       .object({
         externalUrl: z.string().optional(),

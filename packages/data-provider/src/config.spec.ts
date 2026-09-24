@@ -1829,3 +1829,67 @@ describe('MCP UI refresh configuration', () => {
     ).toBe(false);
   });
 });
+
+describe('interface theme config', () => {
+  const parseTheme = (theme: unknown) =>
+    configSchema.safeParse({ version: '1.3.0', interface: { theme } });
+
+  const inlineTheme = {
+    version: 1,
+    name: 'acme',
+    modes: {
+      light: {
+        colors: { 'rgb-surface-primary': '255 255 255', 'rgb-text-primary': '22 21 23' },
+        appearance: { controlRadius: '0.25rem' },
+      },
+      dark: { colors: { 'rgb-surface-primary': '31 31 28' } },
+    },
+    brands: { 'provider-openai': '#19C37D' },
+  };
+
+  it('is absent when not configured', () => {
+    const result = configSchema.safeParse({ version: '1.3.0', interface: {} });
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.interface.theme).toBeUndefined();
+  });
+
+  it('accepts a bundled theme name', () => {
+    const result = parseTheme('clickhouse');
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.interface.theme).toBe('clickhouse');
+  });
+
+  it('rejects an empty theme name', () => {
+    expect(parseTheme('  ').success).toBe(false);
+  });
+
+  it('accepts a valid inline definition', () => {
+    const result = parseTheme(inlineTheme);
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.interface.theme).toEqual(inlineTheme);
+  });
+
+  it('rejects a malformed RGB triplet', () => {
+    expect(
+      parseTheme({
+        ...inlineTheme,
+        modes: { light: { colors: { 'rgb-surface-primary': '#ffffff' } } },
+      }).success,
+    ).toBe(false);
+  });
+
+  it('rejects an unsupported version', () => {
+    expect(parseTheme({ ...inlineTheme, version: 2 }).success).toBe(false);
+  });
+
+  it('rejects unknown keys and color names without the rgb- prefix', () => {
+    expect(parseTheme({ ...inlineTheme, css: 'body {}' }).success).toBe(false);
+    expect(parseTheme({ ...inlineTheme, modes: { sepia: { colors: {} } } }).success).toBe(false);
+    expect(
+      parseTheme({
+        ...inlineTheme,
+        modes: { light: { colors: { 'surface-primary': '255 255 255' } } },
+      }).success,
+    ).toBe(false);
+  });
+});

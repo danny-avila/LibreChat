@@ -278,4 +278,39 @@ describe('loadDefaultInterface', () => {
 
     expect(interfaceConfig?.traceViewer).toBeUndefined();
   });
+
+  it('passes a bundled theme name through unchanged', async () => {
+    const interfaceConfig = await loadDefaultInterface({
+      config: { interface: { theme: 'clickhouse' } },
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.theme).toBe('clickhouse');
+  });
+
+  it('passes an inline theme definition through unchanged', async () => {
+    const theme = {
+      version: 1 as const,
+      name: 'acme',
+      modes: {
+        light: { colors: { 'rgb-surface-primary': '255 255 255' } },
+        dark: { appearance: { controlRadius: '0.25rem' } },
+      },
+    };
+    const interfaceConfig = await loadDefaultInterface({
+      config: { interface: { theme } },
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig?.theme).toEqual(theme);
+  });
+
+  it('leaves the theme unset when not configured', async () => {
+    const interfaceConfig = await loadDefaultInterface({
+      config: {},
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(interfaceConfig).not.toHaveProperty('theme');
+  });
 });
