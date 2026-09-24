@@ -1,6 +1,7 @@
 import type { AppConfig } from '@librechat/data-schemas';
 import {
   createAppConfigService,
+  createMessageBudgetReader,
   _resetOverrideStrictCache,
   getAppConfigOptionsFromUser,
 } from './service';
@@ -732,5 +733,35 @@ describe('getAppConfigOptionsFromUser', () => {
       idOnTheSource: undefined,
       tenantId: 'tenant-a',
     });
+  });
+});
+
+describe('message App budget reader composition', () => {
+  it('fails closed before the host supplies the base config reader', async () => {
+    const reader = createMessageBudgetReader();
+    await expect(reader.getBudget()).rejects.toThrow('not been initialized');
+  });
+
+  it('reads deployment-only values lazily and observes reconfiguration without caching', async () => {
+    const reader = createMessageBudgetReader();
+    const getConfig = jest
+      .fn()
+      .mockResolvedValue({ mcpAppSandbox: { maxPersistedMessageBytes: 2 * 1024 * 1024 } });
+    reader.initialize(getConfig);
+    expect(getConfig).not.toHaveBeenCalled();
+    expect(await reader.getBudget()).toBe(2 * 1024 * 1024);
+    expect(getConfig).toHaveBeenLastCalledWith({ baseOnly: true });
+    getConfig.mockResolvedValue({ mcpAppSandbox: { maxPersistedMessageBytes: 4 * 1024 * 1024 } });
+    expect(await reader.getBudget()).toBe(4 * 1024 * 1024);
+    getConfig.mockRejectedValue(new Error('configuration unavailable'));
+    await expect(reader.getBudget()).rejects.toThrow('configuration unavailable');
+  });
+
+  it('keeps independent hosts isolated and leaves an omitted limit to the storage default', async () => {
+    const a = createMessageBudgetReader();
+    const b = createMessageBudgetReader();
+    a.initialize(jest.fn().mockResolvedValue({}));
+    expect(await a.getBudget()).toBeUndefined();
+    await expect(b.getBudget()).rejects.toThrow('not been initialized');
   });
 });

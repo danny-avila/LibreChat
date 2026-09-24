@@ -2499,6 +2499,9 @@ export type TMCPAppsPolicy = {
   sandboxUrl?: string;
 };
 
+/** Aggregate App-bearing message target; cannot exceed the safe storage ceiling. */
+export const DEFAULT_MCP_APP_MESSAGE_BYTES: number = 12 * 1024 * 1024;
+export const MAX_MCP_APP_MESSAGE_BYTES: number = 12 * 1024 * 1024;
 export const DEFAULT_MCP_APP_PERSISTED_BYTES = 1024 * 1024;
 export const MAX_MCP_APP_PERSISTED_BYTES = 4 * 1024 * 1024;
 export const DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE = 240;
@@ -3190,6 +3193,12 @@ export const configSchema = z.object({
         .positive()
         .max(MAX_MCP_APP_PERSISTED_BYTES)
         .default(DEFAULT_MCP_APP_PERSISTED_BYTES),
+      maxPersistedMessageBytes: z
+        .number()
+        .int()
+        .positive()
+        .max(MAX_MCP_APP_MESSAGE_BYTES)
+        .default(DEFAULT_MCP_APP_MESSAGE_BYTES),
       maxAdmissionRequestsPerMinute: z
         .number()
         .int()

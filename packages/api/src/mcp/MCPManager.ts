@@ -1992,19 +1992,25 @@ Please follow these instructions when using tools from the respective MCP server
             }
             if (!resolvedAppResource) {
               logger.warn(
-                `[MCP][${serverName}][${toolName}] App resource "${resourceUri}" did not return usable App content; preserving tool result`,
+                `[MCP][${serverName}][${toolName}] App resource "${resourceUri}" did not return usable App content; retaining bound URI for a later read`,
               );
-              resourceMeta = undefined;
             }
           } catch (error) {
             if (!options?.signal?.aborted) {
               logger.warn(
-                `[MCP][${serverName}][${toolName}] Could not resolve App resource "${resourceUri}"; preserving tool result`,
+                `[MCP][${serverName}][${toolName}] Could not resolve App resource "${resourceUri}"; retaining bound URI for a later read`,
                 error,
               );
             }
-            resourceMeta = undefined;
+            if (options?.signal?.aborted) {
+              resourceMeta = undefined;
+            }
           }
+        }
+
+        if (options?.signal?.aborted) {
+          resourceMeta = undefined;
+          resolvedAppResource = undefined;
         }
 
         const serverBinding =
