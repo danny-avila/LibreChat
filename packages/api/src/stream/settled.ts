@@ -62,8 +62,7 @@ export function waitForGenerationSettled(
       }
     };
     const recheck = setInterval(() => void readStatus(false), recheckMs);
-    const deadline =
-      maxWaitMs == null ? undefined : setTimeout(() => finish(false), maxWaitMs);
+    const deadline = maxWaitMs == null ? undefined : setTimeout(() => finish(false), maxWaitMs);
     recheck.unref?.();
     deadline?.unref?.();
     void readStatus(true);
