@@ -1,4 +1,13 @@
-import { useRef, useMemo, useState, useEffect, useReducer, useContext, createContext } from 'react';
+import {
+  useRef,
+  useMemo,
+  useState,
+  useEffect,
+  useReducer,
+  useContext,
+  createContext,
+  useLayoutEffect,
+} from 'react';
 import { QueryKeys } from 'librechat-data-provider';
 import { notifyManager, useQueryClient } from '@tanstack/react-query';
 import {
@@ -126,11 +135,12 @@ const DeploymentThemeOverrideContext = createContext<(override: ThemeOverride) =
 /**
  * Lets a route whose policy comes from another tenant paint that tenant's theme:
  * once `ready`, `theme` replaces `interface.theme` from the startup config, an
- * absent theme included, until the route unmounts.
+ * absent theme included, until the route unmounts. Registered before paint, so
+ * neither entering nor leaving the route shows a frame of the other theme.
  */
 export function useDeploymentThemeOverride(ready: boolean, theme: DeploymentThemeValue) {
   const setOverride = useContext(DeploymentThemeOverrideContext);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!ready) {
       return;
     }
