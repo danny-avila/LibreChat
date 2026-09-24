@@ -19,6 +19,7 @@ import type {
   TConversation,
   TStartupConfig,
   EventSubmission,
+  ChatCreatedFrame,
   TMessageContentParts,
 } from 'librechat-data-provider';
 import type { InfiniteData } from '@tanstack/react-query';
@@ -239,8 +240,8 @@ const CONNECTION_ERROR_TEXT = 'Error connecting to server, try refreshing the pa
 /**
  * The parts the in-flight response has streamed so far: the transcript's tail (a user row there
  * means no response was placed), without the holes an interrupted stream leaves. Whether anything
- * streamed is judged without the slots that never received content — a comparison run's
- * `type: ''` placeholders, a text or think part opened before its first delta — but once something
+ * streamed is judged without the slots that never received content (a comparison run's
+ * `type: ''` placeholders, a text or think part opened before its first delta), but once something
  * did, those slots stay: a placeholder is what keeps a comparison lane's layout and attribution
  * when only the other lane produced output. The parts carry the render identity they streamed
  * under, as the final path stamps it, so the settled row does not remount.
@@ -297,7 +298,7 @@ const createErrorMessage = ({
     'Error cancelling request';
   const streamedContent = getStreamedContent(latestMessage);
   if (latestMessage?.conversationId && latestMessage.messageId && streamedContent.length > 0) {
-    /** The row keeps the envelope it streamed under — author, model, icon, creation time — and
+    /** The row keeps the envelope it streamed under (author, model, icon, creation time) and
      *  takes from the failure only what describes the failure: a server payload names `System`
      *  as its sender and the schema dates a fresh envelope now, neither of which applies to a
      *  response that is merely gaining a part. */
@@ -528,7 +529,7 @@ export default function useEventHandlers({
   /** Cleared on every terminal path below: the elapsed anchor must not outlive
    *  its generation, or a later externally-started run attached at this index
    *  would inherit a stale baseline. Navigation teardown deliberately does not
-   *  clear it — a reattach to a still-live run keeps its original start. */
+   *  clear it: a reattach to a still-live run keeps its original start. */
   const setSubmissionStart = useSetRecoilState(store.submissionStartFamily(runIndex));
   const recoverConversation = useCallback(
     (conversationId: string, submission: EventSubmission) => {
@@ -550,7 +551,7 @@ export default function useEventHandlers({
   const location = useLocation();
 
   /** Re-queue the turn's quoted excerpts when an early abort restores the draft,
-   *  so retrying the restored message still sends the references — the pending
+   *  so retrying the restored message still sends the references; the pending
    *  queue was already drained on submit. */
   const restorePendingQuotes = useRecoilCallback(
     ({ set }) =>
@@ -567,7 +568,7 @@ export default function useEventHandlers({
   const { token } = useAuthContext();
 
   const { contentHandler, resetContentHandler } = useContentHandler({ setMessages, getMessages });
-  /** `refetchType: 'all'` so cached-but-unmounted skill queries refresh too —
+  /** `refetchType: 'all'` so cached-but-unmounted skill queries refresh too:
    *  they opt out of `refetchOnMount`, so a plain invalidation would leave
    *  the Skills panel stale until a manual refresh. */
   const onSkillAuthoringComplete = useCallback(() => {
@@ -598,7 +599,7 @@ export default function useEventHandlers({
    *  Historical subagent dialogs rehydrate from the persisted
    *  `subagent_content` on each `tool_call` (written by the backend
    *  at message-save time), so clearing live atoms on switch
-   *  doesn't lose any viewable history — it just keeps `atomFamily`
+   *  doesn't lose any viewable history; it just keeps `atomFamily`
    *  bounded across multi-conversation sessions.
    *
    *  Rule: reset on real conversation switches, but preserve atoms for
@@ -729,7 +730,7 @@ export default function useEventHandlers({
        *  Filtering it out and re-appending at the tail would order any of its
        *  already-present children (abandoned responses from preempted
        *  attempts) before their parent, and the message tree hoists such rows
-       *  into phantom root branches — a folded thread. */
+       *  into phantom root branches, a folded thread. */
       const userIndex = _messages.findIndex((msg) => msg.messageId === userMessage.messageId);
       const messages =
         userIndex >= 0
@@ -800,11 +801,11 @@ export default function useEventHandlers({
   const focusRegeneratedResponse = useFocusRegeneratedResponse();
 
   const createdHandler = useCallback(
-    (data: TResData, submission: EventSubmission) => {
+    (data: ChatCreatedFrame, submission: EventSubmission) => {
       const { messages, userMessage, isRegenerate = false, isTemporary = false } = submission;
       /**
        * The spread carries `manualSkills` through from
-       * `submission.initialResponse` — `useChatFunctions` seeds the field
+       * `submission.initialResponse`: `useChatFunctions` seeds the field
        * there at construction so the assistant placeholder already has it
        * by the time this handler fires. Subsequent `useStepHandler`
        * spreads and `updateContent` spreads preserve it, and
@@ -1018,7 +1019,7 @@ export default function useEventHandlers({
 
         const isNewConvo = conversation.conversationId !== submissionConvo.conversationId;
 
-        // Skip temporary conversations — the server never generates titles for them.
+        // Skip temporary conversations; the server never generates titles for them.
         if (isNewConvo && conversation.conversationId && !_isTemporary) {
           queueTitleGeneration(conversation.conversationId);
         }
@@ -1118,7 +1119,7 @@ export default function useEventHandlers({
         /** A title applied locally (e.g. an immediate-mode title fetched while the
          *  response was still streaming) must survive the final event, whose
          *  `conversation` was built before the title was saved and so carries no
-         *  title yet — otherwise the chat reverts to "New Chat" until reload. This
+         *  title yet, otherwise the chat reverts to "New Chat" until reload. This
          *  holds for a stopped turn too: the server persists a title that finished
          *  generating before the Stop, so the local one stays in sync. */
         if (setConversation && isAddedRequest !== true) {
@@ -1350,7 +1351,7 @@ export default function useEventHandlers({
         });
         /** A compaction has no user row: its `userMessage` slot names the leaf
          *  the turn hangs off, which `messages` already holds. Writing it here
-         *  would duplicate that id as an empty, self-parented user message —
+         *  would duplicate that id as an empty, self-parented user message,
          *  a phantom root the thread then folds into. */
         setMessages(
           submission.compact === true
