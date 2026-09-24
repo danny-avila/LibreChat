@@ -4,7 +4,6 @@
  * These handlers convert LibreChat's internal graph events into OpenAI-compatible
  * streaming format (SSE with chat.completion.chunk objects).
  */
-import type { Response as ServerResponse } from 'express';
 import type { Agents } from 'librechat-data-provider';
 import type { Graph } from '@librechat/agents';
 import type {
@@ -44,15 +43,14 @@ export function createChunk(
   };
 }
 
-/**
- * Write an SSE event to the response
- */
-export function writeSSE(res: ServerResponse, data: ChatCompletionChunk | string): void {
-  if (typeof data === 'string') {
-    res.write(`data: ${data}\n\n`);
-  } else {
-    res.write(`data: ${JSON.stringify(data)}\n\n`);
-  }
+/** One synchronous output frame; HTTP connection and lifecycle stay with the caller. */
+export interface OpenAIWriter {
+  write(frame: string): boolean | void;
+}
+
+/** Write one Chat Completions frame through a caller-owned transport. */
+export function writeSSE(writer: OpenAIWriter, data: ChatCompletionChunk | string): void {
+  writer.write(`data: ${typeof data === 'string' ? data : JSON.stringify(data)}\n\n`);
 }
 
 /**
@@ -158,14 +156,24 @@ export function createOpenAIContentAggregator(): OpenAIContentAggregator {
   };
 }
 
-/**
- * Handler configuration for OpenAI streaming
- */
+/** Legacy stream configuration; retained for existing package consumers. */
 export interface OpenAIStreamHandlerConfig {
   signal?: AbortSignal;
-  res: ServerResponse;
+  res: OpenAIWriter;
   context: OpenAIResponseContext;
   tracker: OpenAIStreamTracker;
+}
+
+/** Transport-neutral stream configuration for new callers. */
+export type OpenAIStreamWriterConfig = Omit<OpenAIStreamHandlerConfig, 'res'> & {
+  writer: OpenAIWriter;
+  res?: never;
+};
+
+type OpenAIContentStreamConfig = OpenAIStreamHandlerConfig | OpenAIStreamWriterConfig;
+
+function getStreamWriter(config: OpenAIContentStreamConfig): OpenAIWriter {
+  return 'writer' in config ? config.writer : config.res;
 }
 
 /**
@@ -639,7 +647,7 @@ export class OpenAIMessageDeltaHandler implements EventHandler {
         }
         this.config.tracker.addText();
         const chunk = createChunk(this.config.context, { content: part.text });
-        writeSSE(this.config.res, chunk);
+        writeSSE(getStreamWriter(this.config), chunk);
       }
     }
   }
@@ -742,7 +750,7 @@ export class OpenAIReasoningDeltaHandler implements EventHandler {
 
         // Stream as delta.reasoning (OpenRouter convention)
         const chunk = createChunk(this.config.context, { reasoning: text });
-        writeSSE(this.config.res, chunk);
+        writeSSE(getStreamWriter(this.config), chunk);
       }
     }
   }
@@ -756,7 +764,7 @@ export interface OpenAIAggregationHandlerConfig {
   signal?: AbortSignal;
 }
 
-type OpenAIContentHandlerConfig = OpenAIStreamHandlerConfig | OpenAIAggregationHandlerConfig;
+type OpenAIContentHandlerConfig = OpenAIContentStreamConfig | OpenAIAggregationHandlerConfig;
 
 export function createOpenAIHandlers(
   config: OpenAIContentHandlerConfig,
@@ -769,7 +777,7 @@ export function createOpenAIHandlers(
     emit:
       'aggregator' in config
         ? undefined
-        : (delta) => writeSSE(config.res, createChunk(config.context, delta)),
+        : (delta) => writeSSE(getStreamWriter(config), createChunk(config.context, delta)),
   });
   const target = 'aggregator' in config ? config.aggregator : config.tracker;
   target.finishToolCalls = toolCallStream.finish;
@@ -796,11 +804,12 @@ export function createOpenAIHandlers(
  * Send the final chunk with finish_reason and optional usage
  */
 export function sendFinalChunk(
-  config: OpenAIStreamHandlerConfig,
+  config: OpenAIContentStreamConfig,
   finishReason: ChatCompletionChunkChoice['finish_reason'] = 'stop',
   usageOverride?: CompletionUsage,
 ): void {
-  const { res, context, tracker } = config;
+  const { context, tracker } = config;
+  const writer = getStreamWriter(config);
   tracker.finishToolCalls?.();
 
   // Determine finish reason based on content
@@ -824,10 +833,10 @@ export function sendFinalChunk(
   }
 
   const finalChunk = createChunk(context, {}, reason, usage);
-  writeSSE(res, finalChunk);
+  writeSSE(writer, finalChunk);
 
   // Send [DONE] marker
-  writeSSE(res, '[DONE]');
+  writeSSE(writer, '[DONE]');
 }
 
 /** Build provider-normalized chat-completion usage from every billed call. */
