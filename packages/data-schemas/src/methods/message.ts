@@ -11,6 +11,7 @@ import type { AppConfig, IConversation, IMessage } from '~/types';
 import { createChatExpirationDate, createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { activeExpirationFilter, createFallbackRetentionDate } from '~/utils/retention';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import { tenantStorage } from '~/config/tenantContext';
 import logger from '~/config/winston';
 
 /** Simple UUID v4 regex to replace zod validation */
@@ -462,6 +463,7 @@ export const CLIENT_MESSAGE_SELECT: string = [
   '-conversationSignature',
   '-summary',
   '-summaryTokenCount',
+  '-privateText',
   '-contextMeta',
   '-langfuseSampled',
   '-langfuseDestinationIds',
@@ -645,7 +647,25 @@ function toSettledAt(value: unknown): Date | undefined {
   return undefined;
 }
 
+export interface PrivateTextWrite {
+  readonly envelope: string;
+  readonly revision: string;
+}
+
+export interface PrivateTextRead {
+  readonly messageId: string;
+  readonly text: string;
+  readonly privacyRevision: string;
+  readonly privateText: string;
+}
+
 export interface MessageMethods {
+  getPrivateMessageTexts(input: {
+    userId: string;
+    tenantId?: string;
+    conversationId: string;
+    messageIds: readonly string[];
+  }): Promise<PrivateTextRead[]>;
   saveMessage(
     ctx: {
       userId: string;
@@ -657,7 +677,7 @@ export interface MessageMethods {
       newMessageId?: string;
       contextMeta?: IMessage['contextMeta'] | null;
     },
-    metadata?: { context?: string },
+    metadata?: { context?: string; privateText?: PrivateTextWrite },
   ): Promise<IMessage | null | undefined>;
   /**
    * Reads the references a trace viewer needs for one of the user's
@@ -881,7 +901,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       /** `null` unsets a previously stored value; omission leaves it in place. */
       contextMeta?: IMessage['contextMeta'] | null;
     },
-    metadata?: { context?: string },
+    metadata?: { context?: string; privateText?: PrivateTextWrite },
   ) {
     if (!userId) {
       throw new Error('User not authenticated');
@@ -902,6 +922,15 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         user: userId,
         messageId: params.newMessageId || params.messageId,
       };
+      delete update.privateText;
+      delete update.privacyRevision;
+      if (metadata?.privateText != null) {
+        if (params.isCreatedByUser !== true || typeof params.text !== 'string') {
+          throw new Error('Private text requires a user message.');
+        }
+        update.privateText = metadata.privateText.envelope;
+        update.privacyRevision = metadata.privateText.revision;
+      }
       delete update.isTemporary;
       delete update.expiredAt;
       let retentionOnInsert: { expiredAt: Date; isTemporary: false } | undefined;
@@ -1966,6 +1995,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
       const { messageId, ...update } = message;
+      delete update.privateText;
+      delete update.privacyRevision;
       const submittedPaths = normalizeUserSubmittedPaths(update.userSubmittedPaths);
       const submittedMessageFields = normalizeUserSubmittedMessageFieldPaths(
         update.userSubmittedMessageFieldPaths,
@@ -3655,7 +3686,36 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     return Message.meiliSearch(query, searchOptions, hydrate);
   }
 
+  async function getPrivateMessageTexts(input: {
+    userId: string;
+    tenantId?: string;
+    conversationId: string;
+    messageIds: readonly string[];
+  }): Promise<PrivateTextRead[]> {
+    if (!input.userId || !UUID_REGEX.test(input.conversationId) || input.messageIds.length > 50) {
+      throw new Error('Invalid private message read.');
+    }
+    const activeTenant = tenantStorage.getStore()?.tenantId;
+    if (activeTenant != null && activeTenant !== input.tenantId) {
+      return [];
+    }
+    const Message = mongoose.models.Message as Model<IMessage>;
+    return Message.find({
+      user: input.userId,
+      ...traceTenantScope(input.tenantId),
+      conversationId: input.conversationId,
+      messageId: { $in: input.messageIds },
+      isCreatedByUser: true,
+      privateText: { $exists: true },
+      $or: [{ expiredAt: null }, { expiredAt: { $gt: new Date() } }],
+    })
+      .select('messageId text privacyRevision +privateText -_id')
+      .limit(50)
+      .lean<PrivateTextRead[]>();
+  }
+
   return {
+    getPrivateMessageTexts,
     saveMessage,
     bulkSaveMessages,
     recordMessage,

@@ -1,0 +1,144 @@
+import { dataService } from 'librechat-data-provider';
+import { render, screen, waitFor, act } from '@testing-library/react';
+import type { TMessage } from 'librechat-data-provider';
+import { OwnerTextProvider, PrivateText } from './PrivateText';
+
+let mockOwnerId = 'owner';
+let mockTenantId = 'tenant-a';
+jest.mock('~/hooks/AuthContext', () => ({
+  useAuthContext: () => ({ user: { id: mockOwnerId, tenantId: mockTenantId } }),
+}));
+jest.mock('~/hooks', () => ({ useLocalize: () => (key: string) => key }));
+jest.mock('librechat-data-provider', () => ({ dataService: { getOwnerMessageTexts: jest.fn() } }));
+
+const canonical = Object.freeze({
+  messageId: 'message',
+  conversationId: 'conversation',
+  isCreatedByUser: true,
+  text: '[EMAIL_1_turn]',
+  privacyRevision: 'turn',
+}) as TMessage;
+const load = dataService.getOwnerMessageTexts as jest.Mock;
+const original = {
+  canonicalText: canonical.text,
+  messageId: 'message',
+  revision: 'turn',
+  text: 'alice@example.com',
+};
+function View({
+  conversationId = 'conversation',
+  messages = [canonical],
+}: {
+  conversationId?: string;
+  messages?: TMessage[];
+}) {
+  return (
+    <OwnerTextProvider messages={messages} conversationId={conversationId} isSubmitting={false}>
+      <PrivateText message={messages[0]} />
+      <pre data-testid="canonical">{JSON.stringify(messages)}</pre>
+    </OwnerTextProvider>
+  );
+}
+beforeEach(() => {
+  mockOwnerId = 'owner';
+  mockTenantId = 'tenant-a';
+  load.mockReset();
+});
+
+it('renders originals without mutating canonical model/export input, and reloads from the private API', async () => {
+  load.mockResolvedValue({ messages: [original] });
+  const first = render(<View />);
+  expect(await screen.findByText('alice@example.com')).toBeInTheDocument();
+  expect(screen.getByTestId('canonical')).not.toHaveTextContent('alice@example.com');
+  expect(canonical.text).toBe('[EMAIL_1_turn]');
+  expect(screen.getByRole('status')).toHaveTextContent('com_ui_private_text_hidden');
+  first.unmount();
+  render(<View />);
+  expect(await screen.findByText('alice@example.com')).toBeInTheDocument();
+  expect(load).toHaveBeenCalledTimes(2);
+});
+
+it('renders only filtered text without an owner provider, as on external viewers', () => {
+  render(<PrivateText message={canonical} />);
+  expect(screen.getByText(canonical.text)).toBeInTheDocument();
+  expect(load).not.toHaveBeenCalled();
+});
+
+it('shows loading then safe unavailable text when decryption or authorization fails', async () => {
+  let finish!: (value: { messages: [] }) => void;
+  load.mockReturnValue(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  render(<View />);
+  expect(screen.getByRole('status')).toHaveTextContent('com_ui_private_text_loading');
+  await act(async () => {
+    finish({ messages: [] });
+  });
+  expect(screen.getByText(canonical.text)).toBeInTheDocument();
+  expect(screen.getByRole('status')).toHaveTextContent('com_ui_private_text_unavailable');
+});
+
+it('rejects stale revisions instead of restoring a previous original', async () => {
+  load.mockResolvedValue({ messages: [{ ...original, revision: 'old-revision' }] });
+  render(<View />);
+  await waitFor(() =>
+    expect(screen.getByRole('status')).toHaveTextContent('com_ui_private_text_unavailable'),
+  );
+  expect(screen.queryByText(original.text)).not.toBeInTheDocument();
+});
+
+it('clears the visible original immediately on account switching, ignoring late responses', async () => {
+  let finish!: (value: { messages: (typeof original)[] }) => void;
+  load.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  load.mockResolvedValue({ messages: [] });
+  const view = render(<View />);
+  mockOwnerId = 'another-owner';
+  view.rerender(<View />);
+  await act(async () => {
+    finish({ messages: [original] });
+  });
+  expect(screen.queryByText(original.text)).not.toBeInTheDocument();
+  expect(screen.getByText(canonical.text)).toBeInTheDocument();
+});
+
+it('batches selected private rows and never loads ordinary messages', async () => {
+  load.mockResolvedValue({ messages: [] });
+  const messages: TMessage[] = Array.from({ length: 51 }, (_, index) => ({
+    ...canonical,
+    messageId: `message-${index}`,
+  }));
+  messages.push({ ...canonical, messageId: 'plain', privacyRevision: undefined });
+  render(<View messages={messages} />);
+  await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+  expect(load.mock.calls.map(([, ids]) => ids.length)).toEqual([50, 1]);
+  expect(load.mock.calls.flatMap(([, ids]) => ids)).not.toContain('plain');
+});
+
+it('invalidates an already rendered original when the canonical message changes', async () => {
+  load.mockResolvedValue({ messages: [original] });
+  const view = render(<View />);
+  expect(await screen.findByText(original.text)).toBeInTheDocument();
+  view.rerender(<View messages={[{ ...canonical, text: 'edited canonical' }]} />);
+  expect(screen.queryByText(original.text)).not.toBeInTheDocument();
+  await waitFor(() =>
+    expect(screen.getByRole('status')).toHaveTextContent('com_ui_private_text_unavailable'),
+  );
+});
+
+it('clears originals when tenant identity changes even if the user ID is unchanged', async () => {
+  load.mockResolvedValueOnce({ messages: [original] });
+  const view = render(<View />);
+  expect(await screen.findByText(original.text)).toBeInTheDocument();
+  load.mockResolvedValue({ messages: [] });
+  mockTenantId = 'tenant-b';
+  view.rerender(<View />);
+  expect(screen.queryByText(original.text)).not.toBeInTheDocument();
+  await waitFor(() => expect(load).toHaveBeenCalledTimes(2));
+});

@@ -27,6 +27,7 @@ const {
   mergeUserSubmittedMessageFieldPaths,
   isContentFilterError,
   withoutTraceRefs,
+  createPrivateTextView,
 } = require('@librechat/api');
 const subagentThreadTaskStore = require('~/server/services/Endpoints/agents/subagentThreadStore');
 const { findAllArtifacts, replaceArtifactContent } = require('~/server/services/Artifacts/update');
@@ -63,6 +64,13 @@ const storedMessageMutationMiddleware = [
 ];
 
 router.use(requireJwtAuth);
+router.post(
+  '/:conversationId/owner-text',
+  createPrivateTextView({
+    read: db.getPrivateMessageTexts,
+    getKey: () => process.env.CREDS_KEY ?? '',
+  }),
+);
 
 async function rejectSubagentThreadWrite(req, res, conversationId) {
   const blocked = await isSubagentThreadWriteBlocked(

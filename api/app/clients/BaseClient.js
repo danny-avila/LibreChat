@@ -30,6 +30,9 @@ const {
   seedTurnConversation,
   needsRetentionConversation,
   getConversationWriteContext,
+  savePrivateTextMessage,
+  stampPrivateTextMessage,
+  requirePrivateTextPersistence,
 } = require('@librechat/api');
 const {
   Constants,
@@ -586,13 +589,16 @@ class BaseClient {
     } = await this.setMessageOptions(opts);
     this.options.startupTelemetry?.mark('history_loaded');
 
-    const userMessage = this.resolveStartUserMessage({
-      opts,
-      message,
-      userMessageId,
-      parentMessageId,
-      conversationId,
-    });
+    const userMessage = stampPrivateTextMessage(
+      this.options.req,
+      this.resolveStartUserMessage({
+        opts,
+        message,
+        userMessageId,
+        parentMessageId,
+        conversationId,
+      }),
+    );
 
     /**
      * Attach quoted excerpts (the "Add to chat" selections from `req.body.quotes`)
@@ -1029,6 +1035,9 @@ class BaseClient {
         await balanceReservations.track(balanceAdmission);
       }
 
+      await requirePrivateTextPersistence(this.options.req, () =>
+        userMessagePersistence != null ? userMessagePersistence.start() : userMessagePromise,
+      );
       completionResult = await this.sendCompletion(payload, opts);
     } catch (error) {
       if (userMessagePersistence?.isPending()) {
@@ -1349,7 +1358,9 @@ class BaseClient {
       req.resolvedConversation = await db.getConvo(req.user.id, message.conversationId);
     }
     const reqCtx = getConversationWriteContext(req);
-    const savedMessage = await db.saveMessage(
+    const savedMessage = await savePrivateTextMessage(
+      db.saveMessage,
+      req,
       reqCtx,
       {
         ...message,
