@@ -87,6 +87,44 @@ describe('theme registry', () => {
     expect(resolveTheme(theme, 'dark').colors['rgb-surface-code']).toBe('98 76 54');
   });
 
+  it('keeps a legacy theme code pane on the surfaces it was painted with', () => {
+    const theme = fromLegacyTheme(
+      {
+        'rgb-surface-chat': '12 34 56',
+        'rgb-surface-primary-alt': '210 211 212',
+      },
+      'legacy-code-body-reference',
+    );
+
+    expect(resolveTheme(theme, 'light').colors['rgb-surface-code-body']).toBe('12 34 56');
+    expect(resolveTheme(theme, 'dark').colors['rgb-surface-code-body']).toBe('210 211 212');
+  });
+
+  it('preserves an explicit code pane instead of deriving it', () => {
+    const theme: ThemeDefinition = {
+      version: 1,
+      name: 'explicit-code-body-reference',
+      modes: {
+        light: {
+          colors: { 'rgb-surface-chat': '12 34 56', 'rgb-surface-code-body': '65 43 21' },
+        },
+        dark: {
+          colors: { 'rgb-surface-primary-alt': '210 211 212', 'rgb-surface-code-body': '98 76 54' },
+        },
+      },
+    };
+
+    expect(resolveTheme(theme, 'light').colors['rgb-surface-code-body']).toBe('65 43 21');
+    expect(resolveTheme(theme, 'dark').colors['rgb-surface-code-body']).toBe('98 76 54');
+  });
+
+  it('paints the default code pane white in light and gray-850 in dark', () => {
+    expect(resolveTheme(libreChatTheme, 'light').colors['rgb-surface-code-body']).toBe(
+      '255 255 255',
+    );
+    expect(resolveTheme(libreChatTheme, 'dark').colors['rgb-surface-code-body']).toBe('23 23 23');
+  });
+
   it('keeps the bundled code surfaces unchanged for the default appearances', () => {
     expect(resolveTheme(libreChatTheme, 'light').colors['rgb-surface-code']).toBe(
       defaultTheme['rgb-surface-code'],

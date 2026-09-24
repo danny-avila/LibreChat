@@ -378,6 +378,19 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
       ? { 'rgb-surface-code': codeSurfaceSource }
       : {};
   /**
+   * The code pane painted `surface-chat` in light and `surface-primary-alt` in
+   * dark before it had a role, so a theme that names neither pane role keeps
+   * the pane it was drawn against.
+   */
+  const codeBodySource =
+    mode === 'dark'
+      ? customColors?.['rgb-surface-primary-alt']
+      : customColors?.['rgb-surface-chat'];
+  const codeBodyFallback =
+    customColors?.['rgb-surface-code-body'] === undefined && codeBodySource !== undefined
+      ? { 'rgb-surface-code-body': codeBodySource }
+      : {};
+  /**
    * Themes written before the shimmer stops existed cannot name them, and
    * filling the omission from the bundled base would pin their in-flight labels
    * to LibreChat's own sweep — a theme that restates its text as white would
@@ -458,6 +471,7 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
       ...baseColors,
       ...customColors,
       ...codeSurfaceFallback,
+      ...codeBodyFallback,
       ...composerHoverFallback,
       ...shimmerBaseFallback,
       ...textMutedFallback,

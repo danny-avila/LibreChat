@@ -54,6 +54,7 @@ export const defaultTheme: IThemeRGB = {
   'rgb-surface-destructive-hover': '153 27 27', // #991b1b (red-800)
   'rgb-surface-chat': '255 255 255', // #fff (white)
   'rgb-surface-code': '247 247 248', // #f7f7f8 (gray-50)
+  'rgb-surface-code-body': '255 255 255', // #fff (white)
   'rgb-surface-inverted': '23 23 23', // #171717 (gray-850)
   'rgb-surface-inverted-hover': '47 47 47', // #2f2f2f (gray-700)
   'rgb-text-inverted': '255 255 255', // #fff (white)
@@ -98,7 +99,7 @@ export const defaultTheme: IThemeRGB = {
   // Brand colors
   'rgb-brand-purple': '126 34 206', // #7e22ce (purple-700)
 
-  /** Code syntax highlighting, measured against the `surface-code` fill. */
+  /** Code syntax highlighting, measured against the `surface-code` and `surface-code-body` fills. */
   'rgb-syntax-text': '33 33 33', // #212121 (gray-800)
   'rgb-syntax-comment': '89 89 89', // #595959 (gray-500)
   'rgb-syntax-meta': '66 66 66', // #424242 (gray-600)

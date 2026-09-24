@@ -253,6 +253,8 @@ function MyComponent() {
 - `bg-surface-dialog` - Dialog/modal background
 - `bg-surface-overlay` - Dialog/modal scrim, adapted per theme
 - `bg-surface-chat` - Chat interface background
+- `bg-surface-code` - Code block chrome: toolbar, output and result switcher
+- `bg-surface-code-body` - Code block pane behind the highlighted code
 
 ### Border Colors
 

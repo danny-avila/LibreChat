@@ -179,6 +179,7 @@ const canvasSurfaces: Array<keyof IThemeRGB> = [
   'rgb-surface-dialog',
   'rgb-surface-chat',
   'rgb-surface-code',
+  'rgb-surface-code-body',
   'rgb-presentation',
 ];
 

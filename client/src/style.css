@@ -220,6 +220,7 @@ html {
   --surface-destructive-hover: var(--red-800);
   --surface-chat: var(--white);
   --surface-code: var(--surface-primary-alt);
+  --surface-code-body: var(--surface-chat);
   --surface-qr: var(--white);
   --border-light: var(--gray-200);
   --border-light-alpha: 1;
@@ -344,6 +345,7 @@ html {
   --surface-destructive-hover: var(--red-900);
   --surface-chat: var(--gray-700);
   --surface-code: var(--presentation);
+  --surface-code-body: var(--surface-primary-alt);
   --surface-qr: var(--white);
   --border-light: var(--gray-700);
   --border-medium-alt: var(--gray-600);
