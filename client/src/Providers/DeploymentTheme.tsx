@@ -64,25 +64,31 @@ const isValidDefinition = (value: unknown): value is ThemeDefinition =>
   validateThemeDefinition(value as ThemeDefinition).length === 0;
 
 /**
- * The user's own theme, read the way `ThemeProvider` reads it on mount: the stored
- * definition, else the legacy color map. The deployment theme is never persisted,
- * so storage still holds this while the deployment theme is applied.
+ * The user's own theme in the shape `ThemeProvider` restores it: a versioned
+ * definition, or legacy colors that the provider overlays on both modes. Stored
+ * with source `legacy`, a definition is the legacy compatibility copy and goes back
+ * through the legacy path. The deployment theme is never persisted, so storage
+ * still holds this while the deployment theme is applied.
  */
-export function readStoredTheme(): ThemeDefinition | undefined {
+type StoredTheme = { definition: ThemeDefinition } | { legacyColors: IThemeRGB; name: string };
+
+export function readStoredTheme(): StoredTheme | undefined {
   try {
     const definition = parseStored('theme-definition');
     if (isValidDefinition(definition)) {
-      return definition;
+      const legacyColors = definition.modes.light?.colors;
+      return localStorage.getItem('theme-source') === 'legacy' && legacyColors
+        ? { legacyColors, name: definition.name }
+        : { definition };
     }
     const colors = parseStored('theme-colors');
     if (typeof colors !== 'object' || colors === null) {
       return undefined;
     }
-    const legacy = fromLegacyTheme(
-      colors as IThemeRGB,
-      localStorage.getItem('theme-name') ?? 'custom',
-    );
-    return isValidDefinition(legacy) ? legacy : undefined;
+    const name = localStorage.getItem('theme-name') ?? 'custom';
+    return isValidDefinition(fromLegacyTheme(colors as IThemeRGB, name))
+      ? { legacyColors: colors as IThemeRGB, name }
+      : undefined;
   } catch {
     return undefined;
   }
@@ -134,7 +140,7 @@ export default function DeploymentTheme({ children }: { children: React.ReactNod
    * deployment theme that goes away hands the provider the user's stored theme,
    * unless the build-time colors outrank it.
    */
-  const fallbackDefinition = useMemo(
+  const storedTheme = useMemo(
     () =>
       !themeDefinition && deploymentThemeApplied.current && !envTheme
         ? readStoredTheme()
@@ -142,11 +148,15 @@ export default function DeploymentTheme({ children }: { children: React.ReactNod
     [themeDefinition, envTheme],
   );
 
-  const activeDefinition = themeDefinition ?? fallbackDefinition;
-
   const props: Omit<ComponentProps<typeof ThemeProvider>, 'children'> = {
     ...(envTheme && { initialTheme: 'system', themeRGB: envTheme }),
-    ...(activeDefinition && { themeDefinition: activeDefinition }),
+    ...(themeDefinition && { themeDefinition }),
+    ...(storedTheme && 'definition' in storedTheme && { themeDefinition: storedTheme.definition }),
+    ...(storedTheme &&
+      'legacyColors' in storedTheme && {
+        themeRGB: storedTheme.legacyColors,
+        themeName: storedTheme.name,
+      }),
     ...(deploymentThemeApplied.current && { persistThemeDefinition: false }),
   };
 

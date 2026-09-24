@@ -199,6 +199,30 @@ describe('DeploymentTheme', () => {
     expect(snapshotStorage()).toEqual(before);
   });
 
+  it('restores a legacy-source theme onto dark mode when the deployment theme is withdrawn', async () => {
+    const legacy = {
+      version: 1,
+      name: 'legacy-stored',
+      modes: { light: { colors: { 'rgb-accent-primary': '4 5 6' } } },
+    };
+    localStorage.setItem('color-theme', 'dark');
+    localStorage.setItem('theme-definition', JSON.stringify(legacy));
+    localStorage.setItem('theme-colors', JSON.stringify(legacy.modes.light.colors));
+    localStorage.setItem('theme-name', 'legacy-stored');
+    localStorage.setItem('theme-source', 'legacy');
+    const before = snapshotStorage();
+    serveTheme('clickhouse');
+    renderTheme(queryClient);
+    await waitFor(() => expect(root().dataset.theme).toBe('clickhouse'));
+
+    replaceConfig();
+
+    await waitFor(() => expect(root().dataset.theme).toBe('legacy-stored'));
+    expect(root().classList.contains('dark')).toBe(true);
+    expect(root().style.getPropertyValue('--accent-primary')).toBe('4 5 6');
+    expect(snapshotStorage()).toEqual(before);
+  });
+
   it('falls back to the environment colors when the deployment theme is withdrawn', async () => {
     mockGetThemeFromEnv.mockReturnValue({ 'rgb-surface-primary': '99 99 99' });
     serveTheme('clickhouse');

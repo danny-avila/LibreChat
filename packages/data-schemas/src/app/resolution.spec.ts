@@ -38,6 +38,43 @@ describe('mergeConfigOverrides', () => {
     expect(mergeConfigOverrides(baseConfig, undefined as unknown as IConfig[])).toBe(baseConfig);
   });
 
+  it('replaces an inline interface theme whole instead of merging two definitions', () => {
+    const base = {
+      interfaceConfig: {
+        theme: {
+          version: 1,
+          name: 'base',
+          modes: {
+            light: { colors: { 'rgb-surface-primary': '255 255 255' } },
+            dark: { colors: { 'rgb-surface-primary': '0 0 0' } },
+          },
+          brands: { 'provider-openai': '#19C37D' },
+        },
+      },
+    } as unknown as AppConfig;
+    const override = {
+      version: 1,
+      name: 'principal',
+      modes: { light: { colors: { 'rgb-surface-primary': '240 240 240' } } },
+    };
+
+    const result = mergeConfigOverrides(base, [fakeConfig({ interface: { theme: override } }, 10)]);
+
+    expect(result.interfaceConfig?.theme).toEqual(override);
+  });
+
+  it('lets a bundled theme name override an inline base theme', () => {
+    const base = {
+      interfaceConfig: { theme: { version: 1, name: 'base', modes: {} } },
+    } as unknown as AppConfig;
+
+    const result = mergeConfigOverrides(base, [
+      fakeConfig({ interface: { theme: 'clickhouse' } }, 10),
+    ]);
+
+    expect(result.interfaceConfig?.theme).toBe('clickhouse');
+  });
+
   it('does not allow DB overrides or tombstones to weaken base-only filters', () => {
     const base = {
       filters: {
