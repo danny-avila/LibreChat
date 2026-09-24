@@ -386,6 +386,7 @@ export function createBackgroundToolCompletionWakeupResolver({
       return {
         status: 'ready',
         parentMessageId,
+        ...(parent.codeApprovalMode != null && { codeApprovalMode: parent.codeApprovalMode }),
         input,
         releaseOnDefiniteFailure: async () => {
           const released = await methods.releaseBackgroundToolResultClaims({
@@ -455,6 +456,7 @@ export function createBackgroundToolCompletionWakeupResolver({
       return {
         status: 'ready',
         parentMessageId,
+        ...(parent.codeApprovalMode != null && { codeApprovalMode: parent.codeApprovalMode }),
         input: buildWakeupInput(receiptClaim.results),
         releaseOnDefiniteFailure: async () => {
           const projectionReleased = await methods.releaseBackgroundToolResultClaims({
@@ -490,6 +492,7 @@ export function createBackgroundToolCompletionWakeupResolver({
       return {
         status: 'ready',
         parentMessageId,
+        ...(parent.codeApprovalMode != null && { codeApprovalMode: parent.codeApprovalMode }),
         input: buildWakeupInput([
           { ...registration, status: receipt.status, output: receipt.output },
         ]),

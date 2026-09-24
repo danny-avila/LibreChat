@@ -778,6 +778,7 @@ export function createSubagentCompletionWakeupResolver({
     return {
       status: 'ready',
       parentMessageId,
+      ...(parent.codeApprovalMode != null && { codeApprovalMode: parent.codeApprovalMode }),
       input: renderWakeupInput(registration, resultTaskId, claim.message, orchestrationSnapshot),
       releaseOnDefiniteFailure: async () => {
         await methods.releaseSubagentTaskResultClaim({
