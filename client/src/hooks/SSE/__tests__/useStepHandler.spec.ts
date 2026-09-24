@@ -1,5 +1,5 @@
 import React from 'react';
-import { useStore } from 'jotai';
+import { useStore, useAtomValue } from 'jotai';
 import { RecoilRoot, useRecoilCallback } from 'recoil';
 import { renderHook, act } from '@testing-library/react';
 import {
@@ -27,6 +27,7 @@ import {
 } from '~/components/Chat/Subagents/state';
 import { ptcTraceByToolCallId, ptcTraceKey, PTC_TRACE_MAX_ENTRIES } from '~/store/ptc';
 import { resolveAskUserQuestionPart } from '~/utils/approval';
+import { sandboxStartingByToolCallId } from '~/store/sandbox';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
 import { IsolatedAtomStore } from 'test/harness';
 
@@ -1878,6 +1879,64 @@ describe('useStepHandler', () => {
     });
   });
 
+  describe('sandbox startup state', () => {
+    const wrapper = ({ children }: React.PropsWithChildren) =>
+      React.createElement(RecoilRoot, null, React.createElement(IsolatedAtomStore, null, children));
+
+    it.each(['completed', 'cleanup'] as const)(
+      'clears the Jotai startup signal on %s',
+      (terminal) => {
+        mockGetMessages.mockReturnValue([createResponseMessage()]);
+        const { result } = renderHook(
+          () => ({
+            ...useStepHandler(createHookParams()),
+            starting: useAtomValue(sandboxStartingByToolCallId('tool-call-1')),
+          }),
+          { wrapper },
+        );
+        const submission = createSubmission();
+        expect(result.current.starting).toBe(false);
+        act(() => {
+          result.current.stepHandler(
+            { event: StepEvents.ON_RUN_STEP, data: createToolCallRunStep() },
+            submission,
+          );
+          result.current.stepHandler(
+            { event: StepEvents.ON_SANDBOX_STARTING, data: { tool_call_id: 'tool-call-1' } },
+            submission,
+          );
+        });
+        expect(result.current.starting).toBe(true);
+        act(() => {
+          if (terminal === 'cleanup') {
+            result.current.clearStepMaps();
+            return;
+          }
+          result.current.stepHandler(
+            {
+              event: StepEvents.ON_RUN_STEP_COMPLETED,
+              data: {
+                result: {
+                  id: 'step-tool-1',
+                  index: 0,
+                  tool_call: {
+                    id: 'tool-call-1',
+                    name: 'test_tool',
+                    args: '{}',
+                    output: 'done',
+                    type: ToolCallTypes.TOOL_CALL,
+                  },
+                } as Agents.ToolEndEvent,
+              },
+            },
+            submission,
+          );
+        });
+        expect(result.current.starting).toBe(false);
+      },
+    );
+  });
+
   describe('on_run_step_completed event', () => {
     it('should finalize tool call with output', () => {
       const responseMessage = createResponseMessage();
@@ -3179,6 +3238,47 @@ describe('useStepHandler', () => {
       label: 'Subagent "self" started',
       timestamp: new Date().toISOString(),
       ...overrides,
+    });
+
+    it('signals parent-index discovery on child lifecycle events, not every progress delta', () => {
+      const onSubagentIndexChange = jest.fn();
+      const { result } = renderHook(
+        () => useStepHandler({ ...createHookParams(), onSubagentIndexChange }),
+        { wrapper: subagentStoreWrapper },
+      );
+      const submission = createSubmission();
+
+      act(() => {
+        for (const phase of ['start', 'run_step_delta', 'stop', 'error'] as const) {
+          result.current.stepHandler(
+            { event: StepEvents.ON_SUBAGENT_UPDATE, data: makeUpdate({ phase }) },
+            submission,
+          );
+        }
+      });
+      expect(onSubagentIndexChange.mock.calls).toEqual([['conv-1'], ['conv-1'], ['conv-1']]);
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_SUBAGENT_UPDATE, data: makeUpdate({ phase: 'start' }) },
+          createSubmission({
+            userMessage: createUserMessage({ conversationId: String(Constants.NEW_CONVO) }),
+            initialResponse: createResponseMessage({ conversationId: String(Constants.NEW_CONVO) }),
+          }),
+        );
+      });
+      expect(onSubagentIndexChange).toHaveBeenCalledTimes(3);
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_SUBAGENT_UPDATE, data: makeUpdate({ phase: 'start' }) },
+          createSubmission({
+            userMessage: createUserMessage({ conversationId: String(Constants.NEW_CONVO) }),
+            initialResponse: createResponseMessage({ conversationId: 'saved-parent' }),
+          }),
+        );
+      });
+      expect(onSubagentIndexChange).toHaveBeenLastCalledWith('saved-parent');
     });
 
     it('correlates updates to a tool call via parentToolCallId (deterministic path)', () => {

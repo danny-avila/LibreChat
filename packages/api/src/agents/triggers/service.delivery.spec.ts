@@ -1,4 +1,5 @@
 import {
+  AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
   AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
   AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
   AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
@@ -6,9 +7,11 @@ import {
   SYSTEM_TENANT_ID,
 } from '@librechat/data-schemas';
 import type { AgentTriggerDeliveryPersistence, AgentTriggerStoredRecord } from './service';
+import type { AgentTriggerDeliveryStore } from './engine';
 import { AgentTriggerServiceUnavailableError, createAgentTriggerService } from './service';
 import { __resetShutdownStateForTests } from '../../app/shutdown';
 import { createAgentTriggerEnvelope } from './envelope';
+import * as deliveryEngineModule from './engine';
 
 jest.mock('@librechat/data-schemas', () => {
   const actual = jest.requireActual('@librechat/data-schemas');
@@ -180,6 +183,7 @@ describe('durable agent trigger service', () => {
     expect(methods.claimNextAgentTriggerDelivery).toHaveBeenCalledWith(
       expect.objectContaining({
         workerCapabilities: [
+          AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
           AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
           AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
           AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
@@ -218,6 +222,7 @@ describe('durable agent trigger service', () => {
     expect(methods.claimNextAgentTriggerDelivery).toHaveBeenCalledWith(
       expect.objectContaining({
         workerCapabilities: [
+          AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
           AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
           AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
         ],
@@ -318,6 +323,183 @@ describe('durable agent trigger service', () => {
     expect(deleteAgentTriggerDeliveriesByUser).toHaveBeenCalledWith('507f1f77bcf86cd799439011');
   });
 
+  it.each(['complete', 'dead', 'retire'] as const)(
+    'wakes for unfinished %s finalization, but not healthy terminal writes',
+    async (operation) => {
+      jest.useFakeTimers();
+      let service: ReturnType<typeof createAgentTriggerService> | undefined;
+      try {
+        let store!: AgentTriggerDeliveryStore;
+        const create = deliveryEngineModule.createAgentTriggerDeliveryEngine;
+        jest
+          .spyOn(deliveryEngineModule, 'createAgentTriggerDeliveryEngine')
+          .mockImplementation((deps, options) => {
+            store = deps.store;
+            return create(deps, options);
+          });
+        let unfinished = false;
+        const terminal = jest.fn(async (_input: unknown, recovery?: { required: boolean }) => {
+          if (recovery != null) recovery.required = unfinished;
+          return true;
+        });
+        const methods = deliveryMethods({
+          completeAgentTriggerDelivery: terminal,
+          deadLetterAgentTriggerDelivery: terminal,
+          retireAgentTriggerDelivery: terminal,
+        });
+        service = createAgentTriggerService({ methods, deliveryOptions: { tickMs: 300_000 } });
+        await service.initialize({ address: { address: '127.0.0.1', family: 'IPv4', port: 3080 } });
+        await jest.advanceTimersByTimeAsync(180_000);
+        const count = (methods.recoverAgentTriggerBatchReceipts as jest.Mock).mock.calls.length;
+        const input = {
+          id: 'row',
+          workerId: 'worker',
+          claimToken: 'token',
+          attempt: 1,
+          settledAt: new Date(),
+        };
+        const finish = () => {
+          if (operation === 'complete') {
+            return store.complete({
+              ...input,
+              result: { mode: 'fire', status: 'started', conversationId: 'conversation-1' },
+            });
+          }
+          if (operation === 'dead') {
+            return store.dead({
+              ...input,
+              error: {
+                code: 'FAILED',
+                message: 'failed',
+                retryable: false,
+                certainty: 'definite',
+                attemptedAt: new Date(),
+              },
+            });
+          }
+          return service!.retire('delivery-key', 'source', 'cancelled');
+        };
+        await expect(finish()).resolves.toBe(true);
+        await jest.advanceTimersByTimeAsync(0);
+        expect(methods.recoverAgentTriggerBatchReceipts).toHaveBeenCalledTimes(count);
+        unfinished = true;
+        await expect(finish()).resolves.toBe(true);
+        await jest.advanceTimersByTimeAsync(0);
+        expect(methods.recoverAgentTriggerBatchReceipts).toHaveBeenCalledTimes(count + 1);
+        expect(getTenantId()).not.toBe(SYSTEM_TENANT_ID);
+      } finally {
+        await service?.stop();
+        jest.restoreAllMocks();
+        jest.useRealTimers();
+      }
+    },
+  );
+
+  it.each(['enqueue', 'requeue'] as const)(
+    'wakes maintenance after an ambiguous %s write failure',
+    async (operation) => {
+      jest.useFakeTimers();
+      let service: ReturnType<typeof createAgentTriggerService> | undefined;
+      try {
+        const methods = deliveryMethods();
+        (methods.enqueueAgentTriggerDelivery as jest.Mock).mockRejectedValue(
+          new Error('publication interrupted'),
+        );
+        (methods.requeueAgentTriggerDelivery as jest.Mock).mockRejectedValue(
+          new Error('publication interrupted'),
+        );
+        service = createAgentTriggerService({ methods, deliveryOptions: { tickMs: 300_000 } });
+        await service.initialize({ address: { address: '127.0.0.1', family: 'IPv4', port: 3080 } });
+        await jest.advanceTimersByTimeAsync(180_000);
+        const count = (methods.recoverAgentTriggerLanePublications as jest.Mock).mock.calls.length;
+        await expect(
+          operation === 'enqueue' ? service.enqueue(envelope()) : service.requeue('row'),
+        ).rejects.toThrow('publication interrupted');
+        await jest.advanceTimersByTimeAsync(0);
+        expect(methods.recoverAgentTriggerLanePublications).toHaveBeenCalledTimes(count + 1);
+      } finally {
+        await service?.stop();
+        jest.useRealTimers();
+      }
+    },
+  );
+
+  it('backs off empty maintenance scans and wakes for new cleanup work', async () => {
+    jest.useFakeTimers();
+    try {
+      const recoverAgentTriggerUserPurges = jest.fn(async () => 0);
+      const methods = deliveryMethods({ recoverAgentTriggerUserPurges });
+      const service = createAgentTriggerService({
+        methods,
+        deliveryOptions: { concurrency: 1, tickMs: 300_000 },
+      });
+      await service.initialize({
+        address: { address: '127.0.0.1', family: 'IPv4', port: 3080 },
+      });
+      await jest.advanceTimersByTimeAsync(0);
+      expect(recoverAgentTriggerUserPurges).toHaveBeenCalledTimes(1);
+      await jest.advanceTimersByTimeAsync(60_000);
+      expect(recoverAgentTriggerUserPurges).toHaveBeenCalledTimes(2);
+      await jest.advanceTimersByTimeAsync(120_000);
+      expect(recoverAgentTriggerUserPurges).toHaveBeenCalledTimes(3);
+      await service.prepareUserPurge('507f1f77bcf86cd799439011', new Date());
+      await jest.advanceTimersByTimeAsync(0);
+      expect(recoverAgentTriggerUserPurges).toHaveBeenCalledTimes(4);
+      await service.stop();
+      await jest.advanceTimersByTimeAsync(120_000);
+      expect(recoverAgentTriggerUserPurges).toHaveBeenCalledTimes(4);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps the base cadence when a recovery marker was inspected but no repair completed', async () => {
+    jest.useFakeTimers();
+    try {
+      const recoverAgentTriggerBatchReceipts = jest.fn(
+        async (_limit?: number, activity?: { found: boolean }) => {
+          if (activity != null) activity.found = true;
+          return 0;
+        },
+      );
+      const service = createAgentTriggerService({
+        methods: deliveryMethods({ recoverAgentTriggerBatchReceipts }),
+        deliveryOptions: { concurrency: 1, tickMs: 300_000 },
+      });
+      await service.initialize({ address: { address: '127.0.0.1', family: 'IPv4', port: 3080 } });
+      await jest.advanceTimersByTimeAsync(0);
+      expect(recoverAgentTriggerBatchReceipts).toHaveBeenCalledTimes(1);
+      await jest.advanceTimersByTimeAsync(30_000);
+      expect(recoverAgentTriggerBatchReceipts).toHaveBeenCalledTimes(2);
+      await service.stop();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('does not mistake an isolated maintenance failure for an empty scan', async () => {
+    jest.useFakeTimers();
+    try {
+      const recoverAgentTriggerUserPurges = jest
+        .fn()
+        .mockRejectedValueOnce(new Error('mongo unavailable'))
+        .mockResolvedValue(0);
+      const methods = deliveryMethods({ recoverAgentTriggerUserPurges });
+      const service = createAgentTriggerService({
+        methods,
+        deliveryOptions: { concurrency: 1, tickMs: 300_000 },
+      });
+      await service.initialize({ address: { address: '127.0.0.1', family: 'IPv4', port: 3080 } });
+      await jest.advanceTimersByTimeAsync(0);
+      expect(recoverAgentTriggerUserPurges).toHaveBeenCalledTimes(1);
+      await jest.advanceTimersByTimeAsync(30_000);
+      expect(recoverAgentTriggerUserPurges).toHaveBeenCalledTimes(2);
+      await service.stop();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('arms and disarms post-commit purge recovery in system context', async () => {
     const prepareAgentTriggerUserPurge = jest.fn(async () => {
       expect(getTenantId()).toBe(SYSTEM_TENANT_ID);
@@ -382,7 +564,11 @@ describe('durable agent trigger service', () => {
       address: { address: '127.0.0.1', family: 'IPv4', port: 3080 },
     });
 
-    expect(expireLegacyAgentEventActorReceipts).toHaveBeenCalledWith(expect.any(Date), 17);
+    expect(expireLegacyAgentEventActorReceipts).toHaveBeenCalledWith(
+      expect.any(Date),
+      17,
+      expect.objectContaining({ found: false }),
+    );
     await service.stop();
   });
 
@@ -402,7 +588,10 @@ describe('durable agent trigger service', () => {
       deliveryOptions: { concurrency: 1, tickMs: 60_000 },
     });
     await service.initialize({ address: { address: '127.0.0.1', family: 'IPv4', port: 3080 } });
-    expect(reclaimCheckpointDeletions).toHaveBeenCalledWith(17);
+    expect(reclaimCheckpointDeletions).toHaveBeenCalledWith(
+      17,
+      expect.objectContaining({ found: false }),
+    );
     let stopped = false;
     const stop = service.stop().then(() => {
       stopped = true;
@@ -542,6 +731,7 @@ describe('durable agent trigger service', () => {
         reason: 'result unavailable',
         onlyIfUnclaimed: true,
       }),
+      { required: false },
     );
     await expect(
       service.retire('trigger_1', 'background-tool-completion', 'dead recovery', {
@@ -550,6 +740,7 @@ describe('durable agent trigger service', () => {
     ).resolves.toBe(true);
     expect(retireAgentTriggerDelivery).toHaveBeenLastCalledWith(
       expect.objectContaining({ onlyIfDead: true }),
+      { required: false },
     );
     await service.stop();
   });

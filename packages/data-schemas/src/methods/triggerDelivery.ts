@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { FilterQuery, Model, Types } from 'mongoose';
 import type {
+  AgentBackgroundToolResultReceipt,
   AgentEventActorDetachedAction,
   AgentTriggerDeliveryClaim,
   AgentEventActorReceipt,
@@ -17,6 +18,8 @@ import type {
   IAgentTriggerUserPurgeDocument,
 } from '~/types/triggerDelivery';
 import {
+  AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
+  AGENT_BACKGROUND_TOOL_RESULT_STORAGE_MAX_CHARS,
   AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
   AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
   AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
@@ -128,6 +131,26 @@ export type AgentTriggerProducerLeaseStatus =
   | { status: 'live'; leaseUntil: Date }
   | { status: 'expired'; leaseUntil: Date }
   | { status: 'missing' };
+
+export interface PersistAgentBackgroundToolResultInput {
+  deliveryKey: string;
+  sourceId: string;
+  result: AgentBackgroundToolResultReceipt;
+}
+
+export type AgentBackgroundToolResultClaim =
+  | { status: 'not_ready' }
+  | { status: 'claimed'; claimId: string }
+  | {
+      status: 'acquired';
+      results: Array<{
+        taskId: string;
+        toolCallId: string;
+        toolName: string;
+        status: AgentBackgroundToolResultReceipt['status'];
+        output: string;
+      }>;
+    };
 
 export interface AgentTriggerDeliveryFence {
   id: string;
@@ -258,15 +281,22 @@ export interface AgentTriggerDeliveryMethods {
       handling?: AgentTriggerHandlingState;
       awaitTerminalHandling?: true;
     },
+    recovery?: { required: boolean },
   ) => Promise<boolean>;
-  retireAgentTriggerDelivery: (input: {
-    deliveryKey: string;
-    sourceId: string;
-    settledAt: Date;
-    reason: string;
-    onlyIfUnclaimed?: boolean;
-    onlyIfDead?: boolean;
-  }) => Promise<boolean>;
+  retireAgentTriggerDelivery: (
+    input: {
+      deliveryKey: string;
+      sourceId: string;
+      settledAt: Date;
+      reason: string;
+      onlyIfUnclaimed?: boolean;
+      onlyIfDead?: boolean;
+      /** Accept transport success without a terminal handling receipt, unless the
+       * delivery explicitly keeps its lane open for terminal handling. */
+      allowSucceeded?: boolean;
+    },
+    recovery?: { required: boolean },
+  ) => Promise<boolean>;
   renewAgentTriggerDeliveryProducerLease: (input: {
     deliveryKey: string;
     sourceId: string;
@@ -277,6 +307,37 @@ export interface AgentTriggerDeliveryMethods {
     sourceId: string;
     now: Date;
   }) => Promise<AgentTriggerProducerLeaseStatus>;
+  persistAgentBackgroundToolResult: (
+    input: PersistAgentBackgroundToolResultInput,
+  ) => Promise<boolean>;
+  getAgentBackgroundToolResult: (input: {
+    deliveryKey: string;
+    sourceId: string;
+  }) => Promise<AgentBackgroundToolResultReceipt | null>;
+  getAgentBackgroundToolResultClaim: (input: {
+    sourceId: string;
+    userId: string;
+    conversationId: string;
+    parentMessageId: string;
+    taskId: string;
+  }) => Promise<AgentBackgroundToolResultReceipt['resultClaim'] | null>;
+  claimAgentBackgroundToolResults: (input: {
+    deliveryKey: string;
+    sourceId: string;
+    userId: string;
+    conversationId: string;
+    parentMessageId: string;
+    agentId?: string;
+    claimId: string;
+    limit?: number;
+  }) => Promise<AgentBackgroundToolResultClaim>;
+  releaseAgentBackgroundToolResultClaims: (input: {
+    sourceId: string;
+    userId: string;
+    conversationId: string;
+    parentMessageId: string;
+    claimId: string;
+  }) => Promise<boolean>;
   settleAgentTriggerHandlingOutcome: (
     input: SettleAgentTriggerHandlingOutcomeInput,
   ) => Promise<boolean>;
@@ -326,7 +387,9 @@ export interface AgentTriggerDeliveryMethods {
       attempt: number;
       error: AgentTriggerDeliveryFailure;
       settledAt: Date;
+      receiptRetryAt?: Date;
     },
+    recovery?: { required: boolean },
   ) => Promise<boolean>;
   getAgentTriggerDelivery: (deliveryKey: string) => Promise<AgentTriggerDeliveryRecord | null>;
   getAgentTriggerDeliveryStatus: (
@@ -344,9 +407,18 @@ export interface AgentTriggerDeliveryMethods {
     user: string | Types.ObjectId,
     now: Date,
   ) => Promise<number>;
-  recoverAgentTriggerLanePublications: (limit?: number) => Promise<number>;
-  recoverAgentTriggerBatchReceipts: (limit?: number) => Promise<number>;
-  reclaimInactiveAgentTriggerLanes: (limit?: number) => Promise<number>;
+  recoverAgentTriggerLanePublications: (
+    limit?: number,
+    activity?: { found: boolean },
+  ) => Promise<number>;
+  recoverAgentTriggerBatchReceipts: (
+    limit?: number,
+    activity?: { found: boolean },
+  ) => Promise<number>;
+  reclaimInactiveAgentTriggerLanes: (
+    limit?: number,
+    activity?: { found: boolean },
+  ) => Promise<number>;
   prepareAgentTriggerUserPurge: (
     user: string | Types.ObjectId,
     fenceStartedAt: Date,
@@ -356,8 +428,16 @@ export interface AgentTriggerDeliveryMethods {
     user: string | Types.ObjectId,
     fenceStartedAt: Date,
   ) => Promise<boolean>;
-  recoverAgentTriggerUserPurges: (limit?: number) => Promise<number>;
+  recoverAgentTriggerUserPurges: (limit?: number, activity?: { found: boolean }) => Promise<number>;
   deleteAgentTriggerDeliveriesByUser: (user: string | Types.ObjectId) => Promise<void>;
+  eraseAgentTriggerDeliveryConversationResults: (
+    user: string | Types.ObjectId,
+    conversationIds: string[],
+  ) => Promise<void>;
+  prepareAgentTriggerConversationResultErasure: (
+    user: string | Types.ObjectId,
+    conversationIds: string[],
+  ) => Promise<void>;
 }
 
 function normalizeFailure(error: AgentTriggerDeliveryFailure): AgentTriggerDeliveryFailure {
@@ -960,6 +1040,8 @@ export function createAgentTriggerDeliveryMethods(
     if (
       input.requiredWorkerCapability != null &&
       input.requiredWorkerCapability !== AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1 &&
+      input.requiredWorkerCapability !==
+        AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2 &&
       input.requiredWorkerCapability !== AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1 &&
       input.requiredWorkerCapability !== AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1
     ) {
@@ -1024,6 +1106,7 @@ export function createAgentTriggerDeliveryMethods(
   /** Repairs abandoned reservations and staging rows left by crashed writers. */
   async function recoverAgentTriggerLanePublications(
     limit = DEFAULT_PURGE_RECOVERY_LIMIT,
+    activity?: { found: boolean },
   ): Promise<number> {
     if (!Number.isSafeInteger(limit) || limit <= 0) {
       throw new TypeError('Agent trigger lane recovery limit must be a positive integer');
@@ -1037,6 +1120,7 @@ export function createAgentTriggerDeliveryMethods(
       .sort({ publisherStartedAt: 1, _id: 1 })
       .limit(boundedLimit)
       .lean<IAgentTriggerLaneSequence[]>();
+    if (activity != null && lanes.length > 0) activity.found = true;
     let recovered = 0;
     const recoveryCursor = new Date();
     for (const lane of lanes) {
@@ -1107,6 +1191,9 @@ export function createAgentTriggerDeliveryMethods(
             .limit(remaining)
             .lean<IAgentTriggerDelivery[]>()
         : [];
+    if (activity != null && (legacyStaged.length > 0 || indexedStaged.length > 0)) {
+      activity.found = true;
+    }
     const staged = [
       ...legacyStaged.map((delivery) => ({
         ...delivery,
@@ -1225,6 +1312,7 @@ export function createAgentTriggerDeliveryMethods(
   /** Bounds high-cardinality ordering metadata after the final retained job settles. */
   async function reclaimInactiveAgentTriggerLanes(
     limit = DEFAULT_PURGE_RECOVERY_LIMIT,
+    activity?: { found: boolean },
   ): Promise<number> {
     if (!Number.isSafeInteger(limit) || limit <= 0) {
       throw new TypeError('Agent trigger lane reclamation limit must be a positive integer');
@@ -1236,6 +1324,7 @@ export function createAgentTriggerDeliveryMethods(
       .limit(boundedLimit)
       .select('_id orderingKey laneCleanupPendingAt')
       .lean<Array<Pick<IAgentTriggerDelivery, '_id' | 'orderingKey' | 'laneCleanupPendingAt'>>>();
+    if (activity != null && pendingCleanup.length > 0) activity.found = true;
     let reclaimed = 0;
     for (const delivery of pendingCleanup) {
       if (await fulfillLaneCleanupRequest(delivery)) {
@@ -1253,6 +1342,7 @@ export function createAgentTriggerDeliveryMethods(
       .limit(remaining)
       .select('_id')
       .lean<Array<Pick<IAgentTriggerLaneSequence, '_id'>>>();
+    if (activity != null && lanes.length > 0) activity.found = true;
     for (const lane of lanes) {
       if (await reclaimLaneIfInactive(lane._id)) {
         reclaimed += 1;
@@ -1692,6 +1782,7 @@ export function createAgentTriggerDeliveryMethods(
 
   async function recoverAgentTriggerBatchReceipts(
     limit = DEFAULT_PURGE_RECOVERY_LIMIT,
+    activity?: { found: boolean },
   ): Promise<number> {
     if (!Number.isSafeInteger(limit) || limit <= 0) {
       throw new TypeError('Agent trigger batch recovery limit must be a positive integer');
@@ -1705,6 +1796,7 @@ export function createAgentTriggerDeliveryMethods(
       .sort({ settledAt: 1, _id: 1 })
       .limit(Math.min(limit, MAX_PURGE_RECOVERY_LIMIT))
       .lean<IAgentTriggerDelivery[]>();
+    if (activity != null && roots.length > 0) activity.found = true;
     let recovered = 0;
     for (const root of roots) {
       if (root.settledAt == null || (root.status !== 'succeeded' && root.status !== 'dead')) {
@@ -1902,6 +1994,7 @@ export function createAgentTriggerDeliveryMethods(
       handling?: AgentTriggerHandlingState;
       awaitTerminalHandling?: true;
     },
+    recovery?: { required: boolean },
   ): Promise<boolean> {
     const awaitsTerminalHandling =
       input.awaitTerminalHandling === true && input.handling?.status === 'started';
@@ -1982,6 +2075,7 @@ export function createAgentTriggerDeliveryMethods(
       });
       await fulfillLaneCleanupRequest(completed);
     } catch (error) {
+      if (recovery != null) recovery.required = true;
       // Root success is authoritative. Maintenance retries both constituent
       // receipt settlement and the existing durable lane-cleanup marker.
       logger.warn('[agent-triggers] failed to finalize a completed trigger batch', {
@@ -1996,14 +2090,20 @@ export function createAgentTriggerDeliveryMethods(
    * that the result will never become dispatchable. This transition is keyed
    * by the immutable delivery identity rather than a worker lease so the
    * producer can unblock the lane even while a resolver is deferring it. */
-  async function retireAgentTriggerDelivery(input: {
-    deliveryKey: string;
-    sourceId: string;
-    settledAt: Date;
-    reason: string;
-    onlyIfUnclaimed?: boolean;
-    onlyIfDead?: boolean;
-  }): Promise<boolean> {
+  async function retireAgentTriggerDelivery(
+    input: {
+      deliveryKey: string;
+      sourceId: string;
+      settledAt: Date;
+      reason: string;
+      onlyIfUnclaimed?: boolean;
+      onlyIfDead?: boolean;
+      /** Accept transport success without a terminal handling receipt, unless the
+       * delivery explicitly keeps its lane open for terminal handling. */
+      allowSucceeded?: boolean;
+    },
+    recovery?: { required: boolean },
+  ): Promise<boolean> {
     if (
       input.deliveryKey.length === 0 ||
       input.deliveryKey.length > 256 ||
@@ -2080,6 +2180,7 @@ export function createAgentTriggerDeliveryMethods(
       try {
         await fulfillLaneCleanupRequest(retired);
       } catch (error) {
+        if (recovery != null) recovery.required = true;
         logger.warn('[agent-triggers] failed to finalize a retired internal delivery', {
           deliveryKey: input.deliveryKey,
           error: error instanceof Error ? error.message : String(error),
@@ -2096,6 +2197,7 @@ export function createAgentTriggerDeliveryMethods(
         $or: [
           { handling: { $exists: false } },
           { 'handling.status': { $in: ['applied', 'completed_no_action', 'failed', 'cancelled'] } },
+          ...(input.allowSucceeded === true ? [{ awaitTerminalHandling: { $ne: true } }] : []),
         ],
       })) != null
     );
@@ -2122,7 +2224,12 @@ export function createAgentTriggerDeliveryMethods(
     const renewed = await Delivery().updateOne(
       {
         deliveryKey: input.deliveryKey,
-        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+        requiredWorkerCapability: {
+          $in: [
+            AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+            AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
+          ],
+        },
         'envelope.event.source.type': 'internal',
         'envelope.event.source.id': input.sourceId,
         status: {
@@ -2161,7 +2268,12 @@ export function createAgentTriggerDeliveryMethods(
     const delivery = await Delivery()
       .findOne({
         deliveryKey: input.deliveryKey,
-        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+        requiredWorkerCapability: {
+          $in: [
+            AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+            AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
+          ],
+        },
         'envelope.event.source.type': 'internal',
         'envelope.event.source.id': input.sourceId,
       })
@@ -2173,6 +2285,262 @@ export function createAgentTriggerDeliveryMethods(
     return delivery.producerLeaseUntil.getTime() > input.now.getTime()
       ? { status: 'live', leaseUntil: delivery.producerLeaseUntil }
       : { status: 'expired', leaseUntil: delivery.producerLeaseUntil };
+  }
+
+  /** Stores terminal output on the pre-admitted delivery before attempting the
+   * parent-message projection. The first terminal receipt wins; exact retries
+   * are idempotent and conflicting rewrites fail closed. */
+  async function persistAgentBackgroundToolResult(
+    input: PersistAgentBackgroundToolResultInput,
+  ): Promise<boolean> {
+    const { result } = input;
+    if (
+      input.deliveryKey.length === 0 ||
+      input.deliveryKey.length > 256 ||
+      input.sourceId.length === 0 ||
+      input.sourceId.length > 256 ||
+      !['completed', 'error', 'cancelled'].includes(result.status) ||
+      result.output.length > AGENT_BACKGROUND_TOOL_RESULT_STORAGE_MAX_CHARS ||
+      !(result.settledAt instanceof Date) ||
+      !Number.isFinite(result.settledAt.getTime())
+    ) {
+      throw new TypeError('Invalid background tool result receipt');
+    }
+    const identity = {
+      deliveryKey: input.deliveryKey,
+      requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
+      'envelope.event.source.type': 'internal',
+      'envelope.event.source.id': input.sourceId,
+      backgroundToolResultErasedAt: { $exists: false },
+    };
+    const updated = await Delivery().updateOne(
+      {
+        ...identity,
+        backgroundToolResult: { $exists: false },
+        status: { $nin: ['dead', 'capability_dead', 'succeeded'] },
+        capabilityStatus: { $ne: 'dead' },
+      },
+      { $set: { backgroundToolResult: result } },
+      { timestamps: false },
+    );
+    if (updated.matchedCount === 1) {
+      return true;
+    }
+    const existing = await Delivery()
+      .findOne(identity)
+      .select('+backgroundToolResult')
+      .lean<Pick<IAgentTriggerDelivery, 'backgroundToolResult'>>();
+    return (
+      existing?.backgroundToolResult?.status === result.status &&
+      existing.backgroundToolResult.output === result.output &&
+      existing.backgroundToolResult.settledAt.getTime() === result.settledAt.getTime()
+    );
+  }
+
+  async function getAgentBackgroundToolResult(input: {
+    deliveryKey: string;
+    sourceId: string;
+  }): Promise<AgentBackgroundToolResultReceipt | null> {
+    if (
+      input.deliveryKey.length === 0 ||
+      input.deliveryKey.length > 256 ||
+      input.sourceId.length === 0 ||
+      input.sourceId.length > 256
+    ) {
+      throw new TypeError('Invalid background tool result receipt lookup');
+    }
+    const delivery = await Delivery()
+      .findOne({
+        deliveryKey: input.deliveryKey,
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
+        'envelope.event.source.type': 'internal',
+        'envelope.event.source.id': input.sourceId,
+      })
+      .select('+backgroundToolResult')
+      .lean<Pick<IAgentTriggerDelivery, 'backgroundToolResult'>>();
+    return delivery?.backgroundToolResult ?? null;
+  }
+
+  async function getAgentBackgroundToolResultClaim(input: {
+    sourceId: string;
+    userId: string;
+    conversationId: string;
+    parentMessageId: string;
+    taskId: string;
+  }): Promise<AgentBackgroundToolResultReceipt['resultClaim'] | null> {
+    const delivery = await Delivery()
+      .findOne({
+        ...backgroundResultIdentity(input),
+        'envelope.event.payload.taskId': input.taskId,
+        'backgroundToolResult.resultClaim': { $exists: true },
+      })
+      .select('+backgroundToolResult')
+      .lean<Pick<IAgentTriggerDelivery, 'backgroundToolResult'>>();
+    return delivery?.backgroundToolResult?.resultClaim ?? null;
+  }
+
+  function backgroundResultIdentity(input: {
+    sourceId: string;
+    userId: string;
+    conversationId: string;
+    parentMessageId: string;
+    agentId?: string;
+  }) {
+    return {
+      user: input.userId,
+      requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
+      'envelope.event.source.type': 'internal',
+      'envelope.event.source.id': input.sourceId,
+      'envelope.target.conversationId': input.conversationId,
+      'envelope.target.parentMessageId': input.parentMessageId,
+      ...(input.agentId == null ? {} : { 'envelope.target.agentId': input.agentId }),
+    };
+  }
+
+  function projectBackgroundResult(delivery: {
+    envelope?: unknown;
+    backgroundToolResult?: AgentBackgroundToolResultReceipt;
+  }) {
+    const envelope = delivery.envelope;
+    if (envelope == null || typeof envelope !== 'object' || Array.isArray(envelope)) {
+      return null;
+    }
+    const event = (envelope as { event?: unknown }).event;
+    if (event == null || typeof event !== 'object' || Array.isArray(event)) {
+      return null;
+    }
+    const payload = (event as { payload?: unknown }).payload;
+    if (payload == null || typeof payload !== 'object' || Array.isArray(payload)) {
+      return null;
+    }
+    const { taskId, toolCallId, toolName } = payload as Record<string, unknown>;
+    const receipt = delivery.backgroundToolResult;
+    if (
+      receipt == null ||
+      typeof taskId !== 'string' ||
+      typeof toolCallId !== 'string' ||
+      typeof toolName !== 'string'
+    ) {
+      return null;
+    }
+    return {
+      taskId,
+      toolCallId,
+      toolName,
+      status: receipt.status,
+      output: receipt.output,
+    };
+  }
+
+  /** Elects exactly one automatic continuation for an independently persisted
+   * result. A later stack layer may coalesce siblings after this ownership
+   * boundary, but the durable receipt itself is never dispatched unclaimed. */
+  async function claimAgentBackgroundToolResults(input: {
+    deliveryKey: string;
+    sourceId: string;
+    userId: string;
+    conversationId: string;
+    parentMessageId: string;
+    agentId?: string;
+    claimId: string;
+    limit?: number;
+  }): Promise<AgentBackgroundToolResultClaim> {
+    if (
+      input.deliveryKey.length === 0 ||
+      input.deliveryKey.length > 256 ||
+      input.sourceId.length === 0 ||
+      input.sourceId.length > 256 ||
+      input.userId.length === 0 ||
+      input.conversationId.length === 0 ||
+      input.conversationId.length > 256 ||
+      input.parentMessageId.length === 0 ||
+      input.parentMessageId.length > 256 ||
+      input.claimId.length === 0 ||
+      input.claimId.length > 128
+    ) {
+      throw new TypeError('Invalid background tool result receipt claim');
+    }
+    const scope = backgroundResultIdentity(input);
+    const projection = 'envelope +backgroundToolResult';
+    let requested = await Delivery()
+      .findOne({ ...scope, deliveryKey: input.deliveryKey })
+      .select(projection)
+      .lean<Pick<IAgentTriggerDelivery, 'envelope' | 'backgroundToolResult'>>();
+    if (requested?.backgroundToolResult == null) {
+      return { status: 'not_ready' };
+    }
+    const existingClaim = requested.backgroundToolResult.resultClaim;
+    if (existingClaim != null && existingClaim.claimId !== input.claimId) {
+      return { status: 'claimed', claimId: existingClaim.claimId };
+    }
+    if (existingClaim == null) {
+      const claimed = await Delivery().updateOne(
+        {
+          ...scope,
+          deliveryKey: input.deliveryKey,
+          backgroundToolResult: { $exists: true },
+          'backgroundToolResult.resultClaim': { $exists: false },
+        },
+        {
+          $set: {
+            'backgroundToolResult.resultClaim': {
+              kind: 'wakeup',
+              claimId: input.claimId,
+              claimedAt: new Date(),
+            },
+          },
+        },
+        { timestamps: false },
+      );
+      if (claimed.modifiedCount !== 1) {
+        requested = await Delivery()
+          .findOne({ ...scope, deliveryKey: input.deliveryKey })
+          .select(projection)
+          .lean<Pick<IAgentTriggerDelivery, 'envelope' | 'backgroundToolResult'>>();
+        const winner = requested?.backgroundToolResult?.resultClaim;
+        if (winner?.claimId !== input.claimId) {
+          return winner == null
+            ? { status: 'not_ready' }
+            : { status: 'claimed', claimId: winner.claimId };
+        }
+      }
+    }
+    const result = requested == null ? null : projectBackgroundResult(requested);
+    return result == null ? { status: 'not_ready' } : { status: 'acquired', results: [result] };
+  }
+
+  async function releaseAgentBackgroundToolResultClaims(input: {
+    sourceId: string;
+    userId: string;
+    conversationId: string;
+    parentMessageId: string;
+    claimId: string;
+  }): Promise<boolean> {
+    if (
+      input.sourceId.length === 0 ||
+      input.sourceId.length > 256 ||
+      input.userId.length === 0 ||
+      input.conversationId.length === 0 ||
+      input.conversationId.length > 256 ||
+      input.parentMessageId.length === 0 ||
+      input.parentMessageId.length > 256 ||
+      input.claimId.length === 0 ||
+      input.claimId.length > 128
+    ) {
+      throw new TypeError('Invalid background tool result receipt claim release');
+    }
+    const scope = backgroundResultIdentity(input);
+    await Delivery().updateMany(
+      { ...scope, 'backgroundToolResult.resultClaim.claimId': input.claimId },
+      { $unset: { 'backgroundToolResult.resultClaim': 1 } },
+      { timestamps: false },
+    );
+    return (
+      (await Delivery().exists({
+        ...scope,
+        'backgroundToolResult.resultClaim.claimId': input.claimId,
+      })) == null
+    );
   }
 
   async function settleAgentTriggerHandlingOutcome(
@@ -3077,9 +3445,25 @@ export function createAgentTriggerDeliveryMethods(
       availableAt: Date;
     },
   ): Promise<boolean> {
+    return retryDelivery(input);
+  }
+
+  async function retryDelivery(
+    input: Parameters<AgentTriggerDeliveryMethods['retryAgentTriggerDelivery']>[0],
+    recoverReceipt = false,
+  ): Promise<boolean> {
     const error = normalizeFailure(input.error);
+    const receiptFence = recoverReceipt
+      ? {
+          requiredWorkerCapability:
+            AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
+          backgroundToolResult: { $exists: true },
+        }
+      : {};
+    const recoveredAttempt = recoverReceipt ? { attempts: 0 } : {};
     const retryUpdate = (status: 'pending' | 'capability_pending') => ({
       $set: {
+        ...recoveredAttempt,
         status,
         availableAt: input.availableAt,
         claimAvailableAt: input.availableAt,
@@ -3108,9 +3492,10 @@ export function createAgentTriggerDeliveryMethods(
       },
     });
     const shieldResult = await Delivery().updateOne(
-      { _id: input.id, ...shieldCapabilityFence(input) },
+      { _id: input.id, ...shieldCapabilityFence(input), ...receiptFence },
       {
         $set: {
+          ...recoveredAttempt,
           status: 'leased',
           availableAt: input.availableAt,
           capabilityStatus: 'pending',
@@ -3134,14 +3519,14 @@ export function createAgentTriggerDeliveryMethods(
       return true;
     }
     const capabilityResult = await Delivery().updateOne(
-      { _id: input.id, ...legacyCapabilityFence(input) },
+      { _id: input.id, ...legacyCapabilityFence(input), ...receiptFence },
       retryUpdate('capability_pending'),
     );
     if (capabilityResult.modifiedCount === 1) {
       return true;
     }
     const result = await Delivery().updateOne(
-      { _id: input.id, ...ordinaryFence(input) },
+      { _id: input.id, ...ordinaryFence(input), ...receiptFence },
       retryUpdate('pending'),
     );
     return result.modifiedCount === 1;
@@ -3152,9 +3537,24 @@ export function createAgentTriggerDeliveryMethods(
       attempt: number;
       error: AgentTriggerDeliveryFailure;
       settledAt: Date;
+      receiptRetryAt?: Date;
     },
+    recovery?: { required: boolean },
   ): Promise<boolean> {
     const error = normalizeFailure(input.error);
+    if (
+      error.retryable &&
+      input.receiptRetryAt != null &&
+      (await retryDelivery({ ...input, availableAt: input.receiptRetryAt }, true))
+    ) {
+      return false;
+    }
+    /** Publication must contend with every retryable terminal transition,
+     * including a receipt committed between recovery and the dead-letter CAS. */
+    const receiptFence =
+      error.retryable || error.code === 'BACKGROUND_TOOL_PRODUCER_LOST'
+        ? { backgroundToolResult: { $exists: false } }
+        : {};
     const deadUpdate = (status: 'dead' | 'capability_dead') => ({
       $set: { status, settledAt: input.settledAt, lastError: error },
       $unset: { leaseBy: 1, leaseUntil: 1, claimToken: 1, expiresAt: 1 },
@@ -3174,7 +3574,7 @@ export function createAgentTriggerDeliveryMethods(
       },
     });
     const shieldDead = await Delivery().updateOne(
-      { _id: input.id, ...shieldCapabilityFence(input) },
+      { _id: input.id, ...shieldCapabilityFence(input), ...receiptFence },
       {
         $set: {
           // The pre-capability runtime already treats `capability_dead` as a
@@ -3201,16 +3601,20 @@ export function createAgentTriggerDeliveryMethods(
       return true;
     }
     const capabilityDead = await Delivery().updateOne(
-      { _id: input.id, ...legacyCapabilityFence(input) },
+      { _id: input.id, ...legacyCapabilityFence(input), ...receiptFence },
       deadUpdate('capability_dead'),
     );
     if (capabilityDead.modifiedCount === 1) {
       return true;
     }
     const dead = await Delivery()
-      .findOneAndUpdate({ _id: input.id, ...ordinaryFence(input) }, deadUpdate('dead'), {
-        new: true,
-      })
+      .findOneAndUpdate(
+        { _id: input.id, ...ordinaryFence(input), ...receiptFence },
+        deadUpdate('dead'),
+        {
+          new: true,
+        },
+      )
       .select('_id orderingKey batchMemberIds batchMembersSettledAt requeueCount')
       .lean<
         Pick<
@@ -3230,6 +3634,7 @@ export function createAgentTriggerDeliveryMethods(
         error,
       });
     } catch (settlementError) {
+      if (recovery != null) recovery.required = true;
       logger.warn('[agent-triggers] failed to settle batch dead-letter receipts', {
         deliveryId: String(dead._id),
         error: settlementError instanceof Error ? settlementError.message : String(settlementError),
@@ -3508,15 +3913,43 @@ export function createAgentTriggerDeliveryMethods(
   /** Recovers cleanup markers whose users are gone; active-user markers are never destructive. */
   async function recoverAgentTriggerUserPurges(
     limit = DEFAULT_PURGE_RECOVERY_LIMIT,
+    activity?: { found: boolean },
   ): Promise<number> {
     if (!Number.isSafeInteger(limit) || limit <= 0) {
       throw new TypeError('Agent trigger purge recovery limit must be a positive integer');
+    }
+    const pending = await Delivery()
+      .find({
+        backgroundToolResultDeletionPendingAt: { $exists: true },
+      })
+      .select('user envelope')
+      .sort({ backgroundToolResultDeletionPendingAt: 1, _id: 1 })
+      .limit(Math.min(limit, MAX_PURGE_RECOVERY_LIMIT))
+      .lean<IAgentTriggerDelivery[]>();
+    if (activity != null && pending.length > 0) activity.found = true;
+    for (const row of pending) {
+      const conversationId = (row.envelope as { target?: { conversationId?: string } }).target
+        ?.conversationId;
+      if (conversationId == null) {
+        continue;
+      }
+      const exists = await mongoose.models.Conversation.exists({ user: row.user, conversationId });
+      if (exists == null) {
+        await eraseAgentTriggerDeliveryConversationResults(row.user, [conversationId]);
+      } else {
+        await Delivery().updateOne(
+          { _id: row._id, backgroundToolResultDeletionPendingAt: { $exists: true } },
+          { $currentDate: { backgroundToolResultDeletionPendingAt: true } },
+          { timestamps: false },
+        );
+      }
     }
     const markers = await UserPurge()
       .find({})
       .sort({ updatedAt: 1, _id: 1 })
       .limit(Math.min(limit, MAX_PURGE_RECOVERY_LIMIT))
       .lean<IAgentTriggerUserPurge[]>();
+    if (activity != null && markers.length > 0) activity.found = true;
     let recovered = 0;
     for (const marker of markers) {
       const user = await mongoose.models.User.findById(marker._id)
@@ -3565,6 +3998,44 @@ export function createAgentTriggerDeliveryMethods(
     await UserPurge().deleteOne({ _id: user });
   }
 
+  async function eraseAgentTriggerDeliveryConversationResults(
+    user: string | Types.ObjectId,
+    conversationIds: string[],
+  ): Promise<void> {
+    if (conversationIds.length === 0 || !mongoose.isObjectIdOrHexString(user)) {
+      return;
+    }
+    const erasedAt = new Date();
+    await Delivery().updateMany(
+      {
+        user,
+        'envelope.target.conversationId': { $in: conversationIds },
+      },
+      {
+        $set: { backgroundToolResultErasedAt: erasedAt },
+        $unset: { backgroundToolResult: 1, backgroundToolResultDeletionPendingAt: 1 },
+      },
+      { timestamps: false },
+    );
+  }
+
+  async function prepareAgentTriggerConversationResultErasure(
+    user: string | Types.ObjectId,
+    conversationIds: string[],
+  ): Promise<void> {
+    if (conversationIds.length === 0 || !mongoose.isObjectIdOrHexString(user)) return;
+    await Delivery().updateMany(
+      {
+        user,
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
+        'envelope.target.conversationId': { $in: conversationIds },
+        backgroundToolResultErasedAt: { $exists: false },
+      },
+      { $set: { backgroundToolResultDeletionPendingAt: new Date() } },
+      { timestamps: false },
+    );
+  }
+
   return {
     ensureAgentTriggerDeliveryIndexes,
     enqueueAgentTriggerDelivery,
@@ -3578,6 +4049,11 @@ export function createAgentTriggerDeliveryMethods(
     retireAgentTriggerDelivery,
     renewAgentTriggerDeliveryProducerLease,
     getAgentTriggerDeliveryProducerLease,
+    persistAgentBackgroundToolResult,
+    getAgentBackgroundToolResult,
+    getAgentBackgroundToolResultClaim,
+    claimAgentBackgroundToolResults,
+    releaseAgentBackgroundToolResultClaims,
     settleAgentTriggerHandlingOutcome,
     admitAgentEventActorAction,
     releaseAgentEventActorAction,
@@ -3606,5 +4082,7 @@ export function createAgentTriggerDeliveryMethods(
     cancelAgentTriggerUserPurge,
     recoverAgentTriggerUserPurges,
     deleteAgentTriggerDeliveriesByUser,
+    eraseAgentTriggerDeliveryConversationResults,
+    prepareAgentTriggerConversationResultErasure,
   };
 }

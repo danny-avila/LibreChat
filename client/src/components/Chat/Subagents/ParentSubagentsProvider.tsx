@@ -21,13 +21,15 @@ const ParentSubagentsContext = createContext<ParentSubagentsContextValue>(defaul
 export function ParentSubagentsProvider({
   conversationId,
   enabled,
+  isSubmitting = false,
   children,
 }: {
   conversationId: string;
   enabled: boolean;
+  isSubmitting?: boolean;
   children: React.ReactNode;
 }) {
-  const { data, refetch } = useParentSubagentsQuery(conversationId, { enabled });
+  const { data, refetch } = useParentSubagentsQuery(conversationId, { enabled }, isSubmitting);
   const refresh = useCallback(async () => {
     const result = await refetch();
     return result.data;

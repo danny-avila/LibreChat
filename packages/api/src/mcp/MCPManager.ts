@@ -4,7 +4,12 @@ import { Permissions, PermissionTypes } from 'librechat-data-provider';
 import { CallToolResultSchema, ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import type { RequestOptions } from '@modelcontextprotocol/sdk/shared/protocol.js';
 import type { TokenMethods, IUser } from '@librechat/data-schemas';
-import type { OboTokenResolver, OboTrustChecker, UpstreamTokenProvider } from '~/mcp/oauth/obo';
+import type {
+  OboTokenResolver,
+  OboTrustChecker,
+  UpstreamTokenProvider,
+  UpstreamTokenProviderResolver,
+} from '~/mcp/oauth/obo';
 import type { AuthIdentityContext } from '~/utils/identity';
 import type { GraphTokenResolver } from '~/utils/graph';
 import type { FlowStateManager } from '~/flow/manager';
@@ -13,18 +18,20 @@ import type { RequestBody } from '~/types';
 import type * as t from './types';
 import {
   getMissingRuntimeBodyPlaceholderFields,
+  toCatalogConnectionConfig,
+  applyRequestHeaders,
   createDeadlineAbortSignal,
   canUseAppConnection,
   isOAuthServer,
   isUserSourced,
   requiresEphemeralUserConnection,
   requiresOAuthMachinery,
-  requiresUserScopedConnection,
   resolveServerInstructions,
 } from './utils';
 import { getMCPAppToolsPublicationGeneration, getMCPToolsChangedGeneration } from './toolsChanged';
 import { MCPAuthenticationRejectedError, isMCPTransportAuthenticationError } from './errors';
 import { resolveDirectOpenIDBearerConfig, usesDirectOpenIDBearerRecovery } from './openid';
+import { createLazyOboUpstreamTokenProvider, awaitOboOperation } from '~/mcp/oauth/obo';
 import { MCPServersInitializer } from './registry/MCPServersInitializer';
 import { OboTokenResolutionError, resolveOboToken } from '~/mcp/oauth';
 import { MCPServerCatalogRecoveryTracker } from './catalog/recovery';
@@ -36,7 +43,8 @@ import { MCPConnectionFactory } from './MCPConnectionFactory';
 import { processMCPEnv, isPluginSourced } from '~/utils/env';
 import { OAuthLifecycleRelay } from './oauth/pending';
 import { preProcessGraphTokens } from '~/utils/graph';
-import { isAbortError } from '~/utils/errors';
+import { isOwnedAbortError } from '~/utils/errors';
+import { withMCPRequestSignal } from './signal';
 import { formatToolContent } from './parsers';
 import { MCPConnection } from './connection';
 import { mcpConfig } from './mcpConfig';
@@ -357,7 +365,7 @@ export class MCPManager extends UserConnectionManager {
         ? await MCPServersRegistry.getInstance().getServerConfig(args.serverName, userId)
         : undefined);
 
-    if (effectiveConfig && userId && requiresUserScopedConnection(effectiveConfig)) {
+    if (effectiveConfig && userId && !canUseAppConnection(effectiveConfig)) {
       return this.getUserConnection({
         ...args,
         serverConfig: effectiveConfig,
@@ -438,8 +446,12 @@ export class MCPManager extends UserConnectionManager {
       return { tools: null, oauthRequired: false, oauthUrl: null };
     }
 
+    /** Discovery sends no `requestHeaders`, so only the body values the catalog
+     *  connection itself needs can block it. A server whose body placeholders
+     *  live solely in `requestHeaders` still lists its tools. */
+    const catalogConfig = toCatalogConnectionConfig(serverConfig);
     const missingBodyFields = getMissingRuntimeBodyPlaceholderFields(
-      serverConfig,
+      catalogConfig,
       args.requestBody,
     );
     if (missingBodyFields.length > 0) {
@@ -452,7 +464,7 @@ export class MCPManager extends UserConnectionManager {
     const { allowedDomains, allowedAddresses, useSSRFProtection } =
       await registry.resolveAllowlists({ userId: user?.id, role: user?.role });
     await this.assertResolvedRuntimeConfigAllowed({
-      config: serverConfig,
+      config: catalogConfig,
       user,
       customUserVars: args.customUserVars,
       requestBody: args.requestBody,
@@ -467,7 +479,8 @@ export class MCPManager extends UserConnectionManager {
     const basic: t.BasicConnectionOptions = {
       dbSourced,
       serverName,
-      serverConfig,
+      serverConfig: catalogConfig,
+      serverDefinition: serverConfig,
       useSSRFProtection,
       allowedDomains,
       allowedAddresses,
@@ -500,6 +513,7 @@ export class MCPManager extends UserConnectionManager {
         requestBody: args.requestBody,
         graphTokenResolver: args.graphTokenResolver,
         upstreamTokenProvider: args.upstreamTokenProvider,
+        upstreamTokenProviderResolver: args.upstreamTokenProviderResolver,
         connectionTimeout: args.connectionTimeout,
         deadlineMs: args.deadlineMs,
         signal: args.signal,
@@ -530,11 +544,15 @@ export class MCPManager extends UserConnectionManager {
       connectionTimeout: args.connectionTimeout,
       deadlineMs: args.deadlineMs,
       onOAuthCredentialsChanged: args.onOAuthCredentialsChanged,
+      onOAuthCredentialsAdopted: args.onOAuthCredentialsAdopted,
       onOAuthCredentialsChanging: args.onOAuthCredentialsChanging,
+      onOAuthCredentialsInvalidated: () =>
+        getMCPToolsChangedGeneration({ userId: user.id, serverName }),
       onDiscoveryDetached: args.onDiscoveryDetached,
       oboTokenResolver: args.oboTokenResolver,
       oboTrustChecker: args.oboTrustChecker,
       upstreamTokenProvider: args.upstreamTokenProvider,
+      upstreamTokenProviderResolver: args.upstreamTokenProviderResolver,
       oboIdentityContext: args.oboIdentityContext,
     });
 
@@ -753,6 +771,7 @@ Please follow these instructions when using tools from the respective MCP server
     flowManager: FlowStateManager<MCPOAuthTokens | null>,
     signal?: AbortSignal,
     allowsTakeover = true,
+    rejectedCredentialSetId?: string | null,
   ): Promise<void> {
     const existingRecovery = this.oauthRecoveries.get(connection);
     if (existingRecovery) {
@@ -793,6 +812,7 @@ Please follow these instructions when using tools from the respective MCP server
           connection.emit('oauthReauthenticationRequired', {
             serverName,
             error,
+            rejectedCredentialSetId,
             serverUrl: connection.url,
             userId,
           }),
@@ -841,6 +861,7 @@ Please follow these instructions when using tools from the respective MCP server
     requestScopedConnections,
     graphTokenResolver,
     upstreamTokenProvider,
+    upstreamTokenProviderResolver,
     oboIdentityContext,
     onOAuthCredentialsChanged,
     onOAuthCredentialsChanging,
@@ -860,6 +881,7 @@ Please follow these instructions when using tools from the respective MCP server
     requestScopedConnections?: t.RequestScopedMCPConnectionStore;
     graphTokenResolver?: GraphTokenResolver;
     upstreamTokenProvider?: UpstreamTokenProvider;
+    upstreamTokenProviderResolver?: UpstreamTokenProviderResolver;
     oboIdentityContext?: AuthIdentityContext;
     onOAuthCredentialsChanged?: t.UserConnectionContext['onOAuthCredentialsChanged'];
     onOAuthCredentialsChanging?: t.UserConnectionContext['onOAuthCredentialsChanging'];
@@ -883,7 +905,7 @@ Please follow these instructions when using tools from the respective MCP server
       try {
         recoverySignal.throwIfAborted();
         const refreshedConfig = await resolveDirectOpenIDBearerConfig({
-          config: serverConfig,
+          config: applyRequestHeaders(serverConfig),
           upstreamTokenProvider,
           forceRefresh: true,
           signal: recoverySignal,
@@ -919,6 +941,7 @@ Please follow these instructions when using tools from the respective MCP server
           requestScopedConnections,
           graphTokenResolver,
           upstreamTokenProvider,
+          upstreamTokenProviderResolver,
           oboIdentityContext,
           onOAuthCredentialsChanged,
           onOAuthCredentialsChanging,
@@ -1093,6 +1116,7 @@ Please follow these instructions when using tools from the respective MCP server
     oboTokenResolver,
     oboTrustChecker,
     upstreamTokenProvider,
+    upstreamTokenProviderResolver,
     oboIdentityContext,
     onOAuthCredentialsChanged,
     onOAuthCredentialsChanging,
@@ -1116,6 +1140,7 @@ Please follow these instructions when using tools from the respective MCP server
     oboTokenResolver?: OboTokenResolver;
     oboTrustChecker?: OboTrustChecker;
     upstreamTokenProvider?: UpstreamTokenProvider;
+    upstreamTokenProviderResolver?: UpstreamTokenProviderResolver;
     oboIdentityContext?: AuthIdentityContext;
     onOAuthCredentialsChanged?: t.UserConnectionContext['onOAuthCredentialsChanged'];
     onOAuthCredentialsChanging?: t.UserConnectionContext['onOAuthCredentialsChanging'];
@@ -1180,6 +1205,7 @@ Please follow these instructions when using tools from the respective MCP server
             oboTokenResolver,
             oboTrustChecker,
             upstreamTokenProvider,
+            upstreamTokenProviderResolver,
             oboIdentityContext,
             onOAuthCredentialsChanged,
             onOAuthCredentialsChanging,
@@ -1232,8 +1258,13 @@ Please follow these instructions when using tools from the respective MCP server
         }
 
         const registry = MCPServersRegistry.getInstance();
-        const rawConfig = providedConfig ?? (await registry.getServerConfig(serverName, userId));
-        if (!rawConfig) {
+        const declaredConfig =
+          providedConfig ?? (await registry.getServerConfig(serverName, userId));
+        /** Folded in before scope detection, Graph preprocessing and
+         *  direct-bearer resolution, so this pipeline sees the same single
+         *  header map the factory does. */
+        const rawConfig = declaredConfig && applyRequestHeaders(declaredConfig);
+        if (!rawConfig || !declaredConfig) {
           throw new McpError(
             ErrorCode.InvalidRequest,
             `${logPrefix} Configuration for server "${serverName}" not found.`,
@@ -1272,6 +1303,7 @@ Please follow these instructions when using tools from the respective MCP server
 
         const oboConfig = rawConfig.obo;
         const usesObo = Boolean(oboConfig && oboTokenResolver && user);
+        let oboUpstreamTokenProvider = upstreamTokenProvider;
 
         /**
          * Resolves the downstream token for this call and installs it as the request
@@ -1283,7 +1315,14 @@ Please follow these instructions when using tools from the respective MCP server
           if (!oboConfig || !oboTokenResolver || !user) {
             return;
           }
-          if (!upstreamTokenProvider) {
+          if (!oboUpstreamTokenProvider && upstreamTokenProviderResolver) {
+            oboUpstreamTokenProvider = createLazyOboUpstreamTokenProvider(
+              upstreamTokenProviderResolver,
+              options?.signal,
+              { mcpServer: serverName, scopes: oboConfig.scopes },
+            );
+          }
+          if (!oboUpstreamTokenProvider) {
             throw new McpError(
               ErrorCode.InternalError,
               `${logPrefix} Internal: upstreamTokenProvider not plumbed for OBO tool call. ` +
@@ -1309,13 +1348,16 @@ Please follow these instructions when using tools from the respective MCP server
           }
           let oboTokens: MCPOAuthTokens;
           try {
-            oboTokens = await resolveOboToken(
-              user,
-              oboConfig,
-              oboTokenResolver,
-              upstreamTokenProvider,
-              oboIdentityContext,
-              forceRefresh,
+            oboTokens = await awaitOboOperation(
+              resolveOboToken(
+                user,
+                oboConfig,
+                oboTokenResolver,
+                oboUpstreamTokenProvider,
+                oboIdentityContext,
+                forceRefresh,
+              ),
+              options?.signal,
             );
           } catch (error) {
             if (error instanceof OboTokenResolutionError) {
@@ -1360,6 +1402,7 @@ Please follow these instructions when using tools from the respective MCP server
               {
                 serverName,
                 serverConfig: currentOptions,
+                serverDefinition: declaredConfig,
                 dbSourced: isDbSourced,
                 skipEnvProcessing: true,
                 useSSRFProtection,
@@ -1377,6 +1420,8 @@ Please follow these instructions when using tools from the respective MCP server
                 requestBody,
                 onOAuthCredentialsChanged,
                 onOAuthCredentialsChanging,
+                onOAuthCredentialsInvalidated: () =>
+                  getMCPToolsChangedGeneration({ userId, serverName }),
               },
               connection!,
             );
@@ -1384,7 +1429,9 @@ Please follow these instructions when using tools from the respective MCP server
 
         connection.setRequestHeaders(resolvedHeaders);
 
+        const checkedCredentialSetId = connection.getOAuthCredentialSetId?.();
         const connectionIsActive = await connection.isConnected(options?.signal);
+        const recordedCredentialSetId = connection.getLastConnectionCheckCredentialSetId?.();
         const connectionCheckError = connectionIsActive
           ? undefined
           : connection.getLastConnectionCheckError();
@@ -1414,7 +1461,7 @@ Please follow these instructions when using tools from the respective MCP server
           const recovery = this.recoverDirectOpenIDBearerConnection({
             connection,
             serverName,
-            serverConfig: rawConfig,
+            serverConfig: declaredConfig,
             user,
             flowManager,
             tokenMethods,
@@ -1425,6 +1472,7 @@ Please follow these instructions when using tools from the respective MCP server
             requestScopedConnections,
             graphTokenResolver,
             upstreamTokenProvider,
+            upstreamTokenProviderResolver,
             oboIdentityContext,
             onOAuthCredentialsChanged,
             onOAuthCredentialsChanging,
@@ -1458,6 +1506,9 @@ Please follow these instructions when using tools from the respective MCP server
                 flowManager,
                 options?.signal,
                 !recoveryTakeoverConsumed,
+                recordedCredentialSetId !== undefined
+                  ? recordedCredentialSetId
+                  : checkedCredentialSetId,
               ),
             );
           } catch (recoveryError) {
@@ -1476,22 +1527,26 @@ Please follow these instructions when using tools from the respective MCP server
         }
 
         const requestTool = () =>
-          connection!.client.request(
-            {
-              method: 'tools/call',
-              params: {
-                name: toolName,
-                arguments: toolArguments,
+          withMCPRequestSignal(options?.signal, (signal) =>
+            connection!.client.request(
+              {
+                method: 'tools/call',
+                params: {
+                  name: toolName,
+                  arguments: toolArguments,
+                },
               },
-            },
-            CallToolResultSchema,
-            {
-              timeout: connection!.timeout,
-              resetTimeoutOnProgress: true,
-              ...options,
-            },
+              CallToolResultSchema,
+              {
+                timeout: connection!.timeout,
+                resetTimeoutOnProgress: true,
+                ...options,
+                signal,
+              },
+            ),
           );
 
+        const requestedCredentialSetId = connection.getOAuthCredentialSetId?.();
         let result: Awaited<ReturnType<typeof requestTool>>;
         try {
           result = await requestTool();
@@ -1504,7 +1559,7 @@ Please follow these instructions when using tools from the respective MCP server
             const recovery = this.recoverDirectOpenIDBearerConnection({
               connection,
               serverName,
-              serverConfig: rawConfig,
+              serverConfig: declaredConfig,
               user,
               flowManager,
               tokenMethods,
@@ -1515,6 +1570,7 @@ Please follow these instructions when using tools from the respective MCP server
               requestScopedConnections,
               graphTokenResolver,
               upstreamTokenProvider,
+              upstreamTokenProviderResolver,
               oboIdentityContext,
               onOAuthCredentialsChanged,
               onOAuthCredentialsChanging,
@@ -1563,6 +1619,7 @@ Please follow these instructions when using tools from the respective MCP server
                   flowManager,
                   options?.signal,
                   !recoveryTakeoverConsumed,
+                  requestedCredentialSetId,
                 ),
               );
             } catch (recoveryError) {
@@ -1594,7 +1651,7 @@ Please follow these instructions when using tools from the respective MCP server
          *  cancellation working, not a fault, so it stays out of the error log.
          *  The error must look like an abort too — a real failure can reject in
          *  the same tick as the Stop and has to stay visible. */
-        if (options?.signal?.aborted === true && isAbortError(error)) {
+        if (isOwnedAbortError(error, options?.signal)) {
           logger.debug(`${logPrefix}[${toolName}] Tool call cancelled by user abort`);
           throw error;
         }

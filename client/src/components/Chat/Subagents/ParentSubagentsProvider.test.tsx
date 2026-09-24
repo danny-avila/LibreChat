@@ -58,9 +58,11 @@ describe('ParentSubagentsProvider', () => {
       </ParentSubagentsProvider>,
     );
 
-    expect(mockUseParentSubagentsQuery).toHaveBeenCalledWith('parent-conversation', {
-      enabled: true,
-    });
+    expect(mockUseParentSubagentsQuery).toHaveBeenCalledWith(
+      'parent-conversation',
+      { enabled: true },
+      false,
+    );
     expect(context?.byMessageId.get('parent-message')).toEqual([eventChild]);
     expect(context?.byThreadId.get('tool-thread')).toEqual(toolChild);
     let result: ParentSubagentIndex | undefined;
@@ -69,5 +71,19 @@ describe('ParentSubagentsProvider', () => {
     });
     expect(refetch).toHaveBeenCalledTimes(1);
     expect(result).toEqual(refreshed);
+  });
+
+  it('marks an active parent run for prompt discovery', () => {
+    mockUseParentSubagentsQuery.mockReturnValue({ data: undefined, refetch: jest.fn() });
+    render(
+      <ParentSubagentsProvider conversationId="parent-conversation" enabled isSubmitting>
+        <div />
+      </ParentSubagentsProvider>,
+    );
+    expect(mockUseParentSubagentsQuery).toHaveBeenCalledWith(
+      'parent-conversation',
+      { enabled: true },
+      true,
+    );
   });
 });

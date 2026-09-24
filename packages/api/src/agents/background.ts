@@ -1787,7 +1787,7 @@ export function buildBackgroundHandleContent(
     background_task_id: task.id,
     tool: task.toolName,
     status: task.status,
-    message,
+    message: `${message} The tool field identifies the originating tool, not the polling tool. Status request: ${JSON.stringify({ name: CHECK_BACKGROUND_TASK_NAME, arguments: { background_task_id: task.id } })}`,
   });
 }
 
@@ -1831,11 +1831,43 @@ interface SerializedBackgroundTask {
   /** Coarse 0..1: no intermediate progress exists, only running vs settled. */
   progress: number;
   cancellation_requested?: boolean;
+  /** ISO-8601 dispatch time, the app's serialization for every timestamp. */
+  started_at?: string;
+  /** ISO-8601 terminal time. Absent while the task is still running. */
+  settled_at?: string;
+  /** Dispatch to settlement, or dispatch to this poll while still running. */
+  elapsed_ms?: number;
   result?: string;
   result_available?: boolean;
   result_chars?: number;
   note?: string;
   error?: string;
+}
+
+/**
+ * Model-facing task timings. The registry keeps epoch milliseconds; everything the
+ * app serializes carries ISO-8601 (`toISOString`), so the poll payload does too.
+ * `elapsed_ms` is served alongside them because a polling model has no clock of its
+ * own: without it, "running" carries no age and a caller cannot tell a task that
+ * started seconds ago from one stuck for an hour.
+ *
+ * `createdAt` is the strictly-increasing dispatch stamp, so a same-millisecond
+ * dispatch can read a few milliseconds after its real start and, for an instantly
+ * settled task, after `updatedAt`; clamping keeps `settled_at` from preceding
+ * `started_at` and `elapsed_ms` from going negative.
+ */
+function taskTimings(task: {
+  status: string;
+  createdAt: number;
+  updatedAt: number;
+}): Pick<SerializedBackgroundTask, 'started_at' | 'settled_at' | 'elapsed_ms'> {
+  const settled = task.status !== 'running';
+  const settledAt = Math.max(task.updatedAt, task.createdAt);
+  return {
+    started_at: new Date(task.createdAt).toISOString(),
+    ...(settled ? { settled_at: new Date(settledAt).toISOString() } : {}),
+    elapsed_ms: Math.max(0, (settled ? settledAt : Date.now()) - task.createdAt),
+  };
 }
 
 function resultFields(
@@ -1880,18 +1912,25 @@ function serializeTask(
     ...(task.status === 'running' && task.cancellationRequestedAt != null
       ? { cancellation_requested: true }
       : {}),
+    ...taskTimings(task),
     ...resultFields(task, includeResult),
     ...taskNote(task),
     ...(task.error !== undefined ? { error: task.error } : {}),
   };
 }
 
+/**
+ * A durable receipt is what a poll sees once process-local state is gone (another
+ * replica, or after a restart). It records when the task settled but not when it was
+ * dispatched, so it carries `settled_at` alone: no start, hence no elapsed span.
+ */
 function serializeDurableTask(task: BackgroundToolResultRecord): SerializedBackgroundTask {
   return {
     background_task_id: task.taskId,
     tool: task.toolName,
     status: task.status,
     progress: 1,
+    ...(task.settledAt == null ? {} : { settled_at: task.settledAt.toISOString() }),
     ...(task.status === 'completed' ? { result: task.output } : { error: task.output }),
   };
 }
@@ -1904,6 +1943,9 @@ interface SerializedSubagentTask {
   status: string;
   progress: number;
   progress_detail?: SubagentTaskSnapshot['progress'];
+  started_at?: string;
+  settled_at?: string;
+  elapsed_ms?: number;
   result?: string;
   result_available?: boolean;
   result_claimed?: boolean;
@@ -1930,6 +1972,8 @@ function serializeSubagentSnapshot(
     status: options.status ?? task.status,
     progress: task.status === 'running' ? 0 : 1,
     ...(task.progress == null ? {} : { progress_detail: task.progress }),
+    /** Timings follow the task's own lifecycle, never a control receipt's status. */
+    ...taskTimings(task),
     ...(options.includeResult == null ? {} : { result: options.includeResult }),
     ...(task.resultAvailable ? { result_available: true } : {}),
     ...(task.resultClaimed ? { result_claimed: true } : {}),
@@ -2210,8 +2254,11 @@ export async function runCheckBackgroundTask(params: {
           if (durableClaim.status === 'not_found' || durableClaim.status === 'not_ready') {
             const localReplay =
               task.resultClaim?.kind === 'manual' && task.resultClaim.claimId === invocationId;
-            let localClaimNeedsNoDurableConfirmation =
-              localReplay && task.liveArtifactPollRequired === true;
+            const pollOwnsOriginatingGeneration =
+              params.generationId != null && params.generationId === task.messageId;
+            const localClaimAllowed =
+              pollOwnsOriginatingGeneration || task.liveArtifactPollRequired === true;
+            let localClaimNeedsNoDurableConfirmation = localReplay && localClaimAllowed;
             if (!localReplay) {
               /** Retire the still-unclaimed delivery before creating local
                * ownership. A live resolver lease wins. Once that resolver is
@@ -2259,7 +2306,7 @@ export async function runCheckBackgroundTask(params: {
                     'The task is finished and completion ownership is being settled. Retry this poll shortly.',
                 });
               }
-              if (task.liveArtifactPollRequired === true) {
+              if (localClaimAllowed) {
                 const localClaim = backgroundTaskRegistry.claimResult(
                   userId,
                   conversationId,
@@ -2285,21 +2332,21 @@ export async function runCheckBackgroundTask(params: {
                       'The task is finished and its result is being made durable. Retry this poll shortly.',
                   });
                 }
-                /** The poll is executing inside the still-unfinished dispatch
-                 * generation, so waiting for the durable row would require
-                 * that generation to end before it can obey its mandatory
-                 * live-artifact poll. The retired unclaimed wakeup plus this
-                 * local manual claim is authoritative for this owner process;
-                 * the persistence retry re-reads and copies the claim after
-                 * the generation finalizes. */
+                /** The poll is executing inside the unfinished dispatch
+                 * generation, or it must deliver a live artifact. Waiting for
+                 * the durable row would require that generation to end first.
+                 * The retired unclaimed wakeup plus this local manual claim is
+                 * authoritative for this owner process; the persistence retry
+                 * re-reads and copies the claim after finalization. */
                 localClaimNeedsNoDurableConfirmation = true;
               }
             }
             /** Ordinary polls claim the durable terminal receipt directly.
              * They never reserve a process-local claim while the receipt is
              * absent: a later poll has a different provider tool-call id and
-             * could never take over that abandoned reservation. The live-
-             * artifact exception above cannot wait for its own generation. */
+             * could never take over that abandoned reservation. A poll owned
+             * by the originating generation cannot wait for that same
+             * generation to finalize its durable response row. */
             if (!localClaimNeedsNoDurableConfirmation) {
               const reconciledClaim = await params.claimBackgroundToolResult({
                 ...durableClaimInput,

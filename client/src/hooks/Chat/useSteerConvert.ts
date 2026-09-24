@@ -1,12 +1,18 @@
-import { useCallback } from 'react';
+import { useCallback, useRef } from 'react';
 import { v4 } from 'uuid';
 import { useRecoilCallback } from 'recoil';
 import type { TPendingSteer } from 'librechat-data-provider';
 import type { QueuedMessage, QueuedMessageOrigin } from '~/store/families';
 import type { GenerationProtocolVersion } from '~/data-provider';
 import type { SteerCarriedContext } from '~/utils';
-import { appendAppliedSteerIds, carriedSteerContext, insertQueuedOrigin } from '~/utils';
+import {
+  appendAppliedSteerIds,
+  carriedSteerContext,
+  insertQueuedOrigin,
+  hydrateFileDeliveryMetadata,
+} from '~/utils';
 import { fetchStreamStatus, getGenerationProtocolVersion } from '~/data-provider';
+import { useFileMapContext } from '~/Providers';
 import store from '~/store';
 
 /** A server-reported steer, or a local one that carries its own client-only
@@ -47,6 +53,9 @@ interface SteerConvertOptions {
  * server-side removal.
  */
 export default function useSteerConvert() {
+  const fileMap = useFileMapContext();
+  const fileMapRef = useRef(fileMap);
+  fileMapRef.current = fileMap;
   const convert = useRecoilCallback(
     ({ snapshot, set }) =>
       (
@@ -129,6 +138,11 @@ export default function useSteerConvert() {
               const local = localChipFor(steer);
               const source = local ?? steer;
               const queuedOrigin = source.queuedOrigin;
+              const files = hydrateFileDeliveryMetadata(
+                queuedOrigin?.item.files ?? steer.files,
+                local?.files,
+                fileMapRef.current,
+              );
               const recoveryFields = bindRecoverySource
                 ? {
                     // One UUID is stable for this queued attempt and all of
@@ -142,13 +156,13 @@ export default function useSteerConvert() {
                 : {};
               const item =
                 queuedOrigin != null
-                  ? { ...queuedOrigin.item, ...recoveryFields }
+                  ? { ...queuedOrigin.item, ...recoveryFields, ...(files && { files }) }
                   : ({
                       id: steer.steerId,
                       text: steer.text,
                       createdAt: steer.createdAt ?? Date.now(),
                       ...recoveryFields,
-                      ...(steer.files && steer.files.length > 0 && { files: steer.files }),
+                      ...(files && files.length > 0 && { files }),
                       // The chip is the usual source, but a reclaimed steer may
                       // have lost its chip to a competing cancel mid-round-trip.
                       ...carriedSteerContext(source),

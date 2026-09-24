@@ -183,6 +183,7 @@ export interface AgentTriggerDeliveryStore {
     attempt: number;
     error: AgentTriggerDeliveryFailure;
     settledAt: Date;
+    receiptRetryAt?: Date;
   }) => Promise<boolean>;
 }
 
@@ -409,6 +410,9 @@ export function createAgentTriggerDeliveryEngine(
         attempt: delivery.attempts,
         error: recorded,
         settledAt: now(),
+        ...(recorded.retryable && {
+          receiptRetryAt: new Date(now().getTime() + retryCapMs),
+        }),
       });
       if (deadLettered) {
         logger.error('[agent-triggers] delivery dead-lettered after exhausting retries', {
@@ -532,6 +536,9 @@ export function createAgentTriggerDeliveryEngine(
             attempt,
             error: recorded,
             settledAt: attemptedAt,
+            ...(recorded.retryable && {
+              receiptRetryAt: new Date(attemptedAt.getTime() + retryCapMs),
+            }),
           });
           if (deadLettered) {
             logger.error('[agent-triggers] delivery dead-lettered', {

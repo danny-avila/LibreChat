@@ -21,13 +21,15 @@ import type {
   CodeEnvironmentUserSettings,
   TAgentsEndpoint,
 } from './config';
-import type { Agent, EToolResources, StatefulCodeEnvironment } from './types/assistants';
+import type { StatefulCodeEnvironment } from './stateful-code';
 import type { CodeApprovalMode } from './code/approval';
+import type { EToolResources } from './types/tools';
 import type { RefillIntervalUnit } from './balance';
 import type { SettingDefinition } from './generate';
 import type { TMinimalFeedback } from './feedback';
 import type { ContentTypes } from './types/runs';
 import type { ProviderId } from './providers';
+import type { Agent } from './types/agents';
 
 export * from './schemas';
 export * from './types/subagents';
@@ -626,7 +628,17 @@ export type TCodeEnvironmentMoveResponse = {
   codeWorkspaces: CodeWorkspaceSelection[];
 };
 
+/** Sanitized results of server request shaping for each saved toggle state. */
+export type ResponsesApiRoute = {
+  default: boolean;
+  on: boolean;
+  off: boolean;
+  withWebSearch?: { default: boolean; on: boolean; off: boolean };
+};
+export type ResponsesApiRouting = Record<string, ResponsesApiRoute>;
+
 export type TConfig = {
+  responsesApiRouting?: ResponsesApiRouting;
   order: number;
   type?: EModelEndpoint;
   azure?: boolean;
