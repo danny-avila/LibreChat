@@ -308,6 +308,24 @@ describe('clickhouse theme definition', () => {
       roundControlRadius: '9999px',
     });
     expect(resolved.appearance.fontFamily).toMatch(/^"Inter", "SF Pro Display"/);
+    expect(resolved.appearance.monoFontFamily).toMatch(
+      /^"Inconsolata", ui-monospace, .*monospace$/,
+    );
+    /** Click UI's `border.radii` 1, 2 and 3. */
+    expect(resolved.appearance).toMatchObject({
+      radiusSm: '0.25rem',
+      radiusMd: '0.25rem',
+      radiusLg: '0.25rem',
+      radiusXl: '0.5rem',
+      radius2xl: '0.5rem',
+      radius3xl: '0.75rem',
+    });
+    /** Click UI's `shadow.1`, deeper in dark mode, raises every surface. */
+    const alpha = mode === 'light' ? '0.15' : '0.6';
+    expect(resolved.appearance.shadowLg).toBe(
+      `0 4px 6px -1px rgb(21 21 21 / ${alpha}), 0 2px 4px -1px rgb(21 21 21 / ${alpha})`,
+    );
+    expect(resolved.appearance.elevationSurface).toBe(resolved.appearance.shadowLg);
   });
 
   it.each(modes)('repaints the %s canvas, text, border and accent roles', (mode) => {
@@ -321,6 +339,28 @@ describe('clickhouse theme definition', () => {
     expect(clickHouse.appearance.controlRadius).not.toBe(defaultAppearance.controlRadius);
     expect(clickHouse.appearance.surfaceRadius).not.toBe(defaultAppearance.surfaceRadius);
     expect(clickHouse.appearance.largeSurfaceRadius).not.toBe(defaultAppearance.largeSurfaceRadius);
+
+    /** The plain utilities' scales move too, not only the `theme-*` roles. `rounded-sm` is the
+     *  one step the two share: Click UI's `radii.1` is already LibreChat's `sm`. */
+    const shapeTokens = [
+      'radiusMd',
+      'radiusLg',
+      'radiusXl',
+      'radius2xl',
+      'radius3xl',
+      'monoFontFamily',
+      'shadowXs',
+      'shadowSm',
+      'shadowMd',
+      'shadowLg',
+      'shadowXl',
+      'shadow2xl',
+      'elevationSurface',
+    ] as const;
+    expect(
+      shapeTokens.filter((token) => clickHouse.appearance[token] === libreChat.appearance[token]),
+    ).toEqual([]);
+    expect(clickHouse.appearance.radiusSm).toBe(libreChat.appearance.radiusSm);
   });
 
   it('keeps the brand yellow as the dark-mode accent and link', () => {
@@ -381,6 +421,8 @@ describe('clickhouse theme at runtime', () => {
     expect(property('--surface-primary')).toBe(clickHouseDarkTheme['rgb-surface-primary']);
     expect(property('--text-primary')).toBe(clickHouseDarkTheme['rgb-text-primary']);
     expect(property('--theme-control-radius')).toBe('0.25rem');
+    expect(property('--theme-radius-lg')).toBe('0.25rem');
+    expect(property('--theme-shadow-lg')).toContain('rgb(21 21 21 / 0.6)');
 
     rerender(renderProvider('dark', libreChatTheme));
 
@@ -391,5 +433,7 @@ describe('clickhouse theme at runtime', () => {
     expect(property('--surface-primary')).toBe(libreChatDark.colors['rgb-surface-primary']);
     expect(property('--text-primary')).toBe(libreChatDark.colors['rgb-text-primary']);
     expect(property('--theme-control-radius')).toBe(defaultAppearance.controlRadius);
+    expect(property('--theme-radius-lg')).toBe(defaultAppearance.radiusLg);
+    expect(property('--theme-shadow-lg')).toBe(defaultAppearance.shadowLg);
   });
 });

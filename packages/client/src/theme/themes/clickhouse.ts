@@ -1,4 +1,4 @@
-import type { ThemeDefinition, IThemeRGB } from '../types';
+import type { IThemeAppearance, ThemeDefinition, IThemeRGB } from '../types';
 
 /**
  * ClickHouse reference theme, built from Click UI's design tokens
@@ -265,22 +265,69 @@ export const clickHouseDarkTheme: IThemeRGB = {
   'rgb-presentation': '31 31 28', // #1f1f1c (background.default)
 };
 
-/** Click UI's radius scale (`border.radii` 1, 2, 3 and full) and its regular
- *  family (`typography.font.families.regular`). */
-const clickHouseAppearance = {
+/**
+ * Click UI's shape, from `border.radii`, `typography.font.families` and `shadow`.
+ *
+ * Nearly every Click UI component (button, field, card, menu, popover, table, toast) is drawn at
+ * `radii.1`, and the dialog at `radii.2`, so the small and medium steps collapse onto `radii.1`,
+ * the dialog-sized steps onto `radii.2`, and the largest onto `radii.3`. `rounded-sm` keeps
+ * `radii.1`, which is already LibreChat's `sm`; every larger step tightens.
+ *
+ * Click UI's mono family is Inconsolata. The app does not bundle it, so the tail is the same
+ * metric-matched stack the default theme uses (Click UI's own tail names `"SFMono Regular"`,
+ * which no platform installs).
+ *
+ * Click UI raises every elevated surface (card, dialog, menu, panel, popover, toast) with
+ * `shadow.1`, and its only lighter step is the hairline `shadow.5`. Steps 2 to 4 are the flyout's
+ * inset and directional edges, which do not belong on a general scale. `shadow.1` darkens from
+ * 0.15 to 0.6 alpha in dark mode; its colour is `#151515` in both (written `lch(6.7738 0 none)`
+ * in the light tokens and as percentages in the dark).
+ */
+const clickHouseShape = {
   controlRadius: '0.25rem',
   surfaceRadius: '0.5rem',
   largeSurfaceRadius: '0.75rem',
   roundControlRadius: '9999px',
+  radiusSm: '0.25rem', // border.radii.1
+  radiusMd: '0.25rem', // border.radii.1
+  radiusLg: '0.25rem', // border.radii.1
+  radiusXl: '0.5rem', // border.radii.2
+  radius2xl: '0.5rem', // border.radii.2
+  radius3xl: '0.75rem', // border.radii.3
   fontFamily:
     '"Inter", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif',
+  monoFontFamily:
+    '"Inconsolata", ui-monospace, SFMono-Regular, Menlo, "Cascadia Mono", "Liberation Mono", Consolas, monospace',
+  shadowXs: '0 2px 2px 0 rgb(0 0 0 / 0.03)', // shadow.5
+  shadowSm: '0 2px 2px 0 rgb(0 0 0 / 0.03)', // shadow.5
+};
+
+const elevation = (alpha: number): string =>
+  `0 4px 6px -1px rgb(21 21 21 / ${alpha}), 0 2px 4px -1px rgb(21 21 21 / ${alpha})`;
+
+const clickHouseElevation = (alpha: number): Partial<IThemeAppearance> => ({
+  shadowMd: elevation(alpha), // shadow.1
+  shadowLg: elevation(alpha), // shadow.1
+  shadowXl: elevation(alpha), // shadow.1
+  shadow2xl: elevation(alpha), // shadow.1
+  elevationSurface: elevation(alpha), // shadow.1
+});
+
+const clickHouseLightAppearance: Partial<IThemeAppearance> = {
+  ...clickHouseShape,
+  ...clickHouseElevation(0.15),
+};
+
+const clickHouseDarkAppearance: Partial<IThemeAppearance> = {
+  ...clickHouseShape,
+  ...clickHouseElevation(0.6),
 };
 
 export const clickHouseTheme: ThemeDefinition = Object.freeze({
   version: 1,
   name: 'clickhouse',
   modes: {
-    light: { colors: clickHouseLightTheme, appearance: clickHouseAppearance },
-    dark: { colors: clickHouseDarkTheme, appearance: clickHouseAppearance },
+    light: { colors: clickHouseLightTheme, appearance: clickHouseLightAppearance },
+    dark: { colors: clickHouseDarkTheme, appearance: clickHouseDarkAppearance },
   },
 });

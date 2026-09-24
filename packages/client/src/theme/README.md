@@ -44,6 +44,12 @@ The defaults reproduce the scale those utilities had before, so a theme that nam
 changes nothing. The mapping lives in the app stylesheet (`client/src/style.css`), not the
 published `theme.css`, whose preset keeps its own `rounded-sm`.
 
+The bundled ClickHouse theme (`themes/clickhouse.ts`) is the reference for a theme that changes
+shape as well as color: it tightens the radius scale to Click UI's `border.radii` steps, sets the
+mono family to Inconsolata over a real fallback stack, and raises every surface with Click UI's
+`shadow.1`, at 0.15 alpha in light mode and 0.6 in dark. Select it for a deployment with
+`interface.theme: clickhouse` in `librechat.yaml`.
+
 `themeRGB`, `REACT_APP_THEME_*`, and the existing localStorage keys remain supported through legacy
 adapters. Theme application removes only variables owned by the theme module when a theme is reset.
 
