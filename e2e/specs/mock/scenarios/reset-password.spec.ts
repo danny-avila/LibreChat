@@ -106,6 +106,7 @@ test.describe('CLI password reset', () => {
         },
       });
       const email = `cli-reset-${randomUUID().slice(0, 8)}@example.com`;
+      const expiresAt = source === 'dotenv' ? new Date(Date.now() + 604800_000) : undefined;
       const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'lc-reset-'));
       const redisUri = process.env.REDIS_URI ?? 'redis://127.0.0.1:6379';
       const prefix = `cli-reset-${randomUUID()}`;
@@ -131,6 +132,11 @@ test.describe('CLI password reset', () => {
         expect(authorized.ok()).toBeTruthy();
         await seedPasskey(email, randomUUID(), 'Reset regression');
         await withMongo(async (db) => {
+          if (expiresAt) {
+            await db
+              .collection('users')
+              .updateOne({ email }, { $set: { expiresAt, emailVerified: false } });
+          }
           const resetUser = await db.collection('users').findOne({ email });
           expect(await db.collection('passkeys').countDocuments({ user: resetUser!._id })).toBe(1);
           expect(
@@ -187,6 +193,10 @@ test.describe('CLI password reset', () => {
         await withMongo(async (db) => {
           const resetUser = await db.collection('users').findOne({ email });
           expect(resetUser?.credentialsChangedAt).toBeTruthy();
+          expect(resetUser?.expiresAt).toEqual(expiresAt);
+          if (expiresAt) {
+            expect(resetUser?.emailVerified).toBe(false);
+          }
           expect(await db.collection('passkeys').countDocuments({ user: resetUser!._id })).toBe(0);
           expect(await db.collection('sessions').countDocuments({ user: resetUser!._id })).toBe(0);
         });

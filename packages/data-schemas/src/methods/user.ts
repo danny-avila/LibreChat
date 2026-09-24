@@ -53,6 +53,7 @@ export function createUserMethods(
     userId: string,
     updateData: Partial<IUser>,
     expectedState?: FilterQuery<IUser>,
+    options?: { preserveExpiresAt?: boolean },
   ) => Promise<IUser | null>;
   claimSamlIdentity: (
     userId: string,
@@ -307,16 +308,18 @@ export function createUserMethods(
 
   /**
    * Update a user with new data without overwriting existing properties.
+   * Removes pending-account expiry unless preserveExpiresAt is requested.
    */
   async function updateUser(
     userId: string,
     updateData: Partial<IUser>,
     expectedState: FilterQuery<IUser> = {},
+    options: { preserveExpiresAt?: boolean } = {},
   ): Promise<IUser | null> {
     const User = mongoose.models.User;
     const updateOperation = {
       $set: updateData,
-      $unset: { expiresAt: '' }, // Remove the expiresAt field to prevent TTL
+      ...(options.preserveExpiresAt ? {} : { $unset: { expiresAt: '' } }),
     };
     const updated = await User.findOneAndUpdate(
       { ...expectedState, _id: userId },

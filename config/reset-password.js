@@ -65,11 +65,16 @@ const resetPassword = async () => {
      * cached document that keeps pre-reset access tokens verifying for the
      * cache TTL.
      */
-    const updated = await methods.updateUser(user._id.toString(), {
-      password: hashedPassword,
-      /** Access tokens minted before this stamp stop verifying */
-      credentialsChangedAt: new Date(),
-    });
+    const updated = await methods.updateUser(
+      user._id.toString(),
+      {
+        password: hashedPassword,
+        /** Access tokens minted before this stamp stop verifying */
+        credentialsChangedAt: new Date(),
+      },
+      {},
+      { preserveExpiresAt: true },
+    );
 
     if (!updated) {
       console.error('User not found during update!');
