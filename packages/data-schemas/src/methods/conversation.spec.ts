@@ -8325,6 +8325,34 @@ describe('Conversation Operations', () => {
       expect(result.conversations.map((c) => c.conversationId)).toEqual([withFiles.conversationId]);
     });
 
+    it('includes conversations whose attachments ride on messages', async () => {
+      /** The standard send flow persists uploads on the user message, so a facet that
+       *  only read the conversation's own array would miss every ordinary chat. */
+      const Message = mongoose.models.Message as mongoose.Model<{
+        user: string;
+        conversationId: string;
+        messageId: string;
+        files: unknown[];
+      }>;
+      const messageFiles = await makeConvo({ title: 'message files' });
+      await makeConvo({ title: 'neither' });
+      await Message.create({
+        user,
+        conversationId: messageFiles.conversationId,
+        messageId: uuidv4(),
+        text: 'here you go',
+        sender: 'User',
+        isCreatedByUser: true,
+        files: [{ file_id: 'file-1' }],
+      });
+
+      const result = await getConvosByCursor(user, { hasFiles: true });
+
+      expect(result.conversations.map((c) => c.conversationId)).toEqual([
+        messageFiles.conversationId,
+      ]);
+    });
+
     it('combines facets rather than widening the result', async () => {
       const match = await makeConvo({
         title: 'match',
@@ -8408,6 +8436,9 @@ describe('Conversation Operations', () => {
       /** A lapsed link is not a shared chat, which is why this reads the links rather
        *  than a flag stored on the conversation. */
       expect(result.conversations.map((c) => c.conversationId)).toEqual([shared.conversationId]);
+      /** The filter already resolved the share set, so the row carries its flag from
+       *  that answer rather than waiting on a second lookup. */
+      expect(result.conversations[0].isShared).toBe(true);
 
       await SharedLink.deleteMany({ user });
     });

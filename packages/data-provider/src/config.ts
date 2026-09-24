@@ -3199,6 +3199,18 @@ export const configSchema = z.object({
   skillSync: skillSyncConfigSchema,
   secureImageLinks: z.boolean().optional(),
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
+  conversationList: z
+    .object({
+      /** How many endpoint names one filter request to the conversation list may
+       * name. The list is a fixed menu of the endpoints a deployment serves, so a
+       * request naming more than this is not a user choosing filters: it is an
+       * unbounded `$in` arriving from somewhere else. Omission keeps 50. */
+      maxEndpointFilters: z.number().int().min(1).max(1_000).optional(),
+      /** One endpoint name. Long enough for a custom endpoint, short enough to
+       * bound the query. Omission keeps 128. */
+      maxEndpointNameLength: z.number().int().min(1).max(1_024).optional(),
+    })
+    .optional(),
   includedTools: z.array(z.string()).optional(),
   filteredTools: z.array(z.string()).optional(),
   mcpServers: MCPServersSchema.optional(),

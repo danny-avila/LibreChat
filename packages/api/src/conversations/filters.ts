@@ -20,16 +20,30 @@ export interface ConversationListFilterResult {
 }
 
 /**
- * How many endpoints one request may name. The list is a fixed menu of the endpoints a
- * deployment serves, so a request naming more than this is not a user choosing filters:
- * it is an unbounded `$in` arriving from somewhere else.
+ * Validation limits for one list request, injectable so the route can take them from
+ * `conversationList` in the deployment config. The defaults reproduce the historical
+ * behavior for a deployment that sets nothing.
  */
-const MAX_ENDPOINT_FILTERS = 50;
+export interface ConversationListLimits {
+  maxEndpointFilters: number;
+  maxEndpointNameLength: number;
+}
 
-/** One endpoint name. Long enough for a custom endpoint, short enough to bound the query. */
-const MAX_ENDPOINT_LENGTH = 128;
+export const DEFAULT_CONVERSATION_LIST_LIMITS: ConversationListLimits = {
+  maxEndpointFilters: 50,
+  maxEndpointNameLength: 128,
+};
 
 const firstValue = (value: unknown): unknown => (Array.isArray(value) ? value[0] : value);
+
+/**
+ * The documented contract is ISO 8601, so anything `new Date()` would quietly accept
+ * beyond that is rejected here rather than applied as an unintended cutoff: `2026-02-30`
+ * rolls over to March, and `1` becomes January 1, 2001. A date-only string means UTC
+ * midnight, matching how `new Date()` parses it.
+ */
+const ISO_DATE =
+  /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(Z|[+-](?:0\d|1[0-4])(?::?[0-5]\d)?)?)?$/;
 
 const parseDate = (value: unknown): { date?: Date; invalid?: boolean } => {
   const raw = firstValue(value);
@@ -39,14 +53,45 @@ const parseDate = (value: unknown): { date?: Date; invalid?: boolean } => {
   if (typeof raw !== 'string') {
     return { invalid: true };
   }
-  const date = new Date(raw);
+  const match = ISO_DATE.exec(raw);
+  if (match == null) {
+    return { invalid: true };
+  }
+  const [, year, month, day, hour = '00', minute = '00', second = '00'] = match;
+  const utc = new Date(
+    Date.UTC(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hour),
+      Number(minute),
+      Number(second),
+    ),
+  );
+  /* A calendar-valid write reads back unchanged; February 30th does not. */
+  const readsBackClean =
+    utc.getUTCFullYear() === Number(year) &&
+    utc.getUTCMonth() === Number(month) - 1 &&
+    utc.getUTCDate() === Number(day) &&
+    utc.getUTCHours() === Number(hour) &&
+    utc.getUTCMinutes() === Number(minute) &&
+    utc.getUTCSeconds() === Number(second);
+  if (!readsBackClean) {
+    return { invalid: true };
+  }
+  /* An offset the regex could not rule out can still be unparsable; a NaN date would
+     reach the query builder as a filter it silently drops. */
+  const date = new Date(raw.replace(' ', 'T'));
   if (Number.isNaN(date.getTime())) {
     return { invalid: true };
   }
   return { date };
 };
 
-const parseEndpoints = (value: unknown): { endpoints?: string[]; invalid?: boolean } => {
+const parseEndpoints = (
+  value: unknown,
+  limits: ConversationListLimits,
+): { endpoints?: string[]; invalid?: boolean } => {
   if (value == null) {
     return {};
   }
@@ -60,7 +105,7 @@ const parseEndpoints = (value: unknown): { endpoints?: string[]; invalid?: boole
     if (trimmed === '') {
       continue;
     }
-    if (trimmed.length > MAX_ENDPOINT_LENGTH) {
+    if (trimmed.length > limits.maxEndpointNameLength) {
       return { invalid: true };
     }
     /** Repeated values would widen the `$in` without widening the result. */
@@ -71,10 +116,26 @@ const parseEndpoints = (value: unknown): { endpoints?: string[]; invalid?: boole
   if (endpoints.length === 0) {
     return {};
   }
-  if (endpoints.length > MAX_ENDPOINT_FILTERS) {
+  if (endpoints.length > limits.maxEndpointFilters) {
     return { invalid: true };
   }
   return { endpoints };
+};
+
+/** A supplied flag must be `true` or `false`; a typo fails the request rather than
+ *  silently widening the list past what the user asked to see. */
+const parseFlag = (value: unknown): { set?: boolean; invalid?: boolean } => {
+  const raw = firstValue(value);
+  if (raw == null || raw === '') {
+    return {};
+  }
+  if (raw === 'true') {
+    return { set: true };
+  }
+  if (raw === 'false') {
+    return { set: false };
+  }
+  return { invalid: true };
 };
 
 /**
@@ -85,7 +146,16 @@ const parseEndpoints = (value: unknown): { endpoints?: string[]; invalid?: boole
  */
 export function parseConversationListFilters(
   query: Request['query'] | Record<string, unknown>,
+  limits?: Partial<ConversationListLimits>,
 ): ConversationListFilterResult {
+  /* The route forwards the config verbatim, so an unset knob arrives as undefined
+     here rather than as the default; a partial object must not disable its limit. */
+  const resolved: ConversationListLimits = {
+    maxEndpointFilters:
+      limits?.maxEndpointFilters ?? DEFAULT_CONVERSATION_LIST_LIMITS.maxEndpointFilters,
+    maxEndpointNameLength:
+      limits?.maxEndpointNameLength ?? DEFAULT_CONVERSATION_LIST_LIMITS.maxEndpointNameLength,
+  };
   const updated = parseDate(query.updatedAfter);
   if (updated.invalid === true) {
     return { filters: {}, error: 'updatedAfter must be an ISO 8601 date' };
@@ -96,12 +166,21 @@ export function parseConversationListFilters(
     return { filters: {}, error: 'createdAfter must be an ISO 8601 date' };
   }
 
-  const endpoints = parseEndpoints(query.endpoints);
+  const endpoints = parseEndpoints(query.endpoints, resolved);
   if (endpoints.invalid === true) {
     return {
       filters: {},
-      error: `endpoints must be at most ${MAX_ENDPOINT_FILTERS} names of ${MAX_ENDPOINT_LENGTH} characters or fewer`,
+      error: `endpoints must be at most ${resolved.maxEndpointFilters} names of ${resolved.maxEndpointNameLength} characters or fewer`,
     };
+  }
+
+  const hasFiles = parseFlag(query.hasFiles);
+  if (hasFiles.invalid === true) {
+    return { filters: {}, error: 'hasFiles must be true or false' };
+  }
+  const sharedOnly = parseFlag(query.sharedOnly);
+  if (sharedOnly.invalid === true) {
+    return { filters: {}, error: 'sharedOnly must be true or false' };
   }
 
   const filters: ConversationListFilters = {};
@@ -114,11 +193,12 @@ export function parseConversationListFilters(
   if (endpoints.endpoints) {
     filters.endpoints = endpoints.endpoints;
   }
-  /** Only the positive case is a filter: "false" means the user is not filtering. */
-  if (firstValue(query.hasFiles) === 'true') {
+  /** Only the positive case is a filter: an explicit "false" means the user is not
+      filtering, same as leaving the facet out. */
+  if (hasFiles.set === true) {
     filters.hasFiles = true;
   }
-  if (firstValue(query.sharedOnly) === 'true') {
+  if (sharedOnly.set === true) {
     filters.sharedOnly = true;
   }
 

@@ -21,6 +21,7 @@ import type {
   IChatProjectDocument,
   IActiveSubagentThreadLease,
   IConversation,
+  IMessage,
   ISharedLink,
   ISubagentThreadReservation,
 } from '~/types';
@@ -3006,16 +3007,16 @@ export function createConversationMethods(
       return null;
     }
 
-    const shares = await SharedLink.find({
+    /* Distinct, not find: the only thing this caller can use is the set of IDs, so the
+       server dedupes and returns nothing else. Covered by `{ user, conversationId }`. */
+    const sharedIds = await SharedLink.find({
       user,
       ...activeExpirationFilter<ISharedLink>(),
-    })
-      .select('conversationId')
-      .lean();
+    }).distinct('conversationId');
 
-    return shares
-      .map((share) => share.conversationId)
-      .filter((conversationId): conversationId is string => typeof conversationId === 'string');
+    return sharedIds.filter(
+      (conversationId): conversationId is string => typeof conversationId === 'string',
+    );
   }
 
   /**
@@ -3100,20 +3101,42 @@ export function createConversationMethods(
       filters.push({ endpoint: { $in: endpoints } } as FilterQuery<IConversation>);
     }
 
-    /* `files` is absent on most rows and `[]` on rows that lost their last attachment,
-       so both have to read as "no attachments". */
+    /* Attachments are not one field: the standard flow rides them on messages, imports
+       can land them on the conversation, and `files` is absent or `[]` when empty. The
+       conversation-side predicate alone would miss every ordinary chat with an upload,
+       so the message-side conversation IDs are resolved once and OR-matched in. */
     if (hasFiles === true) {
-      filters.push({ files: { $exists: true, $not: { $size: 0 } } } as FilterQuery<IConversation>);
+      const orClauses: FilterQuery<IConversation>[] = [
+        { files: { $exists: true, $not: { $size: 0 } } } as FilterQuery<IConversation>,
+      ];
+      const Message = mongoose.models.Message as Model<IMessage> | undefined;
+      if (Message) {
+        const withMessageFiles = await Message.find({
+          user,
+          'files.0': { $exists: true },
+        }).distinct('conversationId');
+        if (withMessageFiles.length > 0) {
+          orClauses.push({
+            conversationId: { $in: withMessageFiles },
+          } as FilterQuery<IConversation>);
+        }
+      }
+      filters.push({ $or: orClauses } as FilterQuery<IConversation>);
     }
 
+    /* When this filter runs, the page's rows are already known to be shared, so the set
+       is kept and used to mark `isShared` directly instead of issuing a second
+       SharedLink query after the conversation query for the same answers. */
+    let sharedIds: Set<string> | null = null;
     if (sharedOnly === true) {
-      const sharedIds = await getSharedConversationIds(user);
+      const activeShares = await getSharedConversationIds(user);
       /* Nothing shared, or sharing switched off, means nothing can match. Returning early
          also keeps an empty `$in` out of the query, which would match every document. */
-      if (sharedIds == null || sharedIds.length === 0) {
+      if (activeShares == null || activeShares.length === 0) {
         return { conversations: [], nextCursor: null };
       }
-      filters.push({ conversationId: { $in: sharedIds } } as FilterQuery<IConversation>);
+      sharedIds = new Set(activeShares);
+      filters.push({ conversationId: { $in: activeShares } } as FilterQuery<IConversation>);
     }
 
     filters.push(getVisibleConversationRetentionFilter());
@@ -3303,7 +3326,13 @@ export function createConversationMethods(
         nextCursor = Buffer.from(JSON.stringify(composite)).toString('base64');
       }
 
-      await attachSharedFlags(user, convos);
+      if (sharedIds != null) {
+        for (const convo of convos) {
+          convo.isShared = sharedIds.has(convo.conversationId);
+        }
+      } else {
+        await attachSharedFlags(user, convos);
+      }
 
       return { conversations: convos, nextCursor };
     } catch (error) {

@@ -27,6 +27,36 @@ describe('parseConversationListFilters', () => {
     expect(filters).toEqual({});
   });
 
+  it('rejects dates JavaScript would silently normalize', () => {
+    /** February 30th rolls over to March and a bare number becomes 2001, so both
+     *  would apply a cutoff the caller never named. */
+    expect(parseConversationListFilters({ updatedAfter: '2026-02-30' }).error).toBe(
+      'updatedAfter must be an ISO 8601 date',
+    );
+    expect(parseConversationListFilters({ updatedAfter: '1' }).error).toBe(
+      'updatedAfter must be an ISO 8601 date',
+    );
+    expect(parseConversationListFilters({ updatedAfter: '2026-13-01' }).error).toBe(
+      'updatedAfter must be an ISO 8601 date',
+    );
+    expect(parseConversationListFilters({ createdAfter: '2026-09-01T25:00:00Z' }).error).toBe(
+      'createdAfter must be an ISO 8601 date',
+    );
+  });
+
+  it('accepts a date-only cutoff as UTC midnight and an offset-bearing one', () => {
+    expect(
+      parseConversationListFilters({
+        updatedAfter: '2026-09-01',
+      }).filters.updatedAfter?.toISOString(),
+    ).toBe('2026-09-01T00:00:00.000Z');
+    expect(
+      parseConversationListFilters({
+        updatedAfter: '2026-09-01T12:00:00+02:00',
+      }).filters.updatedAfter?.toISOString(),
+    ).toBe('2026-09-01T10:00:00.000Z');
+  });
+
   it('accepts one endpoint or many, and de-duplicates them', () => {
     expect(parseConversationListFilters({ endpoints: 'openAI' }).filters.endpoints).toEqual([
       'openAI',
@@ -81,6 +111,44 @@ describe('parseConversationListFilters', () => {
       parseConversationListFilters({ sharedOnly: 'false' }).filters.sharedOnly,
     ).toBeUndefined();
     expect(parseConversationListFilters({}).filters.sharedOnly).toBeUndefined();
+  });
+
+  it('refuses a mistyped flag rather than reading it as absent', () => {
+    /** `hasFiles=tru` arriving as "no filter" would widen the list past what the
+     *  user asked to see, which is the one failure this parser exists to prevent. */
+    expect(parseConversationListFilters({ hasFiles: 'tru' }).error).toBe(
+      'hasFiles must be true or false',
+    );
+    expect(parseConversationListFilters({ sharedOnly: 'yes' }).error).toBe(
+      'sharedOnly must be true or false',
+    );
+    expect(parseConversationListFilters({ sharedOnly: 'TRUE' }).error).toBe(
+      'sharedOnly must be true or false',
+    );
+  });
+
+  it('honors deployment-configured endpoint limits over the defaults', () => {
+    const endpoints = Array.from({ length: 3 }, (_, index) => `endpoint-${index}`);
+    const underCustom = parseConversationListFilters({ endpoints }, { maxEndpointFilters: 3 });
+    const overCustom = parseConversationListFilters({ endpoints }, { maxEndpointFilters: 2 });
+
+    expect(underCustom.error).toBeUndefined();
+    expect(overCustom.error).toMatch(/at most 2/);
+    expect(
+      parseConversationListFilters(
+        { endpoints: 'e'.repeat(9) },
+        {
+          maxEndpointNameLength: 8,
+        },
+      ).error,
+    ).toMatch(/8 characters/);
+  });
+
+  it('keeps the default limit when the config is only partially set', () => {
+    const endpoints = Array.from({ length: 51 }, (_, index) => `endpoint-${index}`);
+    const { error } = parseConversationListFilters({ endpoints }, { maxEndpointNameLength: 256 });
+
+    expect(error).toMatch(/at most 50/);
   });
 
   it('takes the first value when a param is repeated', () => {

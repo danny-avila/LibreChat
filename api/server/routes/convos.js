@@ -156,7 +156,7 @@ router.use(requireJwtAuth);
 const isValidProjectFilter = (projectId) =>
   !projectId || projectId === 'unassigned' || /^[a-f\d]{24}$/i.test(projectId);
 
-router.get('/', async (req, res) => {
+router.get('/', configMiddleware, async (req, res) => {
   const limit = normalizeLimit(req.query.limit);
   const cursor = req.query.cursor;
   const isArchived = isEnabled(req.query.isArchived);
@@ -181,7 +181,10 @@ router.get('/', async (req, res) => {
     tags = Array.isArray(req.query.tags) ? req.query.tags : [req.query.tags];
   }
 
-  const { filters, error: filterError } = parseConversationListFilters(req.query);
+  const { filters, error: filterError } = parseConversationListFilters(req.query, {
+    maxEndpointFilters: req.config?.conversationList?.maxEndpointFilters,
+    maxEndpointNameLength: req.config?.conversationList?.maxEndpointNameLength,
+  });
   if (filterError) {
     return res.status(400).json({ error: filterError });
   }
