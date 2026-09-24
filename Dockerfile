@@ -146,6 +146,9 @@ RUN node -e 'const fs=require("fs"); const p="package.json"; const pkg=JSON.pars
     ip-address@10.3.1 \
     pdfjs-dist@6.2.108 \
     sharp@0.35.4 \
+    && rm -rf /app/api/node_modules/sharp /app/packages/api/node_modules/sharp \
+    && mkdir -p /app/api/node_modules \
+    && cp -a /app/node_modules/sharp /app/api/node_modules/sharp \
     && rm -rf /app/node_modules/gaxios/node_modules/uuid \
     && mkdir -p /app/node_modules/gaxios/node_modules \
     && cp -a /app/node_modules/uuid /app/node_modules/gaxios/node_modules/uuid \
