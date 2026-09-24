@@ -105,7 +105,7 @@ async function createUser(fields: Partial<IUser> = {}): Promise<IUser> {
 
 async function createStoredPasskey(user: IUser, credentialId = 'cred-1') {
   return methods.createPasskey({
-    user: user._id,
+    user: user._id.toString(),
     credentialId,
     publicKey: Buffer.from('public-key'),
     counter: 0,

@@ -18,7 +18,7 @@ const userId = new mongoose.Types.ObjectId();
 const otherUserId = new mongoose.Types.ObjectId();
 
 const passkeyData = (overrides: Partial<t.PasskeyCreateData> = {}): t.PasskeyCreateData => ({
-  user: userId,
+  user: userId.toString(),
   credentialId: 'credential-one',
   publicKey: Buffer.from([1, 2, 3]),
   counter: 0,
@@ -74,7 +74,7 @@ describe('createPasskey', () => {
     await methods.createPasskey(passkeyData());
 
     await expect(
-      methods.createPasskey(passkeyData({ user: otherUserId, name: 'Someone else' })),
+      methods.createPasskey(passkeyData({ user: otherUserId.toString(), name: 'Someone else' })),
     ).rejects.toThrow();
   });
 
@@ -85,7 +85,9 @@ describe('createPasskey', () => {
     await freshMethods.createPasskey(passkeyData());
 
     await expect(
-      freshMethods.createPasskey(passkeyData({ user: otherUserId, name: 'Someone else' })),
+      freshMethods.createPasskey(
+        passkeyData({ user: otherUserId.toString(), name: 'Someone else' }),
+      ),
     ).rejects.toThrow(/duplicate key/);
     expect(await mongoose.models.Passkey.countDocuments({ credentialId: 'credential-one' })).toBe(
       1,
@@ -98,7 +100,7 @@ describe('findPasskeysByUser', () => {
     await methods.createPasskey(passkeyData({ credentialId: 'a', name: 'First' }));
     await methods.createPasskey(passkeyData({ credentialId: 'b', name: 'Second' }));
     await methods.createPasskey(
-      passkeyData({ credentialId: 'c', name: 'Other user', user: otherUserId }),
+      passkeyData({ credentialId: 'c', name: 'Other user', user: otherUserId.toString() }),
     );
 
     const found = await methods.findPasskeysByUser(userId.toString());
@@ -292,7 +294,7 @@ describe('deletePasskeysByUser', () => {
   it('clears every credential for the user and leaves others alone', async () => {
     await methods.createPasskey(passkeyData({ credentialId: 'a' }));
     await methods.createPasskey(passkeyData({ credentialId: 'b' }));
-    await methods.createPasskey(passkeyData({ credentialId: 'c', user: otherUserId }));
+    await methods.createPasskey(passkeyData({ credentialId: 'c', user: otherUserId.toString() }));
 
     const result = await methods.deletePasskeysByUser(userId.toString());
 

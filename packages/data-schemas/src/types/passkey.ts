@@ -23,7 +23,7 @@ export interface IPasskey extends Document {
 }
 
 export interface PasskeyCreateData {
-  user: string | Types.ObjectId;
+  user: string;
   credentialId: string;
   publicKey: Buffer;
   counter: number;
