@@ -1,8 +1,15 @@
 import mongoose from 'mongoose';
-import { Tools, isMcpAppMimeType } from 'librechat-data-provider';
+import {
+  Tools,
+  isMcpAppMimeType,
+  DEFAULT_MCP_APP_MESSAGE_BYTES,
+  MAX_MCP_APP_MESSAGE_BYTES,
+} from 'librechat-data-provider';
 
 /** Leave 4 MiB for timestamps, metadata, later receipts and other non-App message fields. */
-export const MAX_MCP_APP_MESSAGE_BSON_BYTES: number = 12 * 1024 * 1024;
+export const MAX_MCP_APP_MESSAGE_BSON_BYTES: number = DEFAULT_MCP_APP_MESSAGE_BYTES;
+/** Separate canonical-only ceiling; an App target must not reject otherwise persistable text. */
+const CANONICAL_MESSAGE_BSON_BYTES = 16 * 1024 * 1024 - 16 * 1024;
 
 type Resource = Record<string, unknown>;
 type Attachment = Record<string, unknown>;
@@ -58,6 +65,9 @@ export function fitBoundAppSnapshots(
   bsonSize: (attachments: unknown[]) => number,
   maxBytes: number = MAX_MCP_APP_MESSAGE_BSON_BYTES,
 ): unknown[] {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0 || maxBytes > MAX_MCP_APP_MESSAGE_BYTES) {
+    throw new Error('Invalid deployment MCP App message budget');
+  }
   const size = bsonSize(attachments);
   if (size <= maxBytes) return attachments;
 
@@ -97,12 +107,12 @@ export function fitBoundAppSnapshots(
   for (let i = 0; i < result.length; i++) {
     const original = result[i] as Attachment;
     const resources = appResources(original);
-    if (!resources) continue;
+    if (!resources?.some(isBoundAppResource)) continue;
     const keep = resources.filter((value) => !isBoundAppResource(value));
     result[i] = keep.length ? { ...original, [Tools.ui_resources]: keep } : null;
   }
   const withoutApps = result.filter((attachment) => attachment != null);
-  if (bsonSize(withoutApps) <= maxBytes) return withoutApps;
+  if (bsonSize(withoutApps) <= CANONICAL_MESSAGE_BSON_BYTES) return withoutApps;
 
   throw new Error('Message exceeds the BSON budget without optional MCP App snapshots');
 }

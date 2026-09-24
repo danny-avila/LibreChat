@@ -107,6 +107,7 @@ beforeAll(async () => {
   releaseBackgroundToolResultClaims = methods.releaseBackgroundToolResultClaims;
 
   await mongoose.connect(mongoUri);
+  await Message.createIndexes();
 });
 
 afterAll(async () => {
@@ -172,6 +173,277 @@ describe('Message Operations', () => {
         text: 'x'.repeat(bytes),
       },
     ],
+  });
+
+  describe('App admission across writers', () => {
+    it('rebudgets aggregate sub-megabyte blocks on content-only saves', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        attachments: Array.from({ length: 11 }, (_, i) =>
+          appAttachment(i, 1024 * 1024),
+        ) as unknown as IMessage['attachments'],
+      });
+      const content = Array.from({ length: 10 }, () => ({
+        type: 'text',
+        text: 'x'.repeat(700_000),
+      }));
+      await saveMessage(mockCtx, { ...mockMessageData, content, attachments: undefined });
+      const row = await Message.findOne({ messageId: 'msg123' }).lean();
+      expect(row?.content).toEqual(content);
+      expect(mongoose.mongo.BSON.calculateObjectSize(row!)).toBeLessThanOrEqual(
+        MAX_MCP_APP_MESSAGE_BSON_BYTES,
+      );
+    }, 60000);
+
+    it('rebudgets every sub-megabyte settle without a new attachment', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        content: Array.from({ length: 8 }, (_, i) => ({
+          type: 'tool_call',
+          tool_call: { id: `call-${i}`, output: 'pending' },
+        })),
+        attachments: Array.from({ length: 11 }, (_, i) =>
+          appAttachment(i, 1024 * 1024),
+        ) as unknown as IMessage['attachments'],
+      });
+      for (let i = 0; i < 8; i++) {
+        expect(
+          (
+            await updateToolCallResult({
+              userId: 'user123',
+              messageId: 'msg123',
+              conversationId: mockMessageData.conversationId as string,
+              toolCallId: `call-${i}`,
+              output: 'x'.repeat(900_000),
+            })
+          ).matched,
+        ).toBe(true);
+        const row = await Message.findOne({ messageId: 'msg123' }).lean();
+        expect(mongoose.mongo.BSON.calculateObjectSize(row!)).toBeLessThanOrEqual(
+          MAX_MCP_APP_MESSAGE_BSON_BYTES,
+        );
+        expect(row?.attachments).toHaveLength(11);
+      }
+    }, 60000);
+
+    it('never propagates caller tenantId through a budget callback or provenance save', async () => {
+      await tenantStorage.run({ tenantId: 'real-tenant' }, async () => {
+        const result = await saveMessage(mockCtx, {
+          ...mockMessageData,
+          tenantId: 'evil-tenant',
+          userSubmittedPaths: ['/text'],
+          attachments: [appAttachment(0, 4096)] as unknown as IMessage['attachments'],
+        });
+        expect(result?.tenantId).toBe('real-tenant');
+      });
+      const row = await runAsSystem(() => Message.findOne({ messageId: 'msg123' }).lean());
+      expect(row?.tenantId).toBe('real-tenant');
+      expect(row?.attachments).toHaveLength(1);
+    });
+
+    it('preserves omitted attachments from the retried row, not a stale preliminary read', async () => {
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        content: [{ type: 'tool_call', tool_call: { id: 'call_bg', output: 'pending' } }],
+        attachments: [appAttachment(0, 4096)] as unknown as IMessage['attachments'],
+      });
+      const original = Message.findOneAndUpdate.bind(Message);
+      let inject = true;
+      const spy = jest.spyOn(Message, 'findOneAndUpdate').mockImplementation((...args) => {
+        const query = original(...args);
+        const execute = query.exec.bind(query);
+        query.exec = async () => {
+          if (inject && (args[0] as Record<string, unknown>)?.__v != null) {
+            inject = false;
+            await updateToolCallResult({
+              userId: 'user123',
+              messageId: 'msg123',
+              conversationId: mockMessageData.conversationId as string,
+              toolCallId: 'call_bg',
+              attachments: [appAttachment(1, 4096)],
+            });
+          }
+          return execute();
+        };
+        return query;
+      });
+      try {
+        await saveMessage(mockCtx, {
+          ...mockMessageData,
+          text: 'x'.repeat(1024 * 1024 + 1),
+          attachments: undefined,
+        });
+      } finally {
+        spy.mockRestore();
+      }
+      const row = await Message.findOne({ messageId: 'msg123' }).lean();
+      expect(inject).toBe(false);
+      expect(row?.attachments?.map((x) => (x as { file_id: string }).file_id).sort()).toEqual([
+        'app-0',
+        'app-1',
+      ]);
+    });
+
+    it('treats undefined private fields as omissions exactly as MongoDB does', async () => {
+      await saveMessage(mockCtx, mockMessageData);
+      const subagentTranscript = {
+        taskId: 'private',
+        mode: 'append',
+        messagesJson: 'p'.repeat(5 * 1024 * 1024),
+      };
+      await Message.updateOne({ messageId: 'msg123' }, { $set: { subagentTranscript } });
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        subagentTranscript: undefined,
+        attachments: Array.from({ length: 9 }, (_, i) =>
+          appAttachment(i, 1024 * 1024),
+        ) as unknown as IMessage['attachments'],
+      });
+      const row = await Message.findOne({ messageId: 'msg123' })
+        .select('+subagentTranscript')
+        .lean();
+      expect(row?.subagentTranscript).toEqual(subagentTranscript);
+      expect(mongoose.mongo.BSON.calculateObjectSize(row!)).toBeLessThanOrEqual(
+        MAX_MCP_APP_MESSAGE_BSON_BYTES,
+      );
+    }, 60000);
+
+    it.each([
+      ['part agent wins', 'mine', 'other', true],
+      ['different part agent wins', 'other', 'mine', false],
+      ['nested agent fallback', undefined, 'other', false],
+      ['legacy wildcard', undefined, undefined, true],
+    ])('sizes only parts actually updated: %s', async (_name, partAgent, callAgent, matches) => {
+      const content = [
+        { type: 'tool_call', agentId: 'mine', tool_call: { id: 'call_bg', output: 'pending' } },
+        {
+          type: 'tool_call',
+          ...(partAgent != null && { agentId: partAgent }),
+          tool_call: { id: 'call_bg', agentId: callAgent, output: 'p'.repeat(850_000) },
+        },
+      ];
+      let configReads = 0;
+      const methods = createMessageMethods(mongoose, {
+        getMCPAppMessageBudget: async () => {
+          configReads++;
+          return 1024 * 1024;
+        },
+      });
+      await methods.saveMessage(mockCtx, {
+        ...mockMessageData,
+        content,
+        attachments: [appAttachment(0, 150_000)] as unknown as IMessage['attachments'],
+      });
+      const result = await methods.updateToolCallResult({
+        userId: 'user123',
+        messageId: 'msg123',
+        conversationId: mockMessageData.conversationId as string,
+        toolCallId: 'call_bg',
+        agentId: 'mine',
+        output: 'x'.repeat(300_000),
+      });
+      expect(result.matched).toBe(true);
+      const row = await Message.findOne({ messageId: 'msg123' }).lean();
+      expect(row?.content?.[1]).toMatchObject({
+        tool_call: { output: matches ? 'x'.repeat(300_000) : 'p'.repeat(850_000) },
+      });
+      const ui = (row?.attachments?.[0] as { ui_resources: Array<{ text?: string }> } | undefined)
+        ?.ui_resources;
+      if (matches) expect(ui?.[0].text).toBeDefined();
+      else expect(ui).toBeUndefined(); // Canonical-only may exceed the App target, never the storage ceiling.
+      expect(configReads).toBeGreaterThan(0);
+    });
+
+    it.each(['record', 'edit', 'bulk', 'text'] as const)(
+      'applies the same configurable limit through the %s writer',
+      async (writer) => {
+        const methods = createMessageMethods(mongoose, {
+          getMCPAppMessageBudget: async () => 150_000,
+        });
+        const base = {
+          ...mockMessageData,
+          attachments: [appAttachment(0, 100_000)] as unknown as IMessage['attachments'],
+        };
+        await methods.saveMessage(mockCtx, base);
+        const text = 'result'.repeat(15_000);
+        if (writer === 'record')
+          await methods.recordMessage({
+            conversationId: mockMessageData.conversationId,
+            user: 'user123',
+            messageId: 'msg123',
+            text,
+          });
+        if (writer === 'edit')
+          await methods.updateMessage('user123', { messageId: 'msg123', text });
+        if (writer === 'bulk')
+          await methods.bulkSaveMessages([{ ...mockMessageData, user: 'user123', text }]);
+        if (writer === 'text')
+          await methods.updateMessageText('user123', { messageId: 'msg123', text });
+        const row = await Message.findOne({ messageId: 'msg123' }).lean();
+        expect(row?.text).toBe(text);
+        expect(mongoose.mongo.BSON.calculateObjectSize(row!)).toBeLessThanOrEqual(150_000);
+        expect(
+          (row?.attachments?.[0] as { ui_resources: Array<{ text?: string }> }).ui_resources[0]
+            .text,
+        ).toBeUndefined();
+      },
+    );
+
+    it('preserves bulk import counts and timestamps across ordinary and App-bearing rows', async () => {
+      const methods = createMessageMethods(mongoose, {
+        getMCPAppMessageBudget: async () => 80_000,
+      });
+      const createdAt = new Date('2020-01-01T00:00:00Z');
+      const messages = [
+        { ...mockMessageData, messageId: 'normal', createdAt },
+        {
+          ...mockMessageData,
+          messageId: 'app',
+          createdAt,
+          attachments: [appAttachment(0, 100_000)] as unknown as IMessage['attachments'],
+        },
+      ];
+      const created = await methods.bulkSaveMessages(messages, true);
+      expect(created).toMatchObject({ upsertedCount: 2, modifiedCount: 0 });
+      const modified = await methods.bulkSaveMessages(messages, true);
+      expect(modified).toMatchObject({ upsertedCount: 0, modifiedCount: 2, matchedCount: 2 });
+      const row = await Message.findOne({ messageId: 'app' }).lean();
+      expect(row?.createdAt).toEqual(createdAt);
+      expect(mongoose.mongo.BSON.calculateObjectSize(row!)).toBeLessThanOrEqual(80_000);
+    });
+
+    it('keeps newer-producer fields in the whole BSON estimate without dropping them', async () => {
+      await saveMessage(mockCtx, mockMessageData);
+      await Message.collection.updateOne(
+        { messageId: 'msg123' },
+        { $set: { futurePayload: 'x'.repeat(5 * 1024 * 1024) } },
+      );
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        attachments: Array.from({ length: 9 }, (_, i) =>
+          appAttachment(i, 1024 * 1024),
+        ) as unknown as IMessage['attachments'],
+      });
+      const row = await Message.collection.findOne({ messageId: 'msg123' });
+      expect(row?.futurePayload.length).toBe(5 * 1024 * 1024);
+      expect(mongoose.mongo.BSON.calculateObjectSize(row!)).toBeLessThanOrEqual(
+        MAX_MCP_APP_MESSAGE_BSON_BYTES,
+      );
+    }, 60000);
+
+    it('does not resolve App configuration or read a full row on ordinary saves', async () => {
+      const getMCPAppMessageBudget = jest.fn();
+      const methods = createMessageMethods(mongoose, { getMCPAppMessageBudget });
+      const read = jest.spyOn(Message, 'findOne');
+      try {
+        await methods.saveMessage(mockCtx, mockMessageData);
+        await methods.saveMessage(mockCtx, { ...mockMessageData, text: 'updated' });
+        expect(read).not.toHaveBeenCalled();
+        expect(getMCPAppMessageBudget).not.toHaveBeenCalled();
+      } finally {
+        read.mockRestore();
+      }
+    });
   });
 
   describe('saveMessage', () => {

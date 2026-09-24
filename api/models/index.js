@@ -8,6 +8,11 @@ const methods = createMethods(mongoose, {
   findMatchingPattern,
   isExternalSkillId: isDeploymentSkillId,
   getCache: getLogStores,
+  // Lazy require avoids the Config -> models initialization cycle. No user/role overrides.
+  getMCPAppMessageBudget: async () => {
+    const { getAppConfig } = require('~/server/services/Config');
+    return (await getAppConfig()).mcpAppSandbox?.maxPersistedMessageBytes;
+  },
 });
 
 const seedDatabase = async () => {

@@ -270,6 +270,18 @@ function getSteerUserSubmittedPaths(content: unknown): string[] {
   return paths;
 }
 
+/** Mongoose omits undefined $set values. Strip identity/version inputs before any sizing callback. */
+function sanitizeMessageUpdate(update: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(update).filter(
+      ([key, value]) => value !== undefined && !['_id', 'tenantId', '__v'].includes(key),
+    ),
+  );
+}
+
+/** Conservatively admit any server-bound resource to the slow path, including legacy MIME forms. */
+const NO_BOUND_APPS = { 'attachments.ui_resources.serverBinding': { $exists: false } };
+
 /**
  * A terminal save that must drop a stored `contextMeta` unsets it in the same
  * update that persists the response, so no failure between two writes can
@@ -283,17 +295,9 @@ function buildMessageSaveUpdate(
     retentionOnInsert?: { expiredAt: Date; isTemporary: false };
   },
 ): UpdateQuery<IMessage> {
-  if (
-    !options.stampModelOutputOnInsert &&
-    !options.unsetContextMeta &&
-    options.retentionOnInsert == null &&
-    !Array.isArray(update.attachments)
-  ) {
-    return update;
-  }
   return {
     $set: update,
-    ...(Array.isArray(update.attachments) && { $inc: { __v: 1 } }),
+    $inc: { __v: 1 },
     ...((options.stampModelOutputOnInsert || options.retentionOnInsert != null) && {
       $setOnInsert: {
         ...(options.stampModelOutputOnInsert && { isUserSubmitted: false }),
@@ -315,13 +319,16 @@ async function findOneAndMergeMessageProvenance(
     stampModelOutputOnInsert?: boolean;
     unsetContextMeta?: boolean;
     retentionOnInsert?: { expiredAt: Date; isTemporary: false };
-    prepareAppUpdate?: (current: Record<string, unknown> | null) => Record<string, unknown>;
+    prepareAppUpdate?: (
+      current: Record<string, unknown> | null,
+      update: Record<string, unknown>,
+    ) => Promise<Record<string, unknown>>;
+    timestamps?: boolean;
     privateMessagePaths?: string;
+    onWrite?: (inserted: boolean, id: unknown) => void;
   },
 ) {
-  const safeUpdate = { ...update };
-  delete safeUpdate._id;
-  delete safeUpdate.tenantId;
+  const safeUpdate = sanitizeMessageUpdate(update);
   const preservesStoredIsUserSubmitted = !Object.prototype.hasOwnProperty.call(
     safeUpdate,
     'isUserSubmitted',
@@ -372,21 +379,24 @@ async function findOneAndMergeMessageProvenance(
             }
           : { _id: new Message.base.Types.ObjectId() })),
     };
-    const admittedUpdate = options.prepareAppUpdate?.(current) ?? safeUpdate;
+    const admittedUpdate = options.prepareAppUpdate
+      ? await options.prepareAppUpdate(current, { ...safeUpdate, ...provenance })
+      : { ...safeUpdate, ...provenance };
 
     try {
       const message = await Message.findOneAndUpdate(
         filter,
         {
-          $set: { ...admittedUpdate, ...provenance },
-          ...(Array.isArray(safeUpdate.attachments) && { $inc: { __v: 1 } }),
+          $set: admittedUpdate,
+          $inc: { __v: 1 },
           ...(current == null &&
             options.retentionOnInsert != null && { $setOnInsert: options.retentionOnInsert }),
           ...(options.unsetContextMeta && { $unset: { contextMeta: 1 } }),
         },
-        { upsert: options.upsert && current == null, new: true },
+        { upsert: options.upsert && current == null, new: true, timestamps: options.timestamps },
       );
       if (message != null) {
+        options.onWrite?.(current == null, message._id);
         return message;
       }
     } catch (err) {
@@ -886,7 +896,15 @@ function agentOwnershipFilter(prefix: string, agentId: string): Record<string, u
   };
 }
 
-export function createMessageMethods(mongoose: typeof import('mongoose')): MessageMethods {
+export interface MessageDependencies {
+  /** Read from deployment config, never from a message/request or a principal override. */
+  getMCPAppMessageBudget?: () => Promise<number | undefined>;
+}
+
+export function createMessageMethods(
+  mongoose: typeof import('mongoose'),
+  deps: MessageDependencies = {},
+): MessageMethods {
   /** The API constructs method adapters before it necessarily registers every model. */
   function privateMessagePaths(): string {
     const Message = mongoose.models.Message as Model<IMessage>;
@@ -896,30 +914,98 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       .join(' ');
   }
 
-  function prepareAppUpdate(
+  async function prepareAppUpdate(
     update: Record<string, unknown>,
     current: Record<string, unknown> | null,
     unsetContextMeta = false,
-  ): Record<string, unknown> {
+    retentionOnInsert?: { expiredAt: Date; isTemporary: false },
+  ): Promise<Record<string, unknown>> {
     const Message = mongoose.models.Message as Model<IMessage>;
-    const attachments = update.attachments as unknown[];
-    const admitted = fitBoundAppSnapshots(attachments, (candidateAttachments) => {
-      const next = new Message({
-        ...current,
-        ...update,
-        attachments: candidateAttachments,
-        ...(unsetContextMeta ? { contextMeta: undefined } : {}),
-        createdAt: current?.createdAt ?? new Date(),
-        updatedAt: new Date(),
-      });
-      return mongoose.mongo.BSON.calculateObjectSize(
-        next.toObject({ depopulate: true, minimize: false }),
-      );
-    });
+    const safeUpdate = sanitizeMessageUpdate(update);
+    // Omission retains the attachments of THIS fenced row; null/[] explicitly clears them.
+    const attachments = Object.prototype.hasOwnProperty.call(safeUpdate, 'attachments')
+      ? safeUpdate.attachments
+      : current?.attachments;
+    if (!hasBoundAppSnapshots(attachments)) return safeUpdate;
+    const maxBytes = await deps.getMCPAppMessageBudget?.();
+    const admitted = fitBoundAppSnapshots(
+      attachments as unknown[],
+      (candidateAttachments) => {
+        const fields = {
+          ...current,
+          ...(current == null ? retentionOnInsert : {}),
+          ...safeUpdate,
+          attachments: candidateAttachments,
+          ...(unsetContextMeta ? { contextMeta: undefined } : {}),
+          createdAt: current?.createdAt ?? safeUpdate.createdAt ?? new Date(),
+          updatedAt: new Date(),
+          __v: (Number(current?.__v) || 0) + 1,
+        };
+        const next = new Message(fields).toObject({ depopulate: true, minimize: false });
+        // Keep unknown fields already stored by a newer producer, even if this schema drops them.
+        const candidate = { ...current, ...next };
+        if (unsetContextMeta) delete candidate.contextMeta;
+        return mongoose.mongo.BSON.calculateObjectSize(candidate);
+      },
+      maxBytes,
+    );
     if (admitted !== attachments) {
       logger.warn('[saveMessage] Optional MCP App documents exceeded the message BSON budget');
     }
-    return admitted === attachments ? update : { ...update, attachments: admitted };
+    return admitted === attachments ? safeUpdate : { ...safeUpdate, attachments: admitted };
+  }
+
+  /** One admission owner for save, edit, record and import. No size heuristics or stale closures. */
+  async function writeMessage(
+    identity: FilterQuery<IMessage>,
+    input: Record<string, unknown>,
+    options: {
+      upsert: boolean;
+      stampModelOutputOnInsert?: boolean;
+      unsetContextMeta?: boolean;
+      retentionOnInsert?: { expiredAt: Date; isTemporary: false };
+      timestamps?: boolean;
+      onWrite?: (inserted: boolean, id: unknown) => void;
+    },
+  ): Promise<IMessage | null> {
+    const Message = mongoose.models.Message as Model<IMessage>;
+    const update = sanitizeMessageUpdate(input);
+    const paths = normalizeUserSubmittedPaths(update.userSubmittedPaths);
+    const fields = normalizeUserSubmittedMessageFieldPaths(update.userSubmittedMessageFieldPaths);
+    delete update.userSubmittedPaths;
+    delete update.userSubmittedMessageFieldPaths;
+    if (!hasBoundAppSnapshots(update.attachments) && paths.length === 0 && fields.length === 0) {
+      try {
+        // Preserve the single-write common path. If an App row is excluded, its existing
+        // unique (messageId, user, tenantId) index rejects the upsert; budget that row below.
+        const fast = await Message.findOneAndUpdate(
+          { ...identity, ...NO_BOUND_APPS },
+          buildMessageSaveUpdate(update, {
+            stampModelOutputOnInsert: options.stampModelOutputOnInsert ?? false,
+            unsetContextMeta: options.unsetContextMeta ?? false,
+            retentionOnInsert: options.retentionOnInsert,
+          }),
+          {
+            upsert: options.upsert,
+            new: true,
+            timestamps: options.timestamps,
+            includeResultMetadata: true,
+          },
+        );
+        if (fast.value) {
+          options.onWrite?.(fast.lastErrorObject?.updatedExisting === false, fast.value._id);
+          return fast.value;
+        }
+      } catch (error) {
+        if (!isDuplicateKeyError(error)) throw error;
+      }
+    }
+    return findOneAndMergeMessageProvenance(Message, identity, update, paths, fields, {
+      ...options,
+      privateMessagePaths: privateMessagePaths(),
+      prepareAppUpdate: (current, sanitized) =>
+        prepareAppUpdate(sanitized, current, options.unsetContextMeta, options.retentionOnInsert),
+    });
   }
 
   /**
@@ -1043,97 +1129,11 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       delete update.__v;
       const stampModelOutputOnInsert =
         params.isCreatedByUser === false && params.isUserSubmitted === undefined;
-      const hasProvenance =
-        userSubmittedPaths.length > 0 || userSubmittedMessageFieldPaths.length > 0;
-      let hasApps = hasBoundAppSnapshots(update.attachments);
-      if (!hasApps) {
-        const content = Array.isArray(update.content) ? update.content : [];
-        const growingContent =
-          (typeof update.text === 'string' && update.text.length > 1024 * 1024) ||
-          content.length > 128 ||
-          content.some((item) => {
-            if (item == null || typeof item !== 'object') return false;
-            const value = item as { text?: unknown; tool_call?: { output?: unknown } };
-            return (
-              (typeof value.text === 'string' && value.text.length > 1024 * 1024) ||
-              (typeof value.tool_call?.output === 'string' &&
-                value.tool_call.output.length > 1024 * 1024)
-            );
-          });
-        if (growingContent) {
-          const stored = await Message.findOne({ messageId: params.messageId, user: userId })
-            .select({ attachments: 1 })
-            .lean<{ attachments?: unknown[] } | null>();
-          if (hasBoundAppSnapshots(stored?.attachments)) {
-            // Omitted attachments normally retain the stored array. Carry it into the same
-            // versioned budgeted write so optional HTML yields to new canonical output.
-            update.attachments = stored?.attachments;
-            hasApps = true;
-          }
-        }
-      }
-      const appUpdate = hasApps
-        ? (current: Record<string, unknown> | null) =>
-            prepareAppUpdate(update, current, unsetContextMeta)
-        : undefined;
-      let message: IMessage | null = null;
-      if (hasProvenance) {
-        message = await findOneAndMergeMessageProvenance(
-          Message,
-          { messageId: params.messageId, user: userId },
-          update,
-          userSubmittedPaths,
-          userSubmittedMessageFieldPaths,
-          {
-            upsert: true,
-            stampModelOutputOnInsert,
-            unsetContextMeta,
-            retentionOnInsert,
-            prepareAppUpdate: appUpdate,
-            privateMessagePaths: hasApps ? privateMessagePaths() : undefined,
-          },
-        );
-      } else if (hasApps) {
-        for (let attempt = 0; attempt < ATTACHMENT_MERGE_CAS_ATTEMPTS; attempt++) {
-          const current = await Message.findOne({ messageId: params.messageId, user: userId })
-            .select(privateMessagePaths())
-            .lean<Record<string, unknown> | null>();
-          const filter = {
-            messageId: params.messageId,
-            user: userId,
-            ...(current != null
-              ? { _id: current._id, __v: current.__v ?? null }
-              : { _id: new mongoose.Types.ObjectId() }),
-          };
-          try {
-            message = await Message.findOneAndUpdate(
-              filter,
-              buildMessageSaveUpdate(appUpdate!(current), {
-                stampModelOutputOnInsert,
-                unsetContextMeta,
-                retentionOnInsert,
-              }),
-              { upsert: current == null, new: true },
-            );
-            if (message) break;
-          } catch (error) {
-            if (!isDuplicateKeyError(error)) throw error;
-          }
-        }
-        if (!message) {
-          throw new Error('MCP App message write contention exceeded its retry bound');
-        }
-      } else {
-        message = await Message.findOneAndUpdate(
-          { messageId: params.messageId, user: userId },
-          buildMessageSaveUpdate(update, {
-            stampModelOutputOnInsert,
-            unsetContextMeta,
-            retentionOnInsert,
-          }),
-          { upsert: true, new: true },
-        );
-      }
+      const message = await writeMessage(
+        { messageId: params.messageId, user: userId },
+        { ...update, userSubmittedPaths, userSubmittedMessageFieldPaths },
+        { upsert: true, stampModelOutputOnInsert, unsetContextMeta, retentionOnInsert },
+      );
 
       if (message == null) {
         return message;
@@ -1217,7 +1217,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     try {
       const Message = mongoose.models.Message as Model<IMessage>;
       const bulkOps = messages.map((message) => {
-        const normalizedMessage = { ...message };
+        const normalizedMessage = sanitizeMessageUpdate(message);
         const provenance = capNormalizedProvenance(
           normalizeUserSubmittedPaths(message.userSubmittedPaths),
           normalizeUserSubmittedMessageFieldPaths(message.userSubmittedMessageFieldPaths),
@@ -1238,15 +1238,96 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         }
         return {
           updateOne: {
-            filter: { messageId: message.messageId },
-            update: normalizedMessage,
+            filter: {
+              messageId: message.messageId,
+              ...(message.user != null ? { user: message.user } : {}),
+            },
+            update: { $set: normalizedMessage, $inc: { __v: 1 } },
             timestamps: !overrideTimestamp,
             upsert: true,
           },
         };
       });
-      const result = await tenantSafeBulkWrite(Message, bulkOps);
-      return result;
+      // Keep no-App imports batched. The atomic predicate makes a race with App attachment
+      // creation collide on the unique key, at which point only that row uses guarded admission.
+      const guarded: typeof bulkOps = [];
+      const ordinary = bulkOps.filter((op) => {
+        if (hasBoundAppSnapshots(op.updateOne.update.$set.attachments)) {
+          guarded.push(op);
+          return false;
+        }
+        return true;
+      });
+      let result:
+        | {
+            matchedCount: number;
+            modifiedCount: number;
+            upsertedCount: number;
+            upsertedIds: Record<number, unknown>;
+          }
+        | undefined;
+      const repaired = {
+        matchedCount: 0,
+        modifiedCount: 0,
+        upsertedCount: 0,
+        upsertedIds: {} as Record<number, unknown>,
+      };
+      if (ordinary.length) {
+        try {
+          result = await tenantSafeBulkWrite(
+            Message,
+            ordinary.map((op) => ({
+              updateOne: {
+                ...op.updateOne,
+                filter: { ...op.updateOne.filter, ...NO_BOUND_APPS },
+              },
+            })),
+            { ordered: false },
+          );
+        } catch (error) {
+          const failure = error as {
+            writeErrors?: Array<{ code: number; index: number }>;
+            result?: typeof result;
+          };
+          if (
+            !failure.writeErrors?.length ||
+            failure.writeErrors.some((item) => item.code !== 11000)
+          )
+            throw error;
+          result = failure.result;
+          for (const { index } of failure.writeErrors) guarded.push(ordinary[index]);
+        }
+      }
+      // Ordinary imports stay batched; exceptional App rows are admitted one at a time.
+      for (const op of guarded) {
+        await writeMessage(op.updateOne.filter, op.updateOne.update.$set, {
+          upsert: true,
+          timestamps: !overrideTimestamp,
+          onWrite: (inserted, id) => {
+            if (inserted) {
+              repaired.upsertedCount++;
+              repaired.upsertedIds[bulkOps.indexOf(op)] = id;
+            } else {
+              repaired.matchedCount++;
+              repaired.modifiedCount++;
+            }
+          },
+        });
+      }
+      if (!guarded.length) return result;
+      const upsertedIds: Record<number, unknown> = { ...repaired.upsertedIds };
+      for (const [index, id] of Object.entries(result?.upsertedIds ?? {})) {
+        upsertedIds[bulkOps.indexOf(ordinary[Number(index)])] = id;
+      }
+      return {
+        insertedCount: 0,
+        deletedCount: 0,
+        insertedIds: {},
+        upsertedIds,
+        matchedCount: (result?.matchedCount ?? 0) + repaired.matchedCount,
+        modifiedCount: (result?.modifiedCount ?? 0) + repaired.modifiedCount,
+        upsertedCount: (result?.upsertedCount ?? 0) + repaired.upsertedCount,
+      };
     } catch (err) {
       logger.error('Error saving messages in bulk:', err);
       throw err;
@@ -1272,7 +1353,6 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     [key: string]: unknown;
   }) {
     try {
-      const Message = mongoose.models.Message as Model<IMessage>;
       const provenance = capNormalizedProvenance(
         normalizeUserSubmittedPaths(rest.userSubmittedPaths),
         normalizeUserSubmittedMessageFieldPaths(rest.userSubmittedMessageFieldPaths),
@@ -1297,16 +1377,10 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         }),
         ...(provenance.promoteWholeMessage && { isUserSubmitted: true }),
       };
-      const update =
-        rest.isCreatedByUser === false &&
-        rest.isUserSubmitted === undefined &&
-        !provenance.promoteWholeMessage
-          ? { $set: message, $setOnInsert: { isUserSubmitted: false } }
-          : message;
-
-      return await Message.findOneAndUpdate({ user, messageId }, update, {
+      return await writeMessage({ user, messageId }, message, {
         upsert: true,
-        new: true,
+        stampModelOutputOnInsert:
+          rest.isCreatedByUser === false && rest.isUserSubmitted === undefined,
       });
     } catch (err) {
       logger.error('Error recording message:', err);
@@ -1322,8 +1396,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     { messageId, text }: { messageId: string; text: string },
   ) {
     try {
-      const Message = mongoose.models.Message as Model<IMessage>;
-      await Message.updateOne({ messageId, user: userId }, { text });
+      await writeMessage({ messageId, user: userId }, { text }, { upsert: false });
     } catch (err) {
       logger.error('Error updating message text:', err);
       throw err;
@@ -1489,24 +1562,14 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           },
         );
       }
-      const largeOutput = output !== undefined && Buffer.byteLength(output, 'utf8') > 1024 * 1024;
-      const budgetExistingApps =
-        !mergingAttachments &&
-        largeOutput &&
-        hasBoundAppSnapshots(
-          (
-            await Message.findOne(messageFilter)
-              .select({ attachments: 1 })
-              .lean<{ attachments?: unknown[] } | null>()
-          )?.attachments,
-        );
-      if (!mergingAttachments && !budgetExistingApps) {
-        const result = await Message.findOneAndUpdate(
-          messageFilter,
+      if (!mergingAttachments) {
+        const fast = await Message.findOneAndUpdate(
+          { ...messageFilter, ...NO_BOUND_APPS },
           settleUpdate,
           settleOptions,
         ).lean<{ unfinished?: boolean } | null>();
-        return { matched: result != null, unfinished: result?.unfinished === true };
+        if (fast) return { matched: true, unfinished: fast.unfinished === true };
+        // Either absent, or a bound-App row needs an exact candidate even for tiny results.
       }
       /** Dedupe key mirrors the resume merge: `file_id ?? filepath`, so
        * download-fallback attachments (no `file_id`, only a filepath) stay
@@ -1586,35 +1649,55 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
         let admitted = merged;
         if (hasApps) {
           const content = Array.isArray(current.content) ? current.content : [];
-          const nextContent =
-            output === undefined
-              ? content
-              : content.map((entry) => {
-                  if (entry == null || typeof entry !== 'object') return entry;
-                  const part = entry as {
-                    type?: unknown;
-                    agentId?: unknown;
-                    tool_call?: {
-                      id?: unknown;
-                      stepId?: unknown;
-                      agentId?: unknown;
-                      output?: string;
-                    };
-                  };
-                  if (
-                    part.type !== 'tool_call' ||
-                    part.tool_call?.id !== toolCallId ||
-                    (stepId != null && part.tool_call.stepId !== stepId) ||
-                    (agentId != null &&
-                      part.agentId != null &&
-                      part.agentId !== agentId &&
-                      part.tool_call.agentId !== agentId)
-                  )
-                    return entry;
-                  return { ...part, tool_call: { ...part.tool_call, output } };
-                });
-          admitted = prepareAppUpdate({ attachments: merged, content: nextContent }, current)
-            .attachments as unknown[];
+          const nextContent = content.map((entry) => {
+            if (entry == null || typeof entry !== 'object') return entry;
+            const part = entry as {
+              type?: unknown;
+              agentId?: unknown;
+              tool_call?: {
+                id?: unknown;
+                stepId?: unknown;
+                agentId?: unknown;
+                backgroundTask?: Record<string, unknown>;
+              };
+            };
+            // Exactly the agentOwnershipFilter precedence: part agent, then call agent, then wildcard.
+            const owner = part.agentId ?? part.tool_call?.agentId;
+            if (
+              part.type !== 'tool_call' ||
+              part.tool_call?.id !== toolCallId ||
+              (stepId != null && part.tool_call.stepId !== stepId) ||
+              (agentId != null && owner != null && owner !== agentId)
+            )
+              return entry;
+            const task = { ...part.tool_call.backgroundTask };
+            if (backgroundTask) {
+              Object.assign(task, {
+                version: 1,
+                taskId: backgroundTask.taskId,
+                toolName: backgroundTask.toolName,
+                status: backgroundTask.status,
+                cancelled: backgroundTask.cancelled === true,
+                settledAt: backgroundTask.settledAt,
+              });
+              if (backgroundTask.completionReceipt) task.completionReceipt = true;
+              if (backgroundTask.completionWakeup) task.completionWakeup = true;
+              else delete task.completionWakeup;
+            }
+            return {
+              ...part,
+              tool_call: {
+                ...part.tool_call,
+                ...(output !== undefined && { output }),
+                ...((output !== undefined || backgroundTask != null) &&
+                  markBackgrounded && { backgrounded: true }),
+                ...(backgroundTask && { backgroundTask: task }),
+              },
+            };
+          });
+          admitted = (
+            await prepareAppUpdate({ attachments: merged, content: nextContent }, current)
+          ).attachments as unknown[];
         }
         const result = await Message.findOneAndUpdate(
           {
@@ -2167,29 +2250,10 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     metadata?: { context?: string },
   ) {
     try {
-      const Message = mongoose.models.Message as Model<IMessage>;
       const { messageId, ...update } = message;
-      const submittedPaths = normalizeUserSubmittedPaths(update.userSubmittedPaths);
-      const submittedMessageFields = normalizeUserSubmittedMessageFieldPaths(
-        update.userSubmittedMessageFieldPaths,
-      );
-      delete update.userSubmittedPaths;
-      delete update.userSubmittedMessageFieldPaths;
-      const updatedMessage =
-        submittedPaths.length > 0 || submittedMessageFields.length > 0
-          ? await findOneAndMergeMessageProvenance(
-              Message,
-              { messageId, user: userId },
-              update,
-              submittedPaths,
-              submittedMessageFields,
-              { upsert: false },
-            )
-          : await Message.findOneAndUpdate(
-              { messageId, user: userId },
-              Array.isArray(update.attachments) ? { $set: update, $inc: { __v: 1 } } : update,
-              { new: true },
-            );
+      const updatedMessage = await writeMessage({ messageId, user: userId }, update, {
+        upsert: false,
+      });
 
       if (!updatedMessage) {
         throw new Error('Message not found or user not authorized.');
