@@ -122,29 +122,30 @@ RUN \
 # Re-apply patched package versions after npm prune for Vanta high/medium findings.
 RUN node -e 'const fs=require("fs"); const p="package.json"; const pkg=JSON.parse(fs.readFileSync(p,"utf8")); const names=["hono","multer","undici","uuid","form-data","protobufjs","nodemailer","dompurify","@opentelemetry/core","file-type"]; if (pkg.overrides) { for (const n of names) delete pkg.overrides[n]; } fs.writeFileSync(p, JSON.stringify(pkg,null,2));' \
     && npm install --force --legacy-peer-deps --ignore-scripts --no-audit --omit=dev --save=false \
-    hono@4.12.34 \
-    multer@3.0.0-alpha.2 \
+    hono@4.13.7 \
+    multer@2.3.0 \
     nanoid@3.3.18 \
     undici@8.10.0 \
     uuid@13.0.1 \
     form-data@4.0.6 \
     protobufjs@8.6.6 \
-    nodemailer@9.0.1 \
+    nodemailer@9.1.1 \
     dompurify@3.4.13 \
     postcss@8.5.26 \
-    svgo@2.8.3 \
+    svgo@2.8.4 \
     @opentelemetry/propagator-jaeger@2.9.0 \
     @hono/node-server@2.0.11 \
     body-parser@2.3.0 \
     axios@1.19.0 \
     @opentelemetry/core@2.8.0 \
     file-type@21.3.2 \
-    js-yaml@4.3.1 \
+    js-yaml@4.3.2 \
     brace-expansion@5.0.9 \
     fast-uri@3.1.6 \
+    fflate@0.8.3 \
     ip-address@10.3.1 \
     pdfjs-dist@6.2.108 \
-    sharp@0.35.3 \
+    sharp@0.35.4 \
     && rm -rf /app/node_modules/gaxios/node_modules/uuid \
     && mkdir -p /app/node_modules/gaxios/node_modules \
     && cp -a /app/node_modules/uuid /app/node_modules/gaxios/node_modules/uuid \

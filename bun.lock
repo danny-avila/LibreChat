@@ -116,7 +116,7 @@
         "multer": "2.2.0",
         "nanoid": "^3.3.18",
         "node-fetch": "^2.7.0",
-        "nodemailer": "9.0.1",
+        "nodemailer": "9.1.1",
         "ollama": "^0.5.0",
         "openai": "5.8.2",
         "openid-client": "^6.5.0",
@@ -597,7 +597,7 @@
     "fflate": "0.7.5",
     "file-type": "21.3.2",
     "form-data": "4.0.6",
-    "hono@>=4.0.0 <4.12.35": "4.12.34",
+    "hono": "4.13.7",
     "ip-address": "10.3.1",
     "js-yaml": "4.3.1",
     "js-yaml@>=3.0.0 <3.15.0": "3.15.0",
@@ -606,12 +606,12 @@
     "mdast-util-gfm-autolink-literal": "2.0.0",
     "multer": "2.2.0",
     "nanoid": "3.3.18",
-    "nodemailer": "9.0.1",
+    "nodemailer": "9.1.1",
     "postcss": "8.5.26",
     "protobufjs@>=7.5.0 <7.6.5": "7.6.5",
     "protobufjs@>=8.0.0 <8.6.6": "8.6.6",
     "serialize-javascript": "7.0.5",
-    "svgo@>=1.0.0 <2.8.3": "2.8.3",
+    "svgo@>=1.0.0 <2.8.4": "2.8.4",
     "tslib": "^2.8.1",
     "underscore": "1.13.8",
     "undici": "7.29.0",
@@ -3183,7 +3183,7 @@
 
     "hoist-non-react-statics": ["hoist-non-react-statics@3.3.2", "", { "dependencies": { "react-is": "^16.7.0" } }, ""],
 
-    "hono": ["hono@4.12.34", "", {}, ""],
+    "hono": ["hono@4.13.7", "", {}, ""],
 
     "hookified": ["hookified@1.15.1", "", {}, ""],
 
@@ -3853,7 +3853,7 @@
 
     "node-stdlib-browser": ["node-stdlib-browser@1.3.1", "", { "dependencies": { "assert": "^2.0.0", "browser-resolve": "^2.0.0", "browserify-zlib": "^0.2.0", "buffer": "^5.7.1", "console-browserify": "^1.1.0", "constants-browserify": "^1.0.0", "create-require": "^1.1.1", "crypto-browserify": "^3.12.1", "domain-browser": "4.22.0", "events": "^3.0.0", "https-browserify": "^1.0.0", "isomorphic-timers-promises": "^1.0.1", "os-browserify": "^0.3.0", "path-browserify": "^1.0.1", "pkg-dir": "^5.0.0", "process": "^0.11.10", "punycode": "^1.4.1", "querystring-es3": "^0.2.1", "readable-stream": "^3.6.0", "stream-browserify": "^3.0.0", "stream-http": "^3.2.0", "string_decoder": "^1.0.0", "timers-browserify": "^2.0.4", "tty-browserify": "0.0.1", "url": "^0.11.4", "util": "^0.12.4", "vm-browserify": "^1.0.1" } }, ""],
 
-    "nodemailer": ["nodemailer@9.0.1", "", {}, ""],
+    "nodemailer": ["nodemailer@9.1.1", "", {}, ""],
 
     "nodemon": ["nodemon@3.1.14", "", { "dependencies": { "chokidar": "^3.5.2", "debug": "^4", "ignore-by-default": "^1.0.1", "minimatch": "^10.2.1", "pstree.remy": "^1.1.8", "semver": "^7.5.3", "simple-update-notifier": "^2.0.0", "supports-color": "^5.5.0", "touch": "^3.1.0", "undefsafe": "^2.0.5" }, "bin": "bin/nodemon.js" }, ""],
 
@@ -4589,7 +4589,7 @@
 
     "supports-preserve-symlinks-flag": ["supports-preserve-symlinks-flag@1.0.0", "", {}, ""],
 
-    "svgo": ["svgo@2.8.3", "", { "dependencies": { "commander": "^7.2.0", "css-select": "^4.1.3", "css-tree": "^1.1.3", "csso": "^4.2.0", "picocolors": "^1.0.0", "sax": "^1.5.0", "stable": "^0.1.8" }, "bin": "bin/svgo" }, ""],
+    "svgo": ["svgo@2.8.4", "", { "dependencies": { "commander": "^7.2.0", "css-select": "^4.1.3", "css-tree": "^1.1.3", "csso": "^4.2.0", "picocolors": "^1.0.0", "sax": "^1.5.0", "stable": "^0.1.8" }, "bin": "bin/svgo" }, ""],
 
     "swr": ["swr@2.4.2", "", { "dependencies": { "dequal": "^2.0.3", "use-sync-external-store": "^1.6.0" }, "peerDependencies": { "react": "^16.11.0 || ^17.0.0 || ^18.0.0 || ^19.0.0" } }, ""],
 
