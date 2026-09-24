@@ -7555,6 +7555,46 @@ describe('AgentClient - titleConvo', () => {
       expect(processedMessage.content).not.toContain('Response 1');
     });
 
+    it('keeps the newest user message when the turn before it called tools', async () => {
+      const { formatAgentMessages } = jest.requireActual('@librechat/agents');
+      const { messages } = formatAgentMessages(
+        [
+          { role: 'user', content: 'open example.com' },
+          {
+            role: 'assistant',
+            content: [
+              {
+                type: 'tool_call',
+                tool_call: {
+                  id: 'call_1',
+                  name: 'browser_navigate',
+                  args: '{}',
+                  output: 'Page Title: Example Domain',
+                },
+              },
+              { type: 'text', text: 'The title is Example Domain.' },
+            ],
+          },
+          { role: 'user', content: 'I prefer answers in Japanese from now on' },
+        ],
+        undefined,
+        new Set(['browser_navigate']),
+      );
+      expect(messages.map((m) => m.role)).toEqual([
+        'user',
+        'assistant',
+        'tool',
+        'assistant',
+        'user',
+      ]);
+
+      await client.runMemory(messages);
+
+      expect(mockProcessMemory).toHaveBeenCalledTimes(1);
+      const processedMessage = mockProcessMemory.mock.calls[0][0][0];
+      expect(processedMessage.content).toContain('I prefer answers in Japanese from now on');
+    });
+
     it('should cap memory input tokens and preserve recent content', async () => {
       const { HumanMessage, AIMessage } = require('@librechat/agents/langchain/messages');
       mockReq.config.memory.maxInputTokens = 12;
