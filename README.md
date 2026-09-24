@@ -41,6 +41,9 @@
 <a href="https://template.cloud.sealos.io/deploy?templateName=librechat">
   <img src="https://raw.githubusercontent.com/labring-actions/templates/main/Deploy-on-Sealos.svg" alt="Deploy on Sealos" height="30">
 </a>
+<a href="https://zop.dev/zopday/app/deploy?image=registry.librechat.ai/librechat-ai/librechat:latest&port=3080">
+  <img src="https://zop.dev/deploytozopday-inkhard.svg" alt="Deploy on ZopDay" height="30">
+</a>
 </p>
 
 <p align="center">
