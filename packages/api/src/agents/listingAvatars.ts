@@ -2,9 +2,13 @@ import { logger } from '@librechat/data-schemas';
 import { FileSources } from 'librechat-data-provider';
 import type { AgentAvatar } from 'librechat-data-provider';
 import type { RefreshS3UrlFn } from './avatars';
-import { AVATAR_REFRESH_BATCH_SIZE } from './avatars';
+import { AVATAR_REFRESH_BATCH_SIZE, MAX_AVATAR_REFRESH_AGENTS } from './avatars';
 
-type AvatarRefreshEntry = { urlCache: Record<string, string> };
+type AvatarRefreshEntry = {
+  urlCache: Record<string, string>;
+  scope?: 'page';
+  expiresAt?: number;
+};
 type ListedAgent = { id?: string; avatar?: AgentAvatar };
 
 function validRefreshEntry(entry: unknown): entry is AvatarRefreshEntry {
@@ -16,6 +20,10 @@ function validRefreshEntry(entry: unknown): entry is AvatarRefreshEntry {
     typeof entry.urlCache === 'object' &&
     !Array.isArray(entry.urlCache)
   );
+}
+
+export function isFullAgentListAvatarCacheEntry(entry: unknown): boolean {
+  return validRefreshEntry(entry) && entry.scope !== 'page';
 }
 
 /** Only ACL-scoped lists use the full-set refresh, which must finish before a cursor snapshot. */
@@ -57,7 +65,11 @@ export async function refreshManagedAgentListPageAvatars({
     return cachedEntry;
   }
 
-  const urlCache = { ...(cachedEntry?.urlCache ?? {}) };
+  const now = Date.now();
+  const cachedExpiresAt = cachedEntry?.scope === 'page' ? cachedEntry.expiresAt : undefined;
+  const cachedPageIsFresh = typeof cachedExpiresAt === 'number' && cachedExpiresAt > now;
+  const urlCache = cachedPageIsFresh ? { ...cachedEntry?.urlCache } : {};
+  const expiresAt = cachedPageIsFresh ? cachedExpiresAt : now + ttl;
   const pending = agents.filter(
     (agent) =>
       agent.id &&
@@ -66,7 +78,7 @@ export async function refreshManagedAgentListPageAvatars({
       !Object.prototype.hasOwnProperty.call(urlCache, agent.id),
   );
   if (pending.length === 0) {
-    return cachedEntry;
+    return cachedPageIsFresh ? cachedEntry : null;
   }
 
   let changed = false;
@@ -86,10 +98,18 @@ export async function refreshManagedAgentListPageAvatars({
     );
   }
 
-  const entry = { urlCache };
+  if (changed) {
+    // A manager can visit far more agents than the full-set refresh ever loads.
+    // Bound one user's Redis entry to the existing avatar-refresh budget.
+    const cacheIds = Object.keys(urlCache);
+    for (const id of cacheIds.slice(0, Math.max(0, cacheIds.length - MAX_AVATAR_REFRESH_AGENTS))) {
+      delete urlCache[id];
+    }
+  }
+  const entry: AvatarRefreshEntry = { urlCache, scope: 'page', expiresAt };
   if (changed) {
     try {
-      await cacheSet(cacheKey, entry, ttl);
+      await cacheSet(cacheKey, entry, Math.max(1, expiresAt - Date.now()));
     } catch (error) {
       logger.warn('[AgentList] Failed to cache refreshed avatars: %o', error);
     }

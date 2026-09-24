@@ -4266,6 +4266,22 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       expect(refreshS3Url).not.toHaveBeenCalled();
     });
 
+    test('does not treat a manager page cache as an ACL-wide refresh after role downgrade', async () => {
+      mockCache.get.mockResolvedValue({ urlCache: {}, scope: 'page' });
+      findAccessibleResources.mockResolvedValue([agentWithS3Avatar._id]);
+      findPubliclyAccessibleResources.mockResolvedValue([]);
+      refreshS3Url.mockResolvedValue('refreshed-after-downgrade.jpg');
+      const mockReq = { user: { id: userA.toString(), role: 'USER' }, query: {} };
+      const mockRes = { status: jest.fn().mockReturnThis(), json: jest.fn().mockReturnThis() };
+
+      await getListAgentsHandler(mockReq, mockRes);
+
+      expect(refreshS3Url).toHaveBeenCalledTimes(1);
+      expect(mockRes.json.mock.calls[0][0].data[0].avatar.filepath).toBe(
+        'refreshed-after-downgrade.jpg',
+      );
+    });
+
     test('should refresh and persist S3 avatars on cache miss', async () => {
       mockCache.get.mockResolvedValue(false);
       findAccessibleResources.mockResolvedValue([agentWithS3Avatar._id]);

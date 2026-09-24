@@ -16,6 +16,7 @@ const {
   replaceEdgeSourceId,
   mergeDeploymentSkillIds,
   getAgentListAccess,
+  isFullAgentListAvatarCacheEntry,
   refreshAgentListAvatarsBeforePage,
   refreshManagedAgentListPageAvatars,
   mergeAgentOcrConversion,
@@ -1795,10 +1796,7 @@ const getListAgentsHandler = async (req, res) => {
           }),
     ]);
 
-    const isValidCachedRefresh =
-      cachedRefreshEntry != null &&
-      typeof cachedRefreshEntry === 'object' &&
-      cachedRefreshEntry.urlCache != null;
+    const isValidCachedRefresh = isFullAgentListAvatarCacheEntry(cachedRefreshEntry);
 
     /**
      * Refresh all S3 avatars for this user's accessible agent set (not only the current page)
@@ -1886,7 +1884,7 @@ const getListAgentsHandler = async (req, res) => {
 
     const publicSet = new Set(publiclyAccessibleIds.map((oid) => oid.toString()));
     /** Null for EDIT-scoped requests, where every matched agent is editable by definition. */
-    const editableSet = editableIds ? new Set(editableIds.map((oid) => oid.toString())) : null;
+    const editableSet = editableIds ? new Set(editableIds) : null;
     const agentsWithContacts = await attachOwnerContacts(agents);
 
     const urlCache = cachedRefresh?.urlCache;
