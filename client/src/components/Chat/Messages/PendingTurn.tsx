@@ -44,7 +44,8 @@ export default function PendingTurn({
   const { conversation, latestMessageId } = useChatContext();
   const conversationId = conversation?.conversationId ?? '';
   const reveal = useAtomValue(revealedQueuedTurnFamily(conversationId));
-  const portal = useQueuedTurnPortal();
+  const setPortalTarget = useQueuedTurnPortal()?.setTarget;
+  const clientRequestId = reveal?.clientRequestId;
   const usernameDisplay = useRecoilValue(store.UsernameDisplay);
   const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
   const rowRef = useRef<HTMLDivElement | null>(null);
@@ -63,13 +64,13 @@ export default function PendingTurn({
     !successorSeen;
   const setActionsTarget = useCallback(
     (element: HTMLSpanElement | null) => {
-      portal?.setTarget(
-        element == null || reveal == null
+      setPortalTarget?.(
+        element == null || clientRequestId == null
           ? null
-          : { element, conversationId, clientRequestId: reveal.clientRequestId },
+          : { element, conversationId, clientRequestId },
       );
     },
-    [portal?.setTarget, conversationId, reveal?.clientRequestId],
+    [setPortalTarget, conversationId, clientRequestId],
   );
 
   /** A reader resting at the end of the thread was following the response;
