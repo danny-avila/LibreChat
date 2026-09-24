@@ -9,6 +9,7 @@ import {
 import type { McpUiStyles, McpUiStyleVariableKey } from '@modelcontextprotocol/ext-apps/app-bridge';
 import type { UIResource } from 'librechat-data-provider';
 import type { AppToolResult } from '~/utils/mcpApps';
+import type { MCPAppAction } from './approval';
 import {
   callMCPAppTool,
   fetchMCPResourceHtml,
@@ -44,6 +45,9 @@ export type UseAppBridgeParams = {
   toolArgs: Record<string, unknown> | undefined;
   toolResult: AppToolResult | undefined;
   userId?: string;
+  /** Only a host-owned approval control may resolve this; missing control denies actions. */
+  onRequestAction?: (action: MCPAppAction, signal: AbortSignal) => Promise<boolean>;
+  onCancelAction?: () => void;
   /** View-owned retry generation. Each attempt gets an isolated bridge and resource query. */
   attempt: number;
   onSizeChanged: (params: SizeParams) => void;
@@ -95,6 +99,8 @@ export function useAppBridge({
   toolArgs,
   toolResult,
   userId,
+  onRequestAction,
+  onCancelAction,
   attempt,
   onSizeChanged,
   active = true,
@@ -117,11 +123,15 @@ export function useAppBridge({
   // callback or tool-call snapshot never tears down the live AppBridge. Synced at render time
   // (idempotent under Strict Mode) rather than via an effect that would only mirror props.
   const askRef = useRef(ask);
+  const requestActionRef = useRef(onRequestAction);
+  const cancelActionRef = useRef(onCancelAction);
   const onSizeChangedRef = useRef(onSizeChanged);
   const onLoadedRef = useRef(onLoaded);
   const onTeardownRef = useRef(onTeardown);
   const onFailedRef = useRef(onFailed);
   askRef.current = ask;
+  requestActionRef.current = onRequestAction;
+  cancelActionRef.current = onCancelAction;
   onSizeChangedRef.current = onSizeChanged;
   onLoadedRef.current = onLoaded;
   onTeardownRef.current = onTeardown;
@@ -148,6 +158,7 @@ export function useAppBridge({
     // Unmount, a resource switch, or a teardown can run cleanup while a read or bridge.connect() is
     // still pending; this flag stops the pending continuation from touching a disposed bridge.
     let cancelled = false;
+    const viewAbort = new AbortController();
     let resourceSent = false;
     let sendingResource = false;
     let initialized = false;
@@ -242,6 +253,8 @@ export function useAppBridge({
       if (disposed) return;
       disposed = true;
       cancelled = true;
+      viewAbort.abort();
+      cancelActionRef.current?.();
       themeObserver.disconnect();
       bridge.close();
       void queryClient.cancelQueries({ queryKey: resourceQueryKey, exact: true });
@@ -269,14 +282,36 @@ export function useAppBridge({
     // Host-bound actions (tool calls, resource reads/lists, model messages) run with the viewer's
     // auth, so they are only wired in interactive views, never in shared transcripts or /search.
     if (interactive) {
-      bridge.oncalltool = async (params, { signal }) =>
-        callMCPAppTool(
-          serverName,
-          serverBinding,
-          params.name,
-          (params.arguments as Record<string, unknown>) ?? {},
-          signal,
-        );
+      bridge.oncalltool = async (params, { signal }) => {
+        if (signal.aborted || viewAbort.signal.aborted || cancelled || !requestActionRef.current)
+          return { content: [], isError: true };
+        // Snapshot the arguments shown to the user: the App must not mutate them while waiting.
+        let argumentsText: string;
+        let args: Record<string, unknown>;
+        try {
+          argumentsText = JSON.stringify(params.arguments ?? {});
+          if (!argumentsText || argumentsText.length > 16_384)
+            return { content: [], isError: true };
+          args = JSON.parse(argumentsText) as Record<string, unknown>;
+          if (!args || typeof args !== 'object' || Array.isArray(args))
+            return { content: [], isError: true };
+        } catch {
+          return { content: [], isError: true };
+        }
+        const toolName = params.name;
+        try {
+          const actionSignal = AbortSignal.any([signal, viewAbort.signal]);
+          const allowed = await requestActionRef.current(
+            { kind: 'tool', serverName, toolName, argumentsText },
+            actionSignal,
+          );
+          if (!allowed || actionSignal.aborted || cancelled) return { content: [], isError: true };
+          return await callMCPAppTool(serverName, serverBinding, toolName, args, actionSignal);
+        } catch (error) {
+          logger.error('[MCP App] Tool action failed', error);
+          return { content: [], isError: true };
+        }
+      };
 
       bridge.onreadresource = async (params, { signal }) =>
         readMCPResource(serverName, serverBinding, params.uri, signal);
@@ -292,10 +327,23 @@ export function useAppBridge({
           .filter((block) => block.type === 'text' && typeof block.text === 'string')
           .map((block) => block.text)
           .join('\n');
-        if (!text || signal.aborted || cancelled) {
+        if (
+          !text ||
+          text.length > 16_384 ||
+          signal.aborted ||
+          viewAbort.signal.aborted ||
+          cancelled ||
+          !requestActionRef.current
+        ) {
           return { isError: true };
         }
         try {
+          const actionSignal = AbortSignal.any([signal, viewAbort.signal]);
+          const allowed = await requestActionRef.current(
+            { kind: 'message', serverName, text },
+            actionSignal,
+          );
+          if (!allowed || actionSignal.aborted || cancelled) return { isError: true };
           const accepted = askRef.current({ text });
           if (accepted === false) {
             return { isError: true };
@@ -481,6 +529,8 @@ export function useAppBridge({
     void start();
 
     return () => {
+      cancelled = true;
+      cancelActionRef.current?.();
       if (initialized) {
         bridge.teardownResource({}).catch(() => {});
       }

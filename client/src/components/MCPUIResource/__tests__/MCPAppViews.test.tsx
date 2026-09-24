@@ -1,6 +1,6 @@
 import React from 'react';
-import { render } from '@testing-library/react';
 import { Tools } from 'librechat-data-provider';
+import { fireEvent, render, screen } from '@testing-library/react';
 import type { TAttachment, TStartupConfig, UIResource } from 'librechat-data-provider';
 import type { MCPAppFrameState } from '~/hooks/MCP';
 import { MCPAppsPolicyProvider } from '~/Providers/MCPAppsPolicyContext';
@@ -121,6 +121,9 @@ describe('MCPAppViews', () => {
       </MCPAppsPolicyProvider>,
     );
 
+    expect(container.querySelectorAll('iframe[data-sandbox-url]')).toHaveLength(0);
+    expect(mockUseAppBridge).not.toHaveBeenCalled();
+    screen.getAllByRole('button', { name: 'com_ui_mcp_app_open' }).forEach(fireEvent.click);
     expect(container.querySelectorAll('iframe[data-sandbox-url]')).toHaveLength(2);
     expect(mockUseAppBridge).toHaveBeenNthCalledWith(
       1,
@@ -148,6 +151,33 @@ describe('MCPAppViews', () => {
     );
   });
 
+  it('limits simultaneous live bridges and releases the slot on close', () => {
+    const attachments = [
+      attachment(
+        { toolCallId: 'batch', agentId: 'agent', stepId: 'step' },
+        Array.from({ length: 4 }, (_, i) => app({ resourceId: `r${i}`, toolName: `tool${i}` })),
+      ),
+    ];
+    const view = render(
+      <MCPAppsPolicyProvider startupConfig={enabledConfig} ready userId="user-1">
+        <MCPAppViews attachments={attachments} />
+      </MCPAppsPolicyProvider>,
+    );
+    expect(mockUseAppBridge).not.toHaveBeenCalled();
+    view
+      .getAllByRole('button', { name: 'com_ui_mcp_app_open' })
+      .slice(0, 3)
+      .forEach(fireEvent.click);
+    expect(view.container.querySelectorAll('iframe[data-sandbox-url]')).toHaveLength(3);
+    fireEvent.click(view.getByRole('button', { name: 'com_ui_mcp_app_open' }));
+    expect(view.getByRole('alert')).toHaveTextContent('com_ui_mcp_app_at_capacity');
+    expect(view.container.querySelectorAll('iframe[data-sandbox-url]')).toHaveLength(3);
+    fireEvent.click(view.getAllByRole('button', { name: 'com_ui_mcp_app_close' })[0]);
+    expect(view.container.querySelectorAll('iframe[data-sandbox-url]')).toHaveLength(2);
+    fireEvent.click(view.getAllByRole('button', { name: 'com_ui_mcp_app_open' }).at(-1)!);
+    expect(view.container.querySelectorAll('iframe[data-sandbox-url]')).toHaveLength(3);
+  });
+
   it('keeps legitimate same-owner and same-resource occurrences distinct', () => {
     const attachments = [
       attachment({ toolCallId: 'call-0', agentId: 'agent-alpha', stepId: 'step-alpha' }, [
@@ -162,6 +192,9 @@ describe('MCPAppViews', () => {
       </MCPAppsPolicyProvider>,
     );
 
+    expect(container.querySelectorAll('iframe[data-sandbox-url]')).toHaveLength(0);
+    expect(mockUseAppBridge).not.toHaveBeenCalled();
+    screen.getAllByRole('button', { name: 'com_ui_mcp_app_open' }).forEach(fireEvent.click);
     expect(container.querySelectorAll('iframe[data-sandbox-url]')).toHaveLength(2);
     expect(mockUseAppBridge.mock.calls.map(([params]) => params.toolArgs)).toEqual([
       { occurrence: 'first' },
@@ -194,6 +227,8 @@ describe('MCPAppViews', () => {
       </MCPAppsPolicyProvider>
     );
     const view = render(renderViews([targetAttachment]));
+    expect(view.queryByTitle('MCP App: target')).not.toBeInTheDocument();
+    fireEvent.click(view.getByRole('button', { name: 'com_ui_mcp_app_open' }));
     const targetFrame = view.getByTitle('MCP App: target');
 
     view.rerender(renderViews([unrelatedAttachment, targetAttachment]));
@@ -227,6 +262,8 @@ describe('MCPAppViews', () => {
     );
 
     expect(view.queryByTitle('MCP App: owned')).not.toBeInTheDocument();
+    expect(view.queryByTitle('MCP App: nested')).not.toBeInTheDocument();
+    fireEvent.click(view.getByRole('button', { name: 'com_ui_mcp_app_open' }));
     expect(view.getByTitle('MCP App: nested')).toBeInTheDocument();
   });
 
@@ -249,6 +286,8 @@ describe('MCPAppViews', () => {
         <MCPAppViews attachments={attachments} />
       </MCPAppsPolicyProvider>,
     );
+    expect(view.queryByTitle('MCP App: compact')).not.toBeInTheDocument();
+    fireEvent.click(view.getByRole('button', { name: 'com_ui_mcp_app_open' }));
     const container = view.getByTitle('MCP App: compact').parentElement;
 
     expect(container).toHaveStyle({ height: `${height}px` });
