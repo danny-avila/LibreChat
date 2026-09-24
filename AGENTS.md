@@ -15,10 +15,11 @@ promote canary code to `dev`. If a stale PR is redirected to canary, first check
 reviewed head against current canary; coordinate any rebase or new PR with the maintainer. A PR
 explicitly based on `canary` stays there; the main-to-dev retarget workflow does not move it.
 
-`Fixes #N` does not close the issue on a `dev` or `canary` merge — GitHub honors closing keywords
-only on the default branch, so close linked issues by hand. Worktrees share one stash stack, so
-never use a bare `git stash pop`. See the detailed policy in `CLAUDE.md` under "Branching and Pull
-Requests".
+Still link related issues in the PR (for example, `Related to #N`) so the work remains
+traceable. `Fixes #N` does not close an issue on a `dev` or `canary` merge — GitHub honors closing
+keywords only on the default branch. Close resolved issues by hand after merging. Worktrees share
+one stash stack, so never use a bare `git stash pop`. See the detailed policy in `CLAUDE.md` under
+"Branching and Pull Requests".
 
 Write the description for a reader who has not followed the branch: what breaks, what triggers it,
 how it behaves after the change, then one or two views of the mechanism — a focused diff, a call

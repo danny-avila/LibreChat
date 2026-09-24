@@ -83,9 +83,12 @@ The source code for `@librechat/agents` (major backend dependency, same team) li
   explicit maintainer decision. If a stale PR is reassigned to canary, check the PR's base, diff and
   exact reviewed head against current canary before changing its base or proposing a new canary
   branch/PR; if a rebase changes the head, verify and review that new head before merging.
-- **`Fixes #N` does not close the issue.** GitHub honors closing keywords only when a pull request
-  merges into the default branch (`main`). Merging to `dev` or `canary` does not close anything, and
-  the later fast-forward of `main` is not a merge event either — close linked issues by hand.
+- **Link related issues in the PR even when they will not auto-close.** Reference each relevant
+  issue in the description (for example, `Related to #N`) so reviewers can find the context and
+  track the work. GitHub honors `Fixes #N` and other closing keywords only when a pull request
+  merges into the default branch (`main`). Merging to `dev` or `canary` does not close an issue,
+  and the later fast-forward of `main` is not a merge event either — close resolved issues by hand
+  after merging.
 - **Git worktrees share one stash stack.** `refs/stash` lives in the common `.git` directory, so a
   bare `git stash pop` in one worktree can take work stashed in another. Prefer a throwaway WIP
   commit; if you must stash, `git stash push -m <tag>` and `apply` that specific entry.
