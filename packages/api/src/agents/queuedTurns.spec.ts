@@ -844,7 +844,8 @@ describe('Agent queued-turn continuation', () => {
 
 describe('Agent queued-turn delivery scheduling', () => {
   it('can retry initialization after a transient index setup failure', async () => {
-    const ensureAgentQueuedTurnIndexes = jest.fn()
+    const ensureAgentQueuedTurnIndexes = jest
+      .fn()
       .mockRejectedValueOnce(new Error('mongo unavailable'))
       .mockResolvedValue(undefined);
     const scheduler = createAgentQueuedTurnScheduler({
