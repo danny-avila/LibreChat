@@ -6265,10 +6265,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   artifact?: unknown;
                   status: 'completed' | 'error' | 'cancelled';
                 }): Promise<void> => {
-                  if (harvestEnabled) {
-                    await persistBackgroundResult(params);
-                    return;
-                  }
+                  /** Held for the whole persist, including a code harvest that waits for
+                   *  a long dispatch turn, so retention pressure cannot evict the task. */
                   backgroundTaskRegistry.markCompletionPersistencePending(
                     backgroundUserId,
                     backgroundConversationId,

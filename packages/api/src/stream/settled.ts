@@ -4,7 +4,6 @@ import type { GenerationJobStatus } from '../types/stream';
 
 const ACTIVE_STATUSES: ReadonlySet<GenerationJobStatus> = new Set(['running', 'requires_action']);
 const DEFAULT_RECHECK_MS = 60_000;
-const DEFAULT_MAX_WAIT_MS = 24 * 60 * 60 * 1_000;
 
 export interface GenerationSettledSource {
   getJobStatus: (streamId: string) => Promise<GenerationJobStatus | undefined>;
@@ -13,22 +12,21 @@ export interface GenerationSettledSource {
 
 export interface GenerationSettledWaitOptions {
   recheckMs?: number;
+  /** Unbounded by default: a live generation is the only reason to keep waiting,
+   * and the status re-read ends the wait once it is gone. */
   maxWaitMs?: number;
 }
 
 /**
  * Resolves once the conversation's running or paused generation settles: `true`
- * when it settled, `false` when none was running or it outlived `maxWaitMs`.
+ * when it settled, `false` when none was running or it outlived an optional `maxWaitMs`.
  * Settlement is signalled in-process; a periodic status read covers a
  * generation that resumes and settles on another replica.
  */
 export function waitForGenerationSettled(
   source: GenerationSettledSource,
   conversationId: string,
-  {
-    recheckMs = DEFAULT_RECHECK_MS,
-    maxWaitMs = DEFAULT_MAX_WAIT_MS,
-  }: GenerationSettledWaitOptions = {},
+  { recheckMs = DEFAULT_RECHECK_MS, maxWaitMs }: GenerationSettledWaitOptions = {},
 ): Promise<boolean> {
   return new Promise((resolve) => {
     let done = false;
@@ -64,9 +62,10 @@ export function waitForGenerationSettled(
       }
     };
     const recheck = setInterval(() => void readStatus(false), recheckMs);
-    const deadline = setTimeout(() => finish(false), maxWaitMs);
+    const deadline =
+      maxWaitMs == null ? undefined : setTimeout(() => finish(false), maxWaitMs);
     recheck.unref?.();
-    deadline.unref?.();
+    deadline?.unref?.();
     void readStatus(true);
   });
 }

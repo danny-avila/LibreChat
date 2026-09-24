@@ -2664,6 +2664,14 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
     expect(polled.note).toContain('attached to the tool call');
     expect(emitted[0]).toEqual({ file_id: 'f1', toolCallId: 'call_code_long_turn' });
     expect(poll[0].artifact).toEqual(CODE_ARTIFACT);
+    /** Still protected from retention eviction while the row patch waits. */
+    expect(
+      backgroundTaskRegistry.get(
+        'exec_user',
+        'exec_convo_code_long_turn',
+        JSON.parse(dispatch[0].content).background_task_id,
+      )?.completionPersistencePending,
+    ).toBe(true);
   });
 
   it('falls back to poll-turn delivery when the harvest fails (files not lost)', async () => {

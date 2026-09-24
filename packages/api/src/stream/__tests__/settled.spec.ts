@@ -86,6 +86,23 @@ describe('waitForGenerationSettled', () => {
     expect(source.listeners.size).toBe(0);
   });
 
+  it('keeps waiting for as long as the generation stays active by default', async () => {
+    const source = createSource({ 'conversation-1': 'running' });
+    let resolved: boolean | undefined;
+    void waitForGenerationSettled(source, 'conversation-1', { recheckMs: 60 * 60 * 1_000 }).then(
+      (settled) => {
+        resolved = settled;
+      },
+    );
+
+    await jest.advanceTimersByTimeAsync(48 * 60 * 60 * 1_000);
+    expect(resolved).toBeUndefined();
+
+    source.settle({ conversationId: 'conversation-1', status: 'complete' });
+    await jest.advanceTimersByTimeAsync(0);
+    expect(resolved).toBe(true);
+  });
+
   it('gives up after the maximum wait', async () => {
     const source = createSource({ 'conversation-1': 'running' });
     const waiting = waitForGenerationSettled(source, 'conversation-1', {
