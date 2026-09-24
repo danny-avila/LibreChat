@@ -26,6 +26,14 @@ describe('getOpenAIConfig', () => {
     expect(result.tools).toEqual([]);
   });
 
+  it('applies an explicit model transport timeout policy', () => {
+    const result = getOpenAIConfig(mockApiKey, {
+      transportTimeouts: { bodyTimeout: 900_000, headersTimeout: 300_000 },
+    });
+
+    expect(result.configOptions?.fetchOptions?.dispatcher).toBeDefined();
+  });
+
   it('should apply model options', () => {
     const modelOptions = {
       model: 'gpt-4',
@@ -369,7 +377,7 @@ describe('getOpenAIConfig', () => {
       'HTTP-Referer': 'https://librechat.ai',
       'X-Title': 'LibreChat',
       'X-OpenRouter-Title': 'LibreChat',
-      'X-OpenRouter-Categories': 'general-chat,personal-agent',
+      'X-OpenRouter-Categories': 'general-chat,personal-agent,programming-app',
     });
     expect(result.llmConfig.include_reasoning).toBe(true);
     expect(result.llmConfig.promptCache).toBe(true);
@@ -1185,9 +1193,22 @@ describe('getOpenAIConfig', () => {
         'HTTP-Referer': 'https://librechat.ai',
         'X-Title': 'LibreChat',
         'X-OpenRouter-Title': 'LibreChat',
-        'X-OpenRouter-Categories': 'general-chat,personal-agent',
+        'X-OpenRouter-Categories': 'general-chat,personal-agent,programming-app',
         'X-Custom-Header': 'custom-value',
         Authorization: 'Bearer custom-token',
+      });
+    });
+
+    it('should allow custom OpenRouter categories to override attribution defaults', () => {
+      const result = getOpenAIConfig(mockApiKey, {
+        reverseProxyUrl: 'https://openrouter.ai/api/v1',
+        headers: {
+          'X-OpenRouter-Categories': 'general-chat',
+        },
+      });
+
+      expect(result.configOptions?.defaultHeaders).toMatchObject({
+        'X-OpenRouter-Categories': 'general-chat',
       });
     });
   });

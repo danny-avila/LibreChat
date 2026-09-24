@@ -3192,3 +3192,57 @@ describe('Grok 4.7 pricing', () => {
     ).toBe(endpointTokenConfig[model].read);
   });
 });
+
+describe('Opus 5.5 pricing', () => {
+  it.each([
+    'claude-opus-5-5',
+    'claude-opus-5.5',
+    'anthropic/claude-opus-5-5',
+    'global.anthropic.claude-opus-5-5',
+  ])('prices %s independently of Opus 5, without a long-context surcharge', (model) => {
+    const key = model.includes('5.5') ? 'claude-opus-5.5' : 'claude-opus-5-5';
+    for (const inputTokenCount of [1000, 200000, 1000000]) {
+      expect(getMultiplier({ model, tokenType: 'prompt', inputTokenCount })).toBe(
+        tokenValues[key].prompt,
+      );
+      expect(getMultiplier({ model, tokenType: 'completion', inputTokenCount })).toBe(
+        tokenValues[key].completion,
+      );
+      expect(getCacheMultiplier({ model, cacheType: 'write', inputTokenCount })).toBe(
+        cacheTokenValues[key].write,
+      );
+      expect(getCacheMultiplier({ model, cacheType: 'read', inputTokenCount })).toBe(
+        cacheTokenValues[key].read,
+      );
+    }
+    expect(tokenValues[key].prompt).toBeLessThan(tokenValues['claude-opus-5'].prompt);
+    expect(cacheTokenValues[key].read).toBeLessThan(cacheTokenValues['claude-opus-5'].read);
+  });
+});
+
+describe.each([
+  ['gpt-6-sol', 2, 0.2, 2.5, 10],
+  ['gpt-6-luna', 0.1, 0.01, 0.125, 0.5],
+] as const)('%s published pricing', (model, input, read, write, output) => {
+  it.each([272000, 272001])(
+    'applies full-request rates at %i total input tokens',
+    (inputTokenCount) => {
+      const premium = inputTokenCount > 272000;
+      for (const name of [model, `${model}-2026-09-22`, `openai/${model}`]) {
+        expect(getValueKey(name)).toBe(model);
+        expect(getMultiplier({ model: name, tokenType: 'prompt', inputTokenCount })).toBeCloseTo(
+          input * (premium ? 2 : 1),
+        );
+        expect(
+          getMultiplier({ model: name, tokenType: 'completion', inputTokenCount }),
+        ).toBeCloseTo(output * (premium ? 1.5 : 1));
+        expect(getCacheMultiplier({ model: name, cacheType: 'read', inputTokenCount })).toBeCloseTo(
+          read * (premium ? 2 : 1),
+        );
+        expect(
+          getCacheMultiplier({ model: name, cacheType: 'write', inputTokenCount }),
+        ).toBeCloseTo(write * (premium ? 2 : 1));
+      }
+    },
+  );
+});

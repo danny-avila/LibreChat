@@ -2773,10 +2773,14 @@ export function createAgentQueuedTurnMethods(
     }
     await Turn().updateMany(
       {
-        ...scope,
-        $or: [
-          { status: { $in: ['reserving', 'queued'] } },
-          { status: 'claimed', admissionStartedAt: { $exists: false } },
+        $and: [
+          scope,
+          {
+            $or: [
+              { status: { $in: ['reserving', 'queued'] } },
+              { status: 'claimed', admissionStartedAt: { $exists: false } },
+            ],
+          },
         ],
       },
       {
@@ -2838,11 +2842,15 @@ export function createAgentQueuedTurnMethods(
   }): Promise<number> {
     const scope = deletionScope(input);
     const blocker = await Turn().exists({
-      ...scope,
-      $or: [
-        { deliveryKey: { $exists: true }, deliveryState: { $ne: 'retired' } },
-        { status: { $in: ['reserving', 'queued', 'claimed'] } },
-        { admissionStartedAt: { $exists: true } },
+      $and: [
+        scope,
+        {
+          $or: [
+            { deliveryKey: { $exists: true }, deliveryState: { $ne: 'retired' } },
+            { status: { $in: ['reserving', 'queued', 'claimed'] } },
+            { admissionStartedAt: { $exists: true } },
+          ],
+        },
       ],
     });
     if (blocker != null) {
