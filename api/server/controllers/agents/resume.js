@@ -365,7 +365,11 @@ async function persistRePauseProgress({ req, client, job, streamId, conversation
   }
   await applyForcedRetention(
     { stampForcedRetention },
-    { ctx: { userId, interfaceConfig: req.config?.interfaceConfig }, conversationId },
+    {
+      ctx: { userId, interfaceConfig: req.config?.interfaceConfig },
+      conversationId,
+      messageId: savedResponseMessage.messageId,
+    },
   );
   await recoverResumedResponseReference(
     { userId, conversationId, client, savedResponseMessage },
@@ -569,7 +573,11 @@ async function finalizeResumedTurn({
     }
     await applyForcedRetention(
       { stampForcedRetention },
-      { ctx: { userId, interfaceConfig: req.config?.interfaceConfig }, conversationId },
+      {
+        ctx: { userId, interfaceConfig: req.config?.interfaceConfig },
+        conversationId,
+        messageId: savedResponseMessage.messageId,
+      },
     );
     await recoverResumedResponseReference(
       { userId, conversationId, client, savedResponseMessage },
