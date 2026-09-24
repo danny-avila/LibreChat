@@ -393,6 +393,44 @@ describe('User Methods - Database Tests', () => {
       expect(updated?.expiresAt).toBeUndefined();
     });
 
+    test.each([new Date(Date.now() + 604800 * 1000), undefined])(
+      'should preserve expiresAt %s and invalidate auth cache when requested',
+      async (expiresAt) => {
+        enableAuthUserDocCache();
+        const user = await User.create({
+          name: 'Pending User',
+          email: 'pending@example.com',
+          provider: 'local',
+          emailVerified: false,
+          expiresAt,
+        });
+        const userId = user._id?.toString() ?? '';
+        const indexKey = `${AUTH_USER_DOC_BY_ID_PREFIX}:${userId}`;
+        const cache = {
+          get: jest.fn().mockResolvedValue(['auth-cache-key']),
+          set: jest.fn().mockResolvedValue(true),
+          delete: jest.fn().mockResolvedValue(true),
+        };
+        const methodsWithCache = createUserMethods(mongoose, { getCache: () => cache });
+
+        const updated = await methodsWithCache.updateUser(
+          userId,
+          { password: 'new-password-hash', credentialsChangedAt: new Date() },
+          {},
+          { preserveExpiresAt: true },
+        );
+
+        const stored = await User.findById(userId).select('+password').lean();
+        expect(stored?.password).toBe('new-password-hash');
+        expect(updated?.credentialsChangedAt).toBeInstanceOf(Date);
+        expect(updated?.emailVerified).toBe(false);
+        expect(updated?.expiresAt).toEqual(expiresAt);
+        expect(cache.get).toHaveBeenCalledWith(indexKey);
+        expect(cache.delete).toHaveBeenCalledWith('auth-cache-key');
+        expect(cache.delete).toHaveBeenCalledWith(indexKey);
+      },
+    );
+
     test('should update only when the expected account state still matches', async () => {
       const user = await User.create({
         name: 'Conditional User',
