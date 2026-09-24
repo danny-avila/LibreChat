@@ -36,7 +36,11 @@ function readAttempt(): ReloadAttempt | null {
   }
 }
 
-export default function FrontendUpdateNotice() {
+function reloadPage(): void {
+  window.location.reload();
+}
+
+export default function FrontendUpdateNotice({ reload = reloadPage }: { reload?: () => void }) {
   const clientBuildId = getClientBuildId();
   const localize = useLocalize();
   // The policy is read from the existing query; never fetch /api/config to establish a build ID.
@@ -214,7 +218,7 @@ export default function FrontendUpdateNotice() {
       if (!target || checking) return;
       setChecking(true);
       try {
-        if (!canLeave(busyRef.current)) {
+        if (!canLeave(busyRef.current) || store.hasInMemoryQueuedTurns()) {
           setNoticeState('active');
           window.__lcRumPush?.('frontend-release-deferred', {
             expectedBuildId: target.buildId,
@@ -230,7 +234,7 @@ export default function FrontendUpdateNotice() {
           setNoticeState('unavailable');
           return;
         }
-        if (!canLeave(busyRef.current)) {
+        if (!canLeave(busyRef.current) || store.hasInMemoryQueuedTurns()) {
           setNoticeState('active');
           return;
         }
@@ -271,12 +275,12 @@ export default function FrontendUpdateNotice() {
           mismatchAgeMs: mismatchAt.current == null ? 0 : Date.now() - mismatchAt.current,
           action,
         });
-        window.location.reload();
+        reload();
       } finally {
         setChecking(false);
       }
     },
-    [checking, clientBuildId, releaseUrl],
+    [checking, clientBuildId, releaseUrl, reload],
   );
 
   useEffect(() => {
@@ -293,7 +297,8 @@ export default function FrontendUpdateNotice() {
       if (
         !hasRegisteredReloadGuard() ||
         (document.visibilityState !== 'hidden' && Date.now() - lastInteraction < IDLE_MS) ||
-        !canLeave(busyRef.current)
+        !canLeave(busyRef.current) ||
+        store.hasInMemoryQueuedTurns()
       )
         return;
       void attemptReload('automatic');
