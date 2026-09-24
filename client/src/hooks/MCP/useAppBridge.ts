@@ -471,6 +471,10 @@ export function useAppBridge({
     });
 
     bridge.addEventListener('requestteardown', async () => {
+      if (cancelled) return;
+      // A peer-controlled teardown handshake can stall. Revoke action authority before awaiting it.
+      viewAbort.abort();
+      cancelActionRef.current?.();
       if (initialized) {
         await bridge.teardownResource({}).catch(() => {});
       }

@@ -1083,6 +1083,36 @@ describe('useAppBridge', () => {
   });
 
   describe('teardown', () => {
+    it('revokes pending tool approval before awaiting App-controlled teardown', async () => {
+      let grant: ((allowed: boolean) => void) | undefined;
+      let finishTeardown: (() => void) | undefined;
+      mockApproveAction.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            grant = resolve;
+          }),
+      );
+      const { view } = mountBridge(makeResource(), client);
+      await flush();
+      const bridge = latest();
+      await bridge.oninitialized?.();
+      bridge.teardownResource = jest.fn(
+        () =>
+          new Promise<Record<string, never>>((resolve) => {
+            finishTeardown = () => resolve({});
+          }),
+      );
+      const pending = bridge.oncalltool?.({ name: 'next', arguments: { id: 1 } }, requestExtra());
+      await flush();
+      bridge.emit('requestteardown');
+      grant?.(true);
+      await expect(pending).resolves.toEqual({ content: [], isError: true });
+      expect(mockCallTool).not.toHaveBeenCalled();
+      finishTeardown?.();
+      await flush();
+      view.unmount();
+    });
+
     it('does not deliver an awaited teardown completion after the View was disposed', async () => {
       const onTeardown = jest.fn();
       const mounted = mountBridge(makeResource(), client, { onTeardown });
