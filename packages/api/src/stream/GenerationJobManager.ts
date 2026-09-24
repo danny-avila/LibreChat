@@ -2270,7 +2270,7 @@ class GenerationJobManagerClass {
     streamId: string,
     job: Pick<
       SerializableJobData,
-      'createdAt' | 'conversationId' | 'providerExecutionId' | 'agentEventDeliveryKey'
+      'createdAt' | 'conversationId' | 'providerExecutionId' | 'agentEventDeliveryKey' | 'userId'
     >,
     message: string,
   ): Promise<boolean> {
@@ -2302,6 +2302,13 @@ class GenerationJobManagerClass {
               expectCreatedAt: job.createdAt,
             })
           ) {
+            /** A direct terminal transition builds no claim, so it announces itself. */
+            this.notifyGenerationSettled({
+              streamId,
+              conversationId: job.conversationId,
+              userId: job.userId,
+              status: 'error',
+            });
             return true;
           }
         } catch (error) {

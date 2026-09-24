@@ -263,9 +263,10 @@ export interface SubagentThreadTaskStoreOptions extends InMemorySubagentTaskStor
     tenantId?: string;
   }) => Promise<boolean>;
   onTaskPrepared?: (registration: SubagentTaskWakeupRegistration) => Promise<void> | void;
-  /** Called once a child's terminal message is durable. The child generation settles
-   * before that write, so its completion wake-up is ready only from here. */
-  onTaskSettled?: (userId: string) => void;
+  /** Called once a child's terminal message is durable, with the parent conversation its
+   * completion wake-up resumes. The child generation settles before that write, so the
+   * wake-up is ready only from here. */
+  onTaskSettled?: (userId: string, parentConversationId: string) => void;
 }
 
 export interface SubagentTaskWakeupRegistration {
@@ -620,6 +621,8 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
   private readonly cancelUnroutedTask?: SubagentThreadTaskStoreOptions['cancelUnroutedTask'];
   private readonly onTaskPrepared?: SubagentThreadTaskStoreOptions['onTaskPrepared'];
   private readonly onTaskSettled?: SubagentThreadTaskStoreOptions['onTaskSettled'];
+  /** Tasks whose completion wake-up was registered; only they announce settlement. */
+  private readonly wakeupTaskIds = new Set<string>();
   private taskControlTransport?: SubagentTaskControlTransport;
   private activityStream = new SubagentActivityStream(new InMemoryEventTransport());
 
@@ -3208,6 +3211,7 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       subagentType: request.subagentType,
       createdAt: task.createdAt,
     });
+    this.wakeupTaskIds.add(task.taskId);
   }
 
   private async persistCancellation(
@@ -3380,8 +3384,11 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
       }
       logger.error(`[subagentThreads] Failed to refresh ${outcome} child thread`, error);
     }
+    if (!this.wakeupTaskIds.delete(taskId)) {
+      return;
+    }
     try {
-      this.onTaskSettled?.(scope.userId);
+      this.onTaskSettled?.(scope.userId, scope.parentConversationId);
     } catch (error) {
       logger.warn('[subagentThreads] Settled-task listener failed', error);
     }

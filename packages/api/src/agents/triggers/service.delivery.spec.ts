@@ -290,6 +290,7 @@ describe('durable agent trigger service', () => {
 
       expect(methods.expediteAgentTriggerDeliveries).toHaveBeenCalledWith({
         user: '507f1f77bcf86cd799439011',
+        conversationId: 'conversation-1',
         sourceIds: ['background-tool-completion', 'subagent-completion'],
         now: expect.any(Date),
       });
