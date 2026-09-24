@@ -18,8 +18,8 @@ import type {
   TReasoningLabelAttemptEvent,
 } from './runs';
 import type { TMessage, TPayload, TConversation } from '../types';
+import type { StreamContentData } from './content';
 import type { TAttachment } from '../schemas';
-import type { TContentData } from './content';
 import type { Agents } from './agents';
 
 /**
@@ -63,11 +63,13 @@ export type ChatFinalFrame = {
   terminalStatus?: 'complete' | 'error' | 'aborted';
   generationCreatedAt?: number;
   generationProtocolVersion?: number;
-  requestMessage?: TMessage | null;
-  responseMessage?: TMessage | null;
+  /** Assistants runs send only `parentMessageId` and `thread_id` here. */
+  requestMessage?: Partial<TMessage> | null;
+  responseMessage?: Partial<TMessage> | null;
   conversation?: Partial<TConversation> | null;
   runMessages?: TMessage[];
-  title?: string;
+  /** `null` when an abort lands before the conversation has a title. */
+  title?: string | null;
   aborted?: boolean;
   earlyAbort?: boolean;
   /** Steers that never reached an injection boundary, handed back as queued turns. */
@@ -124,27 +126,43 @@ export type ChatTextFrame = {
   parentMessageId?: string;
 };
 
+/**
+ * A content part streamed with its message ids (Assistants). Unlike
+ * `TContentData`, `userMessageId` is optional: the Assistants emitters omit it.
+ */
+export type ChatContentFrame = StreamContentData & {
+  messageId: string;
+  conversationId: string;
+  thread_id: string;
+  userMessageId?: string;
+  stream?: boolean;
+};
+
 /** Every JSON body the server writes on the `message` event. */
 export type ChatFrame =
   | ChatCreatedFrame
   | ChatSyncFrame
   | ChatFinalFrame
   | ChatEventFrame
-  | TContentData
+  | ChatContentFrame
   | ChatTextFrame;
 
 /**
- * The body of the SSE `error` event: the serialized error the server reports
- * (`handleError` writes a JSON string; a failed turn writes the partial
- * request/response pair), or `undefined` when the body did not parse.
+ * The body of the SSE `error` event: a bare message string (`handleError`),
+ * `{ error, generationProtocolVersion }` from the agents stream route, or a
+ * failed turn's partial request/response pair.
  */
-export type ChatErrorData = {
-  text?: string;
-  message?: string;
-  conversation?: Partial<TConversation>;
-  requestMessage?: TMessage;
-  responseMessage?: TMessage;
-};
+export type ChatErrorData =
+  | string
+  | {
+      text?: string;
+      message?: string;
+      error?: string | { message?: string };
+      generationProtocolVersion?: number;
+      conversation?: Partial<TConversation>;
+      requestMessage?: TMessage;
+      responseMessage?: TMessage;
+    };
 
 /**
  * A stream event after normalization, discriminated by `type` the way
@@ -189,7 +207,7 @@ export type ChatEvent =
    */
   | { type: 'step'; data: ChatStepFrame }
   /** AI SDK: `text-delta` and friends, for content-part streams (Assistants). */
-  | { type: 'content'; data: TContentData }
+  | { type: 'content'; data: ChatContentFrame }
   /** AI SDK: `text-delta`, except the text is cumulative rather than a delta. */
   | { type: 'text'; data: ChatTextFrame }
   /** AI SDK: `error`. `data` is `undefined` when the error body was not JSON. */
