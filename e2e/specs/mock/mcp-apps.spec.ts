@@ -278,6 +278,24 @@ async function expectConnectedApp(
         button.addEventListener('click', log, { once: true });
       });
     }
+    if (occurrence > 0) {
+      await open.scrollIntoViewIfNeeded();
+      const box = await open.boundingBox();
+      const hit =
+        box &&
+        (await page.evaluate(
+          ({ x, y }) => {
+            const element = document.elementFromPoint(x, y);
+            return {
+              tag: element?.tagName,
+              text: element?.textContent?.slice(0, 90),
+              className: element?.getAttribute('class')?.slice(0, 90),
+            };
+          },
+          { x: box.x + box.width / 2, y: box.y + box.height / 2 },
+        ));
+      console.info('MCP_APP_HIT_TRACE', hit);
+    }
     await open.click();
     // Diagnostic: a synthetic event tells us if an iframe stole only the pointer click.
     if (occurrence > 0 && (await open.count())) {
