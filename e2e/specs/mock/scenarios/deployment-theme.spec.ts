@@ -91,7 +91,9 @@ async function signIn(page: Page) {
   await page.getByLabel('Password').fill(user.password);
   await page.getByTestId('login-button').click();
   await page.waitForURL(/\/c\/new/, { timeout: 20000 });
-  await expect(page.getByTestId('nav-user')).toBeVisible({ timeout: 20000 });
+  await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible({
+    timeout: 20000,
+  });
 }
 
 async function expectClickHouse(page: Page) {
