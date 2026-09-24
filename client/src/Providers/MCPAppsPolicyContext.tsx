@@ -1,17 +1,29 @@
-import { createContext, useCallback, useContext, useMemo, useRef } from 'react';
+import { createContext, useCallback, useContext, useMemo } from 'react';
+import { atom, createStore, useAtomValue } from 'jotai';
 import {
   DEFAULT_MCP_APPS_POLICY,
+  DEFAULT_MCP_APP_MAX_ACTIVE_VIEWS,
+  DEFAULT_MCP_APP_ACTION_PREVIEW_CHARS,
+  MAX_MCP_APP_ACTIVE_VIEWS,
+  MAX_MCP_APP_ACTION_PREVIEW_CHARS,
   resolveMCPAppCspLimits,
   type TMCPAppsPolicy,
   type TStartupConfig,
 } from 'librechat-data-provider';
 
-/** A loaded App owns two frames and a live bridge; cap them across the entire conversation. */
-export const MAX_ACTIVE_MCP_APP_VIEWS = 3;
+/** One store per host provider; never share capacity across conversations or signed-in users. */
+const activeAppViewsAtom = atom<ReadonlySet<string>>(new Set<string>());
+
+function validLimit(value: unknown, fallback: number, max: number): number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 && value <= max
+    ? value
+    : fallback;
+}
 
 type MCPAppsHostContextValue = {
   reserveView: (key: string) => boolean;
   releaseView: (key: string) => void;
+  activeViewStore: ReturnType<typeof createStore>;
   policy: Readonly<TMCPAppsPolicy>;
   userId?: string;
 };
@@ -19,6 +31,7 @@ type MCPAppsHostContextValue = {
 const DEFAULT_MCP_APPS_HOST: MCPAppsHostContextValue = {
   reserveView: () => false,
   releaseView: () => undefined,
+  activeViewStore: createStore(),
   policy: DEFAULT_MCP_APPS_POLICY,
 };
 
@@ -36,7 +49,20 @@ function getPublishedPolicy(
   ) {
     return DEFAULT_MCP_APPS_POLICY;
   }
-  return { ...policy, cspLimits: resolveMCPAppCspLimits(policy.cspLimits) };
+  return {
+    ...policy,
+    cspLimits: resolveMCPAppCspLimits(policy.cspLimits),
+    maxActiveViews: validLimit(
+      policy.maxActiveViews,
+      DEFAULT_MCP_APP_MAX_ACTIVE_VIEWS,
+      MAX_MCP_APP_ACTIVE_VIEWS,
+    ),
+    maxActionPreviewChars: validLimit(
+      policy.maxActionPreviewChars,
+      DEFAULT_MCP_APP_ACTION_PREVIEW_CHARS,
+      MAX_MCP_APP_ACTION_PREVIEW_CHARS,
+    ),
+  };
 }
 
 export function MCPAppsPolicyProvider({
@@ -51,19 +77,32 @@ export function MCPAppsPolicyProvider({
   userId?: string;
 }) {
   const policy = useMemo(() => getPublishedPolicy(startupConfig, ready), [ready, startupConfig]);
-  const activeViews = useRef(new Set<string>());
-  const reserveView = useCallback((key: string) => {
-    if (activeViews.current.size >= MAX_ACTIVE_MCP_APP_VIEWS) return false;
-    activeViews.current.add(key);
-    return true;
-  }, []);
-  const releaseView = useCallback((key: string) => {
-    activeViews.current.delete(key);
-  }, []);
+  const activeViewStore = useMemo(() => createStore(), []);
+  const reserveView = useCallback(
+    (key: string) => {
+      const active = activeViewStore.get(activeAppViewsAtom);
+      if (active.has(key)) return true;
+      if (active.size >= (policy.maxActiveViews ?? DEFAULT_MCP_APP_MAX_ACTIVE_VIEWS)) return false;
+      activeViewStore.set(activeAppViewsAtom, new Set(active).add(key));
+      return true;
+    },
+    [activeViewStore, policy.maxActiveViews],
+  );
+  const releaseView = useCallback(
+    (key: string) => {
+      const active = activeViewStore.get(activeAppViewsAtom);
+      if (active.has(key)) {
+        const next = new Set(active);
+        next.delete(key);
+        activeViewStore.set(activeAppViewsAtom, next);
+      }
+    },
+    [activeViewStore],
+  );
   const authenticatedUserId = typeof userId === 'string' && userId.trim() ? userId : undefined;
   const value = useMemo(
-    () => ({ policy, userId: authenticatedUserId, reserveView, releaseView }),
-    [authenticatedUserId, policy, reserveView, releaseView],
+    () => ({ policy, userId: authenticatedUserId, reserveView, releaseView, activeViewStore }),
+    [authenticatedUserId, policy, reserveView, releaseView, activeViewStore],
   );
 
   return <MCPAppsPolicyContext.Provider value={value}>{children}</MCPAppsPolicyContext.Provider>;
@@ -75,4 +114,13 @@ export function useMCPAppsPolicy(): Readonly<TMCPAppsPolicy> {
 
 export function useMCPAppsHost(): MCPAppsHostContextValue {
   return useContext(MCPAppsPolicyContext);
+}
+
+/** Subscribe only a capacity notice, not every historical placeholder, to shared View changes. */
+export function useMCPAppViewAtCapacity(): boolean {
+  const { activeViewStore, policy } = useMCPAppsHost();
+  return (
+    useAtomValue(activeAppViewsAtom, { store: activeViewStore }).size >=
+    (policy.maxActiveViews ?? DEFAULT_MCP_APP_MAX_ACTIVE_VIEWS)
+  );
 }

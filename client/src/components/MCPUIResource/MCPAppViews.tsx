@@ -1,14 +1,22 @@
 import React, { useCallback, useEffect, useId, useMemo, useState } from 'react';
 import { Button } from '@librechat/client';
 import type { TAttachment, UIResource } from 'librechat-data-provider';
+import { useMCPAppsHost, useMCPAppViewAtCapacity } from '~/Providers/MCPAppsPolicyContext';
+import { selectToolCallUIResources, getInlineResourceHtml } from '~/utils/mcpApps';
+import { useIsMessagesViewReadOnly } from '~/Providers/MessagesViewContext';
 import { MCPAppApproval, useMCPAppApproval } from '~/hooks/MCP/approval';
-import { useMCPAppsHost } from '~/Providers/MCPAppsPolicyContext';
-import { selectToolCallUIResources } from '~/utils/mcpApps';
 import { useAppBridge, useMCPAppFrame } from '~/hooks/MCP';
 import { MCPAppFrame } from './MCPAppFrame';
 import { useLocalize } from '~/hooks';
 
 const DEFAULT_APP_VIEW_HEIGHT = 320;
+
+function CapacityNotice() {
+  const localize = useLocalize();
+  return useMCPAppViewAtCapacity() ? (
+    <span role="alert">{localize('com_ui_mcp_app_at_capacity')}</span>
+  ) : null;
+}
 
 /**
  * Attachments rendered by a stable ancestor. Presentation components may still receive those
@@ -21,10 +29,12 @@ function ActiveMCPAppView({
   app,
   userId,
   close,
+  ordinal,
 }: {
   app: UIResource;
   userId: string;
   close: () => void;
+  ordinal: number;
 }) {
   const localize = useLocalize();
   const approval = useMCPAppApproval();
@@ -67,7 +77,13 @@ function ActiveMCPAppView({
   }
   return (
     <>
-      <Button type="button" variant="outline" size="sm" onClick={close}>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={close}
+        aria-label={localize('com_ui_mcp_app_close_named', { 0: app.toolName, 1: String(ordinal) })}
+      >
         {localize('com_ui_mcp_app_close')}
       </Button>
       {body}
@@ -75,6 +91,10 @@ function ActiveMCPAppView({
         action={approval.pending}
         approve={approval.approve}
         cancel={approval.cancel}
+        close={() => {
+          approval.cancel();
+          close();
+        }}
       />
     </>
   );
@@ -83,15 +103,25 @@ function ActiveMCPAppView({
 const MCPAppView = React.memo(function MCPAppView({
   app,
   userId,
+  ordinal,
 }: {
   app: UIResource;
   userId: string;
+  ordinal: number;
 }) {
   const localize = useLocalize();
   const { reserveView, releaseView } = useMCPAppsHost();
+  const readOnly = useIsMessagesViewReadOnly();
+  const unavailable = readOnly && !getInlineResourceHtml(app);
   const viewKey = useId();
   const [opened, setOpened] = useState(false);
   const [atCapacity, setAtCapacity] = useState(false);
+  useEffect(() => {
+    if (unavailable) {
+      releaseView(viewKey);
+      setOpened(false);
+    }
+  }, [unavailable, releaseView, viewKey]);
   const close = useCallback(() => {
     releaseView(viewKey);
     setOpened(false);
@@ -104,6 +134,7 @@ const MCPAppView = React.memo(function MCPAppView({
     [releaseView, viewKey],
   );
   const open = () => {
+    if (unavailable) return;
     const reserved = reserveView(viewKey);
     if (!reserved) {
       setAtCapacity(true);
@@ -112,17 +143,36 @@ const MCPAppView = React.memo(function MCPAppView({
     setAtCapacity(false);
     setOpened(true);
   };
+  if (unavailable) {
+    return (
+      <div
+        className="border-border-light bg-surface-secondary text-text-secondary my-2 rounded-lg border px-4 py-3 text-sm"
+        data-mcp-app-view={app.toolName}
+      >
+        {localize('com_ui_mcp_app_shared_unavailable')}
+      </div>
+    );
+  }
   return (
     <div className="my-2" data-mcp-app-view={app.toolName}>
       {opened ? (
-        <ActiveMCPAppView app={app} userId={userId} close={close} />
+        <ActiveMCPAppView app={app} userId={userId} close={close} ordinal={ordinal} />
       ) : (
         <div className="border-border-light bg-surface-secondary text-text-secondary flex min-h-16 items-center gap-3 rounded-lg border px-4 py-3 text-sm">
           <span className="min-w-0 flex-1 truncate">{app.toolName}</span>
-          <Button type="button" variant="outline" size="sm" onClick={open}>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={open}
+            aria-label={localize('com_ui_mcp_app_open_named', {
+              0: app.toolName,
+              1: String(ordinal),
+            })}
+          >
             {localize('com_ui_mcp_app_open')}
           </Button>
-          {atCapacity && <span role="alert">{localize('com_ui_mcp_app_at_capacity')}</span>}
+          {atCapacity && <CapacityNotice />}
         </div>
       )}
     </div>
@@ -147,8 +197,13 @@ export function MCPAppViews({ attachments }: { attachments?: TAttachment[] }) {
 
   return (
     <>
-      {apps.map(({ key, resource }) => (
-        <MCPAppView key={JSON.stringify([userId, key])} app={resource} userId={userId} />
+      {apps.map(({ key, resource }, index) => (
+        <MCPAppView
+          key={JSON.stringify([userId, key])}
+          app={resource}
+          userId={userId}
+          ordinal={index + 1}
+        />
       ))}
     </>
   );

@@ -564,6 +564,8 @@ actions:
 #   maxSerializedLength: 4096
 #   maxPersistedAppBytes: 1048576
 #   maxAdmissionRequestsPerMinute: 240
+#   maxActiveViews: 3  # simultaneous interactive App views per browser
+#   maxActionPreviewChars: 16384  # App tool arguments and chat message preview
 
 # Example MCP Servers Object Structure
 # mcpServers:

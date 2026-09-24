@@ -30,17 +30,19 @@ View URLs, and partial tool input are outside this profile.
 
 An App attachment displays an inert **Open app** placeholder until the authenticated viewer
 activates it. Merely opening or restoring a conversation does not create a sandbox iframe,
-validate a persisted binding, or let an App issue follow-up requests. At most three Apps can be
-open concurrently across the host view; close one to open another. Closing an App tears down its
+validate a persisted binding, or let an App issue follow-up requests. The default limit is three Apps open
+concurrently across the host view (`maxActiveViews`, range 1–32); close one to open another. Closing an App tears down its
 bridge and cancels pending approval; reopening starts a fresh session and does not restore its
 previous in-View state.
 
 Opening an App permits its own resource reads and declared link policy, but does not approve actions
 on the user's behalf. Each App-initiated tool call displays the originating server, tool name and
 complete arguments in a host-owned confirmation; App-initiated chat text shows the complete text
-and requires a separate **Send message**. Rejecting, navigating away, or closing the App does not
-execute that action. Tool arguments and message previews exceeding 16,384 characters fail closed;
-they are never silently truncated for approval. The existing authenticated same-server binding
+and requires a separate **Send message**. Rejecting an action pauses further action requests from that View until it is closed and reopened.
+The dialog also provides a Close app and stop requests control for an App that repeatedly asks.
+Navigating away or closing the App does not execute a pending action. Tool arguments and message
+previews exceeding `maxActionPreviewChars` (default 16,384; range 1–131,072 UTF-16 characters)
+fail closed; they are never silently truncated for approval. The existing authenticated same-server binding
 and visibility checks remain in effect. A user who directly calls their own API can still invoke
 an allowed tool: this is a consent boundary for embedded App code, not an independent authorization
 mechanism for authenticated API clients.
@@ -72,6 +74,8 @@ mcpAppSandbox:
   maxSerializedLength: 8192
   maxPersistedAppBytes: 2097152
   maxAdmissionRequestsPerMinute: 480
+  maxActiveViews: 3
+  maxActionPreviewChars: 16384
 ```
 
 These positive-integer settings come only from the base deployment configuration; role, group, and

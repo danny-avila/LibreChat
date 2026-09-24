@@ -475,6 +475,20 @@ test.describe('MCP Apps full integration', () => {
     expect(
       (await readEvents(page)).filter((event) => event.method === 'tools/call:follow_up'),
     ).toHaveLength(0);
+    // Repeated App-generated actions must not trap the viewer behind new approval modals.
+    for (let i = 0; i < 3; i++) {
+      await app.getByTestId('call-tool').evaluate((button) => (button as HTMLElement).click());
+    }
+    await expect(toolDialog).toHaveCount(0);
+    expect(
+      (await readEvents(page)).filter((event) => event.method === 'tools/call:follow_up'),
+    ).toHaveLength(0);
+    await page
+      .locator('[data-mcp-app-view="show_app"]')
+      .first()
+      .getByRole('button', { name: 'Close app' })
+      .click();
+    await expectConnectedApp(page, label);
     const approvedTool = page.waitForResponse(
       (response) => new URL(response.url()).pathname === '/api/mcp/app-tool-call',
     );

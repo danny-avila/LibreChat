@@ -24,8 +24,9 @@ type Pending = {
 export function useMCPAppApproval() {
   const [pending, setPending] = useState<Pending | null>(null);
   const pendingRef = useRef<Pending | null>(null);
+  const suspendedRef = useRef(false);
   const request = useCallback((action: MCPAppAction, signal: AbortSignal): Promise<boolean> => {
-    if (signal.aborted || pendingRef.current) return Promise.resolve(false);
+    if (signal.aborted || pendingRef.current || suspendedRef.current) return Promise.resolve(false);
     return new Promise<boolean>((resolve) => {
       const settle = (allowed: boolean, notify = true) => {
         if (pendingRef.current !== entry) return;
@@ -42,7 +43,14 @@ export function useMCPAppApproval() {
       else setPending(entry);
     });
   }, []);
-  const cancel = useCallback(() => pendingRef.current?.settle(false), []);
+  // Escape, backdrop and Cancel all pause further App-requested actions for this View.
+  // Only closing and reopening its View restores the ability to ask.
+  const cancel = useCallback(() => {
+    if (pendingRef.current) {
+      suspendedRef.current = true;
+      pendingRef.current.settle(false);
+    }
+  }, []);
   // Resolve an outstanding SDK request when the owning View disappears.
   useEffect(
     () => () => {
@@ -62,10 +70,12 @@ export function MCPAppApproval({
   action,
   approve,
   cancel,
+  close,
 }: {
   action: MCPAppAction | null;
   approve: () => void;
   cancel: () => void;
+  close?: () => void;
 }) {
   const localize = useLocalize();
   return (
@@ -85,7 +95,7 @@ export function MCPAppApproval({
             )}
           </AlertDialogTitle>
           <AlertDialogDescription>
-            {localize('com_ui_mcp_app_action_warning')}
+            {localize('com_ui_mcp_app_action_warning')} {localize('com_ui_mcp_app_cancel_pauses')}
           </AlertDialogDescription>
         </AlertDialogHeader>
         {action && (
@@ -101,6 +111,9 @@ export function MCPAppApproval({
         )}
         <AlertDialogFooter>
           <AlertDialogCancel onClick={cancel}>{localize('com_ui_cancel')}</AlertDialogCancel>
+          {close && (
+            <AlertDialogCancel onClick={close}>{localize('com_ui_mcp_app_stop')}</AlertDialogCancel>
+          )}
           <AlertDialogAction onClick={approve}>
             {localize(
               action?.kind === 'tool' ? 'com_ui_mcp_app_run_tool' : 'com_ui_mcp_app_send_message',

@@ -8,8 +8,13 @@ import { MCPAppSuppressionContext, MCPAppViews } from '../MCPAppViews';
 import { useAppBridge, useMCPAppFrame } from '~/hooks/MCP';
 
 jest.mock('~/hooks', () => ({
-  useLocalize: () => (key: string, values?: Record<number, string>) =>
-    key === 'com_ui_mcp_app_frame_title' ? `MCP App: ${values?.[0] ?? ''}` : key,
+  useLocalize: () => (key: string, values?: Record<number, string>) => {
+    if (key === 'com_ui_mcp_app_frame_title') return `MCP App: ${values?.[0] ?? ''}`;
+    if (key === 'com_ui_mcp_app_open_named' || key === 'com_ui_mcp_app_close_named') {
+      return `${key} ${values?.[0]} (${values?.[1]})`;
+    }
+    return key;
+  },
 }));
 
 jest.mock('~/hooks/MCP', () => ({
@@ -31,6 +36,7 @@ function app(overrides: Partial<UIResource>): UIResource {
     mimeType: 'text/html;profile=mcp-app',
     toolName: 'show_app',
     serverName: 'demo',
+    text: '<p>view</p>',
     ...overrides,
   };
 }
@@ -123,7 +129,7 @@ describe('MCPAppViews', () => {
 
     expect(container.querySelectorAll('iframe[data-sandbox-url]')).toHaveLength(0);
     expect(mockUseAppBridge).not.toHaveBeenCalled();
-    screen.getAllByRole('button', { name: 'com_ui_mcp_app_open' }).forEach(fireEvent.click);
+    screen.getAllByRole('button', { name: /com_ui_mcp_app_open_named/ }).forEach(fireEvent.click);
     expect(container.querySelectorAll('iframe[data-sandbox-url]')).toHaveLength(2);
     expect(mockUseAppBridge).toHaveBeenNthCalledWith(
       1,
@@ -151,6 +157,73 @@ describe('MCPAppViews', () => {
     );
   });
 
+  it('gives duplicate App buttons distinct accessible names', () => {
+    const attachments = [
+      attachment({ toolCallId: 'dup', agentId: 'agent', stepId: 'step' }, [
+        app({ resourceId: 'one' }),
+        app({ resourceId: 'two' }),
+      ]),
+    ];
+    const view = render(
+      <MCPAppsPolicyProvider startupConfig={enabledConfig} ready userId="user-1">
+        <MCPAppViews attachments={attachments} />
+      </MCPAppsPolicyProvider>,
+    );
+    const buttons = view.getAllByRole('button', { name: /com_ui_mcp_app_open_named/ });
+    expect(buttons).toHaveLength(2);
+    expect(buttons[0]).toHaveAccessibleName('com_ui_mcp_app_open_named show_app (1)');
+    expect(buttons[1]).toHaveAccessibleName('com_ui_mcp_app_open_named show_app (2)');
+    fireEvent.click(buttons[0]);
+    expect(view.getByRole('button', { name: /com_ui_mcp_app_close_named/ })).toBeInTheDocument();
+  });
+
+  it('applies the published limit to all Views and clears failed capacity notices on release', () => {
+    const config = {
+      mcpApps: { enabled: true, legacyHtmlEnabled: true, maxActiveViews: 1 },
+    } as TStartupConfig;
+    const attachments = [
+      attachment({ toolCallId: 'bounded', agentId: 'agent', stepId: 'step' }, [
+        app({ resourceId: 'first' }),
+        app({ resourceId: 'second' }),
+      ]),
+    ];
+    const view = render(
+      <MCPAppsPolicyProvider startupConfig={config} ready userId="user-1">
+        <MCPAppViews attachments={attachments} />
+      </MCPAppsPolicyProvider>,
+    );
+    const buttons = view.getAllByRole('button', { name: /com_ui_mcp_app_open_named/ });
+    fireEvent.click(buttons[0]);
+    fireEvent.click(buttons[1]);
+    expect(view.getByRole('alert')).toHaveTextContent('com_ui_mcp_app_at_capacity');
+    fireEvent.click(view.getByRole('button', { name: /com_ui_mcp_app_close_named/ }));
+    expect(view.queryByRole('alert')).not.toBeInTheDocument();
+    fireEvent.click(view.getAllByRole('button', { name: /com_ui_mcp_app_open_named/ })[1]);
+    expect(view.container.querySelectorAll('iframe[data-sandbox-url]')).toHaveLength(1);
+  });
+
+  it('does not reserve capacity or mount a bridge for a read-only URI-only App', () => {
+    const config = {
+      mcpApps: { enabled: true, legacyHtmlEnabled: true, maxActiveViews: 1 },
+    } as TStartupConfig;
+    const attachments = [
+      attachment({ toolCallId: 'read-only', agentId: 'agent', stepId: 'step' }, [
+        app({ text: undefined, resourceId: 'uri-only' }),
+        app({ resourceId: 'inline' }),
+      ]),
+    ];
+    const view = render(
+      <MCPAppsPolicyProvider startupConfig={config} ready userId="user-1">
+        <MCPAppViews attachments={attachments} />
+      </MCPAppsPolicyProvider>,
+    );
+    expect(view.getByText('com_ui_mcp_app_shared_unavailable')).toBeInTheDocument();
+    expect(mockUseMCPAppFrame).not.toHaveBeenCalled();
+    expect(view.getAllByRole('button', { name: /com_ui_mcp_app_open_named/ })).toHaveLength(1);
+    fireEvent.click(view.getByRole('button', { name: /com_ui_mcp_app_open_named/ }));
+    expect(view.container.querySelectorAll('iframe[data-sandbox-url]')).toHaveLength(1);
+  });
+
   it('limits simultaneous live bridges and releases the slot on close', () => {
     const attachments = [
       attachment(
@@ -165,16 +238,16 @@ describe('MCPAppViews', () => {
     );
     expect(mockUseAppBridge).not.toHaveBeenCalled();
     view
-      .getAllByRole('button', { name: 'com_ui_mcp_app_open' })
+      .getAllByRole('button', { name: /com_ui_mcp_app_open_named/ })
       .slice(0, 3)
       .forEach(fireEvent.click);
     expect(view.container.querySelectorAll('iframe[data-sandbox-url]')).toHaveLength(3);
-    fireEvent.click(view.getByRole('button', { name: 'com_ui_mcp_app_open' }));
+    fireEvent.click(view.getByRole('button', { name: /com_ui_mcp_app_open_named/ }));
     expect(view.getByRole('alert')).toHaveTextContent('com_ui_mcp_app_at_capacity');
     expect(view.container.querySelectorAll('iframe[data-sandbox-url]')).toHaveLength(3);
-    fireEvent.click(view.getAllByRole('button', { name: 'com_ui_mcp_app_close' })[0]);
+    fireEvent.click(view.getAllByRole('button', { name: /com_ui_mcp_app_close_named/ })[0]);
     expect(view.container.querySelectorAll('iframe[data-sandbox-url]')).toHaveLength(2);
-    fireEvent.click(view.getAllByRole('button', { name: 'com_ui_mcp_app_open' }).at(-1)!);
+    fireEvent.click(view.getAllByRole('button', { name: /com_ui_mcp_app_open_named/ }).at(-1)!);
     expect(view.container.querySelectorAll('iframe[data-sandbox-url]')).toHaveLength(3);
   });
 
@@ -194,7 +267,7 @@ describe('MCPAppViews', () => {
 
     expect(container.querySelectorAll('iframe[data-sandbox-url]')).toHaveLength(0);
     expect(mockUseAppBridge).not.toHaveBeenCalled();
-    screen.getAllByRole('button', { name: 'com_ui_mcp_app_open' }).forEach(fireEvent.click);
+    screen.getAllByRole('button', { name: /com_ui_mcp_app_open_named/ }).forEach(fireEvent.click);
     expect(container.querySelectorAll('iframe[data-sandbox-url]')).toHaveLength(2);
     expect(mockUseAppBridge.mock.calls.map(([params]) => params.toolArgs)).toEqual([
       { occurrence: 'first' },
@@ -228,7 +301,7 @@ describe('MCPAppViews', () => {
     );
     const view = render(renderViews([targetAttachment]));
     expect(view.queryByTitle('MCP App: target')).not.toBeInTheDocument();
-    fireEvent.click(view.getByRole('button', { name: 'com_ui_mcp_app_open' }));
+    fireEvent.click(view.getByRole('button', { name: /com_ui_mcp_app_open_named/ }));
     const targetFrame = view.getByTitle('MCP App: target');
 
     view.rerender(renderViews([unrelatedAttachment, targetAttachment]));
@@ -263,7 +336,7 @@ describe('MCPAppViews', () => {
 
     expect(view.queryByTitle('MCP App: owned')).not.toBeInTheDocument();
     expect(view.queryByTitle('MCP App: nested')).not.toBeInTheDocument();
-    fireEvent.click(view.getByRole('button', { name: 'com_ui_mcp_app_open' }));
+    fireEvent.click(view.getByRole('button', { name: /com_ui_mcp_app_open_named/ }));
     expect(view.getByTitle('MCP App: nested')).toBeInTheDocument();
   });
 
@@ -287,7 +360,7 @@ describe('MCPAppViews', () => {
       </MCPAppsPolicyProvider>,
     );
     expect(view.queryByTitle('MCP App: compact')).not.toBeInTheDocument();
-    fireEvent.click(view.getByRole('button', { name: 'com_ui_mcp_app_open' }));
+    fireEvent.click(view.getByRole('button', { name: /com_ui_mcp_app_open_named/ }));
     const container = view.getByTitle('MCP App: compact').parentElement;
 
     expect(container).toHaveStyle({ height: `${height}px` });

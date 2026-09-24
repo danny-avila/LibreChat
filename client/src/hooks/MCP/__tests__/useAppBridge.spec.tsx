@@ -131,6 +131,8 @@ jest.mock('~/hooks', () => ({
     key === 'com_ui_mcp_app_frame_title' ? `MCP App: ${values?.[0] ?? ''}` : key,
 }));
 
+const mockPreviewLimit = jest.fn((): number | undefined => undefined);
+
 jest.mock('~/Providers', () => ({
   useOptionalMessagesOperations: () => ({ ask: mockAsk }),
   useIsMessagesViewReadOnly: jest.fn(() => false),
@@ -138,6 +140,7 @@ jest.mock('~/Providers', () => ({
     enabled: true,
     legacyHtmlEnabled: true,
     cspLimits: { maxSourcesPerDirective: 32, maxSerializedLength: 4096 },
+    maxActionPreviewChars: mockPreviewLimit(),
   }),
 }));
 
@@ -260,6 +263,7 @@ describe('useAppBridge', () => {
     mockReadOnly.mockReturnValue(false);
     mockAsk.mockReset();
     mockApproveAction.mockReset().mockResolvedValue(true);
+    mockPreviewLimit.mockReturnValue(undefined);
     mockFetchHtml.mockResolvedValue({ html: '<p>app</p>' });
     mockValidateBinding.mockResolvedValue();
     client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -1016,6 +1020,30 @@ describe('useAppBridge', () => {
       expect(mockCallTool).not.toHaveBeenCalled();
       expect(mockAsk).not.toHaveBeenCalled();
       view.view.unmount();
+    });
+
+    it('uses the published preview limit for both tool arguments and chat messages', async () => {
+      mockCallTool.mockResolvedValue({ content: [] });
+      mockPreviewLimit.mockReturnValue(10);
+      const { view } = mountBridge(makeResource(), client);
+      await flush();
+      const bridge = latest();
+      expect(
+        await bridge.oncalltool?.({ name: 'next', arguments: { query: 42 } }, requestExtra()),
+      ).toEqual({ content: [], isError: true });
+      expect(
+        await bridge.onmessage?.(
+          { content: [{ type: 'text', text: 'more than ten' }] },
+          requestExtra(),
+        ),
+      ).toEqual({ isError: true });
+      expect(mockApproveAction).not.toHaveBeenCalled();
+      await bridge.oncalltool?.({ name: 'next', arguments: { q: 2 } }, requestExtra());
+      await bridge.onmessage?.({ content: [{ type: 'text', text: 'ten chars!' }] }, requestExtra());
+      expect(mockApproveAction).toHaveBeenCalledTimes(2);
+      expect(mockCallTool).toHaveBeenCalledTimes(1);
+      expect(mockAsk).toHaveBeenCalledTimes(1);
+      view.unmount();
     });
 
     it('waits for permission and executes the exact arguments shown to the host once', async () => {

@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef } from 'react';
-import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
+import { QueryKeys, DEFAULT_MCP_APP_ACTION_PREVIEW_CHARS } from 'librechat-data-provider';
 import {
   AppBridge,
   PostMessageTransport,
@@ -112,7 +112,7 @@ export function useAppBridge({
   // Read-only views (shared transcripts, /search) must not let the embedded app proxy tool calls
   // or resource reads against the viewer's MCP servers with the viewer's auth.
   const readOnly = useIsMessagesViewReadOnly();
-  const { cspLimits } = useMCPAppsPolicy();
+  const { cspLimits, maxActionPreviewChars } = useMCPAppsPolicy();
   const queryClient = useQueryClient();
   const viewId = useId();
   // The csp actually delivered to the sandbox document, which is what bounds the app's own egress.
@@ -125,6 +125,7 @@ export function useAppBridge({
   const askRef = useRef(ask);
   const requestActionRef = useRef(onRequestAction);
   const cancelActionRef = useRef(onCancelAction);
+  const maxActionPreviewCharsRef = useRef(maxActionPreviewChars);
   const onSizeChangedRef = useRef(onSizeChanged);
   const onLoadedRef = useRef(onLoaded);
   const onTeardownRef = useRef(onTeardown);
@@ -132,6 +133,7 @@ export function useAppBridge({
   askRef.current = ask;
   requestActionRef.current = onRequestAction;
   cancelActionRef.current = onCancelAction;
+  maxActionPreviewCharsRef.current = maxActionPreviewChars;
   onSizeChangedRef.current = onSizeChanged;
   onLoadedRef.current = onLoaded;
   onTeardownRef.current = onTeardown;
@@ -290,7 +292,11 @@ export function useAppBridge({
         let args: Record<string, unknown>;
         try {
           argumentsText = JSON.stringify(params.arguments ?? {});
-          if (!argumentsText || argumentsText.length > 16_384)
+          if (
+            !argumentsText ||
+            argumentsText.length >
+              (maxActionPreviewCharsRef.current ?? DEFAULT_MCP_APP_ACTION_PREVIEW_CHARS)
+          )
             return { content: [], isError: true };
           args = JSON.parse(argumentsText) as Record<string, unknown>;
           if (!args || typeof args !== 'object' || Array.isArray(args))
@@ -329,7 +335,8 @@ export function useAppBridge({
           .join('\n');
         if (
           !text ||
-          text.length > 16_384 ||
+          text.length >
+            (maxActionPreviewCharsRef.current ?? DEFAULT_MCP_APP_ACTION_PREVIEW_CHARS) ||
           signal.aborted ||
           viewAbort.signal.aborted ||
           cancelled ||

@@ -13,13 +13,27 @@ const action = {
 
 function Harness({
   onReady,
+  onClose,
 }: {
   onReady: (approval: ReturnType<typeof useMCPAppApproval>) => void;
+  onClose?: () => void;
 }) {
   const approval = useMCPAppApproval();
   onReady(approval);
   return (
-    <MCPAppApproval action={approval.pending} approve={approval.approve} cancel={approval.cancel} />
+    <MCPAppApproval
+      action={approval.pending}
+      approve={approval.approve}
+      cancel={approval.cancel}
+      close={
+        onClose
+          ? () => {
+              approval.cancel();
+              onClose();
+            }
+          : undefined
+      }
+    />
   );
 }
 
@@ -57,6 +71,53 @@ test('rejects simultaneous App requests and lets the user deny the first', async
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_cancel' }));
   });
   await expect(first).resolves.toBe(false);
+  view.unmount();
+});
+
+test('denying once suppresses repeated prompts until the View is reopened', async () => {
+  let approval!: ReturnType<typeof useMCPAppApproval>;
+  const view = render(<Harness onReady={(value) => (approval = value)} />);
+  let first!: Promise<boolean>;
+  act(() => {
+    first = approval.request(action, new AbortController().signal);
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_cancel' }));
+  });
+  await expect(first).resolves.toBe(false);
+  for (let i = 0; i < 100; i++) {
+    await expect(approval.request(action, new AbortController().signal)).resolves.toBe(false);
+  }
+  expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  view.unmount();
+  let reopened!: ReturnType<typeof useMCPAppApproval>;
+  const next = render(<Harness onReady={(value) => (reopened = value)} />);
+  let fresh!: Promise<boolean>;
+  act(() => {
+    fresh = reopened.request(action, new AbortController().signal);
+  });
+  expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+  act(() => {
+    reopened.cancel();
+  });
+  await expect(fresh).resolves.toBe(false);
+  next.unmount();
+});
+
+test('the host Stop app control denies the current action and closes its View', async () => {
+  let approval!: ReturnType<typeof useMCPAppApproval>;
+  const onClose = jest.fn();
+  const view = render(<Harness onReady={(value) => (approval = value)} onClose={onClose} />);
+  let pending!: Promise<boolean>;
+  act(() => {
+    pending = approval.request(action, new AbortController().signal);
+  });
+  await act(async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_mcp_app_stop' }));
+  });
+  await expect(pending).resolves.toBe(false);
+  expect(onClose).toHaveBeenCalledTimes(1);
+  await expect(approval.request(action, new AbortController().signal)).resolves.toBe(false);
   view.unmount();
 });
 
