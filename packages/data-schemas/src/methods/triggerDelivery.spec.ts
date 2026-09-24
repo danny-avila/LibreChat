@@ -493,7 +493,8 @@ describe('agent trigger delivery methods', () => {
         sourceId: background.id,
       });
 
-      expect(pending).toEqual([
+      expect(pending.truncated).toBe(false);
+      expect(pending.completions).toEqual([
         {
           deliveryKey: running.delivery.deliveryKey,
           taskId: 'task-running',
@@ -550,7 +551,82 @@ describe('agent trigger delivery methods', () => {
         sourceId: background.id,
       });
 
-      expect(pending.map((entry) => entry.deliveryKey)).toEqual([waiting.delivery.deliveryKey]);
+      expect(pending.completions.map((entry) => entry.deliveryKey)).toEqual([
+        waiting.delivery.deliveryKey,
+      ]);
+    });
+
+    it('looks up one task and reports a truncated listing', async () => {
+      const user = new mongoose.Types.ObjectId();
+      await completion(user, 'task-first');
+      const second = await completion(user, 'task-second');
+
+      const one = await methods.listPendingAgentBackgroundToolCompletions({
+        user,
+        conversationId: 'conversation-1',
+        sourceId: background.id,
+        taskId: 'task-second',
+      });
+      expect(one).toEqual({
+        completions: [expect.objectContaining({ deliveryKey: second.delivery.deliveryKey })],
+        truncated: false,
+      });
+
+      const page = await methods.listPendingAgentBackgroundToolCompletions({
+        user,
+        conversationId: 'conversation-1',
+        sourceId: background.id,
+        limit: 1,
+      });
+      expect(page.completions.map((entry) => entry.taskId)).toEqual(['task-first']);
+      expect(page.truncated).toBe(true);
+    });
+
+    it('omits capability-dead rows, which no worker will deliver', async () => {
+      const user = new mongoose.Types.ObjectId();
+      const dead = await completion(user, 'task-dead');
+      await Delivery.updateOne(
+        { _id: dead.delivery.id },
+        { $set: { status: 'leased', capabilityStatus: 'dead' } },
+      );
+
+      const pending = await methods.listPendingAgentBackgroundToolCompletions({
+        user,
+        conversationId: 'conversation-1',
+        sourceId: background.id,
+      });
+
+      expect(pending.completions).toEqual([]);
+    });
+
+    it('distinguishes retiring a completion from finding it already delivered', async () => {
+      const user = new mongoose.Types.ObjectId();
+      const delivered = await completion(user, 'task-already-delivered');
+      await Delivery.updateOne({ _id: delivered.delivery.id }, { $set: { status: 'succeeded' } });
+      const retire = (requireTransition?: true) =>
+        methods.retireAgentTriggerDelivery({
+          deliveryKey: delivered.delivery.deliveryKey,
+          sourceId: background.id,
+          settledAt: START,
+          reason: 'background result discarded by its owner',
+          onlyIfUnclaimed: true,
+          ...(requireTransition != null && { requireTransition }),
+        });
+
+      await expect(retire()).resolves.toBe(true);
+      await expect(retire(true)).resolves.toBe(false);
+
+      const waiting = await completion(user, 'task-still-waiting');
+      await expect(
+        methods.retireAgentTriggerDelivery({
+          deliveryKey: waiting.delivery.deliveryKey,
+          sourceId: background.id,
+          settledAt: START,
+          reason: 'background result discarded by its owner',
+          onlyIfUnclaimed: true,
+          requireTransition: true,
+        }),
+      ).resolves.toBe(true);
     });
 
     it('refuses a malformed lookup', async () => {

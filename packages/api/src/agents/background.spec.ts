@@ -3063,6 +3063,52 @@ describe('runCheckBackgroundTask (singleton)', () => {
     expect(claimBackgroundToolResult).toHaveBeenCalledTimes(1);
   });
 
+  it('counts a finished subagent as outstanding until its result is delivered', async () => {
+    const store = new InMemorySubagentTaskStore();
+    const subagentTasks: HostSubagentTaskConfig = {
+      store,
+      scopeId: 'owner:settled-subagent-parent',
+      completionDelivery: SUBAGENT_COMPLETION_DELIVERY,
+    };
+    const started = store.start({
+      scopeId: subagentTasks.scopeId,
+      idempotencyKey: 'parent-run:parent-agent:call-settled',
+      parentRunId: 'parent-run',
+      parentAgentId: 'parent-agent',
+      parentToolCallId: 'call-settled',
+      input: 'Research this.',
+      subagentKind: 'agent',
+      subagentType: 'researcher',
+      run: async () => ({ content: 'research done' }),
+    });
+    if (!started.accepted) {
+      throw new Error('Expected subagent task to start.');
+    }
+    for (
+      let i = 0;
+      i < 50 && store.get(subagentTasks.scopeId, started.task.taskId)?.status === 'running';
+      i++
+    ) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+
+    const listed = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'owner',
+        conversationId: 'settled-subagent-parent',
+        agentId: 'agent_parent',
+        args: {},
+        subagentTasks,
+      }),
+    );
+
+    expect(listed.tasks[0]).toEqual(
+      expect.objectContaining({ status: 'completed', result_available: true, delivery: 'pending' }),
+    );
+    expect(listed.outstanding).toBe(1);
+    expect(listed.message).toContain('have not been delivered yet');
+  });
+
   it('tells a wakeup-enabled parent to yield on an unchanged running subagent', async () => {
     const store = new InMemorySubagentTaskStore();
     const subagentTasks: HostSubagentTaskConfig = {
@@ -3422,11 +3468,15 @@ describe('runCheckBackgroundTask delivery semantics', () => {
   const pendingControls = (
     overrides: {
       list?: () => Promise<unknown[]>;
+      complete?: boolean;
       discard?: () => Promise<string>;
     } = {},
   ) =>
     ({
-      list: jest.fn(overrides.list ?? (async () => [])),
+      list: jest.fn(async () => ({
+        completions: await (overrides.list ?? (async () => []))(),
+        complete: overrides.complete ?? true,
+      })),
       discard: jest.fn(overrides.discard ?? (async () => 'not_pending')),
     }) as never;
 
@@ -3615,6 +3665,79 @@ describe('runCheckBackgroundTask delivery semantics', () => {
       expect(cancelled.message).toContain(message);
     },
   );
+
+  it('reports a local task delivered once the durable store no longer holds its delivery', async () => {
+    const delivered = completedWithWakeup('reconcile-user', 'reconcile-convo', 'reconcile-done');
+    const waiting = completedWithWakeup('reconcile-user', 'reconcile-convo', 'reconcile-waiting');
+    const listed = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'reconcile-user',
+        conversationId: 'reconcile-convo',
+        args: {},
+        pendingCompletions: pendingControls({
+          list: async () => [
+            {
+              taskId: waiting,
+              toolName: 'bash_tool',
+              dispatchedAt: new Date('2026-09-24T12:00:00Z'),
+              result: { status: 'completed', settledAt: new Date('2026-09-24T12:01:00Z') },
+              claimedByWakeup: false,
+            },
+          ],
+        }),
+      }),
+    );
+
+    const byId = new Map(
+      listed.tasks.map((task: { background_task_id: string; delivery?: string }) => [
+        task.background_task_id,
+        task.delivery,
+      ]),
+    );
+    expect(byId.get(delivered)).toBe('delivered');
+    expect(byId.get(waiting)).toBe('pending');
+    expect(listed.outstanding).toBe(1);
+  });
+
+  it('keeps the local view and warns when the durable listing is incomplete', async () => {
+    const taskId = completedWithWakeup('truncated-user', 'truncated-convo', 'truncated-call');
+    const listed = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'truncated-user',
+        conversationId: 'truncated-convo',
+        args: {},
+        pendingCompletions: pendingControls({ complete: false }),
+      }),
+    );
+
+    expect(listed.tasks[0]).toEqual(
+      expect.objectContaining({ background_task_id: taskId, delivery: 'pending' }),
+    );
+    expect(listed.outstanding).toBe(1);
+    expect(listed.partial).toBe(true);
+    expect(listed.warning).toContain('More undelivered results exist');
+  });
+
+  it('lets a finished local task be cancelled without the live-cancellation policy', async () => {
+    const taskId = completedWithWakeup(
+      'settled-cancel-user',
+      'settled-cancel-convo',
+      'settled-cancel',
+    );
+
+    const cancelled = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'settled-cancel-user',
+        conversationId: 'settled-cancel-convo',
+        args: { background_task_id: taskId, action: 'cancel' },
+      }),
+    );
+
+    expect(cancelled.status).not.toBe('invalid');
+    expect(cancelled).toEqual(
+      expect.objectContaining({ background_task_id: taskId, status: 'completed' }),
+    );
+  });
 
   it('falls through to the ordinary lookup when nothing is pending for the task', async () => {
     const pendingCompletions = pendingControls({ discard: async () => 'not_pending' });

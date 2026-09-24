@@ -25,6 +25,8 @@ export interface BackgroundToolWakeupRetireOptions {
   onlyIfUnclaimed?: boolean;
   /** Reconcile only after the delivery is irreversibly dead-lettered. */
   onlyIfDead?: boolean;
+  /** Report success only when this call retired it, not when it was already delivered. */
+  requireTransition?: boolean;
 }
 
 /** Process-local handle for the durable delivery admitted before launch. */
@@ -89,10 +91,11 @@ export type BackgroundCompletionDiscardOutcome =
 
 /** Durable view and control of one principal's undelivered background completions. */
 export interface PendingBackgroundCompletionControls {
+  /** `complete` is false when more undelivered completions exist than were listed. */
   list: (input: {
     userId: string;
     conversationId: string;
-  }) => Promise<PendingBackgroundCompletion[]>;
+  }) => Promise<{ completions: PendingBackgroundCompletion[]; complete: boolean }>;
   discard: (input: {
     userId: string;
     conversationId: string;

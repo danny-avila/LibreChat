@@ -543,26 +543,38 @@ export function createPendingBackgroundCompletions(deps: {
     user: string;
     conversationId: string;
     sourceId: string;
-  }) => Promise<Array<PendingBackgroundCompletion & { deliveryKey: string }>>;
+    taskId?: string;
+  }) => Promise<{
+    completions: Array<PendingBackgroundCompletion & { deliveryKey: string }>;
+    truncated: boolean;
+  }>;
   retire: RetireBackgroundToolCompletion;
 }): PendingBackgroundCompletionControls {
-  const read = (input: { userId: string; conversationId: string }) =>
+  const read = (input: { userId: string; conversationId: string; taskId?: string }) =>
     deps.list({
       user: input.userId,
       conversationId: input.conversationId,
       sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
+      ...(input.taskId != null && { taskId: input.taskId }),
     });
   return {
-    list: async (input) =>
-      (await read(input)).map(({ taskId, toolName, dispatchedAt, result, claimedByWakeup }) => ({
-        taskId,
-        toolName,
-        dispatchedAt,
-        ...(result != null && { result }),
-        claimedByWakeup,
-      })),
+    list: async (input) => {
+      const { completions, truncated } = await read(input);
+      return {
+        completions: completions.map(
+          ({ taskId, toolName, dispatchedAt, result, claimedByWakeup }) => ({
+            taskId,
+            toolName,
+            dispatchedAt,
+            ...(result != null && { result }),
+            claimedByWakeup,
+          }),
+        ),
+        complete: !truncated,
+      };
+    },
     discard: async (input) => {
-      const completion = (await read(input)).find(({ taskId }) => taskId === input.taskId);
+      const [completion] = (await read(input)).completions;
       if (completion == null) {
         return 'not_pending';
       }
@@ -573,12 +585,13 @@ export function createPendingBackgroundCompletions(deps: {
         return 'delivering';
       }
       /** Unclaimed-only: once a resolver owns the delivery its continuation can no
-       * longer be withdrawn, so that race reports as already delivering. */
+       * longer be withdrawn, so that race, including one it already finished,
+       * reports as delivering rather than discarded. */
       const retired = await deps.retire(
         completion.deliveryKey,
         BACKGROUND_TOOL_COMPLETION_SOURCE,
         'background result discarded by its owner',
-        { onlyIfUnclaimed: true },
+        { onlyIfUnclaimed: true, requireTransition: true },
       );
       return retired ? 'discarded' : 'delivering';
     },

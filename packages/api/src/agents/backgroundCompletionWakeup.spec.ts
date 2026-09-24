@@ -794,6 +794,7 @@ describe('background tool completion wakeups', () => {
 
 describe('pending background completions', () => {
   const dispatchedAt = new Date(NOW - 60_000);
+  const settled = { status: 'completed' as const, settledAt: new Date(NOW) };
   const row = (overrides = {}) => ({
     deliveryKey: 'delivery-key-1',
     taskId: 'task-1',
@@ -803,24 +804,27 @@ describe('pending background completions', () => {
     claimedByWakeup: false,
     ...overrides,
   });
+  const listing = (completions: Array<ReturnType<typeof row>>, truncated = false) =>
+    jest.fn(async () => ({ completions, truncated }));
 
   it('lists the durable view for the owner without delivery internals', async () => {
-    const list = jest.fn(async () => [
-      row({ result: { status: 'completed' as const, settledAt: new Date(NOW) } }),
-    ]);
+    const list = listing([row({ result: settled })], true);
     const pending = createPendingBackgroundCompletions({ list, retire: jest.fn() });
 
     await expect(
       pending.list({ userId: 'user-1', conversationId: 'conversation-1' }),
-    ).resolves.toEqual([
-      {
-        taskId: 'task-1',
-        toolName: 'slow_tool',
-        dispatchedAt,
-        result: { status: 'completed', settledAt: new Date(NOW) },
-        claimedByWakeup: false,
-      },
-    ]);
+    ).resolves.toEqual({
+      completions: [
+        {
+          taskId: 'task-1',
+          toolName: 'slow_tool',
+          dispatchedAt,
+          result: settled,
+          claimedByWakeup: false,
+        },
+      ],
+      complete: false,
+    });
     expect(list).toHaveBeenCalledWith({
       user: 'user-1',
       conversationId: 'conversation-1',
@@ -828,47 +832,36 @@ describe('pending background completions', () => {
     });
   });
 
-  it('discards a settled, unclaimed result by retiring only an unclaimed delivery', async () => {
+  it('discards a settled, unclaimed result by looking up that task and retiring it exactly', async () => {
     const retire = jest.fn(async () => true);
-    const pending = createPendingBackgroundCompletions({
-      list: async () => [
-        row({ result: { status: 'completed' as const, settledAt: new Date(NOW) } }),
-      ],
-      retire,
-    });
+    const list = listing([row({ result: settled })]);
+    const pending = createPendingBackgroundCompletions({ list, retire });
 
     await expect(
       pending.discard({ userId: 'user-1', conversationId: 'conversation-1', taskId: 'task-1' }),
     ).resolves.toBe('discarded');
+    expect(list).toHaveBeenCalledWith({
+      user: 'user-1',
+      conversationId: 'conversation-1',
+      sourceId: 'background-tool-completion',
+      taskId: 'task-1',
+    });
     expect(retire).toHaveBeenCalledWith(
       'delivery-key-1',
       'background-tool-completion',
       'background result discarded by its owner',
-      { onlyIfUnclaimed: true },
+      { onlyIfUnclaimed: true, requireTransition: true },
     );
   });
 
   it.each([
     ['not_pending', [], true],
     ['running', [row()], true],
-    [
-      'delivering',
-      [
-        row({
-          result: { status: 'completed' as const, settledAt: new Date(NOW) },
-          claimedByWakeup: true,
-        }),
-      ],
-      true,
-    ],
-    [
-      'delivering',
-      [row({ result: { status: 'completed' as const, settledAt: new Date(NOW) } })],
-      false,
-    ],
+    ['delivering', [row({ result: settled, claimedByWakeup: true })], true],
+    ['delivering', [row({ result: settled })], false],
   ])('reports %s without discarding what it cannot', async (outcome, rows, retired) => {
     const retire = jest.fn(async () => retired);
-    const pending = createPendingBackgroundCompletions({ list: async () => rows, retire });
+    const pending = createPendingBackgroundCompletions({ list: listing(rows), retire });
 
     await expect(
       pending.discard({ userId: 'user-1', conversationId: 'conversation-1', taskId: 'task-1' }),

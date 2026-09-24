@@ -1940,6 +1940,24 @@ function serializePendingCompletion(
   };
 }
 
+/** A local task whose durable delivery settled elsewhere (an automatic wake-up
+ * on any replica) no longer holds a local claim; the complete durable listing is
+ * the evidence. An incomplete listing proves nothing, so the local view stands. */
+function reconcileDelivery(
+  task: SerializedBackgroundTask,
+  durablePendingTaskIds: ReadonlySet<string> | undefined,
+): SerializedBackgroundTask {
+  if (
+    task.delivery !== 'pending' ||
+    task.status === 'running' ||
+    durablePendingTaskIds == null ||
+    durablePendingTaskIds.has(task.background_task_id)
+  ) {
+    return task;
+  }
+  return { ...task, delivery: 'delivered' };
+}
+
 function serializeTask(
   task: BackgroundTask,
   { includeResult }: { includeResult: boolean },
@@ -1994,6 +2012,8 @@ interface SerializedSubagentTask {
   error?: string;
   control_id?: string;
   message?: string;
+  /** A finished subagent whose result will still resume the parent turn. */
+  delivery?: 'pending';
 }
 
 function serializeSubagentSnapshot(
@@ -2175,7 +2195,10 @@ export async function runCheckBackgroundTask(params: {
     if (task != null) {
       if (action !== 'poll') {
         if (action === 'cancel') {
-          if (params.ordinaryToolCancellation !== true) {
+          /** A finished task has no execution to stop, so the live-cancellation
+           * policy does not apply: cancelling it falls through to the poll path,
+           * which retires its pending delivery. */
+          if (params.ordinaryToolCancellation !== true && task.status === 'running') {
             return JSON.stringify({
               status: 'invalid',
               background_task_id: taskId,
@@ -2669,12 +2692,23 @@ export async function runCheckBackgroundTask(params: {
   let subagentTasks: SerializedSubagentTask[] = [];
   const listWarnings: string[] = [];
   let pendingCompletions: PendingBackgroundCompletion[] = [];
+  /** Undelivered task ids from the durable store, when the listing was complete:
+   * a local task absent from it was delivered on this or another replica. */
+  let durablePendingTaskIds: ReadonlySet<string> | undefined;
   if (params.pendingCompletions != null) {
     try {
       const localTaskIds = new Set(tasks.map((task) => task.id));
-      pendingCompletions = (
-        await params.pendingCompletions.list({ userId, conversationId })
-      ).filter((completion) => !localTaskIds.has(completion.taskId));
+      const durable = await params.pendingCompletions.list({ userId, conversationId });
+      pendingCompletions = durable.completions.filter(
+        (completion) => !localTaskIds.has(completion.taskId),
+      );
+      if (durable.complete) {
+        durablePendingTaskIds = new Set(durable.completions.map(({ taskId }) => taskId));
+      } else {
+        listWarnings.push(
+          'More undelivered results exist than could be listed; some not shown may still arrive as new turns.',
+        );
+      }
     } catch (error) {
       logger.warn('[background] Failed to list undelivered background completions:', error);
       listWarnings.push(
@@ -2709,16 +2743,28 @@ export async function runCheckBackgroundTask(params: {
     }
   }
   const ordinaryTasks = [
-    ...tasks.map((task) => serializeTask(task, { includeResult: false })),
+    ...tasks.map((task) =>
+      reconcileDelivery(serializeTask(task, { includeResult: false }), durablePendingTaskIds),
+    ),
     ...pendingCompletions.map(serializePendingCompletion),
   ];
+  if (completionWakeups) {
+    subagentTasks = subagentTasks.map((task) =>
+      task.status !== 'running' && task.result_available === true && task.result_claimed !== true
+        ? { ...task, delivery: 'pending' as const }
+        : task,
+    );
+  }
   /** Work is outstanding until its result reaches the conversation: a finished
    * task with a pending delivery is still going to resume the agent. */
+  const isOutstanding = (task: { status: string; delivery?: string }): boolean =>
+    task.status === 'running' || task.delivery === 'pending';
   const outstanding =
-    ordinaryTasks.filter((task) => task.status === 'running' || task.delivery === 'pending')
-      .length + subagentTasks.filter((task) => task.status === 'running').length;
+    ordinaryTasks.filter(isOutstanding).length + subagentTasks.filter(isOutstanding).length;
   const guidance = [
-    ...(ordinaryTasks.some((task) => task.status !== 'running' && task.delivery === 'pending')
+    ...([...ordinaryTasks, ...subagentTasks].some(
+      (task) => task.status !== 'running' && task.delivery === 'pending',
+    )
       ? [PENDING_DELIVERY_GUIDANCE]
       : []),
     ...(completionWakeups && subagentTasks.some((task) => task.status === 'running')

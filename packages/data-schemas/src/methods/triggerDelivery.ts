@@ -44,8 +44,9 @@ export const CLAIM_CAS_MAX_ATTEMPTS = 16;
 /** Candidates fetched per claim read; losing claimers advance through the
  * batch instead of re-reading the same head-of-queue row. */
 const CLAIM_CANDIDATE_BATCH = 8;
-/** A conversation's undelivered completions are few; this bounds a pathological listing. */
-const MAX_PENDING_BACKGROUND_COMPLETIONS = 50;
+/** Matches the per-conversation background task limit, so a listing is complete
+ * unless durable rows outlived that limit across restarts; it then says so. */
+const MAX_PENDING_BACKGROUND_COMPLETIONS = 200;
 /** Every status before a delivery settles, i.e. whose result has not reached its conversation. */
 const UNDELIVERED_STATUSES: IAgentTriggerDelivery['status'][] = [
   'staging',
@@ -271,6 +272,12 @@ export interface PendingAgentBackgroundToolCompletion {
   claimedByWakeup: boolean;
 }
 
+export interface PendingAgentBackgroundToolCompletions {
+  completions: PendingAgentBackgroundToolCompletion[];
+  /** More undelivered completions exist than were returned. */
+  truncated: boolean;
+}
+
 export interface AgentTriggerDeliveryMethods {
   ensureAgentTriggerDeliveryIndexes: () => Promise<void>;
   enqueueAgentTriggerDelivery: (
@@ -319,6 +326,9 @@ export interface AgentTriggerDeliveryMethods {
       /** Accept transport success without a terminal handling receipt, unless the
        * delivery explicitly keeps its lane open for terminal handling. */
       allowSucceeded?: boolean;
+      /** True only when this call retired the delivery, not when it had already
+       * succeeded, e.g. delivered by a resolver that won the race. */
+      requireTransition?: boolean;
     },
     recovery?: { required: boolean },
   ) => Promise<boolean>;
@@ -336,8 +346,10 @@ export interface AgentTriggerDeliveryMethods {
     user: string | Types.ObjectId;
     conversationId: string;
     sourceId: string;
+    /** One task's completion, e.g. to discard it. */
+    taskId?: string;
     limit?: number;
-  }) => Promise<PendingAgentBackgroundToolCompletion[]>;
+  }) => Promise<PendingAgentBackgroundToolCompletions>;
   persistAgentBackgroundToolResult: (
     input: PersistAgentBackgroundToolResultInput,
   ) => Promise<boolean>;
@@ -2132,6 +2144,9 @@ export function createAgentTriggerDeliveryMethods(
       /** Accept transport success without a terminal handling receipt, unless the
        * delivery explicitly keeps its lane open for terminal handling. */
       allowSucceeded?: boolean;
+      /** True only when this call retired the delivery, not when it had already
+       * succeeded, e.g. delivered by a resolver that won the race. */
+      requireTransition?: boolean;
     },
     recovery?: { required: boolean },
   ): Promise<boolean> {
@@ -2218,6 +2233,9 @@ export function createAgentTriggerDeliveryMethods(
         });
       }
       return true;
+    }
+    if (input.requireTransition === true) {
+      return false;
     }
     return (
       (await Delivery().exists({
@@ -2327,14 +2345,19 @@ export function createAgentTriggerDeliveryMethods(
     user: string | Types.ObjectId;
     conversationId: string;
     sourceId: string;
+    taskId?: string;
     limit?: number;
-  }): Promise<PendingAgentBackgroundToolCompletion[]> {
-    const limit = input.limit ?? MAX_PENDING_BACKGROUND_COMPLETIONS;
+  }): Promise<PendingAgentBackgroundToolCompletions> {
+    const limit = Math.min(
+      input.limit ?? MAX_PENDING_BACKGROUND_COMPLETIONS,
+      MAX_PENDING_BACKGROUND_COMPLETIONS,
+    );
     if (
       input.conversationId.length === 0 ||
       input.conversationId.length > 256 ||
       input.sourceId.length === 0 ||
       input.sourceId.length > 256 ||
+      (input.taskId != null && (input.taskId.length === 0 || input.taskId.length > 256)) ||
       !Number.isSafeInteger(limit) ||
       limit <= 0
     ) {
@@ -2346,11 +2369,17 @@ export function createAgentTriggerDeliveryMethods(
         'envelope.event.source.type': 'internal',
         'envelope.event.source.id': input.sourceId,
         'envelope.target.conversationId': input.conversationId,
+        ...(input.taskId != null && { 'envelope.event.payload.taskId': input.taskId }),
         status: { $in: UNDELIVERED_STATUSES },
+        /** Capability-dead rows are dead letters to every worker version. */
+        capabilityStatus: { $ne: 'dead' },
       })
-      .select('+backgroundToolResult deliveryKey createdAt envelope.event.payload')
+      .select(
+        'deliveryKey createdAt envelope.event.payload ' +
+          'backgroundToolResult.status backgroundToolResult.settledAt backgroundToolResult.resultClaim',
+      )
       .sort({ createdAt: 1, _id: 1 })
-      .limit(Math.min(limit, MAX_PENDING_BACKGROUND_COMPLETIONS))
+      .limit(limit + 1)
       .lean<
         Array<
           Pick<IAgentTriggerDelivery, 'deliveryKey' | 'createdAt' | 'backgroundToolResult'> & {
@@ -2358,7 +2387,7 @@ export function createAgentTriggerDeliveryMethods(
           }
         >
       >();
-    return rows.flatMap((row) => {
+    const completions = rows.slice(0, limit).flatMap((row) => {
       const payload = row.envelope?.event?.payload;
       const taskId = payload?.taskId;
       const toolCallId = payload?.toolCallId;
@@ -2386,6 +2415,7 @@ export function createAgentTriggerDeliveryMethods(
         },
       ];
     });
+    return { completions, truncated: rows.length > limit };
   }
 
   /** Stores terminal output on the pre-admitted delivery before attempting the
