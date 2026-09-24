@@ -673,6 +673,31 @@ describe('agent background completion batch config', () => {
 });
 
 describe('agent event runtime config', () => {
+  it('defaults and bounds durable-worker idle polling intervals', () => {
+    const parsed = configSchema.parse({
+      version: '1.0',
+      endpoints: { agents: { eventDriven: { idlePolling: {} } } },
+    });
+    expect(parsed.endpoints?.agents?.eventDriven?.idlePolling).toEqual({
+      deliveryMaxIntervalMs: 15_000,
+      queuedTurnMaxIntervalMs: 120_000,
+      maintenanceMaxIntervalMs: 120_000,
+    });
+    for (const [key, value] of [
+      ['deliveryMaxIntervalMs', 0],
+      ['queuedTurnMaxIntervalMs', 29_999],
+      ['maintenanceMaxIntervalMs', 300_001],
+      ['maintenanceMaxIntervalMs', 30_000.5],
+    ] as const) {
+      expect(
+        configSchema.safeParse({
+          version: '1.0',
+          endpoints: { agents: { eventDriven: { idlePolling: { [key]: value } } } },
+        }).success,
+      ).toBe(false);
+    }
+  });
+
   it('accepts the routing choice and ignores removed rollout fields', () => {
     const result = configSchema.safeParse({
       version: '1.0',

@@ -308,6 +308,7 @@ export default function useCodeWorkspace(
     } else if (status.data.workspaces == null) state = 'unsupported';
     else if (selected != null) state = 'ready';
     else if (stored != null) state = 'missing';
+    else if (workspaces.length === 0) state = 'unavailable';
     return { environment, state, workspaces, selected };
   });
 

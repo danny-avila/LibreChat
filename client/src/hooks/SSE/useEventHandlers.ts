@@ -552,6 +552,12 @@ export default function useEventHandlers({
       queryClient.invalidateQueries({ queryKey: [key], refetchType: 'all' });
     }
   }, [queryClient]);
+  const onSubagentIndexChange = useCallback(
+    (conversationId: string) => {
+      void queryClient.invalidateQueries([QueryKeys.parentSubagents, conversationId]);
+    },
+    [queryClient],
+  );
   const {
     stepHandler,
     clearStepMaps,
@@ -568,6 +574,7 @@ export default function useEventHandlers({
     setIsSubmitting,
     lastAnnouncementTimeRef,
     onSkillAuthoringComplete,
+    onSubagentIndexChange,
   });
   const attachmentHandler = useAttachmentHandler(queryClient);
 
