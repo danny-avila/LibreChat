@@ -4,7 +4,12 @@ import { spawn } from 'node:child_process';
 import { mkdir, open, readFile, readdir } from 'node:fs/promises';
 import { expect, test } from '@playwright/test';
 import type { ChildProcess } from 'node:child_process';
-import { getAccessToken, requestJson, sendMessage } from '../specs/mock/helpers';
+import {
+  getAccessToken,
+  requestJson,
+  sendMessage,
+  sendMessageAndWaitForCompletion,
+} from '../specs/mock/helpers';
 
 interface Pairing {
   environment: { id: string };
@@ -41,6 +46,29 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
   const cli = process.env.BYOM_CODE_CLI!;
   const workspaceTransitions = process.env.BYOM_WORKSPACE_TRANSITIONS === 'true';
   const workers: Worker[] = [];
+  // Emit only conversation identifiers on failure, never raw browser arguments or worker logs.
+  const conversationEvents: unknown[] = [];
+  page.on('console', async (message) => {
+    if (!message.text().startsWith('[conversation]')) return;
+    const values = await Promise.all(
+      message.args().map((value, index) =>
+        value
+          .evaluate((item, position) => {
+            if (position < 2) return typeof item === 'string' ? item : undefined;
+            if (item == null || typeof item !== 'object') return undefined;
+            const record = item as Record<string, unknown>;
+            return {
+              conversationId: record.conversationId,
+              endpoint: record.endpoint,
+              agent_id: record.agent_id,
+            };
+          }, index)
+          .catch(() => undefined),
+      ),
+    );
+    conversationEvents.push(values);
+    if (conversationEvents.length > 20) conversationEvents.shift();
+  });
   let selectedWorker: Worker;
   let selectedApprovalMode: 'ask' | 'acceptEdits' | 'fullAccess' = 'ask';
   const password = `Acceptance-${randomUUID()}`;
@@ -222,7 +250,7 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
   }
 
   async function chat(text: string) {
-    const admitted = await sendMessage(page, text);
+    const admitted = await sendMessageAndWaitForCompletion(page, text);
     expect(admitted.ok()).toBe(true);
     const { conversationId } = (await admitted.json()) as { conversationId: string };
     await expect
@@ -237,6 +265,8 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
         { timeout: 30_000 },
       )
       .toBe(false);
+    await expect(page.getByText('Acceptance model ready.', { exact: true }).last()).toBeVisible();
+    await expect(page.getByTestId('stop-generation-button')).toBeHidden();
     await expect(page).toHaveURL(new RegExp(`/c/${conversationId}$`));
     return conversationId;
   }
@@ -394,6 +424,9 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
       contentType: 'application/json',
     });
   } finally {
+    if (testInfo.status !== testInfo.expectedStatus) {
+      console.log('Native acceptance conversation metadata:', JSON.stringify(conversationEvents));
+    }
     for (const worker of workers) await stop(worker.child);
   }
 });

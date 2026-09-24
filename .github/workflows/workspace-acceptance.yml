@@ -51,6 +51,9 @@ jobs:
           command -v rg
 
       - name: Install and build LibreChat
+        env:
+          VITE_ENABLE_LOGGER: 'true'
+          VITE_LOGGER_FILTER: conversation
         run: |
           npm ci
           npm run e2e:prepare
