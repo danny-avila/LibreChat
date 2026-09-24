@@ -74,10 +74,10 @@ export default function SharePointPickerDialog({
           {/* SharePoint iframe will be injected here by the hook */}
 
           {isDownloading && (
-            <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-black/30 backdrop-blur-xs">
+            <div className="bg-surface-overlay/30 absolute inset-0 z-10 flex items-center justify-center rounded-lg backdrop-blur-xs">
               <div className="bg-surface-primary mx-4 w-full max-w-sm rounded-lg p-6 shadow-lg">
                 <div className="text-center">
-                  <div className="mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-b-2 border-blue-600"></div>
+                  <div className="border-status-info mx-auto mb-4 h-8 w-8 animate-spin rounded-full border-b-2"></div>
                   <h3 className="text-text-primary mb-2 text-lg font-semibold">
                     {localize('com_files_downloading')}
                   </h3>
@@ -96,7 +96,7 @@ export default function SharePointPickerDialog({
                       )}
                       <div className="bg-surface-tertiary h-2 w-full rounded-full">
                         <div
-                          className="h-2 rounded-full bg-blue-600 transition-all duration-300"
+                          className="bg-status-info h-2 rounded-full transition-all duration-300"
                           style={{
                             width: `${Math.round((downloadProgress.completed / downloadProgress.total) * 100)}%`,
                           }}
