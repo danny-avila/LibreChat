@@ -14,10 +14,13 @@ const mockOpenArtifactLabel = 'Open Artifact';
 const mockChildPanelLabel = 'Child activity panel loaded';
 const mockOpenChildLabel = 'Open Child Activity';
 const mockSelectAgentConversationLabel = 'Select Agent Conversation';
-const mockUseParentSubagentsQuery = jest.fn((_conversationId?: string, _config?: unknown) => ({
-  data: undefined,
-  refetch: jest.fn(),
-}));
+const mockStartAgentRunLabel = 'Start Agent Run';
+const mockUseParentSubagentsQuery = jest.fn(
+  (_conversationId?: string, _config?: unknown, _isSubmitting?: boolean) => ({
+    data: undefined,
+    refetch: jest.fn(),
+  }),
+);
 
 jest.mock('~/components/Artifacts/Artifacts', () => {
   const artifactPanelLabel = 'Artifact panel loaded';
@@ -63,8 +66,8 @@ jest.mock('~/hooks/Artifacts/useResetArtifactsOnConversationChange', () => ({
 
 jest.mock('~/data-provider', () => ({
   useDeleteFilesMutation: () => ({ mutateAsync: jest.fn() }),
-  useParentSubagentsQuery: (conversationId: string, config?: unknown) =>
-    mockUseParentSubagentsQuery(conversationId, config),
+  useParentSubagentsQuery: (conversationId: string, config?: unknown, isSubmitting?: boolean) =>
+    mockUseParentSubagentsQuery(conversationId, config, isSubmitting),
 }));
 
 jest.mock('~/hooks', () => ({
@@ -141,6 +144,15 @@ const SelectAgentConversation = () => {
   );
 };
 
+const StartAgentRun = () => {
+  const setSubmitting = useSetRecoilState(store.isSubmittingFamily(0));
+  return (
+    <button type="button" onClick={() => setSubmitting(true)}>
+      {mockStartAgentRunLabel}
+    </button>
+  );
+};
+
 describe('Presentation Artifact loading', () => {
   it('loads the Artifact panel bundle only when the panel is opened', async () => {
     const testGlobal = globalThis as typeof globalThis & {
@@ -163,7 +175,7 @@ describe('Presentation Artifact loading', () => {
 
     expect(await screen.findByText(mockArtifactPanelLabel)).toBeInTheDocument();
     expect(testGlobal.presentationArtifactModuleEvaluations).toBe(1);
-    expect(mockUseParentSubagentsQuery).toHaveBeenCalledWith('', { enabled: false });
+    expect(mockUseParentSubagentsQuery).toHaveBeenCalledWith('', { enabled: false }, false);
   });
 
   it('loads the parent child index only for Agent conversations', () => {
@@ -172,16 +184,25 @@ describe('Presentation Artifact loading', () => {
         <RecoilRoot>
           <Presentation>
             <SelectAgentConversation />
+            <StartAgentRun />
           </Presentation>
         </RecoilRoot>
       </ChatSurfaceHarness>,
     );
 
-    expect(mockUseParentSubagentsQuery).toHaveBeenLastCalledWith('', { enabled: false });
+    expect(mockUseParentSubagentsQuery).toHaveBeenLastCalledWith('', { enabled: false }, false);
     fireEvent.click(screen.getByRole('button', { name: mockSelectAgentConversationLabel }));
-    expect(mockUseParentSubagentsQuery).toHaveBeenLastCalledWith('agent-conversation', {
-      enabled: true,
-    });
+    expect(mockUseParentSubagentsQuery).toHaveBeenLastCalledWith(
+      'agent-conversation',
+      { enabled: true },
+      false,
+    );
+    fireEvent.click(screen.getByRole('button', { name: mockStartAgentRunLabel }));
+    expect(mockUseParentSubagentsQuery).toHaveBeenLastCalledWith(
+      'agent-conversation',
+      { enabled: true },
+      true,
+    );
   });
 
   it('uses one panel slot and lets an opened artifact replace child activity', async () => {
