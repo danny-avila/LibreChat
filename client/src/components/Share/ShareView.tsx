@@ -51,7 +51,11 @@ function SharedView() {
   const { theme, setTheme } = useContext(ThemeContext);
   const { shareId } = useParams();
   const jotaiStore = useStore();
-  const { data: config, isError: configFailed } = useGetSharedStartupConfig(shareId, {
+  const {
+    data: config,
+    isError: configFailed,
+    isInitialLoading: configLoading,
+  } = useGetSharedStartupConfig(shareId, {
     enabled: isAuthReady,
   });
   useDeploymentThemeOverride(config != null || configFailed, config?.interface?.theme);
@@ -179,7 +183,7 @@ function SharedView() {
   );
 
   let content: JSX.Element;
-  if (!isAuthReady || isLoading) {
+  if (!isAuthReady || isLoading || configLoading) {
     content = (
       <div className="flex h-screen items-center justify-center">
         <Spinner className="" />

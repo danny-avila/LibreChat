@@ -64,6 +64,37 @@ describe('shared-link config resolution', () => {
   );
 });
 
+describe('fail-closed shared-link config', () => {
+  const overridesUnavailable = new Error('overrides unavailable');
+  /** Mirrors getAppConfig: a failed override lookup substitutes the base config unless failClosed. */
+  const getAppConfig = jest.fn(async (options?: { failClosed?: boolean }) => {
+    if (options?.failClosed) {
+      throw overridesUnavailable;
+    }
+    return appConfig({ interfaceConfig: { theme: 'librechat' } });
+  });
+
+  it('rejects instead of serving the base config for a tenant link when failClosed', async () => {
+    const middleware = createSharedLinkConfigMiddleware({ getAppConfig, failClosed: true });
+    const req = Object.assign({} as Parameters<typeof middleware>[0], {
+      shareTenantId: 'tenant-owner',
+    });
+    const next = jest.fn();
+
+    await middleware(req, {} as Parameters<typeof middleware>[1], next);
+
+    expect(next).toHaveBeenCalledWith(overridesUnavailable);
+    expect(req.config).toBeUndefined();
+  });
+
+  it('keeps the base-config fallback for the default middleware', async () => {
+    const config = await resolveSharedLinkConfig(getAppConfig, 'tenant-owner');
+
+    expect(getAppConfig).toHaveBeenLastCalledWith({ tenantId: 'tenant-owner' });
+    expect(config.interfaceConfig?.theme).toBe('librechat');
+  });
+});
+
 describe('isFileSnapshotEnabled', () => {
   const original = process.env.SHARED_LINKS_SNAPSHOT_FILES;
 

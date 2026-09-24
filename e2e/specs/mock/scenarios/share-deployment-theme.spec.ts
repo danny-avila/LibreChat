@@ -184,4 +184,23 @@ test.describe('deployment theme on a shared link', () => {
       timeout: 30000,
     });
   });
+
+  test("a slow shared config never shows the conversation in the viewer's theme @scenario:shared-link-waits-for-link-theme", async ({
+    page,
+  }) => {
+    test.setTimeout(120000);
+    await serveThemes(page, VIEWER_THEME, 'clickhouse');
+    const shareId = await createSharedLink(page);
+    await page.route(
+      (url) => url.pathname === `/api/share/${shareId}/config`,
+      async (route) => {
+        await new Promise((resolve) => setTimeout(resolve, 3000));
+        await route.fallback();
+      },
+    );
+
+    await page.goto(`/share/${shareId}`, { timeout: 10000 });
+    await page.getByTestId('messages-view').waitFor({ timeout: 20000 });
+    expect(await page.locator('html').getAttribute('data-theme')).toBe('clickhouse');
+  });
 });
