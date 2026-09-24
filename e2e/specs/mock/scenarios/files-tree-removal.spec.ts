@@ -4,8 +4,12 @@ import { expect, test } from '@playwright/test';
  * The unmounted Files component tree this change deleted was never reachable,
  * which is exactly why its removal needs a scenario: the surfaces that LOOK
  * like it, the chat input's file manager and the files side panel, are the ones
- * a bad deletion would take with them.
+ * a bad deletion would take with them. The panel nav sits behind the mobile
+ * drawer on a phone-width viewport, so the scenario states the desktop viewport
+ * it means rather than depending on which project runs it.
  */
+
+test.use({ viewport: { width: 1280, height: 800 } });
 
 test.describe('files surfaces after the tree removal', () => {
   test('the files panel and the composer attachment entry still work @scenario:files-tree-removal-leaves-live-surfaces-working', async ({
