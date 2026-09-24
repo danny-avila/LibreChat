@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { assertMCPAppsPhaseResults } from './results.mjs';
 
 const baseUrl = new URL(process.env.E2E_BASE_URL || 'http://127.0.0.1:3080');
 const sandboxHost = baseUrl.hostname === 'localhost' ? '127.0.0.1' : 'localhost';
@@ -52,12 +54,13 @@ function run(executable, args, overrides = {}) {
 }
 
 const phases = [
-  { name: 'true', policy: 'true' },
-  { name: 'false', policy: 'false' },
-  { name: 'omitted', policy: 'omitted' },
+  { name: 'true', policy: 'true', minimumPassed: 2 },
+  { name: 'false', policy: 'false', minimumPassed: 1 },
+  { name: 'omitted', policy: 'omitted', minimumPassed: 1 },
   {
     name: 'quota',
     policy: 'true',
+    minimumPassed: 1,
     E2E_MCP_APP_RESOURCE_LIMIT: '2',
     E2E_MCP_APP_TOOL_CALL_LIMIT: '2',
   },
@@ -74,12 +77,32 @@ try {
   env.MONGO_URI = mongo.getUri('LibreChat-e2e');
 
   for (const phase of phases) {
-    await run('npx', ['playwright', 'test', '--config=e2e/playwright.config.mcp-apps.ts'], {
-      E2E_MCP_APPS_PHASE: phase.name,
-      E2E_MCP_APPS_POLICY: phase.policy,
-      E2E_MCP_APP_RESOURCE_LIMIT: phase.E2E_MCP_APP_RESOURCE_LIMIT || '',
-      E2E_MCP_APP_TOOL_CALL_LIMIT: phase.E2E_MCP_APP_TOOL_CALL_LIMIT || '',
-    });
+    const resultsFile = path.join(root, `e2e/.generated/mcp-apps-result-${phase.name}.json`);
+    fs.rmSync(resultsFile, { force: true });
+    await run(
+      'npx',
+      [
+        'playwright',
+        'test',
+        '--config=e2e/playwright.config.mcp-apps.ts',
+        '--reporter=line,html,json',
+      ],
+      {
+        E2E_MCP_APPS_PHASE: phase.name,
+        E2E_MCP_APPS_POLICY: phase.policy,
+        E2E_MCP_APP_RESOURCE_LIMIT: phase.E2E_MCP_APP_RESOURCE_LIMIT || '',
+        E2E_MCP_APP_TOOL_CALL_LIMIT: phase.E2E_MCP_APP_TOOL_CALL_LIMIT || '',
+        PLAYWRIGHT_HTML_OPEN: 'never',
+        PLAYWRIGHT_HTML_OUTPUT_DIR: path.join(root, `e2e/playwright-report/mcp-apps-${phase.name}`),
+        PLAYWRIGHT_JSON_OUTPUT_FILE: resultsFile,
+      },
+    );
+    const passed = assertMCPAppsPhaseResults(
+      JSON.parse(fs.readFileSync(resultsFile, 'utf8')),
+      phase.name,
+      phase.minimumPassed,
+    );
+    console.log(`MCP Apps ${phase.name}: ${passed} browser test(s) passed`);
   }
 } finally {
   await mongo?.stop();
