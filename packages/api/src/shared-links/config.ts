@@ -1,3 +1,4 @@
+import { deploymentThemeSchema } from 'librechat-data-provider';
 import { tenantStorage, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
 import type { TSharedLinkStartupConfig } from 'librechat-data-provider';
 import type { Request, Response, NextFunction } from 'express';
@@ -96,11 +97,14 @@ export function buildSharedLinkStartupPayload(
 
   const { privacyPolicy, termsOfService, codeHighlightThrottleMs } =
     appConfig?.interfaceConfig ?? {};
-  if (privacyPolicy || termsOfService || codeHighlightThrottleMs != null) {
+  const parsedTheme = deploymentThemeSchema.safeParse(appConfig?.interfaceConfig?.theme);
+  const theme = parsedTheme.success ? parsedTheme.data : undefined;
+  if (privacyPolicy || termsOfService || codeHighlightThrottleMs != null || theme) {
     payload.interface = {
       ...(codeHighlightThrottleMs != null ? { codeHighlightThrottleMs } : {}),
       ...(privacyPolicy ? { privacyPolicy } : {}),
       ...(termsOfService ? { termsOfService } : {}),
+      ...(theme ? { theme } : {}),
     };
   }
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useRef, useMemo, useState, useEffect, useReducer, useContext, createContext } from 'react';
 import { QueryKeys } from 'librechat-data-provider';
 import { notifyManager, useQueryClient } from '@tanstack/react-query';
 import {
@@ -116,6 +116,29 @@ function useRebindOnStartupConfigRebuild() {
   );
 }
 
+/** A route's own deployment theme source; `undefined` defers to the startup config. */
+type ThemeOverride = { theme: DeploymentThemeValue } | undefined;
+
+const DeploymentThemeOverrideContext = createContext<(override: ThemeOverride) => void>(
+  () => undefined,
+);
+
+/**
+ * Lets a route whose policy comes from another tenant paint that tenant's theme:
+ * once `ready`, `theme` replaces `interface.theme` from the startup config, an
+ * absent theme included, until the route unmounts.
+ */
+export function useDeploymentThemeOverride(ready: boolean, theme: DeploymentThemeValue) {
+  const setOverride = useContext(DeploymentThemeOverrideContext);
+  useEffect(() => {
+    if (!ready) {
+      return;
+    }
+    setOverride({ theme });
+    return () => setOverride(undefined);
+  }, [ready, theme, setOverride]);
+}
+
 /**
  * Supplies the deployment theme from the startup config to `ThemeProvider`.
  * Precedence: high-contrast modes (inside the provider), then `interface.theme`,
@@ -126,7 +149,8 @@ export default function DeploymentTheme({ children }: { children: React.ReactNod
   const envTheme = useMemo(() => getThemeFromEnv(), []);
   useRebindOnStartupConfigRebuild();
   const { data: startupConfig } = useGetStartupConfig({ keepPreviousData: true });
-  const configTheme = startupConfig?.interface?.theme;
+  const [override, setOverride] = useState<ThemeOverride>(undefined);
+  const configTheme = override ? override.theme : startupConfig?.interface?.theme;
   const themeDefinition = useMemo(() => resolveDeploymentTheme(configTheme), [configTheme]);
 
   /**
@@ -167,5 +191,9 @@ export default function DeploymentTheme({ children }: { children: React.ReactNod
     ...(persistenceOff && { persistThemeDefinition: false }),
   };
 
-  return <ThemeProvider {...props}>{children}</ThemeProvider>;
+  return (
+    <DeploymentThemeOverrideContext.Provider value={setOverride}>
+      <ThemeProvider {...props}>{children}</ThemeProvider>
+    </DeploymentThemeOverrideContext.Provider>
+  );
 }

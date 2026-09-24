@@ -1,5 +1,6 @@
 import { FileSources } from 'librechat-data-provider';
 import { getTenantId, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
+import type { TThemeDefinitionConfig } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import {
   resolveSharedLinkConfig,
@@ -148,6 +149,46 @@ describe('buildSharedLinkStartupPayload', () => {
         termsOfService: { externalUrl: 'https://example.com/tos' },
       },
     });
+  });
+
+  it.each<[string, TThemeDefinitionConfig | string]>([
+    ['a bundled name', 'clickhouse'],
+    [
+      'an inline definition',
+      {
+        version: 1,
+        name: 'acme',
+        modes: { light: { colors: { 'rgb-surface-primary': '1 2 3' } } },
+      },
+    ],
+  ])('carries the link tenant deployment theme as %s', (_label, theme) => {
+    const payload = buildSharedLinkStartupPayload(
+      appConfig({ interfaceConfig: { theme, modelSelect: true } }),
+      {},
+    );
+
+    expect(payload).toEqual({ appTitle: 'LibreChat', interface: { theme } });
+  });
+
+  it('omits a theme that does not match the deployment theme schema', () => {
+    const payload = buildSharedLinkStartupPayload(
+      appConfig({ interfaceConfig: { theme: { name: 'broken', modes: {} } } }),
+      {},
+    );
+
+    expect(payload).toEqual({ appTitle: 'LibreChat' });
+  });
+
+  it('serves the share tenant theme rather than the viewer tenant theme', async () => {
+    const configs: Record<string, AppConfig> = {
+      'tenant-owner': appConfig({ interfaceConfig: { theme: 'clickhouse' } }),
+      'tenant-viewer': appConfig({ interfaceConfig: { theme: 'librechat' } }),
+    };
+    const getAppConfig = jest.fn(async () => configs[getTenantId() ?? ''] ?? appConfig());
+
+    const config = await resolveSharedLinkConfig(getAppConfig, 'tenant-owner');
+
+    expect(buildSharedLinkStartupPayload(config, {}).interface).toEqual({ theme: 'clickhouse' });
   });
 
   it('defaults the app title and omits unrelated interface config', () => {

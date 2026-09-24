@@ -5,8 +5,8 @@ import { act, render, waitFor } from '@testing-library/react';
 import { QueryKeys, dataService } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TStartupConfig } from 'librechat-data-provider';
+import DeploymentTheme, { useDeploymentThemeOverride } from '../DeploymentTheme';
 import { useGetStartupConfig } from '~/data-provider';
-import DeploymentTheme from '../DeploymentTheme';
 
 const mockGetThemeFromEnv = jest.fn();
 
@@ -72,12 +72,27 @@ function LateRoute() {
   return mounted ? <StartupConsumer /> : null;
 }
 
+let showSharedRoute: (theme: ConfigTheme | null) => void = () => undefined;
+
+/** Stands in for the share route; `null` unmounts it, `undefined` serves no theme. */
+function SharedRoute() {
+  const [route, setRoute] = useState<{ theme: ConfigTheme } | null>(null);
+  showSharedRoute = (theme) => setRoute(theme === null ? null : { theme });
+  return route ? <SharedThemeSource theme={route.theme} /> : null;
+}
+
+function SharedThemeSource({ theme }: { theme: ConfigTheme }) {
+  useDeploymentThemeOverride(true, theme);
+  return null;
+}
+
 function renderTheme(queryClient: QueryClient) {
   return render(
     <RecoilRoot>
       <QueryClientProvider client={queryClient}>
         <DeploymentTheme>
           <LateRoute />
+          <SharedRoute />
           <ThemeEditor />
         </DeploymentTheme>
       </QueryClientProvider>
@@ -281,6 +296,31 @@ describe('DeploymentTheme', () => {
 
     await waitFor(() => expect(root().dataset.theme).toBe('acme'));
     expect(snapshotStorage()).toEqual(before);
+  });
+
+  it('paints the theme a route supplies over the startup config until it unmounts', async () => {
+    serveTheme('clickhouse');
+    renderTheme(queryClient);
+    await waitFor(() => expect(root().dataset.theme).toBe('clickhouse'));
+
+    act(() => showSharedRoute(inlineTheme));
+    await waitFor(() => expect(root().dataset.theme).toBe('acme'));
+    expect(root().style.getPropertyValue('--surface-primary')).toBe('10 20 30');
+
+    act(() => showSharedRoute(null));
+    await waitFor(() => expect(root().dataset.theme).toBe('clickhouse'));
+    expect(localStorage.getItem('theme-definition')).toBe(JSON.stringify(storedDefinition));
+  });
+
+  it('shows the stored theme when a route supplies no deployment theme', async () => {
+    serveTheme('clickhouse');
+    renderTheme(queryClient);
+    await waitFor(() => expect(root().dataset.theme).toBe('clickhouse'));
+
+    act(() => showSharedRoute(undefined));
+    await waitFor(() => expect(root().dataset.theme).toBe('stored'));
+    expect(root().style.getPropertyValue('--accent-primary')).toBe('1 2 3');
+    expect(localStorage.getItem('theme-definition')).toBe(JSON.stringify(storedDefinition));
   });
 
   it('picks up the theme after the auth flow removes the startup config query', async () => {

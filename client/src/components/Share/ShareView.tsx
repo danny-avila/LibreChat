@@ -27,6 +27,7 @@ import {
 import SharedSubagentActivityDialog from '~/components/Chat/Subagents/SharedSubagentActivityDialog';
 import { cn, DEFAULT_APP_TITLE, getResponseStatus, selectActiveBranchTail } from '~/utils';
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
+import { useDeploymentThemeOverride } from '~/Providers/DeploymentTheme';
 import { useLocalize, useDocumentTitle, useAuthContext } from '~/hooks';
 import { ThemeSelector, LangSelector } from '~/components/Appearance';
 import { ShareMessagesProvider } from './ShareMessagesProvider';
@@ -51,6 +52,7 @@ function SharedView() {
   const { shareId } = useParams();
   const jotaiStore = useStore();
   const { data: config } = useGetSharedStartupConfig(shareId, { enabled: isAuthReady });
+  useDeploymentThemeOverride(config != null, config?.interface?.theme);
   const { data, isLoading, isFetching, refetch } = useGetSharedMessages(shareId ?? '', {
     enabled: isAuthReady,
   });
