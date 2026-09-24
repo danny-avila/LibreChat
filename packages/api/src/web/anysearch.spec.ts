@@ -103,8 +103,9 @@ async function invokeToolFunc(
   tool: StructuredToolInterface,
   params: AnysearchToolParams,
 ): Promise<[string, AnysearchToolArtifact]> {
-  const func = (tool as { func: AnysearchToolFunc }).func;
-  return func(params);
+  // DynamicStructuredTool hides `func` behind the class; the spec invokes it directly.
+  const inner = tool as unknown as { func: AnysearchToolFunc };
+  return inner.func(params);
 }
 
 function artifactOf(message: ToolMessage): AnysearchToolArtifact {

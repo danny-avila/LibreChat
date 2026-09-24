@@ -42,13 +42,11 @@ export interface AnysearchSearchOptions {
 }
 
 /**
- * Structural slice of the runtime config the agents framework hands the tool;
- * kept minimal so the vendored tool does not depend on which `@langchain/core`
- * copy resolves it (`@librechat/agents` nests its own).
+ * The runtime config the agents framework hands the tool is kept opaque
+ * (`unknown`): the vendored tool must not depend on which `@langchain/core`
+ * copy resolves the `RunnableConfig` type (`@librechat/agents` re-exports its
+ * own). `readTurn` narrows the slice it needs.
  */
-interface AnysearchToolRuntime {
-  toolCall?: unknown;
-}
 
 export interface AnysearchToolConfig {
   anysearchApiKey?: string;
@@ -460,8 +458,11 @@ VERTICAL RULES: include ALL sub_domain params marked (required), passing empty s
 
 Cite sources ONLY with the anchor tokens provided with each result. NEVER use markdown links, [1], or footnotes. CITE ONLY with anchors provided.`;
 
-function readTurn(runtime: AnysearchToolRuntime | undefined): number {
-  const toolCall: unknown = runtime?.toolCall;
+function readTurn(runtime: unknown): number {
+  const toolCall: unknown =
+    runtime != null && typeof runtime === 'object' && 'toolCall' in runtime
+      ? (runtime as { toolCall?: unknown }).toolCall
+      : undefined;
   if (toolCall != null && typeof toolCall === 'object' && 'turn' in toolCall) {
     const turn = (toolCall as { turn?: unknown }).turn;
     if (typeof turn === 'number') {
@@ -518,12 +519,12 @@ export function createAnysearchSearchTool(
 
   const outputLimit = resolveMaxOutputChars(maxOutputChars);
 
-  return tool(
+  const webSearchTool = tool(
     async (
       params: AnysearchToolParams,
-      runtime: AnysearchToolRuntime,
+      config: unknown,
     ): Promise<[string, AnysearchToolArtifact]> => {
-      const turn = readTurn(runtime);
+      const turn = readTurn(config);
       const failure = (message: string): [string, AnysearchToolArtifact] => {
         logger?.error?.(`AnySearch web_search failed: ${message}`);
         return [
@@ -623,7 +624,7 @@ export function createAnysearchSearchTool(
           }
           const text = await callAnysearchTool('batch_search', { queries: items }, client);
           const organic = parseBatchMarkdown(text);
-          onSearchResults?.({ success: true, data: { organic, topStories: [] } }, runtime);
+          onSearchResults?.({ success: true, data: { organic, topStories: [] } }, config);
           const labels = queries.map((item) => item.query).join(' | ');
           const { output, references } = formatAnysearchResultsForLLM(turn, organic, maxOutputChars);
           const outcome =
@@ -671,7 +672,7 @@ export function createAnysearchSearchTool(
                 // still sees the data even if AnySearch changes its Markdown shape.
                 `${output}${output !== '' ? '\n\n' : ''}=== Raw Response ===\n\n${truncateOutput(text, outputLimit)}`
               : output;
-          onSearchResults?.({ success: true, data: { organic, topStories: [] } }, runtime);
+          onSearchResults?.({ success: true, data: { organic, topStories: [] } }, config);
           const outcome =
             organic.length > 0
               ? boundOutcome(`Found ${organic.length} result${organic.length === 1 ? '' : 's'} for "${query}"`)
@@ -695,4 +696,7 @@ export function createAnysearchSearchTool(
       responseFormat: 'content_and_artifact',
     },
   );
+  // `tool()`'s JSON-schema overload returns an exactly-instantiated generic the
+  // bare alias cannot unify with; the instance is structurally the same class.
+  return webSearchTool as unknown as AnysearchWebSearchTool;
 }

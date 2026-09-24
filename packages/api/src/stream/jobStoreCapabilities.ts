@@ -8,7 +8,7 @@ import type { IJobStore, IJobStoreV2 } from './interfaces/IJobStore';
  * while rejecting an implementation that cannot provide the atomic guarantees
  * required by the current generation manager.
  */
-export const JOB_STORE_V2_REQUIRED_METHODS: readonly (keyof IJobStoreV2)[] = [
+export const JOB_STORE_V2_REQUIRED_METHODS = [
   'acknowledgeReplacedJobs',
   'markProviderExecutionDrained',
   'beginProviderExecution',

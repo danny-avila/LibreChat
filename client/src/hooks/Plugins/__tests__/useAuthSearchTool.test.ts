@@ -26,6 +26,8 @@ const emptyForm = (): SearchApiKeyFormData => ({
   tavilyApiKey: '',
   keenableApiKey: '',
   keenableApiUrl: '',
+  anysearchApiKey: '',
+  anysearchApiUrl: '',
   jinaApiKey: '',
   jinaApiUrl: '',
   cohereApiKey: '',
