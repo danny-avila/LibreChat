@@ -20,29 +20,29 @@ const PeoplePickerSearchItem = forwardRef<HTMLDivElement, PeoplePickerSearchItem
     const displayName = name || localize('com_ui_unknown');
     const subtitle = email || `${type} (${principal.source || 'local'})`;
 
-    /** Semantic series roles rather than palette hues: a raw utility does not
-     *  move when the theme does, and these labels render at 12px, so they answer
-     *  to the text floor on whichever canvas the viewer picked. */
+    /** Semantic series roles rather than palette hues, so the dot moves with the
+     *  theme. The series slots are contracted as marks at 3:1, so the hue rides
+     *  on a leading dot and the 12px label stays on `text-secondary` at 4.5:1. */
     const getBadgeConfig = () => {
       switch (type) {
         case PrincipalType.USER:
           return {
-            className: 'bg-series-1/10 text-series-1',
+            dotClassName: 'bg-series-1',
             label: localize('com_ui_user'),
           };
         case PrincipalType.GROUP:
           return {
-            className: 'bg-series-7/10 text-series-7',
+            dotClassName: 'bg-series-7',
             label: localize('com_ui_group'),
           };
         case PrincipalType.ROLE:
           return {
-            className: 'bg-series-6/10 text-series-6',
+            dotClassName: 'bg-series-6',
             label: localize('com_ui_role'),
           };
         default:
           return {
-            className: 'bg-surface-tertiary text-text-secondary',
+            dotClassName: undefined,
             label: type,
           };
       }
@@ -68,12 +68,13 @@ const PeoplePickerSearchItem = forwardRef<HTMLDivElement, PeoplePickerSearchItem
         </div>
 
         <div className="shrink-0">
-          <span
-            className={cn(
-              'inline-flex items-center rounded-full px-2 py-1 text-xs font-medium',
-              badgeConfig.className,
+          <span className="text-text-secondary inline-flex items-center gap-1.5 text-xs font-medium">
+            {badgeConfig.dotClassName != null && (
+              <span
+                aria-hidden="true"
+                className={cn('size-2 shrink-0 rounded-full', badgeConfig.dotClassName)}
+              />
             )}
-          >
             {badgeConfig.label}
           </span>
         </div>
