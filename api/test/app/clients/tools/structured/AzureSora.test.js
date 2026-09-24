@@ -27,8 +27,10 @@ jest.setTimeout(20000);
 describe('AzureSora Video Generation Tool', () => {
   const baseFields = {
     userId: 'user-1',
-    AZURE_SORA_API_KEY: 'test-key',
-    AZURE_SORA_ENDPOINT: 'https://test-resource.openai.azure.com',
+    userAuthValues: {
+      AZURE_SORA_API_KEY: 'test-key',
+      AZURE_SORA_ENDPOINT: 'https://test-resource.openai.azure.com',
+    },
     uploadImageBuffer: jest.fn(),
   };
 
@@ -88,6 +90,10 @@ describe('AzureSora Video Generation Tool', () => {
       maxRedirects: 0,
       proxy: false,
     });
+    expect(mockResolveAzureSoraCredentials).toHaveBeenCalledWith(
+      baseFields.userAuthValues,
+      process.env,
+    );
     expect(mockValidateAzureSoraEndpoint).toHaveBeenCalledWith(
       'https://test-resource.openai.azure.com',
     );
@@ -133,8 +139,10 @@ describe('AzureSora Video Generation Tool', () => {
   test('throws when credentials are not configured', async () => {
     const tool = new AzureSoraTool({
       userId: 'user-1',
-      AZURE_SORA_API_KEY: '',
-      AZURE_SORA_ENDPOINT: '',
+      userAuthValues: {
+        AZURE_SORA_API_KEY: '',
+        AZURE_SORA_ENDPOINT: '',
+      },
     });
 
     await expect(tool._call({ prompt: 'test' })).rejects.toThrow(/Azure Sora is not configured/);

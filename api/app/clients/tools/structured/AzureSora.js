@@ -62,7 +62,7 @@ class AzureSoraTool extends Tool {
       'Generates a short video from a detailed text prompt using Azure OpenAI Sora. Use this when the user explicitly asks to create, generate or make a video.';
     this.schema = azureSoraJsonSchema;
 
-    const credentials = resolveAzureSoraCredentials(fields, process.env);
+    const credentials = resolveAzureSoraCredentials(fields.userAuthValues || {}, process.env);
     this.apiKey = credentials.apiKey;
     this.endpoint = credentials.endpoint;
     this.apiVersion = process.env.AZURE_SORA_API_VERSION || DEFAULT_API_VERSION;

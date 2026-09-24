@@ -46,67 +46,127 @@ function mockConnectDns(address: string): void {
 }
 
 describe('resolveAzureSoraCredentials', () => {
-  it('never combines a global key with a custom endpoint', () => {
-    expect(
-      resolveAzureSoraCredentials(
-        {
-          AZURE_SORA_API_KEY: 'server-key',
-          AZURE_SORA_ENDPOINT: 'https://custom-resource.openai.azure.com',
-        },
-        {
-          AZURE_SORA_API_KEY: 'server-key',
-          AZURE_SORA_ENDPOINT: 'https://admin-resource.openai.azure.com',
-        },
-      ),
-    ).toEqual({
-      apiKey: 'server-key',
-      endpoint: 'https://admin-resource.openai.azure.com',
-    });
-  });
+  const userEndpoint = 'https://user-resource.openai.azure.com';
+  const serverEndpoint = 'https://admin-resource.openai.azure.com';
+  const serverEnvironment = {
+    AZURE_SORA_API_KEY: 'server-key',
+    AZURE_SORA_ENDPOINT: serverEndpoint,
+  };
 
-  it('does not attach a global key to a custom endpoint when no admin endpoint exists', () => {
-    expect(
-      resolveAzureSoraCredentials(
-        {
-          AZURE_SORA_API_KEY: 'server-key',
-          AZURE_SORA_ENDPOINT: 'https://custom-resource.openai.azure.com',
-        },
-        { AZURE_SORA_API_KEY: 'server-key' },
-      ),
-    ).toEqual({ apiKey: 'server-key', endpoint: '' });
-  });
-
-  it('keeps a user key with its user endpoint when a different global key exists', () => {
+  it('does not combine a user key with a global endpoint', () => {
     expect(
       resolveAzureSoraCredentials(
         {
           AZURE_SORA_API_KEY: 'user-key',
-          AZURE_SORA_ENDPOINT: 'https://custom-resource.openai.azure.com',
+          AZURE_SORA_ENDPOINT: serverEndpoint,
         },
+        serverEnvironment,
+      ),
+    ).toEqual({ apiKey: 'server-key', endpoint: serverEndpoint });
+  });
+
+  it('does not combine a global key with a user endpoint', () => {
+    expect(
+      resolveAzureSoraCredentials(
         {
           AZURE_SORA_API_KEY: 'server-key',
-          AZURE_SORA_ENDPOINT: 'https://admin-resource.openai.azure.com',
+          AZURE_SORA_ENDPOINT: userEndpoint,
+        },
+        serverEnvironment,
+      ),
+    ).toEqual({ apiKey: 'server-key', endpoint: serverEndpoint });
+  });
+
+  it('ignores incomplete and blank user or server pairs', () => {
+    expect(
+      resolveAzureSoraCredentials({ AZURE_SORA_API_KEY: 'user-key', AZURE_SORA_ENDPOINT: '' }, {}),
+    ).toEqual({ apiKey: '', endpoint: '' });
+    expect(
+      resolveAzureSoraCredentials(
+        { AZURE_SORA_API_KEY: '', AZURE_SORA_ENDPOINT: userEndpoint },
+        {},
+      ),
+    ).toEqual({ apiKey: '', endpoint: '' });
+    expect(
+      resolveAzureSoraCredentials(
+        { AZURE_SORA_API_KEY: '  ', AZURE_SORA_ENDPOINT: '  ' },
+        { AZURE_SORA_API_KEY: '  ', AZURE_SORA_ENDPOINT: '  ' },
+      ),
+    ).toEqual({ apiKey: '', endpoint: '' });
+  });
+
+  it('uses a complete user pair', () => {
+    expect(
+      resolveAzureSoraCredentials(
+        {
+          AZURE_SORA_API_KEY: 'user-key',
+          AZURE_SORA_ENDPOINT: userEndpoint,
+        },
+        serverEnvironment,
+      ),
+    ).toEqual({ apiKey: 'user-key', endpoint: userEndpoint });
+  });
+
+  it('prefers a complete user pair over complete server pairs', () => {
+    expect(
+      resolveAzureSoraCredentials(
+        {
+          AZURE_SORA_API_KEY: 'preferred-user-key',
+          AZURE_SORA_ENDPOINT: 'https://preferred.openai.azure.com',
+        },
+        {
+          ...serverEnvironment,
+          AZURE_API_KEY: 'general-server-key',
+          AZURE_OPENAI_ENDPOINT: 'https://general.openai.azure.com',
         },
       ),
     ).toEqual({
-      apiKey: 'user-key',
-      endpoint: 'https://custom-resource.openai.azure.com',
+      apiKey: 'preferred-user-key',
+      endpoint: 'https://preferred.openai.azure.com',
     });
   });
 
-  it('supports the general Azure server variables as one configured pair', () => {
+  it('uses a complete Sora-specific server pair', () => {
+    expect(resolveAzureSoraCredentials({}, serverEnvironment)).toEqual({
+      apiKey: 'server-key',
+      endpoint: serverEndpoint,
+    });
+    expect(
+      resolveAzureSoraCredentials(
+        {
+          AZURE_SORA_API_KEY: serverEnvironment.AZURE_SORA_API_KEY,
+          AZURE_SORA_ENDPOINT: serverEnvironment.AZURE_SORA_ENDPOINT,
+        },
+        serverEnvironment,
+      ),
+    ).toEqual({ apiKey: 'server-key', endpoint: serverEndpoint });
+  });
+
+  it('uses a complete general Azure server pair when no Sora-specific pair exists', () => {
     expect(
       resolveAzureSoraCredentials(
         {},
         {
-          AZURE_API_KEY: 'server-key',
-          AZURE_OPENAI_ENDPOINT: 'https://admin-resource.openai.azure.com',
+          AZURE_API_KEY: 'general-server-key',
+          AZURE_OPENAI_ENDPOINT: 'https://general.openai.azure.com',
         },
       ),
     ).toEqual({
-      apiKey: 'server-key',
-      endpoint: 'https://admin-resource.openai.azure.com',
+      apiKey: 'general-server-key',
+      endpoint: 'https://general.openai.azure.com',
     });
+  });
+
+  it('does not combine aliases from different server configurations', () => {
+    expect(
+      resolveAzureSoraCredentials(
+        {},
+        {
+          AZURE_SORA_API_KEY: 'sora-server-key',
+          AZURE_OPENAI_ENDPOINT: 'https://general.openai.azure.com',
+        },
+      ),
+    ).toEqual({ apiKey: '', endpoint: '' });
   });
 });
 

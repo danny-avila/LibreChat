@@ -2,8 +2,6 @@ import type { AxiosRequestConfig } from 'axios';
 import { applySSRFSafeAgentIfDirect } from '../auth/agent';
 import { validateEndpointURL } from '../auth/domain';
 
-const AZURE_SORA_API_KEY_FIELDS = ['AZURE_SORA_API_KEY', 'AZURE_API_KEY'] as const;
-const AZURE_SORA_ENDPOINT_FIELDS = ['AZURE_SORA_ENDPOINT', 'AZURE_OPENAI_ENDPOINT'] as const;
 const AZURE_SORA_HOST_SUFFIXES = [
   'openai.azure.com',
   'openai.azure.us',
@@ -25,17 +23,13 @@ function readString(value: unknown): string {
   return typeof value === 'string' && value.trim().length > 0 ? value : '';
 }
 
-function firstEnvironmentValue(
-  environment: Record<string, string | undefined>,
-  fields: readonly string[],
-): string {
-  for (const field of fields) {
-    const value = readString(environment[field]);
-    if (value) {
-      return value;
-    }
-  }
-  return '';
+function toCredentialPair(
+  apiKeyValue: unknown,
+  endpointValue: unknown,
+): AzureSoraCredentials | null {
+  const apiKey = readString(apiKeyValue);
+  const endpoint = readString(endpointValue).trim();
+  return apiKey && endpoint ? { apiKey, endpoint } : null;
 }
 
 export function resolveAzureSoraCredentials(
@@ -44,17 +38,35 @@ export function resolveAzureSoraCredentials(
 ): AzureSoraCredentials {
   const providedApiKey = readString(fields.AZURE_SORA_API_KEY);
   const providedEndpoint = readString(fields.AZURE_SORA_ENDPOINT).trim();
-  const serverApiKey = firstEnvironmentValue(environment, AZURE_SORA_API_KEY_FIELDS);
-  const serverEndpoint = firstEnvironmentValue(environment, AZURE_SORA_ENDPOINT_FIELDS);
-
-  if (serverApiKey && (!providedApiKey || providedApiKey === serverApiKey)) {
-    return { apiKey: serverApiKey, endpoint: serverEndpoint };
+  const serverApiKeys = [
+    readString(environment.AZURE_SORA_API_KEY),
+    readString(environment.AZURE_API_KEY),
+  ];
+  const serverEndpoints = [
+    readString(environment.AZURE_SORA_ENDPOINT).trim(),
+    readString(environment.AZURE_OPENAI_ENDPOINT).trim(),
+  ];
+  const providedPairUsesServerValue =
+    serverApiKeys.includes(providedApiKey) || serverEndpoints.includes(providedEndpoint);
+  const userCredentials =
+    providedApiKey && providedEndpoint && !providedPairUsesServerValue
+      ? { apiKey: providedApiKey, endpoint: providedEndpoint }
+      : null;
+  if (userCredentials) {
+    return userCredentials;
   }
 
-  return {
-    apiKey: providedApiKey || serverApiKey,
-    endpoint: providedEndpoint || serverEndpoint,
-  };
+  const serverCredentialPairs = [
+    toCredentialPair(environment.AZURE_SORA_API_KEY, environment.AZURE_SORA_ENDPOINT),
+    toCredentialPair(environment.AZURE_API_KEY, environment.AZURE_OPENAI_ENDPOINT),
+  ];
+  for (const credentials of serverCredentialPairs) {
+    if (credentials) {
+      return credentials;
+    }
+  }
+
+  return { apiKey: '', endpoint: '' };
 }
 
 function isApprovedAzureSoraHostname(hostname: string): boolean {
