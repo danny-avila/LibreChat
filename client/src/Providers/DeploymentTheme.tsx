@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useRef } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { QueryKeys } from 'librechat-data-provider';
 import { notifyManager, useQueryClient } from '@tanstack/react-query';
 import {
@@ -129,11 +129,25 @@ export default function DeploymentTheme({ children }: { children: React.ReactNod
   const configTheme = startupConfig?.interface?.theme;
   const themeDefinition = useMemo(() => resolveDeploymentTheme(configTheme), [configTheme]);
 
-  /** Once a deployment theme has been applied, clearing it must not write storage either. */
+  /**
+   * Persistence stays off while a deployment theme is applied and for the render
+   * that withdraws it, so neither the deployment theme nor the restore writes
+   * storage. Once the restored theme is installed, the user's own changes persist.
+   */
   const deploymentThemeApplied = useRef(false);
+  const [persistenceReleased, setPersistenceReleased] = useState(false);
   if (themeDefinition) {
     deploymentThemeApplied.current = true;
+    if (persistenceReleased) {
+      setPersistenceReleased(false);
+    }
   }
+  const withdrawn = !themeDefinition && deploymentThemeApplied.current;
+  useEffect(() => {
+    if (withdrawn) {
+      setPersistenceReleased(true);
+    }
+  }, [withdrawn]);
 
   /**
    * Clearing the prop would leave the provider on the LibreChat palette, so a
@@ -141,11 +155,8 @@ export default function DeploymentTheme({ children }: { children: React.ReactNod
    * unless the build-time colors outrank it.
    */
   const storedTheme = useMemo(
-    () =>
-      !themeDefinition && deploymentThemeApplied.current && !envTheme
-        ? readStoredTheme()
-        : undefined,
-    [themeDefinition, envTheme],
+    () => (withdrawn && !envTheme ? readStoredTheme() : undefined),
+    [withdrawn, envTheme],
   );
 
   const props: Omit<ComponentProps<typeof ThemeProvider>, 'children'> = {
@@ -157,7 +168,8 @@ export default function DeploymentTheme({ children }: { children: React.ReactNod
         themeRGB: storedTheme.legacyColors,
         themeName: storedTheme.name,
       }),
-    ...(deploymentThemeApplied.current && { persistThemeDefinition: false }),
+    ...(deploymentThemeApplied.current &&
+      !persistenceReleased && { persistThemeDefinition: false }),
   };
 
   return <ThemeProvider {...props}>{children}</ThemeProvider>;

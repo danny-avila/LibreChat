@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { RecoilRoot } from 'recoil';
+import { useTheme } from '@librechat/client';
 import { act, render, waitFor } from '@testing-library/react';
 import { QueryKeys, dataService } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -48,6 +49,15 @@ const snapshotStorage = () => THEME_KEYS.map((key) => localStorage.getItem(key))
 
 const root = () => document.documentElement;
 
+let applyUserColors: () => void = () => undefined;
+
+/** Stands in for a host surface that lets the user change their theme. */
+function ThemeEditor() {
+  const { setThemeRGB } = useTheme();
+  applyUserColors = () => setThemeRGB({ 'rgb-accent-primary': '9 9 9' });
+  return null;
+}
+
 function StartupConsumer() {
   useGetStartupConfig();
   return null;
@@ -68,6 +78,7 @@ function renderTheme(queryClient: QueryClient) {
       <QueryClientProvider client={queryClient}>
         <DeploymentTheme>
           <LateRoute />
+          <ThemeEditor />
         </DeploymentTheme>
       </QueryClientProvider>
     </RecoilRoot>,
@@ -235,6 +246,27 @@ describe('DeploymentTheme', () => {
       expect(root().style.getPropertyValue('--surface-primary')).toBe('99 99 99'),
     );
     expect(root().dataset.theme).not.toBe('stored');
+  });
+
+  it('persists theme changes the user makes after the deployment theme is withdrawn', async () => {
+    serveTheme('clickhouse');
+    renderTheme(queryClient);
+    await waitFor(() => expect(root().dataset.theme).toBe('clickhouse'));
+    act(() => applyUserColors());
+    expect(localStorage.getItem('theme-colors')).toBeNull();
+
+    replaceConfig();
+    await waitFor(() => expect(root().dataset.theme).toBe('stored'));
+    expect(JSON.parse(localStorage.getItem('theme-definition') ?? '{}')).toEqual(storedDefinition);
+
+    act(() => applyUserColors());
+
+    await waitFor(() =>
+      expect(JSON.parse(localStorage.getItem('theme-colors') ?? '{}')).toEqual({
+        'rgb-accent-primary': '9 9 9',
+      }),
+    );
+    expect(localStorage.getItem('theme-source')).toBe('legacy');
   });
 
   it('picks up the theme after the auth flow removes the startup config query', async () => {
