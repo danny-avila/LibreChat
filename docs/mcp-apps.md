@@ -73,6 +73,33 @@ MCP App browser routes use independent, per-user, one-minute limits. Configure p
 values at `rateLimits.mcpApps.resourcesPerMinute` and
 `rateLimits.mcpApps.toolCallsPerMinute`; their defaults are 120 and 60 respectively.
 
+## App operation budgets
+
+App-profile MCP sessions have a pre-parse upstream response cap of 4 MiB by default, independent
+of the standard-profile MCP transport settings. Streamable HTTP POST responses, stdio frames and
+standalone SSE events are bounded before the SDK parses JSON. The same cap is checked on serialized
+responses to the App bridge. Oversized optional initial `resources/read` results preserve the
+canonical tool result; a failed follow-up request returns a bounded error, never a truncated JSON
+success. The existing Express 3 MiB JSON ingress bound still applies before App route handlers.
+
+```dotenv
+MCP_APP_MAX_UPSTREAM_BYTES=4194304
+MCP_APP_OPERATION_TIMEOUT_MS=30000
+MCP_APP_MAX_ACTIVE_OPERATIONS=16
+```
+
+These deployment-owned positive integer settings default to the values shown and reject invalid
+or excessively high overrides. The timeout is absolute across configuration, connection checkout,
+recovery and the SDK operation; progress notifications cannot extend the SDK call beyond it. The
+16-slot concurrency bound is **per LibreChat process**, shared across App resource, tool and binding
+validation routes. There is no queue: requests above it receive 503. An aborted or timed-out
+operation holds its slot until its underlying work actually settles, avoiding a false capacity
+release while upstream work remains active. This is not a distributed cluster-wide quota. Measure
+capacity per replica when sizing deployments. For safety, App-profile WebSocket connections are not
+supported: the installed SDK parses their messages before providing a configurable maximum payload.
+Standard-profile WebSocket sessions are unaffected. Larger legitimate Apps may require a higher
+byte limit; do not disable transport limits to work around large results.
+
 ## Required sandbox deployment
 
 The chat application and Sandbox Proxy must use different URL origins. Set the proxy URL in the base

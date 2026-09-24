@@ -61,6 +61,7 @@ import { UserConnectionManager } from './UserConnectionManager';
 import { ConnectionsRepository } from './ConnectionsRepository';
 import { MCPConnectionFactory } from './MCPConnectionFactory';
 import { processMCPEnv, isPluginSourced } from '~/utils/env';
+import { getMCPAppOperationLimits } from './apps/budget';
 import { OAuthLifecycleRelay } from './oauth/pending';
 import { isOwnedAbortError } from '~/utils/errors';
 import { MCPConnection } from './connection';
@@ -1977,9 +1978,14 @@ Please follow these instructions when using tools from the respective MCP server
         if (resourceMeta && !options?.signal?.aborted) {
           const resourceUri = resourceMeta.uri;
           try {
+            const appReadTimeout = getMCPAppOperationLimits().timeoutMs;
             const readResult = await connection.client.readResource(
               { uri: resourceUri },
-              { timeout: connection.timeout, signal: options?.signal },
+              {
+                timeout: Math.min(connection.timeout ?? appReadTimeout, appReadTimeout),
+                maxTotalTimeout: appReadTimeout,
+                signal: options?.signal,
+              },
             );
             if (!options?.signal?.aborted) {
               resolvedAppResource = selectResolvedAppResource(readResult.contents, resourceUri);
@@ -2300,8 +2306,10 @@ Please follow these instructions when using tools from the respective MCP server
 
         let result: TResult;
         try {
+          const operationTimeout = getMCPAppOperationLimits().timeoutMs;
           result = await operation(connection, {
-            timeout: connection.timeout,
+            timeout: Math.min(connection.timeout ?? operationTimeout, operationTimeout),
+            maxTotalTimeout: operationTimeout,
             ...(signal ? { signal } : {}),
           });
         } catch (error) {

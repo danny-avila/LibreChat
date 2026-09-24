@@ -36,6 +36,7 @@ import {
 import { MCP_APPS_CAPABILITY_PROFILE, STANDARD_MCP_CAPABILITY_PROFILE } from './capabilities';
 import { createSSRFSafeUndiciConnect, isSSRFTarget, resolveHostnameSSRF } from '~/auth';
 import { projectMCPAppRuntimeTarget, type MCPAppRuntimeTarget } from './apps/binding';
+import { getMCPAppOperationLimits, guardMCPAppSSEEvents } from './apps/budget';
 import { reserveMCPToolsChangedRevision } from './toolsChanged';
 import { runOutsideTracing } from '~/utils/tracing';
 import { mediaTypeEssence } from '~/utils/headers';
@@ -295,20 +296,27 @@ function buildBlockedMCPResponseSSE(requestIds: JSONRPCRequestId[], message: str
   return textEncoder.encode(events);
 }
 
-function getMCPStreamableHTTPResponseLimits(): {
+function getMCPStreamableHTTPResponseLimits(appProfile = false): {
   maxResponseBytes: number;
   maxLineBytes: number;
 } {
-  return {
-    maxResponseBytes: getNonNegativeIntegerEnv(
-      'MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES',
-      DEFAULT_MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES,
-    ),
-    maxLineBytes: getNonNegativeIntegerEnv(
-      'MCP_STREAMABLE_HTTP_MAX_LINE_BYTES',
-      DEFAULT_MCP_STREAMABLE_HTTP_MAX_LINE_BYTES,
-    ),
-  };
+  const responseLimit = getNonNegativeIntegerEnv(
+    'MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES',
+    DEFAULT_MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES,
+  );
+  const lineLimit = getNonNegativeIntegerEnv(
+    'MCP_STREAMABLE_HTTP_MAX_LINE_BYTES',
+    DEFAULT_MCP_STREAMABLE_HTTP_MAX_LINE_BYTES,
+  );
+  if (appProfile) {
+    const appLimit = getMCPAppOperationLimits().maxBytes;
+    // Zero disables the generic guard, but must never disable an App-profile byte bound.
+    return {
+      maxResponseBytes: responseLimit === 0 ? appLimit : Math.min(responseLimit, appLimit),
+      maxLineBytes: lineLimit === 0 ? appLimit : Math.min(lineLimit, appLimit),
+    };
+  }
+  return { maxResponseBytes: responseLimit, maxLineBytes: lineLimit };
 }
 
 async function guardMCPStreamableHTTPResponse(
@@ -318,15 +326,26 @@ async function guardMCPStreamableHTTPResponse(
     method: string;
     url: string;
     requestIds?: JSONRPCRequestId[];
+    appProfile?: boolean;
   },
 ): Promise<UndiciResponse> {
-  if (context.method === 'GET' || !response.body) {
+  const contentType = response.headers.get('content-type') ?? '';
+  const isEventStream = mediaTypeEssence(contentType) === 'text/event-stream';
+  if (context.method === 'GET') {
+    if (!context.appProfile) return response;
+    if (isEventStream) {
+      return guardMCPAppSSEEvents(
+        response as unknown as Response,
+        getMCPAppOperationLimits().maxBytes,
+      ) as unknown as UndiciResponse;
+    }
+    // SDK GET error paths may call response.text(); bound those as ordinary HTTP bodies.
+  }
+  if (!response.body) {
     return response;
   }
 
-  const contentType = response.headers.get('content-type') ?? '';
-  const isEventStream = mediaTypeEssence(contentType) === 'text/event-stream';
-  const { maxResponseBytes, maxLineBytes } = getMCPStreamableHTTPResponseLimits();
+  const { maxResponseBytes, maxLineBytes } = getMCPStreamableHTTPResponseLimits(context.appProfile);
   const canEmitFallbackSSEError = isEventStream && maxLineBytes > 0;
   if (!isEventStream && maxResponseBytes === 0) {
     return response;
@@ -1275,6 +1294,7 @@ export class MCPConnection extends EventEmitter {
     const agents = this.agents;
     const logPrefix = this.getLogPrefix();
     const rejectDirectBearerAuthentication = this.directBearerRecoveryEnabled;
+    const thisAppProfile = this.capabilityProfile === MCP_APPS_CAPABILITY_PROFILE;
     const effectiveTimeout = timeout || DEFAULT_TIMEOUT;
     const requestDispatchers = new Map<string, ManagedDispatcher>();
     const ssrfConnects = new Map<string, ReturnType<typeof createSSRFSafeUndiciConnect>>();
@@ -1403,6 +1423,7 @@ export class MCPConnection extends EventEmitter {
           method: (currentInit?.method ?? 'GET').toUpperCase(),
           url: currentUrlString,
           requestIds: getJSONRPCRequestIds(currentInit?.body),
+          appProfile: thisAppProfile,
         };
 
         if (!isMethodPreservingRedirect || redirects >= MAX_REDIRECTS) {
@@ -1523,11 +1544,19 @@ export class MCPConnection extends EventEmitter {
             // https://github.com/modelcontextprotocol/typescript-sdk/issues/216
             env: { ...getDefaultEnvironment(), ...(options.env ?? {}) },
             ...(options.cwd !== undefined && { cwd: options.cwd }),
+            ...(this.capabilityProfile === MCP_APPS_CAPABILITY_PROFILE && {
+              maxBufferSize: getMCPAppOperationLimits().maxBytes,
+            }),
           });
 
         case 'websocket': {
           if (!isWebSocketOptions(options)) {
             throw new Error('Invalid options for websocket transport.');
+          }
+          if (this.capabilityProfile === MCP_APPS_CAPABILITY_PROFILE) {
+            // This SDK WebSocket transport JSON.parse's messages before exposing them and offers
+            // no maxPayload option. Fail closed for Apps rather than claim a post-parse cap is safe.
+            throw new Error('MCP Apps require a transport with a pre-parse response size limit');
           }
           this.url = options.url;
           /**
@@ -1644,12 +1673,20 @@ export class MCPConnection extends EventEmitter {
                     }
                   }
                 }
-                return undiciFetch(urlString, {
+                const response = await undiciFetch(urlString, {
                   ...resolvedInit,
                   redirect: 'manual',
                   dispatcher: getSSEDispatcher(urlString),
                   headers: fetchHeaders,
                 });
+                return this.capabilityProfile === MCP_APPS_CAPABILITY_PROFILE
+                  ? guardMCPStreamableHTTPResponse(response, {
+                      logPrefix: this.getLogPrefix(),
+                      method: 'GET',
+                      url: urlString,
+                      appProfile: true,
+                    })
+                  : response;
               },
             },
             fetch: this.createFetchFunction(
@@ -1658,6 +1695,7 @@ export class MCPConnection extends EventEmitter {
               undefined,
               sseConfiguredSecretHeaderKeys,
               options.url,
+              this.capabilityProfile === MCP_APPS_CAPABILITY_PROFILE,
             ) as unknown as FetchLike,
           });
 

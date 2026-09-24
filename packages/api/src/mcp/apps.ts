@@ -14,6 +14,7 @@ import type * as t from './types';
 import { MCPAuthenticationRefreshError, MCPAuthenticationRejectedError } from './errors';
 import { getServerCustomUserVars, getUserMCPAuthMap } from './auth';
 import { OpenIDReauthRequiredError } from '~/utils/oidc';
+import { MCPAppBudgetError } from './apps/budget';
 
 export interface ToolWithMeta {
   _meta?: Record<string, unknown> | null;
@@ -260,6 +261,7 @@ export async function validateAppServerBinding(
 /** A denied app request is an expected client error, not a host fault. */
 export function isDeniedAppRequest(error: unknown): boolean {
   return (
+    error instanceof MCPAppBudgetError ||
     error instanceof OpenIDReauthRequiredError ||
     error instanceof MCPAuthenticationRejectedError ||
     error instanceof MCPAuthenticationRefreshError ||
@@ -273,6 +275,9 @@ export function buildAppProxyErrorResponse(
   error: unknown,
   fallbackMessage: string,
 ): { status: number; body: Record<string, unknown> } {
+  if (error instanceof MCPAppBudgetError) {
+    return { status: error.status, body: { error: error.code, message: error.message } };
+  }
   if (
     error != null &&
     typeof error === 'object' &&

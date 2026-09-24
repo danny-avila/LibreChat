@@ -19,6 +19,7 @@ import {
   resolveAppValidationContext,
   resolveEffectiveAppServerConfig,
 } from '../apps';
+import { assertMCPAppResultFits, MCPAppOperationBudget } from './budget';
 import { buildSandboxResponse } from '../sandbox';
 
 interface MCPAppsBody {
@@ -175,6 +176,7 @@ export function createMCPAppsController(dependencies: MCPAppsControllerDependenc
   serveMCPSandbox: RequestHandler;
   requireMCPAppsEnabled: RequestHandler;
 } {
+  const operationBudget = new MCPAppOperationBudget();
   let sandboxHtml: string | undefined;
   const loadSandboxHtml = (): string => {
     sandboxHtml ??= dependencies.readSandboxFile(dependencies.sandboxPath, 'utf8');
@@ -208,32 +210,41 @@ export function createMCPAppsController(dependencies: MCPAppsControllerDependenc
       const cancellation = attachCancellation(request, response);
       try {
         cancellation.signal.throwIfAborted();
-        const body = request.body ?? {};
-        const serverName = getServerName(body);
-        const context = await resolveAppRequestContext({
-          user,
-          serverName,
-          serverBinding: body.serverBinding,
-          resolveServerConfig: () =>
-            resolveEffectiveAppServerConfig({
-              serverName,
+        const result = await operationBudget.run(cancellation.signal, async (signal) => {
+          const body = request.body ?? {};
+          const serverName = getServerName(body);
+          const context = await resolveAppRequestContext({
+            user,
+            serverName,
+            serverBinding: body.serverBinding,
+            resolveServerConfig: () =>
+              resolveEffectiveAppServerConfig({
+                serverName,
+                user,
+                mcpConfig: getAdmittedMCPConfig(request),
+                ensureConfigServers: dependencies.ensureConfigServers,
+                getAllServerConfigs: dependencies.getAllServerConfigs,
+                recoverServerConfig: dependencies.recoverServerConfig,
+                isAppServerConfig: dependencies.isAppServerConfig,
+              }),
+            findPluginAuthsByKeys: dependencies.findPluginAuthsByKeys,
+            flowManager: dependencies.getFlowManager(),
+            tokenMethods: dependencies.tokenMethods,
+            onOAuthCredentialsChanging: dependencies.createOAuthCredentialsChanging(request),
+            upstreamTokenProvider: dependencies.createUpstreamTokenProvider(
+              request,
+              response,
               user,
-              mcpConfig: getAdmittedMCPConfig(request),
-              ensureConfigServers: dependencies.ensureConfigServers,
-              getAllServerConfigs: dependencies.getAllServerConfigs,
-              recoverServerConfig: dependencies.recoverServerConfig,
-              isAppServerConfig: dependencies.isAppServerConfig,
-            }),
-          findPluginAuthsByKeys: dependencies.findPluginAuthsByKeys,
-          flowManager: dependencies.getFlowManager(),
-          tokenMethods: dependencies.tokenMethods,
-          onOAuthCredentialsChanging: dependencies.createOAuthCredentialsChanging(request),
-          upstreamTokenProvider: dependencies.createUpstreamTokenProvider(request, response, user),
-          allowlists: getAdmittedMCPAllowlists(request),
-          signal: cancellation.signal,
+            ),
+            allowlists: getAdmittedMCPAllowlists(request),
+            signal,
+          });
+          signal.throwIfAborted();
+          const result = await options.proxy(dependencies.getManager(), context, body);
+          signal.throwIfAborted();
+          assertMCPAppResultFits(result);
+          return result;
         });
-        cancellation.signal.throwIfAborted();
-        const result = await options.proxy(dependencies.getManager(), context, body);
         if (canWriteResponse(response)) {
           response.json(result);
         }
@@ -261,27 +272,32 @@ export function createMCPAppsController(dependencies: MCPAppsControllerDependenc
     const cancellation = attachCancellation(request, response);
     try {
       cancellation.signal.throwIfAborted();
-      const body = request.body ?? {};
-      const serverName = getServerName(body);
-      const allowlists = getAdmittedMCPAllowlists(request);
-      const context = await resolveAppValidationContext({
-        user,
-        serverName,
-        serverBinding: body.serverBinding,
-        resolveServerConfig: () =>
-          dependencies.resolveCachedAppServerConfig({
-            serverName,
-            userId: user.id,
-            role: user.role,
-            mcpConfig: getAdmittedMCPConfig(request),
-            allowedDomains: allowlists.allowedDomains,
-            allowedAddresses: allowlists.allowedAddresses,
-          }),
-        findPluginAuthsByKeys: dependencies.findPluginAuthsByKeys,
-        signal: cancellation.signal,
+      const result = await operationBudget.run(cancellation.signal, async (signal) => {
+        const body = request.body ?? {};
+        const serverName = getServerName(body);
+        const allowlists = getAdmittedMCPAllowlists(request);
+        const context = await resolveAppValidationContext({
+          user,
+          serverName,
+          serverBinding: body.serverBinding,
+          resolveServerConfig: () =>
+            dependencies.resolveCachedAppServerConfig({
+              serverName,
+              userId: user.id,
+              role: user.role,
+              mcpConfig: getAdmittedMCPConfig(request),
+              allowedDomains: allowlists.allowedDomains,
+              allowedAddresses: allowlists.allowedAddresses,
+            }),
+          findPluginAuthsByKeys: dependencies.findPluginAuthsByKeys,
+          signal,
+        });
+        signal.throwIfAborted();
+        const result = await validateAppServerBinding(dependencies.getManager(), context);
+        signal.throwIfAborted();
+        assertMCPAppResultFits(result);
+        return result;
       });
-      cancellation.signal.throwIfAborted();
-      const result = await validateAppServerBinding(dependencies.getManager(), context);
       if (canWriteResponse(response)) {
         response.json(result);
       }
