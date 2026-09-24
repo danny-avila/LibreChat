@@ -1077,3 +1077,22 @@ describe('GET /api/config', () => {
     });
   });
 });
+
+describe('passkey enrollment cap', () => {
+  it('publishes the cap normalized from YAML only after authentication', async () => {
+    const { AppService } = require('@librechat/data-schemas');
+    const appConfig = await AppService({ config: { passkeys: { perUserMax: 2 } } });
+    mockGetAppConfig.mockResolvedValue(appConfig);
+
+    const authenticated = await request(createApp(mockUser)).get('/api/config');
+    expect(authenticated.status).toBe(200);
+    expect(authenticated.body.maxPasskeysPerUser).toBe(2);
+    expect(mockGetAppConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: mockUser.id, role: mockUser.role }),
+    );
+
+    const anonymous = await request(createApp()).get('/api/config');
+    expect(anonymous.status).toBe(200);
+    expect(anonymous.body).not.toHaveProperty('maxPasskeysPerUser');
+  });
+});

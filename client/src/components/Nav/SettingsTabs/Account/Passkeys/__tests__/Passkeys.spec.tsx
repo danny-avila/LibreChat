@@ -5,9 +5,13 @@ import Passkeys from '../Passkeys';
 
 const mockClearPasswordError = jest.fn();
 const mockRegisterPasskey = jest.fn();
+const mockRefetchStartupConfig = jest.fn();
 
 jest.mock('~/data-provider', () => ({
-  useGetStartupConfig: () => ({ data: { maxPasskeysPerUser: 20 } }),
+  useGetStartupConfig: () => ({
+    data: { maxPasskeysPerUser: 20 },
+    refetch: mockRefetchStartupConfig,
+  }),
   usePasskeysQuery: () => ({ data: { passkeys: [] }, isLoading: false, isError: false }),
   useRenamePasskeyMutation: () => ({ mutate: jest.fn() }),
   useDeletePasskeyMutation: () => ({ mutateAsync: jest.fn() }),
@@ -43,6 +47,20 @@ jest.mock('~/hooks', () => ({
 describe('Passkeys enrollment dialog', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('refreshes startup configuration on each management dialog open', async () => {
+    const user = userEvent.setup();
+    render(<Passkeys />);
+    expect(mockRefetchStartupConfig).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Passkeys' }));
+    expect(mockRefetchStartupConfig).toHaveBeenCalledTimes(1);
+    await user.keyboard('{Escape}');
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: 'Passkeys' })).not.toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole('button', { name: 'Passkeys' }));
+    expect(mockRefetchStartupConfig).toHaveBeenCalledTimes(2);
   });
 
   it('opens password confirmation in a separate dialog and restores focus on cancel', async () => {

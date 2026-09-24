@@ -49,7 +49,7 @@ function Passkeys() {
   const renameAfterCloseRef = useRef<string | null>(null);
 
   const { data, isLoading, isError } = usePasskeysQuery({ enabled: isDialogOpen });
-  const { data: startupConfig } = useGetStartupConfig();
+  const { data: startupConfig, refetch: refetchStartupConfig } = useGetStartupConfig();
   const { registerPasskey, isRegistering, passwordErrorKey, clearPasswordError } =
     usePasskeyRegistration();
   const { mutate: renameMutate } = useRenamePasskeyMutation();
@@ -165,6 +165,7 @@ function Passkeys() {
     (open: boolean) => {
       setDialogOpen(open);
       if (open) {
+        void refetchStartupConfig();
         return;
       }
       setPassword('');
@@ -173,7 +174,7 @@ function Passkeys() {
       renameAfterCloseRef.current = null;
       clearPasswordError();
     },
-    [clearPasswordError],
+    [clearPasswordError, refetchStartupConfig],
   );
 
   return (

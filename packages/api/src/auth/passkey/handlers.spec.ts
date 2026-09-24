@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { createHash } from 'node:crypto';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { MAX_PASSKEYS_PER_USER } from 'librechat-data-provider';
+import { FileSources, MAX_PASSKEYS_PER_USER } from 'librechat-data-provider';
 import { logger, createMethods, createModels } from '@librechat/data-schemas';
 import type { RegistrationResponseJSON } from '@simplewebauthn/server';
 import type { IUser } from '@librechat/data-schemas';
@@ -48,6 +48,7 @@ const ENV_KEYS = [
   'ALLOW_UNVERIFIED_EMAIL_LOGIN',
   'EMAIL_SERVICE',
   'EMAIL_FROM',
+  'MAX_PASSKEYS_PER_USER',
 ] as const;
 
 type MockResponse = Response & { status: jest.Mock; json: jest.Mock };
@@ -260,7 +261,16 @@ describe('passkey registration provider enforcement', () => {
   });
 
   it('enforces the per-account cap the deployment configures', async () => {
-    const handlers = createPasskeyHandlers(buildDeps({ maxPasskeysPerUser: () => 2 }));
+    const handlers = createPasskeyHandlers(
+      buildDeps({
+        getAppConfig: async () => ({
+          config: {},
+          fileStrategy: FileSources.local,
+          imageOutputType: 'png',
+          passkeys: { perUserMax: 2 },
+        }),
+      }),
+    );
     const user = await createUser();
     await Promise.all([createStoredPasskey(user, 'cap-0'), createStoredPasskey(user, 'cap-1')]);
     const res = buildRes();
@@ -272,7 +282,16 @@ describe('passkey registration provider enforcement', () => {
   });
 
   it('awaits an asynchronous cap resolver on the verify path', async () => {
-    const handlers = createPasskeyHandlers(buildDeps({ maxPasskeysPerUser: async () => 1 }));
+    const handlers = createPasskeyHandlers(
+      buildDeps({
+        getAppConfig: async () => ({
+          config: {},
+          fileStrategy: FileSources.local,
+          imageOutputType: 'png',
+          passkeys: { perUserMax: 1 },
+        }),
+      }),
+    );
     const user = await createUser();
     await createStoredPasskey(user, 'cap-verify-0');
     const res = buildRes();
@@ -290,6 +309,94 @@ describe('passkey registration provider enforcement', () => {
     expect(res.json).toHaveBeenCalledWith({ message: 'Passkey limit reached' });
   });
 
+  it('resolves the authenticated principal once before writing a credential', async () => {
+    const getAppConfig = jest
+      .fn<
+        ReturnType<NonNullable<PasskeyHandlersDeps['getAppConfig']>>,
+        Parameters<NonNullable<PasskeyHandlersDeps['getAppConfig']>>
+      >()
+      .mockResolvedValueOnce({
+        config: {},
+        fileStrategy: FileSources.local,
+        imageOutputType: 'png',
+        passkeys: { perUserMax: 1 },
+      })
+      .mockRejectedValue(new Error('Config unavailable after enrollment'));
+    const handlers = createPasskeyHandlers(buildDeps({ getAppConfig }));
+    const user = await createUser();
+    const req = authedReq(user, { credential: attestation, password: PASSWORD });
+    req.user.role = 'USER';
+    req.user.idOnTheSource = 'source-user';
+    const res = buildRes();
+
+    await handlers.registerPasskeyVerify(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(201);
+    expect(getAppConfig).toHaveBeenCalledTimes(1);
+    expect(getAppConfig).toHaveBeenCalledWith({
+      userId: user._id.toString(),
+      role: 'USER',
+      idOnTheSource: 'source-user',
+      tenantId: undefined,
+      failClosed: true,
+    });
+    expect(await methods.countPasskeysByUser(user._id.toString())).toBe(1);
+  });
+
+  it('reuses configuration already loaded for the request', async () => {
+    const getAppConfig = jest.fn().mockRejectedValue(new Error('Unnecessary config read'));
+    const handlers = createPasskeyHandlers(buildDeps({ getAppConfig }));
+    const user = await createUser();
+    await createStoredPasskey(user);
+    const req = authedReq(user, { password: PASSWORD });
+    req.config = {
+      config: {},
+      fileStrategy: FileSources.local,
+      imageOutputType: 'png',
+      passkeys: { perUserMax: 1 },
+    };
+    const res = buildRes();
+
+    await handlers.registerPasskeyOptions(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(getAppConfig).not.toHaveBeenCalled();
+  });
+
+  it('does not enroll a credential when effective configuration cannot be loaded', async () => {
+    const getAppConfig = jest.fn().mockRejectedValue(new Error('Config unavailable'));
+    const handlers = createPasskeyHandlers(buildDeps({ getAppConfig }));
+    const user = await createUser();
+    const res = buildRes();
+
+    await handlers.registerPasskeyVerify(
+      authedReq(user, { credential: attestation, password: PASSWORD }),
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(await methods.countPasskeysByUser(user._id.toString())).toBe(0);
+    expect(mockVerifyRegistration).not.toHaveBeenCalled();
+  });
+
+  it('removes the inserted credential if the post-write count fails', async () => {
+    const countPasskeysByUser = jest
+      .fn(methods.countPasskeysByUser)
+      .mockResolvedValueOnce(0)
+      .mockRejectedValueOnce(new Error('Count unavailable'));
+    const handlers = createPasskeyHandlers(buildDeps({ countPasskeysByUser }));
+    const user = await createUser();
+    const res = buildRes();
+
+    await handlers.registerPasskeyVerify(
+      authedReq(user, { credential: attestation, password: PASSWORD }),
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(await methods.countPasskeysByUser(user._id.toString())).toBe(0);
+  });
+
   it('rolls back a credential that wins the enrollment race past the cap', async () => {
     /** Both verifies observe the pre-enrollment count, as two concurrent
      *  ceremonies for the same account do, so both pass the early check. */
@@ -299,7 +406,15 @@ describe('passkey registration provider enforcement', () => {
       .mockImplementationOnce(async () => 0)
       .mockImplementation(methods.countPasskeysByUser);
     const handlers = createPasskeyHandlers(
-      buildDeps({ maxPasskeysPerUser: () => 1, countPasskeysByUser: racedCount }),
+      buildDeps({
+        getAppConfig: async () => ({
+          config: {},
+          fileStrategy: FileSources.local,
+          imageOutputType: 'png',
+          passkeys: { perUserMax: 1 },
+        }),
+        countPasskeysByUser: racedCount,
+      }),
     );
     let ceremony = 0;
     mockVerifyRegistration.mockImplementation(async () =>
