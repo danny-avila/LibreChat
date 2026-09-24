@@ -39,9 +39,6 @@ import { WAITING_RETRY_CAP_MS } from './backoff';
 
 /** Internal sources whose deliveries wait on a result or on their parent generation. */
 const COMPLETION_WAKEUP_SOURCES = [BACKGROUND_TOOL_COMPLETION_SOURCE, SUBAGENT_COMPLETION_SOURCE];
-/** A matching delivery a worker held while its readiness changed is re-expedited
- * once, after that worker has had time to release it. */
-const EXPEDITE_FOLLOW_UP_MS = 2_000;
 
 export const AGENT_TRIGGER_TOKEN_TTL = '60s';
 const DEFAULT_USER_DRAIN_TIMEOUT_MS = 35_000;
@@ -563,11 +560,11 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
   };
 
   /** Moves waiting completion deliveries forward when what they wait on has
-   * changed, then claims them here. A matching row that was already due or held
-   * by a worker still needs a claim pass, and a held one may be deferred again by
-   * a resolver that read the old state, so it is re-expedited once shortly after.
-   * Best effort: a missed expedite only means the delivery re-checks at its backoff. */
-  const expediteCompletions = (input: AgentTriggerCompletionExpedite, followUp = false): void => {
+   * changed, and marks held ones so their next deferral re-checks at once. The
+   * claim pass always runs: a matching delivery may already be due here without
+   * having moved. Best effort: a missed expedite only means the delivery
+   * re-checks at its backoff instead of immediately. */
+  const expediteCompletions = (input: AgentTriggerCompletionExpedite): void => {
     const expedite = deps.methods?.expediteAgentTriggerDeliveries;
     if (expedite == null || !deliveryReady || stopping) {
       return;
@@ -579,15 +576,7 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
         now: new Date(),
       }),
     )
-      .then(({ matched, expedited }) => {
-        if (matched === 0) {
-          return;
-        }
-        deliveryEngine?.wake();
-        if (matched > expedited && !followUp) {
-          setTimeout(() => expediteCompletions(input, true), EXPEDITE_FOLLOW_UP_MS).unref?.();
-        }
-      })
+      .then(() => deliveryEngine?.wake())
       .catch((error) =>
         logger.warn('[agent-triggers] failed to expedite waiting completion deliveries:', error),
       );

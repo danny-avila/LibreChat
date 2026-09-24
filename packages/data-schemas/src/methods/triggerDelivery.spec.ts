@@ -486,7 +486,7 @@ describe('agent trigger delivery methods', () => {
           sourceIds: [background.id],
           now: START,
         }),
-      ).resolves.toEqual({ matched: 1, expedited: 1 });
+      ).resolves.toEqual({ expedited: 1, held: 0 });
 
       await expect(methods.claimNextAgentTriggerDelivery(capable)).resolves.toMatchObject({
         id: target.delivery.id,
@@ -514,7 +514,7 @@ describe('agent trigger delivery methods', () => {
 
       await expect(
         methods.expediteAgentTriggerDeliveries({ user, sourceIds: [background.id], now: START }),
-      ).resolves.toEqual({ matched: 2, expedited: 1 });
+      ).resolves.toEqual({ expedited: 1, held: 0 });
 
       const rows = await Delivery.find({
         _id: {
@@ -529,7 +529,7 @@ describe('agent trigger delivery methods', () => {
       expect(availableAt.get(due.delivery.id)).toEqual(START);
     });
 
-    it('leaves a delivery a worker currently holds untouched but reports it', async () => {
+    it('marks a delivery a worker currently holds instead of moving it', async () => {
       const user = new mongoose.Types.ObjectId();
       const held = await waiting({ user, availableAt: START });
       const claim = await methods.claimNextAgentTriggerDelivery(capable);
@@ -542,11 +542,63 @@ describe('agent trigger delivery methods', () => {
           sourceIds: [background.id],
           now: new Date(START.getTime() - 60_000),
         }),
-      ).resolves.toEqual({ matched: 1, expedited: 0 });
+      ).resolves.toEqual({ expedited: 0, held: 1 });
 
       const after = await Delivery.findById(held.delivery.id).lean();
       expect(after?.status).toBe(before?.status);
       expect(after?.availableAt).toEqual(before?.availableAt);
+      expect(after?.wakeRequestedAt).toEqual(new Date(START.getTime() - 60_000));
+    });
+
+    it('re-checks at once when readiness changed while the delivery was held', async () => {
+      const user = new mongoose.Types.ObjectId();
+      const held = await waiting({ user, availableAt: START });
+      const claim = await methods.claimNextAgentTriggerDelivery(capable);
+      expect(claim).toMatchObject({ id: held.delivery.id });
+      const fence = {
+        id: held.delivery.id,
+        workerId: capable.workerId,
+        claimToken: capable.claimToken,
+      };
+      const attempt = await methods.beginAgentTriggerDeliveryAttempt({ ...fence, now: START });
+      await expect(
+        methods.expediteAgentTriggerDeliveries({ user, sourceIds: [background.id], now: START }),
+      ).resolves.toEqual({ expedited: 0, held: 1 });
+
+      const beforeDefer = Date.now();
+      await expect(
+        methods.deferAgentTriggerDeliveryAttempt({
+          ...fence,
+          attempt: attempt!,
+          availableAt: later,
+        }),
+      ).resolves.toBe('expedited');
+
+      const deferred = await Delivery.findById(held.delivery.id).lean();
+      expect(deferred?.wakeRequestedAt).toBeUndefined();
+      expect(deferred?.availableAt.getTime()).toBeGreaterThanOrEqual(beforeDefer);
+      expect(deferred?.availableAt).not.toEqual(later);
+
+      const reclaimed = await methods.claimNextAgentTriggerDelivery({
+        ...capable,
+        claimToken: 'second-claim',
+        now: new Date(),
+        leaseUntil: new Date(Date.now() + 60_000),
+      });
+      expect(reclaimed).toMatchObject({ id: held.delivery.id });
+      const secondFence = { ...fence, claimToken: 'second-claim' };
+      const secondAttempt = await methods.beginAgentTriggerDeliveryAttempt({
+        ...secondFence,
+        now: new Date(),
+      });
+      await expect(
+        methods.deferAgentTriggerDeliveryAttempt({
+          ...secondFence,
+          attempt: secondAttempt!,
+          availableAt: later,
+        }),
+      ).resolves.toBe(true);
+      expect((await Delivery.findById(held.delivery.id).lean())?.availableAt).toEqual(later);
     });
 
     it('refuses an unbounded or malformed selection', async () => {

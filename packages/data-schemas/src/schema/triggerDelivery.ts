@@ -218,6 +218,7 @@ const triggerDeliverySchema: Schema<IAgentTriggerDeliveryDocument> = new Schema(
     requeueCount: { type: Number, default: 0, min: 0 },
     stagingRecoveryAt: { type: Date },
     laneCleanupPendingAt: { type: Date },
+    wakeRequestedAt: { type: Date },
   },
   { timestamps: true },
 );
