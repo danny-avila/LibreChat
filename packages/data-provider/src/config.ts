@@ -1374,7 +1374,8 @@ export const agentsEndpointSchema = baseEndpointSchema
             })
             .optional(),
           /** Server-only policy letting a conversation's owner move its sealed attached decision
-           * onto the environments its agents now use. Omit to keep sealed decisions immovable. */
+           * onto the environments its agents now use, or recover a missing workspace. Omit to keep
+           * sealed decisions immovable. */
           conversationMoves: z
             .object({
               enabled: z.boolean().optional(),
@@ -2389,7 +2390,7 @@ export type TStartupConfig = {
   codeEnvironmentDecisionVersion?: typeof CODE_ENVIRONMENT_DECISION_VERSION;
   /** Owner moves of a sealed code-environment decision supported by the API. Clients must not
    * offer to move a conversation unless this is advertised. */
-  codeEnvironmentMoveVersion?: typeof CODE_ENVIRONMENT_MOVE_VERSION;
+  codeEnvironmentMoveVersion?: 1 | typeof CODE_ENVIRONMENT_MOVE_VERSION;
   interface?: TInterfaceConfig;
   turnstile?: TTurnstileConfig;
   balance?: TBalanceConfig;

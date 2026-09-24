@@ -124,11 +124,10 @@ export interface ConversationCodeEnvironmentMove {
 }
 
 /**
- * Validates an owner's explicit move of a sealed attached decision onto the environments its
- * agents now use. A move may drop environments the agents stopped using and add ones they now use,
- * but never changes the workspace of an environment the decision already covers and never upgrades
- * a conversation that continues without an attached environment. `from` must repeat the persisted selections, so a client acting
- * on a stale view of the conversation cannot replace a decision it has not seen.
+ * Validates the shape and expected decision of an owner's explicit move. The caller must verify
+ * live registration of every target and, for same-environment replacements, absence of the old
+ * workspace before persisting. `from` must repeat the persisted selections, so a stale client
+ * cannot replace a decision it has not seen. A chat without an attached decision stays sealed.
  */
 export function resolveConversationCodeEnvironmentMove({
   conversation,
@@ -149,19 +148,7 @@ export function resolveConversationCodeEnvironmentMove({
   if (!isCodeWorkspaceSelections(to) || to.length === 0) {
     throw new CodeWorkspaceSelectionError('invalid');
   }
-  const sealed = new Map(
-    persisted.codeWorkspaces.map(({ environmentId, workspaceId }) => [environmentId, workspaceId]),
-  );
-  let adds = false;
-  for (const selection of to) {
-    const sealedWorkspaceId = sealed.get(selection.environmentId);
-    if (sealedWorkspaceId == null) {
-      adds = true;
-    } else if (sealedWorkspaceId !== selection.workspaceId) {
-      throw new CodeWorkspaceSelectionError('locked');
-    }
-  }
-  if (!adds && to.length === sealed.size) {
+  if (sameSelections(to, persisted.codeWorkspaces)) {
     throw new CodeWorkspaceSelectionError('locked');
   }
   return { codeWorkspaces: canonicalSelections(to) };

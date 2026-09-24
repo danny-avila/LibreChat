@@ -48,9 +48,8 @@ export interface CodeWorkspaceEnvironmentResult {
 }
 
 /**
- * A saved chat whose attached decision no longer covers every environment its agents use, most
- * often because an agent was pointed at a different machine after the chat was created. The
- * decision stays sealed against implicit changes; only its owner's explicit move replaces it.
+ * A saved chat whose attached decision no longer covers its agents' environments or whose
+ * selected workspace is missing. Only its owner's explicit move replaces the sealed decision.
  */
 export interface CodeWorkspaceRelocation {
   conversationId: string;
@@ -60,9 +59,9 @@ export interface CodeWorkspaceRelocation {
   previous: Array<
     Pick<TPublicCodeEnvironment, 'id'> & Partial<Pick<TPublicCodeEnvironment, 'name'>>
   >;
-  /** Sealed selections the agents still use; a move carries them over unchanged. */
+  /** Registered sealed selections the agents still use; a move carries them over unchanged. */
   retained: CodeWorkspaceSelection[];
-  /** Environments the agents now use that the decision does not cover. */
+  /** Environments needing a new selection, including those whose workspace disappeared. */
   targets: CodeWorkspaceEnvironmentResult[];
 }
 
@@ -133,8 +132,10 @@ export default function useCodeWorkspace(
   const { data: startupConfig } = useGetStartupConfig();
   const supportsEnvironmentDecisions =
     startupConfig?.codeEnvironmentDecisionVersion === CODE_ENVIRONMENT_DECISION_VERSION;
-  const supportsEnvironmentMoves =
+  const supportsWorkspaceRecovery =
     startupConfig?.codeEnvironmentMoveVersion === CODE_ENVIRONMENT_MOVE_VERSION;
+  const supportsEnvironmentMoves =
+    supportsWorkspaceRecovery || startupConfig?.codeEnvironmentMoveVersion === 1;
   const preferences = useWorkspacePreferences(conversation?.agent_id);
   const { agentsConfig, endpointsConfig } = useGetAgentsConfig();
   const canRunCode = useHasAccess({
@@ -374,7 +375,8 @@ export default function useCodeWorkspace(
   if (
     supportsEnvironmentMoves &&
     locked &&
-    state === 'choose' &&
+    (state === 'choose' || (supportsWorkspaceRecovery && state === 'missing')) &&
+    environmentResults.every(({ state }) => ['ready', 'choose', 'missing'].includes(state)) &&
     inferredMode === 'attached' &&
     conversation?.conversationId != null &&
     storedSelections != null &&
@@ -393,7 +395,9 @@ export default function useCodeWorkspace(
       retained: environmentResults.flatMap((result) =>
         result.state === 'ready' && result.selected != null ? [result.selected] : [],
       ),
-      targets: environmentResults.filter((result) => result.state === 'choose'),
+      targets: environmentResults.filter(
+        (result) => result.state === 'choose' || result.state === 'missing',
+      ),
     };
     state = 'relocatable';
   }

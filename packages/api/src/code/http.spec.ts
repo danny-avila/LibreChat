@@ -1669,6 +1669,72 @@ describe('moving a sealed conversation code-environment decision', () => {
     );
   });
 
+  test.each(['attached', undefined] as const)(
+    'recovers a missing workspace on the same machine with mode %s and keeps the new decision sealed',
+    async (codeEnvironmentMode) => {
+      const missing = { ...vm, workspaceId: 'deleted-project' };
+      const { move, conversations, fetchImpl } = setup({
+        stored: {
+          conversationId: 'conversation-1',
+          codeEnvironmentMode,
+          codeWorkspaces: [missing],
+        },
+      });
+
+      const res = await move({ from: [missing], to: [vm] });
+
+      expect(res.statusCode).toBe(200);
+      expect(conversations.get('conversation-1')).toEqual({
+        conversationId: 'conversation-1',
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [vm],
+      });
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect((await move({ from: [missing], to: [vm] })).statusCode).toBe(409);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  test('refuses replacement if the old workspace is still registered or was restored', async () => {
+    const old = { ...vm, workspaceId: 'old-project' };
+    const { move, conversations, replaceDecision, fetchImpl } = setup({
+      stored: { conversationId: 'conversation-1', codeWorkspaces: [old] },
+      fetchImpl: jest.fn(async () =>
+        workerStatusResponse({ workspaces: [{ id: old.workspaceId }, { id: vm.workspaceId }] }),
+      ),
+    });
+
+    const res = await move({ from: [old], to: [vm] });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.body).toEqual(expect.objectContaining({ reason: 'locked' }));
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(replaceDecision).not.toHaveBeenCalled();
+    expect(conversations.get('conversation-1')?.codeWorkspaces).toEqual([old]);
+  });
+
+  test.each([
+    { ready: false, workspaces: [{ id: vm.workspaceId }], reason: 'worker_unavailable' },
+    { ready: true, workspaces: [{ id: 'unrelated' }], reason: 'missing' },
+    { ready: true, workspaces: [], reason: 'worker_unavailable' },
+  ])(
+    'leaves a missing decision untouched when recovery fails: $reason',
+    async ({ reason, ...status }) => {
+      const old = { ...vm, workspaceId: 'deleted-project' };
+      const { move, conversations, replaceDecision } = setup({
+        stored: { conversationId: 'conversation-1', codeWorkspaces: [old] },
+        fetchImpl: jest.fn(async () => workerStatusResponse(status)),
+      });
+
+      const res = await move({ from: [old], to: [vm] });
+
+      expect(res.statusCode).toBe(409);
+      expect(res.body).toEqual(expect.objectContaining({ reason }));
+      expect(replaceDecision).not.toHaveBeenCalled();
+      expect(conversations.get('conversation-1')?.codeWorkspaces).toEqual([old]);
+    },
+  );
+
   test('moves a legacy decision that only stored its selections', async () => {
     const { move, conversations } = setup({
       stored: { conversationId: 'conversation-1', codeWorkspaces: [mac] },
@@ -1805,9 +1871,9 @@ describe('moving a sealed conversation code-environment decision', () => {
       polls: 0,
     },
     {
-      name: 'a workspace switch inside a sealed environment',
+      name: 'a replacement on an environment the caller cannot access',
       body: { from: [mac], to: [{ environmentId: 'mac', workspaceId: 'canary' }] },
-      reason: 'locked',
+      reason: 'invalid',
       polls: 0,
     },
   ])('rejects $name without polling any worker', async ({ body, reason, polls }) => {

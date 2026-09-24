@@ -31,7 +31,7 @@ describe('resolveCodeEnvironmentMoveVersion', () => {
     }) as unknown as AppConfig;
 
   it('advertises moves only where the effective policy enables them', () => {
-    expect(resolveCodeEnvironmentMoveVersion(withMoves({ enabled: true }))).toBe(1);
+    expect(resolveCodeEnvironmentMoveVersion(withMoves({ enabled: true }))).toBe(2);
   });
 
   it.each([undefined, {}, { enabled: false }])(

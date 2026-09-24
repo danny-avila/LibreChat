@@ -325,6 +325,7 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
   async function assertWorkspaceRegistered(
     policy: WorkerPolicy,
     selection: CodeWorkspaceSelection,
+    previousWorkspaceId?: string,
   ): Promise<void> {
     const target = selectWorkerTarget(policy, selection.environmentId);
     if (target == null) {
@@ -355,6 +356,13 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     }
     if (!current.workspaces.some(({ id }) => id === selection.workspaceId)) {
       throw new CodeWorkspaceSelectionError('missing');
+    }
+    if (
+      previousWorkspaceId != null &&
+      previousWorkspaceId !== selection.workspaceId &&
+      current.workspaces.some(({ id }) => id === previousWorkspaceId)
+    ) {
+      throw new CodeWorkspaceSelectionError('locked');
     }
   }
 
@@ -421,7 +429,15 @@ export function createCodeEnvironmentHttpHandlers(deps: CodeEnvironmentHttpDeps)
     }
     try {
       await Promise.all(
-        move.codeWorkspaces.map((selection) => assertWorkspaceRegistered(policy, selection)),
+        move.codeWorkspaces.map((selection) =>
+          assertWorkspaceRegistered(
+            policy,
+            selection,
+            conversation.codeWorkspaces?.find(
+              ({ environmentId }) => environmentId === selection.environmentId,
+            )?.workspaceId,
+          ),
+        ),
       );
     } catch (error) {
       if (error instanceof CodeWorkspaceSelectionError) {
