@@ -244,7 +244,8 @@ export default function AssistantSelect({
   const createAssistant = localize('com_ui_create_assistant');
   return (
     <SelectDropDown
-      value={!value ? createAssistant : value}
+      value={value || null}
+      placeholder={createAssistant}
       setValue={createDropdownSetter(onSelect)}
       availableValues={
         query.data ?? [
