@@ -6,6 +6,7 @@ import { HTML5Backend } from 'react-dnd-html5-backend';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { atom, RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
 import type { SetterOrUpdater } from 'recoil';
+import type { SearchState } from '~/store/search';
 
 /**
  * Real recoil atom used to force ConversationsSection to re-render on demand,
@@ -135,6 +136,7 @@ jest.mock('~/components/Nav/Favorites/FavoriteItem', () => ({
 }));
 
 import ConversationsSection from '../ConversationsSection';
+import store from '~/store';
 
 let setStreamTick: SetterOrUpdater<number>;
 
@@ -239,4 +241,48 @@ describe('ConversationsSection streaming re-renders', () => {
     },
     TEST_TIMEOUT,
   );
+});
+
+describe('ConversationsSection shared scroll surface', () => {
+  /** Searching swaps what the one surface holds — Projects and Pinned leave,
+   *  the chats become results — and a position kept from the previous contents
+   *  would open those results partway down. */
+  it('returns the surface to the top when a search replaces its contents', async () => {
+    let setSearch: SetterOrUpdater<SearchState>;
+
+    function SearchController() {
+      setSearch = useSetRecoilState(store.search);
+      return null;
+    }
+
+    const { container } = render(
+      <QueryClientProvider client={createQueryClient()}>
+        <RecoilRoot>
+          <BrowserRouter>
+            <DndProvider backend={HTML5Backend}>
+              <SearchController />
+              <ConversationsSection />
+            </DndProvider>
+          </BrowserRouter>
+        </RecoilRoot>
+      </QueryClientProvider>,
+    );
+    await settleRenders();
+
+    const surface = container.querySelector<HTMLElement>('.overflow-y-auto');
+    expect(surface).not.toBeNull();
+    surface!.scrollTop = 420;
+
+    act(() => {
+      setSearch({
+        query: 'draft',
+        debouncedQuery: 'draft',
+        enabled: true,
+        isTyping: false,
+        isSearching: true,
+      });
+    });
+
+    expect(surface!.scrollTop).toBe(0);
+  });
 });

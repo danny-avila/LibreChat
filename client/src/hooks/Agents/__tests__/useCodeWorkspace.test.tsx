@@ -99,6 +99,14 @@ describe('useCodeWorkspace', () => {
     },
   );
 
+  it('reports unavailable when a ready worker advertises no workspaces', () => {
+    mockStatus()[0].data.workspaces = [];
+    const { result } = renderHook(() => useCodeWorkspace(conversation()));
+    expect(result.current.state).toBe('unavailable');
+    expect(result.current.canSubmit).toBe(true);
+    expect(result.current.resolveSubmission(undefined, 'attached')).toBeUndefined();
+  });
+
   it('selects one unambiguous initial workspace', () => {
     const { result } = renderHook(() => useCodeWorkspace(conversation()));
 
@@ -126,7 +134,7 @@ describe('useCodeWorkspace', () => {
     expect(result.current.resolveSubmission(undefined, 'without_attached')).toBeUndefined();
   });
 
-  it('uses an agent default ahead of the last used workspace only for new chats', () => {
+  it('uses an agent default ahead of the last used workspace while a chat is undecided', () => {
     mockStatus()[0].data.workspaces.push({ id: 'project-b', name: 'Project B' });
     mockAgentPermissions().agent.code_workspace_id = 'project-b';
     mockPreference.mockReturnValue('project-a');
@@ -137,8 +145,12 @@ describe('useCodeWorkspace', () => {
       },
     );
     expect(result.current.selections?.[0].workspaceId).toBe('project-b');
+    /* Saving the chat does not seal a decision it never recorded, so the default still applies and
+     * the composer still offers the choice. */
     rerender({ id: 'existing' });
-    expect(result.current.mode).toBe('without_attached');
+    expect(result.current.locked).toBe(false);
+    expect(result.current.mode).toBe('attached');
+    expect(result.current.selections?.[0].workspaceId).toBe('project-b');
     expect(result.current.canSubmit).toBe(true);
   });
 
@@ -623,13 +635,127 @@ describe('useCodeWorkspace', () => {
       expect(result.current.relocation).toBeUndefined();
     });
 
-    it('does not offer a move when the sealed machine lost its workspace', () => {
+    it('does not offer recovery to an API that only supports environment moves', () => {
       const removed = { environmentId: 'personal-vm', workspaceId: 'removed-project' };
 
       const { result } = renderHook(() => useCodeWorkspace(sealed([removed])));
 
       expect(result.current.state).toBe('missing');
       expect(result.current.relocation).toBeUndefined();
+    });
+
+    describe('missing workspace recovery', () => {
+      const missing = { environmentId: 'personal-vm', workspaceId: 'deleted-project' };
+      const replacement = { environmentId: 'personal-vm', workspaceId: 'project-a' };
+
+      beforeEach(() => {
+        mockStartupConfig.mockReturnValue({
+          codeEnvironmentMoveVersion: 1,
+          codeWorkspaceRecoveryVersion: 1,
+        });
+      });
+
+      it.each(['attached', undefined] as const)(
+        'offers explicit recovery without silently selecting a replacement for mode %s',
+        (codeEnvironmentMode) => {
+          const { result, rerender } = renderHook(
+            ({ codeWorkspaces }) =>
+              useCodeWorkspace({ ...sealed(codeWorkspaces), codeEnvironmentMode }),
+            { initialProps: { codeWorkspaces: [missing] } },
+          );
+
+          expect(result.current.state).toBe('relocatable');
+          expect(result.current.canSubmit).toBe(false);
+          expect(result.current.selections).toBeUndefined();
+          expect(result.current.resolveSubmission([missing], 'attached')).toBeUndefined();
+          expect(result.current.relocation).toEqual({
+            conversationId: 'existing',
+            from: [missing],
+            previous: [],
+            retained: [],
+            targets: [expect.objectContaining({ state: 'missing', selected: undefined })],
+          });
+
+          rerender({ codeWorkspaces: [replacement] });
+          expect(result.current.state).toBe('ready');
+          expect(result.current.locked).toBe(true);
+          expect(result.current.canSubmit).toBe(true);
+          expect(result.current.relocation).toBeUndefined();
+        },
+      );
+
+      it.each([
+        { codeEnvironmentMoveVersion: 1 },
+        { codeEnvironmentMoveVersion: 1, codeWorkspaceRecoveryVersion: 2 },
+        { codeWorkspaceRecoveryVersion: 1 },
+        { codeEnvironmentMoveVersion: 2, codeWorkspaceRecoveryVersion: 1 },
+      ])('never offers recovery without both supported capabilities: %j', (config) => {
+        mockStartupConfig.mockReturnValue(config);
+        const { result } = renderHook(() => useCodeWorkspace(sealed([missing])));
+        expect(result.current.state).toBe('missing');
+        expect(result.current.relocation).toBeUndefined();
+        expect(result.current.canSubmit).toBe(false);
+      });
+
+      it('preserves ordinary environment moves on a recovery-capable API', () => {
+        const { result } = renderHook(() => useCodeWorkspace(sealed([mac])));
+        expect(result.current.state).toBe('relocatable');
+        expect(result.current.relocation?.targets[0].state).toBe('choose');
+      });
+
+      it('offers the empty recovery picker without inventing a replacement', () => {
+        mockStatus()[0].data.workspaces = [];
+        const { result } = renderHook(() => useCodeWorkspace(sealed([missing])));
+        expect(result.current.relocation?.targets[0].workspaces).toEqual([]);
+        expect(result.current.canSubmit).toBe(false);
+      });
+
+      it.each(['ready', 'loading', 'unavailable', 'unsupported', 'choose', 'missing'] as const)(
+        'handles a second environment in state %s without dropping its sealed selection',
+        (state) => {
+          mockAgentPermissions().agent.subagents = { enabled: true, agent_ids: ['child'] };
+          mockAgentsMap.mockReturnValue({
+            child: {
+              id: 'child',
+              stateful_code_sessions: true,
+              code_environment_id: 'team-vm',
+              tools: [Tools.execute_code],
+            },
+          });
+          mockAgentsConfig().agentsConfig.statefulCodeSessions.environments.push({
+            id: 'team-vm',
+            name: 'Team VM',
+            type: 'attached',
+            baseURL: 'https://team.example.com',
+          });
+          const kept = { environmentId: 'team-vm', workspaceId: 'shared' };
+          mockStatus().push({
+            data: {
+              environmentId: 'team-vm',
+              status: state === 'unavailable' ? 'unavailable' : 'ready',
+              workspaces:
+                state === 'unsupported'
+                  ? undefined
+                  : [{ id: state === 'missing' ? 'replacement' : 'shared' }],
+            },
+            isLoading: state === 'loading',
+            isError: false,
+          });
+          const from = state === 'choose' ? [missing] : [missing, kept];
+          const { result } = renderHook(() => useCodeWorkspace(sealed(from)));
+
+          expect(result.current.canSubmit).toBe(false);
+          if (['loading', 'unavailable', 'unsupported'].includes(state)) {
+            expect(result.current.relocation).toBeUndefined();
+            return;
+          }
+          expect(result.current.relocation?.from).toEqual(from);
+          expect(result.current.relocation?.retained).toEqual(state === 'ready' ? [kept] : []);
+          expect(
+            result.current.relocation?.targets.map(({ environment }) => environment.id),
+          ).toEqual(state === 'ready' ? ['personal-vm'] : ['personal-vm', 'team-vm']);
+        },
+      );
     });
 
     it('does not offer an attached machine to a chat that continues without one', () => {
@@ -646,16 +772,64 @@ describe('useCodeWorkspace', () => {
       expect(result.current.relocation).toBeUndefined();
     });
 
-    it('does not auto-select a sole workspace the saved decision never covered', () => {
+    it('attaches a sole workspace to a saved chat that never recorded a decision', () => {
       const { result } = renderHook(() =>
         useCodeWorkspace({ ...conversation(), conversationId: 'existing' } as TConversation),
       );
 
-      expect(result.current.state).toBe('without_attached');
-      expect(result.current.selections).toBeUndefined();
+      expect(result.current.locked).toBe(false);
+      expect(result.current.state).toBe('ready');
+      expect(result.current.selections).toEqual([
+        { environmentId: 'personal-vm', workspaceId: 'project-a' },
+      ]);
       expect(result.current.resolveSubmission()).toEqual({
-        codeEnvironmentMode: 'without_attached',
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [{ environmentId: 'personal-vm', workspaceId: 'project-a' }],
       });
+    });
+
+    /* Switching an existing chat to a coding agent used to leave the composer with a sealed
+     * decision its owner never made: nothing to select, and Send disabled. */
+    it.each([
+      { support: { codeEnvironmentDecisionVersion: 1 } },
+      { support: { codeEnvironmentDecisionVersion: 1, codeEnvironmentMoveVersion: 1 } },
+    ])('lets a saved chat with several workspaces choose one', ({ support }) => {
+      mockStartupConfig.mockReturnValue(support);
+      mockStatus()[0].data.workspaces.push({ id: 'project-b', name: 'Project B' });
+      const chosen = { environmentId: 'personal-vm', workspaceId: 'project-b' };
+
+      const { result } = renderHook(() =>
+        useCodeWorkspace({ ...conversation(), conversationId: 'existing' } as TConversation),
+      );
+
+      expect(result.current.locked).toBe(false);
+      expect(result.current.state).toBe('choose');
+      expect(result.current.relocation).toBeUndefined();
+      /* `useChatFunctions` submits the conversation's latest selections and mode together, the way
+       * the menu writes both when a workspace is picked. */
+      expect(result.current.resolveSubmission([chosen], 'attached')).toEqual({
+        codeEnvironmentMode: 'attached',
+        codeWorkspaces: [chosen],
+      });
+    });
+
+    /* A replica that predates the protocol reads a field-less row as sealed `without_attached`, so
+     * attaching an agent default here would submit a choice it rejects as `locked`. The rollout
+     * window keeps the legacy lock, which is what an unadvertised protocol means. */
+    it('keeps the legacy lock until the deployment advertises the protocol', () => {
+      mockStartupConfig.mockReturnValue({});
+      mockStatus()[0].data.workspaces.push({ id: 'project-b', name: 'Project B' });
+      mockAgentPermissions().agent.code_workspace_id = 'project-b';
+
+      const { result } = renderHook(() =>
+        useCodeWorkspace({ ...conversation(), conversationId: 'existing' } as TConversation),
+      );
+
+      expect(result.current.locked).toBe(true);
+      expect(result.current.mode).toBeUndefined();
+      expect(result.current.selections).toBeUndefined();
+      expect(result.current.canSubmit).toBe(false);
+      expect(result.current.resolveSubmission()).toBeUndefined();
     });
 
     it('keeps auto-selecting for an API that does not seal decisions', () => {

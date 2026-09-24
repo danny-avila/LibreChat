@@ -42,6 +42,27 @@ describe('resolveConversationCodeEnvironmentDecision', () => {
     ).toEqual({ mode: 'without_attached' });
   });
 
+  /* A chat started by an agent that never ran code stores neither field. Sealing that state made
+   * switching it to a coding agent reject the first workspace its owner picked. */
+  it('lets a saved conversation that never decided establish a decision', () => {
+    expect(
+      resolveConversationCodeEnvironmentDecision({
+        conversationId: 'conversation-1',
+        requestedMode: 'attached',
+        requestedSelections: [selection],
+        conversation: { conversationId: 'conversation-1' },
+      }),
+    ).toEqual({ mode: 'attached', codeWorkspaces: [selection] });
+    expect(
+      resolveConversationCodeEnvironmentDecision({
+        conversationId: 'conversation-1',
+        requestedMode: 'attached',
+        requestedSelections: [selection],
+        conversation: { conversationId: 'conversation-1', codeWorkspaces: [] },
+      }),
+    ).toEqual({ mode: 'attached', codeWorkspaces: [selection] });
+  });
+
   it('allows an identical retry of a persisted decision', () => {
     expect(
       resolveConversationCodeEnvironmentDecision({
@@ -169,21 +190,15 @@ describe('resolveConversationCodeEnvironmentMove', () => {
     ).toEqual({ codeWorkspaces: [vm] });
   });
 
-  it('never switches the workspace of an environment the decision already covers', () => {
-    expect(() =>
+  it('accepts an explicit workspace replacement for the caller to verify against live status', () => {
+    const replacement = { environmentId: 'mac', workspaceId: 'canary' };
+    expect(
       resolveConversationCodeEnvironmentMove({
-        conversation: sealedOn(mac),
-        from: [mac],
-        to: [{ environmentId: 'mac', workspaceId: 'canary' }],
+        conversation: sealedOn(mac, vm),
+        from: [mac, vm],
+        to: [replacement, vm],
       }),
-    ).toThrow(locked);
-    expect(() =>
-      resolveConversationCodeEnvironmentMove({
-        conversation: sealedOn(mac),
-        from: [mac],
-        to: [{ environmentId: 'mac', workspaceId: 'canary' }, vm],
-      }),
-    ).toThrow(locked);
+    ).toEqual({ codeWorkspaces: [replacement, vm] });
   });
 
   it('drops an environment the agents stopped using without adding one', () => {
@@ -251,6 +266,18 @@ describe('resolvePersistableCodeEnvironmentDecision', () => {
         decision: { mode: 'without_attached' },
       }),
     ).toEqual({ codeEnvironmentMode: 'without_attached' });
+  });
+
+  it('records the whole decision a saved conversation establishes for the first time', () => {
+    /* Selections included: an `attached` mode stored without them fails the next turn's
+     * validation, which requires a non-empty selection set. */
+    expect(
+      resolvePersistableCodeEnvironmentDecision({
+        conversationId: 'conversation-1',
+        decision: { mode: 'attached', codeWorkspaces: [mac] },
+        conversation: { conversationId: 'conversation-1' },
+      }),
+    ).toEqual({ codeEnvironmentMode: 'attached', codeWorkspaces: [mac] });
   });
 
   it('never writes a run-start decision over a stored one that a move replaced', () => {

@@ -669,6 +669,8 @@ if (cluster.isMaster) {
     app.use('/api/tags', routes.tags);
     app.use('/api/mcp', routes.mcp);
 
+    app.use('/api', routes.openapi);
+
     /** 404 for unmatched API routes */
     app.use('/api', apiNotFound);
 
@@ -703,7 +705,12 @@ if (cluster.isMaster) {
         await initializeMCPs();
         await initializeOAuthReconnectManager();
         await checkMigrations();
-        await initializeAgentTriggerService({ address: server.address() });
+        await initializeAgentTriggerService({
+          address: server.address(),
+          completionResultBatchSize:
+            baseAppConfig?.endpoints?.agents?.backgroundTasks?.completionResultBatchSize,
+          idlePolling: baseAppConfig?.endpoints?.agents?.eventDriven?.idlePolling,
+        });
       } catch (initErr) {
         logger.error(`Worker ${process.pid} post-listen initialization failed:`, initErr);
         process.exit(1);

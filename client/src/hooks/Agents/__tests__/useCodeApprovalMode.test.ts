@@ -1,4 +1,6 @@
+import { Provider } from 'jotai';
 import { renderHook } from '@testing-library/react';
+import { LocalStorageKeys } from 'librechat-data-provider';
 import type { TConversation } from 'librechat-data-provider';
 import useCodeApprovalMode from '../useCodeApprovalMode';
 
@@ -368,6 +370,73 @@ describe('useCodeApprovalMode', () => {
     const { result } = renderHook(() => useCodeApprovalMode(conversation));
 
     expect(result.current.modes).toEqual(['ask']);
+    expect(result.current.selected).toBe('ask');
+  });
+});
+
+describe('useCodeApprovalMode remembered pick', () => {
+  const withoutMode = { ...conversation, codeApprovalMode: undefined } as TConversation;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    localStorage.clear();
+    mockUseAgentsMapContext.mockReturnValue({});
+    mockUseAgentToolPermissions.mockReturnValue({
+      agent: {
+        id: 'agent_1',
+        tools: ['execute_code'],
+        stateful_code_sessions: true,
+        code_environment_id: 'mac',
+      },
+    });
+    mockUseGetAgentsConfig.mockReturnValue({
+      agentsConfig: {
+        statefulCodeSessions: {
+          approvalsEnabled: true,
+          approvalModes: ['ask', 'acceptEdits'],
+          environments: [
+            {
+              id: 'mac',
+              name: 'Mac',
+              type: 'attached',
+              configSchema: {
+                permissions: {
+                  fileWrite: { allowed: ['ask', 'allow'], default: 'ask' },
+                  commandExecution: { allowed: ['ask'], default: 'ask' },
+                },
+              },
+            },
+          ],
+        },
+      },
+    });
+  });
+
+  test('opens a conversation with no stored mode on the last pick', () => {
+    localStorage.setItem(LocalStorageKeys.LAST_CODE_APPROVAL_MODE, JSON.stringify('acceptEdits'));
+    const { result } = renderHook(() => useCodeApprovalMode(withoutMode), { wrapper: Provider });
+    expect(result.current.selected).toBe('acceptEdits');
+  });
+
+  test('a stored conversation mode still wins over the remembered pick', () => {
+    localStorage.setItem(LocalStorageKeys.LAST_CODE_APPROVAL_MODE, JSON.stringify('acceptEdits'));
+    const { result } = renderHook(
+      () => useCodeApprovalMode({ ...conversation, codeApprovalMode: 'ask' } as TConversation),
+      { wrapper: Provider },
+    );
+    expect(result.current.selected).toBe('ask');
+  });
+
+  test('falls back to ask when policy no longer allows the remembered pick', () => {
+    localStorage.setItem(LocalStorageKeys.LAST_CODE_APPROVAL_MODE, JSON.stringify('fullAccess'));
+    const { result } = renderHook(() => useCodeApprovalMode(withoutMode), { wrapper: Provider });
+    expect(result.current.modes).not.toContain('fullAccess');
+    expect(result.current.selected).toBe('ask');
+  });
+
+  test('ignores a corrupted remembered value', () => {
+    localStorage.setItem(LocalStorageKeys.LAST_CODE_APPROVAL_MODE, JSON.stringify('nonsense'));
+    const { result } = renderHook(() => useCodeApprovalMode(withoutMode), { wrapper: Provider });
     expect(result.current.selected).toBe('ask');
   });
 });

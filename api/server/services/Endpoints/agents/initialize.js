@@ -40,6 +40,7 @@ const {
   encodeAndFormatAudios,
   encodeAndFormatVideos,
   extractFileContext,
+  createScheduleUpstreamTokenProviderResolver,
 } = require('@librechat/api');
 const {
   ResourceType,
@@ -94,6 +95,7 @@ const subagentThreadTaskStore = require('./subagentThreadStore');
 const {
   preregisterBackgroundToolCompletion,
   createBackgroundToolResultPersistence,
+  claimBackgroundToolResult,
   createDeadBackgroundToolClaimRecovery,
 } = require('./backgroundCompletion');
 const { logViolation } = require('~/cache');
@@ -123,6 +125,8 @@ function createToolLoader(
   streamId = null,
   definitionsOnly = false,
   jobCreatedAt,
+  upstreamTokenProvider,
+  upstreamTokenProviderResolver,
 ) {
   /**
    * @param {object} params
@@ -164,9 +168,11 @@ function createToolLoader(
         codeExecutionContext,
         definitionsOnly,
         accessibleMcpServerNames,
+        upstreamTokenProvider,
+        upstreamTokenProviderResolver,
       });
     } catch (error) {
-      if (isFatalAgentInitializationError(error) || isContentFilterError(error)) {
+      if (isFatalAgentInitializationError(error, { signal }) || isContentFilterError(error)) {
         throw error;
       }
       logger.error('Error loading tools for agent ' + agentId, error);
@@ -185,8 +191,10 @@ function createToolLoader(
  * @param {string} [params.checkpointNamespace] Immutable saver-level generation scope
  * @param {string} [params.foregroundRunId] Canonical response identity for foreground execution
  * @param {import('@librechat/api').MCPRuntimeRequestBody} [params.requestBody]
+ * @param {import('@librechat/api').UpstreamTokenProvider} [params.upstreamTokenProvider]
+ * @param {import('@librechat/api').UpstreamTokenProviderResolver} [params.upstreamTokenProviderResolver]
  */
-const initializeClient = async ({
+const initializeClientWithProvider = async ({
   req,
   res,
   signal,
@@ -195,6 +203,8 @@ const initializeClient = async ({
   checkpointNamespace,
   foregroundRunId,
   requestBody,
+  upstreamTokenProvider,
+  upstreamTokenProviderResolver,
 }) => {
   if (!endpointOption) {
     throw new Error('Endpoint option not provided');
@@ -206,6 +216,8 @@ const initializeClient = async ({
   const ordinaryToolCancellationEnabled =
     appConfig?.endpoints?.[EModelEndpoint.agents]?.backgroundTasks?.ordinaryToolCancellation ===
     true;
+  const backgroundCompletionResultMaxChars =
+    appConfig?.endpoints?.[EModelEndpoint.agents]?.backgroundTasks?.completionResultMaxChars;
   /** The normal controller resolves this once for timestamp anchoring. Reuse
    * that trusted document for child-thread execution policy; resume and direct
    * callers fall back to the same owner-scoped lookup. */
@@ -431,6 +443,7 @@ const initializeClient = async ({
     runSignal: signal,
     foregroundRunId,
     ordinaryToolCancellation: ordinaryToolCancellationEnabled,
+    backgroundCompletionResultMaxChars,
     loadTools: async (
       toolNames,
       agentId,
@@ -463,6 +476,8 @@ const initializeClient = async ({
         mcpAvailableTools: ctx.mcpAvailableTools,
         requestScopedConnections: ctx.requestScopedConnections,
         userMCPAuthMap: ctx.userMCPAuthMap,
+        upstreamTokenProvider,
+        upstreamTokenProviderResolver,
         tool_resources: ctx.tool_resources,
         actionsEnabled: ctx.actionsEnabled,
         accessibleMcpServerNames: ctx.accessibleMcpServerNames,
@@ -504,7 +519,7 @@ const initializeClient = async ({
         req,
         updateToolCallResult: db.updateToolCallResult,
       }),
-      claim: db.claimBackgroundToolResults,
+      claim: (input) => claimBackgroundToolResult(db, input),
       recoverDeadClaim: createDeadBackgroundToolClaimRecovery(
         db.releaseBackgroundToolResultClaims,
         (conversationId) => GenerationJobManager.getJob(conversationId),
@@ -624,7 +639,16 @@ const initializeClient = async ({
   const allowedProviders = new Set(appConfig?.endpoints?.[EModelEndpoint.agents]?.allowedProviders);
 
   /** Event-driven mode: only load tool definitions, not full instances */
-  const loadTools = createToolLoader(req, res, signal, streamId, true, jobCreatedAt);
+  const loadTools = createToolLoader(
+    req,
+    res,
+    signal,
+    streamId,
+    true,
+    jobCreatedAt,
+    upstreamTokenProvider,
+    upstreamTokenProviderResolver,
+  );
   /** @type {Array<MongoFile>} */
   const requestFiles = req.body.files ?? [];
   /** @type {string | undefined} */
@@ -712,6 +736,7 @@ const initializeClient = async ({
       skillStates,
       defaultActiveOnShare,
       manualSkills,
+      signal,
     },
     {
       getFiles: db.getFiles,
@@ -760,6 +785,7 @@ const initializeClient = async ({
     {
       req,
       res,
+      signal,
       primaryConfig,
       agent_ids: primaryConfig.agent_ids,
       endpointOption,
@@ -884,6 +910,7 @@ const initializeClient = async ({
     toolIntentsAvailable,
     statefulSessionsAvailable,
     memoryAvailable,
+    signal,
   });
 
   if (updatedMCPAuthMap) {
@@ -1160,7 +1187,7 @@ const initializeClient = async ({
     try {
       return await loading;
     } catch (error) {
-      if (isFatalAgentInitializationError(error)) {
+      if (isFatalAgentInitializationError(error, { signal })) {
         throw error;
       }
       logger.error(`[initializeClient] Error loading subagent metadata ${agentId}:`, error);
@@ -1248,7 +1275,16 @@ const initializeClient = async ({
           req,
           res,
           agent,
-          loadTools: createToolLoader(req, res, context.signal, streamId, true, jobCreatedAt),
+          loadTools: createToolLoader(
+            req,
+            res,
+            context.signal,
+            streamId,
+            true,
+            jobCreatedAt,
+            upstreamTokenProvider,
+            upstreamTokenProviderResolver,
+          ),
           requestFiles,
           authorizedRunFiles: getAuthorizedRunFileSnapshot({
             policy: appConfig.endpoints?.agents?.fileSharing,
@@ -1277,6 +1313,7 @@ const initializeClient = async ({
           memoryAvailable,
           skillStates,
           defaultActiveOnShare,
+          signal: context.signal,
         },
         {
           getFiles: db.getFiles,
@@ -1461,7 +1498,7 @@ const initializeClient = async ({
       graphMemberConfigsById.set(memberId, config);
       return config;
     } catch (error) {
-      if (isFatalAgentInitializationError(error)) {
+      if (isFatalAgentInitializationError(error, { signal })) {
         throw error;
       }
       logger.error(`[initializeClient] Error initializing graph member ${memberId}:`, error);
@@ -1834,4 +1871,26 @@ const initializeClient = async ({
   return { client, userMCPAuthMap };
 };
 
-module.exports = { initializeClient };
+/**
+ * Creates an agent initializer whose host may resolve renewable credentials at
+ * the execution boundary. The resolver returns a provider closure rather than
+ * token material so refresh remains owned by the host integration.
+ *
+ * @param {object} [dependencies]
+ * @param {import('@librechat/api').HostUpstreamTokenProviderResolver} [dependencies.resolveUpstreamTokenProvider]
+ */
+function createInitializeClient(dependencies = {}) {
+  return async (params) => {
+    const upstreamTokenProviderResolver = createScheduleUpstreamTokenProviderResolver(
+      params.req,
+      dependencies.resolveUpstreamTokenProvider,
+      params.signal,
+      params.scheduledTokenContext,
+    );
+    return initializeClientWithProvider({ ...params, upstreamTokenProviderResolver });
+  };
+}
+
+const initializeClient = createInitializeClient();
+
+module.exports = { createInitializeClient, initializeClient };

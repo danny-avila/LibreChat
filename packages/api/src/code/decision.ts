@@ -49,7 +49,17 @@ function validateDecision(mode: unknown, selections: unknown): ConversationCodeE
   return { mode, codeWorkspaces: canonicalSelections(selections) };
 }
 
-/** A stored conversation always carries a decision; legacy rows infer it from their selections. */
+/**
+ * Whether the conversation already recorded a decision. A chat whose turns never involved a
+ * code-capable agent stores neither field, so it has nothing to seal: switching one to a coding
+ * agent still gets to decide. Sealing that state instead would report `without_attached` for a
+ * choice its owner never made, and reject the selection they go on to make.
+ */
+function holdsDecision(conversation: StoredConversationDecision): boolean {
+  return conversation.codeEnvironmentMode != null || (conversation.codeWorkspaces?.length ?? 0) > 0;
+}
+
+/** Reads the decision a conversation holds; legacy rows infer it from their selections. */
 function readPersistedDecision(
   conversation: StoredConversationDecision,
 ): ConversationCodeEnvironmentDecision {
@@ -71,7 +81,11 @@ export function resolveConversationCodeEnvironmentDecision({
   requestedSelections?: unknown;
   conversation?: StoredConversationDecision | null;
 }): ConversationCodeEnvironmentDecision {
-  if (conversation != null && conversation.conversationId === conversationId) {
+  if (
+    conversation != null &&
+    conversation.conversationId === conversationId &&
+    holdsDecision(conversation)
+  ) {
     const persisted = readPersistedDecision(conversation);
     if (requestedMode !== undefined && requestedMode !== persisted.mode) {
       throw new CodeWorkspaceSelectionError('locked');
@@ -110,11 +124,10 @@ export interface ConversationCodeEnvironmentMove {
 }
 
 /**
- * Validates an owner's explicit move of a sealed attached decision onto the environments its
- * agents now use. A move may drop environments the agents stopped using and add ones they now use,
- * but never changes the workspace of an environment the decision already covers and never upgrades
- * a conversation that continues without an attached environment. `from` must repeat the persisted selections, so a client acting
- * on a stale view of the conversation cannot replace a decision it has not seen.
+ * Validates the shape and expected decision of an owner's explicit move. The caller must verify
+ * live registration of every target and, for same-environment replacements, absence of the old
+ * workspace before persisting. `from` must repeat the persisted selections, so a stale client
+ * cannot replace a decision it has not seen. A chat without an attached decision stays sealed.
  */
 export function resolveConversationCodeEnvironmentMove({
   conversation,
@@ -135,19 +148,7 @@ export function resolveConversationCodeEnvironmentMove({
   if (!isCodeWorkspaceSelections(to) || to.length === 0) {
     throw new CodeWorkspaceSelectionError('invalid');
   }
-  const sealed = new Map(
-    persisted.codeWorkspaces.map(({ environmentId, workspaceId }) => [environmentId, workspaceId]),
-  );
-  let adds = false;
-  for (const selection of to) {
-    const sealedWorkspaceId = sealed.get(selection.environmentId);
-    if (sealedWorkspaceId == null) {
-      adds = true;
-    } else if (sealedWorkspaceId !== selection.workspaceId) {
-      throw new CodeWorkspaceSelectionError('locked');
-    }
-  }
-  if (!adds && to.length === sealed.size) {
+  if (sameSelections(to, persisted.codeWorkspaces)) {
     throw new CodeWorkspaceSelectionError('locked');
   }
   return { codeWorkspaces: canonicalSelections(to) };
@@ -189,6 +190,11 @@ export function resolvePersistableCodeEnvironmentDecision({
           ...(requested?.codeWorkspaces != null && { codeWorkspaces: requested.codeWorkspaces }),
         };
   if (conversation == null || conversation.conversationId !== conversationId) {
+    return candidate;
+  }
+  /* A saved chat that held no decision records the one this run establishes, selections included:
+   * writing the mode alone would leave `attached` without the selections the next turn validates. */
+  if (!holdsDecision(conversation)) {
     return candidate;
   }
   if (conversation.codeEnvironmentMode != null || candidate.codeEnvironmentMode == null) {

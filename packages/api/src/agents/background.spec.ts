@@ -26,6 +26,7 @@ import {
   CHECK_BACKGROUND_TASK_NAME,
   RUN_IN_BACKGROUND_ARG,
 } from './background';
+import { parseBackgroundHandle } from '../../../../client/src/components/Chat/Messages/Content/Parts/handle';
 import { SUBAGENT_COMPLETION_DELIVERY, SUBAGENT_WAKEUP_GUIDANCE } from './subagentDelivery';
 import { SubagentTaskOwnerUnavailableError } from './subagentTaskRouting';
 import { TOOL_SELECTION_WILDCARD } from './selection';
@@ -128,6 +129,23 @@ describe('isBackgroundRequested / stripRunInBackgroundArg', () => {
 });
 
 describe('injectRunInBackgroundParam', () => {
+  it('preserves required command fields across injection and inherited-definition cleanup', () => {
+    const definition = {
+      name: 'bash_tool',
+      description: 'Starts a command',
+      parameters: {
+        type: 'object',
+        properties: { command: { type: 'string' } },
+        required: ['command'],
+      },
+    } as LCTool;
+    const injected = injectRunInBackgroundParam(definition);
+    expect(injected.parameters?.required).toEqual(['command']);
+    expect(injected.name).toBe('bash_tool');
+    const [restored] = stripBackgroundFromToolDefinitions([injected], ['bash_tool']);
+    expect(restored.parameters?.required).toEqual(['command']);
+    expect(restored.parameters?.properties).toEqual(definition.parameters?.properties);
+  });
   it('adds a run_in_background boolean without mutating a frozen def', () => {
     const def = Object.freeze(mcpDef('search_mcp_docs'));
     const injected = injectRunInBackgroundParam(def);
@@ -2292,7 +2310,77 @@ describe('runCheckBackgroundTask (singleton)', () => {
     );
   });
 
-  it('lets a later poll collect a receipt without inheriting an abandoned local claim', async () => {
+  it('reports ISO dispatch and settlement stamps with the elapsed span', async () => {
+    const nowSpy = jest.spyOn(Date, 'now');
+    try {
+      const created = backgroundTaskRegistry.create({
+        userId: 'timing_user',
+        conversationId: 'timing_convo',
+        toolCallId: 'call_timing',
+        toolName: 'search_mcp_docs',
+      });
+      if ('atCapacity' in created) {
+        throw new Error('unexpected capacity');
+      }
+      /** The dispatch stamp is monotonic per process, so it is whatever the registry
+       * assigned rather than the clock at this instant; drive the clock from it. */
+      const dispatchedAt = created.task.createdAt;
+
+      nowSpy.mockReturnValue(dispatchedAt + 90_000);
+      const running = JSON.parse(
+        await runCheckBackgroundTask({
+          userId: 'timing_user',
+          conversationId: 'timing_convo',
+          args: { background_task_id: created.task.id },
+        }),
+      );
+      expect(running).toMatchObject({
+        status: 'running',
+        started_at: new Date(dispatchedAt).toISOString(),
+        elapsed_ms: 90_000,
+      });
+      /** A running task has not settled, so it must not claim a terminal stamp. */
+      expect(running.settled_at).toBeUndefined();
+
+      nowSpy.mockReturnValue(dispatchedAt + 120_000);
+      backgroundTaskRegistry.complete('timing_user', 'timing_convo', created.task.id, {
+        content: 'RESULT',
+      });
+
+      nowSpy.mockReturnValue(dispatchedAt + 600_000);
+      const settled = JSON.parse(
+        await runCheckBackgroundTask({
+          userId: 'timing_user',
+          conversationId: 'timing_convo',
+          args: { background_task_id: created.task.id },
+        }),
+      );
+      /** The span freezes at settlement instead of growing with every later poll. */
+      expect(settled).toMatchObject({
+        status: 'completed',
+        started_at: new Date(dispatchedAt).toISOString(),
+        settled_at: new Date(dispatchedAt + 120_000).toISOString(),
+        elapsed_ms: 120_000,
+      });
+
+      const listed = JSON.parse(
+        await runCheckBackgroundTask({
+          userId: 'timing_user',
+          conversationId: 'timing_convo',
+          args: {},
+        }),
+      );
+      expect(listed.tasks[0]).toMatchObject({
+        started_at: new Date(dispatchedAt).toISOString(),
+        settled_at: new Date(dispatchedAt + 120_000).toISOString(),
+        elapsed_ms: 120_000,
+      });
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it('lets a later-generation poll collect a receipt without inheriting an abandoned local claim', async () => {
     const created = backgroundTaskRegistry.create({
       userId: 'claim_user',
       conversationId: 'claim_convo',
@@ -2323,7 +2411,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
       args: { background_task_id: created.task.id },
       agentId: 'agent_parent_1',
       runId: 'poll-run',
-      generationId: 'response-claim',
+      generationId: 'response-later-poll',
       claimBackgroundToolResult,
     };
 
@@ -2341,7 +2429,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
     expect(laterPoll).toMatchObject({ status: 'completed', result: 'CLAIMED RESULT' });
     expect(
       backgroundTaskRegistry.get('claim_user', 'claim_convo', created.task.id)?.resultClaim,
-    ).toMatchObject({ kind: 'manual', generationId: 'response-claim' });
+    ).toMatchObject({ kind: 'manual', generationId: 'response-later-poll' });
     expect(retire).toHaveBeenCalledTimes(1);
     expect(retire).toHaveBeenCalledWith('completion claimed by same-generation manual poll', {
       onlyIfUnclaimed: true,
@@ -2351,10 +2439,61 @@ describe('runCheckBackgroundTask (singleton)', () => {
         messageId: 'response-claim',
         taskId: created.task.id,
         kind: 'manual',
-        generationId: 'response-claim',
+        generationId: 'response-later-poll',
         allowUnfinished: true,
       }),
     );
+  });
+
+  it('delivers a completed result inside its originating generation before the response row finalizes', async () => {
+    const created = backgroundTaskRegistry.create({
+      userId: 'originating_user',
+      conversationId: 'originating_convo',
+      toolCallId: 'call_originating',
+      toolName: 'search_mcp_docs',
+      messageId: 'response-originating',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    backgroundTaskRegistry.complete('originating_user', 'originating_convo', created.task.id, {
+      content: 'ORIGINATING RESULT',
+    });
+    const retire = jest.fn(async () => true);
+    backgroundTaskRegistry.markCompletionWakeup(
+      'originating_user',
+      'originating_convo',
+      created.task.id,
+      { renew: jest.fn(async () => true), retire },
+    );
+    const claimBackgroundToolResult = jest.fn(async () => ({ status: 'not_ready' as const }));
+    const request = {
+      userId: 'originating_user',
+      conversationId: 'originating_convo',
+      args: { background_task_id: created.task.id },
+      toolCallId: 'poll-originating',
+      runId: 'originating-run',
+      generationId: 'response-originating',
+      claimBackgroundToolResult,
+    };
+
+    const result = JSON.parse(await runCheckBackgroundTask(request));
+    const replay = JSON.parse(await runCheckBackgroundTask(request));
+
+    expect(result).toMatchObject({ status: 'completed', result: 'ORIGINATING RESULT' });
+    expect(replay).toMatchObject({ status: 'completed', result: 'ORIGINATING RESULT' });
+    expect(retire).toHaveBeenCalledTimes(1);
+    expect(retire).toHaveBeenCalledWith('completion claimed by same-generation manual poll', {
+      onlyIfUnclaimed: true,
+    });
+    expect(claimBackgroundToolResult).toHaveBeenCalledTimes(2);
+    expect(
+      backgroundTaskRegistry.get('originating_user', 'originating_convo', created.task.id)
+        ?.resultClaim,
+    ).toMatchObject({
+      kind: 'manual',
+      generationId: 'response-originating',
+    });
   });
 
   it('reclaims a dead manual delivery after its owning generation is gone', async () => {
@@ -2497,6 +2636,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
     { status: 'completed' as const, field: 'result', output: 'RECOVERED RESULT' },
     { status: 'error' as const, field: 'error', output: 'RECOVERED FAILURE' },
   ])('recovers a durable $status receipt after process-local state is lost', async (terminal) => {
+    const settledAt = new Date('2026-09-22T09:00:00.000Z');
     const claimBackgroundToolResult = jest.fn(async () => ({
       status: 'acquired' as const,
       messageId: 'response-recovered',
@@ -2507,6 +2647,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
           toolName: 'slow_tool',
           status: terminal.status,
           output: terminal.output,
+          settledAt,
         },
       ],
     }));
@@ -2526,7 +2667,11 @@ describe('runCheckBackgroundTask (singleton)', () => {
       status: terminal.status,
       background_task_id: 'task-recovered',
       [terminal.field]: terminal.output,
+      /** The receipt records settlement only, so a recovered poll reports no span. */
+      settled_at: settledAt.toISOString(),
     });
+    expect(result.started_at).toBeUndefined();
+    expect(result.elapsed_ms).toBeUndefined();
     expect(claimBackgroundToolResult).toHaveBeenCalledWith(
       expect.not.objectContaining({ messageId: expect.anything() }),
     );
@@ -2846,6 +2991,13 @@ describe('runCheckBackgroundTask (singleton)', () => {
     expect(second).toEqual(expect.objectContaining({ status: 'claimed', result_claimed: true }));
     expect(second.result).toBeUndefined();
     expect(claimBackgroundToolResult).not.toHaveBeenCalled();
+
+    /** A subagent task reports the same timings as an ordinary one. */
+    for (const polled of [first, second]) {
+      expect(Number.isNaN(Date.parse(polled.started_at))).toBe(false);
+      expect(Date.parse(polled.settled_at)).toBeGreaterThanOrEqual(Date.parse(polled.started_at));
+      expect(polled.elapsed_ms).toBe(Date.parse(polled.settled_at) - Date.parse(polled.started_at));
+    }
   });
 
   it('falls through cleanly when neither background store recognizes a poll id', async () => {
@@ -3195,6 +3347,16 @@ describe('stripBackgroundFromToolRegistry', () => {
 });
 
 describe('buildBackgroundHandleContent', () => {
+  it.each([{}, { completionWakeup: true }, { liveArtifactPollRequired: true }])(
+    'keeps the server handle compatible with the client parser: %j',
+    (options) => {
+      const content = buildBackgroundHandleContent(
+        { id: '2a6b05c3-327d-43f4-8196-73a6c8d88706', toolName: 'bash_tool', status: 'running' },
+        options,
+      );
+      expect(parseBackgroundHandle(content)).toEqual(JSON.parse(content));
+    },
+  );
   it('produces a running handle carrying the id and poll instruction', () => {
     const registry = new BackgroundTaskRegistryClass();
     const created = registry.create({
@@ -3210,6 +3372,11 @@ describe('buildBackgroundHandleContent', () => {
     expect(parsed.background_task_id).toBe(created.task.id);
     expect(parsed.status).toBe('running');
     expect(parsed.message).toContain(CHECK_BACKGROUND_TASK_NAME);
+    expect(Object.keys(parsed).sort()).toEqual(['background_task_id', 'message', 'status', 'tool']);
+    expect(JSON.parse(parsed.message.split('Status request: ')[1])).toEqual({
+      name: CHECK_BACKGROUND_TASK_NAME,
+      arguments: { background_task_id: created.task.id },
+    });
   });
 
   it('requires polling when the tool can return a process-local live artifact', () => {

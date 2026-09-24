@@ -57,6 +57,7 @@ type TUseStepHandler = {
    * invalidation) so this hook stays free of query-client coupling.
    */
   onSkillAuthoringComplete?: () => void;
+  onSubagentIndexChange?: (conversationId: string) => void;
 };
 
 type TStepEvent =
@@ -159,6 +160,7 @@ export default function useStepHandler({
   announcePolite,
   lastAnnouncementTimeRef,
   onSkillAuthoringComplete,
+  onSubagentIndexChange,
 }: TUseStepHandler) {
   const subagentStore = useStore();
   const toolCallIdMap = useRef(new Map<string, string | undefined>());
@@ -318,37 +320,32 @@ export default function useStepHandler({
   /** Tool-call ids whose sandbox-starting atom is set, so completion can clear them. */
   const knownSandboxAtomKeys = useRef(new Set<string>());
 
-  const setSandboxStarting = useRecoilCallback(
-    ({ set }) =>
-      (toolCallId: string): void => {
-        knownSandboxAtomKeys.current.add(toolCallId);
-        set(sandboxStartingByToolCallId(toolCallId), true);
-      },
-    [],
+  const sandboxStore = useStore();
+  const setSandboxStarting = useCallback(
+    (toolCallId: string): void => {
+      knownSandboxAtomKeys.current.add(toolCallId);
+      sandboxStore.set(sandboxStartingByToolCallId(toolCallId), true);
+    },
+    [sandboxStore],
   );
 
-  const clearSandboxStarting = useRecoilCallback(
-    ({ reset }) =>
-      (toolCallId?: string | null): void => {
-        if (!toolCallId || !knownSandboxAtomKeys.current.has(toolCallId)) {
-          return;
-        }
-        knownSandboxAtomKeys.current.delete(toolCallId);
-        reset(sandboxStartingByToolCallId(toolCallId));
-      },
-    [],
+  const clearSandboxStarting = useCallback(
+    (toolCallId?: string | null): void => {
+      if (!toolCallId || !knownSandboxAtomKeys.current.has(toolCallId)) {
+        return;
+      }
+      knownSandboxAtomKeys.current.delete(toolCallId);
+      sandboxStore.set(sandboxStartingByToolCallId(toolCallId), false);
+    },
+    [sandboxStore],
   );
 
-  const resetSandboxAtoms = useRecoilCallback(
-    ({ reset }) =>
-      (): void => {
-        for (const toolCallId of knownSandboxAtomKeys.current) {
-          reset(sandboxStartingByToolCallId(toolCallId));
-        }
-        knownSandboxAtomKeys.current.clear();
-      },
-    [],
-  );
+  const resetSandboxAtoms = useCallback((): void => {
+    for (const toolCallId of knownSandboxAtomKeys.current) {
+      sandboxStore.set(sandboxStartingByToolCallId(toolCallId), false);
+    }
+    knownSandboxAtomKeys.current.clear();
+  }, [sandboxStore]);
 
   /** PTC tool call ids with a live trace, so the atoms can be released. */
   const knownPtcAtomKeys = useRef(new Set<string>());
@@ -1381,6 +1378,18 @@ export default function useStepHandler({
           responseMessageId = submission?.initialResponse?.messageId ?? '';
         }
         applySubagentUpdate(stepEvent.data, responseMessageId);
+        if (
+          stepEvent.data.phase === 'start' ||
+          stepEvent.data.phase === 'stop' ||
+          stepEvent.data.phase === 'error'
+        ) {
+          const conversationId = [
+            submission?.userMessage?.conversationId,
+            submission?.initialResponse?.conversationId,
+            submission?.conversation?.conversationId,
+          ].find((id) => id && id !== Constants.NEW_CONVO && id !== Constants.PENDING_CONVO);
+          if (conversationId) onSubagentIndexChange?.(conversationId);
+        }
       } else if (stepEvent.event === StepEvents.ON_SUMMARIZE_START) {
         announcePolite({ message: 'summarize_started', isStatus: true });
       } else if (stepEvent.event === StepEvents.ON_SUMMARIZE_DELTA) {
@@ -1499,6 +1508,7 @@ export default function useStepHandler({
       calculateContentIndex,
       getCurrentMessages,
       applySubagentUpdate,
+      onSubagentIndexChange,
       setSandboxStarting,
       clearSandboxStarting,
       applyPtcToolCall,
