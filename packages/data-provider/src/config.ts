@@ -1231,8 +1231,6 @@ export type CodeWorkerEnrollmentPolicy = NonNullable<
 >;
 
 export const DEFAULT_MAX_PROVIDER_ERROR_CHARS = 2000;
-/** `0` keeps every tool result at full length, which is today's behavior. */
-export const DEFAULT_MAX_TOOL_RESULT_CHARS = 0;
 
 export const agentsEndpointSchema = baseEndpointSchema
   .omit({ baseURL: true })
@@ -1246,13 +1244,6 @@ export const agentsEndpointSchema = baseEndpointSchema
         .min(0)
         .max(1_000_000)
         .default(DEFAULT_MAX_PROVIDER_ERROR_CHARS),
-      /** Characters of a tool result kept in the conversation. `0` disables. */
-      maxToolResultChars: z
-        .number()
-        .int()
-        .min(0)
-        .max(10_000_000)
-        .default(DEFAULT_MAX_TOOL_RESULT_CHARS),
       recursionLimit: z.number().optional(),
       disableBuilder: z.boolean().optional().default(false),
       /** Optional workspace guidance acquisition budget, separate from command execution. */

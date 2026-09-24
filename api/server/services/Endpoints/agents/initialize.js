@@ -1802,7 +1802,6 @@ const initializeClientWithProvider = async ({
     stepMap,
     toolInputValidationErrors,
     toolExecuteOptions,
-    maxToolResultChars: req.config?.endpoints?.agents?.maxToolResultChars,
     summarizationOptions,
     aggregateContent,
     toolEndCallback,

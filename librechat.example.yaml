@@ -516,10 +516,12 @@ actions:
 #     - '127.0.0.1:8080'
 
 # Characters of a tool result kept in the conversation. A longer result is cut
-# from the middle, keeping its start and end, with a marker telling the model it
-# was cut. 0, the default, keeps every result whole.
+# before the model sees it, with a marker saying it was cut, and the cut result
+# is what later turns re-send. Unset, the cap is 30% of the model's context
+# window (at most 400,000). Set it for every endpoint under `all`, or per
+# endpoint, where it overrides `all`.
 # endpoints:
-#   agents:
+#   all:
 #     maxToolResultChars: 28800
 
 # Example MCP Servers Object Structure
