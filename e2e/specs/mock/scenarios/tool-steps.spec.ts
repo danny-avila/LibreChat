@@ -15,14 +15,16 @@ import {
  * the tool reducers in `client/src/hooks/SSE/steps/tools.ts`.
  */
 
-const TOOL_CALL_ID = 'call_e2e_execute_code';
 const FINAL_TEXT = 'E2E execute_code complete';
+const TOOL_OUTPUT = 'stdout: E2E code exec ok';
 
 const uniqueLabel = (prefix: string) =>
   `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
+/** The code-execution card: its status toggle, then the command and its output. */
 const toolCard = (page: Page) =>
-  messagesView(page).locator(`[data-testid="tool-call"][data-tool-call-id="${TOOL_CALL_ID}"]`);
+  messagesView(page).getByRole('button', { name: 'Finished running', exact: true });
+const toolOutput = (page: Page) => messagesView(page).getByText(TOOL_OUTPUT, { exact: true });
 
 /** True when `first` sits before `second` in document order. */
 async function precedes(first: Locator, second: Locator): Promise<boolean> {
@@ -39,7 +41,9 @@ async function expectOneToolCardBeforeReply(page: Page, label: string) {
   await expect(reply).toBeVisible({ timeout: 30_000 });
   await expect(reply).toHaveCount(1);
   await expect(toolCard(page)).toHaveCount(1, { timeout: 30_000 });
+  await expect(toolOutput(page)).toHaveCount(1);
   expect(await precedes(toolCard(page), reply)).toBe(true);
+  expect(await precedes(toolOutput(page), reply)).toBe(true);
 }
 
 test.describe('tool call steps', () => {
