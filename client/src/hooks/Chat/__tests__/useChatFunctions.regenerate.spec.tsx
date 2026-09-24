@@ -604,6 +604,39 @@ describe('useChatFunctions ask attachments', () => {
     expect(files?.has('staged-file')).toBe(true);
   });
 
+  it('treats a legacy null file override as an ordinary staged-file submission', () => {
+    const files = new Map([
+      ['legacy-draft-file', { file_id: 'legacy-draft-file', filename: 'draft.pdf' }],
+    ]) as unknown as Parameters<typeof useChatFunctions>[0]['files'];
+    const setSubmission = jest.fn();
+    const { result } = renderHook(() =>
+      useChatFunctions({
+        isSubmitting: false,
+        latestMessage: null,
+        conversation: conversation(Constants.NEW_CONVO as string),
+        getMessages: () => [],
+        setMessages: jest.fn(),
+        setSubmission,
+        files,
+        setFiles: jest.fn(),
+      }),
+    );
+    act(() => {
+      result.current.ask(
+        { text: '' },
+        {
+          overrideFiles: null as unknown as NonNullable<
+            Parameters<typeof result.current.ask>[1]
+          >['overrideFiles'],
+        },
+      );
+    });
+    expect(setSubmission).toHaveBeenCalledTimes(1);
+    expect((setSubmission.mock.calls[0][0] as TSubmission).userMessage.files).toEqual([
+      expect.objectContaining({ file_id: 'legacy-draft-file' }),
+    ]);
+  });
+
   it('still uses a staged ephemeral agent for an ordinary composer submission', () => {
     const stagedAgent: TEphemeralAgent = { skills: true, mcp: ['selected-tool'] };
     mockGetEphemeralAgent.mockReturnValue(stagedAgent);

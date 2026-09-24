@@ -319,8 +319,7 @@ export default function useChatFunctions({
      * App action must not become submittable just because the user has staged
      * a file for a different, unsent composer message.
      */
-    const availableFileCount =
-      overrideFiles === undefined ? (files?.size ?? 0) : overrideFiles.length;
+    const availableFileCount = overrideFiles == null ? (files?.size ?? 0) : overrideFiles.length;
     /** A compaction sends no text: it replays the branch, like a regenerate,
      *  with the response placeholder parented onto the leaf. */
     const regenerateShaped = isRegenerate || compact;
