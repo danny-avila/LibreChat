@@ -2,6 +2,7 @@ import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 import type { IThemeRGB } from './types';
 import { highContrastDarkTheme, highContrastLightTheme } from './themes/highContrast';
+import { clickHouseDarkTheme, clickHouseLightTheme } from './themes/clickhouse';
 import { defaultTheme } from './themes/default';
 import { darkTheme } from './themes/dark';
 
@@ -235,6 +236,8 @@ describe.each([
   ['dark', darkTheme],
   ['high contrast light', highContrastLightTheme],
   ['high contrast dark', highContrastDarkTheme],
+  ['clickhouse light', clickHouseLightTheme],
+  ['clickhouse dark', clickHouseDarkTheme],
 ])('%s theme text contrast', (_name, theme: IThemeRGB) => {
   it('keeps neutral text at WCAG AA on every surface it renders on', () => {
     expect(belowAA(theme, neutralTextTokens, [...canvasSurfaces, 'rgb-surface-tertiary'])).toEqual(
@@ -329,6 +332,8 @@ describe.each([
   ['dark', darkTheme],
   ['high contrast light', highContrastLightTheme],
   ['high contrast dark', highContrastDarkTheme],
+  ['clickhouse light', clickHouseLightTheme],
+  ['clickhouse dark', clickHouseDarkTheme],
 ])('%s series contrast', (_name, theme: IThemeRGB) => {
   it('keeps every series slot at the 3:1 mark floor on its consumer surfaces', () => {
     const failures = seriesTokens.flatMap((token) =>
@@ -359,6 +364,8 @@ describe.each([
   ['dark', darkTheme],
   ['high contrast light', highContrastLightTheme],
   ['high contrast dark', highContrastDarkTheme],
+  ['clickhouse light', clickHouseLightTheme],
+  ['clickhouse dark', clickHouseDarkTheme],
 ])('%s skill indicators', (_name, theme: IThemeRGB) => {
   it('keeps informational marks at the 3:1 floor on every skill surface', () => {
     const indicator = toRgb(theme, 'rgb-status-info');
@@ -387,6 +394,8 @@ describe.each([
   ['dark', darkTheme],
   ['high contrast light', highContrastLightTheme],
   ['high contrast dark', highContrastDarkTheme],
+  ['clickhouse light', clickHouseLightTheme],
+  ['clickhouse dark', clickHouseDarkTheme],
 ])('%s success fill', (_name, theme: IThemeRGB) => {
   it('carries its label at WCAG AA', () => {
     const ratio = contrast(
@@ -441,6 +450,8 @@ describe.each([
   ['dark', darkTheme],
   ['high contrast light', highContrastLightTheme],
   ['high contrast dark', highContrastDarkTheme],
+  ['clickhouse light', clickHouseLightTheme],
+  ['clickhouse dark', clickHouseDarkTheme],
 ])('%s verified fill', (_name, theme: IThemeRGB) => {
   it('carries its check at the 3:1 mark floor', () => {
     const ratio = contrast(toRgb(theme, 'rgb-status-verified'), toRgb(theme, 'rgb-text-on-status'));
@@ -495,6 +506,8 @@ describe.each([
   ['dark', darkTheme],
   ['high contrast light', highContrastLightTheme],
   ['high contrast dark', highContrastDarkTheme],
+  ['clickhouse light', clickHouseLightTheme],
+  ['clickhouse dark', clickHouseDarkTheme],
 ])('%s switch track', (_name, theme: IThemeRGB) => {
   it('keeps the unchecked track at the 3:1 mark floor against thumb and checked fill', () => {
     const track = toRgb(theme, 'rgb-switch-unchecked');

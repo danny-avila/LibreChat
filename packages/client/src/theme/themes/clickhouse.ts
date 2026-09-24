@@ -1,0 +1,284 @@
+import type { ThemeDefinition, IThemeRGB } from '../types';
+
+/**
+ * ClickHouse reference theme, built from Click UI's design tokens
+ * (github.com/ClickHouse/click-ui, `src/theme/tokens/variables.light.ts` and
+ * `variables.dark.ts` at 7dad15bb978d03ba63575e1d4abc02b8927ee1cd).
+ *
+ * This is the deliberately different theme that proves the engine repaints the
+ * app from data alone: no component reads it by name, and LibreChat's defaults
+ * are untouched. Each comment names the Click UI token a value comes from; paths
+ * without a prefix are under `global.color`, `palette.*` is Click UI's ramp.
+ *
+ * Both maps are complete, so nothing falls back to the LibreChat palette. Where
+ * a verbatim Click UI value missed a contrast floor in `clickhouse.spec.ts` or
+ * `semanticTokens.spec.ts`, the value moves along the same Click UI ramp and the
+ * comment records the step and the ratio it replaced.
+ *
+ * `text-on-status` is one label per mode over every solid fill. Dark mode keeps
+ * the brand yellow on `surface-submit`, which forces a near-black label, so the
+ * destructive and `status-*-strong` fills there are the bright end of their
+ * ramps, the same trade `highContrastDarkTheme` makes.
+ */
+
+export const clickHouseLightTheme: IThemeRGB = {
+  // Text colors
+  'rgb-text-primary': '22 21 23', // #161517 (text.default)
+  /** Secondary and tertiary copy also sit on the status fills (the chat error
+   *  box, the route error boundary, the sign-in notices, the deleted rows of a
+   *  diff), where text.muted #696e79 measures 4.05:1 on
+   *  feedback.danger.background. One step down the slate ramp is Click UI's own
+   *  feedback.neutral.foreground. `text-muted` never meets a status fill, so it
+   *  keeps text.muted. */
+  'rgb-text-secondary': '83 87 95', // #53575f (palette.slate.700)
+  'rgb-text-secondary-alt': '83 87 95', // #53575f (palette.slate.700)
+  'rgb-text-tertiary': '83 87 95', // #53575f (palette.slate.700)
+  'rgb-text-muted': '105 110 121', // #696e79 (text.muted)
+  'rgb-text-warning': '163 60 0', // #a33c00 (text.warning)
+  'rgb-text-destructive': '193 0 0', // #c10000 (text.danger)
+  'rgb-shimmer-base': '22 21 23', // #161517 (text.default, matching text-primary)
+  'rgb-shimmer-dip': '128 134 145', // #808691 (palette.slate.500)
+
+  // Link and accent colors
+  'rgb-link': '29 100 236', // #1d64ec (palette.info.500, one step past text.link.default #437eef (3.84:1 on white))
+  'rgb-link-hover': '16 78 198', // #104ec6 (text.link.hover)
+  'rgb-link-visited': '136 0 204', // #8800cc (palette.violet.600)
+  'rgb-accent-primary': '21 21 21', // #151515 (accent.default)
+  'rgb-accent-primary-hover': '50 50 50', // #323232 (palette.neutral.712)
+
+  // Ring colors
+  'rgb-ring-primary': '21 21 21', // #151515 (accent.default)
+
+  // Header colors
+  'rgb-header-primary': '255 255 255', // #ffffff (background.default)
+  'rgb-header-hover': '246 247 250', // #f6f7fa (background.muted)
+  'rgb-header-button-hover': '246 247 250', // #f6f7fa (background.muted)
+
+  // Surface colors
+  'rgb-surface-active': '230 231 233', // #e6e7e9 (palette.slate.100)
+  'rgb-surface-active-alt': '204 207 211', // #cccfd3 (palette.slate.200)
+  'rgb-surface-hover': '230 231 233', // #e6e7e9 (palette.slate.100)
+  'rgb-surface-hover-alt': '204 207 211', // #cccfd3 (palette.slate.200)
+  'rgb-surface-composer-hover': '230 231 233', // #e6e7e9 (palette.slate.100)
+  'rgb-surface-primary': '255 255 255', // #ffffff (background.default)
+  'rgb-chart-widget-surface': '255 255 255', // #ffffff (background.default)
+  'rgb-chart-widget-stroke': '230 231 233', // #e6e7e9 (stroke.default)
+  'rgb-surface-primary-alt': '246 247 250', // #f6f7fa (background.split)
+  'rgb-surface-primary-contrast': '230 231 233', // #e6e7e9 (palette.slate.100)
+  'rgb-surface-secondary': '246 247 250', // #f6f7fa (background.muted)
+  'rgb-surface-secondary-alt': '230 231 233', // #e6e7e9 (palette.slate.100)
+  'rgb-surface-tertiary': '246 247 250', // #f6f7fa (background.muted)
+  'rgb-surface-tertiary-alt': '255 255 255', // #ffffff (background.default)
+  'rgb-surface-dialog': '255 255 255', // #ffffff (background.default)
+  'rgb-surface-overlay': '83 87 95', // #53575f (palette.slate.700)
+  'rgb-surface-submit': '21 21 21', // #151515 (accent.default)
+  'rgb-surface-submit-hover': '50 50 50', // #323232 (palette.neutral.712)
+  'rgb-surface-destructive': '193 0 0', // #c10000 (palette.danger.600)
+  'rgb-surface-destructive-hover': '145 0 0', // #910000 (palette.danger.700)
+  'rgb-surface-chat': '255 255 255', // #ffffff (background.default)
+  'rgb-surface-code': '246 247 250', // #f6f7fa (background.muted)
+  'rgb-surface-inverted': '21 21 21', // #151515 (palette.neutral.900)
+  'rgb-surface-inverted-hover': '50 50 50', // #323232 (palette.neutral.712)
+  'rgb-text-inverted': '255 255 255', // #ffffff (palette.neutral.0)
+  'rgb-surface-fixed': '255 255 255', // #ffffff (palette.neutral.0, same in light and dark)
+  'rgb-surface-fixed-hover': '230 231 233', // #e6e7e9 (palette.slate.100, same in light and dark)
+  'rgb-text-fixed': '22 21 23', // #161517 (palette.slate.900, same in light and dark)
+
+  // Border colors
+  'rgb-border-light': '230 231 233', // #e6e7e9 (stroke.default)
+  'rgb-border-medium': '230 231 233', // #e6e7e9 (stroke.default)
+  'rgb-border-medium-alt': '230 231 233', // #e6e7e9 (stroke.default)
+  'rgb-border-heavy': '179 182 189', // #b3b6bd (stroke.intense)
+  'rgb-border-xheavy': '128 134 145', // #808691 (palette.slate.500, two steps past stroke.intense #b3b6bd (2.03:1 on white))
+  'rgb-border-destructive': '193 0 0', // #c10000 (palette.danger.600)
+
+  // Status colors
+  'rgb-status-success': '0 97 8', // #006108 (palette.success.800, one step past feedback.success.foreground #008a0b (4.27:1 on its fill))
+  'rgb-status-success-subtle': '229 255 232', // #e5ffe8 (feedback.success.background)
+  'rgb-status-success-border': '153 255 161', // #99ffa1 (palette.success.200)
+  'rgb-status-success-strong': '0 138 11', // #008a0b (feedback.success.foreground)
+  'rgb-status-info': '16 78 198', // #104ec6 (palette.info.600, two steps past feedback.info.foreground #437eef (3.32:1 on its fill))
+  'rgb-status-info-subtle': '231 239 253', // #e7effd (feedback.info.background)
+  'rgb-status-info-border': '161 190 247', // #a1bef7 (palette.info.200)
+  'rgb-status-info-strong': '16 78 198', // #104ec6 (palette.info.600)
+  'rgb-status-warning': '163 60 0', // #a33c00 (feedback.warning.foreground)
+  'rgb-status-warning-subtle': '255 226 209', // #ffe2d1 (feedback.warning.background)
+  'rgb-status-warning-border': '255 184 143', // #ffb88f (palette.warning.200)
+  'rgb-status-warning-strong': '163 60 0', // #a33c00 (palette.warning.700)
+  'rgb-status-error': '193 0 0', // #c10000 (feedback.danger.foreground)
+  'rgb-status-error-subtle': '255 221 221', // #ffdddd (feedback.danger.background)
+  'rgb-status-error-border': '255 152 152', // #ff9898 (palette.danger.200)
+  'rgb-status-error-strong': '193 0 0', // #c10000 (palette.danger.600)
+  'rgb-status-neutral': '83 87 95', // #53575f (feedback.neutral.foreground)
+  'rgb-status-neutral-subtle': '246 247 250', // #f6f7fa (feedback.neutral.background)
+  'rgb-status-neutral-border': '230 231 233', // #e6e7e9 (feedback.neutral.stroke)
+  'rgb-status-verified': '16 78 198', // #104ec6 (palette.info.600, matching status-info)
+  'rgb-text-on-status': '255 255 255', // #ffffff (palette.neutral.0)
+
+  // Brand colors
+  'rgb-brand-purple': '136 0 204', // #8800cc (palette.violet.600)
+
+  // Code syntax
+  'rgb-syntax-text': '22 21 23', // #161517 (text.default)
+  'rgb-syntax-comment': '105 110 121', // #696e79 (text.muted)
+  'rgb-syntax-meta': '83 87 95', // #53575f (palette.slate.700)
+  'rgb-syntax-builtin': '138 105 0', // #8a6900 (palette.sunrise.700)
+  'rgb-syntax-keyword': '16 78 198', // #104ec6 (palette.info.600)
+  'rgb-syntax-string': '0 97 8', // #006108 (palette.success.800)
+  'rgb-syntax-attr': '153 0 115', // #990073 (palette.fuchsia.700)
+  'rgb-syntax-title': '163 60 0', // #a33c00 (palette.warning.700)
+
+  // Series
+  'rgb-series-1': '67 126 239', // #437eef (chart.default.blue)
+  'rgb-series-2': '245 90 0', // #f55a00 (palette.warning.500, one step past chart.default.orange #ff7729 (2.65:1 on white))
+  'rgb-series-3': '0 138 11', // #008a0b (palette.success.700, in place of chart.default.green #00e513 (1.72:1 on white))
+  'rgb-series-4': '251 50 201', // #fb32c9 (chart.default.fuchsia)
+  'rgb-series-5': '178 136 0', // #b28800 (palette.sunrise.600, in place of chart.default.yellow #eef400 (1.19:1 on white))
+  'rgb-series-6': '187 51 255', // #bb33ff (chart.default.violet)
+  'rgb-series-7': '0 133 153', // #008599 (palette.babyblue.600, in place of chart.default.babyblue #00cbeb (1.95:1 on white))
+  'rgb-series-8': '8 155 131', // #089b83 (chart.default.teal)
+
+  // Switch
+  'rgb-switch-unchecked': '128 134 145', // #808691 (palette.slate.500)
+
+  // Presentation
+  'rgb-presentation': '255 255 255', // #ffffff (background.default)
+};
+
+export const clickHouseDarkTheme: IThemeRGB = {
+  // Text colors
+  'rgb-text-primary': '255 255 255', // #ffffff (text.default)
+  'rgb-text-secondary': '179 182 189', // #b3b6bd (text.muted)
+  'rgb-text-secondary-alt': '179 182 189', // #b3b6bd (text.muted)
+  'rgb-text-tertiary': '179 182 189', // #b3b6bd (text.muted)
+  'rgb-text-muted': '179 182 189', // #b3b6bd (text.muted)
+  'rgb-text-warning': '255 184 143', // #ffb88f (text.warning)
+  'rgb-text-destructive': '255 186 186', // #ffbaba (text.danger)
+  'rgb-shimmer-base': '255 255 255', // #ffffff (text.default, matching text-primary)
+  'rgb-shimmer-dip': '179 182 189', // #b3b6bd (text.muted)
+
+  // Link and accent colors
+  'rgb-link': '250 255 105', // #faff69 (text.link.default)
+  'rgb-link-hover': '254 255 194', // #feffc2 (text.link.hover)
+  'rgb-link-visited': '204 102 255', // #cc66ff (palette.violet.300)
+  'rgb-accent-primary': '250 255 105', // #faff69 (accent.default)
+  'rgb-accent-primary-hover': '253 255 163', // #fdffa3 (palette.brand.200)
+
+  // Ring colors
+  'rgb-ring-primary': '250 255 105', // #faff69 (outline.default)
+
+  // Header colors
+  'rgb-header-primary': '31 31 28', // #1f1f1c (background.default)
+  'rgb-header-hover': '40 40 40', // #282828 (background.muted)
+  'rgb-header-button-hover': '40 40 40', // #282828 (background.muted)
+
+  // Surface colors
+  'rgb-surface-active': '65 65 65', // #414141 (palette.neutral.700)
+  'rgb-surface-active-alt': '50 50 50', // #323232 (palette.neutral.712)
+  'rgb-surface-hover': '50 50 50', // #323232 (palette.neutral.712)
+  'rgb-surface-hover-alt': '65 65 65', // #414141 (palette.neutral.700)
+  'rgb-surface-composer-hover': '50 50 50', // #323232 (palette.neutral.712)
+  'rgb-surface-primary': '31 31 28', // #1f1f1c (background.default)
+  'rgb-chart-widget-surface': '40 40 40', // #282828 (background.muted)
+  'rgb-chart-widget-stroke': '50 50 50', // #323232 (stroke.default)
+  'rgb-surface-primary-alt': '40 40 40', // #282828 (background.split)
+  'rgb-surface-primary-contrast': '50 50 50', // #323232 (palette.neutral.712)
+  'rgb-surface-secondary': '40 40 40', // #282828 (background.muted)
+  'rgb-surface-secondary-alt': '50 50 50', // #323232 (palette.neutral.712)
+  'rgb-surface-tertiary': '40 40 40', // #282828 (background.muted)
+  'rgb-surface-tertiary-alt': '50 50 50', // #323232 (palette.neutral.712)
+  'rgb-surface-dialog': '31 31 28', // #1f1f1c (background.default)
+  'rgb-surface-overlay': '0 0 0', // #000000 (palette.utility black)
+  'rgb-surface-submit': '250 255 105', // #faff69 (accent.default)
+  'rgb-surface-submit-hover': '253 255 163', // #fdffa3 (palette.brand.200)
+  'rgb-surface-destructive': '255 117 117', // #ff7575 (palette.danger.300)
+  'rgb-surface-destructive-hover': '255 152 152', // #ff9898 (palette.danger.200)
+  'rgb-surface-chat': '31 31 28', // #1f1f1c (background.default)
+  'rgb-surface-code': '40 40 40', // #282828 (codeblock.darkMode.background.default)
+  'rgb-surface-inverted': '255 255 255', // #ffffff (palette.neutral.0)
+  'rgb-surface-inverted-hover': '223 223 223', // #dfdfdf (palette.neutral.200)
+  'rgb-text-inverted': '21 21 21', // #151515 (palette.neutral.900)
+  'rgb-surface-fixed': '255 255 255', // #ffffff (palette.neutral.0, same in light and dark)
+  'rgb-surface-fixed-hover': '230 231 233', // #e6e7e9 (palette.slate.100, same in light and dark)
+  'rgb-text-fixed': '22 21 23', // #161517 (palette.slate.900, same in light and dark)
+
+  // Border colors
+  'rgb-border-light': '50 50 50', // #323232 (stroke.default)
+  'rgb-border-medium': '50 50 50', // #323232 (stroke.default)
+  'rgb-border-medium-alt': '50 50 50', // #323232 (stroke.default)
+  'rgb-border-heavy': '65 65 65', // #414141 (stroke.intense)
+  'rgb-border-xheavy': '128 128 128', // #808080 (palette.neutral.500, three steps past stroke.intense #414141 (1.62:1 on the canvas))
+  'rgb-border-destructive': '255 117 117', // #ff7575 (palette.danger.300)
+
+  // Status colors
+  'rgb-status-success': '204 255 208', // #ccffd0 (feedback.success.foreground)
+  'rgb-status-success-subtle': '0 66 6', // #004206 (feedback.success.background)
+  'rgb-status-success-border': '0 97 8', // #006108 (palette.success.800)
+  'rgb-status-success-strong': '0 229 19', // #00e513 (palette.success.500)
+  'rgb-status-info': '208 223 251', // #d0dffb (feedback.info.foreground)
+  'rgb-status-info-subtle': '13 62 155', // #0d3e9b (feedback.info.background)
+  'rgb-status-info-border': '16 78 198', // #104ec6 (palette.info.600)
+  'rgb-status-info-strong': '109 155 243', // #6d9bf3 (palette.info.300)
+  'rgb-status-warning': '255 184 143', // #ffb88f (feedback.warning.foreground)
+  'rgb-status-warning-subtle': '122 45 0', // #7a2d00 (feedback.warning.background)
+  'rgb-status-warning-border': '163 60 0', // #a33c00 (palette.warning.700)
+  'rgb-status-warning-strong': '255 148 87', // #ff9457 (palette.warning.300)
+  'rgb-status-error': '255 186 186', // #ffbaba (feedback.danger.foreground)
+  'rgb-status-error-subtle': '97 0 0', // #610000 (feedback.danger.background)
+  'rgb-status-error-border': '145 0 0', // #910000 (palette.danger.700)
+  'rgb-status-error-strong': '255 117 117', // #ff7575 (palette.danger.300)
+  'rgb-status-neutral': '249 249 249', // #f9f9f9 (feedback.neutral.foreground)
+  'rgb-status-neutral-subtle': '65 65 65', // #414141 (feedback.neutral.background)
+  'rgb-status-neutral-border': '50 50 50', // #323232 (feedback.neutral.stroke)
+  'rgb-status-verified': '109 155 243', // #6d9bf3 (palette.info.300, matching status-info-strong)
+  'rgb-text-on-status': '29 29 29', // #1d1d1d (iconButton.badge.foreground, the label Click UI sets on its yellow)
+
+  // Brand colors
+  'rgb-brand-purple': '204 102 255', // #cc66ff (palette.violet.300)
+
+  // Code syntax
+  'rgb-syntax-text': '255 255 255', // #ffffff (codeblock.darkMode.text.default)
+  'rgb-syntax-comment': '179 182 189', // #b3b6bd (text.muted)
+  'rgb-syntax-meta': '154 158 167', // #9a9ea7 (palette.slate.400)
+  'rgb-syntax-builtin': '255 195 0', // #ffc300 (chart.default.sunrise)
+  'rgb-syntax-keyword': '109 155 243', // #6d9bf3 (palette.info.300)
+  'rgb-syntax-string': '102 255 115', // #66ff73 (palette.success.300)
+  'rgb-syntax-attr': '251 100 214', // #fb64d6 (chart.default.fuchsia)
+  'rgb-syntax-title': '255 119 41', // #ff7729 (chart.default.orange)
+
+  // Series
+  'rgb-series-1': '67 126 239', // #437eef (chart.default.blue)
+  'rgb-series-2': '255 119 41', // #ff7729 (chart.default.orange)
+  'rgb-series-3': '51 255 68', // #33ff44 (chart.default.green)
+  'rgb-series-4': '251 100 214', // #fb64d6 (chart.default.fuchsia)
+  'rgb-series-5': '255 195 0', // #ffc300 (chart.default.sunrise)
+  'rgb-series-6': '187 51 255', // #bb33ff (chart.default.violet)
+  'rgb-series-7': '0 203 235', // #00cbeb (chart.default.babyblue)
+  'rgb-series-8': '109 248 225', // #6df8e1 (chart.default.teal)
+
+  // Switch
+  'rgb-switch-unchecked': '128 128 128', // #808080 (palette.neutral.500)
+
+  // Presentation
+  'rgb-presentation': '31 31 28', // #1f1f1c (background.default)
+};
+
+/** Click UI's radius scale (`border.radii` 1, 2, 3 and full) and its regular
+ *  family (`typography.font.families.regular`). */
+const clickHouseAppearance = {
+  controlRadius: '0.25rem',
+  surfaceRadius: '0.5rem',
+  largeSurfaceRadius: '0.75rem',
+  roundControlRadius: '9999px',
+  fontFamily:
+    '"Inter", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif',
+};
+
+export const clickHouseTheme: ThemeDefinition = Object.freeze({
+  version: 1,
+  name: 'clickhouse',
+  modes: {
+    light: { colors: clickHouseLightTheme, appearance: clickHouseAppearance },
+    dark: { colors: clickHouseDarkTheme, appearance: clickHouseAppearance },
+  },
+});
