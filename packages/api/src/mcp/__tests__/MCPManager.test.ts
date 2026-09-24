@@ -8,6 +8,7 @@ import {
   McpError,
   ErrorCode,
 } from '@modelcontextprotocol/sdk/types.js';
+import type { TMCPAppsPolicy } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
 import type { GraphTokenResolver } from '~/utils/graph';
 import type * as t from '~/mcp/types';
@@ -109,7 +110,7 @@ const mockRegistryInstance = {
     allowedDomains: mockGetAllowedDomains(),
     allowedAddresses: mockGetAllowedAddresses(),
     useSSRFProtection: mockShouldEnableSSRFProtection(),
-    mcpApps: { enabled: true, legacyHtmlEnabled: true },
+    mcpApps: { enabled: true, legacyHtmlEnabled: true } as TMCPAppsPolicy,
   })),
 };
 
@@ -5452,6 +5453,68 @@ describe('MCPManager', () => {
 
     beforeEach(() => {
       (MCPConnectionFactory.discoverTools as jest.Mock) = jest.fn();
+    });
+
+    it.each([64, 6 * 1024 * 1024])(
+      'passes the user-scoped %i byte limit to App-profile discovery',
+      async (maxBytes) => {
+        const operationLimits = { maxBytes, timeoutMs: 45_000, maxActive: 8 };
+        mockRegistryInstance.resolveAllowlists.mockResolvedValueOnce({
+          allowedDomains: null,
+          allowedAddresses: null,
+          useSSRFProtection: false,
+          mcpApps: { enabled: true, legacyHtmlEnabled: true, operationLimits },
+        });
+        (MCPConnectionFactory.discoverTools as jest.Mock).mockResolvedValue({
+          tools: mockTools,
+          connection: null,
+          oauthRequired: false,
+          oauthUrl: null,
+        });
+        const manager = await MCPManager.createInstance(newMCPServersConfig());
+        await manager.discoverServerTools({
+          serverName,
+          user: { id: 'discovery-user', role: 'ADMIN' } as IUser,
+          capabilityProfile: MCP_APPS_CAPABILITY_PROFILE,
+        });
+
+        expect(mockRegistryInstance.resolveAllowlists).toHaveBeenCalledWith({
+          userId: 'discovery-user',
+          role: 'ADMIN',
+        });
+        expect(MCPConnectionFactory.discoverTools).toHaveBeenCalledWith(
+          expect.objectContaining({
+            capabilityProfile: MCP_APPS_CAPABILITY_PROFILE,
+            operationLimits,
+          }),
+          expect.any(Object),
+        );
+      },
+    );
+
+    it('does not apply App limits to standard-profile discovery', async () => {
+      const operationLimits = { maxBytes: 64, timeoutMs: 45_000, maxActive: 8 };
+      mockAppConnections({ get: jest.fn().mockResolvedValue(null) });
+      mockRegistryInstance.resolveAllowlists.mockResolvedValueOnce({
+        allowedDomains: null,
+        allowedAddresses: null,
+        useSSRFProtection: false,
+        mcpApps: { enabled: true, legacyHtmlEnabled: true, operationLimits },
+      });
+      (MCPConnectionFactory.discoverTools as jest.Mock).mockResolvedValue({
+        tools: mockTools,
+        connection: null,
+        oauthRequired: false,
+        oauthUrl: null,
+      });
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      await manager.discoverServerTools({
+        serverName,
+        capabilityProfile: STANDARD_MCP_CAPABILITY_PROFILE,
+      });
+      expect((MCPConnectionFactory.discoverTools as jest.Mock).mock.calls[0][0]).not.toHaveProperty(
+        'operationLimits',
+      );
     });
 
     it('keeps the declared OAuth identity while stripping discovery headers', async () => {

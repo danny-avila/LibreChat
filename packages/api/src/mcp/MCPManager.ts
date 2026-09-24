@@ -596,7 +596,7 @@ export class MCPManager extends UserConnectionManager {
       return { tools: null, oauthRequired: false, oauthUrl: null };
     }
 
-    const { allowedDomains, allowedAddresses, useSSRFProtection } =
+    const { allowedDomains, allowedAddresses, useSSRFProtection, mcpApps } =
       await registry.resolveAllowlists({ userId: user?.id, role: user?.role });
     await this.assertResolvedRuntimeConfigAllowed({
       config: catalogConfig,
@@ -620,6 +620,9 @@ export class MCPManager extends UserConnectionManager {
       allowedDomains,
       allowedAddresses,
       capabilityProfile,
+      ...(capabilityProfile === MCP_APPS_CAPABILITY_PROFILE && {
+        operationLimits: mcpApps.operationLimits,
+      }),
     };
 
     const finalizeDiscoveryResult = async (
