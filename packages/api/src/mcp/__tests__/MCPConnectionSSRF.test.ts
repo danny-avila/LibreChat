@@ -2177,6 +2177,32 @@ describe('MCP SSRF protection – customFetch input shapes', () => {
     }
   });
 
+  it('honors an operator-raised App cap for an SSE event above the generic 5 MiB line limit', async () => {
+    const event = `data: ${'x'.repeat(5 * 1024 * 1024 + 1024)}\n\n`;
+    const server = await createRawResponseServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      res.write(event.slice(0, 2 * 1024 * 1024));
+      res.end(event.slice(2 * 1024 * 1024));
+    });
+    try {
+      conn = new MCPConnection({
+        serverName: 'app-profile-raised-sse-cap',
+        serverConfig: { type: 'streamable-http', url: server.url },
+        useSSRFProtection: false,
+        capabilityProfile: 'apps',
+        operationLimits: { maxBytes: 6 * 1024 * 1024, timeoutMs: 30_000, maxActive: 16 },
+      });
+      const response = await getGuardedStreamableHTTPCustomFetch(conn)(server.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', method: 'resources/read', id: 1 }),
+      });
+      expect((await response.text()).length).toBe(event.length);
+    } finally {
+      await server.close();
+    }
+  });
+
   it('allows a long App SSE POST with cumulative bytes above the per-event cap', async () => {
     const data = Array.from({ length: 4 }, (_, i) => `data: {"event":${i},"ok":true}\n\n`).join('');
     expect(Buffer.byteLength(data)).toBeGreaterThan(64);

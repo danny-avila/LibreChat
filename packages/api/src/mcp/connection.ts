@@ -308,23 +308,22 @@ function getMCPStreamableHTTPResponseLimits(
   maxResponseBytes: number;
   maxLineBytes: number;
 } {
-  const responseLimit = getNonNegativeIntegerEnv(
-    'MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES',
-    DEFAULT_MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES,
-  );
-  const lineLimit = getNonNegativeIntegerEnv(
-    'MCP_STREAMABLE_HTTP_MAX_LINE_BYTES',
-    DEFAULT_MCP_STREAMABLE_HTTP_MAX_LINE_BYTES,
-  );
   if (appProfile) {
-    const appLimit = getMCPAppOperationLimits(operationLimits).maxBytes;
-    // Zero disables the generic guard, but must never disable an App-profile byte bound.
-    return {
-      maxResponseBytes: responseLimit === 0 ? appLimit : Math.min(responseLimit, appLimit),
-      maxLineBytes: lineLimit === 0 ? appLimit : Math.min(lineLimit, appLimit),
-    };
+    // Validated App-profile policy owns both bounds. Generic transport env defaults are for
+    // standard sessions and must not silently reject an operator-approved larger App event.
+    const maxBytes = getMCPAppOperationLimits(operationLimits).maxBytes;
+    return { maxResponseBytes: maxBytes, maxLineBytes: maxBytes };
   }
-  return { maxResponseBytes: responseLimit, maxLineBytes: lineLimit };
+  return {
+    maxResponseBytes: getNonNegativeIntegerEnv(
+      'MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES',
+      DEFAULT_MCP_STREAMABLE_HTTP_MAX_RESPONSE_BYTES,
+    ),
+    maxLineBytes: getNonNegativeIntegerEnv(
+      'MCP_STREAMABLE_HTTP_MAX_LINE_BYTES',
+      DEFAULT_MCP_STREAMABLE_HTTP_MAX_LINE_BYTES,
+    ),
+  };
 }
 
 async function guardMCPStreamableHTTPResponse(
