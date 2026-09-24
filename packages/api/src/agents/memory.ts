@@ -74,7 +74,7 @@ function normalizeMemoryLLMConfig(llmConfig?: Partial<LLMConfig>): SanitizedMemo
 }
 
 export const memoryInstructions =
-  'LibreChat provides persistent memory across conversations. Saved memories, when available, are shown below. If no memories are shown, this does not mean persistent memory is unavailable. Use memory tools only if provided, and only claim a memory was saved or deleted after the action is confirmed.';
+  'Persistent memory is available across conversations within the current memory scope. Saved memories, if any, are shown below. No entries shown here does not mean memory is unavailable. Use memory tools only if provided; claim a memory was saved or deleted only after the action is confirmed.';
 
 export function formatMemoryContext(memory: string | undefined): string | undefined {
   if (memory == null) {
@@ -698,8 +698,12 @@ export async function buildInlineMemoryTool({
         agentId: memoryAgentId,
         getFormattedMemories: memoryMethods.getFormattedMemories,
       });
-      totalTokens = formatted?.totalTokens ?? 0;
-      tokenCountsByKey = formatted?.tokenCountsByKey;
+      /** A formatted read failure has no trustworthy usage total. */
+      if (formatted.readFailed) {
+        return null;
+      }
+      totalTokens = formatted.totalTokens ?? 0;
+      tokenCountsByKey = formatted.tokenCountsByKey;
     } catch (error) {
       logger.error(
         '[memory] Failed to load memory token count for set_memory',
@@ -1032,6 +1036,7 @@ export async function createMemoryProcessor({
   messageId,
   memoryMethods,
   conversationId,
+  req,
   config = {},
   filters,
   streamId = null,
@@ -1046,6 +1051,8 @@ export async function createMemoryProcessor({
   /** Agent partition; omit for the shared personal pool */
   agentId?: string;
   memoryMethods: RequiredMemoryMethods;
+  /** Reuses the request-scoped formatted snapshot for the chat context. */
+  req?: object;
   config?: MemoryConfig;
   filters?: FiltersConfig;
   streamId?: string | null;
@@ -1053,27 +1060,41 @@ export async function createMemoryProcessor({
   user?: IUser;
   tenantId?: string;
 }): Promise<
-  [
-    string,
-    (
-      messages: BaseMessage[],
-      inspectionMessages?: BaseMessage[],
-    ) => Promise<(TAttachment | null)[] | undefined>,
-  ]
+  | [undefined, undefined]
+  | [
+      string,
+      (
+        messages: BaseMessage[],
+        inspectionMessages?: BaseMessage[],
+      ) => Promise<(TAttachment | null)[] | undefined>,
+    ]
 > {
   const { validKeys, instructions, llmConfig, tokenLimit } = config;
   const finalInstructions = instructions || getDefaultInstructions(validKeys, tokenLimit);
 
-  const [{ withKeys, withoutKeys, totalTokens, tokenCountsByKey }, memoryEntries] =
-    await Promise.all([
-      memoryMethods.getFormattedMemories({
-        userId,
-        agentId,
-      }),
-      hasActivePiiPatterns(filters?.memories?.pii)
-        ? memoryMethods.getUserMemories({ userId, agentId })
-        : Promise.resolve(undefined),
-    ]);
+  const [formatted, memoryEntries] = await Promise.all([
+    (req
+      ? getRequestMemories({
+          req,
+          userId,
+          agentId,
+          getFormattedMemories: memoryMethods.getFormattedMemories,
+        })
+      : memoryMethods.getFormattedMemories({ userId, agentId })
+    ).catch((error) => {
+      logger.error('[memory] Error loading automatic memory context', getSafeErrorMetadata(error));
+      return undefined;
+    }),
+    hasActivePiiPatterns(filters?.memories?.pii)
+      ? memoryMethods.getUserMemories({ userId, agentId })
+      : Promise.resolve(undefined),
+  ]);
+  /** Without the current memory snapshot we cannot safely seed token limits
+   *  or assert that no previous memories exist. Skip extraction for this turn. */
+  if (!formatted || formatted.readFailed) {
+    return [undefined, undefined];
+  }
+  const { withKeys, withoutKeys, totalTokens, tokenCountsByKey } = formatted;
 
   return [
     withoutKeys,

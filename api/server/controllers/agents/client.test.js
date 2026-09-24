@@ -8535,6 +8535,29 @@ describe('AgentClient - titleConvo', () => {
       expect(client.processMemory).toBeUndefined();
     });
 
+    it('does not interpret a failed memory read as an eligible empty store', async () => {
+      mockReq.config.memory = { personalize: true };
+      mockCheckAccess.mockResolvedValue(true);
+      mockGetFormattedMemories.mockResolvedValue({
+        readFailed: true,
+        withKeys: undefined,
+        withoutKeys: undefined,
+        totalTokens: 0,
+      });
+
+      client = new AgentClient(mockOptions);
+      client.conversationId = 'convo-123';
+      client.responseMessageId = 'response-123';
+
+      const result = await client.useMemory();
+
+      expect(result).toEqual({ withKeys: undefined, withoutKeys: undefined });
+      expect(mockCreateMemoryProcessor).not.toHaveBeenCalled();
+      expect(client.processMemory).toBeUndefined();
+      const { formatMemoryContext } = require('@librechat/api');
+      expect(formatMemoryContext(result.withoutKeys)).toBeUndefined();
+    });
+
     it('should return existing memories without auto-processing when memory agent config lacks explicit enablement', async () => {
       mockReq.config.memory.agent = {
         id: 'agent-123',

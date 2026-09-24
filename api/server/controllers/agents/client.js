@@ -3378,6 +3378,7 @@ class AgentClient extends BaseClient {
         getUserMemories: db.getUserMemories,
         getFormattedMemories: db.getFormattedMemories,
       },
+      req: this.options.req,
       res: this.options.res,
       user: createSafeUser(this.options.req.user),
       tenantId: resolveRequestTenantId(this.options.req),
