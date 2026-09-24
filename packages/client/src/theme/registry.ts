@@ -53,10 +53,17 @@ export const themeAppearanceProperties: Readonly<
   roundControlRadius: '--theme-round-control-radius',
   surfaceRadius: '--theme-surface-radius',
   largeSurfaceRadius: '--theme-large-surface-radius',
+  radiusSm: '--theme-radius-sm',
+  radiusMd: '--theme-radius-md',
+  radiusLg: '--theme-radius-lg',
+  radiusXl: '--theme-radius-xl',
+  radius2xl: '--theme-radius-2xl',
+  radius3xl: '--theme-radius-3xl',
   controlHeight: '--theme-control-height',
   spaceCompact: '--theme-space-compact',
   spaceNormal: '--theme-space-normal',
   fontFamily: '--theme-font-family',
+  monoFontFamily: '--theme-mono-font-family',
   elevationSurface: '--theme-elevation-surface',
   motionFast: '--theme-motion-fast',
   motionNormal: '--theme-motion-normal',
@@ -67,10 +74,18 @@ export const defaultAppearance: IThemeAppearance = Object.freeze({
   roundControlRadius: '9999px',
   surfaceRadius: '1rem',
   largeSurfaceRadius: '1.5rem',
+  radiusSm: '0.25rem',
+  radiusMd: '0.375rem',
+  radiusLg: '0.5rem',
+  radiusXl: '0.75rem',
+  radius2xl: '1rem',
+  radius3xl: '1.5rem',
   controlHeight: '2.25rem',
   spaceCompact: '0.375rem',
   spaceNormal: '0.75rem',
   fontFamily: 'Inter, sans-serif',
+  monoFontFamily:
+    "'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, 'Cascadia Mono', 'Liberation Mono', Consolas, monospace",
   elevationSurface: '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)',
   motionFast: '150ms',
   motionNormal: '200ms',
@@ -188,6 +203,8 @@ const isRGB = (value: unknown): value is string => {
 
 const isLength = (value: unknown): value is string =>
   typeof value === 'string' && cssLengthPattern.test(value);
+const isFontFamily = (value: unknown): value is string =>
+  typeof value === 'string' && value.trim().length > 0 && !/[;{}]/.test(value);
 const isDuration = (value: unknown): value is string =>
   typeof value === 'string' && cssDurationPattern.test(value);
 
@@ -208,11 +225,17 @@ const appearanceValidators: Record<keyof IThemeAppearance, (value: unknown) => b
   roundControlRadius: isLength,
   surfaceRadius: isLength,
   largeSurfaceRadius: isLength,
+  radiusSm: isLength,
+  radiusMd: isLength,
+  radiusLg: isLength,
+  radiusXl: isLength,
+  radius2xl: isLength,
+  radius3xl: isLength,
   controlHeight: isLength,
   spaceCompact: isLength,
   spaceNormal: isLength,
-  fontFamily: (value) =>
-    typeof value === 'string' && value.trim().length > 0 && !/[;{}]/.test(value),
+  fontFamily: isFontFamily,
+  monoFontFamily: isFontFamily,
   elevationSurface: (value) =>
     typeof value === 'string' && value.trim().length > 0 && !/[;{}]|url\s*\(/i.test(value),
   motionFast: isDuration,

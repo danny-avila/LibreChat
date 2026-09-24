@@ -47,6 +47,45 @@ async function generate(candidates) {
   return compiler.build(candidates);
 }
 
+const tailwindRoot = path.dirname(require.resolve('tailwindcss/package.json'));
+const applicationRoot = path.resolve(packageRoot, '../../client');
+
+/** The application stylesheet, compiled the way the SPA's build compiles it. */
+async function generateApplication(candidates) {
+  const stylesheet = path.join(applicationRoot, 'src/style.css');
+  const compiler = await compile(await fsp.readFile(stylesheet, 'utf8'), {
+    base: path.dirname(stylesheet),
+    async loadModule(id, base) {
+      const modulePath = id.startsWith('.') ? path.resolve(base, id) : require.resolve(id);
+      const loaded = require(modulePath);
+      return { base: path.dirname(modulePath), module: loaded.default ?? loaded, path: modulePath };
+    },
+    async loadStylesheet(id, base) {
+      const resolved =
+        id === 'tailwindcss' ? path.join(tailwindRoot, 'index.css') : path.resolve(base, id);
+      return {
+        base: path.dirname(resolved),
+        content: await fsp.readFile(resolved, 'utf8'),
+        path: resolved,
+      };
+    },
+  });
+
+  return compiler.build(candidates);
+}
+
+/** The declarations of `.candidate`, whitespace collapsed. */
+function rule(css, candidate) {
+  const match = css.match(new RegExp(`\\.${candidate}\\s*\\{([^}]*)\\}`));
+  return match ? match[1].replace(/\s+/g, ' ').trim() : undefined;
+}
+
+/** Tailwind's own default for a theme variable, read from the installed package. */
+function tailwindDefault(variable) {
+  const theme = fs.readFileSync(path.join(tailwindRoot, 'theme.css'), 'utf8');
+  return theme.match(new RegExp(`\\s${variable}:\\s*([^;]+);`))?.[1].trim();
+}
+
 describe('LibreChat Tailwind preset', () => {
   it('generates every component animation and its keyframes together', async () => {
     const names = ['loading-dot', 'accordion-down', 'accordion-up', 'caret-blink'];
@@ -145,8 +184,69 @@ describe('LibreChat Tailwind preset', () => {
       'utf8',
     );
 
+    /** Prettier wraps a long font stack, so declarations compare with whitespace collapsed. */
+    const collapsed = applicationStyles.replace(/\s+/g, ' ');
     Object.entries(themeAppearanceProperties).forEach(([key, property]) => {
-      expect(applicationStyles).toContain(`${property}: ${defaultAppearance[key]};`);
+      expect(collapsed).toContain(`${property}: ${defaultAppearance[key]};`);
     });
+  });
+});
+
+describe('application radius and font scales', () => {
+  const scale = [
+    ['rounded-sm', '--theme-radius-sm', 'radiusSm'],
+    ['rounded-md', '--theme-radius-md', 'radiusMd'],
+    ['rounded-lg', '--theme-radius-lg', 'radiusLg'],
+    ['rounded-xl', '--theme-radius-xl', 'radiusXl'],
+    ['rounded-2xl', '--theme-radius-2xl', 'radius2xl'],
+    ['rounded-3xl', '--theme-radius-3xl', 'radius3xl'],
+  ];
+
+  it('routes the plain radius and font utilities through theme-owned properties', async () => {
+    const css = await generateApplication([
+      'rounded',
+      ...scale.map(([candidate]) => candidate),
+      'font-sans',
+      'font-mono',
+      'rounded-theme-control',
+      'font-theme-ui',
+    ]);
+
+    scale.forEach(([candidate, property]) => {
+      expect(rule(css, candidate)).toBe(`border-radius: var(${property});`);
+    });
+    /** Bare `rounded` has always matched `sm`, and follows it. */
+    expect(rule(css, 'rounded')).toBe('border-radius: var(--theme-radius-sm);');
+    expect(rule(css, 'font-sans')).toBe('font-family: var(--theme-font-family);');
+    expect(rule(css, 'font-mono')).toBe('font-family: var(--theme-mono-font-family);');
+
+    /** Preflight gives `html` and `code` the same families the utilities do. */
+    expect(css).toContain('--default-font-family: var(--theme-font-family);');
+    expect(css).toContain('--default-mono-font-family: var(--theme-mono-font-family);');
+
+    /** The existing appearance roles are untouched. */
+    expect(rule(css, 'rounded-theme-control')).toBe(
+      `border-radius: var(--theme-control-radius, ${defaultAppearance.controlRadius});`,
+    );
+    expect(rule(css, 'font-theme-ui')).toBe(
+      `font-family: var(--theme-font-family, ${defaultAppearance.fontFamily});`,
+    );
+  });
+
+  it('defaults to the values the utilities resolved to before the remap', () => {
+    /** `sm`, `md` and `lg` were `calc(var(--radius) - 4px)`, `calc(var(--radius) - 2px)` and
+     *  `var(--radius)` over `--radius: 0.5rem`; at the 16px root those are the rem values below. */
+    expect(defaultAppearance.radiusSm).toBe('0.25rem');
+    expect(defaultAppearance.radiusMd).toBe('0.375rem');
+    expect(defaultAppearance.radiusLg).toBe('0.5rem');
+    /** The rest were Tailwind's own steps, read from the installed package. */
+    expect(defaultAppearance.radiusXl).toBe(tailwindDefault('--radius-xl'));
+    expect(defaultAppearance.radius2xl).toBe(tailwindDefault('--radius-2xl'));
+    expect(defaultAppearance.radius3xl).toBe(tailwindDefault('--radius-3xl'));
+
+    expect(defaultAppearance.fontFamily).toBe('Inter, sans-serif');
+    expect(defaultAppearance.monoFontFamily).toBe(
+      "'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, 'Cascadia Mono', 'Liberation Mono', Consolas, monospace",
+    );
   });
 });

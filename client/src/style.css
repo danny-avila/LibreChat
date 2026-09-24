@@ -11,6 +11,23 @@
   --color-green-*: initial;
 }
 
+/* The plain radius and font utilities read theme-owned properties, so a theme definition reshapes
+ * the 900-odd `rounded-*`, `font-sans` and `font-mono` call sites without a migration. The
+ * defaults in the `html` block reproduce the scale these utilities resolved to before. Bare
+ * `rounded` reads `--radius` and has always matched `sm`. App-only: the published preset keeps
+ * its own `sm`, which differs from this scale, so consumers' corners do not move. */
+@theme inline {
+  --radius: var(--theme-radius-sm);
+  --radius-sm: var(--theme-radius-sm);
+  --radius-md: var(--theme-radius-md);
+  --radius-lg: var(--theme-radius-lg);
+  --radius-xl: var(--theme-radius-xl);
+  --radius-2xl: var(--theme-radius-2xl);
+  --radius-3xl: var(--theme-radius-3xl);
+  --font-sans: var(--theme-font-family);
+  --font-mono: var(--theme-mono-font-family);
+}
+
 /* Tailwind v4 changed two preflight defaults this app was built against. Each rule below
  * restores the v3 default rather than adopting the new one, so the upgrade carries no visual
  * change; drop one only as a deliberate design decision.
@@ -280,15 +297,29 @@ html {
   --surface-fixed: var(--white);
   --surface-fixed-hover: var(--gray-100);
   --text-fixed: var(--gray-800);
-  --radius: 0.5rem;
   --theme-control-radius: 0.75rem;
   --theme-round-control-radius: 9999px;
   --theme-surface-radius: 1rem;
   --theme-large-surface-radius: 1.5rem;
+  --theme-radius-sm: 0.25rem;
+  --theme-radius-md: 0.375rem;
+  --theme-radius-lg: 0.5rem;
+  --theme-radius-xl: 0.75rem;
+  --theme-radius-2xl: 1rem;
+  --theme-radius-3xl: 1.5rem;
   --theme-control-height: 2.25rem;
   --theme-space-compact: 0.375rem;
   --theme-space-normal: 0.75rem;
   --theme-font-family: Inter, sans-serif;
+  /* Roboto Mono is self-hosted (the `@font-face` block below), so code renders the same on every
+   * platform with real bold and italic faces. The tail is reached while the font loads, if it
+   * fails, and per glyph for what the bundled latin subset omits (box drawing in terminal output
+   * most visibly), ordered so those glyphs keep Roboto Mono's advance width: `ui-monospace` is SF
+   * Mono on macOS, Cascadia Mono ships with Windows Terminal, and Consolas is last because it is
+   * narrower than the rest. */
+  --theme-mono-font-family:
+    'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, 'Cascadia Mono', 'Liberation Mono',
+    Consolas, monospace;
   --theme-elevation-surface: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
   --theme-motion-fast: 150ms;
   --theme-motion-normal: 200ms;
@@ -1245,7 +1276,7 @@ p > small {
 }
 
 /* `code`, `kbd`, `samp` and `pre` take their font from Tailwind's preflight, which
-   reads `theme.fontFamily.mono` — see `tailwind.config.cjs`. Do not restate it here:
+   reads `--font-mono`, mapped to `--theme-mono-font-family` above. Do not restate it here:
    this file used to, with `!important`, which silently beat every `font-mono` class
    in the app and pinned code to faces the repository does not ship. */
 code.language-text,
