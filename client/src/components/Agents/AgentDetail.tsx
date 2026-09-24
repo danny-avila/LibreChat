@@ -19,7 +19,12 @@ import {
   AgentListResponse,
 } from 'librechat-data-provider';
 import type t from 'librechat-data-provider';
-import { renderAgentAvatar, clearMessagesCache, specDisplayFieldReset } from '~/utils';
+import {
+  renderAgentAvatar,
+  clearMessagesCache,
+  getAgentChatUrl,
+  specDisplayFieldReset,
+} from '~/utils';
 import { useLocalize, useDefaultConvo, useFavorites } from '~/hooks';
 import Description from '~/components/ui/Description';
 import { useChatContext } from '~/Providers';
@@ -101,8 +106,7 @@ const AgentDetail: React.FC<AgentDetailProps> = ({ agent, isOpen, onClose }) => 
    * Copy the agent's shareable link to clipboard
    */
   const handleCopyLink = () => {
-    const baseUrl = new URL(window.location.origin);
-    const chatUrl = `${baseUrl.origin}/c/new?agent_id=${agent.id}`;
+    const chatUrl = getAgentChatUrl(agent.id);
     navigator.clipboard
       .writeText(chatUrl)
       .then(() => {

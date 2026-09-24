@@ -1,4 +1,4 @@
-import { AccessRoleIds, ResourceType } from 'librechat-data-provider';
+import { apiBaseUrl, AccessRoleIds, ResourceType } from 'librechat-data-provider';
 
 export interface ResourceConfig {
   resourceType: ResourceType;
@@ -12,13 +12,19 @@ export interface ResourceConfig {
   getCopyUrlMessage: () => string;
 }
 
+export const getAgentChatUrl = (agentId: string): string => {
+  const url = new URL(`${apiBaseUrl()}/c/new`, window.location.origin);
+  url.searchParams.set('agent_id', agentId);
+  return url.href;
+};
+
 export const RESOURCE_CONFIGS: Partial<Record<ResourceType, ResourceConfig>> = {
   [ResourceType.AGENT]: {
     resourceType: ResourceType.AGENT,
     defaultViewerRoleId: AccessRoleIds.AGENT_VIEWER,
     defaultEditorRoleId: AccessRoleIds.AGENT_EDITOR,
     defaultOwnerRoleId: AccessRoleIds.AGENT_OWNER,
-    getResourceUrl: (agentId: string) => `${window.location.origin}/c/new?agent_id=${agentId}`,
+    getResourceUrl: getAgentChatUrl,
     getResourceName: (name?: string) => (name && name !== '' ? name : 'agent'),
     getShareMessage: (name?: string) => (name && name !== '' ? name : 'agent'),
     getManageMessage: (name?: string) =>
