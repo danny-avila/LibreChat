@@ -120,7 +120,7 @@ export default function SchedulePanel() {
       {!isLoading && !isError && maxPerUser !== undefined && (
         <PanelFooter className="justify-start">
           <p className="text-text-secondary text-xs">
-            {localize('com_ui_schedules_used', { used: schedules.length, max: maxPerUser })}
+            {localize('com_ui_schedules_used', { used: allSchedules.length, max: maxPerUser })}
           </p>
         </PanelFooter>
       )}
