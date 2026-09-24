@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import * as Ariakit from '@ariakit/react';
-import { Check, ChevronDown, Folder, FolderSync, FolderX } from 'lucide-react';
+import { Check, ChevronDown, Folder, FolderSync, FolderX, RefreshCw } from 'lucide-react';
 import { TooltipAnchor, composerControlClasses, useToastContext } from '@librechat/client';
 import type { CodeWorkspaceSelection, TConversation } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
@@ -11,12 +11,15 @@ import type {
   TranslationKeys,
 } from '~/hooks';
 import {
+  useCodeWorkspaceRefresh,
+  useMoveConversationCodeEnvironmentMutation,
+} from '~/data-provider';
+import {
   cn,
   codeWorkspaceErrorKeys,
   getCodeWorkspaceErrorReason,
   getResponseStatus,
 } from '~/utils';
-import { useMoveConversationCodeEnvironmentMutation } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
 const stateLabels: Partial<Record<CodeWorkspaceResult['state'], TranslationKeys>> = {
@@ -174,6 +177,7 @@ export default function CodeWorkspaceMenu({
   const menuStore = Ariakit.useMenuStore({ focusLoop: true, placement: 'top-start' });
   const isOpen = menuStore.useState('open');
   const moveMutation = useMoveConversationCodeEnvironmentMutation();
+  const { refresh, isRefreshing } = useCodeWorkspaceRefresh();
   const [moveDraft, setMoveDraft] = useState<{
     conversationId: string;
     workspaces: Record<string, string>;
@@ -217,7 +221,7 @@ export default function CodeWorkspaceMenu({
   );
   const labelKey = stateLabels[workspace.state];
   let label =
-    workspace.mode === 'without_attached'
+    workspace.state === 'without_attached'
       ? localize('com_ui_code_workspace_without_attached')
       : (onlyDescriptor?.name ?? onlyDescriptor?.id);
   if (label == null && workspace.state === 'ready') {
@@ -241,16 +245,22 @@ export default function CodeWorkspaceMenu({
       <TooltipAnchor
         description={recovery}
         render={
-          <div
+          <button
+            type="button"
             data-testid="code-workspace-locked-status"
-            role="status"
-            aria-label={`${label}. ${recovery}`}
-            className={cn(composerControlClasses(), 'min-w-0 max-w-full cursor-default px-2.5')}
+            disabled={disabled || isRefreshing}
+            onClick={() => void refresh()}
+            aria-label={`${label}. ${recovery}. ${localize('com_ui_retry')}`}
+            aria-busy={isRefreshing}
+            className={cn(composerControlClasses(), 'min-w-0 max-w-full px-2.5')}
           />
         }
       >
         <Icon className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
-        <span className="min-w-0 max-w-[16rem] truncate">{label}</span>
+        <span role="status" className="min-w-0 max-w-[16rem] truncate">
+          {label}
+        </span>
+        <RefreshCw className="size-3 shrink-0 text-text-secondary" aria-hidden="true" />
       </TooltipAnchor>
     );
   }
@@ -424,6 +434,22 @@ export default function CodeWorkspaceMenu({
             ))}
           </>
         )}
+        <Ariakit.MenuSeparator className="my-1 h-0 w-full border-t border-border-light" />
+        <Ariakit.MenuItem
+          disabled={buttonDisabled || isRefreshing}
+          hideOnClick={false}
+          onClick={() => void refresh()}
+          aria-busy={isRefreshing}
+          className={cn(
+            menuItemClasses(),
+            'items-center aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
+          )}
+        >
+          <RefreshCw className="size-4 shrink-0 text-text-secondary" aria-hidden="true" />
+          <span className="text-sm font-medium text-text-primary">
+            {localize('com_ui_refresh')}
+          </span>
+        </Ariakit.MenuItem>
       </Ariakit.Menu>
     </Ariakit.MenuProvider>
   );

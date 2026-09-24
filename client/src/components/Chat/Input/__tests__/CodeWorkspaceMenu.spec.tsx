@@ -88,6 +88,37 @@ function renderMenu(ui: React.ReactElement) {
 }
 
 describe('CodeWorkspaceMenu', () => {
+  test('shows loading rather than the inferred no-workspace fallback on first load', () => {
+    renderMenu(
+      <CodeWorkspaceMenu
+        setConversation={jest.fn()}
+        workspace={workspace({
+          mode: 'without_attached',
+          state: 'loading',
+          selections: undefined,
+          environments: [{ environment, state: 'loading', workspaces: [] }],
+        })}
+        disabled={false}
+      />,
+    );
+    expect(screen.getByTestId('code-workspace')).toHaveTextContent('com_ui_code_workspace_loading');
+  });
+
+  test('can retry a locked unavailable workspace without changing its saved decision', async () => {
+    const invalidate = jest.spyOn(QueryClient.prototype, 'invalidateQueries');
+    const setConversation = jest.fn();
+    renderMenu(
+      <CodeWorkspaceMenu
+        setConversation={setConversation}
+        workspace={workspace({ locked: true, state: 'unavailable', canSubmit: false })}
+        disabled={false}
+      />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: /com_ui_retry/ }));
+    expect(invalidate).toHaveBeenCalled();
+    expect(setConversation).not.toHaveBeenCalled();
+  });
+
   test('shows the instruction file and truncation reported by the worker', async () => {
     const state = workspace();
     state.environments[0].workspaces[0].instructions = [
@@ -260,7 +291,7 @@ describe('CodeWorkspaceMenu', () => {
     );
 
     expect(screen.getByTestId('code-workspace-locked-status')).toHaveAccessibleName(
-      'com_ui_code_workspace_unavailable. com_ui_code_workspace_locked_recovery',
+      'com_ui_code_workspace_unavailable. com_ui_code_workspace_locked_recovery. com_ui_retry',
     );
   });
 

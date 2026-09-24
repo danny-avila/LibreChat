@@ -1,4 +1,5 @@
 import { createElement } from 'react';
+import { RecoilRoot } from 'recoil';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { dataService, QueryKeys, EModelEndpoint, PermissionBits } from 'librechat-data-provider';
@@ -31,7 +32,11 @@ const page = (ids: string[], after: string | null): AgentListResponse =>
 
 const createWrapper = (queryClient: QueryClient) =>
   function Wrapper({ children }: { children: ReactNode }) {
-    return createElement(QueryClientProvider, { client: queryClient }, children);
+    return createElement(
+      QueryClientProvider,
+      { client: queryClient },
+      createElement(RecoilRoot, null, children),
+    );
   };
 
 const renderListAgents = (params: Parameters<typeof useListAgentsQuery>[0]) => {
