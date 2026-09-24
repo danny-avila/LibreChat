@@ -30,6 +30,11 @@ import {
   MAX_SUBAGENTS_CEILING,
   DEFAULT_MAX_RETAINED_TOOL_COUNT_CHARS,
 } from './limits';
+import {
+  DEFAULT_MCP_APP_CSP_LIMITS,
+  resolveMCPAppCspLimits,
+  type MCPAppCspLimits,
+} from './mcp/csp';
 import { CODE_ENVIRONMENT_DECISION_VERSION, CODE_ENVIRONMENT_MOVE_VERSION } from './code/workspace';
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { STATEFUL_CODE_ENVIRONMENTS } from './stateful-code';
@@ -56,7 +61,7 @@ export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'd
 /** How long a started social login may take to return to its callback before its `state` expires. */
 export const DEFAULT_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
-export const BASE_ONLY_CONFIG_SECTIONS = ['filters'] as const;
+export const BASE_ONLY_CONFIG_SECTIONS = ['filters', 'mcpAppSandbox'] as const;
 /** Sections that may be stored in the tenant's base config document but must
  * not be overridden or tombstoned by role, group, or user config documents. */
 export const BASE_PRINCIPAL_CONFIG_SECTIONS = ['langfuse'] as const;
@@ -1923,6 +1928,15 @@ export enum RateLimitPrefix {
   STT = 'STT',
 }
 
+export const mcpAppRateLimitSchema = z
+  .object({
+    resourcesPerMinute: z.number().int().positive().default(120),
+    toolCallsPerMinute: z.number().int().positive().default(60),
+  })
+  .default({});
+
+export type TMCPAppRateLimits = z.infer<typeof mcpAppRateLimitSchema>;
+
 export const rateLimitSchema = z.object({
   agentEvents: z
     .object({
@@ -1962,7 +1976,14 @@ export const rateLimitSchema = z.object({
       userWindowInMinutes: z.number().optional(),
     })
     .optional(),
+  mcpApps: mcpAppRateLimitSchema.optional(),
 });
+
+export function resolveMCPAppRateLimits(
+  rateLimits?: z.input<typeof rateLimitSchema>,
+): TMCPAppRateLimits {
+  return mcpAppRateLimitSchema.parse(rateLimits?.mcpApps);
+}
 
 export enum EImageOutputType {
   PNG = 'png',
@@ -2375,6 +2396,46 @@ export type StartupConfigContext = 'share';
  */
 export type EndpointsDropParamsMap = Record<string, string[] | Record<string, string[]>>;
 
+export type TMCPAppsPolicy = {
+  enabled: boolean;
+  legacyHtmlEnabled: boolean;
+  cspLimits?: MCPAppCspLimits;
+  /** Server-enforced UTF-8 JSON byte cap for one persisted MCP App artifact. */
+  maxPersistedAppBytes?: number;
+  /** Shared per-user ceiling applied before principal-scoped MCP App admission. */
+  maxAdmissionRequestsPerMinute?: number;
+  /** Deployment-owned dedicated Sandbox Proxy URL published to authenticated clients. */
+  sandboxUrl?: string;
+};
+
+export const DEFAULT_MCP_APP_PERSISTED_BYTES = 1024 * 1024;
+export const MAX_MCP_APP_PERSISTED_BYTES = 4 * 1024 * 1024;
+export const DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE = 240;
+
+export const DEFAULT_MCP_APPS_POLICY: TMCPAppsPolicy = {
+  enabled: false,
+  legacyHtmlEnabled: false,
+  maxPersistedAppBytes: DEFAULT_MCP_APP_PERSISTED_BYTES,
+  maxAdmissionRequestsPerMinute: DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
+};
+
+export function resolveMCPAppsPolicy(
+  value?: boolean,
+  cspLimits?: Partial<MCPAppCspLimits>,
+  maxPersistedAppBytes = DEFAULT_MCP_APP_PERSISTED_BYTES,
+  maxAdmissionRequestsPerMinute = DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
+  sandboxUrl?: string,
+): TMCPAppsPolicy {
+  return {
+    enabled: value === true,
+    legacyHtmlEnabled: value !== false,
+    ...(cspLimits != null ? { cspLimits: resolveMCPAppCspLimits(cspLimits) } : {}),
+    maxPersistedAppBytes,
+    maxAdmissionRequestsPerMinute,
+    ...(sandboxUrl !== undefined ? { sandboxUrl } : {}),
+  };
+}
+
 export type TStartupConfig = {
   appTitle: string;
   socialLogins?: string[];
@@ -2473,6 +2534,7 @@ export type TStartupConfig = {
     }
   >;
   mcpPlaceholder?: string;
+  mcpApps?: TMCPAppsPolicy;
   conversationImportMaxFileSize?: number;
   buildInfo?: {
     commit?: string | null;
@@ -2996,6 +3058,49 @@ export const configSchema = z.object({
   includedTools: z.array(z.string()).optional(),
   filteredTools: z.array(z.string()).optional(),
   mcpServers: MCPServersSchema.optional(),
+  mcpAppSandbox: z
+    .object({
+      url: z
+        .string()
+        .trim()
+        .url()
+        .refine(
+          (value) => {
+            try {
+              return ['http:', 'https:'].includes(new URL(value).protocol);
+            } catch {
+              return false;
+            }
+          },
+          { message: 'MCP App sandbox URL must use http:// or https://' },
+        )
+        .optional(),
+      maxSourcesPerDirective: z
+        .number()
+        .int()
+        .positive()
+        .max(Number.MAX_SAFE_INTEGER)
+        .default(DEFAULT_MCP_APP_CSP_LIMITS.maxSourcesPerDirective),
+      maxSerializedLength: z
+        .number()
+        .int()
+        .positive()
+        .max(Number.MAX_SAFE_INTEGER)
+        .default(DEFAULT_MCP_APP_CSP_LIMITS.maxSerializedLength),
+      maxPersistedAppBytes: z
+        .number()
+        .int()
+        .positive()
+        .max(MAX_MCP_APP_PERSISTED_BYTES)
+        .default(DEFAULT_MCP_APP_PERSISTED_BYTES),
+      maxAdmissionRequestsPerMinute: z
+        .number()
+        .int()
+        .positive()
+        .max(Number.MAX_SAFE_INTEGER)
+        .default(DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE),
+    })
+    .default({}),
   mcpSettings: z
     .object({
       allowedDomains: z.array(z.string()).optional(),
@@ -3055,6 +3160,7 @@ export const configSchema = z.object({
           authorizationFenceRetryBatchSize: z.number().int().positive().max(10_000).default(100),
         })
         .default({}),
+      apps: z.boolean().optional(),
     })
     .optional(),
   interface: interfaceSchema,

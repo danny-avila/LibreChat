@@ -11,16 +11,17 @@ import {
   MOBILE_PANE_SHIFT,
 } from '~/components/UnifiedSidebar';
 import {
-  CodeHighlightThrottleContext,
-  normalizeCodeHighlightThrottleMs,
-} from '~/components/Chat/Messages/Content/Parts/useLazyHighlight';
-import {
   PromptGroupsProvider,
   AssistantsMapContext,
   AgentsMapContext,
   SetConvoProvider,
   FileMapContext,
+  MCPAppsPolicyProvider,
 } from '~/Providers';
+import {
+  CodeHighlightThrottleContext,
+  normalizeCodeHighlightThrottleMs,
+} from '~/components/Chat/Messages/Content/Parts/useLazyHighlight';
 import {
   useSearchEnabled,
   useAssistantsMap,
@@ -94,7 +95,7 @@ export default function Root() {
     },
     [setSidebarExpanded],
   );
-  const { isAuthenticated, logout } = useAuthContext();
+  const { isAuthenticated, logout, user } = useAuthContext();
   /** Releases feature-catalog queries after first paint on browser idle. */
   useCatalogWarmup(isAuthenticated);
 
@@ -114,7 +115,7 @@ export default function Root() {
   const agentsMap = useAgentsMap({ isAuthenticated });
   const fileMap = useFileMap({ isAuthenticated });
 
-  const { data: config } = useGetStartupConfig();
+  const { data: config, isSuccess: isConfigReady, error: configError } = useGetStartupConfig();
   const { data: termsData } = useUserTermsQuery({
     enabled: isAuthenticated && config?.interface?.termsOfService?.modalAcceptance === true,
   });
@@ -186,7 +187,13 @@ export default function Root() {
                        *  too late and drops too early. */
                       inert={isSmallScreen && (sidebarExpanded || isSliding) ? '' : undefined}
                     >
-                      <Outlet />
+                      <MCPAppsPolicyProvider
+                        startupConfig={config}
+                        ready={isConfigReady && configError == null}
+                        userId={user?.id}
+                      >
+                        <Outlet />
+                      </MCPAppsPolicyProvider>
                     </div>
                     {/* Without the strip the scrim exists only for the travel:
                       through a close that began while the strip was still on

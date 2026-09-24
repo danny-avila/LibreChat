@@ -27,5 +27,6 @@ export * from './UploadModalContext';
 export * from './ArtifactsContext';
 export * from './PromptGroupsContext';
 export * from './MessagesViewContext';
+export * from './MCPAppsPolicyContext';
 export * from './MediaContext';
 export { default as BadgeRowProvider } from './BadgeRowContext';

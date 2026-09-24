@@ -8,11 +8,17 @@ import {
   configSchema,
   codeEnvironmentUserConfigSchema,
   excludedKeys,
+  DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
+  DEFAULT_MCP_APP_PERSISTED_BYTES,
+  MAX_MCP_APP_PERSISTED_BYTES,
+  resolveMCPAppRateLimits,
+  resolveMCPAppsPolicy,
   resolveEndpointType,
   webSearchSchema,
 } from './config';
 import { EModelEndpoint, isDocumentSupportedProvider } from './schemas';
 import { getEndpointFileConfig, mergeFileConfig } from './file-config';
+import { DEFAULT_MCP_APP_CSP_LIMITS } from './mcp/csp';
 import { modelSpecSubagentsSchema } from './models';
 
 const endpointsConfig: TEndpointsConfig = {
@@ -1664,6 +1670,134 @@ describe('bedrockModels defaults', () => {
   it('keeps Opus 5 available as a global profile', () => {
     expect(bedrockModels).toContain('global.anthropic.claude-opus-5');
     expect(bedrockModels).not.toContain('anthropic.claude-opus-5');
+  });
+});
+
+describe('MCP Apps configuration', () => {
+  it.each([
+    [
+      undefined,
+      {
+        enabled: false,
+        legacyHtmlEnabled: true,
+        maxPersistedAppBytes: DEFAULT_MCP_APP_PERSISTED_BYTES,
+        maxAdmissionRequestsPerMinute: DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
+      },
+    ],
+    [
+      true,
+      {
+        enabled: true,
+        legacyHtmlEnabled: true,
+        maxPersistedAppBytes: DEFAULT_MCP_APP_PERSISTED_BYTES,
+        maxAdmissionRequestsPerMinute: DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
+      },
+    ],
+    [
+      false,
+      {
+        enabled: false,
+        legacyHtmlEnabled: false,
+        maxPersistedAppBytes: DEFAULT_MCP_APP_PERSISTED_BYTES,
+        maxAdmissionRequestsPerMinute: DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
+      },
+    ],
+  ])('resolves raw apps value %s to the effective policy', (value, expected) => {
+    expect(resolveMCPAppsPolicy(value)).toEqual(expected);
+  });
+
+  it('defaults and validates deployment-owned sandbox limits', () => {
+    expect(configSchema.parse({ version: '1.2.1' }).mcpAppSandbox).toEqual({
+      ...DEFAULT_MCP_APP_CSP_LIMITS,
+      maxPersistedAppBytes: DEFAULT_MCP_APP_PERSISTED_BYTES,
+      maxAdmissionRequestsPerMinute: DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
+    });
+    expect(
+      configSchema.parse({
+        version: '1.2.1',
+        mcpAppSandbox: {
+          maxSourcesPerDirective: 64,
+          maxSerializedLength: 8192,
+          maxPersistedAppBytes: 2048,
+          maxAdmissionRequestsPerMinute: 480,
+          url: 'https://mcp-sandbox.example.com/api/mcp/sandbox',
+        },
+      }).mcpAppSandbox,
+    ).toEqual({
+      maxSourcesPerDirective: 64,
+      maxSerializedLength: 8192,
+      maxPersistedAppBytes: 2048,
+      maxAdmissionRequestsPerMinute: 480,
+      url: 'https://mcp-sandbox.example.com/api/mcp/sandbox',
+    });
+    for (const mcpAppSandbox of [
+      { maxSourcesPerDirective: 0 },
+      { maxSourcesPerDirective: 1.5 },
+      { maxSerializedLength: -1 },
+      { maxSerializedLength: 1.5 },
+      { maxSerializedLength: Number.MAX_SAFE_INTEGER + 1 },
+      { maxPersistedAppBytes: 0 },
+      { maxPersistedAppBytes: 1.5 },
+      { maxPersistedAppBytes: MAX_MCP_APP_PERSISTED_BYTES + 1 },
+      { maxAdmissionRequestsPerMinute: 0 },
+      { maxAdmissionRequestsPerMinute: 1.5 },
+      { maxAdmissionRequestsPerMinute: Number.MAX_SAFE_INTEGER + 1 },
+      { url: '/api/mcp/sandbox' },
+      { url: 'ftp://mcp-sandbox.example.com/api/mcp/sandbox' },
+    ]) {
+      expect(configSchema.safeParse({ version: '1.2.1', mcpAppSandbox }).success).toBe(false);
+    }
+  });
+
+  it('publishes optional runtime sandbox fields in the effective policy', () => {
+    expect(
+      resolveMCPAppsPolicy(
+        true,
+        undefined,
+        2048,
+        480,
+        'https://mcp-sandbox.example.com/api/mcp/sandbox',
+      ),
+    ).toEqual({
+      enabled: true,
+      legacyHtmlEnabled: true,
+      maxPersistedAppBytes: 2048,
+      maxAdmissionRequestsPerMinute: 480,
+      sandboxUrl: 'https://mcp-sandbox.example.com/api/mcp/sandbox',
+    });
+  });
+
+  it('defaults App request limits without requiring the parent rateLimits section', () => {
+    expect(resolveMCPAppRateLimits()).toEqual({
+      resourcesPerMinute: 120,
+      toolCallsPerMinute: 60,
+    });
+  });
+
+  it('resolves configured App request limits', () => {
+    expect(
+      resolveMCPAppRateLimits({
+        mcpApps: { resourcesPerMinute: 2, toolCallsPerMinute: 3 },
+      }),
+    ).toEqual({ resourcesPerMinute: 2, toolCallsPerMinute: 3 });
+  });
+
+  it.each([0, -1, 1.5])('rejects invalid App resource request limits: %s', (value) => {
+    expect(
+      configSchema.safeParse({
+        version: '1.3.5',
+        rateLimits: { mcpApps: { resourcesPerMinute: value } },
+      }).success,
+    ).toBe(false);
+  });
+
+  it.each([0, -1, 1.5])('rejects invalid App tool-call limits: %s', (value) => {
+    expect(
+      configSchema.safeParse({
+        version: '1.3.5',
+        rateLimits: { mcpApps: { toolCallsPerMinute: value } },
+      }).success,
+    ).toBe(false);
   });
 });
 

@@ -177,6 +177,7 @@ describe('GET /api/config', () => {
       expect(response.body).not.toHaveProperty('sharePointPickerSharePointScope');
       expect(response.body).not.toHaveProperty('conversationImportMaxFileSize');
       expect(response.body).not.toHaveProperty('insightsEnabled');
+      expect(response.body).not.toHaveProperty('mcpApps');
     });
 
     it('should strip authenticated-only informational fields from unauthenticated response (#12688)', async () => {
@@ -322,6 +323,7 @@ describe('GET /api/config', () => {
         userId: 'user123',
         idOnTheSource: undefined,
         tenantId: 'fallback-tenant',
+        failClosed: true,
       });
     });
 
@@ -337,6 +339,52 @@ describe('GET /api/config', () => {
         userId: 'user123',
         idOnTheSource: undefined,
         tenantId: 'user-tenant',
+        failClosed: true,
+      });
+    });
+
+    it.each([
+      [undefined, { enabled: false, legacyHtmlEnabled: true }],
+      [true, { enabled: true, legacyHtmlEnabled: true }],
+      [false, { enabled: false, legacyHtmlEnabled: false }],
+    ])('publishes the authenticated MCP Apps policy for raw apps=%s', async (apps, expected) => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        mcpSettings: apps === undefined ? {} : { apps },
+      });
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.mcpApps).toEqual({
+        ...expected,
+        cspLimits: { maxSourcesPerDirective: 32, maxSerializedLength: 4096 },
+        maxPersistedAppBytes: 1048576,
+        maxAdmissionRequestsPerMinute: 240,
+      });
+    });
+
+    it('publishes deployment-owned MCP App sandbox limits', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        mcpSettings: { apps: true },
+        mcpAppSandbox: {
+          url: 'https://mcp-sandbox.example.com/api/mcp/sandbox',
+          maxSourcesPerDirective: 64,
+          maxSerializedLength: 8192,
+          maxAdmissionRequestsPerMinute: 480,
+        },
+      });
+      const response = await request(createApp(mockUser)).get('/api/config');
+
+      expect(response.body.mcpApps).toEqual({
+        enabled: true,
+        legacyHtmlEnabled: true,
+        cspLimits: { maxSourcesPerDirective: 64, maxSerializedLength: 8192 },
+        maxPersistedAppBytes: 1048576,
+        maxAdmissionRequestsPerMinute: 480,
+        sandboxUrl: 'https://mcp-sandbox.example.com/api/mcp/sandbox',
       });
     });
 
@@ -755,6 +803,9 @@ describe('GET /api/config', () => {
 
       expect(response.statusCode).toBe(500);
       expect(response.body).toHaveProperty('error');
+      expect(mockGetAppConfig).toHaveBeenCalledWith(
+        expect.objectContaining({ userId: 'user123', failClosed: true }),
+      );
     });
   });
 

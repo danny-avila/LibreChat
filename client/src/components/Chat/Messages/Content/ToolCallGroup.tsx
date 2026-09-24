@@ -21,6 +21,7 @@ import { ToolAuthWarning, ToolAuthWarningContext } from './auth';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { AttachmentGroup, ReasoningCompact } from './Parts';
 import { getOutcomeStatus, summarizeSpan } from './outcome';
+import { MCPAppViews } from '~/components/MCPUIResource';
 import { StackedToolIcons } from './ToolOutput';
 import { mapAttachments } from '~/utils/map';
 import { getSourceDomains } from './sources';
@@ -587,6 +588,7 @@ export default function ToolCallGroup({
         <>
           <SearchVerticals attachments={groupAttachments} />
           <AttachmentGroup attachments={groupAttachments} />
+          <MCPAppViews attachments={groupAttachments} />
         </>
       )}
     </div>

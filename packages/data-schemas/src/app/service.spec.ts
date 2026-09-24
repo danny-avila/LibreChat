@@ -287,6 +287,28 @@ describe('AppService assistants config', () => {
   });
 });
 
+describe('AppService MCP App sandbox configuration', () => {
+  it('preserves deployment-owned MCP App sandbox limits', async () => {
+    const result = await AppService({
+      config: {
+        mcpAppSandbox: {
+          url: 'https://mcp-sandbox.example.com/api/mcp/sandbox',
+          maxSourcesPerDirective: 64,
+          maxSerializedLength: 8192,
+          maxAdmissionRequestsPerMinute: 480,
+        },
+      } as DeepPartial<TCustomConfig>,
+    });
+
+    expect(result.mcpAppSandbox).toEqual({
+      url: 'https://mcp-sandbox.example.com/api/mcp/sandbox',
+      maxSourcesPerDirective: 64,
+      maxSerializedLength: 8192,
+      maxAdmissionRequestsPerMinute: 480,
+    });
+  });
+});
+
 describe('AppService memory capability', () => {
   it('strips the memory capability when no memory config is present', async () => {
     const result = await AppService({ config: {} as DeepPartial<TCustomConfig> });

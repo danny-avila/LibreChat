@@ -161,6 +161,7 @@ export const AppService = async (params?: {
 
   const mcpServersConfig = config.mcpServers || null;
   const mcpSettings = config.mcpSettings || null;
+  const mcpAppSandbox = config.mcpAppSandbox ?? configDefaults.mcpAppSandbox;
   const actions = config.actions;
   const registration = config.registration ?? configDefaults.registration;
   const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
@@ -181,6 +182,7 @@ export const AppService = async (params?: {
     skillSync,
     webSearch,
     mcpSettings,
+    mcpAppSandbox,
     fileStrategy,
     registration,
     transactions,
