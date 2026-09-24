@@ -1,9 +1,11 @@
 import { createElement } from 'react';
+import { AxiosError } from 'axios';
 import { Provider, createStore } from 'jotai';
 import { dataService, QueryKeys } from 'librechat-data-provider';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import type { TConversation } from 'librechat-data-provider';
+import type { AxiosResponse } from 'axios';
 import type { ReactNode } from 'react';
 import {
   useMoveConversationCodeEnvironmentMutation,
@@ -91,7 +93,7 @@ describe('conversation-scoped decision recovery', () => {
       );
     return renderHook(
       () => ({
-        change: useMoveConversationCodeEnvironmentMutation(),
+        change: useMoveConversationCodeEnvironmentMutation(setConversation),
         reconcile: useReconcileConversationCodeEnvironmentMutation(setConversation),
         blocked: useIsReplacingConversationCodeEnvironment('convo-1'),
         unrelated: useIsReplacingConversationCodeEnvironment('convo-2'),
@@ -294,4 +296,174 @@ describe('conversation-scoped decision recovery', () => {
     await waitFor(() => expect(result.current.blocked).toBe(false));
     expect(result.current.recovery).toBeUndefined();
   });
+});
+
+describe('ambiguous workspace transitions', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  const conflict = new AxiosError('stale', 'ERR_BAD_REQUEST', undefined, undefined, {
+    status: 409,
+    data: { reason: 'locked' },
+  } as AxiosResponse);
+
+  it.each([
+    ['attach response lost', new Error('connection reset'), [], [vm]],
+    ['detach response lost', new Error('connection reset'), [mac], []],
+    ['competing tab', conflict, [mac], [vm]],
+    [
+      'server failure',
+      new AxiosError('server', undefined, undefined, undefined, {
+        status: 503,
+      } as AxiosResponse),
+      [mac],
+      [vm],
+    ],
+  ] as const)(
+    'recovers %s through the mutation even after its observer unmounts',
+    async (_label, error, from, to) => {
+      jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      let fail!: (error: Error) => void;
+      let finishRead!: (value: TConversation) => void;
+      jest.mocked(dataService.moveConversationCodeEnvironment).mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            fail = reject;
+          }),
+      );
+      jest.mocked(dataService.getConversationById).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishRead = resolve;
+          }),
+      );
+      const queryClient = new QueryClient({
+        defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+      });
+      const store = createStore();
+      const stored = {
+        conversationId: 'saved',
+        title: 'Preserved',
+        codeEnvironmentMode: from.length ? 'attached' : 'without_attached',
+        codeWorkspaces: from.length ? [...from] : undefined,
+      } as TConversation;
+      const persisted = {
+        ...stored,
+        codeEnvironmentMode: to.length ? 'attached' : 'without_attached',
+        codeWorkspaces: to.length ? [...to] : undefined,
+      } as TConversation;
+      queryClient.setQueryData([QueryKeys.conversation, 'saved'], stored);
+      const wrapper = ({ children }: { children: ReactNode }) =>
+        createElement(
+          Provider,
+          { store },
+          createElement(QueryClientProvider, { client: queryClient }, children),
+        );
+      let current = stored;
+      const setter = jest.fn((update) => {
+        current = update(current);
+      });
+      const mutation = renderHook(() => useMoveConversationCodeEnvironmentMutation(setter), {
+        wrapper,
+      });
+      const guard = renderHook(
+        () => ({
+          blocked: useIsReplacingConversationCodeEnvironment('saved'),
+          unrelated: useIsReplacingConversationCodeEnvironment('other'),
+        }),
+        { wrapper },
+      );
+      act(() =>
+        mutation.result.current.mutate({ conversationId: 'saved', from: [...from], to: [...to] }),
+      );
+      await waitFor(() => expect(fail).toBeDefined());
+      mutation.unmount();
+      await act(async () => fail(error));
+      await waitFor(() => expect(finishRead).toBeDefined());
+      expect(guard.result.current.blocked).toBe(true);
+      expect(guard.result.current.unrelated).toBe(false);
+      await act(async () => finishRead(persisted));
+      await waitFor(() => expect(guard.result.current.blocked).toBe(false));
+      expect(current).toEqual(persisted);
+      expect(queryClient.getQueryData([QueryKeys.conversation, 'saved'])).toEqual(persisted);
+    },
+  );
+
+  it('keeps a failed transition read guarded until explicit retry, without changing another chat', async () => {
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    jest
+      .mocked(dataService.moveConversationCodeEnvironment)
+      .mockRejectedValueOnce(new Error('offline'));
+    jest.mocked(dataService.getConversationById).mockRejectedValueOnce(new Error('still offline'));
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const store = createStore();
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(
+        Provider,
+        { store },
+        createElement(QueryClientProvider, { client: queryClient }, children),
+      );
+    const other = {
+      conversationId: 'other',
+      codeEnvironmentMode: 'attached',
+      codeWorkspaces: [mac],
+    } as TConversation;
+    let current = other;
+    const setter = jest.fn((update) => {
+      current = update(current);
+    });
+    const { result } = renderHook(
+      () => ({
+        mutation: useMoveConversationCodeEnvironmentMutation(setter),
+        recovery: useConversationCodeEnvironmentRecovery('saved'),
+        retry: useReconcileConversationCodeEnvironmentMutation(setter),
+        blocked: useIsReplacingConversationCodeEnvironment('saved'),
+      }),
+      { wrapper },
+    );
+    await act(async () => {
+      await expect(
+        result.current.mutation.mutateAsync({ conversationId: 'saved', from: [mac], to: [] }),
+      ).rejects.toThrow('offline');
+    });
+    expect(result.current.blocked).toBe(true);
+    expect(result.current.recovery?.status).toBe('error');
+    const persisted = {
+      conversationId: 'saved',
+      codeEnvironmentMode: 'without_attached',
+    } as TConversation;
+    jest.mocked(dataService.getConversationById).mockResolvedValueOnce(persisted);
+    await act(async () => {
+      await result.current.retry.mutateAsync(result.current.recovery!.request);
+    });
+    await waitFor(() => expect(result.current.blocked).toBe(false));
+    expect(current).toBe(other);
+  });
+
+  it.each([400, 403, 409, 429])(
+    'does not turn a definitive %s rejection into recovery',
+    async (status) => {
+      jest.spyOn(console, 'error').mockImplementation(() => undefined);
+      const read = jest.spyOn(dataService, 'getConversationById');
+      read.mockClear();
+      const error = new AxiosError('rejected', undefined, undefined, undefined, {
+        status,
+        data: {},
+      } as AxiosResponse);
+      jest.mocked(dataService.moveConversationCodeEnvironment).mockRejectedValueOnce(error);
+      const queryClient = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
+      const wrapper = ({ children }: { children: ReactNode }) =>
+        createElement(QueryClientProvider, { client: queryClient }, children);
+      const { result } = renderHook(() => useMoveConversationCodeEnvironmentMutation(), {
+        wrapper,
+      });
+      await act(async () => {
+        await expect(
+          result.current.mutateAsync({ conversationId: 'saved', from: [mac], to: [] }),
+        ).rejects.toBe(error);
+      });
+      expect(read).not.toHaveBeenCalled();
+    },
+  );
 });

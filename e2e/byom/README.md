@@ -23,6 +23,16 @@ From the LibreChat root:
 BYOM_CODE_REPO=/absolute/path/to/code-interpreter node e2e/byom/run.mjs
 ```
 
+To also exercise a saved non-coding chat switching to a coding agent without implicit access,
+sending and reloading in **No workspace** mode, attaching explicitly, and leaving an offline
+workspace before continuing the same chat:
+
+```sh
+BYOM_WORKSPACE_TRANSITIONS=true BYOM_CODE_REPO=/absolute/path/to/code-interpreter node e2e/byom/run.mjs
+```
+
+This enables the decision protocol and attach/detach policy only in the disposable test app.
+
 Optional: `BYOM_REDIS_BIN` selects an absolute Redis executable,
 `BYOM_CODE_CLI` selects a separately built worker CLI, and
 `E2E_CHROMIUM_CHANNEL=chrome` uses an installed Chrome instead of Playwright Chromium.

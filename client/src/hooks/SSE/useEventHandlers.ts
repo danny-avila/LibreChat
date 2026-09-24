@@ -1238,11 +1238,6 @@ export default function useEventHandlers({
       const { endpoint: _endpoint, endpointType } =
         (submission.conversation as TConversation | null) ?? {};
       const endpoint = endpointType ?? _endpoint;
-      // Local cancel can beat the server's rejection/final event. Its synthetic final payload
-      // does not confirm a stored decision, so reconcile before either local terminal branch.
-      if (!isAssistantsEndpoint(endpoint)) {
-        reconcileFailedCodeDecision(submission, conversationId);
-      }
       if (
         !isAssistantsEndpoint(endpoint) &&
         messages?.[messages.length - 1] != null &&
@@ -1355,7 +1350,6 @@ export default function useEventHandlers({
       setShowStopButton,
       setSubmissionStart,
       recoverConversation,
-      reconcileFailedCodeDecision,
     ],
   );
 

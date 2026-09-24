@@ -18,8 +18,13 @@ import type {
 } from 'librechat-data-provider';
 import type { SetterOrUpdater } from 'recoil';
 import type { CodeEnvironmentReconciliationRequest } from '~/store/codeEnvironmentReconciliation';
+import {
+  CONVERSATION_LIST_KEYS,
+  updateConvoInAllQueries,
+  getCodeWorkspaceErrorReason,
+  getResponseStatus,
+} from '~/utils';
 import { codeEnvironmentReconciliationsAtom } from '~/store/codeEnvironmentReconciliation';
-import { CONVERSATION_LIST_KEYS, updateConvoInAllQueries } from '~/utils';
 import { hasSameCodeDecision } from '~/hooks/Agents/codeDecision';
 
 export type CodeEnvironmentPairingResponse = TCodeEnvironmentPairingResponse;
@@ -124,12 +129,35 @@ export function useIsReplacingConversationCodeEnvironment(conversationId?: strin
 }
 
 /** Keeps every cached copy of the conversation on the decision the server just persisted. */
-export function useMoveConversationCodeEnvironmentMutation() {
+export function useMoveConversationCodeEnvironmentMutation(
+  setConversation?: SetterOrUpdater<TConversation | null>,
+) {
   const queryClient = useQueryClient();
+  const { mutateAsync: reconcile } =
+    useReconcileConversationCodeEnvironmentMutation(setConversation);
   return useMutation<TCodeEnvironmentMoveResponse, Error, TCodeEnvironmentMoveRequest>(
     [MutationKeys.moveConversationCodeEnvironment],
     dataService.moveConversationCodeEnvironment,
     {
+      onError: async (error, { conversationId, from }) => {
+        const status = getResponseStatus(error);
+        if (getCodeWorkspaceErrorReason(error) !== 'locked' && status != null && status < 500) {
+          return;
+        }
+        // A conflict or lost response does not establish which decision the server holds.
+        // Keep this in the mutation, not a component callback that navigation can discard.
+        try {
+          await reconcile({
+            conversationId,
+            attempted: {
+              codeEnvironmentMode: from.length > 0 ? 'attached' : 'without_attached',
+              codeWorkspaces: from.length > 0 ? from : undefined,
+            },
+          });
+        } catch {
+          // The conversation-scoped recovery state retains the failed read and offers retry.
+        }
+      },
       onSuccess: async ({ conversationId, codeEnvironmentMode, codeWorkspaces }) => {
         /** A read already in flight could land after this write and restore the replaced decision. */
         await Promise.all(
@@ -143,6 +171,9 @@ export function useMoveConversationCodeEnvironmentMutation() {
           codeWorkspaces,
         });
         updateConvoInAllQueries(queryClient, conversationId, applyDecision);
+        setConversation?.((current) =>
+          current?.conversationId === conversationId ? applyDecision(current) : current,
+        );
         queryClient.setQueryData<TConversation | undefined>(
           [QueryKeys.conversation, conversationId],
           (conversation) => (conversation == null ? conversation : applyDecision(conversation)),

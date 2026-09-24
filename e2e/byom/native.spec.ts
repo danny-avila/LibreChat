@@ -39,6 +39,7 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
 }, testInfo) => {
   const runDir = process.env.BYOM_ACCEPTANCE_DIR!;
   const cli = process.env.BYOM_CODE_CLI!;
+  const workspaceTransitions = process.env.BYOM_WORKSPACE_TRANSITIONS === 'true';
   const workers: Worker[] = [];
   let selectedWorker: Worker;
   let selectedApprovalMode: 'ask' | 'acceptEdits' | 'fullAccess' = 'ask';
@@ -161,6 +162,7 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
       timeout: 30_000,
     });
     selectedApprovalMode = 'ask';
+    return agent;
   }
 
   async function turn(operation: string, decision?: 'Approve' | 'Reject') {
@@ -219,6 +221,33 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
     return outputs.join('\n');
   }
 
+  async function chat(text: string) {
+    const admitted = await sendMessage(page, text);
+    expect(admitted.ok()).toBe(true);
+    const { conversationId } = (await admitted.json()) as { conversationId: string };
+    await expect
+      .poll(
+        async () => {
+          const status = await requestJson<{ active: boolean }>(page, {
+            path: `/api/agents/chat/status/${conversationId}`,
+            token,
+          });
+          return status.active;
+        },
+        { timeout: 30_000 },
+      )
+      .toBe(false);
+    await expect(page).toHaveURL(new RegExp(`/c/${conversationId}$`));
+    return conversationId;
+  }
+
+  async function readDecision(conversationId: string) {
+    return requestJson<{
+      codeEnvironmentMode?: string;
+      codeWorkspaces?: Array<{ environmentId: string; workspaceId: string }>;
+    }>(page, { path: `/api/convos/${conversationId}`, token });
+  }
+
   async function selectApprovalMode(mode: 'Ask before changes' | 'Accept edits' | 'Full access') {
     const selector = page.getByTestId('code-approval-mode');
     await expect(selector).toBeVisible();
@@ -236,7 +265,81 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
 
   try {
     const a = await startWorker('a');
-    await select(a);
+    const coding = await select(a);
+    if (workspaceTransitions) {
+      const ordinary = await requestJson<{ id: string }>(page, {
+        path: '/api/agents',
+        token,
+        method: 'POST',
+        body: {
+          name: 'Acceptance ordinary chat',
+          provider: 'Acceptance',
+          model: 'acceptance',
+          tools: [],
+        },
+      });
+      await page.goto(`/c/new?agent_id=${encodeURIComponent(ordinary.id)}`);
+      const conversationId = await chat('Keep this conversation and its history.');
+      expect((await readDecision(conversationId)).codeEnvironmentMode).toBeUndefined();
+      await page.getByTestId('model-selector-button').click();
+      await page.locator('#model-search').fill(`Native ${a.environmentId}`);
+      await page.getByRole('option', { name: new RegExp(`Native ${a.environmentId}`) }).click();
+      await expect(page).toHaveURL(new RegExp(`/c/${conversationId}$`));
+      await expect(page.getByTestId('code-workspace')).toContainText('No workspace');
+      expect(await chat('Continue without granting workspace access.')).toBe(conversationId);
+      expect(await readDecision(conversationId)).toMatchObject({
+        codeEnvironmentMode: 'without_attached',
+      });
+      await page.reload();
+      await expect(page.getByTestId('model-selector-button')).toContainText(
+        `Native ${a.environmentId}`,
+      );
+      await expect(page.getByTestId('code-workspace')).toContainText('No workspace');
+      await page.getByTestId('code-workspace').click();
+      await page.getByRole('menuitem', { name: /^Attach / }).click();
+      await expect
+        .poll(async () => (await readDecision(conversationId)).codeEnvironmentMode)
+        .toBe('attached');
+      expect((await readDecision(conversationId)).codeWorkspaces).toEqual([
+        expect.objectContaining({ environmentId: a.environmentId }),
+      ]);
+      await expect(
+        page.getByText('Keep this conversation and its history.', { exact: true }),
+      ).toBeVisible();
+      expect(coding.id).toBeTruthy();
+      expect(await turn('command', 'Approve')).toContain('native-command-ok');
+      await stop(a.child);
+      await page.reload();
+      const workspace = page.getByTestId('code-workspace');
+      await expect(workspace).toBeVisible({ timeout: 30_000 });
+      await workspace.click();
+      await page.getByTestId('code-workspace-detach').click();
+      await expect
+        .poll(async () => (await readDecision(conversationId)).codeEnvironmentMode)
+        .toBe('without_attached');
+      expect((await readDecision(conversationId)).codeWorkspaces ?? []).toEqual([]);
+      expect(await chat('Continue chatting after leaving the offline workspace.')).toBe(
+        conversationId,
+      );
+      await page.reload();
+      await expect(
+        page.getByText('Keep this conversation and its history.', { exact: true }),
+      ).toBeVisible();
+      expect((await readDecision(conversationId)).codeEnvironmentMode).toBe('without_attached');
+      await testInfo.attach('workspace-transitions', {
+        body: JSON.stringify({
+          savedChatPreserved: true,
+          noImplicitWorkspaceAccess: true,
+          noWorkspaceSurvivesReload: true,
+          explicitAttach: true,
+          approvedNativeCommand: true,
+          offlineDetach: true,
+          detachedChatSurvivesReload: true,
+        }),
+        contentType: 'application/json',
+      });
+      return;
+    }
     expect(await turn('create', 'Approve')).toContain('Created workspace/proof.txt');
     expect(await readFile(path.join(a.root, 'proof.txt'), 'utf8')).toBe('native-original');
     expect(await turn('read')).toContain('native-original');

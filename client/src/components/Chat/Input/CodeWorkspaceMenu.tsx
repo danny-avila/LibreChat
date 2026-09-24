@@ -42,7 +42,7 @@ const menuItemClasses = (selected = false) =>
     selected && 'bg-surface-active-alt',
   );
 
-/** A stale view of the decision recovers on reload; the other reasons explain themselves. */
+/** Conflicts refresh the decision; definitive rejections keep their specific explanation. */
 function transitionErrorKey(error: unknown): TranslationKeys {
   const reason = getCodeWorkspaceErrorReason(error);
   if (reason === 'locked') return 'com_ui_code_workspace_move_stale';
@@ -183,7 +183,7 @@ export default function CodeWorkspaceMenu({
   const { showToast } = useToastContext();
   const menuStore = Ariakit.useMenuStore({ focusLoop: true, placement: 'top-start' });
   const isOpen = menuStore.useState('open');
-  const moveMutation = useMoveConversationCodeEnvironmentMutation();
+  const moveMutation = useMoveConversationCodeEnvironmentMutation(setConversation);
   const reconcileMutation = useReconcileConversationCodeEnvironmentMutation(setConversation);
   const [moveDraft, setMoveDraft] = useState<{
     conversationId: string;
@@ -270,14 +270,9 @@ export default function CodeWorkspaceMenu({
     moveMutation.mutate(
       { conversationId: transition.conversationId, from: transition.from, to },
       {
-        onSuccess: ({ conversationId, codeEnvironmentMode, codeWorkspaces }) => {
+        onSuccess: () => {
           to.forEach((selection) => workspace.rememberSelection(selection));
           setMoveDraft(null);
-          setConversation((current) =>
-            current?.conversationId === conversationId
-              ? { ...current, codeEnvironmentMode, codeWorkspaces }
-              : current,
-          );
         },
         onError: (error) => {
           showToast({ message: localize(transitionErrorKey(error)), status: 'error' });

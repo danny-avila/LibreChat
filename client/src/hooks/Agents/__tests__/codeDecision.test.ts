@@ -1,5 +1,5 @@
 import type { TConversation } from 'librechat-data-provider';
-import { withSubmittedCodeDecision } from '../codeDecision';
+import { withSubmittedCodeDecision, hasSameCodeDecision } from '../codeDecision';
 
 const selection = { environmentId: 'personal-vm', workspaceId: 'project-a' };
 const conversation = (overrides: Partial<TConversation> = {}): TConversation =>
@@ -70,4 +70,23 @@ it('records a legacy selection-only submission before the first saved-chat event
     codeEnvironmentMode: 'attached',
     codeWorkspaces: [selection],
   });
+});
+
+it('matches legacy selection-only decisions when reconciling a transition', () => {
+  expect(
+    hasSameCodeDecision(
+      { codeWorkspaces: [selection] },
+      { codeEnvironmentMode: 'attached', codeWorkspaces: [selection] },
+    ),
+  ).toBe(true);
+});
+
+it('treats empty and absent selections alike without treating an undecided chat as sealed', () => {
+  expect(
+    hasSameCodeDecision(
+      { codeEnvironmentMode: 'without_attached', codeWorkspaces: [] },
+      { codeEnvironmentMode: 'without_attached' },
+    ),
+  ).toBe(true);
+  expect(hasSameCodeDecision({}, { codeEnvironmentMode: 'without_attached' })).toBe(false);
 });

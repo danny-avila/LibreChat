@@ -726,29 +726,43 @@ describe('CodeWorkspaceMenu', () => {
         data: { error: 'busy' },
         key: 'com_ui_code_workspace_move_busy',
       },
-    ])('explains a refused move when $name and keeps the chat as it was', async ({ data, key }) => {
-      jest.spyOn(dataService, 'moveConversationCodeEnvironment').mockRejectedValue(
-        new AxiosError('Conflict', 'ERR_BAD_REQUEST', undefined, undefined, {
-          status: 409,
-          data,
-        } as AxiosResponse),
-      );
-      const setConversation = jest.fn();
-      renderMenu(
-        <CodeWorkspaceMenu
-          setConversation={setConversation}
-          workspace={relocatable([target(environment, [{ id: 'project-a', name: 'Project A' }])])}
-          disabled={false}
-        />,
-      );
+    ])(
+      'explains a refused move when $name and reconciles only stale decisions',
+      async ({ data, key }) => {
+        jest.spyOn(dataService, 'moveConversationCodeEnvironment').mockRejectedValue(
+          new AxiosError('Conflict', 'ERR_BAD_REQUEST', undefined, undefined, {
+            status: 409,
+            data,
+          } as AxiosResponse),
+        );
+        const persisted = { ...sealed, codeEnvironmentMode: 'without_attached' } as TConversation;
+        const read = jest.spyOn(dataService, 'getConversationById').mockResolvedValue(persisted);
+        const setConversation = jest.fn();
+        renderMenu(
+          <CodeWorkspaceMenu
+            setConversation={setConversation}
+            workspace={relocatable([target(environment, [{ id: 'project-a', name: 'Project A' }])])}
+            disabled={false}
+          />,
+        );
 
-      await userEvent.click(screen.getByTestId('code-workspace-move'));
-      await userEvent.click(await confirmItem());
+        await userEvent.click(screen.getByTestId('code-workspace-move'));
+        await userEvent.click(await confirmItem());
 
-      await waitFor(() =>
-        expect(mockShowToast).toHaveBeenCalledWith({ message: key, status: 'error' }),
-      );
-      expect(setConversation).not.toHaveBeenCalled();
-    });
+        await waitFor(() =>
+          expect(mockShowToast).toHaveBeenCalledWith({ message: key, status: 'error' }),
+        );
+        if (data.reason === 'locked') {
+          expect(read).toHaveBeenCalledWith('existing');
+          const update = setConversation.mock.calls[0][0];
+          expect(
+            update({ ...sealed, codeEnvironmentMode: 'attached', codeWorkspaces: [mac] }),
+          ).toEqual(persisted);
+        } else {
+          expect(read).not.toHaveBeenCalled();
+          expect(setConversation).not.toHaveBeenCalled();
+        }
+      },
+    );
   });
 });

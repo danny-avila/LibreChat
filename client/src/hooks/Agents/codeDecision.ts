@@ -10,7 +10,7 @@ function sameSelections(
   left?: CodeWorkspaceSelection[],
   right?: CodeWorkspaceSelection[],
 ): boolean {
-  if (left == null || right == null) return left == null && right == null;
+  if (!left?.length || !right?.length) return !left?.length && !right?.length;
   if (left.length !== right.length) return false;
   const key = ({ environmentId, workspaceId }: CodeWorkspaceSelection) =>
     JSON.stringify([environmentId, workspaceId]);
@@ -55,7 +55,8 @@ export function hasSameCodeDecision(
   right: Pick<TConversation, 'codeEnvironmentMode' | 'codeWorkspaces'>,
 ): boolean {
   return (
-    left.codeEnvironmentMode === right.codeEnvironmentMode &&
+    (left.codeEnvironmentMode ?? (left.codeWorkspaces?.length ? 'attached' : undefined)) ===
+      (right.codeEnvironmentMode ?? (right.codeWorkspaces?.length ? 'attached' : undefined)) &&
     sameSelections(left.codeWorkspaces, right.codeWorkspaces)
   );
 }

@@ -1,6 +1,6 @@
 import { createElement } from 'react';
 import { createStore, Provider } from 'jotai';
-import { act, renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { dataService, EModelEndpoint } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { EventSubmission, TConversation, TMessage } from 'librechat-data-provider';
@@ -74,11 +74,6 @@ const attempted = {
   codeEnvironmentMode: 'attached' as const,
   codeWorkspaces: [{ environmentId: 'attempted', workspaceId: 'repo' }],
 };
-const persisted = {
-  conversationId: 'saved',
-  codeEnvironmentMode: 'attached',
-  codeWorkspaces: [{ environmentId: 'authoritative', workspaceId: 'repo' }],
-} as TConversation;
 const user = {
   conversationId: 'saved',
   messageId: 'user',
@@ -109,15 +104,9 @@ describe('local cancellation decision reconciliation', () => {
   afterEach(() => jest.restoreAllMocks());
 
   it.each(['streamed', 'minimal', 'navigated'])(
-    'starts reconciliation before completing the %s cancel path',
+    'does not use a synthetic %s cancel as evidence that the server settled',
     async (kind) => {
-      let finish!: (value: TConversation) => void;
-      const read = jest.spyOn(dataService, 'getConversationById').mockImplementationOnce(
-        () =>
-          new Promise((resolve) => {
-            finish = resolve;
-          }),
-      );
+      const read = jest.spyOn(dataService, 'getConversationById');
       const store = createStore();
       const queryClient = new QueryClient({
         defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -157,16 +146,14 @@ describe('local cancellation decision reconciliation', () => {
       await act(async () => {
         await result.current.handlers.abortConversation('saved', submission, messages);
       });
-      await waitFor(() => expect(read).toHaveBeenCalledWith('saved'));
-      expect(result.current.blocked).toBe(true);
+      expect(read).not.toHaveBeenCalled();
+      expect(result.current.blocked).toBe(false);
       expect(result.current.otherBlocked).toBe(false);
       if (kind === 'minimal') expect(newConversation).toHaveBeenCalled();
       if (kind !== 'navigated') expect(setIsSubmitting).toHaveBeenCalledWith(false);
 
-      await act(async () => finish(persisted));
-      await waitFor(() => expect(result.current.blocked).toBe(false));
       if (kind === 'navigated') expect(current).toBe(currentOther);
-      else expect(current.codeWorkspaces).toEqual(persisted.codeWorkspaces);
+      else expect(current.codeWorkspaces).toEqual(attempted.codeWorkspaces);
     },
   );
 });

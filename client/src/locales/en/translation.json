@@ -39,7 +39,7 @@
   "com_ui_code_workspace_move_info": "This chat used {{0}}, but its agent now uses {{1}}. Files from earlier turns stay on the previous machine.",
   "com_ui_code_workspace_move_info_removed": "This chat's agent no longer uses {{0}}. Move the chat to continue without it.",
   "com_ui_code_workspace_move_info_added": "This chat's agent now also uses {{0}}. Choose a workspace there to continue.",
-  "com_ui_code_workspace_move_stale": "This chat's workspace changed in another window. Reload and try again.",
+  "com_ui_code_workspace_move_stale": "This chat's workspace changed elsewhere. Review its current workspace and try again.",
   "com_ui_code_workspace_move_busy": "Wait for the current response to finish, then move this chat.",
   "com_ui_code_workspace_reconciling": "Confirming this chat's workspace decision…",
   "com_ui_code_workspace_reconcile_failed": "Couldn't confirm this chat's workspace decision. Sending stays paused until you retry successfully or reload.",
