@@ -94,7 +94,7 @@ export default function ContextButton({
           )}
           type="button"
         >
-          <div className="flex w-full items-center justify-center gap-2 text-red-500">
+          <div className="text-text-destructive flex w-full items-center justify-center gap-2">
             <TrashIcon />
           </div>
         </button>

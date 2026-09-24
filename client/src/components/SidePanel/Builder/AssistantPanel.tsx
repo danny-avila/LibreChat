@@ -41,7 +41,7 @@ import Action from './Action';
 const labelClass = 'mb-2 text-text-primary block font-medium';
 const inputClass = cn(
   defaultTextProps,
-  'flex w-full px-3 py-2 dark:border-gray-800 dark:bg-gray-800 rounded-xl mb-2',
+  'flex w-full px-3 py-2 bg-surface-secondary rounded-xl mb-2',
   removeFocusOutlines,
 );
 
@@ -293,7 +293,7 @@ export default function AssistantPanel({
             </button>
           )}
         </div>
-        <div className="bg-surface-primary h-auto px-4 pt-3 pb-8 dark:bg-transparent">
+        <div className="bg-surface-primary h-auto px-4 pt-3 pb-8">
           {/* Avatar & Name */}
           <div className="mb-4">
             <AssistantAvatar
