@@ -1,5 +1,19 @@
-import { Constants } from 'librechat-data-provider';
+import { logger } from '@librechat/data-schemas';
+import {
+  Constants,
+  MCPOptionsSchema,
+  extractEnvVariable,
+  normalizeServerName,
+  normalizeMCPToolKey,
+  buildServerNameAliases,
+} from 'librechat-data-provider';
+import type { AgentToolOptions, MCPOptions } from 'librechat-data-provider';
 import type { ParsedServerConfig } from '~/mcp/types';
+import type { RequestBody } from '~/types';
+import { isDirectOpenIDBearerRecoveryEnabled } from '~/mcp/openid';
+import { ALLOWED_BODY_FIELDS, isPluginSourced } from '~/utils/env';
+import { isApiKeyHeaderOverridden } from './headers';
+import { isEnabled } from '~/utils/common';
 
 /**
  * Linear-time check for MCP tool names (`<prefix><mcp_delimiter><suffix>`).
@@ -29,9 +43,379 @@ export function isOAuthServer(
   return config.requiresOAuth === true || config.oauth != null;
 }
 
-/** Checks that `customUserVars` is present AND non-empty (guards against truthy `{}`) */
-export function hasCustomUserVars(config: Pick<ParsedServerConfig, 'customUserVars'>): boolean {
-  return !!config.customUserVars && Object.keys(config.customUserVars).length > 0;
+/**
+ * Whether a server needs the OAuth-style connection wiring (flow manager,
+ * token methods, OBO/OAuth resolvers). Distinct from `isOAuthServer`: OBO
+ * servers reuse the same wiring even though they don't run an OAuth handshake,
+ * because the runtime needs `oboTokenResolver`/`oboTrustChecker` plumbed through.
+ *
+ * Without this, an OBO server with `requiresOAuth: false` would land in the
+ * non-OAuth branch of MCPManager.discoverServerTools / UserConnectionManager,
+ * which omits the OBO resolver — `usesObo` then evaluates to false in the
+ * factory and the connection sends a bare request that the upstream rejects.
+ */
+export function requiresOAuthMachinery(config: ParsedServerConfig): boolean {
+  if (isDirectOpenIDBearerRecoveryEnabled(config)) {
+    return false;
+  }
+  return isOAuthServer(config) || config.obo != null;
+}
+
+/** Required chat credentials, retaining explicit variables and any still-used generated key. */
+function requiredCustomUserVars(config: UserScopedConnectionConfig): string[] {
+  const keys = Object.keys(config.customUserVars ?? {});
+  if (
+    config.apiKey?.source !== 'user' ||
+    !isApiKeyHeaderOverridden(config.apiKey, config.requestHeaders) ||
+    placeholderBearingFields(config).some((value) => hasPlaceholder(value, /\{\{MCP_API_KEY\}\}/))
+  ) {
+    return keys;
+  }
+  return keys.filter((key) => key !== 'MCP_API_KEY');
+}
+
+/** Checks the effective chat requirements, without weakening catalog-only credentials. */
+export function hasCustomUserVars(config: UserScopedConnectionConfig): boolean {
+  return requiredCustomUserVars(config).length > 0;
+}
+
+function hasRuntimeContextPlaceholder(value: PlaceholderValue): boolean {
+  return (
+    hasPlaceholder(value, RUNTIME_CONTEXT_PLACEHOLDER_PATTERN) ||
+    hasPlaceholder(value, RUNTIME_BODY_PLACEHOLDER_PATTERN)
+  );
+}
+
+function hasPlaceholder(value: PlaceholderValue, pattern: RegExp): boolean {
+  if (typeof value === 'string') {
+    return pattern.test(value) || pattern.test(extractEnvVariable(value));
+  }
+  if (Array.isArray(value)) {
+    return value.some((item) => hasPlaceholder(item, pattern));
+  }
+
+  if (value == null || typeof value !== 'object') {
+    return false;
+  }
+
+  return Object.values(value).some((item) => hasPlaceholder(item, pattern));
+}
+
+function addRuntimeBodyPlaceholderFields(
+  value: PlaceholderValue,
+  fields: Set<keyof RequestBody>,
+): void {
+  if (typeof value === 'string') {
+    for (const candidate of new Set([value, extractEnvVariable(value)])) {
+      for (const match of candidate.matchAll(RUNTIME_BODY_PLACEHOLDER_CAPTURE_PATTERN)) {
+        const placeholderKey = match[1];
+        const field = placeholderKey ? BODY_PLACEHOLDER_FIELDS[placeholderKey] : undefined;
+        if (field) {
+          fields.add(field);
+        }
+      }
+    }
+    return;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      addRuntimeBodyPlaceholderFields(item, fields);
+    }
+    return;
+  }
+
+  if (value == null || typeof value !== 'object') {
+    return;
+  }
+
+  for (const item of Object.values(value)) {
+    addRuntimeBodyPlaceholderFields(item, fields);
+  }
+}
+
+function canResolveRuntimePlaceholders(config: UserScopedConnectionConfig): boolean {
+  return !isUserSourced(config) && !isPluginSourced(config);
+}
+
+/**
+ * Trusted YAML/config servers may use per-user/request placeholders that can
+ * only be resolved once a real request context exists. User-sourced DB servers
+ * deliberately stay sandboxed and only resolve customUserVars, while plugin
+ * configs preserve every placeholder literally as a security boundary.
+ */
+export function hasRuntimeContextPlaceholders(config: UserScopedConnectionConfig): boolean {
+  if (!canResolveRuntimePlaceholders(config)) {
+    return false;
+  }
+
+  return placeholderBearingFields(config).some(hasRuntimeContextPlaceholder);
+}
+
+export function hasRuntimeUrlPlaceholders(config: UserScopedConnectionConfig): boolean {
+  if (!canResolveRuntimePlaceholders(config)) {
+    return false;
+  }
+
+  return hasRuntimeContextPlaceholder(config.url);
+}
+
+export function getMCPRequestScope(config: UserScopedConnectionConfig): MCPRequestScope {
+  if (!canResolveRuntimePlaceholders(config)) {
+    return { requestScoped: false, requiredBodyFields: [] };
+  }
+
+  const requiredBodyFields = new Set<keyof RequestBody>();
+  for (const value of placeholderBearingFields(config)) {
+    addRuntimeBodyPlaceholderFields(value, requiredBodyFields);
+  }
+
+  const fields = Array.from(requiredBodyFields);
+  return { requestScoped: fields.length > 0, requiredBodyFields: fields };
+}
+
+/**
+ * Folds the operator's chat-only `requestHeaders` into `headers`, so everything
+ * downstream — direct-bearer detection, Graph preprocessing, `processMCPEnv`,
+ * the transports — keeps reading ONE header map and never has to learn about a
+ * second one. Called at the entry of each resolution pipeline, before any
+ * consumer inspects the config.
+ *
+ * HTTP header names are case-insensitive, so a base `Authorization` is dropped
+ * when the request map declares `authorization`: keeping both would let Undici
+ * join the values (`old, new`) instead of letting `requestHeaders` win.
+ *
+ * The field is consumed as it merges, making this idempotent for a config that
+ * passes through twice (checkout joiners, direct-bearer recovery).
+ */
+export function applyRequestHeaders<T extends MCPOptions>(config: T): T {
+  const carrier = config as T & {
+    headers?: Record<string, string>;
+    requestHeaders?: Record<string, string>;
+  };
+  if (carrier.requestHeaders == null) {
+    return config;
+  }
+
+  const merged = {
+    ...carrier,
+    headers: mergeHeaderMaps(carrier.headers, carrier.requestHeaders),
+  };
+  if (carrier.apiKey && isApiKeyHeaderOverridden(carrier.apiKey, carrier.requestHeaders)) {
+    /** Keep the explicit auth mode, but disarm its lower-priority header injection. */
+    merged.apiKey = { ...carrier.apiKey, key: undefined };
+  }
+  if (carrier.customUserVars) {
+    const required = new Set(requiredCustomUserVars(carrier));
+    merged.customUserVars = Object.fromEntries(
+      Object.entries(carrier.customUserVars).filter(([key]) => required.has(key)),
+    );
+  }
+  delete merged.requestHeaders;
+  return merged;
+}
+
+/**
+ * Strips the operator's chat-only `requestHeaders` for a catalog (discovery)
+ * connection. Discovery has no conversation or message to resolve a
+ * `{{LIBRECHAT_BODY_*}}` placeholder against, so sending the map at all would
+ * either leak a literal placeholder upstream or resolve it to an empty value.
+ *
+ * Returns the same reference when there is nothing to strip.
+ */
+export function toCatalogConnectionConfig<T extends MCPOptions>(config: T): T {
+  const carrier = config as T & { requestHeaders?: Record<string, string> };
+  if (carrier.requestHeaders == null) {
+    return config;
+  }
+  const catalogConfig = { ...carrier };
+  delete catalogConfig.requestHeaders;
+  return catalogConfig;
+}
+
+export function getRuntimeBodyPlaceholderFields(
+  config: UserScopedConnectionConfig,
+): Array<keyof RequestBody> {
+  return getMCPRequestScope(config).requiredBodyFields;
+}
+
+export function getMissingRuntimeBodyPlaceholderFields(
+  config: UserScopedConnectionConfig,
+  requestBody?: RequestBody,
+): string[] {
+  return getMCPRequestScope(config).requiredBodyFields.filter((field) => {
+    const value = requestBody?.[field];
+    return value == null || (typeof value === 'string' && value.trim() === '');
+  });
+}
+
+/**
+ * `BODY` placeholders vary by chat request, so the normal userId:serverName
+ * cache would reuse a connection built with stale request context.
+ *
+ * Ephemeral connections are created and torn down per tool call — configs using
+ * these placeholders pay a full connect + initialize on every invocation.
+ *
+ * User/OpenID/Graph placeholders still require user-scoped connections, but they
+ * are not request-scoped by themselves. HTTP transports refresh resolved headers
+ * before each tool call, so token/user headers can remain on the cached user
+ * connection without forcing a reconnect for every invocation.
+ */
+export function requiresEphemeralUserConnection(config: UserScopedConnectionConfig): boolean {
+  return getMCPRequestScope(config).requestScoped;
+}
+
+/**
+ * Whether a resolved server config may be reached from the chat MCP picker.
+ *
+ * Mirrors `selectableServers` in the client's `useMCPServerManager`, which is
+ * the list the dropdown offers: `chatMenu: false` is the operator hiding a
+ * server from chat, and `consumeOnly` marks a server the user reaches only
+ * through an agent that references it, never on its own.
+ *
+ * An unresolved config is selectable. A name the registry cannot resolve is
+ * either request-tier (declared on the request body and never registered) or
+ * genuinely unknown, and both already have their own handling downstream —
+ * failing closed here would silently drop request-scoped servers instead.
+ */
+export function isChatSelectableMCPServer(
+  config?: Pick<ParsedServerConfig, 'chatMenu' | 'consumeOnly'> | null,
+): boolean {
+  if (config == null) {
+    return true;
+  }
+  return config.chatMenu !== false && config.consumeOnly !== true;
+}
+
+/**
+ * Narrows a chat picker selection to the servers that picker is allowed to
+ * offer, so a stale client, a replayed body, or a hand-written request cannot
+ * reach a server the menu hides.
+ *
+ * Pass only the picker's own selection. Servers a model spec pins
+ * (`modelSpec.mcpServers`) are the operator's choice and stay attached even
+ * when hidden, so they must be added after this call, not through it.
+ *
+ * The accessible set comes from the registry — the same resolution that feeds
+ * the client's catalog, with its own tier precedence already applied — rather
+ * than being re-derived from the request's config overlay. A user-tier or
+ * process-backed server outranks a config entry of the same name, and this must
+ * agree with whatever the picker was actually offered.
+ *
+ * Names are deduplicated before the lookup, since the selection is
+ * request-supplied, and are matched through the same normalized-name aliasing
+ * that tool loading uses, built over the whole accessible set so an exact name
+ * always wins over another server's normalized form. A name the registry does
+ * not know is request-tier — declared on the body, never registered — and is
+ * kept, as is every name if the lookup fails: this narrows an
+ * already-authenticated selection and is not the authorization boundary.
+ *
+ * Returns the names as they were sent, so callers keep addressing servers the
+ * way the rest of the request does.
+ */
+export async function filterChatSelectableMCPServers(
+  selectedServers: string[] | null | undefined,
+  {
+    userId,
+    role,
+    getAccessibleMCPServers,
+  }: {
+    userId: string;
+    role?: string;
+    getAccessibleMCPServers?: (
+      userId: string,
+      role?: string,
+    ) => Promise<Record<string, Pick<ParsedServerConfig, 'chatMenu' | 'consumeOnly'>>>;
+  },
+): Promise<string[]> {
+  if (!Array.isArray(selectedServers) || selectedServers.length === 0) {
+    return [];
+  }
+  const uniqueServers = [...new Set(selectedServers)];
+  if (getAccessibleMCPServers == null) {
+    return uniqueServers;
+  }
+
+  let accessible: Record<string, Pick<ParsedServerConfig, 'chatMenu' | 'consumeOnly'>>;
+  try {
+    accessible = await getAccessibleMCPServers(userId, role);
+  } catch (error) {
+    logger.warn('[MCP] Could not resolve accessible servers; keeping the chat selection', error);
+    return uniqueServers;
+  }
+
+  const accessibleNames = Object.keys(accessible ?? {});
+  if (accessibleNames.length === 0) {
+    return uniqueServers;
+  }
+  const aliases = buildServerNameAliases(accessibleNames);
+
+  return uniqueServers.filter((serverName) => {
+    const resolved =
+      accessible[serverName] ?? accessible[aliases.get(normalizeServerName(serverName)) ?? ''];
+    return isChatSelectableMCPServer(resolved);
+  });
+}
+
+/**
+ * Returns true when a server requires a per-user connection instead of an
+ * app-shared connection.
+ */
+export function requiresUserScopedConnection(config: UserScopedConnectionConfig): boolean {
+  return (
+    config.requiresOAuth === true ||
+    config.obo != null ||
+    hasCustomUserVars(config) ||
+    hasRuntimeContextPlaceholders(config)
+  );
+}
+
+/**
+ * Whether the config declares chat-only headers. Guards against a truthy `{}`
+ * the way `hasCustomUserVars` does.
+ */
+function hasChatOnlyHeaders(config: UserScopedConnectionConfig): boolean {
+  return !!config.requestHeaders && Object.keys(config.requestHeaders).length > 0;
+}
+
+/** Whether a server can share one operator-owned connection across all users. */
+export function canUseAppConnection(config: UserScopedConnectionConfig): boolean {
+  return (
+    config.startup !== false &&
+    !isUserSourced(config) &&
+    !requiresUserScopedConnection(config) &&
+    /**
+     * One session cannot serve both sides of `requestHeaders`: an app-shared
+     * connection's own `initialize` and `tools/list` are catalog requests that
+     * must omit them, while its chat tool calls must send them. Placeholder
+     * values are already excluded through `requiresUserScopedConnection`; STATIC
+     * values reach here, and sharing would bake chat-only headers into the
+     * startup handshake every later catalog read reuses.
+     */
+    !hasChatOnlyHeaders(config)
+  );
+}
+
+/**
+ * Server instructions fetched from a connection are safe to retain in the
+ * shared YAML registry only when the connection cannot vary by identity or
+ * request. `startup: false` is the one context-independent reason startup
+ * inspection leaves instructions unresolved; every other deferred case can
+ * expose authenticated or request-specific instructions to another user.
+ */
+export function canBackfillSharedServerInstructions(config: UserScopedConnectionConfig): boolean {
+  return (
+    config.startup === false &&
+    !hasChatOnlyHeaders(config) &&
+    !requiresUserScopedConnection(config) &&
+    /** A configured `oauth` block is identity-scoped even when `requiresOAuth`
+     *  is unset or was stamped `false` by the skipped startup inspection —
+     *  `requiresUserScopedConnection` alone would let it through while
+     *  `isOAuthServer` still arms the OAuth machinery for the unstamped case. */
+    config.oauth == null &&
+    config.oauth_headers == null &&
+    config.apiKey?.source !== 'user'
+  );
 }
 
 /**
@@ -45,13 +429,13 @@ export function hasCustomUserVars(config: Pick<ParsedServerConfig, 'customUserVa
  * otherwise every tool call fails authentication. See issue #10969.
  */
 export function getMissingCustomUserVars(
-  config: Pick<ParsedServerConfig, 'customUserVars'>,
+  config: UserScopedConnectionConfig,
   providedVars?: Record<string, string> | null,
 ): string[] {
   if (!hasCustomUserVars(config)) {
     return [];
   }
-  return Object.keys(config.customUserVars ?? {}).filter((key) => {
+  return requiredCustomUserVars(config).filter((key) => {
     const value = providedVars?.[key];
     return value == null || (typeof value === 'string' && value.trim() === '');
   });
@@ -67,15 +451,39 @@ export function isUserSourced(config: Pick<ParsedServerConfig, 'source' | 'dbId'
 }
 
 /**
+ * Resolves the instructions text for a server, mirroring how the inspector fills them:
+ * an enabled flag resolves to the text fetched from the server, while an operator-authored
+ * string is used verbatim. Anything else (`false`, unset) yields no instructions.
+ */
+export function resolveServerInstructions(config: ParsedServerConfig): string | undefined {
+  const declared = config.serverInstructions;
+  if (isEnabled(declared)) return config.resolvedInstructions;
+  return typeof declared === 'string' ? declared : undefined;
+}
+
+export type RedactedServerConfig = Partial<ParsedServerConfig> & {
+  /** True when this config needs chat request fields before it can connect. */
+  requestScoped?: boolean;
+};
+
+/**
  * Allowlist-based sanitization for API responses. Only explicitly listed fields are included;
  * new fields added to ParsedServerConfig are excluded by default until allowlisted here.
  *
- * URLs are returned as-is: DB-stored configs reject ${VAR} patterns at validation time
- * (MCPServerUserInputSchema), and YAML configs are admin-managed. Env variable resolution
- * is handled at the schema/input boundary, not the output boundary.
+ * `url` and the oauth flow URLs (`authorization_url`, `token_url`, `revocation_endpoint`) can
+ * encode internal infrastructure, so they are stripped unless `canEdit` is set: the same
+ * disclosure threshold the PATCH route enforces. Callers derive `canEdit` per server (operator
+ * YAML/config-tier servers from the MANAGE_MCP_SERVERS capability, user-sourced servers from
+ * per-resource ACL EDIT), so a user-sourced config shared view-only does not disclose its URL
+ * to the viewer.
+ * DB-stored configs reject ${VAR} patterns at validation time (MCPServerUserInputSchema);
+ * env variable resolution is handled at the schema/input boundary.
  */
-export function redactServerSecrets(config: ParsedServerConfig): Partial<ParsedServerConfig> {
-  const safe: Partial<ParsedServerConfig> = {
+export function redactServerSecrets(
+  config: ParsedServerConfig,
+  options?: { canEdit?: boolean },
+): RedactedServerConfig {
+  const safe: RedactedServerConfig = {
     type: config.type,
     url: config.url,
     title: config.title,
@@ -95,6 +503,9 @@ export function redactServerSecrets(config: ParsedServerConfig): Partial<ParsedS
     inspectionFailed: config.inspectionFailed,
     customUserVars: config.customUserVars,
     serverInstructions: config.serverInstructions,
+    /** Safe derived metadata: it exposes no placeholder-bearing value, but lets
+     *  clients attach tools that can only be discovered during a chat turn. */
+    requestScoped: requiresEphemeralUserConnection(config) || undefined,
   };
 
   if (config.apiKey) {
@@ -110,18 +521,37 @@ export function redactServerSecrets(config: ParsedServerConfig): Partial<ParsedS
     safe.oauth = safeOAuth;
   }
 
+  if (config.obo) {
+    safe.obo = config.obo;
+  }
+
+  if (!options?.canEdit) {
+    delete safe.url;
+    if (safe.oauth) {
+      const {
+        authorization_url: _au,
+        token_url: _tu,
+        revocation_endpoint: _re,
+        ...restOAuth
+      } = safe.oauth;
+      safe.oauth = restOAuth;
+    }
+  }
+
   return Object.fromEntries(
     Object.entries(safe).filter(([, v]) => v !== undefined),
-  ) as Partial<ParsedServerConfig>;
+  ) as RedactedServerConfig;
 }
 
 /** Applies allowlist-based sanitization to a map of server configs. */
 export function redactAllServerSecrets(
   configs: Record<string, ParsedServerConfig>,
-): Record<string, Partial<ParsedServerConfig>> {
-  const result: Record<string, Partial<ParsedServerConfig>> = {};
+  options?: { canEditByServer?: ReadonlyMap<string, boolean> },
+): Record<string, RedactedServerConfig> {
+  const result: Record<string, RedactedServerConfig> = {};
   for (const [key, config] of Object.entries(configs)) {
-    result[key] = redactServerSecrets(config);
+    const canEdit = options?.canEditByServer?.get(key) ?? false;
+    result[key] = redactServerSecrets(config, { canEdit });
   }
   return result;
 }
@@ -268,6 +698,66 @@ export function escapeRegex(str: string): string {
  * @param title - The display title to convert
  * @returns A slug suitable for use as serverName (e.g., "GitHub MCP Tool" → "github-mcp-tool")
  */
+/**
+ * One cancellation signal for a budgeted operation: the remaining budget and the caller's own
+ * signal, whichever fires first. Undefined when neither bound exists, so unbudgeted callers pay
+ * nothing.
+ */
+export function createDeadlineAbortSignal(
+  deadlineMs?: number,
+  callerSignal?: AbortSignal,
+): AbortSignal | undefined {
+  const budget =
+    deadlineMs != null ? AbortSignal.timeout(Math.max(1, deadlineMs - Date.now())) : undefined;
+  if (budget != null && callerSignal != null) {
+    return AbortSignal.any([budget, callerSignal]);
+  }
+  return budget ?? callerSignal;
+}
+
+export type DeadlineWaitResult<T> = { settled: true; value: T } | { settled: false };
+
+/**
+ * Waits for `promise` only until `deadlineMs` passes or `signal` aborts, and never cancels it:
+ * shared work such as an OAuth token refresh keeps running for whoever depends on its outcome. A
+ * rejection that lands first is rethrown; one that lands after the wait ended stays observed, so
+ * abandoned work never surfaces as an unhandled rejection.
+ */
+export async function waitUntilDeadline<T>(
+  promise: Promise<T>,
+  deadlineMs?: number,
+  signal?: AbortSignal,
+): Promise<DeadlineWaitResult<T>> {
+  if (deadlineMs == null && signal == null) {
+    return { settled: true, value: await promise };
+  }
+  const settlement = promise.then((value): DeadlineWaitResult<T> => ({ settled: true, value }));
+  if (signal?.aborted === true) {
+    settlement.catch(() => undefined);
+    return { settled: false };
+  }
+  let timer: NodeJS.Timeout | undefined;
+  let onAbort: (() => void) | undefined;
+  const interrupted = new Promise<DeadlineWaitResult<T>>((resolve) => {
+    if (deadlineMs != null) {
+      timer = setTimeout(() => resolve({ settled: false }), Math.max(0, deadlineMs - Date.now()));
+      timer.unref?.();
+    }
+    if (signal != null) {
+      onAbort = () => resolve({ settled: false });
+      signal.addEventListener('abort', onAbort, { once: true });
+    }
+  });
+  try {
+    return await Promise.race([settlement, interrupted]);
+  } finally {
+    clearTimeout(timer);
+    if (onAbort != null) {
+      signal?.removeEventListener('abort', onAbort);
+    }
+  }
+}
+
 export function generateServerNameFromTitle(title: string): string {
   const slug = title
     .toLowerCase()
@@ -279,3 +769,12 @@ export function generateServerNameFromTitle(title: string): string {
 
   return slug || 'mcp-server'; // Fallback if empty
 }
+
+export {
+  splitMCPToolKey,
+  normalizeServerName,
+  normalizeMCPToolKey,
+  buildServerNameAliases,
+  stripServerNamePrefix,
+  stripServerNamePrefixes,
+} from 'librechat-data-provider';

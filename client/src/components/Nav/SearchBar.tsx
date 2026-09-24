@@ -5,6 +5,7 @@ import { Search, X } from 'lucide-react';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useShortcutAriaKey } from '~/hooks/useKeyboardShortcuts';
 import { useLocalize, useNewConvo } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
@@ -20,12 +21,20 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
   const navigate = useNavigate();
   const { isSmallScreen } = props;
 
-  const [text, setText] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [showClearIcon, setShowClearIcon] = useState(false);
-
   const { newConversation: newConvo } = useNewConvo();
   const [search, setSearchState] = useRecoilState(store.search);
+
+  /**
+   * Seeded from the stored query rather than blank. The field is mounted in
+   * two places — the list on a pointer device, the drawer's bottom bar on
+   * touch — so crossing the breakpoint mid-search destroys one instance and
+   * builds another. Starting empty would leave the results still filtered by a
+   * query the box no longer shows, with no clear affordance to undo it.
+   */
+  const [text, setText] = useState(() => search.query ?? '');
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [showClearIcon, setShowClearIcon] = useState(() => (search.query ?? '').length > 0);
+  const focusSearchAriaKey = useShortcutAriaKey('focusSearch');
 
   const clearSearch = useCallback(
     (pathname?: string) => {
@@ -38,8 +47,48 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
     [newConvo, navigate, queryClient],
   );
 
+  const sendRequest = useCallback(
+    (value: string) => {
+      if (!value) {
+        return;
+      }
+      queryClient.invalidateQueries([QueryKeys.messages]);
+    },
+    [queryClient],
+  );
+
+  const commitQuery = useRef<(value: string) => void>(() => undefined);
+  commitQuery.current = (value: string) => {
+    setSearchState((prev) => ({ ...prev, debouncedQuery: value, isTyping: false }));
+    sendRequest(value);
+  };
+
+  /**
+   * One instance for the lifetime of the field, reading the current handlers
+   * through the ref, so `cancel` always reaches the timer that is actually
+   * pending. Rebuilding the debounce whenever its dependencies changed would
+   * leave the previous instance's timer running past the cancel meant to stop
+   * it, and cancelling on that rebuild would instead discard live keystrokes.
+   */
+  const debouncedSetDebouncedQuery = useMemo(
+    () => debounce((value: string) => commitQuery.current(value), 500),
+    [],
+  );
+
+  /**
+   * The commit writes to shared state, so a timer left running outlives the
+   * field that scheduled it. This one publishes instead of discarding, because
+   * the field can leave with work pending and no successor to inherit it: the
+   * bottom bar drops the search entirely when you switch panels, and abandoning
+   * the commit there would strand `isTyping` with results the box no longer
+   * matches. Flushing is synchronous with the unmount, so it lands before any
+   * edit a replacement field might make and cannot overwrite one.
+   */
+  useEffect(() => () => debouncedSetDebouncedQuery.flush(), [debouncedSetDebouncedQuery]);
+
   const clearText = useCallback(
     (pathname?: string) => {
+      debouncedSetDebouncedQuery.cancel();
       setShowClearIcon(false);
       setText('');
       setSearchState((prev) => ({
@@ -51,7 +100,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
       clearSearch(pathname);
       inputRef.current?.focus();
     },
-    [setSearchState, clearSearch],
+    [setSearchState, clearSearch, debouncedSetDebouncedQuery],
   );
 
   const handleKeyUp = useCallback(
@@ -62,25 +111,6 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
       }
     },
     [clearText, location.pathname],
-  );
-
-  const sendRequest = useCallback(
-    (value: string) => {
-      if (!value) {
-        return;
-      }
-      queryClient.invalidateQueries([QueryKeys.messages]);
-    },
-    [queryClient],
-  );
-
-  const debouncedSetDebouncedQuery = useMemo(
-    () =>
-      debounce((value: string) => {
-        setSearchState((prev) => ({ ...prev, debouncedQuery: value, isTyping: false }));
-        sendRequest(value);
-      }, 500),
-    [setSearchState, sendRequest],
   );
 
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -117,6 +147,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
       />
       <input
         type="text"
+        data-testid="nav-search-input"
         ref={inputRef}
         className="m-0 mr-0 w-full border-none bg-transparent p-0 pl-7 text-sm leading-tight placeholder-text-secondary placeholder-opacity-100 focus-visible:outline-none group-focus-within:placeholder-text-primary group-hover:placeholder-text-primary"
         value={text}
@@ -125,6 +156,7 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
           e.code === 'Space' ? e.stopPropagation() : null;
         }}
         aria-label={localize('com_nav_search_placeholder')}
+        aria-keyshortcuts={focusSearchAriaKey}
         placeholder={localize('com_nav_search_placeholder')}
         onKeyUp={handleKeyUp}
         onFocus={() => setSearchState((prev) => ({ ...prev, isSearching: true }))}

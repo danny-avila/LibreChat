@@ -1,5 +1,5 @@
 {
-  "$schema": "https://turbo.build/schema.json",
+  "$schema": "https://v2-10-5.turborepo.dev/schema.json",
   "globalDependencies": ["package-lock.json"],
   "tasks": {
     "build": {
@@ -11,8 +11,7 @@
         "!src/**/*.test.*",
         "!src/**/*.spec.*",
         "scripts/**",
-        "rollup.config.js",
-        "server-rollup.config.js",
+        "tsdown.config.mjs",
         "tsconfig.json",
         "tsconfig.build.json",
         "vite.config.ts",

@@ -1,8 +1,8 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { Constants } from 'librechat-data-provider';
 import { useRecoilState, useRecoilValue, useResetRecoilState } from 'recoil';
-import { useArtifactsContext } from '~/Providers';
 import { isCodeOnlyArtifact } from '~/utils/artifacts';
+import { useArtifactsContext } from '~/Providers';
 import { logger } from '~/utils';
 import store from '~/store';
 

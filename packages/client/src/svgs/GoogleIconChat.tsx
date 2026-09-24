@@ -1,7 +1,7 @@
+import { JSX } from 'react/jsx-runtime';
 import { cn } from '~/utils/';
 
 export default function Google({
-  size = 25,
   className = '',
 }: {
   size?: number;

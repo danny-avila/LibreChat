@@ -1,7 +1,6 @@
 const path = require('path');
 const sharp = require('sharp');
 const { v4 } = require('uuid');
-const { ProxyAgent } = require('undici');
 const { GoogleGenAI } = require('@google/genai');
 const { logger } = require('@librechat/data-schemas');
 const { tool } = require('@librechat/agents/langchain/tools');
@@ -10,6 +9,7 @@ const {
   geminiToolkit,
   loadServiceKey,
   getBalanceConfig,
+  getEnvProxyDispatcher,
   getTransactionsConfig,
 } = require('@librechat/api');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
@@ -36,7 +36,6 @@ function isGoogleApisUrl(value) {
 
 if (process.env.PROXY) {
   const originalFetch = globalThis.fetch;
-  const proxyAgent = new ProxyAgent(process.env.PROXY);
 
   globalThis.fetch = function (url, options = {}) {
     if (isGoogleApisUrl(url)) {
@@ -132,7 +131,7 @@ async function initializeGeminiClient(options = {}) {
   return new GoogleGenAI({
     vertexai: true,
     project: serviceKey.project_id,
-    location: process.env.GOOGLE_LOC || process.env.GOOGLE_CLOUD_LOCATION || 'global',
+    location: process.env.GOOGLE_CLOUD_LOCATION || process.env.GOOGLE_LOC || 'global',
     googleAuthOptions: { credentials: serviceKey },
   });
 }

@@ -3,7 +3,11 @@ import * as SeparatorPrimitive from '@radix-ui/react-separator';
 
 import { cn } from '~/utils';
 
-const Separator = React.forwardRef<
+const Separator: React.ForwardRefExoticComponent<
+  Omit<SeparatorPrimitive.SeparatorProps & React.RefAttributes<HTMLDivElement>, 'ref'> & {
+    className?: string;
+  } & React.RefAttributes<HTMLDivElement>
+> = React.forwardRef<
   React.ElementRef<typeof SeparatorPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof SeparatorPrimitive.Root> & {
     className?: string;

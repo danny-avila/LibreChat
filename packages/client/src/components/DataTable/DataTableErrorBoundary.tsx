@@ -1,8 +1,9 @@
 import { Component, ErrorInfo, ReactNode, createRef } from 'react';
+import { JSX } from 'react/jsx-runtime';
 import { RefreshCw } from 'lucide-react';
+import { useLocalize } from '~/hooks';
 import { Button } from '../Button';
 import { logger } from '~/utils';
-import { useLocalize } from '~/hooks';
 
 /**
  * Error boundary specifically for DataTable component.
@@ -72,7 +73,7 @@ class DataTableErrorBoundaryInner extends Component<
             aria-labelledby="datatable-error-title"
             aria-describedby="datatable-error-desc"
             tabIndex={-1}
-            className="before:bg-surface-destructive/80 relative w-full max-w-md overflow-hidden rounded-lg border border-border-light bg-surface-primary-alt p-6 shadow-sm outline-none before:absolute before:left-0 before:top-0 before:h-full before:w-1 focus:ring-2 focus:ring-ring focus:ring-offset-2 dark:border-border-medium dark:bg-surface-secondary"
+            className="relative w-full max-w-md overflow-hidden rounded-lg border border-border-light bg-surface-primary-alt p-6 shadow-sm outline-none before:absolute before:left-0 before:top-0 before:h-full before:w-1 before:bg-surface-destructive/80 focus:ring-2 focus:ring-text-primary focus:ring-offset-2"
           >
             <div className="flex items-center gap-2">
               <RefreshCw className="h-4 w-4 text-surface-destructive" />
@@ -97,7 +98,7 @@ class DataTableErrorBoundaryInner extends Component<
           </div>
 
           {import.meta.env.MODE === 'development' && this.state.error && (
-            <details className="mt-4 max-w-md rounded-md bg-surface-secondary p-3 text-xs dark:bg-surface-tertiary">
+            <details className="mt-4 max-w-md rounded-md bg-surface-secondary p-3 text-xs">
               <summary className="cursor-pointer font-medium text-text-primary">
                 {this.props.localize('com_ui_error_details')}
               </summary>
@@ -114,7 +115,7 @@ class DataTableErrorBoundaryInner extends Component<
   }
 }
 
-export function DataTableErrorBoundary(props: DataTableErrorBoundaryProps) {
+export function DataTableErrorBoundary(props: DataTableErrorBoundaryProps): JSX.Element {
   const localize = useLocalize();
   return <DataTableErrorBoundaryInner {...props} localize={localize} />;
 }

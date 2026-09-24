@@ -1,8 +1,31 @@
+import { logger } from '@librechat/data-schemas';
 import { extractEnvVariable } from 'librechat-data-provider';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { IUser } from '@librechat/data-schemas';
 import type { RequestBody } from '~/types';
-import { extractOpenIDTokenInfo, processOpenIDPlaceholders, isOpenIDTokenValid } from './oidc';
+import {
+  OPENID_TOKEN_FIELDS,
+  isOpenIDTokenValid,
+  extractOpenIDTokenInfo,
+  processOpenIDPlaceholders,
+  OpenIDReauthRequiredError,
+} from './oidc';
+import { getAdminApiKeyHeader } from '~/mcp/headers';
+
+/**
+ * Provenance marker for MCP servers contributed by an Agent Plugins package.
+ * Applied by the plugin loader, never by a plugin-authored `mcp.json` — that
+ * schema is closed, so a package declaring this field is rejected outright.
+ */
+export const MCP_PLUGIN_SOURCE = 'plugin';
+
+/**
+ * True when a server configuration came from an Agent Plugins package, and so
+ * must reach the transport with every placeholder it declared left literal.
+ */
+export function isPluginSourced(config?: { source?: string } | null): boolean {
+  return config?.source === MCP_PLUGIN_SOURCE;
+}
 
 /**
  * List of allowed user fields that can be used in MCP environment variables.
@@ -26,6 +49,7 @@ const ALLOWED_USER_FIELDS = [
   'emailVerified',
   'twoFactorEnabled',
   'termsAccepted',
+  'termsAcceptedAt',
 ] as const;
 
 type AllowedUserField = (typeof ALLOWED_USER_FIELDS)[number];
@@ -101,6 +125,13 @@ export function createSafeUser(
        */
       Object.assign(safeUser, { [field]: user[field] });
     }
+  }
+
+  // Fall back to `_id` when the mongoose virtual `id` is absent (e.g. lean/plain
+  // user objects), so `{{LIBRECHAT_USER_ID}}` placeholders still resolve.
+  if (!safeUser.id && '_id' in user) {
+    const _id = (user as unknown as { _id: { toString?: () => string } | string })._id;
+    safeUser.id = typeof _id === 'string' ? _id : _id?.toString?.();
   }
 
   if ('federatedTokens' in user) {
@@ -289,6 +320,22 @@ function processSingleValue({
   const openidTokenInfo = extractOpenIDTokenInfo(user);
   if (openidTokenInfo && isOpenIDTokenValid(openidTokenInfo)) {
     value = processOpenIDPlaceholders(value, openidTokenInfo);
+  } else if (openidTokenInfo) {
+    const unresolvable = OPENID_ACCESS_CREDENTIAL_PLACEHOLDER_PATTERN.exec(value);
+    if (unresolvable) {
+      logger.warn(
+        `OpenID token is expired or unavailable; cannot resolve ${unresolvable[0]} for the current request`,
+      );
+      throw new OpenIDReauthRequiredError(
+        `OpenID token is expired or unavailable; re-authentication is required to resolve ${unresolvable[0]}`,
+      );
+    }
+    /**
+     * `isOpenIDTokenValid` reports on the access token alone, so an ID token placeholder is not
+     * its to refuse: `processOpenIDPlaceholders` validates the ID token's own expiry and raises
+     * if it is stale. Every other placeholder keeps its literal-then-strip behaviour here.
+     */
+    value = processOpenIDPlaceholders(value, openidTokenInfo, ['ID_TOKEN']);
   }
 
   if (body) {
@@ -319,7 +366,7 @@ function processAdminValue(originalValue: string, dbSourced: boolean): string {
  * @returns - The processed object with environment variables replaced
  */
 export function processMCPEnv(params: {
-  options: Readonly<MCPOptions> & { dbId?: string };
+  options: Readonly<MCPOptions> & { dbId?: string; source?: string };
   user?: Partial<IUser>;
   customUserVars?: Record<string, string>;
   body?: RequestBody;
@@ -333,41 +380,31 @@ export function processMCPEnv(params: {
     return options;
   }
 
+  /**
+   * SECURITY INVARIANT — Agent Plugins configurations are returned verbatim.
+   * Plugin packages are portable third-party data, and the Agent Plugins
+   * specification (§7.2.1, §9.2) forbids resolving any placeholder a plugin
+   * declares. Without this gate a plugin could declare a header such as
+   * `Authorization: Bearer ${OPENAI_API_KEY}` and receive host credentials at
+   * its own origin. The check reads the config rather than a caller-supplied
+   * flag so no future call site can reintroduce the leak by omitting it.
+   */
+  if (isPluginSourced(options)) {
+    return structuredClone(options) as MCPOptions;
+  }
+
   /** Derive dbSourced from explicit param OR from dbId on the options (failsafe for callers that forget the flag) */
   const dbSourced = params.dbSourced ?? !!options.dbId;
 
   const newObj: MCPOptions = structuredClone(options);
 
-  // Apply admin-provided API key to headers at runtime
-  // Note: User-provided keys use {{MCP_API_KEY}} placeholder in headers,
-  // which is processed later via customUserVars replacement
-  if ('apiKey' in newObj && newObj.apiKey) {
-    const apiKeyConfig = newObj.apiKey as {
-      key?: string;
-      source: 'admin' | 'user';
-      authorization_type: 'basic' | 'bearer' | 'custom';
-      custom_header?: string;
+  const adminHeader = getAdminApiKeyHeader(newObj.apiKey);
+  if (adminHeader) {
+    const objWithHeaders = newObj as { headers?: Record<string, string> };
+    objWithHeaders.headers = {
+      ...objWithHeaders.headers,
+      [adminHeader.name]: adminHeader.value,
     };
-
-    if (apiKeyConfig.source === 'admin' && apiKeyConfig.key) {
-      const { key, authorization_type, custom_header } = apiKeyConfig;
-      const headerName =
-        authorization_type === 'custom' ? custom_header || 'X-Api-Key' : 'Authorization';
-
-      let headerValue = key;
-      if (authorization_type === 'basic') {
-        headerValue = `Basic ${key}`;
-      } else if (authorization_type === 'bearer') {
-        headerValue = `Bearer ${key}`;
-      }
-
-      // Initialize headers if needed and add the API key header (overwrites if header already exists)
-      const objWithHeaders = newObj as { headers?: Record<string, string> };
-      if (!objWithHeaders.headers) {
-        objWithHeaders.headers = {};
-      }
-      objWithHeaders.headers[headerName] = headerValue;
-    }
   }
 
   if ('env' in newObj && newObj.env) {
@@ -418,6 +455,22 @@ export function processMCPEnv(params: {
       });
     }
     newObj.headers = processedHeaders;
+  }
+
+  // Process OAuth headers if they exist; sent on OAuth discovery/token requests
+  if ('oauth_headers' in newObj && newObj.oauth_headers) {
+    const processedOAuthHeaders: Record<string, string> = {};
+    for (const [key, originalValue] of Object.entries(newObj.oauth_headers)) {
+      processedOAuthHeaders[key] = processSingleValue({
+        user,
+        body,
+        dbSourced,
+        originalValue,
+        customUserVars,
+        isHeader: true,
+      });
+    }
+    newObj.oauth_headers = processedOAuthHeaders;
   }
 
   // Process URL if it exists (for WebSocket, SSE, StreamableHTTP types)
@@ -543,6 +596,10 @@ export function resolveNestedObject<T = unknown>(options?: {
  * @param options.user - Optional user object for replacing user field placeholders (can be partial with just id)
  * @param options.body - Optional request body object for replacing body field placeholders
  * @param options.customUserVars - Optional custom user variables to replace placeholders
+ * @param options.stripUnresolved - When true (final resolution passes only), replaces any
+ *   remaining resolvable placeholders with an empty string so internal template syntax is
+ *   never forwarded upstream. Leave unset for staged flows whose values are resolved again
+ *   later with more context.
  * @returns The processed headers with all placeholders replaced
  */
 export function resolveHeaders(options?: {
@@ -559,7 +616,7 @@ export function resolveHeaders(options?: {
 
   if (inputHeaders && typeof inputHeaders === 'object' && !Array.isArray(inputHeaders)) {
     Object.keys(inputHeaders).forEach((key) => {
-      resolvedHeaders[key] = processSingleValue({
+      const processed = processSingleValue({
         originalValue: inputHeaders[key],
         customUserVars,
         user: user as IUser,
@@ -567,6 +624,22 @@ export function resolveHeaders(options?: {
         requestHeaders,
         isHeader: true, // Important: Enable header encoding
       });
+      if (!stripUnresolved) {
+        resolvedHeaders[key] = processed;
+        return;
+      }
+
+      /** Reached only when the credential guard did not fire, i.e. the user has no OpenID identity at all: blanking the credential would emit `Authorization: Bearer `, which RFC 6750 rejects for a missing b64token */
+      const unresolvedCredential = OPENID_CREDENTIAL_PLACEHOLDER_PATTERN.exec(processed);
+      if (unresolvedCredential) {
+        logger.warn(
+          `Omitting header "${key}": ${unresolvedCredential[0]} could not be resolved for the current request`,
+        );
+        delete resolvedHeaders[key];
+        return;
+      }
+
+      resolvedHeaders[key] = stripUnresolvedPlaceholders(processed);
     });
   }
 

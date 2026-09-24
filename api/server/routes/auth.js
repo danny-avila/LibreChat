@@ -54,8 +54,10 @@ router.post(
 router.post(
   '/login',
   middleware.logHeaders,
+  middleware.requireSameOrigin,
   middleware.loginLimiter,
   middleware.checkBan,
+  middleware.validateEmailLogin,
   ldapAuth ? middleware.requireLdapAuth : middleware.requireLocalAuth,
   setBalanceConfig,
   loginController,

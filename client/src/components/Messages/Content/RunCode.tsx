@@ -2,16 +2,24 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import debounce from 'lodash/debounce';
 import { useRecoilCallback } from 'recoil';
 import { Tools } from 'librechat-data-provider';
-import { TerminalSquareIcon, Check, X } from 'lucide-react';
-import { Spinner, TooltipAnchor, useToastContext } from '@librechat/client';
+import { SquareTerminal, Check, X } from 'lucide';
+import { MorphIcon, Spinner, TooltipAnchor, useToastContext } from '@librechat/client';
+import type { IconNode } from '@librechat/client';
 import type { CodeBarProps } from '~/common';
 import { useToolCallMutation } from '~/data-provider';
-import { useLocalize } from '~/hooks';
 import { cn, normalizeLanguage } from '~/utils';
 import { useMessageContext } from '~/Providers';
+import { useLocalize } from '~/hooks';
 import store from '~/store';
 
 type RunState = 'idle' | 'loading' | 'success' | 'error';
+
+const stateIcons: Record<RunState, IconNode> = {
+  idle: SquareTerminal,
+  loading: SquareTerminal,
+  success: Check,
+  error: X,
+};
 
 const RunCode: React.FC<CodeBarProps & { iconOnly?: boolean }> = React.memo(
   ({ lang, codeRef, blockIndex, iconOnly = false }) => {
@@ -100,11 +108,7 @@ const RunCode: React.FC<CodeBarProps & { iconOnly?: boolean }> = React.memo(
     const isIdle = runState === 'idle';
     const label = localize('com_ui_run_code');
 
-    const iconClass = (active: boolean) =>
-      cn(
-        'absolute transition-all duration-300 ease-out',
-        active ? 'rotate-0 scale-100 opacity-100' : 'scale-0 opacity-0 rotate-90',
-      );
+    const stateIcon = stateIcons[runState];
 
     const button = (
       <button
@@ -119,24 +123,31 @@ const RunCode: React.FC<CodeBarProps & { iconOnly?: boolean }> = React.memo(
           'focus-visible:outline focus-visible:outline-2 focus-visible:outline-border-heavy',
           'disabled:pointer-events-none disabled:opacity-50',
           isError && 'text-text-destructive hover:text-text-destructive',
-          iconOnly ? 'rounded-lg p-1.5' : 'ml-auto gap-2 rounded-md px-2 py-1',
+          iconOnly
+            ? 'rounded-lg p-1.5'
+            : 'ml-auto gap-2 rounded-lg p-1.5 md:rounded-md md:px-2 md:py-1',
         )}
       >
         <span className="relative flex size-[18px] items-center justify-center" aria-hidden="true">
-          <TerminalSquareIcon size={18} className={iconClass(isIdle)} />
+          <MorphIcon
+            icon={stateIcon}
+            size={18}
+            className={cn(
+              'absolute transition-opacity duration-300',
+              isLoading ? 'opacity-0' : 'opacity-100',
+            )}
+          />
           <span
             className={cn(
               'absolute transition-opacity duration-300',
               isLoading ? 'opacity-100' : 'opacity-0',
             )}
           >
-            <Spinner className="animate-spin" size={18} />
+            {isLoading && <Spinner size={18} />}
           </span>
-          <Check size={18} className={iconClass(isSuccess)} />
-          <X size={18} className={iconClass(isError)} />
         </span>
         {!iconOnly && (
-          <span className="relative overflow-hidden">
+          <span className="relative hidden overflow-hidden md:block">
             <span
               className={cn(
                 'block whitespace-nowrap transition-all duration-300 ease-out',
@@ -174,7 +185,7 @@ const RunCode: React.FC<CodeBarProps & { iconOnly?: boolean }> = React.memo(
       </button>
     );
 
-    return iconOnly ? <TooltipAnchor description={label} render={button} /> : button;
+    return <TooltipAnchor description={label} render={button} />;
   },
 );
 

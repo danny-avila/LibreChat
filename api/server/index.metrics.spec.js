@@ -1,9 +1,12 @@
 const fs = require('fs');
+const { promisify } = require('util');
+const express = require('express');
 const request = require('supertest');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
 
 jest.mock('~/server/services/Config', () => ({
+  syncStaticTools: jest.fn().mockResolvedValue(undefined),
   loadCustomConfig: jest.fn(() => Promise.resolve({})),
   getAppConfig: jest.fn().mockResolvedValue({
     paths: {
@@ -15,6 +18,7 @@ jest.mock('~/server/services/Config', () => ({
     fileStrategy: 'local',
     imageOutputType: 'PNG',
   }),
+  mergeAppTools: jest.fn().mockResolvedValue(undefined),
   setCachedTools: jest.fn(),
 }));
 
@@ -85,6 +89,7 @@ describe('Server metrics route', () => {
 
   let mongoServer;
   let app;
+  let server;
 
   const originalReadFileSync = fs.readFileSync;
 
@@ -123,9 +128,13 @@ describe('Server metrics route', () => {
     process.env.MONGO_URI = mongoServer.getUri();
     process.env.PORT = '0';
     process.env.METRICS_SECRET = 'test-secret';
+    /* index.js listens at module scope and exports only the app, so capture the server to close it. */
+    const listenSpy = jest.spyOn(express.application, 'listen');
     app = require('~/server');
 
     await healthCheckPoll(app);
+    server = listenSpy.mock.results[0].value;
+    listenSpy.mockRestore();
   });
 
   afterEach(() => {

@@ -182,6 +182,46 @@ async function shutdown() {
   }
 }
 
+async function requireRedisStreams() {
+  if (process.env.E2E_REQUIRE_REDIS_STREAMS !== 'true') {
+    return;
+  }
+  const { ioredisClient } = require('@librechat/api');
+  if (!ioredisClient) {
+    throw new Error('[e2e] Redis stream mode was required but no Redis client was configured');
+  }
+  let timeout;
+  try {
+    await Promise.race([
+      ioredisClient.ping(),
+      new Promise((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error(`[e2e] Redis did not respond within ${REDIS_PING_TIMEOUT_MS}ms`)),
+          REDIS_PING_TIMEOUT_MS,
+        );
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function verifyRedisStreams() {
+  if (process.env.E2E_REQUIRE_REDIS_STREAMS !== 'true') {
+    return;
+  }
+  const { GenerationJobManager } = require('@librechat/api');
+  const deadline = Date.now() + REDIS_STREAM_STARTUP_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    if (GenerationJobManager.isRedis) {
+      console.log('[e2e] Verified Redis-backed generation streams');
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error('[e2e] Redis stream mode was required but the server fell back to memory');
+}
+
 process.once('SIGINT', async () => {
   await shutdown();
   process.exit(130);
@@ -195,8 +235,10 @@ process.once('SIGTERM', async () => {
 function startServer() {
   ensureDefaultEnv();
   return maybeStartMemoryMongo()
-    .then(() => {
+    .then(requireRedisStreams)
+    .then(async () => {
       require(path.resolve(__dirname, '../../api/server/index.js'));
+      await verifyRedisStreams();
     })
     .catch((error) => {
       console.error('[e2e] Failed to start test server:', error);

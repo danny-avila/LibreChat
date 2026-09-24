@@ -1,6 +1,7 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Skeleton } from '@librechat/client';
 import { apiBaseUrl } from 'librechat-data-provider';
+import { cn, toAbsoluteFilePath } from '~/utils';
 import DialogImage from './DialogImage';
 import { cn, isSafeImageSrc, toRenderableImageUrl } from '~/utils';
 
@@ -128,7 +129,7 @@ const Image = ({
         onClick={() => setIsOpen(true)}
         className={cn(
           'relative mt-1 w-full max-w-lg cursor-pointer overflow-hidden rounded-lg border border-border-light text-text-secondary-alt shadow-md transition-shadow',
-          'focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary',
+          'focus:outline-none focus-visible:ring-2 focus-visible:ring-text-primary focus-visible:ring-offset-2 focus-visible:ring-offset-surface-primary',
           className,
         )}
         style={heightStyle}

@@ -40,11 +40,12 @@ function mountAuthSessionMiddleware(app, sessionOptions) {
 /**
  * Configures OpenID Connect for the application.
  * @param {Express.Application} app - The Express application instance.
+ * @param {AppConfig} [appConfig] - Base app config, read for OpenID discovery retry settings.
  * @returns {Promise<void>}
  */
-async function configureOpenId(app) {
+async function configureOpenId(app, appConfig) {
   logger.info('Configuring OpenID Connect...');
-  const sessionExpiry = Number(process.env.SESSION_EXPIRY) || DEFAULT_SESSION_EXPIRY;
+  const sessionExpiry = getOpenIdSessionExpiry();
   const sessionOptions = {
     secret: process.env.OPENID_SESSION_SECRET,
     resave: false,
@@ -57,44 +58,49 @@ async function configureOpenId(app) {
   };
   mountAuthSessionMiddleware(app, sessionOptions);
 
-  const config = await setupOpenId();
-  if (!config) {
-    logger.error('OpenID Connect configuration failed - strategy not registered.');
-    return;
-  }
-
-  if (isEnabled(process.env.OPENID_REUSE_TOKENS)) {
-    logger.info('OpenID token reuse is enabled.');
-    passport.use('openidJwt', openIdJwtLogin(config));
-  }
-  logger.info('OpenID Connect configured successfully.');
+  await registerOpenIdWithRetry({
+    setupOpenId,
+    registerJwtStrategy: (config) => passport.use('openidJwt', openIdJwtLogin(config)),
+    reuseTokens: isEnabled(process.env.OPENID_REUSE_TOKENS),
+    discovery: appConfig?.registration?.openidDiscovery,
+    env: {
+      startupAttempts: process.env.OPENID_DISCOVERY_RETRY_ATTEMPTS,
+      retryDelayMs: process.env.OPENID_DISCOVERY_RETRY_DELAY_MS,
+    },
+  });
 }
 
 /**
  *
  * @param {Express.Application} app
+ * @param {AppConfig} [appConfig] - Base app config, read for the social login state lifetime.
  */
-const configureSocialLogins = async (app) => {
+const configureSocialLogins = async (app, appConfig) => {
   logger.info('Configuring social logins...');
+  const stateOptions = {
+    secret: process.env.JWT_SECRET,
+    secureCookie: shouldUseSecureCookie(),
+    maxAgeMs: appConfig?.registration?.oauthStateTtlMs,
+  };
 
   if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
-    passport.use(googleLogin());
+    passport.use(googleLogin(stateOptions));
     passport.use('googleAdmin', googleAdminLogin());
   }
   if (process.env.FACEBOOK_CLIENT_ID && process.env.FACEBOOK_CLIENT_SECRET) {
-    passport.use(facebookLogin());
+    passport.use(facebookLogin(stateOptions));
     passport.use('facebookAdmin', facebookAdminLogin());
   }
   if (process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET) {
-    passport.use(githubLogin());
+    passport.use(githubLogin(stateOptions));
     passport.use('githubAdmin', githubAdminLogin());
   }
   if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
-    passport.use(discordLogin());
+    passport.use(discordLogin(stateOptions));
     passport.use('discordAdmin', discordAdminLogin());
   }
   if (process.env.APPLE_CLIENT_ID && process.env.APPLE_PRIVATE_KEY_PATH) {
-    passport.use(appleLogin());
+    passport.use(appleLogin(stateOptions));
     passport.use('appleAdmin', appleAdminLogin());
   }
   if (
@@ -104,7 +110,7 @@ const configureSocialLogins = async (app) => {
     process.env.OPENID_SCOPE &&
     process.env.OPENID_SESSION_SECRET
   ) {
-    await configureOpenId(app);
+    await configureOpenId(app, appConfig);
   }
   if (
     process.env.SAML_ENTRY_POINT &&
@@ -113,7 +119,7 @@ const configureSocialLogins = async (app) => {
     process.env.SAML_SESSION_SECRET
   ) {
     logger.info('Configuring SAML Connect...');
-    const sessionExpiry = Number(process.env.SESSION_EXPIRY) || DEFAULT_SESSION_EXPIRY;
+    const sessionExpiry = getSessionExpiry();
     const sessionOptions = {
       secret: process.env.SAML_SESSION_SECRET,
       resave: false,

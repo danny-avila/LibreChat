@@ -51,6 +51,17 @@
   </a>
 </p>
 
+## 🚀 What's New in v0.8.8-rc4
+
+- **Public Agents API docs:** Serve an OpenAPI specification and interactive Swagger UI for inference, events, Agent management, and Skill management.
+- **Attached workspaces (highly experimental):** Isolate workspaces by conversation, load repository instructions, and use bounded queue waits and command timeouts.
+- **Trace Viewer:** Inspect model conversations as ordered steps with roles, Agent identity, tool rounds, previews, and cost.
+- **Skills:** Author or import a Skill and invoke it in the same Agent run, with safer rollback for failed imports.
+- **Agent activity:** Render system events as distinct turns and hold live activity to one stable row.
+- **MCP reliability:** Send per-request headers without hiding tools, coordinate OAuth refresh across replicas, and preserve credentials through provider outages.
+- **Performance:** Stream Markdown incrementally, virtualize model search, and reduce completed Agent message rendering work.
+
+Read the [full v0.8.8-rc4 changelog](https://www.librechat.ai/changelog/v0.8.8-rc4).
 
 # ✨ Features
 
@@ -60,13 +71,14 @@
   - Anthropic (Claude), AWS Bedrock, OpenAI, Azure OpenAI, Google, Vertex AI, OpenAI Responses API (incl. Azure)
   - [Custom Endpoints](https://www.librechat.ai/docs/quick_start/custom_endpoints): Use any OpenAI-compatible API with LibreChat, no proxy required
   - Compatible with [Local & Remote AI Providers](https://www.librechat.ai/docs/configuration/librechat_yaml/ai_endpoints):
-    - Ollama, groq, Cohere, Mistral AI, Apple MLX, koboldcpp, together.ai,
+    - Ollama, [AMD Lemonade](https://lemonade-server.ai/), groq, Cohere, Mistral AI, Apple MLX, koboldcpp, together.ai,
     - OpenRouter, Helicone, Perplexity, ShuttleAI, Deepseek, Qwen, and more
 
 - 🔧 **[Code Interpreter API](https://www.librechat.ai/docs/features/code_interpreter)**: 
   - Secure, Sandboxed Execution in Python, Node.js (JS/TS), Go, C/C++, Java, PHP, Rust, and Fortran
   - Seamless File Handling: Upload, process, and download files directly
   - No Privacy Concerns: Fully isolated and secure execution
+  - Open-Source & Self-Hostable: powered by [ClickHouse/code-interpreter](https://github.com/ClickHouse/code-interpreter)
 
 - 🔦 **Agents & Tools Integration**:  
   - **[LibreChat Agents](https://www.librechat.ai/docs/features/agents)**:
@@ -75,7 +87,10 @@
     - Collaborative Sharing: Share agents with specific users and groups
     - Flexible & Extensible: Use MCP Servers, tools, file search, code execution, and more
     - [Skills](https://www.librechat.ai/docs/features/skills): Create reusable `SKILL.md` instruction bundles for manual, automatic, or always-on agent workflows
+    - [Agent Plugins](https://www.librechat.ai/docs/features/agent_plugins): Experimentally bundle deployment Skills and MCP servers into startup-loaded packages
     - [Subagents](https://www.librechat.ai/docs/features/subagents): Delegate focused work to isolated child agent runs with their own context windows
+    - Agent Management API: Automate Agent, file, and Skill management with deployment-bound OIDC clients
+    - Attached Code Workspaces: Let Agents inspect, search, edit, and run commands in managed or personal workspaces (highly experimental)
     - Compatible with Custom Endpoints, OpenAI, Azure, Anthropic, AWS Bedrock, Google, Vertex AI, Responses API, and more
     - [Model Context Protocol (MCP) Support](https://modelcontextprotocol.io/clients#librechat) for Tools
 
@@ -86,7 +101,8 @@
   - **[Learn More →](https://www.librechat.ai/docs/features/web_search)**
 
 - 🪄 **Generative UI with Code Artifacts**:  
-  - [Code Artifacts](https://youtu.be/GfTj7O4gmd0?si=WJbdnemZpJzBrJo3) allow creation of React, HTML, and Mermaid diagrams directly in chat
+  - [Code Artifacts](https://youtu.be/GfTj7O4gmd0?si=WJbdnemZpJzBrJo3) create React, HTML, and Mermaid content directly in chat
+  - Open previews fullscreen and export Mermaid diagrams as SVG or PNG
 
 - 🎨 **Image Generation & Editing**
   - Text-to-image and image-to-image with [GPT-Image-1](https://www.librechat.ai/docs/features/image_gen#1--openai-image-tools-recommended)
@@ -99,10 +115,12 @@
   - Edit, Resubmit, and Continue Messages with Conversation branching  
   - Create and share prompts with specific users and groups
   - [Fork Messages & Conversations](https://www.librechat.ai/docs/features/fork) for Advanced Context control
+  - Compact long conversations on demand while preserving recent context
 
 - 💬 **Multimodal & File Interactions**:  
   - Upload and analyze images with Claude 3, GPT-4.5, GPT-4o, o1, Llama-Vision, and Gemini 📸  
   - Chat with Files using Custom Endpoints, OpenAI, Azure, Anthropic, AWS Bedrock, & Google 🗃️
+  - Copy messages as formatted rich text for documents, email, and collaboration apps
 
 - 🌎 **Multilingual UI**:
   - English, 中文 (简体), 中文 (繁體), العربية, Deutsch, Español, Français, Italiano
@@ -115,6 +133,10 @@
 
 - 🎨 **Customizable Interface**:  
   - Customizable Dropdown & Interface that adapts to both power users and newcomers
+  - Light, dark, system, and high-contrast appearance modes
+
+- 📈 **Observability**:
+  - Export traces and logs with OpenTelemetry and connect Langfuse for Agent and model insights
 
 - 🌊 **[Resumable Streams](https://www.librechat.ai/docs/features/resumable_streams)**:  
   - Never lose a response: AI responses automatically reconnect and resume if your connection drops
@@ -136,6 +158,11 @@
 - 👥 **Multi-User & Secure Access**:
   - Multi-User, Secure Authentication with OAuth2, LDAP, & Email Login Support
   - Built-in Moderation, and Token spend tools
+
+- 🎛️ **[Admin Panel](https://www.librechat.ai/docs/features/admin_panel)**:
+  - Browser-based UI to manage users, groups, roles, and configuration overrides
+  - Edit settings and per-role/group permissions live, without redeploying
+  - Bundled with the Docker Compose stacks for one-command setup
 
 - ⚙️ **Configuration & Deployment**:  
   - Configure Proxy, Reverse Proxy, Docker, & many Deployment options  
@@ -161,7 +188,7 @@ Open source, actively developed, and built for anyone who values control over th
 ## 🌐 Resources
 
 **GitHub Repo:**
-  - **RAG API:** [github.com/danny-avila/rag_api](https://github.com/danny-avila/rag_api)
+  - **RAG API:** [github.com/LibreChat-AI/rag-api](https://github.com/LibreChat-AI/rag-api)
   - **Website:** [github.com/LibreChat-AI/librechat.ai](https://github.com/LibreChat-AI/librechat.ai)
 
 **Other:**
@@ -174,7 +201,7 @@ Open source, actively developed, and built for anyone who values control over th
 ## 📝 Changelog
 
 Keep up with the latest updates by visiting the releases page and notes:
-- [Releases](https://github.com/danny-avila/LibreChat/releases)
+- [Releases](https://github.com/LibreChat-AI/LibreChat/releases)
 - [Changelog](https://www.librechat.ai/changelog) 
 
 **⚠️ Please consult the [changelog](https://www.librechat.ai/changelog) for breaking changes before updating.**
@@ -184,13 +211,18 @@ Keep up with the latest updates by visiting the releases page and notes:
 ## ⭐ Star History
 
 <p align="center">
-  <a href="https://star-history.com/#danny-avila/LibreChat&Date">
-    <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date&theme=dark" onerror="this.src='https://api.star-history.com/svg?repos=danny-avila/LibreChat&type=Date'" />
+  <a href="https://www.star-history.com/?type=date&repos=danny-avila%2FLibreChat">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=danny-avila/LibreChat&type=date&theme=dark&legend=top-left&sealed_token=CXsk3L39t1nlibOv3pQloYwrz8R_yXxCAe1X3DG8sEnmu3PZvzSRZGf7JvisknF83yXqMwR6IcuKLolIQBulChAOseTYP1TDglfT6clOHXzspF-DJhmmsnGasrGpLfCeOEU56Bx761CJp9xDxza5rbyXW3F1GqWNtDf9pMroBq86vS70ilRWu16VyucF" />
+      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=danny-avila/LibreChat&type=date&legend=top-left&sealed_token=CXsk3L39t1nlibOv3pQloYwrz8R_yXxCAe1X3DG8sEnmu3PZvzSRZGf7JvisknF83yXqMwR6IcuKLolIQBulChAOseTYP1TDglfT6clOHXzspF-DJhmmsnGasrGpLfCeOEU56Bx761CJp9xDxza5rbyXW3F1GqWNtDf9pMroBq86vS70ilRWu16VyucF" />
+      <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=danny-avila/LibreChat&type=date&legend=top-left&sealed_token=CXsk3L39t1nlibOv3pQloYwrz8R_yXxCAe1X3DG8sEnmu3PZvzSRZGf7JvisknF83yXqMwR6IcuKLolIQBulChAOseTYP1TDglfT6clOHXzspF-DJhmmsnGasrGpLfCeOEU56Bx761CJp9xDxza5rbyXW3F1GqWNtDf9pMroBq86vS70ilRWu16VyucF" />
+    </picture>
   </a>
 </p>
+
 <p align="center">
   <a href="https://trendshift.io/repositories/4685" target="_blank" style="padding: 10px;">
-    <img src="https://trendshift.io/api/badge/repositories/4685" alt="danny-avila%2FLibreChat | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/>
+    <img src="https://trendshift.io/api/badge/repositories/4685" alt="LibreChat-AI%2FLibreChat | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/>
   </a>
   <a href="https://runacap.com/ross-index/q1-24/" target="_blank" rel="noopener" style="margin-left: 20px;">
     <img style="width: 260px; height: 56px" src="https://runacap.com/wp-content/uploads/2024/04/ROSS_badge_white_Q1_2024.svg" alt="ROSS Index - Fastest Growing Open-Source Startups in Q1 2024 | Runa Capital" width="260" height="56"/>
@@ -211,8 +243,8 @@ If you'd like to help translate LibreChat into your language, we'd love your con
 
 ## 💖 This project exists in its current state thanks to all the people who contribute
 
-<a href="https://github.com/danny-avila/LibreChat/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=danny-avila/LibreChat" />
+<a href="https://github.com/LibreChat-AI/LibreChat/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=LibreChat-AI/LibreChat" />
 </a>
 
 ---

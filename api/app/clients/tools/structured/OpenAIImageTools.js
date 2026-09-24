@@ -2,9 +2,7 @@ const axios = require('axios');
 const { v4 } = require('uuid');
 const OpenAI = require('openai');
 const FormData = require('form-data');
-const { ProxyAgent } = require('undici');
 const { logger } = require('@librechat/data-schemas');
-const { HttpsProxyAgent } = require('https-proxy-agent');
 const { tool } = require('@librechat/agents/langchain/tools');
 const { ContentTypes, EImageOutputType } = require('librechat-data-provider');
 const {
@@ -166,10 +164,10 @@ function createOpenAIImageTools(fields = {}) {
         throw new Error('Missing required field: prompt');
       }
       const clientConfig = { ...closureConfig };
-      if (process.env.PROXY) {
-        const proxyAgent = new ProxyAgent(process.env.PROXY);
+      const proxyDispatcher = getProxyDispatcher();
+      if (proxyDispatcher) {
         clientConfig.fetchOptions = {
-          dispatcher: proxyAgent,
+          dispatcher: proxyDispatcher,
         };
       }
 
@@ -277,10 +275,10 @@ Error Message: ${error.message}`);
       }
 
       const clientConfig = { ...closureConfig };
-      if (process.env.PROXY) {
-        const proxyAgent = new ProxyAgent(process.env.PROXY);
+      const proxyDispatcher = getProxyDispatcher();
+      if (proxyDispatcher) {
         clientConfig.fetchOptions = {
-          dispatcher: proxyAgent,
+          dispatcher: proxyDispatcher,
         };
       }
 
@@ -393,9 +391,7 @@ Error Message: ${error.message}`);
           baseURL,
         };
 
-        if (process.env.PROXY) {
-          axiosConfig.httpsAgent = new HttpsProxyAgent(process.env.PROXY);
-        }
+        applyAxiosProxyConfig(axiosConfig, baseURL);
 
         if (process.env.IMAGE_GEN_OAI_AZURE_API_VERSION && process.env.IMAGE_GEN_OAI_BASEURL) {
           axiosConfig.params = {

@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { FileIcon, PlusIcon } from 'lucide-react';
 import { Button, DotsIcon, TrashIcon } from '@librechat/client';
 import type { TFile } from 'librechat-data-provider';
@@ -18,6 +19,7 @@ export default function FileListItem2({
 }: FileListItemProps) {
   const localize = useLocalize();
   const navigate = useNavigate();
+  const localize = useLocalize();
 
   return (
     <div
@@ -63,7 +65,7 @@ export default function FileListItem2({
       </div>
       <div className="mr-0 flex w-2/12 flex-col items-center justify-evenly sm:mr-4 md:flex-row">
         <Button className="w-min content-center bg-transparent text-gray-500 hover:bg-slate-200">
-          <DotsIcon className="text-grey-100" />
+          <DotsIcon className="text-text-tertiary" />
         </Button>
         <Button
           className="w-min bg-transparent text-[#666666] hover:bg-slate-200"

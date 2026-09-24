@@ -4,8 +4,13 @@ const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
 const {
   generateCheckAccess,
+  planAgentActionUpdate,
   isActionDomainAllowed,
+  legacyActionDomainEncode,
   validateActionOAuthMetadata,
+  ACTION_CREDENTIAL_REFRESH_MESSAGE,
+  buildActionOAuthTokenDeleteQueries,
+  blockFilteredActionProjection,
 } = require('@librechat/api');
 const {
   Permissions,
@@ -18,11 +23,12 @@ const {
   validateAndParseOpenAPISpec,
 } = require('librechat-data-provider');
 const {
-  legacyDomainEncode,
+  decryptMetadata,
   encryptMetadata,
   domainParser,
 } = require('~/server/services/ActionService');
 const { findAccessibleResources } = require('~/server/services/PermissionService');
+const { attachOwnerContacts } = require('~/server/services/Agents/ownerContact');
 const db = require('~/models');
 const { canAccessAgentResource, createAccessLimiters } = require('~/server/middleware');
 
@@ -31,6 +37,12 @@ const { accessIpLimiter, accessUserLimiter } = createAccessLimiters();
 /** Baseline IP rate limiter applied alongside the access limiters. */
 const routeRateLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 150 });
 router.use(routeRateLimiter);
+
+async function deleteActionOAuthTokens(action_id) {
+  await Promise.all(
+    buildActionOAuthTokenDeleteQueries(action_id).map((query) => db.deleteTokens(query)),
+  );
+}
 
 const checkAgentCreate = generateCheckAccess({
   permissionType: PermissionTypes.AGENTS,
@@ -61,9 +73,13 @@ router.get('/', accessIpLimiter, accessUserLimiter, async (req, res) => {
 
     const editableAgentIds = agentsResponse.data.map((agent) => agent.id);
     const actions =
-      editableAgentIds.length > 0
-        ? await db.getActions({ agent_id: { $in: editableAgentIds } })
-        : [];
+      editableAgentIds.length > 0 ? await db.getActions({ agentId: editableAgentIds }) : [];
+
+    for (const action of actions) {
+      if (blockFilteredActionProjection(req.config?.filters, res, action)) {
+        return;
+      }
+    }
 
     res.json(actions);
   } catch (error) {
@@ -99,7 +115,16 @@ router.post(
         return res.status(400).json({ message: 'No functions provided' });
       }
 
-      let metadata = await encryptMetadata(removeNullishValues(_metadata, true));
+      if (
+        blockFilteredActionProjection(req.config?.filters, res, {
+          functions,
+          metadata: _metadata,
+        })
+      ) {
+        return;
+      }
+
+      const metadata = await encryptMetadata(removeNullishValues(_metadata, true));
       const appConfig = req.config;
 
       // SECURITY: Validate the OpenAPI spec and extract the server URL
@@ -142,15 +167,16 @@ router.post(
         return res.status(400).json({ message: 'No domain provided' });
       }
 
-      const legacyDomain = legacyDomainEncode(metadata.domain);
+      const legacyDomain = legacyActionDomainEncode(metadata.domain);
 
-      const action_id = _action_id ?? nanoid();
+      const requestedActionId = _action_id;
+      const action_id = requestedActionId ?? nanoid();
       const initialPromises = [];
 
       // Permissions already validated by middleware - load agent directly
       initialPromises.push(db.getAgent({ id: agent_id }));
-      if (_action_id) {
-        initialPromises.push(db.getActions({ action_id }, true));
+      if (requestedActionId) {
+        initialPromises.push(db.getActions({ actionId: requestedActionId }, true));
       }
 
       /** @type {[Agent, [Action|undefined]]} */
@@ -159,68 +185,83 @@ router.post(
         return res.status(404).json({ message: 'Agent not found for adding action' });
       }
 
-      if (actions_result && actions_result.length) {
-        const action = actions_result[0];
-        if (action.agent_id !== agent_id) {
+      const storedAction = actions_result?.[0];
+      if (storedAction) {
+        if (storedAction.agent_id !== agent_id) {
           return res.status(403).json({ message: 'Action does not belong to this agent' });
         }
-        metadata = { ...action.metadata, ...metadata };
+      }
+
+      const { actions: agentActions = [], tools: agentTools = [], author: agent_author } = agent;
+      const plannedUpdate = planAgentActionUpdate({
+        agentActions,
+        agentTools,
+        incomingFunctions: functions,
+        incomingMetadata: metadata,
+        actionId: action_id,
+        requestedActionId,
+        encodedDomain,
+        legacyDomain,
+        previousLegacyDomain: legacyActionDomainEncode(storedAction?.metadata?.domain),
+        storedAction,
+      });
+
+      if (
+        blockFilteredActionProjection(req.config?.filters, res, {
+          functions: plannedUpdate.tools.map((name) => ({ function: { name } })),
+          metadata: await decryptMetadata(plannedUpdate.metadata),
+        })
+      ) {
+        return;
+      }
+
+      if (plannedUpdate.requiresCredentialRefresh) {
+        return res.status(400).json({
+          message: ACTION_CREDENTIAL_REFRESH_MESSAGE,
+        });
       }
 
       try {
-        await validateActionOAuthMetadata(metadata.auth, appConfig?.actions?.allowedAddresses);
+        await validateActionOAuthMetadata(
+          plannedUpdate.metadata.auth,
+          appConfig?.actions?.allowedAddresses,
+        );
       } catch (error) {
         return res.status(400).json({ message: error.message });
       }
 
-      const { actions: _actions = [], author: agent_author } = agent ?? {};
-      const actions = [];
-      for (const action of _actions) {
-        const [_action_domain, current_action_id] = action.split(actionDelimiter);
-        if (current_action_id === action_id) {
-          continue;
-        }
-
-        actions.push(action);
+      if (plannedUpdate.deleteOAuthTokens && requestedActionId) {
+        // Keep the callback URL stable while preventing old OAuth tokens from following a new target.
+        await deleteActionOAuthTokens(requestedActionId);
       }
-
-      actions.push(`${encodedDomain}${actionDelimiter}${action_id}`);
-
-      /** @type {string[]}} */
-      const { tools: _tools = [] } = agent;
-
-      const shouldRemoveAgentTool = (tool) => {
-        if (!tool) {
-          return false;
-        }
-        return (
-          tool.includes(encodedDomain) || tool.includes(legacyDomain) || tool.includes(action_id)
-        );
-      };
-
-      const tools = _tools
-        .filter((tool) => !shouldRemoveAgentTool(tool))
-        .concat(functions.map((tool) => `${tool.function.name}${actionDelimiter}${encodedDomain}`));
 
       // Force version update since actions are changing
       const updatedAgent = await db.updateAgent(
         { id: agent_id },
-        { tools, actions },
+        { tools: plannedUpdate.tools, actions: plannedUpdate.actions },
         {
           updatingUserId: req.user.id,
           forceVersion: true,
         },
       );
+      await attachOwnerContacts([updatedAgent]);
 
       // Only update user field for new actions
-      const actionUpdateData = { metadata, agent_id };
+      const actionUpdateData = {
+        action_id: plannedUpdate.actionId,
+        metadata: plannedUpdate.metadata,
+        agent_id,
+      };
       if (!actions_result || !actions_result.length) {
         // For new actions, use the agent owner's user ID
         actionUpdateData.user = agent_author || req.user.id;
       }
 
-      /** @type {[Action]} */
-      const updatedAction = await db.updateAction({ action_id, agent_id }, actionUpdateData);
+      /** @type {Action} */
+      const updatedAction = await db.updateAction(
+        { actionId: requestedActionId ?? action_id, agentId: agent_id },
+        actionUpdateData,
+      );
 
       const sensitiveFields = ['api_key', 'oauth_client_id', 'oauth_client_secret'];
       for (let field of sensitiveFields) {
@@ -289,7 +330,7 @@ router.delete(
         { tools: updatedTools, actions: updatedActions },
         { updatingUserId: req.user.id, forceVersion: true },
       );
-      const deleted = await db.deleteAction({ action_id, agent_id });
+      const deleted = await db.deleteAction({ actionId: action_id, agentId: agent_id });
       if (!deleted) {
         logger.warn('[Agent Action Delete] No matching action document found', {
           action_id,

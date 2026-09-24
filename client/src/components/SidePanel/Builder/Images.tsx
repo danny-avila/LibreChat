@@ -45,7 +45,7 @@ export const AssistantAvatar = ({
       <div className="relative h-20 w-20 overflow-hidden rounded-full">
         <img
           src={url}
-          className="bg-token-surface-secondary dark:bg-token-surface-tertiary h-full w-full rounded-full object-cover"
+          className="bg-token-surface-secondary h-full w-full rounded-full object-cover dark:bg-surface-tertiary"
           alt="GPT"
           width="80"
           height="80"
@@ -89,6 +89,7 @@ export function AvatarMenu({
 }) {
   const localize = useLocalize();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const localize = useLocalize();
 
   const onItemClick = () => {
     if (fileInputRef.current) {

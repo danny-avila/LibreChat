@@ -84,6 +84,43 @@ function getPassthroughEnv(): Record<string, string> {
   return env;
 }
 
+function getStreamStoreEnv(): Record<string, string> {
+  const streamStore = process.env.E2E_STREAM_STORE ?? 'memory';
+  if (streamStore === 'memory') {
+    return {
+      E2E_REQUIRE_REDIS_STREAMS: 'false',
+      USE_REDIS: 'false',
+      USE_REDIS_STREAMS: 'false',
+      USE_REDIS_CLUSTER: 'false',
+      REDIS_KEY_PREFIX: '',
+      REDIS_KEY_PREFIX_VAR: '',
+    };
+  }
+  if (streamStore === 'redis') {
+    return {
+      E2E_REQUIRE_REDIS_STREAMS: 'true',
+      USE_REDIS: 'true',
+      USE_REDIS_STREAMS: 'true',
+      USE_REDIS_CLUSTER: 'false',
+      REDIS_URI: process.env.REDIS_URI ?? DEFAULT_REDIS_URI,
+      REDIS_KEY_PREFIX: process.env.E2E_REDIS_KEY_PREFIX ?? DEFAULT_REDIS_KEY_PREFIX,
+      REDIS_KEY_PREFIX_VAR: '',
+    };
+  }
+  if (streamStore === 'redis-cluster') {
+    return {
+      E2E_REQUIRE_REDIS_STREAMS: 'true',
+      USE_REDIS: 'true',
+      USE_REDIS_STREAMS: 'true',
+      USE_REDIS_CLUSTER: 'true',
+      REDIS_URI: process.env.REDIS_URI ?? DEFAULT_REDIS_CLUSTER_URI,
+      REDIS_KEY_PREFIX: process.env.E2E_REDIS_KEY_PREFIX ?? DEFAULT_REDIS_KEY_PREFIX,
+      REDIS_KEY_PREFIX_VAR: '',
+    };
+  }
+  throw new Error(`Unsupported E2E_STREAM_STORE "${streamStore}"`);
+}
+
 export function getBaseE2EEnv(): Record<string, string> {
   const baseURL = getE2EBaseURL();
   const { host, port } = getE2EServerAddress(baseURL);
@@ -107,9 +144,10 @@ export function getBaseE2EEnv(): Record<string, string> {
     JWT_REFRESH_SECRET: process.env.JWT_REFRESH_SECRET ?? GENERATED_JWT_REFRESH_SECRET,
     EMAIL_HOST: '',
     SEARCH: 'false',
-    SESSION_EXPIRY: '60000',
+    SESSION_EXPIRY: process.env.SESSION_EXPIRY ?? '3600000',
     ALLOW_REGISTRATION: 'true',
-    REFRESH_TOKEN_EXPIRY: '300000',
+    REFRESH_TOKEN_EXPIRY: process.env.REFRESH_TOKEN_EXPIRY ?? '3600000',
+    ...getStreamStoreEnv(),
   };
 }
 

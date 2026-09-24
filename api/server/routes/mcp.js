@@ -4,13 +4,14 @@ const { logger, getTenantId, tenantStorage } = require('@librechat/data-schemas'
 const {
   CacheKeys,
   Constants,
+  Permissions,
   PermissionBits,
   PermissionTypes,
-  Permissions,
 } = require('librechat-data-provider');
 const {
   getBasePath,
   createSafeUser,
+  createAuthIdentityContext,
   MCPOAuthHandler,
   MCPTokenStorage,
   getOAuthRequestCookie,
@@ -23,6 +24,16 @@ const {
   generateCheckAccess,
   validateOAuthSession,
   OAUTH_SESSION_COOKIE,
+  mcpConfig: mcpSettings,
+  getServerCustomUserVars,
+  hasCustomUserVars,
+  requiresEphemeralUserConnection,
+  MCPAuthenticationRejectedError,
+  MCPAuthenticationRefreshError,
+  OpenIDReauthRequiredError,
+  readMCPRecoveryGenerationAround,
+  prepareMCPAuthorizationMutation,
+  persistMCPAuthorizationTransaction,
 } = require('@librechat/api');
 const {
   createMCPServerController,
@@ -40,6 +51,7 @@ const {
 } = require('~/config');
 const {
   getServerConnectionStatus,
+  resolveAllMcpConfigs,
   resolveConfigServers,
   getMCPSetupData,
 } = require('~/server/services/MCP');
@@ -50,8 +62,19 @@ const {
   createMCPOAuthLimiters,
 } = require('~/server/middleware');
 const { getUserPluginAuthValue } = require('~/server/services/PluginService');
+const { maybeUninstallOAuthMCP } = require('~/server/services/MCP/oauthCleanup');
+const {
+  invalidateCachedTools,
+  getAppConfig,
+  getMCPToolsCacheGeneration,
+} = require('~/server/services/Config');
 const { updateMCPServerTools } = require('~/server/services/Config/mcp');
 const { reinitMCPServer } = require('~/server/services/Tools/mcp');
+const {
+  clearMCPAuthorizationFenceRetry,
+  persistMCPAuthorizationFenceRetry,
+} = require('~/server/services/MCPAuthorizationFenceRetry');
+const { createOpenIDSessionTokenProvider } = require('~/server/services/OpenIDSessionRefresh');
 const { getLogStores } = require('~/cache');
 const db = require('~/models');
 
@@ -625,6 +648,43 @@ router.post(
   },
 );
 
+function createMCPStatusRuntimeContext(user, mcpConfig, serverNames) {
+  const customUserVarServers = serverNames.filter((serverName) => {
+    const customUserVars = mcpConfig[serverName]?.customUserVars;
+    return (
+      customUserVars && typeof customUserVars === 'object' && Object.keys(customUserVars).length > 0
+    );
+  });
+  let userMCPAuthMapPromise;
+  let mcpAllowlistsPromise;
+  const loadUserMCPAuthMap = () => {
+    if (!customUserVarServers.length) {
+      return Promise.resolve(undefined);
+    }
+    userMCPAuthMapPromise ??= getUserMCPAuthMap({
+      userId: user.id,
+      servers: customUserVarServers,
+      findPluginAuthsByKeys: db.findPluginAuthsByKeys,
+    });
+    return userMCPAuthMapPromise;
+  };
+  const loadMCPAllowlists = () => {
+    mcpAllowlistsPromise ??= getMCPServersRegistry().resolveAllowlists({
+      userId: user.id,
+      role: user.role,
+    });
+    return mcpAllowlistsPromise;
+  };
+  return { user: createSafeUser(user), loadUserMCPAuthMap, loadMCPAllowlists };
+}
+
+function getMCPReinitializeOAuthTimeout(oauthExpiresAt) {
+  if (typeof oauthExpiresAt !== 'number' || !Number.isFinite(oauthExpiresAt)) {
+    return mcpSettings.OAUTH_HANDLING_TIMEOUT;
+  }
+  return Math.max(0, oauthExpiresAt - Date.now());
+}
+
 /**
  * Reinitialize MCP server
  * This endpoint allows reinitializing a specific MCP server
@@ -635,10 +695,11 @@ router.post(
   mcpOAuthIpLimiter,
   mcpOAuthUserLimiter,
   requireJwtAuth,
+  configMiddleware,
   checkMCPUsePermissions,
   mcpOAuthCallbackLimiter,
   setOAuthSession,
-  async (req, res) => {
+  async (req, res, next) => {
     try {
       const { serverName } = req.params;
       const user = createSafeUser(req.user);
@@ -662,7 +723,11 @@ router.post(
         });
       }
 
-      await mcpManager.disconnectUserConnection(user.id, serverName);
+      try {
+        await invalidateCachedTools({ userId: user.id, serverName });
+      } finally {
+        await mcpManager.disconnectUserConnection(user.id, serverName);
+      }
       logger.info(
         `[MCP Reinitialize] Disconnected existing user connection for server: ${serverName}`,
       );
@@ -676,6 +741,10 @@ router.post(
           findPluginAuthsByKeys: db.findPluginAuthsByKeys,
         });
       }
+      const oboIdentityContext = createAuthIdentityContext({
+        user: req.user,
+        tenantId: getTenantId(),
+      });
 
       const result = await reinitMCPServer({
         user,
@@ -683,16 +752,35 @@ router.post(
         serverConfig,
         configServers,
         userMCPAuthMap,
+        upstreamTokenProvider: createOpenIDSessionTokenProvider({
+          req,
+          res,
+          user: req.user,
+          identityContext: oboIdentityContext,
+          tokenPreference: 'access_token',
+        }),
+        oboIdentityContext,
+        recoveryPolicy: req.config?.mcpSettings?.catalogRecovery,
       });
 
       if (!result) {
         return res.status(500).json({ error: 'Failed to reinitialize MCP server for user' });
       }
 
-      const { success, message, oauthRequired, oauthUrl } = result;
+      const {
+        success,
+        message,
+        oauthRequired,
+        oauthUrl,
+        oauthExpiresAt,
+        failureReason,
+        missingUserVars,
+        connectionDeferred,
+      } = result;
 
+      let flowId;
       if (oauthRequired) {
-        const flowId = MCPOAuthHandler.generateFlowId(user.id, serverName);
+        flowId = getOAuthFlowId(user.id, serverName);
         setOAuthCsrfCookie(res, flowId, OAUTH_CSRF_COOKIE_PATH);
       }
 
@@ -700,10 +788,22 @@ router.post(
         success,
         message,
         oauthUrl,
+        flowId,
+        oauthTimeout: oauthRequired ? getMCPReinitializeOAuthTimeout(oauthExpiresAt) : undefined,
         serverName,
         oauthRequired,
+        failureReason,
+        missingUserVars,
+        connectionDeferred,
       });
     } catch (error) {
+      if (
+        error instanceof MCPAuthenticationRejectedError ||
+        error instanceof MCPAuthenticationRefreshError ||
+        error instanceof OpenIDReauthRequiredError
+      ) {
+        return next(error);
+      }
       logger.error('[MCP Reinitialize] Unexpected error', error);
       res.status(500).json({ error: 'Internal server error' });
     }
@@ -984,7 +1084,7 @@ router.delete(
     requiredPermission: PermissionBits.DELETE,
     resourceIdParam: 'serverName',
   }),
-  deleteMCPServerController,
+  (req, res) => deleteMCPServerController(req, res, maybeUninstallOAuthMCP),
 );
 
 module.exports = router;

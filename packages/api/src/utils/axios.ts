@@ -1,5 +1,5 @@
-import { Buffer } from 'buffer';
 import axios from 'axios';
+import { Buffer } from 'buffer';
 import { logger } from '@librechat/data-schemas';
 import type { AxiosInstance, AxiosProxyConfig, AxiosError } from 'axios';
 
@@ -45,7 +45,7 @@ export const logAxiosError = ({
 }: {
   message: string;
   error: AxiosError | Error | unknown;
-}) => {
+}): string => {
   let logMessage = message;
   try {
     const stack =
@@ -86,6 +86,19 @@ export const logAxiosError = ({
   }
   return logMessage;
 };
+
+/** Adds upload context without discarding the Axios response metadata used by
+ * Code API recovery. Transport-specific branching remains in this typed module. */
+export function wrapCodeApiUploadError(error: unknown, message: string): Error {
+  const wrapped = new Error(logAxiosError({ message, error }), { cause: error });
+  if (axios.isAxiosError(error)) {
+    Object.assign(wrapped, {
+      isAxiosError: true,
+      response: error.response,
+    });
+  }
+  return wrapped;
+}
 
 /**
  * Creates and configures an Axios instance with optional proxy settings.

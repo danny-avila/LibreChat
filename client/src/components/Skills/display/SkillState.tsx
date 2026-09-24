@@ -1,6 +1,6 @@
+import { Button } from '@librechat/client';
 import { TriangleAlert, MousePointerClick } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { Button } from '@librechat/client';
 import { cn } from '~/utils';
 
 type SkillStateVariant = 'empty' | 'error';
@@ -25,8 +25,8 @@ const styles: Record<SkillStateVariant, { icon: string; wrap: string }> = {
     wrap: 'bg-surface-tertiary',
   },
   error: {
-    icon: 'text-amber-500',
-    wrap: 'bg-amber-500/10',
+    icon: 'text-status-warning',
+    wrap: 'bg-status-warning-subtle',
   },
 };
 

@@ -10,8 +10,10 @@ jest.mock('~/server/services/Config/ldap', () => ({
 }));
 
 const mockHasCapability = jest.fn();
+const mockHasConfigCapability = jest.fn();
 jest.mock('~/server/middleware/roles/capabilities', () => ({
   hasCapability: (...args) => mockHasCapability(...args),
+  hasConfigCapability: (...args) => mockHasConfigCapability(...args),
 }));
 
 const mockGetTenantId = jest.fn(() => undefined);
@@ -101,9 +103,20 @@ afterEach(() => {
   delete process.env.SAML_CERT;
   delete process.env.SAML_SESSION_SECRET;
   delete process.env.ALLOW_ACCOUNT_DELETION;
+  delete process.env.ADMIN_PANEL_URL;
+  delete process.env.ENABLE_INSIGHTS;
   delete process.env.ANALYTICS_GTM_ID;
   delete process.env.CUSTOM_FOOTER;
   delete process.env.HELP_AND_FAQ_URL;
+  delete process.env.LANGFUSE_FANOUT_ENABLED;
+  delete process.env.LANGFUSE_FANOUT_COLLECTOR_URL;
+  delete process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED;
+  delete process.env.LANGFUSE_PUBLIC_KEY;
+  delete process.env.LANGFUSE_SECRET_KEY;
+  delete process.env.LANGFUSE_TRACING_ENABLED;
+  delete process.env.LANGFUSE_SAMPLE_RATE;
+  delete process.env.TENANT_ISOLATION_STRICT;
+  delete process.env.CODE_ENVIRONMENT_DECISION_VERSION;
 });
 
 describe('GET /api/config', () => {
@@ -163,12 +176,14 @@ describe('GET /api/config', () => {
       expect(response.body).not.toHaveProperty('sharePointPickerGraphScope');
       expect(response.body).not.toHaveProperty('sharePointPickerSharePointScope');
       expect(response.body).not.toHaveProperty('conversationImportMaxFileSize');
+      expect(response.body).not.toHaveProperty('insightsEnabled');
     });
 
     it('should strip authenticated-only informational fields from unauthenticated response (#12688)', async () => {
       process.env.ANALYTICS_GTM_ID = 'GTM-XYZ';
       process.env.CUSTOM_FOOTER = 'internal footer text';
       process.env.HELP_AND_FAQ_URL = 'https://internal.example.com/faq';
+      process.env.ADMIN_PANEL_URL = 'https://admin.example.com';
       mockGetAppConfig.mockResolvedValue(baseAppConfig);
       const app = createApp(null);
 
@@ -183,20 +198,25 @@ describe('GET /api/config', () => {
       expect(response.body).not.toHaveProperty('openidReuseTokens');
       expect(response.body).not.toHaveProperty('allowAccountDeletion');
       expect(response.body).not.toHaveProperty('customFooter');
+      expect(response.body).not.toHaveProperty('adminPanelURL');
     });
 
-    it('should include public share footer fields when share context is requested', async () => {
+    it('should not include share-only fields when share context is requested', async () => {
       process.env.ANALYTICS_GTM_ID = 'GTM-XYZ';
       process.env.CUSTOM_FOOTER = 'public footer text';
       process.env.HELP_AND_FAQ_URL = 'https://internal.example.com/faq';
+      process.env.SANDPACK_BUNDLER_URL = 'https://bundler.test';
+      process.env.SANDPACK_STATIC_BUNDLER_URL = 'https://static-bundler.test';
       mockGetAppConfig.mockResolvedValue(baseAppConfig);
       const app = createApp(null);
 
       const response = await request(app).get('/api/config?context=share');
 
       expect(response.statusCode).toBe(200);
-      expect(response.body.analyticsGtmId).toBe('GTM-XYZ');
-      expect(response.body.customFooter).toBe('public footer text');
+      expect(response.body).not.toHaveProperty('analyticsGtmId');
+      expect(response.body).not.toHaveProperty('customFooter');
+      expect(response.body).not.toHaveProperty('bundlerURL');
+      expect(response.body).not.toHaveProperty('staticBundlerURL');
       expect(response.body).not.toHaveProperty('helpAndFaqURL');
       expect(response.body).not.toHaveProperty('allowAccountDeletion');
     });
@@ -273,6 +293,20 @@ describe('GET /api/config', () => {
       expect(response.statusCode).toBe(500);
       expect(response.body).toHaveProperty('error');
     });
+
+    it('should not expose endpointsDropParamsMap to unauthenticated callers', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        endpoints: {
+          custom: [{ name: 'custom-provider', dropParams: ['temperature'] }],
+        },
+      });
+      const app = createApp(null);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body).not.toHaveProperty('endpointsDropParamsMap');
+    });
   });
 
   describe('authenticated (req.user exists)', () => {
@@ -286,6 +320,7 @@ describe('GET /api/config', () => {
       expect(mockGetAppConfig).toHaveBeenCalledWith({
         role: 'USER',
         userId: 'user123',
+        idOnTheSource: undefined,
         tenantId: 'fallback-tenant',
       });
     });
@@ -300,6 +335,7 @@ describe('GET /api/config', () => {
       expect(mockGetAppConfig).toHaveBeenCalledWith({
         role: 'USER',
         userId: 'user123',
+        idOnTheSource: undefined,
         tenantId: 'user-tenant',
       });
     });
@@ -315,7 +351,61 @@ describe('GET /api/config', () => {
       expect(response.body.modelSpecs).toEqual({ list: [{ name: 'test-spec' }] });
       expect(response.body.balance).toEqual({ enabled: true, startBalance: 10000 });
       expect(response.body.webSearch).toEqual({ searchProvider: 'tavily' });
+      expect(response.body.codeEnvironmentDecisionVersion).toBeUndefined();
     });
+
+    it('does not advertise conversation moves unless the effective policy enables them', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.codeEnvironmentMoveVersion).toBeUndefined();
+    });
+
+    it('advertises enabled conversation moves regardless of decision activation', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        endpoints: {
+          agents: {
+            statefulCodeSessions: {
+              allowedEnvironments: ['user'],
+              conversationMoves: { enabled: true },
+            },
+          },
+        },
+      });
+      delete process.env.CODE_ENVIRONMENT_DECISION_VERSION;
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.codeEnvironmentDecisionVersion).toBeUndefined();
+      expect(response.body.codeEnvironmentMoveVersion).toBe(1);
+    });
+
+    it('advertises code environment decisions only after deployment-wide activation', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      process.env.CODE_ENVIRONMENT_DECISION_VERSION = '1';
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.codeEnvironmentDecisionVersion).toBe(1);
+    });
+
+    it.each(['0', '2', '1.0', 'true'])(
+      'does not advertise unsupported code environment decision version %s',
+      async (version) => {
+        mockGetAppConfig.mockResolvedValue(baseAppConfig);
+        process.env.CODE_ENVIRONMENT_DECISION_VERSION = version;
+        const app = createApp(mockUser);
+
+        const response = await request(app).get('/api/config');
+
+        expect(response.body.codeEnvironmentDecisionVersion).toBeUndefined();
+      },
+    );
 
     it('should strip private prompt fields from model spec presets', async () => {
       mockGetAppConfig.mockResolvedValue({
@@ -327,6 +417,7 @@ describe('GET /api/config', () => {
             {
               name: 'guarded-spec',
               label: 'Guarded Spec',
+              skills: ['private-skill'],
               preset: {
                 endpoint: 'openAI',
                 model: 'gpt-4o',
@@ -352,6 +443,7 @@ describe('GET /api/config', () => {
         model: 'gpt-4o',
         greeting: 'Hello',
       });
+      expect(response.body.modelSpecs.list[0]).not.toHaveProperty('skills');
     });
 
     it('should include full interface config', async () => {
@@ -375,6 +467,131 @@ describe('GET /api/config', () => {
       expect(response.body.bundlerURL).toBe('https://bundler.test');
       expect(response.body.staticBundlerURL).toBe('https://static-bundler.test');
       expect(response.body.conversationImportMaxFileSize).toBe(5000000);
+    });
+
+    it('should advertise Insights only when ENABLE_INSIGHTS is enabled', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      const app = createApp(mockUser);
+
+      let response = await request(app).get('/api/config');
+      expect(response.body.insightsEnabled).toBe(false);
+
+      process.env.ENABLE_INSIGHTS = 'true';
+      response = await request(app).get('/api/config');
+      expect(response.body.insightsEnabled).toBe(true);
+    });
+
+    it('should advertise Langfuse fanout only when the toggle and collector URL are configured', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockHasCapability.mockResolvedValue(true);
+      mockHasConfigCapability.mockResolvedValue(true);
+      process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+      const app = createApp(mockUser);
+
+      let response = await request(app).get('/api/config');
+      expect(response.body.langfuseFanoutEnabled).toBe(false);
+      expect(response.body.langfuseConnectionAccess).toBe(true);
+
+      process.env.LANGFUSE_FANOUT_COLLECTOR_URL = '   ';
+      response = await request(app).get('/api/config');
+      expect(response.body.langfuseFanoutEnabled).toBe(false);
+      expect(response.body.langfuseConnectionAccess).toBe(true);
+
+      process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://langfuse-fanout:4318';
+      response = await request(app).get('/api/config');
+      expect(response.body.langfuseFanoutEnabled).toBe(true);
+      expect(response.body.langfuseConnectionAccess).toBe(true);
+    });
+
+    it('hides Langfuse connection access when tenant export is emergency-disabled', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockHasCapability.mockResolvedValue(true);
+      mockHasConfigCapability.mockResolvedValue(true);
+      process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+      process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://langfuse-fanout:4318';
+      process.env.LANGFUSE_FANOUT_TENANT_EXPORT_DISABLED = 'true';
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.langfuseFanoutEnabled).toBe(true);
+      expect(response.body.langfuseConnectionAccess).toBe(false);
+      expect(mockHasCapability).not.toHaveBeenCalled();
+      expect(mockHasConfigCapability).not.toHaveBeenCalled();
+    });
+
+    it('advertises Langfuse connection access from capabilities rather than the user role', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      process.env.TENANT_ISOLATION_STRICT = 'true';
+      process.env.LANGFUSE_FANOUT_ENABLED = 'true';
+      process.env.LANGFUSE_FANOUT_COLLECTOR_URL = 'http://langfuse-fanout:4318';
+      const app = createApp({ ...mockUser, role: 'DELEGATED_ADMIN' });
+
+      mockHasCapability.mockImplementation(
+        async (_user, capability) => capability === 'access:admin',
+      );
+      mockHasConfigCapability.mockResolvedValue(true);
+      let response = await request(app).get('/api/config');
+      expect(response.body.langfuseConnectionAccess).toBe(true);
+
+      mockHasConfigCapability.mockResolvedValue(false);
+      response = await request(app).get('/api/config');
+      expect(response.body.langfuseFanoutEnabled).toBe(true);
+      expect(response.body.langfuseConnectionAccess).toBe(false);
+    });
+
+    it('skips the Langfuse management capability check without admin access', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockHasCapability.mockResolvedValue(false);
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.langfuseConnectionAccess).toBe(false);
+      expect(mockHasConfigCapability).not.toHaveBeenCalled();
+    });
+
+    it('advertises Langfuse connection access by default in single-tenant mode', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockHasCapability.mockResolvedValue(true);
+      mockHasConfigCapability.mockResolvedValue(true);
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.langfuseFanoutEnabled).toBe(false);
+      expect(response.body.langfuseConnectionAccess).toBe(true);
+    });
+
+    it('hides single-tenant connection settings when environment credentials are configured', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockHasCapability.mockResolvedValue(true);
+      mockHasConfigCapability.mockResolvedValue(true);
+      process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+      process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.langfuseConnectionAccess).toBe(false);
+      expect(mockHasCapability).not.toHaveBeenCalled();
+      expect(mockHasConfigCapability).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      ['LANGFUSE_TRACING_ENABLED', 'false'],
+      ['LANGFUSE_SAMPLE_RATE', '0'],
+    ])('hides Langfuse connection settings when %s=%s', async (key, value) => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockHasCapability.mockResolvedValue(true);
+      mockHasConfigCapability.mockResolvedValue(true);
+      process.env[key] = value;
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.langfuseConnectionAccess).toBe(false);
+      expect(mockHasCapability).not.toHaveBeenCalled();
     });
 
     it('should include post-login informational fields', async () => {
@@ -487,12 +704,47 @@ describe('GET /api/config', () => {
 
     it('should not call hasCapability when allowAccountDeletion is already true', async () => {
       mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      process.env.LANGFUSE_TRACING_ENABLED = 'false';
       const app = createApp(mockUser);
 
       const response = await request(app).get('/api/config');
 
       expect(response.body.allowAccountDeletion).toBe(true);
       expect(mockHasCapability).not.toHaveBeenCalled();
+    });
+
+    it('should include adminPanelURL for users with ACCESS_ADMIN capability', async () => {
+      process.env.ADMIN_PANEL_URL = 'https://admin.example.com';
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockHasCapability.mockResolvedValue(true);
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.adminPanelURL).toBe('https://admin.example.com');
+      expect(mockHasCapability).toHaveBeenCalled();
+    });
+
+    it('should omit adminPanelURL for authenticated users without ACCESS_ADMIN', async () => {
+      process.env.ADMIN_PANEL_URL = 'https://admin.example.com';
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockHasCapability.mockResolvedValue(false);
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body).not.toHaveProperty('adminPanelURL');
+      expect(mockHasCapability).toHaveBeenCalled();
+    });
+
+    it('should omit adminPanelURL when ADMIN_PANEL_URL is not set', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      mockHasCapability.mockResolvedValue(true);
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body).not.toHaveProperty('adminPanelURL');
     });
 
     it('should return 500 when getAppConfig throws', async () => {
@@ -503,6 +755,95 @@ describe('GET /api/config', () => {
 
       expect(response.statusCode).toBe(500);
       expect(response.body).toHaveProperty('error');
+    });
+  });
+
+  describe('endpointsDropParamsMap', () => {
+    it('maps dropParams for array-configured custom endpoints', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        endpoints: {
+          custom: [
+            { name: 'custom-provider', dropParams: ['temperature', 'top_p'] },
+            { name: 'no-drop-provider' },
+          ],
+        },
+      });
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.endpointsDropParamsMap).toEqual({
+        'custom-provider': ['temperature', 'top_p'],
+      });
+    });
+
+    it('normalizes an ollama custom endpoint name to lowercase', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        endpoints: {
+          custom: [{ name: 'Ollama', dropParams: ['stop'] }],
+        },
+      });
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.endpointsDropParamsMap).toEqual({ ollama: ['stop'] });
+    });
+
+    it('keeps azureOpenAI dropParams model-specific instead of merging across groups', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        endpoints: {
+          azureOpenAI: {
+            groupMap: {
+              groupA: { dropParams: ['temperature'] },
+              groupB: { dropParams: ['temperature', 'top_p'] },
+            },
+            modelGroupMap: {
+              'model-a': { group: 'groupA' },
+              'model-b': { group: 'groupB' },
+            },
+          },
+        },
+      });
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.endpointsDropParamsMap.azureOpenAI).toEqual({
+        'model-a': ['temperature'],
+        'model-b': ['temperature', 'top_p'],
+      });
+    });
+
+    it('excludes endpoints without dropParams and non-param endpoints like agents', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        endpoints: {
+          custom: [{ name: 'no-drop-provider' }],
+          azureOpenAI: {
+            groupMap: { groupA: {} },
+            modelGroupMap: { 'model-a': { group: 'groupA' } },
+          },
+          agents: [{ name: 'agents-provider', dropParams: ['temperature'] }],
+        },
+      });
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.endpointsDropParamsMap).toEqual({});
+    });
+
+    it('returns an empty map when appConfig has no endpoints', async () => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      const app = createApp(mockUser);
+
+      const response = await request(app).get('/api/config');
+
+      expect(response.body.endpointsDropParamsMap).toEqual({});
     });
   });
 

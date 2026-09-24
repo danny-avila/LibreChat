@@ -6,7 +6,19 @@ import { Constants } from 'librechat-data-provider';
  * Only allows fields that users should be able to modify.
  * Sensitive fields like author, authorName, _id, productionId, etc. are excluded.
  */
-export const updatePromptGroupSchema = z
+export const updatePromptGroupSchema: z.ZodObject<
+  {
+    /** The name of the prompt group */
+    name: z.ZodOptional<z.ZodString>;
+    /** Short description/oneliner for the prompt group */
+    oneliner: z.ZodOptional<z.ZodString>;
+    /** Category for organizing prompt groups */
+    category: z.ZodOptional<z.ZodString>;
+    /** Command shortcut for the prompt group */
+    command: z.ZodNullable<z.ZodOptional<z.ZodString>>;
+  },
+  'strict'
+> = z
   .object({
     /** The name of the prompt group */
     name: z.string().min(1).max(255).optional(),
@@ -44,6 +56,19 @@ export function validatePromptGroupUpdate(data: unknown): TUpdatePromptGroupSche
  * @param data - The raw request body to validate
  * @returns A SafeParseResult with either the validated data or validation errors
  */
-export function safeValidatePromptGroupUpdate(data: unknown) {
+export function safeValidatePromptGroupUpdate(data: unknown): z.SafeParseReturnType<
+  {
+    name?: string | undefined;
+    category?: string | undefined;
+    command?: string | null | undefined;
+    oneliner?: string | undefined;
+  },
+  {
+    name?: string | undefined;
+    category?: string | undefined;
+    command?: string | null | undefined;
+    oneliner?: string | undefined;
+  }
+> {
   return updatePromptGroupSchema.safeParse(data);
 }

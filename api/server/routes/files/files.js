@@ -3,9 +3,25 @@ const express = require('express');
 const { logger, SystemCapabilities } = require('@librechat/data-schemas');
 const {
   logAxiosError,
+  getSafeErrorMetadata,
+  getApprovalTtlMs,
   refreshS3FileUrls,
+  handleFilesUsageRequest,
+  buildDeleteFilesResponse,
+  deleteAgentResourceFiles,
+  shouldUseUploadSse,
+  startUploadSseStream,
+  sendUploadPolicyError,
   resolveUploadErrorMessage,
   verifyAgentUploadPermission,
+  createCodeExecutionRouteKey,
+  getCodeExecutionBaseUrl,
+  assertUploadContentAllowed,
+  hasActiveFilePolicy,
+  sanitizeFilename,
+  checkToolResourceUploadPermission,
+  resolveAssistantToolPermissions,
+  resolveDownloadPath,
 } = require('@librechat/api');
 const {
   Time,
@@ -14,9 +30,12 @@ const {
   FileSources,
   ResourceType,
   EModelEndpoint,
+  EToolResources,
   PermissionBits,
   checkOpenAIStorage,
   isAssistantsEndpoint,
+  hasActivePiiPatterns,
+  mergeFileConfig,
 } = require('librechat-data-provider');
 const {
   filterFile,
@@ -24,12 +43,17 @@ const {
   processDeleteRequest,
   processAgentFileUpload,
 } = require('~/server/services/Files/process');
+const {
+  resolveEffectiveToolResource,
+  resolveUploadEndpoint,
+  resolveUploadAgent,
+} = require('~/server/services/Files/routing');
 const { fileAccess } = require('~/server/middleware/accessResources/fileAccess');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getOpenAIClient } = require('~/server/controllers/assistants/helpers');
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
+const { getRoleByName } = require('~/models');
 const { checkPermission } = require('~/server/services/PermissionService');
-const { hasAccessToFilesViaAgent } = require('~/server/services/Files');
 const { cleanFileName, getContentDisposition } = require('~/server/utils/files');
 const {
   assertSinglePathSegment,
@@ -116,20 +140,20 @@ router.get('/agent/:agent_id', fileUploadIpLimiter, fileUploadUserLimiter, async
       }
     }
 
-    const agentFileIds = [];
+    const agentFileIds = new Set();
     if (agent.tool_resources) {
       for (const [, resource] of Object.entries(agent.tool_resources)) {
         if (resource?.file_ids && Array.isArray(resource.file_ids)) {
-          agentFileIds.push(...resource.file_ids);
+          resource.file_ids.forEach((fileId) => agentFileIds.add(fileId));
         }
       }
     }
 
-    if (agentFileIds.length === 0) {
+    if (agentFileIds.size === 0) {
       return res.status(200).json([]);
     }
 
-    const files = await db.getFiles({ file_id: { $in: agentFileIds }, user: agent.author }, null, {
+    const files = await db.getFiles({ file_id: { $in: [...agentFileIds] } }, null, {
       text: 0,
     });
 
@@ -152,6 +176,9 @@ router.get('/config', fileUploadIpLimiter, fileUploadUserLimiter, async (req, re
 
 router.delete('/', fileUploadIpLimiter, fileUploadUserLimiter, async (req, res) => {
   try {
+    const sendDeleteResult = (result, successMessage) =>
+      res.status(200).json(buildDeleteFilesResponse(result, successMessage));
+
     const { files: _files } = req.body;
 
     /** @type {MongoFile[]} */
@@ -178,6 +205,68 @@ router.delete('/', fileUploadIpLimiter, fileUploadUserLimiter, async (req, res) 
     const fileIds = files.map((file) => file.file_id);
     const dbFiles = await db.getFiles({ file_id: { $in: fileIds } });
 
+    if (req.body.agent_id && req.body.tool_resource) {
+      if (!isAgentToolResourceKey(req.body.tool_resource)) {
+        return res.status(400).json({ message: 'Invalid agent tool resource' });
+      }
+
+      const agent = await db.getAgent({
+        id: req.body.agent_id,
+      });
+
+      if (!agent) {
+        return res.status(404).json({ message: 'Agent not found' });
+      }
+
+      const hasAgentEditAccess =
+        agent.author?.toString() === req.user.id.toString() ||
+        (await checkPermission({
+          userId: req.user.id,
+          role: req.user.role,
+          resourceType: ResourceType.AGENT,
+          resourceId: agent._id,
+          requiredPermission: PermissionBits.EDIT,
+        }));
+      if (!hasAgentEditAccess) {
+        return res.status(403).json({
+          message: 'You can only delete files you have access to',
+          unauthorizedFiles: files.map((file) => file.file_id),
+        });
+      }
+
+      const agentDeletion = await deleteAgentResourceFiles(
+        {
+          agentId: req.body.agent_id,
+          agentObjectId: agent._id.toString(),
+          toolResource: req.body.tool_resource,
+          requestedFileIds: fileIds,
+          attachedFileIds: agent.tool_resources?.[req.body.tool_resource]?.file_ids ?? [],
+          files: dbFiles.map((file) => ({
+            file_id: file.file_id,
+            owner: file.user?.toString() ?? null,
+            file,
+          })),
+          userId: req.user.id.toString(),
+        },
+        {
+          getSharedResourceFileIds: db.getSharedResourceFileIds,
+          removeAgentResourceFiles: db.removeAgentResourceFiles,
+          deleteFiles: (agentFiles) => processDeleteRequest({ req, files: agentFiles }),
+        },
+      );
+
+      if (agentDeletion.outcome == null) {
+        res.status(200).json({ message: 'File associations removed successfully from agent' });
+        return;
+      }
+
+      logger.debug(
+        `[/files] Agent files deleted successfully: ${agentDeletion.destroyedFileIds.join(', ')}`,
+      );
+      sendDeleteResult(agentDeletion.outcome, 'Files deleted successfully');
+      return;
+    }
+
     const ownedFiles = [];
     const nonOwnedFiles = [];
 
@@ -190,107 +279,49 @@ router.delete('/', fileUploadIpLimiter, fileUploadUserLimiter, async (req, res) 
     }
 
     if (dbFiles.length > 0 && nonOwnedFiles.length === 0) {
-      await processDeleteRequest({ req, files: ownedFiles });
+      const result = await processDeleteRequest({ req, files: ownedFiles });
       logger.debug(
         `[/files] Files deleted successfully: ${ownedFiles
           .filter((f) => f.file_id)
           .map((f) => f.file_id)
           .join(', ')}`,
       );
-      res.status(200).json({ message: 'Files deleted successfully' });
+      sendDeleteResult(result, 'Files deleted successfully');
       return;
     }
 
-    let authorizedFiles = [...ownedFiles];
-    let unauthorizedFiles = [];
-
-    if (req.body.agent_id && nonOwnedFiles.length > 0) {
-      const nonOwnedFileIds = nonOwnedFiles.map((f) => f.file_id);
-      const accessMap = await hasAccessToFilesViaAgent({
-        userId: req.user.id,
-        role: req.user.role,
-        fileIds: nonOwnedFileIds,
-        agentId: req.body.agent_id,
-        isDelete: true,
-        files: nonOwnedFiles,
-      });
-
-      for (const file of nonOwnedFiles) {
-        if (accessMap.get(file.file_id)) {
-          authorizedFiles.push(file);
-        } else {
-          unauthorizedFiles.push(file);
-        }
-      }
-    } else {
-      unauthorizedFiles = nonOwnedFiles;
-    }
+    const authorizedFiles = [...ownedFiles];
+    const unauthorizedFiles = nonOwnedFiles;
 
     if (unauthorizedFiles.length > 0) {
       return res.status(403).json({
-        message: 'You can only delete files you have access to',
+        message: 'You can only delete files you own',
         unauthorizedFiles: unauthorizedFiles.map((f) => f.file_id),
       });
-    }
-
-    /* Handle agent unlinking even if no valid files to delete */
-    if (req.body.agent_id && req.body.tool_resource && dbFiles.length === 0) {
-      const agent = await db.getAgent({
-        id: req.body.agent_id,
-      });
-
-      const toolResourceFiles = agent.tool_resources?.[req.body.tool_resource]?.file_ids ?? [];
-      const agentFiles = files
-        .filter((f) => toolResourceFiles.includes(f.file_id))
-        .map((file) => ({ tool_resource: req.body.tool_resource, file_id: file.file_id }));
-      const hasAgentEditAccess =
-        agent.author?.toString() === req.user.id.toString() ||
-        (await checkPermission({
-          userId: req.user.id,
-          role: req.user.role,
-          resourceType: ResourceType.AGENT,
-          resourceId: agent._id,
-          requiredPermission: PermissionBits.EDIT,
-        }));
-      const unauthorizedFiles = hasAgentEditAccess ? [] : agentFiles;
-      if (unauthorizedFiles.length > 0) {
-        return res.status(403).json({
-          message: 'You can only delete files you have access to',
-          unauthorizedFiles: unauthorizedFiles.map((file) => file.file_id),
-        });
-      }
-
-      await db.removeAgentResourceFiles({
-        agent_id: req.body.agent_id,
-        files: agentFiles,
-      });
-      res.status(200).json({ message: 'File associations removed successfully from agent' });
-      return;
     }
 
     /* Handle assistant unlinking even if no valid files to delete */
     if (req.body.assistant_id && req.body.tool_resource && dbFiles.length === 0) {
       const assistant = await db.getAssistant({
-        id: req.body.assistant_id,
+        assistantId: req.body.assistant_id,
       });
 
-      const toolResourceFiles = assistant.tool_resources?.[req.body.tool_resource]?.file_ids ?? [];
+      const toolResourceFiles = assistant?.tool_resources?.[req.body.tool_resource]?.file_ids ?? [];
       const assistantFiles = files.filter((f) => toolResourceFiles.includes(f.file_id));
 
-      await processDeleteRequest({ req, files: assistantFiles });
-      res.status(200).json({ message: 'File associations removed successfully from assistant' });
+      const result = await processDeleteRequest({ req, files: assistantFiles });
+      sendDeleteResult(result, 'File associations removed successfully from assistant');
       return;
     } else if (
       req.body.assistant_id &&
       req.body.files?.[0]?.filepath === EModelEndpoint.azureAssistants
     ) {
-      await processDeleteRequest({ req, files: req.body.files });
-      return res
-        .status(200)
-        .json({ message: 'File associations removed successfully from Azure Assistant' });
+      const result = await processDeleteRequest({ req, files: req.body.files });
+      sendDeleteResult(result, 'File associations removed successfully from Azure Assistant');
+      return;
     }
 
-    await processDeleteRequest({ req, files: authorizedFiles });
+    const result = await processDeleteRequest({ req, files: authorizedFiles });
 
     logger.debug(
       `[/files] Files deleted successfully: ${authorizedFiles
@@ -298,7 +329,7 @@ router.delete('/', fileUploadIpLimiter, fileUploadUserLimiter, async (req, res) 
         .map((f) => f.file_id)
         .join(', ')}`,
     );
-    res.status(200).json({ message: 'Files deleted successfully' });
+    sendDeleteResult(result, 'Files deleted successfully');
   } catch (error) {
     logger.error('[/files] Error deleting files:', error);
     res.status(400).json({ message: 'Error in request', error: error.message });
@@ -666,40 +697,121 @@ router.post('/', fileUploadIpLimiter, fileUploadUserLimiter, async (req, res) =>
   const safeUserDir = assertSinglePathSegment('userId', req.user.id);
   const tempUploadPath = resolveTempUploadPath({ req, appConfig, safeUserDir });
 
+  /** Opened only once auth/validation has passed, right before the potentially
+   * long-running upload processing begins — see `startUploadSseStream`. */
+  let sseStream = null;
+  const openSseStreamIfRequested = () => {
+    if (shouldUseUploadSse(req)) {
+      sseStream = startUploadSseStream(res);
+    }
+  };
+
   try {
-    filterFile({ req });
+    req.file.originalname = sanitizeFilename(req.file.originalname);
+    const isAssistants = isAssistantsEndpoint(metadata.endpoint);
 
-    metadata.temp_file_id = metadata.file_id;
-    metadata.file_id = req.file_id;
-
-    if (isAssistantsEndpoint(metadata.endpoint)) {
-      return await processFileUpload({ req, res, metadata });
-    }
-
-    let skipUploadAuth = false;
-    try {
-      skipUploadAuth = await hasCapability(req.user, SystemCapabilities.MANAGE_AGENTS);
-    } catch (err) {
-      logger.warn(`[/files] capability check failed, denying bypass: ${err.message}`);
-    }
-
-    if (!skipUploadAuth) {
+    /* Authorization runs before anything reads the target agent. Validating against a
+     * record the caller cannot access answers with that agent's provider limits and
+     * content policy, so the rejection itself reports its configuration. */
+    if (!isAssistants) {
       const denied = await verifyAgentUploadPermission({
         req,
         res,
         metadata,
-        getAgent: db.getAgent,
+        getAgent: ({ id }) => resolveUploadAgent(req, id),
         checkPermission,
+        hasUploadBypass: () => hasCapability(req.user, SystemCapabilities.MANAGE_AGENTS),
       });
       if (denied) {
         return;
       }
     }
 
-    return await processAgentFileUpload({ req, res, metadata });
+    /* Same configuration for validation and routing: an agent upload arrives as
+     * `agents` but is processed under the agent's own provider. */
+    const effectiveEndpoint = await resolveUploadEndpoint({
+      endpoint: metadata.endpoint,
+      agent_id: metadata.agent_id,
+      req,
+    });
+    /* Carried so processing routes under the same configuration validation used, and so
+     * it can tell whether any enabled tool could consume a file kept off the model path,
+     * both from the one agent read this request already made. */
+    metadata.effectiveEndpoint = effectiveEndpoint;
+    /* Left undefined when no agent record backs this upload, as for an ephemeral agent
+     * that exists only for the request. Processing then cannot judge what tools could
+     * consume the file and does not try. */
+    const uploadAgent = await resolveUploadAgent(req, metadata.agent_id);
+    metadata.agentTools = uploadAgent?.tools;
+    metadata.useResponsesApi ??= uploadAgent?.model_parameters?.useResponsesApi;
+    filterFile({ req, endpoint: effectiveEndpoint });
+
+    /* Same destination the processing path will use: a unified upload routed to text
+     * becomes a context resource, and the preflight must account for that extraction
+     * before fail-closing on an uninspectable derived field. */
+    const effectiveToolResource = await resolveEffectiveToolResource({ req, metadata });
+
+    /** Check the role permission before any content inspection: a forbidden upload
+     * must be rejected without reading or embedding the file. */
+    const uploadAllowed = await checkToolResourceUploadPermission({
+      req,
+      toolResource: metadata.tool_resource,
+      getRoleByName,
+    });
+    if (!uploadAllowed) {
+      return res.status(403).json({ message: 'Forbidden: Insufficient permissions' });
+    }
+
+    const legacyAssistantUpload = await assertLegacyAssistantUploadAllowed(req, res, metadata);
+    if (!legacyAssistantUpload.ok) {
+      return;
+    }
+
+    await assertUploadContentAllowed({
+      filters: req.config?.filters,
+      file: req.file,
+      endpoint: metadata.endpoint,
+      toolResource: effectiveToolResource,
+      fileConfig: mergeFileConfig(req.config?.fileConfig),
+      ocrConfigured: req.config?.ocr != null,
+      ragConfigured: !!process.env.RAG_API_URL,
+      readFile: fs.readFile,
+    });
+
+    metadata.temp_file_id = metadata.file_id;
+    metadata.file_id = req.file_id;
+
+    if (isAssistants) {
+      openSseStreamIfRequested();
+      return await processFileUpload({
+        req,
+        res,
+        metadata,
+        sseStream,
+        openai: legacyAssistantUpload.openai,
+      });
+    }
+
+    openSseStreamIfRequested();
+    return await processAgentFileUpload({ req, res, metadata, sseStream });
   } catch (error) {
-    const message = resolveUploadErrorMessage(error);
-    logger.error('[/files] Error processing file:', error);
+    if (
+      sendUploadPolicyError(res, sseStream, error, {
+        tempFileId: metadata.temp_file_id,
+        toolResource: metadata.tool_resource,
+      })
+    ) {
+      return;
+    }
+    const contentProtectionActive =
+      hasActiveFilePolicy(req.config?.filters) ||
+      hasActivePiiPatterns(req.config?.messageFilter?.pii);
+    const message = resolveUploadErrorMessage(
+      error,
+      'Error processing file',
+      contentProtectionActive,
+    );
+    logger.error('[/files] Error processing file:', getSafeErrorMetadata(error));
 
     try {
       if (!tempUploadPath) {
@@ -707,10 +819,29 @@ router.post('/', fileUploadIpLimiter, fileUploadUserLimiter, async (req, res) =>
       }
       await fs.unlink(tempUploadPath);
       cleanup = false;
-    } catch (error) {
-      logger.error('[/files] Error deleting file:', error);
+    } catch (cleanupError) {
+      logger.error('[/files] Error deleting file:', getSafeErrorMetadata(cleanupError));
     }
-    res.status(500).json({ message });
+
+    const userErrorStatusCode = error?.userErrorStatusCode;
+    const errorStatusCode =
+      Number.isInteger(userErrorStatusCode) &&
+      userErrorStatusCode >= 400 &&
+      userErrorStatusCode <= 599
+        ? userErrorStatusCode
+        : 500;
+
+    if (sseStream) {
+      sseStream.sendError({
+        message,
+        code: errorStatusCode,
+        temp_file_id: metadata.temp_file_id,
+        tool_resource: metadata.tool_resource,
+        display_to_user: true,
+      });
+    } else {
+      res.status(errorStatusCode).json({ message });
+    }
   } finally {
     if (cleanup) {
       try {
@@ -718,12 +849,21 @@ router.post('/', fileUploadIpLimiter, fileUploadUserLimiter, async (req, res) =>
           await fs.unlink(tempUploadPath);
         }
       } catch (error) {
-        logger.error('[/files] Error deleting file after file processing:', error);
+        logger.error(
+          '[/files] Error deleting file after file processing:',
+          getSafeErrorMetadata(error),
+        );
       }
     } else {
       logger.debug('[/files] File processing completed without cleanup');
     }
+    if (sseStream) {
+      sseStream.close();
+    }
   }
-});
+};
+
+router.post('/', handleFileUpload);
 
 module.exports = router;
+module.exports.handleFileUpload = handleFileUpload;

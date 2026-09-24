@@ -31,6 +31,7 @@ export default {
       },
     ],
   },
+  transformIgnorePatterns: [`/node_modules/(?!(${esModules})/).*/`],
   moduleNameMapper: {
     '^@src/(.*)$': '<rootDir>/src/$1',
     '~/(.*)': '<rootDir>/src/$1',
@@ -43,8 +44,8 @@ export default {
   //     lines: 57,
   //   },
   // },
-  setupFiles: ['<rootDir>/jest.setup.cjs'],
-  maxWorkers: '50%',
+  setupFiles: ['<rootDir>/jest.setup.cjs', '<rootDir>/../../config/jest.setup.logging.cjs'],
+  maxWorkers,
   restoreMocks: true,
   testTimeout: 15000,
 };

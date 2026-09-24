@@ -10,22 +10,19 @@ permissions:
   packages: write
 
 jobs:
-  build:
+  # Validates the release tag and resolves which tags the images should carry.
+  # `latest` is only applied when this tag is both stable and the newest stable
+  # tag in the repository, so re-cutting an older patch cannot move `latest`.
+  resolve-tags:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - target: api-build
-            file: Dockerfile.multi
-            image_name: librechat-api
-          - target: node
-            file: Dockerfile
-            image_name: librechat
-
+    timeout-minutes: 10
+    outputs:
+      tag_suffixes: ${{ steps.tags.outputs.tag_suffixes }}
     steps:
-      # Check out the repository
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Validate release tag
         id: release-tag
@@ -77,13 +74,15 @@ jobs:
           echo "BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_ENV
 
       - name: Resolve image tags
-        id: image-tags
+        id: tags
         env:
           IMAGE_NAME: ${{ matrix.image_name }}
           IMAGE_TAG: ${{ steps.release-tag.outputs.image_tag }}
           IS_STABLE: ${{ steps.release-tag.outputs.is_stable }}
         run: |
           set -euo pipefail
+          git fetch --tags --force
+          LATEST_STABLE_TAG=$(git tag --list 'v[0-9]*' --sort=-v:refname | grep -E '^v[0-9]+[.][0-9]+[.][0-9]+$' | head -n 1 || true)
           {
             echo 'tags<<EOF'
             printf 'ghcr.io/%s/%s:%s\n' "$OWNER" "$IMAGE_NAME" "$IMAGE_TAG"
@@ -93,17 +92,16 @@ jobs:
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
-      # Build and push Docker images for each target
-      - name: Build and push Docker images
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ${{ matrix.file }}
-          push: true
-          tags: ${{ steps.image-tags.outputs.tags }}
-          platforms: linux/amd64,linux/arm64
-          target: ${{ matrix.target }}
-          build-args: |
-            BUILD_COMMIT=${{ env.BUILD_COMMIT }}
-            BUILD_BRANCH=${{ env.BUILD_BRANCH }}
-            BUILD_DATE=${{ env.BUILD_DATE }}
+  publish:
+    needs: resolve-tags
+    uses: ./.github/workflows/docker-publish.yml
+    with:
+      images: >-
+        [{"target":"api-build","file":"Dockerfile.multi","image_name":"librechat-api"},
+         {"target":"node","file":"Dockerfile","image_name":"librechat"}]
+      tag_suffixes: ${{ needs.resolve-tags.outputs.tag_suffixes }}
+      build_branch: ${{ github.ref_name }}
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      LEGACY_GHCR_TOKEN: ${{ secrets.LEGACY_GHCR_TOKEN }}

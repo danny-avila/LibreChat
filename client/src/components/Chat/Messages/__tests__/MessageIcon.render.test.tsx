@@ -104,7 +104,7 @@ describe('MessageIcon render cycles', () => {
     const { rerender } = render(<MessageIcon iconData={baseIconData} agent={agent1} />);
     iconRenderCount.current = 0;
 
-    const agent2 = makeAgent({ avatar: { filepath: '/images/new-avatar.png' } });
+    const agent2 = makeAgent({ avatar: { filepath: '/images/new-avatar.png', source: 'local' } });
     rerender(<MessageIcon iconData={baseIconData} agent={agent2} />);
 
     expect(iconRenderCount.current).toBe(1);

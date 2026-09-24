@@ -1,18 +1,30 @@
 import { logger } from '@librechat/data-schemas';
-import type { AppConfig } from '@librechat/data-schemas';
 import {
   Tools,
   Constants,
   isAgentsEndpoint,
   isEphemeralAgentId,
+  getEphemeralSender,
   encodeEphemeralAgentId,
 } from 'librechat-data-provider';
 import type {
   AgentModelParameters,
+  AgentToolOptions,
   TEphemeralAgent,
   TModelSpec,
   Agent,
 } from 'librechat-data-provider';
+import type { AppConfig } from '@librechat/data-schemas';
+import type { ParsedServerConfig } from '~/mcp/types';
+import {
+  requiresEphemeralUserConnection,
+  filterChatSelectableMCPServers,
+  validateMCPServerConfig,
+} from '~/mcp/utils';
+import { ASK_USER_QUESTION_TOOL_NAME } from '~/agents/hitl/askUserQuestionTool';
+import { synthesizeBackgroundToolOptions } from '~/agents/background';
+import { mergeSynthesizedToolOptions } from '~/agents/selection';
+import { synthesizeIntentToolOptions } from '~/agents/intent';
 import { getCustomEndpointConfig } from '~/app/config';
 import { resolveResponseAppInstructions } from './generatedResponsePrompts';
 
@@ -20,16 +32,27 @@ const { mcp_all, mcp_delimiter } = Constants;
 type ModelParametersWithPromptPrefix = AgentModelParameters & { promptPrefix?: string | null };
 
 export interface LoadAgentDeps {
-  getAgent: (searchParameter: { id: string }) => Promise<Agent | null>;
+  /** Resolves the agent without its `versions` history; `version` carries the count. */
+  getAgent: (searchParameter: {
+    id: string;
+  }) => Promise<(Agent & { version?: number; versions?: { length: number } }) | null>;
   getMCPServerTools: (
     userId: string,
     serverName: string,
+    serverConfig?: ParsedServerConfig,
   ) => Promise<Record<string, unknown> | null>;
+  /** The MCP servers this user can reach, with the registry's tier precedence
+   *  already applied — the resolution behind the client's catalog. Omitted, the
+   *  chat selection is used as sent. */
+  getAccessibleMCPServers?: (
+    userId: string,
+    role?: string,
+  ) => Promise<Record<string, ParsedServerConfig>>;
 }
 
 export interface LoadAgentParams {
   req: {
-    user?: { id?: string };
+    user?: { id?: string; role?: string };
     config?: AppConfig;
     body?: {
       appId?: string | number;
@@ -140,19 +163,18 @@ export async function loadEphemeralAgent(
     }
   }
 
-  // For ephemeral agents, use modelLabel if provided, then model spec's label,
-  // then modelDisplayLabel from endpoint config, otherwise empty string to show model name
-  const sender =
-    (model_parameters as AgentModelParameters & { modelLabel?: string })?.modelLabel ??
-    modelSpec?.label ??
-    (endpointConfig as { modelDisplayLabel?: string } | undefined)?.modelDisplayLabel ??
-    '';
+  const sender = getEphemeralSender({
+    modelLabel: (model_parameters as AgentModelParameters & { modelLabel?: string })?.modelLabel,
+    specLabel: modelSpec?.label,
+    modelDisplayLabel: (endpointConfig as { modelDisplayLabel?: string } | undefined)
+      ?.modelDisplayLabel,
+  });
 
   // Encode ephemeral agent ID with endpoint, model, and computed sender for display
   const ephemeralId = encodeEphemeralAgentId({
     endpoint,
     model: model as string,
-    sender: sender as string,
+    sender,
   });
 
   const result: Partial<Agent> = {
@@ -167,6 +189,20 @@ export async function loadEphemeralAgent(
 
   if (mergedEphemeralAgent.artifacts) {
     result.artifacts = mergedEphemeralAgent.artifacts;
+  }
+  if (modelSpec?.subagents) {
+    result.subagents = modelSpec.subagents;
+  }
+  if (modelSpec && Object.prototype.hasOwnProperty.call(modelSpec, 'skills')) {
+    if (modelSpec.skills === true) {
+      result.skills_enabled = true;
+    } else if (modelSpec.skills === false) {
+      result.skills_enabled = false;
+      result.skills = [];
+    } else if (Array.isArray(modelSpec.skills)) {
+      result.skills_enabled = true;
+      result.skills = [];
+    }
   }
   return result as Agent;
 }

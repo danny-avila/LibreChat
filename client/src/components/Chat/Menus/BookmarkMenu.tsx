@@ -1,35 +1,22 @@
-import { useState, useId, useCallback, useMemo, useRef } from 'react';
+import { useState, useId } from 'react';
 import { useRecoilValue } from 'recoil';
 import * as Ariakit from '@ariakit/react';
-import { BookmarkPlusIcon } from 'lucide-react';
-import { useQueryClient } from '@tanstack/react-query';
-import { Constants, QueryKeys } from 'librechat-data-provider';
 import { BookmarkFilledIcon, BookmarkIcon } from '@radix-ui/react-icons';
-import { DropdownPopup, TooltipAnchor, Spinner, useToastContext } from '@librechat/client';
-import type { TConversationTag } from 'librechat-data-provider';
+import { DropdownPopup, TooltipAnchor, Spinner } from '@librechat/client';
 import type { FC } from 'react';
-import type * as t from '~/common';
-import { useConversationTagsQuery, useTagConversationMutation } from '~/data-provider';
 import { BookmarkContext } from '~/Providers/BookmarkContext';
-import { BookmarkEditDialog } from '~/components/Bookmarks';
-import { useBookmarkSuccess, useLocalize } from '~/hooks';
-import { NotificationSeverity } from '~/common';
-import { cn, isTemporaryConversation, logger } from '~/utils';
+import useBookmarkItems from '~/hooks/Chat/useBookmarkItems';
+import { useLocalize } from '~/hooks';
+import { cn } from '~/utils';
 import store from '~/store';
 
 const BookmarkMenu: FC = () => {
   const localize = useLocalize();
-  const queryClient = useQueryClient();
-  const { showToast } = useToastContext();
-
-  const conversation = useRecoilValue(store.conversationByIndex(0)) || undefined;
-  const conversationId = conversation?.conversationId ?? '';
-  const updateConvoTags = useBookmarkSuccess(conversationId);
-  const tags = conversation?.tags;
-  const isTemporary = isTemporaryConversation(conversation);
   const menuId = useId();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const conversationId = useRecoilValue(store.conversationByIndex(0))?.conversationId ?? '';
+  const { show, items, bookmarks, hasBookmarks, isLoading, triggerAriaLabel, dialog } =
+    useBookmarkItems();
 
   const mutation = useTagConversationMutation(conversationId, {
     onSuccess: (newTags: string[], vars) => {
@@ -152,7 +139,7 @@ const BookmarkMenu: FC = () => {
   }
 
   const renderButtonContent = () => {
-    if (mutation.isLoading) {
+    if (isLoading) {
       return <Spinner aria-label="Spinner" />;
     }
     if (hasBookmarks) {
@@ -162,7 +149,7 @@ const BookmarkMenu: FC = () => {
   };
 
   return (
-    <BookmarkContext.Provider value={{ bookmarks: data || [] }}>
+    <BookmarkContext.Provider value={{ bookmarks }}>
       <DropdownPopup
         portal={true}
         menuId={menuId}
@@ -177,7 +164,7 @@ const BookmarkMenu: FC = () => {
             render={
               <Ariakit.MenuButton
                 id="bookmark-menu-button"
-                aria-label={buttonAriaLabel}
+                aria-label={triggerAriaLabel}
                 aria-pressed={hasBookmarks}
                 className={cn(
                   'mt-text-sm flex size-9 flex-shrink-0 items-center justify-center gap-2 rounded-xl border border-border-light bg-presentation text-sm transition-colors duration-200 hover:bg-surface-hover',
@@ -190,17 +177,9 @@ const BookmarkMenu: FC = () => {
             }
           />
         }
-        items={dropdownItems}
+        items={items}
       />
-      <BookmarkEditDialog
-        tags={tags}
-        open={isDialogOpen}
-        setTags={updateConvoTags}
-        setOpen={setIsDialogOpen}
-        triggerRef={newBookmarkRef}
-        conversationId={conversationId}
-        context="BookmarkMenu - BookmarkEditDialog"
-      />
+      {dialog}
     </BookmarkContext.Provider>
   );
 };

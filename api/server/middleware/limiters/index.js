@@ -31,4 +31,7 @@ module.exports = {
   createSTTLimiters,
   verifyEmailLimiter,
   resetPasswordLimiter,
+  verifyEmailSubmissionLimiter,
+  resetPasswordSubmissionLimiter,
+  twoFactorTempLimiter,
 };

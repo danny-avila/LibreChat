@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { EToolResources, mergeFileConfig, getEndpointFileConfig } from 'librechat-data-provider';
 import type { AssistantsEndpoint } from 'librechat-data-provider';
 import type { ExtendedFile } from '~/common';
-import FileRow from '~/components/Chat/Input/Files/FileRow';
+import FileRow, { FileRowWrapper } from '~/components/Chat/Input/Files/FileRow';
 import { useGetFileConfig } from '~/data-provider';
 import { useFileHandling } from '~/hooks/Files';
 import { useChatContext } from '~/Providers';
@@ -69,7 +69,7 @@ export default function CodeFiles({
           assistant_id={assistant_id}
           tool_resource={tool_resource}
           setFilesLoading={setFilesLoading}
-          Wrapper={({ children }) => <div className="flex flex-wrap gap-2">{children}</div>}
+          Wrapper={FileRowWrapper}
         />
         <div>
           <button

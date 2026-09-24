@@ -1,4 +1,6 @@
-export default function AudioPaths() {
+import { JSX } from 'react/jsx-runtime';
+
+export default function AudioPaths(): JSX.Element {
   return (
     <>
       <path

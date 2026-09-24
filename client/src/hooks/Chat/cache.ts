@@ -7,7 +7,7 @@ type MessageCacheIdsParams = {
   messages: TMessage[];
 };
 
-function isConcreteConversationId(conversationId?: string | null) {
+function isConcreteConversationId(conversationId?: string | null): conversationId is string {
   return (
     !!conversationId &&
     conversationId !== Constants.NEW_CONVO &&

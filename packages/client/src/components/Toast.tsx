@@ -1,35 +1,35 @@
+import { X } from 'lucide-react';
+import { JSX } from 'react/jsx-runtime';
 import * as RadixToast from '@radix-ui/react-toast';
 import { NotificationSeverity } from '~/common';
-import { useToast } from '~/hooks';
+import { useToast, useLocalize } from '~/hooks';
 
-export function Toast() {
+export function Toast(): JSX.Element {
   const { toast, onOpenChange } = useToast();
+  const localize = useLocalize();
+  const persistent = toast.duration === Infinity;
   const severityClassName = {
-    /* Going up by 100 units in terms of darkness (eg bg-green-500 to bg-green-600) for
-     * bg colors produces colors that are too visually dissimilar to LibreChat's standard color palette.
-     * These colors were derived by adjusting the values in the HSV color space using CCA
-     * until the 4.5:1 contrast ratio threshold was met against white text while maintaining
-     * a relatively recognizable color scheme for toasts without compromising accessibility.
-     * */
-    [NotificationSeverity.INFO]: 'border-gray-500 bg-gray-500',
-    [NotificationSeverity.SUCCESS]: 'border-[#02855E] bg-[#02855E]',
-    [NotificationSeverity.WARNING]: 'border-[#C75209] bg-[#C75209]',
-    [NotificationSeverity.ERROR]: 'border-[#E02F1F] bg-[#E02F1F]',
+    [NotificationSeverity.INFO]: 'border-status-info-strong bg-status-info-strong',
+    [NotificationSeverity.SUCCESS]: 'border-status-success-strong bg-status-success-strong',
+    [NotificationSeverity.WARNING]: 'border-status-warning-strong bg-status-warning-strong',
+    [NotificationSeverity.ERROR]: 'border-status-error-strong bg-status-error-strong',
   };
 
   return (
     <RadixToast.Root
+      key={toast.id}
       open={toast.open}
-      onOpenChange={onOpenChange}
+      onOpenChange={(open) => onOpenChange(open, toast.id)}
+      duration={toast.duration}
       className="toast-root"
       style={{
-        height: '74px',
+        minHeight: '74px',
         marginBottom: '0px',
       }}
     >
       <div className="w-full p-1 text-center md:w-auto md:text-justify">
         <div
-          className={`alert-root pointer-events-auto inline-flex flex-row gap-2 rounded-md border px-3 py-2 font-bold text-white ${
+          className={`alert-root pointer-events-auto inline-flex flex-row gap-2 rounded-md border px-3 py-2 font-bold text-text-on-status ${
             severityClassName[toast.severity]
           }`}
         >
@@ -56,6 +56,14 @@ export function Toast() {
           <RadixToast.Description className="flex-1 justify-center gap-2">
             <div className="whitespace-pre-wrap text-left">{toast.message}</div>
           </RadixToast.Description>
+          {persistent && (
+            <RadixToast.Close
+              aria-label={localize('com_ui_close')}
+              className="ml-2 inline-flex flex-shrink-0 flex-grow-0 items-center justify-center self-center rounded-sm opacity-80 transition-opacity hover:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-current"
+            >
+              <X className="h-4 w-4" strokeWidth={3} />
+            </RadixToast.Close>
+          )}
         </div>
       </div>
     </RadixToast.Root>

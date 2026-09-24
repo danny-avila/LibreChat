@@ -1,3 +1,4 @@
+import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import {
   QueryKeys,
   dataService,
@@ -6,14 +7,6 @@ import {
   defaultOrderQuery,
   defaultAssistantsVersion,
 } from 'librechat-data-provider';
-import { useQuery, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
-import type {
-  UseInfiniteQueryOptions,
-  QueryObserverResult,
-  UseQueryOptions,
-  InfiniteData,
-} from '@tanstack/react-query';
-import type t from 'librechat-data-provider';
 import type {
   Action,
   TPreset,
@@ -30,6 +23,13 @@ import type {
   SharedLinksListParams,
   SharedLinksResponse,
 } from 'librechat-data-provider';
+import type {
+  UseInfiniteQueryOptions,
+  QueryObserverResult,
+  UseQueryOptions,
+  InfiniteData,
+} from '@tanstack/react-query';
+import type t from 'librechat-data-provider';
 import type { ConversationCursorData } from '~/utils/convos';
 import { findConversationInInfinite, isNotFoundError } from '~/utils';
 
@@ -86,28 +86,106 @@ export const useConversationsInfiniteQuery = (
   params: ConversationListParams,
   config?: UseInfiniteQueryOptions<ConversationListResponse, unknown>,
 ) => {
-  const { isArchived, sortBy, sortDirection, tags, search } = params;
+  const { isArchived, sortBy, sortDirection, tags, search, projectId } = params;
 
   return useInfiniteQuery<ConversationListResponse>({
     queryKey: [
       isArchived ? QueryKeys.archivedConversations : QueryKeys.allConversations,
-      { isArchived, sortBy, sortDirection, tags, search },
+      { isArchived, sortBy, sortDirection, tags, search, projectId },
     ],
-    queryFn: ({ pageParam }) =>
-      dataService.listConversations({
+    queryFn: async ({ pageParam }) => {
+      const page = await dataService.listConversations({
         isArchived,
         sortBy,
         sortDirection,
         tags,
         search,
+        projectId,
         cursor: pageParam?.toString(),
-      }),
+      });
+      /* A row's own `isArchived` decides what its menu offers, so a backend that predates
+         that field in the list projection would make archived rows offer Archive and submit
+         a no-op. What the variant asked for is the answer for any row that omits it. */
+      return {
+        ...page,
+        conversations: page.conversations.map((conversation) =>
+          conversation.isArchived == null
+            ? { ...conversation, isArchived: isArchived === true }
+            : conversation,
+        ),
+      };
+    },
     getNextPageParam: (lastPage) => lastPage?.nextCursor ?? undefined,
     keepPreviousData: true,
     staleTime: 5 * 60 * 1000, // 5 minutes
     cacheTime: 30 * 60 * 1000, // 30 minutes
     ...config,
   });
+};
+
+/**
+ * Pinned chats are a hand-curated set, so the sidebar fetches the whole thing rather
+ * than paginating it: a pin older than the first page of the Chats list would
+ * otherwise stay hidden until that list scrolled far enough to reach it, and
+ * `groupConversations` keeps pins out of the Chats groups entirely, so any pin
+ * this query does not return is invisible in the sidebar. The page size is therefore a
+ * request size, not a cap; the query drains the cursor.
+ *
+ * It takes no filters on purpose: the Chats list's status, bookmark and sort choices
+ * narrow that list alone, and a curated shortcut row that emptied itself whenever a
+ * filter was on would be the opposite of a shortcut.
+ */
+export const pinnedConversationsPageSize = 100;
+
+export const usePinnedConversationsQuery = (
+  config?: UseQueryOptions<ConversationListResponse>,
+): QueryObserverResult<ConversationListResponse> => {
+  const queryClient = useQueryClient();
+  const queryKey = [QueryKeys.pinnedConversations];
+
+  return useQuery<ConversationListResponse>(
+    queryKey,
+    async ({ signal }) => {
+      const conversations: ConversationListResponse['conversations'] = [];
+      let cursor: string | undefined;
+
+      do {
+        let page: ConversationListResponse;
+        try {
+          page = await dataService.listConversations({
+            pinned: true,
+            limit: pinnedConversationsPageSize,
+            cursor,
+          });
+        } catch (error) {
+          signal?.throwIfAborted();
+          /** A page failing partway through the drain must not throw away the pins
+           * already loaded: publish them so the retry, which starts the drain over,
+           * renders against the partial set instead of an empty section. */
+          if (conversations.length > 0) {
+            queryClient.setQueryData<ConversationListResponse>(queryKey, {
+              conversations,
+              nextCursor: cursor ?? null,
+            });
+          }
+          throw error;
+        }
+        signal?.throwIfAborted();
+        conversations.push(...page.conversations);
+        cursor = page.nextCursor ?? undefined;
+      } while (cursor);
+
+      return { conversations, nextCursor: null };
+    },
+    {
+      /* Left on the React Query defaults for focus and reconnect, matching the
+         conversations query: a pin changed in another tab is only reconciled by a
+         refetch, since the mutation that made it never touched this cache. */
+      staleTime: 5 * 60 * 1000,
+      cacheTime: 30 * 60 * 1000,
+      ...config,
+    },
+  );
 };
 
 export const useMessagesInfiniteQuery = (
@@ -143,15 +221,14 @@ export const useSharedLinksQuery = (
   params: SharedLinksListParams,
   config?: UseInfiniteQueryOptions<SharedLinksResponse, unknown>,
 ) => {
-  const { pageSize, isPublic, search, sortBy, sortDirection } = params;
+  const { pageSize, search, sortBy, sortDirection } = params;
 
   return useInfiniteQuery<SharedLinksResponse>({
-    queryKey: [QueryKeys.sharedLinks, { pageSize, isPublic, search, sortBy, sortDirection }],
+    queryKey: [QueryKeys.sharedLinks, { pageSize, search, sortBy, sortDirection }],
     queryFn: ({ pageParam }) =>
       dataService.listSharedLinks({
         cursor: pageParam?.toString(),
         pageSize,
-        isPublic,
         search,
         sortBy,
         sortDirection,

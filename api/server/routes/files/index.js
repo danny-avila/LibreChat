@@ -1,5 +1,6 @@
 const express = require('express');
 const {
+  createFileUsageLimiter,
   createFileLimiters,
   configMiddleware,
   requireJwtAuth,

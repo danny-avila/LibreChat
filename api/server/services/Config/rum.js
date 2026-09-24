@@ -1,4 +1,4 @@
-const { isEnabled } = require('@librechat/api');
+const { getRumProxyClientUrl, isEnabled, isRumProxyEnabled } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 
 const DEFAULT_RUM_SERVICE_NAME = 'librechat-web';
@@ -80,22 +80,34 @@ function getRumConfig() {
   }
 
   const authMode = process.env.RUM_AUTH_MODE || 'publicToken';
-  if (authMode !== 'publicToken') {
+  if (authMode !== 'publicToken' && authMode !== 'proxy') {
     logger.warn(`[config] Unsupported RUM auth mode "${authMode}", disabling RUM`);
     return undefined;
   }
 
-  const rumUrl = process.env.RUM_URL;
-  const parsedUrl = rumUrl ? parseUrl(rumUrl) : undefined;
+  let rumUrl;
+  if (authMode === 'proxy') {
+    rumUrl = getRumProxyClientUrl();
 
-  if (!parsedUrl || !isSafeRumUrl(parsedUrl)) {
-    logger.warn('[config] Invalid RUM_URL, disabling RUM');
-    return undefined;
-  }
+    if (!isRumProxyEnabled()) {
+      logger.warn('[config] RUM proxy mode requires RUM_PROXY_TARGET_URL, disabling RUM');
+      return undefined;
+    }
+  } else {
+    rumUrl = process.env.RUM_URL;
+    const parsedUrl = rumUrl ? parseUrl(rumUrl) : undefined;
 
-  if (!process.env.RUM_PUBLIC_TOKEN) {
-    logger.warn('[config] RUM publicToken mode requires RUM_PUBLIC_TOKEN, disabling RUM');
-    return undefined;
+    if (!parsedUrl || !isSafeRumUrl(parsedUrl)) {
+      logger.warn('[config] Invalid RUM_URL, disabling RUM');
+      return undefined;
+    }
+
+    if (!process.env.RUM_PUBLIC_TOKEN) {
+      logger.warn('[config] RUM publicToken mode requires RUM_PUBLIC_TOKEN, disabling RUM');
+      return undefined;
+    }
+
+    rumUrl = parsedUrl.href.replace(/\/$/, '');
   }
 
   const rawTracePropagationTargets = parseCsvEnv(process.env.RUM_TRACE_PROPAGATION_TARGETS);
@@ -123,10 +135,10 @@ function getRumConfig() {
   return {
     provider: 'hyperdx',
     enabled: true,
-    url: parsedUrl.href.replace(/\/$/, ''),
+    url: rumUrl,
     serviceName: process.env.RUM_SERVICE_NAME || DEFAULT_RUM_SERVICE_NAME,
     authMode,
-    publicToken: process.env.RUM_PUBLIC_TOKEN,
+    ...(authMode === 'publicToken' ? { publicToken: process.env.RUM_PUBLIC_TOKEN } : {}),
     ...(tracePropagationTargets.length > 0 ? { tracePropagationTargets } : {}),
     consoleCapture,
     disableReplay: parseBooleanEnv(process.env.RUM_DISABLE_REPLAY, true),

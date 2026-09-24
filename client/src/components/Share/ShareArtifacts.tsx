@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { lazy, Suspense, useState, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import {
   useMediaQuery,
@@ -9,10 +9,11 @@ import {
 import type { TMessage } from 'librechat-data-provider';
 import type { ArtifactsContextValue } from '~/Providers';
 import { ArtifactsProvider, EditorProvider } from '~/Providers';
-import Artifacts from '~/components/Artifacts/Artifacts';
 import { isCodeOnlyArtifact } from '~/utils/artifacts';
 import { getLatestText } from '~/utils';
 import store from '~/store';
+
+const Artifacts = lazy(() => import('~/components/Artifacts/Artifacts'));
 
 const DEFAULT_ARTIFACT_PANEL_SIZE = 40;
 const SHARE_ARTIFACT_PANEL_STORAGE_KEY = 'share:artifacts-panel-size';
@@ -152,7 +153,9 @@ function ShareArtifactsPanel({ contextValue }: ShareArtifactsPanelProps) {
     <ArtifactsProvider value={contextValue}>
       <EditorProvider>
         <div className="flex h-full w-full border-l border-border-light bg-surface-primary shadow-2xl">
-          <Artifacts />
+          <Suspense fallback={null}>
+            <Artifacts />
+          </Suspense>
         </div>
       </EditorProvider>
     </ArtifactsProvider>

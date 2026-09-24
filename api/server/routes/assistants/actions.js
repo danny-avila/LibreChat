@@ -2,10 +2,15 @@ const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { nanoid } = require('nanoid');
 const { logger } = require('@librechat/data-schemas');
-const { isActionDomainAllowed, validateActionOAuthMetadata } = require('@librechat/api');
+const {
+  isActionDomainAllowed,
+  blockFilteredActionProjection,
+  validateActionOAuthMetadata,
+} = require('@librechat/api');
 const { actionDelimiter, EModelEndpoint, removeNullishValues } = require('librechat-data-provider');
 const {
   legacyDomainEncode,
+  decryptMetadata,
   encryptMetadata,
   domainParser,
 } = require('~/server/services/ActionService');
@@ -39,6 +44,15 @@ router.post('/:assistant_id', accessIpLimiter, accessUserLimiter, async (req, re
       return res.status(400).json({ message: 'No functions provided' });
     }
 
+    if (
+      blockFilteredActionProjection(req.config?.filters, res, {
+        functions,
+        metadata: _metadata,
+      })
+    ) {
+      return;
+    }
+
     let metadata = await encryptMetadata(removeNullishValues(_metadata, true));
     const isDomainAllowed = await isActionDomainAllowed(
       metadata.domain,
@@ -62,9 +76,9 @@ router.post('/:assistant_id', accessIpLimiter, accessUserLimiter, async (req, re
 
     const { openai } = await getOpenAIClient({ req, res });
 
-    initialPromises.push(db.getAssistant({ assistant_id }));
+    initialPromises.push(db.getAssistant({ assistantId: assistant_id }));
     initialPromises.push(openai.beta.assistants.retrieve(assistant_id));
-    !!_action_id && initialPromises.push(db.getActions({ action_id }, true));
+    !!_action_id && initialPromises.push(db.getActions({ actionId: action_id }, true));
 
     /** @type {[AssistantDocument, Assistant, [Action|undefined]]} */
     const [assistant_data, assistant, actions_result] = await Promise.all(initialPromises);
@@ -125,6 +139,15 @@ router.post('/:assistant_id', accessIpLimiter, accessUserLimiter, async (req, re
         })),
       );
 
+    if (
+      blockFilteredActionProjection(req.config?.filters, res, {
+        functions: tools,
+        metadata: await decryptMetadata(metadata),
+      })
+    ) {
+      return;
+    }
+
     let updatedAssistant = await openai.beta.assistants.update(assistant_id, { tools });
     const promises = [];
 
@@ -133,7 +156,7 @@ router.post('/:assistant_id', accessIpLimiter, accessUserLimiter, async (req, re
     if (!assistant_data) {
       assistantUpdateData.user = req.user.id;
     }
-    promises.push(db.updateAssistantDoc({ assistant_id }, assistantUpdateData));
+    promises.push(db.updateAssistantDoc({ assistantId: assistant_id }, assistantUpdateData));
 
     // Only update user field for new actions
     const actionUpdateData = { metadata, assistant_id };
@@ -141,7 +164,9 @@ router.post('/:assistant_id', accessIpLimiter, accessUserLimiter, async (req, re
       // For new actions, use the assistant owner's user ID
       actionUpdateData.user = assistant_user || req.user.id;
     }
-    promises.push(db.updateAction({ action_id, assistant_id }, actionUpdateData));
+    promises.push(
+      db.updateAction({ actionId: action_id, assistantId: assistant_id }, actionUpdateData),
+    );
 
     /** @type {[AssistantDocument, Action]} */
     let [assistantDocument, updatedAction] = await Promise.all(promises);

@@ -1,8 +1,8 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
 import { RecoilRoot } from 'recoil';
-import type { MutableSnapshot } from 'recoil';
+import { render, screen } from '@testing-library/react';
 import type { TAttachment } from 'librechat-data-provider';
+import type { MutableSnapshot } from 'recoil';
 import LogContent from '../LogContent';
 import store from '~/store';
 
@@ -86,8 +86,8 @@ describe('LogContent attachment routing', () => {
       text: '<h1>hi</h1>',
     } as Partial<TAttachment>);
     renderWith(<LogContent output="" attachments={[html]} />);
-    // The panel card carries an aria-pressed state; auto-focused on mount.
-    expect(screen.getByRole('button', { pressed: true })).toBeInTheDocument();
+    // The artifact row carries an aria-expanded state; auto-focused on mount.
+    expect(screen.getByRole('button', { expanded: true })).toBeInTheDocument();
     expect(screen.getByText('index.html')).toBeInTheDocument();
   });
 
@@ -100,7 +100,7 @@ describe('LogContent attachment routing', () => {
     renderWith(<LogContent output="" attachments={[mmd]} />);
     expect(screen.getByTestId('mermaid-render')).toHaveTextContent('graph TD');
     // Panel card not rendered for mermaid
-    expect(screen.queryByRole('button', { pressed: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { expanded: true })).not.toBeInTheDocument();
   });
 
   it('routes text-bearing JSON through inline <pre>, not the panel', () => {
@@ -110,12 +110,11 @@ describe('LogContent attachment routing', () => {
     const json = baseAttachment({
       file_id: 'c',
       filename: 'data.json',
-      type: 'application/json',
       text: '{"a":1,"b":2}',
-    } as Partial<TAttachment>);
+    });
     const { container } = renderWith(<LogContent output="" attachments={[json]} />);
     expect(container.querySelector('pre')).not.toBeNull();
-    expect(screen.queryByRole('button', { pressed: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { expanded: true })).not.toBeInTheDocument();
     expect(screen.queryByTestId('mermaid-render')).not.toBeInTheDocument();
   });
 
@@ -123,8 +122,7 @@ describe('LogContent attachment routing', () => {
     const zip = baseAttachment({
       file_id: 'd',
       filename: 'archive.zip',
-      type: 'application/zip',
-    } as Partial<TAttachment>);
+    });
     renderWith(<LogContent output="" attachments={[zip]} />);
     expect(screen.getByTestId('log-link')).toHaveAttribute('data-filename', 'archive.zip');
   });
@@ -137,9 +135,8 @@ describe('LogContent attachment routing', () => {
     const pptx = baseAttachment({
       file_id: 'e',
       filename: 'slides.pptx',
-      type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
       text: '<!DOCTYPE html><body><ol><li>Slide 1</li></ol></body>',
-    } as Partial<TAttachment>);
+    });
     renderWith(<LogContent output="" attachments={[pptx]} />);
     expect(screen.getByText('slides.pptx')).toBeInTheDocument();
   });
@@ -151,11 +148,10 @@ describe('LogContent attachment routing', () => {
     const pptx = baseAttachment({
       file_id: 'e2',
       filename: 'slides.pptx',
-      type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-      text: undefined as unknown as string,
-    } as Partial<TAttachment>);
+      text: undefined,
+    });
     renderWith(<LogContent output="" attachments={[pptx]} />);
-    expect(screen.queryByRole('button', { pressed: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { expanded: true })).not.toBeInTheDocument();
     expect(screen.getByTestId('log-link')).toHaveAttribute('data-filename', 'slides.pptx');
   });
 
@@ -168,13 +164,12 @@ describe('LogContent attachment routing', () => {
     const expired = baseAttachment({
       file_id: 'x-expired',
       filename: 'slides.pptx',
-      type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
       text: '<!DOCTYPE html><body><ol><li>Slide 1</li></ol></body>',
       expiresAt: Date.now() - 60_000,
-    } as Partial<TAttachment>);
+    });
     renderWith(<LogContent output="" attachments={[expired]} />);
     // No panel card and no log-link (the expired branch returns plain text).
-    expect(screen.queryByRole('button', { pressed: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { expanded: true })).not.toBeInTheDocument();
     expect(screen.queryByTestId('log-link')).not.toBeInTheDocument();
     // The localize mock returns the key, so we assert the expired-message key
     // appears in the rendered output alongside the filename.
@@ -189,7 +184,7 @@ describe('LogContent attachment routing', () => {
       expiresAt: Date.now() + 60_000,
     } as Partial<TAttachment>);
     renderWith(<LogContent output="" attachments={[fresh]} />);
-    expect(screen.getByRole('button', { pressed: true })).toBeInTheDocument();
+    expect(screen.getByRole('button', { expanded: true })).toBeInTheDocument();
   });
 
   it('splits a mixed list into the right buckets', () => {
@@ -211,7 +206,6 @@ describe('LogContent attachment routing', () => {
          * bucket, so it would no longer satisfy the "inline pre" check
          * below. */
         filename: 'notes.json',
-        type: 'application/json',
         text: '{"a":1,"b":2}',
       } as Partial<TAttachment>),
     ] as TAttachment[];

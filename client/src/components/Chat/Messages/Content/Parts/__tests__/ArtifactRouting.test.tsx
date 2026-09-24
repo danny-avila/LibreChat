@@ -1,8 +1,8 @@
 import React from 'react';
-import { render, screen, fireEvent, act } from '@testing-library/react';
 import { RecoilRoot, useRecoilValue } from 'recoil';
-import type { MutableSnapshot } from 'recoil';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import type { TAttachment } from 'librechat-data-provider';
+import type { MutableSnapshot } from 'recoil';
 import Attachment, { AttachmentGroup } from '../Attachment';
 import store from '~/store';
 
@@ -45,8 +45,21 @@ jest.mock('~/components/Chat/Messages/Content/Image', () => ({
 
 jest.mock('~/components/Messages/Content/Mermaid/Mermaid', () => ({
   __esModule: true,
-  default: ({ children }: { children: string }) => (
-    <div data-testid="mermaid-render">{children}</div>
+  default: ({
+    children,
+    artifact,
+  }: {
+    children: string;
+    artifact?: { id: string; title?: string; type?: string };
+  }) => (
+    <div
+      data-testid="mermaid-render"
+      data-artifact-id={artifact?.id}
+      data-artifact-title={artifact?.title}
+      data-artifact-type={artifact?.type}
+    >
+      {children}
+    </div>
   ),
 }));
 
@@ -134,11 +147,12 @@ describe('Attachment routing for tool artifacts', () => {
     } as Partial<TAttachment>);
     renderWith(<Attachment attachment={html} />);
 
-    // Card body shows the artifact title
+    // Row shows the artifact title and names its format
     expect(screen.getByText('index.html')).toBeInTheDocument();
-    // Open-panel button carries aria-pressed (auto-focused on mount per the
+    expect(screen.getByText('com_ui_artifact_format_html')).toBeInTheDocument();
+    // Open-panel button carries aria-expanded (auto-focused on mount per the
     // legacy auto-open behaviour).
-    expect(screen.getByRole('button', { pressed: true })).toBeInTheDocument();
+    expect(screen.getByRole('button', { expanded: true })).toBeInTheDocument();
     // Download button has the download aria-label
     expect(
       screen.getByRole('button', { name: /com_ui_download.*index\.html/i }),
@@ -187,7 +201,11 @@ describe('Attachment routing for tool artifacts', () => {
       text: 'graph TD\nA-->B',
     } as Partial<TAttachment>);
     renderWith(<Attachment attachment={mmd} />);
-    expect(screen.getByTestId('mermaid-render')).toHaveTextContent('graph TD');
+    const renderer = screen.getByTestId('mermaid-render');
+    expect(renderer).toHaveTextContent('graph TD');
+    expect(renderer).toHaveAttribute('data-artifact-id', 'tool-artifact-file-1');
+    expect(renderer).toHaveAttribute('data-artifact-title', 'flow.mmd');
+    expect(renderer).toHaveAttribute('data-artifact-type', 'application/vnd.mermaid');
     // The card-style trigger should NOT be rendered for mermaid
     expect(screen.queryByText('com_ui_artifact_click')).not.toBeInTheDocument();
   });
@@ -198,9 +216,8 @@ describe('Attachment routing for tool artifacts', () => {
      * yet); use it as the canonical "unrouted text" example. */
     const json = baseAttachment({
       filename: 'data.json',
-      type: 'application/json',
       text: '{"a":1,"b":2}',
-    } as Partial<TAttachment>);
+    });
     const { container } = renderWith(<Attachment attachment={json} />);
     expect(container.querySelector('pre')).not.toBeNull();
     expect(screen.queryByTestId('mermaid-render')).not.toBeInTheDocument();
@@ -220,9 +237,9 @@ describe('Attachment routing for tool artifacts', () => {
     } as Partial<TAttachment>);
     renderWith(<Attachment attachment={att} />);
     expect(screen.getByText(filename)).toBeInTheDocument();
-    /* Auto-pressed open button (streaming + non-CODE bucket) — same UX as
+    /* Auto-expanded open button (streaming + non-CODE bucket) — same UX as
      * the HTML panel artifact above. */
-    expect(screen.getByRole('button', { pressed: true })).toBeInTheDocument();
+    expect(screen.getByRole('button', { expanded: true })).toBeInTheDocument();
     const downloadPattern = new RegExp(`com_ui_download.*${filename.replace('.', '\\.')}`, 'i');
     expect(screen.getByRole('button', { name: downloadPattern })).toBeInTheDocument();
   });
@@ -250,8 +267,8 @@ describe('ToolArtifactCard click behaviour', () => {
 
   it('toggles closed when the user clicks the (already-selected) card', () => {
     const { getSnapshot } = renderWithProbe(<Attachment attachment={html()} />);
-    // Mount auto-focuses; the open button is in the pressed state.
-    const closeButton = screen.getByRole('button', { pressed: true });
+    // Mount auto-focuses; the open button reads as expanded.
+    const closeButton = screen.getByRole('button', { expanded: true });
     act(() => {
       fireEvent.click(closeButton);
     });
@@ -265,13 +282,13 @@ describe('ToolArtifactCard click behaviour', () => {
   it('reopens after a close (regression: artifact still openable post-close)', () => {
     const { getSnapshot } = renderWithProbe(<Attachment attachment={html()} />);
     act(() => {
-      fireEvent.click(screen.getByRole('button', { pressed: true }));
+      fireEvent.click(screen.getByRole('button', { expanded: true }));
     });
     expect(getSnapshot().visibility).toBe(false);
     expect(getSnapshot().currentArtifactId).toBeNull();
-    // Click the now-unpressed open button again.
+    // Click the now-collapsed open button again.
     act(() => {
-      fireEvent.click(screen.getByRole('button', { pressed: false }));
+      fireEvent.click(screen.getByRole('button', { expanded: false }));
     });
     const snap = getSnapshot();
     expect(snap.currentArtifactId).toBe('tool-artifact-html-1');
@@ -293,8 +310,8 @@ describe('ToolArtifactCard click behaviour', () => {
         text: '<h1>v1</h1>',
       } as Partial<TAttachment>);
       const { container } = renderWith(<AttachmentGroup attachments={[dup, dup]} />);
-      // Dedup atom keeps just one card visible.
-      expect(container.querySelectorAll('div[title="index.html"]')).toHaveLength(1);
+      // Dedup atom keeps just one row visible.
+      expect(container.querySelectorAll('[data-artifact-trigger]')).toHaveLength(1);
       // No "two children with the same key" warning fired.
       const keyWarning = errorSpy.mock.calls.find(
         (args) => typeof args[0] === 'string' && args[0].includes('same key'),
@@ -365,8 +382,7 @@ describe('ToolArtifactCard click behaviour', () => {
         <AttachmentGroup attachments={[dup]} />
       </>,
     );
-    const titles = container.querySelectorAll('div[title="index.html"]');
-    expect(titles.length).toBe(1);
+    expect(container.querySelectorAll('[data-artifact-trigger]')).toHaveLength(1);
   });
 
   it('dedups two mermaid cards for the same file_id across groups (latest mount wins)', () => {
@@ -544,10 +560,9 @@ describe('ToolArtifactCard click behaviour', () => {
     const xlsx = baseAttachment({
       file_id: 'just-resolved-xlsx',
       filename: 'data.xlsx',
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       text: '<table>resolved</table>',
       textFormat: 'html',
-    } as Partial<TAttachment>);
+    });
     const initializeState = (snap: MutableSnapshot) => {
       snap.set(store.isSubmittingFamily(0), false);
       snap.set(store.artifactsVisibility, false);
@@ -580,10 +595,9 @@ describe('ToolArtifactCard click behaviour', () => {
     const xlsx = baseAttachment({
       file_id: 'one-shot-xlsx',
       filename: 'data.xlsx',
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       text: '<table>resolved</table>',
       textFormat: 'html',
-    } as Partial<TAttachment>);
+    });
     const initializeState = (snap: MutableSnapshot) => {
       snap.set(store.isSubmittingFamily(0), false);
       snap.set(store.artifactsVisibility, false);
@@ -664,8 +678,8 @@ describe('ToolArtifactCard click behaviour', () => {
     });
     expect(getSnapshot().currentArtifactId).toBeNull();
     /** Pin to the panel-open button by name — the download button has no
-     * `aria-pressed`, but `getByRole('button', { pressed: false })`
-     * relies on DOM order, which silently shifts if the chip's button
+     * `aria-expanded`, but `getByRole('button', { expanded: false })`
+     * relies on DOM order, which silently shifts if the row's button
      * order changes. */
     const openButton = screen.getByRole('button', { name: /com_ui_artifact_click/i });
     act(() => {
@@ -710,15 +724,13 @@ describe('AttachmentGroup routing', () => {
     const empty = baseAttachment({
       file_id: 'empty-zip',
       filename: 'placeholder.zip',
-      type: 'application/zip',
       bytes: 0,
-    } as Partial<TAttachment>);
+    });
     const real = baseAttachment({
       file_id: 'real-zip',
       filename: 'archive.zip',
-      type: 'application/zip',
       bytes: 1024,
-    } as Partial<TAttachment>);
+    });
     const { container } = renderWith(<AttachmentGroup attachments={[empty, real]} />);
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_show_n_files' }));
     const chips = Array.from(container.querySelectorAll('[data-testid="file-container"]'));
@@ -733,26 +745,22 @@ describe('AttachmentGroup routing', () => {
     const first = baseAttachment({
       file_id: 'file-a',
       filename: 'a.zip',
-      type: 'application/zip',
-    } as Partial<TAttachment>);
+    });
     const second = baseAttachment({
       file_id: 'file-b',
       filename: 'b.zip',
-      type: 'application/zip',
-    } as Partial<TAttachment>);
+    });
     const json = baseAttachment({
       file_id: 'file-c',
       filename: 'c.json',
-      type: 'application/json',
       text: '{"c":true}',
-    } as Partial<TAttachment>);
+    });
     const image = baseAttachment({
       file_id: 'image-a',
       filename: 'preview.png',
-      type: 'image/png',
       width: 16,
       height: 16,
-    } as Partial<TAttachment>);
+    });
 
     const { container } = renderWith(
       <AttachmentGroup attachments={[first, second, json, image]} />,
@@ -784,9 +792,8 @@ describe('AttachmentGroup routing', () => {
     const sandboxFile = baseAttachment({
       file_id: 'sandbox-zip',
       filename: 'archive-deadbe.zip',
-      type: 'application/zip',
       bytes: 1024,
-    } as Partial<TAttachment>);
+    });
     const { container } = renderWith(<AttachmentGroup attachments={[sandboxFile]} />);
     const chip = container.querySelector('[data-testid="file-container"]');
     expect(chip?.textContent).toBe('archive-deadbe.zip');
@@ -802,9 +809,8 @@ describe('AttachmentGroup routing', () => {
     const sandboxDotfile = baseAttachment({
       file_id: 'sandbox-config',
       filename: '_.config-abcdef.zip',
-      type: 'application/zip',
       bytes: 12,
-    } as Partial<TAttachment>);
+    });
     const { container } = renderWith(<AttachmentGroup attachments={[sandboxDotfile]} />);
     const chip = container.querySelector('[data-testid="file-container"]');
     expect(chip?.textContent).toBe('.config.zip');
@@ -823,7 +829,6 @@ describe('AttachmentGroup routing', () => {
       baseAttachment({
         file_id: 'pending-1',
         filename: 'data.xlsx',
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         status: 'pending',
       } as Partial<TAttachment>),
       baseAttachment({
@@ -835,13 +840,76 @@ describe('AttachmentGroup routing', () => {
 
     const { container } = renderWith(<AttachmentGroup attachments={attachments} />);
 
-    /* Two rows: file row (plain.zip) + panel row (resolved + pending). */
-    const rows = container.querySelectorAll('div.flex.flex-wrap');
-    expect(rows.length).toBe(2);
-    /* Resolved artifact card title visible. */
-    expect(screen.getByText('index.html')).toBeInTheDocument();
-    /* Pending placeholder is a FileContainer rendering. */
-    expect(screen.getAllByTestId('file-container').length).toBeGreaterThanOrEqual(1);
+    /* The resolved artifact and the still-pending one share the artifact
+     * group, so when the preview lands the row stays put instead of
+     * jumping between buckets. The plain download keeps its own group. */
+    const group = screen.getByTestId('artifact-row-group');
+    expect(group).toContainElement(container.querySelector('[data-artifact-trigger]'));
+    expect(group).toContainElement(screen.getByText('index.html'));
+    expect(group).toContainElement(screen.getByText('data.xlsx'));
+    expect(group).not.toContainElement(screen.getByText('archive.zip'));
+  });
+
+  it('keeps a pending placeholder in the row slot it arrived in', () => {
+    /* Sinking every pending entry to the end of the group made the
+     * placeholder jump the moment its preview resolved and joined the
+     * salience-sorted siblings. The slot it arrived in is the slot it
+     * upgrades in. */
+    const attachments = [
+      baseAttachment({
+        file_id: 'pending-1',
+        filename: 'data.xlsx',
+        status: 'pending',
+      } as Partial<TAttachment>),
+      baseAttachment({
+        file_id: 'resolved',
+        filename: 'index.html',
+        text: '<h1>hi</h1>',
+      } as Partial<TAttachment>),
+    ] as TAttachment[];
+
+    renderWith(<AttachmentGroup attachments={attachments} />);
+
+    const rows = Array.from(screen.getByTestId('artifact-row-group').children);
+    expect(rows.findIndex((row) => row.textContent?.includes('data.xlsx'))).toBe(0);
+    expect(rows.findIndex((row) => row.textContent?.includes('index.html'))).toBe(1);
+  });
+
+  it('keeps a pending row above an empty artifact through its transition', () => {
+    /* The empty artifact sinks by salience, and a pending file carries the
+     * same `bytes` before and after its preview resolves, so both renders
+     * must order the pair identically — otherwise the row jumps exactly
+     * when the preview lands. */
+    const empty = baseAttachment({
+      file_id: 'empty',
+      filename: 'notes.md',
+      text: '',
+      bytes: 0,
+    } as Partial<TAttachment>);
+    const loading = baseAttachment({
+      file_id: 'pending-2',
+      filename: 'report.xlsx',
+      bytes: 4096,
+      status: 'pending',
+    } as Partial<TAttachment>);
+    const resolved = baseAttachment({
+      file_id: 'pending-2',
+      filename: 'report.xlsx',
+      bytes: 4096,
+      text: '<table></table>',
+      textFormat: 'html',
+    } as Partial<TAttachment>);
+
+    const order = (attachments: TAttachment[]) => {
+      const { unmount } = renderWith(<AttachmentGroup attachments={attachments} />);
+      const rows = Array.from(screen.getByTestId('artifact-row-group').children);
+      const positions = rows.map((row) => (row.textContent?.includes('report.xlsx') ? 'x' : 'e'));
+      unmount();
+      return positions.join('');
+    };
+
+    expect(order([empty, loading] as TAttachment[])).toBe('xe');
+    expect(order([empty, resolved] as TAttachment[])).toBe('xe');
   });
 
   it('renders separate buckets for panel artifacts, mermaid, text, and plain files', () => {
@@ -859,7 +927,6 @@ describe('AttachmentGroup routing', () => {
       baseAttachment({
         file_id: 'c',
         filename: 'data.json',
-        type: 'application/json',
         text: '{"a":1}',
       } as Partial<TAttachment>),
       baseAttachment({

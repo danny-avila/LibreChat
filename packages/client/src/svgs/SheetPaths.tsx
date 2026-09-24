@@ -1,4 +1,6 @@
-export default function SheetPaths() {
+import { JSX } from 'react/jsx-runtime';
+
+export default function SheetPaths(): JSX.Element {
   return (
     <>
       <path

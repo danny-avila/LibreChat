@@ -58,6 +58,8 @@ afterEach(() => {
   delete process.env.RUM_ENABLED;
   delete process.env.RUM_PROVIDER;
   delete process.env.RUM_URL;
+  delete process.env.RUM_PROXY_TARGET_URL;
+  delete process.env.RUM_PROXY_AUTHORIZATION;
   delete process.env.RUM_SERVICE_NAME;
   delete process.env.RUM_AUTH_MODE;
   delete process.env.RUM_PUBLIC_TOKEN;
@@ -105,6 +107,44 @@ describe('GET /api/config RUM config', () => {
     process.env.RUM_URL = 'not a url';
     process.env.RUM_PUBLIC_TOKEN = 'public-token';
     const app = createApp(null);
+
+    const response = await request(app).get('/api/config');
+
+    expect(response.body).not.toHaveProperty('rum');
+  });
+
+  it.each([null, mockUser])(
+    'keeps proxy credentials out of startup config for %p',
+    async (user) => {
+      mockGetAppConfig.mockResolvedValue(baseAppConfig);
+      process.env.RUM_ENABLED = 'true';
+      process.env.RUM_AUTH_MODE = 'proxy';
+      process.env.RUM_PROXY_TARGET_URL = 'http://otel-collector:4318';
+      process.env.RUM_PROXY_AUTHORIZATION = 'server-only-ingestion-key';
+      const app = createApp(user);
+
+      const response = await request(app).get('/api/config');
+
+      expect(JSON.stringify(response.body)).not.toContain('server-only-ingestion-key');
+      expect(JSON.stringify(response.body)).not.toContain('otel-collector');
+      expect(response.body.rum).toEqual({
+        provider: 'hyperdx',
+        enabled: true,
+        url: '/api/rum',
+        serviceName: 'librechat-web',
+        authMode: 'proxy',
+        consoleCapture: false,
+        disableReplay: true,
+        advancedNetworkCapture: false,
+      });
+    },
+  );
+
+  it('omits proxy RUM config without a target collector URL', async () => {
+    mockGetAppConfig.mockResolvedValue(baseAppConfig);
+    process.env.RUM_ENABLED = 'true';
+    process.env.RUM_AUTH_MODE = 'proxy';
+    const app = createApp(mockUser);
 
     const response = await request(app).get('/api/config');
 

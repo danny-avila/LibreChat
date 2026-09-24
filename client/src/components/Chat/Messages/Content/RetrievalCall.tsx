@@ -3,11 +3,14 @@ import { useRecoilValue } from 'recoil';
 import { Tools } from 'librechat-data-provider';
 import { TooltipAnchor } from '@librechat/client';
 import { FileText, FileSpreadsheet, FileCode, FileImage, File } from 'lucide-react';
-import type { TAttachment, TFile } from 'librechat-data-provider';
+import type { TAttachment, TFile, PartMetadata } from 'librechat-data-provider';
 import { useLocalize, useProgress, useExpandCollapse } from '~/hooks';
 import { ToolIcon, OutputRenderer, isError } from './ToolOutput';
+import { resolveToolCallPhase } from '~/utils/toolCallPhase';
+import { toolPanelSpacingClassName } from './disclosure';
 import FilePreviewDialog from './FilePreviewDialog';
 import { sortPagesByRelevance, cn } from '~/utils';
+import { useToolCallIntent } from './Parts/intent';
 import { useGetFiles } from '~/data-provider';
 import ProgressText from './ProgressText';
 import store from '~/store';
@@ -21,6 +24,7 @@ interface FileSource {
   pageRelevance: Record<number, number>;
   fileType?: string;
   fileBytes?: number;
+  fileSource?: string;
   metadata?: Record<string, unknown>;
 }
 
@@ -66,6 +70,7 @@ function extractFileSources(attachments?: TAttachment[]): FileSource[] {
           pageRelevance: source.pageRelevance || {},
           fileType: (meta?.fileType as string) || undefined,
           fileBytes: (meta?.fileBytes as number) || undefined,
+          fileSource: (meta?.storageType as string) || undefined,
           metadata: meta,
         });
       }
@@ -90,6 +95,7 @@ interface DisplayResult {
   pageRelevance?: Record<number, number>;
   fileType?: string;
   fileBytes?: number;
+  fileSource?: string;
 }
 
 interface FileMatch {
@@ -97,6 +103,7 @@ interface FileMatch {
   fileName: string;
   fileType?: string;
   fileBytes?: number;
+  fileSource?: string;
 }
 
 function normalizeFilename(filename: string): string {
@@ -140,6 +147,7 @@ function buildFileLookup(
       fileName: source.fileName,
       fileType: source.fileType,
       fileBytes: source.fileBytes,
+      fileSource: source.fileSource,
     });
   }
 
@@ -158,6 +166,7 @@ function buildFileLookup(
       fileName: file.filename,
       fileType: file.type ?? undefined,
       fileBytes: file.bytes,
+      fileSource: file.source ?? undefined,
     });
   }
 
@@ -179,6 +188,7 @@ function mergeRetrievalResults(
       pageRelevance: source.pageRelevance,
       fileType: source.fileType,
       fileBytes: source.fileBytes,
+      fileSource: source.fileSource,
     }));
   }
 
@@ -195,6 +205,7 @@ function mergeRetrievalResults(
       content: result.content,
       fileType: match?.fileType,
       fileBytes: match?.fileBytes,
+      fileSource: match?.fileSource,
     };
   });
 }
@@ -301,10 +312,10 @@ function FileHeader({
         <TooltipAnchor
           description={localize('com_ui_relevance')}
           side="top"
-          className="flex items-center"
+          className="flex cursor-help items-center"
         >
           <span
-            className="shrink-0 rounded bg-surface-tertiary px-1.5 py-0.5 text-[11px] tabular-nums leading-none text-text-secondary"
+            className="shrink-0 cursor-help rounded bg-surface-tertiary px-1.5 py-0.5 text-[11px] tabular-nums leading-none text-text-secondary"
             aria-label={`${localize('com_ui_relevance')}: ${Math.round(relevance * 100)}%`}
           >
             {Math.round(relevance * 100)}%
@@ -324,23 +335,52 @@ function FileHeader({
 export default function RetrievalCall({
   initialProgress = 0.1,
   isSubmitting,
+  args,
   output,
   attachments,
+  onExpand,
+  runStepStatus,
+  runStepDurationMs,
 }: {
   initialProgress: number;
   isSubmitting: boolean;
+  args?: string | Record<string, unknown>;
   output?: string;
   attachments?: TAttachment[];
+  onExpand?: () => void;
+  runStepStatus?: PartMetadata['runStepStatus'];
+  runStepDurationMs?: PartMetadata['runStepDurationMs'];
 }) {
-  const progress = useProgress(initialProgress);
+  const isClosed = runStepStatus != null;
+  /**
+   * Both halves are load-bearing. Passing 1 in stops `useProgress` scheduling
+   * its 200ms interval, which it keeps alive for any input below 1. Masking
+   * the result makes the terminal value observable on the same render — the
+   * hook settles through 0.99 and a 200ms timeout, so a step closing while
+   * mounted would otherwise render as still in progress for that window.
+   */
+  const rawProgress = useProgress(isClosed ? 1 : initialProgress);
   const localize = useLocalize();
+  /** Model-authored live label (injected when file_search is opted into
+   *  describe_intent); persists as the settled label. The sr-only live
+   *  region below deliberately keeps its stable generic value. */
+  const intent = useToolCallIntent(args);
 
-  const errorState = typeof output === 'string' && isError(output);
-  const cancelled = !isSubmitting && initialProgress < 1 && !errorState;
+  /**
+   * One resolution, read by the label, the live region and the icon alike.
+   * It also unifies two inputs that had drifted apart: the cancellation
+   * inference read `initialProgress` while the label read the animated
+   * `rawProgress`.
+   */
+  const phase = resolveToolCallPhase({
+    runStepStatus,
+    displayProgress: rawProgress,
+    reportedProgress: initialProgress,
+    isSubmitting,
+    hasError: typeof output === 'string' && isError(output),
+  });
   const hasOutput = !!output && !isError(output);
   const autoExpand = useRecoilValue(store.autoExpandTools);
-  const [showOutput, setShowOutput] = useState(() => autoExpand && hasOutput);
-  const { style: expandStyle, ref: expandRef } = useExpandCollapse(showOutput);
 
   const fileSources = useMemo(() => extractFileSources(attachments), [attachments]);
   const parsedResults = useMemo(
@@ -361,6 +401,9 @@ export default function RetrievalCall({
   );
 
   const hasResults = displayResults.length > 0;
+  const hasExpandableContent = phase !== 'failed' && hasResults;
+  const [showOutput, setShowOutput] = useState(() => autoExpand && hasExpandableContent);
+  const { style: expandStyle, ref: expandRef } = useExpandCollapse(showOutput);
 
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
 
@@ -391,47 +434,71 @@ export default function RetrievalCall({
       pages: result.pages,
       pageRelevance: result.pageRelevance,
       fileType: result.fileType,
+      fileSource: result.fileSource,
     };
   }, [displayResults, previewIndex]);
 
   useEffect(() => {
-    if (autoExpand && hasOutput) {
+    if (!hasExpandableContent) {
+      setShowOutput(false);
+      return;
+    }
+    if (autoExpand) {
       setShowOutput(true);
     }
-  }, [autoExpand, hasOutput]);
+  }, [autoExpand, hasExpandableContent]);
+
+  const handleToggleOutput = useCallback(() => {
+    setShowOutput((prev) => {
+      const next = !prev;
+      if (next) {
+        onExpand?.();
+      }
+      return next;
+    });
+  }, [onExpand]);
 
   return (
-    <div className="my-1">
+    <div>
       <span className="sr-only" aria-live="polite" aria-atomic="true">
         {(() => {
-          if (progress < 1 && !cancelled) {
+          if (phase === 'running') {
             return localize('com_ui_searching_files');
           }
-          if (cancelled) {
+          if (phase === 'cancelled') {
             return localize('com_ui_cancelled');
           }
-          return localize('com_ui_retrieved_files');
+          /** A terminal step that errored must not reach the live region as
+           *  "retrieved files", which would tell a screen-reader user the
+           *  opposite of what the card shows. */
+          if (phase === 'failed') {
+            return localize('com_ui_failed');
+          }
+          return intent ?? localize('com_ui_retrieved_files');
         })()}
       </span>
       <div className="relative my-1 flex h-5 shrink-0 items-center gap-2.5">
         <ProgressText
-          progress={progress}
-          onClick={hasOutput ? () => setShowOutput((prev) => !prev) : undefined}
-          inProgressText={localize('com_ui_searching_files')}
-          finishedText={localize('com_ui_retrieved_files')}
-          errorSuffix={errorState && !cancelled ? localize('com_ui_tool_failed') : undefined}
-          icon={
-            <ToolIcon type="file_search" isAnimating={progress < 1 && !cancelled && !errorState} />
+          phase={phase}
+          onClick={hasExpandableContent ? handleToggleOutput : undefined}
+          inProgressText={intent ?? localize('com_ui_searching_files')}
+          /** A cancelled step must not read "Retrieved files" beside a
+           *  cancellation icon while the live region says "Cancelled". */
+          finishedText={
+            phase === 'cancelled'
+              ? localize('com_ui_cancelled')
+              : (intent ?? localize('com_ui_retrieved_files'))
           }
-          hasInput={hasOutput}
+          durationMs={runStepDurationMs}
+          icon={<ToolIcon type="file_search" isAnimating={phase === 'running'} />}
+          hasInput={hasExpandableContent}
           isExpanded={showOutput}
-          error={cancelled}
         />
       </div>
       <div style={expandStyle}>
         <div className="overflow-hidden" ref={expandRef}>
-          {hasOutput && hasResults && (
-            <div className="my-2 flex flex-col gap-2">
+          {hasExpandableContent && (
+            <div className={cn(toolPanelSpacingClassName, 'flex flex-col gap-2')}>
               {displayResults.map((item, i) => {
                 return (
                   <div
@@ -470,6 +537,7 @@ export default function RetrievalCall({
         pages={previewData?.pages}
         pageRelevance={previewData?.pageRelevance}
         fileType={previewData?.fileType}
+        fileSource={previewData?.fileSource}
       />
     </div>
   );
