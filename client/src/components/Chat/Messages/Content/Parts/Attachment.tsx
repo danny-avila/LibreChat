@@ -15,6 +15,7 @@ import {
   isTextAttachment,
   renderAttachmentKey,
 } from './attachmentTypes';
+import { useAttachmentLink, isLocallyStoredSource, isCodeOutputAttachment } from './LogLink';
 import { useLocalize, useAttachmentPreviewSync, useExpandCollapse } from '~/hooks';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import { fileToArtifact, TOOL_ARTIFACT_TYPES } from '~/utils/artifacts';
@@ -23,7 +24,6 @@ import { ROW_GLYPH_SLOT, TOOL_ROW_CLASSES } from '../rows';
 import ToolMermaidArtifact from './ToolMermaidArtifact';
 import FilePreviewDialog from '../FilePreviewDialog';
 import ToolArtifactCard from './ToolArtifactCard';
-import { useAttachmentLink } from './LogLink';
 import { getPreviewKind } from '../preview';
 import { cn } from '~/utils';
 
@@ -111,9 +111,17 @@ const FileAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> 
   });
   const extension = attachment.filename?.split('.').pop();
   // A previewable file (PDF, text) opens the existing preview dialog instead
-  // of force-downloading; anything else keeps the original download click.
+  // of force-downloading — but only when the bytes are actually fetchable:
+  // either a persisted, ACL'd file (real `file_id` + local/s3/etc. `source`)
+  // or a code-interpreter download-fallback (session-scoped `filePath`, no
+  // `file_id`/`source`). Anything else (e.g. an external http(s) URL) keeps
+  // the original download click.
   const previewKind = getPreviewKind(attachment.filename ?? '', file.type, file.source);
-  const handleClick: MouseEventHandler<HTMLButtonElement> = previewKind
+  const canFetchPreview =
+    (!!file.file_id && isLocallyStoredSource(file.source)) ||
+    isCodeOutputAttachment(attachment.filepath, file.file_id, file.source);
+  const canPreview = Boolean(previewKind) && canFetchPreview;
+  const handleClick: MouseEventHandler<HTMLButtonElement> = canPreview
     ? () => setPreviewOpen(true)
     : handleDownload;
   /* Bridge the deferred-preview lifecycle: poll the backend for the
@@ -180,7 +188,7 @@ const FileAttachment = memo(({ attachment }: { attachment: Partial<TAttachment> 
         containerClassName="max-w-fit"
         buttonClassName="bg-surface-secondary hover:cursor-pointer hover:bg-surface-hover active:bg-surface-secondary focus:bg-surface-hover hover:border-border-heavy active:border-border-heavy"
       />
-      {previewKind && (
+      {canPreview && (
         <FilePreviewDialog
           open={previewOpen}
           onOpenChange={setPreviewOpen}
