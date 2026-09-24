@@ -23,6 +23,7 @@ import type {
   TConversation,
   TEndpointsConfig,
 } from 'librechat-data-provider';
+import type { NewConversationOptions } from './Chat/contract';
 import type { AssistantListItem } from '~/common';
 import {
   updateLastSelectedModel,
@@ -328,19 +329,7 @@ const useNewConvo = (index = 0) => {
       keepAddedConvos = false,
       keepComposerState = false,
       disableParams,
-    }: {
-      template?: Partial<TConversation>;
-      preset?: Partial<TPreset>;
-      modelsData?: TModelsConfig;
-      buildDefault?: boolean;
-      disableFocus?: boolean;
-      keepAddedConvos?: boolean;
-      /** Set when the call re-renders a composer an earlier call already opened, such as agent
-       * metadata arriving late. The user never left that composer, so its draft identity and its
-       * in-flight attachments outlive the refresh. */
-      keepComposerState?: boolean;
-      disableParams?: boolean;
-    } = {}) {
+    }: NewConversationOptions = {}) {
       const nextConversationId = _template.conversationId ?? '';
       const keepsExistingDraft =
         keepComposerState ||

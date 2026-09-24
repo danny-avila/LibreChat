@@ -1,20 +1,17 @@
-import type { TModelsConfig, TConversation, TMessage, TPreset } from 'librechat-data-provider';
+import type { TConversation, TMessage, TPreset } from 'librechat-data-provider';
 import type { SetStateAction, Dispatch, MouseEvent } from 'react';
 import type { SetterOrUpdater } from 'recoil';
 import type { NewConversationParams, TOptionSettings, ExtendedFile, TAskFunction } from '~/common';
 
-/** Options accepted by {@link ChatConversationContract.newConversation}. */
-export type NewConversationOptions = {
-  template?: Partial<TConversation>;
-  preset?: Partial<TPreset>;
-  modelsData?: TModelsConfig;
-  buildDefault?: boolean;
+/** Options accepted by {@link ChatConversationContract.newConversation}: the shared params plus
+ *  the two flags only the root pane's generator honors. */
+export type NewConversationOptions = NewConversationParams & {
   /** Skips focusing the composer after the new conversation renders. */
   disableFocus?: boolean;
-  keepAddedConvos?: boolean;
-  /** Keeps the draft identity and in-flight attachments of a composer that was never left. */
+  /** Set when the call re-renders a composer an earlier call already opened, such as agent
+   * metadata arriving late. The user never left that composer, so its draft identity and its
+   * in-flight attachments outlive the refresh. */
   keepComposerState?: boolean;
-  disableParams?: boolean;
 };
 
 /** Target of a regenerate: a response to redo, or the user message whose response to redo. */
