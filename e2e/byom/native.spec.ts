@@ -369,6 +369,20 @@ test('native BYOM saves, persists, isolates workers, and fails closed', async ({
       expect(coding.id).toBeTruthy();
       expect(await turn('command', 'Approve')).toContain('native-command-ok');
       await stop(a.child);
+      // A stopped process stays online in the registry until its 60-second heartbeat lease
+      // expires. Observe that boundary rather than expecting the UI to contradict a live lease.
+      await expect
+        .poll(
+          async () => {
+            const status = await requestJson<{ status: string }>(page, {
+              path: `/api/code-environments/${a.environmentId}/status`,
+              token,
+            });
+            return status.status;
+          },
+          { timeout: 90_000 },
+        )
+        .toBe('offline');
       await page.reload();
       const workspace = page.getByTestId('code-workspace');
       await expect(workspace).toBeVisible({ timeout: 30_000 });
