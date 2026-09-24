@@ -303,7 +303,6 @@ export default function useChatFunctions({
       targetResponseMessageId,
       overrideManualSkills,
       overrideQuotes,
-      overrideEphemeralAgent,
       addedConvo,
       overrideClientRequestId,
       overrideRecoverySteerId,
@@ -408,10 +407,7 @@ export default function useChatFunctions({
 
     setShowStopButton(false);
 
-    const ephemeralAgent =
-      overrideEphemeralAgent === undefined
-        ? getEphemeralAgent(conversationId ?? Constants.NEW_CONVO)
-        : overrideEphemeralAgent;
+    const ephemeralAgent = getEphemeralAgent(conversationId ?? Constants.NEW_CONVO);
     /**
      * Manual skill selection resolution:
      *  - Explicit `overrideManualSkills` wins (regenerate / save-and-submit

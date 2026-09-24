@@ -364,16 +364,11 @@ export function useAppBridge({
             actionSignal,
           );
           if (!allowed || actionSignal.aborted || cancelled) return { isError: true };
-          // An App action is not the user's next composer submission. Explicit overrides keep
-          // staged files, skills, quotes and draft-only agent settings out of this message.
+          // The selected agent and MCP servers belong to the conversation. Only the
+          // next composer's staged files, manual skill picks and quotes are excluded.
           const accepted = askRef.current(
             { text },
-            {
-              overrideFiles: [],
-              overrideManualSkills: [],
-              overrideQuotes: [],
-              overrideEphemeralAgent: null,
-            },
+            { overrideFiles: [], overrideManualSkills: [], overrideQuotes: [] },
           );
           if (accepted === false) {
             return { isError: true };

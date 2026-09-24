@@ -544,7 +544,11 @@ describe('useChatFunctions ask attachments', () => {
         setFiles,
       }),
     );
-    mockGetEphemeralAgent.mockReturnValue({ skills: true, mcp: ['staged-for-next-draft'] });
+    const selectedConversationTools: TEphemeralAgent = {
+      skills: true,
+      mcp: ['selected-server'],
+    };
+    mockGetEphemeralAgent.mockReturnValue(selectedConversationTools);
 
     act(() => {
       result.current.ask(
@@ -553,7 +557,6 @@ describe('useChatFunctions ask attachments', () => {
           overrideFiles: [],
           overrideManualSkills: [],
           overrideQuotes: [],
-          overrideEphemeralAgent: null,
         },
       );
     });
@@ -563,8 +566,8 @@ describe('useChatFunctions ask attachments', () => {
     expect(submission.userMessage.files).toBeUndefined();
     expect(submission.userMessage.manualSkills).toBeUndefined();
     expect(submission.userMessage.quotes).toBeUndefined();
-    expect(submission.ephemeralAgent).toBeNull();
-    expect(mockGetEphemeralAgent).not.toHaveBeenCalled();
+    expect(submission.ephemeralAgent).toEqual(selectedConversationTools);
+    expect(mockGetEphemeralAgent).toHaveBeenCalledTimes(1);
     expect(files?.has('app-next-draft-file')).toBe(true);
     expect(setFiles).not.toHaveBeenCalled();
     expect(isPasteSubmitted('app-next-draft-file')).toBe(false);
@@ -595,7 +598,6 @@ describe('useChatFunctions ask attachments', () => {
           overrideFiles: [],
           overrideManualSkills: [],
           overrideQuotes: [],
-          overrideEphemeralAgent: null,
         },
       );
     });

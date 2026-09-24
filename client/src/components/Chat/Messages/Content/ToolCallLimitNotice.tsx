@@ -56,19 +56,11 @@ export default function ToolCallLimitNotice({ message }: { message: TMessage }) 
     chat?.ask != null && chat.isSubmitting !== true && chat.latestMessageId === message.messageId;
   /**
    * Empty overrides are authoritative: a recovery prompt is not the user's next
-   * compose, so `ask` must not inherit files, skills, quotes or the draft's
-   * ephemeral agent selection.
+   * compose, so `ask` must not attach or drain files, skills, or quotes already
+   * staged in the composer. The agent and MCP server selection remains in scope.
    */
   const recover = (text: string) =>
-    chat?.ask(
-      { text },
-      {
-        overrideFiles: [],
-        overrideManualSkills: [],
-        overrideQuotes: [],
-        overrideEphemeralAgent: null,
-      },
-    );
+    chat?.ask({ text }, { overrideFiles: [], overrideManualSkills: [], overrideQuotes: [] });
 
   return (
     <div

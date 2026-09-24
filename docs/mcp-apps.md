@@ -40,9 +40,10 @@ Opening an App permits its own resource reads and declared link policy, but does
 on the user's behalf. Each App-initiated tool call displays the originating server, tool name and
 complete arguments in a host-owned confirmation; App-initiated chat text shows the complete text
 and requires a separate **Send message**. An approved App message contains only that text: files,
-manual skills, quotes, and ephemeral-agent tool settings staged for the user's next composer message
-are neither submitted nor drained. An explicit empty file override also prevents a blank App message
-from becoming submittable just because a draft file exists. Rejecting an action or an App aborting its own pending approval request pauses further
+manual skills, and quotes staged for the user's next composer message are neither submitted nor
+drained. The conversation's selected agent and MCP server tools remain available to that turn;
+removing them would also change subsequent tool availability. An explicit empty file override
+prevents a blank App message from becoming submittable just because a draft file exists. Rejecting an action or an App aborting its own pending approval request pauses further
 action requests from that View until it is closed and reopened. The dialog also provides a Close
 app and stop requests control for an App that repeatedly asks.
 Navigating away or closing the App does not execute a pending action. Tool arguments and message
