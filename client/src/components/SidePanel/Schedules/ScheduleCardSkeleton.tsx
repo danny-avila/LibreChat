@@ -18,7 +18,7 @@ export default function ScheduleCardSkeleton({ count = 5 }: { count?: number }) 
               <div className="mt-0.5 flex items-center gap-2">
                 <Skeleton className="h-3.5 min-w-0 flex-1 rounded" />
                 <Skeleton className="h-6 w-11 shrink-0 rounded-full" />
-                <Skeleton className="size-6 shrink-0 rounded-md" />
+                <Skeleton className="size-7 shrink-0 rounded-md" />
               </div>
             </div>
           </div>
