@@ -83,12 +83,6 @@ async function validateDockerRunning() {
   }
 
   if (docker) {
-    console.purple('Removing previously made Docker container...');
-    const downCommand = `${sudo}docker compose ${
-      singleCompose ? '-f ./docs/dev/single-compose.yml ' : ''
-    }down`;
-    console.orange(downCommand);
-    execSync(downCommand, { stdio: 'inherit' });
     console.purple('Pruning all LibreChat Docker images...');
 
     const imageName = singleCompose ? 'librechat_single' : 'librechat';
@@ -103,6 +97,12 @@ async function validateDockerRunning() {
     }pull --ignore-buildable`;
     console.orange(pullCommand);
     execSync(pullCommand, { stdio: 'inherit' });
+    console.purple('Removing previously made Docker container...');
+    const downCommand = `${sudo}docker compose ${
+      singleCompose ? '-f ./docs/dev/single-compose.yml ' : ''
+    }down`;
+    console.orange(downCommand);
+    execSync(downCommand, { stdio: 'inherit' });
     console.purple('Removing all unused dangling Docker images...');
     execSync(`${sudo}docker image prune -f`, { stdio: 'inherit' });
     console.purple('Building new LibreChat image...');

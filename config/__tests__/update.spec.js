@@ -78,8 +78,8 @@ describe('Docker updater', () => {
 
     const composeCommands = commands.filter((command) => command.startsWith(`${compose} `));
     expect(composeCommands).toEqual([
-      `${compose} down`,
       `${compose} pull --ignore-buildable`,
+      `${compose} down`,
       `${compose} build --no-cache`,
     ]);
     expect(commands.some((command) => command.startsWith('git '))).toBe(false);
@@ -101,12 +101,14 @@ describe('Docker updater', () => {
     expect(commands.indexOf('docker compose pull --ignore-buildable')).toBeGreaterThan(3);
   });
 
-  it('does not report success or build after a pull failure', async () => {
+  it('does not stop the stack, build, or report success after a pull failure', async () => {
     const { commands, messages, completion } = runUpdater(['-d', '-g'], {
       failCommand: 'docker compose pull --ignore-buildable',
     });
 
     await expect(completion).rejects.toThrow('Command failed: docker compose pull');
+    expect(commands).not.toContain('docker compose down');
+    expect(commands).not.toContain('docker image prune -f');
     expect(commands).not.toContain('docker compose build --no-cache');
     expect(messages.some((message) => message.includes('now up to date!'))).toBe(false);
   });
@@ -117,7 +119,9 @@ describe('Docker updater', () => {
     });
     await completion;
 
-    expect(commands).toContain('docker compose pull --ignore-buildable');
+    expect(commands.indexOf('docker rmi librechat:latest')).toBeLessThan(
+      commands.indexOf('docker compose pull --ignore-buildable'),
+    );
     expect(commands).toContain('docker compose build --no-cache');
   });
 
