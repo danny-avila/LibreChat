@@ -33,6 +33,11 @@ BYOM_WORKSPACE_TRANSITIONS=true BYOM_CODE_REPO=/absolute/path/to/code-interprete
 
 This enables the decision protocol and attach/detach policy only in the disposable test app.
 
+The `Native Workspace Acceptance` workflow runs this transition variant on a hosted macOS
+runner when the harness changes in a `dev` pull request. It pins the Code API/worker revision
+and uses the native Seatbelt policy unchanged. It does not upload identities, raw logs or
+browser state. This proves the macOS journey only; Linux and WSL2 require their own native run.
+
 Optional: `BYOM_REDIS_BIN` selects an absolute Redis executable,
 `BYOM_CODE_CLI` selects a separately built worker CLI, and
 `E2E_CHROMIUM_CHANNEL=chrome` uses an installed Chrome instead of Playwright Chromium.
