@@ -103,6 +103,25 @@ export const buildCreatedInitialResponse = ({
   conversationId: userMessage.conversationId ?? initialResponse.conversationId,
 });
 
+/** Apply the resolved request choice only after acknowledgement. A saved decision may have
+ *  moved since this event was emitted, so replay must never replace it. */
+function acknowledgedCodeEnvironment(
+  current: TConversation | null,
+  submission: EventSubmission,
+): Pick<TConversation, 'codeEnvironmentMode' | 'codeWorkspaces'> {
+  const { codeEnvironmentMode, codeWorkspaces } = submission;
+  if (codeEnvironmentMode == null && !codeWorkspaces?.length) return {};
+  const saved =
+    current?.conversationId != null &&
+    current.conversationId !== Constants.NEW_CONVO &&
+    current.conversationId !== Constants.PENDING_CONVO;
+  if (saved && (current.codeEnvironmentMode != null || current.codeWorkspaces?.length)) return {};
+  return {
+    codeEnvironmentMode,
+    codeWorkspaces: codeEnvironmentMode === 'without_attached' ? undefined : codeWorkspaces,
+  };
+}
+
 export const isInitialNewConversationSubmission = ({
   userMessage,
 }: Pick<EventSubmission, 'userMessage'>): boolean =>
@@ -718,6 +737,7 @@ export default function useEventHandlers({
           });
           update = tConvoUpdateSchema.parse({
             ...prevState,
+            ...acknowledgedCodeEnvironment(prevState, submission),
             conversationId,
             thread_id,
             title,
@@ -742,6 +762,7 @@ export default function useEventHandlers({
         setConversation((prevState) => {
           update = tConvoUpdateSchema.parse({
             ...prevState,
+            ...acknowledgedCodeEnvironment(prevState, submission),
             conversationId,
             thread_id,
             messages: [requestMessage.messageId, responseMessage.messageId],
@@ -801,6 +822,7 @@ export default function useEventHandlers({
           });
           update = tConvoUpdateSchema.parse({
             ...prevState,
+            ...acknowledgedCodeEnvironment(prevState, submission),
             conversationId,
             title,
           }) as TConversation;
@@ -823,6 +845,7 @@ export default function useEventHandlers({
         setConversation((prevState) => {
           update = tConvoUpdateSchema.parse({
             ...prevState,
+            ...acknowledgedCodeEnvironment(prevState, submission),
             conversationId,
           }) as TConversation;
           return update;

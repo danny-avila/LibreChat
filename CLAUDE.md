@@ -14,7 +14,7 @@ LibreChat is a monorepo with the following key workspaces:
 | `/packages/client` | TypeScript | Frontend | `packages/data-provider` | Shared frontend utilities |
 
 The source code for `@librechat/agents` (major backend dependency, same team) lives at
-<https://github.com/danny-avila/agents>.
+<https://github.com/LibreChat-AI/agents>.
 
 ---
 

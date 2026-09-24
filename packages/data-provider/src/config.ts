@@ -2100,6 +2100,24 @@ export enum RetentionMode {
   TEMPORARY = 'temporary',
 }
 
+/** Single source for the agents panel selector's unsearched list cap; the
+ * schema default and the client fallback both read it. */
+export const DEFAULT_AGENT_SELECTOR_LIMIT = 10;
+export const AGENT_SELECTOR_LIMIT_MIN = 1;
+export const AGENT_SELECTOR_LIMIT_MAX = 100;
+
+/** Runtime guard for values that bypass `interfaceSchema`: raw librechat.yaml
+ * reads and principal-scoped admin overrides reach the client unparsed, so an
+ * out-of-bounds value falls back to the default instead of emptying the list. */
+export function normalizeAgentSelectorLimit(value: unknown): number {
+  return typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= AGENT_SELECTOR_LIMIT_MIN &&
+    value <= AGENT_SELECTOR_LIMIT_MAX
+    ? value
+    : DEFAULT_AGENT_SELECTOR_LIMIT;
+}
+
 export const interfaceSchema = z
   .object({
     privacyPolicy: z
@@ -2114,6 +2132,14 @@ export const interfaceSchema = z
     modelSelect: z.boolean().optional(),
     /** Milliseconds between syntax highlights while a code block streams. */
     codeHighlightThrottleMs: z.number().int().min(0).max(60_000).default(300),
+    /** Most agents the agents panel selector lists before a search term is
+     * typed; typing lifts the cap so search reaches every agent. */
+    agentSelectorLimit: z
+      .number()
+      .int()
+      .min(AGENT_SELECTOR_LIMIT_MIN)
+      .max(AGENT_SELECTOR_LIMIT_MAX)
+      .default(DEFAULT_AGENT_SELECTOR_LIMIT),
     parameters: z.boolean().optional(),
     multiConvo: z.boolean().optional(),
     bookmarks: z.boolean().optional(),
@@ -2236,6 +2262,7 @@ export const interfaceSchema = z
   .default({
     modelSelect: true,
     codeHighlightThrottleMs: 300,
+    agentSelectorLimit: DEFAULT_AGENT_SELECTOR_LIMIT,
     parameters: true,
     presets: true,
     multiConvo: true,
