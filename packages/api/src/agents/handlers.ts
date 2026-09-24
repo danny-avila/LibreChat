@@ -315,6 +315,7 @@ export interface ToolExecuteOptions {
     reapply?: boolean;
     backgroundTask?: BackgroundToolResultState;
     resolveBackgroundTask?: () => BackgroundToolResultState;
+    onFilesPersisted?: (attachments: unknown[]) => void;
   }) => Promise<{ attachments?: unknown[]; deliveryReady?: boolean } | null>;
   /** Shared ordinary-tool completion lifecycle. The delivery is registered
    * before invoke; settlement is persisted onto the original response row. */
@@ -6169,6 +6170,13 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         : { backgroundTask, resolveBackgroundTask }),
                       output: params.output ?? localTask?.result,
                       artifact: params.artifact,
+                      onFilesPersisted: (attachments) =>
+                        backgroundTaskRegistry.finishHarvest(
+                          backgroundUserId,
+                          backgroundConversationId,
+                          task.id,
+                          attachments,
+                        ),
                     });
                     if (persisted == null) {
                       /** Harvest never persisted anything (missing anchor

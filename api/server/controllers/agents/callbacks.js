@@ -20,6 +20,7 @@ const {
   sendEvent,
   computeUsageCostUSD,
   GenerationJobManager,
+  waitForGenerationSettled,
   writeAttachmentEvent,
   createToolExecuteHandler,
   createOwnedToolEndHandler,
@@ -1294,6 +1295,8 @@ function createBackgroundCodeResultHandler({ req, updateToolCallResult }) {
     preflightCodeOutputBatch,
     processCodeOutput,
     runPreviewFinalize,
+    waitForGenerationSettled: (conversationId) =>
+      waitForGenerationSettled(GenerationJobManager, conversationId),
   });
 }
 

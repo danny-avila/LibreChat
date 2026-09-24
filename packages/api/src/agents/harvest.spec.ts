@@ -153,3 +153,130 @@ describe('createBackgroundToolResultHandler claim ownership', () => {
     );
   });
 });
+
+describe('createBackgroundCodeResultHandler long dispatch turns', () => {
+  const RETRY_SCHEDULE_MS = 1_000_000;
+  const backgroundTask = {
+    taskId: 'task-1',
+    toolName: 'execute_code',
+    status: 'completed' as const,
+    settledAt: new Date('2026-09-24T00:00:00Z'),
+    completionWakeup: true as const,
+  };
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  function createHandler(
+    updateToolCallResult: jest.Mock,
+    waitForGenerationSettled?: (conversationId: string) => Promise<boolean>,
+  ) {
+    return createBackgroundCodeResultHandler({
+      req,
+      preflightCodeOutputBatch: jest
+        .fn()
+        .mockResolvedValue([{ file: params.artifact.files[0], sessionId: 'storage-session' }]),
+      processCodeOutput: jest.fn().mockResolvedValue({ file: { file_id: 'persisted-file' } }),
+      updateToolCallResult,
+      runPreviewFinalize: jest.fn(),
+      ...(waitForGenerationSettled != null && { waitForGenerationSettled }),
+    });
+  }
+
+  it('waits for a dispatch turn that outlives the retry schedule, then anchors', async () => {
+    let turnRunning = true;
+    const updateToolCallResult = jest.fn(async () => ({
+      matched: true,
+      unfinished: turnRunning,
+    }));
+    let settle: (settled: boolean) => void = () => undefined;
+    const waitForGenerationSettled = jest.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    const onFilesPersisted = jest.fn();
+    const handler = createHandler(updateToolCallResult, waitForGenerationSettled);
+
+    const result = handler({ ...params, backgroundTask, onFilesPersisted });
+    await jest.advanceTimersByTimeAsync(RETRY_SCHEDULE_MS);
+
+    expect(onFilesPersisted).toHaveBeenCalledWith([
+      { file_id: 'persisted-file', stepId: 'step-1' },
+    ]);
+    expect(onFilesPersisted.mock.invocationCallOrder[0]).toBeLessThan(
+      updateToolCallResult.mock.invocationCallOrder[0],
+    );
+    expect(waitForGenerationSettled).toHaveBeenCalledWith('conversation-1');
+    const attemptsWhileRunning = updateToolCallResult.mock.calls.length;
+    await jest.advanceTimersByTimeAsync(60 * 60 * 1_000);
+    expect(updateToolCallResult).toHaveBeenCalledTimes(attemptsWhileRunning);
+
+    turnRunning = false;
+    settle(true);
+    await jest.advanceTimersByTimeAsync(0);
+
+    await expect(result).resolves.toEqual({
+      attachments: [{ file_id: 'persisted-file', stepId: 'step-1' }],
+      deliveryReady: true,
+    });
+    expect(updateToolCallResult).toHaveBeenCalledTimes(attemptsWhileRunning + 1);
+  });
+
+  it('waits for a running turn that has not saved its row yet', async () => {
+    let rowSaved = false;
+    const updateToolCallResult = jest.fn(async () => ({ matched: rowSaved, unfinished: false }));
+    const waitForGenerationSettled = jest.fn(async () => {
+      rowSaved = true;
+      return true;
+    });
+    const handler = createHandler(updateToolCallResult, waitForGenerationSettled);
+
+    const result = handler({ ...params, backgroundTask });
+    await jest.advanceTimersByTimeAsync(RETRY_SCHEDULE_MS);
+
+    await expect(result).resolves.toEqual(expect.objectContaining({ deliveryReady: true }));
+    expect(waitForGenerationSettled).toHaveBeenCalledTimes(1);
+  });
+
+  it('gives the result up when no generation is running and the row never appears', async () => {
+    const updateToolCallResult = jest.fn(async () => ({ matched: false, unfinished: false }));
+    const waitForGenerationSettled = jest.fn(async () => false);
+    const handler = createHandler(updateToolCallResult, waitForGenerationSettled);
+
+    const result = handler({ ...params, backgroundTask });
+    await jest.advanceTimersByTimeAsync(RETRY_SCHEDULE_MS + 10_000);
+
+    await expect(result).resolves.toEqual(expect.objectContaining({ deliveryReady: false }));
+    expect(updateToolCallResult).toHaveBeenCalledTimes(14 + 3);
+  });
+
+  it('gives the result up when the turn ends without saving the tool call', async () => {
+    const updateToolCallResult = jest.fn(async () => ({ matched: true, unfinished: true }));
+    const waitForGenerationSettled = jest.fn(async () => true);
+    const handler = createHandler(updateToolCallResult, waitForGenerationSettled);
+
+    const result = handler({ ...params, backgroundTask });
+    await jest.advanceTimersByTimeAsync(RETRY_SCHEDULE_MS + 10_000);
+
+    await expect(result).resolves.toEqual(expect.objectContaining({ deliveryReady: false }));
+    expect(waitForGenerationSettled).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the bounded schedule when no settlement signal is wired', async () => {
+    const updateToolCallResult = jest.fn(async () => ({ matched: true, unfinished: true }));
+    const handler = createHandler(updateToolCallResult);
+
+    const result = handler({ ...params, backgroundTask });
+    await jest.advanceTimersByTimeAsync(RETRY_SCHEDULE_MS);
+
+    await expect(result).resolves.toEqual(expect.objectContaining({ deliveryReady: false }));
+    expect(updateToolCallResult).toHaveBeenCalledTimes(14);
+  });
+});

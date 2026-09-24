@@ -12,6 +12,8 @@ import type { ServerRequest } from '~/types';
 const BACKGROUND_PATCH_RETRY_DELAYS_MS = [
   250, 500, 1_000, 2_000, 5_000, 10_000, 20_000, 30_000, 60_000, 120_000, 180_000, 240_000, 300_000,
 ];
+/** Final save lands just before settlement is announced; these absorb replica lag. */
+const SETTLED_PATCH_RETRY_DELAYS_MS = [1_000, 5_000];
 interface HarvestFileRef {
   id: string;
   name: string;
@@ -95,6 +97,10 @@ export interface CodeHarvestDeps {
     fileId: string;
     previewRevision?: number;
   }) => void;
+  /** Resolves once the conversation's running generation settles, `false` when
+   * none is running. Lets a dispatch turn that outlives the retry schedule
+   * finish before its result is given up as unanchorable. */
+  waitForGenerationSettled?: (conversationId: string) => Promise<boolean>;
 }
 
 export interface CodeHarvestParams {
@@ -119,6 +125,9 @@ export interface CodeHarvestParams {
   /** Re-reads local claim ownership on every retry so a same-generation
    * manual poll cannot be overwritten by a later automatic continuation. */
   resolveBackgroundTask?: () => BackgroundToolResultState;
+  /** Called once generated files are stored, before the row patch, which can
+   * wait for the dispatch turn to end: a poll in that turn needs them now. */
+  onFilesPersisted?: (attachments: unknown[]) => void;
 }
 
 export type CodeHarvestHandler = (
@@ -127,23 +136,26 @@ export type CodeHarvestHandler = (
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function persistBackgroundToolResultRow(
+type BackgroundResultRowParams = {
+  userId: string;
+  messageId: string;
+  conversationId: string;
+  toolCallId: string;
+  stepId?: string;
+  agentId?: string;
+  output?: string;
+  attachments?: unknown[];
+  backgroundTask?: BackgroundToolResultState;
+  resolveBackgroundTask?: () => BackgroundToolResultState;
+};
+
+async function anchorBackgroundToolResultRow(
   updateToolCallResult: CodeHarvestDeps['updateToolCallResult'],
-  params: {
-    userId: string;
-    messageId: string;
-    conversationId: string;
-    toolCallId: string;
-    stepId?: string;
-    agentId?: string;
-    output?: string;
-    attachments?: unknown[];
-    backgroundTask?: BackgroundToolResultState;
-    resolveBackgroundTask?: () => BackgroundToolResultState;
-  },
+  params: BackgroundResultRowParams,
+  retryDelaysMs: readonly number[],
 ): Promise<boolean> {
   const { resolveBackgroundTask, ...persistedParams } = params;
-  for (let attempt = 0; attempt <= BACKGROUND_PATCH_RETRY_DELAYS_MS.length; attempt++) {
+  for (let attempt = 0; attempt <= retryDelaysMs.length; attempt++) {
     const currentBackgroundTask = resolveBackgroundTask?.() ?? persistedParams.backgroundTask;
     const result = await updateToolCallResult({
       ...persistedParams,
@@ -153,12 +165,42 @@ async function persistBackgroundToolResultRow(
     if (result.matched && !result.unfinished) {
       return true;
     }
-    if (attempt === BACKGROUND_PATCH_RETRY_DELAYS_MS.length) {
+    if (attempt === retryDelaysMs.length) {
       break;
     }
-    await sleep(BACKGROUND_PATCH_RETRY_DELAYS_MS[attempt]);
+    await sleep(retryDelaysMs[attempt]);
   }
   return false;
+}
+
+/**
+ * Patches the result onto the dispatch turn's row, which is absent or unfinished
+ * while that turn streams. A turn can run far longer than the retry schedule, so
+ * a result still unanchored at the end waits for the conversation's generation
+ * to settle and tries once more instead of being given up.
+ */
+async function persistBackgroundToolResultRow(
+  updateToolCallResult: CodeHarvestDeps['updateToolCallResult'],
+  params: BackgroundResultRowParams,
+  waitForGenerationSettled?: CodeHarvestDeps['waitForGenerationSettled'],
+): Promise<boolean> {
+  const anchored = await anchorBackgroundToolResultRow(
+    updateToolCallResult,
+    params,
+    BACKGROUND_PATCH_RETRY_DELAYS_MS,
+  );
+  if (anchored || waitForGenerationSettled == null) {
+    return anchored;
+  }
+  try {
+    await waitForGenerationSettled(params.conversationId);
+  } catch (error) {
+    logger.warn(
+      `[background] Failed waiting for the dispatch turn of message ${params.messageId} to settle:`,
+      error,
+    );
+  }
+  return anchorBackgroundToolResultRow(updateToolCallResult, params, SETTLED_PATCH_RETRY_DELAYS_MS);
 }
 
 /** Persists an ordinary detached tool result without invoking code-artifact processing. */
@@ -218,6 +260,7 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
     preflightCodeOutputBatch,
     processCodeOutput,
     runPreviewFinalize,
+    waitForGenerationSettled,
   } = deps;
   return async ({
     toolCallId,
@@ -233,6 +276,7 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
     reapply,
     backgroundTask,
     resolveBackgroundTask,
+    onFilesPersisted,
   }) => {
     const userId = req.user?.id;
     if (!userId || !messageId || !conversationId) {
@@ -311,22 +355,27 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
       }
     }
 
-    const deliveryReady = await persistBackgroundToolResultRow(updateToolCallResult, {
-      userId,
-      messageId,
-      conversationId,
-      toolCallId,
-      stepId,
-      agentId,
-      output,
-      attachments,
-      ...(backgroundTask != null ? { backgroundTask } : {}),
-      ...(resolveBackgroundTask != null ? { resolveBackgroundTask } : {}),
-    });
+    onFilesPersisted?.(attachments);
+    const deliveryReady = await persistBackgroundToolResultRow(
+      updateToolCallResult,
+      {
+        userId,
+        messageId,
+        conversationId,
+        toolCallId,
+        stepId,
+        agentId,
+        output,
+        attachments,
+        ...(backgroundTask != null ? { backgroundTask } : {}),
+        ...(resolveBackgroundTask != null ? { resolveBackgroundTask } : {}),
+      },
+      waitForGenerationSettled,
+    );
     if (!deliveryReady) {
       logger.warn(
         `[background] Could not anchor code result onto message ${messageId} (tool call ${toolCallId}); ` +
-          'the dispatch turn never persisted. Poll delivery still returns the result.',
+          'the dispatch turn ended without saving that tool call. Poll delivery still returns the result.',
       );
     }
     return { attachments, ...(backgroundTask != null ? { deliveryReady } : {}) };
