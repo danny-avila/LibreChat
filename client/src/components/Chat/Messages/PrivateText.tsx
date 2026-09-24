@@ -18,17 +18,26 @@ interface OwnerTextState {
 const empty: OwnerTextState = { scope: '', messages: new Map(), loading: false };
 const OwnerTextContext = createContext<OwnerTextState>(empty);
 
-export function OwnerTextProvider({
-  messages,
-  conversationId,
-  isSubmitting,
-  children,
-}: {
+interface OwnerTextProviderProps {
   messages: readonly TMessage[] | null;
   conversationId?: string;
   isSubmitting: boolean;
   children: ReactNode;
-}) {
+}
+
+export function OwnerTextProvider(props: OwnerTextProviderProps) {
+  if (!props.messages?.some((message) => message.isCreatedByUser && message.privacyRevision)) {
+    return <>{props.children}</>;
+  }
+  return <ActiveOwnerTextProvider {...props} />;
+}
+
+function ActiveOwnerTextProvider({
+  messages,
+  conversationId,
+  isSubmitting,
+  children,
+}: OwnerTextProviderProps) {
   const { user } = useAuthContext();
   const selection = useMemo(
     () =>

@@ -58,6 +58,17 @@ it('renders originals without mutating canonical model/export input, and reloads
   expect(load).toHaveBeenCalledTimes(2);
 });
 
+it('does not fetch originals for an ordinary transcript', () => {
+  const plain = { ...canonical, privacyRevision: undefined };
+  render(
+    <OwnerTextProvider messages={[plain]} conversationId="conversation" isSubmitting={false}>
+      <span data-testid="ordinary-transcript" />
+    </OwnerTextProvider>,
+  );
+  expect(screen.getByTestId('ordinary-transcript')).toBeInTheDocument();
+  expect(load).not.toHaveBeenCalled();
+});
+
 it('renders only filtered text without an owner provider, as on external viewers', () => {
   render(<PrivateText message={canonical} />);
   expect(screen.getByText(canonical.text)).toBeInTheDocument();
