@@ -1022,6 +1022,41 @@ describe('useAppBridge', () => {
       view.view.unmount();
     });
 
+    it('submits only approved App text without draining staged composer context', async () => {
+      let grant: ((allowed: boolean) => void) | undefined;
+      mockApproveAction.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            grant = resolve;
+          }),
+      );
+      const { view } = mountBridge(makeResource(), client);
+      await flush();
+      const pending = latest().onmessage?.(
+        {
+          content: [
+            { type: 'text', text: 'approved' },
+            { type: 'text', text: 'message' },
+          ],
+        },
+        requestExtra(),
+      );
+      await flush();
+      expect(mockApproveAction).toHaveBeenCalledWith(
+        { kind: 'message', serverName: 'demo', text: 'approved\nmessage' },
+        expect.any(AbortSignal),
+      );
+      expect(mockAsk).not.toHaveBeenCalled();
+      grant?.(true);
+      await expect(pending).resolves.toEqual({});
+      expect(mockAsk).toHaveBeenCalledTimes(1);
+      expect(mockAsk).toHaveBeenCalledWith(
+        { text: 'approved\nmessage' },
+        { overrideFiles: [], overrideManualSkills: [], overrideQuotes: [] },
+      );
+      view.unmount();
+    });
+
     it('uses the published preview limit for both tool arguments and chat messages', async () => {
       mockCallTool.mockResolvedValue({ content: [] });
       mockPreviewLimit.mockReturnValue(10);

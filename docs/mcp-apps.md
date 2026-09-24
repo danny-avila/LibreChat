@@ -38,7 +38,9 @@ previous in-View state.
 Opening an App permits its own resource reads and declared link policy, but does not approve actions
 on the user's behalf. Each App-initiated tool call displays the originating server, tool name and
 complete arguments in a host-owned confirmation; App-initiated chat text shows the complete text
-and requires a separate **Send message**. Rejecting an action pauses further action requests from that View until it is closed and reopened.
+and requires a separate **Send message**. An approved App message contains only that text: files,
+manual skills, and quotes staged in the user's composer remain in the draft and are neither submitted
+nor drained. Rejecting an action pauses further action requests from that View until it is closed and reopened.
 The dialog also provides a Close app and stop requests control for an App that repeatedly asks.
 Navigating away or closing the App does not execute a pending action. Tool arguments and message
 previews exceeding `maxActionPreviewChars` (default 16,384; range 1–131,072 UTF-16 characters)

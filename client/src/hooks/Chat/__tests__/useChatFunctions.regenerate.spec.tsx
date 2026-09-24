@@ -513,6 +513,51 @@ describe('useChatFunctions ask attachments', () => {
     });
   });
 
+  it('keeps the next composer file staged when a text-only App message uses empty overrides', () => {
+    const setMessages = jest.fn();
+    const setSubmission = jest.fn();
+    const setFiles = jest.fn();
+    const files = new Map([
+      [
+        'app-next-draft-file',
+        {
+          file_id: 'app-next-draft-file',
+          filepath: '/uploads/app-next-draft-file',
+          filename: 'private-next-message.pdf',
+          type: 'application/pdf',
+        },
+      ],
+    ]) as unknown as Parameters<typeof useChatFunctions>[0]['files'];
+    const { result } = renderHook(() =>
+      useChatFunctions({
+        isSubmitting: false,
+        latestMessage: null,
+        conversation: conversation(Constants.NEW_CONVO as string),
+        getMessages: () => [],
+        setMessages,
+        setSubmission,
+        files,
+        setFiles,
+      }),
+    );
+
+    act(() => {
+      result.current.ask(
+        { text: 'approved App message' },
+        { overrideFiles: [], overrideManualSkills: [], overrideQuotes: [] },
+      );
+    });
+
+    const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+    expect(submission.userMessage.text).toBe('approved App message');
+    expect(submission.userMessage.files).toBeUndefined();
+    expect(submission.userMessage.manualSkills).toBeUndefined();
+    expect(submission.userMessage.quotes).toBeUndefined();
+    expect(files?.has('app-next-draft-file')).toBe(true);
+    expect(setFiles).not.toHaveBeenCalled();
+    expect(isPasteSubmitted('app-next-draft-file')).toBe(false);
+  });
+
   it('marks files consumed through overrideFiles as submitted', () => {
     const overrideFiles = [
       {

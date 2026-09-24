@@ -351,7 +351,12 @@ export function useAppBridge({
             actionSignal,
           );
           if (!allowed || actionSignal.aborted || cancelled) return { isError: true };
-          const accepted = askRef.current({ text });
+          // An App action is not the user's next composer submission. Empty overrides keep
+          // staged files, skills, and quotes out of this message and in the user's draft.
+          const accepted = askRef.current(
+            { text },
+            { overrideFiles: [], overrideManualSkills: [], overrideQuotes: [] },
+          );
           if (accepted === false) {
             return { isError: true };
           }
