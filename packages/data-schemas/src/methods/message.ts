@@ -10,8 +10,8 @@ import type { SchemaWithMeiliMethods } from '~/models/plugins/mongoMeili';
 import type { AppConfig, IConversation, IMessage } from '~/types';
 import { createChatExpirationDate, createTempChatExpirationDate } from '~/utils/tempChatRetention';
 import { activeExpirationFilter, createFallbackRetentionDate } from '~/utils/retention';
-import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { fitBoundAppSnapshots, hasBoundAppSnapshots } from './appSnapshots';
+import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import logger from '~/config/winston';
 
 /** Simple UUID v4 regex to replace zod validation */

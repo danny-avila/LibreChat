@@ -17,9 +17,9 @@ import {
   SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
 } from './message';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
+import { MAX_MCP_APP_MESSAGE_BSON_BYTES } from './appSnapshots';
 import { createModels } from '../models';
 import logger from '~/config/winston';
-import { MAX_MCP_APP_MESSAGE_BSON_BYTES } from './appSnapshots';
 
 const waitForTimestampTick = () => new Promise((resolve) => setTimeout(resolve, 2));
 
