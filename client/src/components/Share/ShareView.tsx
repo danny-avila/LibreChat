@@ -51,8 +51,10 @@ function SharedView() {
   const { theme, setTheme } = useContext(ThemeContext);
   const { shareId } = useParams();
   const jotaiStore = useStore();
-  const { data: config } = useGetSharedStartupConfig(shareId, { enabled: isAuthReady });
-  useDeploymentThemeOverride(config != null, config?.interface?.theme);
+  const { data: config, isError: configFailed } = useGetSharedStartupConfig(shareId, {
+    enabled: isAuthReady,
+  });
+  useDeploymentThemeOverride(config != null || configFailed, config?.interface?.theme);
   const { data, isLoading, isFetching, refetch } = useGetSharedMessages(shareId ?? '', {
     enabled: isAuthReady,
   });

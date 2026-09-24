@@ -165,4 +165,23 @@ test.describe('deployment theme on a shared link', () => {
     );
     expect(bubbleColor).not.toBe(await backgroundOf(page, 'main'));
   });
+
+  test("a shared link whose config request fails does not keep the viewer's theme @scenario:shared-link-config-failure-drops-viewer-theme", async ({
+    page,
+  }) => {
+    test.setTimeout(120000);
+    await serveThemes(page, VIEWER_THEME, null);
+    const shareId = await createSharedLink(page);
+    await expectViewerTheme(page);
+    await page.route(
+      (url) => url.pathname === `/api/share/${shareId}/config`,
+      (route) => route.fulfill({ status: 500, json: { message: 'unavailable' } }),
+    );
+
+    await page.goto(`/share/${shareId}`, { timeout: 10000 });
+    await expect(page.getByTestId('messages-view')).toBeVisible({ timeout: 20000 });
+    await expect(page.locator('html')).not.toHaveAttribute('data-theme', 'viewer', {
+      timeout: 30000,
+    });
+  });
 });
