@@ -176,7 +176,7 @@ const Composer: ForwardRefExoticComponent<
   return (
     <div
       className={cn(
-        'flex w-full flex-col gap-1.5 rounded-3xl p-2.5',
+        'rounded-theme-surface-lg flex w-full flex-col gap-1.5 p-2.5',
         composerSurfaceClasses(),
         composerSurfaceShadow.within,
         className,
