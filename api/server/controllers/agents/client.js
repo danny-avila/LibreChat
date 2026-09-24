@@ -4830,17 +4830,19 @@ class AgentClient extends BaseClient {
           agents.push(...this.agentConfigs.values());
         }
 
-        /** Ahead of the checkpoint setup below: the prune and `createRun` are
-         *  deliberately overlapped, and an await between them serializes both. */
-        const predictedToolNames = await predictToolsForTurn({
+        /** Awaited after the memory run starts, so the two overlap. */
+        const predictionPromise = predictToolsForTurn({
           config: appConfig?.classification,
           agents,
           messages,
           signal: abortController.signal,
+        }).catch((error) => {
+          logger.warn(
+            '[AgentClient] Tool prediction failed; continuing without it',
+            getSafeErrorMetadata(error),
+          );
+          return [];
         });
-        if (predictedToolNames.length > 0) {
-          this.predictedToolNames = predictedToolNames;
-        }
         const modelBoundCallback =
           AgentClient.prototype.createModelBoundChatModelCallback.call(this);
         const initialModelBoundAdmission =
@@ -4881,6 +4883,11 @@ class AgentClient extends BaseClient {
 
         if (this.processMemory && !isCompactionTurn) {
           memoryPromise = this.runMemory(memoryMessages);
+        }
+
+        const predictedToolNames = await predictionPromise;
+        if (predictedToolNames.length > 0) {
+          this.predictedToolNames = predictedToolNames;
         }
 
         const { calibrationRatio, fadingTier, fadingTiers } = resolveRunSeeds(this);
