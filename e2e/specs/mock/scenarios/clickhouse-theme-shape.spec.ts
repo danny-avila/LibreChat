@@ -92,7 +92,7 @@ test.describe('ClickHouse theme shape', () => {
     expect(await page.evaluate(() => localStorage.getItem('theme-definition'))).toBeNull();
   });
 
-  test('theme controls take Click UI button metrics, checked fill and focus outline @scenario:clickhouse-controls-follow-click-ui', async ({
+  test('theme controls take Click UI control height, checked fill and focus outline @scenario:clickhouse-controls-follow-click-ui', async ({
     page,
   }) => {
     await storeClickHouse(page);
@@ -101,9 +101,10 @@ test.describe('ClickHouse theme shape', () => {
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'clickhouse');
     const mode = await resolvedMode(page);
 
-    /** `genericMenu.panel.size.height`, `button.basic.space.x` and `transition.default`. */
+    /** `genericMenu.panel.size.height` and `transition.default`; the shared spacing role that
+     *  also pads message bubbles keeps LibreChat's 12px. */
     expect(await probeStyle(page, 'h-theme-control', 'height')).toBe('32px');
-    expect(await probeStyle(page, 'px-theme-normal', 'padding-left')).toBe('16px');
+    expect(await probeStyle(page, 'px-theme-normal', 'padding-left')).toBe('12px');
     expect(await probeStyle(page, 'duration-theme-fast', 'transition-duration')).toBe('0.1s');
     /** The checked checkbox and switch fill, and `outline.default`. */
     const fill = mode === 'light' ? 'rgb(21, 21, 21)' : 'rgb(250, 255, 105)';

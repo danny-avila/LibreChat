@@ -303,8 +303,6 @@ const clickHouseShape = {
   shadowXs: '0 2px 2px 0 rgb(0 0 0 / 0.03)', // shadow.5
   shadowSm: '0 2px 2px 0 rgb(0 0 0 / 0.03)', // shadow.5
   controlHeight: '2rem', // genericMenu.panel.size.height
-  spaceCompact: '0.5rem', // button.basic.space.gap
-  spaceNormal: '1rem', // button.basic.space.x
   motionFast: '100ms', // transition.default
 };
 
