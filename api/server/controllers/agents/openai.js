@@ -55,6 +55,7 @@ const {
   isContentFilterError,
   getSafeErrorMetadata,
   getUserFacingProviderError,
+  getAgentErrorMetadata,
   getRemoteAgentPermissions,
   createToolExecuteHandler,
   createOwnedToolEndHandler,
@@ -260,13 +261,11 @@ function handleExecutionError({ error, res, context, appConfig }) {
       error.body.error,
     );
   }
-  const statusCode =
-    typeof error?.status === 'number' && error.status >= 400 && error.status < 600
-      ? error.status
-      : 500;
+  const errorMetadata = getAgentErrorMetadata(error);
+  const statusCode = errorMetadata?.status ?? 500;
   const errorType =
     statusCode >= 400 && statusCode < 500 ? 'invalid_request_error' : 'server_error';
-  const errorCode = !protectionEnabled && typeof error?.code === 'string' ? error.code : null;
+  const errorCode = !protectionEnabled ? (errorMetadata?.code ?? null) : null;
   sendErrorResponse(res, statusCode, errorMessage, errorType, errorCode);
 }
 

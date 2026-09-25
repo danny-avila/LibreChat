@@ -3240,6 +3240,47 @@ describe('useStepHandler', () => {
       ...overrides,
     });
 
+    it('signals parent-index discovery on child lifecycle events, not every progress delta', () => {
+      const onSubagentIndexChange = jest.fn();
+      const { result } = renderHook(
+        () => useStepHandler({ ...createHookParams(), onSubagentIndexChange }),
+        { wrapper: subagentStoreWrapper },
+      );
+      const submission = createSubmission();
+
+      act(() => {
+        for (const phase of ['start', 'run_step_delta', 'stop', 'error'] as const) {
+          result.current.stepHandler(
+            { event: StepEvents.ON_SUBAGENT_UPDATE, data: makeUpdate({ phase }) },
+            submission,
+          );
+        }
+      });
+      expect(onSubagentIndexChange.mock.calls).toEqual([['conv-1'], ['conv-1'], ['conv-1']]);
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_SUBAGENT_UPDATE, data: makeUpdate({ phase: 'start' }) },
+          createSubmission({
+            userMessage: createUserMessage({ conversationId: String(Constants.NEW_CONVO) }),
+            initialResponse: createResponseMessage({ conversationId: String(Constants.NEW_CONVO) }),
+          }),
+        );
+      });
+      expect(onSubagentIndexChange).toHaveBeenCalledTimes(3);
+
+      act(() => {
+        result.current.stepHandler(
+          { event: StepEvents.ON_SUBAGENT_UPDATE, data: makeUpdate({ phase: 'start' }) },
+          createSubmission({
+            userMessage: createUserMessage({ conversationId: String(Constants.NEW_CONVO) }),
+            initialResponse: createResponseMessage({ conversationId: 'saved-parent' }),
+          }),
+        );
+      });
+      expect(onSubagentIndexChange).toHaveBeenLastCalledWith('saved-parent');
+    });
+
     it('correlates updates to a tool call via parentToolCallId (deterministic path)', () => {
       const { result, getProgress } = renderStepHandlerWithReader();
       const { submission } = seedResponseWithSubagentToolCalls(result, ['call_A']);

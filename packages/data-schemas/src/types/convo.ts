@@ -67,7 +67,8 @@ export interface IAgentEventActorSummary {
  * for prefix-based provider prompt caches. Graph messages stay canonical.
  */
 export interface IAgentFadingTier {
-  v: 1;
+  /** Version 1 is readable but must not seed a version 2 SDK run. */
+  v: 1 | 2;
   /** Token budget the caps derive from; never grows within a conversation. */
   budgetTokens: number;
   /** Whether observation masking has activated. */

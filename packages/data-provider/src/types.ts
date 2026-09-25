@@ -33,6 +33,7 @@ import type { Agent } from './types/agents';
 
 export * from './schemas';
 export * from './types/subagents';
+export * from './types/background';
 
 export type TMessages = TMessage[];
 

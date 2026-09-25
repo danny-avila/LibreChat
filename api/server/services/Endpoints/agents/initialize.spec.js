@@ -69,13 +69,8 @@ jest.mock('~/server/services/ToolService', () => ({
   loadAgentTools: jest.fn(),
   loadToolsForExecution: (...args) => mockLoadToolsForExecution(...args),
   getAccessibleMcpServerNames: (...args) => mockGetAccessibleMcpServerNames(...args),
-  isFatalAgentInitializationError: (error) =>
-    [
-      'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
-      'resource_recovery_required',
-      'stateful_code_environment_not_allowed',
-      'code_workspace_unavailable',
-    ].includes(error?.code),
+  isFatalAgentInitializationError:
+    jest.requireActual('@librechat/api').isFatalAgentInitializationError,
 }));
 
 jest.mock('~/server/controllers/ModelController', () => ({
@@ -309,6 +304,9 @@ describe('initializeClient — processAgent ACL gate', () => {
         jobCreatedAt: 1234,
       }),
     );
+    expect(
+      require('~/server/controllers/agents/callbacks').createBackgroundCodeResultHandler,
+    ).toHaveBeenCalledWith(expect.objectContaining({ jobCreatedAt: 1234 }));
     expect(createToolEndCallback).toHaveBeenCalledWith(
       expect.objectContaining({
         streamId: 'conv_1',
@@ -429,6 +427,34 @@ describe('initializeClient — processAgent ACL gate', () => {
       code: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
       statusCode: 503,
     });
+    loadAgentTools.mockRejectedValueOnce(toolError);
+    mockInitializeAgent.mockImplementationOnce(async ({ req, res, loadTools, agent }) => {
+      await loadTools({
+        req,
+        res,
+        tools: ['run_query_mcp_warehouse'],
+        model: agent.model,
+        agentId: agent.id,
+        provider: agent.provider,
+      });
+      return makePrimaryConfig([]);
+    });
+
+    await expect(
+      initializeClient({
+        req: makeReq(),
+        res: {},
+        signal: new AbortController().signal,
+        endpointOption: makeEndpointOption(),
+      }),
+    ).rejects.toBe(toolError);
+  });
+
+  it.each([
+    new (require('@librechat/api').OpenIDReauthRequiredError)('Please sign in again'),
+    new (require('@librechat/api').MCPAuthenticationRejectedError)('private-mcp', false),
+    new (require('@librechat/api').MCPAuthenticationRefreshError)(new Error('Retry later')),
+  ])('preserves credential failure through the runtime agent loader: %s', async (toolError) => {
     loadAgentTools.mockRejectedValueOnce(toolError);
     mockInitializeAgent.mockImplementationOnce(async ({ req, res, loadTools, agent }) => {
       await loadTools({

@@ -174,6 +174,14 @@ describe('useCodeWorkspace', () => {
     },
   );
 
+  it('reports unavailable when a ready worker advertises no workspaces', () => {
+    mockStatus()[0].data.workspaces = [];
+    const { result } = renderHook(() => useCodeWorkspace(conversation()));
+    expect(result.current.state).toBe('unavailable');
+    expect(result.current.canSubmit).toBe(true);
+    expect(result.current.resolveSubmission(undefined, 'attached')).toBeUndefined();
+  });
+
   it('selects one unambiguous initial workspace', () => {
     const { result } = renderHook(() => useCodeWorkspace(conversation()));
 

@@ -1,6 +1,7 @@
 import { useAtomValue, useStore } from 'jotai';
 import { DynamicQueryKeys, MutationKeys, QueryKeys, dataService } from 'librechat-data-provider';
 import {
+  useIsFetching,
   useIsMutating,
   useMutation,
   useQueries,
@@ -16,6 +17,7 @@ import type {
   TCodeEnvironmentStatusResponse,
   TCodeEnvironmentsResponse,
 } from 'librechat-data-provider';
+import type { QueryFilters } from '@tanstack/react-query';
 import type { SetterOrUpdater } from 'recoil';
 import type { CodeEnvironmentReconciliationRequest } from '~/store/codeEnvironmentReconciliation';
 import {
@@ -26,6 +28,7 @@ import {
 } from '~/utils';
 import { codeEnvironmentReconciliationsAtom } from '~/store/codeEnvironmentReconciliation';
 import { hasSameCodeDecision } from '~/hooks/Agents/codeDecision';
+import { retryTransientQuery } from './retry';
 
 export type CodeEnvironmentPairingResponse = TCodeEnvironmentPairingResponse;
 
@@ -37,30 +40,41 @@ export function useCodeEnvironmentsQuery(enabled = true) {
   );
 }
 
+function codeEnvironmentStatusOptions(id: string, enabled: boolean) {
+  return {
+    queryKey: DynamicQueryKeys.codeEnvironmentStatus(id),
+    queryFn: (): Promise<TCodeEnvironmentStatusResponse> =>
+      dataService.getCodeEnvironmentStatus(id),
+    enabled: enabled && id.length > 0,
+    staleTime: 10_000,
+    refetchInterval: 10_000,
+    refetchIntervalInBackground: false,
+    retry: retryTransientQuery,
+  };
+}
+
 export function useCodeEnvironmentStatusQuery(id: string, enabled = true) {
-  return useQuery<TCodeEnvironmentStatusResponse>(
-    DynamicQueryKeys.codeEnvironmentStatus(id),
-    () => dataService.getCodeEnvironmentStatus(id),
-    {
-      enabled: enabled && id.length > 0,
-      refetchInterval: 10_000,
-      refetchIntervalInBackground: false,
-      retry: false,
-    },
-  );
+  return useQuery(codeEnvironmentStatusOptions(id, enabled));
 }
 
 export function useCodeEnvironmentStatusQueries(ids: string[], enabled = true) {
-  return useQueries({
-    queries: ids.map((id) => ({
-      queryKey: DynamicQueryKeys.codeEnvironmentStatus(id),
-      queryFn: () => dataService.getCodeEnvironmentStatus(id),
-      enabled: enabled && id.length > 0,
-      refetchInterval: 10_000,
-      refetchIntervalInBackground: false,
-      retry: false,
-    })),
-  });
+  return useQueries({ queries: ids.map((id) => codeEnvironmentStatusOptions(id, enabled)) });
+}
+
+/** Refresh discovery, not the conversation draft or expanded agent editor records. */
+const isWorkspaceDiscovery: NonNullable<QueryFilters['predicate']> = ({ queryKey }) =>
+  queryKey[0] === QueryKeys.endpoints ||
+  queryKey[0] === QueryKeys.agents ||
+  queryKey[0] === QueryKeys.codeEnvironments ||
+  (queryKey[0] === QueryKeys.agent && queryKey.length === 2);
+
+export function useCodeWorkspaceRefresh() {
+  const queryClient = useQueryClient();
+  const isRefreshing = useIsFetching({ predicate: isWorkspaceDiscovery }) > 0;
+  return {
+    isRefreshing,
+    refresh: () => queryClient.invalidateQueries({ predicate: isWorkspaceDiscovery }),
+  };
 }
 
 export function usePairCodeEnvironmentMutation() {

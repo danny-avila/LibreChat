@@ -94,6 +94,7 @@ const { processAddedConvo } = require('./addedConvo');
 const subagentThreadTaskStore = require('./subagentThreadStore');
 const {
   preregisterBackgroundToolCompletion,
+  pendingBackgroundToolCompletions,
   createBackgroundToolResultPersistence,
   claimBackgroundToolResult,
   createDeadBackgroundToolClaimRecovery,
@@ -511,10 +512,14 @@ const initializeClientWithProvider = async ({
     },
     persistBackgroundCodeResult: createBackgroundCodeResultHandler({
       req,
+      streamId,
+      jobCreatedAt,
       updateToolCallResult: db.updateToolCallResult,
     }),
     backgroundToolCompletion: {
       ...(completionWakeupsEnabled ? { preregister: preregisterBackgroundToolCompletion } : {}),
+      /** Deliveries admitted before wake-ups were disabled still drain and still count. */
+      pending: pendingBackgroundToolCompletions,
       persist: createBackgroundToolResultPersistence({
         req,
         updateToolCallResult: db.updateToolCallResult,
