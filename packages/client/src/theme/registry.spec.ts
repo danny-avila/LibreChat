@@ -516,7 +516,7 @@ describe('theme registry', () => {
         version: 1,
         name: 'offsets',
         modes: {
-          light: { appearance: { radiusSm: 'calc(1rem + 2px)', radiusMd: 'calc(4px - 0)' } },
+          light: { appearance: { radiusSm: 'calc(1rem + 2px)', radiusMd: 'calc(4px - 0px)' } },
         },
       }),
     ).toEqual([]);
@@ -524,9 +524,14 @@ describe('theme registry', () => {
       validateThemeDefinition({
         version: 1,
         name: 'nested',
-        modes: { light: { appearance: { radiusSm: 'calc(1rem - var(--x))' } } },
+        modes: {
+          light: { appearance: { radiusSm: 'calc(1rem - var(--x))', radiusMd: 'calc(4px - 0)' } },
+        },
       }),
-    ).toEqual(['Invalid appearance value for radiusSm: calc(1rem - var(--x))']);
+    ).toEqual([
+      'Invalid appearance value for radiusSm: calc(1rem - var(--x))',
+      'Invalid appearance value for radiusMd: calc(4px - 0)',
+    ]);
   });
 
   it('sanitizes malformed legacy colors without weakening definition validation', () => {
