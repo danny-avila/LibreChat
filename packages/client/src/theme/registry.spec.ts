@@ -492,6 +492,7 @@ describe('theme registry', () => {
             shadowMd: 'not-a-shadow',
             shadowXl: '1px red',
             shadow2xl: 'not-a-shadow var(--missing)',
+            shadowXs: 'var(--shadow),',
             unknownSpacing: '1rem',
           },
         },
@@ -506,6 +507,7 @@ describe('theme registry', () => {
       'Invalid appearance value for shadowMd: not-a-shadow',
       'Invalid appearance value for shadowXl: 1px red',
       'Invalid appearance value for shadow2xl: not-a-shadow var(--missing)',
+      'Invalid appearance value for shadowXs: var(--shadow),',
       'Unknown appearance token: unknownSpacing',
     ]);
     expect(() => resolveTheme(invalidTheme, 'light')).toThrow(TypeError);

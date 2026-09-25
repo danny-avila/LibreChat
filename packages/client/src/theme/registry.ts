@@ -228,7 +228,8 @@ const isLength = (value: unknown): value is string =>
   (cssLengthPattern.test(value) || cssLengthDifferencePattern.test(value));
 const isFontFamily = (value: unknown): value is string =>
   typeof value === 'string' && value.trim().length > 0 && !/[;{}]/.test(value);
-/** Splits on `separator` outside parentheses, so `rgb(0, 0, 0)` stays one part. */
+/** Splits on `separator` outside parentheses, so `rgb(0, 0, 0)` stays one part. Empty parts are
+ *  kept, so a stray comma stays visible to the caller. */
 function splitTopLevel(value: string, separator: RegExp): string[] {
   const parts: string[] = [];
   let depth = 0;
@@ -247,7 +248,7 @@ function splitTopLevel(value: string, separator: RegExp): string[] {
     current += char;
   }
   parts.push(current);
-  return parts.map((part) => part.trim()).filter((part) => part.length > 0);
+  return parts.map((part) => part.trim());
 }
 
 type ShadowToken = 'length' | 'inset' | 'color' | 'variable';
@@ -272,7 +273,7 @@ const isShadowColor = (token: string): boolean =>
  * what is written around it within the grammar.
  */
 function isShadowLayer(layer: string): boolean {
-  const tokens = splitTopLevel(layer, /\s/);
+  const tokens = splitTopLevel(layer, /\s/).filter((token) => token.length > 0);
   const kinds = tokens.map(classifyShadowToken);
   const count = (kind: ShadowToken) => kinds.filter((each) => each === kind).length;
   const lengths = count('length');
@@ -295,7 +296,7 @@ const isShadow = (value: unknown): value is string => {
     return true;
   }
   const layers = splitTopLevel(value, /,/);
-  if (layers.length === 0 || !layers.every(isShadowLayer)) {
+  if (layers.some((layer) => layer.length === 0) || !layers.every(isShadowLayer)) {
     return false;
   }
   /** A browser defers its own check for a value holding `var()` and would accept anything. */
