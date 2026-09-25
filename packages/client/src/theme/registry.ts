@@ -186,7 +186,7 @@ const cssLengthDifferencePattern =
   /^calc\(\s*\d*\.?\d+(px|rem|em)\s+[-+]\s+\d*\.?\d+(px|rem|em)\s*\)$/;
 const cssDurationPattern = /^\d*\.?\d+(ms|s)$/;
 const hexColorPattern = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
-const shadowLengthPattern = /^(-?(0|\d*\.?\d+[a-z]+)|(calc|min|max|clamp|env)\(.*\))$/i;
+const shadowLengthPattern = /^(-?(0|\d*\.?\d+[a-z]+)|(calc|min|max|clamp)\(.*\))$/i;
 const shadowColorPattern = /^(#[0-9a-f]{3,8}|[a-z]+|[a-z-]+\(.*\))$/i;
 /** Tailwind composes `--tw-shadow` into one list with the ring layers, where `none` is invalid. */
 const disabledShadow = '0 0 #0000';
@@ -269,11 +269,12 @@ function isShadowLayer(layer: string): boolean {
 }
 
 /**
- * A shadow must be concrete: a browser defers its check of any value holding `var()` until
- * substitution, so such a value could never be validated before it reaches the ring layers.
+ * A shadow must be concrete: a browser defers its check of any value holding `var()`, `env()` or
+ * `attr()` until substitution, so such a value could never be validated before it reaches the
+ * ring layers.
  */
 const isShadow = (value: unknown): value is string => {
-  if (typeof value !== 'string' || /[;{}]|url\s*\(|var\s*\(/i.test(value)) {
+  if (typeof value !== 'string' || /[;{}]|url\s*\(|(var|env|attr)\s*\(/i.test(value)) {
     return false;
   }
   if (value.trim().toLowerCase() === 'none') {

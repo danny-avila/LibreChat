@@ -36,7 +36,7 @@ through `radius3xl` (`--theme-radius-*`), `font-sans` reads `fontFamily` (`--the
 `font-mono` reads `monoFontFamily` (`--theme-mono-font-family`), and `shadow-2xs` through
 `shadow-2xl` (and bare `shadow`, which matches `sm`) read `shadow2xs` through `shadow2xl`
 (`--theme-shadow-*`). `elevationSurface` stays the separate role behind `shadow-theme-surface`.
-A shadow value must be a concrete `box-shadow` list (no `var()`) or `none`; `none` is written as a transparent layer so
+A shadow value must be a concrete `box-shadow` list (no `var()`, `env()` or `attr()`) or `none`; `none` is written as a transparent layer so
 Tailwind can still compose it with ring utilities.
 The defaults reproduce the scale those utilities had before, so a theme that names none of them
 changes nothing. The mapping lives in the app stylesheet (`client/src/style.css`), not the

@@ -494,6 +494,7 @@ describe('theme registry', () => {
             shadow2xl: 'not-a-shadow var(--missing)',
             shadowXs: '0,',
             shadowSm: '0 2px 4px var(--brand-shadow)',
+            shadow2xs: '0 env(safe-area-inset-tpo) 1px black',
             unknownSpacing: '1rem',
           },
         },
@@ -510,6 +511,7 @@ describe('theme registry', () => {
       'Invalid appearance value for shadow2xl: not-a-shadow var(--missing)',
       'Invalid appearance value for shadowXs: 0,',
       'Invalid appearance value for shadowSm: 0 2px 4px var(--brand-shadow)',
+      'Invalid appearance value for shadow2xs: 0 env(safe-area-inset-tpo) 1px black',
       'Unknown appearance token: unknownSpacing',
     ]);
     expect(() => resolveTheme(invalidTheme, 'light')).toThrow(TypeError);
@@ -551,7 +553,6 @@ describe('theme registry', () => {
       'none',
       '0 1px 2px 0 rgb(0 0 0 / 0.05)',
       'inset 0 0 0 1px rgba(0, 0, 0, 0.1), 0 8px 16px -4px #00000033',
-      '0 env(safe-area-inset-top) 1px black',
       '0 calc(0.25rem + 1px) 1ch -0.5vw rgb(0 0 0 / 0.1)',
       '0 0 #0000',
     ];
