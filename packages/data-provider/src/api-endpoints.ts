@@ -141,6 +141,12 @@ export const subagentThread = (
 export const subagentControl = (parentConversationId: string, threadId: string) =>
   `${conversationsRoot}/${encodeURIComponent(parentConversationId)}/subagents/${encodeURIComponent(threadId)}/control`;
 
+export const backgroundTasks = (conversationId: string) =>
+  `${conversationsRoot}/${encodeURIComponent(conversationId)}/background-tasks`;
+
+export const backgroundTasksCancel = (conversationId: string) =>
+  `${backgroundTasks(conversationId)}/cancel`;
+
 export const genTitle = (conversationId: string) =>
   `${conversationsRoot}/gen_title/${encodeURIComponent(conversationId)}`;
 

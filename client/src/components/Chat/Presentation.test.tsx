@@ -2,12 +2,22 @@ import React from 'react';
 import { useSetAtom } from 'jotai';
 import { RecoilRoot, useSetRecoilState } from 'recoil';
 import { fireEvent, render, screen } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TConversation } from 'librechat-data-provider';
 import type { Artifact } from '~/common';
 import { activeSubagentPanel } from '~/components/Chat/Subagents/state';
 import { ChatSurfaceHarness } from 'test/harness';
 import Presentation from './Presentation';
 import store from '~/store';
+
+const renderPresentation = (element: React.ReactElement) => {
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return render(element, {
+    wrapper: ({ children }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    ),
+  });
+};
 
 const mockArtifactPanelLabel = 'Artifact panel loaded';
 const mockOpenArtifactLabel = 'Open Artifact';
@@ -159,7 +169,7 @@ describe('Presentation Artifact loading', () => {
       presentationArtifactModuleEvaluations?: number;
     };
 
-    render(
+    renderPresentation(
       <ChatSurfaceHarness>
         <RecoilRoot>
           <Presentation>
@@ -179,7 +189,7 @@ describe('Presentation Artifact loading', () => {
   });
 
   it('loads the parent child index only for Agent conversations', () => {
-    render(
+    renderPresentation(
       <ChatSurfaceHarness>
         <RecoilRoot>
           <Presentation>
@@ -206,7 +216,7 @@ describe('Presentation Artifact loading', () => {
   });
 
   it('uses one panel slot and lets an opened artifact replace child activity', async () => {
-    render(
+    renderPresentation(
       <ChatSurfaceHarness>
         <RecoilRoot>
           <Presentation>
