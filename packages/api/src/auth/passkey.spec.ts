@@ -3,6 +3,7 @@ import { logger } from '@librechat/data-schemas';
 import { MAX_PASSKEYS_PER_USER } from 'librechat-data-provider';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/server';
+import type { TCustomConfig } from 'librechat-data-provider';
 import type { PasskeyChallengeStore, PasskeyConfig } from './passkey';
 import {
   authenticationChallengeKey,
@@ -142,6 +143,14 @@ describe('resolveMaxPasskeysPerUser', () => {
     expect(
       resolveMaxPasskeysPerUser(undefined, { MAX_PASSKEYS_PER_USER: '100' } as NodeJS.ProcessEnv),
     ).toBe(100);
+  });
+
+  it('ignores an out-of-bounds cap from an unvalidated override', () => {
+    const env = { MAX_PASSKEYS_PER_USER: '9' } as NodeJS.ProcessEnv;
+    const rejected: unknown[] = [0, -1, 101, 1.5, '5', 'abc', null];
+    for (const perUserMax of rejected) {
+      expect(resolveMaxPasskeysPerUser({ perUserMax } as TCustomConfig['passkeys'], env)).toBe(9);
+    }
   });
 });
 
