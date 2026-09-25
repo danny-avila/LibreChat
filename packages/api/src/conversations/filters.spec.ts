@@ -70,6 +70,19 @@ describe('parseConversationListFilters', () => {
     ).toBe('2026-09-01T10:00:00.000Z');
   });
 
+  it('accepts fractional seconds finer than milliseconds', () => {
+    expect(
+      parseConversationListFilters({
+        updatedAfter: '2026-09-01T00:00:00.123456Z',
+      }).filters.updatedAfter?.toISOString(),
+    ).toBe('2026-09-01T00:00:00.123Z');
+    expect(
+      parseConversationListFilters({
+        createdAfter: '2026-09-01T00:00:00.123456789',
+      }).filters.createdAfter?.toISOString(),
+    ).toBe('2026-09-01T00:00:00.123Z');
+  });
+
   it('reads a timestamp without an offset as UTC, not the server zone', () => {
     expect(
       parseConversationListFilters({

@@ -37,7 +37,7 @@ const firstValue = (value: unknown): unknown => (Array.isArray(value) ? value[0]
  * request would select different conversations on hosts in different zones.
  */
 const ISO_DATE =
-  /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(Z|[+-](?:0\d|1[0-4])(?::?[0-5]\d)?)?)?$/;
+  /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d+))?)?(Z|[+-](?:0\d|1[0-4])(?::?[0-5]\d)?)?)?$/;
 
 const parseDate = (value: unknown): { date?: Date; invalid?: boolean } => {
   const raw = firstValue(value);
