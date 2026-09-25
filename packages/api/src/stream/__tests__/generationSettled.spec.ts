@@ -99,6 +99,8 @@ describe('generation settled notifications', () => {
 
     await expect(manager.expireApproval('settled-approval')).resolves.toBe(true);
     await expect(manager.expireApproval('settled-approval')).resolves.toBe(false);
+    /** The next expiry sweep relays the terminal job without announcing it again. */
+    await (manager as unknown as { cleanup(): Promise<void> }).cleanup();
 
     expect(events).toEqual([
       {
