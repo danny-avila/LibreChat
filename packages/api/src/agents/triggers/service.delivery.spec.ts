@@ -244,6 +244,28 @@ describe('durable agent trigger service', () => {
       await service.stop();
     });
 
+    it('targets only named subagent completions when a child settles', async () => {
+      const methods = deliveryMethods({
+        expediteAgentTriggerDeliveries: jest.fn(async () => ({ expedited: 1, held: 0 })),
+      });
+      const service = createAgentTriggerService({ methods });
+      await service.initialize({ address });
+      service.expediteCompletionWakeups({
+        user: 'user-1',
+        conversationId: 'parent-1',
+        taskIds: ['child-1'],
+      });
+      await flush();
+      expect(methods.expediteAgentTriggerDeliveries).toHaveBeenCalledWith({
+        user: 'user-1',
+        conversationId: 'parent-1',
+        taskIds: ['child-1'],
+        sourceIds: ['subagent-completion'],
+        now: expect.any(Date),
+      });
+      await service.stop();
+    });
+
     it('does not expedite a result the store refused to persist', async () => {
       const methods = deliveryMethods({
         persistAgentBackgroundToolResult: jest.fn(async () => false),

@@ -60,7 +60,7 @@ export interface AgentTriggerServiceOptions {
 
 /** A principal's deliveries resuming one conversation, or exact deliveries. */
 export type AgentTriggerCompletionExpedite =
-  | { user: string; conversationId: string }
+  | { user: string; conversationId: string; taskIds?: string[] }
   | { deliveryKeys: string[] };
 
 export interface AgentTriggerServiceDeps {
@@ -575,9 +575,16 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
     void runAsSystem(() =>
       expedite({
         ...('user' in input
-          ? { user: input.user, conversationId: input.conversationId }
+          ? {
+              user: input.user,
+              conversationId: input.conversationId,
+              ...(input.taskIds != null && { taskIds: input.taskIds }),
+            }
           : { deliveryKeys: input.deliveryKeys }),
-        sourceIds: COMPLETION_WAKEUP_SOURCES,
+        sourceIds:
+          'user' in input && input.taskIds != null
+            ? [SUBAGENT_COMPLETION_SOURCE]
+            : COMPLETION_WAKEUP_SOURCES,
         now: new Date(),
       }),
     )

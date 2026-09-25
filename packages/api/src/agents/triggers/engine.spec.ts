@@ -175,6 +175,40 @@ describe('createAgentTriggerDeliveryEngine', () => {
     await expect(dispatchesWithin('expedited')).resolves.toBe(2);
   });
 
+  it('reclaims an ordering release made due by a held wake signal without waiting for its stale deadline', async () => {
+    jest.useFakeTimers();
+    try {
+      let claimable = true;
+      const store = storeWith({
+        claimNext: jest.fn(async () => {
+          if (!claimable) return null;
+          claimable = false;
+          return delivery();
+        }),
+        findEarlierUnsettled: jest
+          .fn()
+          .mockResolvedValueOnce({ availableAt: new Date(START.getTime() + 60_000) })
+          .mockResolvedValue(null),
+        release: jest.fn(async () => {
+          claimable = true;
+          return true;
+        }),
+      });
+      const dispatch = jest.fn(async () => successResult());
+      const engine = createAgentTriggerDeliveryEngine(
+        { store, dispatch, now: () => START },
+        { concurrency: 1, tickMs: 60_000, maxIdleTickMs: 60_000 },
+      );
+      engine.start();
+      await jest.advanceTimersByTimeAsync(100);
+      await engine.stop();
+      expect(store.release).toHaveBeenCalledTimes(1);
+      expect(dispatch).toHaveBeenCalledTimes(1);
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
   it('runs each claim pass under the root trace context', async () => {
     const withContext = jest.spyOn(context, 'with');
     const store = storeWith({ claimNext: jest.fn(async () => null) });

@@ -78,8 +78,8 @@ const subagentThreadTaskStore = createSubagentThreadTaskStore(
     releaseOwnerAdmission: db.releaseSubagentAdmission,
     cancelUnroutedTask: cancelUnroutedGeneration,
     onTaskPrepared: completionWakeupHandler,
-    onTaskSettled: (userId, conversationId) =>
-      expediteCompletionWakeups({ user: userId, conversationId }),
+    onTaskSettled: (userId, conversationId, taskIds) =>
+      expediteCompletionWakeups({ user: userId, conversationId, taskIds }),
   },
 );
 
