@@ -52,7 +52,7 @@ import type {
   BackgroundToolResultClaim,
   BackgroundToolResultRecord,
 } from '@librechat/data-schemas';
-import type { AgentToolOptions } from 'librechat-data-provider';
+import type { AgentToolOptions, BackgroundTaskDelivery } from 'librechat-data-provider';
 import type { BackgroundToolResultState } from './harvest';
 import type { CapabilityToolNames } from './selection';
 import {
@@ -1868,7 +1868,7 @@ interface SerializedBackgroundTask {
   /** Whether the result has reached the conversation. `pending` results still
    * arrive as a new turn unless polled or cancelled first. Absent when the task
    * has no automatic delivery, so only a poll ever surfaces its result. */
-  delivery?: 'pending' | 'delivered' | 'failed';
+  delivery?: BackgroundTaskDelivery;
   note?: string;
   error?: string;
 }
@@ -1969,24 +1969,55 @@ function serializePendingCompletion(
   };
 }
 
+/** One conversation's durable delivery evidence, split from what this process holds. */
+export interface DurableCompletionView {
+  /** Undelivered completions this process does not hold. */
+  pending: PendingBackgroundCompletion[];
+  /** Dead-lettered completions this process does not hold; only a poll recovers them. */
+  dead: PendingBackgroundCompletion[];
+  /** Every undelivered task id, present only when the listing was complete: a local
+   * task absent from it was delivered on this or another replica. */
+  pendingTaskIds?: ReadonlySet<string>;
+  deadTaskIds: ReadonlySet<string>;
+}
+
+/** Reads the durable delivery store, which outlives the process-local registry.
+ * Rejects when the store is unreachable; callers keep their local view then. */
+export async function readDurableCompletions(
+  controls: Pick<PendingBackgroundCompletionControls, 'list'>,
+  input: { userId: string; conversationId: string },
+  localTaskIds: ReadonlySet<string>,
+): Promise<DurableCompletionView> {
+  const durable = await controls.list(input);
+  const remote = (completion: PendingBackgroundCompletion) => !localTaskIds.has(completion.taskId);
+  return {
+    pending: durable.completions.filter(remote),
+    dead: durable.dead.filter(remote),
+    ...(durable.complete && {
+      pendingTaskIds: new Set(durable.completions.map(({ taskId }) => taskId)),
+    }),
+    deadTaskIds: new Set(durable.dead.map(({ taskId }) => taskId)),
+  };
+}
+
 /** A local task whose durable delivery settled elsewhere (an automatic wake-up
  * on any replica) no longer holds a local claim; the complete durable listing is
  * the evidence. An incomplete listing proves nothing, so the local view stands. */
-function reconcileDelivery(
-  task: SerializedBackgroundTask,
-  durablePendingTaskIds: ReadonlySet<string> | undefined,
-  deadTaskIds: ReadonlySet<string>,
-): SerializedBackgroundTask {
-  if (task.delivery !== 'pending' || task.status === 'running') {
-    return task;
+export function resolveTaskDelivery(
+  task: BackgroundTask,
+  durable?: Pick<DurableCompletionView, 'pendingTaskIds' | 'deadTaskIds'>,
+): BackgroundTaskDelivery | undefined {
+  const local = taskDelivery(task).delivery;
+  if (local !== 'pending' || task.status === 'running' || durable == null) {
+    return local;
   }
-  if (deadTaskIds.has(task.background_task_id)) {
-    return { ...task, delivery: 'failed' };
+  if (durable.deadTaskIds.has(task.id)) {
+    return 'failed';
   }
-  if (durablePendingTaskIds == null || durablePendingTaskIds.has(task.background_task_id)) {
-    return task;
+  if (durable.pendingTaskIds == null || durable.pendingTaskIds.has(task.id)) {
+    return local;
   }
-  return { ...task, delivery: 'delivered' };
+  return 'delivered';
 }
 
 /** A completion whose automatic delivery dead-lettered and that this process no
@@ -2766,25 +2797,15 @@ export async function runCheckBackgroundTask(params: {
   const tasks = backgroundTaskRegistry.list(userId, conversationId);
   let subagentTasks: SerializedSubagentTask[] = [];
   const listWarnings: string[] = [];
-  let pendingCompletions: PendingBackgroundCompletion[] = [];
-  /** Undelivered task ids from the durable store, when the listing was complete:
-   * a local task absent from it was delivered on this or another replica. */
-  let durablePendingTaskIds: ReadonlySet<string> | undefined;
-  let deadTaskIds: ReadonlySet<string> = new Set();
-  let deadCompletions: PendingBackgroundCompletion[] = [];
+  let durable: DurableCompletionView | undefined;
   if (params.pendingCompletions != null) {
     try {
-      const localTaskIds = new Set(tasks.map((task) => task.id));
-      const durable = await params.pendingCompletions.list({ userId, conversationId });
-      deadTaskIds = new Set(durable.dead.map(({ taskId }) => taskId));
-      /** A dead letter this process no longer holds is still recoverable by a poll. */
-      deadCompletions = durable.dead.filter((completion) => !localTaskIds.has(completion.taskId));
-      pendingCompletions = durable.completions.filter(
-        (completion) => !localTaskIds.has(completion.taskId),
+      durable = await readDurableCompletions(
+        params.pendingCompletions,
+        { userId, conversationId },
+        new Set(tasks.map((task) => task.id)),
       );
-      if (durable.complete) {
-        durablePendingTaskIds = new Set(durable.completions.map(({ taskId }) => taskId));
-      } else {
+      if (durable.pendingTaskIds == null) {
         listWarnings.push(
           'More undelivered results exist than could be listed; some not shown may still arrive as new turns.',
         );
@@ -2823,15 +2844,13 @@ export async function runCheckBackgroundTask(params: {
     }
   }
   const ordinaryTasks = [
-    ...tasks.map((task) =>
-      reconcileDelivery(
-        serializeTask(task, { includeResult: false }),
-        durablePendingTaskIds,
-        deadTaskIds,
-      ),
-    ),
-    ...pendingCompletions.map(serializePendingCompletion),
-    ...deadCompletions.map(serializeDeadCompletion),
+    ...tasks.map((task) => {
+      const serialized = serializeTask(task, { includeResult: false });
+      const delivery = resolveTaskDelivery(task, durable);
+      return delivery == null ? serialized : { ...serialized, delivery };
+    }),
+    ...(durable?.pending ?? []).map(serializePendingCompletion),
+    ...(durable?.dead ?? []).map(serializeDeadCompletion),
   ];
   /** Pending only with durable evidence: whether a subagent's wake-up exists depends on
    * the policy when it was admitted, not on this request's configuration. */

@@ -72,6 +72,7 @@ export type BackgroundToolDeadClaimRecovery = (
  * read from the durable delivery store rather than a process-local registry. */
 export interface PendingBackgroundCompletion {
   taskId: string;
+  toolCallId: string;
   toolName: string;
   dispatchedAt: Date;
   /** The tool's terminal outcome once it settled; absent while it still runs. */

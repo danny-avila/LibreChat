@@ -9,8 +9,14 @@ import {
   useSubagentControlMutation,
   useCancelBackgroundTasksMutation,
 } from '~/data-provider';
+import {
+  countActive,
+  buildTaskRows,
+  subagentTaskKey,
+  findToolCallArgs,
+  countAwaitingDelivery,
+} from './rows';
 import { useParentSubagents } from '~/components/Chat/Subagents/ParentSubagentsProvider';
-import { buildTaskRows, countActive, findToolCallArgs, subagentTaskKey } from './rows';
 import parseJsonField from '~/components/Chat/Messages/Content/Parts/parseJsonField';
 import { getToolCallIntent } from '~/components/Chat/Messages/Content/Parts/intent';
 
@@ -20,6 +26,8 @@ const noRefresh = async () => undefined;
 export type BackgroundTasksView = {
   rows: TaskRow[];
   activeCount: number;
+  /** Finished results that will still arrive as a new agent turn. */
+  awaitingCount: number;
   /** Whether the deployment lets users stop ordinary background tools. */
   toolsCancellable: boolean;
   isStopping: boolean;
@@ -257,6 +265,7 @@ export default function useBackgroundTasks({
   return {
     rows,
     activeCount: countActive(rows),
+    awaitingCount: countAwaitingDelivery(rows),
     toolsCancellable,
     isStopping,
     stopFailed,

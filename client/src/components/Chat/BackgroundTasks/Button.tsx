@@ -30,7 +30,7 @@ function BackgroundTasksButton({
   const [wide, setWide] = useState(false);
   const [popoverElement, setPopoverElement] = useState<HTMLDivElement | null>(null);
   const view = useBackgroundTasks({ conversationId, isSubmitting, now });
-  const { rows, activeCount } = view;
+  const { rows, activeCount, awaitingCount } = view;
 
   useEffect(() => {
     setNow(Date.now());
@@ -57,8 +57,12 @@ function BackgroundTasksButton({
   }
 
   const title = localize('com_ui_background_tasks');
-  const triggerLabel =
-    activeCount > 0 ? localize('com_ui_background_tasks_label', { 0: activeCount }) : title;
+  let triggerLabel = title;
+  if (activeCount > 0) {
+    triggerLabel = localize('com_ui_background_tasks_label', { 0: activeCount });
+  } else if (awaitingCount > 0) {
+    triggerLabel = localize('com_ui_background_tasks_pending_label', { 0: awaitingCount });
+  }
   const running = rows.filter((row) => row.status === 'running' || row.status === 'stopping');
   const finished = rows.filter((row) => row.status !== 'running' && row.status !== 'stopping');
   const anyStoppable = running.some(view.canStop);
@@ -94,10 +98,14 @@ function BackgroundTasksButton({
             className="relative inline-flex size-9 flex-shrink-0 items-center justify-center rounded-xl border border-border-light bg-presentation text-text-primary transition-all ease-in-out hover:bg-surface-tertiary aria-expanded:bg-surface-tertiary"
           >
             <ListTodo className="icon-md" aria-hidden="true" />
-            {activeCount > 0 && (
+            {(activeCount > 0 || awaitingCount > 0) && (
               <span
                 aria-hidden="true"
-                className="absolute -right-0.5 -top-0.5 size-2 animate-pulse rounded-full bg-status-info ring-2 ring-presentation motion-reduce:animate-none"
+                data-testid="background-tasks-indicator"
+                className={cn(
+                  'absolute -right-0.5 -top-0.5 size-2 rounded-full bg-status-info ring-2 ring-presentation',
+                  activeCount > 0 && 'animate-pulse motion-reduce:animate-none',
+                )}
               />
             )}
           </Ariakit.PopoverDisclosure>
