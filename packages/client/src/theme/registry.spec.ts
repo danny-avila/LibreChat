@@ -491,6 +491,7 @@ describe('theme registry', () => {
             shadowLg: '0 1px red; color: red',
             shadowMd: 'not-a-shadow',
             shadowXl: '1px red',
+            shadow2xl: 'not-a-shadow var(--missing)',
             unknownSpacing: '1rem',
           },
         },
@@ -504,6 +505,7 @@ describe('theme registry', () => {
       'Invalid appearance value for shadowLg: 0 1px red; color: red',
       'Invalid appearance value for shadowMd: not-a-shadow',
       'Invalid appearance value for shadowXl: 1px red',
+      'Invalid appearance value for shadow2xl: not-a-shadow var(--missing)',
       'Unknown appearance token: unknownSpacing',
     ]);
     expect(() => resolveTheme(invalidTheme, 'light')).toThrow(TypeError);
@@ -547,6 +549,8 @@ describe('theme registry', () => {
       'inset 0 0 0 1px rgba(0, 0, 0, 0.1), 0 8px 16px -4px #00000033',
       '0 2px 4px var(--brand-shadow)',
       'var(--brand-shadow)',
+      '0 env(safe-area-inset-top) 1px black',
+      '0 1px var(--shadow-color)',
       '0 calc(0.25rem + 1px) 1ch -0.5vw rgb(0 0 0 / 0.1)',
       '0 0 #0000',
     ];

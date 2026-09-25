@@ -186,7 +186,7 @@ const cssLengthDifferencePattern =
   /^calc\(\s*\d*\.?\d+(px|rem|em)\s+[-+]\s+\d*\.?\d+(px|rem|em)\s*\)$/;
 const cssDurationPattern = /^\d*\.?\d+(ms|s)$/;
 const hexColorPattern = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
-const shadowLengthPattern = /^(-?(0|\d*\.?\d+[a-z]+)|(calc|min|max|clamp)\(.*\))$/i;
+const shadowLengthPattern = /^(-?(0|\d*\.?\d+[a-z]+)|(calc|min|max|clamp|env)\(.*\))$/i;
 const shadowColorPattern = /^(#[0-9a-f]{3,8}|[a-z]+|[a-z-]+\(.*\))$/i;
 /** Tailwind composes `--tw-shadow` into one list with the ring layers, where `none` is invalid. */
 const disabledShadow = '0 0 #0000';
@@ -250,21 +250,40 @@ function splitTopLevel(value: string, separator: RegExp): string[] {
   return parts.map((part) => part.trim()).filter((part) => part.length > 0);
 }
 
-/** One layer: two to four lengths, optionally `inset` and one color, per the box-shadow grammar. */
+type ShadowToken = 'length' | 'inset' | 'color' | 'variable';
+
+const classifyShadowToken = (token: string): ShadowToken => {
+  if (shadowLengthPattern.test(token)) {
+    return 'length';
+  }
+  if (token.toLowerCase() === 'inset') {
+    return 'inset';
+  }
+  return /^var\s*\(/i.test(token) ? 'variable' : 'color';
+};
+
+/** A named color is indistinguishable from any other word without the browser's color parser. */
+const isShadowColor = (token: string): boolean =>
+  globalThis.CSS?.supports?.('color', token) ?? shadowColorPattern.test(token);
+
+/**
+ * One layer: two to four lengths, optionally `inset` and one color, per the box-shadow grammar.
+ * A `var()` may stand for any number of those parts, so a layer holding one only has to keep
+ * what is written around it within the grammar.
+ */
 function isShadowLayer(layer: string): boolean {
   const tokens = splitTopLevel(layer, /\s/);
-  const lengths = tokens.filter((token) => shadowLengthPattern.test(token)).length;
-  const insets = tokens.filter((token) => token.toLowerCase() === 'inset').length;
-  const colors = tokens.length - lengths - insets;
-  const color = tokens.find(
-    (token) => !shadowLengthPattern.test(token) && token.toLowerCase() !== 'inset',
-  );
+  const kinds = tokens.map(classifyShadowToken);
+  const count = (kind: ShadowToken) => kinds.filter((each) => each === kind).length;
+  const lengths = count('length');
+  const colors = tokens.filter((_, i) => kinds[i] === 'color');
+  const hasVariable = count('variable') > 0;
   return (
-    lengths >= 2 &&
+    (hasVariable || lengths >= 2) &&
     lengths <= 4 &&
-    insets <= 1 &&
-    colors <= 1 &&
-    (color === undefined || shadowColorPattern.test(color))
+    count('inset') <= 1 &&
+    colors.length <= 1 &&
+    colors.every(isShadowColor)
   );
 }
 
@@ -275,15 +294,14 @@ const isShadow = (value: unknown): value is string => {
   if (value.trim().toLowerCase() === 'none') {
     return true;
   }
-  /** A `var()` can stand for any part of the list, so only the browser can judge the whole. */
-  if (/var\s*\(/i.test(value)) {
-    return globalThis.CSS?.supports?.('box-shadow', value) ?? true;
-  }
   const layers = splitTopLevel(value, /,/);
   if (layers.length === 0 || !layers.every(isShadowLayer)) {
     return false;
   }
-  /** The structure check cannot tell a named color from any other word; a browser can. */
+  /** A browser defers its own check for a value holding `var()` and would accept anything. */
+  if (/var\s*\(/i.test(value)) {
+    return true;
+  }
   return globalThis.CSS?.supports?.('box-shadow', value) ?? true;
 };
 const isDuration = (value: unknown): value is string =>
