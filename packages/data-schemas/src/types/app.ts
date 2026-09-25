@@ -112,6 +112,8 @@ export interface AppConfig {
   fileConfig?: TFileConfig;
   /** Secure image links configuration, enabled unless explicitly disabled */
   secureImageLinks?: TCustomConfig['secureImageLinks'];
+  /** Validation limits for the conversation list's filter facets */
+  conversationList?: TCustomConfig['conversationList'];
   /** Processed model specifications */
   modelSpecs?: TCustomConfig['modelSpecs'];
   /** Available tools */

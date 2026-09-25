@@ -42,6 +42,9 @@ jest.mock('@librechat/api', () =>
 jest.mock('@librechat/data-schemas', () => require(MOCKS).dataSchemas());
 jest.mock('librechat-data-provider', () => require(MOCKS).dataProvider());
 jest.mock('~/models', () => require(MOCKS).sharedModels());
+jest.mock('~/server/services/Config', () => ({
+  getAppConfig: jest.fn().mockResolvedValue({}),
+}));
 jest.mock('~/server/middleware/requireJwtAuth', () => require(MOCKS).requireJwtAuth());
 jest.mock('~/server/middleware', () => require(MOCKS).middlewarePassthrough());
 jest.mock('~/server/utils/import/fork', () => require(MOCKS).forkUtils());
@@ -87,11 +90,7 @@ describe('Convos Routes', () => {
       if (tenantId) {
         req.user.tenantId = tenantId;
       }
-      const endpointLimit = req.get('x-test-endpoint-limit');
       req.config = {
-        ...(endpointLimit
-          ? { conversationList: { maxEndpointFilters: Number(endpointLimit) } }
-          : {}),
         messageFilter: {
           pii: {
             starterPatterns: ['sk_prefix'],
@@ -1880,6 +1879,7 @@ describe('Convos Routes', () => {
 
   describe('GET / list facets', () => {
     const { getConvosByCursor } = require('~/models');
+    const { getAppConfig } = require('~/server/services/Config');
 
     beforeEach(() => {
       getConvosByCursor.mockResolvedValue({ conversations: [], nextCursor: null });
@@ -1940,16 +1940,16 @@ describe('Convos Routes', () => {
       expect(getConvosByCursor).not.toHaveBeenCalled();
     });
 
+    /** The limits are deployment-level, so the list reads the base config instead of
+     *  resolving the caller's merged config on every sidebar request. */
     it('enforces the endpoint limit the deployment configures', async () => {
       const query = 'endpoints=openAI&endpoints=agents&endpoints=google';
 
       const withinDefault = await request(app).get('/api/convos').query(query);
       expect(withinDefault.status).toBe(200);
 
-      const overConfigured = await request(app)
-        .get('/api/convos')
-        .set('x-test-endpoint-limit', '2')
-        .query(query);
+      getAppConfig.mockResolvedValueOnce({ conversationList: { maxEndpointFilters: 2 } });
+      const overConfigured = await request(app).get('/api/convos').query(query);
       expect(overConfigured.status).toBe(400);
       expect(overConfigured.body.error).toMatch(/at most 2 names/);
     });

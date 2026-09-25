@@ -203,6 +203,7 @@ export const AppService = async (params?: {
     fileStrategies: config.fileStrategies,
     cloudfront: config.cloudfront as AppConfig['cloudfront'],
     secureImageLinks: config.secureImageLinks !== false,
+    conversationList: config.conversationList,
   };
 
   const agentsDefaults = agentsConfigSetup(config);

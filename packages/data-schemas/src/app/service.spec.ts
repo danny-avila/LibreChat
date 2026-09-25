@@ -309,6 +309,26 @@ describe('AppService MCP App sandbox configuration', () => {
   });
 });
 
+describe('AppService conversation list limits', () => {
+  it('carries the configured filter limits onto the app config', async () => {
+    const result = await AppService({
+      config: {
+        conversationList: { maxEndpointFilters: 200, maxEndpointNameLength: 256 },
+      } as DeepPartial<TCustomConfig>,
+    });
+
+    expect(result.conversationList).toEqual({
+      maxEndpointFilters: 200,
+      maxEndpointNameLength: 256,
+    });
+  });
+
+  it('leaves the limits unset when the deployment configures none', async () => {
+    const result = await AppService({ config: {} as DeepPartial<TCustomConfig> });
+    expect(result.conversationList).toBeUndefined();
+  });
+});
+
 describe('AppService memory capability', () => {
   it('strips the memory capability when no memory config is present', async () => {
     const result = await AppService({ config: {} as DeepPartial<TCustomConfig> });

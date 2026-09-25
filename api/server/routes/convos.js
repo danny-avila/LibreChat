@@ -49,6 +49,7 @@ const { forkConversation, duplicateConversation } = require('~/server/utils/impo
 const { storage, importFileFilter } = require('~/server/routes/files/multer');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 const { importConversations } = require('~/server/utils/import');
+const { getAppConfig } = require('~/server/services/Config');
 const subagentThreadTaskStore = require('~/server/services/Endpoints/agents/subagentThreadStore');
 const getLogStores = require('~/cache/getLogStores');
 const db = require('~/models');
@@ -156,7 +157,7 @@ router.use(requireJwtAuth);
 const isValidProjectFilter = (projectId) =>
   !projectId || projectId === 'unassigned' || /^[a-f\d]{24}$/i.test(projectId);
 
-router.get('/', configMiddleware, async (req, res) => {
+router.get('/', async (req, res) => {
   const limit = normalizeLimit(req.query.limit);
   const cursor = req.query.cursor;
   const isArchived = isEnabled(req.query.isArchived);
@@ -181,10 +182,8 @@ router.get('/', configMiddleware, async (req, res) => {
     tags = Array.isArray(req.query.tags) ? req.query.tags : [req.query.tags];
   }
 
-  const { filters, error: filterError } = parseConversationListFilters(req.query, {
-    maxEndpointFilters: req.config?.conversationList?.maxEndpointFilters,
-    maxEndpointNameLength: req.config?.conversationList?.maxEndpointNameLength,
-  });
+  const { conversationList } = await getAppConfig({ baseOnly: true });
+  const { filters, error: filterError } = parseConversationListFilters(req.query, conversationList);
   if (filterError) {
     return res.status(400).json({ error: filterError });
   }
