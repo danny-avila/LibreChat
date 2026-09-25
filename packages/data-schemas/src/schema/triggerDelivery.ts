@@ -253,6 +253,8 @@ triggerDeliverySchema.index(
   { sparse: true },
 );
 triggerDeliverySchema.index({ status: 1, updatedAt: -1 });
+/** One user's waiting deliveries, read when their readiness changes. */
+triggerDeliverySchema.index({ user: 1, status: 1, availableAt: 1 });
 triggerDeliverySchema.index({ 'actorReceipt.resolution': 1 }, { sparse: true });
 triggerDeliverySchema.index({ user: 1, actorActionAdmittedAt: 1 }, { sparse: true });
 triggerDeliverySchema.index({ stagingRecoveryAt: 1 }, { sparse: true });

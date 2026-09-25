@@ -23,6 +23,7 @@ import type {
 import type { AgentContinueTriggerEnvelope } from './triggers/envelope';
 import type { AgentTriggerDispatchContext } from './triggers/dispatch';
 import type { AgentTriggerEnqueueOptions } from './triggers/delivery';
+import { WAITING_RETRY_CAP_MS, waitingRetryAfter } from './triggers/backoff';
 import { BACKGROUND_TOOL_PRODUCER_LEASE_MS } from './backgroundCompletion';
 import { SUBAGENT_COMPLETION_SOURCE } from './subagentCompletionWakeup';
 import { createAgentTriggerEnvelope } from './triggers/envelope';
@@ -97,6 +98,8 @@ export interface BackgroundToolCompletionWakeupResolverDeps {
   methods: WakeupMethods;
   getGenerationJob: (conversationId: string) => Promise<GenerationState | null>;
   getResultBatchSize?: () => number | undefined;
+  /** Longest a waiting delivery re-checks readiness; the backoff default otherwise. */
+  getWaitMaxIntervalMs?: () => number | undefined;
 }
 
 function executionError(
@@ -153,6 +156,12 @@ function isParentActive(job: GenerationState | null): boolean {
     job?.status === 'requires_action' ||
     job?.metadata?.terminalPersistencePending === true
   );
+}
+
+/** A running or approval-paused parent can stay busy for hours; one that has
+ * settled and is only finishing terminal persistence clears within moments. */
+function isParentWorking(job: GenerationState | null): boolean {
+  return job?.status === 'running' || job?.status === 'requires_action';
 }
 
 function timestamp(message: Pick<IMessage, 'createdAt'>): number {
@@ -255,9 +264,12 @@ export function createBackgroundToolCompletionWakeupResolver({
   methods,
   getGenerationJob,
   getResultBatchSize,
+  getWaitMaxIntervalMs,
 }: BackgroundToolCompletionWakeupResolverDeps): NonNullable<
   AgentTriggerExecutionHostDeps['prepareContinue']
 > {
+  const waitingRetry = (receivedAt: number): string =>
+    waitingRetryAfter(receivedAt, Date.now(), getWaitMaxIntervalMs?.() ?? WAITING_RETRY_CAP_MS);
   return async (
     envelope: AgentContinueTriggerEnvelope,
     context: AgentTriggerDispatchContext,
@@ -291,7 +303,7 @@ export function createBackgroundToolCompletionWakeupResolver({
         code: 'PARENT_NOT_READY',
         retryable: true,
         status: 409,
-        retryAfter: '1',
+        retryAfter: isParentWorking(parentJob) ? waitingRetry(envelope.receivedAt) : '1',
         deferWithoutAttempt: true,
       });
     }
@@ -529,7 +541,7 @@ export function createBackgroundToolCompletionWakeupResolver({
       code: 'BACKGROUND_TOOL_RESULT_NOT_READY',
       retryable: true,
       status: 409,
-      retryAfter: '1',
+      retryAfter: waitingRetry(envelope.receivedAt),
       deferWithoutAttempt: true,
     });
   };

@@ -2714,6 +2714,18 @@ describe('agent trigger delivery methods', () => {
     );
   });
 
+  it("indexes a user's waiting deliveries for user-scoped readiness reads", async () => {
+    const deliveryIndexes = await Delivery.collection.indexes();
+    const userIndex = deliveryIndexes.find(
+      (index) =>
+        JSON.stringify(index.key) === JSON.stringify({ user: 1, status: 1, availableAt: 1 }),
+    );
+    expect(userIndex).toBeDefined();
+    /** A sparse index would skip every row the expedite and listing reads need. */
+    expect(userIndex?.sparse).toBeUndefined();
+    expect(userIndex?.partialFilterExpression).toBeUndefined();
+  });
+
   it('publishes an idempotent replay on its persisted ordering lane', async () => {
     const user = new mongoose.Types.ObjectId();
     const input = enqueueInput({ user, orderingKey: 'original-lane' });

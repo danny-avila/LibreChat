@@ -1287,6 +1287,59 @@ describe('createSubagentCompletionWakeupResolver', () => {
     expect(snapshot.value.note).toContain('Do not infer that no other children ran');
   });
 
+  it('backs off by waiting age while the child task is still running', async () => {
+    const { methods } = resolverMethods();
+    methods.getMessages.mockImplementation(async (filter: { conversationId: string }) =>
+      filter.conversationId === 'conversation-1'
+        ? [
+            {
+              messageId: 'response-1',
+              parentMessageId: 'user-1',
+              isCreatedByUser: false,
+              createdAt: new Date(NOW - 30),
+            },
+          ]
+        : [{ messageId: 'task-1:user', conversationId: 'thread-1', isCreatedByUser: true }],
+    );
+    const resolverAt = (offsetMs: number) =>
+      createSubagentCompletionWakeupResolver({
+        methods: methods as never,
+        getGenerationJob: async () => null,
+        now: () => NOW + offsetMs,
+      });
+
+    await expect(
+      resolverAt(5_000)(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
+    ).rejects.toMatchObject({ code: 'CHILD_NOT_READY', retryAfter: '5' });
+    await expect(
+      resolverAt(90_000)(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
+    ).rejects.toMatchObject({ code: 'CHILD_NOT_READY', retryAfter: '9' });
+    await expect(
+      resolverAt(20 * 60_000)(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
+    ).rejects.toMatchObject({ code: 'CHILD_NOT_READY', retryAfter: '60' });
+    await expect(
+      createSubagentCompletionWakeupResolver({
+        methods: methods as never,
+        getGenerationJob: async () => null,
+        now: () => NOW + 20 * 60_000,
+        getWaitMaxIntervalMs: () => 30_000,
+      })(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
+    ).rejects.toMatchObject({ code: 'CHILD_NOT_READY', retryAfter: '30' });
+  });
+
+  it('backs off by waiting age while the parent generation keeps running', async () => {
+    const { methods } = resolverMethods();
+    const resolve = createSubagentCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => ({ status: 'running' }),
+      now: () => NOW + 150_000,
+    });
+
+    await expect(
+      resolve(wakeupEnvelope(), { idempotencyKey: 'trigger_claim_1' } as never),
+    ).rejects.toMatchObject({ code: 'PARENT_NOT_READY', retryAfter: '15' });
+  });
+
   it('dead-letters a child whose process disappeared after the task timeout grace', async () => {
     const { methods } = resolverMethods();
     methods.getMessages.mockImplementation(async (filter: { conversationId: string }) =>
