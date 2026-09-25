@@ -340,13 +340,21 @@ describe('applyTheme', () => {
     expect(root.style.getPropertyValue('--border-control')).toBe('60 61 62');
   });
 
-  it('outlines controls with secondary text when a legacy border is too quiet', () => {
+  it('carries a legacy light border onto the control outline', () => {
+    const root = document.documentElement;
+
+    applyTheme({ 'rgb-border-light': '110 111 112' }, root, defaultTheme);
+
+    expect(root.style.getPropertyValue('--border-control')).toBe('110 111 112');
+  });
+
+  it('keeps the bundled outline when the legacy borders are too quiet', () => {
     const root = document.documentElement;
 
     applyTheme({ 'rgb-border-medium': '240 240 240' }, root, defaultTheme);
 
     expect(root.style.getPropertyValue('--border-control')).toBe(
-      defaultTheme['rgb-text-secondary'],
+      defaultTheme['rgb-border-control'],
     );
   });
 

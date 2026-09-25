@@ -71,10 +71,7 @@ function mapColors(colors: IThemeRGB, base?: IThemeRGB): Array<[string, string]>
     variables.push(['--chart-widget-stroke', colors['rgb-border-light']]);
   }
 
-  const legacyControlBorder =
-    colors['rgb-border-control'] === undefined && colors['rgb-border-medium'] !== undefined
-      ? controlBorderFallback({ ...base, ...colors })
-      : undefined;
+  const legacyControlBorder = controlBorderFallback(colors, base);
   if (legacyControlBorder !== undefined) {
     variables.push(['--border-control', legacyControlBorder]);
   }

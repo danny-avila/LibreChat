@@ -58,26 +58,51 @@ const CONTROL_CANVASES: readonly (keyof IThemeRGB)[] = Object.freeze([
   'rgb-surface-chat',
 ]);
 
-/**
- * The control outline for a theme that paints its own borders but predates
- * `rgb-border-control`. Controls were outlined with `border-medium` before the
- * role existed, so that value is kept wherever it already clears the 3:1
- * non-text floor on the theme's own canvases. A quieter one would leave every
- * field without a visible edge, so the outline falls to the theme's secondary
- * text instead, the one colour a theme already keeps legible on those canvases.
- * `colors` is the palette as it will be painted: the theme over its base.
- */
-export function controlBorderFallback(colors: IThemeRGB): string | undefined {
-  const border = colors['rgb-border-medium'];
-  if (border === undefined) {
-    return undefined;
-  }
-  const clears = CONTROL_CANVASES.every((canvas) => {
-    const surface = colors[canvas];
-    const ratio = surface === undefined ? undefined : contrastRatio(border, surface);
+/** What a theme has to paint to have coordinated the outline its controls wore. */
+const CONTROL_SURROUNDINGS: readonly (keyof IThemeRGB)[] = Object.freeze([
+  'rgb-border-light',
+  'rgb-border-medium',
+  ...CONTROL_CANVASES,
+]);
+
+const clearsControlCanvases = (outline: string, palette: IThemeRGB): boolean =>
+  CONTROL_CANVASES.every((canvas) => {
+    const surface = palette[canvas];
+    const ratio = surface === undefined ? undefined : contrastRatio(outline, surface);
     return ratio === undefined || ratio >= NON_TEXT_CONTRAST;
   });
-  return clears ? border : (colors['rgb-text-secondary'] ?? border);
+
+/**
+ * The control outline for a stored or environment theme that predates
+ * `rgb-border-control`. Controls drew `border-light` (fields, dropdowns,
+ * comboboxes) or `border-medium` (select, OTP) before the role existed, so a
+ * theme that painted either, or the canvases they sit on, coordinated an
+ * outline this role now replaces. The first candidate that clears the 3:1
+ * non-text floor on the theme's own canvases wins: its light border, its
+ * medium border, the bundled role, and last its secondary text, the one colour
+ * a theme already keeps legible there. A theme that names none of these keeps
+ * the bundled role, and one that names the role keeps it as written.
+ * `base` is the bundled palette for the mode, which the theme is painted over.
+ */
+export function controlBorderFallback(colors: IThemeRGB, base: IThemeRGB = {}): string | undefined {
+  if (colors['rgb-border-control'] !== undefined) {
+    return undefined;
+  }
+  const ownsControlSurroundings = CONTROL_SURROUNDINGS.some((token) => colors[token] !== undefined);
+  if (!ownsControlSurroundings) {
+    return undefined;
+  }
+  const palette: IThemeRGB = { ...base, ...colors };
+  const candidates = [
+    colors['rgb-border-light'],
+    colors['rgb-border-medium'],
+    base['rgb-border-control'],
+  ].filter((value): value is string => value !== undefined);
+  return (
+    candidates.find((candidate) => clearsControlCanvases(candidate, palette)) ??
+    palette['rgb-text-secondary'] ??
+    candidates[0]
+  );
 }
 
 export const themeAppearanceProperties: Readonly<
@@ -614,16 +639,8 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
     customColors?.['rgb-border-light'] !== undefined
       ? { 'rgb-chart-widget-stroke': customColors['rgb-border-light'] }
       : {};
-  /**
-   * A theme that paints its own borders takes its control outline from them
-   * rather than LibreChat's gray, which was never measured against that
-   * theme's canvases; see `controlBorderFallback`.
-   */
   const borderControlSource =
-    customColors?.['rgb-border-control'] === undefined &&
-    customColors?.['rgb-border-medium'] !== undefined
-      ? controlBorderFallback({ ...baseColors, ...customColors })
-      : undefined;
+    customColors != null ? controlBorderFallback(customColors, baseColors) : undefined;
   const borderControlFallback =
     borderControlSource !== undefined ? { 'rgb-border-control': borderControlSource } : {};
   /**

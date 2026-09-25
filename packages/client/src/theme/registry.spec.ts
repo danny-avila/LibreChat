@@ -263,17 +263,49 @@ describe('theme registry', () => {
     expect(resolved.colors['rgb-border-control']).toBe('150 151 152');
   });
 
-  it('outlines controls with secondary text when a legacy border is too quiet', () => {
+  it('keeps a legacy light border that clears 3:1, the role most controls drew', () => {
     const resolved = resolveTheme(
       {
         version: 1,
-        name: 'quiet-control-border-reference',
+        name: 'light-border-reference',
+        modes: {
+          light: { colors: { 'rgb-border-light': '110 111 112', 'rgb-border-medium': '90 91 92' } },
+        },
+      },
+      'light',
+    );
+
+    expect(resolved.colors['rgb-border-control']).toBe('110 111 112');
+  });
+
+  it('passes over quiet legacy borders to the bundled outline where it clears 3:1', () => {
+    const resolved = resolveTheme(
+      {
+        version: 1,
+        name: 'quiet-border-reference',
+        modes: {
+          light: {
+            colors: { 'rgb-border-light': '245 245 245', 'rgb-border-medium': '240 240 240' },
+          },
+        },
+      },
+      'light',
+    );
+
+    expect(resolved.colors['rgb-border-control']).toBe(defaultTheme['rgb-border-control']);
+  });
+
+  it('outlines controls with secondary text when no border clears its canvases', () => {
+    const resolved = resolveTheme(
+      {
+        version: 1,
+        name: 'mid-gray-canvas-reference',
         modes: {
           light: {
             colors: {
-              'rgb-surface-primary': '255 255 255',
-              'rgb-border-medium': '240 240 240',
-              'rgb-text-secondary': '80 81 82',
+              'rgb-surface-primary': '140 140 140',
+              'rgb-border-medium': '150 150 150',
+              'rgb-text-secondary': '20 21 22',
             },
           },
         },
@@ -281,7 +313,7 @@ describe('theme registry', () => {
       'light',
     );
 
-    expect(resolved.colors['rgb-border-control']).toBe('80 81 82');
+    expect(resolved.colors['rgb-border-control']).toBe('20 21 22');
   });
 
   it('gives a theme that leaves every border alone the bundled control outline', () => {
