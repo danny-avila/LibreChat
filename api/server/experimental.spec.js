@@ -23,6 +23,15 @@ describe('Experimental server configuration', () => {
     expect(source).toMatch(/if \(shuttingDown\) \{[\s\S]*?return;[\s\S]*?Starting a new worker/);
   });
 
+  it("drains background tasks within the primary's cluster shutdown deadline", () => {
+    expect(source).toMatch(
+      /registerBackgroundTaskShutdown\(\{[\s\S]*?getBudgetMs: getClusterShutdownBudgetMs,[\s\S]*?\}\);/,
+    );
+    expect(source).toMatch(
+      /const destroyGenerationJobManager = \(\) => \{\s*const budgetMs = getClusterShutdownBudgetMs\(\);/,
+    );
+  });
+
   it('starts approval expiry after installing the scheduled-run callback', () => {
     const handlerIndex = source.indexOf(
       'GenerationJobManager.setApprovalExpiredHandler(recordExpiredScheduleApproval);',

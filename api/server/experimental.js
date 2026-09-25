@@ -45,6 +45,7 @@ const {
   registerShutdownTask,
   getRemainingShutdownMs,
   getShutdownElapsedMs,
+  registerBackgroundTaskShutdown,
   configureMessageFilterRegexValidator,
   configureFileConfigRegexEngine,
   configureAgentEventRuntime,
@@ -386,11 +387,12 @@ if (cluster.isMaster) {
    *  after signalling. Measure against that, and hold back a reserve for the tasks after this
    *  one. Abandoning an unrecorded drain fences the next generation permanently. */
   const CLUSTER_TEARDOWN_RESERVE_MS = 3_000;
-  const destroyGenerationJobManager = () => {
+  /** Shutdown time this worker actually has, or null when it is not shutting down. */
+  const getClusterShutdownBudgetMs = () => {
     const remaining = getRemainingShutdownMs();
     const elapsed = getShutdownElapsedMs();
     if (remaining == null || elapsed == null) {
-      return GenerationJobManager.destroy();
+      return null;
     }
     /** Prefer the deadline the primary actually set. The elapsed-based estimate starts
      *  counting only when this worker's signal handler ran, which lags the primary's timer
@@ -399,11 +401,15 @@ if (cluster.isMaster) {
       clusterShutdownDeadlineAt != null
         ? clusterShutdownDeadlineAt - Date.now()
         : CLUSTER_FORCE_EXIT_MS - elapsed;
+    return Math.min(remaining, primaryRemaining);
+  };
+  const destroyGenerationJobManager = () => {
+    const budgetMs = getClusterShutdownBudgetMs();
+    if (budgetMs == null) {
+      return GenerationJobManager.destroy();
+    }
     return GenerationJobManager.destroy({
-      settlementBudgetMs: Math.max(
-        0,
-        Math.min(remaining, primaryRemaining) - CLUSTER_TEARDOWN_RESERVE_MS,
-      ),
+      settlementBudgetMs: Math.max(0, budgetMs - CLUSTER_TEARDOWN_RESERVE_MS),
     });
   };
   // Tear down stream resources before shared caches and telemetry exporters shut down.
@@ -508,6 +514,10 @@ if (cluster.isMaster) {
     // principal) still merges DB `__base__` overrides, which must not drive which hook
     // modules load in every worker (matches api/server/index.js's baseOnly usage).
     const baseAppConfig = await getAppConfig({ baseOnly: true });
+    registerBackgroundTaskShutdown({
+      interruptGraceMs: baseAppConfig?.endpoints?.agents?.backgroundTasks?.shutdownInterruptGraceMs,
+      getBudgetMs: getClusterShutdownBudgetMs,
+    });
     configureAgentEventRuntime(baseAppConfig?.endpoints?.agents?.eventDriven);
     const toolApproval = baseAppConfig?.endpoints?.agents?.toolApproval;
     await loadToolApprovalHooks(toolApproval?.enabled ? toolApproval.hooks : undefined, {
