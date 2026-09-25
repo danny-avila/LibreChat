@@ -739,6 +739,7 @@ describe('MCPServersRegistry', () => {
         'srv',
         yamlConfig,
       );
+      const getServerConfigSpy = jest.spyOn(registry, 'getServerConfig');
 
       await expect(
         registry.resolveCachedAppServerConfig({
@@ -749,6 +750,7 @@ describe('MCPServersRegistry', () => {
           ...allowlists,
         }),
       ).resolves.toEqual({ serverConfig: storedYamlConfig, connectionOwner: 'operator' });
+      expect(getServerConfigSpy).toHaveBeenCalledWith('srv', 'user-1');
     });
   });
 
