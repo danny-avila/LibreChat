@@ -173,7 +173,7 @@ function ControlCombobox({
         className={cn(
           'bg-surface-secondary flex items-center justify-center gap-2 rounded-full',
           'text-text-primary hover:bg-surface-tertiary',
-          'border-border-light border',
+          'border-border-control border',
           isCollapsed ? 'h-9 w-9' : 'h-9 w-full rounded-xl px-3 py-2 text-sm',
           variant === 'field' && cn(fieldControl, 'hover:bg-surface-hover justify-start'),
           className,

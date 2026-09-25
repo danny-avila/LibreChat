@@ -150,7 +150,7 @@ const Dropdown: React.FC<DropdownProps> = ({
         store={selectProps}
         disabled={disabled}
         className={cn(
-          'border-border-light text-text-primary hover:bg-surface-hover hover:text-text-primary relative inline-flex items-center justify-between rounded-xl border bg-transparent py-2 text-sm transition-all duration-200 ease-in-out',
+          'border-border-control text-text-primary hover:bg-surface-hover hover:text-text-primary relative inline-flex items-center justify-between rounded-xl border bg-transparent py-2 text-sm transition-all duration-200 ease-in-out',
           'disabled:hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-transparent',
           /** Horizontal padding would squeeze the icon, which flex-shrinks to fit */
           iconOnly ? 'size-10 justify-center px-0' : 'w-fit gap-2 px-3',
@@ -214,7 +214,7 @@ const Dropdown: React.FC<DropdownProps> = ({
                   autoSelect
                   placeholder={searchPlaceholder}
                   aria-label={searchPlaceholder}
-                  className="border-border-light text-text-primary placeholder:text-text-secondary w-full rounded-lg border bg-inherit py-1.5 pr-2 pl-8 text-sm focus:outline-hidden"
+                  className="border-border-control text-text-primary placeholder:text-text-secondary w-full rounded-lg border bg-inherit py-1.5 pr-2 pl-8 text-sm focus:outline-hidden"
                 />
               </div>
             </div>

@@ -1,5 +1,6 @@
 import type { IThemeAppearance, IThemeBrands, IThemeRGB, ResolvedThemeDefinition } from '../types';
 import {
+  controlBorderFallback,
   MARK_NEIGHBOURHOOD,
   themeAppearanceProperties,
   themeBrandTokens,
@@ -68,6 +69,11 @@ function mapColors(colors: IThemeRGB, base?: IThemeRGB): Array<[string, string]>
 
   if (colors['rgb-chart-widget-stroke'] === undefined && colors['rgb-border-light'] !== undefined) {
     variables.push(['--chart-widget-stroke', colors['rgb-border-light']]);
+  }
+
+  const legacyControlBorder = controlBorderFallback(colors, base);
+  if (legacyControlBorder !== undefined) {
+    variables.push(['--border-control', legacyControlBorder]);
   }
 
   /**

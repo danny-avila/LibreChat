@@ -83,7 +83,7 @@ const SecretInput: React.ForwardRefExoticComponent<
           id={id}
           type={isVisible ? 'text' : 'password'}
           className={cn(
-            'border-border-light placeholder:text-text-secondary flex h-10 w-full rounded-lg border bg-transparent py-2 pl-3 text-sm focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50',
+            'border-border-control placeholder:text-text-secondary flex h-10 w-full rounded-lg border bg-transparent py-2 pl-3 text-sm focus-visible:outline-hidden disabled:cursor-not-allowed disabled:opacity-50',
             colorTransition && 'transition-colors',
             className ?? '',
             copyButton != null || showCopy ? 'pr-20' : 'pr-11',
