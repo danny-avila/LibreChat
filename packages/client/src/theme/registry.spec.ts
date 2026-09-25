@@ -255,12 +255,33 @@ describe('theme registry', () => {
       {
         version: 1,
         name: 'legacy-control-border-reference',
-        modes: { dark: { colors: { 'rgb-border-medium': '60 61 62' } } },
+        modes: { dark: { colors: { 'rgb-border-medium': '150 151 152' } } },
       },
       'dark',
     );
 
-    expect(resolved.colors['rgb-border-control']).toBe('60 61 62');
+    expect(resolved.colors['rgb-border-control']).toBe('150 151 152');
+  });
+
+  it('outlines controls with secondary text when a legacy border is too quiet', () => {
+    const resolved = resolveTheme(
+      {
+        version: 1,
+        name: 'quiet-control-border-reference',
+        modes: {
+          light: {
+            colors: {
+              'rgb-surface-primary': '255 255 255',
+              'rgb-border-medium': '240 240 240',
+              'rgb-text-secondary': '80 81 82',
+            },
+          },
+        },
+      },
+      'light',
+    );
+
+    expect(resolved.colors['rgb-border-control']).toBe('80 81 82');
   });
 
   it('gives a theme that leaves every border alone the bundled control outline', () => {

@@ -9,6 +9,7 @@ import type {
   ThemeMode,
 } from './types';
 import { highContrastDarkTheme, highContrastLightTheme } from './themes/highContrast';
+import { contrastRatio } from './utils/contrast';
 import { defaultTheme } from './themes/default';
 import { darkTheme } from './themes/dark';
 export const THEME_VERSION = 1 as const;
@@ -45,6 +46,39 @@ export const MARK_NEIGHBOURHOOD: readonly (keyof IThemeRGB)[] = Object.freeze([
   'rgb-surface-secondary',
   'rgb-surface-tertiary',
 ]);
+
+const NON_TEXT_CONTRAST = 3;
+
+/** The canvases a form control is painted on, which its outline is measured against. */
+const CONTROL_CANVASES: readonly (keyof IThemeRGB)[] = Object.freeze([
+  'rgb-surface-primary',
+  'rgb-surface-secondary',
+  'rgb-surface-tertiary',
+  'rgb-surface-dialog',
+  'rgb-surface-chat',
+]);
+
+/**
+ * The control outline for a theme that paints its own borders but predates
+ * `rgb-border-control`. Controls were outlined with `border-medium` before the
+ * role existed, so that value is kept wherever it already clears the 3:1
+ * non-text floor on the theme's own canvases. A quieter one would leave every
+ * field without a visible edge, so the outline falls to the theme's secondary
+ * text instead, the one colour a theme already keeps legible on those canvases.
+ * `colors` is the palette as it will be painted: the theme over its base.
+ */
+export function controlBorderFallback(colors: IThemeRGB): string | undefined {
+  const border = colors['rgb-border-medium'];
+  if (border === undefined) {
+    return undefined;
+  }
+  const clears = CONTROL_CANVASES.every((canvas) => {
+    const surface = colors[canvas];
+    const ratio = surface === undefined ? undefined : contrastRatio(border, surface);
+    return ratio === undefined || ratio >= NON_TEXT_CONTRAST;
+  });
+  return clears ? border : (colors['rgb-text-secondary'] ?? border);
+}
 
 export const themeAppearanceProperties: Readonly<
   Record<keyof IThemeAppearance, `--theme-${string}`>
@@ -581,15 +615,17 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
       ? { 'rgb-chart-widget-stroke': customColors['rgb-border-light'] }
       : {};
   /**
-   * Form controls were outlined with `border-medium` before they had a role, so
-   * a theme that paints its own borders keeps the outline it drew rather than
-   * LibreChat's gray, which was never measured against that theme's canvas.
+   * A theme that paints its own borders takes its control outline from them
+   * rather than LibreChat's gray, which was never measured against that
+   * theme's canvases; see `controlBorderFallback`.
    */
-  const borderControlFallback =
+  const borderControlSource =
     customColors?.['rgb-border-control'] === undefined &&
     customColors?.['rgb-border-medium'] !== undefined
-      ? { 'rgb-border-control': customColors['rgb-border-medium'] }
-      : {};
+      ? controlBorderFallback({ ...baseColors, ...customColors })
+      : undefined;
+  const borderControlFallback =
+    borderControlSource !== undefined ? { 'rgb-border-control': borderControlSource } : {};
   /**
    * Slot 8 arrived after the seven-slot scale shipped, so a stored or
    * environment theme that paints its own scale cannot name it. Filling the

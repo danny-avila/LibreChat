@@ -77,18 +77,50 @@ function outlineAgainstSurface(page: Page): Promise<{ border: string; surface: s
   });
 }
 
-const PALETTES: Array<{ name: string; appearance: Appearance; definition?: unknown }> = [
-  { name: 'default light', appearance: 'light' },
-  { name: 'default dark', appearance: 'dark' },
-  { name: 'high contrast light', appearance: 'high-contrast-light' },
-  { name: 'high contrast dark', appearance: 'high-contrast-dark' },
-  { name: 'clickhouse light', appearance: 'light', definition: clickHouseTheme },
-  { name: 'clickhouse dark', appearance: 'dark', definition: clickHouseTheme },
+/** Each tag is written out whole: the runner finds a scenario by its literal tag. */
+const PALETTES: Array<{
+  name: string;
+  tag: string;
+  appearance: Appearance;
+  definition?: unknown;
+}> = [
+  {
+    name: 'default light',
+    tag: '@scenario:control-outline-clears-3-to-1-default-light',
+    appearance: 'light',
+  },
+  {
+    name: 'default dark',
+    tag: '@scenario:control-outline-clears-3-to-1-default-dark',
+    appearance: 'dark',
+  },
+  {
+    name: 'high contrast light',
+    tag: '@scenario:control-outline-clears-3-to-1-high-contrast-light',
+    appearance: 'high-contrast-light',
+  },
+  {
+    name: 'high contrast dark',
+    tag: '@scenario:control-outline-clears-3-to-1-high-contrast-dark',
+    appearance: 'high-contrast-dark',
+  },
+  {
+    name: 'clickhouse light',
+    tag: '@scenario:control-outline-clears-3-to-1-clickhouse-light',
+    appearance: 'light',
+    definition: clickHouseTheme,
+  },
+  {
+    name: 'clickhouse dark',
+    tag: '@scenario:control-outline-clears-3-to-1-clickhouse-dark',
+    appearance: 'dark',
+    definition: clickHouseTheme,
+  },
 ];
 
 test.describe('form control outline', () => {
   for (const palette of PALETTES) {
-    test(`a dropdown outline clears 3:1 in the ${palette.name} palette @scenario:control-outline-clears-3-to-1-${palette.name.replace(/ /g, '-')}`, async ({
+    test(`a dropdown outline clears 3:1 in the ${palette.name} palette ${palette.tag}`, async ({
       page,
     }) => {
       await installAppearance(page, palette.appearance, palette.definition);

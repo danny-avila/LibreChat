@@ -340,6 +340,16 @@ describe('applyTheme', () => {
     expect(root.style.getPropertyValue('--border-control')).toBe('60 61 62');
   });
 
+  it('outlines controls with secondary text when a legacy border is too quiet', () => {
+    const root = document.documentElement;
+
+    applyTheme({ 'rgb-border-medium': '240 240 240' }, root, defaultTheme);
+
+    expect(root.style.getPropertyValue('--border-control')).toBe(
+      defaultTheme['rgb-text-secondary'],
+    );
+  });
+
   it('leaves an explicit control outline alone', () => {
     const root = document.documentElement;
 
