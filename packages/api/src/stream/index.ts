@@ -4,6 +4,8 @@ export {
   type CreateGenerationJobOptions,
   type GenerationJobManagerOptions,
   type TerminalJobClaim,
+  type GenerationSettledEvent,
+  type GenerationSettledListener,
   GENERATION_RECOVERY_FAILED_ERROR,
   TERMINAL_PUBLICATION_RECONNECT_ERROR,
 } from './GenerationJobManager';
@@ -84,3 +86,7 @@ export { RedisJobStore } from './implementations/RedisJobStore';
 export { RedisEventTransport } from './implementations/RedisEventTransport';
 
 export { waitForGenerationPersistence } from './persistence';
+export { waitForGenerationSettled } from './settled';
+export type { GenerationSettledSource, GenerationSettledWaitOptions } from './settled';
+
+export type { GenerationSettlementState } from './interfaces/IJobStore';

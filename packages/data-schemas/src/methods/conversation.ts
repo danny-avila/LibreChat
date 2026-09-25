@@ -449,7 +449,11 @@ export interface ConversationMethods {
   getAgentEventActorReconciliationStorageMetrics(
     now: Date,
   ): Promise<AgentEventActorReconciliationStorageMetrics>;
-  expireLegacyAgentEventActorReceipts(now: Date, limit?: number): Promise<number>;
+  expireLegacyAgentEventActorReceipts(
+    now: Date,
+    limit?: number,
+    activity?: { found: boolean },
+  ): Promise<number>;
   reserveSubagentThread(input: {
     user: string;
     conversationId: string;
@@ -1782,7 +1786,11 @@ export function createConversationMethods(
   /** Bounded mixed-version cleanup for terminal receipts embedded by older
    * builds. New receipts expire through the delivery collection TTL index,
    * but dormant legacy conversations need an independent retirement path. */
-  async function expireLegacyAgentEventActorReceipts(now: Date, limit = 100): Promise<number> {
+  async function expireLegacyAgentEventActorReceipts(
+    now: Date,
+    limit = 100,
+    activity?: { found: boolean },
+  ): Promise<number> {
     if (Number.isNaN(now.getTime())) {
       throw new TypeError('now must be a valid date');
     }
@@ -1821,6 +1829,9 @@ export function createConversationMethods(
       return 0;
     }
     legacyReceiptExpiryCursor = candidates[candidates.length - 1]._id;
+    // A full page is not an empty sweep: later conversations may contain
+    // expired receipts. Keep scanning at base cadence until the page walk ends.
+    if (activity != null && candidates.length === boundedLimit) activity.found = true;
     const expiredInvocationIds = [
       ...new Set(
         candidates.flatMap((candidate) =>
@@ -1830,6 +1841,8 @@ export function createConversationMethods(
         ),
       ),
     ];
+    if (expiredInvocationIds.length === 0) return 0;
+    if (activity != null) activity.found = true;
     const protectedInvocationIds = new Set(
       await Delivery.find({
         deliveryKey: { $in: expiredInvocationIds },

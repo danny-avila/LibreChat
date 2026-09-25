@@ -47,6 +47,7 @@ const {
   resolveAgentTurnExecutionPlan,
   logAgentMemorySnapshot,
   getCodeWorkspaceSelectionErrorDetails,
+  getAgentErrorMetadata,
   shouldPersistCodeWorkspaceInitializationError,
   resolvePersistableCodeEnvironmentDecision,
   getFailedTurnTraceFields,
@@ -114,13 +115,12 @@ function getInitializationFailure(error) {
     };
   }
 
-  const candidateStatus = error?.status ?? error?.statusCode;
-  if (!Number.isInteger(candidateStatus) || candidateStatus < 400 || candidateStatus >= 600) {
+  const metadata = getAgentErrorMetadata(error);
+  if (!metadata?.status) {
     return null;
   }
   return {
-    status: candidateStatus,
-    ...(typeof error?.code === 'string' ? { code: error.code } : {}),
+    ...metadata,
     ...getCodeWorkspaceSelectionErrorDetails(error),
     error: error?.message || 'Failed to start generation',
   };

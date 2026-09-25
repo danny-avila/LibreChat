@@ -220,6 +220,31 @@ describe('agent queued turn methods', () => {
     ).resolves.toMatchObject({ status: 'queued', sequence: expect.any(Number) });
   });
 
+  it('reports reservation-only recovery activity when deleted lanes yield no deliveries', async () => {
+    const first = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'lost-lane-first' }),
+    );
+    const second = await methods.enqueueAgentQueuedTurn(
+      enqueueInput({ clientRequestId: 'lost-lane-second' }),
+    );
+    await Turn.updateMany(
+      { _id: { $in: [first.turn.queuedTurnId, second.turn.queuedTurnId] } },
+      {
+        $set: { status: 'reserving' },
+        $unset: { sequence: 1 },
+      },
+    );
+    await Sequence.deleteMany({});
+    for (let i = 0; i < 2; i++) {
+      const activity = { found: false };
+      expect(await methods.findQueuedTurnsNeedingDelivery(1, activity)).toEqual([]);
+      expect(activity.found).toBe(true);
+    }
+    const empty = { found: false };
+    expect(await methods.findQueuedTurnsNeedingDelivery(1, empty)).toEqual([]);
+    expect(empty.found).toBe(false);
+  });
+
   it('caps each conversation at 100 active turns while preserving exact replay', async () => {
     const inputs = Array.from({ length: 101 }, (_, index) =>
       enqueueInput({ clientRequestId: `capacity-${index}`, text: `turn ${index}` }),

@@ -1512,6 +1512,43 @@ export const agentsEndpointSchema = baseEndpointSchema
       eventDriven: z
         .object({
           selfUrl: z.string().url().optional(),
+          /** Every replica keeps polling Mongo as a crash-recovery fallback. Wakes
+           * keep local delivery prompt; these caps bound work missed across replicas. */
+          idlePolling: z
+            .object({
+              deliveryMaxIntervalMs: z
+                .number()
+                .int()
+                .min(1_000)
+                .max(300_000)
+                .optional()
+                .default(15_000),
+              queuedTurnMaxIntervalMs: z
+                .number()
+                .int()
+                .min(30_000)
+                .max(300_000)
+                .optional()
+                .default(120_000),
+              maintenanceMaxIntervalMs: z
+                .number()
+                .int()
+                .min(30_000)
+                .max(300_000)
+                .optional()
+                .default(120_000),
+              /** Longest a background or subagent completion re-checks whether its
+               * result and parent turn are ready. The events it waits on expedite it,
+               * so this bounds missed signals rather than normal delivery latency. */
+              completionWaitMaxIntervalMs: z
+                .number()
+                .int()
+                .min(5_000)
+                .max(300_000)
+                .optional()
+                .default(60_000),
+            })
+            .optional(),
         })
         .optional(),
       /** Conversational background-task delivery policy. Automatic completion wakeups are

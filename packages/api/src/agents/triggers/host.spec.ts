@@ -588,6 +588,37 @@ describe('createAgentTriggerExecutionHost continue adapter', () => {
     });
   });
 
+  it.each([undefined, 'ask', 'acceptEdits', 'fullAccess'] as const)(
+    'forwards prepared coding mode %s without trusting the event payload',
+    async (mode) => {
+      const envelope = createContinueEnvelope();
+      envelope.event.payload = { codeApprovalMode: 'fullAccess' };
+      const fetcher = fetchMock(async () =>
+        response({
+          streamId: 'conversation-1',
+          conversationId: 'conversation-1',
+          status: 'started',
+        }),
+      );
+      const host = createAgentTriggerExecutionHost(
+        deps(fetcher, {
+          prepareContinue: async () => ({
+            status: 'ready',
+            input: 'durable result',
+            parentMessageId: 'response-1',
+            codeApprovalMode: mode,
+          }),
+        }),
+      );
+
+      await host.dispatch(envelope);
+
+      const body = JSON.parse(String(fetcher.mock.calls[0][1]?.body));
+      expect(body.codeApprovalMode).toBe(mode);
+      if (mode === undefined) expect(body).not.toHaveProperty('codeApprovalMode');
+    },
+  );
+
   it('carries a prepared queued-turn payload and settles it after admission', async () => {
     const envelope = createContinueEnvelope();
     const admitted = {
