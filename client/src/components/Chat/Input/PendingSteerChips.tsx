@@ -329,7 +329,7 @@ function QueuedRow({
       />
       {(recoveryHeld || isRejected || isUnconfirmed || isIndeterminate) && (
         <span
-          className="shrink-0 text-xs text-text-warning"
+          className="text-text-warning shrink-0 text-xs"
           title={recoveryHeld ? localize('com_ui_steer_recovery_review') : undefined}
         >
           {localize(statusLabel)}

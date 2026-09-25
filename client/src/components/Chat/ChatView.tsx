@@ -197,7 +197,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
                         so they cannot paint through the approval preview. */}
                         <div
                           className={cn(
-                            'relative z-10 w-full bg-surface-primary-alt [view-transition-name:chat-form]',
+                            'bg-surface-primary-alt relative z-10 w-full [view-transition-name:chat-form]',
                             !isLandingPage && 'scrollbar-gutter-spacer',
                             isLandingPage && 'max-w-3xl transition-all duration-200 xl:max-w-4xl',
                           )}
@@ -205,7 +205,7 @@ function ChatView({ index = 0, project }: { index?: number; project?: TChatProje
                           {isLandingPage && <ConversationStarters />}
                           {isSubagentThreadReadOnly ? (
                             <div
-                              className="mx-auto w-full max-w-3xl px-4 py-3 text-center text-sm text-text-secondary xl:max-w-4xl"
+                              className="text-text-secondary mx-auto w-full max-w-3xl px-4 py-3 text-center text-sm xl:max-w-4xl"
                               role="note"
                             >
                               {localize('com_ui_subagent_thread_read_only')}

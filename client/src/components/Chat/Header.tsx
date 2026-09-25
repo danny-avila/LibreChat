@@ -81,7 +81,7 @@ function Header({
   return (
     /* The composer review is in a z-10 stacking context. Keep header controls
        above it when a tall review reaches the top of a short viewport. */
-    <div className="absolute top-0 z-20 flex h-[52px] w-full items-center gap-2 bg-gradient-to-b from-surface-primary-alt via-surface-primary-alt/70 to-transparent p-2 font-semibold text-text-primary md:from-surface-primary-alt/80 md:via-surface-primary-alt/50 2xl:from-surface-primary-alt/0 2xl:via-transparent">
+    <div className="from-surface-primary-alt via-surface-primary-alt/70 text-text-primary md:from-surface-primary-alt/80 md:via-surface-primary-alt/50 2xl:from-surface-primary-alt/0 absolute top-0 z-20 flex h-[52px] w-full items-center gap-2 bg-gradient-to-b to-transparent p-2 font-semibold 2xl:via-transparent">
       <div className="flex flex-shrink-0 items-center md:hidden">
         <OpenSidebar testId="header-open-sidebar-button" />
       </div>

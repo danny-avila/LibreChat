@@ -4929,6 +4929,7 @@ describe('MCPConnectionFactory', () => {
           tokenMethods: {
             findToken: jest.fn(),
             createToken: jest.fn(),
+            replaceTokenIfCurrent: jest.fn(),
             updateToken: jest.fn(),
             deleteTokens: jest.fn(),
           },

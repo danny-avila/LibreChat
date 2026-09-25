@@ -91,6 +91,7 @@ function ControlCombobox({
   const [searchValue, setSearchValue] = useState('');
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [buttonWidth, setButtonWidth] = useState<number | null>(null);
+  const popoverWidth = isCollapsed ? '300px' : (buttonWidth ?? '300px');
   const popoverZIndex = usePopoverZIndex();
 
   const getItem = (option: OptionWithIcon) => ({
@@ -227,7 +228,7 @@ function ControlCombobox({
         gutter={gutter}
         portal={portal}
         className={cn(
-          'overflow-hidden rounded-xl border border-border-light bg-surface-secondary shadow-lg',
+          'border-border-light bg-surface-secondary overflow-hidden rounded-xl border shadow-lg',
           popoverMaxHeight != null && 'flex flex-col',
           popoverClassName ?? 'animate-popover',
         )}
@@ -237,24 +238,22 @@ function ControlCombobox({
            * placement, so a short viewport shrinks the cap instead of pushing
            * lower options offscreen; the fallback keeps the cap when the
            * variable is absent. */
-          ...(popoverMaxHeight != null
-            ? {
-                maxHeight: `min(${popoverMaxHeight}px, var(--popover-available-height, ${popoverMaxHeight}px))`,
-              }
-            : null),
-          ...(matchTriggerWidth
-            ? { width: isCollapsed ? '300px' : (buttonWidth ?? '300px') }
-            : { minWidth: '16rem' }),
+          maxHeight:
+            popoverMaxHeight != null
+              ? `min(${popoverMaxHeight}px, var(--popover-available-height, ${popoverMaxHeight}px))`
+              : undefined,
+          width: matchTriggerWidth ? popoverWidth : undefined,
+          minWidth: matchTriggerWidth ? undefined : '16rem',
         }}
       >
         <div className="shrink-0 py-1.5">
           <div className="relative">
-            <Search className="text-text-primary absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
+            <Search className="text-text-primary absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" />
             <Ariakit.Combobox
               store={combobox}
               autoSelect
               placeholder={searchPlaceholder}
-              className="bg-surface-secondary text-text-primary w-full rounded-md py-2 pr-3 pl-9 text-sm focus:outline-hidden"
+              className="bg-surface-secondary text-text-primary focus:outline-hidden w-full rounded-md py-2 pl-9 pr-3 text-sm"
             />
           </div>
         </div>
