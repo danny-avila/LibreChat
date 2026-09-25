@@ -29,6 +29,7 @@ module.exports = createMCPAppsController({
   sandboxFrameAncestors: process.env.MCP_SANDBOX_FRAME_ANCESTORS,
   readSandboxFile: fs.readFileSync,
   getManager: getMCPManager,
+  getOperationBudget: () => getMCPManager().appOperationBudget,
   getFlowManager: () => getFlowStateManager(getLogStores(CacheKeys.FLOWS)),
   getAppConfig: (req) =>
     getAppConfig({

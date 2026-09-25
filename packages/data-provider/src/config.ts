@@ -2493,6 +2493,24 @@ export type StartupConfigContext = 'share';
  */
 export type EndpointsDropParamsMap = Record<string, string[] | Record<string, string[]>>;
 
+export type TMCPAppOperationLimits = {
+  maxBytes: number;
+  timeoutMs: number;
+  maxActive: number;
+};
+
+export const DEFAULT_MCP_APP_OPERATION_LIMITS: TMCPAppOperationLimits = {
+  maxBytes: 4 * 1024 * 1024,
+  timeoutMs: 30_000,
+  maxActive: 16,
+};
+
+export function resolveMCPAppOperationLimits(
+  limits?: Partial<TMCPAppOperationLimits>,
+): TMCPAppOperationLimits {
+  return { ...DEFAULT_MCP_APP_OPERATION_LIMITS, ...limits };
+}
+
 export type TMCPAppsPolicy = {
   enabled: boolean;
   legacyHtmlEnabled: boolean;
@@ -2505,6 +2523,8 @@ export type TMCPAppsPolicy = {
   maxActiveViews?: number;
   /** Maximum UTF-16 characters displayed for an App-requested action before denying it. */
   maxActionPreviewChars?: number;
+  /** Server-side bounds for App operations; never derived from App-provided content. */
+  operationLimits?: TMCPAppOperationLimits;
   /** Deployment-owned dedicated Sandbox Proxy URL published to authenticated clients. */
   sandboxUrl?: string;
 };
@@ -2537,6 +2557,7 @@ export function resolveMCPAppsPolicy(
   sandboxUrl?: string,
   maxActiveViews = DEFAULT_MCP_APP_MAX_ACTIVE_VIEWS,
   maxActionPreviewChars = DEFAULT_MCP_APP_ACTION_PREVIEW_CHARS,
+  operationLimits?: Partial<TMCPAppOperationLimits>,
 ): TMCPAppsPolicy {
   return {
     enabled: value === true,
@@ -2546,6 +2567,9 @@ export function resolveMCPAppsPolicy(
     maxAdmissionRequestsPerMinute,
     maxActiveViews,
     maxActionPreviewChars,
+    ...(operationLimits != null
+      ? { operationLimits: resolveMCPAppOperationLimits(operationLimits) }
+      : {}),
     ...(sandboxUrl !== undefined ? { sandboxUrl } : {}),
   };
 }
@@ -3233,6 +3257,28 @@ export const configSchema = z.object({
         .positive()
         .max(MAX_MCP_APP_ACTION_PREVIEW_CHARS)
         .default(DEFAULT_MCP_APP_ACTION_PREVIEW_CHARS),
+      operationLimits: z
+        .object({
+          maxBytes: z
+            .number()
+            .int()
+            .positive()
+            .max(16 * 1024 * 1024)
+            .default(DEFAULT_MCP_APP_OPERATION_LIMITS.maxBytes),
+          timeoutMs: z
+            .number()
+            .int()
+            .positive()
+            .max(10 * 60_000)
+            .default(DEFAULT_MCP_APP_OPERATION_LIMITS.timeoutMs),
+          maxActive: z
+            .number()
+            .int()
+            .positive()
+            .max(256)
+            .default(DEFAULT_MCP_APP_OPERATION_LIMITS.maxActive),
+        })
+        .default({}),
     })
     .default({}),
   mcpSettings: z

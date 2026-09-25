@@ -85,6 +85,10 @@ mcpAppSandbox:
   maxAdmissionRequestsPerMinute: 480
   maxActiveViews: 3
   maxActionPreviewChars: 16384
+  operationLimits:
+    maxBytes: 4194304
+    timeoutMs: 30000
+    maxActive: 16
 ```
 
 These positive-integer settings come only from the base deployment configuration; role, group, and
@@ -120,6 +124,37 @@ limits applied after admission.
 MCP App browser routes use independent, per-user, one-minute limits. Configure positive integer
 values at `rateLimits.mcpApps.resourcesPerMinute` and
 `rateLimits.mcpApps.toolCallsPerMinute`; their defaults are 120 and 60 respectively.
+
+## App operation budgets
+
+App-profile MCP sessions have a pre-parse upstream response cap of 4 MiB by default, independent
+of the standard-profile MCP transport settings, including the generic Streamable HTTP SSE line
+limit. Raising the validated App limit can admit a larger single SSE event without changing
+standard-profile limits. Streamable HTTP JSON responses, stdio frames and
+SSE events (both Streamable HTTP and standalone) are bounded before the SDK parses JSON. The SSE
+cap resets between events, so a healthy long-lived stream is not rejected for its lifetime bytes.
+An oversized standalone SSE event
+closes that App session after the SDK observes the error, preventing a sustained reconnect loop.
+The same cap is checked on serialized
+responses to the App bridge. Oversized optional initial `resources/read` results preserve the
+canonical tool result; a failed follow-up request returns a bounded error, never a truncated JSON
+success. The existing Express 3 MiB JSON ingress bound still applies before App route handlers.
+
+Configure `mcpAppSandbox.operationLimits` in `librechat.yaml` as shown above. The validated
+positive-integer limits default to the values shown and reject invalid or excessively high
+overrides. They are read from the admitted deployment config, not from process environment
+variables. The timeout is absolute across configuration, connection checkout,
+recovery and the SDK operation; progress notifications cannot extend the SDK call beyond it. The
+16-slot concurrency bound is **per LibreChat process**, shared across App resource, tool and binding
+validation routes and the optional initial document read after a tool completes. There is no queue:
+follow-up requests above it receive 503; an overloaded optional first read retains the bound URI
+for retry without changing the canonical tool result. An aborted or timed-out operation holds its
+slot until its underlying work actually settles, avoiding a false capacity
+release while upstream work remains active. This is not a distributed cluster-wide quota. Measure
+capacity per replica when sizing deployments. For safety, App-profile WebSocket connections are not
+supported: the installed SDK parses their messages before providing a configurable maximum payload.
+Standard-profile WebSocket sessions are unaffected. Larger legitimate Apps may require a higher
+byte limit; do not disable transport limits to work around large results.
 
 ## Required sandbox deployment
 

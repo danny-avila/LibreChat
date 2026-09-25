@@ -50,6 +50,7 @@ import { mcpOptionsContainGraphTokenPlaceholder, preProcessGraphTokens } from '~
 import { MCPAuthenticationRejectedError, isMCPTransportAuthenticationError } from './errors';
 import { resolveDirectOpenIDBearerConfig, usesDirectOpenIDBearerRecovery } from './openid';
 import { createLazyOboUpstreamTokenProvider, awaitOboOperation } from '~/mcp/oauth/obo';
+import { MCPAppOperationBudget, getMCPAppOperationLimits } from './apps/budget';
 import { formatToolContent, selectResolvedAppResource } from './parsers';
 import { MCPServersInitializer } from './registry/MCPServersInitializer';
 import { OboTokenResolutionError, resolveOboToken } from '~/mcp/oauth';
@@ -146,6 +147,9 @@ export class MCPManager extends UserConnectionManager {
       catalogRecoveryMaxDetachedDiscoveries,
     );
   }
+
+  /** Per-process admission for follow-up requests and optional first document reads. */
+  public readonly appOperationBudget: MCPAppOperationBudget = new MCPAppOperationBudget();
 
   private readonly resourceUriCache = new Map<string, Map<string, { uri: string }>>();
 
@@ -592,7 +596,7 @@ export class MCPManager extends UserConnectionManager {
       return { tools: null, oauthRequired: false, oauthUrl: null };
     }
 
-    const { allowedDomains, allowedAddresses, useSSRFProtection } =
+    const { allowedDomains, allowedAddresses, useSSRFProtection, mcpApps } =
       await registry.resolveAllowlists({ userId: user?.id, role: user?.role });
     await this.assertResolvedRuntimeConfigAllowed({
       config: catalogConfig,
@@ -616,6 +620,9 @@ export class MCPManager extends UserConnectionManager {
       allowedDomains,
       allowedAddresses,
       capabilityProfile,
+      ...(capabilityProfile === MCP_APPS_CAPABILITY_PROFILE && {
+        operationLimits: mcpApps.operationLimits,
+      }),
     };
 
     const finalizeDiscoveryResult = async (
@@ -1974,12 +1981,23 @@ Please follow these instructions when using tools from the respective MCP server
         }
 
         let resolvedAppResource: t.ResourceContents | undefined;
-        if (resourceMeta && !options?.signal?.aborted) {
+        const appConnection = connection;
+        if (resourceMeta && appConnection && !options?.signal?.aborted) {
           const resourceUri = resourceMeta.uri;
           try {
-            const readResult = await connection.client.readResource(
-              { uri: resourceUri },
-              { timeout: connection.timeout, signal: options?.signal },
+            const limits = getMCPAppOperationLimits(mcpApps?.operationLimits);
+            const readResult = await this.appOperationBudget.run(
+              options?.signal ?? new AbortController().signal,
+              (signal) =>
+                appConnection.client.readResource(
+                  { uri: resourceUri },
+                  {
+                    timeout: Math.min(appConnection.timeout ?? limits.timeoutMs, limits.timeoutMs),
+                    maxTotalTimeout: limits.timeoutMs,
+                    signal,
+                  },
+                ),
+              limits,
             );
             if (!options?.signal?.aborted) {
               resolvedAppResource = selectResolvedAppResource(readResult.contents, resourceUri);
@@ -2306,8 +2324,10 @@ Please follow these instructions when using tools from the respective MCP server
 
         let result: TResult;
         try {
+          const operationTimeout = getMCPAppOperationLimits(context.operationLimits).timeoutMs;
           result = await operation(connection, {
-            timeout: connection.timeout,
+            timeout: Math.min(connection.timeout ?? operationTimeout, operationTimeout),
+            maxTotalTimeout: operationTimeout,
             ...(signal ? { signal } : {}),
           });
         } catch (error) {

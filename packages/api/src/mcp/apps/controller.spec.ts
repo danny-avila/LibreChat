@@ -5,6 +5,7 @@ import type { RequestHandler, Response } from 'express';
 import type { MCPAppsControllerDependencies } from './controller';
 import type { MCPAppsProxyManager } from '../apps';
 import { createMCPAppsController } from './controller';
+import { MCPAppOperationBudget } from './budget';
 import { getPluginAuthMap } from '~/agents/auth';
 
 jest.mock('~/agents/auth', () => ({ getPluginAuthMap: jest.fn() }));
@@ -19,6 +20,9 @@ type MockRequest = EventEmitter & {
   query: Record<string, unknown>;
   user?: { id: string; role?: string };
   config?: {
+    mcpAppSandbox?: {
+      operationLimits?: Partial<{ maxBytes: number; timeoutMs: number; maxActive: number }>;
+    };
     mcpSettings?: {
       apps?: boolean;
       allowedDomains?: string[] | null;
@@ -73,6 +77,7 @@ const asHandlerRequest = (request: MockRequest): Parameters<RequestHandler>[0] =
 const asHandlerResponse = (response: MockResponse): Response => response as unknown as Response;
 
 function makeDependencies(manager: MCPAppsProxyManager) {
+  const operationBudget = new MCPAppOperationBudget();
   const provider = jest.fn();
   const onOAuthCredentialsChanging = jest.fn(async () => async () => undefined);
   const dependencies: MCPAppsControllerDependencies = {
@@ -81,6 +86,7 @@ function makeDependencies(manager: MCPAppsProxyManager) {
     sandboxFrameAncestors: 'https://host.example.com',
     readSandboxFile: jest.fn(() => '<script>/*__CSP_APPLIED__*/ /*__VIEW_CSP__*/</script>'),
     getManager: jest.fn(() => manager),
+    getOperationBudget: jest.fn(() => operationBudget),
     getFlowManager: jest.fn(
       () => ({}) as ReturnType<MCPAppsControllerDependencies['getFlowManager']>,
     ),
@@ -807,5 +813,150 @@ describe('createMCPAppsController', () => {
     expect(request.config).toEqual({ mcpSettings: {} });
     expect(response.status).toHaveBeenCalledWith(403);
     expect(next).not.toHaveBeenCalled();
+  });
+});
+
+describe('App operation budgets at the authenticated HTTP boundary', () => {
+  const admitted = (
+    operationLimits: Partial<{ maxBytes: number; timeoutMs: number; maxActive: number }> = {},
+  ) =>
+    makeRequest({
+      config: {
+        mcpSettings: { apps: true },
+        mcpAppSandbox: { operationLimits },
+        mcpConfig: { srv: { type: 'stdio', command: 'test', args: [] } },
+      },
+    });
+
+  beforeEach(() => {
+    mockGetPluginAuthMap.mockResolvedValue({ mcp_srv: {} });
+  });
+
+  it('rejects oversized live resources and tool replies without serializing them into HTTP responses', async () => {
+    const manager = makeManager();
+    manager.readResource.mockResolvedValue({
+      contents: [{ uri: 'ui://view', text: 'x'.repeat(100) }],
+    });
+    manager.appToolCall.mockResolvedValue({ content: [{ type: 'text', text: 'x'.repeat(100) }] });
+    const { dependencies } = makeDependencies(manager);
+    const handlers = createMCPAppsController(dependencies);
+    const resourceResponse = makeResponse();
+    await handlers.readMCPResource(
+      asHandlerRequest(admitted({ maxBytes: 80 })),
+      asHandlerResponse(resourceResponse),
+      jest.fn(),
+    );
+    expect(resourceResponse.status).toHaveBeenCalledWith(502);
+    expect(resourceResponse.json).toHaveBeenCalledWith(
+      expect.objectContaining({ error: 'mcp_app_response_too_large' }),
+    );
+    expect(resourceResponse.json).not.toHaveBeenCalledWith(
+      expect.objectContaining({ contents: expect.any(Array) }),
+    );
+    const toolResponse = makeResponse();
+    const toolRequest = admitted({ maxBytes: 80 });
+    toolRequest.body.toolName = 'fixture-tool';
+    await handlers.appToolCall(
+      asHandlerRequest(toolRequest),
+      asHandlerResponse(toolResponse),
+      jest.fn(),
+    );
+    expect(toolResponse.status).toHaveBeenCalledWith(502);
+    expect(toolResponse.json).toHaveBeenCalledWith(
+      expect.objectContaining({ error: 'mcp_app_response_too_large' }),
+    );
+  });
+
+  it('shares the manager budget with an in-flight initial App resource read', async () => {
+    const manager = makeManager();
+    const operationBudget = new MCPAppOperationBudget();
+    const limits = { maxBytes: 4 * 1024 * 1024, timeoutMs: 30_000, maxActive: 1 };
+    let finish!: () => void;
+    const holding = operationBudget.run(
+      new AbortController().signal,
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+      limits,
+    );
+    const { dependencies } = makeDependencies(manager);
+    dependencies.getOperationBudget = () => operationBudget;
+    const response = makeResponse();
+    await createMCPAppsController(dependencies).readMCPResource(
+      asHandlerRequest(admitted({ maxActive: 1 })),
+      asHandlerResponse(response),
+      jest.fn(),
+    );
+    expect(response.status).toHaveBeenCalledWith(503);
+    expect(manager.readResource).not.toHaveBeenCalled();
+    await Promise.resolve();
+    finish();
+    await holding;
+  });
+
+  it('rejects overload without allocating a second manager request, then admits after settlement', async () => {
+    const manager = makeManager();
+    let resolve!: (result: { contents: [] }) => void;
+    manager.readResource.mockImplementationOnce(
+      () =>
+        new Promise((done) => {
+          resolve = done;
+        }),
+    );
+    manager.readResource.mockResolvedValue({ contents: [] });
+    const { dependencies } = makeDependencies(manager);
+    const handler = createMCPAppsController(dependencies).readMCPResource;
+    const firstResponse = makeResponse();
+    const first = handler(
+      asHandlerRequest(admitted({ maxActive: 1 })),
+      asHandlerResponse(firstResponse),
+      jest.fn(),
+    );
+    for (let i = 0; i < 20 && !resolve; i++) await Promise.resolve();
+    expect(resolve).toBeDefined();
+    const blocked = makeResponse();
+    await handler(
+      asHandlerRequest(admitted({ maxActive: 1 })),
+      asHandlerResponse(blocked),
+      jest.fn(),
+    );
+    expect(blocked.status).toHaveBeenCalledWith(503);
+    expect(manager.readResource).toHaveBeenCalledTimes(1);
+    resolve({ contents: [] });
+    await first;
+    const allowed = makeResponse();
+    await handler(
+      asHandlerRequest(admitted({ maxActive: 1 })),
+      asHandlerResponse(allowed),
+      jest.fn(),
+    );
+    expect(manager.readResource).toHaveBeenCalledTimes(2);
+    expect(allowed.json).toHaveBeenCalledWith({ contents: [] });
+  });
+
+  it('returns 504 when upstream ignores the deadline and does not write its late reply', async () => {
+    const manager = makeManager();
+    let complete!: (value: { contents: [] }) => void;
+    manager.readResource.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          complete = resolve;
+        }),
+    );
+    const { dependencies } = makeDependencies(manager);
+    const response = makeResponse();
+    await createMCPAppsController(dependencies).readMCPResource(
+      asHandlerRequest(admitted({ timeoutMs: 20 })),
+      asHandlerResponse(response),
+      jest.fn(),
+    );
+    expect(response.status).toHaveBeenCalledWith(504);
+    complete({ contents: [] });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(response.json).toHaveBeenCalledTimes(1);
+    expect(response.json).toHaveBeenCalledWith(
+      expect.objectContaining({ error: 'mcp_app_timeout' }),
+    );
   });
 });

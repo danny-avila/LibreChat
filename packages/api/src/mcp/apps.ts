@@ -7,6 +7,7 @@ import { logger } from '@librechat/data-schemas';
 import { MCP_APP_MIME_TYPE } from 'librechat-data-provider';
 import { McpError, ErrorCode } from '@modelcontextprotocol/sdk/types.js';
 import type { PluginAuthMethods, TokenMethods, IUser } from '@librechat/data-schemas';
+import type { TMCPAppOperationLimits } from 'librechat-data-provider';
 import type { UpstreamTokenProvider } from './oauth/obo';
 import type { FlowStateManager } from '~/flow/manager';
 import type { MCPOAuthTokens } from './oauth';
@@ -14,6 +15,7 @@ import type * as t from './types';
 import { MCPAuthenticationRefreshError, MCPAuthenticationRejectedError } from './errors';
 import { getServerCustomUserVars, getUserMCPAuthMap } from './auth';
 import { OpenIDReauthRequiredError } from '~/utils/oidc';
+import { MCPAppBudgetError } from './apps/budget';
 
 export interface ToolWithMeta {
   _meta?: Record<string, unknown> | null;
@@ -48,6 +50,7 @@ export interface MCPAppAllowlists {
 }
 
 export interface MCPAppOperationContext extends MCPAppValidationContext {
+  operationLimits?: TMCPAppOperationLimits;
   allowlists: MCPAppAllowlists;
   flowManager: FlowStateManager<MCPOAuthTokens | null>;
   tokenMethods?: TokenMethods;
@@ -260,6 +263,7 @@ export async function validateAppServerBinding(
 /** A denied app request is an expected client error, not a host fault. */
 export function isDeniedAppRequest(error: unknown): boolean {
   return (
+    error instanceof MCPAppBudgetError ||
     error instanceof OpenIDReauthRequiredError ||
     error instanceof MCPAuthenticationRejectedError ||
     error instanceof MCPAuthenticationRefreshError ||
@@ -273,6 +277,9 @@ export function buildAppProxyErrorResponse(
   error: unknown,
   fallbackMessage: string,
 ): { status: number; body: Record<string, unknown> } {
+  if (error instanceof MCPAppBudgetError) {
+    return { status: error.status, body: { error: error.code, message: error.message } };
+  }
   if (
     error != null &&
     typeof error === 'object' &&

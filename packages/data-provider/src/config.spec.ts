@@ -14,6 +14,7 @@ import {
   DEFAULT_MCP_APP_ACTION_PREVIEW_CHARS,
   MAX_MCP_APP_ACTIVE_VIEWS,
   MAX_MCP_APP_ACTION_PREVIEW_CHARS,
+  DEFAULT_MCP_APP_OPERATION_LIMITS,
   MAX_MCP_APP_PERSISTED_BYTES,
   resolveMCPAppRateLimits,
   resolveMCPAppsPolicy,
@@ -1725,6 +1726,7 @@ describe('MCP Apps configuration', () => {
       maxAdmissionRequestsPerMinute: DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
       maxActiveViews: DEFAULT_MCP_APP_MAX_ACTIVE_VIEWS,
       maxActionPreviewChars: DEFAULT_MCP_APP_ACTION_PREVIEW_CHARS,
+      operationLimits: DEFAULT_MCP_APP_OPERATION_LIMITS,
     });
     expect(
       configSchema.parse({
@@ -1737,6 +1739,7 @@ describe('MCP Apps configuration', () => {
           maxAdmissionRequestsPerMinute: 480,
           maxActiveViews: 7,
           maxActionPreviewChars: 32768,
+          operationLimits: { maxBytes: 6 * 1024 * 1024, timeoutMs: 45_000, maxActive: 8 },
           url: 'https://mcp-sandbox.example.com/api/mcp/sandbox',
         },
       }).mcpAppSandbox,
@@ -1748,6 +1751,7 @@ describe('MCP Apps configuration', () => {
       maxAdmissionRequestsPerMinute: 480,
       maxActiveViews: 7,
       maxActionPreviewChars: 32768,
+      operationLimits: { maxBytes: 6 * 1024 * 1024, timeoutMs: 45_000, maxActive: 8 },
       url: 'https://mcp-sandbox.example.com/api/mcp/sandbox',
     });
     for (const mcpAppSandbox of [
@@ -1771,11 +1775,35 @@ describe('MCP Apps configuration', () => {
       { maxActionPreviewChars: 0 },
       { maxActionPreviewChars: 1.5 },
       { maxActionPreviewChars: MAX_MCP_APP_ACTION_PREVIEW_CHARS + 1 },
+      { operationLimits: { maxBytes: 0 } },
+      { operationLimits: { maxBytes: 16 * 1024 * 1024 + 1 } },
+      { operationLimits: { timeoutMs: 10 * 60_000 + 1 } },
+      { operationLimits: { maxActive: 0 } },
+      { operationLimits: { maxActive: 257 } },
       { url: '/api/mcp/sandbox' },
       { url: 'ftp://mcp-sandbox.example.com/api/mcp/sandbox' },
     ]) {
       expect(configSchema.safeParse({ version: '1.2.1', mcpAppSandbox }).success).toBe(false);
     }
+  });
+
+  it('carries the validated App operation limits to server-side policy consumers', () => {
+    const sandbox = configSchema.parse({
+      version: '1.2.1',
+      mcpAppSandbox: { operationLimits: { maxBytes: 2 * 1024 * 1024 } },
+    }).mcpAppSandbox;
+    expect(
+      resolveMCPAppsPolicy(
+        true,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        sandbox.operationLimits,
+      ).operationLimits,
+    ).toEqual({ ...DEFAULT_MCP_APP_OPERATION_LIMITS, maxBytes: 2 * 1024 * 1024 });
   });
 
   it('publishes optional runtime sandbox fields in the effective policy', () => {

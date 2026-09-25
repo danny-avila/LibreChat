@@ -852,6 +852,9 @@ async function loadToolDefinitionsWrapper({
     appConfig?.mcpAppSandbox?.maxPersistedAppBytes,
     appConfig?.mcpAppSandbox?.maxAdmissionRequestsPerMinute,
     appConfig?.mcpAppSandbox?.url,
+    appConfig?.mcpAppSandbox?.maxActiveViews,
+    appConfig?.mcpAppSandbox?.maxActionPreviewChars,
+    appConfig?.mcpAppSandbox?.operationLimits,
   );
   const capabilityProfile = resolveMCPClientCapabilityProfile(mcpApps);
   const runtimeRequestBody = requestBody ?? req.body;

@@ -1,10 +1,11 @@
-import { resolveMCPAppsPolicy } from 'librechat-data-provider';
+import { resolveMCPAppsPolicy, resolveMCPAppOperationLimits } from 'librechat-data-provider';
+import type { MCPAppCspLimits, TMCPAppOperationLimits } from 'librechat-data-provider';
 import type { PluginAuthMethods, TokenMethods } from '@librechat/data-schemas';
 import type { Request, RequestHandler, Response } from 'express';
-import type { MCPAppCspLimits } from 'librechat-data-provider';
 import type { MCPAppAllowlists, MCPAppsProxyManager, AuthenticatedMCPAppUser } from '../apps';
 import type { UpstreamTokenProvider } from '../oauth/obo';
 import type { FlowStateManager } from '~/flow/manager';
+import type { MCPAppOperationBudget } from './budget';
 import type { MCPOAuthTokens } from '../oauth';
 import type * as t from '../types';
 import {
@@ -19,6 +20,7 @@ import {
   resolveAppValidationContext,
   resolveEffectiveAppServerConfig,
 } from '../apps';
+import { assertMCPAppResultFits } from './budget';
 import { buildSandboxResponse } from '../sandbox';
 
 interface MCPAppsBody {
@@ -31,6 +33,7 @@ interface MCPAppsBody {
 }
 
 interface MCPAppsConfig {
+  mcpAppSandbox?: { operationLimits?: Partial<TMCPAppOperationLimits> };
   mcpSettings?: {
     apps?: boolean;
     allowedDomains?: string[] | null;
@@ -54,6 +57,7 @@ export interface MCPAppsControllerDependencies {
   sandboxFrameAncestors?: string;
   readSandboxFile: (path: string, encoding: 'utf8') => string;
   getManager: () => MCPAppsProxyManager;
+  getOperationBudget: () => MCPAppOperationBudget;
   getFlowManager: () => FlowStateManager<MCPOAuthTokens | null>;
   getAppConfig: (request: MCPAppsRequest) => Promise<MCPAppsConfig | undefined>;
   getSandboxCspLimits: () => Promise<MCPAppCspLimits>;
@@ -208,32 +212,50 @@ export function createMCPAppsController(dependencies: MCPAppsControllerDependenc
       const cancellation = attachCancellation(request, response);
       try {
         cancellation.signal.throwIfAborted();
-        const body = request.body ?? {};
-        const serverName = getServerName(body);
-        const context = await resolveAppRequestContext({
-          user,
-          serverName,
-          serverBinding: body.serverBinding,
-          resolveServerConfig: () =>
-            resolveEffectiveAppServerConfig({
-              serverName,
+        const limits = resolveMCPAppOperationLimits(request.config?.mcpAppSandbox?.operationLimits);
+        const result = await dependencies.getOperationBudget().run(
+          cancellation.signal,
+          async (signal) => {
+            const body = request.body ?? {};
+            const serverName = getServerName(body);
+            const context = await resolveAppRequestContext({
               user,
-              mcpConfig: getAdmittedMCPConfig(request),
-              ensureConfigServers: dependencies.ensureConfigServers,
-              getAllServerConfigs: dependencies.getAllServerConfigs,
-              recoverServerConfig: dependencies.recoverServerConfig,
-              isAppServerConfig: dependencies.isAppServerConfig,
-            }),
-          findPluginAuthsByKeys: dependencies.findPluginAuthsByKeys,
-          flowManager: dependencies.getFlowManager(),
-          tokenMethods: dependencies.tokenMethods,
-          onOAuthCredentialsChanging: dependencies.createOAuthCredentialsChanging(request),
-          upstreamTokenProvider: dependencies.createUpstreamTokenProvider(request, response, user),
-          allowlists: getAdmittedMCPAllowlists(request),
-          signal: cancellation.signal,
-        });
-        cancellation.signal.throwIfAborted();
-        const result = await options.proxy(dependencies.getManager(), context, body);
+              serverName,
+              serverBinding: body.serverBinding,
+              resolveServerConfig: () =>
+                resolveEffectiveAppServerConfig({
+                  serverName,
+                  user,
+                  mcpConfig: getAdmittedMCPConfig(request),
+                  ensureConfigServers: dependencies.ensureConfigServers,
+                  getAllServerConfigs: dependencies.getAllServerConfigs,
+                  recoverServerConfig: dependencies.recoverServerConfig,
+                  isAppServerConfig: dependencies.isAppServerConfig,
+                }),
+              findPluginAuthsByKeys: dependencies.findPluginAuthsByKeys,
+              flowManager: dependencies.getFlowManager(),
+              tokenMethods: dependencies.tokenMethods,
+              onOAuthCredentialsChanging: dependencies.createOAuthCredentialsChanging(request),
+              upstreamTokenProvider: dependencies.createUpstreamTokenProvider(
+                request,
+                response,
+                user,
+              ),
+              allowlists: getAdmittedMCPAllowlists(request),
+              signal,
+            });
+            signal.throwIfAborted();
+            const result = await options.proxy(
+              dependencies.getManager(),
+              { ...context, operationLimits: limits },
+              body,
+            );
+            signal.throwIfAborted();
+            assertMCPAppResultFits(result, limits);
+            return result;
+          },
+          limits,
+        );
         if (canWriteResponse(response)) {
           response.json(result);
         }
@@ -261,27 +283,37 @@ export function createMCPAppsController(dependencies: MCPAppsControllerDependenc
     const cancellation = attachCancellation(request, response);
     try {
       cancellation.signal.throwIfAborted();
-      const body = request.body ?? {};
-      const serverName = getServerName(body);
-      const allowlists = getAdmittedMCPAllowlists(request);
-      const context = await resolveAppValidationContext({
-        user,
-        serverName,
-        serverBinding: body.serverBinding,
-        resolveServerConfig: () =>
-          dependencies.resolveCachedAppServerConfig({
+      const limits = resolveMCPAppOperationLimits(request.config?.mcpAppSandbox?.operationLimits);
+      const result = await dependencies.getOperationBudget().run(
+        cancellation.signal,
+        async (signal) => {
+          const body = request.body ?? {};
+          const serverName = getServerName(body);
+          const allowlists = getAdmittedMCPAllowlists(request);
+          const context = await resolveAppValidationContext({
+            user,
             serverName,
-            userId: user.id,
-            role: user.role,
-            mcpConfig: getAdmittedMCPConfig(request),
-            allowedDomains: allowlists.allowedDomains,
-            allowedAddresses: allowlists.allowedAddresses,
-          }),
-        findPluginAuthsByKeys: dependencies.findPluginAuthsByKeys,
-        signal: cancellation.signal,
-      });
-      cancellation.signal.throwIfAborted();
-      const result = await validateAppServerBinding(dependencies.getManager(), context);
+            serverBinding: body.serverBinding,
+            resolveServerConfig: () =>
+              dependencies.resolveCachedAppServerConfig({
+                serverName,
+                userId: user.id,
+                role: user.role,
+                mcpConfig: getAdmittedMCPConfig(request),
+                allowedDomains: allowlists.allowedDomains,
+                allowedAddresses: allowlists.allowedAddresses,
+              }),
+            findPluginAuthsByKeys: dependencies.findPluginAuthsByKeys,
+            signal,
+          });
+          signal.throwIfAborted();
+          const result = await validateAppServerBinding(dependencies.getManager(), context);
+          signal.throwIfAborted();
+          assertMCPAppResultFits(result, limits);
+          return result;
+        },
+        limits,
+      );
       if (canWriteResponse(response)) {
         response.json(result);
       }
