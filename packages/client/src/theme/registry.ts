@@ -65,12 +65,13 @@ const CONTROL_SURROUNDINGS: readonly (keyof IThemeRGB)[] = Object.freeze([
   ...CONTROL_CANVASES,
 ]);
 
-const clearsControlCanvases = (outline: string, palette: IThemeRGB): boolean =>
-  CONTROL_CANVASES.every((canvas) => {
+/** The outline's lowest contrast across the canvases a theme paints. */
+const weakestContrast = (outline: string, palette: IThemeRGB): number =>
+  CONTROL_CANVASES.reduce((weakest, canvas) => {
     const surface = palette[canvas];
     const ratio = surface === undefined ? undefined : contrastRatio(outline, surface);
-    return ratio === undefined || ratio >= NON_TEXT_CONTRAST;
-  });
+    return ratio === undefined ? weakest : Math.min(weakest, ratio);
+  }, Number.POSITIVE_INFINITY);
 
 /**
  * The control outline for a stored or environment theme that predates
@@ -79,9 +80,9 @@ const clearsControlCanvases = (outline: string, palette: IThemeRGB): boolean =>
  * theme that painted either, or the canvases they sit on, coordinated an
  * outline this role now replaces. The first candidate that clears the 3:1
  * non-text floor on the theme's own canvases wins: its light border, its
- * medium border, the bundled role, and last its secondary text, the one colour
- * a theme already keeps legible there. A theme that names none of these keeps
- * the bundled role, and one that names the role keeps it as written.
+ * medium border, the bundled role, then its secondary and primary text. When
+ * none clears, the one that comes closest does. A theme that names none of
+ * these keeps the bundled role, and one that names the role keeps it as written.
  * `base` is the bundled palette for the mode, which the theme is painted over.
  */
 export function controlBorderFallback(colors: IThemeRGB, base: IThemeRGB = {}): string | undefined {
@@ -93,16 +94,21 @@ export function controlBorderFallback(colors: IThemeRGB, base: IThemeRGB = {}): 
     return undefined;
   }
   const palette: IThemeRGB = { ...base, ...colors };
-  const candidates = [
+  const ranked = [
     colors['rgb-border-light'],
     colors['rgb-border-medium'],
     base['rgb-border-control'],
-  ].filter((value): value is string => value !== undefined);
-  return (
-    candidates.find((candidate) => clearsControlCanvases(candidate, palette)) ??
-    palette['rgb-text-secondary'] ??
-    candidates[0]
+    palette['rgb-text-secondary'],
+    palette['rgb-text-primary'],
+  ]
+    .filter((value): value is string => value !== undefined)
+    .map((outline) => ({ outline, contrast: weakestContrast(outline, palette) }));
+  const clearing = ranked.find(({ contrast }) => contrast >= NON_TEXT_CONTRAST);
+  const closest = ranked.reduce<(typeof ranked)[number] | undefined>(
+    (best, entry) => (best === undefined || entry.contrast > best.contrast ? entry : best),
+    undefined,
   );
+  return (clearing ?? closest)?.outline;
 }
 
 export const themeAppearanceProperties: Readonly<

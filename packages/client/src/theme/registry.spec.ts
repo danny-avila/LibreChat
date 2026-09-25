@@ -295,6 +295,28 @@ describe('theme registry', () => {
     expect(resolved.colors['rgb-border-control']).toBe(defaultTheme['rgb-border-control']);
   });
 
+  it('falls to the candidate that comes closest when nothing clears 3:1', () => {
+    const resolved = resolveTheme(
+      {
+        version: 1,
+        name: 'illegible-reference',
+        modes: {
+          light: {
+            colors: {
+              'rgb-surface-primary': '140 140 140',
+              'rgb-border-medium': '150 150 150',
+              'rgb-text-secondary': '120 120 120',
+              'rgb-text-primary': '90 90 90',
+            },
+          },
+        },
+      },
+      'light',
+    );
+
+    expect(resolved.colors['rgb-border-control']).toBe('90 90 90');
+  });
+
   it('outlines controls with secondary text when no border clears its canvases', () => {
     const resolved = resolveTheme(
       {
