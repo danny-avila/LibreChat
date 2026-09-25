@@ -454,6 +454,7 @@ describe('parts', () => {
           mediaType: 'application/pdf',
           filename: 'report.pdf',
           url: '/files/report.pdf',
+          providerMetadata: { librechat: { source: 'attachment', filepath: '/files/report.pdf' } },
         },
         { type: 'source-url', sourceId: 'call-1-0', url: 'https://a.example', title: 'A' },
         { type: 'source-url', sourceId: 'call-1-1', url: 'https://b.example' },
@@ -498,7 +499,13 @@ describe('parts', () => {
         metadata: { conversationId: 'convo-1', parentMessageId: null, contentless: true },
         parts: [
           { type: 'text', text: 'Describe this' },
-          { type: 'file', mediaType: 'image/png', filename: 'cat.png', url: '/images/cat.png' },
+          {
+            type: 'file',
+            mediaType: 'image/png',
+            filename: 'cat.png',
+            url: '/images/cat.png',
+            providerMetadata: { librechat: { source: 'attachment', filepath: '/images/cat.png' } },
+          },
         ],
       });
       expect(fromUIMessage(view)).toEqual(message);
@@ -812,6 +819,92 @@ describe('parts', () => {
       });
 
       expect(fromUIMessage(toUIMessage(message)).text).toBe('stored summary');
+    });
+  });
+
+  describe('legacy and edited shapes', () => {
+    it('keeps a null model through a base-less rebuild', () => {
+      const message = createMessage({
+        model: null,
+        text: 'Hi',
+        content: [{ type: ContentTypes.TEXT, text: 'Hi' }],
+      });
+
+      expect(fromUIMessage(toUIMessage(message))).toStrictEqual(message);
+    });
+
+    it('takes the audio format from an edited media type', () => {
+      const view = toUIPart(samples[ContentTypes.INPUT_AUDIO]) as Extract<
+        UIMessagePart,
+        { type: 'file' }
+      >;
+
+      expect(
+        fromUIPart({ ...view, mediaType: 'audio/mp3', url: 'data:audio/mp3;base64,BBBB' }),
+      ).toEqual({ type: ContentTypes.INPUT_AUDIO, input_audio: { data: 'BBBB', format: 'mp3' } });
+    });
+
+    it('gives sources and attachments no content slot', () => {
+      const parts: UIMessagePart[] = [
+        { type: 'text', text: 'a' },
+        { type: 'source-url', sourceId: 's', url: 'https://a.example' },
+        { type: 'file', mediaType: 'image/png', url: '/x.png' },
+        { type: 'text', text: 'b' },
+        { type: 'step-start' },
+        { type: 'text', text: 'c' },
+      ];
+
+      expect(fromUIParts(parts)).toStrictEqual(
+        sparse(4, {
+          0: { type: ContentTypes.TEXT, text: 'a' },
+          1: { type: ContentTypes.TEXT, text: 'b' },
+          3: { type: ContentTypes.TEXT, text: 'c' },
+        }),
+      );
+    });
+
+    it('reports a legacy retrieval output as submitted', () => {
+      const part = toUIPart({
+        type: ContentTypes.TOOL_CALL,
+        tool_call: { id: 'r-1', type: 'retrieval', retrieval: {}, output: 'found' },
+      } as TMessageContentParts);
+
+      expect(part).toMatchObject({ state: 'output-available', output: 'found' });
+    });
+
+    it('reports an error-prefixed output as output-error', () => {
+      const part = toUIPart({
+        type: ContentTypes.TOOL_CALL,
+        tool_call: {
+          id: 'call-1',
+          type: 'tool_call',
+          name: 'search',
+          args: '{}',
+          output: 'Error processing tool search: boom',
+        },
+      });
+
+      expect(part).toMatchObject({
+        state: 'output-error',
+        errorText: 'Error processing tool search: boom',
+      });
+    });
+
+    it('matches an attachment whose url was edited to its stored file', () => {
+      const stored = {
+        file_id: 'a',
+        filepath: '/files/a.pdf',
+        filename: 'a.pdf',
+        type: 'application/pdf',
+      };
+      const message = createMessage({ isCreatedByUser: true, text: 'File', files: [stored] });
+      const view = toUIMessage(message);
+      const attachment = view.parts[1] as Extract<UIMessagePart, { type: 'file' }>;
+      const parts: UIMessagePart[] = [view.parts[0], { ...attachment, url: '/files/moved.pdf' }];
+
+      expect(fromUIMessage({ ...view, parts }, message).files).toEqual([
+        { ...stored, filepath: '/files/moved.pdf' },
+      ]);
     });
   });
 

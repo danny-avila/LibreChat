@@ -3,6 +3,7 @@ import type { TMessage, TAttachment } from './schemas';
 import type { Agents } from './types/agents';
 import type { TFile } from './types/files';
 import { ContentTypes, ToolCallTypes } from './types/runs';
+import { isToolErrorOutput } from './errors';
 import { Tools } from './types/tools';
 
 /**
@@ -85,9 +86,14 @@ export type UIFilePartMetadata =
   | ({ source: ContentTypes.INPUT_AUDIO; format: string } & Omit<
       ContentPartOf<ContentTypes.INPUT_AUDIO>,
       'type' | 'input_audio'
-    >);
+    >)
+  /** A `message.files` entry; `filepath` is the stored path, kept as its identity across edits. */
+  | { source: 'attachment'; filepath: string };
 
-/** AI SDK `FileUIPart`. Without `providerMetadata` it is a message attachment, not content. */
+/**
+ * AI SDK `FileUIPart`. A part from a content slot names its content type as `source`; one with
+ * `source: 'attachment'`, or no metadata at all (built by hand), is a message attachment.
+ */
 export type UIFilePart = {
   type: 'file';
   mediaType: string;
@@ -318,8 +324,11 @@ const readToolCall = (toolCall: ToolCallValue): ToolCallFields => {
         submitted: toolCall.code_interpreter.outputs.length > 0,
       };
     case 'retrieval':
-    case 'file_search':
-      return { name: toolCall.type, id: toolCall.id || undefined, submitted: false };
+    case 'file_search': {
+      const output =
+        'output' in toolCall && typeof toolCall.output === 'string' ? toolCall.output : undefined;
+      return { name: toolCall.type, id: toolCall.id || undefined, output, submitted: !!output };
+    }
     default:
       return {
         name: toolCall.name,
@@ -332,13 +341,16 @@ const readToolCall = (toolCall: ToolCallValue): ToolCallFields => {
 };
 
 /**
- * The durable failure marker a stored call carries, if any: a failed or cancelled run step, a
- * cancelled background task, or arguments rejected by schema validation.
+ * The failure a stored call records, if any: a failed or cancelled run step, an output the tool
+ * renderers read as an error, a cancelled background task, or arguments rejected by validation.
  */
-const getToolFailure = (toolCall: ToolCallValue): string | undefined => {
+const getToolFailure = (toolCall: ToolCallValue, output?: UIToolOutput): string | undefined => {
   const { runStepStatus } = toolCall;
   if (runStepStatus === 'failed' || runStepStatus === 'cancelled') {
     return runStepStatus;
+  }
+  if (typeof output === 'string' && isToolErrorOutput(output)) {
+    return 'failed';
   }
   if (!('name' in toolCall)) {
     return undefined;
@@ -362,7 +374,7 @@ const toToolPart = (part: ToolCallContentPart, index: number): UIToolPart => {
   const { name, id, args, output, submitted } = readToolCall(toolCall);
   const { input, complete } = parseToolInput(args);
   const { runStepStatus, progress } = toolCall;
-  const failure = getToolFailure(toolCall);
+  const failure = getToolFailure(toolCall, output);
   const approval = submitted ? undefined : getToolApproval(toolCall);
 
   let state: UIToolState = complete ? 'input-available' : 'input-streaming';
@@ -519,6 +531,8 @@ const fromFilePart = (
   metadata: UIFilePartMetadata,
 ): TMessageContentParts | undefined => {
   switch (metadata.source) {
+    case 'attachment':
+      return undefined;
     case ContentTypes.IMAGE_FILE: {
       const { source: _source, image_file: imageFile, ...rest } = metadata;
       return {
@@ -538,8 +552,11 @@ const fromFilePart = (
       return { type: ContentTypes.VIDEO_URL, video_url: { url: part.url }, ...rest };
     }
     case ContentTypes.INPUT_AUDIO: {
-      const { source: _source, format, ...rest } = metadata;
+      const { source: _source, format: storedFormat, ...rest } = metadata;
       const data = part.url.slice(part.url.indexOf(',') + 1);
+      const format = part.mediaType.startsWith('audio/')
+        ? part.mediaType.slice('audio/'.length)
+        : storedFormat;
       return { type: ContentTypes.INPUT_AUDIO, input_audio: { data, format }, ...rest };
     }
   }
@@ -610,20 +627,39 @@ export function fromUIPart(part: UIMessagePart): TMessageContentParts | undefine
   return fromToolPart(part);
 }
 
-/** Maps UI parts back to a content array; `step-start` parts become holes again. */
-export function fromUIParts(parts: ReadonlyArray<UIMessagePart>): TMessageContentParts[] {
+/**
+ * Collects content in slot order: a mapped part takes the next slot and `step-start` holds one
+ * open as a hole, while parts with no content slot (sources, attachments) take none, so their
+ * position in the view never shifts a step's index.
+ */
+const createContentWriter = () => {
   const content: TMessageContentParts[] = [];
-  for (let i = 0; i < parts.length; i++) {
-    const part = parts[i];
+  let slot = 0;
+  const write = (part: UIMessagePart) => {
     const mapped = fromUIPart(part);
     if (mapped) {
-      content[i] = mapped;
+      content[slot++] = mapped;
     } else if (part.type === 'step-start') {
-      content.length = i + 1;
+      slot++;
+      content.length = slot;
     }
+  };
+  return { content, write };
+};
+
+/** Maps UI parts back to a content array; `step-start` parts become holes again. */
+export function fromUIParts(parts: ReadonlyArray<UIMessagePart>): TMessageContentParts[] {
+  const writer = createContentWriter();
+  for (const part of parts) {
+    writer.write(part);
   }
-  return content;
+  return writer.content;
 }
+
+/** A `file` part that stands for a `message.files` entry rather than a content slot. */
+const isAttachmentPart = (part: UIMessagePart): part is UIFilePart =>
+  part.type === 'file' &&
+  (!part.providerMetadata || part.providerMetadata.librechat.source === 'attachment');
 
 const toAttachmentFilePart = (file: Partial<TFile>): UIFilePart | undefined => {
   if (!file.filepath) {
@@ -634,6 +670,7 @@ const toAttachmentFilePart = (file: Partial<TFile>): UIFilePart | undefined => {
     mediaType: file.type || 'application/octet-stream',
     ...(file.filename && { filename: file.filename }),
     url: file.filepath,
+    providerMetadata: { librechat: { source: 'attachment', filepath: file.filepath } },
   };
 };
 
@@ -740,7 +777,7 @@ export function toUIMessage(message: TMessage): UIMessage {
     conversationId: message.conversationId,
     parentMessageId: message.parentMessageId,
     ...(message.sender !== undefined && { sender: message.sender }),
-    ...(message.model != null && { model: message.model }),
+    ...(message.model !== undefined && { model: message.model }),
     ...(message.endpoint !== undefined && { endpoint: message.endpoint }),
     ...(message.error !== undefined && { error: message.error }),
     ...(message.unfinished !== undefined && { unfinished: message.unfinished }),
@@ -806,9 +843,9 @@ const resolveText = (text: string, metadata: UIMessageMetadata | undefined, base
 };
 
 /**
- * Attachment `file` parts (those without content metadata) describe `message.files`: stored
- * entries are matched by path in view order with the view's edits applied, new parts become
- * entries, and stored entries the view never showed (no `filepath`) are kept.
+ * Attachment `file` parts describe `message.files`: each is matched to its stored entry by the
+ * path it was viewed with (so an edited `url` still finds it), the view's edits are applied, parts
+ * built by hand become new entries, and stored entries the view never showed are kept.
  */
 const reconcileFiles = (
   attachments: ReadonlyArray<UIFilePart>,
@@ -827,7 +864,9 @@ const reconcileFiles = (
     }
   }
   const files = attachments.map((part) => {
-    const stored = byPath.get(part.url);
+    const metadata = part.providerMetadata?.librechat;
+    const identity = metadata?.source === 'attachment' ? metadata.filepath : part.url;
+    const stored = byPath.get(identity);
     if (stored) {
       return applyFileEdits(stored, part, 'application/octet-stream');
     }
@@ -861,25 +900,18 @@ const pickIdentity = <K extends 'conversationId' | 'parentMessageId'>(
 export function fromUIMessage(message: UIMessage, base?: TMessage): TMessage {
   const metadata = message.metadata;
   const contentless = metadata?.contentless === true;
-  const content: TMessageContentParts[] = [];
+  const writer = createContentWriter();
   const attachments: UIFilePart[] = [];
   let text = '';
-  for (let i = 0; i < message.parts.length; i++) {
-    const part = message.parts[i];
+  for (const part of message.parts) {
     if (part.type === 'text') {
       text += part.text;
-    } else if (part.type === 'file' && !part.providerMetadata) {
+    } else if (isAttachmentPart(part)) {
       attachments.push(part);
       continue;
     }
-    if (contentless) {
-      continue;
-    }
-    const mapped = fromUIPart(part);
-    if (mapped) {
-      content[i] = mapped;
-    } else if (part.type === 'step-start') {
-      content.length = i + 1;
+    if (!contentless) {
+      writer.write(part);
     }
   }
 
@@ -893,7 +925,7 @@ export function fromUIMessage(message: UIMessage, base?: TMessage): TMessage {
     text: resolveText(text, metadata, base),
   };
   if (!contentless) {
-    next.content = content;
+    next.content = writer.content;
   }
   const files = reconcileFiles(attachments, base?.files);
   if (files) {
