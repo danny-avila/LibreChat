@@ -29,6 +29,7 @@
   --font-sans: var(--theme-font-family);
   --font-mono: var(--theme-mono-font-family);
   --shadow: var(--theme-shadow-sm);
+  --shadow-2xs: var(--theme-shadow-2xs);
   --shadow-xs: var(--theme-shadow-xs);
   --shadow-sm: var(--theme-shadow-sm);
   --shadow-md: var(--theme-shadow-md);
@@ -330,6 +331,7 @@ html {
     'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, 'Cascadia Mono', 'Liberation Mono',
     Consolas, monospace;
   --theme-elevation-surface: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --theme-shadow-2xs: 0 1px rgb(0 0 0 / 0.05);
   --theme-shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   --theme-shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
   --theme-shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);

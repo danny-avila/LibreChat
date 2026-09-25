@@ -149,6 +149,7 @@ describe('applyTheme', () => {
       radius2xl: ['--theme-radius-2xl', '0.75rem'],
       radius3xl: ['--theme-radius-3xl', '1rem'],
       monoFontFamily: ['--theme-mono-font-family', 'Inconsolata, monospace'],
+      shadow2xs: ['--theme-shadow-2xs', '0 1px rgb(0 0 0 / 0.1)'],
       shadowXs: ['--theme-shadow-xs', '0 1px 2px rgb(0 0 0 / 0.15)'],
       shadowSm: ['--theme-shadow-sm', '0 2px 4px rgb(0 0 0 / 0.15)'],
       shadowMd: ['--theme-shadow-md', '0 4px 8px rgb(0 0 0 / 0.15)'],

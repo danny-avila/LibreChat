@@ -33,8 +33,8 @@ scales.
 In the LibreChat app the plain Tailwind utilities read theme-owned properties, so a theme reshapes
 existing call sites without a migration: `rounded-sm` through `rounded-3xl` read `radiusSm`
 through `radius3xl` (`--theme-radius-*`), `font-sans` reads `fontFamily` (`--theme-font-family`),
-`font-mono` reads `monoFontFamily` (`--theme-mono-font-family`), and `shadow-xs` through
-`shadow-2xl` (and bare `shadow`, which matches `sm`) read `shadowXs` through `shadow2xl`
+`font-mono` reads `monoFontFamily` (`--theme-mono-font-family`), and `shadow-2xs` through
+`shadow-2xl` (and bare `shadow`, which matches `sm`) read `shadow2xs` through `shadow2xl`
 (`--theme-shadow-*`). `elevationSurface` stays the separate role behind `shadow-theme-surface`.
 A shadow value must be a `box-shadow` list or `none`; `none` is written as a transparent layer so
 Tailwind can still compose it with ring utilities.

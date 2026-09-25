@@ -202,6 +202,7 @@ describe('application radius, font and shadow scales', () => {
     ['rounded-3xl', '--theme-radius-3xl', 'radius3xl'],
   ];
   const shadows = [
+    ['shadow-2xs', '--theme-shadow-2xs', 'shadow2xs', '--shadow-2xs'],
     ['shadow-xs', '--theme-shadow-xs', 'shadowXs', '--shadow-xs'],
     ['shadow-sm', '--theme-shadow-sm', 'shadowSm', '--shadow-sm'],
     ['shadow-md', '--theme-shadow-md', 'shadowMd', '--shadow-md'],

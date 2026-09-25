@@ -65,6 +65,7 @@ export const themeAppearanceProperties: Readonly<
   fontFamily: '--theme-font-family',
   monoFontFamily: '--theme-mono-font-family',
   elevationSurface: '--theme-elevation-surface',
+  shadow2xs: '--theme-shadow-2xs',
   shadowXs: '--theme-shadow-xs',
   shadowSm: '--theme-shadow-sm',
   shadowMd: '--theme-shadow-md',
@@ -93,6 +94,7 @@ export const defaultAppearance: IThemeAppearance = Object.freeze({
   monoFontFamily:
     "'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, 'Cascadia Mono', 'Liberation Mono', Consolas, monospace",
   elevationSurface: '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)',
+  shadow2xs: '0 1px rgb(0 0 0 / 0.05)',
   shadowXs: '0 1px 2px 0 rgb(0 0 0 / 0.05)',
   shadowSm: '0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)',
   shadowMd: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
@@ -308,6 +310,7 @@ const appearanceValidators: Record<keyof IThemeAppearance, (value: unknown) => b
   fontFamily: isFontFamily,
   monoFontFamily: isFontFamily,
   elevationSurface: isShadow,
+  shadow2xs: isShadow,
   shadowXs: isShadow,
   shadowSm: isShadow,
   shadowMd: isShadow,
@@ -450,6 +453,7 @@ function definedBrands(brands?: Partial<IThemeBrands>): Partial<IThemeBrands> {
 
 const shadowAppearanceKeys: ReadonlyArray<keyof IThemeAppearance> = [
   'elevationSurface',
+  'shadow2xs',
   'shadowXs',
   'shadowSm',
   'shadowMd',

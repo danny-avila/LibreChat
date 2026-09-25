@@ -376,6 +376,7 @@ export interface IThemeAppearance {
   fontFamily: string;
   monoFontFamily: string;
   elevationSurface: string;
+  shadow2xs: string;
   shadowXs: string;
   shadowSm: string;
   shadowMd: string;
