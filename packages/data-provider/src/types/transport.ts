@@ -224,8 +224,13 @@ export type ChatEvent =
   | { type: 'content'; data: ChatContentFrame }
   /** AI SDK: `text-delta`, except the text is cumulative rather than a delta. */
   | { type: 'text'; data: ChatTextFrame }
-  /** AI SDK: `error`. `data` is `undefined` when the error body was not JSON. */
-  | { type: 'error'; data?: ChatErrorData | null }
+  /**
+   * AI SDK: `error`. `data` is `undefined` when the error body was not JSON.
+   * `status` is set by `reconnectToStream` only: the HTTP status of a failed
+   * connection, `0` when it dropped (including a cancel the caller did not
+   * issue), and absent for an error event the server wrote into the stream.
+   */
+  | { type: 'error'; data?: ChatErrorData | null; status?: number }
   /** AI SDK: `abort`. The caller closed a stream that was still open. */
   | { type: 'abort' };
 
@@ -247,15 +252,46 @@ export type ChatTransportOptions = {
   onEvent: (event: ChatEvent) => void;
 };
 
+/** Attaches to a generation already running on the server. */
+export type ChatStreamRequest = {
+  /** The stream route, with the resume cursor and generation fence in its query. */
+  url: string;
+  /** Sent beside the bearer token and kept across a token refresh. */
+  headers?: Record<string, string>;
+};
+
+/** The handle `reconnectToStream` returns for one attachment. */
+export interface ChatStreamConnection {
+  /**
+   * Whether the connection has closed. A response body that simply ends
+   * dispatches no event, so this is the only way to see that it did.
+   */
+  readonly closed: boolean;
+}
+
 /**
  * Carries one turn from request to terminal event. Implementations own the
  * wire (connection, framing, auth refresh); callers only see {@link ChatEvent}s.
  *
  * AI SDK: `ChatTransport`. `send` corresponds to `sendMessages`, returning
  * through a callback rather than a `ReadableStream` so handlers keep running
- * synchronously inside the frame that produced them. `reconnectToStream` has
- * no counterpart yet; resume still lives in `useResumableSSE`.
+ * synchronously inside the frame that produced them.
  */
 export interface ChatTransport<TRequest = ChatTransportRequest> {
   send(request: TRequest, options: ChatTransportOptions): void;
+  /**
+   * Attaches to a running generation and reports it through the same events
+   * as `send`. Aborting the signal while the stream is open emits
+   * `{ type: 'abort' }`; a cancel the caller did not issue (a backgrounded or
+   * frozen tab) is a dropped connection and emits `{ type: 'error', status: 0 }`.
+   * Each 401 refreshes the token and reattaches on the same handle; a refresh
+   * that fails is reported as the 401.
+   *
+   * AI SDK: `reconnectToStream`, which resolves to a stream (or `null` when
+   * nothing is running); here the caller learns that from a 404 `error`.
+   */
+  reconnectToStream(
+    request: ChatStreamRequest,
+    options: ChatTransportOptions,
+  ): ChatStreamConnection;
 }

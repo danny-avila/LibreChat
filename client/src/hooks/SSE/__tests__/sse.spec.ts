@@ -17,13 +17,19 @@ class FakeXHR {
   withCredentials = false;
   headers: Record<string, string> = {};
   body: string | null = null;
+  method = '';
+  url = '';
   private readonly listeners: Record<string, XHRListener[]> = {};
 
   addEventListener(type: string, listener: XHRListener) {
     (this.listeners[type] ??= []).push(listener);
   }
 
-  open() {}
+  open(method: string, url: string) {
+    this.method = method;
+    this.url = url;
+  }
+
   setRequestHeader(key: string, value: string) {
     this.headers[key] = value;
   }
@@ -257,6 +263,187 @@ describe('createSSETransport', () => {
     send();
 
     expect(xhrs).toHaveLength(0);
+    expect(events).toEqual([]);
+  });
+});
+
+describe('createSSETransport().reconnectToStream', () => {
+  const OriginalXHR = global.XMLHttpRequest;
+  const stream = {
+    url: '/api/agents/chat/stream/convo-1?resume=true',
+    headers: { 'X-LibreChat-Generation-Protocol': '2' },
+  };
+  let xhrs: FakeXHR[];
+  let events: ChatEvent[];
+  let controller: AbortController;
+
+  const current = () => xhrs[xhrs.length - 1];
+  const attach = (token = 'token-1') =>
+    createSSETransport({ token }).reconnectToStream(stream, {
+      signal: controller.signal,
+      onEvent: (event) => events.push(event),
+    });
+
+  beforeEach(() => {
+    xhrs = [];
+    events = [];
+    controller = new AbortController();
+    const FakeConstructor = jest.fn(() => {
+      const xhr = new FakeXHR();
+      xhrs.push(xhr);
+      return xhr;
+    });
+    global.XMLHttpRequest = Object.assign(FakeConstructor, {
+      HEADERS_RECEIVED: FakeXHR.HEADERS_RECEIVED,
+    }) as unknown as typeof XMLHttpRequest;
+  });
+
+  afterEach(() => {
+    global.XMLHttpRequest = OriginalXHR;
+    jest.restoreAllMocks();
+  });
+
+  it('attaches with a GET carrying the bearer token and the request headers', () => {
+    attach();
+
+    expect(current().method).toBe('GET');
+    expect(current().url).toBe(stream.url);
+    expect(current().headers).toEqual({
+      Authorization: 'Bearer token-1',
+      'X-LibreChat-Generation-Protocol': '2',
+    });
+  });
+
+  it('normalizes the resume snapshot and the frames behind it', () => {
+    attach();
+    current().receiveHeaders();
+    current().write(
+      message({ sync: true, resumeState: { runSteps: [] }, pendingEvents: [] }) +
+        message({ event: 'attachment', data: { file_id: 'file-1' } }) +
+        message({ final: true, reconcile: true, terminalStatus: 'complete' }),
+    );
+
+    expect(events).toEqual([
+      { type: 'open' },
+      { type: 'sync', data: { sync: true, resumeState: { runSteps: [] }, pendingEvents: [] } },
+      { type: 'attachment', data: { file_id: 'file-1' } },
+      { type: 'final', data: { final: true, reconcile: true, terminalStatus: 'complete' } },
+    ]);
+  });
+
+  it('emits a server error event with its parsed body and no status', () => {
+    attach();
+    current().write(`event: error\ndata: ${JSON.stringify({ error: 'failed' })}\n\n`);
+
+    expect(events).toEqual([{ type: 'error', status: undefined, data: { error: 'failed' } }]);
+  });
+
+  it('emits an HTTP failure with its status and no data for a body that is not JSON', () => {
+    attach();
+    current().status = 404;
+    current().write('Not Found');
+
+    expect(events).toEqual([{ type: 'error', status: 404, data: undefined }]);
+  });
+
+  it('reports a cancel the caller did not issue as a dropped connection', () => {
+    const connection = attach();
+    current().receiveHeaders();
+
+    current().abort();
+
+    expect(events).toEqual([{ type: 'open' }, { type: 'error', status: 0 }]);
+    expect(connection.closed).toBe(true);
+  });
+
+  it('emits abort when the caller closes an open stream, then goes quiet', () => {
+    const connection = attach();
+    current().receiveHeaders();
+    const xhr = current();
+
+    controller.abort();
+    xhr.write(message({ final: true }));
+
+    expect(events).toEqual([{ type: 'open' }, { type: 'abort' }]);
+    expect(connection.closed).toBe(true);
+  });
+
+  it('reports closed once the response body ends without a terminal event', () => {
+    const connection = attach();
+    current().receiveHeaders();
+    current().write(message({ created: true, message: {} }));
+    expect(connection.closed).toBe(false);
+
+    current().emit('load');
+
+    expect(connection.closed).toBe(true);
+    controller.abort();
+    expect(events.map((event) => event.type)).toEqual(['open', 'created']);
+  });
+
+  it('refreshes the token on every 401 and reattaches with the request headers', async () => {
+    const refreshToken = jest
+      .spyOn(request, 'refreshToken')
+      .mockResolvedValueOnce({ token: 'token-2' } as never)
+      .mockResolvedValueOnce({ token: 'token-3' } as never);
+    const dispatchTokenUpdated = jest
+      .spyOn(request, 'dispatchTokenUpdatedEvent')
+      .mockImplementation(() => undefined);
+    attach();
+
+    for (const _attempt of [1, 2]) {
+      current().status = 401;
+      current().write('Unauthorized');
+      await new Promise(process.nextTick);
+    }
+
+    expect(refreshToken).toHaveBeenCalledTimes(2);
+    expect(dispatchTokenUpdated).toHaveBeenLastCalledWith('token-3');
+    expect(xhrs).toHaveLength(3);
+    expect(current().method).toBe('GET');
+    expect(current().headers).toEqual({
+      Authorization: 'Bearer token-3',
+      'X-LibreChat-Generation-Protocol': '2',
+    });
+    expect(events).toEqual([]);
+  });
+
+  it('reports the 401 when the token refresh fails', async () => {
+    jest.spyOn(console, 'log').mockImplementation(() => undefined);
+    jest.spyOn(request, 'refreshToken').mockRejectedValue(new Error('refresh failed'));
+    attach();
+    current().status = 401;
+    current().write('Unauthorized');
+
+    await new Promise(process.nextTick);
+
+    expect(xhrs).toHaveLength(1);
+    expect(events).toEqual([{ type: 'error', status: 401, data: undefined }]);
+  });
+
+  it('stays closed when the caller aborts while a 401 refresh is in flight', async () => {
+    jest.spyOn(request, 'refreshToken').mockResolvedValue({ token: 'token-2' } as never);
+    const dispatchTokenUpdated = jest
+      .spyOn(request, 'dispatchTokenUpdatedEvent')
+      .mockImplementation(() => undefined);
+    attach();
+    current().status = 401;
+    current().write('Unauthorized');
+
+    controller.abort();
+    await new Promise(process.nextTick);
+
+    expect(xhrs).toHaveLength(1);
+    expect(dispatchTokenUpdated).not.toHaveBeenCalled();
+    expect(events).toEqual([]);
+  });
+
+  it('never opens a connection for an already-aborted signal', () => {
+    controller.abort();
+    const connection = attach();
+
+    expect(xhrs).toHaveLength(0);
+    expect(connection.closed).toBe(true);
     expect(events).toEqual([]);
   });
 });
