@@ -13,7 +13,6 @@ const mockLogin = jest.fn();
 
 const mockStartupConfig: TStartupConfig = {
   socialLogins: ['google', 'facebook', 'openid', 'github', 'discord', 'saml'],
-  maxPasskeysPerUser: 20,
   discordLoginEnabled: true,
   facebookLoginEnabled: true,
   githubLoginEnabled: true,

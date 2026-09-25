@@ -2604,7 +2604,7 @@ export type TStartupConfig = {
   samlLoginEnabled: boolean;
   passkeyLoginEnabled: boolean;
   /** Per-account passkey enrollment cap, from `passkeys.perUserMax`; post-login only. */
-  maxPasskeysPerUser: number;
+  maxPasskeysPerUser?: number;
   openidLabel: string;
   openidImageUrl: string;
   openidAutoRedirect: boolean;
