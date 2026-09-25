@@ -111,6 +111,8 @@ export interface EnqueueAgentQueuedTurnInput extends AgentQueuedTurnConversation
   quotes?: readonly string[];
   manualSkills?: readonly string[];
   codeApprovalMode?: CodeApprovalMode;
+  /** Internal publication fence, committed with approval-bearing rows. */
+  deliveryReservation?: { queuedTurnId: string; deliveryKey: string };
   expectedPredecessorCreatedAt?: number;
   priority?: boolean;
   availableAt?: Date;
@@ -1093,6 +1095,9 @@ export function createAgentQueuedTurnMethods(
   ): Promise<{ turn: AgentQueuedTurnRecord; replayed: boolean }> {
     const scope = conversationScope(input);
     const normalized = normalizeEnqueue(input);
+    if (input.codeApprovalMode != null && input.deliveryReservation == null) {
+      throw new TypeError('Approval snapshots require a versioned delivery reservation');
+    }
     const requestFingerprint = fingerprint(normalized);
     const existing = await Turn()
       .findOne({ ...scope, clientRequestId: normalized.clientRequestId })
@@ -1149,7 +1154,11 @@ export function createAgentQueuedTurnMethods(
               status: 'reserving',
               attempts: 0,
               availableAt: input.availableAt ?? new Date(),
-              deliveryState: 'pending',
+              deliveryState: input.deliveryReservation != null ? 'publishing' : 'pending',
+              ...(input.deliveryReservation != null && {
+                _id: requireBoundedString(input.deliveryReservation.queuedTurnId, 128),
+                deliveryKey: requireBoundedString(input.deliveryReservation.deliveryKey, 128),
+              }),
               reservationWriterId: writer.writerId,
             });
             return {

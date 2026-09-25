@@ -25,11 +25,12 @@ import type { AgentQueuedTurnLifecycle } from './queuedTurns';
 import type { SteerFileFetcher } from './steering/request';
 import type { SteerRequestUser } from './steering/refs';
 import { buildOwnerFilter, collectFileIds, toSteerFileRef } from './steering/refs';
+import { createQueuedTurnDeliveryReservation } from './queuedTurns';
 import { getReferencedQuotes } from '~/utils';
 
 const MAX_QUEUED_TURN_LENGTH = 16_000;
 const MAX_QUEUED_TURN_FILES = 10;
-const CAPABILITY = { supported: true, durability: 'durable' } as const;
+const CAPABILITY = { supported: true, durability: 'durable', protocolVersion: 2 } as const;
 
 interface QueuedTurnConversation {
   agent_id?: string;
@@ -42,6 +43,7 @@ interface QueuedTurnHttpMethods extends AgentQueuedTurnMethods {
 }
 
 export interface AgentQueuedTurnHttpDeps {
+  protocolVersion?: 2;
   methods: QueuedTurnHttpMethods;
   lifecycle: Pick<AgentQueuedTurnLifecycle, 'schedule' | 'cancel'>;
   getFiles?: SteerFileFetcher;
@@ -264,6 +266,9 @@ export async function handleAgentQueuedTurnEnqueue(
     return { status: 400, body: { code: 'INVALID_QUEUED_TURN' } };
   }
   const input = parsed.data;
+  if (input.codeApprovalMode != null && deps.protocolVersion !== 2) {
+    return { status: 409, body: { code: 'QUEUED_TURN_PROTOCOL_REQUIRED' } };
+  }
   const text = input.text.replace(/\0/g, '').trim();
   if (text.length === 0) {
     return { status: 400, body: { code: 'EMPTY_TEXT' } };
@@ -332,7 +337,7 @@ export async function handleAgentQueuedTurnEnqueue(
     return resolvedFiles.error;
   }
   try {
-    const queued = await deps.methods.enqueueAgentQueuedTurn({
+    const enqueueInput = {
       ...scope,
       conversationId: input.conversationId,
       agentId: authorized.conversation.agent_id,
@@ -346,6 +351,12 @@ export async function handleAgentQueuedTurnEnqueue(
       priority: false,
       ...(input.expectedPredecessorCreatedAt != null && {
         expectedPredecessorCreatedAt: input.expectedPredecessorCreatedAt,
+      }),
+    };
+    const queued = await deps.methods.enqueueAgentQueuedTurn({
+      ...enqueueInput,
+      ...(input.codeApprovalMode != null && {
+        deliveryReservation: createQueuedTurnDeliveryReservation(enqueueInput),
       }),
     });
     /** A same-body replay is the transport-independent receipt lookup. It can

@@ -39,6 +39,60 @@ function requestBody() {
 }
 
 describe('Agent queued-turn HTTP admission receipts', () => {
+  it('refuses snapshot writes on v1 before ownership lookup or persistence', async () => {
+    const getConvo = jest.fn();
+    const methods = { getConvo } as unknown as AgentQueuedTurnMethods & {
+      getConvo: typeof getConvo;
+    };
+    await expect(
+      handleAgentQueuedTurnEnqueue(
+        { id: USER_ID },
+        { ...requestBody(), codeApprovalMode: 'fullAccess' },
+        {
+          methods,
+          lifecycle: { schedule: jest.fn(), cancel: jest.fn() },
+        },
+      ),
+    ).resolves.toMatchObject({ status: 409, body: { code: 'QUEUED_TURN_PROTOCOL_REQUIRED' } });
+    expect(getConvo).not.toHaveBeenCalled();
+  });
+
+  it('reserves the v2 publication identity with the authorized snapshot', async () => {
+    const enqueue = jest.fn().mockResolvedValue({ turn: turn('queued'), replayed: false });
+    const getConvo = jest.fn(async () => ({ agent_id: 'agent_1', endpoint: 'agents' }));
+    const methods = {
+      getConvo,
+      getAgentQueuedTurnByClientRequestId: jest.fn(async () => null),
+      enqueueAgentQueuedTurn: enqueue,
+      listActiveAgentQueuedTurns: jest.fn(async () => []),
+      getAgentQueuedTurnLaneSnapshot: jest.fn(async () => ({
+        revision: 0,
+        recoveryRequired: false,
+      })),
+    } as unknown as AgentQueuedTurnMethods & { getConvo: typeof getConvo };
+    await expect(
+      handleAgentQueuedTurnEnqueue(
+        { id: USER_ID },
+        { ...requestBody(), codeApprovalMode: 'ask' },
+        {
+          protocolVersion: 2,
+          methods,
+          checkAgentAccess: jest.fn(async () => true),
+          lifecycle: { schedule: jest.fn(), cancel: jest.fn() },
+        },
+      ),
+    ).resolves.toMatchObject({ status: 202, body: { capability: { protocolVersion: 2 } } });
+    expect(enqueue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        codeApprovalMode: 'ask',
+        deliveryReservation: {
+          queuedTurnId: expect.stringMatching(/^[a-f0-9]{24}$/),
+          deliveryKey: expect.any(String),
+        },
+      }),
+    );
+  });
+
   it('rejects a same-id replay that changes its queued approval snapshot', async () => {
     const saved = { ...turn('admitted'), codeApprovalMode: 'ask' as const };
     const methods = {
@@ -46,6 +100,7 @@ describe('Agent queued-turn HTTP admission receipts', () => {
       getAgentQueuedTurnByClientRequestId: jest.fn(async () => saved),
     };
     const deps = {
+      protocolVersion: 2,
       methods: methods as unknown as AgentQueuedTurnMethods & { getConvo: typeof methods.getConvo },
       lifecycle: { schedule: jest.fn(), cancel: jest.fn() },
     } satisfies AgentQueuedTurnHttpDeps;

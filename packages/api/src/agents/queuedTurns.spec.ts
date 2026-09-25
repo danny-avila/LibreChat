@@ -9,7 +9,11 @@ import type {
 } from '@librechat/data-schemas';
 import type { AgentQueuedTurnResolverDeps, AgentQueuedTurnSchedulerDeps } from './queuedTurns';
 import type { AgentContinueTriggerEnvelope } from './triggers/envelope';
-import { AGENT_QUEUED_TURN_SOURCE, createAgentQueuedTurnLifecycle } from './queuedTurns';
+import {
+  createQueuedTurnDeliveryReservation,
+  AGENT_QUEUED_TURN_SOURCE,
+  createAgentQueuedTurnLifecycle,
+} from './queuedTurns';
 import { getAgentTriggerIdempotencyKey } from './triggers/envelope';
 import { AgentTriggerExecutionError } from './triggers/host';
 
@@ -1066,6 +1070,38 @@ describe('Agent queued-turn delivery scheduling', () => {
       status: 'queued',
     };
   }
+
+  it('publishes approval snapshots only with their precommitted v2 identity', async () => {
+    const input = { ...queuedTurn('seed', 1), codeApprovalMode: 'fullAccess' as const };
+    const reservation = createQueuedTurnDeliveryReservation(input);
+    const row = { ...input, ...reservation, deliveryState: 'publishing' as const };
+    const reserve = jest.fn().mockResolvedValue({ outcome: 'already_reserved', turn: row });
+    const enqueue = jest.fn(async (value: unknown) => ({
+      deliveryKey: getAgentTriggerIdempotencyKey(value as AgentContinueTriggerEnvelope),
+    }));
+    const scheduler = createAgentQueuedTurnScheduler({
+      methods: {
+        reserveAgentQueuedTurnDelivery: reserve,
+        markQueuedTurnScheduled: jest.fn(async () => ({ outcome: 'scheduled', turn: row })),
+      } as unknown as AgentQueuedTurnMethods,
+      enqueue,
+      getGenerationAdmissionEvidence: async () => null,
+    });
+    await scheduler.schedule(row);
+    expect(reserve).toHaveBeenLastCalledWith(
+      expect.objectContaining({ deliveryKey: reservation.deliveryKey }),
+    );
+    expect(enqueue).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ requiredWorkerCapability: 'agent_queued_turn_v2' }),
+    );
+    // An old worker computes the v1 identity from a projection lacking the mode.
+    const { codeApprovalMode: _mode, ...legacyProjection } = row;
+    reserve.mockResolvedValueOnce({ outcome: 'conflict', turn: row });
+    await expect(scheduler.schedule(legacyProjection)).rejects.toThrow();
+    expect(reserve.mock.calls[1]?.[0].deliveryKey).not.toBe(reservation.deliveryKey);
+    expect(enqueue).toHaveBeenCalledTimes(1);
+  });
 
   it('uses independent delivery lanes so publication order cannot invert queue order', async () => {
     const enqueue = jest.fn(async (value: unknown) => ({

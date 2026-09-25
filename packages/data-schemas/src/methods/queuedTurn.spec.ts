@@ -138,10 +138,34 @@ describe('agent queued turn methods', () => {
     expect(await Turn.countDocuments()).toBe(1);
   });
 
+  it('refuses an unfenced approval snapshot before inserting a row', async () => {
+    await expect(
+      methods.enqueueAgentQueuedTurn(enqueueInput({ codeApprovalMode: 'ask' })),
+    ).rejects.toThrow('versioned delivery reservation');
+    expect(await Turn.countDocuments()).toBe(0);
+  });
+
   it('keeps the selected approval mode on queued, claimed, and retried turns', async () => {
-    const input = enqueueInput({ codeApprovalMode: 'fullAccess' });
+    const input = enqueueInput({
+      codeApprovalMode: 'fullAccess',
+      deliveryReservation: { queuedTurnId: '507f191e810c19729de860ea', deliveryKey: 'v2-key' },
+    });
     const first = await methods.enqueueAgentQueuedTurn(input);
     expect(first.turn.codeApprovalMode).toBe('fullAccess');
+    expect(first.turn).toMatchObject({ deliveryKey: 'v2-key', deliveryState: 'publishing' });
+    const scope = {
+      user,
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      queuedTurnId: first.turn.queuedTurnId,
+    };
+    await expect(
+      methods.reserveAgentQueuedTurnDelivery({ ...scope, deliveryKey: 'legacy-v1-key' }),
+    ).resolves.toMatchObject({ outcome: 'conflict' });
+    await expect(
+      methods.reserveAgentQueuedTurnDelivery({ ...scope, deliveryKey: 'v2-key' }),
+    ).resolves.toMatchObject({ outcome: 'already_reserved' });
+
     expect((await methods.enqueueAgentQueuedTurn(input)).replayed).toBe(true);
     await expect(
       methods.enqueueAgentQueuedTurn({ ...input, codeApprovalMode: 'ask' }),
@@ -163,7 +187,11 @@ describe('agent queued turn methods', () => {
     expect(created.turn.codeApprovalMode).toBeUndefined();
     expect((await methods.enqueueAgentQueuedTurn(input)).replayed).toBe(true);
     await expect(
-      methods.enqueueAgentQueuedTurn({ ...input, codeApprovalMode: 'fullAccess' }),
+      methods.enqueueAgentQueuedTurn({
+        ...input,
+        codeApprovalMode: 'fullAccess',
+        deliveryReservation: { queuedTurnId: '507f191e810c19729de860ea', deliveryKey: 'v2-key' },
+      }),
     ).rejects.toBeInstanceOf(AgentQueuedTurnConflictError);
   });
 

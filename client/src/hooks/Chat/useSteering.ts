@@ -378,6 +378,7 @@ export interface UseSteeringParams {
   index: number;
   conversationId: string;
   conversation: TConversation | null;
+  addedConversation?: TConversation | null;
   isSubmitting: boolean;
   answerModeActive: boolean;
   /** Composer attachments — consumed into queued items (steering is text-only). */
@@ -412,6 +413,7 @@ export default function useSteering({
   index,
   conversationId,
   conversation,
+  addedConversation,
   isSubmitting,
   answerModeActive,
   files,
@@ -437,7 +439,7 @@ export default function useSteering({
   const setDefaultAction = useSetRecoilState(store.duringRunDefaultAction);
   const steerInterruptsByDefault = useRecoilValue(store.steerInterruptsByDefault);
 
-  const { selected: codeApprovalMode } = useCodeApprovalMode(conversation);
+  const { selected: codeApprovalMode } = useCodeApprovalMode(conversation, addedConversation);
   const endpoint = conversation?.endpointType ?? conversation?.endpoint;
   const steerable = !isAssistantsEndpoint(endpoint);
   const hasRealConvoId =

@@ -1210,10 +1210,29 @@ export function getSchedules(): Promise<sch.TSchedulesResponse> {
   return request.get(endpoints.schedules());
 }
 
-export function enqueueAgentQueuedTurn(
+export async function enqueueAgentQueuedTurn(
   payload: qt.TEnqueueAgentQueuedTurnRequest,
 ): Promise<qt.TEnqueueAgentQueuedTurnResponse> {
-  return request.post(endpoints.agentQueuedTurns(), payload);
+  if (payload.codeApprovalMode == null) {
+    return request.post(endpoints.agentQueuedTurns(), payload);
+  }
+  const unsupported = () =>
+    Object.assign(new Error('Queued approval snapshots require protocol v2'), {
+      response: { status: 409, data: { code: 'QUEUED_TURN_PROTOCOL_REQUIRED' } },
+    });
+  try {
+    const { capability } = await listAgentQueuedTurns(payload.conversationId);
+    if (!capability.supported || capability.protocolVersion !== 2) {
+      throw unsupported();
+    }
+    // A capability read can hit a different replica. An old writer must reject
+    // the versioned URL rather than strip the snapshot and accept a v1 row.
+    return await request.post(endpoints.agentQueuedTurns(2), payload);
+  } catch (error) {
+    const status = (error as { response?: { status?: number } })?.response?.status;
+    if (status === 404 || status === 501) throw unsupported();
+    throw error;
+  }
 }
 
 export function listAgentQueuedTurns(

@@ -27,9 +27,11 @@ let mockServerQueuedTurns: unknown[] | undefined;
 let mockFileMap: Record<string, Pick<TFile, 'llmDeliveryPath'>> = {};
 const mockUseAgentQueuedTurns = jest.fn((..._args: unknown[]) => ({ data: mockServerQueuedTurns }));
 
+const mockCodeApprovalMode = jest.fn((..._args: unknown[]) => ({ selected: mockApprovalMode }));
+
 jest.mock('~/hooks/Agents/useCodeApprovalMode', () => ({
   __esModule: true,
-  default: () => ({ selected: mockApprovalMode }),
+  default: (...args: unknown[]) => mockCodeApprovalMode(...args),
 }));
 
 jest.mock('~/Providers', () => ({
@@ -313,7 +315,10 @@ describe('useSteering', () => {
   });
 
   describe('server-owned Agent queued turns', () => {
-    function setupServerQueue(initializer = withActiveGeneration()) {
+    function setupServerQueue(
+      initializer = withActiveGeneration(),
+      addedConversation?: TConversation,
+    ) {
       const sendNow = jest.fn();
       const wrapper = ({ children }: { children: React.ReactNode }) => (
         <RecoilRoot initializeState={initializer}>{children}</RecoilRoot>
@@ -325,6 +330,7 @@ describe('useSteering', () => {
             index: 0,
             conversationId: CONVO_ID,
             conversation: agentsConversation,
+            addedConversation,
             isSubmitting: true,
             answerModeActive: false,
             sendNow,
@@ -363,6 +369,18 @@ describe('useSteering', () => {
         if (mode == null) expect(input).not.toHaveProperty('codeApprovalMode');
       },
     );
+
+    it('snapshots the combined-agent selection rather than the primary preference', async () => {
+      mockApprovalMode = 'ask';
+      const addedConversation = { ...agentsConversation, agent_id: 'restricted-agent' };
+      const { result } = setupServerQueue(withActiveGeneration(), addedConversation);
+      await act(async () => {
+        result.current.steering.queueFromComposer('run later');
+        await Promise.resolve();
+      });
+      expect(mockCodeApprovalMode).toHaveBeenLastCalledWith(agentsConversation, addedConversation);
+      expect(mockEnqueueQueuedTurn.mock.calls[0]?.[0].codeApprovalMode).toBe('ask');
+    });
 
     it('keeps startup turns local until the server generation epoch exists', async () => {
       const { result } = setupServerQueue(

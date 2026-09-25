@@ -80,6 +80,8 @@ export const agentQueuedTurnCapabilitySchema = z.discriminatedUnion('supported',
   z.object({
     supported: z.literal(true),
     durability: z.enum(agentQueuedTurnDurability),
+    /** v2 preserves approval snapshots through admission and execution. */
+    protocolVersion: z.literal(2).optional(),
   }),
 ]);
 export type TAgentQueuedTurnCapability = z.infer<typeof agentQueuedTurnCapabilitySchema>;
