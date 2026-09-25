@@ -251,45 +251,29 @@ function splitTopLevel(value: string, separator: RegExp): string[] {
   return parts.map((part) => part.trim());
 }
 
-type ShadowToken = 'length' | 'inset' | 'color' | 'variable';
-
-const classifyShadowToken = (token: string): ShadowToken => {
-  if (shadowLengthPattern.test(token)) {
-    return 'length';
-  }
-  if (token.toLowerCase() === 'inset') {
-    return 'inset';
-  }
-  return /^var\s*\(/i.test(token) ? 'variable' : 'color';
-};
-
 /** A named color is indistinguishable from any other word without the browser's color parser. */
 const isShadowColor = (token: string): boolean =>
   globalThis.CSS?.supports?.('color', token) ?? shadowColorPattern.test(token);
 
-/**
- * One layer: two to four lengths, optionally `inset` and one color, per the box-shadow grammar.
- * A `var()` may stand for any number of those parts, so a layer holding one only has to keep
- * what is written around it within the grammar.
- */
+/** One layer: two to four lengths, optionally `inset` and one color, per the box-shadow grammar. */
 function isShadowLayer(layer: string): boolean {
   const tokens = splitTopLevel(layer, /\s/).filter((token) => token.length > 0);
-  const kinds = tokens.map(classifyShadowToken);
-  const count = (kind: ShadowToken) => kinds.filter((each) => each === kind).length;
-  const lengths = count('length');
-  const colors = tokens.filter((_, i) => kinds[i] === 'color');
-  const hasVariable = count('variable') > 0;
+  const lengths = tokens.filter((token) => shadowLengthPattern.test(token)).length;
+  const insets = tokens.filter((token) => token.toLowerCase() === 'inset').length;
+  const colors = tokens.filter(
+    (token) => !shadowLengthPattern.test(token) && token.toLowerCase() !== 'inset',
+  );
   return (
-    (hasVariable || lengths >= 2) &&
-    lengths <= 4 &&
-    count('inset') <= 1 &&
-    colors.length <= 1 &&
-    colors.every(isShadowColor)
+    lengths >= 2 && lengths <= 4 && insets <= 1 && colors.length <= 1 && colors.every(isShadowColor)
   );
 }
 
+/**
+ * A shadow must be concrete: a browser defers its check of any value holding `var()` until
+ * substitution, so such a value could never be validated before it reaches the ring layers.
+ */
 const isShadow = (value: unknown): value is string => {
-  if (typeof value !== 'string' || /[;{}]|url\s*\(/i.test(value)) {
+  if (typeof value !== 'string' || /[;{}]|url\s*\(|var\s*\(/i.test(value)) {
     return false;
   }
   if (value.trim().toLowerCase() === 'none') {
@@ -298,10 +282,6 @@ const isShadow = (value: unknown): value is string => {
   const layers = splitTopLevel(value, /,/);
   if (layers.some((layer) => layer.length === 0) || !layers.every(isShadowLayer)) {
     return false;
-  }
-  /** A browser defers its own check for a value holding `var()` and would accept anything. */
-  if (/var\s*\(/i.test(value)) {
-    return true;
   }
   return globalThis.CSS?.supports?.('box-shadow', value) ?? true;
 };
