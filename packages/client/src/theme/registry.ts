@@ -186,7 +186,7 @@ const cssLengthDifferencePattern =
   /^calc\(\s*\d*\.?\d+(px|rem|em)\s+[-+]\s+\d*\.?\d+(px|rem|em)\s*\)$/;
 const cssDurationPattern = /^\d*\.?\d+(ms|s)$/;
 const hexColorPattern = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
-const shadowLengthPattern = /^-?(0|\d*\.?\d+(px|rem|em))$/;
+const shadowLengthPattern = /^(-?(0|\d*\.?\d+[a-z]+)|(calc|min|max|clamp)\(.*\))$/i;
 const shadowColorPattern = /^(#[0-9a-f]{3,8}|[a-z]+|[a-z-]+\(.*\))$/i;
 /** Tailwind composes `--tw-shadow` into one list with the ring layers, where `none` is invalid. */
 const disabledShadow = '0 0 #0000';
@@ -274,6 +274,10 @@ const isShadow = (value: unknown): value is string => {
   }
   if (value.trim().toLowerCase() === 'none') {
     return true;
+  }
+  /** A `var()` can stand for any part of the list, so only the browser can judge the whole. */
+  if (/var\s*\(/i.test(value)) {
+    return globalThis.CSS?.supports?.('box-shadow', value) ?? true;
   }
   const layers = splitTopLevel(value, /,/);
   if (layers.length === 0 || !layers.every(isShadowLayer)) {
