@@ -10,7 +10,7 @@ export interface FilterInputProps
   /** Container className for custom styling */
   containerClassName?: string;
   /** Surface behind the floating label, matching the input's surrounding panel. */
-  surface?: 'primary' | 'presentation';
+  surface?: 'primary' | 'presentation' | 'dialog';
 }
 
 /**
@@ -25,12 +25,22 @@ export interface FilterInputProps
  *   onChange={(e) => setSearchQuery(e.target.value)}
  * />
  */
+/** The floating label breaks the field's top border, so it has to paint the
+ *  surface behind it. The surface is painted on the container and inherited by the
+ *  label, so a field on another panel names it through `surface` rather than the
+ *  label drifting from its host. */
+const SURFACE_CLASSES: Record<NonNullable<FilterInputProps['surface']>, string> = {
+  primary: 'bg-surface-primary-alt',
+  presentation: 'bg-presentation',
+  dialog: 'bg-surface-dialog',
+};
+
 const FilterInput: React.ForwardRefExoticComponent<
   FilterInputProps & React.RefAttributes<HTMLInputElement>
 > = React.forwardRef<HTMLInputElement, FilterInputProps>(
   ({ className, label, inputId, containerClassName, surface = 'primary', ...props }, ref) => {
     return (
-      <div className={cn('relative', containerClassName)}>
+      <div className={cn('relative', SURFACE_CLASSES[surface], containerClassName)}>
         <input
           id={inputId}
           ref={ref}
@@ -44,12 +54,7 @@ const FilterInput: React.ForwardRefExoticComponent<
         />
         <label
           htmlFor={inputId}
-          className={cn(
-            'text-text-secondary pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm transition-all duration-200 peer-focus:top-0 peer-focus:px-1 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-0 peer-[:not(:placeholder-shown)]:px-1 peer-[:not(:placeholder-shown)]:text-xs',
-            surface === 'presentation'
-              ? 'peer-focus:bg-presentation peer-[:not(:placeholder-shown)]:bg-presentation'
-              : 'peer-focus:bg-surface-primary peer-[:not(:placeholder-shown)]:bg-surface-primary',
-          )}
+          className="text-text-secondary pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm transition-all duration-200 peer-focus:top-0 peer-focus:bg-inherit peer-focus:px-1 peer-focus:text-xs peer-[:not(:placeholder-shown)]:top-0 peer-[:not(:placeholder-shown)]:bg-inherit peer-[:not(:placeholder-shown)]:px-1 peer-[:not(:placeholder-shown)]:text-xs"
         >
           {label}
         </label>

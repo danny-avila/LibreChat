@@ -109,7 +109,7 @@ export default function MemoryCreateDialog({
       <OGDialogTemplate
         title={localize('com_ui_create_memory')}
         showCloseButton={false}
-        className="w-11/12 md:max-w-lg"
+        className="w-11/12 md:max-w-2xl"
         main={
           <div className="space-y-4">
             <div className="space-y-2">
@@ -145,8 +145,8 @@ export default function MemoryCreateDialog({
                 onBlur={() => setTouched((prev) => ({ ...prev, value: true }))}
                 onKeyDown={handleKeyPress}
                 placeholder={localize('com_ui_enter_value')}
-                className="border-border-light text-text-primary focus-visible:ring-border-heavy min-h-[100px] w-full resize-none rounded-lg border bg-transparent px-3 py-2 text-sm focus-visible:ring-1"
-                rows={4}
+                className="border-border-light text-text-primary focus-visible:ring-border-heavy max-h-[45vh] min-h-[180px] w-full resize-y rounded-lg border bg-transparent px-3 py-2 text-sm focus-visible:ring-1"
+                rows={8}
                 aria-invalid={showValueError && valueError != null}
                 aria-describedby="memory-value-message"
               />

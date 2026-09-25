@@ -8,6 +8,7 @@ export * from './policies';
 export * from './json';
 export * from './icons';
 export * from './svg';
+export * from './row';
 export * from './email';
 export * from './share';
 export * from './files';

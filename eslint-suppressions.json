@@ -310,7 +310,7 @@
   },
   "client/src/components/Chat/Input/Files/Table/DataTable.tsx": {
     "shadcn/no-restyle": {
-      "count": 28
+      "count": 17
     },
     "shadcn/no-unknown-classes": {
       "count": 1
@@ -1113,7 +1113,7 @@
   },
   "client/src/components/Conversations/ProjectsSection.tsx": {
     "shadcn/no-restyle": {
-      "count": 28
+      "count": 11
     }
   },
   "client/src/components/Conversations/RenameForm.tsx": {
@@ -1338,11 +1338,6 @@
       "count": 4
     }
   },
-  "client/src/components/Nav/SearchBar.tsx": {
-    "shadcn/no-raw-colors": {
-      "count": 1
-    }
-  },
   "client/src/components/Nav/Settings/Dialog.tsx": {
     "shadcn/no-restyle": {
       "count": 8
@@ -1527,11 +1522,6 @@
   "client/src/components/Prompts/buttons/AutoSendPrompt.tsx": {
     "shadcn/no-restyle": {
       "count": 6
-    }
-  },
-  "client/src/components/Prompts/buttons/CreatePromptButton.tsx": {
-    "shadcn/no-restyle": {
-      "count": 1
     }
   },
   "client/src/components/Prompts/dialogs/SharePrompt.tsx": {
@@ -1982,7 +1972,7 @@
   },
   "client/src/components/SidePanel/Bookmarks/BookmarkTable.tsx": {
     "shadcn/no-restyle": {
-      "count": 3
+      "count": 2
     }
   },
   "client/src/components/SidePanel/Builder/Action.tsx": {
@@ -2060,17 +2050,12 @@
       "count": 3
     },
     "shadcn/no-restyle": {
-      "count": 17
+      "count": 6
     }
   },
   "client/src/components/SidePanel/MCPBuilder/MCPBuilderPanel.tsx": {
     "shadcn/no-restyle": {
-      "count": 3
-    }
-  },
-  "client/src/components/SidePanel/MCPBuilder/MCPCardActions.tsx": {
-    "shadcn/no-restyle": {
-      "count": 57
+      "count": 2
     }
   },
   "client/src/components/SidePanel/MCPBuilder/MCPServerCard.tsx": {
@@ -2103,16 +2088,6 @@
       "count": 1
     }
   },
-  "client/src/components/SidePanel/MCPBuilder/MCPServerList.tsx": {
-    "shadcn/no-restyle": {
-      "count": 1
-    }
-  },
-  "client/src/components/SidePanel/Memories/MemoryCardActions.tsx": {
-    "shadcn/no-restyle": {
-      "count": 16
-    }
-  },
   "client/src/components/SidePanel/Memories/MemoryCreateDialog.tsx": {
     "shadcn/no-restyle": {
       "count": 12
@@ -2125,7 +2100,7 @@
   },
   "client/src/components/SidePanel/Memories/MemoryPanel.tsx": {
     "shadcn/no-restyle": {
-      "count": 5
+      "count": 4
     }
   },
   "client/src/components/SidePanel/Parameters/DynamicCombobox.tsx": {
@@ -2178,12 +2153,7 @@
   },
   "client/src/components/SidePanel/Schedules/SchedulePanel.tsx": {
     "shadcn/no-restyle": {
-      "count": 3
-    }
-  },
-  "client/src/components/SidePanel/SidePanelGroup.tsx": {
-    "shadcn/no-restyle": {
-      "count": 1
+      "count": 2
     }
   },
   "client/src/components/Skills/buttons/ShareSkill.tsx": {
@@ -2226,7 +2196,7 @@
   },
   "client/src/components/Skills/forms/CreateSkillForm.tsx": {
     "shadcn/no-restyle": {
-      "count": 24
+      "count": 17
     }
   },
   "client/src/components/Skills/forms/SkillContentEditor.tsx": {

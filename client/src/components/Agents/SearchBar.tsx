@@ -72,7 +72,6 @@ const SearchBar: React.FC<SearchBarProps> = ({ value, onSearch, className = '' }
       <FilterInput
         inputId="agent-search"
         label={localize('com_agents_search_aria')}
-        surface="presentation"
         type="text"
         ref={inputRef}
         value={searchTerm}

@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { cva } from 'class-variance-authority';
 import { cn } from '~/utils';
 
 interface TableProps extends React.HTMLAttributes<HTMLTableElement> {
@@ -21,15 +22,24 @@ const Table: React.ForwardRefExoticComponent<TableProps & React.RefAttributes<HT
   );
 Table.displayName = 'Table';
 
+interface TableHeaderProps extends React.HTMLAttributes<HTMLTableSectionElement> {
+  sticky?: boolean;
+}
+
+const tableHeaderVariants = cva('', {
+  variants: {
+    sticky: {
+      true: 'bg-surface-secondary sticky top-0 z-50',
+      false: '',
+    },
+  },
+});
+
 const TableHeader: React.ForwardRefExoticComponent<
-  React.HTMLAttributes<HTMLTableSectionElement> & React.RefAttributes<HTMLTableSectionElement>
-> = React.forwardRef<HTMLTableSectionElement, React.HTMLAttributes<HTMLTableSectionElement>>(
-  ({ className, ...props }, ref) => (
-    <thead
-      ref={ref}
-      className={cn('[&_tr]:border-border-light [&_tr]:border-b', className)}
-      {...props}
-    />
+  TableHeaderProps & React.RefAttributes<HTMLTableSectionElement>
+> = React.forwardRef<HTMLTableSectionElement, TableHeaderProps>(
+  ({ className, sticky = false, ...props }, ref) => (
+    <thead ref={ref} className={cn(tableHeaderVariants({ sticky }), className)} {...props} />
   ),
 );
 TableHeader.displayName = 'TableHeader';
@@ -47,14 +57,7 @@ const TableFooter: React.ForwardRefExoticComponent<
   React.HTMLAttributes<HTMLTableSectionElement> & React.RefAttributes<HTMLTableSectionElement>
 > = React.forwardRef<HTMLTableSectionElement, React.HTMLAttributes<HTMLTableSectionElement>>(
   ({ className, ...props }, ref) => (
-    <tfoot
-      ref={ref}
-      className={cn(
-        'border-border-light bg-surface-tertiary border-t font-medium [&>tr]:last:border-b-0',
-        className,
-      )}
-      {...props}
-    />
+    <tfoot ref={ref} className={cn('bg-surface-secondary font-medium', className)} {...props} />
   ),
 );
 TableFooter.displayName = 'TableFooter';
@@ -66,7 +69,9 @@ const TableRow: React.ForwardRefExoticComponent<
     <tr
       ref={ref}
       className={cn(
-        'border-border-light hover:bg-surface-tertiary data-[state=selected]:bg-surface-tertiary border-b transition-colors',
+        /** Rows are separated by their own padding and the hover fill, not by rules:
+         *  a ruled table reads as a grid, and a list of records rarely needs one. */
+        'hover:bg-surface-hover data-[state=selected]:bg-surface-hover transition-colors',
         className,
       )}
       {...props}
@@ -75,20 +80,36 @@ const TableRow: React.ForwardRefExoticComponent<
 );
 TableRow.displayName = 'TableRow';
 
+/** A compact table's header: a side panel lists records rather than presenting
+ *  a grid, and a full-height, full-size heading over two text lines reads as
+ *  scaffolding rather than as the column names those rows sit under. */
+const tableHeadVariants = cva('', {
+  variants: {
+    size: {
+      default: '',
+      sm: 'h-auto text-xs',
+    },
+  },
+  defaultVariants: { size: 'default' },
+});
+
 const TableHead: React.ForwardRefExoticComponent<
-  React.ThHTMLAttributes<HTMLTableCellElement> & React.RefAttributes<HTMLTableCellElement>
-> = React.forwardRef<HTMLTableCellElement, React.ThHTMLAttributes<HTMLTableCellElement>>(
-  ({ className, ...props }, ref) => (
-    <th
-      ref={ref}
-      className={cn(
-        'text-text-secondary h-12 px-4 text-left align-middle font-medium [&:has([role=checkbox])]:pr-0',
-        className,
-      )}
-      {...props}
-    />
-  ),
-);
+  React.ThHTMLAttributes<HTMLTableCellElement> &
+    React.RefAttributes<HTMLTableCellElement> & { size?: 'default' | 'sm' }
+> = React.forwardRef<
+  HTMLTableCellElement,
+  React.ThHTMLAttributes<HTMLTableCellElement> & { size?: 'default' | 'sm' }
+>(({ className, size, ...props }, ref) => (
+  <th
+    ref={ref}
+    className={cn(
+      'text-text-secondary h-12 px-4 text-left align-middle font-medium [&:has([role=checkbox])]:pr-0',
+      tableHeadVariants({ size }),
+      className,
+    )}
+    {...props}
+  />
+));
 TableHead.displayName = 'TableHead';
 
 const TableCell: React.ForwardRefExoticComponent<
