@@ -5,8 +5,19 @@ export * from './crypto';
 export * from './schema';
 export * from './utils';
 export { createModels } from './models';
+export { isMediaFileId } from './types/media';
 export {
   createMethods,
+  createMediaMethods,
+  createMediaAccountingMethods,
+  createMediaNativeMethods,
+  createNativeMessageMethods,
+  createMediaPresetMethods,
+  createMediaRecoveryMethods,
+  createMediaTitleMethods,
+  MediaAccountingError,
+  MediaPersistenceError,
+  deriveMediaThreadTitle,
   CLIENT_MESSAGE_SELECT,
   SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
   RoleConflictError,
@@ -76,6 +87,7 @@ export {
   AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V2,
 } from './types/triggerDelivery';
 export type * from './types';
+export { toMediaAsset } from './utils/media';
 export type * from './methods';
 export {
   AUDIT_ACTIONS,

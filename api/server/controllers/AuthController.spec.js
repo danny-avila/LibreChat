@@ -956,6 +956,7 @@ describe('refreshController – OpenID path', () => {
       token: reusableIdToken,
       user: expect.objectContaining({
         _id: 'user-db-id',
+        id: 'user-db-id',
         email: baseClaims.email,
         openidId: baseClaims.sub,
       }),
@@ -1269,6 +1270,7 @@ describe('refreshController – OpenID path', () => {
       token: reusableIdToken,
       user: expect.objectContaining({
         _id: 'user-db-id',
+        id: 'user-db-id',
         email: baseClaims.email,
       }),
     });
@@ -1398,6 +1400,7 @@ describe('refreshController – OpenID path', () => {
       token: 'new-app-token',
       user: expect.objectContaining({
         _id: 'user-db-id',
+        id: 'user-db-id',
         email: baseClaims.email,
         openidId: baseClaims.sub,
       }),
@@ -1732,7 +1735,12 @@ describe('refreshController – OpenID path', () => {
       }),
     );
     expect(storeOpenIDSession).not.toHaveBeenCalled();
-    expect(res.send).toHaveBeenCalledWith(expect.objectContaining({ token: 'shared-app-token' }));
+    expect(res.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        token: 'shared-app-token',
+        user: expect.objectContaining({ id: 'user-db-id', tenantId: 'tenant-1' }),
+      }),
+    );
     expect(res.status).toHaveBeenCalledWith(200);
   });
 
@@ -2355,23 +2363,22 @@ describe('refreshController – LibreChat path', () => {
       token: 'local-app-token',
       user: {
         _id: 'local-user-id',
+        id: 'local-user-id',
         email: 'local@example.com',
       },
     });
   });
 
-  it('sanitizes user documents before returning CI refresh responses', async () => {
+  it('sanitizes lean users and supplies their canonical id in CI refresh responses', async () => {
     process.env.NODE_ENV = 'CI';
     getUserById.mockResolvedValue({
-      toObject: () => ({
-        _id: 'local-user-id',
-        email: 'local@example.com',
-        password: 'hashed-password',
-        __v: 1,
-        totpSecret: 'totp-secret',
-        backupCodes: ['backup-code'],
-        federatedTokens: { access_token: 'do-not-return' },
-      }),
+      _id: 'local-user-id',
+      email: 'local@example.com',
+      password: 'hashed-password',
+      __v: 1,
+      totpSecret: 'totp-secret',
+      backupCodes: ['backup-code'],
+      federatedTokens: { access_token: 'do-not-return' },
     });
 
     await refreshController(req, res);
@@ -2383,6 +2390,7 @@ describe('refreshController – LibreChat path', () => {
       token: 'local-app-token',
       user: {
         _id: 'local-user-id',
+        id: 'local-user-id',
         email: 'local@example.com',
       },
     });

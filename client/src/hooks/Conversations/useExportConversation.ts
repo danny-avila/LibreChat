@@ -4,7 +4,7 @@ import { useParams } from 'react-router-dom';
 import exportFromJSON from 'export-from-json';
 import { useToastContext } from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
-import { buildTree, QueryKeys } from 'librechat-data-provider';
+import { buildTree, QueryKeys, detachNativeIdentity } from 'librechat-data-provider';
 import type { TConversation, TMessage, TPreset } from 'librechat-data-provider';
 import { ScreenshotLimitError, useScreenshot } from '~/hooks/ScreenshotContext';
 import useBuildMessageTree from '~/hooks/Messages/useBuildMessageTree';
@@ -46,7 +46,12 @@ export default function useExportConversation({
     const queryParam =
       paramId === 'new' ? paramId : (conversation?.conversationId ?? paramId ?? '');
     const messages = queryClient.getQueryData<TMessage[]>([QueryKeys.messages, queryParam]) ?? [];
-    const dataTree = buildTree({ messages });
+    const dataTree = buildTree({
+      messages: messages.map((message) => ({
+        ...message,
+        content: message.content?.map((part) => detachNativeIdentity(part)),
+      })),
+    });
     return dataTree?.length === 0 ? null : (dataTree ?? null);
   }, [paramId, conversation?.conversationId, queryClient]);
 

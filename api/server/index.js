@@ -33,6 +33,8 @@ const {
   agentStartupIngressMiddleware,
   agentStartupTelemetryMiddleware,
   initializeFileStorage,
+  isLeader,
+  startMediaWorker,
   initializeDeploymentSkills,
   initializeDeploymentPlugins,
   getDeploymentPluginSkills,
@@ -79,6 +81,7 @@ const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { startExpiredFileSweep } = require('./services/Files/process');
 const { checkMigrations } = require('./services/start/migration');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
+const mediaApplication = require('./services/Media');
 const initializeMCPs = require('./services/initializeMCPs');
 const { configureSubagentTaskRouting } = require('./services/Endpoints/agents/subagentThreadStore');
 const configureSocialLogins = require('./socialLogins');
@@ -171,7 +174,8 @@ const SHUTDOWN_TEARDOWN_RESERVE_MS = 10_000;
 const startServer = async () => {
   await waitForKeyvRedisClient();
   await configureSubagentTaskRouting();
-  const { metricsMiddleware, metricsRouter } = createMetrics({
+  const { metricsMiddleware, metricsRouter, recordMediaEvent } = createMetrics({
+    collectMediaBacklogMetrics: () => runAsSystem(agentEventMethods.getMediaBacklogMetrics),
     collectAgentEventActorStorageMetrics: () =>
       runAsSystem(async () => {
         const now = new Date();
@@ -267,6 +271,12 @@ const startServer = async () => {
   await runAsSystem(async () => {
     await performStartupChecks(appConfig);
     await updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions });
+  });
+  const mediaRuntime = mediaApplication.initialize({
+    app,
+    appConfig,
+    mediaMetrics: recordMediaEvent,
+    isLeader,
   });
 
   const indexPath = path.join(appConfig.paths.dist, 'index.html');
@@ -406,6 +416,7 @@ const startServer = async () => {
   app.use('/api/admin/roles', routes.adminRoles);
   app.use('/api/admin/skills', routes.adminSkills);
   app.use('/api/admin/users', routes.adminUsers);
+  app.use('/api/admin/media', routes.adminMedia);
   app.use('/api/admin/audit-log', routes.adminAuditLog);
   app.use('/api/actions', routes.actions);
   app.use('/api/keys', routes.keys);
@@ -426,6 +437,7 @@ const startServer = async () => {
   app.use('/api/config', preAuthTenantMiddleware, optionalJwtAuth, routes.config);
   app.use('/api/assistants', routes.assistants);
   app.use('/api/files', await routes.files.initialize());
+  mediaApplication.mount(app, mediaRuntime);
   app.use(
     '/images/',
     createValidateImageRequest({
@@ -487,6 +499,7 @@ const startServer = async () => {
      * failures and leave the server listening but only partially
      * initialized — passing liveness checks while serving broken requests.
      */
+    void startMediaWorker(mediaRuntime.worker, logger);
     try {
       await runAsSystem(async () => {
         await initializeMCPs();

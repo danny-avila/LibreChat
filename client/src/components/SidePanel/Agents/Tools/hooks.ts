@@ -157,6 +157,7 @@ export function useAgentItems({
   skills = NO_SKILLS,
   skillsPermission = false,
 }: UseAgentItemsOptions): AgentItemsResult {
+  const localize = useLocalize();
   const { control } = useFormContext<AgentForm>();
   const { agentsConfig, regularTools, mcpServersMap, actions } = useAgentPanelContext();
   const hasMcpAccess = useHasAccess({
@@ -213,7 +214,15 @@ export function useAgentItems({
         showMemory,
         webSearchUserProvided,
         builtinAuthMap,
-      }),
+      }).map((item) =>
+        item.kind === 'tool' && item.id === 'media_generate'
+          ? {
+              ...item,
+              name: localize('com_media_tool_generate'),
+              description: localize('com_media_tool_description'),
+            }
+          : item,
+      ),
     [
       agentsConfig,
       regularTools,
@@ -228,6 +237,7 @@ export function useAgentItems({
       showMemory,
       webSearchUserProvided,
       builtinAuthMap,
+      localize,
     ],
   );
 

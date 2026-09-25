@@ -13,6 +13,7 @@ import { useLocalize, useProgress, useExpandCollapse, useLazyCollapseBody } from
 import { cn, getToolDisplayLabel, logger, openInNewTab } from '~/utils';
 import { ToolIcon, getToolIconType, isError } from './ToolOutput';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
+import MediaToolReceipt from '~/components/Chat/Media/Receipt';
 import { resolveToolCallPhase } from '~/utils/toolCallPhase';
 import { toolPanelSpacingClassName } from './disclosure';
 import { useToolCallIntent } from './Parts/intent';
@@ -419,6 +420,9 @@ export default function ToolCall({
       )}
       {!hideAttachments && attachments && attachments.length > 0 && (
         <AttachmentGroup attachments={attachments} />
+      )}
+      {(name === 'media_generate' || name === 'media_status') && (
+        <MediaToolReceipt output={output} />
       )}
     </>
   );

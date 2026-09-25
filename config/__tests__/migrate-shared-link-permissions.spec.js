@@ -3,6 +3,7 @@ jest.mock('@librechat/api', () => ({
   ensureRequiredCollectionsExist: jest.fn().mockResolvedValue(undefined),
   matchModelName: jest.fn(),
   findMatchingPattern: jest.fn(),
+  createMediaConsumerConfigProvider: jest.fn(() => jest.fn()),
 }));
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),

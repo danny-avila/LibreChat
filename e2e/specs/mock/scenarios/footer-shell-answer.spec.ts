@@ -1,8 +1,10 @@
 import { randomUUID } from 'crypto';
 import { expect, test } from '@playwright/test';
+import { EModelEndpoint } from 'librechat-data-provider';
 import type { Locator, Page } from '@playwright/test';
 import { getE2EUser } from '../../../setup/user';
 import { deleteConversations, deleteMessagesByConversation, seedConversations } from '../db';
+import { MOCK_ENDPOINTS } from '../helpers';
 
 /**
  * The document says whether the deployment configured a footer, and the composer
@@ -72,7 +74,14 @@ test.describe('footer answer in the shell', () => {
     test.setTimeout(60000);
     const conversationId = randomUUID();
     await seedConversations(getE2EUser().email, [
-      { conversationId, title: 'Shell without an answer', updatedAt: new Date() },
+      {
+        conversationId,
+        title: 'Shell without an answer',
+        updatedAt: new Date(),
+        endpoint: MOCK_ENDPOINTS[0].label,
+        endpointType: EModelEndpoint.custom,
+        model: MOCK_ENDPOINTS[0].model,
+      },
     ]);
 
     try {
@@ -109,13 +118,23 @@ test.describe('footer answer in the shell', () => {
     test.setTimeout(60000);
     const conversationId = randomUUID();
     await seedConversations(getE2EUser().email, [
-      { conversationId, title: 'Override policy link', updatedAt: new Date() },
+      {
+        conversationId,
+        title: 'Override policy link',
+        updatedAt: new Date(),
+        endpoint: MOCK_ENDPOINTS[0].label,
+        endpointType: EModelEndpoint.custom,
+        model: MOCK_ENDPOINTS[0].model,
+      },
     ]);
 
     try {
-      /** The harness deployment configures no footer, so its document says so:
-       *  this caller's resolved configuration is the one that disagrees. */
+      /** The caller's policy link overrides the deployment's negative answer. */
+      await serveShell(page, (html) =>
+        html.replace(/"hasConfiguredFooter":(?:true|false)/, '"hasConfiguredFooter":false'),
+      );
       await serveResolvedConfig(page, {
+        customFooter: undefined,
         interface: { privacyPolicy: { externalUrl: 'https://example.com/privacy' } },
       });
 

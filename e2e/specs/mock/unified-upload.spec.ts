@@ -19,8 +19,8 @@ import {
  * for chat.spec.ts's upload-to-provider test).
  *
  * What this proves end-to-end (real backend + DB), and what it deliberately can't:
- * - The composer renders ONE attach button (unified mode), not the legacy 3-way
- *   dropdown.
+ * - Unified upload works through the direct button and the source menu that
+ *   offers local upload alongside media creation.
  * - A `none`-routed upload (csv) persists `llmDeliveryPath: 'none'` and is kept
  *   out of LLM delivery — reachable only by tools.
  * - A `provider`-routed upload (markdown) is STILL delivered to the model AND
@@ -35,15 +35,24 @@ import {
  */
 
 test.describe('unified file upload', () => {
-  test('single attach button routes a csv to llmDeliveryPath "none"', async ({ page }) => {
+  test('direct upload routes a csv to llmDeliveryPath "none" when media chat is disabled', async ({
+    page,
+  }) => {
     test.setTimeout(120000);
+    await page.route('**/api/config', async (route) => {
+      const response = await route.fetch();
+      const config = await response.json();
+      await route.fulfill({
+        response,
+        json: { ...config, media: { ...config.media, chat: false } },
+      });
+    });
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
 
     // Default model needs a real key; Mock Provider B is the unified-mode endpoint.
     await selectMockEndpoint(page, MOCK_ENDPOINTS[1]);
 
-    // Unified mode: one attach button, and the legacy multi-option dropdown trigger
-    // is not rendered at all.
+    // Without another source, unified upload opens the file chooser directly.
     await expect(page.locator('#attach-file-button')).toBeVisible({ timeout: 15000 });
     await expect(page.locator('#attach-file-menu-button')).toHaveCount(0);
 
@@ -69,16 +78,15 @@ test.describe('unified file upload', () => {
     expect(persisted?.llmDeliveryPath).toBe('none');
   });
 
-  test('single attach button still delivers a provider-routed upload and shows it in chat', async ({
+  test('the source menu delivers a provider-routed upload and shows it in chat', async ({
     page,
   }) => {
     test.setTimeout(120000);
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
     await selectMockEndpoint(page, MOCK_ENDPOINTS[1]);
 
-    // Same single unified button — no legacy dropdown.
-    await expect(page.locator('#attach-file-button')).toBeVisible({ timeout: 15000 });
-    await expect(page.locator('#attach-file-menu-button')).toHaveCount(0);
+    await expect(page.locator('#attach-file-menu-button')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('#attach-file-button')).toHaveCount(0);
 
     // markdown is overridden to `provider` for Mock Provider B: it should be
     // delivered to the model (unlike `none`) while still attaching to the chat.
@@ -117,12 +125,12 @@ test.describe('unified file upload', () => {
     ).toBeVisible();
   });
 
-  test('single attach button routes a json upload to llmDeliveryPath "text"', async ({ page }) => {
+  test('the source menu routes a json upload to llmDeliveryPath "text"', async ({ page }) => {
     test.setTimeout(120000);
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
     await selectMockEndpoint(page, MOCK_ENDPOINTS[1]);
 
-    await expect(page.locator('#attach-file-button')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('#attach-file-menu-button')).toBeVisible({ timeout: 15000 });
 
     // application/json is neither overridden nor image/pdf, so it falls through to the
     // system fallback ('text'): extracted and delivered as text context, not a provider file.
@@ -141,9 +149,7 @@ test.describe('unified file upload', () => {
     expect(persisted?.llmDeliveryPath).toBe('text');
   });
 
-  test('legacy endpoint renders the 3-way upload dropdown, not the single button', async ({
-    page,
-  }) => {
+  test('legacy endpoint offers provider-specific upload choices', async ({ page }) => {
     test.setTimeout(120000);
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
     // Mock Provider A opts into legacyFileUploadUX.

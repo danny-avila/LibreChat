@@ -645,7 +645,11 @@ const skillFileConfigSchema = z.object({
   importCleanupConcurrency: z.number().int().positive().optional(),
 });
 
+/** Maximum objects selected by one shared retention pass; failed rows defer themselves. */
+export const fileRetentionSweepLimitSchema = z.number().int().min(1).max(10000).default(100);
+
 export const fileConfigSchema = z.object({
+  retentionSweepLimit: fileRetentionSweepLimitSchema.optional(),
   endpoints: z.record(endpointFileConfigSchema).optional(),
   skills: skillFileConfigSchema.optional(),
   serverFileSizeLimit: z.number().min(0).optional(),
@@ -1236,6 +1240,10 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
   if (!dynamic) {
     return mergedConfig;
   }
+
+  mergedConfig.retentionSweepLimit = fileRetentionSweepLimitSchema.parse(
+    dynamic.retentionSweepLimit,
+  );
 
   if (dynamic.defaultLLMDeliveryPath !== undefined) {
     mergedConfig.defaultLLMDeliveryPath = dynamic.defaultLLMDeliveryPath;

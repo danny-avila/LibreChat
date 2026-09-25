@@ -1,4 +1,17 @@
 export enum QueryKeys {
+  mediaCatalog = 'mediaCatalog',
+  mediaRecovery = 'mediaRecovery',
+  mediaRecoveryCapabilities = 'mediaRecoveryCapabilities',
+  mediaThreads = 'mediaThreads',
+  mediaThread = 'mediaThread',
+  mediaTurns = 'mediaTurns',
+  mediaJob = 'mediaJob',
+  mediaTurnJobs = 'mediaTurnJobs',
+  mediaJobOutputs = 'mediaJobOutputs',
+  mediaJobDiagnostics = 'mediaJobDiagnostics',
+  mediaSubmission = 'mediaSubmission',
+  mediaImport = 'mediaImport',
+  mediaPresets = 'mediaPresets',
   messages = 'messages',
   sharedMessages = 'sharedMessages',
   sharedStartupConfig = 'sharedStartupConfig',
@@ -111,6 +124,15 @@ export const DynamicQueryKeys = {
 } as const;
 
 export enum MutationKeys {
+  submitMedia = 'submitMedia',
+  recoverMediaJob = 'recoverMediaJob',
+  importMedia = 'importMedia',
+  uploadMedia = 'uploadMedia',
+  cancelMediaJob = 'cancelMediaJob',
+  retryMediaJob = 'retryMediaJob',
+  updateMediaThread = 'updateMediaThread',
+  deleteMediaThread = 'deleteMediaThread',
+  deleteMediaThreads = 'deleteMediaThreads',
   subagentControl = 'subagentControl',
   enqueueAgentQueuedTurn = 'enqueueAgentQueuedTurn',
   cancelAgentQueuedTurn = 'cancelAgentQueuedTurn',

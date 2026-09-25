@@ -1,3 +1,13 @@
+import {
+  createMediaOwnerModel,
+  createMediaActivationModel,
+  createMediaPermitModel,
+  createMediaAssetWriteModel,
+  createMediaJobModel,
+  createMediaThreadModel,
+  createMediaTurnModel,
+  createMediaPresetModel,
+} from './media';
 import { createAgentQueuedTurnModel, createAgentQueuedTurnSequenceModel } from './queuedTurn';
 import { createAgentTriggerLaneSequenceModel } from './triggerLaneSequence';
 import { createScheduleModel, createScheduleRunModel } from './schedule';
@@ -7,6 +17,8 @@ import { createOpenIDRefreshFlightModel } from './openidRefreshFlight';
 import { createAgentTriggerUserPurgeModel } from './triggerUserPurge';
 import { createRefreshTokenBridgeModel } from './refreshTokenBridge';
 import { createAgentTriggerDeliveryModel } from './triggerDelivery';
+import { createMediaSettlementModel } from './mediaSettlement';
+import { createMediaNativePartModel } from './mediaNativePart';
 import { createSkillSyncStatusModel } from './skillSyncStatus';
 import { createConversationTagModel } from './conversationTag';
 import { createCodeEnvironmentModel } from './codeEnvironment';
@@ -51,6 +63,16 @@ import logger from '~/config/winston';
  */
 export function createModels(mongoose: typeof import('mongoose')): {
   User: ReturnType<typeof createUserModel>;
+  MediaOwner: ReturnType<typeof createMediaOwnerModel>;
+  MediaThread: ReturnType<typeof createMediaThreadModel>;
+  MediaTurn: ReturnType<typeof createMediaTurnModel>;
+  MediaJob: ReturnType<typeof createMediaJobModel>;
+  MediaAssetWrite: ReturnType<typeof createMediaAssetWriteModel>;
+  MediaPermit: ReturnType<typeof createMediaPermitModel>;
+  MediaActivation: ReturnType<typeof createMediaActivationModel>;
+  MediaSettlement: ReturnType<typeof createMediaSettlementModel>;
+  MediaNativePart: ReturnType<typeof createMediaNativePartModel>;
+  MediaPreset: ReturnType<typeof createMediaPresetModel>;
   Token: ReturnType<typeof createTokenModel>;
   Session: ReturnType<typeof createSessionModel>;
   Balance: ReturnType<typeof createBalanceModel>;
@@ -99,6 +121,16 @@ export function createModels(mongoose: typeof import('mongoose')): {
   OpenIDRefreshFlight: ReturnType<typeof createOpenIDRefreshFlightModel>;
 } {
   const models = {
+    MediaOwner: createMediaOwnerModel(mongoose),
+    MediaThread: createMediaThreadModel(mongoose),
+    MediaTurn: createMediaTurnModel(mongoose),
+    MediaJob: createMediaJobModel(mongoose),
+    MediaAssetWrite: createMediaAssetWriteModel(mongoose),
+    MediaPermit: createMediaPermitModel(mongoose),
+    MediaActivation: createMediaActivationModel(mongoose),
+    MediaSettlement: createMediaSettlementModel(mongoose),
+    MediaNativePart: createMediaNativePartModel(mongoose),
+    MediaPreset: createMediaPresetModel(mongoose),
     User: createUserModel(mongoose),
     Token: createTokenModel(mongoose),
     Session: createSessionModel(mongoose),

@@ -1,5 +1,9 @@
 import path from 'path';
+import { randomUUID } from 'crypto';
+import { mediaConfigSchema } from 'librechat-data-provider';
+import type { MediaAccountDeletion } from '@librechat/api';
 import { applyRuntimeEnv } from './runtimeEnv';
+import { mediaFixtureConfig } from './media';
 
 type TUser = { email: string; password: string };
 
@@ -20,26 +24,27 @@ export default async function cleanupUser(user: TUser) {
   registerBackendAlias();
   /* eslint-disable @typescript-eslint/no-require-imports */
   const { connectDb } = require('@librechat/backend/db/connect');
+  const methods = require('@librechat/backend/models');
+  const { findUser, deleteConvos, deleteMessages, deleteAllUserSessions } = methods;
+  const { runAsSystem } = require('@librechat/data-schemas');
   const {
-    findUser,
-    deleteConvos,
-    deleteMessages,
-    deleteAllUserSessions,
-  } = require('@librechat/backend/models');
-  const {
-    User,
-    Balance,
-    Transaction,
-    AclEntry,
-    Token,
-    Group,
-  } = require('@librechat/backend/db/models');
+    prepareMediaAccountDeletion,
+    completeMediaAccountDeletion,
+    cancelMediaAccountDeletion,
+  } = require('@librechat/api');
+  const { User, Transaction, AclEntry, Token, Group } = require('@librechat/backend/db/models');
   /* eslint-enable @typescript-eslint/no-require-imports */
 
   const { email } = user;
+  let mediaDeletion: MediaAccountDeletion | undefined;
+  let userDeleted = false;
+  let disconnect: (() => Promise<void>) | undefined;
   try {
     console.log('🤖: global teardown has been started');
     const db = await connectDb();
+    disconnect = async () => {
+      await db.connection.close();
+    };
     console.log('🤖:  ✅  Connected to Database');
 
     const foundUser = await findUser({ email });
@@ -50,6 +55,13 @@ export default async function cleanupUser(user: TUser) {
 
     const userId = foundUser._id;
     console.log('🤖:  ✅  Found user in Database');
+    mediaDeletion = await runAsSystem(() =>
+      prepareMediaAccountDeletion({
+        repository: methods,
+        scope: { ownerId: userId.toString(), tenantId: foundUser.tenantId ?? null },
+        token: randomUUID(),
+      }),
+    );
 
     // Delete all conversations & associated messages
     const { deletedCount, messages } = await deleteConvos(userId, {}).catch((error) => {
@@ -75,19 +87,47 @@ export default async function cleanupUser(user: TUser) {
     await deleteAllUserSessions(userId.toString());
 
     // Delete user, balance, transactions, tokens, ACL entries, and remove from groups
-    await Balance.deleteMany({ user: userId });
+    await runAsSystem(() => methods.deleteBalances({ user: userId }));
     await Transaction.deleteMany({ user: userId });
     await Token.deleteMany({ userId: userId });
     await AclEntry.deleteMany({ principalId: userId });
     const userIdStr = userId.toString();
     await Group.updateMany({ memberIds: userIdStr }, { $pullAll: { memberIds: [userIdStr] } });
     await User.deleteMany({ _id: userId });
+    userDeleted = true;
+    await runAsSystem(() =>
+      completeMediaAccountDeletion({
+        repository: methods,
+        session: mediaDeletion,
+        log: console.error,
+      }),
+    );
+    if (mediaDeletion) {
+      const { scope } = mediaDeletion;
+      const cleanupConfig = mediaConfigSchema.parse(mediaFixtureConfig());
+      await runAsSystem(() =>
+        methods.reconcileMediaAccountDeletion({
+          scope,
+          limit: cleanupConfig.limits.pageSize,
+          retentionMs: cleanupConfig.assets.deletedAccountRetentionMs,
+        }),
+      );
+    }
 
     console.log('🤖:  ✅  Deleted user from Database');
-
-    await db.connection.close();
   } catch (error) {
     console.error('Error:', error);
+    throw error;
+  } finally {
+    await runAsSystem(() =>
+      cancelMediaAccountDeletion({
+        repository: methods,
+        session: mediaDeletion,
+        userDeleted,
+        log: console.error,
+      }),
+    );
+    await disconnect?.();
   }
 }
 

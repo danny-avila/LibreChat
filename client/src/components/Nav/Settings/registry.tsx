@@ -22,10 +22,12 @@ import LangfuseConnection from '../SettingsTabs/Integrations/LangfuseConnection'
 import ClockFormatSelector from '../SettingsTabs/General/ClockFormatSelector';
 import ImportConversations from '../SettingsTabs/Data/ImportConversations';
 import WeekStartSelector from '../SettingsTabs/General/WeekStartSelector';
+import MediaRecoverySetting from '../SettingsTabs/General/MediaRecovery';
 import { ArchiveAllChats } from '../SettingsTabs/Data/ArchiveAllChats';
 import { toggleControl, ThemeSetting, LangSetting } from './controls';
 import BackupCodesItem from '../SettingsTabs/Account/BackupCodesItem';
 import { EngineSTTSetting, EngineTTSSetting } from './SpeechControls';
+import { ClearCreations } from '../SettingsTabs/Data/ClearCreations';
 import FontSizeSelector from '../SettingsTabs/Chat/FontSizeSelector';
 import ChatTitleInTab from '../SettingsTabs/General/ChatTitleInTab';
 import AdvancedPrompts from '../SettingsTabs/Chat/AdvancedPrompts';
@@ -190,6 +192,15 @@ export const registry: SettingEntry[] = [
     keywords: ['admin', 'panel', 'dashboard'],
     Component: AdminPanel,
     show: (ctx) => ctx.adminPanelURL !== '',
+  },
+  {
+    id: 'mediaRecovery',
+    tab: GENERAL,
+    section: 'admin',
+    labelKey: 'com_media_recovery_admin',
+    keywords: ['media', 'studio', 'recovery', 'jobs'],
+    show: (ctx) => ctx.canReadMediaRecovery,
+    Component: MediaRecoverySetting,
   },
 
   // Chat · Sending
@@ -699,6 +710,14 @@ export const registry: SettingEntry[] = [
     section: 'danger',
     labelKey: 'com_ui_settings_label_clear_chats',
     Component: ClearChats,
+  },
+  {
+    id: 'clearCreations',
+    tab: DATA,
+    section: 'danger',
+    labelKey: 'com_ui_settings_label_clear_creations',
+    show: (ctx) => ctx.hasMediaStudio,
+    Component: ClearCreations,
   },
 
   // Account · Profile

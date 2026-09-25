@@ -135,6 +135,7 @@ describe('forkConversation', () => {
         expectedMessagesTexts.map((text) => expect.objectContaining({ text })),
       ),
       true,
+      { unavailableMedia: 'placeholder' },
     );
   });
 
@@ -154,6 +155,7 @@ describe('forkConversation', () => {
         expectedMessagesTexts.map((text) => expect.objectContaining({ text })),
       ),
       true,
+      { unavailableMedia: 'placeholder' },
     );
   });
 
@@ -297,6 +299,7 @@ describe('forkConversation', () => {
         expectedMessagesTexts.map((text) => expect.objectContaining({ text })),
       ),
       true,
+      { unavailableMedia: 'placeholder' },
     );
   });
 
@@ -317,6 +320,7 @@ describe('forkConversation', () => {
         expectedMessagesTexts.map((text) => expect.objectContaining({ text })),
       ),
       true,
+      { unavailableMedia: 'placeholder' },
     );
   });
 

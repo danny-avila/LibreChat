@@ -35,7 +35,7 @@ import { useLocalize, TranslationKeys } from '~/hooks';
 import { cn } from '~/utils';
 import store from '~/store';
 
-interface DataTableProps<TData, TValue> {
+interface DataTableProps<TData extends TFile, TValue> {
   columns: ColumnDef<TData, TValue>[];
   data: TData[];
 }
@@ -55,7 +55,10 @@ type Style = {
   zIndex?: number;
 };
 
-export default function DataTable<TData, TValue>({ columns, data }: DataTableProps<TData, TValue>) {
+export default function DataTable<TData extends TFile, TValue>({
+  columns,
+  data,
+}: DataTableProps<TData, TValue>) {
   const localize = useLocalize();
   const [isDeleting, setIsDeleting] = useState(false);
   const setFiles = useSetRecoilState(store.filesByIndex(0));
@@ -82,6 +85,7 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
     getFilteredRowModel: getFilteredRowModel(),
     onColumnVisibilityChange: setColumnVisibility,
     getPaginationRowModel: getPaginationRowModel(),
+    enableRowSelection: (row) => row.original.deletionRestriction !== 'retained_media',
     onRowSelectionChange: setRowSelection,
     state: {
       sorting,
@@ -96,11 +100,13 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
       <div className="flex flex-wrap items-center gap-2 py-2 sm:gap-4 sm:py-4">
         <Button
           variant="outline"
+          aria-label={localize('com_ui_delete')}
           onClick={() => {
             setIsDeleting(true);
             const filesToDelete = table
               .getFilteredSelectedRowModel()
-              .rows.map((row) => row.original);
+              .rows.filter((row) => row.getCanSelect())
+              .map((row) => row.original);
             deleteFiles({ files: filesToDelete as TFile[], setFiles });
             setRowSelection({});
           }}
@@ -129,6 +135,11 @@ export default function DataTable<TData, TValue>({ columns, data }: DataTablePro
           />
         </div>
       </div>
+      {data.some((file) => file.deletionRestriction === 'retained_media') && (
+        <p id="retained-media-description" className="text-sm text-text-secondary">
+          {localize('com_files_retained_media')}
+        </p>
+      )}
       <div className="relative grid h-full max-h-[calc(100vh-20rem)] min-h-[calc(100vh-20rem)] w-full flex-1 overflow-hidden overflow-x-auto overflow-y-auto rounded-md border border-border-light">
         <Table className="w-full min-w-[300px] border-separate border-spacing-0">
           <TableHeader className="sticky top-0 z-50">

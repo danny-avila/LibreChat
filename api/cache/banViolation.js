@@ -64,17 +64,15 @@ const banViolation = async (req, res, errorMessage) => {
     return;
   }
 
-  req.ip = removePorts(req);
+  const ip = removePorts(req);
   logger.info(
-    `[BAN] Banning user ${user_id} ${req.ip ? `@ ${req.ip} ` : ''}for ${
-      duration / 1000 / 60
-    } minutes`,
+    `[BAN] Banning user ${user_id} ${ip ? `@ ${ip} ` : ''}for ${duration / 1000 / 60} minutes`,
   );
 
   const expiresAt = Date.now() + duration;
   await banLogs.set(user_id, { type, violation_count, duration, expiresAt });
-  if (req.ip) {
-    await banLogs.set(req.ip, { type, user_id, violation_count, duration, expiresAt });
+  if (ip) {
+    await banLogs.set(ip, { type, user_id, violation_count, duration, expiresAt });
   }
 
   errorMessage.ban = true;

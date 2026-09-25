@@ -19,6 +19,7 @@ const {
   filterPersistableAbortContent,
   decrementPendingRequest,
   sanitizeMessageForTransmit,
+  preserveNativeErrorResponse,
   checkAndIncrementPendingRequest,
   exemptFromConcurrencyLimiter,
   isScheduleFireRequest,
@@ -1885,6 +1886,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           parentMessageId: resumeState.userMessage.messageId,
           sender: client?.sender ?? 'AI',
           content: persistableContent,
+          metadata: client?.buildResponseMetadata?.(),
           unfinished: true,
           error: false,
           isCreatedByUser: false,
@@ -3106,13 +3108,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             conversation,
             title: conversation.title,
             requestMessage: sanitizeMessageForTransmit(userMessage),
-            responseMessage: {
+            responseMessage: sanitizeMessageForTransmit({
               ...response,
               ...(responseIsUnfinished && { unfinished: true }),
               ...(stepLimitReached && {
                 finish_reason: Constants.TOOL_CALL_LIMIT_FINISH_REASON,
               }),
-            },
+            }),
             ...(pendingSteers.length > 0 && { pendingSteers }),
           };
 
@@ -3279,17 +3281,44 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             ownsScheduledFailure =
               (await GenerationJobManager.completeJob(streamId, generationError, jobCreatedAt, {
                 beforeErrorPublication: () =>
-                  saveErrorTurn(req, {
-                    conversationId,
-                    endpointOption,
-                    isNewConvo,
-                    errorText: generationError,
-                    liveUserMessage: userMessage,
-                    liveResponseMessageId,
-                    runCreated: client?.run != null,
-                    sender: client?.sender,
-                    initialAgentId: verifiedInitialAgentId,
-                  }),
+                  preserveNativeErrorResponse(
+                    {
+                      client,
+                      context: {
+                        userId,
+                        isTemporary:
+                          req?._agentEventBindingRetention?.isTemporary ??
+                          req?.resolvedConversation?.isTemporary ??
+                          req?.body?.isTemporary,
+                        expiredAt:
+                          req?._agentEventBindingRetention?.expiredAt ??
+                          req?.resolvedConversation?.expiredAt,
+                        interfaceConfig: req?.config?.interfaceConfig,
+                      },
+                      conversationId,
+                      userMessage,
+                      responseFields: {
+                        sender: client?.sender,
+                        endpoint: endpointOption.endpoint,
+                        model: responseModel,
+                        iconURL: endpointIconURL,
+                      },
+                      errorText: generationError,
+                      saveMessage,
+                    },
+                    () =>
+                      saveErrorTurn(req, {
+                        conversationId,
+                        endpointOption,
+                        isNewConvo,
+                        errorText: generationError,
+                        liveUserMessage: userMessage,
+                        liveResponseMessageId,
+                        runCreated: client?.run != null,
+                        sender: client?.sender,
+                        initialAgentId: verifiedInitialAgentId,
+                      }),
+                  ),
               })) === true;
             /** A true completion means this owner won the terminal CAS and
              * the beforeErrorPublication barrier above finished. Only that

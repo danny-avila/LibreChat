@@ -1,5 +1,10 @@
 import { createHash } from 'crypto';
-import { EToolResources, FileContext, FileSources } from 'librechat-data-provider';
+import {
+  EToolResources,
+  FileContext,
+  FileSources,
+  resolveMediaConfig,
+} from 'librechat-data-provider';
 import type { CodeEnvRef, TFile } from 'librechat-data-provider';
 import type { FilterQuery, SortOrder, Model } from 'mongoose';
 import type {
@@ -11,7 +16,9 @@ import type {
   RunArtifactRunScope,
   PublishRunArtifactInput,
 } from '~/types/file';
+import type { MediaConsumerConfig } from '~/types/mediaConsumers';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import { isMediaFileId } from '~/types/media';
 import logger from '../config/winston';
 
 export type FileOwnerScope = {
@@ -41,7 +48,7 @@ function withOwnerScope<T extends FilterQuery<IMongoFile>>(
     ...filter,
     user: ownerScope.userId,
   };
-  if (ownerScope.tenantId) {
+  if (ownerScope.tenantId !== undefined) {
     scopedFilter.tenantId = ownerScope.tenantId;
   }
   return scopedFilter;
@@ -123,7 +130,12 @@ function serializeRunArtifact(
 }
 
 /** Factory function that takes mongoose instance and returns the file methods */
-export function createFileMethods(mongoose: typeof import('mongoose')): {
+export function createFileMethods(
+  mongoose: typeof import('mongoose'),
+  deps: {
+    getMediaConsumerConfig?: () => Promise<MediaConsumerConfig>;
+  } = {},
+): {
   getRunFileCandidates: (fileIds: readonly string[], tenantId?: string | null) => Promise<TFile[]>;
   claimRunArtifactFile: (scope: RunArtifactScope) => Promise<RunArtifactClaim>;
   publishRunArtifactFile: (input: PublishRunArtifactInput) => Promise<RunArtifactFile>;
@@ -136,8 +148,12 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     selectFields?: Record<string, 0 | 1> | string | null,
   ) => Promise<IMongoFile[] | null>;
   getExpiredFiles: (limit?: number, options?: ExpiredFileQueryOptions) => Promise<IMongoFile[]>;
-  incrementFileDeletionAttempts: (file_id: string) => Promise<number>;
-  deferExpiredFile: (file_id: string, deletionRetryAt: Date) => Promise<void>;
+  incrementFileDeletionAttempts: (file_id: string, ownerScope?: FileOwnerScope) => Promise<number>;
+  deferExpiredFile: (
+    file_id: string,
+    deletionRetryAt: Date,
+    ownerScope?: FileOwnerScope,
+  ) => Promise<void>;
   getToolFilesByIds: (
     fileIds: string[],
     toolResourceSet?: Set<EToolResources>,
@@ -373,7 +389,20 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   ): Promise<IMongoFile[] | null> {
     const File = mongoose.models.File as Model<IMongoFile>;
     const sortOptions = { updatedAt: -1 as SortOrder, ..._sortOptions };
-    const query = File.find(filter);
+    const query = File.find({
+      $and: [
+        filter,
+        {
+          $or: [
+            { mediaOutputKey: { $exists: false } },
+            {
+              mediaLifecycle: 'live',
+              $or: [{ mediaHardExpiresAt: null }, { mediaHardExpiresAt: { $gt: new Date() } }],
+            },
+          ],
+        },
+      ],
+    });
     if (selectFields != null) {
       query.select(selectFields);
     } else {
@@ -408,8 +437,20 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   ): Promise<IMongoFile[]> {
     const File = mongoose.models.File as Model<IMongoFile>;
     return await File.find({
+      // Media deletion still goes through the retain/retire CAS in processDeleteRequest.
+      // Completed tombstones are receipts, not remaining objects to sweep.
+      mediaLifecycle: { $ne: 'retired' },
       expiredAt: { $ne: null, $lte: now },
-      $or: [{ deletionRetryAt: null }, { deletionRetryAt: { $lte: now } }],
+      $and: [
+        { $or: [{ deletionRetryAt: null }, { deletionRetryAt: { $lte: now } }] },
+        {
+          $or: [
+            { mediaUseUntil: null },
+            { mediaUseUntil: { $lte: now } },
+            { mediaHardExpiresAt: { $lte: now } },
+          ],
+        },
+      ],
     })
       .sort({ expiredAt: 1 })
       .limit(limit)
@@ -427,10 +468,13 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
    * both still think it is below — so the give-up would never be reported.
    * Returning it here gives every caller a distinct attempt number.
    */
-  async function incrementFileDeletionAttempts(file_id: string): Promise<number> {
+  async function incrementFileDeletionAttempts(
+    file_id: string,
+    ownerScope?: FileOwnerScope,
+  ): Promise<number> {
     const File = mongoose.models.File as Model<IMongoFile>;
     const file = await File.findOneAndUpdate(
-      { file_id },
+      withOwnerScope({ file_id }, ownerScope),
       { $inc: { deletionAttempts: 1 } },
       /** `timestamps: false`: sweep bookkeeping is not a content write.
        *  `processCodeOutput` falls back to `updatedAt` as the writer-order
@@ -451,9 +495,17 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
    * computed a shorter backoff from a lower attempt count cannot pull the
    * file forward past a longer one another node already committed.
    */
-  async function deferExpiredFile(file_id: string, deletionRetryAt: Date): Promise<void> {
+  async function deferExpiredFile(
+    file_id: string,
+    deletionRetryAt: Date,
+    ownerScope?: FileOwnerScope,
+  ): Promise<void> {
     const File = mongoose.models.File as Model<IMongoFile>;
-    await File.updateOne({ file_id }, { $max: { deletionRetryAt } }, { timestamps: false }).exec();
+    await File.updateOne(
+      withOwnerScope({ file_id }, ownerScope),
+      { $max: { deletionRetryAt } },
+      { timestamps: false },
+    ).exec();
   }
 
   /**
@@ -951,14 +1003,27 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   }): Promise<IMongoFile | null> {
     const File = mongoose.models.File as Model<IMongoFile>;
     const { file_id, inc = 1, user, tenantId } = data;
+    const media = isMediaFileId(file_id);
+    if (media && !user) return null;
+    const config = media
+      ? ((await deps.getMediaConsumerConfig?.()) ?? resolveMediaConfig().limits)
+      : undefined;
     const updateOperation = {
       $inc: { usage: inc },
       $unset: { expiresAt: '', temp_file_id: '' },
+      ...(config ? { $set: { mediaUseUntil: new Date(Date.now() + config.consumerClaimMs) } } : {}),
     };
     // Owner scoping is fail-closed: mismatches leave usage and TTL metadata unchanged.
     const query: FilterQuery<IMongoFile> = user
-      ? withOwnerScope({ file_id }, { userId: user, tenantId })
+      ? withOwnerScope(
+          { file_id },
+          { userId: user, tenantId: media ? (tenantId ?? null) : tenantId },
+        )
       : { file_id };
+    if (media) {
+      query.mediaLifecycle = 'live';
+      query.$or = [{ mediaHardExpiresAt: null }, { mediaHardExpiresAt: { $gt: new Date() } }];
+    }
     return File.findOneAndUpdate(query, updateOperation, {
       new: true,
     }).lean<IMongoFile>();
@@ -1021,7 +1086,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     const File = mongoose.models.File as Model<IMongoFile>;
     const bulkOperations = updates.map((update) => ({
       updateOne: {
-        filter: { file_id: update.file_id },
+        filter: { file_id: update.file_id, mediaOutputKey: { $exists: false } },
         update: {
           $set: {
             filepath: update.filepath,

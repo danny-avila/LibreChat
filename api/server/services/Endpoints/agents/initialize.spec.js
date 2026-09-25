@@ -140,6 +140,7 @@ describe('initializeClient — processAgent ACL gate', () => {
   });
 
   const makeReq = () => ({
+    app: { locals: {} },
     user: { id: testUser._id.toString(), role: 'USER' },
     body: { conversationId: 'conv_1', files: [] },
     resolvedConversation: null,
@@ -883,6 +884,7 @@ describe('initializeClient — subagent loading', () => {
 
   /** Build a request with the `subagents` capability enabled. */
   const makeSubagentReq = () => ({
+    app: { locals: {} },
     user: { id: testUser._id.toString(), role: 'USER' },
     body: { conversationId: 'conv_sub', files: [] },
     resolvedConversation: null,

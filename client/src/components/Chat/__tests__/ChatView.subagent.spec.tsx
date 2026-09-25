@@ -67,6 +67,9 @@ jest.mock('../Presentation', () => ({ children }: { children: React.ReactNode })
   <>{children}</>
 ));
 jest.mock('../Input/ChatForm', () => () => <div data-testid="chat-form" />);
+jest.mock('../Studio', () => ({
+  StudioProvider: ({ children }: { children: React.ReactNode }) => children,
+}));
 jest.mock('../Landing', () => () => <div data-testid="landing" />);
 jest.mock('../Trace', () => ({
   TraceSurface: ({ children }: { children: React.ReactNode }) => <>{children}</>,
@@ -107,7 +110,7 @@ describe('ChatView child-thread execution identity', () => {
       },
     };
 
-    render(<ChatView />);
+    render(<ChatView messagesReady />);
 
     expect(screen.queryByTestId('chat-form')).not.toBeInTheDocument();
     expect(screen.getByRole('note')).toHaveTextContent('com_ui_subagent_thread_read_only');
@@ -123,7 +126,7 @@ describe('ChatView child-thread execution identity', () => {
       },
     };
 
-    render(<ChatView />);
+    render(<ChatView messagesReady />);
 
     expect(screen.queryByTestId('chat-form')).not.toBeInTheDocument();
     expect(screen.getByRole('note')).toHaveTextContent('com_ui_subagent_thread_read_only');

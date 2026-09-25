@@ -7,6 +7,7 @@ import {
   langfuseConfigSchema,
   skillSyncConfigSchema,
   summarizationConfigSchema,
+  mediaConfigSchema,
 } from 'librechat-data-provider';
 import type {
   FileSources,
@@ -106,6 +107,25 @@ export function loadFiltersConfig(config: DeepPartial<TCustomConfig>): AppConfig
   return hasActiveFiltersConfig(parsed.data) ? parsed.data : undefined;
 }
 
+export function loadMediaConfig(config: DeepPartial<TCustomConfig>): AppConfig['media'] {
+  if (config.media === undefined) {
+    return undefined;
+  }
+  const parsed = mediaConfigSchema.safeParse(config.media);
+  if (!parsed.success) {
+    logger.warn('[AppService] Invalid media config', parsed.error.flatten());
+    throw new Error('Invalid media config');
+  }
+  return parsed.data;
+}
+
+const defaultMediaConfig = mediaConfigSchema.parse({});
+
+/** An absent YAML section stays absent on AppConfig; all runtime defaults use this accessor. */
+export function getMediaConfig(config: Pick<AppConfig, 'media'>): NonNullable<AppConfig['media']> {
+  return config.media ?? defaultMediaConfig;
+}
+
 export type Paths = {
   root: string;
   uploads: string;
@@ -167,6 +187,7 @@ export const AppService = async (params?: {
   const turnstileConfig = loadTurnstileConfig(config, configDefaults);
   const speech = config.speech;
   const filters = loadFiltersConfig(config);
+  const media = loadMediaConfig(config);
   const messageFilter = config.messageFilter;
   const langfuse = loadLangfuseConfig(config);
 
@@ -187,6 +208,7 @@ export const AppService = async (params?: {
     filteredTools,
     includedTools,
     filters,
+    media,
     langfuse,
     messageFilter,
     summarization,
