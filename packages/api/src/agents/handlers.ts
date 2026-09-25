@@ -315,6 +315,7 @@ export interface ToolExecuteOptions {
     reapply?: boolean;
     backgroundTask?: BackgroundToolResultState;
     resolveBackgroundTask?: () => BackgroundToolResultState;
+    onFilesPersisted?: (attachments: unknown[]) => void;
   }) => Promise<{ attachments?: unknown[]; deliveryReady?: boolean } | null>;
   /** Shared ordinary-tool completion lifecycle. The delivery is registered
    * before invoke; settlement is persisted onto the original response row. */
@@ -6169,6 +6170,13 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                         : { backgroundTask, resolveBackgroundTask }),
                       output: params.output ?? localTask?.result,
                       artifact: params.artifact,
+                      onFilesPersisted: (attachments) =>
+                        backgroundTaskRegistry.finishHarvest(
+                          backgroundUserId,
+                          backgroundConversationId,
+                          task.id,
+                          attachments,
+                        ),
                     });
                     if (persisted == null) {
                       /** Harvest never persisted anything (missing anchor
@@ -6257,10 +6265,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                   artifact?: unknown;
                   status: 'completed' | 'error' | 'cancelled';
                 }): Promise<void> => {
-                  if (harvestEnabled) {
-                    await persistBackgroundResult(params);
-                    return;
-                  }
+                  /** Held for the whole persist, including a code harvest that waits for
+                   *  a long dispatch turn, so retention pressure cannot evict the task. */
                   backgroundTaskRegistry.markCompletionPersistencePending(
                     backgroundUserId,
                     backgroundConversationId,

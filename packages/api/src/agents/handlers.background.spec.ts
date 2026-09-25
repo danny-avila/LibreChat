@@ -2621,6 +2621,59 @@ describe('createToolExecuteHandler — backgrounded code execution', () => {
     expect(poll[0].artifact).toBeUndefined();
   });
 
+  it('releases stored files to same-turn polls while the row patch waits for the dispatch turn', async () => {
+    const state: CodeToolState = { calls: 0 };
+    const emitted: unknown[] = [];
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [makeCodeTool(state)] }),
+      /** Files are stored; the row patch then waits for the long dispatch turn. */
+      persistBackgroundCodeResult: (params) => {
+        params.onFilesPersisted?.([{ file_id: 'f1', toolCallId: params.toolCallId }]);
+        return new Promise(() => undefined);
+      },
+      emitAttachment: (attachment) => {
+        emitted.push(attachment);
+      },
+    });
+    const configurable = buildConfig(['execute_code']);
+
+    const dispatch = await runBatch(handler, {
+      toolCalls: [codeCall({ id: 'call_code_long_turn' })],
+      agentId: 'a',
+      configurable,
+      metadata: { thread_id: 'exec_convo_code_long_turn', run_id: 'msg-long-turn' },
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    const poll = (await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call_poll_long_turn',
+          name: CHECK_BACKGROUND_TASK_NAME,
+          args: { background_task_id: JSON.parse(dispatch[0].content).background_task_id },
+        },
+      ],
+      agentId: 'a',
+      configurable,
+      metadata: { thread_id: 'exec_convo_code_long_turn', run_id: 'msg-long-turn' },
+    })) as Array<{ content: string; artifact?: unknown }>;
+
+    const polled = JSON.parse(poll[0].content);
+    expect(polled.status).toBe('completed');
+    expect(polled.note).toContain('attached to the tool call');
+    expect(emitted[0]).toEqual({ file_id: 'f1', toolCallId: 'call_code_long_turn' });
+    expect(poll[0].artifact).toEqual(CODE_ARTIFACT);
+    /** Still protected from retention eviction while the row patch waits. */
+    expect(
+      backgroundTaskRegistry.get(
+        'exec_user',
+        'exec_convo_code_long_turn',
+        JSON.parse(dispatch[0].content).background_task_id,
+      )?.completionPersistencePending,
+    ).toBe(true);
+  });
+
   it('falls back to poll-turn delivery when the harvest fails (files not lost)', async () => {
     const state: CodeToolState = { calls: 0 };
     const toolEndCalls: Array<{ name?: string; artifact?: unknown }> = [];

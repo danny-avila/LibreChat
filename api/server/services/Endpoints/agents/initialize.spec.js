@@ -304,6 +304,9 @@ describe('initializeClient — processAgent ACL gate', () => {
         jobCreatedAt: 1234,
       }),
     );
+    expect(
+      require('~/server/controllers/agents/callbacks').createBackgroundCodeResultHandler,
+    ).toHaveBeenCalledWith(expect.objectContaining({ jobCreatedAt: 1234 }));
     expect(createToolEndCallback).toHaveBeenCalledWith(
       expect.objectContaining({
         streamId: 'conv_1',

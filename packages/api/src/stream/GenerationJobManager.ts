@@ -20,6 +20,7 @@ import type {
 import type { StandardGraph } from '@librechat/agents';
 import type {
   SerializableJobData,
+  GenerationSettlementState,
   CreatedJobData,
   IEventTransport,
   UsageMetadata,
@@ -3772,9 +3773,21 @@ class GenerationJobManagerClass {
     await this.jobStore.releaseIdempotencyKey(legacyKey, expectedClaim);
   }
 
-  /**
-   * Get job status.
-   */
+  /** Observes identity and final-save ownership without attaching a runtime or
+   * promoting a slow terminal writer to stale-owner recovery. */
+  async getGenerationSettlementState(
+    streamId: string,
+  ): Promise<GenerationSettlementState | undefined> {
+    const job = await this.jobStore.getJob(streamId);
+    if (job == null) return undefined;
+    return {
+      createdAt: job.createdAt,
+      status: job.status,
+      terminalPersistencePending: job.terminalPersistencePending,
+    };
+  }
+
+  /** Get job status. */
   async getJobStatus(streamId: string): Promise<t.GenerationJobStatus | undefined> {
     const jobData = await this.jobStore.getJob(streamId);
     return jobData?.status as t.GenerationJobStatus | undefined;
