@@ -2988,6 +2988,15 @@ export function createConversationMethods(
     }
   }
 
+  /** Conversations with a file on any of this user's messages, where uploads normally live. */
+  async function getMessageFileConversationIds(user: string): Promise<string[] | null> {
+    const Message = mongoose.models.Message as Model<IMessage> | undefined;
+    if (!Message) {
+      return null;
+    }
+    return Message.find({ user, 'files.0': { $exists: true } }).distinct('conversationId');
+  }
+
   /**
    * The conversations this user is actively sharing.
    *
@@ -3101,25 +3110,23 @@ export function createConversationMethods(
       filters.push({ endpoint: { $in: endpoints } } as FilterQuery<IConversation>);
     }
 
+    /* The two facet lookups are independent user-scoped reads, so they start together
+       instead of adding their latencies on every page that combines them. */
+    const [messageFileIds, activeShares] = await Promise.all([
+      hasFiles === true ? getMessageFileConversationIds(user) : null,
+      sharedOnly === true ? getSharedConversationIds(user) : null,
+    ]);
+
     /* Attachments are not one field: the standard flow rides them on messages, imports
        can land them on the conversation, and `files` is absent or `[]` when empty. The
        conversation-side predicate alone would miss every ordinary chat with an upload,
-       so the message-side conversation IDs are resolved once and OR-matched in. */
+       so the message-side conversation IDs are OR-matched in. */
     if (hasFiles === true) {
       const orClauses: FilterQuery<IConversation>[] = [
         { files: { $exists: true, $not: { $size: 0 } } } as FilterQuery<IConversation>,
       ];
-      const Message = mongoose.models.Message as Model<IMessage> | undefined;
-      if (Message) {
-        const withMessageFiles = await Message.find({
-          user,
-          'files.0': { $exists: true },
-        }).distinct('conversationId');
-        if (withMessageFiles.length > 0) {
-          orClauses.push({
-            conversationId: { $in: withMessageFiles },
-          } as FilterQuery<IConversation>);
-        }
+      if (messageFileIds != null && messageFileIds.length > 0) {
+        orClauses.push({ conversationId: { $in: messageFileIds } } as FilterQuery<IConversation>);
       }
       filters.push({ $or: orClauses } as FilterQuery<IConversation>);
     }
@@ -3129,7 +3136,6 @@ export function createConversationMethods(
        SharedLink query after the conversation query for the same answers. */
     let sharedIds: Set<string> | null = null;
     if (sharedOnly === true) {
-      const activeShares = await getSharedConversationIds(user);
       /* Nothing shared, or sharing switched off, means nothing can match. Returning early
          also keeps an empty `$in` out of the query, which would match every document. */
       if (activeShares == null || activeShares.length === 0) {
