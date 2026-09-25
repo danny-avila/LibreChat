@@ -2988,13 +2988,19 @@ export function createConversationMethods(
     }
   }
 
-  /** Conversations with a file on any of this user's messages, where uploads normally live. */
+  /**
+   * Conversations with a file on any of this user's messages, where uploads normally live:
+   * on the message itself, or on a content part such as a mid-run steer.
+   */
   async function getMessageFileConversationIds(user: string): Promise<string[] | null> {
     const Message = mongoose.models.Message as Model<IMessage> | undefined;
     if (!Message) {
       return null;
     }
-    return Message.find({ user, 'files.0': { $exists: true } }).distinct('conversationId');
+    return Message.find({
+      user,
+      $or: [{ 'files.0': { $exists: true } }, { 'content.files.0': { $exists: true } }],
+    }).distinct('conversationId');
   }
 
   /**

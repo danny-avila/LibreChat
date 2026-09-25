@@ -8353,6 +8353,42 @@ describe('Conversation Operations', () => {
       ]);
     });
 
+    it('reads files attached to a message content part, such as a steer', async () => {
+      const Message = mongoose.models.Message as mongoose.Model<{
+        user: string;
+        conversationId: string;
+        messageId: string;
+        content: unknown[];
+      }>;
+      const steered = await makeConvo({ title: 'steered' });
+      const textOnly = await makeConvo({ title: 'text only' });
+      await Message.create([
+        {
+          user,
+          conversationId: steered.conversationId,
+          messageId: uuidv4(),
+          sender: 'Assistant',
+          isCreatedByUser: false,
+          content: [
+            { type: 'text', text: 'working on it' },
+            { type: 'steer', steer: 'use this', steerId: 's-1', files: [{ file_id: 'f-1' }] },
+          ],
+        },
+        {
+          user,
+          conversationId: textOnly.conversationId,
+          messageId: uuidv4(),
+          sender: 'Assistant',
+          isCreatedByUser: false,
+          content: [{ type: 'steer', steer: 'no file', steerId: 's-2', files: [] }],
+        },
+      ]);
+
+      const result = await getConvosByCursor(user, { hasFiles: true });
+
+      expect(result.conversations.map((c) => c.conversationId)).toEqual([steered.conversationId]);
+    });
+
     it('combines facets rather than widening the result', async () => {
       const match = await makeConvo({
         title: 'match',

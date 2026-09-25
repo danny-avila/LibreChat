@@ -71,6 +71,35 @@ async function seedUserMessageWithFile(conversationId: string): Promise<void> {
   );
 }
 
+async function seedSteerWithFile(conversationId: string): Promise<void> {
+  const user = await userId();
+  await withMongo((db) =>
+    db.collection('messages').insertOne({
+      messageId: randomUUID(),
+      parentMessageId: '00000000-0000-0000-0000-000000000000',
+      conversationId,
+      user,
+      isCreatedByUser: false,
+      sender: 'Assistant',
+      endpoint: 'openAI',
+      error: false,
+      unfinished: false,
+      content: [
+        { type: 'text', text: 'Working on it' },
+        {
+          type: 'steer',
+          steer: 'Use this file too',
+          steerId: randomUUID(),
+          files: [{ file_id: randomUUID(), filename: 'extra.txt', type: 'text/plain' }],
+        },
+      ],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      __v: 0,
+    }),
+  );
+}
+
 async function seedShare(conversationId: string, expiredAt: Date | null): Promise<void> {
   const user = await userId();
   await withMongo((db) =>
@@ -174,21 +203,24 @@ test('the attachment facet finds a chat whose only file rides on a message @scen
 }) => {
   const endpoint = uniqueEndpoint();
   const uploadedInChat = randomUUID();
+  const steeredWithFile = randomUUID();
   const importedWithFiles = randomUUID();
   const emptiedFiles = randomUUID();
   const plain = randomUUID();
   await seedRows(endpoint, [
     { conversationId: uploadedInChat },
+    { conversationId: steeredWithFile },
     { conversationId: importedWithFiles, files: [randomUUID()] },
     { conversationId: emptiedFiles, files: [] },
     { conversationId: plain },
   ]);
   await seedUserMessageWithFile(uploadedInChat);
+  await seedSteerWithFile(steeredWithFile);
 
   expect(await listIds(page, `endpoints=${endpoint}&hasFiles=true`)).toEqual(
-    [uploadedInChat, importedWithFiles].sort(),
+    [uploadedInChat, steeredWithFile, importedWithFiles].sort(),
   );
-  expect(await listIds(page, `endpoints=${endpoint}&hasFiles=false`)).toHaveLength(4);
+  expect(await listIds(page, `endpoints=${endpoint}&hasFiles=false`)).toHaveLength(5);
 });
 
 test('the shared facet follows live links and drops expired ones @scenario:list-shared-facet-follows-live-links', async ({
