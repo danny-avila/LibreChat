@@ -63,7 +63,7 @@ function TaskCard({
               aria-expanded={open}
               aria-controls={detailId}
               onClick={() => setOpen((value) => !value)}
-              className="text-text-primary focus-visible:ring-ring-primary flex max-w-full items-start gap-1 rounded text-left text-sm focus-visible:outline-none focus-visible:ring-2"
+              className="text-text-primary focus-visible:ring-ring-primary flex max-w-full items-start gap-1 rounded text-left text-sm focus-visible:ring-2 focus-visible:outline-none"
             >
               <span className="line-clamp-2 break-words">{title}</span>
               <ChevronDown
@@ -75,7 +75,7 @@ function TaskCard({
               />
             </button>
           ) : (
-            <p className="text-text-primary line-clamp-2 break-words text-sm">{title}</p>
+            <p className="text-text-primary line-clamp-2 text-sm break-words">{title}</p>
           )}
           <p className="text-text-secondary mt-0.5 flex items-center gap-2 text-xs">
             {title !== kindLabel && <span className="font-medium">{kindLabel}</span>}
@@ -105,7 +105,7 @@ function TaskCard({
                 aria-label={`${stopLabel}: ${title}`}
                 disabled={isStopping}
                 onClick={() => onStop(row)}
-                className="border-border-medium text-text-primary hover:bg-surface-hover focus-visible:ring-ring-primary flex size-7 shrink-0 items-center justify-center rounded-md border focus-visible:outline-none focus-visible:ring-2 disabled:opacity-50"
+                className="border-border-medium text-text-primary hover:bg-surface-hover focus-visible:ring-ring-primary flex size-7 shrink-0 items-center justify-center rounded-md border focus-visible:ring-2 focus-visible:outline-none disabled:opacity-50"
               >
                 <Square className="size-3" aria-hidden="true" />
               </button>
@@ -117,7 +117,7 @@ function TaskCard({
       {expandable && open && (
         <pre
           id={detailId}
-          className="bg-surface-primary text-text-primary mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-md p-2 font-mono text-xs"
+          className="bg-surface-primary text-text-primary mt-2 max-h-48 overflow-auto rounded-md p-2 font-mono text-xs break-words whitespace-pre-wrap"
         >
           {row.detail}
         </pre>

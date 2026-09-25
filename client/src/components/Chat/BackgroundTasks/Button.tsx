@@ -97,7 +97,7 @@ function BackgroundTasksButton({
             {activeCount > 0 && (
               <span
                 aria-hidden="true"
-                className="bg-status-info ring-presentation absolute -right-0.5 -top-0.5 size-2 animate-pulse rounded-full ring-2 motion-reduce:animate-none"
+                className="bg-status-info ring-presentation absolute -top-0.5 -right-0.5 size-2 animate-pulse rounded-full ring-2 motion-reduce:animate-none"
               />
             )}
           </Ariakit.PopoverDisclosure>
@@ -116,7 +116,7 @@ function BackgroundTasksButton({
           wide ? 'w-[36rem]' : 'w-80',
         )}
       >
-        <div className="flex items-center gap-1 px-3 pb-2 pt-3">
+        <div className="flex items-center gap-1 px-3 pt-3 pb-2">
           <Ariakit.PopoverHeading className="flex-1 text-sm font-semibold">
             {title}
           </Ariakit.PopoverHeading>

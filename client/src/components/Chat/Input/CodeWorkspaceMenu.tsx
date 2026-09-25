@@ -337,12 +337,12 @@ export default function CodeWorkspaceMenu({
             onClick={() => void refresh()}
             aria-label={`${label}. ${recovery}. ${localize('com_ui_retry')}`}
             aria-busy={isRefreshing}
-            className={cn(composerControlClasses(), 'min-w-0 max-w-full px-2.5')}
+            className={cn(composerControlClasses(), 'max-w-full min-w-0 px-2.5')}
           />
         }
       >
         <Icon className="text-text-secondary size-4 shrink-0" aria-hidden="true" />
-        <span role="status" className="min-w-0 max-w-[16rem] truncate">
+        <span role="status" className="max-w-[16rem] min-w-0 truncate">
           {label}
         </span>
         <RefreshCw className="text-text-secondary size-3 shrink-0" aria-hidden="true" />
@@ -374,7 +374,7 @@ export default function CodeWorkspaceMenu({
             }
             className={cn(
               composerControlClasses(),
-              'min-w-0 max-w-full px-2.5 md:px-theme-normal',
+              'md:px-theme-normal max-w-full min-w-0 px-2.5',
               isOpen && 'bg-surface-hover',
               buttonDisabled && 'cursor-not-allowed opacity-50',
             )}
@@ -382,7 +382,7 @@ export default function CodeWorkspaceMenu({
         }
       >
         <ButtonIcon className="text-text-secondary size-4 shrink-0" aria-hidden="true" />
-        <span className="min-w-0 max-w-[12rem] truncate">{buttonLabel}</span>
+        <span className="max-w-[12rem] min-w-0 truncate">{buttonLabel}</span>
         <ChevronDown
           className={cn(
             'text-text-secondary size-3 shrink-0 transition-transform',
@@ -396,7 +396,7 @@ export default function CodeWorkspaceMenu({
         gutter={8}
         unmountOnHide={true}
         className={cn(
-          'z-50 flex min-w-[280px] max-w-[min(360px,calc(100vw-2rem))] flex-col rounded-xl',
+          'z-50 flex max-w-[min(360px,calc(100vw-2rem))] min-w-[280px] flex-col rounded-xl',
           'border-border-light bg-presentation max-h-[var(--popover-available-height)] overflow-y-auto border p-1.5 shadow-lg',
           'origin-bottom opacity-0 transition-[opacity,transform] duration-200 ease-out',
           'data-[enter]:scale-100 data-[enter]:opacity-100',

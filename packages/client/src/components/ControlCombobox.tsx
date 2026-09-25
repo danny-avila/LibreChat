@@ -248,12 +248,12 @@ function ControlCombobox({
       >
         <div className="shrink-0 py-1.5">
           <div className="relative">
-            <Search className="text-text-primary absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" />
+            <Search className="text-text-primary absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
             <Ariakit.Combobox
               store={combobox}
               autoSelect
               placeholder={searchPlaceholder}
-              className="bg-surface-secondary text-text-primary focus:outline-hidden w-full rounded-md py-2 pl-9 pr-3 text-sm"
+              className="bg-surface-secondary text-text-primary w-full rounded-md py-2 pr-3 pl-9 text-sm focus:outline-hidden"
             />
           </div>
         </div>
