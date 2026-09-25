@@ -224,4 +224,18 @@ describe('SearchBar across a breakpoint remount', () => {
       expect(mockSearchState.debouncedQuery).toBe('');
     });
   });
+
+  /** An IME uses Escape to cancel the text it is composing, not the search. */
+  describe('Escape while an IME is composing', () => {
+    it('keeps the query during composition and clears it after', () => {
+      render(<SearchBar />);
+      type('konnichiwa');
+
+      fireEvent.keyDown(input(), { key: 'Escape', isComposing: true });
+      expect(input().value).toBe('konnichiwa');
+
+      fireEvent.keyDown(input(), { key: 'Escape' });
+      expect(input().value).toBe('');
+    });
+  });
 });

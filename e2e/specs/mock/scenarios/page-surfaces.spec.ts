@@ -1,6 +1,12 @@
 import { expect, test } from '@playwright/test';
 import type { Locator } from '@playwright/test';
-import { openSidebar } from './sidebar';
+import {
+  MOCK_ENDPOINTS,
+  NEW_CHAT_PATH,
+  messagesView,
+  selectMockEndpoint,
+  sendMessage,
+} from '../helpers';
 
 /**
  * A floating label breaks its field's top border, so it paints over the border
@@ -41,19 +47,27 @@ test.describe('page surfaces', () => {
     expect(skill.notch).toBe(skill.backdrop);
   });
 
-  test('Escape during IME composition keeps the search @scenario:search-escape-leaves-ime-composition', async ({
+  test('a reply with a wide table stays inside the chat column @scenario:chat-column-fits-beside-sidebar', async ({
     page,
   }) => {
-    await page.goto('/c/new');
-    await openSidebar(page);
-    const search = page.getByTestId('nav-search-input');
-    await search.fill('konnichiwa');
-    await expect(search).toHaveValue('konnichiwa');
+    await page.setViewportSize({ width: 900, height: 600 });
+    await page.goto(NEW_CHAT_PATH);
+    await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+    const response = await sendMessage(page, 'E2E_PARAGRAPHS_REPLY');
+    expect(response.ok()).toBeTruthy();
+    const view = messagesView(page);
+    await expect(view.getByText('E2E closing paragraph')).toBeVisible({ timeout: 20_000 });
+    await expect(view.locator('.markdown-table-wrapper')).toBeVisible();
 
-    await search.dispatchEvent('keydown', { key: 'Escape', code: 'Escape', isComposing: true });
-    await expect(search).toHaveValue('konnichiwa');
-
-    await search.press('Escape');
-    await expect(search).toHaveValue('');
+    const bounds = await view.evaluate((element) => {
+      const wrapper = element.querySelector('.markdown-table-wrapper')!;
+      return {
+        viewRight: element.getBoundingClientRect().right,
+        viewport: window.innerWidth,
+        tableScrolls: wrapper.scrollWidth > wrapper.clientWidth,
+      };
+    });
+    expect(bounds.viewRight).toBeLessThanOrEqual(bounds.viewport);
+    expect(bounds.tableScrolls).toBe(true);
   });
 });
