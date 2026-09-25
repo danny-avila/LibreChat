@@ -511,6 +511,7 @@ const initializeClientWithProvider = async ({
     },
     persistBackgroundCodeResult: createBackgroundCodeResultHandler({
       req,
+      jobCreatedAt,
       updateToolCallResult: db.updateToolCallResult,
     }),
     backgroundToolCompletion: {

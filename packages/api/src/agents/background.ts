@@ -834,7 +834,11 @@ export class BackgroundTaskRegistryClass {
 
   private sweepBucketTasks(bucket: TaskBucket, now: number): void {
     for (const [taskId, task] of bucket.tasks) {
-      if (task.status !== 'running' && now - task.updatedAt > COMPLETED_TASK_TTL_MS) {
+      if (
+        task.status !== 'running' &&
+        task.completionPersistencePending !== true &&
+        now - task.updatedAt > COMPLETED_TASK_TTL_MS
+      ) {
         bucket.tasks.delete(taskId);
       }
     }
@@ -859,7 +863,13 @@ export class BackgroundTaskRegistryClass {
     }
     this.lastGlobalSweepAt = now;
     for (const [bucketKey, bucket] of this.buckets) {
-      if (now - bucket.lastAccess > IDLE_BUCKET_TTL_MS && bucket.capacityPermits.size === 0) {
+      if (
+        now - bucket.lastAccess > IDLE_BUCKET_TTL_MS &&
+        bucket.capacityPermits.size === 0 &&
+        ![...bucket.tasks.values()].some(
+          (task) => task.status === 'running' || task.completionPersistencePending === true,
+        )
+      ) {
         this.buckets.delete(bucketKey);
         continue;
       }
@@ -1615,7 +1625,14 @@ export class BackgroundTaskRegistryClass {
   }
 
   markCompletionPersistenceFinished(userId: string, conversationId: string, taskId: string): void {
-    this.update(userId, conversationId, taskId, { completionPersistencePending: undefined });
+    const bucket = this.buckets.get(this.key(userId, conversationId));
+    const task = bucket?.tasks.get(taskId);
+    if (bucket == null || task == null) return;
+    /** Even a policy-blocked task must release retention protection. This only
+     * clears lifecycle state; the immutable artifact block remains intact. */
+    task.completionPersistencePending = undefined;
+    task.updatedAt = Date.now();
+    bucket.lastAccess = task.updatedAt;
   }
 
   markCompletionPersistenceFailed(userId: string, conversationId: string, taskId: string): void {

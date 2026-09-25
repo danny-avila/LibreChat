@@ -1369,6 +1369,54 @@ describe('BackgroundTaskRegistryClass', () => {
     expect(registry.get('u1', 'c1', created.task.id)).toBeUndefined();
   });
 
+  it.each(['completed', 'error', 'cancelled', 'blocked'] as const)(
+    'preserves pending %s results through both TTLs and releases protection afterward',
+    async (status) => {
+      jest.useFakeTimers();
+      try {
+        const registry = new BackgroundTaskRegistryClass();
+        const created = registry.create({
+          userId: 'u',
+          conversationId: 'c',
+          toolCallId: 'call',
+          toolName: 'execute_code',
+          harvestStarted: true,
+        });
+        if ('atCapacity' in created) throw new Error('Unexpected capacity rejection');
+        if (status === 'cancelled') registry.cancel('u', 'c', created.task.id, 'cancelled');
+        else if (status === 'error') registry.fail('u', 'c', created.task.id, 'failed');
+        else
+          registry.complete('u', 'c', created.task.id, { content: 'result', harvestStarted: true });
+        registry.markCompletionPersistencePending('u', 'c', created.task.id);
+        registry.finishHarvest('u', 'c', created.task.id, [{ file_id: 'file' }]);
+        if (status === 'blocked') registry.blockArtifact('u', 'c', created.task.id, 'blocked');
+        registry.claimResult('u', 'c', created.task.id, { kind: 'manual', claimId: 'poll' });
+        await jest.advanceTimersByTimeAsync(7 * 60 * 60_000);
+        expect(registry.get('u', 'c', created.task.id)).toMatchObject({
+          completionPersistencePending: true,
+        });
+        registry.markCompletionPersistenceFinished('u', 'c', created.task.id);
+        expect(
+          registry.get('u', 'c', created.task.id)?.completionPersistencePending,
+        ).toBeUndefined();
+        if (status === 'blocked')
+          expect(registry.get('u', 'c', created.task.id)).toMatchObject({
+            artifactBlocked: true,
+            artifact: undefined,
+          });
+        if (status === 'completed')
+          expect(registry.get('u', 'c', created.task.id)).toMatchObject({
+            result: 'result',
+            resultClaim: { kind: 'manual', claimId: 'poll' },
+          });
+        await jest.advanceTimersByTimeAsync(61 * 60_000);
+        expect(registry.get('u', 'c', created.task.id)).toBeUndefined();
+      } finally {
+        jest.useRealTimers();
+      }
+    },
+  );
+
   it('caps concurrent running tasks per conversation', () => {
     const registry = new BackgroundTaskRegistryClass();
     let atCapacity = false;

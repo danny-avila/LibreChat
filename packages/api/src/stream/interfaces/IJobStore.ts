@@ -106,6 +106,12 @@ export type GenerationProtocolVersion = 1 | 2;
 /**
  * Serializable job data - no object references, suitable for Redis/external storage
  */
+/** Read-only durable evidence, without attaching a runtime or recovering a slow save. */
+export type GenerationSettlementState = Pick<
+  SerializableJobData,
+  'createdAt' | 'status' | 'terminalPersistencePending'
+>;
+
 export interface SerializableJobData {
   streamId: string;
   userId: string;

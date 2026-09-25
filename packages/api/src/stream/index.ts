@@ -85,3 +85,7 @@ export { RedisJobStore } from './implementations/RedisJobStore';
 export { RedisEventTransport } from './implementations/RedisEventTransport';
 
 export { waitForGenerationPersistence } from './persistence';
+export { waitForGenerationSettled } from './settled';
+export type { GenerationSettledSource, GenerationSettledWaitOptions } from './settled';
+
+export type { GenerationSettlementState } from './interfaces/IJobStore';
