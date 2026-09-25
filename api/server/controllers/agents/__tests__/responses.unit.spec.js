@@ -197,6 +197,8 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  getAgentErrorMetadata: (...args) =>
+    jest.requireActual('@librechat/api').getAgentErrorMetadata(...args),
   /* Provisioning moved into this package; the controllers build the callback from it. */
   createProvisionFilesCallback: () => async () => {},
   createAgentExecutionContext: (context) => context,
@@ -1820,6 +1822,53 @@ describe('createResponse controller', () => {
   });
 
   describe('safe error logging', () => {
+    const credentialCases = () => {
+      const {
+        OpenIDReauthRequiredError,
+        MCPAuthenticationRejectedError,
+        MCPAuthenticationRefreshError,
+        OboTokenResolutionError,
+      } = jest.requireActual('@librechat/api');
+      return [
+        [new OpenIDReauthRequiredError('Please sign in again'), 401, undefined],
+        [
+          new MCPAuthenticationRejectedError('private-mcp', false),
+          403,
+          'MCP_AUTHENTICATION_REJECTED',
+        ],
+        [
+          new MCPAuthenticationRefreshError(new Error('temporary failure')),
+          503,
+          'MCP_AUTHENTICATION_REFRESH_FAILED',
+        ],
+        [
+          new OboTokenResolutionError('session_refresh_failed', 'Please sign in again', false),
+          403,
+          'MCP_AUTHENTICATION_REJECTED',
+        ],
+        [
+          new OboTokenResolutionError('exchange_failed', 'Temporary exchange failure', true),
+          503,
+          'MCP_AUTHENTICATION_REFRESH_FAILED',
+        ],
+      ];
+    };
+    it.each(credentialCases())(
+      'preserves remote Responses credential metadata: %s',
+      async (error, status, code) => {
+        const api = require('@librechat/api');
+        api.initializeAgent.mockRejectedValueOnce(error);
+        await createResponse(req, res);
+        expect(api.sendResponsesErrorResponse).toHaveBeenCalledWith(
+          res,
+          status,
+          error.message,
+          status < 500 ? 'invalid_request' : 'server_error',
+          ...(code ? [code] : []),
+        );
+      },
+    );
+
     it('does not classify a client disconnect as an upstream model error', async () => {
       const api = require('@librechat/api');
       const { logger } = require('@librechat/data-schemas');
