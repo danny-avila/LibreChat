@@ -252,6 +252,8 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  getAgentErrorMetadata: (...args) =>
+    jest.requireActual('@librechat/api').getAgentErrorMetadata(...args),
   sendEvent: jest.fn(),
   logAgentMemorySnapshot: jest.fn(),
   isScheduleFireRequest: (...args) => mockIsScheduleFireRequest(...args),
@@ -4069,6 +4071,71 @@ describe('ResumableAgentController resume metadata', () => {
       );
     });
   });
+
+  it.each([
+    new (jest.requireActual('@librechat/api').OpenIDReauthRequiredError)(
+      'Please sign in again to continue using this MCP server.',
+    ),
+    new (jest.requireActual('@librechat/api').MCPAuthenticationRejectedError)('private-mcp', false),
+    new (jest.requireActual('@librechat/api').MCPAuthenticationRefreshError)(
+      new Error('upstream refresh unavailable'),
+    ),
+    new (jest.requireActual('@librechat/api').OboTokenResolutionError)(
+      'session_refresh_failed',
+      'Please sign in again',
+      false,
+    ),
+    new (jest.requireActual('@librechat/api').OboTokenResolutionError)(
+      'exchange_failed',
+      'Temporary exchange failure',
+      true,
+    ),
+  ])(
+    'publishes an actionable MCP initialization failure without an HTTP 401: %s',
+    async (error) => {
+      const initializeClient = jest.fn().mockRejectedValue(error);
+      const req = {
+        user: { id: 'user-123' },
+        body: {
+          text: 'Use the private tool.',
+          messageId: 'user-msg',
+          clientRequestId: 'req-abc',
+          conversationId: 'conversation-123',
+          endpointOption: { endpoint: 'agents', modelOptions: { model: 'gpt-4.1' } },
+        },
+        config: {},
+      };
+      const res = createResumableResponse();
+
+      await AgentController(req, res, jest.fn(), initializeClient, null);
+
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.status).not.toHaveBeenCalledWith(401);
+      expect(initializeClient).toHaveBeenCalledTimes(1);
+      let metadata = {
+        status: error.status ?? error.statusCode,
+        ...(error.code ? { code: error.code } : {}),
+      };
+      if (error.name === 'OboTokenResolutionError') {
+        metadata = {
+          status: error.retryable ? 503 : 403,
+          code: error.retryable
+            ? 'MCP_AUTHENTICATION_REFRESH_FAILED'
+            : 'MCP_AUTHENTICATION_REJECTED',
+          retryable: error.retryable,
+        };
+      }
+      expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
+        'conversation-123',
+        JSON.stringify({
+          ...metadata,
+          error: error.message,
+        }),
+        1000,
+        expect.objectContaining({ beforeErrorPublication: expect.any(Function) }),
+      );
+    },
+  );
 
   it('finalizes the failed job before releasing the idempotency claim', async () => {
     mockGenerationJobManager.claimGeneration.mockResolvedValue(wonGenerationClaim());
