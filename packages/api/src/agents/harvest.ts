@@ -57,6 +57,8 @@ export interface BackgroundToolResultState {
 export interface CodeHarvestDeps {
   /** Generation identity captured by the host at dispatch, not at harvest time. */
   generationCreatedAt?: number;
+  /** The stream owning that epoch; nested child conversations must observe their own. */
+  generationStreamId?: string | null;
   req: ServerRequest;
   /** Data-schemas method: idempotent tool-call part patch + attachment append. */
   updateToolCallResult: (params: {
@@ -309,6 +311,7 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
     runPreviewFinalize,
     waitForGenerationSettled,
     generationCreatedAt,
+    generationStreamId,
   } = deps;
   return async ({
     toolCallId,
@@ -419,7 +422,9 @@ export function createBackgroundCodeResultHandler(deps: CodeHarvestDeps): CodeHa
         ...(resolveBackgroundTask != null ? { resolveBackgroundTask } : {}),
       },
       waitForGenerationSettled,
-      generationCreatedAt,
+      generationStreamId == null || generationStreamId === conversationId
+        ? generationCreatedAt
+        : undefined,
     );
     if (!deliveryReady) {
       logger.warn(

@@ -318,23 +318,27 @@ describe('createBackgroundCodeResultHandler long dispatch turns', () => {
     expect(updateToolCallResult).toHaveBeenCalledTimes(attemptsBeforeSettle + 1);
   });
 
-  it('pins the waiter to the dispatch epoch supplied by the host', async () => {
-    const wait = jest.fn(async () => true);
-    const handler = createBackgroundCodeResultHandler({
-      req,
-      preflightCodeOutputBatch: async () => [],
-      processCodeOutput: jest.fn(),
-      runPreviewFinalize: jest.fn(),
-      updateToolCallResult: async () => ({ matched: true, unfinished: false }),
-      generationCreatedAt: 1234,
-      waitForGenerationSettled: wait,
-    });
-    await handler({ ...params, backgroundTask });
-    expect(wait).toHaveBeenCalledWith(params.conversationId, {
-      generationCreatedAt: 1234,
-      signal: expect.any(AbortSignal),
-    });
-  });
+  it.each([params.conversationId, 'another-conversation'])(
+    'pins only the epoch owned by the host stream %s',
+    async (generationStreamId) => {
+      const wait = jest.fn(async () => true);
+      const handler = createBackgroundCodeResultHandler({
+        req,
+        preflightCodeOutputBatch: async () => [],
+        processCodeOutput: jest.fn(),
+        runPreviewFinalize: jest.fn(),
+        updateToolCallResult: async () => ({ matched: true, unfinished: false }),
+        generationCreatedAt: 1234,
+        generationStreamId,
+        waitForGenerationSettled: wait,
+      });
+      await handler({ ...params, backgroundTask });
+      expect(wait).toHaveBeenCalledWith(params.conversationId, {
+        ...(generationStreamId === params.conversationId && { generationCreatedAt: 1234 }),
+        signal: expect.any(AbortSignal),
+      });
+    },
+  );
 
   it('stops listening for the turn once the result is anchored', async () => {
     const updateToolCallResult = jest.fn(async () => ({ matched: true, unfinished: false }));
