@@ -33,6 +33,7 @@ import { selfOriginFromAddress } from '../../app/origin';
 import { createAgentTriggerExecutionHost } from './host';
 import { parseAgentTriggerEnvelope } from './envelope';
 import { createIdleRecoveryLoop } from '../recovery';
+import { WAITING_RETRY_CAP_MS } from './backoff';
 
 export const AGENT_TRIGGER_TOKEN_TTL = '60s';
 const DEFAULT_USER_DRAIN_TIMEOUT_MS = 35_000;
@@ -48,6 +49,7 @@ export interface AgentTriggerServiceOptions {
     queuedTurnMaxIntervalMs?: number;
     maintenanceMaxIntervalMs?: number;
     deliveryMaxIntervalMs?: number;
+    completionWaitMaxIntervalMs?: number;
   };
 }
 
@@ -206,6 +208,8 @@ export interface AgentTriggerService {
     input: Parameters<AgentTriggerDeliveryMethods['getAgentBackgroundToolResultClaim']>[0],
   ) => ReturnType<AgentTriggerDeliveryMethods['getAgentBackgroundToolResultClaim']>;
   getBackgroundCompletionResultBatchSize: () => number;
+  /** Longest a waiting completion delivery re-checks readiness. */
+  getCompletionWaitMaxIntervalMs: () => number;
   releaseBackgroundToolResultClaims: AgentTriggerDeliveryMethods['releaseAgentBackgroundToolResultClaims'];
   drainUser: (userId: string) => Promise<void>;
   prepareUserPurge: (userId: string, fenceStartedAt: Date, tenantId?: string) => Promise<void>;
@@ -323,6 +327,7 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
   }
   let boundOrigin: string | undefined;
   let backgroundCompletionResultBatchSize = 8;
+  let completionWaitMaxIntervalMs = WAITING_RETRY_CAP_MS;
   let deliveryEngine: AgentTriggerDeliveryEngine | undefined;
   let initializePromise: Promise<void> | undefined;
   let purgeRecoveryPromise: Promise<boolean> | undefined;
@@ -553,6 +558,8 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
   return {
     initialize: (options = {}) => {
       backgroundCompletionResultBatchSize = options.completionResultBatchSize ?? 8;
+      completionWaitMaxIntervalMs =
+        options.idlePolling?.completionWaitMaxIntervalMs ?? WAITING_RETRY_CAP_MS;
       boundOrigin = selfOriginFromAddress(options.address) ?? boundOrigin;
       if (deps.methods == null || deliveryReady) {
         return Promise.resolve();
@@ -728,6 +735,7 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
         return getClaim == null ? null : getClaim(input);
       }),
     getBackgroundCompletionResultBatchSize: () => backgroundCompletionResultBatchSize,
+    getCompletionWaitMaxIntervalMs: () => completionWaitMaxIntervalMs,
     releaseBackgroundToolResultClaims: (input) =>
       runAsSystem(async () => {
         const release = requireMethods().releaseAgentBackgroundToolResultClaims;

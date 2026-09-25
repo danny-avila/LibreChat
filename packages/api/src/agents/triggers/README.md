@@ -99,6 +99,11 @@ experimental clustered startup:
 | `queuedTurnMaxIntervalMs` | 120000 | 30000–300000 |
 | `maintenanceMaxIntervalMs` | 120000 | 30000–300000 |
 | `deliveryMaxIntervalMs` | 15000 | 1000–300000 |
+| `completionWaitMaxIntervalMs` | 60000 | 5000–300000 |
+
+`completionWaitMaxIntervalMs` caps how long a background or subagent completion waits between
+readiness checks while its result or parent turn is not ready. It backs off from 5 seconds by a tenth
+of its age, so a long wait costs about one re-check per cap instead of one every five seconds.
 
 Setting a recovery cap to `30000` restores its original fixed recovery frequency. No stored-data
 migration is needed; optional activity reporting preserves the existing numeric/boolean results.

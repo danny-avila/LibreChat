@@ -756,6 +756,88 @@ describe('background tool completion wakeups', () => {
     expect(methods.claimBackgroundToolResults).not.toHaveBeenCalled();
   });
 
+  it('backs off by waiting age while the invoking generation keeps running', async () => {
+    const { methods } = resolverMethods();
+    const resolve = createBackgroundToolCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => ({ status: 'running' }),
+    });
+    const deliveryEnvelope = await envelope();
+
+    jest.setSystemTime(NOW + 120_000);
+    await expect(resolve(deliveryEnvelope, { idempotencyKey: 'delivery-1' })).rejects.toMatchObject(
+      { code: 'PARENT_NOT_READY', retryAfter: '12', deferWithoutAttempt: true },
+    );
+    jest.setSystemTime(NOW + 6 * 60 * 60_000);
+    await expect(resolve(deliveryEnvelope, { idempotencyKey: 'delivery-1' })).rejects.toMatchObject(
+      { code: 'PARENT_NOT_READY', retryAfter: '60' },
+    );
+  });
+
+  it('caps the waiting backoff at the configured interval', async () => {
+    const { methods } = resolverMethods();
+    const resolve = createBackgroundToolCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => ({ status: 'running' }),
+      getWaitMaxIntervalMs: () => 20_000,
+    });
+    const deliveryEnvelope = await envelope();
+
+    jest.setSystemTime(NOW + 6 * 60 * 60_000);
+    await expect(resolve(deliveryEnvelope, { idempotencyKey: 'delivery-1' })).rejects.toMatchObject(
+      { code: 'PARENT_NOT_READY', retryAfter: '20' },
+    );
+  });
+
+  it('keeps backing off while the parent is paused for approval', async () => {
+    const { methods } = resolverMethods();
+    const resolve = createBackgroundToolCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => ({ status: 'requires_action' }),
+    });
+    const deliveryEnvelope = await envelope();
+
+    jest.setSystemTime(NOW + 60 * 60_000);
+    await expect(resolve(deliveryEnvelope, { idempotencyKey: 'delivery-1' })).rejects.toMatchObject(
+      { code: 'PARENT_NOT_READY', retryAfter: '60' },
+    );
+  });
+
+  it('re-checks within a second once the parent has settled and only persistence remains', async () => {
+    const { methods } = resolverMethods();
+    const resolve = createBackgroundToolCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => ({
+        status: 'complete',
+        metadata: { terminalPersistencePending: true },
+      }),
+    });
+    const deliveryEnvelope = await envelope();
+
+    jest.setSystemTime(NOW + 10 * 60_000);
+    await expect(resolve(deliveryEnvelope, { idempotencyKey: 'delivery-1' })).rejects.toMatchObject(
+      { code: 'PARENT_NOT_READY', retryAfter: '1' },
+    );
+  });
+
+  it('backs off by waiting age while the tool result is not durable yet', async () => {
+    const { methods } = resolverMethods();
+    methods.claimBackgroundToolResults.mockResolvedValue({ status: 'missing', results: [] });
+    const resolve = createBackgroundToolCompletionWakeupResolver({
+      methods: methods as never,
+      getGenerationJob: async () => null,
+    });
+    const deliveryEnvelope = await envelope();
+
+    await expect(resolve(deliveryEnvelope, { idempotencyKey: 'delivery-1' })).rejects.toMatchObject(
+      { code: 'BACKGROUND_TOOL_RESULT_NOT_READY', retryAfter: '5' },
+    );
+    jest.setSystemTime(NOW + 5 * 60_000);
+    await expect(resolve(deliveryEnvelope, { idempotencyKey: 'delivery-1' })).rejects.toMatchObject(
+      { code: 'BACKGROUND_TOOL_RESULT_NOT_READY', retryAfter: '30' },
+    );
+  });
+
   it('does not manufacture terminal evidence from wall-clock age', async () => {
     const { methods } = resolverMethods();
     methods.claimBackgroundToolResults.mockResolvedValue({ status: 'missing', results: [] });
