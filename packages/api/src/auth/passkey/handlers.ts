@@ -3,10 +3,10 @@ import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simp
 import type { PasskeyCreateData, PasskeyRecord, AppConfig } from '@librechat/data-schemas';
 import type { TPasskey } from 'librechat-data-provider';
 import type { Request, Response } from 'express';
+import type { AppConfigUserLike, GetAppConfigOptions } from '~/app/service';
 import type { PasskeyConfig, PasskeyChallengeStore } from '~/auth/passkey';
 import type { ComparePasswordDeps } from '~/auth/password';
 import type { UserDocumentId } from '~/auth/verification';
-import type { GetAppConfigOptions } from '~/app/service';
 import {
   getPasskeyConfig,
   isPasskeyEnabled,
@@ -55,7 +55,7 @@ interface AuthenticationBody {
  * handoff to `loginController` and legacy-verification grandfathering, not by
  * the route handlers themselves.
  */
-export interface PasskeyAccount {
+export interface PasskeyAccount extends AppConfigUserLike {
   id?: string;
   _id?: UserDocumentId;
   email?: string;
