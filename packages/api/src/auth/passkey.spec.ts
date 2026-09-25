@@ -1,7 +1,9 @@
 import Keyv from 'keyv';
 import { logger } from '@librechat/data-schemas';
+import { MAX_PASSKEYS_PER_USER } from 'librechat-data-provider';
 import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/server';
+import type { TCustomConfig } from 'librechat-data-provider';
 import type { PasskeyChallengeStore, PasskeyConfig } from './passkey';
 import {
   authenticationChallengeKey,
@@ -12,6 +14,7 @@ import {
   getPasskeyConfig,
   isPasskeyEnabled,
   registrationChallengeKey,
+  resolveMaxPasskeysPerUser,
   verifyPasskeyAuthentication,
   verifyPasskeyRegistration,
 } from './passkey';
@@ -106,6 +109,50 @@ function createAuthenticator(credentialId = 'cred-id') {
 
   return { assert, credential: { credentialId: id, publicKey: cosePublicKey, counter: 0 } };
 }
+
+describe('resolveMaxPasskeysPerUser', () => {
+  it('prefers the yaml value over the environment and the documented default', () => {
+    expect(
+      resolveMaxPasskeysPerUser({ perUserMax: 5 }, {
+        MAX_PASSKEYS_PER_USER: '9',
+      } as NodeJS.ProcessEnv),
+    ).toBe(5);
+  });
+
+  it('falls back to the environment, then the documented default', () => {
+    expect(
+      resolveMaxPasskeysPerUser(undefined, { MAX_PASSKEYS_PER_USER: '9' } as NodeJS.ProcessEnv),
+    ).toBe(9);
+    expect(resolveMaxPasskeysPerUser(undefined, {} as NodeJS.ProcessEnv)).toBe(
+      MAX_PASSKEYS_PER_USER,
+    );
+    expect(
+      resolveMaxPasskeysPerUser(undefined, {
+        MAX_PASSKEYS_PER_USER: 'not-a-number',
+      } as NodeJS.ProcessEnv),
+    ).toBe(MAX_PASSKEYS_PER_USER);
+  });
+
+  it('applies the schema bounds to the environment value too', () => {
+    const rejected = ['0', '-1', '101', '9abc', '1.5'];
+    for (const value of rejected) {
+      expect(
+        resolveMaxPasskeysPerUser(undefined, { MAX_PASSKEYS_PER_USER: value } as NodeJS.ProcessEnv),
+      ).toBe(MAX_PASSKEYS_PER_USER);
+    }
+    expect(
+      resolveMaxPasskeysPerUser(undefined, { MAX_PASSKEYS_PER_USER: '100' } as NodeJS.ProcessEnv),
+    ).toBe(100);
+  });
+
+  it('ignores an out-of-bounds cap from an unvalidated override', () => {
+    const env = { MAX_PASSKEYS_PER_USER: '9' } as NodeJS.ProcessEnv;
+    const rejected: unknown[] = [0, -1, 101, 1.5, '5', 'abc', null];
+    for (const perUserMax of rejected) {
+      expect(resolveMaxPasskeysPerUser({ perUserMax } as TCustomConfig['passkeys'], env)).toBe(9);
+    }
+  });
+});
 
 describe('getPasskeyConfig', () => {
   it('derives the RP ID and origins from DOMAIN_CLIENT', () => {

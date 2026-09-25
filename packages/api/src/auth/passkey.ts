@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import { logger } from '@librechat/data-schemas';
+import { MAX_PASSKEYS_PER_USER } from 'librechat-data-provider';
 import {
   generateAuthenticationOptions,
   generateRegistrationOptions,
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
 } from '@simplewebauthn/server';
-
 import type {
   AuthenticationResponseJSON,
   AuthenticatorTransportFuture,
@@ -15,7 +15,7 @@ import type {
   RegistrationResponseJSON,
 } from '@simplewebauthn/server';
 import type { PasskeyDeviceType } from '@librechat/data-schemas';
-
+import type { TCustomConfig } from 'librechat-data-provider';
 import { isEnabled } from '~/utils';
 
 /** How long a generated challenge stays valid, in milliseconds. */
@@ -145,6 +145,29 @@ export function getPasskeyConfig(env: NodeJS.ProcessEnv = process.env): PasskeyC
  */
 export function isPasskeyEnabled(config: PasskeyConfig = getPasskeyConfig()): boolean {
   return config.enabled && config.origins.length > 0;
+}
+
+/** The schema's bounds for `passkeys.perUserMax`, applied to every source of the cap. */
+const isCapWithinBounds = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 100;
+
+/**
+ * yaml wins over the environment, which wins over the documented default, so a
+ * deployment that sets neither keeps exactly the behavior it has today. Every
+ * source is held to the schema's bounds: principal-scoped database overrides
+ * merge in without passing through `configSchema`, and a stray value must
+ * neither brick enrollment nor lift the cap.
+ */
+export function resolveMaxPasskeysPerUser(
+  config?: TCustomConfig['passkeys'],
+  env: NodeJS.ProcessEnv = process.env,
+): number {
+  const fromConfig: unknown = config?.perUserMax;
+  if (isCapWithinBounds(fromConfig)) {
+    return fromConfig;
+  }
+  const fromEnv = Number(env.MAX_PASSKEYS_PER_USER);
+  return isCapWithinBounds(fromEnv) ? fromEnv : MAX_PASSKEYS_PER_USER;
 }
 
 /** Namespaced cache key for a pending registration ceremony. */

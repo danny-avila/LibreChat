@@ -1,9 +1,9 @@
 import { logger } from '@librechat/data-schemas';
-import { MAX_PASSKEYS_PER_USER } from 'librechat-data-provider';
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from '@simplewebauthn/server';
-import type { PasskeyCreateData, PasskeyRecord } from '@librechat/data-schemas';
+import type { PasskeyCreateData, PasskeyRecord, AppConfig } from '@librechat/data-schemas';
 import type { TPasskey } from 'librechat-data-provider';
 import type { Request, Response } from 'express';
+import type { AppConfigUserLike, GetAppConfigOptions } from '~/app/service';
 import type { PasskeyConfig, PasskeyChallengeStore } from '~/auth/passkey';
 import type { ComparePasswordDeps } from '~/auth/password';
 import type { UserDocumentId } from '~/auth/verification';
@@ -11,12 +11,14 @@ import {
   getPasskeyConfig,
   isPasskeyEnabled,
   defaultPasskeyName,
+  resolveMaxPasskeysPerUser,
   verifyPasskeyRegistration,
   verifyPasskeyAuthentication,
   createPasskeyRegistrationOptions,
   createPasskeyAuthenticationOptions,
 } from '~/auth/passkey';
 import { grandfatherLegacyEmailVerification } from '~/auth/verification';
+import { resolveStrictAppConfig } from '~/app/service';
 import { comparePassword } from '~/auth/password';
 import { isEnabled } from '~/utils';
 
@@ -53,7 +55,7 @@ interface AuthenticationBody {
  * handoff to `loginController` and legacy-verification grandfathering, not by
  * the route handlers themselves.
  */
-export interface PasskeyAccount {
+export interface PasskeyAccount extends AppConfigUserLike {
   id?: string;
   _id?: UserDocumentId;
   email?: string;
@@ -74,6 +76,7 @@ export type PasskeyRequest<TBody = StepUpBody> = Request<
 > & {
   user?: PasskeyAccount;
   banned?: boolean;
+  config?: AppConfig;
 };
 
 /** Every management route sits behind `requireJwtAuth`, so `req.user` is always populated. */
@@ -115,6 +118,8 @@ export interface PasskeyHandlersDeps {
   findPasskeyByCredentialId: (credentialId: string) => Promise<PasskeyRecord | null>;
   /** Resolves the cache backing pending WebAuthn ceremonies. */
   getChallengeCache: () => PasskeyChallengeStore;
+  /** Resolves effective configuration for the authenticated principal. */
+  getAppConfig?: (options: GetAppConfigOptions) => Promise<AppConfig | undefined>;
   compare: ComparePasswordDeps['compare'];
   /** The login ban middleware; reports an internal failure through `next(err)`. */
   checkBan: (
@@ -242,12 +247,21 @@ export function createPasskeyHandlers(deps: PasskeyHandlersDeps): PasskeyHandler
     recordPasskeyUse,
     getChallengeCache,
     findPasskeysByUser,
+    getAppConfig,
     countPasskeysByUser,
     findPasskeyByCredentialId,
   } = deps;
 
   const getChallengeStore = (): PasskeyChallengeStore =>
     createPasskeyChallengeStore(getChallengeCache());
+
+  /** Resolved per request, so a config reload changes the cap without a restart. */
+  const resolveMaxPasskeys = async (req: AuthenticatedPasskeyRequest): Promise<number> => {
+    const appConfig =
+      req.config ??
+      (getAppConfig ? await resolveStrictAppConfig(getAppConfig, req.user) : undefined);
+    return resolveMaxPasskeysPerUser(appConfig?.passkeys);
+  };
 
   /**
    * Step-up gate shared by the passkey endpoints that add or remove a login factor.
@@ -336,8 +350,11 @@ export function createPasskeyHandlers(deps: PasskeyHandlersDeps): PasskeyHandler
     }
 
     try {
-      const existingCredentials = await findPasskeysByUser(req.user.id);
-      if (existingCredentials.length >= MAX_PASSKEYS_PER_USER) {
+      const [existingCredentials, maxPasskeys] = await Promise.all([
+        findPasskeysByUser(req.user.id),
+        resolveMaxPasskeys(req),
+      ]);
+      if (existingCredentials.length >= maxPasskeys) {
         return res.status(409).json({ message: 'Passkey limit reached' });
       }
 
@@ -387,7 +404,11 @@ export function createPasskeyHandlers(deps: PasskeyHandlersDeps): PasskeyHandler
         return res.status(400).json({ message: 'Missing credential' });
       }
 
-      if ((await countPasskeysByUser(req.user.id)) >= MAX_PASSKEYS_PER_USER) {
+      const [count, maxPasskeys] = await Promise.all([
+        countPasskeysByUser(req.user.id),
+        resolveMaxPasskeys(req),
+      ]);
+      if (count >= maxPasskeys) {
         return res.status(409).json({ message: 'Passkey limit reached' });
       }
 
@@ -418,6 +439,24 @@ export function createPasskeyHandlers(deps: PasskeyHandlersDeps): PasskeyHandler
         name:
           trimmedName.slice(0, MAX_PASSKEY_NAME_LENGTH) || defaultPasskeyName(verified.transports),
       });
+
+      /**
+       * The early count check races a concurrent ceremony for the same account:
+       * both can observe a below-cap count and both insert. Re-counting after
+       * the write and rolling this credential back keeps the stored set within
+       * the cap without a transaction, at the cost of rejecting the whole race.
+       */
+      let countAfterWrite: number;
+      try {
+        countAfterWrite = await countPasskeysByUser(req.user.id);
+      } catch (error) {
+        await deletePasskey(passkey.id, req.user.id);
+        throw error;
+      }
+      if (countAfterWrite > maxPasskeys) {
+        await deletePasskey(passkey.id, req.user.id);
+        return res.status(409).json({ message: 'Passkey limit reached' });
+      }
 
       return res.status(201).json({ passkey: serializePasskey(passkey) });
     } catch (err) {

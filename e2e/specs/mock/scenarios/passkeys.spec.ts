@@ -9,6 +9,7 @@ import type {
 } from '@playwright/test';
 import { seedPasskey, deleteUserByEmail, countUserPasskeys, enableTwoFactorFlag } from '../db';
 import { NEW_CHAT_PATH } from '../helpers';
+import { getPrimaryE2EUser } from '../../../setup/users.mock';
 
 /**
  * Passkey sign-in and management, driven through a real WebAuthn ceremony: Chromium's
@@ -420,6 +421,109 @@ test.describe('passkeys', () => {
       expect(deletion.ok()).toBeTruthy();
       expect(await countUserPasskeys(user.id)).toBe(0);
     } finally {
+      await request.dispose();
+    }
+  });
+
+  test('a configured per-user cap hides the add control at that cap @scenario:passkey-cap-hides-add-control', async ({
+    browser,
+    playwright,
+    baseURL,
+  }) => {
+    test.setTimeout(60000);
+    const request = await playwright.request.newContext({ baseURL: passkeyBaseURL(baseURL) });
+    user = await createFreshUser(request);
+    await seedPasskey(user.email, `e2e-cap-${randomUUID()}`, 'Only key');
+    context = await openContextFor(browser, request, passkeyBaseURL(baseURL));
+    await request.dispose();
+    const page = await context.newPage();
+
+    await page.route('**/api/config', async (route) => {
+      const response = await route.fetch();
+      const config = await response.json();
+      await route.fulfill({ response, json: { ...config, maxPasskeysPerUser: 1 } });
+    });
+
+    const cappedDialog = await openPasskeysDialog(page);
+    const cappedAdd = cappedDialog.getByRole('button', { name: 'Add passkey' });
+    await expect(cappedAdd).toBeVisible();
+    await expect(cappedAdd).toBeDisabled();
+    await expect(
+      cappedDialog.getByText('You have reached the maximum number of passkeys'),
+    ).toBeVisible();
+
+    await page.unroute('**/api/config');
+    await page.keyboard.press('Escape');
+    await expect(cappedDialog).toBeHidden();
+    await page
+      .getByRole('dialog', { name: /Settings/ })
+      .getByRole('button', { name: 'Passkeys', exact: true })
+      .click();
+    const defaultDialog = page.getByRole('dialog', { name: 'Passkeys', exact: true });
+    const defaultAdd = defaultDialog.getByRole('button', { name: 'Add passkey' });
+    await expect(defaultAdd).toBeVisible();
+    await expect(defaultAdd).toBeEnabled();
+    await expect(
+      defaultDialog.getByText('You have reached the maximum number of passkeys'),
+    ).toHaveCount(0);
+  });
+
+  test('the effective user cap reaches startup and both enrollment routes @scenario:passkey-cap-effective-config', async ({
+    playwright,
+    baseURL,
+  }) => {
+    test.setTimeout(60000);
+    const request = await playwright.request.newContext({ baseURL: passkeyBaseURL(baseURL) });
+    user = await createFreshUser(request);
+    const headers = { Authorization: `Bearer ${user.token}` };
+    const admin = getPrimaryE2EUser();
+    const login = await request.post('/api/auth/login', {
+      data: { email: admin.email, password: admin.password },
+    });
+    expect(login.ok()).toBeTruthy();
+    const adminHeaders = { Authorization: `Bearer ${(await login.json()).token}` };
+    const overridePath = `/api/admin/config/user/${user.id}`;
+    try {
+      const baseline = await request.get('/api/config', { headers });
+      expect((await baseline.json()).maxPasskeysPerUser).toBe(20);
+      await seedPasskey(user.email, `e2e-effective-cap-${randomUUID()}`, 'Existing key');
+      const saved = await request.put(overridePath, {
+        headers: adminHeaders,
+        data: { overrides: { passkeys: { perUserMax: 1 } } },
+      });
+      expect(saved.ok()).toBeTruthy();
+      await expect
+        .poll(async () => {
+          const config = await request.get('/api/config', { headers });
+          return (await config.json()).maxPasskeysPerUser;
+        })
+        .toBe(1);
+
+      for (const path of ['options', 'verify']) {
+        const response = await request.post(`/api/auth/passkey/register/${path}`, {
+          headers,
+          data: { password: user.password, credential: { id: 'over-cap' } },
+        });
+        expect(response.status()).toBe(409);
+        expect(await response.json()).toEqual({ message: 'Passkey limit reached' });
+      }
+      expect(await countUserPasskeys(user.id)).toBe(1);
+      const restored = await request.delete(overridePath, { headers: adminHeaders });
+      expect(restored.ok()).toBeTruthy();
+      await expect
+        .poll(async () => {
+          const config = await request.get('/api/config', { headers });
+          return (await config.json()).maxPasskeysPerUser;
+        })
+        .toBe(20);
+      const allowed = await request.post('/api/auth/passkey/register/options', {
+        headers,
+        data: { password: user.password },
+      });
+      expect(allowed.status()).toBe(200);
+    } finally {
+      const cleanup = await request.delete(overridePath, { headers: adminHeaders });
+      expect([200, 404]).toContain(cleanup.status());
       await request.dispose();
     }
   });

@@ -82,6 +82,8 @@ export interface AppConfig {
   registration?: TCustomConfig['registration'];
   /** Changing the registered email address */
   emailChange?: TCustomConfig['emailChange'];
+  /** Passkey enrollment configuration */
+  passkeys?: TCustomConfig['passkeys'];
   /** Actions configurations */
   actions?: TCustomConfig['actions'];
   /** Admin-filtered tools */

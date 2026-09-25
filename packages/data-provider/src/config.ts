@@ -2603,6 +2603,8 @@ export type TStartupConfig = {
   appleLoginEnabled: boolean;
   samlLoginEnabled: boolean;
   passkeyLoginEnabled: boolean;
+  /** Per-account passkey enrollment cap, from `passkeys.perUserMax`; post-login only. */
+  maxPasskeysPerUser?: number;
   openidLabel: string;
   openidImageUrl: string;
   openidAutoRedirect: boolean;
@@ -3376,6 +3378,14 @@ export const configSchema = z.object({
       tokenTTLSeconds: z.number().int().min(60).max(86_400).optional(),
     })
     .optional(),
+  /** WebAuthn passkey enrollment. An unset field falls back to its env var, then the
+   *  documented default, so an existing deployment keeps the behavior it has today. */
+  passkeys: z
+    .object({
+      /** `MAX_PASSKEYS_PER_USER` when unset; the documented default when neither is given. */
+      perUserMax: z.number().int().min(1).max(100).optional(),
+    })
+    .default({}),
   balance: balanceSchema.optional(),
   transactions: transactionsSchema.optional(),
   speech: z

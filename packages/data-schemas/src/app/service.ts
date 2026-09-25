@@ -187,6 +187,7 @@ export const AppService = async (params?: {
     fileStrategy,
     registration,
     emailChange,
+    passkeys: config.passkeys,
     transactions,
     filteredTools,
     includedTools,

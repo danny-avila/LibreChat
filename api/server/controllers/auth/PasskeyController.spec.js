@@ -1,5 +1,7 @@
 const mockCheckBan = jest.fn();
 const mockGetLogStores = jest.fn();
+const mockGetAppConfig = jest.fn();
+jest.mock('~/server/services/Config/app', () => ({ getAppConfig: mockGetAppConfig }));
 const mockModels = {
   getUserById: jest.fn(),
   updateUser: jest.fn(),
@@ -69,6 +71,7 @@ describe('PasskeyController wiring', () => {
 
   it('hands the model methods, bcrypt and the ban check to the handler factory', () => {
     expect(deps.compare).toBe(bcrypt.compare);
+    expect(deps.getAppConfig).toBe(mockGetAppConfig);
     for (const name of Object.keys(mockModels)) {
       expect(deps[name]).toBe(mockModels[name]);
     }
