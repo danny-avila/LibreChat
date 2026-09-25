@@ -635,6 +635,8 @@ const loadTools = async ({
     admittedAppConfig?.mcpAppSandbox?.maxPersistedAppBytes,
     admittedAppConfig?.mcpAppSandbox?.maxAdmissionRequestsPerMinute,
     admittedAppConfig?.mcpAppSandbox?.url,
+    admittedAppConfig?.mcpAppSandbox?.maxActiveViews,
+    admittedAppConfig?.mcpAppSandbox?.maxActionPreviewChars,
     admittedAppConfig?.mcpAppSandbox?.operationLimits,
   );
   const capabilityProfile = resolveMCPClientCapabilityProfile(admittedMCPAppsPolicy);

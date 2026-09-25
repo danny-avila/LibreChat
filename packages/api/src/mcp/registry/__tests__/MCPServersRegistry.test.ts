@@ -5,6 +5,8 @@ import {
   DEFAULT_MCP_APPS_POLICY,
   DEFAULT_MCP_APP_PERSISTED_BYTES,
   DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
+  DEFAULT_MCP_APP_MAX_ACTIVE_VIEWS,
+  DEFAULT_MCP_APP_ACTION_PREVIEW_CHARS,
 } from 'librechat-data-provider';
 import type * as t from '~/mcp/types';
 import {
@@ -548,6 +550,8 @@ describe('MCPServersRegistry', () => {
           legacyHtmlEnabled: true,
           maxPersistedAppBytes: DEFAULT_MCP_APP_PERSISTED_BYTES,
           maxAdmissionRequestsPerMinute: DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
+          maxActiveViews: DEFAULT_MCP_APP_MAX_ACTIVE_VIEWS,
+          maxActionPreviewChars: DEFAULT_MCP_APP_ACTION_PREVIEW_CHARS,
         },
       });
     });
@@ -563,6 +567,8 @@ describe('MCPServersRegistry', () => {
           legacyHtmlEnabled: true,
           maxPersistedAppBytes: DEFAULT_MCP_APP_PERSISTED_BYTES,
           maxAdmissionRequestsPerMinute: DEFAULT_MCP_APP_ADMISSION_REQUESTS_PER_MINUTE,
+          maxActiveViews: DEFAULT_MCP_APP_MAX_ACTIVE_VIEWS,
+          maxActionPreviewChars: DEFAULT_MCP_APP_ACTION_PREVIEW_CHARS,
         },
       });
     });

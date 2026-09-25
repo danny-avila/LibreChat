@@ -42,6 +42,8 @@ async function resolveMCPAllowlists(ctx) {
       appConfig?.mcpAppSandbox?.maxPersistedAppBytes,
       appConfig?.mcpAppSandbox?.maxAdmissionRequestsPerMinute,
       appConfig?.mcpAppSandbox?.url,
+      appConfig?.mcpAppSandbox?.maxActiveViews,
+      appConfig?.mcpAppSandbox?.maxActionPreviewChars,
       appConfig?.mcpAppSandbox?.operationLimits,
     ),
   };
@@ -129,6 +131,8 @@ async function initializeMCPs() {
         appConfig?.mcpAppSandbox?.maxPersistedAppBytes,
         appConfig?.mcpAppSandbox?.maxAdmissionRequestsPerMinute,
         appConfig?.mcpAppSandbox?.url,
+        appConfig?.mcpAppSandbox?.maxActiveViews,
+        appConfig?.mcpAppSandbox?.maxActionPreviewChars,
         appConfig?.mcpAppSandbox?.operationLimits,
       ),
     );

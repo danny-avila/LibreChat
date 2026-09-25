@@ -1006,6 +1006,8 @@ router.post(
           req.config?.mcpAppSandbox?.maxPersistedAppBytes,
           req.config?.mcpAppSandbox?.maxAdmissionRequestsPerMinute,
           req.config?.mcpAppSandbox?.url,
+          req.config?.mcpAppSandbox?.maxActiveViews,
+          req.config?.mcpAppSandbox?.maxActionPreviewChars,
           req.config?.mcpAppSandbox?.operationLimits,
         ),
       });

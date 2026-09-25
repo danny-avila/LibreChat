@@ -260,6 +260,19 @@ async function expectConnectedApp(
   toolName = 'show_app',
   occurrence = 0,
 ) {
+  // The placeholder is async after reload, and opening one View removes its button.
+  // Match the stable host-owned tool identity rather than a shifting list of placeholders.
+  const view = page.locator(`[data-mcp-app-view="${toolName}"]`).nth(occurrence);
+  await expect(view).toBeVisible({ timeout: 30_000 });
+  const open = view.getByRole('button', { name: 'Open app' });
+  if (await open.count()) {
+    // Pre-scroll before clicking a sibling View: Chrome can drop Playwright's first click when
+    // scrolling past an active sandbox iframe and dispatch it to the old focused frame.
+    await open.scrollIntoViewIfNeeded();
+    await open.boundingBox();
+    await open.click();
+    await expect(view.getByRole('button', { name: 'Close app' })).toBeVisible();
+  }
   const app = appFrame(page, toolName, occurrence);
   await expect(app.getByTestId('status')).toHaveText('connected', { timeout: 30_000 });
   await expect(app.getByTestId('document-source')).toHaveText('resources-read-document');
@@ -413,6 +426,10 @@ test.describe('MCP Apps full integration', () => {
     await expect(messagesView(page).getByText(`E2E MCP App complete: ${label}`)).toBeVisible({
       timeout: 60_000,
     });
+    // Merely receiving a completed App result must not run its code or perform App RPCs.
+    await expect(page.locator('iframe[data-sandbox-url]')).toHaveCount(0);
+    expect(appRequests).toEqual([]);
+    await page.getByRole('button', { name: 'Open app' }).click();
     await expect(page.locator('iframe[data-sandbox-url]')).toHaveCount(1);
     const outerCsp = (await sandboxResponse).headers()['content-security-policy'];
     expect(outerCsp).toContain('frame-src blob:');
@@ -447,7 +464,39 @@ test.describe('MCP Apps full integration', () => {
     expect(viewCsp).not.toContain(MCP_APP_ORIGIN);
 
     const app = await expectConnectedApp(page, label);
-    await clickAndExpectRoute(page, app, 'call-tool', '/api/mcp/app-tool-call');
+    // App code can dispatch events without a user gesture. It must still be denied by default.
+    await app.getByTestId('call-tool').evaluate((button) => (button as HTMLElement).click());
+    const toolDialog = page.getByRole('alertdialog');
+    await expect(toolDialog).toContainText('follow_up');
+    expect(
+      (await readEvents(page)).filter((event) => event.method === 'tools/call:follow_up'),
+    ).toHaveLength(0);
+    await toolDialog.getByRole('button', { name: 'Cancel' }).click();
+    expect(
+      (await readEvents(page)).filter((event) => event.method === 'tools/call:follow_up'),
+    ).toHaveLength(0);
+    // Repeated App-generated actions must not trap the viewer behind new approval modals.
+    for (let i = 0; i < 3; i++) {
+      await app.getByTestId('call-tool').evaluate((button) => (button as HTMLElement).click());
+    }
+    await expect(toolDialog).toHaveCount(0);
+    expect(
+      (await readEvents(page)).filter((event) => event.method === 'tools/call:follow_up'),
+    ).toHaveLength(0);
+    const appView = page.locator('[data-mcp-app-view="show_app"]').first();
+    await appView.getByRole('button', { name: 'Close app' }).focus();
+    await page.keyboard.press('Enter');
+    await expect(appView.getByRole('button', { name: 'Open app' })).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(appView.getByRole('button', { name: 'Close app' })).toBeFocused();
+    await expectConnectedApp(page, label);
+    const approvedTool = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === '/api/mcp/app-tool-call',
+    );
+    await app.getByTestId('call-tool').click();
+    await expect(toolDialog).toContainText('"label":"from-view"');
+    await toolDialog.getByRole('button', { name: 'Run tool' }).click();
+    expect((await approvedTool).ok()).toBeTruthy();
     await expect(app.getByTestId('operation')).toContainText('"followUp":"from-view"');
     await page.screenshot({ path: testInfo.outputPath('settled-app.png'), fullPage: true });
 
@@ -485,6 +534,10 @@ test.describe('MCP Apps full integration', () => {
       { timeout: 30_000 },
     );
     await app.getByTestId('send-message').click();
+    const messageDialog = page.getByRole('alertdialog');
+    await expect(messageDialog).toContainText(appMessage);
+    await expect(messageDialog).toContainText('selected agent and tools may be used');
+    await messageDialog.getByRole('button', { name: 'Send message' }).click();
     await expect(app.getByTestId('operation')).toHaveText('message-sent');
     expect((await nextGeneration).ok()).toBeTruthy();
     await expect(messagesView(page).getByText(appMessage, { exact: true })).toBeVisible({
@@ -541,6 +594,12 @@ test.describe('MCP Apps full integration', () => {
     await expect(messagesView(page).getByText(`E2E MCP App complete: ${retryLabel}`)).toBeVisible({
       timeout: 60_000,
     });
+    await expect(page.locator('iframe[title="MCP App: show_app"]')).toHaveCount(1);
+    await page
+      .locator('[data-mcp-app-view]')
+      .nth(1)
+      .getByRole('button', { name: 'Open app' })
+      .click();
     expect((await failedSandboxResponse).status()).toBe(503);
     await expect(page.locator('iframe[title="MCP App: show_app"]')).toHaveCount(2);
 
@@ -591,8 +650,9 @@ test.describe('MCP Apps full integration', () => {
     await expect(messagesView(page).getByText(`E2E MCP link App complete: ${label}`)).toBeVisible({
       timeout: 60_000,
     });
-    await expect(page.locator('iframe[data-sandbox-url]')).toHaveCount(3);
+    await expect(page.locator('iframe[data-sandbox-url]')).toHaveCount(2);
     const linkApp = await expectConnectedApp(page, label, 'show_link_app');
+    await expect(page.locator('iframe[data-sandbox-url]')).toHaveCount(3);
     const linkViewCsp = await linkApp
       .locator('meta[http-equiv="Content-Security-Policy"]')
       .getAttribute('content');
@@ -670,6 +730,7 @@ test.describe('MCP Apps full integration', () => {
 
     await resetEvents(page);
     await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(page.locator('iframe[data-sandbox-url]')).toHaveCount(0);
     await expectConnectedApp(page, label);
     await expectConnectedApp(page, retryLabel, 'show_app', 1);
     await expectConnectedApp(page, label, 'show_link_app');
@@ -796,10 +857,11 @@ test.describe('MCP Apps full integration', () => {
     });
     await expect(phaseHeader).toBeVisible({ timeout: 60_000 });
     await expect(phaseHeader).toHaveAttribute('aria-expanded', 'false');
-    await expectAppFramesOutsidePanels(page, 2);
+    await expectAppFramesOutsidePanels(page, 0);
 
     await expectConnectedApp(page, alphaLabel, 'show_app', 0);
     await expectConnectedApp(page, betaLabel, 'show_app', 1);
+    await expectAppFramesOutsidePanels(page, 2);
     await page.screenshot({
       path: testInfo.outputPath('settled-grouped-apps.png'),
       fullPage: true,
@@ -822,9 +884,10 @@ test.describe('MCP Apps full integration', () => {
     });
     await expect(reloadedHeader).toBeVisible({ timeout: 60_000 });
     await expect(reloadedHeader).toHaveAttribute('aria-expanded', 'false');
-    await expectAppFramesOutsidePanels(page, 2);
+    await expectAppFramesOutsidePanels(page, 0);
     await expectConnectedApp(page, alphaLabel, 'show_app', 0);
     await expectConnectedApp(page, betaLabel, 'show_app', 1);
+    await expectAppFramesOutsidePanels(page, 2);
     expect(
       (await readEvents(page)).filter((event) => event.method === 'resources/read:show_app'),
     ).toHaveLength(2);

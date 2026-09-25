@@ -9,6 +9,8 @@ import {
   withMongo,
 } from '../db';
 import { clickHouseTheme } from '../../../../packages/client/src/theme/themes/clickhouse';
+import { defaultTheme } from '../../../../packages/client/src/theme/themes/default';
+import { darkTheme } from '../../../../packages/client/src/theme/themes/dark';
 import { openAgentBuilder, uniqueAgentName, cleanupAgent } from '../agents.helpers';
 import { MOCK_ENDPOINTS, getAccessToken, requestJson } from '../helpers';
 import { getE2EUser } from '../../../setup/user';
@@ -155,6 +157,86 @@ async function seedCodeAnalysis(title: string, logs?: string): Promise<string> {
   return conversationId;
 }
 
+async function seedCodeReply(title: string, runs: string[] = []): Promise<string> {
+  const conversationId = randomUUID();
+  const { email } = getE2EUser();
+  await seedConversations(email, [{ conversationId, title, updatedAt: new Date() }]);
+  await withMongo(async (db) => {
+    const user = await db.collection('users').findOne({ email });
+    const userId = String(user?._id);
+    const userMessageId = randomUUID();
+    const replyId = randomUUID();
+    const now = Date.now();
+    await db.collection('messages').insertMany([
+      {
+        messageId: userMessageId,
+        parentMessageId: '00000000-0000-0000-0000-000000000000',
+        conversationId,
+        user: userId,
+        endpoint: 'agents',
+        text: 'Show me the snippet',
+        isCreatedByUser: true,
+        sender: 'User',
+        error: false,
+        unfinished: false,
+        createdAt: new Date(now),
+        updatedAt: new Date(now),
+        __v: 0,
+      },
+      {
+        messageId: replyId,
+        parentMessageId: userMessageId,
+        conversationId,
+        user: userId,
+        endpoint: 'agents',
+        text: '',
+        isCreatedByUser: false,
+        sender: 'Mock Provider A',
+        error: false,
+        unfinished: false,
+        content: [{ type: 'text', text: `Here it is:\n\n\`\`\`python\n${CODE_INPUT}\n\`\`\`` }],
+        createdAt: new Date(now + 1000),
+        updatedAt: new Date(now + 1000),
+        __v: 0,
+      },
+    ]);
+    if (runs.length === 0) {
+      return;
+    }
+    await db.collection('toolcalls').insertMany(
+      runs.map((result, i) => ({
+        conversationId,
+        messageId: replyId,
+        toolId: 'execute_code',
+        user: user?._id,
+        result,
+        partIndex: 0,
+        blockIndex: 0,
+        createdAt: new Date(now + 2000 + i),
+        updatedAt: new Date(now + 2000 + i),
+      })),
+    );
+  });
+  return conversationId;
+}
+
+/** Reads the shared code block's toolbar (`surface-code`) and code pane (`surface-code-body`). */
+async function expectCodePanePaint(block: Locator, colors: IThemeRGB) {
+  const surface = rgbCss(colors['rgb-surface-code']);
+  const body = rgbCss(colors['rgb-surface-code-body']);
+  const code = block.locator('code').first();
+  await expect(code).toBeVisible();
+  const pane = code.locator('xpath=..');
+  const toolbar = block.getByText('python', { exact: true }).first().locator('xpath=..');
+  expect((await painted(toolbar)).background).toBe(surface);
+  const panePaint = await painted(pane);
+  expect(panePaint.background).toBe(body);
+  const codeColor = (await painted(code)).color;
+  expect(contrast(parseRgb(codeColor), parseRgb(panePaint.background))).toBeGreaterThan(
+    WCAG_AA_NORMAL,
+  );
+}
+
 async function openCodeAnalysis(page: Page, conversationId: string, mode: Mode) {
   await page.goto(`/c/${conversationId}?${THEME_PARAM}=${mode}`);
   await expect(page.locator('html')).toHaveClass(new RegExp(`\\b${mode}\\b`));
@@ -247,6 +329,7 @@ test.describe('semantic colour roles on builder, tools and sharing surfaces', ()
         const colors = colorsFor(mode);
         const block = await openCodeAnalysis(page, conversationId, mode);
         expect((await painted(block)).background).toBe(rgbCss(colors['rgb-surface-code']));
+        await expectCodePanePaint(block, colors);
 
         const output = block.getByText(CODE_LOGS, { exact: true });
         await expect(output).toBeVisible();
@@ -261,6 +344,96 @@ test.describe('semantic colour roles on builder, tools and sharing surfaces', ()
         );
       }
     } finally {
+      await deleteMessagesByConversation([conversationId]);
+      await deleteConversations([conversationId]);
+    }
+  });
+
+  test('a chat code block paints its toolbar and code pane with the theme code surface @scenario:chat-code-block-follows-theme-code-surface', async ({
+    page,
+  }) => {
+    test.setTimeout(90000);
+    const conversationId = await seedCodeReply('Theme chat code block');
+    await installThemeBridge(page);
+
+    try {
+      for (const mode of MODES) {
+        await page.goto(`/c/${conversationId}?${THEME_PARAM}=${mode}`);
+        await expect(page.locator('html')).toHaveClass(new RegExp(`\\b${mode}\\b`));
+        const code = page.locator('.message-render code', { hasText: CODE_INPUT }).first();
+        await expect(code).toBeVisible({ timeout: 20000 });
+        const block = code.locator('xpath=ancestor::div[contains(@class,"rounded-xl")][1]');
+        await expectCodePanePaint(block, colorsFor(mode));
+      }
+    } finally {
+      await deleteMessagesByConversation([conversationId]);
+      await deleteConversations([conversationId]);
+    }
+  });
+
+  test('the built-in theme keeps the code pane distinct from its toolbar @scenario:chat-code-block-keeps-default-pane', async ({
+    page,
+  }) => {
+    test.setTimeout(90000);
+    const conversationId = await seedCodeReply('Default chat code block');
+
+    try {
+      for (const mode of MODES) {
+        await page.addInitScript((m) => {
+          localStorage.setItem('color-theme', m);
+          localStorage.removeItem('theme-definition');
+          localStorage.removeItem('theme-source');
+          localStorage.removeItem('theme-colors');
+          localStorage.removeItem('theme-name');
+        }, mode);
+        await page.goto(`/c/${conversationId}`);
+        await expect(page.locator('html')).toHaveClass(new RegExp(`\\b${mode}\\b`));
+        const code = page.locator('.message-render code', { hasText: CODE_INPUT }).first();
+        await expect(code).toBeVisible({ timeout: 20000 });
+        const block = code.locator('xpath=ancestor::div[contains(@class,"rounded-xl")][1]');
+        await expectCodePanePaint(block, mode === 'dark' ? darkTheme : defaultTheme);
+        const pane = (await painted(code.locator('xpath=..'))).background;
+        const toolbar = (
+          await painted(block.getByText('python', { exact: true }).first().locator('xpath=..'))
+        ).background;
+        expect(pane).not.toBe(toolbar);
+      }
+    } finally {
+      await deleteMessagesByConversation([conversationId]);
+      await deleteConversations([conversationId]);
+    }
+  });
+
+  test('an executed chat code block paints its output pane and result switcher with the theme code surface @scenario:executed-code-block-output-follows-theme-code-surface', async ({
+    page,
+  }) => {
+    test.setTimeout(90000);
+    const conversationId = await seedCodeReply('Theme executed code block', [
+      'first-run-output',
+      'second-run-output',
+    ]);
+    await installThemeBridge(page);
+
+    try {
+      for (const mode of MODES) {
+        await page.goto(`/c/${conversationId}?${THEME_PARAM}=${mode}`);
+        await expect(page.locator('html')).toHaveClass(new RegExp(`\\b${mode}\\b`));
+        const surface = rgbCss(colorsFor(mode)['rgb-surface-code']);
+        const switcher = page.getByRole('navigation', { name: 'Navigate results' });
+        await expect(switcher).toBeVisible({ timeout: 20000 });
+        expect((await painted(switcher)).background).toBe(surface);
+
+        const output = page.getByText(/^(first|second)-run-output$/);
+        await expect(output).toBeVisible();
+        const pane = page.getByText('Output', { exact: true }).locator('xpath=..');
+        const panePaint = await painted(pane);
+        expect(panePaint.background).toBe(surface);
+        expect(
+          contrast(parseRgb((await painted(output)).color), parseRgb(panePaint.background)),
+        ).toBeGreaterThan(WCAG_AA_NORMAL);
+      }
+    } finally {
+      await withMongo((db) => db.collection('toolcalls').deleteMany({ conversationId }));
       await deleteMessagesByConversation([conversationId]);
       await deleteConversations([conversationId]);
     }

@@ -408,6 +408,8 @@ describe('GET /api/config', () => {
         cspLimits: { maxSourcesPerDirective: 32, maxSerializedLength: 4096 },
         maxPersistedAppBytes: 1048576,
         maxAdmissionRequestsPerMinute: 240,
+        maxActiveViews: 3,
+        maxActionPreviewChars: 16384,
       });
     });
 
@@ -420,6 +422,8 @@ describe('GET /api/config', () => {
           maxSourcesPerDirective: 64,
           maxSerializedLength: 8192,
           maxAdmissionRequestsPerMinute: 480,
+          maxActiveViews: 7,
+          maxActionPreviewChars: 32768,
         },
       });
       const response = await request(createApp(mockUser)).get('/api/config');
@@ -430,6 +434,8 @@ describe('GET /api/config', () => {
         cspLimits: { maxSourcesPerDirective: 64, maxSerializedLength: 8192 },
         maxPersistedAppBytes: 1048576,
         maxAdmissionRequestsPerMinute: 480,
+        maxActiveViews: 7,
+        maxActionPreviewChars: 32768,
         sandboxUrl: 'https://mcp-sandbox.example.com/api/mcp/sandbox',
       });
     });

@@ -220,6 +220,7 @@ html {
   --surface-destructive-hover: var(--red-800);
   --surface-chat: var(--white);
   --surface-code: var(--surface-primary-alt);
+  --surface-code-body: var(--surface-chat);
   --surface-qr: var(--white);
   --border-light: var(--gray-200);
   --border-light-alpha: 1;
@@ -344,6 +345,7 @@ html {
   --surface-destructive-hover: var(--red-900);
   --surface-chat: var(--gray-700);
   --surface-code: var(--presentation);
+  --surface-code-body: var(--surface-primary-alt);
   --surface-qr: var(--white);
   --border-light: var(--gray-700);
   --border-medium-alt: var(--gray-600);
@@ -1108,39 +1110,43 @@ p > small {
 .prose :where(tfoot td):not(:where([class~='not-prose'] *)) {
   vertical-align: top;
 }
+/* Prose colours read the theme roles, so a theme definition repaints message
+ * content. Each variable takes the role that reproduces the default palette
+ * (body is `text-secondary`, #424242 in light); dark links stay on
+ * `text-primary` because the default dark set renders them white. */
 .prose {
-  --tw-prose-body: #424242;
-  --tw-prose-headings: #111827;
-  --tw-prose-lead: #4b5563;
-  --tw-prose-links: #0066cc;
-  --tw-prose-bold: #111827;
-  --tw-prose-counters: #6b7280;
-  --tw-prose-bullets: #d1d5db;
-  --tw-prose-hr: #cdcdcd;
-  --tw-prose-quotes: #111827;
-  --tw-prose-quote-borders: #e5e7eb;
-  --tw-prose-captions: #6b7280;
-  --tw-prose-code: #111827;
-  --tw-prose-pre-code: #e5e7eb;
-  --tw-prose-pre-bg: #1f2937;
-  --tw-prose-th-borders: #d1d5db;
-  --tw-prose-td-borders: #e5e7eb;
-  --tw-prose-invert-body: #d1d5db;
-  --tw-prose-invert-headings: #fff;
-  --tw-prose-invert-lead: #9ca3af;
-  --tw-prose-invert-links: #fff;
-  --tw-prose-invert-bold: #fff;
-  --tw-prose-invert-counters: #9ca3af;
-  --tw-prose-invert-bullets: #4b5563;
-  --tw-prose-invert-hr: #424242;
-  --tw-prose-invert-quotes: #f3f4f6;
-  --tw-prose-invert-quote-borders: #424242;
-  --tw-prose-invert-captions: #9ca3af;
-  --tw-prose-invert-code: #fff;
-  --tw-prose-invert-pre-code: #d1d5db;
-  --tw-prose-invert-pre-bg: rgba(0, 0, 0, 0.5);
-  --tw-prose-invert-th-borders: #4b5563;
-  --tw-prose-invert-td-borders: #424242;
+  --tw-prose-body: rgb(var(--text-secondary));
+  --tw-prose-headings: rgb(var(--text-primary));
+  --tw-prose-lead: rgb(var(--text-secondary));
+  --tw-prose-links: rgb(var(--link));
+  --tw-prose-bold: rgb(var(--text-primary));
+  --tw-prose-counters: rgb(var(--text-tertiary));
+  --tw-prose-bullets: rgb(var(--border-medium));
+  --tw-prose-hr: rgb(var(--border-medium));
+  --tw-prose-quotes: rgb(var(--text-primary));
+  --tw-prose-quote-borders: rgb(var(--border-light));
+  --tw-prose-captions: rgb(var(--text-tertiary));
+  --tw-prose-code: rgb(var(--text-primary));
+  --tw-prose-pre-code: rgb(var(--text-primary));
+  --tw-prose-pre-bg: rgb(var(--surface-code));
+  --tw-prose-th-borders: rgb(var(--border-medium));
+  --tw-prose-td-borders: rgb(var(--border-light));
+  --tw-prose-invert-body: rgb(var(--text-secondary));
+  --tw-prose-invert-headings: rgb(var(--text-primary));
+  --tw-prose-invert-lead: rgb(var(--text-tertiary));
+  --tw-prose-invert-links: rgb(var(--text-primary));
+  --tw-prose-invert-bold: rgb(var(--text-primary));
+  --tw-prose-invert-counters: rgb(var(--text-tertiary));
+  --tw-prose-invert-bullets: rgb(var(--border-medium));
+  --tw-prose-invert-hr: rgb(var(--border-medium));
+  --tw-prose-invert-quotes: rgb(var(--text-primary));
+  --tw-prose-invert-quote-borders: rgb(var(--border-medium));
+  --tw-prose-invert-captions: rgb(var(--text-tertiary));
+  --tw-prose-invert-code: rgb(var(--text-primary));
+  --tw-prose-invert-pre-code: rgb(var(--text-primary));
+  --tw-prose-invert-pre-bg: rgb(var(--surface-code));
+  --tw-prose-invert-th-borders: rgb(var(--border-medium));
+  --tw-prose-invert-td-borders: rgb(var(--border-medium));
   font-size: 1rem;
   line-height: 1.4;
 }

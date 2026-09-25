@@ -89,14 +89,33 @@ jest.mock('../Parts', () => ({
   ),
 }));
 
-jest.mock('@librechat/client', () => ({
-  Button: ({ children, onClick, ...props }: any) => (
-    <button onClick={onClick} {...props}>
-      {children}
-    </button>
-  ),
-  Spinner: (props: React.HTMLAttributes<HTMLSpanElement>) => <span {...props} />,
-}));
+jest.mock('@librechat/client', () => {
+  const DialogPart = ({ children }: { children?: React.ReactNode }) => <div>{children}</div>;
+  const DialogButton = ({
+    children,
+    onClick,
+  }: {
+    children?: React.ReactNode;
+    onClick?: () => void;
+  }) => <button onClick={onClick}>{children}</button>;
+  return {
+    Button: ({ children, onClick, ...props }: any) => (
+      <button onClick={onClick} {...props}>
+        {children}
+      </button>
+    ),
+    Spinner: (props: React.HTMLAttributes<HTMLSpanElement>) => <span {...props} />,
+    AlertDialog: ({ children, open }: { children?: React.ReactNode; open: boolean }) =>
+      open ? <div>{children}</div> : null,
+    AlertDialogContent: DialogPart,
+    AlertDialogHeader: DialogPart,
+    AlertDialogTitle: DialogPart,
+    AlertDialogDescription: DialogPart,
+    AlertDialogFooter: DialogPart,
+    AlertDialogAction: DialogButton,
+    AlertDialogCancel: DialogButton,
+  };
+});
 
 jest.mock('lucide-react', () => ({
   ChevronDown: () => <span>{'ChevronDown'}</span>,
@@ -303,8 +322,9 @@ describe('ToolCall', () => {
         />,
       );
 
-      // A server-bound inline resource renders through the sandbox bridge (not bare srcDoc),
-      // so its App.connect handshake receives tool input/results.
+      // Stored results do not run App code until the viewer explicitly opens the App.
+      expect(container.querySelector('iframe[data-sandbox-url]')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /com_ui_mcp_app_open_named/ }));
       const iframe = container.querySelector('iframe[data-sandbox-url]');
       expect(iframe).toBeInTheDocument();
       const { useAppBridge } = jest.requireMock('~/hooks/MCP') as { useAppBridge: jest.Mock };
@@ -377,6 +397,8 @@ describe('ToolCall', () => {
           </MCPAppsPolicyProvider>
         </RecoilRoot>,
       );
+      expect(container.querySelector('iframe[data-sandbox-url]')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: /com_ui_mcp_app_open_named/ }));
       expect(container.querySelector('iframe[data-sandbox-url]')).toBeInTheDocument();
 
       rerender(
