@@ -77,6 +77,13 @@ describe('background task routes', () => {
       }),
     ]);
     expect(body.tasks[0].settledAt).toBeUndefined();
+    expect(body.tasks[1].settledAt).toBe(new Date(done.settledAt!).toISOString());
+    const later = jest.spyOn(Date, 'now').mockReturnValue(done.settledAt! + 60_000);
+    registry.markCompletionPersistenceFinished('user-1', conversationId, done.id);
+    later.mockRestore();
+    const afterPersistence = response();
+    handler(request(), afterPersistence);
+    expect(afterPersistence.json.mock.calls[0][0].tasks[1].settledAt).toBe(body.tasks[1].settledAt);
     expect(JSON.stringify(body)).not.toContain('secret output');
 
     const other = response();
@@ -140,10 +147,24 @@ describe('background task routes', () => {
     expect(abort).not.toHaveBeenCalled();
   });
 
-  it('rejects malformed task id lists', () => {
+  it('rejects malformed bodies without accidentally cancelling every task', () => {
     const registry = new BackgroundTaskRegistryClass();
-    const res = response();
-    createBackgroundTaskCancelHandler({ registry })(request({ body: { taskIds: [1] } }), res);
-    expect(res.status).toHaveBeenCalledWith(400);
+    const abort = jest.fn();
+    createTask(registry, 'call-1', abort);
+    const handler = createBackgroundTaskCancelHandler({ registry });
+    for (const body of [
+      undefined,
+      null,
+      'invalid',
+      [],
+      { taskIds: null },
+      { taskIds: undefined },
+      { taskIds: [1] },
+    ]) {
+      const res = response();
+      handler(request({ body }), res);
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(abort).not.toHaveBeenCalled();
+    }
   });
 });

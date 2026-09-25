@@ -78,9 +78,56 @@ describe('findToolCallArgs', () => {
         ],
       },
     ] as unknown as TMessage[];
-    expect(findToolCallArgs(messages, new Set(['a']))).toEqual(
-      new Map([['a', '{"command":"ls"}']]),
+    expect(findToolCallArgs(messages, [{ messageId: 'm1', toolCallId: 'a' }])).toEqual(
+      new Map([['m1\u0000a', '{"command":"ls"}']]),
     );
-    expect(findToolCallArgs(undefined, new Set(['a'])).size).toBe(0);
+    expect(findToolCallArgs(undefined, [{ toolCallId: 'a' }]).size).toBe(0);
+  });
+
+  it('keeps separate commands for tasks whose call ids repeat in different messages', () => {
+    const tools = [
+      {
+        taskId: 'older',
+        messageId: 'm1',
+        toolCallId: 'call_0',
+        toolName: 'bash_tool',
+        status: 'completed' as const,
+        cancellationRequested: false,
+        startedAt: iso(2_000),
+      },
+      {
+        taskId: 'newer',
+        messageId: 'm2',
+        toolCallId: 'call_0',
+        toolName: 'bash_tool',
+        status: 'running' as const,
+        cancellationRequested: false,
+        startedAt: iso(1_000),
+      },
+    ];
+    const messages = [
+      {
+        messageId: 'm1',
+        content: [{ type: ContentTypes.TOOL_CALL, tool_call: { id: 'call_0', args: 'older' } }],
+      },
+      {
+        messageId: 'm2',
+        content: [{ type: ContentTypes.TOOL_CALL, tool_call: { id: 'call_0', args: 'newer' } }],
+      },
+    ] as unknown as TMessage[];
+    const args = findToolCallArgs(messages, tools);
+    const rows = buildTaskRows({
+      now,
+      args,
+      tools,
+      subagents: [],
+      stoppingThreads: new Set(),
+      describe: (value) => ({ detail: String(value) }),
+    });
+    expect(rows.find((row) => row.taskId === 'older')?.detail).toBe('older');
+    expect(rows.find((row) => row.taskId === 'newer')?.detail).toBe('newer');
+    expect(findToolCallArgs(messages, [{ toolCallId: 'call_0' }]).get('\u0000call_0')).toBe(
+      'newer',
+    );
   });
 });

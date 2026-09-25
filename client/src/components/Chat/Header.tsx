@@ -3,6 +3,7 @@ import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
 import {
   getConfigDefaults,
+  EModelEndpoint,
   Constants,
   PermissionTypes,
   Permissions,
@@ -39,6 +40,7 @@ function Header({
   const { data: startupConfig } = useGetStartupConfig();
   const navVisible = useRecoilValue(store.sidebarExpanded);
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(0));
+  const effectiveEndpoint = useRecoilValue(store.effectiveEndpointByIndex(0));
 
   /** The mobile row only offers a new chat when there is one to leave. Read
    *  from the route rather than the context conversation, which still holds the
@@ -114,9 +116,14 @@ function Header({
       <div className={cn('flex flex-shrink-0 items-center gap-2', hiddenBehindNav)}>
         {hasAccessToTemporaryChat === true && <TemporaryChatIndicator />}
         {!isNewChat && <NewChat className="md:hidden" />}
-        {!isNewChat && parentConversationId == null && (
-          <BackgroundTasksButton conversationId={routeConversationId} isSubmitting={isSubmitting} />
-        )}
+        {!isNewChat &&
+          parentConversationId == null &&
+          effectiveEndpoint === EModelEndpoint.agents && (
+            <BackgroundTasksButton
+              conversationId={routeConversationId}
+              isSubmitting={isSubmitting}
+            />
+          )}
         <HeaderMenu startupConfig={startupConfig} trace={trace} className="md:hidden" />
         <div className="hidden items-center gap-2 md:flex">
           {trace.show && <TraceButton onClick={trace.open} />}

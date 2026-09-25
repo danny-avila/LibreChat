@@ -43,23 +43,28 @@ const subagentStatus = (status: SubagentThreadStatus): TaskRowStatus => {
 
 export type ToolCallArgs = string | Record<string, unknown> | undefined;
 
-/**
- * Resolves each task's tool-call args from the loaded messages, newest first,
- * stopping as soon as every id is found.
- */
+/** Resolve a tool call within its dispatch message; a legacy task without a
+ * message id can still use the newest matching call as a best-effort fallback. */
+const toolCallKey = (messageId: string | undefined, toolCallId: string): string =>
+  `${messageId ?? ''}\u0000${toolCallId}`;
+
 export function findToolCallArgs(
   messages: readonly TMessage[] | undefined,
-  toolCallIds: ReadonlySet<string>,
+  tasks: readonly Pick<BackgroundTaskSummary, 'messageId' | 'toolCallId'>[],
 ): Map<string, ToolCallArgs> {
   const found = new Map<string, ToolCallArgs>();
-  if (messages == null || toolCallIds.size === 0) return found;
-  for (let i = messages.length - 1; i >= 0 && found.size < toolCallIds.size; i--) {
-    for (const part of messages[i].content ?? []) {
+  if (messages == null || tasks.length === 0) return found;
+  const wanted = new Set(tasks.map((task) => toolCallKey(task.messageId, task.toolCallId)));
+  for (let i = messages.length - 1; i >= 0 && found.size < wanted.size; i--) {
+    const message = messages[i];
+    for (const part of message.content ?? []) {
       if (part?.type !== ContentTypes.TOOL_CALL) continue;
       const call = part[ContentTypes.TOOL_CALL] as { id?: string; args?: ToolCallArgs } | undefined;
-      if (call?.id != null && toolCallIds.has(call.id)) {
-        found.set(call.id, call.args);
-      }
+      if (call?.id == null) continue;
+      const key = toolCallKey(message.messageId, call.id);
+      if (wanted.has(key) && !found.has(key)) found.set(key, call.args);
+      const fallback = toolCallKey(undefined, call.id);
+      if (wanted.has(fallback) && !found.has(fallback)) found.set(fallback, call.args);
     }
   }
   return found;
@@ -118,7 +123,9 @@ export function buildTaskRows({
   stoppingThreads: ReadonlySet<string>;
   now: number;
 }): TaskRow[] {
-  const rows = tools.map((task) => toolRow(task, describe(args.get(task.toolCallId))));
+  const rows = tools.map((task) =>
+    toolRow(task, describe(args.get(toolCallKey(task.messageId, task.toolCallId)))),
+  );
   for (const child of subagents) {
     const row = subagentRow(child, stoppingThreads);
     const recent = row.settledAt == null || now - row.settledAt <= RECENT_SUBAGENT_WINDOW_MS;

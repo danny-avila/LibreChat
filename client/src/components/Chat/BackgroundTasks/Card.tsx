@@ -26,12 +26,14 @@ function TaskCard({
   canStop,
   isStopping,
   onStop,
+  portalElement,
 }: {
   row: TaskRow;
   now: number;
   canStop: boolean;
   isStopping: boolean;
   onStop: (row: TaskRow) => void;
+  portalElement: HTMLElement | null;
 }) {
   const localize = useLocalize();
   const { i18n } = useTranslation();
@@ -96,6 +98,7 @@ function TaskCard({
         {row.status === 'running' && canStop && (
           <TooltipAnchor
             description={stopLabel}
+            portalElement={portalElement}
             render={
               <button
                 type="button"

@@ -27,6 +27,7 @@ function BackgroundTasksButton({
   const disclosureRef = useRef<HTMLButtonElement>(null);
   const [now, setNow] = useState(() => Date.now());
   const [wide, setWide] = useState(false);
+  const [popoverElement, setPopoverElement] = useState<HTMLDivElement | null>(null);
   const view = useBackgroundTasks({ conversationId, isSubmitting, now });
   const { rows, activeCount } = view;
 
@@ -47,9 +48,13 @@ function BackgroundTasksButton({
   const running = rows.filter((row) => row.status === 'running' || row.status === 'stopping');
   const finished = rows.filter((row) => row.status !== 'running' && row.status !== 'stopping');
   const anyStoppable = running.some(view.canStop);
-  const stopAllLabel = anyStoppable
-    ? localize('com_ui_background_tasks_stop_all')
-    : localize('com_ui_background_tasks_cancel_disabled');
+  const partiallyStoppable = running.some((row) => row.status === 'running' && !view.canStop(row));
+  let stopAllLabel = localize('com_ui_background_tasks_stop_all');
+  if (!anyStoppable) {
+    stopAllLabel = localize('com_ui_background_tasks_cancel_disabled');
+  } else if (partiallyStoppable) {
+    stopAllLabel = localize('com_ui_background_tasks_stop_available');
+  }
   const card = (row: (typeof rows)[number]) => (
     <TaskCard
       key={row.id}
@@ -58,6 +63,7 @@ function BackgroundTasksButton({
       canStop={view.canStop(row)}
       isStopping={view.isStopping}
       onStop={view.stop}
+      portalElement={popoverElement}
     />
   );
 
@@ -84,6 +90,7 @@ function BackgroundTasksButton({
         }
       />
       <Ariakit.Popover
+        ref={setPopoverElement}
         store={popover}
         gutter={8}
         portal
@@ -124,17 +131,25 @@ function BackgroundTasksButton({
               action={
                 <TooltipAnchor
                   description={stopAllLabel}
+                  portalElement={popoverElement}
                   render={
-                    <button
-                      type="button"
-                      aria-label={stopAllLabel}
-                      disabled={!anyStoppable || view.isStopping}
-                      onClick={() => void view.stopAll()}
-                      data-testid="background-tasks-stop-all"
-                      className={cn(iconButtonClass, 'border border-border-medium')}
+                    <span
+                      role={!anyStoppable ? 'group' : undefined}
+                      aria-label={!anyStoppable ? stopAllLabel : undefined}
+                      tabIndex={!anyStoppable ? 0 : undefined}
+                      className="inline-flex"
                     >
-                      <Square className="size-3 fill-current" aria-hidden="true" />
-                    </button>
+                      <button
+                        type="button"
+                        aria-label={stopAllLabel}
+                        disabled={!anyStoppable || view.isStopping}
+                        onClick={() => void view.stopAll()}
+                        data-testid="background-tasks-stop-all"
+                        className={cn(iconButtonClass, 'border border-border-medium')}
+                      >
+                        <Square className="size-3 fill-current" aria-hidden="true" />
+                      </button>
+                    </span>
                   }
                 />
               }
@@ -146,6 +161,11 @@ function BackgroundTasksButton({
             <Section label={localize('com_ui_background_tasks_finished')} count={finished.length}>
               {finished.map(card)}
             </Section>
+          )}
+          {view.stopFailed && (
+            <p role="alert" className="px-3 pb-3 text-sm text-status-error">
+              {localize('com_ui_background_tasks_stop_failed')}
+            </p>
           )}
         </div>
       </Ariakit.Popover>

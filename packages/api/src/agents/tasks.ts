@@ -51,8 +51,8 @@ export function toBackgroundTaskSummary(task: BackgroundTask): BackgroundTaskSum
     status: task.status,
     cancellationRequested: task.cancellationRequestedAt != null,
     startedAt: new Date(task.createdAt).toISOString(),
-    ...(settled
-      ? { settledAt: new Date(Math.max(task.updatedAt, task.createdAt)).toISOString() }
+    ...(settled && task.settledAt != null
+      ? { settledAt: new Date(task.settledAt).toISOString() }
       : {}),
   };
 }
@@ -98,9 +98,15 @@ export function createBackgroundTaskCancelHandler(deps: BackgroundTaskRouteDepen
       return;
     }
 
-    const requested = (req.body as { taskIds?: unknown } | undefined)?.taskIds;
+    const payload: unknown = req.body;
+    if (payload == null || typeof payload !== 'object' || Array.isArray(payload)) {
+      res.status(400).json({ error: 'Invalid background task cancellation request' });
+      return;
+    }
+    const hasTaskIds = 'taskIds' in payload;
+    const requested = hasTaskIds ? payload.taskIds : undefined;
     if (
-      requested != null &&
+      hasTaskIds &&
       (!Array.isArray(requested) ||
         requested.length > MAX_CANCEL_TASK_IDS ||
         !requested.every(validTaskId))
@@ -109,13 +115,12 @@ export function createBackgroundTaskCancelHandler(deps: BackgroundTaskRouteDepen
       return;
     }
 
-    const taskIds =
-      requested == null
-        ? deps.registry
-            .list(userId, conversationId)
-            .filter((task) => task.status === 'running')
-            .map((task) => task.id)
-        : [...new Set(requested as string[])];
+    const taskIds = hasTaskIds
+      ? [...new Set(requested as string[])]
+      : deps.registry
+          .list(userId, conversationId)
+          .filter((task) => task.status === 'running')
+          .map((task) => task.id);
 
     const body: BackgroundTaskCancelResponse = {
       results: taskIds.map((taskId) => ({

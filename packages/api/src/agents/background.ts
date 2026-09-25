@@ -676,6 +676,7 @@ export interface BackgroundTask {
   completionPersistenceFailed?: boolean;
   createdAt: number;
   updatedAt: number;
+  settledAt?: number;
 }
 
 interface TaskBucket {
@@ -1387,6 +1388,7 @@ export class BackgroundTaskRegistryClass {
     const artifactChars = hasRetainedCapacity ? storedArtifact.chars : 0;
     const updated = this.update(userId, conversationId, taskId, {
       status: 'completed',
+      settledAt: Date.now(),
       result: retainedContent,
       artifact,
       error: undefined,
@@ -1560,6 +1562,7 @@ export class BackgroundTaskRegistryClass {
     const retainedError = hasRetainedCapacity ? storedError : undefined;
     const updated = this.update(userId, conversationId, taskId, {
       status: 'error',
+      settledAt: Date.now(),
       error: retainedError,
       result: undefined,
       artifact: undefined,
@@ -1593,6 +1596,7 @@ export class BackgroundTaskRegistryClass {
     const retainedError = hasRetainedCapacity ? storedError : undefined;
     const updated = this.update(userId, conversationId, taskId, {
       status: 'cancelled',
+      settledAt: Date.now(),
       error: retainedError,
       result: undefined,
       artifact: undefined,
@@ -1713,6 +1717,7 @@ export class BackgroundTaskRegistryClass {
     const retainedError = hasRetainedCapacity ? storedError : undefined;
     const updated = this.update(userId, conversationId, taskId, {
       status: 'error',
+      settledAt: task.settledAt ?? Date.now(),
       error: retainedError,
       result: undefined,
       artifact: undefined,
@@ -1787,7 +1792,8 @@ export class BackgroundTaskRegistryClass {
   }
 }
 
-export const backgroundTaskRegistry = new BackgroundTaskRegistryClass();
+export const backgroundTaskRegistry: BackgroundTaskRegistryClass =
+  new BackgroundTaskRegistryClass();
 
 /** Content for the synthetic ToolMessage returned when a call is backgrounded. */
 export function buildBackgroundHandleContent(

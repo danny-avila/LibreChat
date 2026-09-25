@@ -181,7 +181,96 @@ describe('BackgroundTasksButton', () => {
     const stopAll = await screen.findByTestId('background-tasks-stop-all');
     expect(stopAll).toBeDisabled();
     expect(stopAll).toHaveAccessibleName('com_ui_background_tasks_cancel_disabled');
+    const explanation = stopAll.parentElement!;
+    expect(explanation).toHaveAttribute('tabindex', '0');
+    expect(explanation).toHaveAttribute('aria-label', 'com_ui_background_tasks_cancel_disabled');
+    explanation.focus();
+    expect(explanation).toHaveFocus();
     expect(screen.queryByRole('button', { name: /com_ui_background_tasks_stop:/ })).toBeNull();
     expect(cancelTools).not.toHaveBeenCalled();
+  });
+
+  it('labels partial stop-all accurately when tool cancellation is disabled', async () => {
+    jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(index({ cancellable: false }));
+    const cancelTools = jest.spyOn(dataService, 'cancelBackgroundTasks');
+    const cancelSubagent = jest.spyOn(dataService, 'controlSubagentTask').mockResolvedValue({
+      receipt: {
+        invocationId: 'invocation',
+        action: 'cancel',
+        status: 'accepted',
+        createdAt: startedAt,
+        updatedAt: startedAt,
+      },
+    });
+    renderButton([runningChild]);
+    const user = userEvent.setup();
+    await user.click(await screen.findByTestId('header-background-tasks-button'));
+    const dialog = screen.getByRole('dialog', { name: 'com_ui_background_tasks' });
+    await waitFor(() =>
+      expect(within(dialog).getAllByTestId('background-task-row')).toHaveLength(3),
+    );
+    const stopAll = within(dialog).getByTestId('background-tasks-stop-all');
+    expect(stopAll).toHaveAccessibleName('com_ui_background_tasks_stop_available');
+    await user.click(stopAll);
+    expect(cancelTools).not.toHaveBeenCalled();
+    expect(cancelSubagent).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows failed cancellation and restores the retry control for a running subagent', async () => {
+    jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(index({ tasks: [] }));
+    const cancelSubagent = jest
+      .spyOn(dataService, 'controlSubagentTask')
+      .mockRejectedValueOnce(new Error('network unavailable'))
+      .mockResolvedValue({
+        receipt: {
+          invocationId: 'invocation',
+          action: 'cancel',
+          status: 'accepted',
+          createdAt: startedAt,
+          updatedAt: startedAt,
+        },
+      });
+    renderButton([runningChild]);
+    const user = userEvent.setup();
+    await user.click(await screen.findByTestId('header-background-tasks-button'));
+    const dialog = screen.getByRole('dialog', { name: 'com_ui_background_tasks' });
+    const stop = await within(dialog).findByRole('button', {
+      name: /com_ui_background_tasks_stop:/,
+    });
+    await user.click(stop);
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'com_ui_background_tasks_stop_failed',
+    );
+    expect(
+      within(dialog).getByRole('button', { name: /com_ui_background_tasks_stop:/ }),
+    ).toBeEnabled();
+    await user.click(within(dialog).getByRole('button', { name: /com_ui_background_tasks_stop:/ }));
+    await waitFor(() => expect(cancelSubagent).toHaveBeenCalledTimes(2));
+  });
+
+  it('re-enables stopping after the server rejects a cancellation receipt', async () => {
+    jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(index({ tasks: [] }));
+    jest.spyOn(dataService, 'controlSubagentTask').mockResolvedValue({
+      receipt: {
+        invocationId: 'invocation',
+        action: 'cancel',
+        status: 'rejected',
+        createdAt: startedAt,
+        updatedAt: startedAt,
+      },
+    });
+    renderButton([runningChild]);
+    const user = userEvent.setup();
+    await user.click(await screen.findByTestId('header-background-tasks-button'));
+    const dialog = screen.getByRole('dialog', { name: 'com_ui_background_tasks' });
+    await user.click(
+      await within(dialog).findByRole('button', { name: /com_ui_background_tasks_stop:/ }),
+    );
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'com_ui_background_tasks_stop_failed',
+    );
+    expect(
+      within(dialog).getByRole('button', { name: /com_ui_background_tasks_stop:/ }),
+    ).toBeEnabled();
   });
 });

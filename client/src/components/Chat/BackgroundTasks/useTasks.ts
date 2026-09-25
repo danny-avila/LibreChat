@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { v4 } from 'uuid';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
@@ -20,6 +20,7 @@ export type BackgroundTasksView = {
   /** Whether the deployment lets users stop ordinary background tools. */
   toolsCancellable: boolean;
   isStopping: boolean;
+  stopFailed: boolean;
   canStop: (row: TaskRow) => boolean;
   stop: (row: TaskRow) => Promise<void>;
   stopAll: () => Promise<void>;
@@ -55,13 +56,26 @@ export default function useBackgroundTasks({
   const { mutateAsync: controlSubagent } = useSubagentControlMutation();
   const [stoppingThreads, setStoppingThreads] = useState<ReadonlySet<string>>(() => new Set());
   const [isStopping, setIsStopping] = useState(false);
+  const [stopFailed, setStopFailed] = useState(false);
+
+  useEffect(() => {
+    setStoppingThreads((current) => {
+      const settled = [...current].filter((threadId) => {
+        const status = byThreadId.get(threadId)?.status;
+        return status != null && status !== 'running' && status !== 'dispatched';
+      });
+      if (settled.length === 0) return current;
+      const remaining = new Set(current);
+      for (const threadId of settled) remaining.delete(threadId);
+      return remaining;
+    });
+  }, [byThreadId]);
 
   /** Read once per task-list change rather than subscribing, so streaming
    *  message updates do not re-render the header. */
   const args = useMemo(() => {
-    const ids = new Set((data?.tasks ?? []).map((task) => task.toolCallId));
     const messages = queryClient.getQueryData<TMessage[]>([QueryKeys.messages, conversationId]);
-    return findToolCallArgs(messages, ids);
+    return findToolCallArgs(messages, data?.tasks ?? []);
   }, [data?.tasks, conversationId, queryClient]);
 
   const rows = useMemo(
@@ -93,26 +107,56 @@ export default function useBackgroundTasks({
       const subagents = targets.flatMap((row) => (row.subagent == null ? [] : [row.subagent]));
       if (toolIds.length === 0 && subagents.length === 0) return;
       setIsStopping(true);
+      setStopFailed(false);
       setStoppingThreads(
         (current) => new Set([...current, ...subagents.map((target) => target.threadId)]),
       );
       const submittedAt = new Date().toISOString();
-      await Promise.allSettled([
-        ...(toolIds.length > 0
-          ? [cancelTools({ conversationId, body: { taskIds: toolIds } })]
-          : []),
-        ...subagents.map(({ threadId, taskId }) =>
-          controlSubagent({
-            parentConversationId: conversationId,
-            threadId,
-            command: { taskId, invocationId: v4(), action: 'cancel' },
-            submittedAt,
-          }),
+      const [toolFailed, subagentResults] = await Promise.all([
+        toolIds.length > 0
+          ? cancelTools({ conversationId, body: { taskIds: toolIds } })
+              .then(({ results }) =>
+                results.some(
+                  (result) =>
+                    !['requested', 'already_requested', 'settled'].includes(result.status),
+                ),
+              )
+              .catch(() => true)
+          : Promise.resolve(false),
+        Promise.allSettled(
+          subagents.map(({ threadId, taskId }) =>
+            controlSubagent({
+              parentConversationId: conversationId,
+              threadId,
+              command: { taskId, invocationId: v4(), action: 'cancel' },
+              submittedAt,
+            }),
+          ),
         ),
       ]);
-      if (subagents.length > 0) {
-        await refresh();
+      const failedThreads = subagents.flatMap(({ threadId }, index) => {
+        const result = subagentResults[index];
+        return result.status === 'rejected' ||
+          (result.value.receipt.status !== 'accepted' && result.value.receipt.status !== 'applied')
+          ? [threadId]
+          : [];
+      });
+      if (failedThreads.length > 0) {
+        setStoppingThreads((current) => {
+          const remaining = new Set(current);
+          for (const threadId of failedThreads) remaining.delete(threadId);
+          return remaining;
+        });
       }
+      let failed = toolFailed || failedThreads.length > 0;
+      if (subagents.length > 0) {
+        try {
+          await refresh();
+        } catch {
+          failed = true;
+        }
+      }
+      setStopFailed(failed);
       setIsStopping(false);
     },
     [conversationId, cancelTools, controlSubagent, refresh],
@@ -129,6 +173,7 @@ export default function useBackgroundTasks({
     activeCount: countActive(rows),
     toolsCancellable,
     isStopping,
+    stopFailed,
     canStop,
     stop,
     stopAll,
