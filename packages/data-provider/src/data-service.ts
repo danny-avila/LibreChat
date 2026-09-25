@@ -1221,16 +1221,17 @@ export async function enqueueAgentQueuedTurn(
       response: { status: 409, data: { code: 'QUEUED_TURN_PROTOCOL_REQUIRED' } },
     });
   try {
-    const { capability } = await listAgentQueuedTurns(payload.conversationId);
-    if (!capability.supported || capability.protocolVersion !== 2) {
-      throw unsupported();
-    }
-    // A capability read can hit a different replica. An old writer must reject
-    // the versioned URL rather than strip the snapshot and accept a v1 row.
+    // The versioned URL is the capability gate. Do not preflight with a list:
+    // retries must reach receipt lookup even when mutable access has changed.
     return await request.post(endpoints.agentQueuedTurns(2), payload);
   } catch (error) {
-    const status = (error as { response?: { status?: number } })?.response?.status;
-    if (status === 404 || status === 501) throw unsupported();
+    const response = (error as { response?: { status?: number; data?: { code?: unknown } } })
+      ?.response;
+    const status = response?.status;
+    // Structured origin responses (notably priority fallback) are authoritative.
+    if ((status === 404 || status === 501) && typeof response?.data?.code !== 'string') {
+      throw unsupported();
+    }
     throw error;
   }
 }

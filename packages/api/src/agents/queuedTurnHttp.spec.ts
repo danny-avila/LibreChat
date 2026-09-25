@@ -1,8 +1,10 @@
 import { Types } from 'mongoose';
 import { AgentQueuedTurnLaneRetiredError } from '@librechat/data-schemas';
 import type { AgentQueuedTurnMethods, AgentQueuedTurnRecord } from '@librechat/data-schemas';
+import type { Request, Response } from 'express';
 import type { AgentQueuedTurnHttpDeps } from './queuedTurnHttp';
 import {
+  createAgentQueuedTurnEnqueueHandlers,
   handleAgentQueuedTurnCancel,
   handleAgentQueuedTurnEnqueue,
   handleAgentQueuedTurnList,
@@ -335,5 +337,58 @@ describe('Agent queued-turn HTTP admission receipts', () => {
       handleAgentQueuedTurnCancel({ id: USER_ID }, 'queued-turn-1', deps),
     ).resolves.toMatchObject({ status: 200 });
     expect(cancel).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('queued-turn enqueue adapters', () => {
+  const getConvo = jest.fn();
+  const getDependencies = jest.fn(() => ({
+    protocolVersion: 2 as const,
+    methods: {
+      getConvo,
+      getAgentQueuedTurnByClientRequestId: jest.fn(async () => ({
+        ...turn('admitted'),
+        codeApprovalMode: 'ask',
+      })),
+    } as unknown as AgentQueuedTurnHttpDeps['methods'],
+    lifecycle: { schedule: jest.fn(), cancel: jest.fn() },
+  }));
+
+  beforeEach(() => jest.clearAllMocks());
+
+  it.each(['enqueue', 'enqueueV2'] as const)(
+    'pins %s protocol in the TypeScript adapter',
+    async (name) => {
+      const handlers = createAgentQueuedTurnEnqueueHandlers(getDependencies);
+      const req = {
+        user: { id: USER_ID },
+        body: { ...requestBody(), codeApprovalMode: 'ask', protocolVersion: 2 },
+      } as unknown as Request;
+      const status = jest.fn().mockReturnThis();
+      const json = jest.fn();
+      const res = { status, json } as unknown as Response;
+      await handlers[name](req, res, jest.fn());
+      expect(getDependencies).toHaveBeenCalledWith(req);
+      expect(getConvo).not.toHaveBeenCalled();
+      expect(status).toHaveBeenCalledWith(name === 'enqueue' ? 409 : 200);
+      if (name === 'enqueueV2') {
+        expect(json).toHaveBeenCalledWith(
+          expect.objectContaining({
+            receipt: expect.objectContaining({ queuedTurnId: 'queued-turn-1' }),
+          }),
+        );
+      }
+    },
+  );
+
+  it('bounds dependency failures as enqueue errors', async () => {
+    const handlers = createAgentQueuedTurnEnqueueHandlers(() => {
+      throw new Error('dependencies unavailable');
+    });
+    const status = jest.fn().mockReturnThis();
+    const json = jest.fn();
+    await handlers.enqueueV2({} as Request, { status, json } as unknown as Response, jest.fn());
+    expect(status).toHaveBeenCalledWith(500);
+    expect(json).toHaveBeenCalledWith({ code: 'QUEUED_TURN_ENQUEUE_FAILED' });
   });
 });

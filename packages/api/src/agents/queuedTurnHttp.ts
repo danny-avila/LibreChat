@@ -5,6 +5,7 @@ import {
   isEphemeralAgentId,
 } from 'librechat-data-provider';
 import {
+  logger,
   AgentQueuedTurnCapacityError,
   AgentQueuedTurnConflictError,
   AgentQueuedTurnLaneRetiredError,
@@ -21,6 +22,7 @@ import type {
   TAgentQueuedTurnReceipt,
   TFile,
 } from 'librechat-data-provider';
+import type { Request, RequestHandler } from 'express';
 import type { AgentQueuedTurnLifecycle } from './queuedTurns';
 import type { SteerFileFetcher } from './steering/request';
 import type { SteerRequestUser } from './steering/refs';
@@ -471,4 +473,25 @@ export async function handleAgentQueuedTurnCancel(
     return { status: 409, body: { code: 'QUEUED_TURN_ALREADY_ADMITTING' } };
   }
   return { status: 200, body: { receipt: receipt(cancelled.turn) } };
+}
+
+/** Keep protocol selection and error handling in the TypeScript backend. */
+export function createAgentQueuedTurnEnqueueHandlers(
+  getDependencies: (req: Request) => AgentQueuedTurnHttpDeps,
+): { enqueue: RequestHandler; enqueueV2: RequestHandler } {
+  const create =
+    (protocolVersion?: 2): RequestHandler =>
+    async (req, res) => {
+      try {
+        const result = await handleAgentQueuedTurnEnqueue(req.user ?? {}, req.body ?? {}, {
+          ...getDependencies(req),
+          protocolVersion,
+        });
+        res.status(result.status).json(result.body);
+      } catch (error) {
+        logger.error('[AgentQueuedTurns] Failed to enqueue turn', error);
+        res.status(500).json({ code: 'QUEUED_TURN_ENQUEUE_FAILED' });
+      }
+    };
+  return { enqueue: create(), enqueueV2: create(2) };
 }
