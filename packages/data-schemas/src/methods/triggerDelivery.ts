@@ -246,6 +246,27 @@ export interface AgentEventActorReceiptStorageMetrics {
   deadDeliveries: number;
 }
 
+/** Selects deferred internal deliveries whose readiness condition just changed. */
+export interface ExpediteAgentTriggerDeliveriesInput {
+  sourceIds: readonly string[];
+  /** Exact deliveries, e.g. the one whose result just became durable. */
+  deliveryKeys?: readonly string[];
+  /** Every matching delivery of one principal, e.g. after one of its generations settled. */
+  user?: string | Types.ObjectId;
+  /** Narrows a principal's selection to deliveries that resume this conversation. */
+  conversationId?: string;
+  /** Exact tasks within a principal's conversation, including a repaired attempt's predecessor. */
+  taskIds?: readonly string[];
+  now: Date;
+}
+
+export interface ExpediteAgentTriggerDeliveriesResult {
+  /** Deferred, unheld deliveries moved to `now`. */
+  expedited: number;
+  /** Deliveries a worker held, marked so their next deferral re-checks at once. */
+  held: number;
+}
+
 export interface AgentTriggerDeliveryMethods {
   ensureAgentTriggerDeliveryIndexes: () => Promise<void>;
   enqueueAgentTriggerDelivery: (
@@ -270,9 +291,10 @@ export interface AgentTriggerDeliveryMethods {
   beginAgentTriggerDeliveryAttempt: (
     input: AgentTriggerDeliveryFence & { now: Date },
   ) => Promise<number | null>;
+  /** `expedited` when readiness changed while the delivery was held: it is due now instead. */
   deferAgentTriggerDeliveryAttempt: (
     input: AgentTriggerDeliveryFence & { attempt: number; availableAt: Date },
-  ) => Promise<boolean>;
+  ) => Promise<boolean | 'expedited'>;
   completeAgentTriggerDelivery: (
     input: AgentTriggerDeliveryFence & {
       attempt: number;
@@ -307,6 +329,9 @@ export interface AgentTriggerDeliveryMethods {
     sourceId: string;
     now: Date;
   }) => Promise<AgentTriggerProducerLeaseStatus>;
+  expediteAgentTriggerDeliveries: (
+    input: ExpediteAgentTriggerDeliveriesInput,
+  ) => Promise<ExpediteAgentTriggerDeliveriesResult>;
   persistAgentBackgroundToolResult: (
     input: PersistAgentBackgroundToolResultInput,
   ) => Promise<boolean>;
@@ -1846,57 +1871,61 @@ export function createAgentTriggerDeliveryMethods(
     $or: [ordinaryFence(input), legacyCapabilityFence(input), shieldCapabilityFence(input)],
   });
 
+  /** Readiness signals and the lease release must meet in one fenced write. Try
+   * the unmarked state first, then the marked state: a concurrent expedite can
+   * only add a marker while this lease is held. After release, expedite's second
+   * update sees an unheld row. No pipeline updates or unfenced follow-up needed. */
+  async function releaseWaitingDelivery(
+    input: AgentTriggerDeliveryFence & { availableAt: Date; attempt?: number },
+  ): Promise<boolean | 'expedited'> {
+    const attemptFence = input.attempt == null ? {} : { attempts: input.attempt };
+    const attemptChange = input.attempt == null ? {} : { $inc: { attempts: -1 } };
+    const profiles = [
+      { filter: shieldCapabilityFence(input), status: 'leased', capabilityStatus: 'pending' },
+      { filter: legacyCapabilityFence(input), status: 'capability_pending' },
+      { filter: ordinaryFence(input), status: 'pending' },
+    ] as const;
+    for (const marked of [false, true]) {
+      for (const profile of profiles) {
+        const availableAt = marked ? new Date() : input.availableAt;
+        const result = await Delivery().updateOne(
+          {
+            _id: input.id,
+            ...profile.filter,
+            ...attemptFence,
+            wakeRequestedAt: { $exists: marked },
+          },
+          {
+            ...attemptChange,
+            $set: {
+              status: profile.status,
+              ...('capabilityStatus' in profile && { capabilityStatus: profile.capabilityStatus }),
+              availableAt,
+              claimAvailableAt: availableAt,
+            },
+            $unset: {
+              leaseBy: 1,
+              leaseUntil: 1,
+              claimToken: 1,
+              capabilityLeaseBy: 1,
+              capabilityLeaseUntil: 1,
+              capabilityClaimToken: 1,
+              wakeRequestedAt: 1,
+            },
+          },
+        );
+        if (result.modifiedCount === 1) {
+          return marked ? 'expedited' : true;
+        }
+      }
+    }
+    return false;
+  }
+
   async function releaseAgentTriggerDelivery(
     input: AgentTriggerDeliveryFence & { availableAt: Date },
   ): Promise<boolean> {
-    const shieldResult = await Delivery().updateOne(
-      { _id: input.id, ...shieldCapabilityFence(input) },
-      {
-        $set: {
-          status: 'leased',
-          availableAt: input.availableAt,
-          capabilityStatus: 'pending',
-          claimAvailableAt: input.availableAt,
-        },
-        $unset: {
-          leaseBy: 1,
-          leaseUntil: 1,
-          claimToken: 1,
-          capabilityLeaseBy: 1,
-          capabilityLeaseUntil: 1,
-          capabilityClaimToken: 1,
-        },
-      },
-    );
-    if (shieldResult.modifiedCount === 1) {
-      return true;
-    }
-    const capabilityResult = await Delivery().updateOne(
-      { _id: input.id, ...legacyCapabilityFence(input) },
-      {
-        $set: {
-          status: 'capability_pending',
-          availableAt: input.availableAt,
-          claimAvailableAt: input.availableAt,
-        },
-        $unset: { leaseBy: 1, leaseUntil: 1, claimToken: 1 },
-      },
-    );
-    if (capabilityResult.modifiedCount === 1) {
-      return true;
-    }
-    const result = await Delivery().updateOne(
-      { _id: input.id, ...ordinaryFence(input) },
-      {
-        $set: {
-          status: 'pending',
-          availableAt: input.availableAt,
-          claimAvailableAt: input.availableAt,
-        },
-        $unset: { leaseBy: 1, leaseUntil: 1, claimToken: 1 },
-      },
-    );
-    return result.modifiedCount === 1;
+    return (await releaseWaitingDelivery(input)) !== false;
   }
 
   async function beginAgentTriggerDeliveryAttempt(
@@ -1926,64 +1955,11 @@ export function createAgentTriggerDeliveryMethods(
   /** Releases a pre-dispatch deferral and restores the attempt consumed by beginAttempt. */
   async function deferAgentTriggerDeliveryAttempt(
     input: AgentTriggerDeliveryFence & { attempt: number; availableAt: Date },
-  ): Promise<boolean> {
+  ): Promise<boolean | 'expedited'> {
     if (!Number.isSafeInteger(input.attempt) || input.attempt <= 0) {
       throw new TypeError('attempt must be a positive integer');
     }
-    const update = {
-      $inc: { attempts: -1 },
-      $set: {
-        availableAt: input.availableAt,
-        claimAvailableAt: input.availableAt,
-      },
-      $unset: { leaseBy: 1, leaseUntil: 1, claimToken: 1 },
-    };
-    const shieldResult = await Delivery().updateOne(
-      {
-        _id: input.id,
-        ...shieldCapabilityFence(input),
-        attempts: input.attempt,
-      },
-      {
-        $inc: update.$inc,
-        $set: {
-          status: 'leased',
-          availableAt: input.availableAt,
-          capabilityStatus: 'pending',
-          claimAvailableAt: input.availableAt,
-        },
-        $unset: {
-          leaseBy: 1,
-          leaseUntil: 1,
-          claimToken: 1,
-          capabilityLeaseBy: 1,
-          capabilityLeaseUntil: 1,
-          capabilityClaimToken: 1,
-        },
-      },
-    );
-    if (shieldResult.modifiedCount === 1) {
-      return true;
-    }
-    const capabilityResult = await Delivery().updateOne(
-      {
-        _id: input.id,
-        ...legacyCapabilityFence(input),
-        attempts: input.attempt,
-      },
-      {
-        ...update,
-        $set: { ...update.$set, status: 'capability_pending' },
-      },
-    );
-    if (capabilityResult.modifiedCount === 1) {
-      return true;
-    }
-    const result = await Delivery().updateOne(
-      { _id: input.id, ...ordinaryFence(input), attempts: input.attempt },
-      { ...update, $set: { ...update.$set, status: 'pending' } },
-    );
-    return result.modifiedCount === 1;
+    return releaseWaitingDelivery(input);
   }
 
   async function completeAgentTriggerDelivery(
@@ -2285,6 +2261,75 @@ export function createAgentTriggerDeliveryMethods(
     return delivery.producerLeaseUntil.getTime() > input.now.getTime()
       ? { status: 'live', leaseUntil: delivery.producerLeaseUntil }
       : { status: 'expired', leaseUntil: delivery.producerLeaseUntil };
+  }
+
+  /** Pulls deferred deliveries back to `now` when the condition they were
+   * waiting on has changed, so a waiting delivery can back off without delaying
+   * the moment it becomes deliverable. Unclaimed rows move now; held rows retain
+   * a signal consumed atomically by readiness deferral or ordering release. */
+  async function expediteAgentTriggerDeliveries(
+    input: ExpediteAgentTriggerDeliveriesInput,
+  ): Promise<ExpediteAgentTriggerDeliveriesResult> {
+    const deliveryKeys = input.deliveryKeys ?? [];
+    if (
+      (input.taskIds != null &&
+        (input.user == null ||
+          input.conversationId == null ||
+          input.taskIds.length === 0 ||
+          input.taskIds.some((id) => id.length === 0 || id.length > 256))) ||
+      input.sourceIds.length === 0 ||
+      input.sourceIds.some((id) => id.length === 0 || id.length > 256) ||
+      deliveryKeys.some((key) => key.length === 0 || key.length > 256) ||
+      (deliveryKeys.length === 0 && input.user == null) ||
+      (input.conversationId != null &&
+        (input.conversationId.length === 0 || input.conversationId.length > 256)) ||
+      !(input.now instanceof Date) ||
+      !Number.isFinite(input.now.getTime())
+    ) {
+      throw new TypeError('Invalid agent trigger delivery expedite');
+    }
+    const selection = {
+      'envelope.event.source.type': 'internal',
+      'envelope.event.source.id': { $in: [...input.sourceIds] },
+      ...(deliveryKeys.length > 0 && { deliveryKey: { $in: [...deliveryKeys] } }),
+      ...(input.taskIds != null && {
+        'envelope.event.payload.taskId': { $in: [...input.taskIds] },
+      }),
+      ...(input.user != null && { user: input.user }),
+      ...(input.conversationId != null && {
+        'envelope.target.conversationId': input.conversationId,
+      }),
+    };
+    /** Classic operators only: aggregation-pipeline updates are not portable. A
+     * held row may be deferred on readiness its worker read before the change,
+     * so it keeps a marker that its deferral honors instead of moving now. The
+     * marker is written first: a row released after it was read as held is then
+     * seen unheld by the move, so no release between the two escapes both. */
+    const held = await Delivery().updateMany(
+      {
+        ...selection,
+        status: { $in: ['leased', 'capability_leased'] },
+        $or: [{ leaseBy: { $exists: true } }, { capabilityLeaseBy: { $exists: true } }],
+      },
+      { $set: { wakeRequestedAt: input.now } },
+    );
+    const moved = await Delivery().updateMany(
+      {
+        ...selection,
+        availableAt: { $gt: input.now },
+        leaseBy: { $exists: false },
+        $or: [
+          { status: { $in: ['pending', 'capability_pending'] } },
+          {
+            status: 'leased',
+            capabilityStatus: 'pending',
+            capabilityLeaseBy: { $exists: false },
+          },
+        ],
+      },
+      { $set: { availableAt: input.now, claimAvailableAt: input.now } },
+    );
+    return { expedited: moved.modifiedCount, held: held.matchedCount };
   }
 
   /** Stores terminal output on the pre-admitted delivery before attempting the
@@ -4049,6 +4094,7 @@ export function createAgentTriggerDeliveryMethods(
     retireAgentTriggerDelivery,
     renewAgentTriggerDeliveryProducerLease,
     getAgentTriggerDeliveryProducerLease,
+    expediteAgentTriggerDeliveries,
     persistAgentBackgroundToolResult,
     getAgentBackgroundToolResult,
     getAgentBackgroundToolResultClaim,
