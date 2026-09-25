@@ -2196,7 +2196,7 @@
   },
   "client/src/components/Skills/forms/CreateSkillForm.tsx": {
     "shadcn/no-restyle": {
-      "count": 24
+      "count": 17
     }
   },
   "client/src/components/Skills/forms/SkillContentEditor.tsx": {

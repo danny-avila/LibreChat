@@ -107,14 +107,15 @@ const SearchBar = forwardRef((props: SearchBarProps, ref: React.Ref<HTMLDivEleme
 
   /** Escape empties the field rather than only leaving it: a stale query keeps the
    *  results route mounted, so dismissing the search has to dismiss what it found.
-   *  Stopped here so it does not also close the drawer the field sits in. */
+   *  Stopped here so it does not also close the drawer the field sits in. An IME
+   *  composing text owns Escape, which cancels the composition, not the search. */
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.code === 'Space') {
         e.stopPropagation();
         return;
       }
-      if (e.key === 'Escape' && text !== '') {
+      if (e.key === 'Escape' && text !== '' && !e.nativeEvent.isComposing) {
         e.preventDefault();
         e.stopPropagation();
         clearText(location.pathname);

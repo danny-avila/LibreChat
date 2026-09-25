@@ -177,12 +177,12 @@ export default function CreateSkillForm({
                     aria-invalid={errors.name ? 'true' : 'false'}
                     aria-describedby={errors.name ? 'skill-name-error' : undefined}
                   />
-                  <Label
+                  <label
                     htmlFor="skill-name"
-                    className="bg-presentation text-text-secondary peer-focus:text-text-primary pointer-events-none absolute -top-1 left-3 origin-[0] translate-y-3 scale-100 rounded px-1 text-base transition-transform duration-200 peer-placeholder-shown:translate-y-3 peer-placeholder-shown:scale-100 peer-focus:-translate-y-2 peer-focus:scale-75 peer-[:not(:placeholder-shown)]:-translate-y-2 peer-[:not(:placeholder-shown)]:scale-75"
+                    className="bg-surface-primary-alt text-text-secondary peer-focus:text-text-primary pointer-events-none absolute -top-1 left-3 origin-[0] translate-y-3 scale-100 rounded px-1 text-base transition-transform duration-200 peer-placeholder-shown:translate-y-3 peer-placeholder-shown:scale-100 peer-focus:-translate-y-2 peer-focus:scale-75 peer-[:not(:placeholder-shown)]:-translate-y-2 peer-[:not(:placeholder-shown)]:scale-75"
                   >
                     {localize('com_ui_name')}*
-                  </Label>
+                  </label>
                   <div
                     id="skill-name-error"
                     className={cn(
