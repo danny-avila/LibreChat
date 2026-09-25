@@ -388,6 +388,44 @@ describe('createToolExecuteHandler — background tool calls', () => {
     expect(JSON.parse(dispatch.content).message).not.toContain('host will resume you');
   });
 
+  it('expedites the delivery when only the parent-message projection was persisted', async () => {
+    const tool = makeSearchTool({ calls: 0 });
+    const expedite = jest.fn();
+    const retire = jest.fn(async () => true);
+    const handler = createToolExecuteHandler({
+      loadTools: async () => ({ loadedTools: [tool] }),
+      backgroundToolCompletion: {
+        preregister: jest.fn(async () => ({
+          renew: jest.fn(async () => true),
+          persistResult: jest.fn(async () => false),
+          retire,
+          expedite,
+        })),
+        persist: jest.fn(async () => true),
+        claim: jest.fn(async () => ({ status: 'acquired' as const, results: [] })),
+      },
+    });
+
+    await runBatch(handler, {
+      toolCalls: [
+        {
+          id: 'call-projection-only',
+          name: tool.name,
+          args: { q: 'projection', run_in_background: true },
+          stepId: 'step-projection-only',
+        },
+      ],
+      agentId: 'agent_parent_1',
+      configurable: buildConfig([tool.name]),
+      metadata: { thread_id: 'exec_convo', run_id: 'response-1' },
+    });
+    await flushMicrotasks();
+    await flushMicrotasks();
+
+    expect(expedite).toHaveBeenCalledTimes(1);
+    expect(retire).not.toHaveBeenCalled();
+  });
+
   it('retires a preregistered delivery when terminal persistence fails', async () => {
     const tool = makeSearchTool({ calls: 0 });
     const retire = jest.fn(async () => true);

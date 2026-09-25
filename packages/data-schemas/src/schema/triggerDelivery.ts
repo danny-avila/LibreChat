@@ -218,6 +218,7 @@ const triggerDeliverySchema: Schema<IAgentTriggerDeliveryDocument> = new Schema(
     requeueCount: { type: Number, default: 0, min: 0 },
     stagingRecoveryAt: { type: Date },
     laneCleanupPendingAt: { type: Date },
+    wakeRequestedAt: { type: Date },
   },
   { timestamps: true },
 );
@@ -253,7 +254,7 @@ triggerDeliverySchema.index(
   { sparse: true },
 );
 triggerDeliverySchema.index({ status: 1, updatedAt: -1 });
-/** One user's waiting deliveries, read when their readiness changes. */
+/** One user's waiting deliveries, read when that user's generation settles. */
 triggerDeliverySchema.index({ user: 1, status: 1, availableAt: 1 });
 triggerDeliverySchema.index({ 'actorReceipt.resolution': 1 }, { sparse: true });
 triggerDeliverySchema.index({ user: 1, actorActionAdmittedAt: 1 }, { sparse: true });

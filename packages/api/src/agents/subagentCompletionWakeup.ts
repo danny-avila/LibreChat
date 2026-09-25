@@ -810,11 +810,11 @@ export function createSubagentCompletionWakeupResolver({
  * simply defers until the terminal child message exists. */
 export function createSubagentCompletionWakeupHandler(
   enqueue: EnqueueAgentTrigger,
-): (registration: SubagentTaskWakeupRegistration) => Promise<void> {
+): (registration: SubagentTaskWakeupRegistration) => Promise<boolean> {
   return async (registration) => {
     const parentAgentId = registration.parentAgentId?.trim();
     if (parentAgentId == null || parentAgentId === '' || isEphemeralAgentId(parentAgentId)) {
-      return;
+      return false;
     }
     const eventId = registration.taskId;
     const envelope = createAgentTriggerEnvelope({
@@ -850,5 +850,6 @@ export function createSubagentCompletionWakeupHandler(
         Math.max(Date.now(), registration.createdAt) + WAKEUP_ADMISSION_DELAY_MS,
       ),
     });
+    return true;
   };
 }

@@ -60,7 +60,7 @@ describe('createSubagentCompletionWakeupHandler', () => {
     const enqueue = enqueueMock();
     const notify = createSubagentCompletionWakeupHandler(enqueue);
 
-    await notify(registration());
+    await expect(notify(registration())).resolves.toBe(true);
 
     expect(enqueue).toHaveBeenCalledTimes(1);
     const [envelopeValue, options] = enqueue.mock.calls[0]!;
@@ -112,7 +112,7 @@ describe('createSubagentCompletionWakeupHandler', () => {
     const enqueue = enqueueMock();
     const notify = createSubagentCompletionWakeupHandler(enqueue);
 
-    await notify(registration({ parentAgentId: undefined }));
+    await expect(notify(registration({ parentAgentId: undefined }))).resolves.toBe(false);
 
     expect(enqueue).not.toHaveBeenCalled();
   });
