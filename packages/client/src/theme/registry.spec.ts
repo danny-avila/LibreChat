@@ -488,6 +488,13 @@ describe('theme registry', () => {
           },
           appearance: {
             controlRadius: 'url(theme.css)',
+            shadowLg: '0 1px red; color: red',
+            shadowMd: 'not-a-shadow',
+            shadowXl: '1px red',
+            shadow2xl: 'not-a-shadow var(--missing)',
+            shadowXs: '0,',
+            shadowSm: '0 2px 4px var(--brand-shadow)',
+            shadow2xs: '0 env(safe-area-inset-tpo) 1px black',
             unknownSpacing: '1rem',
           },
         },
@@ -498,6 +505,13 @@ describe('theme registry', () => {
       'Invalid RGB value for rgb-text-primary: 999 0 0',
       'Unknown color token: rgb-unknown',
       'Invalid appearance value for controlRadius: url(theme.css)',
+      'Invalid appearance value for shadowLg: 0 1px red; color: red',
+      'Invalid appearance value for shadowMd: not-a-shadow',
+      'Invalid appearance value for shadowXl: 1px red',
+      'Invalid appearance value for shadow2xl: not-a-shadow var(--missing)',
+      'Invalid appearance value for shadowXs: 0,',
+      'Invalid appearance value for shadowSm: 0 2px 4px var(--brand-shadow)',
+      'Invalid appearance value for shadow2xs: 0 env(safe-area-inset-tpo) 1px black',
       'Unknown appearance token: unknownSpacing',
     ]);
     expect(() => resolveTheme(invalidTheme, 'light')).toThrow(TypeError);
@@ -532,6 +546,46 @@ describe('theme registry', () => {
       'Invalid appearance value for radiusSm: calc(1rem - var(--x))',
       'Invalid appearance value for radiusMd: calc(4px - 0)',
     ]);
+  });
+
+  it('accepts the box-shadow forms a theme is likely to write', () => {
+    const shadows = [
+      'none',
+      '0 1px 2px 0 rgb(0 0 0 / 0.05)',
+      'inset 0 0 0 1px rgba(0, 0, 0, 0.1), 0 8px 16px -4px #00000033',
+      '0 calc(0.25rem + 1px) 1ch -0.5vw rgb(0 0 0 / 0.1)',
+      '0 0 #0000',
+    ];
+
+    shadows.forEach((shadowLg) => {
+      expect(
+        validateThemeDefinition({
+          version: 1,
+          name: 'shadows',
+          modes: { light: { appearance: { shadowLg } } },
+        }),
+      ).toEqual([]);
+    });
+  });
+
+  it('keeps accepting variable-backed surface elevation that released themes may hold', () => {
+    const elevationSurface =
+      '0 8px 16px rgb(var(--shadow-rgb) / 0.2), 0 env(safe-area-inset-top) 1px black';
+
+    expect(
+      validateThemeDefinition({
+        version: 1,
+        name: 'elevation',
+        modes: { light: { appearance: { elevationSurface } } },
+      }),
+    ).toEqual([]);
+    expect(
+      validateThemeDefinition({
+        version: 1,
+        name: 'elevation',
+        modes: { light: { appearance: { shadowLg: elevationSurface } } },
+      }),
+    ).toEqual([`Invalid appearance value for shadowLg: ${elevationSurface}`]);
   });
 
   it('sanitizes malformed legacy colors without weakening definition validation', () => {

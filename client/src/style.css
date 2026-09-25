@@ -11,11 +11,13 @@
   --color-green-*: initial;
 }
 
-/* The plain radius and font utilities read theme-owned properties, so a theme definition reshapes
- * the 900-odd `rounded-*`, `font-sans` and `font-mono` call sites without a migration. The
- * defaults in the `html` block reproduce the scale these utilities resolved to before. Bare
- * `rounded` stays Tailwind's fixed 0.25rem: `sm` keeps its px offset, so the two part at a
- * non-16px root. App-only: the published preset keeps its own `sm`, which differs from this
+/* The plain radius, font and shadow utilities read theme-owned properties, so a theme definition
+ * reshapes the existing `rounded-*`, `font-sans`, `font-mono` and `shadow-*` call sites without a
+ * migration. The defaults in the `html` block reproduce the scale these utilities resolved to
+ * before. Bare `rounded` stays Tailwind's fixed 0.25rem: `sm` keeps its px offset, so the two part
+ * at a non-16px root. Bare `shadow` reads `--shadow`, which has always equalled `sm`, and follows
+ * it. A shadow held in a variable cannot be recolored by a `shadow-<color>` modifier; nothing here
+ * uses one. App-only: the published preset keeps its own `sm` radius, which differs from this
  * scale, so consumers' corners do not move. */
 @theme inline {
   --radius-sm: var(--theme-radius-sm);
@@ -26,6 +28,14 @@
   --radius-3xl: var(--theme-radius-3xl);
   --font-sans: var(--theme-font-family);
   --font-mono: var(--theme-mono-font-family);
+  --shadow: var(--theme-shadow-sm);
+  --shadow-2xs: var(--theme-shadow-2xs);
+  --shadow-xs: var(--theme-shadow-xs);
+  --shadow-sm: var(--theme-shadow-sm);
+  --shadow-md: var(--theme-shadow-md);
+  --shadow-lg: var(--theme-shadow-lg);
+  --shadow-xl: var(--theme-shadow-xl);
+  --shadow-2xl: var(--theme-shadow-2xl);
 }
 
 /* Tailwind v4 changed two preflight defaults this app was built against. Each rule below
@@ -321,6 +331,13 @@ html {
     'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, 'Cascadia Mono', 'Liberation Mono',
     Consolas, monospace;
   --theme-elevation-surface: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --theme-shadow-2xs: 0 1px rgb(0 0 0 / 0.05);
+  --theme-shadow-xs: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  --theme-shadow-sm: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+  --theme-shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+  --theme-shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --theme-shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+  --theme-shadow-2xl: 0 25px 50px -12px rgb(0 0 0 / 0.25);
   --theme-motion-fast: 150ms;
   --theme-motion-normal: 200ms;
   --switch-unchecked: 148 148 148;

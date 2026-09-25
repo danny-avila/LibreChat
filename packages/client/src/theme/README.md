@@ -27,14 +27,22 @@ const compactTheme: ThemeDefinition = {
 ```
 
 The appearance registry covers shared control shape, surface shape, control height, compact/normal
-spacing, UI and code typography, surface elevation, fast/normal motion, and the radius scale.
+spacing, UI and code typography, surface elevation, fast/normal motion, and the radius and shadow
+scales.
 
 In the LibreChat app the plain Tailwind utilities read theme-owned properties, so a theme reshapes
 existing call sites without a migration: `rounded-sm` through `rounded-3xl` read `radiusSm`
 through `radius3xl` (`--theme-radius-*`), `font-sans` reads `fontFamily` (`--theme-font-family`),
-and `font-mono` reads `monoFontFamily` (`--theme-mono-font-family`). The defaults reproduce the
-scale those utilities had before, so a theme that names none of them changes nothing. The mapping lives in the app stylesheet
-(`client/src/style.css`), not the published `theme.css`, whose preset keeps its own `rounded-sm`.
+`font-mono` reads `monoFontFamily` (`--theme-mono-font-family`), and `shadow-2xs` through
+`shadow-2xl` (and bare `shadow`, which matches `sm`) read `shadow2xs` through `shadow2xl`
+(`--theme-shadow-*`). A shadow step must be a concrete `box-shadow` list (no `var()`, `env()` or
+`attr()`) or `none`. `elevationSurface` stays the separate role behind `shadow-theme-surface` and
+keeps its original validation, so a released theme holding `var()` there still loads. On every
+shadow role, `none` is written as a transparent layer so Tailwind can still compose it with ring
+utilities.
+The defaults reproduce the scale those utilities had before, so a theme that names none of them
+changes nothing. The mapping lives in the app stylesheet (`client/src/style.css`), not the
+published `theme.css`, whose preset keeps its own `rounded-sm`.
 
 `themeRGB`, `REACT_APP_THEME_*`, and the existing localStorage keys remain supported through legacy
 adapters. Theme application removes only variables owned by the theme module when a theme is reset.

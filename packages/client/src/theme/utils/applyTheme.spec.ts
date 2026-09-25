@@ -139,7 +139,7 @@ describe('applyTheme', () => {
 
   /** The plain `rounded-*`, `font-sans` and `font-mono` utilities read these properties, so a
    *  theme reaches every call site only if the adapter writes them and a reset removes them. */
-  it('applies and clears the radius scale and the mono family', () => {
+  it('applies and clears the radius and shadow scales and the mono family', () => {
     const root = document.documentElement;
     const scale = {
       radiusSm: ['--theme-radius-sm', '0px'],
@@ -149,6 +149,13 @@ describe('applyTheme', () => {
       radius2xl: ['--theme-radius-2xl', '0.75rem'],
       radius3xl: ['--theme-radius-3xl', '1rem'],
       monoFontFamily: ['--theme-mono-font-family', 'Inconsolata, monospace'],
+      shadow2xs: ['--theme-shadow-2xs', '0 1px rgb(0 0 0 / 0.1)'],
+      shadowXs: ['--theme-shadow-xs', '0 1px 2px rgb(0 0 0 / 0.15)'],
+      shadowSm: ['--theme-shadow-sm', '0 2px 4px rgb(0 0 0 / 0.15)'],
+      shadowMd: ['--theme-shadow-md', '0 4px 8px rgb(0 0 0 / 0.15)'],
+      shadowLg: ['--theme-shadow-lg', '0 8px 16px rgb(0 0 0 / 0.15)'],
+      shadowXl: ['--theme-shadow-xl', '0 12px 24px rgb(0 0 0 / 0.15)'],
+      shadow2xl: ['--theme-shadow-2xl', 'inset 0 0 0 1px rgb(0, 0, 0)'],
     } as const;
     const appearance = Object.fromEntries(
       Object.entries(scale).map(([key, [, value]]) => [key, value]),
@@ -172,11 +179,55 @@ describe('applyTheme', () => {
     expect(root.style.getPropertyValue('--theme-mono-font-family')).toBe(
       defaultAppearance.monoFontFamily,
     );
+    expect(root.style.getPropertyValue('--theme-shadow-lg')).toBe(defaultAppearance.shadowLg);
 
     clearAppliedTheme(root);
     Object.values(scale).forEach(([property]) => {
       expect(root.style.getPropertyValue(property)).toBe('');
     });
+  });
+
+  /** Tailwind lists `--tw-shadow` after the ring layers, where a bare `none` voids the whole
+   *  declaration and takes a focus ring with it, so a disabled step becomes a transparent layer. */
+  it('writes a disabled shadow step as a composable transparent layer', () => {
+    const root = document.documentElement;
+
+    applyResolvedTheme(
+      resolveTheme(
+        {
+          version: 1,
+          name: 'flat',
+          modes: { light: { appearance: { shadow2xl: 'none', elevationSurface: ' NONE ' } } },
+        },
+        'light',
+      ),
+      root,
+    );
+
+    expect(root.style.getPropertyValue('--theme-shadow-2xl')).toBe('0 0 #0000');
+    expect(root.style.getPropertyValue('--theme-elevation-surface')).toBe('0 0 #0000');
+    expect(root.style.getPropertyValue('--theme-shadow-lg')).toBe(defaultAppearance.shadowLg);
+    clearAppliedTheme(root);
+  });
+
+  it('keeps the default for an appearance key that is present but undefined', () => {
+    const root = document.documentElement;
+
+    applyResolvedTheme(
+      resolveTheme(
+        {
+          version: 1,
+          name: 'sparse',
+          modes: { light: { appearance: { shadowLg: undefined, radiusSm: undefined } } },
+        },
+        'light',
+      ),
+      root,
+    );
+
+    expect(root.style.getPropertyValue('--theme-shadow-lg')).toBe(defaultAppearance.shadowLg);
+    expect(root.style.getPropertyValue('--theme-radius-sm')).toBe(defaultAppearance.radiusSm);
+    clearAppliedTheme(root);
   });
 
   it('applies the resolved high-contrast code surface instead of the stock grey', () => {

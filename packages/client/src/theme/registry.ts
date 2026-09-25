@@ -65,6 +65,13 @@ export const themeAppearanceProperties: Readonly<
   fontFamily: '--theme-font-family',
   monoFontFamily: '--theme-mono-font-family',
   elevationSurface: '--theme-elevation-surface',
+  shadow2xs: '--theme-shadow-2xs',
+  shadowXs: '--theme-shadow-xs',
+  shadowSm: '--theme-shadow-sm',
+  shadowMd: '--theme-shadow-md',
+  shadowLg: '--theme-shadow-lg',
+  shadowXl: '--theme-shadow-xl',
+  shadow2xl: '--theme-shadow-2xl',
   motionFast: '--theme-motion-fast',
   motionNormal: '--theme-motion-normal',
 });
@@ -87,6 +94,13 @@ export const defaultAppearance: IThemeAppearance = Object.freeze({
   monoFontFamily:
     "'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, 'Cascadia Mono', 'Liberation Mono', Consolas, monospace",
   elevationSurface: '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)',
+  shadow2xs: '0 1px rgb(0 0 0 / 0.05)',
+  shadowXs: '0 1px 2px 0 rgb(0 0 0 / 0.05)',
+  shadowSm: '0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1)',
+  shadowMd: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
+  shadowLg: '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)',
+  shadowXl: '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)',
+  shadow2xl: '0 25px 50px -12px rgb(0 0 0 / 0.25)',
   motionFast: '150ms',
   motionNormal: '200ms',
 });
@@ -172,6 +186,10 @@ const cssLengthDifferencePattern =
   /^calc\(\s*\d*\.?\d+(px|rem|em)\s+[-+]\s+\d*\.?\d+(px|rem|em)\s*\)$/;
 const cssDurationPattern = /^\d*\.?\d+(ms|s)$/;
 const hexColorPattern = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+const shadowLengthPattern = /^(-?(0|\d*\.?\d+[a-z]+)|(calc|min|max|clamp)\(.*\))$/i;
+const shadowColorPattern = /^(#[0-9a-f]{3,8}|[a-z]+|[a-z-]+\(.*\))$/i;
+/** Tailwind composes `--tw-shadow` into one list with the ring layers, where `none` is invalid. */
+const disabledShadow = '0 0 #0000';
 
 function isLinearGradient(value: string): boolean {
   if (!value.startsWith('linear-gradient(') || /url\s*\(|image-set/i.test(value)) {
@@ -210,6 +228,64 @@ const isLength = (value: unknown): value is string =>
   (cssLengthPattern.test(value) || cssLengthDifferencePattern.test(value));
 const isFontFamily = (value: unknown): value is string =>
   typeof value === 'string' && value.trim().length > 0 && !/[;{}]/.test(value);
+/** Splits on `separator` outside parentheses, so `rgb(0, 0, 0)` stays one part. Empty parts are
+ *  kept, so a stray comma stays visible to the caller. */
+function splitTopLevel(value: string, separator: RegExp): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let current = '';
+  for (const char of value) {
+    if (char === '(') {
+      depth += 1;
+    } else if (char === ')') {
+      depth -= 1;
+    }
+    if (depth === 0 && separator.test(char)) {
+      parts.push(current);
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+  parts.push(current);
+  return parts.map((part) => part.trim());
+}
+
+/** A named color is indistinguishable from any other word without the browser's color parser. */
+const isShadowColor = (token: string): boolean =>
+  globalThis.CSS?.supports?.('color', token) ?? shadowColorPattern.test(token);
+
+/** One layer: two to four lengths, optionally `inset` and one color, per the box-shadow grammar. */
+function isShadowLayer(layer: string): boolean {
+  const tokens = splitTopLevel(layer, /\s/).filter((token) => token.length > 0);
+  const lengths = tokens.filter((token) => shadowLengthPattern.test(token)).length;
+  const insets = tokens.filter((token) => token.toLowerCase() === 'inset').length;
+  const colors = tokens.filter(
+    (token) => !shadowLengthPattern.test(token) && token.toLowerCase() !== 'inset',
+  );
+  return (
+    lengths >= 2 && lengths <= 4 && insets <= 1 && colors.length <= 1 && colors.every(isShadowColor)
+  );
+}
+
+/**
+ * A shadow must be concrete: a browser defers its check of any value holding `var()`, `env()` or
+ * `attr()` until substitution, so such a value could never be validated before it reaches the
+ * ring layers.
+ */
+const isShadow = (value: unknown): value is string => {
+  if (typeof value !== 'string' || /[;{}]|url\s*\(|(var|env|attr)\s*\(/i.test(value)) {
+    return false;
+  }
+  if (value.trim().toLowerCase() === 'none') {
+    return true;
+  }
+  const layers = splitTopLevel(value, /,/);
+  if (layers.some((layer) => layer.length === 0) || !layers.every(isShadowLayer)) {
+    return false;
+  }
+  return globalThis.CSS?.supports?.('box-shadow', value) ?? true;
+};
 const isDuration = (value: unknown): value is string =>
   typeof value === 'string' && cssDurationPattern.test(value);
 
@@ -241,8 +317,16 @@ const appearanceValidators: Record<keyof IThemeAppearance, (value: unknown) => b
   spaceNormal: isLength,
   fontFamily: isFontFamily,
   monoFontFamily: isFontFamily,
+  /** Released themes may hold `var()` here, so this role keeps its original, looser check. */
   elevationSurface: (value) =>
     typeof value === 'string' && value.trim().length > 0 && !/[;{}]|url\s*\(/i.test(value),
+  shadow2xs: isShadow,
+  shadowXs: isShadow,
+  shadowSm: isShadow,
+  shadowMd: isShadow,
+  shadowLg: isShadow,
+  shadowXl: isShadow,
+  shadow2xl: isShadow,
   motionFast: isDuration,
   motionNormal: isDuration,
 };
@@ -362,19 +446,37 @@ export function validateThemeDefinition(theme: ThemeDefinition): string[] {
 }
 
 /**
- * A partial theme promises that an omitted value falls back, and
- * `Partial<IThemeBrands>` lets a key be present with `undefined`. Spreading
- * that would overwrite the inherited brand with nothing, and unlike colors,
- * which `mapColors` skips when undefined, every brand token is written to the
- * DOM unconditionally, so the avatar would lose its fill entirely.
+ * A partial theme promises that an omitted value falls back, and `Partial<T>` lets a key be
+ * present with `undefined`. Spreading that would overwrite the inherited value with nothing:
+ * every brand and appearance token is written to the DOM unconditionally, so an avatar would
+ * lose its fill and a shadow or radius step its value, unlike colors, which `mapColors` skips.
  */
-function definedBrands(brands?: Partial<IThemeBrands>): Partial<IThemeBrands> {
-  if (!brands) {
+function definedEntries<T extends object>(values?: Partial<T>): Partial<T> {
+  if (!values) {
     return {};
   }
   return Object.fromEntries(
-    Object.entries(brands).filter(([, value]) => value !== undefined),
-  ) as Partial<IThemeBrands>;
+    Object.entries(values).filter(([, value]) => value !== undefined),
+  ) as Partial<T>;
+}
+
+const shadowAppearanceKeys: ReadonlyArray<keyof IThemeAppearance> = [
+  'elevationSurface',
+  'shadow2xs',
+  'shadowXs',
+  'shadowSm',
+  'shadowMd',
+  'shadowLg',
+  'shadowXl',
+  'shadow2xl',
+];
+
+function withComposableShadows(appearance: IThemeAppearance): IThemeAppearance {
+  return shadowAppearanceKeys.reduce<IThemeAppearance>(
+    (result, key) =>
+      result[key].trim().toLowerCase() === 'none' ? { ...result, [key]: disabledShadow } : result,
+    appearance,
+  );
 }
 
 export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedThemeDefinition {
@@ -508,12 +610,15 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
       ...seriesEightFallback,
       ...verifiedFallback,
     } as Required<IThemeRGB>,
-    appearance: { ...defaultAppearance, ...definition?.appearance },
+    appearance: withComposableShadows({
+      ...defaultAppearance,
+      ...definedEntries(definition?.appearance),
+    }),
     /** Mode last: a mode override is more specific than the theme-wide set. */
     brands: {
       ...defaultBrands,
-      ...definedBrands(theme.brands),
-      ...definedBrands(definition?.brands),
+      ...definedEntries(theme.brands),
+      ...definedEntries(definition?.brands),
     },
   };
 }
