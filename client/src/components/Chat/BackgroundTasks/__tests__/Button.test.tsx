@@ -104,29 +104,49 @@ const renderButton = (children: ParentSubagentSummary[] = [], initialMessages = 
 afterEach(() => jest.restoreAllMocks());
 
 describe('BackgroundTasksButton', () => {
-  it('ages out the last finished child even while the panel is closed', async () => {
-    jest.useFakeTimers();
-    try {
-      jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(index({ tasks: [] }));
-      renderButton([
-        {
-          ...runningChild,
-          status: 'completed',
-          updatedAt: new Date(Date.now() - 3_599_000).toISOString(),
-        },
-      ]);
-      await act(async () => {
-        await jest.advanceTimersByTimeAsync(100);
-      });
-      expect(screen.getByTestId('header-background-tasks-button')).toBeInTheDocument();
-      await act(async () => {
-        await jest.advanceTimersByTimeAsync(1_100);
-      });
-      expect(screen.queryByTestId('header-background-tasks-button')).toBeNull();
-    } finally {
-      jest.useRealTimers();
-    }
-  });
+  it.each(['tool', 'subagent'])(
+    'ages out the last finished %s even while the panel is closed',
+    async (kind) => {
+      jest.useFakeTimers();
+      try {
+        const settledAt = new Date(Date.now() - 3_599_000).toISOString();
+        jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(
+          index({
+            tasks:
+              kind === 'tool'
+                ? [
+                    {
+                      ...index().tasks[1],
+                      settledAt,
+                    },
+                  ]
+                : [],
+          }),
+        );
+        renderButton(
+          kind === 'subagent'
+            ? [
+                {
+                  ...runningChild,
+                  status: 'completed',
+                  updatedAt: settledAt,
+                },
+              ]
+            : [],
+        );
+        await act(async () => {
+          await jest.advanceTimersByTimeAsync(100);
+        });
+        expect(screen.getByTestId('header-background-tasks-button')).toBeInTheDocument();
+        await act(async () => {
+          await jest.advanceTimersByTimeAsync(1_100);
+        });
+        expect(screen.queryByTestId('header-background-tasks-button')).toBeNull();
+      } finally {
+        jest.useRealTimers();
+      }
+    },
+  );
 
   it('keeps an accepted cancellation pending through an observation failure, then reconciles failure', async () => {
     jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(index({ tasks: [] }));

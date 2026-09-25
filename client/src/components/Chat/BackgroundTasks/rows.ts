@@ -121,7 +121,8 @@ const isActive = (row: TaskRow) => row.status === 'running' || row.status === 's
 /**
  * One list across both background kinds: active rows first, then the most
  * recently started. Settled subagents older than the registry's retention are
- * dropped so a long conversation does not list its whole history.
+ * dropped so a long conversation does not list its whole history. Apply the
+ * same bound to cached tools after their terminal response stops polling.
  */
 export function buildTaskRows({
   tools,
@@ -143,15 +144,17 @@ export function buildTaskRows({
   );
   for (const child of subagents) {
     const row = subagentRow(child, stoppingThreads);
-    const recent = row.settledAt == null || now - row.settledAt <= RECENT_SUBAGENT_WINDOW_MS;
-    if (isActive(row) || recent) {
-      rows.push(row);
-    }
+    rows.push(row);
   }
-  return rows.sort((left, right) => {
-    const active = Number(isActive(right)) - Number(isActive(left));
-    return active !== 0 ? active : (right.startedAt ?? 0) - (left.startedAt ?? 0);
-  });
+  return rows
+    .filter(
+      (row) =>
+        isActive(row) || row.settledAt == null || now - row.settledAt <= RECENT_SUBAGENT_WINDOW_MS,
+    )
+    .sort((left, right) => {
+      const active = Number(isActive(right)) - Number(isActive(left));
+      return active !== 0 ? active : (right.startedAt ?? 0) - (left.startedAt ?? 0);
+    });
 }
 
 export const countActive = (rows: readonly TaskRow[]) => rows.filter(isActive).length;

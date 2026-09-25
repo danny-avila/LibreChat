@@ -41,7 +41,7 @@ function BackgroundTasksButton({
 
   const nextExpiry = rows.reduce(
     (next, row) =>
-      row.kind === 'subagent' && row.settledAt != null
+      row.settledAt != null && row.status !== 'running' && row.status !== 'stopping'
         ? Math.min(next, row.settledAt + RECENT_SUBAGENT_WINDOW_MS + 1)
         : next,
     Infinity,
