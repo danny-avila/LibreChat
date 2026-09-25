@@ -268,6 +268,20 @@ describe('parts', () => {
       expect(fromUIPart(uiPart)).toStrictEqual(part);
     });
 
+    it('maps an untyped lane placeholder to step-start', () => {
+      const placeholder = { type: '' } as unknown as MappableContentPart;
+      const content = [
+        { type: ContentTypes.TEXT, text: 'a' },
+        placeholder,
+      ] as TMessageContentParts[];
+
+      expect(toUIPart(placeholder)).toEqual({ type: 'step-start' });
+      expect(toUIMessage(createMessage({ content })).parts).toEqual([
+        { type: 'text', text: 'a' },
+        { type: 'step-start' },
+      ]);
+    });
+
     it('maps a missing slot to step-start and step-start back to nothing', () => {
       expect(toUIPart(undefined)).toEqual({ type: 'step-start' });
       expect(fromUIPart({ type: 'step-start' })).toBeUndefined();

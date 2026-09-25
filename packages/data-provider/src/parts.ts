@@ -431,7 +431,9 @@ const toDataPart = (part: ContentPartOf<keyof typeof dataPartTypes>): UIDataPart
 
 /**
  * Maps one content part to its UI part. A missing part (a hole in a streamed array) maps to
- * `step-start`, so indexes line up with the content array.
+ * `step-start`, so indexes line up with the content array. So does a slot with no known type,
+ * such as the `type: ''` lane placeholder a dual-conversation turn seeds: persistence compacts
+ * those away, and the reverse mapping leaves a hole in their place the same way.
  */
 export function toUIPart(
   part: MappableContentPart | null | undefined,
@@ -525,6 +527,7 @@ export function toUIPart(
     case ContentTypes.ERROR:
       return toDataPart(part);
   }
+  return stepStart;
 }
 
 /** Maps a content array to UI parts, one per slot, holes included. */
