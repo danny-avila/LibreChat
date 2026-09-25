@@ -698,10 +698,13 @@ function replyResponses(text) {
 /**
  * Attaches synthetic usage_metadata on a final empty chunk (the OpenAI
  * streaming pattern) so token-usage SSE events flow end to end in mock runs.
+ * Input is counted over the complete prompt a real provider bills — system
+ * instructions included — since the context snapshot calibrates against it.
  */
 class UsageEmittingFakeChatModel extends FakeChatModel {
-  constructor({ resolveInvocation, resolveOnStream, sleep, ...options }) {
+  constructor({ graph, resolveInvocation, resolveOnStream, sleep, ...options }) {
     super({ ...options, sleep });
+    this.graph = graph;
     this.resolveInvocation = resolveInvocation;
     this.resolveOnStream = resolveOnStream;
     this.streamSleep = sleep ?? CHUNK_DELAY_MS;
@@ -818,7 +821,13 @@ class UsageEmittingFakeChatModel extends FakeChatModel {
       outputChars += typeof chunk.text === 'string' ? chunk.text.length : 0;
       yield chunk;
     }
-    const inputChars = (messages ?? []).reduce(
+    const { messages: promptMessages } = await getStreamAgentView({
+      graph: this.graph,
+      messages: messages ?? [],
+      options,
+      runManager,
+    });
+    const inputChars = promptMessages.reduce(
       (sum, message) => sum + getContentText(message?.content).length,
       0,
     );
@@ -869,6 +878,7 @@ function overrideModel({
 
   if (!thrownError) {
     const model = new UsageEmittingFakeChatModel({
+      graph,
       responses,
       sleep: sleep ?? CHUNK_DELAY_MS,
       emitCustomEvent: true,
@@ -2792,12 +2802,12 @@ function provisioningToolResponses({ text, toolNames }) {
     const command = Array.from({ length: 120 }, (_, index) => `printf 'line-${index}-☃\\n'`).join(
       '\n',
     );
-    const args =
-      codeTool.name === 'bash_tool'
-        ? { command }
-        : codeTool.name === 'execute_code'
-          ? { lang: 'bash', code: command }
-          : codeTool.args;
+    let args = codeTool.args;
+    if (codeTool.name === 'bash_tool') {
+      args = { command };
+    } else if (codeTool.name === 'execute_code') {
+      args = { lang: 'bash', code: command };
+    }
     return {
       responses: ['', `E2E highlighted code complete: ${highlightLabel}`],
       sleep: highlightLabel === 'cancel' ? HIGHLIGHT_CANCEL_CHUNK_DELAY_MS : SLOW_CHUNK_DELAY_MS,
