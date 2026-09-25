@@ -53,10 +53,17 @@ export const themeAppearanceProperties: Readonly<
   roundControlRadius: '--theme-round-control-radius',
   surfaceRadius: '--theme-surface-radius',
   largeSurfaceRadius: '--theme-large-surface-radius',
+  radiusSm: '--theme-radius-sm',
+  radiusMd: '--theme-radius-md',
+  radiusLg: '--theme-radius-lg',
+  radiusXl: '--theme-radius-xl',
+  radius2xl: '--theme-radius-2xl',
+  radius3xl: '--theme-radius-3xl',
   controlHeight: '--theme-control-height',
   spaceCompact: '--theme-space-compact',
   spaceNormal: '--theme-space-normal',
   fontFamily: '--theme-font-family',
+  monoFontFamily: '--theme-mono-font-family',
   elevationSurface: '--theme-elevation-surface',
   motionFast: '--theme-motion-fast',
   motionNormal: '--theme-motion-normal',
@@ -67,10 +74,18 @@ export const defaultAppearance: IThemeAppearance = Object.freeze({
   roundControlRadius: '9999px',
   surfaceRadius: '1rem',
   largeSurfaceRadius: '1.5rem',
+  radiusSm: 'calc(0.5rem - 4px)',
+  radiusMd: 'calc(0.5rem - 2px)',
+  radiusLg: '0.5rem',
+  radiusXl: '0.75rem',
+  radius2xl: '1rem',
+  radius3xl: '1.5rem',
   controlHeight: '2.25rem',
   spaceCompact: '0.375rem',
   spaceNormal: '0.75rem',
   fontFamily: 'Inter, sans-serif',
+  monoFontFamily:
+    "'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, 'Cascadia Mono', 'Liberation Mono', Consolas, monospace",
   elevationSurface: '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)',
   motionFast: '150ms',
   motionNormal: '200ms',
@@ -153,6 +168,8 @@ export const highContrastTheme: ThemeDefinition = Object.freeze({
 
 const rgbPattern = /^(\d{1,3})\s+(\d{1,3})\s+(\d{1,3})$/;
 const cssLengthPattern = /^(0|\d*\.?\d+(px|rem|em))$/;
+const cssLengthDifferencePattern =
+  /^calc\(\s*\d*\.?\d+(px|rem|em)\s+[-+]\s+\d*\.?\d+(px|rem|em)\s*\)$/;
 const cssDurationPattern = /^\d*\.?\d+(ms|s)$/;
 const hexColorPattern = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 
@@ -186,8 +203,13 @@ const isRGB = (value: unknown): value is string => {
   return match !== null && match.slice(1).every((channel) => Number(channel) <= 255);
 };
 
+/** The bare form, or one `calc()` of two unit-bearing lengths (a bare `0` is a number there):
+ *  the small radius defaults keep a px offset. */
 const isLength = (value: unknown): value is string =>
-  typeof value === 'string' && cssLengthPattern.test(value);
+  typeof value === 'string' &&
+  (cssLengthPattern.test(value) || cssLengthDifferencePattern.test(value));
+const isFontFamily = (value: unknown): value is string =>
+  typeof value === 'string' && value.trim().length > 0 && !/[;{}]/.test(value);
 const isDuration = (value: unknown): value is string =>
   typeof value === 'string' && cssDurationPattern.test(value);
 
@@ -208,11 +230,17 @@ const appearanceValidators: Record<keyof IThemeAppearance, (value: unknown) => b
   roundControlRadius: isLength,
   surfaceRadius: isLength,
   largeSurfaceRadius: isLength,
+  radiusSm: isLength,
+  radiusMd: isLength,
+  radiusLg: isLength,
+  radiusXl: isLength,
+  radius2xl: isLength,
+  radius3xl: isLength,
   controlHeight: isLength,
   spaceCompact: isLength,
   spaceNormal: isLength,
-  fontFamily: (value) =>
-    typeof value === 'string' && value.trim().length > 0 && !/[;{}]/.test(value),
+  fontFamily: isFontFamily,
+  monoFontFamily: isFontFamily,
   elevationSurface: (value) =>
     typeof value === 'string' && value.trim().length > 0 && !/[;{}]|url\s*\(/i.test(value),
   motionFast: isDuration,

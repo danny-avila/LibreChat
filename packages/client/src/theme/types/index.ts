@@ -364,10 +364,17 @@ export interface IThemeAppearance {
   roundControlRadius: string;
   surfaceRadius: string;
   largeSurfaceRadius: string;
+  radiusSm: string;
+  radiusMd: string;
+  radiusLg: string;
+  radiusXl: string;
+  radius2xl: string;
+  radius3xl: string;
   controlHeight: string;
   spaceCompact: string;
   spaceNormal: string;
   fontFamily: string;
+  monoFontFamily: string;
   elevationSurface: string;
   motionFast: string;
   motionNormal: string;

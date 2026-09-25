@@ -503,6 +503,37 @@ describe('theme registry', () => {
     expect(() => resolveTheme(invalidTheme, 'light')).toThrow(TypeError);
   });
 
+  /** A caller may seed a theme from the exported defaults or round-trip a resolved theme. */
+  it('accepts its own appearance defaults, calc() radii included', () => {
+    const roundTrip = resolveTheme(
+      { version: 1, name: 'seeded', modes: { light: { appearance: { ...defaultAppearance } } } },
+      'light',
+    );
+
+    expect(roundTrip.appearance).toEqual(defaultAppearance);
+    expect(
+      validateThemeDefinition({
+        version: 1,
+        name: 'offsets',
+        modes: {
+          light: { appearance: { radiusSm: 'calc(1rem + 2px)', radiusMd: 'calc(4px - 0px)' } },
+        },
+      }),
+    ).toEqual([]);
+    expect(
+      validateThemeDefinition({
+        version: 1,
+        name: 'nested',
+        modes: {
+          light: { appearance: { radiusSm: 'calc(1rem - var(--x))', radiusMd: 'calc(4px - 0)' } },
+        },
+      }),
+    ).toEqual([
+      'Invalid appearance value for radiusSm: calc(1rem - var(--x))',
+      'Invalid appearance value for radiusMd: calc(4px - 0)',
+    ]);
+  });
+
   it('sanitizes malformed legacy colors without weakening definition validation', () => {
     const legacyTheme = fromLegacyTheme(
       {

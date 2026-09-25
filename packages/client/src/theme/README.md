@@ -26,8 +26,16 @@ const compactTheme: ThemeDefinition = {
 <ThemeProvider themeDefinition={compactTheme}>{children}</ThemeProvider>;
 ```
 
-The initial appearance registry intentionally covers only shared control shape, surface shape,
-control height, compact/normal spacing, UI typography, surface elevation, and fast/normal motion.
+The appearance registry covers shared control shape, surface shape, control height, compact/normal
+spacing, UI and code typography, surface elevation, fast/normal motion, and the radius scale.
+
+In the LibreChat app the plain Tailwind utilities read theme-owned properties, so a theme reshapes
+existing call sites without a migration: `rounded-sm` through `rounded-3xl` read `radiusSm`
+through `radius3xl` (`--theme-radius-*`), `font-sans` reads `fontFamily` (`--theme-font-family`),
+and `font-mono` reads `monoFontFamily` (`--theme-mono-font-family`). The defaults reproduce the
+scale those utilities had before, so a theme that names none of them changes nothing. The mapping lives in the app stylesheet
+(`client/src/style.css`), not the published `theme.css`, whose preset keeps its own `rounded-sm`.
+
 `themeRGB`, `REACT_APP_THEME_*`, and the existing localStorage keys remain supported through legacy
 adapters. Theme application removes only variables owned by the theme module when a theme is reset.
 

@@ -4,7 +4,7 @@ import applyTheme, {
   clearAppliedTheme,
   themeOwnedProperties,
 } from './applyTheme';
-import { highContrastTheme, resolveTheme } from '../registry';
+import { defaultAppearance, highContrastTheme, resolveTheme } from '../registry';
 import { defaultTheme } from '../themes/default';
 
 const semanticProperties = [
@@ -135,6 +135,48 @@ describe('applyTheme', () => {
     expect(root.style.getPropertyValue('--theme-control-radius')).toBe('0.25rem');
     expect(root.style.getPropertyValue('--theme-surface-radius')).toBe('0.5rem');
     expect(root.style.getPropertyValue('--theme-motion-fast')).toBe('80ms');
+  });
+
+  /** The plain `rounded-*`, `font-sans` and `font-mono` utilities read these properties, so a
+   *  theme reaches every call site only if the adapter writes them and a reset removes them. */
+  it('applies and clears the radius scale and the mono family', () => {
+    const root = document.documentElement;
+    const scale = {
+      radiusSm: ['--theme-radius-sm', '0px'],
+      radiusMd: ['--theme-radius-md', '0.125rem'],
+      radiusLg: ['--theme-radius-lg', '0.25rem'],
+      radiusXl: ['--theme-radius-xl', '0.5rem'],
+      radius2xl: ['--theme-radius-2xl', '0.75rem'],
+      radius3xl: ['--theme-radius-3xl', '1rem'],
+      monoFontFamily: ['--theme-mono-font-family', 'Inconsolata, monospace'],
+    } as const;
+    const appearance = Object.fromEntries(
+      Object.entries(scale).map(([key, [, value]]) => [key, value]),
+    );
+
+    applyResolvedTheme(
+      resolveTheme(
+        { version: 1, name: 'shape-reference', modes: { light: { appearance } } },
+        'light',
+      ),
+      root,
+    );
+
+    Object.values(scale).forEach(([property, value]) => {
+      expect(root.style.getPropertyValue(property)).toBe(value);
+      expect(themeOwnedProperties).toContain(property);
+    });
+
+    applyResolvedTheme(resolveTheme({ version: 1, name: 'defaults', modes: {} }, 'light'), root);
+    expect(root.style.getPropertyValue('--theme-radius-lg')).toBe(defaultAppearance.radiusLg);
+    expect(root.style.getPropertyValue('--theme-mono-font-family')).toBe(
+      defaultAppearance.monoFontFamily,
+    );
+
+    clearAppliedTheme(root);
+    Object.values(scale).forEach(([property]) => {
+      expect(root.style.getPropertyValue(property)).toBe('');
+    });
   });
 
   it('applies the resolved high-contrast code surface instead of the stock grey', () => {
