@@ -25,6 +25,8 @@ export interface BackgroundToolWakeupRetireOptions {
   onlyIfUnclaimed?: boolean;
   /** Reconcile only after the delivery is irreversibly dead-lettered. */
   onlyIfDead?: boolean;
+  /** Report success only when this call retired it, not when it was already delivered. */
+  requireTransition?: boolean;
 }
 
 /** Process-local handle for the durable delivery admitted before launch. */
@@ -65,3 +67,54 @@ export interface BackgroundToolDeadClaimRecoveryInput {
 export type BackgroundToolDeadClaimRecovery = (
   input: BackgroundToolDeadClaimRecoveryInput,
 ) => Promise<boolean>;
+
+/** A background tool completion whose result has not reached its conversation yet,
+ * read from the durable delivery store rather than a process-local registry. */
+export interface PendingBackgroundCompletion {
+  taskId: string;
+  toolName: string;
+  dispatchedAt: Date;
+  /** The tool's terminal outcome once it settled; absent while it still runs. */
+  result?: { status: 'completed' | 'error' | 'cancelled'; settledAt: Date };
+  /** An automatic delivery holds the result and is starting its turn. */
+  claimedByWakeup: boolean;
+}
+
+/**
+ * What cancelling an undelivered completion did: `discarded` retired its delivery,
+ * so the result never arrives; `running` found the tool still executing where this
+ * process cannot stop it; `delivering` found the result already being delivered;
+ * `not_pending` found no undelivered completion for the task.
+ */
+export type BackgroundCompletionDiscardOutcome =
+  | 'discarded'
+  | 'running'
+  | 'delivering'
+  | 'not_pending';
+
+/** Durable view and control of one principal's undelivered background completions. */
+export interface PendingBackgroundCompletionControls {
+  /** `complete` is false when more undelivered completions exist than were listed. */
+  list: (input: { userId: string; conversationId: string }) => Promise<{
+    completions: PendingBackgroundCompletion[];
+    /** Completions whose automatic delivery dead-lettered; only a poll recovers them. */
+    dead: PendingBackgroundCompletion[];
+    complete: boolean;
+  }>;
+  /** Subagent tasks whose completion wake-up has not been delivered yet. */
+  listSubagentWakeups: (input: {
+    userId: string;
+    conversationId: string;
+  }) => Promise<{ taskIds: string[]; complete: boolean }>;
+  discard: (input: {
+    userId: string;
+    conversationId: string;
+    taskId: string;
+  }) => Promise<BackgroundCompletionDiscardOutcome>;
+  /** Retires a task's pending delivery after a manual poll claimed its result. */
+  settleClaimed: (input: {
+    userId: string;
+    conversationId: string;
+    taskId: string;
+  }) => Promise<boolean>;
+}

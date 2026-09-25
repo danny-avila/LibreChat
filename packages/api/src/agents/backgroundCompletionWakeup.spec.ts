@@ -4,6 +4,7 @@ import type { CodeApprovalMode } from 'librechat-data-provider';
 import type { EnqueueBackgroundToolCompletion } from './backgroundCompletionWakeup';
 import {
   BACKGROUND_TOOL_WAKEUP_INPUT_MAX_CHARS,
+  createPendingBackgroundCompletions,
   createBackgroundToolCompletionWakeupHandler,
   createBackgroundToolCompletionWakeupResolver,
   createBackgroundToolDeadClaimRecovery,
@@ -889,5 +890,145 @@ describe('background tool completion wakeups', () => {
         retryable: false,
       },
     );
+  });
+});
+
+describe('pending background completions', () => {
+  const dispatchedAt = new Date(NOW - 60_000);
+  const settled = { status: 'completed' as const, settledAt: new Date(NOW) };
+  const row = (overrides = {}) => ({
+    deliveryKey: 'delivery-key-1',
+    taskId: 'task-1',
+    toolCallId: 'call-1',
+    toolName: 'slow_tool',
+    dispatchedAt,
+    claimedByWakeup: false,
+    ...overrides,
+  });
+  const listing = (completions: Array<ReturnType<typeof row>>, truncated = false) =>
+    jest.fn(async () => ({ completions, dead: [row({ taskId: 'task-dead' })], truncated }));
+  const listTaskIds = jest.fn(async () => ({ taskIds: ['child-1'], truncated: false }));
+
+  it('lists the durable view for the owner without delivery internals', async () => {
+    const list = listing([row({ result: settled })], true);
+    const pending = createPendingBackgroundCompletions({ list, listTaskIds, retire: jest.fn() });
+
+    await expect(
+      pending.list({ userId: 'user-1', conversationId: 'conversation-1' }),
+    ).resolves.toEqual({
+      dead: [
+        {
+          taskId: 'task-dead',
+          toolName: 'slow_tool',
+          dispatchedAt,
+          claimedByWakeup: false,
+        },
+      ],
+      completions: [
+        {
+          taskId: 'task-1',
+          toolName: 'slow_tool',
+          dispatchedAt,
+          result: settled,
+          claimedByWakeup: false,
+        },
+      ],
+      complete: false,
+    });
+    expect(list).toHaveBeenCalledWith({
+      user: 'user-1',
+      conversationId: 'conversation-1',
+      sourceId: 'background-tool-completion',
+    });
+  });
+
+  it('discards a settled, unclaimed result by looking up that task and retiring it exactly', async () => {
+    const retire = jest.fn(async () => true);
+    const list = listing([row({ result: settled })]);
+    const pending = createPendingBackgroundCompletions({ list, listTaskIds, retire });
+
+    await expect(
+      pending.discard({ userId: 'user-1', conversationId: 'conversation-1', taskId: 'task-1' }),
+    ).resolves.toBe('discarded');
+    expect(list).toHaveBeenCalledWith({
+      user: 'user-1',
+      conversationId: 'conversation-1',
+      sourceId: 'background-tool-completion',
+      taskId: 'task-1',
+    });
+    expect(retire).toHaveBeenCalledWith(
+      'delivery-key-1',
+      'background-tool-completion',
+      'background result discarded by its owner',
+      { onlyIfUnclaimed: true, requireTransition: true },
+    );
+  });
+
+  it("retires a manually claimed task's delivery only while no wake-up holds it", async () => {
+    const retire = jest.fn(async () => true);
+    const pending = createPendingBackgroundCompletions({
+      list: listing([row({ result: settled })]),
+      listTaskIds,
+      retire,
+    });
+
+    await expect(
+      pending.settleClaimed({
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        taskId: 'task-1',
+      }),
+    ).resolves.toBe(true);
+    expect(retire).toHaveBeenCalledWith(
+      'delivery-key-1',
+      'background-tool-completion',
+      'completion claimed by manual poll',
+      { onlyIfUnclaimed: true },
+    );
+    await expect(
+      createPendingBackgroundCompletions({ list: listing([]), listTaskIds, retire }).settleClaimed({
+        userId: 'user-1',
+        conversationId: 'conversation-1',
+        taskId: 'task-1',
+      }),
+    ).resolves.toBe(false);
+  });
+
+  it('lists undelivered subagent wake-ups from their own source', async () => {
+    const pending = createPendingBackgroundCompletions({
+      list: listing([]),
+      listTaskIds,
+      retire: jest.fn(),
+    });
+
+    await expect(
+      pending.listSubagentWakeups({ userId: 'user-1', conversationId: 'conversation-1' }),
+    ).resolves.toEqual({ taskIds: ['child-1'], complete: true });
+    expect(listTaskIds).toHaveBeenCalledWith({
+      user: 'user-1',
+      conversationId: 'conversation-1',
+      sourceId: 'subagent-completion',
+    });
+  });
+
+  it.each([
+    ['not_pending', [], true],
+    ['running', [row()], true],
+    ['delivering', [row({ result: settled, claimedByWakeup: true })], true],
+    ['delivering', [row({ result: settled })], false],
+  ])('reports %s without discarding what it cannot', async (outcome, rows, retired) => {
+    const retire = jest.fn(async () => retired);
+    const pending = createPendingBackgroundCompletions({
+      list: listing(rows),
+      listTaskIds,
+      retire,
+    });
+
+    await expect(
+      pending.discard({ userId: 'user-1', conversationId: 'conversation-1', taskId: 'task-1' }),
+    ).resolves.toBe(outcome);
+    if (outcome !== 'delivering' || rows[0]?.claimedByWakeup === true) {
+      expect(retire).not.toHaveBeenCalled();
+    }
   });
 });

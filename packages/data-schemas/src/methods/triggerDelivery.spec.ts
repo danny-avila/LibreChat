@@ -795,6 +795,252 @@ describe('agent trigger delivery methods', () => {
     });
   });
 
+  describe('listPendingAgentBackgroundToolCompletions', () => {
+    const background = { id: 'background-tool-completion', type: 'internal' };
+    const completion = (
+      user: mongoose.Types.ObjectId,
+      taskId: string,
+      overrides: Partial<Parameters<typeof enqueueInput>[0]> = {},
+    ) =>
+      methods.enqueueAgentTriggerDelivery(
+        enqueueInput({
+          user,
+          orderingKey: `background-lane-${taskId}`,
+          envelope: {
+            event: {
+              source: background,
+              payload: { taskId, toolCallId: `call-${taskId}`, toolName: 'slow_task' },
+            },
+            target: { conversationId: 'conversation-1' },
+          },
+          requiredWorkerCapability:
+            AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
+          ...overrides,
+        }),
+      );
+
+    it('lists what is still going to arrive, running or settled, without result content', async () => {
+      const user = new mongoose.Types.ObjectId();
+      const running = await completion(user, 'task-running');
+      const settled = await completion(user, 'task-settled');
+      await methods.persistAgentBackgroundToolResult({
+        deliveryKey: settled.delivery.deliveryKey,
+        sourceId: background.id,
+        result: { status: 'completed', output: 'secret output', settledAt: START },
+      });
+
+      const pending = await methods.listPendingAgentBackgroundToolCompletions({
+        user,
+        conversationId: 'conversation-1',
+        sourceId: background.id,
+      });
+
+      expect(pending.truncated).toBe(false);
+      expect(pending.completions).toEqual([
+        {
+          deliveryKey: running.delivery.deliveryKey,
+          taskId: 'task-running',
+          toolCallId: 'call-task-running',
+          toolName: 'slow_task',
+          dispatchedAt: expect.any(Date),
+          claimedByWakeup: false,
+        },
+        {
+          deliveryKey: settled.delivery.deliveryKey,
+          taskId: 'task-settled',
+          toolCallId: 'call-task-settled',
+          toolName: 'slow_task',
+          dispatchedAt: expect.any(Date),
+          result: { status: 'completed', settledAt: START },
+          claimedByWakeup: false,
+        },
+      ]);
+      expect(JSON.stringify(pending)).not.toContain('secret output');
+    });
+
+    it('excludes delivered rows and everything outside the conversation, user, and source', async () => {
+      const user = new mongoose.Types.ObjectId();
+      const delivered = await completion(user, 'task-delivered');
+      await Delivery.updateOne({ _id: delivered.delivery.id }, { $set: { status: 'succeeded' } });
+      await completion(new mongoose.Types.ObjectId(), 'task-other-user');
+      await completion(user, 'task-other-conversation', {
+        envelope: {
+          event: {
+            source: background,
+            payload: {
+              taskId: 'task-other-conversation',
+              toolCallId: 'call',
+              toolName: 'slow_task',
+            },
+          },
+          target: { conversationId: 'conversation-2' },
+        },
+      });
+      await completion(user, 'task-other-source', {
+        envelope: {
+          event: {
+            source: { id: 'agent-queued-turn', type: 'internal' },
+            payload: { taskId: 'task-other-source', toolCallId: 'call', toolName: 'slow_task' },
+          },
+          target: { conversationId: 'conversation-1' },
+        },
+      });
+      const waiting = await completion(user, 'task-waiting');
+
+      const pending = await methods.listPendingAgentBackgroundToolCompletions({
+        user,
+        conversationId: 'conversation-1',
+        sourceId: background.id,
+      });
+
+      expect(pending.completions.map((entry) => entry.deliveryKey)).toEqual([
+        waiting.delivery.deliveryKey,
+      ]);
+    });
+
+    it('looks up one task and reports a truncated listing', async () => {
+      const user = new mongoose.Types.ObjectId();
+      await completion(user, 'task-first');
+      const second = await completion(user, 'task-second');
+
+      const one = await methods.listPendingAgentBackgroundToolCompletions({
+        user,
+        conversationId: 'conversation-1',
+        sourceId: background.id,
+        taskId: 'task-second',
+      });
+      expect(one).toEqual({
+        completions: [expect.objectContaining({ deliveryKey: second.delivery.deliveryKey })],
+        dead: [],
+        truncated: false,
+      });
+
+      const page = await methods.listPendingAgentBackgroundToolCompletions({
+        user,
+        conversationId: 'conversation-1',
+        sourceId: background.id,
+        limit: 1,
+      });
+      expect(page.completions.map((entry) => entry.taskId)).toEqual(['task-first']);
+      expect(page.truncated).toBe(true);
+    });
+
+    it('omits legacy rows whose results live only on the parent message', async () => {
+      const user = new mongoose.Types.ObjectId();
+      await completion(user, 'task-legacy', {
+        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+      });
+
+      const pending = await methods.listPendingAgentBackgroundToolCompletions({
+        user,
+        conversationId: 'conversation-1',
+        sourceId: background.id,
+      });
+
+      expect(pending.completions).toEqual([]);
+    });
+
+    it('reports dead-lettered tasks apart from pending ones', async () => {
+      const user = new mongoose.Types.ObjectId();
+      const dead = await completion(user, 'task-dead');
+      await Delivery.updateOne(
+        { _id: dead.delivery.id },
+        { $set: { status: 'leased', capabilityStatus: 'dead' } },
+      );
+      const deadLetter = await completion(user, 'task-dead-letter');
+      await Delivery.updateOne({ _id: deadLetter.delivery.id }, { $set: { status: 'dead' } });
+
+      const pending = await methods.listPendingAgentBackgroundToolCompletions({
+        user,
+        conversationId: 'conversation-1',
+        sourceId: background.id,
+      });
+
+      expect(pending.completions).toEqual([]);
+      expect(pending.dead.map(({ taskId }) => taskId).sort()).toEqual([
+        'task-dead',
+        'task-dead-letter',
+      ]);
+      expect(pending.dead[0]).toEqual(
+        expect.objectContaining({ toolName: 'slow_task', dispatchedAt: expect.any(Date) }),
+      );
+    });
+
+    it("lists a conversation's undelivered task ids for one source", async () => {
+      const user = new mongoose.Types.ObjectId();
+      const subagent = { id: 'subagent-completion', type: 'internal' };
+      await completion(user, 'child-waiting', {
+        envelope: {
+          event: { source: subagent, payload: { taskId: 'child-waiting' } },
+          target: { conversationId: 'conversation-1' },
+        },
+      });
+      const delivered = await completion(user, 'child-delivered', {
+        envelope: {
+          event: { source: subagent, payload: { taskId: 'child-delivered' } },
+          target: { conversationId: 'conversation-1' },
+        },
+      });
+      await Delivery.updateOne({ _id: delivered.delivery.id }, { $set: { status: 'succeeded' } });
+
+      await expect(
+        methods.listUndeliveredAgentTriggerTaskIds({
+          user,
+          conversationId: 'conversation-1',
+          sourceId: subagent.id,
+        }),
+      ).resolves.toEqual({ taskIds: ['child-waiting'], truncated: false });
+    });
+
+    it('distinguishes retiring a completion from finding it already delivered', async () => {
+      const user = new mongoose.Types.ObjectId();
+      const delivered = await completion(user, 'task-already-delivered');
+      await Delivery.updateOne({ _id: delivered.delivery.id }, { $set: { status: 'succeeded' } });
+      const retire = (requireTransition?: true) =>
+        methods.retireAgentTriggerDelivery({
+          deliveryKey: delivered.delivery.deliveryKey,
+          sourceId: background.id,
+          settledAt: START,
+          reason: 'background result discarded by its owner',
+          onlyIfUnclaimed: true,
+          ...(requireTransition != null && { requireTransition }),
+        });
+
+      await expect(retire()).resolves.toBe(true);
+      await expect(retire(true)).resolves.toBe(false);
+
+      const waiting = await completion(user, 'task-still-waiting');
+      await expect(
+        methods.retireAgentTriggerDelivery({
+          deliveryKey: waiting.delivery.deliveryKey,
+          sourceId: background.id,
+          settledAt: START,
+          reason: 'background result discarded by its owner',
+          onlyIfUnclaimed: true,
+          requireTransition: true,
+        }),
+      ).resolves.toBe(true);
+    });
+
+    it('refuses a malformed lookup', async () => {
+      await expect(
+        methods.listPendingAgentBackgroundToolCompletions({
+          user: new mongoose.Types.ObjectId(),
+          conversationId: '',
+          sourceId: background.id,
+        }),
+      ).rejects.toThrow(TypeError);
+      await expect(
+        methods.listPendingAgentBackgroundToolCompletions({
+          user: new mongoose.Types.ObjectId(),
+          conversationId: 'conversation-1',
+          sourceId: background.id,
+          limit: 0,
+        }),
+      ).rejects.toThrow(TypeError);
+    });
+  });
+
   it('persists one private background result receipt independently of message rows', async () => {
     const source = { id: 'background-tool-completion', type: 'internal' };
     const queued = await methods.enqueueAgentTriggerDelivery(

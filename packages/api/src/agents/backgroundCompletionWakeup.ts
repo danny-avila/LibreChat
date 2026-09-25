@@ -10,9 +10,11 @@ import type {
 } from '@librechat/data-schemas';
 import type {
   BackgroundToolDeadClaimRecovery,
+  PendingBackgroundCompletion,
   BackgroundToolWakeupAdmission,
   BackgroundToolWakeupRegistration,
   BackgroundToolWakeupRetireOptions,
+  PendingBackgroundCompletionControls,
 } from './backgroundCompletion';
 import type {
   AgentTriggerContinuePreparation,
@@ -23,6 +25,7 @@ import type { AgentTriggerDispatchContext } from './triggers/dispatch';
 import type { AgentTriggerEnqueueOptions } from './triggers/delivery';
 import { WAITING_RETRY_CAP_MS, waitingRetryAfter } from './triggers/backoff';
 import { BACKGROUND_TOOL_PRODUCER_LEASE_MS } from './backgroundCompletion';
+import { SUBAGENT_COMPLETION_SOURCE } from './subagentCompletionWakeup';
 import { createAgentTriggerEnvelope } from './triggers/envelope';
 import { AgentTriggerExecutionError } from './triggers/host';
 import { truncateMiddle } from '~/utils';
@@ -541,6 +544,102 @@ export function createBackgroundToolCompletionWakeupResolver({
       retryAfter: waitingRetry(envelope.receivedAt),
       deferWithoutAttempt: true,
     });
+  };
+}
+
+/** Lists and discards a conversation's undelivered background completions from the
+ * durable delivery store, which outlives the process-local task registry: a result
+ * dispatched in an earlier turn, on another replica, or before a restart is still
+ * going to arrive, and the owner must be able to see and stop that. */
+export function createPendingBackgroundCompletions(deps: {
+  list: (input: {
+    user: string;
+    conversationId: string;
+    sourceId: string;
+    taskId?: string;
+  }) => Promise<{
+    completions: Array<PendingBackgroundCompletion & { deliveryKey: string }>;
+    dead: Array<PendingBackgroundCompletion & { deliveryKey: string }>;
+    truncated: boolean;
+  }>;
+  listTaskIds: (input: {
+    user: string;
+    conversationId: string;
+    sourceId: string;
+  }) => Promise<{ taskIds: string[]; truncated: boolean }>;
+  retire: RetireBackgroundToolCompletion;
+}): PendingBackgroundCompletionControls {
+  const read = (input: { userId: string; conversationId: string; taskId?: string }) =>
+    deps.list({
+      user: input.userId,
+      conversationId: input.conversationId,
+      sourceId: BACKGROUND_TOOL_COMPLETION_SOURCE,
+      ...(input.taskId != null && { taskId: input.taskId }),
+    });
+  return {
+    list: async (input) => {
+      const { completions, dead, truncated } = await read(input);
+      const project = ({
+        taskId,
+        toolName,
+        dispatchedAt,
+        result,
+        claimedByWakeup,
+      }: PendingBackgroundCompletion): PendingBackgroundCompletion => ({
+        taskId,
+        toolName,
+        dispatchedAt,
+        ...(result != null && { result }),
+        claimedByWakeup,
+      });
+      return {
+        completions: completions.map(project),
+        dead: dead.map(project),
+        complete: !truncated,
+      };
+    },
+    discard: async (input) => {
+      const [completion] = (await read(input)).completions;
+      if (completion == null) {
+        return 'not_pending';
+      }
+      if (completion.result == null) {
+        return 'running';
+      }
+      if (completion.claimedByWakeup) {
+        return 'delivering';
+      }
+      /** Unclaimed-only: once a resolver owns the delivery its continuation can no
+       * longer be withdrawn, so that race, including one it already finished,
+       * reports as delivering rather than discarded. */
+      const retired = await deps.retire(
+        completion.deliveryKey,
+        BACKGROUND_TOOL_COMPLETION_SOURCE,
+        'background result discarded by its owner',
+        { onlyIfUnclaimed: true, requireTransition: true },
+      );
+      return retired ? 'discarded' : 'delivering';
+    },
+    listSubagentWakeups: async (input) => {
+      const { taskIds, truncated } = await deps.listTaskIds({
+        user: input.userId,
+        conversationId: input.conversationId,
+        sourceId: SUBAGENT_COMPLETION_SOURCE,
+      });
+      return { taskIds, complete: !truncated };
+    },
+    settleClaimed: async (input) => {
+      const [completion] = (await read(input)).completions;
+      if (completion == null) {
+        return false;
+      }
+      return deps.retire(
+        completion.deliveryKey,
+        BACKGROUND_TOOL_COMPLETION_SOURCE,
+        'completion claimed by manual poll',
+        { onlyIfUnclaimed: true },
+      );
+    },
   };
 }
 

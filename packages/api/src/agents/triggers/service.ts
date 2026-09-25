@@ -213,7 +213,7 @@ export interface AgentTriggerService {
     deliveryKey: string,
     sourceId: string,
     reason: string,
-    options?: { onlyIfUnclaimed?: boolean; onlyIfDead?: boolean },
+    options?: { onlyIfUnclaimed?: boolean; onlyIfDead?: boolean; requireTransition?: boolean },
   ) => Promise<boolean>;
   renewProducerLease: (deliveryKey: string, sourceId: string, leaseUntil: Date) => Promise<boolean>;
   persistBackgroundToolResult: (input: {
@@ -770,6 +770,7 @@ export function createAgentTriggerService(deps: AgentTriggerServiceDeps = {}): A
                 settledAt: new Date(),
                 ...(options?.onlyIfUnclaimed === true ? { onlyIfUnclaimed: true } : {}),
                 ...(options?.onlyIfDead === true ? { onlyIfDead: true } : {}),
+                ...(options?.requireTransition === true ? { requireTransition: true } : {}),
               },
               recovery,
             ),
