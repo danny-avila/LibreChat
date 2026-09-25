@@ -2,7 +2,7 @@
 # https://www.librechat.ai/docs/configuration/librechat_yaml
 
 # Configuration version (required)
-version: 1.3.14
+version: 1.3.17
 
 # Cache settings: Set to true to enable caching
 cache: true
@@ -11,6 +11,49 @@ cache: true
 # That flow verifies the credentials and stores the secret key encrypted; do not
 # place a plaintext langfuse.secretKey in this file. Environment-managed central
 # credentials and optional fanout routing are documented in .env.example.
+#
+# Self-hosted Langfuse behind an authenticating proxy or gateway can be given
+# custom request headers. They are sent on every outbound Langfuse request —
+# trace and media export, feedback scores, and credential verification.
+# Values support ${ENV_VAR} interpolation; a header whose variable is unset is
+# dropped with a warning rather than sent as a literal placeholder.
+#
+# These are deployment-level: trace export batches spans from every user through
+# a single exporter, so unlike endpoints.custom headers they cannot carry
+# per-user placeholders such as {{LIBRECHAT_USER_ID}}.
+#
+# Values are masked in admin config reads and in the startup config log, but
+# prefer ${ENV_VAR} references over literal credentials here regardless.
+#
+# Scope: these are sent only when the deployment configures exactly ONE Langfuse
+# origin (a self-hosted base URL, or a single tenant destination URL), and only
+# to that origin. The map has no way to say which endpoint it authenticates to,
+# so a deployment configuring several origins — e.g. a fanout collector plus a
+# separate central host — gets a warning and no headers, rather than having a
+# gateway credential sent somewhere it was not meant for.
+#
+# Fanout deployments additionally need collector support: the gateway forwards
+# only Authorization upstream, so a tenant Langfuse behind its own proxy is not
+# covered even when the collector receives these.
+#
+# Traces carry the internal user id as the Langfuse userId and no user or
+# request metadata unless langfuse.trace opts in. userIdField picks the user
+# field that becomes the trace userId (id, email, username, name, openidId,
+# samlId, ldapId, googleId, githubId, discordId, appleId, facebookId); a user
+# without a value for that field keeps the internal id. The two allowlists copy
+# fields into trace metadata as librechat.user.<field> (the userId fields plus
+# role and provider) and librechat.conversation.id, librechat.endpoint,
+# librechat.endpoint.type, librechat.provider, librechat.model,
+# librechat.model.label, librechat.spec.
+#
+# langfuse:
+#   headers:
+#     CF-Access-Client-Id: "${CF_ACCESS_CLIENT_ID}"
+#     CF-Access-Client-Secret: "${CF_ACCESS_CLIENT_SECRET}"
+#   trace:
+#     userIdField: email
+#     userMetadataFields: [email, username, role, provider]
+#     conversationMetadataFields: [conversationId, endpoint, model, modelLabel, spec]
 
 # File storage configuration
 # Single strategy for all file types (legacy format, still supported)
@@ -100,6 +143,8 @@ cache: true
 # Custom interface configuration
 interface:
   customWelcome: 'Welcome to LibreChat! Enjoy your experience.'
+  # Minimum interval between syntax-highlighting passes while streamed code changes (default: 300 ms)
+  # codeHighlightThrottleMs: 300
   # Enable/disable file search as a chatarea selection (default: true)
   # Note: This setting does not disable the Agents File Search Capability.
   # To disable the Agents Capability, see the Agents Endpoint configuration instead.
@@ -167,6 +212,34 @@ interface:
     create: true
     share: false
     public: false
+  # Scheduled chats are experimental and disabled unless explicitly enabled.
+  # A deployment with Redis-backed resumable streams can run this on every replica.
+  # A single-process deployment without Redis must also set
+  # `SCHEDULES_SINGLE_PROCESS=true`; unsafe multi-replica writes fail closed.
+  # Scheduled agents that can pause require both `USE_REDIS_STREAMS=true` for
+  # shared action state and a durable shared checkpointer for graph continuation.
+  # MongoDB is currently the built-in durable checkpointer (and the default).
+  # schedules:
+  #   use: true
+  #   create: true
+  #   maxPerUser: 10
+  #   minIntervalMinutes: 60
+  #   autoDisableAfterFailures: 5
+  #   # Maximum occurrences concurrently passing readiness admission per replica (1-100).
+  #   admissionConcurrency: 20
+  #   fireConcurrency: 5
+  #   # Maximum MCP readiness connections opened at once by one schedule admission (1-10).
+  #   mcpPreflightConcurrency: 3
+  #   # Maximum wall-clock time for one MCP readiness admission (1000-600000 ms).
+  #   mcpPreflightTimeoutMs: 300000
+  #   # Require every schedule to be filed under a chat project. Enforced on
+  #   # create/update AND at each fire, so turning it on stops (auto-disables)
+  #   # schedules that predate it rather than letting their runs land loose.
+  #   requireProject: false
+  #   # Pin every scheduled run to ONE chat project, ignoring the user's choice.
+  #   # Implies `requireProject`. Chat projects are user-owned, so a value set here
+  #   # only makes sense as a per-user or per-role config override.
+  #   # projectId: '000000000000000000000000'
   peoplePicker:
     users: true
     groups: true
@@ -174,6 +247,34 @@ interface:
   marketplace:
     use: false
   fileCitations: true
+  # Show the thumbs up/thumbs down feedback buttons on responses (default: true)
+  feedback: true
+  # Conversation trace viewer: a waterfall of the model calls and tool spans behind
+  # each response, read from the deployment's Langfuse project. The control only
+  # appears on the requesting user's own conversations with a sampled trace, and
+  # needs a Langfuse release that serves the v2 Observations API.
+  # traceViewer:
+  #   enabled: false
+  #   # Traces are matched to users by the internal user id, so no trace is shown while
+  #   # langfuse.trace.userIdField exports another user field.
+  #   # Return observation input, output and metadata in the record inspector. Input
+  #   # carries system prompts, agent instructions and tool definitions, which a
+  #   # user chatting with a shared agent cannot otherwise see.
+  #   showInputOutput: false
+  #   # Name the tools of each tool round from the round's own record. This adds
+  #   # requests to Langfuse per listed page, and Langfuse returns each round's full
+  #   # input and output to serve them, though only the tool names are kept and sent
+  #   # on; arguments and results stay behind showInputOutput. When off, a round is
+  #   # named only where the conversation's messages can be matched to the trace.
+  #   showToolNames: false
+  #   # Observations read per request (1-10000); older records load on demand.
+  #   maxRecords: 1000
+  #   # Characters kept from each input, output and metadata value (1-1000000).
+  #   maxContentLength: 50000
+  #   # Trace reads one user may start per minute (1-1000).
+  #   requestsPerMinute: 30
+  #   # Budget for each request to Langfuse, in milliseconds (1000-300000).
+  #   requestTimeoutMs: 10000
   # Tools pinned to the prompt bar by default for all users.
   # Only seeds the initial state — once a user pins/unpins a tool, their choice is kept.
   # Valid tool keys: artifacts, execute_code, web_search, file_search, skills.
@@ -199,6 +300,9 @@ interface:
   #   public: true # Allows users to toggle "share with everyone" for their links. Whether anonymous access is permitted is controlled by ALLOW_SHARED_LINKS_PUBLIC.
   #   snapshotFiles: true # Snapshot files referenced by a shared chat so viewers can preview/download them via the link. Enabled by default; the SHARED_LINKS_SNAPSHOT_FILES env var overrides this.
   # mcpServers:
+  #   # Poll only while MCP controls are visible, in milliseconds (0 disables polling).
+  #   toolsRefreshInterval: 300000
+  #   statusRefreshInterval: 30000
   # Controls user permissions for MCP (Model Context Protocol) server management
   # - use: Allow users to use configured MCP servers
   # - create: Allow users to create and manage new MCP servers
@@ -219,6 +323,10 @@ interface:
 
   # Temporary chat retention period in hours (default: 720, min: 1, max: 8760)
   # temporaryChatRetention: 1
+  # Regular chat retention in hours under retentionMode: "all" (min: 1, max: 8760).
+  # Defaults to the temporary chat retention policy when omitted.
+  # generalChatRetention: 2160 # 90 days, independently of temporary chats
+  # Existing stored deadlines are not migrated when these settings change.
   # Retention mode: "all" applies expiry to all data types, "temporary" (default) only to temporary chats
   # Before switching from "all" back to "temporary", remove retention deadlines from non-temporary data
   # that should stop expiring:
@@ -244,6 +352,12 @@ registration:
   socialLogins: ['github', 'google', 'discord', 'openid', 'facebook', 'apple', 'saml']
   # allowedDomains:
   # - "gmail.com"
+  # How long a started social login may take to return from the provider (ms, default 600000)
+  # oauthStateTtlMs: 600000
+  # OpenID discovery retries when the provider is unreachable (overrides OPENID_DISCOVERY_RETRY_* env vars)
+  # openidDiscovery:
+  #   startupAttempts: 1   # attempts before startup continues; 0 = background retries only
+  #   retryDelayMs: 5000   # delay between startup and background attempts
 
 # Example Balance settings
 # balance:
@@ -253,6 +367,7 @@ registration:
 #   refillIntervalValue: 30
 #   refillIntervalUnit: 'days'
 #   refillAmount: 10000
+#   reservationTtlMs: 1800000  # How long an in-flight request's reserved credits count if never released
 
 # Example Transactions settings
 # Controls whether to save transaction records to the database
@@ -311,6 +426,10 @@ registration:
 #     - '127.0.0.1:8080'
 
 # rateLimits:
+#   # Authenticated agent-event admission has its own API-key-principal bucket.
+#   agentEvents:
+#     userMax: 40
+#     userWindowInMinutes: 1
 #   fileUploads:
 #     ipMax: 100
 #     ipWindowInMinutes: 60  # Rate limit window for file uploads per IP
@@ -403,6 +522,33 @@ actions:
 #     url: http://localhost:3001/sse
 #     # proxy: "${MCP_PROXY_URL}"  # optional outbound proxy (http/https/socks/socks5)
 #     timeout: 60000  # 1 minute timeout for this server, this is the default timeout for MCP servers.
+#   coordinated-oauth:
+#     type: streamable-http
+#     url: https://mcp.example.com/mcp
+#     requiresOAuth: true
+#     # Stage rollout with coordination disabled (the default). Once EVERY replica is upgraded,
+#     # pause MCP traffic and drain active refreshes/callbacks on EVERY replica before changing
+#     # this flag. Apply the same value everywhere while paused, then resume. For rollback, drain,
+#     # disable everywhere, replace the replicas, then resume. Do not toggle during live traffic.
+#     # All coordinated replicas must use the same Redis cache.
+#     oauthRefreshCoordination: false
+#     # Peer refresh wait; capped at 30000 ms by the refresh execution budget.
+#     oauthRefreshWaitTimeout: 15000
+#     # Callback/adoption persistence wait; raise for longer publication budgets (max 840000 ms).
+#     oauthPersistenceWaitTimeout: 15000
+#   private-openid:
+#     type: streamable-http
+#     url: https://mcp.example.com/mcp
+#     headers:
+#       # Trusted operator configs automatically use the live session token and replace the
+#       # connection once after a 401/403. A rejected tools/call is never replayed automatically.
+#       # Enabled oauth or obo configuration takes precedence over this passthrough mode.
+#       Authorization: "Bearer {{LIBRECHAT_OPENID_ACCESS_TOKEN}}"
+#     # Sent only during a chat turn, merged over `headers` (these win on a duplicate name).
+#     # Tool discovery has no conversation to resolve them against, so it omits them entirely:
+#     # a `{{LIBRECHAT_BODY_*}}` placeholder here no longer hides the server's tool list.
+#     requestHeaders:
+#       X-Conversation-Id: "{{LIBRECHAT_BODY_CONVERSATIONID}}"
 #   puppeteer:
 #     type: stdio
 #     command: npx
@@ -441,8 +587,15 @@ endpoints:
   #   # (optional) Assistant Capabilities available to all users. Omit the ones you wish to exclude. Defaults to list below.
   #   capabilities: ["code_interpreter", "retrieval", "actions", "tools", "image_vision"]
   # agents:
+  #   # Maximum provider response-body inactivity for Agent model calls. Defaults to 15 minutes;
+  #   # each received chunk resets the timer. Set to 0 to disable the idle timeout.
+  #   modelResponseBodyTimeoutMs: 900000
+  #   # Maximum wait for provider response headers. Defaults to 5 minutes; 0 disables.
+  #   modelResponseHeadersTimeoutMs: 300000
   #   # (optional) Default recursion depth for agents, defaults to 25
   #   recursionLimit: 50
+  #   # Maximum provider error characters retained without content protection (0 hides detail).
+  #   maxProviderErrorChars: 2000
   #   # (optional) Max recursion depth for agents, defaults to 25
   #   maxRecursionLimit: 100
   #   # (optional) Abort a run once a single streamed tool call's arguments exceed this many bytes.
@@ -494,6 +647,22 @@ endpoints:
   #   # (optional) Minimum relevance score for sources to be included in responses, defaults to 0.45 (45% relevance threshold)
   #   # Set to 0.0 to show all sources (no filtering), or higher like 0.7 for stricter filtering
   #   minRelevanceScore: 0.45
+  #   # (optional) Maximum explicit subagents per agent, for both the flat list and
+  #   # graph definitions. Defaults to 10; hard cap 50.
+  #   maxSubagents: 20
+  #   # (optional) Shared files during an active agent run. Each delegating agent must
+  #   # also opt in with subagents.shareFiles. Inputs are read-only; outputs stay
+  #   # private until explicitly published. Published files remain downloadable.
+  #   fileSharing:
+  #     enabled: false
+  #     allowSiblingSharing: false # permit explicitly named sibling/descendant recipients
+  #     maxFiles: 100 # manifest capacity, 1–1000
+  #     maxPrivateBytes: 268435456 # aggregate private output snapshots, 256 MiB
+  #     ttlMs: 3600000 # active manifest lifetime, at most 24 hours
+  #   # (optional) Maximum concurrent Code API uploads per route and user. Defaults to 3.
+  #   codeApiUploadConcurrency: 3
+  #   # (optional) Maximum total time spent waiting on Code API rate limits. Defaults to 20000 ms.
+  #   codeApiMaxRetryWaitMs: 20000
   #   # (optional) Cap the number of active accessible skills shown in the model-visible catalog.
   #   # Useful for large organizations where many department-specific skills may be available.
   #   skills:
@@ -505,7 +674,76 @@ endpoints:
   #   # "stateful_code_sessions" is highly experimental and may change substantially.
   #   # (optional) Limit the workspace scopes users may select. Omit to allow all three.
   #   statefulCodeSessions:
+  #     # Keep move-only behavior unless attach/detach is explicitly enabled.
+  #     # Enable only after ALL API replicas run this build and advertise decision protocol 1
+  #     # (CODE_ENVIRONMENT_DECISION_VERSION=1), then refresh clients.
+  #     conversationMoves:
+  #       enabled: true
+  #       allowAttachDetach: false
   #     allowedEnvironments: ["user", "agent-user", "conversation"]
+  #     # Personal BYOM enrollment. Requires allowPrincipalWorkers on a control plane.
+  #     # Omitted values default to enabled and five registered environments per user.
+  #     # Principal config overrides may tighten, but cannot raise, this ceiling.
+  #     # Lowering the limit, or disabling enrollment, does not revoke existing machines.
+  #     # This counts registered environments across control planes, not online workers.
+  #     principalWorkers:
+  #       enabled: true
+  #       maxPerUser: 25
+  #     # Route an agent to an operator-managed Code API or to a Code API whose
+  #     # `remote-bridge` backend leases work to an outbound @librechat/code worker.
+  #     environments:
+  #       - id: managed-default
+  #         name: Managed Code API
+  #         type: managed
+  #         baseURL: https://code.example.com/v1
+  #         default: true
+  #       - id: engineering-vm
+  #         name: Engineering VM
+  #         type: attached
+  #         baseURL: https://code-bridge.example.com/v1
+  #         # Pins an administrator-managed environment to one worker.
+  #         owner: deployment
+  #         pairing:
+  #           workerId: engineering-vm
+  #           tokenEnv: CODE_BRIDGE_ADMIN_TOKEN
+  #       - id: personal-workers
+  #         name: Personal Code Workers
+  #         type: attached
+  #         baseURL: https://code-bridge.example.com/v1
+  #         # Lets authenticated users create principal-bound environments and
+  #         # receive a one-time code for an outbound @librechat/code worker.
+  #         # The administrator secret stays in the named environment variable.
+  #         owner: deployment
+  #         # Optionally expose only these bounded preferences to environment owners.
+  #         configSchema:
+  #           limits:
+  #             # Maximum Bash execution budget the model may request per call.
+  #             # Omit to preserve the historical 30-second limit. Hard cap: 300000.
+  #             maxCommandTimeoutMs: 120000
+  #           permissions:
+  #             fileWrite:
+  #               allowed: [allow, ask, deny]
+  #               default: ask
+  #             commandExecution:
+  #               # Add allow to offer Full access in the chat composer. Both
+  #               # permission categories must permit allow; defaults can stay ask.
+  #               # Full access skips routine code prompts within the worker sandbox.
+  #               # Explicit endpoint ask/deny rules and hooks still apply.
+  #               allowed: [ask, deny]
+  #               default: ask
+  #         pairing:
+  #           allowPrincipalWorkers: true
+  #           tokenEnv: CODE_BRIDGE_ADMIN_TOKEN
+  #   # (optional) Trusted origin for internal event delivery. By default, LibreChat
+  #   # uses its own bound listener; override only for an internal TLS/front-door route.
+  #   eventDriven:
+  #     # selfUrl: 'https://librechat.internal'
+  #   # (optional) Automatic conversational delivery for supported completed background tasks.
+  #   # Enabled by default; set false to keep background tools and subagents poll-only.
+  #   backgroundTasks:
+  #     completionWakeups: true
+  #     # Allow owners to cooperatively cancel ordinary background tools, including BYOM Bash.
+  #     ordinaryToolCancellation: false
   #   # "run_in_background" makes Code Interpreter tools eligible by default and enables per-tool MCP opt-in.
   #   # "tool_intents" enables live model-written labels for native tools and opted-in MCP tools.
   #   # (optional) Require user approval before matching tool calls. Disabled by default.
@@ -520,6 +758,31 @@ endpoints:
   #   checkpointer:
   #     type: mongo # mongo (default) or memory (single-process development only)
   #     ttl: 86400 # Approval window in seconds; defaults to 24 hours
+  #   # (optional) Keep the user's answers to Ask User questions in the model context verbatim,
+  #   # even after the messages that carried them were summarized or pruned. On by default.
+  #   askUserQuestion:
+  #     retainedAnswers:
+  #       enabled: true
+  #       maxTokens: 4096 # Older answers drop first past this budget; the newest is always kept
+  #   # (optional) Authenticate machine clients for the Agent Management API.
+  #   # Each verified OAuth client is bound server-side to one existing LibreChat
+  #   # user and tenant; that user's normal role and Agent ACLs still apply.
+  #   managementApi:
+  #     auth:
+  #       oidc:
+  #         enabled: true
+  #         issuer: 'https://identity.example.com/'
+  #         audience: 'https://librechat.example.com/agents'
+  #         # jwksUri: 'https://identity.example.com/.well-known/jwks.json'
+  #         # Cognito M2M access tokens use client_id instead of aud. For that
+  #         # profile, omit audience and require the access-token type and scope:
+  #         # tokenUse: access
+  #         # requiredScopes: ['agents-api/manage']
+  #       clients:
+  #         - clientId: 'machine-client-id'
+  #           # subject: 'provider-specific-service-principal-subject'
+  #           userId: '507f1f77bcf86cd799439011'
+  #           tenantId: 'tenant-id'
 
   # (optional) Custom request headers for the built-in OpenAI / Google endpoints.
   # Forwarded on every request to the provider (or an AI gateway / reverse proxy
@@ -560,7 +823,7 @@ endpoints:
   #     # Available regions: us-east5, us-central1, europe-west1, europe-west4, asia-southeast1
   #     # Multi-region endpoints: us, eu, global
   #     # IMPORTANT: specific regional endpoints only serve Claude Sonnet 4.6 and earlier. Newer
-  #     # models (Opus 4.7+, Opus 5, Sonnet 5, Fable 5) require "global" or a multi-region value
+  #     # models (Opus 4.7+, Opus 5, Sonnet 5, Fable 5/5.1) require "global" or a multi-region value
   #     # ("us"/"eu") and will 404 on a specific region. "global" also avoids the 10% regional premium.
   #     region: "us-east5"
   #     # Path to Google service account key file (optional)
@@ -579,6 +842,7 @@ endpoints:
   #     # Option 1: Simple array (legacy format - model name = deployment name)
   #     # Use this if you want the technical model IDs to show in the UI
   #     # models:
+  #     #   - "claude-fable-5-1"
   #     #   - "claude-fable-5"
   #     #   - "claude-opus-5"
   #     #   - "claude-opus-4-8"
@@ -592,6 +856,8 @@ endpoints:
   #     # The deploymentName is the actual Vertex AI model ID used for API calls
   #     # You can use friendly names (avoid spaces for cleaner YAML) or technical IDs as keys
   #     models:
+  #       claude-fable-5.1:
+  #         deploymentName: claude-fable-5-1
   #       claude-fable-5:
   #         deploymentName: claude-fable-5
   #       claude-opus-5:
@@ -618,6 +884,19 @@ endpoints:
   #     #     deploymentName: claude-3-5-haiku@20241022  # Override for this model
 
   custom:
+    # xAI: Grok 4.7 uses the existing OpenAI-compatible chat and agent paths.
+    # https://docs.x.ai/developers/grok-4-7
+    # Set XAI_API_KEY in your environment. No separate SpaceXAI provider is needed.
+    - name: 'xai'
+      apiKey: '${XAI_API_KEY}'
+      baseURL: 'https://api.x.ai/v1'
+      models:
+        default: ['grok-4.7']
+        fetch: true
+      titleConvo: true
+      titleModel: 'grok-4.7'
+      modelDisplayLabel: 'xAI'
+
     # Anthropic-compatible Example (native `/v1/messages` API)
     # Set `provider: anthropic` to use the native Anthropic client instead of the
     # default OpenAI-compatible one — for Anthropic itself or Anthropic-compatible
@@ -746,40 +1025,6 @@ endpoints:
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
 
-    # Helicone Example
-    - name: 'Helicone'
-      # For `apiKey` and `baseURL`, you can use environment variables that you define.
-      # recommended environment variables:
-      apiKey: '${HELICONE_KEY}'
-      baseURL: 'https://ai-gateway.helicone.ai'
-      headers:
-        x-librechat-body-parentmessageid: '{{LIBRECHAT_BODY_PARENTMESSAGEID}}'
-      models:
-        default:
-          ['gpt-4o-mini', 'claude-4.5-sonnet', 'llama-3.1-8b-instruct', 'gemini-2.5-flash-lite']
-        fetch: true
-      titleConvo: true
-      titleModel: 'gpt-4o-mini'
-      modelDisplayLabel: 'Helicone'
-      iconURL: https://marketing-assets-helicone.s3.us-west-2.amazonaws.com/helicone.png
-
-    # Portkey AI Example
-    - name: 'Portkey'
-      apiKey: 'dummy'
-      baseURL: 'https://api.portkey.ai/v1'
-      headers:
-        x-portkey-api-key: '${PORTKEY_API_KEY}'
-        x-portkey-virtual-key: '${PORTKEY_OPENAI_VIRTUAL_KEY}'
-      models:
-        default: ['gpt-4o-mini', 'gpt-4o', 'chatgpt-4o-latest']
-        fetch: true
-      titleConvo: true
-      titleModel: 'current_model'
-      summarize: false
-      summaryModel: 'current_model'
-      modelDisplayLabel: 'Portkey'
-      iconURL: https://images.crunchbase.com/image/upload/c_pad,f_auto,q_auto:eco,dpr_1/rjqy7ghvjoiu4cd1xjbf
-
   # AWS Bedrock Example
   # Note: Bedrock endpoint is configured via environment variables
   # bedrock:
@@ -902,7 +1147,21 @@ endpoints:
 #     tokens: 2000 # Also preserve up to this many recent tokens
 
 # fileConfig:
+#   skills:
+#     # Bound parallel storage deletes after a failed archive import (default: 8).
+#     # Set to 1 for serial cleanup on storage backends that require it.
+#     importCleanupConcurrency: 8
+#   # Store best-effort text for inferred tool-routed message attachments. On each turn,
+#   # deliver it only if no available tool can read the type. Off by default; also configurable
+#   # under endpoints.default or a provider/custom endpoint name. Explicit destinations stand.
+#   # Existing files without extracted text are not backfilled. Paused runs retain encoded text
+#   # and conservatively count referenced fallback text against current limits on resume.
+#   textFallbackWithoutTools: false
+#   fileContextSizeLimit: 128  # Maximum aggregate model-bound attachment size in one agent turn (MB)
+#   fileContextCharLimit: 1000000  # Maximum aggregate extracted-text characters in one agent turn
 #   endpoints:
+#     agents:
+#       fileLimit: 10
 #     assistants:
 #       fileLimit: 5
 #       fileSizeLimit: 10  # Maximum size for an individual file in MB
@@ -946,6 +1205,8 @@ endpoints:
 #   searxngApiKey: '${SEARXNG_API_KEY}'
 #   # Tavily (search provider and/or scraper)
 #   tavilyApiKey: '${TAVILY_API_KEY}'
+#   # Keenable (search provider; keyless by default, a key only lifts rate limits)
+#   keenableApiKey: '${KEENABLE_API_KEY}'
 #   # Content scrapers
 #   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
 #   firecrawlApiUrl: '${FIRECRAWL_API_URL}'
@@ -1008,6 +1269,63 @@ endpoints:
 #     # includeFavicon: false   # Include favicon URL for each result
 #     # format: markdown        # 'markdown' (default) or 'text' (plain text, may increase latency)
 #     # timeout: 15000          # HTTP request timeout in milliseconds (max 120000); Tavily Extract receives seconds clamped to 1-60
+#
+# Keenable as both search provider and scraper example — a fully keyless web
+# search stack: no API key for any of the three categories. The public search and
+# fetch endpoints are rate-limited; a key only lifts the cap.
+# webSearch:
+#   searchProvider: keenable
+#   scraperProvider: keenable
+#   rerankerType: none          # Rerankers all require a key; 'none' skips reranking
+#   # keenableApiKey: '${KEENABLE_API_KEY}'   # Optional: a key only lifts rate limits (public endpoints used when unset)
+#   # keenableApiUrl: '${KEENABLE_API_URL}'   # Optional: search API URL override (fetch uses KEENABLE_FETCH_URL)
+#   keenableSearchOptions:
+#     maxResults: 5             # 1-20 results per search (default: 8)
+#     # site: example.com       # Restrict search to a single domain
+#     # attributionTitle: LibreChat  # X-Keenable-Title header sent with each request
+#     # timeout: 15000          # HTTP request timeout in milliseconds (max 120000)
+#   keenableScraperOptions:
+#     # attributionTitle: LibreChat  # X-Keenable-Title header sent with each fetch
+#     timeout: 15000            # HTTP request timeout in milliseconds (max 120000)
+#
+# Keenable search paired with another scraper (Firecrawl here) also works; each
+# category is configured independently:
+# webSearch:
+#   searchProvider: keenable
+#   scraperProvider: firecrawl
+#   firecrawlApiKey: '${FIRECRAWL_API_KEY}'
+#
+# The reverse (someone else's search, Keenable as the scraper) also works. Pin
+# the stack for every user as shown below, or leave the providers unpinned so
+# each user can save this same keyless combination in the API-key dialog:
+# webSearch:
+#   searchProvider: searxng
+#   searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}'
+#   scraperProvider: keenable
+#   rerankerType: none
+#
+# SearXNG as the search provider example:
+# webSearch:
+#   searchProvider: searxng
+#   searxngInstanceUrl: '${SEARXNG_INSTANCE_URL}'
+#   # searxngApiKey: '${SEARXNG_API_KEY}'
+#   searxngSearchOptions:
+#     # Engines your instance should query. Accepts a comma-separated string or a list.
+#     # Defaults to 'google,bing,duckduckgo'; DuckDuckGo serves CAPTCHAs to most
+#     # self-hosted instances, so override it when results come back empty.
+#     #
+#     # Names must match engines enabled on your own instance. SearXNG ignores an
+#     # engine it does not know instead of reporting an error, so a typo or a
+#     # disabled engine shows up as fewer results rather than a failure. Check the
+#     # enabled list at https://your-instance/config before setting this.
+#     engines:
+#       - google
+#       - bing
+#       - startpage
+#       - qwant
+#     # language: en            # Result language code (default: 'all')
+#     # timeRange: month        # 'day', 'month', or 'year'
+#     # timeout: 10000          # HTTP request timeout in milliseconds (1-120000, default: 10000)
 
 # Memory configuration for user memories
 # memory:
@@ -1036,11 +1354,100 @@ endpoints:
 #     # model_parameters:
 #     #   temperature: 0.1
 
-# Reject chat messages whose text matches credential-shaped patterns
-# before they reach moderation, the model, or persistence. Filter
-# types live under `messageFilter.<type>`; today only `pii` ships, but
-# the namespace is structured so future filter types can plug in.
-# Omit the whole section to disable.
+# Apply opt-in content filters to source-classified submitted and reusable content.
+# `filters` is base-config-only: database overrides and tombstones cannot add,
+# change, or remove this policy for individual users, groups, or roles.
+# In multi-replica deployments, use a coordinated deploy or restart and verify
+# every replica loaded the same base config before considering policy active;
+# local cache invalidation is not a rollout barrier.
+# Omit `filters` or a source to leave that scope disabled. Omitting a source's
+# `pii` block disables its source-aware detectors; for messages, `inspect` can
+# still change how an enabled legacy `messageFilter.pii` attributes old rows.
+# Omit `fields` to filter every supported field for an enabled source.
+# `starterPatterns` and `customPatterns` can be configured independently
+# under any source so each input surface can use a different policy. Starter
+# ids are closed to the catalog below. Custom regexes use bounded,
+# linear-time syntax; unsupported constructs are rejected at config load.
+# `action` defaults to `block`. Set it to `audit` for a shadow rollout that
+# records raw-free findings without rejecting or modifying content. Redaction
+# is intentionally not an action yet because safe replacement requires a
+# mutation-aware boundary and match spans; configuring an unsupported action
+# is rejected rather than silently treated as enforcement.
+# Omit `starterPatterns` to enable the full starter catalog; set it to `[]`
+# to disable starters while retaining any configured custom patterns.
+# Enabling or changing this policy does not rewrite or delete stored records.
+# Current policy rechecks protected fields when they are resubmitted and when
+# records are copied, shared, or become model-bound. Safe partial metadata edits
+# can succeed so records remain repairable, but persisted protected fields remain
+# unusable on those paths until repaired. Protected prompt or preset fields may
+# be blanked with `contentFilterBlocked: true` in management views. Prompt-group
+# metadata blocked by policy returns an explicit error on direct GET, while
+# collection and reuse responses omit that group.
+# Automatic memory maintenance may log and skip a rejected background update
+# while allowing the main chat response to continue.
+# Legacy assistant rows without provenance default to `model_output`, preserving
+# legacy behavior. Inventory or migrate those records before relying on retroactive
+# enforcement. Opting into `inspect` treats otherwise unattributed assistant content,
+# including selected attachment projections, as submitted; explicit model provenance
+# remains exempt.
+# Roll out strict file inspection deliberately: `uninspectable: block` can make
+# older opaque files unavailable for reuse until inspectable text is present.
+# filters:
+#   messages:
+#     unattributedAssistantContent: model_output # `model_output` (default) or `inspect`
+#     pii:
+#       action: audit # `block` (default), `audit`, or `redact` (reserved for transformation-aware ingress; current routes still block)
+#       # `redact` requires the later encrypted owner-view and canonical-message integration.
+#       # maxCharacters: 65536 # bounded total inspected text per transformation session
+#       # maxMatches: 256 # bounded matches per transformation session
+#       # Custom patterns may set category: email, phone, name, credential, or custom.
+#       fields: [name, text, summary, quote, answer, decision_response, decision_reason, content_part, attachment_reference, assembled_context]
+#       starterPatterns: [sk_prefix, bearer_header, api_key_header]
+#       customPatterns:
+#         - id: organization_identifier
+#           label: Organization identifier
+#           regex: "ORG-[A-Z0-9]{12}"
+#   prompts:
+#     pii:
+#       fields: [name, description, oneliner, category, command, text, preset_text, system, context, instructions, additional_instructions, greeting, example_input, example_output]
+#   agentInstructions:
+#     pii:
+#       fields: [name, category, description, instructions, additional_instructions, edge_description, edge_prompt, edge_prompt_key, artifacts, support_contact_name, support_contact_email]
+#   conversationStarters:
+#     pii:
+#       fields: [text]
+#   conversationTitles:
+#     pii:
+#       fields: [title]
+#   feedback:
+#     pii:
+#       fields: [text]
+#   skills:
+#     pii:
+#       fields: [name, display_title, description, category, frontmatter, instructions, imported_text, file_name, file_text]
+#   memories:
+#     pii:
+#       fields: [key, value, summary]
+#   files:
+#     pii:
+#       fields: [name, content, extracted_text, transcript, uri]
+#       # `allow` is the compatibility default. `block` rejects opaque or
+#       # oversized selected file content before provider/storage side effects.
+#       uninspectable: block
+#   toolArguments:
+#     pii:
+#       fields: [name, arguments, output]
+#   modelParameters:
+#     pii:
+#       fields: [stop, request_fields, response_format, metadata]
+#   actionMetadata:
+#     pii:
+#       fields: [raw_spec, domain, privacy_policy_url, authorization_type, custom_auth_header, authorization_content_type, authorization_url, client_url, scope, token_exchange_method, api_key, oauth_client_id, oauth_client_secret]
+
+# Legacy message-only filter configuration. Existing deployments can continue
+# using this shape while migrating message policy into `filters.messages`.
+# When both shapes are configured, both policies apply. Prefer
+# `filters.messages` for centrally managed source-aware policy.
 # messageFilter:
 #   pii:
 #     # (optional) Pick a subset of the starter catalog by id; omit to
@@ -1056,3 +1463,7 @@ endpoints:
 #       - id: anthropic_api_key
 #         label: Anthropic API key
 #         regex: "sk-ant-[A-Za-z0-9_-]{20,}"
+
+# ACL writes retry only conflicts on an individual document.
+# permissions:
+#   maxWriteAttempts: 3 # Integer 1-100, including the first attempt.

@@ -24,6 +24,7 @@ let MCPOAuthHandler: MCPOAuthHandlerType;
 let createModels: CreateModelsType;
 let createMethods: CreateMethodsType;
 let RoleBits: RoleBitsType;
+let getMCPAppToolsPublicationGeneration: typeof import('~/mcp/toolsChanged').getMCPAppToolsPublicationGeneration;
 
 // Test data helpers
 const createSSEConfig = (
@@ -39,6 +40,13 @@ const createSSEConfig = (
 });
 
 let dbMethods: ReturnType<CreateMethodsType>;
+
+/** `Model.find` overloads reduce the spy's inferred arguments to an empty tuple,
+ *  so the recorded calls are re-typed here and mapped to their filter. */
+function aclFindFilters(spy: jest.SpyInstance): Array<Record<string, unknown>> {
+  const calls = spy.mock.calls as unknown as Array<[Record<string, unknown>]>;
+  return calls.map(([filter]) => filter);
+}
 
 beforeAll(async () => {
   // Set encryption keys BEFORE importing modules that use crypto
@@ -64,6 +72,7 @@ beforeAll(async () => {
   ServerConfigsDB = serverConfigsModule.ServerConfigsDB;
   const oauthModule = await import('~/mcp/oauth');
   MCPOAuthHandler = oauthModule.MCPOAuthHandler;
+  ({ getMCPAppToolsPublicationGeneration } = await import('~/mcp/toolsChanged'));
 
   mongoServer = await MongoMemoryServer.create();
   const mongoUri = mongoServer.getUri();
@@ -657,7 +666,7 @@ describe('ServerConfigsDB', () => {
       expect(retrieved?.apiKey?.key).toBe('new-api-key');
     });
 
-    it('should preserve apiKey.key when authorization_type changes (bearer to custom)', async () => {
+    it('should require apiKey.key when authorization_type changes', async () => {
       const config: ParsedServerConfig = {
         type: 'sse',
         url: 'https://example.com/mcp',
@@ -679,16 +688,19 @@ describe('ServerConfigsDB', () => {
           source: 'admin',
           authorization_type: 'custom',
           custom_header: 'X-My-Api-Key',
-          // key not provided - should be preserved
         },
       };
-      await serverConfigsDB.update(created.serverName, updatedConfig, userId);
+      await expect(
+        serverConfigsDB.update(created.serverName, updatedConfig, userId),
+      ).rejects.toMatchObject({
+        code: 'MCP_API_KEY_REENTRY_REQUIRED',
+        changedFields: ['apiKey.authorization_type', 'apiKey.custom_header'],
+      });
 
-      // Verify the key is preserved and authorization_type/custom_header updated
       const retrieved = await serverConfigsDB.get(created.serverName, userId);
       expect(retrieved?.apiKey?.key).toBe('my-api-key');
-      expect(retrieved?.apiKey?.authorization_type).toBe('custom');
-      expect(retrieved?.apiKey?.custom_header).toBe('X-My-Api-Key');
+      expect(retrieved?.apiKey?.authorization_type).toBe('bearer');
+      expect(retrieved?.apiKey?.custom_header).toBeUndefined();
     });
 
     it('should NOT preserve apiKey.key when switching from admin to user source', async () => {
@@ -1036,6 +1048,157 @@ describe('ServerConfigsDB', () => {
     });
   });
 
+  describe.each(['sse', 'streamable-http'] as const)('%s header persistence', (type) => {
+    const safeHeaders = { 'X-Safe': 'value', Authorization: 'Bearer {{MCP_API_KEY}}' };
+    const unsafeHeaders = {
+      ...safeHeaders,
+      'X-Secret': '${SECRET}:{{LIBRECHAT_OPENID_ACCESS_TOKEN}}',
+    };
+    const sanitizedHeaders = { ...safeHeaders, 'X-Secret': ':' };
+
+    it.each([
+      { name: 'omitted', maps: {}, expected: {} },
+      {
+        name: 'explicit undefined',
+        maps: { headers: undefined, requestHeaders: undefined },
+        expected: {},
+      },
+      {
+        name: 'empty',
+        maps: { headers: {}, requestHeaders: {} },
+        expected: { headers: {}, requestHeaders: {} },
+      },
+      {
+        name: 'headers only',
+        maps: { headers: unsafeHeaders },
+        expected: { headers: sanitizedHeaders },
+      },
+      {
+        name: 'requestHeaders only',
+        maps: { requestHeaders: unsafeHeaders },
+        expected: { requestHeaders: sanitizedHeaders },
+      },
+      {
+        name: 'both populated',
+        maps: { headers: unsafeHeaders, requestHeaders: unsafeHeaders },
+        expected: { headers: sanitizedHeaders, requestHeaders: sanitizedHeaders },
+      },
+    ])('preserves $name maps through add, update and upsert', async ({ maps, expected }) => {
+      const config = {
+        type,
+        url: 'https://example.com/mcp',
+        title: 'Header Persistence',
+        requiresOAuth: true,
+        ...maps,
+      } satisfies ParsedServerConfig;
+      const original = structuredClone(config);
+      const created = await serverConfigsDB.add('temp-name', config, userId);
+      const assertRoundTrip = async (minimized = false) => {
+        const stored = await mongoose.models.MCPServer.collection.findOne({
+          serverName: created.serverName,
+        });
+        const result = await serverConfigsDB.get(created.serverName, userId);
+        const all = await serverConfigsDB.getAll(userId);
+        expect(result).toBeDefined();
+        for (const key of ['headers', 'requestHeaders'] as const) {
+          const value = expected[key];
+          if (value != null && (!minimized || Object.keys(value).length > 0)) {
+            expect(stored?.config[key]).toEqual(value);
+            expect(result).toHaveProperty(key, expected[key]);
+          } else {
+            expect(stored?.config).not.toHaveProperty(key);
+            expect(result).not.toHaveProperty(key);
+          }
+        }
+        expect(all[created.serverName]).toEqual(result);
+        expect(MCPOptionsSchema.safeParse(result).success).toBe(true);
+        expect(() => getMCPAppToolsPublicationGeneration(result!)).not.toThrow();
+      };
+
+      /** Mongoose minimizes empty objects on create, but preserves them on update. */
+      await assertRoundTrip(true);
+      for (const method of ['update', 'upsert'] as const) {
+        await serverConfigsDB.update(
+          created.serverName,
+          {
+            ...config,
+            headers: { 'X-Old': 'remove me' },
+            requestHeaders: { 'X-Old': 'remove me too' },
+          },
+          userId,
+        );
+        await serverConfigsDB[method](created.serverName, config, userId);
+        await assertRoundTrip();
+      }
+      expect(config).toEqual(original);
+    });
+
+    it.each([
+      { name: 'headers null', maps: { headers: null }, expected: {} },
+      { name: 'requestHeaders null', maps: { requestHeaders: null }, expected: {} },
+      { name: 'both null', maps: { headers: null, requestHeaders: null }, expected: {} },
+      {
+        name: 'headers null with request headers',
+        maps: { headers: null, requestHeaders: safeHeaders },
+        expected: { requestHeaders: safeHeaders },
+      },
+      {
+        name: 'requestHeaders null with headers',
+        maps: { headers: safeHeaders, requestHeaders: null },
+        expected: { headers: safeHeaders },
+      },
+      {
+        name: 'headers null with empty request headers',
+        maps: { headers: null, requestHeaders: {} },
+        expected: { requestHeaders: {} },
+      },
+      {
+        name: 'requestHeaders null with empty headers',
+        maps: { headers: {}, requestHeaders: null },
+        expected: { headers: {} },
+      },
+    ])('normalizes historical $name on single and bulk reads', async ({ maps, expected }) => {
+      const created = await serverConfigsDB.add(
+        'temp-name',
+        {
+          type,
+          url: 'https://example.com/mcp',
+          title: 'Historical Headers',
+          requiresOAuth: true,
+        },
+        userId,
+      );
+      await mongoose.models.MCPServer.collection.updateOne(
+        { serverName: created.serverName },
+        {
+          $set: { config: { type, url: 'https://example.com/mcp', requiresOAuth: true, ...maps } },
+        },
+      );
+      const stored = await mongoose.models.MCPServer.collection.findOne({
+        serverName: created.serverName,
+      });
+      expect(MCPOptionsSchema.safeParse(stored?.config).success).toBe(false);
+
+      const result = await serverConfigsDB.get(created.serverName, userId);
+      const all = await serverConfigsDB.getAll(userId);
+      expect(result).toBeDefined();
+      for (const key of ['headers', 'requestHeaders'] as const) {
+        if (expected[key] != null) {
+          expect(result).toHaveProperty(key, expected[key]);
+        } else {
+          expect(result).not.toHaveProperty(key);
+        }
+      }
+      expect(all[created.serverName]).toEqual(result);
+      expect(MCPOptionsSchema.safeParse(result).success).toBe(true);
+      const generation = getMCPAppToolsPublicationGeneration(result!);
+      expect(getMCPAppToolsPublicationGeneration(all[created.serverName])).toBe(generation);
+      expect(
+        await mongoose.models.MCPServer.collection.findOne({ serverName: created.serverName }),
+      ).toEqual(stored);
+    });
+  });
+
   describe('get()', () => {
     it('normalizes null headers from historical stored configs before runtime use', async () => {
       const server = await mongoose.models.MCPServer.create({
@@ -1357,6 +1520,103 @@ describe('ServerConfigsDB', () => {
         expect(Object.keys(result)).toHaveLength(1);
         expect(result['agent-only-server']).toBeDefined();
         expect(result['agent-only-server'].consumeOnly).toBe(true);
+      });
+
+      it('should bound the agent ACL query to agents that reference MCP servers', async () => {
+        const config = createSSEConfig('Bounded Server');
+        const created = await serverConfigsDB.add('temp', config, userId);
+
+        const Agent = mongoose.models.Agent;
+        const referencingAgent = await Agent.create({
+          id: 'referencing-agent',
+          name: 'Referencing Agent',
+          provider: 'openai',
+          model: 'gpt-4',
+          author: new mongoose.Types.ObjectId(userId),
+          mcpServerNames: [created.serverName],
+        });
+        // Accessible to userId2 but references no MCP server: these must not
+        // inflate the agent-side ACL query (#14016)
+        const spectatorAgent = await Agent.create({
+          id: 'spectator-agent',
+          name: 'Spectator Agent',
+          provider: 'openai',
+          model: 'gpt-4',
+          author: new mongoose.Types.ObjectId(userId),
+        });
+
+        const agentRole = await mongoose.models.AccessRole.findOne({
+          accessRoleId: AccessRoleIds.AGENT_VIEWER,
+        });
+        for (const agent of [referencingAgent, spectatorAgent]) {
+          await mongoose.models.AclEntry.create({
+            principalType: PrincipalType.USER,
+            principalModel: PrincipalModel.USER,
+            principalId: new mongoose.Types.ObjectId(userId2),
+            resourceType: ResourceType.AGENT,
+            resourceId: agent._id,
+            permBits: PermissionBits.VIEW,
+            roleId: agentRole!._id,
+            grantedBy: new mongoose.Types.ObjectId(userId),
+          });
+        }
+
+        const findSpy = jest.spyOn(mongoose.models.AclEntry, 'find');
+        try {
+          const result = await serverConfigsDB.getAll(userId2);
+          expect(result['bounded-server']?.consumeOnly).toBe(true);
+
+          const agentSideFilters = aclFindFilters(findSpy).filter(
+            (filter) => filter.resourceType === ResourceType.AGENT,
+          );
+          expect(agentSideFilters).toHaveLength(1);
+          const boundIds = (agentSideFilters[0]?.resourceId as { $in?: unknown[] } | undefined)
+            ?.$in;
+          expect(boundIds).toHaveLength(1);
+          expect(String(boundIds?.[0])).toBe(referencingAgent._id.toString());
+        } finally {
+          findSpy.mockRestore();
+        }
+      });
+
+      it('should skip the agent ACL query entirely when no agent references MCP servers', async () => {
+        const config = createSSEConfig('Unreferenced Server');
+        await serverConfigsDB.add('temp', config, userId);
+
+        const Agent = mongoose.models.Agent;
+        const agent = await Agent.create({
+          id: 'plain-agent',
+          name: 'Plain Agent',
+          provider: 'openai',
+          model: 'gpt-4',
+          author: new mongoose.Types.ObjectId(userId),
+        });
+        const agentRole = await mongoose.models.AccessRole.findOne({
+          accessRoleId: AccessRoleIds.AGENT_VIEWER,
+        });
+        await mongoose.models.AclEntry.create({
+          principalType: PrincipalType.USER,
+          principalModel: PrincipalModel.USER,
+          principalId: new mongoose.Types.ObjectId(userId2),
+          resourceType: ResourceType.AGENT,
+          resourceId: agent._id,
+          permBits: PermissionBits.VIEW,
+          roleId: agentRole!._id,
+          grantedBy: new mongoose.Types.ObjectId(userId),
+        });
+
+        const findSpy = jest.spyOn(mongoose.models.AclEntry, 'find');
+        try {
+          const result = await serverConfigsDB.getAll(userId2);
+          expect(result['unreferenced-server']).toBeUndefined();
+
+          const agentSideFilters = aclFindFilters(findSpy).filter(
+            (filter) => filter.resourceType === ResourceType.AGENT,
+          );
+          expect(agentSideFilters).toHaveLength(0);
+        } finally {
+          findSpy.mockRestore();
+        }
       });
 
       it('should deduplicate servers with both direct and agent access', async () => {

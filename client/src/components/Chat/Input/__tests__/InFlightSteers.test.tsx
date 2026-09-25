@@ -1,6 +1,6 @@
 import React from 'react';
 import { getDefaultStore } from 'jotai';
-import { RecoilRoot, useRecoilValue } from 'recoil';
+import { RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import type { PendingSteer, QueuedMessage } from '~/store/families';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
@@ -19,6 +19,12 @@ const mockSetDefaultAction = jest.fn();
 const mockRestoreToComposer = jest.fn();
 let convertSteersForTest: ReturnType<typeof useSteerConvert>;
 let observedQueueForTest: QueuedMessage[];
+let setSteersForTest: (updater: (prev: PendingSteer[]) => PendingSteer[]) => void;
+let mockFileMap: Record<string, { llmDeliveryPath?: 'provider' | 'text' | 'none' }> = {};
+
+jest.mock('~/Providers', () => ({
+  useFileMapContext: () => mockFileMap,
+}));
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
@@ -26,11 +32,24 @@ jest.mock('~/hooks', () => ({
   useSteerReclaim: jest.requireActual('~/hooks/Chat/useSteerCancel').useSteerReclaim,
 }));
 
-jest.mock('@librechat/client', () => ({
-  useToastContext: () => ({ showToast: mockShowToast }),
-  InfoHoverCard: () => null,
-  ESide: { Top: 'top', Bottom: 'bottom' },
-}));
+jest.mock('~/../test/mockMorphIcon', () => jest.requireActual('~/../test/mockMorphIcon'));
+
+jest.mock('@librechat/client', () => {
+  const { createSteerMorphIconMock } = jest.requireActual('~/../test/mockMorphIcon');
+  return {
+    useToastContext: () => ({ showToast: mockShowToast }),
+    /** Trigger-only stand-in: the receipt renders its marks as the hover card's
+     *  custom trigger, so the mock must render children under the accessible
+     *  name rather than swallowing them. */
+    InfoHoverCard: ({ text, children }: { text: string; children?: React.ReactNode }) => (
+      <button type="button" aria-label={text}>
+        {children}
+      </button>
+    ),
+    ESide: { Top: 'top', Bottom: 'bottom' },
+    MorphIcon: createSteerMorphIconMock(),
+  };
+});
 
 jest.mock('~/data-provider', () => ({
   useCancelSteerMutation: () => ({ mutateAsync: mockCancelMutateAsync }),
@@ -67,8 +86,20 @@ jest.mock('~/components/Chat/Input/Files/ImagePreview', () => ({
 
 jest.mock('~/components/Chat/Messages/Content/FilePreviewDialog', () => ({
   __esModule: true,
-  default: ({ open, fileName }: { open: boolean; fileName: string }) =>
-    open ? <div data-testid="steer-file-preview">{fileName}</div> : null,
+  default: ({
+    open,
+    fileName,
+    deliveryPath,
+  }: {
+    open: boolean;
+    fileName: string;
+    deliveryPath?: string;
+  }) =>
+    open ? (
+      <div data-testid="steer-file-preview" data-delivery-path={deliveryPath}>
+        {fileName}
+      </div>
+    ) : null,
 }));
 
 jest.mock('~/components/Chat/Messages/Content/MarkdownLite', () => ({
@@ -108,6 +139,7 @@ function steersElement(steers: PendingSteer[], options?: RenderOptions) {
   const SteerRaceProbe = () => {
     convertSteersForTest = useSteerConvert();
     observedQueueForTest = useRecoilValue(store.queuedMessagesByConvoId(CONVO_ID));
+    setSteersForTest = useSetRecoilState(store.pendingSteersByConvoId(CONVO_ID));
     return null;
   };
   return (
@@ -158,6 +190,7 @@ async function clickMenuItem(label: string) {
 describe('InFlightSteers', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockFileMap = {};
     mockCancelMutateAsync.mockResolvedValue({ removed: true });
     mockRestoreToComposer.mockReturnValue(true);
     observedQueueForTest = [];
@@ -183,6 +216,19 @@ describe('InFlightSteers', () => {
   it('leaves failed steers to the composer recovery rows', () => {
     renderSteers([{ steerId: 's3', text: 'never sent', status: 'failed', createdAt: 1 }]);
     expect(screen.queryByTestId('in-flight-steers')).toBeNull();
+  });
+
+  it('renders carried quotes as the same reference blocks the applied part shows', () => {
+    renderSteers([
+      {
+        steerId: 's-quoted',
+        text: 'about the selection',
+        status: 'pending',
+        createdAt: 1,
+        quotes: ['the selected excerpt'],
+      },
+    ]);
+    expect(screen.getByTestId('message-quotes')).toHaveTextContent('the selected excerpt');
   });
 
   it('shows the menu at rest on every pointer, without hover-gating', () => {
@@ -606,6 +652,29 @@ describe('InFlightSteers', () => {
     expect(screen.getByTestId('steer-file-preview')).toHaveTextContent('notes.pdf');
   });
 
+  it.each(['application/pdf', 'image/png'])(
+    'hydrates %s preview metadata after the steer',
+    (type) => {
+      const steer: PendingSteer = {
+        steerId: 's1',
+        text: 'see attached',
+        status: 'pending',
+        createdAt: 1,
+        files: [{ file_id: 'f1', filename: 'notes.pdf', type }],
+      };
+      const rendered = renderSteers([steer]);
+
+      mockFileMap = { f1: { llmDeliveryPath: 'text' } };
+      rendered.rerender(steersElement([steer]));
+
+      fireEvent.click(screen.getByTestId('steer-file'));
+      expect(screen.getByTestId('steer-file-preview')).toHaveAttribute(
+        'data-delivery-path',
+        'text',
+      );
+    },
+  );
+
   it('renders markdown the same way the applied part will, so text does not reflow on apply', () => {
     renderSteers([{ steerId: 's1', text: '**bold** steer', status: 'pending', createdAt: 1 }], {
       enableUserMsgMarkdown: true,
@@ -708,9 +777,11 @@ describe('InFlightSteers', () => {
       ]);
       const toggle = screen.getByRole('button', { name: 'com_ui_show_more' });
       expect(toggle).toHaveAttribute('aria-expanded', 'false');
+      expect(toggle.querySelector('[data-icon="chevron-down"]')).not.toBeNull();
       fireEvent.click(toggle);
       const collapse = screen.getByRole('button', { name: 'com_ui_show_less' });
       expect(collapse).toHaveAttribute('aria-expanded', 'true');
+      expect(collapse.querySelector('[data-icon="chevron-up"]')).not.toBeNull();
     } finally {
       scrollHeight.mockRestore();
     }
@@ -791,6 +862,44 @@ describe('InFlightSteers — interrupt-now escalation', () => {
     expect(screen.queryByTestId('steer-escalate-now')).toBeNull();
     expect(document.activeElement).toBe(screen.getByLabelText('com_ui_more_options'));
     expect(screen.getByRole('status')).toHaveTextContent('com_ui_steer_in_flight_preempt');
+    // Preempting steers use ZapOff; non-preempt uses Zap.
+    expect(
+      screen.getByTestId('in-flight-steer').querySelector('[data-icon="zap-off"]'),
+    ).not.toBeNull();
+  });
+
+  it('flips the receipt to interrupting on the click, confirming its check only on the ACK', async () => {
+    let resolveArm: (value: unknown) => void = () => {};
+    mockArmMutateAsync.mockReturnValue(
+      new Promise((resolve) => {
+        resolveArm = resolve;
+      }),
+    );
+    renderSteers([{ steerId: 's1', text: 'hold on', status: 'pending', createdAt: 1 }]);
+    expect(screen.getByTestId('steer-receipt')).toHaveAttribute('data-receipt-state', 'delivered');
+
+    fireEvent.click(screen.getByTestId('steer-escalate-now'));
+    // The silent round trip is what reads as broken: the label and pulse react
+    // on the click, while the check waits for the confirmed durable arm.
+    const receipt = screen.getByTestId('steer-receipt');
+    expect(receipt).toHaveAttribute('data-receipt-state', 'interrupting');
+    expect(receipt.querySelector('svg')).toBeNull();
+
+    await act(async () => {
+      resolveArm({ armed: true, generationProtocolVersion: 2, preemptRevision: 1 });
+    });
+    expect(receipt).toHaveAttribute('data-receipt-state', 'interrupting');
+    expect(receipt.querySelector('svg')).not.toBeNull();
+  });
+
+  it('returns the receipt to delivered when the arm loses its race', async () => {
+    mockArmMutateAsync.mockResolvedValue({ armed: false, generationProtocolVersion: 2 });
+    renderSteers([{ steerId: 's1', text: 'hold on', status: 'pending', createdAt: 1 }]);
+
+    await act(async () => {
+      fireEvent.click(screen.getByTestId('steer-escalate-now'));
+    });
+    expect(screen.getByTestId('steer-receipt')).toHaveAttribute('data-receipt-state', 'delivered');
   });
 
   it('names each escalation control with the message it will interrupt for', () => {
@@ -1122,5 +1231,78 @@ describe('InFlightSteers — menu structure', () => {
       screen.getByRole('menuitem', { name: 'com_ui_always_interrupt' }),
     );
     expect(screen.queryByRole('menuitem', { name: 'com_ui_interrupt_steer_now' })).toBeNull();
+  });
+});
+
+describe('InFlightSteers delivery receipts', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('labels a sending steer with the muted in-progress state and no check', () => {
+    renderSteers([{ steerId: 'local-1', text: 'still posting', status: 'sending', createdAt: 1 }]);
+    const receipt = screen.getByTestId('steer-receipt');
+    expect(receipt).toHaveAttribute('data-receipt-state', 'sending');
+    expect(receipt).toHaveTextContent('com_ui_steer_sending');
+    expect(receipt.querySelector('svg')).toBeNull();
+  });
+
+  it('shows the delivered check once the server durably queued the steer', () => {
+    renderSteers([{ steerId: 's-ack', text: 'waiting', status: 'pending', createdAt: 1 }]);
+    const receipt = screen.getByTestId('steer-receipt');
+    expect(receipt).toHaveAttribute('data-receipt-state', 'delivered');
+    expect(receipt.querySelector('svg')).not.toBeNull();
+    expect(screen.getByLabelText('com_ui_steer_delivered_info')).toBeInTheDocument();
+  });
+
+  it('relabels to the interrupting state when the steer is armed to preempt', () => {
+    renderSteers([
+      { steerId: 's-armed', text: 'stop now', status: 'pending', createdAt: 1, preempt: true },
+    ]);
+    const receipt = screen.getByTestId('steer-receipt');
+    expect(receipt).toHaveAttribute('data-receipt-state', 'interrupting');
+    // A confirmed arm keeps its check alongside the pulsing dot.
+    expect(receipt.querySelector('svg')).not.toBeNull();
+    expect(screen.getByLabelText('com_ui_steer_interrupting_info')).toBeInTheDocument();
+  });
+
+  it('shows interrupting without a check while the preempting POST is unacknowledged', () => {
+    renderSteers([
+      { steerId: 'local-2', text: 'stop', status: 'sending', createdAt: 1, preempt: true },
+    ]);
+    const receipt = screen.getByTestId('steer-receipt');
+    expect(receipt).toHaveAttribute('data-receipt-state', 'interrupting');
+    // The label and pulse react instantly; the check waits for the 202.
+    expect(receipt.querySelector('svg')).toBeNull();
+  });
+
+  it('honors an SSE-delivered preempt confirmation while the arm response is still pending', async () => {
+    mockArmMutateAsync.mockReturnValue(new Promise(() => {}));
+    renderSteers([{ steerId: 's1', text: 'hold on', status: 'pending', createdAt: 1 }]);
+    fireEvent.click(screen.getByTestId('steer-escalate-now'));
+    expect(screen.getByTestId('steer-receipt').querySelector('svg')).toBeNull();
+
+    // steer_updated relabels the chip before the arm HTTP response returns:
+    // that IS durable confirmation, and the check must not wait out the
+    // round-trip timeout.
+    await act(async () => {
+      setSteersForTest((prev) =>
+        prev.map((steer) => ({ ...steer, preempt: true, preemptRevision: 1 })),
+      );
+    });
+    const receipt = screen.getByTestId('steer-receipt');
+    expect(receipt).toHaveAttribute('data-receipt-state', 'interrupting');
+    expect(receipt.querySelector('svg')).not.toBeNull();
+  });
+
+  it('announces receipt transitions through the polite live region', async () => {
+    renderSteers([{ steerId: 's1', text: 'hold on', status: 'sending', createdAt: 1 }]);
+    // Mount state is not replayed: the region starts empty.
+    expect(screen.getByRole('status')).toHaveTextContent('');
+
+    await act(async () => {
+      setSteersForTest((prev) => prev.map((steer) => ({ ...steer, status: 'pending' as const })));
+    });
+    expect(screen.getByRole('status')).toHaveTextContent('com_ui_steer_delivered');
   });
 });

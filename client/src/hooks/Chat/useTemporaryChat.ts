@@ -5,9 +5,11 @@ import { useRecoilState, useRecoilValue } from 'recoil';
 import store from '~/store';
 
 export type UseTemporaryChatResult = {
-  /** Only offered before a conversation has any history — it cannot be toggled mid-thread. */
+  /** Only offered before a conversation has any history, it cannot be toggled mid-thread. */
   show: boolean;
   isTemporary: boolean;
+  /** Temporary mode is locked in for the conversation in progress, leaving only a read-only indicator. */
+  isActive: boolean;
   toggle: () => void;
 };
 
@@ -24,9 +26,12 @@ export default function useTemporaryChat(): UseTemporaryChatResult {
   const hasStarted = conversationId != null && conversationId !== Constants.NEW_CONVO;
   const hasMessages = Array.isArray(conversation?.messages) && conversation.messages.length >= 1;
 
+  const show = !hasStarted && !hasMessages && !isSubmitting;
+
   return {
-    show: !hasStarted && !hasMessages && !isSubmitting,
+    show,
     isTemporary,
+    isActive: isTemporary && !show,
     toggle,
   };
 }

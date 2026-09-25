@@ -45,6 +45,17 @@ jest.mock('~/server/services/Config', () => ({
   invalidateConfigCaches: jest.fn(),
 }));
 
+const mockConfigMiddleware = jest.fn((req, _res, next) => {
+  middlewareCalls.push('config');
+  req.config = { langfuse: { headers: { 'CF-Access-Client-Id': 'proxy-client' } } };
+  next();
+});
+
+jest.mock(
+  '~/server/middleware/config/app',
+  () => (req, res, next) => mockConfigMiddleware(req, res, next),
+);
+
 jest.mock('~/models', () => ({
   findConfigByPrincipal: jest.fn(),
   patchConfigFields: jest.fn(),
@@ -73,7 +84,7 @@ describe('admin Langfuse routes', () => {
     const response = await request(createApp()).get('/api/admin/langfuse/connection').expect(200);
 
     expect(response.body).toEqual({ handler: 'get' });
-    expect(middlewareCalls).toEqual(['jwt', 'access:admin']);
+    expect(middlewareCalls).toEqual(['jwt', 'access:admin', 'config']);
     expect(mockHasConfigCapability).toHaveBeenCalledWith(
       {
         id: 'user-1',
@@ -100,7 +111,7 @@ describe('admin Langfuse routes', () => {
     };
 
     expect(response.body).toEqual({ handler: expectedHandlers[handlerName] });
-    expect(middlewareCalls).toEqual(['jwt', 'access:admin']);
+    expect(middlewareCalls).toEqual(['jwt', 'access:admin', 'config']);
     expect(mockHandlers[handlerName]).toHaveBeenCalledTimes(1);
   });
 
@@ -114,5 +125,31 @@ describe('admin Langfuse routes', () => {
     await request(createApp())[method.toLowerCase()](path).send({}).expect(403);
 
     expect(mockHandlers[handlerName]).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Credential verification reads the deployment's Langfuse headers off
+   * `req.config`. The handler unit tests inject `config` into their mock
+   * requests, so only the mounted router proves the middleware supplying it is
+   * actually wired up — without it a proxied Langfuse host rejects every
+   * verification while the handler suite stays green.
+   */
+  it.each([
+    ['PUT', '/api/admin/langfuse/connection', 'updateConnection'],
+    ['POST', '/api/admin/langfuse/connection/test', 'testConnection'],
+  ])('resolves the app config before %s %s reaches its handler', async (method, path, handler) => {
+    await request(createApp())[method.toLowerCase()](path).send({}).expect(200);
+
+    expect(mockConfigMiddleware).toHaveBeenCalledTimes(1);
+    const [req] = mockHandlers[handler].mock.calls[0];
+    expect(req.config?.langfuse?.headers).toEqual({ 'CF-Access-Client-Id': 'proxy-client' });
+  });
+
+  it('resolves the app config only after the access checks reject', async () => {
+    canManageLangfuse = false;
+
+    await request(createApp()).post('/api/admin/langfuse/connection/test').send({}).expect(403);
+
+    expect(mockConfigMiddleware).not.toHaveBeenCalled();
   });
 });

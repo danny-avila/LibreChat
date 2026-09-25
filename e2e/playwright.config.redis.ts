@@ -21,8 +21,10 @@ export default defineConfig({
     /steering\.spec\.ts/,
     /steering-escalation\.spec\.ts/,
     /streaming\.spec\.ts/,
+    /subagent-activity\.spec\.ts/,
     /thread-fold\.spec\.ts/,
     /tool-approvals\.spec\.ts/,
     /usage\.spec\.ts/,
+    /scenarios\/redis-stream\.spec\.ts/,
   ],
 });

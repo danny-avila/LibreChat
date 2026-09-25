@@ -1,19 +1,16 @@
-import { memo, useRef, useState, useEffect, useCallback, useLayoutEffect } from 'react';
+import { memo, useRef, useEffect, useCallback, useLayoutEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { TextQuote } from 'lucide-react';
 import { useSetRecoilState } from 'recoil';
+import { cn, MAX_QUOTE_COUNT } from '~/utils';
 import { mainTextareaId } from '~/common';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 import store from '~/store';
 
 /** Only selections fully inside a rendered chat message get the popup. */
 const MESSAGE_SELECTOR = '.message-render';
 /** Max characters captured per excerpt (backend re-caps as defense-in-depth). */
 const MAX_QUOTE_LENGTH = 1500;
-/** Max excerpts queued at once; mirrors the backend `QUOTE_MAX_COUNT` cap so
- *  the composer never shows more quotes than the model actually receives. */
-const MAX_QUOTE_COUNT = 10;
 /** Vertical gap (px) between the selection and the popup. */
 const POPUP_OFFSET = 8;
 /** Keep the popup this far (px) from the viewport edges. */
@@ -247,8 +244,7 @@ const resolveTop = (anchor: Anchor, height: number, preferBelow: boolean): numbe
  */
 function QuoteButton({ conversationId }: { conversationId: string }) {
   const localize = useLocalize();
-  const [selection, setSelection] = useState<SelectionState | null>(null);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const selectionRef = useRef<SelectionState | null>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const rangeRef = useRef<Range | null>(null);
   const clippersRef = useRef<HTMLElement[]>([]);
@@ -258,6 +254,32 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
   /** Set by the listener effect so the press handlers can dismiss the popup. */
   const hideRef = useRef<() => void>(() => undefined);
   const setQuotes = useSetRecoilState(store.pendingQuotesByConvoId(conversationId));
+
+  /** Selection and scroll events must not enter React's commit/selection-restoration
+   *  path. Keep the portal mounted and update only its transient presentation. */
+  const presentSelection = useCallback((next: SelectionState | null) => {
+    selectionRef.current = next;
+    const button = buttonRef.current;
+    if (!button) {
+      return;
+    }
+    if (!next) {
+      button.style.display = 'none';
+      return;
+    }
+    const touch = String(next.viaTouch);
+    if (button.dataset.touch !== touch) {
+      button.dataset.touch = touch;
+    }
+    if (button.style.display === 'none') {
+      button.style.display = 'inline-flex';
+    }
+    const { width, height } = button.getBoundingClientRect();
+    const maxLeft = Math.max(EDGE_MARGIN, window.innerWidth - width - EDGE_MARGIN);
+    const left = Math.min(Math.max(anchorCenterX(next.anchor) - width / 2, EDGE_MARGIN), maxLeft);
+    button.style.top = `${resolveTop(next.anchor, height, next.viaTouch)}px`;
+    button.style.left = `${left}px`;
+  }, []);
 
   useEffect(() => {
     let settleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -283,8 +305,7 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
       }
       rangeRef.current = null;
       clippersRef.current = [];
-      setSelection(null);
-      setPos(null);
+      presentSelection(null);
     };
 
     const hide = () => {
@@ -304,18 +325,18 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
         hide();
         return;
       }
-      rangeRef.current = reading.range;
+      /** Native handle drags can mutate the Selection's Range in place. */
+      rangeRef.current = reading.range.cloneRange();
       clippersRef.current = reading.clippers;
-      /** Reuse the previous state object when nothing moved so a redundant
-       *  settle pass costs no render. */
-      setSelection((prev) =>
-        prev &&
-        prev.text === reading.text &&
-        prev.viaTouch === touch &&
-        sameAnchor(prev.anchor, reading.anchor)
-          ? prev
-          : { text: reading.text, anchor: reading.anchor, viaTouch: touch },
-      );
+      const previous = selectionRef.current;
+      if (
+        !previous ||
+        previous.text !== reading.text ||
+        previous.viaTouch !== touch ||
+        !sameAnchor(previous.anchor, reading.anchor)
+      ) {
+        presentSelection({ text: reading.text, anchor: reading.anchor, viaTouch: touch });
+      }
     };
 
     const handlePointerDown = (event: PointerEvent) => {
@@ -387,9 +408,10 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
         hide();
         return;
       }
-      setSelection((prev) =>
-        prev && !sameAnchor(prev.anchor, anchor) ? { ...prev, anchor } : prev,
-      );
+      const previous = selectionRef.current;
+      if (previous && !sameAnchor(previous.anchor, anchor)) {
+        presentSelection({ ...previous, anchor });
+      }
     };
 
     const scheduleReanchor = () => {
@@ -427,24 +449,17 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
       document.removeEventListener('scroll', scheduleReanchor, true);
       window.removeEventListener('resize', scheduleReanchor);
     };
-  }, []);
+  }, [presentSelection]);
 
-  /** Clamp using the button's real size so it never lands off-screen. Runs
-   *  before paint, so the first visible frame is already in its final spot. */
+  /** A parent render (for example a locale change) can change the button size. */
   useLayoutEffect(() => {
-    if (!selection || !buttonRef.current) {
-      return;
-    }
-    const { width, height } = buttonRef.current.getBoundingClientRect();
-    const maxLeft = Math.max(EDGE_MARGIN, window.innerWidth - width - EDGE_MARGIN);
-    const left = Math.min(
-      Math.max(anchorCenterX(selection.anchor) - width / 2, EDGE_MARGIN),
-      maxLeft,
-    );
-    const top = resolveTop(selection.anchor, height, selection.viaTouch);
+    presentSelection(selectionRef.current);
+  });
 
-    setPos((prev) => (prev && prev.top === top && prev.left === left ? prev : { top, left }));
-  }, [selection]);
+  useLayoutEffect(() => {
+    pressedTextRef.current = null;
+    hideRef.current();
+  }, [conversationId]);
 
   const commitQuote = useCallback(
     (text: string) => {
@@ -454,19 +469,19 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
       rangeRef.current = null;
       clippersRef.current = [];
       pressedTextRef.current = null;
-      setSelection(null);
-      setPos(null);
+      presentSelection(null);
       window.getSelection()?.removeAllRanges();
       document.getElementById(mainTextareaId)?.focus();
     },
-    [setQuotes],
+    [setQuotes, presentSelection],
   );
 
   const addQuote = useCallback(() => {
+    const selection = selectionRef.current;
     if (selection) {
       commitQuote(selection.text);
     }
-  }, [selection, commitQuote]);
+  }, [commitQuote]);
 
   /**
    * End a touch press that did not commit. While a press is in flight the
@@ -483,16 +498,12 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
     }
   }, []);
 
-  if (!selection) {
-    return null;
-  }
-
   return createPortal(
     <button
       ref={buttonRef}
       type="button"
       /** A tap is also the gesture that dismisses a selection, so `click` can
-       *  never be relied on here: the button is already unmounted by the time it
+       *  never be relied on here: the button can be hidden by the time it
        *  would fire. The excerpt is captured on the press and committed on the
        *  release instead, which keeps a button's normal escape hatches — drag
        *  off the button, or have the gesture stolen by a scroll, and nothing is
@@ -502,7 +513,7 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
           return;
         }
         event.preventDefault();
-        pressedTextRef.current = selection.text;
+        pressedTextRef.current = selectionRef.current?.text ?? null;
         try {
           event.currentTarget.setPointerCapture(event.pointerId);
         } catch {
@@ -538,15 +549,14 @@ function QuoteButton({ conversationId }: { conversationId: string }) {
       aria-label={localize('com_ui_add_to_chat')}
       data-testid="add-to-chat-button"
       style={{
-        top: pos?.top ?? 0,
-        left: pos?.left ?? 0,
-        /** Hidden until measured so it never flashes at an unclamped position. */
-        visibility: pos == null ? 'hidden' : 'visible',
+        top: 0,
+        left: 0,
+        display: 'none',
       }}
       className={cn(
         'fixed z-50 inline-flex items-center gap-1.5 rounded-full border border-border-light bg-surface-secondary text-sm font-medium text-text-primary shadow-lg transition-colors hover:bg-surface-tertiary',
         /** Comfortable tap target when the selection came from a finger. */
-        selection.viaTouch ? 'min-h-11 px-4 py-2.5' : 'px-3 py-1.5',
+        'px-3 py-1.5 data-[touch=true]:min-h-11 data-[touch=true]:px-4 data-[touch=true]:py-2.5',
       )}
     >
       <TextQuote className="h-4 w-4" aria-hidden="true" />

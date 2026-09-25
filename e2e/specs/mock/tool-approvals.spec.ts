@@ -77,6 +77,14 @@ type ApprovalResumeResponse = {
 const approvalCards = (page: Page) => messagesView(page).getByTestId('tool-approval');
 const approvalCard = (page: Page, toolCallId: string) =>
   messagesView(page).locator(`[data-testid="tool-approval"][data-tool-call-id="${toolCallId}"]`);
+const composerApprovalPanel = (page: Page) => page.locator('#pending-tool-approval-panel');
+
+async function collapseComposerApproval(page: Page) {
+  const panel = composerApprovalPanel(page);
+  await expect(panel).toBeVisible({ timeout: 30000 });
+  await panel.getByRole('button', { name: 'Collapse', exact: true }).click();
+  await expect(panel).toHaveCount(0);
+}
 
 function isResumeRequest(request: Request) {
   return (
@@ -143,6 +151,13 @@ async function startApproval(
   const card = approvalCards(page).first();
   await expect(card).toBeVisible({ timeout: 30000 });
   await expect(card).toContainText(expectedReason);
+  /**
+   * The primary composer review opens automatically above the historical
+   * timeline card. Verify that entry point, then collapse it so these tests
+   * can keep exercising the timeline fallback without an overlay intercepting
+   * its controls. The native BYOM acceptance spec submits through the composer.
+   */
+  await collapseComposerApproval(page);
   return card;
 }
 
@@ -162,35 +177,44 @@ async function submitAndCapture(page: Page, submit: Locator) {
 
 async function expectCompletedApprovalToolOutput(page: Page, toolCallId: string, output: string) {
   const view = messagesView(page);
-  const groupToggle = view.getByRole('button', { name: /^Used \d+ tools$/ }).last();
+  const groupToggle = view.getByRole('button', { name: /^Ran \d+ actions/ }).last();
   const toolCall = view.locator(`[data-testid="tool-call"][data-tool-call-id="${toolCallId}"]`);
 
   // On reload, the conversation arrives asynchronously and multi-tool groups
   // start collapsed. Wait for either the target card or its group before
   // deciding whether expansion is necessary.
   await expect(toolCall.or(groupToggle).first()).toBeVisible({ timeout: 30000 });
-  if (
-    !(await toolCall.isVisible()) &&
-    (await groupToggle.getAttribute('aria-expanded')) !== 'true'
-  ) {
-    await groupToggle.click();
-  }
+  // The final model turn is the quiescence barrier: all parallel tool work
+  // has settled before invocation-count assertions inspect the audit. It is
+  // also the fence the expansions below need, because the streamed response
+  // carries a placeholder id that the saved message replaces, remounting
+  // every card in the turn and closing whatever this helper had opened.
+  await expect(view.getByText(/^E2E approval outcomes:/).last()).toBeVisible({ timeout: 30000 });
 
-  await expect(toolCall).toBeVisible({ timeout: 30000 });
   const toggle = toolCall.getByRole('button', { name: /Ran approval_probe/ });
-  await expect(toggle).toBeVisible({ timeout: 30000 });
-  if ((await toggle.getAttribute('aria-expanded')) !== 'true') {
-    await toggle.click();
-  }
-
   // Scope exact output to its stable call id. This catches both a dropped
   // completion and an output accidentally attached to a sibling tool card.
-  await expect(
-    view.locator(`[data-tool-call-output-id="${toolCallId}"]`).getByText(output, { exact: true }),
-  ).toBeVisible({ timeout: 30000 });
-  // The final model turn is the quiescence barrier: all parallel tool work
-  // has settled before invocation-count assertions inspect the audit.
-  await expect(view.getByText(/^E2E approval outcomes:/).last()).toBeVisible({ timeout: 30000 });
+  const toolOutput = view
+    .locator(`[data-tool-call-output-id="${toolCallId}"]`)
+    .getByText(output, { exact: true });
+
+  // Re-open on every attempt rather than expanding once: a card that a late
+  // remount closes underneath would otherwise leave the assertion waiting on
+  // a body that nothing is going to mount again.
+  await expect(async () => {
+    if (!(await toolCall.isVisible())) {
+      const hasGroup = (await groupToggle.count()) > 0;
+      if (hasGroup && (await groupToggle.getAttribute('aria-expanded')) !== 'true') {
+        await groupToggle.click();
+      }
+    }
+    await expect(toolCall).toBeVisible({ timeout: 5000 });
+    await expect(toggle).toBeVisible({ timeout: 5000 });
+    if ((await toggle.getAttribute('aria-expanded')) !== 'true') {
+      await toggle.click();
+    }
+    await expect(toolOutput).toBeVisible({ timeout: 5000 });
+  }).toPass({ timeout: 30000 });
 }
 
 test.describe('tool approvals', () => {
@@ -486,6 +510,7 @@ test.describe('tool approvals', () => {
       // decisions, not just the simpler one-call resume path.
       await page.reload({ waitUntil: 'domcontentloaded' });
       await expect.poll(() => new URL(page.url()).pathname).toBe(conversationPath);
+      await collapseComposerApproval(page);
       await expect(approvalCards(page)).toHaveCount(2);
 
       const firstCard = approvalCard(page, firstCallId);
@@ -502,8 +527,7 @@ test.describe('tool approvals', () => {
       await expect(submit).toBeEnabled();
 
       const groupToggle = messagesView(page).getByRole('button', {
-        name: 'Used 2 tools',
-        exact: true,
+        name: /^Running 2 actions/,
       });
       const groupPanel = messagesView(page).getByTestId('tool-call-group-panel').last();
       await Promise.all([
@@ -602,6 +626,7 @@ test.describe('tool approvals', () => {
 
       await page.reload({ waitUntil: 'domcontentloaded' });
       await expect.poll(() => new URL(page.url()).pathname).toBe(conversationPath);
+      await collapseComposerApproval(page);
       const rehydratedCard = approvalCard(page, toolCallId);
       await expect(rehydratedCard).toBeVisible({ timeout: 30000 });
       await expect(rehydratedCard).toContainText(APPROVAL_REASON);
@@ -609,6 +634,7 @@ test.describe('tool approvals', () => {
       await page.goto(NEW_CHAT_PATH, { waitUntil: 'domcontentloaded' });
       await expect(approvalCards(page)).toHaveCount(0);
       await page.goto(conversationPath, { waitUntil: 'domcontentloaded' });
+      await collapseComposerApproval(page);
       const navigatedCard = approvalCard(page, toolCallId);
       await expect(navigatedCard).toBeVisible({ timeout: 30000 });
       await expect(navigatedCard).toContainText(APPROVAL_REASON);

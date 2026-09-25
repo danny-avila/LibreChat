@@ -1850,7 +1850,7 @@
   "com_ui_special_var_desc_iso_datetime": "Data i godzina UTC w formacie ISO 8601",
   "com_ui_special_var_iso_datetime": "Data i godzina UTC ISO",
   "com_ui_special_variable_added": "Dodano zmienną specjalną {{0}}.",
-  "com_ui_special_variables": "Zmienne specjalne:",
+  "com_ui_special_variables": "Zmienne specjalne",
   "com_ui_speech_not_supported": "Twoja przeglądarka nie obsługuje rozpoznawania mowy",
   "com_ui_speech_not_supported_use_external": "Twoja przeglądarka nie obsługuje rozpoznawania mowy. Spróbuj przełączyć na zewnętrzne STT w menu Ustawienia > Mowa.",
   "com_ui_speech_while_submitting": "Nie można przesłać mowy podczas generowania odpowiedzi",

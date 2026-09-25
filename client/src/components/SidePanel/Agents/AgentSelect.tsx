@@ -2,15 +2,25 @@ import { memo, useCallback, useEffect, useRef } from 'react';
 import { EarthIcon } from 'lucide-react';
 import { ControlCombobox } from '@librechat/client';
 import { useFormContext, Controller } from 'react-hook-form';
-import { AgentCapabilities, defaultAgentFormValues } from 'librechat-data-provider';
+import {
+  AgentCapabilities,
+  normalizeAgentSelectorLimit,
+  defaultAgentFormValues,
+} from 'librechat-data-provider';
 import type { Agent, AgentCreateParams, StatefulCodeEnvironment } from 'librechat-data-provider';
 import type { UseMutationResult, QueryObserverResult } from '@tanstack/react-query';
 import type { TAgentCapabilities, AgentForm } from '~/common';
 import { cn, createProviderOption, processAgentOption, getDefaultAgentFormValues } from '~/utils';
+import { useListAgentsQuery, useGetStartupConfig } from '~/data-provider';
 import { useLocalize, useAgentDefaultPermissionLevel } from '~/hooks';
-import { useListAgentsQuery } from '~/data-provider';
+import { mergeDirtyToolsWithServerActions } from './agentTools';
 
 const keys = new Set(Object.keys(defaultAgentFormValues));
+
+/** Dropdown cap: 480px tall; the unsearched list cap comes from
+ * `interface.agentSelectorLimit` (default 10), and the search field covers
+ * agents past the cut. */
+const SELECTOR_MAX_HEIGHT = 480;
 
 function AgentSelect({
   agentQuery,
@@ -27,8 +37,20 @@ function AgentSelect({
 }) {
   const localize = useLocalize();
   const lastSelectedAgent = useRef<string | null>(null);
-  const { control, reset } = useFormContext();
+  const {
+    control,
+    getValues,
+    reset,
+    setValue,
+    /** Subscribing dirtyFields is required for reset({ keepDirtyValues: true })
+     * to preserve edits when an action mutation refreshes the agent query. */
+    formState: { dirtyFields },
+  } = useFormContext();
+  const dirtyFieldsRef = useRef(dirtyFields);
+  dirtyFieldsRef.current = dirtyFields;
   const permissionLevel = useAgentDefaultPermissionLevel();
+  const { data: startupConfig } = useGetStartupConfig();
+  const selectorLimit = normalizeAgentSelectorLimit(startupConfig?.interface?.agentSelectorLimit);
 
   const { data: agents = null } = useListAgentsQuery(
     { requiredPermission: permissionLevel },
@@ -46,14 +68,14 @@ function AgentSelect({
   );
 
   const resetAgentForm = useCallback(
-    (fullAgent: Agent) => {
+    (fullAgent: Agent, preserveDirtyValues = false) => {
       const isGlobal = fullAgent.isPublic ?? false;
       const update = {
         ...fullAgent,
         provider: createProviderOption(fullAgent.provider),
         label: fullAgent.name ?? '',
         value: fullAgent.id || '',
-        icon: isGlobal ? <EarthIcon className={'icon-lg text-green-400'} /> : null,
+        icon: isGlobal ? <EarthIcon className="icon-lg text-status-success" /> : null,
       };
 
       const capabilities: TAgentCapabilities = {
@@ -89,6 +111,10 @@ function AgentSelect({
         avatar_preview: fullAgent.avatar?.filepath ?? '',
         avatar_action: null,
         stateful_code_environment: fullAgent.stateful_code_environment ?? 'user',
+        code_environment_id: fullAgent.code_environment_id,
+        repositoryInstructions: fullAgent.repositoryInstructions,
+        code_workspace_id: fullAgent.code_workspace_id,
+        git_identity: fullAgent.git_identity,
       };
 
       Object.entries(fullAgent).forEach(([name, value]) => {
@@ -159,18 +185,31 @@ function AgentSelect({
        * the flag). The builder has no control left for it and the runtime
        * treats it as "no skills", yet the section would render the selection
        * as active. Normalize to enabled so the form matches what the UI
-       * shows and a later save persists the displayed behavior. */
+       * shows and a later save persists the displayed behavior.
+       *
+       * An explicit `skills_scope` is exempt: `none` deliberately keeps the
+       * allowlist so returning to `selected` restores it, and flipping the
+       * flag there would persist skills-enabled on an agent shown as Off,
+       * which `skillDeps` reads as permission to inject authoring tools. */
       if (
         Array.isArray(formValues.skills) &&
         formValues.skills.length > 0 &&
-        formValues.skills_enabled !== true
+        formValues.skills_enabled !== true &&
+        formValues.skills_scope === undefined
       ) {
         formValues.skills_enabled = true;
       }
 
-      reset(formValues);
+      const mergedDirtyTools =
+        preserveDirtyValues && dirtyFieldsRef.current.tools != null
+          ? mergeDirtyToolsWithServerActions(getValues('tools') ?? [], agentTools)
+          : undefined;
+      reset(formValues, { keepDirtyValues: preserveDirtyValues });
+      if (mergedDirtyTools != null) {
+        setValue('tools', mergedDirtyTools, { shouldDirty: true });
+      }
     },
-    [reset],
+    [getValues, reset, setValue],
   );
 
   const onSelect = useCallback(
@@ -207,7 +246,7 @@ function AgentSelect({
 
   useEffect(() => {
     if (agentQuery.data && agentQuery.isSuccess) {
-      resetAgentForm(agentQuery.data);
+      resetAgentForm(agentQuery.data, true);
     }
   }, [agentQuery.data, agentQuery.isSuccess, resetAgentForm]);
 
@@ -246,6 +285,8 @@ function AgentSelect({
           selectPlaceholder={field?.value?.value ?? createAgent}
           iconSide="right"
           searchPlaceholder={localize('com_agents_search_name')}
+          popoverMaxHeight={SELECTOR_MAX_HEIGHT}
+          unsearchedLimit={selectorLimit}
           SelectIcon={field?.value?.icon}
           setValue={onSelect}
           items={

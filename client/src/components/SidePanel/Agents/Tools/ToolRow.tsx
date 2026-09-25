@@ -75,18 +75,19 @@ function ToolRowImpl({ item, onInfo, onRemove }: Props) {
       )}
       <div
         className={cn(
-          'flex shrink-0 items-center gap-0.5 opacity-0',
-          'group-focus-within:opacity-100 group-hover:opacity-100',
+          'flex shrink-0 items-center gap-0.5',
+          'group-focus-within:opacity-100 group-hover:opacity-100 no-touch:opacity-0',
         )}
       >
         <Button
           variant="ghost"
+          size="icon-xs"
           onClick={() => onInfo(item)}
           aria-label={
             configurable ? localize('com_ui_tools_configure') : localize('com_ui_tools_info')
           }
           className={cn(
-            'size-6 rounded-md p-0 text-text-secondary',
+            'rounded-md text-text-secondary',
             'hover:text-text-secondary focus-visible:opacity-100',
           )}
         >
@@ -94,10 +95,11 @@ function ToolRowImpl({ item, onInfo, onRemove }: Props) {
         </Button>
         <Button
           variant="ghost"
+          size="icon-xs"
           onClick={() => onRemove(item)}
           aria-label={localize('com_ui_tools_remove')}
           className={cn(
-            'size-6 rounded-md p-0 text-text-secondary',
+            'rounded-md text-text-secondary',
             'hover:text-text-secondary focus-visible:opacity-100',
           )}
         >

@@ -1,16 +1,16 @@
 import { logger } from '@librechat/data-schemas';
 import { AnthropicClientOptions } from '@librechat/agents';
 import {
-  EModelEndpoint,
+  isOpus55Model,
+  OPUS_55_BLOCK_BINDING,
   ThinkingDisplay,
   AnthropicEffort,
   anthropicSettings,
-  isMythosClassModel,
   resolveThinkingDisplay,
   supportsAdaptiveThinking,
+  supportsPromptCache,
   requiresExplicitThinkingDisabled,
 } from 'librechat-data-provider';
-import { matchModelName } from '~/utils/tokens';
 
 const FINE_GRAINED_TOOL_STREAMING_BETA = 'fine-grained-tool-streaming-2025-05-14';
 
@@ -37,23 +37,7 @@ function appendAnthropicBetaHeader(
  * @returns {boolean}
  */
 function checkPromptCacheSupport(modelName: string): boolean {
-  const modelMatch = matchModelName(modelName, EModelEndpoint.anthropic) ?? '';
-  if (
-    modelMatch.includes('claude-3-5-sonnet-latest') ||
-    modelMatch.includes('claude-3.5-sonnet-latest')
-  ) {
-    return false;
-  }
-
-  return (
-    /claude-3[-.]7/.test(modelMatch) ||
-    /claude-3[-.]5-(?:sonnet|haiku)/.test(modelMatch) ||
-    /claude-3-(?:sonnet|haiku|opus)?/.test(modelMatch) ||
-    /claude-(?:sonnet|opus|haiku)-[4-9]/.test(modelMatch) ||
-    /claude-[4-9]-(?:sonnet|opus|haiku)?/.test(modelMatch) ||
-    /claude-4(?:-(?:sonnet|opus|haiku))?/.test(modelMatch) ||
-    isMythosClassModel(modelMatch)
-  );
+  return supportsPromptCache(modelName);
 }
 
 /**
@@ -112,7 +96,11 @@ function configureReasoning(
     return updatedOptions;
   }
 
-  if (extendedOptions.thinking && modelName && supportsAdaptiveThinking(modelName)) {
+  if (
+    (extendedOptions.thinking || isOpus55Model(modelName)) &&
+    modelName &&
+    supportsAdaptiveThinking(modelName)
+  ) {
     /**
      * For Opus 4.7+, Anthropic omits thinking content from responses by
      * default. Resolver returns `'summarized'` for those models (so the
@@ -122,9 +110,11 @@ function configureReasoning(
      * https://platform.claude.com/docs/en/about-claude/models/whats-new-claude-4-7#thinking-content-omitted-by-default
      */
     const display = resolveThinkingDisplay(modelName, extendedOptions.thinkingDisplay);
-    const adaptive = display
-      ? { type: 'adaptive' as const, display }
-      : { type: 'adaptive' as const };
+    const adaptive = {
+      type: 'adaptive' as const,
+      ...(display ? { display } : {}),
+      ...(isOpus55Model(modelName) ? { block_binding: { ...OPUS_55_BLOCK_BINDING } } : {}),
+    };
     /**
      * TODO: Remove the cast once `@librechat/agents` updates its
      * `ChatAnthropicMessages['thinking']` type to include the `display` field

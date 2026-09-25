@@ -36,6 +36,91 @@ describe('aggregateSubagentContent', () => {
     expect(parts).toEqual([{ type: ContentTypes.TEXT, text: 'Hello world!' }]);
   });
 
+  it('preserves message-creation phases and keeps their text runs separate', () => {
+    const parts = aggregateSubagentContent([
+      makeEvent({
+        phase: 'run_step',
+        data: {
+          id: 'commentary-step',
+          stepDetails: {
+            type: 'message_creation',
+            message_creation: { phase: 'commentary' },
+          },
+        },
+      }),
+      makeEvent({
+        phase: 'run_step',
+        data: {
+          id: 'final-step',
+          stepDetails: {
+            type: 'message_creation',
+            message_creation: { phase: 'final_answer' },
+          },
+        },
+      }),
+      makeEvent({
+        phase: 'message_delta',
+        data: {
+          id: 'commentary-step',
+          delta: { content: [{ type: 'text', text: 'Commentary.' }] },
+        },
+      }),
+      makeEvent({
+        phase: 'message_delta',
+        data: {
+          id: 'final-step',
+          delta: { content: [{ type: 'text', text: 'Final answer.' }] },
+        },
+      }),
+    ]);
+
+    expect(parts).toEqual([
+      { type: ContentTypes.TEXT, text: 'Commentary.', phase: 'commentary' },
+      { type: ContentTypes.TEXT, text: 'Final answer.', phase: 'final_answer' },
+    ]);
+  });
+
+  it('retains a long-lived message phase while later completed steps are retired', () => {
+    const laterSteps = Array.from({ length: 100 }, (_, index) => `later-step-${index}`);
+    const events: SubagentUpdateEvent[] = [
+      makeEvent({
+        phase: 'run_step',
+        data: {
+          id: 'long-lived-step',
+          stepDetails: {
+            type: 'message_creation',
+            message_creation: { phase: 'commentary' },
+          },
+        },
+      }),
+      ...laterSteps.flatMap((id) => [
+        makeEvent({
+          phase: 'run_step',
+          data: {
+            id,
+            stepDetails: {
+              type: 'message_creation',
+              message_creation: { phase: 'final_answer' },
+            },
+          },
+        }),
+        makeEvent({ phase: 'run_step_closed', data: { id } }),
+      ]),
+      makeEvent({
+        phase: 'message_delta',
+        data: {
+          id: 'long-lived-step',
+          delta: { content: [{ type: 'text', text: 'Still commentary.' }] },
+        },
+      }),
+      makeEvent({ phase: 'run_step_closed', data: { id: 'long-lived-step' } }),
+    ];
+
+    expect(aggregateSubagentContent(events)).toEqual([
+      { type: ContentTypes.TEXT, text: 'Still commentary.', phase: 'commentary' },
+    ]);
+  });
+
   it('concatenates reasoning_delta chunks into a single THINK part', () => {
     const parts = aggregateSubagentContent([
       makeEvent({
@@ -106,6 +191,45 @@ describe('aggregateSubagentContent', () => {
     const tc = (parts[0] as { tool_call: { output?: string; progress: number } }).tool_call;
     expect(tc.output).toBe('1+1 = 2');
     expect(tc.progress).toBe(1);
+  });
+
+  it('preserves input-validation failures on completed tool calls', () => {
+    const parts = aggregateSubagentContent([
+      makeEvent({
+        phase: 'run_step',
+        data: {
+          stepDetails: {
+            type: 'tool_calls',
+            tool_calls: [{ id: 'question-1', name: 'ask_user_question', args: '{}' }],
+          },
+        },
+      }),
+      makeEvent({
+        phase: 'run_step_completed',
+        data: {
+          result: {
+            type: 'tool_call',
+            tool_call: {
+              id: 'question-1',
+              name: 'ask_user_question',
+              output: 'Invalid question schema',
+              progress: 1,
+              inputValidationError: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    expect(parts).toEqual([
+      expect.objectContaining({
+        type: ContentTypes.TOOL_CALL,
+        tool_call: expect.objectContaining({
+          id: 'question-1',
+          inputValidationError: true,
+        }),
+      }),
+    ]);
   });
 
   it('interleaves tool calls between text parts in order', () => {
@@ -267,6 +391,25 @@ describe('buildSubagentTickerLines', () => {
     ]);
     expect(lines).toHaveLength(1);
     expect(lines[0]).toEqual({ kind: 'writing', body: 'Hello world' });
+  });
+
+  it('retains meaningful text across a whitespace-heavy stream', () => {
+    const lines = buildSubagentTickerLines([
+      makeEvent({
+        phase: 'message_delta',
+        data: { delta: { content: [{ type: 'text', text: 'Visible' }] } },
+      }),
+      makeEvent({
+        phase: 'message_delta',
+        data: { delta: { content: [{ type: 'text', text: ' \n'.repeat(1200) }] } },
+      }),
+      makeEvent({
+        phase: 'message_delta',
+        data: { delta: { content: [{ type: 'text', text: 'again' }] } },
+      }),
+    ]);
+
+    expect(lines[0]).toEqual({ kind: 'writing', body: 'Visible again' });
   });
 
   it('truncates the writing body to the tail when it grows past the cap', () => {

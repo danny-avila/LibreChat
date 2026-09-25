@@ -13,6 +13,7 @@ const mockAbortMutateAsync = jest.fn();
 const mockConvertSteersToQueued = jest.fn();
 
 jest.mock('~/data-provider', () => ({
+  useGetStartupConfig: () => ({ data: undefined }),
   useAbortStreamMutation: () => ({ mutateAsync: mockAbortMutateAsync }),
   supportsGenerationProtocolV2: (value: unknown) =>
     value != null &&

@@ -5,6 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
+const { Writable } = require('stream');
 const { execSync } = require('child_process');
 
 /** @typedef {(message: string) => void} ConsoleColor */
@@ -23,6 +24,43 @@ const askQuestion = (query) => {
     rl.question('\x1b[36m' + query + '\n> ' + '\x1b[0m', (ans) => {
       rl.close();
       resolve(ans);
+    }),
+  );
+};
+
+/**
+ * @param {string} query
+ * @param {NodeJS.ReadableStream} [input]
+ * @param {NodeJS.WritableStream} [destination]
+ * @returns {Promise<string>}
+ */
+const askSilentQuestion = (query, input = process.stdin, destination = process.stdout) => {
+  let muted = false;
+  const output = new Writable({
+    write(chunk, encoding, callback) {
+      if (!muted) {
+        destination.write(chunk, encoding);
+      }
+      callback();
+    },
+  });
+  output.isTTY = destination.isTTY;
+
+  const rl = readline.createInterface({
+    input,
+    output,
+    terminal: input.isTTY,
+  });
+
+  destination.write(query);
+  muted = true;
+
+  return new Promise((resolve) =>
+    rl.question('', (answer) => {
+      muted = false;
+      destination.write('\n');
+      rl.close();
+      resolve(answer);
     }),
   );
 };
@@ -91,6 +129,7 @@ coloredConsole.gray = (/** @type {string} */ msg) => console.log('\x1b[90m%s\x1b
 
 module.exports = {
   askQuestion,
+  askSilentQuestion,
   askMultiLineQuestion,
   silentExit,
   isDockerRunning,

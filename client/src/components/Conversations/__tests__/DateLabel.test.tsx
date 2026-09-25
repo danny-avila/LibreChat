@@ -7,6 +7,7 @@ jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string, params?: Record<string, string>) => {
     const translations: Record<string, string> = {
       com_a11y_chats_date_section: `Chats from ${params?.date ?? ''}`,
+      com_a11y_chats_alpha_section: `Chats with titles starting with ${params?.letter ?? ''}`,
       com_ui_date_today: 'Today',
       com_ui_date_yesterday: 'Yesterday',
       com_ui_date_previous_7_days: 'Previous 7 days',
@@ -19,6 +20,16 @@ describe('DateLabel', () => {
   it('provides accessible heading name via aria-label', () => {
     render(<DateLabel groupName="com_ui_date_today" />);
     expect(screen.getByRole('heading', { level: 2, name: 'Chats from Today' })).toBeInTheDocument();
+  });
+
+  it('uses the alphabetical accessible name for title groups', () => {
+    render(<DateLabel groupName="A" isAlphabetical />);
+    expect(
+      screen.getByRole('heading', {
+        level: 2,
+        name: 'Chats with titles starting with A',
+      }),
+    ).toBeInTheDocument();
   });
 
   it('renders visible text as the localized group name', () => {

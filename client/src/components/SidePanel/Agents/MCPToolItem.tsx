@@ -18,6 +18,7 @@ interface MCPToolItemProps {
   intentDisabled: boolean;
   deferredToolsEnabled: boolean;
   programmaticToolsEnabled: boolean;
+  programmaticToolsAvailable: boolean;
   backgroundToolsEnabled: boolean;
   toolIntentsEnabled: boolean;
   onToggleSelect: () => void;
@@ -44,6 +45,7 @@ export default function MCPToolItem({
   onToggleIntent,
   deferredToolsEnabled,
   programmaticToolsEnabled,
+  programmaticToolsAvailable,
   backgroundToolsEnabled,
   toolIntentsEnabled,
 }: MCPToolItemProps) {
@@ -86,7 +88,7 @@ export default function MCPToolItem({
               pressed={isDeferred}
               label={localize('com_ui_mcp_defer_loading')}
               tooltip={localize('com_ui_mcp_click_to_defer')}
-              activeClass="text-text-warning"
+              activeBorderClass="border-series-4"
               onToggle={onToggleDefer}
             />
           )}
@@ -95,8 +97,13 @@ export default function MCPToolItem({
               icon={Code2}
               pressed={isProgrammatic}
               label={localize('com_ui_mcp_programmatic')}
-              tooltip={localize('com_ui_mcp_click_to_programmatic')}
-              activeClass="text-violet-500"
+              tooltip={localize(
+                programmaticToolsAvailable
+                  ? 'com_ui_mcp_click_to_programmatic'
+                  : 'com_ui_mcp_programmatic_requires_code',
+              )}
+              activeBorderClass="border-series-6"
+              disabled={!programmaticToolsAvailable && !isProgrammatic}
               onToggle={onToggleProgrammatic}
             />
           )}
@@ -106,7 +113,7 @@ export default function MCPToolItem({
               pressed={isBackground}
               label={localize('com_ui_mcp_background')}
               tooltip={localize('com_ui_mcp_click_to_background')}
-              activeClass="text-sky-500"
+              activeBorderClass="border-series-1"
               onToggle={onToggleBackground}
             />
           )}
@@ -119,7 +126,7 @@ export default function MCPToolItem({
               tooltip={localize(
                 intentDisabled ? 'com_ui_mcp_intent_programmatic' : 'com_ui_mcp_click_to_intent',
               )}
-              activeClass="text-teal-500"
+              activeBorderClass="border-series-3"
               onToggle={onToggleIntent}
             />
           )}

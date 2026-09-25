@@ -317,18 +317,22 @@ describe('importChatGptConvo', () => {
 
     expect(userMsg1.sender).toBe('user');
     expect(userMsg1.isCreatedByUser).toBe(true);
+    expect(userMsg1.isUserSubmitted).toBe(true);
     expect(userMsg1.model).toBe('gpt-4');
 
     expect(userMsg2.sender).toBe('user');
     expect(userMsg2.isCreatedByUser).toBe(true);
+    expect(userMsg2.isUserSubmitted).toBe(true);
     expect(userMsg2.model).toBe('gpt-4o-mini');
 
     expect(assistantMsg1.sender).toBe('GPT-4');
     expect(assistantMsg1.isCreatedByUser).toBe(false);
+    expect(assistantMsg1.isUserSubmitted).toBe(true);
     expect(assistantMsg1.model).toBe('gpt-4');
 
     expect(assistantMsg2.sender).toBe('GPT-3.5-turbo');
     expect(assistantMsg2.isCreatedByUser).toBe(false);
+    expect(assistantMsg2.isUserSubmitted).toBe(true);
     expect(assistantMsg2.model).toBe('gpt-3.5-turbo');
   });
 
@@ -875,6 +879,16 @@ describe('importLibreChatConvo', () => {
 
     expect(importBatchBuilder.startConversation).toHaveBeenCalledWith(EModelEndpoint.openAI);
     expect(importBatchBuilder.saveMessage).toHaveBeenCalledTimes(expectedNumberOfMessages);
+    expect(
+      importBatchBuilder.saveMessage.mock.calls.every(
+        ([message]) => message.isUserSubmitted === true,
+      ),
+    ).toBe(true);
+    expect(
+      importBatchBuilder.saveMessage.mock.calls.some(
+        ([message]) => message.isCreatedByUser === false && message.isUserSubmitted === true,
+      ),
+    ).toBe(true);
     expect(importBatchBuilder.finishConversation).toHaveBeenCalledTimes(1);
     expect(importBatchBuilder.saveBatch).toHaveBeenCalled();
   });
@@ -950,6 +964,39 @@ describe('importLibreChatConvo', () => {
         },
       },
     ]);
+  });
+
+  it('drops server-private context meta and trace sampling from imported messages', async () => {
+    const message = {
+      messageId: 'message-1',
+      parentMessageId: Constants.NO_PARENT,
+      text: 'Imported response',
+      isCreatedByUser: false,
+      langfuseSampled: true,
+      langfuseDestinationIds: ['forged-destination'],
+      langfuseRunId: 'someone-elses-run',
+      contextMeta: {
+        calibrationRatio: 1,
+        encoding: 'claude',
+        fading: { v: 1, budgetTokens: 1, masked: true },
+      },
+    };
+    const jsonData = {
+      conversationId: 'context-meta-import',
+      title: 'Context meta import',
+      recursive: false,
+      messages: [message],
+    };
+    const importBatchBuilder = new ImportBatchBuilder('user-123');
+
+    const importer = getImporter(jsonData);
+    await importer(jsonData, 'user-123', () => importBatchBuilder);
+
+    expect(importBatchBuilder.messages[0]).not.toHaveProperty('contextMeta');
+    expect(importBatchBuilder.messages[0].langfuseSampled).toBe(false);
+    expect(importBatchBuilder.messages[0]).not.toHaveProperty('langfuseDestinationIds');
+    expect(importBatchBuilder.messages[0]).not.toHaveProperty('langfuseRunId');
+    expect(importBatchBuilder.messages[0].isUserSubmitted).toBe(true);
   });
 
   it('sanitizes singleton content and attachment fields before Mongoose array casting', async () => {
@@ -1080,6 +1127,7 @@ describe('importLibreChatConvo', () => {
     // Get the imported messages
     const messages = importBatchBuilder.messages;
     expect(messages.length).toBeGreaterThan(0);
+    expect(messages.every((message) => message.isUserSubmitted === true)).toBe(true);
 
     // Build maps for verification
     const textToMessageMap = new Map();
@@ -1283,22 +1331,30 @@ describe('importLibreChatConvo', () => {
       expect(result.conversation.model).toBe(openAISettings.model.default);
     });
 
-    it('applies all-data retention to imported conversations and messages', () => {
-      const requestUserId = 'user-123';
-      const builder = new ImportBatchBuilder(requestUserId, {
-        retentionMode: RetentionMode.ALL,
-        temporaryChatRetention: 24,
-      });
-      builder.startConversation(EModelEndpoint.openAI);
-      const message = builder.addUserMessage('Retained import');
-      const result = builder.finishConversation('Imported retained chat');
+    it.each([undefined, 2160])(
+      'applies all-data retention to imports with general retention %s',
+      (generalChatRetention) => {
+        const requestUserId = 'user-123';
+        const builder = new ImportBatchBuilder(requestUserId, {
+          retentionMode: RetentionMode.ALL,
+          temporaryChatRetention: 24,
+          generalChatRetention,
+        });
+        const now = Date.now();
+        builder.startConversation(EModelEndpoint.openAI);
+        const message = builder.addUserMessage('Retained import');
+        const result = builder.finishConversation('Imported retained chat');
 
-      expect(message.isTemporary).toBe(false);
-      expect(message.expiredAt).toBeInstanceOf(Date);
-      expect(result.conversation.isTemporary).toBe(false);
-      expect(result.conversation.expiredAt).toBeInstanceOf(Date);
-      expect(result.conversation.expiredAt).toBe(message.expiredAt);
-    });
+        expect(message.isTemporary).toBe(false);
+        expect(message.expiredAt).toBeInstanceOf(Date);
+        expect(result.conversation.isTemporary).toBe(false);
+        expect(result.conversation.expiredAt).toBeInstanceOf(Date);
+        expect(result.conversation.expiredAt).toBe(message.expiredAt);
+        const hours = generalChatRetention ?? 24;
+        expect(message.expiredAt.getTime()).toBeGreaterThanOrEqual(now + hours * 3600000);
+        expect(message.expiredAt.getTime()).toBeLessThan(now + hours * 3600000 + 1000);
+      },
+    );
   });
 });
 
@@ -1538,6 +1594,26 @@ describe('processAssistantMessage', () => {
     });
   });
 
+  test('should link tens of thousands of citations in one message', () => {
+    const count = 40000;
+    const marker = '【†】';
+    const span = `${'word '.repeat(19)}${marker}`;
+    const citations = Array.from({ length: count }, (_, index) => ({
+      start_ix: (index + 1) * span.length - marker.length,
+      end_ix: (index + 1) * span.length,
+      metadata: { type: 'webpage', title: 'Source', url: 'https://example.com' },
+    }));
+
+    const text = span.repeat(count);
+    const startedAt = performance.now();
+    const result = processAssistantMessage({ metadata: { citations } }, text);
+    const elapsedMs = performance.now() - startedAt;
+
+    expect(elapsedMs).toBeLessThan(1000);
+    expect(result).not.toContain(marker);
+    expect(result.split(' ([Source](https://example.com))')).toHaveLength(count + 1);
+  });
+
   test('should handle potential ReDoS attack payloads', () => {
     // Test with increasing input sizes to check for exponential behavior
     const sizes = [32, 33, 34]; // Adding more sizes would increase test time
@@ -1657,12 +1733,14 @@ describe('importClaudeConvo', () => {
     // Check user message
     const userMsg = savedMessages.find((msg) => msg.text === 'Hello Claude');
     expect(userMsg.isCreatedByUser).toBe(true);
+    expect(userMsg.isUserSubmitted).toBe(true);
     expect(userMsg.sender).toBe('user');
     expect(userMsg.endpoint).toBe(EModelEndpoint.anthropic);
 
     // Check assistant message
     const assistantMsg = savedMessages.find((msg) => msg.text === 'Hello! How can I help you?');
     expect(assistantMsg.isCreatedByUser).toBe(false);
+    expect(assistantMsg.isUserSubmitted).toBe(true);
     expect(assistantMsg.sender).toBe('Claude');
     expect(assistantMsg.parentMessageId).toBe(userMsg.messageId);
   });

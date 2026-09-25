@@ -19,7 +19,9 @@ import DisplayUsernameMessages from '../SettingsTabs/Account/DisplayUsernameMess
 import ConversationModeSwitch from '../SettingsTabs/Speech/ConversationModeSwitch';
 import EnableTwoFactorItem from '../SettingsTabs/Account/TwoFactorAuthentication';
 import LangfuseConnection from '../SettingsTabs/Integrations/LangfuseConnection';
+import ClockFormatSelector from '../SettingsTabs/General/ClockFormatSelector';
 import ImportConversations from '../SettingsTabs/Data/ImportConversations';
+import WeekStartSelector from '../SettingsTabs/General/WeekStartSelector';
 import { ArchiveAllChats } from '../SettingsTabs/Data/ArchiveAllChats';
 import { toggleControl, ThemeSetting, LangSetting } from './controls';
 import BackupCodesItem from '../SettingsTabs/Account/BackupCodesItem';
@@ -43,7 +45,9 @@ import SharedLinks from '../SettingsTabs/Data/SharedLinks';
 import ImageResize from '../SettingsTabs/Chat/ImageResize';
 import { showThinkingAtom } from '~/store/showThinking';
 import ProviderKeys from '../SettingsTabs/ProviderKeys';
+import { autoScrollAtom } from '~/store/autoScroll';
 import Avatar from '../SettingsTabs/Account/Avatar';
+import CodeEnvironments from './CodeEnvironments';
 import About from '../SettingsTabs/About/About';
 import ApiKeys from '../SettingsTabs/ApiKeys';
 import MemoryToggle from './MemoryToggle';
@@ -59,7 +63,15 @@ export const registry: SettingEntry[] = [
     tab: GENERAL,
     section: 'appearance',
     labelKey: 'com_nav_theme',
-    keywords: ['dark', 'light', 'appearance', 'color'],
+    keywords: [
+      'dark',
+      'light',
+      'appearance',
+      'color',
+      'contrast',
+      'high contrast',
+      'accessibility',
+    ],
     Component: ThemeSetting,
   },
   {
@@ -85,6 +97,22 @@ export const registry: SettingEntry[] = [
     labelKey: 'com_nav_chat_direction',
     keywords: ['rtl', 'ltr'],
     Component: ChatDirection,
+  },
+  {
+    id: 'clockFormat',
+    tab: GENERAL,
+    section: 'appearance',
+    labelKey: 'com_nav_clock_format',
+    keywords: ['time', '12-hour', '24-hour', 'am', 'pm', 'meridiem'],
+    Component: ClockFormatSelector,
+  },
+  {
+    id: 'weekStart',
+    tab: GENERAL,
+    section: 'appearance',
+    labelKey: 'com_nav_week_start',
+    keywords: ['week', 'calendar', 'sunday', 'monday'],
+    Component: WeekStartSelector,
   },
   // General · Layout
   {
@@ -118,6 +146,19 @@ export const registry: SettingEntry[] = [
       stateAtom: store.showScrollButton,
       localizationKey: 'com_nav_scroll_button',
       switchId: 'showScrollButton',
+    }),
+  },
+  {
+    id: 'mobileDrawerStrip',
+    tab: GENERAL,
+    section: 'layout',
+    labelKey: 'com_nav_mobile_drawer_strip',
+    keywords: ['mobile', 'sidebar', 'drawer', 'swipe'],
+    Component: toggleControl({
+      stateAtom: store.mobileDrawerStrip,
+      localizationKey: 'com_nav_mobile_drawer_strip',
+      hoverCardText: 'com_nav_mobile_drawer_strip_info',
+      switchId: 'mobileDrawerStrip',
     }),
   },
   {
@@ -280,6 +321,19 @@ export const registry: SettingEntry[] = [
     }),
   },
   {
+    id: 'collapseLongUserMessages',
+    tab: CHAT,
+    section: 'messages',
+    labelKey: 'com_nav_collapse_user_messages',
+    keywords: ['collapse', 'expand', 'long', 'user', 'message', 'truncate', 'show', 'more'],
+    Component: toggleControl({
+      stateAtom: store.collapseLongUserMessages,
+      localizationKey: 'com_nav_collapse_user_messages',
+      switchId: 'collapseLongUserMessages',
+      hoverCardText: 'com_nav_info_collapse_user_messages',
+    }),
+  },
+  {
     id: 'usernameDisplay',
     tab: CHAT,
     section: 'messages',
@@ -324,6 +378,19 @@ export const registry: SettingEntry[] = [
     }),
   },
   {
+    id: 'copyRichText',
+    tab: CHAT,
+    section: 'messages',
+    labelKey: 'com_nav_copy_rich_text',
+    keywords: ['copy', 'clipboard', 'rich', 'html', 'format', 'markdown', 'paste'],
+    Component: toggleControl({
+      stateAtom: store.copyRichText,
+      localizationKey: 'com_nav_copy_rich_text',
+      switchId: 'copyRichText',
+      hoverCardText: 'com_nav_info_copy_rich_text',
+    }),
+  },
+  {
     id: 'autoExpandTools',
     tab: CHAT,
     section: 'messages',
@@ -352,7 +419,7 @@ export const registry: SettingEntry[] = [
     section: 'conversations',
     labelKey: 'com_nav_auto_scroll',
     Component: toggleControl({
-      stateAtom: store.autoScroll,
+      stateAtom: autoScrollAtom,
       localizationKey: 'com_nav_auto_scroll',
       switchId: 'autoScroll',
     }),
@@ -542,6 +609,15 @@ export const registry: SettingEntry[] = [
     keywords: ['agent', 'code', 'environment', 'sandbox', 'stateful', 'workspace'],
     show: (ctx) => ctx.hasStatefulCodeSessions,
     Component: StatefulWorkspaceDefault,
+  },
+  {
+    id: 'codeEnvironments',
+    tab: DATA,
+    section: 'codeExecution',
+    labelKey: 'com_ui_code_environments',
+    keywords: ['bridge', 'cli', 'code', 'environment', 'sandbox', 'vm', 'worker'],
+    show: (ctx) => ctx.hasStatefulCodeSessions,
+    Component: CodeEnvironments,
   },
   // Data controls · Your data
   {

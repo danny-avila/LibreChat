@@ -2,7 +2,9 @@ import { ErrorTypes } from 'librechat-data-provider';
 import { logger, tenantStorage } from '@librechat/data-schemas';
 import type { NextFunction, Request, Response } from 'express';
 import type { MongoServerError, ValidationError, CustomError } from '~/types';
+import { MCPAuthenticationRefreshError, MCPAuthenticationRejectedError } from '~/mcp/errors';
 import { buildTenantIsolationErrorLogContext } from './auth';
+import { OpenIDReauthRequiredError } from '~/utils/oidc';
 
 const handleDuplicateKeyError = (err: MongoServerError, res: Response) => {
   logger.warn('Duplicate key error: ' + (err.errmsg || err.message));
@@ -81,6 +83,32 @@ export const ErrorController = (
 
     if (isMongoServerError(error)) {
       return handleDuplicateKeyError(error, res);
+    }
+
+    if (err instanceof OpenIDReauthRequiredError) {
+      logger.warn('OpenID re-authentication required: ' + err.message);
+      return res.status(401).send({ error: 'invalid_token', message: err.message });
+    }
+
+    if (err instanceof MCPAuthenticationRejectedError) {
+      logger.warn('MCP bearer authentication rejected: ' + err.message);
+      /** A remote credential rejection must not trigger the client's app-JWT retry interceptor. */
+      return res.status(err.statusCode).send({
+        error: 'invalid_token',
+        code: err.code,
+        message: err.message,
+        retryable: err.retryable,
+        connectionRefreshed: err.connectionRefreshed,
+      });
+    }
+
+    if (err instanceof MCPAuthenticationRefreshError) {
+      logger.warn('MCP bearer refresh temporarily unavailable: ' + err.message);
+      return res.status(err.statusCode).send({
+        code: err.code,
+        message: err.message,
+        retryable: err.retryable,
+      });
     }
 
     if (isCustomError(error) && error.statusCode && error.body) {

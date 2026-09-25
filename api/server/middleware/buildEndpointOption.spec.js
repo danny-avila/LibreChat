@@ -11,7 +11,21 @@ jest.mock('librechat-data-provider', () => {
   };
 });
 
+jest.mock('@librechat/data-schemas', () => {
+  const actual = jest.requireActual('@librechat/data-schemas');
+  return {
+    ...actual,
+    logger: {
+      error: jest.fn(),
+      warn: jest.fn(),
+      info: jest.fn(),
+      debug: jest.fn(),
+    },
+  };
+});
+
 const { EModelEndpoint, parseCompactConvo } = require('librechat-data-provider');
+const { logger } = require('@librechat/data-schemas');
 
 const mockBuildOptions = jest.fn((_endpoint, parsedBody) => ({
   ...parsedBody,
@@ -404,6 +418,172 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
     expect(req.body.endpointOption.promptPrefix).toBe('Help Ada.');
   });
 
+  it('blocks a filtered profile name before a non-agent endpoint is built', async () => {
+    mockGetEndpointsConfig.mockResolvedValue({});
+
+    const req = createReq(
+      {
+        endpoint: EModelEndpoint.assistants,
+        spec: 'guarded-assistant',
+        assistant_id: 'asst_123',
+      },
+      {
+        filters: {
+          prompts: {
+            pii: {
+              fields: ['preset_text'],
+              starterPatterns: [],
+              customPatterns: [
+                {
+                  id: 'submitted-content',
+                  label: 'submitted content',
+                  regex: 'BLOCK-[A-Z]+',
+                },
+              ],
+            },
+          },
+        },
+        modelSpecs: {
+          enforce: false,
+          list: [
+            {
+              name: 'guarded-assistant',
+              preset: {
+                endpoint: EModelEndpoint.assistants,
+                assistant_id: 'asst_123',
+                promptPrefix: 'Help {{current_user}}.',
+              },
+            },
+          ],
+        },
+      },
+    );
+    req.user = { name: 'BLOCK-NAME' };
+    const res = createRes();
+    const next = jest.fn();
+
+    await buildEndpointOption(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: 'content_filter_block',
+        source: 'prompt',
+        field: 'preset_text',
+      }),
+    );
+    expect(mockBuildOptions).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('applies agent-instruction policy to the profile name substituted into a prompt prefix', async () => {
+    mockGetEndpointsConfig.mockResolvedValue({});
+
+    const req = createReq(
+      {
+        endpoint: EModelEndpoint.assistants,
+        spec: 'guarded-assistant',
+        assistant_id: 'asst_123',
+      },
+      {
+        filters: {
+          agentInstructions: {
+            pii: {
+              fields: ['instructions'],
+              starterPatterns: [],
+              customPatterns: [
+                {
+                  id: 'submitted-content',
+                  label: 'submitted content',
+                  regex: 'BLOCK-[A-Z]+',
+                },
+              ],
+            },
+          },
+        },
+        modelSpecs: {
+          enforce: false,
+          list: [
+            {
+              name: 'guarded-assistant',
+              preset: {
+                endpoint: EModelEndpoint.assistants,
+                assistant_id: 'asst_123',
+                promptPrefix: 'Help {{current_user}}.',
+              },
+            },
+          ],
+        },
+      },
+    );
+    req.user = { name: 'BLOCK-NAME' };
+    const res = createRes();
+
+    await buildEndpointOption(req, res, jest.fn());
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: 'content_filter_block',
+        source: 'agent_instruction',
+        field: 'instructions',
+      }),
+    );
+    expect(mockBuildOptions).not.toHaveBeenCalled();
+  });
+
+  it('does not assign user provenance to static model-spec prompt text', async () => {
+    mockGetEndpointsConfig.mockResolvedValue({});
+
+    const req = createReq(
+      {
+        endpoint: EModelEndpoint.assistants,
+        spec: 'guarded-assistant',
+        assistant_id: 'asst_123',
+      },
+      {
+        filters: {
+          prompts: {
+            pii: {
+              fields: ['preset_text'],
+              starterPatterns: [],
+              customPatterns: [
+                {
+                  id: 'submitted-content',
+                  label: 'submitted content',
+                  regex: 'BLOCK-[A-Z]+',
+                },
+              ],
+            },
+          },
+        },
+        modelSpecs: {
+          enforce: false,
+          list: [
+            {
+              name: 'guarded-assistant',
+              preset: {
+                endpoint: EModelEndpoint.assistants,
+                assistant_id: 'asst_123',
+                promptPrefix: 'Administrator text BLOCK-STATIC. Help {{current_user}}.',
+              },
+            },
+          ],
+        },
+      },
+    );
+    req.user = { name: 'Ada' };
+    const res = createRes();
+    const next = jest.fn();
+
+    await buildEndpointOption(req, res, next);
+
+    expect(res.status).not.toHaveBeenCalled();
+    expect(req.body.endpointOption.promptPrefix).toBe('Administrator text BLOCK-STATIC. Help Ada.');
+    expect(mockBuildOptions).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
   it('should leave restored agent promptPrefix variables for agent initialization', async () => {
     mockGetEndpointsConfig.mockResolvedValue({});
 
@@ -463,6 +643,35 @@ describe('buildEndpointOption - defaultParamsEndpoint parsing', () => {
     const parsedResult = parseCompactConvo.mock.results[0].value;
     expect(parsedResult.maxOutputTokens).toBeUndefined();
     expect(parsedResult.max_tokens).toBe(4096);
+  });
+
+  it('does not log submitted content when compact conversation parsing fails', async () => {
+    const secret = 'PRIVATE-SUBMITTED-CONTENT';
+    const parseError = new Error('Invalid compact conversation');
+    parseCompactConvo.mockImplementationOnce(() => {
+      throw parseError;
+    });
+    mockGetEndpointsConfig.mockResolvedValue({});
+
+    const req = createReq(
+      {
+        endpoint: secret,
+        endpointType: EModelEndpoint.custom,
+        text: secret,
+      },
+      { modelSpecs: null },
+    );
+    const res = createRes();
+    const { handleError } = require('@librechat/api');
+
+    await buildEndpointOption(req, res, jest.fn());
+
+    expect(logger.error).toHaveBeenCalledWith('Error parsing compact conversation', parseError);
+    expect(logger.debug).not.toHaveBeenCalled();
+    expect(JSON.stringify([...logger.error.mock.calls, ...logger.debug.mock.calls])).not.toContain(
+      secret,
+    );
+    expect(handleError).toHaveBeenCalledWith(res, { text: 'Error parsing conversation' });
   });
 
   it('should scope non-agent chat attachment usage updates to the authenticated user', async () => {

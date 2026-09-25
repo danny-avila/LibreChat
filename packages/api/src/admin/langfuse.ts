@@ -2,7 +2,6 @@ import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
 import { logger, BASE_CONFIG_PRINCIPAL_ID } from '@librechat/data-schemas';
 import type {
   TCustomConfig,
-  LangfuseConfig,
   TLangfuseConnectionStatus,
   TUpdateLangfuseConnectionRequest,
   TLangfuseConnectionTestErrorCode,
@@ -19,13 +18,36 @@ import {
   getLangfuseTenantDestinations,
   resolveLangfuseTenantDestination,
 } from '~/langfuse/tenantDestinations';
+import { redirectPolicyFor, resolveLangfuseHeaders } from '~/langfuse/utils';
 import { decryptConfigSecret, encryptConfigSecretFields } from './secrets';
-import { getLangfuseDestinationId } from '~/langfuse/destinations';
+import { scopeHeadersToDestination } from '~/langfuse/destinations';
 import { isLangfuseConnectionAvailable } from '~/langfuse/policy';
+import { resolveLangfuseSession } from '~/langfuse/session';
+import { mergeHeaders } from '~/utils/headers';
 
 const DEFAULT_PRIORITY = 10;
 const ENCRYPTED_PREFIX = 'v3:';
 const LANGFUSE_VERIFICATION_TIMEOUT_MS = 10_000;
+
+type LangfuseConnectionChange =
+  | 'created'
+  | 'credentials_rotated'
+  | 'destination_changed'
+  | 'disabled'
+  | 'enabled'
+  | 'updated';
+type LangfuseConnectionChanges = [LangfuseConnectionChange, ...LangfuseConnectionChange[]];
+
+export interface LangfuseConnectionEvent {
+  event_name: 'librechat.langfuse.connection.changed';
+  tenant_id?: string;
+  configured: boolean;
+  enabled: boolean;
+  destination?: string;
+  change: LangfuseConnectionChange;
+  changes: LangfuseConnectionChange[];
+  verification_result: 'skipped' | 'success';
+}
 
 export interface AdminLangfuseDeps {
   findConfigByPrincipal: (
@@ -50,13 +72,17 @@ export interface AdminLangfuseDeps {
   ) => Promise<IConfig | null>;
   getMessages: MessageMethods['getMessages'];
   invalidateConfigCaches?: (tenantId?: string) => Promise<void>;
+  recordConnectionUpdate?: (event: LangfuseConnectionEvent) => void;
 }
 
 function getTenantId(req: ServerRequest): string | undefined {
   return (req.user as { tenantId?: string } | undefined)?.tenantId;
 }
 
-function readStoredLangfuse(config: IConfig | null): LangfuseConfig | undefined {
+/** Reads from the stored override tree, so this is `TCustomConfig`'s
+ *  `DeepPartial` view of the section rather than the standalone
+ *  `LangfuseConfig` — record-valued fields carry optional values here. */
+function readStoredLangfuse(config: IConfig | null): TCustomConfig['langfuse'] {
   const overrides = config?.overrides as Partial<TCustomConfig> | undefined;
   return overrides?.langfuse;
 }
@@ -73,6 +99,33 @@ function buildStatus(config: IConfig | null): TLangfuseConnectionStatus {
     secretKeyPreview: stored?.secretKeyPreview,
     updatedAt: config?.updatedAt ? new Date(config.updatedAt).toISOString() : undefined,
   };
+}
+
+function getConnectionChanges(
+  stored: TCustomConfig['langfuse'],
+  enabled: boolean,
+  destination: string,
+  publicKey: string,
+  secretKey: string,
+): LangfuseConnectionChanges {
+  if (!stored?.publicKey || !stored.secretKey) {
+    return ['created'];
+  }
+  const changes: LangfuseConnectionChange[] = [];
+  if (stored.destination !== destination) {
+    changes.push('destination_changed');
+  }
+  if (stored.publicKey !== publicKey || secretKey !== '') {
+    changes.push('credentials_rotated');
+  }
+  if (stored.enabled !== true && enabled) {
+    changes.push('enabled');
+  }
+  if (stored.enabled === true && !enabled) {
+    changes.push('disabled');
+  }
+  const [change, ...additionalChanges] = changes;
+  return change ? [change, ...additionalChanges] : ['updated'];
 }
 
 function rejectWhenConnectionUnavailable(res: Response): Response | undefined {
@@ -136,13 +189,15 @@ async function verifyLangfuseCredentials(
   destination: LangfuseTenantDestination,
   publicKey: string,
   secretKey: string,
+  headers?: Record<string, string>,
 ): Promise<LangfuseVerificationResult> {
   try {
     const auth = Buffer.from(`${publicKey}:${secretKey}`).toString('base64');
     const signal = AbortSignal.timeout(LANGFUSE_VERIFICATION_TIMEOUT_MS);
     const secretResponse = await fetch(`${destination.baseUrl}/api/public/projects`, {
-      headers: { Authorization: `Basic ${auth}` },
+      headers: mergeHeaders(headers, { Authorization: `Basic ${auth}` }),
       signal,
+      ...redirectPolicyFor(headers),
     });
     if (!secretResponse.ok) {
       return {
@@ -181,13 +236,14 @@ async function verifyLangfuseCredentials(
 
     const publicResponse = await fetch(`${destination.baseUrl}/api/public/ingestion`, {
       method: 'POST',
-      headers: {
+      headers: mergeHeaders(headers, {
         Authorization: `Bearer ${publicKey}`,
         'X-Langfuse-Public-Key': publicKey,
         'Content-Type': 'application/json',
-      },
+      }),
       body: JSON.stringify({ batch: [] }),
       signal,
+      ...redirectPolicyFor(headers),
     });
     if (!publicResponse.ok) {
       return {
@@ -236,6 +292,8 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
     toggleConfigActive,
     getMessages,
     invalidateConfigCaches,
+    recordConnectionUpdate = (event) =>
+      logger.info({ message: '[adminLangfuse] Connection updated', ...event }),
   } = deps;
 
   function findBaseConfig(options?: { includeInactive?: boolean }): Promise<IConfig | null> {
@@ -275,34 +333,15 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
     }
 
     try {
-      const stored = readStoredLangfuse(await findBaseConfig());
-      const destination = resolveLangfuseTenantDestination(stored?.destination);
-      const projectId = stored?.projectId?.trim();
-      if (stored?.enabled !== true || !destination || !projectId) {
-        const response: TLangfuseSessionLinkResponse = { url: null };
-        return res.status(200).json(response);
-      }
-
-      const destinationId = getLangfuseDestinationId(destination.baseUrl, projectId);
-      const messages = await getMessages(
-        {
-          user: userId,
-          conversationId,
-          langfuseSampled: true,
-          langfuseDestinationIds: destinationId,
-        },
-        '_id',
-        { sort: false, limit: 1 },
-      );
-      if (messages.length === 0) {
-        const response: TLangfuseSessionLinkResponse = { url: null };
-        return res.status(200).json(response);
-      }
-
-      const sessionUrl = new URL(destination.baseUrl);
-      const basePath = sessionUrl.pathname.replace(/\/+$/, '');
-      sessionUrl.pathname = `${basePath}/project/${encodeURIComponent(projectId)}/sessions/${encodeURIComponent(conversationId)}`;
-      const response: TLangfuseSessionLinkResponse = { url: sessionUrl.toString() };
+      const session = await resolveLangfuseSession({
+        config: readStoredLangfuse(await findBaseConfig()),
+        conversationId,
+        userId,
+        getMessages,
+      });
+      const response: TLangfuseSessionLinkResponse = session
+        ? { url: session.url, destinationId: session.destinationId }
+        : { url: null };
       return res.status(200).json(response);
     } catch (error) {
       logger.error('[adminLangfuse] getSessionLink error:', error);
@@ -372,6 +411,10 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
           tenantDestination,
           publicKey,
           secretKey,
+          scopeHeadersToDestination(
+            resolveLangfuseHeaders(req.config?.langfuse?.headers),
+            tenantDestination.baseUrl,
+          ),
         );
         if (!verification.success) {
           return res
@@ -404,11 +447,30 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
         updated = await toggleConfigActive(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID, true);
       }
 
+      const status = buildStatus(updated ?? existing);
+      const changes = getConnectionChanges(
+        stored,
+        enabled,
+        persistedDestination,
+        publicKey,
+        secretKey,
+      );
+      recordConnectionUpdate({
+        event_name: 'librechat.langfuse.connection.changed',
+        tenant_id: getTenantId(req),
+        configured: status.configured,
+        enabled: status.enabled,
+        destination: status.destination,
+        change: changes[0],
+        changes,
+        verification_result: connectionChanged ? 'success' : 'skipped',
+      });
+
       invalidateConfigCaches?.(getTenantId(req))?.catch((err) =>
         logger.error('[adminLangfuse] Cache invalidation failed after update:', err),
       );
 
-      return res.status(200).json(buildStatus(updated ?? existing));
+      return res.status(200).json(status);
     } catch (error) {
       logger.error('[adminLangfuse] updateConnection error:', error);
       return res.status(500).json({ error: 'Failed to update Langfuse connection' });
@@ -463,7 +525,15 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
         return res.status(200).json(failed);
       }
 
-      const result = await verifyLangfuseCredentials(tenantDestination, publicKey, secretKey);
+      const result = await verifyLangfuseCredentials(
+        tenantDestination,
+        publicKey,
+        secretKey,
+        scopeHeadersToDestination(
+          resolveLangfuseHeaders(req.config?.langfuse?.headers),
+          tenantDestination.baseUrl,
+        ),
+      );
       const response: TLangfuseConnectionTestResponse = result.success
         ? { success: true }
         : { success: false, errorCode: result.errorCode };

@@ -91,6 +91,21 @@ describe('SegmentedMeter', () => {
     expect(children()[1].className).not.toContain('ring-series');
   });
 
+  it('recedes every segment but the highlighted one', () => {
+    renderMeter({ highlightId: 'a' });
+
+    expect(children()[0].className).not.toContain('opacity-40');
+    children()
+      .slice(1)
+      .forEach((child) => expect(child).toHaveClass('opacity-40'));
+  });
+
+  it('recedes all segments when none matches the highlight', () => {
+    renderMeter({ highlightId: 'nonexistent' });
+
+    children().forEach((child) => expect(child).toHaveClass('opacity-40'));
+  });
+
   it('hatches without changing the slot, and reads the stripe from the theme', () => {
     renderMeter();
 

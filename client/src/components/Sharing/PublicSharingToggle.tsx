@@ -17,9 +17,11 @@ interface PublicSharingToggleProps {
   className?: string;
 }
 
-const accessDescriptions: Record<
-  ResourceType,
-  'com_ui_agent' | 'com_ui_prompt' | 'com_ui_mcp_server' | 'com_ui_skill' | 'com_ui_shared_link'
+const accessDescriptions: Partial<
+  Record<
+    ResourceType,
+    'com_ui_agent' | 'com_ui_prompt' | 'com_ui_mcp_server' | 'com_ui_skill' | 'com_ui_shared_link'
+  >
 > = {
   [ResourceType.AGENT]: 'com_ui_agent',
   [ResourceType.PROMPTGROUP]: 'com_ui_prompt',
@@ -71,7 +73,8 @@ export default function PublicSharingToggle({
                 side={ESide.Top}
                 text={localize('com_ui_share_everyone_description_var', {
                   resource:
-                    localize(accessDescriptions[resourceType]) || localize('com_ui_resource'),
+                    localize(accessDescriptions[resourceType] ?? 'com_ui_resource') ||
+                    localize('com_ui_resource'),
                 })}
               />
             </div>
@@ -85,7 +88,7 @@ export default function PublicSharingToggle({
         </div>
       </div>
 
-      <Collapse open={isPublic} className="pt-4">
+      <Collapse open={isPublic} overflowVisibleWhenOpen className="pt-4">
         <div className="flex items-center justify-between bg-transparent">
           <div className="flex items-center gap-3">
             <div className="text-status-info">

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { JSX } from 'react/jsx-runtime';
 import { CircleHelpIcon, InfoIcon } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { HoverCard, HoverCardTrigger, HoverCardPortal, HoverCardContent } from './HoverCard';
 import { ESide } from '~/common';
 
@@ -8,9 +9,17 @@ type InfoHoverCardProps = {
   side?: ESide;
   text: string;
   icon?: 'help' | 'info';
+  /** Custom trigger content replacing the stock icon (e.g. a status glyph);
+   *  the hover text stays the trigger's accessible name either way. */
+  children?: ReactNode;
 };
 
-const InfoHoverCard = ({ side, text, icon = 'help' }: InfoHoverCardProps): JSX.Element => {
+const InfoHoverCard = ({
+  side,
+  text,
+  icon = 'help',
+  children,
+}: InfoHoverCardProps): JSX.Element => {
   const [isOpen, setIsOpen] = useState(false);
   const Icon = icon === 'info' ? InfoIcon : CircleHelpIcon;
 
@@ -24,7 +33,7 @@ const InfoHoverCard = ({ side, text, icon = 'help' }: InfoHoverCardProps): JSX.E
           onBlur={() => setIsOpen(false)}
           aria-label={text}
         >
-          <Icon className="h-5 w-5 text-text-tertiary" aria-hidden="true" />
+          {children ?? <Icon className="h-5 w-5 text-text-tertiary" aria-hidden="true" />}
         </button>
       </HoverCardTrigger>
       <HoverCardPortal>

@@ -22,9 +22,13 @@ const DEFAULT_FOLLOWER_RETRY_MS = 3000;
  * followers short-circuit on the stale status and never re-tag entries written
  * by the previous version. Bumped to 3 so cached entries whose `serverInstructions` still holds
  * inspector-fetched text are rewritten with the declaration preserved and the text moved to
- * `resolvedInstructions`.
+ * `resolvedInstructions`. Bumped to 4 so persisted `toolFunctions` are rebuilt
+ * with redundant server-name prefixes stripped and `serverToolName` recorded —
+ * otherwise a follower accepts the previous deployment's config hash and
+ * republishes pre-strip definitions into the current catalog namespace
+ * indefinitely.
  */
-const REGISTRY_STORAGE_SCHEMA_VERSION = 3;
+const REGISTRY_STORAGE_SCHEMA_VERSION = 4;
 
 const parseDurationMs = (
   value: string | undefined,

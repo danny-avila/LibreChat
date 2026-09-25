@@ -1,8 +1,16 @@
 const { v4: uuidv4 } = require('uuid');
 const {
+  assertConversationImportWriteSize,
+  assertModelBoundContent,
+  assertConversationImportContentAllowed,
+  reportLocatorTraversalFailure,
+  executeConversationImportWrites,
+} = require('@librechat/api');
+const {
+  getTenantId,
   logger,
   createFallbackRetentionDate,
-  createTempChatExpirationDate,
+  createChatExpirationDate,
 } = require('@librechat/data-schemas');
 const {
   EModelEndpoint,
@@ -10,17 +18,48 @@ const {
   RetentionMode,
   openAISettings,
 } = require('librechat-data-provider');
-const { bulkIncrementTagCounts, bulkSaveConvos, bulkSaveMessages } = require('~/models');
+const {
+  bulkIncrementTagCounts,
+  bulkSaveConvos,
+  bulkSaveMessages,
+  deleteImportedConversations,
+  deleteImportedMessages,
+  getFiles,
+} = require('~/models');
 const { FALLBACK_MODEL_BY_ENDPOINT } = require('./defaults');
 
 /**
  * Factory function for creating an instance of ImportBatchBuilder.
  * @param {string} requestUserId - The ID of the user making the request.
  * @param {object} [interfaceConfig] - Runtime interface config for import retention.
+ * @param {object} [filters] - Source-aware content filters for submitted imports.
+ * @param {object} [legacyPii] - Legacy messageFilter.pii configuration.
  * @returns {ImportBatchBuilder} - The newly created ImportBatchBuilder instance.
  */
-function createImportBatchBuilder(requestUserId, interfaceConfig) {
-  return new ImportBatchBuilder(requestUserId, interfaceConfig);
+function createImportBatchBuilder(requestUserId, interfaceConfig, filters, legacyPii) {
+  return new ImportBatchBuilder(requestUserId, interfaceConfig, filters, legacyPii);
+}
+
+/**
+ * Applies the current content policy to a conversation snapshot before it is copied.
+ * @param {object} [filters] - Source-aware content filters.
+ * @param {object} snapshot - Conversation content that would be persisted.
+ * @param {object[]} snapshot.conversations - Conversation metadata records.
+ * @param {object[]} snapshot.messages - Message records.
+ * @param {object} [resolutionContext] - Owner-aware canonical file resolution dependencies.
+ * @param {{ id?: string, tenantId?: string }} [resolutionContext.user] - Snapshot owner.
+ * @param {Function} [resolutionContext.getFiles] - Canonical file lookup.
+ * @param {object[]} [resolutionContext.trustedLiveFiles] - Server-hydrated canonical rows.
+ * @param {object} [resolutionContext.legacyPii] - Legacy messageFilter.pii configuration.
+ * @returns {Promise<void>}
+ * @throws {ContentFilterError|UninspectableFileError|import('@librechat/api').ContentTraversalLimitError}
+ */
+async function assertConversationContentAllowed(filters, snapshot, resolutionContext = {}) {
+  return assertConversationImportContentAllowed(filters, snapshot, {
+    ...resolutionContext,
+    onTraversalFailure: reportLocatorTraversalFailure,
+    assertModelBoundContent,
+  });
 }
 
 /**
@@ -31,10 +70,14 @@ class ImportBatchBuilder {
    * Creates an instance of ImportBatchBuilder.
    * @param {string} requestUserId - The ID of the user making the import request.
    * @param {object} [interfaceConfig] - Runtime interface config for import retention.
+   * @param {object} [filters] - Source-aware content filters for submitted imports.
+   * @param {object} [legacyPii] - Legacy messageFilter.pii configuration.
    */
-  constructor(requestUserId, interfaceConfig) {
+  constructor(requestUserId, interfaceConfig, filters, legacyPii) {
     this.requestUserId = requestUserId;
     this.interfaceConfig = interfaceConfig;
+    this.filters = filters;
+    this.legacyPii = legacyPii;
     this.conversations = [];
     this.messages = [];
     this.retentionFields = undefined;
@@ -53,7 +96,7 @@ class ImportBatchBuilder {
     try {
       this.retentionFields = {
         isTemporary: false,
-        expiredAt: createTempChatExpirationDate(this.interfaceConfig),
+        expiredAt: createChatExpirationDate(this.interfaceConfig),
       };
     } catch (error) {
       logger.error('[ImportBatchBuilder] Error creating import expiration date:', error);
@@ -80,7 +123,12 @@ class ImportBatchBuilder {
    * @returns {object} The saved message object.
    */
   addUserMessage(text) {
-    const message = this.saveMessage({ text, sender: 'user', isCreatedByUser: true });
+    const message = this.saveMessage({
+      text,
+      sender: 'user',
+      isCreatedByUser: true,
+      isUserSubmitted: true,
+    });
     return message;
   }
 
@@ -96,6 +144,7 @@ class ImportBatchBuilder {
       text,
       sender,
       isCreatedByUser: false,
+      isUserSubmitted: true,
       model: model || openAISettings.model.default,
     });
     return message;
@@ -127,6 +176,7 @@ class ImportBatchBuilder {
       ...this.getRetentionFields(),
     };
     convo._id && delete convo._id;
+    delete convo.subagentThread;
     this.conversations.push(convo);
 
     return { conversation: convo, messages: this.messages };
@@ -139,17 +189,46 @@ class ImportBatchBuilder {
    * @throws {Error} If there is an error saving the batch.
    */
   async saveBatch() {
+    const tenantId = getTenantId();
+    assertConversationImportWriteSize({
+      conversations: this.conversations,
+      messages: this.messages,
+      ...(tenantId == null ? {} : { tenantId }),
+    });
+
+    await assertConversationContentAllowed(
+      this.filters,
+      {
+        conversations: this.conversations,
+        messages: this.messages,
+      },
+      {
+        user: { id: this.requestUserId },
+        getFiles,
+        ...(this.legacyPii == null ? {} : { legacyPii: this.legacyPii }),
+      },
+    );
+
+    const conversationIds = this.conversations.map((convo) => convo.conversationId);
+    const cleanupScope = {
+      user: this.requestUserId,
+      conversationIds,
+      ...(tenantId == null ? {} : { tenantId }),
+    };
+    const tags = this.conversations.flatMap((convo) => convo.tags);
+
     try {
-      const promises = [];
-      promises.push(bulkSaveConvos(this.conversations));
-      promises.push(bulkSaveMessages(this.messages, true));
-      promises.push(
-        bulkIncrementTagCounts(
-          this.requestUserId,
-          this.conversations.flatMap((convo) => convo.tags),
-        ),
-      );
-      await Promise.all(promises);
+      await executeConversationImportWrites({
+        saveConversations: () => bulkSaveConvos(this.conversations),
+        saveMessages: () => bulkSaveMessages(this.messages, true),
+        updateTagCounts: () => bulkIncrementTagCounts(this.requestUserId, tags),
+        deleteMessages: () => deleteImportedMessages(cleanupScope),
+        deleteConversations: () => deleteImportedConversations(cleanupScope),
+        onTagCountError: (error) =>
+          logger.error(`Error updating imported tag counts: ${error.message}`),
+        onCleanupError: (error, resource) =>
+          logger.error(`Error cleaning imported ${resource}: ${error.message}`),
+      });
       logger.debug(
         `user: ${this.requestUserId} | Added ${this.conversations.length} conversations and ${this.messages.length} messages to the DB.`,
       );
@@ -206,4 +285,8 @@ class ImportBatchBuilder {
   }
 }
 
-module.exports = { ImportBatchBuilder, createImportBatchBuilder };
+module.exports = {
+  ImportBatchBuilder,
+  createImportBatchBuilder,
+  assertConversationContentAllowed,
+};

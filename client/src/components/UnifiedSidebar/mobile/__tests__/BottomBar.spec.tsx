@@ -1,7 +1,7 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
-import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, cleanup, render, screen, fireEvent } from '@testing-library/react';
 import type { NavLink } from '~/common';
 
 jest.mock('~/hooks', () => ({
@@ -21,6 +21,8 @@ jest.mock('@librechat/client', () => ({
     children: React.ReactNode;
     asChild?: boolean;
   }) => <div {...props}>{children}</div>,
+  /** The real `useNewChat` pulls the file-deletion mutation, which reads the toast context. */
+  useToastContext: () => ({ showToast: jest.fn() }),
 }));
 
 jest.mock('~/Providers', () => ({
@@ -45,10 +47,17 @@ jest.mock('~/hooks/useNewConvo', () => ({
 import BottomBar from '../BottomBar';
 
 const links = [] as NavLink[];
+let queryClient: QueryClient;
 
 describe('mobile bottom bar — new chat ordering', () => {
   beforeEach(() => {
+    queryClient = new QueryClient();
     jest.clearAllMocks();
+  });
+
+  afterEach(() => {
+    cleanup();
+    queryClient.clear();
   });
 
   /**
@@ -69,7 +78,7 @@ describe('mobile bottom bar — new chat ordering', () => {
     });
 
     render(
-      <QueryClientProvider client={new QueryClient()}>
+      <QueryClientProvider client={queryClient}>
         <RecoilRoot>
           <BottomBar links={links} onNewChat={onNewChat} />
         </RecoilRoot>
@@ -80,14 +89,14 @@ describe('mobile bottom bar — new chat ordering', () => {
     expect(order).toEqual(['close']);
     expect(afterSlide).toBeDefined();
 
-    afterSlide?.();
+    act(() => afterSlide?.());
     expect(order).toEqual(['close', 'reset']);
   });
 
   it('leaves modified clicks to the browser (new tab)', () => {
     const onNewChat = jest.fn();
     render(
-      <QueryClientProvider client={new QueryClient()}>
+      <QueryClientProvider client={queryClient}>
         <RecoilRoot>
           <BottomBar links={links} onNewChat={onNewChat} />
         </RecoilRoot>

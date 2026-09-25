@@ -1,5 +1,7 @@
 const fs = require('fs');
 const path = require('path');
+const { promisify } = require('util');
+const express = require('express');
 const request = require('supertest');
 const { MongoMemoryServer } = require('mongodb-memory-server');
 const mongoose = require('mongoose');
@@ -33,6 +35,14 @@ jest.mock('~/config', () => ({
   createMCPManager: jest.fn().mockResolvedValue({
     getAppToolFunctions: jest.fn().mockResolvedValue({}),
   }),
+}));
+
+jest.mock('~/server/services/Agents/triggers', () => ({
+  initializeAgentTriggerService: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('~/server/services/Schedules', () => ({
+  initializeScheduleEngine: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock(
@@ -110,6 +120,34 @@ describe('Telemetry wiring', () => {
 describe('Startup readiness wiring', () => {
   const source = fs.readFileSync(path.join(__dirname, 'index.js'), 'utf8');
 
+  it('starts code-environment lifecycle reconciliation only after Mongo connects', () => {
+    const connectIndex = source.indexOf('await connectDb();');
+    const reconcileIndex = source.indexOf('startCodeEnvironmentLifecycleReconciler({ mongoose });');
+    const listenIndex = source.indexOf('const server = app.listen');
+
+    expect(connectIndex).toBeGreaterThan(-1);
+    expect(reconcileIndex).toBeGreaterThan(connectIndex);
+    expect(listenIndex).toBeGreaterThan(reconcileIndex);
+    expect(
+      source.match(/startCodeEnvironmentLifecycleReconciler\(\{ mongoose \}\);/g),
+    ).toHaveLength(1);
+  });
+
+  it('configures social logins with the app config loaded at startup in both server entries', () => {
+    const experimental = fs.readFileSync(path.join(__dirname, 'experimental.js'), 'utf8');
+
+    for (const [name, contents] of [
+      ['index.js', source],
+      ['experimental.js', experimental],
+    ]) {
+      const appConfigIndex = contents.indexOf('const appConfig = await getAppConfig(');
+      const socialLoginsIndex = contents.indexOf('await configureSocialLogins(app, appConfig);');
+
+      expect([name, appConfigIndex > -1]).toEqual([name, true]);
+      expect([name, socialLoginsIndex > appConfigIndex]).toEqual([name, true]);
+    }
+  });
+
   it('awaits the shared Redis client before startup cache access', () => {
     const redisReadyIndex = source.indexOf('await waitForKeyvRedisClient();');
     const connectDbIndex = source.indexOf('await connectDb();');
@@ -130,6 +168,14 @@ describe('Startup readiness wiring', () => {
     expect(postListenMcpIndex).toBeGreaterThan(-1);
     expect(streamConfigIndex).toBeLessThan(listenIndex);
     expect(streamConfigIndex).toBeLessThan(postListenMcpIndex);
+  });
+
+  it('configures subagent task routing before the server accepts requests', () => {
+    const routingIndex = source.indexOf('await configureSubagentTaskRouting();');
+    const listenIndex = source.indexOf('const server = app.listen');
+
+    expect(routingIndex).toBeGreaterThan(-1);
+    expect(listenIndex).toBeGreaterThan(routingIndex);
   });
 
   it('registers generation stream cleanup with the graceful shutdown coordinator', () => {
@@ -154,6 +200,22 @@ describe('Startup readiness wiring', () => {
     expect(timeoutConfigIndex).toBeLessThan(shutdownIndex);
   });
 
+  it('registers security headers ahead of the health endpoints in both server entries', () => {
+    const experimental = fs.readFileSync(path.join(__dirname, 'experimental.js'), 'utf8');
+
+    for (const [name, contents] of [
+      ['index.js', source],
+      ['experimental.js', experimental],
+    ]) {
+      const headersIndex = contents.indexOf('const securityHeaders = createSecurityHeaders();');
+      const healthIndex = contents.indexOf("app.get('/health'");
+
+      expect([name, headersIndex > -1]).toEqual([name, true]);
+      expect([name, healthIndex > -1]).toEqual([name, true]);
+      expect([name, headersIndex < healthIndex]).toEqual([name, true]);
+    }
+  });
+
   it('mounts the chat-start readiness gate before agent routes', () => {
     const readinessGateIndex = source.indexOf(
       "app.use('/api/agents/chat', rejectChatStartsUntilReady);",
@@ -164,6 +226,14 @@ describe('Startup readiness wiring', () => {
     expect(agentsRouteIndex).toBeGreaterThan(-1);
     expect(readinessGateIndex).toBeLessThan(agentsRouteIndex);
   });
+
+  it('awaits durable trigger delivery before reporting readiness', () => {
+    const triggerDeliveryIndex = source.indexOf('await initializeAgentTriggerService(');
+    const readyIndex = source.indexOf('serverReady = true;');
+
+    expect(triggerDeliveryIndex).toBeGreaterThan(-1);
+    expect(readyIndex).toBeGreaterThan(triggerDeliveryIndex);
+  });
 });
 
 describe('Server Configuration', () => {
@@ -172,6 +242,7 @@ describe('Server Configuration', () => {
 
   let mongoServer;
   let app;
+  let server;
 
   /** Mocked fs.readFileSync for index.html */
   const originalReadFileSync = fs.readFileSync;
@@ -209,21 +280,51 @@ describe('Server Configuration', () => {
     mongoServer = await MongoMemoryServer.create();
     process.env.MONGO_URI = mongoServer.getUri();
     process.env.PORT = '0'; // Use a random available port
+    /* This deployment configures a footer, so the shell it serves has to say so
+       before any `/api/config` request: the composer lays out against it. */
+    process.env.CUSTOM_FOOTER = 'Operator policy footer';
+    /* index.js listens at module scope and exports only the app, so capture the server to close it. */
+    const listenSpy = jest.spyOn(express.application, 'listen');
     app = require('~/server');
 
     // Wait for the app to be healthy
     await healthCheckPoll(app);
+    server = listenSpy.mock.results[0].value;
+    listenSpy.mockRestore();
   });
 
   afterAll(async () => {
+    await promisify(server.close).call(server);
     await mongoServer.stop();
     await mongoose.disconnect();
+    delete process.env.CUSTOM_FOOTER;
   });
 
   it('should return OK for /health', async () => {
     const response = await request(app).get('/health');
     expect(response.status).toBe(200);
     expect(response.text).toBe('OK');
+  });
+
+  it('should set baseline security headers on health checks', async () => {
+    const response = await request(app).get('/health');
+
+    expect(response.headers['strict-transport-security']).toBe('max-age=31536000');
+    expect(response.headers['x-frame-options']).toBe('SAMEORIGIN');
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
+    expect(response.headers['cross-origin-opener-policy']).toBe('same-origin');
+    expect(response.headers['cross-origin-resource-policy']).toBe('same-origin');
+    expect(response.headers['referrer-policy']).toBe('no-referrer');
+  });
+
+  it('should set baseline security headers on the index page without a CSP', async () => {
+    const response = await request(app).get('/');
+
+    expect(response.status).toBe(200);
+    expect(response.headers['x-frame-options']).toBe('SAMEORIGIN');
+    expect(response.headers['x-content-type-options']).toBe('nosniff');
+    expect(response.headers['content-security-policy']).toBeUndefined();
+    expect(response.headers['content-security-policy-report-only']).toBeUndefined();
   });
 
   it('should not cache index page', async () => {
@@ -292,6 +393,19 @@ describe('Server Configuration', () => {
     expect(directIndexResponse.text).toContain('window.__LIBRECHAT_CONFIG__');
     expect(directIndexResponse.text).toContain('data-librechat-query-devtools="true"');
     expect(directIndexResponse.text).toContain('"enableQueryDevtools":true');
+  });
+
+  it('serves the configured-footer answer with the shell', async () => {
+    const [fallbackResponse, indexResponse] = await Promise.all([
+      request(app).get('/this/does/not/exist'),
+      request(app).get('/index.html'),
+    ]);
+
+    for (const response of [fallbackResponse, indexResponse]) {
+      expect(response.status).toBe(200);
+      expect(response.text).toContain('window.__LIBRECHAT_CONFIG__');
+      expect(response.text).toContain('"hasConfiguredFooter":true');
+    }
   });
 
   it('should return 500 for unknown errors via ErrorController', async () => {

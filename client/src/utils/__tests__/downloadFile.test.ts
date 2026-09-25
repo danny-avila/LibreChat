@@ -1,4 +1,12 @@
-import { getCodeBlockFilename, isHttpDownloadTarget, triggerDownload } from '../downloadFile';
+import { FileSources } from 'librechat-data-provider';
+import {
+  getCodeBlockFilename,
+  getDownloadFilename,
+  isHttpDownloadTarget,
+  registerDownloadFilename,
+  triggerDownload,
+  unregisterDownloadFilename,
+} from '../downloadFile';
 
 describe('downloadFile utilities', () => {
   let clickSpy: jest.SpyInstance;
@@ -67,6 +75,50 @@ describe('downloadFile utilities', () => {
     expect(revokeSpy).not.toHaveBeenCalled();
     jest.advanceTimersByTime(1000);
     expect(revokeSpy).toHaveBeenCalledWith('blob:https://app.example.com/download-id');
+  });
+
+  it('uses registered response metadata to name blob downloads', () => {
+    const target = 'blob:https://app.example.com/text-download';
+    registerDownloadFilename(target, 'report.pdf.txt');
+
+    triggerDownload(target, 'report.pdf');
+
+    expect(appendedLink?.download).toBe('report.pdf.txt');
+  });
+
+  it('keeps registered names available for concurrent blob downloads', () => {
+    const target = 'blob:https://app.example.com/concurrent-download';
+    registerDownloadFilename(target, 'report.pdf.txt');
+
+    triggerDownload(target, 'report.pdf');
+    expect(appendedLink?.download).toBe('report.pdf.txt');
+
+    triggerDownload(target, 'report.pdf');
+    expect(appendedLink?.download).toBe('report.pdf.txt');
+  });
+
+  it('clears registered names when blob URLs are released', () => {
+    const target = 'blob:https://app.example.com/released-download';
+    registerDownloadFilename(target, 'report.pdf.txt');
+    unregisterDownloadFilename(target);
+
+    triggerDownload(target, 'report.pdf');
+
+    expect(appendedLink?.download).toBe('report.pdf');
+  });
+});
+
+describe('getDownloadFilename', () => {
+  it('adds a text extension for text-source files', () => {
+    expect(getDownloadFilename('report.pdf', 'file-1', FileSources.text)).toBe('report.pdf.txt');
+  });
+
+  it('recognizes existing text extensions case-insensitively', () => {
+    expect(getDownloadFilename('NOTES.TXT', 'file-2', FileSources.text)).toBe('NOTES.TXT');
+  });
+
+  it('preserves filenames for other storage sources', () => {
+    expect(getDownloadFilename('report.pdf', 'file-3', FileSources.local)).toBe('report.pdf');
   });
 });
 

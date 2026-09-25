@@ -1,7 +1,7 @@
 const express = require('express');
 const { generateCheckAccess } = require('@librechat/api');
 const { PermissionTypes, Permissions, PermissionBits } = require('librechat-data-provider');
-const { requireJwtAuth, configMiddleware, canAccessAgentResource } = require('~/server/middleware');
+const { configMiddleware, canAccessAgentResource } = require('~/server/middleware');
 const v1 = require('~/server/controllers/agents/v1');
 const { getRoleByName } = require('~/models');
 const actions = require('./actions');
@@ -20,8 +20,6 @@ const checkAgentCreate = generateCheckAccess({
   permissions: [Permissions.USE, Permissions.CREATE],
   getRoleByName,
 });
-
-router.use(requireJwtAuth);
 
 /**
  * Agent actions route.
@@ -113,6 +111,7 @@ router.patch(
     requiredPermission: PermissionBits.EDIT,
     resourceIdParam: 'id',
   }),
+  configMiddleware,
   v1.updateAgent,
 );
 
@@ -130,6 +129,7 @@ router.post(
     requiredPermission: PermissionBits.EDIT,
     resourceIdParam: 'id',
   }),
+  configMiddleware,
   v1.duplicateAgent,
 );
 
@@ -164,6 +164,7 @@ router.post(
     requiredPermission: PermissionBits.EDIT,
     resourceIdParam: 'id',
   }),
+  configMiddleware,
   v1.revertAgentVersion,
 );
 

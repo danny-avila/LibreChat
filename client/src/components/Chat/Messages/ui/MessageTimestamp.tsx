@@ -1,4 +1,5 @@
 import { useTranslation } from 'react-i18next';
+import useClockFormat from '~/hooks/useClockFormat';
 import { cn, getMessageTimestamp } from '~/utils';
 import useTimeTick from '~/hooks/useTimeTick';
 
@@ -34,16 +35,18 @@ function TimestampText({
 function RecentTimestamp({
   value,
   language,
+  hour12,
   className,
   revealOnHover,
 }: {
   value?: string | null;
   language: string;
+  hour12: boolean;
   className?: string;
   revealOnHover?: boolean;
 }) {
   useTimeTick();
-  const timestamp = getMessageTimestamp(value, language);
+  const timestamp = getMessageTimestamp(value, language, hour12);
 
   if (!timestamp) {
     return null;
@@ -71,7 +74,8 @@ export default function MessageTimestamp({
   revealOnHover?: boolean;
 }) {
   const { i18n } = useTranslation();
-  const timestamp = getMessageTimestamp(value, i18n.language);
+  const hour12 = useClockFormat();
+  const timestamp = getMessageTimestamp(value, i18n.language, hour12);
 
   if (!timestamp) {
     return null;
@@ -82,6 +86,7 @@ export default function MessageTimestamp({
       <RecentTimestamp
         value={value}
         language={i18n.language}
+        hour12={hour12}
         className={className}
         revealOnHover={revealOnHover}
       />

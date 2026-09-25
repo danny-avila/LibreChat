@@ -253,6 +253,30 @@ describe('requireJwtAuth tenant context chaining', () => {
     expect(logger.warn).not.toHaveBeenCalled();
   });
 
+  it('preserves the typed account-deletion fence in an authentication rejection', () => {
+    const req = mockReq(undefined, {
+      _mockStrategies: {
+        jwt: {
+          user: false,
+          info: {
+            message: 'Account deletion is in progress',
+            code: 'ACCOUNT_DELETION_IN_PROGRESS',
+          },
+          status: 401,
+        },
+      },
+    });
+    const res = mockRes();
+
+    requireJwtAuth(req, res, jest.fn());
+
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({
+      message: 'Account deletion is in progress',
+      code: 'ACCOUNT_DELETION_IN_PROGRESS',
+    });
+  });
+
   it('logs OpenID JWT expiry when JWT fallback succeeds', () => {
     isEnabled.mockReturnValue(true);
     mockRegisteredStrategies.add('openidJwt');

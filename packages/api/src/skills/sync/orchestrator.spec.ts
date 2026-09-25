@@ -58,6 +58,7 @@ function statusFromConfig(
         deletedSkillCount: 0,
         deletedFileCount: 0,
         skippedSkillCount: 0,
+        skippedFileCount: 0,
         errorCode: undefined,
         errorMessage: undefined,
         startedAt: undefined,

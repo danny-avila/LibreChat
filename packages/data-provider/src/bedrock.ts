@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import * as s from './schemas';
 
+export const THINKING_BINDING_BETA = 'thinking-binding-controls-2026-08-01';
+
 const DEFAULT_THINKING_BUDGET = 2000;
 const BEDROCK_CLAUDE_SONNET_4_6_MAX_OUTPUT = 64000;
 export const BEDROCK_OUTPUT_128K_BETA = 'output-128k-2025-02-19';
@@ -11,13 +13,18 @@ export const BEDROCK_FINE_GRAINED_TOOL_STREAMING_BETA = 'fine-grained-tool-strea
 const GENERATED_BEDROCK_BETAS = new Set<string>([
   BEDROCK_OUTPUT_128K_BETA,
   BEDROCK_FINE_GRAINED_TOOL_STREAMING_BETA,
+  THINKING_BINDING_BETA,
 ]);
 
 const bedrockReasoningConfigValues = new Set<string>(Object.values(s.BedrockReasoningConfig));
 
 type ThinkingConfig =
   | { type: 'enabled'; budget_tokens: number }
-  | { type: 'adaptive'; display?: s.ThinkingDisplayWireValue }
+  | {
+      type: 'adaptive';
+      display?: s.ThinkingDisplayWireValue;
+      block_binding?: typeof OPUS_55_BLOCK_BINDING;
+    }
   | { type: 'disabled' };
 
 /**
@@ -92,6 +99,17 @@ function parseOpusVersion(model: string): { major: number; minor: number } | nul
   }
   return null;
 }
+
+/** Opus 5.5 has an always-on, conversation-bound thinking contract unlike Opus 5. */
+export function isOpus55Model(model: string): boolean {
+  const opus = parseOpusVersion(model);
+  return opus?.major === 5 && opus.minor === 5;
+}
+
+/** LibreChat permits edits and compaction of earlier turns; drop only invalidated blocks. */
+export const OPUS_55_BLOCK_BINDING = {
+  prefix_mismatch_behavior: 'drop_block',
+} as const;
 
 /** Extracts sonnet major/minor version from both naming formats.
  *  Uses bounded minor capture to avoid matching date suffixes (e.g., -20250514). */
@@ -188,6 +206,9 @@ export function omitsSamplingParameters(model: string): boolean {
  * See https://platform.claude.com/docs/en/about-claude/models/migration-guide#migrating-to-claude-sonnet-5
  */
 export function requiresExplicitThinkingDisabled(model: string): boolean {
+  if (isOpus55Model(model)) {
+    return false;
+  }
   const sonnet = parseSonnetVersion(model);
   if (sonnet != null && sonnet.major >= 5) {
     return true;
@@ -212,6 +233,9 @@ const EFFORTS_REJECTED_WHEN_THINKING_DISABLED = new Set<string>([
  * off, so the cap is Opus 5+ only.
  */
 export function capsEffortWhenThinkingDisabled(model: string): boolean {
+  if (isOpus55Model(model)) {
+    return false;
+  }
   const opus = parseOpusVersion(model);
   return opus != null && opus.major >= 5;
 }
@@ -276,6 +300,28 @@ export function supportsContext1m(model: string): boolean {
 }
 
 /**
+ * Checks whether a native Anthropic Claude model supports prompt caching.
+ *
+ * This uses the configured model ID directly. Resolving it through a token
+ * map first can collapse a newly released Claude model to the generic
+ * `claude-` fallback and incorrectly disable cache control.
+ */
+export function supportsPromptCache(model: string): boolean {
+  if (model.includes('claude-3-5-sonnet-latest') || model.includes('claude-3.5-sonnet-latest')) {
+    return false;
+  }
+
+  return (
+    /claude-3[-.]7/.test(model) ||
+    /claude-3[-.]5-(?:sonnet|haiku)/.test(model) ||
+    /claude-3-(?:sonnet|haiku|opus)?/.test(model) ||
+    /claude-(?:sonnet|opus|haiku)[-.]?(?:[4-9]|\d{2,})/.test(model) ||
+    /claude-(?:[4-9]|\d{2,})(?:[-.](?:sonnet|opus|haiku))?/.test(model) ||
+    s.isMythosClassModel(model)
+  );
+}
+
+/**
  * A Bedrock Claude model ID may be prefixed (`anthropic.claude-*`,
  * `us.anthropic.claude-*`, `global.anthropic.claude-*`) or bare (`claude-*`,
  * used when the LibreChat model ID maps to an application inference profile).
@@ -299,6 +345,9 @@ function isBedrockClaudeModel(model: string): boolean {
  * @returns Array of beta header strings, or empty array if not applicable
  */
 function getBedrockAnthropicBetaHeaders(model: string): string[] {
+  if (isOpus55Model(model)) {
+    return [THINKING_BINDING_BETA];
+  }
   const betaHeaders: string[] = [];
 
   /** Mythos-class (Fable/Mythos) is intentionally not matched: these betas are built-in/no-op for the
@@ -525,7 +574,8 @@ export const bedrockInputParser = s.tConversationSchema
         const persistedAmrf = typedData.additionalModelRequestFields as
           | Record<string, unknown>
           | undefined;
-        const thinkingDisabled = additionalFields.thinking === false;
+        const thinkingDisabled =
+          additionalFields.thinking === false && !isOpus55Model(typedData.model as string);
         const effort = additionalFields.effort;
         if (typeof effort === 'string' && effort !== '') {
           additionalFields.output_config = { effort };
@@ -549,7 +599,7 @@ export const bedrockInputParser = s.tConversationSchema
           );
         }
 
-        if (additionalFields.thinking === false) {
+        if (thinkingDisabled) {
           delete additionalFields.thinkingBudget;
           delete additionalFields.thinkingDisplay;
           if (requiresExplicitThinkingDisabled(typedData.model as string)) {
@@ -578,6 +628,9 @@ export const bedrockInputParser = s.tConversationSchema
             | undefined;
           const persistedDisplay = extractPersistedDisplay(typedData.additionalModelRequestFields);
           const thinkingConfig: ThinkingConfig = { type: 'adaptive' };
+          if (isOpus55Model(typedData.model as string)) {
+            thinkingConfig.block_binding = { ...OPUS_55_BLOCK_BINDING };
+          }
           const display = resolveThinkingDisplay(
             typedData.model as string,
             topLevelDisplay ?? persistedDisplay,

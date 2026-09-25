@@ -1,5 +1,5 @@
-import { TooltipAnchor } from '@librechat/client';
-import { MessageCircleDashed } from 'lucide-react';
+import { HatGlasses } from 'lucide-react';
+import { Chip, TooltipAnchor } from '@librechat/client';
 import { useShortcutAriaKey, useShortcutHint } from '~/hooks/useKeyboardShortcuts';
 import useTemporaryChat from '~/hooks/Chat/useTemporaryChat';
 import { useLocalize } from '~/hooks';
@@ -32,10 +32,36 @@ export function TemporaryChat() {
                 : 'bg-presentation shadow-sm hover:bg-surface-active-alt',
             )}
           >
-            <MessageCircleDashed className="icon-md" aria-hidden="true" />
+            <HatGlasses className="icon-md" aria-hidden="true" />
           </button>
         }
       />
     </div>
+  );
+}
+
+/** Once the first message is sent the toggle retires, so the active mode still
+ * needs a persistent, read-only cue in the header. `role="status"` carries the
+ * mode change to assistive technology, which matters most below `md` where the
+ * label is visually hidden and only the icon remains. */
+export function TemporaryChatIndicator() {
+  const localize = useLocalize();
+  const { isActive } = useTemporaryChat();
+
+  if (!isActive) {
+    return null;
+  }
+
+  return (
+    <Chip
+      role="status"
+      tone="neutral"
+      size="theme"
+      shape="theme"
+      className="flex-shrink-0"
+      leading={<HatGlasses className="size-4 shrink-0" aria-hidden="true" />}
+    >
+      <span className="max-md:sr-only">{localize('com_ui_temporary')}</span>
+    </Chip>
   );
 }

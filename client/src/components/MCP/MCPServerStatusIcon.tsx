@@ -71,7 +71,7 @@ export default function MCPServerStatusIcon({
     return null;
   }
 
-  const { connectionState } = serverStatus;
+  const { connectionState, requestScoped } = serverStatus;
 
   // Connecting: show spinner, with cancel when an OAuth flow is pending.
   if (connectionState === 'connecting') {
@@ -87,6 +87,13 @@ export default function MCPServerStatusIcon({
     }
 
     return <ConnectingSpinner serverName={serverName} />;
+  }
+
+  // Request-scoped servers can only be connected while serving an MCP request.
+  if ((connectionState === 'disconnected' || connectionState === 'error') && requestScoped) {
+    return hasCustomUserVars ? (
+      <ConfigureButton serverName={serverName} onConfigClick={onConfigClick} />
+    ) : null;
   }
 
   // Disconnected or Error: show connect button (PlugZap icon)
@@ -111,8 +118,11 @@ interface CompactStatusDotProps {
 function CompactStatusDot({ serverStatus, isInitializing }: CompactStatusDotProps) {
   if (isInitializing) {
     return (
+      /** `status-info` rather than `-strong`: the strong slot is a neutral grey
+       *  in both standard palettes, so using it turned this blue dot grey. The
+       *  pulse takes the on-status ink so it inverts with the fill. */
       <div className="flex size-3.5 items-center justify-center rounded-full border-2 border-surface-secondary bg-status-info">
-        <div className="size-1.5 animate-pulse rounded-full bg-white" />
+        <div className="size-1.5 animate-pulse rounded-full bg-text-on-status" />
       </div>
     );
   }
@@ -126,10 +136,12 @@ function CompactStatusDot({ serverStatus, isInitializing }: CompactStatusDotProp
   const { connectionState, requiresOAuth } = serverStatus;
 
   let colorClass = 'bg-status-neutral';
-  if (connectionState === 'connected') {
-    colorClass = 'bg-status-success';
-  } else if (connectionState === 'connecting') {
+  if (connectionState === 'connecting') {
     colorClass = 'bg-status-info';
+  } else if (serverStatus.requestScoped) {
+    colorClass = 'bg-status-info';
+  } else if (connectionState === 'connected') {
+    colorClass = 'bg-status-success';
   } else if (connectionState === 'error') {
     colorClass = 'bg-status-error';
   } else if (connectionState === 'disconnected' && requiresOAuth) {

@@ -13,13 +13,23 @@ import { cn } from '~/utils';
  * you leave it. Replaces the icon rail's ten unlabelled glyphs with labelled
  * rows, and costs no standing width.
  */
-function Switcher({ links }: { links: NavLink[] }) {
+function Switcher({
+  links,
+  onLeaveInsights,
+  onNavigate,
+  routeActiveId,
+}: {
+  links: NavLink[];
+  onLeaveInsights?: () => void;
+  onNavigate?: () => void;
+  routeActiveId?: string;
+}) {
   const localize = useLocalize();
   const menuId = useId();
   const [isOpen, setIsOpen] = useState(false);
   const { active, setActive } = useActivePanel();
 
-  const activeId = resolveActivePanel(active, links);
+  const activeId = routeActiveId ?? resolveActivePanel(active, links);
   const activeLink = links.find((link) => link.id === activeId);
 
   const items = useMemo<t.MenuItemProps[]>(
@@ -30,9 +40,19 @@ function Switcher({ links }: { links: NavLink[] }) {
         ariaChecked: link.id === activeId,
         className: link.id === activeId ? 'bg-surface-active-alt' : undefined,
         icon: <link.icon className="size-5 text-text-primary" aria-hidden="true" />,
-        onClick: () => setActive(link.id),
+        onClick: () => {
+          if (link.onClick) {
+            link.onClick();
+            onNavigate?.();
+            return;
+          }
+          setActive(link.id);
+          if (routeActiveId) {
+            onLeaveInsights?.();
+          }
+        },
       })),
-    [links, activeId, localize, setActive],
+    [links, activeId, localize, onLeaveInsights, onNavigate, routeActiveId, setActive],
   );
 
   if (!activeLink) {

@@ -96,3 +96,40 @@ export function getRunStepDurationLabels(
     announcedValues: { count: formatDurationValue(announcedMinutes, language) },
   };
 }
+
+/**
+ * The streaming elapsed indicator's variant of the duration labels: the same
+ * locale-formatted visible form, with the spoken form phrased for a run still
+ * in progress ("5 seconds elapsed") rather than a settled one ("took 5
+ * seconds"). Produced here, beside `getRunStepDurationLabels`, so both forms
+ * keep sharing one per-locale number formatter.
+ */
+export function getElapsedDurationLabels(
+  durationMs: number,
+  language?: string,
+): RunStepDurationLabels {
+  const { key, values } = getRunStepDurationLabels(durationMs, language);
+  const totalSeconds = durationMs / MS_PER_SECOND;
+
+  if (Math.round(totalSeconds) < SECONDS_PER_MINUTE) {
+    const seconds = Math.round(totalSeconds);
+    return {
+      key,
+      values,
+      announcedKey:
+        seconds === 1 ? 'com_ui_elapsed_announced_seconds_one' : 'com_ui_elapsed_announced_seconds',
+      announcedValues: { count: formatDurationValue(seconds, language) },
+    };
+  }
+
+  const announcedMinutes = Math.round(totalSeconds / SECONDS_PER_MINUTE);
+  return {
+    key,
+    values,
+    announcedKey:
+      announcedMinutes === 1
+        ? 'com_ui_elapsed_announced_minutes_one'
+        : 'com_ui_elapsed_announced_minutes',
+    announcedValues: { count: formatDurationValue(announcedMinutes, language) },
+  };
+}

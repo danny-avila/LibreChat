@@ -11,7 +11,7 @@ import {
   resolveModelSpecEndpoint,
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
-import type { LocalizeFunction, IconsRecord } from '~/common';
+import type { LocalizeFunction } from '~/common';
 import { getTimestampedValue } from './timestamps';
 import { getAgentAvatarUrl } from './agents';
 
@@ -662,26 +662,6 @@ export function getIconEndpoint({
   endpoint?: string | null;
 }) {
   return (endpointsConfig?.[iconURL ?? ''] ? (iconURL ?? endpoint) : endpoint) ?? '';
-}
-
-/** Gets the key to use for the default endpoint iconURL, as defined by the custom config */
-export function getIconKey({
-  endpoint,
-  endpointType: _eType,
-  endpointsConfig,
-  endpointIconURL: iconURL,
-}: {
-  endpoint?: string | null;
-  endpointsConfig?: t.TEndpointsConfig | null;
-  endpointType?: string | null;
-  endpointIconURL?: string;
-}): keyof IconsRecord {
-  const endpointType = _eType ?? getEndpointField(endpointsConfig, endpoint, 'type') ?? '';
-  const endpointIconURL = iconURL ?? getEndpointField(endpointsConfig, endpoint, 'iconURL') ?? '';
-  if (endpointIconURL && EModelEndpoint[endpointIconURL] != null) {
-    return endpointIconURL;
-  }
-  return endpointType ? 'unknown' : (endpoint ?? 'unknown');
 }
 
 export const getEntity = ({

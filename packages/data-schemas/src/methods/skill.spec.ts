@@ -7,6 +7,7 @@ import {
   AccessRoleIds,
   PrincipalType,
   PermissionBits,
+  SKILL_BODY_MAX_LENGTH,
 } from 'librechat-data-provider';
 import {
   partitionIssues,
@@ -565,6 +566,31 @@ describe('skill validation helpers', () => {
 });
 
 describe('Skill CRUD methods', () => {
+  it('rejects an oversized body before scanning its frontmatter on create', async () => {
+    const body = `---\nalways-apply: a${' '.repeat(SKILL_BODY_MAX_LENGTH)}b\n---`;
+
+    await expect(methods.createSkill(makeSkillInput({ body }))).rejects.toMatchObject({
+      code: 'SKILL_VALIDATION_FAILED',
+      issues: [expect.objectContaining({ field: 'body', code: 'TOO_LONG' })],
+    });
+  });
+
+  it('rejects an oversized body before scanning its frontmatter on update', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput());
+    const body = `---\nalways-apply: a${' '.repeat(SKILL_BODY_MAX_LENGTH)}b\n---`;
+
+    await expect(
+      methods.updateSkill({
+        id: skill._id.toString(),
+        expectedVersion: 1,
+        update: { body },
+      }),
+    ).rejects.toMatchObject({
+      code: 'SKILL_VALIDATION_FAILED',
+      issues: [expect.objectContaining({ field: 'body', code: 'TOO_LONG' })],
+    });
+  });
+
   it('creates a skill with version 1 and default fileCount 0', async () => {
     const { skill, warnings } = await methods.createSkill(makeSkillInput());
     expect(skill.name).toBe('demo-skill');
@@ -781,7 +807,7 @@ describe('Skill CRUD methods', () => {
     expect(filtered).toEqual([canonical]);
   });
 
-  it('deleteSkill prunes agent allowlists even when skill file cleanup fails', async () => {
+  it('deleteSkill remains retryable after skill file cleanup fails', async () => {
     const { skill } = await methods.createSkill(makeSkillInput({ name: 'flaky-files' }));
     const Agent = mongoose.models.Agent;
     const agent = await Agent.create(makeAgentDoc([skill._id.toString()]));
@@ -790,9 +816,21 @@ describe('Skill CRUD methods', () => {
       .spyOn(SkillFile, 'deleteMany')
       .mockRejectedValueOnce(new Error('transient storage failure'));
     try {
-      await expect(methods.deleteSkill(skill._id.toString())).rejects.toThrow(
-        'transient storage failure',
-      );
+      const first = await methods.deleteSkill(skill._id.toString());
+      expect(first).toEqual({
+        deleted: true,
+        skillAbsent: true,
+        cleanupComplete: false,
+        failedCleanupSteps: ['skill_files'],
+      });
+
+      const retry = await methods.deleteSkill(skill._id.toString());
+      expect(retry).toEqual({
+        deleted: false,
+        skillAbsent: true,
+        cleanupComplete: true,
+        failedCleanupSteps: [],
+      });
     } finally {
       deleteManySpy.mockRestore();
     }
@@ -819,6 +857,70 @@ describe('Skill CRUD methods', () => {
     } | null;
     expect(agentAfter?.skills).toEqual([]);
     expect(agentAfter?.skills_enabled).toBe(false);
+  });
+
+  it('deleteSkill keeps skills enabled when the entire allowlist is deleted from an all-scoped agent', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'all-scoped-only-skill' }));
+    const Agent = mongoose.models.Agent;
+    const agent = await Agent.create(makeAgentDoc([skill._id.toString()], { skills_scope: 'all' }));
+
+    const res = await methods.deleteSkill(skill._id.toString());
+    expect(res.deleted).toBe(true);
+
+    const agentAfter = (await Agent.findById(agent._id).lean()) as {
+      skills?: string[];
+      skills_enabled?: boolean;
+      skills_scope?: string;
+    } | null;
+    expect(agentAfter?.skills).toEqual([]);
+    expect(agentAfter?.skills_enabled).toBe(true);
+    expect(agentAfter?.skills_scope).toBe('all');
+  });
+
+  it('deleteSkill keeps skills enabled when the entire allowlist is deleted from a selected-scoped agent', async () => {
+    const { skill } = await methods.createSkill(
+      makeSkillInput({ name: 'selected-scoped-only-skill' }),
+    );
+    const Agent = mongoose.models.Agent;
+    const agent = await Agent.create(
+      makeAgentDoc([skill._id.toString()], { skills_scope: 'selected' }),
+    );
+
+    const res = await methods.deleteSkill(skill._id.toString());
+    expect(res.deleted).toBe(true);
+
+    const agentAfter = (await Agent.findById(agent._id).lean()) as {
+      skills?: string[];
+      skills_enabled?: boolean;
+      skills_scope?: string;
+    } | null;
+    expect(agentAfter?.skills).toEqual([]);
+    expect(agentAfter?.skills_enabled).toBe(true);
+    expect(agentAfter?.skills_scope).toBe('selected');
+  });
+
+  it('deleteSkill disables skills when the entire allowlist is deleted from a none-scoped agent', async () => {
+    /** `skills_enabled: true` with `skills_scope: none` is a shape the API
+     *  accepts. It renders as Off, and `skillDeps` reads the master flag on
+     *  its own as permission to expose the authoring tools, so cleanup has to
+     *  clear it rather than treat the explicit scope as an opt-out. */
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'none-scoped-only-skill' }));
+    const Agent = mongoose.models.Agent;
+    const agent = await Agent.create(
+      makeAgentDoc([skill._id.toString()], { skills_scope: 'none' }),
+    );
+
+    const res = await methods.deleteSkill(skill._id.toString());
+    expect(res.deleted).toBe(true);
+
+    const agentAfter = (await Agent.findById(agent._id).lean()) as {
+      skills?: string[];
+      skills_enabled?: boolean;
+      skills_scope?: string;
+    } | null;
+    expect(agentAfter?.skills).toEqual([]);
+    expect(agentAfter?.skills_enabled).toBe(false);
+    expect(agentAfter?.skills_scope).toBe('none');
   });
 
   it('deleteSkill prunes the deleted id from agent skill allowlists', async () => {
@@ -1337,6 +1439,7 @@ describe('Skill CRUD methods', () => {
     });
     const names = result.skills.map((s) => s.name).sort();
     expect(names).toEqual(['always-a', 'always-b']);
+    expect(result.skills.map((skill) => skill.version)).toEqual([1, 1]);
   });
 
   it('listAlwaysApplySkills excludes rows outside accessibleIds', async () => {
@@ -2079,6 +2182,45 @@ describe('SkillFile methods', () => {
       const [file] = await methods.listSkillFiles(skill._id);
       expect(file.codeEnvRefs?.default?.file_id).toBe('default-file');
       expect(file.codeEnvRefs?.stateful?.file_id).toBe('stateful-file');
+    });
+
+    it('persists deployment-specific route keys and their reference metadata', async () => {
+      const { skill } = await methods.createSkill(makeSkillInput());
+      await methods.upsertSkillFile({
+        skillId: skill._id,
+        relativePath: 'scripts/a.sh',
+        file_id: 'f1',
+        filename: 'a.sh',
+        filepath: '/a',
+        source: 'local',
+        mimeType: 'text/plain',
+        bytes: 1,
+        author: owner._id,
+      });
+      const executionRouteKey = 'stateful:0123456789abcdef0123456789abcdef';
+
+      await methods.updateSkillFileCodeEnvIds([
+        {
+          skillId: skill._id,
+          relativePath: 'scripts/a.sh',
+          codeEnvRef: {
+            kind: 'skill',
+            id: skill._id.toString(),
+            version: 1,
+            storage_session_id: 'route-session',
+            file_id: 'route-file',
+            executionProfile: 'stateful',
+            executionRouteKey,
+          },
+        },
+      ]);
+
+      const [file] = await methods.listSkillFiles(skill._id);
+      expect(file.codeEnvRefs?.[executionRouteKey]).toMatchObject({
+        file_id: 'route-file',
+        executionProfile: 'stateful',
+        executionRouteKey,
+      });
     });
 
     it('reports modifiedCount=0 when no SkillFile rows match the (skillId, relativePath) filter', async () => {

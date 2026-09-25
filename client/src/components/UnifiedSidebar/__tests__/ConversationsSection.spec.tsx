@@ -1,11 +1,12 @@
 import React from 'react';
 import { DndProvider } from 'react-dnd';
 import { BrowserRouter } from 'react-router-dom';
+import { render, act } from '@testing-library/react';
 import { HTML5Backend } from 'react-dnd-html5-backend';
-import { render, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { atom, RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
 import type { SetterOrUpdater } from 'recoil';
+import type { SearchState } from '~/store/search';
 
 /**
  * Real recoil atom used to force ConversationsSection to re-render on demand,
@@ -16,8 +17,6 @@ import type { SetterOrUpdater } from 'recoil';
  */
 const streamTickAtom = atom<number>({ key: 'conversations-section-stream-tick', default: 0 });
 
-/** Generous because it covers a first-require module transform, not a race. */
-const LAZY_CHUNK_TIMEOUT = 15_000;
 const TEST_TIMEOUT = 30_000;
 
 const mockUseFavorites = jest.fn(() => ({
@@ -26,9 +25,30 @@ const mockUseFavorites = jest.fn(() => ({
   isLoading: false,
 }));
 const mockUseGetConversationTags = jest.fn(() => ({ data: [] as unknown[] }));
+const mockConversationsRender = jest.fn();
+const mockSetChatsExpanded = jest.fn();
+const mockMoveToTop = jest.fn();
 const mockUseTitleGeneration = jest.fn(() => {
   useRecoilValue(streamTickAtom);
 });
+
+/** One stable identity across renders, like react-query's cached data: the
+ *  section's derived `conversations` memo (and so the PinnedSection props)
+ *  keeps referential stability mid-stream, which is what the memoized-children
+ *  guarantee below depends on. */
+const mockConversationsResult = {
+  data: { pages: [{ conversations: [] as unknown[], nextCursor: null }] },
+  fetchNextPage: jest.fn(),
+  refetch: jest.fn(),
+  isFetchingNextPage: false,
+  isLoading: false,
+  isFetching: false,
+  isError: false,
+};
+
+/** Same identity rule as above: a fresh `pinnedData.conversations` array would
+ *  rebuild `pinnedConversations` and re-render PinnedSection on every tick. */
+const mockPinnedResult = { data: { conversations: [] as unknown[], nextCursor: null } };
 
 jest.mock('~/store', () => {
   const { atom: recoilAtom } = jest.requireActual('recoil');
@@ -49,8 +69,8 @@ jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
   useHasAccess: () => true,
   useAuthContext: () => ({ isAuthenticated: true }),
-  useLocalStorage: () => [true, jest.fn()],
-  useNavScrolling: () => ({ moveToTop: jest.fn() }),
+  useLocalStorage: () => [true, mockSetChatsExpanded],
+  useNavScrolling: () => ({ moveToTop: mockMoveToTop }),
   useFavorites: () => mockUseFavorites(),
   useShowMarketplace: () => false,
   useNewConvo: () => ({ newConversation: jest.fn() }),
@@ -59,16 +79,8 @@ jest.mock('~/hooks', () => ({
 
 jest.mock('~/data-provider', () => ({
   __esModule: true,
-  useConversationsInfiniteQuery: () => ({
-    data: { pages: [{ conversations: [], nextCursor: null }] },
-    fetchNextPage: jest.fn(),
-    isFetchingNextPage: false,
-    isLoading: false,
-    isFetching: false,
-  }),
-  usePinnedConversationsQuery: () => ({
-    data: { conversations: [], nextCursor: null },
-  }),
+  useConversationsInfiniteQuery: () => mockConversationsResult,
+  usePinnedConversationsQuery: () => mockPinnedResult,
   useTitleGeneration: () => mockUseTitleGeneration(),
   useGetEndpointsQuery: () => ({ data: {}, isLoading: false }),
   useGetStartupConfig: () => ({ data: { modelSpecs: { list: [] } } }),
@@ -86,20 +98,32 @@ jest.mock('~/hooks/Input/useSelectMention', () => ({
   default: () => ({ onSelectEndpoint: jest.fn(), onSelectSpec: jest.fn() }),
 }));
 
-jest.mock('~/components/Conversations', () => ({
-  __esModule: true,
-  Conversations: () => <div data-testid="conversations-stub" />,
-}));
+jest.mock('~/components/Conversations', () => {
+  const { memo } = jest.requireActual('react');
+  const ConversationsStub = memo(function ConversationsStub() {
+    mockConversationsRender();
+    return <div data-testid="conversations-stub" />;
+  });
+  return { __esModule: true, Conversations: ConversationsStub };
+});
 
 jest.mock('~/components/Conversations/ProjectsSection', () => ({
   __esModule: true,
   default: () => <div data-testid="projects-stub" />,
 }));
 
-jest.mock('~/components/Conversations/PinnedSection', () => ({
-  __esModule: true,
-  default: () => <div data-testid="pinned-stub" />,
-}));
+jest.mock('~/components/Conversations/PinnedSection', () => {
+  const { memo } = jest.requireActual('react');
+  /** Mirrors the real merged section closely enough for the streaming test:
+   *  memoized like it, and its first act is the same `useFavorites` call
+   *  through the ~/hooks mock, so that hook's call count tracks its renders. */
+  const PinnedSectionStub = memo(function PinnedSectionStub() {
+    mockUseFavorites();
+    return <div data-testid="pinned-stub" />;
+  });
+  PinnedSectionStub.displayName = 'PinnedSectionStub';
+  return { __esModule: true, default: PinnedSectionStub };
+});
 
 jest.mock('~/components/Nav/SearchBar', () => ({
   __esModule: true,
@@ -112,6 +136,7 @@ jest.mock('~/components/Nav/Favorites/FavoriteItem', () => ({
 }));
 
 import ConversationsSection from '../ConversationsSection';
+import store from '~/store';
 
 let setStreamTick: SetterOrUpdater<number>;
 
@@ -123,14 +148,11 @@ function TickController() {
 const createQueryClient = () => new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
 const renderCount = () =>
-  mockUseFavorites.mock.calls.length +
-  mockUseGetConversationTags.mock.calls.length +
-  mockUseTitleGeneration.mock.calls.length;
+  mockUseFavorites.mock.calls.length + mockUseTitleGeneration.mock.calls.length;
 
 /**
- * Yield a full event-loop turn inside act. The lazy BookmarkNav's Suspense commit
- * lands during waitFor's polling, outside act, so its follow-up work sits in the real
- * scheduler as a macrotask that a microtask-only `await act(async () => {})` misses.
+ * Yield a full event-loop turn inside act, so follow-up work that lands in the real
+ * scheduler as a macrotask is flushed before render counts are compared.
  */
 const flushEventLoopTurn = () =>
   act(async () => {
@@ -179,6 +201,7 @@ describe('ConversationsSection section order', () => {
 
 describe('ConversationsSection streaming re-renders', () => {
   beforeEach(() => {
+    mockConversationsRender.mockClear();
     mockUseFavorites.mockImplementation(() => ({
       favorites: [],
       reorderFavorites: jest.fn(),
@@ -191,29 +214,15 @@ describe('ConversationsSection streaming re-renders', () => {
   });
 
   it(
-    'does not re-render FavoritesList or BookmarkNav when the section re-renders mid-stream',
+    'does not re-render memoized children when the section re-renders mid-stream',
     async () => {
       renderSection();
-
-      // BookmarkNav is lazy-loaded; wait until it has actually rendered (its own
-      // data hook firing is the deterministic signal that the chunk resolved).
-      // Resolving that import means transforming BookmarkNav's whole module graph
-      // on first require, which outruns the default one-second budget whenever the
-      // transform cache is cold or the machine is busy.
-      await waitFor(() => expect(mockUseGetConversationTags).toHaveBeenCalled(), {
-        timeout: LAZY_CHUNK_TIMEOUT,
-      });
-
-      // waitFor resolves once the hook first fires, but on loaded Windows shards the
-      // Suspense resolution can leave a trailing pass pending in the real scheduler,
-      // which the first stream tick's act would flush into the children's counts.
       await settleRenders();
 
       expect(mockUseFavorites.mock.calls.length).toBeGreaterThan(0);
-      expect(mockUseGetConversationTags.mock.calls.length).toBeGreaterThan(0);
 
       const favBaseline = mockUseFavorites.mock.calls.length;
-      const tagBaseline = mockUseGetConversationTags.mock.calls.length;
+      const conversationsBaseline = mockConversationsRender.mock.calls.length;
       const titleBaseline = mockUseTitleGeneration.mock.calls.length;
 
       // Simulate a stream: repeatedly re-render ConversationsSection.
@@ -228,8 +237,52 @@ describe('ConversationsSection streaming re-renders', () => {
 
       // The memoized children, fed referentially stable props, did not re-render.
       expect(mockUseFavorites.mock.calls.length).toBe(favBaseline);
-      expect(mockUseGetConversationTags.mock.calls.length).toBe(tagBaseline);
+      expect(mockConversationsRender.mock.calls.length).toBe(conversationsBaseline);
     },
     TEST_TIMEOUT,
   );
+});
+
+describe('ConversationsSection shared scroll surface', () => {
+  /** Searching swaps what the one surface holds — Projects and Pinned leave,
+   *  the chats become results — and a position kept from the previous contents
+   *  would open those results partway down. */
+  it('returns the surface to the top when a search replaces its contents', async () => {
+    let setSearch: SetterOrUpdater<SearchState>;
+
+    function SearchController() {
+      setSearch = useSetRecoilState(store.search);
+      return null;
+    }
+
+    const { container } = render(
+      <QueryClientProvider client={createQueryClient()}>
+        <RecoilRoot>
+          <BrowserRouter>
+            <DndProvider backend={HTML5Backend}>
+              <SearchController />
+              <ConversationsSection />
+            </DndProvider>
+          </BrowserRouter>
+        </RecoilRoot>
+      </QueryClientProvider>,
+    );
+    await settleRenders();
+
+    const surface = container.querySelector<HTMLElement>('.overflow-y-auto');
+    expect(surface).not.toBeNull();
+    surface!.scrollTop = 420;
+
+    act(() => {
+      setSearch({
+        query: 'draft',
+        debouncedQuery: 'draft',
+        enabled: true,
+        isTyping: false,
+        isSearching: true,
+      });
+    });
+
+    expect(surface!.scrollTop).toBe(0);
+  });
 });

@@ -1,10 +1,12 @@
 import { memo, useId, useRef, useMemo, useState, useEffect, useCallback } from 'react';
+import { X, Clock, Pencil } from 'lucide-react';
 import { useSetAtom, useAtomValue } from 'jotai';
-import { useToastContext } from '@librechat/client';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
-import { X, Zap, ZapOff, Clock, Pencil, ChevronUp, ChevronDown } from 'lucide-react';
+import { Zap, ZapOff, ChevronUp, ChevronDown } from 'lucide';
+import { MorphIcon, useToastContext } from '@librechat/client';
 import type { TFile, TMessage } from 'librechat-data-provider';
 import type { SteeringControls, QueuedMessageContext } from '~/hooks/Chat/useSteering';
+import type { SteerReceiptState } from '~/components/Chat/Steering/Receipt';
 import type { PendingSteer } from '~/store/families';
 import type { MenuEntry } from './SteerMenu';
 import {
@@ -13,14 +15,18 @@ import {
   useDefaultToggleEntry,
   useInterruptToggleEntry,
 } from './SteerMenu';
+import { carriedSteerContext, cn, hydrateFileDeliveryMetadata, usesImagePreview } from '~/utils';
 import FilePreviewDialog from '~/components/Chat/Messages/Content/FilePreviewDialog';
 import { supportsGenerationProtocolV2, useArmSteerMutation } from '~/data-provider';
 import { steerOverlayHeightFamily, escalatingSteerFamily } from '~/store/steer';
+import MessageQuotes from '~/components/Chat/Messages/Content/MessageQuotes';
+import { QUEUE_ICON, STEER_ICON } from '~/components/Chat/Steering/identity';
 import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import { useSteerCancel, useSteerReclaim, useLocalize } from '~/hooks';
 import ImagePreview from '~/components/Chat/Input/Files/ImagePreview';
-import { carriedSteerContext, cn } from '~/utils';
+import SteerReceipt from '~/components/Chat/Steering/Receipt';
+import { useFileMapContext } from '~/Providers';
 import store from '~/store';
 
 /** Restores a message's text into the composer, or refuses (false) when the
@@ -37,7 +43,7 @@ const splitFiles = (files?: TMessage['files']) => {
   const images: NonNullable<TMessage['files']> = [];
   const others: NonNullable<TMessage['files']> = [];
   for (const file of files ?? []) {
-    (file.type?.startsWith('image/') === true ? images : others).push(file);
+    (usesImagePreview(file) ? images : others).push(file);
   }
   return { images, others };
 };
@@ -51,6 +57,14 @@ const STEER_OVERFLOW_TOLERANCE = 8;
 /** Axios has no default request timeout. Bound the UI lock while preserving an
  *  honest unknown outcome; the idempotent arm may still complete server-side. */
 const ARM_CONFIRM_TIMEOUT_MS = 10_000;
+
+/** Live-region copy per receipt state, announced on transitions only. */
+const RECEIPT_ANNOUNCEMENTS = {
+  sending: 'com_ui_steer_sending',
+  delivered: 'com_ui_steer_delivered',
+  interrupting: 'com_ui_steer_in_flight_preempt',
+  applied: 'com_ui_steer_applied_info',
+} as const;
 
 /** The control rail flanking a bubble. `py-3` reproduces the bubble's own
  *  first-line band — its `py-2.5` padding, its 1px border, and half the gap
@@ -133,6 +147,35 @@ const InFlightSteer = memo(function InFlightSteer({
   const { images, others } = useMemo(() => splitFiles(steer.files), [steer.files]);
   const sending = steer.status === 'sending';
   const preempting = steer.preempt === true;
+  /** This row's own arm request is in flight (the convo-scoped escalating flag
+   *  cannot say WHICH row asked). The receipt must react on the click, not the
+   *  ACK — the silent round trip is exactly what reads as broken. */
+  const [arming, setArming] = useState(false);
+  /** An interrupt shows as interrupting even before its confirmation (the
+   *  click must react instantly); `confirmed` withholds the check until the
+   *  server durably acknowledged the enqueue/arm. A relabelled chip
+   *  (`preempt` true past `sending`) IS that confirmation — the SSE
+   *  `steer_updated` can deliver it while the arm HTTP response is still in
+   *  flight, and the check must not wait out that round trip. */
+  let receiptState: SteerReceiptState = 'delivered';
+  if (preempting || arming) {
+    receiptState = 'interrupting';
+  } else if (sending) {
+    receiptState = 'sending';
+  }
+  const receiptConfirmed = preempting ? !sending : !arming;
+
+  /** Mirrors each receipt TRANSITION into the row's polite live region so
+   *  keyboard and screen-reader users get the same immediate confirmation the
+   *  visible marks give; the initial state is not replayed on mount. */
+  const prevReceiptStateRef = useRef(receiptState);
+  useEffect(() => {
+    if (prevReceiptStateRef.current === receiptState) {
+      return;
+    }
+    prevReceiptStateRef.current = receiptState;
+    setEscalationAnnouncement(localize(RECEIPT_ANNOUNCEMENTS[receiptState]));
+  }, [receiptState, localize]);
 
   /** Long steers (several paragraphs) collapse to a preview so the stack stays
    *  scannable; the toggle is offered only once the content actually overflows
@@ -198,6 +241,7 @@ const InFlightSteer = memo(function InFlightSteer({
       const trigger = event.currentTarget;
       setEscalationAnnouncement('');
       setEscalating(true);
+      setArming(true);
       const params = {
         conversationId,
         steerId: steer.steerId,
@@ -292,7 +336,10 @@ const InFlightSteer = memo(function InFlightSteer({
           clearTimeout(timeout);
         }
       };
-      void requestArm().finally(() => setEscalating(false));
+      void requestArm().finally(() => {
+        setEscalating(false);
+        setArming(false);
+      });
     },
     [
       armSteer,
@@ -393,7 +440,7 @@ const InFlightSteer = memo(function InFlightSteer({
     {
       key: 'queue',
       label: localize('com_ui_convert_to_queue'),
-      icon: <Clock className="h-4 w-4 text-cyan-500" aria-hidden="true" />,
+      icon: <Clock className={cn('h-4 w-4', QUEUE_ICON)} aria-hidden="true" />,
       onClick: () => {
         void reclaim().then((reclaimed) => {
           if (reclaimed) {
@@ -473,15 +520,17 @@ const InFlightSteer = memo(function InFlightSteer({
             sending && 'opacity-70',
           )}
         >
-          {preempting ? (
-            <ZapOff className="mt-1 h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden="true" />
-          ) : (
-            <Zap className="mt-1 h-3.5 w-3.5 shrink-0 text-amber-500" aria-hidden="true" />
-          )}
+          <MorphIcon
+            icon={preempting ? ZapOff : Zap}
+            className={cn('mt-1 h-3.5 w-3.5 shrink-0', STEER_ICON)}
+          />
           <span className="sr-only">
             {localize(preempting ? 'com_ui_steer_in_flight_preempt' : 'com_ui_steer_in_flight')}
           </span>
           <div className="flex min-w-0 flex-col items-start gap-1">
+            {/* Same reference blocks the applied `SteerPart` shows, outside the
+             *  collapse so the excerpts stay visible while a long steer clips. */}
+            <MessageQuotes quotes={steer.quotes} />
             <div
               ref={contentRef}
               id={contentId}
@@ -518,11 +567,7 @@ const InFlightSteer = memo(function InFlightSteer({
                 aria-controls={contentId}
                 className="inline-flex items-center gap-1 rounded text-xs font-medium text-text-secondary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy"
               >
-                {expanded ? (
-                  <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
-                ) : (
-                  <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
-                )}
+                <MorphIcon icon={expanded ? ChevronUp : ChevronDown} className="h-3.5 w-3.5" />
                 {expanded ? localize('com_ui_show_less') : localize('com_ui_show_more')}
               </button>
             )}
@@ -541,6 +586,17 @@ const InFlightSteer = memo(function InFlightSteer({
           </div>
         )}
       </div>
+      {/* Delivery receipt under the bubble, iMessage-style: present from the
+       *  first frame so the status never flickers in from nothing, and every
+       *  advance (Sending → Delivered ✓ → Interrupting) is an event the server
+       *  actually confirmed. The margin re-aligns it under the bubble's right
+       *  edge when the outboard send-now rail (24px control + 6px gap) is
+       *  present; the rail hides while sending or already escalated. */}
+      <SteerReceipt
+        state={receiptState}
+        confirmed={receiptConfirmed}
+        className={!sending && !preempting ? 'mr-[30px]' : undefined}
+      />
       <span role="status" aria-live="polite" aria-atomic="true" className="sr-only">
         {escalationAnnouncement}
       </span>
@@ -552,7 +608,9 @@ const InFlightSteer = memo(function InFlightSteer({
           fileId={selectedFile?.file_id}
           filePath={selectedFile?.filepath}
           fileType={selectedFile?.type ?? undefined}
+          fileSource={selectedFile?.source}
           fileSize={(selectedFile as TFile | null)?.bytes}
+          deliveryPath={selectedFile?.llmDeliveryPath}
         />
       )}
     </div>
@@ -576,7 +634,17 @@ const InFlightSteers = memo(function InFlightSteers({
 }) {
   const localize = useLocalize();
   const steers = useRecoilValue(store.pendingSteersByConvoId(conversationId));
-  const inFlight = useMemo(() => steers.filter((steer) => steer.status !== 'failed'), [steers]);
+  const fileMap = useFileMapContext();
+  const inFlight = useMemo(
+    () =>
+      steers
+        .filter((steer) => steer.status !== 'failed')
+        .map((steer) => {
+          const files = hydrateFileDeliveryMetadata(steer.files, undefined, fileMap);
+          return files === steer.files ? steer : { ...steer, files };
+        }),
+    [fileMap, steers],
+  );
   /** Mirrors `PendingSteerChips`: while one interrupt is unresolved, every
    *  other escalation control disables rather than arming a second seal. The
    *  escalating flag covers an arm request's round trip, before its chip

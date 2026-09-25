@@ -112,6 +112,34 @@ describe('useFollowScroll', () => {
     expect(state.writes).toEqual([900]);
   });
 
+  /** A failing PTC call settles by appending its error line in the same
+   *  commit that clears the last running row, so the growth and the end of
+   *  the stream arrive together. */
+  it('pins one last time when the change that ends the stream also adds content', () => {
+    const { rerender, state } = setup();
+    state.scrollHeight = 1200;
+    rerender(<Probe content="ab" active={false} expanded />);
+    expect(state.writes).toEqual([1200]);
+  });
+
+  it('does not pin the settling change for a reader who scrolled up', () => {
+    const { rerender, pane, state } = setup();
+    state.scrollTop = 100;
+    fireEvent.scroll(pane);
+    state.scrollHeight = 1200;
+    rerender(<Probe content="ab" active={false} expanded />);
+    expect(state.writes).toHaveLength(0);
+  });
+
+  it('pins only the settling change, not the ones after it', () => {
+    const { rerender, state } = setup();
+    rerender(<Probe content="ab" active={false} expanded />);
+    expect(state.writes).toEqual([900]);
+    state.scrollHeight = 1200;
+    rerender(<Probe content="abc" active={false} expanded />);
+    expect(state.writes).toEqual([900]);
+  });
+
   it('detaches when the user scrolls up beyond the follow threshold', () => {
     const { rerender, pane, state } = setup();
     state.scrollTop = 100;

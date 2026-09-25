@@ -30,8 +30,8 @@ async function expandBreakdown(popover: Locator) {
   await expect(toggle).toHaveAttribute('aria-expanded', 'true');
 }
 
-/** Opens the gauge breakdown popover (click, not hover), expands the detail,
- *  and returns its region. */
+/** Opens the gauge breakdown popover (a click, which also pins it), expands
+ *  the detail, and returns its region. */
 async function openBreakdown(page: Page) {
   await expectGaugeAboveZero(page);
   await gauge(page).click();
@@ -250,7 +250,7 @@ test.describe('context usage gauge', () => {
     await expect(popover.getByTestId('token-usage-totals')).toBeVisible({ timeout: 10000 });
   });
 
-  test('hides on a new chat, then reveals snapshot on hover and breakdown on click', async ({
+  test('hides on a new chat, then reveals the breakdown on hover and pins it on click', async ({
     page,
   }) => {
     test.setTimeout(120000);
@@ -263,16 +263,29 @@ test.describe('context usage gauge', () => {
     await sendAndAwaitReply(page, 'hello');
     await expectGaugeAboveZero(page);
 
-    /** Hover surfaces the compact snapshot tooltip — not the full breakdown. */
+    /** Hover opens the full breakdown after the intent delay; the compact
+     *  tooltip is gone, and the popover carries no tooltip role. */
     await gauge(page).hover();
-    const tooltip = page.getByRole('tooltip');
-    await expect(tooltip).toBeVisible({ timeout: 10000 });
-    await expect(tooltip).toContainText('Context');
-    await expect(page.getByRole('region', { name: 'Context usage' })).toHaveCount(0);
-
-    /** Click opens the breakdown popover; Escape (focus-away) closes it. */
-    await gauge(page).click();
     const popover = page.getByRole('region', { name: 'Context usage' });
+    await expect(popover).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole('tooltip')).toHaveCount(0);
+
+    /** Moving the pointer away closes it: hover is the only thing holding it. */
+    await messagesView(page).hover({ position: { x: 5, y: 5 } });
+    await expect(popover).toBeHidden({ timeout: 10000 });
+
+    /** Click pins the breakdown: the pointer can leave without it closing. */
+    await gauge(page).hover();
+    await expect(popover).toBeVisible({ timeout: 10000 });
+    await gauge(page).click();
+    await messagesView(page).hover({ position: { x: 5, y: 5 } });
+    await page.waitForTimeout(500);
+    await expect(popover).toBeVisible();
+    await gauge(page).click();
+    await expect(popover).toBeHidden({ timeout: 10000 });
+
+    /** A click-opened popover is pinned too; Escape (focus-away) closes it. */
+    await gauge(page).click();
     await expect(popover).toBeVisible({ timeout: 10000 });
     await expect(popover.getByText('Context window')).toBeVisible();
     await page.keyboard.press('Escape');

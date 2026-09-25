@@ -102,13 +102,10 @@ export class ConnectionsRepository {
     if (existingConnection) {
       // Check if config was cached/updated since connection was created
       if (serverConfig.updatedAt && existingConnection.isStale(serverConfig.updatedAt)) {
-        logger.info(
-          `${this.prefix(serverName)} Existing connection for ${serverName} is outdated. Recreating a new connection.`,
-          {
-            connectionCreated: new Date(existingConnection.createdAt).toISOString(),
-            configCachedAt: new Date(serverConfig.updatedAt).toISOString(),
-          },
-        );
+        logger.info(`${this.prefix()} Existing connection is outdated; recreating`, {
+          connectionCreated: new Date(existingConnection.createdAt).toISOString(),
+          configCachedAt: new Date(serverConfig.updatedAt).toISOString(),
+        });
 
         // Disconnect stale connection
         await this.disconnectConnection(serverName);
@@ -220,7 +217,7 @@ export class ConnectionsRepository {
             if (!options.continueOnError) {
               throw error;
             }
-            logger.warn(`${this.prefix(name)} Failed to establish connection`, error);
+            logger.warn(`${this.prefix()} Failed to establish connection`);
             return [name, null];
           }
         }),
@@ -258,8 +255,8 @@ export class ConnectionsRepository {
     try {
       connection.removeAllListeners?.('toolsChanged');
       await connection.dispose();
-    } catch (err) {
-      logger.error(`${this.prefix(serverName)} Error disposing`, err);
+    } catch {
+      logger.error(`${this.prefix()} Error disposing`);
     } finally {
       await cancelMCPToolsChanged({ userId: this.ownerId, serverName });
     }
@@ -278,8 +275,8 @@ export class ConnectionsRepository {
   }
 
   // Returns formatted log prefix for server messages
-  protected prefix(serverName: string): string {
-    return `[MCP][${serverName}]`;
+  protected prefix(): string {
+    return this.ownerId ? `[MCP][User: ${this.ownerId}]` : '[MCP]';
   }
 
   /**

@@ -225,7 +225,7 @@ const AgentGrid: React.FC<AgentGridProps> = ({
     </div>
   );
 
-  if (isLoading || (isFetching && !isFetchingNextPage)) {
+  if ((isLoading || (isFetching && !isFetchingNextPage)) && !hasData) {
     return loadingSpinner;
   }
   return mainContent;

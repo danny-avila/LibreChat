@@ -1,6 +1,22 @@
 import { z } from 'zod';
-import { MemoryScope, MAX_SUBAGENTS, ViolationTypes, ErrorTypes } from 'librechat-data-provider';
-import type { Agent, TModelsConfig } from 'librechat-data-provider';
+import {
+  CODE_WORKSPACE_ID_PATTERN,
+  MemoryScope,
+  SkillsScope,
+  getMaxSubagents,
+  agentGitIdentitySchema,
+  resolveModelCatalogKey,
+  ViolationTypes,
+  ErrorTypes,
+  MAX_SUBAGENT_GRAPH_NODES,
+  MAX_GRAPH_SUBAGENT_MEMBERS,
+} from 'librechat-data-provider';
+import type {
+  Agent,
+  AgentGitIdentity,
+  TModelsConfig,
+  AgentSubagentsConfig,
+} from 'librechat-data-provider';
 import type { Request, Response } from 'express';
 
 /**
@@ -9,6 +25,11 @@ import type { Request, Response } from 'express';
  * (see `~/types/http`), whose `params` type is widened to `unknown`.
  */
 type LooseRequest = Request<unknown, unknown, unknown>;
+
+const agentCodeWorkspaceIdSchema: z.ZodUnion<[z.ZodLiteral<''>, z.ZodString]> = z.union([
+  z.literal(''),
+  z.string().regex(CODE_WORKSPACE_ID_PATTERN),
+]);
 
 /** Avatar schema shared between create and update */
 export const agentAvatarSchema: z.ZodObject<
@@ -174,40 +195,229 @@ export const agentToolOptionsSchema: z.ZodOptional<
 > = z.record(z.string(), toolOptionsSchema).optional();
 
 /**
- * Subagent spawning configuration for an agent. `agent_ids` is capped at
- * `Constants.MAX_SUBAGENTS` so a crafted API request cannot trigger hundreds
- * of `processAgent` calls (DB lookup + permission check + tool loading).
- * The UI enforces the same cap, so legitimate payloads never hit the bound.
+ * Subagent spawning configuration for an agent. `agent_ids` and `graphs` are
+ * capped at the effective subagents limit (10 by default, configurable via
+ * `endpoints.agents.maxSubagents`) so a crafted API request cannot trigger
+ * hundreds of `processAgent` calls (DB lookup + permission check + tool
+ * loading). The UI enforces the same cap, so legitimate payloads never hit
+ * the bound.
  */
-export const agentSubagentsSchema: z.ZodOptional<
-  z.ZodObject<
-    {
-      enabled: z.ZodOptional<z.ZodBoolean>;
-      allowSelf: z.ZodOptional<z.ZodBoolean>;
-      agent_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-    },
-    'strip',
-    z.ZodTypeAny,
-    {
-      enabled?: boolean | undefined;
-      agent_ids?: string[] | undefined;
-      allowSelf?: boolean | undefined;
-    },
-    {
-      enabled?: boolean | undefined;
-      agent_ids?: string[] | undefined;
-      allowSelf?: boolean | undefined;
+const graphSubagentEdgeSchema = z
+  .object({
+    from: z.union([z.string(), z.array(z.string()).min(1)]),
+    to: z.union([z.string(), z.array(z.string()).min(1)]),
+    description: z.string().optional(),
+    edgeType: z.literal('direct'),
+    prompt: z.string().optional(),
+    excludeResults: z.boolean().optional(),
+  })
+  .strict();
+
+function validateGraphSubagentTopology(graph: {
+  type: string;
+  agent_ids: string[];
+  edges: Array<{
+    from: string | string[];
+    to: string | string[];
+    prompt?: string;
+    excludeResults?: boolean;
+  }>;
+  entry_agent_id: string;
+  result_agent_id: string;
+}): string | undefined {
+  const memberIds = new Set(graph.agent_ids);
+  if (memberIds.size !== graph.agent_ids.length) {
+    return `Graph subagent "${graph.type}" contains duplicate member IDs.`;
+  }
+  const reservedMemberIds = new Set([
+    '__start__',
+    '__end__',
+    'messages',
+    'agentMessages',
+    'subagentResult',
+  ]);
+  const invalidMemberId = graph.agent_ids.find(
+    (agentId) => reservedMemberIds.has(agentId) || agentId.includes('|') || agentId.includes(':'),
+  );
+  if (invalidMemberId) {
+    return `Graph subagent "${graph.type}" member "${invalidMemberId}" is reserved by the graph runtime.`;
+  }
+  if (!memberIds.has(graph.entry_agent_id) || !memberIds.has(graph.result_agent_id)) {
+    return `Graph subagent "${graph.type}" entry and result must reference configured members.`;
+  }
+  const adjacency = new Map(graph.agent_ids.map((agentId) => [agentId, new Set<string>()]));
+  const reverse = new Map(graph.agent_ids.map((agentId) => [agentId, new Set<string>()]));
+  const incomingGroups = new Map<string, string[][]>();
+  const directedEdges = new Set<string>();
+  for (const edge of graph.edges) {
+    const sources = Array.isArray(edge.from) ? edge.from : [edge.from];
+    const destinations = Array.isArray(edge.to) ? edge.to : [edge.to];
+    if (
+      new Set(sources).size !== sources.length ||
+      new Set(destinations).size !== destinations.length
+    ) {
+      return `Graph subagent "${graph.type}" edge endpoints must be unique.`;
     }
-  >
-> = z
+    if (edge.excludeResults === true && !edge.prompt) {
+      return `Graph subagent "${graph.type}" cannot exclude results without an edge prompt.`;
+    }
+    if (edge.prompt && destinations.length !== 1) {
+      return `Graph subagent "${graph.type}" prompted edges must have one destination.`;
+    }
+    for (const agentId of [...sources, ...destinations]) {
+      if (!memberIds.has(agentId)) {
+        return `Graph subagent "${graph.type}" references unknown member "${agentId}".`;
+      }
+    }
+    for (const destination of destinations) {
+      const groups = incomingGroups.get(destination) ?? [];
+      groups.push(sources);
+      incomingGroups.set(destination, groups);
+      for (const source of sources) {
+        if (source === destination) {
+          return `Graph subagent "${graph.type}" cannot contain self-edges.`;
+        }
+        const edgeKey = `${source}\0${destination}`;
+        if (directedEdges.has(edgeKey)) {
+          return `Graph subagent "${graph.type}" contains duplicate edges.`;
+        }
+        directedEdges.add(edgeKey);
+        adjacency.get(source)?.add(destination);
+        reverse.get(destination)?.add(source);
+      }
+    }
+  }
+  for (const [destination, groups] of incomingGroups) {
+    const sources = reverse.get(destination);
+    if (sources && sources.size > 1 && (groups.length !== 1 || groups[0].length !== sources.size)) {
+      return `Graph subagent "${graph.type}" fan-in to "${destination}" must use one array-valued source edge.`;
+    }
+  }
+  const roots = graph.agent_ids.filter((agentId) => reverse.get(agentId)?.size === 0);
+  const sinks = graph.agent_ids.filter((agentId) => adjacency.get(agentId)?.size === 0);
+  if (roots.length !== 1 || roots[0] !== graph.entry_agent_id) {
+    return `Graph subagent "${graph.type}" must use entry_agent_id as its only root.`;
+  }
+  if (sinks.length !== 1 || sinks[0] !== graph.result_agent_id) {
+    return `Graph subagent "${graph.type}" must use result_agent_id as its only sink.`;
+  }
+  const remainingIncoming = new Map(
+    graph.agent_ids.map((agentId) => [agentId, reverse.get(agentId)?.size ?? 0]),
+  );
+  const ready = roots.slice();
+  let visitedCount = 0;
+  while (ready.length > 0) {
+    const source = ready.pop();
+    if (source === undefined) {
+      continue;
+    }
+    visitedCount++;
+    for (const destination of adjacency.get(source) ?? []) {
+      const count = (remainingIncoming.get(destination) ?? 0) - 1;
+      remainingIncoming.set(destination, count);
+      if (count === 0) {
+        ready.push(destination);
+      }
+    }
+  }
+  if (visitedCount !== memberIds.size) {
+    return `Graph subagent "${graph.type}" must be acyclic and fully connected.`;
+  }
+  const isSimpleChain = graph.agent_ids.every(
+    (agentId) => (adjacency.get(agentId)?.size ?? 0) <= 1 && (reverse.get(agentId)?.size ?? 0) <= 1,
+  );
+  if (
+    !isSimpleChain &&
+    graph.edges.some(
+      (edge) =>
+        edge.prompt && (Array.isArray(edge.to) ? edge.to[0] : edge.to) !== graph.result_agent_id,
+    )
+  ) {
+    return `Graph subagent "${graph.type}" prompts in a branched graph must target result_agent_id.`;
+  }
+  return undefined;
+}
+
+const graphSubagentSchema = z
+  .object({
+    type: z.string().trim().min(1),
+    name: z.string().trim().min(1),
+    description: z.string().trim().min(1),
+    agent_ids: z.array(z.string()).min(1).max(MAX_GRAPH_SUBAGENT_MEMBERS),
+    edges: z.array(graphSubagentEdgeSchema),
+    entry_agent_id: z.string(),
+    result_agent_id: z.string(),
+  })
+  .superRefine((graph, ctx) => {
+    const error = validateGraphSubagentTopology(graph);
+    if (error) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: error,
+      });
+    }
+  });
+
+export const agentSubagentsSchema: z.ZodOptional<z.ZodType<AgentSubagentsConfig>> = z
   .object({
     enabled: z.boolean().optional(),
     allowSelf: z.boolean().optional(),
-    agent_ids: z.array(z.string()).max(MAX_SUBAGENTS).optional(),
+    shareFiles: z.boolean().optional(),
+    agent_ids: z.array(z.string()).optional(),
+    graphs: z.array(graphSubagentSchema).optional(),
+  })
+  .superRefine((subagents, ctx) => {
+    const maxSubagents = getMaxSubagents();
+    if ((subagents.agent_ids?.length ?? 0) > maxSubagents) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['agent_ids'],
+        message: `agent_ids must contain at most ${maxSubagents} item(s)`,
+      });
+    }
+    if ((subagents.graphs?.length ?? 0) > maxSubagents) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['graphs'],
+        message: `graphs must contain at most ${maxSubagents} item(s)`,
+      });
+    }
+    const reservedTypes = new Set(subagents.agent_ids ?? []);
+    const configuredAgentIds = new Set(subagents.agent_ids ?? []);
+    if (subagents.allowSelf !== false) {
+      reservedTypes.add('self');
+    }
+    for (let graphIndex = 0; graphIndex < (subagents.graphs?.length ?? 0); graphIndex++) {
+      const graph = subagents.graphs?.[graphIndex];
+      if (!graph) {
+        continue;
+      }
+      if (reservedTypes.has(graph.type)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['graphs', graphIndex, 'type'],
+          message: 'Graph subagent types must be unique across all spawn targets',
+        });
+      }
+      reservedTypes.add(graph.type);
+      for (const agentId of graph.agent_ids) {
+        configuredAgentIds.add(agentId);
+      }
+    }
+    if (configuredAgentIds.size > MAX_SUBAGENT_GRAPH_NODES) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Subagent configuration exceeds the maximum of ${MAX_SUBAGENT_GRAPH_NODES} unique agents`,
+      });
+    }
   })
   .optional();
 
 /** Base agent schema with all common fields */
+const agentCodeEnvironmentIdSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/);
+const agentGitIdentityUpdateSchema: z.ZodType<AgentGitIdentity | null | undefined> =
+  agentGitIdentitySchema.nullable();
+
 export const agentBaseSchema: z.ZodObject<
   {
     name: z.ZodOptional<z.ZodNullable<z.ZodString>>;
@@ -237,6 +447,8 @@ export const agentBaseSchema: z.ZodObject<
     tools: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     skills: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     skills_enabled: z.ZodOptional<z.ZodBoolean>;
+    skill_authoring_enabled: z.ZodOptional<z.ZodBoolean>;
+    skills_scope: z.ZodOptional<z.ZodNativeEnum<typeof SkillsScope>>;
     memory_scope: z.ZodOptional<z.ZodNativeEnum<typeof MemoryScope>>;
     /** @deprecated Use edges instead */
     agent_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
@@ -294,6 +506,10 @@ export const agentBaseSchema: z.ZodObject<
     hide_sequential_outputs: z.ZodOptional<z.ZodBoolean>;
     stateful_code_sessions: z.ZodOptional<z.ZodBoolean>;
     stateful_code_environment: z.ZodOptional<z.ZodEnum<['user', 'agent-user', 'conversation']>>;
+    code_environment_id: z.ZodOptional<z.ZodString>;
+    code_workspace_id: z.ZodOptional<typeof agentCodeWorkspaceIdSchema>;
+    repositoryInstructions: z.ZodOptional<z.ZodEnum<['prefer', 'defer', 'off']>>;
+    git_identity: typeof agentGitIdentitySchema;
     artifacts: z.ZodOptional<z.ZodString>;
     recursion_limit: z.ZodOptional<z.ZodNumber>;
     conversation_starters: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
@@ -327,27 +543,7 @@ export const agentBaseSchema: z.ZodObject<
         >
       >
     >;
-    subagents: z.ZodOptional<
-      z.ZodObject<
-        {
-          enabled: z.ZodOptional<z.ZodBoolean>;
-          allowSelf: z.ZodOptional<z.ZodBoolean>;
-          agent_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-        },
-        'strip',
-        z.ZodTypeAny,
-        {
-          enabled?: boolean | undefined;
-          agent_ids?: string[] | undefined;
-          allowSelf?: boolean | undefined;
-        },
-        {
-          enabled?: boolean | undefined;
-          agent_ids?: string[] | undefined;
-          allowSelf?: boolean | undefined;
-        }
-      >
-    >;
+    subagents: typeof agentSubagentsSchema;
     support_contact: z.ZodOptional<
       z.ZodObject<
         {
@@ -378,6 +574,8 @@ export const agentBaseSchema: z.ZodObject<
   tools: z.array(z.string()).optional(),
   skills: z.array(z.string()).optional(),
   skills_enabled: z.boolean().optional(),
+  skill_authoring_enabled: z.boolean().optional(),
+  skills_scope: z.nativeEnum(SkillsScope).optional(),
   memory_scope: z.nativeEnum(MemoryScope).optional(),
   /** @deprecated Use edges instead */
   agent_ids: z.array(z.string()).optional(),
@@ -386,6 +584,10 @@ export const agentBaseSchema: z.ZodObject<
   hide_sequential_outputs: z.boolean().optional(),
   stateful_code_sessions: z.boolean().optional(),
   stateful_code_environment: z.enum(['user', 'agent-user', 'conversation']).optional(),
+  code_environment_id: agentCodeEnvironmentIdSchema.optional(),
+  code_workspace_id: agentCodeWorkspaceIdSchema.optional(),
+  repositoryInstructions: z.enum(['prefer', 'defer', 'off']).optional(),
+  git_identity: agentGitIdentitySchema,
   artifacts: z.string().optional(),
   recursion_limit: z.number().optional(),
   conversation_starters: z.array(z.string()).optional(),
@@ -425,6 +627,8 @@ export const agentCreateSchema: z.ZodObject<
     model_parameters: z.ZodOptional<z.ZodRecord<z.ZodString, z.ZodUnknown>>;
     skills: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     skills_enabled: z.ZodOptional<z.ZodBoolean>;
+    skill_authoring_enabled: z.ZodOptional<z.ZodBoolean>;
+    skills_scope: z.ZodOptional<z.ZodNativeEnum<typeof SkillsScope>>;
     memory_scope: z.ZodOptional<z.ZodNativeEnum<typeof MemoryScope>>;
     agent_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     edges: z.ZodOptional<
@@ -481,6 +685,10 @@ export const agentCreateSchema: z.ZodObject<
     hide_sequential_outputs: z.ZodOptional<z.ZodBoolean>;
     stateful_code_sessions: z.ZodOptional<z.ZodBoolean>;
     stateful_code_environment: z.ZodOptional<z.ZodEnum<['user', 'agent-user', 'conversation']>>;
+    code_environment_id: z.ZodOptional<z.ZodString>;
+    git_identity: typeof agentGitIdentitySchema;
+    code_workspace_id: z.ZodOptional<typeof agentCodeWorkspaceIdSchema>;
+    repositoryInstructions: z.ZodOptional<z.ZodEnum<['prefer', 'defer', 'off']>>;
     artifacts: z.ZodOptional<z.ZodString>;
     recursion_limit: z.ZodOptional<z.ZodNumber>;
     conversation_starters: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
@@ -514,27 +722,7 @@ export const agentCreateSchema: z.ZodObject<
         >
       >
     >;
-    subagents: z.ZodOptional<
-      z.ZodObject<
-        {
-          enabled: z.ZodOptional<z.ZodBoolean>;
-          allowSelf: z.ZodOptional<z.ZodBoolean>;
-          agent_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-        },
-        'strip',
-        z.ZodTypeAny,
-        {
-          enabled?: boolean | undefined;
-          agent_ids?: string[] | undefined;
-          allowSelf?: boolean | undefined;
-        },
-        {
-          enabled?: boolean | undefined;
-          agent_ids?: string[] | undefined;
-          allowSelf?: boolean | undefined;
-        }
-      >
-    >;
+    subagents: typeof agentSubagentsSchema;
     support_contact: z.ZodOptional<
       z.ZodObject<
         {
@@ -576,6 +764,8 @@ export const agentUpdateSchema: z.ZodObject<
     tools: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     skills: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     skills_enabled: z.ZodOptional<z.ZodBoolean>;
+    skill_authoring_enabled: z.ZodOptional<z.ZodBoolean>;
+    skills_scope: z.ZodOptional<z.ZodNativeEnum<typeof SkillsScope>>;
     memory_scope: z.ZodOptional<z.ZodNativeEnum<typeof MemoryScope>>;
     agent_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
     edges: z.ZodOptional<
@@ -632,6 +822,10 @@ export const agentUpdateSchema: z.ZodObject<
     hide_sequential_outputs: z.ZodOptional<z.ZodBoolean>;
     stateful_code_sessions: z.ZodOptional<z.ZodBoolean>;
     stateful_code_environment: z.ZodOptional<z.ZodEnum<['user', 'agent-user', 'conversation']>>;
+    code_environment_id: z.ZodOptional<z.ZodNullable<z.ZodString>>;
+    code_workspace_id: z.ZodOptional<typeof agentCodeWorkspaceIdSchema>;
+    repositoryInstructions: z.ZodOptional<z.ZodEnum<['prefer', 'defer', 'off']>>;
+    git_identity: typeof agentGitIdentityUpdateSchema;
     artifacts: z.ZodOptional<z.ZodString>;
     recursion_limit: z.ZodOptional<z.ZodNumber>;
     conversation_starters: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
@@ -665,27 +859,7 @@ export const agentUpdateSchema: z.ZodObject<
         >
       >
     >;
-    subagents: z.ZodOptional<
-      z.ZodObject<
-        {
-          enabled: z.ZodOptional<z.ZodBoolean>;
-          allowSelf: z.ZodOptional<z.ZodBoolean>;
-          agent_ids: z.ZodOptional<z.ZodArray<z.ZodString, 'many'>>;
-        },
-        'strip',
-        z.ZodTypeAny,
-        {
-          enabled?: boolean | undefined;
-          agent_ids?: string[] | undefined;
-          allowSelf?: boolean | undefined;
-        },
-        {
-          enabled?: boolean | undefined;
-          agent_ids?: string[] | undefined;
-          allowSelf?: boolean | undefined;
-        }
-      >
-    >;
+    subagents: typeof agentSubagentsSchema;
     support_contact: z.ZodOptional<
       z.ZodObject<
         {
@@ -735,6 +909,10 @@ export const agentUpdateSchema: z.ZodObject<
   'strip'
 > = agentBaseSchema.extend({
   avatar: z.union([agentAvatarSchema, z.null()]).optional(),
+  code_environment_id: agentCodeEnvironmentIdSchema.nullable().optional(),
+  code_workspace_id: agentCodeWorkspaceIdSchema.optional(),
+  repositoryInstructions: z.enum(['prefer', 'defer', 'off']).optional(),
+  git_identity: agentGitIdentityUpdateSchema,
   provider: z.string().optional(),
   model: z.string().nullable().optional(),
 });
@@ -792,7 +970,7 @@ export async function validateAgentModel(
     };
   }
 
-  const availableModels = modelsConfig[endpoint];
+  const availableModels = modelsConfig[resolveModelCatalogKey(endpoint, modelsConfig)];
   if (!availableModels) {
     return {
       isValid: false,

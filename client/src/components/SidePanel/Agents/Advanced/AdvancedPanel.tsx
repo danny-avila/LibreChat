@@ -1,14 +1,12 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { useFormContext } from 'react-hook-form';
 import { ChevronLeft, Check, Copy } from 'lucide-react';
-import { AgentCapabilities } from 'librechat-data-provider';
-import { Button, TooltipAnchor, useToastContext } from '@librechat/client';
+import { Button, TooltipAnchor, labelVariants, useToastContext } from '@librechat/client';
 import type { AgentForm } from '~/common';
-import { sectionLabelClass, groupHeadingClass } from './ui';
 import { useAgentPanelContext } from '~/Providers';
-import StatefulSessions from './StatefulSessions';
 import OrchestrationHub from './OrchestrationHub';
 import MaxAgentSteps from './MaxAgentSteps';
+import { groupHeadingClass } from './ui';
 import { useLocalize } from '~/hooks';
 import { Panel } from '~/common';
 
@@ -19,11 +17,7 @@ export default function AdvancedPanel() {
   const currentAgentId = watch('id');
   const [copied, setCopied] = useState(false);
 
-  const { agentsConfig, setActivePanel } = useAgentPanelContext();
-  const statefulSessionsEnabled = useMemo(
-    () => agentsConfig?.capabilities.includes(AgentCapabilities.stateful_code_sessions) ?? false,
-    [agentsConfig],
-  );
+  const { setActivePanel } = useAgentPanelContext();
 
   const handleCopyAgentId = async () => {
     if (!currentAgentId) return;
@@ -59,14 +53,15 @@ export default function AdvancedPanel() {
         <section className="flex flex-col gap-3">
           <span className={groupHeadingClass}>{localize('com_ui_essentials')}</span>
           <MaxAgentSteps />
-          {statefulSessionsEnabled && <StatefulSessions />}
         </section>
 
         <OrchestrationHub currentAgentId={currentAgentId} />
 
         {currentAgentId && (
           <div className="flex items-center justify-between gap-2 border-t border-border-light pt-3">
-            <span className={sectionLabelClass}>{localize('com_ui_agent_id')}</span>
+            <span className={labelVariants({ variant: 'section' })}>
+              {localize('com_ui_agent_id')}
+            </span>
             <TooltipAnchor
               description={currentAgentId}
               render={
@@ -82,7 +77,7 @@ export default function AdvancedPanel() {
                       <Copy className="h-3.5 w-3.5" aria-hidden="true" />
                     </span>
                     <span className="t-icon" data-icon="b">
-                      <Check className="h-3.5 w-3.5 text-green-500" aria-hidden="true" />
+                      <Check className="h-3.5 w-3.5 text-status-success" aria-hidden="true" />
                     </span>
                   </span>
                 </Button>

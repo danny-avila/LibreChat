@@ -25,6 +25,10 @@ const mockGenerationJobManager = {
 
 const mockSaveMessage = jest.fn();
 
+const mockRecordScheduleOutcome = jest.fn();
+const mockBeginScheduledStop = jest.fn();
+const mockAcknowledgeScheduledStopPersistence = jest.fn();
+
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
   logger: mockLogger,
@@ -33,11 +37,23 @@ jest.mock('@librechat/data-schemas', () => ({
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   isEnabled: jest.fn().mockReturnValue(false),
+  isAgentTriggerRequest: jest.fn(() => false),
+  captureScheduleFireContext: jest.fn((req) => {
+    req._isScheduledFire = false;
+    req._isManualScheduledFire = false;
+  }),
   GenerationJobManager: mockGenerationJobManager,
 }));
 
 jest.mock('~/models', () => ({
   saveMessage: (...args) => mockSaveMessage(...args),
+}));
+
+jest.mock('~/server/services/Schedules', () => ({
+  recordScheduleOutcome: (...args) => mockRecordScheduleOutcome(...args),
+  beginScheduledStop: (...args) => mockBeginScheduledStop(...args),
+  acknowledgeScheduledStopPersistence: (...args) =>
+    mockAcknowledgeScheduledStopPersistence(...args),
 }));
 
 jest.mock('~/server/middleware', () => ({
@@ -48,6 +64,7 @@ jest.mock('~/server/middleware', () => ({
     next();
   },
   moderateText: (req, res, next) => next(),
+  agentEventUserLimiter: (req, res, next) => next(),
   messageIpLimiter: (req, res, next) => next(),
   configMiddleware: (req, res, next) => next(),
   messageUserLimiter: (req, res, next) => next(),
@@ -60,6 +77,7 @@ jest.mock('~/server/routes/agents/chat', () => require('express').Router());
 jest.mock('~/server/routes/agents/v1', () => ({
   v1: require('express').Router(),
 }));
+jest.mock('~/server/routes/agents/management', () => require('express').Router());
 
 // Import after mocks
 const agentRoutes = require('~/server/routes/agents/index');
@@ -81,6 +99,12 @@ describe('Agent Abort Endpoint', () => {
     mockGenerationJobManager.getActiveJobIdsForUser.mockReset();
     mockSaveMessage.mockReset();
     mockSaveMessage.mockImplementation(async (_context, message) => message);
+    mockRecordScheduleOutcome.mockReset();
+    mockRecordScheduleOutcome.mockResolvedValue(true);
+    mockBeginScheduledStop.mockReset();
+    mockBeginScheduledStop.mockResolvedValue(true);
+    mockAcknowledgeScheduledStopPersistence.mockReset();
+    mockAcknowledgeScheduledStopPersistence.mockResolvedValue(undefined);
   });
 
   describe('POST /chat/abort', () => {
@@ -356,6 +380,10 @@ describe('Agent Abort Endpoint', () => {
             endpoint: 'anthropic',
             iconURL: 'https://example.com/spec-icon.png',
             model: 'claude-3',
+            userSubmittedPaths: ['/content/0/tool_call/args'],
+            userSubmittedMessageFieldPaths: [
+              { path: '/content/0/tool_call/output', field: 'decision_response' },
+            ],
           },
           content: [{ type: 'text', text: 'Partial response...' }],
           text: 'Partial response...',
@@ -385,6 +413,10 @@ describe('Agent Abort Endpoint', () => {
             unfinished: true,
             error: false,
             isCreatedByUser: false,
+            userSubmittedPaths: ['/content/0/tool_call/args'],
+            userSubmittedMessageFieldPaths: [
+              { path: '/content/0/tool_call/output', field: 'decision_response' },
+            ],
             user: 'test-user-123',
           }),
           expect.objectContaining({
@@ -393,8 +425,78 @@ describe('Agent Abort Endpoint', () => {
         );
       });
 
+      it('carries the context meta the run published onto the stopped response', async () => {
+        const contextMeta = {
+          calibrationRatio: 1.2,
+          encoding: 'claude',
+          fading: { v: 1, budgetTokens: 50_000, masked: true },
+          fadingTiers: [{ agentId: 'agent-a', v: 1, budgetTokens: 50_000, masked: true }],
+        };
+        mockGenerationJobManager.getJob.mockResolvedValue({
+          metadata: { userId: 'test-user-123' },
+        });
+        const abortResult = {
+          success: true,
+          jobData: {
+            userMessage: { messageId: 'user-msg-123' },
+            responseMessageId: 'response-msg-456',
+            conversationId: 'test-stream-123',
+            contextMeta,
+          },
+          content: [{ type: 'text', text: 'Partial response...' }],
+          text: 'Partial response...',
+        };
+        mockGenerationJobManager.abortJob.mockImplementation(async (_streamId, options) => {
+          await options.beforePublish(abortResult);
+          return abortResult;
+        });
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .send({ conversationId: 'test-stream-123' });
+
+        expect(response.status).toBe(200);
+        expect(mockSaveMessage).toHaveBeenCalledWith(
+          expect.anything(),
+          expect.objectContaining({ messageId: 'response-msg-456', contextMeta }),
+          expect.objectContaining({
+            context: 'api/server/routes/agents/index.js - abort endpoint',
+          }),
+        );
+      });
+
+      it('unsets context meta on the stopped response when the job has none', async () => {
+        mockGenerationJobManager.getJob.mockResolvedValue({
+          metadata: { userId: 'test-user-123' },
+        });
+        const abortResult = {
+          success: true,
+          jobData: {
+            userMessage: { messageId: 'user-msg-123' },
+            responseMessageId: 'response-msg-456',
+            conversationId: 'test-stream-123',
+          },
+          content: [{ type: 'text', text: 'Partial response...' }],
+          text: 'Partial response...',
+        };
+        mockGenerationJobManager.abortJob.mockImplementation(async (_streamId, options) => {
+          await options.beforePublish(abortResult);
+          return abortResult;
+        });
+
+        await request(app)
+          .post('/api/agents/chat/abort')
+          .send({ conversationId: 'test-stream-123' });
+
+        const [, savedResponse] = mockSaveMessage.mock.calls.find(
+          ([, message]) => message.messageId === 'response-msg-456',
+        );
+        expect(savedResponse.contextMeta).toBeNull();
+      });
+
       it('saves the aborted partial as temporary from job metadata, not the request body', async () => {
         const jobStreamId = 'test-stream-123';
+        const expiredAt = new Date('2030-01-01T00:00:00.000Z');
 
         mockGenerationJobManager.getJob.mockResolvedValue({
           metadata: { userId: 'test-user-123' },
@@ -408,6 +510,7 @@ describe('Agent Abort Endpoint', () => {
             responseMessageId: 'response-msg-456',
             conversationId: jobStreamId,
             isTemporary: true,
+            retentionExpiresAt: expiredAt.toISOString(),
           },
           content: [{ type: 'text', text: 'Partial...' }],
           text: 'Partial...',
@@ -423,7 +526,7 @@ describe('Agent Abort Endpoint', () => {
 
         expect(response.status).toBe(200);
         expect(mockSaveMessage).toHaveBeenCalledWith(
-          expect.objectContaining({ isTemporary: true }),
+          expect.objectContaining({ isTemporary: true, expiredAt }),
           expect.anything(),
           expect.anything(),
         );
@@ -839,6 +942,141 @@ describe('Agent Abort Endpoint', () => {
           streamId: 'non-existent-job',
           generationProtocolVersion: 1,
         });
+      });
+    });
+
+    describe('Scheduled Stop persistence protocol', () => {
+      const scheduledJob = {
+        status: 'running',
+        createdAt: 111,
+        metadata: {
+          userId: 'test-user-123',
+          generationProtocolVersion: 2,
+          scheduleId: 's1',
+          scheduledFor: '2026-01-01T00:00:00.000Z',
+          conversationId: 'conv-1',
+        },
+      };
+
+      it('stamps the Stop before signalling abort, then acknowledges after persistence', async () => {
+        mockGenerationJobManager.getJob.mockResolvedValue(scheduledJob);
+        mockGenerationJobManager.abortJob.mockResolvedValue({
+          success: true,
+          jobData: { conversationId: 'conv-1' },
+          content: [],
+          text: '',
+        });
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .set('X-LibreChat-Generation-Protocol', '2')
+          .send({ conversationId: 'conv-1', generationProtocolVersion: 2 });
+
+        expect(response.status).toBe(200);
+        expect(mockBeginScheduledStop).toHaveBeenCalledWith({
+          scheduleId: 's1',
+          scheduledFor: '2026-01-01T00:00:00.000Z',
+        });
+        // Stamp BEFORE the abort signal; acknowledgement AFTER it (persistence done).
+        expect(mockBeginScheduledStop.mock.invocationCallOrder[0]).toBeLessThan(
+          mockGenerationJobManager.abortJob.mock.invocationCallOrder[0],
+        );
+        // The ack also carries a terminal outcome to re-drive: the owner calls
+        // recordScheduleOutcome once, and if that call's Stop barrier deferred (slow
+        // beforePublish), nothing would settle the run where no reconciler is armed.
+        expect(mockAcknowledgeScheduledStopPersistence).toHaveBeenCalledWith(
+          expect.objectContaining({
+            scheduleId: 's1',
+            scheduledFor: '2026-01-01T00:00:00.000Z',
+            settle: expect.objectContaining({ status: 'interrupted' }),
+          }),
+        );
+        expect(mockGenerationJobManager.abortJob.mock.invocationCallOrder[0]).toBeLessThan(
+          mockAcknowledgeScheduledStopPersistence.mock.invocationCallOrder[0],
+        );
+      });
+
+      it('returns STOP_IN_PROGRESS and never signals a second abort when a Stop is already live', async () => {
+        mockGenerationJobManager.getJob.mockResolvedValue(scheduledJob);
+        mockBeginScheduledStop.mockResolvedValue('in_progress');
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .set('X-LibreChat-Generation-Protocol', '2')
+          .send({ conversationId: 'conv-1', generationProtocolVersion: 2 });
+
+        expect(response.status).toBe(409);
+        expect(response.body.code).toBe('STOP_IN_PROGRESS');
+        expect(mockGenerationJobManager.abortJob).not.toHaveBeenCalled();
+        expect(mockAcknowledgeScheduledStopPersistence).not.toHaveBeenCalled();
+      });
+
+      it('does NOT acknowledge when the abort persistence failed (run stays preserved)', async () => {
+        mockGenerationJobManager.getJob.mockResolvedValue(scheduledJob);
+        mockGenerationJobManager.abortJob.mockResolvedValue({
+          success: true,
+          persistenceFailed: true,
+          jobData: { conversationId: 'conv-1' },
+          content: [],
+          text: '',
+        });
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .set('X-LibreChat-Generation-Protocol', '2')
+          .send({ conversationId: 'conv-1', generationProtocolVersion: 2 });
+
+        expect(response.status).toBe(200);
+        expect(response.body.persistenceFailed).toBe(true);
+        expect(mockBeginScheduledStop).toHaveBeenCalled();
+        expect(mockAcknowledgeScheduledStopPersistence).not.toHaveBeenCalled();
+      });
+
+      it('does not re-drive settlement for a PAUSED job, which settles explicitly', async () => {
+        mockGenerationJobManager.getJob.mockResolvedValue({
+          ...scheduledJob,
+          status: 'requires_action',
+        });
+        mockGenerationJobManager.abortJob.mockResolvedValue({
+          success: true,
+          jobData: { conversationId: 'conv-1' },
+          content: [],
+          text: '',
+        });
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .set('X-LibreChat-Generation-Protocol', '2')
+          .send({ conversationId: 'conv-1', generationProtocolVersion: 2 });
+
+        expect(response.status).toBe(200);
+        const ack = mockAcknowledgeScheduledStopPersistence.mock.calls[0][0];
+        expect(ack.settle).toBeUndefined();
+        // The paused path records its own outcome explicitly.
+        expect(mockRecordScheduleOutcome).toHaveBeenCalled();
+      });
+
+      it('leaves non-scheduled aborts untouched by the Stop protocol', async () => {
+        mockGenerationJobManager.getJob.mockResolvedValue({
+          status: 'running',
+          createdAt: 1,
+          metadata: { userId: 'test-user-123', generationProtocolVersion: 2 },
+        });
+        mockGenerationJobManager.abortJob.mockResolvedValue({
+          success: true,
+          jobData: { conversationId: 'conv-x' },
+          content: [],
+          text: '',
+        });
+
+        const response = await request(app)
+          .post('/api/agents/chat/abort')
+          .set('X-LibreChat-Generation-Protocol', '2')
+          .send({ conversationId: 'conv-x', generationProtocolVersion: 2 });
+
+        expect(response.status).toBe(200);
+        expect(mockBeginScheduledStop).not.toHaveBeenCalled();
+        expect(mockAcknowledgeScheduledStopPersistence).not.toHaveBeenCalled();
       });
     });
   });

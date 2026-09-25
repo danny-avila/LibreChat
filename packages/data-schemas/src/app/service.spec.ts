@@ -4,7 +4,7 @@ import {
   defaultAssistantsVersion,
 } from 'librechat-data-provider';
 import type { DeepPartial, TCustomConfig } from 'librechat-data-provider';
-import { AppService, loadSummarizationConfig } from './service';
+import { AppService, loadFiltersConfig, loadSummarizationConfig } from './service';
 import logger from '~/config/winston';
 
 jest.mock('~/config/winston', () => ({
@@ -81,6 +81,142 @@ describe('loadSummarizationConfig', () => {
     expect(result).toBeUndefined();
     expect(warnSpy).toHaveBeenCalledTimes(1);
     expect(String(warnSpy.mock.calls[0][0])).toContain('Invalid summarization config');
+  });
+});
+
+describe('loadFiltersConfig', () => {
+  it('treats omission and zero-rule source configs as disabled', () => {
+    expect(loadFiltersConfig({})).toBeUndefined();
+    expect(loadFiltersConfig({ filters: {} })).toBeUndefined();
+    expect(loadFiltersConfig({ filters: { messages: {} } })).toBeUndefined();
+    expect(
+      loadFiltersConfig({
+        filters: {
+          skills: {
+            pii: {
+              fields: ['file_text'],
+              starterPatterns: [],
+            },
+          },
+        },
+      }),
+    ).toBeUndefined();
+  });
+
+  it('retains strict legacy attribution without source-aware PII patterns', () => {
+    expect(
+      loadFiltersConfig({
+        filters: {
+          messages: { unattributedAssistantContent: 'inspect' },
+        },
+      }),
+    ).toEqual({ messages: { unattributedAssistantContent: 'inspect' } });
+    expect(
+      loadFiltersConfig({
+        filters: {
+          messages: { unattributedAssistantContent: 'model_output' },
+        },
+      }),
+    ).toBeUndefined();
+  });
+
+  it('returns a validated source-aware filter config', () => {
+    const result = loadFiltersConfig({
+      filters: {
+        agentInstructions: {
+          pii: {
+            fields: ['instructions'],
+            customPatterns: [
+              {
+                id: 'organization-identifier',
+                label: 'Organization identifier',
+                regex: 'ORG-[A-Z0-9]+',
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    expect(result).toEqual({
+      agentInstructions: {
+        pii: {
+          fields: ['instructions'],
+          customPatterns: [
+            {
+              id: 'organization-identifier',
+              label: 'Organization identifier',
+              regex: 'ORG-[A-Z0-9]+',
+            },
+          ],
+        },
+      },
+    });
+  });
+
+  it('retains an explicit file fail-close policy without text matchers', () => {
+    expect(
+      loadFiltersConfig({
+        filters: {
+          files: {
+            pii: {
+              fields: ['content'],
+              starterPatterns: [],
+              uninspectable: 'block',
+            },
+          },
+        },
+      }),
+    ).toEqual({
+      files: {
+        pii: {
+          fields: ['content'],
+          starterPatterns: [],
+          uninspectable: 'block',
+        },
+      },
+    });
+  });
+
+  it('rejects structurally partial filter patterns instead of disabling policy', () => {
+    expect(() =>
+      loadFiltersConfig({
+        filters: {
+          messages: {
+            pii: {
+              customPatterns: [{ regex: 'ORG-[A-Z0-9]+' }],
+            },
+          },
+        },
+      }),
+    ).toThrow('Invalid filters config');
+  });
+
+  it.each([null, false, 0, 'messages'])(
+    'rejects a configured non-object value (%p) instead of disabling policy',
+    (filters) => {
+      expect(() =>
+        loadFiltersConfig({
+          filters,
+        } as unknown as DeepPartial<TCustomConfig>),
+      ).toThrow('Invalid filters config');
+    },
+  );
+
+  it('rejects app config construction when configured filters are invalid', async () => {
+    await expect(
+      AppService({
+        config: {
+          filters: {
+            messages: {
+              pii: {
+                customPatterns: [{ regex: '(' }],
+              },
+            },
+          },
+        } as DeepPartial<TCustomConfig>,
+      }),
+    ).rejects.toThrow('Invalid filters config');
   });
 });
 

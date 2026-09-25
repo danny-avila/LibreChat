@@ -64,6 +64,13 @@ test.describe('message hover actions', () => {
     await expect(streamingEdit).toHaveCount(0);
     await expect(streamingFork).toHaveCount(0);
 
+    /** What the withheld actions leave behind is the elapsed-time indicator,
+     *  ticking once per second in the slot they reclaim when the answer lands. */
+    const streamingElapsed = streaming.getByTestId('stream-elapsed');
+    await expect(streamingElapsed).toHaveText(/^\d+s$/);
+    const firstReading = (await streamingElapsed.textContent()) ?? '';
+    await expect(streamingElapsed).not.toHaveText(firstReading, { timeout: 5000 });
+
     /** The settled turn above carries the positive control: the toolbar system is
      *  mounted and working, so the absences above read as "withheld" rather than
      *  "nothing rendered yet". */
@@ -71,6 +78,7 @@ test.describe('message hover actions', () => {
 
     /** ...and the response earns them back, or "withheld" would just be "gone". */
     await expect(stopButton(page)).toBeHidden({ timeout: 60000 });
+    await expect(streamingElapsed).toHaveCount(0);
     await expect(streamingCopy).toBeEnabled();
     await expect(streamingEdit).toBeEnabled();
     await expect(streamingFork).toBeEnabled();

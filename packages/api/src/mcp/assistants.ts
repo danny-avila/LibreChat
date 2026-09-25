@@ -6,7 +6,7 @@ import {
   splitMCPToolKey,
 } from 'librechat-data-provider';
 import type { MCPOptions } from 'librechat-data-provider';
-import type { LCAvailableTools, ParsedServerConfig } from '~/mcp/types';
+import type { LCAvailableTools, LCFunctionTool, ParsedServerConfig } from '~/mcp/types';
 import { createConcurrencyLimiter } from '~/utils/promise';
 import { findShadowedServerNames } from '~/mcp/utils';
 
@@ -154,11 +154,22 @@ async function loadServerCatalog(
   throw new Error(`MCP tool definitions unavailable for assistant server "${serverName}"`);
 }
 
+export interface AssistantToolDefinitionsResult {
+  toolDefinitions: LCAvailableTools;
+  /**
+   * Every server name the principal can reach, from the same merged registry
+   * read that resolved the catalogs — the legacy-key heal reuses it instead
+   * of repeating the app-config and registry round trips on the write path.
+   * `undefined` when the payload references no MCP tools (nothing to heal).
+   */
+  accessibleServerNames?: string[];
+}
+
 /** Loads the static catalog with the configuration-addressed MCP slices referenced by an assistant. */
 export async function getAssistantToolDefinitions(
   params: AssistantToolDefinitionsParams,
   deps: AssistantToolDefinitionsDeps,
-): Promise<LCAvailableTools> {
+): Promise<AssistantToolDefinitionsResult> {
   const mcpToolNames =
     params.tools?.filter(
       (tool): tool is string =>
@@ -166,7 +177,7 @@ export async function getAssistantToolDefinitions(
     ) ?? [];
   const userId = params.user?.id;
   if (mcpToolNames.length === 0 || !userId) {
-    return params.staticTools;
+    return { toolDefinitions: params.staticTools };
   }
 
   const configs = await resolveAssistantMcpConfigs(
@@ -182,5 +193,31 @@ export async function getAssistantToolDefinitions(
       (serverName) => loadServerCatalog(userId, serverName, configs[serverName], deps, recover),
     ),
   );
-  return Object.assign({}, params.staticTools, ...serverCatalogs);
+  /** Entries keep `serverToolName` here: the assistants heal verifies legacy
+   *  key rewrites against that upstream identity. The controllers sanitize
+   *  through {@link toProviderToolDefinition} at the submission boundary. */
+  return {
+    toolDefinitions: Object.assign({}, params.staticTools, ...serverCatalogs),
+    accessibleServerNames: [
+      ...new Set([...Object.keys(configs), ...Object.keys(params.mcpConfig)]),
+    ],
+  };
+}
+
+/**
+ * Assistant writers submit tool entries VERBATIM as provider tool definitions
+ * (`assistantData.tools` in the v1/v2 controllers), and providers reject
+ * unknown fields — the internal `serverToolName` mapping must never leave the
+ * catalog. Strings and entries without the mapping pass through by reference;
+ * the cached catalog keeps the mapping for the runtime call path.
+ */
+export function toProviderToolDefinition<T>(tool: T): T | LCFunctionTool {
+  if (tool == null || typeof tool !== 'object') {
+    return tool;
+  }
+  const entry = tool as Partial<LCFunctionTool>;
+  if (entry.serverToolName == null || entry.type !== 'function' || entry['function'] == null) {
+    return tool;
+  }
+  return { type: entry.type, ['function']: entry['function'] };
 }

@@ -32,8 +32,16 @@ const FOLLOW_THRESHOLD_PX = 40;
  * would open at the tail. Gated, it opens reading from the top, while an
  * expand mid-stream pins immediately. The pin's own scroll event measures
  * distance zero and keeps the attached state, so programmatic scrolls
- * need no special-casing. Finished panes (`active === false`) are never
- * scrolled.
+ * need no special-casing.
+ *
+ * A finished pane (`active === false`) is never scrolled, with one
+ * exception: the very change that ends the stream. That change often adds
+ * content — a failing PTC call settles by appending its error line in the
+ * same commit that clears the last running row — and gating on `active`
+ * alone would drop exactly the pin that content needs, leaving the final
+ * line below the fold. So the falling edge of `active` still pins, but
+ * only when the content changed with it; ending the stream on its own
+ * leaves the pane where the reader left it.
  */
 export default function useFollowScroll<T extends HTMLElement>(
   content: string | readonly ReactNode[],
@@ -42,6 +50,8 @@ export default function useFollowScroll<T extends HTMLElement>(
 ): { ref: RefObject<T>; onScroll: UIEventHandler<T> } {
   const ref = useRef<T>(null);
   const followRef = useRef(true);
+  const wasActiveRef = useRef(active);
+  const previousContentRef = useRef(content);
 
   const onScroll = useCallback<UIEventHandler<T>>((event) => {
     const el = event.currentTarget;
@@ -49,7 +59,14 @@ export default function useFollowScroll<T extends HTMLElement>(
   }, []);
 
   useLayoutEffect(() => {
-    if (!active || !expanded || !followRef.current) {
+    const settling = wasActiveRef.current && !Object.is(previousContentRef.current, content);
+    previousContentRef.current = content;
+    wasActiveRef.current = active;
+
+    if (!expanded || !followRef.current) {
+      return;
+    }
+    if (!active && !settling) {
       return;
     }
     const el = ref.current;

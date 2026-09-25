@@ -9,6 +9,7 @@ import { removeCharIfLast, detectVariables } from '~/utils';
 import { useRecordPromptUsage } from '~/data-provider';
 import { VariableDialog } from '~/components/Prompts';
 import { usePromptGroupsContext } from '~/Providers';
+import { activateCatalog } from '~/hooks';
 import MentionItem from './MentionItem';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -64,8 +65,9 @@ function PromptsCommand({
   const localize = useLocalize();
   const { mutate: recordUsage } = useRecordPromptUsage();
   const promptGroupsContext = usePromptGroupsContext();
-  const { allPromptGroups, hasAccess } = promptGroupsContext ?? {};
+  const { allPromptGroups, hasAccess, requestAllPromptGroups } = promptGroupsContext ?? {};
   const { data, isLoading } = allPromptGroups ?? {};
+  const showPromptsPopover = useRecoilValue(store.showPromptsPopoverFamily(index));
 
   const [activeIndex, setActiveIndex] = useState(0);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -140,9 +142,18 @@ function PromptsCommand({
       setActiveIndex(0);
       setSearchValue('');
     } else {
+      /** Opening the picker before background warmup starts the fetch now */
+      activateCatalog('prompts');
       setVariableGroup(null);
     }
   }, [open, setSearchValue]);
+
+  /** The full prompt list is fetched on first popover open, not at app startup */
+  useEffect(() => {
+    if (showPromptsPopover) {
+      requestAllPromptGroups?.();
+    }
+  }, [showPromptsPopover, requestAllPromptGroups]);
 
   useEffect(() => {
     setActiveIndex((prev) => Math.min(prev, Math.max(matches.length - 1, 0)));
