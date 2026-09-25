@@ -168,6 +168,8 @@ export const highContrastTheme: ThemeDefinition = Object.freeze({
 
 const rgbPattern = /^(\d{1,3})\s+(\d{1,3})\s+(\d{1,3})$/;
 const cssLengthPattern = /^(0|\d*\.?\d+(px|rem|em))$/;
+const cssLengthDifferencePattern =
+  /^calc\(\s*(0|\d*\.?\d+(px|rem|em))\s+[-+]\s+(0|\d*\.?\d+(px|rem|em))\s*\)$/;
 const cssDurationPattern = /^\d*\.?\d+(ms|s)$/;
 const hexColorPattern = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 
@@ -201,8 +203,10 @@ const isRGB = (value: unknown): value is string => {
   return match !== null && match.slice(1).every((channel) => Number(channel) <= 255);
 };
 
+/** The bare form, or one `calc()` of two of them: the small radius defaults keep a px offset. */
 const isLength = (value: unknown): value is string =>
-  typeof value === 'string' && cssLengthPattern.test(value);
+  typeof value === 'string' &&
+  (cssLengthPattern.test(value) || cssLengthDifferencePattern.test(value));
 const isFontFamily = (value: unknown): value is string =>
   typeof value === 'string' && value.trim().length > 0 && !/[;{}]/.test(value);
 const isDuration = (value: unknown): value is string =>
