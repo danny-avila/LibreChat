@@ -58,6 +58,7 @@ export type { JobStoreV2RequiredMethod } from './jobStoreCapabilities';
 export {
   buildRecoveredSteerPayload,
   canonicalRecoveryFileIds,
+  getSteerRecoveryFailure,
   RecoveredSteerPayloadMismatchError,
 } from './SteerRecovery';
 export type { RecoveredSteerPayload } from './SteerRecovery';

@@ -28,6 +28,7 @@ const {
   acceptAgentStartupTelemetry,
   isSteerPreemptSupported,
   buildRecoveredSteerPayload,
+  getSteerRecoveryFailure,
   deleteAgentCheckpoint,
   getAttachmentTitleText,
   createMCPRuntimeRequestBody,
@@ -3439,10 +3440,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           sendGenerationJson(
             res,
             409,
-            {
-              code: 'RECOVERY_PAYLOAD_MISMATCH',
-              error: 'The queued message changed before it could be recovered. Please retry.',
-            },
+            getSteerRecoveryFailure(error, { conversationId, streamId, recoveredSteerId }),
             generationProtocolVersion,
           );
         } else if (initializationFailure) {
