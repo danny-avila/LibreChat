@@ -2427,7 +2427,7 @@ class GenerationJobManagerClass {
       (options.recoveredSteerPayload != null &&
         !isRecoveredSteerPayload(options.recoveredSteerPayload))
     ) {
-      throw new RecoveredSteerPayloadMismatchError();
+      throw new RecoveredSteerPayloadMismatchError('invalid_payload');
     }
     // Capture the active epoch before the store atomically replaces it. A
     // subscriber attached to that predecessor filters events by generation,

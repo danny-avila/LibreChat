@@ -6,6 +6,7 @@ import { Constants, ContentTypes, EModelEndpoint, LocalStorageKeys } from 'libre
 import type { CodeApprovalMode, TConversation, TFile, TMessage } from 'librechat-data-provider';
 import type { QueuedMessage } from '~/store/families';
 import { clearAllDrafts, getPendingDraftId, getNewConversationDraftId } from '~/utils';
+import { recoveryDispositionsFamily } from '~/components/Chat/Steering/recovery';
 import useSteering, { mergeQueuedTurnFileMetadata } from '../useSteering';
 import { revealedQueuedTurnFamily } from '~/store/steer';
 import useQueueDrain from '../useQueueDrain';
@@ -153,6 +154,7 @@ function useQueue(convoId: string) {
 
 describe('useSteering', () => {
   beforeEach(() => {
+    getDefaultStore().set(recoveryDispositionsFamily(CONVO_ID), {});
     jest.clearAllMocks();
     mockApprovalMode = undefined;
     getDefaultStore().set(revealedQueuedTurnFamily(CONVO_ID), null);
@@ -161,6 +163,175 @@ describe('useSteering', () => {
     mockServerQueuedTurns = undefined;
     mockFileMap = {};
   });
+
+  it.each([true, false])(
+    'reserves a recovery against queue drain while cancelling (removed=%s)',
+    async (removed) => {
+      const item: QueuedMessage = {
+        id: 'leftover',
+        text: 'original words',
+        createdAt: 1,
+        recoverySteerId: 'source',
+        recoveryClientSteerId: 'client-source',
+        clientRequestId: 'attempt',
+      };
+      let resolveCancel: (value: { removed: boolean }) => void = () => undefined;
+      mockCancelSteer.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveCancel = resolve;
+          }),
+      );
+      const ask = jest.fn();
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <RecoilRoot
+          initializeState={withActiveGeneration(({ set }) => {
+            set(store.queuedMessagesByConvoId(CONVO_ID), [item]);
+            set(store.isSubmittingFamily(0), false);
+          })}
+        >
+          {children}
+        </RecoilRoot>
+      );
+      const { result } = renderHook(
+        () => {
+          const steering = useSteering({
+            consumeDraft: jest.fn(),
+            index: 0,
+            conversationId: CONVO_ID,
+            conversation: agentsConversation,
+            isSubmitting: false,
+            answerModeActive: false,
+            sendNow: jest.fn(),
+            stopGenerating: jest.fn(),
+          });
+          useQueueDrain(0, CONVO_ID, ask);
+          return {
+            steering,
+            queue: useQueue(CONVO_ID),
+            setEnd: useSetRecoilState(store.runEndByIndex(0)),
+          };
+        },
+        { wrapper },
+      );
+      let cancellation: Promise<boolean> = Promise.resolve(false);
+      act(() => {
+        cancellation = result.current.steering.discardQueued(item);
+      });
+      act(() =>
+        result.current.setEnd({
+          conversationId: CONVO_ID,
+          outcome: 'completed',
+          endedAt: 200,
+          generationCreatedAt: 41,
+        }),
+      );
+      expect(ask).not.toHaveBeenCalled();
+      expect(result.current.queue).toEqual([item]);
+      let discarded = false;
+      await act(async () => {
+        resolveCancel({ removed });
+        discarded = await cancellation;
+      });
+      expect(discarded).toBe(removed);
+      expect(ask).not.toHaveBeenCalled();
+      expect(getDefaultStore().get(recoveryDispositionsFamily(CONVO_ID))).toEqual({
+        source: removed ? 'cancelled' : 'blocked',
+      });
+      if (removed) {
+        expect(result.current.queue).toEqual([item]);
+      } else {
+        expect(result.current.queue).toEqual([item]);
+        act(() =>
+          result.current.setEnd({
+            conversationId: CONVO_ID,
+            outcome: 'completed',
+            endedAt: 300,
+            generationCreatedAt: 42,
+          }),
+        );
+        expect(ask).not.toHaveBeenCalled();
+        act(() => result.current.steering.dismissRecovery(item));
+        expect(result.current.queue).toEqual([]);
+        expect(getDefaultStore().get(recoveryDispositionsFamily(CONVO_ID))).toEqual({
+          source: 'dismissed',
+        });
+      }
+    },
+  );
+
+  it.each(['blocked', 'cancelled'] as const)(
+    'releases exactly one completed run-end after dismissing a %s recovery',
+    async (disposition) => {
+      const held: QueuedMessage = {
+        id: 'held',
+        text: 'might already be delivered',
+        createdAt: 1,
+        recoverySteerId: 'source',
+        clientRequestId: 'recovery-attempt',
+      };
+      const first: QueuedMessage = { id: 'next', text: 'send after dismissal', createdAt: 2 };
+      const second: QueuedMessage = { id: 'later', text: 'wait for next run', createdAt: 3 };
+      getDefaultStore().set(recoveryDispositionsFamily(CONVO_ID), { source: disposition });
+      const ask = jest.fn();
+      const wrapper = ({ children }: { children: React.ReactNode }) => (
+        <RecoilRoot
+          initializeState={withActiveGeneration(({ set }) => {
+            set(store.queuedMessagesByConvoId(CONVO_ID), [held, first, second]);
+            set(store.isSubmittingFamily(0), false);
+          })}
+        >
+          {children}
+        </RecoilRoot>
+      );
+      const { result } = renderHook(
+        () => {
+          const steering = useSteering({
+            consumeDraft: jest.fn(),
+            index: 0,
+            conversationId: CONVO_ID,
+            conversation: agentsConversation,
+            isSubmitting: false,
+            answerModeActive: false,
+            sendNow: jest.fn(),
+            stopGenerating: jest.fn(),
+          });
+          useQueueDrain(0, CONVO_ID, ask);
+          return {
+            steering,
+            queue: useQueue(CONVO_ID),
+            end: useRecoilValue(store.runEndByIndex(0)),
+            setEnd: useSetRecoilState(store.runEndByIndex(0)),
+          };
+        },
+        { wrapper },
+      );
+      const terminal = {
+        conversationId: CONVO_ID,
+        outcome: 'completed' as const,
+        endedAt: 200,
+        generationCreatedAt: 41,
+      };
+      act(() => result.current.setEnd(terminal));
+      await waitFor(() => expect(result.current.end).toEqual(terminal));
+      expect(ask).not.toHaveBeenCalled();
+      expect(result.current.queue).toEqual([held, first, second]);
+
+      act(() => result.current.steering.dismissRecovery(held));
+      await waitFor(() => expect(ask).toHaveBeenCalledTimes(1));
+      expect(ask).toHaveBeenCalledWith(
+        { text: first.text },
+        expect.objectContaining({ overrideQueuedMessageOrigin: expect.any(Object) }),
+      );
+      expect(result.current.end).toBeNull();
+      expect(result.current.queue).toEqual([second]);
+      expect(getDefaultStore().get(recoveryDispositionsFamily(CONVO_ID))).toEqual({
+        source: 'dismissed',
+      });
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(ask).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it('keeps optimistic delivery metadata when a legacy receipt omits it', () => {
     expect(
@@ -2818,7 +2989,7 @@ describe('useSteering', () => {
       expect(mockMutate).not.toHaveBeenCalled();
     });
 
-    it('atomically discards a recovered source and downgrades its row in place', async () => {
+    it('confirms a discarded recovery but keeps it held until the guarded UI action succeeds', async () => {
       mockCancelSteer.mockResolvedValueOnce({
         removed: true,
         generationProtocolVersion: 2,
@@ -2867,26 +3038,12 @@ describe('useSteering', () => {
         steerId: 'server-leftover',
         clientSteerId: 'client-leftover',
       });
-      expect(result.current.queue).toEqual([
-        before,
-        {
-          id: 'queued-leftover',
-          text: 'edit this next',
-          createdAt: 1,
-          expectedPredecessorCreatedAt: 41,
-          files: [
-            {
-              file_id: 'file-1',
-              filepath: '/uploads/file-1.txt',
-              type: 'text/plain',
-            },
-          ],
-          quotes: ['keep quote'],
-          manualSkills: ['keep skill'],
-          priority: true,
-        },
-        after,
-      ]);
+      expect(result.current.queue).toEqual([before, recovered, after]);
+      expect(getDefaultStore().get(recoveryDispositionsFamily(CONVO_ID))).toEqual({
+        'server-leftover': 'cancelled',
+      });
+      act(() => result.current.steering.sendQueuedNow(recovered));
+      expect(mockMutate).not.toHaveBeenCalled();
     });
 
     it('keeps a recovered queue row when its parked source cannot be discarded', async () => {
@@ -2937,6 +3094,22 @@ describe('useSteering', () => {
       expect(discarded).toBe(false);
       expect(mockCancelSteer).not.toHaveBeenCalled();
       expect(result.current.queue).toEqual([recovered]);
+    });
+
+    it('refuses a direct manual send of an unreconciled recovery', () => {
+      const item = {
+        id: 'held',
+        text: 'may already be delivered',
+        createdAt: 1,
+        recoverySteerId: 'source',
+      };
+      getDefaultStore().set(recoveryDispositionsFamily(CONVO_ID), { source: 'blocked' });
+      const { result, sendNow } = setupWithState({ isSubmitting: false }, ({ set }) => {
+        set(store.queuedMessagesByConvoId(CONVO_ID), [item]);
+      });
+      act(() => result.current.steering.sendQueuedNow(item));
+      expect(sendNow).not.toHaveBeenCalled();
+      expect(result.current.queue).toEqual([item]);
     });
 
     it('sendQueuedNow steers whenever steering is available, even under the queue preference', () => {
