@@ -649,6 +649,7 @@ export function createBackgroundToolCompletionWakeupHandler(
   retire: RetireBackgroundToolCompletion,
   renewProducerLease: RenewBackgroundToolCompletionProducerLease,
   persistResult?: PersistBackgroundToolCompletionResult,
+  expedite?: (deliveryKey: string) => void,
 ): (
   registration: BackgroundToolWakeupRegistration,
 ) => Promise<BackgroundToolWakeupAdmission | false> {
@@ -712,6 +713,7 @@ export function createBackgroundToolCompletionWakeupHandler(
         options == null
           ? retire(admitted.deliveryKey, BACKGROUND_TOOL_COMPLETION_SOURCE, reason)
           : retire(admitted.deliveryKey, BACKGROUND_TOOL_COMPLETION_SOURCE, reason, options),
+      ...(expedite == null ? {} : { expedite: () => expedite(admitted.deliveryKey) }),
     };
   };
 }

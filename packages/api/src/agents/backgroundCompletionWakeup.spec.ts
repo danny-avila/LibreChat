@@ -113,6 +113,25 @@ describe('background tool completion wakeups', () => {
     jest.useRealTimers();
   });
 
+  it('expedites its own delivery when a result it can consume appears', async () => {
+    const expedite = jest.fn();
+    const notify = createBackgroundToolCompletionWakeupHandler(
+      async () => ({ deliveryKey: 'delivery-key-1' }),
+      async () => true,
+      async () => true,
+      undefined,
+      expedite,
+    );
+
+    const admission = await notify(registration());
+    if (admission === false) {
+      throw new Error('Expected an admission');
+    }
+    admission.expedite?.();
+
+    expect(expedite).toHaveBeenCalledWith('delivery-key-1');
+  });
+
   it('pre-registers the exact task on the invoking response branch', async () => {
     const enqueue = jest.fn<
       ReturnType<EnqueueBackgroundToolCompletion>,

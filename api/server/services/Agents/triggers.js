@@ -53,6 +53,7 @@ service = createAgentTriggerService({
   ),
   isPrincipalActive: methods.isAgentTriggerPrincipalActive,
   supportsDetachedActionCompletion: () => GenerationJobManager.supportsDetachedAgentEventActions,
+  subscribeGenerationSettled: (listener) => GenerationJobManager.onGenerationSettled(listener),
   settleSourceBeforeDeadLetter: queuedTurnLifecycle.settleBeforeDeadLetter,
   prepareContinue: createAgentContinuationResolver({
     eventActor: eventActorAdapter,
@@ -92,6 +93,7 @@ module.exports = {
   retireAgentTrigger: service.retire,
   renewAgentTriggerProducerLease: service.renewProducerLease,
   persistAgentBackgroundToolResult: service.persistBackgroundToolResult,
+  expediteCompletionWakeups: service.expediteCompletionWakeups,
   getAgentBackgroundToolResultClaim: service.getBackgroundToolResultClaim,
   releaseAgentBackgroundToolResultClaims: service.releaseBackgroundToolResultClaims,
   drainAgentTriggerDeliveriesForUser: service.drainUser,

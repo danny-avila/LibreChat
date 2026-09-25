@@ -6134,6 +6134,8 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
                           'background tool result was not persisted',
                           'definite',
                         );
+                      } else if (deliveryReady && !durableReceiptReady) {
+                        completionAdmission?.expedite?.();
                       }
                     } catch (persistError) {
                       if (!durableReceiptReady) {

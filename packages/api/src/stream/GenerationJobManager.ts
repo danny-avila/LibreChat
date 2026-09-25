@@ -568,10 +568,22 @@ export interface CreateGenerationJobOptions {
  * receiving this claim, then pass the same object to {@link finishTerminalJob}
  * from a `finally` block.
  */
+/** A generation reached a terminal state and released its runtime. */
+export interface GenerationSettledEvent {
+  streamId: string;
+  conversationId: string;
+  userId: string;
+  status: TerminalJobClaim['status'];
+}
+
+export type GenerationSettledListener = (event: GenerationSettledEvent) => void;
+
 export interface TerminalJobClaim {
   readonly streamId: string;
   readonly createdAt: number;
   readonly conversationId?: string;
+  /** The generation's owner, so settlement can be announced to that principal's waiters. */
+  readonly userId?: string;
   readonly status: 'complete' | 'error' | 'aborted';
   readonly error?: string;
   /** The winner must durably publish either its normal FINAL or a
@@ -786,6 +798,7 @@ class GenerationJobManagerClass {
 
   /** Makes terminal cleanup idempotent while keeping claims opaque to callers. */
   private terminalFinishPromises = new WeakMap<TerminalJobClaim, Promise<void>>();
+  private generationSettledListeners = new Set<GenerationSettledListener>();
 
   /** Exact local runtime observed when a claim won; never clean a later runtime. */
   private terminalClaimRuntimes = new WeakMap<TerminalJobClaim, RuntimeJobState | null>();
@@ -1078,6 +1091,7 @@ class GenerationJobManagerClass {
       createdAt,
       ...(job?.createdAt === createdAt &&
         job.conversationId != null && { conversationId: job.conversationId }),
+      ...(job?.createdAt === createdAt && job.userId != null && { userId: job.userId }),
       status: 'error' as const,
       error,
       drainedSteers: Object.freeze([...drainedSteers]),
@@ -2256,7 +2270,7 @@ class GenerationJobManagerClass {
     streamId: string,
     job: Pick<
       SerializableJobData,
-      'createdAt' | 'conversationId' | 'providerExecutionId' | 'agentEventDeliveryKey'
+      'createdAt' | 'conversationId' | 'providerExecutionId' | 'agentEventDeliveryKey' | 'userId'
     >,
     message: string,
   ): Promise<boolean> {
@@ -2288,6 +2302,13 @@ class GenerationJobManagerClass {
               expectCreatedAt: job.createdAt,
             })
           ) {
+            /** A direct terminal transition builds no claim, so it announces itself. */
+            this.notifyGenerationSettled({
+              streamId,
+              conversationId: job.conversationId,
+              userId: job.userId,
+              status: 'error',
+            });
             return true;
           }
         } catch (error) {
@@ -2298,6 +2319,15 @@ class GenerationJobManagerClass {
 
         try {
           const current = await this.jobStore.getJob(streamId);
+          if (current?.createdAt === job.createdAt && current.status === 'error') {
+            this.notifyGenerationSettled({
+              streamId,
+              conversationId: current.conversationId,
+              userId: current.userId,
+              status: 'error',
+            });
+            return true;
+          }
           if (
             current == null ||
             current.createdAt !== job.createdAt ||
@@ -3901,6 +3931,7 @@ class GenerationJobManagerClass {
       ...(jobData.conversationId != null && {
         conversationId: jobData.conversationId,
       }),
+      ...(jobData.userId != null && { userId: jobData.userId }),
       status,
       ...(terminalError != null && { error: terminalError }),
       ...(options.persistencePending === true && {
@@ -4071,6 +4102,40 @@ class GenerationJobManagerClass {
    * claim is idempotent, and every local mutation is pinned to the runtime
    * object and generation epoch captured when the CAS won.
    */
+  /**
+   * Calls `listener` after each generation owned by this process reaches a
+   * terminal state and its runtime is released — by completion, error, or
+   * abort. Listeners run synchronously and must not throw; failures are logged
+   * and never affect terminal cleanup. Returns an unsubscribe function.
+   */
+  onGenerationSettled(listener: GenerationSettledListener): () => void {
+    this.generationSettledListeners.add(listener);
+    return () => {
+      this.generationSettledListeners.delete(listener);
+    };
+  }
+
+  private notifyGenerationSettled(
+    target: Pick<TerminalJobClaim, 'streamId' | 'conversationId' | 'userId' | 'status'>,
+  ): void {
+    if (target.userId == null || this.generationSettledListeners.size === 0) {
+      return;
+    }
+    const event: GenerationSettledEvent = {
+      streamId: target.streamId,
+      conversationId: target.conversationId ?? target.streamId,
+      userId: target.userId,
+      status: target.status,
+    };
+    for (const listener of this.generationSettledListeners) {
+      try {
+        listener(event);
+      } catch (listenerError) {
+        logger.error('[GenerationJobManager] Generation settled listener failed', listenerError);
+      }
+    }
+  }
+
   finishTerminalJob(claim: TerminalJobClaim): Promise<void> {
     const inFlight = this.terminalFinishPromises.get(claim);
     if (inFlight) {
@@ -4260,6 +4325,7 @@ class GenerationJobManagerClass {
         metricStatus = 'error';
       }
       recordGenerationJob(this.storeLabel, metricStatus);
+      this.notifyGenerationSettled(claim);
     }
 
     if (cleanupError != null) {
@@ -4616,6 +4682,7 @@ class GenerationJobManagerClass {
       ...(jobData.conversationId != null && {
         conversationId: jobData.conversationId,
       }),
+      ...(jobData.userId != null && { userId: jobData.userId }),
       status: 'aborted',
       persistencePending: true,
       drainedSteers: Object.freeze([...drainedSteers]),
@@ -8865,6 +8932,17 @@ class GenerationJobManagerClass {
 
     await this.runApprovalExpiredHandler(streamId, expiredJob);
     await this.notifyApprovalExpiredRuntime(streamId, expiredJob.createdAt, observedRuntime);
+    /** Expiry is a direct `requires_action -> aborted` transition that never builds a
+     * terminal claim, so it announces settlement itself. */
+    this.notifyGenerationSettled({
+      streamId,
+      conversationId: expiredJob.conversationId,
+      userId: expiredJob.userId,
+      status: 'aborted',
+    });
+    /** Terminal now; releasing ownership keeps the sweep's relay branch from
+     * announcing this generation a second time. */
+    this.releaseJobOwnership(streamId, expiredJob.createdAt);
     return true;
   }
 
@@ -9055,7 +9133,17 @@ class GenerationJobManagerClass {
           await this.runApprovalExpiredHandler(streamId, job);
         }
         await this.notifyApprovalExpiredRuntime(streamId, job.createdAt, runtime);
-        changed = this.releaseJobOwnership(streamId, job.createdAt) || changed;
+        const released = this.releaseJobOwnership(streamId, job.createdAt);
+        if (released) {
+          /** The store won the expiry CAS, so no local claim announced it. */
+          this.notifyGenerationSettled({
+            streamId,
+            conversationId: job.conversationId,
+            userId: job.userId,
+            status: 'aborted',
+          });
+        }
+        changed = released || changed;
         continue;
       }
       if (

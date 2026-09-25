@@ -44,6 +44,9 @@ export interface BackgroundToolWakeupAdmission {
    * Manual polling requires an atomic unclaimed-only transition: once a
    * resolver owns a lease, its prepared continuation cannot be cancelled. */
   retire: (reason: string, options?: BackgroundToolWakeupRetireOptions) => Promise<boolean>;
+  /** Best effort: makes a waiting delivery claimable now that a result it can
+   * consume exists, e.g. a parent-message projection written without a receipt. */
+  expedite?: () => void;
 }
 
 /** Durable ownership repair used by a manual poll after an automatic

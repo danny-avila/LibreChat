@@ -453,6 +453,348 @@ describe('agent trigger delivery methods', () => {
     ).resolves.toEqual({ status: 'live', leaseUntil: renewedUntil });
   });
 
+  describe('expediteAgentTriggerDeliveries', () => {
+    const background = { id: 'background-tool-completion', type: 'internal' };
+    const later = new Date(START.getTime() + 30_000);
+    const capable = {
+      workerId: 'background-capable-worker',
+      claimToken: 'background-capable-claim',
+      now: START,
+      leaseUntil: new Date(START.getTime() + 60_000),
+      workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2],
+    };
+    const waiting = (overrides: Partial<Parameters<typeof enqueueInput>[0]> = {}) =>
+      methods.enqueueAgentTriggerDelivery(
+        enqueueInput({
+          orderingKey: `background-lane-${counter + 1}`,
+          envelope: { event: { source: background } },
+          requiredWorkerCapability:
+            AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
+          availableAt: later,
+          ...overrides,
+        }),
+      );
+
+    it('makes a deferred delivery claimable now once its result is durable', async () => {
+      const target = await waiting();
+      const sibling = await waiting();
+      await expect(methods.claimNextAgentTriggerDelivery(capable)).resolves.toBeNull();
+
+      await expect(
+        methods.expediteAgentTriggerDeliveries({
+          deliveryKeys: [target.delivery.deliveryKey],
+          sourceIds: [background.id],
+          now: START,
+        }),
+      ).resolves.toEqual({ expedited: 1, held: 0 });
+
+      await expect(methods.claimNextAgentTriggerDelivery(capable)).resolves.toMatchObject({
+        id: target.delivery.id,
+      });
+      await expect(
+        methods.claimNextAgentTriggerDelivery({ ...capable, claimToken: 'second-claim' }),
+      ).resolves.toBeNull();
+      const untouched = await Delivery.findById(sibling.delivery.id).lean();
+      expect(untouched?.availableAt).toEqual(later);
+    });
+
+    it("moves only the principal's waiting rows from the named sources", async () => {
+      const user = new mongoose.Types.ObjectId();
+      const mine = await waiting({ user });
+      const otherUser = await waiting();
+      const otherSource = await waiting({
+        user,
+        envelope: { event: { source: { id: 'agent-queued-turn', type: 'internal' } } },
+      });
+      const external = await waiting({
+        user,
+        envelope: { event: { source: { id: background.id, type: 'webhook' } } },
+      });
+      const due = await waiting({ user, availableAt: START });
+
+      await expect(
+        methods.expediteAgentTriggerDeliveries({ user, sourceIds: [background.id], now: START }),
+      ).resolves.toEqual({ expedited: 1, held: 0 });
+
+      const rows = await Delivery.find({
+        _id: {
+          $in: [mine, otherUser, otherSource, external, due].map((row) => row.delivery.id),
+        },
+      }).lean();
+      const availableAt = new Map(rows.map((row) => [String(row._id), row.availableAt]));
+      expect(availableAt.get(mine.delivery.id)).toEqual(START);
+      expect(availableAt.get(otherUser.delivery.id)).toEqual(later);
+      expect(availableAt.get(otherSource.delivery.id)).toEqual(later);
+      expect(availableAt.get(external.delivery.id)).toEqual(later);
+      expect(availableAt.get(due.delivery.id)).toEqual(START);
+    });
+
+    it('marks a delivery a worker currently holds instead of moving it', async () => {
+      const user = new mongoose.Types.ObjectId();
+      const held = await waiting({ user, availableAt: START });
+      const claim = await methods.claimNextAgentTriggerDelivery(capable);
+      expect(claim).toMatchObject({ id: held.delivery.id });
+      const before = await Delivery.findById(held.delivery.id).lean();
+
+      await expect(
+        methods.expediteAgentTriggerDeliveries({
+          user,
+          sourceIds: [background.id],
+          now: new Date(START.getTime() - 60_000),
+        }),
+      ).resolves.toEqual({ expedited: 0, held: 1 });
+
+      const after = await Delivery.findById(held.delivery.id).lean();
+      expect(after?.status).toBe(before?.status);
+      expect(after?.availableAt).toEqual(before?.availableAt);
+      expect(after?.wakeRequestedAt).toEqual(new Date(START.getTime() - 60_000));
+    });
+
+    it('re-checks at once when readiness changed while the delivery was held', async () => {
+      const user = new mongoose.Types.ObjectId();
+      const held = await waiting({ user, availableAt: START });
+      const claim = await methods.claimNextAgentTriggerDelivery(capable);
+      expect(claim).toMatchObject({ id: held.delivery.id });
+      const fence = {
+        id: held.delivery.id,
+        workerId: capable.workerId,
+        claimToken: capable.claimToken,
+      };
+      const attempt = await methods.beginAgentTriggerDeliveryAttempt({ ...fence, now: START });
+      await expect(
+        methods.expediteAgentTriggerDeliveries({ user, sourceIds: [background.id], now: START }),
+      ).resolves.toEqual({ expedited: 0, held: 1 });
+
+      const beforeDefer = Date.now();
+      await expect(
+        methods.deferAgentTriggerDeliveryAttempt({
+          ...fence,
+          attempt: attempt!,
+          availableAt: later,
+        }),
+      ).resolves.toBe('expedited');
+
+      const deferred = await Delivery.findById(held.delivery.id).lean();
+      expect(deferred?.wakeRequestedAt).toBeUndefined();
+      expect(deferred?.availableAt.getTime()).toBeGreaterThanOrEqual(beforeDefer);
+      expect(deferred?.availableAt).not.toEqual(later);
+
+      const reclaimed = await methods.claimNextAgentTriggerDelivery({
+        ...capable,
+        claimToken: 'second-claim',
+        now: new Date(),
+        leaseUntil: new Date(Date.now() + 60_000),
+      });
+      expect(reclaimed).toMatchObject({ id: held.delivery.id });
+      const secondFence = { ...fence, claimToken: 'second-claim' };
+      const secondAttempt = await methods.beginAgentTriggerDeliveryAttempt({
+        ...secondFence,
+        now: new Date(),
+      });
+      await expect(
+        methods.deferAgentTriggerDeliveryAttempt({
+          ...secondFence,
+          attempt: secondAttempt!,
+          availableAt: later,
+        }),
+      ).resolves.toBe(true);
+      expect((await Delivery.findById(held.delivery.id).lean())?.availableAt).toEqual(later);
+    });
+
+    it.each(['ordinary', 'legacy', 'shielded'] as const)(
+      'honors a held wake marker on ordering release for %s leases',
+      async (profile) => {
+        const row = await waiting({
+          availableAt: START,
+          ...(profile === 'ordinary' && { requiredWorkerCapability: undefined }),
+        });
+        if (profile === 'legacy') {
+          await Delivery.updateOne(
+            { _id: row.delivery.id },
+            {
+              $set: { status: 'capability_pending', availableAt: START },
+              $unset: { capabilityStatus: 1, leaseUntil: 1 },
+            },
+          );
+        }
+        const claimed = await methods.claimNextAgentTriggerDelivery(capable);
+        expect(claimed?.id).toBe(row.delivery.id);
+        const fence = {
+          id: row.delivery.id,
+          workerId: capable.workerId,
+          claimToken: capable.claimToken,
+        };
+        await methods.expediteAgentTriggerDeliveries({
+          deliveryKeys: [row.delivery.deliveryKey],
+          sourceIds: [background.id],
+          now: START,
+        });
+        await expect(
+          methods.releaseAgentTriggerDelivery({
+            ...fence,
+            claimToken: 'stale',
+            availableAt: later,
+          }),
+        ).resolves.toBe(false);
+        expect((await Delivery.findById(row.delivery.id).lean())?.wakeRequestedAt).toEqual(START);
+        await expect(
+          methods.releaseAgentTriggerDelivery({ ...fence, availableAt: later }),
+        ).resolves.toBe(true);
+        const released = await Delivery.findById(row.delivery.id).lean();
+        expect(released?.wakeRequestedAt).toBeUndefined();
+        expect(released?.availableAt.getTime()).toBeLessThanOrEqual(Date.now());
+        expect(released?.claimAvailableAt).toEqual(released?.availableAt);
+        expect(released?.attempts).toBe(0);
+        const reclaimed = await methods.claimNextAgentTriggerDelivery({
+          ...capable,
+          now: new Date(),
+          claimToken: 'next',
+        });
+        expect(reclaimed?.id).toBe(row.delivery.id);
+        await methods.releaseAgentTriggerDelivery({
+          ...fence,
+          claimToken: 'next',
+          availableAt: later,
+        });
+        expect((await Delivery.findById(row.delivery.id).lean())?.availableAt).toEqual(later);
+      },
+    );
+
+    it.each(['release', 'defer'] as const)(
+      'does not lose an expedite between the unmarked and marked %s writes',
+      async (operation) => {
+        const row = await waiting({ availableAt: START });
+        await methods.claimNextAgentTriggerDelivery(capable);
+        const fence = {
+          id: row.delivery.id,
+          workerId: capable.workerId,
+          claimToken: capable.claimToken,
+        };
+        const attempt =
+          operation === 'defer'
+            ? await methods.beginAgentTriggerDeliveryAttempt({ ...fence, now: START })
+            : undefined;
+        const updateOne = Delivery.collection.updateOne.bind(Delivery.collection);
+        let injected = false;
+        const spy = jest
+          .spyOn(Delivery.collection, 'updateOne')
+          .mockImplementation(async (filter, update, options) => {
+            if (
+              !injected &&
+              filter.capabilityClaimToken === capable.claimToken &&
+              (filter.wakeRequestedAt as { $exists?: boolean } | undefined)?.$exists === false
+            ) {
+              injected = true;
+              await methods.expediteAgentTriggerDeliveries({
+                deliveryKeys: [row.delivery.deliveryKey],
+                sourceIds: [background.id],
+                now: START,
+              });
+            }
+            return updateOne(filter, update, options);
+          });
+        try {
+          const input = { ...fence, availableAt: later };
+          if (operation === 'defer') {
+            await expect(
+              methods.deferAgentTriggerDeliveryAttempt({ ...input, attempt: attempt! }),
+            ).resolves.toBe('expedited');
+          } else {
+            await expect(methods.releaseAgentTriggerDelivery(input)).resolves.toBe(true);
+          }
+        } finally {
+          spy.mockRestore();
+        }
+        expect(injected).toBe(true);
+        const released = await Delivery.findById(row.delivery.id).lean();
+        expect(released?.wakeRequestedAt).toBeUndefined();
+        expect(released?.availableAt.getTime()).toBeLessThanOrEqual(Date.now());
+        expect(released?.attempts).toBe(0);
+      },
+    );
+
+    it('leaves unfinished siblings backed off when only named child tasks settle', async () => {
+      const user = new mongoose.Types.ObjectId();
+      const source = { id: 'subagent-completion', type: 'internal' };
+      const task = (taskId: string) =>
+        waiting({
+          user,
+          envelope: {
+            event: { source, payload: { taskId } },
+            target: { conversationId: 'parent' },
+          },
+        });
+      const original = await task('original');
+      const recovered = await task('recovered');
+      const sibling = await task('sibling');
+      await expect(
+        methods.expediteAgentTriggerDeliveries({
+          user,
+          conversationId: 'parent',
+          taskIds: ['original', 'recovered'],
+          sourceIds: [source.id],
+          now: START,
+        }),
+      ).resolves.toEqual({ expedited: 2, held: 0 });
+      expect((await Delivery.findById(original.delivery.id).lean())?.availableAt).toEqual(START);
+      expect((await Delivery.findById(recovered.delivery.id).lean())?.availableAt).toEqual(START);
+      expect((await Delivery.findById(sibling.delivery.id).lean())?.availableAt).toEqual(later);
+      await expect(
+        methods.expediteAgentTriggerDeliveries({
+          user,
+          conversationId: 'parent',
+          taskIds: [],
+          sourceIds: [source.id],
+          now: START,
+        }),
+      ).rejects.toThrow(TypeError);
+    });
+
+    it("narrows a principal's selection to the conversation being resumed", async () => {
+      const user = new mongoose.Types.ObjectId();
+      const target = await waiting({
+        user,
+        envelope: { event: { source: background }, target: { conversationId: 'settled-convo' } },
+      });
+      const other = await waiting({
+        user,
+        envelope: { event: { source: background }, target: { conversationId: 'other-convo' } },
+      });
+
+      await expect(
+        methods.expediteAgentTriggerDeliveries({
+          user,
+          conversationId: 'settled-convo',
+          sourceIds: [background.id],
+          now: START,
+        }),
+      ).resolves.toEqual({ expedited: 1, held: 0 });
+
+      expect((await Delivery.findById(target.delivery.id).lean())?.availableAt).toEqual(START);
+      expect((await Delivery.findById(other.delivery.id).lean())?.availableAt).toEqual(later);
+    });
+
+    it('refuses an unbounded or malformed selection', async () => {
+      await expect(
+        methods.expediteAgentTriggerDeliveries({ sourceIds: [background.id], now: START }),
+      ).rejects.toThrow(TypeError);
+      await expect(
+        methods.expediteAgentTriggerDeliveries({
+          user: new mongoose.Types.ObjectId(),
+          sourceIds: [],
+          now: START,
+        }),
+      ).rejects.toThrow(TypeError);
+      await expect(
+        methods.expediteAgentTriggerDeliveries({
+          deliveryKeys: ['trigger_x'],
+          sourceIds: [background.id],
+          now: new Date(Number.NaN),
+        }),
+      ).rejects.toThrow(TypeError);
+    });
+  });
+
   describe('listPendingAgentBackgroundToolCompletions', () => {
     const background = { id: 'background-tool-completion', type: 'internal' };
     const completion = (
@@ -2714,7 +3056,7 @@ describe('agent trigger delivery methods', () => {
     );
   });
 
-  it("indexes a user's waiting deliveries for user-scoped readiness reads", async () => {
+  it("indexes a user's waiting deliveries for settle-time expediting", async () => {
     const deliveryIndexes = await Delivery.collection.indexes();
     const userIndex = deliveryIndexes.find(
       (index) =>

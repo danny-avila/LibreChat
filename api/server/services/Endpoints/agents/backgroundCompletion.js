@@ -16,6 +16,7 @@ const {
   releaseAgentBackgroundToolResultClaims,
   renewAgentTriggerProducerLease,
   retireAgentTrigger,
+  expediteCompletionWakeups,
 } = require('../../Agents/triggers');
 
 const preregisterBackgroundToolCompletion = createBackgroundToolCompletionWakeupHandler(
@@ -24,6 +25,7 @@ const preregisterBackgroundToolCompletion = createBackgroundToolCompletionWakeup
   renewAgentTriggerProducerLease,
   (deliveryKey, sourceId, result) =>
     persistAgentBackgroundToolResult({ deliveryKey, sourceId, result }),
+  (deliveryKey) => expediteCompletionWakeups({ deliveryKeys: [deliveryKey] }),
 );
 
 const pendingBackgroundToolCompletions = createPendingBackgroundCompletions({
