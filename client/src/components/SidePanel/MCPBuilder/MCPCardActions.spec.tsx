@@ -9,16 +9,20 @@ jest.mock('~/hooks', () => ({
 }));
 
 jest.mock('@librechat/client', () => ({
+  Button: jest.requireActual('@librechat/client').Button,
   buttonVariants: jest.requireActual('@librechat/client').buttonVariants,
   Spinner: (props: React.ComponentProps<'span'>) => <span {...props} />,
   TooltipAnchor: ({
     children,
+    render,
     description: _description,
     side: _side,
     ...props
-  }: React.ComponentProps<'div'> & { description: string; side?: string }) => (
-    <div {...props}>{children}</div>
-  ),
+  }: React.ComponentProps<'div'> & {
+    description: string;
+    side?: string;
+    render?: React.ReactElement;
+  }) => render ?? <div {...props}>{children}</div>,
 }));
 
 const connectedOAuthStatus = {

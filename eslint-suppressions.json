@@ -2058,11 +2058,6 @@
       "count": 2
     }
   },
-  "client/src/components/SidePanel/MCPBuilder/MCPCardActions.tsx": {
-    "shadcn/require-static-classes": {
-      "count": 7
-    }
-  },
   "client/src/components/SidePanel/MCPBuilder/MCPServerCard.tsx": {
     "shadcn/no-restyle": {
       "count": 3

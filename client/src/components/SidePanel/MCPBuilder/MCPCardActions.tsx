@@ -1,5 +1,5 @@
 import React from 'react';
-import { Spinner, TooltipAnchor } from '@librechat/client';
+import { Button, Spinner, TooltipAnchor } from '@librechat/client';
 import { KeyRound, Pencil, PlugZap, RefreshCw, Unlink, X } from 'lucide-react';
 import type { MCPServerStatus } from 'librechat-data-provider';
 import { cn, rowActionClasses, rowActionSlotClasses } from '~/utils';
@@ -59,7 +59,6 @@ export default function MCPCardActions({
   const isDisconnected = connectionState === 'disconnected';
   const isError = connectionState === 'error';
 
-  const buttonBaseClass = rowActionClasses();
   /** A run in flight is a state of the row, not an action waiting to be found:
    *  the spinner and the cancel that replaces it stay put without a hover. */
   const loadingClass = rowActionClasses({ visible: true });
@@ -71,39 +70,48 @@ export default function MCPCardActions({
         {/* Edit button stays visible during loading */}
         {canEdit && (
           <TooltipAnchor
-            focusOutline="hidden"
             ref={editButtonRef}
             description={localize('com_ui_edit')}
             side="top"
-            className={loadingClass}
-            aria-label={localize('com_ui_edit')}
-            role="button"
-            onClick={onEditClick}
-          >
-            <Pencil className="size-4" aria-hidden="true" />
-          </TooltipAnchor>
+            render={
+              <Button
+                type="button"
+                variant="row-action"
+                size="icon-xs"
+                aria-label={localize('com_ui_edit')}
+                onClick={onEditClick}
+              >
+                <Pencil className="text-text-secondary size-4" aria-hidden="true" />
+              </Button>
+            }
+          />
         )}
 
         {/* Spinner with cancel on hover */}
         {canCancel ? (
           <TooltipAnchor
-            focusOutline="hidden"
             description={localize('com_ui_cancel')}
             side="top"
-            className={cn(loadingClass, 'group/cancel')}
-            aria-label={localize('com_ui_cancel')}
-            role="button"
-            onClick={onCancel}
-          >
-            <div className="relative size-4">
-              {/* The fade belongs to the wrapper: the spinner's own opacity is the
-                  primitive's, and so is the cancel cross's to the icon. */}
-              <span className="absolute inset-0 flex items-center justify-center group-hover/cancel:opacity-0">
-                <Spinner className="size-4" />
-              </span>
-              <X className="text-text-destructive absolute inset-0 size-4 opacity-0 group-hover/cancel:opacity-100" />
-            </div>
-          </TooltipAnchor>
+            render={
+              <Button
+                type="button"
+                variant="row-action"
+                size="icon-xs"
+                className="group/cancel"
+                aria-label={localize('com_ui_cancel')}
+                onClick={onCancel}
+              >
+                <div className="relative size-4">
+                  {/* The fade belongs to the wrapper: the spinner's own opacity is the
+                      primitive's, and so is the cancel cross's to the icon. */}
+                  <span className="text-text-secondary absolute inset-0 flex items-center justify-center group-hover/cancel:opacity-0">
+                    <Spinner className="size-4" />
+                  </span>
+                  <X className="text-text-destructive absolute inset-0 size-4 opacity-0 group-hover/cancel:opacity-100" />
+                </div>
+              </Button>
+            }
+          />
         ) : (
           <div className={cn(loadingClass, 'cursor-default hover:bg-transparent')}>
             <Spinner
@@ -120,80 +128,64 @@ export default function MCPCardActions({
     <div className={rowActionSlotClasses()}>
       {/* Edit button - opens MCPServerDialog to edit server definition */}
       {canEdit && (
-        <TooltipAnchor
-          focusOutline="hidden"
-          ref={editButtonRef}
-          description={localize('com_ui_edit')}
-          side="top"
-          className={buttonBaseClass}
-          aria-label={localize('com_ui_edit')}
-          role="button"
-          onClick={onEditClick}
-        >
+        <RowAction ref={editButtonRef} label={localize('com_ui_edit')} onClick={onEditClick}>
           <Pencil className="size-4" aria-hidden="true" />
-        </TooltipAnchor>
+        </RowAction>
       )}
 
       {/* Connect button - for disconnected or error states */}
       {(isDisconnected || isError) && !serverStatus?.requestScoped && (
-        <TooltipAnchor
-          focusOutline="hidden"
-          description={localize('com_nav_mcp_connect')}
-          side="top"
-          className={buttonBaseClass}
-          aria-label={localize('com_nav_mcp_connect')}
-          role="button"
-          onClick={() => onInitialize()}
-        >
+        <RowAction label={localize('com_nav_mcp_connect')} onClick={() => onInitialize()}>
           <PlugZap className="size-4" aria-hidden="true" />
-        </TooltipAnchor>
+        </RowAction>
       )}
 
       {/* On-demand servers stay idle between requests, so their user variables
           must remain configurable without a live transport connection. */}
       {(isConnected || serverStatus?.requestScoped) && hasCustomUserVars && (
-        <TooltipAnchor
-          focusOutline="hidden"
-          description={localize('com_ui_configure')}
-          side="top"
-          className={buttonBaseClass}
-          aria-label={localize('com_ui_configure')}
-          role="button"
-          onClick={onConfigClick}
-        >
+        <RowAction label={localize('com_ui_configure')} onClick={onConfigClick}>
           <KeyRound className="size-4" aria-hidden="true" />
-        </TooltipAnchor>
+        </RowAction>
       )}
 
       {/* Refresh button - for connected servers (allows reconnection) */}
       {isConnected && !serverStatus?.requestScoped && (
-        <TooltipAnchor
-          focusOutline="hidden"
-          description={localize('com_nav_mcp_reconnect')}
-          side="top"
-          className={buttonBaseClass}
-          aria-label={localize('com_nav_mcp_reconnect')}
-          role="button"
-          onClick={() => onInitialize()}
-        >
+        <RowAction label={localize('com_nav_mcp_reconnect')} onClick={() => onInitialize()}>
           <RefreshCw className="size-4" aria-hidden="true" />
-        </TooltipAnchor>
+        </RowAction>
       )}
 
       {/* Revoke button - for OAuth servers (available regardless of connection state) */}
       {serverStatus?.requiresOAuth && onRevoke && (
-        <TooltipAnchor
-          focusOutline="hidden"
-          description={localize('com_ui_revoke')}
-          side="top"
-          className={buttonBaseClass}
-          aria-label={localize('com_ui_revoke')}
-          role="button"
-          onClick={onRevoke}
-        >
+        <RowAction label={localize('com_ui_revoke')} onClick={onRevoke}>
           <Unlink className="text-text-destructive size-4" aria-hidden="true" />
-        </TooltipAnchor>
+        </RowAction>
       )}
     </div>
   );
 }
+
+/** A revealed row action with its tooltip: the label is both the tooltip and the name. */
+const RowAction = React.forwardRef<
+  HTMLDivElement,
+  { label: string; onClick: (e: React.MouseEvent) => void; children: React.ReactNode }
+>(function RowAction({ label, onClick, children }, ref) {
+  return (
+    <TooltipAnchor
+      ref={ref}
+      description={label}
+      side="top"
+      render={
+        <Button
+          type="button"
+          variant="row-action-reveal"
+          size="icon-xs"
+          aria-label={label}
+          onClick={onClick}
+        >
+          {children}
+        </Button>
+      }
+    />
+  );
+});
