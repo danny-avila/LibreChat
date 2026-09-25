@@ -1024,6 +1024,7 @@ class BaseClient {
             renewBalanceReservation: db.renewBalanceReservation,
             releaseBalanceReservation: db.releaseBalanceReservation,
             balanceConfig,
+            findBalanceByUser: db.findBalanceByUser,
           },
         );
         await balanceReservations.track(balanceAdmission);

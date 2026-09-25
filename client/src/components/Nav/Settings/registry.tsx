@@ -673,6 +673,7 @@ export const registry: SettingEntry[] = [
     tab: DATA,
     section: 'apiKeys',
     labelKey: 'com_ui_settings_label_revoke_keys',
+    show: (ctx) => ctx.hasUserProvidedEndpoints,
     Component: RevokeKeys,
   },
   // Langfuse

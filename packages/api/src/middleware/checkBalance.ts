@@ -4,6 +4,7 @@ import {
   ViolationTypes,
   MIN_BALANCE_RESERVATION_TTL_MS,
   DEFAULT_BALANCE_RESERVATION_TTL_MS,
+  getRefillEligibilityDate,
 } from 'librechat-data-provider';
 import type {
   BalanceReservationRequest,
@@ -12,6 +13,7 @@ import type {
   BalanceReservationResult,
   IBalanceUpdate,
   BalanceConfig,
+  IBalance,
 } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
@@ -41,6 +43,37 @@ export interface CheckBalanceDeps {
   ) => Promise<void>;
   /** Balance config for lazy initialization when no record exists, and the reservation TTL */
   balanceConfig?: BalanceConfig;
+  /** Read on the refusal path only, to tell the user when their credits come back. */
+  findBalanceByUser?: (user: string) => Promise<IBalance | null>;
+}
+
+/**
+ * When auto-refill will next top this user up. Refill fires on exhaustion once the interval has
+ * elapsed, so a refused request means it is still pending and this date is when it becomes due.
+ * Returns undefined when auto-refill is off, so the client never promises a renewal that is not coming.
+ */
+async function getRefillAt(
+  user: string,
+  deps: Pick<CheckBalanceDeps, 'findBalanceByUser'>,
+): Promise<string | undefined> {
+  if (!deps.findBalanceByUser) {
+    return undefined;
+  }
+  try {
+    const record = await deps.findBalanceByUser(user);
+    if (!record?.autoRefillEnabled || !record.lastRefill || !(record.refillAmount > 0)) {
+      return undefined;
+    }
+    const due = getRefillEligibilityDate(
+      new Date(record.lastRefill),
+      record.refillIntervalValue ?? 0,
+      record.refillIntervalUnit ?? 'days',
+    );
+    return Number.isFinite(due.getTime()) ? due.toISOString() : undefined;
+  } catch (error) {
+    logger.debug('[Balance.check] Could not resolve next refill date', { user, error });
+    return undefined;
+  }
 }
 
 /**
@@ -260,6 +293,11 @@ export async function checkBalance(
     tokenCost,
     promptTokens: txData.amount,
   };
+
+  const refillAt = await getRefillAt(user, deps);
+  if (refillAt) {
+    errorMessage.refillAt = refillAt;
+  }
 
   if (txData.generations && txData.generations.length > 0) {
     errorMessage.generations = txData.generations;

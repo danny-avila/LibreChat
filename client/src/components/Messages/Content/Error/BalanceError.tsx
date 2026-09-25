@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import type { ErrorRendererProps, JsonValue } from './parts';
 import {
   ErrorBody,
@@ -40,8 +41,23 @@ function readGeneration(generation: JsonValue): GenerationRow | null {
   };
 }
 
+/** Absent whenever auto-refill is off, so the message never promises a renewal that is not coming. */
+function readRefillDate(json: ErrorRendererProps['json'], locale: string): string | null {
+  const refillAt = readString(json, 'refillAt');
+  if (refillAt == null) {
+    return null;
+  }
+  const date = new Date(refillAt);
+  if (!Number.isFinite(date.getTime())) {
+    return null;
+  }
+  return new Intl.DateTimeFormat(locale, { dateStyle: 'long' }).format(date);
+}
+
 export default function BalanceError({ json }: ErrorRendererProps) {
   const localize = useLocalize();
+  const { i18n } = useTranslation();
+  const refillDate = readRefillDate(json, i18n.resolvedLanguage ?? 'en');
   const balance = readNumber(json, 'balance');
   const tokenCost = readNumber(json, 'tokenCost');
   const promptTokens = readNumber(json, 'promptTokens');
@@ -60,6 +76,10 @@ export default function BalanceError({ json }: ErrorRendererProps) {
   return (
     <ErrorBody>
       <p>{summary}</p>
+      {refillDate != null ? (
+        <p>{localize('com_error_token_balance_refill', { 0: refillDate })}</p>
+      ) : null}
+      <p>{localize('com_error_token_balance_help')}</p>
       {promptTokens != null ? (
         <p className="text-text-secondary">
           {localize('com_error_token_balance_prompt', { 0: formatNumber(promptTokens) })}

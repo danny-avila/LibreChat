@@ -7,6 +7,7 @@ import { useDocumentTitle, useHasAccess, useLocalize, TranslationKeys } from '~/
 import { useGetEndpointsQuery, useGetAgentCategoriesQuery } from '~/data-provider';
 import MarketplaceAdminSettings from './MarketplaceAdminSettings';
 import OpenSidebar from '~/components/Chat/Menus/OpenSidebar';
+import { DEFAULT_APP_TITLE } from '~/utils/documentTitle';
 import { SidePanelGroup } from '~/components/SidePanel';
 import CategoryTabs from './CategoryTabs';
 import SearchBar from './SearchBar';
@@ -47,7 +48,7 @@ const AgentMarketplace: React.FC<AgentMarketplaceProps> = ({ className = '' }) =
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Set page title
-  useDocumentTitle(`${localize('com_agents_marketplace')} | LibreChat`);
+  useDocumentTitle(`${localize('com_agents_marketplace')} | ${DEFAULT_APP_TITLE}`);
 
   // Ensure endpoints config is loaded first (required for agent queries)
   useGetEndpointsQuery();
