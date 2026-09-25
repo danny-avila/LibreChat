@@ -862,6 +862,129 @@ describe('Message Operations', () => {
       expect(saved?.attachments).toEqual([{ file_id: 'f1', toolCallId: 'call_bg' }]);
     });
 
+    describe('a step id the persisted part lost', () => {
+      const conversationId = () => mockMessageData.conversationId as string;
+      const partOutputs = async () => {
+        const saved = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+        return (
+          saved?.content as Array<{ tool_call?: { id: string; stepId?: string; output?: string } }>
+        )
+          .filter((part) => part.tool_call != null)
+          .map((part) => [
+            part.tool_call?.id,
+            part.tool_call?.stepId ?? null,
+            part.tool_call?.output,
+          ]);
+      };
+
+      it('patches the one part a resumed turn saved without its step id', async () => {
+        await saveMessage(mockCtx, { ...mockMessageData, content: toolCallContent() });
+
+        const result = await updateToolCallResult({
+          userId: 'user123',
+          messageId: 'msg123',
+          conversationId: conversationId(),
+          toolCallId: 'call_bg',
+          stepId: 'step_before_pause',
+          output: 'stdout:\nfinished during the pause',
+          attachments: [{ file_id: 'report', toolCallId: 'call_bg' }],
+        });
+
+        expect(result).toEqual({ matched: true, unfinished: false });
+        expect(await partOutputs()).toEqual([
+          ['call_bg', null, 'stdout:\nfinished during the pause'],
+          ['call_other', null, 'untouched'],
+        ]);
+        const saved = await Message.findOne({ messageId: 'msg123', user: 'user123' }).lean();
+        expect(saved?.attachments).toEqual([{ file_id: 'report', toolCallId: 'call_bg' }]);
+      });
+
+      it('still prefers the part whose step id matches exactly', async () => {
+        await saveMessage(mockCtx, {
+          ...mockMessageData,
+          content: [
+            {
+              type: 'tool_call',
+              tool_call: { id: 'call_0', name: 'execute_code', output: 'stepless' },
+            },
+            {
+              type: 'tool_call',
+              tool_call: { id: 'call_0', name: 'execute_code', stepId: 'step_b', output: 'handle' },
+            },
+          ],
+        });
+
+        await updateToolCallResult({
+          userId: 'user123',
+          messageId: 'msg123',
+          conversationId: conversationId(),
+          toolCallId: 'call_0',
+          stepId: 'step_b',
+          output: 'settled',
+        });
+
+        expect(await partOutputs()).toEqual([
+          ['call_0', null, 'stepless'],
+          ['call_0', 'step_b', 'settled'],
+        ]);
+      });
+
+      it('does not guess on a row the turn is still writing', async () => {
+        await saveMessage(mockCtx, {
+          ...mockMessageData,
+          unfinished: true,
+          content: toolCallContent(),
+        });
+
+        const result = await updateToolCallResult({
+          userId: 'user123',
+          messageId: 'msg123',
+          conversationId: conversationId(),
+          toolCallId: 'call_bg',
+          stepId: 'step_not_saved_yet',
+          output: 'settled',
+        });
+
+        expect(result).toEqual({ matched: false, unfinished: false });
+        expect((await partOutputs())[0]).toEqual([
+          'call_bg',
+          null,
+          '{"background_task_id":"task-1"}',
+        ]);
+      });
+
+      it('leaves an ambiguous repeated call id unmatched rather than guessing', async () => {
+        await saveMessage(mockCtx, {
+          ...mockMessageData,
+          content: [
+            {
+              type: 'tool_call',
+              tool_call: { id: 'call_0', name: 'execute_code', output: 'first' },
+            },
+            {
+              type: 'tool_call',
+              tool_call: { id: 'call_0', name: 'execute_code', output: 'second' },
+            },
+          ],
+        });
+
+        const result = await updateToolCallResult({
+          userId: 'user123',
+          messageId: 'msg123',
+          conversationId: conversationId(),
+          toolCallId: 'call_0',
+          stepId: 'step_lost',
+          output: 'settled',
+        });
+
+        expect(result).toEqual({ matched: false, unfinished: false });
+        expect(await partOutputs()).toEqual([
+          ['call_0', null, 'first'],
+          ['call_0', null, 'second'],
+        ]);
+      });
+    });
+
     it('appends to existing attachments instead of replacing them', async () => {
       await saveMessage(mockCtx, {
         ...mockMessageData,
@@ -1025,7 +1148,16 @@ describe('Message Operations', () => {
     });
 
     it('reports no match when the targeted tool-call part is absent', async () => {
-      await saveMessage(mockCtx, { ...mockMessageData, content: toolCallContent() });
+      /** The call was saved under a different, stamped step: a real mismatch, not
+       * a part that lost its step id. */
+      await saveMessage(mockCtx, {
+        ...mockMessageData,
+        content: toolCallContent().map((part) =>
+          part.tool_call?.id === 'call_bg'
+            ? { ...part, tool_call: { ...part.tool_call, stepId: 'other-step' } }
+            : part,
+        ),
+      });
 
       await expect(
         updateToolCallResult({
