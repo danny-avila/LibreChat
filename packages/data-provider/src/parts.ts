@@ -44,6 +44,8 @@ type TextShape = {
   textObject?: TextObjectFields;
   /** The stored part had no text field at all, which is not the same as an empty string. */
   textAbsent?: true;
+  /** The value the stored annotations index into; an edit away from it drops them. */
+  annotatedValue?: string;
 };
 
 export type UITextPartMetadata = Omit<ContentPartOf<ContentTypes.TEXT>, 'type' | 'text'> &
@@ -257,7 +259,12 @@ const splitText = (text: string | TextData | undefined): { value: string } & Tex
     return { value: text ?? '' };
   }
   const { value, ...textObject } = text;
-  return { value: value ?? '', textObject };
+  const stored = value ?? '';
+  return {
+    value: stored,
+    textObject,
+    ...((textObject.annotations?.length ?? 0) > 0 && { annotatedValue: stored }),
+  };
 };
 
 /** Restores the stored text field; `undefined` means the field is left off the part. */
@@ -265,7 +272,14 @@ const joinText = (value: string, shape: TextShape): string | Text | undefined =>
   if (shape.textAbsent && value === '') {
     return undefined;
   }
-  return shape.textObject ? { ...shape.textObject, value } : value;
+  if (!shape.textObject) {
+    return value;
+  }
+  if (shape.annotatedValue !== undefined && value !== shape.annotatedValue) {
+    const { annotations: _stale, ...textObject } = shape.textObject;
+    return { ...textObject, value };
+  }
+  return { ...shape.textObject, value };
 };
 
 const thinkOpenPattern = /^\s*<think>\s*/;
@@ -290,6 +304,7 @@ const toTextMetadata = <M extends object>(rest: M, shape: TextShape) => ({
   ...rest,
   ...(shape.textObject && { textObject: shape.textObject }),
   ...(shape.textAbsent && { textAbsent: shape.textAbsent }),
+  ...(shape.annotatedValue !== undefined && { annotatedValue: shape.annotatedValue }),
 });
 
 const parseToolInput = (args: UIToolInput | undefined) => {
@@ -419,7 +434,7 @@ const toToolPart = (
 
   return {
     type: `tool-${name}`,
-    toolCallId: id || `${ContentTypes.TOOL_CALL}-${index}`,
+    toolCallId: id || `${ContentTypes.TOOL_CALL}-${part.streamedIndex ?? index}`,
     state,
     ...(input !== undefined && { input }),
     ...(state === 'output-available' && output !== undefined && { output }),
@@ -664,15 +679,16 @@ const fromToolPart = (part: UIToolPart): TMessageContentParts => {
 export function fromUIPart(part: UIMessagePart): TMessageContentParts | undefined {
   switch (part.type) {
     case 'text': {
-      const { textObject, textAbsent, ...rest } = part.providerMetadata?.librechat ?? {};
-      const text = joinText(part.text, { textObject, textAbsent });
+      const { textObject, textAbsent, annotatedValue, ...rest } =
+        part.providerMetadata?.librechat ?? {};
+      const text = joinText(part.text, { textObject, textAbsent, annotatedValue });
       return { type: ContentTypes.TEXT, ...(text !== undefined && { text }), ...rest };
     }
     case 'reasoning': {
-      const { textObject, textAbsent, thinkOpen, thinkClose, ...rest } =
+      const { textObject, textAbsent, annotatedValue, thinkOpen, thinkClose, ...rest } =
         part.providerMetadata?.librechat ?? {};
       const wrapped = `${thinkOpen ?? ''}${part.text}${thinkClose ?? ''}`;
-      const think = joinText(wrapped, { textObject, textAbsent });
+      const think = joinText(wrapped, { textObject, textAbsent, annotatedValue });
       return { type: ContentTypes.THINK, ...(think !== undefined && { think }), ...rest };
     }
     case 'file':

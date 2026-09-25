@@ -1101,6 +1101,41 @@ describe('parts', () => {
     });
   });
 
+  describe('stable identities', () => {
+    it('derives a fallback tool call id from the streamed index', () => {
+      const part = {
+        type: ContentTypes.TOOL_CALL,
+        streamedIndex: 3,
+        tool_call: { type: 'tool_call', name: 'search', args: '{}' },
+      } as TMessageContentParts;
+
+      expect(toUIPart(part, 2)).toMatchObject({ toolCallId: 'tool_call-3' });
+    });
+
+    it('drops annotations once their text is edited', () => {
+      const annotations = [
+        {
+          type: 'file_path' as const,
+          text: 'file',
+          start_index: 4,
+          end_index: 8,
+          file_path: { file_id: 'f' },
+        },
+      ];
+      const part = {
+        type: ContentTypes.TEXT,
+        text: { value: 'See file', annotations },
+      } as TMessageContentParts;
+      const view = toUIPart(part) as Extract<UIMessagePart, { type: 'text' }>;
+
+      expect(fromUIPart(view)).toStrictEqual(part);
+      expect(fromUIPart({ ...view, text: 'Rewritten' })).toEqual({
+        type: ContentTypes.TEXT,
+        text: { value: 'Rewritten' },
+      });
+    });
+  });
+
   it('narrows tool and data parts', () => {
     const parts = toUIParts(recorded.agentUpdate.concat(recorded.toolCompleted[1]));
 
