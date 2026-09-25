@@ -22,6 +22,7 @@ export {
 export {
   HIGH_CONTRAST_THEME_NAME,
   THEME_VERSION,
+  collectThemeWarnings,
   defaultAppearance,
   defaultBrands,
   fromLegacyTheme,

@@ -1,5 +1,6 @@
 import type { ThemeDefinition } from './types';
 import {
+  collectThemeWarnings,
   defaultAppearance,
   defaultBrands,
   fromLegacyTheme,
@@ -512,9 +513,95 @@ describe('theme registry', () => {
       'Invalid appearance value for shadowXs: 0,',
       'Invalid appearance value for shadowSm: 0 2px 4px var(--brand-shadow)',
       'Invalid appearance value for shadow2xs: 0 env(safe-area-inset-tpo) 1px black',
-      'Unknown appearance token: unknownSpacing',
     ]);
     expect(() => resolveTheme(invalidTheme, 'light')).toThrow(TypeError);
+  });
+
+  describe('appearance tokens this reader does not know', () => {
+    const newerTheme = {
+      version: 1,
+      name: 'newer',
+      modes: {
+        light: {
+          colors: { 'rgb-text-primary': '1 2 3' },
+          appearance: { controlRadius: '2px', shadowTint: '0 1px 2px black' },
+        },
+        dark: { appearance: { futureSpacing: '3rem' } },
+      },
+      brands: { 'provider-openai': '#123456' },
+    } as ThemeDefinition;
+
+    it('resolves the rest of the definition and reports the unknown key', () => {
+      expect(validateThemeDefinition(newerTheme)).toEqual([]);
+      expect(collectThemeWarnings(newerTheme)).toEqual([
+        'Unknown light appearance token ignored: shadowTint',
+        'Unknown dark appearance token ignored: futureSpacing',
+      ]);
+
+      const light = resolveTheme(newerTheme, 'light');
+      expect(light.colors['rgb-text-primary']).toBe('1 2 3');
+      expect(light.appearance).toEqual({ ...defaultAppearance, controlRadius: '2px' });
+      expect(light.brands['provider-openai']).toBe('#123456');
+      expect(resolveTheme(newerTheme, 'dark').appearance).toEqual(defaultAppearance);
+    });
+
+    it('reports nothing for a definition that only uses known tokens', () => {
+      expect(collectThemeWarnings(compactTheme)).toEqual([]);
+      expect(collectThemeWarnings(libreChatTheme)).toEqual([]);
+    });
+
+    it('still rejects an invalid value for a known key beside an unknown one', () => {
+      const theme = {
+        version: 1,
+        name: 'mixed',
+        modes: { light: { appearance: { controlRadius: 'huge', futureSpacing: '1rem' } } },
+      } as ThemeDefinition;
+
+      expect(validateThemeDefinition(theme)).toEqual([
+        'Invalid appearance value for controlRadius: huge',
+      ]);
+      expect(() => resolveTheme(theme, 'light')).toThrow(TypeError);
+    });
+
+    it('still rejects an unknown colour token', () => {
+      const theme = {
+        version: 1,
+        name: 'colour',
+        modes: {
+          light: { colors: { 'rgb-future': '1 2 3' }, appearance: { futureSpacing: '1rem' } },
+        },
+      } as ThemeDefinition;
+
+      expect(validateThemeDefinition(theme)).toEqual(['Unknown color token: rgb-future']);
+    });
+
+    it('still rejects an injection attempt carried by an unknown key', () => {
+      const theme = {
+        version: 1,
+        name: 'injection',
+        modes: {
+          light: {
+            appearance: {
+              futureSpacing: '1rem; } body { display: none',
+              futureImage: 'url(https://example.com/x.png)',
+              futureMarkup: '</style><script>',
+              futureObject: { nested: true },
+              'future-name;}': '1rem',
+              constructor: '1rem',
+            },
+          },
+        },
+      } as unknown as ThemeDefinition;
+
+      expect(validateThemeDefinition(theme)).toEqual([
+        'Invalid appearance value for futureSpacing: 1rem; } body { display: none',
+        'Invalid appearance value for futureImage: url(https://example.com/x.png)',
+        'Invalid appearance value for futureMarkup: </style><script>',
+        'Invalid appearance value for futureObject: [object Object]',
+        'Invalid appearance value for future-name;}: 1rem',
+      ]);
+      expect(() => resolveTheme(theme, 'light')).toThrow(TypeError);
+    });
   });
 
   /** A caller may seed a theme from the exported defaults or round-trip a resolved theme. */
