@@ -38,13 +38,18 @@ export type LibreChatProviderMetadata<T> = { librechat: T };
 /** Fields of a `TextData` object other than its value, kept so the object form round-trips. */
 type TextObjectFields = Omit<NonNullable<TextData>, 'value'>;
 
-export type UITextPartMetadata = Omit<ContentPartOf<ContentTypes.TEXT>, 'type' | 'text'> & {
+/** How the stored text field was shaped, so the reverse mapping restores that shape. */
+type TextShape = {
   textObject?: TextObjectFields;
+  /** The stored part had no text field at all, which is not the same as an empty string. */
+  textAbsent?: true;
 };
 
-export type UIReasoningPartMetadata = Omit<ContentPartOf<ContentTypes.THINK>, 'type' | 'think'> & {
-  textObject?: TextObjectFields;
-};
+export type UITextPartMetadata = Omit<ContentPartOf<ContentTypes.TEXT>, 'type' | 'text'> &
+  TextShape;
+
+export type UIReasoningPartMetadata = Omit<ContentPartOf<ContentTypes.THINK>, 'type' | 'think'> &
+  TextShape;
 
 /** AI SDK `TextUIPart`. */
 export type UITextPart = {
@@ -102,8 +107,12 @@ export type UIStepStartPart = { type: 'step-start' };
 export type UIToolState =
   | 'input-streaming'
   | 'input-available'
+  | 'approval-requested'
   | 'output-available'
   | 'output-error';
+
+/** AI SDK tool `approval`, for a call paused for human review. */
+export type UIToolApproval = { id: string; requestReason?: string };
 
 export type UIToolInput = Agents.ToolCall['args'] | object;
 export type UIToolOutput = string | CodeInterpreterOutputs;
@@ -118,8 +127,9 @@ export type UIToolPartMetadata = Omit<ToolCallContentPart, 'type' | 'tool_call'>
 };
 
 /**
- * AI SDK `ToolUIPart`: `tool-<name>` with a lifecycle `state`. Cancelled and failed steps both
- * surface as `output-error`; the exact run-step status stays on the stored call.
+ * AI SDK `ToolUIPart`: `tool-<name>` with a lifecycle `state`. Cancelled, failed, rejected and
+ * background-cancelled calls all surface as `output-error`; the exact marker stays on the stored
+ * call. A call paused for human review is `approval-requested`.
  */
 export type UIToolPart = {
   type: `tool-${string}`;
@@ -128,6 +138,7 @@ export type UIToolPart = {
   input?: UIToolInput;
   output?: UIToolOutput;
   errorText?: string;
+  approval?: UIToolApproval;
   callProviderMetadata?: LibreChatProviderMetadata<UIToolPartMetadata>;
 };
 
@@ -165,6 +176,11 @@ export type UIMessageMetadata = Pick<
 > & {
   /** Set when the message had no `content`, so its parts were built from `text` and `files`. */
   contentless?: boolean;
+  /**
+   * The stored `text` of a content-bearing message, present only when it differs from the text
+   * parts joined, so a rebuild without a stored base keeps it.
+   */
+  text?: string;
   /** Agents that produced parts of this message, in order of first appearance. */
   agentIds?: string[];
   /** Parallel content groups present in this message, in order of first appearance. */
@@ -174,10 +190,13 @@ export type UIMessageMetadata = Pick<
   summaries?: DataOf<ContentTypes.SUMMARY>[];
 };
 
-/** AI SDK `UIMessage`. */
+/**
+ * AI SDK `UIMessage`. `role` omits the AI SDK's `system`: a `TMessage` is either created by the
+ * user or not, so a system role could not survive the reverse mapping.
+ */
 export type UIMessage = {
   id: string;
-  role: 'system' | 'user' | 'assistant';
+  role: 'user' | 'assistant';
   metadata?: UIMessageMetadata;
   parts: UIMessagePart[];
 };
@@ -213,9 +232,10 @@ const hasKeys = (value: object) => Object.keys(value).length > 0;
 const withLibreChatMetadata = <P extends object, M extends object>(part: P, metadata: M) =>
   hasKeys(metadata) ? { ...part, providerMetadata: { librechat: metadata } } : part;
 
-const splitText = (
-  text: string | TextData | undefined,
-): { value: string; textObject?: TextObjectFields } => {
+const splitText = (text: string | TextData | undefined): { value: string } & TextShape => {
+  if (text === undefined) {
+    return { value: '', textAbsent: true };
+  }
   if (text == null || typeof text === 'string') {
     return { value: text ?? '' };
   }
@@ -223,8 +243,19 @@ const splitText = (
   return { value: value ?? '', textObject };
 };
 
-const joinText = (value: string, textObject?: TextObjectFields): string | Text =>
-  textObject ? { ...textObject, value } : value;
+/** Restores the stored text field; `undefined` means the field is left off the part. */
+const joinText = (value: string, shape: TextShape): string | Text | undefined => {
+  if (shape.textAbsent && value === '') {
+    return undefined;
+  }
+  return shape.textObject ? { ...shape.textObject, value } : value;
+};
+
+const toTextMetadata = <M extends object>(rest: M, shape: TextShape) => ({
+  ...rest,
+  ...(shape.textObject && { textObject: shape.textObject }),
+  ...(shape.textAbsent && { textAbsent: shape.textAbsent }),
+});
 
 const parseToolInput = (args: UIToolInput | undefined) => {
   if (typeof args !== 'string') {
@@ -237,61 +268,100 @@ const parseToolInput = (args: UIToolInput | undefined) => {
   }
 };
 
-type ToolCallFields = { name: string; id?: string; args?: UIToolInput; output?: UIToolOutput };
+type ToolCallFields = {
+  name: string;
+  id?: string;
+  args?: UIToolInput;
+  output?: UIToolOutput;
+  /** Whether the call's output was submitted, by that variant's own sentinel. */
+  submitted: boolean;
+};
 
 const readToolCall = (toolCall: ToolCallValue): ToolCallFields => {
   switch (toolCall.type) {
     case 'function':
       return {
         name: toolCall.function.name,
-        id: toolCall.id,
+        id: toolCall.id || undefined,
         args: toolCall.function.arguments,
         output: toolCall.function.output ?? undefined,
+        submitted: toolCall.function.output != null,
       };
     case 'code_interpreter':
       return {
         name: toolCall.type,
-        id: toolCall.id,
+        id: toolCall.id || undefined,
         args: toolCall.code_interpreter.input,
         output: toolCall.code_interpreter.outputs,
+        submitted: toolCall.code_interpreter.outputs.length > 0,
       };
     case 'retrieval':
     case 'file_search':
-      return { name: toolCall.type, id: toolCall.id };
+      return { name: toolCall.type, id: toolCall.id || undefined, submitted: false };
     default:
       return {
         name: toolCall.name,
-        id: toolCall.id ?? toolCall.stepId,
+        id: toolCall.id || toolCall.stepId || undefined,
         args: toolCall.args,
         output: toolCall.output,
+        submitted: toolCall.output != null && toolCall.output !== '',
       };
   }
 };
 
+/**
+ * The durable failure marker a stored call carries, if any: a failed or cancelled run step, a
+ * cancelled background task, or arguments rejected by schema validation.
+ */
+const getToolFailure = (toolCall: ToolCallValue): string | undefined => {
+  const { runStepStatus } = toolCall;
+  if (runStepStatus === 'failed' || runStepStatus === 'cancelled') {
+    return runStepStatus;
+  }
+  if (!('name' in toolCall)) {
+    return undefined;
+  }
+  if (toolCall.backgroundTask?.cancelled) {
+    return 'cancelled';
+  }
+  return toolCall.inputValidationError ? 'input-validation-error' : undefined;
+};
+
+const getToolApproval = (toolCall: ToolCallValue): UIToolApproval | undefined => {
+  if (!('name' in toolCall) || !toolCall.approval) {
+    return undefined;
+  }
+  const { actionId, description } = toolCall.approval;
+  return { id: actionId, ...(description && { requestReason: description }) };
+};
+
 const toToolPart = (part: ToolCallContentPart, index: number): UIToolPart => {
   const { tool_call: toolCall, type: _type, ...partMetadata } = part;
-  const { name, id, args, output } = readToolCall(toolCall);
+  const { name, id, args, output, submitted } = readToolCall(toolCall);
   const { input, complete } = parseToolInput(args);
   const { runStepStatus, progress } = toolCall;
-  const failed = runStepStatus === 'failed' || runStepStatus === 'cancelled';
-  const hasOutput = output != null && output !== '';
+  const failure = getToolFailure(toolCall);
+  const approval = submitted ? undefined : getToolApproval(toolCall);
 
   let state: UIToolState = complete ? 'input-available' : 'input-streaming';
-  if (failed) {
+  if (failure) {
     state = 'output-error';
-  } else if (hasOutput || runStepStatus === 'completed' || (progress ?? 0) >= 1) {
+  } else if (submitted || runStepStatus === 'completed' || (progress ?? 0) >= 1) {
     state = 'output-available';
+  } else if (approval) {
+    state = 'approval-requested';
   }
 
   return {
     type: `tool-${name}`,
-    toolCallId: id ?? `${ContentTypes.TOOL_CALL}-${index}`,
+    toolCallId: id || `${ContentTypes.TOOL_CALL}-${index}`,
     state,
     ...(input !== undefined && { input }),
     ...(state === 'output-available' && output !== undefined && { output }),
     ...(state === 'output-error' && {
-      errorText: typeof output === 'string' && output ? output : runStepStatus,
+      errorText: typeof output === 'string' && output ? output : failure,
     }),
+    ...(state === 'approval-requested' && { approval }),
     callProviderMetadata: { librechat: { ...partMetadata, toolCall } },
   };
 };
@@ -312,10 +382,10 @@ export function toUIPart(part: MappableContentPart | null | undefined, index = 0
   switch (part.type) {
     case ContentTypes.TEXT: {
       const { type: _type, text, ...rest } = part;
-      const { value, textObject } = splitText(text);
+      const { value, ...shape } = splitText(text);
       return withLibreChatMetadata(
         { type: 'text', text: value } satisfies UITextPart,
-        textObject ? { ...rest, textObject } : rest,
+        toTextMetadata(rest, shape),
       );
     }
     case ContentTypes.TEXT_DELTA: {
@@ -324,10 +394,10 @@ export function toUIPart(part: MappableContentPart | null | undefined, index = 0
     }
     case ContentTypes.THINK: {
       const { type: _type, think, ...rest } = part;
-      const { value, textObject } = splitText(think);
+      const { value, ...shape } = splitText(think);
       return withLibreChatMetadata(
         { type: 'reasoning', text: value } satisfies UIReasoningPart,
-        textObject ? { ...rest, textObject } : rest,
+        toTextMetadata(rest, shape),
       );
     }
     case ContentTypes.TOOL_CALL:
@@ -399,14 +469,40 @@ export function toUIParts(content: ReadonlyArray<MappableContentPart | null | un
   return parts;
 }
 
+/**
+ * Writes the view's `url`, `filename` and `mediaType` onto a stored file record where they differ
+ * from what the forward mapping derived, so an edit lands and an untouched part round-trips.
+ */
+const applyFileEdits = <F extends Partial<TFile>>(
+  file: F,
+  part: UIFilePart,
+  fallbackType: string,
+) => {
+  const edited = { ...file };
+  if (part.url !== file.filepath) {
+    edited.filepath = part.url;
+  }
+  if (part.filename !== undefined && part.filename !== file.filename) {
+    edited.filename = part.filename;
+  }
+  if (part.mediaType !== (file.type || fallbackType)) {
+    edited.type = part.mediaType;
+  }
+  return edited;
+};
+
 const fromFilePart = (
   part: UIFilePart,
   metadata: UIFilePartMetadata,
 ): TMessageContentParts | undefined => {
   switch (metadata.source) {
     case ContentTypes.IMAGE_FILE: {
-      const { source: _source, ...rest } = metadata;
-      return { type: ContentTypes.IMAGE_FILE, ...rest };
+      const { source: _source, image_file: imageFile, ...rest } = metadata;
+      return {
+        type: ContentTypes.IMAGE_FILE,
+        image_file: applyFileEdits(imageFile, part, 'image/*'),
+        ...rest,
+      };
     }
     case ContentTypes.IMAGE_URL: {
       const { source: _source, urlObject, detail, ...rest } = metadata;
@@ -443,6 +539,14 @@ const fromToolPart = (part: UIToolPart): TMessageContentParts => {
         args: typeof part.input === 'string' ? part.input : JSON.stringify(part.input),
       }),
       ...(output !== undefined && { output }),
+      ...(part.state === 'output-error' && { runStepStatus: 'failed' as const }),
+      ...(part.approval && {
+        approval: {
+          actionId: part.approval.id,
+          allowed_decisions: [],
+          ...(part.approval.requestReason && { description: part.approval.requestReason }),
+        },
+      }),
     },
   };
 };
@@ -458,12 +562,14 @@ const fromToolPart = (part: UIToolPart): TMessageContentParts => {
 export function fromUIPart(part: UIMessagePart): TMessageContentParts | undefined {
   switch (part.type) {
     case 'text': {
-      const { textObject, ...rest } = part.providerMetadata?.librechat ?? {};
-      return { type: ContentTypes.TEXT, text: joinText(part.text, textObject), ...rest };
+      const { textObject, textAbsent, ...rest } = part.providerMetadata?.librechat ?? {};
+      const text = joinText(part.text, { textObject, textAbsent });
+      return { type: ContentTypes.TEXT, ...(text !== undefined && { text }), ...rest };
     }
     case 'reasoning': {
-      const { textObject, ...rest } = part.providerMetadata?.librechat ?? {};
-      return { type: ContentTypes.THINK, think: joinText(part.text, textObject), ...rest };
+      const { textObject, textAbsent, ...rest } = part.providerMetadata?.librechat ?? {};
+      const think = joinText(part.text, { textObject, textAbsent });
+      return { type: ContentTypes.THINK, ...(think !== undefined && { think }), ...rest };
     }
     case 'file':
       return part.providerMetadata
@@ -506,18 +612,43 @@ const toAttachmentFilePart = (file: Partial<TFile>): UIFilePart | undefined => {
   };
 };
 
-const toSourceParts = (attachment: TAttachment): UISourceUrlPart[] => {
+type SourceLink = { link: string; title?: string };
+
+/** The linkable results of a web search: organic, top stories, and plain link references. */
+const getSourceLinks = (attachment: TAttachment): SourceLink[] => {
   const results = attachment[Tools.web_search];
   if (!results) {
     return [];
   }
-  const sources = [...(results.organic ?? []), ...(results.topStories ?? [])];
-  return sources.map((source, i) => ({
-    type: 'source-url',
-    sourceId: `${attachment.toolCallId}-${i}`,
-    url: source.link,
-    ...(source.title && { title: source.title }),
-  }));
+  const links: SourceLink[] = [...(results.organic ?? []), ...(results.topStories ?? [])];
+  for (const reference of results.references ?? []) {
+    if (reference.type === 'link') {
+      links.push(reference);
+    }
+  }
+  return links;
+};
+
+/**
+ * Appends one `source-url` part per distinct URL across every search attachment. The id carries a
+ * message-wide ordinal, since provider tool-call ids repeat across agents and turns.
+ */
+const pushSourceParts = (parts: UIMessagePart[], attachments: TAttachment[] | undefined) => {
+  const seen = new Set<string>();
+  for (const attachment of attachments ?? []) {
+    for (const source of getSourceLinks(attachment)) {
+      if (seen.has(source.link)) {
+        continue;
+      }
+      seen.add(source.link);
+      parts.push({
+        type: 'source-url',
+        sourceId: `${attachment.toolCallId}-${seen.size - 1}`,
+        url: source.link,
+        ...(source.title && { title: source.title }),
+      });
+    }
+  }
 };
 
 const pushUnique = <T>(seen: Set<T>, value: T | undefined) => {
@@ -541,6 +672,7 @@ export function toUIMessage(message: TMessage): UIMessage {
   const summaries: UIMessageMetadata['summaries'] = [];
 
   const contentless = !content || (content.length === 0 && (message.text?.length ?? 0) > 0);
+  let joinedText = '';
 
   if (content && !contentless) {
     for (let i = 0; i < content.length; i++) {
@@ -550,9 +682,14 @@ export function toUIMessage(message: TMessage): UIMessage {
       if (part == null) {
         continue;
       }
-      pushUnique(agentIds, part.agentId);
+      pushUnique(
+        agentIds,
+        part.agentId ?? (part.type === ContentTypes.TOOL_CALL ? part.tool_call.agentId : undefined),
+      );
       pushUnique(groupIds, part.groupId);
-      if (uiPart.type === 'data-agent-update') {
+      if (uiPart.type === 'text') {
+        joinedText += uiPart.text;
+      } else if (uiPart.type === 'data-agent-update') {
         pushUnique(agentIds, uiPart.data.agent_update.agentId);
       } else if (uiPart.type === 'data-activity-label') {
         activityLabels.push(uiPart.data);
@@ -572,9 +709,7 @@ export function toUIMessage(message: TMessage): UIMessage {
       parts.push(filePart);
     }
   }
-  for (const attachment of message.attachments ?? []) {
-    parts.push(...toSourceParts(attachment));
-  }
+  pushSourceParts(parts, message.attachments);
 
   const metadata: UIMessageMetadata = {
     conversationId: message.conversationId,
@@ -586,6 +721,9 @@ export function toUIMessage(message: TMessage): UIMessage {
     ...(message.unfinished !== undefined && { unfinished: message.unfinished }),
     ...(message.createdAt !== undefined && { createdAt: message.createdAt }),
     ...(contentless && { contentless: true }),
+    ...(!contentless &&
+      message.text !== undefined &&
+      message.text !== joinedText && { text: message.text }),
     ...(agentIds.size > 0 && { agentIds: Array.from(agentIds) }),
     ...(groupIds.size > 0 && { groupIds: Array.from(groupIds) }),
     ...(activityLabels.length > 0 && { activityLabels }),
@@ -627,12 +765,16 @@ const joinPartText = (parts: ReadonlyArray<UIMessagePart | undefined>) => {
 };
 
 /**
- * `TMessage.text` of a content-bearing message is not derived from its parts, so it is kept
- * unless the text parts changed, in which case the view's text wins.
+ * `TMessage.text` of a content-bearing message is not derived from its parts, so the stored text
+ * is kept unless the text parts changed, in which case the view's text wins. Without a base the
+ * stored text travels in `metadata.text`.
  */
-const resolveText = (text: string, contentless: boolean, base?: TMessage) => {
-  if (contentless || base?.text === undefined) {
+const resolveText = (text: string, metadata: UIMessageMetadata | undefined, base?: TMessage) => {
+  if (metadata?.contentless) {
     return text;
+  }
+  if (base?.text === undefined) {
+    return metadata?.text ?? text;
   }
   const baseText = joinPartText((base.content ?? []).map((part) => toUIPart(part)));
   return text === baseText ? base.text : text;
@@ -640,16 +782,13 @@ const resolveText = (text: string, contentless: boolean, base?: TMessage) => {
 
 /**
  * Attachment `file` parts (those without content metadata) describe `message.files`: stored
- * entries are kept by path in view order, new parts become entries, and stored entries the view
- * never showed (no `filepath`) are kept.
+ * entries are matched by path in view order with the view's edits applied, new parts become
+ * entries, and stored entries the view never showed (no `filepath`) are kept.
  */
 const reconcileFiles = (
-  parts: ReadonlyArray<UIMessagePart>,
+  attachments: ReadonlyArray<UIFilePart>,
   baseFiles: TMessage['files'],
 ): TMessage['files'] => {
-  const attachments = parts.filter(
-    (part): part is UIFilePart => part.type === 'file' && !part.providerMetadata,
-  );
   if (!baseFiles && attachments.length === 0) {
     return undefined;
   }
@@ -662,39 +801,76 @@ const reconcileFiles = (
       hidden.push(file);
     }
   }
-  const files = attachments.map(
-    (part) =>
-      byPath.get(part.url) ?? {
-        filepath: part.url,
-        ...(part.filename && { filename: part.filename }),
-        type: part.mediaType,
-      },
-  );
+  const files = attachments.map((part) => {
+    const stored = byPath.get(part.url);
+    if (stored) {
+      return applyFileEdits(stored, part, 'application/octet-stream');
+    }
+    return {
+      filepath: part.url,
+      ...(part.filename && { filename: part.filename }),
+      type: part.mediaType,
+    };
+  });
   return files.concat(hidden);
+};
+
+/** Reads an identity field from metadata, where an explicit `null` is a value, not an absence. */
+const pickIdentity = <K extends 'conversationId' | 'parentMessageId'>(
+  key: K,
+  metadata: UIMessageMetadata | undefined,
+  base: TMessage | undefined,
+): TMessage[K] => {
+  if (metadata && metadata[key] !== undefined) {
+    return metadata[key];
+  }
+  return base?.[key] ?? null;
 };
 
 /**
  * Maps a `UIMessage` back onto a `TMessage`. `base` is the stored message with the same id,
  * whose fields the UI view does not carry (tree position, feedback, token counts) are kept;
  * without one the message is rebuilt from the view alone, metadata fields included.
+ * One pass over the parts collects the text, the content and the attachments.
  */
 export function fromUIMessage(message: UIMessage, base?: TMessage): TMessage {
   const metadata = message.metadata;
   const contentless = metadata?.contentless === true;
-  const text = joinPartText(message.parts);
+  const content: TMessageContentParts[] = [];
+  const attachments: UIFilePart[] = [];
+  let text = '';
+  for (let i = 0; i < message.parts.length; i++) {
+    const part = message.parts[i];
+    if (part.type === 'text') {
+      text += part.text;
+    } else if (part.type === 'file' && !part.providerMetadata) {
+      attachments.push(part);
+      continue;
+    }
+    if (contentless) {
+      continue;
+    }
+    const mapped = fromUIPart(part);
+    if (mapped) {
+      content[i] = mapped;
+    } else if (part.type === 'step-start') {
+      content.length = i + 1;
+    }
+  }
+
   const next: TMessage = {
     ...base,
     ...pickMessageFields(metadata),
     messageId: message.id,
     isCreatedByUser: message.role === 'user',
-    conversationId: metadata?.conversationId ?? base?.conversationId ?? null,
-    parentMessageId: metadata?.parentMessageId ?? base?.parentMessageId ?? null,
-    text: resolveText(text, contentless, base),
+    conversationId: pickIdentity('conversationId', metadata, base),
+    parentMessageId: pickIdentity('parentMessageId', metadata, base),
+    text: resolveText(text, metadata, base),
   };
   if (!contentless) {
-    next.content = fromUIParts(message.parts);
+    next.content = content;
   }
-  const files = reconcileFiles(message.parts, base?.files);
+  const files = reconcileFiles(attachments, base?.files);
   if (files) {
     next.files = files;
   }

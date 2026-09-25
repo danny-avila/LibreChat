@@ -1,6 +1,7 @@
 import type { MappableContentPart, UIMessagePart, UIToolPart } from './parts';
-import type { TMessageContentParts } from './types/content';
+import type { TMessageContentParts, PartMetadata } from './types/content';
 import type { TAttachment, TMessage } from './schemas';
+import type { Agents } from './types/agents';
 import {
   fromUIMessage,
   isUIToolPart,
@@ -463,6 +464,7 @@ describe('parts', () => {
         sender: 'Agent',
         model: 'agent-a',
         unfinished: true,
+        text: '',
         agentIds: ['agent-a', 'agent-b'],
         groupIds: [2, 1],
         steers: [{ steer: 'Focus on cats', steerId: 's-1' }],
@@ -603,7 +605,201 @@ describe('parts', () => {
         content: [{ type: ContentTypes.TEXT, text: 'Partial' }],
       });
 
-      expect(fromUIMessage(toUIMessage(message))).toEqual({ ...message, text: 'Partial' });
+      expect(fromUIMessage(toUIMessage(message))).toStrictEqual(message);
+    });
+  });
+
+  describe('stored shapes', () => {
+    const toolCall = (fields: Partial<Agents.ToolCall> & PartMetadata): TMessageContentParts => ({
+      type: ContentTypes.TOOL_CALL,
+      tool_call: { type: 'tool_call', name: 'search', args: '{"q":"cats"}', ...fields },
+    });
+
+    it('falls back from an empty tool call id to the host step id', () => {
+      expect(toUIPart(toolCall({ id: '', stepId: 'step-7' }), 3)).toMatchObject({
+        toolCallId: 'step-7',
+      });
+      expect(toUIPart(toolCall({ id: '' }), 3)).toMatchObject({ toolCallId: 'tool_call-3' });
+    });
+
+    it('reports durable failure markers as output-error', () => {
+      const cancelled = toolCall({
+        id: 'call-1',
+        output: 'partial',
+        progress: 1,
+        backgroundTask: {
+          version: 1,
+          taskId: 't',
+          toolName: 'search',
+          status: 'completed',
+          cancelled: true,
+          settledAt: new Date(0),
+        },
+      });
+      const rejected = toolCall({ id: 'call-2', progress: 1, inputValidationError: true });
+
+      expect(toUIPart(cancelled)).toMatchObject({ state: 'output-error', errorText: 'partial' });
+      expect(toUIPart(rejected)).toMatchObject({
+        state: 'output-error',
+        errorText: 'input-validation-error',
+      });
+    });
+
+    it('reports a call paused for review as approval-requested', () => {
+      const paused = toolCall({
+        id: 'call-1',
+        approval: { actionId: 'action-1', allowed_decisions: ['approve'], description: 'Run it?' },
+      });
+
+      expect(toUIPart(paused)).toMatchObject({
+        state: 'approval-requested',
+        approval: { id: 'action-1', requestReason: 'Run it?' },
+      });
+      expect(fromUIPart(toUIPart(paused))).toStrictEqual(paused);
+    });
+
+    it('treats an empty legacy function output as submitted', () => {
+      const part = toUIPart({
+        type: ContentTypes.TOOL_CALL,
+        tool_call: {
+          id: 'fn-1',
+          type: 'function',
+          function: { name: 'lookup', arguments: '{}', output: '' },
+        },
+      });
+
+      expect(part).toMatchObject({ state: 'output-available', output: '' });
+    });
+
+    it('keeps a text or think part without its text field', () => {
+      const text = { type: ContentTypes.TEXT } as TMessageContentParts;
+      const think = { type: ContentTypes.THINK } as TMessageContentParts;
+
+      expect(fromUIPart(toUIPart(text))).toStrictEqual(text);
+      expect(fromUIPart(toUIPart(think))).toStrictEqual(think);
+    });
+
+    it('persists the failure of a hand-built error tool part', () => {
+      const part: UIToolPart = {
+        type: 'tool-search',
+        toolCallId: 'call-9',
+        state: 'output-error',
+        input: { q: 'dogs' },
+        errorText: 'Timed out',
+      };
+
+      expect(toUIPart(fromUIPart(part))).toMatchObject({
+        state: 'output-error',
+        errorText: 'Timed out',
+      });
+    });
+
+    it('collects agents that own only a nested tool call', () => {
+      const message = createMessage({ content: [toolCall({ id: 'call-1', agentId: 'agent-z' })] });
+
+      expect(toUIMessage(message).metadata?.agentIds).toEqual(['agent-z']);
+    });
+  });
+
+  describe('sources', () => {
+    const search = (toolCallId: string, links: string[]) =>
+      ({
+        conversationId: 'convo-1',
+        messageId: 'response-1',
+        toolCallId,
+        type: Tools.web_search,
+        [Tools.web_search]: {
+          organic: links.map((link) => ({ link })),
+          references: [
+            { link: 'https://ref.example', type: 'link', title: 'Ref' },
+            { link: 'https://img.example/a.png', type: 'image' },
+          ],
+        },
+      }) as TAttachment;
+
+    it('gives distinct sources distinct ids when tool call ids repeat', () => {
+      const message = createMessage({
+        content: [{ type: ContentTypes.TEXT, text: 'Found' }],
+        attachments: [
+          search('call_0', ['https://a.example']),
+          search('call_0', ['https://b.example']),
+        ],
+      });
+
+      const sources = toUIMessage(message).parts.filter((part) => part.type === 'source-url');
+
+      expect(sources).toEqual([
+        { type: 'source-url', sourceId: 'call_0-0', url: 'https://a.example' },
+        { type: 'source-url', sourceId: 'call_0-1', url: 'https://ref.example', title: 'Ref' },
+        { type: 'source-url', sourceId: 'call_0-2', url: 'https://b.example' },
+      ]);
+    });
+  });
+
+  describe('edits through the view', () => {
+    it('writes image file edits back while keeping the stored record', () => {
+      const part = samples[ContentTypes.IMAGE_FILE] as TMessageContentParts;
+      const edited: UIMessagePart = {
+        ...(toUIPart(part) as Extract<UIMessagePart, { type: 'file' }>),
+        url: '/images/dog.png',
+        filename: 'dog.png',
+      };
+
+      expect(fromUIPart(edited)).toMatchObject({
+        type: ContentTypes.IMAGE_FILE,
+        image_file: { file_id: 'file-1', filepath: '/images/dog.png', filename: 'dog.png' },
+      });
+    });
+
+    it('writes attachment renames onto the matched stored file', () => {
+      const stored = {
+        file_id: 'a',
+        filepath: '/files/a.pdf',
+        filename: 'a.pdf',
+        type: 'application/pdf',
+      };
+      const message = createMessage({ isCreatedByUser: true, text: 'File', files: [stored] });
+      const view = toUIMessage(message);
+      const parts: UIMessagePart[] = [
+        view.parts[0],
+        {
+          type: 'file',
+          mediaType: 'application/pdf',
+          filename: 'renamed.pdf',
+          url: '/files/a.pdf',
+        },
+      ];
+
+      expect(fromUIMessage({ ...view, parts }, message).files).toEqual([
+        { ...stored, filename: 'renamed.pdf' },
+      ]);
+    });
+
+    it('keeps an explicit null parent instead of the stored one', () => {
+      const message = createMessage({
+        text: 'Hi',
+        content: [{ type: ContentTypes.TEXT, text: 'Hi' }],
+      });
+      const view = toUIMessage(message);
+
+      const next = fromUIMessage(
+        {
+          ...view,
+          metadata: { ...view.metadata, conversationId: 'convo-1', parentMessageId: null },
+        },
+        message,
+      );
+
+      expect(next.parentMessageId).toBeNull();
+    });
+
+    it('keeps stored text that the parts do not derive without a base', () => {
+      const message = createMessage({
+        text: 'stored summary',
+        content: [samples[ContentTypes.THINK] as TMessageContentParts],
+      });
+
+      expect(fromUIMessage(toUIMessage(message)).text).toBe('stored summary');
     });
   });
 
