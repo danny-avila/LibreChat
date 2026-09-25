@@ -250,6 +250,47 @@ describe('theme registry', () => {
     expect(resolved.colors['rgb-chart-widget-stroke']).toBe('50 51 52');
   });
 
+  it('keeps the control outline a theme drew with its own medium border', () => {
+    const resolved = resolveTheme(
+      {
+        version: 1,
+        name: 'legacy-control-border-reference',
+        modes: { dark: { colors: { 'rgb-border-medium': '60 61 62' } } },
+      },
+      'dark',
+    );
+
+    expect(resolved.colors['rgb-border-control']).toBe('60 61 62');
+  });
+
+  it('gives a theme that leaves every border alone the bundled control outline', () => {
+    const resolved = resolveTheme(
+      {
+        version: 1,
+        name: 'surface-only-reference',
+        modes: { light: { colors: { 'rgb-surface-primary': '250 250 250' } } },
+      },
+      'light',
+    );
+
+    expect(resolved.colors['rgb-border-control']).toBe(defaultTheme['rgb-border-control']);
+  });
+
+  it('preserves an explicit control outline', () => {
+    const resolved = resolveTheme(
+      {
+        version: 1,
+        name: 'explicit-control-border-reference',
+        modes: {
+          dark: { colors: { 'rgb-border-medium': '60 61 62', 'rgb-border-control': '70 71 72' } },
+        },
+      },
+      'dark',
+    );
+
+    expect(resolved.colors['rgb-border-control']).toBe('70 71 72');
+  });
+
   /** A deliberately different reference theme: it paints the whole seven-slot
    *  scale and its own surfaces, so it predates slot 8 and cannot name it.
    *  Falling back to the bundled indigo would paint a stop whose 3:1 mark

@@ -75,6 +75,7 @@
   --color-border-heavy: rgb(var(--border-heavy) / var(--border-heavy-alpha, 1));
   --color-border-xheavy: rgb(var(--border-xheavy) / var(--border-xheavy-alpha, 1));
   --color-border-destructive: rgb(var(--border-destructive));
+  --color-border-control: rgb(var(--border-control));
 
   /* status */
   --color-status-success: rgb(var(--status-success));

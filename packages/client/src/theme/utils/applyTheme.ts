@@ -70,6 +70,10 @@ function mapColors(colors: IThemeRGB, base?: IThemeRGB): Array<[string, string]>
     variables.push(['--chart-widget-stroke', colors['rgb-border-light']]);
   }
 
+  if (colors['rgb-border-control'] === undefined && colors['rgb-border-medium'] !== undefined) {
+    variables.push(['--border-control', colors['rgb-border-medium']]);
+  }
+
   /**
    * Same rule as `resolveTheme`: a theme that paints what the mark is measured
    * against coordinated the `status-success-strong` the mark wore before it had

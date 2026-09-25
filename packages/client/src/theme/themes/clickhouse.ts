@@ -92,6 +92,7 @@ export const clickHouseLightTheme: IThemeRGB = {
   'rgb-border-heavy': '179 182 189', // #b3b6bd (stroke.intense)
   'rgb-border-xheavy': '128 134 145', // #808691 (palette.slate.500, two steps past stroke.intense #b3b6bd (2.03:1 on white))
   'rgb-border-destructive': '193 0 0', // #c10000 (palette.danger.600)
+  'rgb-border-control': '128 134 145', // #808691 (palette.slate.500, 3.42:1 on background.muted)
 
   // Status colors
   'rgb-status-success': '0 97 8', // #006108 (palette.success.800, one step past feedback.success.foreground #008a0b (4.27:1 on its fill))
@@ -211,6 +212,7 @@ export const clickHouseDarkTheme: IThemeRGB = {
   'rgb-border-heavy': '65 65 65', // #414141 (stroke.intense)
   'rgb-border-xheavy': '128 128 128', // #808080 (palette.neutral.500, three steps past stroke.intense #414141 (1.62:1 on the canvas))
   'rgb-border-destructive': '255 117 117', // #ff7575 (palette.danger.300)
+  'rgb-border-control': '128 128 128', // #808080 (palette.neutral.500, 3.73:1 on background.muted)
 
   // Status colors
   'rgb-status-success': '204 255 208', // #ccffd0 (feedback.success.foreground)

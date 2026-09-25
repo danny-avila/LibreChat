@@ -581,6 +581,16 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
       ? { 'rgb-chart-widget-stroke': customColors['rgb-border-light'] }
       : {};
   /**
+   * Form controls were outlined with `border-medium` before they had a role, so
+   * a theme that paints its own borders keeps the outline it drew rather than
+   * LibreChat's gray, which was never measured against that theme's canvas.
+   */
+  const borderControlFallback =
+    customColors?.['rgb-border-control'] === undefined &&
+    customColors?.['rgb-border-medium'] !== undefined
+      ? { 'rgb-border-control': customColors['rgb-border-medium'] }
+      : {};
+  /**
    * Slot 8 arrived after the seven-slot scale shipped, so a stored or
    * environment theme that paints its own scale cannot name it. Filling the
    * omission from the bundled base would drop LibreChat's indigo onto that
@@ -639,6 +649,7 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
       ...textMutedFallback,
       ...chartWidgetSurfaceFallback,
       ...chartWidgetStrokeFallback,
+      ...borderControlFallback,
       ...seriesEightFallback,
       ...verifiedFallback,
     } as Required<IThemeRGB>,

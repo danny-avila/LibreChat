@@ -70,6 +70,10 @@ export interface IThemeRGB {
   'rgb-border-heavy'?: string;
   'rgb-border-xheavy'?: string;
   'rgb-border-destructive'?: string;
+  /** The boundary of a form control (field, select trigger, OTP slot). Owes the
+   *  3:1 non-text floor on every canvas, so it is kept apart from the separator
+   *  roles above, which stay quiet. */
+  'rgb-border-control'?: string;
 
   // Status colors
   'rgb-status-success'?: string;
@@ -210,6 +214,7 @@ export interface IThemeVariables {
   '--border-xheavy': string;
   '--border-xheavy-alpha': string;
   '--border-destructive': string;
+  '--border-control': string;
   '--status-success': string;
   '--status-success-subtle': string;
   '--status-success-border': string;
@@ -311,6 +316,7 @@ export interface IThemeColors {
   'border-heavy'?: string;
   'border-xheavy'?: string;
   'border-destructive'?: string;
+  'border-control'?: string;
   'status-success'?: string;
   'status-success-subtle'?: string;
   'status-success-border'?: string;

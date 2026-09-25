@@ -1,0 +1,18 @@
+/**
+ * Stylesheet defaults for `--border-control`, the form-control boundary role.
+ *
+ * Every other color role is declared by the app stylesheet, but this one ships
+ * with the package so a consumer rendering `Input`, `Select` or `InputOTP` gets
+ * an outline that clears the WCAG 1.4.11 3:1 floor without restating it.
+ * `ThemeProvider` paints the registry value inline whenever a theme is active,
+ * which outranks these; they only cover the stock palette before and without a
+ * theme definition, and `semanticTokens.spec.ts` keeps them in step with
+ * `themes/default.ts` and `themes/dark.ts`.
+ */
+html {
+  --border-control: 133 133 133;
+}
+
+.dark {
+  --border-control: 125 125 125;
+}
