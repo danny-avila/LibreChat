@@ -71,9 +71,9 @@ async function seedUserMessageWithFile(conversationId: string): Promise<void> {
   );
 }
 
-async function seedContentPartWithFile(
+async function seedAssistantMessage(
   conversationId: string,
-  part: Record<string, unknown>,
+  fields: Record<string, unknown>,
 ): Promise<void> {
   const user = await userId();
   await withMongo((db) =>
@@ -87,10 +87,11 @@ async function seedContentPartWithFile(
       endpoint: 'openAI',
       error: false,
       unfinished: false,
-      content: [{ type: 'text', text: 'Working on it' }, part],
+      content: [{ type: 'text', text: 'Working on it' }],
       createdAt: new Date(),
       updatedAt: new Date(),
       __v: 0,
+      ...fields,
     }),
   );
 }
@@ -200,6 +201,7 @@ test('the attachment facet finds a chat whose only file rides on a message @scen
   const uploadedInChat = randomUUID();
   const steeredWithFile = randomUUID();
   const nativeImage = randomUUID();
+  const toolOutput = randomUUID();
   const importedWithFiles = randomUUID();
   const emptiedFiles = randomUUID();
   const plain = randomUUID();
@@ -207,26 +209,33 @@ test('the attachment facet finds a chat whose only file rides on a message @scen
     { conversationId: uploadedInChat },
     { conversationId: steeredWithFile },
     { conversationId: nativeImage },
+    { conversationId: toolOutput },
     { conversationId: importedWithFiles, files: [randomUUID()] },
     { conversationId: emptiedFiles, files: [] },
     { conversationId: plain },
   ]);
   await seedUserMessageWithFile(uploadedInChat);
-  await seedContentPartWithFile(steeredWithFile, {
-    type: 'steer',
-    steer: 'Use this file too',
-    steerId: randomUUID(),
-    files: [{ file_id: randomUUID(), filename: 'extra.txt', type: 'text/plain' }],
+  await seedAssistantMessage(steeredWithFile, {
+    content: [
+      {
+        type: 'steer',
+        steer: 'Use this file too',
+        steerId: randomUUID(),
+        files: [{ file_id: randomUUID(), filename: 'extra.txt', type: 'text/plain' }],
+      },
+    ],
   });
-  await seedContentPartWithFile(nativeImage, {
-    type: 'image_file',
-    image_file: { file_id: randomUUID() },
+  await seedAssistantMessage(nativeImage, {
+    content: [{ type: 'image_file', image_file: { file_id: randomUUID() } }],
+  });
+  await seedAssistantMessage(toolOutput, {
+    attachments: [{ file_id: randomUUID(), filename: 'plot.png', toolCallId: randomUUID() }],
   });
 
   expect(await listIds(page, `endpoints=${endpoint}&hasFiles=true`)).toEqual(
-    [uploadedInChat, steeredWithFile, nativeImage, importedWithFiles].sort(),
+    [uploadedInChat, steeredWithFile, nativeImage, toolOutput, importedWithFiles].sort(),
   );
-  expect(await listIds(page, `endpoints=${endpoint}&hasFiles=false`)).toHaveLength(6);
+  expect(await listIds(page, `endpoints=${endpoint}&hasFiles=false`)).toHaveLength(7);
 });
 
 test('the shared facet follows live links and drops expired ones @scenario:list-shared-facet-follows-live-links', async ({

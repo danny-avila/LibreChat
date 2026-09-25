@@ -8416,6 +8416,39 @@ describe('Conversation Operations', () => {
       expect(result.conversations.map((c) => c.conversationId)).toEqual([attached.conversationId]);
     });
 
+    it('reads files a tool or assistant attached to its response', async () => {
+      const Message = mongoose.models.Message as mongoose.Model<{
+        user: string;
+        conversationId: string;
+        messageId: string;
+        attachments: unknown[];
+      }>;
+      const generated = await makeConvo({ title: 'generated file' });
+      const searched = await makeConvo({ title: 'search results only' });
+      await Message.create([
+        {
+          user,
+          conversationId: generated.conversationId,
+          messageId: uuidv4(),
+          sender: 'Assistant',
+          isCreatedByUser: false,
+          attachments: [{ file_id: 'f-out', filename: 'plot.png', toolCallId: 't-1' }],
+        },
+        {
+          user,
+          conversationId: searched.conversationId,
+          messageId: uuidv4(),
+          sender: 'Assistant',
+          isCreatedByUser: false,
+          attachments: [{ type: 'web_search', toolCallId: 't-2' }],
+        },
+      ]);
+
+      const result = await getConvosByCursor(user, { hasFiles: true });
+
+      expect(result.conversations.map((c) => c.conversationId)).toEqual([generated.conversationId]);
+    });
+
     it('combines facets rather than widening the result', async () => {
       const match = await makeConvo({
         title: 'match',

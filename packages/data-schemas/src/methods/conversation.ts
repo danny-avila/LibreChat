@@ -2989,9 +2989,10 @@ export function createConversationMethods(
   }
 
   /**
-   * Conversations with a file on any of this user's messages, where uploads normally live:
-   * on the message itself, or on a content part in any shape replay reads (a steer's
-   * `files`, a provider-native `file` or `image_file`, or a bare `file_id`).
+   * Conversations with a file on any of this user's messages. A message holds files in
+   * three places: uploads on `files`, tool and assistant output on `attachments`, and
+   * content parts in every shape replay reads (a steer's `files`, a provider-native
+   * `file` or `image_file`, or a bare `file_id`).
    */
   async function getMessageFileConversationIds(user: string): Promise<string[] | null> {
     const Message = mongoose.models.Message as Model<IMessage> | undefined;
@@ -3002,6 +3003,7 @@ export function createConversationMethods(
       user,
       $or: [
         { 'files.0': { $exists: true } },
+        { 'attachments.file_id': { $type: 'string' } },
         { 'content.files.0': { $exists: true } },
         { 'content.file.file_id': { $type: 'string' } },
         { 'content.image_file.file_id': { $type: 'string' } },
