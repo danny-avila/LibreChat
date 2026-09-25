@@ -236,6 +236,9 @@ module.exports = {
 
   toolCallModel: () => ({ deleteToolCalls: jest.fn() }),
 
+  /** The list route reads its filter limits from the base config. */
+  appConfig: () => ({ getAppConfig: jest.fn().mockResolvedValue({}) }),
+
   sharedModels: () => ({
     getConvosByCursor: jest.fn(),
     getConvo: jest.fn(),

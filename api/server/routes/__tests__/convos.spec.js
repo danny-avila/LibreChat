@@ -42,9 +42,7 @@ jest.mock('@librechat/api', () =>
 jest.mock('@librechat/data-schemas', () => require(MOCKS).dataSchemas());
 jest.mock('librechat-data-provider', () => require(MOCKS).dataProvider());
 jest.mock('~/models', () => require(MOCKS).sharedModels());
-jest.mock('~/server/services/Config', () => ({
-  getAppConfig: jest.fn().mockResolvedValue({}),
-}));
+jest.mock('~/server/services/Config', () => require(MOCKS).appConfig());
 jest.mock('~/server/middleware/requireJwtAuth', () => require(MOCKS).requireJwtAuth());
 jest.mock('~/server/middleware', () => require(MOCKS).middlewarePassthrough());
 jest.mock('~/server/utils/import/fork', () => require(MOCKS).forkUtils());
