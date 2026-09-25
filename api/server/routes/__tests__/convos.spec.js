@@ -1954,6 +1954,16 @@ describe('Convos Routes', () => {
       expect(overConfigured.body.error).toMatch(/at most 2 names/);
     });
 
+    it('answers the route error when the config cannot be read', async () => {
+      getAppConfig.mockRejectedValueOnce(new Error('config unavailable'));
+
+      const response = await request(app).get('/api/convos');
+
+      expect(response.status).toBe(500);
+      expect(response.body.error).toBe('Error fetching conversations');
+      expect(getConvosByCursor).not.toHaveBeenCalled();
+    });
+
     it('forwards the shared flag only when it is on', async () => {
       await request(app).get('/api/convos').query({ sharedOnly: 'true' });
       expect(getConvosByCursor).toHaveBeenLastCalledWith(

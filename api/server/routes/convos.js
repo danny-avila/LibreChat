@@ -182,15 +182,15 @@ router.get('/', async (req, res) => {
     tags = Array.isArray(req.query.tags) ? req.query.tags : [req.query.tags];
   }
 
-  const { filters, error: filterError } = await resolveConversationListFilters(
-    req.query,
-    getAppConfig,
-  );
-  if (filterError) {
-    return res.status(400).json({ error: filterError });
-  }
-
   try {
+    const { filters, error: filterError } = await resolveConversationListFilters(
+      req.query,
+      getAppConfig,
+    );
+    if (filterError) {
+      return res.status(400).json({ error: filterError });
+    }
+
     const result = await db.getConvosByCursor(req.user.id, {
       cursor,
       limit,
