@@ -258,10 +258,7 @@ export const useDeleteSkillMutation = (
   });
 };
 
-/**
- * Upload a file into a skill. Stubbed in phase 1 — the backend responds 501.
- * The hook is wired now so the frontend can call it once the backend is ready.
- */
+/** Upload or replace a file in a skill and refresh its cached contents. */
 export const useUploadSkillFileMutation = (
   options?: UploadSkillFileOptions,
 ): UseMutationResult<TSkillFile, unknown, TUploadSkillFileVariables> => {
@@ -282,6 +279,11 @@ export const useUploadSkillFileMutation = (
       );
       queryClient.invalidateQueries([QueryKeys.skill, variables.skillId]);
       if (onSuccess) onSuccess(skillFile, variables, context);
+      queryClient.invalidateQueries([
+        QueryKeys.skillFileContent,
+        variables.skillId,
+        skillFile.relativePath,
+      ]);
     },
   });
 };

@@ -2338,6 +2338,7 @@
   "com_ui_skill_file_binary": "Binary file — cannot preview inline",
   "com_ui_skill_file_download": "Download",
   "com_ui_skill_file_load_error": "Failed to load file content",
+  "com_ui_skill_file_save_error": "Could not save the file. Your changes are still in the editor.",
   "com_ui_skill_finished": "Loaded {{0}}",
   "com_ui_skill_instructions": "Instructions",
   "com_ui_skill_instructions_too_long": "Instructions must be {{0}} characters or fewer",

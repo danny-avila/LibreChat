@@ -791,6 +791,64 @@ describe('Skill routes', () => {
   });
 
   describe('POST /api/skills/:id/files (live)', () => {
+    it('replaces a nested text file and clears the old cached content', async () => {
+      const { Readable } = require('stream');
+      const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+      const { updateSkillFileContent } = require('~/models');
+      const originalStrategy = getStrategyFunctions.getMockImplementation();
+      const stored = new Map();
+      const saveBuffer = jest.fn(async ({ buffer, fileName }) => {
+        const filepath = `/uploads/${fileName}`;
+        stored.set(filepath, Buffer.from(buffer));
+        return filepath;
+      });
+      const getDownloadStream = jest.fn(async (_req, filepath) => {
+        const buffer = stored.get(filepath);
+        if (!buffer) {
+          throw new Error('File not found in test storage');
+        }
+        return Readable.from([buffer]);
+      });
+      getStrategyFunctions.mockReturnValue({ saveBuffer, getDownloadStream });
+
+      try {
+        const created = await createSkillAsOwner();
+        const skillId = created.body._id;
+        const relativePath = 'references/queries.md';
+        const url = `/api/skills/${skillId}/files`;
+        const readUrl = `${url}/${encodeURIComponent(relativePath)}`;
+        const upload = (content) =>
+          request(app)
+            .post(url)
+            .field('relativePath', relativePath)
+            .attach('file', Buffer.from(content), {
+              filename: 'queries.md',
+              contentType: 'text/markdown',
+            });
+
+        const original = await upload('first revision');
+        expect(original.status).toBe(200);
+        await updateSkillFileContent(skillId, relativePath, {
+          content: 'first revision',
+          isBinary: false,
+        });
+        const cached = await request(app).get(readUrl);
+        expect(cached.status).toBe(200);
+        expect(cached.body.content).toBe('first revision');
+
+        const replacement = await upload('saved revision');
+        expect(replacement.status).toBe(200);
+        expect(replacement.body.relativePath).toBe(relativePath);
+        const persisted = await request(app).get(readUrl);
+        expect(persisted.status).toBe(200);
+        expect(persisted.body.content).toBe('saved revision');
+        expect(getDownloadStream).toHaveBeenCalledTimes(1);
+        expect(saveBuffer).toHaveBeenCalledTimes(2);
+      } finally {
+        getStrategyFunctions.mockImplementation(originalStrategy);
+      }
+    });
+
     it('returns 400 when no file is provided', async () => {
       const created = await createSkillAsOwner();
       const res = await request(app).post(`/api/skills/${created.body._id}/files`);
