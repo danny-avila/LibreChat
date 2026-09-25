@@ -897,6 +897,43 @@ describe('Skill routes', () => {
       },
     );
 
+    it('treats legacy skills without a stored source as inline for reads and file edits', async () => {
+      const created = await createSkillAsOwner();
+      const skillId = created.body._id;
+      const id = new mongoose.Types.ObjectId(skillId);
+      await Skill.collection.updateOne({ _id: id }, { $unset: { source: '' } });
+      expect(await Skill.collection.findOne({ _id: id })).not.toHaveProperty('source');
+
+      const detail = await request(app).get(`/api/skills/${skillId}`);
+      expect(detail.status).toBe(200);
+      expect(detail.body.source).toBe('inline');
+      const list = await request(app).get('/api/skills');
+      expect(list.status).toBe(200);
+      expect(list.body.skills.find((entry) => entry._id === skillId).source).toBe('inline');
+
+      const url = `/api/skills/${skillId}/files`;
+      const first = await request(app)
+        .post(url)
+        .field('relativePath', 'references/legacy.md')
+        .attach('file', Buffer.from('first'), {
+          filename: 'legacy.md',
+          contentType: 'text/markdown',
+        });
+      expect(first.status).toBe(200);
+      const edited = await request(app)
+        .post(`${url}/references/legacy.md`)
+        .field('relativePath', 'references/legacy.md')
+        .field('expectedFileId', first.body.file_id)
+        .attach('file', Buffer.from('edited'), {
+          filename: 'legacy.md',
+          contentType: 'text/markdown',
+        });
+      expect(edited.status).toBe(200);
+      expect(await SkillFile.findOne({ skillId }).lean()).toMatchObject({
+        file_id: edited.body.file_id,
+      });
+    });
+
     it('atomically rejects a race after storing bytes and cleans up only the losing upload', async () => {
       const { getStrategyFunctions } = require('~/server/services/Files/strategies');
       const originalStrategy = getStrategyFunctions.getMockImplementation();
@@ -970,6 +1007,65 @@ describe('Skill routes', () => {
           filepath: '/uploads/committed',
         });
         expect(deleteFile).not.toHaveBeenCalled();
+      } finally {
+        bump.mockRestore();
+        getStrategyFunctions.mockImplementation(originalStrategy);
+      }
+    });
+
+    it('cleans up the superseded blob when a replacement commits but the parent bump fails', async () => {
+      const { getStrategyFunctions } = require('~/server/services/Files/strategies');
+      const { upsertSkillFile } = require('~/models');
+      const originalStrategy = getStrategyFunctions.getMockImplementation();
+      const created = await createSkillAsOwner();
+      const skillId = created.body._id;
+      const oldPath = '/uploads/previous';
+      const newPath = '/uploads/replacement';
+      const stored = new Set([oldPath]);
+      await upsertSkillFile({
+        skillId,
+        relativePath: 'references/committed.md',
+        file_id: 'original',
+        filename: 'committed.md',
+        filepath: oldPath,
+        source: 'local',
+        mimeType: 'text/markdown',
+        bytes: 8,
+        author: testUsers.editor._id,
+      });
+      const deleteFile = jest.fn(async (_req, { filepath }) => {
+        stored.delete(filepath);
+      });
+      const saveBuffer = jest.fn(async () => {
+        stored.add(newPath);
+        return newPath;
+      });
+      getStrategyFunctions.mockReturnValue({ saveBuffer, deleteFile });
+      const bump = jest
+        .spyOn(Skill, 'findByIdAndUpdate')
+        .mockRejectedValueOnce(new Error('parent update failed'));
+      try {
+        const response = await request(app)
+          .post(`/api/skills/${skillId}/files/references/committed.md`)
+          .field('relativePath', 'references/committed.md')
+          .field('expectedFileId', 'original')
+          .attach('file', Buffer.from('new text'), {
+            filename: 'committed.md',
+            contentType: 'text/markdown',
+          });
+        expect(response.status).toBe(500);
+        expect(await SkillFile.findOne({ skillId }).lean()).toMatchObject({
+          filepath: newPath,
+          file_id: expect.not.stringMatching('original'),
+        });
+        expect(saveBuffer).toHaveBeenCalledTimes(1);
+        expect(deleteFile).toHaveBeenCalledTimes(1);
+        expect(deleteFile.mock.calls[0][1]).toMatchObject({
+          filepath: oldPath,
+          user: testUsers.editor._id.toString(),
+        });
+        expect(stored.has(oldPath)).toBe(false);
+        expect(stored.has(newPath)).toBe(true);
       } finally {
         bump.mockRestore();
         getStrategyFunctions.mockImplementation(originalStrategy);

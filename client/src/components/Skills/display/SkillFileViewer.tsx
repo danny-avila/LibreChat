@@ -3,7 +3,7 @@ import { Copy, Check } from 'lucide';
 import { useNavigate } from 'react-router-dom';
 import { apiBaseUrl } from 'librechat-data-provider';
 import { ArrowLeft, FileText, FileQuestion, Pencil } from 'lucide-react';
-import { Spinner, MorphIcon, TooltipAnchor, useToastContext } from '@librechat/client';
+import { Button, Spinner, MorphIcon, TooltipAnchor, useToastContext } from '@librechat/client';
 import type { TSkill, TSkillFileContentResponse } from 'librechat-data-provider';
 import { useGetSkillFileContentQuery } from '~/data-provider';
 import SkillMarkdownRenderer from './SkillMarkdownRenderer';
@@ -24,7 +24,10 @@ function SkillFileViewer({ skillId, relativePath, skill }: SkillFileViewerProps)
   const navigate = useNavigate();
   const localize = useLocalize();
   const { showToast } = useToastContext();
-  const { data, isLoading, isError } = useGetSkillFileContentQuery(skillId, relativePath);
+  const { data, isLoading, isError, isFetching, refetch } = useGetSkillFileContentQuery(
+    skillId,
+    relativePath,
+  );
   const permissions = useSkillPermissions(skill);
   const [editingFile, setEditingFile] = useState<
     (TSkillFileContentResponse & { content: string }) | null
@@ -158,6 +161,14 @@ function SkillFileViewer({ skillId, relativePath, skill }: SkillFileViewerProps)
               <div className="flex flex-col items-center justify-center gap-2 py-12 text-text-secondary">
                 <FileQuestion className="size-8" />
                 <p className="text-sm">{localize('com_ui_skill_file_load_error')}</p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => void refetch()}
+                  disabled={isFetching}
+                >
+                  {localize('com_ui_retry')}
+                </Button>
               </div>
             )}
 

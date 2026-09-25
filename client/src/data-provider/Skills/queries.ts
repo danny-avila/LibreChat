@@ -128,7 +128,7 @@ export const useListSkillFilesQuery = (
 /**
  * Fetch a single skill file's content. Returns cached text from the DB when
  * available; otherwise the backend reads from storage, caches, and returns it.
- * Uses `staleTime: Infinity` because file content is cached server-side.
+ * Confirmed content stays fresh until invalidated; unavailable results refetch on revisit.
  */
 export const useGetSkillFileContentQuery = (
   skillId: string | null | undefined,
@@ -154,7 +154,7 @@ export const useGetSkillFileContentQuery = (
     {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,
-      refetchOnMount: false,
+      refetchOnMount: (query) => (query.state.data === null ? 'always' : false),
       retry: false,
       staleTime: Infinity,
       ...config,

@@ -53,6 +53,7 @@ export function createSkillUploadHandler(
       if (!req.user?.id) {
         return res.status(401).json({ error: 'Unauthorized' });
       }
+      const userId = req.user.id;
       const skillId = String((req.params as { id: string }).id);
       const { relativePath, expectedFileId } = req.body;
       if (typeof relativePath !== 'string' || !relativePath) {
@@ -85,7 +86,7 @@ export function createSkillUploadHandler(
       if (!skill) {
         return res.status(404).json({ error: 'Skill not found' });
       }
-      if (skill.source !== 'inline') {
+      if ((skill.source ?? 'inline') !== 'inline') {
         return res.status(403).json({ error: 'Externally managed skill files are read-only' });
       }
       if (
@@ -104,12 +105,27 @@ export function createSkillUploadHandler(
       const storage = deps.resolveStorage(req, { isImage: file.mimetype.startsWith('image/') });
       const fileId = randomUUID();
       const filepath = await storage.saveBuffer({
-        userId: req.user.id,
+        userId,
         buffer: file.buffer,
         fileName: `${fileId}__${file.originalname}`,
         basePath: 'uploads',
         tenantId,
       });
+      const cleanupReplacedBlob = (): void => {
+        if (!existingFile || existingFile.filepath === filepath) {
+          return;
+        }
+        const deleteFile = deps.getStrategyFunctions(existingFile.source).deleteFile;
+        if (deleteFile) {
+          deleteFile(req, {
+            filepath: existingFile.filepath,
+            storageKey: existingFile.storageKey,
+            storageRegion: existingFile.storageRegion,
+            user: existingFile.author?.toString() ?? userId,
+            tenantId: existingFile.tenantId ?? tenantId,
+          }).catch((error: Error) => logger.error('[uploadFile] Old blob cleanup failed:', error));
+        }
+      };
       let result: StoredSkillFile;
       try {
         result = await deps.upsertSkillFile({
@@ -124,7 +140,7 @@ export function createSkillUploadHandler(
           mimeType: file.mimetype || 'application/octet-stream',
           bytes: file.size,
           isExecutable: existingFile?.isExecutable ?? false,
-          author: req.user.id,
+          author: userId,
           tenantId,
         });
       } catch (error) {
@@ -132,11 +148,13 @@ export function createSkillUploadHandler(
           // A parent-version update can fail after the file row committed. Never
           // delete its live blob on that ambiguous failure; retain it for reread.
           const persisted = await deps.getSkillFileByPath(skillId, relativePath);
-          if (persisted?.file_id !== fileId) {
+          if (persisted?.file_id === fileId) {
+            cleanupReplacedBlob();
+          } else {
             await deps.getStrategyFunctions(storage.source).deleteFile?.(req, {
               filepath,
               ...getStorageMetadata({ filepath, source: storage.source }),
-              user: req.user.id,
+              user: userId,
               tenantId,
             });
           }
@@ -145,18 +163,7 @@ export function createSkillUploadHandler(
         }
         throw error;
       }
-      if (existingFile && existingFile.filepath !== filepath) {
-        const deleteFile = deps.getStrategyFunctions(existingFile.source).deleteFile;
-        if (deleteFile) {
-          deleteFile(req, {
-            filepath: existingFile.filepath,
-            storageKey: existingFile.storageKey,
-            storageRegion: existingFile.storageRegion,
-            user: existingFile.author?.toString() ?? req.user.id,
-            tenantId: existingFile.tenantId ?? tenantId,
-          }).catch((error: Error) => logger.error('[uploadFile] Old blob cleanup failed:', error));
-        }
-      }
+      cleanupReplacedBlob();
       return res.status(200).json(result);
     } catch (error) {
       if (error instanceof Error && 'code' in error) {

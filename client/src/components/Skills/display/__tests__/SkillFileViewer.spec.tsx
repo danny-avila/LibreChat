@@ -521,11 +521,13 @@ describe('skill file editing', () => {
       ).toBeNull();
       view.unmount();
       const reopened = renderViewer(filePath, skill, view.queryClient);
+      await waitFor(() => expect(get).toHaveBeenCalledTimes(3));
+      await waitFor(() => expect(view.queryClient.isFetching()).toBe(0));
       expect(screen.queryByText('deleted content')).not.toBeInTheDocument();
       expect(screen.queryByRole('button', { name: 'com_ui_edit' })).not.toBeInTheDocument();
       expect(post).toHaveBeenCalledTimes(1);
+      reopened.unmount();
 
-      // A later create/access-restored event can refresh the terminal cache entry.
       get.mockResolvedValue({
         data: {
           fileId: 'restored-revision',
@@ -537,15 +539,95 @@ describe('skill file editing', () => {
           bytes: 16,
         },
       });
-      await act(async () => {
-        await view.queryClient.invalidateQueries([QueryKeys.skillFileContent, skill._id, filePath]);
-      });
+      const restored = renderViewer(filePath, skill, view.queryClient);
       expect(await screen.findByText('restored content')).toBeVisible();
       expect(screen.getByRole('button', { name: 'com_ui_edit' })).toBeEnabled();
-      reopened.unmount();
+      expect(get).toHaveBeenCalledTimes(4);
+      restored.unmount();
       view.queryClient.clear();
     },
   );
+
+  it.each([403, 404, 410])(
+    'refetches a previously unavailable file on revisit after %s',
+    async (status) => {
+      const get = jest
+        .spyOn(axios, 'get')
+        .mockRejectedValueOnce({ response: { status } })
+        .mockResolvedValue({
+          data: {
+            fileId: 'restored-revision',
+            content: 'restored after revisit',
+            filename: 'queries.md',
+            relativePath: filePath,
+            mimeType: 'text/markdown',
+            isBinary: false,
+            bytes: 22,
+          },
+        });
+      const first = renderViewer();
+      expect(await screen.findByText('com_ui_skill_file_load_error')).toBeVisible();
+      expect(get).toHaveBeenCalledTimes(1);
+      first.unmount();
+
+      const second = renderViewer(filePath, skill, first.queryClient);
+      expect(await screen.findByText('restored after revisit')).toBeVisible();
+      expect(screen.getByRole('button', { name: 'com_ui_edit' })).toBeEnabled();
+      expect(get).toHaveBeenCalledTimes(2);
+      second.unmount();
+      first.queryClient.clear();
+    },
+  );
+
+  it('can retry a temporarily unavailable file without leaving the viewer', async () => {
+    const get = jest
+      .spyOn(axios, 'get')
+      .mockRejectedValueOnce({ response: { status: 403 } })
+      .mockRejectedValueOnce({ response: { status: 403 } })
+      .mockResolvedValue({
+        data: {
+          fileId: 'restored-revision',
+          content: 'access restored in place',
+          filename: 'queries.md',
+          relativePath: filePath,
+          mimeType: 'text/markdown',
+          isBinary: false,
+          bytes: 24,
+        },
+      });
+    const view = renderViewer();
+    expect(await screen.findByText('com_ui_skill_file_load_error')).toBeVisible();
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_retry' }));
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'com_ui_retry' })).toBeEnabled());
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_retry' }));
+    expect(await screen.findByText('access restored in place')).toBeVisible();
+    expect(get).toHaveBeenCalledTimes(3);
+    view.unmount();
+    view.queryClient.clear();
+  });
+
+  it('keeps confirmed file content fresh across revisits', async () => {
+    const get = jest.spyOn(axios, 'get').mockResolvedValue({
+      data: {
+        fileId: 'revision-1',
+        content: 'confirmed text',
+        filename: 'queries.md',
+        relativePath: filePath,
+        mimeType: 'text/markdown',
+        isBinary: false,
+        bytes: 14,
+      },
+    });
+    const first = renderViewer();
+    expect(await screen.findByText('confirmed text')).toBeVisible();
+    first.unmount();
+    const second = renderViewer(filePath, skill, first.queryClient);
+    expect(screen.getByText('confirmed text')).toBeVisible();
+    expect(get).toHaveBeenCalledTimes(1);
+    second.unmount();
+    first.queryClient.clear();
+  });
 
   it.each(['github', 'notion'] as const)(
     'keeps %s-managed skill files read-only even with edit permission',
