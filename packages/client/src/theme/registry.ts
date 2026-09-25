@@ -444,19 +444,18 @@ export function validateThemeDefinition(theme: ThemeDefinition): string[] {
 }
 
 /**
- * A partial theme promises that an omitted value falls back, and
- * `Partial<IThemeBrands>` lets a key be present with `undefined`. Spreading
- * that would overwrite the inherited brand with nothing, and unlike colors,
- * which `mapColors` skips when undefined, every brand token is written to the
- * DOM unconditionally, so the avatar would lose its fill entirely.
+ * A partial theme promises that an omitted value falls back, and `Partial<T>` lets a key be
+ * present with `undefined`. Spreading that would overwrite the inherited value with nothing:
+ * every brand and appearance token is written to the DOM unconditionally, so an avatar would
+ * lose its fill and a shadow or radius step its value, unlike colors, which `mapColors` skips.
  */
-function definedBrands(brands?: Partial<IThemeBrands>): Partial<IThemeBrands> {
-  if (!brands) {
+function definedEntries<T extends object>(values?: Partial<T>): Partial<T> {
+  if (!values) {
     return {};
   }
   return Object.fromEntries(
-    Object.entries(brands).filter(([, value]) => value !== undefined),
-  ) as Partial<IThemeBrands>;
+    Object.entries(values).filter(([, value]) => value !== undefined),
+  ) as Partial<T>;
 }
 
 const shadowAppearanceKeys: ReadonlyArray<keyof IThemeAppearance> = [
@@ -609,12 +608,15 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
       ...seriesEightFallback,
       ...verifiedFallback,
     } as Required<IThemeRGB>,
-    appearance: withComposableShadows({ ...defaultAppearance, ...definition?.appearance }),
+    appearance: withComposableShadows({
+      ...defaultAppearance,
+      ...definedEntries(definition?.appearance),
+    }),
     /** Mode last: a mode override is more specific than the theme-wide set. */
     brands: {
       ...defaultBrands,
-      ...definedBrands(theme.brands),
-      ...definedBrands(definition?.brands),
+      ...definedEntries(theme.brands),
+      ...definedEntries(definition?.brands),
     },
   };
 }

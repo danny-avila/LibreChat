@@ -210,6 +210,26 @@ describe('applyTheme', () => {
     clearAppliedTheme(root);
   });
 
+  it('keeps the default for an appearance key that is present but undefined', () => {
+    const root = document.documentElement;
+
+    applyResolvedTheme(
+      resolveTheme(
+        {
+          version: 1,
+          name: 'sparse',
+          modes: { light: { appearance: { shadowLg: undefined, radiusSm: undefined } } },
+        },
+        'light',
+      ),
+      root,
+    );
+
+    expect(root.style.getPropertyValue('--theme-shadow-lg')).toBe(defaultAppearance.shadowLg);
+    expect(root.style.getPropertyValue('--theme-radius-sm')).toBe(defaultAppearance.radiusSm);
+    clearAppliedTheme(root);
+  });
+
   it('applies the resolved high-contrast code surface instead of the stock grey', () => {
     const root = document.documentElement;
 
