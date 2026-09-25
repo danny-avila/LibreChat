@@ -58,7 +58,13 @@ const makeAgents = (count: number, offset: number): MockAgent[] =>
 const routeMarketplace = async (page: Page, handler: (route: Route) => Promise<void>) => {
   await page.route('**/api/agents*', async (route) => {
     const requestUrl = new URL(route.request().url());
-    if (route.request().method() !== 'GET' || requestUrl.pathname !== '/api/agents') {
+    // The agent selector also calls this endpoint and now refreshes on window focus.
+    // Marketplace always sends its sort; only those requests belong to this fixture.
+    if (
+      route.request().method() !== 'GET' ||
+      requestUrl.pathname !== '/api/agents' ||
+      !requestUrl.searchParams.has('sort')
+    ) {
       await route.continue();
       return;
     }
