@@ -55,6 +55,7 @@ const {
   isContentFilterError,
   getSafeErrorMetadata,
   getUserFacingProviderError,
+  getAgentErrorMetadata,
   getRemoteAgentPermissions,
   createToolExecuteHandler,
   createOwnedToolEndHandler,
@@ -71,7 +72,7 @@ const {
   executeAgentRun,
   waitForAgentExecutionWrites,
   resolveToolRoleGrants,
-  resolveConversationCodeEnvironmentDecision,
+  resolveAdmittedCodeEnvironmentDecision,
   createTerminalRunErrorObserver,
 } = require('@librechat/api');
 const {
@@ -260,13 +261,11 @@ function handleExecutionError({ error, res, context, appConfig }) {
       error.body.error,
     );
   }
-  const statusCode =
-    typeof error?.status === 'number' && error.status >= 400 && error.status < 600
-      ? error.status
-      : 500;
+  const errorMetadata = getAgentErrorMetadata(error);
+  const statusCode = errorMetadata?.status ?? 500;
   const errorType =
     statusCode >= 400 && statusCode < 500 ? 'invalid_request_error' : 'server_error';
-  const errorCode = !protectionEnabled && typeof error?.code === 'string' ? error.code : null;
+  const errorCode = !protectionEnabled ? (errorMetadata?.code ?? null) : null;
   sendErrorResponse(res, statusCode, errorMessage, errorType, errorCode);
 }
 
@@ -466,12 +465,16 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         req.resolvedConversation = conversation;
       }
 
-      const codeEnvironmentDecision = resolveConversationCodeEnvironmentDecision({
-        conversationId,
-        requestedMode: request.code_environment_mode,
-        requestedSelections: request.code_workspaces,
-        conversation: req.resolvedConversation,
-      });
+      const { decision: codeEnvironmentDecision, conversation: admittedConversation } =
+        await resolveAdmittedCodeEnvironmentDecision({
+          appConfig,
+          conversation: req.resolvedConversation,
+          conversationId,
+          requestedMode: request.code_environment_mode,
+          requestedSelections: request.code_workspaces,
+          readDecision: (id) => db.readAdmittedConvoCodeEnvironmentDecision(principal.userId, id),
+        });
+      req.resolvedConversation = admittedConversation;
       const parentMessageId = request.parent_message_id ?? null;
       let mcpParentMessageId;
       if (
@@ -821,7 +824,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
       // Create handler config for OpenAI streaming (only used when streaming)
       const handlerConfig = isStreaming
         ? {
-            res,
+            writer: res,
             context,
             tracker,
           }

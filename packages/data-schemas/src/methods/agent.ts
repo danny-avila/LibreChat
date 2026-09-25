@@ -1103,14 +1103,17 @@ export function createAgentMethods(
   getListAgentsByAccess: ({
     accessibleIds,
     otherParams,
+    tenantId,
     limit,
     after,
     includeSkillConfig,
     includeExecutionConfig,
     sort,
   }: {
-    accessibleIds?: Types.ObjectId[];
+    accessibleIds?: Array<Types.ObjectId | string> | null;
     otherParams?: Record<string, unknown>;
+    /** Authenticated tenant for unrestricted listings; null/omitted restricts to legacy agents. */
+    tenantId?: string | null;
     limit?: number | null;
     after?: string | null;
     includeSkillConfig?: boolean;
@@ -1948,25 +1951,25 @@ export function createAgentMethods(
   }
 
   /**
-   * Get accessible agents with cursor pagination. Pages default to 100 items, and a
-   * caller that asks for no mode gets `'recent'` — the most-recently-edited order this
-   * endpoint has always served. Pass `limit: null` to opt out of pagination.
-   *
-   * All modes preserve the same projected response shape. Popularity counts are
-   * computed from compact candidate rows and unique tenant-scoped users before
-   * the selected page is fetched.
+   * Get agents by accessible IDs with cursor pagination. Pass `accessibleIds: null`
+   * only after a management-capability check, with the authenticated tenantId
+   * (or null for legacy agents); `[]` and omitted IDs match nothing.
+   * Defaults to the most-recently-edited order and a 100-page limit (max 1000);
+   * pass `limit: null` to opt out entirely. Other sort modes preserve the projection.
    */
   async function getListAgentsByAccess({
     accessibleIds = [],
     otherParams = {},
+    tenantId,
     limit = 100,
     after = null,
     includeSkillConfig = false,
     includeExecutionConfig = false,
     sort: sortInput = 'recent',
   }: {
-    accessibleIds?: Types.ObjectId[];
+    accessibleIds?: Array<Types.ObjectId | string> | null;
     otherParams?: Record<string, unknown>;
+    tenantId?: string | null;
     limit?: number | null;
     after?: string | null;
     includeSkillConfig?: boolean;
@@ -1991,7 +1994,9 @@ export function createAgentMethods(
 
     const baseQuery: Record<string, unknown> = {
       ...otherParams,
-      _id: { $in: accessibleIds },
+      ...(accessibleIds === null
+        ? { tenantId: tenantId ?? null }
+        : { _id: { $in: accessibleIds } }),
     };
 
     // `.find()` casts query values against the schema automatically; the aggregate

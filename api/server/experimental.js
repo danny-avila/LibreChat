@@ -708,6 +708,7 @@ if (cluster.isMaster) {
           address: server.address(),
           completionResultBatchSize:
             baseAppConfig?.endpoints?.agents?.backgroundTasks?.completionResultBatchSize,
+          idlePolling: baseAppConfig?.endpoints?.agents?.eventDriven?.idlePolling,
         });
       } catch (initErr) {
         logger.error(`Worker ${process.pid} post-listen initialization failed:`, initErr);

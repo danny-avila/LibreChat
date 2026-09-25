@@ -248,17 +248,33 @@ jobs:
           first_tag=$(grep -m1 -v '^[[:space:]]*$' <<< "$TAG_SUFFIXES")
           docker buildx imagetools inspect "${GHCR_IMAGE}:${first_tag}"
 
-      # After the move to another owner, deployments still pull the old GHCR
-      # namespace. Copying each published tag there keeps them updating until the
-      # deprecation window closes. Copies are cross-repo blob mounts within GHCR,
-      # so no image data is rebuilt or re-uploaded.
-      #
-      # Set the LEGACY_GHCR_OWNER variable and the LEGACY_GHCR_TOKEN secret (a token
-      # with write:packages for that owner) to turn this on. It stays off when either
-      # is unset, and while the owner still matches the one publishing the images.
-      - name: Mirror tags to the legacy namespace
-        if: ${{ vars.LEGACY_GHCR_OWNER != '' }}
-        continue-on-error: true
+  # After the move to another owner, deployments still pull the old GHCR namespace.
+  # Copying each published tag there keeps them updating until the deprecation window
+  # closes. Copies are cross-repo blob mounts within GHCR, so no image data is rebuilt
+  # or re-uploaded.
+  #
+  # It runs in its own job so the credential that can write to the legacy namespace
+  # lives in an environment, out of reach of workflows on other branches, and so a
+  # mirror failure cannot fail a publish.
+  #
+  # Set the LEGACY_GHCR_OWNER variable and the LEGACY_GHCR_TOKEN secret (a token with
+  # write:packages for that owner) to turn this on. It stays off when either is unset,
+  # and while the owner still matches the one publishing the images.
+  mirror:
+    name: Mirror ${{ matrix.image.image_name }} to the legacy namespace
+    if: ${{ vars.LEGACY_GHCR_OWNER != '' }}
+    needs: merge
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    environment: legacy-mirror
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ${{ fromJSON(inputs.images) }}
+
+    steps:
+      - name: Copy the published tags
         env:
           LEGACY_OWNER: ${{ vars.LEGACY_GHCR_OWNER }}
           LEGACY_TOKEN: ${{ secrets.LEGACY_GHCR_TOKEN }}
@@ -277,13 +293,15 @@ jobs:
             exit 0
           fi
 
-          # The pull side needs this login too: it replaces the GITHUB_TOKEN
-          # credential for ghcr.io, and both namespaces are read with it.
+          # Registry names must be lowercase, and the repository owner is not guaranteed to be.
+          source_image="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/${IMAGE_NAME}"
+          legacy_image="ghcr.io/${legacy_owner}/${IMAGE_NAME}"
+
+          # This login reads both namespaces: it replaces the default ghcr.io credential.
           echo "$LEGACY_TOKEN" | docker login ghcr.io -u "$legacy_owner" --password-stdin
 
-          legacy_image="ghcr.io/${legacy_owner}/${IMAGE_NAME}"
           while IFS= read -r suffix; do
             [ -n "$suffix" ] || continue
-            echo "Mirroring ${GHCR_IMAGE}:${suffix} -> ${legacy_image}:${suffix}"
-            docker buildx imagetools create -t "${legacy_image}:${suffix}" "${GHCR_IMAGE}:${suffix}"
+            echo "Mirroring ${source_image}:${suffix} -> ${legacy_image}:${suffix}"
+            docker buildx imagetools create -t "${legacy_image}:${suffix}" "${source_image}:${suffix}"
           done <<< "$TAG_SUFFIXES"
