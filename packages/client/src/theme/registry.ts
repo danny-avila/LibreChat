@@ -276,7 +276,11 @@ const isShadow = (value: unknown): value is string => {
     return true;
   }
   const layers = splitTopLevel(value, /,/);
-  return layers.length > 0 && layers.every(isShadowLayer);
+  if (layers.length === 0 || !layers.every(isShadowLayer)) {
+    return false;
+  }
+  /** The structure check cannot tell a named color from any other word; a browser can. */
+  return globalThis.CSS?.supports?.('box-shadow', value) ?? true;
 };
 const isDuration = (value: unknown): value is string =>
   typeof value === 'string' && cssDurationPattern.test(value);

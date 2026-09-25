@@ -91,7 +91,8 @@ test.describe('theme shadow scale', () => {
     const theme = {
       version: 1,
       name: 'e2e-malformed-shadow',
-      modes: { light: { appearance: { shadowLg: 'not-a-shadow' } } },
+      /** Well formed but for the color, which only the browser's own parser can reject. */
+      modes: { light: { appearance: { shadowLg: '0 8px 16px not-a-color' } } },
     };
     await storeTheme(page, theme);
 
