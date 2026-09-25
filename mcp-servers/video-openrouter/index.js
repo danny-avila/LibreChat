@@ -7,7 +7,7 @@ import {
 
 const API_KEY = process.env.OPENROUTER_KEY || '';
 const API_BASE = process.env.VIDEO_OPENROUTER_BASE || 'https://openrouter.ai/api/v1/videos';
-const MODEL = process.env.VIDEO_OPENROUTER_MODEL || 'alibaba/happyhorse-1.1';
+const MODEL = process.env.VIDEO_OPENROUTER_MODEL || 'black-forest-labs/flux-3-video';
 const POLL_INTERVAL = parseInt(process.env.VIDEO_POLL_INTERVAL || '5', 10);
 const POLL_TIMEOUT = parseInt(process.env.VIDEO_POLL_TIMEOUT || '300', 10); // 5 min default
 

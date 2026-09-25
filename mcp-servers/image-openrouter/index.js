@@ -9,7 +9,7 @@ import path from 'path';
 
 const API_KEY = process.env.OPENROUTER_KEY || '';
 const API_BASE = process.env.IMAGE_OPENROUTER_BASE || 'https://openrouter.ai/api/v1/images';
-const MODEL = process.env.IMAGE_OPENROUTER_MODEL || 'black-forest-labs/flux.2-pro';
+const MODEL = process.env.IMAGE_OPENROUTER_MODEL || 'x-ai/grok-imagine-image-2.0';
 const IMAGES_PATH = process.env.IMAGES_PATH || '/app/generated_files/';
 
 if (!API_KEY) {
