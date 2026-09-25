@@ -1,6 +1,11 @@
 import { ContentTypes } from 'librechat-data-provider';
 import type { ParentSubagentSummary, TMessage } from 'librechat-data-provider';
-import { RECENT_SUBAGENT_WINDOW_MS, buildTaskRows, findToolCallArgs } from '../rows';
+import {
+  RECENT_SUBAGENT_WINDOW_MS,
+  buildTaskRows,
+  findToolCallArgs,
+  subagentTaskKey,
+} from '../rows';
 
 const now = Date.parse('2026-09-24T12:00:00.000Z');
 const iso = (offsetMs: number) => new Date(now - offsetMs).toISOString();
@@ -25,7 +30,7 @@ describe('buildTaskRows', () => {
       now,
       args: new Map(),
       describe: () => ({}),
-      stoppingThreads: new Set(['running-child']),
+      stoppingThreads: new Set([subagentTaskKey('running-child', 'task')]),
       tools: [
         {
           taskId: 'done',
@@ -53,10 +58,10 @@ describe('buildTaskRows', () => {
     });
 
     expect(rows.map((row) => [row.id, row.status])).toEqual([
-      ['subagent:running-child', 'stopping'],
+      ['subagent:running-child\u0000task', 'stopping'],
       ['tool:stopping', 'stopping'],
       ['tool:done', 'completed'],
-      ['subagent:recent-child', 'error'],
+      ['subagent:recent-child\u0000task', 'error'],
     ]);
     expect(rows[0].subagent).toEqual({ threadId: 'running-child', taskId: 'task' });
     expect(rows[3].subagent).toBeUndefined();
@@ -64,6 +69,21 @@ describe('buildTaskRows', () => {
 });
 
 describe('findToolCallArgs', () => {
+  it('does not guess when a provider reuses a call id within one response', () => {
+    const messages = [
+      {
+        messageId: 'm',
+        content: ['first', 'second'].map((stepId) => ({
+          type: ContentTypes.TOOL_CALL,
+          tool_call: { id: 'call_0', stepId, args: { command: stepId } },
+        })),
+      },
+    ] as unknown as TMessage[];
+    expect(findToolCallArgs(messages, [{ messageId: 'm', toolCallId: 'call_0' }]).size).toBe(0);
+    expect(
+      findToolCallArgs(messages, [{ messageId: 'm', toolCallId: 'call_0', stepId: 'second' }]),
+    ).toEqual(new Map([['m\u0000call_0\u0000second', { command: 'second' }]]));
+  });
   it('resolves only the requested tool calls', () => {
     const messages = [
       {
@@ -126,8 +146,6 @@ describe('findToolCallArgs', () => {
     });
     expect(rows.find((row) => row.taskId === 'older')?.detail).toBe('older');
     expect(rows.find((row) => row.taskId === 'newer')?.detail).toBe('newer');
-    expect(findToolCallArgs(messages, [{ toolCallId: 'call_0' }]).get('\u0000call_0')).toBe(
-      'newer',
-    );
+    expect(findToolCallArgs(messages, [{ toolCallId: 'call_0' }]).size).toBe(0);
   });
 });

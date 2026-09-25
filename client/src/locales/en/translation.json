@@ -9,6 +9,7 @@
   "com_ui_background_tasks_stop_all": "Stop all running tasks",
   "com_ui_background_tasks_stop_available": "Stop available running tasks",
   "com_ui_background_tasks_stop_failed": "Could not stop some tasks. Try again.",
+  "com_ui_background_tasks_load_failed": "Could not load all tasks. The list may be incomplete. Try again.",
   "com_ui_background_tasks_stopping": "Stopping…",
   "com_ui_background_tasks_subagent": "Subagent",
   "com_ui_repository_instructions": "Repository instructions",

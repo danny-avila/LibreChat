@@ -18,6 +18,7 @@ const {
   createParentSubagentIndexHandler,
   createBackgroundTaskIndexHandler,
   createBackgroundTaskCancelHandler,
+  createBackgroundTaskPolicyMiddleware,
   backgroundTaskRegistry,
   createSubagentThreadViewHandler,
   resolveImportMaxFileSize,
@@ -35,6 +36,7 @@ const {
   isStopConfirmed,
 } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
+const { getAppConfig } = require('~/server/services/Config/app');
 const { CacheKeys, EModelEndpoint } = require('librechat-data-provider');
 const {
   createImportLimiters,
@@ -147,6 +149,7 @@ const subagentControlHandler = createSubagentControlHandler({
   getSubagentTaskControlReceipt: db.getSubagentTaskControlReceipt,
   store: subagentThreadTaskStore,
 });
+const backgroundTaskPolicy = createBackgroundTaskPolicyMiddleware({ getAppConfig });
 const backgroundTaskIndexHandler = createBackgroundTaskIndexHandler({
   registry: backgroundTaskRegistry,
 });
@@ -216,10 +219,10 @@ router.post(
   subagentControlHandler,
 );
 router.get('/:parentConversationId/subagents', parentSubagentIndexHandler);
-router.get('/:conversationId/background-tasks', configMiddleware, backgroundTaskIndexHandler);
+router.get('/:conversationId/background-tasks', backgroundTaskPolicy, backgroundTaskIndexHandler);
 router.post(
   '/:conversationId/background-tasks/cancel',
-  configMiddleware,
+  backgroundTaskPolicy,
   backgroundTaskCancelHandler,
 );
 router.get('/:parentConversationId/subagents/:threadId', subagentThreadViewHandler);

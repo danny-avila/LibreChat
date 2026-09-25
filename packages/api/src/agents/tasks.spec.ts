@@ -1,6 +1,10 @@
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types';
-import { createBackgroundTaskCancelHandler, createBackgroundTaskIndexHandler } from './tasks';
+import {
+  createBackgroundTaskCancelHandler,
+  createBackgroundTaskIndexHandler,
+  createBackgroundTaskPolicyMiddleware,
+} from './tasks';
 import { BackgroundTaskRegistryClass } from './background';
 
 const conversationId = 'convo-1';
@@ -49,6 +53,26 @@ const createTask = (
 };
 
 describe('background task routes', () => {
+  it('loads effective policy without runtime workspace augmentation and fails closed', async () => {
+    const req = request();
+    const getAppConfig = jest.fn().mockResolvedValue(req.config);
+    const next = jest.fn();
+    const middleware = createBackgroundTaskPolicyMiddleware({ getAppConfig });
+    await middleware(req, response(), next);
+    expect(getAppConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'user-1',
+        skipRuntimeAugmentation: true,
+        failClosed: true,
+      }),
+    );
+    expect(next).toHaveBeenCalledTimes(1);
+    getAppConfig.mockRejectedValue(new Error('policy store unavailable'));
+    const failed = response();
+    await middleware(req, failed, next);
+    expect(failed.status).toHaveBeenCalledWith(503);
+    expect(next).toHaveBeenCalledTimes(1);
+  });
   it('lists only the caller’s tasks without results', () => {
     const registry = new BackgroundTaskRegistryClass();
     const running = createTask(registry, 'call-1');

@@ -1,8 +1,8 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
 import userEvent from '@testing-library/user-event';
-import { render, screen, waitFor, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { ContentTypes, QueryKeys, dataService } from 'librechat-data-provider';
 import type { ParentSubagentSummary, BackgroundTaskIndex, TMessage } from 'librechat-data-provider';
 import { ParentSubagentsProvider } from '~/components/Chat/Subagents/ParentSubagentsProvider';
@@ -80,15 +80,16 @@ const messages: TMessage[] = [
   } as TMessage,
 ];
 
-const renderButton = (children: ParentSubagentSummary[] = []) => {
+const renderButton = (children: ParentSubagentSummary[] = [], initialMessages = messages) => {
+  jest.spyOn(dataService, 'getSubagentThread').mockImplementation(() => new Promise(() => {}));
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  queryClient.setQueryData([QueryKeys.messages, conversationId], messages);
+  queryClient.setQueryData([QueryKeys.messages, conversationId], initialMessages);
   jest.spyOn(dataService, 'getParentSubagents').mockResolvedValue({
     parentConversationId: conversationId,
     children,
     childrenTruncated: false,
   });
-  return render(
+  const rendered = render(
     <RecoilRoot>
       <QueryClientProvider client={queryClient}>
         <ParentSubagentsProvider conversationId={conversationId} enabled>
@@ -97,11 +98,150 @@ const renderButton = (children: ParentSubagentSummary[] = []) => {
       </QueryClientProvider>
     </RecoilRoot>,
   );
+  return { ...rendered, queryClient };
 };
 
 afterEach(() => jest.restoreAllMocks());
 
 describe('BackgroundTasksButton', () => {
+  it('ages out the last finished child even while the panel is closed', async () => {
+    jest.useFakeTimers();
+    try {
+      jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(index({ tasks: [] }));
+      renderButton([
+        {
+          ...runningChild,
+          status: 'completed',
+          updatedAt: new Date(Date.now() - 3_599_000).toISOString(),
+        },
+      ]);
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(100);
+      });
+      expect(screen.getByTestId('header-background-tasks-button')).toBeInTheDocument();
+      await act(async () => {
+        await jest.advanceTimersByTimeAsync(1_100);
+      });
+      expect(screen.queryByTestId('header-background-tasks-button')).toBeNull();
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps an accepted cancellation pending through an observation failure, then reconciles failure', async () => {
+    jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(index({ tasks: [] }));
+    const cancel = jest
+      .spyOn(dataService, 'controlSubagentTask')
+      .mockImplementation(async (_parent, _thread, command) => ({
+        receipt: {
+          invocationId: command.invocationId,
+          action: 'cancel',
+          status: 'accepted',
+          createdAt: startedAt,
+          updatedAt: startedAt,
+        },
+      }));
+    const { queryClient } = renderButton([runningChild]);
+    jest
+      .mocked(dataService.getSubagentThread)
+      .mockRejectedValueOnce(new Error('receipt read unavailable'));
+    const user = userEvent.setup();
+    await user.click(await screen.findByTestId('header-background-tasks-button'));
+    await user.click(await screen.findByRole('button', { name: /com_ui_background_tasks_stop:/ }));
+    await waitFor(() => expect(cancel).toHaveBeenCalledTimes(1));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'com_ui_background_tasks_load_failed',
+    );
+    expect(screen.queryByRole('button', { name: /com_ui_background_tasks_stop:/ })).toBeNull();
+    const invocationId = cancel.mock.calls[0][2].invocationId;
+    act(() => {
+      queryClient.setQueryData(
+        [
+          QueryKeys.subagentThread,
+          conversationId,
+          runningChild.threadId,
+          runningChild.latestTaskId,
+        ],
+        {
+          controlReceipts: [{ invocationId, status: 'failed' }],
+        },
+      );
+    });
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('com_ui_background_tasks_stop_failed'),
+    );
+    expect(
+      await screen.findByRole('button', { name: /com_ui_background_tasks_stop:/ }),
+    ).toBeEnabled();
+  });
+
+  it('shows an initial load failure and lets the user retry', async () => {
+    const getTasks = jest
+      .spyOn(dataService, 'getBackgroundTasks')
+      .mockRejectedValueOnce(new Error('unavailable'))
+      .mockResolvedValue(index());
+    renderButton();
+    const user = userEvent.setup();
+    await user.click(await screen.findByTestId('header-background-tasks-button'));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'com_ui_background_tasks_load_failed',
+    );
+    await user.click(screen.getByRole('button', { name: 'com_ui_retry' }));
+    await waitFor(() => expect(getTasks).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText('Rerun the focused specs')).toBeVisible();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('fills in commands when restored messages arrive after the task index', async () => {
+    jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(index());
+    const { queryClient } = renderButton([], []);
+    const user = userEvent.setup();
+    await user.click(await screen.findByTestId('header-background-tasks-button'));
+    expect(screen.queryByText('Rerun the focused specs')).toBeNull();
+    act(() => {
+      queryClient.setQueryData([QueryKeys.messages, conversationId], messages);
+    });
+    expect(await screen.findByText('Rerun the focused specs')).toBeVisible();
+  });
+
+  it('does not carry stopping into a new task on the same child thread', async () => {
+    jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(index({ tasks: [] }));
+    jest.spyOn(dataService, 'controlSubagentTask').mockResolvedValue({
+      receipt: {
+        invocationId: 'cancel-a',
+        action: 'cancel',
+        status: 'accepted',
+        createdAt: startedAt,
+        updatedAt: startedAt,
+      },
+    });
+    const { queryClient } = renderButton([runningChild]);
+    const user = userEvent.setup();
+    await user.click(await screen.findByTestId('header-background-tasks-button'));
+    await user.click(await screen.findByRole('button', { name: /com_ui_background_tasks_stop:/ }));
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /com_ui_background_tasks_stop:/ })).toBeNull(),
+    );
+    act(() => {
+      queryClient.setQueryData([QueryKeys.parentSubagents, conversationId], {
+        parentConversationId: conversationId,
+        childrenTruncated: false,
+        children: [
+          {
+            ...runningChild,
+            latestTaskId: 'sub-task-2',
+            tasks: [
+              ...runningChild.tasks,
+              { taskId: 'sub-task-2', status: 'running', createdAt: new Date().toISOString() },
+            ],
+          },
+        ],
+      });
+    });
+    expect(
+      await screen.findByRole('button', { name: /com_ui_background_tasks_stop:/ }),
+    ).toBeEnabled();
+  });
   it('renders nothing when the conversation has no background tasks', async () => {
     const getTasks = jest
       .spyOn(dataService, 'getBackgroundTasks')
@@ -184,7 +324,7 @@ describe('BackgroundTasksButton', () => {
     const explanation = stopAll.parentElement!;
     expect(explanation).toHaveAttribute('tabindex', '0');
     expect(explanation).toHaveAttribute('aria-label', 'com_ui_background_tasks_cancel_disabled');
-    explanation.focus();
+    act(() => explanation.focus());
     expect(explanation).toHaveFocus();
     expect(screen.queryByRole('button', { name: /com_ui_background_tasks_stop:/ })).toBeNull();
     expect(cancelTools).not.toHaveBeenCalled();

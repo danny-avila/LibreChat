@@ -120,6 +120,7 @@ function Header({
           parentConversationId == null &&
           effectiveEndpoint === EModelEndpoint.agents && (
             <BackgroundTasksButton
+              key={routeConversationId}
               conversationId={routeConversationId}
               isSubmitting={isSubmitting}
             />

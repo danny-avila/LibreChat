@@ -43,30 +43,45 @@ const subagentStatus = (status: SubagentThreadStatus): TaskRowStatus => {
 
 export type ToolCallArgs = string | Record<string, unknown> | undefined;
 
-/** Resolve a tool call within its dispatch message; a legacy task without a
- * message id can still use the newest matching call as a best-effort fallback. */
-const toolCallKey = (messageId: string | undefined, toolCallId: string): string =>
-  `${messageId ?? ''}\u0000${toolCallId}`;
+/** Legacy identities are usable only when they resolve unambiguously. */
+const toolCallKey = (messageId: string | undefined, toolCallId: string, stepId?: string): string =>
+  `${messageId ?? ''}\u0000${toolCallId}${stepId == null ? '' : `\u0000${stepId}`}`;
+
+export const subagentTaskKey = (threadId: string, taskId?: string): string =>
+  `${threadId}\u0000${taskId ?? ''}`;
 
 export function findToolCallArgs(
   messages: readonly TMessage[] | undefined,
-  tasks: readonly Pick<BackgroundTaskSummary, 'messageId' | 'toolCallId'>[],
+  tasks: readonly Pick<BackgroundTaskSummary, 'messageId' | 'toolCallId' | 'stepId'>[],
 ): Map<string, ToolCallArgs> {
   const found = new Map<string, ToolCallArgs>();
   if (messages == null || tasks.length === 0) return found;
-  const wanted = new Set(tasks.map((task) => toolCallKey(task.messageId, task.toolCallId)));
-  for (let i = messages.length - 1; i >= 0 && found.size < wanted.size; i--) {
+  const wanted = new Set(
+    tasks.map((task) => toolCallKey(task.messageId, task.toolCallId, task.stepId)),
+  );
+  const ambiguous = new Set<string>();
+  for (let i = messages.length - 1; i >= 0; i--) {
     const message = messages[i];
     for (const part of message.content ?? []) {
       if (part?.type !== ContentTypes.TOOL_CALL) continue;
-      const call = part[ContentTypes.TOOL_CALL] as { id?: string; args?: ToolCallArgs } | undefined;
+      const call = part[ContentTypes.TOOL_CALL] as
+        | { id?: string; stepId?: string; args?: ToolCallArgs }
+        | undefined;
       if (call?.id == null) continue;
-      const key = toolCallKey(message.messageId, call.id);
-      if (wanted.has(key) && !found.has(key)) found.set(key, call.args);
-      const fallback = toolCallKey(undefined, call.id);
-      if (wanted.has(fallback) && !found.has(fallback)) found.set(fallback, call.args);
+      const keys = new Set([
+        toolCallKey(message.messageId, call.id, call.stepId),
+        toolCallKey(message.messageId, call.id),
+        toolCallKey(undefined, call.id, call.stepId),
+        toolCallKey(undefined, call.id),
+      ]);
+      for (const key of keys) {
+        if (!wanted.has(key)) continue;
+        if (found.has(key)) ambiguous.add(key);
+        found.set(key, call.args);
+      }
     }
   }
+  for (const key of ambiguous) found.delete(key);
   return found;
 }
 
@@ -91,11 +106,11 @@ const subagentRow = (child: ParentSubagentSummary, stopping: ReadonlySet<string>
   const running = status === 'running';
   const taskId = child.latestTaskId;
   return {
-    id: `subagent:${child.threadId}`,
+    id: `subagent:${subagentTaskKey(child.threadId, taskId)}`,
     kind: 'subagent',
     name: child.title,
-    status: running && stopping.has(child.threadId) ? 'stopping' : status,
-    startedAt: time(child.tasks[0]?.createdAt),
+    status: running && stopping.has(subagentTaskKey(child.threadId, taskId)) ? 'stopping' : status,
+    startedAt: time(child.tasks.find((task) => task.taskId === taskId)?.createdAt),
     settledAt: running ? undefined : time(child.updatedAt),
     ...(running && taskId != null ? { subagent: { threadId: child.threadId, taskId } } : {}),
   };
@@ -124,7 +139,7 @@ export function buildTaskRows({
   now: number;
 }): TaskRow[] {
   const rows = tools.map((task) =>
-    toolRow(task, describe(args.get(toolCallKey(task.messageId, task.toolCallId)))),
+    toolRow(task, describe(args.get(toolCallKey(task.messageId, task.toolCallId, task.stepId)))),
   );
   for (const child of subagents) {
     const row = subagentRow(child, stoppingThreads);

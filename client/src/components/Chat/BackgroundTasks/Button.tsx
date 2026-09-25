@@ -2,6 +2,7 @@ import { memo, useEffect, useRef, useState } from 'react';
 import * as Ariakit from '@ariakit/react';
 import { TooltipAnchor } from '@librechat/client';
 import { ListTodo, Maximize2, Minimize2, Square, X } from 'lucide-react';
+import { RECENT_SUBAGENT_WINDOW_MS } from './rows';
 import useBackgroundTasks from './useTasks';
 import { useLocalize } from '~/hooks';
 import Section from './Section';
@@ -32,13 +33,26 @@ function BackgroundTasksButton({
   const { rows, activeCount } = view;
 
   useEffect(() => {
-    if (!open || activeCount === 0) return;
     setNow(Date.now());
+    if (!open || activeCount === 0) return;
     const timer = setInterval(() => setNow(Date.now()), TICK_MS);
     return () => clearInterval(timer);
   }, [open, activeCount]);
 
-  if (rows.length === 0) {
+  const nextExpiry = rows.reduce(
+    (next, row) =>
+      row.kind === 'subagent' && row.settledAt != null
+        ? Math.min(next, row.settledAt + RECENT_SUBAGENT_WINDOW_MS + 1)
+        : next,
+    Infinity,
+  );
+  useEffect(() => {
+    if (!Number.isFinite(nextExpiry)) return;
+    const timer = setTimeout(() => setNow(Date.now()), Math.max(0, nextExpiry - Date.now()));
+    return () => clearTimeout(timer);
+  }, [nextExpiry]);
+
+  if (rows.length === 0 && !view.loadFailed) {
     return null;
   }
 
@@ -124,6 +138,18 @@ function BackgroundTasksButton({
           </Ariakit.PopoverDismiss>
         </div>
         <div className="space-y-4 overflow-y-auto px-3 pb-3">
+          {view.loadFailed && (
+            <div role="alert" className="text-sm text-status-error">
+              <p>{localize('com_ui_background_tasks_load_failed')}</p>
+              <button
+                type="button"
+                className="rounded px-2 py-1 text-text-primary underline focus-visible:ring-2 focus-visible:ring-ring-primary"
+                onClick={() => void view.retry()}
+              >
+                {localize('com_ui_retry')}
+              </button>
+            </div>
+          )}
           {running.length > 0 && (
             <Section
               label={localize('com_ui_background_tasks_running')}

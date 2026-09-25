@@ -6,6 +6,7 @@ type ParentSubagentsContextValue = {
   byMessageId: ReadonlyMap<string, ParentSubagentSummary[]>;
   byThreadId: ReadonlyMap<string, ParentSubagentSummary>;
   refresh: () => Promise<ParentSubagentIndex | undefined>;
+  isError: boolean;
 };
 
 const emptyMap = new Map<string, ParentSubagentSummary[]>();
@@ -14,6 +15,7 @@ const defaultValue: ParentSubagentsContextValue = {
   byMessageId: emptyMap,
   byThreadId: emptyThreadMap,
   refresh: async () => undefined,
+  isError: false,
 };
 
 const ParentSubagentsContext = createContext<ParentSubagentsContextValue>(defaultValue);
@@ -29,7 +31,11 @@ export function ParentSubagentsProvider({
   isSubmitting?: boolean;
   children: React.ReactNode;
 }) {
-  const { data, refetch } = useParentSubagentsQuery(conversationId, { enabled }, isSubmitting);
+  const { data, refetch, isError } = useParentSubagentsQuery(
+    conversationId,
+    { enabled },
+    isSubmitting,
+  );
   const refresh = useCallback(async () => {
     const result = await refetch();
     return result.data;
@@ -50,8 +56,8 @@ export function ParentSubagentsProvider({
         return updated === 0 ? left.threadId.localeCompare(right.threadId) : updated;
       });
     }
-    return { byMessageId, byThreadId, refresh };
-  }, [data, refresh]);
+    return { byMessageId, byThreadId, refresh, isError };
+  }, [data, refresh, isError]);
 
   return (
     <ParentSubagentsContext.Provider value={value}>{children}</ParentSubagentsContext.Provider>

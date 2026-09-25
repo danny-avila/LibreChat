@@ -5,9 +5,12 @@ import type {
   BackgroundTaskIndex,
   TAgentsEndpoint,
 } from 'librechat-data-provider';
-import type { Response } from 'express';
+import type { AppConfig } from '@librechat/data-schemas';
+import type { Response, NextFunction } from 'express';
 import type { BackgroundTask, BackgroundTaskRegistryClass } from './background';
+import type { GetAppConfigOptions } from '~/app/service';
 import type { ServerRequest } from '~/types';
+import { getAppConfigOptionsFromUser } from '~/app/service';
 
 /** The registry surface the user-facing task routes read and act on. */
 export type BackgroundTaskRegistryView = Pick<
@@ -17,6 +20,24 @@ export type BackgroundTaskRegistryView = Pick<
 
 export interface BackgroundTaskRouteDependencies {
   registry: BackgroundTaskRegistryView;
+}
+
+/** Resolve effective cancellation policy without enumerating code environments. */
+export function createBackgroundTaskPolicyMiddleware(deps: {
+  getAppConfig: (options: GetAppConfigOptions) => Promise<AppConfig>;
+}) {
+  return async (req: ServerRequest, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      req.config = await deps.getAppConfig({
+        ...getAppConfigOptionsFromUser(req.user),
+        skipRuntimeAugmentation: true,
+        failClosed: true,
+      });
+      next();
+    } catch {
+      res.status(503).json({ error: 'Background task policy is temporarily unavailable' });
+    }
+  };
 }
 
 const MAX_CONVERSATION_ID_LENGTH = 256;
@@ -48,6 +69,7 @@ export function toBackgroundTaskSummary(task: BackgroundTask): BackgroundTaskSum
     toolName: task.toolName,
     toolCallId: task.toolCallId,
     ...(task.messageId == null ? {} : { messageId: task.messageId }),
+    ...(task.stepId == null ? {} : { stepId: task.stepId }),
     status: task.status,
     cancellationRequested: task.cancellationRequestedAt != null,
     startedAt: new Date(task.createdAt).toISOString(),

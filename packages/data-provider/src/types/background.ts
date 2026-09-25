@@ -9,6 +9,8 @@ export type BackgroundTaskSummary = {
   toolName: string;
   toolCallId: string;
   messageId?: string;
+  /** Distinguishes repeated provider call ids within one response. */
+  stepId?: string;
   status: BackgroundTaskStatus;
   cancellationRequested: boolean;
   /** ISO-8601 dispatch time. */

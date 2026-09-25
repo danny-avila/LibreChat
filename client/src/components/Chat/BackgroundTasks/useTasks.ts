@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { v4 } from 'uuid';
-import { QueryKeys } from 'librechat-data-provider';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueries } from '@tanstack/react-query';
+import { QueryKeys, dataService } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { TaskRow, ToolCallArgs } from './rows';
 import {
@@ -10,9 +10,9 @@ import {
   useCancelBackgroundTasksMutation,
 } from '~/data-provider';
 import { useParentSubagents } from '~/components/Chat/Subagents/ParentSubagentsProvider';
+import { buildTaskRows, countActive, findToolCallArgs, subagentTaskKey } from './rows';
 import parseJsonField from '~/components/Chat/Messages/Content/Parts/parseJsonField';
 import { getToolCallIntent } from '~/components/Chat/Messages/Content/Parts/intent';
-import { buildTaskRows, countActive, findToolCallArgs } from './rows';
 
 export type BackgroundTasksView = {
   rows: TaskRow[];
@@ -21,6 +21,8 @@ export type BackgroundTasksView = {
   toolsCancellable: boolean;
   isStopping: boolean;
   stopFailed: boolean;
+  loadFailed: boolean;
+  retry: () => Promise<void>;
   canStop: (row: TaskRow) => boolean;
   stop: (row: TaskRow) => Promise<void>;
   stopAll: () => Promise<void>;
@@ -49,21 +51,74 @@ export default function useBackgroundTasks({
   isSubmitting: boolean;
   now: number;
 }): BackgroundTasksView {
-  const queryClient = useQueryClient();
-  const { data } = useBackgroundTasksQuery(conversationId, undefined, isSubmitting);
-  const { byThreadId, refresh } = useParentSubagents();
+  const { data, isError, refetch } = useBackgroundTasksQuery(
+    conversationId,
+    undefined,
+    isSubmitting,
+  );
+  const { byThreadId, refresh, isError: subagentsError } = useParentSubagents();
   const { mutateAsync: cancelTools } = useCancelBackgroundTasksMutation();
   const { mutateAsync: controlSubagent } = useSubagentControlMutation();
   const [stoppingThreads, setStoppingThreads] = useState<ReadonlySet<string>>(() => new Set());
   const [isStopping, setIsStopping] = useState(false);
   const [stopFailed, setStopFailed] = useState(false);
+  const [pendingControls, setPendingControls] = useState<
+    Array<{
+      threadId: string;
+      taskId: string;
+      invocationId: string;
+    }>
+  >([]);
+  const controls = useQueries({
+    queries: pendingControls.map((control) => ({
+      queryKey: [QueryKeys.subagentThread, conversationId, control.threadId, control.taskId],
+      queryFn: () =>
+        dataService.getSubagentThread(conversationId, control.threadId, control.taskId),
+      retry: false,
+      refetchInterval: 2_000,
+      select: (view: Awaited<ReturnType<typeof dataService.getSubagentThread>>) =>
+        view.controlReceipts?.find((receipt) => receipt.invocationId === control.invocationId)
+          ?.status,
+    })),
+  });
+  // Receipt acceptance is not completion: a queued control can fail after POST returns.
+  const controlStates = controls.map((result) => result.data).join(',');
+  useEffect(() => {
+    const statuses = controlStates.split(',');
+    const finished = pendingControls.filter((control, index) => {
+      const child = byThreadId.get(control.threadId);
+      return (
+        statuses[index] === 'failed' ||
+        statuses[index] === 'rejected' ||
+        statuses[index] === 'applied' ||
+        child?.latestTaskId !== control.taskId ||
+        (child.status !== 'running' && child.status !== 'dispatched')
+      );
+    });
+    if (finished.length === 0) return;
+    const failed = pendingControls.filter((_, index) =>
+      ['failed', 'rejected'].includes(statuses[index]),
+    );
+    if (failed.length > 0) {
+      setStopFailed(true);
+      setStoppingThreads((current) => {
+        const next = new Set(current);
+        for (const control of failed)
+          next.delete(subagentTaskKey(control.threadId, control.taskId));
+        return next;
+      });
+    }
+    setPendingControls((current) => current.filter((control) => !finished.includes(control)));
+  }, [controlStates, pendingControls, byThreadId]);
 
   useEffect(() => {
     setStoppingThreads((current) => {
-      const settled = [...current].filter((threadId) => {
-        const status = byThreadId.get(threadId)?.status;
-        return status != null && status !== 'running' && status !== 'dispatched';
-      });
+      const active = new Set(
+        [...byThreadId.values()]
+          .filter((child) => child.status === 'running' || child.status === 'dispatched')
+          .map((child) => subagentTaskKey(child.threadId, child.latestTaskId)),
+      );
+      const settled = [...current].filter((key) => !active.has(key));
       if (settled.length === 0) return current;
       const remaining = new Set(current);
       for (const threadId of settled) remaining.delete(threadId);
@@ -71,12 +126,25 @@ export default function useBackgroundTasks({
     });
   }, [byThreadId]);
 
-  /** Read once per task-list change rather than subscribing, so streaming
-   *  message updates do not re-render the header. */
-  const args = useMemo(() => {
-    const messages = queryClient.getQueryData<TMessage[]>([QueryKeys.messages, conversationId]);
-    return findToolCallArgs(messages, data?.tasks ?? []);
-  }, [data?.tasks, conversationId, queryClient]);
+  /** Observe existing message data without fetching. Structural sharing of the
+   * selected record ignores unrelated streaming text but includes late restoration. */
+  const selectArgs = useCallback(
+    (messages: TMessage[]) => Object.fromEntries(findToolCallArgs(messages, data?.tasks ?? [])),
+    [data?.tasks],
+  );
+  const { data: selectedArgs } = useQuery<TMessage[], unknown, Record<string, ToolCallArgs>>({
+    queryKey: [QueryKeys.messages, conversationId],
+    enabled: false,
+    select: selectArgs,
+  });
+  const args = useMemo(() => new Map(Object.entries(selectedArgs ?? {})), [selectedArgs]);
+  const retry = useCallback(async () => {
+    await Promise.allSettled([
+      refetch(),
+      refresh(),
+      ...controls.map((control) => control.refetch()),
+    ]);
+  }, [refetch, refresh, controls]);
 
   const rows = useMemo(
     () =>
@@ -109,7 +177,11 @@ export default function useBackgroundTasks({
       setIsStopping(true);
       setStopFailed(false);
       setStoppingThreads(
-        (current) => new Set([...current, ...subagents.map((target) => target.threadId)]),
+        (current) =>
+          new Set([
+            ...current,
+            ...subagents.map((target) => subagentTaskKey(target.threadId, target.taskId)),
+          ]),
       );
       const submittedAt = new Date().toISOString();
       const [toolFailed, subagentResults] = await Promise.all([
@@ -124,21 +196,26 @@ export default function useBackgroundTasks({
               .catch(() => true)
           : Promise.resolve(false),
         Promise.allSettled(
-          subagents.map(({ threadId, taskId }) =>
-            controlSubagent({
+          subagents.map(async ({ threadId, taskId }) => {
+            const invocationId = v4();
+            const result = await controlSubagent({
               parentConversationId: conversationId,
               threadId,
-              command: { taskId, invocationId: v4(), action: 'cancel' },
+              command: { taskId, invocationId, action: 'cancel' },
               submittedAt,
-            }),
-          ),
+            });
+            if (result.receipt.status === 'accepted') {
+              setPendingControls((current) => [...current, { threadId, taskId, invocationId }]);
+            }
+            return result;
+          }),
         ),
       ]);
-      const failedThreads = subagents.flatMap(({ threadId }, index) => {
+      const failedThreads = subagents.flatMap(({ threadId, taskId }, index) => {
         const result = subagentResults[index];
         return result.status === 'rejected' ||
           (result.value.receipt.status !== 'accepted' && result.value.receipt.status !== 'applied')
-          ? [threadId]
+          ? [subagentTaskKey(threadId, taskId)]
           : [];
       });
       if (failedThreads.length > 0) {
@@ -156,7 +233,7 @@ export default function useBackgroundTasks({
           failed = true;
         }
       }
-      setStopFailed(failed);
+      if (failed) setStopFailed(true);
       setIsStopping(false);
     },
     [conversationId, cancelTools, controlSubagent, refresh],
@@ -174,6 +251,8 @@ export default function useBackgroundTasks({
     toolsCancellable,
     isStopping,
     stopFailed,
+    loadFailed: isError || subagentsError || controls.some((control) => control.isError),
+    retry,
     canStop,
     stop,
     stopAll,
