@@ -481,8 +481,8 @@ test.describe('quieter management panels', () => {
       name: 'Toggle files for e2e-deployment-skill',
       exact: true,
     });
-    const open = page.getByRole('button', { name: 'e2e-deployment-skill', exact: true });
     const row = disclosure.locator('..');
+    const open = row.getByRole('button', { name: /^e2e-deployment-skill/ });
     await expect(disclosure).toBeVisible();
 
     await disclosure.focus();
