@@ -10,3 +10,4 @@ export * from './stripUIResourceMarkers';
 export * from './fading';
 export { buildIndexWithRetry, createIndexesWithRetry, isIndexBuildInProgress } from './retry';
 export type { IndexBuildOptions } from './retry';
+export * from './search';
