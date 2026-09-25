@@ -184,6 +184,10 @@ const cssLengthDifferencePattern =
   /^calc\(\s*\d*\.?\d+(px|rem|em)\s+[-+]\s+\d*\.?\d+(px|rem|em)\s*\)$/;
 const cssDurationPattern = /^\d*\.?\d+(ms|s)$/;
 const hexColorPattern = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
+const shadowLengthPattern = /^-?(0|\d*\.?\d+(px|rem|em))$/;
+const shadowColorPattern = /^(#[0-9a-f]{3,8}|[a-z]+|[a-z-]+\(.*\))$/i;
+/** Tailwind composes `--tw-shadow` into one list with the ring layers, where `none` is invalid. */
+const disabledShadow = '0 0 #0000';
 
 function isLinearGradient(value: string): boolean {
   if (!value.startsWith('linear-gradient(') || /url\s*\(|image-set/i.test(value)) {
@@ -222,8 +226,56 @@ const isLength = (value: unknown): value is string =>
   (cssLengthPattern.test(value) || cssLengthDifferencePattern.test(value));
 const isFontFamily = (value: unknown): value is string =>
   typeof value === 'string' && value.trim().length > 0 && !/[;{}]/.test(value);
-const isShadow = (value: unknown): value is string =>
-  typeof value === 'string' && value.trim().length > 0 && !/[;{}]|url\s*\(/i.test(value);
+/** Splits on `separator` outside parentheses, so `rgb(0, 0, 0)` stays one part. */
+function splitTopLevel(value: string, separator: RegExp): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let current = '';
+  for (const char of value) {
+    if (char === '(') {
+      depth += 1;
+    } else if (char === ')') {
+      depth -= 1;
+    }
+    if (depth === 0 && separator.test(char)) {
+      parts.push(current);
+      current = '';
+      continue;
+    }
+    current += char;
+  }
+  parts.push(current);
+  return parts.map((part) => part.trim()).filter((part) => part.length > 0);
+}
+
+/** One layer: two to four lengths, optionally `inset` and one color, per the box-shadow grammar. */
+function isShadowLayer(layer: string): boolean {
+  const tokens = splitTopLevel(layer, /\s/);
+  const lengths = tokens.filter((token) => shadowLengthPattern.test(token)).length;
+  const insets = tokens.filter((token) => token.toLowerCase() === 'inset').length;
+  const colors = tokens.length - lengths - insets;
+  const color = tokens.find(
+    (token) => !shadowLengthPattern.test(token) && token.toLowerCase() !== 'inset',
+  );
+  return (
+    lengths >= 2 &&
+    lengths <= 4 &&
+    insets <= 1 &&
+    colors <= 1 &&
+    (color === undefined || shadowColorPattern.test(color))
+  );
+}
+
+const isShadow = (value: unknown): value is string => {
+  if (typeof value !== 'string' || /[;{}]|url\s*\(/i.test(value)) {
+    return false;
+  }
+  if (value.trim().toLowerCase() === 'none') {
+    return true;
+  }
+  const layers = splitTopLevel(value, /,/);
+  return layers.length > 0 && layers.every(isShadowLayer);
+};
 const isDuration = (value: unknown): value is string =>
   typeof value === 'string' && cssDurationPattern.test(value);
 
@@ -396,6 +448,24 @@ function definedBrands(brands?: Partial<IThemeBrands>): Partial<IThemeBrands> {
   ) as Partial<IThemeBrands>;
 }
 
+const shadowAppearanceKeys: ReadonlyArray<keyof IThemeAppearance> = [
+  'elevationSurface',
+  'shadowXs',
+  'shadowSm',
+  'shadowMd',
+  'shadowLg',
+  'shadowXl',
+  'shadow2xl',
+];
+
+function withComposableShadows(appearance: IThemeAppearance): IThemeAppearance {
+  return shadowAppearanceKeys.reduce<IThemeAppearance>(
+    (result, key) =>
+      result[key].trim().toLowerCase() === 'none' ? { ...result, [key]: disabledShadow } : result,
+    appearance,
+  );
+}
+
 export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedThemeDefinition {
   const errors = validateThemeDefinition(theme);
   if (errors.length > 0) {
@@ -527,7 +597,7 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
       ...seriesEightFallback,
       ...verifiedFallback,
     } as Required<IThemeRGB>,
-    appearance: { ...defaultAppearance, ...definition?.appearance },
+    appearance: withComposableShadows({ ...defaultAppearance, ...definition?.appearance }),
     /** Mode last: a mode override is more specific than the theme-wide set. */
     brands: {
       ...defaultBrands,

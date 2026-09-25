@@ -489,6 +489,8 @@ describe('theme registry', () => {
           appearance: {
             controlRadius: 'url(theme.css)',
             shadowLg: '0 1px red; color: red',
+            shadowMd: 'not-a-shadow',
+            shadowXl: '1px red',
             unknownSpacing: '1rem',
           },
         },
@@ -500,6 +502,8 @@ describe('theme registry', () => {
       'Unknown color token: rgb-unknown',
       'Invalid appearance value for controlRadius: url(theme.css)',
       'Invalid appearance value for shadowLg: 0 1px red; color: red',
+      'Invalid appearance value for shadowMd: not-a-shadow',
+      'Invalid appearance value for shadowXl: 1px red',
       'Unknown appearance token: unknownSpacing',
     ]);
     expect(() => resolveTheme(invalidTheme, 'light')).toThrow(TypeError);
@@ -534,6 +538,26 @@ describe('theme registry', () => {
       'Invalid appearance value for radiusSm: calc(1rem - var(--x))',
       'Invalid appearance value for radiusMd: calc(4px - 0)',
     ]);
+  });
+
+  it('accepts the box-shadow forms a theme is likely to write', () => {
+    const shadows = [
+      'none',
+      '0 1px 2px 0 rgb(0 0 0 / 0.05)',
+      'inset 0 0 0 1px rgba(0, 0, 0, 0.1), 0 8px 16px -4px #00000033',
+      '0 2px 4px var(--brand-shadow)',
+      '0 0 #0000',
+    ];
+
+    shadows.forEach((shadowLg) => {
+      expect(
+        validateThemeDefinition({
+          version: 1,
+          name: 'shadows',
+          modes: { light: { appearance: { shadowLg } } },
+        }),
+      ).toEqual([]);
+    });
   });
 
   it('sanitizes malformed legacy colors without weakening definition validation', () => {

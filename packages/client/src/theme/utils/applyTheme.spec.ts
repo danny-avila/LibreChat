@@ -154,7 +154,7 @@ describe('applyTheme', () => {
       shadowMd: ['--theme-shadow-md', '0 4px 8px rgb(0 0 0 / 0.15)'],
       shadowLg: ['--theme-shadow-lg', '0 8px 16px rgb(0 0 0 / 0.15)'],
       shadowXl: ['--theme-shadow-xl', '0 12px 24px rgb(0 0 0 / 0.15)'],
-      shadow2xl: ['--theme-shadow-2xl', 'none'],
+      shadow2xl: ['--theme-shadow-2xl', 'inset 0 0 0 1px rgb(0, 0, 0)'],
     } as const;
     const appearance = Object.fromEntries(
       Object.entries(scale).map(([key, [, value]]) => [key, value]),
@@ -184,6 +184,29 @@ describe('applyTheme', () => {
     Object.values(scale).forEach(([property]) => {
       expect(root.style.getPropertyValue(property)).toBe('');
     });
+  });
+
+  /** Tailwind lists `--tw-shadow` after the ring layers, where a bare `none` voids the whole
+   *  declaration and takes a focus ring with it, so a disabled step becomes a transparent layer. */
+  it('writes a disabled shadow step as a composable transparent layer', () => {
+    const root = document.documentElement;
+
+    applyResolvedTheme(
+      resolveTheme(
+        {
+          version: 1,
+          name: 'flat',
+          modes: { light: { appearance: { shadow2xl: 'none', elevationSurface: ' NONE ' } } },
+        },
+        'light',
+      ),
+      root,
+    );
+
+    expect(root.style.getPropertyValue('--theme-shadow-2xl')).toBe('0 0 #0000');
+    expect(root.style.getPropertyValue('--theme-elevation-surface')).toBe('0 0 #0000');
+    expect(root.style.getPropertyValue('--theme-shadow-lg')).toBe(defaultAppearance.shadowLg);
+    clearAppliedTheme(root);
   });
 
   it('applies the resolved high-contrast code surface instead of the stock grey', () => {
