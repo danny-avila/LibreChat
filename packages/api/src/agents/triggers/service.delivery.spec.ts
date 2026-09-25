@@ -209,6 +209,18 @@ describe('durable agent trigger service', () => {
     await service.stop();
   });
 
+  describe('completion wait configuration', () => {
+    const address = { address: '127.0.0.1', family: 'IPv4' as const, port: 3080 };
+
+    it('exposes the configured completion wait cap', async () => {
+      const service = createAgentTriggerService({ methods: deliveryMethods() });
+      expect(service.getCompletionWaitMaxIntervalMs()).toBe(60_000);
+      await service.initialize({ address, idlePolling: { completionWaitMaxIntervalMs: 20_000 } });
+      expect(service.getCompletionWaitMaxIntervalMs()).toBe(20_000);
+      await service.stop();
+    });
+  });
+
   it('advertises ordinary completion but not detached-action capability without durable storage', async () => {
     const methods = deliveryMethods();
     const service = createAgentTriggerService({

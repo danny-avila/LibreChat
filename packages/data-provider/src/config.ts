@@ -1537,6 +1537,16 @@ export const agentsEndpointSchema = baseEndpointSchema
                 .max(300_000)
                 .optional()
                 .default(120_000),
+              /** Longest a background or subagent completion re-checks whether its
+               * result and parent turn are ready. The events it waits on expedite it,
+               * so this bounds missed signals rather than normal delivery latency. */
+              completionWaitMaxIntervalMs: z
+                .number()
+                .int()
+                .min(5_000)
+                .max(300_000)
+                .optional()
+                .default(60_000),
             })
             .optional(),
         })

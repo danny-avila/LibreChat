@@ -24,11 +24,13 @@ const getGenerationAdmissionEvidence = (userId, clientRequestId, streamId, conve
 const subagentCompletionAdapter = createSubagentCompletionWakeupResolver({
   methods,
   getGenerationJob: (conversationId) => GenerationJobManager.getJob(conversationId),
+  getWaitMaxIntervalMs: () => service.getCompletionWaitMaxIntervalMs(),
 });
 const backgroundToolCompletionAdapter = createBackgroundToolCompletionWakeupResolver({
   methods,
   getGenerationJob: (conversationId) => GenerationJobManager.getJob(conversationId),
   getResultBatchSize: () => service.getBackgroundCompletionResultBatchSize(),
+  getWaitMaxIntervalMs: () => service.getCompletionWaitMaxIntervalMs(),
 });
 const eventActorAdapter = createAgentEventContinueResolver({
   methods,
