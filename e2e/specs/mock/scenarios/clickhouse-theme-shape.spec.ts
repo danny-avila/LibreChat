@@ -54,6 +54,23 @@ async function openMentionMenu(page: Page): Promise<Locator> {
   return menu;
 }
 
+/**
+ * Paints code text, waits for the browser to settle its font loads, and reports the status of
+ * every declared Inconsolata face. A face is fetched only once text renders in it.
+ */
+async function inconsolataStatuses(page: Page): Promise<string[]> {
+  return page.evaluate(async () => {
+    const probe = document.createElement('code');
+    probe.textContent = 'const probe = 0;';
+    document.body.append(probe);
+    await document.fonts.ready;
+    probe.remove();
+    return [...document.fonts]
+      .filter((face) => face.family.replace(/"/g, '') === 'Inconsolata')
+      .map((face) => face.status);
+  });
+}
+
 async function resolvedMode(page: Page): Promise<Mode> {
   const dark = await page.evaluate(() => document.documentElement.classList.contains('dark'));
   return dark ? 'dark' : 'light';
@@ -103,5 +120,56 @@ test.describe('ClickHouse theme shape', () => {
     const family = await probeStyle(page, 'font-mono', 'font-family');
     expect(family.replace(/"/g, '').startsWith('Inconsolata')).toBe(true);
     expect(family).toContain('monospace');
+  });
+
+  test('the ClickHouse theme renders code in the self-hosted Inconsolata face @scenario:clickhouse-mono-font-is-bundled', async ({
+    page,
+  }) => {
+    const fetched: string[] = [];
+    page.on('requestfinished', (request) => {
+      if (/inconsolata-latin-\d+-normal/.test(request.url())) {
+        fetched.push(request.url());
+      }
+    });
+    await storeClickHouse(page);
+
+    await openMentionMenu(page);
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'clickhouse');
+
+    expect(await inconsolataStatuses(page)).toContain('loaded');
+    expect(await page.evaluate(() => document.fonts.check('16px Inconsolata'))).toBe(true);
+    expect(fetched).not.toHaveLength(0);
+  });
+
+  test('the production build serves the Inconsolata licence beside the font @scenario:inconsolata-licence-ships-with-font', async ({
+    page,
+  }) => {
+    const font = await page.request.get('/assets/fonts/inconsolata-latin-400-normal.woff2');
+    expect(font.status()).toBe(200);
+
+    const licence = await page.request.get('/assets/fonts/inconsolata-OFL.txt');
+    expect(licence.status()).toBe(200);
+    const text = await licence.text();
+    expect(text).toContain('Copyright 2006 The Inconsolata Project Authors');
+    expect(text).toContain('SIL OPEN FONT LICENSE Version 1.1');
+  });
+
+  test('the default theme never fetches Inconsolata @scenario:default-theme-skips-inconsolata', async ({
+    page,
+  }) => {
+    const fetched: string[] = [];
+    page.on('request', (request) => {
+      if (/inconsolata/i.test(request.url())) {
+        fetched.push(request.url());
+      }
+    });
+
+    await openMentionMenu(page);
+    await expect(page.locator('html')).not.toHaveAttribute('data-theme', 'clickhouse');
+
+    const statuses = await inconsolataStatuses(page);
+    expect(statuses).not.toHaveLength(0);
+    expect(statuses.every((status) => status === 'unloaded')).toBe(true);
+    expect(fetched).toEqual([]);
   });
 });
