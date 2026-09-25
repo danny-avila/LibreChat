@@ -47,7 +47,7 @@ export const clickHouseLightTheme: IThemeRGB = {
   'rgb-accent-primary-hover': '50 50 50', // #323232 (palette.neutral.712)
 
   // Ring colors
-  'rgb-ring-primary': '21 21 21', // #151515 (accent.default)
+  'rgb-ring-primary': '67 126 239', // #437eef (outline.default)
 
   // Header colors
   'rgb-header-primary': '255 255 255', // #ffffff (background.default)
@@ -70,7 +70,7 @@ export const clickHouseLightTheme: IThemeRGB = {
   'rgb-surface-tertiary': '246 247 250', // #f6f7fa (background.muted)
   'rgb-surface-tertiary-alt': '255 255 255', // #ffffff (background.default)
   'rgb-surface-dialog': '255 255 255', // #ffffff (background.default)
-  'rgb-surface-overlay': '83 87 95', // #53575f (palette.slate.700)
+  'rgb-surface-overlay': '21 21 21', // #151515 (dialog.color.opaqueBackground, lch(6.7738 0 none))
   'rgb-surface-submit': '21 21 21', // #151515 (accent.default)
   'rgb-surface-submit-hover': '50 50 50', // #323232 (palette.neutral.712)
   'rgb-surface-destructive': '193 0 0', // #c10000 (palette.danger.600)
@@ -198,9 +198,9 @@ export const clickHouseDarkTheme: IThemeRGB = {
   'rgb-surface-chat': '31 31 28', // #1f1f1c (background.default)
   'rgb-surface-code': '40 40 40', // #282828 (codeblock.darkMode.background.default)
   'rgb-surface-code-body': '40 40 40', // #282828 (codeblock.darkMode.background.default)
-  'rgb-surface-inverted': '255 255 255', // #ffffff (palette.neutral.0)
-  'rgb-surface-inverted-hover': '223 223 223', // #dfdfdf (palette.neutral.200)
-  'rgb-text-inverted': '21 21 21', // #151515 (palette.neutral.900)
+  'rgb-surface-inverted': '250 255 105', // #faff69 (button.basic.color.primary.background.default)
+  'rgb-surface-inverted-hover': '252 255 150', // #fcff96 (button.basic.color.primary.background.hover)
+  'rgb-text-inverted': '31 31 28', // #1f1f1c (button.basic.color.primary.text.default)
   'rgb-surface-fixed': '255 255 255', // #ffffff (palette.neutral.0, same in light and dark)
   'rgb-surface-fixed-hover': '230 231 233', // #e6e7e9 (palette.slate.100, same in light and dark)
   'rgb-text-fixed': '22 21 23', // #161517 (palette.slate.900, same in light and dark)
@@ -302,6 +302,8 @@ const clickHouseShape = {
     '"Inconsolata", ui-monospace, SFMono-Regular, Menlo, "Cascadia Mono", "Liberation Mono", Consolas, monospace',
   shadowXs: '0 2px 2px 0 rgb(0 0 0 / 0.03)', // shadow.5
   shadowSm: '0 2px 2px 0 rgb(0 0 0 / 0.03)', // shadow.5
+  controlHeight: '2rem', // genericMenu.panel.size.height
+  motionFast: '100ms', // transition.default
 };
 
 const elevation = (alpha: number): string =>
