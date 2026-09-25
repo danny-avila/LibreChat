@@ -540,7 +540,9 @@ export function toUIMessage(message: TMessage): UIMessage {
   const steers: UIMessageMetadata['steers'] = [];
   const summaries: UIMessageMetadata['summaries'] = [];
 
-  if (content) {
+  const contentless = !content || (content.length === 0 && (message.text?.length ?? 0) > 0);
+
+  if (content && !contentless) {
     for (let i = 0; i < content.length; i++) {
       const part = content[i] as MappableContentPart | undefined;
       const uiPart = toUIPart(part, i);
@@ -583,7 +585,7 @@ export function toUIMessage(message: TMessage): UIMessage {
     ...(message.error !== undefined && { error: message.error }),
     ...(message.unfinished !== undefined && { unfinished: message.unfinished }),
     ...(message.createdAt !== undefined && { createdAt: message.createdAt }),
-    ...(!content && { contentless: true }),
+    ...(contentless && { contentless: true }),
     ...(agentIds.size > 0 && { agentIds: Array.from(agentIds) }),
     ...(groupIds.size > 0 && { groupIds: Array.from(groupIds) }),
     ...(activityLabels.length > 0 && { activityLabels }),
@@ -599,35 +601,102 @@ export function toUIMessage(message: TMessage): UIMessage {
   };
 }
 
+const messageFields = ['sender', 'model', 'endpoint', 'error', 'unfinished', 'createdAt'] as const;
+
+const pickMessageFields = (metadata: UIMessageMetadata | undefined) => {
+  const fields: Partial<Pick<TMessage, (typeof messageFields)[number]>> = {};
+  if (!metadata) {
+    return fields;
+  }
+  for (const key of messageFields) {
+    if (metadata[key] !== undefined) {
+      Object.assign(fields, { [key]: metadata[key] });
+    }
+  }
+  return fields;
+};
+
+const joinPartText = (parts: ReadonlyArray<UIMessagePart | undefined>) => {
+  let text = '';
+  for (const part of parts) {
+    if (part?.type === 'text') {
+      text += part.text;
+    }
+  }
+  return text;
+};
+
+/**
+ * `TMessage.text` of a content-bearing message is not derived from its parts, so it is kept
+ * unless the text parts changed, in which case the view's text wins.
+ */
+const resolveText = (text: string, contentless: boolean, base?: TMessage) => {
+  if (contentless || base?.text === undefined) {
+    return text;
+  }
+  const baseText = joinPartText((base.content ?? []).map((part) => toUIPart(part)));
+  return text === baseText ? base.text : text;
+};
+
+/**
+ * Attachment `file` parts (those without content metadata) describe `message.files`: stored
+ * entries are kept by path in view order, new parts become entries, and stored entries the view
+ * never showed (no `filepath`) are kept.
+ */
+const reconcileFiles = (
+  parts: ReadonlyArray<UIMessagePart>,
+  baseFiles: TMessage['files'],
+): TMessage['files'] => {
+  const attachments = parts.filter(
+    (part): part is UIFilePart => part.type === 'file' && !part.providerMetadata,
+  );
+  if (!baseFiles && attachments.length === 0) {
+    return undefined;
+  }
+  const byPath = new Map<string, Partial<TFile>>();
+  const hidden: Partial<TFile>[] = [];
+  for (const file of baseFiles ?? []) {
+    if (file.filepath) {
+      byPath.set(file.filepath, file);
+    } else {
+      hidden.push(file);
+    }
+  }
+  const files = attachments.map(
+    (part) =>
+      byPath.get(part.url) ?? {
+        filepath: part.url,
+        ...(part.filename && { filename: part.filename }),
+        type: part.mediaType,
+      },
+  );
+  return files.concat(hidden);
+};
+
 /**
  * Maps a `UIMessage` back onto a `TMessage`. `base` is the stored message with the same id,
- * whose fields the UI view does not carry (tree position, files, feedback, token counts) are
- * kept; without one the message is rebuilt from the view alone.
+ * whose fields the UI view does not carry (tree position, feedback, token counts) are kept;
+ * without one the message is rebuilt from the view alone, metadata fields included.
  */
 export function fromUIMessage(message: UIMessage, base?: TMessage): TMessage {
   const metadata = message.metadata;
-  const text = message.parts.reduce(
-    (joined, part) => (part.type === 'text' ? joined + part.text : joined),
-    '',
-  );
+  const contentless = metadata?.contentless === true;
+  const text = joinPartText(message.parts);
   const next: TMessage = {
     ...base,
+    ...pickMessageFields(metadata),
     messageId: message.id,
     isCreatedByUser: message.role === 'user',
     conversationId: metadata?.conversationId ?? base?.conversationId ?? null,
     parentMessageId: metadata?.parentMessageId ?? base?.parentMessageId ?? null,
-    text: metadata?.contentless ? text : (base?.text ?? text),
+    text: resolveText(text, contentless, base),
   };
-  if (!metadata?.contentless) {
+  if (!contentless) {
     next.content = fromUIParts(message.parts);
   }
-  if (!base) {
-    const files = message.parts
-      .filter((part): part is UIFilePart => part.type === 'file' && !part.providerMetadata)
-      .map((part) => ({ filepath: part.url, filename: part.filename, type: part.mediaType }));
-    if (files.length > 0) {
-      next.files = files;
-    }
+  const files = reconcileFiles(message.parts, base?.files);
+  if (files) {
+    next.files = files;
   }
   return next;
 }

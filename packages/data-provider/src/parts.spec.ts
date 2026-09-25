@@ -515,6 +515,98 @@ describe('parts', () => {
     });
   });
 
+  describe('fromUIMessage', () => {
+    it('views an empty content array with text as contentless', () => {
+      const message = createMessage({ content: [], text: 'Legacy answer' });
+
+      const view = toUIMessage(message);
+
+      expect(view.parts).toEqual([{ type: 'text', text: 'Legacy answer' }]);
+      expect(view.metadata?.contentless).toBe(true);
+      expect(fromUIMessage(view, message)).toStrictEqual(message);
+    });
+
+    it('keeps an empty streaming placeholder as content', () => {
+      const message = createMessage({ content: [] });
+
+      const view = toUIMessage(message);
+
+      expect(view.parts).toEqual([]);
+      expect(fromUIMessage(view, message)).toStrictEqual(message);
+    });
+
+    it('updates the stored text when a text part is edited', () => {
+      const message = createMessage({
+        text: 'old',
+        content: [{ type: ContentTypes.TEXT, text: 'old' }],
+      });
+      const view = toUIMessage(message);
+
+      const next = fromUIMessage({ ...view, parts: [{ type: 'text', text: 'new' }] }, message);
+
+      expect(next.text).toBe('new');
+      expect(next.content).toEqual([{ type: ContentTypes.TEXT, text: 'new' }]);
+    });
+
+    it('keeps stored text that the parts do not derive', () => {
+      const message = createMessage({
+        text: 'stored summary',
+        content: [{ type: ContentTypes.TEXT, text: 'Answer' }],
+      });
+
+      expect(fromUIMessage(toUIMessage(message), message).text).toBe('stored summary');
+    });
+
+    it('applies removed and added attachments to a stored message', () => {
+      const kept = {
+        file_id: 'a',
+        filepath: '/files/a.pdf',
+        filename: 'a.pdf',
+        type: 'application/pdf',
+      };
+      const removed = {
+        file_id: 'b',
+        filepath: '/files/b.pdf',
+        filename: 'b.pdf',
+        type: 'application/pdf',
+      };
+      const unlisted = { file_id: 'c' };
+      const message = createMessage({
+        isCreatedByUser: true,
+        text: 'Files',
+        files: [kept, removed, unlisted],
+      });
+      const view = toUIMessage(message);
+      const parts: UIMessagePart[] = [
+        view.parts[0],
+        view.parts[1],
+        { type: 'file', mediaType: 'image/png', filename: 'new.png', url: '/images/new.png' },
+      ];
+
+      const next = fromUIMessage({ ...view, parts }, message);
+
+      expect(next.files).toEqual([
+        kept,
+        { filepath: '/images/new.png', filename: 'new.png', type: 'image/png' },
+        unlisted,
+      ]);
+    });
+
+    it('restores metadata fields when no stored message exists', () => {
+      const message = createMessage({
+        sender: 'Agent',
+        model: 'gpt-5',
+        endpoint: 'agents',
+        error: true,
+        unfinished: true,
+        createdAt: '2026-09-25T00:00:00.000Z',
+        content: [{ type: ContentTypes.TEXT, text: 'Partial' }],
+      });
+
+      expect(fromUIMessage(toUIMessage(message))).toEqual({ ...message, text: 'Partial' });
+    });
+  });
+
   it('narrows tool and data parts', () => {
     const parts = toUIParts(recorded.agentUpdate.concat(recorded.toolCompleted[1]));
 
