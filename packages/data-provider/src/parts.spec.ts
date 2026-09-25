@@ -301,6 +301,7 @@ describe('parts', () => {
           id: 'call-9',
           args: '{"q":"dogs"}',
           output: '5',
+          runStepStatus: 'completed',
         },
       });
     });
@@ -466,6 +467,7 @@ describe('parts', () => {
         model: 'agent-a',
         unfinished: true,
         text: '',
+        attachments: [attachment],
         agentIds: ['agent-a', 'agent-b'],
         groupIds: [2, 1],
         steers: [{ steer: 'Focus on cats', steerId: 's-1' }],
@@ -905,6 +907,65 @@ describe('parts', () => {
       expect(fromUIMessage({ ...view, parts }, message).files).toEqual([
         { ...stored, filepath: '/files/moved.pdf' },
       ]);
+    });
+  });
+
+  describe('rebuilds without a stored base', () => {
+    it('keeps a successful hand-built tool part successful', () => {
+      const part: UIToolPart = {
+        type: 'tool-search',
+        toolCallId: 'call-9',
+        state: 'output-available',
+        input: { q: 'dogs' },
+      };
+
+      expect(toUIPart(fromUIPart(part))).toMatchObject({ state: 'output-available' });
+    });
+
+    it('keeps an array output from a hand-built tool part', () => {
+      const part: UIToolPart = {
+        type: 'tool-code_interpreter',
+        toolCallId: 'ci-9',
+        state: 'output-available',
+        input: 'print(1)',
+        output: [{ logs: 'done' }],
+      };
+
+      expect(toUIPart(fromUIPart(part))).toMatchObject({
+        type: 'tool-code_interpreter',
+        state: 'output-available',
+        output: [{ logs: 'done' }],
+      });
+    });
+
+    it('keeps attachments and an empty content array', () => {
+      const attachment = {
+        conversationId: 'convo-1',
+        messageId: 'response-1',
+        toolCallId: 'call-1',
+        filename: 'notes.txt',
+        filepath: '/files/notes.txt',
+      } as TAttachment;
+      const message = createMessage({ content: [], text: 'Legacy', attachments: [attachment] });
+
+      expect(fromUIMessage(toUIMessage(message))).toStrictEqual(message);
+    });
+
+    it('keeps hidden files in their stored positions', () => {
+      const hidden = { file_id: 'h' };
+      const visible = {
+        file_id: 'v',
+        filepath: '/files/v.pdf',
+        filename: 'v.pdf',
+        type: 'application/pdf',
+      };
+      const message = createMessage({
+        isCreatedByUser: true,
+        text: 'Files',
+        files: [hidden, visible],
+      });
+
+      expect(fromUIMessage(toUIMessage(message), message).files).toEqual([hidden, visible]);
     });
   });
 

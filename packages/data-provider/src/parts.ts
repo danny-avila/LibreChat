@@ -191,6 +191,10 @@ export type UIMessageMetadata = Pick<
    * parts joined, so a rebuild without a stored base keeps it.
    */
   text?: string;
+  /** Set when a contentless message stored `content: []` rather than no `content` at all. */
+  emptyContent?: true;
+  /** The stored attachments, carried whole so a rebuild without a stored base keeps them. */
+  attachments?: TAttachment[];
   /** Agents that produced parts of this message, in order of first appearance. */
   agentIds?: string[];
   /** Parallel content groups present in this message, in order of first appearance. */
@@ -568,18 +572,34 @@ const fromToolPart = (part: UIToolPart): TMessageContentParts => {
     const { toolCall, ...partMetadata } = stored;
     return { type: ContentTypes.TOOL_CALL, tool_call: toolCall, ...partMetadata };
   }
+  const name = part.type.slice('tool-'.length);
+  if (Array.isArray(part.output)) {
+    return {
+      type: ContentTypes.TOOL_CALL,
+      tool_call: {
+        type: ToolCallTypes.CODE_INTERPRETER,
+        id: part.toolCallId,
+        code_interpreter: {
+          input: typeof part.input === 'string' ? part.input : JSON.stringify(part.input ?? ''),
+          outputs: part.output,
+        },
+        ...(part.state === 'output-error' && { runStepStatus: 'failed' as const }),
+      },
+    };
+  }
   const output = typeof part.output === 'string' ? part.output : part.errorText;
   return {
     type: ContentTypes.TOOL_CALL,
     tool_call: {
       type: ToolCallTypes.TOOL_CALL,
-      name: part.type.slice('tool-'.length),
+      name,
       id: part.toolCallId,
       ...(part.input !== undefined && {
         args: typeof part.input === 'string' ? part.input : JSON.stringify(part.input),
       }),
       ...(output !== undefined && { output }),
       ...(part.state === 'output-error' && { runStepStatus: 'failed' as const }),
+      ...(part.state === 'output-available' && { runStepStatus: 'completed' as const }),
       ...(part.approval && {
         approval: {
           actionId: part.approval.id,
@@ -783,6 +803,8 @@ export function toUIMessage(message: TMessage): UIMessage {
     ...(message.unfinished !== undefined && { unfinished: message.unfinished }),
     ...(message.createdAt !== undefined && { createdAt: message.createdAt }),
     ...(contentless && { contentless: true }),
+    ...(contentless && content && { emptyContent: true }),
+    ...(message.attachments !== undefined && { attachments: message.attachments }),
     ...(!contentless &&
       message.text !== undefined &&
       message.text !== joinedText && { text: message.text }),
@@ -845,7 +867,8 @@ const resolveText = (text: string, metadata: UIMessageMetadata | undefined, base
 /**
  * Attachment `file` parts describe `message.files`: each is matched to its stored entry by the
  * path it was viewed with (so an edited `url` still finds it), the view's edits are applied, parts
- * built by hand become new entries, and stored entries the view never showed are kept.
+ * built by hand become new entries, and stored entries the view never showed keep their slots
+ * while the visible entries fill the others in view order.
  */
 const reconcileFiles = (
   attachments: ReadonlyArray<UIFilePart>,
@@ -855,15 +878,12 @@ const reconcileFiles = (
     return undefined;
   }
   const byPath = new Map<string, Partial<TFile>>();
-  const hidden: Partial<TFile>[] = [];
   for (const file of baseFiles ?? []) {
     if (file.filepath) {
       byPath.set(file.filepath, file);
-    } else {
-      hidden.push(file);
     }
   }
-  const files = attachments.map((part) => {
+  const visible = attachments.map((part) => {
     const metadata = part.providerMetadata?.librechat;
     const identity = metadata?.source === 'attachment' ? metadata.filepath : part.url;
     const stored = byPath.get(identity);
@@ -876,7 +896,16 @@ const reconcileFiles = (
       type: part.mediaType,
     };
   });
-  return files.concat(hidden);
+  const files: Partial<TFile>[] = [];
+  let next = 0;
+  for (const file of baseFiles ?? []) {
+    if (!file.filepath) {
+      files.push(file);
+    } else if (next < visible.length) {
+      files.push(visible[next++]);
+    }
+  }
+  return files.concat(visible.slice(next));
 };
 
 /** Reads an identity field from metadata, where an explicit `null` is a value, not an absence. */
@@ -926,6 +955,11 @@ export function fromUIMessage(message: UIMessage, base?: TMessage): TMessage {
   };
   if (!contentless) {
     next.content = writer.content;
+  } else if (metadata?.emptyContent && base?.content === undefined) {
+    next.content = [];
+  }
+  if (base?.attachments === undefined && metadata?.attachments !== undefined) {
+    next.attachments = metadata.attachments;
   }
   const files = reconcileFiles(attachments, base?.files);
   if (files) {
