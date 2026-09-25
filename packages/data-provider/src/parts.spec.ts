@@ -471,7 +471,9 @@ describe('parts', () => {
           mediaType: 'application/pdf',
           filename: 'report.pdf',
           url: '/files/report.pdf',
-          providerMetadata: { librechat: { source: 'attachment', filepath: '/files/report.pdf' } },
+          providerMetadata: {
+            librechat: { source: 'attachment', filepath: '/files/report.pdf', index: 0 },
+          },
         },
         { type: 'source-url', sourceId: 'call-1-0', url: 'https://a.example', title: 'A' },
         { type: 'source-url', sourceId: 'call-1-1', url: 'https://b.example' },
@@ -522,7 +524,9 @@ describe('parts', () => {
             mediaType: 'image/png',
             filename: 'cat.png',
             url: '/images/cat.png',
-            providerMetadata: { librechat: { source: 'attachment', filepath: '/images/cat.png' } },
+            providerMetadata: {
+              librechat: { source: 'attachment', filepath: '/images/cat.png', index: 0 },
+            },
           },
         ],
       });
@@ -1042,6 +1046,58 @@ describe('parts', () => {
         expect.objectContaining({ id: 'mem-1' }),
         message,
       );
+    });
+  });
+
+  describe('identity and additions', () => {
+    it('keeps two stored files that share a path distinct', () => {
+      const first = {
+        file_id: 'a',
+        filepath: '/files/same.pdf',
+        filename: 'first.pdf',
+        type: 'application/pdf',
+      };
+      const second = {
+        file_id: 'b',
+        filepath: '/files/same.pdf',
+        filename: 'second.pdf',
+        type: 'application/pdf',
+      };
+      const message = createMessage({
+        isCreatedByUser: true,
+        text: 'Files',
+        files: [first, second],
+      });
+
+      expect(fromUIMessage(toUIMessage(message), message)).toStrictEqual(message);
+    });
+
+    it('writes content added to a contentless message', () => {
+      const message = createMessage({ isCreatedByUser: false, text: 'Plain' });
+      const view = toUIMessage(message);
+      const tool: UIToolPart = {
+        type: 'tool-search',
+        toolCallId: 'call-1',
+        state: 'input-available',
+        input: { q: 'x' },
+      };
+
+      const next = fromUIMessage({ ...view, parts: [...view.parts, tool] }, message);
+
+      expect(next.content?.map((part) => part.type)).toEqual([
+        ContentTypes.TEXT,
+        ContentTypes.TOOL_CALL,
+      ]);
+      expect(next.text).toBe('Plain');
+    });
+
+    it('keeps primitive JSON arguments as their string', () => {
+      const part = toUIPart({
+        type: ContentTypes.TOOL_CALL,
+        tool_call: { id: 'call-1', type: 'tool_call', name: 'count', args: '42' },
+      });
+
+      expect(part).toMatchObject({ input: '42', state: 'input-available' });
     });
   });
 

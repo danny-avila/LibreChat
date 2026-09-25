@@ -87,8 +87,11 @@ export type UIFilePartMetadata =
       ContentPartOf<ContentTypes.INPUT_AUDIO>,
       'type' | 'input_audio'
     >)
-  /** A `message.files` entry; `filepath` is the stored path, kept as its identity across edits. */
-  | { source: 'attachment'; filepath: string };
+  /**
+   * A `message.files` entry: `index` is its position in the stored array and `filepath` the path
+   * it was viewed with, together its identity across edits even when two entries share a path.
+   */
+  | { source: 'attachment'; filepath: string; index: number };
 
 /**
  * AI SDK `FileUIPart`. A part from a content slot names its content type as `source`; one with
@@ -294,7 +297,11 @@ const parseToolInput = (args: UIToolInput | undefined) => {
     return { input: args, complete: args != null };
   }
   try {
-    return { input: JSON.parse(args) as UIToolInput, complete: true };
+    const parsed: unknown = JSON.parse(args);
+    return {
+      input: typeof parsed === 'object' && parsed !== null ? (parsed as object) : args,
+      complete: true,
+    };
   } catch {
     return { input: args, complete: false };
   }
@@ -716,7 +723,7 @@ const isAttachmentPart = (part: UIMessagePart): part is UIFilePart =>
   part.type === 'file' &&
   (!part.providerMetadata || part.providerMetadata.librechat.source === 'attachment');
 
-const toAttachmentFilePart = (file: Partial<TFile>): UIFilePart | undefined => {
+const toAttachmentFilePart = (file: Partial<TFile>, index: number): UIFilePart | undefined => {
   if (!file.filepath) {
     return undefined;
   }
@@ -725,7 +732,7 @@ const toAttachmentFilePart = (file: Partial<TFile>): UIFilePart | undefined => {
     mediaType: file.type || 'application/octet-stream',
     ...(file.filename && { filename: file.filename }),
     url: file.filepath,
-    providerMetadata: { librechat: { source: 'attachment', filepath: file.filepath } },
+    providerMetadata: { librechat: { source: 'attachment', filepath: file.filepath, index } },
   };
 };
 
@@ -821,8 +828,9 @@ export function toUIMessage(message: TMessage, options?: UIMappingOptions): UIMe
     parts.push({ type: 'text', text: message.text ?? '' });
   }
 
-  for (const file of message.files ?? []) {
-    const filePart = toAttachmentFilePart(file);
+  const files = message.files ?? [];
+  for (let i = 0; i < files.length; i++) {
+    const filePart = toAttachmentFilePart(files[i], i);
     if (filePart) {
       parts.push(filePart);
     }
@@ -902,8 +910,8 @@ const resolveText = (text: string, metadata: UIMessageMetadata | undefined, base
 
 /**
  * Attachment `file` parts describe `message.files`: each is matched to its stored entry by the
- * path it was viewed with (so an edited `url` still finds it), the view's edits are applied, parts
- * built by hand become new entries, and stored entries the view never showed keep their slots
+ * position and path it was viewed with (so an edited `url` still finds it, and entries sharing a
+ * path stay distinct), the view's edits are applied, parts built by hand become new entries, and stored entries the view never showed keep their slots
  * while the visible entries fill the others in view order.
  */
 const reconcileFiles = (
@@ -913,17 +921,20 @@ const reconcileFiles = (
   if (!baseFiles && attachments.length === 0) {
     return undefined;
   }
-  const byPath = new Map<string, Partial<TFile>>();
-  for (const file of baseFiles ?? []) {
-    if (file.filepath) {
-      byPath.set(file.filepath, file);
-    }
-  }
-  const visible = attachments.map((part) => {
+  const claimed = new Set<Partial<TFile>>();
+  /** A viewed part names its stored entry; a hand-built one takes the first unclaimed match. */
+  const findStored = (part: UIFilePart) => {
     const metadata = part.providerMetadata?.librechat;
-    const identity = metadata?.source === 'attachment' ? metadata.filepath : part.url;
-    const stored = byPath.get(identity);
+    if (metadata?.source === 'attachment') {
+      const candidate = baseFiles?.[metadata.index];
+      return candidate?.filepath === metadata.filepath ? candidate : undefined;
+    }
+    return baseFiles?.find((file) => file.filepath === part.url && !claimed.has(file));
+  };
+  const visible = attachments.map((part) => {
+    const stored = findStored(part);
     if (stored) {
+      claimed.add(stored);
       return applyFileEdits(stored, part, 'application/octet-stream');
     }
     return {
@@ -969,17 +980,19 @@ export function fromUIMessage(message: UIMessage, base?: TMessage): TMessage {
   const writer = createContentWriter();
   const attachments: UIFilePart[] = [];
   let text = '';
+  let addedContent = false;
   for (const part of message.parts) {
     if (part.type === 'text') {
       text += part.text;
     } else if (isAttachmentPart(part)) {
       attachments.push(part);
       continue;
+    } else if (part.type !== 'source-url' && part.type !== 'step-start') {
+      addedContent = true;
     }
-    if (!contentless) {
-      writer.write(part);
-    }
+    writer.write(part);
   }
+  const writesContent = !contentless || addedContent;
 
   const next: TMessage = {
     ...base,
@@ -990,7 +1003,7 @@ export function fromUIMessage(message: UIMessage, base?: TMessage): TMessage {
     parentMessageId: pickIdentity('parentMessageId', metadata, base),
     text: resolveText(text, metadata, base),
   };
-  if (!contentless) {
+  if (writesContent) {
     next.content = writer.content;
   } else if (metadata?.emptyContent && base?.content === undefined) {
     next.content = [];
