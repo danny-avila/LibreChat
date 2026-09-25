@@ -338,6 +338,13 @@ describe('createSSETransport().reconnectToStream', () => {
     expect(events).toEqual([{ type: 'error', status: undefined, data: { error: 'failed' } }]);
   });
 
+  it('keeps the raw text of a server error event that is not JSON', () => {
+    attach();
+    current().write('event: error\ndata: service unavailable\n\n');
+
+    expect(events).toEqual([{ type: 'error', status: undefined, data: 'service unavailable' }]);
+  });
+
   it('emits an HTTP failure with its status and no data for a body that is not JSON', () => {
     attach();
     current().status = 404;
@@ -381,14 +388,32 @@ describe('createSSETransport().reconnectToStream', () => {
     expect(events.map((event) => event.type)).toEqual(['open', 'created']);
   });
 
-  it('refreshes the token on every 401 and reattaches with the request headers', async () => {
-    const refreshToken = jest
-      .spyOn(request, 'refreshToken')
-      .mockResolvedValueOnce({ token: 'token-2' } as never)
-      .mockResolvedValueOnce({ token: 'token-3' } as never);
+  it('refreshes the token on a 401 and reattaches with the request headers', async () => {
+    jest.spyOn(request, 'refreshToken').mockResolvedValue({ token: 'token-2' } as never);
     const dispatchTokenUpdated = jest
       .spyOn(request, 'dispatchTokenUpdatedEvent')
       .mockImplementation(() => undefined);
+    attach();
+    current().status = 401;
+    current().write('Unauthorized');
+
+    await new Promise(process.nextTick);
+
+    expect(dispatchTokenUpdated).toHaveBeenCalledWith('token-2');
+    expect(xhrs).toHaveLength(2);
+    expect(current().method).toBe('GET');
+    expect(current().headers).toEqual({
+      Authorization: 'Bearer token-2',
+      'X-LibreChat-Generation-Protocol': '2',
+    });
+    expect(events).toEqual([]);
+  });
+
+  it('reports a second 401 instead of refreshing again', async () => {
+    const refreshToken = jest
+      .spyOn(request, 'refreshToken')
+      .mockResolvedValue({ token: 'token-2' } as never);
+    jest.spyOn(request, 'dispatchTokenUpdatedEvent').mockImplementation(() => undefined);
     attach();
 
     for (const _attempt of [1, 2]) {
@@ -397,15 +422,9 @@ describe('createSSETransport().reconnectToStream', () => {
       await new Promise(process.nextTick);
     }
 
-    expect(refreshToken).toHaveBeenCalledTimes(2);
-    expect(dispatchTokenUpdated).toHaveBeenLastCalledWith('token-3');
-    expect(xhrs).toHaveLength(3);
-    expect(current().method).toBe('GET');
-    expect(current().headers).toEqual({
-      Authorization: 'Bearer token-3',
-      'X-LibreChat-Generation-Protocol': '2',
-    });
-    expect(events).toEqual([]);
+    expect(refreshToken).toHaveBeenCalledTimes(1);
+    expect(xhrs).toHaveLength(2);
+    expect(events).toEqual([{ type: 'error', status: 401, data: undefined }]);
   });
 
   it('reports the 401 when the token refresh fails', async () => {

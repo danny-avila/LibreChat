@@ -48,15 +48,18 @@ async function refreshToken(): Promise<string | null> {
   }
 }
 
-/** Failure bodies are often empty or HTML, so a body that is not JSON is `undefined`. */
-function parseErrorBody(body: unknown): ChatErrorData | undefined {
+/**
+ * An HTTP failure body is often empty or HTML, so one that is not JSON is
+ * `undefined`. An error event the server wrote keeps its raw text instead.
+ */
+function parseErrorBody(body: unknown, status?: number): ChatErrorData | undefined {
   if (typeof body !== 'string' || body === '') {
     return undefined;
   }
   try {
     return JSON.parse(body);
   } catch {
-    return undefined;
+    return status == null ? body : undefined;
   }
 }
 
@@ -159,8 +162,10 @@ export function createSSETransport({ token }: { token?: string }): ChatTransport
 
       sse.addEventListener('message', emitFrame(onEvent));
 
+      let refreshed = false;
       sse.addEventListener('error', async (e: StreamErrorEvent) => {
-        if (e.responseCode === 401) {
+        if (e.responseCode === 401 && !refreshed) {
+          refreshed = true;
           const refreshedToken = await refreshToken();
           if (signal.aborted) {
             return;
@@ -172,7 +177,11 @@ export function createSSETransport({ token }: { token?: string }): ChatTransport
             return;
           }
         }
-        onEvent({ type: 'error', status: e.responseCode, data: parseErrorBody(e.data) });
+        onEvent({
+          type: 'error',
+          status: e.responseCode,
+          data: parseErrorBody(e.data, e.responseCode),
+        });
       });
 
       /** sse.js dispatches `abort` when the XHR is cancelled, by our close or by the user agent. */

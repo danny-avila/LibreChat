@@ -3389,9 +3389,7 @@ export default function useResumableSSE(
 
           const errorSupportsV2 = supportsGenerationProtocolV2(data);
           const errorString =
-            typeof data === 'string'
-              ? JSON.stringify(data)
-              : (data.error ?? data.message ?? JSON.stringify(data));
+            typeof data === 'string' ? data : (data.error ?? data.message ?? JSON.stringify(data));
 
           // Check if it's a known error type (ViolationTypes or ErrorTypes)
           let isKnownError = false;

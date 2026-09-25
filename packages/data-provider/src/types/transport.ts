@@ -284,8 +284,10 @@ export interface ChatTransport<TRequest = ChatTransportRequest> {
    * as `send`. Aborting the signal while the stream is open emits
    * `{ type: 'abort' }`; a cancel the caller did not issue (a backgrounded or
    * frozen tab) is a dropped connection and emits `{ type: 'error', status: 0 }`.
-   * Each 401 refreshes the token and reattaches on the same handle; a refresh
-   * that fails is reported as the 401.
+   * The first 401 refreshes the token and reattaches on the same handle; a
+   * failed refresh or a second 401 is reported as the 401, so the caller's own
+   * retry budget bounds it. A server-written error that is not JSON arrives as
+   * its raw text.
    *
    * AI SDK: `reconnectToStream`, which resolves to a stream (or `null` when
    * nothing is running); here the caller learns that from a 404 `error`.
