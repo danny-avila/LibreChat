@@ -24,13 +24,13 @@ const empty: BackgroundTaskIndex = {
   cancellable: true,
 };
 
-const setup = (submitting = false) => {
+const setup = (submitting = false, enabled = true) => {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const wrapper = ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={client}>{children}</QueryClientProvider>
   );
   const hook = renderHook(
-    ({ isSubmitting }) => useBackgroundTasksQuery('convo-1', undefined, isSubmitting).data,
+    ({ isSubmitting }) => useBackgroundTasksQuery('convo-1', { enabled }, isSubmitting).data,
     { initialProps: { isSubmitting: submitting }, wrapper },
   );
   return { ...hook, client };
@@ -43,6 +43,15 @@ describe('background task discovery polling', () => {
   });
 
   afterEach(() => jest.useRealTimers());
+
+  it('does not fetch disabled conversations, including when their submission ends', async () => {
+    const { rerender, client, unmount } = setup(true, false);
+    rerender({ isSubmitting: false });
+    await act(async () => jest.advanceTimersByTimeAsync(120_000));
+    expect(mockGetBackgroundTasks).not.toHaveBeenCalled();
+    unmount();
+    client.clear();
+  });
 
   it('refetches immediately at submit end and discovers tasks that appear afterward', async () => {
     mockGetBackgroundTasks.mockResolvedValueOnce(empty).mockResolvedValueOnce(empty);
@@ -79,15 +88,33 @@ describe('background task discovery polling', () => {
     client.clear();
   });
 
-  it('stops polling after the bounded discovery window when no task appears', async () => {
+  it('backs off to quiet discovery after the bounded fast discovery window', async () => {
     const { rerender, client, unmount } = setup(true);
     await act(async () => jest.advanceTimersByTimeAsync(0));
     rerender({ isSubmitting: false });
     await act(async () => jest.advanceTimersByTimeAsync(12_000));
     const calls = mockGetBackgroundTasks.mock.calls.length;
     expect(calls).toBeGreaterThan(1);
-    await act(async () => jest.advanceTimersByTimeAsync(60_000));
+    await act(async () => jest.advanceTimersByTimeAsync(30_000));
     expect(mockGetBackgroundTasks).toHaveBeenCalledTimes(calls);
+    await act(async () => jest.advanceTimersByTimeAsync(30_000));
+    expect(mockGetBackgroundTasks).toHaveBeenCalledTimes(calls + 1);
+    unmount();
+    client.clear();
+  });
+
+  it('discovers server-started tasks without a browser submission', async () => {
+    const { result, client, unmount } = setup();
+    await act(async () => jest.advanceTimersByTimeAsync(0));
+    mockGetBackgroundTasks.mockResolvedValue({
+      ...empty,
+      tasks: [{ taskId: 'server-task', toolName: 'bash_tool', status: 'running' }],
+    });
+    await act(async () => jest.advanceTimersByTimeAsync(60_000));
+    await waitFor(() => expect(result.current?.tasks[0]?.taskId).toBe('server-task'));
+    const calls = mockGetBackgroundTasks.mock.calls.length;
+    await act(async () => jest.advanceTimersByTimeAsync(2_000));
+    expect(mockGetBackgroundTasks).toHaveBeenCalledTimes(calls + 1);
     unmount();
     client.clear();
   });

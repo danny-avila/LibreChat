@@ -1,6 +1,6 @@
 import React from 'react';
 import '@testing-library/jest-dom';
-import { render } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import Header from '../Header';
 
 const mockEndpoint = { current: 'agents' };
@@ -43,7 +43,9 @@ jest.mock('../TemporaryChat', () => ({
   TemporaryChatIndicator: () => null,
 }));
 jest.mock('../Trace', () => ({ useTraceControl: () => ({ show: false }) }));
-jest.mock('../BackgroundTasks', () => ({ BackgroundTasksButton: jest.fn(() => null) }));
+jest.mock('../BackgroundTasks', () => ({
+  BackgroundTasksButton: jest.fn(() => <div data-testid="conversation-tasks" />),
+}));
 jest.mock('../Menus/Endpoints/ModelSelector', () => () => null);
 jest.mock('../ExportAndShareMenu', () => () => null);
 jest.mock('../SubagentThreadLink', () => () => null);
@@ -65,9 +67,15 @@ describe('Header stacking', () => {
     expect(backgroundTasks).toHaveBeenCalled();
   });
 
-  test('does not mount background task controls for non-agent conversations', () => {
+  test('keeps conversation task controls mounted across endpoint switches', () => {
+    const { rerender } = render(<Header />);
     mockEndpoint.current = 'openAI';
-    render(<Header />);
+    rerender(<Header />);
+    expect(screen.getByTestId('conversation-tasks')).toBeInTheDocument();
+  });
+
+  test('does not mount parent task controls on child threads', () => {
+    render(<Header parentConversationId="parent" />);
     expect(backgroundTasks).not.toHaveBeenCalled();
   });
 });

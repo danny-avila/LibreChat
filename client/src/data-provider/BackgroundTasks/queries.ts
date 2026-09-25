@@ -11,8 +11,9 @@ import type { UseQueryOptions } from '@tanstack/react-query';
 const RUNNING_REFRESH_MS = 2_000;
 const SUBMITTING_REFRESH_MS = 5_000;
 const POST_SUBMIT_DISCOVERY_MS = 10_000;
+const QUIET_REFRESH_MS = 60_000;
 
-/** Poll active tasks and briefly continue discovery after a submission ends. */
+/** Fast discovery around submissions, with a visible-tab fallback for server-started work. */
 export const backgroundTasksRefetchInterval = (
   index: BackgroundTaskIndex | undefined,
   isSubmitting = false,
@@ -23,7 +24,7 @@ export const backgroundTasksRefetchInterval = (
     return RUNNING_REFRESH_MS;
   }
   if (now < discoveryDeadline) return RUNNING_REFRESH_MS;
-  return isSubmitting ? SUBMITTING_REFRESH_MS : false;
+  return isSubmitting ? SUBMITTING_REFRESH_MS : QUIET_REFRESH_MS;
 };
 
 export const useBackgroundTasksQuery = (
@@ -58,11 +59,11 @@ export const useBackgroundTasksQuery = (
       setDiscoveryDeadline(0);
       return;
     }
-    if (last.isSubmitting && !isSubmitting) {
+    if (last.isSubmitting && !isSubmitting && config?.enabled !== false) {
       setDiscoveryDeadline(Date.now() + POST_SUBMIT_DISCOVERY_MS);
       void refetch();
     }
-  }, [conversationId, isSubmitting, refetch]);
+  }, [conversationId, isSubmitting, refetch, config?.enabled]);
 
   return query;
 };

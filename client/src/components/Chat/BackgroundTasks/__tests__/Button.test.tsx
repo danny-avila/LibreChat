@@ -104,6 +104,36 @@ const renderButton = (children: ParentSubagentSummary[] = [], initialMessages = 
 afterEach(() => jest.restoreAllMocks());
 
 describe('BackgroundTasksButton', () => {
+  it('does not expose the previous conversation tasks while host context catches up to navigation', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    queryClient.setQueryData([QueryKeys.parentSubagents, 'old-chat'], {
+      parentConversationId: 'old-chat',
+      children: [runningChild],
+      childrenTruncated: false,
+    });
+    const getTasks = jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(index());
+    jest.spyOn(dataService, 'getParentSubagents').mockResolvedValue({
+      parentConversationId: 'old-chat',
+      children: [runningChild],
+      childrenTruncated: false,
+    });
+    const panel = (hostId: string) => (
+      <RecoilRoot>
+        <QueryClientProvider client={queryClient}>
+          <ParentSubagentsProvider conversationId={hostId} enabled>
+            <BackgroundTasksButton conversationId={conversationId} isSubmitting={false} />
+          </ParentSubagentsProvider>
+        </QueryClientProvider>
+      </RecoilRoot>
+    );
+    const { rerender, container } = render(panel('old-chat'));
+    await act(async () => {});
+    expect(container).toBeEmptyDOMElement();
+    expect(getTasks).not.toHaveBeenCalled();
+    rerender(panel(conversationId));
+    await waitFor(() => expect(getTasks).toHaveBeenCalledWith(conversationId));
+  });
+
   it.each(['tool', 'subagent'])(
     'ages out the last finished %s even while the panel is closed',
     async (kind) => {
