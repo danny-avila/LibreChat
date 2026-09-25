@@ -671,6 +671,18 @@ describe('parts', () => {
       expect(part).toMatchObject({ state: 'output-available', output: '' });
     });
 
+    it('views persisted reasoning without its think tags and restores them', () => {
+      const part = {
+        type: ContentTypes.THINK,
+        think: '<think>\nWeighing options\n</think>',
+      } as TMessageContentParts;
+      const bare = { type: ContentTypes.THINK, think: 'No tags' } as TMessageContentParts;
+
+      expect(toUIPart(part)).toMatchObject({ type: 'reasoning', text: 'Weighing options' });
+      expect(fromUIPart(toUIPart(part))).toStrictEqual(part);
+      expect(fromUIPart(toUIPart(bare))).toStrictEqual(bare);
+    });
+
     it('keeps a text or think part without its text field', () => {
       const text = { type: ContentTypes.TEXT } as TMessageContentParts;
       const think = { type: ContentTypes.THINK } as TMessageContentParts;

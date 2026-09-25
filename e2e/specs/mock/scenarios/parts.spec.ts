@@ -97,33 +97,37 @@ test.describe('UI parts view of persisted messages', () => {
     expect(assistant.parts[reasoning]).toMatchObject({ text: thinkText(label) });
   });
 
-  test('views persisted tool calls as completed tool parts @scenario:persisted-tool-calls-view-as-completed-tool-parts', async ({
-    page,
-  }) => {
-    test.setTimeout(90_000);
-    const label = uniqueLabel('parts-tool');
-    await page.goto(NEW_CHAT_PATH, { timeout: 10_000 });
-    await selectMockEndpoint(page, TOOL_ENDPOINT);
-    await selectMemoryServer(page);
-    const response = await sendMessageAndWaitForCompletion(page, `E2E_ACTIVITY_REPLY:${label}`, {
-      timeout: 60_000,
+  test.describe('with an MCP tool turn', () => {
+    test.skip(({ isMobile }) => isMobile === true, 'composer MCP picker is desktop-only');
+
+    test('views persisted tool calls as completed tool parts @scenario:persisted-tool-calls-view-as-completed-tool-parts', async ({
+      page,
+    }) => {
+      test.setTimeout(90_000);
+      const label = uniqueLabel('parts-tool');
+      await page.goto(NEW_CHAT_PATH, { timeout: 10_000 });
+      await selectMockEndpoint(page, TOOL_ENDPOINT);
+      await selectMemoryServer(page);
+      const response = await sendMessageAndWaitForCompletion(page, `E2E_ACTIVITY_REPLY:${label}`, {
+        timeout: 60_000,
+      });
+      expect(response.ok()).toBeTruthy();
+
+      const messages = await readPersistedMessages(page);
+      const assistant = viewAndRestore(messages).find((message) => message.role === 'assistant');
+      if (!assistant) {
+        throw new Error('Persisted tool reply missing');
+      }
+
+      const tools = assistant.parts.filter((part) => part.type.startsWith('tool-'));
+      expect(tools.length).toBeGreaterThanOrEqual(2);
+      for (const tool of tools) {
+        expect(tool).toMatchObject({ state: 'output-available', toolCallId: expect.any(String) });
+        expect((tool as { toolCallId: string }).toolCallId).not.toBe('');
+      }
+      expect(new Set(tools.map((tool) => (tool as { toolCallId: string }).toolCallId)).size).toBe(
+        tools.length,
+      );
     });
-    expect(response.ok()).toBeTruthy();
-
-    const messages = await readPersistedMessages(page);
-    const assistant = viewAndRestore(messages).find((message) => message.role === 'assistant');
-    if (!assistant) {
-      throw new Error('Persisted tool reply missing');
-    }
-
-    const tools = assistant.parts.filter((part) => part.type.startsWith('tool-'));
-    expect(tools.length).toBeGreaterThanOrEqual(2);
-    for (const tool of tools) {
-      expect(tool).toMatchObject({ state: 'output-available', toolCallId: expect.any(String) });
-      expect((tool as { toolCallId: string }).toolCallId).not.toBe('');
-    }
-    expect(new Set(tools.map((tool) => (tool as { toolCallId: string }).toolCallId)).size).toBe(
-      tools.length,
-    );
   });
 });

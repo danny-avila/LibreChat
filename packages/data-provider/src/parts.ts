@@ -48,8 +48,12 @@ type TextShape = {
 export type UITextPartMetadata = Omit<ContentPartOf<ContentTypes.TEXT>, 'type' | 'text'> &
   TextShape;
 
+/** The `<think>` wrapper persisted reasoning carries, exactly as stored, so it can be restored. */
+type ThinkWrapper = { thinkOpen?: string; thinkClose?: string };
+
 export type UIReasoningPartMetadata = Omit<ContentPartOf<ContentTypes.THINK>, 'type' | 'think'> &
-  TextShape;
+  TextShape &
+  ThinkWrapper;
 
 /** AI SDK `TextUIPart`. */
 export type UITextPart = {
@@ -251,6 +255,24 @@ const joinText = (value: string, shape: TextShape): string | Text | undefined =>
   return shape.textObject ? { ...shape.textObject, value } : value;
 };
 
+const thinkOpenPattern = /^\s*<think>\s*/;
+const thinkClosePattern = /\s*<\/think>\s*$/;
+
+/**
+ * Persisted reasoning is stored inside `<think>` tags, which every renderer strips; the view
+ * exposes the reasoning alone and keeps the exact wrapper for the reverse mapping.
+ */
+const splitThinkTags = (value: string): { value: string } & ThinkWrapper => {
+  const open = value.match(thinkOpenPattern)?.[0];
+  const inner = open ? value.slice(open.length) : value;
+  const close = inner.match(thinkClosePattern)?.[0];
+  return {
+    value: close ? inner.slice(0, inner.length - close.length) : inner,
+    ...(open && { thinkOpen: open }),
+    ...(close && { thinkClose: close }),
+  };
+};
+
 const toTextMetadata = <M extends object>(rest: M, shape: TextShape) => ({
   ...rest,
   ...(shape.textObject && { textObject: shape.textObject }),
@@ -394,11 +416,12 @@ export function toUIPart(part: MappableContentPart | null | undefined, index = 0
     }
     case ContentTypes.THINK: {
       const { type: _type, think, ...rest } = part;
-      const { value, ...shape } = splitText(think);
-      return withLibreChatMetadata(
-        { type: 'reasoning', text: value } satisfies UIReasoningPart,
-        toTextMetadata(rest, shape),
-      );
+      const { value: raw, ...shape } = splitText(think);
+      const { value, ...wrapper } = splitThinkTags(raw);
+      return withLibreChatMetadata({ type: 'reasoning', text: value } satisfies UIReasoningPart, {
+        ...toTextMetadata(rest, shape),
+        ...wrapper,
+      });
     }
     case ContentTypes.TOOL_CALL:
       return toToolPart(part, index);
@@ -567,8 +590,10 @@ export function fromUIPart(part: UIMessagePart): TMessageContentParts | undefine
       return { type: ContentTypes.TEXT, ...(text !== undefined && { text }), ...rest };
     }
     case 'reasoning': {
-      const { textObject, textAbsent, ...rest } = part.providerMetadata?.librechat ?? {};
-      const think = joinText(part.text, { textObject, textAbsent });
+      const { textObject, textAbsent, thinkOpen, thinkClose, ...rest } =
+        part.providerMetadata?.librechat ?? {};
+      const wrapped = `${thinkOpen ?? ''}${part.text}${thinkClose ?? ''}`;
+      const think = joinText(wrapped, { textObject, textAbsent });
       return { type: ContentTypes.THINK, ...(think !== undefined && { think }), ...rest };
     }
     case 'file':
