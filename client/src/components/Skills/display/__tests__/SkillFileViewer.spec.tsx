@@ -49,7 +49,7 @@ jest.mock('../ViewToggle', () => ({
   default: () => <span />,
 }));
 
-const skill = { _id: 'skill-id', name: 'example', author: 'user-id' } as TSkill;
+const skill = { _id: 'skill-id', name: 'example', author: 'user-id', source: 'inline' } as TSkill;
 const filePath = 'references/queries.md';
 
 function Location() {
@@ -57,14 +57,14 @@ function Location() {
   return <output data-testid="location">{location.pathname}</output>;
 }
 
-function renderViewer(path = filePath) {
+function renderViewer(path = filePath, selectedSkill = skill) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
   const view = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={['/skills/skill-id']}>
-        <SkillFileViewer skill={skill} skillId={skill._id} relativePath={path} />
+        <SkillFileViewer skill={selectedSkill} skillId={skill._id} relativePath={path} />
         <Location />
       </MemoryRouter>
     </QueryClientProvider>,
@@ -94,6 +94,8 @@ describe('skill file editing', () => {
       return {
         data: {
           content: persisted,
+          fileId: 'revision-1',
+          file_id: 'revision-2',
           filename: 'queries.md',
           relativePath: filePath,
           mimeType: 'text/markdown',
@@ -103,10 +105,11 @@ describe('skill file editing', () => {
       } as AxiosResponse;
     });
     const post = jest.spyOn(axios, 'post').mockImplementation(async (url, body) => {
-      expect(url).toBe('/api/skills/skill-id/files');
+      expect(url).toBe(`/api/skills/skill-id/files/${encodeURIComponent(filePath)}`);
       expect(body).toBeInstanceOf(FormData);
       const formData = body as FormData;
       expect(formData.get('relativePath')).toBe(filePath);
+      expect(formData.get('expectedFileId')).toBe('revision-1');
       const file = formData.get('file');
       expect(file).toBeInstanceOf(File);
       if (!(file instanceof File)) {
@@ -116,7 +119,13 @@ describe('skill file editing', () => {
       expect(file.type).toBe('text/markdown');
       persisted = await readFile(file);
       return {
-        data: { relativePath: filePath, filename: file.name, mimeType: file.type },
+        data: {
+          relativePath: filePath,
+          fileId: 'revision-1',
+          file_id: 'revision-2',
+          filename: file.name,
+          mimeType: file.type,
+        },
       } as AxiosResponse;
     });
     const first = renderViewer();
@@ -149,6 +158,8 @@ describe('skill file editing', () => {
         ({
           data: {
             content: persisted,
+            fileId: 'revision-1',
+            file_id: 'revision-2',
             filename: 'queries.md',
             relativePath: filePath,
             mimeType: 'text/markdown',
@@ -167,7 +178,13 @@ describe('skill file editing', () => {
         }
         persisted = await readFile(file);
         return {
-          data: { relativePath: filePath, filename: file.name, mimeType: file.type },
+          data: {
+            relativePath: filePath,
+            fileId: 'revision-1',
+            file_id: 'revision-2',
+            filename: file.name,
+            mimeType: file.type,
+          },
         } as AxiosResponse;
       });
     const view = renderViewer();
@@ -208,6 +225,8 @@ describe('skill file editing', () => {
     jest.spyOn(axios, 'get').mockResolvedValue({
       data: {
         content,
+        fileId: 'revision-1',
+        file_id: 'revision-2',
         filename: 'queries.md',
         relativePath: filePath,
         mimeType,
@@ -226,6 +245,8 @@ describe('skill file editing', () => {
     jest.spyOn(axios, 'get').mockResolvedValue({
       data: {
         content: '',
+        fileId: 'revision-1',
+        file_id: 'revision-2',
         filename: 'empty.sh',
         relativePath: 'scripts/empty.sh',
         mimeType: 'text/plain',
@@ -234,7 +255,13 @@ describe('skill file editing', () => {
       },
     });
     const post = jest.spyOn(axios, 'post').mockResolvedValue({
-      data: { relativePath: 'scripts/empty.sh', filename: 'empty.sh', mimeType: 'text/plain' },
+      data: {
+        relativePath: 'scripts/empty.sh',
+        fileId: 'revision-1',
+        file_id: 'revision-2',
+        filename: 'empty.sh',
+        mimeType: 'text/plain',
+      },
     });
     const view = renderViewer('scripts/empty.sh');
     fireEvent.click(await screen.findByRole('button', { name: 'com_ui_edit' }));
@@ -251,6 +278,8 @@ describe('skill file editing', () => {
     jest.spyOn(axios, 'get').mockResolvedValue({
       data: {
         content: 'old content',
+        fileId: 'revision-1',
+        file_id: 'revision-2',
         filename: 'queries.md',
         relativePath: filePath,
         mimeType: 'text/markdown',
@@ -266,6 +295,8 @@ describe('skill file editing', () => {
     mockCanEdit = false;
     view.queryClient.setQueryData([QueryKeys.skillFileContent, skill._id, filePath], {
       content: 'remote revision',
+      fileId: 'revision-1',
+      file_id: 'revision-2',
       filename: 'queries.md',
       relativePath: filePath,
       mimeType: 'text/markdown',
@@ -281,6 +312,106 @@ describe('skill file editing', () => {
     view.queryClient.clear();
   });
 
+  it('keeps confirmed content visible if the post-save verification read fails', async () => {
+    jest
+      .spyOn(axios, 'get')
+      .mockResolvedValueOnce({
+        data: {
+          fileId: 'revision-1',
+          content: 'original',
+          filename: 'queries.md',
+          relativePath: filePath,
+          mimeType: 'text/markdown',
+          isBinary: false,
+          bytes: 8,
+        },
+      })
+      .mockRejectedValue(new Error('verification offline'));
+    jest.spyOn(axios, 'post').mockResolvedValue({
+      data: {
+        file_id: 'revision-2',
+        filename: 'queries.md',
+        relativePath: filePath,
+        mimeType: 'text/markdown',
+      },
+    });
+    const view = renderViewer();
+    fireEvent.click(await screen.findByRole('button', { name: 'com_ui_edit' }));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'confirmed save' } });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_save' }));
+    await waitFor(() =>
+      expect(
+        view.queryClient.getQueryState([QueryKeys.skillFileContent, skill._id, filePath])?.status,
+      ).toBe('error'),
+    );
+    expect(screen.getByText('confirmed save')).toBeVisible();
+    expect(screen.queryByText('com_ui_skill_file_load_error')).not.toBeInTheDocument();
+    view.queryClient.clear();
+  });
+
+  it('preserves a conflicting draft and does not allow a blind retry', async () => {
+    jest.spyOn(axios, 'get').mockResolvedValue({
+      data: {
+        fileId: 'revision-1',
+        content: 'before',
+        filename: 'queries.md',
+        relativePath: filePath,
+        mimeType: 'text/markdown',
+        isBinary: false,
+        bytes: 6,
+      },
+    });
+    const post = jest.spyOn(axios, 'post').mockRejectedValue({ response: { status: 409 } });
+    const view = renderViewer();
+    fireEvent.click(await screen.findByRole('button', { name: 'com_ui_edit' }));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'stale draft' } });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_save' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('com_ui_skill_file_conflict');
+    expect(screen.getByRole('textbox')).toHaveValue('stale draft');
+    expect(screen.getByRole('button', { name: 'com_ui_save' })).toBeDisabled();
+    fireEvent.keyDown(screen.getByRole('textbox'), { key: 's', ctrlKey: true });
+    expect(post).toHaveBeenCalledTimes(1);
+    view.queryClient.clear();
+  });
+
+  it.each(['github', 'notion'] as const)(
+    'keeps %s-managed skill files read-only even with edit permission',
+    async (source) => {
+      jest.spyOn(axios, 'get').mockResolvedValue({
+        data: {
+          fileId: 'revision-1',
+          content: 'upstream text',
+          filename: 'queries.md',
+          relativePath: filePath,
+          mimeType: 'text/markdown',
+          isBinary: false,
+          bytes: 13,
+        },
+      });
+      const view = renderViewer(filePath, { ...skill, source });
+      await screen.findByText('upstream text');
+      expect(screen.queryByRole('button', { name: 'com_ui_edit' })).not.toBeInTheDocument();
+      view.queryClient.clear();
+    },
+  );
+
+  it('does not offer unprotected edits for an older server response without a revision', async () => {
+    jest.spyOn(axios, 'get').mockResolvedValue({
+      data: {
+        content: 'legacy text',
+        filename: 'queries.md',
+        relativePath: filePath,
+        mimeType: 'text/markdown',
+        isBinary: false,
+        bytes: 11,
+      },
+    });
+    const view = renderViewer();
+    await screen.findByText('legacy text');
+    expect(screen.queryByRole('button', { name: 'com_ui_edit' })).not.toBeInTheDocument();
+    view.queryClient.clear();
+  });
+
   it('does not offer editing when loading a file fails', async () => {
     jest.spyOn(axios, 'get').mockRejectedValue(new Error('file read failed'));
     const view = renderViewer();
@@ -293,6 +424,8 @@ describe('skill file editing', () => {
     jest.spyOn(axios, 'get').mockResolvedValue({
       data: {
         content: '# Skill',
+        fileId: 'revision-1',
+        file_id: 'revision-2',
         filename: 'SKILL.md',
         relativePath: 'SKILL.md',
         mimeType: 'text/markdown',

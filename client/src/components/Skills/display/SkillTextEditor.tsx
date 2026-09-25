@@ -25,6 +25,7 @@ export default function SkillTextEditor({
   const { showToast } = useToastContext();
   const queryClient = useQueryClient();
   const [content, setContent] = useState(file.content);
+  const [conflict, setConflict] = useState(false);
 
   const upload = useUploadSkillFileMutation({
     onSuccess: (saved) => {
@@ -34,6 +35,7 @@ export default function SkillTextEditor({
           previous && {
             ...previous,
             content,
+            fileId: saved.file_id,
             bytes: new Blob([content]).size,
             filename: saved.filename,
             mimeType: saved.mimeType,
@@ -46,17 +48,28 @@ export default function SkillTextEditor({
       });
       onClose();
     },
-    onError: () => {
-      showToast({ status: 'error', message: localize('com_ui_skill_file_save_error') });
+    onError: (error: unknown) => {
+      const isConflict = (error as { response?: { status?: number } })?.response?.status === 409;
+      setConflict(isConflict);
+      if (isConflict) {
+        queryClient.invalidateQueries([QueryKeys.skillFileContent, skillId, relativePath]);
+      }
+      showToast({
+        status: 'error',
+        message: localize(
+          isConflict ? 'com_ui_skill_file_conflict' : 'com_ui_skill_file_save_error',
+        ),
+      });
     },
   });
 
   const save = () => {
-    if (!canEdit || upload.isLoading || content === file.content) {
+    if (!canEdit || !file.fileId || conflict || upload.isLoading || content === file.content) {
       return;
     }
     const formData = new FormData();
     formData.append('relativePath', relativePath);
+    formData.append('expectedFileId', file.fileId);
     formData.append('file', new File([content], file.filename, { type: file.mimeType }));
     upload.mutate({ skillId, formData });
   };
@@ -79,7 +92,7 @@ export default function SkillTextEditor({
       />
       {upload.isError && (
         <p role="alert" className="text-sm text-text-destructive">
-          {localize('com_ui_skill_file_save_error')}
+          {localize(conflict ? 'com_ui_skill_file_conflict' : 'com_ui_skill_file_save_error')}
         </p>
       )}
       {!canEdit && (
@@ -94,7 +107,9 @@ export default function SkillTextEditor({
         <Button
           type="button"
           onClick={save}
-          disabled={!canEdit || upload.isLoading || content === file.content}
+          disabled={
+            !canEdit || !file.fileId || conflict || upload.isLoading || content === file.content
+          }
         >
           {upload.isLoading ? localize('com_ui_saving') : localize('com_ui_save')}
         </Button>

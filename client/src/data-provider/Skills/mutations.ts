@@ -268,17 +268,19 @@ export const useUploadSkillFileMutation = (
     mutationFn: ({ skillId, formData }: TUploadSkillFileVariables) =>
       dataService.uploadSkillFile(skillId, formData),
     ...rest,
-    onSuccess: (skillFile, variables, context) => {
+    onSuccess: async (skillFile, variables, context) => {
+      await queryClient.cancelQueries([QueryKeys.skillFiles, variables.skillId]);
       queryClient.setQueryData<TListSkillFilesResponse>(
         [QueryKeys.skillFiles, variables.skillId],
         (prev) => {
-          if (!prev) return { files: [skillFile] };
+          if (!prev) return prev;
           const filtered = prev.files.filter((f) => f.relativePath !== skillFile.relativePath);
           return { files: [...filtered, skillFile] };
         },
       );
       queryClient.invalidateQueries([QueryKeys.skill, variables.skillId]);
       if (onSuccess) onSuccess(skillFile, variables, context);
+      queryClient.invalidateQueries([QueryKeys.skillFiles, variables.skillId]);
       queryClient.invalidateQueries([
         QueryKeys.skillFileContent,
         variables.skillId,
