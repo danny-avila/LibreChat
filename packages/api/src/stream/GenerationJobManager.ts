@@ -8931,6 +8931,9 @@ class GenerationJobManagerClass {
       userId: expiredJob.userId,
       status: 'aborted',
     });
+    /** Terminal now; releasing ownership keeps the sweep's relay branch from
+     * announcing this generation a second time. */
+    this.releaseJobOwnership(streamId, expiredJob.createdAt);
     return true;
   }
 

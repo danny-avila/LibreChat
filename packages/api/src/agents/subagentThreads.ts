@@ -1433,6 +1433,9 @@ export class SubagentThreadTaskStore extends InMemorySubagentTaskStore {
               }
               throw new Error(publicFailureDetail(error));
             } finally {
+              if (prepared != null) {
+                this.wakeupTaskIds.delete(prepared.replay?.taskId ?? runtime.taskId);
+              }
               if (prepared != null && prepared.replay == null) {
                 this.completeActivity(
                   lease,
