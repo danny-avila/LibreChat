@@ -317,7 +317,9 @@ const appearanceValidators: Record<keyof IThemeAppearance, (value: unknown) => b
   spaceNormal: isLength,
   fontFamily: isFontFamily,
   monoFontFamily: isFontFamily,
-  elevationSurface: isShadow,
+  /** Released themes may hold `var()` here, so this role keeps its original, looser check. */
+  elevationSurface: (value) =>
+    typeof value === 'string' && value.trim().length > 0 && !/[;{}]|url\s*\(/i.test(value),
   shadow2xs: isShadow,
   shadowXs: isShadow,
   shadowSm: isShadow,

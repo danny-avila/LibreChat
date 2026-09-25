@@ -568,6 +568,26 @@ describe('theme registry', () => {
     });
   });
 
+  it('keeps accepting variable-backed surface elevation that released themes may hold', () => {
+    const elevationSurface =
+      '0 8px 16px rgb(var(--shadow-rgb) / 0.2), 0 env(safe-area-inset-top) 1px black';
+
+    expect(
+      validateThemeDefinition({
+        version: 1,
+        name: 'elevation',
+        modes: { light: { appearance: { elevationSurface } } },
+      }),
+    ).toEqual([]);
+    expect(
+      validateThemeDefinition({
+        version: 1,
+        name: 'elevation',
+        modes: { light: { appearance: { shadowLg: elevationSurface } } },
+      }),
+    ).toEqual([`Invalid appearance value for shadowLg: ${elevationSurface}`]);
+  });
+
   it('sanitizes malformed legacy colors without weakening definition validation', () => {
     const legacyTheme = fromLegacyTheme(
       {

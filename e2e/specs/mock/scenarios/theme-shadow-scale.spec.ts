@@ -101,4 +101,48 @@ test.describe('theme shadow scale', () => {
     await expect(page.locator('html')).not.toHaveAttribute('data-theme', theme.name);
     expect(await boxShadow(menu)).toContain(DEFAULT_LG);
   });
+
+  test('a shadow step naming an unknown environment variable is rejected and the default stays @scenario:env-shadow-step-keeps-default-shadow', async ({
+    page,
+  }) => {
+    const theme = {
+      version: 1,
+      name: 'e2e-env-shadow',
+      /** The browser cannot check `env()` before substitution, and this name does not exist. */
+      modes: { light: { appearance: { shadowLg: '0 env(safe-area-inset-tpo) 1px black' } } },
+    };
+    await storeTheme(page, theme);
+
+    const menu = await openMentionMenu(page);
+
+    await expect(page.locator('html')).not.toHaveAttribute('data-theme', theme.name);
+    expect(await boxShadow(menu)).toContain(DEFAULT_LG);
+  });
+
+  test('a released theme with a variable-backed surface elevation still loads @scenario:variable-surface-elevation-theme-still-loads', async ({
+    page,
+  }) => {
+    const theme = {
+      version: 1,
+      name: 'e2e-variable-elevation',
+      modes: {
+        light: { appearance: { elevationSurface: '0 8px 16px rgb(var(--e2e-shadow, 9 240 120))' } },
+      },
+    };
+    await storeTheme(page, theme);
+
+    await openMentionMenu(page);
+    await expect(page.locator('html')).toHaveAttribute('data-theme', theme.name);
+
+    /** No app call site uses `shadow-theme-surface`, so the probe reads the role's property. */
+    const surface = await page.evaluate(() => {
+      const probe = document.createElement('div');
+      probe.style.boxShadow = 'var(--theme-elevation-surface)';
+      document.body.append(probe);
+      const value = getComputedStyle(probe).boxShadow;
+      probe.remove();
+      return value;
+    });
+    expect(surface).toContain('rgb(9, 240, 120) 0px 8px 16px 0px');
+  });
 });

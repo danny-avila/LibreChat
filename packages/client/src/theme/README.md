@@ -35,9 +35,11 @@ existing call sites without a migration: `rounded-sm` through `rounded-3xl` read
 through `radius3xl` (`--theme-radius-*`), `font-sans` reads `fontFamily` (`--theme-font-family`),
 `font-mono` reads `monoFontFamily` (`--theme-mono-font-family`), and `shadow-2xs` through
 `shadow-2xl` (and bare `shadow`, which matches `sm`) read `shadow2xs` through `shadow2xl`
-(`--theme-shadow-*`). `elevationSurface` stays the separate role behind `shadow-theme-surface`.
-A shadow value must be a concrete `box-shadow` list (no `var()`, `env()` or `attr()`) or `none`; `none` is written as a transparent layer so
-Tailwind can still compose it with ring utilities.
+(`--theme-shadow-*`). A shadow step must be a concrete `box-shadow` list (no `var()`, `env()` or
+`attr()`) or `none`. `elevationSurface` stays the separate role behind `shadow-theme-surface` and
+keeps its original validation, so a released theme holding `var()` there still loads. On every
+shadow role, `none` is written as a transparent layer so Tailwind can still compose it with ring
+utilities.
 The defaults reproduce the scale those utilities had before, so a theme that names none of them
 changes nothing. The mapping lives in the app stylesheet (`client/src/style.css`), not the
 published `theme.css`, whose preset keeps its own `rounded-sm`.
