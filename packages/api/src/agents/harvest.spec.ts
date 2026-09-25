@@ -251,10 +251,28 @@ describe('createBackgroundCodeResultHandler long dispatch turns', () => {
     const handler = createHandler(updateToolCallResult, waitForGenerationSettled);
 
     const result = handler({ ...params, backgroundTask });
-    await jest.advanceTimersByTimeAsync(RETRY_SCHEDULE_MS + 10_000);
+    await jest.advanceTimersByTimeAsync(RETRY_SCHEDULE_MS + 60_000);
 
     await expect(result).resolves.toEqual(expect.objectContaining({ deliveryReady: false }));
-    expect(updateToolCallResult).toHaveBeenCalledTimes(14 + 3);
+    expect(updateToolCallResult).toHaveBeenCalledTimes(14 + 5);
+  });
+
+  it('anchors a final save that lands well after the generation reads as settled', async () => {
+    let settledAt: number | undefined;
+    const updateToolCallResult = jest.fn(async () => ({
+      matched: true,
+      unfinished: settledAt == null || Date.now() - settledAt < 40_000,
+    }));
+    const waitForGenerationSettled = jest.fn(async () => {
+      settledAt = Date.now();
+      return true;
+    });
+    const handler = createHandler(updateToolCallResult, waitForGenerationSettled);
+
+    const result = handler({ ...params, backgroundTask });
+    await jest.advanceTimersByTimeAsync(RETRY_SCHEDULE_MS + 60_000);
+
+    await expect(result).resolves.toEqual(expect.objectContaining({ deliveryReady: true }));
   });
 
   it('gives the result up when the turn ends without saving the tool call', async () => {
@@ -263,7 +281,7 @@ describe('createBackgroundCodeResultHandler long dispatch turns', () => {
     const handler = createHandler(updateToolCallResult, waitForGenerationSettled);
 
     const result = handler({ ...params, backgroundTask });
-    await jest.advanceTimersByTimeAsync(RETRY_SCHEDULE_MS + 10_000);
+    await jest.advanceTimersByTimeAsync(RETRY_SCHEDULE_MS + 60_000);
 
     await expect(result).resolves.toEqual(expect.objectContaining({ deliveryReady: false }));
     expect(waitForGenerationSettled).toHaveBeenCalledTimes(1);

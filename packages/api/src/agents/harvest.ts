@@ -12,8 +12,10 @@ import type { ServerRequest } from '~/types';
 const BACKGROUND_PATCH_RETRY_DELAYS_MS = [
   250, 500, 1_000, 2_000, 5_000, 10_000, 20_000, 30_000, 60_000, 120_000, 180_000, 240_000, 300_000,
 ];
-/** Final save lands just before settlement is announced; these absorb replica lag. */
-const SETTLED_PATCH_RETRY_DELAYS_MS = [1_000, 5_000];
+/** A settle event arrives after the final save, but a status re-read can see a
+ * terminal job whose final save is still running; these outlast the job manager's
+ * 45-second terminal-persistence bound. */
+const SETTLED_PATCH_RETRY_DELAYS_MS = [1_000, 5_000, 15_000, 30_000];
 interface HarvestFileRef {
   id: string;
   name: string;
