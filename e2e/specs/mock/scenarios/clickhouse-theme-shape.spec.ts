@@ -141,6 +141,19 @@ test.describe('ClickHouse theme shape', () => {
     expect(fetched).not.toHaveLength(0);
   });
 
+  test('the production build serves the Inconsolata licence beside the font @scenario:inconsolata-licence-ships-with-font', async ({
+    page,
+  }) => {
+    const font = await page.request.get('/assets/fonts/inconsolata-latin-400-normal.woff2');
+    expect(font.status()).toBe(200);
+
+    const licence = await page.request.get('/assets/fonts/inconsolata-OFL.txt');
+    expect(licence.status()).toBe(200);
+    const text = await licence.text();
+    expect(text).toContain('Copyright 2006 The Inconsolata Project Authors');
+    expect(text).toContain('SIL OPEN FONT LICENSE Version 1.1');
+  });
+
   test('the default theme never fetches Inconsolata @scenario:default-theme-skips-inconsolata', async ({
     page,
   }) => {
