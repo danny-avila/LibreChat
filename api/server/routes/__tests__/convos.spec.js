@@ -87,7 +87,11 @@ describe('Convos Routes', () => {
       if (tenantId) {
         req.user.tenantId = tenantId;
       }
+      const endpointLimit = req.get('x-test-endpoint-limit');
       req.config = {
+        ...(endpointLimit
+          ? { conversationList: { maxEndpointFilters: Number(endpointLimit) } }
+          : {}),
         messageFilter: {
           pii: {
             starterPatterns: ['sk_prefix'],
@@ -1926,6 +1930,28 @@ describe('Convos Routes', () => {
       expect(response.status).toBe(400);
       expect(response.body.error).toMatch(/updatedAfter/);
       expect(getConvosByCursor).not.toHaveBeenCalled();
+    });
+
+    it('refuses a mistyped flag instead of listing unfiltered', async () => {
+      const response = await request(app).get('/api/convos').query({ hasFiles: 'tru' });
+
+      expect(response.status).toBe(400);
+      expect(response.body.error).toMatch(/hasFiles/);
+      expect(getConvosByCursor).not.toHaveBeenCalled();
+    });
+
+    it('enforces the endpoint limit the deployment configures', async () => {
+      const query = 'endpoints=openAI&endpoints=agents&endpoints=google';
+
+      const withinDefault = await request(app).get('/api/convos').query(query);
+      expect(withinDefault.status).toBe(200);
+
+      const overConfigured = await request(app)
+        .get('/api/convos')
+        .set('x-test-endpoint-limit', '2')
+        .query(query);
+      expect(overConfigured.status).toBe(400);
+      expect(overConfigured.body.error).toMatch(/at most 2 names/);
     });
 
     it('forwards the shared flag only when it is on', async () => {
