@@ -376,6 +376,8 @@ export type PendingSteer = {
   /** Manual skill picks, carried for restoration only (a skill pick
    *  configures a NEW turn's run, so it never rides the steer POST). */
   manualSkills?: string[];
+  /** Full-generation setting carried for restoration only; it cannot alter a live steer. */
+  reasoningOverride?: TMessage['reasoningOverride'];
   /** Asked the run to seal generation at the next safe boundary rather than
    *  wait for a tool step. Labelling only — the server owns the behaviour and
    *  echoes what it actually armed. */
@@ -430,6 +432,11 @@ export type QueuedMessage = {
     position?: number;
     revision?: number;
   };
+  /** A row the run-end drain must not submit on its own. Set when a steer the
+   * server REJECTED is swept into the queue so its words stay recoverable:
+   * the failure surface offers Retry and "Send as new", and auto-sending here
+   * would start a turn the user never asked for with text that was refused. */
+  needsExplicitSend?: boolean;
   /** Stable identity for server enqueue/retry. Recovered steer rows also use
    * it to dismiss their parked source; a later recovery attempt gets a fresh
    * identity. */
@@ -449,6 +456,8 @@ export type QueuedMessage = {
   /** Manual skill picks consumed from the composer at enqueue time; passed
    *  to `ask` as `overrideManualSkills` on drain. */
   manualSkills?: string[];
+  /** Request-scoped reasoning setting captured when this item was queued. */
+  reasoningOverride?: TMessage['reasoningOverride'];
   /** Front-inserted by "Interrupt & send": stays ahead of chronologically
    *  older items when leftover steers are merged back into the queue. */
   priority?: boolean;

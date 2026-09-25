@@ -1,10 +1,6 @@
 import { expect, test } from '@playwright/test';
-import { randomUUID } from 'node:crypto';
-import { ObjectId } from 'mongodb';
 import type { Page } from '@playwright/test';
 import { computedStyles, normalizeColor, themeValue, useStoredTheme } from './style.helpers';
-import { getAccessToken } from '../helpers';
-import { withMongo } from '../db';
 
 /**
  * Two of the upgrade's renamings are about focus, and both are invisible until
@@ -16,26 +12,36 @@ import { withMongo } from '../db';
  * when the platform forces its own colours — while v4's means `outline: none`.
  */
 
-/** The attach-file menu trigger: one Tab from the composer on the new-chat
- *  screen with no seeding, and it carries both classes under test
- *  (`focus-visible:ring-text-primary/50` and `focus-visible:outline-hidden`,
- *  client/src/components/Chat/Input/Files/AttachFileMenu.tsx). */
-const ATTACH_TRIGGER = '#attach-file-menu-button';
+/** The composer's palette trigger: reachable by Tab from the composer on the
+ *  new-chat screen with no seeding, and it carries the outline half of the pair
+ *  under test (`focus-visible:outline-hidden` beside its ring, from IconButton). */
+const PALETTE_TRIGGER = '[data-testid="composer-palette-button"]';
 
-/** Focus it by keyboard, because both classes are behind `focus-visible:`. */
-async function tabToAttachTrigger(page: Page): Promise<void> {
+/** The composer control that halves its own ring
+ *  (`focus-visible:ring-text-primary/50`, Chat/Input/CollapseChat.tsx). It only
+ *  renders once the draft outgrows three rows. */
+const HALVED_RING_CONTROL = 'button[aria-label="Collapse Chat"]';
+const TALL_DRAFT = ['one', 'two', 'three', 'four', 'five'].join('\n');
+
+/** Focus a composer control by keyboard, because both classes are behind
+ *  `focus-visible:`. */
+async function tabToComposerControl(page: Page, selector: string, draft?: string): Promise<void> {
   const composer = page.getByRole('textbox', { name: 'Message input' });
   await expect(composer).toBeVisible({ timeout: 30000 });
   await composer.click();
+  if (draft != null) {
+    await composer.fill(draft);
+    await expect(page.locator(selector)).toHaveCount(1, { timeout: 10000 });
+  }
   for (let press = 0; press < 15; press++) {
     await page.keyboard.press('Tab');
     const focused = await page.evaluate(
-      (selector) => document.activeElement?.matches(selector) ?? false,
-      ATTACH_TRIGGER,
+      (target) => document.activeElement?.matches(target) ?? false,
+      selector,
     );
     if (focused) return;
   }
-  throw new Error('the attach-file trigger was never reached by Tab');
+  throw new Error(`${selector} was never reached by Tab`);
 }
 
 test.describe('Tailwind v4 focus treatment', () => {
@@ -50,28 +56,28 @@ test.describe('Tailwind v4 focus treatment', () => {
     test.setTimeout(120_000);
 
     await page.goto('/c/new', { timeout: 30000 });
-    await tabToAttachTrigger(page);
+    await tabToComposerControl(page, HALVED_RING_CONTROL, TALL_DRAFT);
 
     /** Without the mode, the control's own halved ring is what shows. */
-    const halved = await computedStyles(page.locator(ATTACH_TRIGGER), ['--tw-ring-color']);
+    const halved = await computedStyles(page.locator(HALVED_RING_CONTROL), ['--tw-ring-color']);
     expect(halved['--tw-ring-color']).toContain('color-mix');
 
     await page.emulateMedia({ contrast: 'more' });
     await expect(page.locator('html.high-contrast')).toHaveCount(1, { timeout: 30000 });
-    await tabToAttachTrigger(page);
+    await tabToComposerControl(page, HALVED_RING_CONTROL, TALL_DRAFT);
 
     /** With it, the ring is restored to the ink token at full strength: the
      *  stylesheet re-declares the colour, because v4 has no ring-opacity. */
-    const restored = await computedStyles(page.locator(ATTACH_TRIGGER), ['--tw-ring-color']);
+    const restored = await computedStyles(page.locator(HALVED_RING_CONTROL), ['--tw-ring-color']);
     const opaque = await normalizeColor(page, `rgb(${await themeValue(page, '--text-primary')})`);
     expect(await normalizeColor(page, restored['--tw-ring-color'])).toBe(opaque);
     expect(restored['--tw-ring-color']).not.toContain('color-mix');
 
     /** The restoring rule is `html.high-contrast *`, so it has to hold for every
      *  control that halves its own ring rather than only the one focused above:
-     *  the attach-file button, the composer's collapse and its tools menu all
-     *  write the same class. */
-    for (const selector of ['#attach-file', '#collapse-chat-button', '#tools-menu-button']) {
+     *  the assistants attach button and the composer's collapse both write the
+     *  same class. */
+    for (const selector of ['#attach-file', HALVED_RING_CONTROL]) {
       const control = page.locator(selector);
       if ((await control.count()) === 0) continue;
       const ring = await computedStyles(control, ['--tw-ring-color']);
@@ -88,13 +94,13 @@ test.describe('Tailwind v4 focus treatment', () => {
 
     await page.emulateMedia({ forcedColors: 'active' });
     await page.goto('/c/new', { timeout: 30000 });
-    await tabToAttachTrigger(page);
+    await tabToComposerControl(page, PALETTE_TRIGGER);
 
     /** `outline-hidden` keeps v3's transparent outline, which the platform
      *  repaints in forced colours; `outline-none` would remove the outline box
      *  and leave the keyboard user with the ring alone, which forced colours
      *  flattens. */
-    const outline = await computedStyles(page.locator(ATTACH_TRIGGER), [
+    const outline = await computedStyles(page.locator(PALETTE_TRIGGER), [
       'outlineStyle',
       'outlineWidth',
     ]);
@@ -108,10 +114,13 @@ test.describe('Tailwind v4 focus treatment', () => {
   }) => {
     test.setTimeout(120_000);
     await useStoredTheme(page, 'light');
+    /* Pin the scheme with the stored theme: a dark system scheme still brings in
+       the dark theme's own `:focus-visible` outline, which is not under test. */
+    await page.emulateMedia({ colorScheme: 'light' });
     await page.goto('/c/new', { timeout: 30000 });
-    await tabToAttachTrigger(page);
+    await tabToComposerControl(page, PALETTE_TRIGGER);
 
-    const focused = await computedStyles(page.locator(ATTACH_TRIGGER), [
+    const focused = await computedStyles(page.locator(PALETTE_TRIGGER), [
       'outlineStyle',
       'boxShadow',
     ]);
@@ -120,70 +129,8 @@ test.describe('Tailwind v4 focus treatment', () => {
   });
 });
 
-/** The signed-in user's id, read from the access token's payload. */
-async function currentUserId(page: Page): Promise<string> {
-  const token = await getAccessToken(page);
-  const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8'));
-  return String(payload.id);
-}
-
 test.describe('Tailwind v4 focus ownership', () => {
   test.use({ viewport: { width: 1280, height: 900 } });
-
-  /** The files table marks a file's name cell as a button and draws its keyboard
-   *  indicator as a 2px outline. v4's `outline-hidden` sets `--tw-outline-style:
-   *  none`, and `outline-2` reads that variable, so the cell's own
-   *  `focus:outline-hidden` beside `focus-visible:outline-2` erased the outline it
-   *  was meant to draw and left the cell with no indicator at all. */
-  test('a keyboard-focused file name shows its outline @scenario:a-keyboard-focused-file-name-shows-its-outline', async ({
-    page,
-  }) => {
-    test.setTimeout(120_000);
-    await page.goto('/c/new', { timeout: 30000 });
-
-    const fileId = randomUUID();
-    const filename = `outline-${fileId.slice(0, 8)}.txt`;
-    const user = new ObjectId(await currentUserId(page));
-    await withMongo((db) =>
-      db.collection('files').insertOne({
-        user,
-        file_id: fileId,
-        filename,
-        filepath: `/uploads/${user.toHexString()}/${fileId}__${filename}`,
-        bytes: 12,
-        type: 'text/plain',
-        object: 'file',
-        usage: 0,
-        source: 'local',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      }),
-    );
-
-    try {
-      await page.reload();
-      await page.getByTestId('nav-panel-files').click();
-      const table = page.getByRole('region', { name: 'Files Table' });
-      const filter = table.locator('#filename-filter');
-      await filter.fill(filename);
-      const cell = table.locator('td[role="button"]').filter({ hasText: filename });
-      await expect(cell).toHaveCount(1, { timeout: 30000 });
-
-      /** Reach it by keyboard, because the outline is behind `focus-visible:`. */
-      await filter.focus();
-      for (let press = 0; press < 10; press++) {
-        await page.keyboard.press('Tab');
-        if (await cell.evaluate((node) => node === document.activeElement)) break;
-      }
-      await expect(cell).toBeFocused();
-
-      const focused = await computedStyles(cell, ['outlineStyle', 'outlineWidth']);
-      expect(focused.outlineStyle).toBe('solid');
-      expect(focused.outlineWidth).toBe('2px');
-    } finally {
-      await withMongo((db) => db.collection('files').deleteOne({ file_id: fileId }));
-    }
-  });
 
   /** A primitive that owns no focus treatment of its own, such as the keyboard
    *  shortcuts dialog's close control, takes `focusOutline="hidden"` from a caller

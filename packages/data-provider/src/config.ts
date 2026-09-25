@@ -2045,11 +2045,18 @@ export type TTermsOfService = z.infer<typeof termsOfServiceSchema>;
 // Schema for localized string (either simple string or language-keyed object)
 const localizedStringSchema = z.union([z.string(), z.record(z.string())]);
 export type LocalizedString = z.infer<typeof localizedStringSchema>;
-
 export const mcpRefreshDefaults = {
   toolsRefreshInterval: 5 * 60 * 1000,
   statusRefreshInterval: 30 * 1000,
 };
+
+/** Default confirmation window for a client-side steer escalation arm. */
+export const DEFAULT_STEER_ARM_CONFIRMATION_TIMEOUT_MS = 10_000;
+export const DEFAULT_QUEUED_TURN_RECONCILIATION_TIMEOUT_MS = 60_000;
+/** Last-resort expiry of the client's per-pane queued-send lock. */
+export const DEFAULT_QUEUED_SEND_LOCK_TIMEOUT_MS = 60_000;
+/** How many recently touched files the composer palette offers to reuse. */
+export const DEFAULT_COMPOSER_RECENT_FILES = 5;
 
 const mcpServersSchema = z
   .object({
@@ -2364,12 +2371,44 @@ export const interfaceSchema = z
           requireProject: z.boolean().optional(),
           /** Pins every scheduled run to ONE chat project, ignoring any client
            *  choice. Implies `requireProject`. The project must belong to the
-           *  schedule's owner, so a deployment-wide value only makes sense with a
-           *  per-user/per-role config override. */
+           *  schedule's owner, so a deployment-wide value only makes sense with
+           *  a per-user/per-role config override. */
           projectId: z.string().trim().min(1).optional(),
         }),
       ])
       .optional(),
+    /** Client confirmation window for a steer escalation arm, in milliseconds. */
+    steerArmConfirmationTimeoutMs: z
+      .number()
+      .int()
+      .positive()
+      .max(2_147_483_647)
+      .default(DEFAULT_STEER_ARM_CONFIRMATION_TIMEOUT_MS),
+    /** How long the client keeps reconciling a transport-ambiguous queued turn
+     *  before it stops polling, in milliseconds. A slow proxy or a delayed
+     *  read replica needs a longer window than the default. */
+    queuedTurnReconciliationTimeoutMs: z
+      .number()
+      .int()
+      .positive()
+      .max(2_147_483_647)
+      .default(DEFAULT_QUEUED_TURN_RECONCILIATION_TIMEOUT_MS),
+    /** How long a queued send may hold its pane before the claim is treated as
+     *  broken and released, in milliseconds. A healthy start releases it at once;
+     *  this only bounds a start that failed without ever reporting progress. */
+    queuedSendLockTimeoutMs: z
+      .number()
+      .int()
+      .positive()
+      .max(2_147_483_647)
+      .default(DEFAULT_QUEUED_SEND_LOCK_TIMEOUT_MS),
+    /** How many recently touched files the composer palette requests and shows
+     *  while idle; 0 turns that idle list off. Searching the palette still
+     *  finds any of the user's files, since it is the composer's only way to
+     *  reuse one. Capped at the file list endpoint's
+     *  own default maximum (`fileListLimit`) so the palette can never ask for
+     *  more than a typical deployment will return. */
+    composerRecentFiles: z.number().int().min(0).max(100).default(DEFAULT_COMPOSER_RECENT_FILES),
   })
   .default({
     modelSelect: true,
@@ -2447,6 +2486,10 @@ export const interfaceSchema = z
     // from librechat.yaml — including it would silently enable the feature (and permit
     // billable scheduled runs) on every deployment that never opted in. The PERMISSION
     // defaults live in updateInterfacePermissions, which is a separate concern.
+    steerArmConfirmationTimeoutMs: DEFAULT_STEER_ARM_CONFIRMATION_TIMEOUT_MS,
+    queuedTurnReconciliationTimeoutMs: DEFAULT_QUEUED_TURN_RECONCILIATION_TIMEOUT_MS,
+    queuedSendLockTimeoutMs: DEFAULT_QUEUED_SEND_LOCK_TIMEOUT_MS,
+    composerRecentFiles: DEFAULT_COMPOSER_RECENT_FILES,
   });
 
 export type TInterfaceConfig = z.infer<typeof interfaceSchema>;
@@ -3349,6 +3392,8 @@ export const configSchema = z.object({
     .optional(),
   interface: interfaceSchema,
   turnstile: turnstileSchema.optional(),
+  /** Maximum rows an explicitly limited GET /files request may return. */
+  fileListLimit: z.number().int().positive().default(100),
   fileStrategy: fileStorageSchema.default(FileSources.local),
   fileStrategies: fileStrategiesSchema,
   cloudfront: cloudfrontConfigSchema,

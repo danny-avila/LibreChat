@@ -9,6 +9,7 @@ const {
 } = require('librechat-data-provider');
 const {
   toPendingSteer,
+  persistedReasoningOverrideFields,
   getViolationInfo,
   buildMessageFiles,
   getReferencedQuotes,
@@ -239,7 +240,16 @@ function resolvePreallocatedUserMessageId({
 }
 
 function getPreliminaryUserMessage(
-  { messageId, parentMessageId, text, quotes, files, manualSkills, alwaysAppliedSkills },
+  {
+    messageId,
+    parentMessageId,
+    text,
+    quotes,
+    files,
+    manualSkills,
+    alwaysAppliedSkills,
+    reasoningOverride,
+  },
   conversationId,
   subagentTriggerProjection,
 ) {
@@ -272,6 +282,9 @@ function getPreliminaryUserMessage(
     ...(Array.isArray(manualSkills) && manualSkills.length > 0 && { manualSkills }),
     ...(Array.isArray(alwaysAppliedSkills) &&
       alwaysAppliedSkills.length > 0 && { alwaysAppliedSkills }),
+    /* A preliminary message is always a fresh turn: edits and regenerations reuse
+       the live user message, and compaction is projected before reaching here. */
+    ...persistedReasoningOverrideFields({ rawReasoningOverride: reasoningOverride }),
     ...(subagentTriggerProjection != null && { subagentTriggerProjection }),
   };
 }
@@ -2318,6 +2331,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 conversationId: userMsg.conversationId,
                 text: userMsg.text,
                 quotes: userMsg.quotes,
+                reasoningOverride: userMsg.reasoningOverride,
                 // Persist the turn's uploaded files here (authoritative job metadata) so a
                 // HITL resume sources them from the job, not the user DB row — which the
                 // approval prompt can race (the row save may still be in flight when a fast

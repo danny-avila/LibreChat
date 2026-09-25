@@ -138,6 +138,14 @@ async function seedReplyMessage(id: string, label: string) {
 }
 
 test.describe('unseen replies', () => {
+  /* The tab title counts every unseen conversation, and a shared verification run leaves
+   * legitimately-unseen conversations from earlier scenarios behind, so these tests assert
+   * the count they add and clear rather than a pristine zero baseline. */
+  async function titleCount(page: Page): Promise<number> {
+    const match = (await page.title()).match(/^\((\d+)\)/);
+    return match ? Number(match[1]) : 0;
+  }
+
   test('opening a conversation clears its dot and the title count @scenario:open-conversation-clears-dot-and-title-count', async ({
     page,
   }) => {
@@ -161,7 +169,17 @@ test.describe('unseen replies', () => {
           .filter({ hasText: firstTitle })
           .locator('span[aria-hidden="true"].bg-status-info'),
       ).toBeVisible();
-      await expect.poll(() => page.title()).toMatch(/^\(2\)/);
+      await expect(
+        page
+          .getByTestId('convo-item')
+          .filter({ hasText: secondTitle })
+          .locator('span[aria-hidden="true"].bg-status-info'),
+      ).toBeVisible();
+      /* Both seeded dots are on screen, so the count read here already includes
+       * them; the away poll can still discover older conversations the client
+       * had not counted yet (a shared run leaves many), so what opening has to
+       * do is clear THIS conversation's contribution, not land on a fixed sum. */
+      const settled = await titleCount(page);
       await page
         .getByTestId('convo-item')
         .filter({ hasText: firstTitle })
@@ -177,7 +195,7 @@ test.describe('unseen replies', () => {
           .filter({ hasText: firstTitle })
           .locator('span[aria-hidden="true"].bg-status-info'),
       ).toHaveCount(0);
-      await expect.poll(() => page.title()).toMatch(/^\(1\)/);
+      await expect.poll(() => titleCount(page)).toBeLessThanOrEqual(settled - 1);
     } finally {
       await cleanup(first);
       await cleanup(second);
@@ -231,12 +249,15 @@ test.describe('unseen replies', () => {
       await openSidebar(page);
       const row = page.getByTestId('convo-item').filter({ hasText: title });
       await expect(row.locator('span[aria-hidden="true"].bg-status-info')).toHaveCount(0);
+      const baseline = await titleCount(page);
       await openConversationMenu(row);
       /* Dispatched rather than clicked, like the row controls around it: the menu is portaled,
          and on the mobile project the drawer's scrim sits over it and intercepts the pointer. */
       await page.getByRole('menuitem', { name: 'Mark as unread' }).dispatchEvent('click');
       await expect(row.locator('span[aria-hidden="true"].bg-status-info')).toBeVisible();
-      await expect.poll(() => page.title()).toMatch(/^\(1\)/);
+      /* At least one more, not exactly one: the other projects share this user
+       * and seed unseen conversations of their own while this one runs. */
+      await expect.poll(() => titleCount(page)).toBeGreaterThanOrEqual(baseline + 1);
 
       const token = await getAccessToken(page);
       const neverReplied = conversationId();
@@ -309,6 +330,7 @@ test.describe('unseen replies', () => {
       await openSidebar(page);
       const row = page.getByTestId('convo-item').filter({ hasText: title });
       await expect(row.locator('span[aria-hidden="true"].bg-status-info')).toHaveCount(0);
+      const baseline = await titleCount(page);
       await unfocus(page);
 
       const second = await context.newPage();
@@ -341,7 +363,10 @@ test.describe('unseen replies', () => {
         await expect(row.locator('span[aria-hidden="true"].bg-status-info')).toBeVisible({
           timeout: 75_000,
         });
-        await expect.poll(() => page.title()).toMatch(/^\(1\)/);
+        /* The away poll that lights the dot also discovers conversations the
+         * client had not counted yet, so the count must rise past the baseline
+         * rather than land on an exact sum over state this tab never owned. */
+        await expect.poll(() => titleCount(page)).toBeGreaterThan(baseline);
       } finally {
         await second.close();
       }

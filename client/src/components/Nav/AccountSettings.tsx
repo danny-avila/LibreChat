@@ -1,4 +1,5 @@
 import { useState, memo, useRef } from 'react';
+import { useSetAtom } from 'jotai';
 import { useSetRecoilState } from 'recoil';
 import * as Menu from '@ariakit/react/menu';
 import { GearIcon, DropdownMenuSeparator, Avatar } from '@librechat/client';
@@ -6,6 +7,7 @@ import {
   Archive,
   ChevronRight,
   CircleHelp,
+  Files,
   Keyboard,
   LifeBuoy,
   LogOut,
@@ -13,6 +15,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { ArchivedChatsModal } from '~/components/Nav/SettingsTabs/General/ArchivedChatsModal';
+import { filesDialogTriggerAtom, showFilesDialogAtom } from '~/store/filesDialog';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { openInNewTab } from '~/utils';
@@ -99,6 +102,8 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
     enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
   });
   const [showSettings, setShowSettings] = useState(false);
+  const setShowFiles = useSetAtom(showFilesDialogAtom);
+  const setFilesDialogTrigger = useSetAtom(filesDialogTriggerAtom);
   const setShowShortcutsDialog = useSetRecoilState(store.showShortcutsDialog);
   const [showArchived, setShowArchived] = useState(false);
   const accountSettingsButtonRef = useRef<HTMLButtonElement>(null);
@@ -159,6 +164,21 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
         <Menu.MenuItem onClick={() => setShowArchived(true)} className="select-item text-sm">
           <Archive className="icon-md" aria-hidden="true" />
           {localize('com_nav_archived_chats')}
+        </Menu.MenuItem>
+
+        <Menu.MenuItem
+          onClick={() => {
+            /** The menu is gone by the time the dialog captures focus, so the
+             *  account button has to be named here or focus returns to the
+             *  document body when the dialog closes. */
+            setFilesDialogTrigger(accountSettingsButtonRef);
+            setShowFiles(true);
+          }}
+          className="select-item text-sm"
+          data-testid="nav-files"
+        >
+          <Files className="icon-md" aria-hidden="true" />
+          {localize('com_nav_my_files')}
         </Menu.MenuItem>
         <Menu.MenuItem
           onClick={() => setShowSettings(true)}

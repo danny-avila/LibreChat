@@ -14,7 +14,7 @@ import { MessagesViewProvider, useChatContext, useFileMapContext } from '~/Provi
 import { RowMountProvider, useProgressiveRowMount } from '~/hooks/Messages';
 import { useChatSurface } from '~/components/Chat/Subagents/surface';
 import useThreadRows from '~/hooks/Messages/useThreadRows';
-import { steerOverlayHeightFamily } from '~/store/steer';
+import PendingSteers from './Content/Parts/PendingSteers';
 import { autoScrollAtom } from '~/store/autoScroll';
 import { FLAT_THREAD, ThreadList } from './Thread';
 import { fontSizeAtom } from '~/store/fontSize';
@@ -123,12 +123,12 @@ function MessagesViewContent({
     }
   }, [latestMessageId, measureNearBottom, mountWindow, reportNearBottom, _messagesTree]);
 
-  /** The in-flight steer overlay floats above the composer over the bottom of
-   *  the thread (see `InFlightSteers`); reserve an equal band here so the
-   *  newest message rests above it and older ones scroll behind. */
+  /* The redesign renders pending steers inside the streaming reply rather than
+     as a stack floating over the bottom of the thread, so there is no band to
+     reserve here and nothing publishes an overlay height. Composer panels that
+     do float (an answer popover, a tool-approval review) are handled by
+     ScrollButton through `composerOverlayCountFamily`. */
   const overlayConversationId = conversationId ?? Constants.NEW_CONVO;
-  const steerOverlayHeight = useAtomValue(steerOverlayHeightFamily(overlayConversationId));
-
   return (
     <>
       <div className="relative flex-1 overflow-hidden overflow-y-auto">
@@ -147,15 +147,7 @@ function MessagesViewContent({
               overflowAnchor: mountWindow != null ? 'none' : undefined,
             }}
           >
-            <div
-              ref={contentRef}
-              className="flex flex-col pt-14 pb-9"
-              style={
-                steerOverlayHeight > 0
-                  ? { paddingBottom: `calc(2.25rem + ${steerOverlayHeight}px)` }
-                  : undefined
-              }
-            >
+            <div ref={contentRef} className="flex flex-col pt-14 pb-9">
               {(_messagesTree && _messagesTree.length == 0) || _messagesTree === null ? (
                 <div
                   className={cn(
@@ -192,6 +184,19 @@ function MessagesViewContent({
                   />
                 </>
               )}
+              {/** The pending surface is renderer-independent: both ThreadList
+               * and MultiMessage end at this shared thread tail. Keeping its
+               * mount here also preserves recovery controls when the message
+               * tree is temporarily empty during navigation or delivery.
+               *
+               * It keys off the RENDERED tree for the same reason the mount
+               * window does: during warm-cache navigation the Recoil
+               * conversation id still names the source chat, and its Cancel
+               * and Escalate actions would mutate that run while sitting at
+               * the destination thread's tail. */}
+              {treeConversationId != null && (
+                <PendingSteers conversationId={treeConversationId} index={index} />
+              )}
               <div id="messages-end" className="group h-0 w-full shrink-0" ref={messagesEndRef} />
             </div>
           </div>
@@ -204,7 +209,6 @@ function MessagesViewContent({
             messagesEndRef={messagesEndRef}
             scrollHandler={handleSmoothToRef}
             onNearBottomChange={handleNearBottom}
-            overlayHeight={steerOverlayHeight}
           />
 
           <MessageNav scrollableRef={scrollableRef} />

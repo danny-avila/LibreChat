@@ -47,6 +47,14 @@ export async function loadDefaultInterface({
     feedback: interfaceConfig?.feedback ?? defaults.feedback,
     currency: interfaceConfig?.currency ?? defaults.currency,
     theme: interfaceConfig?.theme,
+    steerArmConfirmationTimeoutMs:
+      interfaceConfig?.steerArmConfirmationTimeoutMs ?? defaults.steerArmConfirmationTimeoutMs,
+    queuedTurnReconciliationTimeoutMs:
+      interfaceConfig?.queuedTurnReconciliationTimeoutMs ??
+      defaults.queuedTurnReconciliationTimeoutMs,
+    queuedSendLockTimeoutMs:
+      interfaceConfig?.queuedSendLockTimeoutMs ?? defaults.queuedSendLockTimeoutMs,
+    composerRecentFiles: interfaceConfig?.composerRecentFiles ?? defaults.composerRecentFiles,
 
     // Permissions and related settings - only include if explicitly configured
     bookmarks: interfaceConfig?.bookmarks,

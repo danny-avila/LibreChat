@@ -1,14 +1,24 @@
-import { getDefaultStore } from 'jotai';
 import { renderHook, act } from '@testing-library/react';
-import { Constants, ContentTypes, EModelEndpoint, createPayload } from 'librechat-data-provider';
+import { Provider as JotaiProvider, createStore } from 'jotai';
+import {
+  Constants,
+  ContentTypes,
+  EModelEndpoint,
+  QueryKeys,
+  createPayload,
+} from 'librechat-data-provider';
 import type {
+  Agent,
   CodeEnvironmentMode,
   CodeWorkspaceSelection,
   TConversation,
   TMessage,
   TSubmission,
+  TReasoningOverride,
   TEphemeralAgent,
 } from 'librechat-data-provider';
+import type { ReactNode } from 'react';
+import { pendingReasoningOverrideFamily } from '~/components/Chat/Input/Composer/state';
 import { activeUsageResponseIdFamily, pendingUsageFamily } from '~/store/usage';
 import { revealedQueuedTurnFamily } from '~/store/steer';
 import useChatFunctions from '../useChatFunctions';
@@ -21,7 +31,17 @@ const mockGetEphemeralAgent = jest.fn((): TEphemeralAgent | null => null);
 const mockSetFilesToDelete = jest.fn();
 const mockGetSender = jest.fn(() => 'Assistant');
 const mockGetExpiry = jest.fn(() => 'expiry-key');
-const mockGetQueryData = jest.fn(() => ({}));
+const mockAgentQueryData: { current?: Agent } = {};
+const mockEndpointsQueryData: { current?: Record<string, unknown> } = {};
+const mockGetQueryData = jest.fn((queryKey: readonly unknown[]) => {
+  if (queryKey[0] === QueryKeys.agent) {
+    return mockAgentQueryData.current;
+  }
+  if (queryKey[0] === QueryKeys.endpoints) {
+    return mockEndpointsQueryData.current ?? {};
+  }
+  return {};
+});
 const mockLoggerWarn = jest.fn();
 const mockGetLatestConversation = jest.fn(() => null as TConversation | null);
 const mockResolveCodeWorkspaceSubmission = jest.fn<
@@ -52,7 +72,10 @@ jest.mock('recoil', () => ({
   useRecoilCallback: (factory: any) =>
     factory({
       snapshot: {
-        getLoadable: () => ({ state: 'hasValue', contents: [] }),
+        getLoadable: (_atom: unknown) => ({
+          state: 'hasValue',
+          contents: [],
+        }),
       },
       set: jest.fn(),
       reset: jest.fn(),
@@ -70,6 +93,14 @@ jest.mock('~/hooks/Conversations/useGetSender', () => () => mockGetSender);
 jest.mock('~/hooks/Input/useUserKey', () => () => ({ getExpiry: mockGetExpiry }));
 jest.mock('~/hooks', () => ({
   useAuthContext: () => ({ user: null }),
+}));
+jest.mock('~/Providers/AgentsMapContext', () => ({
+  useAgentsMapContext: () => ({
+    'agent-1': {
+      provider: 'openAI',
+      model: 'gpt-5.1',
+    },
+  }),
 }));
 jest.mock('~/store', () => ({
   __esModule: true,
@@ -128,7 +159,13 @@ const conversation = (conversationId: string) =>
 function renderAsk(
   messages: TMessage[] | undefined,
   conversationId = 'conversation-1',
-  options: { endpoint?: TConversation['endpoint']; isSubmitting?: boolean } = {},
+  options: {
+    endpoint?: TConversation['endpoint'];
+    model?: string;
+    isSubmitting?: boolean;
+    reasoningOverride?: TReasoningOverride;
+    agentId?: string;
+  } = {},
 ) {
   const setMessages = jest.fn();
   const setSubmission = jest.fn();
@@ -137,24 +174,38 @@ function renderAsk(
   if ('endpoint' in options) {
     immutableConversation.endpoint = options.endpoint ?? null;
   }
-  const hook = renderHook(() =>
-    useChatFunctions({
-      isSubmitting: options.isSubmitting ?? false,
-      latestMessage: messages?.at(-1) ?? null,
-      conversation: immutableConversation,
-      getMessages,
-      setMessages,
-      setSubmission,
-    }),
+  if (options.model != null) {
+    immutableConversation.model = options.model;
+  }
+  if (options.agentId != null) {
+    immutableConversation.agent_id = options.agentId;
+  }
+  const reasoningStore = createStore();
+  reasoningStore.set(pendingReasoningOverrideFamily(conversationId), options.reasoningOverride);
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <JotaiProvider store={reasoningStore}>{children}</JotaiProvider>
+  );
+  const hook = renderHook(
+    () =>
+      useChatFunctions({
+        isSubmitting: options.isSubmitting ?? false,
+        latestMessage: messages?.at(-1) ?? null,
+        conversation: immutableConversation,
+        getMessages,
+        setMessages,
+        setSubmission,
+      }),
+    { wrapper },
   );
 
-  return { ...hook, getMessages, setMessages, setSubmission };
+  return { ...hook, getMessages, setMessages, setSubmission, reasoningStore };
 }
 
 describe('useChatFunctions ask', () => {
   beforeEach(() => {
+    mockEndpointsQueryData.current = undefined;
     jest.clearAllMocks();
-    mockGetQueryData.mockReturnValue({});
+    mockAgentQueryData.current = undefined;
     mockGetLatestConversation.mockReturnValue(null);
     mockResolveCodeWorkspaceSubmission.mockReturnValue({});
   });
@@ -162,8 +213,13 @@ describe('useChatFunctions ask', () => {
   it.each([EModelEndpoint.agents, EModelEndpoint.openAI])(
     'binds the optimistic %s response before publishing its messages',
     (endpoint) => {
-      const { result, setMessages, setSubmission } = renderAsk([], 'conversation-1', { endpoint });
-      const store = getDefaultStore();
+      /* The helper renders under its own Jotai store; the hook writes there. */
+      const {
+        result,
+        setMessages,
+        setSubmission,
+        reasoningStore: store,
+      } = renderAsk([], 'conversation-1', { endpoint });
       store.set(activeUsageResponseIdFamily('conversation-1'), null);
       setMessages.mockImplementation((messages: TMessage[]) => {
         expect(store.get(activeUsageResponseIdFamily('conversation-1'))).toBe(
@@ -234,7 +290,8 @@ describe('useChatFunctions ask', () => {
 
   it('refuses every direct send before consuming composer context during handoff', () => {
     const family = revealedQueuedTurnFamily('conversation-1');
-    getDefaultStore().set(family, {
+    const { result, setSubmission, getMessages, reasoningStore } = renderAsk([]);
+    reasoningStore.set(family, {
       clientRequestId: 'queued',
       parentMessageId: 'response',
       generationCreatedAt: 41,
@@ -242,7 +299,6 @@ describe('useChatFunctions ask', () => {
       revealedAt: new Date().toISOString(),
     });
     try {
-      const { result, setSubmission, getMessages } = renderAsk([]);
       expect(result.current.ask({ text: 'direct' })).toBe(false);
       expect(
         result.current.ask({ text: 'rerun', parentMessageId: 'earlier' }, { isRegenerate: true }),
@@ -252,7 +308,7 @@ describe('useChatFunctions ask', () => {
       expect(setSubmission).not.toHaveBeenCalled();
       expect(mockSetFilesToDelete).not.toHaveBeenCalled();
     } finally {
-      getDefaultStore().set(family, null);
+      reasoningStore.set(family, null);
     }
   });
 
@@ -297,6 +353,40 @@ describe('useChatFunctions ask', () => {
     expect(setMessages).not.toHaveBeenCalled();
     expect(setSubmission).not.toHaveBeenCalled();
     expect(mockSetShowStopButton).not.toHaveBeenCalled();
+  });
+
+  it('refuses a second submit fired in the same task, before isSubmitting commits', () => {
+    const { result, setSubmission } = renderAsk([]);
+
+    let first: ReturnType<typeof result.current.ask>;
+    let second: ReturnType<typeof result.current.ask>;
+    act(() => {
+      first = result.current.ask({ text: 'double enter', conversationId: 'conversation-1' });
+      second = result.current.ask({ text: 'double enter', conversationId: 'conversation-1' });
+    });
+
+    expect(first!).not.toBe(false);
+    expect(second!).toBe(false);
+    expect(setSubmission).toHaveBeenCalledTimes(1);
+  });
+
+  it('releases the in-flight guard on the next commit rather than latching it', () => {
+    const { result, rerender, setSubmission } = renderAsk([]);
+
+    act(() => {
+      result.current.ask({ text: 'first turn', conversationId: 'conversation-1' });
+    });
+    /* `isSubmitting` never turns true here, standing in for a start that fails
+       outright: the next commit has to release the guard on its own instead of
+       latching the composer shut. */
+    act(() => {
+      rerender();
+    });
+    act(() => {
+      result.current.ask({ text: 'second turn', conversationId: 'conversation-1' });
+    });
+
+    expect(setSubmission).toHaveBeenCalledTimes(2);
   });
 
   it('reports a refusal when no endpoint is available', () => {
@@ -368,12 +458,134 @@ describe('useChatFunctions ask', () => {
     expect(setMessages).toHaveBeenCalled();
     expect(setSubmission).toHaveBeenCalled();
   });
+
+  it('stores an explicit reasoning override on only the submitted user turn', () => {
+    const { result, setSubmission } = renderAsk([]);
+    const override = { key: 'reasoning_effort', value: 'high' } as TReasoningOverride;
+
+    act(() => {
+      result.current.ask({ text: 'Think carefully' }, { overrideReasoning: override });
+    });
+
+    const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+    expect(submission.userMessage.reasoningOverride).toEqual(override);
+    expect(submission.conversation).not.toHaveProperty('reasoning_effort', 'high');
+    expect(submission.endpointOption).not.toHaveProperty('reasoning_effort', 'high');
+  });
+
+  /* A manual compaction is an internal summarization turn, like a regenerate:
+     the staged choice belongs to the user's next real message. */
+  it('leaves a staged reasoning override for the next message across a manual compaction', () => {
+    const override = { key: 'reasoning_effort', value: 'high' } as TReasoningOverride;
+    const { result, setSubmission, reasoningStore } = renderAsk(
+      [{ messageId: 'msg-1', parentMessageId: Constants.NO_PARENT } as TMessage],
+      'conversation-1',
+      { reasoningOverride: override },
+    );
+
+    act(() => {
+      result.current.ask(
+        {
+          text: '',
+          conversationId: 'conversation-1',
+          messageId: 'msg-1',
+          parentMessageId: 'msg-1',
+        },
+        { compact: true },
+      );
+    });
+
+    const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission | undefined;
+    expect(submission?.userMessage?.reasoningOverride).toBeUndefined();
+    expect(reasoningStore.get(pendingReasoningOverrideFamily('conversation-1'))).toEqual(override);
+  });
+
+  it('drains a staged reasoning override onto a fresh submission exactly once', () => {
+    const override = { key: 'reasoning_effort', value: 'high' } as TReasoningOverride;
+    const { result, setSubmission, reasoningStore } = renderAsk([], 'conversation-1', {
+      reasoningOverride: override,
+    });
+
+    act(() => {
+      result.current.ask({ text: 'Think carefully' });
+    });
+
+    const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+    expect(submission.userMessage.reasoningOverride).toEqual(override);
+    expect(reasoningStore.get(pendingReasoningOverrideFamily('conversation-1'))).toBeUndefined();
+  });
+  it('keeps a staged override for an ephemeral agent resolved from its encoded target', () => {
+    const override = { key: 'reasoning_effort', value: 'high' } as TReasoningOverride;
+    const { result, setSubmission } = renderAsk([], 'conversation-1', {
+      reasoningOverride: override,
+      agentId: 'openAI__gpt-5___GPT-5',
+    });
+
+    act(() => {
+      result.current.ask({ text: 'Think carefully' });
+    });
+
+    const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+    expect(submission.userMessage.reasoningOverride).toEqual(override);
+  });
+
+  it('submits the declared effort override for the mock custom endpoint', () => {
+    mockEndpointsQueryData.current = {
+      'Mock Provider A': {
+        type: 'custom',
+        customParams: {
+          defaultParamsEndpoint: 'anthropic',
+          paramDefinitions: [{ key: 'effort' }],
+        },
+      },
+    };
+    const override = { key: 'effort', value: 'high' } as TReasoningOverride;
+    const { result, setSubmission } = renderAsk([], 'mock-provider-conversation', {
+      /* The lab's endpoint is a named custom endpoint, so its label is not an
+         `EModelEndpoint` member; that is the configuration under test. */
+      endpoint: 'Mock Provider A' as TConversation['endpoint'],
+      model: 'mock-model-a',
+      reasoningOverride: override,
+    });
+
+    act(() => {
+      result.current.ask({ text: 'Think with effort' });
+    });
+
+    const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+    expect(submission.userMessage.reasoningOverride).toEqual(override);
+  });
+
+  it('uses hydrated per-agent query data when the agent catalog is unavailable', () => {
+    const agentId = 'agent-uncatalogued';
+    const override = { key: 'reasoning_effort', value: 'high' } as TReasoningOverride;
+    mockAgentQueryData.current = {
+      id: agentId,
+      provider: 'openAI',
+      model: 'gpt-5.1',
+    } as Agent;
+    const { result, setSubmission, reasoningStore } = renderAsk([], 'conversation-uncatalogued', {
+      agentId,
+      reasoningOverride: override,
+    });
+
+    act(() => {
+      result.current.ask({ text: 'Think carefully' });
+    });
+
+    const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+    expect(submission.userMessage.reasoningOverride).toEqual(override);
+    expect(
+      reasoningStore.get(pendingReasoningOverrideFamily('conversation-uncatalogued')),
+    ).toBeUndefined();
+    expect(mockGetQueryData).toHaveBeenCalledWith([QueryKeys.agent, agentId]);
+  });
 });
 
 describe('useChatFunctions regenerate', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockGetQueryData.mockReturnValue({});
+    mockAgentQueryData.current = undefined;
   });
 
   it('keys a non-tail regenerate to the selected assistant response', () => {
@@ -464,12 +676,41 @@ describe('useChatFunctions regenerate', () => {
       expect(submission.initialResponse?.clientQueueParentMessageId).toBe('user-1');
     },
   );
+  it('replays the original user turn reasoning override on regenerate', () => {
+    const parent = {
+      ...userMessage('user-reasoning'),
+      reasoningOverride: { key: 'reasoning_effort', value: 'high' },
+    } as TMessage;
+    const response = assistantMessage('assistant-reasoning', parent.messageId);
+    const { result, setSubmission } = renderAsk([parent, response]);
+
+    act(() => {
+      result.current.regenerate(response);
+    });
+
+    const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+    expect(submission.userMessage.reasoningOverride).toEqual(parent.reasoningOverride);
+  });
+
+  it('drops a replayed reasoning override that the selected model no longer supports', () => {
+    const parent = {
+      ...userMessage('user-reasoning'),
+      reasoningOverride: { key: 'effort', value: 'max' },
+    } as TMessage;
+    const response = assistantMessage('assistant-reasoning', parent.messageId);
+    const { result, setSubmission } = renderAsk([parent, response]);
+
+    act(() => result.current.regenerate(response));
+
+    const submission = setSubmission.mock.calls.at(-1)?.[0] as TSubmission;
+    expect(submission.userMessage.reasoningOverride).toBeUndefined();
+  });
 });
 
 describe('useChatFunctions ask attachments', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockGetQueryData.mockReturnValue({});
+    mockAgentQueryData.current = undefined;
   });
   afterEach(() => {
     mockGetEphemeralAgent.mockReturnValue(null);
