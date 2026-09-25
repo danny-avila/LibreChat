@@ -252,6 +252,8 @@ jest.mock('@librechat/data-schemas', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  getAgentErrorMetadata: (...args) =>
+    jest.requireActual('@librechat/api').getAgentErrorMetadata(...args),
   sendEvent: jest.fn(),
   logAgentMemorySnapshot: jest.fn(),
   isScheduleFireRequest: (...args) => mockIsScheduleFireRequest(...args),
@@ -4078,6 +4080,16 @@ describe('ResumableAgentController resume metadata', () => {
     new (jest.requireActual('@librechat/api').MCPAuthenticationRefreshError)(
       new Error('upstream refresh unavailable'),
     ),
+    new (jest.requireActual('@librechat/api').OboTokenResolutionError)(
+      'session_refresh_failed',
+      'Please sign in again',
+      false,
+    ),
+    new (jest.requireActual('@librechat/api').OboTokenResolutionError)(
+      'exchange_failed',
+      'Temporary exchange failure',
+      true,
+    ),
   ])(
     'publishes an actionable MCP initialization failure without an HTTP 401: %s',
     async (error) => {
@@ -4100,11 +4112,23 @@ describe('ResumableAgentController resume metadata', () => {
       expect(res.status).toHaveBeenCalledWith(200);
       expect(res.status).not.toHaveBeenCalledWith(401);
       expect(initializeClient).toHaveBeenCalledTimes(1);
+      let metadata = {
+        status: error.status ?? error.statusCode,
+        ...(error.code ? { code: error.code } : {}),
+      };
+      if (error.name === 'OboTokenResolutionError') {
+        metadata = {
+          status: error.retryable ? 503 : 403,
+          code: error.retryable
+            ? 'MCP_AUTHENTICATION_REFRESH_FAILED'
+            : 'MCP_AUTHENTICATION_REJECTED',
+          retryable: error.retryable,
+        };
+      }
       expect(mockGenerationJobManager.completeJob).toHaveBeenCalledWith(
         'conversation-123',
         JSON.stringify({
-          status: error.status ?? error.statusCode,
-          ...(error.code ? { code: error.code } : {}),
+          ...metadata,
           error: error.message,
         }),
         1000,

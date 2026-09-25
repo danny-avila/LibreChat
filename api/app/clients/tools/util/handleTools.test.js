@@ -498,6 +498,38 @@ describe('Tool Handlers', () => {
         expect(bulkSettled).toBe(true);
       });
 
+      it.each([false, true])(
+        'lets cancellation supersede an auth failure after sibling settlement: authFailure=%s',
+        async (authFailure) => {
+          const controller = new AbortController();
+          const stopped = new Error('request cancelled');
+          let siblingSettled = false;
+          mockCreateMCPTools.mockImplementationOnce(async () => {
+            if (authFailure) {
+              throw failures[0];
+            }
+            return [{ name: 'first' }];
+          });
+          mockCreateMCPTools.mockImplementationOnce(
+            () =>
+              new Promise((resolve) =>
+                setImmediate(() => {
+                  controller.abort(stopped);
+                  siblingSettled = true;
+                  resolve([{ name: 'sibling' }]);
+                }),
+              ),
+          );
+          await expect(
+            load(
+              [toolKey(Constants.mcp_all), toolKey(Constants.mcp_all, 'healthy')],
+              controller.signal,
+            ),
+          ).rejects.toBe(stopped);
+          expect(siblingSettled).toBe(true);
+        },
+      );
+
       it('allows a later request to recover after re-authentication', async () => {
         mockCreateMCPTools.mockRejectedValueOnce(failures[0]);
         await expect(load([toolKey(Constants.mcp_all)])).rejects.toBe(failures[0]);

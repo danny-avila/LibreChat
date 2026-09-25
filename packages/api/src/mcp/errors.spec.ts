@@ -9,9 +9,6 @@ import {
   isMCPTransportAuthenticationError,
   MCPTransportAuthenticationError,
   isMCPInitializationError,
-  createMCPToolLoadGuard,
-  MCPAuthenticationRejectedError,
-  MCPAuthenticationRefreshError,
 } from './errors';
 import { OboTokenResolutionError } from './oauth/obo';
 
@@ -81,36 +78,5 @@ describe('MCP HTTP error response mapping', () => {
 
   it('ignores unrelated errors', () => {
     expect(getMCPErrorResponse(new Error('unrelated'))).toBeNull();
-  });
-});
-
-describe('createMCPToolLoadGuard', () => {
-  it('records the first credential failure without throwing until all loads settle', () => {
-    const guard = createMCPToolLoadGuard();
-    const error = new MCPAuthenticationRejectedError('first-server', false);
-    expect(() => guard.capture(new Error('optional tool unavailable'))).not.toThrow();
-    expect(() => guard.throwIfFailed()).not.toThrow();
-    expect(() => guard.capture(error)).not.toThrow();
-    guard.capture(new MCPAuthenticationRefreshError(new Error('temporary outage')));
-    try {
-      guard.throwIfFailed();
-      throw new Error('Expected credential failure');
-    } catch (actual) {
-      expect(actual).toBe(error);
-    }
-  });
-
-  it('preserves cancellation owned by the loading request', () => {
-    const controller = new AbortController();
-    const guard = createMCPToolLoadGuard(controller.signal);
-    controller.abort();
-    guard.capture(controller.signal.reason);
-    expect(() => guard.throwIfFailed()).toThrow(controller.signal.reason);
-  });
-
-  it('does not promote an unrelated optional-tool abort to a request cancellation', () => {
-    const guard = createMCPToolLoadGuard(new AbortController().signal);
-    guard.capture(Object.assign(new Error('optional timeout'), { name: 'AbortError' }));
-    expect(() => guard.throwIfFailed()).not.toThrow();
   });
 });
