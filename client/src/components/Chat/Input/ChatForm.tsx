@@ -383,6 +383,7 @@ const ChatForm = memo(function ChatForm({
   );
   const steering = useSteering({
     consumeDraft,
+    addedConversation: addedConvo,
     index,
     conversationId,
     conversation,

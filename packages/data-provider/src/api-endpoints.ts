@@ -322,7 +322,8 @@ export const agents = ({ path = '', options }: { path?: string; options?: object
 export const activeJobs = () => `${BASE_URL}/api/agents/chat/active`;
 
 const agentQueuedTurnsRoot = `${BASE_URL}/api/agents/chat/queued-turns`;
-export const agentQueuedTurns = () => agentQueuedTurnsRoot;
+export const agentQueuedTurns = (protocolVersion?: 2) =>
+  protocolVersion === 2 ? `${agentQueuedTurnsRoot}/v2` : agentQueuedTurnsRoot;
 export const agentQueuedTurnsByConversation = (
   conversationId: string,
   clientRequestIds: string[] = [],

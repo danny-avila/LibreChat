@@ -9,6 +9,13 @@ import type {
 } from '~/types/triggerDelivery';
 import type { IUser } from '~/types/user';
 import {
+  AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
+  AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
+  AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
+  AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V2,
+  AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+} from '~/types/triggerDelivery';
+import {
   AgentTriggerDeliveryConflictError,
   createAgentTriggerDeliveryMethods,
   recordAgentEventActorReceiptMetric,
@@ -17,11 +24,6 @@ import {
   CLAIM_CAS_MAX_ATTEMPTS,
   type AgentTriggerDeliveryMethods,
 } from './triggerDelivery';
-import {
-  AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
-  AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
-  AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
-} from '~/types/triggerDelivery';
 import { createAgentTriggerLaneSequenceModel } from '../models/triggerLaneSequence';
 import { createAgentTriggerUserPurgeModel } from '../models/triggerUserPurge';
 import { createAgentTriggerDeliveryModel } from '../models/triggerDelivery';
@@ -1358,15 +1360,18 @@ describe('agent trigger delivery methods', () => {
     ).resolves.toBe(true);
   });
 
-  it('keeps capability-fenced work limited to capable workers through lease recovery', async () => {
+  it.each([
+    AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+    AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V2,
+  ])('keeps %s fenced through lease recovery', async (capability) => {
     const queued = await methods.enqueueAgentTriggerDelivery(
       enqueueInput({
-        requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+        requiredWorkerCapability: capability,
       }),
     );
     expect(queued.delivery).toMatchObject({
       status: 'capability_pending',
-      requiredWorkerCapability: AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
+      requiredWorkerCapability: capability,
     });
     const claimInput = {
       workerId: 'capable-worker',
@@ -1379,12 +1384,13 @@ describe('agent trigger delivery methods', () => {
       methods.claimNextAgentTriggerDelivery({
         ...claimInput,
         workerId: 'old-worker',
+        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1],
         claimToken: 'old-claim',
       }),
     ).resolves.toBeNull();
     const capable = await methods.claimNextAgentTriggerDelivery({
       ...claimInput,
-      workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+      workerCapabilities: [capability],
     });
     expect(capable).toMatchObject({ status: 'capability_leased' });
 
@@ -1396,6 +1402,7 @@ describe('agent trigger delivery methods', () => {
     await expect(
       methods.claimNextAgentTriggerDelivery({
         workerId: 'old-worker',
+        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1],
         claimToken: 'old-recovery',
         now: recoveryNow,
         leaseUntil: new Date(recoveryNow.getTime() + 60_000),
@@ -1406,7 +1413,7 @@ describe('agent trigger delivery methods', () => {
       claimToken: 'capable-recovery',
       now: recoveryNow,
       leaseUntil: new Date(recoveryNow.getTime() + 60_000),
-      workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+      workerCapabilities: [capability],
     });
     expect(recovered).toMatchObject({ status: 'capability_leased' });
 
@@ -1439,6 +1446,7 @@ describe('agent trigger delivery methods', () => {
     await expect(
       methods.claimNextAgentTriggerDelivery({
         workerId: 'old-worker',
+        workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1],
         claimToken: 'old-requeue',
         now: recoveryNow,
         leaseUntil: new Date(recoveryNow.getTime() + 60_000),
@@ -1449,7 +1457,7 @@ describe('agent trigger delivery methods', () => {
       claimToken: 'capable-final',
       now: recoveryNow,
       leaseUntil: new Date(recoveryNow.getTime() + 60_000),
-      workerCapabilities: [AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1],
+      workerCapabilities: [capability],
     });
     const finalAttempt = await methods.beginAgentTriggerDeliveryAttempt({
       id: finalClaim!.id,
