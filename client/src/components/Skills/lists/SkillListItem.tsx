@@ -305,7 +305,6 @@ function SkillListItem({
       <div
         className={cn(
           'text-text-primary flex w-full items-center gap-1 rounded-lg pr-1 text-sm select-none',
-          'focus-within:ring-text-primary focus-within:ring-2 focus-within:ring-inset',
           isActive && !activeFile && 'bg-surface-active',
           !isActive && 'hover:bg-surface-active-alt',
         )}
@@ -313,7 +312,7 @@ function SkillListItem({
         <button
           type="button"
           onClick={handleSkillClick}
-          className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg py-1.5 pl-3 text-left outline-hidden"
+          className="focus-visible:ring-text-primary flex min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg py-1.5 pl-3 text-left outline-hidden focus-visible:ring-2 focus-visible:ring-inset"
           aria-current={isActive ? 'true' : undefined}
         >
           <span className="flex size-6 shrink-0 items-center justify-center">
@@ -337,7 +336,7 @@ function SkillListItem({
           <button
             type="button"
             onClick={handleChevronClick}
-            className="text-text-secondary hover:text-text-primary inline-flex size-6 shrink-0 items-center justify-center rounded-md outline-hidden"
+            className="text-text-secondary hover:text-text-primary focus-visible:ring-text-primary inline-flex size-6 shrink-0 items-center justify-center rounded-md outline-hidden focus-visible:ring-2 focus-visible:ring-inset"
             aria-label={localize('com_ui_skills_toggle_files', { 0: skill.name })}
             aria-expanded={expanded}
           >

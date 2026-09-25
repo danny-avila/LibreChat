@@ -1,7 +1,12 @@
 import { expect, test } from '@playwright/test';
 import { FileSources } from 'librechat-data-provider';
-import type { TFile, TSchedule, TSchedulesResponse } from 'librechat-data-provider';
-import type { Page } from '@playwright/test';
+import type {
+  TFile,
+  TSchedule,
+  TConversationTag,
+  TSchedulesResponse,
+} from 'librechat-data-provider';
+import type { Page, Locator } from '@playwright/test';
 import type { AgentSummary } from '../agents.helpers';
 import { getAccessToken, requestJson, uniqueName } from '../helpers';
 import { cleanupAgent } from '../agents.helpers';
@@ -52,6 +57,65 @@ async function cleanupSchedules(page: Page, fixture: Awaited<ReturnType<typeof s
     });
   }
   await cleanupAgent(page, fixture.agent.id);
+}
+
+/** Whether a focused control's ring (2px plus its 2px offset) is drawn in full, rather
+ *  than cut off by an ancestor that clips its overflow. */
+async function ringIsUnclipped(control: Locator): Promise<boolean> {
+  return control.evaluate((element) => {
+    const ring = 4;
+    const box = element.getBoundingClientRect();
+    if (getComputedStyle(element).boxShadow === 'none') {
+      return false;
+    }
+    for (
+      let node = element.parentElement;
+      node && node !== document.body;
+      node = node.parentElement
+    ) {
+      const style = getComputedStyle(node);
+      if (style.overflowX === 'visible' && style.overflowY === 'visible') {
+        continue;
+      }
+      const clip = node.getBoundingClientRect();
+      if (
+        box.left - ring < clip.left ||
+        box.right + ring > clip.right ||
+        box.top - ring < clip.top ||
+        box.bottom + ring > clip.bottom
+      ) {
+        return false;
+      }
+    }
+    return true;
+  });
+}
+
+const hasRing = (control: Locator) =>
+  control.evaluate((element) => getComputedStyle(element).boxShadow !== 'none');
+
+function syntheticSchedule(
+  id: string,
+  name: string,
+  status: 'skipped_balance' | 'skipped_overlap',
+): TSchedule {
+  return {
+    id,
+    user: 'schedule-fixture-user',
+    name,
+    prompt: 'Summarize the day',
+    agent_id: 'schedule-fixture-agent',
+    cadence: { frequency: 'daily', hour: 0, minute: 0 },
+    timezone: 'UTC',
+    target: 'new',
+    enabled: true,
+    nextRunAt: '2099-01-01T00:00:00.000Z',
+    lastRun: { status, firedAt: '2026-09-01T00:00:00.000Z' },
+    runCount: 3,
+    failureCount: 0,
+    createdAt: '2026-09-01T00:00:00.000Z',
+    updatedAt: '2026-09-01T00:00:00.000Z',
+  };
 }
 
 test.describe('quieter management panels', () => {
@@ -328,5 +392,110 @@ test.describe('quieter management panels', () => {
       body: await page.screenshot(),
       contentType: 'image/png',
     });
+  });
+  test('a run skipped for balance warns its owner while an overlap skip does not @scenario:balance-skipped-schedule-warns-owner', async ({
+    page,
+  }) => {
+    const balance = syntheticSchedule(
+      'balance-fixture',
+      uniqueName('Balance skipped'),
+      'skipped_balance',
+    );
+    const overlap = syntheticSchedule(
+      'overlap-fixture',
+      uniqueName('Overlap skipped'),
+      'skipped_overlap',
+    );
+    await page.route('**/api/schedules', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.continue();
+        return;
+      }
+      const response = await route.fetch();
+      const data = (await response.json()) as TSchedulesResponse;
+      await route.fulfill({ response, json: { ...data, schedules: [balance, overlap] } });
+    });
+
+    try {
+      await page.goto('/c/new');
+      await openPanel(page, 'schedules', 'Scheduled chats');
+      const panel = page.getByRole('region', { name: 'Scheduled chats', exact: true });
+      const balanceCard = panel.getByTestId('schedule-card').filter({ hasText: balance.name });
+      const overlapCard = panel.getByTestId('schedule-card').filter({ hasText: overlap.name });
+      await expect(balanceCard).toBeVisible();
+      await expect(overlapCard).toBeVisible();
+
+      await expect(balanceCard.getByText('Skipped', { exact: true })).toBeVisible();
+      await expect(overlapCard.getByText('Skipped', { exact: true })).toHaveCount(0);
+      await expect(balanceCard.locator('svg.text-status-warning')).toHaveCount(1);
+      await expect(overlapCard.locator('svg.text-status-warning')).toHaveCount(0);
+    } finally {
+      await page.unroute('**/api/schedules');
+    }
+  });
+
+  test('a focused row action draws its whole focus ring @scenario:row-actions-keep-focus-ring-visible', async ({
+    page,
+  }) => {
+    const bookmark: TConversationTag = {
+      _id: 'focus-ring-fixture',
+      user: 'focus-ring-fixture-user',
+      tag: uniqueName('Focus ring bookmark'),
+      description: '',
+      count: 0,
+      position: 0,
+      createdAt: '2026-09-01T00:00:00.000Z',
+      updatedAt: '2026-09-01T00:00:00.000Z',
+    };
+    await page.route('**/api/tags', (route) =>
+      route.request().method() === 'GET' ? route.fulfill({ json: [bookmark] }) : route.continue(),
+    );
+
+    try {
+      await page.goto('/c/new');
+      await openPanel(page, 'bookmarks', 'Bookmarks');
+      const edit = page.getByRole('button', { name: 'Edit Bookmark', exact: true });
+      const remove = page.getByRole('button', { name: 'Delete Bookmark', exact: true });
+      await expect(page.getByText(bookmark.tag, { exact: true })).toBeVisible();
+
+      await edit.focus();
+      await page.keyboard.press('Tab');
+      await expect(remove).toBeFocused();
+      expect(await ringIsUnclipped(remove)).toBe(true);
+
+      await page.keyboard.press('Shift+Tab');
+      await expect(edit).toBeFocused();
+      expect(await ringIsUnclipped(edit)).toBe(true);
+      expect(await hasRing(remove)).toBe(false);
+    } finally {
+      await page.unroute('**/api/tags');
+    }
+  });
+
+  test('each control in a skill row shows its own keyboard focus @scenario:skill-row-controls-show-own-focus', async ({
+    page,
+  }) => {
+    await page.goto('/c/new');
+    await openPanel(page, 'skills', 'Skills');
+    const disclosure = page.getByRole('button', {
+      name: 'Toggle files for e2e-deployment-skill',
+      exact: true,
+    });
+    const open = page.getByRole('button', { name: 'e2e-deployment-skill', exact: true });
+    const row = disclosure.locator('..');
+    await expect(disclosure).toBeVisible();
+
+    await disclosure.focus();
+    await page.keyboard.press('Shift+Tab');
+    await expect(open).toBeFocused();
+    expect(await hasRing(open)).toBe(true);
+    expect(await hasRing(disclosure)).toBe(false);
+    expect(await hasRing(row)).toBe(false);
+
+    await page.keyboard.press('Tab');
+    await expect(disclosure).toBeFocused();
+    expect(await hasRing(disclosure)).toBe(true);
+    expect(await hasRing(open)).toBe(false);
+    expect(await hasRing(row)).toBe(false);
   });
 });

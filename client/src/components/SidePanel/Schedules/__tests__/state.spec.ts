@@ -62,14 +62,25 @@ describe('scheduleRowState', () => {
     ).toEqual({ tone: 'warning', label: 'com_ui_schedule_needs_approval' });
   });
 
-  /** A skipped or in-flight run is not a problem to report: the schedule is still
+  /** An overlapping or in-flight run is not a problem to report: the schedule is still
    *  keeping its cadence, so the row keeps showing the next one. */
-  it('leaves a skipped or started run alone', () => {
-    for (const status of ['started', 'skipped_overlap', 'skipped_balance'] as const) {
+  it('leaves an overlap-skipped or started run alone', () => {
+    for (const status of ['started', 'skipped_overlap'] as const) {
       expect(
         scheduleRowState(schedule({ lastRun: { status } } as Partial<TSchedule>), localize),
       ).toEqual({ tone: 'running', label: null });
     }
+  });
+
+  /** A run skipped for balance keeps the schedule enabled only until the skip count
+   *  disables it, so the owner is told before the clock stops. */
+  it('warns when a run was skipped for balance', () => {
+    expect(
+      scheduleRowState(
+        schedule({ lastRun: { status: 'skipped_balance' } } as Partial<TSchedule>),
+        localize,
+      ),
+    ).toEqual({ tone: 'warning', label: 'com_ui_schedule_run_skipped' });
   });
 
   /** Disabled beats everything: a schedule the system stopped is not "failing", it

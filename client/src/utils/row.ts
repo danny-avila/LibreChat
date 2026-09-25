@@ -38,14 +38,15 @@ export const rowActionClasses = ({
  * room to be read, and the ellipsis then said the name was longer than it was.
  *
  * Where a pointer cannot hover there is no reveal to wait for, so the slot keeps its
- * width and the actions stay reachable.
+ * width and the actions stay reachable. Only the collapsed slot clips: once focus is
+ * inside, the focused action's ring has to draw past the slot's edge.
  */
 export const rowActionSlotClasses = ({ open = false }: { open?: boolean } = {}): string =>
   cn(
-    'flex shrink-0 items-center gap-0.5 overflow-hidden',
+    'flex shrink-0 items-center gap-0.5',
     !open && [
-      '[@media(hover:hover)]:w-0',
+      '[@media(hover:hover)]:w-0 [@media(hover:hover)]:overflow-hidden',
       '[@media(hover:hover)]:group-hover:w-auto',
-      '[@media(hover:hover)]:group-focus-within:w-auto',
+      '[@media(hover:hover)]:group-focus-within:w-auto [@media(hover:hover)]:group-focus-within:overflow-visible',
     ],
   );
