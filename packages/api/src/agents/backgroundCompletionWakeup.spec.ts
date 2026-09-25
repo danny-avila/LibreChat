@@ -805,7 +805,7 @@ describe('pending background completions', () => {
     ...overrides,
   });
   const listing = (completions: Array<ReturnType<typeof row>>, truncated = false) =>
-    jest.fn(async () => ({ completions, deadTaskIds: ['task-dead'], truncated }));
+    jest.fn(async () => ({ completions, dead: [row({ taskId: 'task-dead' })], truncated }));
   const listTaskIds = jest.fn(async () => ({ taskIds: ['child-1'], truncated: false }));
 
   it('lists the durable view for the owner without delivery internals', async () => {
@@ -815,7 +815,14 @@ describe('pending background completions', () => {
     await expect(
       pending.list({ userId: 'user-1', conversationId: 'conversation-1' }),
     ).resolves.toEqual({
-      deadTaskIds: ['task-dead'],
+      dead: [
+        {
+          taskId: 'task-dead',
+          toolName: 'slow_tool',
+          dispatchedAt,
+          claimedByWakeup: false,
+        },
+      ],
       completions: [
         {
           taskId: 'task-1',

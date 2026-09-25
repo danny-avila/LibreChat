@@ -279,8 +279,8 @@ export interface PendingAgentBackgroundToolCompletion {
 
 export interface PendingAgentBackgroundToolCompletions {
   completions: PendingAgentBackgroundToolCompletion[];
-  /** Tasks whose delivery dead-lettered: never delivered, recoverable only by a poll. */
-  deadTaskIds: string[];
+  /** Completions whose delivery dead-lettered: never delivered, recoverable only by a poll. */
+  dead: PendingAgentBackgroundToolCompletion[];
   /** More undelivered completions exist than were returned. */
   truncated: boolean;
 }
@@ -2410,15 +2410,9 @@ export function createAgentTriggerDeliveryMethods(
           }
         >
       >();
-    const deadTaskIds: string[] = [];
+    const dead: PendingAgentBackgroundToolCompletion[] = [];
     const completions = rows.slice(0, limit).flatMap((row) => {
       const payload = row.envelope?.event?.payload;
-      if (isDeadDelivery(row)) {
-        if (typeof payload?.taskId === 'string') {
-          deadTaskIds.push(payload.taskId);
-        }
-        return [];
-      }
       const taskId = payload?.taskId;
       const toolCallId = payload?.toolCallId;
       const toolName = payload?.toolName;
@@ -2443,9 +2437,15 @@ export function createAgentTriggerDeliveryMethods(
           }),
           claimedByWakeup: receipt?.resultClaim != null,
         },
-      ];
+      ].filter((completion) => {
+        if (!isDeadDelivery(row)) {
+          return true;
+        }
+        dead.push(completion);
+        return false;
+      });
     });
-    return { completions, deadTaskIds, truncated: rows.length > limit };
+    return { completions, dead, truncated: rows.length > limit };
   }
 
   async function listUndeliveredAgentTriggerTaskIds(input: {

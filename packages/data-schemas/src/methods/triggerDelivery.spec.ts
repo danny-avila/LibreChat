@@ -569,7 +569,7 @@ describe('agent trigger delivery methods', () => {
       });
       expect(one).toEqual({
         completions: [expect.objectContaining({ deliveryKey: second.delivery.deliveryKey })],
-        deadTaskIds: [],
+        dead: [],
         truncated: false,
       });
 
@@ -615,7 +615,13 @@ describe('agent trigger delivery methods', () => {
       });
 
       expect(pending.completions).toEqual([]);
-      expect(pending.deadTaskIds.sort()).toEqual(['task-dead', 'task-dead-letter']);
+      expect(pending.dead.map(({ taskId }) => taskId).sort()).toEqual([
+        'task-dead',
+        'task-dead-letter',
+      ]);
+      expect(pending.dead[0]).toEqual(
+        expect.objectContaining({ toolName: 'slow_task', dispatchedAt: expect.any(Date) }),
+      );
     });
 
     it("lists a conversation's undelivered task ids for one source", async () => {

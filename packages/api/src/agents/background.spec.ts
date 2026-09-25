@@ -3101,7 +3101,7 @@ describe('runCheckBackgroundTask (singleton)', () => {
           args: {},
           subagentTasks,
           pendingCompletions: {
-            list: jest.fn(async () => ({ completions: [], deadTaskIds: [], complete: true })),
+            list: jest.fn(async () => ({ completions: [], dead: [], complete: true })),
             listSubagentWakeups: jest.fn(async () => ({
               taskIds: subagentWakeups,
               complete: true,
@@ -3486,7 +3486,7 @@ describe('runCheckBackgroundTask delivery semantics', () => {
     overrides: {
       list?: () => Promise<unknown[]>;
       complete?: boolean;
-      deadTaskIds?: string[];
+      dead?: unknown[];
       subagentWakeups?: string[];
       discard?: () => Promise<string>;
     } = {},
@@ -3494,7 +3494,7 @@ describe('runCheckBackgroundTask delivery semantics', () => {
     ({
       list: jest.fn(async () => ({
         completions: await (overrides.list ?? (async () => []))(),
-        deadTaskIds: overrides.deadTaskIds ?? [],
+        dead: overrides.dead ?? [],
         complete: overrides.complete ?? true,
       })),
       listSubagentWakeups: jest.fn(async () => ({
@@ -3731,15 +3731,91 @@ describe('runCheckBackgroundTask delivery semantics', () => {
         userId: 'dead-user',
         conversationId: 'dead-convo',
         args: {},
-        pendingCompletions: pendingControls({ deadTaskIds: [taskId] }),
+        pendingCompletions: pendingControls({
+          dead: [
+            {
+              taskId,
+              toolName: 'bash_tool',
+              dispatchedAt: new Date('2026-09-24T12:00:00Z'),
+              claimedByWakeup: false,
+            },
+            {
+              taskId: 'restored-dead-task',
+              toolName: 'slow_task',
+              dispatchedAt: new Date('2026-09-24T11:00:00Z'),
+              result: { status: 'completed', settledAt: new Date('2026-09-24T11:01:00Z') },
+              claimedByWakeup: false,
+            },
+          ],
+        }),
       }),
     );
 
     expect(listed.tasks[0]).toEqual(
       expect.objectContaining({ background_task_id: taskId, delivery: 'failed' }),
     );
-    expect(listed.outstanding).toBe(1);
+    /** A dead letter this process no longer holds is listed from the durable store. */
+    expect(listed.tasks[1]).toEqual(
+      expect.objectContaining({
+        background_task_id: 'restored-dead-task',
+        status: 'completed',
+        delivery: 'failed',
+      }),
+    );
+    expect(listed.outstanding).toBe(2);
     expect(listed.message).toContain('Automatic delivery failed');
+  });
+
+  it('retires the pending delivery when a local poll claims the durable result', async () => {
+    const created = backgroundTaskRegistry.create({
+      userId: 'local-claim-user',
+      conversationId: 'local-claim-convo',
+      toolCallId: 'local-claim-call',
+      toolName: 'bash_tool',
+      messageId: 'local-claim-message',
+    });
+    if ('atCapacity' in created) {
+      throw new Error('unexpected capacity');
+    }
+    const retire = jest.fn(async () => true);
+    backgroundTaskRegistry.markCompletionWakeup(
+      'local-claim-user',
+      'local-claim-convo',
+      created.task.id,
+      {
+        renew: jest.fn(async () => true),
+        retire,
+      },
+    );
+    backgroundTaskRegistry.complete('local-claim-user', 'local-claim-convo', created.task.id, {
+      content: 'finished output',
+    });
+
+    const polled = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'local-claim-user',
+        conversationId: 'local-claim-convo',
+        args: { background_task_id: created.task.id },
+        claimBackgroundToolResult: jest.fn(async () => ({
+          status: 'acquired' as const,
+          results: [],
+        })) as never,
+      }),
+    );
+
+    expect(polled.status).toBe('completed');
+    expect(retire).toHaveBeenCalledWith('completion claimed by manual poll', {
+      onlyIfUnclaimed: true,
+    });
+    const listed = JSON.parse(
+      await runCheckBackgroundTask({
+        userId: 'local-claim-user',
+        conversationId: 'local-claim-convo',
+        args: {},
+      }),
+    );
+    expect(listed.tasks[0].delivery).toBe('delivered');
+    expect(listed.outstanding).toBe(0);
   });
 
   it('keeps the local view and warns when the durable listing is incomplete', async () => {

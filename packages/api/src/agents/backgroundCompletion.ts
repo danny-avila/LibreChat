@@ -94,8 +94,8 @@ export interface PendingBackgroundCompletionControls {
   /** `complete` is false when more undelivered completions exist than were listed. */
   list: (input: { userId: string; conversationId: string }) => Promise<{
     completions: PendingBackgroundCompletion[];
-    /** Tasks whose automatic delivery dead-lettered; only a poll recovers them. */
-    deadTaskIds: string[];
+    /** Completions whose automatic delivery dead-lettered; only a poll recovers them. */
+    dead: PendingBackgroundCompletion[];
     complete: boolean;
   }>;
   /** Subagent tasks whose completion wake-up has not been delivered yet. */

@@ -1966,6 +1966,18 @@ function reconcileDelivery(
   return { ...task, delivery: 'delivered' };
 }
 
+/** A completion whose automatic delivery dead-lettered and that this process no
+ * longer holds: never delivered, so only a poll can still collect its result. */
+function serializeDeadCompletion(
+  completion: PendingBackgroundCompletion,
+): SerializedBackgroundTask {
+  return {
+    ...serializePendingCompletion(completion),
+    delivery: 'failed',
+    note: 'Automatic delivery failed; this result will not arrive as a new turn. Poll it to collect the result.',
+  };
+}
+
 function serializeTask(
   task: BackgroundTask,
   { includeResult }: { includeResult: boolean },
@@ -2324,6 +2336,23 @@ export async function runCheckBackgroundTask(params: {
                   'The task is finished and its result is being recovered. Retry this poll shortly.',
               });
             }
+          }
+          if (durableClaim.status === 'acquired' && task.completionWakeupRetired !== true) {
+            /** The result reaches the agent here, so its automatic delivery is redundant. */
+            await backgroundTaskRegistry
+              .retireCompletionWakeup(
+                userId,
+                conversationId,
+                taskId,
+                'completion claimed by manual poll',
+                { onlyIfUnclaimed: true },
+              )
+              .catch((error: unknown) =>
+                logger.warn(
+                  `[background] Failed to retire the delivery of manually claimed task ${taskId}:`,
+                  error,
+                ),
+              );
           }
           if (durableClaim.status === 'not_found' || durableClaim.status === 'not_ready') {
             const localReplay =
@@ -2719,11 +2748,14 @@ export async function runCheckBackgroundTask(params: {
    * a local task absent from it was delivered on this or another replica. */
   let durablePendingTaskIds: ReadonlySet<string> | undefined;
   let deadTaskIds: ReadonlySet<string> = new Set();
+  let deadCompletions: PendingBackgroundCompletion[] = [];
   if (params.pendingCompletions != null) {
     try {
       const localTaskIds = new Set(tasks.map((task) => task.id));
       const durable = await params.pendingCompletions.list({ userId, conversationId });
-      deadTaskIds = new Set(durable.deadTaskIds);
+      deadTaskIds = new Set(durable.dead.map(({ taskId }) => taskId));
+      /** A dead letter this process no longer holds is still recoverable by a poll. */
+      deadCompletions = durable.dead.filter((completion) => !localTaskIds.has(completion.taskId));
       pendingCompletions = durable.completions.filter(
         (completion) => !localTaskIds.has(completion.taskId),
       );
@@ -2776,6 +2808,7 @@ export async function runCheckBackgroundTask(params: {
       ),
     ),
     ...pendingCompletions.map(serializePendingCompletion),
+    ...deadCompletions.map(serializeDeadCompletion),
   ];
   /** Pending only with durable evidence: whether a subagent's wake-up exists depends on
    * the policy when it was admitted, not on this request's configuration. */

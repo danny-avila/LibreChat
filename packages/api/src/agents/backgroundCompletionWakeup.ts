@@ -547,7 +547,7 @@ export function createPendingBackgroundCompletions(deps: {
     taskId?: string;
   }) => Promise<{
     completions: Array<PendingBackgroundCompletion & { deliveryKey: string }>;
-    deadTaskIds: string[];
+    dead: Array<PendingBackgroundCompletion & { deliveryKey: string }>;
     truncated: boolean;
   }>;
   listTaskIds: (input: {
@@ -566,18 +566,23 @@ export function createPendingBackgroundCompletions(deps: {
     });
   return {
     list: async (input) => {
-      const { completions, deadTaskIds, truncated } = await read(input);
+      const { completions, dead, truncated } = await read(input);
+      const project = ({
+        taskId,
+        toolName,
+        dispatchedAt,
+        result,
+        claimedByWakeup,
+      }: PendingBackgroundCompletion): PendingBackgroundCompletion => ({
+        taskId,
+        toolName,
+        dispatchedAt,
+        ...(result != null && { result }),
+        claimedByWakeup,
+      });
       return {
-        deadTaskIds,
-        completions: completions.map(
-          ({ taskId, toolName, dispatchedAt, result, claimedByWakeup }) => ({
-            taskId,
-            toolName,
-            dispatchedAt,
-            ...(result != null && { result }),
-            claimedByWakeup,
-          }),
-        ),
+        completions: completions.map(project),
+        dead: dead.map(project),
         complete: !truncated,
       };
     },
