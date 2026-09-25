@@ -1,14 +1,67 @@
 import { SSE } from 'sse.js';
 import { request } from 'librechat-data-provider';
-import type { ChatFrame, ChatTransport, ChatErrorData } from 'librechat-data-provider';
+import type {
+  ChatFrame,
+  ChatEvent,
+  ChatTransport,
+  ChatErrorData,
+  ChatStreamConnection,
+} from 'librechat-data-provider';
 import { normalizeFrame } from './frames';
 
 type StreamErrorEvent = MessageEvent & { responseCode?: number };
+type EventCallback = (event: ChatEvent) => void;
 
 const jsonHeaders = (token?: string) => ({
   'Content-Type': 'application/json',
   Authorization: `Bearer ${token}`,
 });
+
+/** Parses one `message` event and emits it normalized; a frame that is not JSON is skipped. */
+const emitFrame = (onEvent: EventCallback) => (e: MessageEvent) => {
+  let frame: ChatFrame;
+  try {
+    frame = JSON.parse(e.data);
+  } catch (error) {
+    console.error('Skipping malformed stream frame:', error);
+    return;
+  }
+  const event = normalizeFrame(frame);
+  if (event) {
+    onEvent(event);
+  }
+};
+
+/** Resolves to the refreshed token, or `null` when the refresh failed. */
+async function refreshToken(): Promise<string | null> {
+  try {
+    const refreshResponse = await request.refreshToken();
+    const refreshedToken = refreshResponse?.token ?? '';
+    if (!refreshedToken) {
+      throw new Error('Token refresh failed.');
+    }
+    return refreshedToken;
+  } catch (error) {
+    /* token refresh failed, continue handling the original 401 */
+    console.log(error);
+    return null;
+  }
+}
+
+/**
+ * An HTTP failure body is often empty or HTML, so one that is not JSON is
+ * `undefined`. An error event the server wrote keeps its raw text instead.
+ */
+function parseErrorBody(body: unknown, status?: number): ChatErrorData | undefined {
+  if (typeof body !== 'string' || body === '') {
+    return undefined;
+  }
+  try {
+    return JSON.parse(body);
+  } catch {
+    return status == null ? body : undefined;
+  }
+}
 
 /**
  * POSTs the turn with `sse.js` and normalizes what comes back. Owns the wire:
@@ -40,19 +93,7 @@ export function createSSETransport({ token }: { token?: string }): ChatTransport
         }
       });
 
-      sse.addEventListener('message', (e: MessageEvent) => {
-        let frame: ChatFrame;
-        try {
-          frame = JSON.parse(e.data);
-        } catch (error) {
-          console.error('Skipping malformed stream frame:', error);
-          return;
-        }
-        const event = normalizeFrame(frame);
-        if (event) {
-          onEvent(event);
-        }
-      });
+      sse.addEventListener('message', emitFrame(onEvent));
 
       let refreshed = false;
       /** sse.js marks the connection closed on a 401, but the turn is still
@@ -62,26 +103,15 @@ export function createSSETransport({ token }: { token?: string }): ChatTransport
         if (e.responseCode === 401 && !refreshed) {
           refreshed = true;
           refreshing = true;
-          try {
-            const refreshResponse = await request.refreshToken();
-            refreshing = false;
-            if (signal.aborted) {
-              return;
-            }
-            const refreshedToken = refreshResponse?.token ?? '';
-            if (!refreshedToken) {
-              throw new Error('Token refresh failed.');
-            }
+          const refreshedToken = await refreshToken();
+          refreshing = false;
+          if (signal.aborted) {
+            return;
+          }
+          if (refreshedToken) {
             sse.headers = jsonHeaders(refreshedToken);
             request.dispatchTokenUpdatedEvent(refreshedToken);
             sse.stream();
-            return;
-          } catch (error) {
-            refreshing = false;
-            /* token refresh failed, continue handling the original 401 */
-            console.log(error);
-          }
-          if (signal.aborted) {
             return;
           }
         }
@@ -114,6 +144,60 @@ export function createSSETransport({ token }: { token?: string }): ChatTransport
       );
 
       sse.stream();
+    },
+
+    reconnectToStream({ url, headers }, { signal, onEvent }): ChatStreamConnection {
+      if (signal.aborted) {
+        return { closed: true };
+      }
+
+      const sse = new SSE(url, {
+        headers: { Authorization: `Bearer ${token}`, ...headers },
+        method: 'GET',
+      });
+
+      sse.addEventListener('open', () => {
+        onEvent({ type: 'open' });
+      });
+
+      sse.addEventListener('message', emitFrame(onEvent));
+
+      let refreshed = false;
+      sse.addEventListener('error', async (e: StreamErrorEvent) => {
+        if (e.responseCode === 401 && !refreshed) {
+          refreshed = true;
+          const refreshedToken = await refreshToken();
+          if (signal.aborted) {
+            return;
+          }
+          if (refreshedToken) {
+            sse.headers = { ...sse.headers, Authorization: `Bearer ${refreshedToken}` };
+            request.dispatchTokenUpdatedEvent(refreshedToken);
+            sse.stream();
+            return;
+          }
+        }
+        onEvent({
+          type: 'error',
+          status: e.responseCode,
+          data: parseErrorBody(e.data, e.responseCode),
+        });
+      });
+
+      /** sse.js dispatches `abort` when the XHR is cancelled, by our close or by the user agent. */
+      sse.addEventListener('abort', () => {
+        onEvent(signal.aborted ? { type: 'abort' } : { type: 'error', status: 0 });
+      });
+
+      signal.addEventListener('abort', () => sse.close(), { once: true });
+
+      sse.stream();
+
+      return {
+        get closed() {
+          return sse.readyState === SSE.CLOSED;
+        },
+      };
     },
   };
 }
