@@ -2186,10 +2186,12 @@ export const themeDefinitionSchema = z
 
 export type TThemeDefinitionConfig = z.infer<typeof themeDefinitionSchema>;
 
+/** A bundled theme name or an inline theme definition applied to every user. */
+export const deploymentThemeSchema = z.union([z.string().trim().min(1), themeDefinitionSchema]);
+
 export const interfaceSchema = z
   .object({
-    /** A bundled theme name or an inline theme definition applied to every user. */
-    theme: z.union([z.string().trim().min(1), themeDefinitionSchema]).optional(),
+    theme: deploymentThemeSchema.optional(),
     privacyPolicy: z
       .object({
         externalUrl: z.string().optional(),
@@ -2688,7 +2690,7 @@ export type TStartupConfig = {
 
 export type TSharedLinkStartupInterface = Pick<
   Partial<TInterfaceConfig>,
-  'privacyPolicy' | 'termsOfService' | 'codeHighlightThrottleMs'
+  'privacyPolicy' | 'termsOfService' | 'codeHighlightThrottleMs' | 'theme'
 >;
 
 export type TSharedLinkStartupConfig = Pick<TStartupConfig, 'appTitle'> &
