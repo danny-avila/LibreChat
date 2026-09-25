@@ -8389,6 +8389,33 @@ describe('Conversation Operations', () => {
       expect(result.conversations.map((c) => c.conversationId)).toEqual([steered.conversationId]);
     });
 
+    it.each([
+      ['a provider-native file part', { type: 'file', file: { file_id: 'f-native' } }],
+      ['an image_file part', { type: 'image_file', image_file: { file_id: 'f-image' } }],
+      ['a part carrying a bare file_id', { type: 'file', file_id: 'f-bare' }],
+    ])('reads files attached as %s', async (_label, part) => {
+      const Message = mongoose.models.Message as mongoose.Model<{
+        user: string;
+        conversationId: string;
+        messageId: string;
+        content: unknown[];
+      }>;
+      const attached = await makeConvo({ title: 'attached' });
+      await makeConvo({ title: 'text only' });
+      await Message.create({
+        user,
+        conversationId: attached.conversationId,
+        messageId: uuidv4(),
+        sender: 'User',
+        isCreatedByUser: true,
+        content: [{ type: 'text', text: 'see this' }, part],
+      });
+
+      const result = await getConvosByCursor(user, { hasFiles: true });
+
+      expect(result.conversations.map((c) => c.conversationId)).toEqual([attached.conversationId]);
+    });
+
     it('combines facets rather than widening the result', async () => {
       const match = await makeConvo({
         title: 'match',
