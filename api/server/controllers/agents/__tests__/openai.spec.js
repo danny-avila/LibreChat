@@ -174,6 +174,8 @@ jest.mock('@librechat/agents', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  getAgentErrorMetadata: (...args) =>
+    jest.requireActual('@librechat/api').getAgentErrorMetadata(...args),
   /* Provisioning moved into this package; the controllers build the callback from it. */
   createProvisionFilesCallback: () => async () => {},
   createAgentExecutionContext: (context) => context,
@@ -428,8 +430,8 @@ jest.mock('~/cache', () => ({
 jest.mock('~/server/services/ToolService', () => ({
   loadAgentTools: jest.fn().mockResolvedValue([]),
   loadToolsForExecution: jest.fn().mockResolvedValue([]),
-  isFatalAgentInitializationError: jest.fn((error) =>
-    ['AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE', 'resource_recovery_required'].includes(error?.code),
+  isFatalAgentInitializationError: jest.fn((...args) =>
+    jest.requireActual('@librechat/api').isFatalAgentInitializationError(...args),
   ),
 }));
 
@@ -1673,6 +1675,63 @@ describe('OpenAIChatCompletionController', () => {
         expect.objectContaining({ signal: undefined }),
       );
     });
+
+    const credentialCases = () => {
+      const {
+        OpenIDReauthRequiredError,
+        MCPAuthenticationRejectedError,
+        MCPAuthenticationRefreshError,
+        OboTokenResolutionError,
+      } = jest.requireActual('@librechat/api');
+      return [
+        [new OpenIDReauthRequiredError('Please sign in again'), 401, undefined],
+        [
+          new MCPAuthenticationRejectedError('private-mcp', false),
+          403,
+          'MCP_AUTHENTICATION_REJECTED',
+        ],
+        [
+          new MCPAuthenticationRefreshError(new Error('temporary failure')),
+          503,
+          'MCP_AUTHENTICATION_REFRESH_FAILED',
+        ],
+        [
+          new OboTokenResolutionError('session_refresh_failed', 'Please sign in again', false),
+          403,
+          'MCP_AUTHENTICATION_REJECTED',
+        ],
+        [
+          new OboTokenResolutionError('exchange_failed', 'Temporary exchange failure', true),
+          503,
+          'MCP_AUTHENTICATION_REFRESH_FAILED',
+        ],
+      ];
+    };
+    it.each(credentialCases())(
+      'preserves remote chat credential response metadata: %s',
+      async (error, status, code) => {
+        const { initializeAgent, createErrorResponse } = require('@librechat/api');
+        const { loadAgentTools } = require('~/server/services/ToolService');
+        loadAgentTools.mockRejectedValueOnce(error);
+        initializeAgent.mockImplementationOnce(async ({ req, res, loadTools, agent }) => {
+          await loadTools({
+            req,
+            res,
+            tools: ['search_mcp_private'],
+            model: agent.model,
+            agentId: agent.id,
+            provider: agent.provider,
+          });
+        });
+        await OpenAIChatCompletionController(req, res);
+        expect(res.status).toHaveBeenCalledWith(status);
+        expect(createErrorResponse).toHaveBeenCalledWith(
+          error.message,
+          status < 500 ? 'invalid_request_error' : 'server_error',
+          code ?? null,
+        );
+      },
+    );
 
     it('returns 503 when an agent expects MCP tools but resolves none', async () => {
       const { initializeAgent } = require('@librechat/api');
