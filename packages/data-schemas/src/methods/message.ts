@@ -897,6 +897,11 @@ type UpdateToolCallResultInput = {
   };
 };
 
+type SteplessToolCallFallback = {
+  content: NonNullable<IMessage['content']>;
+  hasResultClaim: boolean;
+};
+
 export function createMessageMethods(mongoose: typeof import('mongoose')): MessageMethods {
   /**
    * Saves a message in the database.
@@ -1263,49 +1268,64 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
      * An unfinished row may not hold the real part yet, and more than one
      * candidate means a repeated provider id: both stay unmatched rather than
      * patching the wrong part. */
-    if (!(await hasSingleSteplessPart(input))) {
+    const fallback = await getSteplessToolCallFallback(input);
+    if (fallback == null) {
       return exact;
     }
-    return settleToolCallResult(input, null);
+    return settleToolCallResult(input, null, fallback);
   }
 
-  async function hasSingleSteplessPart({
+  async function getSteplessToolCallFallback({
     userId,
     messageId,
     conversationId,
     toolCallId,
+    stepId,
     agentId,
-  }: UpdateToolCallResultInput): Promise<boolean> {
+  }: UpdateToolCallResultInput): Promise<SteplessToolCallFallback | undefined> {
     const Message = mongoose.models.Message as Model<IMessage>;
     const row = await Message.findOne({ messageId, user: userId, conversationId })
       .select({ content: 1, unfinished: 1 })
       .lean<Pick<IMessage, 'content' | 'unfinished'> | null>();
     if (row == null || row.unfinished === true) {
-      return false;
+      return;
     }
-    const candidates = (row.content ?? []).filter((part) => {
+    let candidates = 0;
+    let hasResultClaim = false;
+    const content = row.content ?? [];
+    for (const part of content) {
       const entry = part as {
         type?: unknown;
         agentId?: unknown;
-        tool_call?: { id?: unknown; stepId?: unknown; agentId?: unknown };
+        tool_call?: {
+          id?: unknown;
+          stepId?: unknown;
+          agentId?: unknown;
+          backgroundTask?: { resultClaim?: unknown };
+        };
       } | null;
       if (entry?.type !== 'tool_call' || entry.tool_call?.id !== toolCallId) {
-        return false;
+        continue;
+      }
+      const owner = entry.agentId ?? entry.tool_call.agentId;
+      if (agentId != null && owner != null && owner !== agentId) {
+        continue;
+      }
+      /** An unmatched write can mean attachment contention, not a missing
+       * identity. Never substitute a sibling for an existing exact part. */
+      if (entry.tool_call.stepId === stepId) {
+        return;
       }
       if (entry.tool_call.stepId != null) {
-        return false;
+        continue;
       }
-      if (agentId == null) {
-        return true;
+      candidates += 1;
+      if (candidates > 1) {
+        return;
       }
-      const partAgent = entry.agentId ?? null;
-      const callAgent = entry.tool_call.agentId ?? null;
-      return (
-        partAgent === agentId ||
-        (partAgent === null && (callAgent === agentId || callAgent === null))
-      );
-    });
-    return candidates.length === 1;
+      hasResultClaim = entry.tool_call.backgroundTask?.resultClaim != null;
+    }
+    return candidates === 1 ? { content, hasResultClaim } : undefined;
   }
 
   async function settleToolCallResult(
@@ -1314,6 +1334,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       messageId,
       conversationId,
       toolCallId,
+      stepId,
       agentId,
       output,
       attachments,
@@ -1323,8 +1344,8 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     /** A step id to match exactly, `null` to match a part with no stored step,
      * or `undefined` to ignore steps. */
     stepMatch: string | null | undefined,
+    fallback?: SteplessToolCallFallback,
   ): Promise<{ matched: boolean; unfinished: boolean }> {
-    const stepId = stepMatch ?? undefined;
     /** One source of truth for which content part this settle may touch:
      * `prefix: ''` yields the `$elemMatch` document filter, `prefix: 'part.'`
      * the arrayFilters element filter — the same predicate in one dialect,
@@ -1341,7 +1362,9 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
       messageId,
       user: userId,
       conversationId,
-      content: { $elemMatch: partScope('') },
+      ...(fallback == null
+        ? { content: { $elemMatch: partScope('') } }
+        : { content: fallback.content, unfinished: { $ne: true } }),
     };
     const partIdentityFilter = partScope('part.');
     /** Amazon DocumentDB rejects aggregation-pipeline updates, so the part
@@ -1381,8 +1404,18 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
     if (Object.keys(partPatch).length === 0 && !mergingAttachments) {
       return { matched: false, unfinished: false };
     }
+    /** Fence the fallback on the content used to establish its unique identity.
+     * A concurrent save or claim must invalidate the whole write, including any
+     * supplied claim. The snapshot lets us preserve an existing claim and stamp
+     * a missing one atomically with settlement, rather than before this fence. */
+    const settlePatch = {
+      ...partPatch,
+      ...(fallback != null && !fallback.hasResultClaim && backgroundTask?.resultClaim != null
+        ? { 'content.$[part].tool_call.backgroundTask.resultClaim': backgroundTask.resultClaim }
+        : {}),
+    };
     const settleUpdate = {
-      ...(Object.keys(partPatch).length > 0 ? { $set: partPatch } : {}),
+      ...(Object.keys(settlePatch).length > 0 ? { $set: settlePatch } : {}),
       ...(disarmWakeup
         ? { $unset: { 'content.$[part].tool_call.backgroundTask.completionWakeup': 1 } }
         : {}),
@@ -1405,7 +1438,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
        * instead expose a claimable terminal part that lets a second consumer
        * deliver the same result. A crash between the writes is healed by the
        * settle retry, whose claim write no-ops against its own stamp. */
-      if (backgroundTask?.resultClaim != null) {
+      if (fallback == null && backgroundTask?.resultClaim != null) {
         await Message.updateOne(
           messageFilter,
           {
@@ -1489,7 +1522,7 @@ export function createMessageMethods(mongoose: typeof import('mongoose')): Messa
           },
           {
             ...settleUpdate,
-            $set: { ...partPatch, attachments: merged },
+            $set: { ...settlePatch, attachments: merged },
           },
           settleOptions,
         ).lean<{ unfinished?: boolean } | null>();
