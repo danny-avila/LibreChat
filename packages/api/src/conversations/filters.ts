@@ -40,7 +40,9 @@ const firstValue = (value: unknown): unknown => (Array.isArray(value) ? value[0]
  * The documented contract is ISO 8601, so anything `new Date()` would quietly accept
  * beyond that is rejected here rather than applied as an unintended cutoff: `2026-02-30`
  * rolls over to March, and `1` becomes January 1, 2001. A date-only string means UTC
- * midnight, matching how `new Date()` parses it.
+ * midnight, matching how `new Date()` parses it, and a timestamp without an offset is
+ * UTC as well: left to `new Date()` it would take the server's local zone, so the same
+ * request would select different conversations on hosts in different zones.
  */
 const ISO_DATE =
   /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(Z|[+-](?:0\d|1[0-4])(?::?[0-5]\d)?)?)?$/;
@@ -57,7 +59,7 @@ const parseDate = (value: unknown): { date?: Date; invalid?: boolean } => {
   if (match == null) {
     return { invalid: true };
   }
-  const [, year, month, day, hour = '00', minute = '00', second = '00'] = match;
+  const [, year, month, day, hour = '00', minute = '00', second = '00', , zone] = match;
   const utc = new Date(
     Date.UTC(
       Number(year),
@@ -81,7 +83,8 @@ const parseDate = (value: unknown): { date?: Date; invalid?: boolean } => {
   }
   /* An offset the regex could not rule out can still be unparsable; a NaN date would
      reach the query builder as a filter it silently drops. */
-  const date = new Date(raw.replace(' ', 'T'));
+  const hasTime = match[4] != null;
+  const date = new Date(`${raw.replace(' ', 'T')}${hasTime && zone == null ? 'Z' : ''}`);
   if (Number.isNaN(date.getTime())) {
     return { invalid: true };
   }

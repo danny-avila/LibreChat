@@ -57,6 +57,19 @@ describe('parseConversationListFilters', () => {
     ).toBe('2026-09-01T10:00:00.000Z');
   });
 
+  it('reads a timestamp without an offset as UTC, not the server zone', () => {
+    expect(
+      parseConversationListFilters({
+        updatedAfter: '2026-09-01T12:00:00',
+      }).filters.updatedAfter?.toISOString(),
+    ).toBe('2026-09-01T12:00:00.000Z');
+    expect(
+      parseConversationListFilters({
+        createdAfter: '2026-09-01 08:30',
+      }).filters.createdAfter?.toISOString(),
+    ).toBe('2026-09-01T08:30:00.000Z');
+  });
+
   it('accepts one endpoint or many, and de-duplicates them', () => {
     expect(parseConversationListFilters({ endpoints: 'openAI' }).filters.endpoints).toEqual([
       'openAI',
