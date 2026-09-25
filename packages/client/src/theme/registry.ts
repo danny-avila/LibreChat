@@ -331,6 +331,36 @@ const appearanceValidators: Record<keyof IThemeAppearance, (value: unknown) => b
   motionNormal: isDuration,
 };
 
+const isAppearanceKey = (key: string): key is keyof IThemeAppearance =>
+  Object.prototype.hasOwnProperty.call(appearanceValidators, key);
+
+/**
+ * A token added after this reader shipped is ignored rather than rejected, so a newer definition
+ * degrades to the defaults for what this version cannot paint instead of losing every value it
+ * can. It never reaches the DOM, but it must still look like a token: a camelCase name and a
+ * plain CSS value, never a declaration or rule break.
+ */
+const isFutureAppearance = (key: string, value: unknown): boolean =>
+  /^[a-z][a-zA-Z0-9]*$/.test(key) && typeof value === 'string' && !/[;{}<>]|url\s*\(/i.test(value);
+
+/** The appearance tokens this reader does not know, which `resolveTheme` leaves out. */
+export function collectThemeWarnings(theme: ThemeDefinition): string[] {
+  if (!isPlainRecord(theme) || !isPlainRecord(theme.modes)) {
+    return [];
+  }
+  return (['light', 'dark'] as const).flatMap((mode) => {
+    const appearance: unknown = isPlainRecord(theme.modes[mode])
+      ? theme.modes[mode]?.appearance
+      : undefined;
+    if (!isPlainRecord(appearance)) {
+      return [];
+    }
+    return Object.keys(appearance)
+      .filter((key) => !isAppearanceKey(key))
+      .map((key) => `Unknown ${mode} appearance token ignored: ${key}`);
+  });
+}
+
 /** Shared by the theme-wide `brands` and each mode's override block. */
 function collectBrandErrors(brands: unknown): string[] {
   if (!isPlainRecord(brands)) {
@@ -417,13 +447,9 @@ export function validateThemeDefinition(theme: ThemeDefinition): string[] {
       errors.push(`Theme appearance for ${mode} must be an object`);
     } else {
       Object.entries(definition.appearance ?? {}).forEach(([key, value]) => {
-        const appearanceKey = key as keyof IThemeAppearance;
-        const validator = appearanceValidators[appearanceKey];
-        if (!validator) {
-          errors.push(`Unknown appearance token: ${key}`);
-          return;
-        }
-        if (value !== undefined && !validator(value)) {
+        const isKnown = isAppearanceKey(key);
+        const isValid = isKnown ? appearanceValidators[key](value) : isFutureAppearance(key, value);
+        if (value !== undefined && !isValid) {
           errors.push(`Invalid appearance value for ${key}: ${value}`);
         }
       });
@@ -458,6 +484,12 @@ function definedEntries<T extends object>(values?: Partial<T>): Partial<T> {
   return Object.fromEntries(
     Object.entries(values).filter(([, value]) => value !== undefined),
   ) as Partial<T>;
+}
+
+function knownAppearance(appearance?: Partial<IThemeAppearance>): Partial<IThemeAppearance> {
+  return Object.fromEntries(
+    Object.entries(definedEntries(appearance)).filter(([key]) => isAppearanceKey(key)),
+  );
 }
 
 const shadowAppearanceKeys: ReadonlyArray<keyof IThemeAppearance> = [
@@ -612,7 +644,7 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
     } as Required<IThemeRGB>,
     appearance: withComposableShadows({
       ...defaultAppearance,
-      ...definedEntries(definition?.appearance),
+      ...knownAppearance(definition?.appearance),
     }),
     /** Mode last: a mode override is more specific than the theme-wide set. */
     brands: {

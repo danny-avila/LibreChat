@@ -148,6 +148,30 @@ describe('DeploymentTheme', () => {
     expect(snapshotStorage()).toEqual(before);
   });
 
+  it('applies an inline definition with an unknown appearance key and reports the key', async () => {
+    const before = snapshotStorage();
+    serveTheme({
+      ...inlineTheme,
+      modes: {
+        ...inlineTheme.modes,
+        light: {
+          ...inlineTheme.modes.light,
+          appearance: { controlRadius: '2px', futureSpacing: '3rem' },
+        },
+      },
+    });
+    renderTheme(queryClient);
+
+    await waitFor(() => expect(root().dataset.theme).toBe('acme'));
+    expect(root().style.getPropertyValue('--surface-primary')).toBe('10 20 30');
+    expect(root().style.getPropertyValue('--theme-control-radius')).toBe('2px');
+    expect(root().getAttribute('style')).not.toContain('3rem');
+    expect(warn).toHaveBeenCalledWith(
+      '[ThemeProvider] Unknown light appearance token ignored: futureSpacing',
+    );
+    expect(snapshotStorage()).toEqual(before);
+  });
+
   it('ignores an invalid inline definition with a warning and keeps the stored theme', async () => {
     serveTheme({
       ...inlineTheme,

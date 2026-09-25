@@ -701,6 +701,112 @@ describe('ThemeProvider', () => {
     expect(JSON.parse(localStorage.getItem('theme-definition') ?? '{}')).toEqual(storedDefinition);
   });
 
+  describe('a definition carrying an appearance token this reader does not know', () => {
+    const newerDefinition = {
+      version: 1 as const,
+      name: 'newer',
+      modes: {
+        light: {
+          colors: { 'rgb-accent-primary': '4 5 6' },
+          appearance: { controlRadius: '2px', futureSpacing: '3rem' },
+        },
+      },
+    };
+    let warn: jest.SpyInstance;
+
+    beforeEach(() => {
+      warn = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+      warn.mockRestore();
+    });
+
+    const expectApplied = () => {
+      const root = document.documentElement;
+      expect(root.dataset.theme).toBe('newer');
+      expect(root.style.getPropertyValue('--accent-primary')).toBe('4 5 6');
+      expect(root.style.getPropertyValue('--theme-control-radius')).toBe('2px');
+      expect(root.getAttribute('style')).not.toContain('3rem');
+      expect(warn).toHaveBeenCalledWith(
+        '[ThemeProvider] Unknown light appearance token ignored: futureSpacing',
+      );
+    };
+
+    it('restores the stored definition with the rest applied and keeps the key stored', async () => {
+      localStorage.setItem('theme-definition', JSON.stringify(newerDefinition));
+      localStorage.setItem('theme-source', 'definition');
+
+      render(
+        <ThemeProvider initialTheme="light">
+          <Controls />
+        </ThemeProvider>,
+      );
+
+      await waitFor(expectApplied);
+      expect(screen.getAllByRole('status')[0]).toHaveTextContent('newer');
+      expect(JSON.parse(localStorage.getItem('theme-definition') ?? '{}')).toEqual(newerDefinition);
+    });
+
+    it('applies the same definition from a controlled deployment prop', async () => {
+      render(
+        <ThemeProvider
+          initialTheme="light"
+          persistThemeDefinition={false}
+          themeDefinition={newerDefinition}
+        >
+          <Controls />
+        </ThemeProvider>,
+      );
+
+      await waitFor(expectApplied);
+      expect(localStorage.getItem('theme-definition')).toBeNull();
+    });
+
+    it('still discards a stored definition whose known key has an invalid value', async () => {
+      const invalid = {
+        ...newerDefinition,
+        modes: { light: { appearance: { controlRadius: 'huge', futureSpacing: '3rem' } } },
+      };
+      localStorage.setItem('theme-definition', JSON.stringify(invalid));
+
+      render(
+        <ThemeProvider initialTheme="light">
+          <Controls />
+        </ThemeProvider>,
+      );
+
+      await waitFor(() => {
+        expect(document.documentElement.classList.contains('light')).toBe(true);
+      });
+      expect(document.documentElement.dataset.theme).toBeUndefined();
+      expect(document.documentElement.style.getPropertyValue('--theme-control-radius')).toBe('');
+    });
+
+    it('still ignores a controlled definition that carries an injection attempt', async () => {
+      render(
+        <ThemeProvider
+          initialTheme="light"
+          persistThemeDefinition={false}
+          themeDefinition={{
+            ...newerDefinition,
+            modes: {
+              light: { appearance: { futureSpacing: '1rem; } body { display: none' } },
+            },
+          }}
+        >
+          <Controls />
+        </ThemeProvider>,
+      );
+
+      await waitFor(() => {
+        expect(document.documentElement.classList.contains('light')).toBe(true);
+      });
+      expect(document.documentElement.dataset.theme).toBeUndefined();
+      expect(document.documentElement.getAttribute('style') ?? '').not.toContain('display');
+    });
+  });
+
   it('uses a stable identity when a legacy consumer clears an active theme name', async () => {
     render(
       <ThemeProvider
