@@ -194,14 +194,16 @@ export function parseConversationListFilters(
 
 /**
  * The list route's entry point. The limits are deployment-level, so they come from the
- * base config (in memory, no database reads) rather than the caller's merged config,
- * which would put principal and override lookups in front of every sidebar request.
+ * base config rather than the caller's merged config, and only a request naming endpoints
+ * reads it at all: the limits bound nothing else, and an unfiltered sidebar request should
+ * not wait on, or fail with, a config cache it does not use.
  */
 export async function resolveConversationListFilters(
   query: Request['query'],
   getAppConfig: ConversationListConfigReader,
 ): Promise<ConversationListFilterResult> {
-  const { conversationList } = await getAppConfig({ baseOnly: true });
+  const { conversationList } =
+    query.endpoints == null ? {} : await getAppConfig({ baseOnly: true });
   return parseConversationListFilters(
     query,
     conversationList ?? conversationListConfigSchema.parse({}),

@@ -1954,10 +1954,10 @@ describe('Convos Routes', () => {
       expect(overConfigured.body.error).toMatch(/at most 2 names/);
     });
 
-    it('answers the route error when the config cannot be read', async () => {
+    it('answers the route error when an endpoint filter cannot read its limits', async () => {
       getAppConfig.mockRejectedValueOnce(new Error('config unavailable'));
 
-      const response = await request(app).get('/api/convos');
+      const response = await request(app).get('/api/convos').query({ endpoints: 'openAI' });
 
       expect(response.status).toBe(500);
       expect(response.body.error).toBe('Error fetching conversations');

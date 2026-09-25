@@ -201,6 +201,19 @@ describe('resolveConversationListFilters', () => {
     expect(error).toMatch(/at most 1 names/);
   });
 
+  it('reads no config for a request that names no endpoints', async () => {
+    const getAppConfig = jest.fn().mockRejectedValue(new Error('config unavailable'));
+
+    const { filters, error } = await resolveConversationListFilters(
+      { hasFiles: 'true' },
+      getAppConfig,
+    );
+
+    expect(getAppConfig).not.toHaveBeenCalled();
+    expect(error).toBeUndefined();
+    expect(filters.hasFiles).toBe(true);
+  });
+
   it('falls back to the schema defaults when the config carries none', async () => {
     const endpoints = Array.from({ length: 51 }, (_, index) => `endpoint-${index}`);
     const { error } = await resolveConversationListFilters(
