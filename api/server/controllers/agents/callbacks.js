@@ -1295,8 +1295,8 @@ function createBackgroundCodeResultHandler({ req, updateToolCallResult }) {
     preflightCodeOutputBatch,
     processCodeOutput,
     runPreviewFinalize,
-    waitForGenerationSettled: (conversationId) =>
-      waitForGenerationSettled(GenerationJobManager, conversationId),
+    waitForGenerationSettled: (conversationId, options) =>
+      waitForGenerationSettled(GenerationJobManager, conversationId, options),
   });
 }
 

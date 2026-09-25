@@ -213,7 +213,9 @@ describe('createBackgroundCodeResultHandler long dispatch turns', () => {
     expect(onFilesPersisted.mock.invocationCallOrder[0]).toBeLessThan(
       updateToolCallResult.mock.invocationCallOrder[0],
     );
-    expect(waitForGenerationSettled).toHaveBeenCalledWith('conversation-1');
+    expect(waitForGenerationSettled).toHaveBeenCalledWith('conversation-1', {
+      signal: expect.any(AbortSignal),
+    });
     const attemptsWhileRunning = updateToolCallResult.mock.calls.length;
     await jest.advanceTimersByTimeAsync(60 * 60 * 1_000);
     expect(updateToolCallResult).toHaveBeenCalledTimes(attemptsWhileRunning);
@@ -285,6 +287,52 @@ describe('createBackgroundCodeResultHandler long dispatch turns', () => {
 
     await expect(result).resolves.toEqual(expect.objectContaining({ deliveryReady: false }));
     expect(waitForGenerationSettled).toHaveBeenCalledTimes(1);
+  });
+
+  it('anchors as soon as the dispatch turn settles instead of at the next scheduled retry', async () => {
+    let turnRunning = true;
+    const updateToolCallResult = jest.fn(async () => ({ matched: true, unfinished: turnRunning }));
+    let settle: (settled: boolean) => void = () => undefined;
+    const waitForGenerationSettled = jest.fn(
+      () =>
+        new Promise<boolean>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    const handler = createHandler(updateToolCallResult, waitForGenerationSettled);
+    let finished = false;
+
+    const result = handler({ ...params, backgroundTask }).then((value) => {
+      finished = true;
+      return value;
+    });
+    /** 45 s in, the schedule is inside a 30 s gap (next step near 69 s). */
+    await jest.advanceTimersByTimeAsync(45_000);
+    const attemptsBeforeSettle = updateToolCallResult.mock.calls.length;
+    turnRunning = false;
+    settle(true);
+    await jest.advanceTimersByTimeAsync(0);
+
+    expect(finished).toBe(true);
+    await expect(result).resolves.toEqual(expect.objectContaining({ deliveryReady: true }));
+    expect(updateToolCallResult).toHaveBeenCalledTimes(attemptsBeforeSettle + 1);
+  });
+
+  it('stops listening for the turn once the result is anchored', async () => {
+    const updateToolCallResult = jest.fn(async () => ({ matched: true, unfinished: false }));
+    let signal: AbortSignal | undefined;
+    const waitForGenerationSettled = jest.fn(
+      (_conversationId: string, options?: { signal?: AbortSignal }) => {
+        signal = options?.signal;
+        return new Promise<boolean>(() => undefined);
+      },
+    );
+    const handler = createHandler(updateToolCallResult, waitForGenerationSettled);
+
+    await expect(handler({ ...params, backgroundTask })).resolves.toEqual(
+      expect.objectContaining({ deliveryReady: true }),
+    );
+    expect(signal?.aborted).toBe(true);
   });
 
   it('keeps the bounded schedule when no settlement signal is wired', async () => {

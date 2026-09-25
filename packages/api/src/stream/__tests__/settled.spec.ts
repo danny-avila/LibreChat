@@ -116,6 +116,20 @@ describe('waitForGenerationSettled', () => {
     expect(source.listeners.size).toBe(0);
   });
 
+  it('stops waiting when the caller aborts', async () => {
+    const source = createSource({ 'conversation-1': 'running' });
+    const controller = new AbortController();
+    const waiting = waitForGenerationSettled(source, 'conversation-1', {
+      signal: controller.signal,
+    });
+    await jest.advanceTimersByTimeAsync(0);
+
+    controller.abort();
+
+    await expect(waiting).resolves.toBe(false);
+    expect(source.listeners.size).toBe(0);
+  });
+
   it('does not wait when the status cannot be read', async () => {
     const source = createSource({ 'conversation-1': 'running' });
     source.getJobStatus.mockRejectedValueOnce(new Error('job store unavailable'));

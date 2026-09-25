@@ -102,7 +102,10 @@ export interface CodeHarvestDeps {
   /** Resolves once the conversation's running generation settles, `false` when
    * none is running. Lets a dispatch turn that outlives the retry schedule
    * finish before its result is given up as unanchorable. */
-  waitForGenerationSettled?: (conversationId: string) => Promise<boolean>;
+  waitForGenerationSettled?: (
+    conversationId: string,
+    options?: { signal?: AbortSignal },
+  ) => Promise<boolean>;
 }
 
 export interface CodeHarvestParams {
@@ -136,8 +139,6 @@ export type CodeHarvestHandler = (
   params: CodeHarvestParams,
 ) => Promise<{ attachments: unknown[]; deliveryReady?: boolean } | null>;
 
-const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
-
 type BackgroundResultRowParams = {
   userId: string;
   messageId: string;
@@ -151,10 +152,25 @@ type BackgroundResultRowParams = {
   resolveBackgroundTask?: () => BackgroundToolResultState;
 };
 
+/** Resolves `true` once `interrupt` fires, or `false` after `ms`; never both. */
+function sleepUnlessInterrupted(ms: number, interrupt: Promise<void>): Promise<boolean> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), ms);
+    void interrupt.then(() => {
+      clearTimeout(timer);
+      resolve(true);
+    });
+  });
+}
+
+const NEVER: Promise<void> = new Promise(() => undefined);
+
+/** `false` once `interrupt` cut the schedule short, so the caller can retry at once. */
 async function anchorBackgroundToolResultRow(
   updateToolCallResult: CodeHarvestDeps['updateToolCallResult'],
   params: BackgroundResultRowParams,
   retryDelaysMs: readonly number[],
+  interrupt: Promise<void> = NEVER,
 ): Promise<boolean> {
   const { resolveBackgroundTask, ...persistedParams } = params;
   for (let attempt = 0; attempt <= retryDelaysMs.length; attempt++) {
@@ -170,39 +186,63 @@ async function anchorBackgroundToolResultRow(
     if (attempt === retryDelaysMs.length) {
       break;
     }
-    await sleep(retryDelaysMs[attempt]);
+    if (await sleepUnlessInterrupted(retryDelaysMs[attempt], interrupt)) {
+      return false;
+    }
   }
   return false;
 }
 
 /**
  * Patches the result onto the dispatch turn's row, which is absent or unfinished
- * while that turn streams. A turn can run far longer than the retry schedule, so
- * a result still unanchored at the end waits for the conversation's generation
- * to settle and tries once more instead of being given up.
+ * while that turn streams. The patch is retried on a schedule, but the turn
+ * settling is what actually makes the row patchable, so a settle observed
+ * mid-schedule retries at once instead of at the next scheduled step. A turn that
+ * outlives the schedule is waited for rather than given up. Only a positive
+ * settle cuts the schedule short: an unknown generation state keeps the schedule.
  */
 async function persistBackgroundToolResultRow(
   updateToolCallResult: CodeHarvestDeps['updateToolCallResult'],
   params: BackgroundResultRowParams,
   waitForGenerationSettled?: CodeHarvestDeps['waitForGenerationSettled'],
 ): Promise<boolean> {
-  const anchored = await anchorBackgroundToolResultRow(
-    updateToolCallResult,
-    params,
-    BACKGROUND_PATCH_RETRY_DELAYS_MS,
-  );
-  if (anchored || waitForGenerationSettled == null) {
-    return anchored;
+  if (waitForGenerationSettled == null) {
+    return anchorBackgroundToolResultRow(
+      updateToolCallResult,
+      params,
+      BACKGROUND_PATCH_RETRY_DELAYS_MS,
+    );
   }
-  try {
-    await waitForGenerationSettled(params.conversationId);
-  } catch (error) {
+  const listening = new AbortController();
+  const settlement = waitForGenerationSettled(params.conversationId, {
+    signal: listening.signal,
+  }).catch((error: unknown) => {
     logger.warn(
       `[background] Failed waiting for the dispatch turn of message ${params.messageId} to settle:`,
       error,
     );
+    return false;
+  });
+  const settledTurn = settlement.then((settled) => (settled ? undefined : NEVER));
+  try {
+    const anchored = await anchorBackgroundToolResultRow(
+      updateToolCallResult,
+      params,
+      BACKGROUND_PATCH_RETRY_DELAYS_MS,
+      settledTurn,
+    );
+    if (anchored) {
+      return true;
+    }
+    await settlement;
+    return anchorBackgroundToolResultRow(
+      updateToolCallResult,
+      params,
+      SETTLED_PATCH_RETRY_DELAYS_MS,
+    );
+  } finally {
+    listening.abort();
   }
-  return anchorBackgroundToolResultRow(updateToolCallResult, params, SETTLED_PATCH_RETRY_DELAYS_MS);
 }
 
 /** Persists an ordinary detached tool result without invoking code-artifact processing. */

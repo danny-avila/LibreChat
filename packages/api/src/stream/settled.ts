@@ -15,6 +15,8 @@ export interface GenerationSettledWaitOptions {
   /** Unbounded by default: a live generation is the only reason to keep waiting,
    * and the status re-read ends the wait once it is gone. */
   maxWaitMs?: number;
+  /** Stops waiting (resolving `false`) once the caller no longer needs the answer. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -26,7 +28,7 @@ export interface GenerationSettledWaitOptions {
 export function waitForGenerationSettled(
   source: GenerationSettledSource,
   conversationId: string,
-  { recheckMs = DEFAULT_RECHECK_MS, maxWaitMs }: GenerationSettledWaitOptions = {},
+  { recheckMs = DEFAULT_RECHECK_MS, maxWaitMs, signal }: GenerationSettledWaitOptions = {},
 ): Promise<boolean> {
   return new Promise((resolve) => {
     let done = false;
@@ -45,6 +47,13 @@ export function waitForGenerationSettled(
         finish(true);
       }
     });
+    if (signal != null) {
+      if (signal.aborted) {
+        finish(false);
+        return;
+      }
+      signal.addEventListener('abort', () => finish(false), { once: true });
+    }
     const readStatus = async (initial: boolean): Promise<void> => {
       try {
         const status = await source.getJobStatus(conversationId);
