@@ -59,6 +59,7 @@ let claimBackgroundToolResults: ReturnType<
 let releaseBackgroundToolResultClaims: ReturnType<
   typeof createMessageMethods
 >['releaseBackgroundToolResultClaims'];
+let getMessagesByCursor: ReturnType<typeof createMessageMethods>['getMessagesByCursor'];
 
 function rejectUpdateArrays(beforeUpdate?: () => Promise<void>) {
   const originalFindOneAndUpdate = Message.collection.findOneAndUpdate.bind(Message.collection);
@@ -98,6 +99,7 @@ beforeAll(async () => {
   releaseSubagentTaskResultClaim = methods.releaseSubagentTaskResultClaim;
   claimBackgroundToolResults = methods.claimBackgroundToolResults;
   releaseBackgroundToolResultClaims = methods.releaseBackgroundToolResultClaims;
+  getMessagesByCursor = methods.getMessagesByCursor;
 
   await mongoose.connect(mongoUri);
 });
@@ -4162,16 +4164,18 @@ describe('Message Operations', () => {
     };
 
     /**
-     * Simulates the pagination logic from api/server/routes/messages.js
-     * This tests the exact query pattern used in the route
+     * Maps the route-shaped arguments this suite uses onto production
+     * `getMessagesByCursor`. Sort-field whitelisting stays here because it
+     * belongs to the route, not the data method.
      */
-    const getMessagesByCursor = async ({
+    const getMessagesByCursorPage = async ({
       conversationId,
       user,
       pageSize = 25,
       cursor = null as string | null,
       sortBy = 'createdAt',
       sortDirection = 'desc',
+      select,
     }: {
       conversationId: string;
       user: string;
@@ -4179,31 +4183,14 @@ describe('Message Operations', () => {
       cursor?: string | null;
       sortBy?: string;
       sortDirection?: string;
+      select?: string;
     }) => {
-      const sortOrder = sortDirection === 'asc' ? 1 : -1;
+      const sortOrder: 1 | -1 = sortDirection === 'asc' ? 1 : -1;
       const sortField = ['createdAt', 'updatedAt'].includes(sortBy) ? sortBy : 'createdAt';
-      const cursorOperator = sortDirection === 'asc' ? '$gt' : '$lt';
-
-      const filter: Record<string, unknown> = { conversationId, user };
-      if (cursor) {
-        filter[sortField] = { [cursorOperator]: new Date(cursor) };
-      }
-
-      const messages = await Message.find(filter)
-        .sort({ [sortField]: sortOrder })
-        .limit(pageSize + 1)
-        .lean();
-
-      let nextCursor: string | null = null;
-      if (messages.length > pageSize) {
-        messages.pop(); // Remove extra item used to detect next page
-        // Create cursor from the last RETURNED item (not the popped one)
-        nextCursor = (messages[messages.length - 1] as Record<string, unknown>)[
-          sortField
-        ] as string;
-      }
-
-      return { messages, nextCursor };
+      return getMessagesByCursor(
+        { conversationId, user },
+        { sortField, sortOrder, limit: pageSize, cursor, select },
+      );
     };
 
     it('should return messages for a conversation with pagination', async () => {
@@ -4217,7 +4204,7 @@ describe('Message Operations', () => {
       }
 
       // Fetch first page (pageSize 25)
-      const page1 = await getMessagesByCursor({
+      const page1 = await getMessagesByCursorPage({
         conversationId,
         user: 'user123',
         pageSize: 25,
@@ -4227,7 +4214,7 @@ describe('Message Operations', () => {
       expect(page1.nextCursor).toBeTruthy();
 
       // Fetch second page using cursor
-      const page2 = await getMessagesByCursor({
+      const page2 = await getMessagesByCursorPage({
         conversationId,
         user: 'user123',
         pageSize: 25,
@@ -4265,7 +4252,7 @@ describe('Message Operations', () => {
       const item26 = messages[25];
 
       // Fetch first page with pageSize 25
-      const page1 = await getMessagesByCursor({
+      const page1 = await getMessagesByCursorPage({
         conversationId,
         user: 'user123',
         pageSize: 25,
@@ -4279,7 +4266,7 @@ describe('Message Operations', () => {
       expect(page1Ids).not.toContain(item26!.messageId);
 
       // Fetch second page
-      const page2 = await getMessagesByCursor({
+      const page2 = await getMessagesByCursorPage({
         conversationId,
         user: 'user123',
         pageSize: 25,
@@ -4311,7 +4298,7 @@ describe('Message Operations', () => {
         new Date('2026-01-03T00:00:00.000Z'),
       );
 
-      const result = await getMessagesByCursor({
+      const result = await getMessagesByCursorPage({
         conversationId,
         user: 'user123',
       });
@@ -4337,7 +4324,7 @@ describe('Message Operations', () => {
         new Date('2026-01-02T00:00:00.000Z'),
       );
 
-      const result = await getMessagesByCursor({
+      const result = await getMessagesByCursorPage({
         conversationId,
         user: 'user123',
         sortDirection: 'asc',
@@ -4352,7 +4339,7 @@ describe('Message Operations', () => {
     it('should handle empty conversation', async () => {
       const conversationId = uuidv4();
 
-      const result = await getMessagesByCursor({
+      const result = await getMessagesByCursorPage({
         conversationId,
         user: 'user123',
       });
@@ -4385,7 +4372,7 @@ describe('Message Operations', () => {
         updatedAt: createdAt,
       });
 
-      const result = await getMessagesByCursor({
+      const result = await getMessagesByCursorPage({
         conversationId,
         user: 'user123',
       });
@@ -4405,7 +4392,7 @@ describe('Message Operations', () => {
         await createMessageWithTimestamp(i, conversationId, createdAt);
       }
 
-      const result = await getMessagesByCursor({
+      const result = await getMessagesByCursorPage({
         conversationId,
         user: 'user123',
         pageSize: 25,
@@ -4430,7 +4417,7 @@ describe('Message Operations', () => {
       const allMessages: unknown[] = [];
 
       for (let page = 0; page < 5; page++) {
-        const result = await getMessagesByCursor({
+        const result = await getMessagesByCursorPage({
           conversationId,
           user: 'user123',
           pageSize: 1,
@@ -4462,7 +4449,7 @@ describe('Message Operations', () => {
         messages.push(msg);
       }
 
-      const result = await getMessagesByCursor({
+      const result = await getMessagesByCursorPage({
         conversationId,
         user: 'user123',
         pageSize: 10,
@@ -4470,6 +4457,100 @@ describe('Message Operations', () => {
 
       // All messages should be returned
       expect(result?.messages).toHaveLength(5);
+    });
+
+    const expectNoEqualTimestampGaps = async (sortDirection: 'asc' | 'desc') => {
+      const conversationId = uuidv4();
+      const sameTime = new Date('2026-01-01T12:00:00.000Z');
+
+      for (let i = 0; i < 30; i++) {
+        await createMessageWithTimestamp(i, conversationId, sameTime);
+      }
+
+      const page1 = await getMessagesByCursorPage({
+        conversationId,
+        user: 'user123',
+        pageSize: 25,
+        sortDirection,
+        select: CLIENT_MESSAGE_SELECT,
+      });
+
+      expect(page1.messages).toHaveLength(25);
+      expect(page1.nextCursor).toBeTruthy();
+      expect(page1.messages[0]).not.toHaveProperty('_id');
+
+      const page2 = await getMessagesByCursorPage({
+        conversationId,
+        user: 'user123',
+        pageSize: 25,
+        sortDirection,
+        cursor: page1.nextCursor,
+        select: CLIENT_MESSAGE_SELECT,
+      });
+
+      expect(page2.messages).toHaveLength(5);
+
+      const allMessageIds = [
+        ...page1.messages.map((message) => message.messageId),
+        ...page2.messages.map((message) => message.messageId),
+      ];
+      expect(allMessageIds).toHaveLength(30);
+      expect(new Set(allMessageIds).size).toBe(30);
+    };
+
+    it('should not skip equal-timestamp rows at the page boundary', async () => {
+      await expectNoEqualTimestampGaps('desc');
+    });
+
+    it('should not skip equal-timestamp rows at the page boundary when sorting ascending', async () => {
+      await expectNoEqualTimestampGaps('asc');
+    });
+
+    it('should resume from a legacy scalar createdAt cursor', async () => {
+      const conversationId = uuidv4();
+      const newest = new Date('2026-01-03T00:00:00.000Z');
+      const middle = new Date('2026-01-02T00:00:00.000Z');
+      const oldest = new Date('2026-01-01T00:00:00.000Z');
+      const msgNewest = await createMessageWithTimestamp(3, conversationId, newest);
+      const msgMiddle = await createMessageWithTimestamp(2, conversationId, middle);
+      const msgOldest = await createMessageWithTimestamp(1, conversationId, oldest);
+
+      for (const legacyCursor of [newest.toISOString(), String(newest)]) {
+        const result = await getMessagesByCursorPage({
+          conversationId,
+          user: 'user123',
+          cursor: legacyCursor,
+          sortDirection: 'desc',
+        });
+
+        expect(result.messages.map((message) => message.messageId)).toEqual([
+          msgMiddle!.messageId,
+          msgOldest!.messageId,
+        ]);
+      }
+    });
+
+    it('should start from the beginning when the cursor is not usable', async () => {
+      const conversationId = uuidv4();
+      await createMessageWithTimestamp(1, conversationId, new Date('2026-01-01T00:00:00.000Z'));
+      await createMessageWithTimestamp(2, conversationId, new Date('2026-01-02T00:00:00.000Z'));
+
+      const malformed = Buffer.from(
+        JSON.stringify({ primary: 'not-a-date', id: 'not-an-object-id' }),
+      ).toString('base64');
+
+      for (const cursor of [malformed, 'not-a-date']) {
+        const result = await getMessagesByCursorPage({
+          conversationId,
+          user: 'user123',
+          cursor,
+        });
+        expect(result.messages).toHaveLength(2);
+      }
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.stringContaining('[getMessagesByCursor] Invalid cursor format'),
+      );
     });
   });
 
