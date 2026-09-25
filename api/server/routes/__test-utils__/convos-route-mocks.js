@@ -109,11 +109,11 @@ module.exports = {
       const raw = Array.isArray(value) ? value[0] : value;
       return raw === 'asc' || raw === 'desc' ? raw : fallback;
     }),
-    /** The real parser, so the route tests see the same 400s and configured limits a
-     *  request would; it imports nothing at runtime. */
-    parseConversationListFilters: jest.fn(
+    /** The real resolver and parser, so the route tests see the same 400s and configured
+     *  limits a request would. */
+    resolveConversationListFilters: jest.fn(
       jest.requireActual('../../../../packages/api/src/conversations/filters.ts')
-        .parseConversationListFilters,
+        .resolveConversationListFilters,
     ),
     resolveImportMaxFileSize: jest.fn(() => 262144000),
     createAxiosInstance: jest.fn(() => ({
@@ -218,6 +218,8 @@ module.exports = {
   }),
 
   dataProvider: (overrides = {}) => ({
+    conversationListConfigSchema:
+      jest.requireActual('librechat-data-provider').conversationListConfigSchema,
     CacheKeys: { GEN_TITLE: 'GEN_TITLE' },
     EModelEndpoint: {
       azureAssistants: 'azureAssistants',

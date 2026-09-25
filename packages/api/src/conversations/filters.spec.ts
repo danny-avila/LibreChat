@@ -1,4 +1,17 @@
-import { parseConversationListFilters } from './filters';
+import { conversationListConfigSchema } from 'librechat-data-provider';
+import type { TConversationListConfig } from 'librechat-data-provider';
+import {
+  resolveConversationListFilters,
+  parseConversationListFilters as parseWithLimits,
+} from './filters';
+
+const defaults = conversationListConfigSchema.parse({});
+
+/** The parser with the schema's default limits, overridable per test. */
+const parseConversationListFilters = (
+  query: Record<string, unknown>,
+  limits: Partial<TConversationListConfig> = {},
+) => parseWithLimits(query, { ...defaults, ...limits });
 
 describe('parseConversationListFilters', () => {
   it('leaves every facet undefined when the query carries none', () => {
@@ -157,11 +170,11 @@ describe('parseConversationListFilters', () => {
     ).toMatch(/8 characters/);
   });
 
-  it('keeps the default limit when the config is only partially set', () => {
+  it('refuses more endpoints than the schema default allows', () => {
     const endpoints = Array.from({ length: 51 }, (_, index) => `endpoint-${index}`);
-    const { error } = parseConversationListFilters({ endpoints }, { maxEndpointNameLength: 256 });
+    const { error } = parseConversationListFilters({ endpoints });
 
-    expect(error).toMatch(/at most 50/);
+    expect(error).toMatch(/at most 50 names of 128 characters/);
   });
 
   it('takes the first value when a param is repeated', () => {
@@ -170,5 +183,31 @@ describe('parseConversationListFilters', () => {
     });
 
     expect(filters.updatedAfter?.toISOString()).toBe('2026-09-01T00:00:00.000Z');
+  });
+});
+
+describe('resolveConversationListFilters', () => {
+  it('reads the limits from the base config, never the merged one', async () => {
+    const getAppConfig = jest.fn().mockResolvedValue({
+      conversationList: { maxEndpointFilters: 1, maxEndpointNameLength: 128 },
+    });
+
+    const { error } = await resolveConversationListFilters(
+      { endpoints: ['openAI', 'agents'] },
+      getAppConfig,
+    );
+
+    expect(getAppConfig).toHaveBeenCalledWith({ baseOnly: true });
+    expect(error).toMatch(/at most 1 names/);
+  });
+
+  it('falls back to the schema defaults when the config carries none', async () => {
+    const endpoints = Array.from({ length: 51 }, (_, index) => `endpoint-${index}`);
+    const { error } = await resolveConversationListFilters(
+      { endpoints },
+      jest.fn().mockResolvedValue({}),
+    );
+
+    expect(error).toMatch(/at most 50/);
   });
 });

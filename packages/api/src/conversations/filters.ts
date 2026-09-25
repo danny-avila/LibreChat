@@ -1,3 +1,5 @@
+import { conversationListConfigSchema } from 'librechat-data-provider';
+import type { TConversationListConfig } from 'librechat-data-provider';
 import type { Request } from 'express';
 
 /**
@@ -19,20 +21,10 @@ export interface ConversationListFilterResult {
   error?: string;
 }
 
-/**
- * Validation limits for one list request, injectable so the route can take them from
- * `conversationList` in the deployment config. The defaults reproduce the historical
- * behavior for a deployment that sets nothing.
- */
-export interface ConversationListLimits {
-  maxEndpointFilters: number;
-  maxEndpointNameLength: number;
-}
-
-export const DEFAULT_CONVERSATION_LIST_LIMITS: ConversationListLimits = {
-  maxEndpointFilters: 50,
-  maxEndpointNameLength: 128,
-};
+/** Reads the deployment config; injected so this module does not reach for the app's. */
+export type ConversationListConfigReader = (options: {
+  baseOnly: true;
+}) => Promise<{ conversationList?: TConversationListConfig }>;
 
 const firstValue = (value: unknown): unknown => (Array.isArray(value) ? value[0] : value);
 
@@ -93,7 +85,7 @@ const parseDate = (value: unknown): { date?: Date; invalid?: boolean } => {
 
 const parseEndpoints = (
   value: unknown,
-  limits: ConversationListLimits,
+  limits: TConversationListConfig,
 ): { endpoints?: string[]; invalid?: boolean } => {
   if (value == null) {
     return {};
@@ -149,16 +141,8 @@ const parseFlag = (value: unknown): { set?: boolean; invalid?: boolean } => {
  */
 export function parseConversationListFilters(
   query: Request['query'] | Record<string, unknown>,
-  limits?: Partial<ConversationListLimits>,
+  limits: TConversationListConfig,
 ): ConversationListFilterResult {
-  /* The route forwards the config verbatim, so an unset knob arrives as undefined
-     here rather than as the default; a partial object must not disable its limit. */
-  const resolved: ConversationListLimits = {
-    maxEndpointFilters:
-      limits?.maxEndpointFilters ?? DEFAULT_CONVERSATION_LIST_LIMITS.maxEndpointFilters,
-    maxEndpointNameLength:
-      limits?.maxEndpointNameLength ?? DEFAULT_CONVERSATION_LIST_LIMITS.maxEndpointNameLength,
-  };
   const updated = parseDate(query.updatedAfter);
   if (updated.invalid === true) {
     return { filters: {}, error: 'updatedAfter must be an ISO 8601 date' };
@@ -169,11 +153,11 @@ export function parseConversationListFilters(
     return { filters: {}, error: 'createdAfter must be an ISO 8601 date' };
   }
 
-  const endpoints = parseEndpoints(query.endpoints, resolved);
+  const endpoints = parseEndpoints(query.endpoints, limits);
   if (endpoints.invalid === true) {
     return {
       filters: {},
-      error: `endpoints must be at most ${resolved.maxEndpointFilters} names of ${resolved.maxEndpointNameLength} characters or fewer`,
+      error: `endpoints must be at most ${limits.maxEndpointFilters} names of ${limits.maxEndpointNameLength} characters or fewer`,
     };
   }
 
@@ -206,4 +190,20 @@ export function parseConversationListFilters(
   }
 
   return { filters };
+}
+
+/**
+ * The list route's entry point. The limits are deployment-level, so they come from the
+ * base config (in memory, no database reads) rather than the caller's merged config,
+ * which would put principal and override lookups in front of every sidebar request.
+ */
+export async function resolveConversationListFilters(
+  query: Request['query'],
+  getAppConfig: ConversationListConfigReader,
+): Promise<ConversationListFilterResult> {
+  const { conversationList } = await getAppConfig({ baseOnly: true });
+  return parseConversationListFilters(
+    query,
+    conversationList ?? conversationListConfigSchema.parse({}),
+  );
 }

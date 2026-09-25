@@ -323,9 +323,23 @@ describe('AppService conversation list limits', () => {
     });
   });
 
-  it('leaves the limits unset when the deployment configures none', async () => {
+  it('fills the schema defaults when the deployment configures none', async () => {
     const result = await AppService({ config: {} as DeepPartial<TCustomConfig> });
-    expect(result.conversationList).toBeUndefined();
+    expect(result.conversationList).toEqual({ maxEndpointFilters: 50, maxEndpointNameLength: 128 });
+  });
+
+  it('keeps the defaults when the configured block is invalid', async () => {
+    const result = await AppService({
+      config: { conversationList: { maxEndpointFilters: 0 } } as DeepPartial<TCustomConfig>,
+    });
+    expect(result.conversationList).toEqual({ maxEndpointFilters: 50, maxEndpointNameLength: 128 });
+  });
+
+  it('keeps the default for a limit the deployment leaves out', async () => {
+    const result = await AppService({
+      config: { conversationList: { maxEndpointFilters: 10 } } as DeepPartial<TCustomConfig>,
+    });
+    expect(result.conversationList).toEqual({ maxEndpointFilters: 10, maxEndpointNameLength: 128 });
   });
 });
 

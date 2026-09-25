@@ -7,7 +7,7 @@ const {
   normalizeLimit,
   normalizeSortDirection,
   normalizeSortField,
-  parseConversationListFilters,
+  resolveConversationListFilters,
   CONVERSATION_SORT_FIELDS,
   openCheckpointDeletion,
   waitForGenerationPersistence,
@@ -182,8 +182,10 @@ router.get('/', async (req, res) => {
     tags = Array.isArray(req.query.tags) ? req.query.tags : [req.query.tags];
   }
 
-  const { conversationList } = await getAppConfig({ baseOnly: true });
-  const { filters, error: filterError } = parseConversationListFilters(req.query, conversationList);
+  const { filters, error: filterError } = await resolveConversationListFilters(
+    req.query,
+    getAppConfig,
+  );
   if (filterError) {
     return res.status(400).json({ error: filterError });
   }

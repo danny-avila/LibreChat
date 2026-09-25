@@ -2,6 +2,7 @@ import {
   AgentCapabilities,
   EModelEndpoint,
   filtersConfigSchema,
+  conversationListConfigSchema,
   hasActiveFiltersConfig,
   getConfigDefaults,
   langfuseConfigSchema,
@@ -89,6 +90,19 @@ export function loadLangfuseConfig(config: DeepPartial<TCustomConfig>): AppConfi
   }
 
   return parsed.data;
+}
+
+/** Resolves the list filter limits, schema defaults included; an invalid block keeps the
+ *  defaults rather than lifting a bound the operator meant to set. */
+export function loadConversationListConfig(
+  config: DeepPartial<TCustomConfig>,
+): NonNullable<AppConfig['conversationList']> {
+  const parsed = conversationListConfigSchema.safeParse(config.conversationList ?? {});
+  if (parsed.success) {
+    return parsed.data;
+  }
+  logger.warn('[AppService] Invalid conversationList config', parsed.error.flatten());
+  return conversationListConfigSchema.parse({});
 }
 
 export function loadFiltersConfig(config: DeepPartial<TCustomConfig>): AppConfig['filters'] {
@@ -203,7 +217,7 @@ export const AppService = async (params?: {
     fileStrategies: config.fileStrategies,
     cloudfront: config.cloudfront as AppConfig['cloudfront'],
     secureImageLinks: config.secureImageLinks !== false,
-    conversationList: config.conversationList,
+    conversationList: loadConversationListConfig(config),
   };
 
   const agentsDefaults = agentsConfigSetup(config);

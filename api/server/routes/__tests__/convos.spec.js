@@ -1946,7 +1946,9 @@ describe('Convos Routes', () => {
       const withinDefault = await request(app).get('/api/convos').query(query);
       expect(withinDefault.status).toBe(200);
 
-      getAppConfig.mockResolvedValueOnce({ conversationList: { maxEndpointFilters: 2 } });
+      getAppConfig.mockResolvedValueOnce({
+        conversationList: { maxEndpointFilters: 2, maxEndpointNameLength: 128 },
+      });
       const overConfigured = await request(app).get('/api/convos').query(query);
       expect(overConfigured.status).toBe(400);
       expect(overConfigured.body.error).toMatch(/at most 2 names/);
