@@ -118,6 +118,7 @@ export default function McpSection({ item }: Props) {
   const liveServer = mcpServersMap.get(serverName) ?? item.server;
   const tools = useMemo(() => liveServer.tools ?? [], [liveServer.tools]);
   const hasTools = tools.length > 0;
+  const serverDefaultDefer = liveServer.deferLoading ?? false;
 
   /** Subscribe to the tools field so selection toggles re-render this section.
    * `getValues` is a non-reactive read and left the checkboxes visually stale. */
@@ -311,7 +312,7 @@ export default function McpSection({ item }: Props) {
 
   const selectedTools = getSelectedTools();
   const allSelected = hasTools && selectedTools.length === tools.length;
-  const allDeferred = areAllToolsDeferred(tools);
+  const allDeferred = areAllToolsDeferred(tools, serverDefaultDefer);
   const allProgrammatic = areAllToolsProgrammatic(tools);
   const programmaticBulkLabel = localize(
     allProgrammatic ? 'com_ui_mcp_unprogrammatic_all' : 'com_ui_mcp_programmatic_all',
@@ -491,7 +492,7 @@ export default function McpSection({ item }: Props) {
                   pressed={allDeferred}
                   label={localize(allDeferred ? 'com_ui_mcp_undefer_all' : 'com_ui_mcp_defer_all')}
                   activeBorderClass="border-series-4"
-                  onToggle={() => toggleDeferAll(tools)}
+                  onToggle={() => toggleDeferAll(tools, serverDefaultDefer)}
                 />
               )}
               {hasTools && programmaticToolsEnabled && (
@@ -569,7 +570,9 @@ export default function McpSection({ item }: Props) {
                   key={tool.tool_id}
                   tool={tool}
                   isSelected={selectedTools.includes(tool.tool_id)}
-                  isDeferred={deferredToolsEnabled && isToolDeferred(tool.tool_id)}
+                  isDeferred={
+                    deferredToolsEnabled && isToolDeferred(tool.tool_id, serverDefaultDefer)
+                  }
                   isProgrammatic={programmaticToolsEnabled && isToolProgrammatic(tool.tool_id)}
                   isBackground={backgroundToolsEnabled && isToolBackground(tool.tool_id)}
                   isIntent={
@@ -584,7 +587,7 @@ export default function McpSection({ item }: Props) {
                   backgroundToolsEnabled={backgroundToolsEnabled}
                   toolIntentsEnabled={toolIntentsEnabled}
                   onToggleSelect={() => toggleToolSelect(tool.tool_id)}
-                  onToggleDefer={() => toggleToolDefer(tool.tool_id)}
+                  onToggleDefer={() => toggleToolDefer(tool.tool_id, serverDefaultDefer)}
                   onToggleProgrammatic={() => toggleToolProgrammatic(tool.tool_id)}
                   onToggleBackground={() => toggleToolBackground(tool.tool_id)}
                   onToggleIntent={() => toggleToolIntent(tool.tool_id)}
