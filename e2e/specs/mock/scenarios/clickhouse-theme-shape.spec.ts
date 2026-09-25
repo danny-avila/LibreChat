@@ -92,6 +92,26 @@ test.describe('ClickHouse theme shape', () => {
     expect(await page.evaluate(() => localStorage.getItem('theme-definition'))).toBeNull();
   });
 
+  test('theme controls take Click UI button metrics, checked fill and focus outline @scenario:clickhouse-controls-follow-click-ui', async ({
+    page,
+  }) => {
+    await storeClickHouse(page);
+
+    await openMentionMenu(page);
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'clickhouse');
+    const mode = await resolvedMode(page);
+
+    /** `genericMenu.panel.size.height`, `button.basic.space.x` and `transition.default`. */
+    expect(await probeStyle(page, 'h-theme-control', 'height')).toBe('32px');
+    expect(await probeStyle(page, 'px-theme-normal', 'padding-left')).toBe('16px');
+    expect(await probeStyle(page, 'duration-theme-fast', 'transition-duration')).toBe('0.1s');
+    /** The checked checkbox and switch fill, and `outline.default`. */
+    const fill = mode === 'light' ? 'rgb(21, 21, 21)' : 'rgb(250, 255, 105)';
+    const ring = mode === 'light' ? 'rgb(67, 126, 239)' : 'rgb(250, 255, 105)';
+    expect(await probeStyle(page, 'bg-surface-inverted', 'background-color')).toBe(fill);
+    expect(await probeStyle(page, 'ring-2 ring-ring-primary', 'box-shadow')).toContain(ring);
+  });
+
   test('monospace text under the ClickHouse theme leads with Inconsolata @scenario:clickhouse-mono-font-leads-with-inconsolata', async ({
     page,
   }) => {

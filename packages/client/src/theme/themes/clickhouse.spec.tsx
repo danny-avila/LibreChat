@@ -357,10 +357,36 @@ describe('clickhouse theme definition', () => {
       'shadowXl',
       'shadow2xl',
       'elevationSurface',
+      'controlHeight',
+      'spaceCompact',
+      'spaceNormal',
+      'motionFast',
     ] as const;
     expect(
       shapeTokens.filter((token) => clickHouse.appearance[token] === libreChat.appearance[token]),
     ).toEqual([]);
+  });
+
+  /** Click UI's `button.basic` metrics and `transition.default`, on the controls that read
+   *  the theme's control roles. */
+  it('sizes theme controls from Click UI button metrics', () => {
+    expect(resolveTheme(clickHouseTheme, 'light').appearance).toMatchObject({
+      controlHeight: '2rem',
+      spaceCompact: '0.5rem',
+      spaceNormal: '1rem',
+      motionFast: '100ms',
+    });
+  });
+
+  /** The checkbox, switch and default button share `surface-inverted`. Dark mode takes Click UI's
+   *  primary fill, which its checkbox and switch also use; light keeps `#151515`, the checkbox and
+   *  switch colour. Every focus ring takes `outline.default`. */
+  it.each([
+    ['light', clickHouseLightTheme, '21 21 21', '67 126 239'],
+    ['dark', clickHouseDarkTheme, '250 255 105', '250 255 105'],
+  ])('paints the %s primary fill and focus ring from Click UI', (_mode, theme, fill, ring) => {
+    expect(theme['rgb-surface-inverted']).toBe(fill);
+    expect(theme['rgb-ring-primary']).toBe(ring);
   });
 
   it('keeps the brand yellow as the dark-mode accent and link', () => {
