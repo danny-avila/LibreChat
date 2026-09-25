@@ -1,10 +1,5 @@
-import { useQuery, useMutation, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import { QueryKeys, dataService } from 'librechat-data-provider';
-import type {
-  QueryObserverResult,
-  UseQueryOptions,
-  UseInfiniteQueryOptions,
-} from '@tanstack/react-query';
+import { useQuery, useMutation, useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 import type {
   TSkill,
   TSkillListRequest,
@@ -13,6 +8,11 @@ import type {
   TListSkillFilesResponse,
   TSkillFileContentResponse,
 } from 'librechat-data-provider';
+import type {
+  QueryObserverResult,
+  UseQueryOptions,
+  UseInfiniteQueryOptions,
+} from '@tanstack/react-query';
 
 /**
  * Paginated skill list (single page) — use this for small lists or when you want to
@@ -133,12 +133,24 @@ export const useListSkillFilesQuery = (
 export const useGetSkillFileContentQuery = (
   skillId: string | null | undefined,
   relativePath: string | null | undefined,
-  config?: UseQueryOptions<TSkillFileContentResponse>,
-): QueryObserverResult<TSkillFileContentResponse> => {
+  config?: UseQueryOptions<TSkillFileContentResponse | null>,
+): QueryObserverResult<TSkillFileContentResponse | null> => {
   const enabled = !!skillId && !!relativePath;
-  return useQuery<TSkillFileContentResponse>(
+  return useQuery<TSkillFileContentResponse | null>(
     [QueryKeys.skillFileContent, skillId, relativePath],
-    () => dataService.getSkillFileContent(skillId as string, relativePath as string),
+    async () => {
+      try {
+        return await dataService.getSkillFileContent(skillId as string, relativePath as string);
+      } catch (error) {
+        const status = (error as { response?: { status?: number } })?.response?.status;
+        // A terminal response replaces cached bytes, including on background reads.
+        // Throw transient failures so React Query retains the last confirmed content.
+        if (status === 404 || status === 410 || status === 403) {
+          return null;
+        }
+        throw error;
+      }
+    },
     {
       refetchOnWindowFocus: false,
       refetchOnReconnect: false,

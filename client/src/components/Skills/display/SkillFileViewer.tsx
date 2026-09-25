@@ -40,7 +40,7 @@ function SkillFileViewer({ skillId, relativePath, skill }: SkillFileViewerProps)
   const isEditing = editingFile != null;
   const canEdit = skill?.source === 'inline' && !permissions.isLoading && permissions.canEdit;
   // Older servers do not support conditional writes. Keep their sub-files read-only.
-  const canEditFile = canEdit && (isSkillMd || !!data?.fileId);
+  const canEditFile = canEdit && data != null && (isSkillMd || !!data.fileId);
 
   const rawUrl = useMemo(
     () =>
@@ -143,7 +143,7 @@ function SkillFileViewer({ skillId, relativePath, skill }: SkillFileViewerProps)
             skillId={skillId}
             relativePath={relativePath}
             file={editingFile}
-            canEdit={canEdit}
+            canEdit={canEditFile}
             onClose={() => setEditingFile(null)}
           />
         ) : (
@@ -154,7 +154,7 @@ function SkillFileViewer({ skillId, relativePath, skill }: SkillFileViewerProps)
               </div>
             )}
 
-            {isError && !data && (
+            {(isError || data === null) && !data && (
               <div className="flex flex-col items-center justify-center gap-2 py-12 text-text-secondary">
                 <FileQuestion className="size-8" />
                 <p className="text-sm">{localize('com_ui_skill_file_load_error')}</p>

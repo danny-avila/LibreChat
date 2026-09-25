@@ -29,18 +29,17 @@ export default function SkillTextEditor({
 
   const upload = useUploadSkillFileMutation({
     onSuccess: (saved) => {
-      queryClient.setQueryData<TSkillFileContentResponse>(
+      queryClient.setQueryData<TSkillFileContentResponse | null>(
         [QueryKeys.skillFileContent, skillId, relativePath],
-        (previous) =>
-          previous && {
-            ...previous,
-            content,
-            fileId: saved.file_id,
-            bytes: new Blob([content]).size,
-            filename: saved.filename,
-            mimeType: saved.mimeType,
-            isBinary: false,
-          },
+        {
+          ...file,
+          content,
+          fileId: saved.file_id,
+          bytes: new Blob([content]).size,
+          filename: saved.filename,
+          mimeType: saved.mimeType,
+          isBinary: false,
+        },
       );
       showToast({
         status: 'success',

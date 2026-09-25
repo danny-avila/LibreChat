@@ -269,7 +269,14 @@ export const useUploadSkillFileMutation = (
       dataService.uploadSkillFile(skillId, formData),
     ...rest,
     onSuccess: async (skillFile, variables, context) => {
-      await queryClient.cancelQueries([QueryKeys.skillFiles, variables.skillId]);
+      await Promise.all([
+        queryClient.cancelQueries([QueryKeys.skillFiles, variables.skillId]),
+        queryClient.cancelQueries([
+          QueryKeys.skillFileContent,
+          variables.skillId,
+          skillFile.relativePath,
+        ]),
+      ]);
       queryClient.setQueryData<TListSkillFilesResponse>(
         [QueryKeys.skillFiles, variables.skillId],
         (prev) => {

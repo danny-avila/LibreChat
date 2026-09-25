@@ -76,7 +76,12 @@ export function createSkillUploadHandler(
       ) {
         return res.status(400).json({ error: 'A matching path and file revision are required' });
       }
-      const skill = req.resourceAccess?.resourceInfo ?? (await deps.getSkillById(skillId));
+      // Privileged access can bypass the ACL resolver. Start both scoped reads
+      // together, but do not write bytes until the source and revision are checked.
+      const [skill, existingFile] = await Promise.all([
+        req.resourceAccess?.resourceInfo ?? deps.getSkillById(skillId),
+        deps.getSkillFileByPath(skillId, relativePath),
+      ]);
       if (!skill) {
         return res.status(404).json({ error: 'Skill not found' });
       }
@@ -92,7 +97,6 @@ export function createSkillUploadHandler(
       ) {
         return res;
       }
-      const existingFile = await deps.getSkillFileByPath(skillId, relativePath);
       if (expectedFileId != null && existingFile?.file_id !== expectedFileId) {
         return res.status(409).json({ error: 'SKILL_FILE_CONFLICT' });
       }

@@ -3,7 +3,7 @@ import axios from 'axios';
 import { QueryKeys } from 'librechat-data-provider';
 import { MemoryRouter, useLocation } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { TSkill } from 'librechat-data-provider';
 import type { AxiosResponse } from 'axios';
 import SkillFileViewer from '../SkillFileViewer';
@@ -57,10 +57,13 @@ function Location() {
   return <output data-testid="location">{location.pathname}</output>;
 }
 
-function renderViewer(path = filePath, selectedSkill = skill) {
-  const queryClient = new QueryClient({
+function renderViewer(
+  path = filePath,
+  selectedSkill = skill,
+  queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
-  });
+  }),
+) {
   const view = render(
     <QueryClientProvider client={queryClient}>
       <MemoryRouter initialEntries={['/skills/skill-id']}>
@@ -312,40 +315,147 @@ describe('skill file editing', () => {
     view.queryClient.clear();
   });
 
-  it('keeps confirmed content visible if the post-save verification read fails', async () => {
+  it.each([undefined, 500, 503])(
+    'keeps confirmed content visible if verification fails transiently (%s)',
+    async (status) => {
+      jest
+        .spyOn(axios, 'get')
+        .mockResolvedValueOnce({
+          data: {
+            fileId: 'revision-1',
+            content: 'original',
+            filename: 'queries.md',
+            relativePath: filePath,
+            mimeType: 'text/markdown',
+            isBinary: false,
+            bytes: 8,
+          },
+        })
+        .mockRejectedValue(status ? { response: { status } } : new Error('verification offline'));
+      jest.spyOn(axios, 'post').mockResolvedValue({
+        data: {
+          file_id: 'revision-2',
+          filename: 'queries.md',
+          relativePath: filePath,
+          mimeType: 'text/markdown',
+        },
+      });
+      const view = renderViewer();
+      fireEvent.click(await screen.findByRole('button', { name: 'com_ui_edit' }));
+      fireEvent.change(screen.getByRole('textbox'), { target: { value: 'confirmed save' } });
+      fireEvent.click(screen.getByRole('button', { name: 'com_ui_save' }));
+      await waitFor(() =>
+        expect(
+          view.queryClient.getQueryState([QueryKeys.skillFileContent, skill._id, filePath])?.status,
+        ).toBe('error'),
+      );
+      expect(screen.getByText('confirmed save')).toBeVisible();
+      expect(screen.queryByText('com_ui_skill_file_load_error')).not.toBeInTheDocument();
+      view.queryClient.clear();
+    },
+  );
+
+  it('publishes a confirmed save even if an earlier reread cleared the cached content while saving', async () => {
     jest
       .spyOn(axios, 'get')
       .mockResolvedValueOnce({
         data: {
           fileId: 'revision-1',
-          content: 'original',
+          content: 'before',
           filename: 'queries.md',
           relativePath: filePath,
           mimeType: 'text/markdown',
           isBinary: false,
-          bytes: 8,
+          bytes: 6,
         },
       })
-      .mockRejectedValue(new Error('verification offline'));
-    jest.spyOn(axios, 'post').mockResolvedValue({
-      data: {
-        file_id: 'revision-2',
-        filename: 'queries.md',
-        relativePath: filePath,
-        mimeType: 'text/markdown',
-      },
-    });
+      .mockRejectedValue({ response: { status: 503 } });
+    let acknowledge!: (response: AxiosResponse) => void;
+    const post = jest.spyOn(axios, 'post').mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          acknowledge = resolve;
+        }),
+    );
     const view = renderViewer();
     fireEvent.click(await screen.findByRole('button', { name: 'com_ui_edit' }));
-    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'confirmed save' } });
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'confirmed content' } });
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_save' }));
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    act(() => {
+      view.queryClient.setQueryData([QueryKeys.skillFileContent, skill._id, filePath], null);
+    });
+    await act(async () => {
+      acknowledge({
+        data: {
+          file_id: 'revision-2',
+          filename: 'queries.md',
+          mimeType: 'text/markdown',
+          relativePath: filePath,
+        },
+      } as AxiosResponse);
+    });
+    await screen.findByText('confirmed content');
     await waitFor(() =>
       expect(
         view.queryClient.getQueryState([QueryKeys.skillFileContent, skill._id, filePath])?.status,
       ).toBe('error'),
     );
-    expect(screen.getByText('confirmed save')).toBeVisible();
-    expect(screen.queryByText('com_ui_skill_file_load_error')).not.toBeInTheDocument();
+    expect(
+      view.queryClient.getQueryData([QueryKeys.skillFileContent, skill._id, filePath]),
+    ).toMatchObject({ fileId: 'revision-2', content: 'confirmed content' });
+    view.unmount();
+    view.queryClient.clear();
+  });
+
+  it('ignores a delayed terminal reread that began before a confirmed save', async () => {
+    let rejectOldRead!: (error: unknown) => void;
+    const get = jest
+      .spyOn(axios, 'get')
+      .mockResolvedValueOnce({
+        data: {
+          fileId: 'revision-1',
+          content: 'before',
+          filename: 'queries.md',
+          relativePath: filePath,
+          mimeType: 'text/markdown',
+          isBinary: false,
+          bytes: 6,
+        },
+      })
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            rejectOldRead = reject;
+          }),
+      )
+      .mockRejectedValue({ response: { status: 503 } });
+    jest.spyOn(axios, 'post').mockResolvedValue({
+      data: {
+        file_id: 'revision-2',
+        filename: 'queries.md',
+        mimeType: 'text/markdown',
+        relativePath: filePath,
+      },
+    });
+    const view = renderViewer();
+    fireEvent.click(await screen.findByRole('button', { name: 'com_ui_edit' }));
+    act(() => {
+      void view.queryClient.invalidateQueries([QueryKeys.skillFileContent, skill._id, filePath]);
+    });
+    await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'confirmed content' } });
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_save' }));
+    await screen.findByText('confirmed content');
+    await waitFor(() => expect(view.queryClient.isFetching()).toBe(0));
+    await act(async () => {
+      rejectOldRead({ response: { status: 404 } });
+    });
+    expect(screen.getByText('confirmed content')).toBeVisible();
+    expect(
+      view.queryClient.getQueryData([QueryKeys.skillFileContent, skill._id, filePath]),
+    ).toMatchObject({ fileId: 'revision-2', content: 'confirmed content' });
+    view.unmount();
     view.queryClient.clear();
   });
 
@@ -373,6 +483,69 @@ describe('skill file editing', () => {
     expect(post).toHaveBeenCalledTimes(1);
     view.queryClient.clear();
   });
+
+  it.each([404, 410, 403])(
+    'discards cached content after a conflict reread returns %s without losing the draft',
+    async (status) => {
+      const get = jest
+        .spyOn(axios, 'get')
+        .mockResolvedValueOnce({
+          data: {
+            fileId: 'revision-1',
+            content: 'deleted content',
+            filename: 'queries.md',
+            relativePath: filePath,
+            mimeType: 'text/markdown',
+            isBinary: false,
+            bytes: 15,
+          },
+        })
+        .mockRejectedValue({ response: { status } });
+      const post = jest.spyOn(axios, 'post').mockRejectedValue({ response: { status: 409 } });
+      const view = renderViewer();
+      fireEvent.click(await screen.findByRole('button', { name: 'com_ui_edit' }));
+      fireEvent.change(screen.getByRole('textbox'), { target: { value: 'keep this draft' } });
+      fireEvent.click(screen.getByRole('button', { name: 'com_ui_save' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('com_ui_skill_file_conflict');
+      await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+      await waitFor(() => expect(view.queryClient.isFetching()).toBe(0));
+      expect(screen.getByRole('textbox')).toHaveValue('keep this draft');
+      expect(screen.getByRole('button', { name: 'com_ui_save' })).toBeDisabled();
+      fireEvent.click(screen.getByRole('button', { name: 'com_ui_cancel' }));
+
+      expect(screen.queryByText('deleted content')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'com_ui_edit' })).not.toBeInTheDocument();
+      expect(screen.getByText('com_ui_skill_file_load_error')).toBeVisible();
+      expect(
+        view.queryClient.getQueryData([QueryKeys.skillFileContent, skill._id, filePath]),
+      ).toBeNull();
+      view.unmount();
+      const reopened = renderViewer(filePath, skill, view.queryClient);
+      expect(screen.queryByText('deleted content')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'com_ui_edit' })).not.toBeInTheDocument();
+      expect(post).toHaveBeenCalledTimes(1);
+
+      // A later create/access-restored event can refresh the terminal cache entry.
+      get.mockResolvedValue({
+        data: {
+          fileId: 'restored-revision',
+          content: 'restored content',
+          filename: 'queries.md',
+          relativePath: filePath,
+          mimeType: 'text/markdown',
+          isBinary: false,
+          bytes: 16,
+        },
+      });
+      await act(async () => {
+        await view.queryClient.invalidateQueries([QueryKeys.skillFileContent, skill._id, filePath]);
+      });
+      expect(await screen.findByText('restored content')).toBeVisible();
+      expect(screen.getByRole('button', { name: 'com_ui_edit' })).toBeEnabled();
+      reopened.unmount();
+      view.queryClient.clear();
+    },
+  );
 
   it.each(['github', 'notion'] as const)(
     'keeps %s-managed skill files read-only even with edit permission',
