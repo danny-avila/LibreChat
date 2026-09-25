@@ -202,6 +202,7 @@ test('the attachment facet finds a chat whose only file rides on a message @scen
   const steeredWithFile = randomUUID();
   const nativeImage = randomUUID();
   const toolOutput = randomUUID();
+  const downloadOnly = randomUUID();
   const importedWithFiles = randomUUID();
   const emptiedFiles = randomUUID();
   const plain = randomUUID();
@@ -210,6 +211,7 @@ test('the attachment facet finds a chat whose only file rides on a message @scen
     { conversationId: steeredWithFile },
     { conversationId: nativeImage },
     { conversationId: toolOutput },
+    { conversationId: downloadOnly },
     { conversationId: importedWithFiles, files: [randomUUID()] },
     { conversationId: emptiedFiles, files: [] },
     { conversationId: plain },
@@ -231,11 +233,21 @@ test('the attachment facet finds a chat whose only file rides on a message @scen
   await seedAssistantMessage(toolOutput, {
     attachments: [{ file_id: randomUUID(), filename: 'plot.png', toolCallId: randomUUID() }],
   });
+  await seedAssistantMessage(downloadOnly, {
+    attachments: [{ filename: 'report.csv', filepath: '/api/files/code/download/s/report.csv' }],
+  });
 
   expect(await listIds(page, `endpoints=${endpoint}&hasFiles=true`)).toEqual(
-    [uploadedInChat, steeredWithFile, nativeImage, toolOutput, importedWithFiles].sort(),
+    [
+      uploadedInChat,
+      steeredWithFile,
+      nativeImage,
+      toolOutput,
+      downloadOnly,
+      importedWithFiles,
+    ].sort(),
   );
-  expect(await listIds(page, `endpoints=${endpoint}&hasFiles=false`)).toHaveLength(7);
+  expect(await listIds(page, `endpoints=${endpoint}&hasFiles=false`)).toHaveLength(8);
 });
 
 test('the shared facet follows live links and drops expired ones @scenario:list-shared-facet-follows-live-links', async ({

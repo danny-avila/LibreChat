@@ -8424,6 +8424,7 @@ describe('Conversation Operations', () => {
         attachments: unknown[];
       }>;
       const generated = await makeConvo({ title: 'generated file' });
+      const downloadOnly = await makeConvo({ title: 'download-only file' });
       const searched = await makeConvo({ title: 'search results only' });
       await Message.create([
         {
@@ -8436,17 +8437,32 @@ describe('Conversation Operations', () => {
         },
         {
           user,
+          conversationId: downloadOnly.conversationId,
+          messageId: uuidv4(),
+          sender: 'Assistant',
+          isCreatedByUser: false,
+          attachments: [
+            { filename: 'report.csv', filepath: '/api/files/code/download/s/report.csv' },
+          ],
+        },
+        {
+          user,
           conversationId: searched.conversationId,
           messageId: uuidv4(),
           sender: 'Assistant',
           isCreatedByUser: false,
-          attachments: [{ type: 'web_search', toolCallId: 't-2' }],
+          attachments: [
+            { type: 'web_search', toolCallId: 't-2' },
+            { filename: 'blank.txt', filepath: '' },
+          ],
         },
       ]);
 
       const result = await getConvosByCursor(user, { hasFiles: true });
 
-      expect(result.conversations.map((c) => c.conversationId)).toEqual([generated.conversationId]);
+      expect(result.conversations.map((c) => c.conversationId).sort()).toEqual(
+        [generated.conversationId, downloadOnly.conversationId].sort(),
+      );
     });
 
     it('combines facets rather than widening the result', async () => {
