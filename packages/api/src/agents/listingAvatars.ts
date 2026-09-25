@@ -6,10 +6,20 @@ import { AVATAR_REFRESH_BATCH_SIZE, MAX_AVATAR_REFRESH_AGENTS } from './avatars'
 
 type AvatarRefreshEntry = {
   urlCache: Record<string, string>;
+  /** Stored pathname corresponding to each signed page URL, used to detect avatar replacements. */
+  avatarPaths?: Record<string, string>;
   scope?: 'page';
   expiresAt?: number;
 };
 type ListedAgent = { id?: string; avatar?: AgentAvatar };
+
+/** The list writer and avatar upload invalidator must always use the same tenant-scoped key. */
+export function getAgentListAvatarRefreshKey(user: {
+  id: string;
+  tenantId?: string | null;
+}): string {
+  return `${user.id}:${user.tenantId ?? ''}:agents_avatar_refresh`;
+}
 
 function validRefreshEntry(entry: unknown): entry is AvatarRefreshEntry {
   return (
@@ -69,7 +79,22 @@ export async function refreshManagedAgentListPageAvatars({
   const cachedExpiresAt = cachedEntry?.scope === 'page' ? cachedEntry.expiresAt : undefined;
   const cachedPageIsFresh = typeof cachedExpiresAt === 'number' && cachedExpiresAt > now;
   const urlCache = cachedPageIsFresh ? { ...cachedEntry?.urlCache } : {};
+  const avatarPaths = cachedPageIsFresh ? { ...cachedEntry?.avatarPaths } : {};
   const expiresAt = cachedPageIsFresh ? cachedExpiresAt : now + ttl;
+  // A different user can replace an agent's avatar without clearing this viewer's cache.
+  // Never overlay a new avatar with a signed URL for an older stored pathname.
+  for (const agent of agents) {
+    if (
+      agent.id &&
+      Object.prototype.hasOwnProperty.call(urlCache, agent.id) &&
+      (agent.avatar?.source !== FileSources.s3 ||
+        !agent.avatar.filepath ||
+        avatarPaths[agent.id] !== agent.avatar.filepath)
+    ) {
+      delete urlCache[agent.id];
+      delete avatarPaths[agent.id];
+    }
+  }
   const pending = agents.filter(
     (agent) =>
       agent.id &&
@@ -78,7 +103,7 @@ export async function refreshManagedAgentListPageAvatars({
       !Object.prototype.hasOwnProperty.call(urlCache, agent.id),
   );
   if (pending.length === 0) {
-    return cachedPageIsFresh ? cachedEntry : null;
+    return cachedPageIsFresh ? { urlCache, avatarPaths, scope: 'page', expiresAt } : null;
   }
 
   let changed = false;
@@ -89,6 +114,7 @@ export async function refreshManagedAgentListPageAvatars({
           const url = await refreshS3Url(agent.avatar!);
           if (url && agent.id) {
             urlCache[agent.id] = url;
+            avatarPaths[agent.id] = agent.avatar!.filepath!;
             changed = true;
           }
         } catch (error) {
@@ -104,9 +130,10 @@ export async function refreshManagedAgentListPageAvatars({
     const cacheIds = Object.keys(urlCache);
     for (const id of cacheIds.slice(0, Math.max(0, cacheIds.length - MAX_AVATAR_REFRESH_AGENTS))) {
       delete urlCache[id];
+      delete avatarPaths[id];
     }
   }
-  const entry: AvatarRefreshEntry = { urlCache, scope: 'page', expiresAt };
+  const entry: AvatarRefreshEntry = { urlCache, avatarPaths, scope: 'page', expiresAt };
   if (changed) {
     try {
       await cacheSet(cacheKey, entry, Math.max(1, expiresAt - Date.now()));

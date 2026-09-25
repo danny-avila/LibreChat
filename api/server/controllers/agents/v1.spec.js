@@ -3456,6 +3456,9 @@ describe('Agent Controllers - Mass Assignment Protection', () => {
       findPubliclyAccessibleResources.mockResolvedValue([]);
 
       await getListAgentsHandler(mockReq, mockRes);
+      expect(mockCache.get).toHaveBeenCalledWith(
+        `${userB.toString()}:${tenantA}:agents_avatar_refresh`,
+      );
       expect(mockRes.json.mock.calls[0][0].data.map((agent) => agent.id)).toEqual([agentInA.id]);
 
       mockRes.json.mockClear();

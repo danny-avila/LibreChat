@@ -1,6 +1,7 @@
 import { FileSources } from 'librechat-data-provider';
 import {
   isFullAgentListAvatarCacheEntry,
+  getAgentListAvatarRefreshKey,
   refreshAgentListAvatarsBeforePage,
   refreshManagedAgentListPageAvatars,
 } from './listingAvatars';
@@ -23,6 +24,16 @@ function params() {
 }
 
 describe('Agent listing avatar scope', () => {
+  it('uses the same tenant-qualified key for listing and upload, including legacy users', () => {
+    expect(getAgentListAvatarRefreshKey({ id: 'alice', tenantId: 'tenant-a' })).toBe(
+      'alice:tenant-a:agents_avatar_refresh',
+    );
+    expect(getAgentListAvatarRefreshKey({ id: 'alice', tenantId: 'tenant-b' })).not.toBe(
+      getAgentListAvatarRefreshKey({ id: 'alice', tenantId: 'tenant-a' }),
+    );
+    expect(getAgentListAvatarRefreshKey({ id: 'alice' })).toBe('alice::agents_avatar_refresh');
+  });
+
   it('does not load every tenant avatar before a manager list query', async () => {
     const refreshAll = jest.fn().mockResolvedValue({ urlCache: { 'agent-visible': 'signed.jpg' } });
     await expect(refreshAgentListAvatarsBeforePage(null, null, refreshAll)).resolves.toBeNull();
@@ -113,6 +124,27 @@ describe('Agent listing avatar scope', () => {
     } finally {
       clock.mockRestore();
     }
+  });
+
+  it('re-signs when another user replaces a cached avatar', async () => {
+    const options = params();
+    const previous = await refreshManagedAgentListPageAvatars(options);
+    const replacement = {
+      id: visible.id,
+      avatar: { source: FileSources.s3, filepath: 'replacement.jpg' },
+    };
+    options.refreshS3Url.mockResolvedValueOnce('signed-replacement.jpg');
+
+    const refreshed = await refreshManagedAgentListPageAvatars({
+      ...options,
+      cachedEntry: previous,
+      agents: [replacement],
+    });
+
+    expect(options.refreshS3Url).toHaveBeenCalledTimes(2);
+    expect(refreshed?.urlCache[visible.id]).toBe('signed-replacement.jpg');
+    expect(refreshed?.avatarPaths?.[visible.id]).toBe('replacement.jpg');
+    expect(options.cacheSet).toHaveBeenCalledTimes(2);
   });
 
   it('leaves an ordinary ACL viewer on the pre-query full-list refresh path', async () => {

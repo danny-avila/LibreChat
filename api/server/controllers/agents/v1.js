@@ -17,6 +17,7 @@ const {
   mergeDeploymentSkillIds,
   getAgentListAccess,
   isFullAgentListAvatarCacheEntry,
+  getAgentListAvatarRefreshKey,
   refreshAgentListAvatarsBeforePage,
   refreshManagedAgentListPageAvatars,
   mergeAgentOcrConversion,
@@ -1755,7 +1756,7 @@ const getListAgentsHandler = async (req, res) => {
     }
 
     const cache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
-    const refreshKey = `${userId}:${req.user.tenantId ?? ''}:agents_avatar_refresh`;
+    const refreshKey = getAgentListAvatarRefreshKey(req.user);
 
     /**
      * These reads share no inputs, so they resolve together rather than chaining round
@@ -2011,7 +2012,7 @@ const uploadAgentAvatarHandler = async (req, res) => {
 
     try {
       const avatarCache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
-      await avatarCache.delete(`${req.user.id}:agents_avatar_refresh`);
+      await avatarCache.delete(getAgentListAvatarRefreshKey(req.user));
     } catch (cacheErr) {
       logger.error('[/:agent_id/avatar] Error invalidating avatar refresh cache', cacheErr);
     }
