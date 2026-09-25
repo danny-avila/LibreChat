@@ -123,6 +123,12 @@ module.exports = {
     }),
     createSubagentThreadViewHandler: jest.fn(() => (_req, res) => res.status(200).json({})),
     createSubagentControlHandler: jest.fn(() => (_req, res) => res.status(200).json({})),
+    createBackgroundTaskIndexHandler: jest.fn(
+      () => (_req, res) => res.status(200).json({ tasks: [] }),
+    ),
+    createBackgroundTaskCancelHandler: jest.fn(
+      () => (_req, res) => res.status(200).json({ results: [] }),
+    ),
     isValidSubagentControlRequest: jest.fn((body) => {
       if (body == null || typeof body !== 'object') return false;
       const commonKeys = ['taskId', 'invocationId', 'action'];
