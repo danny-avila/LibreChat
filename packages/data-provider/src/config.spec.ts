@@ -682,12 +682,15 @@ describe('agent event runtime config', () => {
       deliveryMaxIntervalMs: 15_000,
       queuedTurnMaxIntervalMs: 120_000,
       maintenanceMaxIntervalMs: 120_000,
+      completionWaitMaxIntervalMs: 60_000,
     });
     for (const [key, value] of [
       ['deliveryMaxIntervalMs', 0],
       ['queuedTurnMaxIntervalMs', 29_999],
       ['maintenanceMaxIntervalMs', 300_001],
       ['maintenanceMaxIntervalMs', 30_000.5],
+      ['completionWaitMaxIntervalMs', 4_999],
+      ['completionWaitMaxIntervalMs', 300_001],
     ] as const) {
       expect(
         configSchema.safeParse({

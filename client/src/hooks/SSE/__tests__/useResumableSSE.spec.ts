@@ -10,6 +10,7 @@ import {
   request,
 } from 'librechat-data-provider';
 import type { TMessage, TSubmission } from 'librechat-data-provider';
+import { recoveryDispositionsFamily } from '~/components/Chat/Steering/recovery';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 
 type SSEEventListener = (e: Partial<MessageEvent> & { responseCode?: number }) => void;
@@ -359,6 +360,7 @@ const advanceRetryTimer = async (ms: number) => {
 
 describe('useResumableSSE', () => {
   beforeEach(() => {
+    getDefaultStore().set(recoveryDispositionsFamily(CONV_ID), {});
     mockSSEInstances.length = 0;
     localStorage.clear();
     mockErrorHandler.mockClear();
@@ -2962,6 +2964,58 @@ describe('useResumableSSE', () => {
     expect(mockSetIsSubmitting).toHaveBeenCalledWith(false);
     expect(mockSetShowStopButton).not.toHaveBeenCalledWith(true);
     expect(mockSetShowStopButton).toHaveBeenCalledWith(false);
+    unmount();
+  });
+
+  it.each(['RECOVERY_PAYLOAD_MISMATCH', 'INVALID_RECOVERY_REQUEST'])(
+    'holds a rejected recovery (%s) without changing its words or binding',
+    async (code) => {
+      (request.post as jest.Mock).mockRejectedValueOnce({
+        response: { status: 409, data: { code } },
+      });
+      const item = {
+        id: 'leftover',
+        text: 'original words',
+        createdAt: 1,
+        recoverySteerId: 'source',
+        recoveryClientSteerId: 'client-source',
+        clientRequestId: 'attempt',
+        quotes: ['original excerpt'],
+        files: [{ file_id: 'original-file' }],
+      };
+      const submission = buildSubmission({
+        recoverySteerId: 'source',
+        clientRequestId: 'attempt',
+        queuedMessageOrigin: { item, beforeIds: [], afterIds: [] },
+      });
+      const { unmount } = renderHook(() => useResumableSSE(submission, buildChatHelpers()));
+      await waitFor(() => expect(mockSetSubmission).toHaveBeenCalledWith(null));
+      expect(getDefaultStore().get(recoveryDispositionsFamily(CONV_ID))).toEqual({
+        source: 'blocked',
+      });
+      expect(mockRestoreQueuedSubmission).toHaveBeenCalledWith(submission);
+      expect(mockConvertSteersToQueued).not.toHaveBeenCalled();
+      expect(request.post).toHaveBeenCalledTimes(1);
+      unmount();
+    },
+  );
+
+  it('does not permanently hold a rate-limited recovery', async () => {
+    (request.post as jest.Mock).mockRejectedValueOnce({ response: { status: 429 } });
+    const submission = buildSubmission({ recoverySteerId: 'source', clientRequestId: 'attempt' });
+    const { unmount } = renderHook(() => useResumableSSE(submission, buildChatHelpers()));
+    await waitFor(() => expect(mockSetSubmission).toHaveBeenCalledWith(null));
+    expect(getDefaultStore().get(recoveryDispositionsFamily(CONV_ID))).toEqual({});
+    unmount();
+  });
+
+  it('does not dispatch a recovery cancelled between dequeuing and startup', async () => {
+    getDefaultStore().set(recoveryDispositionsFamily(CONV_ID), { source: 'cancelled' });
+    const submission = buildSubmission({ recoverySteerId: 'source', clientRequestId: 'attempt' });
+    const { unmount } = renderHook(() => useResumableSSE(submission, buildChatHelpers()));
+    await waitFor(() => expect(mockSetSubmission).toHaveBeenCalledWith(null));
+    expect(request.post).not.toHaveBeenCalled();
+    expect(mockSSEInstances).toHaveLength(0);
     unmount();
   });
 

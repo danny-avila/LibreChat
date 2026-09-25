@@ -99,6 +99,17 @@ experimental clustered startup:
 | `queuedTurnMaxIntervalMs` | 120000 | 30000–300000 |
 | `maintenanceMaxIntervalMs` | 120000 | 30000–300000 |
 | `deliveryMaxIntervalMs` | 15000 | 1000–300000 |
+| `completionWaitMaxIntervalMs` | 60000 | 5000–300000 |
+
+`completionWaitMaxIntervalMs` caps how long a background or subagent completion waits between
+readiness checks while its result or parent turn is not ready. It backs off from 5 seconds by a tenth
+of its age; a durable result and a settled generation expedite it, so the cap bounds missed signals.
+Parent settlement expedites completion deliveries only in that conversation. A child's durable
+terminal result expedites only its task, plus the original task when recovering an abandoned
+attempt. Terminal replays signal readiness after registering their delivery, without executing the
+child again. A held delivery consumes its wake marker in the same fenced write that releases it
+for ordering or defers readiness. These writes use classic operators for DocumentDB compatibility;
+older workers can ignore the optional marker and fall back to the configured polling interval.
 
 Setting a recovery cap to `30000` restores its original fixed recovery frequency. No stored-data
 migration is needed; optional activity reporting preserves the existing numeric/boolean results.

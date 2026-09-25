@@ -171,6 +171,8 @@ export interface IAgentTriggerDelivery {
   stagingRecoveryAt?: Date;
   /** Durable proof that successful settlement still owes lane cleanup publication. */
   laneCleanupPendingAt?: Date;
+  /** Readiness changed while a worker held this delivery; its next deferral re-checks at once. */
+  wakeRequestedAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
 }
