@@ -348,6 +348,21 @@ const readToolCall = (toolCall: ToolCallValue): ToolCallFields => {
  * The failure a stored call records, if any: a failed or cancelled run step, an output the tool
  * renderers read as an error, a cancelled background task, or arguments rejected by validation.
  */
+/**
+ * Options for the forward mapping. Some tool outcomes are decided by knowledge this package does
+ * not hold, such as a memory tool's failure prose or a background task's status attachment; the
+ * caller that owns those rules supplies them here rather than the mapping copying them.
+ */
+export type UIMappingOptions = {
+  /**
+   * Returns a failure reason for a tool call the stored markers leave successful, or `undefined`.
+   * It receives the stored call; `toUIMessage` also passes the message, for its attachments.
+   */
+  resolveToolFailure?: (toolCall: ToolCallValue, message?: TMessage) => string | undefined;
+};
+
+type MappingContext = UIMappingOptions & { message?: TMessage };
+
 const getToolFailure = (toolCall: ToolCallValue, output?: UIToolOutput): string | undefined => {
   const { runStepStatus } = toolCall;
   if (runStepStatus === 'failed' || runStepStatus === 'cancelled') {
@@ -373,12 +388,17 @@ const getToolApproval = (toolCall: ToolCallValue): UIToolApproval | undefined =>
   return { id: actionId, ...(description && { requestReason: description }) };
 };
 
-const toToolPart = (part: ToolCallContentPart, index: number): UIToolPart => {
+const toToolPart = (
+  part: ToolCallContentPart,
+  index: number,
+  context?: MappingContext,
+): UIToolPart => {
   const { tool_call: toolCall, type: _type, ...partMetadata } = part;
   const { name, id, args, output, submitted } = readToolCall(toolCall);
   const { input, complete } = parseToolInput(args);
   const { runStepStatus, progress } = toolCall;
-  const failure = getToolFailure(toolCall, output);
+  const failure =
+    getToolFailure(toolCall, output) ?? context?.resolveToolFailure?.(toolCall, context.message);
   const approval = submitted ? undefined : getToolApproval(toolCall);
 
   let state: UIToolState = complete ? 'input-available' : 'input-streaming';
@@ -413,7 +433,11 @@ const toDataPart = (part: ContentPartOf<keyof typeof dataPartTypes>): UIDataPart
  * Maps one content part to its UI part. A missing part (a hole in a streamed array) maps to
  * `step-start`, so indexes line up with the content array.
  */
-export function toUIPart(part: MappableContentPart | null | undefined, index = 0): UIMessagePart {
+export function toUIPart(
+  part: MappableContentPart | null | undefined,
+  index = 0,
+  options?: UIMappingOptions,
+): UIMessagePart {
   if (part == null) {
     return stepStart;
   }
@@ -427,8 +451,12 @@ export function toUIPart(part: MappableContentPart | null | undefined, index = 0
       );
     }
     case ContentTypes.TEXT_DELTA: {
-      const { value } = splitText(part.text_delta ?? part.text);
-      return { type: 'text', text: value, state: 'streaming' };
+      const { type: _type, text, text_delta: textDelta, ...rest } = part;
+      const { value } = splitText(textDelta ?? text);
+      return withLibreChatMetadata(
+        { type: 'text', text: value, state: 'streaming' } satisfies UITextPart,
+        rest,
+      );
     }
     case ContentTypes.THINK: {
       const { type: _type, think, ...rest } = part;
@@ -440,7 +468,7 @@ export function toUIPart(part: MappableContentPart | null | undefined, index = 0
       });
     }
     case ContentTypes.TOOL_CALL:
-      return toToolPart(part, index);
+      return toToolPart(part, index, options);
     case ContentTypes.IMAGE_FILE: {
       const { type: _type, ...rest } = part;
       const { image_file: imageFile } = rest;
@@ -500,10 +528,13 @@ export function toUIPart(part: MappableContentPart | null | undefined, index = 0
 }
 
 /** Maps a content array to UI parts, one per slot, holes included. */
-export function toUIParts(content: ReadonlyArray<MappableContentPart | null | undefined>) {
+export function toUIParts(
+  content: ReadonlyArray<MappableContentPart | null | undefined>,
+  options?: UIMappingOptions,
+) {
   const parts: UIMessagePart[] = new Array(content.length);
   for (let i = 0; i < content.length; i++) {
-    parts[i] = toUIPart(content[i], i);
+    parts[i] = toUIPart(content[i], i, options);
   }
   return parts;
 }
@@ -584,6 +615,7 @@ const fromToolPart = (part: UIToolPart): TMessageContentParts => {
           outputs: part.output,
         },
         ...(part.state === 'output-error' && { runStepStatus: 'failed' as const }),
+        ...(part.state === 'output-available' && { runStepStatus: 'completed' as const }),
       },
     };
   }
@@ -744,7 +776,8 @@ const pushUnique = <T>(seen: Set<T>, value: T | undefined) => {
  * then web search sources. A message without `content` gets one text part from `text`.
  * One pass over the content builds both the parts and the metadata.
  */
-export function toUIMessage(message: TMessage): UIMessage {
+export function toUIMessage(message: TMessage, options?: UIMappingOptions): UIMessage {
+  const context: MappingContext = { ...options, message };
   const content = message.content;
   const parts: UIMessagePart[] = [];
   const agentIds = new Set<string>();
@@ -759,7 +792,7 @@ export function toUIMessage(message: TMessage): UIMessage {
   if (content && !contentless) {
     for (let i = 0; i < content.length; i++) {
       const part = content[i] as MappableContentPart | undefined;
-      const uiPart = toUIPart(part, i);
+      const uiPart = toUIPart(part, i, context);
       parts.push(uiPart);
       if (part == null) {
         continue;
@@ -922,8 +955,9 @@ const pickIdentity = <K extends 'conversationId' | 'parentMessageId'>(
 
 /**
  * Maps a `UIMessage` back onto a `TMessage`. `base` is the stored message with the same id,
- * whose fields the UI view does not carry (tree position, feedback, token counts) are kept;
- * without one the message is rebuilt from the view alone, metadata fields included.
+ * whose fields the UI view does not carry (tree position, feedback, token counts) are kept.
+ * A stored message round-trips only with its base: without one the message is rebuilt from the
+ * view and its metadata, and a file record keeps only what its part shows (path, name, type).
  * One pass over the parts collects the text, the content and the attachments.
  */
 export function fromUIMessage(message: UIMessage, base?: TMessage): TMessage {

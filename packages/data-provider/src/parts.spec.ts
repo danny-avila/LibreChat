@@ -1,4 +1,4 @@
-import type { MappableContentPart, UIMessagePart, UIToolPart } from './parts';
+import type { UIMappingOptions, MappableContentPart, UIMessagePart, UIToolPart } from './parts';
 import type { TMessageContentParts, PartMetadata } from './types/content';
 import type { TAttachment, TMessage } from './schemas';
 import type { Agents } from './types/agents';
@@ -225,6 +225,8 @@ const createMessage = (overrides: Partial<TMessage>): TMessage => ({
   text: '',
   ...overrides,
 });
+
+type ResolveToolFailure = NonNullable<UIMappingOptions['resolveToolFailure']>;
 
 describe('parts', () => {
   describe('toUIPart', () => {
@@ -966,6 +968,66 @@ describe('parts', () => {
       });
 
       expect(fromUIMessage(toUIMessage(message), message).files).toEqual([hidden, visible]);
+    });
+  });
+
+  describe('caller-supplied tool outcomes', () => {
+    it('keeps ownership metadata on a streamed text delta', () => {
+      const part = {
+        type: ContentTypes.TEXT_DELTA,
+        text_delta: 'chunk',
+        agentId: 'agent-a',
+        groupId: 2,
+      } as MappableContentPart;
+
+      expect(toUIPart(part)).toEqual({
+        type: 'text',
+        text: 'chunk',
+        state: 'streaming',
+        providerMetadata: { librechat: { agentId: 'agent-a', groupId: 2 } },
+      });
+    });
+
+    it('marks an empty hand-built array output completed', () => {
+      const part: UIToolPart = {
+        type: 'tool-code_interpreter',
+        toolCallId: 'ci-9',
+        state: 'output-available',
+        input: 'print()',
+        output: [],
+      };
+
+      expect(toUIPart(fromUIPart(part))).toMatchObject({ state: 'output-available' });
+    });
+
+    it('applies a failure the caller resolves from its own rules', () => {
+      const memory: TMessageContentParts = {
+        type: ContentTypes.TOOL_CALL,
+        tool_call: {
+          id: 'mem-1',
+          type: 'tool_call',
+          name: 'set_memory',
+          args: '{}',
+          output: 'Invalid key',
+        },
+      };
+      const message = createMessage({ content: [memory] });
+      const resolveToolFailure = jest.fn<string | undefined, Parameters<ResolveToolFailure>>(
+        (toolCall) =>
+          'name' in toolCall && toolCall.name === 'set_memory' && toolCall.output !== 'Memory set'
+            ? 'failed'
+            : undefined,
+      );
+
+      expect(toUIMessage(message).parts[0]).toMatchObject({ state: 'output-available' });
+      expect(toUIMessage(message, { resolveToolFailure }).parts[0]).toMatchObject({
+        state: 'output-error',
+        errorText: 'Invalid key',
+      });
+      expect(resolveToolFailure).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'mem-1' }),
+        message,
+      );
     });
   });
 
