@@ -15,6 +15,13 @@ on:
         description: 'Reason for manual trigger'
         required: false
         default: 'Manual e2e run'
+      coverage:
+        description: 'Coverage profile: full suite on both stores, or the PR shards'
+        type: choice
+        options:
+          - full
+          - pr
+        default: full
 
 permissions:
   contents: read
@@ -169,7 +176,7 @@ jobs:
         ${{
           (github.event_name == 'pull_request' && needs.codegraph_select.outputs.e2e_include != '' &&
           fromJSON(needs.codegraph_select.outputs.e2e_include)) ||
-          (github.event_name == 'pull_request' &&
+          ((github.event_name == 'pull_request' || inputs.coverage == 'pr') &&
           fromJSON('{"include":[{"name":"memory, shard 1/6","stream_store":"memory","redis_image":"","suite":"full","shard":"1/6","artifact":"memory-1-of-6"},{"name":"memory, shard 2/6","stream_store":"memory","redis_image":"","suite":"full","shard":"2/6","artifact":"memory-2-of-6"},{"name":"memory, shard 3/6","stream_store":"memory","redis_image":"","suite":"full","shard":"3/6","artifact":"memory-3-of-6"},{"name":"memory, shard 4/6","stream_store":"memory","redis_image":"","suite":"full","shard":"4/6","artifact":"memory-4-of-6"},{"name":"memory, shard 5/6","stream_store":"memory","redis_image":"","suite":"full","shard":"5/6","artifact":"memory-5-of-6"},{"name":"memory, shard 6/6","stream_store":"memory","redis_image":"","suite":"full","shard":"6/6","artifact":"memory-6-of-6"},{"name":"redis transport, shard 1/2","stream_store":"redis","redis_image":"redis:7-alpine","suite":"transport","shard":"1/2","artifact":"redis-transport-1-of-2"},{"name":"redis transport, shard 2/2","stream_store":"redis","redis_image":"redis:7-alpine","suite":"transport","shard":"2/2","artifact":"redis-transport-2-of-2"}]}')) ||
           fromJSON('{"include":[{"name":"memory, shard 1/2","stream_store":"memory","redis_image":"","suite":"full","shard":"1/2","artifact":"memory-1-of-2"},{"name":"memory, shard 2/2","stream_store":"memory","redis_image":"","suite":"full","shard":"2/2","artifact":"memory-2-of-2"},{"name":"redis, shard 1/2","stream_store":"redis","redis_image":"redis:7-alpine","suite":"full","shard":"1/2","artifact":"redis-1-of-2"},{"name":"redis, shard 2/2","stream_store":"redis","redis_image":"redis:7-alpine","suite":"full","shard":"2/2","artifact":"redis-2-of-2"}]}')
         }}

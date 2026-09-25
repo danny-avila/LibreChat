@@ -93,10 +93,21 @@ test('PR selection and fail-open defaults use six memory shards and two Redis tr
   assertPartition(prMatrix, 'redis', 'transport', 2);
 });
 
-test('nightly and manual runs retain full-suite coverage on both stores', () => {
+test('nightly and default manual runs retain full-suite coverage on both stores', () => {
+  assert.equal(workflow.on.workflow_dispatch.inputs.coverage.default, 'full');
   assert.equal(defaults[1].include.length, 4);
   assertPartition(defaults[1], 'memory', 'full', 2);
   assertPartition(defaults[1], 'redis', 'full', 2);
+});
+
+test('manual PR coverage opts into the PR fallback matrix without bypassing the PR author gate', () => {
+  assert.deepEqual(workflow.on.workflow_dispatch.inputs.coverage.options, ['full', 'pr']);
+  assert.match(
+    shards.strategy.matrix,
+    /github\.event_name == 'pull_request' \|\| inputs\.coverage == 'pr'/,
+  );
+  assert.match(shards.if, /github\.event_name == 'workflow_dispatch'/);
+  assert.match(shards.if, /github\.event\.pull_request\.author_association/);
 });
 
 test('every shard has a unique job name and artifact namespace', () => {
