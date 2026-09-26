@@ -95,7 +95,7 @@ export type BackgroundCompletionDiscardOutcome =
 
 /** Durable view and control of one principal's undelivered background completions. */
 export interface PendingBackgroundCompletionControls {
-  /** `complete` is false when more undelivered completions exist than were listed. */
+  /** `complete` is false when undelivered or dead-lettered results were truncated. */
   list: (input: { userId: string; conversationId: string }) => Promise<{
     completions: PendingBackgroundCompletion[];
     /** Completions whose automatic delivery dead-lettered; only a poll recovers them. */

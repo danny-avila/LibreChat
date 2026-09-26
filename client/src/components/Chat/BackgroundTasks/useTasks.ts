@@ -5,17 +5,18 @@ import { QueryKeys, dataService } from 'librechat-data-provider';
 import type { TMessage, ParentSubagentSummary } from 'librechat-data-provider';
 import type { TaskRow, ToolCallArgs } from './rows';
 import {
-  useBackgroundTasksQuery,
-  useSubagentControlMutation,
-  useCancelBackgroundTasksMutation,
-} from '~/data-provider';
-import {
   countActive,
   buildTaskRows,
   subagentTaskKey,
   findToolCallArgs,
+  countFailedDelivery,
   countAwaitingDelivery,
 } from './rows';
+import {
+  useBackgroundTasksQuery,
+  useSubagentControlMutation,
+  useCancelBackgroundTasksMutation,
+} from '~/data-provider';
 import { useParentSubagents } from '~/components/Chat/Subagents/ParentSubagentsProvider';
 import parseJsonField from '~/components/Chat/Messages/Content/Parts/parseJsonField';
 import { getToolCallIntent } from '~/components/Chat/Messages/Content/Parts/intent';
@@ -28,6 +29,10 @@ export type BackgroundTasksView = {
   activeCount: number;
   /** Finished results that will still arrive as a new agent turn. */
   awaitingCount: number;
+  /** Failed automatic deliveries still recoverable through an agent poll. */
+  failedCount: number;
+  /** A store outage or bounded list may hide remote results. */
+  incomplete: boolean;
   /** Whether the deployment lets users stop ordinary background tools. */
   toolsCancellable: boolean;
   isStopping: boolean;
@@ -266,6 +271,8 @@ export default function useBackgroundTasks({
     rows,
     activeCount: countActive(rows),
     awaitingCount: countAwaitingDelivery(rows),
+    failedCount: countFailedDelivery(rows),
+    incomplete: data?.complete === false,
     toolsCancellable,
     isStopping,
     stopFailed,

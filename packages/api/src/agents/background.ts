@@ -2807,7 +2807,7 @@ export async function runCheckBackgroundTask(params: {
       );
       if (durable.pendingTaskIds == null) {
         listWarnings.push(
-          'More undelivered results exist than could be listed; some not shown may still arrive as new turns.',
+          'The undelivered or failed result list may be incomplete; pending results not shown may still arrive as new turns.',
         );
       }
     } catch (error) {

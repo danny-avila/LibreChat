@@ -134,10 +134,12 @@ const isActive = (row: TaskRow) => row.status === 'running' || row.status === 's
 
 /** A finished result still on its way to the agent keeps the task relevant. */
 const isAwaitingDelivery = (row: TaskRow) => row.delivery === 'pending';
+const isFailedDelivery = (row: TaskRow) => row.delivery === 'failed';
 
 const rank = (row: TaskRow): number => {
-  if (isActive(row)) return 2;
-  return isAwaitingDelivery(row) ? 1 : 0;
+  if (isActive(row)) return 3;
+  if (isAwaitingDelivery(row)) return 2;
+  return isFailedDelivery(row) ? 1 : 0;
 };
 
 /**
@@ -173,6 +175,7 @@ export function buildTaskRows({
       (row) =>
         isActive(row) ||
         isAwaitingDelivery(row) ||
+        isFailedDelivery(row) ||
         row.settledAt == null ||
         now - row.settledAt <= RECENT_SUBAGENT_WINDOW_MS,
     )
@@ -186,3 +189,6 @@ export const countActive = (rows: readonly TaskRow[]) => rows.filter(isActive).l
 
 export const countAwaitingDelivery = (rows: readonly TaskRow[]) =>
   rows.filter(isAwaitingDelivery).length;
+
+export const countFailedDelivery = (rows: readonly TaskRow[]) =>
+  rows.filter(isFailedDelivery).length;

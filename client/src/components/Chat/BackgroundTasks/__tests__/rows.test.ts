@@ -3,6 +3,7 @@ import type { ParentSubagentSummary, TMessage } from 'librechat-data-provider';
 import {
   RECENT_SUBAGENT_WINDOW_MS,
   countAwaitingDelivery,
+  countFailedDelivery,
   buildTaskRows,
   findToolCallArgs,
   subagentTaskKey,
@@ -50,7 +51,11 @@ describe('buildTaskRows', () => {
           settledAt: iso(1_000),
         }),
         tool('old-pending', { delivery: 'pending' }),
-        tool('old-failed', { delivery: 'failed', startedAt: iso(3_000), settledAt: iso(2_000) }),
+        tool('old-failed', {
+          delivery: 'failed',
+          startedAt: iso(RECENT_SUBAGENT_WINDOW_MS * 3),
+          settledAt: iso(RECENT_SUBAGENT_WINDOW_MS * 3 - 1_000),
+        }),
         tool('old-delivered', { delivery: 'delivered' }),
         {
           ...tool('running', {}),
@@ -64,10 +69,11 @@ describe('buildTaskRows', () => {
     expect(rows.map((row) => [row.id, row.status, row.delivery])).toEqual([
       ['tool:running', 'running', undefined],
       ['tool:old-pending', 'completed', 'pending'],
-      ['tool:recent-delivered', 'completed', undefined],
       ['tool:old-failed', 'completed', 'failed'],
+      ['tool:recent-delivered', 'completed', undefined],
     ]);
     expect(countAwaitingDelivery(rows)).toBe(1);
+    expect(countFailedDelivery(rows)).toBe(1);
   });
 
   it('orders active rows first and drops subagents settled past the retention window', () => {

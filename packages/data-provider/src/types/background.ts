@@ -30,6 +30,8 @@ export type BackgroundTaskSummary = {
 export type BackgroundTaskIndex = {
   conversationId: string;
   tasks: BackgroundTaskSummary[];
+  /** False when the durable store is unavailable or its bounded list is incomplete. */
+  complete?: boolean;
   /** Whether the deployment accepts user cancellation of ordinary tools. */
   cancellable: boolean;
 };

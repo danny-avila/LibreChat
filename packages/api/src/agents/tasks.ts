@@ -166,6 +166,7 @@ export function createBackgroundTaskIndexHandler(deps: BackgroundTaskRouteDepend
           .filter(isSettled)
           .map((completion) => toCompletionSummary(completion, 'failed')),
       ],
+      complete: durable?.pendingTaskIds != null,
       cancellable: ordinaryToolCancellationEnabled(agentsConfig(req)),
     };
     res.status(200).json(body);

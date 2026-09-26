@@ -119,7 +119,12 @@ describe('background task routes', () => {
 
     const other = response();
     await handler(request({ userId: 'user-2', cancellation: false }), other);
-    expect(other.json).toHaveBeenCalledWith({ conversationId, tasks: [], cancellable: false });
+    expect(other.json).toHaveBeenCalledWith({
+      conversationId,
+      tasks: [],
+      complete: false,
+      cancellable: false,
+    });
   });
 
   describe('result delivery', () => {
@@ -152,6 +157,7 @@ describe('background task routes', () => {
       const res = response();
       await createBackgroundTaskIndexHandler({ registry, pending })(request(), res);
       expect(pending.list).toHaveBeenCalledWith({ userId: 'user-1', conversationId });
+      expect(res.json.mock.calls[0][0].complete).toBe(durable.complete);
       return res.json.mock.calls[0][0].tasks as Array<Record<string, unknown>>;
     };
 
@@ -226,9 +232,10 @@ describe('background task routes', () => {
       const res = response();
       await createBackgroundTaskIndexHandler({ registry, pending })(request(), res);
       expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json.mock.calls[0][0].tasks).toEqual([
-        expect.objectContaining({ taskId: task.id, delivery: 'pending' }),
-      ]);
+      expect(res.json.mock.calls[0][0]).toMatchObject({
+        complete: false,
+        tasks: [expect.objectContaining({ taskId: task.id, delivery: 'pending' })],
+      });
     });
   });
 
