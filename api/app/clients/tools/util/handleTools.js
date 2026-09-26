@@ -48,6 +48,7 @@ const {
   OpenWeather,
   StructuredSD,
   StructuredACS,
+  AzureSora,
   TraversaalSearch,
   StructuredWolfram,
   TavilySearchResults,
@@ -217,6 +218,7 @@ const loadTools = async ({
     wolfram: StructuredWolfram,
     'stable-diffusion': StructuredSD,
     'azure-ai-search': StructuredACS,
+    'azure-sora': AzureSora,
     traversaal_search: TraversaalSearch,
     tavily_search_results_json: TavilySearchResults,
   };
