@@ -417,7 +417,6 @@ export class MCPServersRegistry {
   public async resolveCachedAppServerConfig({
     serverName,
     userId,
-    role,
     mcpConfig,
     allowedDomains,
     allowedAddresses,
@@ -429,8 +428,11 @@ export class MCPServersRegistry {
     allowedDomains?: string[] | null;
     allowedAddresses?: string[] | null;
   }): Promise<t.MCPConnectionTarget | undefined> {
-    const baseConfigs = await this.getBaseServerConfigs(userId, role);
-    const base = baseConfigs[serverName];
+    // Validation concerns exactly one persisted binding. Avoid the all-server path here: besides
+    // doing unrelated ACL/decryption work, one slow or malformed server can otherwise prevent an
+    // independent inline App from ever reaching its sandbox. getServerConfig applies the same
+    // YAML-over-user precedence with an ACL-aware, per-server DB fallback.
+    const base = await this.getServerConfig(serverName, userId);
     const rawConfig = mcpConfig[serverName];
     let selectedConfig = base;
 
