@@ -378,28 +378,57 @@ const readToolCall = (toolCall: ToolCallValue): ToolCallFields => {
 export type UIMappingOptions = {
   /**
    * Returns a failure reason for a tool call the stored markers leave successful, or `undefined`.
-   * It receives the stored call; `toUIMessage` also passes the message, for its attachments.
+   * The reason becomes the part's `errorText`, since the stored output (a background dispatch
+   * handle, prose that reads as success) is not what established the failure; return the output
+   * itself when it is the message to show. It receives the stored call; `toUIMessage` also passes
+   * the message, for its attachments.
    */
   resolveToolFailure?: (toolCall: ToolCallValue, message?: TMessage) => string | undefined;
 };
 
 type MappingContext = UIMappingOptions & { message?: TMessage };
 
-const getToolFailure = (toolCall: ToolCallValue, output?: UIToolOutput): string | undefined => {
+/**
+ * `detail` says whether the stored output describes the failure (a failed step's partial output, an
+ * error the tool returned); when it does not, as with a cancelled background task whose output is
+ * the benign dispatch handle, the view reports the reason instead.
+ */
+type ToolFailure = { reason: string; detail: boolean };
+
+const getToolFailure = (
+  toolCall: ToolCallValue,
+  output?: UIToolOutput,
+): ToolFailure | undefined => {
   const { runStepStatus } = toolCall;
   if (runStepStatus === 'failed' || runStepStatus === 'cancelled') {
-    return runStepStatus;
+    return { reason: runStepStatus, detail: true };
   }
   if (typeof output === 'string' && isToolErrorOutput(output)) {
-    return 'failed';
+    return { reason: 'failed', detail: true };
   }
   if (!('name' in toolCall)) {
     return undefined;
   }
   if (toolCall.backgroundTask?.cancelled) {
-    return 'cancelled';
+    return { reason: 'cancelled', detail: false };
   }
-  return toolCall.inputValidationError ? 'input-validation-error' : undefined;
+  return toolCall.inputValidationError
+    ? { reason: 'input-validation-error', detail: true }
+    : undefined;
+};
+
+/** A caller-resolved failure is known from outside the output, so its reason is what the view shows. */
+const resolveFailure = (
+  toolCall: ToolCallValue,
+  output: UIToolOutput | undefined,
+  context?: MappingContext,
+): ToolFailure | undefined => {
+  const stored = getToolFailure(toolCall, output);
+  if (stored) {
+    return stored;
+  }
+  const reason = context?.resolveToolFailure?.(toolCall, context.message);
+  return reason ? { reason, detail: false } : undefined;
 };
 
 const getToolApproval = (toolCall: ToolCallValue): UIToolApproval | undefined => {
@@ -419,8 +448,7 @@ const toToolPart = (
   const { name, id, args, output, submitted } = readToolCall(toolCall);
   const { input, complete } = parseToolInput(args);
   const { runStepStatus, progress } = toolCall;
-  const failure =
-    getToolFailure(toolCall, output) ?? context?.resolveToolFailure?.(toolCall, context.message);
+  const failure = resolveFailure(toolCall, output, context);
   const approval = submitted ? undefined : getToolApproval(toolCall);
 
   let state: UIToolState = complete ? 'input-available' : 'input-streaming';
@@ -439,7 +467,7 @@ const toToolPart = (
     ...(input !== undefined && { input }),
     ...(state === 'output-available' && output !== undefined && { output }),
     ...(state === 'output-error' && {
-      errorText: typeof output === 'string' && output ? output : failure,
+      errorText: failure?.detail && typeof output === 'string' && output ? output : failure?.reason,
     }),
     ...(state === 'approval-requested' && { approval }),
     callProviderMetadata: { librechat: { ...partMetadata, toolCall } },

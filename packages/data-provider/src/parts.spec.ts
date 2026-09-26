@@ -681,7 +681,7 @@ describe('parts', () => {
       });
       const rejected = toolCall({ id: 'call-2', progress: 1, inputValidationError: true });
 
-      expect(toUIPart(cancelled)).toMatchObject({ state: 'output-error', errorText: 'partial' });
+      expect(toUIPart(cancelled)).toMatchObject({ state: 'output-error', errorText: 'cancelled' });
       expect(toUIPart(rejected)).toMatchObject({
         state: 'output-error',
         errorText: 'input-validation-error',
@@ -1070,7 +1070,7 @@ describe('parts', () => {
       const resolveToolFailure = jest.fn<string | undefined, Parameters<ResolveToolFailure>>(
         (toolCall) =>
           'name' in toolCall && toolCall.name === 'set_memory' && toolCall.output !== 'Memory set'
-            ? 'failed'
+            ? toolCall.output
             : undefined,
       );
 
@@ -1083,6 +1083,53 @@ describe('parts', () => {
         expect.objectContaining({ id: 'mem-1' }),
         message,
       );
+    });
+  });
+
+  describe('failure reasons', () => {
+    const dispatchHandle = JSON.stringify({ taskId: 't-1', status: 'running' });
+    const detached = (fields: Partial<Agents.ToolCall> & PartMetadata): TMessageContentParts => ({
+      type: ContentTypes.TOOL_CALL,
+      tool_call: {
+        id: 'bg-1',
+        type: 'tool_call',
+        name: 'bash',
+        args: '{}',
+        output: dispatchHandle,
+        progress: 1,
+        ...fields,
+      },
+    });
+
+    it('reports a cancelled background task by its reason, not its dispatch handle', () => {
+      const part = detached({
+        backgroundTask: {
+          version: 1,
+          taskId: 't-1',
+          toolName: 'bash',
+          status: 'completed',
+          cancelled: true,
+          settledAt: new Date(0),
+        },
+      });
+
+      expect(toUIPart(part)).toMatchObject({ state: 'output-error', errorText: 'cancelled' });
+    });
+
+    it('reports a caller-resolved failure by the reason the caller returns', () => {
+      const message = createMessage({ content: [detached({})] });
+      const resolveToolFailure: ResolveToolFailure = () => 'Task exited with code 1';
+
+      expect(toUIMessage(message, { resolveToolFailure }).parts[0]).toMatchObject({
+        state: 'output-error',
+        errorText: 'Task exited with code 1',
+      });
+    });
+
+    it('keeps a failed step output as the error text', () => {
+      const part = detached({ output: 'partial', runStepStatus: 'failed' });
+
+      expect(toUIPart(part)).toMatchObject({ state: 'output-error', errorText: 'partial' });
     });
   });
 
