@@ -746,6 +746,8 @@ function getAlwaysApplyFrontmatterValue(
 }
 
 export type UpsertSkillFileInput = {
+  /** When supplied, replace only this stored revision; never recreate a deleted file. */
+  expectedFileId?: string;
   skillId: Types.ObjectId | string;
   relativePath: string;
   file_id: string;
@@ -758,7 +760,7 @@ export type UpsertSkillFileInput = {
   mimeType: string;
   bytes: number;
   isExecutable?: boolean;
-  author: Types.ObjectId;
+  author: Types.ObjectId | string;
   tenantId?: string;
 };
 
@@ -1095,6 +1097,7 @@ export function createSkillMethods(
     skillId: Types.ObjectId | string,
     relativePath: string,
     update: { content?: string; isBinary?: boolean },
+    expectedFileId?: string,
   ) => Promise<void>;
   updateSkillFileCodeEnvIds: (
     updates: Array<{
@@ -1869,7 +1872,11 @@ export function createSkillMethods(
     const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
     const category = inferSkillFileCategory(row.relativePath);
     const result = (await SkillFile.findOneAndUpdate(
-      { skillId: row.skillId, relativePath: row.relativePath },
+      {
+        skillId: row.skillId,
+        relativePath: row.relativePath,
+        ...(row.expectedFileId != null ? { file_id: row.expectedFileId } : {}),
+      },
       {
         $set: {
           skillId: row.skillId,
@@ -1890,9 +1897,14 @@ export function createSkillMethods(
         },
         $unset: { content: '', isBinary: '', codeEnvRef: '', codeEnvRefs: '' },
       },
-      { new: true, upsert: true, includeResultMetadata: true },
+      { new: true, upsert: row.expectedFileId == null, includeResultMetadata: true },
     ).lean()) as unknown as SkillFileUpsertResult;
     const current = result.value;
+    if (!current && row.expectedFileId != null) {
+      throw Object.assign(new Error('Skill file changed since it was read'), {
+        code: 'SKILL_FILE_CONFLICT',
+      });
+    }
     if (!current) {
       const error = new Error('Skill file upsert failed to read the saved file row');
       (error as Error & { code?: string }).code = 'SKILL_FILE_UPSERT_NOT_FOUND';
@@ -1930,9 +1942,13 @@ export function createSkillMethods(
     skillId: Types.ObjectId | string,
     relativePath: string,
     update: { content?: string; isBinary?: boolean },
+    expectedFileId?: string,
   ): Promise<void> {
     const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
-    await SkillFile.updateOne({ skillId, relativePath }, { $set: update });
+    await SkillFile.updateOne(
+      { skillId, relativePath, ...(expectedFileId != null ? { file_id: expectedFileId } : {}) },
+      { $set: update },
+    );
   }
 
   async function updateSkillFileCodeEnvIds(
