@@ -66,6 +66,7 @@ describe('createAppConfigService', () => {
       const config = await getAppConfig();
 
       expect(deps.loadBaseConfig).toHaveBeenCalledTimes(1);
+      expect(deps.loadBaseConfig).toHaveBeenCalledWith('startup');
       expect(config).toEqual(deps._baseConfig);
     });
 
@@ -104,6 +105,56 @@ describe('createAppConfigService', () => {
       await getAppConfig({ refresh: true });
 
       expect(deps.loadBaseConfig).toHaveBeenCalledTimes(2);
+      expect(deps.loadBaseConfig).toHaveBeenLastCalledWith('reload');
+    });
+
+    it.each(['invalid YAML', 'missing local file', 'remote fetch failure'])(
+      'keeps the last good base config when reload fails: %s',
+      async (message) => {
+        const deps = createDeps();
+        const { getAppConfig, clearAppConfigCache } = createAppConfigService(deps);
+        const initial = await getAppConfig({ baseOnly: true });
+        deps.loadBaseConfig.mockRejectedValueOnce(new Error(message));
+
+        await clearAppConfigCache();
+        const reloaded = await getAppConfig({ baseOnly: true });
+
+        expect(reloaded).toBe(initial);
+        expect(deps._cache._store.get('app_config:_BASE_')).toBe(initial);
+        expect(deps.loadBaseConfig).toHaveBeenLastCalledWith('reload');
+      },
+    );
+
+    it('single-flights concurrent base config reloads', async () => {
+      const deps = createDeps();
+      const { getAppConfig, clearAppConfigCache } = createAppConfigService(deps);
+      const initial = await getAppConfig({ baseOnly: true });
+      await clearAppConfigCache();
+
+      let resolveReload: ((config: AppConfig) => void) | undefined;
+      deps.loadBaseConfig.mockImplementationOnce(
+        () =>
+          new Promise<AppConfig>((resolve) => {
+            resolveReload = resolve;
+          }),
+      );
+      const reloads = Array.from({ length: 10 }, () => getAppConfig({ baseOnly: true }));
+      await Promise.resolve();
+      expect(deps.loadBaseConfig).toHaveBeenCalledTimes(2);
+
+      const next = { ...initial, interfaceConfig: { modelSelect: false } };
+      resolveReload?.(next);
+      await expect(Promise.all(reloads)).resolves.toEqual(Array(10).fill(next));
+      expect(deps.loadBaseConfig).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not convert a startup load failure into an empty config', async () => {
+      const failure = new Error('invalid startup config');
+      const deps = createDeps({ loadBaseConfig: jest.fn().mockRejectedValue(failure) });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      await expect(getAppConfig({ baseOnly: true })).rejects.toBe(failure);
+      expect(deps.loadBaseConfig).toHaveBeenCalledWith('startup');
     });
 
     it('queries DB for applicable configs', async () => {
