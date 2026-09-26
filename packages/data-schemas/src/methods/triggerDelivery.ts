@@ -2418,7 +2418,9 @@ export function createAgentTriggerDeliveryMethods(
       }
       return { completions: completions.reverse(), dead, truncated: rows.length > limit };
     };
-    const first = classify(await read({ status: { $in: [...UNDELIVERED_STATUSES, ...DEAD_STATUSES] } }));
+    const first = classify(
+      await read({ status: { $in: [...UNDELIVERED_STATUSES, ...DEAD_STATUSES] } }),
+    );
     if (!first.truncated) return first;
 
     /** Overfull conversations need separate bounded reads so old dead letters

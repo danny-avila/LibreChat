@@ -3888,7 +3888,7 @@ describe('runCheckBackgroundTask delivery semantics', () => {
     );
     expect(listed.outstanding).toBe(1);
     expect(listed.partial).toBe(true);
-    expect(listed.warning).toContain('More undelivered results exist');
+    expect(listed.warning).toContain('result list may be incomplete');
   });
 
   it('lets a finished local task be cancelled without the live-cancellation policy', async () => {

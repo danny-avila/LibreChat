@@ -141,9 +141,11 @@ describe('BackgroundTasksButton', () => {
       try {
         const old = new Date(Date.now() - 2 * 60 * 60_000).toISOString();
         const startedAt = new Date(Date.now() - 2 * 60 * 60_000 - 1_000).toISOString();
-        jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(
-          index({ tasks: [{ ...index().tasks[1], startedAt, settledAt: old, delivery }] }),
-        );
+        jest
+          .spyOn(dataService, 'getBackgroundTasks')
+          .mockResolvedValue(
+            index({ tasks: [{ ...index().tasks[1], startedAt, settledAt: old, delivery }] }),
+          );
         renderButton([], []);
         await act(async () => {
           await jest.advanceTimersByTimeAsync(100);
@@ -171,7 +173,9 @@ describe('BackgroundTasksButton', () => {
   it('announces a failed-only result inside the task list after its tool settled hours ago', async () => {
     const old = new Date(Date.now() - 2 * 60 * 60_000).toISOString();
     jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(
-      index({ tasks: [{ ...index().tasks[1], startedAt: old, settledAt: old, delivery: 'failed' }] }),
+      index({
+        tasks: [{ ...index().tasks[1], startedAt: old, settledAt: old, delivery: 'failed' }],
+      }),
     );
     renderButton([], []);
     const trigger = await screen.findByTestId('header-background-tasks-button');
