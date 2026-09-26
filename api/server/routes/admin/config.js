@@ -8,7 +8,11 @@ const {
   hasAnyConfigReadAccess,
   getReadableConfigSections,
 } = require('~/server/middleware/roles/capabilities');
-const { getAppConfig, invalidateConfigCaches } = require('~/server/services/Config');
+const {
+  getAppConfig,
+  invalidateConfigCaches,
+  reloadCustomConfig,
+} = require('~/server/services/Config');
 const { requireJwtAuth } = require('~/server/middleware');
 const db = require('~/models');
 
@@ -31,12 +35,14 @@ const handlers = createAdminConfigHandlers({
   hasCapability,
   getAppConfig,
   invalidateConfigCaches,
+  reloadCustomConfig,
 });
 
 router.use(requireJwtAuth, requireAdminAccess);
 
 router.get('/', handlers.listConfigs);
 router.get('/base', handlers.getBaseConfig);
+router.post('/reload', handlers.reloadConfig);
 router.get('/:principalType/:principalId', handlers.getConfig);
 router.put('/:principalType/:principalId', handlers.upsertConfigOverrides);
 router.patch('/:principalType/:principalId/fields', handlers.patchConfigField);
