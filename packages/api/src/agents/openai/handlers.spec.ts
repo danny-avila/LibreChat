@@ -7,6 +7,7 @@ import {
   buildCompletionUsage,
   OpenAIModelEndHandler,
   createOpenAIStreamTracker,
+  createOpenAIContentAggregator,
   createOpenAIHandlers,
   createChunk,
   writeSSE,
