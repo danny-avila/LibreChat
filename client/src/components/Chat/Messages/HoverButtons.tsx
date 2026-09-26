@@ -17,10 +17,10 @@ import { useOptionalMessagesOperations } from '~/Providers';
 import { hasEditablePart } from './Content/editableParts';
 import { revealedQueuedTurnFamily } from '~/store/steer';
 import { Fork } from '~/components/Conversations';
+import { cn, getAllContentText } from '~/utils';
 import { hoverButtonClasses } from './styles';
 import MessageAudio from './MessageAudio';
 import Feedback from './Feedback';
-import { cn } from '~/utils';
 import store from '~/store';
 
 type THoverButtons = {
@@ -50,38 +50,6 @@ type HoverButtonProps = {
   buttonStyle?: string;
   dataTestId?: string;
   disabled?: boolean;
-};
-
-const extractMessageContent = (message: TMessage): string => {
-  if (typeof message.content === 'string') {
-    return message.content;
-  }
-
-  if (Array.isArray(message.content)) {
-    return message.content
-      .map((part) => {
-        if (part == null) {
-          return '';
-        }
-        if (typeof part === 'string') {
-          return part;
-        }
-        if ('text' in part) {
-          return part.text || '';
-        }
-        if ('think' in part) {
-          const think = part.think;
-          if (typeof think === 'string') {
-            return think;
-          }
-          return think && 'text' in think ? think.text || '' : '';
-        }
-        return '';
-      })
-      .join('');
-  }
-
-  return message.text || '';
 };
 
 const HoverButton = memo(
@@ -229,7 +197,7 @@ const HoverButtons = ({
           index={index}
           isLast={isLast}
           messageId={message.messageId}
-          content={extractMessageContent(message)}
+          content={getAllContentText(message)}
           renderButton={(props) => (
             <HoverButton
               onClick={props.onClick}
