@@ -64,6 +64,7 @@ import { MCPConnectionFactory } from './MCPConnectionFactory';
 import { processMCPEnv, isPluginSourced } from '~/utils/env';
 import { OAuthLifecycleRelay } from './oauth/pending';
 import { isOwnedAbortError } from '~/utils/errors';
+import { withMCPRequestSignal } from './signal';
 import { MCPConnection } from './connection';
 import { mcpConfig } from './mcpConfig';
 
@@ -1835,20 +1836,23 @@ Please follow these instructions when using tools from the respective MCP server
         }
 
         const requestTool = () =>
-          connection!.client.request(
-            {
-              method: 'tools/call',
-              params: {
-                name: toolName,
-                arguments: toolArguments,
+          withMCPRequestSignal(options?.signal, (signal) =>
+            connection!.client.request(
+              {
+                method: 'tools/call',
+                params: {
+                  name: toolName,
+                  arguments: toolArguments,
+                },
               },
-            },
-            CallToolResultSchema,
-            {
-              timeout: connection!.timeout,
-              resetTimeoutOnProgress: true,
-              ...options,
-            },
+              CallToolResultSchema,
+              {
+                timeout: connection!.timeout,
+                resetTimeoutOnProgress: true,
+                ...options,
+                signal,
+              },
+            ),
           );
 
         // Deliberately use `request`: the typed wrapper also enforces the tool's output schema and

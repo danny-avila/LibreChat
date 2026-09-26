@@ -80,12 +80,27 @@ function SubagentControlHistory({
             key={control.invocationId}
             className="border-border-light bg-surface-secondary rounded-lg border px-3 py-2 text-sm"
           >
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <StatusIcon size={14} aria-hidden className="text-text-secondary shrink-0" />
-              <span className="font-medium">{localize(CONTROL_ACTION_LABELS[control.action])}</span>
-              <span className="text-text-secondary ml-auto text-xs" aria-live="polite">
+              <span className="min-w-0 flex-1 font-medium">
+                {localize(CONTROL_ACTION_LABELS[control.action])}
+              </span>
+              <span className="text-text-secondary ml-auto shrink-0 text-xs" aria-live="polite">
                 {localize(CONTROL_STATUS_LABELS[control.status])}
               </span>
+              {control.status === 'accepted' &&
+                control.controlId != null &&
+                onCancelControl != null && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 shrink-0 px-2 text-xs"
+                    onClick={() => onCancelControl(control.controlId as string)}
+                  >
+                    {localize('com_ui_subagent_control_withdraw')}
+                  </Button>
+                )}
             </div>
             {control.message != null && control.message !== '' && (
               <div className="text-text-secondary mt-1 break-words">
@@ -105,19 +120,6 @@ function SubagentControlHistory({
                 )}
               </div>
             )}
-            {control.status === 'accepted' &&
-              control.controlId != null &&
-              onCancelControl != null && (
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="mt-1 h-7 px-2 text-xs"
-                  onClick={() => onCancelControl(control.controlId as string)}
-                >
-                  {localize('com_ui_subagent_control_withdraw')}
-                </Button>
-              )}
           </div>
         );
       })}

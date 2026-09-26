@@ -2391,11 +2391,6 @@
       "count": 2
     }
   },
-  "packages/client/src/components/ControlCombobox.tsx": {
-    "shadcn/no-inline-styles": {
-      "count": 1
-    }
-  },
   "packages/client/src/components/DataTable.tsx": {
     "shadcn/no-inline-styles": {
       "count": 6

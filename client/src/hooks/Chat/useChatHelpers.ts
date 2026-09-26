@@ -162,6 +162,7 @@ export default function useChatHelpers(index = 0, paramId?: string): ChatContrac
     conversation,
     latestMessage,
     setSubmission,
+    setConversation,
   });
 
   const askRef = useRef(_ask);

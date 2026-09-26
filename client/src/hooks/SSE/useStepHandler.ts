@@ -59,6 +59,7 @@ type TUseStepHandler = {
    * invalidation) so this hook stays free of query-client coupling.
    */
   onSkillAuthoringComplete?: () => void;
+  onSubagentIndexChange?: (conversationId: string) => void;
 };
 
 type TStepEvent =
@@ -82,6 +83,7 @@ export default function useStepHandler({
   announcePolite,
   lastAnnouncementTimeRef,
   onSkillAuthoringComplete,
+  onSubagentIndexChange,
 }: TUseStepHandler) {
   const subagentStore = useStore();
   const toolCallIdMap = useRef(new Map<string, string | undefined>());
@@ -831,6 +833,18 @@ export default function useStepHandler({
           responseMessageId = submission?.initialResponse?.messageId ?? '';
         }
         applySubagentUpdate(stepEvent.data, responseMessageId);
+        if (
+          stepEvent.data.phase === 'start' ||
+          stepEvent.data.phase === 'stop' ||
+          stepEvent.data.phase === 'error'
+        ) {
+          const conversationId = [
+            submission?.userMessage?.conversationId,
+            submission?.initialResponse?.conversationId,
+            submission?.conversation?.conversationId,
+          ].find((id) => id && id !== Constants.NEW_CONVO && id !== Constants.PENDING_CONVO);
+          if (conversationId) onSubagentIndexChange?.(conversationId);
+        }
       } else if (stepEvent.event === StepEvents.ON_SUMMARIZE_START) {
         announcePolite({ message: 'summarize_started', isStatus: true });
       } else if (stepEvent.event === StepEvents.ON_SUMMARIZE_DELTA) {
@@ -907,6 +921,7 @@ export default function useStepHandler({
       setMessages,
       getCurrentMessages,
       applySubagentUpdate,
+      onSubagentIndexChange,
       setSandboxStarting,
       clearSandboxStarting,
       applyPtcToolCall,

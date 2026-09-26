@@ -750,6 +750,12 @@ endpoints:
   #   # "stateful_code_sessions" is highly experimental and may change substantially.
   #   # (optional) Limit the workspace scopes users may select. Omit to allow all three.
   #   statefulCodeSessions:
+  #     # Keep move-only behavior unless attach/detach is explicitly enabled.
+  #     # Enable only after ALL API replicas run this build and advertise decision protocol 1
+  #     # (CODE_ENVIRONMENT_DECISION_VERSION=1), then refresh clients.
+  #     conversationMoves:
+  #       enabled: true
+  #       allowAttachDetach: false
   #     allowedEnvironments: ["user", "agent-user", "conversation"]
   #     # Personal BYOM enrollment. Requires allowPrincipalWorkers on a control plane.
   #     # Omitted values default to enabled and five registered environments per user.
@@ -1466,7 +1472,11 @@ endpoints:
 #   messages:
 #     unattributedAssistantContent: model_output # `model_output` (default) or `inspect`
 #     pii:
-#       action: audit # `block` (default) or `audit`
+#       action: audit # `block` (default), `audit`, or `redact` (reserved for transformation-aware ingress; current routes still block)
+#       # `redact` requires the later encrypted owner-view and canonical-message integration.
+#       # maxCharacters: 65536 # bounded total inspected text per transformation session
+#       # maxMatches: 256 # bounded matches per transformation session
+#       # Custom patterns may set category: email, phone, name, credential, or custom.
 #       fields: [name, text, summary, quote, answer, decision_response, decision_reason, content_part, attachment_reference, assembled_context]
 #       starterPatterns: [sk_prefix, bearer_header, api_key_header]
 #       customPatterns:

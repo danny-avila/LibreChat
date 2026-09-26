@@ -47,6 +47,7 @@ export * from './types/insights';
 export * from './types/traces';
 export * from './types/transport';
 export * from './types/subagents';
+export * from './types/background';
 export * from './types/queuedTurns';
 /* access permissions */
 export * from './accessPermissions';
