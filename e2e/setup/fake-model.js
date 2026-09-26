@@ -49,6 +49,7 @@ const STEER_SPLIT_REPLY_MARKER = 'E2E_STEER_SPLIT_REPLY:';
 const STEER_LATE_REPLY_MARKER = 'E2E_STEER_LATE_REPLY:';
 const ACTIVITY_REPLY_MARKER = 'E2E_ACTIVITY_REPLY:';
 const ACTIVITY_PHASE_REPLY_MARKER = 'E2E_ACTIVITY_PHASE_REPLY:';
+const ACTIVITY_FAILED_REPLY_MARKER = 'E2E_ACTIVITY_FAILED_REPLY:';
 const ASK_USER_QUESTION_MARKER = 'E2E_ASK_USER_QUESTION:';
 const RESUME_ICON_REPLY_MARKER = 'E2E_RESUME_ICON_REPLY:';
 const FORCED_ERROR_MARKER = 'E2E_FORCED_ERROR:';
@@ -100,6 +101,8 @@ const STEER_LATE_FINAL_TEXT = 'E2E steer late reply done';
 const SLOW_REPLY_CONTINUATION_TEXT = 'E2E slow reply continued';
 const ACTIVITY_FINAL_TEXT = 'E2E activity reply done';
 const ACTIVITY_PHASE_FINAL_TEXT = 'E2E activity phase reply done';
+const ACTIVITY_FAILED_FINAL_TEXT = 'E2E activity failed reply done';
+const SLOW_ECHO_TOOL_NAME_PREFIX = 'slow_echo';
 const STEER_TOOL_NAME_PREFIX = 'remember_fact';
 const ASK_USER_QUESTION_TOOL_NAME = 'ask_user_question';
 const SLOW_CHUNK_DELAY_MS = Number(process.env.MOCK_LLM_SLOW_CHUNK_DELAY_MS) || 35;
@@ -1464,6 +1467,81 @@ function activityPhaseReplyResponses(label, toolNames) {
         };
       }
       return { response: `${ACTIVITY_PHASE_FINAL_TEXT} ${label}` };
+    },
+  };
+}
+
+/**
+ * A phase whose middle batch holds a failed call beside a slow one: `slow_echo`
+ * called without its required `text` fails schema validation before the tool
+ * runs, and a second `slow_echo` keeps the batch live for `delay` ms so a spec
+ * can watch the fold while it streams.
+ */
+function activityFailedReplyResponses(label, toolNames) {
+  const rememberTool = Array.from(toolNames).find((name) =>
+    name.startsWith(STEER_TOOL_NAME_PREFIX),
+  );
+  const slowTool = Array.from(toolNames).find((name) =>
+    name.startsWith(SLOW_ECHO_TOOL_NAME_PREFIX),
+  );
+  if (!rememberTool || !slowTool) {
+    return {
+      responses: [
+        `E2E activity failed reply unavailable: ${STEER_TOOL_NAME_PREFIX} and ${SLOW_ECHO_TOOL_NAME_PREFIX} tools required.`,
+      ],
+    };
+  }
+  let invocation = 0;
+  return {
+    responses: [''],
+    resolveInvocation: async () => {
+      invocation += 1;
+      if (invocation === 1) {
+        return {
+          response: '',
+          toolCalls: [
+            {
+              id: `call_e2e_activity_failed_alpha_${label}`,
+              name: rememberTool,
+              args: { fact: `activity failed alpha ${label}` },
+              type: 'tool_call',
+            },
+          ],
+        };
+      }
+      if (invocation === 2) {
+        return {
+          response: '',
+          toolCalls: [
+            {
+              id: `call_e2e_activity_failed_broken_${label}`,
+              name: slowTool,
+              args: { delay_ms: 10 },
+              type: 'tool_call',
+            },
+            {
+              id: `call_e2e_activity_failed_slow_${label}`,
+              name: slowTool,
+              args: { text: `activity failed slow ${label}`, delay_ms: 4000 },
+              type: 'tool_call',
+            },
+          ],
+        };
+      }
+      if (invocation === 3) {
+        return {
+          response: '',
+          toolCalls: [
+            {
+              id: `call_e2e_activity_failed_beta_${label}`,
+              name: rememberTool,
+              args: { fact: `activity failed beta ${label}` },
+              type: 'tool_call',
+            },
+          ],
+        };
+      }
+      return { response: `${ACTIVITY_FAILED_FINAL_TEXT} ${label}` };
     },
   };
 }
@@ -2979,6 +3057,11 @@ function resolveResponses({ graph, messages, text, toolNames }) {
   const activityPhaseLabel = getMarkerValue(text, ACTIVITY_PHASE_REPLY_MARKER);
   if (activityPhaseLabel) {
     return activityPhaseReplyResponses(activityPhaseLabel, toolNames);
+  }
+
+  const activityFailedLabel = getMarkerValue(text, ACTIVITY_FAILED_REPLY_MARKER);
+  if (activityFailedLabel) {
+    return activityFailedReplyResponses(activityFailedLabel, toolNames);
   }
 
   const askUserQuestionLabel = getMarkerValue(text, ASK_USER_QUESTION_MARKER);

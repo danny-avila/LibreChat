@@ -24,6 +24,14 @@ describe('firstErrorLine', () => {
     expect(firstErrorLine('Error processing tool: disk full')).toBe('disk full');
   });
 
+  it('strips a bare error prefix such as schema-validation feedback', () => {
+    expect(
+      firstErrorLine(
+        'Error: Tool "slow_echo" input failed schema validation.\n Please fix your mistakes.',
+      ),
+    ).toBe('Tool "slow_echo" input failed schema validation.');
+  });
+
   it('is empty for no output', () => {
     expect(firstErrorLine(undefined)).toBe('');
     expect(firstErrorLine('')).toBe('');

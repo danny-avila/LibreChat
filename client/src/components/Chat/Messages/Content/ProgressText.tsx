@@ -135,15 +135,25 @@ export default function ProgressText({
             {icon}
           </span>
         )}
-        <span className={cn(showShimmer ? 'shimmer' : '', 'min-w-0 truncate font-medium')}>
+        {/* The label names the card and stays whole; a subtitle can be
+            arbitrary authored text (a question, an error line), so it takes
+            ALL of the shrink and ellipsizes instead of pushing the line past
+            the message column. All, not most: a weighted share left the label
+            a fraction of a pixel short of its text, and that fraction is
+            enough for `truncate` to swap its last letters for an ellipsis.
+            `max-w-full` keeps a label wider than the row from overflowing it
+            now that nothing else can shrink the label. */}
+        <span
+          className={cn(
+            showShimmer ? 'shimmer' : '',
+            'min-w-0 max-w-full truncate font-medium',
+            subtitle && 'shrink-0',
+          )}
+        >
           {text}
         </span>
-        {/* The label names the card and stays whole; a subtitle can be
-            arbitrary authored text (a question, a server name), so it takes
-            essentially all of the shrink and ellipsizes instead of pushing
-            the line past the message column. */}
         {subtitle && (
-          <span className="min-w-0 shrink-[100] truncate font-normal text-text-secondary">
+          <span className="min-w-0 shrink truncate font-normal text-text-secondary">
             {subtitle}
           </span>
         )}

@@ -347,7 +347,7 @@ export default function ToolCall({
       /** The subject is the work the call named for itself, as on the live
        *  header and the collapsed card's peek, so the same failure reads the
        *  same wherever it is summarized. */
-      const subject = intent ?? function_name;
+      const subject = intent ?? displayFunctionName;
       return subject
         ? localize('com_ui_failed_subject', { 0: subject })
         : localize('com_ui_failed');
