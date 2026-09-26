@@ -1,5 +1,6 @@
-import { useSprings, animated, SpringConfig } from '@react-spring/web';
 import { useEffect, useRef, useState } from 'react';
+import { useSprings, animated } from '@react-spring/web';
+import type { SpringConfig } from '@react-spring/web';
 
 interface SegmenterOptions {
   granularity?: 'grapheme' | 'word' | 'sentence';
@@ -71,7 +72,8 @@ const SplitText: React.FC<SplitTextProps> = ({
   onLetterAnimationComplete,
   onLineCountChange,
 }) => {
-  const words = text.split(' ').map(splitGraphemes);
+  const containsRtl = /[\p{Script=Arabic}\p{Script=Hebrew}]/u.test(text);
+  const words = containsRtl ? [[text]] : text.split(' ').map(splitGraphemes);
   const letters = words.flat();
   const [inView, setInView] = useState(false);
   const ref = useRef<HTMLParagraphElement>(null);
@@ -138,12 +140,16 @@ const SplitText: React.FC<SplitTextProps> = ({
       <span className="sr-only">{text}</span>
       <p
         ref={ref}
+        dir="auto"
         className={`split-parent inline overflow-hidden ${className}`}
         style={{ textAlign, whiteSpace: 'normal', wordWrap: 'break-word' }}
         aria-hidden="true"
       >
         {words.map((word, wordIndex) => (
-          <span key={wordIndex} style={{ display: 'inline-block', whiteSpace: 'nowrap' }}>
+          <span
+            key={wordIndex}
+            style={{ display: 'inline-block', whiteSpace: containsRtl ? 'normal' : 'nowrap' }}
+          >
             {word.map((letter, letterIndex) => {
               const index =
                 words.slice(0, wordIndex).reduce((acc, w) => acc + w.length, 0) + letterIndex;
