@@ -64,7 +64,7 @@ const { getAppConfig, replaceBaseConfig, clearAppConfigCache, clearOverrideCache
     cacheKeys: CacheKeys,
     getApplicableConfigs: db.getApplicableConfigs,
     getUserPrincipals: db.getUserPrincipals,
-    syncConfigGeneration: configGeneration.check,
+    ...(configGeneration.distributed ? { syncConfigGeneration: configGeneration.check } : {}),
     augmentConfig: ({ appConfig, baseConfig, principals, options }) => {
       if (!options.userId) return appConfig;
       return mergeAccessibleCodeEnvironments({

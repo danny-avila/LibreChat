@@ -339,6 +339,9 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
    * Returns the `_BASE_` config (YAML + AppService). No DB queries.
    */
   async function ensureBaseConfig(refresh?: boolean): Promise<AppConfig> {
+    if (!syncConfigGeneration) {
+      return readBaseConfig(refresh);
+    }
     const generationChange = await applyRemoteGeneration();
     const previousRevision = baseConfigRevision;
     const baseConfig = await readBaseConfig(refresh);
