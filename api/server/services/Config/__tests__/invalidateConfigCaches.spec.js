@@ -2,6 +2,7 @@
 
 const mockClearAppConfigCache = jest.fn().mockResolvedValue(undefined);
 const mockClearOverrideCache = jest.fn().mockResolvedValue(undefined);
+const mockReplaceBaseConfig = jest.fn().mockResolvedValue(undefined);
 
 jest.mock('~/cache/getLogStores', () => {
   return jest.fn(() => ({}));
@@ -36,9 +37,18 @@ const mockClearMcpConfigCache = jest.fn().mockResolvedValue(undefined);
 jest.mock('@librechat/api', () => ({
   createAppConfigService: jest.fn(() => ({
     getAppConfig: jest.fn().mockResolvedValue({ availableTools: {} }),
+    replaceBaseConfig: mockReplaceBaseConfig,
     clearAppConfigCache: mockClearAppConfigCache,
     clearOverrideCache: mockClearOverrideCache,
   })),
+  createConfigReloader: jest.fn(() => jest.fn()),
+  createConfigGenerationTracker: jest.fn(() => ({
+    distributed: false,
+    check: jest.fn().mockResolvedValue(false),
+    bump: jest.fn().mockResolvedValue(undefined),
+  })),
+  ioredisClient: null,
+  cacheConfig: { USE_REDIS: false },
   clearMcpConfigCache: mockClearMcpConfigCache,
   createCodeEnvironmentRegistry: jest.fn(() => ({})),
   mergeAccessibleCodeEnvironments: jest.fn(({ appConfig }) => appConfig),

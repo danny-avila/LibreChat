@@ -66,6 +66,7 @@ describe('createAppConfigService', () => {
       const config = await getAppConfig();
 
       expect(deps.loadBaseConfig).toHaveBeenCalledTimes(1);
+      expect(deps.loadBaseConfig).toHaveBeenCalledWith('startup');
       expect(config).toEqual(deps._baseConfig);
     });
 
@@ -104,6 +105,111 @@ describe('createAppConfigService', () => {
       await getAppConfig({ refresh: true });
 
       expect(deps.loadBaseConfig).toHaveBeenCalledTimes(2);
+      expect(deps.loadBaseConfig).toHaveBeenLastCalledWith('reload');
+    });
+
+    it.each(['invalid YAML', 'missing local file', 'remote fetch failure'])(
+      'keeps the last good base config when reload fails: %s',
+      async (message) => {
+        const deps = createDeps();
+        const { getAppConfig, clearAppConfigCache } = createAppConfigService(deps);
+        const initial = await getAppConfig({ baseOnly: true });
+        deps.loadBaseConfig.mockRejectedValueOnce(new Error(message));
+
+        await clearAppConfigCache();
+        const reloaded = await getAppConfig({ baseOnly: true });
+
+        expect(reloaded).toBe(initial);
+        expect(deps._cache._store.get('app_config:_BASE_')).toBe(initial);
+        expect(deps.loadBaseConfig).toHaveBeenLastCalledWith('reload');
+      },
+    );
+
+    it('single-flights concurrent base config reloads', async () => {
+      const deps = createDeps();
+      const { getAppConfig, clearAppConfigCache } = createAppConfigService(deps);
+      const initial = await getAppConfig({ baseOnly: true });
+      await clearAppConfigCache();
+
+      let resolveReload: ((config: AppConfig) => void) | undefined;
+      deps.loadBaseConfig.mockImplementationOnce(
+        () =>
+          new Promise<AppConfig>((resolve) => {
+            resolveReload = resolve;
+          }),
+      );
+      const reloads = Array.from({ length: 10 }, () => getAppConfig({ baseOnly: true }));
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(deps.loadBaseConfig).toHaveBeenCalledTimes(2);
+
+      const next = { ...initial, interfaceConfig: { modelSelect: false } };
+      resolveReload?.(next);
+      await expect(Promise.all(reloads)).resolves.toEqual(Array(10).fill(next));
+      expect(deps.loadBaseConfig).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not convert a startup load failure into an empty config', async () => {
+      const failure = new Error('invalid startup config');
+      const deps = createDeps({ loadBaseConfig: jest.fn().mockRejectedValue(failure) });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      await expect(getAppConfig({ baseOnly: true })).rejects.toBe(failure);
+      expect(deps.loadBaseConfig).toHaveBeenCalledWith('startup');
+    });
+
+    it('drops base and override entries when another replica publishes a generation', async () => {
+      const syncConfigGeneration = jest.fn().mockResolvedValue(undefined);
+      const deps = createDeps({
+        syncConfigGeneration,
+        getApplicableConfigs: jest
+          .fn()
+          .mockResolvedValue([{ priority: 10, overrides: { x: 'old' }, isActive: true }]),
+      });
+      const { getAppConfig } = createAppConfigService(deps);
+      await getAppConfig({ role: 'USER' });
+
+      const next = { ...deps._baseConfig, endpoints: ['new-endpoint'] };
+      deps.loadBaseConfig.mockResolvedValueOnce(next);
+      const acknowledge = jest.fn();
+      syncConfigGeneration.mockResolvedValueOnce({ acknowledge });
+      const config = await getAppConfig({ role: 'USER' });
+
+      expect(config.endpoints).toEqual(['new-endpoint']);
+      expect(acknowledge).toHaveBeenCalledTimes(1);
+      expect(deps.loadBaseConfig).toHaveBeenLastCalledWith('reload');
+      expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not acknowledge a generation until its source reload succeeds', async () => {
+      const syncConfigGeneration = jest.fn().mockResolvedValue(undefined);
+      const deps = createDeps({ syncConfigGeneration });
+      const { getAppConfig } = createAppConfigService(deps);
+      const initial = await getAppConfig({ baseOnly: true });
+      const acknowledge = jest.fn();
+
+      syncConfigGeneration.mockResolvedValueOnce({ acknowledge });
+      deps.loadBaseConfig.mockRejectedValueOnce(new Error('remote unavailable'));
+      await expect(getAppConfig({ baseOnly: true })).resolves.toBe(initial);
+      expect(acknowledge).not.toHaveBeenCalled();
+
+      const next = { ...initial, interfaceConfig: { modelSelect: false } };
+      syncConfigGeneration.mockResolvedValueOnce({ acknowledge });
+      deps.loadBaseConfig.mockResolvedValueOnce(next);
+      await expect(getAppConfig({ baseOnly: true })).resolves.toBe(next);
+      expect(acknowledge).toHaveBeenCalledTimes(1);
+    });
+
+    it('installs a validated base config without re-reading its source', async () => {
+      const deps = createDeps();
+      const { getAppConfig, replaceBaseConfig } = createAppConfigService(deps);
+      const initial = await getAppConfig({ baseOnly: true });
+      const next = { ...initial, interfaceConfig: { modelSelect: false } };
+
+      await replaceBaseConfig(next);
+      const config = await getAppConfig({ baseOnly: true });
+
+      expect(config).toBe(next);
+      expect(deps.loadBaseConfig).toHaveBeenCalledTimes(1);
     });
 
     it('queries DB for applicable configs', async () => {

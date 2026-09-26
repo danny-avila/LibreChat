@@ -14,6 +14,7 @@ jest.mock('@librechat/data-schemas', () => {
   };
 });
 
+import { ConfigReloadError } from '~/app/loader';
 import { createAdminConfigHandlers } from './config';
 
 function mockReq(overrides = {}) {
@@ -81,6 +82,52 @@ function createHandlers(overrides = {}) {
 }
 
 describe('createAdminConfigHandlers', () => {
+  describe('reloadConfig', () => {
+    it('returns the per-section reload report', async () => {
+      const report = {
+        scope: 'cluster' as const,
+        distributed: true,
+        generation: 7,
+        sections: [
+          {
+            section: 'endpoints',
+            status: 'applied_live' as const,
+            restartRequired: false,
+          },
+        ],
+      };
+      const { handlers } = createHandlers({
+        reloadCustomConfig: jest.fn().mockResolvedValue(report),
+      });
+      const res = mockRes();
+
+      await handlers.reloadConfig(mockReq(), res);
+
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toEqual(report);
+    });
+
+    it('returns validation issues without applying an invalid config', async () => {
+      const reloadCustomConfig = jest
+        .fn()
+        .mockRejectedValue(
+          new ConfigReloadError('Invalid custom config', undefined, [
+            { code: 'custom', path: ['endpoints'], message: 'Invalid endpoints' },
+          ]),
+        );
+      const { handlers } = createHandlers({ reloadCustomConfig });
+      const res = mockRes();
+
+      await handlers.reloadConfig(mockReq(), res);
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({
+        error: 'Custom config validation failed',
+        validationErrors: [{ code: 'custom', path: ['endpoints'], message: 'Invalid endpoints' }],
+      });
+    });
+  });
+
   describe('listConfigs', () => {
     it('redacts secret fields from config list responses', async () => {
       const { handlers } = createHandlers({

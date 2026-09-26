@@ -3,10 +3,13 @@ const { CacheKeys } = require('librechat-data-provider');
 const { AppService, logger } = require('@librechat/data-schemas');
 const {
   createAppConfigService,
+  createConfigReloader,
+  createConfigGenerationTracker,
   clearMcpConfigCache,
   createCodeEnvironmentRegistry,
   mergeAccessibleCodeEnvironments,
   cacheConfig,
+  ioredisClient,
   standardCache,
 } = require('@librechat/api');
 const { setCachedTools, invalidateCachedTools } = require('./getCachedTools');
@@ -33,9 +36,7 @@ async function invalidateCodeEnvironmentConfigCache(tenantId) {
   await getCodeEnvironmentRegistry().invalidateAccessibleConfigurations(tenantId);
 }
 
-const loadBaseConfig = async () => {
-  /** @type {TCustomConfig} */
-  const config = (await loadCustomConfig()) ?? {};
+const buildBaseConfig = async (config) => {
   /** @type {Record<string, FunctionTool>} */
   const systemTools = loadAndFormatTools({
     adminFilter: config.filteredTools,
@@ -45,27 +46,48 @@ const loadBaseConfig = async () => {
   return AppService({ config, paths, systemTools });
 };
 
-const { getAppConfig, clearAppConfigCache, clearOverrideCache } = createAppConfigService({
-  loadBaseConfig,
-  setCachedTools,
-  getCache: getLogStores,
-  cacheKeys: CacheKeys,
-  getApplicableConfigs: db.getApplicableConfigs,
-  getUserPrincipals: db.getUserPrincipals,
-  augmentConfig: ({ appConfig, baseConfig, principals, options }) => {
-    if (!options.userId) return appConfig;
-    return mergeAccessibleCodeEnvironments({
-      appConfig,
-      deploymentConfig: baseConfig,
-      actor: {
-        userId: options.userId,
-        role: options.role ?? null,
-        idOnTheSource: options.idOnTheSource ?? null,
-        principals,
-      },
-      registry: getCodeEnvironmentRegistry(),
-    });
-  },
+const loadBaseConfig = async (mode) => {
+  /** @type {TCustomConfig} */
+  const config = (await loadCustomConfig(mode === 'startup', { mode })) ?? {};
+  return buildBaseConfig(config);
+};
+
+const configGeneration = createConfigGenerationTracker(
+  cacheConfig.USE_REDIS ? ioredisClient : null,
+);
+
+const { getAppConfig, replaceBaseConfig, clearAppConfigCache, clearOverrideCache } =
+  createAppConfigService({
+    loadBaseConfig,
+    setCachedTools,
+    getCache: getLogStores,
+    cacheKeys: CacheKeys,
+    getApplicableConfigs: db.getApplicableConfigs,
+    getUserPrincipals: db.getUserPrincipals,
+    ...(configGeneration.distributed ? { syncConfigGeneration: configGeneration.check } : {}),
+    augmentConfig: ({ appConfig, baseConfig, principals, options }) => {
+      if (!options.userId) return appConfig;
+      return mergeAccessibleCodeEnvironments({
+        appConfig,
+        deploymentConfig: baseConfig,
+        actor: {
+          userId: options.userId,
+          role: options.role ?? null,
+          idOnTheSource: options.idOnTheSource ?? null,
+          principals,
+        },
+        registry: getCodeEnvironmentRegistry(),
+      });
+    },
+  });
+
+const reloadCustomConfig = createConfigReloader({
+  loadConfig: () => loadCustomConfig(false, { mode: 'reload' }),
+  buildBaseConfig,
+  getBaseConfig: () => getAppConfig({ baseOnly: true }),
+  replaceBaseConfig,
+  clearOverrideCache,
+  generation: configGeneration,
 });
 
 // Config owns the reader; models never import this module to obtain it.
@@ -102,6 +124,7 @@ module.exports = {
   clearAppConfigCache,
   clearOverrideCache,
   invalidateConfigCaches,
+  reloadCustomConfig,
   getCodeEnvironmentRegistry,
   invalidateCodeEnvironmentConfigCache,
 };
