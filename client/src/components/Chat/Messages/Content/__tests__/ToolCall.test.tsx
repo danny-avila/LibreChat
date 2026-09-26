@@ -3,6 +3,7 @@ import { RecoilRoot } from 'recoil';
 import { Tools, Constants, dataService } from 'librechat-data-provider';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { ToolAuthWarningContext } from '../auth';
+import { FailedRevealContext } from '../reveal';
 import ToolCall from '../ToolCall';
 import { logger } from '~/utils';
 
@@ -760,5 +761,63 @@ describe('ToolCall', () => {
       expect(liveRegion).not.toBeNull();
       expect(liveRegion!.className).toContain('sr-only');
     });
+  });
+});
+
+describe('ToolCall failure fast path', () => {
+  const failedProps = {
+    args: '{"url":"https://x"}',
+    name: 'fetch_page',
+    output: 'Error: tool call failed: HTTP 429 from github.com\nretry after 60',
+    initialProgress: 1,
+    isSubmitting: false,
+  };
+
+  it('spends the subtitle on the first line of the error', () => {
+    render(
+      <RecoilRoot>
+        <ToolCall {...failedProps} />
+      </RecoilRoot>,
+    );
+    expect(screen.getByTestId('subtitle')).toHaveTextContent('HTTP 429 from github.com');
+  });
+
+  it('opens its panel and takes focus when a header above asks for its failures', () => {
+    const { rerender } = render(
+      <RecoilRoot>
+        <FailedRevealContext.Provider value={0}>
+          <ToolCall {...failedProps} toolCallId="f1" />
+        </FailedRevealContext.Provider>
+      </RecoilRoot>,
+    );
+    expect(screen.queryByTestId('tool-call-info')).not.toBeInTheDocument();
+
+    rerender(
+      <RecoilRoot>
+        <FailedRevealContext.Provider value={1}>
+          <ToolCall {...failedProps} toolCallId="f1" />
+        </FailedRevealContext.Provider>
+      </RecoilRoot>,
+    );
+    expect(screen.getByTestId('tool-call-info')).toBeInTheDocument();
+    expect(screen.getByTestId('tool-call')).toHaveFocus();
+  });
+
+  it('ignores the request on a row that did not fail', () => {
+    const { rerender } = render(
+      <RecoilRoot>
+        <FailedRevealContext.Provider value={0}>
+          <ToolCall {...failedProps} output="rows" />
+        </FailedRevealContext.Provider>
+      </RecoilRoot>,
+    );
+    rerender(
+      <RecoilRoot>
+        <FailedRevealContext.Provider value={1}>
+          <ToolCall {...failedProps} output="rows" />
+        </FailedRevealContext.Provider>
+      </RecoilRoot>,
+    );
+    expect(screen.queryByTestId('tool-call-info')).not.toBeInTheDocument();
   });
 });

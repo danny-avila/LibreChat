@@ -143,3 +143,19 @@ describe('ProgressText disclosure', () => {
     expect(button.querySelector('svg')).toBeNull();
   });
 });
+
+describe('ProgressText failure', () => {
+  it('keeps the verdict word on a failed row, open or not', () => {
+    renderProgressText({ phase: 'failed', hasInput: true, isExpanded: true });
+    expect(screen.getByText('· com_ui_tool_failed')).toBeInTheDocument();
+  });
+
+  it('marks a failed row at its left edge and nothing else', () => {
+    const { container, rerender } = renderProgressText({ phase: 'failed' });
+    expect(container.querySelector('.progress-text-wrapper')).toHaveClass('before:bg-status-error');
+    rerender(<ProgressText {...defaults} phase="completed" />);
+    expect(container.querySelector('.progress-text-wrapper')).not.toHaveClass(
+      'before:bg-status-error',
+    );
+  });
+});

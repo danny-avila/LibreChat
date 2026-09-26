@@ -21,13 +21,19 @@ import {
   scheduleMessageContentLayoutReconcile,
   EXPAND_TRANSITION,
 } from '~/hooks';
-import { getLiveActivity, getSpanIconNames, LIVE_ACTIVITY_THROTTLE_MS } from './live';
+import {
+  getFailedLines,
+  getLiveActivity,
+  getSpanIconNames,
+  LIVE_ACTIVITY_THROTTLE_MS,
+} from './live';
+import { FailedRevealContext, FailedRevealPill, useFailedRevealTrigger } from './reveal';
+import { FOLD_RAIL_CLASSES, ROW_GLYPH_SLOT, TOOL_ROW_CLASSES } from './rows';
 import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
 import useThrottledValue from '~/hooks/Messages/useThrottledValue';
 import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { getActivityLabelText } from '~/utils/activityLabels';
 import { getOutcomeStatus, summarizeSpan } from './outcome';
-import { ROW_GLYPH_SLOT, TOOL_ROW_CLASSES } from './rows';
 import { sandboxStartingByToolCallId } from '~/store';
 import { StackedToolIcons } from './ToolOutput';
 import { getSourceDomains } from './sources';
@@ -345,24 +351,19 @@ function LivePhaseHeader({
    *  hidden group header carries the same counts in the same words. */
   const { failed, cancelled } = activity.outcome;
   const combo = painted.comboCount > 1 ? `×${painted.comboCount}` : '';
-  const detail = useMemo(() => {
-    const notes: string[] = [];
-    if (failed > 0) {
-      notes.push(
-        localize(failed === 1 ? 'com_ui_one_action_failed' : 'com_ui_n_actions_failed', {
+  const failedNote =
+    failed > 0
+      ? localize(failed === 1 ? 'com_ui_one_action_failed' : 'com_ui_n_actions_failed', {
           0: String(failed),
-        }),
-      );
-    }
-    if (cancelled > 0) {
-      notes.push(
-        localize(cancelled === 1 ? 'com_ui_one_action_cancelled' : 'com_ui_n_actions_cancelled', {
+        })
+      : '';
+  const cancelledNote =
+    cancelled > 0
+      ? localize(cancelled === 1 ? 'com_ui_one_action_cancelled' : 'com_ui_n_actions_cancelled', {
           0: String(cancelled),
-        }),
-      );
-    }
-    return notes.join(' · ');
-  }, [failed, cancelled, localize]);
+        })
+      : '';
+  const detail = [failedNote, cancelledNote].filter(Boolean).join(' · ');
 
   /** Announcements have their own identity, apart from the ticker's. A line
    *  is spoken once, when it is left and therefore complete; an outcome is
@@ -437,13 +438,80 @@ function LivePhaseHeader({
           className="shrink-0 text-xs font-normal text-text-warning"
           data-testid="live-phase-outcome"
         >
-          {/** The verdict is the span's, not the newest line's, so it keeps its
+          {/** The failure count is spoken here, as part of the header's name,
+           *  and SHOWN by the pill beside the header, which is also the way to
+           *  the failed rows. Only a stop count has no pill and stays visible.
+           *  The verdict is the span's, not the newest line's, so it keeps its
            *  own separator from whatever the row happens to be saying. */}
-          <span className="mr-1 text-text-secondary">·</span>
-          <span>{detail}</span>
+          {failedNote !== '' && <span className="sr-only">· {failedNote}</span>}
+          {cancelledNote !== '' && (
+            <>
+              <span className="mr-1 text-text-secondary">·</span>
+              <span>{cancelledNote}</span>
+            </>
+          )}
         </span>
       )}
     </>
+  );
+}
+
+/**
+ * The first failed call of a collapsed card, on a row of its own beneath the
+ * header, the way the cursor row peeks while streaming: the failure is
+ * readable, and one click away, without unfolding. Its own component so only
+ * a collapsed card with a failure pays for the line's lookups.
+ */
+function FailedPeek({
+  parts,
+  attachmentsById,
+  count,
+  onReveal,
+}: {
+  parts: ReadonlyArray<TMessageContentParts | undefined>;
+  attachmentsById: Record<string, TAttachment[] | undefined>;
+  count: number;
+  onReveal: () => void;
+}) {
+  const localize = useLocalize();
+  const mcpServerNames = useMCPServerNames();
+  const first = useMemo(
+    () => getFailedLines(parts, localize, mcpServerNames, attachmentsById)[0],
+    [parts, localize, mcpServerNames, attachmentsById],
+  );
+  if (first == null) {
+    return null;
+  }
+  return (
+    <button
+      type="button"
+      className={cn(
+        TOOL_ROW_CLASSES,
+        'w-full pl-6 text-left text-text-secondary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-heavy',
+      )}
+      onClick={onReveal}
+      data-testid="activity-phase-failed-peek"
+    >
+      <span className={cn(ROW_GLYPH_SLOT, 'text-status-error')} aria-hidden="true">
+        <TriangleAlert size={14} />
+      </span>
+      <span className="tool-status-text min-w-0 shrink-0 truncate font-medium text-status-error">
+        {first.text}
+      </span>
+      {first.detail !== '' && (
+        <span className="tool-status-text min-w-0 shrink-[100] truncate font-normal">
+          {first.detail}
+        </span>
+      )}
+      {count > 1 && (
+        <span className="shrink-0 text-xs font-normal">
+          {localize('com_ui_plus_n_more', { 0: String(count - 1) })}
+        </span>
+      )}
+      <span className="ml-auto shrink-0 text-xs font-medium underline underline-offset-2">
+        {localize('com_ui_show_error')}
+      </span>
+    </button>
   );
 }
 
@@ -483,6 +551,16 @@ export default function ActivityPhaseGroup({
   const isLive = liveParts != null;
   const label = getActivityLabelText(labelPart);
   const hasFailure = labelPart.status === 'failed' || labelPart.status === 'partial';
+  const outcomeParts = spanParts ?? liveParts;
+  const attachmentsById = useMemo(() => mapAttachments(attachments ?? []), [attachments]);
+  /** The span's failed calls, for the peek under a collapsed header and the
+   *  pill beside it. Read from the same parts the header's glyph and live
+   *  line read, so the three can never disagree about the count. */
+  const failedCount = useMemo(
+    () => (outcomeParts == null ? 0 : summarizeSpan(outcomeParts, attachmentsById).failed),
+    [outcomeParts, attachmentsById],
+  );
+
   /** Already `smoothStreaming && !reducedMotion` — it owns the media query, so
    *  a second subscription here would install one `matchMedia` listener per
    *  phase card without changing the answer. */
@@ -535,6 +613,7 @@ export default function ActivityPhaseGroup({
     isExpanded,
     hasPendingApproval,
   );
+  const { tick: revealTick, reveal } = useFailedRevealTrigger(isExpanded && shouldRenderBody);
 
   useEffect(() => {
     if (!foldsIn || userOverrideRef.current) {
@@ -579,6 +658,36 @@ export default function ActivityPhaseGroup({
     onExpansionChange?.(!isExpanded);
     setIsExpanded(!isExpanded);
   }, [mountBody, isExpanded, onExpansionChange]);
+
+  /** One click to the error from a closed card: open the card the way a
+   *  toggle would, then ask every failed row below to open its own panel. */
+  const handleRevealFailed = useCallback(() => {
+    userOverrideRef.current = true;
+    cancelEntranceRef.current?.();
+    cancelEntranceRef.current = null;
+    mountBody();
+    setIsSettled(true);
+    if (!isExpanded) {
+      onExpansionChange?.(true);
+      setIsExpanded(true);
+    }
+    reveal();
+  }, [mountBody, isExpanded, onExpansionChange, reveal]);
+
+  /** An open card is titled by its stable label: the rows themselves carry
+   *  the live line now, and a header that kept tickering above them would
+   *  swap its text under a reader who is looking at the list. A live span
+   *  with no label yet keeps the live line, which is all it has. */
+  const showLiveHeader = isLive && (!isExpanded || label.length === 0);
+  const peek =
+    hasContent && !isExpanded && failedCount > 0 && outcomeParts != null ? (
+      <FailedPeek
+        parts={outcomeParts}
+        attachmentsById={attachmentsById}
+        count={failedCount}
+        onReveal={handleRevealFailed}
+      />
+    ) : null;
 
   /** Only the folding entrance drives the header off its natural height.
    *  History and reduced-motion render the plain, unstyled row. */
@@ -662,8 +771,14 @@ export default function ActivityPhaseGroup({
       <span className="sr-only" role="status" data-testid="activity-phase-announcer">
         {announcement}
       </span>
-      <div style={headerStyle}>
-        <div className="overflow-hidden">
+      <div
+        style={headerStyle}
+        /** Pinned while open, so a run long enough to scroll keeps its name
+         *  at the top of the viewport. The containing block is this card, so
+         *  the header stops pinning where its own rows end. */
+        className={cn(isExpanded && 'sticky top-0 z-[1] bg-presentation')}
+      >
+        <div className="flex items-center gap-2 overflow-hidden">
           <Button
             variant="ghost"
             type="button"
@@ -673,7 +788,12 @@ export default function ActivityPhaseGroup({
              *  keyboard users with no focus indicator. The ghost variant
              *  supplies it today; stating it here keeps the requirement with
              *  the element that depends on it. */
-            className="flex h-auto min-h-7 w-full items-center justify-start gap-2 rounded-none bg-transparent p-0 py-1 text-left font-medium text-text-secondary hover:bg-transparent hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-heavy focus-visible:ring-offset-0"
+            className={cn(
+              'flex h-auto min-h-7 min-w-0 flex-1 items-center justify-start gap-2 rounded-none bg-transparent p-0 py-1 text-left font-medium text-text-secondary hover:bg-transparent hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-border-heavy focus-visible:ring-offset-0',
+              /** The open card's title: the one semibold, primary-colour line
+               *  in the fold, so the rows under it read as its contents. */
+              isExpanded && 'font-semibold text-text-primary',
+            )}
             onClick={handleToggle}
             aria-expanded={isExpanded}
             aria-controls={panelId}
@@ -682,12 +802,12 @@ export default function ActivityPhaseGroup({
              *  is named by that line ALONE: the polite region beside it holds
              *  the previous line, and `sr-only` text still counts toward a
              *  button's computed name. */
-            aria-label={isLive ? undefined : label}
+            aria-label={showLiveHeader ? undefined : label}
             /** Unresolved ids are skipped, so one list covers a row with no
              *  multiplier and no outcome note as well as a row with both. */
-            aria-labelledby={isLive ? `${lineId} ${comboId} ${detailId}` : undefined}
+            aria-labelledby={showLiveHeader ? `${lineId} ${comboId} ${detailId}` : undefined}
           >
-            {isLive ? (
+            {showLiveHeader ? (
               <LivePhaseHeader
                 parts={liveParts}
                 animate={smoothStreaming}
@@ -699,8 +819,8 @@ export default function ActivityPhaseGroup({
               />
             ) : (
               <>
-                {spanParts != null && !hasFailure ? (
-                  <SpanGlyph parts={spanParts} attachments={attachments} />
+                {outcomeParts != null && !hasFailure ? (
+                  <SpanGlyph parts={outcomeParts} attachments={attachments} />
                 ) : (
                   <PhaseGlyph failed={hasFailure} />
                 )}
@@ -715,8 +835,10 @@ export default function ActivityPhaseGroup({
               aria-hidden="true"
             />
           </Button>
+          <FailedRevealPill count={failedCount} onReveal={handleRevealFailed} />
         </div>
       </div>
+      {peek}
       <div
         id={panelId}
         style={expandStyle}
@@ -725,8 +847,10 @@ export default function ActivityPhaseGroup({
         data-testid="activity-phase-panel"
       >
         {shouldRenderBody && (
-          <div className="overflow-hidden" ref={expandRef}>
-            {children}
+          <div className={cn('overflow-hidden', FOLD_RAIL_CLASSES)} ref={expandRef}>
+            <FailedRevealContext.Provider value={revealTick}>
+              {children}
+            </FailedRevealContext.Provider>
           </div>
         )}
       </div>

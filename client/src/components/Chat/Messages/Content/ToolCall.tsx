@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect, useCallback } from 'react';
+import { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Button } from '@librechat/client';
 import {
@@ -16,11 +16,13 @@ import { useMCPIconMap, useMCPServerNames } from '~/hooks/MCP';
 import { resolveToolCallPhase } from '~/utils/toolCallPhase';
 import { toolPanelSpacingClassName } from './disclosure';
 import { useToolCallIntent } from './Parts/intent';
+import { useFailedReveal } from './reveal';
 import { AttachmentGroup } from './Parts';
 import ToolCallInfo from './ToolCallInfo';
 import ProgressText from './ProgressText';
 import { TOOL_ROW_CLASSES } from './rows';
 import { ToolAuthWarning } from './auth';
+import { firstErrorLine } from './live';
 import store from '~/store';
 
 export default function ToolCall({
@@ -291,7 +293,33 @@ export default function ToolCall({
     setShowInfo((prev) => !prev);
   }, [mountBody, onExpand, showInfo]);
 
+  const rowRef = useRef<HTMLDivElement>(null);
+  /** A header above asked for its failures: open this card's panel, bring
+   *  the row into view and hand it focus, so a keyboard reader lands on the
+   *  error rather than on the pill they pressed. */
+  const revealError = useCallback(() => {
+    mountBody();
+    onExpand?.();
+    setShowInfo(true);
+    const row = rowRef.current;
+    if (row == null) {
+      return;
+    }
+    if (typeof row.scrollIntoView === 'function') {
+      row.scrollIntoView({ block: 'nearest' });
+    }
+    row.focus({ preventScroll: true });
+  }, [mountBody, onExpand]);
+  useFailedReveal(phase === 'failed' && hasInfo, revealError);
+
+  /** A failed row spends its subtitle on the error's first line: what went
+   *  wrong is the fact the reader needs from that slot, ahead of which server
+   *  the call went through. */
   const subtitle = useMemo(() => {
+    const errorLine = phase === 'failed' ? firstErrorLine(output) : '';
+    if (errorLine.length > 0) {
+      return errorLine;
+    }
     if (isMCPToolCall && mcpServerName) {
       return localize('com_ui_via_server', { 0: mcpServerName });
     }
@@ -299,7 +327,7 @@ export default function ToolCall({
       return localize('com_ui_via_server', { 0: domain });
     }
     return undefined;
-  }, [isMCPToolCall, mcpServerName, domain, localize]);
+  }, [phase, output, isMCPToolCall, mcpServerName, domain, localize]);
 
   /** Model-authored live label, streamed as the first args key (injected by
    *  the `tool_intents` capability); persists as the settled label —
@@ -316,8 +344,12 @@ export default function ToolCall({
      * a screen-reader user the opposite of what the card shows.
      */
     if (phase === 'failed') {
-      return function_name
-        ? localize('com_ui_failed_subject', { 0: function_name })
+      /** The subject is the work the call named for itself, as on the live
+       *  header and the collapsed card's peek, so the same failure reads the
+       *  same wherever it is summarized. */
+      const subject = intent ?? function_name;
+      return subject
+        ? localize('com_ui_failed_subject', { 0: subject })
         : localize('com_ui_failed');
     }
     if (intent != null) {
@@ -352,7 +384,13 @@ export default function ToolCall({
           return getFinishedText();
         })()}
       </span>
-      <div className={TOOL_ROW_CLASSES} data-testid="tool-call" data-tool-call-id={toolCallId}>
+      <div
+        className={TOOL_ROW_CLASSES}
+        data-testid="tool-call"
+        data-tool-call-id={toolCallId}
+        ref={rowRef}
+        tabIndex={phase === 'failed' ? -1 : undefined}
+      >
         <ProgressText
           phase={phase}
           onClick={handleToggleInfo}

@@ -740,8 +740,7 @@ describe('live fold parity with the cards it hides', () => {
         true,
       );
       fireEvent.click(screen.getByRole('button', { name: 'Reviewed the work' }));
-      const group = screen.getByTestId('tool-call-group-panel')
-        .previousElementSibling as HTMLElement;
+      const group = screen.getByRole('button', { name: /Ran 2 actions.*1 failed/ });
       expect(group).toHaveAccessibleName(/1 failed/);
       expect(group.querySelector('.lucide-triangle-alert')).not.toBeNull();
     });
@@ -1244,7 +1243,8 @@ describe('live activity hardening transitions', () => {
         cancelled: /Cancelled.*1 cancelled/,
         completed: 'Finished in background',
       }[status];
-      expect(screen.getByRole('button')).toHaveAccessibleName(expected);
+      /** The header is the first button; a failure adds the pill after it. */
+      expect(screen.getAllByRole('button')[0]).toHaveAccessibleName(expected);
     },
   );
 
@@ -1268,7 +1268,7 @@ describe('live activity hardening transitions', () => {
         ...calls.slice(1),
       ]),
     );
-    expect(screen.getByRole('button')).toHaveAccessibleName(/Looking up item 1023.*1 failed/);
+    expect(screen.getAllByRole('button')[0]).toHaveAccessibleName(/Looking up item 1023.*1 failed/);
     expect(screen.getByTestId('activity-phase-announcer')).toHaveTextContent('1 failed');
   });
 

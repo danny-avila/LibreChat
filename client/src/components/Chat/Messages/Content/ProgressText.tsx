@@ -18,10 +18,26 @@ const wrapperClass =
 const contentClass =
   'progress-text-content absolute left-0 right-0 top-0 max-w-full overflow-visible whitespace-nowrap';
 
-const Wrapper = ({ popover, children }: { popover: boolean; children: React.ReactNode }) => {
+/** A failed row is marked at its left edge, in the rail's column when the row
+ *  sits under a header and in the gutter when it stands alone, so a failure
+ *  is findable by shape before its text is read. A pseudo-element rather than
+ *  a border: the row's content is absolutely positioned against the padding
+ *  box, so a border would push it and change the row's geometry. */
+const failedStripeClass =
+  "before:absolute before:-left-3 before:top-0 before:h-full before:w-0.5 before:rounded-full before:bg-status-error before:content-['']";
+
+const Wrapper = ({
+  popover,
+  failed,
+  children,
+}: {
+  popover: boolean;
+  failed: boolean;
+  children: React.ReactNode;
+}) => {
   if (popover) {
     return (
-      <div className={wrapperClass}>
+      <div className={cn(wrapperClass, failed && failedStripeClass)}>
         <Popover.Trigger asChild>
           <div className={contentClass} style={{ opacity: 1, transform: 'none' }}>
             {children}
@@ -32,7 +48,7 @@ const Wrapper = ({ popover, children }: { popover: boolean; children: React.Reac
   }
 
   return (
-    <div className={wrapperClass}>
+    <div className={cn(wrapperClass, failed && failedStripeClass)}>
       <div className={contentClass} style={{ opacity: 1, transform: 'none' }}>
         {children}
       </div>
@@ -99,7 +115,7 @@ export default function ProgressText({
       : undefined;
 
   return (
-    <Wrapper popover={popover}>
+    <Wrapper popover={popover} failed={phase === 'failed'}>
       <Button
         type="button"
         variant="ghost"

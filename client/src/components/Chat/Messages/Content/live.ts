@@ -1,4 +1,4 @@
-import { Tools, Constants, ContentTypes } from 'librechat-data-provider';
+import { Tools, Constants, ContentTypes, stripToolCallErrorPrefix } from 'librechat-data-provider';
 import type {
   Agents,
   TAttachment,
@@ -341,4 +341,55 @@ export function getLiveActivity(
     outcome: { failed: span.failed, cancelled: span.cancelled },
     iconNames: getSpanIconNames(parts),
   };
+}
+
+export type FailedLine = {
+  /** The row's own failed label: `Failed: <intent or tool>`. */
+  text: string;
+  /** The first line of what the tool returned, with the error prefix removed. */
+  detail: string;
+  iconName: string;
+};
+
+const PROCESSING_PREFIX = /^Error processing tool:?\s*/i;
+
+/** The opening line of an error, for a peek row that has one line to spend. */
+export function firstErrorLine(output: string | null | undefined): string {
+  if (!output) {
+    return '';
+  }
+  const cleaned = stripToolCallErrorPrefix(output).replace(PROCESSING_PREFIX, '').trim();
+  const newline = cleaned.indexOf('\n');
+  return newline === -1 ? cleaned : cleaned.slice(0, newline).trim();
+}
+
+/**
+ * Every failed call in a span, in order, as the line its card shows plus the
+ * first line of its error. A collapsed header peeks the first of these so the
+ * failure is readable without unfolding; the count of the rest rides beside it.
+ */
+export function getFailedLines(
+  parts: ReadonlyArray<TMessageContentParts | undefined>,
+  localize: Localize,
+  serverNames: readonly string[],
+  attachmentsById?: Record<string, TAttachment[] | undefined>,
+): FailedLine[] {
+  const span = summarizeSpan(parts, attachmentsById);
+  const lines: FailedLine[] = [];
+  for (const part of parts) {
+    if (part == null) {
+      continue;
+    }
+    const meta = span.metaOf(part);
+    const toolCall = getStandardToolCall(part);
+    if (meta?.failed !== true || toolCall == null) {
+      continue;
+    }
+    lines.push({
+      text: toolCallLine(part, toolCall, localize, serverNames, span).text,
+      detail: firstErrorLine(toolCall.output),
+      iconName: meta.iconName,
+    });
+  }
+  return lines;
 }
