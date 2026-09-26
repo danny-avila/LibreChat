@@ -130,6 +130,42 @@ describe('config reload', () => {
     expect(generation.bump).not.toHaveBeenCalled();
   });
 
+  it('retries a failed generation bump when the local config is already current', async () => {
+    let current = appConfig(customConfig('old-model'));
+    const candidate = customConfig('new-model');
+    const replaceBaseConfig = jest.fn(async (config: AppConfig) => {
+      current = config;
+      return config;
+    });
+    const generation = {
+      distributed: true,
+      check: jest.fn().mockResolvedValue(undefined),
+      bump: jest
+        .fn()
+        .mockRejectedValueOnce(new Error('Redis unavailable'))
+        .mockResolvedValueOnce(1),
+    };
+    const reload = createConfigReloader({
+      loadConfig: async () => candidate,
+      buildBaseConfig: async (config) => appConfig(config),
+      getBaseConfig: async () => current,
+      replaceBaseConfig,
+      clearOverrideCache: async () => undefined,
+      generation,
+    });
+
+    await expect(reload()).resolves.toMatchObject({
+      scope: 'local',
+      propagationError: 'Redis generation update failed',
+    });
+    await expect(reload()).resolves.toMatchObject({
+      scope: 'cluster',
+      generation: 1,
+    });
+    expect(generation.bump).toHaveBeenCalledTimes(2);
+    expect(replaceBaseConfig).toHaveBeenCalledTimes(1);
+  });
+
   it('reports local-only scope when Redis is not configured', async () => {
     const previous = appConfig(customConfig('old-model'));
     const next = customConfig('new-model');
@@ -184,6 +220,26 @@ describe('config reload', () => {
       restartRequired: true,
       restartRequiredPaths: ['mcpServers.docs.url'],
     });
+  });
+
+  it('does not regress its generation when an older read resolves after a bump', async () => {
+    const store = new MemoryGenerationStore();
+    const tracker = createConfigGenerationTracker(store, { pollIntervalMs: 0 });
+    await tracker.check();
+    let resolveRead: ((generation: string) => void) | undefined;
+    store.get.mockImplementationOnce(
+      () =>
+        new Promise<string>((resolve) => {
+          resolveRead = resolve;
+        }),
+    );
+
+    const staleCheck = tracker.check();
+    await tracker.bump();
+    resolveRead?.('0');
+
+    await expect(staleCheck).resolves.toBeUndefined();
+    await expect(tracker.check()).resolves.toBeUndefined();
   });
 
   it('retries a generation until a successful reload acknowledges it', async () => {

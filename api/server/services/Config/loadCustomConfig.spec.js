@@ -195,6 +195,7 @@ describe('loadCustomConfig', () => {
     await expect(loadCustomConfig(true, { mode: 'reload' })).rejects.toMatchObject({
       name: 'ConfigReloadError',
     });
+    expect(axios.get).toHaveBeenCalledWith('https://example.com/config.yaml', { timeout: 10000 });
     expect(mockExit).not.toHaveBeenCalled();
   });
 

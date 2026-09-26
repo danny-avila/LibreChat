@@ -27,7 +27,7 @@ export interface CustomConfigLoadOptions {
 export interface CustomConfigLoaderOptions {
   defaultConfigPath: string;
   loadLocal: (configPath: string) => unknown;
-  fetchRemote?: (configPath: string) => Promise<unknown>;
+  fetchRemote?: (configPath: string, mode: CustomConfigLoadMode) => Promise<unknown>;
   redactConfig: (config: TCustomConfig) => TCustomConfig;
 }
 
@@ -42,6 +42,8 @@ export class ConfigReloadError extends Error {
     this.validationErrors = validationErrors;
   }
 }
+
+const REMOTE_CONFIG_RELOAD_TIMEOUT_MS = 10_000;
 
 const OPENROUTER_PROMPT_CACHE_DEFAULT = {
   key: 'promptCache',
@@ -161,7 +163,12 @@ export function createCustomConfigLoader({
   defaultConfigPath,
   loadLocal,
   redactConfig,
-  fetchRemote = async (configPath: string): Promise<unknown> => (await axios.get(configPath)).data,
+  fetchRemote = async (configPath: string, mode: CustomConfigLoadMode): Promise<unknown> =>
+    (
+      await (mode === 'reload'
+        ? axios.get(configPath, { timeout: REMOTE_CONFIG_RELOAD_TIMEOUT_MS })
+        : axios.get(configPath))
+    ).data,
 }: CustomConfigLoaderOptions): (
   printConfig?: boolean,
   options?: CustomConfigLoadOptions,
@@ -207,7 +214,7 @@ export function createCustomConfigLoader({
       let loadedConfig: unknown;
       if (isRemoteConfigPath(configPath)) {
         try {
-          loadedConfig = await fetchRemote(configPath);
+          loadedConfig = await fetchRemote(configPath, mode);
         } catch (error) {
           return failSourceLoad(`Failed to fetch the remote config file from ${configPath}`, error);
         }

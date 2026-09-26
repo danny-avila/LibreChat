@@ -48,7 +48,7 @@ const buildBaseConfig = async (config) => {
 
 const loadBaseConfig = async (mode) => {
   /** @type {TCustomConfig} */
-  const config = (await loadCustomConfig(true, { mode })) ?? {};
+  const config = (await loadCustomConfig(mode === 'startup', { mode })) ?? {};
   return buildBaseConfig(config);
 };
 

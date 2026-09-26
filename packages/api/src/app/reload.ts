@@ -7,6 +7,7 @@ import type { AppConfig } from '@librechat/data-schemas';
 import { ConfigReloadError } from './loader';
 
 const CONFIG_GENERATION_KEY = 'config:generation';
+/** Bootstrap coordination cannot read its own interval from the config it gates. One second bounds Redis reads per replica while keeping propagation responsive. */
 const DEFAULT_GENERATION_POLL_MS = 1_000;
 
 const RESTART_ONLY_PATHS = [
@@ -161,7 +162,11 @@ export function createConfigGenerationTracker(
   let checkFlight: Promise<ConfigGenerationChange | undefined> | undefined;
 
   async function readGeneration(): Promise<ConfigGenerationChange | undefined> {
+    const generationBeforeRead = seenGeneration;
     const generation = (await store!.get(CONFIG_GENERATION_KEY)) ?? '0';
+    if (seenGeneration !== generationBeforeRead) {
+      return undefined;
+    }
     if (seenGeneration == null) {
       seenGeneration = generation;
       return undefined;
@@ -217,6 +222,7 @@ export function createConfigGenerationTracker(
 
 export function createConfigReloader(deps: ConfigReloaderDeps): () => Promise<ConfigReloadResult> {
   let reloadFlight: Promise<ConfigReloadResult> | undefined;
+  let propagationPending = false;
 
   async function reload(): Promise<ConfigReloadResult> {
     const current = await deps.getBaseConfig();
@@ -231,7 +237,8 @@ export function createConfigReloader(deps: ConfigReloaderDeps): () => Promise<Co
       }
       candidate = loaded;
       report = createConfigReloadReport((current.config ?? {}) as TCustomConfig, candidate);
-      if (report.every((section) => section.status === 'unchanged')) {
+      const configChanged = report.some((section) => section.status !== 'unchanged');
+      if (!configChanged && !propagationPending) {
         return {
           scope: 'unchanged',
           distributed: deps.generation.distributed,
@@ -239,10 +246,12 @@ export function createConfigReloader(deps: ConfigReloaderDeps): () => Promise<Co
         };
       }
 
-      const next = await deps.buildBaseConfig(candidate);
-      await deps.replaceBaseConfig(next);
-      installed = true;
-      await deps.clearOverrideCache();
+      if (configChanged) {
+        const next = await deps.buildBaseConfig(candidate);
+        await deps.replaceBaseConfig(next);
+        installed = true;
+        await deps.clearOverrideCache();
+      }
     } catch (error) {
       if (installed) {
         await deps
@@ -263,8 +272,10 @@ export function createConfigReloader(deps: ConfigReloaderDeps): () => Promise<Co
       if (generation == null) {
         return { scope: 'local', distributed: false, sections: report };
       }
+      propagationPending = false;
       return { scope: 'cluster', distributed: true, generation, sections: report };
     } catch (error) {
+      propagationPending = true;
       logger.error('[configReload] Failed to publish the config generation:', error);
       return {
         scope: 'local',
