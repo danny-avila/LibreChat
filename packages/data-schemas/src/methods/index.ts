@@ -115,9 +115,11 @@ import { createPromptMethods, type PromptMethods, type PromptDeps } from './prom
 import {
   createSkillMethods,
   partitionIssues,
+  SKILL_BOOLEAN_FLAGS,
   validateSkillName,
   validateSkillBody,
   validateRelativePath,
+  pickValidFrontmatter,
   validateSkillFrontmatter,
   getCanonicalSkillFrontmatterKey,
   normalizeSkillFrontmatterKeys,
@@ -136,6 +138,8 @@ import {
   type ValidationIssue,
   type DeleteSkillCleanupStep,
   type DeleteSkillResult,
+  type SkillBooleanFlag,
+  type SkillBooleanColumn,
 } from './skill';
 import { createScheduleMethods, type ScheduleMethods } from './schedule';
 import {
@@ -206,10 +210,12 @@ export { tokenValues, cacheTokenValues, premiumTokenValues, defaultRate, createT
 export { permissionBitSupersets, PERM_BITS_WRITE_ATTEMPTS };
 export { CLIENT_MESSAGE_SELECT, SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT };
 export {
+  SKILL_BOOLEAN_FLAGS,
   partitionIssues,
   validateSkillName,
   validateSkillBody,
   validateRelativePath,
+  pickValidFrontmatter,
   validateSkillFrontmatter,
   getCanonicalSkillFrontmatterKey,
   normalizeSkillFrontmatterKeys,
@@ -578,6 +584,8 @@ export type {
   ValidationIssue,
   DeleteSkillCleanupStep,
   DeleteSkillResult,
+  SkillBooleanFlag,
+  SkillBooleanColumn,
   SkillSyncStatusInput,
   SkillSyncCredentialSummary,
   UpsertSkillSyncCredentialInput,
