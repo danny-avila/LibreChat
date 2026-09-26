@@ -39,12 +39,14 @@ describe('OpenAI-compatible agent stream handlers', () => {
       handlers.on_reasoning_delta.handle('on_reasoning_delta', {
         delta: { content: [{ type: 'think', think: 'reasoning' }] },
       });
-      handlers.on_run_step.handle('on_run_step', {
-        id: 'step-1',
-        stepDetails: {
-          type: 'tool_calls',
-          tool_calls: [{ id: 'call-1', name: 'lookup', args: '{"city":"Madrid"}' }],
-        },
+      handlers.on_model_response.handle('on_model_response', {
+        type: 'model_response',
+        id: 'accepted-1',
+        agentId: 'agent',
+        messageId: 'message-1',
+        toolCalls: [{ id: 'call-1', name: 'lookup', args: { city: 'Madrid' } }],
+        toolCallDispositions: ['client'],
+        invalidToolCalls: [],
       });
       expect(frames).toHaveLength(3);
       sendFinalChunk(config, 'stop', {
@@ -78,6 +80,52 @@ describe('OpenAI-compatible agent stream handlers', () => {
       subagent: { total_tokens: 3 },
     });
     expect(current[current.length - 1]).toBe('data: [DONE]\n\n');
+  });
+
+  it.each(['sdk', 'provider'] as const)(
+    'does not project %s-owned calls from accepted results',
+    (disposition) => {
+      const frames: string[] = [];
+      const tracker = createOpenAIStreamTracker();
+      const config: OpenAIStreamWriterConfig = {
+        writer: { write: (frame): void => void frames.push(frame) },
+        context,
+        tracker,
+      };
+      const handlers = createOpenAIHandlers(config);
+      handlers.on_model_response.handle('on_model_response', {
+        type: 'model_response',
+        id: 'accepted-internal',
+        agentId: 'agent',
+        toolCalls: [{ id: 'internal', name: 'lookup', args: { city: 'Madrid' } }],
+        toolCallDispositions: [disposition],
+        invalidToolCalls: [],
+      });
+      sendFinalChunk(config);
+      expect(tracker.toolCalls.size).toBe(0);
+      expect(frames.some((frame) => frame.includes('tool_calls'))).toBe(false);
+      expect(handlers.on_run_step).toBeUndefined();
+      expect(handlers.on_run_step_delta).toBeUndefined();
+    },
+  );
+
+  it('projects explicit client delegation into non-streaming output', () => {
+    const aggregator = createOpenAIContentAggregator();
+    const handlers = createOpenAIHandlers({ aggregator });
+    handlers.on_model_response.handle('on_model_response', {
+      type: 'model_response',
+      id: 'accepted-client',
+      agentId: 'agent',
+      toolCalls: [{ id: 'client', name: 'lookup', args: { city: 'Madrid' } }],
+      toolCallDispositions: ['client'],
+      invalidToolCalls: [],
+    });
+    aggregator.finishToolCalls?.();
+    expect(aggregator.toolCalls.get(0)).toEqual({
+      id: 'client',
+      type: 'function',
+      function: { name: 'lookup', arguments: '{"city":"Madrid"}' },
+    });
   });
 
   it('propagates a synchronous transport failure instead of claiming completion', () => {
