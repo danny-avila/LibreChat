@@ -1,4 +1,4 @@
-import { Tools, Constants, ContentTypes } from 'librechat-data-provider';
+import { Tools, Constants, ContentTypes, stripToolCallErrorPrefix } from 'librechat-data-provider';
 import type {
   Agents,
   TAttachment,
@@ -11,8 +11,8 @@ import type { TranslationKeys } from '~/hooks';
 import { getBatchActivityLabelPart, getActivityLabelText } from '~/utils/activityLabels';
 import { hasPendingApprovalInPart, hasPendingAuthInPart } from '~/utils/groupToolCalls';
 import { ASK_USER_QUESTION, getSubmittedAskAnswer } from '~/utils/approval';
+import { getToolDisplayLabel, parseToolName } from '~/utils/toolLabels';
 import { boundIntentLabel, getToolCallIntent } from './Parts/intent';
-import { getToolDisplayLabel } from '~/utils/toolLabels';
 import { isBashProgrammaticToolCall } from './routing';
 import { getToolMeta, summarizeSpan } from './outcome';
 
@@ -341,4 +341,69 @@ export function getLiveActivity(
     outcome: { failed: span.failed, cancelled: span.cancelled },
     iconNames: getSpanIconNames(parts),
   };
+}
+
+export type FailedLine = {
+  /** The row's own failed label: `Failed: <intent or tool>`. */
+  text: string;
+  /** The first line of what the tool returned, with the error prefix removed. */
+  detail: string;
+  iconName: string;
+};
+
+const PROCESSING_PREFIX = /^Error processing tool:?\s*/i;
+/** Whatever prefix survives the two above, so a peek row does not spend its
+ *  one line on the word the red glyph beside it already says. */
+const GENERIC_ERROR_PREFIX = /^Error:\s*/i;
+
+/** The opening line of an error, for a peek row that has one line to spend. */
+export function firstErrorLine(output: string | null | undefined): string {
+  if (!output) {
+    return '';
+  }
+  const cleaned = stripToolCallErrorPrefix(output)
+    .replace(PROCESSING_PREFIX, '')
+    .replace(GENERIC_ERROR_PREFIX, '')
+    .trim();
+  const newline = cleaned.indexOf('\n');
+  return newline === -1 ? cleaned : cleaned.slice(0, newline).trim();
+}
+
+/**
+ * Every failed call in a span, in order, as the line its card shows plus the
+ * first line of its error. A collapsed header peeks the first of these so the
+ * failure is readable without unfolding; the count of the rest rides beside it.
+ */
+export function getFailedLines(
+  parts: ReadonlyArray<TMessageContentParts | undefined>,
+  localize: Localize,
+  serverNames: readonly string[],
+  attachmentsById?: Record<string, TAttachment[] | undefined>,
+): FailedLine[] {
+  const span = summarizeSpan(parts, attachmentsById);
+  const lines: FailedLine[] = [];
+  for (const part of parts) {
+    if (part == null) {
+      continue;
+    }
+    const meta = span.metaOf(part);
+    const toolCall = getStandardToolCall(part);
+    if (meta?.failed !== true || toolCall == null) {
+      continue;
+    }
+    /** Named as the ROW names itself, since the peek stands in for the row:
+     *  the model's intent, else the bare tool for an MCP call (`ToolCall`
+     *  shows the server as a subtitle), else the tool's display label. The
+     *  live ticker names the server instead, as its group header does. */
+    const parsed = parseToolName(toolCall.name ?? '', serverNames);
+    const subject =
+      getToolCallIntent(toolCall.args) ??
+      (parsed.mcpServer ? parsed.toolName : getToolDisplayLabel(parsed.raw, localize, serverNames));
+    lines.push({
+      text: subject ? localize('com_ui_failed_subject', { 0: subject }) : localize('com_ui_failed'),
+      detail: firstErrorLine(toolCall.output),
+      iconName: meta.iconName,
+    });
+  }
+  return lines;
 }

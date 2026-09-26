@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
 import { ROW_GLYPH_SLOT, TOOL_ROW_CLASSES } from '../rows';
 import ActivityPhaseGroup from '../ActivityPhaseGroup';
+import { useFailedReveal } from '../reveal';
 
 const mockUseSmoothStreaming = jest.fn(() => true);
 const mockScheduleLayoutReconcile = jest.fn((_target: HTMLElement | null) => jest.fn());
@@ -10,6 +11,11 @@ const mockScheduleLayoutReconcile = jest.fn((_target: HTMLElement | null) => jes
 jest.mock('~/hooks/Messages/useSmoothStreaming', () => ({
   __esModule: true,
   default: () => mockUseSmoothStreaming(),
+}));
+
+jest.mock('~/hooks/MCP', () => ({
+  useMCPIconMap: () => new Map(),
+  useMCPServerNames: () => [],
 }));
 
 jest.mock('~/hooks', () => {
@@ -405,5 +411,121 @@ describe('ActivityPhaseGroup', () => {
     expect(image).toHaveAttribute('href', 'https://example.com/page');
     /** Outside the fold: collapsing the card must not take the media with it. */
     expect(screen.getByTestId('activity-phase-panel')).not.toContainElement(image);
+  });
+});
+
+describe('ActivityPhaseGroup failure fast path', () => {
+  const toPart = (call: Record<string, unknown>, id: string): TMessageContentParts =>
+    ({
+      type: ContentTypes.TOOL_CALL,
+      [ContentTypes.TOOL_CALL]: { id, args: '{}', type: 'tool_call', progress: 1, ...call },
+    }) as unknown as TMessageContentParts;
+  const okCall = toPart({ name: 'lookup', output: 'rows' }, 'ok');
+  const failedCall = toPart(
+    { name: 'fetch_page', output: 'Error: tool call failed: HTTP 429\nretry after 60' },
+    'f1',
+  );
+  const RevealProbe = ({ onReveal }: { onReveal: () => void }) => {
+    useFailedReveal(true, onReveal);
+    return <div data-testid="phase-content" />;
+  };
+
+  test('peeks the first failed call under a collapsed card and reaches it in one click', () => {
+    const onReveal = jest.fn();
+    render(
+      <ActivityPhaseGroup labelPart={labelPart} hasContent spanParts={[okCall, failedCall]}>
+        <RevealProbe onReveal={onReveal} />
+      </ActivityPhaseGroup>,
+    );
+    const peek = screen.getByTestId('activity-phase-failed-peek');
+    expect(peek).toHaveTextContent('HTTP 429');
+    expect(peek).toHaveTextContent('com_ui_show_error');
+    expect(screen.queryByTestId('phase-content')).not.toBeInTheDocument();
+
+    fireEvent.click(peek);
+
+    expect(screen.getByRole('button', { name: LABEL })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.queryByTestId('activity-phase-failed-peek')).not.toBeInTheDocument();
+    expect(onReveal).toHaveBeenCalledTimes(1);
+  });
+
+  test('the pill beside the header does the same on an open card', () => {
+    const onReveal = jest.fn();
+    render(
+      <ActivityPhaseGroup labelPart={labelPart} hasContent spanParts={[failedCall, failedCall]}>
+        <RevealProbe onReveal={onReveal} />
+      </ActivityPhaseGroup>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: LABEL }));
+    const pill = screen.getByRole('button', { name: 'com_ui_show_failed_n' });
+    fireEvent.click(pill);
+    expect(onReveal).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: LABEL })).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  test('a card with no failure shows neither pill nor peek', () => {
+    render(
+      <ActivityPhaseGroup labelPart={labelPart} hasContent spanParts={[okCall]}>
+        <div data-testid="phase-content" />
+      </ActivityPhaseGroup>,
+    );
+    expect(screen.queryByTestId('failed-reveal-pill')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('activity-phase-failed-peek')).not.toBeInTheDocument();
+  });
+});
+
+describe('ActivityPhaseGroup open header', () => {
+  const runningCall = {
+    type: ContentTypes.TOOL_CALL,
+    [ContentTypes.TOOL_CALL]: {
+      id: 'r1',
+      name: 'lookup',
+      args: '{"intent":"Checking the rollback path"}',
+      type: 'tool_call',
+      progress: 0.5,
+      output: '',
+    },
+  } as unknown as TMessageContentParts;
+
+  test('titles an open card by its label instead of the live line', () => {
+    render(
+      <ActivityPhaseGroup labelPart={labelPart} hasContent liveParts={[runningCall]}>
+        <div data-testid="phase-content" />
+      </ActivityPhaseGroup>,
+    );
+    const live = screen.getByRole('button');
+    expect(live).toHaveAttribute('aria-labelledby');
+    expect(live).toHaveTextContent('Checking the rollback path');
+
+    fireEvent.click(live);
+
+    const open = screen.getByRole('button', { name: LABEL });
+    expect(open).not.toHaveAttribute('aria-labelledby');
+    expect(open).toHaveClass('font-semibold', 'text-text-primary');
+    expect(open).not.toHaveTextContent('Checking the rollback path');
+  });
+
+  test('keeps the live line open when the span has no label yet', () => {
+    render(
+      <ActivityPhaseGroup labelPart={makeLabelPart('')} hasContent liveParts={[runningCall]}>
+        <div data-testid="phase-content" />
+      </ActivityPhaseGroup>,
+    );
+    fireEvent.click(screen.getByRole('button'));
+    expect(screen.getByRole('button')).toHaveTextContent('Checking the rollback path');
+  });
+
+  test('pins the open header and rails the rows under it', () => {
+    render(
+      <ActivityPhaseGroup labelPart={labelPart} hasContent>
+        <div data-testid="phase-content" />
+      </ActivityPhaseGroup>,
+    );
+    const header = screen.getByRole('button', { name: LABEL });
+    const pinned = header.parentElement?.parentElement;
+    expect(pinned).not.toHaveClass('sticky');
+    fireEvent.click(header);
+    expect(pinned).toHaveClass('sticky', 'top-0');
+    expect(screen.getByTestId('activity-phase-panel').firstElementChild).toHaveClass('pl-6');
   });
 });

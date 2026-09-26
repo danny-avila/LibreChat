@@ -143,3 +143,34 @@ describe('ProgressText disclosure', () => {
     expect(button.querySelector('svg')).toBeNull();
   });
 });
+
+describe('ProgressText subtitle', () => {
+  it('gives the subtitle every bit of the shrink so the label keeps its last letters', () => {
+    renderProgressText({ subtitle: 'HTTP 429 from github.com' });
+    const label = screen.getByText('Completed foo');
+    const subtitle = screen.getByText('HTTP 429 from github.com');
+    expect(label).toHaveClass('shrink-0', 'max-w-full', 'truncate');
+    expect(subtitle).toHaveClass('shrink', 'min-w-0', 'truncate');
+  });
+
+  it('lets a lone label shrink into its own ellipsis', () => {
+    renderProgressText();
+    expect(screen.getByText('Completed foo')).not.toHaveClass('shrink-0');
+  });
+});
+
+describe('ProgressText failure', () => {
+  it('keeps the verdict word on a failed row, open or not', () => {
+    renderProgressText({ phase: 'failed', hasInput: true, isExpanded: true });
+    expect(screen.getByText('· com_ui_tool_failed')).toBeInTheDocument();
+  });
+
+  it('marks a failed row at its left edge and nothing else', () => {
+    const { container, rerender } = renderProgressText({ phase: 'failed' });
+    expect(container.querySelector('.progress-text-wrapper')).toHaveClass('before:bg-status-error');
+    rerender(<ProgressText {...defaults} phase="completed" />);
+    expect(container.querySelector('.progress-text-wrapper')).not.toHaveClass(
+      'before:bg-status-error',
+    );
+  });
+});

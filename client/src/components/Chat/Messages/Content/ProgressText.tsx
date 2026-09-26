@@ -18,10 +18,26 @@ const wrapperClass =
 const contentClass =
   'progress-text-content absolute left-0 right-0 top-0 max-w-full overflow-visible whitespace-nowrap';
 
-const Wrapper = ({ popover, children }: { popover: boolean; children: React.ReactNode }) => {
+/** A failed row is marked at its left edge, in the rail's column when the row
+ *  sits under a header and in the gutter when it stands alone, so a failure
+ *  is findable by shape before its text is read. A pseudo-element rather than
+ *  a border: the row's content is absolutely positioned against the padding
+ *  box, so a border would push it and change the row's geometry. */
+const failedStripeClass =
+  "before:absolute before:-left-3 before:top-0 before:h-full before:w-0.5 before:rounded-full before:bg-status-error before:content-['']";
+
+const Wrapper = ({
+  popover,
+  failed,
+  children,
+}: {
+  popover: boolean;
+  failed: boolean;
+  children: React.ReactNode;
+}) => {
   if (popover) {
     return (
-      <div className={wrapperClass}>
+      <div className={cn(wrapperClass, failed && failedStripeClass)}>
         <Popover.Trigger asChild>
           <div className={contentClass} style={{ opacity: 1, transform: 'none' }}>
             {children}
@@ -32,7 +48,7 @@ const Wrapper = ({ popover, children }: { popover: boolean; children: React.Reac
   }
 
   return (
-    <div className={wrapperClass}>
+    <div className={cn(wrapperClass, failed && failedStripeClass)}>
       <div className={contentClass} style={{ opacity: 1, transform: 'none' }}>
         {children}
       </div>
@@ -99,7 +115,7 @@ export default function ProgressText({
       : undefined;
 
   return (
-    <Wrapper popover={popover}>
+    <Wrapper popover={popover} failed={phase === 'failed'}>
       <Button
         type="button"
         variant="ghost"
@@ -119,15 +135,25 @@ export default function ProgressText({
             {icon}
           </span>
         )}
-        <span className={cn(showShimmer ? 'shimmer' : '', 'min-w-0 truncate font-medium')}>
+        {/* The label names the card and stays whole; a subtitle can be
+            arbitrary authored text (a question, an error line), so it takes
+            ALL of the shrink and ellipsizes instead of pushing the line past
+            the message column. All, not most: a weighted share left the label
+            a fraction of a pixel short of its text, and that fraction is
+            enough for `truncate` to swap its last letters for an ellipsis.
+            `max-w-full` keeps a label wider than the row from overflowing it
+            now that nothing else can shrink the label. */}
+        <span
+          className={cn(
+            showShimmer ? 'shimmer' : '',
+            'min-w-0 max-w-full truncate font-medium',
+            subtitle && 'shrink-0',
+          )}
+        >
           {text}
         </span>
-        {/* The label names the card and stays whole; a subtitle can be
-            arbitrary authored text (a question, a server name), so it takes
-            essentially all of the shrink and ellipsizes instead of pushing
-            the line past the message column. */}
         {subtitle && (
-          <span className="min-w-0 shrink-[100] truncate font-normal text-text-secondary">
+          <span className="min-w-0 shrink truncate font-normal text-text-secondary">
             {subtitle}
           </span>
         )}
