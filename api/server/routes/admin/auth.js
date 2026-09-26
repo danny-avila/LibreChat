@@ -33,7 +33,7 @@ const {
 } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const getLogStores = require('~/cache/getLogStores');
-const { getOpenIdConfig } = require('~/strategies');
+const { getOpenIdConfig, ensureOpenIdConfigured } = require('~/strategies');
 const middleware = require('~/server/middleware');
 
 const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
@@ -145,6 +145,7 @@ function retrievePkceChallenge(provider) {
  * ────────────────────────────────────────────── */
 
 router.get('/oauth/openid', async (req, res, next) => {
+  await ensureOpenIdConfigured();
   const state = generateState();
   const cache = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
   const stored = await storeAndStripChallenge(cache, req, state, 'openid');

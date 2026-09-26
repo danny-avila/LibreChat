@@ -11,6 +11,7 @@ const {
   getOAuthFailureMessage,
   redirectToAuthFailure,
 } = require('@librechat/api');
+const { ensureOpenIdConfigured } = require('~/strategies');
 const { checkDomainAllowed, loginLimiter, logHeaders } = require('~/server/middleware');
 const { createOAuthHandler } = require('~/server/controllers/auth/oauth');
 const { findBalanceByUser, upsertBalanceFields } = require('~/models');
@@ -113,7 +114,8 @@ router.get(
 /**
  * OpenID Routes
  */
-router.get('/openid', (req, res, next) => {
+router.get('/openid', async (req, res, next) => {
+  await ensureOpenIdConfigured();
   return passport.authenticate('openid', {
     session: false,
     state: randomState(),
