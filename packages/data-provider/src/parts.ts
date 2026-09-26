@@ -454,8 +454,9 @@ const toDataPart = (part: ContentPartOf<keyof typeof dataPartTypes>): UIDataPart
 /**
  * Maps one content part to its UI part. A missing part (a hole in a streamed array) maps to
  * `step-start`, so indexes line up with the content array. So does a slot with no known type,
- * such as the `type: ''` lane placeholder a dual-conversation turn seeds: persistence compacts
- * those away, and the reverse mapping leaves a hole in their place the same way.
+ * such as the `type: ''` lane placeholder a dual-conversation turn seeds, and a tool call slot
+ * whose call has not arrived yet: persistence compacts those away, and the reverse mapping leaves
+ * a hole in their place the same way.
  */
 export function toUIPart(
   part: MappableContentPart | null | undefined,
@@ -476,10 +477,10 @@ export function toUIPart(
     }
     case ContentTypes.TEXT_DELTA: {
       const { type: _type, text, text_delta: textDelta, ...rest } = part;
-      const { value } = splitText(textDelta ?? text);
+      const { value, ...shape } = splitText(textDelta ?? text);
       return withLibreChatMetadata(
         { type: 'text', text: value, state: 'streaming' } satisfies UITextPart,
-        rest,
+        toTextMetadata(rest, shape),
       );
     }
     case ContentTypes.THINK: {
@@ -492,7 +493,7 @@ export function toUIPart(
       });
     }
     case ContentTypes.TOOL_CALL:
-      return toToolPart(part, index, options);
+      return part.tool_call == null ? stepStart : toToolPart(part, index, options);
     case ContentTypes.IMAGE_FILE: {
       const { type: _type, ...rest } = part;
       const { image_file: imageFile } = rest;
@@ -825,7 +826,8 @@ export function toUIMessage(message: TMessage, options?: UIMappingOptions): UIMe
       }
       pushUnique(
         agentIds,
-        part.agentId ?? (part.type === ContentTypes.TOOL_CALL ? part.tool_call.agentId : undefined),
+        part.agentId ??
+          (part.type === ContentTypes.TOOL_CALL ? part.tool_call?.agentId : undefined),
       );
       pushUnique(groupIds, part.groupId);
       if (uiPart.type === 'text') {

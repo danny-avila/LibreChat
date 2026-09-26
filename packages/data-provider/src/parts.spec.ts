@@ -282,6 +282,20 @@ describe('parts', () => {
       ]);
     });
 
+    it('maps a tool call slot whose call has not arrived to step-start', () => {
+      const placeholder = { type: ContentTypes.TOOL_CALL } as unknown as MappableContentPart;
+      const content = [
+        { type: ContentTypes.TEXT, text: 'a' },
+        placeholder,
+      ] as TMessageContentParts[];
+
+      expect(toUIPart(placeholder)).toEqual({ type: 'step-start' });
+      expect(toUIMessage(createMessage({ content })).parts).toEqual([
+        { type: 'text', text: 'a' },
+        { type: 'step-start' },
+      ]);
+    });
+
     it('maps a missing slot to step-start and step-start back to nothing', () => {
       expect(toUIPart(undefined)).toEqual({ type: 'step-start' });
       expect(fromUIPart({ type: 'step-start' })).toBeUndefined();
@@ -1003,6 +1017,29 @@ describe('parts', () => {
         text: 'chunk',
         state: 'streaming',
         providerMetadata: { librechat: { agentId: 'agent-a', groupId: 2 } },
+      });
+    });
+
+    it('keeps the object form and annotations of a streamed text delta', () => {
+      const annotations = [
+        {
+          type: 'file_citation',
+          text: 'cite',
+          start_index: 4,
+          end_index: 8,
+          file_citation: { file_id: 'f', quote: 'q' },
+        },
+      ];
+      const part = {
+        type: ContentTypes.TEXT_DELTA,
+        text_delta: { value: 'See cite', annotations },
+      } as MappableContentPart;
+      const uiPart = toUIPart(part);
+
+      expect(uiPart).toMatchObject({ type: 'text', text: 'See cite', state: 'streaming' });
+      expect(fromUIPart(uiPart)).toStrictEqual({
+        type: ContentTypes.TEXT,
+        text: { value: 'See cite', annotations },
       });
     });
 
