@@ -230,17 +230,8 @@ jest.mock('@librechat/api', () => ({
   buildInitialToolSessions: jest.fn().mockReturnValue(mockInitialSessions),
   AgentRunEnvelopeError: MockAgentRunEnvelopeError,
   createAgentRunEnvelope: (...args) => mockCreateAgentRunEnvelope(...args),
-  resolveConversationCodeEnvironmentDecision: ({
-    requestedMode,
-    requestedSelections,
-    conversation,
-  }) => {
-    const codeWorkspaces = requestedSelections ?? conversation?.codeWorkspaces;
-    return {
-      mode: requestedMode ?? (codeWorkspaces?.length ? 'attached' : 'without_attached'),
-      ...(codeWorkspaces !== undefined && { codeWorkspaces }),
-    };
-  },
+  resolveAdmittedCodeEnvironmentDecision: (...args) =>
+    jest.requireActual('@librechat/api').resolveAdmittedCodeEnvironmentDecision(...args),
   createMCPRuntimeRequestBody: ({
     messageId,
     conversationId,
@@ -485,6 +476,7 @@ jest.mock('~/models', () => ({
   getConvoFiles: jest.fn().mockResolvedValue([]),
   getFormattedMemories: jest.fn().mockResolvedValue({ withKeys: '', withoutKeys: '' }),
   getConvo: jest.fn().mockResolvedValue(null),
+  readAdmittedConvoCodeEnvironmentDecision: jest.fn().mockResolvedValue(null),
   isSubagentOwnerAdmissible: jest.fn().mockResolvedValue(true),
 }));
 
@@ -1508,11 +1500,19 @@ describe('OpenAIChatCompletionController', () => {
   });
 
   describe('conversation ownership validation', () => {
-    it.each([false, true])(
-      'propagates explicit or owned persisted workspaces: continuation=%s',
-      async (continuation) => {
+    it.each([
+      [false, false],
+      [true, false],
+      [false, true],
+      [true, true],
+    ])(
+      'propagates explicit or owned persisted workspaces: continuation=%s moves=%s',
+      async (continuation, movesEnabled) => {
         const api = require('@librechat/api');
         const selections = [{ environmentId: 'machine', workspaceId: 'project' }];
+        req.config.endpoints.agents.statefulCodeSessions = {
+          conversationMoves: { enabled: movesEnabled },
+        };
         api.validateRequest.mockReturnValueOnce({
           request: {
             model: 'agent-123',
@@ -1526,7 +1526,15 @@ describe('OpenAIChatCompletionController', () => {
             conversationId: 'convo-abc',
             codeWorkspaces: selections,
           });
+        if (continuation && movesEnabled)
+          require('~/models').readAdmittedConvoCodeEnvironmentDecision.mockResolvedValueOnce({
+            conversationId: 'convo-abc',
+            codeWorkspaces: selections,
+          });
         await OpenAIChatCompletionController(req, res);
+        const fencedRead = require('~/models').readAdmittedConvoCodeEnvironmentDecision;
+        if (movesEnabled) expect(fencedRead).toHaveBeenCalledTimes(1);
+        else expect(fencedRead).not.toHaveBeenCalled();
         expect(api.initializeAgent).toHaveBeenCalledWith(
           expect.objectContaining({
             requestBody: expect.objectContaining({ codeWorkspaces: selections }),

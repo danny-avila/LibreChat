@@ -252,17 +252,8 @@ jest.mock('@librechat/api', () => ({
   })),
   AgentRunEnvelopeError: MockAgentRunEnvelopeError,
   createAgentRunEnvelope: (...args) => mockCreateAgentRunEnvelope(...args),
-  resolveConversationCodeEnvironmentDecision: ({
-    requestedMode,
-    requestedSelections,
-    conversation,
-  }) => {
-    const codeWorkspaces = requestedSelections ?? conversation?.codeWorkspaces;
-    return {
-      mode: requestedMode ?? (codeWorkspaces?.length ? 'attached' : 'without_attached'),
-      ...(codeWorkspaces !== undefined && { codeWorkspaces }),
-    };
-  },
+  resolveAdmittedCodeEnvironmentDecision: (...args) =>
+    jest.requireActual('@librechat/api').resolveAdmittedCodeEnvironmentDecision(...args),
   resolvePersistableCodeEnvironmentDecision: (...args) =>
     jest.requireActual('@librechat/api').resolvePersistableCodeEnvironmentDecision(...args),
   getCodeWorkspaceSelections: jest.fn(),
@@ -568,6 +559,7 @@ jest.mock('~/models', () => ({
   getFormattedMemories: jest.fn().mockResolvedValue({ withKeys: '', withoutKeys: '' }),
   saveConvo: jest.fn().mockResolvedValue({}),
   getConvo: jest.fn().mockResolvedValue(null),
+  readAdmittedConvoCodeEnvironmentDecision: jest.fn().mockResolvedValue(null),
   isSubagentOwnerAdmissible: jest.fn().mockResolvedValue(true),
 }));
 
@@ -614,11 +606,19 @@ describe('createResponse controller', () => {
     };
   });
 
-  it.each([false, true])(
-    'passes explicit or owner-loaded workspace selections to runtime: continuation=%s',
-    async (continuation) => {
+  it.each([
+    [false, false],
+    [true, false],
+    [false, true],
+    [true, true],
+  ])(
+    'passes explicit or owner-loaded workspace selections to runtime: continuation=%s moves=%s',
+    async (continuation, movesEnabled) => {
       const api = require('@librechat/api');
       const selections = [{ environmentId: 'machine', workspaceId: 'project' }];
+      req.config.endpoints.agents.statefulCodeSessions = {
+        conversationMoves: { enabled: movesEnabled },
+      };
       const request = {
         model: 'agent-123',
         input: 'Hello',
@@ -631,7 +631,15 @@ describe('createResponse controller', () => {
           conversationId: 'previous',
           codeWorkspaces: selections,
         });
+      if (continuation && movesEnabled)
+        require('~/models').readAdmittedConvoCodeEnvironmentDecision.mockResolvedValueOnce({
+          conversationId: 'previous',
+          codeWorkspaces: selections,
+        });
       await createResponse(req, res);
+      const fencedRead = require('~/models').readAdmittedConvoCodeEnvironmentDecision;
+      if (movesEnabled) expect(fencedRead).toHaveBeenCalledTimes(1);
+      else expect(fencedRead).not.toHaveBeenCalled();
       expect(api.initializeAgent).toHaveBeenCalledWith(
         expect.objectContaining({
           requestBody: expect.objectContaining({ codeWorkspaces: selections }),
