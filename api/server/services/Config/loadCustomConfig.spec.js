@@ -147,6 +147,57 @@ describe('loadCustomConfig', () => {
     );
   });
 
+  it('does not exit when config validation fails during reload', async () => {
+    process.env.CONFIG_PATH = 'invalidConfig.yaml';
+    loadYaml.mockReturnValueOnce({ invalidField: true });
+
+    await expect(loadCustomConfig(true, { mode: 'reload' })).rejects.toMatchObject({
+      name: 'ConfigReloadError',
+      validationErrors: expect.any(Array),
+    });
+    expect(mockExit).not.toHaveBeenCalled();
+  });
+
+  it('rejects a reload when the local config file is missing', async () => {
+    process.env.CONFIG_PATH = 'missingConfig.yaml';
+    loadYaml.mockReturnValueOnce(null);
+
+    await expect(loadCustomConfig(true, { mode: 'reload' })).rejects.toMatchObject({
+      name: 'ConfigReloadError',
+    });
+    expect(mockExit).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed local YAML during reload without exiting', async () => {
+    process.env.CONFIG_PATH = 'invalidConfig.yaml';
+    loadYaml.mockReturnValueOnce(new Error('Malformed YAML'));
+
+    await expect(loadCustomConfig(true, { mode: 'reload' })).rejects.toMatchObject({
+      name: 'ConfigReloadError',
+    });
+    expect(mockExit).not.toHaveBeenCalled();
+  });
+
+  it('rejects malformed remote YAML during reload without exiting', async () => {
+    process.env.CONFIG_PATH = 'https://example.com/config.yaml';
+    axios.get.mockResolvedValueOnce({ data: 'version: [unterminated' });
+
+    await expect(loadCustomConfig(true, { mode: 'reload' })).rejects.toMatchObject({
+      name: 'ConfigReloadError',
+    });
+    expect(mockExit).not.toHaveBeenCalled();
+  });
+
+  it('rejects a reload when the remote config fetch fails', async () => {
+    process.env.CONFIG_PATH = 'https://example.com/config.yaml';
+    axios.get.mockRejectedValueOnce(new Error('Network error'));
+
+    await expect(loadCustomConfig(true, { mode: 'reload' })).rejects.toMatchObject({
+      name: 'ConfigReloadError',
+    });
+    expect(mockExit).not.toHaveBeenCalled();
+  });
+
   it('should handle and return null on YAML parse error for a string response from remote', async () => {
     process.env.CONFIG_PATH = 'http://example.com/config.yaml';
     process.env.CONFIG_BYPASS_VALIDATION = 'true';
