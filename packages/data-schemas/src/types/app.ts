@@ -13,6 +13,7 @@ import type {
   TAssistantEndpoint,
   TAnthropicEndpoint,
   SummarizationConfig,
+  TConversationListConfig,
   SkillSyncConfig,
   FiltersConfig,
 } from 'librechat-data-provider';
@@ -112,6 +113,8 @@ export interface AppConfig {
   fileConfig?: TFileConfig;
   /** Secure image links configuration, enabled unless explicitly disabled */
   secureImageLinks?: TCustomConfig['secureImageLinks'];
+  /** Validation limits for the conversation list's filter facets */
+  conversationList?: TConversationListConfig;
   /** Processed model specifications */
   modelSpecs?: TCustomConfig['modelSpecs'];
   /** Available tools */

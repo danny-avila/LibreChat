@@ -8223,4 +8223,411 @@ describe('Conversation Operations', () => {
       ]);
     });
   });
+  describe('getConvosByCursor list facets', () => {
+    const user = 'facet-user';
+    const day = 24 * 60 * 60 * 1000;
+
+    /** `timestamps: true` rewrites both dates on save, so a test that needs an old
+     *  conversation has to set them afterwards. */
+    const makeConvo = async (
+      overrides: Partial<{
+        title: string;
+        endpoint: string;
+        updatedAt: Date;
+        createdAt: Date;
+        files: string[];
+      }> = {},
+    ) => {
+      const convo = await Conversation.create({
+        conversationId: uuidv4(),
+        user,
+        title: overrides.title ?? 'Facet conversation',
+        endpoint: overrides.endpoint ?? EModelEndpoint.openAI,
+        ...(overrides.files ? { files: overrides.files } : {}),
+      });
+
+      if (overrides.updatedAt || overrides.createdAt) {
+        /** Through the driver, not the model: Mongoose suppresses `updatedAt` only with
+         *  `timestamps: false` and refuses `createdAt` outright, since it marks the
+         *  field immutable. */
+        await Conversation.collection.updateOne(
+          { _id: convo._id },
+          {
+            $set: {
+              ...(overrides.updatedAt ? { updatedAt: overrides.updatedAt } : {}),
+              ...(overrides.createdAt ? { createdAt: overrides.createdAt } : {}),
+            },
+          },
+        );
+      }
+
+      return convo;
+    };
+
+    beforeEach(async () => {
+      await Conversation.deleteMany({ user });
+    });
+
+    it('keeps only conversations updated at or after the cutoff', async () => {
+      const recent = await makeConvo({ title: 'recent', updatedAt: new Date() });
+      await makeConvo({ title: 'stale', updatedAt: new Date(Date.now() - 30 * day) });
+
+      const result = await getConvosByCursor(user, {
+        updatedAfter: new Date(Date.now() - 7 * day),
+      });
+
+      expect(result.conversations.map((c) => c.conversationId)).toEqual([recent.conversationId]);
+    });
+
+    it('filters on createdAt independently of updatedAt', async () => {
+      /** An old chat replied to today has a new updatedAt and an old createdAt. */
+      const revived = await makeConvo({
+        title: 'revived',
+        createdAt: new Date(Date.now() - 30 * day),
+        updatedAt: new Date(),
+      });
+      const fresh = await makeConvo({ title: 'fresh', createdAt: new Date() });
+
+      const byCreated = await getConvosByCursor(user, {
+        createdAfter: new Date(Date.now() - 7 * day),
+      });
+      expect(byCreated.conversations.map((c) => c.conversationId)).toEqual([fresh.conversationId]);
+
+      const byUpdated = await getConvosByCursor(user, {
+        updatedAfter: new Date(Date.now() - 7 * day),
+      });
+      expect(byUpdated.conversations.map((c) => c.conversationId).sort()).toEqual(
+        [revived.conversationId, fresh.conversationId].sort(),
+      );
+    });
+
+    it('matches any of the requested endpoints', async () => {
+      const openai = await makeConvo({ endpoint: EModelEndpoint.openAI });
+      const anthropic = await makeConvo({ endpoint: EModelEndpoint.anthropic });
+      await makeConvo({ endpoint: EModelEndpoint.google });
+
+      const result = await getConvosByCursor(user, {
+        endpoints: [EModelEndpoint.openAI, EModelEndpoint.anthropic],
+      });
+
+      expect(result.conversations.map((c) => c.conversationId).sort()).toEqual(
+        [openai.conversationId, anthropic.conversationId].sort(),
+      );
+    });
+
+    it('treats a missing and an emptied file list alike when filtering on attachments', async () => {
+      const withFiles = await makeConvo({ title: 'with files', files: ['file-1'] });
+      await makeConvo({ title: 'no field' });
+      await makeConvo({ title: 'emptied', files: [] });
+
+      const result = await getConvosByCursor(user, { hasFiles: true });
+
+      expect(result.conversations.map((c) => c.conversationId)).toEqual([withFiles.conversationId]);
+    });
+
+    it('includes conversations whose attachments ride on messages', async () => {
+      /** The standard send flow persists uploads on the user message, so a facet that
+       *  only read the conversation's own array would miss every ordinary chat. */
+      const Message = mongoose.models.Message as mongoose.Model<{
+        user: string;
+        conversationId: string;
+        messageId: string;
+        files: unknown[];
+      }>;
+      const messageFiles = await makeConvo({ title: 'message files' });
+      await makeConvo({ title: 'neither' });
+      await Message.create({
+        user,
+        conversationId: messageFiles.conversationId,
+        messageId: uuidv4(),
+        text: 'here you go',
+        sender: 'User',
+        isCreatedByUser: true,
+        files: [{ file_id: 'file-1' }],
+      });
+
+      const result = await getConvosByCursor(user, { hasFiles: true });
+
+      expect(result.conversations.map((c) => c.conversationId)).toEqual([
+        messageFiles.conversationId,
+      ]);
+    });
+
+    it('reads files attached to a message content part, such as a steer', async () => {
+      const Message = mongoose.models.Message as mongoose.Model<{
+        user: string;
+        conversationId: string;
+        messageId: string;
+        content: unknown[];
+      }>;
+      const steered = await makeConvo({ title: 'steered' });
+      const textOnly = await makeConvo({ title: 'text only' });
+      await Message.create([
+        {
+          user,
+          conversationId: steered.conversationId,
+          messageId: uuidv4(),
+          sender: 'Assistant',
+          isCreatedByUser: false,
+          content: [
+            { type: 'text', text: 'working on it' },
+            { type: 'steer', steer: 'use this', steerId: 's-1', files: [{ file_id: 'f-1' }] },
+          ],
+        },
+        {
+          user,
+          conversationId: textOnly.conversationId,
+          messageId: uuidv4(),
+          sender: 'Assistant',
+          isCreatedByUser: false,
+          content: [{ type: 'steer', steer: 'no file', steerId: 's-2', files: [] }],
+        },
+      ]);
+
+      const result = await getConvosByCursor(user, { hasFiles: true });
+
+      expect(result.conversations.map((c) => c.conversationId)).toEqual([steered.conversationId]);
+    });
+
+    it.each([
+      ['a provider-native file part', { type: 'file', file: { file_id: 'f-native' } }],
+      ['an image_file part', { type: 'image_file', image_file: { file_id: 'f-image' } }],
+      ['a part carrying a bare file_id', { type: 'file', file_id: 'f-bare' }],
+    ])('reads files attached as %s', async (_label, part) => {
+      const Message = mongoose.models.Message as mongoose.Model<{
+        user: string;
+        conversationId: string;
+        messageId: string;
+        content: unknown[];
+      }>;
+      const attached = await makeConvo({ title: 'attached' });
+      await makeConvo({ title: 'text only' });
+      await Message.create({
+        user,
+        conversationId: attached.conversationId,
+        messageId: uuidv4(),
+        sender: 'User',
+        isCreatedByUser: true,
+        content: [{ type: 'text', text: 'see this' }, part],
+      });
+
+      const result = await getConvosByCursor(user, { hasFiles: true });
+
+      expect(result.conversations.map((c) => c.conversationId)).toEqual([attached.conversationId]);
+    });
+
+    it('reads files a tool or assistant attached to its response', async () => {
+      const Message = mongoose.models.Message as mongoose.Model<{
+        user: string;
+        conversationId: string;
+        messageId: string;
+        attachments: unknown[];
+      }>;
+      const generated = await makeConvo({ title: 'generated file' });
+      const downloadOnly = await makeConvo({ title: 'download-only file' });
+      const searched = await makeConvo({ title: 'search results only' });
+      await Message.create([
+        {
+          user,
+          conversationId: generated.conversationId,
+          messageId: uuidv4(),
+          sender: 'Assistant',
+          isCreatedByUser: false,
+          attachments: [{ file_id: 'f-out', filename: 'plot.png', toolCallId: 't-1' }],
+        },
+        {
+          user,
+          conversationId: downloadOnly.conversationId,
+          messageId: uuidv4(),
+          sender: 'Assistant',
+          isCreatedByUser: false,
+          attachments: [
+            { filename: 'report.csv', filepath: '/api/files/code/download/s/report.csv' },
+          ],
+        },
+        {
+          user,
+          conversationId: searched.conversationId,
+          messageId: uuidv4(),
+          sender: 'Assistant',
+          isCreatedByUser: false,
+          attachments: [
+            { type: 'web_search', toolCallId: 't-2' },
+            { filename: 'blank.txt', filepath: '' },
+          ],
+        },
+      ]);
+
+      const result = await getConvosByCursor(user, { hasFiles: true });
+
+      expect(result.conversations.map((c) => c.conversationId).sort()).toEqual(
+        [generated.conversationId, downloadOnly.conversationId].sort(),
+      );
+    });
+
+    it('combines facets rather than widening the result', async () => {
+      const match = await makeConvo({
+        title: 'match',
+        endpoint: EModelEndpoint.openAI,
+        files: ['file-1'],
+        updatedAt: new Date(),
+      });
+      await makeConvo({ title: 'wrong endpoint', endpoint: EModelEndpoint.google, files: ['f'] });
+      await makeConvo({ title: 'no files', endpoint: EModelEndpoint.openAI });
+      await makeConvo({
+        title: 'too old',
+        endpoint: EModelEndpoint.openAI,
+        files: ['f'],
+        updatedAt: new Date(Date.now() - 30 * day),
+      });
+
+      const result = await getConvosByCursor(user, {
+        endpoints: [EModelEndpoint.openAI],
+        hasFiles: true,
+        updatedAfter: new Date(Date.now() - 7 * day),
+      });
+
+      expect(result.conversations.map((c) => c.conversationId)).toEqual([match.conversationId]);
+    });
+
+    it('carries the facets across a paged cursor', async () => {
+      const wanted = [] as string[];
+      for (let index = 0; index < 3; index++) {
+        const convo = await makeConvo({
+          title: `wanted ${index}`,
+          endpoint: EModelEndpoint.openAI,
+          updatedAt: new Date(Date.now() - index * 1000),
+        });
+        wanted.push(convo.conversationId);
+      }
+      for (let index = 0; index < 3; index++) {
+        await makeConvo({ title: `other ${index}`, endpoint: EModelEndpoint.google });
+      }
+
+      const first = await getConvosByCursor(user, {
+        endpoints: [EModelEndpoint.openAI],
+        limit: 2,
+      });
+      expect(first.conversations).toHaveLength(2);
+      expect(first.nextCursor).not.toBeNull();
+
+      const second = await getConvosByCursor(user, {
+        endpoints: [EModelEndpoint.openAI],
+        limit: 2,
+        cursor: first.nextCursor,
+      });
+
+      const paged = [...first.conversations, ...second.conversations].map((c) => c.conversationId);
+      /** The second page must not reintroduce the rows the filter excluded. */
+      expect(paged.sort()).toEqual(wanted.sort());
+    });
+
+    it('keeps only conversations with an active shared link', async () => {
+      const SharedLink = mongoose.models.SharedLink as mongoose.Model<{
+        conversationId: string;
+        user: string;
+        shareId: string;
+        expiredAt?: Date | null;
+      }>;
+      const shared = await makeConvo({ title: 'shared' });
+      await makeConvo({ title: 'not shared' });
+      const expired = await makeConvo({ title: 'share expired' });
+
+      await SharedLink.create([
+        { conversationId: shared.conversationId, user, shareId: `share-${uuidv4()}` },
+        {
+          conversationId: expired.conversationId,
+          user,
+          shareId: `share-${uuidv4()}`,
+          expiredAt: new Date('2020-01-01T00:00:00.000Z'),
+        },
+      ]);
+
+      const result = await getConvosByCursor(user, { sharedOnly: true });
+
+      /** A lapsed link is not a shared chat, which is why this reads the links rather
+       *  than a flag stored on the conversation. */
+      expect(result.conversations.map((c) => c.conversationId)).toEqual([shared.conversationId]);
+      /** The filter already resolved the share set, so the row carries its flag from
+       *  that answer rather than waiting on a second lookup. */
+      expect(result.conversations[0].isShared).toBe(true);
+
+      await SharedLink.deleteMany({ user });
+    });
+
+    it('returns nothing when the user shares nothing', async () => {
+      await makeConvo({ title: 'present' });
+
+      const result = await getConvosByCursor(user, { sharedOnly: true });
+
+      /** An empty `$in` would match every document, so this must short-circuit. */
+      expect(result.conversations).toEqual([]);
+      expect(result.nextCursor).toBeNull();
+    });
+
+    it('returns nothing when the deployment has sharing switched off', async () => {
+      const SharedLink = mongoose.models.SharedLink as mongoose.Model<{
+        conversationId: string;
+        user: string;
+        shareId: string;
+      }>;
+      const shared = await makeConvo({ title: 'shared' });
+      await SharedLink.create({
+        conversationId: shared.conversationId,
+        user,
+        shareId: `share-${uuidv4()}`,
+      });
+
+      const previous = process.env.ALLOW_SHARED_LINKS;
+      process.env.ALLOW_SHARED_LINKS = 'false';
+      try {
+        const result = await getConvosByCursor(user, { sharedOnly: true });
+        expect(result.conversations).toEqual([]);
+      } finally {
+        if (previous === undefined) {
+          delete process.env.ALLOW_SHARED_LINKS;
+        } else {
+          process.env.ALLOW_SHARED_LINKS = previous;
+        }
+        await SharedLink.deleteMany({ user });
+      }
+    });
+
+    it('narrows shared chats further with another facet', async () => {
+      const SharedLink = mongoose.models.SharedLink as mongoose.Model<{
+        conversationId: string;
+        user: string;
+        shareId: string;
+      }>;
+      const match = await makeConvo({ title: 'shared openai', endpoint: EModelEndpoint.openAI });
+      const wrongEndpoint = await makeConvo({
+        title: 'shared google',
+        endpoint: EModelEndpoint.google,
+      });
+
+      await SharedLink.create([
+        { conversationId: match.conversationId, user, shareId: `share-${uuidv4()}` },
+        { conversationId: wrongEndpoint.conversationId, user, shareId: `share-${uuidv4()}` },
+      ]);
+
+      const result = await getConvosByCursor(user, {
+        sharedOnly: true,
+        endpoints: [EModelEndpoint.openAI],
+      });
+
+      expect(result.conversations.map((c) => c.conversationId)).toEqual([match.conversationId]);
+
+      await SharedLink.deleteMany({ user });
+    });
+
+    it('ignores an invalid date rather than filtering on NaN', async () => {
+      const convo = await makeConvo({ title: 'present' });
+
+      const result = await getConvosByCursor(user, {
+        updatedAfter: new Date('not a date'),
+      });
+
+      expect(result.conversations.map((c) => c.conversationId)).toEqual([convo.conversationId]);
+    });
+  });
 });

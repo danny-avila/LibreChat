@@ -21,6 +21,7 @@ import type {
   IChatProjectDocument,
   IActiveSubagentThreadLease,
   IConversation,
+  IMessage,
   ISharedLink,
   ISubagentThreadReservation,
 } from '~/types';
@@ -319,6 +320,11 @@ export interface ConversationMethods {
       sortBy?: string;
       sortDirection?: string;
       projectId?: string;
+      updatedAfter?: Date;
+      createdAfter?: Date;
+      endpoints?: string[];
+      hasFiles?: boolean;
+      sharedOnly?: boolean;
     },
   ): Promise<{ conversations: IConversation[]; nextCursor: string | null }>;
   getConvosQueried(
@@ -2983,6 +2989,63 @@ export function createConversationMethods(
   }
 
   /**
+   * Conversations with a file on any of this user's messages. A message holds files in
+   * three places: uploads on `files`, tool and assistant output on `attachments` (a stored
+   * file, or a download-only one the client renders by its `filepath`), and content parts
+   * in every shape replay reads (a steer's `files`, a provider-native `file` or
+   * `image_file`, or a bare `file_id`).
+   */
+  async function getMessageFileConversationIds(user: string): Promise<string[] | null> {
+    const Message = mongoose.models.Message as Model<IMessage> | undefined;
+    if (!Message) {
+      return null;
+    }
+    return Message.find({
+      user,
+      $or: [
+        { 'files.0': { $exists: true } },
+        { 'attachments.file_id': { $type: 'string' } },
+        { 'attachments.filepath': { $type: 'string', $gt: '' } },
+        { 'content.files.0': { $exists: true } },
+        { 'content.file.file_id': { $type: 'string' } },
+        { 'content.image_file.file_id': { $type: 'string' } },
+        { 'content.file_id': { $type: 'string' } },
+      ],
+    }).distinct('conversationId');
+  }
+
+  /**
+   * The conversations this user is actively sharing.
+   *
+   * Shared state is not a field on the conversation: it is a live link that can expire,
+   * so a denormalized flag would keep saying "shared" after a link lapsed. This asks the
+   * links themselves, indexed by `{ user, conversationId }`, and returns `null` when the
+   * deployment has sharing switched off so the caller can tell "no links" from "not
+   * applicable".
+   */
+  async function getSharedConversationIds(user: string): Promise<string[] | null> {
+    const SharedLink = mongoose.models.SharedLink as Model<ISharedLink> | undefined;
+    if (!SharedLink) {
+      return null;
+    }
+    const allowSharedLinks = process.env.ALLOW_SHARED_LINKS;
+    if (allowSharedLinks !== undefined && allowSharedLinks.toLowerCase().trim() !== 'true') {
+      return null;
+    }
+
+    /* Distinct, not find: the only thing this caller can use is the set of IDs, so the
+       server dedupes and returns nothing else. Covered by `{ user, conversationId }`. */
+    const sharedIds = await SharedLink.find({
+      user,
+      ...activeExpirationFilter<ISharedLink>(),
+    }).distinct('conversationId');
+
+    return sharedIds.filter(
+      (conversationId): conversationId is string => typeof conversationId === 'string',
+    );
+  }
+
+  /**
    * Retrieves conversations using cursor-based pagination.
    */
   async function getConvosByCursor(
@@ -2997,6 +3060,11 @@ export function createConversationMethods(
       sortBy = 'updatedAt',
       sortDirection = 'desc',
       projectId,
+      updatedAfter,
+      createdAfter,
+      endpoints,
+      hasFiles,
+      sharedOnly,
     }: {
       cursor?: string | null;
       limit?: number;
@@ -3007,6 +3075,11 @@ export function createConversationMethods(
       sortBy?: string;
       sortDirection?: string;
       projectId?: string;
+      updatedAfter?: Date;
+      createdAfter?: Date;
+      endpoints?: string[];
+      hasFiles?: boolean;
+      sharedOnly?: boolean;
     } = {},
   ) {
     const Conversation = mongoose.models.Conversation as Model<IConversation> &
@@ -3039,6 +3112,54 @@ export function createConversationMethods(
       } as FilterQuery<IConversation>);
     } else if (projectId) {
       filters.push({ chatProjectId: projectId } as FilterQuery<IConversation>);
+    }
+
+    /* Ranges are half-open on purpose: the caller sends the start of the window it
+       means, and "since midnight" must not depend on how the clock rounds. */
+    if (updatedAfter instanceof Date && !Number.isNaN(updatedAfter.getTime())) {
+      filters.push({ updatedAt: { $gte: updatedAfter } } as FilterQuery<IConversation>);
+    }
+    if (createdAfter instanceof Date && !Number.isNaN(createdAfter.getTime())) {
+      filters.push({ createdAt: { $gte: createdAfter } } as FilterQuery<IConversation>);
+    }
+
+    if (Array.isArray(endpoints) && endpoints.length > 0) {
+      filters.push({ endpoint: { $in: endpoints } } as FilterQuery<IConversation>);
+    }
+
+    /* The two facet lookups are independent user-scoped reads, so they start together
+       instead of adding their latencies on every page that combines them. */
+    const [messageFileIds, activeShares] = await Promise.all([
+      hasFiles === true ? getMessageFileConversationIds(user) : null,
+      sharedOnly === true ? getSharedConversationIds(user) : null,
+    ]);
+
+    /* Attachments are not one field: the standard flow rides them on messages, imports
+       can land them on the conversation, and `files` is absent or `[]` when empty. The
+       conversation-side predicate alone would miss every ordinary chat with an upload,
+       so the message-side conversation IDs are OR-matched in. */
+    if (hasFiles === true) {
+      const orClauses: FilterQuery<IConversation>[] = [
+        { files: { $exists: true, $not: { $size: 0 } } } as FilterQuery<IConversation>,
+      ];
+      if (messageFileIds != null && messageFileIds.length > 0) {
+        orClauses.push({ conversationId: { $in: messageFileIds } } as FilterQuery<IConversation>);
+      }
+      filters.push({ $or: orClauses } as FilterQuery<IConversation>);
+    }
+
+    /* When this filter runs, the page's rows are already known to be shared, so the set
+       is kept and used to mark `isShared` directly instead of issuing a second
+       SharedLink query after the conversation query for the same answers. */
+    let sharedIds: Set<string> | null = null;
+    if (sharedOnly === true) {
+      /* Nothing shared, or sharing switched off, means nothing can match. Returning early
+         also keeps an empty `$in` out of the query, which would match every document. */
+      if (activeShares == null || activeShares.length === 0) {
+        return { conversations: [], nextCursor: null };
+      }
+      sharedIds = new Set(activeShares);
+      filters.push({ conversationId: { $in: activeShares } } as FilterQuery<IConversation>);
     }
 
     filters.push(getVisibleConversationRetentionFilter());
@@ -3228,7 +3349,13 @@ export function createConversationMethods(
         nextCursor = Buffer.from(JSON.stringify(composite)).toString('base64');
       }
 
-      await attachSharedFlags(user, convos);
+      if (sharedIds != null) {
+        for (const convo of convos) {
+          convo.isShared = sharedIds.has(convo.conversationId);
+        }
+      } else {
+        await attachSharedFlags(user, convos);
+      }
 
       return { conversations: convos, nextCursor };
     } catch (error) {

@@ -3187,6 +3187,22 @@ export type TOpenIdDiscoveryConfig = z.infer<typeof openIdDiscoverySchema>;
 /** Maximum CAS attempts per ACL document, including the initial attempt. */
 export const permissionWriteAttemptsSchema = z.number().int().min(1).max(100).default(3);
 
+/**
+ * Validation limits for the conversation list's filter facets. The field defaults are the
+ * only definition of these values: `getConfigDefaults()` resolves them for AppService, and
+ * the parser takes what AppService resolved.
+ */
+export const conversationListConfigSchema = z.object({
+  /** How many endpoint names one filter request may name. The list is a fixed menu of the
+   * endpoints a deployment serves, so a request naming more than this is not a user
+   * choosing filters: it is an unbounded `$in` arriving from somewhere else. */
+  maxEndpointFilters: z.number().int().min(1).max(1_000).default(50),
+  /** One endpoint name. Long enough for a custom endpoint, short enough to bound the query. */
+  maxEndpointNameLength: z.number().int().min(1).max(1_024).default(128),
+});
+
+export type TConversationListConfig = z.infer<typeof conversationListConfigSchema>;
+
 export const configSchema = z.object({
   version: z.string(),
   permissions: z.object({ maxWriteAttempts: permissionWriteAttemptsSchema }).optional(),
@@ -3199,6 +3215,9 @@ export const configSchema = z.object({
   skillSync: skillSyncConfigSchema,
   secureImageLinks: z.boolean().optional(),
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
+  conversationList: conversationListConfigSchema.default(() =>
+    conversationListConfigSchema.parse({}),
+  ),
   includedTools: z.array(z.string()).optional(),
   filteredTools: z.array(z.string()).optional(),
   mcpServers: MCPServersSchema.optional(),

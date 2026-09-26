@@ -109,6 +109,12 @@ module.exports = {
       const raw = Array.isArray(value) ? value[0] : value;
       return raw === 'asc' || raw === 'desc' ? raw : fallback;
     }),
+    /** The real resolver and parser, so the route tests see the same 400s and configured
+     *  limits a request would. */
+    resolveConversationListFilters: jest.fn(
+      jest.requireActual('../../../../packages/api/src/conversations/filters.ts')
+        .resolveConversationListFilters,
+    ),
     resolveImportMaxFileSize: jest.fn(() => 262144000),
     createAxiosInstance: jest.fn(() => ({
       get: jest.fn(),
@@ -212,6 +218,8 @@ module.exports = {
   }),
 
   dataProvider: (overrides = {}) => ({
+    conversationListConfigSchema:
+      jest.requireActual('librechat-data-provider').conversationListConfigSchema,
     CacheKeys: { GEN_TITLE: 'GEN_TITLE' },
     EModelEndpoint: {
       azureAssistants: 'azureAssistants',
@@ -229,6 +237,9 @@ module.exports = {
   }),
 
   toolCallModel: () => ({ deleteToolCalls: jest.fn() }),
+
+  /** The list route reads its filter limits from the base config. */
+  appConfig: () => ({ getAppConfig: jest.fn().mockResolvedValue({}) }),
 
   sharedModels: () => ({
     getConvosByCursor: jest.fn(),
