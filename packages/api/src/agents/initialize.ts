@@ -2533,6 +2533,7 @@ export async function initializeAgent(
     }
   }
 
+  let temporalInstructions: string | undefined;
   if (agent.instructions && agent.instructions !== '') {
     const resolvedInstructions = replaceSpecialVars({
       text: agent.instructions,
@@ -2542,7 +2543,7 @@ export async function initializeAgent(
     });
     if (hasTemporalSpecialVars(agent.instructions)) {
       agent.instructions = undefined;
-      appendAdditionalInstructions(agent, resolvedInstructions);
+      temporalInstructions = resolvedInstructions;
     } else {
       agent.instructions = resolvedInstructions;
     }
@@ -2810,7 +2811,9 @@ export async function initializeAgent(
     agentContextAttachments,
     fileConsumers,
     toolContextMap: toolContextMap ?? {},
-    dynamicToolContextMap: dynamicToolContextMap ?? {},
+    dynamicToolContextMap: temporalInstructions
+      ? { ...dynamicToolContextMap, agent_temporal_instructions: temporalInstructions }
+      : (dynamicToolContextMap ?? {}),
     useLegacyContent: !!options.useLegacyContent,
     tools: (tools ?? []) as GenericTool[] & string[],
     maxToolResultChars: maxToolResultCharsResolved,
