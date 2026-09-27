@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, DEFAULT_MCP_APP_ACTION_PREVIEW_CHARS } from 'librechat-data-provider';
 import { JSONRPCMessageSchema } from '@modelcontextprotocol/sdk/types.js';
+import { QueryKeys, DEFAULT_MCP_APP_ACTION_PREVIEW_CHARS } from 'librechat-data-provider';
 import { AppBridge, buildAllowAttribute } from '@modelcontextprotocol/ext-apps/app-bridge';
 import type {
   Transport,
