@@ -56,4 +56,41 @@ async function loadUsers(db, userIds, projection) {
   return new Map(users.map((user) => [String(user._id), user]));
 }
 
-module.exports = { ago, parseDateRange, getDb, loadUsers };
+/**
+ * 대화의 메시지를 시간순으로 읽어 역할/본문만 남긴 형태로 반환한다.
+ * `text` 가 비어 있고 본문이 `content[]` 파트로만 들어온 경우도 흡수한다.
+ *
+ * 소프트 삭제(`bklDeletedAt`) 여부를 보지 않는다 — 호출하는 라우트가
+ * 무엇을 열어줄지 판단한다.
+ */
+async function loadConversationMessages(db, conversationId) {
+  const msgs = await db
+    .collection('messages')
+    .find(
+      { conversationId },
+      {
+        projection: { isCreatedByUser: 1, text: 1, content: 1, createdAt: 1, model: 1, sender: 1 },
+      },
+    )
+    .sort({ createdAt: 1 })
+    .toArray();
+
+  return msgs.map((msg) => {
+    let text = msg.text || '';
+    if (!text && Array.isArray(msg.content)) {
+      text = msg.content
+        .filter((content) => content && content.type === 'text')
+        .map((content) => content.text || '')
+        .join('\n')
+        .trim();
+    }
+    return {
+      role: msg.isCreatedByUser ? 'user' : 'assistant',
+      text,
+      createdAt: msg.createdAt,
+      model: msg.model || null,
+    };
+  });
+}
+
+module.exports = { ago, parseDateRange, getDb, loadUsers, loadConversationMessages };

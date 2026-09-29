@@ -152,7 +152,7 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
           {/* BKL: greeting 옆 로봇 대신 BKL 로고. */}
           <div className={`relative flex size-10 items-center justify-center ${textHasMultipleLines ? 'mb-2' : ''}`}>
             <span className="flex size-10 items-center justify-center overflow-hidden rounded-full bg-black">
-              <img src="/assets/bkl-logo.png" alt="BKL" className="w-8 object-contain" />
+              <img src="/assets/bkl-logo.png" alt="BKL Prism" className="w-8 object-contain" />
             </span>
             {startupConfig?.showBirthdayIcon && (
               <TooltipAnchor
@@ -196,6 +196,8 @@ export default function Landing({ centerFormOnLanding }: { centerFormOnLanding: 
             />
           )}
         </div>
+        {/* 태그라인과 스펙트럼 선은 하단 푸터(버전 줄)로 모았다 — 같은 화면에서
+            인사말 아래와 푸터 양쪽에 브랜드가 뜨면 겹쳐 보인다. Chat/Footer.tsx */}
         {description && (
           <div className="animate-fadeIn mt-4 max-w-md text-center text-sm font-normal text-text-primary">
             {description}

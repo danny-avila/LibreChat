@@ -52,6 +52,16 @@
   --amber-900: #78350f;
   --amber-950: #451a03;
   --brand-purple: #ab68ff;
+  /* BKL Prism 브랜드 팔레트. 프리즘이 백색광을 스펙트럼으로 나누는 데서 온
+     이름이라 단색이 아니라 sp-1..4 의 띠가 아이덴티티다. accent 는 그 띠의
+     시작(보라)에서 뽑은 단색으로, 버튼·포커스 같은 기능색에 쓴다. */
+  --prism-sp-1: #6d5ae0;
+  --prism-sp-2: #3b7be0;
+  --prism-sp-3: #17a9a2;
+  --prism-sp-4: #e0a23b;
+  --prism-accent: #4b45c6;
+  --prism-accent-ink: #3a34a8;
+  --prism-accent-soft: rgba(75, 69, 198, 0.09);
   --gizmo-gray-500: #999;
   --gizmo-gray-600: #666;
   --gizmo-gray-950: #0f0f0f;
@@ -87,8 +97,9 @@ html {
   --surface-tertiary: var(--gray-100);
   --surface-tertiary-alt: var(--white);
   --surface-dialog: var(--white);
-  --surface-submit: var(--green-700);
-  --surface-submit-hover: var(--green-800);
+  /* BKL Prism: 기본 제출색을 LibreChat 상속 green-700 에서 브랜드 accent 로. */
+  --surface-submit: var(--prism-accent);
+  --surface-submit-hover: var(--prism-accent-ink);
   --surface-destructive: var(--red-700);
   --surface-destructive-hover: var(--red-800);
   --surface-chat: var(--white);
@@ -127,6 +138,15 @@ html {
 }
 .dark {
   --brand-purple: #ab68ff;
+  /* 어두운 배경에서 라이트 팔레트를 그대로 쓰면 스펙트럼이 탁해진다.
+     밝기를 올린 대응 색으로 교체 (BKL Prism 브랜드 정의의 dark 세트). */
+  --prism-sp-1: #9b8bff;
+  --prism-sp-2: #5e9bff;
+  --prism-sp-3: #33c8be;
+  --prism-sp-4: #f0b85a;
+  --prism-accent: #8e86ff;
+  --prism-accent-ink: #a7a0ff;
+  --prism-accent-soft: rgba(142, 134, 255, 0.13);
   --presentation: var(--gray-800);
   --text-primary: var(--gray-100);
   --text-secondary: var(--gray-300);
@@ -149,8 +169,10 @@ html {
   --surface-tertiary: var(--gray-700);
   --surface-tertiary-alt: var(--gray-700);
   --surface-dialog: var(--gray-850);
-  --surface-submit: var(--green-700);
-  --surface-submit-hover: var(--green-800);
+  /* 버튼 배경은 흰 글자를 얹으므로 dark accent(#8e86ff, 연한 라벤더)를 그대로
+     쓰면 대비가 무너진다. 채도를 유지한 중간 인디고를 따로 쓴다. */
+  --surface-submit: #5b54d6;
+  --surface-submit-hover: #4b45c6;
   --surface-destructive: var(--red-800);
   --surface-destructive-hover: var(--red-900);
   --surface-chat: var(--gray-700);
@@ -3078,4 +3100,46 @@ html {
   --rdp-range_middle-background-color: rgba(96, 165, 250, 0.22);
   --rdp-range_start-background: #3b82f6;
   --rdp-range_end-background: #3b82f6;
+}
+
+/* ── BKL Prism 브랜드 요소 ─────────────────────────────────────────────
+   프리즘은 백색광을 스펙트럼으로 나누는 도구고, 서비스 이름이 곧 그
+   작동 방식이다. 그래서 브랜딩의 중심은 단색 로고가 아니라 sp-1..4 로
+   이어지는 띠다. 여기 두 클래스가 그 띠를 쓰는 유일한 통로다 — 컴포넌트
+   여기저기에 그라디언트를 하드코딩하면 다크 팔레트 전환이 새기 시작한다. */
+
+.prism-spectrum-text {
+  background: linear-gradient(
+    92deg,
+    var(--prism-sp-1),
+    var(--prism-sp-2) 42%,
+    var(--prism-sp-3) 74%,
+    var(--prism-sp-4)
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* 배경색을 못 칠하는 환경(강제 색상 모드, 일부 인쇄 경로)에서 글자가
+   통째로 사라지지 않도록 되돌린다. */
+@media (forced-colors: active) {
+  .prism-spectrum-text {
+    background: none;
+    color: CanvasText;
+  }
+}
+
+.prism-rule {
+  height: 3px;
+  border: 0;
+  border-radius: 3px;
+  background: linear-gradient(
+    90deg,
+    var(--prism-sp-1),
+    var(--prism-sp-2) 38%,
+    var(--prism-sp-3) 70%,
+    var(--prism-sp-4)
+  );
+  opacity: 0.9;
 }

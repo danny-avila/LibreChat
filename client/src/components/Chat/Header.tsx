@@ -7,6 +7,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { getConfigDefaults, PermissionTypes, Permissions, QueryKeys } from 'librechat-data-provider';
 import type { ContextType } from '~/common';
 import { HeaderNewChat, OpenSidebar } from './Menus';
+import PrismWordmark from '~/components/Bkl/PrismWordmark';
 import { useGetStartupConfig } from '~/data-provider';
 import ExportAndShareMenu from './ExportAndShareMenu';
 import BookmarkMenu from './Menus/BookmarkMenu';
@@ -16,7 +17,7 @@ import store from '~/store';
 
 // BKL: 채팅 대기화면 헤더에서 노출하지 않는 컴포넌트들.
 // (모델 선택, 프리셋, 다중 응답 대화 추가, 비밀 대화)
-// 제품 요구상 BKL DB AI 는 단일 모델 (bkl-search) + 단일 세션이라 불필요.
+// 제품 요구상 BKL Prism 은 단일 모델 (bkl-search) + 단일 세션이라 불필요.
 const defaultInterface = getConfigDefaults().interface;
 
 function Header() {
@@ -67,14 +68,14 @@ function Header() {
                 <HeaderNewChat />
                 <button
                   type="button"
-                  aria-label="BKL DB AI 홈"
+                  aria-label="BKL Prism 홈"
                   className="flex h-9 items-center gap-2 rounded-xl border border-border-light bg-presentation px-3 text-sm font-semibold text-text-primary transition-colors hover:bg-surface-active-alt"
                   onClick={handleHomeClick}
                 >
                   <span className="flex size-6 shrink-0 items-center justify-center overflow-hidden rounded-full bg-black">
                     <img src="/assets/bkl-logo.png" alt="" className="w-5 object-contain" />
                   </span>
-                  <span className="hidden sm:inline">BKL DB AI</span>
+                  <PrismWordmark className="hidden sm:inline" />
                 </button>
               </motion.div>
             )}

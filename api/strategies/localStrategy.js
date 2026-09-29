@@ -19,6 +19,7 @@ const { getAppConfig } = require('~/server/services/Config');
 const { getBklMaintenanceConfig } = require('~/server/services/Config/bklMaintenance');
 const crypto = require('crypto');
 const { persistBklFields } = require('~/server/services/bklSso');
+const { refreshUserOrgInBackground } = require('~/server/services/bklOrg');
 
 const BKL_AUTH_URL = process.env.BKL_AUTH_URL || 'https://nb.bkl.co.kr/apis/identity/auth/login';
 
@@ -168,6 +169,9 @@ async function passportLogin(req, email_or_id, password, done) {
     logger.info(
       `[BKL Login] [Login successful] [ID: ${id}] [Sid: ${bklSid}] [Request-IP: ${req.ip}]`,
     );
+    // 조직(그룹) 정보 갱신 — 로그인 응답을 지연시키지 않도록 비차단으로 돌린다.
+    // 전 직원이 주기적으로 로그인하므로 어드민 일괄 동기화 없이도 채워진다.
+    refreshUserOrgInBackground(user);
     return done(null, user);
   } catch (err) {
     logger.error('[BKL Login] Exception during login', err);

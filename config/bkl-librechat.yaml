@@ -4,6 +4,10 @@ interface:
   sidePanel: false
 endpoints:
   custom:
+    # `name` 은 화면에 뜨는 이름이 아니라 라우팅 키다. 저장된 모든 대화가
+    # 이 문자열을 `endpoint` 로 물고 있어서, BKL Prism 리브랜딩 때도 바꾸지
+    # 않았다 — 바꾸면 기존 대화가 엔드포인트를 못 찾는다. 사용자에게 보이는
+    # 이름은 아래 `modelDisplayLabel` 과 `APP_TITLE` 이다.
     - name: BKL DB AI
       apiKey: bkl-internal
       baseURL: ${BKL_API_BASE_URL}/v1
@@ -30,7 +34,7 @@ endpoints:
 
         대화:
         {convo}
-      modelDisplayLabel: bkl DB AI
+      modelDisplayLabel: BKL Prism
       dropParams:
         - frequency_penalty
         - presence_penalty

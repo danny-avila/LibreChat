@@ -2,7 +2,8 @@
 
 /**
  * 사용자 탭 (항목 1·3):
- * - 그룹(class) 필터 + 그룹 인사이트 (시간대 패턴 / 질문 유형 / 주요 키워드)
+ * - 그룹 필터 + 그룹 인사이트 (시간대 패턴 / 질문 유형 / 주요 키워드)
+ *   그룹은 BIMS 조직 API 의 groupSid/groupName 기준이다.
  * - 사용자 클릭 → 세션 목록 → 세션 클릭 → 메시지 열람
  * - 새로고침 시 선택 사용자·펼친 세션·스크롤 위치 보존 (항목 1)
  */
@@ -36,7 +37,10 @@
         name: u.name || u.bkl_user_nm || u.username || (u.email ? u.email.split('@')[0] : ''),
         email: u.email || '',
         bkl_sid: u.bkl_sid || null,
-        user_class: u.bkl_user_class ?? null,
+        group_sid: u.bkl_group_sid ?? null,
+        group_name: u.bkl_group_name ?? null,
+        div_name: u.bkl_div_name ?? null,
+        hq_name: u.bkl_hq_name ?? null,
         queries: usage.queries || 0,
         enhances: usage.enhances || 0,
         active_days: usage.active_days || 0,
@@ -48,18 +52,34 @@
     renderUsersTable();
   }
 
+  /** 실제로 존재하는 그룹만 옵션으로 만든다 (sid → 이름, 이름 기준 정렬). */
   function renderGroupFilter() {
     const sel = document.getElementById('group-filter');
-    const classes = [...new Set(ui.users.map((u) => u.user_class).filter((c) => c != null))].sort((a, b) => a - b);
+    const groups = new Map();
+    for (const u of ui.users) {
+      if (u.group_sid != null && !groups.has(u.group_sid)) {
+        groups.set(u.group_sid, u.group_name);
+      }
+    }
+    const options = [...groups.entries()].sort((a, b) =>
+      String(a[1] || a[0]).localeCompare(String(b[1] || b[0]), 'ko'),
+    );
     const prev = ui.group;
     sel.innerHTML = '<option value="all">전체</option>' +
-      classes.map((c) => `<option value="${c}">class ${c}</option>`).join('');
+      options.map(([sid, name]) => `<option value="${sid}">${A.groupLabel(name)}</option>`).join('');
     if ([...sel.options].some((o) => o.value === String(prev))) sel.value = String(prev);
+  }
+
+  /** 현재 선택된 그룹의 표시명 (인사이트 부제목용). */
+  function selectedGroupLabel() {
+    if (ui.group === 'all') return '전체';
+    const user = ui.users.find((u) => String(u.group_sid) === String(ui.group));
+    return A.groupLabel(user?.group_name);
   }
 
   function filteredUsers() {
     let list = ui.users;
-    if (ui.group !== 'all') list = list.filter((u) => String(u.user_class) === String(ui.group));
+    if (ui.group !== 'all') list = list.filter((u) => String(u.group_sid) === String(ui.group));
     if (ui.searchText) {
       const q = ui.searchText.toLowerCase();
       list = list.filter((u) => (u.name || '').toLowerCase().includes(q) || (u.email || '').toLowerCase().includes(q));
@@ -73,6 +93,12 @@
     });
   }
 
+  /** 소속 전체 계층 — 배지에 마우스를 올렸을 때 보여준다. */
+  function orgTooltip(u) {
+    const parts = [u.hq_name, u.div_name, u.group_name].filter(Boolean);
+    return parts.length ? A.escHtml(parts.join(' › ')) : '';
+  }
+
   function renderUsersTable() {
     const list = filteredUsers();
     document.getElementById('users-count').textContent = list.length + '명';
@@ -81,7 +107,7 @@
     tbody.innerHTML = list.map((u) => `
       <tr data-uid="${u.user_id}" class="${u.user_id === ui.selectedUserId ? 'selected' : ''}">
         <td><div class="user-cell">
-          <span class="user-name">${A.escHtml(u.name)}${u.user_class != null ? ' <span class="badge">c' + u.user_class + '</span>' : ''}</span>
+          <span class="user-name">${A.escHtml(u.name)}${u.group_name ? ` <span class="badge" title="${orgTooltip(u)}">${A.groupLabel(u.group_name)}</span>` : ''}</span>
           <span class="user-email">${A.escHtml(u.email)}</span>
         </div></td>
         <td>${A.fmtNum(u.active_days)}</td>
@@ -181,20 +207,20 @@
   async function loadGroupInsights() {
     const panel = document.getElementById('group-insights-panel');
     panel.style.display = 'block';
-    document.getElementById('group-insights-sub').textContent =
-      (ui.group === 'all' ? '전체' : 'class ' + ui.group) + ' · 로딩 중...';
+    const label = selectedGroupLabel();
+    document.getElementById('group-insights-sub').textContent = label + ' · 로딩 중...';
     try {
       const rangeQ = range.params().slice(1);
-      const groupUsers = ui.group === 'all' ? ui.users : ui.users.filter((u) => String(u.user_class) === String(ui.group));
+      const groupUsers = ui.group === 'all' ? ui.users : ui.users.filter((u) => String(u.group_sid) === String(ui.group));
       const sids = groupUsers.map((u) => u.bkl_sid).filter(Boolean);
       const sidParam = ui.group === 'all' || !sids.length ? '' : '&user_sids=' + encodeURIComponent(sids.join(','));
 
       const [gi, cat] = await Promise.all([
-        A.getJSON('/groups/insights?user_class=' + encodeURIComponent(ui.group) + '&' + rangeQ),
+        A.getJSON('/groups/insights?group_sid=' + encodeURIComponent(ui.group) + '&' + rangeQ),
         A.getJSON('/analytics/query-categories?' + rangeQ + sidParam).catch(() => null),
       ]);
       document.getElementById('group-insights-sub').textContent =
-        (ui.group === 'all' ? '전체' : 'class ' + ui.group) + ' · 표본 ' + A.fmtNum(gi.sample_size) + '건';
+        label + ' · 표본 ' + A.fmtNum(gi.sample_size) + '건';
 
       const hourMap = new Map(gi.hourly.map((h) => [h.hour, h.queries]));
       const labels = Array.from({ length: 24 }, (_, i) => i + '시');
@@ -215,15 +241,50 @@
     }
   }
 
+  /* ── 그룹 일괄 동기화 ─────────────────────────────────────── */
+  /**
+   * 조직 정보가 없거나 오래된 사용자를 채운다.
+   *
+   * 사용자당 1콜이라 서버가 limit 단위로 끊어 처리하고 남은 수를 돌려준다.
+   * 남아 있으면 이어서 진행할지 물어본다.
+   */
+  async function syncGroups() {
+    const btn = document.getElementById('btn-sync-groups');
+    btn.disabled = true;
+    btn.textContent = '동기화 중...';
+    try {
+      const r = await A.sendJSON('POST', '/users/sync-groups', {});
+      if (r.message) {
+        alert(r.message);
+      } else {
+        const lines = [
+          '처리 ' + A.fmtNum(r.processed) + '명 · 그룹 확인 ' + A.fmtNum(r.synced) + '명',
+          '그룹 없음 ' + A.fmtNum(r.empty) + '명 · 실패 ' + A.fmtNum(r.failed) + '명',
+          '남은 대상 ' + A.fmtNum(r.remaining) + '명',
+        ];
+        if (r.errors?.length) {
+          lines.push('', '오류 예시:', ...r.errors);
+        }
+        alert(lines.join('\n'));
+      }
+      await load();
+    } catch (e) {
+      alert('그룹 동기화 실패: ' + e.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '그룹 동기화';
+    }
+  }
+
   /* ── 엑셀 ─────────────────────────────────────────────────── */
   function exportUsers() {
     const list = filteredUsers();
     if (!list.length) { alert('내보낼 데이터가 없습니다.'); return; }
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-      ['이름', '이메일', '그룹', '질의', '강화', '활동일', '최근 활동', '모델별'],
+      ['이름', '이메일', '그룹', '본부', '전문가그룹', '질의', '강화', '활동일', '최근 활동', '모델별'],
       ...list.map((u) => [
-        u.name, u.email, u.user_class != null ? 'class ' + u.user_class : '',
+        u.name, u.email, u.group_name || '', u.div_name || '', u.hq_name || '',
         u.queries, u.enhances, u.active_days, u.last_active ? A.fmtKST(u.last_active) : '',
         u.by_model.map((m) => `${m.model}:${m.queries}`).join(', '),
       ]),
@@ -262,6 +323,7 @@
     renderUsersTable();
   });
   document.getElementById('btn-group-insights').addEventListener('click', loadGroupInsights);
+  document.getElementById('btn-sync-groups').addEventListener('click', syncGroups);
   document.getElementById('btn-close-insights').addEventListener('click', () => {
     document.getElementById('group-insights-panel').style.display = 'none';
   });

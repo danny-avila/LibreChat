@@ -63,7 +63,7 @@ function PrintPreview() {
       const asstText = replaceCitationsWithFilenames(getBklDisplayText(ASSISTANT_MD), SOURCES);
       const blocks = [
         { sender: 'User', isUser: true, html: await renderMarkdownToHtml(userText) },
-        { sender: 'BKL DB AI', isUser: false, html: await renderMarkdownToHtml(asstText) },
+        { sender: 'BKL Prism', isUser: false, html: await renderMarkdownToHtml(asstText) },
       ];
       setHtml(
         buildPrintHtml({

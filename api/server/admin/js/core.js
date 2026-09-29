@@ -102,6 +102,17 @@
     return new Date(new Date(iso).getTime() + 9 * 3600 * 1000).toISOString().slice(0, 10);
   }
   function fmtNum(n) { return (n ?? 0).toLocaleString(); }
+  /**
+   * 그룹 표시명 — BIMS 조직 API 의 groupName 이 원본이다.
+   *
+   * 예전에는 bkl_user_class 를 `class 62` 로 찍었는데, userClass("사용자 구분")는
+   * 조직 체계가 아니라 groupSid(133~405)와 아예 다른 값이었다. 그래서 조직
+   * 정보가 없으면 class 로 대체하지 않고 미표시로 둔다.
+   */
+  function groupLabel(name) {
+    const text = typeof name === 'string' ? name.trim() : '';
+    return text.length ? escHtml(text) : '—';
+  }
   function escHtml(s) {
     return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
@@ -341,6 +352,7 @@
     fmtNum,
     fmtDelta,
     escHtml,
+    groupLabel,
     renderMarkdown,
     createRangeFilter,
     makeChart,

@@ -83,7 +83,7 @@
   async function loadGroup() {
     const j = await A.getJSON('/usage/by-group' + range.params());
     data.byGroup = j.data;
-    A.makeChart('group-chart', 'bar', j.data.map((d) => 'class ' + d.user_class), [
+    A.makeChart('group-chart', 'bar', j.data.map((d) => d.group_name || '(미확인)'), [
       { label: '질의 수', data: j.data.map((d) => d.queries), backgroundColor: 'rgba(99,102,241,.7)', borderColor: '#6366f1', borderWidth: 1 },
       { label: '활성 사용자', data: j.data.map((d) => d.active_users), backgroundColor: 'rgba(16,185,129,.7)', borderColor: '#10b981', borderWidth: 1 },
     ]);
@@ -135,7 +135,7 @@
       const breakdown = (u.by_model || []).map((m) => `${A.escHtml(m.model)} ${A.fmtNum(m.queries)}건`).join(' · ');
       return `<tr>
         <td><div class="user-cell"><span class="user-name">${A.escHtml(name)}</span><span class="user-email">${A.escHtml(u.email || '')}</span></div></td>
-        <td>${u.bkl_user_class != null ? '<span class="badge">class ' + u.bkl_user_class + '</span>' : '—'}</td>
+        <td>${A.groupLabel(u.group_name)}</td>
         <td>${A.escHtml(u.department || '—')}</td>
         <td>${A.fmtNum(u.queries)}</td>
         <td>${A.fmtNum(u.enhances)}</td>
@@ -152,7 +152,7 @@
     tbody.innerHTML = j.data.map((m) => `<tr>
       <td style="white-space:nowrap">${A.fmtKST(m.createdAt)}</td>
       <td>${A.escHtml(m.user_name ?? '—')}</td>
-      <td>${m.user_class != null ? '<span class="badge">class ' + m.user_class + '</span>' : '—'}</td>
+      <td>${A.groupLabel(m.group_name)}</td>
       <td>${m.kind === 'query_enhance' ? '<span class="badge badge-enhance">강화</span>' : '<span class="badge">질의</span>'}</td>
       <td class="text-clip" title="${A.escHtml(m.text || '')}">${A.escHtml((m.text || '').slice(0, 120))}</td>
     </tr>`).join('');
@@ -212,7 +212,7 @@
     if (data.byGroup?.length) {
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
         ['그룹', '질의 수', '강화 수', '활성 사용자'],
-        ...data.byGroup.map((g) => ['class ' + g.user_class, g.queries, g.enhances, g.active_users]),
+        ...data.byGroup.map((g) => [g.group_name || '', g.queries, g.enhances, g.active_users]),
       ]), '그룹별');
     }
     if (data.categories?.length) {
@@ -233,7 +233,7 @@
         ['사용자', '이메일', '그룹', '부서', '질의', '강화', '활동일', '모델별 분해'],
         ...data.byUser.map((u) => [
           u.name || u.username || '', u.email || '',
-          u.bkl_user_class != null ? 'class ' + u.bkl_user_class : '',
+          u.group_name || '',
           u.department || '',
           u.queries, u.enhances, u.active_days,
           (u.by_model || []).map((m) => `${m.model}:${m.queries}`).join(', '),

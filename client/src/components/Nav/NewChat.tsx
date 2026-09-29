@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { TooltipAnchor, MobileSidebar, Sidebar, Button } from '@librechat/client';
 import { QueryKeys } from 'librechat-data-provider';
 import { CLOSE_SIDEBAR_ID, OPEN_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
+import PrismWordmark from '~/components/Bkl/PrismWordmark';
 import { useLocalize, useNewConvo } from '~/hooks';
 import { clearMessagesCache } from '~/utils';
 import store from '~/store';
@@ -24,7 +25,7 @@ export default function NewChat({
   headerButtons?: React.ReactNode;
 }) {
   // BKL: "새 채팅" 클릭 핸들러는 FavoritesList 의 row 로 이동. 여기에서는
-  // close-sidebar 버튼과 BKL DB AI 홈 버튼을 sidebar 상단에 유지한다.
+  // close-sidebar 버튼과 BKL Prism 홈 버튼을 sidebar 상단에 유지한다.
   const localize = useLocalize();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -58,14 +59,14 @@ export default function NewChat({
       <div className="flex items-center justify-between gap-2 px-0.5 py-[2px] md:py-2">
         <button
           type="button"
-          aria-label="BKL DB AI 홈"
+          aria-label="BKL Prism 홈"
           className="flex min-w-0 flex-1 items-center gap-2 rounded-xl px-2 py-1.5 text-left text-sm font-semibold text-text-primary transition-colors hover:bg-surface-active-alt focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
           onClick={handleHomeClick}
         >
           <span className="flex size-7 shrink-0 items-center justify-center overflow-hidden rounded-full bg-black">
             <img src="/assets/bkl-logo.png" alt="" className="w-6 object-contain" />
           </span>
-          <span className="truncate">BKL DB AI</span>
+          <PrismWordmark className="truncate" />
         </button>
         <div className="flex shrink-0 items-center gap-0.5">
           {headerButtons}

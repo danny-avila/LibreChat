@@ -2,11 +2,11 @@ const express = require('express');
 const { logger } = require('@librechat/data-schemas');
 const { deleteConvos } = require('~/models/Conversation');
 const { deleteToolCalls } = require('~/models/ToolCall');
-const { getDb, loadUsers } = require('./helpers');
+const { getDb, loadUsers, loadConversationMessages } = require('./helpers');
 
 const router = express.Router();
 
-/** 항목 11: 어드민 "삭제된 채팅" 관리 — 목록 / 복원 / 최종 삭제 */
+/** 항목 11: 어드민 "삭제된 채팅" 관리 — 목록 / 내용 조회 / 복원 / 최종 삭제 */
 
 router.get('/deleted-convos', async (req, res) => {
   try {
@@ -62,6 +62,45 @@ router.get('/deleted-convos', async (req, res) => {
           purge_at: purgeAt,
         };
       }),
+    });
+  } catch (err) {
+    res.status(500).json({ error: String(err.message) });
+  }
+});
+
+/**
+ * 삭제된 채팅의 대화 내용 조회 (읽기 전용).
+ *
+ * 복원하면 사용자의 채팅 목록에도 다시 나타나므로, 내용만 확인할 때는 이
+ * 경로를 쓴다. `bklDeletedAt` 를 건드리지 않고 Meilisearch 재색인도 하지
+ * 않으므로 사용자의 채팅 상태에 아무 영향이 없다.
+ *
+ * 소프트 삭제된 대화만 열어준다 — 이 탭이 활성 대화까지 들여다보는 범용
+ * 우회로가 되지 않게 한다.
+ *
+ * 조회 가능 기간은 보관정리(`BKL_CHAT_RETENTION_DAYS`) 전까지다. 최종 삭제
+ * 후에는 메시지가 남지 않으므로 빈 목록이 반환된다.
+ */
+router.get('/deleted-convos/messages', async (req, res) => {
+  try {
+    const { conversation_id: conversationId } = req.query;
+    if (!conversationId) {
+      return res.status(400).json({ error: 'conversation_id required' });
+    }
+    const db = getDb();
+    const convo = await db
+      .collection('conversations')
+      .findOne({ conversationId }, { projection: { title: 1, bklDeletedAt: 1 } });
+    if (!convo) {
+      return res.status(404).json({ error: 'conversation not found' });
+    }
+    if (!convo.bklDeletedAt) {
+      return res.status(400).json({ error: 'conversation is not soft-deleted' });
+    }
+    res.json({
+      title: convo.title || '(untitled)',
+      deleted_at: convo.bklDeletedAt,
+      data: await loadConversationMessages(db, conversationId),
     });
   } catch (err) {
     res.status(500).json({ error: String(err.message) });

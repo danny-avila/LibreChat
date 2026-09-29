@@ -12,7 +12,8 @@ import {
   CircleHelpIcon,
 } from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
-import { LocalStorageKeys, QueryKeys } from 'librechat-data-provider';
+import { QueryKeys } from 'librechat-data-provider';
+import { BKL_APP_TITLE } from '~/components/Bkl/brand';
 import { FileSearch, FolderPlus, RotateCcw, X } from 'lucide-react';
 import type { ContextType } from '~/common';
 import { ESide } from '~/common';
@@ -38,10 +39,8 @@ import FilterBar, {
 const DEFAULT_TOP_K = 100;
 const DEFAULT_CHUNKS_PER_DOC = 1000;
 const PAGE_SIZE = 10;
-const DEFAULT_APP_TITLE = 'BKL DB AI';
-
 function getAppTitle(): string {
-  return localStorage.getItem(LocalStorageKeys.APP_TITLE) || DEFAULT_APP_TITLE;
+  return BKL_APP_TITLE;
 }
 
 function toApiFilters(f: DocumentSearchFilterState): KeywordSearchFilters | undefined {

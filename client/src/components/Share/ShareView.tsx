@@ -19,7 +19,7 @@ import {
 import { ThemeSelector, LangSelector } from '~/components/Nav/SettingsTabs/General/General';
 import { ShareArtifactsContainer } from './ShareArtifacts';
 import { useLocalize, useDocumentTitle } from '~/hooks';
-import { useGetStartupConfig } from '~/data-provider';
+import { BKL_APP_TITLE } from '~/components/Bkl/brand';
 import { ShareContext } from '~/Providers';
 import { ShareMessagesProvider } from './ShareMessagesProvider';
 import MessagesView from './MessagesView';
@@ -29,7 +29,6 @@ import store from '~/store';
 
 function SharedView() {
   const localize = useLocalize();
-  const { data: config } = useGetStartupConfig();
   const { theme, setTheme } = useContext(ThemeContext);
   const { shareId } = useParams();
   const { data, isLoading } = useGetSharedMessages(shareId ?? '');
@@ -39,12 +38,7 @@ function SharedView() {
   const [langcode, setLangcode] = useRecoilState(store.lang);
 
   // configure document title
-  let docTitle = '';
-  if (config?.appTitle != null && data?.title != null) {
-    docTitle = `${data.title} | ${config.appTitle}`;
-  } else {
-    docTitle = data?.title ?? config?.appTitle ?? document.title;
-  }
+  const docTitle = data?.title != null ? `${data.title} | ${BKL_APP_TITLE}` : BKL_APP_TITLE;
 
   useDocumentTitle(docTitle);
 

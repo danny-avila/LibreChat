@@ -6,7 +6,7 @@ import store from '~/store';
 import { cn } from '~/utils';
 
 /**
- * BKL: 상단 안내 banner — bkl DB AI 의 초기 테스트 상태와 검색 범위 한정 명시.
+ * BKL: 상단 안내 banner — BKL Prism 의 초기 테스트 상태와 검색 범위 한정 명시.
  *
  *   디자인:
  *     - 단색 amber tint (그라데이션 없음 — 사용자 피드백). 좌측 Info 아이콘 + 본문 + 우측 X.
@@ -45,11 +45,11 @@ export default function BklTopBanner() {
           aria-hidden="true"
         />
         <div className="min-w-0 flex-1 text-xs leading-relaxed sm:text-sm">
-          <p className="font-semibold">bkl DB AI 베타 서비스 안내</p>
+          <p className="font-semibold">BKL Prism 베타 서비스 안내</p>
           <div className="mt-0.5 text-amber-800 dark:text-amber-200">
             <p>
               현재 본 서비스는 베타 서비스 단계이며,{' '}
-              <span className="font-bold underline">2023.06.30 ~ 2026.06.30 3개년 종결 사건</span>
+              <span className="font-bold underline">2022.06.30 ~ 2026.07.31 4개년 종결 사건</span>
               에 한해 검색이 제공됩니다.
             </p>
             <p className="mt-0.5 sm:mt-0">

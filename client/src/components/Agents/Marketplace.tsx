@@ -4,7 +4,8 @@ import { useOutletContext } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSearchParams, useParams, useNavigate } from 'react-router-dom';
 import { TooltipAnchor, Button, NewChatIcon, useMediaQuery } from '@librechat/client';
-import { LocalStorageKeys, PermissionTypes, Permissions, QueryKeys } from 'librechat-data-provider';
+import { PermissionTypes, Permissions, QueryKeys } from 'librechat-data-provider';
+import { BKL_APP_TITLE } from '~/components/Bkl/brand';
 import type t from 'librechat-data-provider';
 import type { ContextType } from '~/common';
 import { useDocumentTitle, useHasAccess, useLocalize, TranslationKeys } from '~/hooks';
@@ -23,10 +24,8 @@ interface AgentMarketplaceProps {
   className?: string;
 }
 
-const DEFAULT_APP_TITLE = 'BKL DB AI';
-
 function getAppTitle(): string {
-  return localStorage.getItem(LocalStorageKeys.APP_TITLE) || DEFAULT_APP_TITLE;
+  return BKL_APP_TITLE;
 }
 
 /**

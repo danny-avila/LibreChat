@@ -177,6 +177,7 @@ router.get('/usage/by-user', async (req, res) => {
       bkl_user_class: 1,
       bkl_user_id: 1,
       bkl_department: 1,
+      bkl_group_name: 1,
       email: 1,
     });
 
@@ -196,6 +197,7 @@ router.get('/usage/by-user', async (req, res) => {
           bkl_user_class: user.bkl_user_class ?? null,
           bkl_user_id: user.bkl_user_id ?? null,
           department: user.bkl_department ?? null,
+          group_name: user.bkl_group_name ?? null,
           email: user.email ?? null,
           queries: row.queries,
           enhances: row.enhances,
@@ -247,15 +249,27 @@ router.get('/usage/by-group', async (req, res) => {
         { $addFields: { user_oid: { $convert: { input: '$user', to: 'objectId', onError: null } } } },
         { $lookup: { from: 'users', localField: 'user_oid', foreignField: '_id', as: 'u' } },
         { $unwind: { path: '$u', preserveNullAndEmptyArrays: true } },
+        // BKL: 그룹 기준은 BIMS 조직의 groupSid 다. 과거에는 bkl_user_class
+        // ("사용자 구분")로 묶었는데 조직 체계가 아니어서 의미가 없었다.
         {
           $group: {
-            _id: { $ifNull: ['$u.bkl_user_class', 'unknown'] },
+            _id: { $ifNull: ['$u.bkl_group_sid', 'unknown'] },
+            group_name: { $first: '$u.bkl_group_name' },
             queries: { $sum: { $cond: [{ $eq: ['$kind', 'query'] }, 1, 0] } },
             enhances: { $sum: { $cond: [{ $eq: ['$kind', 'query_enhance'] }, 1, 0] } },
             users: { $addToSet: '$user' },
           },
         },
-        { $project: { _id: 0, user_class: '$_id', queries: 1, enhances: 1, active_users: { $size: '$users' } } },
+        {
+          $project: {
+            _id: 0,
+            group_sid: '$_id',
+            group_name: 1,
+            queries: 1,
+            enhances: 1,
+            active_users: { $size: '$users' },
+          },
+        },
         { $sort: { queries: -1 } },
       ])
       .toArray();
@@ -327,11 +341,15 @@ router.get('/queries/history', async (req, res) => {
       textMap = new Map(messages.map((message) => [message.messageId, message.text]));
     }
 
-    const userMap = await loadUsers(
-      db,
-      [...new Set(logs.map((log) => log.user).filter(Boolean))],
-      { name: 1, username: 1, email: 1, bkl_user_class: 1, bkl_user_id: 1, bkl_department: 1 },
-    );
+    const userMap = await loadUsers(db, [...new Set(logs.map((log) => log.user).filter(Boolean))], {
+      name: 1,
+      username: 1,
+      email: 1,
+      bkl_user_class: 1,
+      bkl_user_id: 1,
+      bkl_department: 1,
+      bkl_group_name: 1,
+    });
 
     res.json({
       total,
@@ -353,6 +371,7 @@ router.get('/queries/history', async (req, res) => {
           user_email: user.email ?? null,
           user_class: user.bkl_user_class ?? null,
           department: user.bkl_department ?? null,
+          group_name: user.bkl_group_name ?? null,
         };
       }),
     });
@@ -372,11 +391,12 @@ router.get('/messages/recent', async (req, res) => {
       .limit(limit)
       .toArray();
 
-    const userMap = await loadUsers(
-      db,
-      [...new Set(logs.map((log) => log.user).filter(Boolean))],
-      { name: 1, username: 1, bkl_user_class: 1 },
-    );
+    const userMap = await loadUsers(db, [...new Set(logs.map((log) => log.user).filter(Boolean))], {
+      name: 1,
+      username: 1,
+      bkl_user_class: 1,
+      bkl_group_name: 1,
+    });
 
     res.json({
       data: logs.map((log) => {
@@ -387,6 +407,7 @@ router.get('/messages/recent', async (req, res) => {
           user_name: user.name ?? null,
           user_username: user.username ?? null,
           user_class: user.bkl_user_class ?? null,
+          group_name: user.bkl_group_name ?? null,
         };
       }),
       limit,
