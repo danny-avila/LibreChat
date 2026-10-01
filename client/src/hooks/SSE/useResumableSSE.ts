@@ -41,7 +41,7 @@ import type {
   TContextUsageEvent,
   ChatStreamConnection,
 } from 'librechat-data-provider';
-import type { QueuedMessageOrigin, DrainAfterAbort, DetachedRun, RunEnd } from '~/hooks/Chat/queue';
+import type { QueuedMessageOrigin, DrainAfterAbort, RunEnd } from '~/hooks/Chat/queue';
 import type { ActiveJobsResponse, StreamStatusResponse } from '~/data-provider';
 import type { GenerationProtocolVersion } from '~/data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
@@ -1371,9 +1371,6 @@ export default function useResumableSSE(
   /** Whether the current submission's run end already reached the queue drain. A run that
    *  ended attached must not also be resolved as detached when the user later leaves. */
   const runEndPublishedRef = useRef(false);
-  /** The run a cleanup closed while it was still generating, kept until the next effect body
-   *  learns whether the user left the chat (empty submission) or the run moved on. */
-  const detachCandidateRef = useRef<{ conversationId: string; run: DetachedRun } | null>(null);
   const setRunEnd = useCallback(
     (end: RunEnd) => {
       runEndPublishedRef.current = true;
@@ -4287,14 +4284,6 @@ export default function useResumableSSE(
       }
       stopForegroundReattachRef.current?.();
       stopForegroundReattachRef.current = null;
-      /** Leaving the chat clears the submission to an empty object (a terminal event clears it
-       *  to null). The run keeps generating with no subscriber, so no terminal event will reach
-       *  the queue drain; remember the run, and its end is read from history on return. */
-      const detachCandidate = detachCandidateRef.current;
-      detachCandidateRef.current = null;
-      if (submission != null && detachCandidate != null) {
-        jotaiStore.set(detachedRunByConvoId(detachCandidate.conversationId), detachCandidate.run);
-      }
       // Close SSE but do NOT dispatch cancel - navigation should not abort
       streamRef.current?.abort();
       streamRef.current = null;
@@ -4321,10 +4310,12 @@ export default function useResumableSSE(
     });
 
     submissionRef.current = submission;
-    detachCandidateRef.current = null;
     runEndPublishedRef.current = false;
     if (submission.conversation?.conversationId != null) {
+      /** A run starting here owns the conversation's end from now on: an earlier run this pane
+       *  left is superseded, and a Stop belonged to that earlier run. */
       jotaiStore.set(stopRequestedByConvoId(submission.conversation.conversationId), false);
+      jotaiStore.set(detachedRunByConvoId(submission.conversation.conversationId), null);
     }
     const startController = new AbortController();
     const { signal } = startController;
@@ -4855,24 +4846,27 @@ export default function useResumableSSE(
       stopForegroundReattachRef.current = null;
       // Reset reconnect counter before closing (so abort handler doesn't think we're reconnecting)
       reconnectAttemptRef.current = 0;
+      /** The pane is moving off a run that is still generating (another chat, a new chat, or
+       *  an unmount): the server keeps going with no subscriber and deletes the job when done,
+       *  so no terminal event will reach the queue drain. Remember the run; on return its end is
+       *  read from history. A run that already published its end, or that the user stopped, is
+       *  not remembered. */
       const closing = submissionRef.current;
       const closingConvoId = closing?.conversation?.conversationId;
       const closingUserMessageId = closing?.userMessage?.messageId;
-      detachCandidateRef.current =
+      if (
         streamRef.current != null &&
         !runEndPublishedRef.current &&
         closingConvoId != null &&
         closingConvoId !== Constants.NEW_CONVO &&
         closingUserMessageId != null &&
         !jotaiStore.get(stopRequestedByConvoId(closingConvoId))
-          ? {
-              conversationId: closingConvoId,
-              run: {
-                userMessageId: closingUserMessageId,
-                responseMessageId: closing?.initialResponse?.messageId,
-              },
-            }
-          : null;
+      ) {
+        jotaiStore.set(detachedRunByConvoId(closingConvoId), {
+          userMessageId: closingUserMessageId,
+          responseMessageId: closing?.initialResponse?.messageId,
+        });
+      }
       streamRef.current?.abort();
       streamRef.current = null;
       // Clear handler maps to prevent memory leaks and stale state

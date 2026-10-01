@@ -1,4 +1,4 @@
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, waitFor } from '@testing-library/react';
 import { RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Provider as JotaiProvider, createStore, useAtomValue } from 'jotai';
@@ -2769,6 +2769,39 @@ describe('useResumeOnLoad', () => {
           outcome: 'completed',
           responseMessageId: 'response-detached',
         }),
+      );
+      expect(jotaiStore.get(detachedRunByConvoId(CONVERSATION_ID))).toBeNull();
+    });
+
+    it('keeps the detached run until a history refetch shows its response', async () => {
+      mockUseStreamStatus.mockReturnValue({
+        isSuccess: true,
+        isFetching: false,
+        data: { active: false },
+      });
+      let history: TMessage[] = [buildUserMessage(CONVERSATION_ID)];
+      const { jotaiStore } = renderUseResumeOnLoad({
+        getMessages: () => history,
+        detachedRun: { userMessageId: USER_MESSAGE_ID },
+      });
+      /** The first read found no response; it is saved before the history refetch settles. */
+      expect(jotaiStore.get(pendingRunEndByConvoId(CONVERSATION_ID))).toBeNull();
+      expect(jotaiStore.get(detachedRunByConvoId(CONVERSATION_ID))).not.toBeNull();
+      history = [
+        ...history,
+        {
+          messageId: 'response-late',
+          parentMessageId: USER_MESSAGE_ID,
+          conversationId: CONVERSATION_ID,
+          isCreatedByUser: false,
+          text: 'saved after the first read',
+        } as TMessage,
+      ];
+
+      await waitFor(() =>
+        expect(jotaiStore.get(pendingRunEndByConvoId(CONVERSATION_ID))).toEqual(
+          expect.objectContaining({ outcome: 'completed', responseMessageId: 'response-late' }),
+        ),
       );
       expect(jotaiStore.get(detachedRunByConvoId(CONVERSATION_ID))).toBeNull();
     });

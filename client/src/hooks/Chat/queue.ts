@@ -256,13 +256,22 @@ export function resolveDetachedRunEnd(
   run: DetachedRun,
   messages: TMessage[] | undefined,
 ): RunEnd | null {
-  const target = run.responseMessageId?.replace(/_+$/, '');
   const responses = (messages ?? []).filter(
     (message) => message.isCreatedByUser === false && message.parentMessageId === run.userMessageId,
   );
-  const response =
-    responses.find((message) => message.messageId === target) ??
-    (responses.length === 1 ? responses[0] : undefined);
+  /** A fresh turn's placeholder is the user message id padded with `_`, which names no response;
+   *  a real id is matched exactly first, since persisted ids may themselves end in `_`. */
+  const exact = run.responseMessageId;
+  const unpadded = exact?.replace(/_+$/, '');
+  const namesResponse = exact != null && unpadded !== run.userMessageId;
+  let response: TMessage | undefined;
+  if (namesResponse) {
+    response =
+      responses.find((message) => message.messageId === exact) ??
+      responses.find((message) => message.messageId === unpadded);
+  } else if (responses.length === 1) {
+    response = responses[0];
+  }
   if (response == null) {
     return null;
   }

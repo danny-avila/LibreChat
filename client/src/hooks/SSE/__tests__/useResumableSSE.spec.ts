@@ -1037,9 +1037,35 @@ describe('useResumableSSE', () => {
       unmount();
     });
 
-    it('records no detached run when a terminal event clears the submission', async () => {
+    it('remembers the run when switching to a saved chat clears the submission to null', async () => {
       const { rerender, unmount } = await renderLeavable();
       rerender({ current: null });
+      expect(detachedRun()).toEqual({ userMessageId: 'msg-1', responseMessageId: 'resp-1' });
+      unmount();
+    });
+
+    it('remembers the run when the chat unmounts mid-stream', async () => {
+      const { unmount } = await renderLeavable();
+      unmount();
+      expect(detachedRun()).toEqual({ userMessageId: 'msg-1', responseMessageId: 'resp-1' });
+    });
+
+    it('forgets a left run once a new run starts in that conversation', async () => {
+      const { rerender, unmount } = await renderLeavable();
+      rerender({ current: null });
+      expect(detachedRun()).not.toBeNull();
+      rerender({
+        current: buildSubmission({
+          userMessage: {
+            messageId: 'msg-2',
+            conversationId: CONV_ID,
+            text: 'Next',
+            isCreatedByUser: true,
+            sender: 'User',
+            parentMessageId: 'resp-1',
+          },
+        }),
+      });
       expect(detachedRun()).toBeNull();
       unmount();
     });

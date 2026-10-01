@@ -5,6 +5,7 @@ import {
   selectMockEndpoint,
   getAccessToken,
   messagesView,
+  requestJson,
   fetchJson,
   sendMessage,
   replyPrompt,
@@ -38,6 +39,29 @@ async function typeDuringRun(page: Page, text: string) {
   await input.click();
   await input.fill(text);
   await expect(duringRunSendButton(page)).toBeVisible({ timeout: 5000 });
+}
+
+/** Waits until the server has saved the slow run's complete reply. */
+async function waitForServerToFinish(page: Page, conversationId: string) {
+  const token = await getAccessToken(page);
+  await expect
+    .poll(
+      async () => {
+        const messages = await fetchJson<TMessage[]>(
+          page,
+          `/api/messages/${encodeURIComponent(conversationId)}`,
+          token,
+        );
+        return messages.some(
+          (message) =>
+            !message.isCreatedByUser &&
+            message.unfinished !== true &&
+            JSON.stringify(message.content ?? message.text ?? '').includes('chunk-159'),
+        );
+      },
+      { timeout: 60000 },
+    )
+    .toBe(true);
 }
 
 test.describe('chat-owned queue state', () => {
@@ -98,26 +122,52 @@ test.describe('chat-owned queue state', () => {
     await expect(page).toHaveURL(/\/c\/new$/);
 
     /** The run finishes while its chat is not on screen. */
-    const token = await getAccessToken(page);
-    await expect
-      .poll(
-        async () => {
-          const messages = await fetchJson<TMessage[]>(
-            page,
-            `/api/messages/${encodeURIComponent(conversationId)}`,
-            token,
-          );
-          return messages.some(
-            (message) =>
-              !message.isCreatedByUser &&
-              message.unfinished !== true &&
-              JSON.stringify(message.content ?? message.text ?? '').includes('chunk-159'),
-          );
-        },
-        { timeout: 60000 },
-      )
-      .toBe(true);
+    await waitForServerToFinish(page, conversationId);
     await expect(messagesView(page).getByText(followUp)).toHaveCount(0);
+
+    await page.goBack();
+    await expect(page).toHaveURL(new RegExp(`/c/${conversationId}(\\?.*)?$`));
+    await expect(
+      messagesView(page).locator('.user-turn').filter({ hasText: followUp }),
+    ).toBeVisible({ timeout: 30000 });
+    await expect(queuedRows(page).filter({ hasText: followUp })).toHaveCount(0);
+  });
+
+  test('a follow-up queued in a chat the user left for a saved chat sends on return @scenario:parked-run-end-drains-after-switching-chats', async ({
+    page,
+  }) => {
+    const width = page.viewportSize()?.width ?? 0;
+    test.skip(width < 768, 'the conversation list is in the drawer below md');
+    test.setTimeout(150000);
+    const label = uniqueLabel('switched');
+    const followUp = `Switched follow-up ${label}`;
+    const otherTitle = `Other chat ${label}`;
+
+    /** A saved chat to switch to, titled so its list row can be found. */
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+    const otherId = await establishConversation(page, `switched-other-${label}`);
+    await requestJson(page, {
+      path: '/api/convos/update',
+      token: await getAccessToken(page),
+      method: 'POST',
+      body: { arg: { conversationId: otherId, title: otherTitle } },
+    });
+
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+    const conversationId = await establishConversation(page, `switched-setup-${label}`);
+    const run = await sendMessage(page, `E2E_SLOW_REPLY:${label}`);
+    expect(run.ok()).toBeTruthy();
+    await typeDuringRun(page, followUp);
+    await messageInput(page).press('ControlOrMeta+Enter');
+    await expect(queuedRows(page).filter({ hasText: followUp })).toBeVisible({ timeout: 10000 });
+
+    /** Leave the way a user does: pick the other saved chat in the conversation list. */
+    await page.getByTestId('convo-item').filter({ hasText: otherTitle }).click();
+    await expect(page).toHaveURL(new RegExp(`/c/${otherId}(\\?.*)?$`));
+
+    await waitForServerToFinish(page, conversationId);
 
     await page.goBack();
     await expect(page).toHaveURL(new RegExp(`/c/${conversationId}(\\?.*)?$`));

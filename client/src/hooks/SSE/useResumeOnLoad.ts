@@ -1009,15 +1009,27 @@ export default function useResumeOnLoad(
       restoreSteerChips(conversationId, undefined);
       /** A run this pane stopped watching when the user left has ended on the server, which
        *  deleted the job. Its persisted response tells how it ended; parking that end lets the
-       *  queue drain send a follow-up queued during the run, as an attached run would have. */
+       *  queue drain send a follow-up queued during the run, as an attached run would have.
+       *  History read before the response was saved cannot resolve it, so the marker stays
+       *  until one refetch of history either resolves it or the next visit tries again. */
       const detachedFamily = detachedRunByConvoId(conversationId);
       const detachedRun = jotaiStore.get(detachedFamily);
-      if (detachedRun != null) {
-        jotaiStore.set(detachedFamily, null);
-        const end = resolveDetachedRunEnd(conversationId, detachedRun, getMessages());
-        if (end != null) {
-          jotaiStore.set(pendingRunEndByConvoId(conversationId), end);
+      const parkDetachedEnd = (): boolean => {
+        if (detachedRun == null || jotaiStore.get(detachedFamily) !== detachedRun) {
+          return true;
         }
+        const end = resolveDetachedRunEnd(conversationId, detachedRun, getMessages());
+        if (end == null) {
+          return false;
+        }
+        jotaiStore.set(detachedFamily, null);
+        jotaiStore.set(pendingRunEndByConvoId(conversationId), end);
+        return true;
+      };
+      if (!parkDetachedEnd()) {
+        void queryClient
+          .refetchQueries({ queryKey: [QueryKeys.messages, conversationId], exact: true })
+          .then(parkDetachedEnd);
       }
       processedConvoRef.current = conversationId;
       return;

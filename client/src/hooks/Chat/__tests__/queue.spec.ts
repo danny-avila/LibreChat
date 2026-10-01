@@ -62,6 +62,32 @@ describe('resolveDetachedRunEnd', () => {
     );
   });
 
+  it('matches a persisted response id that itself ends in an underscore', () => {
+    const end = resolveDetachedRunEnd(
+      CONVO_ID,
+      { userMessageId: USER_ID, responseMessageId: 'response-2_' },
+      [response({ messageId: 'response-1' }), response({ messageId: 'response-2_' })],
+    );
+    expect(end?.responseMessageId).toBe('response-2_');
+  });
+
+  it('leaves a run unresolved when the response it named is not loaded', () => {
+    expect(
+      resolveDetachedRunEnd(CONVO_ID, { userMessageId: USER_ID, responseMessageId: 'response-2' }, [
+        response({ messageId: 'response-1' }),
+      ]),
+    ).toBeNull();
+  });
+
+  it('treats the padded user id placeholder as naming no response', () => {
+    const end = resolveDetachedRunEnd(
+      CONVO_ID,
+      { userMessageId: USER_ID, responseMessageId: `${USER_ID}_` },
+      [response({ messageId: 'server-response' })],
+    );
+    expect(end?.responseMessageId).toBe('server-response');
+  });
+
   it('does not guess between siblings when the run named no response', () => {
     expect(
       resolveDetachedRunEnd(CONVO_ID, { userMessageId: USER_ID }, [
