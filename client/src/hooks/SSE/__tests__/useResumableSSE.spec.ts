@@ -325,7 +325,12 @@ import useResumableSSE, {
   ABORT_SWEEP_STATUSES,
 } from '~/hooks/SSE/useResumableSSE';
 import useSSE from '~/hooks/SSE/useSSE';
-import { queuedMessagesByConvoId, resetQueueFamilies } from '~/hooks/Chat/queue';
+import {
+  queuedMessagesByConvoId,
+  stopRequestedByConvoId,
+  detachedRunByConvoId,
+  resetQueueFamilies,
+} from '~/hooks/Chat/queue';
 
 const CONV_ID = 'conv-abc-123';
 
@@ -1010,6 +1015,54 @@ describe('useResumableSSE', () => {
       expect.objectContaining({ outcome: 'completed' }),
     );
     unmount();
+  });
+
+  describe('a run the user leaves mid-stream', () => {
+    const renderLeavable = async () => {
+      const chatHelpers = buildChatHelpers();
+      const rendered = renderHook(
+        ({ current }: { current: TSubmission | null }) => useResumableSSE(current, chatHelpers),
+        { initialProps: { current: buildSubmission() as TSubmission | null } },
+      );
+      await flushMicrotasks();
+      expect(mockSSEInstances.length).toBeGreaterThan(0);
+      return rendered;
+    };
+    const detachedRun = () => getDefaultStore().get(detachedRunByConvoId(CONV_ID));
+
+    it('remembers the run when navigation clears the submission, so its end is read on return', async () => {
+      const { rerender, unmount } = await renderLeavable();
+      rerender({ current: {} as TSubmission });
+      expect(detachedRun()).toEqual({ userMessageId: 'msg-1', responseMessageId: 'resp-1' });
+      unmount();
+    });
+
+    it('records no detached run when a terminal event clears the submission', async () => {
+      const { rerender, unmount } = await renderLeavable();
+      rerender({ current: null });
+      expect(detachedRun()).toBeNull();
+      unmount();
+    });
+
+    it('records no detached run once the run end already reached the drain', async () => {
+      mockFetchStreamStatus.mockResolvedValue({ active: false });
+      const { rerender, unmount } = await renderLeavable();
+      await act(async () => {
+        getLastSSE()._emit('error', { responseCode: 404 });
+      });
+      await waitFor(() => expect(mockSetRunEnd).toHaveBeenCalled());
+      rerender({ current: {} as TSubmission });
+      expect(detachedRun()).toBeNull();
+      unmount();
+    });
+
+    it('records no detached run for a run the user stopped before leaving', async () => {
+      const { rerender, unmount } = await renderLeavable();
+      getDefaultStore().set(stopRequestedByConvoId(CONV_ID), true);
+      rerender({ current: {} as TSubmission });
+      expect(detachedRun()).toBeNull();
+      unmount();
+    });
   });
 
   it('authorizes only the exact failed recovery source past the conversion tombstone', async () => {

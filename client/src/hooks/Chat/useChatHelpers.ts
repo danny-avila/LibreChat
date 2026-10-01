@@ -5,10 +5,10 @@ import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import { Constants, QueryKeys, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { ChatContract } from './contract';
+import { stopRequestedByConvoId, drainAfterAbortByIndex, runEndByIndex } from '~/hooks/Chat/queue';
 import { useLatestMessage, useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
 import { useAbortStreamMutation, supportsGenerationProtocolV2 } from '~/data-provider';
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
-import { drainAfterAbortByIndex, runEndByIndex } from '~/hooks/Chat/queue';
 import { useChatSettings } from '~/Providers/ChatSettingsContext';
 import useChatFunctions from '~/hooks/Chat/useChatFunctions';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
@@ -234,6 +234,7 @@ export default function useChatHelpers(index = 0, paramId?: string): ChatContrac
       // start the NEXT submission) while the abort response is in flight;
       // the fallback clear below must not tear down that new run.
       const submissionAtAbort = captureSubmission();
+      queueStore.set(stopRequestedByConvoId(conversationId), true);
       try {
         console.log('[useChatHelpers] Calling abort mutation for:', conversationId);
         const response = await abortStream({
@@ -341,6 +342,7 @@ export default function useChatHelpers(index = 0, paramId?: string): ChatContrac
     conversationId,
     endpoint,
     endpointType,
+    queueStore,
     activeGenerationCreatedAt,
     activeGenerationProtocolVersion,
     abortStream,

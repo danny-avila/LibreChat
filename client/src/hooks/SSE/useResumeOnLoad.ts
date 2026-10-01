@@ -38,6 +38,11 @@ import {
   getGenerationProtocolVersion,
   supportsGenerationProtocolV2,
 } from '~/data-provider/SSE/protocol';
+import {
+  resolveDetachedRunEnd,
+  pendingRunEndByConvoId,
+  detachedRunByConvoId,
+} from '~/hooks/Chat/queue';
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import { agentQueuedTurnsQueryKey } from '~/data-provider/SSE/queuedTurns';
@@ -1002,10 +1007,24 @@ export default function useResumeOnLoad(
       // `unrecoveredSteers` above — same empty-list reconcile as the resume path.
       settleAppliedSteerParts(conversationId, getMessages());
       restoreSteerChips(conversationId, undefined);
+      /** A run this pane stopped watching when the user left has ended on the server, which
+       *  deleted the job. Its persisted response tells how it ended; parking that end lets the
+       *  queue drain send a follow-up queued during the run, as an attached run would have. */
+      const detachedFamily = detachedRunByConvoId(conversationId);
+      const detachedRun = jotaiStore.get(detachedFamily);
+      if (detachedRun != null) {
+        jotaiStore.set(detachedFamily, null);
+        const end = resolveDetachedRunEnd(conversationId, detachedRun, getMessages());
+        if (end != null) {
+          jotaiStore.set(pendingRunEndByConvoId(conversationId), end);
+        }
+      }
       processedConvoRef.current = conversationId;
       return;
     }
 
+    /** Still generating: the stream this resume attaches will deliver the run's own end. */
+    jotaiStore.set(detachedRunByConvoId(conversationId), null);
     processedConvoRef.current = conversationId;
     if (handoffGenerationKey != null) {
       consumedHandoffGenerationRef.current = handoffGenerationKey;

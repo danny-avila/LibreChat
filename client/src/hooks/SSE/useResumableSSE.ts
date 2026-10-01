@@ -41,8 +41,8 @@ import type {
   TContextUsageEvent,
   ChatStreamConnection,
 } from 'librechat-data-provider';
+import type { QueuedMessageOrigin, DrainAfterAbort, DetachedRun, RunEnd } from '~/hooks/Chat/queue';
 import type { ActiveJobsResponse, StreamStatusResponse } from '~/data-provider';
-import type { DrainAfterAbort, QueuedMessageOrigin } from '~/hooks/Chat/queue';
 import type { GenerationProtocolVersion } from '~/data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData, TFinalResData } from '~/common';
@@ -88,6 +88,13 @@ import {
   GENERATION_PROTOCOL_VERSION,
 } from '~/data-provider';
 import {
+  stopRequestedByConvoId,
+  detachedRunByConvoId,
+  drainAfterAbortByIndex,
+  queuedMessagesByConvoId,
+  runEndByIndex,
+} from '~/hooks/Chat/queue';
+import {
   recoveryDispositionsFamily,
   canRestoreRecovery,
   blockRecovery,
@@ -96,7 +103,6 @@ import useEventHandlers, {
   buildCreatedInitialResponse,
   keepLocalCodeApprovalMode,
 } from './useEventHandlers';
-import { drainAfterAbortByIndex, queuedMessagesByConvoId, runEndByIndex } from '~/hooks/Chat/queue';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import { abortScrollFamily, showStopButtonByIndex } from '~/store/generation';
 import { withSubmittedCodeDecision } from '~/hooks/Agents/codeDecision';
@@ -1361,7 +1367,20 @@ export default function useResumableSSE(
     [],
   );
 
-  const setRunEnd = useSetAtom(runEndByIndex(runIndex));
+  const publishRunEnd = useSetAtom(runEndByIndex(runIndex));
+  /** Whether the current submission's run end already reached the queue drain. A run that
+   *  ended attached must not also be resolved as detached when the user later leaves. */
+  const runEndPublishedRef = useRef(false);
+  /** The run a cleanup closed while it was still generating, kept until the next effect body
+   *  learns whether the user left the chat (empty submission) or the run moved on. */
+  const detachCandidateRef = useRef<{ conversationId: string; run: DetachedRun } | null>(null);
+  const setRunEnd = useCallback(
+    (end: RunEnd) => {
+      runEndPublishedRef.current = true;
+      publishRunEnd(end);
+    },
+    [publishRunEnd],
+  );
   const setDrainAfterAbort = useSetAtom(drainAfterAbortByIndex(runIndex));
   const clearDrainAfterAbort = useCallback(
     (conversationId: string, generationCreatedAt?: number) => {
@@ -4268,6 +4287,14 @@ export default function useResumableSSE(
       }
       stopForegroundReattachRef.current?.();
       stopForegroundReattachRef.current = null;
+      /** Leaving the chat clears the submission to an empty object (a terminal event clears it
+       *  to null). The run keeps generating with no subscriber, so no terminal event will reach
+       *  the queue drain; remember the run, and its end is read from history on return. */
+      const detachCandidate = detachCandidateRef.current;
+      detachCandidateRef.current = null;
+      if (submission != null && detachCandidate != null) {
+        jotaiStore.set(detachedRunByConvoId(detachCandidate.conversationId), detachCandidate.run);
+      }
       // Close SSE but do NOT dispatch cancel - navigation should not abort
       streamRef.current?.abort();
       streamRef.current = null;
@@ -4294,6 +4321,11 @@ export default function useResumableSSE(
     });
 
     submissionRef.current = submission;
+    detachCandidateRef.current = null;
+    runEndPublishedRef.current = false;
+    if (submission.conversation?.conversationId != null) {
+      jotaiStore.set(stopRequestedByConvoId(submission.conversation.conversationId), false);
+    }
     const startController = new AbortController();
     const { signal } = startController;
     const isCurrentEffect = () => !signal.aborted && submissionRef.current === submission;
@@ -4823,6 +4855,24 @@ export default function useResumableSSE(
       stopForegroundReattachRef.current = null;
       // Reset reconnect counter before closing (so abort handler doesn't think we're reconnecting)
       reconnectAttemptRef.current = 0;
+      const closing = submissionRef.current;
+      const closingConvoId = closing?.conversation?.conversationId;
+      const closingUserMessageId = closing?.userMessage?.messageId;
+      detachCandidateRef.current =
+        streamRef.current != null &&
+        !runEndPublishedRef.current &&
+        closingConvoId != null &&
+        closingConvoId !== Constants.NEW_CONVO &&
+        closingUserMessageId != null &&
+        !jotaiStore.get(stopRequestedByConvoId(closingConvoId))
+          ? {
+              conversationId: closingConvoId,
+              run: {
+                userMessageId: closingUserMessageId,
+                responseMessageId: closing?.initialResponse?.messageId,
+              },
+            }
+          : null;
       streamRef.current?.abort();
       streamRef.current = null;
       // Clear handler maps to prevent memory leaks and stale state

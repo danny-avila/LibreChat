@@ -6,10 +6,14 @@ import { Constants, ContentTypes, QueryKeys } from 'librechat-data-provider';
 import type { Agents, TMessage, TConversation, TSubmission } from 'librechat-data-provider';
 import type { MutableSnapshot } from 'recoil';
 import type { ReactNode } from 'react';
-import type { QueuedMessage } from '~/hooks/Chat/queue';
-import type { PendingSteer } from '~/hooks/Chat/queue';
+import type { QueuedMessage, PendingSteer, DetachedRun } from '~/hooks/Chat/queue';
+import {
+  queuedMessagesByConvoId,
+  pendingRunEndByConvoId,
+  detachedRunByConvoId,
+  resetQueueFamilies,
+} from '~/hooks/Chat/queue';
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
-import { queuedMessagesByConvoId, resetQueueFamilies } from '~/hooks/Chat/queue';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import { agentQueuedTurnsQueryKey } from '~/data-provider/SSE/queuedTurns';
 import { submissionStartFamily } from '~/store/generation';
@@ -108,6 +112,7 @@ function renderUseResumeOnLoad({
   onQueuedMessages,
   submissionStart,
   onSubmissionStart,
+  detachedRun,
 }: {
   messages?: TMessage[];
   getMessages?: () => TMessage[] | undefined;
@@ -124,11 +129,15 @@ function renderUseResumeOnLoad({
   onQueuedMessages?: (queued: QueuedMessage[]) => void;
   submissionStart?: number;
   onSubmissionStart?: (submissionStart: number | null) => void;
+  detachedRun?: DetachedRun;
 }) {
   const getMessages = jest.fn(getMessagesOverride ?? (() => messages));
   const jotaiStore = createStore();
   if (submissionStart != null) {
     jotaiStore.set(submissionStartFamily(0), submissionStart);
+  }
+  if (detachedRun != null) {
+    jotaiStore.set(detachedRunByConvoId(conversationId), detachedRun);
   }
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -2730,6 +2739,63 @@ describe('useResumeOnLoad', () => {
       });
 
       expect(observedSteers[observedSteers.length - 1]).toEqual([failedChip]);
+    });
+
+    it('parks the end of a run that finished after the user left, so its queue drains', async () => {
+      mockUseStreamStatus.mockReturnValue({
+        isSuccess: true,
+        isFetching: false,
+        data: { active: false },
+      });
+      const completedResponse = {
+        messageId: 'response-detached',
+        parentMessageId: USER_MESSAGE_ID,
+        conversationId: CONVERSATION_ID,
+        isCreatedByUser: false,
+        text: 'finished while away',
+      } as TMessage;
+
+      const { jotaiStore } = renderUseResumeOnLoad({
+        messages: [buildUserMessage(CONVERSATION_ID), completedResponse],
+        detachedRun: { userMessageId: USER_MESSAGE_ID },
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(jotaiStore.get(pendingRunEndByConvoId(CONVERSATION_ID))).toEqual(
+        expect.objectContaining({
+          conversationId: CONVERSATION_ID,
+          outcome: 'completed',
+          responseMessageId: 'response-detached',
+        }),
+      );
+      expect(jotaiStore.get(detachedRunByConvoId(CONVERSATION_ID))).toBeNull();
+    });
+
+    it('parks nothing for a conversation this pane never left mid-run', async () => {
+      mockUseStreamStatus.mockReturnValue({
+        isSuccess: true,
+        isFetching: false,
+        data: { active: false },
+      });
+      const { jotaiStore } = renderUseResumeOnLoad({
+        messages: [
+          buildUserMessage(CONVERSATION_ID),
+          {
+            messageId: 'response-old',
+            parentMessageId: USER_MESSAGE_ID,
+            conversationId: CONVERSATION_ID,
+            isCreatedByUser: false,
+            text: 'history',
+          } as TMessage,
+        ],
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(jotaiStore.get(pendingRunEndByConvoId(CONVERSATION_ID))).toBeNull();
     });
 
     it('converts resumeState.pendingSteers to queued when inactive (expired action, unparked queue)', async () => {
