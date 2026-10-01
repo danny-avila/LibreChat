@@ -1044,6 +1044,22 @@ describe('useResumableSSE', () => {
       unmount();
     });
 
+    it('marks a regeneration and carries a resumed epoch when the user leaves', async () => {
+      const chatHelpers = buildChatHelpers();
+      const resumed = {
+        ...buildSubmission(),
+        isRegenerate: true,
+        resumeStreamId: CONV_ID,
+        resumeGenerationCreatedAt: 4200,
+      } as TSubmission;
+      const { unmount } = renderHook(() => useResumableSSE(resumed, chatHelpers));
+      await flushMicrotasks();
+      unmount();
+      expect(detachedRun()).toEqual(
+        expect.objectContaining({ isRegenerate: true, generationCreatedAt: 4200 }),
+      );
+    });
+
     it('remembers the run when the chat unmounts mid-stream', async () => {
       const { unmount } = await renderLeavable();
       unmount();

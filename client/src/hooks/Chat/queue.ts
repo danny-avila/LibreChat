@@ -234,6 +234,12 @@ export type DetachedRun = {
   userMessageId: string;
   /** The response placeholder's id, when the submission carried one. */
   responseMessageId?: string;
+  /** The run's generation epoch, when the start response installed one. The queue drain matches
+   *  server admission receipts against it. */
+  generationCreatedAt?: number;
+  /** A regeneration rewrites a response that already exists in history, so history cannot tell
+   *  whether the row it finds is the old reply or the new one. */
+  isRegenerate?: boolean;
 };
 
 export const detachedRunByConvoId = atomFamily((_conversationId: string) =>
@@ -256,6 +262,9 @@ export function resolveDetachedRunEnd(
   run: DetachedRun,
   messages: TMessage[] | undefined,
 ): RunEnd | null {
+  if (run.isRegenerate === true) {
+    return null;
+  }
   const responses = (messages ?? []).filter(
     (message) => message.isCreatedByUser === false && message.parentMessageId === run.userMessageId,
   );
@@ -285,6 +294,7 @@ export function resolveDetachedRunEnd(
     conversationId,
     outcome,
     endedAt: Date.now(),
+    ...(run.generationCreatedAt != null && { generationCreatedAt: run.generationCreatedAt }),
     ...(outcome === 'completed' && { responseMessageId: response.messageId }),
   };
 }

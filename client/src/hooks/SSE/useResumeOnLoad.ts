@@ -35,14 +35,16 @@ import {
   ACTIVE_JOBS_SUCCESSOR_GRACE_MS,
 } from '~/data-provider';
 import {
-  getGenerationProtocolVersion,
-  supportsGenerationProtocolV2,
-} from '~/data-provider/SSE/protocol';
-import {
+  settledQueuedTurnReceiptsByConvoId,
+  queuedMessagesByConvoId,
   resolveDetachedRunEnd,
   pendingRunEndByConvoId,
   detachedRunByConvoId,
 } from '~/hooks/Chat/queue';
+import {
+  getGenerationProtocolVersion,
+  supportsGenerationProtocolV2,
+} from '~/data-provider/SSE/protocol';
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import { agentQueuedTurnsQueryKey } from '~/data-provider/SSE/queuedTurns';
@@ -1016,6 +1018,17 @@ export default function useResumeOnLoad(
       const detachedRun = jotaiStore.get(detachedFamily);
       const parkDetachedEnd = (): boolean => {
         if (detachedRun == null || jotaiStore.get(detachedFamily) !== detachedRun) {
+          return true;
+        }
+        /** Without the run's epoch the drain cannot match a server admission receipt, so a run
+         *  whose queue the server shares is left for a manual send rather than guessed at. */
+        const serverSharesQueue =
+          jotaiStore.get(settledQueuedTurnReceiptsByConvoId(conversationId)).length > 0 ||
+          jotaiStore
+            .get(queuedMessagesByConvoId(conversationId))
+            .some((item) => item.server != null);
+        if (detachedRun.generationCreatedAt == null && serverSharesQueue) {
+          jotaiStore.set(detachedFamily, null);
           return true;
         }
         const end = resolveDetachedRunEnd(conversationId, detachedRun, getMessages());

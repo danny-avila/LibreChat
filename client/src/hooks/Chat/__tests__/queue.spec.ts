@@ -88,6 +88,25 @@ describe('resolveDetachedRunEnd', () => {
     expect(end?.responseMessageId).toBe('server-response');
   });
 
+  it('leaves a regeneration unresolved, since history still holds the reply it replaces', () => {
+    expect(
+      resolveDetachedRunEnd(
+        CONVO_ID,
+        { userMessageId: USER_ID, responseMessageId: 'response-1_', isRegenerate: true },
+        [response({ messageId: 'response-1' })],
+      ),
+    ).toBeNull();
+  });
+
+  it('carries the run epoch so the drain can match server admission receipts', () => {
+    const end = resolveDetachedRunEnd(
+      CONVO_ID,
+      { userMessageId: USER_ID, generationCreatedAt: 4200 },
+      [response()],
+    );
+    expect(end?.generationCreatedAt).toBe(4200);
+  });
+
   it('does not guess between siblings when the run named no response', () => {
     expect(
       resolveDetachedRunEnd(CONVO_ID, { userMessageId: USER_ID }, [

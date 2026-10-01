@@ -8,6 +8,7 @@ import type { MutableSnapshot } from 'recoil';
 import type { ReactNode } from 'react';
 import type { QueuedMessage, PendingSteer, DetachedRun } from '~/hooks/Chat/queue';
 import {
+  settledQueuedTurnReceiptsByConvoId,
   queuedMessagesByConvoId,
   pendingRunEndByConvoId,
   detachedRunByConvoId,
@@ -113,6 +114,7 @@ function renderUseResumeOnLoad({
   submissionStart,
   onSubmissionStart,
   detachedRun,
+  seedJotai,
 }: {
   messages?: TMessage[];
   getMessages?: () => TMessage[] | undefined;
@@ -130,6 +132,7 @@ function renderUseResumeOnLoad({
   submissionStart?: number;
   onSubmissionStart?: (submissionStart: number | null) => void;
   detachedRun?: DetachedRun;
+  seedJotai?: (store: ReturnType<typeof createStore>) => void;
 }) {
   const getMessages = jest.fn(getMessagesOverride ?? (() => messages));
   const jotaiStore = createStore();
@@ -139,6 +142,7 @@ function renderUseResumeOnLoad({
   if (detachedRun != null) {
     jotaiStore.set(detachedRunByConvoId(conversationId), detachedRun);
   }
+  seedJotai?.(jotaiStore);
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -2804,6 +2808,69 @@ describe('useResumeOnLoad', () => {
         ),
       );
       expect(jotaiStore.get(detachedRunByConvoId(CONVERSATION_ID))).toBeNull();
+    });
+
+    it('leaves a run without an epoch for a manual send when the server shares the queue', async () => {
+      mockUseStreamStatus.mockReturnValue({
+        isSuccess: true,
+        isFetching: false,
+        data: { active: false },
+      });
+      const { jotaiStore } = renderUseResumeOnLoad({
+        messages: [
+          buildUserMessage(CONVERSATION_ID),
+          {
+            messageId: 'response-detached',
+            parentMessageId: USER_MESSAGE_ID,
+            conversationId: CONVERSATION_ID,
+            isCreatedByUser: false,
+            text: 'finished while away',
+          } as TMessage,
+        ],
+        detachedRun: { userMessageId: USER_MESSAGE_ID },
+        seedJotai: (store) =>
+          store.set(settledQueuedTurnReceiptsByConvoId(CONVERSATION_ID), [
+            { clientRequestId: 'queued-1', status: 'admitted', effectivePredecessorCreatedAt: 41 },
+          ]),
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(jotaiStore.get(pendingRunEndByConvoId(CONVERSATION_ID))).toBeNull();
+      expect(jotaiStore.get(detachedRunByConvoId(CONVERSATION_ID))).toBeNull();
+    });
+
+    it('parks a shared-queue run end with its epoch, so its admission receipt is matched', async () => {
+      mockUseStreamStatus.mockReturnValue({
+        isSuccess: true,
+        isFetching: false,
+        data: { active: false },
+      });
+      const { jotaiStore } = renderUseResumeOnLoad({
+        messages: [
+          buildUserMessage(CONVERSATION_ID),
+          {
+            messageId: 'response-detached',
+            parentMessageId: USER_MESSAGE_ID,
+            conversationId: CONVERSATION_ID,
+            isCreatedByUser: false,
+            text: 'finished while away',
+          } as TMessage,
+        ],
+        detachedRun: { userMessageId: USER_MESSAGE_ID, generationCreatedAt: 41 },
+        seedJotai: (store) =>
+          store.set(settledQueuedTurnReceiptsByConvoId(CONVERSATION_ID), [
+            { clientRequestId: 'queued-1', status: 'admitted', effectivePredecessorCreatedAt: 41 },
+          ]),
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(jotaiStore.get(pendingRunEndByConvoId(CONVERSATION_ID))).toEqual(
+        expect.objectContaining({ outcome: 'completed', generationCreatedAt: 41 }),
+      );
     });
 
     it('parks nothing for a conversation this pane never left mid-run', async () => {
