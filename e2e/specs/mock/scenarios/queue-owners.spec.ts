@@ -133,6 +133,42 @@ test.describe('chat-owned queue state', () => {
     await expect(queuedRows(page).filter({ hasText: followUp })).toHaveCount(0);
   });
 
+  test('a follow-up queued before the user stopped and left the run stays queued on return @scenario:stopped-run-left-keeps-follow-up-queued', async ({
+    page,
+  }) => {
+    test.setTimeout(150000);
+    const label = uniqueLabel('stopped');
+    const followUp = `Stopped follow-up ${label}`;
+
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+    const conversationId = await establishConversation(page, `stopped-setup-${label}`);
+
+    const run = await sendMessage(page, `E2E_SLOW_REPLY:${label}`);
+    expect(run.ok()).toBeTruthy();
+    await expect(messagesView(page).getByText('chunk-010')).toBeVisible({ timeout: 15000 });
+    await typeDuringRun(page, followUp);
+    await messageInput(page).press('ControlOrMeta+Enter');
+    await expect(queuedRows(page).filter({ hasText: followUp })).toBeVisible({ timeout: 10000 });
+
+    const stop = page.getByRole('button', { name: 'Stop generating' });
+    await stop.click();
+    await expect(stop).toBeHidden({ timeout: 15000 });
+
+    await page.evaluate((path) => {
+      window.history.pushState({}, '', path);
+      window.dispatchEvent(new PopStateEvent('popstate'));
+    }, NEW_CHAT_PATH);
+    await expect(page).toHaveURL(/\/c\/new$/);
+
+    await page.goBack();
+    await expect(page).toHaveURL(new RegExp(`/c/${conversationId}(\\?.*)?$`));
+    await expect(queuedRows(page).filter({ hasText: followUp })).toBeVisible({ timeout: 15000 });
+    await expect(
+      messagesView(page).locator('.user-turn').filter({ hasText: followUp }),
+    ).toHaveCount(0);
+  });
+
   test('a follow-up queued in a chat the user left for a saved chat sends on return @scenario:parked-run-end-drains-after-switching-chats', async ({
     page,
   }) => {
