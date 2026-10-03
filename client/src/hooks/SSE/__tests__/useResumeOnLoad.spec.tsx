@@ -115,6 +115,7 @@ function renderUseResumeOnLoad({
   onSubmissionStart,
   detachedRun,
   seedJotai,
+  seedQueryClient,
 }: {
   messages?: TMessage[];
   getMessages?: () => TMessage[] | undefined;
@@ -133,6 +134,7 @@ function renderUseResumeOnLoad({
   onSubmissionStart?: (submissionStart: number | null) => void;
   detachedRun?: DetachedRun;
   seedJotai?: (store: ReturnType<typeof createStore>) => void;
+  seedQueryClient?: (client: QueryClient) => void;
 }) {
   const getMessages = jest.fn(getMessagesOverride ?? (() => messages));
   const jotaiStore = createStore();
@@ -146,6 +148,7 @@ function renderUseResumeOnLoad({
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  seedQueryClient?.(queryClient);
   let setSubmissionState: ((submission: TSubmission | null) => void) | undefined;
   let setIsSubmittingState: ((value: boolean) => void) | undefined;
   let setAttachedEpochState: ((value: number | null) => void) | undefined;
@@ -2808,6 +2811,82 @@ describe('useResumeOnLoad', () => {
         ),
       );
       expect(jotaiStore.get(detachedRunByConvoId(CONVERSATION_ID))).toBeNull();
+    });
+
+    it('resolves a detached run from refetched history, not the response it left cached', async () => {
+      mockUseStreamStatus.mockReturnValue({
+        isSuccess: true,
+        isFetching: false,
+        data: { active: false },
+      });
+      const historyKey = [QueryKeys.messages, CONVERSATION_ID];
+      const leftResponse = {
+        messageId: 'response-detached',
+        parentMessageId: USER_MESSAGE_ID,
+        conversationId: CONVERSATION_ID,
+        isCreatedByUser: false,
+        text: 'streamed before leaving',
+      } as TMessage;
+      let client: QueryClient | undefined;
+      const { jotaiStore } = renderUseResumeOnLoad({
+        getMessages: () => client?.getQueryData<TMessage[]>(historyKey),
+        detachedRun: { userMessageId: USER_MESSAGE_ID, responseMessageId: 'response-detached' },
+        seedQueryClient: (queryClient) => {
+          client = queryClient;
+          queryClient.setQueryDefaults(historyKey, {
+            queryFn: async () => [
+              buildUserMessage(CONVERSATION_ID),
+              { ...leftResponse, unfinished: true },
+            ],
+          });
+          queryClient.setQueryData(historyKey, [buildUserMessage(CONVERSATION_ID), leftResponse]);
+        },
+      });
+
+      await waitFor(() =>
+        expect(jotaiStore.get(pendingRunEndByConvoId(CONVERSATION_ID))).toEqual(
+          expect.objectContaining({ outcome: 'aborted' }),
+        ),
+      );
+      expect(jotaiStore.get(detachedRunByConvoId(CONVERSATION_ID))).toBeNull();
+    });
+
+    it('keeps the detached run for the next visit when the history refetch fails', async () => {
+      mockUseStreamStatus.mockReturnValue({
+        isSuccess: true,
+        isFetching: false,
+        data: { active: false },
+      });
+      const historyKey = [QueryKeys.messages, CONVERSATION_ID];
+      const queryFn = jest.fn(async (): Promise<TMessage[]> => {
+        throw new Error('history unavailable');
+      });
+      let client: QueryClient | undefined;
+      const { jotaiStore } = renderUseResumeOnLoad({
+        getMessages: () => client?.getQueryData<TMessage[]>(historyKey),
+        detachedRun: { userMessageId: USER_MESSAGE_ID, responseMessageId: 'response-detached' },
+        seedQueryClient: (queryClient) => {
+          client = queryClient;
+          queryClient.setQueryDefaults(historyKey, { queryFn });
+          queryClient.setQueryData(historyKey, [
+            buildUserMessage(CONVERSATION_ID),
+            {
+              messageId: 'response-detached',
+              parentMessageId: USER_MESSAGE_ID,
+              conversationId: CONVERSATION_ID,
+              isCreatedByUser: false,
+              text: 'streamed before leaving',
+            } as TMessage,
+          ]);
+        },
+      });
+
+      await waitFor(() => expect(queryFn).toHaveBeenCalled());
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(jotaiStore.get(pendingRunEndByConvoId(CONVERSATION_ID))).toBeNull();
+      expect(jotaiStore.get(detachedRunByConvoId(CONVERSATION_ID))).not.toBeNull();
     });
 
     it('leaves a run without an epoch for a manual send when the server shares the queue', async () => {
