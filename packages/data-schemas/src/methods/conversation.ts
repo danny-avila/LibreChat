@@ -4140,6 +4140,12 @@ export function createConversationMethods(
         );
         await options?.beforeDelete?.(waveIds);
         await deps?.prepareAgentTriggerConversationResultErasure?.(user, waveIds);
+        /** Removed before the conversation, so a failure here leaves both for a retry and a
+         * webhook can never claim a record whose controlling conversation is gone. */
+        await mongoose.models.PRAutomation?.deleteMany({
+          user,
+          conversationId: { $in: waveIds },
+        });
         const result = await Conversation.deleteMany({ user, conversationId: { $in: waveIds } });
         if (result.deletedCount > 0) {
           /** Result erasure is irreversible. Keep receipts intact when a
@@ -4174,6 +4180,10 @@ export function createConversationMethods(
       ];
 
       if (recoveryConversationIds.length > 0) {
+        await mongoose.models.PRAutomation?.deleteMany({
+          user,
+          conversationId: { $in: recoveryConversationIds },
+        });
         await deps?.deleteAgentQueuedTurns?.(
           user,
           recoveryConversationIds.map((conversationId) => ({
