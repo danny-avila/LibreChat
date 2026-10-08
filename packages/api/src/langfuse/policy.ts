@@ -1,3 +1,4 @@
+import type { AppConfig } from '@librechat/data-schemas';
 import { isFalseEnv, isTrueEnv } from './utils';
 import { normalizeString } from '~/utils/text';
 
@@ -56,6 +57,17 @@ function traceIdAccumulation(traceId: string): number {
     accumulation = (accumulation ^ part) >>> 0;
   }
   return accumulation;
+}
+
+/**
+ * A temporary chat reaches no Langfuse destination unless the deployment opts
+ * in. Read strictly, since admin config patches persist without validation.
+ */
+export function isLangfuseTraceAllowed(
+  appConfig: AppConfig | undefined,
+  isTemporary?: boolean | null,
+): boolean {
+  return isTemporary !== true || appConfig?.langfuse?.trace?.temporaryChats === true;
 }
 
 export function isLangfuseTraceSampled(traceId: string): boolean {

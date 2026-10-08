@@ -68,6 +68,10 @@ projects:
 # librechat.endpoint.type, librechat.provider, librechat.model,
 # librechat.model.label, librechat.spec.
 #
+# Temporary chats, including chats interface.retentionMode "ephemeral" forces
+# temporary, are not traced and their feedback is not scored unless
+# langfuse.trace.temporaryChats is true.
+#
 # langfuse:
 #   headers:
 #     CF-Access-Client-Id: "${CF_ACCESS_CLIENT_ID}"
@@ -76,6 +80,7 @@ projects:
 #     userIdField: email
 #     userMetadataFields: [email, username, role, provider]
 #     conversationMetadataFields: [conversationId, endpoint, model, modelLabel, spec]
+#     temporaryChats: false
 
 # File storage configuration
 # Single strategy for all file types (legacy format, still supported)
