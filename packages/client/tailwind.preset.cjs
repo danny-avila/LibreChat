@@ -57,8 +57,10 @@ module.exports = {
         'theme-list': 'var(--theme-list-min-width, 8rem)',
       },
       maxHeight: {
-        /** The tallest a Select's list draws before it scrolls. */
-        'theme-list': 'var(--theme-list-max-height, 24rem)',
+        /** The tallest a Select's list draws before it scrolls, never past the room the popper
+         *  leaves between its trigger and the viewport's edge. */
+        'theme-list':
+          'min(var(--theme-list-max-height, 24rem), var(--radix-select-content-available-height, 100dvh))',
       },
       inset: {
         /** Where a sign-in label rests in its field: centered 2px low, as on the stock 44px field,

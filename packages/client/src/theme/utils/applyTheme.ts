@@ -186,8 +186,15 @@ function mapColors(input: RenamedThemeRGB, base?: IThemeRGB): Array<[string, str
   return variables;
 }
 
-/** The `theme-chrome-quiet:` variant matches the literal `0`, so every spelling of zero is written as it. */
+/**
+ * The `theme-chrome-quiet:` variant matches the literal `0`, so every spelling of zero is written as
+ * it. A `none` list height is written as the viewport's, which the list's available-height cap
+ * always undercuts; `none` itself would void the `min()` that applies that cap.
+ */
 function canonicalAppearance(key: keyof IThemeAppearance, value: string): string {
+  if (key === 'listMaxHeight' && value === 'none') {
+    return '100dvh';
+  }
   return key === 'chromeBorderAlpha' && Number(value) === 0 ? '0' : value;
 }
 
