@@ -678,6 +678,16 @@ describe('Office HTML producers', () => {
       expect(html!).toContain('Sheet One');
     });
 
+    test('routes xlsb by extension', async () => {
+      const html = await bufferToOfficeHtml(
+        readFixture('sample.xlsb'),
+        'workbook.xlsb',
+        'application/octet-stream',
+      );
+      expect(html).not.toBeNull();
+      expect(html!).toContain('Sheet One');
+    });
+
     test('routes csv by extension', async () => {
       const html = await bufferToOfficeHtml(
         Buffer.from('a,b\n1,2', 'utf-8'),
@@ -725,6 +735,7 @@ describe('Office HTML producers', () => {
       ['data', 'application/csv', 'csv'],
       ['workbook.xlsx', '', 'spreadsheet'],
       ['legacy.xls', '', 'spreadsheet'],
+      ['workbook.xlsb', '', 'spreadsheet'],
       ['sheet.ods', '', 'spreadsheet'],
       ['noext', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'spreadsheet'],
       ['noext', 'application/vnd.ms-excel', 'spreadsheet'],
@@ -768,6 +779,7 @@ describe('Office HTML producers', () => {
     it.each([
       ['deck.pptx', 'text/csv', 'presentation'],
       ['workbook.xlsx', 'text/csv', 'spreadsheet'],
+      ['workbook.xlsb', 'text/csv', 'spreadsheet'],
       [
         'legacy.xls',
         'application/vnd.openxmlformats-officedocument.presentationml.presentation',
