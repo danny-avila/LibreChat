@@ -470,6 +470,34 @@ describe('BackgroundTasksButton', () => {
     expect(row.querySelector('[inert]')).not.toBeNull();
   });
 
+  it('prioritizes the exact subagent thread over a reused call id', async () => {
+    jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(index({ tasks: [] }));
+    renderButton([runningChild]);
+    const message = document.createElement('section');
+    message.id = 'parent-message';
+    const targets = ['thread-1', 'other-thread'].map((thread) => {
+      const wrapper = document.createElement('div');
+      wrapper.dataset.taskToolCall = 'call-subagent';
+      const target = document.createElement('button');
+      target.dataset.subagentThread = thread;
+      target.dataset.subagentToolCall = 'call-subagent';
+      target.scrollIntoView = jest.fn();
+      wrapper.append(target);
+      message.append(wrapper);
+      return target;
+    });
+    document.body.append(message);
+    try {
+      await userEvent.click(await screen.findByTestId('header-background-tasks-button'));
+      await userEvent.click(
+        await screen.findByRole('button', { name: /^com_ui_background_tasks_go_to_tool:/ }),
+      );
+      expect(targets[0].scrollIntoView).toHaveBeenCalled();
+    } finally {
+      message.remove();
+    }
+  });
+
   it('selects the requested step when call ids repeat', async () => {
     jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(
       index({

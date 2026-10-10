@@ -107,8 +107,13 @@ function BackgroundTasksButton({
             element.dataset.subagentToolCall === row.toolCallId)),
     );
     // Legacy call ids are only usable when they identify one rendered call.
+    const threads =
+      row.threadId == null
+        ? []
+        : targets.filter((element) => element.dataset.subagentThread === row.threadId);
     let target = message;
-    if (destinations.length === 1) target = destinations[0];
+    if (threads.length === 1) target = threads[0];
+    else if (destinations.length === 1) target = destinations[0];
     else if (destinations.length === 0 && targets.length === 1) target = targets[0];
     if (target == null) return false;
     if (!target.hasAttribute('tabindex') && !target.matches('button')) {
