@@ -51,6 +51,7 @@ function TaskCard({
   const { i18n } = useTranslation();
   const detailId = useId();
   const [open, setOpen] = useState(false);
+  const [visited, setVisited] = useState(false);
   const [jumpUnavailable, setJumpUnavailable] = useState(false);
   const active = row.status === 'running' || row.status === 'stopping';
   const kindLabel =
@@ -75,10 +76,15 @@ function TaskCard({
               type="button"
               aria-expanded={open}
               aria-controls={detailId}
-              onClick={() => setOpen((value) => !value)}
+              onClick={() => {
+                setVisited(true);
+                setOpen((value) => !value);
+              }}
               className="text-text-primary focus-visible:ring-text-primary flex max-w-full items-start gap-1 rounded text-left text-sm focus-visible:ring-2 focus-visible:outline-none"
             >
-              <span className={cn('line-clamp-2 break-words', active && 'shimmer')}>{title}</span>
+              <span className="line-clamp-2 break-words">
+                <span className={cn(active && 'shimmer')}>{title}</span>
+              </span>
               <ChevronDown
                 aria-hidden="true"
                 className={cn(
@@ -88,13 +94,8 @@ function TaskCard({
               />
             </button>
           ) : (
-            <p
-              className={cn(
-                'text-text-primary line-clamp-2 text-sm break-words',
-                active && 'shimmer',
-              )}
-            >
-              {title}
+            <p className="text-text-primary line-clamp-2 text-sm break-words">
+              <span className={cn(active && 'shimmer')}>{title}</span>
             </p>
           )}
           <p className="text-text-secondary mt-0.5 flex items-center gap-2 text-xs">
@@ -131,7 +132,7 @@ function TaskCard({
               variant="ghost"
               size="xs"
               shape="inset"
-              label={localize('com_ui_background_tasks_go_to_tool')}
+              label={`${localize('com_ui_background_tasks_go_to_tool')}: ${title}`}
               onClick={() => setJumpUnavailable(!onJump(row))}
             >
               <ArrowUpRight className="size-3.5" aria-hidden="true" />
@@ -159,7 +160,7 @@ function TaskCard({
         )}
         {row.status === 'stopping' && <Spinner className="size-4 shrink-0" />}
       </div>
-      {expandable && (
+      {expandable && visited && (
         <Collapse open={open}>
           <pre
             id={detailId}

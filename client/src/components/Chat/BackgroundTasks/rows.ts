@@ -25,6 +25,7 @@ export type TaskRow = {
   taskId?: string;
   messageId?: string;
   toolCallId?: string;
+  stepId?: string;
   threadId?: string;
   status: TaskRowStatus;
   startedAt?: number;
@@ -112,6 +113,7 @@ const toolRow = (
     taskId: task.taskId,
     messageId: task.messageId,
     toolCallId: task.toolCallId,
+    stepId: task.stepId,
     ...described,
     status: task.status === 'running' && task.cancellationRequested ? 'stopping' : task.status,
     startedAt: time(task.startedAt),

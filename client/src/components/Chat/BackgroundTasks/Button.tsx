@@ -87,6 +87,13 @@ function BackgroundTasksButton({
   const jumpToTool = (row: TaskRow): boolean => {
     const message = row.messageId == null ? null : document.getElementById(row.messageId);
     const scope = message ?? document;
+    const destinations = Array.from(
+      scope.querySelectorAll<HTMLElement>('[data-task-tool-call]'),
+    ).filter(
+      (element) =>
+        element.dataset.taskToolCall === row.toolCallId &&
+        (row.stepId == null || element.dataset.taskStep === row.stepId),
+    );
     const targets = Array.from(
       scope.querySelectorAll<HTMLElement>(
         '[data-tool-call-id], [data-subagent-tool-call], [data-subagent-thread]',
@@ -99,13 +106,16 @@ function BackgroundTasksButton({
             element.dataset.subagentToolCall === row.toolCallId)),
     );
     // Legacy call ids are only usable when they identify one rendered call.
-    const target = targets.length === 1 ? targets[0] : message;
+    let target = message;
+    if (destinations.length === 1) target = destinations[0];
+    else if (destinations.length === 0 && targets.length === 1) target = targets[0];
     if (target == null) return false;
     if (!target.hasAttribute('tabindex') && !target.matches('button')) {
       target.tabIndex = -1;
       target.addEventListener('blur', () => target.removeAttribute('tabindex'), { once: true });
     }
-    finalFocusRef.current = target;
+    finalFocusRef.current = null;
+    target.focus({ preventScroll: true });
     popover.hide();
     target.scrollIntoView?.({
       block: 'center',
@@ -162,6 +172,7 @@ function BackgroundTasksButton({
         portal
         unmountOnHide
         finalFocus={finalFocusRef}
+        autoFocusOnHide={() => finalFocusRef.current != null}
         aria-label={title}
         className={cn(
           'animate-composer-popover border-border-medium bg-surface-secondary text-text-primary rounded-theme-menu-panel animate-composer-popover-resize z-[200] flex max-w-[calc(100vw-2rem)] flex-col border shadow-lg focus:outline-none motion-reduce:transition-none',

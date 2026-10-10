@@ -488,7 +488,9 @@ const Part = memo(function Part({
       })();
       const preparedCard = (
         <ToolPreparation call={toolCall} isSubmitting={isSubmitting}>
-          {card}
+          <div data-task-tool-call={toolCallId} data-task-step={toolCall.stepId}>
+            {card}
+          </div>
         </ToolPreparation>
       );
 

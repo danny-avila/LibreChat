@@ -371,6 +371,31 @@ describe('BackgroundTasksButton', () => {
     expect(container).toBeEmptyDOMElement();
   });
 
+  it('does not mount command payloads until first expansion', async () => {
+    jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(index());
+    renderButton();
+    await userEvent.click(await screen.findByTestId('header-background-tasks-button'));
+    expect(screen.queryByText('npx jest tasks.spec.ts')).toBeNull();
+  });
+
+  it('keeps shimmer inside the two-line clamp', async () => {
+    jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(index());
+    renderButton();
+    await userEvent.click(await screen.findByTestId('header-background-tasks-button'));
+    expect(screen.getByText('Rerun the focused specs').parentElement).toHaveClass('line-clamp-2');
+  });
+
+  it('names navigation with the task title', async () => {
+    jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(index());
+    renderButton();
+    await userEvent.click(await screen.findByTestId('header-background-tasks-button'));
+    expect(
+      screen.getByRole('button', {
+        name: 'com_ui_background_tasks_go_to_tool: Rerun the focused specs',
+      }),
+    ).toBeInTheDocument();
+  });
+
   it('animates running tool titles with the shared shimmer', async () => {
     jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(index());
     renderButton();
@@ -400,7 +425,7 @@ describe('BackgroundTasksButton', () => {
     renderButton([runningChild]);
     await userEvent.click(await screen.findByTestId('header-background-tasks-button'));
     expect(
-      await screen.findAllByRole('button', { name: 'com_ui_background_tasks_go_to_tool' }),
+      await screen.findAllByRole('button', { name: /^com_ui_background_tasks_go_to_tool:/ }),
     ).toHaveLength(3);
   });
 
@@ -408,8 +433,39 @@ describe('BackgroundTasksButton', () => {
     jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(index());
     renderButton();
     await userEvent.click(await screen.findByTestId('header-background-tasks-button'));
-    const action = screen.getAllByRole('button', { name: 'com_ui_background_tasks_go_to_tool' })[0];
+    const action = screen.getAllByRole('button', {
+      name: /^com_ui_background_tasks_go_to_tool:/,
+    })[0];
     expect(action.textContent).toBe('');
+  });
+
+  it('selects the requested step when call ids repeat', async () => {
+    jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(
+      index({
+        tasks: [{ ...index().tasks[0], messageId: 'step-message', stepId: 'second' }],
+      }),
+    );
+    renderButton();
+    const message = document.createElement('section');
+    message.id = 'step-message';
+    const targets = ['first', 'second'].map((step) => {
+      const target = document.createElement('div');
+      target.dataset.taskToolCall = 'call-running';
+      target.dataset.taskStep = step;
+      target.scrollIntoView = jest.fn();
+      message.append(target);
+      return target;
+    });
+    document.body.append(message);
+    try {
+      await userEvent.click(await screen.findByTestId('header-background-tasks-button'));
+      await userEvent.click(
+        screen.getByRole('button', { name: /^com_ui_background_tasks_go_to_tool:/ }),
+      );
+      expect(targets[1].scrollIntoView).toHaveBeenCalled();
+    } finally {
+      message.remove();
+    }
   });
 
   it('scrolls to the matching tool and dismisses the panel', async () => {
@@ -423,7 +479,7 @@ describe('BackgroundTasksButton', () => {
       await userEvent.click(await screen.findByTestId('header-background-tasks-button'));
       const row = screen.getByText('Rerun the focused specs').closest('li')!;
       await userEvent.click(
-        within(row).getByRole('button', { name: 'com_ui_background_tasks_go_to_tool' }),
+        within(row).getByRole('button', { name: /^com_ui_background_tasks_go_to_tool:/ }),
       );
       expect(target.scrollIntoView).toHaveBeenCalledWith({ block: 'center', behavior: 'smooth' });
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
@@ -446,7 +502,7 @@ describe('BackgroundTasksButton', () => {
     try {
       await userEvent.click(await screen.findByTestId('header-background-tasks-button'));
       await userEvent.click(
-        screen.getByRole('button', { name: 'com_ui_background_tasks_go_to_tool' }),
+        screen.getByRole('button', { name: /^com_ui_background_tasks_go_to_tool:/ }),
       );
       expect(message).toHaveAttribute('tabindex', '-1');
     } finally {
@@ -459,7 +515,7 @@ describe('BackgroundTasksButton', () => {
     renderButton();
     await userEvent.click(await screen.findByTestId('header-background-tasks-button'));
     await userEvent.click(
-      screen.getAllByRole('button', { name: 'com_ui_background_tasks_go_to_tool' })[0],
+      screen.getAllByRole('button', { name: /^com_ui_background_tasks_go_to_tool:/ })[0],
     );
     expect(screen.getByRole('status')).toHaveTextContent(
       'com_ui_background_tasks_tool_unavailable',
@@ -506,7 +562,7 @@ describe('BackgroundTasksButton', () => {
     const dialog = await screen.findByRole('dialog', { name: 'com_ui_background_tasks' });
     const title = within(dialog).getByRole('button', { name: 'Rerun the focused specs' });
     expect(within(dialog).getAllByTestId('background-task-row')).toHaveLength(2);
-    expect(within(dialog).getByText('npx jest tasks.spec.ts').closest('[inert]')).not.toBeNull();
+    expect(within(dialog).queryByText('npx jest tasks.spec.ts')).toBeNull();
 
     await user.click(title);
     expect(title).toHaveAttribute('aria-expanded', 'true');
