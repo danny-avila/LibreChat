@@ -51,6 +51,8 @@ type ButtonVariantOptions =
         | 'xs'
         | 'sm'
         | 'lg'
+        | 'auth'
+        | 'auth-action'
         | 'wide'
         | 'snug'
         | 'bare'
@@ -59,7 +61,7 @@ type ButtonVariantOptions =
         | 'tile'
         | null
         | undefined;
-      shape?: 'default' | 'soft' | 'theme' | 'round' | null | undefined;
+      shape?: 'default' | 'soft' | 'auth-action' | 'theme' | 'round' | null | undefined;
     } & ClassProp)
   | undefined;
 
@@ -143,9 +145,10 @@ const buttonVariantRecipe = cva(
          */
         'row-action': 'rounded-md hover:bg-surface-hover-alt hover:text-text-primary',
         /** A row action revealed by hover or keyboard focus, and kept visible
-         * while its dialog or menu is open. Touch users always see it. */
+         * while its dialog or menu is open. Any touchscreen, including the one on
+         * a 2-in-1 whose trackpad reports hover, always sees it. */
         'row-action-reveal':
-          'shrink-0 rounded-md text-text-secondary transition-opacity hover:bg-surface-hover-alt hover:text-text-primary data-[open]:bg-surface-active data-[open]:text-text-primary data-[open]:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:focus-visible:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100 [@media(hover:hover)]:group-hover:opacity-100',
+          'shrink-0 rounded-md text-text-secondary transition-opacity hover:bg-surface-hover-alt hover:text-text-primary data-[open]:bg-surface-active data-[open]:text-text-primary data-[open]:opacity-100 no-touch:opacity-0 no-touch:focus-visible:opacity-100 no-touch:group-focus-within:opacity-100 no-touch:group-hover:opacity-100',
         link: 'text-text-primary underline-offset-4 hover:underline',
         /** A link-weight action in the accent color, such as the alternate way to confirm a sign-in. */
         'link-accent':
@@ -239,6 +242,10 @@ const buttonVariantRecipe = cva(
         xs: 'h-theme-button-xs rounded-md px-2.5 text-xs',
         sm: 'h-theme-button-sm rounded-lg px-3',
         lg: 'h-theme-button-lg rounded-lg px-8',
+        /** The height of a sign-in form's submit button, the `authButtonHeight` role. */
+        auth: 'h-theme-auth-button px-theme-button-x',
+        /** The other actions of the sign-in flow, the `authActionHeight` role. */
+        'auth-action': 'h-theme-auth-action px-theme-button-x',
         /** Default height with the generous pad of a dialog's confirming action. */
         wide: 'h-theme-button px-8',
         /** Default height with a snug pad, for a text action that sits close to its neighbors. */
@@ -262,8 +269,10 @@ const buttonVariantRecipe = cva(
       },
       shape: {
         default: 'rounded-lg',
-        /** The generous corner of a sign-in form's controls. */
-        soft: 'rounded-2xl',
+        /** The corner of a sign-in form's controls, the `authControlRadius` role. */
+        soft: 'rounded-theme-auth-control',
+        /** The corner of the sign-in flow's other actions, the `authActionRadius` role. */
+        'auth-action': 'rounded-theme-auth-action',
         theme: 'rounded-theme-control',
         round: 'rounded-theme-control-round',
         unset: '',

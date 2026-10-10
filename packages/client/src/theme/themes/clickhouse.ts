@@ -208,6 +208,12 @@ export const clickHouseLightTheme: IThemeRGB = {
   'rgb-series-6': '187 51 255', // #bb33ff (chart.default.violet)
   'rgb-series-7': '0 203 235', // #00cbeb (chart.default.babyblue)
   'rgb-series-8': '8 155 131', // #089b83 (chart.default.teal)
+  'rgb-category-icon-1': '105 110 121', // #696e79 (text.muted; Click UI draws its icons neutral)
+  'rgb-category-icon-2': '105 110 121', // #696e79 (text.muted)
+  'rgb-category-icon-4': '105 110 121', // #696e79 (text.muted)
+  'rgb-category-icon-5': '105 110 121', // #696e79 (text.muted)
+  'rgb-category-icon-6': '105 110 121', // #696e79 (text.muted)
+  'rgb-category-icon-7': '105 110 121', // #696e79 (text.muted)
 
   // Switch
   'rgb-switch-unchecked': '204 207 211', // #cccfd3 (switch.color.background.default)
@@ -399,6 +405,12 @@ export const clickHouseDarkTheme: IThemeRGB = {
   'rgb-series-6': '187 51 255', // #bb33ff (chart.default.violet)
   'rgb-series-7': '0 203 235', // #00cbeb (chart.default.babyblue)
   'rgb-series-8': '109 248 225', // #6df8e1 (chart.default.teal)
+  'rgb-category-icon-1': '179 182 189', // #b3b6bd (text.muted; Click UI draws its icons neutral)
+  'rgb-category-icon-2': '179 182 189', // #b3b6bd (text.muted)
+  'rgb-category-icon-4': '179 182 189', // #b3b6bd (text.muted)
+  'rgb-category-icon-5': '179 182 189', // #b3b6bd (text.muted)
+  'rgb-category-icon-6': '179 182 189', // #b3b6bd (text.muted)
+  'rgb-category-icon-7': '179 182 189', // #b3b6bd (text.muted)
 
   // Switch
   'rgb-switch-unchecked': '96 96 96', // #606060 (switch.color.background.default)
@@ -513,6 +525,11 @@ const clickHouseShape = {
   fieldHeight: '2rem',
   fieldHeightLg: '3.6876rem', // content-sized like fieldHeight: the 3rem title line (2rem at 1.5), field.space.y twice, a 1px stroke each side
   fieldPaddingY: '0.2813rem', // field.space.y
+  /** Click UI draws one field and one button size, so the sign-in form's controls take them and
+   *  the button's square corner instead of LibreChat's taller, rounder sign-in pair. */
+  authFieldHeight: '2rem',
+  authButtonHeight: '2rem',
+  authControlRadius: '0.25rem', // button.radii.all
   fieldFocusStyle: 'border' as const,
   /** Click UI fills its fields in `field.color.background.default`. */
   fieldFillStyle: 'fill' as const,

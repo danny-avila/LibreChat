@@ -246,6 +246,17 @@ export interface IThemeRGB {
   'rgb-series-6'?: string;
   'rgb-series-7'?: string;
   'rgb-series-8'?: string;
+  /**
+   * The prompt category icons, one role per series slot they were drawn in. Each follows its
+   * `rgb-series-N` when a theme omits it, so a theme can quiet the icons without moving the
+   * chart slots they share.
+   */
+  'rgb-category-icon-1'?: string;
+  'rgb-category-icon-2'?: string;
+  'rgb-category-icon-4'?: string;
+  'rgb-category-icon-5'?: string;
+  'rgb-category-icon-6'?: string;
+  'rgb-category-icon-7'?: string;
 
   /**
    * Unchecked track of the shared `Switch`. A control state rather than a
@@ -432,6 +443,12 @@ export interface IThemeVariables {
   '--series-6': string;
   '--series-7': string;
   '--series-8': string;
+  '--category-icon-1': string;
+  '--category-icon-2': string;
+  '--category-icon-4': string;
+  '--category-icon-5': string;
+  '--category-icon-6': string;
+  '--category-icon-7': string;
 
   '--switch-unchecked': string;
   '--switch-thumb': string;
@@ -597,6 +614,12 @@ export interface IThemeColors {
   'table-header-text'?: string;
   'table-header-fill'?: string;
   'series-8'?: string;
+  'category-icon-1'?: string;
+  'category-icon-2'?: string;
+  'category-icon-4'?: string;
+  'category-icon-5'?: string;
+  'category-icon-6'?: string;
+  'category-icon-7'?: string;
   presentation?: string;
 
   // Retained for excluded SidePanel/Agents + SidePanel/Builder (pending migration)
@@ -681,6 +704,16 @@ export interface IThemeAppearance {
   fieldHeight: string;
   /** The height of the large `title` field. */
   fieldHeightLg: string;
+  /** The sign-in form's floating-label field and submit button heights, and the corner both
+   *  share; the corner follows `radius2xl` when a theme names that and not this. */
+  authFieldHeight: string;
+  authButtonHeight: string;
+  authControlRadius: string;
+  /** The height and corner of the other actions in the sign-in flow, the second-factor verify and
+   *  the reset-success continue buttons. They follow `authButtonHeight` and `authControlRadius`
+   *  when a theme names those, then `buttonHeight` and `radiusLg`, which they drew before. */
+  authActionHeight: string;
+  authActionRadius: string;
   /** The field's vertical padding, which has to leave its line room inside `fieldHeight`. */
   fieldPaddingY: string;
   fieldFocusStyle: 'ring' | 'border';

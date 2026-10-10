@@ -1480,6 +1480,9 @@ export const DEFAULT_AVATAR_REFRESH_COVERAGE_LIMIT = 1000;
 export const DEFAULT_MAX_PROVIDER_ERROR_CHARS = 2000;
 export const DEFAULT_AGENT_MODEL_RESPONSE_BODY_TIMEOUT_MS = 900_000;
 export const DEFAULT_AGENT_MODEL_RESPONSE_HEADERS_TIMEOUT_MS = 300_000;
+/** Below the idle cutoff of common proxies (nginx 60 s, Cloudflare 100 s), so a
+ * stream that is silent while a tool runs is not closed underneath the client. */
+export const DEFAULT_STREAM_KEEPALIVE_INTERVAL_MS = 25_000;
 export const DEFAULT_CACHE_CLEAR_TIMEOUT_MS = 1000;
 
 export const HOST_FILE_EDIT_HARD_MAX_COUNT = 100;
@@ -1547,6 +1550,17 @@ export const agentsEndpointSchema = baseEndpointSchema
         .min(0)
         .max(86_400_000)
         .default(DEFAULT_AGENT_MODEL_RESPONSE_HEADERS_TIMEOUT_MS),
+      /** Interval between SSE comment frames on an otherwise silent chat stream, so
+       * proxies with an idle timeout keep it open; 0 disables the keepalive. */
+      streamKeepaliveIntervalMs: z
+        .number()
+        .int()
+        .min(0)
+        .max(3_600_000)
+        .refine((ms) => ms === 0 || ms >= 1_000, {
+          message: 'Use 0 to disable, or at least 1000 ms',
+        })
+        .default(DEFAULT_STREAM_KEEPALIVE_INTERVAL_MS),
       recursionLimit: z.number().optional(),
       disableBuilder: z.boolean().optional().default(false),
       /** Optional workspace guidance acquisition budget, separate from command execution. */
@@ -2640,6 +2654,21 @@ export type TThemeDefinitionConfig = z.infer<typeof themeDefinitionSchema>;
 
 /** A bundled theme name or an inline theme definition applied to every user. */
 export const deploymentThemeSchema = z.union([z.string().trim().min(1), themeDefinitionSchema]);
+/** Single source for the quiet period between syntax highlights while a code block streams, and
+ *  its bounds; the schema default and the client's normalizer both read them. */
+export const DEFAULT_CODE_HIGHLIGHT_THROTTLE_MS = 300;
+export const MAX_CODE_HIGHLIGHT_THROTTLE_MS = 60_000;
+
+/** A configured highlight cadence the schema would accept, or the default. */
+export function normalizeCodeHighlightThrottleMs(value: unknown): number {
+  return typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= MAX_CODE_HIGHLIGHT_THROTTLE_MS
+    ? value
+    : DEFAULT_CODE_HIGHLIGHT_THROTTLE_MS;
+}
+
 /** Single source for the agents panel selector's unsearched list cap; the
  * schema default and the client fallback both read it. */
 export const DEFAULT_AGENT_SELECTOR_LIMIT = 10;
@@ -2682,7 +2711,12 @@ export const interfaceSchema = z
     /** Set to false during a rolling upgrade, until every API replica supports title ownership and old title jobs drain. */
     runningChatRename: z.boolean().default(true),
     /** Milliseconds between syntax highlights while a code block streams. */
-    codeHighlightThrottleMs: z.number().int().min(0).max(60_000).default(300),
+    codeHighlightThrottleMs: z
+      .number()
+      .int()
+      .min(0)
+      .max(MAX_CODE_HIGHLIGHT_THROTTLE_MS)
+      .default(DEFAULT_CODE_HIGHLIGHT_THROTTLE_MS),
     /** Most agents the agents panel selector lists before a search term is
      * typed; typing lifts the cap so search reaches every agent. */
     agentSelectorLimit: z
@@ -2931,7 +2965,7 @@ export const interfaceSchema = z
   .default({
     modelSelect: true,
     runningChatRename: true,
-    codeHighlightThrottleMs: 300,
+    codeHighlightThrottleMs: DEFAULT_CODE_HIGHLIGHT_THROTTLE_MS,
     agentSelectorLimit: DEFAULT_AGENT_SELECTOR_LIMIT,
     parameters: true,
     presets: true,

@@ -177,6 +177,19 @@ describe('LibreChat Tailwind preset', () => {
         defaultAppearance.buttonHeightCompact,
       ],
       ['h-theme-field-lg', '--theme-field-height-lg', defaultAppearance.fieldHeightLg],
+      ['h-theme-auth-field', '--theme-auth-field-height', defaultAppearance.authFieldHeight],
+      ['h-theme-auth-button', '--theme-auth-button-height', defaultAppearance.authButtonHeight],
+      ['h-theme-auth-action', '--theme-auth-action-height', defaultAppearance.authActionHeight],
+      [
+        'rounded-theme-auth-action',
+        '--theme-auth-action-radius',
+        defaultAppearance.authActionRadius,
+      ],
+      [
+        'rounded-theme-auth-control',
+        '--theme-auth-control-radius',
+        defaultAppearance.authControlRadius,
+      ],
       ['size-theme-button', '--theme-button-height', defaultAppearance.buttonHeight],
       [
         'size-theme-icon-button-sm',
@@ -266,9 +279,13 @@ describe('LibreChat Tailwind preset', () => {
     /** `any-pointer`, not `pointer`: the floor has to apply to a 2-in-1's
      *  touchscreen while its trackpad is the primary device and reports `fine`. */
     expect(variants.touch).toBe('@media (any-pointer: coarse)');
-    /** Its inverse gates hidden-until-hover states, so a 2-in-1's finger user —
-     *  whose trackpad makes `(hover: hover)` true — never loses the control. */
-    expect(variants['no-touch']).toBe('@media not all and (any-pointer: coarse)');
+    /** It gates hidden-until-hover states: only where hover exists, so a
+     *  pointerless or print context never hides what nothing can reveal, and
+     *  never where any pointer is coarse, so a 2-in-1's finger user, whose
+     *  trackpad makes `(hover: hover)` true, never loses the control. */
+    expect(variants['no-touch']).toEqual({
+      '@media (hover: hover)': { '@media not all and (any-pointer: coarse)': '@slot' },
+    });
     expect(variants['high-contrast']).toBe('html.high-contrast &');
   });
 
@@ -296,6 +313,9 @@ describe('LibreChat Tailwind preset', () => {
       popoverRadius: 'radius2xl',
       menuPanelRadius: 'radiusXl',
       composerActionRadius: 'roundControlRadius',
+      authControlRadius: 'radius2xl',
+      authActionHeight: 'buttonHeight',
+      authActionRadius: 'radiusLg',
     };
     Object.entries(themeAppearanceProperties).forEach(([key, property]) => {
       const value = aliases[key]

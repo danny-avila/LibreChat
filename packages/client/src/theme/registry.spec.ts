@@ -1,6 +1,6 @@
 import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
-import type { ThemeDefinition } from './types';
+import type { IThemeAppearance, IThemeRGB, ThemeDefinition } from './types';
 import {
   collectThemeWarnings,
   darkAppearanceDefaults,
@@ -642,6 +642,67 @@ describe('theme registry', () => {
     expect(resolved.colors['rgb-text-tooltip']).toBe('1 2 3');
     expect(resolved.colors['rgb-alert-error-fill']).toBe('4 5 6');
     expect(resolved.colors['rgb-alert-error-border']).toBe('7 8 9');
+  });
+
+  it('keeps the category icons on the series slots a theme repainted, unless it names them', () => {
+    const inherited = resolveTheme(
+      {
+        version: 1,
+        name: 'legacy-series',
+        modes: { light: { colors: { 'rgb-series-2': '1 2 3', 'rgb-series-4': '4 5 6' } } },
+      },
+      'light',
+    );
+    const explicit = resolveTheme(
+      {
+        version: 1,
+        name: 'explicit-category-icon',
+        modes: { light: { colors: { 'rgb-series-4': '4 5 6', 'rgb-category-icon-4': '7 8 9' } } },
+      },
+      'light',
+    );
+
+    expect(inherited.colors['rgb-category-icon-2']).toBe('1 2 3');
+    expect(inherited.colors['rgb-category-icon-4']).toBe('4 5 6');
+    expect(explicit.colors['rgb-category-icon-4']).toBe('7 8 9');
+    expect(explicit.colors['rgb-series-4']).toBe('4 5 6');
+  });
+
+  it('carries the slot 4 category icon from the role name it first shipped under', () => {
+    const legacy = { 'rgb-series-4': '4 5 6', 'rgb-category-icon': '7 8 9' } as IThemeRGB;
+    const renamed = resolveTheme(
+      { version: 1, name: 'renamed-category-icon', modes: { light: { colors: legacy } } },
+      'light',
+    );
+    const named = resolveTheme(
+      {
+        version: 1,
+        name: 'current-category-icon',
+        modes: { light: { colors: { ...legacy, 'rgb-category-icon-4': '1 2 3' } } },
+      },
+      'light',
+    );
+
+    expect(renamed.colors['rgb-category-icon-4']).toBe('7 8 9');
+    expect(named.colors['rgb-category-icon-4']).toBe('1 2 3');
+    expect(renamed.colors).not.toHaveProperty('rgb-category-icon');
+  });
+
+  it('keeps a renamed category icon role through the legacy color adapter', () => {
+    const legacy = { 'rgb-category-icon': '7 8 9' } as IThemeRGB;
+
+    expect(fromLegacyTheme(legacy).modes.light?.colors?.['rgb-category-icon-4']).toBe('7 8 9');
+    expect(fromLegacyTheme(legacy).modes.light?.colors).not.toHaveProperty('rgb-category-icon');
+  });
+
+  it('does not warn that a renamed category icon role is ignored', () => {
+    const theme = {
+      version: 1,
+      name: 'renamed-category-icon-warning',
+      modes: { light: { colors: { 'rgb-category-icon': '7 8 9' } as IThemeRGB } },
+    };
+
+    expect(collectThemeWarnings(theme)).toEqual([]);
   });
 
   it('preserves an explicit tooltip surface and falls back to the bundled one otherwise', () => {
@@ -1376,10 +1437,42 @@ describe('theme registry', () => {
       buttonHeightLg: '2.75rem',
       iconButtonSizeSm: '2rem',
       fieldHeightLg: '3rem',
+      authFieldHeight: '2.75rem',
+      authButtonHeight: '3rem',
+      authControlRadius: '1rem',
+      authActionHeight: '2.5rem',
+      authActionRadius: '0.5rem',
       checkboxSize: '1rem',
       listMinWidth: '8rem',
       listMaxHeight: '24rem',
     });
+  });
+
+  it('sizes the other sign-in actions from the sign-in pair, then the Button roles they drew', () => {
+    const resolve = (appearance: Partial<IThemeAppearance>) =>
+      resolveTheme({ version: 1, name: 'auth-actions', modes: { light: { appearance } } }, 'light')
+        .appearance;
+
+    expect(resolve({})).toMatchObject({ authActionHeight: '2.5rem', authActionRadius: '0.5rem' });
+    expect(resolve({ buttonHeight: '2.25rem', radiusLg: '3px' })).toMatchObject({
+      authActionHeight: '2.25rem',
+      authActionRadius: '3px',
+    });
+    expect(
+      resolve({
+        buttonHeight: '2.25rem',
+        radiusLg: '3px',
+        authButtonHeight: '2rem',
+        authControlRadius: '0',
+      }),
+    ).toMatchObject({ authActionHeight: '2rem', authActionRadius: '0' });
+    expect(resolve({ radius2xl: '2px', radiusLg: '5px' })).toMatchObject({
+      authControlRadius: '2px',
+      authActionRadius: '5px',
+    });
+    expect(
+      resolve({ authButtonHeight: '2rem', authActionHeight: '3.5rem', authActionRadius: '1px' }),
+    ).toMatchObject({ authActionHeight: '3.5rem', authActionRadius: '1px' });
   });
 
   it("bounds a Select list's width and scroll height", () => {
@@ -1422,6 +1515,8 @@ describe('theme registry', () => {
       { fieldHeightLg: '20px' },
       { fieldHeightLg: '1rem' },
       { fieldHeightLg: '1.5em' },
+      { authFieldHeight: '20px' },
+      { authButtonHeight: 'auto' },
       { iconSize: '0' },
       { iconSize: '1.5rem' },
       { iconSize: '10px' },

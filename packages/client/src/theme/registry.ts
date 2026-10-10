@@ -6,12 +6,14 @@ import {
   collectThemeWarningIssues,
   defaultSwitchSize,
   themeColorTokens as sharedColorTokens,
+  renamedThemeColorTokens,
   themeBrandTokens as sharedBrandTokens,
 } from 'librechat-data-provider';
 import type {
   ThemeColorToken,
   ThemeBrandToken,
   ThemeAppearanceToken,
+  RenamedThemeColorToken,
 } from 'librechat-data-provider';
 import type {
   IThemeAppearance,
@@ -177,10 +179,16 @@ export const overlayFallbackSources: ReadonlyArray<readonly [keyof IThemeRGB, ke
   ['rgb-text-tooltip', 'rgb-text-primary'],
   ['rgb-alert-error-fill', 'rgb-status-error-subtle'],
   ['rgb-alert-error-border', 'rgb-status-error-border'],
+  ['rgb-category-icon-1', 'rgb-series-1'],
+  ['rgb-category-icon-2', 'rgb-series-2'],
+  ['rgb-category-icon-4', 'rgb-series-4'],
+  ['rgb-category-icon-5', 'rgb-series-5'],
+  ['rgb-category-icon-6', 'rgb-series-6'],
+  ['rgb-category-icon-7', 'rgb-series-7'],
 ];
 
-/** A theme that repaints a source role keeps the tooltip and the error alert on it, unless it
- *  names them. */
+/** A theme that repaints a source role keeps the tooltip, the error alert and the category icons on
+ *  it, unless it names them. */
 export function overlayFallbacks(colors: IThemeRGB): IThemeRGB {
   return Object.fromEntries(
     overlayFallbackSources.flatMap(([role, source]) => {
@@ -250,6 +258,11 @@ export const themeAppearanceProperties: Readonly<
   iconButtonSizeSm: '--theme-icon-button-size-sm',
   fieldHeight: '--theme-field-height',
   fieldHeightLg: '--theme-field-height-lg',
+  authFieldHeight: '--theme-auth-field-height',
+  authButtonHeight: '--theme-auth-button-height',
+  authControlRadius: '--theme-auth-control-radius',
+  authActionHeight: '--theme-auth-action-height',
+  authActionRadius: '--theme-auth-action-radius',
   fieldPaddingY: '--theme-field-padding-y',
   fieldFocusStyle: '--theme-field-focus-style',
   fieldFillStyle: '--theme-field-fill-style',
@@ -356,6 +369,11 @@ export const defaultAppearance: IThemeAppearance = Object.freeze({
   iconButtonSizeSm: '2rem',
   fieldHeight: '2.5rem',
   fieldHeightLg: '3rem',
+  authFieldHeight: '2.75rem',
+  authButtonHeight: '3rem',
+  authControlRadius: '1rem',
+  authActionHeight: '2.5rem',
+  authActionRadius: '0.5rem',
   fieldPaddingY: '0.5rem',
   fieldFocusStyle: 'ring',
   fieldFillStyle: 'transparent',
@@ -532,13 +550,30 @@ function definedEntries<T extends object>(values?: Partial<T>): Partial<T> {
   ) as Partial<T>;
 }
 
+/** Roles that shipped under another name, each paired with the name it has now. */
+export const renamedColorTokens: ReadonlyArray<readonly [RenamedThemeColorToken, keyof IThemeRGB]> =
+  renamedThemeColorTokens;
+
+/** Colors as a theme written before a rename may carry them. */
+export type RenamedThemeRGB = IThemeRGB & Partial<Record<RenamedThemeColorToken, string>>;
+
+/** Carries a renamed role to its current name, unless the colors name that too, so every reader
+ *  that keeps only known tokens keeps the value. */
+export function withRenamedColors(colors: RenamedThemeRGB): IThemeRGB {
+  const renamed = renamedColorTokens.flatMap(([from, to]) => {
+    const value = colors[from];
+    return value !== undefined && colors[to] === undefined ? [[to, value] as const] : [];
+  });
+  return renamed.length > 0 ? { ...colors, ...Object.fromEntries(renamed) } : colors;
+}
+
 /** A color token this reader does not know passed validation as a warning; it never reaches the DOM. */
-function knownColors(colors?: IThemeRGB): IThemeRGB | undefined {
+function knownColors(colors?: RenamedThemeRGB): IThemeRGB | undefined {
   if (!colors) {
     return colors;
   }
   return Object.fromEntries(
-    Object.entries(colors).filter(([key]) => colorTokenSet.has(key)),
+    Object.entries(withRenamedColors(colors)).filter(([key]) => colorTokenSet.has(key)),
   ) as IThemeRGB;
 }
 
@@ -571,9 +606,10 @@ function withComposableShadows(appearance: IThemeAppearance): IThemeAppearance {
 /**
  * Roles split out of a broader one, each paired with the role it read before. Headings drew the UI
  * family before the display role existed, theme-sized controls were padded by the shared spacing,
- * and dialog titles were set in the `text-lg` step and the display family, the composer's popovers, the model selector and the send button drew `rounded-2xl`, `rounded-xl` and the round control corner, so a theme that names
+ * and dialog titles were set in the `text-lg` step and the display family, the composer's popovers, the model selector and the send button drew `rounded-2xl`, `rounded-xl` and the round control corner, and the sign-in controls drew `rounded-2xl` and the other sign-in actions the default Button's height and corner, so a theme that names
  * the broader role and not the split one keeps what it drew. Pairs resolve in order, so a role can
- * follow one that is itself inherited.
+ * follow one that is itself inherited; the other sign-in actions resolve before the sign-in corner
+ * is derived, so they follow only a corner the theme names and otherwise keep `radiusLg`.
  */
 const inheritedAppearance: ReadonlyArray<[keyof IThemeAppearance, keyof IThemeAppearance]> = [
   ['displayFontFamily', 'fontFamily'],
@@ -585,6 +621,11 @@ const inheritedAppearance: ReadonlyArray<[keyof IThemeAppearance, keyof IThemeAp
   ['popoverRadius', 'radius2xl'],
   ['menuPanelRadius', 'radiusXl'],
   ['composerActionRadius', 'roundControlRadius'],
+  ['authActionRadius', 'authControlRadius'],
+  ['authActionRadius', 'radiusLg'],
+  ['authControlRadius', 'radius2xl'],
+  ['authActionHeight', 'authButtonHeight'],
+  ['authActionHeight', 'buttonHeight'],
 ];
 
 /**
@@ -879,10 +920,11 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
   };
 }
 
-export function fromLegacyTheme(colors: IThemeRGB, name = 'custom'): ThemeDefinition {
+export function fromLegacyTheme(colors: RenamedThemeRGB, name = 'custom'): ThemeDefinition {
   const legacyName = name.trim() || 'custom';
+  const current = withRenamedColors(colors);
   const sanitizedColors = themeColorTokens.reduce<IThemeRGB>((result, token) => {
-    const value = colors[token];
+    const value = current[token];
     if (isThemeRGB(value)) {
       result[token] = value;
     }
