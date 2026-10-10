@@ -90,24 +90,22 @@ describe('Part', () => {
     expect(screen.getByText('generic:unknown_tool:none')).toBeTruthy();
   });
 
-  it('draws inherited object member names with the default renderers, not the prototype', () => {
-    render(
-      <>
-        <Part
-          {...baseProps}
-          part={toolPart({ name: 'constructor' })}
-          renderers={createRenderers()}
-        />
-        <Part
-          {...baseProps}
-          part={{ type: 'toString' } as unknown as TMessageContentParts}
-          renderers={createRenderers()}
-        />
-      </>,
-    );
-    expect(screen.getByText('generic:constructor:none')).toBeTruthy();
-    expect(screen.queryByText(/^\[object /)).toBeNull();
-  });
+  it.each(['constructor', '__proto__', 'toString', 'hasOwnProperty'])(
+    'treats the inherited member %s as unknown in both registries',
+    (name) => {
+      const { container } = render(
+        <>
+          <Part {...baseProps} part={toolPart({ name })} renderers={createRenderers()} />
+          <Part
+            {...baseProps}
+            part={{ type: name } as unknown as TMessageContentParts}
+            renderers={createRenderers()}
+          />
+        </>,
+      );
+      expect(container.textContent).toBe(`generic:${name}:none`);
+    },
+  );
 
   it('lets a matcher route a call before its name, and wraps every agent tool card', () => {
     const renderers = createRenderers({
