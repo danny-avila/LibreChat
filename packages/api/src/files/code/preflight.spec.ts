@@ -106,7 +106,7 @@ describe('preflightCodeOutputBatch', () => {
 
     const result = await preflightCodeOutputBatch({
       artifact: artifact(12),
-      limits: { ...limits, fileLimit: 12 },
+      limits: { ...limits, fileLimit: 12, totalSizeLimit: 64 },
       prepare,
     });
 

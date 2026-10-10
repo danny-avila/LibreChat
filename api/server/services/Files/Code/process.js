@@ -136,10 +136,13 @@ const cachePreparedCodeOutputBuffer = ({
   if (buffer.length > CODE_OUTPUT_PREFLIGHT_MAX_BYTES) {
     return;
   }
-  const fileLimit = Number(
-    req.config?.fileConfig?.endpoints?.agents?.fileLimit ??
-      req.config?.fileConfig?.fileLimit ??
-      CODE_OUTPUT_PREFLIGHT_MAX_COUNT,
+  const fileLimit = Math.floor(
+    Number(
+      req.config?.fileConfig?.endpoints?.agents?.fileLimit ??
+        req.config?.fileConfig?.endpoints?.default?.fileLimit ??
+        req.config?.fileConfig?.fileLimit ??
+        CODE_OUTPUT_PREFLIGHT_MAX_COUNT,
+    ),
   );
   const maxCount =
     Number.isFinite(fileLimit) && fileLimit > CODE_OUTPUT_PREFLIGHT_MAX_COUNT
