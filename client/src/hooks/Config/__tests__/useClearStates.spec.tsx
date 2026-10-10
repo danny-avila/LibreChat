@@ -3,9 +3,13 @@ import { RecoilRoot } from 'recoil';
 import { act, renderHook } from '@testing-library/react';
 import { ReasoningEffort } from 'librechat-data-provider';
 import { createStore, Provider as JotaiProvider } from 'jotai';
+import {
+  abortScrollFamily,
+  showStopButtonByIndex,
+  submissionStartFamily,
+} from '~/store/generation';
 import { pendingReasoningOverrideFamily } from '~/components/Chat/Input/Composer/state';
 import { filesDialogTriggerAtom, showFilesDialogAtom } from '~/store/filesDialog';
-import { abortScrollFamily, showStopButtonByIndex } from '~/store/generation';
 import useClearStates from '../useClearStates';
 import store from '~/store';
 
@@ -57,7 +61,7 @@ describe('useClearStates', () => {
   });
 
   /* `skipFirst` keeps the landing pane's run state; every other pane's stop
-     button and scroll latch reset so the next session starts idle. */
+     button, scroll latch and elapsed baseline reset so the next session starts idle. */
   it.each([
     [false, [false, false]],
     [true, [true, false]],
@@ -66,6 +70,7 @@ describe('useClearStates', () => {
     for (const key of [0, 1]) {
       jotaiStore.set(showStopButtonByIndex(key), true);
       jotaiStore.set(abortScrollFamily(key), true);
+      jotaiStore.set(submissionStartFamily(key), 1000);
     }
     const wrapper = ({ children }: { children: React.ReactNode }) => (
       <JotaiProvider store={jotaiStore}>
@@ -82,5 +87,8 @@ describe('useClearStates', () => {
 
     expect([0, 1].map((key) => jotaiStore.get(showStopButtonByIndex(key)))).toEqual(expected);
     expect([0, 1].map((key) => jotaiStore.get(abortScrollFamily(key)))).toEqual(expected);
+    expect([0, 1].map((key) => jotaiStore.get(submissionStartFamily(key)))).toEqual(
+      expected.map((kept) => (kept ? 1000 : null)),
+    );
   });
 });
