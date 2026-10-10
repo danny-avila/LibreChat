@@ -3,7 +3,12 @@ import { RecoilRoot, useSetRecoilState } from 'recoil';
 import { useTheme, clickHouseTheme } from '@librechat/client';
 import { act, render, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { QueryKeys, MutationKeys, dataService } from 'librechat-data-provider';
+import {
+  QueryKeys,
+  MutationKeys,
+  dataService,
+  SESSION_EXPIRY_COOKIE,
+} from 'librechat-data-provider';
 import type { TStartupConfig, TUser } from 'librechat-data-provider';
 import type { ThemeDefinition } from '@librechat/client';
 import {
@@ -421,6 +426,14 @@ describe('DeploymentTheme', () => {
   });
 });
 
+/** The readable expiry the server sets beside the session cookies; `undefined` removes it. */
+function sessionExpiresAt(at?: number) {
+  document.cookie =
+    at === undefined
+      ? `${SESSION_EXPIRY_COOKIE}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`
+      : `${SESSION_EXPIRY_COOKIE}=${at}; path=/`;
+}
+
 describe('DeploymentTheme cache', () => {
   const user = { id: 'user-1', tenantId: 'tenant-a' };
   let queryClient: QueryClient;
@@ -432,6 +445,7 @@ describe('DeploymentTheme cache', () => {
     const definition = theme === 'clickhouse' ? clickHouseTheme : (theme as ThemeDefinition);
     writeThemeCache(buildThemeCache(owner, theme as NonNullable<ConfigTheme>, definition));
     setThemeOwner(owner);
+    sessionExpiresAt(Date.now() + 60000);
   };
   const cachedEntry = () => JSON.parse(localStorage.getItem(THEME_CACHE_KEY) ?? 'null');
   const pending = () => getStartupConfig.mockReturnValue(new Promise(() => undefined));
@@ -439,6 +453,7 @@ describe('DeploymentTheme cache', () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
+    sessionExpiresAt(undefined);
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     getStartupConfig = jest.spyOn(dataService, 'getStartupConfig');
     mockGetThemeFromEnv.mockReturnValue(undefined);
@@ -468,6 +483,18 @@ describe('DeploymentTheme cache', () => {
 
     expect(root().dataset.theme).toBeUndefined();
     expect(cachedEntry()?.owner).toBe('tenant-a:user-1');
+  });
+
+  it.each([
+    ['has ended', Date.now() - 1000],
+    ['left no expiry', undefined],
+  ])('paints no cached theme for the tab owner when the session %s', (_, at) => {
+    cacheTheme();
+    sessionExpiresAt(at);
+    pending();
+    renderTheme(queryClient);
+
+    expect(root().dataset.theme).toBeUndefined();
   });
 
   it('paints no cached theme in a tab whose identity changed elsewhere', () => {

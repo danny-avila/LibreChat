@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
+import { SESSION_EXPIRY_COOKIE } from 'librechat-data-provider';
 import type { Request, Response, NextFunction } from 'express';
 import { getOAuthCallbackUrl } from './url';
 import { isEnabled } from '~/utils/common';
@@ -71,6 +72,18 @@ export function setRefreshTokenCookie(res: Response, refreshToken: string, expir
   });
 }
 
+/**
+ * Mirrors the session's expiry where the page can read it before the app runs, so a replay
+ * keyed to the signed-in owner can skip a session that has ended. It holds no credential.
+ */
+export function setSessionExpiryCookie(res: Response, expires: Date): void {
+  res.cookie(SESSION_EXPIRY_COOKIE, String(expires.getTime()), {
+    expires,
+    secure: shouldUseSecureCookie(),
+    sameSite: 'strict',
+  });
+}
+
 export interface OpenIDMarkerCookieOptions {
   userId?: string | null;
   expires: Date;
@@ -98,6 +111,7 @@ export function setOpenIDMarkerCookies(
   };
 
   res.cookie(TOKEN_PROVIDER_COOKIE, 'openid', cookieOptions);
+  setSessionExpiryCookie(res, expires);
 
   if (!userId || !reuseTokens) {
     return;

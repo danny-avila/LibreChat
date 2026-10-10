@@ -1,6 +1,7 @@
 import { resolve } from 'path';
 import { readFileSync } from 'fs';
 import { render } from '@testing-library/react';
+import { SESSION_EXPIRY_COOKIE } from 'librechat-data-provider';
 import { ThemeProvider, applyResolvedTheme, resolveTheme } from '@librechat/client';
 import type { ThemeDefinition } from '@librechat/client';
 import {
@@ -41,6 +42,14 @@ const acme: ThemeDefinition = {
 
 const root = () => document.documentElement;
 
+/** The readable expiry the server sets beside the session cookies; `undefined` removes it. */
+function sessionExpiresAt(at?: number) {
+  document.cookie =
+    at === undefined
+      ? `${SESSION_EXPIRY_COOKIE}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`
+      : `${SESSION_EXPIRY_COOKIE}=${at}; path=/`;
+}
+
 function mockMedia(dark: boolean) {
   window.matchMedia = jest.fn().mockImplementation((query: string) => ({
     matches: dark && query === '(prefers-color-scheme: dark)',
@@ -80,6 +89,7 @@ describe('index.html deployment theme boot script', () => {
     window.history.pushState({}, '', '/c/new');
     writeThemeCache(buildThemeCache('tenant-a:user-1', 'acme', acme));
     setThemeOwner('tenant-a:user-1');
+    sessionExpiresAt(Date.now() + 60000);
   });
 
   it.each(['light', 'dark'] as const)(
@@ -124,6 +134,18 @@ describe('index.html deployment theme boot script', () => {
     ['a tab last signed in as someone else', 'tenant-b:user-2'],
   ])('paints no cached theme in %s', (_, tabOwner) => {
     setThemeOwner(tabOwner);
+    boot();
+    expect(root().getAttribute('style')).toBeNull();
+    expect(root().hasAttribute('data-theme')).toBe(false);
+    expect(root().hasAttribute('data-theme-boot')).toBe(false);
+    expect(document.head.textContent).toContain('background-color: #ffffff');
+  });
+
+  it.each([
+    ['has ended', Date.now() - 1000],
+    ['left no expiry', undefined],
+  ])('paints no cached theme for the tab owner when the session %s', (_, at) => {
+    sessionExpiresAt(at);
     boot();
     expect(root().getAttribute('style')).toBeNull();
     expect(root().hasAttribute('data-theme')).toBe(false);

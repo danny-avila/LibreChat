@@ -16,6 +16,7 @@ jest.mock(
     ErrorTypes: {},
     SystemRoles: { USER: 'USER', ADMIN: 'ADMIN' },
     errorsToString: jest.fn(),
+    SESSION_EXPIRY_COOKIE: 'session_expires_at',
   }),
   { virtual: false },
 );
@@ -39,6 +40,7 @@ jest.mock(
           sameSite: 'strict',
         });
       }),
+      setSessionExpiryCookie: jest.fn(),
       setOpenIDMarkerCookies: jest.fn((res, { userId, expires }) => {
         res.cookie('token_provider', 'openid', {
           expires,
@@ -138,6 +140,7 @@ let isEmailDomainAllowed;
 let resolveAppConfigForUser;
 let setRefreshTokenCookie;
 let setOpenIDMarkerCookies;
+let setSessionExpiryCookie;
 let setCloudFrontCookies;
 let getCloudFrontConfig;
 let parseCloudFrontCookieScope;
@@ -182,6 +185,7 @@ jest.isolateModules(() => {
     commitPasswordReset,
     setRefreshTokenCookie,
     setOpenIDMarkerCookies,
+    setSessionExpiryCookie,
     setCloudFrontCookies,
     getCloudFrontConfig,
     parseCloudFrontCookieScope,
@@ -1697,6 +1701,29 @@ describe('CloudFront cookie integration', () => {
         },
         { userId: 'old-user', tenantId: 'old-tenant' },
       );
+    });
+
+    it('mirrors the session expiry in the readable cookie the theme replay checks', async () => {
+      const expiration = new Date(Date.now() + 604800000);
+      createSession.mockResolvedValueOnce({
+        session: { expiration },
+        refreshToken: 'mock-refresh-token',
+      });
+      const res = mockResponse();
+
+      await setAuthTokens('user-123', res);
+
+      expect(setSessionExpiryCookie).toHaveBeenCalledWith(res, expiration);
+    });
+
+    it('re-stamps the expiry of the session a refresh keeps', async () => {
+      const expiration = new Date(Date.now() + 3600000);
+      const res = mockResponse();
+
+      await setAuthTokens('user-123', res, { _id: 'session-1', expiration });
+
+      expect(createSession).not.toHaveBeenCalled();
+      expect(setSessionExpiryCookie).toHaveBeenCalledWith(res, expiration);
     });
 
     it('succeeds even when setCloudFrontCookies returns false', async () => {

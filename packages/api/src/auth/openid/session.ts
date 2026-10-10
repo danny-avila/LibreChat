@@ -1,3 +1,4 @@
+import { SESSION_EXPIRY_COOKIE } from 'librechat-data-provider';
 import type {
   AuthIdentityContext,
   AuthIdentitySource,
@@ -1378,6 +1379,7 @@ export function createOpenIDSessionRefreshService(
         'openid_id_token',
         'openid_user_id',
         'token_provider',
+        SESSION_EXPIRY_COOKIE,
       ]) {
         res?.clearCookie?.(name);
       }

@@ -566,6 +566,13 @@ export const themeAppearanceTokens = Object.freeze(
 );
 
 /**
+ * A page-readable cookie carrying the signed-in session's expiry (epoch ms), set beside the
+ * httpOnly session cookies with the same lifetime and cleared with them. The theme boot replay
+ * reads it to tell a live session from one that ended, since the session cookies are unreadable.
+ */
+export const SESSION_EXPIRY_COOKIE = 'session_expires_at';
+
+/**
  * Bumped by hand when a release changes what resolving a theme emits without changing its roles
  * (a palette value, a fallback derivation, an emitted attribute), so cached entries are rebuilt.
  */

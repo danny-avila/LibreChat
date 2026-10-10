@@ -1,5 +1,5 @@
-import { themeRoleFingerprint } from 'librechat-data-provider';
 import { resolveTheme, describeResolvedTheme } from '@librechat/client';
+import { SESSION_EXPIRY_COOKIE, themeRoleFingerprint } from 'librechat-data-provider';
 import type { ResolvedThemeStyle, ThemeDefinition } from '@librechat/client';
 import type { TInterfaceConfig, TUser } from 'librechat-data-provider';
 
@@ -104,11 +104,22 @@ export function readThemeCache(): ThemeCacheEntry | undefined {
   return undefined;
 }
 
-/** The cache, only when this tab last saw its owner signed in, so the replay cannot cross identities. */
+const sessionExpiryPattern = new RegExp(`(?:^|;\\s*)${SESSION_EXPIRY_COOKIE}=(\\d+)`);
+
+/** Whether the server's readable session-expiry cookie says a session is still live. */
+export function hasLiveSession(): boolean {
+  const expiry = sessionExpiryPattern.exec(document.cookie);
+  return expiry != null && Number(expiry[1]) > Date.now();
+}
+
+/**
+ * The cache, only when this tab last saw its owner signed in and that session is still live,
+ * so the replay cannot cross identities or outlive the session.
+ */
 export function readOwnedThemeCache(): ThemeCacheEntry | undefined {
   try {
     const tabOwner = sessionStorage.getItem(THEME_OWNER_KEY);
-    const entry = tabOwner ? readThemeCache() : undefined;
+    const entry = tabOwner && hasLiveSession() ? readThemeCache() : undefined;
     return entry?.owner === tabOwner ? entry : undefined;
   } catch {
     return undefined;

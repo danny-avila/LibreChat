@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { SESSION_EXPIRY_COOKIE } from 'librechat-data-provider';
 import type { Page } from '@playwright/test';
 import { clickHouseTheme } from '../../../../packages/client/src/theme/themes/clickhouse';
 import { resolveTheme } from '../../../../packages/client/src/theme/registry';
@@ -129,6 +130,13 @@ async function openChat(page: Page) {
   await expect(page.getByTestId('composer-surface')).toBeVisible({ timeout: 30000 });
 }
 
+/** The session expiry the server mirrors in a page-readable cookie, in epoch milliseconds. */
+const sessionExpiry = (page: Page) =>
+  page.evaluate((name) => {
+    const match = new RegExp(`(?:^|;\\s*)${name}=(\\d+)`).exec(document.cookie);
+    return match ? Number(match[1]) : null;
+  }, SESSION_EXPIRY_COOKIE);
+
 const rgb = (channels?: string) => `rgb(${(channels ?? '').split(' ').join(', ')})`;
 
 /** Reloads throttled with the config held, and checks every frame before the answer. */
@@ -146,6 +154,8 @@ async function expectFirstPaint(page: Page, mode: Mode) {
   await expect
     .poll(() => page.evaluate((key) => localStorage.getItem(key), CACHE_KEY))
     .not.toBeNull();
+  /** The reload happens inside a live session. */
+  expect(await sessionExpiry(page)).toBeGreaterThan(Date.now());
 
   await sampleFrames(page);
   await throttle(page);
@@ -258,6 +268,16 @@ const cacheForSomeoneElse = (page: Page) =>
 /** A fresh tab: the session cookies are shared, the tab's own session storage is not. */
 const forgetTabOwner = (page: Page) => page.evaluate(() => sessionStorage.clear());
 
+/**
+ * A tab that outlived its session: the owner marker and the cache still match, but the
+ * readable session expiry has passed. The refresh token is left valid so the reload can
+ * still sign in and the config can answer, which isolates the boot-time check.
+ */
+const endSession = (page: Page) =>
+  page.evaluate((name) => {
+    document.cookie = `${name}=${Date.now() - 1000}; path=/`;
+  }, SESSION_EXPIRY_COOKIE);
+
 test.describe('cached theme owner (light)', () => {
   test.use({ colorScheme: 'light', viewport: { width: 1280, height: 800 } });
 
@@ -273,6 +293,13 @@ test.describe('cached theme owner (light)', () => {
   }) => {
     test.setTimeout(120000);
     await expectNoCachedPaint(page, forgetTabOwner);
+  });
+
+  test('a tab whose session has ended paints no cached deployment theme in light @scenario:cached-theme-expired-session-not-boot-painted-light', async ({
+    page,
+  }) => {
+    test.setTimeout(120000);
+    await expectNoCachedPaint(page, endSession);
   });
 });
 
@@ -292,4 +319,26 @@ test.describe('cached theme owner (dark)', () => {
     test.setTimeout(120000);
     await expectNoCachedPaint(page, forgetTabOwner);
   });
+
+  test('a tab whose session has ended paints no cached deployment theme in dark @scenario:cached-theme-expired-session-not-boot-painted-dark', async ({
+    page,
+  }) => {
+    test.setTimeout(120000);
+    await expectNoCachedPaint(page, endSession);
+  });
+});
+
+test('a session refresh pushes the readable session expiry forward @scenario:session-refresh-extends-expiry', async ({
+  page,
+}) => {
+  await openChat(page);
+  const before = await sessionExpiry(page);
+  expect(before).toBeGreaterThan(Date.now());
+
+  const refreshed = await page.evaluate(async () => {
+    const response = await fetch('/api/auth/refresh', { method: 'POST', credentials: 'include' });
+    return response.ok;
+  });
+  expect(refreshed).toBe(true);
+  await expect.poll(() => sessionExpiry(page)).toBeGreaterThan(before ?? 0);
 });
