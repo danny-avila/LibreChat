@@ -133,7 +133,8 @@ export type UIToolState =
 
 /**
  * AI SDK tool `approval`, for a call paused for human review. `approved` and `reason` are set once
- * the reviewer decided: `approve` and `edit` approve the call, `reject` and `respond` deny it.
+ * the reviewer decided: `approve` and `edit` approve the call, `reject` and `respond` deny it. A
+ * `respond` still ends with the reviewer's text as the call's output, so it never reads as denied.
  */
 export type UIToolApproval = {
   id: string;
@@ -504,7 +505,8 @@ const toToolPart = (
   const ended = submitted || runStepStatus === 'completed' || (progress ?? 0) >= 1;
 
   let state: UIToolState = complete ? 'input-available' : 'input-streaming';
-  if (approval?.approved === false && (ended || failure)) {
+  const responded = 'name' in toolCall && toolCall.approval?.decision === 'respond';
+  if (approval?.approved === false && !responded && (ended || failure)) {
     state = 'output-denied';
   } else if (failure) {
     state = 'output-error';

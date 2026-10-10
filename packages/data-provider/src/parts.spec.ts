@@ -1305,6 +1305,24 @@ describe('parts', () => {
       expect(fromUIPart(toUIPart(failed))).toStrictEqual(failed);
     });
 
+    it("reports a respond decision that ended as output-available with the reviewer's output", () => {
+      const responded = toolCall({
+        approval: approval({ decision: 'respond' }),
+        output: 'human response',
+        progress: 1,
+      });
+
+      const part = toUIPart(responded);
+      expect(withoutMetadata(part as UIToolPart)).toStrictEqual({
+        type: 'tool-search',
+        toolCallId: 'call-1',
+        state: 'output-available',
+        input: { q: 'cats' },
+        output: 'human response',
+      });
+      expect(fromUIPart(part)).toStrictEqual(responded);
+    });
+
     it('keeps an approved call approved through its output or failure', () => {
       const succeeded = toolCall({ approval: approval({ decision: 'approve' }), output: '3' });
       const failed = toolCall({
