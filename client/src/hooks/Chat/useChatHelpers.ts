@@ -18,6 +18,9 @@ import { getMessageCacheIds } from './cache';
 import { useAbortCleanup } from './abort';
 import store from '~/store';
 
+/** The live attachments map the stream and preview polling write. */
+const useLiveAttachments = () => useRecoilValue(store.messageAttachmentsMap);
+
 // this to be set somewhere else
 export default function useChatHelpers(index = 0, paramId?: string): ChatContract {
   const clearAllSubmissions = store.useClearSubmissionState();
@@ -401,6 +404,7 @@ export default function useChatHelpers(index = 0, paramId?: string): ChatContrac
       setSiblingIdx,
       latestMessageId,
       latestMessageDepth,
+      useLiveAttachments,
       ask,
       index,
       regenerate,
