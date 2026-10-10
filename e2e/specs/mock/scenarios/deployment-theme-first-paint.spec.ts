@@ -45,9 +45,14 @@ const CACHE_KEY = 'deployment-theme';
  * Serves `theme` as `interface.theme` (`null` removes it), holding the answer until the
  * app has painted while `held()`. Returns when each signed-in answer was sent: that
  * answer is the one carrying the signed-in theme, so the frames before it are the ones
- * under test.
+ * under test. Without `signedInOnly`, every answer counts, signed out ones included.
  */
-async function serveTheme(page: Page, theme: () => string | null, held: () => boolean) {
+async function serveTheme(
+  page: Page,
+  theme: () => string | null,
+  held: () => boolean,
+  signedInOnly = true,
+) {
   const answeredAt: number[] = [];
   await page.route(
     (url) => url.pathname === '/api/config',
@@ -67,7 +72,7 @@ async function serveTheme(page: Page, theme: () => string | null, held: () => bo
           })
           .catch(() => undefined);
       }
-      if (route.request().headers()['authorization']) {
+      if (!signedInOnly || route.request().headers()['authorization']) {
         answeredAt.push(Date.now());
       }
       await route.fulfill({ response, json: { ...body, interface: served } });
@@ -288,17 +293,52 @@ const cacheForSomeoneElse = (page: Page) =>
 /** A fresh tab: the session cookies are shared, the tab's own session storage is not. */
 const forgetTabOwner = (page: Page) => page.evaluate(() => sessionStorage.clear());
 
+/** A tab that outlived its session: the owner marker and the cache still match, the hint has expired. */
 /**
- * A tab that outlived its session: the owner marker and the cache still match, but the
- * readable session expiry has passed. The refresh token is left valid so the reload can
- * still sign in and the config can answer, which isolates the boot-time check.
+ * A reload of a tab whose session ended. The refresh is refused the way the server refuses an
+ * expired session, so the app lands on the login page, and the signed-out config answers with
+ * the deployment theme too: no frame before the first answer of any kind may wear the cached
+ * theme, and the session end drops the cache and the tab owner.
  */
+async function expectEndedSessionPaint(page: Page, open: (page: Page) => Promise<void>) {
+  let held = false;
+  const answeredAt = await serveTheme(
+    page,
+    () => 'clickhouse',
+    () => held,
+    false,
+  );
+  await openChat(page);
+  await expect
+    .poll(() => page.evaluate((key) => localStorage.getItem(key), CACHE_KEY))
+    .not.toBeNull();
+
+  await open(page);
+  await page.route(
+    (url) => url.pathname === '/api/auth/refresh',
+    (route) =>
+      route.fulfill({ status: 401, body: 'Refresh token expired or not found for this user' }),
+  );
+  await sampleFrames(page);
+  await throttle(page);
+  held = true;
+  const reloadedAt = Date.now();
+  await page.reload();
+  await expect(page).toHaveURL(/\/login/, { timeout: 60000 });
+  const frames = await framesBeforeAnswer(page, answeredAt, reloadedAt);
+  for (const frame of frames) {
+    expect(frame.theme).toBeNull();
+  }
+  await expect.poll(() => page.evaluate((key) => localStorage.getItem(key), CACHE_KEY)).toBeNull();
+  expect(await page.evaluate(() => sessionStorage.getItem('deployment-theme-owner'))).toBeNull();
+}
+
 const endSession = (page: Page) =>
   rewriteSessionHint(page, (hint) => ({ ...hint, expires: Date.now() - 1000 }));
 
 /**
- * Another identity signed in since, through a flow that ends in a full navigation (an OAuth
- * callback): the tab's owner marker and the cache still name the previous identity.
+ * Another identity's session, signed in since through a flow that ends in a full navigation
+ * (an OAuth callback): the tab's owner marker and the cache still name the previous identity.
  */
 const otherSession = (page: Page) =>
   rewriteSessionHint(page, (hint) => ({ ...hint, owner: 'tenant-x:someone-else' }));
@@ -324,14 +364,14 @@ test.describe('cached theme owner (light)', () => {
     page,
   }) => {
     test.setTimeout(120000);
-    await expectNoCachedPaint(page, endSession);
+    await expectEndedSessionPaint(page, endSession);
   });
 
   test('a tab now signed in as someone else paints no cached deployment theme in light @scenario:cached-theme-other-session-not-boot-painted-light', async ({
     page,
   }) => {
     test.setTimeout(120000);
-    await expectNoCachedPaint(page, otherSession);
+    await expectEndedSessionPaint(page, otherSession);
   });
 });
 
@@ -356,14 +396,14 @@ test.describe('cached theme owner (dark)', () => {
     page,
   }) => {
     test.setTimeout(120000);
-    await expectNoCachedPaint(page, endSession);
+    await expectEndedSessionPaint(page, endSession);
   });
 
   test('a tab now signed in as someone else paints no cached deployment theme in dark @scenario:cached-theme-other-session-not-boot-painted-dark', async ({
     page,
   }) => {
     test.setTimeout(120000);
-    await expectNoCachedPaint(page, otherSession);
+    await expectEndedSessionPaint(page, otherSession);
   });
 });
 
