@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { meoRequestHeaders } from './request';
 
 type Connection = {
   id: string;
@@ -27,11 +28,12 @@ type Consent = {
   promptCharacters: number;
 };
 
-async function json<T>(url: string, init?: RequestInit): Promise<T> {
+async function json<T>(url: string, token: string | undefined, init?: RequestInit): Promise<T> {
+  if (!token) throw new Error('Your Meo AI session is still loading. Try again in a moment.');
   const response = await fetch(url, {
     ...init,
     credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
+    headers: meoRequestHeaders(token, init?.headers),
   });
   const value = await response.json().catch(() => ({}));
   if (!response.ok) {
@@ -44,7 +46,7 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
 
 export default function MeoChat() {
   const { t } = useTranslation();
-  const { user } = useAuthContext();
+  const { user, token } = useAuthContext();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedConnection = searchParams.get('connection') ?? '';
   const requestedModel = searchParams.get('model') ?? '';
@@ -81,8 +83,13 @@ export default function MeoChat() {
 
   useEffect(() => {
     let active = true;
+    if (!token) {
+      return () => {
+        active = false;
+      };
+    }
     setLoading(true);
-    json<{ connections: Connection[] }>('/api/meo/connections')
+    json<{ connections: Connection[] }>('/api/meo/connections', token)
       .then(({ connections: result }) => {
         if (!active) return;
         setConnections(result);
@@ -107,12 +114,17 @@ export default function MeoChat() {
     return () => {
       active = false;
     };
-  }, [requestedConnection, requestedModel, t, updateDeepLink]);
+  }, [requestedConnection, requestedModel, t, token, updateDeepLink]);
 
   useEffect(() => {
     let active = true;
+    if (!token) {
+      return () => {
+        active = false;
+      };
+    }
     setHistoryLoading(true);
-    json<{ conversations: Conversation[] }>('/api/meo/conversations')
+    json<{ conversations: Conversation[] }>('/api/meo/conversations', token)
       .then(({ conversations: result }) => {
         if (!active) return;
         setHistory(result);
@@ -125,7 +137,7 @@ export default function MeoChat() {
     return () => {
       active = false;
     };
-  }, [selectedConversationKey]);
+  }, [selectedConversationKey, token]);
 
   useEffect(() => {
     if (!credentialId) {
@@ -133,10 +145,12 @@ export default function MeoChat() {
       setModelDiscovery('idle');
       return;
     }
+    if (!token) return;
     let active = true;
     setModelDiscovery('idle');
     json<{ supported: boolean; models: Model[] }>(
       `/api/meo/connections/${encodeURIComponent(credentialId)}/models`,
+      token,
     )
       .then((result) => {
         if (!active) return;
@@ -161,7 +175,7 @@ export default function MeoChat() {
     return () => {
       active = false;
     };
-  }, [connections, credentialId, requestedModel, t, updateDeepLink]);
+  }, [connections, credentialId, requestedModel, t, token, updateDeepLink]);
 
   useEffect(() => {
     let active = true;
@@ -171,6 +185,10 @@ export default function MeoChat() {
         active = false;
       };
     }
+    if (!token)
+      return () => {
+        active = false;
+      };
     localStorage.setItem(selectedConversationKey, activeConversationId);
     if (skipHistoryLoadRef.current === activeConversationId) {
       skipHistoryLoadRef.current = '';
@@ -179,13 +197,14 @@ export default function MeoChat() {
     setMessages([]);
     json<{ messages: Message[] }>(
       `/api/meo/conversations/${encodeURIComponent(activeConversationId)}/messages`,
+      token,
     )
       .then(({ messages: result }) => active && setMessages(result))
       .catch((reason: Error) => active && setError(reason.message));
     return () => {
       active = false;
     };
-  }, [activeConversationId, selectedConversationKey]);
+  }, [activeConversationId, selectedConversationKey, token]);
 
   const selected = useMemo(
     () => connections.find((item) => item.id === credentialId),
@@ -227,7 +246,7 @@ export default function MeoChat() {
     setBusy(true);
     const nextMessages: Message[] = [...messages, { role: 'user', content: prompt }];
     try {
-      const prepared = await json<{ consent: Consent }>('/api/meo/chat/prepare', {
+      const prepared = await json<{ consent: Consent }>('/api/meo/chat/prepare', token, {
         method: 'POST',
         body: JSON.stringify({ credentialId, model: model.trim(), messages: nextMessages }),
       });
@@ -239,19 +258,27 @@ export default function MeoChat() {
 
       let conversationId = activeConversationId;
       if (!conversationId) {
-        const created = await json<{ conversation: Conversation }>('/api/meo/conversations', {
-          method: 'POST',
-          body: JSON.stringify({ title: prompt.slice(0, 80) }),
-        });
+        const created = await json<{ conversation: Conversation }>(
+          '/api/meo/conversations',
+          token,
+          {
+            method: 'POST',
+            body: JSON.stringify({ title: prompt.slice(0, 80) }),
+          },
+        );
         conversationId = created.conversation.id;
         skipHistoryLoadRef.current = conversationId;
         setHistory((current) => [created.conversation, ...current]);
         setActiveConversationId(conversationId);
       }
-      await json('/api/meo/conversations/' + encodeURIComponent(conversationId) + '/messages', {
-        method: 'POST',
-        body: JSON.stringify({ role: 'user', content: prompt }),
-      });
+      await json(
+        '/api/meo/conversations/' + encodeURIComponent(conversationId) + '/messages',
+        token,
+        {
+          method: 'POST',
+          body: JSON.stringify({ role: 'user', content: prompt }),
+        },
+      );
       setMessages(nextMessages);
       setDraft('');
 
@@ -260,7 +287,7 @@ export default function MeoChat() {
       const response = await fetch('/api/meo/chat/stream', {
         method: 'POST',
         credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+        headers: meoRequestHeaders(token, { Accept: 'text/event-stream' }),
         body: JSON.stringify({
           credentialId,
           model: model.trim(),
@@ -312,7 +339,7 @@ export default function MeoChat() {
       }
       if (!completed) throw new Error(t('meo_web_stream_incomplete'));
       if (assistantText) {
-        await json(`/api/meo/conversations/${encodeURIComponent(conversationId)}/messages`, {
+        await json(`/api/meo/conversations/${encodeURIComponent(conversationId)}/messages`, token, {
           method: 'POST',
           body: JSON.stringify({ role: 'assistant', content: assistantText }),
         });
