@@ -86,6 +86,7 @@ function BackgroundTasksButton({
   }
   const jumpToTool = (row: TaskRow): boolean => {
     const message = row.messageId == null ? null : document.getElementById(row.messageId);
+    if (row.messageId != null && message == null) return false;
     const scope = message ?? document;
     const destinations = Array.from(
       scope.querySelectorAll<HTMLElement>('[data-task-tool-call]'),

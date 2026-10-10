@@ -160,14 +160,16 @@ function TaskCard({
         )}
         {row.status === 'stopping' && <Spinner className="size-4 shrink-0" />}
       </div>
-      {expandable && visited && (
+      {expandable && (
         <Collapse open={open}>
-          <pre
-            id={detailId}
-            className="bg-surface-primary text-text-primary mt-2 max-h-48 overflow-auto rounded-md p-2 font-mono text-xs break-words whitespace-pre-wrap"
-          >
-            {row.detail}
-          </pre>
+          {visited && (
+            <pre
+              id={detailId}
+              className="bg-surface-primary text-text-primary mt-2 max-h-48 overflow-auto rounded-md p-2 font-mono text-xs break-words whitespace-pre-wrap"
+            >
+              {row.detail}
+            </pre>
+          )}
         </Collapse>
       )}
       {jumpUnavailable && (

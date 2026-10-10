@@ -439,6 +439,37 @@ describe('BackgroundTasksButton', () => {
     expect(action.textContent).toBe('');
   });
 
+  it('does not navigate to another message when the recorded message is unloaded', async () => {
+    jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(
+      index({
+        tasks: [{ ...index().tasks[0], messageId: 'unloaded' }],
+      }),
+    );
+    renderButton();
+    const other = document.createElement('button');
+    other.dataset.toolCallId = 'call-running';
+    document.body.append(other);
+    try {
+      await userEvent.click(await screen.findByTestId('header-background-tasks-button'));
+      await userEvent.click(
+        screen.getByRole('button', { name: /^com_ui_background_tasks_go_to_tool:/ }),
+      );
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'com_ui_background_tasks_tool_unavailable',
+      );
+    } finally {
+      other.remove();
+    }
+  });
+
+  it('mounts the empty closed reveal shell before first expansion', async () => {
+    jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(index());
+    renderButton();
+    await userEvent.click(await screen.findByTestId('header-background-tasks-button'));
+    const row = screen.getByText('Rerun the focused specs').closest('li')!;
+    expect(row.querySelector('[inert]')).not.toBeNull();
+  });
+
   it('selects the requested step when call ids repeat', async () => {
     jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(
       index({
