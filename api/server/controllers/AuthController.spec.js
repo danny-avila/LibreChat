@@ -2682,6 +2682,35 @@ describe('refreshController – LibreChat path', () => {
     expect(res.send).toHaveBeenCalledWith('Refresh token expired or not found for this user');
   });
 
+  it('clears the readable session hint when the refresh session is gone', async () => {
+    getUserById.mockResolvedValue({ _id: 'local-user-id', provider: 'local' });
+    findSession.mockResolvedValue(null);
+
+    await refreshController(req, res);
+
+    expect(setAuthTokens).not.toHaveBeenCalled();
+    expect(res.clearCookie).toHaveBeenCalledWith('session_hint');
+    expect(res.status).toHaveBeenCalledWith(401);
+  });
+
+  it('clears the readable session hint when the refresh token is invalid', async () => {
+    req.headers.cookie = 'refreshToken=not-a-jwt';
+
+    await refreshController(req, res);
+
+    expect(res.clearCookie).toHaveBeenCalledWith('session_hint');
+    expect(res.status).toHaveBeenCalledWith(403);
+  });
+
+  it('keeps the readable session hint on a successful refresh', async () => {
+    getUserById.mockResolvedValue({ _id: 'local-user-id', provider: 'local' });
+
+    await refreshController(req, res);
+
+    expect(setAuthTokens).toHaveBeenCalled();
+    expect(res.clearCookie).not.toHaveBeenCalledWith('session_hint');
+  });
+
   it('preserves CI refresh compatibility without session lookup', async () => {
     process.env.NODE_ENV = 'CI';
     getUserById.mockResolvedValue({

@@ -125,6 +125,7 @@ export function createLocalRefreshHandler(deps: LocalRefreshDependencies) {
       const userId = payload.id;
       const user = await deps.getUserById(userId, deps.userProjection);
       if (!user) {
+        res.clearCookie(SESSION_HINT_COOKIE);
         return res.status(401).redirect('/login');
       }
 
@@ -184,6 +185,7 @@ export function createLocalRefreshHandler(deps: LocalRefreshDependencies) {
         }
         return res.status(200).send({ token, user: sanitizeUserForAuthResponse(user) });
       }
+      res.clearCookie(SESSION_HINT_COOKIE);
       if (req.query?.retry) {
         return res.status(403).send('No session found');
       }
@@ -193,6 +195,7 @@ export function createLocalRefreshHandler(deps: LocalRefreshDependencies) {
       return res.status(401).send(EXPIRED_REFRESH_MESSAGE);
     } catch (error) {
       deps.error('[refreshController] Invalid refresh token:', error);
+      res.clearCookie(SESSION_HINT_COOKIE);
       return res.status(403).send('Invalid refresh token');
     }
   };
