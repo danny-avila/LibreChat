@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
-import { SESSION_EXPIRY_COOKIE } from 'librechat-data-provider';
+import { SESSION_HINT_COOKIE, themeOwnerKey, formatSessionHint } from 'librechat-data-provider';
 import type { Request, Response, NextFunction } from 'express';
 import { getOAuthCallbackUrl } from './url';
 import { isEnabled } from '~/utils/common';
@@ -72,12 +72,27 @@ export function setRefreshTokenCookie(res: Response, refreshToken: string, expir
   });
 }
 
+export interface SessionHintOwner {
+  userId?: string | { toString(): string } | null;
+  tenantId?: string | null;
+}
+
 /**
- * Mirrors the session's expiry where the page can read it before the app runs, so a replay
- * keyed to the signed-in owner can skip a session that has ended. It holds no credential.
+ * Names the session's owner and expiry where the page can read them before the app runs, so a
+ * replay of something the owner cached skips a session that ended or belongs to someone else.
+ * A session with no known user clears it rather than leaving a previous owner's hint behind.
  */
-export function setSessionExpiryCookie(res: Response, expires: Date): void {
-  res.cookie(SESSION_EXPIRY_COOKIE, String(expires.getTime()), {
+export function setSessionHintCookie(
+  res: Response,
+  expires: Date,
+  { userId, tenantId }: SessionHintOwner,
+): void {
+  if (!userId) {
+    res.clearCookie(SESSION_HINT_COOKIE);
+    return;
+  }
+  const owner = themeOwnerKey(userId.toString(), tenantId);
+  res.cookie(SESSION_HINT_COOKIE, formatSessionHint({ expires: expires.getTime(), owner }), {
     expires,
     secure: shouldUseSecureCookie(),
     sameSite: 'strict',
@@ -86,6 +101,8 @@ export function setSessionExpiryCookie(res: Response, expires: Date): void {
 
 export interface OpenIDMarkerCookieOptions {
   userId?: string | null;
+  /** Names the session's owner in the readable session hint alongside `userId`. */
+  tenantId?: string | null;
   expires: Date;
   refreshExpiryMs: number;
   reuseTokens?: boolean;
@@ -97,6 +114,7 @@ export function setOpenIDMarkerCookies(
   res: Response,
   {
     userId,
+    tenantId,
     expires,
     refreshExpiryMs,
     reuseTokens = isEnabled(process.env.OPENID_REUSE_TOKENS),
@@ -111,7 +129,7 @@ export function setOpenIDMarkerCookies(
   };
 
   res.cookie(TOKEN_PROVIDER_COOKIE, 'openid', cookieOptions);
-  setSessionExpiryCookie(res, expires);
+  setSessionHintCookie(res, expires, { userId, tenantId });
 
   if (!userId || !reuseTokens) {
     return;

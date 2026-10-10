@@ -566,11 +566,31 @@ export const themeAppearanceTokens = Object.freeze(
 );
 
 /**
- * A page-readable cookie carrying the signed-in session's expiry (epoch ms), set beside the
- * httpOnly session cookies with the same lifetime and cleared with them. The theme boot replay
- * reads it to tell a live session from one that ended, since the session cookies are unreadable.
+ * A page-readable cookie naming the signed-in session's owner and expiry, set beside the httpOnly
+ * session cookies with the same lifetime and cleared with them. The session cookies are
+ * unreadable, so the theme boot replay reads this one to replay a cached theme only into a live
+ * session of the identity that cached it. It holds no credential.
  */
-export const SESSION_EXPIRY_COOKIE = 'session_expires_at';
+export const SESSION_HINT_COOKIE = 'session_hint';
+
+export type SessionHint = { expires: number; owner: string };
+
+/** The identity a cached deployment theme belongs to, as the cache and the session hint name it. */
+export const themeOwnerKey = (userId: string, tenantId?: string | null): string =>
+  `${tenantId ?? ''}:${userId}`;
+
+/** `<expiry epoch ms>~<owner key>`; the expiry never contains the separator, the owner may. */
+export const formatSessionHint = ({ expires, owner }: SessionHint): string => `${expires}~${owner}`;
+
+/** Reads a decoded session hint value, or `undefined` when it is malformed. */
+export function parseSessionHint(value: string): SessionHint | undefined {
+  const separator = value.indexOf('~');
+  const expires = Number(value.slice(0, separator));
+  if (separator < 1 || !Number.isFinite(expires)) {
+    return undefined;
+  }
+  return { expires, owner: value.slice(separator + 1) };
+}
 
 /**
  * Bumped by hand when a release changes what resolving a theme emits without changing its roles

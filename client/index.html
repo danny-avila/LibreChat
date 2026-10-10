@@ -107,12 +107,16 @@
         if (!contrast && !publicRoute) {
           try {
             const cached = JSON.parse(localStorage.getItem('deployment-theme') || 'null');
-            /* The server mirrors the session's expiry here; the session cookies are unreadable. */
-            const expiry = /(?:^|;\s*)session_expires_at=(\d+)/.exec(document.cookie);
+            /* The server names the session's owner and expiry here (`<expiry>~<owner>`), since
+             * the session cookies are unreadable: only a live session of the cache's owner replays it. */
+            const hint = /(?:^|;\s*)session_hint=([^;]*)/.exec(document.cookie);
+            const session = hint ? decodeURIComponent(hint[1]) : '';
+            const separator = session.indexOf('~');
             const boot =
               cached &&
-              expiry &&
-              Number(expiry[1]) > Date.now() &&
+              separator > 0 &&
+              Number(session.slice(0, separator)) > Date.now() &&
+              session.slice(separator + 1) === cached.owner &&
               cached.v === '__THEME_CACHE_VERSION__' &&
               typeof cached.owner === 'string' &&
               cached.owner === sessionStorage.getItem('deployment-theme-owner') &&

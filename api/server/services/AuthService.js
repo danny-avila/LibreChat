@@ -11,7 +11,7 @@ const {
   ErrorTypes,
   SystemRoles,
   errorsToString,
-  SESSION_EXPIRY_COOKIE,
+  SESSION_HINT_COOKIE,
 } = require('librechat-data-provider');
 const {
   math,
@@ -26,7 +26,7 @@ const {
   shouldUseSecureCookie,
   setRefreshTokenCookie,
   setOpenIDMarkerCookies,
-  setSessionExpiryCookie,
+  setSessionHintCookie,
   clearCloudFrontCookies,
   normalizeExpiresIn,
   createOpenIDSessionIdentity,
@@ -213,7 +213,7 @@ const clearOpenIDAuthTokens = (req, res, userId, tenantId) => {
     'openid_id_token',
     'openid_user_id',
     'token_provider',
-    SESSION_EXPIRY_COOKIE,
+    SESSION_HINT_COOKIE,
   ]) {
     res.clearCookie?.(name);
   }
@@ -738,7 +738,10 @@ const setAuthTokens = async (userId, res, _session = null, req = null) => {
       secure: shouldUseSecureCookie(),
       sameSite: 'strict',
     });
-    setSessionExpiryCookie(res, new Date(refreshTokenExpires));
+    setSessionHintCookie(res, new Date(refreshTokenExpires), {
+      userId: user?._id ?? userId,
+      tenantId: user?.tenantId,
+    });
 
     setCloudFrontAuthCookies(req, res, user, { userId: user?._id ?? userId });
 
@@ -937,6 +940,7 @@ const setOpenIDAuthTokens = (
 
     setOpenIDMarkerCookies(res, {
       userId,
+      tenantId,
       expires: expirationDate,
       refreshExpiryMs: expiryInMilliseconds,
       refreshToken,

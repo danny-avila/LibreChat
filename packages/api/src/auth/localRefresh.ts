@@ -1,8 +1,5 @@
 import jwt from 'jsonwebtoken';
-import {
-  SESSION_EXPIRY_COOKIE,
-  TWO_FACTOR_ENROLLMENT_REQUIRED_CODE,
-} from 'librechat-data-provider';
+import { SESSION_HINT_COOKIE, TWO_FACTOR_ENROLLMENT_REQUIRED_CODE } from 'librechat-data-provider';
 import type { ISession, OIDCTokens } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import type { TokenIssuance, TwoFactorAccount } from './twoFactor';
@@ -144,7 +141,7 @@ export function createLocalRefreshHandler(deps: LocalRefreshDependencies) {
           `[refreshController] Refresh token predates enrollment or password reset: userId=${userId}`,
         );
         res.clearCookie('refreshToken');
-        res.clearCookie(SESSION_EXPIRY_COOKIE);
+        res.clearCookie(SESSION_HINT_COOKIE);
         return res.status(401).send(EXPIRED_REFRESH_MESSAGE);
       }
 
@@ -158,7 +155,7 @@ export function createLocalRefreshHandler(deps: LocalRefreshDependencies) {
         if (requiresEnrollment(user)) {
           await deps.deleteSession({ sessionId: session._id.toString() });
           res.clearCookie('refreshToken');
-          res.clearCookie(SESSION_EXPIRY_COOKIE);
+          res.clearCookie(SESSION_HINT_COOKIE);
           deps.clearCloudFrontCookies(res, {
             userId,
             tenantId: user.tenantId ?? user.orgId,

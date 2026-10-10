@@ -7,7 +7,8 @@ import {
   QueryKeys,
   MutationKeys,
   dataService,
-  SESSION_EXPIRY_COOKIE,
+  formatSessionHint,
+  SESSION_HINT_COOKIE,
 } from 'librechat-data-provider';
 import type { TStartupConfig, TUser } from 'librechat-data-provider';
 import type { ThemeDefinition } from '@librechat/client';
@@ -426,12 +427,12 @@ describe('DeploymentTheme', () => {
   });
 });
 
-/** The readable expiry the server sets beside the session cookies; `undefined` removes it. */
-function sessionExpiresAt(at?: number) {
+/** The readable hint the server sets beside the session cookies; no `expires` removes it. */
+function sessionHint(expires?: number, owner = 'tenant-a:user-1') {
   document.cookie =
-    at === undefined
-      ? `${SESSION_EXPIRY_COOKIE}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`
-      : `${SESSION_EXPIRY_COOKIE}=${at}; path=/`;
+    expires === undefined
+      ? `${SESSION_HINT_COOKIE}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/`
+      : `${SESSION_HINT_COOKIE}=${encodeURIComponent(formatSessionHint({ expires, owner }))}; path=/`;
 }
 
 describe('DeploymentTheme cache', () => {
@@ -445,7 +446,7 @@ describe('DeploymentTheme cache', () => {
     const definition = theme === 'clickhouse' ? clickHouseTheme : (theme as ThemeDefinition);
     writeThemeCache(buildThemeCache(owner, theme as NonNullable<ConfigTheme>, definition));
     setThemeOwner(owner);
-    sessionExpiresAt(Date.now() + 60000);
+    sessionHint(Date.now() + 60000, owner);
   };
   const cachedEntry = () => JSON.parse(localStorage.getItem(THEME_CACHE_KEY) ?? 'null');
   const pending = () => getStartupConfig.mockReturnValue(new Promise(() => undefined));
@@ -453,7 +454,7 @@ describe('DeploymentTheme cache', () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
-    sessionExpiresAt(undefined);
+    sessionHint(undefined);
     queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     getStartupConfig = jest.spyOn(dataService, 'getStartupConfig');
     mockGetThemeFromEnv.mockReturnValue(undefined);
@@ -490,7 +491,16 @@ describe('DeploymentTheme cache', () => {
     ['left no expiry', undefined],
   ])('paints no cached theme for the tab owner when the session %s', (_, at) => {
     cacheTheme();
-    sessionExpiresAt(at);
+    sessionHint(at);
+    pending();
+    renderTheme(queryClient);
+
+    expect(root().dataset.theme).toBeUndefined();
+  });
+
+  it('paints no cached theme when the live session belongs to someone who signed in since', () => {
+    cacheTheme();
+    sessionHint(Date.now() + 60000, 'tenant-b:user-2');
     pending();
     renderTheme(queryClient);
 
