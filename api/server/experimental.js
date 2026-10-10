@@ -551,7 +551,7 @@ if (cluster.isMaster) {
     indexHTML = injectColorModeHandoff(indexHTML, baseAppConfig?.interfaceConfig?.colorModeFromUrl);
     const indexShell = createDeploymentThemeShell(
       indexHTML,
-      appConfig.interfaceConfig?.theme,
+      baseAppConfig?.interfaceConfig?.theme,
       readBundledThemeBoot(appConfig.paths.dist),
     );
 
