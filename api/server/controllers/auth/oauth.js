@@ -12,6 +12,7 @@ const { sendOpenIDAuthResponse } = require('~/server/services/OpenIDRefreshRecov
 const getLogStores = require('~/cache/getLogStores');
 const { checkBan } = require('~/server/middleware');
 const { generateToken } = require('~/models');
+const { safeOAuthRedirect } = require('~/server/utils/oauthRedirect');
 
 const domains = {
   client: process.env.DOMAIN_CLIENT,
@@ -95,6 +96,18 @@ function createOAuthHandler(redirectUri = domains.client) {
         ) {
           req.session.openidLogoutIdToken = req.user.tokenset?.id_token;
         }
+      }
+      const postLoginRedirect = safeOAuthRedirect(
+        req.session?.openidPostLoginRedirect,
+        redirectUri,
+      );
+      if (postLoginRedirect) {
+        delete req.session.openidPostLoginRedirect;
+        const clientUrl = new URL(redirectUri);
+        const clientPath = clientUrl.pathname.replace(/\/$/, '');
+        clientUrl.pathname = `${clientPath}/login`.replace(/^\/\/+/g, '/');
+        clientUrl.searchParams.set('redirect_to', postLoginRedirect);
+        return res.redirect(clientUrl.toString());
       }
       res.redirect(redirectUri);
     } catch (err) {

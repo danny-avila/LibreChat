@@ -3,7 +3,9 @@ import remarkGfm from 'remark-gfm';
 import ReactMarkdown from 'react-markdown';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
+import type { MeoConsent } from './MeoConsentDialog';
 import { useAuthContext } from '~/hooks/AuthContext';
+import MeoConsentDialog from './MeoConsentDialog';
 import { meoRequestHeaders } from './request';
 
 type Connection = {
@@ -16,18 +18,6 @@ type Connection = {
 type Model = { id: string; name: string; description?: string };
 type Message = { role: 'user' | 'assistant'; content: string };
 type Conversation = { id: string; title: string; createdAt: string; updatedAt: string };
-type Consent = {
-  requestId: string;
-  payloadSha256: string;
-  confirmationVersion: number;
-  providerName: string;
-  model: string;
-  purpose: string;
-  dataCategories: string[];
-  destination: string;
-  promptCharacters: number;
-};
-
 async function json<T>(url: string, token: string | undefined, init?: RequestInit): Promise<T> {
   if (!token) throw new Error('Your Meo AI session is still loading. Try again in a moment.');
   const response = await fetch(url, {
@@ -66,10 +56,31 @@ export default function MeoChat() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [pendingConsent, setPendingConsent] = useState<MeoConsent | null>(null);
   const streamAbortRef = useRef<AbortController | null>(null);
   const skipHistoryLoadRef = useRef('');
+  const consentDecisionRef = useRef<((approved: boolean) => void) | null>(null);
 
-  useEffect(() => () => streamAbortRef.current?.abort(), []);
+  useEffect(
+    () => () => {
+      streamAbortRef.current?.abort();
+      consentDecisionRef.current?.(false);
+    },
+    [],
+  );
+
+  const requestConsent = (consent: MeoConsent) =>
+    new Promise<boolean>((resolve) => {
+      consentDecisionRef.current = resolve;
+      setPendingConsent(consent);
+    });
+
+  const resolveConsent = (approved: boolean) => {
+    const resolve = consentDecisionRef.current;
+    consentDecisionRef.current = null;
+    setPendingConsent(null);
+    resolve?.(approved);
+  };
 
   const updateDeepLink = useCallback(
     (connection: string, selectedModel: string) => {
@@ -246,14 +257,12 @@ export default function MeoChat() {
     setBusy(true);
     const nextMessages: Message[] = [...messages, { role: 'user', content: prompt }];
     try {
-      const prepared = await json<{ consent: Consent }>('/api/meo/chat/prepare', token, {
+      const prepared = await json<{ consent: MeoConsent }>('/api/meo/chat/prepare', token, {
         method: 'POST',
         body: JSON.stringify({ credentialId, model: model.trim(), messages: nextMessages }),
       });
       const consent = prepared.consent;
-      const approved = window.confirm(
-        `${consent.providerName} · ${consent.model}\n${consent.purpose}\n${consent.dataCategories.join(', ')}\n${consent.destination}\n\n${consent.promptCharacters} characters will be sent to this provider. Continue?`,
-      );
+      const approved = await requestConsent(consent);
       if (!approved) return;
 
       let conversationId = activeConversationId;
@@ -363,7 +372,7 @@ export default function MeoChat() {
   }
 
   return (
-    <main className="mx-auto flex h-full w-full max-w-5xl flex-col gap-4 px-4 py-5 md:px-8">
+    <main className="!text-text-primary mx-auto flex h-full w-full max-w-5xl flex-col gap-4 px-4 py-5 md:px-8">
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">{t('meo_web_title')}</h1>
@@ -461,6 +470,7 @@ export default function MeoChat() {
           </p>
         )}
       </section>
+      {pendingConsent && <MeoConsentDialog consent={pendingConsent} onResolve={resolveConsent} />}
       <form
         onSubmit={submit}
         className="bg-surface-primary flex items-end gap-3 rounded-xl border p-3"

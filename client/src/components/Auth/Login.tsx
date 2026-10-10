@@ -4,7 +4,7 @@ import { ErrorTypes, registerPage } from 'librechat-data-provider';
 import { useOutletContext, useSearchParams, useLocation } from 'react-router-dom';
 import type { TLoginLayoutContext } from '~/common';
 import type { TranslationKeys } from '~/hooks';
-import { getLoginError, persistRedirectToSession } from '~/utils';
+import { getLoginError, peekPostLoginRedirect, persistRedirectToSession } from '~/utils';
 import { ErrorMessage } from '~/components/Auth/ErrorMessage';
 import SocialButton from '~/components/Auth/SocialButton';
 import { useAuthContext } from '~/hooks/AuthContext';
@@ -30,6 +30,7 @@ function Login() {
 
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
+  const postLoginRedirect = peekPostLoginRedirect(searchParams) ?? undefined;
   const disableAutoRedirect = searchParams.get('redirect') === 'false';
 
   const [isAutoRedirectDisabled, setIsAutoRedirectDisabled] = useState(disableAutoRedirect);
@@ -105,6 +106,7 @@ function Login() {
             }
             label={startupConfig.openidLabel}
             id="openid"
+            redirectTo={postLoginRedirect}
           />
         </div>
       </div>

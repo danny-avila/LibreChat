@@ -18,6 +18,7 @@ const {
   markOAuthNavigation,
 } = require('~/server/middleware');
 const { createOAuthHandler } = require('~/server/controllers/auth/oauth');
+const { safeOAuthRedirect } = require('~/server/utils/oauthRedirect');
 const { findBalanceByUser, upsertBalanceFields } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 
@@ -118,6 +119,10 @@ router.get(
  * OpenID Routes
  */
 router.get('/openid', (req, res, next) => {
+  const redirectTo = safeOAuthRedirect(req.query?.redirect_to, domains.client);
+  if (redirectTo && req.session) {
+    req.session.openidPostLoginRedirect = redirectTo;
+  }
   return passport.authenticate('openid', {
     session: false,
     state: randomState(),

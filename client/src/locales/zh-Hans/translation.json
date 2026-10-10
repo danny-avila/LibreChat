@@ -1444,5 +1444,9 @@
   "com_ui_zoom_in": "放大",
   "com_ui_zoom_level": "缩放级别",
   "com_ui_zoom_out": "缩小",
-  "com_user_message": "您"
+  "com_user_message": "您",
+  "meo_web_consent_title": "将此消息发送给服务提供方？",
+  "meo_web_consent_summary": "{{provider}} · {{model}}。用途：{{purpose}}。数据类别：{{categories}}。目的地：{{destination}}。将向该服务提供方发送此对话中的 {{count}} 个字符。",
+  "meo_web_consent_cancel": "取消",
+  "meo_web_consent_continue": "继续"
 }

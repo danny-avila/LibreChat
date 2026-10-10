@@ -17,6 +17,7 @@ import StartupLayout from './Layouts/Startup';
 import MarketplaceRoute from './Marketplace';
 import LoginLayout from './Layouts/Login';
 import dashboardRoutes from './Dashboard';
+import RootRedirect from './RootRedirect';
 import WithRum from '~/lib/rum/WithRum';
 import ShareRoute from './ShareRoute';
 import ChatRoute from './ChatRoute';
@@ -147,7 +148,7 @@ export const router = createBrowserRouter(
               children: [
                 {
                   index: true,
-                  element: <Navigate to="/c/new" replace={true} />,
+                  element: <RootRedirect />,
                 },
                 {
                   path: 'new',

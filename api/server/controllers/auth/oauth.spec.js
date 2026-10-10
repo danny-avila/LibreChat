@@ -176,6 +176,22 @@ describe('createOAuthHandler', () => {
     expect(res.redirect).toHaveBeenCalledWith('http://localhost:3080');
   });
 
+  it('returns an OpenID user to the validated requested deep link after login', async () => {
+    mockIsAdminPanelRedirect.mockReturnValue(false);
+    const handler = createOAuthHandler('http://localhost:3080');
+    const req = buildReq({
+      session: { openidPostLoginRedirect: '/new?connection=credential-id&model=model-id' },
+    });
+    const res = buildRes();
+
+    await handler(req, res, jest.fn());
+
+    expect(res.redirect).toHaveBeenCalledWith(
+      'http://localhost:3080/login?redirect_to=%2Fnew%3Fconnection%3Dcredential-id%26model%3Dmodel-id',
+    );
+    expect(req.session.openidPostLoginRedirect).toBeUndefined();
+  });
+
   it('forwards the refresh token from req.authInfo for non-openid admin providers', async () => {
     const handler = createOAuthHandler('http://admin.example.com/auth/google/callback');
     const req = buildReq({

@@ -49,9 +49,16 @@ const mockRedirectToAuthFailure = jest.fn((res, { clientDomain, authFailedError 
   res.redirect(`${clientDomain}/login?redirect=false&error=${authFailedError}`),
 );
 const mockPassportAuthenticate = jest.fn(() => (_req, _res, next) => next());
+const mockOAuthInitiationRequest = jest.fn();
 
 jest.mock('passport', () => ({
-  authenticate: (...args) => mockPassportAuthenticate(...args),
+  authenticate: (...args) => {
+    const middleware = mockPassportAuthenticate(...args);
+    return (req, res, next) => {
+      mockOAuthInitiationRequest(req);
+      return middleware(req, res, next);
+    };
+  },
 }));
 
 jest.mock('openid-client', () => ({
@@ -142,6 +149,7 @@ describe('OAuth route failure logging', () => {
     mockGetOAuthFailureMessage.mockClear();
     mockRedirectToAuthFailure.mockClear();
     mockPassportAuthenticate.mockClear();
+    mockOAuthInitiationRequest.mockClear();
     mockMarkOAuthNavigation.mockClear();
     mockOpenIDCallbackAuthenticatorOptions = undefined;
     mockPassportAuthenticate.mockImplementation(() => (_req, _res, next) => next());
@@ -176,6 +184,19 @@ describe('OAuth route failure logging', () => {
       expect.any(Function),
     );
     expect(mockOAuthHandler).toHaveBeenCalled();
+  });
+
+  it('keeps only a validated same-origin redirect in the OpenID session', async () => {
+    const app = createApp([]);
+    mockPassportAuthenticate.mockImplementation(() => (_req, res) => res.status(204).end());
+
+    await request(app)
+      .get('/oauth/openid?redirect_to=%2Fnew%3Fconnection%3Dcredential-id%26model%3Dmodel-id')
+      .expect(204);
+
+    expect(mockOAuthInitiationRequest.mock.calls[0][0].session.openidPostLoginRedirect).toBe(
+      '/new?connection=credential-id&model=model-id',
+    );
   });
 
   it('logs structured fallback errors without using Unknown OAuth error', async () => {
