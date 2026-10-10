@@ -106,6 +106,7 @@ describe('Part', () => {
       </>,
     );
     expect(screen.getByText('generic:constructor:none')).toBeTruthy();
+    expect(screen.queryByText(/^\[object /)).toBeNull();
   });
 
   it('lets a matcher route a call before its name, and wraps every agent tool card', () => {
