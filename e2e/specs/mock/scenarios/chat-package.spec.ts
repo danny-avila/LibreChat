@@ -230,4 +230,41 @@ test.describe('the built @librechat/chat package', () => {
     expect(answer.react).toBe(resolve(dist, 'react.cjs'));
     expect(answer.components).toBe(resolve(dist, 'components.cjs'));
   });
+
+  test('the client resolves the stream core from the built package @scenario:the-client-resolves-the-stream-core-from-the-built-package', () => {
+    test.setTimeout(120_000);
+    const dist = resolve(repoRoot, 'packages/chat/dist');
+    expect(existsSync(dist), 'packages/chat/dist is missing: run npm run build').toBe(true);
+
+    /** Resolved from the client workspace, the way Vite and the client's jest see it,
+     *  with every UI module blocked so the stream code proves it stays framework-free. */
+    const probe = `
+      const Module = require('node:module');
+      const blocked = new Set(${JSON.stringify(UI_MODULES)});
+      const resolveFilename = Module._resolveFilename;
+      Module._resolveFilename = function (request, ...rest) {
+        if (blocked.has(request)) throw new Error('the core reached ' + request);
+        return resolveFilename.call(this, request, ...rest);
+      };
+      const core = require('@librechat/chat');
+      const names = ['createSSETransport', 'normalizeFrame', 'applyMessageDelta', 'applyToolCallDelta', 'isAnsweredAskUserQuestionPart'];
+      const answer = { entry: require.resolve('@librechat/chat'), cjs: {}, esm: {} };
+      for (const name of names) answer.cjs[name] = typeof core[name];
+      import('@librechat/chat').then((esm) => {
+        for (const name of names) answer.esm[name] = typeof esm[name];
+        process.stdout.write(JSON.stringify(answer));
+      });
+    `;
+    const loaded = run(process.execPath, ['-e', probe], { cwd: resolve(repoRoot, 'client') });
+    expect(loaded.status, loaded.output).toBe(0);
+    const answer = JSON.parse(loaded.stdout) as {
+      entry: string;
+      cjs: Record<string, string>;
+      esm: Record<string, string>;
+    };
+    expect(answer.entry).toBe(resolve(dist, 'index.cjs'));
+    for (const exports of [answer.cjs, answer.esm]) {
+      expect(Object.values(exports)).toEqual(Array(5).fill('function'));
+    }
+  });
 });

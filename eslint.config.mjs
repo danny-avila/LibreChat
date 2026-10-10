@@ -636,6 +636,15 @@ export default [
         'error',
         { sourceRoot: path.join(__dirname, 'packages/chat/src'), packageName: '@librechat/chat' },
       ],
+      // The code moving in from `client/src` keeps the app's convention for intentionally unused names.
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
+      ],
     },
   },
   {
