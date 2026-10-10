@@ -70,6 +70,16 @@ export type PartProps = Omit<PartRenderProps, 'part' | 'partIndex'> & {
   renderers: PartRenderers;
 };
 
+/**
+ * A registry entry the host set itself. Tool names and part types come from message data, so a
+ * name like `constructor` must not reach a member every object inherits.
+ */
+const ownEntry = <T,>(
+  registry: Partial<Record<string, T>>,
+  key: string | undefined,
+): T | undefined =>
+  key != null && Object.prototype.hasOwnProperty.call(registry, key) ? registry[key] : undefined;
+
 const isAgentToolCall = (toolCall: ToolCallValue): toolCall is AgentToolCall =>
   'args' in toolCall && (!toolCall.type || toolCall.type === ToolCallTypes.TOOL_CALL);
 
@@ -91,7 +101,7 @@ const renderToolCall = (
   };
   const render =
     renderers.matchTool?.(toolCall) ??
-    (toolCall.name ? renderers.tools[toolCall.name] : undefined) ??
+    ownEntry(renderers.tools, toolCall.name) ??
     renderers.defaultTool;
   const card = render(toolProps);
   return renderers.wrapTool ? renderers.wrapTool(card, toolProps) : card;
@@ -115,7 +125,7 @@ export const Part: MemoExoticComponent<(props: PartProps) => ReactNode> = memo(f
   if (part.type === ContentTypes.TOOL_CALL) {
     return renderToolCall(renderers, { ...props, part });
   }
-  const render = renderers.parts[part.type] as PartRenderer | undefined;
+  const render = ownEntry(renderers.parts, part.type) as PartRenderer | undefined;
   return render?.(props) ?? null;
 });
 Part.displayName = 'Part';
