@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { decryptV2, encryptV2, logger } from '@librechat/data-schemas';
 import type { PullRequestProvider } from 'librechat-data-provider';
@@ -20,6 +21,17 @@ export const DEFAULT_PULL_REQUEST_OAUTH_RETENTION_DAYS = 180;
 const REFRESH_SKEW_MS = 60_000;
 const DAY_SECONDS = 24 * 60 * 60;
 const MAX_TOKEN_LENGTH = 8_192;
+/**
+ * The token endpoint errors that mean the grant itself is dead: RFC 6749 `invalid_grant`, and the
+ * codes GitHub answers with for a refresh token or a code it no longer accepts. Any other error,
+ * such as `invalid_client` after a wrong client secret is deployed, is about the server, and
+ * deleting every user's grant for it would leave them nothing to recover once it is fixed.
+ */
+const GRANT_REFUSALS: ReadonlySet<string> = new Set([
+  'invalid_grant',
+  'bad_refresh_token',
+  'bad_verification_code',
+]);
 
 /** Where users authorize and where the code is exchanged, on the configured host. */
 export function oauthEndpoints(
@@ -104,12 +116,21 @@ class MalformedGrantError extends Error {
 }
 
 /** Thrown for a grant the provider refused, as opposed to one it could not be asked about. A
- *  refusal disconnects the user, so only a definite one is: a server error is an outage, whatever
- *  its body says. */
+ *  refusal disconnects the user, so only a definite one is: a server error, or an error about the
+ *  client rather than the grant, is an outage, whatever its status. */
 class GrantRejectedError extends Error {
   constructor() {
     super('The provider rejected the grant');
     this.name = 'GrantRejectedError';
+  }
+}
+
+/** A refresh was refused while the grant may still be replaced by another replica's refresh of
+ *  it, so it is neither usable nor yet known to be gone. */
+class GrantRefusalPendingError extends Error {
+  constructor() {
+    super('The provider refused the grant; removal is pending');
+    this.name = 'GrantRefusalPendingError';
   }
 }
 
@@ -135,7 +156,9 @@ export type PullRequestOAuth = {
     code: string,
     config: PullRequestOAuthConfig,
   ): Promise<void>;
-  /** The user's access token, refreshed when it is about to expire; null when not connected. */
+  /** The user's access token, refreshed when it is about to expire; null when not connected.
+   *  Rejects when it cannot be known: an outage, a grant that cannot be read, or a refusal that
+   *  another replica's refresh may still overtake. */
   token(userId: string, config: PullRequestOAuthConfig): Promise<string | null>;
   connected(userId: string, config: PullRequestOAuthConfig): Promise<boolean>;
   /** Removes every connection the user has, whatever app or host it was made with, so a later
@@ -159,6 +182,7 @@ export function createPullRequestOAuth({
   encrypt = encryptV2,
   decrypt = decryptV2,
   now = Date.now,
+  delay = (ms) => sleep(ms, undefined, { ref: false }),
 }: {
   store: PullRequestOAuthStore;
   fetchFn: PullRequestFetch;
@@ -168,6 +192,8 @@ export function createPullRequestOAuth({
   encrypt?: (value: string) => Promise<string>;
   decrypt?: (value: string) => Promise<string>;
   now?: () => number;
+  /** Waits out the grace before a refused grant is removed. */
+  delay?: (ms: number) => Promise<void>;
 }): PullRequestOAuth {
   const scopeOf = (userId: string, config: PullRequestOAuthConfig) =>
     `${PULL_REQUEST_OAUTH_TYPE}:${userId}:${config.provider}:${config.host}`;
@@ -176,6 +202,8 @@ export function createPullRequestOAuth({
 
   /** Token reads in flight in this process, so concurrent lookups of one user refresh once. */
   const reading = new Map<string, Promise<string | null>>();
+  /** Refused grants waiting out their grace, so they are not sent to the provider again. */
+  const removing = new Set<string>();
 
   async function requestGrant(
     config: PullRequestOAuthConfig,
@@ -205,13 +233,15 @@ export function createPullRequestOAuth({
       ),
     });
     const parsed: unknown = await response.json().catch(() => null);
-    /** GitHub answers a refused grant with 200 and an `error` field; others use 400 or 401. */
+    const error = isRecord(parsed) && typeof parsed.error === 'string' ? parsed.error : undefined;
+    /** GitHub answers a refused grant with 200 and an `error` field; others use 400 or 401. A
+     *  server error is an outage whatever its body says. */
     const refused =
-      response.status === 400 ||
-      response.status === 401 ||
-      (response.ok && isRecord(parsed) && typeof parsed.error === 'string');
+      (response.ok || response.status === 400 || response.status === 401) &&
+      error != null &&
+      GRANT_REFUSALS.has(error);
     if (refused) throw new GrantRejectedError();
-    if (!response.ok || !isRecord(parsed) || !isToken(parsed.access_token)) {
+    if (!response.ok || error != null || !isRecord(parsed) || !isToken(parsed.access_token)) {
       throw new Error(`Token endpoint answered ${response.status}`);
     }
     return {
@@ -250,6 +280,12 @@ export function createPullRequestOAuth({
   ): Promise<{ row: PullRequestOAuthRow; grant: Grant } | null> {
     const row = await store.findToken({ scope: scopeOf(userId, config) });
     if (row == null) return null;
+    /** The TTL reaper removes an expired row late, never on time; until then it is already gone,
+     *  so it is neither used nor extended back to life. */
+    if (row.expiresAt != null) {
+      const expiresAt = new Date(row.expiresAt).getTime();
+      if (Number.isFinite(expiresAt) && expiresAt <= now()) return null;
+    }
     /** Only this service writes the row, so a value that does not decrypt (a missing or rotated
      *  key) or is not a grant is a failure, not an absent connection, and it propagates. A grant
      *  issued to another OAuth app, from before the app was replaced, is no connection to this one. */
@@ -295,6 +331,8 @@ export function createPullRequestOAuth({
     grant: Grant,
   ): Promise<string | null> {
     if (grant.refreshToken == null) return null;
+    const removal = `${scopeOf(userId, config)}\0${row.token}`;
+    if (removing.has(removal)) throw new GrantRefusalPendingError();
     let next: Grant;
     try {
       next = await requestGrant(
@@ -309,8 +347,25 @@ export function createPullRequestOAuth({
         if (current != null && current.row.token !== row.token) {
           return current.grant.accessToken;
         }
-        await store.deleteTokens({ scope: scopeOf(userId, config), token: row.token });
-        return null;
+        /**
+         * A rotating provider also refuses the old refresh token once another replica has used
+         * it, and that replica may not have stored the new grant yet. The refusal is only
+         * definite after it had time to: the row is removed then, and only if it is still this
+         * one. Until then the token is unavailable rather than disconnected.
+         */
+        removing.add(removal);
+        const graceMs =
+          2 * (config.requestTimeoutSeconds ?? DEFAULT_PULL_REQUEST_OAUTH_REQUEST_SECONDS) * 1000;
+        void delay(graceMs)
+          .then(() => store.deleteTokens({ scope: scopeOf(userId, config), token: row.token }))
+          .catch((cause: unknown) => {
+            logger.warn(
+              '[PullRequests] Refused OAuth grant not removed',
+              getSafeErrorMetadata(cause),
+            );
+          })
+          .finally(() => removing.delete(removal));
+        throw new GrantRefusalPendingError();
       }
       throw error;
     }
