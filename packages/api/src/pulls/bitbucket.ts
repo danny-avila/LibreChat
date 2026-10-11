@@ -349,35 +349,32 @@ export function createBitbucketPullRequestSource({
         }
       }
 
-      /** `undefined`: the repository is not visible. An empty list: it is, and nothing matched. */
-      const list = async (states: readonly string[], pageLength: number, page: number) => {
+      /**
+       * A full page even without a recorded commit: the newest closed one may be a fork, which
+       * cannot match, and must not hide an older one from the repository itself. Later pages come
+       * from the `next` link Bitbucket returns, which is opaque, and only its absence ends the
+       * list. `undefined`: the repository is not visible. An empty list: it is, and nothing matched.
+       */
+      const listAll = async (closed: boolean): Promise<ListItem[] | undefined> => {
+        const states = closed ? CLOSED_STATES : OPEN_STATES;
+        const pageLength = Math.min(Math.max(lookup.maxCandidatePullRequests, 1), MAX_PAGE_LENGTH);
         const filter = states.map((state) => `state = "${state}"`).join(' OR ');
         const query = new URLSearchParams({
           q: `source.branch.name = ${bbqlString(branch)} AND (${filter})`,
           sort: '-created_on',
           pagelen: String(pageLength),
-          page: String(page),
         });
         /** The default list is open pull requests only. The `state` parameters lift that default
          *  and `q` names the same states, so either filter alone lists the same pull requests. */
         for (const state of states) query.append('state', state);
-        const listed = await getJson(`/pullrequests?${query.toString()}`);
-        if (listed == null) return undefined;
-        return parsePage(listed).values.map((item) => parseListItem(item, repo));
-      };
-      /**
-       * A full page even without a recorded commit: the newest closed one may be a fork, which
-       * cannot match, and must not hide an older one from the repository itself.
-       */
-      const listAll = async (closed: boolean): Promise<ListItem[] | undefined> => {
-        const states = closed ? CLOSED_STATES : OPEN_STATES;
-        const pageLength = Math.min(Math.max(lookup.maxCandidatePullRequests, 1), MAX_PAGE_LENGTH);
         const all: ListItem[] = [];
-        for (let page = 1; page <= lookup.maxCandidatePages; page++) {
-          const items = await list(states, pageLength, page);
-          if (items === undefined) return page === 1 ? undefined : all;
-          all.push(...items.filter(isComplete));
-          if (items.length < pageLength) break;
+        let next: string | null = `${base}/pullrequests?${query.toString()}`;
+        for (let page = 1; page <= lookup.maxCandidatePages && next != null; page++) {
+          const listed = await request(next, lookup, []);
+          if (listed == null) return page === 1 ? undefined : all;
+          const parsed = parsePage(listed);
+          all.push(...parsed.values.map((item) => parseListItem(item, repo)).filter(isComplete));
+          next = parsed.next;
         }
         return all;
       };

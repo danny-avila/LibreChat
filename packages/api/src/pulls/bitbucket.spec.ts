@@ -146,6 +146,47 @@ describe('createBitbucketPullRequestSource', () => {
     await expect(find(source)).resolves.toMatchObject({ number: 3, state: 'merged' });
   });
 
+  describe('closed history across pages', () => {
+    const merged = pullRequest({ id: 3, state: 'MERGED' });
+    const declinedFork = pullRequest({ id: 8, state: 'DECLINED', source: fork() });
+    const history = (next: string) =>
+      routes(merged, {
+        'state=OPEN': () => json(page([])),
+        /** A short first page that still links on: only a missing `next` ends the list. */
+        'state=MERGED': () => json(page([declinedFork], next)),
+        'cursor=opaque': () => json(page([merged])),
+        '/pullrequests/3/diffstat': () => json(page([])),
+        '/pullrequests/3/statuses': () => json(page([])),
+        '/pullrequests/3': () => json(merged),
+      });
+
+    it('follows the next link Bitbucket returns instead of building page numbers', async () => {
+      const { source, fetchFn } = sourceFor(history(`${API}pullrequests?cursor=opaque`));
+      await expect(find(source, { limits: { maxCandidatePages: 2 } })).resolves.toMatchObject({
+        number: 3,
+        state: 'merged',
+      });
+      expect(urlsOf(fetchFn)).toContain(`${API}pullrequests?cursor=opaque`);
+      expect(urlsOf(fetchFn).some((url) => /[?&]page=/.test(url))).toBe(false);
+    });
+
+    it('reads no more pages than the configured bound', async () => {
+      const { source, fetchFn } = sourceFor(history(`${API}pullrequests?cursor=opaque`));
+      await expect(find(source, { limits: { maxCandidatePages: 1 } })).resolves.toBeNull();
+      expect(urlsOf(fetchFn)).not.toContain(`${API}pullrequests?cursor=opaque`);
+    });
+
+    it('never follows a next link off the repository API', async () => {
+      const { source, fetchFn } = sourceFor(
+        history('https://evil.example/2.0/repositories/w/r/pullrequests?cursor=opaque'),
+      );
+      await expect(find(source, { limits: { maxCandidatePages: 2 } })).rejects.toMatchObject({
+        code: 'UPSTREAM_ERROR',
+      });
+      expect(urlsOf(fetchFn).every((url) => url.startsWith(API))).toBe(true);
+    });
+  });
+
   it('skips a pull request whose source commit is gone and keeps searching', async () => {
     const gone = pullRequest({ id: 5, source: { ...pullRequest().source, commit: null } });
     const { source } = sourceFor(
