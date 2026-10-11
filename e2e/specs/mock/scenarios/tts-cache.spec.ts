@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
-import type { APIRequestContext, Page } from '@playwright/test';
+import type { Browser, BrowserContext, Page } from '@playwright/test';
 import type { User } from '../../../types';
 import {
   MOCK_ENDPOINTS,
@@ -102,59 +102,125 @@ test.describe('read-aloud audio cache', () => {
     browser,
     baseURL,
   }) => {
-    if (typeof baseURL !== 'string') {
-      throw new Error('baseURL must be configured for mock scenarios');
-    }
-    const user: User = {
-      name: 'TTS Cache',
-      email: `tts-cache-${randomUUID().slice(0, 8)}@example.com`,
-      password: `Pw-${randomUUID()}`,
-    };
-    await cleanupUser(user);
-    const context = await browser.newContext({ storageState: undefined, baseURL });
-    await context.addInitScript(() => {
-      localStorage.setItem('navVisible', 'true');
-    });
-    const page = await context.newPage();
-
-    const register = async (request: APIRequestContext) => {
-      const registered = await request.post('/api/auth/register', {
-        data: {
-          email: user.email,
-          name: user.name,
-          password: user.password,
-          confirm_password: user.password,
-        },
-      });
-      expect(registered.ok()).toBeTruthy();
-    };
-
+    const { context, page, user } = await signInFreshUser(browser, baseURL);
     try {
-      await register(context.request);
-      await page.goto('/login', { timeout: 10000 });
-      await page.getByLabel('Email').fill(user.email);
-      await page.getByLabel('Password').fill(user.password);
-      await page.getByTestId('login-button').click();
-      await page.waitForURL(/\/c\/new/, { timeout: 10000 });
-
       await page.evaluate(async (name) => {
         const cache = await caches.open(name);
         await cache.put('/tts-cache/seeded', new Response(new Blob([new Uint8Array([1, 2, 3])])));
       }, TTS_CACHE);
-      expect(await page.evaluate((name) => caches.has(name), TTS_CACHE)).toBe(true);
+      expect(await hasTTSCache(page)).toBe(true);
 
-      const navUser = page.getByTestId('nav-user');
-      if (!(await navUser.isVisible())) {
-        await page.getByTestId('header-open-sidebar-button').click();
-      }
-      await navUser.click();
-      await page.getByRole('menuitem', { name: 'Log out' }).click();
-      await page.waitForURL(/\/login/, { timeout: 10000 });
+      await logOut(page);
 
-      await expect.poll(() => page.evaluate((name) => caches.has(name), TTS_CACHE)).toBe(false);
+      await expect.poll(() => hasTTSCache(page)).toBe(false);
+    } finally {
+      await context.close().catch(() => undefined);
+      await cleanupUser(user);
+    }
+  });
+
+  test('audio still loading in one tab is not cached after another tab logs out @scenario:tts-cache-stays-cleared-across-tabs', async ({
+    browser,
+    baseURL,
+  }) => {
+    const { context, page, user } = await signInFreshUser(browser, baseURL);
+    try {
+      await page.addInitScript(() => {
+        localStorage.setItem('engineTTS', JSON.stringify('external'));
+        localStorage.setItem('voice', JSON.stringify('alloy'));
+      });
+      await context.route('**/api/files/speech/config/get', (route) =>
+        route.fulfill({
+          json: { textToSpeech: true, engineTTS: 'external', cacheTTS: true, ttsExternal: true },
+        }),
+      );
+      await context.route('**/api/files/speech/tts/voices', (route) =>
+        route.fulfill({ json: ['alloy'] }),
+      );
+      let release: () => void = () => undefined;
+      const held = new Promise<void>((resolve) => (release = resolve));
+      const requested = new Promise<void>((resolve) => {
+        void context.route('**/api/files/speech/tts/manual', async (route) => {
+          resolve();
+          await held;
+          await route.fulfill({
+            body: Buffer.from([0xff, 0xf3, 0x00, 0x00]),
+            contentType: 'audio/mpeg',
+          });
+        });
+      });
+
+      await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+      await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+      const label = `tabs-${randomUUID().slice(0, 8)}`;
+      await sendMessageAndWaitForCompletion(page, replyPrompt(label));
+      await expect(page.getByText(replyText(label)).first()).toBeVisible({ timeout: 20000 });
+
+      await page.getByRole('button', { name: 'Read aloud' }).last().click();
+      await requested;
+
+      const other = await context.newPage();
+      await other.goto(NEW_CHAT_PATH, { timeout: 10000 });
+      await logOut(other);
+
+      const delivered = page.waitForResponse('**/api/files/speech/tts/manual');
+      release();
+      await delivered;
+      /** The first tab would write within a few frames of the response; give it time to. */
+      await page.waitForTimeout(1500);
+      expect(await hasTTSCache(page)).toBe(false);
     } finally {
       await context.close().catch(() => undefined);
       await cleanupUser(user);
     }
   });
 });
+
+const hasTTSCache = (page: Page) => page.evaluate((name) => caches.has(name), TTS_CACHE);
+
+/** A dedicated account, so logging out does not end the session other specs share. */
+async function signInFreshUser(
+  browser: Browser,
+  baseURL: string | undefined,
+): Promise<{ context: BrowserContext; page: Page; user: User }> {
+  if (typeof baseURL !== 'string') {
+    throw new Error('baseURL must be configured for mock scenarios');
+  }
+  const user: User = {
+    name: 'TTS Cache',
+    email: `tts-cache-${randomUUID().slice(0, 8)}@example.com`,
+    password: `Pw-${randomUUID()}`,
+  };
+  await cleanupUser(user);
+  const context = await browser.newContext({ storageState: undefined, baseURL });
+  await context.addInitScript(() => {
+    localStorage.setItem('navVisible', 'true');
+  });
+  const registered = await context.request.post('/api/auth/register', {
+    data: {
+      email: user.email,
+      name: user.name,
+      password: user.password,
+      confirm_password: user.password,
+    },
+  });
+  expect(registered.ok()).toBeTruthy();
+
+  const page = await context.newPage();
+  await page.goto('/login', { timeout: 10000 });
+  await page.getByLabel('Email').fill(user.email);
+  await page.getByLabel('Password').fill(user.password);
+  await page.getByTestId('login-button').click();
+  await page.waitForURL(/\/c\/new/, { timeout: 10000 });
+  return { context, page, user };
+}
+
+async function logOut(page: Page): Promise<void> {
+  const navUser = page.getByTestId('nav-user');
+  if (!(await navUser.isVisible())) {
+    await page.getByTestId('header-open-sidebar-button').click();
+  }
+  await navUser.click();
+  await page.getByRole('menuitem', { name: 'Log out' }).click();
+  await page.waitForURL(/\/login/, { timeout: 10000 });
+}
