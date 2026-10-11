@@ -18,6 +18,7 @@ const ctx: SettingsContextValue = {
   emailEnabled: true,
   allowEmailChange: true,
   passkeyLoginEnabled: false,
+  hasPullRequestConnect: false,
   isTwoFactorPolicyProvider: true,
   twoFactorEnabled: false,
   allowAccountDeletion: true,

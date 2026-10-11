@@ -40,6 +40,7 @@ export function useSettingsContext(): SettingsContextValue {
   const emailEnabled = startupConfig?.emailEnabled === true;
   const allowEmailChange = startupConfig?.allowEmailChange === true;
   const passkeyLoginEnabled = startupConfig?.passkeyLoginEnabled === true;
+  const hasPullRequestConnect = startupConfig?.pullRequestsConnect != null;
   const twoFactorPolicyProvider = user != null && isTwoFactorPolicyProvider(user.provider);
   const twoFactorEnabled = user?.twoFactorEnabled === true;
   const allowAccountDeletion = startupConfig?.allowAccountDeletion !== false;
@@ -79,6 +80,7 @@ export function useSettingsContext(): SettingsContextValue {
       emailEnabled,
       allowEmailChange,
       passkeyLoginEnabled,
+      hasPullRequestConnect,
       isTwoFactorPolicyProvider: twoFactorPolicyProvider,
       twoFactorEnabled,
       allowAccountDeletion,
@@ -105,6 +107,7 @@ export function useSettingsContext(): SettingsContextValue {
       emailEnabled,
       allowEmailChange,
       passkeyLoginEnabled,
+      hasPullRequestConnect,
       twoFactorPolicyProvider,
       twoFactorEnabled,
       allowAccountDeletion,
