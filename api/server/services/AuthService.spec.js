@@ -692,6 +692,9 @@ describe('setOpenIDAuthTokens', () => {
   });
 });
 
+const loggedText = () =>
+  JSON.stringify(['info', 'warn', 'error', 'debug'].map((level) => logger[level].mock.calls));
+
 describe('registerUser', () => {
   const registrationPayload = {
     name: 'Test User',
@@ -779,9 +782,7 @@ describe('registerUser', () => {
     expect(logger.info.mock.calls).toEqual([
       ['[registerUser] Email in use [User ID: existing-id]'],
     ]);
-    const logged = JSON.stringify(
-      ['info', 'warn', 'error', 'debug'].map((level) => logger[level].mock.calls),
-    );
+    const logged = loggedText();
     for (const secret of [
       'dup@example.com',
       'testuser',
@@ -805,10 +806,15 @@ describe('registerUser', () => {
 
     expect(result.status).toBe(404);
     expect(logger.info).toHaveBeenCalled();
-    const logged = JSON.stringify(logger.info.mock.calls);
-    expect(logged).not.toContain('pii-leak@example.com');
-    expect(logged).not.toContain('testuser');
-    expect(logged).not.toContain('Test User');
+    const logged = loggedText();
+    for (const secret of [
+      'pii-leak@example.com',
+      'testuser',
+      'Test User',
+      registrationPayload.password,
+    ]) {
+      expect(logged).not.toContain(secret);
+    }
   });
 });
 
@@ -1243,6 +1249,7 @@ describe('resendVerificationEmail', () => {
     expect(logger.error.mock.calls).toEqual([
       ['[resendVerificationEmail] Error resending verification email:', { type: 'Error' }],
     ]);
+    expect(loggedText()).not.toContain('leak@example.com');
   });
 
   it('should not delete tokens when no user exists for the email', async () => {
