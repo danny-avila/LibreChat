@@ -1,8 +1,37 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MutationKeys, QueryKeys, dataService } from 'librechat-data-provider';
 import type { TPullRequestConnectStart, TPullRequestConnection } from 'librechat-data-provider';
+import type { QueryClient } from '@tanstack/react-query';
 import { useGetStartupConfig } from '../Endpoints';
+
+/** The credential the server looks this user's pull requests up with, as the status shows it. */
+const credentialOf = (status: TPullRequestConnection): string =>
+  status.connected ? `user:${status.provider ?? ''}` : 'server';
+
+/** Per app, the credential its cached pull requests were last refreshed under. */
+const refreshedUnder = new WeakMap<QueryClient, string>();
+
+/**
+ * Refetches every cached pull request when a status shows a different credential than the one
+ * they were last refreshed under: connecting, disconnecting, or a connection moving to another
+ * provider. The first status an app sees refreshes them only when it shows the user's own
+ * account, since anything fetched before it may have used the server's token; one showing the
+ * server's token, the common case, costs nothing. Every path that learns the status goes
+ * through here, so a change refetches pull requests once.
+ */
+export function syncPullRequestConnection(
+  queryClient: QueryClient,
+  status: TPullRequestConnection,
+): void {
+  const credential = credentialOf(status);
+  const previous = refreshedUnder.get(queryClient);
+  refreshedUnder.set(queryClient, credential);
+  if (previous === credential || (previous == null && credential === 'server')) {
+    return;
+  }
+  queryClient.invalidateQueries([QueryKeys.conversationPullRequest]);
+}
 
 /**
  * Whether the signed-in user has connected their own account. Asked only when the deployment
@@ -24,19 +53,16 @@ export const usePullRequestConnectionQuery = () => {
     },
   );
 
-  const connected = query.data?.connected;
-  const previous = useRef(connected);
+  const { data } = query;
   useEffect(() => {
-    if (previous.current != null && connected != null && previous.current !== connected) {
-      queryClient.invalidateQueries([QueryKeys.conversationPullRequest]);
+    if (data != null) {
+      syncPullRequestConnection(queryClient, data);
     }
-    previous.current = connected ?? previous.current;
-  }, [connected, queryClient]);
+  }, [data, queryClient]);
 
   return query;
 };
 
-/** Starts the provider's sign-in; the caller navigates a window it opened to the returned url. */
 /**
  * The same status for what contains the Settings row, so an app the server no longer has hides
  * the whole section, and a later answer that it has one again brings the section back. It shares
@@ -55,6 +81,7 @@ export const usePullRequestConnectionStatus = () => {
   ).data;
 };
 
+/** Starts the provider's sign-in; the caller navigates a window it opened to the returned url. */
 export const useConnectPullRequestAccountMutation = () =>
   useMutation<TPullRequestConnectStart, unknown, void>({
     mutationKey: [MutationKeys.connectPullRequestAccount],
@@ -72,6 +99,8 @@ export const useDisconnectPullRequestAccountMutation = () => {
         (current) => (current == null ? current : { ...current, connected: false }),
       );
       queryClient.invalidateQueries([QueryKeys.pullRequestConnection]);
+      /** A disconnect always leaves the server's token, whatever this app saw before. */
+      refreshedUnder.set(queryClient, 'server');
       queryClient.invalidateQueries([QueryKeys.conversationPullRequest]);
     },
   });

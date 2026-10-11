@@ -1,6 +1,7 @@
 import { QueryKeys, dataService } from 'librechat-data-provider';
 import type { TPullRequestConnection } from 'librechat-data-provider';
 import type { QueryClient } from '@tanstack/react-query';
+import { syncPullRequestConnection } from './connection';
 
 /** How often the status is asked while the sign-in window is still open. */
 export const PULL_REQUEST_CONNECT_POLL_MS = 2000;
@@ -20,7 +21,8 @@ const watches = new WeakMap<QueryClient, Watch>();
  *   ask. The flow may still finish in a window this one lost track of, so until it expires the
  *   status is asked again whenever this window regains focus, and never on a timer.
  * - At `expiresAt` the server's signed state is no longer accepted, so watching ends.
- * - Seeing the account connected ends watching and refetches every cached pull request.
+ * - Seeing the account connected ends watching and refetches every cached pull request, once,
+ *   through the same check a mounted status row uses.
  *
  * A failed status read is not an answer, so watching continues; the row shows the failure.
  * Returns a function that ends the watch.
@@ -51,7 +53,7 @@ export function watchPullRequestSignIn(
       return;
     }
     stop();
-    queryClient.invalidateQueries([QueryKeys.conversationPullRequest]);
+    syncPullRequestConnection(queryClient, status);
   };
 
   const tick = () => {

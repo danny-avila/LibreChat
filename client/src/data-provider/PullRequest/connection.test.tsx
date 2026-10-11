@@ -77,6 +77,51 @@ describe('pull request connection hooks', () => {
     );
   });
 
+  it('refetches cached pull requests when the first status shows the user connected', async () => {
+    mockGetConnection.mockResolvedValueOnce(connection(true));
+    const { wrapper, invalidate } = setup();
+    renderHook(() => usePullRequestConnectionQuery(), { wrapper });
+    await waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith([QueryKeys.conversationPullRequest]),
+    );
+    expect(invalidate).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves cached pull requests alone when the first status shows the server token', async () => {
+    mockGetConnection.mockResolvedValueOnce(connection(false));
+    const { wrapper, invalidate } = setup();
+    const { result } = renderHook(() => usePullRequestConnectionQuery(), { wrapper });
+    await waitFor(() => expect(result.current.data?.connected).toBe(false));
+    expect(invalidate).not.toHaveBeenCalled();
+  });
+
+  it('refreshes pull requests once per change, not on every Settings visit', async () => {
+    mockGetConnection.mockResolvedValue(connection(true));
+    const { wrapper, invalidate } = setup();
+    const first = renderHook(() => usePullRequestConnectionQuery(), { wrapper });
+    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(1));
+    first.unmount();
+
+    const second = renderHook(() => usePullRequestConnectionQuery(), { wrapper });
+    await act(async () => {
+      await second.result.current.refetch();
+    });
+    expect(invalidate).toHaveBeenCalledTimes(1);
+  });
+
+  it('refetches cached pull requests when a connection moves to another provider', async () => {
+    mockGetConnection.mockResolvedValueOnce(connection(true));
+    const { wrapper, invalidate } = setup();
+    const { result } = renderHook(() => usePullRequestConnectionQuery(), { wrapper });
+    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(1));
+
+    mockGetConnection.mockResolvedValueOnce({ ...connection(true), provider: 'gitlab' });
+    await act(async () => {
+      await result.current.refetch();
+    });
+    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(2));
+  });
+
   it('marks the account disconnected and refetches the status and pull requests', async () => {
     mockDisconnect.mockResolvedValue(undefined);
     const { client, wrapper, invalidate } = setup();
