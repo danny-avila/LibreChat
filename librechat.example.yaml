@@ -978,7 +978,8 @@ endpoints:
   #     maxCandidatePages: 1 # pages of those read per state, for branch names reused more often (1 to 10)
   #     maxHeadComparisons: 3 # candidates compared with the chat's last commit (0 to 20)
   #     # Share looked-up pull requests and GitHub rate limit cooldowns between replicas, so they
-  #     # do not each spend the token on the same answer. Only takes effect with USE_REDIS.
+  #     # do not each spend the token on the same answer. Only takes effect with USE_REDIS. Redis
+  #     # holds at most cacheMaxEntries x cacheMaxCredentials results, one per slot.
   #     sharedCache: false
   #     # Milliseconds one shared cache call may take before a lookup carries on without it (10 to 5000).
   #     sharedCacheTimeoutMs: 250

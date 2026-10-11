@@ -1963,10 +1963,13 @@ export const agentsEndpointSchema = baseEndpointSchema
           /** Share looked-up pull requests and GitHub rate limit cooldowns between replicas
            *  through Redis, so each replica does not spend the token on the same answer. Takes
            *  effect only when the deployment runs with Redis (`USE_REDIS`); each replica keeps its
-           *  own in-memory cache either way. */
+           *  own in-memory cache either way. Redis holds at most `cacheMaxEntries` times
+           *  `cacheMaxCredentials` results and `cacheMaxCredentials` cooldowns: each goes in a
+           *  slot picked from its key, replacing what was there. */
           sharedCache: z.boolean().optional().default(false),
           /** Longest one shared cache read or write may take, in milliseconds, before a lookup
-           *  carries on without it, so a slow Redis cannot hold the header request. */
+           *  carries on without it, so a slow Redis cannot hold the header request. A command
+           *  still queued at that point, as during a disconnect, is dropped rather than sent later. */
           sharedCacheTimeoutMs: z.number().int().min(10).max(5000).optional().default(250),
         })
         .optional(),

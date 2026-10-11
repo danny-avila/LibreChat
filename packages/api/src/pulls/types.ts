@@ -84,11 +84,12 @@ export type PullRequestLookupInput = PullRequestFindInput & {
 
 /**
  * Storage the lookup shares with other replicas, so one answer or one rate limit from GitHub serves
- * every replica. Values must round-trip as JSON; `ttlMs` is how long the store may keep one.
+ * every replica. Values must round-trip as JSON; `ttlMs` is how long the store may keep one. A call
+ * still unsent at `timeoutMs` must be dropped, not left queued, and reject.
  */
 export type PullRequestLookupStore = {
-  get(key: string): Promise<unknown>;
-  set(key: string, value: unknown, ttlMs: number): Promise<void>;
+  get(key: string, timeoutMs: number): Promise<unknown>;
+  set(key: string, value: unknown, ttlMs: number, timeoutMs: number): Promise<void>;
 };
 
 export type PullRequestLookup = (input: PullRequestLookupInput) => Promise<PullRequestLookupResult>;

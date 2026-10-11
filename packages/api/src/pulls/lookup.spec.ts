@@ -476,6 +476,9 @@ describe('the repositories the credential may be used for', () => {
   });
 });
 
+const isPlainObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
 describe('the shared store', () => {
   const token = 'ghp_secret_token';
   const shared = { ...input, token, sharedCache: true };
@@ -484,13 +487,13 @@ describe('the shared store', () => {
   function createStore(clock: () => number) {
     const values = new Map<string, { value: unknown; until: number }>();
     const store = {
-      get: jest.fn(async (key: string) => {
+      get: jest.fn(async (key: string, _timeoutMs: number) => {
         const held = values.get(key);
         return held != null && held.until > clock()
           ? JSON.parse(JSON.stringify(held.value))
           : undefined;
       }),
-      set: jest.fn(async (key: string, value: unknown, ttlMs: number) => {
+      set: jest.fn(async (key: string, value: unknown, ttlMs: number, _timeoutMs: number) => {
         values.set(key, { value, until: clock() + ttlMs });
       }),
     };
@@ -608,9 +611,76 @@ describe('the shared store', () => {
     expect(find).toHaveBeenCalledTimes(1);
   });
 
+  /** The key digest a lookup with `shared` writes, so a planted entry differs only as labelled. */
+  async function sharedKey(): Promise<string> {
+    const { store } = createStore(Date.now);
+    await createPullRequestLookup({ source: { find: jest.fn().mockResolvedValue(value) }, store })(
+      shared,
+    );
+    await settle();
+    return (store.set.mock.calls[0][1] as { key: string }).key;
+  }
+
+  it('holds no more results than every partition together, however many branches are looked up', async () => {
+    const { store, values } = createStore(Date.now);
+    const find = jest.fn().mockResolvedValue(value);
+    const lookup = createPullRequestLookup({ source: { find }, store });
+    for (let i = 0; i < 200; i++) {
+      await lookup({ ...shared, branch: `b${i}`, cacheMaxEntries: 10, cacheMaxCredentials: 2 });
+    }
+    await settle();
+    expect(store.set).toHaveBeenCalledTimes(200);
+    expect(values.size).toBeLessThanOrEqual(20);
+  });
+
+  it('holds one rate limit cooldown per credential slot', async () => {
+    const { store, values } = createStore(Date.now);
+    const limited = jest.fn().mockRejectedValue(new PullRequestSourceError('RATE_LIMITED', 60_000));
+    const lookup = createPullRequestLookup({ source: { find: limited }, store });
+    for (let i = 0; i < 50; i++) {
+      await lookup({ ...shared, token: `t${i}`, cacheMaxCredentials: 4 });
+    }
+    await settle();
+    expect([...values.keys()].filter((key) => key.includes('cooldown')).length).toBeLessThanOrEqual(
+      4,
+    );
+  });
+
+  it('gives the store its timeout as the deadline of every call', async () => {
+    const { store } = createStore(Date.now);
+    const lookup = createPullRequestLookup({
+      source: { find: jest.fn().mockResolvedValue(value) },
+      store,
+    });
+    await lookup({ ...shared, sharedCacheTimeoutMs: 75 });
+    await settle();
+    expect(store.get.mock.calls.every((call) => call[1] === 75)).toBe(true);
+    expect(store.set.mock.calls[0][3]).toBe(75);
+  });
+
+  it('serves a well-formed entry stored under its own key', async () => {
+    const key = await sharedKey();
+    const store: PullRequestLookupStore = {
+      get: jest.fn(async (slot: string) =>
+        slot.includes('cooldown')
+          ? undefined
+          : { result: { ok: true, value }, expiresAt: Number.MAX_SAFE_INTEGER, key },
+      ),
+      set: jest.fn(async () => undefined),
+    };
+    const find = jest.fn().mockResolvedValue(null);
+    const lookup = createPullRequestLookup({ source: { find }, store });
+    await expect(lookup(shared)).resolves.toEqual({ ok: true, value });
+    expect(find).not.toHaveBeenCalled();
+  });
+
   it.each([
     ['nothing', undefined],
     ['a string', 'cached'],
+    [
+      'an answer for another key in the same slot',
+      { result: { ok: true, value }, expiresAt: Number.MAX_SAFE_INTEGER, key: 'other' },
+    ],
     ['an entry without an expiry', { result: { ok: true, value } }],
     ['an expiry that is not a number', { result: { ok: true, value }, expiresAt: 'later' }],
     ['a result without ok', { result: { value }, expiresAt: Number.MAX_SAFE_INTEGER }],
@@ -644,9 +714,13 @@ describe('the shared store', () => {
       },
     ],
     ['an entry that has expired', { result: { ok: true, value }, expiresAt: 0 }],
-  ])('ignores %s in the store', async (_label, stored) => {
+  ])('ignores %s in the store', async (_label, planted) => {
+    const key = await sharedKey();
+    const stored = isPlainObject(planted) && !('key' in planted) ? { ...planted, key } : planted;
     const store: PullRequestLookupStore = {
-      get: jest.fn(async (key: string) => (key.includes('cooldown') ? { until: 'soon' } : stored)),
+      get: jest.fn(async (slot: string) =>
+        slot.includes('cooldown') ? { until: 'soon' } : stored,
+      ),
       set: jest.fn(async () => undefined),
     };
     const find = jest.fn().mockResolvedValue(null);
