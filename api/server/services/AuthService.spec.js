@@ -776,10 +776,20 @@ describe('registerUser', () => {
 
     expect(result.status).toBe(200);
     expect(createUser).not.toHaveBeenCalled();
-    const logged = JSON.stringify(logger.info.mock.calls);
-    expect(logged).toContain('existing-id');
-    expect(logged).not.toContain('dup@example.com');
-    expect(logged).not.toContain('testuser');
+    expect(logger.info.mock.calls).toEqual([
+      ['[registerUser] Email in use [User ID: existing-id]'],
+    ]);
+    const logged = JSON.stringify(
+      ['info', 'warn', 'error', 'debug'].map((level) => logger[level].mock.calls),
+    );
+    for (const secret of [
+      'dup@example.com',
+      'testuser',
+      'Test User',
+      registrationPayload.password,
+    ]) {
+      expect(logged).not.toContain(secret);
+    }
   });
 
   it('does not log the registration body on validation failure', async () => {
@@ -1230,9 +1240,9 @@ describe('resendVerificationEmail', () => {
 
     await resendVerificationEmail({ body: { email: 'leak@example.com' } });
 
-    const [, metadata] = logger.error.mock.calls[0];
-    expect(metadata).toEqual({ type: 'Error' });
-    expect(metadata).not.toBeInstanceOf(Error);
+    expect(logger.error.mock.calls).toEqual([
+      ['[resendVerificationEmail] Error resending verification email:', { type: 'Error' }],
+    ]);
   });
 
   it('should not delete tokens when no user exists for the email', async () => {
