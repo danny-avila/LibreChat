@@ -386,7 +386,11 @@ describe('a grant that cannot be read', () => {
     await expect(broken.connected(user, github)).rejects.toThrow('key unavailable');
   });
 
-  it('treats a stored value that is not a grant as no connection', async () => {
+  it.each([
+    ['text that is not JSON', 'not json'],
+    ['JSON that is not a grant', JSON.stringify({ accessToken: 7, clientId: github.clientId })],
+    ['a grant without its app', JSON.stringify({ accessToken: 'kept' })],
+  ])('reports %s as a failure, not as a disconnection', async (_label, plaintext) => {
     const { oauth } = setup([() => json({ access_token: 'kept' })]);
     const user = userId();
     await connect(oauth, user);
@@ -396,9 +400,10 @@ describe('a grant that cannot be read', () => {
       secret,
       redirectUri,
       encrypt,
-      decrypt: async () => 'not json',
+      decrypt: async () => plaintext,
     });
-    await expect(garbled.token(user, github)).resolves.toBeNull();
+    await expect(garbled.token(user, github)).rejects.toThrow('malformed');
+    await expect(garbled.connected(user, github)).rejects.toThrow('malformed');
   });
 });
 

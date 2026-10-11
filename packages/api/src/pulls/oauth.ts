@@ -95,6 +95,14 @@ type Grant = {
   clientId: string;
 };
 
+/** A stored grant that decrypts but is not one this service wrote: corruption, not absence. */
+class MalformedGrantError extends Error {
+  constructor() {
+    super('The stored pull request grant is malformed');
+    this.name = 'MalformedGrantError';
+  }
+}
+
 /** Thrown for a grant the provider refused, as opposed to one it could not be asked about. A
  *  refusal disconnects the user, so only a definite one is: a server error is an outage, whatever
  *  its body says. */
@@ -242,24 +250,26 @@ export function createPullRequestOAuth({
   ): Promise<{ row: PullRequestOAuthRow; grant: Grant } | null> {
     const row = await store.findToken({ scope: scopeOf(userId, config) });
     if (row == null) return null;
-    /** A decryption failure (a missing or rotated key) is an outage, not an absent connection,
-     *  so it propagates; only a stored value that is not a grant reads as none. */
+    /** Only this service writes the row, so a value that does not decrypt (a missing or rotated
+     *  key) or is not a grant is a failure, not an absent connection, and it propagates. A grant
+     *  issued to another OAuth app, from before the app was replaced, is no connection to this one. */
     const plaintext = await decrypt(row.token);
     let parsed: unknown;
     try {
       parsed = JSON.parse(plaintext);
     } catch {
-      return null;
+      throw new MalformedGrantError();
     }
     if (
       !isRecord(parsed) ||
       !isToken(parsed.accessToken) ||
-      parsed.clientId !== config.clientId ||
+      typeof parsed.clientId !== 'string' ||
       (parsed.refreshToken !== undefined && !isToken(parsed.refreshToken)) ||
       (parsed.accessExpiresAt !== undefined && typeof parsed.accessExpiresAt !== 'number')
     ) {
-      return null;
+      throw new MalformedGrantError();
     }
+    if (parsed.clientId !== config.clientId) return null;
     return { row, grant: parsed as Grant };
   }
 
