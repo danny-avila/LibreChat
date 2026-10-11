@@ -101,6 +101,7 @@ describe('AnalyticsConsent', () => {
   it('tells a loaded container that consent was withdrawn', () => {
     localStorage.setItem('analyticsConsent', JSON.stringify('denied'));
     window.dataLayer = [];
+    window.google_tag_manager = { 'GTM-TEST': {} };
     renderConsent('GTM-TEST');
     expect(window.dataLayer).toHaveLength(1);
     expect(Array.from(window.dataLayer[0] as ArrayLike<unknown>)).toEqual([
@@ -123,5 +124,14 @@ describe('AnalyticsConsent', () => {
       'update',
       expect.objectContaining({ analytics_storage: 'granted', ad_storage: 'granted' }),
     ]);
+  });
+
+  it('leaves the data layer alone when the configured container is not on the page', () => {
+    localStorage.setItem('analyticsConsent', JSON.stringify('denied'));
+    window.dataLayer = [];
+    window.google_tag_manager = { 'GTM-OTHER': {} };
+    renderConsent('GTM-TEST');
+    renderConsent(undefined);
+    expect(window.dataLayer).toHaveLength(0);
   });
 });
