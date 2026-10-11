@@ -743,6 +743,45 @@ describe('the shared store', () => {
     expect(store.set).not.toHaveBeenCalled();
   });
 
+  it('serves a shared answer while this replica is cooling down', async () => {
+    const { store } = createStore(Date.now);
+    const limited = jest.fn().mockRejectedValue(new PullRequestSourceError('RATE_LIMITED', 60_000));
+    const cooled = createPullRequestLookup({ source: { find: limited }, store });
+    const other = createPullRequestLookup({
+      source: { find: jest.fn().mockResolvedValue(value) },
+      store,
+    });
+    await other({ ...shared, branch: 'other' });
+    await settle();
+    await cooled({ ...shared, branch: 'limited' });
+    await settle();
+    await expect(cooled({ ...shared, branch: 'other' })).resolves.toEqual({ ok: true, value });
+    /** Nothing stored for this branch, so the cooldown still answers without asking GitHub. */
+    await expect(cooled({ ...shared, branch: 'third' })).resolves.toEqual({
+      ok: false,
+      error: { code: 'RATE_LIMITED' },
+    });
+    expect(limited).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not join a lookup running under another sharing policy', async () => {
+    const { store } = createStore(Date.now);
+    let release: (pr: typeof value) => void = () => undefined;
+    const answer = new Promise<typeof value>((resolve) => (release = resolve));
+    const find = jest.fn(() => answer);
+    const lookup = createPullRequestLookup({ source: { find }, store });
+    const local = lookup({ ...input, token, sharedCache: false });
+    const fast = lookup({ ...shared, sharedCacheTimeoutMs: 10 });
+    const slow = lookup({ ...shared, sharedCacheTimeoutMs: 5_000 });
+    await settle();
+    /** The local caller never reached the store; each shared deadline asked it on its own. */
+    expect(store.get.mock.calls.map((call) => call[1]).sort((x, y) => x - y)).toEqual([
+      10, 10, 5_000, 5_000,
+    ]);
+    release(value);
+    await Promise.all([local, fast, slow]);
+  });
+
   it('does not split the cache by whether it is shared', async () => {
     const find = jest.fn().mockResolvedValue(value);
     const lookup = createPullRequestLookup({

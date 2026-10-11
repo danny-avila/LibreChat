@@ -1,7 +1,6 @@
 import { CacheKeys } from 'librechat-data-provider';
 import type { PullRequestLookupStore } from '~/pulls/types';
-import { keyvRedisClient } from './redisClients';
-import { cacheConfig } from './cacheConfig';
+import type { cacheConfig } from './cacheConfig';
 
 /** The commands the store sends; the single-node and the cluster client both provide them. */
 type StoreCommands = {
@@ -13,6 +12,12 @@ export type PullRequestStoreClient = {
   withCommandOptions(options: { timeout: number }): StoreCommands;
 };
 
+/** The deployment's cache settings the store follows: whether Redis is on, and its key prefix. */
+export type PullRequestStoreConfig = Pick<
+  typeof cacheConfig,
+  'USE_REDIS' | 'FORCED_IN_MEMORY_CACHE_NAMESPACES' | 'REDIS_KEY_PREFIX' | 'GLOBAL_PREFIX_SEPARATOR'
+>;
+
 /**
  * The store pull request lookups share between replicas, or `undefined` when there is nothing to
  * share it through: without Redis, or with the namespace forced in memory, each replica's own
@@ -22,18 +27,22 @@ export type PullRequestStoreClient = {
  * passes, such as one held in the offline queue while Redis is disconnected, is taken out of the
  * queue and rejected, so a Redis outage does not pile up commands to replay on reconnect.
  */
-export function createPullRequestLookupStore(
-  client: PullRequestStoreClient | null = keyvRedisClient,
-): PullRequestLookupStore | undefined {
+export function createPullRequestLookupStore({
+  client,
+  config,
+}: {
+  client: PullRequestStoreClient | null;
+  config: PullRequestStoreConfig;
+}): PullRequestLookupStore | undefined {
   if (
     client == null ||
-    !cacheConfig.USE_REDIS ||
-    cacheConfig.FORCED_IN_MEMORY_CACHE_NAMESPACES?.includes(CacheKeys.PULL_REQUESTS)
+    !config.USE_REDIS ||
+    config.FORCED_IN_MEMORY_CACHE_NAMESPACES?.includes(CacheKeys.PULL_REQUESTS)
   ) {
     return undefined;
   }
-  const prefix = cacheConfig.REDIS_KEY_PREFIX
-    ? `${cacheConfig.REDIS_KEY_PREFIX}${cacheConfig.GLOBAL_PREFIX_SEPARATOR}${CacheKeys.PULL_REQUESTS}:`
+  const prefix = config.REDIS_KEY_PREFIX
+    ? `${config.REDIS_KEY_PREFIX}${config.GLOBAL_PREFIX_SEPARATOR}${CacheKeys.PULL_REQUESTS}:`
     : `${CacheKeys.PULL_REQUESTS}:`;
   return {
     get: async (key, timeoutMs) => {

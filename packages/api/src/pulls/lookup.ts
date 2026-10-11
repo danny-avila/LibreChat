@@ -248,18 +248,22 @@ export function createPullRequestLookup({
     const key = `${scope}\0${provider ?? ''}\0${host ?? ''}\0${repo}#${branch}\0${head ?? ''}\0${pullRequest ?? ''}\0${policy}`;
     const cached = touch(scope)?.get(key);
     if (cached != null && cached.expiresAt > now()) return cached.result;
-    const pending = inflight.get(key);
+    /** Only when this caller's settings ask for it; the store is there whenever Redis is. */
+    const shared = sharedCache === true ? store : undefined;
+    /** A caller joins only work run under its own sharing policy, so its toggle and deadline hold. */
+    const flight = shared != null ? `${key}\0shared\0${sharedCacheTimeoutMs}` : key;
+    const pending = inflight.get(flight);
     if (pending != null) return pending;
     /** A rate limit belongs to the credential on one provider host; elsewhere it is not limited. */
     const limitScope = `${scope}\0${provider ?? ''}\0${host ?? ''}`;
+    let cooling = false;
     const until = cooldowns.get(limitScope);
     if (until != null) {
-      if (until > now()) return rateLimited;
-      cooldowns.delete(limitScope);
+      if (until > now()) cooling = true;
+      else cooldowns.delete(limitScope);
     }
-
-    /** Only when this caller's settings ask for it; the store is there whenever Redis is. */
-    const shared = sharedCache === true ? store : undefined;
+    /** Another replica may already hold the answer, so only a lookup without the store stops here. */
+    if (cooling && shared == null) return rateLimited;
     const lifetimeOf = (result: PullRequestLookupResult): number =>
       result.ok ? ttlMs : Math.min(ttlMs, FAILURE_TTL_MS);
     const capacity = cacheMaxEntries ?? maxEntries;
@@ -282,6 +286,7 @@ export function createPullRequestLookup({
           remember(scope, key, { result: stored.result, expiresAt }, capacity, credentials);
           return stored.result;
         }
+        if (cooling) return rateLimited;
         if (isCooldown(cooldown, cooldownDigest) && cooldown.until > now()) {
           startCooldown(limitScope, Math.min(cooldown.until, now() + MAX_COOLDOWN_MS));
           return rateLimited;
@@ -334,8 +339,8 @@ export function createPullRequestLookup({
         share(shared, storeKey, { ...entry, key: resultDigest }, lifetime, sharedCacheTimeoutMs);
       }
       return result;
-    })().finally(() => inflight.delete(key));
-    inflight.set(key, run);
+    })().finally(() => inflight.delete(flight));
+    inflight.set(flight, run);
     return run;
   };
 }
