@@ -9,6 +9,7 @@ import {
   InfoHoverCard,
   useOnClickOutside,
 } from '@librechat/client';
+import { TTS_CACHE_NAME } from '~/utils';
 import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
 
@@ -22,7 +23,7 @@ export const DeleteCache = ({ disabled = false }: { disabled?: boolean }) => {
   useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);
 
   const checkCache = useCallback(async () => {
-    const cache = await caches.open('tts-responses');
+    const cache = await caches.open(TTS_CACHE_NAME);
     const keys = await cache.keys();
     setIsCacheEmpty(keys.length === 0);
   }, []);
@@ -33,7 +34,7 @@ export const DeleteCache = ({ disabled = false }: { disabled?: boolean }) => {
 
   const revokeAllUserKeys = useCallback(async () => {
     setIsLoading(true);
-    const cache = await caches.open('tts-responses');
+    const cache = await caches.open(TTS_CACHE_NAME);
     await cache.keys().then((keys) => Promise.all(keys.map((key) => cache.delete(key))));
     setIsLoading(false);
   }, []);

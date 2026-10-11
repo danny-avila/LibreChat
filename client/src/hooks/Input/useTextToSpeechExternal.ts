@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import { useTextToSpeechMutation, useVoicesQuery } from '~/data-provider';
+import { getTTSCacheKey, TTS_CACHE_NAME } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -106,10 +107,14 @@ function useTextToSpeechExternal({
         const audioBlob = new Blob([data], { type: 'audio/mpeg' });
 
         if (cacheTTS && inputText) {
-          const cache = await caches.open('tts-responses');
-          const request = new Request(inputText);
-          const response = new Response(audioBlob);
-          cache.put(request, response);
+          const cacheKey = await getTTSCacheKey(
+            inputText,
+            (variables.get('voice') ?? '') as string,
+          );
+          if (cacheKey) {
+            const cache = await caches.open(TTS_CACHE_NAME);
+            await cache.put(cacheKey, new Response(audioBlob));
+          }
         }
 
         const blobUrl = URL.createObjectURL(audioBlob);

@@ -10,9 +10,9 @@ import {
   MediaSourceAppender,
   usePauseGlobalAudio,
 } from '~/hooks/Audio';
+import { logger, getTTSCacheKey, TTS_CACHE_NAME } from '~/utils';
 import { useAuthContext } from '~/hooks';
 import { globalAudioId } from '~/common';
-import { logger } from '~/utils';
 import store from '~/store';
 
 function timeoutPromise(ms: number, message?: string) {
@@ -68,9 +68,11 @@ export default function StreamAudio({ index = 0 }) {
 
         /** Keyed by the spoken text, as manual playback is, so audio cached from an
          *  unfiltered message (reasoning included) is never replayed. */
-        let cacheKey = latestMessage ? getSpeechText(latestMessage) : '';
-        const cache = await caches.open('tts-responses');
-        const cachedResponse = await cache.match(cacheKey);
+        let cacheKey = latestMessage
+          ? await getTTSCacheKey(getSpeechText(latestMessage), voice)
+          : null;
+        const cache = await caches.open(TTS_CACHE_NAME);
+        const cachedResponse = cacheKey ? await cache.match(cacheKey) : undefined;
 
         setAudioRunId(activeRunId);
         if (cachedResponse) {
@@ -141,7 +143,9 @@ export default function StreamAudio({ index = 0 }) {
             const targetMessage = latestMessages.find(
               (msg) => msg.messageId === latestMessage?.messageId,
             );
-            cacheKey = targetMessage ? getSpeechText(targetMessage) : '';
+            cacheKey = targetMessage
+              ? await getTTSCacheKey(getSpeechText(targetMessage), voice)
+              : null;
             if (!cacheKey) {
               logger.warn('Cache key not found, skipping audio cache');
             } else {

@@ -521,6 +521,19 @@ describe('AuthContextProvider — logout onSuccess/onError handling', () => {
     expect(mockEndPullRequestSession).toHaveBeenCalled();
   });
 
+  it('clears the TTS cache at the logout session boundary', () => {
+    const del = jest.fn().mockResolvedValue(true);
+    Object.defineProperty(globalThis, 'caches', { value: { delete: del }, configurable: true });
+    renderProvider();
+
+    act(() => {
+      mockCapturedLogoutOptions.onSuccess({ message: 'Logout successful' });
+    });
+
+    expect(del).toHaveBeenCalledWith('tts-responses');
+    Reflect.deleteProperty(globalThis, 'caches');
+  });
+
   it('does not end the sidebar pull request queue while a session is being established', () => {
     mockEndPullRequestSession.mockClear();
     renderProvider();

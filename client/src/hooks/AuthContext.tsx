@@ -27,6 +27,7 @@ import type { ReactNode } from 'react';
 import {
   isSafeRedirect,
   getPostLoginRedirect,
+  clearTTSCache,
   clearPostLoginRedirect,
   persistRedirectToSession,
   clearComposerDraftStorage,
@@ -66,6 +67,7 @@ const endSessionClientState = (): void => {
   clearRetainedFileDeletions();
   clearComposerDraftStorage();
   endPullRequestSession();
+  void clearTTSCache();
 };
 /**
  * Only recognized codes override the HTTP status used by the login error translation.
