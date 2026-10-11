@@ -1,4 +1,5 @@
 const { Keyv } = require('keyv');
+const { logger } = require('@librechat/data-schemas');
 const { Time, CacheKeys, ViolationTypes } = require('librechat-data-provider');
 const {
   logFile,
@@ -126,18 +127,20 @@ async function clearExpiredFromCache(cache) {
         const deleted = await cache.opts.store.delete(key);
         if (!deleted) {
           cacheConfig.DEBUG_MEMORY_CACHE &&
-            console.warn(`[Cache] Error deleting entry: ${key} from ${cache.opts.namespace}`);
+            logger.warn(`[Cache] Error deleting entry from ${cache.opts.namespace}`);
           continue;
         }
         cleared++;
       }
     } catch (error) {
       cacheConfig.DEBUG_MEMORY_CACHE &&
-        console.log(`[Cache] Error processing entry from ${cache.opts.namespace}:`, error);
+        logger.debug(`[Cache] Error processing entry from ${cache.opts.namespace}`, {
+          error: error?.name,
+        });
       const deleted = await cache.opts.store.delete(key);
       if (!deleted) {
         cacheConfig.DEBUG_MEMORY_CACHE &&
-          console.warn(`[Cache] Error deleting entry: ${key} from ${cache.opts.namespace}`);
+          logger.warn(`[Cache] Error deleting entry from ${cache.opts.namespace}`);
         continue;
       }
       cleared++;
@@ -146,29 +149,42 @@ async function clearExpiredFromCache(cache) {
 
   if (cleared > 0) {
     cacheConfig.DEBUG_MEMORY_CACHE &&
-      console.log(
+      logger.debug(
         `[Cache] Cleared ${cleared} entries older than ${ttl}ms from ${cache.opts.namespace}`,
       );
   }
 }
 
+/**
+ * Logs per-namespace entry counts and TTL info only. Cache values and keys can hold
+ * tokens, challenges, message content, or user identifiers, so neither is ever output.
+ */
 const auditCache = () => {
   const ttlStores = getTTLStores();
-  console.log('[Cache] Starting audit');
+  logger.debug('[Cache] Starting audit');
 
   ttlStores.forEach((store) => {
     if (!store?.opts?.store?.entries) {
       return;
     }
 
-    console.log(`[Cache] ${store.opts.namespace} entries:`, {
+    const expiries = [];
+    for (const raw of store.opts.store.values()) {
+      try {
+        const expires = store.opts.deserialize(raw)?.expires;
+        if (typeof expires === 'number') {
+          expiries.push(expires);
+        }
+      } catch {
+        /* entry unreadable: omit from expiry range */
+      }
+    }
+
+    logger.debug(`[Cache] ${store.opts.namespace} entries:`, {
       count: store.opts.store.size,
       ttl: store.opts.ttl,
-      keys: Array.from(store.opts.store.keys()),
-      entriesWithTimestamps: Array.from(store.opts.store.entries()).map(([key, value]) => ({
-        key,
-        value,
-      })),
+      earliestExpiry: expiries.length ? new Date(Math.min(...expiries)).toISOString() : null,
+      latestExpiry: expiries.length ? new Date(Math.max(...expiries)).toISOString() : null,
     });
   });
 };
@@ -203,7 +219,7 @@ if (!cacheConfig.USE_REDIS && !cacheConfig.CI) {
       const memory = process.memoryUsage();
       const totalSize = ttlStores.reduce((sum, store) => sum + (store.opts?.store?.size ?? 0), 0);
 
-      console.log('[Cache] Memory usage:', {
+      logger.debug('[Cache] Memory usage:', {
         heapUsed: `${(memory.heapUsed / 1024 / 1024).toFixed(2)} MB`,
         heapTotal: `${(memory.heapTotal / 1024 / 1024).toFixed(2)} MB`,
         rss: `${(memory.rss / 1024 / 1024).toFixed(2)} MB`,
@@ -221,11 +237,11 @@ if (!cacheConfig.USE_REDIS && !cacheConfig.CI) {
   // (see packages/api/src/app/shutdown.ts) rather than attaching a direct
   // signal handler — multiple competing handlers race the HTTP drain.
   registerShutdownTask('cache cleanup', async () => {
-    cacheConfig.DEBUG_MEMORY_CACHE && console.log('[Cache] Cleaning up and shutting down...');
+    cacheConfig.DEBUG_MEMORY_CACHE && logger.debug('[Cache] Cleaning up and shutting down...');
     cleanupIntervals.forEach((interval) => clearInterval(interval));
     cleanupIntervals.clear();
     await clearAllExpiredFromCache();
-    cacheConfig.DEBUG_MEMORY_CACHE && console.log('[Cache] Final cleanup completed');
+    cacheConfig.DEBUG_MEMORY_CACHE && logger.debug('[Cache] Final cleanup completed');
   });
 }
 
@@ -245,3 +261,4 @@ const getLogStores = (key) => {
 };
 
 module.exports = getLogStores;
+module.exports.auditCache = auditCache;
