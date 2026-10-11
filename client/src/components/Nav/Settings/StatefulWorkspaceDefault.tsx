@@ -54,7 +54,11 @@ export default function StatefulWorkspaceDefault() {
 
   const options = STATEFUL_CODE_ENVIRONMENTS.filter(
     (candidate) => allowedEnvironments.includes(candidate) || candidate === savedEnvironment,
-  ).map((candidate) => ({ value: candidate, label: localize(ENVIRONMENT_LABELS[candidate]) }));
+  ).map((candidate) => ({
+    value: candidate,
+    label: localize(ENVIRONMENT_LABELS[candidate]),
+    disabled: !allowedEnvironments.includes(candidate),
+  }));
 
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">

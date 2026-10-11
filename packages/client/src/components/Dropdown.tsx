@@ -291,6 +291,7 @@ const Dropdown: React.FC<DropdownProps> = ({
               <Select.SelectItem
                 key={`option-${index}`}
                 value={String(option.value)}
+                disabled={option.disabled === true}
                 className="select-item"
                 data-theme={option.value}
               >

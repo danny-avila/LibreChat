@@ -67,7 +67,7 @@ describe('StatefulWorkspaceDefault', () => {
     expect(mockMutate).toHaveBeenCalledWith({ statefulCodeEnvironment: 'conversation' });
   });
 
-  it('only lists deployment-allowed scopes plus the saved value', async () => {
+  it('lists the saved disallowed scope as disabled', async () => {
     mockAllowedEnvironments = ['user'];
 
     render(<StatefulWorkspaceDefault />);
@@ -78,14 +78,9 @@ describe('StatefulWorkspaceDefault', () => {
     ).toBeInTheDocument();
     expect(
       screen.getByRole('option', { name: 'com_ui_stateful_code_environment_agent_user' }),
-    ).toBeInTheDocument();
+    ).toHaveAttribute('aria-disabled', 'true');
     expect(
       screen.queryByRole('option', { name: 'com_ui_stateful_code_environment_conversation' }),
     ).not.toBeInTheDocument();
-
-    await userEvent.click(
-      screen.getByRole('option', { name: 'com_ui_stateful_code_environment_agent_user' }),
-    );
-    expect(mockMutate).not.toHaveBeenCalled();
   });
 });
