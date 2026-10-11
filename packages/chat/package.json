@@ -60,6 +60,9 @@
   "peerDependencies": {
     "librechat-data-provider": "*"
   },
+  "dependencies": {
+    "sse.js": "^2.8.0"
+  },
   "devDependencies": {
     "@babel/preset-env": "^7.29.5",
     "@babel/preset-react": "^7.22.15",
