@@ -628,6 +628,29 @@ const supportedMimeTypesSchema = z
   )
   .optional();
 
+/**
+ * Server-side resolution applied when storing image uploads. Matches the shapes
+ * `resizeImageBuffer` accepts: a named preset (`'high'`: short side <= 768px,
+ * long side <= 2000px; `'low'`: fits within 512x512), or `{ px }` capping the
+ * longest edge (aspect ratio kept), or `{ percentage }` scaling relative to the
+ * original. Unset falls back to `'high'` at the storage handlers.
+ */
+export const imageUploadResizeSchema = z
+  .union([
+    z.enum(['high', 'low']),
+    z
+      .object({
+        percentage: z.number().min(0).max(100).optional(),
+        px: z.number().int().positive().optional(),
+      })
+      .strict()
+      .refine((v) => v.percentage !== undefined || v.px !== undefined, {
+        message: 'imageUploadResize requires `percentage` or `px`',
+      }),
+  ])
+  .optional();
+export type TImageUploadResize = z.infer<typeof imageUploadResizeSchema>;
+
 export const DefaultLLMDeliveryPath = z.enum(['provider', 'text', 'none']);
 export type TDefaultLLMDeliveryPath = z.infer<typeof DefaultLLMDeliveryPath>;
 
@@ -669,6 +692,7 @@ export const fileConfigSchema = z.object({
       px: z.number().min(0).optional(),
     })
     .optional(),
+  imageUploadResize: imageUploadResizeSchema,
   clientImageResize: z
     .object({
       enabled: z.boolean().optional(),

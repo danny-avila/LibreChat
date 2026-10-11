@@ -493,6 +493,11 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
     file,
     file_id,
     endpoint,
+    /* Server-side resize for stored uploads, from `fileConfig.imageUploadResize`
+     * ('high'/'low' or { px | percentage }); the handlers default to 'high' when
+     * unset. Providers whose image tools work on the stored upload (and some local
+     * OpenAI-compatible servers that size output to their input) inherit this cap. */
+    resolution: appConfig?.fileConfig?.imageUploadResize ?? 'high',
   });
   const storageMetadata = getStorageMetadata({ filepath, source, storageKey, storageRegion });
 
