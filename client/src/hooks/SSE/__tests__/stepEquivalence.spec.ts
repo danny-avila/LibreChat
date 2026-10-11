@@ -28,14 +28,14 @@ import {
 import { ptcTraceByToolCallId, ptcTraceKey } from '~/store/ptc';
 import { sandboxStartingByToolCallId } from '~/store/sandbox';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
-import legacyStepHandler from './legacyStepHandler';
 
 /**
  * Equivalence table for the step reducer. Each row is an event sequence shaped like a recorded
  * agent stream, with the frame boundaries and run-boundary calls the SSE hooks make. The digest
  * pins what the pre-reducer `stepHandler` produced for the row on every channel it writes: each
- * message-list write, each announcement, each host callback, and the live-status atoms. A row
- * whose digest moves changed observable behavior.
+ * message-list write, each announcement, each host callback, and the live-status atoms. The
+ * digests were recorded by running that handler side by side with this binding and requiring
+ * equal logs, so a row whose digest moves changed observable behavior.
  */
 
 const PRELIM: string = Constants.USE_PRELIM_RESPONSE_MESSAGE_ID;
@@ -223,7 +223,7 @@ const rows: Row[] = [
       { call: 'flushPendingDeltas' },
       { frame: true },
     ],
-    digest: '',
+    digest: '078e3ccb88c2a351',
   },
   {
     name: 'replays deltas that arrive before their run step',
@@ -236,7 +236,7 @@ const rows: Row[] = [
       toolStep('t1', 1, [{ id: 'call-1', name: 'search' }]),
       { frame: true },
     ],
-    digest: '',
+    digest: 'b11e5d4a36c3f25d',
   },
   {
     name: 'times a tool call from preparation to close',
@@ -262,7 +262,7 @@ const rows: Row[] = [
       closed('t1', 0),
     ],
     sandbox: ['call-1', 'call-2'],
-    digest: '',
+    digest: '43800a3620d7f481',
   },
   {
     name: 'reports a skill file authored by a tool call',
@@ -276,7 +276,7 @@ const rows: Row[] = [
         output: 'written',
       }),
     ],
-    digest: '',
+    digest: '3655708ced395a6c',
   },
   {
     name: 'regenerates an earlier branch through the preliminary id',
@@ -292,7 +292,7 @@ const rows: Row[] = [
       ],
     },
     steps: [textStep('s1', 0, PRELIM), text('s1', 'again'), { frame: true }],
-    digest: '',
+    digest: '55ebe9bf5b9df0ea',
   },
   {
     name: 'continues an edit after its retained prefix',
@@ -311,7 +311,7 @@ const rows: Row[] = [
       text('s2', 'tail'),
       { frame: true },
     ],
-    digest: '',
+    digest: 'bcf040ec24e470fc',
   },
   {
     name: 'streams and settles a summary',
@@ -334,7 +334,7 @@ const rows: Row[] = [
         },
       } as StepEvent,
     ],
-    digest: '',
+    digest: '141779fddd2f4add',
   },
   {
     name: 'announces a failed summary',
@@ -346,7 +346,7 @@ const rows: Row[] = [
         data: { id: 'sum1', agentId: 'a1', error: 'boom' },
       } as StepEvent,
     ],
-    digest: '',
+    digest: 'f63470a3394dbd94',
   },
   {
     name: 'records an agent handoff',
@@ -361,7 +361,7 @@ const rows: Row[] = [
         },
       },
     ],
-    digest: '',
+    digest: '48f03bdf6613a5f0',
   },
   {
     name: 'routes subagent envelopes to their parent occurrence',
@@ -379,7 +379,7 @@ const rows: Row[] = [
       subagentProgressKey('resp-1', 'call-sub', 0),
       subagentProgressKey('resp-2', 'call-sub-2', 0),
     ],
-    digest: '',
+    digest: '4e5902ea8131cf80',
   },
   {
     name: 'folds a programmatic tool-call trace and settles it across a gap',
@@ -396,7 +396,7 @@ const rows: Row[] = [
       ['resp-1', 'call_ptc'],
       ['resp-prelim', 'call_ptc'],
     ],
-    digest: '',
+    digest: '574046928a1a938b',
   },
   {
     name: 'restores a user turn missing from another tab',
@@ -407,7 +407,7 @@ const rows: Row[] = [
       response({ messageId: 'resp-placeholder', parentMessageId: 'user-1' }),
     ],
     steps: [textStep('s1', 0), text('s1', 'hi'), { frame: true }],
-    digest: '',
+    digest: '2196daeec40a5ec4',
   },
   {
     name: 'keeps the compaction anchor of a compact regenerate',
@@ -419,7 +419,7 @@ const rows: Row[] = [
       messages: [user(), response({ messageId: 'anchor', parentMessageId: 'user-1' })],
     },
     steps: [summaryStep('sum1', 0), summaryDelta('sum1', 'short'), { frame: true }],
-    digest: '',
+    digest: 'bec603f100020017',
   },
   {
     name: 'drops a queued flush at an abort boundary',
@@ -434,13 +434,11 @@ const rows: Row[] = [
       textStep('s1', 0),
       { frame: true },
     ],
-    digest: '',
+    digest: '3e9b683cabfffbcc',
   },
 ];
 
-type Hook = typeof useStepHandler;
-
-function run(hook: Hook, row: Row) {
+function run(hook: typeof useStepHandler, row: Row) {
   takeRegisteredSubagentProgressKeys();
   const store = createStore();
   let cache: TMessage[] = row.cache ?? [];
@@ -541,14 +539,10 @@ describe('step reducer equivalence', () => {
   });
 
   it.each(rows.map((row) => [row.name, row] as const))('%s', (_name, row) => {
-    jest.spyOn(Date, 'now').mockReturnValue(1_000_000);
-    const before = run(legacyStepHandler, row);
-    jest.spyOn(Date, 'now').mockReturnValue(1_000_000);
-    const after = run(useStepHandler, row);
-    expect(after).toEqual(before);
+    const log = run(useStepHandler, row);
     expect(
-      before.writes.length + before.callbacks.length + Object.keys(before.atoms).length,
+      log.writes.length + log.callbacks.length + Object.keys(log.atoms).length,
     ).toBeGreaterThan(0);
-    console.log(row.name, digest(before));
+    expect(digest(log)).toBe(row.digest);
   });
 });
