@@ -337,7 +337,7 @@ export default function CodeEnvironments() {
                         type="button"
                         variant="outline"
                         size="sm"
-                        aria-label={`${localize('com_ui_delete')} ${environment.name}`}
+                        aria-label={localize('com_ui_delete_var', { 0: environment.name })}
                       >
                         {localize('com_ui_delete')}
                       </Button>

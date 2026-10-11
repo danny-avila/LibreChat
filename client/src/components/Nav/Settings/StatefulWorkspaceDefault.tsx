@@ -73,6 +73,7 @@ export default function StatefulWorkspaceDefault() {
         disabled={mutation.isLoading}
         testId="default-stateful-workspace"
         aria-labelledby="default-stateful-workspace-label"
+        aria-describedby="default-stateful-workspace-description"
         className="shrink-0"
         sizeClasses="z-50 min-w-[18rem]"
         triggerClassName="w-full sm:w-[16rem]"

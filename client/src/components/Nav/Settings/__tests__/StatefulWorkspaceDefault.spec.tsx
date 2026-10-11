@@ -48,6 +48,14 @@ describe('StatefulWorkspaceDefault', () => {
     );
   });
 
+  it('describes the trigger with the workspace explanation', () => {
+    render(<StatefulWorkspaceDefault />);
+
+    expect(screen.getByTestId('default-stateful-workspace')).toHaveAccessibleDescription(
+      'com_ui_default_stateful_workspace_description',
+    );
+  });
+
   it('persists a new default for future agents', async () => {
     render(<StatefulWorkspaceDefault />);
 
