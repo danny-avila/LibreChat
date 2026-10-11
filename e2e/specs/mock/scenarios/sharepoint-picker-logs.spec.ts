@@ -69,7 +69,12 @@ test('picking SharePoint files keeps file names and tokens out of the console @s
 }) => {
   test.setTimeout(60000);
   const logged: string[] = [];
-  page.on('console', (message) => logged.push(message.text()));
+  page.on('console', async (message) => {
+    const args = await Promise.all(
+      message.args().map((arg) => arg.jsonValue().catch(() => '[unserializable]')),
+    );
+    logged.push([message.text(), ...args.map((arg) => JSON.stringify(arg))].join(' '));
+  });
   await enableSharePoint(page);
 
   await page.goto(NEW_CHAT_PATH);
@@ -82,8 +87,8 @@ test('picking SharePoint files keeps file names and tokens out of the console @s
 
   await expect.poll(() => logged.some((text) => text.includes('download failed'))).toBe(true);
 
-  const leaked = logged.filter(
-    (text) => text.includes(SECRET_FILE_NAME) || text.includes(SECRET_TOKEN),
+  const leaked = logged.filter((text) =>
+    [SECRET_FILE_NAME, SECRET_TOKEN, DOWNLOAD_URL].some((secret) => text.includes(secret)),
   );
   expect(leaked).toEqual([]);
 });
