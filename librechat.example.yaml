@@ -950,6 +950,14 @@ endpoints:
   #     # host: "github.example.com"
   #     # Environment variable reference only, never the token itself. Optional, see above.
   #     token: "${GITHUB_PULL_REQUEST_TOKEN}"
+  #     # Let each user connect their own account, so lookups use their token, rate limit and
+  #     # repository access instead of the server's (read from this file only). Register
+  #     # <DOMAIN_SERVER>/api/pull-requests/oauth/callback as the app's callback URL. On GitHub a
+  #     # GitHub App with read-only Pull requests, Checks and Contents permissions is recommended.
+  #     # oauth:
+  #     #   clientId: "${GITHUB_PR_OAUTH_CLIENT_ID}"
+  #     #   clientSecret: "${GITHUB_PR_OAUTH_CLIENT_SECRET}"
+  #     #   scope: "repo" # only for a classic OAuth app; GitLab defaults to read_api
   #     # Repositories the token may be used for, as owner/name or owner/*. A worker reports its
   #     # own repository, and only these are ever looked up with the server's token.
   #     allowedRepositories: ["LibreChat-AI/LibreChat"]

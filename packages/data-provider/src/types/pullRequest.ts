@@ -27,6 +27,14 @@ export type TConversationPullRequest = {
   checks: PullRequestChecks;
 };
 
+/** Whether the signed-in user has connected their own account for pull request lookups. */
+export type TPullRequestConnection = {
+  /** Whether users can connect an account on this deployment at all. */
+  configured: boolean;
+  provider?: PullRequestProvider;
+  connected: boolean;
+};
+
 /** Most conversations one batch lookup may name. It bounds the fan-out to GitHub of a single
  *  request; the lookups themselves stay governed by the configured limits and cache. */
 export const PULL_REQUEST_BATCH_MAX = 50;

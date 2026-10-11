@@ -78,6 +78,35 @@ export function resolvePullRequestToken(
   return null;
 }
 
+/** A user connection the operator configured: the app users authorize, on the configured host. */
+export type PullRequestOAuthConfig = {
+  provider: PullRequestProvider;
+  host: string;
+  clientId: string;
+  clientSecret: string;
+  scope?: string;
+};
+
+/**
+ * The OAuth app users connect their accounts through, or `null` when none is configured or its
+ * references do not resolve, in which case users cannot connect and only the server token is used.
+ */
+export function resolvePullRequestOAuth(
+  settings: Partial<PullRequestSettings> | null | undefined,
+  env: Env,
+): PullRequestOAuthConfig | null {
+  const oauth = settings?.oauth;
+  if (oauth == null) return null;
+  const provider = resolvePullRequestProvider(settings?.provider);
+  if (provider == null) return null;
+  const host = resolvePullRequestHost(settings?.host, provider);
+  const clientId = resolveTokenReference(oauth.clientId, env);
+  const clientSecret = resolveTokenReference(oauth.clientSecret, env);
+  if (host == null || clientId == null || clientSecret == null) return null;
+  const scope = oauth.scope?.trim();
+  return { provider, host, clientId, clientSecret, ...(scope ? { scope } : {}) };
+}
+
 /**
  * Whether pull requests can do anything on this deployment. The feature is on unless an
  * administrator turns it off, and it stays dormant, advertising nothing and recording nothing,
@@ -91,6 +120,9 @@ export function isPullRequestFeatureActive(
   if (settings?.enabled === false) return false;
   const provider = resolvePullRequestProvider(settings?.provider);
   if (provider == null || resolvePullRequestHost(settings?.host, provider) == null) return false;
+  /** Users who connect their own account need no repository list: their token sees only what
+   *  they can already see. */
+  if (resolvePullRequestOAuth(settings, env) != null) return true;
   if (settings?.token == null && resolvePullRequestToken(undefined, env, provider) == null) {
     return false;
   }
