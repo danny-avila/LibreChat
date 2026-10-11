@@ -940,6 +940,8 @@ endpoints:
   #   # whose branch has moved on since its last command does.
   #   pullRequests:
   #     enabled: true # set false to turn the feature off
+  #     # GitHub Enterprise Server or a *.ghe.com tenant; github.com when omitted.
+  #     # host: "github.example.com"
   #     # Environment variable reference only, never the token itself. Optional, see above.
   #     token: "${GITHUB_PULL_REQUEST_TOKEN}"
   #     # Repositories the token may be used for, as owner/name or owner/*. A worker reports its

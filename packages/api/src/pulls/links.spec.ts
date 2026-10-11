@@ -16,6 +16,11 @@ describe('findPullRequestLink', () => {
     expect(findPullRequestLink(output, 'o/r')).toBe(8);
   });
 
+  it('finds a link on a GitHub Enterprise host, which the lookup then checks', () => {
+    expect(findPullRequestLink('https://ghe.example.com/o/r/pull/9', 'o/r')).toBe(9);
+    expect(findPullRequestLink('https://ghe.local:8443/o/r/pull/9', 'o/r')).toBe(9);
+  });
+
   it('accepts a link to a page of the pull request', () => {
     expect(findPullRequestLink('https://github.com/o/r/pull/12/files', 'o/r')).toBe(12);
   });
@@ -29,7 +34,6 @@ describe('findPullRequestLink', () => {
     ['a repository that only starts the same', 'https://github.com/o/r-fork/pull/4'],
     ['an issue', 'https://github.com/o/r/issues/4'],
     ['the page git push suggests', 'https://github.com/o/r/pull/new/feat/x'],
-    ['another host', 'https://example.com/o/r/pull/4'],
     ['plain http', 'http://github.com/o/r/pull/4'],
     ['a number glued to more text', 'https://github.com/o/r/pull/4abc'],
     ['pull request zero', 'https://github.com/o/r/pull/0'],

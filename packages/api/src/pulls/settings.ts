@@ -20,6 +20,24 @@ export function resolveTokenReference(reference: string | undefined, env: Env): 
   return env[name]?.trim() || null;
 }
 
+const HOST = /^(?=[a-z0-9])[a-z0-9.-]*[a-z0-9](?::[0-9]{1,5})?$/;
+
+/**
+ * The configured GitHub host, lowercased, or `github.com` when none is set. `null` for a value that
+ * is not a plain host name: the token is then sent nowhere rather than to a host nobody named.
+ */
+export function resolvePullRequestHost(host: string | undefined): string | null {
+  if (host == null) return 'github.com';
+  const value = host.trim().toLowerCase();
+  if (value.length > 253 || !HOST.test(value)) return null;
+  const [name, port] = value.split(':');
+  if (port == null) return value;
+  const number = Number(port);
+  if (number < 1 || number > 65535) return null;
+  /** A URL drops the https default port, so a page on `host:443` compares as `host`. */
+  return number === 443 ? name : `${name}:${number}`;
+}
+
 /** The configured token reference, else the first fallback variable that is set. */
 export function resolvePullRequestToken(reference: string | undefined, env: Env): string | null {
   if (reference != null) return resolveTokenReference(reference, env);
@@ -41,6 +59,7 @@ export function isPullRequestFeatureActive(
   env: Env,
 ): boolean {
   if (settings?.enabled === false) return false;
+  if (resolvePullRequestHost(settings?.host) == null) return false;
   if (settings?.token == null && resolvePullRequestToken(undefined, env) == null) return false;
   return (
     settings?.allowAllRepositories === true || (settings?.allowedRepositories?.length ?? 0) > 0

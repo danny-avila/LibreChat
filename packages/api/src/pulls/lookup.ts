@@ -111,6 +111,7 @@ export function createPullRequestLookup({
     branch,
     head,
     pullRequest,
+    host,
     token,
     ttlMs,
     limits,
@@ -134,7 +135,7 @@ export function createPullRequestLookup({
         .sort()
         .join('|'),
     ].join(',');
-    const key = `${scope}\0${repo}#${branch}\0${head ?? ''}\0${pullRequest ?? ''}\0${policy}`;
+    const key = `${scope}\0${host ?? ''}\0${repo}#${branch}\0${head ?? ''}\0${pullRequest ?? ''}\0${policy}`;
     const cached = touch(scope)?.get(key);
     if (cached != null && cached.expiresAt > now()) return cached.result;
     const pending = inflight.get(key);
@@ -155,6 +156,7 @@ export function createPullRequestLookup({
             branch,
             head,
             pullRequest,
+            ...(host != null ? { host } : {}),
             token,
             limits,
             allowedRepositories,

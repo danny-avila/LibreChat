@@ -66,6 +66,16 @@ describe('createPullRequestLookup', () => {
     expect(find).toHaveBeenCalledTimes(3);
   });
 
+  it('keys by host, so one GitHub never answers for another', async () => {
+    const find = jest.fn().mockResolvedValue(value);
+    const lookup = createPullRequestLookup({ source: { find } });
+    await lookup(input);
+    await lookup({ ...input, host: 'ghe.example.com' });
+    await lookup({ ...input, host: 'ghe.example.com' });
+    expect(find).toHaveBeenCalledTimes(2);
+    expect(find).toHaveBeenLastCalledWith(expect.objectContaining({ host: 'ghe.example.com' }));
+  });
+
   it('keys by the linked pull request and hands it to the source', async () => {
     const find = jest.fn().mockResolvedValue(value);
     const lookup = createPullRequestLookup({ source: { find } });

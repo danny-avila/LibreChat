@@ -1,4 +1,4 @@
-import { createGitHubPullRequestSource, summarizeChecks } from './github';
+import { createGitHubPullRequestSource, summarizeChecks, gitHubApiBase } from './github';
 import { PullRequestSourceError } from './types';
 
 const sha = 'a'.repeat(40);
@@ -187,10 +187,46 @@ describe('createGitHubPullRequestSource', () => {
     await expect(find(source)).rejects.toMatchObject({ code: 'UPSTREAM_ERROR' });
   });
 
+  it('rejects a github.com page when the configured host is an Enterprise one', async () => {
+    const { source } = sourceFor(routes());
+    await expect(
+      source.find({ repo: 'o/r', branch: 'feat/x', token: 't', host: 'ghe.example.com' }),
+    ).rejects.toMatchObject({ code: 'UPSTREAM_ERROR' });
+  });
+
   it('bounds the title', async () => {
     const { source } = sourceFor(routes(pull({ title: 'x'.repeat(1000) })));
     const result = await find(source);
     expect(result?.title).toHaveLength(256);
+  });
+});
+
+describe('GitHub host', () => {
+  it.each([
+    ['github.com', 'https://api.github.com'],
+    ['acme.ghe.com', 'https://api.acme.ghe.com'],
+    ['ghe.example.com', 'https://ghe.example.com/api/v3'],
+    ['ghe.local:8443', 'https://ghe.local:8443/api/v3'],
+  ])('serves the API of %s from %s', (host, base) => {
+    expect(gitHubApiBase(host)).toBe(base);
+  });
+
+  it('sends every request of an Enterprise lookup to that host and accepts its pages', async () => {
+    const host = 'ghe.example.com';
+    const fetchFn = jest.fn(async (input: string) => {
+      const url = String(input);
+      if (url.includes('/pulls?state=open')) return json(listed());
+      if (url.includes('/pulls/7')) return json(pull({ html_url: `https://${host}/o/r/pull/7` }));
+      if (url.includes('/check-runs')) return json({ check_runs: [] });
+      throw new Error(`unexpected ${url}`);
+    });
+    const source = createGitHubPullRequestSource({ fetchFn });
+    const result = await source.find({ repo: 'o/r', branch: 'feat/x', token: 't', host });
+    expect(result).toMatchObject({ number: 7, url: `https://${host}/o/r/pull/7` });
+    expect(fetchFn.mock.calls.length).toBeGreaterThan(0);
+    for (const [url] of fetchFn.mock.calls) {
+      expect(String(url).startsWith(`https://${host}/api/v3/`)).toBe(true);
+    }
   });
 });
 

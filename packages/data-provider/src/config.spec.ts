@@ -1189,6 +1189,29 @@ describe('agent pull request config', () => {
     },
   );
 
+  it.each([
+    'github.com',
+    'github.example.com',
+    'acme.ghe.com',
+    'GHE.Example.com',
+    'ghe.local:8443',
+  ])('accepts %s as the GitHub host', (host) => {
+    expect(parse({ ...enabled, host }).success).toBe(true);
+  });
+
+  it.each([
+    'https://github.example.com',
+    'github.example.com/api/v3',
+    'user@github.example.com',
+    '-github.com',
+    'github.com.',
+    'ghe.local:0',
+    'ghe.local:65536',
+    '',
+  ])('rejects %p as the GitHub host', (host) => {
+    expect(parse({ ...enabled, host }).success).toBe(false);
+  });
+
   it.each(['ghp_abcdef', '${bad name}', '$GITHUB_TOKEN', '${}'])(
     'rejects %s as a token because only a reference is allowed',
     (token) => {
