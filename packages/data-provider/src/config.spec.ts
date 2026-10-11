@@ -1205,6 +1205,8 @@ describe('agent pull request config', () => {
     'user@github.example.com',
     '-github.com',
     'github.com.',
+    'ghe.local:0',
+    'ghe.local:65536',
     '',
   ])('rejects %p as the GitHub host', (host) => {
     expect(parse({ ...enabled, host }).success).toBe(false);

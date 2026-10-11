@@ -28,8 +28,14 @@ const HOST = /^(?=[a-z0-9])[a-z0-9.-]*[a-z0-9](?::[0-9]{1,5})?$/;
  */
 export function resolvePullRequestHost(host: string | undefined): string | null {
   if (host == null) return 'github.com';
-  const normalized = host.trim().toLowerCase();
-  return normalized.length <= 253 && HOST.test(normalized) ? normalized : null;
+  const value = host.trim().toLowerCase();
+  if (value.length > 253 || !HOST.test(value)) return null;
+  const [name, port] = value.split(':');
+  if (port == null) return value;
+  const number = Number(port);
+  if (number < 1 || number > 65535) return null;
+  /** A URL drops the https default port, so a page on `host:443` compares as `host`. */
+  return number === 443 ? name : `${name}:${number}`;
 }
 
 /** The configured token reference, else the first fallback variable that is set. */

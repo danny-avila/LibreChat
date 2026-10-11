@@ -13,14 +13,25 @@ describe('resolvePullRequestHost', () => {
   it('normalizes a configured host, which the raw YAML does not', () => {
     expect(resolvePullRequestHost('  GitHub.Example.com ')).toBe('github.example.com');
     expect(resolvePullRequestHost('ghe.local:8443')).toBe('ghe.local:8443');
+    expect(resolvePullRequestHost('ghe.local:08443')).toBe('ghe.local:8443');
   });
 
-  it.each(['https://github.example.com', 'github.example.com/api', 'u@github.example.com', ''])(
-    'refuses %p rather than falling back to github.com',
-    (host) => {
-      expect(resolvePullRequestHost(host)).toBeNull();
-    },
-  );
+  it('drops the https default port, which a page URL never carries', () => {
+    expect(resolvePullRequestHost('github.com:443')).toBe('github.com');
+    expect(resolvePullRequestHost('GHE.Example.com:443')).toBe('ghe.example.com');
+  });
+
+  it.each([
+    'https://github.example.com',
+    'github.example.com/api',
+    'u@github.example.com',
+    'ghe.local:0',
+    'ghe.local:65536',
+    'ghe.local:99999',
+    '',
+  ])('refuses %p rather than falling back to github.com', (host) => {
+    expect(resolvePullRequestHost(host)).toBeNull();
+  });
 });
 
 describe('resolvePullRequestToken', () => {

@@ -521,7 +521,14 @@ const pullRequestHostSchema = z
   .max(253)
   .regex(/^(?=[a-z0-9])[a-z0-9.-]*[a-z0-9](?::[0-9]{1,5})?$/i, {
     message: 'must be a host name like github.example.com, without a scheme or path',
-  });
+  })
+  .refine(
+    (value) => {
+      const port = value.split(':')[1];
+      return port == null || (Number(port) >= 1 && Number(port) <= 65535);
+    },
+    { message: 'must use a port from 1 to 65535' },
+  );
 
 const pullRequestTokenReferenceSchema = z
   .string()
