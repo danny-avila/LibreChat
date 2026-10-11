@@ -74,7 +74,11 @@ test('picking SharePoint files keeps file names and tokens out of the console @s
 
   await page.goto(NEW_CHAT_PATH);
   await page.getByRole('button', { name: 'Attach and tools' }).click();
-  await page.getByRole('menuitem', { name: 'From SharePoint' }).click();
+  await page.getByRole('button', { name: 'More upload options' }).click();
+  await page
+    .getByRole('button', { name: /From SharePoint/ })
+    .first()
+    .click();
 
   await expect(page.getByText('Selected 1 file(s) from SharePoint')).toBeVisible();
   await expect.poll(() => logged.some((text) => text.includes('download failed'))).toBe(true);
