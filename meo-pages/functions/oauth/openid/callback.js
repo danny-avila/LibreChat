@@ -10,11 +10,17 @@ import {
 
 function fail(reason) {
   // Keep OAuth diagnostics useful without logging authorization codes, state,
-  // cookies, access tokens, or provider responses.
+  // cookies, access tokens, or provider responses. These fixed stage labels
+  // are safe to show in the callback response when production logging is not
+  // available.
   console.warn('meo_oauth_callback_failed', { reason });
-  return new Response('Meo Account sign-in failed. Return to Meo AI and try again.', {
+  return new Response(`Meo Account sign-in failed (${reason}). Return to Meo AI and try again.`, {
     status: 400,
-    headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' },
+    headers: {
+      'Content-Type': 'text/plain; charset=utf-8',
+      'Cache-Control': 'no-store',
+      'X-Meo-OAuth-Failure': reason,
+    },
   });
 }
 

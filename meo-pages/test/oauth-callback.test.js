@@ -24,9 +24,10 @@ test('callback reports a safe reason when its PKCE state cookie is missing', asy
   const response = await onRequest({ request, env });
 
   assert.equal(response.status, 400);
+  assert.equal(response.headers.get('X-Meo-OAuth-Failure'), 'state_cookie_missing_or_invalid');
   assert.equal(
     await response.text(),
-    'Meo Account sign-in failed. Return to Meo AI and try again.',
+    'Meo Account sign-in failed (state_cookie_missing_or_invalid). Return to Meo AI and try again.',
   );
   assert.deepEqual(warnings, [
     ['meo_oauth_callback_failed', { reason: 'state_cookie_missing_or_invalid' }],
