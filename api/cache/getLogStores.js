@@ -156,7 +156,7 @@ async function clearExpiredFromCache(cache) {
 }
 
 /**
- * Logs per-namespace entry counts and TTL info only. Cache values and keys can hold
+ * Logs per-namespace entry counts and TTL only. Cache values and keys can hold
  * tokens, challenges, message content, or user identifiers, so neither is ever output.
  */
 const auditCache = () => {
@@ -168,23 +168,9 @@ const auditCache = () => {
       return;
     }
 
-    const expiries = [];
-    for (const raw of store.opts.store.values()) {
-      try {
-        const expires = store.opts.deserialize(raw)?.expires;
-        if (typeof expires === 'number') {
-          expiries.push(expires);
-        }
-      } catch {
-        /* entry unreadable: omit from expiry range */
-      }
-    }
-
     logger.debug(`[Cache] ${store.opts.namespace} entries:`, {
       count: store.opts.store.size,
       ttl: store.opts.ttl,
-      earliestExpiry: expiries.length ? new Date(Math.min(...expiries)).toISOString() : null,
-      latestExpiry: expiries.length ? new Date(Math.max(...expiries)).toISOString() : null,
     });
   });
 };
