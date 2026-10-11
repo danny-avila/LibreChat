@@ -49,11 +49,14 @@ export function watchPullRequestSignIn(
     } catch {
       return;
     }
-    if (stopped || !status.connected) {
+    if (stopped) {
       return;
     }
-    stop();
+    /** Every answer, so an account removed elsewhere mid-flow also refreshes pull requests. */
     syncPullRequestConnection(queryClient, status);
+    if (status.connected) {
+      stop();
+    }
   };
 
   const tick = () => {

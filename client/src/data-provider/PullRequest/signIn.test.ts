@@ -111,6 +111,20 @@ describe('watchPullRequestSignIn', () => {
     expect(mockGetConnection).toHaveBeenCalledTimes(asked);
   });
 
+  it('refreshes pull requests when the account it watches turns out disconnected', async () => {
+    const { client, invalidate, popup } = setup();
+    mockGetConnection.mockResolvedValueOnce(connection(true));
+    watch(client, { popup: { closed: true }, expiresAt: Date.now() + 10 * MINUTE });
+    await pass(PULL_REQUEST_CONNECT_POLL_MS);
+    expect(invalidate).toHaveBeenCalledTimes(1);
+
+    /** Removed elsewhere while this window still watches a new sign-in. */
+    mockGetConnection.mockResolvedValue(connection(false));
+    watch(client, { popup, expiresAt: Date.now() + 10 * MINUTE });
+    await pass(PULL_REQUEST_CONNECT_POLL_MS);
+    expect(invalidate).toHaveBeenCalledTimes(2);
+  });
+
   it('keeps watching through a failed status read', async () => {
     const { client, invalidate, popup } = setup();
     mockGetConnection.mockRejectedValueOnce(new Error('500'));
