@@ -543,6 +543,30 @@ describe('BackgroundTasksButton', () => {
     }
   });
 
+  it('keeps the panel open when its exact destination is inert', async () => {
+    jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(
+      index({
+        tasks: [{ ...index().tasks[0], messageId: 'inert-message' }],
+      }),
+    );
+    renderButton();
+    const message = document.createElement('section');
+    message.id = 'inert-message';
+    message.setAttribute('inert', '');
+    document.body.append(message);
+    try {
+      await userEvent.click(await screen.findByTestId('header-background-tasks-button'));
+      await userEvent.click(
+        screen.getByRole('button', { name: /^com_ui_background_tasks_go_to_tool:/ }),
+      );
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'com_ui_background_tasks_tool_unavailable',
+      );
+    } finally {
+      message.remove();
+    }
+  });
+
   it('selects the requested step when call ids repeat', async () => {
     jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(
       index({

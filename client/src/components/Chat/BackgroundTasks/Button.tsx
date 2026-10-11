@@ -13,7 +13,7 @@ import { cn } from '~/utils';
 const TICK_MS = 1_000;
 
 const iconButtonClass =
-  'flex size-7 shrink-0 items-center justify-center rounded-md text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-text-primary disabled:pointer-events-none disabled:opacity-50';
+  'flex size-7 shrink-0 items-center justify-center rounded-md text-text-secondary hover:bg-surface-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-control disabled:pointer-events-none disabled:opacity-50';
 
 /** Header control listing the conversation's background tools and subagents. */
 function BackgroundTasksButton({
@@ -147,7 +147,8 @@ function BackgroundTasksButton({
     if (threads.length === 1) target = threads[0];
     else if (destinations.length === 1) target = destinations[0];
     else if (destinations.length === 0 && targets.length === 1) target = targets[0];
-    if (target == null) return false;
+    if (target == null || target.closest('[inert], [hidden], [aria-hidden="true"]') != null)
+      return false;
     if (!target.hasAttribute('tabindex') && !target.matches('button')) {
       target.tabIndex = -1;
       target.addEventListener('blur', () => target.removeAttribute('tabindex'), { once: true });
@@ -253,7 +254,7 @@ function BackgroundTasksButton({
               <p>{localize('com_ui_background_tasks_load_failed')}</p>
               <button
                 type="button"
-                className="text-text-primary focus-visible:ring-text-primary rounded px-2 py-1 underline focus-visible:ring-2"
+                className="text-text-primary focus-visible:ring-focus-control rounded px-2 py-1 underline focus-visible:ring-2"
                 onClick={() => void view.retry()}
               >
                 {localize('com_ui_retry')}
