@@ -42,7 +42,7 @@ test.describe('the cache audit log', () => {
       result.stdout.slice(result.stdout.indexOf('RESULT') + 'RESULT'.length),
     );
     const output = lines.join('\n');
-    expect(output).toContain('"count":1');
+    expect(output).toContain('count=1');
     expect(output).not.toContain('probe-secret-token');
     expect(output).not.toContain('probe-user-key-1234');
   });

@@ -10,6 +10,8 @@ const {
   violationCache,
   userPrincipalsCache,
   registerShutdownTask,
+  auditCacheStores,
+  formatMemoryUsage,
 } = require('@librechat/api');
 
 /** No-op store for cache namespaces that are deliberately disabled. */
@@ -155,25 +157,7 @@ async function clearExpiredFromCache(cache) {
   }
 }
 
-/**
- * Logs per-namespace entry counts and TTL only. Cache values and keys can hold
- * tokens, challenges, message content, or user identifiers, so neither is ever output.
- */
-const auditCache = () => {
-  const ttlStores = getTTLStores();
-  logger.info('[Cache] Starting audit');
-
-  ttlStores.forEach((store) => {
-    if (!store?.opts?.store?.entries) {
-      return;
-    }
-
-    logger.info(`[Cache] ${store.opts.namespace} entries:`, {
-      count: store.opts.store.size,
-      ttl: store.opts.ttl,
-    });
-  });
-};
+const auditCache = () => auditCacheStores(getTTLStores(), logger);
 
 /**
  * Clears expired entries from all TTL-enabled stores
@@ -205,13 +189,7 @@ if (!cacheConfig.USE_REDIS && !cacheConfig.CI) {
       const memory = process.memoryUsage();
       const totalSize = ttlStores.reduce((sum, store) => sum + (store.opts?.store?.size ?? 0), 0);
 
-      logger.info('[Cache] Memory usage:', {
-        heapUsed: `${(memory.heapUsed / 1024 / 1024).toFixed(2)} MB`,
-        heapTotal: `${(memory.heapTotal / 1024 / 1024).toFixed(2)} MB`,
-        rss: `${(memory.rss / 1024 / 1024).toFixed(2)} MB`,
-        external: `${(memory.external / 1024 / 1024).toFixed(2)} MB`,
-        totalCacheEntries: totalSize,
-      });
+      logger.info(formatMemoryUsage(memory, totalSize));
 
       auditCache();
     }, Time.ONE_MINUTE);

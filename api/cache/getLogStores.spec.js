@@ -15,7 +15,7 @@ describe('auditCache', () => {
 
     const output = JSON.stringify(info.mock.calls);
     expect(output).toContain(CacheKeys.ADMIN_OAUTH_EXCHANGE);
-    expect(output).toContain('"count":1');
+    expect(output).toContain('count=1');
     expect(output).not.toContain(secretValue);
     expect(output).not.toContain(secretKey);
     expect(log).not.toHaveBeenCalled();
