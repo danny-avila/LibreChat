@@ -17,7 +17,7 @@ test('OAuth code exchange uses Supabase public-client PKCE contract', async (t) 
     assert.equal(input, `${env.SUPABASE_URL}/auth/v1/oauth/token`);
     assert.equal(init.method, 'POST');
     assert.equal(init.headers['Content-Type'], 'application/x-www-form-urlencoded');
-    assert.equal(init.headers.apikey, undefined);
+    assert.equal(init.headers.apikey, env.SUPABASE_ANON_KEY);
     assert.deepEqual(Object.fromEntries(new URLSearchParams(init.body)), {
       grant_type: 'authorization_code',
       code: 'one-time-code',
@@ -40,13 +40,15 @@ test('OAuth code exchange uses Supabase public-client PKCE contract', async (t) 
   );
 });
 
-test('OAuth refresh uses the registered public client and never logs tokens', async (t) => {
+test('OAuth refresh uses the registered public client and Supabase public API key', async (t) => {
   const originalFetch = globalThis.fetch;
   t.after(() => {
     globalThis.fetch = originalFetch;
   });
   globalThis.fetch = async (input, init) => {
     assert.equal(input, `${env.SUPABASE_URL}/auth/v1/oauth/token`);
+    assert.equal(init.headers['Content-Type'], 'application/x-www-form-urlencoded');
+    assert.equal(init.headers.apikey, env.SUPABASE_ANON_KEY);
     assert.deepEqual(Object.fromEntries(new URLSearchParams(init.body)), {
       grant_type: 'refresh_token',
       refresh_token: 'opaque-refresh',
