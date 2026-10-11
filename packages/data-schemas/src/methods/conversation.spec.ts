@@ -9504,6 +9504,13 @@ describe('laneGit', () => {
       await expect(read(conversationId)).resolves.not.toHaveProperty('pullRequest');
     });
 
+    it('treats an empty repository like an unknown one when keeping the link', async () => {
+      const conversationId = await seed();
+      await record({ user, conversationId, laneGit: lane, pullRequest: 7 });
+      await record({ user, conversationId, laneGit: lane, repo: '' });
+      await expect(read(conversationId)).resolves.toEqual({ ...lane, pullRequest: 7 });
+    });
+
     it('replaces the link with a newer one', async () => {
       const conversationId = await seed();
       await record({ user, conversationId, laneGit: lane, repo: 'o/r', pullRequest: 7 });

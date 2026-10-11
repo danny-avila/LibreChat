@@ -3258,7 +3258,7 @@ export function createConversationMethods(
      * fields one by one, the second only another lane and replaces the whole state. A concurrent
      * write can move the stored lane between the two, so they are retried once.
      */
-    const sameLane = { 'laneGit.branch': laneGit.branch, 'laneGit.repo': repo ?? null };
+    const sameLane = { 'laneGit.branch': laneGit.branch, 'laneGit.repo': repo || null };
     for (let attempt = 0; attempt < 2; attempt++) {
       const kept = await write(sameLane, {
         $set: {
