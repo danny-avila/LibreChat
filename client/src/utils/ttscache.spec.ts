@@ -154,9 +154,42 @@ describe('cross-tab logout', () => {
     const leaving = openTab();
 
     const epoch = reading.getTTSCacheEpoch();
-    await leaving.clearTTSCache();
+    await leaving.endTTSCacheSession();
     await reading.putTTSCache('/tts-cache/late', {} as Response, epoch);
 
     expect(put).not.toHaveBeenCalled();
+  });
+
+  it('keeps a still-signed-in tab from caching new audio until it authenticates again', async () => {
+    Object.assign(globalThis, { BroadcastChannel: FakeChannel });
+    const put = jest.fn();
+    Object.defineProperty(globalThis, 'caches', {
+      value: { open: async () => ({ keys: async () => [], put }), delete: async () => true },
+      configurable: true,
+    });
+    const stale = openTab();
+    const leaving = openTab();
+    stale.openTTSCacheWrites();
+
+    await leaving.endTTSCacheSession();
+    await stale.putTTSCache('/tts-cache/after', {} as Response, stale.getTTSCacheEpoch());
+    expect(put).not.toHaveBeenCalled();
+
+    stale.openTTSCacheWrites();
+    await stale.putTTSCache('/tts-cache/next', {} as Response, stale.getTTSCacheEpoch());
+    expect(put).toHaveBeenCalledWith('/tts-cache/next', {});
+  });
+
+  it('keeps caching after a manual clear from settings', async () => {
+    const put = jest.fn();
+    Object.defineProperty(globalThis, 'caches', {
+      value: { open: async () => ({ keys: async () => [], put }), delete: async () => true },
+      configurable: true,
+    });
+    const tab = openTab();
+
+    await tab.clearTTSCache();
+    await tab.putTTSCache('/tts-cache/again', {} as Response, tab.getTTSCacheEpoch());
+    expect(put).toHaveBeenCalledTimes(1);
   });
 });

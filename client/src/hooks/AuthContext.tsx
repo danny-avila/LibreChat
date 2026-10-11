@@ -27,7 +27,8 @@ import type { ReactNode } from 'react';
 import {
   isSafeRedirect,
   getPostLoginRedirect,
-  clearTTSCache,
+  openTTSCacheWrites,
+  endTTSCacheSession,
   clearPostLoginRedirect,
   persistRedirectToSession,
   clearComposerDraftStorage,
@@ -67,7 +68,7 @@ const endSessionClientState = (): Promise<void> => {
   clearRetainedFileDeletions();
   clearComposerDraftStorage();
   endPullRequestSession();
-  return clearTTSCache();
+  return endTTSCacheSession();
 };
 /**
  * Only recognized codes override the HTTP status used by the login error translation.
@@ -131,6 +132,7 @@ const AuthContextProvider = ({
            * cannot write the departing account's payload back in. This is the only place that
            * knows a new session exists to reopen it for. */
           openFileDeletionRetention();
+          openTTSCacheWrites();
         } else {
           /** Cleanup still queued from a failed delete belongs to the account that uploaded
            * those files, and losing the session passes through here every way it can happen: the

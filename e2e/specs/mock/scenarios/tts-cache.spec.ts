@@ -119,7 +119,7 @@ test.describe('read-aloud audio cache', () => {
     }
   });
 
-  test('audio still loading in one tab is not cached after another tab logs out @scenario:tts-cache-stays-cleared-across-tabs', async ({
+  test('a tab that is still open is not cached into after another tab logs out @scenario:tts-cache-stays-cleared-across-tabs', async ({
     browser,
     baseURL,
   }) => {
@@ -167,6 +167,16 @@ test.describe('read-aloud audio cache', () => {
       release();
       await delivered;
       /** The first tab would write within a few frames of the response; give it time to. */
+      await page.waitForTimeout(1500);
+      expect(await storedTTSKeys(page)).toEqual([]);
+
+      /** The first tab still holds the departed session's token; audio it requests now is
+       *  not cached either, until that tab authenticates again. */
+      const readAloud = page.getByRole('button', { name: 'Read aloud' }).last();
+      await expect(readAloud).toHaveAccessibleName('Read aloud');
+      const again = page.waitForResponse('**/api/files/speech/tts/manual');
+      await readAloud.click();
+      await again;
       await page.waitForTimeout(1500);
       expect(await storedTTSKeys(page)).toEqual([]);
     } finally {
