@@ -73,6 +73,7 @@ jest.mock('~/server/services/Config', () => ({
 
 const mockLoadToolDefinitions = jest.fn();
 const mockGetUserMCPAuthMap = jest.fn();
+const mockResolveAgentCodeExecution = jest.fn();
 jest.mock('@librechat/api', () => ({
   ...jest.requireActual('@librechat/api'),
   AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE: 'AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE',
@@ -89,6 +90,7 @@ jest.mock('@librechat/api', () => ({
       : (upstreamTokenProvider ?? createSessionProvider()),
   loadToolDefinitions: (...args) => mockLoadToolDefinitions(...args),
   getUserMCPAuthMap: (...args) => mockGetUserMCPAuthMap(...args),
+  resolveAgentCodeExecution: (...args) => mockResolveAgentCodeExecution(...args),
   createAuthIdentityContext: ({ user, tenantId }) => ({
     appUserId: user?._id?.toString?.() ?? user?.id,
     openidSubject: user?.openidId,
@@ -230,6 +232,9 @@ function createEndpointsConfig(capabilities) {
 describe('ToolService - Action Capability Gating', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockResolveAgentCodeExecution.mockImplementation((params) =>
+      jest.requireActual('@librechat/api').resolveAgentCodeExecution(params),
+    );
     mockLoadToolDefinitions.mockResolvedValue({
       toolDefinitions: [],
       toolRegistry: new Map(),
@@ -3236,14 +3241,17 @@ describe('ToolService - Action Capability Gating', () => {
         codeWorkspaces: [{ environmentId: 'personal-machine', workspaceId: 'project-a' }],
       };
       mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
-      mockResolveCodeExecutionContext.mockReturnValueOnce({
-        baseUrl: 'http://attached-code.test/v1',
-        codeSessionKey: 'execute_code:stateful:attached',
-        executionProfile: 'stateful',
-        statefulSessions: true,
-        environmentType: 'attached',
-        environmentId: 'personal-machine',
-        bridgeWorkerId: 'worker-abc',
+      mockResolveAgentCodeExecution.mockReturnValueOnce({
+        codeEnvAvailable: true,
+        context: {
+          baseUrl: 'http://attached-code.test/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          statefulSessions: true,
+          environmentType: 'attached',
+          environmentId: 'personal-machine',
+          bridgeWorkerId: 'worker-abc',
+        },
       });
       mockCreateLaneGitRecorder.mockClear();
 
@@ -3294,14 +3302,17 @@ describe('ToolService - Action Capability Gating', () => {
         codeWorkspaces: [{ environmentId: 'personal-machine', workspaceId: 'project-a' }],
       };
       mockGetEndpointsConfig.mockResolvedValue(createEndpointsConfig(capabilities));
-      mockResolveCodeExecutionContext.mockReturnValueOnce({
-        baseUrl: 'http://attached-code.test/v1',
-        codeSessionKey: 'execute_code:stateful:attached',
-        executionProfile: 'stateful',
-        statefulSessions: true,
-        environmentType: 'attached',
-        environmentId: 'personal-machine',
-        bridgeWorkerId: 'worker-abc',
+      mockResolveAgentCodeExecution.mockReturnValueOnce({
+        codeEnvAvailable: true,
+        context: {
+          baseUrl: 'http://attached-code.test/v1',
+          codeSessionKey: 'execute_code:stateful:attached',
+          executionProfile: 'stateful',
+          statefulSessions: true,
+          environmentType: 'attached',
+          environmentId: 'personal-machine',
+          bridgeWorkerId: 'worker-abc',
+        },
       });
       mockCreateLaneGitRecorder.mockClear();
 
