@@ -366,6 +366,11 @@ export function createConversationPullRequestHandler(deps: {
 
       const credential = credentialOf(settings, deps.env, userToken);
       if (userToken === USER_TOKEN_FAILED) {
+        /** A conversation with no lane has no pull request whichever token would have read it. */
+        if (eligibleLane(laneGit, ALL_REPOSITORIES) == null) {
+          res.status(200).json(NONE);
+          return;
+        }
         res
           .status(503)
           .json({ error: 'Pull request lookup is unavailable', code: 'UPSTREAM_ERROR' });

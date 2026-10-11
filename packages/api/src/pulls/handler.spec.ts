@@ -224,6 +224,19 @@ describe('createConversationPullRequestHandler', () => {
       expect(res.json).toHaveBeenCalledWith({ pullRequest: null });
     });
 
+    it("answers no pull request for a conversation without a lane, even when the user's token cannot be read", async () => {
+      const { run, lookup, res } = setup({
+        settings: connectable,
+        env: { ...oauthEnv, GH_TOKEN: 'ghp_server' },
+        laneGit: null,
+        userToken: jest.fn().mockRejectedValue(new Error('key unavailable')),
+      });
+      await run();
+      expect(lookup).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({ pullRequest: null });
+    });
+
     it("answers unavailable, not the server's token or no pull request, when the user's cannot be read", async () => {
       const { run, lookup, res } = setup({
         settings: connectable,
