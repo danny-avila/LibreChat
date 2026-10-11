@@ -311,11 +311,14 @@ export function createGitLabPullRequestSource({
         if (!Array.isArray(listed)) throw new PullRequestSourceError('UPSTREAM_ERROR');
         return listed.map(parseListItem);
       };
-      /** Without a recorded commit only the newest closed one matters, as on GitHub. */
+      /**
+       * Reads pages of one state up to the configured budget. The history is read a full page at
+       * a time even without a recorded commit: it also lists open merge requests from forks, which
+       * are skipped, so its newest entry is not necessarily the one that matches.
+       */
       const listAll = async (state: 'opened' | 'all'): Promise<ListItem[] | undefined> => {
-        const newestOnly = state === 'all' && recorded == null;
-        const perPage = newestOnly ? 1 : lookup.maxCandidatePullRequests;
-        const pages = newestOnly ? 1 : lookup.maxCandidatePages;
+        const perPage = lookup.maxCandidatePullRequests;
+        const pages = lookup.maxCandidatePages;
         const all: ListItem[] = [];
         for (let page = 1; page <= pages; page++) {
           const items = await list(state, perPage, page);
@@ -343,8 +346,12 @@ export function createGitLabPullRequestSource({
       const detail = await getJson(`/merge_requests/${chosen.iid}`);
       if (detail == null) return null;
       const mergeRequest = parseMergeRequest(detail, host);
-      /** A push between the list and the detail can move the head off the recorded commit. */
-      if (mergeRequest.sha !== chosen.sha && !(await contains(mergeRequest.sha))) return null;
+      /** The merge request may have changed between the list and the detail: its source branch,
+       *  the project it comes from, or a push that moved the head off the recorded commit. */
+      if (mergeRequest.sourceBranch !== branch || mergeRequest.fromFork !== chosen.fromFork) {
+        return null;
+      }
+      if (mergeRequest.sha !== chosen.sha && !(await matches(mergeRequest))) return null;
       return report(mergeRequest);
     },
   };

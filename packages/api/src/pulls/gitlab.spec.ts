@@ -237,6 +237,27 @@ describe('createGitLabPullRequestSource', () => {
     });
   });
 
+  it('finds a closed merge request behind a newer open fork, without a recorded commit', async () => {
+    const fork = { iid: 9, state: 'opened', sha, source_project_id: 2, target_project_id: 1 };
+    const merged = { iid: 7, state: 'merged', sha, source_project_id: 1, target_project_id: 1 };
+    const { source, fetchFn } = sourceFor({
+      'state=opened': () => json([]),
+      'state=all': () => json([fork, merged]),
+      '/merge_requests/7': () => json(mergeRequest({ state: 'merged' })),
+      '/api/graphql': () => json(stats()),
+    });
+    await expect(find(source)).resolves.toMatchObject({ number: 7, state: 'merged' });
+    const history = fetchFn.mock.calls
+      .map(([url]) => String(url))
+      .find((url) => url.includes('state=all'));
+    expect(new URL(history ?? '').searchParams.get('per_page')).toBe('10');
+  });
+
+  it('drops a merge request whose source branch changed after it was listed', async () => {
+    const { source } = sourceFor(routes(mergeRequest({ source_branch: 'other' })));
+    await expect(find(source)).resolves.toBeNull();
+  });
+
   describe('forks', () => {
     const fork = { source_project_id: 2, target_project_id: 1 };
 
