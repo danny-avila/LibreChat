@@ -180,6 +180,21 @@ describe('cross-tab logout', () => {
     expect(put).toHaveBeenCalledWith('/tts-cache/next', {});
   });
 
+  it('still ends the session where a channel cannot be opened', async () => {
+    Object.assign(globalThis, {
+      BroadcastChannel: class {
+        constructor() {
+          throw new Error('SecurityError');
+        }
+      },
+    });
+    const del = jest.fn(async () => true);
+    Object.defineProperty(globalThis, 'caches', { value: { delete: del }, configurable: true });
+
+    await expect(openTab().endTTSCacheSession()).resolves.toBeUndefined();
+    expect(del).toHaveBeenCalledWith('tts-responses');
+  });
+
   it('keeps caching after a manual clear from settings', async () => {
     const put = jest.fn();
     Object.defineProperty(globalThis, 'caches', {

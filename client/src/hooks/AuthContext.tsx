@@ -214,12 +214,13 @@ const AuthContextProvider = ({
         isExternalRedirectRef.current = true;
         setTokenHeader(undefined);
         const { redirect } = data;
+        const leave = () => window.location.replace(redirect);
         /** Unloading does not wait for Cache Storage, so the TTS cache delete settles first,
          * bounded so a stalled storage backend cannot hold the user on the page. */
         void Promise.race([
           endSessionClientState(),
           new Promise((resolve) => setTimeout(resolve, 1000)),
-        ]).then(() => window.location.replace(redirect));
+        ]).then(leave, leave);
         return;
       }
       endSessionClientState();

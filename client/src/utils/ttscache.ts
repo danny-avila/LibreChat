@@ -17,7 +17,12 @@ const getChannel = (): BroadcastChannel | null => {
   if (channel !== undefined) {
     return channel;
   }
-  channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(TTS_CACHE_NAME);
+  try {
+    channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(TTS_CACHE_NAME);
+  } catch {
+    /** An opaque origin cannot open a channel; this tab then fences only its own writes. */
+    channel = null;
+  }
   channel?.addEventListener('message', () => {
     sessionEpoch += 1;
     writesOpen = false;
