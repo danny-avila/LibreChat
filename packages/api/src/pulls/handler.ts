@@ -201,12 +201,16 @@ export type PullRequestUserToken = (
 const USER_TOKEN_FAILED = Symbol('user token failed');
 type UserTokenRead = string | null | typeof USER_TOKEN_FAILED;
 
+/** Only with the feature on: reading the token can refresh, extend or delete the stored grant. */
 async function readUserToken(
   userToken: PullRequestUserToken | undefined,
   userId: string,
   settings: PullRequestSettings | undefined,
+  env: Readonly<Record<string, string | undefined>>,
 ): Promise<UserTokenRead> {
-  if (userToken == null || settings == null) return null;
+  if (userToken == null || settings == null || !isPullRequestFeatureActive(settings, env)) {
+    return null;
+  }
   try {
     return await userToken(userId, settings);
   } catch (error) {
@@ -353,7 +357,7 @@ export function createConversationPullRequestHandler(deps: {
       const [settings, laneGit, userToken] = await Promise.all([
         settingsRead,
         deps.getConvoLaneGit(userId, conversationId),
-        settingsRead.then((loaded) => readUserToken(deps.userToken, userId, loaded)),
+        settingsRead.then((loaded) => readUserToken(deps.userToken, userId, loaded, deps.env)),
       ]);
       if (!settings || !isPullRequestFeatureActive(settings, deps.env)) {
         res.status(200).json(NONE);
@@ -443,7 +447,7 @@ export function createConversationPullRequestsHandler(deps: {
       const laneRead = deps.getConvosLaneGit(userId, ids);
       /** Starts with the lane read, once the settings say which account to read. */
       const userTokenRead = configRead.then((loaded) =>
-        readUserToken(deps.userToken, userId, loaded),
+        readUserToken(deps.userToken, userId, loaded, deps.env),
       );
       /** A read nobody waits for (feature off, config timed out) must not fail unhandled. */
       laneRead.catch(() => undefined);

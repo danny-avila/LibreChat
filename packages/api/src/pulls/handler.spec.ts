@@ -212,6 +212,18 @@ describe('createConversationPullRequestHandler', () => {
       expect(res.json).toHaveBeenCalledWith({ pullRequest: null });
     });
 
+    it("does not read the user's token while the feature is turned off", async () => {
+      const userToken = jest.fn().mockResolvedValue('gho_user');
+      const { run, res } = setup({
+        settings: { ...connectable, enabled: false },
+        env: { ...oauthEnv, GH_TOKEN: 'ghp_server' },
+        userToken,
+      });
+      await run();
+      expect(userToken).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith({ pullRequest: null });
+    });
+
     it("answers unavailable, not the server's token or no pull request, when the user's cannot be read", async () => {
       const { run, lookup, res } = setup({
         settings: connectable,
@@ -581,6 +593,21 @@ describe('createConversationPullRequestsHandler', () => {
     });
     await run({ conversationIds: ['a', 'b'] });
     expect(lookup).toHaveBeenCalledWith(expect.objectContaining({ token: 'gho_user' }));
+  });
+
+  it("does not read the user's token for a batch while the feature is turned off", async () => {
+    const userToken = jest.fn().mockResolvedValue('gho_user');
+    const { run } = batch({
+      settings: {
+        ...enabled,
+        enabled: false,
+        oauth: { clientId: '${GH_CLIENT_ID}', clientSecret: '${GH_CLIENT_SECRET}' },
+      },
+      env: { GH_CLIENT_ID: 'id', GH_CLIENT_SECRET: 'secret' },
+      userToken,
+    });
+    await run({ conversationIds: ['a', 'b'] });
+    expect(userToken).not.toHaveBeenCalled();
   });
 
   it("answers the batch's lanes unavailable when the user's own token cannot be read", async () => {
