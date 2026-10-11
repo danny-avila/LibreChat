@@ -5,6 +5,7 @@ import { QueryKeys } from 'librechat-data-provider';
 import { render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TPullRequestConnection, TStartupConfig } from 'librechat-data-provider';
+import { stopPullRequestSignIn } from '~/data-provider/PullRequest/signIn';
 import ConnectedAccounts from '../ConnectedAccounts';
 
 const mockGetConnection = jest.fn();
@@ -46,8 +47,12 @@ const connection = (connected: boolean): TPullRequestConnection => ({
 /** Rejections are part of these tests; keep React Query from logging each one. */
 const logger = { log: () => undefined, warn: () => undefined, error: () => undefined };
 
+/** A sign-in watch outlives the row, so each test ends the one it started. */
+const clients: QueryClient[] = [];
+
 const renderRow = () => {
   const client = new QueryClient({ logger, defaultOptions: { queries: { retry: false } } });
+  clients.push(client);
   const invalidate = jest.spyOn(client, 'invalidateQueries');
   const { unmount } = render(
     <QueryClientProvider client={client}>
@@ -57,7 +62,12 @@ const renderRow = () => {
   return { client, invalidate, unmount };
 };
 
-const fakeWindow = () => ({ opener: {} as unknown, location: { href: '' }, close: jest.fn() });
+const fakeWindow = () => ({
+  opener: {} as unknown,
+  closed: false,
+  location: { href: '' },
+  close: jest.fn(),
+});
 
 describe('ConnectedAccounts', () => {
   let openSpy: jest.SpyInstance;
@@ -71,6 +81,7 @@ describe('ConnectedAccounts', () => {
   });
 
   afterEach(() => {
+    clients.splice(0).forEach(stopPullRequestSignIn);
     openSpy.mockRestore();
   });
 
@@ -209,6 +220,49 @@ describe('ConnectedAccounts', () => {
 
     await waitFor(() => expect(popup.close).toHaveBeenCalledTimes(1));
   });
+
+  it('stops asking once the sign-in window is closed without finishing', async () => {
+    const popup = fakeWindow();
+    openSpy.mockReturnValue(popup as unknown as Window);
+    mockGetConnection.mockResolvedValue(connection(false));
+    mockConnect.mockResolvedValue({ url: 'https://github.com/login/oauth/authorize?x=1' });
+    renderRow();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /com_ui_pr_account_connect_aria/ }),
+    );
+    await waitFor(() => expect(popup.location.href).not.toBe(''));
+    popup.closed = true;
+    /** The next tick asks one last time; nothing after it. */
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    const settled = mockGetConnection.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    expect(mockGetConnection).toHaveBeenCalledTimes(settled);
+    expect(
+      screen.getByRole('button', { name: /com_ui_pr_account_connect_aria/ }),
+    ).toBeInTheDocument();
+  }, 10000);
+
+  it('refreshes pull requests when the sign-in finishes after Settings closed', async () => {
+    const popup = fakeWindow();
+    openSpy.mockReturnValue(popup as unknown as Window);
+    mockGetConnection.mockResolvedValue(connection(false));
+    mockConnect.mockResolvedValue({ url: 'https://github.com/login/oauth/authorize?x=1' });
+    const { client, invalidate, unmount } = renderRow();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /com_ui_pr_account_connect_aria/ }),
+    );
+    await waitFor(() => expect(popup.location.href).not.toBe(''));
+    unmount();
+    mockGetConnection.mockResolvedValue(connection(true));
+
+    await waitFor(
+      () => expect(invalidate).toHaveBeenCalledWith([QueryKeys.conversationPullRequest]),
+      { timeout: 5000 },
+    );
+    expect(client.getQueryData([QueryKeys.pullRequestConnection])).toEqual(connection(true));
+  }, 10000);
 
   it('closes the opened window and explains when the connection cannot start', async () => {
     const popup = fakeWindow();

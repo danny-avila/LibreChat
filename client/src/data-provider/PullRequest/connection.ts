@@ -4,17 +4,14 @@ import { MutationKeys, QueryKeys, dataService } from 'librechat-data-provider';
 import type { TPullRequestConnectStart, TPullRequestConnection } from 'librechat-data-provider';
 import { useGetStartupConfig } from '../Endpoints';
 
-/** How often the status is asked while a sign-in started from this window is still open. */
-export const PULL_REQUEST_CONNECT_POLL_MS = 2000;
-
 /**
  * Whether the signed-in user has connected their own account. Asked only when the deployment
- * offers connecting one, and again when the window regains focus. With `watch`, it is also asked
- * on an interval, in the background too, because the provider's sign-in can finish without this
- * window ever regaining focus afterwards. A change in either direction swaps the token the server
- * looks pull requests up with, so every cached pull request is refetched.
+ * offers connecting one, and again when the window regains focus; a sign-in in progress is
+ * watched by `watchPullRequestSignIn`, which outlives this hook. A change in either direction
+ * swaps the token the server looks pull requests up with, so every cached pull request is
+ * refetched.
  */
-export const usePullRequestConnectionQuery = ({ watch = false }: { watch?: boolean } = {}) => {
+export const usePullRequestConnectionQuery = () => {
   const queryClient = useQueryClient();
   const { data: startupConfig } = useGetStartupConfig();
   const query = useQuery<TPullRequestConnection>(
@@ -24,8 +21,6 @@ export const usePullRequestConnectionQuery = ({ watch = false }: { watch?: boole
       enabled: startupConfig?.pullRequestsConnect != null,
       retry: false,
       refetchOnWindowFocus: true,
-      refetchInterval: watch ? PULL_REQUEST_CONNECT_POLL_MS : false,
-      refetchIntervalInBackground: watch,
     },
   );
 

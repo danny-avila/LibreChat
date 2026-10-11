@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useId, useRef, useState } from 'react';
 import { ExternalLink, Gitlab } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -23,6 +24,7 @@ import {
   usePullRequestConnectionQuery,
   useConnectPullRequestAccountMutation,
   useDisconnectPullRequestAccountMutation,
+  watchPullRequestSignIn,
 } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
@@ -49,10 +51,8 @@ export default function ConnectedAccounts() {
   const localize = useLocalize();
   const rowId = useId();
   const { data: startupConfig } = useGetStartupConfig();
-  /** When a sign-in sent to the provider and not yet seen to finish stops being valid. */
-  const [awaitingUntil, setAwaitingUntil] = useState<number | null>(null);
-  const awaitingSignIn = awaitingUntil != null;
-  const status = usePullRequestConnectionQuery({ watch: awaitingSignIn });
+  const queryClient = useQueryClient();
+  const status = usePullRequestConnectionQuery();
   const connectMutation = useConnectPullRequestAccountMutation();
   const disconnectMutation = useDisconnectPullRequestAccountMutation();
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -60,19 +60,6 @@ export default function ConnectedAccounts() {
   const [disconnectFailed, setDisconnectFailed] = useState(false);
   const actionRef = useRef<HTMLButtonElement | null>(null);
   const keepFocus = useRef(false);
-
-  const connected = status.data?.connected === true;
-  useEffect(() => {
-    if (awaitingUntil == null) {
-      return;
-    }
-    if (connected) {
-      setAwaitingUntil(null);
-      return;
-    }
-    const timer = setTimeout(() => setAwaitingUntil(null), Math.max(0, awaitingUntil - Date.now()));
-    return () => clearTimeout(timer);
-  }, [awaitingUntil, connected]);
 
   /**
    * Callback ref, so a replacement button takes focus as it mounts after an action, but only
@@ -117,13 +104,17 @@ export default function ConnectedAccounts() {
     popup.opener = null;
     /**
      * The promise, not `mutate` callbacks, so the window opened in the click is still sent to the
-     * sign-in page (or closed) when Settings is closed before the server answers.
+     * sign-in page (or closed) when Settings is closed before the server answers. The watch on the
+     * sign-in lives outside this row for the same reason.
      */
     connectMutation.mutateAsync().then(
       ({ url, expiresInSeconds }) => {
         popup.location.href = url;
         keepFocus.current = true;
-        setAwaitingUntil(Date.now() + (expiresInSeconds ?? DEFAULT_CONNECT_FLOW_SECONDS) * 1000);
+        watchPullRequestSignIn(queryClient, {
+          popup,
+          expiresAt: Date.now() + (expiresInSeconds ?? DEFAULT_CONNECT_FLOW_SECONDS) * 1000,
+        });
       },
       () => {
         popup.close();
