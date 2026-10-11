@@ -1,7 +1,6 @@
 import jwt from 'jsonwebtoken';
-import { setTimeout as sleep } from 'node:timers/promises';
-import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { decryptV2, encryptV2, logger } from '@librechat/data-schemas';
+import { createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
 import type { PullRequestProvider } from 'librechat-data-provider';
 import type { PullRequestOAuthConfig } from './settings';
 import type { PullRequestFetch } from './shared';
@@ -84,6 +83,8 @@ export type PullRequestOAuthStore = {
   deleteTokens(
     query: { scope: string; token?: string } | { userId: string; type: string },
   ): Promise<unknown>;
+  /** Whether the user exists and no account deletion has started for it (its deletion fence). */
+  isAgentTriggerPrincipalActive(userId: string): Promise<boolean>;
 };
 
 /** What a verified `state` carries back to the callback. */
@@ -97,8 +98,8 @@ export type PullRequestOAuthState = {
   nonce: string;
 };
 
-/** A grant as stored, encrypted, in one row per user and provider host. */
-type Grant = {
+/** What the provider issued. */
+type Issued = {
   accessToken: string;
   refreshToken?: string;
   /** Epoch milliseconds; absent for a token that does not expire. */
@@ -106,6 +107,32 @@ type Grant = {
   /** The app that issued it; a grant of a replaced app is treated as no connection. */
   clientId: string;
 };
+
+/**
+ * Every stored record carries `lineage`, fixed when the user connects and kept by every refresh,
+ * so a write can tell a later state of the same connection from a new one. Each write also
+ * stores a fresh `v`, which makes the ciphertext a version: every write and delete compares and
+ * swaps on the exact row it read, never on equal content.
+ */
+type Versioned = { lineage: string; v: string };
+
+/** A grant as stored, encrypted, in one row per user and provider host. `leaseUntil` marks the
+ *  one replica allowed to refresh it, so no two spend the same refresh token. */
+type Grant = Issued &
+  Versioned & {
+    leaseUntil?: number;
+    /** Epoch milliseconds of the last write, which every use makes; the retention counts from it
+     *  under the current `retentionDays`, so a shortened retention applies to existing grants. */
+    usedAt?: number;
+  };
+
+/** What a definite refusal leaves behind: no connection, but the lineage, so a slower replica
+ *  whose refresh of the same grant succeeded can still store its result over it. */
+type Refused = Versioned & { refused: true; clientId: string };
+
+type Stored = Grant | Refused;
+
+const isRefused = (record: Stored): record is Refused => 'refused' in record;
 
 /** A stored grant that decrypts but is not one this service wrote: corruption, not absence. */
 class MalformedGrantError extends Error {
@@ -125,12 +152,19 @@ class GrantRejectedError extends Error {
   }
 }
 
-/** A refresh was refused while the grant may still be replaced by another replica's refresh of
- *  it, so it is neither usable nor yet known to be gone. */
-class GrantRefusalPendingError extends Error {
+/** Another replica holds the refresh of this grant, so its token is not known yet. */
+class GrantRefreshPendingError extends Error {
   constructor() {
-    super('The provider refused the grant; removal is pending');
-    this.name = 'GrantRefusalPendingError';
+    super('Another refresh of the grant is in progress');
+    this.name = 'GrantRefreshPendingError';
+  }
+}
+
+/** The user was deleted, or its deletion started, while the connection was being made. */
+class InactivePrincipalError extends Error {
+  constructor() {
+    super('The user is not active');
+    this.name = 'InactivePrincipalError';
   }
 }
 
@@ -161,6 +195,9 @@ export type PullRequestOAuth = {
    *  another replica's refresh may still overtake. */
   token(userId: string, config: PullRequestOAuthConfig): Promise<string | null>;
   connected(userId: string, config: PullRequestOAuthConfig): Promise<boolean>;
+  /** Marks the grant refused when the provider rejected `accessToken` on a lookup, only while it
+   *  is still the stored one: a grant refreshed or reconnected since stands. */
+  reject(userId: string, config: PullRequestOAuthConfig, accessToken: string): Promise<void>;
   /** Removes every connection the user has, whatever app or host it was made with, so a later
    *  configuration can never bring back one the user removed. */
   disconnect(userId: string): Promise<void>;
@@ -182,7 +219,6 @@ export function createPullRequestOAuth({
   encrypt = encryptV2,
   decrypt = decryptV2,
   now = Date.now,
-  delay = (ms) => sleep(ms, undefined, { ref: false }),
 }: {
   store: PullRequestOAuthStore;
   fetchFn: PullRequestFetch;
@@ -192,24 +228,21 @@ export function createPullRequestOAuth({
   encrypt?: (value: string) => Promise<string>;
   decrypt?: (value: string) => Promise<string>;
   now?: () => number;
-  /** Waits out the grace before a refused grant is removed. */
-  delay?: (ms: number) => Promise<void>;
 }): PullRequestOAuth {
   const scopeOf = (userId: string, config: PullRequestOAuthConfig) =>
     `${PULL_REQUEST_OAUTH_TYPE}:${userId}:${config.provider}:${config.host}`;
   const verifierOf = (nonce: string) =>
     base64url(createHmac('sha256', secret).update(`pull-request-oauth:${nonce}`).digest());
 
-  /** Token reads in flight in this process, so concurrent lookups of one user refresh once. */
+  /** Token reads in flight in this process, keyed by everything that changes the answer (user,
+   *  provider, host and app), so concurrent lookups share one read and at most one refresh. */
   const reading = new Map<string, Promise<string | null>>();
-  /** Refused grants waiting out their grace, so they are not sent to the provider again. */
-  const removing = new Set<string>();
 
   async function requestGrant(
     config: PullRequestOAuthConfig,
     form: Record<string, string>,
     clientId: string,
-  ): Promise<Grant> {
+  ): Promise<Issued> {
     const endpoints = oauthEndpoints(config.provider, config.host);
     const body = new URLSearchParams(form);
     const headers: Record<string, string> = {
@@ -257,38 +290,54 @@ export function createPullRequestOAuth({
   const retentionOf = (config: PullRequestOAuthConfig): number =>
     (config.retentionDays ?? DEFAULT_PULL_REQUEST_OAUTH_RETENTION_DAYS) * DAY_SECONDS;
 
+  /** One replica's claim on a refresh: its provider request, with room to store the answer. A
+   *  claim that outlives it (a stalled replica) lets another replica claim the grant; the stalled
+   *  one's answer is then still stored, as it carries the same lineage. */
+  const leaseOf = (config: PullRequestOAuthConfig): number =>
+    2 * (config.requestTimeoutSeconds ?? DEFAULT_PULL_REQUEST_OAUTH_REQUEST_SECONDS) * 1000;
+
   /** How long the row may live: an access token that expires without a refresh token lives that
-   *  long; any other grant lives the retention, which every use extends (see `token`). */
-  const lifetimeOf = (grant: Grant, config: PullRequestOAuthConfig): number => {
-    if (grant.refreshToken == null && grant.accessExpiresAt != null) {
-      return Math.max(1, Math.ceil((grant.accessExpiresAt - now()) / 1000));
+   *  long; a refusal lives a day, long enough for a slower refresh of the same grant to land; any
+   *  other grant lives the retention, which every use extends (see `token`). */
+  const lifetimeOf = (record: Stored, config: PullRequestOAuthConfig): number => {
+    if (isRefused(record)) return DAY_SECONDS;
+    if (record.refreshToken == null && record.accessExpiresAt != null) {
+      const remaining = Math.max(1, Math.ceil((record.accessExpiresAt - now()) / 1000));
+      return Math.min(remaining, retentionOf(config));
     }
     return retentionOf(config);
   };
 
-  /** Whether a grant's row is past half its retention, so using it should extend it. A grant that
-   *  never expires is otherwise never rewritten, and would be removed while still in use. */
-  const isAging = (row: PullRequestOAuthRow, config: PullRequestOAuthConfig): boolean => {
+  /** Whether using a grant should rewrite its row: past half its retention, so it is extended (a
+   *  grant that never expires is otherwise never rewritten, and would be removed while in use),
+   *  or set to outlive the current retention, so a shortened retention takes hold. */
+  const needsRewrite = (row: PullRequestOAuthRow, config: PullRequestOAuthConfig): boolean => {
     if (row.expiresAt == null) return false;
-    const expiresAt = new Date(row.expiresAt).getTime();
-    return Number.isFinite(expiresAt) && expiresAt - now() < (retentionOf(config) * 1000) / 2;
+    const remaining = new Date(row.expiresAt).getTime() - now();
+    const retention = retentionOf(config) * 1000;
+    return Number.isFinite(remaining) && (remaining < retention / 2 || remaining > retention);
   };
 
+  /** Whether a grant can answer now, or never will without a refresh. */
+  const isLive = (grant: Grant, skewMs: number): boolean =>
+    grant.accessExpiresAt == null || grant.accessExpiresAt - skewMs > now();
+
+  /** The stored record for this app, or null when there is none: no row, a row past its
+   *  retention (the TTL reaper removes it late, never on time), or a record of a replaced app. */
   async function read(
     userId: string,
     config: PullRequestOAuthConfig,
-  ): Promise<{ row: PullRequestOAuthRow; grant: Grant } | null> {
+  ): Promise<{ row: PullRequestOAuthRow; record: Stored } | null> {
     const row = await store.findToken({ scope: scopeOf(userId, config) });
     if (row == null) return null;
-    /** The TTL reaper removes an expired row late, never on time; until then it is already gone,
-     *  so it is neither used nor extended back to life. */
     if (row.expiresAt != null) {
       const expiresAt = new Date(row.expiresAt).getTime();
       if (Number.isFinite(expiresAt) && expiresAt <= now()) return null;
     }
     /** Only this service writes the row, so a value that does not decrypt (a missing or rotated
-     *  key) or is not a grant is a failure, not an absent connection, and it propagates. A grant
-     *  issued to another OAuth app, from before the app was replaced, is no connection to this one. */
+     *  key) or is not one of its records is a failure, not an absent connection, and it
+     *  propagates. A record of another OAuth app, from before the app was replaced, is no
+     *  connection to this one. */
     const plaintext = await decrypt(row.token);
     let parsed: unknown;
     try {
@@ -298,30 +347,92 @@ export function createPullRequestOAuth({
     }
     if (
       !isRecord(parsed) ||
-      !isToken(parsed.accessToken) ||
       typeof parsed.clientId !== 'string' ||
+      typeof parsed.lineage !== 'string' ||
+      typeof parsed.v !== 'string'
+    ) {
+      throw new MalformedGrantError();
+    }
+    if (parsed.refused === true) {
+      return parsed.clientId === config.clientId ? { row, record: parsed as Refused } : null;
+    }
+    if (
+      !isToken(parsed.accessToken) ||
       (parsed.refreshToken !== undefined && !isToken(parsed.refreshToken)) ||
-      (parsed.accessExpiresAt !== undefined && typeof parsed.accessExpiresAt !== 'number')
+      (parsed.accessExpiresAt !== undefined && typeof parsed.accessExpiresAt !== 'number') ||
+      (parsed.leaseUntil !== undefined && typeof parsed.leaseUntil !== 'number') ||
+      (parsed.usedAt !== undefined && typeof parsed.usedAt !== 'number')
     ) {
       throw new MalformedGrantError();
     }
     if (parsed.clientId !== config.clientId) return null;
-    return { row, grant: parsed as Grant };
+    /** Unused for longer than the retention now allows: gone, and removed if still this row. */
+    if (typeof parsed.usedAt === 'number' && parsed.usedAt + retentionOf(config) * 1000 <= now()) {
+      store
+        .deleteTokens({ scope: scopeOf(userId, config), token: row.token })
+        .catch((error: unknown) => {
+          logger.warn(
+            '[PullRequests] Expired OAuth grant not removed',
+            getSafeErrorMetadata(error),
+          );
+        });
+      return null;
+    }
+    return { row, record: parsed as Grant };
   }
 
+  /**
+   * Stores `record` as a new version, only while the row is still `expected` (absent, for null).
+   * Returns the new version, or null when the row had moved on.
+   */
   async function write(
     userId: string,
     config: PullRequestOAuthConfig,
     expected: string | null,
-    grant: Grant,
-  ): Promise<boolean> {
-    return store.replaceTokenIfCurrent(scopeOf(userId, config), expected, {
+    record: Omit<Grant, 'v'> | Omit<Refused, 'v'>,
+  ): Promise<string | null> {
+    const versioned = (
+      'refused' in record
+        ? { ...record, v: randomUUID() }
+        : { ...record, usedAt: now(), v: randomUUID() }
+    ) as Stored;
+    const token = await encrypt(JSON.stringify(versioned));
+    const stored = await store.replaceTokenIfCurrent(scopeOf(userId, config), expected, {
       userId,
       type: PULL_REQUEST_OAUTH_TYPE,
       identifier: `${config.provider}:${config.host}`,
-      token: await encrypt(JSON.stringify(grant)),
-      expiresIn: lifetimeOf(grant, config),
+      token,
+      expiresIn: lifetimeOf(versioned, config),
     });
+    return stored ? token : null;
+  }
+
+  /**
+   * Stores a refreshed grant over the version this replica claimed. When that version is gone,
+   * the row's state decides: removed (a disconnect or an account deletion) stays removed; a newer
+   * connection wins; a later state of this same connection (another replica's claim after this
+   * one's lease ran out, or its refusal of the refresh token this one already used) is replaced,
+   * since only this answer holds the refresh token the provider now accepts.
+   */
+  async function settle(
+    userId: string,
+    config: PullRequestOAuthConfig,
+    expected: string,
+    next: Omit<Grant, 'v'>,
+  ): Promise<string | null> {
+    let version = expected;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if ((await write(userId, config, version, next)) != null) return next.accessToken;
+      const current = await read(userId, config);
+      if (current == null) return null;
+      if (current.record.lineage !== next.lineage) {
+        return isRefused(current.record) || !isLive(current.record, 0)
+          ? null
+          : current.record.accessToken;
+      }
+      version = current.row.token;
+    }
+    throw new Error('The refreshed grant could not be stored');
   }
 
   async function refresh(
@@ -331,49 +442,54 @@ export function createPullRequestOAuth({
     grant: Grant,
   ): Promise<string | null> {
     if (grant.refreshToken == null) return null;
-    const removal = `${scopeOf(userId, config)}\0${row.token}`;
-    if (removing.has(removal)) throw new GrantRefusalPendingError();
-    let next: Grant;
+    if (grant.leaseUntil != null && grant.leaseUntil > now()) throw new GrantRefreshPendingError();
+    const { v: _v, leaseUntil: _lease, ...unleased } = grant;
+    /** Claim the refresh: only the replica whose claim lands spends the refresh token. */
+    const claimed = await write(userId, config, row.token, {
+      ...unleased,
+      leaseUntil: now() + leaseOf(config),
+    });
+    if (claimed == null) {
+      const current = await read(userId, config);
+      if (current == null || isRefused(current.record)) return null;
+      if (current.record.leaseUntil == null && isLive(current.record, REFRESH_SKEW_MS)) {
+        return current.record.accessToken;
+      }
+      throw new GrantRefreshPendingError();
+    }
+    let issued: Issued;
     try {
-      next = await requestGrant(
+      issued = await requestGrant(
         config,
         { grant_type: 'refresh_token', refresh_token: grant.refreshToken },
         config.clientId,
       );
     } catch (error) {
       if (error instanceof GrantRejectedError) {
-        /** Another replica may have refreshed with this token first; its grant is the answer. */
+        /** Refuses only the version this replica claimed; anything newer stands. */
+        const refused = await write(userId, config, claimed, {
+          refused: true,
+          clientId: grant.clientId,
+          lineage: grant.lineage,
+        });
+        if (refused != null) return null;
         const current = await read(userId, config);
-        if (current != null && current.row.token !== row.token) {
-          return current.grant.accessToken;
-        }
-        /**
-         * A rotating provider also refuses the old refresh token once another replica has used
-         * it, and that replica may not have stored the new grant yet. The refusal is only
-         * definite after it had time to: the row is removed then, and only if it is still this
-         * one. Until then the token is unavailable rather than disconnected.
-         */
-        removing.add(removal);
-        const graceMs =
-          2 * (config.requestTimeoutSeconds ?? DEFAULT_PULL_REQUEST_OAUTH_REQUEST_SECONDS) * 1000;
-        void delay(graceMs)
-          .then(() => store.deleteTokens({ scope: scopeOf(userId, config), token: row.token }))
-          .catch((cause: unknown) => {
-            logger.warn(
-              '[PullRequests] Refused OAuth grant not removed',
-              getSafeErrorMetadata(cause),
-            );
-          })
-          .finally(() => removing.delete(removal));
-        throw new GrantRefusalPendingError();
+        return current == null || isRefused(current.record) || !isLive(current.record, 0)
+          ? null
+          : current.record.accessToken;
       }
+      /** An outage: release the claim so the next attempt need not wait it out. */
+      await write(userId, config, claimed, unleased).catch((cause: unknown) => {
+        logger.warn('[PullRequests] OAuth refresh claim not released', getSafeErrorMetadata(cause));
+      });
       throw error;
     }
     /** A provider that does not rotate refresh tokens keeps the one it was given. */
-    const stored: Grant = { ...next, refreshToken: next.refreshToken ?? grant.refreshToken };
-    if (await write(userId, config, row.token, stored)) return stored.accessToken;
-    const current = await read(userId, config);
-    return current?.grant.accessToken ?? null;
+    return settle(userId, config, claimed, {
+      ...issued,
+      refreshToken: issued.refreshToken ?? grant.refreshToken,
+      lineage: grant.lineage,
+    });
   }
 
   async function currentToken(
@@ -381,20 +497,18 @@ export function createPullRequestOAuth({
     config: PullRequestOAuthConfig,
   ): Promise<string | null> {
     const current = await read(userId, config);
-    if (current == null) return null;
-    const { row, grant } = current;
+    if (current == null || isRefused(current.record)) return null;
+    const { row, record: grant } = current;
     /** Without a refresh token there is nothing to refresh with, so it serves until it expires. */
-    const skew = grant.refreshToken == null ? 0 : REFRESH_SKEW_MS;
-    if (grant.accessExpiresAt == null || grant.accessExpiresAt - skew > now()) {
-      if (isAging(row, config)) {
-        write(userId, config, row.token, grant).catch((error: unknown) => {
+    if (isLive(grant, grant.refreshToken == null ? 0 : REFRESH_SKEW_MS)) {
+      if (needsRewrite(row, config) && grant.leaseUntil == null) {
+        const { v: _v, ...same } = grant;
+        write(userId, config, row.token, same).catch((error: unknown) => {
           logger.warn('[PullRequests] OAuth retention not extended', getSafeErrorMetadata(error));
         });
       }
       return grant.accessToken;
     }
-    /** A refresh the provider could not answer is an outage, not a disconnection: it reaches
-     *  the caller, and the grant stays for the next attempt. */
     return refresh(userId, config, row, grant);
   }
 
@@ -461,6 +575,10 @@ export function createPullRequestOAuth({
     },
 
     async complete(state, code, config) {
+      /** No code is spent for a user that is gone or being deleted. */
+      if (!(await store.isAgentTriggerPrincipalActive(state.userId))) {
+        throw new InactivePrincipalError();
+      }
       const response = await requestGrant(
         config,
         {
@@ -471,19 +589,30 @@ export function createPullRequestOAuth({
         },
         config.clientId,
       );
+      const record = { ...response, lineage: randomUUID() };
       /** Replaces whatever the user had connected before, read first so the swap is exact. */
-      for (let attempt = 0; attempt < 3; attempt++) {
+      let stored: string | null = null;
+      for (let attempt = 0; attempt < 3 && stored == null; attempt++) {
         const current = await store.findToken({ scope: scopeOf(state.userId, config) });
-        if (await write(state.userId, config, current?.token ?? null, response)) return;
+        stored = await write(state.userId, config, current?.token ?? null, record);
       }
-      throw new Error('The grant could not be stored');
+      if (stored == null) throw new Error('The grant could not be stored');
+      /**
+       * Account deletion sets its fence, then removes the user's tokens, then the user. A grant
+       * stored before that removal goes with it; one stored after it finds the fence (or no user)
+       * here and removes itself, so no credential outlives the account.
+       */
+      if (!(await store.isAgentTriggerPrincipalActive(state.userId))) {
+        await store.deleteTokens({ scope: scopeOf(state.userId, config), token: stored });
+        throw new InactivePrincipalError();
+      }
     },
 
     async token(userId, config) {
       /** Concurrent callers share one read and at most one refresh. Joining only the refresh is
        *  not enough: a caller whose read answered after another's refresh had already finished
        *  would refresh the grant that refresh replaced. */
-      const key = scopeOf(userId, config);
+      const key = `${scopeOf(userId, config)}\0${config.clientId}`;
       const pending = reading.get(key);
       if (pending != null) return pending;
       const started = currentToken(userId, config);
@@ -497,12 +626,20 @@ export function createPullRequestOAuth({
 
     async connected(userId, config) {
       const current = await read(userId, config);
-      if (current == null) return false;
+      if (current == null || isRefused(current.record)) return false;
       /** The row of a grant that cannot be refreshed outlives it until the TTL reaper runs. */
-      const { grant } = current;
-      return (
-        grant.refreshToken != null || grant.accessExpiresAt == null || grant.accessExpiresAt > now()
-      );
+      return current.record.refreshToken != null || isLive(current.record, 0);
+    },
+
+    async reject(userId, config, accessToken) {
+      const current = await read(userId, config);
+      if (current == null || isRefused(current.record)) return;
+      if (current.record.accessToken !== accessToken) return;
+      await write(userId, config, current.row.token, {
+        refused: true,
+        clientId: current.record.clientId,
+        lineage: current.record.lineage,
+      });
     },
 
     async disconnect(userId) {

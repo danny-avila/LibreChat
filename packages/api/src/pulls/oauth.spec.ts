@@ -48,15 +48,11 @@ beforeEach(async () => {
 const userId = () => new mongoose.Types.ObjectId().toString();
 const json = (body: unknown, init?: ResponseInit) => Response.json(body, init);
 
-/** Settles the removal grace at once; a test that needs to hold it passes its own. */
-const noGrace = async () => undefined;
 const settle = () => new Promise((resolve) => setImmediate(resolve));
+const users = () => mongoose.connection.db!.collection('users');
+const tokens = () => mongoose.connection.db!.collection('tokens');
 
-function setup(
-  responses: Array<() => Response>,
-  now = () => Date.now(),
-  delay: (ms: number) => Promise<void> = noGrace,
-) {
+function setup(responses: Array<() => Response | Promise<Response>>, now = () => Date.now()) {
   const fetchFn = jest.fn(async (_input: string, _init?: RequestInit) => {
     const next = responses.shift();
     if (next == null) throw new Error('unexpected request');
@@ -70,7 +66,6 @@ function setup(
     encrypt,
     decrypt,
     now,
-    delay,
   });
   return { oauth, fetchFn };
 }
@@ -82,6 +77,12 @@ async function connect(
   user: string,
   config = github,
 ): Promise<void> {
+  /** Completion stores only for a user that exists and is not being deleted. */
+  await users().updateOne(
+    { _id: new mongoose.Types.ObjectId(user) },
+    { $setOnInsert: { email: `${user}@example.com` } },
+    { upsert: true },
+  );
   const { url } = oauth.authorizationUrl({ id: user }, config);
   const state = new URL(url).searchParams.get('state') ?? '';
   const claims = oauth.verifyState(state);
@@ -169,6 +170,10 @@ describe('complete', () => {
       () => json({ access_token: 'gho_access', token_type: 'bearer' }),
     ]);
     const user = userId();
+    await users().insertOne({
+      _id: new mongoose.Types.ObjectId(user),
+      email: `${user}@example.com`,
+    });
     const { url } = oauth.authorizationUrl({ id: user }, github);
     const challenge = new URL(url).searchParams.get('code_challenge');
     const claims = oauth.verifyState(new URL(url).searchParams.get('state') ?? '');
@@ -348,8 +353,7 @@ describe('token', () => {
     const user = userId();
     await connect(oauth, user, gitlab);
     clock += 120 * 1000;
-    await expect(oauth.token(user, gitlab)).rejects.toThrow('removal is pending');
-    await settle();
+    await expect(oauth.token(user, gitlab)).resolves.toBeNull();
     await expect(oauth.connected(user, gitlab)).resolves.toBe(false);
   });
 
@@ -365,8 +369,7 @@ describe('token', () => {
     const user = userId();
     await connect(oauth, user, gitlab);
     clock += 120 * 1000;
-    await expect(oauth.token(user, gitlab)).rejects.toThrow();
-    await settle();
+    await expect(oauth.token(user, gitlab)).resolves.toBeNull();
     await expect(oauth.connected(user, gitlab)).resolves.toBe(false);
   });
 
@@ -392,52 +395,159 @@ describe('token', () => {
     await connect(oauth, user, gitlab);
     clock += 120 * 1000;
     await expect(oauth.token(user, gitlab)).rejects.toThrow('Token endpoint answered');
-    await settle();
     await expect(oauth.connected(user, gitlab)).resolves.toBe(true);
     /** Once the secret is fixed, the same grant refreshes. */
     await expect(oauth.token(user, gitlab)).resolves.toBe('a2');
   });
 
-  it("keeps the grant another replica's refresh is about to store", async () => {
-    let clock = 1_000_000;
-    const { oauth: connector } = setup(
-      [() => json({ access_token: 'a1', refresh_token: 'r1', expires_in: 60 })],
-      () => clock,
-    );
-    const user = userId();
-    await connect(connector, user, gitlab);
-    clock += 120 * 1000;
-    /** Replica A's refresh is answered at the provider but not yet back. */
+  /** A refresh held at the provider until the test answers it. */
+  function heldRefresh(clock: () => number, body: Record<string, unknown>) {
     let answer: () => void = () => undefined;
     const answered = new Promise<void>((resolve) => (answer = resolve));
-    const replicaA = setup(
+    /** Resolves once the request is at the provider, which is after the claim is stored. */
+    let reached: () => void = () => undefined;
+    const requested = new Promise<void>((resolve) => (reached = resolve));
+    const replica = setup([], clock);
+    replica.fetchFn.mockImplementationOnce(async () => {
+      reached();
+      await answered;
+      return json(body);
+    });
+    return { ...replica, answer, requested };
+  }
+
+  async function connectExpiring(clock: () => number) {
+    const { oauth } = setup(
+      [() => json({ access_token: 'a1', refresh_token: 'r1', expires_in: 60 })],
+      clock,
+    );
+    const user = userId();
+    await connect(oauth, user, gitlab);
+    return user;
+  }
+
+  it('lets one replica at a time spend the refresh token', async () => {
+    let clock = 1_000_000;
+    const user = await connectExpiring(() => clock);
+    clock += 120 * 1000;
+    const replicaA = heldRefresh(() => clock, {
+      access_token: 'a2',
+      refresh_token: 'r2',
+      expires_in: 7200,
+    });
+    const first = replicaA.oauth.token(user, gitlab);
+    await replicaA.requested;
+    /** B finds A's claim and does not send the same refresh token. */
+    const replicaB = setup([], () => clock);
+    await expect(replicaB.oauth.token(user, gitlab)).rejects.toThrow('Another refresh');
+    expect(replicaB.fetchFn).not.toHaveBeenCalled();
+    await expect(replicaB.oauth.connected(user, gitlab)).resolves.toBe(true);
+    replicaA.answer();
+    await expect(first).resolves.toBe('a2');
+    await expect(replicaB.oauth.token(user, gitlab)).resolves.toBe('a2');
+  });
+
+  it("stores a stalled replica's refresh over another replica's refusal of the same grant", async () => {
+    let clock = 1_000_000;
+    const user = await connectExpiring(() => clock);
+    clock += 120 * 1000;
+    const replicaA = heldRefresh(() => clock, {
+      access_token: 'a2',
+      refresh_token: 'r2',
+      expires_in: 7200,
+    });
+    const first = replicaA.oauth.token(user, gitlab);
+    await replicaA.requested;
+    /** A outlives its claim; B claims the grant and is refused the token A already rotated. */
+    clock += 60 * 1000;
+    const replicaB = setup([() => json({ error: 'invalid_grant' }, { status: 400 })], () => clock);
+    await expect(replicaB.oauth.token(user, gitlab)).resolves.toBeNull();
+    await expect(replicaB.oauth.connected(user, gitlab)).resolves.toBe(false);
+    /** A's answer is the only grant the provider still accepts, so it is kept. */
+    replicaA.answer();
+    await expect(first).resolves.toBe('a2');
+    await expect(replicaB.oauth.connected(user, gitlab)).resolves.toBe(true);
+    await expect(replicaB.oauth.token(user, gitlab)).resolves.toBe('a2');
+  });
+
+  it('does not bring back a connection removed while its refresh was in flight', async () => {
+    let clock = 1_000_000;
+    const user = await connectExpiring(() => clock);
+    clock += 120 * 1000;
+    const replica = heldRefresh(() => clock, {
+      access_token: 'a2',
+      refresh_token: 'r2',
+      expires_in: 7200,
+    });
+    const pending = replica.oauth.token(user, gitlab);
+    await replica.requested;
+    await replica.oauth.disconnect(user);
+    replica.answer();
+    await expect(pending).resolves.toBeNull();
+    await expect(replica.oauth.connected(user, gitlab)).resolves.toBe(false);
+    expect(await tokens().countDocuments({ userId: new mongoose.Types.ObjectId(user) })).toBe(0);
+  });
+
+  it('releases its claim after an outage, so the next attempt need not wait it out', async () => {
+    let clock = 1_000_000;
+    const user = await connectExpiring(() => clock);
+    clock += 120 * 1000;
+    const { oauth } = setup([() => new Response('', { status: 503 })], () => clock);
+    await expect(oauth.token(user, gitlab)).rejects.toThrow('Token endpoint answered');
+    const other = setup(
       [() => json({ access_token: 'a2', refresh_token: 'r2', expires_in: 7200 })],
       () => clock,
     );
-    replicaA.fetchFn.mockImplementationOnce(async () => {
-      await answered;
-      return json({ access_token: 'a2', refresh_token: 'r2', expires_in: 7200 });
+    await expect(other.oauth.token(user, gitlab)).resolves.toBe('a2');
+  });
+
+  it("does not hand a replaced app's token to a read under the new app", async () => {
+    let clock = 1_000_000;
+    const user = await connectExpiring(() => clock);
+    clock += 120 * 1000;
+    const replica = heldRefresh(() => clock, {
+      access_token: 'a2',
+      refresh_token: 'r2',
+      expires_in: 7200,
     });
-    const first = replicaA.oauth.token(user, gitlab);
-    /** Replica B is refused the rotated-out token before A stores the new grant. */
-    let endGrace: () => void = () => undefined;
-    const grace = new Promise<void>((resolve) => (endGrace = resolve));
-    const replicaB = setup(
-      [() => json({ error: 'invalid_grant' }, { status: 400 })],
-      () => clock,
-      () => grace,
+    const old = replica.oauth.token(user, gitlab);
+    /** Same provider and host, another app: its own read, which finds no grant of its own. */
+    const replaced = replica.oauth.token(user, { ...gitlab, clientId: 'gl-client-2' });
+    await expect(replaced).resolves.toBeNull();
+    replica.answer();
+    await expect(old).resolves.toBe('a2');
+  });
+
+  it('applies a shortened retention to a grant stored under a longer one', async () => {
+    let clock = Date.now();
+    const { oauth } = setup([() => json({ access_token: 'kept' })], () => clock);
+    const user = userId();
+    await connect(oauth, user, { ...github, retentionDays: 180 });
+    const shortened = { ...github, retentionDays: 1 };
+    /** Used now: served, and the row is cut down to the new retention. */
+    await expect(oauth.token(user, shortened)).resolves.toBe('kept');
+    await settle();
+    await settle();
+    const row = await tokens().findOne({ userId: new mongoose.Types.ObjectId(user) });
+    /** The store stamps the row on its own clock. */
+    expect(new Date(row?.expiresAt).getTime()).toBeLessThanOrEqual(
+      Date.now() + 24 * 60 * 60 * 1000,
     );
-    await expect(replicaB.oauth.token(user, gitlab)).rejects.toThrow('removal is pending');
-    /** Within the grace B does not ask the provider again. */
-    await expect(replicaB.oauth.token(user, gitlab)).rejects.toThrow('removal is pending');
-    expect(replicaB.fetchFn).toHaveBeenCalledTimes(1);
-    answer();
-    await expect(first).resolves.toBe('a2');
-    endGrace();
+    /** Then left unused past it: gone, and the row removed. */
+    clock += 2 * 24 * 60 * 60 * 1000;
+    await expect(oauth.token(user, shortened)).resolves.toBeNull();
+    await expect(oauth.connected(user, shortened)).resolves.toBe(false);
+  });
+
+  it('ends a grant unused for longer than the current retention, whatever its row says', async () => {
+    let clock = Date.now();
+    const { oauth } = setup([() => json({ access_token: 'old' })], () => clock);
+    const user = userId();
+    await connect(oauth, user, { ...github, retentionDays: 180 });
+    clock += 2 * 24 * 60 * 60 * 1000;
+    await expect(oauth.token(user, { ...github, retentionDays: 1 })).resolves.toBeNull();
     await settle();
-    await settle();
-    await expect(replicaB.oauth.connected(user, gitlab)).resolves.toBe(true);
-    await expect(replicaB.oauth.token(user, gitlab)).resolves.toBe('a2');
+    expect(await tokens().countDocuments({ userId: new mongoose.Types.ObjectId(user) })).toBe(0);
   });
 
   it('treats a row past its retention as gone, and does not extend it', async () => {
@@ -446,14 +556,13 @@ describe('token', () => {
     const { oauth } = setup([() => json({ access_token: 'old' })], () => clock);
     const user = userId();
     await connect(oauth, user, config);
-    const tokens = mongoose.connection.db!.collection('tokens');
-    const before = await tokens.findOne({ userId: new mongoose.Types.ObjectId(user) });
+    const before = await tokens().findOne({ userId: new mongoose.Types.ObjectId(user) });
     expect(before?.expiresAt).toBeInstanceOf(Date);
     clock += 2 * 24 * 60 * 60 * 1000;
     await expect(oauth.token(user, config)).resolves.toBeNull();
     await expect(oauth.connected(user, config)).resolves.toBe(false);
     await settle();
-    const after = await tokens.findOne({ userId: new mongoose.Types.ObjectId(user) });
+    const after = await tokens().findOne({ userId: new mongoose.Types.ObjectId(user) });
     expect(after?.expiresAt).toEqual(before?.expiresAt);
   });
 
@@ -574,6 +683,70 @@ describe('a grant that cannot be read', () => {
     });
     await expect(garbled.token(user, github)).rejects.toThrow('malformed');
     await expect(garbled.connected(user, github)).rejects.toThrow('malformed');
+  });
+});
+
+describe('reject', () => {
+  it('disconnects a grant the provider refused on a lookup', async () => {
+    const { oauth } = setup([() => json({ access_token: 'revoked' })]);
+    const user = userId();
+    await connect(oauth, user);
+    await oauth.reject(user, github, 'revoked');
+    await expect(oauth.connected(user, github)).resolves.toBe(false);
+    await expect(oauth.token(user, github)).resolves.toBeNull();
+  });
+
+  it('keeps a grant replaced since the refused token was read', async () => {
+    const { oauth } = setup([
+      () => json({ access_token: 'old' }),
+      () => json({ access_token: 'new' }),
+    ]);
+    const user = userId();
+    await connect(oauth, user);
+    await connect(oauth, user);
+    await oauth.reject(user, github, 'old');
+    await expect(oauth.token(user, github)).resolves.toBe('new');
+  });
+});
+
+describe('completion during account deletion', () => {
+  async function complete(oauth: ReturnType<typeof setup>['oauth'], user: string) {
+    const { url } = oauth.authorizationUrl({ id: user }, github);
+    const claims = oauth.verifyState(new URL(url).searchParams.get('state') ?? '');
+    if (claims == null) throw new Error('state did not verify');
+    return oauth.complete(claims, 'the-code', github);
+  }
+
+  it.each([
+    ['whose deletion has started', { agentTriggerDeletionStartedAt: new Date() }],
+    ['that no longer exists', null],
+  ])('spends no code and stores nothing for a user %s', async (_label, fields) => {
+    const user = userId();
+    if (fields != null) {
+      await users().insertOne({
+        _id: new mongoose.Types.ObjectId(user),
+        email: `${user}@example.com`,
+        ...fields,
+      });
+    }
+    const { oauth, fetchFn } = setup([() => json({ access_token: 'late' })]);
+    await expect(complete(oauth, user)).rejects.toThrow('not active');
+    expect(fetchFn).not.toHaveBeenCalled();
+    expect(await tokens().countDocuments({ userId: new mongoose.Types.ObjectId(user) })).toBe(0);
+  });
+
+  it('removes the grant it stored when the deletion started during the exchange', async () => {
+    const user = userId();
+    const _id = new mongoose.Types.ObjectId(user);
+    await users().insertOne({ _id, email: `${user}@example.com` });
+    const { oauth } = setup([
+      async () => {
+        await users().updateOne({ _id }, { $set: { agentTriggerDeletionStartedAt: new Date() } });
+        return json({ access_token: 'late' });
+      },
+    ]);
+    await expect(complete(oauth, user)).rejects.toThrow('not active');
+    expect(await tokens().countDocuments({ userId: _id })).toBe(0);
   });
 });
 
