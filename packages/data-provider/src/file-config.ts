@@ -638,15 +638,8 @@ const supportedMimeTypesSchema = z
 export const imageUploadResizeSchema = z
   .union([
     z.enum(['high', 'low']),
-    z
-      .object({
-        percentage: z.number().min(0).max(100).optional(),
-        px: z.number().int().positive().optional(),
-      })
-      .strict()
-      .refine((v) => v.percentage !== undefined || v.px !== undefined, {
-        message: 'imageUploadResize requires `percentage` or `px`',
-      }),
+    z.object({ percentage: z.number().positive().max(100) }).strict(),
+    z.object({ px: z.number().int().positive() }).strict(),
   ])
   .optional();
 export type TImageUploadResize = z.infer<typeof imageUploadResizeSchema>;

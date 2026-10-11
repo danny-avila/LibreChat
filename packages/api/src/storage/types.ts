@@ -26,8 +26,8 @@ export interface GetURLParams {
 
 /** Resolution applied when storing an image upload. Mirrors `imageUploadResize`
  *  in the deployment's `fileConfig`: a named preset, a max-edge `px`, or a
- *  `percentage` of the original. */
-export type ImageUploadResolution = 'high' | 'low' | { percentage?: number; px?: number };
+ *  `percentage` of the original. The two custom forms are mutually exclusive. */
+export type ImageUploadResolution = 'high' | 'low' | { percentage: number } | { px: number };
 
 export interface SaveURLParams {
   userId: string;

@@ -1420,6 +1420,7 @@ endpoints:
 #   # <= 768px, long side <= 2000px; 'low': fits within 512x512), or size options:
 #   #   px: 2048        # cap the longest edge in pixels, keeping aspect ratio
 #   #   percentage: 50  # scale relative to the original
+#   # Use either `px` or `percentage`, not both.
 #   # Defaults to 'high' when unset.
 #   imageUploadResize:
 #     px: 2048

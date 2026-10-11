@@ -2261,7 +2261,7 @@ describe('processImageFile', () => {
     );
   });
 
-  test('defaults stored-upload resolution to high when unconfigured', async () => {
+  test('leaves resolution unset when imageUploadResize is not configured', async () => {
     const handleImageUpload = jest.fn().mockResolvedValue({
       filepath: '/images/user-123/image.webp',
       bytes: 256,
@@ -2281,7 +2281,9 @@ describe('processImageFile', () => {
       },
     });
 
-    expect(handleImageUpload).toHaveBeenCalledWith(expect.objectContaining({ resolution: 'high' }));
+    expect(handleImageUpload).toHaveBeenCalledWith(
+      expect.objectContaining({ resolution: undefined }),
+    );
   });
 });
 

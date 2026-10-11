@@ -2164,10 +2164,19 @@ describe('fileConfigSchema.imageUploadResize', () => {
     ).toEqual({ percentage: 50 });
   });
 
-  it('rejects unknown presets, strict-mode extras, bare objects, and px of zero', () => {
+  it('rejects unknown presets, bare objects, zero values, and dual-key objects', () => {
     expect(fileConfigSchema.safeParse({ imageUploadResize: 'medium' }).success).toBe(false);
-    expect(fileConfigSchema.safeParse({ imageUploadResize: { pixel: 2048 } }).success).toBe(false);
     expect(fileConfigSchema.safeParse({ imageUploadResize: {} }).success).toBe(false);
     expect(fileConfigSchema.safeParse({ imageUploadResize: { px: 0 } }).success).toBe(false);
+    expect(fileConfigSchema.safeParse({ imageUploadResize: { percentage: 0 } }).success).toBe(
+      false,
+    );
+    expect(fileConfigSchema.safeParse({ imageUploadResize: { pixel: 2048 } }).success).toBe(false);
+    expect(
+      fileConfigSchema.safeParse({ imageUploadResize: { percentage: 50, px: 2048 } }).success,
+    ).toBe(false);
+    expect(
+      fileConfigSchema.safeParse({ imageUploadResize: { px: 2048, extra: true } }).success,
+    ).toBe(false);
   });
 });
