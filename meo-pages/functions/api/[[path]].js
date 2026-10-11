@@ -6,6 +6,56 @@ const jsonHeaders = {
   'Cache-Control': 'no-store',
 };
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const timestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+class ApiFailure extends Error {
+  constructor(status, message) {
+    super(message);
+    this.status = status;
+  }
+}
+
+function upstreamFailure(status, fallback) {
+  if (status === 401) return new ApiFailure(401, 'Meo Account 登录已失效，请重新登录。');
+  if (status === 403) return new ApiFailure(403, '需要完成账号验证，或此操作未获授权。');
+  if (status === 404) return new ApiFailure(404, '请求的资源不存在。');
+  if (status === 409) return new ApiFailure(409, '本次确认已过期或内容已变化，请重新确认。');
+  if (status === 429) return new ApiFailure(429, '请求过于频繁，请稍后再试。');
+  if ([400, 413, 415, 422].includes(status)) return new ApiFailure(status, fallback);
+  return new ApiFailure(
+    status >= 500 && status <= 599 ? status : 502,
+    '服务暂时不可用，请稍后再试。',
+  );
+}
+
+export function parseConversationCursor(cursor) {
+  if (!cursor) return null;
+  try {
+    if (typeof cursor !== 'string' || cursor.length > 512 || !/^[A-Za-z0-9_-]+$/.test(cursor))
+      throw new Error();
+    const parsed = JSON.parse(atob(cursor.replaceAll('-', '+').replaceAll('_', '/')));
+    if (!Array.isArray(parsed) || parsed.length !== 2) throw new Error();
+    const [updatedAt, id] = parsed;
+    if (
+      typeof updatedAt !== 'string' ||
+      typeof id !== 'string' ||
+      !timestampPattern.test(updatedAt) ||
+      Number.isNaN(Date.parse(updatedAt)) ||
+      !uuidPattern.test(id)
+    )
+      throw new Error();
+    return { updatedAt, id };
+  } catch {
+    throw new ApiFailure(400, '会话分页位置无效。');
+  }
+}
+
+function encodeConversationCursor(row) {
+  return btoa(JSON.stringify([row.updated_at, row.id]))
+    .replaceAll('+', '-')
+    .replaceAll('/', '_')
+    .replaceAll('=', '');
+}
 
 function json(data, status = 200, headers = {}) {
   return Response.json(data, { status, headers: { ...jsonHeaders, ...headers } });
@@ -23,37 +73,42 @@ function safeOrigin(request) {
 
 async function bodyJson(request) {
   const length = Number(request.headers.get('Content-Length') ?? 0);
-  if (length > 64_000) throw new Error('Request is too large');
+  if (length > 64_000) throw new ApiFailure(413, '请求内容过大。');
   const text = await request.text();
-  if (text.length > 64_000) throw new Error('Request is too large');
-  const value = JSON.parse(text);
+  if (text.length > 64_000) throw new ApiFailure(413, '请求内容过大。');
+  let value;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    throw new ApiFailure(400, '请求格式无效。');
+  }
   if (!value || typeof value !== 'object' || Array.isArray(value))
-    throw new Error('Invalid request');
+    throw new ApiFailure(400, '请求格式无效。');
   return value;
 }
 
 function requiredText(value, max, label) {
   if (typeof value !== 'string' || !value.trim() || value.trim().length > max)
-    throw new Error(`${label} is invalid`);
+    throw new ApiFailure(400, `${label} 无效。`);
   return value.trim();
 }
 
 function chatInput(body) {
   if (!Array.isArray(body.messages) || body.messages.length < 1 || body.messages.length > 80)
-    throw new Error('Chat context is invalid');
+    throw new ApiFailure(400, '对话上下文无效。');
   const messages = body.messages.map((message) => {
     if (!message || !['user', 'assistant'].includes(message.role))
-      throw new Error('Chat message is invalid');
+      throw new ApiFailure(400, '对话消息无效。');
     return { role: message.role, content: requiredText(message.content, 40_000, 'Message') };
   });
-  if (messages.at(-1)?.role !== 'user') throw new Error('The latest message must be from the user');
+  if (messages.at(-1)?.role !== 'user') throw new ApiFailure(400, '最后一条消息必须来自用户。');
   const history = messages
     .slice(0, -1)
     .map((message) => `${message.role === 'assistant' ? 'Assistant' : 'User'}: ${message.content}`)
     .join('\n\n');
   const current = messages.at(-1).content;
   const userPrompt = history ? `Conversation so far:\n${history}\n\nUser: ${current}` : current;
-  if (userPrompt.length > 40_000) throw new Error('Chat context is too large');
+  if (userPrompt.length > 40_000) throw new ApiFailure(413, '对话上下文过长。');
   return {
     credentialId: requiredText(body.credentialId, 80, 'Connection'),
     model: requiredText(body.model, 160, 'Model'),
@@ -93,9 +148,13 @@ async function db(request, env, session, path, init = {}) {
 }
 
 async function responseJson(response, fallback) {
-  const data = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(fallback);
-  return data;
+  if (!response.ok) throw upstreamFailure(response.status, fallback);
+  if (response.status === 204) return null;
+  try {
+    return await response.json();
+  } catch {
+    throw new ApiFailure(502, '服务返回的数据无法读取。');
+  }
 }
 
 async function route(request, env, session, userId, pathname) {
@@ -122,16 +181,28 @@ async function route(request, env, session, userId, pathname) {
     });
   }
   if (pathname === '/api/conversations' && method === 'GET') {
+    const before = parseConversationCursor(url.searchParams.get('cursor'));
     const query = new URLSearchParams({
       select: 'id,title,created_at,updated_at',
+      user_id: `eq.${userId}`,
       order: 'updated_at.desc,id.desc',
-      limit: '50',
+      limit: '51',
     });
+    if (before)
+      query.set(
+        'or',
+        `(updated_at.lt.${before.updatedAt},and(updated_at.eq.${before.updatedAt},id.lt.${before.id}))`,
+      );
     const rows = await responseJson(
       await db(request, env, session, `ai_conversations?${query}`),
       'Conversation history is unavailable',
     );
-    return json({ conversations: Array.isArray(rows) ? rows : [] });
+    if (!Array.isArray(rows)) throw new ApiFailure(502, '会话列表无法读取。');
+    const conversations = rows.slice(0, 50);
+    return json({
+      conversations,
+      nextCursor: rows.length > 50 ? encodeConversationCursor(conversations.at(-1)) : null,
+    });
   }
   if (pathname === '/api/conversations' && method === 'POST') {
     const body = await bodyJson(request);
@@ -148,7 +219,7 @@ async function route(request, env, session, userId, pathname) {
       },
     );
     const rows = await responseJson(result, 'Conversation could not be created');
-    if (!Array.isArray(rows) || !rows[0]) throw new Error('Conversation could not be created');
+    if (!Array.isArray(rows) || !rows[0]) throw new ApiFailure(502, '无法创建会话。');
     return json({ conversation: rows[0] }, 201);
   }
   const messagesMatch = pathname.match(/^\/api\/conversations\/([^/]+)\/messages$/);
@@ -157,6 +228,7 @@ async function route(request, env, session, userId, pathname) {
     if (method === 'GET') {
       const query = new URLSearchParams({
         select: 'id,conversation_id,role,executor,content,created_at',
+        user_id: `eq.${userId}`,
         conversation_id: `eq.${conversationId}`,
         order: 'created_at.asc,id.asc',
         limit: '500',
@@ -170,7 +242,7 @@ async function route(request, env, session, userId, pathname) {
     if (method === 'POST') {
       const body = await bodyJson(request);
       const role = body.role;
-      if (!['user', 'assistant'].includes(role)) throw new Error('Message role is invalid');
+      if (!['user', 'assistant'].includes(role)) throw new ApiFailure(400, '消息角色无效。');
       const content = requiredText(body.content, 40_000, 'Message');
       const params = new URLSearchParams({
         select: 'id,conversation_id,role,executor,content,created_at',
@@ -191,14 +263,20 @@ async function route(request, env, session, userId, pathname) {
       );
       const updatedAt = new Date().toISOString();
       await responseJson(
-        await db(request, env, session, `ai_conversations?id=eq.${conversationId}`, {
-          method: 'PATCH',
-          headers: { Prefer: 'return=minimal' },
-          body: JSON.stringify({ updated_at: updatedAt }),
-        }),
+        await db(
+          request,
+          env,
+          session,
+          `ai_conversations?id=eq.${conversationId}&user_id=eq.${userId}`,
+          {
+            method: 'PATCH',
+            headers: { Prefer: 'return=minimal' },
+            body: JSON.stringify({ updated_at: updatedAt }),
+          },
+        ),
         'Conversation timestamp could not be updated',
       );
-      if (!Array.isArray(inserted) || !inserted[0]) throw new Error('Message could not be saved');
+      if (!Array.isArray(inserted) || !inserted[0]) throw new ApiFailure(502, '消息未能保存。');
       return json({ message: inserted[0] }, 201);
     }
   }
@@ -228,7 +306,7 @@ async function route(request, env, session, userId, pathname) {
       typeof consent.requestId !== 'string' ||
       typeof consent.payloadSha256 !== 'string'
     ) {
-      throw new Error('Consent confirmation is invalid');
+      throw new ApiFailure(400, '授权确认无效。');
     }
     const upstream = await broker(
       request,
@@ -259,11 +337,9 @@ async function route(request, env, session, userId, pathname) {
       !upstream.body ||
       !upstream.headers.get('Content-Type')?.includes('text/event-stream')
     ) {
-      const data = await upstream.json().catch(() => null);
-      return json(
-        { error: data?.error ?? 'Provider stream could not be opened' },
-        upstream.status || 502,
-      );
+      throw upstream.ok
+        ? new ApiFailure(502, 'AI 服务没有返回有效的数据流。')
+        : upstreamFailure(upstream.status, 'AI 服务拒绝了本次请求。');
     }
     return new Response(upstream.body, {
       status: upstream.status,
@@ -290,7 +366,8 @@ export async function onRequest({ request, env }) {
     const result = await route(request, env, session, user.id, pathname);
     if (cookie) result.headers.append('Set-Cookie', cookie);
     return result;
-  } catch {
-    return json({ error: 'Meo AI could not complete that request. Please try again.' }, 400);
+  } catch (error) {
+    if (error instanceof ApiFailure) return json({ error: error.message }, error.status);
+    return json({ error: 'Meo AI 暂时无法完成请求，请稍后再试。' }, 502);
   }
 }

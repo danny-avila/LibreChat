@@ -26,6 +26,19 @@ export function requestedSelection(search, connections, modelsResult) {
   };
 }
 
+export function chatContext(messages) {
+  const selected = [];
+  let characters = 0;
+  for (let index = messages.length - 1; index >= 0 && selected.length < 80; index -= 1) {
+    const message = messages[index];
+    const cost = message.content.length + 32;
+    if (selected.length && characters + cost > 36_000) break;
+    selected.unshift({ role: message.role, content: message.content });
+    characters += cost;
+  }
+  return selected;
+}
+
 export function safeMarkdown(markdown) {
   const escape = (value) =>
     value

@@ -1,6 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { requestedSelection, safeMarkdown, SseParser } from '../public/core.js';
+import { chatContext, requestedSelection, safeMarkdown, SseParser } from '../public/core.js';
+
+test('long conversations retain recent context within broker limits', () => {
+  const history = Array.from({ length: 100 }, (_, index) => ({
+    role: index % 2 ? 'assistant' : 'user',
+    content: `turn-${index}`,
+  }));
+  const selected = chatContext(history);
+  assert.equal(selected.length, 80);
+  assert.equal(selected[0].content, 'turn-20');
+  assert.equal(selected.at(-1).content, 'turn-99');
+  assert.deepEqual(
+    chatContext([
+      { role: 'assistant', content: 'old'.repeat(12000) },
+      { role: 'user', content: 'new' },
+    ]),
+    [{ role: 'user', content: 'new' }],
+  );
+});
 
 test('deep links select only a connection and model available to that account', () => {
   const connections = [{ id: 'credential-1', defaultModel: 'model-a' }];

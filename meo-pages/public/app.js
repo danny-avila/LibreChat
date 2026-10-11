@@ -1,10 +1,15 @@
-import { requestedSelection, safeMarkdown, SseParser } from './core.js';
+import { chatContext, requestedSelection, safeMarkdown, SseParser } from './core.js';
 
 const root = document.querySelector('#app');
 const state = {
   userId: '',
   connections: [],
   history: [],
+  historyCursor: null,
+  historyLoading: false,
+  historyGeneration: 0,
+  conversationLoadGeneration: 0,
+  modelLoadGeneration: 0,
   messages: [],
   conversationId: '',
   connection: null,
@@ -12,6 +17,8 @@ const state = {
   models: [],
   modelSupported: false,
   busy: false,
+  draft: '',
+  retryAvailable: false,
   error: '',
   notice: '',
   mobileMenu: false,
@@ -47,7 +54,9 @@ async function api(path, init = {}) {
   });
   if (!response.ok) {
     const data = await response.json().catch(() => null);
-    throw new Error(data?.error ?? `Request failed (${response.status})`);
+    const error = new Error(data?.error ?? `Request failed (${response.status})`);
+    error.status = response.status;
+    throw error;
   }
   return response;
 }
@@ -70,7 +79,9 @@ function formatMessage(row) {
 }
 
 async function loadModels(connectionId) {
+  const generation = ++state.modelLoadGeneration;
   const result = await json(`/api/models?connection=${encodeURIComponent(connectionId)}`);
+  if (generation !== state.modelLoadGeneration || state.connection?.id !== connectionId) return;
   state.models = result.models;
   state.modelSupported = result.supported;
   const selection = requestedSelection(location.search, [state.connection], result);
@@ -101,24 +112,62 @@ async function loadConnections() {
 }
 
 async function loadHistory() {
+  const generation = ++state.historyGeneration;
   const result = await json('/api/conversations');
+  if (generation !== state.historyGeneration) return;
   state.history = result.conversations;
+  state.historyCursor = result.nextCursor;
   const requested = localStorage.getItem('meo.selectedConversation') ?? '';
   const conversation = state.history.find((item) => item.id === requested);
   if (conversation) await openConversation(conversation.id, false);
 }
 
+async function loadMoreHistory() {
+  if (!state.historyCursor || state.historyLoading || state.busy) return;
+  const generation = state.historyGeneration;
+  state.historyLoading = true;
+  render();
+  try {
+    const page = await json(`/api/conversations?cursor=${encodeURIComponent(state.historyCursor)}`);
+    if (generation !== state.historyGeneration) return;
+    const known = new Set(state.history.map((item) => item.id));
+    state.history.push(...page.conversations.filter((item) => !known.has(item.id)));
+    state.historyCursor = page.nextCursor;
+  } catch (error) {
+    if (generation === state.historyGeneration) state.error = error.message;
+  } finally {
+    if (generation === state.historyGeneration) {
+      state.historyLoading = false;
+      render();
+    }
+  }
+}
+
 async function openConversation(id, persist = true) {
-  const result = await json(`/api/conversations/${encodeURIComponent(id)}/messages`);
-  state.conversationId = id;
-  state.messages = result.messages.map(formatMessage);
-  if (persist) localStorage.setItem('meo.selectedConversation', id);
+  if (state.busy) return;
+  const generation = ++state.conversationLoadGeneration;
+  try {
+    const result = await json(`/api/conversations/${encodeURIComponent(id)}/messages`);
+    if (generation !== state.conversationLoadGeneration) return;
+    state.conversationId = id;
+    state.messages = result.messages.map(formatMessage);
+    state.retryAvailable = state.messages.at(-1)?.role === 'user';
+    state.error = '';
+    if (persist) localStorage.setItem('meo.selectedConversation', id);
+  } catch (error) {
+    if (generation !== state.conversationLoadGeneration) return;
+    state.error = error.message;
+  }
   render();
 }
 
 async function newConversation() {
+  if (state.busy) return;
+  state.conversationLoadGeneration += 1;
   state.conversationId = '';
   state.messages = [];
+  state.retryAvailable = false;
+  state.draft = '';
   localStorage.removeItem('meo.selectedConversation');
   state.error = '';
   render();
@@ -153,6 +202,7 @@ function renderSidebar() {
     class: 'button primary',
     text: '＋  新建对话',
     onclick: newConversation,
+    disabled: state.busy,
   });
   const historyTitle = el('div', { class: 'sidebar-heading' }, [el('span', { text: '最近会话' })]);
   const items = state.history.length
@@ -162,13 +212,24 @@ function renderSidebar() {
           title: conversation.title || '新对话',
           text: conversation.title || '新对话',
           onclick: () => openConversation(conversation.id),
+          disabled: state.busy,
         }),
       )
     : [el('div', { class: 'empty', text: '你的云端会话会显示在这里。' })];
   const history = el('div', { class: 'history' }, items);
+  if (state.historyCursor)
+    history.append(
+      el('button', {
+        class: 'button ghost',
+        text: state.historyLoading ? '加载中…' : '加载更多',
+        disabled: state.historyLoading || state.busy,
+        onclick: loadMoreHistory,
+      }),
+    );
   const signout = el('button', {
     class: 'button ghost',
     text: '退出登录',
+    disabled: state.busy,
     onclick: async () => {
       await api('/api/logout', { method: 'POST' });
       location.reload();
@@ -202,6 +263,7 @@ function renderTopbar() {
     label: item.displayName || item.provider,
   }));
   const connectionSelect = makeSelect(connectionItems, state.connection?.id, async (id) => {
+    if (state.busy) return;
     state.connection = state.connections.find((item) => item.id === id) ?? null;
     try {
       await loadModels(id);
@@ -212,6 +274,7 @@ function renderTopbar() {
     render();
   });
   connectionSelect.setAttribute('aria-label', 'AI connection');
+  connectionSelect.disabled = state.busy;
   let modelControl;
   if (state.modelSupported && state.models.length) {
     modelControl = makeSelect(
@@ -236,6 +299,7 @@ function renderTopbar() {
     });
   }
   const user = el('span', { class: 'topbar-title', text: 'Meo Account 已连接' });
+  modelControl.disabled = state.busy;
   const menu = el('button', {
     class: 'button menu-toggle',
     text: '☰',
@@ -304,28 +368,41 @@ async function persistMessage(conversationId, role, content) {
   });
 }
 
-async function sendMessage(text) {
-  const content = text.trim();
-  if (!content || state.busy || !state.connection || !state.model) return;
+async function sendMessage(text, retry = false) {
+  const content = retry ? (state.messages.at(-1)?.content ?? '') : text.trim();
+  if (
+    !content ||
+    state.busy ||
+    !state.connection ||
+    !state.model ||
+    (retry && !state.retryAvailable)
+  )
+    return;
+  let savedUser = retry;
+  let assistantPersisted = false;
+  let assistant = null;
   state.busy = true;
   state.error = '';
   state.notice = '';
   render();
   try {
-    if (!state.conversationId) {
-      const result = await json('/api/conversations', {
-        method: 'POST',
-        body: JSON.stringify({ title: content.slice(0, 64) }),
-      });
-      state.conversationId = result.conversation.id;
-      localStorage.setItem('meo.selectedConversation', state.conversationId);
+    if (!retry) {
+      if (!state.conversationId) {
+        const result = await json('/api/conversations', {
+          method: 'POST',
+          body: JSON.stringify({ title: content.slice(0, 64) }),
+        });
+        state.conversationId = result.conversation.id;
+        state.history.unshift(result.conversation);
+        localStorage.setItem('meo.selectedConversation', state.conversationId);
+      }
+      await persistMessage(state.conversationId, 'user', content);
+      savedUser = true;
+      state.messages.push({ id: crypto.randomUUID(), role: 'user', content });
+      state.draft = '';
     }
-    await persistMessage(state.conversationId, 'user', content);
-    state.messages.push({ id: crypto.randomUUID(), role: 'user', content });
-    const requestMessages = state.messages.map(({ role, content: value }) => ({
-      role,
-      content: value,
-    }));
+    state.retryAvailable = true;
+    const requestMessages = chatContext(state.messages);
     render();
     const prepared = await json('/api/chat/prepare', {
       method: 'POST',
@@ -352,7 +429,7 @@ async function sendMessage(text) {
         },
       );
     });
-    const assistant = { id: crypto.randomUUID(), role: 'assistant', content: '' };
+    assistant = { id: crypto.randomUUID(), role: 'assistant', content: '' };
     state.messages.push(assistant);
     render();
     const response = await api('/api/chat/stream', {
@@ -365,11 +442,13 @@ async function sendMessage(text) {
       }),
     });
     if (!response.body) throw new Error('Provider stream is empty');
+    let completed = false;
     const parser = new SseParser((event, data) => {
       if (event === 'delta' && typeof data.text === 'string') {
         assistant.content += data.text;
         renderMessages();
       }
+      if (event === 'done') completed = true;
       if (event === 'error') throw new Error(data.message ?? 'Provider stream failed');
     });
     const reader = response.body.getReader();
@@ -378,14 +457,17 @@ async function sendMessage(text) {
       parser.push(value, done);
       if (done) break;
     }
-    if (!assistant.content) throw new Error('The provider returned no text');
+    if (!completed || !assistant.content) throw new Error('AI 回复未完整结束，请重试。');
     await persistMessage(state.conversationId, 'assistant', assistant.content);
+    assistantPersisted = true;
+    state.retryAvailable = false;
     state.notice = t('saved');
     await loadHistory();
   } catch (error) {
     if (error.message !== 'Request cancelled') state.error = error.message;
-    if (state.messages.at(-1)?.role === 'assistant' && !state.messages.at(-1).content)
+    if (!assistantPersisted && assistant && state.messages.at(-1) === assistant)
       state.messages.pop();
+    state.retryAvailable = savedUser && !assistantPersisted;
   } finally {
     state.busy = false;
     render();
@@ -419,32 +501,43 @@ function renderMain() {
   const textarea = el('textarea', {
     placeholder: '给 Meo AI 发消息…',
     'aria-label': '消息内容',
+    maxlength: 35000,
     disabled: !state.connection || !state.model || state.busy,
     onkeydown: (event) => {
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
         const value = event.target.value;
-        event.target.value = '';
         sendMessage(value);
       }
     },
   });
+  textarea.value = state.draft;
   const send = el('button', {
     class: 'send',
     text: state.busy ? '…' : '↑',
     title: '发送',
     disabled: !state.connection || !state.model || state.busy,
     onclick: () => {
-      const value = textarea.value;
-      textarea.value = '';
-      sendMessage(value);
+      sendMessage(textarea.value);
     },
   });
   textarea.addEventListener('input', () => {
+    state.draft = textarea.value;
     send.disabled = !textarea.value.trim() || state.busy || !state.connection || !state.model;
   });
+  send.disabled = !state.draft.trim() || state.busy || !state.connection || !state.model;
   const composer = el('footer', { class: 'composer-wrap' }, [
     el('div', { class: 'composer' }, [textarea, send]),
+    ...(state.retryAvailable
+      ? [
+          el('button', {
+            class: 'button ghost',
+            text: '重试回复',
+            disabled: state.busy,
+            onclick: () => sendMessage('', true),
+          }),
+        ]
+      : []),
     el('div', {
       class: 'hint',
       text: 'AI 回复可能不准确。发送前会显示 Account 的本次请求授权摘要。',
@@ -471,8 +564,20 @@ async function boot() {
     state.userId = session.userId;
     await Promise.all([loadConnections(), loadHistory()]);
     render();
-  } catch {
-    renderLogin();
+  } catch (error) {
+    if (error.status === 401) {
+      renderLogin();
+      return;
+    }
+    root.replaceChildren(
+      el('main', { class: 'login' }, [
+        el('section', { class: 'login-card' }, [
+          el('h1', { text: 'Meo AI 暂时无法加载' }),
+          el('p', { text: error.message || '请检查网络后重试。' }),
+          el('button', { class: 'button primary', text: '重试', onclick: boot }),
+        ]),
+      ]),
+    );
   }
 }
 
