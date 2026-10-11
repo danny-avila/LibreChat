@@ -41,6 +41,7 @@ export default function BashCall({
   hideAttachments = false,
   onExpand,
   toolCallId,
+  stepId,
 }: {
   initialProgress: number;
   isSubmitting: boolean;
@@ -56,6 +57,7 @@ export default function BashCall({
   hideAttachments?: boolean;
   onExpand?: () => void;
   toolCallId?: string;
+  stepId?: string;
 }) {
   const localize = useLocalize();
   const [showTimeoutDetails, setShowTimeoutDetails] = useState(false);
@@ -189,7 +191,12 @@ export default function BashCall({
     <>
       <BareStatus active={bare} text={finishedText} />
       {!bare && (
-        <div className={TOOL_ROW_CLASSES} ref={rowRef}>
+        <div
+          className={TOOL_ROW_CLASSES}
+          ref={rowRef}
+          data-task-tool-call={toolCallId}
+          data-task-step={stepId}
+        >
           <ProgressText
             phase={phase}
             onClick={toggleCode}
