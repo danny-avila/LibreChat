@@ -8,7 +8,10 @@ import {
   unseal,
 } from '../../_lib/session.js';
 
-function fail() {
+function fail(reason) {
+  // Keep OAuth diagnostics useful without logging authorization codes, state,
+  // cookies, access tokens, or provider responses.
+  console.warn('meo_oauth_callback_failed', { reason });
   return new Response('Meo Account sign-in failed. Return to Meo AI and try again.', {
     status: 400,
     headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store' },
@@ -20,20 +23,30 @@ export async function onRequest({ request, env }) {
   const code = url.searchParams.get('code') ?? '';
   const state = url.searchParams.get('state') ?? '';
   const flow = await unseal(cookieValue(request, stateCookieName), env);
-  if (
-    !code ||
-    !state ||
-    !flow ||
-    flow.state !== state ||
-    Date.now() - Number(flow.createdAt) > 600_000
-  ) {
-    return fail();
-  }
+  if (!code) return fail('missing_code');
+  if (!state) return fail('missing_state');
+  if (!flow) return fail('state_cookie_missing_or_invalid');
+  if (flow.state !== state) return fail('state_mismatch');
+  if (Date.now() - Number(flow.createdAt) > 600_000) return fail('state_expired');
+
+  let tokens;
   try {
-    const tokens = await exchangeCode(env, code, flow.verifier, callbackUrl(request));
-    if (!tokens?.access_token || !tokens?.refresh_token) return fail();
-    const user = await accountUser(env, tokens.access_token);
-    if (!user) return fail();
+    tokens = await exchangeCode(env, code, flow.verifier, callbackUrl(request));
+  } catch {
+    return fail('code_exchange_failed');
+  }
+  if (!tokens?.access_token || !tokens?.refresh_token) return fail('invalid_token_response');
+
+  let user;
+  try {
+    user = await accountUser(env, tokens.access_token);
+  } catch {
+    return fail('account_user_lookup_failed');
+  }
+  if (!user) return fail('account_user_lookup_failed');
+
+  let cookie;
+  try {
     const session = {
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
@@ -42,9 +55,13 @@ export async function onRequest({ request, env }) {
         Math.floor(Date.now() / 1000) + Number(tokens.expires_in ?? 3600),
       userId: user.id,
     };
-    const cookie = await seal(session, env);
-    if (cookie.length > 3800)
-      return new Response('Account session is too large for this browser.', { status: 500 });
+    cookie = await seal(session, env);
+  } catch {
+    return fail('session_cookie_creation_failed');
+  }
+  if (cookie.length > 3800) return fail('session_cookie_too_large');
+
+  try {
     return new Response(null, {
       status: 302,
       headers: [
@@ -60,6 +77,6 @@ export async function onRequest({ request, env }) {
       ],
     });
   } catch {
-    return fail();
+    return fail('callback_response_failed');
   }
 }
