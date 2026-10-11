@@ -34,6 +34,7 @@ import { ShareMessagesProvider } from './ShareMessagesProvider';
 import { useForkSharedConvoMutation } from '~/data-provider';
 import { useGetSharedStartupConfig } from '~/data-provider';
 import { ShareArtifactsContainer } from './ShareArtifacts';
+import AnalyticsConsent from '../System/AnalyticsConsent';
 import AppChatSurface from '../Chat/Surface';
 import { ShareContext } from '~/Providers';
 import MessagesView from './MessagesView';
@@ -236,6 +237,7 @@ function SharedView() {
       <div className="text-text-primary relative flex h-full min-h-0 flex-col" role="presentation">
         {content}
         {footer}
+        <AnalyticsConsent gtmId={config?.analyticsGtmId} />
       </div>
     </div>
   );

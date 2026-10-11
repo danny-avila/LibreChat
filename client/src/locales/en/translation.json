@@ -3647,5 +3647,11 @@
   "com_ui_tool_approval_connection_unavailable": "Approval cannot be remembered for this connection. Each call requires review.",
   "com_ui_tool_approval_remember_disabled": "Remembered approvals are disabled. Each call requires review.",
   "com_ui_tool_approval_storage_unavailable": "Remembered approval is unavailable. This approval will apply only to this call.",
-  "com_ui_tool_approval_background_unavailable": "Background launches cannot teach approval. Approve a successful foreground call to remember this tool."
+  "com_ui_tool_approval_background_unavailable": "Background launches cannot teach approval. Approve a successful foreground call to remember this tool.",
+  "com_ui_analytics_consent_accept": "Allow analytics",
+  "com_ui_analytics_consent_decline": "Decline",
+  "com_ui_analytics_consent_label": "Analytics consent",
+  "com_ui_analytics_consent_message": "This site can use Google Tag Manager to measure how it is used. Analytics stay off unless you allow them, and you can change this later in Settings.",
+  "com_ui_analytics_consent_setting": "Allow analytics",
+  "com_ui_analytics_consent_setting_description": "Lets this site load Google Tag Manager. Turning this off takes full effect after you reload the page."
 }

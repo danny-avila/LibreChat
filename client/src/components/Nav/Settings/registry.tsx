@@ -28,6 +28,7 @@ import EnableTwoFactorItem from '../SettingsTabs/Account/TwoFactorAuthentication
 import LangfuseConnection from '../SettingsTabs/Integrations/LangfuseConnection';
 import ClockFormatSelector from '../SettingsTabs/General/ClockFormatSelector';
 import ImportConversations from '../SettingsTabs/Data/ImportConversations';
+import AnalyticsConsentToggle from '../SettingsTabs/Data/AnalyticsConsent';
 import WeekStartSelector from '../SettingsTabs/General/WeekStartSelector';
 import { ArchiveAllChats } from '../SettingsTabs/Data/ArchiveAllChats';
 import { toggleControl, ThemeSetting, LangSetting } from './controls';
@@ -724,6 +725,15 @@ export const registry: SettingEntry[] = [
     labelKey: 'com_ui_settings_label_archive_all_chats',
     keywords: ['archive', 'chats', 'conversations', 'bulk'],
     Component: ArchiveAllChats,
+  },
+  {
+    id: 'analyticsConsent',
+    tab: DATA,
+    section: 'data',
+    labelKey: 'com_ui_analytics_consent_setting',
+    keywords: ['analytics', 'cookies', 'consent', 'tracking', 'privacy', 'google', 'gtm'],
+    show: (ctx) => ctx.analyticsConfigured,
+    Component: AnalyticsConsentToggle,
   },
   // Data controls · API keys
   {

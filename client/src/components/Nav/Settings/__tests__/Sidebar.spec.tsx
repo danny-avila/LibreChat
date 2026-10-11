@@ -29,6 +29,7 @@ const ctx: SettingsContextValue = {
   replyTabBadgeAllowed: true,
   replyNotificationsAllowed: true,
   replyNotificationSoundAllowed: true,
+  analyticsConfigured: false,
 };
 
 function setup(extra: Partial<SettingsContextValue> = {}, query = '') {

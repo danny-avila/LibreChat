@@ -11,6 +11,7 @@ import useProviderKeys from '../SettingsTabs/ProviderKeys/useProviderKeys';
 import { useHasAccess, useAuthContext, useGetAgentsConfig } from '~/hooks';
 import usePersonalizationAccess from '~/hooks/usePersonalizationAccess';
 import { useGetStartupConfig } from '~/data-provider';
+import { hasAnalyticsGtmId } from '~/store/analytics';
 import store from '~/store';
 
 export function useSettingsContext(): SettingsContextValue {
@@ -55,6 +56,7 @@ export function useSettingsContext(): SettingsContextValue {
     replyConfigLoaded && replyNotificationsConfig?.desktop !== false;
   const replyNotificationSoundAllowed =
     replyConfigLoaded && replyNotificationsConfig?.sound !== false;
+  const analyticsConfigured = hasAnalyticsGtmId(startupConfig?.analyticsGtmId);
   const hasRemoteAgentsBool = hasRemoteAgents === true;
   const hasMultiConvoBool = hasMultiConvo === true;
   const hasPromptsBool = hasPrompts === true;
@@ -88,6 +90,7 @@ export function useSettingsContext(): SettingsContextValue {
       replyTabBadgeAllowed,
       replyNotificationsAllowed,
       replyNotificationSoundAllowed,
+      analyticsConfigured,
     }),
     [
       balanceEnabled,
@@ -113,6 +116,7 @@ export function useSettingsContext(): SettingsContextValue {
       replyTabBadgeAllowed,
       replyNotificationsAllowed,
       replyNotificationSoundAllowed,
+      analyticsConfigured,
     ],
   );
 }

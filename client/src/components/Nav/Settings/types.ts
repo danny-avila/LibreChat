@@ -62,6 +62,7 @@ export interface SettingsContextValue {
   replyTabBadgeAllowed: boolean;
   replyNotificationsAllowed: boolean;
   replyNotificationSoundAllowed: boolean;
+  analyticsConfigured: boolean;
 }
 
 export interface SettingEntry {
