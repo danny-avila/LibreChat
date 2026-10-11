@@ -38,7 +38,10 @@ test.describe('the cache audit log', () => {
       cwd: resolve(repoRoot, 'api'),
     });
     expect(result.status, result.output).toBe(0);
-    const output = result.stdout.slice(result.stdout.indexOf('RESULT') + 'RESULT'.length);
+    const lines: string[] = JSON.parse(
+      result.stdout.slice(result.stdout.indexOf('RESULT') + 'RESULT'.length),
+    );
+    const output = lines.join('\n');
     expect(output).toContain('"count":1');
     expect(output).not.toContain('probe-secret-token');
     expect(output).not.toContain('probe-user-key-1234');
