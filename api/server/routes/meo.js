@@ -1,5 +1,9 @@
 const express = require('express');
-const { MeoAccountProviderClient, MeoCloudConversationClient } = require('@librechat/api');
+const {
+  MeoAccountProviderClient,
+  MeoCloudConversationClient,
+  meoErrorResponse,
+} = require('@librechat/api');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 
 const router = express.Router();
@@ -43,13 +47,8 @@ function cloudFor(req) {
 }
 
 function sendError(res, error) {
-  const message = error instanceof Error ? error.message : 'Meo Account request failed';
-  const status = message.includes('session is unavailable') ? 401 : 400;
-  const safeMessage =
-    status === 401
-      ? 'Meo Account session is unavailable. Sign in again.'
-      : 'Meo Account request failed. Check the connection and try again.';
-  return res.status(status).json({ error: safeMessage });
+  const { status, message } = meoErrorResponse(error);
+  return res.status(status).json({ error: message });
 }
 
 router.get('/connections', requireJwtAuth, async (req, res) => {
@@ -62,7 +61,7 @@ router.get('/connections', requireJwtAuth, async (req, res) => {
 
 router.get('/conversations', requireJwtAuth, async (req, res) => {
   try {
-    return res.json({ conversations: await cloudFor(req).listConversations() });
+    return res.json(await cloudFor(req).listConversations(req.query.cursor));
   } catch (error) {
     return sendError(res, error);
   }

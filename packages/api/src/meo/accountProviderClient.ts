@@ -1,3 +1,5 @@
+import { MeoHttpError, meoUpstreamError } from './httpError';
+
 export type MeoCredential = {
   id: string;
   provider: string;
@@ -160,7 +162,7 @@ export class MeoAccountProviderClient {
     signal: AbortSignal,
   ): Promise<Response> {
     const token = (await this.accessToken()).trim();
-    if (!token) throw new Error('Meo Account session is unavailable');
+    if (!token) throw new MeoHttpError(401, 'Meo Account session is unavailable. Sign in again.');
     const { userPrompt, categories } = chatPrompt(input.messages);
     const response = await this.fetcher(`${this.accountUrl}/functions/v1/ai-provider-broker`, {
       method: 'POST',
@@ -193,12 +195,7 @@ export class MeoAccountProviderClient {
       signal,
     });
     if (!response.ok) {
-      const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
-      throw new Error(
-        typeof data.error === 'string'
-          ? data.error
-          : `Meo Account request failed (${response.status})`,
-      );
+      throw meoUpstreamError(response.status);
     }
     if (!response.body || !response.headers.get('content-type')?.includes('text/event-stream')) {
       throw new Error('Meo Account returned an invalid chat stream');
@@ -208,7 +205,7 @@ export class MeoAccountProviderClient {
 
   private async call(body: Record<string, unknown>): Promise<Record<string, unknown>> {
     const token = (await this.accessToken()).trim();
-    if (!token) throw new Error('Meo Account session is unavailable');
+    if (!token) throw new MeoHttpError(401, 'Meo Account session is unavailable. Sign in again.');
     const response = await this.fetcher(`${this.accountUrl}/functions/v1/ai-provider-broker`, {
       method: 'POST',
       headers: {
@@ -219,46 +216,42 @@ export class MeoAccountProviderClient {
       body: JSON.stringify(body),
       redirect: 'error',
     });
+    if (!response.ok) throw meoUpstreamError(response.status);
     let data: unknown;
     try {
       data = await response.json();
     } catch {
       throw new Error('Meo Account returned invalid JSON');
     }
-    if (!response.ok || !data || typeof data !== 'object' || Array.isArray(data)) {
-      const error =
-        data && typeof data === 'object' ? (data as Record<string, unknown>).error : null;
-      throw new Error(
-        typeof error === 'string' ? error : `Meo Account request failed (${response.status})`,
-      );
-    }
+    if (!data || typeof data !== 'object' || Array.isArray(data))
+      throw new Error('Meo Account returned invalid JSON');
     return data as Record<string, unknown>;
   }
 }
 
 function chatPrompt(messages: MeoChatMessage[]) {
   if (!Array.isArray(messages) || messages.length < 1 || messages.length > 80)
-    throw new Error('Chat context is invalid');
+    throw new MeoHttpError(400, 'Chat context is invalid');
   const normalized = messages.map((message) => {
     if (
       !message ||
       !['user', 'assistant'].includes(message.role) ||
       typeof message.content !== 'string'
     )
-      throw new Error('Chat message is invalid');
+      throw new MeoHttpError(400, 'Chat message is invalid');
     const content = message.content.trim();
-    if (!content || content.length > 40000) throw new Error('Chat message is invalid');
+    if (!content || content.length > 40000) throw new MeoHttpError(400, 'Chat message is invalid');
     return { role: message.role, content };
   });
   if (normalized[normalized.length - 1]?.role !== 'user')
-    throw new Error('The latest chat message must be from the user');
+    throw new MeoHttpError(400, 'The latest chat message must be from the user');
   const history = normalized
     .slice(0, -1)
     .map(({ role, content }) => `${role === 'assistant' ? 'Assistant' : 'User'}: ${content}`)
     .join('\n\n');
   const current = normalized[normalized.length - 1].content;
   const userPrompt = history ? `Conversation so far:\n${history}\n\nUser: ${current}` : current;
-  if (userPrompt.length > 40000) throw new Error('Chat context is too large');
+  if (userPrompt.length > 40000) throw new MeoHttpError(400, 'Chat context is too large');
   return {
     userPrompt,
     categories: history ? ['chat_text', 'conversation_context'] : ['chat_text'],
@@ -273,6 +266,6 @@ function isModel(value: unknown): value is MeoModel {
 
 function requiredText(value: unknown, label: string, max: number): string {
   if (typeof value !== 'string' || !value.trim() || value.trim().length > max)
-    throw new Error(`${label} is invalid`);
+    throw new MeoHttpError(400, `${label} is invalid`);
   return value.trim();
 }

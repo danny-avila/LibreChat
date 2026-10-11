@@ -146,3 +146,4 @@ export * from './tools/approval';
 export * from './mcp/approval';
 export * from './meo/accountProviderClient';
 export * from './meo/cloudConversationClient';
+export * from './meo/httpError';

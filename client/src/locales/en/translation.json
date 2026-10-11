@@ -3432,6 +3432,8 @@
   "meo_web_chat_failed": "The chat request failed.",
   "meo_ai_activity": "AI activity",
   "meo_web_history": "Conversation history",
+  "meo_web_load_more": "Load more",
+  "meo_web_loading_more": "Loading…",
   "meo_web_untitled_chat": "Untitled chat",
   "meo_web_conversation": "Conversation"
 }

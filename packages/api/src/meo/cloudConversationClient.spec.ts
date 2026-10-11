@@ -12,9 +12,10 @@ describe('MeoCloudConversationClient', () => {
     });
 
     const conversations = await client.listConversations();
-    expect(conversations).toEqual([
-      { id: 'conversation-1', title: 'Hello', createdAt: '', updatedAt: '' },
-    ]);
+    expect(conversations).toEqual({
+      conversations: [{ id: 'conversation-1', title: 'Hello', createdAt: '', updatedAt: '' }],
+      nextCursor: null,
+    });
     expect(fetcher.mock.calls[0][1]?.headers).toEqual(
       expect.objectContaining({
         Authorization: 'Bearer account-session-token',
@@ -40,6 +41,19 @@ describe('MeoCloudConversationClient', () => {
       role: 'user',
       content: 'Hello',
     });
+  });
+
+  it('forwards a cursor and preserves upstream rate limit status without exposing its body', async () => {
+    const fetcher = jest.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
+      Response.json({ error: 'private upstream detail' }, { status: 429 }),
+    );
+    const client = new MeoCloudConversationClient({
+      cloudUrl: 'https://ai.meoarch.org',
+      accessToken: async () => 'token',
+      fetcher,
+    });
+    await expect(client.listConversations('next-cursor')).rejects.toMatchObject({ status: 429 });
+    expect(String(fetcher.mock.calls[0][0])).toContain('cursor=next-cursor');
   });
 
   it('rejects public HTTP cloud URLs and extracts persisted text blocks', async () => {

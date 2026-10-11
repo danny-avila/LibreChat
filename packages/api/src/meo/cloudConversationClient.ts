@@ -1,3 +1,5 @@
+import { MeoHttpError, meoUpstreamError } from './httpError';
+
 export type MeoConversationSummary = {
   id: string;
   title: string;
@@ -37,10 +39,16 @@ export class MeoCloudConversationClient {
     this.fetcher = options.fetcher ?? fetch;
   }
 
-  async listConversations(): Promise<MeoConversationSummary[]> {
-    const data = await this.call('/v1/conversations?limit=50');
+  async listConversations(
+    cursor = '',
+  ): Promise<{ conversations: MeoConversationSummary[]; nextCursor: string | null }> {
+    if (typeof cursor !== 'string' || cursor.length > 512)
+      throw new MeoHttpError(400, 'Conversation cursor is invalid');
+    const query = new URLSearchParams({ limit: '50' });
+    if (cursor) query.set('cursor', cursor);
+    const data = await this.call(`/v1/conversations?${query}`);
     if (!Array.isArray(data.conversations)) throw new Error('Meo Cloud returned invalid history');
-    return data.conversations.flatMap((value): MeoConversationSummary[] => {
+    const conversations = data.conversations.flatMap((value): MeoConversationSummary[] => {
       if (!value || typeof value !== 'object') return [];
       const row = value as Record<string, unknown>;
       if (typeof row.id !== 'string') return [];
@@ -53,6 +61,10 @@ export class MeoCloudConversationClient {
         },
       ];
     });
+    return {
+      conversations,
+      nextCursor: typeof data.next_cursor === 'string' ? data.next_cursor : null,
+    };
   }
 
   async createConversation(title: string): Promise<MeoConversationSummary> {
@@ -108,7 +120,7 @@ export class MeoCloudConversationClient {
 
   private async call(path: string, init?: RequestInit): Promise<Record<string, unknown>> {
     const token = (await this.accessToken()).trim();
-    if (!token) throw new Error('Meo Account session is unavailable');
+    if (!token) throw new MeoHttpError(401, 'Meo Account session is unavailable. Sign in again.');
     const response = await this.fetcher(`${this.cloudUrl}${path}`, {
       ...init,
       method: init?.method ?? 'GET',
@@ -121,15 +133,15 @@ export class MeoCloudConversationClient {
       redirect: 'error',
       cache: 'no-store',
     });
+    if (!response.ok) throw meoUpstreamError(response.status);
     let data: unknown;
     try {
       data = await response.json();
     } catch {
       throw new Error('Meo Cloud returned invalid JSON');
     }
-    if (!response.ok || !data || typeof data !== 'object' || Array.isArray(data)) {
-      throw new Error(`Meo Cloud request failed (${response.status})`);
-    }
+    if (!data || typeof data !== 'object' || Array.isArray(data))
+      throw new Error('Meo Cloud returned invalid JSON');
     return data as Record<string, unknown>;
   }
 }
@@ -161,7 +173,7 @@ function messageText(value: unknown): string {
 
 function requiredText(value: unknown, label: string, max: number): string {
   if (typeof value !== 'string' || !value.trim() || value.trim().length > max) {
-    throw new Error(`${label} is invalid`);
+    throw new MeoHttpError(400, `${label} is invalid`);
   }
   return value.trim();
 }
