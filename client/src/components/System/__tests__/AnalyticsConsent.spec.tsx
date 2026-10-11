@@ -98,4 +98,16 @@ describe('AnalyticsConsent', () => {
       expect.objectContaining({ analytics_storage: 'denied', ad_storage: 'denied' }),
     ]);
   });
+
+  it('tells a container still on the page that consent was given again', () => {
+    localStorage.setItem('analyticsConsent', JSON.stringify('granted'));
+    window.dataLayer = [{ event: 'gtm.js' }];
+    renderConsent('GTM-TEST');
+    expect(initialize).not.toHaveBeenCalled();
+    expect(Array.from(window.dataLayer[1] as ArrayLike<unknown>)).toEqual([
+      'consent',
+      'update',
+      expect.objectContaining({ analytics_storage: 'granted', ad_storage: 'granted' }),
+    ]);
+  });
 });

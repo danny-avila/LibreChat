@@ -3,13 +3,15 @@ import { useAtom } from 'jotai';
 import TagManager from 'react-gtm-module';
 import { analyticsConsentAtom, hasAnalyticsGtmId } from '~/store/analytics';
 
+type ConsentState = 'granted' | 'denied';
+
 /**
- * Tells an already loaded Google Tag Manager that analytics consent was withdrawn,
- * through the consent mode command `gtag('consent', 'update', ...)`. A loaded
- * container cannot be unloaded, so tags that ignore consent mode keep running
- * until the page reloads; the reload is what completes the revocation.
+ * Tells an already loaded Google Tag Manager the viewer's current answer, through
+ * the consent mode command `gtag('consent', 'update', ...)`. A loaded container
+ * cannot be unloaded, so after a withdrawal tags that ignore consent mode keep
+ * running until the page reloads; the reload is what completes the revocation.
  */
-function pushConsentDenied() {
+function pushConsentUpdate(state: ConsentState) {
   const dataLayer = window.dataLayer;
   if (!Array.isArray(dataLayer)) {
     return;
@@ -20,11 +22,22 @@ function pushConsentDenied() {
     dataLayer?.push(arguments);
   }
   gtag('consent', 'update', {
-    analytics_storage: 'denied',
-    ad_storage: 'denied',
-    ad_user_data: 'denied',
-    ad_personalization: 'denied',
+    analytics_storage: state,
+    ad_storage: state,
+    ad_user_data: state,
+    ad_personalization: state,
   });
+}
+
+/** Whether a container is already on this page: GTM itself, or the `gtm.js` start
+ *  event its snippet queues before the script arrives. */
+function isContainerLoaded() {
+  if (typeof window.google_tag_manager !== 'undefined') {
+    return true;
+  }
+  return (window.dataLayer ?? []).some(
+    (entry) => (entry as { event?: unknown } | null)?.event === 'gtm.js',
+  );
 }
 
 /**
@@ -40,7 +53,10 @@ export default function useAnalytics(gtmId: string | null | undefined) {
     if (!enabled || consent !== 'granted') {
       return;
     }
-    if (typeof window.google_tag_manager !== 'undefined') {
+    if (isContainerLoaded()) {
+      /** Consent given again after a withdrawal in this page: the container is
+       *  still here, so it only needs the new answer. */
+      pushConsentUpdate('granted');
       return;
     }
     TagManager.initialize({ gtmId });
@@ -48,7 +64,7 @@ export default function useAnalytics(gtmId: string | null | undefined) {
 
   useEffect(() => {
     if (consent === 'denied') {
-      pushConsentDenied();
+      pushConsentUpdate('denied');
     }
   }, [consent]);
 
