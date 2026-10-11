@@ -71,7 +71,7 @@ export default function useAnalytics(gtmId: string | null | undefined) {
   }, [enabled, gtmId, consent]);
 
   useEffect(() => {
-    /** Only this deployment's container is told; another one on the page keeps its own state. */
+    /** Nothing is pushed unless this deployment's container is on the page. */
     if (enabled && consent === 'denied' && isContainerLoaded(gtmId)) {
       pushConsentUpdate('denied');
     }
