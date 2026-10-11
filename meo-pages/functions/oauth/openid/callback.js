@@ -1,4 +1,9 @@
-import { accountUser, callbackUrl, exchangeCode } from '../../_lib/account.js';
+import {
+  OAuthTokenExchangeError,
+  accountUser,
+  callbackUrl,
+  exchangeCode,
+} from '../../_lib/account.js';
 import {
   clearCookies,
   seal,
@@ -37,7 +42,10 @@ export async function onRequest({ request, env }) {
   let tokens;
   try {
     tokens = await exchangeCode(env, code, flow.verifier, callbackUrl(request));
-  } catch {
+  } catch (error) {
+    if (error instanceof OAuthTokenExchangeError) {
+      return fail(error.reason);
+    }
     return fail('code_exchange_failed');
   }
   if (!tokens?.access_token || !tokens?.refresh_token) return fail('invalid_token_response');
