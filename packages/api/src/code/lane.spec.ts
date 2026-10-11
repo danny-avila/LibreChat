@@ -77,7 +77,15 @@ describe('createLaneGitRecorder', () => {
     );
   });
 
-  it.each(['../x', 'o/..', 'a b/c', 'owner', 'o/r/extra', 'x'.repeat(300)])(
+  it('stores a nested GitLab group path with the lane', async () => {
+    const { record, setConvoLaneGit } = make({ repo: 'group/sub/project' });
+    await record?.(laneGit);
+    expect(setConvoLaneGit).toHaveBeenCalledWith(
+      expect.objectContaining({ repo: 'group/sub/project' }),
+    );
+  });
+
+  it.each(['../x', 'o/..', 'o/./r', 'o//r', 'a b/c', 'owner', 'x'.repeat(300)])(
     'drops the unsafe repository %s but still records the lane',
     async (repo) => {
       const { record, setConvoLaneGit } = make({ repo });

@@ -63,6 +63,7 @@ import { STATEFUL_CODE_ENVIRONMENTS } from './stateful-code';
 import { specsConfigSchema, TSpecsConfig } from './models';
 import { fileConfigSchema } from './file-config';
 import {
+  PULL_REQUEST_PROVIDERS,
   PULL_REQUEST_BATCH_VERSION,
   PULL_REQUEST_BATCH_TIMEOUT_MAX_SECONDS,
 } from './types/pullRequest';
@@ -506,8 +507,8 @@ const skillSyncTenantIdSchema = z
 const pullRequestRepositorySchema = z
   .string()
   .trim()
-  .regex(/^[A-Za-z0-9_.-]+\/(?:[A-Za-z0-9_.-]+|\*)$/, {
-    message: 'must be owner/name or owner/*',
+  .regex(/^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+){0,18}\/(?:[A-Za-z0-9_.-]+|\*)$/, {
+    message: 'must be owner/name or owner/*, or a nested group path such as group/sub/name',
   })
   .refine((value) => value.split('/').every((segment) => segment !== '.' && segment !== '..'), {
     message: 'must not contain dot segments',
@@ -1896,8 +1897,13 @@ export const agentsEndpointSchema = baseEndpointSchema
       pullRequests: z
         .object({
           enabled: z.boolean().optional(),
-          /** The GitHub the token belongs to: `github.com` (the default), a GitHub Enterprise Server
-           *  host, or a GitHub Enterprise Cloud data residency host ending in `.ghe.com`. */
+          /** Where pull requests live: `github` (the default), `gitlab` for merge requests on
+           *  gitlab.com or a self-managed GitLab, or `bitbucket` for Bitbucket Cloud. Read from the
+           *  YAML only, as `host` is, so an override cannot send the token to another service. */
+          provider: z.enum(PULL_REQUEST_PROVIDERS).optional(),
+          /** The host the token belongs to: by default `github.com`, `gitlab.com` or `bitbucket.org`
+           *  for the provider; a GitHub Enterprise Server or `*.ghe.com` host, or a self-managed
+           *  GitLab host. Bitbucket is Cloud only. Read from the YAML only, never an override. */
           host: pullRequestHostSchema.optional(),
           /** Environment variable reference holding a read-only GitHub token, e.g.
            *  `${GITHUB_PULL_REQUEST_TOKEN}`. Never the token itself. Optional: without it the first

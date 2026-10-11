@@ -1182,7 +1182,19 @@ describe('agent pull request config', () => {
     expect(parse({ ...enabled, allowedRepositories: [repo] }).success).toBe(true);
   });
 
-  it.each(['*/*', '*', 'owner', 'o/r/extra', '../x', 'o/..', 'a b/c', 'o/*x', ''])(
+  it.each(['g/sub/r', 'g/sub/*', 'a/b/c/d'])('accepts the nested group path %s', (repo) => {
+    expect(parse({ ...enabled, allowedRepositories: [repo] }).success).toBe(true);
+  });
+
+  it.each(['github', 'gitlab', 'bitbucket'])('accepts the provider %s', (provider) => {
+    expect(parse({ ...enabled, provider }).success).toBe(true);
+  });
+
+  it('rejects a provider it does not know', () => {
+    expect(parse({ ...enabled, provider: 'gitea' }).success).toBe(false);
+  });
+
+  it.each(['*/*', '*', 'owner', 'g/*/r', '../x', 'o/..', 'g/../r', 'a b/c', 'o/*x', 'o//r', ''])(
     'rejects %p as an allowed repository',
     (repo) => {
       expect(parse({ ...enabled, allowedRepositories: [repo] }).success).toBe(false);

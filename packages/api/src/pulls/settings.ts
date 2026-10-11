@@ -1,15 +1,36 @@
-import type { TAgentsEndpoint } from 'librechat-data-provider';
+import { PULL_REQUEST_PROVIDERS } from 'librechat-data-provider';
+import type { PullRequestProvider, TAgentsEndpoint } from 'librechat-data-provider';
 
 export type PullRequestSettings = NonNullable<TAgentsEndpoint['pullRequests']>;
 
 const TOKEN_REFERENCE = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/;
 
 /**
- * Tried in order when `token` is not configured, so a deployment that already holds a GitHub token
- * for something else gets pull requests without more setup. A token named in the config always
- * wins, and one that does not resolve is reported instead of silently replaced.
+ * Tried in order when `token` is not configured, so a deployment that already holds a token for
+ * something else gets pull requests without more setup. A token named in the config always wins,
+ * and one that does not resolve is reported instead of silently replaced.
  */
-const TOKEN_ENV_FALLBACKS = ['GITHUB_PULL_REQUEST_TOKEN', 'GITHUB_TOKEN', 'GH_TOKEN'] as const;
+const TOKEN_ENV_FALLBACKS: Record<PullRequestProvider, readonly string[]> = {
+  github: ['GITHUB_PULL_REQUEST_TOKEN', 'GITHUB_TOKEN', 'GH_TOKEN'],
+  gitlab: ['GITLAB_PULL_REQUEST_TOKEN', 'GITLAB_TOKEN'],
+  bitbucket: ['BITBUCKET_PULL_REQUEST_TOKEN'],
+};
+
+const DEFAULT_HOSTS: Record<PullRequestProvider, string> = {
+  github: 'github.com',
+  gitlab: 'gitlab.com',
+  bitbucket: 'bitbucket.org',
+};
+
+/** The configured provider, GitHub when none is set, `null` for a name this server does not know. */
+export function resolvePullRequestProvider(
+  provider: string | undefined,
+): PullRequestProvider | null {
+  if (provider == null) return 'github';
+  return (PULL_REQUEST_PROVIDERS as readonly string[]).includes(provider)
+    ? (provider as PullRequestProvider)
+    : null;
+}
 
 type Env = Readonly<Record<string, string | undefined>>;
 
@@ -23,25 +44,34 @@ export function resolveTokenReference(reference: string | undefined, env: Env): 
 const HOST = /^(?=[a-z0-9])[a-z0-9.-]*[a-z0-9](?::[0-9]{1,5})?$/;
 
 /**
- * The configured GitHub host, lowercased, or `github.com` when none is set. `null` for a value that
- * is not a plain host name: the token is then sent nowhere rather than to a host nobody named.
+ * The configured host, lowercased, or the provider's own when none is set. `null` for a value that
+ * is not a plain host name, and for any Bitbucket host but Cloud's: the token is then sent nowhere
+ * rather than to a host nobody named.
  */
-export function resolvePullRequestHost(host: string | undefined): string | null {
-  if (host == null) return 'github.com';
+export function resolvePullRequestHost(
+  host: string | undefined,
+  provider: PullRequestProvider = 'github',
+): string | null {
+  if (host == null) return DEFAULT_HOSTS[provider];
   const value = host.trim().toLowerCase();
   if (value.length > 253 || !HOST.test(value)) return null;
   const [name, port] = value.split(':');
-  if (port == null) return value;
-  const number = Number(port);
-  if (number < 1 || number > 65535) return null;
+  const number = port == null ? null : Number(port);
+  if (number != null && (number < 1 || number > 65535)) return null;
   /** A URL drops the https default port, so a page on `host:443` compares as `host`. */
-  return number === 443 ? name : `${name}:${number}`;
+  const normalized = number == null || number === 443 ? name : `${name}:${number}`;
+  if (provider === 'bitbucket' && normalized !== DEFAULT_HOSTS.bitbucket) return null;
+  return normalized;
 }
 
 /** The configured token reference, else the first fallback variable that is set. */
-export function resolvePullRequestToken(reference: string | undefined, env: Env): string | null {
+export function resolvePullRequestToken(
+  reference: string | undefined,
+  env: Env,
+  provider: PullRequestProvider = 'github',
+): string | null {
   if (reference != null) return resolveTokenReference(reference, env);
-  for (const name of TOKEN_ENV_FALLBACKS) {
+  for (const name of TOKEN_ENV_FALLBACKS[provider]) {
     const value = env[name]?.trim();
     if (value) return value;
   }
@@ -59,8 +89,11 @@ export function isPullRequestFeatureActive(
   env: Env,
 ): boolean {
   if (settings?.enabled === false) return false;
-  if (resolvePullRequestHost(settings?.host) == null) return false;
-  if (settings?.token == null && resolvePullRequestToken(undefined, env) == null) return false;
+  const provider = resolvePullRequestProvider(settings?.provider);
+  if (provider == null || resolvePullRequestHost(settings?.host, provider) == null) return false;
+  if (settings?.token == null && resolvePullRequestToken(undefined, env, provider) == null) {
+    return false;
+  }
   return (
     settings?.allowAllRepositories === true || (settings?.allowedRepositories?.length ?? 0) > 0
   );

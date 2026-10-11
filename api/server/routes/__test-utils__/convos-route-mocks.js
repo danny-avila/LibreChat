@@ -147,7 +147,7 @@ module.exports = {
       () => (_req, res) => res.status(200).json({ tasks: [] }),
     ),
     createBackgroundTaskPolicyMiddleware: jest.fn(() => (_req, _res, next) => next()),
-    createGitHubPullRequestSource: jest.fn(() => ({ find: jest.fn() })),
+    createPullRequestSource: jest.fn(() => ({ find: jest.fn() })),
     createProxyAwareFetch: jest.fn(() => jest.fn()),
     createPullRequestLookup: jest.fn(() => jest.fn()),
     createConversationPullRequestsHandler: jest.fn(() => jest.fn()),
