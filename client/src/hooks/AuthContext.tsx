@@ -268,6 +268,7 @@ const AuthContextProvider = ({
       setIsAuthReady(true);
       setQueriesEnabled(true);
       openFileDeletionRetention();
+      openTTSCacheWrites();
       navigate(redirect, { replace: true });
     },
     [navigate, setQueriesEnabled, setUser],

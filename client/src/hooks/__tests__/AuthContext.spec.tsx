@@ -15,17 +15,19 @@ import {
 } from 'librechat-data-provider';
 import type { TAuthConfig } from '~/common';
 import {
+  SESSION_KEY,
+  putTTSCache,
+  getTTSCacheEpoch,
+  retainFileDeletion,
+  clearRetainedFileDeletions,
+  takeRetainedFileDeletions,
+} from '~/utils';
+import {
   chatFilterStatusAtom,
   chatFilterTagsAtom,
   chatSortAtom,
   resetChatFilterSessionAtom,
 } from '~/components/Conversations/chatFilters';
-import {
-  SESSION_KEY,
-  retainFileDeletion,
-  clearRetainedFileDeletions,
-  takeRetainedFileDeletions,
-} from '~/utils';
 import { AuthContextProvider, useAuthContext } from '../AuthContext';
 
 const mockNavigate = jest.fn();
@@ -558,6 +560,28 @@ describe('AuthContextProvider — logout onSuccess/onError handling', () => {
     });
 
     expect(del).toHaveBeenCalledWith('tts-responses');
+    Reflect.deleteProperty(globalThis, 'caches');
+  });
+
+  it('reopens TTS caching when a session is completed in place', async () => {
+    const put = jest.fn();
+    Object.defineProperty(globalThis, 'caches', {
+      value: { open: async () => ({ keys: async () => [], put }), delete: async () => true },
+      configurable: true,
+    });
+    renderProvider();
+
+    act(() => {
+      mockCapturedLogoutOptions.onSuccess({ message: 'Logout successful' });
+    });
+    await putTTSCache('/tts-cache/ended', {} as Response, getTTSCacheEpoch());
+    expect(put).not.toHaveBeenCalled();
+
+    act(() => {
+      capturedAuthContext?.completeAuthentication('auth-token', { id: 'user-1' } as never);
+    });
+    await putTTSCache('/tts-cache/next', {} as Response, getTTSCacheEpoch());
+    expect(put).toHaveBeenCalledWith('/tts-cache/next', {});
     Reflect.deleteProperty(globalThis, 'caches');
   });
 
