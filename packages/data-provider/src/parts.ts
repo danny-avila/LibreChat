@@ -500,12 +500,12 @@ const toToolPart = (
   const { name, id, args, output, submitted } = readToolCall(toolCall);
   const { input, complete } = parseToolInput(args);
   const { runStepStatus, progress } = toolCall;
-  const failure = resolveFailure(toolCall, output, context);
+  const responded = 'name' in toolCall && toolCall.approval?.decision === 'respond';
+  const failure = responded ? getToolFailure(toolCall) : resolveFailure(toolCall, output, context);
   const approval = getToolApproval(toolCall);
   const ended = submitted || runStepStatus === 'completed' || (progress ?? 0) >= 1;
 
   let state: UIToolState = complete ? 'input-available' : 'input-streaming';
-  const responded = 'name' in toolCall && toolCall.approval?.decision === 'respond';
   if (approval?.approved === false && !responded && (ended || failure)) {
     state = 'output-denied';
   } else if (failure) {

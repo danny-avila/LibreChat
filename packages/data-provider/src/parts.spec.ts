@@ -1323,6 +1323,29 @@ describe('parts', () => {
       expect(fromUIPart(part)).toStrictEqual(responded);
     });
 
+    it("keeps a respond decision's output successful even when it reads like an error", () => {
+      const responded = toolCall({
+        approval: approval({ decision: 'respond' }),
+        output: 'Error: tool call failed: use the cached result instead',
+        progress: 1,
+      });
+      const resolveToolFailure = jest.fn(() => 'failed');
+
+      const part = toUIPart(responded, 0, { resolveToolFailure });
+      expect(part).toMatchObject({
+        state: 'output-available',
+        output: 'Error: tool call failed: use the cached result instead',
+      });
+      expect(part).not.toHaveProperty('errorText');
+      expect(resolveToolFailure).not.toHaveBeenCalled();
+      expect(fromUIPart(part)).toStrictEqual(responded);
+      expect(
+        toUIPart(
+          toolCall({ approval: approval({ decision: 'respond' }), runStepStatus: 'failed' }),
+        ),
+      ).toMatchObject({ state: 'output-error' });
+    });
+
     it('keeps an approved call approved through its output or failure', () => {
       const succeeded = toolCall({ approval: approval({ decision: 'approve' }), output: '3' });
       const failed = toolCall({
