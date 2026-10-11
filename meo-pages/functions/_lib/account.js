@@ -37,7 +37,9 @@ export async function accountUser(env, accessToken) {
 export async function exchangeCode(env, code, verifier, redirectUri) {
   const response = await fetch(`${accountUrl(env)}/auth/v1/oauth/token`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: authHeaders(env, null, {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    }),
     body: new URLSearchParams({
       grant_type: 'authorization_code',
       code,
@@ -55,7 +57,9 @@ export async function exchangeCode(env, code, verifier, redirectUri) {
 export async function refreshTokens(env, refreshToken) {
   const response = await fetch(`${accountUrl(env)}/auth/v1/oauth/token`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    headers: authHeaders(env, null, {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    }),
     body: new URLSearchParams({
       grant_type: 'refresh_token',
       refresh_token: refreshToken,
