@@ -8,6 +8,8 @@ Cloudflare Pages serves the static UI and runs the small `/api/*` and `/oauth/*`
 
 In the Cloudflare Pages project, set the root directory to `meo-pages`, build command to `npm run build`, and output directory to `public`. Builds run on Cloudflare's build infrastructure. Deploy the `main` branch after GitHub Actions passes.
 
+The repository build watch include is `meo-pages/*` (`*` matches nested paths in Pages build watch rules), so LibreChat upstream-only commits do not consume Pages builds.
+
 ## Runtime variables
 
 Set these for Production (and Preview only when using a registered OAuth callback):
