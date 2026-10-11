@@ -333,7 +333,7 @@ const verifyEmail = async (req) => {
   const tokenUserId = emailVerificationData.userId?.toString();
   const userId = user._id?.toString();
   if (!tokenUserId || tokenUserId !== userId) {
-    logger.warn(`[verifyEmail] [Email verification token user mismatch] [Email: ${decodedEmail}]`);
+    logger.warn(`[verifyEmail] [Email verification token user mismatch] [User ID: ${user._id}]`);
     return new Error(invalidEmailVerificationMessage);
   }
 
@@ -348,19 +348,19 @@ const verifyEmail = async (req) => {
 
   if (user.emailVerified) {
     await deleteTokens(getEmailVerificationTokenDeleteQuery(emailVerificationData));
-    logger.info(`[verifyEmail] Email already verified [Email: ${decodedEmail}]`);
+    logger.info(`[verifyEmail] Email already verified [User ID: ${user._id}]`);
     return { message: 'Email verification was successful', status: 'success' };
   }
 
   const updatedUser = await updateUser(emailVerificationData.userId, { emailVerified: true });
 
   if (!updatedUser) {
-    logger.warn(`[verifyEmail] [User update failed] [Email: ${decodedEmail}]`);
+    logger.warn(`[verifyEmail] [User update failed] [User ID: ${user._id}]`);
     return new Error(invalidEmailVerificationMessage);
   }
 
   await deleteTokens(getEmailVerificationTokenDeleteQuery(emailVerificationData));
-  logger.info(`[verifyEmail] Email verification successful [Email: ${decodedEmail}]`);
+  logger.info(`[verifyEmail] Email verification successful [User ID: ${user._id}]`);
   return { message: 'Email verification was successful', status: 'success' };
 };
 
@@ -477,9 +477,7 @@ const requestPasswordReset = async (req) => {
 
   const baseConfig = await getAppConfig({ baseOnly: true });
   if (!isEmailDomainAllowed(email, baseConfig?.registration?.allowedDomains)) {
-    logger.warn(
-      `[requestPasswordReset] Blocked - email domain not allowed [Email: ${email}] [IP: ${req.ip}]`,
-    );
+    logger.warn(`[requestPasswordReset] Blocked - email domain not allowed [IP: ${req.ip}]`);
     const error = new Error(ErrorTypes.AUTH_FAILED);
     error.code = ErrorTypes.AUTH_FAILED;
     error.message = 'Email domain not allowed';
@@ -497,16 +495,14 @@ const requestPasswordReset = async (req) => {
   }
 
   if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
-    logger.warn(
-      `[requestPasswordReset] Tenant config blocked domain [Email: ${email}] [IP: ${req.ip}]`,
-    );
+    logger.warn(`[requestPasswordReset] Tenant config blocked domain [IP: ${req.ip}]`);
     return {
       message: 'If an account with that email exists, a password reset link has been sent to it.',
     };
   }
   const emailEnabled = checkEmailConfig();
 
-  logger.warn(`[requestPasswordReset] [Password reset request initiated]`);
+  logger.warn('[requestPasswordReset] [Password reset request initiated]');
 
   if (!user) {
     logger.warn('[requestPasswordReset] [No user found]');
@@ -545,13 +541,9 @@ const requestPasswordReset = async (req) => {
       },
       template: 'requestPasswordReset.handlebars',
     });
-    logger.info(
-      `[requestPasswordReset] Link emailed. [Email: ${email}] [ID: ${user._id}] [IP: ${req.ip}]`,
-    );
+    logger.info(`[requestPasswordReset] Link emailed. [User ID: ${user._id}] [IP: ${req.ip}]`);
   } else {
-    logger.info(
-      `[requestPasswordReset] Link issued. [Email: ${email}] [ID: ${user._id}] [IP: ${req.ip}]`,
-    );
+    logger.info(`[requestPasswordReset] Link issued. [User ID: ${user._id}] [IP: ${req.ip}]`);
     return { link };
   }
 
