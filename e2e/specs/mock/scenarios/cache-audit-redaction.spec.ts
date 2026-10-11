@@ -11,6 +11,7 @@ import { run, repoRoot, inOneProject } from './lint.helpers';
  */
 
 const PROBE = `
+process.env.USE_REDIS = 'false';
 const { logger } = require('@librechat/data-schemas');
 const { CacheKeys } = require('librechat-data-provider');
 const getLogStores = require('./cache/getLogStores');
