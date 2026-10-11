@@ -1,4 +1,4 @@
-import { getTenantId } from '@librechat/data-schemas';
+import { getTenantId, tenantStorage } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import type { PullRequestOAuth, PullRequestOAuthState } from './oauth';
 import type { ServerRequest } from '~/types';
@@ -186,6 +186,19 @@ describe('callback', () => {
       oauth: makeOAuth({ complete: jest.fn().mockRejectedValue(new Error('secret detail')) }),
     });
     expect(res.redirect).toHaveBeenCalledWith('/oauth/error?error=callback_failed');
+  });
+
+  it('refuses a callback already placed in another tenant than the flow started in', async () => {
+    const oauth = makeOAuth({ verifyState: jest.fn(() => ({ ...claims, tenantId: 'tenant-a' })) });
+    const context = setup({ oauth });
+    await tenantStorage.run({ tenantId: 'tenant-b' }, () =>
+      context.handlers.callback(
+        callbackRequest({ state: 's', code: 'c' }, bound()),
+        asRes(context.res),
+      ),
+    );
+    expect(oauth.complete).not.toHaveBeenCalled();
+    expect(context.res.redirect).toHaveBeenCalledWith('/oauth/error?error=invalid_state');
   });
 
   it('restores the tenant the flow started in before storing', async () => {

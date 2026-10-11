@@ -135,10 +135,16 @@ export function createPullRequestConnectionHandlers(deps: {
       }
       /**
        * The provider's redirect carries no session, so the tenant the flow started in is restored
-       * from the signed state before anything is read or stored.
+       * from the signed state before anything is read or stored. A request already placed in
+       * another tenant (by host, for example) is refused rather than stored there.
        */
+      const current = getTenantId();
+      if (current != null && current !== claims.tenantId) {
+        fail(res, 'invalid_state');
+        return;
+      }
       const finish = () => finishCallback(res, claims, code);
-      if (claims.tenantId && !getTenantId()) {
+      if (claims.tenantId && current == null) {
         await tenantStorage.run({ tenantId: claims.tenantId }, finish);
         return;
       }

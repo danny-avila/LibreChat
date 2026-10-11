@@ -221,9 +221,12 @@ export function createPullRequestOAuth({
   ): Promise<{ row: PullRequestOAuthRow; grant: Grant } | null> {
     const row = await store.findToken({ scope: scopeOf(userId, config) });
     if (row == null) return null;
+    /** A decryption failure (a missing or rotated key) is an outage, not an absent connection,
+     *  so it propagates; only a stored value that is not a grant reads as none. */
+    const plaintext = await decrypt(row.token);
     let parsed: unknown;
     try {
-      parsed = JSON.parse(await decrypt(row.token));
+      parsed = JSON.parse(plaintext);
     } catch {
       return null;
     }

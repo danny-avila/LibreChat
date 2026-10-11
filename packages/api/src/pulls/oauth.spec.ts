@@ -324,6 +324,41 @@ describe('token', () => {
   });
 });
 
+describe('a grant that cannot be read', () => {
+  it('reports a decryption failure as a failure, not as a disconnection', async () => {
+    const { oauth } = setup([() => json({ access_token: 'kept' })]);
+    const user = userId();
+    await connect(oauth, user);
+    const broken = createPullRequestOAuth({
+      store,
+      fetchFn: jest.fn(),
+      secret,
+      redirectUri,
+      encrypt,
+      decrypt: async () => {
+        throw new Error('key unavailable');
+      },
+    });
+    await expect(broken.token(user, github)).rejects.toThrow('key unavailable');
+    await expect(broken.connected(user, github)).rejects.toThrow('key unavailable');
+  });
+
+  it('treats a stored value that is not a grant as no connection', async () => {
+    const { oauth } = setup([() => json({ access_token: 'kept' })]);
+    const user = userId();
+    await connect(oauth, user);
+    const garbled = createPullRequestOAuth({
+      store,
+      fetchFn: jest.fn(),
+      secret,
+      redirectUri,
+      encrypt,
+      decrypt: async () => 'not json',
+    });
+    await expect(garbled.token(user, github)).resolves.toBeNull();
+  });
+});
+
 describe('disconnect', () => {
   it('removes the stored grant', async () => {
     const { oauth } = setup([() => json({ access_token: 'gone' })]);
