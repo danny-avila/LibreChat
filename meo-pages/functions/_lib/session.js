@@ -1,5 +1,5 @@
 const sessionCookie = '__Host-meo-session';
-const stateCookie = '__Host-meo-oauth';
+const stateCookie = '__Secure-meo-oauth';
 const textEncoder = new TextEncoder();
 
 function base64url(bytes) {

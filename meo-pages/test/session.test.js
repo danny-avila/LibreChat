@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { seal, unseal, cookieValue, sessionCookieHeader } from '../functions/_lib/session.js';
+import {
+  seal,
+  unseal,
+  cookieValue,
+  sessionCookieHeader,
+  stateCookieHeader,
+} from '../functions/_lib/session.js';
 
 const env = { SESSION_SECRET: 'A'.repeat(43) };
 
@@ -11,6 +17,10 @@ test('session payload is authenticated encryption and cookie is HttpOnly', async
   const alteredCiphertext = `${ciphertext[0] === 'A' ? 'B' : 'A'}${ciphertext.slice(1)}`;
   assert.equal(await unseal(`${iv}.${alteredCiphertext}`, env), null);
   assert.match(sessionCookieHeader(sealed), /HttpOnly; Secure; SameSite=Lax/);
+  assert.match(
+    stateCookieHeader(sealed),
+    /^__Secure-meo-oauth=.*Path=\/oauth\/;.*HttpOnly; Secure;/,
+  );
   assert.equal(
     cookieValue(
       new Request('https://chat.meoarch.org', {
