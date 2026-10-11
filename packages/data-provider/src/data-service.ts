@@ -1251,7 +1251,7 @@ export function getPullRequestConnection(): Promise<t.TPullRequestConnection> {
   return request.get(endpoints.pullRequestConnection());
 }
 
-export function connectPullRequestAccount(): Promise<{ url: string }> {
+export function connectPullRequestAccount(): Promise<t.TPullRequestConnectStart> {
   return request.get(endpoints.pullRequestConnect());
 }
 
