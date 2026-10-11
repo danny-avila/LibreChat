@@ -4,6 +4,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TPullRequestConnection, TStartupConfig } from 'librechat-data-provider';
 import {
+  resetPullRequestCredentials,
   usePullRequestConnectionQuery,
   useDisconnectPullRequestAccountMutation,
 } from './connection';
@@ -118,6 +119,37 @@ describe('pull request connection hooks', () => {
     mockGetConnection.mockResolvedValueOnce({ ...connection(true), provider: 'gitlab' });
     await act(async () => {
       await result.current.refetch();
+    });
+    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(2));
+  });
+
+  it('refetches cached pull requests when the deployment moves a disconnected user to another provider', async () => {
+    mockGetConnection.mockResolvedValueOnce(connection(false));
+    const { wrapper, invalidate } = setup();
+    const { result } = renderHook(() => usePullRequestConnectionQuery(), { wrapper });
+    await waitFor(() => expect(result.current.data?.connected).toBe(false));
+    expect(invalidate).not.toHaveBeenCalled();
+
+    mockGetConnection.mockResolvedValueOnce({ ...connection(false), provider: 'gitlab' });
+    await act(async () => {
+      await result.current.refetch();
+    });
+    await waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith([QueryKeys.conversationPullRequest]),
+    );
+  });
+
+  it('starts over with the next session, so its first status follows the first-status rule', async () => {
+    mockGetConnection.mockResolvedValue(connection(true));
+    const { wrapper, invalidate } = setup();
+    const first = renderHook(() => usePullRequestConnectionQuery(), { wrapper });
+    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(1));
+    first.unmount();
+
+    resetPullRequestCredentials();
+    const second = renderHook(() => usePullRequestConnectionQuery(), { wrapper });
+    await act(async () => {
+      await second.result.current.refetch();
     });
     await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(2));
   });

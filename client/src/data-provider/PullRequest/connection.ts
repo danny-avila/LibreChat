@@ -5,12 +5,20 @@ import type { TPullRequestConnectStart, TPullRequestConnection } from 'librechat
 import type { QueryClient } from '@tanstack/react-query';
 import { useGetStartupConfig } from '../Endpoints';
 
-/** The credential the server looks this user's pull requests up with, as the status shows it. */
+/**
+ * The credential the server looks this user's pull requests up with, as the status shows it:
+ * the user's own account or the server's token, on the provider the deployment now uses.
+ */
 const credentialOf = (status: TPullRequestConnection): string =>
-  status.connected ? `user:${status.provider ?? ''}` : 'server';
+  `${status.connected ? 'user' : 'server'}:${status.provider ?? ''}`;
 
 /** Per app, the credential its cached pull requests were last refreshed under. */
-const refreshedUnder = new WeakMap<QueryClient, string>();
+const refreshedUnder = new Map<QueryClient, string>();
+
+/** Forgets every app's credential with the session, so the next one starts from its own. */
+export function resetPullRequestCredentials(): void {
+  refreshedUnder.clear();
+}
 
 /**
  * Refetches every cached pull request when a status shows a different credential than the one
@@ -27,7 +35,7 @@ export function syncPullRequestConnection(
   const credential = credentialOf(status);
   const previous = refreshedUnder.get(queryClient);
   refreshedUnder.set(queryClient, credential);
-  if (previous === credential || (previous == null && credential === 'server')) {
+  if (previous === credential || (previous == null && !status.connected)) {
     return;
   }
   queryClient.invalidateQueries([QueryKeys.conversationPullRequest]);
@@ -94,13 +102,16 @@ export const useDisconnectPullRequestAccountMutation = () => {
     mutationKey: [MutationKeys.disconnectPullRequestAccount],
     mutationFn: () => dataService.disconnectPullRequestAccount(),
     onSuccess: () => {
-      queryClient.setQueryData<TPullRequestConnection>(
+      const status = queryClient.setQueryData<TPullRequestConnection>(
         [QueryKeys.pullRequestConnection],
         (current) => (current == null ? current : { ...current, connected: false }),
       );
       queryClient.invalidateQueries([QueryKeys.pullRequestConnection]);
       /** A disconnect always leaves the server's token, whatever this app saw before. */
-      refreshedUnder.set(queryClient, 'server');
+      refreshedUnder.set(
+        queryClient,
+        credentialOf({ configured: true, provider: status?.provider, connected: false }),
+      );
       queryClient.invalidateQueries([QueryKeys.conversationPullRequest]);
     },
   });

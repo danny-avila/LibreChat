@@ -3,36 +3,55 @@ import type { TPullRequestConnection } from 'librechat-data-provider';
 import type { QueryClient } from '@tanstack/react-query';
 import { syncPullRequestConnection } from './connection';
 
-/** How often the status is asked while the sign-in window is still open. */
+/** First wait between status asks while a sign-in is watched; each wait doubles from here. */
 export const PULL_REQUEST_CONNECT_POLL_MS = 2000;
+/** Longest wait between status asks, so a sign-in left open costs a few requests a minute. */
+export const PULL_REQUEST_CONNECT_POLL_MAX_MS = 30_000;
+/** Same-origin pages that end an OAuth sign-in announce it here. */
+export const OAUTH_SETTLED_CHANNEL = 'librechat:oauth-settled';
 
 type Watch = { stop: () => void };
 
 /** One sign-in per app at a time: starting another replaces the watch on the first. */
-const watches = new WeakMap<QueryClient, Watch>();
+const watches = new Map<QueryClient, Watch>();
+
+/**
+ * Announces, from the page an OAuth sign-in lands on, that it has settled. The page shares this
+ * app's origin, so the announcement reaches the window that started the sign-in even when the
+ * provider's pages severed the popup from it (a cross-origin opener policy makes the retained
+ * window handle read as closed while the sign-in is still open).
+ */
+export function announceOAuthSettled(): void {
+  if (typeof BroadcastChannel === 'undefined') {
+    return;
+  }
+  const channel = new BroadcastChannel(OAUTH_SETTLED_CHANNEL);
+  channel.postMessage('settled');
+  channel.close();
+}
 
 /**
  * Watches a sign-in started from this window until the account is connected, outside any
  * component, so closing Settings mid-flow still refreshes what was fetched with the old token.
  *
- * - While the sign-in window is open, the status is asked on an interval, because the provider can
- *   finish without this window ever regaining focus.
- * - Once that window is closed (finished, denied or cancelled) the interval stops after one last
- *   ask. The flow may still finish in a window this one lost track of, so until it expires the
- *   status is asked again whenever this window regains focus, and never on a timer.
+ * - The landing page's announcement asks the status at once; it is the signal that survives the
+ *   provider severing the popup, so the popup handle is not consulted at all.
+ * - Without it (an older page, no BroadcastChannel) the status is asked on a timer that starts at
+ *   2 seconds and doubles to 30, and whenever this window regains focus.
  * - At `expiresAt` the server's signed state is no longer accepted, so watching ends.
- * - Seeing the account connected ends watching and refetches every cached pull request, once,
- *   through the same check a mounted status row uses.
+ * - Seeing the account connected ends watching. Every answer goes through the same check a
+ *   mounted status row uses, so a change of credential refetches cached pull requests once.
  *
  * A failed status read is not an answer, so watching continues; the row shows the failure.
- * Returns a function that ends the watch.
+ * Returns a function that ends the watch; ending the session ends every watch.
  */
 export function watchPullRequestSignIn(
   queryClient: QueryClient,
-  { popup, expiresAt }: { popup: Pick<Window, 'closed'>; expiresAt: number },
+  { expiresAt }: { expiresAt: number },
 ): () => void {
   watches.get(queryClient)?.stop();
-  let interval: ReturnType<typeof setInterval> | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let wait = PULL_REQUEST_CONNECT_POLL_MS;
   let stopped = false;
 
   const check = async (): Promise<void> => {
@@ -59,21 +78,25 @@ export function watchPullRequestSignIn(
     }
   };
 
-  const tick = () => {
-    if (popup.closed) {
-      clearInterval(interval);
-      interval = undefined;
-    }
-    void check();
+  const schedule = () => {
+    timer = setTimeout(() => {
+      void check();
+      wait = Math.min(wait * 2, PULL_REQUEST_CONNECT_POLL_MAX_MS);
+      schedule();
+    }, wait);
   };
-  const onFocus = () => void check();
+  const onSignal = () => void check();
+  const channel =
+    typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(OAUTH_SETTLED_CHANNEL);
+  channel?.addEventListener('message', onSignal);
   const expiry = setTimeout(() => stop(), Math.max(0, expiresAt - Date.now()));
 
   function stop() {
     stopped = true;
-    clearInterval(interval);
+    clearTimeout(timer);
     clearTimeout(expiry);
-    window.removeEventListener('focus', onFocus);
+    window.removeEventListener('focus', onSignal);
+    channel?.close();
     if (watches.get(queryClient) === watch) {
       watches.delete(queryClient);
     }
@@ -81,12 +104,14 @@ export function watchPullRequestSignIn(
 
   const watch: Watch = { stop };
   watches.set(queryClient, watch);
-  interval = setInterval(tick, PULL_REQUEST_CONNECT_POLL_MS);
-  window.addEventListener('focus', onFocus);
+  schedule();
+  window.addEventListener('focus', onSignal);
   return stop;
 }
 
-/** Ends the sign-in watch of an app, if one is running. */
-export function stopPullRequestSignIn(queryClient: QueryClient): void {
-  watches.get(queryClient)?.stop();
+/** Ends every sign-in watch, as the session ending does: none may ask for the next user. */
+export function stopPullRequestSignIns(): void {
+  for (const watch of [...watches.values()]) {
+    watch.stop();
+  }
 }

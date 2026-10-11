@@ -112,7 +112,6 @@ export default function ConnectedAccounts() {
         popup.location.href = url;
         keepFocus.current = true;
         watchPullRequestSignIn(queryClient, {
-          popup,
           expiresAt: Date.now() + (expiresInSeconds ?? DEFAULT_CONNECT_FLOW_SECONDS) * 1000,
         });
       },

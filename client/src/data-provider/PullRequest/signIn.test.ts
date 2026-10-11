@@ -1,7 +1,13 @@
 import { QueryKeys } from 'librechat-data-provider';
 import { QueryClient } from '@tanstack/react-query';
 import type { TPullRequestConnection } from 'librechat-data-provider';
-import { PULL_REQUEST_CONNECT_POLL_MS, watchPullRequestSignIn } from './signIn';
+import {
+  PULL_REQUEST_CONNECT_POLL_MS,
+  announceOAuthSettled,
+  stopPullRequestSignIns,
+  watchPullRequestSignIn,
+} from './signIn';
+import { endPullRequestSession } from './queries';
 
 const mockGetConnection = jest.fn();
 
@@ -16,6 +22,28 @@ jest.mock('librechat-data-provider', () => {
   };
 });
 
+/** jsdom has no BroadcastChannel; this one delivers between instances of one name, as tabs do. */
+class FakeBroadcastChannel {
+  static open = new Set<FakeBroadcastChannel>();
+  private listeners = new Set<(event: MessageEvent) => void>();
+  constructor(readonly name: string) {
+    FakeBroadcastChannel.open.add(this);
+  }
+  addEventListener(_type: 'message', listener: (event: MessageEvent) => void) {
+    this.listeners.add(listener);
+  }
+  postMessage(data: unknown) {
+    for (const other of FakeBroadcastChannel.open) {
+      if (other !== this && other.name === this.name) {
+        other.listeners.forEach((listener) => listener({ data } as MessageEvent));
+      }
+    }
+  }
+  close() {
+    FakeBroadcastChannel.open.delete(this);
+  }
+}
+
 const connection = (connected: boolean): TPullRequestConnection => ({
   configured: true,
   provider: 'github',
@@ -29,18 +57,23 @@ const setup = () => {
     logger: { log: () => undefined, warn: () => undefined, error: () => undefined },
   });
   const invalidate = jest.spyOn(client, 'invalidateQueries');
-  const popup = { closed: false };
-  return { client, invalidate, popup };
+  return { client, invalidate };
 };
 
-/** Every interval tick plus the reads it starts. */
 const pass = (ms: number) => jest.advanceTimersByTimeAsync(ms);
+const focus = async () => {
+  window.dispatchEvent(new Event('focus'));
+  await pass(0);
+};
 
 describe('watchPullRequestSignIn', () => {
-  const stops: Array<() => void> = [];
-  const watch = (...args: Parameters<typeof watchPullRequestSignIn>) => {
-    stops.push(watchPullRequestSignIn(...args));
-  };
+  beforeAll(() => {
+    (globalThis as { BroadcastChannel?: unknown }).BroadcastChannel = FakeBroadcastChannel;
+  });
+
+  afterAll(() => {
+    delete (globalThis as { BroadcastChannel?: unknown }).BroadcastChannel;
+  });
 
   beforeEach(() => {
     jest.useFakeTimers();
@@ -49,100 +82,109 @@ describe('watchPullRequestSignIn', () => {
   });
 
   afterEach(() => {
-    stops.splice(0).forEach((stop) => stop());
+    stopPullRequestSignIns();
     jest.useRealTimers();
   });
 
-  it('asks while the window is open, then refreshes pull requests once connected', async () => {
-    const { client, invalidate, popup } = setup();
-    watch(client, { popup, expiresAt: Date.now() + 10 * MINUTE });
+  it('refreshes pull requests and stops once the account shows connected', async () => {
+    const { client, invalidate } = setup();
+    watchPullRequestSignIn(client, { expiresAt: Date.now() + 10 * MINUTE });
 
-    await pass(PULL_REQUEST_CONNECT_POLL_MS * 2);
-    expect(mockGetConnection).toHaveBeenCalledTimes(2);
+    await pass(PULL_REQUEST_CONNECT_POLL_MS);
+    expect(mockGetConnection).toHaveBeenCalledTimes(1);
     expect(invalidate).not.toHaveBeenCalled();
 
     mockGetConnection.mockResolvedValue(connection(true));
-    await pass(PULL_REQUEST_CONNECT_POLL_MS);
+    await focus();
     expect(invalidate).toHaveBeenCalledWith([QueryKeys.conversationPullRequest]);
     expect(client.getQueryData([QueryKeys.pullRequestConnection])).toEqual(connection(true));
 
-    await pass(PULL_REQUEST_CONNECT_POLL_MS * 5);
-    window.dispatchEvent(new Event('focus'));
-    await pass(0);
-    expect(mockGetConnection).toHaveBeenCalledTimes(3);
-  });
-
-  it('stops asking on a timer once the window is closed, after one last ask', async () => {
-    const { client, popup } = setup();
-    watch(client, { popup, expiresAt: Date.now() + 60 * MINUTE });
-    await pass(PULL_REQUEST_CONNECT_POLL_MS);
-    expect(mockGetConnection).toHaveBeenCalledTimes(1);
-
-    popup.closed = true;
-    await pass(PULL_REQUEST_CONNECT_POLL_MS);
-    expect(mockGetConnection).toHaveBeenCalledTimes(2);
-    await pass(10 * MINUTE);
-    expect(mockGetConnection).toHaveBeenCalledTimes(2);
-  });
-
-  it('still notices a sign-in finished after its window closed, when this window is focused', async () => {
-    const { client, invalidate, popup } = setup();
-    popup.closed = true;
-    watch(client, { popup, expiresAt: Date.now() + 10 * MINUTE });
-    await pass(PULL_REQUEST_CONNECT_POLL_MS);
     const asked = mockGetConnection.mock.calls.length;
+    await pass(5 * MINUTE);
+    await focus();
+    expect(mockGetConnection).toHaveBeenCalledTimes(asked);
+  });
 
+  it('asks at once when the sign-in page announces it settled, however the popup reads', async () => {
+    const { client, invalidate } = setup();
+    watchPullRequestSignIn(client, { expiresAt: Date.now() + 10 * MINUTE });
     mockGetConnection.mockResolvedValue(connection(true));
-    window.dispatchEvent(new Event('focus'));
+
+    /** Before any timer is due: only the announcement can explain this ask. */
+    announceOAuthSettled();
     await pass(0);
-    expect(mockGetConnection).toHaveBeenCalledTimes(asked + 1);
+    expect(mockGetConnection).toHaveBeenCalledTimes(1);
     expect(invalidate).toHaveBeenCalledWith([QueryKeys.conversationPullRequest]);
   });
 
-  it('stops watching, focus included, when the flow expires', async () => {
-    const { client, popup } = setup();
-    watch(client, { popup, expiresAt: Date.now() + 1 * MINUTE });
+  it('backs off asking on a timer, so a sign-in left open costs few requests', async () => {
+    const { client } = setup();
+    watchPullRequestSignIn(client, { expiresAt: Date.now() + 60 * MINUTE });
+
+    await pass(15_000);
+    /** Responsive while a sign-in is likely: 2, 6 and 14 seconds in. */
+    expect(mockGetConnection).toHaveBeenCalledTimes(3);
+    await pass(60 * MINUTE - 15_000);
+    /** At most one ask per 30 seconds after that: about 120 in an hour, not 1,800. */
+    expect(mockGetConnection.mock.calls.length).toBeLessThanOrEqual(122);
+  });
+
+  it('stops watching, focus and announcements included, when the flow expires', async () => {
+    const { client } = setup();
+    watchPullRequestSignIn(client, { expiresAt: Date.now() + 1 * MINUTE });
     await pass(1 * MINUTE);
     const asked = mockGetConnection.mock.calls.length;
 
     await pass(5 * MINUTE);
-    window.dispatchEvent(new Event('focus'));
+    await focus();
+    announceOAuthSettled();
     await pass(0);
     expect(mockGetConnection).toHaveBeenCalledTimes(asked);
   });
 
-  it('refreshes pull requests when the account it watches turns out disconnected', async () => {
-    const { client, invalidate, popup } = setup();
-    mockGetConnection.mockResolvedValueOnce(connection(true));
-    watch(client, { popup: { closed: true }, expiresAt: Date.now() + 10 * MINUTE });
+  it('keeps watching through a failed status read', async () => {
+    const { client, invalidate } = setup();
+    mockGetConnection.mockRejectedValueOnce(new Error('500'));
+    watchPullRequestSignIn(client, { expiresAt: Date.now() + 10 * MINUTE });
     await pass(PULL_REQUEST_CONNECT_POLL_MS);
+
+    mockGetConnection.mockResolvedValue(connection(true));
+    await focus();
+    expect(invalidate).toHaveBeenCalledWith([QueryKeys.conversationPullRequest]);
+  });
+
+  it('refreshes pull requests when the account it watches turns out disconnected', async () => {
+    const { client, invalidate } = setup();
+    mockGetConnection.mockResolvedValueOnce(connection(true));
+    watchPullRequestSignIn(client, { expiresAt: Date.now() + 10 * MINUTE });
+    await focus();
     expect(invalidate).toHaveBeenCalledTimes(1);
 
     /** Removed elsewhere while this window still watches a new sign-in. */
     mockGetConnection.mockResolvedValue(connection(false));
-    watch(client, { popup, expiresAt: Date.now() + 10 * MINUTE });
-    await pass(PULL_REQUEST_CONNECT_POLL_MS);
+    watchPullRequestSignIn(client, { expiresAt: Date.now() + 10 * MINUTE });
+    await focus();
     expect(invalidate).toHaveBeenCalledTimes(2);
   });
 
-  it('keeps watching through a failed status read', async () => {
-    const { client, invalidate, popup } = setup();
-    mockGetConnection.mockRejectedValueOnce(new Error('500'));
-    watch(client, { popup, expiresAt: Date.now() + 10 * MINUTE });
-    await pass(PULL_REQUEST_CONNECT_POLL_MS);
+  it('replaces the watch on an earlier sign-in when another starts', async () => {
+    const { client } = setup();
+    watchPullRequestSignIn(client, { expiresAt: Date.now() + 10 * MINUTE });
+    watchPullRequestSignIn(client, { expiresAt: Date.now() + 10 * MINUTE });
 
-    mockGetConnection.mockResolvedValue(connection(true));
-    await pass(PULL_REQUEST_CONNECT_POLL_MS);
-    expect(invalidate).toHaveBeenCalledWith([QueryKeys.conversationPullRequest]);
+    await focus();
+    expect(mockGetConnection).toHaveBeenCalledTimes(1);
   });
 
-  it('replaces the watch on an earlier sign-in when another starts', async () => {
-    const { client, popup } = setup();
-    const first = { closed: false };
-    watch(client, { popup: first, expiresAt: Date.now() + 10 * MINUTE });
-    watch(client, { popup, expiresAt: Date.now() + 10 * MINUTE });
+  it('ends every watch with the session, so none asks for the next user', async () => {
+    const { client } = setup();
+    watchPullRequestSignIn(client, { expiresAt: Date.now() + 10 * MINUTE });
 
-    await pass(PULL_REQUEST_CONNECT_POLL_MS);
-    expect(mockGetConnection).toHaveBeenCalledTimes(1);
+    endPullRequestSession();
+    await pass(10 * MINUTE);
+    await focus();
+    announceOAuthSettled();
+    await pass(0);
+    expect(mockGetConnection).not.toHaveBeenCalled();
   });
 });
