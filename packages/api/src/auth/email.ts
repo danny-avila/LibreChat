@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { timingSafeEqual } from 'node:crypto';
 import { logger, hashToken, getRandomValues, isValidObjectIdString } from '@librechat/data-schemas';
 import type { EmailChangeErrorCode, TCustomConfig } from 'librechat-data-provider';
+import { getSafeErrorMetadata } from '../utils/errors';
 import { isEmailDomainAllowed } from './domain';
 import { isEnabled } from '../utils/common';
 
@@ -523,7 +524,7 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
     } catch (error) {
       logger.error(
         `[emailChange] Verification delivery failed [User ID: ${userId}] [IP: ${ip}]`,
-        error,
+        getSafeErrorMetadata(error),
       );
       return result(500, 'Failed to send verification email', 'email_delivery_failed');
     }
@@ -688,7 +689,10 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
       if (isDuplicateKeyError(error)) {
         return result(409, 'Email address is already linked to another account', 'email_in_use');
       }
-      logger.error(`[emailChange] Update failed [User ID: ${userId}] [IP: ${ip}]`, error);
+      logger.error(
+        `[emailChange] Update failed [User ID: ${userId}] [IP: ${ip}]`,
+        getSafeErrorMetadata(error),
+      );
       await restoreClaimedToken(deps, emailChangeToken, scope, tenantId);
       return result(500, 'Failed to change email address');
     }
