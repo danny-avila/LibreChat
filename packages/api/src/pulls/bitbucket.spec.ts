@@ -127,8 +127,46 @@ describe('createBitbucketPullRequestSource', () => {
       'source.branch.name = "feat/x" AND (state = "MERGED" OR state = "DECLINED" OR state = "SUPERSEDED")',
     );
     expect(closed.getAll('state')).toEqual(['MERGED', 'DECLINED', 'SUPERSEDED']);
-    /** Without a recorded commit only the newest closed one counts. */
-    expect(closed.get('pagelen')).toBe('1');
+    /** A full page even without a recorded commit, so a closed fork cannot hide the rest. */
+    expect(closed.get('pagelen')).toBe('10');
+  });
+
+  it('finds an older closed pull request behind a newer closed fork on the same branch', async () => {
+    const merged = pullRequest({ id: 3, state: 'MERGED' });
+    const { source } = sourceFor(
+      routes(merged, {
+        'state=OPEN': () => json(page([])),
+        'state=MERGED': () =>
+          json(page([pullRequest({ id: 8, state: 'DECLINED', source: fork() }), merged])),
+        '/pullrequests/3/diffstat': () => json(page([])),
+        '/pullrequests/3/statuses': () => json(page([])),
+        '/pullrequests/3': () => json(merged),
+      }),
+    );
+    await expect(find(source)).resolves.toMatchObject({ number: 3, state: 'merged' });
+  });
+
+  it('skips a pull request whose source commit is gone and keeps searching', async () => {
+    const gone = pullRequest({ id: 5, source: { ...pullRequest().source, commit: null } });
+    const { source } = sourceFor(
+      routes(pullRequest(), { 'state=OPEN': () => json(page([gone, pullRequest()])) }),
+    );
+    await expect(find(source)).resolves.toMatchObject({ number: 7 });
+  });
+
+  it('finds nothing when the detail lost its source commit', async () => {
+    const gone = pullRequest({ source: { ...pullRequest().source, commit: {} } });
+    const { source } = sourceFor(routes(gone));
+    await expect(find(source)).resolves.toBeNull();
+  });
+
+  it.each([
+    ['moved to another source branch', { branch: { name: 'other' } }],
+    ['moved to a fork', { repository: { full_name: 'someone/r' } }],
+  ])('finds nothing when the pull request %s after it was listed', async (_case, change) => {
+    const moved = pullRequest({ source: { ...pullRequest().source, ...change } });
+    const { source } = sourceFor(routes(moved));
+    await expect(find(source, { head: sha })).resolves.toBeNull();
   });
 
   it('escapes a quote and a backslash in the branch name', async () => {
@@ -390,6 +428,12 @@ describe('createBitbucketPullRequestSource', () => {
       const { source, fetchFn } = sourceFor(routes());
       await expect(find(source, { pullRequest: 7 })).resolves.toMatchObject({ number: 7 });
       expect(urlsOf(fetchFn).some((url) => url.includes('/pullrequests?'))).toBe(false);
+    });
+
+    it('is ignored without a source commit, and the branch is searched instead', async () => {
+      const gone = pullRequest({ id: 9, source: { ...pullRequest().source, commit: null } });
+      const { source } = sourceFor(routes(pullRequest(), { '/pullrequests/9': () => json(gone) }));
+      await expect(find(source, { pullRequest: 9 })).resolves.toMatchObject({ number: 7 });
     });
 
     it('is ignored for another branch, and the branch is searched instead', async () => {

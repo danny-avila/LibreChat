@@ -54,6 +54,9 @@ type BitbucketPullRequest = {
 
 type ListItem = { id: number; state: string; hash: string; fromFork: boolean };
 
+/** A pull request whose source commit is gone (a deleted branch, a collected commit) proves nothing. */
+type Parsed<T extends { hash: string }> = Omit<T, 'hash'> & { hash: string | null };
+
 /** Two commit hashes, either possibly abbreviated, name the same commit. */
 export function isSameCommit(a: string, b: string): boolean {
   const length = Math.min(a.length, b.length);
@@ -91,7 +94,7 @@ function parseCommon(value: unknown, repo: string) {
   }
   const { source } = value;
   const commit = isRecord(source.commit) ? source.commit.hash : null;
-  if (typeof commit !== 'string' || !COMMIT_HASH.test(commit)) {
+  if (commit != null && (typeof commit !== 'string' || !COMMIT_HASH.test(commit))) {
     throw new PullRequestSourceError('UPSTREAM_ERROR');
   }
   const branch = isRecord(source.branch) ? source.branch.name : null;
@@ -101,13 +104,13 @@ function parseCommon(value: unknown, repo: string) {
     value,
     id: value.id,
     state: value.state,
-    hash: commit,
+    hash: typeof commit === 'string' ? commit : null,
     sourceBranch: typeof branch === 'string' ? branch : null,
     fromFork: typeof fullName !== 'string' || fullName.toLowerCase() !== repo.toLowerCase(),
   };
 }
 
-function parsePullRequest(value: unknown, repo: string): BitbucketPullRequest {
+function parsePullRequest(value: unknown, repo: string): Parsed<BitbucketPullRequest> {
   const common = parseCommon(value, repo);
   const links = common.value.links;
   const html = isRecord(links) && isRecord(links.html) ? links.html.href : null;
@@ -126,7 +129,7 @@ function parsePullRequest(value: unknown, repo: string): BitbucketPullRequest {
   };
 }
 
-function parseListItem(value: unknown, repo: string): ListItem {
+function parseListItem(value: unknown, repo: string): Parsed<ListItem> {
   const { id, state, hash, fromFork } = parseCommon(value, repo);
   return { id, state, hash, fromFork };
 }
@@ -157,6 +160,9 @@ function statusCommit(value: Record<string, unknown>): string | null {
   if (typeof href !== 'string') return null;
   return /\/commit\/([a-f0-9]{7,64})$/.exec(href)?.[1] ?? null;
 }
+
+const isComplete = <T extends { hash: string | null }>(item: T): item is T & { hash: string } =>
+  item.hash != null;
 
 /** BBQL string literal: a backslash or a double quote inside it is escaped with a backslash. */
 const bbqlString = (value: string): string => `"${value.replace(/[\\"]/g, '\\$&')}"`;
@@ -337,7 +343,9 @@ export function createBitbucketPullRequestSource({
         const linked = await getJson(`/pullrequests/${pullRequest}`);
         if (linked != null) {
           const pull = parsePullRequest(linked, repo);
-          if (pull.sourceBranch === branch && (await matches(pull))) return report(pull);
+          if (isComplete(pull) && pull.sourceBranch === branch && (await matches(pull))) {
+            return report(pull);
+          }
         }
       }
 
@@ -357,19 +365,18 @@ export function createBitbucketPullRequestSource({
         if (listed == null) return undefined;
         return parsePage(listed).values.map((item) => parseListItem(item, repo));
       };
-      /** Without a recorded commit only the newest closed one matters, as on GitHub. */
+      /**
+       * A full page even without a recorded commit: the newest closed one may be a fork, which
+       * cannot match, and must not hide an older one from the repository itself.
+       */
       const listAll = async (closed: boolean): Promise<ListItem[] | undefined> => {
         const states = closed ? CLOSED_STATES : OPEN_STATES;
-        const newestOnly = closed && recorded == null;
-        const pageLength = newestOnly
-          ? 1
-          : Math.min(Math.max(lookup.maxCandidatePullRequests, 1), MAX_PAGE_LENGTH);
-        const pages = newestOnly ? 1 : lookup.maxCandidatePages;
+        const pageLength = Math.min(Math.max(lookup.maxCandidatePullRequests, 1), MAX_PAGE_LENGTH);
         const all: ListItem[] = [];
-        for (let page = 1; page <= pages; page++) {
+        for (let page = 1; page <= lookup.maxCandidatePages; page++) {
           const items = await list(states, pageLength, page);
           if (items === undefined) return page === 1 ? undefined : all;
-          all.push(...items);
+          all.push(...items.filter(isComplete));
           if (items.length < pageLength) break;
         }
         return all;
@@ -390,8 +397,12 @@ export function createBitbucketPullRequestSource({
       const detail = await getJson(`/pullrequests/${chosen.id}`);
       if (detail == null) return null;
       const pull = parsePullRequest(detail, repo);
-      /** A push between the list and the detail can move the head off the recorded commit. */
-      if (!isSameCommit(pull.hash, chosen.hash) && !(await contains(pull.hash))) return null;
+      /** The pull request may have changed between the list and the detail: its source branch,
+       *  the repository it comes from, or a push that moved the head off the recorded commit. */
+      if (!isComplete(pull) || pull.sourceBranch !== branch || pull.fromFork !== chosen.fromFork) {
+        return null;
+      }
+      if (!isSameCommit(pull.hash, chosen.hash) && !(await matches(pull))) return null;
       return report(pull);
     },
   };
