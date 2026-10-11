@@ -513,6 +513,16 @@ const pullRequestRepositorySchema = z
     message: 'must not contain dot segments',
   });
 
+/** A GitHub host name, optionally with a port: `github.com`, an Enterprise Server host such as
+ *  `github.example.com`, or a data residency tenant such as `acme.ghe.com`. Never a URL. */
+const pullRequestHostSchema = z
+  .string()
+  .trim()
+  .max(253)
+  .regex(/^(?=[a-z0-9])[a-z0-9.-]*[a-z0-9](?::[0-9]{1,5})?$/i, {
+    message: 'must be a host name like github.example.com, without a scheme or path',
+  });
+
 const pullRequestTokenReferenceSchema = z
   .string()
   .trim()
@@ -1879,6 +1889,9 @@ export const agentsEndpointSchema = baseEndpointSchema
       pullRequests: z
         .object({
           enabled: z.boolean().optional(),
+          /** The GitHub the token belongs to: `github.com` (the default), a GitHub Enterprise Server
+           *  host, or a GitHub Enterprise Cloud data residency host ending in `.ghe.com`. */
+          host: pullRequestHostSchema.optional(),
           /** Environment variable reference holding a read-only GitHub token, e.g.
            *  `${GITHUB_PULL_REQUEST_TOKEN}`. Never the token itself. Optional: without it the first
            *  of `GITHUB_PULL_REQUEST_TOKEN`, `GITHUB_TOKEN` and `GH_TOKEN` that is set is used. */

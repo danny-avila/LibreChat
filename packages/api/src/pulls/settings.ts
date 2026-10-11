@@ -20,6 +20,18 @@ export function resolveTokenReference(reference: string | undefined, env: Env): 
   return env[name]?.trim() || null;
 }
 
+const HOST = /^(?=[a-z0-9])[a-z0-9.-]*[a-z0-9](?::[0-9]{1,5})?$/;
+
+/**
+ * The configured GitHub host, lowercased, or `github.com` when none is set. `null` for a value that
+ * is not a plain host name: the token is then sent nowhere rather than to a host nobody named.
+ */
+export function resolvePullRequestHost(host: string | undefined): string | null {
+  if (host == null) return 'github.com';
+  const normalized = host.trim().toLowerCase();
+  return normalized.length <= 253 && HOST.test(normalized) ? normalized : null;
+}
+
 /** The configured token reference, else the first fallback variable that is set. */
 export function resolvePullRequestToken(reference: string | undefined, env: Env): string | null {
   if (reference != null) return resolveTokenReference(reference, env);
@@ -41,6 +53,7 @@ export function isPullRequestFeatureActive(
   env: Env,
 ): boolean {
   if (settings?.enabled === false) return false;
+  if (resolvePullRequestHost(settings?.host) == null) return false;
   if (settings?.token == null && resolvePullRequestToken(undefined, env) == null) return false;
   return (
     settings?.allowAllRepositories === true || (settings?.allowedRepositories?.length ?? 0) > 0

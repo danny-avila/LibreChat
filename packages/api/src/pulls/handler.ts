@@ -14,7 +14,11 @@ import type { GetAppConfigOptions } from '~/app/service';
 import type { PullRequestSettings } from './settings';
 import type { PullRequestLookup } from './types';
 import type { ServerRequest } from '~/types';
-import { isPullRequestFeatureActive, resolvePullRequestToken } from './settings';
+import {
+  resolvePullRequestHost,
+  resolvePullRequestToken,
+  isPullRequestFeatureActive,
+} from './settings';
 import { ALL_REPOSITORIES, isAllowedRepository } from './repository';
 import { getAppConfigOptionsFromUser } from '~/app/service';
 import { getSafeErrorMetadata } from '~/utils';
@@ -177,6 +181,32 @@ function eligibleLane(
   };
 }
 
+type ServerUser = ServerRequest['user'];
+
+const agentsPullRequests = (config: AppConfig): PullRequestSettings | undefined =>
+  (config.endpoints?.[EModelEndpoint.agents] as TAgentsEndpoint | undefined)?.pullRequests;
+
+/**
+ * The user's settings, with `host` taken from the operator's YAML alone. Role, group and user
+ * overrides live in the database and may be edited by delegated administrators; letting one set
+ * the host would let it send the deployment's token to a server of its choosing.
+ */
+async function readSettings(
+  getAppConfig: (options: GetAppConfigOptions) => Promise<AppConfig>,
+  user: ServerUser,
+): Promise<PullRequestSettings | undefined> {
+  const options = { ...getAppConfigOptionsFromUser(user), skipRuntimeAugmentation: true };
+  const [resolved, base] = await Promise.all([
+    getAppConfig({ ...options, failClosed: true }),
+    getAppConfig({ ...options, baseOnly: true }),
+  ]);
+  const settings = agentsPullRequests(resolved);
+  if (settings == null) return undefined;
+  const { host: _override, ...rest } = settings;
+  const host = agentsPullRequests(base)?.host;
+  return host != null ? { ...rest, host } : rest;
+}
+
 /** Everything one lookup needs from the settings, so the single and batch routes cannot differ. */
 function lookupInput(settings: PullRequestSettings, token: string, lane: EligibleLane) {
   return {
@@ -184,6 +214,7 @@ function lookupInput(settings: PullRequestSettings, token: string, lane: Eligibl
     branch: lane.branch,
     head: lane.head,
     ...(lane.pullRequest != null ? { pullRequest: lane.pullRequest } : {}),
+    host: resolvePullRequestHost(settings.host) ?? undefined,
     token,
     ttlMs: (settings.cacheTtlSeconds ?? 30) * 1000,
     cacheMaxEntries: settings.cacheMaxEntries ?? 500,
@@ -253,16 +284,10 @@ export function createConversationPullRequestHandler(deps: {
        * used when the resolved config turns the feature on, which keeps a disabled deployment's
        * answer the same as before.
        */
-      const [appConfig, laneGit] = await Promise.all([
-        deps.getAppConfig({
-          ...getAppConfigOptionsFromUser(req.user),
-          skipRuntimeAugmentation: true,
-          failClosed: true,
-        }),
+      const [settings, laneGit] = await Promise.all([
+        readSettings(deps.getAppConfig, req.user),
         deps.getConvoLaneGit(userId, conversationId),
       ]);
-      const settings = (appConfig.endpoints?.[EModelEndpoint.agents] as TAgentsEndpoint | undefined)
-        ?.pullRequests;
       if (!settings || !isPullRequestFeatureActive(settings, deps.env)) {
         res.status(200).json(NONE);
         return;
@@ -334,11 +359,7 @@ export function createConversationPullRequestsHandler(deps: {
        * overlapped.
        */
       const startedAt = Date.now();
-      const configRead = deps.getAppConfig({
-        ...getAppConfigOptionsFromUser(req.user),
-        skipRuntimeAugmentation: true,
-        failClosed: true,
-      });
+      const configRead = readSettings(deps.getAppConfig, req.user);
       const laneRead = deps.getConvosLaneGit(userId, ids);
       /** A lane read nobody waits for (feature off, config timed out) must not fail unhandled. */
       laneRead.catch(() => undefined);
@@ -351,9 +372,7 @@ export function createConversationPullRequestsHandler(deps: {
         unavailable();
         return;
       }
-      const appConfig = loaded;
-      const settings = (appConfig.endpoints?.[EModelEndpoint.agents] as TAgentsEndpoint | undefined)
-        ?.pullRequests;
+      const settings = loaded;
       const deadline =
         startedAt + (settings?.batchTimeoutSeconds ?? DEFAULT_BATCH_TIMEOUT_SECONDS) * 1000;
       const none = (): TConversationPullRequestsResponse => ({

@@ -8,7 +8,7 @@ import type { PullRequestSource } from './types';
 import { isAllowedRepository } from './repository';
 import { PullRequestSourceError } from './types';
 
-const GITHUB_API_BASE = 'https://api.github.com';
+export const DEFAULT_GITHUB_HOST = 'github.com';
 /** Defaults for the operator bounds in `endpoints.agents.pullRequests`. */
 const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
 const DEFAULT_LOOKUP_TIMEOUT_MS = 30_000;
@@ -64,23 +64,33 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 const isCount = (value: unknown): value is number =>
   typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 
-/** The URL ends up in an href, so only a plain https github.com page is accepted. */
-function isGitHubPageUrl(value: unknown): value is string {
+/**
+ * The REST API of a GitHub host: `api.github.com` for github.com, `api.<host>` for a data residency
+ * tenant on `ghe.com`, and `/api/v3` on the host itself for GitHub Enterprise Server.
+ */
+export function gitHubApiBase(host: string): string {
+  if (host === DEFAULT_GITHUB_HOST) return 'https://api.github.com';
+  if (host.endsWith('.ghe.com')) return `https://api.${host}`;
+  return `https://${host}/api/v3`;
+}
+
+/** The URL ends up in an href, so only a plain https page on the configured host is accepted. */
+function isGitHubPageUrl(value: unknown, host: string): value is string {
   if (typeof value !== 'string') return false;
   try {
     const url = new URL(value);
-    return url.protocol === 'https:' && url.hostname === 'github.com';
+    return url.protocol === 'https:' && url.host === host;
   } catch {
     return false;
   }
 }
 
-function parsePull(value: unknown): GitHubPull {
+function parsePull(value: unknown, host: string): GitHubPull {
   if (
     !isRecord(value) ||
     !isCount(value.number) ||
     typeof value.title !== 'string' ||
-    !isGitHubPageUrl(value.html_url) ||
+    !isGitHubPageUrl(value.html_url, host) ||
     (value.state !== 'open' && value.state !== 'closed') ||
     typeof value.merged !== 'boolean' ||
     typeof value.draft !== 'boolean' ||
@@ -242,15 +252,15 @@ const isPathSegment = (value: string): boolean => value !== '.' && value !== '..
 
 export function createGitHubPullRequestSource({
   fetchFn,
-  apiBase = GITHUB_API_BASE,
 }: {
   /** The deployment's HTTP client, so proxying and instrumentation are decided by the caller. */
   fetchFn: PullRequestFetch;
-  apiBase?: string;
 }): PullRequestSource {
   /** One lookup's credential and deadlines, shared by every request it makes. */
   type Lookup = {
     token: string;
+    /** The host's REST API root; every request of the lookup goes there and nowhere else. */
+    apiBase: string;
     requestTimeoutMs: number;
     /** Aborts when the whole lookup runs out of time. */
     deadline: AbortSignal;
@@ -270,7 +280,7 @@ export function createGitHubPullRequestSource({
   ): Promise<unknown | null> {
     let response: Response;
     try {
-      response = await fetchFn(`${apiBase}${pathname}`, {
+      response = await fetchFn(`${lookup.apiBase}${pathname}`, {
         headers: {
           Accept: 'application/vnd.github+json',
           Authorization: `Bearer ${lookup.token}`,
@@ -338,6 +348,7 @@ export function createGitHubPullRequestSource({
       branch,
       head: recordedHead,
       pullRequest,
+      host = DEFAULT_GITHUB_HOST,
       token,
       limits,
       allowedRepositories,
@@ -350,6 +361,7 @@ export function createGitHubPullRequestSource({
       if (recordedHead === null) return null;
       const lookup: Lookup = {
         token,
+        apiBase: gitHubApiBase(host),
         requestTimeoutMs: limits?.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS,
         deadline: AbortSignal.timeout(limits?.lookupTimeoutMs ?? DEFAULT_LOOKUP_TIMEOUT_MS),
         maxCheckRunPages: limits?.maxCheckRunPages ?? DEFAULT_MAX_CHECK_RUN_PAGES,
@@ -450,7 +462,7 @@ export function createGitHubPullRequestSource({
       if (pullRequest != null && Number.isSafeInteger(pullRequest) && pullRequest > 0) {
         const linked = await getJson(`${base}/pulls/${pullRequest}`, lookup);
         if (linked != null) {
-          const pull = parsePull(linked);
+          const pull = parsePull(linked, host);
           const sameRepository = pull.headRepo?.toLowerCase() === repo.toLowerCase();
           if (
             pull.headRef === branch &&
@@ -501,7 +513,7 @@ export function createGitHubPullRequestSource({
        */
       const detail = await getJson(`${base}/pulls/${chosen.number}`, lookup);
       if (detail == null) return null;
-      const pull = parsePull(detail);
+      const pull = parsePull(detail, host);
       /** A push between the list and the detail can move the head off the recorded commit. */
       if (pull.headSha !== chosen.sha && !(await contains(pull.headSha))) return null;
       return report(pull);

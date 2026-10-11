@@ -1,9 +1,11 @@
 /**
- * `https://github.com/{owner}/{name}/pull/{number}`, ending where the number does. A `/pull/new/`
- * page (what `git push` suggests) has no number and never matches.
+ * `https://{host}/{owner}/{name}/pull/{number}`, ending where the number does. A `/pull/new/` page
+ * (what `git push` suggests) has no number and never matches. Any host matches, so a GitHub
+ * Enterprise link is found too: the number is only a candidate, which the lookup reads from the
+ * configured host and accepts only when its head is the lane's branch.
  */
 const PULL_REQUEST_URL =
-  /https:\/\/github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/pull\/(\d+)(?![\w-])/g;
+  /https:\/\/[A-Za-z0-9.-]+(?::\d{1,5})?\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/pull\/(\d+)(?![\w-])/g;
 
 /**
  * The pull request of `repo` that command output links to, the last one when it links several,

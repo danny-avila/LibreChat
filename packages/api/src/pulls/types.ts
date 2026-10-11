@@ -49,6 +49,8 @@ export type PullRequestFindInput = {
    * branch is searched as if no link had been seen.
    */
   pullRequest?: number | null;
+  /** The GitHub host the token belongs to, `github.com` when omitted. Already normalized. */
+  host?: string;
   token: string;
   limits?: PullRequestLookupLimits;
   /** The repositories the token may be used for. A pull request from a fork has its checks read

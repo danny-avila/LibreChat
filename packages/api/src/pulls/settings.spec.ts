@@ -1,8 +1,27 @@
 import {
-  isPullRequestFeatureActive,
-  resolvePullRequestToken,
   resolveTokenReference,
+  resolvePullRequestHost,
+  resolvePullRequestToken,
+  isPullRequestFeatureActive,
 } from './settings';
+
+describe('resolvePullRequestHost', () => {
+  it('is github.com when no host is configured', () => {
+    expect(resolvePullRequestHost(undefined)).toBe('github.com');
+  });
+
+  it('normalizes a configured host, which the raw YAML does not', () => {
+    expect(resolvePullRequestHost('  GitHub.Example.com ')).toBe('github.example.com');
+    expect(resolvePullRequestHost('ghe.local:8443')).toBe('ghe.local:8443');
+  });
+
+  it.each(['https://github.example.com', 'github.example.com/api', 'u@github.example.com', ''])(
+    'refuses %p rather than falling back to github.com',
+    (host) => {
+      expect(resolvePullRequestHost(host)).toBeNull();
+    },
+  );
+});
 
 describe('resolvePullRequestToken', () => {
   it('prefers the configured reference over any fallback', () => {
@@ -77,6 +96,18 @@ describe('isPullRequestFeatureActive', () => {
     expect(isPullRequestFeatureActive({ enabled: false, allowAllRepositories: true }, env)).toBe(
       false,
     );
+  });
+
+  it('stays dormant with a host that is not a host name, so the token goes nowhere', () => {
+    expect(
+      isPullRequestFeatureActive(
+        { host: 'https://ghe.example.com', allowAllRepositories: true },
+        env,
+      ),
+    ).toBe(false);
+    expect(
+      isPullRequestFeatureActive({ host: 'ghe.example.com', allowAllRepositories: true }, env),
+    ).toBe(true);
   });
 
   it('is on when explicitly enabled and fully scoped', () => {

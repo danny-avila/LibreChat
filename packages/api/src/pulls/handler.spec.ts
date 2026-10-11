@@ -90,6 +90,7 @@ describe('createConversationPullRequestHandler', () => {
       branch: 'feat/x',
       token: 'ghp_secret',
       head: null,
+      host: 'github.com',
       ttlMs: 30_000,
       cacheMaxEntries: 500,
       cacheMaxCredentials: 256,
@@ -105,6 +106,51 @@ describe('createConversationPullRequestHandler', () => {
     });
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ pullRequest: pr });
+  });
+
+  it('looks up on the configured GitHub host, normalized', async () => {
+    const { run, lookup } = setup({ settings: { ...enabled, host: ' GHE.Example.com ' } });
+    await run();
+    expect(lookup).toHaveBeenCalledWith(expect.objectContaining({ host: 'ghe.example.com' }));
+  });
+
+  /** The operator's YAML holds `base`; a role, group or user override in the database holds `override`. */
+  async function hostFor(base: Record<string, unknown>, override: Record<string, unknown>) {
+    const lookup = jest.fn().mockResolvedValue({ ok: true, value: pr });
+    const handler = createConversationPullRequestHandler({
+      getConvoLaneGit: jest.fn().mockResolvedValue({ branch: 'feat/x', head: null, repo: 'o/r' }),
+      getAppConfig: jest
+        .fn()
+        .mockImplementation(async (options: { baseOnly?: boolean }) =>
+          configWith(options.baseOnly ? base : override),
+        ),
+      lookup,
+      env: { GH_TOKEN: 'ghp_secret' },
+    });
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await handler(
+      { user: { id: 'u1' }, params: { conversationId: 'c1' } } as unknown as ServerRequest,
+      res as unknown as Response,
+    );
+    return lookup.mock.calls[0]?.[0]?.host;
+  }
+
+  it('takes the host from the operator config, never from a database override', async () => {
+    const override = { ...enabled, host: 'attacker.example' };
+    expect(await hostFor({ ...enabled, host: 'ghe.example.com' }, override)).toBe(
+      'ghe.example.com',
+    );
+    expect(await hostFor(enabled, override)).toBe('github.com');
+  });
+
+  it('never sends the token anywhere when the host is not a host name', async () => {
+    const { run, res, lookup } = setup({
+      settings: { ...enabled, host: 'https://ghe.example.com' },
+    });
+    await run();
+    expect(lookup).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ pullRequest: null });
   });
 
   it('passes the pull request the conversation linked to', async () => {
@@ -280,12 +326,13 @@ describe('createConversationPullRequestHandler', () => {
 
   it('starts the config and the owner-scoped lane reads together, not one after the other', async () => {
     const order: string[] = [];
-    let releaseConfig: (config: unknown) => void = () => undefined;
+    const pending: Array<(config: unknown) => void> = [];
+    const releaseConfig = (config: unknown) => pending.forEach((resolve) => resolve(config));
     const getAppConfig = jest.fn(
       () =>
         new Promise((resolve) => {
           order.push('config:start');
-          releaseConfig = resolve;
+          pending.push(resolve);
         }),
     );
     const getConvoLaneGit = jest.fn(async () => {
@@ -304,7 +351,8 @@ describe('createConversationPullRequestHandler', () => {
       res as unknown as Response,
     );
     await new Promise((resolve) => setImmediate(resolve));
-    expect(order).toEqual(['config:start', 'lane:start']);
+    /** The resolved config and the operator's base config, then the lane, all before any settles. */
+    expect(order).toEqual(['config:start', 'config:start', 'lane:start']);
     releaseConfig(configWith(enabled));
     await done;
     expect(res.json).toHaveBeenCalledWith({ pullRequest: pr });
@@ -416,6 +464,26 @@ describe('createConversationPullRequestsHandler', () => {
     };
     return { run, res, lookup, getConvosLaneGit };
   }
+
+  it('takes the host from the operator config for the batch too', async () => {
+    const lookup = jest.fn().mockResolvedValue({ ok: true, value: pr });
+    const handler = createConversationPullRequestsHandler({
+      getConvosLaneGit: jest.fn().mockResolvedValue([lane('a')]),
+      getAppConfig: jest
+        .fn()
+        .mockImplementation(async (options: { baseOnly?: boolean }) =>
+          configWith(options.baseOnly ? enabled : { ...enabled, host: 'attacker.example' }),
+        ),
+      lookup,
+      env: { GH_TOKEN: 'ghp_secret' },
+    });
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await handler(
+      { user: { id: 'u1' }, body: { conversationIds: ['a'] } } as unknown as ServerRequest,
+      res as unknown as Response,
+    );
+    expect(lookup).toHaveBeenCalledWith(expect.objectContaining({ host: 'github.com' }));
+  });
 
   it('keeps conversations on one lane apart when they linked different pull requests', async () => {
     const linked = (conversationId: string, pullRequest: number) => ({
