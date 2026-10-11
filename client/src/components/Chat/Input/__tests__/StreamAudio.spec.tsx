@@ -1,10 +1,13 @@
 import React from 'react';
+import { TextEncoder } from 'util';
+import { webcrypto } from 'crypto';
 import { RecoilRoot } from 'recoil';
 import { render, waitFor } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { Constants, QueryKeys } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TMessage, TConversation } from 'librechat-data-provider';
+import { getTTSCacheKey } from '~/utils';
 import StreamAudio from '../StreamAudio';
 import store from '~/store';
 
@@ -16,17 +19,20 @@ const match = jest.fn(async (_key: string) => ({ blob: async () => new Blob() })
 
 describe('StreamAudio cache', () => {
   beforeAll(() => {
+    Object.defineProperty(global, 'crypto', { value: webcrypto, configurable: true });
+    Object.assign(global, { TextEncoder });
     Object.defineProperty(global, 'caches', {
       writable: true,
       configurable: true,
-      value: { open: async () => ({ match, put: jest.fn() }) },
+      value: { open: async () => ({ match, keys: async () => [], put: jest.fn() }) },
     });
     URL.createObjectURL = jest.fn(() => 'blob:audio');
     URL.revokeObjectURL = jest.fn();
   });
 
   /** Audio cached before reasoning was filtered is keyed by the full text; looking up the
-   *  spoken answer instead means that recording is never replayed. */
+   *  spoken answer instead means that recording is never replayed. The key is a hash, so
+   *  the message text itself never reaches Cache Storage. */
   it('looks up cached audio by the spoken answer, not the stored text', async () => {
     const message = {
       messageId: 'assistant-1',
@@ -59,6 +65,8 @@ describe('StreamAudio cache', () => {
     );
 
     await waitFor(() => expect(match).toHaveBeenCalled());
-    expect(match).toHaveBeenCalledWith('The capital of Germany is Berlin.');
+    const key = await getTTSCacheKey('The capital of Germany is Berlin.');
+    expect(key).toMatch(/^\/tts-cache\/[0-9a-f]{64}$/);
+    expect(match).toHaveBeenCalledWith(key);
   });
 });

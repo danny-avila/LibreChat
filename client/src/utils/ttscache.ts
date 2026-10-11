@@ -29,8 +29,8 @@ export async function getTTSCacheKey(text: string, voice?: string | null): Promi
  *  keyed by the raw message text. */
 export async function openTTSCache(): Promise<Cache> {
   const cache = await caches.open(TTS_CACHE_NAME);
-  legacyPurge ??= cache
-    .keys()
+  legacyPurge ??= Promise.resolve()
+    .then(() => cache.keys())
     .then((keys) =>
       Promise.all(
         keys
