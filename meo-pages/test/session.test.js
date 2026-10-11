@@ -4,6 +4,7 @@ import {
   seal,
   unseal,
   cookieValue,
+  stateCookieValue,
   sessionCookieHeader,
   stateCookieHeader,
 } from '../functions/_lib/session.js';
@@ -19,7 +20,7 @@ test('session payload is authenticated encryption and cookie is HttpOnly', async
   assert.match(sessionCookieHeader(sealed), /HttpOnly; Secure; SameSite=Lax/);
   assert.match(
     stateCookieHeader(sealed),
-    /^__Secure-meo-oauth=.*Path=\/oauth\/;.*HttpOnly; Secure;/,
+    /^__Host-meo-oauth=.*Path=\/;.*HttpOnly; Secure;.*SameSite=Lax/,
   );
   assert.equal(
     cookieValue(
@@ -27,6 +28,22 @@ test('session payload is authenticated encryption and cookie is HttpOnly', async
         headers: { Cookie: `other=x; __Host-meo-session=${sealed}` },
       }),
       '__Host-meo-session',
+    ),
+    sealed,
+  );
+  assert.equal(
+    stateCookieValue(
+      new Request('https://chat.meoarch.org/oauth/openid/callback', {
+        headers: { Cookie: `__Host-meo-oauth=${sealed}` },
+      }),
+    ),
+    sealed,
+  );
+  assert.equal(
+    stateCookieValue(
+      new Request('https://chat.meoarch.org/oauth/openid/callback', {
+        headers: { Cookie: `__Secure-meo-oauth=${sealed}` },
+      }),
     ),
     sealed,
   );
