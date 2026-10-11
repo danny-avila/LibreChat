@@ -19,6 +19,7 @@ export enum ProviderId {
   helicone = 'helicone',
   huggingface = 'huggingface',
   lemonade = 'lemonade',
+  litellm = 'litellm',
   mistral = 'mistral',
   mlx = 'mlx',
   ollama = 'ollama',
@@ -50,6 +51,7 @@ export const knownEndpointToProvider: Record<KnownEndpoints, ProviderId> = {
   [KnownEndpoints.helicone]: ProviderId.helicone,
   [KnownEndpoints.huggingface]: ProviderId.huggingface,
   [KnownEndpoints.lemonade]: ProviderId.lemonade,
+  [KnownEndpoints.litellm]: ProviderId.litellm,
   [KnownEndpoints.mistral]: ProviderId.mistral,
   [KnownEndpoints.mlx]: ProviderId.mlx,
   [KnownEndpoints.ollama]: ProviderId.ollama,
@@ -78,6 +80,7 @@ const providerAliases: Record<string, ProviderId> = {
   moonshotai: ProviderId.moonshot,
   amdlemonade: ProviderId.lemonade,
   lemonadeserver: ProviderId.lemonade,
+  litellmproxy: ProviderId.litellm,
   mistralai: ProviderId.mistral,
   togetherai: ProviderId.together,
 };

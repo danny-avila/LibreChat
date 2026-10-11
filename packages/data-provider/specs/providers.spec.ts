@@ -48,6 +48,8 @@ describe('resolveProviderId', () => {
     expect(resolveProviderId('kimi')).toBe(ProviderId.moonshot);
     expect(resolveProviderId('AMD Lemonade')).toBe(ProviderId.lemonade);
     expect(resolveProviderId('Lemonade Server')).toBe(ProviderId.lemonade);
+    expect(resolveProviderId('LiteLLM')).toBe(ProviderId.litellm);
+    expect(resolveProviderId('LiteLLM Proxy')).toBe(ProviderId.litellm);
   });
 
   it('returns null for empty and unknown input', () => {

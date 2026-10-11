@@ -1258,6 +1258,20 @@ endpoints:
       dropParams: ['stop']
       modelDisplayLabel: 'OpenRouter'
 
+    # LiteLLM Example
+    # Self-hosted proxy (https://docs.litellm.ai/docs/proxy/quick_start). The default port is 4000.
+    - name: 'LiteLLM'
+      # The key is a LiteLLM virtual key or the master key set in your proxy config.
+      apiKey: '${LITELLM_API_KEY}'
+      baseURL: 'http://localhost:4000/v1'
+      models:
+        # Model names are the aliases from your proxy config. fetch loads them from `/v1/models`.
+        default: ['gpt-6-luna']
+        fetch: true
+      titleConvo: true
+      titleModel: 'gpt-6-luna'
+      modelDisplayLabel: 'LiteLLM'
+
   # AWS Bedrock Example
   # Note: Bedrock endpoint is configured via environment variables
   # bedrock:
