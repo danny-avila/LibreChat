@@ -157,10 +157,12 @@ async function responseJson(response, fallback) {
   }
 }
 
-async function route(request, env, session, userId, pathname) {
+async function route(request, env, session, user, pathname) {
   const url = new URL(request.url);
   const method = request.method;
-  if (pathname === '/api/session' && method === 'GET') return json({ userId });
+  const userId = user.id;
+  if (pathname === '/api/session' && method === 'GET')
+    return json({ userId, email: typeof user.email === 'string' ? user.email : '' });
   if (pathname === '/api/logout' && method === 'POST') {
     const response = json({ ok: true });
     for (const cookie of clearCookies()) response.headers.append('Set-Cookie', cookie);
@@ -363,7 +365,7 @@ export async function onRequest({ request, env }) {
     if (!user || user.id !== session.userId)
       return json({ error: 'Meo Account session is invalid' }, 401);
     const pathname = new URL(request.url).pathname;
-    const result = await route(request, env, session, user.id, pathname);
+    const result = await route(request, env, session, user, pathname);
     if (cookie) result.headers.append('Set-Cookie', cookie);
     return result;
   } catch (error) {

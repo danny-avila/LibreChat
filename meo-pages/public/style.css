@@ -47,6 +47,8 @@ button { cursor: pointer; }
 .history-item { text-align:left; border:0; background:transparent; border-radius:9px; padding:10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--muted); }
 .history-item:hover,.history-item.active { background:var(--bubble); color:var(--ink); }
 .sidebar-footer { margin-top:auto; color:var(--muted); font-size:12px; line-height:1.55; padding:8px 5px; }
+.sidebar-footer .button { display:block; width:100%; margin:5px 0; text-align:left; text-decoration:none; }
+.account-identity { color:var(--ink); font-size:13px; font-weight:650; overflow-wrap:anywhere; padding:0 13px 7px; }
 .main { display:flex; min-width:0; min-height:100vh; flex-direction:column; }
 .topbar { display:flex; align-items:center; justify-content:space-between; gap:16px; min-height:72px; border-bottom:1px solid var(--line); padding:13px clamp(16px,3vw,38px); }
 .topbar-title { font-size:14px; color:var(--muted); }
@@ -58,6 +60,7 @@ button { cursor: pointer; }
 .welcome .brand-mark { width:52px; height:52px; margin:0 auto 20px; border-radius:17px; font-size:22px; }
 .welcome h1 { font-size:clamp(25px,4vw,38px); letter-spacing:-.04em; margin:0 0 10px; }
 .welcome p { margin:0; color:var(--muted); line-height:1.6; }
+.welcome .button { display:inline-flex; align-items:center; margin:18px 5px 0; text-decoration:none; }
 .messages { display:grid; gap:24px; padding-bottom:22px; }
 .message { display:grid; grid-template-columns:34px minmax(0,1fr); gap:13px; align-items:start; }
 .avatar { display:grid; place-items:center; width:32px; height:32px; border-radius:11px; background:var(--bubble); color:var(--accent); font-weight:800; font-size:12px; }

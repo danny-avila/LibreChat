@@ -11,6 +11,17 @@ const env = {
 };
 const userId = '00000000-0000-4000-8000-000000000001';
 
+test('session exposes the current account email for the switcher', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async () => Response.json({ id: userId, email: 'tester@example.com' });
+  const response = await onRequest({ request: await request('/api/session'), env });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { userId, email: 'tester@example.com' });
+});
+
 async function request(path, init = {}) {
   const cookie = sessionCookieHeader(
     await seal(

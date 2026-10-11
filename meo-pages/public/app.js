@@ -3,6 +3,7 @@ import { chatContext, requestedSelection, safeMarkdown, SseParser } from './core
 const root = document.querySelector('#app');
 const state = {
   userId: '',
+  email: '',
   connections: [],
   history: [],
   historyCursor: null,
@@ -72,6 +73,10 @@ function deepLink() {
   history.replaceState(null, '', `/new${params.size ? `?${params}` : ''}`);
 }
 
+function selectedConversationKey() {
+  return `meo.selectedConversation.${state.userId}`;
+}
+
 function formatMessage(row) {
   let content = row.content;
   if (Array.isArray(content)) content = content.map((part) => part?.text ?? '').join('');
@@ -117,7 +122,7 @@ async function loadHistory() {
   if (generation !== state.historyGeneration) return;
   state.history = result.conversations;
   state.historyCursor = result.nextCursor;
-  const requested = localStorage.getItem('meo.selectedConversation') ?? '';
+  const requested = localStorage.getItem(selectedConversationKey()) ?? '';
   const conversation = state.history.find((item) => item.id === requested);
   if (conversation) await openConversation(conversation.id, false);
 }
@@ -153,7 +158,7 @@ async function openConversation(id, persist = true) {
     state.messages = result.messages.map(formatMessage);
     state.retryAvailable = state.messages.at(-1)?.role === 'user';
     state.error = '';
-    if (persist) localStorage.setItem('meo.selectedConversation', id);
+    if (persist) localStorage.setItem(selectedConversationKey(), id);
   } catch (error) {
     if (generation !== state.conversationLoadGeneration) return;
     state.error = error.message;
@@ -168,7 +173,7 @@ async function newConversation() {
   state.messages = [];
   state.retryAvailable = false;
   state.draft = '';
-  localStorage.removeItem('meo.selectedConversation');
+  localStorage.removeItem(selectedConversationKey());
   state.error = '';
   render();
 }
@@ -231,8 +236,27 @@ function renderSidebar() {
     text: '退出登录',
     disabled: state.busy,
     onclick: async () => {
-      await api('/api/logout', { method: 'POST' });
-      location.reload();
+      try {
+        await api('/api/logout', { method: 'POST' });
+        location.reload();
+      } catch (error) {
+        state.error = error.message;
+        render();
+      }
+    },
+  });
+  const switchAccount = el('button', {
+    class: 'button ghost',
+    text: '切换账号',
+    disabled: state.busy,
+    onclick: async () => {
+      try {
+        await api('/api/logout', { method: 'POST' });
+        location.assign('https://account.meoarch.org/ai/switch-account');
+      } catch (error) {
+        state.error = error.message;
+        render();
+      }
     },
   });
   return el('aside', { class: 'sidebar' }, [
@@ -241,6 +265,13 @@ function renderSidebar() {
     historyTitle,
     history,
     el('div', { class: 'sidebar-footer' }, [
+      el('div', { class: 'account-identity', text: state.email || 'Meo Account' }),
+      el('a', {
+        class: 'button ghost',
+        href: 'https://account.meoarch.org/settings/profile',
+        text: '管理账号',
+      }),
+      switchAccount,
       el('div', { text: 'Provider key 仅由 Meo Account 保存和使用。' }),
       signout,
     ]),
@@ -298,7 +329,10 @@ function renderTopbar() {
       },
     });
   }
-  const user = el('span', { class: 'topbar-title', text: 'Meo Account 已连接' });
+  const user = el('span', {
+    class: 'topbar-title',
+    text: state.email ? `当前账号：${state.email}` : 'Meo Account 已连接',
+  });
   modelControl.disabled = state.busy;
   const menu = el('button', {
     class: 'button menu-toggle',
@@ -394,7 +428,7 @@ async function sendMessage(text, retry = false) {
         });
         state.conversationId = result.conversation.id;
         state.history.unshift(result.conversation);
-        localStorage.setItem('meo.selectedConversation', state.conversationId);
+        localStorage.setItem(selectedConversationKey(), state.conversationId);
       }
       await persistMessage(state.conversationId, 'user', content);
       savedUser = true;
@@ -488,6 +522,28 @@ function renderMain() {
         el('span', { class: 'brand-mark', text: 'm' }),
         el('h1', { text: '今天想聊些什么？' }),
         el('p', { text: '选择 Account 连接和模型，开始一段安全、可同步的对话。' }),
+        ...(!state.connection
+          ? [
+              el('a', {
+                class: 'button primary',
+                href: 'https://account.meoarch.org/settings/services',
+                text: '在 Account 添加 AI 连接',
+              }),
+              el('button', {
+                class: 'button ghost',
+                text: '重新检查连接',
+                onclick: async () => {
+                  try {
+                    await loadConnections();
+                    state.error = '';
+                  } catch (error) {
+                    state.error = error.message;
+                  }
+                  render();
+                },
+              }),
+            ]
+          : []),
       ])
     : null;
   const messages = el(
@@ -562,6 +618,8 @@ async function boot() {
   try {
     const session = await json('/api/session');
     state.userId = session.userId;
+    state.email = session.email;
+    localStorage.removeItem('meo.selectedConversation');
     await Promise.all([loadConnections(), loadHistory()]);
     render();
   } catch (error) {
