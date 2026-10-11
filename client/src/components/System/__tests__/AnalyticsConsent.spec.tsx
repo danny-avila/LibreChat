@@ -57,6 +57,17 @@ describe('AnalyticsConsent', () => {
     expect(initialize).toHaveBeenCalledWith({ gtmId: 'GTM-TEST' });
     expect(getBanner()).not.toBeInTheDocument();
     expect(localStorage.getItem('analyticsConsent')).toBe(JSON.stringify('granted'));
+    /** Consent defaults reach the data layer before the container loads, advertising denied. */
+    expect(Array.from(window.dataLayer?.[0] as ArrayLike<unknown>)).toEqual([
+      'consent',
+      'default',
+      {
+        analytics_storage: 'granted',
+        ad_storage: 'denied',
+        ad_user_data: 'denied',
+        ad_personalization: 'denied',
+      },
+    ]);
   });
 
   it('keeps GTM unloaded after Decline and hides the banner', () => {
@@ -122,7 +133,7 @@ describe('AnalyticsConsent', () => {
     expect(Array.from(window.dataLayer[0] as ArrayLike<unknown>)).toEqual([
       'consent',
       'update',
-      expect.objectContaining({ analytics_storage: 'granted', ad_storage: 'granted' }),
+      expect.objectContaining({ analytics_storage: 'granted', ad_storage: 'denied' }),
     ]);
   });
 

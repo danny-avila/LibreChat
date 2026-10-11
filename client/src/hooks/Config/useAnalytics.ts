@@ -6,26 +6,25 @@ import { analyticsConsentAtom, hasAnalyticsGtmId } from '~/store/analytics';
 type ConsentState = 'granted' | 'denied';
 
 /**
- * Tells an already loaded Google Tag Manager the viewer's current answer, through
- * the consent mode command `gtag('consent', 'update', ...)`. A loaded container
- * cannot be unloaded, so after a withdrawal tags that ignore consent mode keep
- * running until the page reloads; the reload is what completes the revocation.
+ * Sends a Google consent mode command (`gtag('consent', ...)`) to the data layer.
+ * The viewer answers one question, analytics, so advertising storage and ad data
+ * use stay denied whatever the answer. A loaded container cannot be unloaded, so
+ * after a withdrawal tags that ignore consent mode keep running until the page
+ * reloads; the reload is what completes the revocation.
  */
-function pushConsentUpdate(state: ConsentState) {
+function pushConsent(command: 'default' | 'update', analytics: ConsentState) {
+  window.dataLayer = window.dataLayer ?? [];
   const dataLayer = window.dataLayer;
-  if (!Array.isArray(dataLayer)) {
-    return;
-  }
   /** GTM reads consent commands only in the `arguments` shape gtag pushes, not as a plain array. */
   function gtag(..._args: unknown[]) {
     // eslint-disable-next-line prefer-rest-params -- GTM requires the Arguments object itself
-    dataLayer?.push(arguments);
+    dataLayer.push(arguments);
   }
-  gtag('consent', 'update', {
-    analytics_storage: state,
-    ad_storage: state,
-    ad_user_data: state,
-    ad_personalization: state,
+  gtag('consent', command, {
+    analytics_storage: analytics,
+    ad_storage: 'denied',
+    ad_user_data: 'denied',
+    ad_personalization: 'denied',
   });
 }
 
@@ -64,16 +63,18 @@ export default function useAnalytics(gtmId: string | null | undefined) {
     if (isContainerLoaded(gtmId)) {
       /** Consent given again after a withdrawal in this page: the container is
        *  still here, so it only needs the new answer. */
-      pushConsentUpdate('granted');
+      pushConsent('update', 'granted');
       return;
     }
+    /** Set before the container's first tag runs; the snippet keeps an existing data layer. */
+    pushConsent('default', 'granted');
     TagManager.initialize({ gtmId });
   }, [enabled, gtmId, consent]);
 
   useEffect(() => {
     /** Nothing is pushed unless this deployment's container is on the page. */
     if (enabled && consent === 'denied' && isContainerLoaded(gtmId)) {
-      pushConsentUpdate('denied');
+      pushConsent('update', 'denied');
     }
   }, [enabled, gtmId, consent]);
 
