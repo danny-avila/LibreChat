@@ -1,26 +1,25 @@
 import express from 'express';
-import { EModelEndpoint } from 'librechat-data-provider';
 import { logger, getTenantId, tenantStorage } from '@librechat/data-schemas';
-import type {
-  TAgentsEndpoint,
-  PullRequestProvider,
-  TPullRequestConnection,
-} from 'librechat-data-provider';
+import type { PullRequestProvider, TPullRequestConnection } from 'librechat-data-provider';
 import type { Request, Response, Router, RequestHandler } from 'express';
 import type { AppConfig } from '@librechat/data-schemas';
+import type { AppConfigUserLike, GetAppConfigOptions } from '~/app/service';
 import type { PullRequestOAuth, PullRequestOAuthStore } from './oauth';
-import type { GetAppConfigOptions } from '~/app/service';
 import type { PullRequestOAuthConfig } from './settings';
 import type { PullRequestUserToken } from './handler';
 import type { PullRequestFetch } from './shared';
 import type { ServerRequest } from '~/types';
+import {
+  PULL_REQUEST_OAUTH_CALLBACK_PATH,
+  createPullRequestOAuthFromEnv,
+  DEFAULT_PULL_REQUEST_OAUTH_FLOW_MINUTES,
+} from './oauth';
 import {
   setOAuthSession,
   validateOAuthCsrf,
   setOAuthCsrfCookie,
   validateOAuthSession,
 } from '~/oauth/csrf';
-import { PULL_REQUEST_OAUTH_CALLBACK_PATH, createPullRequestOAuthFromEnv } from './oauth';
 import { isPullRequestFeatureActive, resolvePullRequestOAuth } from './settings';
 import { readPullRequestSettings } from './handler';
 import { getSafeErrorMetadata } from '~/utils';
@@ -45,11 +44,19 @@ type Env = Readonly<Record<string, string | undefined>>;
 export function createPullRequestConnectionHandlers(deps: {
   oauth: PullRequestOAuth;
   getAppConfig: (options: GetAppConfigOptions) => Promise<AppConfig>;
+  /** The user a callback's signed state names, as config resolution needs it; null if gone. */
+  getUser: (userId: string) => Promise<AppConfigUserLike | null>;
   env: Env;
 }) {
-  /** The signed-in user's connection settings, with the app taken from the operator's YAML. */
-  async function configFor(req: ServerRequest): Promise<PullRequestOAuthConfig | null> {
-    const settings = await readPullRequestSettings(deps.getAppConfig, req.user);
+  /**
+   * A user's connection settings: the feature as that user's effective config resolves it (role,
+   * group and user overrides included), with the app taken from the operator's YAML. Starting a
+   * flow and finishing it both ask this, so a flow that may start may also finish.
+   */
+  async function configFor(
+    user: AppConfigUserLike | null | undefined,
+  ): Promise<PullRequestOAuthConfig | null> {
+    const settings = await readPullRequestSettings(deps.getAppConfig, user);
     if (settings == null || !isPullRequestFeatureActive(settings, deps.env)) return null;
     return resolvePullRequestOAuth(settings, deps.env);
   }
@@ -64,16 +71,14 @@ export function createPullRequestConnectionHandlers(deps: {
     code: string,
   ): Promise<void> {
     try {
-      /** The operator's YAML alone decides the app; a changed app voids flows started before. */
-      const base = await deps.getAppConfig({
-        baseOnly: true,
-        ...(claims.tenantId ? { tenantId: claims.tenantId } : {}),
-      });
-      const settings = (base.endpoints?.[EModelEndpoint.agents] as TAgentsEndpoint | undefined)
-        ?.pullRequests;
-      const config = isPullRequestFeatureActive(settings, deps.env)
-        ? resolvePullRequestOAuth(settings, deps.env)
-        : null;
+      /** The user must still exist, in the tenant the flow started in. */
+      const user = await deps.getUser(claims.userId);
+      if (user == null || (user.tenantId ?? null) !== (claims.tenantId ?? null)) {
+        fail(res, 'invalid_state');
+        return;
+      }
+      /** The same check as starting the flow; a changed app voids flows started before. */
+      const config = await configFor({ ...user, id: claims.userId });
       if (config == null || config.provider !== claims.provider || config.host !== claims.host) {
         fail(res, 'invalid_state');
         return;
@@ -97,7 +102,7 @@ export function createPullRequestConnectionHandlers(deps: {
         return;
       }
       try {
-        const config = await configFor(req);
+        const config = await configFor(req.user);
         if (config == null) {
           res
             .status(404)
@@ -109,7 +114,13 @@ export function createPullRequestConnectionHandlers(deps: {
           { id: user.id, ...(tenantId ? { tenantId } : {}) },
           config,
         );
-        setOAuthCsrfCookie(res, flowId, PULL_REQUEST_OAUTH_CALLBACK_PATH);
+        /** As long as the signed state is valid, so an approval inside the window can finish. */
+        setOAuthCsrfCookie(
+          res,
+          flowId,
+          PULL_REQUEST_OAUTH_CALLBACK_PATH,
+          (config.flowTimeoutMinutes ?? DEFAULT_PULL_REQUEST_OAUTH_FLOW_MINUTES) * 60_000,
+        );
         res.status(200).json({ url });
       } catch (error) {
         logger.error('[PullRequests] Could not start a connection', getSafeErrorMetadata(error));
@@ -169,7 +180,7 @@ export function createPullRequestConnectionHandlers(deps: {
         return;
       }
       try {
-        const config = await configFor(req);
+        const config = await configFor(req.user);
         const body: TPullRequestConnection =
           config == null
             ? { configured: false, connected: false }
@@ -204,18 +215,20 @@ export function createPullRequestConnectionHandlers(deps: {
   };
 }
 
-/** The lookups' view of a connection: the user's token, or none. */
-export function createPullRequestUserToken(
-  oauth: PullRequestOAuth,
-  env: Env,
-): (
-  userId: string,
-  settings: Parameters<typeof resolvePullRequestOAuth>[0],
-) => Promise<string | null> {
-  return async (userId, settings) => {
+type ConnectionSettings = Parameters<typeof resolvePullRequestOAuth>[0];
+
+/** The lookups' view of a connection: the user's token, or none, and its invalidation. */
+export function createPullRequestUserToken(oauth: PullRequestOAuth, env: Env) {
+  const read = async (userId: string, settings: ConnectionSettings) => {
     const config = resolvePullRequestOAuth(settings, env);
     return config == null ? null : oauth.token(userId, config);
   };
+  return Object.assign(read, {
+    reject: async (userId: string, settings: ConnectionSettings, token: string) => {
+      const config = resolvePullRequestOAuth(settings, env);
+      if (config != null) await oauth.reject(userId, config, token);
+    },
+  });
 }
 
 type ConnectionDeps = {
@@ -240,7 +253,13 @@ export function createPullRequestUserTokenFromEnv(
 export function createPullRequestConnectionRouter(
   deps: ConnectionDeps & {
     getAppConfig: (options: GetAppConfigOptions) => Promise<AppConfig>;
+    getUserById: (
+      userId: string,
+      fieldsToSelect: string,
+    ) => Promise<{ role?: string; tenantId?: string; idOnTheSource?: string | null } | null>;
     requireJwtAuth: RequestHandler;
+    /** The app's limiter for unauthenticated OAuth callbacks: each one costs a token exchange. */
+    callbackLimiter: RequestHandler;
   },
 ): Router {
   const router = express.Router();
@@ -249,12 +268,22 @@ export function createPullRequestConnectionRouter(
   const handlers = createPullRequestConnectionHandlers({
     oauth,
     getAppConfig: deps.getAppConfig,
+    getUser: async (userId) => {
+      const user = await deps.getUserById(userId, 'role tenantId idOnTheSource');
+      if (user == null) return null;
+      return {
+        id: userId,
+        ...(user.role != null ? { role: user.role } : {}),
+        ...(user.tenantId != null ? { tenantId: user.tenantId } : {}),
+        ...(user.idOnTheSource !== undefined ? { idOnTheSource: user.idOnTheSource } : {}),
+      };
+    },
     env: deps.env,
   });
   /** Behind `requireJwtAuth`, which puts the signed-in user on the request. */
   const authed = (handler: (req: ServerRequest, res: Response) => Promise<void>) =>
     handler as unknown as RequestHandler;
-  router.get('/oauth/callback', handlers.callback);
+  router.get('/oauth/callback', deps.callbackLimiter, handlers.callback);
   router.get('/oauth/connect', deps.requireJwtAuth, setOAuthSession, authed(handlers.connect));
   router.get('/oauth/status', deps.requireJwtAuth, authed(handlers.status));
   router.delete('/oauth', deps.requireJwtAuth, authed(handlers.disconnect));

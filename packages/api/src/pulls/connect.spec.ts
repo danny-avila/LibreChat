@@ -48,17 +48,21 @@ function setup({
   settings = oauthSettings,
   base = settings,
   oauth = makeOAuth(),
+  user = { role: 'USER' },
 }: {
   settings?: Record<string, unknown> | undefined;
   base?: Record<string, unknown> | undefined;
   oauth?: jest.Mocked<PullRequestOAuth>;
+  /** The stored user a callback's state names; null when it no longer exists. */
+  user?: { role?: string; tenantId?: string } | null;
 } = {}) {
   const getAppConfig = jest
     .fn()
     .mockImplementation(async (options: { baseOnly?: boolean }) =>
       configWith(options.baseOnly ? base : settings),
     );
-  const handlers = createPullRequestConnectionHandlers({ oauth, getAppConfig, env });
+  const getUser = jest.fn(async (id: string) => (user == null ? null : { id, ...user }));
+  const handlers = createPullRequestConnectionHandlers({ oauth, getAppConfig, getUser, env });
   const res = {
     status: jest.fn().mockReturnThis(),
     json: jest.fn().mockReturnThis(),
@@ -67,7 +71,7 @@ function setup({
     clearCookie: jest.fn().mockReturnThis(),
     redirect: jest.fn(),
   };
-  return { handlers, oauth, getAppConfig, res };
+  return { handlers, oauth, getAppConfig, getUser, res };
 }
 
 const asRes = (res: unknown) => res as Response;
@@ -97,6 +101,21 @@ describe('connect', () => {
       OAUTH_CSRF_COOKIE,
       generateOAuthCsrfToken(claims.flowId, env.JWT_SECRET),
       expect.objectContaining({ httpOnly: true, path: '/api/pull-requests/oauth/callback' }),
+    );
+  });
+
+  it.each([
+    ['the default flow timeout', {}, 10 * 60_000],
+    ['a configured flow timeout', { flowTimeoutMinutes: 45 }, 45 * 60_000],
+  ])('keeps the binding cookie for %s', async (_label, flow, maxAge) => {
+    const { handlers, res } = setup({
+      settings: { ...oauthSettings, oauth: { ...oauthSettings.oauth, ...flow } },
+    });
+    await handlers.connect(signedIn(), asRes(res));
+    expect(res.cookie).toHaveBeenCalledWith(
+      OAUTH_CSRF_COOKIE,
+      expect.any(String),
+      expect.objectContaining({ maxAge }),
     );
   });
 
@@ -228,9 +247,39 @@ describe('callback', () => {
         tenantDuringComplete = getTenantId();
       }),
     });
-    const { getAppConfig } = await run({ state: 's', code: 'c' }, bound(), { oauth });
+    const { getAppConfig } = await run({ state: 's', code: 'c' }, bound(), {
+      oauth,
+      user: { role: 'USER', tenantId: 'tenant-a' },
+    });
     expect(tenantDuringComplete).toBe('tenant-a');
-    expect(getAppConfig).toHaveBeenCalledWith({ baseOnly: true, tenantId: 'tenant-a' });
+    expect(getAppConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ baseOnly: true, tenantId: 'tenant-a', userId: 'u1' }),
+    );
+  });
+
+  it('completes a flow an override turned on for this user while the operator config has it off', async () => {
+    const { oauth, getAppConfig, res } = await run({ state: 's', code: 'c' }, bound(), {
+      base: { ...oauthSettings, enabled: false },
+      user: { role: 'BETA' },
+    });
+    expect(oauth.complete).toHaveBeenCalled();
+    expect(res.redirect).toHaveBeenCalledWith('/oauth/success?serverName=GitHub');
+    expect(getAppConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ role: 'BETA', userId: 'u1', failClosed: true }),
+    );
+  });
+
+  it.each([
+    ['the user no longer exists', { user: null }],
+    [
+      "the user's effective config turns the feature off",
+      { settings: { ...oauthSettings, enabled: false } },
+    ],
+    ['the user is in another tenant than the flow', { user: { tenantId: 'tenant-b' } }],
+  ])('refuses the callback when %s, storing nothing', async (_label, options) => {
+    const { oauth, res } = await run({ state: 's', code: 'c' }, bound(), options);
+    expect(oauth.complete).not.toHaveBeenCalled();
+    expect(res.redirect).toHaveBeenCalledWith('/oauth/error?error=invalid_state');
   });
 });
 
@@ -290,12 +339,28 @@ describe('createPullRequestConnectionRouter', () => {
     router.stack.flatMap((layer) =>
       layer.route ? Object.keys(layer.route.methods).map((m) => `${m} ${layer.route!.path}`) : [],
     );
+  const callbackLimiter = jest.fn();
   const deps = {
-    store: { findToken: jest.fn(), replaceTokenIfCurrent: jest.fn(), deleteTokens: jest.fn() },
+    store: {
+      findToken: jest.fn(),
+      replaceTokenIfCurrent: jest.fn(),
+      deleteTokens: jest.fn(),
+      isAgentTriggerPrincipalActive: jest.fn(),
+    },
     fetchFn: jest.fn(),
     getAppConfig: jest.fn(),
+    getUserById: jest.fn(),
     requireJwtAuth: jest.fn(),
+    callbackLimiter,
   };
+
+  it('puts the callback, which costs a token exchange and needs no sign-in, behind the limiter', () => {
+    const router = createPullRequestConnectionRouter({ ...deps, env }) as unknown as {
+      stack: Array<{ route?: { path: string; stack: Array<{ handle: unknown }> } }>;
+    };
+    const callback = router.stack.find((layer) => layer.route?.path === '/oauth/callback');
+    expect(callback?.route?.stack[0].handle).toBe(callbackLimiter);
+  });
 
   it('registers the connection routes when states can be signed', () => {
     const router = createPullRequestConnectionRouter({ ...deps, env });

@@ -1,5 +1,6 @@
 const { createProxyAwareFetch, createPullRequestConnectionRouter } = require('@librechat/api');
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
+const { loginLimiter } = require('~/server/middleware/limiters');
 const { getAppConfig } = require('~/server/services/Config');
 const db = require('~/models');
 
@@ -8,5 +9,7 @@ module.exports = createPullRequestConnectionRouter({
   fetchFn: createProxyAwareFetch(),
   env: process.env,
   getAppConfig,
+  getUserById: db.getUserById,
   requireJwtAuth,
+  callbackLimiter: loginLimiter,
 });
