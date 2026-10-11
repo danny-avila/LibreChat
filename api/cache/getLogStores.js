@@ -134,7 +134,7 @@ async function clearExpiredFromCache(cache) {
       }
     } catch (error) {
       cacheConfig.DEBUG_MEMORY_CACHE &&
-        logger.debug(`[Cache] Error processing entry from ${cache.opts.namespace}`, {
+        logger.info(`[Cache] Error processing entry from ${cache.opts.namespace}`, {
           error: error?.name,
         });
       const deleted = await cache.opts.store.delete(key);
@@ -149,7 +149,7 @@ async function clearExpiredFromCache(cache) {
 
   if (cleared > 0) {
     cacheConfig.DEBUG_MEMORY_CACHE &&
-      logger.debug(
+      logger.info(
         `[Cache] Cleared ${cleared} entries older than ${ttl}ms from ${cache.opts.namespace}`,
       );
   }
@@ -161,14 +161,14 @@ async function clearExpiredFromCache(cache) {
  */
 const auditCache = () => {
   const ttlStores = getTTLStores();
-  logger.debug('[Cache] Starting audit');
+  logger.info('[Cache] Starting audit');
 
   ttlStores.forEach((store) => {
     if (!store?.opts?.store?.entries) {
       return;
     }
 
-    logger.debug(`[Cache] ${store.opts.namespace} entries:`, {
+    logger.info(`[Cache] ${store.opts.namespace} entries:`, {
       count: store.opts.store.size,
       ttl: store.opts.ttl,
     });
@@ -205,7 +205,7 @@ if (!cacheConfig.USE_REDIS && !cacheConfig.CI) {
       const memory = process.memoryUsage();
       const totalSize = ttlStores.reduce((sum, store) => sum + (store.opts?.store?.size ?? 0), 0);
 
-      logger.debug('[Cache] Memory usage:', {
+      logger.info('[Cache] Memory usage:', {
         heapUsed: `${(memory.heapUsed / 1024 / 1024).toFixed(2)} MB`,
         heapTotal: `${(memory.heapTotal / 1024 / 1024).toFixed(2)} MB`,
         rss: `${(memory.rss / 1024 / 1024).toFixed(2)} MB`,
@@ -223,11 +223,11 @@ if (!cacheConfig.USE_REDIS && !cacheConfig.CI) {
   // (see packages/api/src/app/shutdown.ts) rather than attaching a direct
   // signal handler — multiple competing handlers race the HTTP drain.
   registerShutdownTask('cache cleanup', async () => {
-    cacheConfig.DEBUG_MEMORY_CACHE && logger.debug('[Cache] Cleaning up and shutting down...');
+    cacheConfig.DEBUG_MEMORY_CACHE && logger.info('[Cache] Cleaning up and shutting down...');
     cleanupIntervals.forEach((interval) => clearInterval(interval));
     cleanupIntervals.clear();
     await clearAllExpiredFromCache();
-    cacheConfig.DEBUG_MEMORY_CACHE && logger.debug('[Cache] Final cleanup completed');
+    cacheConfig.DEBUG_MEMORY_CACHE && logger.info('[Cache] Final cleanup completed');
   });
 }
 
