@@ -25,6 +25,13 @@ const GTM_ID = 'GTM-E2ETEST';
 
 type Probe = { requests: () => number };
 
+/** Stands in for gtm.js: registers the container under its id, as GTM does once loaded. */
+const GTM_STUB = `(() => {
+  const id = new URL(document.currentScript.src).searchParams.get('id');
+  window.google_tag_manager = window.google_tag_manager || {};
+  window.google_tag_manager[id] = {};
+})();`;
+
 /** A request that should not happen has no event to wait on, so absence is
  *  observed over a short settle window after the config arrived; the page holds
  *  open streams, so `networkidle` never fires. */
@@ -55,7 +62,7 @@ async function serveGtmId(page: Page, gtmId: string | null = GTM_ID): Promise<Pr
   let requests = 0;
   await page.route('**://*.googletagmanager.com/**', async (route) => {
     requests += 1;
-    await route.fulfill({ status: 200, contentType: 'text/javascript', body: '' });
+    await route.fulfill({ status: 200, contentType: 'text/javascript', body: GTM_STUB });
   });
   return { requests: () => requests };
 }
@@ -173,6 +180,14 @@ test.describe('analytics consent', () => {
     await allowButton(page).click();
     await expect(banner(page)).toHaveCount(0);
     await expect.poll(gtm.requests).toBeGreaterThan(0);
+
+    /** A viewer who never signs in withdraws from the shared view's own Settings. */
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    const toggle = page.getByRole('dialog').getByRole('switch', { name: 'Allow analytics' });
+    await expect(toggle).toBeChecked();
+    await toggle.click();
+    await expect(toggle).not.toBeChecked();
+    await expect.poll(() => lastConsentUpdate(page)).toBe('denied');
   });
 
   test('turning analytics off in Settings withdraws consent @scenario:settings-revokes-analytics-consent', async ({

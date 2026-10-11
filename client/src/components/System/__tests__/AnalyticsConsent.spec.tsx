@@ -30,7 +30,6 @@ describe('AnalyticsConsent', () => {
     initialize.mockClear();
     delete window.google_tag_manager;
     delete window.dataLayer;
-    document.head.innerHTML = '';
   });
 
   it('renders nothing and never loads GTM when no container is configured', () => {
@@ -102,9 +101,6 @@ describe('AnalyticsConsent', () => {
   it('still loads the configured container when a different one is on the page', () => {
     localStorage.setItem('analyticsConsent', JSON.stringify('granted'));
     window.google_tag_manager = { 'GTM-OTHER': {} };
-    const other = document.createElement('script');
-    other.src = 'https://www.googletagmanager.com/gtm.js?id=GTM-TESTX';
-    document.head.appendChild(other);
     renderConsent('GTM-TEST');
     expect(initialize).toHaveBeenCalledWith({ gtmId: 'GTM-TEST' });
   });
@@ -125,9 +121,7 @@ describe('AnalyticsConsent', () => {
   it('tells a container still on the page that consent was given again', () => {
     localStorage.setItem('analyticsConsent', JSON.stringify('granted'));
     window.dataLayer = [];
-    const script = document.createElement('script');
-    script.src = 'https://www.googletagmanager.com/gtm.js?id=GTM-TEST';
-    document.head.appendChild(script);
+    window.google_tag_manager = { 'GTM-TEST': {} };
     renderConsent('GTM-TEST');
     expect(initialize).not.toHaveBeenCalled();
     expect(Array.from(window.dataLayer[0] as ArrayLike<unknown>)).toEqual([
@@ -144,5 +138,15 @@ describe('AnalyticsConsent', () => {
     renderConsent('GTM-TEST');
     renderConsent(undefined);
     expect(window.dataLayer).toHaveLength(0);
+  });
+
+  it('retries a container whose script never registered', () => {
+    localStorage.setItem('analyticsConsent', JSON.stringify('granted'));
+    const failed = document.createElement('script');
+    failed.src = 'https://www.googletagmanager.com/gtm.js?id=GTM-TEST';
+    document.head.appendChild(failed);
+    renderConsent('GTM-TEST');
+    expect(initialize).toHaveBeenCalledWith({ gtmId: 'GTM-TEST' });
+    failed.remove();
   });
 });

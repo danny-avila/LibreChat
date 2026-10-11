@@ -28,23 +28,12 @@ function pushConsent(command: 'default' | 'update', analytics: ConsentState) {
   });
 }
 
-/** Whether this deployment's container is already on the page: registered by GTM
- *  itself, or its `gtm.js?id=` script injected and still loading. Another
- *  container on the page does not count. */
+/** Whether this deployment's container finished loading on this page. GTM
+ *  registers each container it runs under its id, so another container does not
+ *  count, and a script that failed to load is retried on the next grant. */
 function isContainerLoaded(gtmId: string) {
   const registry = window.google_tag_manager as Record<string, unknown> | undefined;
-  if (registry?.[gtmId] != null) {
-    return true;
-  }
-  return Array.from(document.querySelectorAll<HTMLScriptElement>('script[src*="gtm.js"]')).some(
-    (script) => {
-      try {
-        return new URL(script.src, window.location.href).searchParams.get('id') === gtmId;
-      } catch {
-        return false;
-      }
-    },
-  );
+  return registry?.[gtmId] != null;
 }
 
 /**
