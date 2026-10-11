@@ -143,6 +143,7 @@ let parseCloudFrontCookieScope;
 let storeOpenIdSession;
 let jwt;
 let logger;
+let registerSchema;
 let getTenantId;
 let findUser;
 let findToken;
@@ -185,6 +186,7 @@ jest.isolateModules(() => {
     storeOpenIdSession,
   } = require('@librechat/api'));
   jwt = require('jsonwebtoken');
+  ({ registerSchema } = require('~/strategies/validators'));
   ({ logger, getTenantId } = require('@librechat/data-schemas'));
   ({
     findUser,
@@ -764,6 +766,25 @@ describe('registerUser', () => {
         }),
       }),
     );
+  });
+
+  it('does not log the registration body on validation failure', async () => {
+    registerSchema.safeParse.mockReturnValueOnce({
+      success: false,
+      error: { errors: [{ path: ['password'], message: 'Password too short' }] },
+    });
+
+    const result = await registerUser({
+      ...registrationPayload,
+      email: 'pii-leak@example.com',
+    });
+
+    expect(result.status).toBe(404);
+    expect(logger.info).toHaveBeenCalled();
+    const logged = JSON.stringify(logger.info.mock.calls);
+    expect(logged).not.toContain('pii-leak@example.com');
+    expect(logged).not.toContain('testuser');
+    expect(logged).not.toContain('Test User');
   });
 });
 

@@ -288,7 +288,7 @@ const sendVerificationEmail = async (user) => {
     expiresIn: 900,
   });
 
-  logger.info(`[sendVerificationEmail] Verification link issued. [Email: ${email}]`);
+  logger.info(`[sendVerificationEmail] Verification link issued. [User ID: ${user._id}]`);
 };
 
 /**
@@ -307,28 +307,26 @@ const verifyEmail = async (req) => {
   try {
     decodedEmail = decodeURIComponent(email);
   } catch {
-    logger.warn(`[verifyEmail] [Invalid email encoding] [Email: ${email}]`);
+    logger.warn('[verifyEmail] [Invalid email encoding]');
     return new Error(invalidEmailVerificationMessage);
   }
 
   const user = await findUser({ email: decodedEmail }, 'email _id emailVerified');
 
   if (!user) {
-    logger.warn(`[verifyEmail] [User not found] [Email: ${decodedEmail}]`);
+    logger.warn('[verifyEmail] [User not found]');
     return new Error(invalidEmailVerificationMessage);
   }
 
   const emailVerificationData = await findEmailVerificationToken(user);
 
   if (!emailVerificationData) {
-    logger.warn(`[verifyEmail] [No email verification data found] [Email: ${decodedEmail}]`);
+    logger.warn(`[verifyEmail] [No email verification data found] [User ID: ${user._id}]`);
     return new Error(invalidEmailVerificationMessage);
   }
 
   if (!emailVerificationData.token) {
-    logger.warn(
-      `[verifyEmail] [Email verification token data is invalid] [Email: ${decodedEmail}]`,
-    );
+    logger.warn(`[verifyEmail] [Email verification token data is invalid] [User ID: ${user._id}]`);
     return new Error(invalidEmailVerificationMessage);
   }
 
@@ -376,11 +374,10 @@ const registerUser = async (user, additionalData = {}) => {
   const result = registerSchema.safeParse(user);
   if (!result.success) {
     const errorMessage = errorsToString(result.error.errors);
-    logger.info(
-      'Route: register - Validation Error',
-      { name: 'Request params:', value: user },
-      { name: 'Validation error:', value: errorMessage },
-    );
+    logger.info('Route: register - Validation Error', {
+      name: 'Validation error:',
+      value: errorMessage,
+    });
 
     return { status: 404, message: errorMessage };
   }
@@ -395,7 +392,7 @@ const registerUser = async (user, additionalData = {}) => {
     if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
       const errorMessage =
         'The email address provided cannot be used. Please use a different email address.';
-      logger.error(`[registerUser] [Registration not allowed] [Email: ${user.email}]`);
+      logger.error('[registerUser] [Registration not allowed]');
       return { status: 403, message: errorMessage };
     }
 
@@ -509,10 +506,10 @@ const requestPasswordReset = async (req) => {
   }
   const emailEnabled = checkEmailConfig();
 
-  logger.warn(`[requestPasswordReset] [Password reset request initiated] [Email: ${email}]`);
+  logger.warn(`[requestPasswordReset] [Password reset request initiated]`);
 
   if (!user) {
-    logger.warn(`[requestPasswordReset] [No user found] [Email: ${email}] [IP: ${req.ip}]`);
+    logger.warn('[requestPasswordReset] [No user found]');
     return {
       message: 'If an account with that email exists, a password reset link has been sent to it.',
     };
@@ -604,7 +601,7 @@ const resetPassword = async (userId, token, password) => {
   }
 
   await deleteTokens(getPasswordResetTokenDeleteQuery(passwordResetToken));
-  logger.info(`[resetPassword] Password reset successful. [Email: ${user.email}]`);
+  logger.info(`[resetPassword] Password reset successful. [User ID: ${user._id}]`);
   return { message: 'Password reset was successful' };
 };
 
@@ -968,7 +965,7 @@ const resendVerificationEmail = async (req) => {
     const user = await findUser({ email }, 'email _id name');
 
     if (!user) {
-      logger.warn(`[resendVerificationEmail] [No user found] [Email: ${email}]`);
+      logger.warn('[resendVerificationEmail] [No user found]');
       return { status: 200, message: genericVerificationMessage };
     }
 
@@ -1001,7 +998,7 @@ const resendVerificationEmail = async (req) => {
       expiresIn: 900,
     });
 
-    logger.info(`[resendVerificationEmail] Verification link issued. [Email: ${user.email}]`);
+    logger.info(`[resendVerificationEmail] Verification link issued. [User ID: ${user._id}]`);
 
     return {
       status: 200,
