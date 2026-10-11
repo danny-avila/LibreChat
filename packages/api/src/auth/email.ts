@@ -275,7 +275,10 @@ async function sendSecurityNotification(
   try {
     await deps.sendEmail(data);
   } catch (error) {
-    logger.error(`[emailChange] Failed to send ${logContext} notification`, error);
+    logger.error(
+      `[emailChange] Failed to send ${logContext} notification`,
+      getSafeErrorMetadata(error),
+    );
   }
 }
 
@@ -344,7 +347,7 @@ async function deleteTokensOrLog(
   try {
     await deps.deleteTokens(query, tenantId);
   } catch (error) {
-    logger.error(`[emailChange] Failed to clean up ${context}`, error);
+    logger.error(`[emailChange] Failed to clean up ${context}`, getSafeErrorMetadata(error));
   }
 }
 
@@ -362,7 +365,7 @@ async function claimTokenIfCurrent(
     const { deletedCount } = await deps.deleteTokens(query, tenantId);
     return deletedCount ? 'claimed' : 'superseded';
   } catch (error) {
-    logger.error('[emailChange] Failed to claim the pending token', error);
+    logger.error('[emailChange] Failed to claim the pending token', getSafeErrorMetadata(error));
     return 'unavailable';
   }
 }
@@ -399,7 +402,7 @@ async function restoreClaimedToken(
       tenantId,
     );
   } catch (error) {
-    logger.error('[emailChange] Failed to restore the claimed token', error);
+    logger.error('[emailChange] Failed to restore the claimed token', getSafeErrorMetadata(error));
   }
 }
 

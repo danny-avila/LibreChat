@@ -26,6 +26,7 @@ const {
   createOpenIDSessionIdentity,
   resolveAppConfigForUser,
   commitPasswordReset,
+  getSafeErrorMetadata,
 } = require('@librechat/api');
 const {
   findUser,
@@ -341,7 +342,7 @@ const verifyEmail = async (req) => {
 
   if (!isValid) {
     logger.warn(
-      `[verifyEmail] [Invalid or expired email verification token] [Email: ${decodedEmail}]`,
+      `[verifyEmail] [Invalid or expired email verification token] [User ID: ${user._id}]`,
     );
     return new Error(invalidEmailVerificationMessage);
   }
@@ -399,11 +400,7 @@ const registerUser = async (user, additionalData = {}) => {
     const existingUser = await findUser({ email }, 'email _id');
 
     if (existingUser) {
-      logger.info(
-        'Register User - Email in use',
-        { name: 'Request params:', value: user },
-        { name: 'Existing user:', value: existingUser },
-      );
+      logger.info(`[registerUser] Email in use [User ID: ${existingUser._id}]`);
 
       // Sleep for 1 second
       await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -446,11 +443,11 @@ const registerUser = async (user, additionalData = {}) => {
      * without the response body revealing which of the two happened. */
     return { status: 200, message: genericVerificationMessage, userCreated: true };
   } catch (err) {
-    logger.error('[registerUser] Error in registering user:', err);
+    logger.error('[registerUser] Error in registering user:', getSafeErrorMetadata(err));
     if (newUserId) {
       const result = await deleteUserById(newUserId);
       logger.warn(
-        `[registerUser] [Email: ${email}] [Temporary User deleted: ${JSON.stringify(result)}]`,
+        `[registerUser] [User ID: ${newUserId}] [Temporary User deleted: ${JSON.stringify(result)}]`,
       );
     }
     return { status: 500, message: 'Something went wrong' };
@@ -477,7 +474,7 @@ const requestPasswordReset = async (req) => {
 
   const baseConfig = await getAppConfig({ baseOnly: true });
   if (!isEmailDomainAllowed(email, baseConfig?.registration?.allowedDomains)) {
-    logger.warn(`[requestPasswordReset] Blocked - email domain not allowed [IP: ${req.ip}]`);
+    logger.warn('[requestPasswordReset] Blocked - email domain not allowed');
     const error = new Error(ErrorTypes.AUTH_FAILED);
     error.code = ErrorTypes.AUTH_FAILED;
     error.message = 'Email domain not allowed';
@@ -490,12 +487,15 @@ const requestPasswordReset = async (req) => {
     try {
       appConfig = await resolveAppConfigForUser(getAppConfig, user);
     } catch (err) {
-      logger.error('[requestPasswordReset] Failed to resolve tenant config, using base:', err);
+      logger.error(
+        '[requestPasswordReset] Failed to resolve tenant config, using base:',
+        getSafeErrorMetadata(err),
+      );
     }
   }
 
   if (!isEmailDomainAllowed(email, appConfig?.registration?.allowedDomains)) {
-    logger.warn(`[requestPasswordReset] Tenant config blocked domain [IP: ${req.ip}]`);
+    logger.warn('[requestPasswordReset] Tenant config blocked domain');
     return {
       message: 'If an account with that email exists, a password reset link has been sent to it.',
     };
@@ -541,9 +541,9 @@ const requestPasswordReset = async (req) => {
       },
       template: 'requestPasswordReset.handlebars',
     });
-    logger.info(`[requestPasswordReset] Link emailed. [User ID: ${user._id}] [IP: ${req.ip}]`);
+    logger.info(`[requestPasswordReset] Link emailed. [User ID: ${user._id}]`);
   } else {
-    logger.info(`[requestPasswordReset] Link issued. [User ID: ${user._id}] [IP: ${req.ip}]`);
+    logger.info(`[requestPasswordReset] Link issued. [User ID: ${user._id}]`);
     return { link };
   }
 
@@ -593,7 +593,7 @@ const resetPassword = async (userId, token, password) => {
   }
 
   await deleteTokens(getPasswordResetTokenDeleteQuery(passwordResetToken));
-  logger.info(`[resetPassword] Password reset successful. [User ID: ${user._id}]`);
+  logger.info(`[resetPassword] Password reset successful. [User ID: ${userId}]`);
   return { message: 'Password reset was successful' };
 };
 
@@ -997,7 +997,10 @@ const resendVerificationEmail = async (req) => {
       message: genericVerificationMessage,
     };
   } catch (error) {
-    logger.error(`[resendVerificationEmail] Error resending verification email: ${error.message}`);
+    logger.error(
+      '[resendVerificationEmail] Error resending verification email:',
+      getSafeErrorMetadata(error),
+    );
     return {
       status: 200,
       message: genericVerificationMessage,

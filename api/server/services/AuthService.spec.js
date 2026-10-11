@@ -27,6 +27,7 @@ jest.mock(
       isEnabled: jest.fn((val) => val === 'true' || val === true),
       checkEmailConfig: jest.fn(),
       isEmailDomainAllowed: jest.fn(),
+      getSafeErrorMetadata: jest.fn((error) => ({ type: error?.name ?? 'UnknownError' })),
       math: jest.fn((val, fallback) => (val ? Number(val) : fallback)),
       storeOpenIdSession: jest.fn(),
       shouldUseSecureCookie,
@@ -768,6 +769,19 @@ describe('registerUser', () => {
     );
   });
 
+  it('logs a duplicate registration by id without the body or existing user', async () => {
+    findUser.mockResolvedValue({ _id: 'existing-id', email: 'dup@example.com' });
+
+    const result = await registerUser({ ...registrationPayload, email: 'dup@example.com' });
+
+    expect(result.status).toBe(200);
+    expect(createUser).not.toHaveBeenCalled();
+    const logged = JSON.stringify(logger.info.mock.calls);
+    expect(logged).toContain('existing-id');
+    expect(logged).not.toContain('dup@example.com');
+    expect(logged).not.toContain('testuser');
+  });
+
   it('does not log the registration body on validation failure', async () => {
     registerSchema.safeParse.mockReturnValueOnce({
       success: false,
@@ -1209,6 +1223,17 @@ describe('resendVerificationEmail', () => {
     jest.clearAllMocks();
   });
 
+  it('logs a failed resend without the error message or address', async () => {
+    findUser.mockResolvedValue({ _id: 'user-fail', email: 'leak@example.com', name: 'Leaky' });
+    checkEmailConfig.mockReturnValue(true);
+    sendEmail.mockRejectedValueOnce(new Error('rejected leak@example.com'));
+
+    await resendVerificationEmail({ body: { email: 'leak@example.com' } });
+
+    expect(logger.error).toHaveBeenCalled();
+    expect(JSON.stringify(logger.error.mock.calls)).not.toContain('leak@example.com');
+  });
+
   it('should not delete tokens when no user exists for the email', async () => {
     findUser.mockResolvedValue(null);
 
@@ -1278,7 +1303,8 @@ describe('resendVerificationEmail', () => {
       message: 'Please check your email to verify your email address.',
     });
     expect(logger.error).toHaveBeenCalledWith(
-      '[resendVerificationEmail] Error resending verification email: mail transport unavailable',
+      '[resendVerificationEmail] Error resending verification email:',
+      { type: 'Error' },
     );
   });
 });
