@@ -284,7 +284,7 @@ describe('deleteUserController - 2FA enforcement', () => {
 
     const lines = logger.info.mock.calls.map(([line]) => String(line));
     expect(lines).toContain('User deleted account. ID: user1 Tenant: tenant-1');
-    expect(lines.join('\n')).not.toContain('a@b.com');
+    expect(JSON.stringify(logger.info.mock.calls)).not.toContain('a@b.com');
   });
 
   it('aborts active generation jobs before deleting account-owned records', async () => {
