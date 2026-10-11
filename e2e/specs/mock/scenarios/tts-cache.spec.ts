@@ -168,7 +168,7 @@ test.describe('read-aloud audio cache', () => {
       await delivered;
       /** The first tab would write within a few frames of the response; give it time to. */
       await page.waitForTimeout(1500);
-      expect(await hasTTSCache(page)).toBe(false);
+      expect(await storedTTSKeys(page)).toEqual([]);
     } finally {
       await context.close().catch(() => undefined);
       await cleanupUser(user);
@@ -177,6 +177,16 @@ test.describe('read-aloud audio cache', () => {
 });
 
 const hasTTSCache = (page: Page) => page.evaluate((name) => caches.has(name), TTS_CACHE);
+
+/** Entries in the cache without creating it: an absent cache holds nothing. */
+const storedTTSKeys = (page: Page) =>
+  page.evaluate(async (name) => {
+    if (!(await caches.has(name))) {
+      return [];
+    }
+    const cache = await caches.open(name);
+    return (await cache.keys()).map((request) => new URL(request.url).pathname);
+  }, TTS_CACHE);
 
 /** A dedicated account, so logging out does not end the session other specs share. */
 async function signInFreshUser(
@@ -216,6 +226,10 @@ async function signInFreshUser(
 }
 
 async function logOut(page: Page): Promise<void> {
+  /** The sidebar toggle is only meaningful once the app has rendered its chrome. */
+  await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible({
+    timeout: 20000,
+  });
   const navUser = page.getByTestId('nav-user');
   if (!(await navUser.isVisible())) {
     await page.getByTestId('header-open-sidebar-button').click();
