@@ -1150,7 +1150,15 @@ describe('agent pull request config', () => {
       cacheMaxCredentials: 256,
       maxConcurrentLookups: 4,
       batchTimeoutSeconds: 20,
+      sharedCache: false,
+      sharedCacheTimeoutMs: 250,
     });
+  });
+
+  it('shares the cache between replicas only when asked to, and only as a boolean', () => {
+    expect(parse({ sharedCache: true }).success).toBe(true);
+    expect(parse({ sharedCache: false }).success).toBe(true);
+    expect(parse({ sharedCache: 'true' }).success).toBe(false);
   });
 
   const enabled = {
@@ -1258,6 +1266,9 @@ describe('agent pull request config', () => {
     ['batchTimeoutSeconds', 0],
     ['batchTimeoutSeconds', 121],
     ['batchTimeoutSeconds', 1.5],
+    ['sharedCacheTimeoutMs', 9],
+    ['sharedCacheTimeoutMs', 5001],
+    ['sharedCacheTimeoutMs', 1.5],
   ])('rejects %s of %s', (field, value) => {
     expect(parse({ [field]: value }).success).toBe(false);
   });
@@ -1274,9 +1285,11 @@ describe('agent pull request config', () => {
         cacheMaxEntries: 100_000,
         maxConcurrentLookups: 16,
         batchTimeoutSeconds: 120,
+        sharedCacheTimeoutMs: 5000,
       }).success,
     ).toBe(true);
     expect(parse({ maxHeadComparisons: 0 }).success).toBe(true);
+    expect(parse({ sharedCacheTimeoutMs: 10 }).success).toBe(true);
   });
 
   it.each([4, 3601, 1.5])('rejects a cache lifetime of %s seconds', (cacheTtlSeconds) => {

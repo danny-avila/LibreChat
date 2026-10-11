@@ -1,5 +1,5 @@
 import type { TConversationPullRequest } from 'librechat-data-provider';
-import type { PullRequestSource } from './types';
+import type { PullRequestLookupStore, PullRequestSource } from './types';
 import { createPullRequestLookup } from './lookup';
 import { PullRequestSourceError } from './types';
 
@@ -473,5 +473,210 @@ describe('the repositories the credential may be used for', () => {
     expect(find.mock.calls[1][0].allowedRepositories).toEqual(['o/r', 'fork/*']);
     await lookup({ ...input, allowedRepositories: ['FORK/*', 'o/r'] });
     expect(find).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('the shared store', () => {
+  const token = 'ghp_secret_token';
+  const shared = { ...input, token, sharedCache: true };
+
+  /** A Map with lifetimes, standing in for Redis between two replicas. */
+  function createStore(clock: () => number) {
+    const values = new Map<string, { value: unknown; until: number }>();
+    const store = {
+      get: jest.fn(async (key: string) => {
+        const held = values.get(key);
+        return held != null && held.until > clock()
+          ? JSON.parse(JSON.stringify(held.value))
+          : undefined;
+      }),
+      set: jest.fn(async (key: string, value: unknown, ttlMs: number) => {
+        values.set(key, { value, until: clock() + ttlMs });
+      }),
+    };
+    return { store, values };
+  }
+
+  /** Background writes settle on the next turns of the event loop. */
+  const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+  it("serves one replica's answer to another without asking GitHub again", async () => {
+    const { store } = createStore(Date.now);
+    const first = jest.fn().mockResolvedValue(value);
+    const second = jest.fn().mockResolvedValue(value);
+    const a = createPullRequestLookup({ source: { find: first }, store });
+    const b = createPullRequestLookup({ source: { find: second }, store });
+    await expect(a(shared)).resolves.toEqual({ ok: true, value });
+    await settle();
+    await expect(b(shared)).resolves.toEqual({ ok: true, value });
+    expect(second).not.toHaveBeenCalled();
+    /** Now in the second replica's own cache, so the store is not asked again. */
+    store.get.mockClear();
+    await b(shared);
+    expect(store.get).not.toHaveBeenCalled();
+  });
+
+  it('keeps a shared answer no longer than its lifetime', async () => {
+    let clock = 0;
+    const { store } = createStore(() => clock);
+    const a = createPullRequestLookup({
+      source: { find: jest.fn().mockResolvedValue(value) },
+      store,
+      now: () => clock,
+    });
+    const find = jest.fn().mockResolvedValue(null);
+    const b = createPullRequestLookup({ source: { find }, store, now: () => clock });
+    await a(shared);
+    await settle();
+    clock = 30_001;
+    await expect(b(shared)).resolves.toEqual({ ok: true, value: null });
+    expect(find).toHaveBeenCalledTimes(1);
+  });
+
+  it('puts every replica into the cooldown one of them was rate limited into', async () => {
+    const { store } = createStore(Date.now);
+    const limited = jest.fn().mockRejectedValue(new PullRequestSourceError('RATE_LIMITED', 60_000));
+    const find = jest.fn().mockResolvedValue(value);
+    const a = createPullRequestLookup({ source: { find: limited }, store });
+    const b = createPullRequestLookup({ source: { find }, store });
+    await a(shared);
+    await settle();
+    /** Another branch, so it is the cooldown and not a cached failure that answers. */
+    await expect(b({ ...shared, branch: 'other' })).resolves.toEqual({
+      ok: false,
+      error: { code: 'RATE_LIMITED' },
+    });
+    expect(find).not.toHaveBeenCalled();
+    const cooldown = store.set.mock.calls.find(([key]) => key.includes('cooldown'));
+    expect(cooldown?.[2]).toBe(60_000);
+  });
+
+  it('does not share a cooldown with lookups on another host', async () => {
+    const { store } = createStore(Date.now);
+    const limited = jest.fn().mockRejectedValue(new PullRequestSourceError('RATE_LIMITED', 60_000));
+    const find = jest.fn().mockResolvedValue(value);
+    const a = createPullRequestLookup({ source: { find: limited }, store });
+    const b = createPullRequestLookup({ source: { find }, store });
+    await a(shared);
+    await settle();
+    await expect(b({ ...shared, host: 'ghe.example.com' })).resolves.toEqual({ ok: true, value });
+  });
+
+  it('never puts the token in a stored key or value', async () => {
+    const { store } = createStore(Date.now);
+    const find = jest
+      .fn()
+      .mockResolvedValueOnce(value)
+      .mockRejectedValueOnce(new PullRequestSourceError('RATE_LIMITED'));
+    const lookup = createPullRequestLookup({ source: { find }, store });
+    await lookup(shared);
+    await lookup({ ...shared, branch: 'b'.repeat(5_000) });
+    await settle();
+    expect(store.set).toHaveBeenCalledTimes(3);
+    for (const [key, stored] of store.set.mock.calls) {
+      expect(key).toMatch(/^pr:v1:/);
+      expect(key.length).toBeLessThan(100);
+      expect(key).not.toContain(token);
+      expect(JSON.stringify(stored)).not.toContain(token);
+    }
+  });
+
+  it('answers from GitHub when the store fails', async () => {
+    const store: PullRequestLookupStore = {
+      get: jest.fn().mockRejectedValue(new Error('ECONNREFUSED')),
+      set: jest.fn().mockRejectedValue(new Error('ECONNREFUSED')),
+    };
+    const find = jest.fn().mockResolvedValue(value);
+    const lookup = createPullRequestLookup({ source: { find }, store });
+    await expect(lookup(shared)).resolves.toEqual({ ok: true, value });
+    await settle();
+    await lookup(shared);
+    expect(find).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not wait on a store that never answers for longer than its timeout', async () => {
+    const hang = () => new Promise<never>(() => undefined);
+    const store: PullRequestLookupStore = { get: jest.fn(hang), set: jest.fn(hang) };
+    const find = jest.fn().mockResolvedValue(value);
+    const lookup = createPullRequestLookup({ source: { find }, store });
+    const started = Date.now();
+    await expect(lookup({ ...shared, sharedCacheTimeoutMs: 20 })).resolves.toEqual({
+      ok: true,
+      value,
+    });
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(find).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['nothing', undefined],
+    ['a string', 'cached'],
+    ['an entry without an expiry', { result: { ok: true, value } }],
+    ['an expiry that is not a number', { result: { ok: true, value }, expiresAt: 'later' }],
+    ['a result without ok', { result: { value }, expiresAt: Number.MAX_SAFE_INTEGER }],
+    [
+      'an unknown error code',
+      { result: { ok: false, error: { code: 'TEAPOT' } }, expiresAt: Number.MAX_SAFE_INTEGER },
+    ],
+    [
+      'a pull request missing fields',
+      { result: { ok: true, value: { number: 1 } }, expiresAt: Number.MAX_SAFE_INTEGER },
+    ],
+    [
+      'a pull request with an unknown state',
+      {
+        result: { ok: true, value: { ...value, state: 'draft' } },
+        expiresAt: Number.MAX_SAFE_INTEGER,
+      },
+    ],
+    [
+      'a pull request page that is not https',
+      {
+        result: { ok: true, value: { ...value, url: 'javascript:alert(1)' } },
+        expiresAt: Number.MAX_SAFE_INTEGER,
+      },
+    ],
+    [
+      'a pull request from an unknown provider',
+      {
+        result: { ok: true, value: { ...value, provider: 'gitea' } },
+        expiresAt: Number.MAX_SAFE_INTEGER,
+      },
+    ],
+    ['an entry that has expired', { result: { ok: true, value }, expiresAt: 0 }],
+  ])('ignores %s in the store', async (_label, stored) => {
+    const store: PullRequestLookupStore = {
+      get: jest.fn(async (key: string) => (key.includes('cooldown') ? { until: 'soon' } : stored)),
+      set: jest.fn(async () => undefined),
+    };
+    const find = jest.fn().mockResolvedValue(null);
+    const lookup = createPullRequestLookup({ source: { find }, store });
+    await expect(lookup(shared)).resolves.toEqual({ ok: true, value: null });
+    expect(find).toHaveBeenCalledTimes(1);
+  });
+
+  it('is never touched when the shared cache is off', async () => {
+    const { store } = createStore(Date.now);
+    const find = jest
+      .fn()
+      .mockResolvedValueOnce(value)
+      .mockRejectedValueOnce(new PullRequestSourceError('RATE_LIMITED'));
+    const lookup = createPullRequestLookup({ source: { find }, store });
+    await lookup(input);
+    await lookup({ ...input, sharedCache: false, branch: 'b' });
+    await settle();
+    expect(store.get).not.toHaveBeenCalled();
+    expect(store.set).not.toHaveBeenCalled();
+  });
+
+  it('does not split the cache by whether it is shared', async () => {
+    const find = jest.fn().mockResolvedValue(value);
+    const lookup = createPullRequestLookup({
+      source: { find },
+      store: createStore(Date.now).store,
+    });
+    await lookup(input);
+    await lookup({ ...input, sharedCache: true });
+    expect(find).toHaveBeenCalledTimes(1);
   });
 });

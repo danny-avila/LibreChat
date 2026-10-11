@@ -95,6 +95,8 @@ describe('createConversationPullRequestHandler', () => {
       ttlMs: 30_000,
       cacheMaxEntries: 500,
       cacheMaxCredentials: 256,
+      sharedCache: false,
+      sharedCacheTimeoutMs: 250,
       allowedRepositories: ['o/r'],
       limits: {
         requestTimeoutMs: 10_000,

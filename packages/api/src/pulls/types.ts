@@ -75,6 +75,20 @@ export type PullRequestLookupInput = PullRequestFindInput & {
   cacheMaxEntries?: number;
   /** Credentials cached at once; the lookup's own default if omitted. */
   cacheMaxCredentials?: number;
+  /** Read and write the lookup's shared store, when it has one. It never changes the answer, so it
+   *  is not part of any cache key. */
+  sharedCache?: boolean;
+  /** Longest one shared store call may take before the lookup carries on without it. */
+  sharedCacheTimeoutMs?: number;
+};
+
+/**
+ * Storage the lookup shares with other replicas, so one answer or one rate limit from GitHub serves
+ * every replica. Values must round-trip as JSON; `ttlMs` is how long the store may keep one.
+ */
+export type PullRequestLookupStore = {
+  get(key: string): Promise<unknown>;
+  set(key: string, value: unknown, ttlMs: number): Promise<void>;
 };
 
 export type PullRequestLookup = (input: PullRequestLookupInput) => Promise<PullRequestLookupResult>;

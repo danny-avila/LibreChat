@@ -1,7 +1,18 @@
 import { createHash } from 'node:crypto';
 import { logger } from '@librechat/data-schemas';
-import type { PullRequestLookup, PullRequestLookupResult, PullRequestSource } from './types';
-import { PullRequestSourceError } from './types';
+import {
+  PULL_REQUEST_CHECKS,
+  PULL_REQUEST_STATES,
+  PULL_REQUEST_MERGEABLE,
+  PULL_REQUEST_PROVIDERS,
+} from 'librechat-data-provider';
+import type {
+  PullRequestSource,
+  PullRequestLookup,
+  PullRequestLookupStore,
+  PullRequestLookupResult,
+} from './types';
+import { PULL_REQUEST_ERROR_CODES, PullRequestSourceError } from './types';
 import { getSafeErrorMetadata } from '~/utils';
 
 /** A failed lookup is remembered briefly so a failing upstream is not hammered by every poll. */
@@ -13,12 +24,82 @@ const MAX_COOLDOWN_MS = 60 * 60_000;
 const DEFAULT_MAX_ENTRIES = 500;
 /** Credentials with a cache partition at once unless configured; the least recently used goes. */
 const DEFAULT_MAX_PARTITIONS = 256;
+/** A shared store call slower than this is abandoned; Redis answers in single milliseconds. */
+const DEFAULT_SHARED_TIMEOUT_MS = 250;
+/** Versioned, so a change to the stored shape is a miss for replicas still on the old one. */
+const STORE_PREFIX = 'pr:v1:';
 
 type Entry = { result: PullRequestLookupResult; expiresAt: number };
+type Cooldown = { until: number };
 
 /** Keys carry a digest, never the token, so no credential is held in a map key or a heap dump. */
 const scopeOf = (token: string): string =>
   createHash('sha256').update(token).digest('hex').slice(0, 32);
+
+/** Repository and branch are user-influenced and unbounded, so the stored key is a fixed size. */
+const storeKeyOf = (key: string): string =>
+  `${STORE_PREFIX}result:${createHash('sha256').update(key).digest('hex')}`;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const isOneOf = <T extends string>(options: readonly T[], value: unknown): value is T =>
+  typeof value === 'string' && (options as readonly string[]).includes(value);
+
+const isTime = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value);
+
+/** Another replica, or another version of one, wrote this; anything not shaped right is a miss. */
+function isEntry(value: unknown): value is Entry {
+  if (!isRecord(value) || !isTime(value.expiresAt) || !isRecord(value.result)) return false;
+  const { result } = value;
+  if (result.ok === false) {
+    return isRecord(result.error) && isOneOf(PULL_REQUEST_ERROR_CODES, result.error.code);
+  }
+  if (result.ok !== true) return false;
+  const pr = result.value;
+  if (pr === null) return true;
+  return (
+    isRecord(pr) &&
+    Number.isInteger(pr.number) &&
+    typeof pr.title === 'string' &&
+    typeof pr.url === 'string' &&
+    /** The page becomes a link in the card, so only https ever comes back out of the store. */
+    pr.url.startsWith('https://') &&
+    (pr.provider === undefined || isOneOf(PULL_REQUEST_PROVIDERS, pr.provider)) &&
+    isTime(pr.additions) &&
+    isTime(pr.deletions) &&
+    typeof pr.isDraft === 'boolean' &&
+    isOneOf(PULL_REQUEST_STATES, pr.state) &&
+    isOneOf(PULL_REQUEST_MERGEABLE, pr.mergeable) &&
+    isOneOf(PULL_REQUEST_CHECKS, pr.checks)
+  );
+}
+
+const isCooldown = (value: unknown): value is Cooldown => isRecord(value) && isTime(value.until);
+
+/**
+ * Runs one shared store call, bounded by `timeoutMs`. The store is an optimization, so a failure
+ * or a slow answer is logged and reads as `undefined`, and the lookup carries on in memory.
+ */
+async function bounded<T>(call: () => Promise<T>, timeoutMs: number): Promise<T | undefined> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<undefined>((resolve) => {
+    timer = setTimeout(() => {
+      logger.debug('[PullRequests] Shared cache timed out', { timeoutMs });
+      resolve(undefined);
+    }, timeoutMs);
+    timer.unref?.();
+  });
+  try {
+    return await Promise.race([call(), timeout]);
+  } catch (error) {
+    logger.debug('[PullRequests] Shared cache unavailable', getSafeErrorMetadata(error));
+    return undefined;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /**
  * Caches lookups per credential, repository, branch, recorded commit and lookup policy, and shares
@@ -28,13 +109,19 @@ const scopeOf = (token: string): string =>
  * scopes both the cache and the in-flight map. A rate limit applies to the credential, not the
  * branch, so it starts a cooldown for every branch under that credential. Callers must have
  * authorized the conversation before asking.
+ *
+ * With a `store` and `sharedCache` on the input, results and cooldowns are also written to the
+ * store and read from it on a local miss, so replicas share them. In-flight coalescing stays per
+ * process, and the in-memory cache stays in front of the store.
  */
 export function createPullRequestLookup({
   source,
+  store,
   now = Date.now,
   maxEntries = DEFAULT_MAX_ENTRIES,
 }: {
   source: PullRequestSource;
+  store?: PullRequestLookupStore;
   now?: () => number;
   maxEntries?: number;
 }): PullRequestLookup {
@@ -80,17 +167,15 @@ export function createPullRequestLookup({
   function remember(
     scope: string,
     key: string,
-    result: PullRequestLookupResult,
-    ttlMs: number,
+    entry: Entry,
     capacity: number,
     credentials: number,
   ): void {
-    const lifetime = result.ok ? ttlMs : Math.min(ttlMs, FAILURE_TTL_MS);
     const entries = partitionOf(scope, credentials);
     const bound = Math.max(capacities.get(scope) ?? 0, capacity);
     capacities.set(scope, bound);
     entries.delete(key);
-    entries.set(key, { result, expiresAt: now() + lifetime });
+    entries.set(key, entry);
     while (entries.size > bound) {
       const oldest = entries.keys().next();
       if (oldest.done) break;
@@ -98,12 +183,23 @@ export function createPullRequestLookup({
     }
   }
 
-  function startCooldown(scope: string, retryAfterMs?: number): void {
-    const wait = Math.min(MAX_COOLDOWN_MS, Math.max(MIN_COOLDOWN_MS, retryAfterMs ?? 0));
-    cooldowns.set(scope, now() + wait);
-    for (const [other, until] of cooldowns) {
-      if (until <= now()) cooldowns.delete(other);
+  function startCooldown(scope: string, until: number): void {
+    cooldowns.set(scope, until);
+    for (const [other, end] of cooldowns) {
+      if (end <= now()) cooldowns.delete(other);
     }
+  }
+
+  /** Writes in the background: the answer is already known, so the caller never waits on it. */
+  function share(
+    target: PullRequestLookupStore,
+    key: string,
+    value: Entry | Cooldown,
+    ttlMs: number,
+    timeoutMs: number,
+  ): void {
+    if (ttlMs <= 0) return;
+    void bounded(() => target.set(key, value, ttlMs), timeoutMs);
   }
 
   return async ({
@@ -119,6 +215,8 @@ export function createPullRequestLookup({
     allowedRepositories,
     cacheMaxEntries,
     cacheMaxCredentials,
+    sharedCache,
+    sharedCacheTimeoutMs = DEFAULT_SHARED_TIMEOUT_MS,
   }) => {
     const scope = scopeOf(token);
     /** Everything that changes the answer or how long it may be reused is part of the key. */
@@ -149,7 +247,32 @@ export function createPullRequestLookup({
       cooldowns.delete(limitScope);
     }
 
+    /** Only when this caller's settings ask for it; the store is there whenever Redis is. */
+    const shared = sharedCache === true ? store : undefined;
+    const lifetimeOf = (result: PullRequestLookupResult): number =>
+      result.ok ? ttlMs : Math.min(ttlMs, FAILURE_TTL_MS);
+    const capacity = cacheMaxEntries ?? maxEntries;
+    const credentials = cacheMaxCredentials ?? DEFAULT_MAX_PARTITIONS;
+    const storeKey = storeKeyOf(key);
+    const cooldownKey = `${STORE_PREFIX}cooldown:${createHash('sha256').update(limitScope).digest('hex')}`;
+
     const run = (async (): Promise<PullRequestLookupResult> => {
+      if (shared != null) {
+        const [stored, cooldown] = await Promise.all([
+          bounded(() => shared.get(storeKey), sharedCacheTimeoutMs),
+          bounded(() => shared.get(cooldownKey), sharedCacheTimeoutMs),
+        ]);
+        if (isEntry(stored) && stored.expiresAt > now()) {
+          /** Never kept longer than this replica would have kept its own answer. */
+          const expiresAt = Math.min(stored.expiresAt, now() + lifetimeOf(stored.result));
+          remember(scope, key, { result: stored.result, expiresAt }, capacity, credentials);
+          return stored.result;
+        }
+        if (isCooldown(cooldown) && cooldown.until > now()) {
+          startCooldown(limitScope, Math.min(cooldown.until, now() + MAX_COOLDOWN_MS));
+          return rateLimited;
+        }
+      }
       let result: PullRequestLookupResult;
       try {
         result = {
@@ -172,18 +295,21 @@ export function createPullRequestLookup({
         }
         const code = error instanceof PullRequestSourceError ? error.code : 'UPSTREAM_ERROR';
         if (error instanceof PullRequestSourceError && error.code === 'RATE_LIMITED') {
-          startCooldown(limitScope, error.retryAfterMs);
+          const wait = Math.min(
+            MAX_COOLDOWN_MS,
+            Math.max(MIN_COOLDOWN_MS, error.retryAfterMs ?? 0),
+          );
+          startCooldown(limitScope, now() + wait);
+          if (shared != null) {
+            share(shared, cooldownKey, { until: now() + wait }, wait, sharedCacheTimeoutMs);
+          }
         }
         result = { ok: false, error: { code } };
       }
-      remember(
-        scope,
-        key,
-        result,
-        ttlMs,
-        cacheMaxEntries ?? maxEntries,
-        cacheMaxCredentials ?? DEFAULT_MAX_PARTITIONS,
-      );
+      const lifetime = lifetimeOf(result);
+      const entry: Entry = { result, expiresAt: now() + lifetime };
+      remember(scope, key, entry, capacity, credentials);
+      if (shared != null) share(shared, storeKey, entry, lifetime, sharedCacheTimeoutMs);
       return result;
     })().finally(() => inflight.delete(key));
     inflight.set(key, run);
