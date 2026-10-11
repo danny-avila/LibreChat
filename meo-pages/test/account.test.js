@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   OAuthTokenExchangeError,
+  accountUser,
   exchangeCode,
   refreshTokens,
 } from '../functions/_lib/account.js';
@@ -93,6 +94,32 @@ test('OAuth network failures get a stable diagnostic reason', async (t) => {
       return true;
     },
   );
+});
+
+test('OAuth UserInfo lookup uses bearer token and OIDC subject identity', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async (input, init) => {
+    assert.equal(input, `${env.SUPABASE_URL}/auth/v1/oauth/userinfo`);
+    assert.equal(init.headers.Authorization, 'Bearer opaque-access');
+    assert.equal(init.headers.apikey, undefined);
+    return Response.json({ sub: 'user-uuid', email: 'user@example.com' });
+  };
+
+  const user = await accountUser(env, 'opaque-access');
+  assert.equal(user.id, 'user-uuid');
+  assert.equal(user.sub, 'user-uuid');
+});
+
+test('OAuth UserInfo lookup rejects payloads without an OIDC subject', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async () => Response.json({ email: 'user@example.com' });
+  assert.equal(await accountUser(env, 'opaque-access'), null);
 });
 
 test('OAuth refresh uses the registered public client', async (t) => {
