@@ -10,9 +10,9 @@ import type {
 } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { Response } from 'express';
-import type { GetAppConfigOptions } from '~/app/service';
+import type { AppConfigUserLike, GetAppConfigOptions } from '~/app/service';
+import type { PullRequestErrorCode, PullRequestLookup } from './types';
 import type { PullRequestSettings } from './settings';
-import type { PullRequestLookup } from './types';
 import type { ServerRequest } from '~/types';
 import {
   resolvePullRequestHost,
@@ -172,7 +172,28 @@ const repositoryScope = (settings: PullRequestSettings): readonly string[] =>
  * The token a lookup runs with and the repositories it may be used for. A user's own token sees
  * only what that user can see, so it is not held to the list the server's token is.
  */
-type Credential = { token: string; repositories: readonly string[] };
+/** `personal` marks the user's own token, the one a refusal invalidates. */
+type Credential = { token: string; repositories: readonly string[]; personal?: true };
+
+/** Clients know the codes a lookup has always had; a refused token is an upstream failure to them. */
+const wireCode = (code: PullRequestErrorCode | string): string =>
+  code === 'CREDENTIAL_REJECTED' ? 'UPSTREAM_ERROR' : code;
+
+/** A refused personal token is invalidated, so the account reads as disconnected rather than
+ *  failing every lookup; the server's token is the operator's to fix. */
+async function invalidateRejected(
+  userToken: PullRequestUserToken | undefined,
+  userId: string,
+  settings: PullRequestSettings,
+  credential: Credential,
+): Promise<void> {
+  if (credential.personal !== true || userToken?.reject == null) return;
+  try {
+    await userToken.reject(userId, settings, credential.token);
+  } catch (error) {
+    logger.warn('[PullRequests] Refused user token not invalidated', getSafeErrorMetadata(error));
+  }
+}
 
 function credentialOf(
   settings: PullRequestSettings,
@@ -180,7 +201,9 @@ function credentialOf(
   userToken: UserTokenRead,
 ): Credential | null {
   if (userToken === USER_TOKEN_FAILED) return null;
-  if (userToken != null) return { token: userToken, repositories: ALL_REPOSITORIES };
+  if (userToken != null) {
+    return { token: userToken, repositories: ALL_REPOSITORIES, personal: true };
+  }
   const token = resolvePullRequestToken(
     settings.token,
     env,
@@ -189,11 +212,14 @@ function credentialOf(
   return token == null ? null : { token, repositories: repositoryScope(settings) };
 }
 
-/** Reads the user's own token, or null when the user has not connected an account. */
-export type PullRequestUserToken = (
+/** Reads the user's own token, or null when the user has not connected an account. `reject`
+ *  invalidates that token after the provider refused it on a lookup. */
+export type PullRequestUserToken = ((
   userId: string,
   settings: PullRequestSettings,
-) => Promise<string | null>;
+) => Promise<string | null>) & {
+  reject?: (userId: string, settings: PullRequestSettings, token: string) => Promise<void>;
+};
 
 /** A connected account whose token could not be read or refreshed (the provider or the key store
  *  is down). That is an outage, answered as one: neither "no pull request" nor the server's token,
@@ -234,8 +260,6 @@ function eligibleLane(
   };
 }
 
-type ServerUser = ServerRequest['user'];
-
 const agentsPullRequests = (config: AppConfig): PullRequestSettings | undefined =>
   (config.endpoints?.[EModelEndpoint.agents] as TAgentsEndpoint | undefined)?.pullRequests;
 
@@ -247,7 +271,7 @@ const agentsPullRequests = (config: AppConfig): PullRequestSettings | undefined 
  */
 export async function readPullRequestSettings(
   getAppConfig: (options: GetAppConfigOptions) => Promise<AppConfig>,
-  user: ServerUser,
+  user: AppConfigUserLike | null | undefined,
 ): Promise<PullRequestSettings | undefined> {
   const options = { ...getAppConfigOptionsFromUser(user), skipRuntimeAugmentation: true };
   const [resolved, base] = await Promise.all([
@@ -353,24 +377,23 @@ export function createConversationPullRequestHandler(deps: {
        * used when the resolved config turns the feature on, which keeps a disabled deployment's
        * answer the same as before.
        */
-      const settingsRead = readPullRequestSettings(deps.getAppConfig, req.user);
-      const [settings, laneGit, userToken] = await Promise.all([
-        settingsRead,
+      const [settings, laneGit] = await Promise.all([
+        readPullRequestSettings(deps.getAppConfig, req.user),
         deps.getConvoLaneGit(userId, conversationId),
-        settingsRead.then((loaded) => readUserToken(deps.userToken, userId, loaded, deps.env)),
       ]);
       if (!settings || !isPullRequestFeatureActive(settings, deps.env)) {
         res.status(200).json(NONE);
         return;
       }
+      /** Reading the user's token can refresh and rotate it, so only a lane that some credential
+       *  could look up is worth it; any other conversation has no pull request regardless. */
+      const userToken =
+        eligibleLane(laneGit, ALL_REPOSITORIES) == null
+          ? null
+          : await readUserToken(deps.userToken, userId, settings, deps.env);
 
       const credential = credentialOf(settings, deps.env, userToken);
       if (userToken === USER_TOKEN_FAILED) {
-        /** A conversation with no lane has no pull request whichever token would have read it. */
-        if (eligibleLane(laneGit, ALL_REPOSITORIES) == null) {
-          res.status(200).json(NONE);
-          return;
-        }
         res
           .status(503)
           .json({ error: 'Pull request lookup is unavailable', code: 'UPSTREAM_ERROR' });
@@ -398,9 +421,12 @@ export function createConversationPullRequestHandler(deps: {
 
       const result = await deps.lookup(lookupInput(settings, credential, lane));
       if (!result.ok) {
+        if (result.error.code === 'CREDENTIAL_REJECTED') {
+          await invalidateRejected(deps.userToken, userId, settings, credential);
+        }
         res.status(503).json({
           error: 'Pull request lookup is unavailable',
-          code: result.error.code,
+          code: wireCode(result.error.code),
         });
         return;
       }
@@ -450,9 +476,12 @@ export function createConversationPullRequestsHandler(deps: {
       const startedAt = Date.now();
       const configRead = readPullRequestSettings(deps.getAppConfig, req.user);
       const laneRead = deps.getConvosLaneGit(userId, ids);
-      /** Starts with the lane read, once the settings say which account to read. */
-      const userTokenRead = configRead.then((loaded) =>
-        readUserToken(deps.userToken, userId, loaded, deps.env),
+      /** Once the settings and the lanes are in, and only if some lane could be looked up: reading
+       *  the user's token can refresh and rotate it. */
+      const userTokenRead = Promise.all([configRead, laneRead]).then(([loaded, lanes]) =>
+        lanes.some(({ laneGit }) => eligibleLane(laneGit, ALL_REPOSITORIES) != null)
+          ? readUserToken(deps.userToken, userId, loaded, deps.env)
+          : null,
       );
       /** A read nobody waits for (feature off, config timed out) must not fail unhandled. */
       laneRead.catch(() => undefined);
@@ -591,13 +620,16 @@ export function createConversationPullRequestsHandler(deps: {
           result.ok ? { ok: true, value: result.value } : { ok: false, code: result.error.code },
         );
       });
+      if ([...outcomes.values()].some((o) => !o.ok && o.code === 'CREDENTIAL_REJECTED')) {
+        await invalidateRejected(deps.userToken, userId, settings, credential);
+      }
       const looked = ids.map((conversationId): TConversationPullRequestsEntry => {
         const lane = eligible.get(conversationId);
         const outcome = lane == null ? undefined : outcomes.get(keyOf(lane));
         if (outcome == null) return { conversationId, pullRequest: null };
         return outcome.ok
           ? { conversationId, pullRequest: outcome.value }
-          : { conversationId, error: { code: outcome.code } };
+          : { conversationId, error: { code: wireCode(outcome.code) } };
       });
       res.status(200).json({ results: looked });
     } catch (error) {

@@ -188,6 +188,29 @@ describe('createConversationPullRequestHandler', () => {
       );
     });
 
+    it.each([
+      ["the user's own token", true],
+      ["the server's token", false],
+    ])('invalidates %s only when the provider refuses it', async (_label, personal) => {
+      const userToken = Object.assign(jest.fn().mockResolvedValue(personal ? 'gho_user' : null), {
+        reject: jest.fn().mockResolvedValue(undefined),
+      });
+      const { run, res } = setup({
+        settings: personal ? connectable : enabled,
+        env: { ...oauthEnv, GH_TOKEN: 'ghp_server' },
+        lookup: jest.fn().mockResolvedValue({ ok: false, error: { code: 'CREDENTIAL_REJECTED' } }),
+        userToken,
+      });
+      await run();
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'UPSTREAM_ERROR' }));
+      if (personal) {
+        expect(userToken.reject).toHaveBeenCalledWith('u1', expect.anything(), 'gho_user');
+      } else {
+        expect(userToken.reject).not.toHaveBeenCalled();
+      }
+    });
+
     it("falls back to the server's token, still held to its list, for a user who has not connected", async () => {
       const { run, lookup, res } = setup({
         settings: connectable,
@@ -224,18 +247,26 @@ describe('createConversationPullRequestHandler', () => {
       expect(res.json).toHaveBeenCalledWith({ pullRequest: null });
     });
 
-    it("answers no pull request for a conversation without a lane, even when the user's token cannot be read", async () => {
-      const { run, lookup, res } = setup({
-        settings: connectable,
-        env: { ...oauthEnv, GH_TOKEN: 'ghp_server' },
-        laneGit: null,
-        userToken: jest.fn().mockRejectedValue(new Error('key unavailable')),
-      });
-      await run();
-      expect(lookup).not.toHaveBeenCalled();
-      expect(res.status).toHaveBeenCalledWith(200);
-      expect(res.json).toHaveBeenCalledWith({ pullRequest: null });
-    });
+    it.each([
+      ['no lane', null],
+      ['a lane without a branch', { branch: null, head: null, repo: 'o/r' }],
+    ])(
+      "answers no pull request for %s without reading the user's token",
+      async (_label, laneGit) => {
+        const userToken = jest.fn().mockRejectedValue(new Error('key unavailable'));
+        const { run, lookup, res } = setup({
+          settings: connectable,
+          env: { ...oauthEnv, GH_TOKEN: 'ghp_server' },
+          laneGit: laneGit as Lane,
+          userToken,
+        });
+        await run();
+        expect(userToken).not.toHaveBeenCalled();
+        expect(lookup).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.json).toHaveBeenCalledWith({ pullRequest: null });
+      },
+    );
 
     it("answers unavailable, not the server's token or no pull request, when the user's cannot be read", async () => {
       const { run, lookup, res } = setup({
@@ -621,6 +652,44 @@ describe('createConversationPullRequestsHandler', () => {
     });
     await run({ conversationIds: ['a', 'b'] });
     expect(userToken).not.toHaveBeenCalled();
+  });
+
+  it("does not read the user's token for a batch with no lane to look up", async () => {
+    const userToken = jest.fn().mockResolvedValue('gho_user');
+    const { run, res } = batch({
+      settings: {
+        ...enabled,
+        oauth: { clientId: '${GH_CLIENT_ID}', clientSecret: '${GH_CLIENT_SECRET}' },
+      },
+      env: { GH_CLIENT_ID: 'id', GH_CLIENT_SECRET: 'secret' },
+      lanes: [{ conversationId: 'b', laneGit: { branch: null, head: null } }],
+      userToken,
+    });
+    await run({ conversationIds: ['a', 'b'] });
+    expect(userToken).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it("invalidates the user's own token when a batch lookup is refused with it", async () => {
+    const userToken = Object.assign(jest.fn().mockResolvedValue('gho_user'), {
+      reject: jest.fn().mockResolvedValue(undefined),
+    });
+    const { run, res } = batch({
+      settings: {
+        ...enabled,
+        oauth: { clientId: '${GH_CLIENT_ID}', clientSecret: '${GH_CLIENT_SECRET}' },
+      },
+      env: { GH_CLIENT_ID: 'id', GH_CLIENT_SECRET: 'secret' },
+      lanes: [lane('a', 'o/r')],
+      lookup: jest.fn().mockResolvedValue({ ok: false, error: { code: 'CREDENTIAL_REJECTED' } }),
+      userToken,
+    });
+    await run({ conversationIds: ['a'] });
+    expect(userToken.reject).toHaveBeenCalledTimes(1);
+    expect(userToken.reject).toHaveBeenCalledWith('u1', expect.anything(), 'gho_user');
+    expect(res.json).toHaveBeenCalledWith({
+      results: [{ conversationId: 'a', error: { code: 'UPSTREAM_ERROR' } }],
+    });
   });
 
   it("answers the batch's lanes unavailable when the user's own token cannot be read", async () => {

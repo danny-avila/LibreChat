@@ -199,6 +199,8 @@ export function createGitLabPullRequestSource({
     }
     /** A project the token cannot see is indistinguishable from one without merge requests. */
     if (response.status === 404 || absent.includes(response.status)) return null;
+    /** The provider no longer accepts the token: revoked, or expired without a refresh. */
+    if (response.status === 401) throw new PullRequestSourceError('CREDENTIAL_REJECTED');
     throw new PullRequestSourceError('UPSTREAM_ERROR');
   }
 
