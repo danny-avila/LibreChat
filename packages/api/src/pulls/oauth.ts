@@ -174,8 +174,8 @@ export function createPullRequestOAuth({
   const verifierOf = (nonce: string) =>
     base64url(createHmac('sha256', secret).update(`pull-request-oauth:${nonce}`).digest());
 
-  /** Refreshes in flight in this process, so concurrent lookups of one user refresh once. */
-  const refreshing = new Map<string, Promise<string | null>>();
+  /** Token reads in flight in this process, so concurrent lookups of one user refresh once. */
+  const reading = new Map<string, Promise<string | null>>();
 
   async function requestGrant(
     config: PullRequestOAuthConfig,
@@ -321,6 +321,28 @@ export function createPullRequestOAuth({
     return current?.grant.accessToken ?? null;
   }
 
+  async function currentToken(
+    userId: string,
+    config: PullRequestOAuthConfig,
+  ): Promise<string | null> {
+    const current = await read(userId, config);
+    if (current == null) return null;
+    const { row, grant } = current;
+    /** Without a refresh token there is nothing to refresh with, so it serves until it expires. */
+    const skew = grant.refreshToken == null ? 0 : REFRESH_SKEW_MS;
+    if (grant.accessExpiresAt == null || grant.accessExpiresAt - skew > now()) {
+      if (isAging(row, config)) {
+        write(userId, config, row.token, grant).catch((error: unknown) => {
+          logger.warn('[PullRequests] OAuth retention not extended', getSafeErrorMetadata(error));
+        });
+      }
+      return grant.accessToken;
+    }
+    /** A refresh the provider could not answer is an outage, not a disconnection: it reaches
+     *  the caller, and the grant stays for the next attempt. */
+    return refresh(userId, config, row, grant);
+  }
+
   return {
     authorizationUrl(user, config) {
       const nonce = base64url(randomBytes(16));
@@ -403,33 +425,29 @@ export function createPullRequestOAuth({
     },
 
     async token(userId, config) {
-      const current = await read(userId, config);
-      if (current == null) return null;
-      const { row, grant } = current;
-      if (grant.accessExpiresAt == null || grant.accessExpiresAt - REFRESH_SKEW_MS > now()) {
-        if (isAging(row, config)) {
-          write(userId, config, row.token, grant).catch((error: unknown) => {
-            logger.warn('[PullRequests] OAuth retention not extended', getSafeErrorMetadata(error));
-          });
-        }
-        return grant.accessToken;
-      }
+      /** Concurrent callers share one read and at most one refresh. Joining only the refresh is
+       *  not enough: a caller whose read answered after another's refresh had already finished
+       *  would refresh the grant that refresh replaced. */
       const key = scopeOf(userId, config);
-      const pending = refreshing.get(key);
+      const pending = reading.get(key);
       if (pending != null) return pending;
-      /** A refresh the provider could not answer is an outage, not a disconnection: it reaches
-       *  the caller, and the grant stays for the next attempt. */
-      const started = refresh(userId, config, row, grant);
-      refreshing.set(key, started);
+      const started = currentToken(userId, config);
+      reading.set(key, started);
       try {
         return await started;
       } finally {
-        refreshing.delete(key);
+        reading.delete(key);
       }
     },
 
     async connected(userId, config) {
-      return (await read(userId, config)) != null;
+      const current = await read(userId, config);
+      if (current == null) return false;
+      /** The row of a grant that cannot be refreshed outlives it until the TTL reaper runs. */
+      const { grant } = current;
+      return (
+        grant.refreshToken != null || grant.accessExpiresAt == null || grant.accessExpiresAt > now()
+      );
     },
 
     async disconnect(userId) {

@@ -271,6 +271,62 @@ describe('token', () => {
     expect(formOf(fetchFn.mock.calls[2][1]).get('refresh_token')).toBe('r1');
   });
 
+  it('serves a grant without a refresh token until it expires, then reports it disconnected', async () => {
+    let clock = 1_000_000;
+    const { oauth, fetchFn } = setup(
+      [() => json({ access_token: 'a1', expires_in: 60 })],
+      () => clock,
+    );
+    const user = userId();
+    await connect(oauth, user, gitlab);
+    /** Inside the refresh margin, but with nothing to refresh with it is still the token. */
+    clock += 50 * 1000;
+    await expect(oauth.token(user, gitlab)).resolves.toBe('a1');
+    await expect(oauth.connected(user, gitlab)).resolves.toBe(true);
+    clock += 20 * 1000;
+    await expect(oauth.token(user, gitlab)).resolves.toBeNull();
+    await expect(oauth.connected(user, gitlab)).resolves.toBe(false);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
+  it('refreshes once when a concurrent caller reads the grant after the refresh finished', async () => {
+    let clock = 1_000_000;
+    const { oauth: connector } = setup(
+      [() => json({ access_token: 'a1', refresh_token: 'r1', expires_in: 7200 })],
+      () => clock,
+    );
+    const user = userId();
+    await connect(connector, user, gitlab);
+    /** The second read of the stored grant answers only once the first caller is done. */
+    let release: () => void = () => undefined;
+    const firstDone = new Promise<void>((resolve) => (release = resolve));
+    let reads = 0;
+    const slowStore: PullRequestOAuthStore = {
+      ...store,
+      findToken: async (query) => {
+        const row = await store.findToken(query);
+        reads += 1;
+        if (reads === 2) await firstDone;
+        return row;
+      },
+    };
+    const fetchFn = jest.fn(async () => json({ access_token: 'a2', expires_in: 7200 }));
+    const oauth = createPullRequestOAuth({
+      store: slowStore,
+      fetchFn,
+      secret,
+      redirectUri,
+      encrypt,
+      decrypt,
+      now: () => clock,
+    });
+    clock += 7200 * 1000;
+    const first = oauth.token(user, gitlab).finally(release);
+    const second = oauth.token(user, gitlab);
+    await expect(Promise.all([first, second])).resolves.toEqual(['a2', 'a2']);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+  });
+
   it('disconnects a user whose refresh token the provider rejects', async () => {
     let clock = 1_000_000;
     const { oauth } = setup(
