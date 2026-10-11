@@ -25,6 +25,17 @@ const GTM_ID = 'GTM-E2ETEST';
 
 type Probe = { requests: () => number };
 
+/** A request that should not happen has no event to wait on, so absence is
+ *  observed over a short settle window after the config arrived; the page holds
+ *  open streams, so `networkidle` never fires. */
+const SETTLE_MS = 1500;
+
+async function expectNoGtm(page: Page, gtm: Probe, expected: number) {
+  await page.waitForTimeout(SETTLE_MS);
+  expect(gtm.requests()).toBe(expected);
+  await expect(page.locator('script[src*="googletagmanager.com"]')).toHaveCount(0);
+}
+
 async function serveGtmId(page: Page, gtmId: string | null = GTM_ID): Promise<Probe> {
   const withId = (payload: Record<string, unknown>) => {
     const served = { ...payload };
@@ -53,9 +64,13 @@ const banner = (page: Page) => page.getByRole('region', { name: 'Analytics conse
 const allowButton = (page: Page) => banner(page).getByRole('button', { name: 'Allow analytics' });
 const declineButton = (page: Page) => banner(page).getByRole('button', { name: 'Decline' });
 
-/** The app shell is up once the composer renders. */
+/** The app shell is up once the composer renders and the startup config, which
+ *  carries the tag manager id, has arrived. */
 async function openNewChat(page: Page) {
-  await page.goto(NEW_CHAT_PATH, { timeout: 15000 });
+  await Promise.all([
+    page.waitForResponse((res) => new URL(res.url()).pathname === '/api/config' && res.ok()),
+    page.goto(NEW_CHAT_PATH, { timeout: 15000 }),
+  ]);
   await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible({
     timeout: 20000,
   });
@@ -137,8 +152,7 @@ test.describe('analytics consent', () => {
 
     await openNewChat(page);
     await expect(banner(page)).toHaveCount(0);
-    await page.waitForLoadState('networkidle').catch(() => undefined);
-    expect(gtm.requests()).toBe(0);
+    await expectNoGtm(page, gtm, 0);
   });
 
   test('a shared link asks before loading Google Tag Manager @scenario:shared-link-gtm-waits-for-consent', async ({
@@ -191,8 +205,7 @@ test.describe('analytics consent', () => {
     const before = gtm.requests();
     await openNewChat(page);
     await expect(banner(page)).toHaveCount(0);
-    await page.waitForLoadState('networkidle').catch(() => undefined);
-    expect(gtm.requests()).toBe(before);
+    await expectNoGtm(page, gtm, before);
 
     /** And it can be given again from the same place. */
     const again = await openDataSettings(page);
