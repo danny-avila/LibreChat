@@ -22,6 +22,13 @@ const renderConsent = (gtmId?: string | null) =>
     </Provider>,
   );
 
+const appendContainerScript = (gtmId: string) => {
+  const script = document.createElement('script');
+  script.src = `https://www.googletagmanager.com/gtm.js?id=${gtmId}`;
+  document.head.appendChild(script);
+  return script;
+};
+
 const getBanner = () => screen.queryByRole('region', { name: 'com_ui_analytics_consent_label' });
 
 describe('AnalyticsConsent', () => {
@@ -140,13 +147,35 @@ describe('AnalyticsConsent', () => {
     expect(window.dataLayer).toHaveLength(0);
   });
 
-  it('retries a container whose script never registered', () => {
+  it('does not inject a second container while the first is still loading', () => {
     localStorage.setItem('analyticsConsent', JSON.stringify('granted'));
-    const failed = document.createElement('script');
-    failed.src = 'https://www.googletagmanager.com/gtm.js?id=GTM-TEST';
-    document.head.appendChild(failed);
+    const loading = appendContainerScript('GTM-TEST');
     renderConsent('GTM-TEST');
-    expect(initialize).toHaveBeenCalledWith({ gtmId: 'GTM-TEST' });
-    failed.remove();
+    expect(initialize).not.toHaveBeenCalled();
+    loading.remove();
+  });
+
+  it('tells a still loading container that consent was withdrawn', () => {
+    localStorage.setItem('analyticsConsent', JSON.stringify('denied'));
+    window.dataLayer = [];
+    const loading = appendContainerScript('GTM-TEST');
+    renderConsent('GTM-TEST');
+    expect(window.dataLayer).toHaveLength(1);
+    loading.remove();
+  });
+
+  it('retries a container whose script failed to load', () => {
+    localStorage.setItem('analyticsConsent', JSON.stringify('granted'));
+    initialize.mockImplementationOnce(({ gtmId }: { gtmId: string }) => {
+      appendContainerScript(gtmId);
+    });
+    const first = renderConsent('GTM-TEST');
+    const failed = document.querySelector('script[src*="gtm.js"]');
+    expect(failed).not.toBeNull();
+    failed?.dispatchEvent(new Event('error'));
+    expect(document.querySelector('script[src*="gtm.js"]')).toBeNull();
+    first.unmount();
+    renderConsent('GTM-TEST');
+    expect(initialize).toHaveBeenCalledTimes(2);
   });
 });

@@ -28,12 +28,35 @@ function pushConsent(command: 'default' | 'update', analytics: ConsentState) {
   });
 }
 
-/** Whether this deployment's container finished loading on this page. GTM
+/** The `gtm.js` script of this deployment's container, while it loads or after. */
+function findContainerScript(gtmId: string): HTMLScriptElement | undefined {
+  return Array.from(document.querySelectorAll<HTMLScriptElement>('script[src*="gtm.js"]')).find(
+    (script) => {
+      try {
+        return new URL(script.src, window.location.href).searchParams.get('id') === gtmId;
+      } catch {
+        return false;
+      }
+    },
+  );
+}
+
+/** Whether this deployment's container is on the page, loading or loaded. GTM
  *  registers each container it runs under its id, so another container does not
- *  count, and a script that failed to load is retried on the next grant. */
-function isContainerLoaded(gtmId: string) {
+ *  count. A script that failed to load is removed (see `initializeContainer`). */
+function isContainerPresent(gtmId: string) {
   const registry = window.google_tag_manager as Record<string, unknown> | undefined;
-  return registry?.[gtmId] != null;
+  return registry?.[gtmId] != null || findContainerScript(gtmId) != null;
+}
+
+/** Loads the container with consent defaults queued ahead of its first tag. A
+ *  script that fails to load is removed, so the next grant retries it. */
+function initializeContainer(gtmId: string) {
+  /** The snippet keeps an existing data layer, so the defaults stay first in it. */
+  pushConsent('default', 'granted');
+  TagManager.initialize({ gtmId });
+  const script = findContainerScript(gtmId);
+  script?.addEventListener('error', () => script.remove(), { once: true });
 }
 
 /**
@@ -49,20 +72,19 @@ export default function useAnalytics(gtmId: string | null | undefined) {
     if (!enabled || consent !== 'granted') {
       return;
     }
-    if (isContainerLoaded(gtmId)) {
-      /** Consent given again after a withdrawal in this page: the container is
-       *  still here, so it only needs the new answer. */
+    if (isContainerPresent(gtmId)) {
+      /** Consent given again after a withdrawal in this page, or a second shell
+       *  mounting: the container is already here and only needs the answer. */
       pushConsent('update', 'granted');
       return;
     }
-    /** Set before the container's first tag runs; the snippet keeps an existing data layer. */
-    pushConsent('default', 'granted');
-    TagManager.initialize({ gtmId });
+    initializeContainer(gtmId);
   }, [enabled, gtmId, consent]);
 
   useEffect(() => {
-    /** Nothing is pushed unless this deployment's container is on the page. */
-    if (enabled && consent === 'denied' && isContainerLoaded(gtmId)) {
+    /** Nothing is pushed unless this deployment's container is on the page; one
+     *  still loading reads the update from the data layer queue when it starts. */
+    if (enabled && consent === 'denied' && isContainerPresent(gtmId)) {
       pushConsent('update', 'denied');
     }
   }, [enabled, gtmId, consent]);
