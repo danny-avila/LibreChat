@@ -43,6 +43,12 @@ export type PullRequestFindInput = {
   branch: string;
   /** The commit the conversation last ran at; a pull request must carry it to be the match. */
   head?: string | null;
+  /**
+   * A pull request the conversation's own command output linked to. It is the answer when its
+   * head branch is `branch`, whether or not GitHub has the recorded commit yet; otherwise the
+   * branch is searched as if no link had been seen.
+   */
+  pullRequest?: number | null;
   token: string;
   limits?: PullRequestLookupLimits;
   /** The repositories the token may be used for. A pull request from a fork has its checks read

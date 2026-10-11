@@ -1,5 +1,6 @@
 import { logger } from '@librechat/data-schemas';
 import type { WorkspaceLaneGit } from './workspace';
+import { findPullRequestLink } from '~/pulls/links';
 import { getSafeErrorMetadata } from '~/utils';
 
 /**
@@ -18,6 +19,8 @@ export type LaneGitWriter = (input: {
   conversationId: string;
   laneGit: WorkspaceLaneGit;
   repo?: string;
+  /** A pull request of `repo` the command's output linked to; see `findPullRequestLink`. */
+  pullRequest?: number;
   /** Reserved when the command settled; the database ignores a report below the one it holds. */
   seq: number;
   /** The database ignores the report once the conversation is no longer on this workspace. */
@@ -100,7 +103,7 @@ export async function createLaneGitRecorder({
   getConvoLaneContext?: LaneContextReader;
   reserveConvoLaneGitSeq: LaneSeqReserver;
   setConvoLaneGit: LaneGitWriter;
-}): Promise<((laneGit: WorkspaceLaneGit) => Promise<boolean>) | undefined> {
+}): Promise<((laneGit: WorkspaceLaneGit, output?: string) => Promise<boolean>) | undefined> {
   if (!enabled || !user || !conversationId) return undefined;
   const safeRepo = isSafeRepo(repo) ? repo : undefined;
 
@@ -131,13 +134,18 @@ export async function createLaneGitRecorder({
     }
   };
 
-  const write = async (laneGit: WorkspaceLaneGit, reserved: Reservation): Promise<boolean> => {
+  const write = async (
+    laneGit: WorkspaceLaneGit,
+    pullRequest: number | null,
+    reserved: Reservation,
+  ): Promise<boolean> => {
     try {
       return await setConvoLaneGit({
         user,
         conversationId: reserved.conversationId,
         laneGit,
         ...(safeRepo ? { repo: safeRepo } : {}),
+        ...(pullRequest != null ? { pullRequest } : {}),
         seq: reserved.seq,
         ...(workspace
           ? {
@@ -163,14 +171,22 @@ export async function createLaneGitRecorder({
    * last wrote, and the database already ignores a write that changes nothing the reader can see.
    * Resolves to whether the write applied, which is false when a newer report is already stored
    * and for a conversation not saved yet. A repo that is not a plain `owner/name` is dropped.
+   * `output` is what the command printed; a pull request link to the lane's repository in it is
+   * recorded with the lane, so the header can show that pull request without searching for it.
    */
-  return (laneGit) => {
+  return (laneGit, output) => {
+    const pullRequest =
+      safeRepo != null && output != null && laneGit.branch != null
+        ? findPullRequestLink(output, safeRepo)
+        : null;
     const previous = reservationTails.get(queueKey) ?? Promise.resolve();
     const reservation = previous.then(() => reserve());
     reservationTails.set(queueKey, reservation);
     void reservation.then(() => {
       if (reservationTails.get(queueKey) === reservation) reservationTails.delete(queueKey);
     });
-    return reservation.then((reserved) => (reserved == null ? false : write(laneGit, reserved)));
+    return reservation.then((reserved) =>
+      reserved == null ? false : write(laneGit, pullRequest, reserved),
+    );
   };
 }

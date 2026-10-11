@@ -355,6 +355,8 @@ export interface ConversationMethods {
     conversationId: string;
     laneGit: Pick<NonNullable<IConversation['laneGit']>, 'branch' | 'head'>;
     repo?: string;
+    /** A pull request the command's output linked to; replaces the one recorded for the lane. */
+    pullRequest?: number;
     /** Reserved with `reserveConvoLaneGitSeq` when the command settled. */
     seq: number;
     /** The workspace the command ran in; the write applies only while the chat is still on it. */
@@ -3161,6 +3163,7 @@ export function createConversationMethods(
     conversationId,
     laneGit,
     repo,
+    pullRequest,
     seq,
     workspace,
   }: {
@@ -3168,15 +3171,33 @@ export function createConversationMethods(
     conversationId: string;
     laneGit: Pick<NonNullable<IConversation['laneGit']>, 'branch' | 'head'>;
     repo?: string;
+    pullRequest?: number;
     seq: number;
     workspace?: { environmentId: string; workspaceId: string; required?: boolean; epoch?: number };
   }): Promise<boolean> {
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    /**
+     * A pipeline update, so a report without a link keeps the one already recorded while the lane
+     * is still on that branch and repository. Values are literals: a branch may start with `$`.
+     */
+    const keptPullRequest = {
+      $cond: [
+        {
+          $and: [
+            { $eq: ['$laneGit.branch', { $literal: laneGit.branch }] },
+            { $eq: ['$laneGit.repo', repo ? { $literal: repo } : '$$REMOVE'] },
+          ],
+        },
+        '$laneGit.pullRequest',
+        '$$REMOVE',
+      ],
+    };
     const next = {
-      branch: laneGit.branch,
-      head: laneGit.head,
-      ...(repo ? { repo } : {}),
-      seq,
+      branch: { $literal: laneGit.branch },
+      head: { $literal: laneGit.head },
+      ...(repo ? { repo: { $literal: repo } } : {}),
+      pullRequest: pullRequest != null ? { $literal: pullRequest } : keptPullRequest,
+      seq: { $literal: seq },
     };
     const epochFence =
       workspace?.epoch == null
@@ -3233,7 +3254,7 @@ export function createConversationMethods(
             ...workspaceFence,
           ],
         },
-        { $set: { laneGit: next } },
+        [{ $set: { laneGit: next } }],
         { timestamps: false },
       ),
     );
@@ -3254,8 +3275,13 @@ export function createConversationMethods(
       .select('laneGit')
       .lean<Pick<IConversation, 'laneGit'> | null>();
     if (stored?.laneGit == null) return null;
-    const { branch, head, repo } = stored.laneGit;
-    return { branch, head, ...(repo ? { repo } : {}) };
+    const { branch, head, repo, pullRequest } = stored.laneGit;
+    return {
+      branch,
+      head,
+      ...(repo ? { repo } : {}),
+      ...(pullRequest != null ? { pullRequest } : {}),
+    };
   }
 
   /**
@@ -3279,8 +3305,18 @@ export function createConversationMethods(
       .lean<Array<Pick<IConversation, 'conversationId' | 'laneGit'>>>();
     return stored.flatMap(({ conversationId, laneGit }) => {
       if (laneGit == null || conversationId == null) return [];
-      const { branch, head, repo } = laneGit;
-      return [{ conversationId, laneGit: { branch, head, ...(repo ? { repo } : {}) } }];
+      const { branch, head, repo, pullRequest } = laneGit;
+      return [
+        {
+          conversationId,
+          laneGit: {
+            branch,
+            head,
+            ...(repo ? { repo } : {}),
+            ...(pullRequest != null ? { pullRequest } : {}),
+          },
+        },
+      ];
     });
   }
 

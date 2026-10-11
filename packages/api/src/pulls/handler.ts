@@ -21,14 +21,19 @@ import { getSafeErrorMetadata } from '~/utils';
 
 const MAX_CONVERSATION_ID_LENGTH = 256;
 
-export type ConversationLaneGit = { branch: string | null; head: string | null; repo?: string };
+export type ConversationLaneGit = {
+  branch: string | null;
+  head: string | null;
+  repo?: string;
+  pullRequest?: number;
+};
 
 const validConversationId = (value: string | undefined): value is string =>
   value != null && value.trim() !== '' && value.length <= MAX_CONVERSATION_ID_LENGTH;
 
 const NONE: TConversationPullRequestResponse = { pullRequest: null };
 
-type EligibleLane = { branch: string; head: string | null; repo: string };
+type EligibleLane = { branch: string; head: string | null; repo: string; pullRequest?: number };
 
 /** Lookups in flight at once for one batch, unless configured. */
 const DEFAULT_BATCH_CONCURRENCY = 4;
@@ -164,7 +169,12 @@ function eligibleLane(
 ): EligibleLane | null {
   if (laneGit?.branch == null || laneGit.repo == null) return null;
   if (!isAllowedRepository(laneGit.repo, repositoryScope(settings))) return null;
-  return { branch: laneGit.branch, head: laneGit.head, repo: laneGit.repo };
+  return {
+    branch: laneGit.branch,
+    head: laneGit.head,
+    repo: laneGit.repo,
+    ...(laneGit.pullRequest != null ? { pullRequest: laneGit.pullRequest } : {}),
+  };
 }
 
 /** Everything one lookup needs from the settings, so the single and batch routes cannot differ. */
@@ -173,6 +183,7 @@ function lookupInput(settings: PullRequestSettings, token: string, lane: Eligibl
     repo: lane.repo,
     branch: lane.branch,
     head: lane.head,
+    ...(lane.pullRequest != null ? { pullRequest: lane.pullRequest } : {}),
     token,
     ttlMs: (settings.cacheTtlSeconds ?? 30) * 1000,
     cacheMaxEntries: settings.cacheMaxEntries ?? 500,
@@ -401,7 +412,8 @@ export function createConversationPullRequestsHandler(deps: {
        * already coalesces them, so each distinct lookup takes one slot and one deadline, not one
        * per conversation. Otherwise duplicates would hold every slot while a single request ran.
        */
-      const keyOf = (lane: EligibleLane) => `${lane.repo}\0${lane.branch}\0${lane.head ?? ''}`;
+      const keyOf = (lane: EligibleLane) =>
+        `${lane.repo}\0${lane.branch}\0${lane.head ?? ''}\0${lane.pullRequest ?? ''}`;
       const distinct = new Map<string, EligibleLane>();
       for (const lane of eligible.values()) distinct.set(keyOf(lane), lane);
       type Outcome =
@@ -421,6 +433,7 @@ export function createConversationPullRequestsHandler(deps: {
           input.repo,
           input.branch,
           input.head,
+          input.pullRequest,
           input.ttlMs,
           input.limits,
           input.allowedRepositories,

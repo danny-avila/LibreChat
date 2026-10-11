@@ -34,7 +34,12 @@ const configWith = (pullRequests?: Record<string, unknown>) => ({
   endpoints: { agents: { pullRequests } },
 });
 
-type Lane = { branch: string | null; head: string | null; repo?: string } | null;
+type Lane = {
+  branch: string | null;
+  head: string | null;
+  repo?: string;
+  pullRequest?: number;
+} | null;
 
 function setup(
   options: {
@@ -100,6 +105,14 @@ describe('createConversationPullRequestHandler', () => {
     });
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ pullRequest: pr });
+  });
+
+  it('passes the pull request the conversation linked to', async () => {
+    const { run, lookup } = setup({
+      laneGit: { branch: 'feat/x', head: null, repo: 'o/r', pullRequest: 7 },
+    });
+    await run();
+    expect(lookup).toHaveBeenCalledWith(expect.objectContaining({ pullRequest: 7 }));
   });
 
   it('passes the configured lookup bounds to GitHub', async () => {
@@ -403,6 +416,18 @@ describe('createConversationPullRequestsHandler', () => {
     };
     return { run, res, lookup, getConvosLaneGit };
   }
+
+  it('keeps conversations on one lane apart when they linked different pull requests', async () => {
+    const linked = (conversationId: string, pullRequest: number) => ({
+      conversationId,
+      laneGit: { branch: 'feat/x', head: null, repo: 'o/r', pullRequest },
+    });
+    const { run, lookup } = batch({ lanes: [linked('a', 7), linked('b', 9)] });
+    await run({ conversationIds: ['a', 'b'] });
+    expect(lookup).toHaveBeenCalledTimes(2);
+    expect(lookup).toHaveBeenCalledWith(expect.objectContaining({ pullRequest: 7 }));
+    expect(lookup).toHaveBeenCalledWith(expect.objectContaining({ pullRequest: 9 }));
+  });
 
   it('looks up any repository on the batch route too, when the administrator opted in', async () => {
     const { run, lookup } = batch({
