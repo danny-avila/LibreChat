@@ -85,9 +85,41 @@ function BackgroundTasksButton({
     stopAllLabel = localize('com_ui_background_tasks_stop_available');
   }
   const jumpToTool = (row: TaskRow): boolean => {
-    const message = row.messageId == null ? null : document.getElementById(row.messageId);
-    if (row.messageId != null && message == null) return false;
-    const scope = message ?? document;
+    if (row.eventOrigin && row.threadId != null) {
+      const events = Array.from(
+        document.querySelectorAll<HTMLElement>(
+          '[data-event-subagent-conversation] [data-subagent-thread]',
+        ),
+      ).filter(
+        (element) =>
+          element.dataset.subagentThread === row.threadId &&
+          element.dataset.subagentParentMessage === row.messageId &&
+          element.closest<HTMLElement>('[data-event-subagent-conversation]')?.dataset
+            .eventSubagentConversation === conversationId,
+      );
+      if (events.length !== 1) return false;
+      const target = events[0];
+      if (target.matches(':disabled')) return false;
+      const group = target.closest('[data-event-subagent-conversation]');
+      group?.querySelector<HTMLButtonElement>('button[aria-expanded="false"]')?.click();
+      finalFocusRef.current = null;
+      popover.hide();
+      window.requestAnimationFrame(() => {
+        if (!target.isConnected || popover.getState().open) return;
+        target.focus({ preventScroll: true });
+        target.scrollIntoView?.({
+          block: 'center',
+          behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+            ? 'instant'
+            : 'smooth',
+        });
+      });
+      return true;
+    }
+    if (row.messageId == null) return false;
+    const message = document.getElementById(row.messageId);
+    if (message == null) return false;
+    const scope = message;
     const destinations = Array.from(
       scope.querySelectorAll<HTMLElement>('[data-task-tool-call]'),
     ).filter(

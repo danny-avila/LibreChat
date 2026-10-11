@@ -498,6 +498,51 @@ describe('BackgroundTasksButton', () => {
     }
   });
 
+  it('rejects identity-less durable completions even when a visible call id matches', async () => {
+    jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(index());
+    renderButton();
+    const other = document.createElement('button');
+    other.dataset.toolCallId = 'call-running';
+    document.body.append(other);
+    try {
+      await userEvent.click(await screen.findByTestId('header-background-tasks-button'));
+      await userEvent.click(
+        screen.getAllByRole('button', { name: /^com_ui_background_tasks_go_to_tool:/ })[0],
+      );
+      expect(screen.getByRole('status')).toHaveTextContent(
+        'com_ui_background_tasks_tool_unavailable',
+      );
+    } finally {
+      other.remove();
+    }
+  });
+
+  it('reveals an event activity destination outside its parent message', async () => {
+    jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(index({ tasks: [] }));
+    renderButton([{ ...runningChild, origin: 'event', parentToolCallId: undefined }]);
+    const group = document.createElement('section');
+    group.dataset.eventSubagentConversation = conversationId;
+    const header = document.createElement('button');
+    header.setAttribute('aria-expanded', 'false');
+    const target = document.createElement('button');
+    target.dataset.subagentThread = 'thread-1';
+    target.dataset.subagentParentMessage = 'parent-message';
+    target.scrollIntoView = jest.fn();
+    header.onclick = () => header.setAttribute('aria-expanded', 'true');
+    group.append(header, target);
+    document.body.append(group);
+    try {
+      await userEvent.click(await screen.findByTestId('header-background-tasks-button'));
+      await userEvent.click(
+        await screen.findByRole('button', { name: /^com_ui_background_tasks_go_to_tool:/ }),
+      );
+      expect(header).toHaveAttribute('aria-expanded', 'true');
+      await waitFor(() => expect(target.scrollIntoView).toHaveBeenCalled());
+    } finally {
+      group.remove();
+    }
+  });
+
   it('selects the requested step when call ids repeat', async () => {
     jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(
       index({
@@ -528,15 +573,18 @@ describe('BackgroundTasksButton', () => {
   });
 
   it('scrolls to the matching tool and dismisses the panel', async () => {
-    jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(index());
+    jest
+      .spyOn(dataService, 'getBackgroundTasks')
+      .mockResolvedValue(index({ tasks: [{ ...index().tasks[0], messageId: 'message-target' }] }));
     renderButton();
     const target = document.createElement('button');
+    target.id = 'message-target';
     target.dataset.toolCallId = 'call-running';
     target.scrollIntoView = jest.fn();
     document.body.append(target);
     try {
       await userEvent.click(await screen.findByTestId('header-background-tasks-button'));
-      const row = screen.getByText('Rerun the focused specs').closest('li')!;
+      const row = screen.getAllByTestId('background-task-row')[0];
       await userEvent.click(
         within(row).getByRole('button', { name: /^com_ui_background_tasks_go_to_tool:/ }),
       );

@@ -27,6 +27,7 @@ export type TaskRow = {
   toolCallId?: string;
   stepId?: string;
   threadId?: string;
+  eventOrigin?: boolean;
   status: TaskRowStatus;
   startedAt?: number;
   settledAt?: number;
@@ -133,6 +134,7 @@ const subagentRow = (child: ParentSubagentSummary, stopping: ReadonlySet<string>
     messageId: child.parentMessageId,
     toolCallId: child.parentToolCallId,
     threadId: child.threadId,
+    eventOrigin: child.origin === 'event',
     status: running && stopping.has(subagentTaskKey(child.threadId, taskId)) ? 'stopping' : status,
     startedAt: time(child.tasks.find((task) => task.taskId === taskId)?.createdAt),
     settledAt: running ? undefined : time(child.updatedAt),
