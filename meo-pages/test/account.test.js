@@ -1,6 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { exchangeCode, refreshTokens } from '../functions/_lib/account.js';
+import {
+  OAuthTokenExchangeError,
+  exchangeCode,
+  refreshTokens,
+} from '../functions/_lib/account.js';
 
 const env = {
   SUPABASE_URL: 'https://bdyhkkgwhcamfyoqcthx.supabase.co',
@@ -17,7 +21,7 @@ test('OAuth code exchange uses Supabase public-client PKCE contract', async (t) 
     assert.equal(input, `${env.SUPABASE_URL}/auth/v1/oauth/token`);
     assert.equal(init.method, 'POST');
     assert.equal(init.headers['Content-Type'], 'application/x-www-form-urlencoded');
-    assert.equal(init.headers.apikey, env.SUPABASE_ANON_KEY);
+    assert.equal(init.headers.apikey, undefined);
     assert.deepEqual(Object.fromEntries(new URLSearchParams(init.body)), {
       grant_type: 'authorization_code',
       code: 'one-time-code',
@@ -40,7 +44,58 @@ test('OAuth code exchange uses Supabase public-client PKCE contract', async (t) 
   );
 });
 
-test('OAuth refresh uses the registered public client and Supabase public API key', async (t) => {
+test('OAuth exchange exposes only safe server error code and status', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async () =>
+    Response.json(
+      { error: 'invalid_grant', error_description: 'sensitive server detail' },
+      { status: 400 },
+    );
+
+  await assert.rejects(
+    exchangeCode(
+      env,
+      'one-time-code',
+      'pkce-verifier',
+      'https://chat.meoarch.org/oauth/openid/callback',
+    ),
+    (error) => {
+      assert.ok(error instanceof OAuthTokenExchangeError);
+      assert.equal(error.reason, 'token_400_invalid_grant');
+      assert.doesNotMatch(error.message, /sensitive server detail/);
+      return true;
+    },
+  );
+});
+
+test('OAuth network failures get a stable diagnostic reason', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async () => {
+    throw new Error('network internals');
+  };
+
+  await assert.rejects(
+    exchangeCode(
+      env,
+      'one-time-code',
+      'pkce-verifier',
+      'https://chat.meoarch.org/oauth/openid/callback',
+    ),
+    (error) => {
+      assert.ok(error instanceof OAuthTokenExchangeError);
+      assert.equal(error.reason, 'token_network_error');
+      return true;
+    },
+  );
+});
+
+test('OAuth refresh uses the registered public client', async (t) => {
   const originalFetch = globalThis.fetch;
   t.after(() => {
     globalThis.fetch = originalFetch;
@@ -48,7 +103,7 @@ test('OAuth refresh uses the registered public client and Supabase public API ke
   globalThis.fetch = async (input, init) => {
     assert.equal(input, `${env.SUPABASE_URL}/auth/v1/oauth/token`);
     assert.equal(init.headers['Content-Type'], 'application/x-www-form-urlencoded');
-    assert.equal(init.headers.apikey, env.SUPABASE_ANON_KEY);
+    assert.equal(init.headers.apikey, undefined);
     assert.deepEqual(Object.fromEntries(new URLSearchParams(init.body)), {
       grant_type: 'refresh_token',
       refresh_token: 'opaque-refresh',
