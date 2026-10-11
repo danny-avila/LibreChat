@@ -11,6 +11,7 @@ import type {
   Model,
   SortOrder,
   Types,
+  UpdateQuery,
 } from 'mongoose';
 import type { SearchParams } from 'meilisearch';
 import type {
@@ -3176,29 +3177,6 @@ export function createConversationMethods(
     workspace?: { environmentId: string; workspaceId: string; required?: boolean; epoch?: number };
   }): Promise<boolean> {
     const Conversation = mongoose.models.Conversation as Model<IConversation>;
-    /**
-     * A pipeline update, so a report without a link keeps the one already recorded while the lane
-     * is still on that branch and repository. Values are literals: a branch may start with `$`.
-     */
-    const keptPullRequest = {
-      $cond: [
-        {
-          $and: [
-            { $eq: ['$laneGit.branch', { $literal: laneGit.branch }] },
-            { $eq: ['$laneGit.repo', repo ? { $literal: repo } : '$$REMOVE'] },
-          ],
-        },
-        '$laneGit.pullRequest',
-        '$$REMOVE',
-      ],
-    };
-    const next = {
-      branch: { $literal: laneGit.branch },
-      head: { $literal: laneGit.head },
-      ...(repo ? { repo: { $literal: repo } } : {}),
-      pullRequest: pullRequest != null ? { $literal: pullRequest } : keptPullRequest,
-      seq: { $literal: seq },
-    };
     const epochFence =
       workspace?.epoch == null
         ? []
@@ -3237,28 +3215,62 @@ export function createConversationMethods(
               ],
             },
           ];
-    const result = await withoutMeiliIndexing(
-      Conversation.updateOne(
-        {
-          user,
-          conversationId,
-          ...activeExpirationFilter<IConversation>(),
-          $and: [
-            {
-              $or: [
-                { 'laneGit.seq': { $exists: false } },
-                { 'laneGit.seq': null },
-                { 'laneGit.seq': { $lt: seq } },
-              ],
-            },
-            ...workspaceFence,
-          ],
+    const fences: FilterQuery<IConversation>[] = [
+      {
+        $or: [
+          { 'laneGit.seq': { $exists: false } },
+          { 'laneGit.seq': null },
+          { 'laneGit.seq': { $lt: seq } },
+        ],
+      },
+      ...workspaceFence,
+    ];
+    const write = async (
+      lane: FilterQuery<IConversation> | null,
+      update: UpdateQuery<IConversation>,
+    ): Promise<boolean> => {
+      const result = await withoutMeiliIndexing(
+        Conversation.updateOne(
+          {
+            user,
+            conversationId,
+            ...activeExpirationFilter<IConversation>(),
+            $and: lane == null ? fences : [...fences, lane],
+          },
+          update,
+          { timestamps: false },
+        ),
+      );
+      return result.modifiedCount === 1;
+    };
+    const replaced = {
+      branch: laneGit.branch,
+      head: laneGit.head,
+      ...(repo ? { repo } : {}),
+      ...(pullRequest != null ? { pullRequest } : {}),
+      seq,
+    };
+    if (pullRequest != null) return write(null, { $set: { laneGit: replaced } });
+    /**
+     * A report without a link keeps the one already recorded while the lane is still on that
+     * branch and repository, and drops it otherwise. Plain updates rather than an aggregation
+     * pipeline, which Amazon DocumentDB rejects: the first matches only the same lane and sets its
+     * fields one by one, the second only another lane and replaces the whole state. A concurrent
+     * write can move the stored lane between the two, so they are retried once.
+     */
+    const sameLane = { 'laneGit.branch': laneGit.branch, 'laneGit.repo': repo ?? null };
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const kept = await write(sameLane, {
+        $set: {
+          'laneGit.branch': laneGit.branch,
+          'laneGit.head': laneGit.head,
+          'laneGit.seq': seq,
         },
-        [{ $set: { laneGit: next } }],
-        { timestamps: false },
-      ),
-    );
-    return result.modifiedCount === 1;
+      });
+      if (kept) return true;
+      if (await write({ $nor: [sameLane] }, { $set: { laneGit: replaced } })) return true;
+    }
+    return false;
   }
 
   /** The last reported lane state, or null when the conversation has none or is not the owner's. */
