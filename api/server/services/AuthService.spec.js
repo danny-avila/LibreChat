@@ -1230,8 +1230,9 @@ describe('resendVerificationEmail', () => {
 
     await resendVerificationEmail({ body: { email: 'leak@example.com' } });
 
-    expect(logger.error).toHaveBeenCalled();
-    expect(JSON.stringify(logger.error.mock.calls)).not.toContain('leak@example.com');
+    const [, metadata] = logger.error.mock.calls[0];
+    expect(metadata).toEqual({ type: 'Error' });
+    expect(metadata).not.toBeInstanceOf(Error);
   });
 
   it('should not delete tokens when no user exists for the email', async () => {
