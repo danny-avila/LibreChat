@@ -407,14 +407,39 @@ function writeRuntimeMockConfig() {
   }
 }
 
+/** A kept certificate is replaced when it expires within this window, so no run outlives it. */
+const GIT_HOST_CERT_MIN_SECONDS = 7 * 24 * 60 * 60;
+
+function hasFreshGitHostCertificate(): boolean {
+  if (!fs.existsSync(gitHostKeyPath) || !fs.existsSync(gitHostCertPath)) {
+    return false;
+  }
+  try {
+    /** Exits non-zero when the certificate expires within the window, or cannot be read. */
+    execFileSync(
+      'openssl',
+      ['x509', '-checkend', String(GIT_HOST_CERT_MIN_SECONDS), '-noout', '-in', gitHostCertPath],
+      { stdio: 'ignore' },
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The fake git host speaks TLS, as every pull request host must, with a certificate for
  * `localhost` the app server trusts through `NODE_EXTRA_CA_CERTS`. Node reads that file once at
- * startup, so it is made here, before any web server starts, and kept while it exists: the
- * config module loads again in every worker, which must not swap the pair under a running server.
+ * startup, so it is made here, before any web server starts, and kept while it is valid for a
+ * week more. The config module loads again in every worker, which must not swap the pair under a
+ * running server, so only the main process ever replaces one.
  */
 function ensureGitHostCertificate() {
-  if (fs.existsSync(gitHostKeyPath) && fs.existsSync(gitHostCertPath)) {
+  const exists = fs.existsSync(gitHostKeyPath) && fs.existsSync(gitHostCertPath);
+  if (exists && process.env.TEST_WORKER_INDEX != null) {
+    return;
+  }
+  if (hasFreshGitHostCertificate()) {
     return;
   }
   fs.mkdirSync(path.dirname(gitHostCertPath), { recursive: true });
