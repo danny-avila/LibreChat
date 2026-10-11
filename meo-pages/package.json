@@ -1,0 +1,9 @@
+{
+  "name": "meo-ai-pages",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "build": "node ./scripts/check-build.mjs"
+  }
+}
