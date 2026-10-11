@@ -478,6 +478,11 @@ export function createConversationPullRequestsHandler(deps: {
           input.ttlMs,
           input.limits,
           input.allowedRepositories,
+          /** Where the lookup caches and shares its answer, so each caller's own policy holds. */
+          input.cacheMaxEntries,
+          input.cacheMaxCredentials,
+          input.sharedCache,
+          input.sharedCacheTimeoutMs,
         ])}`;
         const joined = sharedLookups.join(shareKey, scope, limit, input);
         const result = await withDeadline(joined.promise, remaining);

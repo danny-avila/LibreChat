@@ -1117,6 +1117,43 @@ describe('createConversationPullRequestsHandler', () => {
       expect(hosts).toEqual(['github.com', 'ghe.example.com']);
     });
 
+    it.each([
+      ['sharing setting', { sharedCache: true }],
+      ['shared cache deadline', { sharedCache: true, sharedCacheTimeoutMs: 10 }],
+      ['cache capacity', { cacheMaxEntries: 50 }],
+    ])('does not join a lookup started with another %s', async (_label, changed) => {
+      const inputs: unknown[] = [];
+      const lookup = jest.fn(
+        (input: unknown) =>
+          new Promise(() => {
+            inputs.push(input);
+          }),
+      );
+      const settings = { ...enabled, batchTimeoutSeconds: 1 };
+      const getAppConfig = jest
+        .fn()
+        .mockResolvedValueOnce(configWith(settings))
+        .mockResolvedValueOnce(configWith(settings))
+        .mockResolvedValue(configWith({ ...settings, ...changed }));
+      const handler = createConversationPullRequestsHandler({
+        getConvosLaneGit: jest.fn(async () => [lane('a', 'o/r', 'feat/shared')]),
+        getAppConfig,
+        lookup: lookup as never,
+        env: { GH_TOKEN: 'ghp_secret' },
+      });
+      const call = () =>
+        handler(
+          { user: { id: 'u1' }, body: { conversationIds: ['a'] } } as unknown as ServerRequest,
+          { status: jest.fn().mockReturnThis(), json: jest.fn() } as unknown as Response,
+        );
+      void call();
+      await flush();
+      void call();
+      await flush();
+      expect(inputs).toHaveLength(2);
+      expect(inputs[1]).toMatchObject(changed);
+    });
+
     it('does not join a lookup started for another provider on the same host', async () => {
       const providers: Array<string | undefined> = [];
       const lookup = jest.fn(
