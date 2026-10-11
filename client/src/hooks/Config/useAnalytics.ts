@@ -29,14 +29,22 @@ function pushConsentUpdate(state: ConsentState) {
   });
 }
 
-/** Whether a container is already on this page: GTM itself, or the `gtm.js` start
- *  event its snippet queues before the script arrives. */
-function isContainerLoaded() {
-  if (typeof window.google_tag_manager !== 'undefined') {
+/** Whether this deployment's container is already on the page: registered by GTM
+ *  itself, or its `gtm.js?id=` script injected and still loading. Another
+ *  container on the page does not count. */
+function isContainerLoaded(gtmId: string) {
+  const registry = window.google_tag_manager as Record<string, unknown> | undefined;
+  if (registry?.[gtmId] != null) {
     return true;
   }
-  return (window.dataLayer ?? []).some(
-    (entry) => (entry as { event?: unknown } | null)?.event === 'gtm.js',
+  return Array.from(document.querySelectorAll<HTMLScriptElement>('script[src*="gtm.js"]')).some(
+    (script) => {
+      try {
+        return new URL(script.src, window.location.href).searchParams.get('id') === gtmId;
+      } catch {
+        return false;
+      }
+    },
   );
 }
 
@@ -53,7 +61,7 @@ export default function useAnalytics(gtmId: string | null | undefined) {
     if (!enabled || consent !== 'granted') {
       return;
     }
-    if (isContainerLoaded()) {
+    if (isContainerLoaded(gtmId)) {
       /** Consent given again after a withdrawal in this page: the container is
        *  still here, so it only needs the new answer. */
       pushConsentUpdate('granted');

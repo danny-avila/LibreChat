@@ -30,6 +30,7 @@ describe('AnalyticsConsent', () => {
     initialize.mockClear();
     delete window.google_tag_manager;
     delete window.dataLayer;
+    document.head.innerHTML = '';
   });
 
   it('renders nothing and never loads GTM when no container is configured', () => {
@@ -80,11 +81,21 @@ describe('AnalyticsConsent', () => {
     expect(initialize).not.toHaveBeenCalled();
   });
 
-  it('does not load a second container when GTM is already on the page', () => {
+  it('does not load the configured container twice', () => {
     localStorage.setItem('analyticsConsent', JSON.stringify('granted'));
-    window.google_tag_manager = {};
+    window.google_tag_manager = { 'GTM-TEST': {} };
     renderConsent('GTM-TEST');
     expect(initialize).not.toHaveBeenCalled();
+  });
+
+  it('still loads the configured container when a different one is on the page', () => {
+    localStorage.setItem('analyticsConsent', JSON.stringify('granted'));
+    window.google_tag_manager = { 'GTM-OTHER': {} };
+    const other = document.createElement('script');
+    other.src = 'https://www.googletagmanager.com/gtm.js?id=GTM-TESTX';
+    document.head.appendChild(other);
+    renderConsent('GTM-TEST');
+    expect(initialize).toHaveBeenCalledWith({ gtmId: 'GTM-TEST' });
   });
 
   it('tells a loaded container that consent was withdrawn', () => {
@@ -101,10 +112,13 @@ describe('AnalyticsConsent', () => {
 
   it('tells a container still on the page that consent was given again', () => {
     localStorage.setItem('analyticsConsent', JSON.stringify('granted'));
-    window.dataLayer = [{ event: 'gtm.js' }];
+    window.dataLayer = [];
+    const script = document.createElement('script');
+    script.src = 'https://www.googletagmanager.com/gtm.js?id=GTM-TEST';
+    document.head.appendChild(script);
     renderConsent('GTM-TEST');
     expect(initialize).not.toHaveBeenCalled();
-    expect(Array.from(window.dataLayer[1] as ArrayLike<unknown>)).toEqual([
+    expect(Array.from(window.dataLayer[0] as ArrayLike<unknown>)).toEqual([
       'consent',
       'update',
       expect.objectContaining({ analytics_storage: 'granted', ad_storage: 'granted' }),
