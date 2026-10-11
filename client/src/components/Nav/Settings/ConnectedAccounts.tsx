@@ -1,4 +1,4 @@
-import { useCallback, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { ExternalLink, Gitlab } from 'lucide-react';
 import {
   AlertDialog,
@@ -37,6 +37,9 @@ const PROVIDERS: Record<
 
 type ConnectError = 'com_ui_pr_account_connect_error' | 'com_ui_pr_account_popup_blocked';
 
+/** How long a started sign-in is watched for; the server's signed state expires after this. */
+const CONNECT_FLOW_MS = 10 * 60 * 1000;
+
 /**
  * The user's own account for pull request lookups. One row for the provider the operator
  * configured: the status, and a single action to connect or disconnect it. The action button is
@@ -46,7 +49,9 @@ export default function ConnectedAccounts() {
   const localize = useLocalize();
   const rowId = useId();
   const { data: startupConfig } = useGetStartupConfig();
-  const status = usePullRequestConnectionQuery();
+  /** A sign-in sent to the provider and not yet seen to finish. */
+  const [awaitingSignIn, setAwaitingSignIn] = useState(false);
+  const status = usePullRequestConnectionQuery({ watch: awaitingSignIn });
   const connectMutation = useConnectPullRequestAccountMutation();
   const disconnectMutation = useDisconnectPullRequestAccountMutation();
   const [confirmOpen, setConfirmOpen] = useState(false);
@@ -54,6 +59,19 @@ export default function ConnectedAccounts() {
   const [disconnectFailed, setDisconnectFailed] = useState(false);
   const actionRef = useRef<HTMLButtonElement | null>(null);
   const keepFocus = useRef(false);
+
+  const connected = status.data?.connected === true;
+  useEffect(() => {
+    if (!awaitingSignIn) {
+      return;
+    }
+    if (connected) {
+      setAwaitingSignIn(false);
+      return;
+    }
+    const timer = setTimeout(() => setAwaitingSignIn(false), CONNECT_FLOW_MS);
+    return () => clearTimeout(timer);
+  }, [awaitingSignIn, connected]);
 
   /**
    * Callback ref, so a replacement button takes focus as it mounts after an action, but only
@@ -96,6 +114,7 @@ export default function ConnectedAccounts() {
     connectMutation.mutate(undefined, {
       onSuccess: ({ url }) => {
         keepFocus.current = true;
+        setAwaitingSignIn(true);
         popup.location.href = url;
       },
       onError: () => {
@@ -140,6 +159,7 @@ export default function ConnectedAccounts() {
         type="button"
         variant="outline"
         size="sm"
+        aria-label={localize('com_ui_retry')}
         aria-busy={status.isFetching}
         onClick={retry}
       >

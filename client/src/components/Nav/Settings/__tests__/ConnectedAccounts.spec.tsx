@@ -122,6 +122,35 @@ describe('ConnectedAccounts', () => {
     expect(popup.close).not.toHaveBeenCalled();
   });
 
+  it('keeps asking while the sign-in is open, so a finish without refocus still shows', async () => {
+    const popup = fakeWindow();
+    openSpy.mockReturnValue(popup as unknown as Window);
+    mockGetConnection.mockResolvedValue(connection(false));
+    mockConnect.mockResolvedValue({ url: 'https://github.com/login/oauth/authorize?x=1' });
+    const { invalidate } = renderRow();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /com_ui_pr_account_connect_aria/ }),
+    );
+    await waitFor(() => expect(popup.location.href).not.toBe(''));
+    const before = mockGetConnection.mock.calls.length;
+    mockGetConnection.mockResolvedValue(connection(true));
+
+    expect(
+      await screen.findByRole(
+        'button',
+        { name: /com_ui_pr_account_disconnect_aria/ },
+        { timeout: 5000 },
+      ),
+    ).toBeInTheDocument();
+    expect(mockGetConnection.mock.calls.length).toBeGreaterThan(before);
+    expect(invalidate).toHaveBeenCalledWith([QueryKeys.conversationPullRequest]);
+
+    const settled = mockGetConnection.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    expect(mockGetConnection).toHaveBeenCalledTimes(settled);
+  }, 15000);
+
   it('closes the opened window and explains when the connection cannot start', async () => {
     const popup = fakeWindow();
     openSpy.mockReturnValue(popup as unknown as Window);
@@ -212,5 +241,26 @@ describe('ConnectedAccounts', () => {
       await screen.findByRole('button', { name: /com_ui_pr_account_disconnect_aria/ }),
     ).toBeInTheDocument();
     expect(mockGetConnection).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the retry button named while a failed refresh is retried', async () => {
+    mockGetConnection.mockResolvedValueOnce(connection(false));
+    const { client } = renderRow();
+    await screen.findByRole('button', { name: /com_ui_pr_account_connect_aria/ });
+
+    mockGetConnection.mockRejectedValueOnce(new Error('500'));
+    await client.refetchQueries([QueryKeys.pullRequestConnection]);
+    const retry = await screen.findByRole('button', { name: 'com_ui_retry' });
+
+    let answer: (value: TPullRequestConnection) => void = () => undefined;
+    mockGetConnection.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+    await userEvent.click(retry);
+
+    await waitFor(() => expect(retry).toHaveAttribute('aria-busy', 'true'));
+    expect(screen.getByRole('button', { name: 'com_ui_retry' })).toBe(retry);
+    answer(connection(false));
+    expect(
+      await screen.findByRole('button', { name: /com_ui_pr_account_connect_aria/ }),
+    ).toBeInTheDocument();
   });
 });
