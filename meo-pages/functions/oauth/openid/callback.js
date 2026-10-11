@@ -1,10 +1,9 @@
 import { accountUser, callbackUrl, exchangeCode } from '../../_lib/account.js';
 import {
   clearCookies,
-  cookieValue,
   seal,
   sessionCookieHeader,
-  stateCookieName,
+  stateCookieValue,
   unseal,
 } from '../../_lib/session.js';
 
@@ -28,7 +27,7 @@ export async function onRequest({ request, env }) {
   const url = new URL(request.url);
   const code = url.searchParams.get('code') ?? '';
   const state = url.searchParams.get('state') ?? '';
-  const flow = await unseal(cookieValue(request, stateCookieName), env);
+  const flow = await unseal(stateCookieValue(request), env);
   if (!code) return fail('missing_code');
   if (!state) return fail('missing_state');
   if (!flow) return fail('state_cookie_missing_or_invalid');
@@ -68,6 +67,7 @@ export async function onRequest({ request, env }) {
   if (cookie.length > 3800) return fail('session_cookie_too_large');
 
   try {
+    const [, clearStateCookie, clearLegacyStateCookie] = clearCookies();
     return new Response(null, {
       status: 302,
       headers: [
@@ -79,7 +79,8 @@ export async function onRequest({ request, env }) {
         ],
         ['Cache-Control', 'no-store'],
         ['Set-Cookie', sessionCookieHeader(cookie)],
-        ['Set-Cookie', clearCookies()[1]],
+        ['Set-Cookie', clearStateCookie],
+        ['Set-Cookie', clearLegacyStateCookie],
       ],
     });
   } catch {
