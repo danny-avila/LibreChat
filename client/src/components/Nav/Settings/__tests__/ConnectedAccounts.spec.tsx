@@ -49,12 +49,12 @@ const logger = { log: () => undefined, warn: () => undefined, error: () => undef
 const renderRow = () => {
   const client = new QueryClient({ logger, defaultOptions: { queries: { retry: false } } });
   const invalidate = jest.spyOn(client, 'invalidateQueries');
-  render(
+  const { unmount } = render(
     <QueryClientProvider client={client}>
       <ConnectedAccounts />
     </QueryClientProvider>,
   );
-  return { client, invalidate };
+  return { client, invalidate, unmount };
 };
 
 const fakeWindow = () => ({ opener: {} as unknown, location: { href: '' }, close: jest.fn() });
@@ -151,6 +151,65 @@ describe('ConnectedAccounts', () => {
     expect(mockGetConnection).toHaveBeenCalledTimes(settled);
   }, 15000);
 
+  it('stops watching when the flow the server started expires', async () => {
+    const popup = fakeWindow();
+    openSpy.mockReturnValue(popup as unknown as Window);
+    mockGetConnection.mockResolvedValue(connection(false));
+    mockConnect.mockResolvedValue({
+      url: 'https://github.com/login/oauth/authorize?x=1',
+      expiresInSeconds: 1,
+    });
+    renderRow();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /com_ui_pr_account_connect_aria/ }),
+    );
+    await waitFor(() => expect(popup.location.href).not.toBe(''));
+    const started = mockGetConnection.mock.calls.length;
+    /** Past one poll interval: a watch still running would have asked again by now. */
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    expect(mockGetConnection).toHaveBeenCalledTimes(started);
+  }, 10000);
+
+  it('still sends the window to the sign-in page when Settings closes first', async () => {
+    const popup = fakeWindow();
+    openSpy.mockReturnValue(popup as unknown as Window);
+    mockGetConnection.mockResolvedValue(connection(false));
+    let answer: (value: { url: string }) => void = () => undefined;
+    mockConnect.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+    const { unmount } = renderRow();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /com_ui_pr_account_connect_aria/ }),
+    );
+    await waitFor(() => expect(mockConnect).toHaveBeenCalledTimes(1));
+    unmount();
+    answer({ url: 'https://github.com/login/oauth/authorize?x=1' });
+
+    await waitFor(() =>
+      expect(popup.location.href).toBe('https://github.com/login/oauth/authorize?x=1'),
+    );
+    expect(popup.close).not.toHaveBeenCalled();
+  });
+
+  it('closes the window when the connection fails after Settings closed', async () => {
+    const popup = fakeWindow();
+    openSpy.mockReturnValue(popup as unknown as Window);
+    mockGetConnection.mockResolvedValue(connection(false));
+    let fail: (error: Error) => void = () => undefined;
+    mockConnect.mockReturnValueOnce(new Promise((_resolve, reject) => (fail = reject)));
+    const { unmount } = renderRow();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /com_ui_pr_account_connect_aria/ }),
+    );
+    await waitFor(() => expect(mockConnect).toHaveBeenCalledTimes(1));
+    unmount();
+    fail(new Error('500'));
+
+    await waitFor(() => expect(popup.close).toHaveBeenCalledTimes(1));
+  });
+
   it('closes the opened window and explains when the connection cannot start', async () => {
     const popup = fakeWindow();
     openSpy.mockReturnValue(popup as unknown as Window);
@@ -207,6 +266,28 @@ describe('ConnectedAccounts', () => {
     const connect = await screen.findByRole('button', { name: /com_ui_pr_account_connect_aria/ });
     expect(screen.getByRole('status')).toHaveTextContent('com_ui_pr_account_not_connected');
     await waitFor(() => expect(connect).toHaveFocus());
+  });
+
+  it('cannot be cancelled or dismissed once the disconnect is sent', async () => {
+    mockGetConnection.mockResolvedValue(connection(true));
+    let settle: () => void = () => undefined;
+    mockDisconnect.mockReturnValueOnce(new Promise<void>((resolve) => (settle = resolve)));
+    renderRow();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /com_ui_pr_account_disconnect_aria/ }),
+    );
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'com_ui_pr_account_disconnect' }),
+    );
+
+    const cancel = screen.getByRole('button', { name: 'com_ui_cancel' });
+    await waitFor(() => expect(cancel).toBeDisabled());
+    await userEvent.keyboard('{Escape}');
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+
+    settle();
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
   });
 
   it('keeps the confirmation open with an error when disconnecting fails', async () => {

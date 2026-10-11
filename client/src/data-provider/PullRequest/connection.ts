@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MutationKeys, QueryKeys, dataService } from 'librechat-data-provider';
-import type { TPullRequestConnection } from 'librechat-data-provider';
+import type { TPullRequestConnectStart, TPullRequestConnection } from 'librechat-data-provider';
 import { useGetStartupConfig } from '../Endpoints';
 
 /** How often the status is asked while a sign-in started from this window is still open. */
@@ -42,8 +42,26 @@ export const usePullRequestConnectionQuery = ({ watch = false }: { watch?: boole
 };
 
 /** Starts the provider's sign-in; the caller navigates a window it opened to the returned url. */
+/**
+ * The same status for what contains the Settings row, so an app the server no longer has hides
+ * the whole section, and a later answer that it has one again brings the section back. It shares
+ * the row's query and leaves refetching pull requests on a change to the row.
+ */
+export const usePullRequestConnectionStatus = () => {
+  const { data: startupConfig } = useGetStartupConfig();
+  return useQuery<TPullRequestConnection>(
+    [QueryKeys.pullRequestConnection],
+    () => dataService.getPullRequestConnection(),
+    {
+      enabled: startupConfig?.pullRequestsConnect != null,
+      retry: false,
+      refetchOnWindowFocus: true,
+    },
+  ).data;
+};
+
 export const useConnectPullRequestAccountMutation = () =>
-  useMutation<{ url: string }, unknown, void>({
+  useMutation<TPullRequestConnectStart, unknown, void>({
     mutationKey: [MutationKeys.connectPullRequestAccount],
     mutationFn: () => dataService.connectPullRequestAccount(),
   });

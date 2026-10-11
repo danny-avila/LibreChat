@@ -37,8 +37,8 @@ const PROVIDERS: Record<
 
 type ConnectError = 'com_ui_pr_account_connect_error' | 'com_ui_pr_account_popup_blocked';
 
-/** How long a started sign-in is watched for; the server's signed state expires after this. */
-const CONNECT_FLOW_MS = 10 * 60 * 1000;
+/** How long a started sign-in is watched for when the server does not say how long it lasts. */
+const DEFAULT_CONNECT_FLOW_SECONDS = 10 * 60;
 
 /**
  * The user's own account for pull request lookups. One row for the provider the operator
@@ -49,8 +49,9 @@ export default function ConnectedAccounts() {
   const localize = useLocalize();
   const rowId = useId();
   const { data: startupConfig } = useGetStartupConfig();
-  /** A sign-in sent to the provider and not yet seen to finish. */
-  const [awaitingSignIn, setAwaitingSignIn] = useState(false);
+  /** When a sign-in sent to the provider and not yet seen to finish stops being valid. */
+  const [awaitingUntil, setAwaitingUntil] = useState<number | null>(null);
+  const awaitingSignIn = awaitingUntil != null;
   const status = usePullRequestConnectionQuery({ watch: awaitingSignIn });
   const connectMutation = useConnectPullRequestAccountMutation();
   const disconnectMutation = useDisconnectPullRequestAccountMutation();
@@ -62,16 +63,16 @@ export default function ConnectedAccounts() {
 
   const connected = status.data?.connected === true;
   useEffect(() => {
-    if (!awaitingSignIn) {
+    if (awaitingUntil == null) {
       return;
     }
     if (connected) {
-      setAwaitingSignIn(false);
+      setAwaitingUntil(null);
       return;
     }
-    const timer = setTimeout(() => setAwaitingSignIn(false), CONNECT_FLOW_MS);
+    const timer = setTimeout(() => setAwaitingUntil(null), Math.max(0, awaitingUntil - Date.now()));
     return () => clearTimeout(timer);
-  }, [awaitingSignIn, connected]);
+  }, [awaitingUntil, connected]);
 
   /**
    * Callback ref, so a replacement button takes focus as it mounts after an action, but only
@@ -114,17 +115,21 @@ export default function ConnectedAccounts() {
       return;
     }
     popup.opener = null;
-    connectMutation.mutate(undefined, {
-      onSuccess: ({ url }) => {
-        keepFocus.current = true;
-        setAwaitingSignIn(true);
+    /**
+     * The promise, not `mutate` callbacks, so the window opened in the click is still sent to the
+     * sign-in page (or closed) when Settings is closed before the server answers.
+     */
+    connectMutation.mutateAsync().then(
+      ({ url, expiresInSeconds }) => {
         popup.location.href = url;
+        keepFocus.current = true;
+        setAwaitingUntil(Date.now() + (expiresInSeconds ?? DEFAULT_CONNECT_FLOW_SECONDS) * 1000);
       },
-      onError: () => {
+      () => {
         popup.close();
         setConnectError('com_ui_pr_account_connect_error');
       },
-    });
+    );
   };
 
   const disconnect = () => {
@@ -210,6 +215,10 @@ export default function ConnectedAccounts() {
     <AlertDialog
       open={confirmOpen}
       onOpenChange={(open) => {
+        /** A disconnect already sent cannot be taken back, so it is not dismissed mid-request. */
+        if (!open && disconnectMutation.isLoading) {
+          return;
+        }
         setConfirmOpen(open);
         setDisconnectFailed(false);
       }}
@@ -266,7 +275,7 @@ export default function ConnectedAccounts() {
         )}
         <AlertDialogFooter className="mt-2">
           <AlertDialogCancel asChild>
-            <Button type="button" variant="outline">
+            <Button type="button" variant="outline" disabled={disconnectMutation.isLoading}>
               {localize('com_ui_cancel')}
             </Button>
           </AlertDialogCancel>
