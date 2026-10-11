@@ -141,8 +141,8 @@ export function createPullRequestLookup({
     if (cached != null && cached.expiresAt > now()) return cached.result;
     const pending = inflight.get(key);
     if (pending != null) return pending;
-    /** A rate limit belongs to the credential on one host; the same token elsewhere is not limited. */
-    const limitScope = `${scope}\0${host ?? ''}`;
+    /** A rate limit belongs to the credential on one provider host; elsewhere it is not limited. */
+    const limitScope = `${scope}\0${provider ?? ''}\0${host ?? ''}`;
     const until = cooldowns.get(limitScope);
     if (until != null) {
       if (until > now()) return rateLimited;

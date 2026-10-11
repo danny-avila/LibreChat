@@ -37,7 +37,8 @@ function sourceFor(routes: Record<string, () => Response>) {
 
 const routes = (detail = mergeRequest(), overrides: Record<string, () => Response> = {}) => ({
   'state=opened': () => json(listed()),
-  'state=all': () => json([]),
+  'state=merged': () => json([]),
+  'state=closed': () => json([]),
   '/merge_requests/7': () => json(detail),
   '/api/graphql': () => json(stats()),
   ...overrides,
@@ -118,7 +119,8 @@ describe('createGitLabPullRequestSource', () => {
   ])('reports a %s merge request as %s, with no conflict state', async (state, expected) => {
     const { source } = sourceFor({
       'state=opened': () => json([]),
-      'state=all': () => json(listed({ state })),
+      'state=merged': () => json([]),
+      'state=closed': () => json(listed({ state })),
       '/merge_requests/7': () => json(mergeRequest({ state, has_conflicts: true })),
       '/api/graphql': () => json(stats()),
     });
@@ -237,20 +239,45 @@ describe('createGitLabPullRequestSource', () => {
     });
   });
 
-  it('finds a closed merge request behind a newer open fork, without a recorded commit', async () => {
-    const fork = { iid: 9, state: 'opened', sha, source_project_id: 2, target_project_id: 1 };
+  it('finds a merged merge request behind more open forks than one page holds', async () => {
+    const forks = Array.from({ length: 10 }, (_, index) => ({
+      iid: 20 + index,
+      state: 'opened',
+      sha,
+      source_project_id: 2,
+      target_project_id: 1,
+    }));
     const merged = { iid: 7, state: 'merged', sha, source_project_id: 1, target_project_id: 1 };
     const { source, fetchFn } = sourceFor({
-      'state=opened': () => json([]),
-      'state=all': () => json([fork, merged]),
+      'state=opened': () => json(forks),
+      'state=merged': () => json([merged]),
+      'state=closed': () => json([]),
       '/merge_requests/7': () => json(mergeRequest({ state: 'merged' })),
       '/api/graphql': () => json(stats()),
     });
     await expect(find(source)).resolves.toMatchObject({ number: 7, state: 'merged' });
     const history = fetchFn.mock.calls
       .map(([url]) => String(url))
-      .find((url) => url.includes('state=all'));
+      .find((url) => url.includes('state=merged'));
     expect(new URL(history ?? '').searchParams.get('per_page')).toBe('10');
+  });
+
+  it('takes the newest of the merged and closed merge requests', async () => {
+    const item = (iid: number, state: string) => ({
+      iid,
+      state,
+      sha,
+      source_project_id: 1,
+      target_project_id: 1,
+    });
+    const { source } = sourceFor({
+      'state=opened': () => json([]),
+      'state=merged': () => json([item(3, 'merged')]),
+      'state=closed': () => json([item(7, 'closed')]),
+      '/merge_requests/7': () => json(mergeRequest({ state: 'closed' })),
+      '/api/graphql': () => json(stats()),
+    });
+    await expect(find(source)).resolves.toMatchObject({ number: 7, state: 'closed' });
   });
 
   it('drops a merge request whose source branch changed after it was listed', async () => {

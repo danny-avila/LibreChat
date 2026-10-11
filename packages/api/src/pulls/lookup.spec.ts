@@ -200,6 +200,7 @@ describe('rate limit cooldown', () => {
       ok: true,
       value,
     });
+    await expect(lookup({ ...input, provider: 'gitlab' })).resolves.toEqual({ ok: true, value });
     await expect(lookup({ ...input, branch: 'other' })).resolves.toEqual(rateLimited);
   });
 
