@@ -177,16 +177,18 @@ describe('theme cache storage', () => {
  *   dark only (the other mode absent), with each enum literal, `none` in either case and each
  *   spelling of zero the role accepts as further samples;
  * - every role the resolver derives from others, found by diffing its resolved output against the
- *   bare theme and then against its other sources named together, so a source that acts only
- *   beside another joins too; each is generated with all of its sources named, with every pair of
- *   them, and with the role named as well, every named role taking its own value, so fallback
- *   precedence and opting out are covered without listing the chains by hand;
+ *   bare theme and then, until no source joins, beside each known source and beside all of them,
+ *   so a source that acts only beside another joins too; each is generated in every scope with all
+ *   of its sources named, with every pair of them, and with the role named as well, every named
+ *   role taking its own value, so fallback precedence and opting out are covered without listing
+ *   the chains by hand;
  * - every brand set theme-wide, in light and in dark with conflicting values;
- * - every pair of candidates for roles validated together;
+ * - every pair of candidates for roles validated together, theme-wide, in light only and in dark
+ *   only;
  * - definitions with one or both mode blocks absent.
  * A new role, or a new fallback, joins by construction.
  */
-const PIN = { fingerprint: '1.4.dxwdxg', digest: 'qm47cy' };
+const PIN = { fingerprint: '1.4.dxwdxg', digest: '1se7x01' };
 
 const digestOf = (text: string): string => {
   let hash = 5381;
@@ -360,8 +362,9 @@ const differs = (
 ): boolean => before.some((roles, index) => roles[key] !== after[index][key]);
 
 /**
- * Role to the roles that change it, read from the resolver: first each role named alone, then each
- * further role named beside a derived role's sources, which finds a source that only acts jointly.
+ * Role to the roles that change it, read from the resolver: first each role named alone, then, until
+ * no source joins, each further role named beside each known source and beside all of them, which
+ * finds a source that only acts jointly even when another source masks it.
  */
 function findDerived(kind: Kind): Map<string, string[]> {
   const base = resolvedRoles(kind, []);
@@ -373,12 +376,22 @@ function findDerived(kind: Kind): Map<string, string[]> {
       .forEach((key) => found.set(key, (found.get(key) ?? new Set()).add(source)));
   });
   found.forEach((sources, target) => {
-    const named = [...sources];
-    const before = resolvedRoles(kind, named);
-    TOKENS[kind]
-      .filter((token) => token !== target && !named.includes(token))
-      .filter((token) => differs(before, resolvedRoles(kind, [...named, token]), target))
-      .forEach((token) => sources.add(token));
+    let grew = true;
+    while (grew) {
+      const named = [...sources];
+      const contexts = [named, ...(named.length > 1 ? named.map((source) => [source]) : [])].map(
+        (context) => ({ context, before: resolvedRoles(kind, context) }),
+      );
+      const joined = TOKENS[kind]
+        .filter((token) => token !== target && !sources.has(token))
+        .filter((token) =>
+          contexts.some(({ context, before }) =>
+            differs(before, resolvedRoles(kind, [...context, token]), target),
+          ),
+        );
+      joined.forEach((token) => sources.add(token));
+      grew = joined.length > 0;
+    }
   });
   return new Map(
     [...found].map(([key, sources]) => [key, [...sources].sort(byCodePoint)] as [string, string[]]),
@@ -439,10 +452,12 @@ function derivedFixtures(): Fixture[] {
       const named = (tokens: string[], scope: Scope) =>
         define(target, (mode) => OVERRIDES[kind](tokens, mode), scope);
       const pairs = sources.flatMap((first, index) =>
-        sources.slice(index + 1).map((second) => ({
-          key: `derived:${kind}:${target}:pair:${first}+${second}`,
-          theme: named([first, second], 'both'),
-        })),
+        sources.slice(index + 1).flatMap((second) =>
+          SCOPES.map((scope) => ({
+            key: `derived:${kind}:${target}:pair:${first}+${second}:${scope}`,
+            theme: named([first, second], scope),
+          })),
+        ),
       );
       return [
         ...SCOPES.flatMap((scope) => [
@@ -458,13 +473,15 @@ function derivedFixtures(): Fixture[] {
   );
 }
 
-/** Every accepted pair of the jointly validated roles. */
+/** Every accepted pair of the jointly validated roles, in every scope. */
 function jointFixtures(): Fixture[] {
   return JOINTLY_VALIDATED.flatMap(([first, second]) =>
-    ACCEPTED_PAIRS[`${first}+${second}`].map(([a, b]) => ({
-      key: `joint:${first}:${a}:${second}:${b}`,
-      theme: define(first, () => ({ appearance: { [first]: a, [second]: b } }), 'both'),
-    })),
+    ACCEPTED_PAIRS[`${first}+${second}`].flatMap(([a, b]) =>
+      SCOPES.map((scope) => ({
+        key: `joint:${first}:${a}:${second}:${b}:${scope}`,
+        theme: define(first, () => ({ appearance: { [first]: a, [second]: b } }), scope),
+      })),
+    ),
   );
 }
 
@@ -542,6 +559,13 @@ describe('resolver output pin', () => {
     expect(derivedRoles().colors.get('rgb-series-8')).toEqual(
       expect.arrayContaining(['rgb-series-1', 'rgb-text-secondary']),
     );
+  });
+
+  it('generates derived fixtures the validator accepts, joint rules included', () => {
+    const rejected = derivedFixtures()
+      .filter(({ theme }) => !isValid(theme))
+      .map(({ key }) => key);
+    expect(rejected).toEqual([]);
   });
 
   it('gives roles sharing a validator distinct values', () => {
