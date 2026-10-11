@@ -231,6 +231,7 @@ function lookupInput(settings: PullRequestSettings, token: string, lane: Eligibl
     cacheMaxCredentials: settings.cacheMaxCredentials ?? 256,
     sharedCache: settings.sharedCache === true,
     sharedCacheTimeoutMs: settings.sharedCacheTimeoutMs ?? 250,
+    sharedCacheSlots: settings.sharedCacheSlots ?? 65_536,
     allowedRepositories: repositoryScope(settings),
     limits: {
       requestTimeoutMs: (settings.requestTimeoutSeconds ?? 10) * 1000,

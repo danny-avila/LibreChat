@@ -5,8 +5,26 @@ import type { cacheConfig } from './cacheConfig';
 /** The commands the store sends; the single-node and the cluster client both provide them. */
 type StoreCommands = {
   get(key: string): Promise<string | null>;
-  set(key: string, value: string, options: { PX: number }): Promise<unknown>;
+  eval(script: string, options: { keys: string[]; arguments: string[] }): Promise<unknown>;
 };
+
+/**
+ * Writes ARGV[1] for ARGV[2] ms unless the key holds a value for the same owner (ARGV[3]) with an
+ * order at least ARGV[4]. One script, so the check and the write cannot interleave with another
+ * replica's: a slower writer never replaces a newer answer, a shorter rate limit never a longer.
+ */
+const PUT_SCRIPT = `
+local held = redis.call('GET', KEYS[1])
+if held then
+  local ok, value = pcall(cjson.decode, held)
+  if ok and type(value) == 'table' and value.key == ARGV[3]
+    and tonumber(value.order) and tonumber(value.order) >= tonumber(ARGV[4]) then
+    return 0
+  end
+end
+redis.call('SET', KEYS[1], ARGV[1], 'PX', ARGV[2])
+return 1
+`;
 
 export type PullRequestStoreClient = {
   withCommandOptions(options: { timeout: number }): StoreCommands;
@@ -49,10 +67,16 @@ export function createPullRequestLookupStore({
       const raw = await client.withCommandOptions({ timeout: timeoutMs }).get(prefix + key);
       return raw == null ? undefined : JSON.parse(raw);
     },
-    set: async (key, value, ttlMs, timeoutMs) => {
-      await client
-        .withCommandOptions({ timeout: timeoutMs })
-        .set(prefix + key, JSON.stringify(value), { PX: Math.max(1, Math.ceil(ttlMs)) });
+    put: async (key, value, ttlMs, timeoutMs) => {
+      await client.withCommandOptions({ timeout: timeoutMs }).eval(PUT_SCRIPT, {
+        keys: [prefix + key],
+        arguments: [
+          JSON.stringify(value),
+          String(Math.max(1, Math.ceil(ttlMs))),
+          value.key,
+          String(value.order),
+        ],
+      });
     },
   };
 }

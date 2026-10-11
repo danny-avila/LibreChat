@@ -1152,6 +1152,7 @@ describe('agent pull request config', () => {
       batchTimeoutSeconds: 20,
       sharedCache: false,
       sharedCacheTimeoutMs: 250,
+      sharedCacheSlots: 65_536,
     });
   });
 
@@ -1269,6 +1270,9 @@ describe('agent pull request config', () => {
     ['sharedCacheTimeoutMs', 9],
     ['sharedCacheTimeoutMs', 5001],
     ['sharedCacheTimeoutMs', 1.5],
+    ['sharedCacheSlots', 63],
+    ['sharedCacheSlots', 1_000_001],
+    ['sharedCacheSlots', 1.5],
   ])('rejects %s of %s', (field, value) => {
     expect(parse({ [field]: value }).success).toBe(false);
   });
@@ -1290,6 +1294,8 @@ describe('agent pull request config', () => {
     ).toBe(true);
     expect(parse({ maxHeadComparisons: 0 }).success).toBe(true);
     expect(parse({ sharedCacheTimeoutMs: 10 }).success).toBe(true);
+    expect(parse({ sharedCacheSlots: 64 }).success).toBe(true);
+    expect(parse({ sharedCacheSlots: 1_000_000 }).success).toBe(true);
   });
 
   it.each([4, 3601, 1.5])('rejects a cache lifetime of %s seconds', (cacheTtlSeconds) => {

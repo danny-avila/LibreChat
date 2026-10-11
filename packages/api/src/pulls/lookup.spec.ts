@@ -1,5 +1,5 @@
 import type { TConversationPullRequest } from 'librechat-data-provider';
-import type { PullRequestLookupStore, PullRequestSource } from './types';
+import type { PullRequestSource, PullRequestLookupStore, PullRequestSharedValue } from './types';
 import { createPullRequestLookup } from './lookup';
 import { PullRequestSourceError } from './types';
 
@@ -475,17 +475,20 @@ describe('the repositories the credential may be used for', () => {
     expect(find).toHaveBeenCalledTimes(2);
   });
 });
-
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
 describe('the shared store', () => {
   const token = 'ghp_secret_token';
   const shared = { ...input, token, sharedCache: true };
+  const forever = Number.MAX_SAFE_INTEGER;
 
-  /** A Map with lifetimes, standing in for Redis between two replicas. */
+  /**
+   * A Map with lifetimes, standing in for Redis between replicas, with the store's write rule: a
+   * value for the same owner with an order at least as large is kept.
+   */
   function createStore(clock: () => number) {
-    const values = new Map<string, { value: unknown; until: number }>();
+    const values = new Map<string, { value: PullRequestSharedValue; until: number }>();
     const store = {
       get: jest.fn(async (key: string, _timeoutMs: number) => {
         const held = values.get(key);
@@ -493,9 +496,20 @@ describe('the shared store', () => {
           ? JSON.parse(JSON.stringify(held.value))
           : undefined;
       }),
-      set: jest.fn(async (key: string, value: unknown, ttlMs: number, _timeoutMs: number) => {
-        values.set(key, { value, until: clock() + ttlMs });
-      }),
+      put: jest.fn(
+        async (key: string, value: PullRequestSharedValue, ttlMs: number, _timeoutMs: number) => {
+          const held = values.get(key);
+          if (
+            held != null &&
+            held.until > clock() &&
+            held.value.key === value.key &&
+            held.value.order >= value.order
+          ) {
+            return;
+          }
+          values.set(key, { value, until: clock() + ttlMs });
+        },
+      ),
     };
     return { store, values };
   }
@@ -503,7 +517,17 @@ describe('the shared store', () => {
   /** Background writes settle on the next turns of the event loop. */
   const settle = () => new Promise((resolve) => setImmediate(resolve));
 
-  it("serves one replica's answer to another without asking GitHub again", async () => {
+  /** The owner digest a lookup with `shared` writes, so a planted value differs only as labelled. */
+  async function sharedKey(): Promise<string> {
+    const { store } = createStore(Date.now);
+    await createPullRequestLookup({ source: { find: jest.fn().mockResolvedValue(value) }, store })(
+      shared,
+    );
+    await settle();
+    return store.put.mock.calls[0][1].key;
+  }
+
+  it("serves one replica's answer to another without asking the provider again", async () => {
     const { store } = createStore(Date.now);
     const first = jest.fn().mockResolvedValue(value);
     const second = jest.fn().mockResolvedValue(value);
@@ -517,6 +541,20 @@ describe('the shared store', () => {
     store.get.mockClear();
     await b(shared);
     expect(store.get).not.toHaveBeenCalled();
+  });
+
+  it('shares "no pull request" as an answer too', async () => {
+    const { store } = createStore(Date.now);
+    const second = jest.fn().mockResolvedValue(value);
+    const a = createPullRequestLookup({
+      source: { find: jest.fn().mockResolvedValue(null) },
+      store,
+    });
+    const b = createPullRequestLookup({ source: { find: second }, store });
+    await a(shared);
+    await settle();
+    await expect(b(shared)).resolves.toEqual({ ok: true, value: null });
+    expect(second).not.toHaveBeenCalled();
   });
 
   it('keeps a shared answer no longer than its lifetime', async () => {
@@ -536,6 +574,25 @@ describe('the shared store', () => {
     expect(find).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    ['an upstream error', new Error('ECONNRESET')],
+    ['a source failure', new PullRequestSourceError('UPSTREAM_ERROR')],
+    ['an unconfigured source', new PullRequestSourceError('NOT_CONFIGURED')],
+  ])('never shares %s, so another replica tries the provider itself', async (_label, error) => {
+    const { store } = createStore(Date.now);
+    const find = jest.fn().mockResolvedValue(value);
+    const a = createPullRequestLookup({
+      source: { find: jest.fn().mockRejectedValue(error) },
+      store,
+    });
+    const b = createPullRequestLookup({ source: { find }, store });
+    await a(shared);
+    await settle();
+    expect(store.put).not.toHaveBeenCalled();
+    await expect(b(shared)).resolves.toEqual({ ok: true, value });
+    expect(find).toHaveBeenCalledTimes(1);
+  });
+
   it('puts every replica into the cooldown one of them was rate limited into', async () => {
     const { store } = createStore(Date.now);
     const limited = jest.fn().mockRejectedValue(new PullRequestSourceError('RATE_LIMITED', 60_000));
@@ -544,14 +601,52 @@ describe('the shared store', () => {
     const b = createPullRequestLookup({ source: { find }, store });
     await a(shared);
     await settle();
-    /** Another branch, so it is the cooldown and not a cached failure that answers. */
+    /** Another branch, so it is the cooldown and not a cached answer that answers. */
     await expect(b({ ...shared, branch: 'other' })).resolves.toEqual({
       ok: false,
       error: { code: 'RATE_LIMITED' },
     });
     expect(find).not.toHaveBeenCalled();
-    const cooldown = store.set.mock.calls.find(([key]) => key.includes('cooldown'));
+    const cooldown = store.put.mock.calls.find(([key]) => key.includes('cooldown'));
     expect(cooldown?.[2]).toBe(60_000);
+  });
+
+  it('writes a rate limit with its end, so a shorter one written later cannot end it', async () => {
+    let clock = 1_000;
+    const { store } = createStore(() => clock);
+    const long = jest.fn().mockRejectedValue(new PullRequestSourceError('RATE_LIMITED', 3_600_000));
+    const short = jest.fn().mockRejectedValue(new PullRequestSourceError('RATE_LIMITED'));
+    const a = createPullRequestLookup({ source: { find: long }, store, now: () => clock });
+    const b = createPullRequestLookup({ source: { find: short }, store, now: () => clock });
+    /** At once, so neither has seen the other's limit; the long one is written first. */
+    await Promise.all([a(shared), b({ ...shared, branch: 'other' })]);
+    await settle();
+    const ends = store.put.mock.calls
+      .filter(([key]) => key.includes('cooldown'))
+      .map(([, stored]) => stored.order);
+    expect(ends).toEqual([1_000 + 3_600_000, 1_000 + 10_000]);
+    /** Past the short limit, a third replica still sees the long one. */
+    clock += 60_000;
+    const find = jest.fn().mockResolvedValue(value);
+    const c = createPullRequestLookup({ source: { find }, store, now: () => clock });
+    await expect(c({ ...shared, branch: 'third' })).resolves.toEqual({
+      ok: false,
+      error: { code: 'RATE_LIMITED' },
+    });
+    expect(find).not.toHaveBeenCalled();
+  });
+
+  it('writes an answer with its end, so a slower replica cannot replace a newer one', async () => {
+    const clock = 0;
+    const { store } = createStore(() => clock);
+    const lookup = createPullRequestLookup({
+      source: { find: jest.fn().mockResolvedValue(value) },
+      store,
+      now: () => clock,
+    });
+    await lookup(shared);
+    await settle();
+    expect(store.put.mock.calls[0][1].order).toBe(30_000);
   });
 
   it('does not share a cooldown with lookups on another host', async () => {
@@ -565,80 +660,42 @@ describe('the shared store', () => {
     await expect(b({ ...shared, host: 'ghe.example.com' })).resolves.toEqual({ ok: true, value });
   });
 
-  it('never puts the token in a stored key or value', async () => {
+  it('finds a shared answer whatever cache capacity each caller has', async () => {
     const { store } = createStore(Date.now);
-    const find = jest
-      .fn()
-      .mockResolvedValueOnce(value)
-      .mockRejectedValueOnce(new PullRequestSourceError('RATE_LIMITED'));
-    const lookup = createPullRequestLookup({ source: { find }, store });
-    await lookup(shared);
-    await lookup({ ...shared, branch: 'b'.repeat(5_000) });
-    await settle();
-    expect(store.set).toHaveBeenCalledTimes(3);
-    for (const [key, stored] of store.set.mock.calls) {
-      expect(key).toMatch(/^pr:v1:/);
-      expect(key.length).toBeLessThan(100);
-      expect(key).not.toContain(token);
-      expect(JSON.stringify(stored)).not.toContain(token);
-    }
-  });
-
-  it('answers from GitHub when the store fails', async () => {
-    const store: PullRequestLookupStore = {
-      get: jest.fn().mockRejectedValue(new Error('ECONNREFUSED')),
-      set: jest.fn().mockRejectedValue(new Error('ECONNREFUSED')),
-    };
-    const find = jest.fn().mockResolvedValue(value);
-    const lookup = createPullRequestLookup({ source: { find }, store });
-    await expect(lookup(shared)).resolves.toEqual({ ok: true, value });
-    await settle();
-    await lookup(shared);
-    expect(find).toHaveBeenCalledTimes(1);
-  });
-
-  it('does not wait on a store that never answers for longer than its timeout', async () => {
-    const hang = () => new Promise<never>(() => undefined);
-    const store: PullRequestLookupStore = { get: jest.fn(hang), set: jest.fn(hang) };
-    const find = jest.fn().mockResolvedValue(value);
-    const lookup = createPullRequestLookup({ source: { find }, store });
-    const started = Date.now();
-    await expect(lookup({ ...shared, sharedCacheTimeoutMs: 20 })).resolves.toEqual({
-      ok: true,
-      value,
+    const second = jest.fn().mockResolvedValue(value);
+    const a = createPullRequestLookup({
+      source: { find: jest.fn().mockResolvedValue(value) },
+      store,
     });
-    expect(Date.now() - started).toBeLessThan(1_000);
-    expect(find).toHaveBeenCalledTimes(1);
+    const b = createPullRequestLookup({ source: { find: second }, store });
+    await a({ ...shared, cacheMaxEntries: 10, cacheMaxCredentials: 1 });
+    await settle();
+    await expect(
+      b({ ...shared, cacheMaxEntries: 5_000, cacheMaxCredentials: 64 }),
+    ).resolves.toEqual({ ok: true, value });
+    expect(second).not.toHaveBeenCalled();
   });
 
-  /** The key digest a lookup with `shared` writes, so a planted entry differs only as labelled. */
-  async function sharedKey(): Promise<string> {
-    const { store } = createStore(Date.now);
-    await createPullRequestLookup({ source: { find: jest.fn().mockResolvedValue(value) }, store })(
-      shared,
-    );
-    await settle();
-    return (store.set.mock.calls[0][1] as { key: string }).key;
-  }
-
-  it('holds no more results than every partition together, however many branches are looked up', async () => {
+  it('holds no more results than its slot count, however many branches are looked up', async () => {
     const { store, values } = createStore(Date.now);
-    const find = jest.fn().mockResolvedValue(value);
-    const lookup = createPullRequestLookup({ source: { find }, store });
+    const lookup = createPullRequestLookup({
+      source: { find: jest.fn().mockResolvedValue(value) },
+      store,
+    });
     for (let i = 0; i < 200; i++) {
-      await lookup({ ...shared, branch: `b${i}`, cacheMaxEntries: 10, cacheMaxCredentials: 2 });
+      await lookup({ ...shared, branch: `b${i}`, sharedCacheSlots: 20 });
     }
     await settle();
-    expect(store.set).toHaveBeenCalledTimes(200);
+    expect(store.put).toHaveBeenCalledTimes(200);
     expect(values.size).toBeLessThanOrEqual(20);
   });
 
-  it('holds one rate limit cooldown per credential slot', async () => {
+  it('holds no more rate limit cooldowns than its slot count', async () => {
     const { store, values } = createStore(Date.now);
     const limited = jest.fn().mockRejectedValue(new PullRequestSourceError('RATE_LIMITED', 60_000));
     const lookup = createPullRequestLookup({ source: { find: limited }, store });
     for (let i = 0; i < 50; i++) {
-      await lookup({ ...shared, token: `t${i}`, cacheMaxCredentials: 4 });
+      await lookup({ ...shared, token: `t${i}`, sharedCacheSlots: 4 });
     }
     await settle();
     expect([...values.keys()].filter((key) => key.includes('cooldown')).length).toBeLessThanOrEqual(
@@ -655,18 +712,63 @@ describe('the shared store', () => {
     await lookup({ ...shared, sharedCacheTimeoutMs: 75 });
     await settle();
     expect(store.get.mock.calls.every((call) => call[1] === 75)).toBe(true);
-    expect(store.set.mock.calls[0][3]).toBe(75);
+    expect(store.put.mock.calls[0][3]).toBe(75);
   });
 
-  it('serves a well-formed entry stored under its own key', async () => {
+  it('never puts the token in a stored key or value', async () => {
+    const { store } = createStore(Date.now);
+    const find = jest
+      .fn()
+      .mockResolvedValueOnce(value)
+      .mockRejectedValueOnce(new PullRequestSourceError('RATE_LIMITED'));
+    const lookup = createPullRequestLookup({ source: { find }, store });
+    await lookup(shared);
+    await lookup({ ...shared, branch: 'b'.repeat(5_000) });
+    await settle();
+    /** The answer and the cooldown; a failed lookup is never stored. */
+    expect(store.put).toHaveBeenCalledTimes(2);
+    for (const [key, stored] of store.put.mock.calls) {
+      expect(key).toMatch(/^pr:v2:/);
+      expect(key.length).toBeLessThan(100);
+      expect(key).not.toContain(token);
+      expect(JSON.stringify(stored)).not.toContain(token);
+    }
+  });
+
+  it('answers from the provider when the store fails', async () => {
+    const store: PullRequestLookupStore = {
+      get: jest.fn().mockRejectedValue(new Error('ECONNREFUSED')),
+      put: jest.fn().mockRejectedValue(new Error('ECONNREFUSED')),
+    };
+    const find = jest.fn().mockResolvedValue(value);
+    const lookup = createPullRequestLookup({ source: { find }, store });
+    await expect(lookup(shared)).resolves.toEqual({ ok: true, value });
+    await settle();
+    await lookup(shared);
+    expect(find).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not wait on a store that never answers for longer than its timeout', async () => {
+    const hang = () => new Promise<never>(() => undefined);
+    const store: PullRequestLookupStore = { get: jest.fn(hang), put: jest.fn(hang) };
+    const find = jest.fn().mockResolvedValue(value);
+    const lookup = createPullRequestLookup({ source: { find }, store });
+    const started = Date.now();
+    await expect(lookup({ ...shared, sharedCacheTimeoutMs: 20 })).resolves.toEqual({
+      ok: true,
+      value,
+    });
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(find).toHaveBeenCalledTimes(1);
+  });
+
+  it('serves a well-formed value stored under its own key', async () => {
     const key = await sharedKey();
     const store: PullRequestLookupStore = {
       get: jest.fn(async (slot: string) =>
-        slot.includes('cooldown')
-          ? undefined
-          : { result: { ok: true, value }, expiresAt: Number.MAX_SAFE_INTEGER, key },
+        slot.includes('cooldown') ? undefined : { key, order: forever, value },
       ),
-      set: jest.fn(async () => undefined),
+      put: jest.fn(async () => undefined),
     };
     const find = jest.fn().mockResolvedValue(null);
     const lookup = createPullRequestLookup({ source: { find }, store });
@@ -677,51 +779,36 @@ describe('the shared store', () => {
   it.each([
     ['nothing', undefined],
     ['a string', 'cached'],
-    [
-      'an answer for another key in the same slot',
-      { result: { ok: true, value }, expiresAt: Number.MAX_SAFE_INTEGER, key: 'other' },
-    ],
-    ['an entry without an expiry', { result: { ok: true, value } }],
-    ['an expiry that is not a number', { result: { ok: true, value }, expiresAt: 'later' }],
-    ['a result without ok', { result: { value }, expiresAt: Number.MAX_SAFE_INTEGER }],
-    [
-      'an unknown error code',
-      { result: { ok: false, error: { code: 'TEAPOT' } }, expiresAt: Number.MAX_SAFE_INTEGER },
-    ],
-    [
-      'a pull request missing fields',
-      { result: { ok: true, value: { number: 1 } }, expiresAt: Number.MAX_SAFE_INTEGER },
-    ],
+    ['an answer for another key in the same slot', { key: 'other', order: forever, value }],
+    ['a value without an order', { value }],
+    ['an order that is not a number', { order: 'later', value }],
+    ['a value that has run out', { order: 0, value }],
+    ['a value missing entirely', { order: forever }],
+    ['a pull request missing fields', { order: forever, value: { number: 1 } }],
     [
       'a pull request with an unknown state',
-      {
-        result: { ok: true, value: { ...value, state: 'draft' } },
-        expiresAt: Number.MAX_SAFE_INTEGER,
-      },
+      { order: forever, value: { ...value, state: 'draft' } },
     ],
     [
       'a pull request page that is not https',
-      {
-        result: { ok: true, value: { ...value, url: 'javascript:alert(1)' } },
-        expiresAt: Number.MAX_SAFE_INTEGER,
-      },
+      { order: forever, value: { ...value, url: 'javascript:alert(1)' } },
     ],
     [
       'a pull request from an unknown provider',
-      {
-        result: { ok: true, value: { ...value, provider: 'gitea' } },
-        expiresAt: Number.MAX_SAFE_INTEGER,
-      },
+      { order: forever, value: { ...value, provider: 'gitea' } },
     ],
-    ['an entry that has expired', { result: { ok: true, value }, expiresAt: 0 }],
+    [
+      'a stored failure from an older replica',
+      { result: { ok: false, error: { code: 'UPSTREAM_ERROR' } }, expiresAt: forever },
+    ],
   ])('ignores %s in the store', async (_label, planted) => {
     const key = await sharedKey();
     const stored = isPlainObject(planted) && !('key' in planted) ? { ...planted, key } : planted;
     const store: PullRequestLookupStore = {
       get: jest.fn(async (slot: string) =>
-        slot.includes('cooldown') ? { until: 'soon' } : stored,
+        slot.includes('cooldown') ? { key, order: 'soon' } : stored,
       ),
-      set: jest.fn(async () => undefined),
+      put: jest.fn(async () => undefined),
     };
     const find = jest.fn().mockResolvedValue(null);
     const lookup = createPullRequestLookup({ source: { find }, store });
@@ -740,7 +827,7 @@ describe('the shared store', () => {
     await lookup({ ...input, sharedCache: false, branch: 'b' });
     await settle();
     expect(store.get).not.toHaveBeenCalled();
-    expect(store.set).not.toHaveBeenCalled();
+    expect(store.put).not.toHaveBeenCalled();
   });
 
   it('serves a shared answer while this replica is cooling down', async () => {
@@ -756,7 +843,7 @@ describe('the shared store', () => {
     await cooled({ ...shared, branch: 'limited' });
     await settle();
     await expect(cooled({ ...shared, branch: 'other' })).resolves.toEqual({ ok: true, value });
-    /** Nothing stored for this branch, so the cooldown still answers without asking GitHub. */
+    /** Nothing stored for this branch, so the cooldown still answers without asking the provider. */
     await expect(cooled({ ...shared, branch: 'third' })).resolves.toEqual({
       ok: false,
       error: { code: 'RATE_LIMITED' },

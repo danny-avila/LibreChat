@@ -6,13 +6,15 @@ import {
   PULL_REQUEST_MERGEABLE,
   PULL_REQUEST_PROVIDERS,
 } from 'librechat-data-provider';
+import type { TConversationPullRequest } from 'librechat-data-provider';
 import type {
   PullRequestSource,
+  PullRequestSharedValue,
   PullRequestLookup,
   PullRequestLookupStore,
   PullRequestLookupResult,
 } from './types';
-import { PULL_REQUEST_ERROR_CODES, PullRequestSourceError } from './types';
+import { PullRequestSourceError } from './types';
 import { getSafeErrorMetadata } from '~/utils';
 
 /** A failed lookup is remembered briefly so a failing upstream is not hammered by every poll. */
@@ -26,13 +28,19 @@ const DEFAULT_MAX_ENTRIES = 500;
 const DEFAULT_MAX_PARTITIONS = 256;
 /** A shared store call slower than this is abandoned; Redis answers in single milliseconds. */
 const DEFAULT_SHARED_TIMEOUT_MS = 250;
+/** Shared store slots for results, and again for cooldowns, unless the deployment sets its own. */
+const DEFAULT_SHARED_SLOTS = 65_536;
 /** Versioned, so a change to the stored shape is a miss for replicas still on the old one. */
-const STORE_PREFIX = 'pr:v1:';
+const STORE_PREFIX = 'pr:v2:';
 
 type Entry = { result: PullRequestLookupResult; expiresAt: number };
-/** `key` is the digest of the full key, since a slot is shared by every key that maps to it. */
-type Stored = Entry & { key: string };
-type Cooldown = { key: string; until: number };
+/**
+ * What the shared store holds. `key` is the digest of the full key, since a slot is shared by every
+ * key that maps to it, and `order` is when the value runs out: the store keeps the later of two
+ * values for one key. Only a found answer is shared, never a failure: an upstream error can be this
+ * replica's own network or proxy, and another replica may well reach the provider.
+ */
+type Stored = PullRequestSharedValue & { value: TConversationPullRequest | null };
 
 /** Keys carry a digest, never the token, so no credential is held in a map key or a heap dump. */
 const scopeOf = (token: string): string =>
@@ -43,7 +51,8 @@ const digestOf = (key: string): string => createHash('sha256').update(key).diges
 /**
  * The shared store is a fixed number of slots, so it holds no more than its slot count however
  * many repositories and branches are looked up: an answer goes in the slot its key's digest picks,
- * replacing whatever was there, and a read whose slot holds another key is a miss.
+ * replacing whatever was there, and a read whose slot holds another key is a miss. The count is
+ * deployment-wide (read from the YAML only), so every caller addresses the same slot for a key.
  */
 const slotOf = (kind: 'result' | 'cooldown', digest: string, slots: number): string =>
   `${STORE_PREFIX}${kind}:${Number.parseInt(digest.slice(0, 12), 16) % slots}`;
@@ -59,14 +68,8 @@ const isTime = (value: unknown): value is number =>
 
 /** Another replica, or another version of one, wrote this; anything not shaped right is a miss. */
 function isStored(value: unknown, key: string): value is Stored {
-  if (!isRecord(value) || value.key !== key) return false;
-  if (!isTime(value.expiresAt) || !isRecord(value.result)) return false;
-  const { result } = value;
-  if (result.ok === false) {
-    return isRecord(result.error) && isOneOf(PULL_REQUEST_ERROR_CODES, result.error.code);
-  }
-  if (result.ok !== true) return false;
-  const pr = result.value;
+  if (!isRecord(value) || value.key !== key || !isTime(value.order)) return false;
+  const pr = value.value;
   if (pr === null) return true;
   return (
     isRecord(pr) &&
@@ -85,8 +88,9 @@ function isStored(value: unknown, key: string): value is Stored {
   );
 }
 
-const isCooldown = (value: unknown, key: string): value is Cooldown =>
-  isRecord(value) && value.key === key && isTime(value.until);
+/** A provider's rate limit on a credential, which holds for every replica until `order`. */
+const isCooldown = (value: unknown, key: string): value is PullRequestSharedValue =>
+  isRecord(value) && value.key === key && isTime(value.order);
 
 /**
  * Runs one shared store call, bounded by `timeoutMs`. The store is an optimization, so a failure
@@ -194,8 +198,9 @@ export function createPullRequestLookup({
     }
   }
 
+  /** A cooldown only ever extends: a shorter hint arriving later never ends a longer one early. */
   function startCooldown(scope: string, until: number): void {
-    cooldowns.set(scope, until);
+    cooldowns.set(scope, Math.max(cooldowns.get(scope) ?? 0, until));
     for (const [other, end] of cooldowns) {
       if (end <= now()) cooldowns.delete(other);
     }
@@ -205,12 +210,12 @@ export function createPullRequestLookup({
   function share(
     target: PullRequestLookupStore,
     key: string,
-    value: Stored | Cooldown,
+    value: PullRequestSharedValue,
     ttlMs: number,
     timeoutMs: number,
   ): void {
     if (ttlMs <= 0) return;
-    void bounded(() => target.set(key, value, ttlMs, timeoutMs), timeoutMs);
+    void bounded(() => target.put(key, value, ttlMs, timeoutMs), timeoutMs);
   }
 
   return async ({
@@ -228,6 +233,7 @@ export function createPullRequestLookup({
     cacheMaxCredentials,
     sharedCache,
     sharedCacheTimeoutMs = DEFAULT_SHARED_TIMEOUT_MS,
+    sharedCacheSlots = DEFAULT_SHARED_SLOTS,
   }) => {
     const scope = scopeOf(token);
     /** Everything that changes the answer or how long it may be reused is part of the key. */
@@ -268,11 +274,10 @@ export function createPullRequestLookup({
       result.ok ? ttlMs : Math.min(ttlMs, FAILURE_TTL_MS);
     const capacity = cacheMaxEntries ?? maxEntries;
     const credentials = cacheMaxCredentials ?? DEFAULT_MAX_PARTITIONS;
-    /** As many results as every replica's partitions hold together, and a cooldown per credential. */
     const resultDigest = digestOf(key);
     const cooldownDigest = digestOf(limitScope);
-    const storeKey = slotOf('result', resultDigest, capacity * credentials);
-    const cooldownKey = slotOf('cooldown', cooldownDigest, credentials);
+    const storeKey = slotOf('result', resultDigest, sharedCacheSlots);
+    const cooldownKey = slotOf('cooldown', cooldownDigest, sharedCacheSlots);
 
     const run = (async (): Promise<PullRequestLookupResult> => {
       if (shared != null) {
@@ -280,15 +285,16 @@ export function createPullRequestLookup({
           bounded(() => shared.get(storeKey, sharedCacheTimeoutMs), sharedCacheTimeoutMs),
           bounded(() => shared.get(cooldownKey, sharedCacheTimeoutMs), sharedCacheTimeoutMs),
         ]);
-        if (isStored(stored, resultDigest) && stored.expiresAt > now()) {
+        if (isStored(stored, resultDigest) && stored.order > now()) {
+          const result: PullRequestLookupResult = { ok: true, value: stored.value };
           /** Never kept longer than this replica would have kept its own answer. */
-          const expiresAt = Math.min(stored.expiresAt, now() + lifetimeOf(stored.result));
-          remember(scope, key, { result: stored.result, expiresAt }, capacity, credentials);
-          return stored.result;
+          const expiresAt = Math.min(stored.order, now() + ttlMs);
+          remember(scope, key, { result, expiresAt }, capacity, credentials);
+          return result;
         }
         if (cooling) return rateLimited;
-        if (isCooldown(cooldown, cooldownDigest) && cooldown.until > now()) {
-          startCooldown(limitScope, Math.min(cooldown.until, now() + MAX_COOLDOWN_MS));
+        if (isCooldown(cooldown, cooldownDigest) && cooldown.order > now()) {
+          startCooldown(limitScope, Math.min(cooldown.order, now() + MAX_COOLDOWN_MS));
           return rateLimited;
         }
       }
@@ -324,7 +330,7 @@ export function createPullRequestLookup({
             share(
               shared,
               cooldownKey,
-              { key: cooldownDigest, until: end },
+              { key: cooldownDigest, order: end },
               wait,
               sharedCacheTimeoutMs,
             );
@@ -335,8 +341,9 @@ export function createPullRequestLookup({
       const lifetime = lifetimeOf(result);
       const entry: Entry = { result, expiresAt: now() + lifetime };
       remember(scope, key, entry, capacity, credentials);
-      if (shared != null) {
-        share(shared, storeKey, { ...entry, key: resultDigest }, lifetime, sharedCacheTimeoutMs);
+      if (shared != null && result.ok) {
+        const stored: Stored = { key: resultDigest, order: entry.expiresAt, value: result.value };
+        share(shared, storeKey, stored, lifetime, sharedCacheTimeoutMs);
       }
       return result;
     })().finally(() => inflight.delete(flight));

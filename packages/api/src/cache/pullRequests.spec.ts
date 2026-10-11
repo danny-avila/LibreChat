@@ -16,7 +16,10 @@ function fakeClient() {
   const values = new Map<string, string>();
   const commands = {
     get: jest.fn(async (key: string) => values.get(key) ?? null),
-    set: jest.fn(async (key: string, value: string) => values.set(key, value)),
+    eval: jest.fn(async (_script: string, options: { keys: string[]; arguments: string[] }) => {
+      values.set(options.keys[0], options.arguments[0]);
+      return 1;
+    }),
   };
   const client = { withCommandOptions: jest.fn(() => commands) };
   return { client, commands, values };
@@ -51,11 +54,14 @@ describe('createPullRequestLookupStore', () => {
     const { client, commands } = fakeClient();
     const config = { ...base, REDIS_KEY_PREFIX: 'tenant' };
     const store = createPullRequestLookupStore({ client, config });
-    await store?.set('k', { until: 2 }, 5_000.4, 40);
+    await store?.put('k', { key: 'owner', order: 2 }, 5_000.4, 40);
     const key = `tenant::${CacheKeys.PULL_REQUESTS}:k`;
-    expect(commands.set).toHaveBeenCalledWith(key, '{"until":2}', { PX: 5_001 });
+    expect(commands.eval).toHaveBeenCalledWith(expect.any(String), {
+      keys: [key],
+      arguments: ['{"key":"owner","order":2}', '5001', 'owner', '2'],
+    });
     expect(client.withCommandOptions).toHaveBeenLastCalledWith({ timeout: 40 });
-    await expect(store?.get('k', 30)).resolves.toEqual({ until: 2 });
+    await expect(store?.get('k', 30)).resolves.toEqual({ key: 'owner', order: 2 });
     expect(client.withCommandOptions).toHaveBeenLastCalledWith({ timeout: 30 });
     await expect(store?.get('missing', 30)).resolves.toBeUndefined();
   });
@@ -75,11 +81,13 @@ describe('createPullRequestLookupStore', () => {
     /** Never settles: the client keeps waiting to reconnect until it is destroyed. */
     void redis.connect().catch(() => undefined);
     try {
-      const client = redis as unknown as PullRequestStoreClient;
+      /** The production client, typed as the store sees it, with no cast. */
+      const client: PullRequestStoreClient = redis;
       const store = createPullRequestLookupStore({ client, config: base });
       const started = Date.now();
       await expect(store?.get('k', 50)).rejects.toBeInstanceOf(TimeoutError);
-      await expect(store?.set('k', { until: 1 }, 1_000, 50)).rejects.toBeInstanceOf(TimeoutError);
+      const value = { key: 'owner', order: 1 };
+      await expect(store?.put('k', value, 1_000, 50)).rejects.toBeInstanceOf(TimeoutError);
       expect(Date.now() - started).toBeLessThan(2_000);
     } finally {
       redis.destroy();

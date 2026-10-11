@@ -80,16 +80,24 @@ export type PullRequestLookupInput = PullRequestFindInput & {
   sharedCache?: boolean;
   /** Longest one shared store call may take before the lookup carries on without it. */
   sharedCacheTimeoutMs?: number;
+  /** Slots the shared store spreads results over, and again cooldowns; deployment-wide. */
+  sharedCacheSlots?: number;
 };
 
+/** A value in the shared store: `key` names whose it is, `order` how recent it is. */
+export type PullRequestSharedValue = { key: string; order: number };
+
 /**
- * Storage the lookup shares with other replicas, so one answer or one rate limit from GitHub serves
- * every replica. Values must round-trip as JSON; `ttlMs` is how long the store may keep one. A call
- * still unsent at `timeoutMs` must be dropped, not left queued, and reject.
+ * Storage the lookup shares with other replicas, so one answer or one rate limit from the provider
+ * serves every replica. Values must round-trip as JSON; `ttlMs` is how long the store may keep one.
+ * A call still unsent at `timeoutMs` must be dropped, not left queued, and reject.
  */
 export type PullRequestLookupStore = {
   get(key: string, timeoutMs: number): Promise<unknown>;
-  set(key: string, value: unknown, ttlMs: number, timeoutMs: number): Promise<void>;
+  /** Stores `value` unless the slot already holds one with the same `key` and an `order` at least
+   *  as large, checked and written atomically, so a slower replica's write never replaces a newer
+   *  answer and a shorter rate limit never ends a longer one. */
+  put(key: string, value: PullRequestSharedValue, ttlMs: number, timeoutMs: number): Promise<void>;
 };
 
 export type PullRequestLookup = (input: PullRequestLookupInput) => Promise<PullRequestLookupResult>;
