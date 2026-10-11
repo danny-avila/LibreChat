@@ -1,6 +1,7 @@
 import type { PullRequestProvider } from 'librechat-data-provider';
 import type { PullRequestFetch } from './shared';
 import type { PullRequestSource } from './types';
+import { createBitbucketPullRequestSource } from './bitbucket';
 import { createGitHubPullRequestSource } from './github';
 import { createGitLabPullRequestSource } from './gitlab';
 import { PullRequestSourceError } from './types';
@@ -31,5 +32,6 @@ export function createPullRequestSource({
   return routePullRequestSources({
     github: createGitHubPullRequestSource({ fetchFn }),
     gitlab: createGitLabPullRequestSource({ fetchFn }),
+    bitbucket: createBitbucketPullRequestSource({ fetchFn }),
   });
 }
