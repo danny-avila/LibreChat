@@ -105,3 +105,58 @@ describe('openTTSCache and putTTSCache', () => {
     ).resolves.toBeUndefined();
   });
 });
+
+describe('cross-tab logout', () => {
+  type Listener = () => void;
+  const tabs: FakeChannel[] = [];
+  class FakeChannel {
+    listeners: Listener[] = [];
+    constructor(readonly name: string) {
+      tabs.push(this);
+    }
+
+    addEventListener(_type: 'message', listener: Listener) {
+      this.listeners.push(listener);
+    }
+
+    postMessage() {
+      tabs
+        .filter((tab) => tab !== this && tab.name === this.name)
+        .forEach((tab) => {
+          tab.listeners.forEach((listener) => listener());
+        });
+    }
+  }
+
+  afterEach(() => {
+    Reflect.deleteProperty(globalThis, 'BroadcastChannel');
+    Reflect.deleteProperty(globalThis, 'caches');
+  });
+
+  /** Each isolated module load is a separate tab sharing one Cache Storage. */
+  const openTab = (): typeof import('./ttscache') => {
+    let tab: typeof import('./ttscache') | undefined;
+    jest.isolateModules(() => {
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      tab = require('./ttscache') as typeof import('./ttscache');
+    });
+    return tab as typeof import('./ttscache');
+  };
+
+  it('drops a write in flight in another tab when this tab logs out', async () => {
+    Object.assign(globalThis, { BroadcastChannel: FakeChannel });
+    const put = jest.fn();
+    Object.defineProperty(globalThis, 'caches', {
+      value: { open: async () => ({ keys: async () => [], put }), delete: async () => true },
+      configurable: true,
+    });
+    const reading = openTab();
+    const leaving = openTab();
+
+    const epoch = reading.getTTSCacheEpoch();
+    await leaving.clearTTSCache();
+    await reading.putTTSCache('/tts-cache/late', {} as Response, epoch);
+
+    expect(put).not.toHaveBeenCalled();
+  });
+});

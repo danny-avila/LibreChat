@@ -61,13 +61,13 @@ if (import.meta.hot) {
  * its identity across an in-app account switch, so the account on the way out is the only place
  * that reliably sees the transition. Both are cleared together so neither can be added to an exit
  * path the other was wired into. */
-const endSessionClientState = (): void => {
+const endSessionClientState = (): Promise<void> => {
   getDefaultStore().set(resetChatFilterSessionAtom);
   getDefaultStore().set(resetFacetsAtom);
   clearRetainedFileDeletions();
   clearComposerDraftStorage();
   endPullRequestSession();
-  void clearTTSCache();
+  return clearTTSCache();
 };
 /**
  * Only recognized codes override the HTTP status used by the login error translation.
@@ -211,8 +211,13 @@ const AuthContextProvider = ({
          * axios Authorization header and deletion state synchronously to prevent in-flight requests. */
         isExternalRedirectRef.current = true;
         setTokenHeader(undefined);
-        endSessionClientState();
-        window.location.replace(data.redirect);
+        const { redirect } = data;
+        /** Unloading does not wait for Cache Storage, so the TTS cache delete settles first,
+         * bounded so a stalled storage backend cannot hold the user on the page. */
+        void Promise.race([
+          endSessionClientState(),
+          new Promise((resolve) => setTimeout(resolve, 1000)),
+        ]).then(() => window.location.replace(redirect));
         return;
       }
       endSessionClientState();

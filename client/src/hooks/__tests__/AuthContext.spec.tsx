@@ -5,7 +5,7 @@ import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { getDefaultStore } from 'jotai';
 import { MemoryRouter } from 'react-router-dom';
-import { render, act } from '@testing-library/react';
+import { render, act, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   FileSources,
@@ -477,7 +477,7 @@ describe('AuthContextProvider — logout onSuccess/onError handling', () => {
     window.history.replaceState({}, '', '/');
   });
 
-  it('calls window.location.replace and setTokenHeader(undefined) when redirect is present', () => {
+  it('calls window.location.replace and setTokenHeader(undefined) when redirect is present', async () => {
     const replaceSpy = jest.spyOn(window.location, 'replace').mockImplementation(() => {});
 
     renderProvider();
@@ -489,8 +489,35 @@ describe('AuthContextProvider — logout onSuccess/onError handling', () => {
       });
     });
 
-    expect(replaceSpy).toHaveBeenCalledWith('https://idp.example.com/logout?id_token_hint=abc');
     expect(mockSetTokenHeader).toHaveBeenCalledWith(undefined);
+    await waitFor(() =>
+      expect(replaceSpy).toHaveBeenCalledWith('https://idp.example.com/logout?id_token_hint=abc'),
+    );
+  });
+
+  it('leaves for the IdP only after the TTS cache delete settles', async () => {
+    const replaceSpy = jest.spyOn(window.location, 'replace').mockImplementation(() => {});
+    let settle: (value: boolean) => void = () => undefined;
+    const del = jest.fn(() => new Promise<boolean>((resolve) => (settle = resolve)));
+    Object.defineProperty(globalThis, 'caches', { value: { delete: del }, configurable: true });
+    renderProvider();
+
+    act(() => {
+      mockCapturedLogoutOptions.onSuccess({
+        message: 'Logout successful',
+        redirect: 'https://idp.example.com/logout?id_token_hint=abc',
+      });
+    });
+
+    expect(del).toHaveBeenCalledWith('tts-responses');
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(replaceSpy).not.toHaveBeenCalled();
+
+    settle(true);
+    await waitFor(() => expect(replaceSpy).toHaveBeenCalled());
+    Reflect.deleteProperty(globalThis, 'caches');
   });
   it('resets account-scoped chat filters at the logout session boundary', () => {
     const jotaiStore = getDefaultStore();
@@ -557,7 +584,7 @@ describe('AuthContextProvider — logout onSuccess/onError handling', () => {
     expect(replaceSpy).not.toHaveBeenCalled();
   });
 
-  it('does not trigger silentRefresh after OIDC redirect', () => {
+  it('does not trigger silentRefresh after OIDC redirect', async () => {
     const replaceSpy = jest.spyOn(window.location, 'replace').mockImplementation(() => {});
 
     renderProviderLive();
@@ -570,7 +597,7 @@ describe('AuthContextProvider — logout onSuccess/onError handling', () => {
       });
     });
 
-    expect(replaceSpy).toHaveBeenCalled();
+    await waitFor(() => expect(replaceSpy).toHaveBeenCalled());
     expect(mockRefreshMutate).not.toHaveBeenCalled();
   });
 });

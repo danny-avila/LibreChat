@@ -6,6 +6,20 @@ const TTS_CACHE_KEY = /^\/tts-cache\/[0-9a-f]{64}$/;
 /** Bumped when a session ends, so a write started before logout cannot repopulate the cache. */
 let sessionEpoch = 0;
 let legacyPurge: Promise<void> | null = null;
+let channel: BroadcastChannel | null | undefined;
+
+/** Tabs share Cache Storage but not this module, so a logout in one tab ends the epoch in every
+ *  tab that has a TTS request of its own in flight. */
+const getChannel = (): BroadcastChannel | null => {
+  if (channel !== undefined) {
+    return channel;
+  }
+  channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(TTS_CACHE_NAME);
+  channel?.addEventListener('message', () => {
+    sessionEpoch += 1;
+  });
+  return channel;
+};
 
 const toHex = (buffer: ArrayBuffer): string =>
   Array.from(new Uint8Array(buffer), (byte) => byte.toString(16).padStart(2, '0')).join('');
@@ -46,7 +60,10 @@ export async function openTTSCache(): Promise<Cache> {
   return cache;
 }
 
-export const getTTSCacheEpoch = (): number => sessionEpoch;
+export const getTTSCacheEpoch = (): number => {
+  getChannel();
+  return sessionEpoch;
+};
 
 /** Best effort: storage can be full or blocked, and that must not fail playback. Skipped when
  *  the session that requested the audio has ended since `epoch` was read. */
@@ -67,6 +84,7 @@ export async function putTTSCache(key: string, response: Response, epoch: number
 /** Deletes every cached TTS response. Safe when the Cache API is missing or rejects. */
 export async function clearTTSCache(): Promise<void> {
   sessionEpoch += 1;
+  getChannel()?.postMessage('clear');
   if (typeof caches === 'undefined') {
     return;
   }
