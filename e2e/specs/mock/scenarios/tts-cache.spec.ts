@@ -74,7 +74,7 @@ test.describe('read-aloud audio cache', () => {
       );
     }, TTS_CACHE);
     await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
-    const label = `tts ${randomUUID().slice(0, 8)}`;
+    const label = `tts-${randomUUID().slice(0, 8)}`;
     await sendMessageAndWaitForCompletion(page, replyPrompt(label));
     await expect(page.getByText(replyText(label)).first()).toBeVisible({ timeout: 20000 });
     const conversationId = new URL(page.url()).pathname.split('/c/')[1];
