@@ -217,8 +217,16 @@ export function createPullRequestConnectionHandlers(deps: {
 
 type ConnectionSettings = Parameters<typeof resolvePullRequestOAuth>[0];
 
+/** A `PullRequestUserToken` that reads only the connection settings it needs. */
+type ConnectionToken = ((
+  userId: string,
+  settings: ConnectionSettings,
+) => Promise<string | null>) & {
+  reject: (userId: string, settings: ConnectionSettings, token: string) => Promise<void>;
+};
+
 /** The lookups' view of a connection: the user's token, or none, and its invalidation. */
-export function createPullRequestUserToken(oauth: PullRequestOAuth, env: Env) {
+export function createPullRequestUserToken(oauth: PullRequestOAuth, env: Env): ConnectionToken {
   const read = async (userId: string, settings: ConnectionSettings) => {
     const config = resolvePullRequestOAuth(settings, env);
     return config == null ? null : oauth.token(userId, config);

@@ -366,9 +366,10 @@ export function createPullRequestOAuth({
       throw new MalformedGrantError();
     }
     if (parsed.clientId !== config.clientId) return null;
-    /** Unused for longer than the retention now allows: gone, and removed if still this row. */
+    /** Unused for longer than the retention now allows: gone, and removed if still this row. Awaited,
+     *  so the row is gone by the time the caller hears there is no connection. */
     if (typeof parsed.usedAt === 'number' && parsed.usedAt + retentionOf(config) * 1000 <= now()) {
-      store
+      await store
         .deleteTokens({ scope: scopeOf(userId, config), token: row.token })
         .catch((error: unknown) => {
           logger.warn(
@@ -503,7 +504,8 @@ export function createPullRequestOAuth({
     if (isLive(grant, grant.refreshToken == null ? 0 : REFRESH_SKEW_MS)) {
       if (needsRewrite(row, config) && grant.leaseUntil == null) {
         const { v: _v, ...same } = grant;
-        write(userId, config, row.token, same).catch((error: unknown) => {
+        /** Rare (past half the retention, or a shortened one), so the read waits for it. */
+        await write(userId, config, row.token, same).catch((error: unknown) => {
           logger.warn('[PullRequests] OAuth retention not extended', getSafeErrorMetadata(error));
         });
       }
