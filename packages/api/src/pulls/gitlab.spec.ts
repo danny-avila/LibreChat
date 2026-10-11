@@ -29,6 +29,8 @@ function sourceFor(routes: Record<string, () => Response>) {
   const fetchFn = jest.fn(async (input: string, _init?: RequestInit) => {
     const url = String(input);
     const key = Object.keys(routes).find((fragment) => url.includes(fragment));
+    /** Nothing is being merged unless a test says so. */
+    if (key == null && url.includes('state=locked')) return json([]);
     if (key == null) throw new Error(`unexpected ${url}`);
     return routes[key]();
   });
@@ -260,6 +262,29 @@ describe('createGitLabPullRequestSource', () => {
       .map(([url]) => String(url))
       .find((url) => url.includes('state=merged'));
     expect(new URL(history ?? '').searchParams.get('per_page')).toBe('10');
+  });
+
+  it('finds a merge request while GitLab is merging it, ahead of older history', async () => {
+    const item = (iid: number, state: string) => ({
+      iid,
+      state,
+      sha,
+      source_project_id: 1,
+      target_project_id: 1,
+    });
+    const { source, fetchFn } = sourceFor({
+      'state=opened': () => json([]),
+      'state=locked': () => json([item(9, 'locked')]),
+      'state=merged': () => json([item(3, 'merged')]),
+      'state=closed': () => json([]),
+      '/merge_requests/9': () => json(mergeRequest({ iid: 9, state: 'locked' })),
+      '/api/graphql': () => json(stats()),
+    });
+    await expect(find(source)).resolves.toMatchObject({ number: 9 });
+    const locked = fetchFn.mock.calls
+      .map(([url]) => new URL(String(url)))
+      .find((url) => url.searchParams.get('state') === 'locked');
+    expect(locked?.searchParams.get('source_branch')).toBe('feat/x');
   });
 
   it('takes the newest of the merged and closed merge requests', async () => {
