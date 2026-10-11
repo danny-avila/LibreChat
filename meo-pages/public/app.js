@@ -40,6 +40,8 @@ function el(tag, attrs = {}, children = []) {
     else if (key === 'text') node.textContent = value;
     else if (key.startsWith('on') && typeof value === 'function')
       node.addEventListener(key.slice(2).toLowerCase(), value);
+    else if (value === true) node.setAttribute(key, '');
+    else if (value === false) continue;
     else if (value !== null && value !== undefined) node.setAttribute(key, value);
   }
   for (const child of children) node.append(child);
