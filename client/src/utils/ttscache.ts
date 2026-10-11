@@ -1,6 +1,7 @@
 export const TTS_CACHE_NAME = 'tts-responses';
 
 const TTS_CACHE_PATH = '/tts-cache/';
+const TTS_CACHE_KEY = /^\/tts-cache\/[0-9a-f]{64}$/;
 
 /** Bumped when a session ends, so a write started before logout cannot repopulate the cache. */
 let sessionEpoch = 0;
@@ -33,7 +34,7 @@ export async function openTTSCache(): Promise<Cache> {
     .then((keys) =>
       Promise.all(
         keys
-          .filter((key) => !new URL(key.url).pathname.startsWith(TTS_CACHE_PATH))
+          .filter((key) => !TTS_CACHE_KEY.test(new URL(key.url).pathname))
           .map((key) => cache.delete(key)),
       ),
     )

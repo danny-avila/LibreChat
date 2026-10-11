@@ -80,6 +80,7 @@ describe('openTTSCache and putTTSCache', () => {
 
   it('drops entries keyed by raw message text and keeps hashed ones', async () => {
     entries.set('https://chat.example/a%20private%20assistant%20reply', {} as Response);
+    entries.set('https://chat.example/tts-cache/private%20reply', {} as Response);
     entries.set(`https://chat.example/tts-cache/${'a'.repeat(64)}`, {} as Response);
     await openTTSCache();
     expect(Array.from(entries.keys())).toEqual([

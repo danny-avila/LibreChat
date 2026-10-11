@@ -9,7 +9,7 @@ import {
   InfoHoverCard,
   useOnClickOutside,
 } from '@librechat/client';
-import { openTTSCache } from '~/utils';
+import { openTTSCache, clearTTSCache } from '~/utils';
 import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
 
@@ -34,8 +34,7 @@ export const DeleteCache = ({ disabled = false }: { disabled?: boolean }) => {
 
   const revokeAllUserKeys = useCallback(async () => {
     setIsLoading(true);
-    const cache = await openTTSCache();
-    await cache.keys().then((keys) => Promise.all(keys.map((key) => cache.delete(key))));
+    await clearTTSCache();
     setIsLoading(false);
   }, []);
 

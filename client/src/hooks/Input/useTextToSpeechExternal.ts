@@ -37,7 +37,8 @@ function useTextToSpeechExternal({
   const [downloadFile, setDownloadFile] = useState(false);
 
   const promiseAudioRef = useRef<HTMLAudioElement | null>(null);
-  const cacheEpochRef = useRef(getTTSCacheEpoch());
+  /** The session each request started in, so audio from before a logout is not cached. */
+  const requestEpochs = useRef(new WeakMap<FormData, number>());
 
   /* Global Audio Variables */
   const globalIsFetching = useRecoilValue(store.globalAudioFetchingFamily(index));
@@ -107,14 +108,13 @@ function useTextToSpeechExternal({
         const inputText = (variables.get('input') ?? '') as string;
         const audioBlob = new Blob([data], { type: 'audio/mpeg' });
 
-        if (cacheTTS && inputText) {
-          const cacheKey = await getTTSCacheKey(
-            inputText,
-            (variables.get('voice') ?? '') as string,
+        const epoch = requestEpochs.current.get(variables);
+        if (cacheTTS && inputText && epoch != null) {
+          /** Not awaited: caching must never delay or block playback. */
+          void getTTSCacheKey(inputText, (variables.get('voice') ?? '') as string).then(
+            (cacheKey) =>
+              cacheKey ? putTTSCache(cacheKey, new Response(audioBlob), epoch) : undefined,
           );
-          if (cacheKey) {
-            await putTTSCache(cacheKey, new Response(audioBlob), cacheEpochRef.current);
-          }
         }
 
         const blobUrl = URL.createObjectURL(audioBlob);
@@ -139,7 +139,7 @@ function useTextToSpeechExternal({
 
   const startMutation = (text: string, download: boolean) => {
     const formData = createFormData(text, voice ?? '');
-    cacheEpochRef.current = getTTSCacheEpoch();
+    requestEpochs.current.set(formData, getTTSCacheEpoch());
     setDownloadFile(download);
     processAudio(formData);
   };
