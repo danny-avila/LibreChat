@@ -68,12 +68,14 @@ test('picking SharePoint files keeps file names and tokens out of the console @s
   page,
 }) => {
   test.setTimeout(60000);
-  const logged: string[] = [];
-  page.on('console', async (message) => {
-    const args = await Promise.all(
-      message.args().map((arg) => arg.jsonValue().catch(() => '[unserializable]')),
+  const pending: Promise<string>[] = [];
+  page.on('console', (message) => {
+    const args = message.args().map((arg) => arg.jsonValue().catch(() => '[unserializable]'));
+    pending.push(
+      Promise.all(args).then((values) =>
+        [message.text(), ...values.map((value) => JSON.stringify(value))].join(' '),
+      ),
     );
-    logged.push([message.text(), ...args.map((arg) => JSON.stringify(arg))].join(' '));
   });
   await enableSharePoint(page);
 
@@ -85,8 +87,11 @@ test('picking SharePoint files keeps file names and tokens out of the console @s
     .first()
     .click();
 
-  await expect.poll(() => logged.some((text) => text.includes('download failed'))).toBe(true);
+  await expect
+    .poll(async () => (await Promise.all(pending)).some((text) => text.includes('download failed')))
+    .toBe(true);
 
+  const logged = await Promise.all(pending);
   const leaked = logged.filter((text) =>
     [SECRET_FILE_NAME, SECRET_TOKEN, DOWNLOAD_URL].some((secret) => text.includes(secret)),
   );
