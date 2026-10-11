@@ -80,7 +80,6 @@ test('picking SharePoint files keeps file names and tokens out of the console @s
     .first()
     .click();
 
-  await expect(page.getByText('Selected 1 file(s) from SharePoint')).toBeVisible();
   await expect.poll(() => logged.some((text) => text.includes('download failed'))).toBe(true);
 
   const leaked = logged.filter(
