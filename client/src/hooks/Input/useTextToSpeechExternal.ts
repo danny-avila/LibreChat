@@ -152,7 +152,10 @@ function useTextToSpeechExternal({
   };
 
   const handleCachedResponse = async (text: string, download: boolean) => {
-    const cachedResponse = await caches.match(text);
+    const cacheKey = await getTTSCacheKey(text, voice ?? '');
+    const cachedResponse = cacheKey
+      ? await caches.open(TTS_CACHE_NAME).then((cache) => cache.match(cacheKey))
+      : undefined;
     if (!cachedResponse) {
       return startMutation(text, download);
     }
