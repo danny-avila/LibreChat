@@ -467,6 +467,7 @@ export function createConversationPullRequestsHandler(deps: {
         const input = lookupInput(settings, token, lane);
         /** The same lane under the same policy is one lookup for every request that wants it. */
         const shareKey = `${scope}\0${JSON.stringify([
+          input.host,
           input.repo,
           input.branch,
           input.head,

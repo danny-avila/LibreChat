@@ -98,3 +98,16 @@ export function isPullRequestFeatureActive(
     settings?.allowAllRepositories === true || (settings?.allowedRepositories?.length ?? 0) > 0
   );
 }
+
+/**
+ * What a lane recorder needs from the settings: whether to record at all, and the host whose pull
+ * request links it keeps.
+ */
+export function resolvePullRequestRecording(
+  settings: Partial<PullRequestSettings> | null | undefined,
+  env: Env,
+): { enabled: boolean; host?: string } {
+  const enabled = isPullRequestFeatureActive(settings, env);
+  const host = enabled ? resolvePullRequestHost(settings?.host) : null;
+  return host != null ? { enabled, host } : { enabled };
+}

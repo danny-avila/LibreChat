@@ -16,9 +16,23 @@ describe('findPullRequestLink', () => {
     expect(findPullRequestLink(output, 'o/r')).toBe(8);
   });
 
-  it('finds a link on a GitHub Enterprise host, which the lookup then checks', () => {
-    expect(findPullRequestLink('https://ghe.example.com/o/r/pull/9', 'o/r')).toBe(9);
-    expect(findPullRequestLink('https://ghe.local:8443/o/r/pull/9', 'o/r')).toBe(9);
+  it('finds a link only on the configured host', () => {
+    expect(findPullRequestLink('https://ghe.example.com/o/r/pull/9', 'o/r')).toBeNull();
+    expect(
+      findPullRequestLink('https://ghe.example.com/o/r/pull/9', 'o/r', 'ghe.example.com'),
+    ).toBe(9);
+    expect(findPullRequestLink('https://GHE.local:8443/o/r/pull/9', 'o/r', 'ghe.local:8443')).toBe(
+      9,
+    );
+    expect(findPullRequestLink('https://ghe.local:443/o/r/pull/9', 'o/r', 'ghe.local')).toBe(9);
+    expect(
+      findPullRequestLink('https://github.com/o/r/pull/9', 'o/r', 'ghe.example.com'),
+    ).toBeNull();
+  });
+
+  it('keeps the last link on the configured host when another installation is linked after it', () => {
+    const output = 'https://ghe.example.com/o/r/pull/4 and https://github.com/o/r/pull/7';
+    expect(findPullRequestLink(output, 'o/r', 'ghe.example.com')).toBe(4);
   });
 
   it('finds a GitLab merge request, in a nested group too', () => {

@@ -3,6 +3,7 @@ import {
   resolvePullRequestHost,
   resolvePullRequestToken,
   isPullRequestFeatureActive,
+  resolvePullRequestRecording,
   resolvePullRequestProvider,
 } from './settings';
 
@@ -172,5 +173,33 @@ describe('isPullRequestFeatureActive', () => {
     expect(isPullRequestFeatureActive({ enabled: true, allowAllRepositories: true }, env)).toBe(
       true,
     );
+  });
+});
+
+describe('resolvePullRequestRecording', () => {
+  const env = { GITHUB_TOKEN: 't' };
+  it('records with the configured host when the feature is on', () => {
+    expect(
+      resolvePullRequestRecording({ host: 'GHE.example.com:443', allowAllRepositories: true }, env),
+    ).toEqual({ enabled: true, host: 'ghe.example.com' });
+    expect(resolvePullRequestRecording({ allowAllRepositories: true }, env)).toEqual({
+      enabled: true,
+      host: 'github.com',
+    });
+  });
+
+  it('records links on the default host of the configured provider', () => {
+    expect(
+      resolvePullRequestRecording(
+        { provider: 'gitlab', allowAllRepositories: true },
+        { GITLAB_TOKEN: 't' },
+      ),
+    ).toEqual({ enabled: true, host: 'gitlab.com' });
+  });
+
+  it('records nothing when the feature is off', () => {
+    expect(resolvePullRequestRecording({ allowAllRepositories: true }, {})).toEqual({
+      enabled: false,
+    });
   });
 });

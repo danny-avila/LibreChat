@@ -119,6 +119,12 @@ describe('createLaneGitRecorder', () => {
     );
   });
 
+  it('records only a link on the configured host', async () => {
+    const { record, setConvoLaneGit } = make({ repo: 'o/r', host: 'ghe.example.com' });
+    await record?.(laneGit, 'https://ghe.example.com/o/r/pull/5 https://github.com/o/r/pull/9');
+    expect(setConvoLaneGit).toHaveBeenCalledWith(expect.objectContaining({ pullRequest: 5 }));
+  });
+
   it.each([
     ['output without a link', 'nothing to see', 'o/r', laneGit],
     ['a link to another repository', 'https://github.com/x/y/pull/42', 'o/r', laneGit],

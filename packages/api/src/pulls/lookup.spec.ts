@@ -192,6 +192,17 @@ describe('rate limit cooldown', () => {
     });
   });
 
+  it('does not block the same credential on another host', async () => {
+    const find = jest.fn().mockRejectedValueOnce(limited(60_000)).mockResolvedValue(value);
+    const lookup = createPullRequestLookup({ source: { find } });
+    await lookup(input);
+    await expect(lookup({ ...input, host: 'ghe.example.com' })).resolves.toEqual({
+      ok: true,
+      value,
+    });
+    await expect(lookup({ ...input, branch: 'other' })).resolves.toEqual(rateLimited);
+  });
+
   it('waits at least a short floor when GitHub gives no retry time', async () => {
     let clock = 0;
     const find = jest.fn().mockRejectedValueOnce(limited()).mockResolvedValue(value);

@@ -141,10 +141,12 @@ export function createPullRequestLookup({
     if (cached != null && cached.expiresAt > now()) return cached.result;
     const pending = inflight.get(key);
     if (pending != null) return pending;
-    const until = cooldowns.get(scope);
+    /** A rate limit belongs to the credential on one host; the same token elsewhere is not limited. */
+    const limitScope = `${scope}\0${host ?? ''}`;
+    const until = cooldowns.get(limitScope);
     if (until != null) {
       if (until > now()) return rateLimited;
-      cooldowns.delete(scope);
+      cooldowns.delete(limitScope);
     }
 
     const run = (async (): Promise<PullRequestLookupResult> => {
@@ -170,7 +172,7 @@ export function createPullRequestLookup({
         }
         const code = error instanceof PullRequestSourceError ? error.code : 'UPSTREAM_ERROR';
         if (error instanceof PullRequestSourceError && error.code === 'RATE_LIMITED') {
-          startCooldown(scope, error.retryAfterMs);
+          startCooldown(limitScope, error.retryAfterMs);
         }
         result = { ok: false, error: { code } };
       }
