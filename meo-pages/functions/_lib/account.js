@@ -64,14 +64,20 @@ async function tokenRequest(env, body) {
 }
 
 export async function accountUser(env, accessToken) {
-  const response = await fetch(`${accountUrl(env)}/auth/v1/user`, {
-    headers: authHeaders(env, accessToken),
-    cache: 'no-store',
-    redirect: 'error',
+  // OAuth access tokens issued by Supabase's OAuth 2.1 server use the OIDC
+  // UserInfo endpoint. /auth/v1/user is for a normal Supabase Auth session
+  // and is not the correct post-exchange identity lookup for this client.
+  const response = await fetch(`${accountUrl(env)}/auth/v1/oauth/userinfo`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
   });
   if (!response.ok) return null;
   const user = await response.json().catch(() => null);
-  return user && typeof user.id === 'string' ? user : null;
+  if (!user || typeof user.sub !== 'string' || !user.sub) return null;
+  // Keep the internal session shape stable for existing callers while using
+  // the standards-compliant OIDC subject as the account identity.
+  return { ...user, id: user.sub };
 }
 
 export async function exchangeCode(env, code, verifier, redirectUri) {
