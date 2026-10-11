@@ -18,6 +18,7 @@ import {
   resolvePullRequestHost,
   resolvePullRequestToken,
   isPullRequestFeatureActive,
+  resolvePullRequestProvider,
 } from './settings';
 import { ALL_REPOSITORIES, isAllowedRepository } from './repository';
 import { getAppConfigOptionsFromUser } from '~/app/service';
@@ -187,9 +188,9 @@ const agentsPullRequests = (config: AppConfig): PullRequestSettings | undefined 
   (config.endpoints?.[EModelEndpoint.agents] as TAgentsEndpoint | undefined)?.pullRequests;
 
 /**
- * The user's settings, with `host` taken from the operator's YAML alone. Role, group and user
- * overrides live in the database and may be edited by delegated administrators; letting one set
- * the host would let it send the deployment's token to a server of its choosing.
+ * The user's settings, with `provider` and `host` taken from the operator's YAML alone. Role, group
+ * and user overrides live in the database and may be edited by delegated administrators; letting
+ * one choose either would let it send the deployment's token to a server of its choosing.
  */
 async function readSettings(
   getAppConfig: (options: GetAppConfigOptions) => Promise<AppConfig>,
@@ -202,9 +203,13 @@ async function readSettings(
   ]);
   const settings = agentsPullRequests(resolved);
   if (settings == null) return undefined;
-  const { host: _override, ...rest } = settings;
-  const host = agentsPullRequests(base)?.host;
-  return host != null ? { ...rest, host } : rest;
+  const { host: _host, provider: _provider, ...rest } = settings;
+  const operator = agentsPullRequests(base);
+  return {
+    ...rest,
+    ...(operator?.provider != null ? { provider: operator.provider } : {}),
+    ...(operator?.host != null ? { host: operator.host } : {}),
+  };
 }
 
 /** Everything one lookup needs from the settings, so the single and batch routes cannot differ. */
@@ -214,7 +219,12 @@ function lookupInput(settings: PullRequestSettings, token: string, lane: Eligibl
     branch: lane.branch,
     head: lane.head,
     ...(lane.pullRequest != null ? { pullRequest: lane.pullRequest } : {}),
-    host: resolvePullRequestHost(settings.host) ?? undefined,
+    provider: resolvePullRequestProvider(settings.provider) ?? undefined,
+    host:
+      resolvePullRequestHost(
+        settings.host,
+        resolvePullRequestProvider(settings.provider) ?? undefined,
+      ) ?? undefined,
     token,
     ttlMs: (settings.cacheTtlSeconds ?? 30) * 1000,
     cacheMaxEntries: settings.cacheMaxEntries ?? 500,
@@ -302,7 +312,11 @@ export function createConversationPullRequestHandler(deps: {
         return;
       }
 
-      const token = resolvePullRequestToken(settings.token, deps.env);
+      const token = resolvePullRequestToken(
+        settings.token,
+        deps.env,
+        resolvePullRequestProvider(settings.provider) ?? undefined,
+      );
       if (token == null) {
         logger.warn('[PullRequests] Enabled without a usable token reference');
         res.status(503).json({ error: 'Pull requests are not configured', code: 'NOT_CONFIGURED' });
@@ -403,7 +417,11 @@ export function createConversationPullRequestsHandler(deps: {
        * A missing token is a fact about the conversations that needed one, not about the request:
        * those entries say so, and every other conversation keeps its correct "no pull request".
        */
-      const token = resolvePullRequestToken(settings.token, deps.env);
+      const token = resolvePullRequestToken(
+        settings.token,
+        deps.env,
+        resolvePullRequestProvider(settings.provider) ?? undefined,
+      );
       if (token == null) {
         logger.warn('[PullRequests] Enabled without a usable token reference');
         res.status(200).json({

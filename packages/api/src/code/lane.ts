@@ -42,7 +42,7 @@ export type LaneContextReader = (
   codeAttachmentEpoch?: number;
 } | null>;
 
-const REPO_PATTERN = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const REPO_PATTERN = /^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+){1,19}$/;
 const MAX_REPO_LENGTH = 256;
 
 const isSafeRepo = (repo: string | undefined): repo is string =>

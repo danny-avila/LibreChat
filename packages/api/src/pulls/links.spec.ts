@@ -21,6 +21,22 @@ describe('findPullRequestLink', () => {
     expect(findPullRequestLink('https://ghe.local:8443/o/r/pull/9', 'o/r')).toBe(9);
   });
 
+  it('finds a GitLab merge request, in a nested group too', () => {
+    const output = 'View it on GitLab: https://gitlab.com/g/r/-/merge_requests/14\n';
+    expect(findPullRequestLink(output, 'g/r')).toBe(14);
+    expect(
+      findPullRequestLink('https://gitlab.example.com/g/sub/r/-/merge_requests/3', 'g/sub/r'),
+    ).toBe(3);
+  });
+
+  it('does not take a merge request of a project nested under the lane one', () => {
+    expect(findPullRequestLink('https://gitlab.com/g/r/x/-/merge_requests/3', 'g/r')).toBeNull();
+  });
+
+  it('finds a Bitbucket pull request', () => {
+    expect(findPullRequestLink('https://bitbucket.org/w/r/pull-requests/21', 'w/r')).toBe(21);
+  });
+
   it('accepts a link to a page of the pull request', () => {
     expect(findPullRequestLink('https://github.com/o/r/pull/12/files', 'o/r')).toBe(12);
   });
@@ -33,6 +49,8 @@ describe('findPullRequestLink', () => {
     ['another repository', 'https://github.com/other/r/pull/4'],
     ['a repository that only starts the same', 'https://github.com/o/r-fork/pull/4'],
     ['an issue', 'https://github.com/o/r/issues/4'],
+    ['a GitLab issue', 'https://gitlab.com/o/r/-/issues/4'],
+    ['a new merge request page', 'https://gitlab.com/o/r/-/merge_requests/new'],
     ['the page git push suggests', 'https://github.com/o/r/pull/new/feat/x'],
     ['plain http', 'http://github.com/o/r/pull/4'],
     ['a number glued to more text', 'https://github.com/o/r/pull/4abc'],

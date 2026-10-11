@@ -1,4 +1,4 @@
-import type { TConversationPullRequest } from 'librechat-data-provider';
+import type { PullRequestProvider, TConversationPullRequest } from 'librechat-data-provider';
 
 /** Stable, user-safe reasons a lookup could not answer. None carries upstream text. */
 export const PULL_REQUEST_ERROR_CODES = [
@@ -49,7 +49,9 @@ export type PullRequestFindInput = {
    * branch is searched as if no link had been seen.
    */
   pullRequest?: number | null;
-  /** The GitHub host the token belongs to, `github.com` when omitted. Already normalized. */
+  /** Which service to ask, GitHub when omitted. */
+  provider?: PullRequestProvider;
+  /** The host the token belongs to, the provider's own when omitted. Already normalized. */
   host?: string;
   token: string;
   limits?: PullRequestLookupLimits;

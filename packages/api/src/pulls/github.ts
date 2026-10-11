@@ -4,27 +4,36 @@ import type {
   PullRequestState,
   TConversationPullRequest,
 } from 'librechat-data-provider';
+import type { PullRequestFetch } from './shared';
 import type { PullRequestSource } from './types';
+import {
+  isCount,
+  isRecord,
+  COMMIT_ID,
+  isPageUrl,
+  retryAfterMs,
+  isPathSegment,
+  MAX_TITLE_LENGTH,
+  DEFAULT_LOOKUP_TIMEOUT_MS,
+  DEFAULT_REQUEST_TIMEOUT_MS,
+  DEFAULT_MAX_CANDIDATE_PAGES,
+  DEFAULT_MAX_HEAD_COMPARISONS,
+  DEFAULT_MAX_CANDIDATE_PULL_REQUESTS,
+} from './shared';
 import { isAllowedRepository } from './repository';
 import { PullRequestSourceError } from './types';
 
+export type { PullRequestFetch } from './shared';
+
 export const DEFAULT_GITHUB_HOST = 'github.com';
-/** Defaults for the operator bounds in `endpoints.agents.pullRequests`. */
-const DEFAULT_REQUEST_TIMEOUT_MS = 10_000;
-const DEFAULT_LOOKUP_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_CHECK_RUN_PAGES = 10;
 const CHECK_RUN_PAGE_SIZE = 100;
-const DEFAULT_MAX_CANDIDATE_PULL_REQUESTS = 10;
-const DEFAULT_MAX_HEAD_COMPARISONS = 3;
-const DEFAULT_MAX_CANDIDATE_PAGES = 1;
 /**
  * Comparing `recorded...candidate`: `ahead` means the candidate builds on the recorded commit and
  * `identical` that it is the recorded commit. `behind` means the candidate does not contain it
  * (the recorded commit is newer), and `diverged` that the histories split, so neither matches.
  */
 const CONTAINS_RECORDED_STATUSES = new Set(['ahead', 'identical']);
-const COMMIT_ID = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/;
-const MAX_TITLE_LENGTH = 256;
 const REPO_PATTERN = /^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/;
 const FAILING_CONCLUSIONS = new Set([
   'failure',
@@ -34,9 +43,6 @@ const FAILING_CONCLUSIONS = new Set([
   'startup_failure',
   'stale',
 ]);
-
-/** The only part of `fetch` this module calls, so any compatible client can be injected. */
-export type PullRequestFetch = (input: string, init?: RequestInit) => Promise<Response>;
 
 type GitHubPull = {
   number: number;
@@ -58,12 +64,6 @@ type GitHubPull = {
 
 type GitHubCheckRun = { status: string; conclusion: string | null };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  value != null && typeof value === 'object' && !Array.isArray(value);
-
-const isCount = (value: unknown): value is number =>
-  typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
-
 /**
  * The REST API of a GitHub host: `api.github.com` for github.com, `api.<host>` for a data residency
  * tenant on `ghe.com`, and `/api/v3` on the host itself for GitHub Enterprise Server.
@@ -74,23 +74,12 @@ export function gitHubApiBase(host: string): string {
   return `https://${host}/api/v3`;
 }
 
-/** The URL ends up in an href, so only a plain https page on the configured host is accepted. */
-function isGitHubPageUrl(value: unknown, host: string): value is string {
-  if (typeof value !== 'string') return false;
-  try {
-    const url = new URL(value);
-    return url.protocol === 'https:' && url.host === host;
-  } catch {
-    return false;
-  }
-}
-
 function parsePull(value: unknown, host: string): GitHubPull {
   if (
     !isRecord(value) ||
     !isCount(value.number) ||
     typeof value.title !== 'string' ||
-    !isGitHubPageUrl(value.html_url, host) ||
+    !isPageUrl(value.html_url, host) ||
     (value.state !== 'open' && value.state !== 'closed') ||
     typeof value.merged !== 'boolean' ||
     typeof value.draft !== 'boolean' ||
@@ -192,6 +181,7 @@ export function toConversationPullRequest(
     number: pull.number,
     title: pull.title.slice(0, MAX_TITLE_LENGTH),
     url: pull.url,
+    provider: 'github',
     additions: pull.additions,
     deletions: pull.deletions,
     state: summarizeState(pull),
@@ -229,27 +219,11 @@ async function isSecondaryLimit(response: Response): Promise<boolean> {
   }
 }
 
-/** How long GitHub asked callers to wait: `retry-after` seconds, else the quota reset time. */
-function retryAfterMs(response: Response): number | undefined {
-  const retryAfter = Number(response.headers.get('retry-after'));
-  if (response.headers.get('retry-after') != null && Number.isFinite(retryAfter)) {
-    return Math.max(0, retryAfter * 1000);
-  }
-  const reset = Number(response.headers.get('x-ratelimit-reset'));
-  if (response.headers.get('x-ratelimit-reset') != null && Number.isFinite(reset)) {
-    return Math.max(0, reset * 1000 - Date.now());
-  }
-  return undefined;
-}
-
 /**
  * Reads pull requests through GitHub's REST API with a token the caller supplies. Only the
  * decision (absent, rate limited, failed) leaves this module; response bodies and error text
  * never do.
  */
-/** `.` and `..` match the character class but would rewrite the API path. */
-const isPathSegment = (value: string): boolean => value !== '.' && value !== '..';
-
 export function createGitHubPullRequestSource({
   fetchFn,
 }: {
@@ -300,7 +274,7 @@ export function createGitHubPullRequestSource({
       }
     }
     if (isRateLimited(response)) {
-      const hinted = retryAfterMs(response);
+      const hinted = retryAfterMs(response, 'x-ratelimit-reset');
       /** A 429 that names no wait may still be a secondary limit, told apart by its message. */
       const wait =
         hinted == null && (await isSecondaryLimit(response)) ? SECONDARY_LIMIT_WAIT_MS : hinted;

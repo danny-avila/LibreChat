@@ -3,7 +3,22 @@ import {
   resolvePullRequestHost,
   resolvePullRequestToken,
   isPullRequestFeatureActive,
+  resolvePullRequestProvider,
 } from './settings';
+
+describe('resolvePullRequestProvider', () => {
+  it('is GitHub when none is configured', () => {
+    expect(resolvePullRequestProvider(undefined)).toBe('github');
+  });
+
+  it.each(['github', 'gitlab', 'bitbucket'])('accepts %s', (provider) => {
+    expect(resolvePullRequestProvider(provider)).toBe(provider);
+  });
+
+  it('refuses a provider this server does not know', () => {
+    expect(resolvePullRequestProvider('gitea')).toBeNull();
+  });
+});
 
 describe('resolvePullRequestHost', () => {
   it('is github.com when no host is configured', () => {
@@ -31,6 +46,17 @@ describe('resolvePullRequestHost', () => {
     '',
   ])('refuses %p rather than falling back to github.com', (host) => {
     expect(resolvePullRequestHost(host)).toBeNull();
+  });
+
+  it("defaults to the provider's own host", () => {
+    expect(resolvePullRequestHost(undefined, 'gitlab')).toBe('gitlab.com');
+    expect(resolvePullRequestHost(undefined, 'bitbucket')).toBe('bitbucket.org');
+    expect(resolvePullRequestHost('GitLab.Example.com', 'gitlab')).toBe('gitlab.example.com');
+  });
+
+  it('refuses any Bitbucket host but Cloud, which is all this server can read', () => {
+    expect(resolvePullRequestHost('bitbucket.example.com', 'bitbucket')).toBeNull();
+    expect(resolvePullRequestHost('Bitbucket.org', 'bitbucket')).toBe('bitbucket.org');
   });
 });
 
@@ -107,6 +133,27 @@ describe('isPullRequestFeatureActive', () => {
     expect(isPullRequestFeatureActive({ enabled: false, allowAllRepositories: true }, env)).toBe(
       false,
     );
+  });
+
+  it('falls back to the variables of the configured provider only', () => {
+    const gitlab = { provider: 'gitlab' as const, allowAllRepositories: true };
+    expect(isPullRequestFeatureActive(gitlab, { GITHUB_TOKEN: 't' })).toBe(false);
+    expect(isPullRequestFeatureActive(gitlab, { GITLAB_TOKEN: 't' })).toBe(true);
+    expect(resolvePullRequestToken(undefined, { GITLAB_TOKEN: 'g', GH_TOKEN: 'h' }, 'gitlab')).toBe(
+      'g',
+    );
+    expect(
+      resolvePullRequestToken(undefined, { BITBUCKET_PULL_REQUEST_TOKEN: 'b' }, 'bitbucket'),
+    ).toBe('b');
+  });
+
+  it('stays dormant for a provider this server does not know', () => {
+    expect(
+      isPullRequestFeatureActive(
+        { provider: 'gitea' as never, token: '${T}', allowAllRepositories: true },
+        env,
+      ),
+    ).toBe(false);
   });
 
   it('stays dormant with a host that is not a host name, so the token goes nowhere', () => {

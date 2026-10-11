@@ -20,7 +20,7 @@ const {
   createBackgroundTaskCancelHandler,
   createBackgroundTaskPolicyMiddleware,
   createConversationPullRequestHandler,
-  createGitHubPullRequestSource,
+  createPullRequestSource,
   createProxyAwareFetch,
   createPullRequestLookup,
   createConversationPullRequestsHandler,
@@ -174,7 +174,7 @@ const backgroundTaskCancelHandler = createBackgroundTaskCancelHandler({
 });
 /** One lookup, so the header's single route and the sidebar's batch route share its cache. */
 const pullRequestLookup = createPullRequestLookup({
-  source: createGitHubPullRequestSource({ fetchFn: createProxyAwareFetch() }),
+  source: createPullRequestSource({ fetchFn: createProxyAwareFetch() }),
 });
 const conversationPullRequestHandler = createConversationPullRequestHandler({
   getConvoLaneGit: db.getConvoLaneGit,

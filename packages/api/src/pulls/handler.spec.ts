@@ -90,6 +90,7 @@ describe('createConversationPullRequestHandler', () => {
       branch: 'feat/x',
       token: 'ghp_secret',
       head: null,
+      provider: 'github',
       host: 'github.com',
       ttlMs: 30_000,
       cacheMaxEntries: 500,
@@ -134,6 +135,39 @@ describe('createConversationPullRequestHandler', () => {
     );
     return lookup.mock.calls[0]?.[0]?.host;
   }
+
+  it('takes the provider from the operator config, never from a database override', async () => {
+    const lookup = jest.fn().mockResolvedValue({ ok: true, value: pr });
+    const handler = createConversationPullRequestHandler({
+      getConvoLaneGit: jest.fn().mockResolvedValue({ branch: 'feat/x', head: null, repo: 'o/r' }),
+      getAppConfig: jest
+        .fn()
+        .mockImplementation(async (options: { baseOnly?: boolean }) =>
+          configWith(options.baseOnly ? enabled : { ...enabled, provider: 'gitlab' }),
+        ),
+      lookup,
+      env: { GH_TOKEN: 'ghp_secret', GITLAB_TOKEN: 'glpat_other' },
+    });
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await handler(
+      { user: { id: 'u1' }, params: { conversationId: 'c1' } } as unknown as ServerRequest,
+      res as unknown as Response,
+    );
+    expect(lookup).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'github', host: 'github.com', token: 'ghp_secret' }),
+    );
+  });
+
+  it('looks a GitLab lane up with the GitLab token on the GitLab host', async () => {
+    const { run, lookup } = setup({
+      settings: { ...enabled, token: undefined, provider: 'gitlab' },
+      env: { GH_TOKEN: 'ghp_secret', GITLAB_TOKEN: 'glpat_secret' },
+    });
+    await run();
+    expect(lookup).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'gitlab', host: 'gitlab.com', token: 'glpat_secret' }),
+    );
+  });
 
   it('takes the host from the operator config, never from a database override', async () => {
     const override = { ...enabled, host: 'attacker.example' };

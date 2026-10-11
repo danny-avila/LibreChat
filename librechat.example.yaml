@@ -938,9 +938,15 @@ endpoints:
   #   # repositories involved, with read-only "Pull requests", "Checks" and "Contents" permissions.
   #   # Without "Checks" every matched pull request fails to load, and without "Contents" a chat
   #   # whose branch has moved on since its last command does.
+  #   # On GitLab the fallbacks are GITLAB_PULL_REQUEST_TOKEN and GITLAB_TOKEN, and the token needs
+  #   # read_api; on Bitbucket the fallback is BITBUCKET_PULL_REQUEST_TOKEN. Repositories may be
+  #   # nested GitLab group paths such as group/sub/name or group/sub/*.
   #   pullRequests:
   #     enabled: true # set false to turn the feature off
-  #     # GitHub Enterprise Server or a *.ghe.com tenant; github.com when omitted.
+  #     # github (default), gitlab, or bitbucket (Bitbucket Cloud). Read from this file only.
+  #     # provider: "gitlab"
+  #     # GitHub Enterprise Server, a *.ghe.com tenant, or a self-managed GitLab host; the
+  #     # provider's own host (github.com, gitlab.com, bitbucket.org) when omitted.
   #     # host: "github.example.com"
   #     # Environment variable reference only, never the token itself. Optional, see above.
   #     token: "${GITHUB_PULL_REQUEST_TOKEN}"

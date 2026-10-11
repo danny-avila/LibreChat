@@ -67,6 +67,7 @@ describe('createGitHubPullRequestSource', () => {
       number: 7,
       title: 'Simplify single tool',
       url: 'https://github.com/o/r/pull/7',
+      provider: 'github',
       additions: 12,
       deletions: 3,
       state: 'open',
