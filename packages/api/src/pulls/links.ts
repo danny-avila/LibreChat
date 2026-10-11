@@ -1,7 +1,6 @@
-const DEFAULT_HOST = 'github.com';
+import { resolvePullRequestHost } from './settings';
 
-/** A URL drops the https default port, as the configured host does. */
-const normalizeHost = (host: string): string => host.toLowerCase().replace(/:443$/, '');
+const DEFAULT_HOST = 'github.com';
 
 /**
  * A pull request page on any provider, ending where the number does: GitHub's
@@ -30,7 +29,7 @@ export function findPullRequestLink(
   let found: number | null = null;
   for (const match of output.matchAll(PULL_REQUEST_URL)) {
     const [, linkHost, path, digits] = match;
-    if (normalizeHost(linkHost) !== host) continue;
+    if (resolvePullRequestHost(linkHost) !== host) continue;
     if (path.toLowerCase() !== wanted) continue;
     const number = Number(digits);
     if (Number.isSafeInteger(number) && number > 0) found = number;

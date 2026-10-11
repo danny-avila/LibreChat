@@ -25,6 +25,9 @@ describe('findPullRequestLink', () => {
       9,
     );
     expect(findPullRequestLink('https://ghe.local:443/o/r/pull/9', 'o/r', 'ghe.local')).toBe(9);
+    expect(findPullRequestLink('https://ghe.local:08443/o/r/pull/9', 'o/r', 'ghe.local:8443')).toBe(
+      9,
+    );
     expect(
       findPullRequestLink('https://github.com/o/r/pull/9', 'o/r', 'ghe.example.com'),
     ).toBeNull();
