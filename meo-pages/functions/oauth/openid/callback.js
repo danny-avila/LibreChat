@@ -1,4 +1,4 @@
-import { accountUser, callbackUrl, exchangeCode } from '../../../_lib/account.js';
+import { accountUser, callbackUrl, exchangeCode } from '../../_lib/account.js';
 import {
   clearCookies,
   cookieValue,
@@ -6,7 +6,7 @@ import {
   sessionCookieHeader,
   stateCookieName,
   unseal,
-} from '../../../_lib/session.js';
+} from '../../_lib/session.js';
 
 function fail() {
   return new Response('Meo Account sign-in failed. Return to Meo AI and try again.', {
