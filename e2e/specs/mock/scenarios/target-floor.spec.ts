@@ -132,6 +132,12 @@ test.describe('target floor', () => {
           .click();
         const dialog = page.getByRole('dialog', { name: 'Delete Assistant' });
         await expect(dialog).toBeVisible();
+        /** The dialog slides in, so its frame and glyph are only comparable once it settles. */
+        await dialog.evaluate((element) =>
+          Promise.all(
+            element.getAnimations({ subtree: true }).map((animation) => animation.finished),
+          ),
+        );
 
         const close = dialog.getByRole('button', { name: 'Close' });
         const [box, glyph, frame] = await Promise.all([
