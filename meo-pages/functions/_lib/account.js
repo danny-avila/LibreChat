@@ -39,16 +39,15 @@ function safeOAuthErrorCode(value) {
 async function tokenRequest(env, body) {
   let response;
   try {
+    // Keep this request intentionally identical to Supabase's documented
+    // public-client OAuth 2.1 example. Extra RequestInit options can change
+    // edge-runtime behaviour and are unnecessary for this POST.
     response = await fetch(`${accountUrl(env)}/auth/v1/oauth/token`, {
       method: 'POST',
-      // Supabase OAuth 2.1 public clients authenticate with client_id in the
-      // form body. The token endpoint does not use the project apikey header.
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
       },
       body: new URLSearchParams(body),
-      cache: 'no-store',
-      redirect: 'error',
     });
   } catch {
     throw new OAuthTokenExchangeError('token_network_error');
