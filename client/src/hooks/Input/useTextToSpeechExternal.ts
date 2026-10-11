@@ -1,8 +1,8 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useToastContext } from '@librechat/client';
+import { putTTSCache, openTTSCache, getTTSCacheKey, getTTSCacheEpoch } from '~/utils';
 import { useTextToSpeechMutation, useVoicesQuery } from '~/data-provider';
-import { getTTSCacheKey, TTS_CACHE_NAME } from '~/utils';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
 
@@ -37,6 +37,7 @@ function useTextToSpeechExternal({
   const [downloadFile, setDownloadFile] = useState(false);
 
   const promiseAudioRef = useRef<HTMLAudioElement | null>(null);
+  const cacheEpochRef = useRef(getTTSCacheEpoch());
 
   /* Global Audio Variables */
   const globalIsFetching = useRecoilValue(store.globalAudioFetchingFamily(index));
@@ -112,8 +113,7 @@ function useTextToSpeechExternal({
             (variables.get('voice') ?? '') as string,
           );
           if (cacheKey) {
-            const cache = await caches.open(TTS_CACHE_NAME);
-            await cache.put(cacheKey, new Response(audioBlob));
+            await putTTSCache(cacheKey, new Response(audioBlob), cacheEpochRef.current);
           }
         }
 
@@ -139,6 +139,7 @@ function useTextToSpeechExternal({
 
   const startMutation = (text: string, download: boolean) => {
     const formData = createFormData(text, voice ?? '');
+    cacheEpochRef.current = getTTSCacheEpoch();
     setDownloadFile(download);
     processAudio(formData);
   };
@@ -154,7 +155,7 @@ function useTextToSpeechExternal({
   const handleCachedResponse = async (text: string, download: boolean) => {
     const cacheKey = await getTTSCacheKey(text, voice ?? '');
     const cachedResponse = cacheKey
-      ? await caches.open(TTS_CACHE_NAME).then((cache) => cache.match(cacheKey))
+      ? await openTTSCache().then((cache) => cache.match(cacheKey))
       : undefined;
     if (!cachedResponse) {
       return startMutation(text, download);

@@ -54,7 +54,7 @@ const cacheKeys = (page: Page) =>
   }, TTS_CACHE);
 
 test.describe('read-aloud audio cache', () => {
-  test('replaying a message reads its audio from a cache keyed without the message text @scenario:tts-replay-cached-under-hashed-key', async ({
+  test('replaying a message reads its audio from a cache that holds no message text @scenario:tts-replay-cached-under-hashed-key', async ({
     page,
   }) => {
     await page.addInitScript(() => {
@@ -64,7 +64,15 @@ test.describe('read-aloud audio cache', () => {
     const speech = await routeExternalSpeech(page);
 
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
-    await page.evaluate((name) => caches.delete(name), TTS_CACHE);
+    /** An entry an earlier version keyed by the raw message text. */
+    await page.evaluate(async (name) => {
+      await caches.delete(name);
+      const cache = await caches.open(name);
+      await cache.put(
+        '/E2E%20legacy%20reply%20text',
+        new Response(new Blob([new Uint8Array([1])])),
+      );
+    }, TTS_CACHE);
     await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
     const label = `tts ${randomUUID().slice(0, 8)}`;
     await sendMessageAndWaitForCompletion(page, replyPrompt(label));

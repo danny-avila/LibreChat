@@ -2,6 +2,10 @@ export const TTS_CACHE_NAME = 'tts-responses';
 
 const TTS_CACHE_PATH = '/tts-cache/';
 
+/** Bumped when a session ends, so a write started before logout cannot repopulate the cache. */
+let sessionEpoch = 0;
+let legacyPurge: Promise<void> | null = null;
+
 const toHex = (buffer: ArrayBuffer): string =>
   Array.from(new Uint8Array(buffer), (byte) => byte.toString(16).padStart(2, '0')).join('');
 
@@ -20,8 +24,48 @@ export async function getTTSCacheKey(text: string, voice?: string | null): Promi
   }
 }
 
+/** Opens the TTS cache. The first open per page load drops entries that earlier versions
+ *  keyed by the raw message text. */
+export async function openTTSCache(): Promise<Cache> {
+  const cache = await caches.open(TTS_CACHE_NAME);
+  legacyPurge ??= cache
+    .keys()
+    .then((keys) =>
+      Promise.all(
+        keys
+          .filter((key) => !new URL(key.url).pathname.startsWith(TTS_CACHE_PATH))
+          .map((key) => cache.delete(key)),
+      ),
+    )
+    .then(
+      () => undefined,
+      () => undefined,
+    );
+  await legacyPurge;
+  return cache;
+}
+
+export const getTTSCacheEpoch = (): number => sessionEpoch;
+
+/** Best effort: storage can be full or blocked, and that must not fail playback. Skipped when
+ *  the session that requested the audio has ended since `epoch` was read. */
+export async function putTTSCache(key: string, response: Response, epoch: number): Promise<void> {
+  if (epoch !== sessionEpoch) {
+    return;
+  }
+  try {
+    const cache = await openTTSCache();
+    if (epoch === sessionEpoch) {
+      await cache.put(key, response);
+    }
+  } catch {
+    /** Caching is an optimization; the audio has already been delivered. */
+  }
+}
+
 /** Deletes every cached TTS response. Safe when the Cache API is missing or rejects. */
 export async function clearTTSCache(): Promise<void> {
+  sessionEpoch += 1;
   if (typeof caches === 'undefined') {
     return;
   }
