@@ -1115,6 +1115,38 @@ describe('createConversationPullRequestsHandler', () => {
       expect(hosts).toEqual(['github.com', 'ghe.example.com']);
     });
 
+    it('does not join a lookup started for another provider on the same host', async () => {
+      const providers: Array<string | undefined> = [];
+      const lookup = jest.fn(
+        (input: { provider?: string }) =>
+          new Promise(() => {
+            providers.push(input.provider);
+          }),
+      );
+      const settings = { ...enabled, host: 'git.example.com', batchTimeoutSeconds: 1 };
+      const getAppConfig = jest
+        .fn()
+        .mockResolvedValueOnce(configWith(settings))
+        .mockResolvedValueOnce(configWith(settings))
+        .mockResolvedValue(configWith({ ...settings, provider: 'gitlab' as const }));
+      const handler = createConversationPullRequestsHandler({
+        getConvosLaneGit: jest.fn(async () => [lane('a', 'o/r', 'feat/shared')]),
+        getAppConfig,
+        lookup: lookup as never,
+        env: { GH_TOKEN: 'ghp_secret' },
+      });
+      const call = () =>
+        handler(
+          { user: { id: 'u1' }, body: { conversationIds: ['a'] } } as unknown as ServerRequest,
+          { status: jest.fn().mockReturnThis(), json: jest.fn() } as unknown as Response,
+        );
+      void call();
+      await flush();
+      void call();
+      await flush();
+      expect(providers).toEqual(['github', 'gitlab']);
+    });
+
     it('gives every conversation on a shared branch the same failure when that lookup fails', async () => {
       const lookup = jest
         .fn()

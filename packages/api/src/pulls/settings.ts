@@ -108,6 +108,8 @@ export function resolvePullRequestRecording(
   env: Env,
 ): { enabled: boolean; host?: string } {
   const enabled = isPullRequestFeatureActive(settings, env);
-  const host = enabled ? resolvePullRequestHost(settings?.host) : null;
+  const provider = resolvePullRequestProvider(settings?.provider);
+  const host =
+    enabled && provider != null ? resolvePullRequestHost(settings?.host, provider) : null;
   return host != null ? { enabled, host } : { enabled };
 }

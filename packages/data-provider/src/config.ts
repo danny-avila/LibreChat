@@ -113,9 +113,12 @@ export const BASE_ONLY_CONFIG_SECTIONS = ['filters', 'mcpAppSandbox'] as const;
  * not be overridden or tombstoned by role, group, or user config documents. */
 export const BASE_PRINCIPAL_CONFIG_SECTIONS = ['langfuse'] as const;
 /** Fields inside overridable sections that only the operator's YAML sets: a role, group, user
- * or tenant config document can neither change nor remove them. The pull request host decides
- * where the deployment's token is sent. */
-export const BASE_ONLY_CONFIG_PATHS = ['endpoints.agents.pullRequests.host'] as const;
+ * or tenant config document can neither change nor remove them. The pull request provider and
+ * host decide where the deployment's token is sent. */
+export const BASE_ONLY_CONFIG_PATHS = [
+  'endpoints.agents.pullRequests.provider',
+  'endpoints.agents.pullRequests.host',
+] as const;
 
 export const defaultRetrievalModels = [
   'gpt-4o',

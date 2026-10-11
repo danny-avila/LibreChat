@@ -163,6 +163,11 @@ describe('mergeConfigOverrides', () => {
     ]);
     expect(changed).toMatchObject({ host: 'ghe.example.com', cacheTtlSeconds: 60 });
 
+    const provider = read([
+      fakeConfig({ endpoints: { agents: { pullRequests: { provider: 'gitlab' } } } }, 10),
+    ]);
+    expect(provider.provider).toBeUndefined();
+
     const removed = read([fakeConfig({}, 10, ['endpoints.agents.pullRequests.host'])]);
     expect(removed.host).toBe('ghe.example.com');
 
