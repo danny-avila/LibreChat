@@ -85,6 +85,9 @@ export type PullRequestOAuthConfig = {
   clientId: string;
   clientSecret: string;
   scope?: string;
+  flowTimeoutMinutes?: number;
+  requestTimeoutSeconds?: number;
+  retentionDays?: number;
 };
 
 /**
@@ -104,7 +107,17 @@ export function resolvePullRequestOAuth(
   const clientSecret = resolveTokenReference(oauth.clientSecret, env);
   if (host == null || clientId == null || clientSecret == null) return null;
   const scope = oauth.scope?.trim();
-  return { provider, host, clientId, clientSecret, ...(scope ? { scope } : {}) };
+  const { flowTimeoutMinutes, requestTimeoutSeconds, retentionDays } = oauth;
+  return {
+    provider,
+    host,
+    clientId,
+    clientSecret,
+    ...(scope ? { scope } : {}),
+    ...(flowTimeoutMinutes != null ? { flowTimeoutMinutes } : {}),
+    ...(requestTimeoutSeconds != null ? { requestTimeoutSeconds } : {}),
+    ...(retentionDays != null ? { retentionDays } : {}),
+  };
 }
 
 /**

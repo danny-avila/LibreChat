@@ -2,8 +2,12 @@ import { getTenantId, tenantStorage } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import type { PullRequestOAuth, PullRequestOAuthState } from './oauth';
 import type { ServerRequest } from '~/types';
+import {
+  createPullRequestUserToken,
+  createPullRequestConnectionRouter,
+  createPullRequestConnectionHandlers,
+} from './connect';
 import { generateOAuthCsrfToken, OAUTH_CSRF_COOKIE, OAUTH_SESSION_COOKIE } from '~/oauth/csrf';
-import { createPullRequestConnectionHandlers, createPullRequestUserToken } from './connect';
 
 const env = {
   JWT_SECRET: 'jwt-secret',
@@ -100,6 +104,21 @@ describe('connect', () => {
     const { handlers, res } = setup({ settings: { allowedRepositories: ['o/r'] } });
     await handlers.connect(signedIn(), asRes(res));
     expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'NOT_CONFIGURED' }));
+  });
+
+  it('answers a failure with a stable code, never the cause', async () => {
+    const { handlers, res } = setup({
+      oauth: makeOAuth({
+        authorizationUrl: jest.fn(() => {
+          throw new Error('mongodb://secret@host');
+        }),
+      }),
+    });
+    await handlers.connect(signedIn(), asRes(res));
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'CONNECT_FAILED' }));
+    expect(JSON.stringify(res.json.mock.calls)).not.toContain('secret@host');
   });
 
   it('takes the app from the operator config, never from a database override', async () => {
@@ -236,11 +255,61 @@ describe('status and disconnect', () => {
   it('removes the connection', async () => {
     const { handlers, oauth, res } = setup();
     await handlers.disconnect(signedIn(), asRes(res));
-    expect(oauth.disconnect).toHaveBeenCalledWith(
-      'u1',
-      expect.objectContaining({ provider: 'github' }),
-    );
+    expect(oauth.disconnect).toHaveBeenCalledWith('u1');
     expect(res.status).toHaveBeenCalledWith(204);
+  });
+
+  it('removes the connection after the app was turned off', async () => {
+    const { handlers, oauth, res } = setup({ settings: { allowedRepositories: ['o/r'] } });
+    await handlers.disconnect(signedIn(), asRes(res));
+    expect(oauth.disconnect).toHaveBeenCalledWith('u1');
+    expect(res.status).toHaveBeenCalledWith(204);
+  });
+
+  it('answers a status or disconnect failure with a stable code', async () => {
+    const failing = makeOAuth({
+      connected: jest.fn(async () => {
+        throw new Error('key unavailable');
+      }),
+      disconnect: jest.fn(async () => {
+        throw new Error('db down');
+      }),
+    });
+    const { handlers, res } = setup({ oauth: failing });
+    await handlers.status(signedIn(), asRes(res));
+    expect(res.json).toHaveBeenLastCalledWith(expect.objectContaining({ code: 'STATUS_FAILED' }));
+    await handlers.disconnect(signedIn(), asRes(res));
+    expect(res.json).toHaveBeenLastCalledWith(
+      expect.objectContaining({ code: 'DISCONNECT_FAILED' }),
+    );
+  });
+});
+
+describe('createPullRequestConnectionRouter', () => {
+  const routesOf = (router: { stack: Array<{ route?: { path: string; methods: object } }> }) =>
+    router.stack.flatMap((layer) =>
+      layer.route ? Object.keys(layer.route.methods).map((m) => `${m} ${layer.route!.path}`) : [],
+    );
+  const deps = {
+    store: { findToken: jest.fn(), replaceTokenIfCurrent: jest.fn(), deleteTokens: jest.fn() },
+    fetchFn: jest.fn(),
+    getAppConfig: jest.fn(),
+    requireJwtAuth: jest.fn(),
+  };
+
+  it('registers the connection routes when states can be signed', () => {
+    const router = createPullRequestConnectionRouter({ ...deps, env });
+    expect(routesOf(router as never)).toEqual([
+      'get /oauth/callback',
+      'get /oauth/connect',
+      'get /oauth/status',
+      'delete /oauth',
+    ]);
+  });
+
+  it('registers nothing without a signing secret', () => {
+    const router = createPullRequestConnectionRouter({ ...deps, env: {} });
+    expect(routesOf(router as never)).toEqual([]);
   });
 });
 

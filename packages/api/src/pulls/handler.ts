@@ -177,8 +177,9 @@ type Credential = { token: string; repositories: readonly string[] };
 function credentialOf(
   settings: PullRequestSettings,
   env: Readonly<Record<string, string | undefined>>,
-  userToken: string | null,
+  userToken: UserTokenRead,
 ): Credential | null {
+  if (userToken === USER_TOKEN_FAILED) return null;
   if (userToken != null) return { token: userToken, repositories: ALL_REPOSITORIES };
   const token = resolvePullRequestToken(
     settings.token,
@@ -188,23 +189,29 @@ function credentialOf(
   return token == null ? null : { token, repositories: repositoryScope(settings) };
 }
 
-/** Reads the user's own token, or none: a failed read falls back to the server's token. */
+/** Reads the user's own token, or null when the user has not connected an account. */
 export type PullRequestUserToken = (
   userId: string,
   settings: PullRequestSettings,
 ) => Promise<string | null>;
 
+/** A connected account whose token could not be read or refreshed (the provider or the key store
+ *  is down). That is an outage, answered as one: neither "no pull request" nor the server's token,
+ *  which may see less than the user's own. */
+const USER_TOKEN_FAILED = Symbol('user token failed');
+type UserTokenRead = string | null | typeof USER_TOKEN_FAILED;
+
 async function readUserToken(
   userToken: PullRequestUserToken | undefined,
   userId: string,
   settings: PullRequestSettings | undefined,
-): Promise<string | null> {
+): Promise<UserTokenRead> {
   if (userToken == null || settings == null) return null;
   try {
     return await userToken(userId, settings);
   } catch (error) {
     logger.warn('[PullRequests] User token unavailable', getSafeErrorMetadata(error));
-    return null;
+    return USER_TOKEN_FAILED;
   }
 }
 
@@ -354,6 +361,12 @@ export function createConversationPullRequestHandler(deps: {
       }
 
       const credential = credentialOf(settings, deps.env, userToken);
+      if (userToken === USER_TOKEN_FAILED) {
+        res
+          .status(503)
+          .json({ error: 'Pull request lookup is unavailable', code: 'UPSTREAM_ERROR' });
+        return;
+      }
       /** Users can connect their own account and this one has not: nothing to look up with. */
       if (credential == null && resolvePullRequestOAuth(settings, deps.env) != null) {
         res.status(200).json(NONE);
@@ -465,15 +478,25 @@ export function createConversationPullRequestsHandler(deps: {
       }
       const [lanes, userToken] = reads;
       const credential = credentialOf(settings, deps.env, userToken);
+      const userTokenFailed = userToken === USER_TOKEN_FAILED;
       /** Users can connect their own account and this one has not: nothing to look up with. */
-      if (credential == null && resolvePullRequestOAuth(settings, deps.env) != null) {
+      if (
+        credential == null &&
+        !userTokenFailed &&
+        resolvePullRequestOAuth(settings, deps.env) != null
+      ) {
         res.status(200).json(none());
         return;
       }
 
+      /** The repositories the missing credential would have been used for: every one, for a
+       *  user's own token that failed to load. */
+      const repositories =
+        credential?.repositories ??
+        (userTokenFailed ? ALL_REPOSITORIES : repositoryScope(settings));
       const eligible = new Map<string, EligibleLane>();
       for (const { conversationId, laneGit } of lanes) {
-        const lane = eligibleLane(laneGit, credential?.repositories ?? repositoryScope(settings));
+        const lane = eligibleLane(laneGit, repositories);
         if (lane != null) eligible.set(conversationId, lane);
       }
       if (eligible.size === 0) {
@@ -486,12 +509,14 @@ export function createConversationPullRequestsHandler(deps: {
        * those entries say so, and every other conversation keeps its correct "no pull request".
        */
       if (credential == null) {
-        logger.warn('[PullRequests] Enabled without a usable token reference');
+        if (!userTokenFailed)
+          logger.warn('[PullRequests] Enabled without a usable token reference');
+        const code = userTokenFailed ? 'UPSTREAM_ERROR' : 'NOT_CONFIGURED';
         res.status(200).json({
           results: ids.map(
             (conversationId): TConversationPullRequestsEntry =>
               eligible.has(conversationId)
-                ? { conversationId, error: { code: 'NOT_CONFIGURED' } }
+                ? { conversationId, error: { code } }
                 : { conversationId, pullRequest: null },
           ),
         });

@@ -1937,6 +1937,12 @@ export const agentsEndpointSchema = baseEndpointSchema
                 .max(256)
                 .regex(/^[A-Za-z0-9_:.\- ]*$/)
                 .optional(),
+              /** Minutes a user may take to approve the connection at the provider. Default 10. */
+              flowTimeoutMinutes: z.number().int().min(1).max(60).optional(),
+              /** Seconds a code exchange or token refresh may take. Default 10. */
+              requestTimeoutSeconds: z.number().int().min(1).max(60).optional(),
+              /** Days a connection is kept without being used; every use extends it. Default 180. */
+              retentionDays: z.number().int().min(1).max(3650).optional(),
             })
             .optional(),
           /** Repositories the token may be used for, as `owner/name` or `owner/*`. A worker reports

@@ -287,20 +287,63 @@ describe('token', () => {
     await expect(oauth.connected(user, gitlab)).resolves.toBe(false);
   });
 
-  it('keeps the connection when the provider cannot be reached, and answers none for now', async () => {
+  it.each([
+    ['an empty server error', () => new Response('', { status: 503 })],
+    [
+      'a server error with an OAuth error body',
+      () => json({ error: 'temporarily_unavailable' }, { status: 503 }),
+    ],
+  ])('keeps the connection and reports the outage on %s', async (_name, outage) => {
     let clock = 1_000_000;
     const { oauth } = setup(
-      [
-        () => json({ access_token: 'a1', refresh_token: 'r1', expires_in: 60 }),
-        () => new Response('', { status: 503 }),
-      ],
+      [() => json({ access_token: 'a1', refresh_token: 'r1', expires_in: 60 }), outage],
       () => clock,
     );
     const user = userId();
     await connect(oauth, user, gitlab);
     clock += 120 * 1000;
-    await expect(oauth.token(user, gitlab)).resolves.toBeNull();
+    await expect(oauth.token(user, gitlab)).rejects.toThrow('Token endpoint answered 503');
     await expect(oauth.connected(user, gitlab)).resolves.toBe(true);
+  });
+
+  it('gives up on a token endpoint slower than the configured request timeout', async () => {
+    const fetchFn = jest.fn(
+      (_input: string, init?: RequestInit) =>
+        new Promise<Response>((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => reject(init.signal?.reason));
+        }),
+    );
+    const oauth = createPullRequestOAuth({ store, fetchFn, secret, redirectUri, encrypt, decrypt });
+    const { url } = oauth.authorizationUrl({ id: userId() }, github);
+    const claims = oauth.verifyState(new URL(url).searchParams.get('state') ?? '');
+    const started = Date.now();
+    await expect(
+      oauth.complete(claims!, 'the-code', { ...github, requestTimeoutSeconds: 1 }),
+    ).rejects.toThrow();
+    expect(Date.now() - started).toBeLessThan(5_000);
+  });
+
+  it('extends a grant that never expires each time it is used past half its retention', async () => {
+    const { oauth } = setup([() => json({ access_token: 'forever' })]);
+    const user = userId();
+    const config = { ...github, retentionDays: 10 };
+    await connect(oauth, user, config);
+    const tokens = mongoose.connection.db!.collection('tokens');
+    const first = (await tokens.findOne({}))!.expiresAt as Date;
+    expect(first.getTime() - Date.now()).toBeGreaterThan(9.9 * 86_400_000);
+
+    /** Used early: nothing to extend. */
+    await expect(oauth.token(user, config)).resolves.toBe('forever');
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(((await tokens.findOne({}))!.expiresAt as Date).getTime()).toBe(first.getTime());
+
+    /** Six days in, the row would go in four: using it starts the retention again. */
+    await tokens.updateOne({}, { $set: { expiresAt: new Date(Date.now() + 4 * 86_400_000) } });
+    await expect(oauth.token(user, config)).resolves.toBe('forever');
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const extended = (await tokens.findOne({}))!.expiresAt as Date;
+    expect(extended.getTime() - Date.now()).toBeGreaterThan(9.9 * 86_400_000);
+    await expect(oauth.token(user, config)).resolves.toBe('forever');
   });
 
   it('takes the grant another replica stored when its refresh lost the race', async () => {
@@ -364,8 +407,37 @@ describe('disconnect', () => {
     const { oauth } = setup([() => json({ access_token: 'gone' })]);
     const user = userId();
     await connect(oauth, user);
-    await oauth.disconnect(user, github);
+    await oauth.disconnect(user);
     await expect(oauth.token(user, github)).resolves.toBeNull();
     expect(await mongoose.connection.db!.collection('tokens').countDocuments({})).toBe(0);
+  });
+
+  it("removes grants made under an earlier app or host, and only that user's", async () => {
+    const { oauth } = setup([
+      () => json({ access_token: 'github-grant' }),
+      () => json({ access_token: 'gitlab-grant' }),
+      () => json({ access_token: 'someone-else' }),
+    ]);
+    const user = userId();
+    const other = userId();
+    await connect(oauth, user, github);
+    await connect(oauth, user, gitlab);
+    await connect(oauth, other, github);
+    await oauth.disconnect(user);
+    await expect(oauth.token(user, github)).resolves.toBeNull();
+    await expect(oauth.token(user, gitlab)).resolves.toBeNull();
+    await expect(oauth.token(other, github)).resolves.toBe('someone-else');
+  });
+});
+
+describe('flow timeout', () => {
+  it('signs the state for the configured number of minutes', () => {
+    const { oauth } = setup([]);
+    const { url } = oauth.authorizationUrl({ id: userId() }, { ...github, flowTimeoutMinutes: 3 });
+    const claims = jwt.decode(new URL(url).searchParams.get('state') ?? '') as {
+      iat: number;
+      exp: number;
+    };
+    expect(claims.exp - claims.iat).toBe(180);
   });
 });

@@ -958,6 +958,9 @@ endpoints:
   #     #   clientId: "${GITHUB_PR_OAUTH_CLIENT_ID}"
   #     #   clientSecret: "${GITHUB_PR_OAUTH_CLIENT_SECRET}"
   #     #   scope: "repo" # only for a classic OAuth app; GitLab defaults to read_api
+  #     #   flowTimeoutMinutes: 10 # time to approve at the provider
+  #     #   requestTimeoutSeconds: 10 # per code exchange or token refresh
+  #     #   retentionDays: 180 # an unused connection is removed after this; each use extends it
   #     # Repositories the token may be used for, as owner/name or owner/*. A worker reports its
   #     # own repository, and only these are ever looked up with the server's token.
   #     allowedRepositories: ["LibreChat-AI/LibreChat"]

@@ -151,8 +151,7 @@ module.exports = {
     createProxyAwareFetch: jest.fn(() => jest.fn()),
     createPullRequestLookup: jest.fn(() => jest.fn()),
     createPullRequestLookupStore: jest.fn(() => undefined),
-    createPullRequestOAuthFromEnv: jest.fn(() => undefined),
-    createPullRequestUserToken: jest.fn(() => jest.fn()),
+    createPullRequestUserTokenFromEnv: jest.fn(() => undefined),
     createConversationPullRequestsHandler: jest.fn(() => jest.fn()),
     createConversationPullRequestHandler: jest.fn(
       () => (_req, res) => res.status(200).json({ pullRequest: null }),

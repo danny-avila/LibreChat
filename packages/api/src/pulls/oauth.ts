@@ -11,12 +11,14 @@ import { isRecord } from './shared';
 export const PULL_REQUEST_OAUTH_TYPE = 'pr_oauth';
 export const PULL_REQUEST_OAUTH_CALLBACK_PATH = '/api/pull-requests/oauth/callback';
 const STATE_AUDIENCE = 'librechat:pull-request-oauth';
-const STATE_TTL_SECONDS = 10 * 60;
-const REQUEST_TIMEOUT_MS = 10_000;
+/** Defaults for `pullRequests.oauth.flowTimeoutMinutes`, `requestTimeoutSeconds` and
+ *  `retentionDays`. */
+export const DEFAULT_PULL_REQUEST_OAUTH_FLOW_MINUTES = 10;
+export const DEFAULT_PULL_REQUEST_OAUTH_REQUEST_SECONDS = 10;
+export const DEFAULT_PULL_REQUEST_OAUTH_RETENTION_DAYS = 180;
 /** An access token this close to expiring is refreshed first, so a lookup never starts with it. */
 const REFRESH_SKEW_MS = 60_000;
-/** How long a grant is kept when the provider does not say how long its refresh token lives. */
-const DEFAULT_GRANT_LIFETIME_SECONDS = 180 * 24 * 60 * 60;
+const DAY_SECONDS = 24 * 60 * 60;
 const MAX_TOKEN_LENGTH = 8_192;
 
 /** Where users authorize and where the code is exchanged, on the configured host. */
@@ -47,7 +49,7 @@ export function oauthEndpoints(
 }
 
 /** The fields of a stored token row this module reads and writes; plain values, no documents. */
-export type PullRequestOAuthRow = { token: string };
+export type PullRequestOAuthRow = { token: string; expiresAt?: Date | string | null };
 
 export type PullRequestOAuthRowInput = {
   userId: string;
@@ -67,7 +69,9 @@ export type PullRequestOAuthStore = {
     expected: string | null,
     data: PullRequestOAuthRowInput,
   ): Promise<boolean>;
-  deleteTokens(query: { scope: string; token?: string }): Promise<unknown>;
+  deleteTokens(
+    query: { scope: string; token?: string } | { userId: string; type: string },
+  ): Promise<unknown>;
 };
 
 /** What a verified `state` carries back to the callback. */
@@ -91,7 +95,9 @@ type Grant = {
   clientId: string;
 };
 
-/** Thrown for a grant the provider refused, as opposed to one it could not be asked about. */
+/** Thrown for a grant the provider refused, as opposed to one it could not be asked about. A
+ *  refusal disconnects the user, so only a definite one is: a server error is an outage, whatever
+ *  its body says. */
 class GrantRejectedError extends Error {
   constructor() {
     super('The provider rejected the grant');
@@ -124,7 +130,9 @@ export type PullRequestOAuth = {
   /** The user's access token, refreshed when it is about to expire; null when not connected. */
   token(userId: string, config: PullRequestOAuthConfig): Promise<string | null>;
   connected(userId: string, config: PullRequestOAuthConfig): Promise<boolean>;
-  disconnect(userId: string, config: PullRequestOAuthConfig): Promise<void>;
+  /** Removes every connection the user has, whatever app or host it was made with, so a later
+   *  configuration can never bring back one the user removed. */
+  disconnect(userId: string): Promise<void>;
 };
 
 /**
@@ -184,14 +192,16 @@ export function createPullRequestOAuth({
       method: 'POST',
       headers,
       body: body.toString(),
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(
+        (config.requestTimeoutSeconds ?? DEFAULT_PULL_REQUEST_OAUTH_REQUEST_SECONDS) * 1000,
+      ),
     });
     const parsed: unknown = await response.json().catch(() => null);
     /** GitHub answers a refused grant with 200 and an `error` field; others use 400 or 401. */
     const refused =
       response.status === 400 ||
       response.status === 401 ||
-      (isRecord(parsed) && typeof parsed.error === 'string');
+      (response.ok && isRecord(parsed) && typeof parsed.error === 'string');
     if (refused) throw new GrantRejectedError();
     if (!response.ok || !isRecord(parsed) || !isToken(parsed.access_token)) {
       throw new Error(`Token endpoint answered ${response.status}`);
@@ -206,13 +216,24 @@ export function createPullRequestOAuth({
     };
   }
 
-  /** How long the row may live: as long as a refresh token can, else the access token's life. */
-  const lifetimeOf = (grant: Grant): number => {
-    if (grant.refreshToken != null) return DEFAULT_GRANT_LIFETIME_SECONDS;
-    if (grant.accessExpiresAt != null) {
+  const retentionOf = (config: PullRequestOAuthConfig): number =>
+    (config.retentionDays ?? DEFAULT_PULL_REQUEST_OAUTH_RETENTION_DAYS) * DAY_SECONDS;
+
+  /** How long the row may live: an access token that expires without a refresh token lives that
+   *  long; any other grant lives the retention, which every use extends (see `token`). */
+  const lifetimeOf = (grant: Grant, config: PullRequestOAuthConfig): number => {
+    if (grant.refreshToken == null && grant.accessExpiresAt != null) {
       return Math.max(1, Math.ceil((grant.accessExpiresAt - now()) / 1000));
     }
-    return DEFAULT_GRANT_LIFETIME_SECONDS;
+    return retentionOf(config);
+  };
+
+  /** Whether a grant's row is past half its retention, so using it should extend it. A grant that
+   *  never expires is otherwise never rewritten, and would be removed while still in use. */
+  const isAging = (row: PullRequestOAuthRow, config: PullRequestOAuthConfig): boolean => {
+    if (row.expiresAt == null) return false;
+    const expiresAt = new Date(row.expiresAt).getTime();
+    return Number.isFinite(expiresAt) && expiresAt - now() < (retentionOf(config) * 1000) / 2;
   };
 
   async function read(
@@ -253,7 +274,7 @@ export function createPullRequestOAuth({
       type: PULL_REQUEST_OAUTH_TYPE,
       identifier: `${config.provider}:${config.host}`,
       token: await encrypt(JSON.stringify(grant)),
-      expiresIn: lifetimeOf(grant),
+      expiresIn: lifetimeOf(grant, config),
     });
   }
 
@@ -302,7 +323,10 @@ export function createPullRequestOAuth({
           ...(user.tenantId ? { t: user.tenantId } : {}),
         },
         secret,
-        { audience: STATE_AUDIENCE, expiresIn: STATE_TTL_SECONDS },
+        {
+          audience: STATE_AUDIENCE,
+          expiresIn: (config.flowTimeoutMinutes ?? DEFAULT_PULL_REQUEST_OAUTH_FLOW_MINUTES) * 60,
+        },
       );
       const endpoints = oauthEndpoints(config.provider, config.host);
       const scope = config.scope ?? endpoints.defaultScope;
@@ -373,15 +397,19 @@ export function createPullRequestOAuth({
       if (current == null) return null;
       const { row, grant } = current;
       if (grant.accessExpiresAt == null || grant.accessExpiresAt - REFRESH_SKEW_MS > now()) {
+        if (isAging(row, config)) {
+          write(userId, config, row.token, grant).catch((error: unknown) => {
+            logger.warn('[PullRequests] OAuth retention not extended', getSafeErrorMetadata(error));
+          });
+        }
         return grant.accessToken;
       }
       const key = scopeOf(userId, config);
       const pending = refreshing.get(key);
       if (pending != null) return pending;
-      const started = refresh(userId, config, row, grant).catch((error: unknown) => {
-        logger.warn('[PullRequests] OAuth refresh failed', getSafeErrorMetadata(error));
-        return null;
-      });
+      /** A refresh the provider could not answer is an outage, not a disconnection: it reaches
+       *  the caller, and the grant stays for the next attempt. */
+      const started = refresh(userId, config, row, grant);
       refreshing.set(key, started);
       try {
         return await started;
@@ -394,8 +422,8 @@ export function createPullRequestOAuth({
       return (await read(userId, config)) != null;
     },
 
-    async disconnect(userId, config) {
-      await store.deleteTokens({ scope: scopeOf(userId, config) });
+    async disconnect(userId) {
+      await store.deleteTokens({ userId, type: PULL_REQUEST_OAUTH_TYPE });
     },
   };
 }

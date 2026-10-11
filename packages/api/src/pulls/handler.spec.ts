@@ -212,14 +212,17 @@ describe('createConversationPullRequestHandler', () => {
       expect(res.json).toHaveBeenCalledWith({ pullRequest: null });
     });
 
-    it("falls back to the server's token when the user's cannot be read", async () => {
-      const { run, lookup } = setup({
+    it("answers unavailable, not the server's token or no pull request, when the user's cannot be read", async () => {
+      const { run, lookup, res } = setup({
         settings: connectable,
         env: { ...oauthEnv, GH_TOKEN: 'ghp_server' },
         userToken: jest.fn().mockRejectedValue(new Error('mongodb://secret@host')),
       });
       await run();
-      expect(lookup).toHaveBeenCalledWith(expect.objectContaining({ token: 'ghp_server' }));
+      expect(lookup).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'UPSTREAM_ERROR' }));
+      expect(JSON.stringify(res.json.mock.calls)).not.toContain('secret@host');
     });
   });
 
@@ -578,6 +581,30 @@ describe('createConversationPullRequestsHandler', () => {
     });
     await run({ conversationIds: ['a', 'b'] });
     expect(lookup).toHaveBeenCalledWith(expect.objectContaining({ token: 'gho_user' }));
+  });
+
+  it("answers the batch's lanes unavailable when the user's own token cannot be read", async () => {
+    const { run, lookup, res } = batch({
+      settings: {
+        ...enabled,
+        oauth: { clientId: '${GH_CLIENT_ID}', clientSecret: '${GH_CLIENT_SECRET}' },
+      },
+      env: { GH_CLIENT_ID: 'id', GH_CLIENT_SECRET: 'secret', GH_TOKEN: 'ghp_server' },
+      lanes: [
+        lane('a', 'elsewhere/private'),
+        { conversationId: 'b', laneGit: { branch: null, head: null } },
+      ],
+      userToken: jest.fn().mockRejectedValue(new Error('refresh timed out')),
+    });
+    await run({ conversationIds: ['a', 'b'] });
+    expect(lookup).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      results: [
+        { conversationId: 'a', error: { code: 'UPSTREAM_ERROR' } },
+        { conversationId: 'b', pullRequest: null },
+      ],
+    });
   });
 
   it('takes the host from the operator config for the batch too', async () => {
