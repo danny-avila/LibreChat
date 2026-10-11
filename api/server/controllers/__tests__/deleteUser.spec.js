@@ -278,7 +278,12 @@ describe('deleteUserController - 2FA enforcement', () => {
       user: { id: 'user1', _id: 'user1', email: 'a@b.com', tenantId: 'tenant-1' },
       body: {},
     };
-    mockGetUserById.mockResolvedValue({ _id: 'user1', twoFactorEnabled: false });
+    mockGetUserById.mockResolvedValue({
+      _id: 'user1',
+      email: 'a@b.com',
+      tenantId: 'tenant-1',
+      twoFactorEnabled: false,
+    });
 
     await deleteUserController(req, createRes());
 
