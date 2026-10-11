@@ -52,6 +52,8 @@ type GitHubPull = {
   headSha: string;
   /** The repository that head lives in; a fork's checks run there, not in the base repository. */
   headRepo?: string;
+  /** The branch the pull request merges from, in whichever repository it lives; null if unsaid. */
+  headRef: string | null;
 };
 
 type GitHubCheckRun = { status: string; conclusion: string | null };
@@ -107,6 +109,7 @@ function parsePull(value: unknown): GitHubPull {
     mergeable: value.mergeable,
     headSha: value.head.sha,
     ...(headRepo ? { headRepo } : {}),
+    headRef: typeof value.head.ref === 'string' ? value.head.ref : null,
   };
 }
 
@@ -330,7 +333,15 @@ export function createGitHubPullRequestSource({
   }
 
   return {
-    async find({ repo, branch, head: recordedHead, token, limits, allowedRepositories }) {
+    async find({
+      repo,
+      branch,
+      head: recordedHead,
+      pullRequest,
+      token,
+      limits,
+      allowedRepositories,
+    }) {
       /**
        * A lane with a branch and no commit yet has nothing to match a pull request against, and
        * every candidate would be accepted, including an earlier incarnation of a reused branch
@@ -352,6 +363,27 @@ export function createGitHubPullRequestSource({
       const [, owner, name] = match;
       if (!isPathSegment(owner) || !isPathSegment(name)) return null;
       const base = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
+      /**
+       * A fork's checks run in the fork. Its repository is read only when an administrator named
+       * it, so the server's token is never used against a repository nobody authorized.
+       */
+      const checksBaseOf = (pull: GitHubPull): string => {
+        const headRepo = pull.headRepo;
+        if (headRepo == null || headRepo.toLowerCase() === `${owner}/${name}`.toLowerCase()) {
+          return base;
+        }
+        const parts = REPO_PATTERN.exec(headRepo);
+        if (parts == null || !isPathSegment(parts[1]) || !isPathSegment(parts[2])) return base;
+        if (!isAllowedRepository(headRepo, allowedRepositories)) return base;
+        return `/repos/${encodeURIComponent(parts[1])}/${encodeURIComponent(parts[2])}`;
+      };
+      const report = async (pull: GitHubPull): Promise<TConversationPullRequest> => {
+        const checks = await readCheckRuns(
+          `${checksBaseOf(pull)}/commits/${pull.headSha}/check-runs`,
+          lookup,
+        );
+        return toConversationPullRequest(pull, checks.runs, checks.incomplete);
+      };
       const headFilter = encodeURIComponent(`${owner}:${branch}`);
       /** `undefined`: the repository is not visible. An empty list: it is, and nothing matched. */
       const listPulls = async (state: 'open' | 'closed', perPage: number, page = 1) => {
@@ -409,6 +441,25 @@ export function createGitHubPullRequestSource({
         }
         return all;
       };
+      /**
+       * A pull request the conversation's own output linked to is read directly, so a lane with
+       * commits not pushed yet still shows it. Its head must be the lane's branch in the lane's
+       * repository. A branch name alone proves nothing for a fork (anyone can open `patch-1`), so
+       * a fork's pull request counts only when it carries the recorded commit, as in the search.
+       */
+      if (pullRequest != null && Number.isSafeInteger(pullRequest) && pullRequest > 0) {
+        const linked = await getJson(`${base}/pulls/${pullRequest}`, lookup);
+        if (linked != null) {
+          const pull = parsePull(linked);
+          const sameRepository = pull.headRepo?.toLowerCase() === repo.toLowerCase();
+          if (
+            pull.headRef === branch &&
+            (sameRepository || (recorded != null && (await contains(pull.headSha))))
+          ) {
+            return report(pull);
+          }
+        }
+      }
       /** Open first on its own, so closed history on a reused branch name cannot hide it. */
       const open = await listAll('open');
       if (open === undefined) return null;
@@ -453,25 +504,7 @@ export function createGitHubPullRequestSource({
       const pull = parsePull(detail);
       /** A push between the list and the detail can move the head off the recorded commit. */
       if (pull.headSha !== chosen.sha && !(await contains(pull.headSha))) return null;
-      /**
-       * A fork's checks run in the fork. Its repository is read only when an administrator named
-       * it, so the server's token is never used against a repository nobody authorized.
-       */
-      const checksBase = (() => {
-        const headRepo = pull.headRepo;
-        if (headRepo == null || headRepo.toLowerCase() === `${owner}/${name}`.toLowerCase()) {
-          return base;
-        }
-        const parts = REPO_PATTERN.exec(headRepo);
-        if (parts == null || !isPathSegment(parts[1]) || !isPathSegment(parts[2])) return base;
-        if (!isAllowedRepository(headRepo, allowedRepositories)) return base;
-        return `/repos/${encodeURIComponent(parts[1])}/${encodeURIComponent(parts[2])}`;
-      })();
-      const checks = await readCheckRuns(
-        `${checksBase}/commits/${pull.headSha}/check-runs`,
-        lookup,
-      );
-      return toConversationPullRequest(pull, checks.runs, checks.incomplete);
+      return report(pull);
     },
   };
 }

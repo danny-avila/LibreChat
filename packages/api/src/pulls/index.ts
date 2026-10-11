@@ -1,4 +1,5 @@
 export * from './types';
+export * from './links';
 export * from './github';
 export * from './lookup';
 export * from './handler';

@@ -66,6 +66,16 @@ describe('createPullRequestLookup', () => {
     expect(find).toHaveBeenCalledTimes(3);
   });
 
+  it('keys by the linked pull request and hands it to the source', async () => {
+    const find = jest.fn().mockResolvedValue(value);
+    const lookup = createPullRequestLookup({ source: { find } });
+    await lookup(input);
+    await lookup({ ...input, pullRequest: 1 });
+    await lookup({ ...input, pullRequest: 1 });
+    expect(find).toHaveBeenCalledTimes(2);
+    expect(find).toHaveBeenLastCalledWith(expect.objectContaining({ pullRequest: 1 }));
+  });
+
   it('returns a failure as a coded result and retries it sooner than a success', async () => {
     let clock = 0;
     const find = jest
