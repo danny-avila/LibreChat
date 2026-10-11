@@ -127,9 +127,6 @@ async function broker(request, env, session, body, acceptStream = false) {
       'Cache-Control': 'no-store',
     }),
     body: JSON.stringify(body),
-    cache: 'no-store',
-    redirect: 'error',
-    signal: request.signal,
   });
 }
 
@@ -141,9 +138,6 @@ async function db(request, env, session, path, init = {}) {
       'Cache-Control': 'no-store',
       ...(init.headers ?? {}),
     }),
-    cache: 'no-store',
-    redirect: 'error',
-    signal: request.signal,
   });
 }
 
