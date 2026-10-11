@@ -227,6 +227,36 @@ describe('ConnectedAccounts', () => {
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
   });
 
+  it('keeps the confirmation button named while the disconnect is in flight', async () => {
+    mockGetConnection.mockResolvedValue(connection(true));
+    let settle: () => void = () => undefined;
+    mockDisconnect.mockReturnValueOnce(new Promise<void>((resolve) => (settle = resolve)));
+    renderRow();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /com_ui_pr_account_disconnect_aria/ }),
+    );
+    const confirm = await screen.findByRole('button', { name: 'com_ui_pr_account_disconnect' });
+    await userEvent.click(confirm);
+
+    await waitFor(() => expect(confirm).toHaveAttribute('aria-busy', 'true'));
+    expect(screen.getByRole('button', { name: 'com_ui_pr_account_disconnect' })).toBe(confirm);
+    settle();
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+  });
+
+  it('names the provider the server reports over a stale startup config', async () => {
+    mockGetConnection.mockResolvedValue({ configured: true, provider: 'gitlab', connected: false });
+    renderRow();
+
+    expect(
+      await screen.findByRole('button', {
+        name: 'com_ui_pr_account_connect_aria:com_ui_pr_provider_gitlab',
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('group')).toHaveAccessibleName('com_ui_pr_provider_gitlab');
+  });
+
   it('explains a failed status check and retries it', async () => {
     mockGetConnection.mockRejectedValueOnce(new Error('500'));
     renderRow();

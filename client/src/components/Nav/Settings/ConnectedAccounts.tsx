@@ -88,8 +88,11 @@ export default function ConnectedAccounts() {
     }
   }, []);
 
-  const provider = startupConfig?.pullRequestsConnect;
-  /** The server is the authority: an app it no longer has is nothing to connect to. */
+  /**
+   * The server is the authority: an app it no longer has is nothing to connect to, and once the
+   * status loads its provider is the one a connection goes to, whatever the cached startup says.
+   */
+  const provider = status.data?.provider ?? startupConfig?.pullRequestsConnect;
   if (provider == null || status.data?.configured === false) {
     return null;
   }
@@ -270,6 +273,7 @@ export default function ConnectedAccounts() {
           <Button
             type="button"
             variant="destructive"
+            aria-label={localize('com_ui_pr_account_disconnect')}
             aria-busy={disconnectMutation.isLoading}
             disabled={disconnectMutation.isLoading}
             onClick={disconnect}
