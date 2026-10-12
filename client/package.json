@@ -4,8 +4,7 @@
   "description": "",
   "type": "module",
   "scripts": {
-    "typecheck": "bun check",
-    "typecheck:tsc": "tsc --noEmit",
+    "typecheck": "node ../scripts/typecheck.mts",
     "data-provider": "cd .. && npm run build:data-provider",
     "build:file": "cross-env NODE_ENV=production vite build --debug > vite-output.log 2>&1",
     "build": "cross-env NODE_ENV=production NODE_OPTIONS=--max-old-space-size=8192 vite build",
