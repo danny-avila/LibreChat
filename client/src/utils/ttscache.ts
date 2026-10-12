@@ -1,6 +1,6 @@
-/** Earlier versions persisted read-aloud audio to Cache Storage under this name, keyed by the
- *  message text. Audio is now held only in this tab's memory, so that cache is just deleted. */
-const LEGACY_TTS_CACHE_NAME = 'tts-responses';
+/** Cache Storage names earlier builds persisted read-aloud audio under (the first keyed by the
+ *  message text). Audio is now held only in this tab's memory, so these are just deleted. */
+const LEGACY_TTS_CACHE_NAMES = ['tts-responses', 'tts-responses-v1', 'tts-responses-v1:pending'];
 const MAX_ENTRIES = 50;
 /** Long replies make large recordings, so the cache is bounded by size as well as count. */
 const MAX_BYTES = 32 * 1024 * 1024;
@@ -10,18 +10,25 @@ const audioByKey = new Map<string, Blob>();
 let totalBytes = 0;
 /** Bumped on every clear, so a request that was in flight across a logout cannot write. */
 let generation = 0;
+/** The account the cached audio belongs to. */
+let ownerId: string | undefined;
 
 const toHex = (buffer: ArrayBuffer): string =>
   Array.from(new Uint8Array(buffer), (byte) => byte.toString(16).padStart(2, '0')).join('');
 
-/** Returns a SHA-256 hash of the spoken text and voice, so the cache holds no message text.
- *  Returns null when hashing is unavailable (no secure context); the caller skips the cache. */
-export async function getTTSCacheKey(text: string, voice?: string | null): Promise<string | null> {
+/** Returns a SHA-256 hash of the user, voice and spoken text, so the cache holds no message text
+ *  and one account can never match another's audio. Returns null when hashing is unavailable
+ *  (no secure context); the caller skips the cache. */
+export async function getTTSCacheKey(
+  text: string,
+  voice?: string | null,
+  userId?: string | null,
+): Promise<string | null> {
   if (!text || typeof crypto === 'undefined' || !crypto.subtle) {
     return null;
   }
   try {
-    const data = new TextEncoder().encode(JSON.stringify([voice ?? '', text]));
+    const data = new TextEncoder().encode(JSON.stringify([userId ?? '', voice ?? '', text]));
     return toHex(await crypto.subtle.digest('SHA-256', data));
   } catch {
     return null;
@@ -73,10 +80,24 @@ export function clearTTSCache(): void {
   audioByKey.clear();
   totalBytes = 0;
   generation += 1;
+  ownerId = undefined;
   if (typeof caches === 'undefined') {
     return;
   }
-  void Promise.resolve()
-    .then(() => caches.delete(LEGACY_TTS_CACHE_NAME))
-    .catch(() => undefined);
+  for (const name of LEGACY_TTS_CACHE_NAMES) {
+    void Promise.resolve()
+      .then(() => caches.delete(name))
+      .catch(() => undefined);
+  }
+}
+
+/** Records the signed-in account; signing in as a different one in this tab empties the cache. */
+export function setTTSCacheOwner(userId?: string | null): void {
+  if (!userId) {
+    return;
+  }
+  if (ownerId !== undefined && ownerId !== userId) {
+    clearTTSCache();
+  }
+  ownerId = userId;
 }

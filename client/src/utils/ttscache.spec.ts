@@ -5,6 +5,7 @@ import {
   getTTSCacheKey,
   hasCachedTTSAudio,
   setCachedTTSAudio,
+  setTTSCacheOwner,
   getCachedTTSAudio,
   getTTSCacheGeneration,
 } from './ttscache';
@@ -33,6 +34,12 @@ describe('getTTSCacheKey', () => {
     expect(await getTTSCacheKey(text, 'alloy')).toBe(key);
     expect(await getTTSCacheKey(text, 'echo')).not.toBe(key);
     expect(await getTTSCacheKey('other', 'alloy')).not.toBe(key);
+  });
+
+  it("differs by user, so one account never matches another account's audio", async () => {
+    expect(await getTTSCacheKey(text, 'alloy', 'user-a')).not.toBe(
+      await getTTSCacheKey(text, 'alloy', 'user-b'),
+    );
   });
 
   it('returns null for empty text', async () => {
@@ -86,6 +93,17 @@ describe('in-memory audio cache', () => {
     expect(hasCachedTTSAudio()).toBe(false);
   });
 
+  it('empties when a different account takes over the tab, not when the same one returns', () => {
+    setTTSCacheOwner('first');
+    setCachedTTSAudio('mine', audio('mine'), getTTSCacheGeneration());
+    setTTSCacheOwner('first');
+    setTTSCacheOwner(undefined);
+    expect(getCachedTTSAudio('mine')).toBeDefined();
+
+    setTTSCacheOwner('second');
+    expect(getCachedTTSAudio('mine')).toBeUndefined();
+  });
+
   it('drops audio from a request that was in flight across a clear', () => {
     const generation = getTTSCacheGeneration();
     clearTTSCache();
@@ -108,6 +126,8 @@ describe('legacy Cache Storage cleanup', () => {
     clearTTSCache();
     await Promise.resolve();
     expect(del).toHaveBeenCalledWith('tts-responses');
+    expect(del).toHaveBeenCalledWith('tts-responses-v1');
+    expect(del).toHaveBeenCalledWith('tts-responses-v1:pending');
   });
 
   it('tolerates a missing Cache API and a rejected delete', async () => {

@@ -27,6 +27,7 @@ import type { ReactNode } from 'react';
 import {
   clearTTSCache,
   isSafeRedirect,
+  setTTSCacheOwner,
   getPostLoginRedirect,
   clearPostLoginRedirect,
   persistRedirectToSession,
@@ -121,6 +122,8 @@ const AuthContextProvider = ({
         setIsAuthReady(true);
         if (isAuthenticated) {
           setQueriesEnabled(true);
+          /** A different account signing in without a logout must not inherit cached audio. */
+          setTTSCacheOwner(user?.id);
           /**
            * Any accepted full-auth response supersedes a staged enrollment, whichever path minted
            * it. The setup endpoints trust the stored bearer independently of the session, so a
@@ -261,6 +264,7 @@ const AuthContextProvider = ({
       setIsAuthReady(true);
       setQueriesEnabled(true);
       openFileDeletionRetention();
+      setTTSCacheOwner(authenticatedUser.id);
       navigate(redirect, { replace: true });
     },
     [navigate, setQueriesEnabled, setUser],

@@ -31,7 +31,7 @@ const promiseTimeoutMessage = 'Reader promise timed out';
 const maxPromiseTime = 15000;
 
 export default function StreamAudio({ index = 0 }) {
-  const { token } = useAuthContext();
+  const { token, user } = useAuthContext();
 
   const cacheTTS = useRecoilValue(store.cacheTTS);
   const playbackRate = useRecoilValue(store.playbackRate);
@@ -76,7 +76,7 @@ export default function StreamAudio({ index = 0 }) {
         /** Keyed by the spoken text, as manual playback is, so audio cached from an
          *  unfiltered message (reasoning included) is never replayed. */
         let cacheKey = latestMessage
-          ? await getTTSCacheKey(getSpeechText(latestMessage), voice)
+          ? await getTTSCacheKey(getSpeechText(latestMessage), voice, user?.id)
           : null;
         const cachedAudio = cacheKey ? getCachedTTSAudio(cacheKey) : undefined;
 
@@ -149,7 +149,7 @@ export default function StreamAudio({ index = 0 }) {
               (msg) => msg.messageId === latestMessage?.messageId,
             );
             cacheKey = targetMessage
-              ? await getTTSCacheKey(getSpeechText(targetMessage), voice)
+              ? await getTTSCacheKey(getSpeechText(targetMessage), voice, user?.id)
               : null;
             if (!cacheKey) {
               logger.warn('Cache key not found, skipping audio cache');
@@ -190,6 +190,7 @@ export default function StreamAudio({ index = 0 }) {
     audioRef,
     voice,
     token,
+    user?.id,
   ]);
 
   useEffect(() => {

@@ -8,7 +8,7 @@ import {
   getTTSCacheGeneration,
 } from '~/utils';
 import { useTextToSpeechMutation, useVoicesQuery } from '~/data-provider';
-import { useLocalize } from '~/hooks';
+import { useLocalize, useAuthContext } from '~/hooks';
 import store from '~/store';
 
 const createFormData = (text: string, voice: string) => {
@@ -34,6 +34,7 @@ function useTextToSpeechExternal({
   index = 0,
 }: TUseTTSExternal) {
   const localize = useLocalize();
+  const { user } = useAuthContext();
   const { showToast } = useToastContext();
   const voice = useRecoilValue(store.voice);
   const cacheTTS = useRecoilValue(store.cacheTTS);
@@ -116,7 +117,7 @@ function useTextToSpeechExternal({
         const generation = requestGenerations.current.get(variables);
         if (cacheTTS && inputText && generation != null) {
           /** Not awaited: caching must never delay playback. */
-          void getTTSCacheKey(inputText, (variables.get('voice') ?? '') as string).then(
+          void getTTSCacheKey(inputText, (variables.get('voice') ?? '') as string, user?.id).then(
             (cacheKey) => cacheKey && setCachedTTSAudio(cacheKey, audioBlob, generation),
           );
         }
@@ -157,7 +158,7 @@ function useTextToSpeechExternal({
   };
 
   const handleCachedResponse = async (text: string, download: boolean) => {
-    const cacheKey = await getTTSCacheKey(text, voice ?? '');
+    const cacheKey = await getTTSCacheKey(text, voice ?? '', user?.id);
     const cachedAudio = cacheKey ? getCachedTTSAudio(cacheKey) : undefined;
     if (!cachedAudio) {
       return startMutation(text, download);
