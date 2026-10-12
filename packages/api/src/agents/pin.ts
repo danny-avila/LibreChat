@@ -5,7 +5,7 @@
  */
 const MODEL_ROUTING_KWARGS = new Set(['model', 'models', 'route', 'fallbacks']);
 
-type PinnedModelOptions<T, M> = Omit<T, 'fallbacks'> & { model: M };
+type PinnedModelOptions<T, M> = Omit<T, 'fallbacks' | 'modelName'> & { model: M };
 
 /**
  * Pins an agent's provider options to its validated model. `model_parameters` is free-form, so
@@ -18,7 +18,7 @@ export function pinAgentModel<T extends Record<string, unknown>, M>(
   modelOptions: T,
   model: M,
 ): PinnedModelOptions<T, M> {
-  const { fallbacks: _fallbacks, ...options } = modelOptions;
+  const { fallbacks: _fallbacks, modelName: _modelName, ...options } = modelOptions;
   const { modelKwargs } = options;
   if (modelKwargs == null || typeof modelKwargs !== 'object' || Array.isArray(modelKwargs)) {
     return { ...options, model };
