@@ -245,6 +245,40 @@ describe('watchPullRequestSignIn', () => {
     expect(mockGetConnection).not.toHaveBeenCalled();
   });
 
+  it('applies an answer asked for just before the flow expired', async () => {
+    const { client, invalidate } = setup();
+    let answer: (status: TPullRequestConnection) => void = () => undefined;
+    mockGetConnection.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+    watchPullRequestSignIn(client, {
+      startedIn: pullRequestSignInSession(),
+      expiresAt: Date.now() + 1 * MINUTE,
+    });
+    await pass(1 * MINUTE - 1);
+    announceOAuthSettled({ outcome: 'succeeded' });
+    await pass(1);
+    expect(invalidate).not.toHaveBeenCalled();
+    answer(connection(true));
+    await pass(0);
+    expect(invalidate).toHaveBeenCalled();
+  });
+
+  it('discards an answer that arrives after the session ended', async () => {
+    const { client, invalidate } = setup();
+    let answer: (status: TPullRequestConnection) => void = () => undefined;
+    mockGetConnection.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+    watchPullRequestSignIn(client, {
+      startedIn: pullRequestSignInSession(),
+      expiresAt: Date.now() + 10 * MINUTE,
+    });
+    announceOAuthSettled({ outcome: 'succeeded' });
+    await pass(0);
+    endPullRequestSession();
+    invalidate.mockClear();
+    answer(connection(true));
+    await pass(0);
+    expect(invalidate).not.toHaveBeenCalled();
+  });
+
   it('does not start a watch for a sign-in begun in a session that has since ended', async () => {
     const { client } = setup();
     const startedIn = pullRequestSignInSession();
