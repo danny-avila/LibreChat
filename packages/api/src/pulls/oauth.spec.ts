@@ -721,6 +721,31 @@ describe('token', () => {
     expect(Date.now() - started).toBeLessThan(5_000);
   });
 
+  it('renews the connection generation with a grant still in use, so it never expires first', async () => {
+    const { oauth } = setup([() => json({ access_token: 'forever' })]);
+    const user = userId();
+    const config = { ...github, retentionDays: 10 };
+    await connect(oauth, user, config);
+    const tokens = mongoose.connection.db!.collection('tokens');
+    const owner = { userId: new mongoose.Types.ObjectId(user) };
+    /** Nearly ten years on, the generation is about to go while the grant is used every day. */
+    const soon = new Date(Date.now() + 86_400_000);
+    await tokens.updateOne(
+      { ...owner, type: PULL_REQUEST_OAUTH_GENERATION_TYPE },
+      { $set: { expiresAt: soon } },
+    );
+    await tokens.updateOne(
+      { ...owner, type: PULL_REQUEST_OAUTH_TYPE },
+      { $set: { expiresAt: new Date(Date.now() + 8 * 86_400_000) } },
+    );
+    await expect(oauth.token(user, config)).resolves.toBe('forever');
+    const generation = await tokens.findOne({ ...owner, type: PULL_REQUEST_OAUTH_GENERATION_TYPE });
+    expect((generation!.expiresAt as Date).getTime() - Date.now()).toBeGreaterThan(
+      3000 * 86_400_000,
+    );
+    await expect(oauth.token(user, config)).resolves.toBe('forever');
+  });
+
   it('extends a grant that never expires on its first use each day', async () => {
     const { oauth } = setup([() => json({ access_token: 'forever' })]);
     const user = userId();

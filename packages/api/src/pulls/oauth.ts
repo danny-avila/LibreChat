@@ -24,8 +24,9 @@ export const DEFAULT_PULL_REQUEST_OAUTH_RETENTION_DAYS = 180;
 /** An access token this close to expiring is refreshed first, so a lookup never starts with it. */
 const REFRESH_SKEW_MS = 60_000;
 const DAY_SECONDS = 24 * 60 * 60;
-/** A generation row outlives every grant made under it: the longest `retentionDays` allowed. If it
- *  expired first, the generation would revert and silently disconnect the user. */
+/** A generation row outlives every grant made under it: the longest `retentionDays` allowed, and
+ *  renewed whenever a grant under it is (see `renewGeneration`), so a grant in use for longer than
+ *  that never outlives it. If it expired first, the user would be silently disconnected. */
 const GENERATION_LIFETIME_SECONDS = 3650 * DAY_SECONDS;
 const MAX_TOKEN_LENGTH = 8_192;
 /**
@@ -338,6 +339,27 @@ export function createPullRequestOAuth({
   }
 
   /**
+   * Starts the generation's lifetime again, at most once a day, whenever a grant under it is
+   * extended or refreshed. The same value is written back only while it is current, so a
+   * generation replaced meanwhile (a disconnect, a new sign-in) is never restored.
+   */
+  async function renewGeneration(userId: string, generation: string | undefined): Promise<void> {
+    if (generation == null || generation === FIRST_GENERATION) return;
+    const scope = generationScopeOf(userId);
+    const row = await store.findToken({ scope });
+    if (row?.token !== generation || row.expiresAt == null) return;
+    const remaining = new Date(row.expiresAt).getTime() - now();
+    if (remaining > (GENERATION_LIFETIME_SECONDS - DAY_SECONDS) * 1000) return;
+    await store.replaceTokenIfCurrent(scope, generation, {
+      userId,
+      type: PULL_REQUEST_OAUTH_GENERATION_TYPE,
+      identifier: 'generation',
+      token: generation,
+      expiresIn: GENERATION_LIFETIME_SECONDS,
+    });
+  }
+
+  /**
    * Moves the user from the generation a flow started in to a new one, or fails as stale: one
    * sign-in at a time, and none across a disconnect. Returns the new generation.
    */
@@ -569,7 +591,10 @@ export function createPullRequestOAuth({
   ): Promise<string | null> {
     let version = expected;
     for (let attempt = 0; attempt < 3; attempt++) {
-      if ((await write(userId, config, version, next)) != null) return next.accessToken;
+      if ((await write(userId, config, version, next)) != null) {
+        await renewGeneration(userId, next.generation);
+        return next.accessToken;
+      }
       const current = await read(userId, config, next.generation ?? FIRST_GENERATION);
       if (current == null) return null;
       if (current.record.lineage !== next.lineage) {
@@ -657,6 +682,7 @@ export function createPullRequestOAuth({
         /** Rare (past half the retention, or a shortened one), so the read waits for it. A failed
          *  write is an outage, not a successful read: the grant would keep its old deadline. */
         await write(userId, config, row.token, same);
+        await renewGeneration(userId, grant.generation);
       }
       return grant.accessToken;
     }
