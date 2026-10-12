@@ -24,13 +24,14 @@ const state = {
   models: [],
   modelSupported: false,
   busy: false,
-  streaming: false,
-  stopController: null,
   draft: '',
   retryAvailable: false,
   error: '',
   notice: '',
   mobileMenu: false,
+  abortController: null,
+  streamReader: null,
+  cancelRequested: false,
 };
 
 const t = (key) =>
@@ -39,7 +40,15 @@ const t = (key) =>
     invalid_model: '链接中的模型不可用于此连接，已切换到默认模型。',
     no_connection: '请先在 Meo Account 添加 AI provider 连接。',
     saved: '会话已同步到 Meo Cloud。',
+    stopped: '已停止生成，并保留当前回复。',
   })[key] ?? key;
+
+const examplePrompts = [
+  '帮我把今天要做的事情整理成一个清晰的计划',
+  '解释一个我不懂的概念，先用简单的话说明',
+  '帮我检查这段文字，并告诉我最值得改的三点',
+  '和我一起拆解一个项目问题，先找最可能的原因',
+];
 
 function el(tag, attrs = {}, children = []) {
   const node = document.createElement(tag);
@@ -76,6 +85,26 @@ async function json(path, init) {
   return (await api(path, init)).json();
 }
 
+function friendlyError(error) {
+  if (error?.name === 'AbortError' || error?.message === 'Request cancelled') {
+    return '这次请求已取消。已保存的会话内容不会受到影响。你可以修改内容后重新发送。';
+  }
+  if (error?.status === 401 || error?.status === 403) {
+    return '登录或授权已失效。你的本地输入仍然保留，请重新登录或检查 Account 中的 provider 授权。';
+  }
+  if (error instanceof TypeError || /network|fetch/i.test(error?.message ?? '')) {
+    return '网络连接失败。你的草稿仍然保留，请检查网络后重试。';
+  }
+  if ((error?.status ?? 0) >= 500 || /provider|stream|model/i.test(error?.message ?? '')) {
+    return 'AI provider 暂时没有完成请求。你的已保存会话不会丢失，可以稍后重试或切换模型。';
+  }
+  return '这次操作没有完成。你的已保存会话不会丢失，请重试；如果问题持续出现，再检查连接与模型设置。';
+}
+
+function setError(error) {
+  state.error = friendlyError(error);
+}
+
 function deepLink() {
   const params = new URLSearchParams();
   if (state.connection?.id) params.set('connection', state.connection.id);
@@ -85,6 +114,32 @@ function deepLink() {
 
 function selectedConversationKey() {
   return `meo.selectedConversation.${state.userId}`;
+}
+
+function draftKey(conversationId = state.conversationId) {
+  return `meo.draft.${state.userId}.${conversationId || 'new'}`;
+}
+
+function loadDraft(conversationId = state.conversationId) {
+  try {
+    return sessionStorage.getItem(draftKey(conversationId)) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function saveDraft(value = state.draft, conversationId = state.conversationId) {
+  state.draft = value;
+  try {
+    if (value) sessionStorage.setItem(draftKey(conversationId), value);
+    else sessionStorage.removeItem(draftKey(conversationId));
+  } catch {
+    // Draft persistence is best-effort when storage is unavailable.
+  }
+}
+
+function clearDraft(conversationId = state.conversationId) {
+  saveDraft('', conversationId);
 }
 
 function formatMessage(row) {
@@ -135,6 +190,7 @@ async function loadHistory() {
   const requested = localStorage.getItem(selectedConversationKey()) ?? '';
   const conversation = state.history.find((item) => item.id === requested);
   if (conversation) await openConversation(conversation.id, false);
+  else state.draft = loadDraft('');
 }
 
 async function loadMoreHistory() {
@@ -149,7 +205,7 @@ async function loadMoreHistory() {
     state.history.push(...page.conversations.filter((item) => !known.has(item.id)));
     state.historyCursor = page.nextCursor;
   } catch (error) {
-    if (generation === state.historyGeneration) state.error = error.message;
+    if (generation === state.historyGeneration) setError(error);
   } finally {
     if (generation === state.historyGeneration) {
       state.historyLoading = false;
@@ -167,11 +223,12 @@ async function openConversation(id, persist = true) {
     state.conversationId = id;
     state.messages = result.messages.map(formatMessage);
     state.retryAvailable = state.messages.at(-1)?.role === 'user';
+    state.draft = loadDraft(id);
     state.error = '';
     if (persist) localStorage.setItem(selectedConversationKey(), id);
   } catch (error) {
     if (generation !== state.conversationLoadGeneration) return;
-    state.error = error.message;
+    setError(error);
   }
   render();
 }
@@ -182,7 +239,7 @@ async function newConversation() {
   state.conversationId = '';
   state.messages = [];
   state.retryAvailable = false;
-  state.draft = '';
+  state.draft = loadDraft('');
   localStorage.removeItem(selectedConversationKey());
   state.error = '';
   render();
@@ -250,7 +307,7 @@ function renderSidebar() {
         await api('/api/logout', { method: 'POST' });
         location.reload();
       } catch (error) {
-        state.error = error.message;
+        setError(error);
         render();
       }
     },
@@ -264,12 +321,12 @@ function renderSidebar() {
         await api('/api/logout', { method: 'POST' });
         location.assign('https://account.meoarch.org/ai/switch-account');
       } catch (error) {
-        state.error = error.message;
+        setError(error);
         render();
       }
     },
   });
-  return el('aside', { class: 'sidebar' }, [
+  return el('aside', { class: 'sidebar', id: 'sidebar' }, [
     brand,
     el('div', { class: 'sidebar-actions' }, [newButton]),
     historyTitle,
@@ -310,7 +367,7 @@ function renderTopbar() {
       await loadModels(id);
       state.error = '';
     } catch (error) {
-      state.error = error.message;
+      setError(error);
     }
     render();
   });
@@ -347,7 +404,9 @@ function renderTopbar() {
   const menu = el('button', {
     class: 'button menu-toggle',
     text: '☰',
-    'aria-label': '打开侧栏',
+    'aria-label': state.mobileMenu ? '关闭侧栏' : '打开侧栏',
+    'aria-expanded': state.mobileMenu ? 'true' : 'false',
+    'aria-controls': 'sidebar',
     onclick: () => {
       state.mobileMenu = !state.mobileMenu;
       render();
@@ -359,9 +418,29 @@ function renderTopbar() {
   ]);
 }
 
+function enhanceCodeBlocks(body) {
+  for (const pre of body.querySelectorAll('pre')) {
+    const button = el('button', {
+      class: 'copy-code',
+      text: '复制',
+      'aria-label': '复制代码',
+      onclick: async () => {
+        const code = pre.querySelector('code')?.textContent ?? pre.textContent ?? '';
+        await navigator.clipboard.writeText(code);
+        button.textContent = '已复制';
+        setTimeout(() => {
+          button.textContent = '复制';
+        }, 1200);
+      },
+    });
+    pre.append(button);
+  }
+}
+
 function renderMessage(message) {
   const body = el('div', { class: 'message-body' });
   body.innerHTML = safeMarkdown(message.content);
+  enhanceCodeBlocks(body);
   if (message.transient)
     body.append(
       el('div', {
@@ -370,9 +449,24 @@ function renderMessage(message) {
           message.transient === 'stopped' ? '已停止 · 这段回复未保存' : '回复中断 · 这段回复未保存',
       }),
     );
-  return el('article', { class: `message ${message.role}` }, [
+  const copy = el('button', {
+    class: 'message-action',
+    text: '复制',
+    'aria-label': '复制消息',
+    onclick: async () => {
+      await navigator.clipboard.writeText(message.content);
+      copy.textContent = '已复制';
+      setTimeout(() => {
+        copy.textContent = '复制';
+      }, 1200);
+    },
+  });
+  return el('article', { class: `message ${message.role}`, 'data-message-id': message.id }, [
     el('div', { class: 'avatar', text: message.role === 'user' ? '你' : 'm' }),
-    body,
+    el('div', { class: 'message-content' }, [
+      body,
+      el('div', { class: 'message-actions' }, [copy]),
+    ]),
   ]);
 }
 
@@ -410,6 +504,7 @@ function openConsent(consent, approve, deny) {
   );
   overlay.append(dialog);
   document.body.append(overlay);
+  dialog.querySelector('button')?.focus();
   return () => overlay.remove();
 }
 
@@ -418,6 +513,39 @@ async function persistMessage(conversationId, role, content) {
     method: 'POST',
     body: JSON.stringify({ role, content }),
   });
+}
+
+function cancelGeneration() {
+  if (!state.busy) return;
+  state.cancelRequested = true;
+  state.abortController?.abort();
+  state.streamReader?.cancel().catch(() => {});
+}
+
+function isNearBottom() {
+  const scroll = document.querySelector('.chat-scroll');
+  if (!scroll) return true;
+  return scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 120;
+}
+
+function updateStreamingMessage(message) {
+  const list = document.querySelector('.messages');
+  if (!list) return;
+  const follow = isNearBottom();
+  const last = list.lastElementChild;
+  if (last?.dataset.messageId === message.id) {
+    const body = last.querySelector('.message-body');
+    if (body) {
+      body.innerHTML = safeMarkdown(message.content);
+      enhanceCodeBlocks(body);
+    }
+  } else {
+    list.append(renderMessage(message));
+  }
+  if (follow) {
+    const scroll = document.querySelector('.chat-scroll');
+    if (scroll) scroll.scrollTop = scroll.scrollHeight;
+  }
 }
 
 async function sendMessage(text, retry = false) {
@@ -433,7 +561,10 @@ async function sendMessage(text, retry = false) {
   let savedUser = retry;
   let assistantPersisted = false;
   let assistant = null;
+  let sourceDraftKey = state.conversationId;
   state.busy = true;
+  state.cancelRequested = false;
+  state.abortController = new AbortController();
   state.error = '';
   state.notice = '';
   if (state.messages.at(-1)?.transient) state.messages.pop();
@@ -443,6 +574,7 @@ async function sendMessage(text, retry = false) {
       if (!state.conversationId) {
         const result = await json('/api/conversations', {
           method: 'POST',
+          signal: state.abortController.signal,
           body: JSON.stringify({ title: content.slice(0, 64) }),
         });
         state.conversationId = result.conversation.id;
@@ -452,13 +584,15 @@ async function sendMessage(text, retry = false) {
       await persistMessage(state.conversationId, 'user', content);
       savedUser = true;
       state.messages.push({ id: crypto.randomUUID(), role: 'user', content });
-      state.draft = '';
+      clearDraft(sourceDraftKey);
+      if (sourceDraftKey !== state.conversationId) clearDraft(state.conversationId);
     }
     state.retryAvailable = true;
     const requestMessages = chatContext(state.messages);
     render();
     const prepared = await json('/api/chat/prepare', {
       method: 'POST',
+      signal: state.abortController.signal,
       body: JSON.stringify({
         connection: state.connection.id,
         credentialId: state.connection.id,
@@ -478,20 +612,17 @@ async function sendMessage(text, retry = false) {
         },
         () => {
           close();
-          reject(new Error('Request cancelled'));
+          reject(new DOMException('Request cancelled', 'AbortError'));
         },
       );
     });
+    if (state.cancelRequested) throw new DOMException('Request cancelled', 'AbortError');
     assistant = { id: crypto.randomUUID(), role: 'assistant', content: '' };
     state.messages.push(assistant);
     render();
-    const controller = new AbortController();
-    state.stopController = controller;
-    state.streaming = true;
-    render();
     const response = await api('/api/chat/stream', {
       method: 'POST',
-      signal: controller.signal,
+      signal: state.abortController.signal,
       body: JSON.stringify({
         credentialId: state.connection.id,
         model: state.model,
@@ -504,50 +635,65 @@ async function sendMessage(text, retry = false) {
     const parser = new SseParser((event, data) => {
       if (event === 'delta' && typeof data.text === 'string') {
         assistant.content += data.text;
-        renderMessages();
+        updateStreamingMessage(assistant);
       }
       if (event === 'done') completed = true;
       if (event === 'error') throw new Error(data.message ?? 'Provider stream failed');
     });
     const reader = response.body.getReader();
+    state.streamReader = reader;
     while (true) {
       const { value, done } = await reader.read();
       parser.push(value, done);
       if (done) break;
     }
+    if (state.cancelRequested) throw new DOMException('Request cancelled', 'AbortError');
     if (!completed || !assistant.content) throw new Error('AI 回复未完整结束，请重试。');
-    state.streaming = false;
-    state.stopController = null;
-    render();
     await persistMessage(state.conversationId, 'assistant', assistant.content);
     assistantPersisted = true;
     state.retryAvailable = false;
     state.notice = t('saved');
     await loadHistory();
   } catch (error) {
-    const stopped = state.stopController?.signal.aborted === true;
-    if (stopped) state.notice = '已停止生成。用户消息已保存，可重试回复。';
-    else if (error.message === 'Request cancelled')
-      state.notice = '已取消发送。用户消息已保存，可重试回复。';
-    else state.error = error.message;
-    if (!assistantPersisted && assistant && state.messages.at(-1) === assistant) {
-      if (assistant.content) assistant.transient = stopped ? 'stopped' : 'failed';
-      else state.messages.pop();
+    if (state.cancelRequested || error?.name === 'AbortError') {
+      if (assistant?.content && !assistantPersisted) {
+        try {
+          await persistMessage(state.conversationId, 'assistant', assistant.content);
+          assistantPersisted = true;
+          state.notice = t('stopped');
+        } catch {
+          state.notice = '已停止生成。当前部分回复只保留在本页中。';
+          assistant.transient = 'stopped';
+        }
+      } else if (!assistant?.content) {
+        if (assistant && state.messages.at(-1) === assistant) state.messages.pop();
+        state.notice = '已取消这次请求。';
+      }
+    } else {
+      setError(error);
+      if (!assistantPersisted && assistant && state.messages.at(-1) === assistant) {
+        if (assistant.content) assistant.transient = 'failed';
+        else state.messages.pop();
+      }
     }
     state.retryAvailable = savedUser && !assistantPersisted;
   } finally {
-    state.streaming = false;
-    state.stopController = null;
+    state.streamReader = null;
+    state.abortController = null;
+    state.cancelRequested = false;
     state.busy = false;
     render();
   }
 }
 
-function renderMessages() {
-  const list = document.querySelector('.messages');
-  if (!list) return;
-  list.replaceChildren(...state.messages.map(renderMessage));
-  list.scrollIntoView({ block: 'end', behavior: 'smooth' });
+function fillExample(prompt) {
+  saveDraft(prompt);
+  render();
+  requestAnimationFrame(() => {
+    const textarea = document.querySelector('.composer textarea');
+    textarea?.focus();
+    textarea?.setSelectionRange(prompt.length, prompt.length);
+  });
 }
 
 function renderMain() {
@@ -557,8 +703,21 @@ function renderMain() {
         el('span', { class: 'brand-mark', text: 'm' }),
         el('h1', { text: '今天想聊些什么？' }),
         el('p', { text: '选择 Account 连接和模型，开始一段安全、可同步的对话。' }),
-        ...(!state.connection
+        ...(state.connection
           ? [
+              el(
+                'div',
+                { class: 'prompt-grid', 'aria-label': '示例提示' },
+                examplePrompts.map((prompt) =>
+                  el('button', {
+                    class: 'prompt-chip',
+                    text: prompt,
+                    onclick: () => fillExample(prompt),
+                  }),
+                ),
+              ),
+            ]
+          : [
               el('a', {
                 class: 'button primary',
                 href: 'https://account.meoarch.org/settings/services',
@@ -572,18 +731,17 @@ function renderMain() {
                     await loadConnections();
                     state.error = '';
                   } catch (error) {
-                    state.error = error.message;
+                    setError(error);
                   }
                   render();
                 },
               }),
-            ]
-          : []),
+            ]),
       ])
     : null;
   const messages = el(
     'div',
-    { class: 'messages', id: 'messages' },
+    { class: 'messages', id: 'messages', 'aria-live': 'polite' },
     state.messages.map(renderMessage),
   );
   const scroll = el('div', { class: 'chat-scroll' }, [
@@ -595,44 +753,31 @@ function renderMain() {
     maxlength: 35000,
     disabled: !state.connection || !state.model || state.busy,
     onkeydown: (event) => {
+      if (event.isComposing) return;
       if (event.key === 'Enter' && !event.shiftKey) {
         event.preventDefault();
-        const value = event.target.value;
-        sendMessage(value);
+        sendMessage(event.target.value);
       }
     },
   });
   textarea.value = state.draft;
   const send = el('button', {
-    class: 'send',
-    text: state.busy ? '…' : '↑',
-    title: '发送',
-    disabled: !state.connection || !state.model || state.busy,
+    class: `send${state.busy ? ' stop' : ''}`,
+    text: state.busy ? '■' : '↑',
+    title: state.busy ? '停止生成' : '发送',
+    'aria-label': state.busy ? '停止生成' : '发送消息',
+    disabled: !state.busy && (!state.connection || !state.model || !state.draft.trim()),
     onclick: () => {
-      sendMessage(textarea.value);
+      if (state.busy) cancelGeneration();
+      else sendMessage(textarea.value);
     },
   });
   textarea.addEventListener('input', () => {
-    state.draft = textarea.value;
-    send.disabled = !textarea.value.trim() || state.busy || !state.connection || !state.model;
+    saveDraft(textarea.value);
+    send.disabled = !textarea.value.trim() || !state.connection || !state.model;
   });
-  send.disabled = !state.draft.trim() || state.busy || !state.connection || !state.model;
   const composer = el('footer', { class: 'composer-wrap' }, [
     el('div', { class: 'composer' }, [textarea, send]),
-    ...(state.streaming
-      ? [
-          el('button', {
-            class: 'button stop-button',
-            text: '停止生成',
-            onclick: () => {
-              state.stopController?.abort();
-              state.streaming = false;
-              state.notice = '正在停止生成…';
-              render();
-            },
-          }),
-        ]
-      : []),
     ...(state.retryAvailable
       ? [
           el('button', {
@@ -645,7 +790,7 @@ function renderMain() {
       : []),
     el('div', {
       class: 'hint',
-      text: 'AI 回复可能不准确。发送前会显示 Account 的本次请求授权摘要。',
+      text: 'AI 回复可能不准确。Enter 发送，Shift+Enter 换行；发送前会显示本次授权摘要。',
     }),
     ...(state.error
       ? [el('div', { class: 'notice error', role: 'alert', text: state.error })]
@@ -655,11 +800,25 @@ function renderMain() {
   return el('main', { class: 'main' }, [renderTopbar(), scroll, composer]);
 }
 
+function closeMobileMenu() {
+  if (!state.mobileMenu) return;
+  state.mobileMenu = false;
+  render();
+  requestAnimationFrame(() => document.querySelector('.menu-toggle')?.focus());
+}
+
 function render() {
-  const shell = el('div', { class: `shell${state.mobileMenu ? ' menu-open' : ''}` }, [
-    renderSidebar(),
-    renderMain(),
-  ]);
+  const shellChildren = [renderSidebar(), renderMain()];
+  if (state.mobileMenu) {
+    shellChildren.push(
+      el('button', {
+        class: 'sidebar-backdrop',
+        'aria-label': '关闭侧栏',
+        onclick: closeMobileMenu,
+      }),
+    );
+  }
+  const shell = el('div', { class: `shell${state.mobileMenu ? ' menu-open' : ''}` }, shellChildren);
   root.replaceChildren(shell);
 }
 
@@ -680,12 +839,20 @@ async function boot() {
       el('main', { class: 'login' }, [
         el('section', { class: 'login-card' }, [
           el('h1', { text: 'Meo AI 暂时无法加载' }),
-          el('p', { text: error.message || '请检查网络后重试。' }),
+          el('p', { text: friendlyError(error) }),
           el('button', { class: 'button primary', text: '重试', onclick: boot }),
         ]),
       ]),
     );
   }
 }
+
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && state.mobileMenu) closeMobileMenu();
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
+    event.preventDefault();
+    document.querySelector('.composer textarea')?.focus();
+  }
+});
 
 boot();
