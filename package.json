@@ -244,13 +244,13 @@
     "mdast-util-gfm": {
       "mdast-util-gfm-autolink-literal": "2.0.0"
     },
-    "katex": "^0.16.21",
+    "katex": "^0.18.2",
     "rehype-katex": {
-      "katex": "^0.16.21"
+      "katex": "^0.18.2"
     },
     "remark-math": {
       "micromark-extension-math": {
-        "katex": "^0.16.21"
+        "katex": "^0.18.2"
       }
     },
     "eslint": {
