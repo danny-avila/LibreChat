@@ -25,10 +25,9 @@ import {
 import type * as t from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import {
+  clearTTSCache,
   isSafeRedirect,
   getPostLoginRedirect,
-  openTTSCacheWrites,
-  endTTSCacheSession,
   clearPostLoginRedirect,
   persistRedirectToSession,
   clearComposerDraftStorage,
@@ -62,13 +61,13 @@ if (import.meta.hot) {
  * its identity across an in-app account switch, so the account on the way out is the only place
  * that reliably sees the transition. Both are cleared together so neither can be added to an exit
  * path the other was wired into. */
-const endSessionClientState = (): Promise<void> => {
+const endSessionClientState = (): void => {
   getDefaultStore().set(resetChatFilterSessionAtom);
   getDefaultStore().set(resetFacetsAtom);
   clearRetainedFileDeletions();
   clearComposerDraftStorage();
   endPullRequestSession();
-  return endTTSCacheSession();
+  clearTTSCache();
 };
 /**
  * Only recognized codes override the HTTP status used by the login error translation.
@@ -187,8 +186,6 @@ const AuthContextProvider = ({
       setError(undefined);
       const redirect =
         getPostLoginRedirect(new URLSearchParams(window.location.search)) ?? '/c/new';
-      /** A new session starts here, unlike a token rotation, so only here does caching reopen. */
-      openTTSCacheWrites();
       setUserContext({ token, isAuthenticated: true, user, redirect });
     },
     onError: (error: TResError | unknown) => {
@@ -214,14 +211,8 @@ const AuthContextProvider = ({
          * axios Authorization header and deletion state synchronously to prevent in-flight requests. */
         isExternalRedirectRef.current = true;
         setTokenHeader(undefined);
-        const { redirect } = data;
-        const leave = () => window.location.replace(redirect);
-        /** Unloading does not wait for Cache Storage, so the TTS cache delete settles first,
-         * bounded so a stalled storage backend cannot hold the user on the page. */
-        void Promise.race([
-          endSessionClientState(),
-          new Promise((resolve) => setTimeout(resolve, 1000)),
-        ]).then(leave, leave);
+        endSessionClientState();
+        window.location.replace(data.redirect);
         return;
       }
       endSessionClientState();
@@ -270,7 +261,6 @@ const AuthContextProvider = ({
       setIsAuthReady(true);
       setQueriesEnabled(true);
       openFileDeletionRetention();
-      openTTSCacheWrites();
       navigate(redirect, { replace: true });
     },
     [navigate, setQueriesEnabled, setUser],
@@ -345,7 +335,6 @@ const AuthContextProvider = ({
           const fallbackRedirect = isSafeRedirect(currentUrl) ? currentUrl : '/c/new';
           const redirect =
             getPostLoginRedirect(new URLSearchParams(window.location.search)) ?? fallbackRedirect;
-          openTTSCacheWrites();
           setUserContext({ user, token, isAuthenticated: true, redirect });
           return;
         }

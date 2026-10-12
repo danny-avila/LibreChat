@@ -5,7 +5,7 @@ import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { getDefaultStore } from 'jotai';
 import { MemoryRouter } from 'react-router-dom';
-import { render, act, waitFor } from '@testing-library/react';
+import { render, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   FileSources,
@@ -16,9 +16,10 @@ import {
 import type { TAuthConfig } from '~/common';
 import {
   SESSION_KEY,
-  putTTSCache,
-  getTTSCacheEpoch,
+  getCachedTTSAudio,
+  setCachedTTSAudio,
   retainFileDeletion,
+  getTTSCacheGeneration,
   clearRetainedFileDeletions,
   takeRetainedFileDeletions,
 } from '~/utils';
@@ -479,7 +480,7 @@ describe('AuthContextProvider — logout onSuccess/onError handling', () => {
     window.history.replaceState({}, '', '/');
   });
 
-  it('calls window.location.replace and setTokenHeader(undefined) when redirect is present', async () => {
+  it('calls window.location.replace and setTokenHeader(undefined) when redirect is present', () => {
     const replaceSpy = jest.spyOn(window.location, 'replace').mockImplementation(() => {});
 
     renderProvider();
@@ -491,35 +492,8 @@ describe('AuthContextProvider — logout onSuccess/onError handling', () => {
       });
     });
 
+    expect(replaceSpy).toHaveBeenCalledWith('https://idp.example.com/logout?id_token_hint=abc');
     expect(mockSetTokenHeader).toHaveBeenCalledWith(undefined);
-    await waitFor(() =>
-      expect(replaceSpy).toHaveBeenCalledWith('https://idp.example.com/logout?id_token_hint=abc'),
-    );
-  });
-
-  it('leaves for the IdP only after the TTS cache delete settles', async () => {
-    const replaceSpy = jest.spyOn(window.location, 'replace').mockImplementation(() => {});
-    const pending: Array<(value: boolean) => void> = [];
-    const del = jest.fn(() => new Promise<boolean>((resolve) => pending.push(resolve)));
-    Object.defineProperty(globalThis, 'caches', { value: { delete: del }, configurable: true });
-    renderProvider();
-
-    act(() => {
-      mockCapturedLogoutOptions.onSuccess({
-        message: 'Logout successful',
-        redirect: 'https://idp.example.com/logout?id_token_hint=abc',
-      });
-    });
-
-    expect(del).toHaveBeenCalledWith('tts-responses-v1');
-    await act(async () => {
-      await Promise.resolve();
-    });
-    expect(replaceSpy).not.toHaveBeenCalled();
-
-    pending.forEach((resolve) => resolve(true));
-    await waitFor(() => expect(replaceSpy).toHaveBeenCalled());
-    Reflect.deleteProperty(globalThis, 'caches');
   });
   it('resets account-scoped chat filters at the logout session boundary', () => {
     const jotaiStore = getDefaultStore();
@@ -550,58 +524,15 @@ describe('AuthContextProvider — logout onSuccess/onError handling', () => {
     expect(mockEndPullRequestSession).toHaveBeenCalled();
   });
 
-  it('clears the TTS cache at the logout session boundary', () => {
-    const del = jest.fn().mockResolvedValue(true);
-    Object.defineProperty(globalThis, 'caches', { value: { delete: del }, configurable: true });
+  it('drops cached read-aloud audio at the logout session boundary', () => {
+    setCachedTTSAudio('departing', new Blob(['audio']), getTTSCacheGeneration());
     renderProvider();
 
     act(() => {
       mockCapturedLogoutOptions.onSuccess({ message: 'Logout successful' });
     });
 
-    expect(del).toHaveBeenCalledWith('tts-responses-v1');
-    Reflect.deleteProperty(globalThis, 'caches');
-  });
-
-  it('keeps TTS caching closed when only the token rotates after logout', async () => {
-    const put = jest.fn();
-    Object.defineProperty(globalThis, 'caches', {
-      value: { open: async () => ({ put }), delete: async () => true },
-      configurable: true,
-    });
-    renderProvider();
-
-    act(() => {
-      mockCapturedLogoutOptions.onSuccess({ message: 'Logout successful' });
-    });
-    act(() => {
-      window.dispatchEvent(new CustomEvent('tokenUpdated', { detail: 'rotated-token' }));
-    });
-    await putTTSCache('/tts-cache/v1/rotated', {} as Response, getTTSCacheEpoch());
-    expect(put).not.toHaveBeenCalled();
-    Reflect.deleteProperty(globalThis, 'caches');
-  });
-
-  it('reopens TTS caching when a session is completed in place', async () => {
-    const put = jest.fn();
-    Object.defineProperty(globalThis, 'caches', {
-      value: { open: async () => ({ keys: async () => [], put }), delete: async () => true },
-      configurable: true,
-    });
-    renderProvider();
-
-    act(() => {
-      mockCapturedLogoutOptions.onSuccess({ message: 'Logout successful' });
-    });
-    await putTTSCache('/tts-cache/ended', {} as Response, getTTSCacheEpoch());
-    expect(put).not.toHaveBeenCalled();
-
-    act(() => {
-      capturedAuthContext?.completeAuthentication('auth-token', { id: 'user-1' } as never);
-    });
-    await putTTSCache('/tts-cache/next', {} as Response, getTTSCacheEpoch());
-    expect(put).toHaveBeenCalledWith('/tts-cache/next', {});
-    Reflect.deleteProperty(globalThis, 'caches');
+    expect(getCachedTTSAudio('departing')).toBeUndefined();
   });
 
   it('does not end the sidebar pull request queue while a session is being established', () => {
@@ -627,7 +558,7 @@ describe('AuthContextProvider — logout onSuccess/onError handling', () => {
     expect(replaceSpy).not.toHaveBeenCalled();
   });
 
-  it('does not trigger silentRefresh after OIDC redirect', async () => {
+  it('does not trigger silentRefresh after OIDC redirect', () => {
     const replaceSpy = jest.spyOn(window.location, 'replace').mockImplementation(() => {});
 
     renderProviderLive();
@@ -640,7 +571,7 @@ describe('AuthContextProvider — logout onSuccess/onError handling', () => {
       });
     });
 
-    await waitFor(() => expect(replaceSpy).toHaveBeenCalled());
+    expect(replaceSpy).toHaveBeenCalled();
     expect(mockRefreshMutate).not.toHaveBeenCalled();
   });
 });

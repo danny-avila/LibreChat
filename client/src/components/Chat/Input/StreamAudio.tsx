@@ -10,7 +10,13 @@ import {
   MediaSourceAppender,
   usePauseGlobalAudio,
 } from '~/hooks/Audio';
-import { logger, putTTSCache, matchTTSCache, getTTSCacheKey, getTTSCacheEpoch } from '~/utils';
+import {
+  logger,
+  getTTSCacheKey,
+  setCachedTTSAudio,
+  getCachedTTSAudio,
+  getTTSCacheGeneration,
+} from '~/utils';
 import { useAuthContext } from '~/hooks';
 import { globalAudioId } from '~/common';
 import store from '~/store';
@@ -57,7 +63,7 @@ export default function StreamAudio({ index = 0 }) {
 
     async function fetchAudio() {
       setIsFetching(true);
-      const epoch = getTTSCacheEpoch();
+      const generation = getTTSCacheGeneration();
       let mediaSource: MediaSourceAppender | undefined;
 
       try {
@@ -72,7 +78,7 @@ export default function StreamAudio({ index = 0 }) {
         let cacheKey = latestMessage
           ? await getTTSCacheKey(getSpeechText(latestMessage), voice)
           : null;
-        const cachedAudio = cacheKey ? await matchTTSCache(cacheKey) : undefined;
+        const cachedAudio = cacheKey ? getCachedTTSAudio(cacheKey) : undefined;
 
         setAudioRunId(activeRunId);
         if (cachedAudio) {
@@ -149,7 +155,7 @@ export default function StreamAudio({ index = 0 }) {
               logger.warn('Cache key not found, skipping audio cache');
             } else {
               logger.log('Adding audio to cache');
-              await putTTSCache(cacheKey, new Response(audioBlob), epoch);
+              setCachedTTSAudio(cacheKey, audioBlob, generation);
             }
           }
         }

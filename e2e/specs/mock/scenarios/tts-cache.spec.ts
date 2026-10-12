@@ -14,15 +14,14 @@ import { deleteConversations } from '../db';
 import cleanupUser from '../../../setup/cleanupUser';
 
 /**
- * Read-aloud audio is cached in the browser's Cache Storage. Entries are keyed by a
- * SHA-256 hash of the voice and spoken text, so the cache never holds message text,
- * and the whole cache is dropped when the session ends.
+ * Read-aloud audio is cached only in the tab's memory: a replay plays without a second TTS
+ * request, nothing is written to Cache Storage, logout empties the cache, and the cache that
+ * earlier versions persisted to disk is deleted when the app starts.
  */
 
 test.describe.configure({ timeout: 120_000 });
 
-const TTS_CACHE = 'tts-responses-v1';
-/** The cache earlier versions keyed by raw message text. */
+/** The Cache Storage name earlier versions persisted audio under, keyed by message text. */
 const LEGACY_TTS_CACHE = 'tts-responses';
 const createdConversationIds: string[] = [];
 
@@ -31,15 +30,19 @@ test.afterAll(async () => {
 });
 
 /** Stands in for a configured external TTS provider: the e2e config has none. */
-async function routeExternalSpeech(page: Page): Promise<{ requests: () => number }> {
+async function routeExternalSpeech(
+  target: Page | BrowserContext,
+): Promise<{ requests: () => number }> {
   let ttsRequests = 0;
-  await page.route('**/api/files/speech/config/get', (route) =>
+  await target.route('**/api/files/speech/config/get', (route) =>
     route.fulfill({
       json: { textToSpeech: true, engineTTS: 'external', cacheTTS: true, ttsExternal: true },
     }),
   );
-  await page.route('**/api/files/speech/tts/voices', (route) => route.fulfill({ json: ['alloy'] }));
-  await page.route('**/api/files/speech/tts/manual', (route) => {
+  await target.route('**/api/files/speech/tts/voices', (route) =>
+    route.fulfill({ json: ['alloy'] }),
+  );
+  await target.route('**/api/files/speech/tts/manual', (route) => {
     ttsRequests += 1;
     return route.fulfill({
       body: Buffer.from([0xff, 0xf3, 0x00, 0x00]),
@@ -49,160 +52,109 @@ async function routeExternalSpeech(page: Page): Promise<{ requests: () => number
   return { requests: () => ttsRequests };
 }
 
-const cacheKeys = (page: Page) =>
-  page.evaluate(async (name) => {
-    const cache = await caches.open(name);
-    return (await cache.keys()).map((request) => new URL(request.url).pathname);
-  }, TTS_CACHE);
+const useExternalEngine = (target: Page | BrowserContext) =>
+  target.addInitScript(() => {
+    localStorage.setItem('engineTTS', JSON.stringify('external'));
+    localStorage.setItem('voice', JSON.stringify('alloy'));
+  });
+
+/** Sends a message to the mock model and returns the read-aloud button of its reply. */
+async function replyToReadAloud(page: Page, prefix: string) {
+  await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
+  const label = `${prefix}-${randomUUID().slice(0, 8)}`;
+  await sendMessageAndWaitForCompletion(page, replyPrompt(label));
+  await expect(page.getByText(replyText(label)).first()).toBeVisible({ timeout: 20000 });
+  const conversationId = new URL(page.url()).pathname.split('/c/')[1];
+  if (conversationId) createdConversationIds.push(conversationId);
+  return page.getByRole('button', { name: 'Read aloud' }).last();
+}
+
+const cacheStorageNames = (page: Page) => page.evaluate(() => caches.keys());
 
 test.describe('read-aloud audio cache', () => {
-  test('replaying a message reads its audio from a cache that holds no message text @scenario:tts-replay-cached-under-hashed-key', async ({
+  test('replaying a message plays from memory without a second TTS request @scenario:tts-replay-served-from-memory', async ({
     page,
   }) => {
-    await page.addInitScript(() => {
-      localStorage.setItem('engineTTS', JSON.stringify('external'));
-      localStorage.setItem('voice', JSON.stringify('alloy'));
-    });
+    await useExternalEngine(page);
     const speech = await routeExternalSpeech(page);
-
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
-    /** An entry an earlier version keyed by the raw message text, in the cache it used. */
-    await page.evaluate(
-      async ([name, legacy]) => {
-        await caches.delete(name);
-        const cache = await caches.open(legacy);
-        await cache.put(
-          '/E2E%20legacy%20reply%20text',
-          new Response(new Blob([new Uint8Array([1])])),
-        );
-      },
-      [TTS_CACHE, LEGACY_TTS_CACHE],
-    );
-    await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
-    const label = `tts-${randomUUID().slice(0, 8)}`;
-    await sendMessageAndWaitForCompletion(page, replyPrompt(label));
-    await expect(page.getByText(replyText(label)).first()).toBeVisible({ timeout: 20000 });
-    const conversationId = new URL(page.url()).pathname.split('/c/')[1];
-    if (conversationId) createdConversationIds.push(conversationId);
 
-    const readAloud = page.getByRole('button', { name: 'Read aloud' }).last();
+    const readAloud = await replyToReadAloud(page, 'tts');
     await readAloud.click();
     await expect.poll(() => speech.requests()).toBe(1);
-    await expect.poll(() => cacheKeys(page)).toHaveLength(1);
-
-    const [key] = await cacheKeys(page);
-    expect(key).toMatch(/^\/tts-cache\/v1\/[0-9a-f]{64}$/);
-    expect(key).not.toContain(encodeURIComponent(label));
-    expect(key).not.toContain('E2E');
-    expect(await page.evaluate((legacy) => caches.has(legacy), LEGACY_TTS_CACHE)).toBe(false);
 
     await expect(readAloud).toHaveAccessibleName('Read aloud');
     await readAloud.click();
-    /** The replay is served from Cache Storage: the provider is not called again. */
+    /** Give a second request time to start, if one were going to. */
     await page.waitForTimeout(1500);
     expect(speech.requests()).toBe(1);
-    expect(await cacheKeys(page)).toEqual([key]);
   });
 
-  test('logging out removes cached read-aloud audio @scenario:tts-cache-cleared-on-logout', async ({
+  test('read-aloud audio is never written to Cache Storage @scenario:tts-audio-never-persisted', async ({
+    page,
+  }) => {
+    await useExternalEngine(page);
+    const speech = await routeExternalSpeech(page);
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+
+    const readAloud = await replyToReadAloud(page, 'disk');
+    await readAloud.click();
+    await expect.poll(() => speech.requests()).toBe(1);
+    await page.waitForTimeout(1000);
+
+    expect(await cacheStorageNames(page)).not.toContain(LEGACY_TTS_CACHE);
+    expect((await cacheStorageNames(page)).filter((name) => name.startsWith('tts'))).toEqual([]);
+  });
+
+  test('logging out empties the read-aloud cache @scenario:tts-memory-cleared-on-logout', async ({
     browser,
     baseURL,
   }) => {
     const { context, page, user } = await signInFreshUser(browser, baseURL);
     try {
-      await page.evaluate(async (name) => {
-        const cache = await caches.open(name);
-        await cache.put('/tts-cache/seeded', new Response(new Blob([new Uint8Array([1, 2, 3])])));
-      }, TTS_CACHE);
-      expect(await hasTTSCache(page)).toBe(true);
-
-      await logOut(page);
-
-      await expect.poll(() => hasTTSCache(page)).toBe(false);
-    } finally {
-      await context.close().catch(() => undefined);
-      await cleanupUser(user);
-    }
-  });
-
-  test('a tab that is still open is not cached into after another tab logs out @scenario:tts-cache-stays-cleared-across-tabs', async ({
-    browser,
-    baseURL,
-  }) => {
-    const { context, page, user } = await signInFreshUser(browser, baseURL);
-    try {
-      await page.addInitScript(() => {
-        localStorage.setItem('engineTTS', JSON.stringify('external'));
-        localStorage.setItem('voice', JSON.stringify('alloy'));
-      });
-      await context.route('**/api/files/speech/config/get', (route) =>
-        route.fulfill({
-          json: { textToSpeech: true, engineTTS: 'external', cacheTTS: true, ttsExternal: true },
-        }),
-      );
-      await context.route('**/api/files/speech/tts/voices', (route) =>
-        route.fulfill({ json: ['alloy'] }),
-      );
-      let release: () => void = () => undefined;
-      const held = new Promise<void>((resolve) => (release = resolve));
-      const requested = new Promise<void>((resolve) => {
-        void context.route('**/api/files/speech/tts/manual', async (route) => {
-          resolve();
-          await held;
-          await route.fulfill({
-            body: Buffer.from([0xff, 0xf3, 0x00, 0x00]),
-            contentType: 'audio/mpeg',
-          });
-        });
-      });
-
+      await useExternalEngine(context);
+      const speech = await routeExternalSpeech(context);
       await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
-      await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
-      const label = `tabs-${randomUUID().slice(0, 8)}`;
-      await sendMessageAndWaitForCompletion(page, replyPrompt(label));
-      await expect(page.getByText(replyText(label)).first()).toBeVisible({ timeout: 20000 });
 
-      await page.getByRole('button', { name: 'Read aloud' }).last().click();
-      await requested;
-
-      const other = await context.newPage();
-      await other.goto(NEW_CHAT_PATH, { timeout: 10000 });
-      await logOut(other);
-
-      const delivered = page.waitForResponse('**/api/files/speech/tts/manual');
-      release();
-      await delivered;
-      /** The first tab would write within a few frames of the response; give it time to. */
-      await page.waitForTimeout(1500);
-      expect(await storedTTSKeys(page)).toEqual([]);
-
-      /** The first tab still holds the departed session's token; audio it requests now is
-       *  not cached either, until that tab authenticates again. */
-      const readAloud = page.getByRole('button', { name: 'Read aloud' }).last();
-      await expect(readAloud).toHaveAccessibleName('Read aloud');
-      const again = page.waitForResponse('**/api/files/speech/tts/manual');
+      const readAloud = await replyToReadAloud(page, 'logout');
+      const conversationPath = new URL(page.url()).pathname;
       await readAloud.click();
-      await again;
-      await page.waitForTimeout(1500);
-      expect(await storedTTSKeys(page)).toEqual([]);
+      await expect.poll(() => speech.requests()).toBe(1);
+
+      /** Same tab, no reload: only the logout can have emptied the in-memory cache. */
+      await logOut(page);
+      await logIn(page, user);
+      await page.evaluate((path) => {
+        window.history.pushState({}, '', path);
+        window.dispatchEvent(new PopStateEvent('popstate'));
+      }, conversationPath);
+      await expect(page).toHaveURL(new RegExp(conversationPath));
+      await page.getByRole('button', { name: 'Read aloud' }).last().click();
+      await expect.poll(() => speech.requests()).toBe(2);
     } finally {
       await context.close().catch(() => undefined);
       await cleanupUser(user);
     }
+  });
+
+  test('audio earlier versions saved to Cache Storage is deleted when the app starts @scenario:tts-legacy-disk-cache-purged-at-startup', async ({
+    page,
+  }) => {
+    await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+    await page.evaluate(async (name) => {
+      const cache = await caches.open(name);
+      await cache.put(
+        '/E2E%20legacy%20reply%20text',
+        new Response(new Blob([new Uint8Array([1])])),
+      );
+    }, LEGACY_TTS_CACHE);
+
+    await page.reload();
+    await expect
+      .poll(() => page.evaluate((name) => caches.has(name), LEGACY_TTS_CACHE))
+      .toBe(false);
   });
 });
-
-const hasTTSCache = (page: Page) => page.evaluate((name) => caches.has(name), TTS_CACHE);
-
-/** Entries in the cache without creating it: an absent cache holds nothing. */
-const storedTTSKeys = (page: Page) =>
-  page.evaluate(async (name) => {
-    if (!(await caches.has(name))) {
-      return [];
-    }
-    const cache = await caches.open(name);
-    return (await cache.keys()).map((request) => new URL(request.url).pathname);
-  }, TTS_CACHE);
 
 /** A dedicated account, so logging out does not end the session other specs share. */
 async function signInFreshUser(
@@ -234,11 +186,15 @@ async function signInFreshUser(
 
   const page = await context.newPage();
   await page.goto('/login', { timeout: 10000 });
+  await logIn(page, user);
+  return { context, page, user };
+}
+
+async function logIn(page: Page, user: User): Promise<void> {
   await page.getByLabel('Email').fill(user.email);
   await page.getByLabel('Password').fill(user.password);
   await page.getByTestId('login-button').click();
   await page.waitForURL(/\/c\/new/, { timeout: 10000 });
-  return { context, page, user };
 }
 
 async function logOut(page: Page): Promise<void> {

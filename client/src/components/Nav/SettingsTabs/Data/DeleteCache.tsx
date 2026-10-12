@@ -9,7 +9,7 @@ import {
   InfoHoverCard,
   useOnClickOutside,
 } from '@librechat/client';
-import { openTTSCache, clearTTSCache } from '~/utils';
+import { clearTTSCache, hasCachedTTSAudio } from '~/utils';
 import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
 
@@ -22,15 +22,8 @@ export const DeleteCache = ({ disabled = false }: { disabled?: boolean }) => {
   const contentRef = useRef(null);
   useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);
 
-  const checkCache = useCallback(async () => {
-    try {
-      const cache = await openTTSCache();
-      const keys = await cache.keys();
-      setIsCacheEmpty(keys.length === 0);
-    } catch {
-      /** A delete that has not succeeded yet leaves entries behind; keep the action available. */
-      setIsCacheEmpty(false);
-    }
+  const checkCache = useCallback(() => {
+    setIsCacheEmpty(!hasCachedTTSAudio());
   }, []);
 
   useEffect(() => {
@@ -39,7 +32,8 @@ export const DeleteCache = ({ disabled = false }: { disabled?: boolean }) => {
 
   const revokeAllUserKeys = useCallback(async () => {
     setIsLoading(true);
-    await clearTTSCache();
+    clearTTSCache();
+    setIsCacheEmpty(true);
     setIsLoading(false);
   }, []);
 
