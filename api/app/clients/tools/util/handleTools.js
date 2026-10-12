@@ -2,6 +2,7 @@ const { logger, getTenantId } = require('@librechat/data-schemas');
 const { Calculator, createSearchTool, createCodeExecutionTool } = require('@librechat/agents');
 const {
   checkAccess,
+  resolveMCPToolProvider,
   createGitHubCompareTool,
   getProxyDispatcher,
   toolkitParent,
@@ -701,7 +702,11 @@ const loadTools = async ({
         streamId: options.req?._resumableStreamId || null,
         jobCreatedAt: options.jobCreatedAt,
         model: agent?.model ?? model,
-        provider: agent?.provider ?? endpoint,
+        provider: resolveMCPToolProvider(
+          undefined,
+          agent?.provider ?? endpoint,
+          options.req?.config,
+        ),
       },
     })),
   );

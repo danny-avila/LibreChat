@@ -3,6 +3,7 @@ const { logger, getTenantId } = require('@librechat/data-schemas');
 const { Providers, Constants: AgentConstants } = require('@librechat/agents');
 const {
   sendEvent,
+  resolveMCPToolProvider,
   createMCPToolApprovalMetadata,
   PENDING_STALE_MS,
   MCPOAuthHandler,
@@ -1321,7 +1322,7 @@ function createToolInstance({
         invocationUserId: config?.configurable?.user_id,
         serverConfig: capturedServerConfig,
       });
-      const provider = (config?.metadata?.provider || capturedProvider)?.toLowerCase();
+      const provider = resolveMCPToolProvider(config?.metadata?.provider, capturedProvider);
       const canUseMCP = mcpPermissionContext
         ? await mcpPermissionContext.canUseServers(permissionUser)
         : await userCanUseMCPServers(permissionUser);

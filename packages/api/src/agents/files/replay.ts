@@ -86,6 +86,8 @@ export function selectHistoricalToolImages({
       const file = filesById?.get(ref.file_id);
       if (
         !file ||
+        (file.conversationId != null && file.conversationId !== conversationId) ||
+        (file.messageId != null && file.messageId !== message.messageId) ||
         file.context !== FileContext.image_generation ||
         file.llmDeliveryPath === 'none' ||
         !['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type) ||
@@ -217,7 +219,7 @@ export async function replayHistoricalToolImages({
     const content: ReplayPart[] = [
       {
         type: 'text',
-        text: `Historical MCP image (preview): message ${messageId}, tool call ${toolCallId}, file ${file.file_id}.`,
+        text: `Historical MCP image (preview): ${JSON.stringify({ messageId, toolCallId, fileId: file.file_id }).slice(0, 1024)}.`,
       },
       {
         type: 'image_url',
@@ -243,10 +245,13 @@ export async function replayHistoricalToolImages({
     result.content.push(...content);
   }
   if (result.files.length < selected.length) {
-    result.content.push({
+    const omission: ReplayPart = {
       type: 'text',
       text: 'Some historical MCP image previews were unavailable or exceeded replay limits. Reopen the original images if visual details are needed.',
-    });
+    };
+    if (deps.countTokens([...result.content, omission]) <= config.maxTokens) {
+      result.content.push(omission);
+    }
   }
   return result;
 }

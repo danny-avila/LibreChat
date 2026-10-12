@@ -75,6 +75,8 @@ describe('historical MCP image admission', () => {
     { bytes: 0 },
     { bytes: config.maxSourceBytes + 1 },
     { llmDeliveryPath: 'none' },
+    { conversationId: 'different' },
+    { messageId: 'different' },
   ])('uses canonical policy fields rather than snapshots: %j', (override) => {
     expect(
       selectHistoricalToolImages({
@@ -163,7 +165,7 @@ describe('durable replay projection', () => {
     expect(result.files[0].height).toBe(410);
     expect(result.content[1].type).toBe('image_url');
     expect(result.content[0]).toEqual(
-      expect.objectContaining({ text: expect.stringContaining('tool call call-1') }),
+      expect.objectContaining({ text: expect.stringContaining('"toolCallId":"call-1"') }),
     );
     expect(file.width).toBe(900);
   });
@@ -203,12 +205,13 @@ describe('durable replay projection', () => {
   });
   it('respects endpoint MIME policy and performs no storage read for rejected files', async () => {
     const opts = options();
-    const filteredReq = Object.assign(Object.create(req), {
+    const filteredReq = {
+      ...req,
       config: {
         ...req.config,
-        fileConfig: { endpoints: { custom: { supportedMimeTypes: ['application/pdf'] } } },
+        fileConfig: { endpoints: { custom: { supportedMimeTypes: [/^application\/pdf$/] } } },
       },
-    });
+    } as ServerRequest;
     const result = await replayHistoricalToolImages({
       ...opts,
       endpoint: 'custom',
