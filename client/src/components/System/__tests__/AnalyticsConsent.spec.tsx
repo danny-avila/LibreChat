@@ -166,9 +166,12 @@ describe('AnalyticsConsent', () => {
 
   it('retries a container whose script failed to load', () => {
     localStorage.setItem('analyticsConsent', JSON.stringify('granted'));
-    initialize.mockImplementationOnce(({ gtmId }: { gtmId: string }) => {
+    /** Stands in for the GTM snippet: queues the start event, then injects gtm.js. */
+    const bootstrap = ({ gtmId }: { gtmId: string }) => {
+      window.dataLayer?.push({ event: 'gtm.js' });
       appendContainerScript(gtmId);
-    });
+    };
+    initialize.mockImplementationOnce(bootstrap).mockImplementationOnce(bootstrap);
     const first = renderConsent('GTM-TEST');
     const failed = document.querySelector('script[src*="gtm.js"]');
     expect(failed).not.toBeNull();
@@ -177,5 +180,11 @@ describe('AnalyticsConsent', () => {
     first.unmount();
     renderConsent('GTM-TEST');
     expect(initialize).toHaveBeenCalledTimes(2);
+    /** Only the retry's start event is left for the container to replay. */
+    const startEvents = (window.dataLayer ?? []).filter(
+      (entry) => (entry as { event?: unknown } | null)?.event === 'gtm.js',
+    );
+    expect(startEvents).toHaveLength(1);
+    document.querySelector('script[src*="gtm.js"]')?.remove();
   });
 });

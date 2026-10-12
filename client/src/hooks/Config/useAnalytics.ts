@@ -50,13 +50,29 @@ function isContainerPresent(gtmId: string) {
 }
 
 /** Loads the container with consent defaults queued ahead of its first tag. A
- *  script that fails to load is removed, so the next grant retries it. */
+ *  script that fails to load is removed together with the `gtm.js` start event
+ *  the snippet queued for it, so the next grant retries without a container
+ *  that loads later replaying two start events. */
 function initializeContainer(gtmId: string) {
   /** The snippet keeps an existing data layer, so the defaults stay first in it. */
   pushConsent('default', 'granted');
+  const queued = window.dataLayer?.length ?? 0;
   TagManager.initialize({ gtmId });
+  const startEvent = window.dataLayer
+    ?.slice(queued)
+    .find((entry) => (entry as { event?: unknown } | null)?.event === 'gtm.js');
   const script = findContainerScript(gtmId);
-  script?.addEventListener('error', () => script.remove(), { once: true });
+  script?.addEventListener(
+    'error',
+    () => {
+      script.remove();
+      const index = window.dataLayer?.indexOf(startEvent) ?? -1;
+      if (startEvent != null && index !== -1) {
+        window.dataLayer?.splice(index, 1);
+      }
+    },
+    { once: true },
+  );
 }
 
 /**
