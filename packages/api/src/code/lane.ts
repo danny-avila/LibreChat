@@ -78,6 +78,7 @@ const reservationTails = new Map<string, Promise<unknown>>();
  */
 export async function createLaneGitRecorder({
   enabled,
+  host,
   user,
   conversationId,
   repo,
@@ -89,6 +90,8 @@ export async function createLaneGitRecorder({
 }: {
   /** Whether the deployment shows pull requests; when it does not, nothing is read or recorded. */
   enabled: boolean;
+  /** The configured pull request host; a link to any other host is not recorded. */
+  host?: string;
   user: string | undefined;
   conversationId: string | undefined;
   repo?: string;
@@ -177,7 +180,7 @@ export async function createLaneGitRecorder({
   return (laneGit, output) => {
     const pullRequest =
       safeRepo != null && output != null && laneGit.branch != null
-        ? findPullRequestLink(output, safeRepo)
+        ? findPullRequestLink(output, safeRepo, host)
         : null;
     const previous = reservationTails.get(queueKey) ?? Promise.resolve();
     const reservation = previous.then(() => reserve());

@@ -16,25 +16,50 @@ describe('findPullRequestLink', () => {
     expect(findPullRequestLink(output, 'o/r')).toBe(8);
   });
 
-  it('finds a link on a GitHub Enterprise host, which the lookup then checks', () => {
-    expect(findPullRequestLink('https://ghe.example.com/o/r/pull/9', 'o/r')).toBe(9);
-    expect(findPullRequestLink('https://ghe.local:8443/o/r/pull/9', 'o/r')).toBe(9);
+  it('finds a link only on the configured host', () => {
+    expect(findPullRequestLink('https://ghe.example.com/o/r/pull/9', 'o/r')).toBeNull();
+    expect(
+      findPullRequestLink('https://ghe.example.com/o/r/pull/9', 'o/r', 'ghe.example.com'),
+    ).toBe(9);
+    expect(findPullRequestLink('https://GHE.local:8443/o/r/pull/9', 'o/r', 'ghe.local:8443')).toBe(
+      9,
+    );
+    expect(findPullRequestLink('https://ghe.local:443/o/r/pull/9', 'o/r', 'ghe.local')).toBe(9);
+    expect(findPullRequestLink('https://ghe.local:08443/o/r/pull/9', 'o/r', 'ghe.local:8443')).toBe(
+      9,
+    );
+    expect(
+      findPullRequestLink('https://github.com/o/r/pull/9', 'o/r', 'ghe.example.com'),
+    ).toBeNull();
+  });
+
+  it('keeps the last link on the configured host when another installation is linked after it', () => {
+    const output = 'https://ghe.example.com/o/r/pull/4 and https://github.com/o/r/pull/7';
+    expect(findPullRequestLink(output, 'o/r', 'ghe.example.com')).toBe(4);
   });
 
   it('finds a GitLab merge request, in a nested group too', () => {
     const output = 'View it on GitLab: https://gitlab.com/g/r/-/merge_requests/14\n';
-    expect(findPullRequestLink(output, 'g/r')).toBe(14);
+    expect(findPullRequestLink(output, 'g/r', 'gitlab.com')).toBe(14);
     expect(
-      findPullRequestLink('https://gitlab.example.com/g/sub/r/-/merge_requests/3', 'g/sub/r'),
+      findPullRequestLink(
+        'https://gitlab.example.com/g/sub/r/-/merge_requests/3',
+        'g/sub/r',
+        'gitlab.example.com',
+      ),
     ).toBe(3);
   });
 
   it('does not take a merge request of a project nested under the lane one', () => {
-    expect(findPullRequestLink('https://gitlab.com/g/r/x/-/merge_requests/3', 'g/r')).toBeNull();
+    expect(
+      findPullRequestLink('https://gitlab.com/g/r/x/-/merge_requests/3', 'g/r', 'gitlab.com'),
+    ).toBeNull();
   });
 
   it('finds a Bitbucket pull request', () => {
-    expect(findPullRequestLink('https://bitbucket.org/w/r/pull-requests/21', 'w/r')).toBe(21);
+    expect(
+      findPullRequestLink('https://bitbucket.org/w/r/pull-requests/21', 'w/r', 'bitbucket.org'),
+    ).toBe(21);
   });
 
   it('accepts a link to a page of the pull request', () => {
@@ -58,6 +83,7 @@ describe('findPullRequestLink', () => {
     ['a bare number', 'opened #4'],
   ])('ignores %s', (_, output) => {
     expect(findPullRequestLink(output, 'o/r')).toBeNull();
+    expect(findPullRequestLink(output, 'o/r', 'gitlab.com')).toBeNull();
   });
 
   it('ignores a number too large to be a pull request', () => {

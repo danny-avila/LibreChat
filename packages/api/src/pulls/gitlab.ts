@@ -47,6 +47,7 @@ type GitLabMergeRequest = {
 };
 
 type ListItem = { iid: number; state: string; sha: string; fromFork: boolean };
+type ListState = 'opened' | 'locked' | 'merged' | 'closed';
 
 /** A failed or canceled pipeline outranks one still running; anything unfinished is running. */
 export function summarizePipeline(status: string | null): PullRequestChecks {
@@ -297,7 +298,7 @@ export function createGitLabPullRequestSource({
       }
 
       /** `undefined`: the project is not visible. An empty list: it is, and nothing matched. */
-      const list = async (state: 'opened' | 'all', perPage: number, page: number) => {
+      const list = async (state: ListState, perPage: number, page: number) => {
         const query = new URLSearchParams({
           state,
           source_branch: branch,
@@ -312,11 +313,11 @@ export function createGitLabPullRequestSource({
         return listed.map(parseListItem);
       };
       /**
-       * Reads pages of one state up to the configured budget. The history is read a full page at
-       * a time even without a recorded commit: it also lists open merge requests from forks, which
-       * are skipped, so its newest entry is not necessarily the one that matches.
+       * Reads pages of one state up to the configured budget, a full page at a time even without
+       * a recorded commit: a fork's merge request never matches without one, so the newest entry
+       * is not necessarily the one that does.
        */
-      const listAll = async (state: 'opened' | 'all'): Promise<ListItem[] | undefined> => {
+      const listAll = async (state: ListState): Promise<ListItem[] | undefined> => {
         const perPage = lookup.maxCandidatePullRequests;
         const pages = lookup.maxCandidatePages;
         const all: ListItem[] = [];
@@ -335,12 +336,22 @@ export function createGitLabPullRequestSource({
         return null;
       };
 
-      /** Open first on its own, so closed history on a reused branch name cannot hide it. */
-      const open = await listAll('opened');
-      if (open === undefined) return null;
-      const chosen =
-        (await choose(open)) ??
-        (await choose(((await listAll('all')) ?? []).filter((item) => item.state !== 'opened')));
+      /** A project's `iid` grows with every merge request it creates, so it orders by age. */
+      const newestFirst = (...lists: (ListItem[] | undefined)[]): ListItem[] =>
+        lists.flatMap((items) => items ?? []).sort((a, b) => b.iid - a.iid);
+      /** Open first on its own, so closed history on a reused branch name cannot hide it. GitLab
+       *  lists a merge request that is being merged as `locked`, under no other state filter, and
+       *  it is still the branch's live merge request, so it is read with the open ones. */
+      const [opened, locked] = await Promise.all([listAll('opened'), listAll('locked')]);
+      if (opened === undefined) return null;
+      const open = newestFirst(opened, locked);
+      /** Merged and closed are listed apart from open ones, so any number of open fork merge
+       *  requests on the branch name cannot crowd the history out of its page budget. */
+      const history = async (): Promise<ListItem[]> => {
+        const [merged, closed] = await Promise.all([listAll('merged'), listAll('closed')]);
+        return newestFirst(merged, closed);
+      };
+      const chosen = (await choose(open)) ?? (await choose(await history()));
       if (chosen == null) return null;
 
       const detail = await getJson(`/merge_requests/${chosen.iid}`);

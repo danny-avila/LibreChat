@@ -2,6 +2,7 @@ export * from './types';
 export * from './links';
 export * from './github';
 export * from './gitlab';
+export * from './bitbucket';
 export * from './sources';
 export * from './lookup';
 export * from './handler';
