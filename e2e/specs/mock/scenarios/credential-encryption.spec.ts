@@ -332,7 +332,12 @@ test.describe('stored credential encryption', () => {
         headers: adminHeaders,
         data: { overrides: { credentials: { writeFormat: 'legacy' } } },
       });
-      expect(put.status(), await put.text()).toBe(200);
+      /** A first override for a principal is created (201, `configVersion` 1). */
+      expect(put.status(), await put.text()).toBe(201);
+      const created = (await put.json()) as {
+        config?: { overrides?: { credentials?: { writeFormat?: string } } };
+      };
+      expect(created.config?.overrides?.credentials?.writeFormat).toBe('legacy');
 
       /** The override reaches the merged config after an async cache invalidation. */
       await expect
