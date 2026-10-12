@@ -262,7 +262,7 @@ export function createSkillManagementHandlers(
   function wrap(
     permission: PermissionBits | undefined,
     operation: (req: ManagementRequest, res: Response) => Promise<Response>,
-    options: { mutation?: boolean } = {},
+    options: { mutation?: boolean; canonicalizeId?: boolean } = {},
   ) {
     return async (request: Request, res: Response): Promise<Response> => {
       const req = request as ManagementRequest;
@@ -278,6 +278,7 @@ export function createSkillManagementHandlers(
         });
         if (!allowed) return sendError(res, 'permission_denied');
         if (permission !== undefined) {
+          if (options.canonicalizeId) req.params.id = req.params.id.toLowerCase();
           if (!idSchema.safeParse(req.params.id).success) return sendError(res, 'not_found');
           const [skill, canManage] = await Promise.all([
             deps.getSkillById(req.params.id),
@@ -384,13 +385,9 @@ export function createSkillManagementHandlers(
     ),
     delete: wrap(
       PermissionBits.DELETE,
-      (req, res) => {
-        req.params.id = req.params.id.toLowerCase();
-        return runHandler(req, res, deps.handlers.delete, (body) =>
-          skillDeleteResponseSchema.parse(body),
-        );
-      },
-      { mutation: true },
+      (req, res) =>
+        runHandler(req, res, deps.handlers.delete, (body) => skillDeleteResponseSchema.parse(body)),
+      { mutation: true, canonicalizeId: true },
     ),
     listFiles: wrap(PermissionBits.VIEW, (req, res) =>
       runHandler(req, res, deps.handlers.listFiles, (body) => ({
