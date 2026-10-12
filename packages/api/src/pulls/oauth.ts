@@ -263,6 +263,38 @@ export function createPullRequestOAuth({
     return row?.token ?? FIRST_GENERATION;
   }
 
+  async function replaceGeneration(userId: string): Promise<void> {
+    const scope = generationScopeOf(userId);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const current = await store.findToken({ scope });
+      const replaced = await store.replaceTokenIfCurrent(scope, current?.token ?? null, {
+        userId,
+        type: PULL_REQUEST_OAUTH_GENERATION_TYPE,
+        identifier: 'generation',
+        token: randomUUID(),
+        /** Outlives the longest flow a state could still be valid for. */
+        expiresIn: DAY_SECONDS,
+      });
+      if (replaced) return;
+    }
+    throw new Error('The connection generation could not be replaced');
+  }
+
+  /**
+   * A token, or null when the user disconnected while it was being read. The generation is read
+   * before the grant and again after: a grant found before a disconnect removed it is answered
+   * only if that disconnect had not finished, since its last step replaces the generation.
+   */
+  async function fencedToken(
+    userId: string,
+    config: PullRequestOAuthConfig,
+  ): Promise<string | null> {
+    const before = await generationOf(userId);
+    const token = await currentToken(userId, config);
+    if (token == null) return null;
+    return (await generationOf(userId)) === before ? token : null;
+  }
+
   /** A flow may store a grant only for an active user still in the generation it started in. */
   async function assertCurrent(state: PullRequestOAuthState): Promise<void> {
     const [active, generation] = await Promise.all([
@@ -401,17 +433,11 @@ export function createPullRequestOAuth({
       throw new MalformedGrantError();
     }
     if (parsed.clientId !== config.clientId) return null;
-    /** Unused for longer than the retention now allows: gone, and removed if still this row. Awaited,
-     *  so the row is gone by the time the caller hears there is no connection. */
+    /** Unused for longer than the retention now allows: gone, and removed if still this row.
+     *  Awaited, and a failure propagates: the caller hears there is no connection only once the
+     *  credential is actually gone. */
     if (typeof parsed.usedAt === 'number' && parsed.usedAt + retentionOf(config) * 1000 <= now()) {
-      await store
-        .deleteTokens({ scope: scopeOf(userId, config), token: row.token })
-        .catch((error: unknown) => {
-          logger.warn(
-            '[PullRequests] Expired OAuth grant not removed',
-            getSafeErrorMetadata(error),
-          );
-        });
+      await store.deleteTokens({ scope: scopeOf(userId, config), token: row.token });
       return null;
     }
     return { row, record: parsed as Grant };
@@ -657,7 +683,7 @@ export function createPullRequestOAuth({
       const key = `${userId}\0${configKeyOf(config)}`;
       const pending = reading.get(key);
       if (pending != null) return pending;
-      const started = currentToken(userId, config);
+      const started = fencedToken(userId, config);
       reading.set(key, started);
       try {
         return await started;
@@ -685,22 +711,18 @@ export function createPullRequestOAuth({
     },
 
     async disconnect(userId) {
-      /** A new generation first, so a flow started before this cannot store a grant after it. */
-      const scope = generationScopeOf(userId);
-      let replaced = false;
-      for (let attempt = 0; attempt < 3 && !replaced; attempt++) {
-        const current = await store.findToken({ scope });
-        replaced = await store.replaceTokenIfCurrent(scope, current?.token ?? null, {
-          userId,
-          type: PULL_REQUEST_OAUTH_GENERATION_TYPE,
-          identifier: 'generation',
-          token: randomUUID(),
-          /** Outlives the longest flow a state could still be valid for. */
-          expiresIn: DAY_SECONDS,
-        });
-      }
-      if (!replaced) throw new Error('The connection generation could not be replaced');
+      /**
+       * The generation is replaced before the grants are removed, so a flow started before this
+       * cannot store a grant after it (see `complete`), and again after, so a token read that
+       * found the grant before its removal does not answer with it once this has returned (see
+       * `fencedToken`). Reads of this process are not joined by later requests either.
+       */
+      await replaceGeneration(userId);
       await store.deleteTokens({ userId, type: PULL_REQUEST_OAUTH_TYPE });
+      await replaceGeneration(userId);
+      for (const key of reading.keys()) {
+        if (key.startsWith(`${userId}\0`)) reading.delete(key);
+      }
     },
   };
 }
