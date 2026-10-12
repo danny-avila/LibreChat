@@ -78,6 +78,9 @@ export function watchPullRequestSignIn(
   let timer: ReturnType<typeof setTimeout> | undefined;
   let wait = PULL_REQUEST_CONNECT_POLL_MS;
   let stopped = false;
+  /** This flow's sign-in page reported a failure: the next status read that succeeds ends the
+   *  watch, whatever it says, since the server may have stored the grant before failing. */
+  let failed = false;
 
   /** `fresh` for a check after the sign-in page settled: a request already in flight may have been
    *  sent before the callback stored the grant, and asking now would only join it. */
@@ -107,7 +110,7 @@ export function watchPullRequestSignIn(
     /** Every answer, so an account removed elsewhere mid-flow also refreshes pull requests. */
     syncPullRequestConnection(queryClient, status);
     const ours = flowId == null || status.flowId == null || status.flowId === flowId;
-    if (status.connected && ours) {
+    if (failed || (status.connected && ours)) {
       stop();
     }
   };
@@ -129,8 +132,10 @@ export function watchPullRequestSignIn(
     /** A failure naming no flow is another sign-in's (an MCP server's, say): ours always name it. */
     if (settlement.flowId != null && settlement.flowId === flowId) {
       /** The server can store the grant and still report the flow failed (a check after storing
-       *  could not finish), so the status is read once more before the watch ends. */
-      void check(true).finally(stop);
+       *  could not finish), so the watch ends only on a status read that succeeds; a failed one
+       *  leaves it to the timer, focus and expiry like any other. */
+      failed = true;
+      void check(true);
     }
   };
   const channel =

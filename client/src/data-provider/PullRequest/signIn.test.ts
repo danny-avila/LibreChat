@@ -348,6 +348,23 @@ describe('watchPullRequestSignIn', () => {
       expect(await askedAfter(10 * MINUTE)).toBe(0);
     });
 
+    it('keeps watching when the read after a failure fails, until one succeeds', async () => {
+      const { client, invalidate } = setup();
+      watchFlow(client, 'flow-a');
+      mockGetConnection.mockRejectedValueOnce(new Error('offline'));
+      announceOAuthSettled({ outcome: 'failed', flowId: 'flow-a' });
+      await pass(0);
+      expect(mockGetConnection).toHaveBeenCalledTimes(1);
+
+      /** The server had stored the grant: the next read that succeeds syncs it, then the watch ends. */
+      mockGetConnection.mockResolvedValue({ ...connection(true), flowId: 'flow-a' });
+      invalidate.mockClear();
+      await focus();
+      expect(mockGetConnection).toHaveBeenCalledTimes(2);
+      expect(invalidate).toHaveBeenCalledWith([QueryKeys.conversationPullRequest]);
+      expect(await askedAfter(10 * MINUTE)).toBe(0);
+    });
+
     it('leaves the watch on another flow running', async () => {
       watchFlow(setup().client, 'flow-b');
       announceOAuthSettled({ outcome: 'failed', flowId: 'flow-a' });

@@ -33,9 +33,30 @@ function refetchPullRequests(queryClient: QueryClient): void {
     .then(() => queryClient.invalidateQueries([QueryKeys.conversationPullRequest]));
 }
 
+/** Counts sessions, so work a session started does not touch the next one's cache. */
+let epoch = 0;
+
 /** Forgets every app's credential with the session, so the next one starts from its own. */
 export function resetPullRequestCredentials(): void {
   refreshedUnder.clear();
+  epoch += 1;
+}
+
+/**
+ * Reads the status afresh and syncs pull requests to it, with or without Settings open: an
+ * invalidation alone refetches only a status something is still watching. A request already in
+ * flight is cancelled first, since it may have been sent before the change it must observe.
+ */
+async function reconcileConnection(queryClient: QueryClient, startedIn: number): Promise<void> {
+  await queryClient.cancelQueries([QueryKeys.pullRequestConnection]);
+  const status = await queryClient.fetchQuery<TPullRequestConnection>(
+    [QueryKeys.pullRequestConnection],
+    () => dataService.getPullRequestConnection(),
+    { staleTime: 0, retry: false },
+  );
+  if (startedIn === epoch) {
+    syncPullRequestConnection(queryClient, status);
+  }
 }
 
 /**
@@ -135,10 +156,15 @@ export const useConnectPullRequestAccountMutation = () =>
 
 export const useDisconnectPullRequestAccountMutation = () => {
   const queryClient = useQueryClient();
-  return useMutation<void, unknown, void>({
+  return useMutation<void, unknown, void, number>({
     mutationKey: [MutationKeys.disconnectPullRequestAccount],
     mutationFn: () => dataService.disconnectPullRequestAccount(),
-    onSuccess: () => {
+    /** The session the disconnect was sent in: an answer after it ended belongs to nobody here. */
+    onMutate: () => epoch,
+    onSuccess: (_data, _variables, startedIn) => {
+      if (startedIn !== epoch) {
+        return;
+      }
       const status = queryClient.setQueryData<TPullRequestConnection>(
         [QueryKeys.pullRequestConnection],
         (current) => (current == null ? current : { ...current, connected: false }),
@@ -152,9 +178,15 @@ export const useDisconnectPullRequestAccountMutation = () => {
       refetchPullRequests(queryClient);
     },
     /** A failed request may still have ended the connection (the server fences the grant before
-     *  removing it), so the status is asked again and a change refetches pull requests. */
-    onError: () => {
-      queryClient.invalidateQueries([QueryKeys.pullRequestConnection]);
+     *  removing it), so the status is asked again and a change refetches pull requests. A status
+     *  read that fails too leaves the status invalidated for the next look at it. */
+    onError: (_error, _variables, startedIn) => {
+      if (startedIn == null || startedIn !== epoch) {
+        return;
+      }
+      reconcileConnection(queryClient, startedIn).catch(() =>
+        queryClient.invalidateQueries([QueryKeys.pullRequestConnection]),
+      );
     },
   });
 };

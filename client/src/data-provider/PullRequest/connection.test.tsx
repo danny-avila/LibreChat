@@ -242,4 +242,49 @@ describe('pull request connection hooks', () => {
     expect(invalidate).toHaveBeenCalledWith([QueryKeys.pullRequestConnection]);
     expect(invalidate).toHaveBeenCalledWith([QueryKeys.conversationPullRequest]);
   });
+
+  it('reads the status after a failed disconnect even with Settings closed', async () => {
+    mockDisconnect.mockRejectedValue(new Error('500'));
+    const { client, wrapper, invalidate } = setup();
+    /** Pull requests were last refreshed under the user's own grant. */
+    syncPullRequestConnection(client, { ...connection(true), flowId: 'flow-a' });
+    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(1));
+    /** No status observer is mounted: only the mutation is. */
+    const { result } = renderHook(() => useDisconnectPullRequestAccountMutation(), { wrapper });
+    mockGetConnection.mockResolvedValue(connection(false));
+
+    await act(async () => {
+      await result.current.mutateAsync().catch(() => undefined);
+    });
+
+    await waitFor(() => expect(mockGetConnection).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(2));
+    expect(invalidate).toHaveBeenLastCalledWith([QueryKeys.conversationPullRequest]);
+  });
+
+  it('leaves the next session alone when a disconnect answers after the session ended', async () => {
+    let answer: (value?: unknown) => void = () => undefined;
+    mockDisconnect.mockImplementation(() => new Promise((resolve) => (answer = resolve)));
+    const { client, wrapper, invalidate } = setup();
+    const { result } = renderHook(() => useDisconnectPullRequestAccountMutation(), { wrapper });
+
+    let pending: Promise<void> = Promise.resolve();
+    act(() => {
+      pending = result.current.mutateAsync();
+    });
+    await waitFor(() => expect(mockDisconnect).toHaveBeenCalledTimes(1));
+    /** Signed out, and the next user's status is cached, before the old disconnect answers. */
+    resetPullRequestCredentials();
+    client.setQueryData([QueryKeys.pullRequestConnection], connection(true));
+    invalidate.mockClear();
+    await act(async () => {
+      answer();
+      await pending;
+    });
+
+    expect(
+      client.getQueryData<TPullRequestConnection>([QueryKeys.pullRequestConnection])?.connected,
+    ).toBe(true);
+    expect(invalidate).not.toHaveBeenCalled();
+  });
 });
