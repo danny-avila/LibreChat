@@ -50,7 +50,7 @@ async function makeSkill() {
 describe('Skill deletion journal', () => {
   it('indexes only marked Skills for startup and periodic deletion discovery', () => {
     expect(mongoose.models.Skill.schema.indexes()).toContainEqual([
-      { deletingAt: 1 },
+      { deletionNeedsJournal: 1 },
       expect.objectContaining({ sparse: true }),
     ]);
   });
@@ -63,16 +63,51 @@ describe('Skill deletion journal', () => {
       deletingAt?: Date;
     } | null;
     expect(stored?.deletingAt).toBeInstanceOf(Date);
+    expect(await lifecycle.discoverUnjournaledDeletions()).toBe(0);
     await lifecycle.beginSkillDeletion(skill.id);
     expect(await mongoose.models.SkillDeletion.countDocuments({ skillId: skill._id })).toBe(1);
   });
 
   it('repairs a crash between the Skill mark and tombstone insert', async () => {
     const { skill } = await makeSkill();
-    await mongoose.models.Skill.updateOne({ _id: skill._id }, { $set: { deletingAt: new Date() } });
+    await mongoose.models.Skill.updateOne(
+      { _id: skill._id },
+      { $set: { deletingAt: new Date(), deletionNeedsJournal: true } },
+    );
     expect(await mongoose.models.SkillDeletion.countDocuments({})).toBe(0);
     expect(await lifecycle.discoverUnjournaledDeletions()).toBe(1);
+    expect(await lifecycle.discoverUnjournaledDeletions()).toBe(0);
     expect(await mongoose.models.SkillDeletion.countDocuments({ skillId: skill._id })).toBe(1);
+  });
+
+  it('retries a partially backfilled deletion without rescanning it after success', async () => {
+    const { skill, author } = await makeSkill();
+    await mongoose.models.SkillFile.create({
+      skillId: skill._id,
+      file_id: 'legacy-file',
+      relativePath: 'references/legacy.md',
+      filename: 'legacy.md',
+      filepath: `/uploads/${author}/legacy-file`,
+      source: 'local',
+      mimeType: 'text/markdown',
+      bytes: 4,
+      author,
+      tenantId: 'tenant-a',
+    });
+    const write = jest
+      .spyOn(mongoose.models.SkillUploadIntent, 'updateOne')
+      .mockRejectedValueOnce(new Error('database unavailable'));
+    try {
+      await expect(lifecycle.beginSkillDeletion(skill.id)).rejects.toThrow('database unavailable');
+    } finally {
+      write.mockRestore();
+    }
+    expect(await mongoose.models.SkillDeletion.countDocuments({ skillId: skill._id })).toBe(1);
+    expect(await lifecycle.discoverUnjournaledDeletions()).toBe(1);
+    expect(await lifecycle.listSkillUploadIntents(skill._id)).toMatchObject([
+      { fileId: 'legacy-file', state: 'committed' },
+    ]);
+    expect(await lifecycle.discoverUnjournaledDeletions()).toBe(0);
   });
 
   it('retains completed tombstones for late file reconciliation', async () => {
@@ -126,6 +161,15 @@ describe('Skill upload intents', () => {
     ).toBe(false);
     expect(
       await lifecycle.transitionSkillUploadIntent('file-1', 'worker-1', 'uploading', 'committing'),
+    ).toBe(true);
+    expect(
+      await lifecycle.transitionSkillUploadIntent('file-1', 'worker-1', 'uploading', 'committing'),
+    ).toBe(true);
+    expect(
+      await lifecycle.transitionSkillUploadIntent('file-1', 'worker-1', 'committing', 'committed'),
+    ).toBe(true);
+    expect(
+      await lifecycle.transitionSkillUploadIntent('file-1', 'worker-1', 'committing', 'committed'),
     ).toBe(true);
     await lifecycle.beginSkillDeletion(skill.id);
     await expect(

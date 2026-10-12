@@ -67,3 +67,23 @@ it('does not delete a blob after an ambiguous database commit', async () => {
   await expect(withSkillUploadIntent(deps, operation)).rejects.toThrow('lost database reply');
   expect(operation.deleteReserved).not.toHaveBeenCalled();
 });
+
+it.each(['acknowledgement rejected', 'reply lost'] as const)(
+  'returns a persisted upload after recovering %s',
+  async (scenario) => {
+    const deps = makeDeps();
+    const operation = makeOperation();
+    operation.isPersisted = jest.fn(async () => true);
+    deps.transitionSkillUploadIntent.mockResolvedValueOnce(true);
+    if (scenario === 'reply lost') {
+      deps.transitionSkillUploadIntent.mockRejectedValueOnce(new Error('lost acknowledgement'));
+    } else {
+      deps.transitionSkillUploadIntent.mockResolvedValueOnce(false);
+    }
+    deps.transitionSkillUploadIntent.mockResolvedValueOnce(true);
+
+    await expect(withSkillUploadIntent(deps, operation)).resolves.toBe('saved');
+    expect(deps.transitionSkillUploadIntent).toHaveBeenCalledTimes(3);
+    expect(operation.deleteReserved).not.toHaveBeenCalled();
+  },
+);

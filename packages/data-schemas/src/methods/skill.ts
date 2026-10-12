@@ -1832,7 +1832,7 @@ export function createSkillMethods(
     const Skill = mongoose.models.Skill as Model<ISkillDocument>;
     const result = await Skill.updateMany(
       { _id: { $in: soleOwned }, deletingAt: { $exists: false } },
-      { $set: { deletingAt: new Date() } },
+      { $set: { deletingAt: new Date(), deletionNeedsJournal: true } },
     );
     return result.modifiedCount;
   }

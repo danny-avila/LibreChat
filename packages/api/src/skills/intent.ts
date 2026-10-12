@@ -51,6 +51,7 @@ export async function withSkillUploadIntent<T>(
     writerId,
   });
   let savedPath: string | undefined;
+  let persistedResult: { value: T } | undefined;
   try {
     const filepath = await operation.save();
     savedPath = filepath;
@@ -63,7 +64,7 @@ export async function withSkillUploadIntent<T>(
     if (!claimed) {
       throw Object.assign(new Error('Skill upload was cancelled'), { code: 'SKILL_DELETING' });
     }
-    const result = await operation.persist(filepath);
+    persistedResult = { value: await operation.persist(filepath) };
     const committed = await deps.transitionSkillUploadIntent(
       operation.fileId,
       writerId,
@@ -71,7 +72,7 @@ export async function withSkillUploadIntent<T>(
       'committed',
     );
     if (!committed) throw new Error('Skill upload commit acknowledgement failed');
-    return result;
+    return persistedResult.value;
   } catch (error) {
     let persisted = false;
     try {
@@ -81,7 +82,13 @@ export async function withSkillUploadIntent<T>(
       throw error;
     }
     if (persisted) {
-      await deps.transitionSkillUploadIntent(operation.fileId, writerId, 'committing', 'committed');
+      const committed = await deps.transitionSkillUploadIntent(
+        operation.fileId,
+        writerId,
+        'committing',
+        'committed',
+      );
+      if (committed && persistedResult) return persistedResult.value;
       throw error;
     }
     await deps.transitionSkillUploadIntent(operation.fileId, writerId, 'uploading', 'abandoned');

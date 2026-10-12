@@ -97,7 +97,7 @@ export function createSkillLifecycleMethods(
     const skill = (await skillModel()
       .findOneAndUpdate(
         { _id: skillId, deletingAt: { $exists: false } },
-        { $set: { deletingAt: new Date() } },
+        { $set: { deletingAt: new Date(), deletionNeedsJournal: true } },
         { new: true },
       )
       .lean()) as SkillRow | null;
@@ -117,18 +117,23 @@ export function createSkillLifecycleMethods(
         { upsert: true, new: true },
       )
       .lean()) as ISkillDeletion;
-    // Pre-existing files have no upload intent. Materialize their persistent
-    // blob references while the parent is hidden; restart discovery repeats
-    // this if the process dies midway through the backfill.
-    for await (const file of skillFileModel().find({ skillId }).cursor()) {
-      await preserveExistingSkillBlob({
-        skillId: skillId.toString(),
-        fileId: file.file_id,
-        source: file.source,
-        storageKey: file.filepath,
-        author: file.author.toString(),
-        tenantId: file.tenantId,
-      });
+    if (existing.deletionNeedsJournal) {
+      // The marker also covers crashes after the journal insert but before
+      // every legacy file has a durable blob reference.
+      for await (const file of skillFileModel().find({ skillId }).cursor()) {
+        await preserveExistingSkillBlob({
+          skillId: skillId.toString(),
+          fileId: file.file_id,
+          source: file.source,
+          storageKey: file.filepath,
+          author: file.author.toString(),
+          tenantId: file.tenantId,
+        });
+      }
+      await skillModel().updateOne(
+        { _id: skillId, deletionNeedsJournal: true },
+        { $unset: { deletionNeedsJournal: '' } },
+      );
     }
     return journal;
   }
@@ -143,7 +148,7 @@ export function createSkillLifecycleMethods(
   async function discoverUnjournaledDeletions(): Promise<number> {
     let count = 0;
     for await (const skill of skillModel()
-      .find({ deletingAt: { $exists: true } })
+      .find({ deletionNeedsJournal: true })
       .select('_id')
       .cursor()) {
       await beginSkillDeletion(skill._id.toString());
@@ -245,7 +250,8 @@ export function createSkillLifecycleMethods(
       { fileId, writerId, state: from },
       { $set: { state: to } },
     );
-    return result.modifiedCount === 1;
+    if (result.modifiedCount === 1) return true;
+    return Boolean(await intentModel().exists({ fileId, writerId, state: to }));
   }
 
   async function listSkillUploadIntents(
