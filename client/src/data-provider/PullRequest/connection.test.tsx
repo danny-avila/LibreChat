@@ -74,17 +74,15 @@ describe('pull request connection hooks', () => {
     mockGetConnection.mockResolvedValueOnce(connection(false));
     const { wrapper, invalidate } = setup();
     const { result } = renderHook(() => usePullRequestConnectionQuery(), { wrapper });
-    await waitFor(() => expect(result.current.data?.connected).toBe(false));
-    expect(invalidate).not.toHaveBeenCalledWith([QueryKeys.conversationPullRequest]);
+    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(1));
 
     mockGetConnection.mockResolvedValueOnce(connection(true));
     await act(async () => {
       await result.current.refetch();
     });
 
-    await waitFor(() =>
-      expect(invalidate).toHaveBeenCalledWith([QueryKeys.conversationPullRequest]),
-    );
+    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(2));
+    expect(invalidate).toHaveBeenLastCalledWith([QueryKeys.conversationPullRequest]);
   });
 
   it('refetches cached pull requests when the first status shows the user connected', async () => {
@@ -97,12 +95,19 @@ describe('pull request connection hooks', () => {
     expect(invalidate).toHaveBeenCalledTimes(1);
   });
 
-  it('leaves cached pull requests alone when the first status shows the server token', async () => {
-    mockGetConnection.mockResolvedValueOnce(connection(false));
+  it('refetches cached pull requests once on a first status showing the server token', async () => {
+    mockGetConnection.mockResolvedValue(connection(false));
     const { wrapper, invalidate } = setup();
     const { result } = renderHook(() => usePullRequestConnectionQuery(), { wrapper });
-    await waitFor(() => expect(result.current.data?.connected).toBe(false));
-    expect(invalidate).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith([QueryKeys.conversationPullRequest]),
+    );
+    expect(invalidate).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      await result.current.refetch();
+    });
+    expect(invalidate).toHaveBeenCalledTimes(1);
   });
 
   it('refreshes pull requests once per change, not on every Settings visit', async () => {
@@ -136,16 +141,13 @@ describe('pull request connection hooks', () => {
     mockGetConnection.mockResolvedValueOnce(connection(false));
     const { wrapper, invalidate } = setup();
     const { result } = renderHook(() => usePullRequestConnectionQuery(), { wrapper });
-    await waitFor(() => expect(result.current.data?.connected).toBe(false));
-    expect(invalidate).not.toHaveBeenCalled();
+    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(1));
 
     mockGetConnection.mockResolvedValueOnce({ ...connection(false), provider: 'gitlab' });
     await act(async () => {
       await result.current.refetch();
     });
-    await waitFor(() =>
-      expect(invalidate).toHaveBeenCalledWith([QueryKeys.conversationPullRequest]),
-    );
+    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(2));
   });
 
   it('starts over with the next session, so its first status follows the first-status rule', async () => {

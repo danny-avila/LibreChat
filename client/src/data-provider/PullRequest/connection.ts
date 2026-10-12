@@ -30,10 +30,9 @@ export function resetPullRequestCredentials(): void {
 /**
  * Refetches every cached pull request when a status shows a different credential than the one
  * they were last refreshed under: connecting, disconnecting, or a connection moving to another
- * provider. The first status an app sees refreshes them only when it shows the user's own
- * account, since anything fetched before it may have used the server's token; one showing the
- * server's token, the common case, costs nothing. Every path that learns the status goes
- * through here, so a change refetches pull requests once.
+ * provider. The first status of a session always refreshes them once, whatever it says, since
+ * pull requests fetched before it may have used a grant this app never saw. Every path that
+ * learns the status goes through here, so a change refetches pull requests once.
  */
 export function syncPullRequestConnection(
   queryClient: QueryClient,
@@ -42,7 +41,7 @@ export function syncPullRequestConnection(
   const credential = credentialOf(status);
   const previous = refreshedUnder.get(queryClient);
   refreshedUnder.set(queryClient, credential);
-  if (previous === credential || (previous == null && !status.connected)) {
+  if (previous === credential) {
     return;
   }
   queryClient.invalidateQueries([QueryKeys.conversationPullRequest]);

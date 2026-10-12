@@ -12,6 +12,15 @@ export const OAUTH_SETTLED_CHANNEL = 'librechat:oauth-settled';
 
 type Watch = { stop: () => void };
 
+/** What a landing page says about the sign-in it ends, and which one when it knows. */
+export type OAuthSettlement = { outcome: 'succeeded' | 'failed'; flowId?: string };
+
+const isSettlement = (value: unknown): value is OAuthSettlement =>
+  typeof value === 'object' &&
+  value !== null &&
+  ((value as OAuthSettlement).outcome === 'succeeded' ||
+    (value as OAuthSettlement).outcome === 'failed');
+
 /** One sign-in per app at a time: starting another replaces the watch on the first. */
 const watches = new Map<QueryClient, Watch>();
 /** Counts ended sessions, so work started in one session can tell it has ended. */
@@ -23,17 +32,17 @@ export function pullRequestSignInSession(): number {
 }
 
 /**
- * Announces, from the page an OAuth sign-in lands on, that it has settled. The page shares this
- * app's origin, so the announcement reaches the window that started the sign-in even when the
+ * Announces, from the page an OAuth sign-in lands on, how it settled. The page shares this app's
+ * origin, so the announcement reaches the window that started the sign-in even when the
  * provider's pages severed the popup from it (a cross-origin opener policy makes the retained
  * window handle read as closed while the sign-in is still open).
  */
-export function announceOAuthSettled(): void {
+export function announceOAuthSettled(settlement: OAuthSettlement): void {
   if (typeof BroadcastChannel === 'undefined') {
     return;
   }
   const channel = new BroadcastChannel(OAUTH_SETTLED_CHANNEL);
-  channel.postMessage('settled');
+  channel.postMessage(settlement);
   channel.close();
 }
 
@@ -42,7 +51,9 @@ export function announceOAuthSettled(): void {
  * component, so closing Settings mid-flow still refreshes what was fetched with the old token.
  *
  * - The landing page's announcement asks the status at once; it is the signal that survives the
- *   provider severing the popup, so the popup handle is not consulted at all.
+ *   provider severing the popup, so the popup handle is not consulted at all. A failure ends the
+ *   watch when it names this sign-in's flow, or, naming none, when this is the only sign-in being
+ *   watched, since a page that cannot say which flow failed cannot be matched more closely.
  * - Without it (an older page, no BroadcastChannel) the status is asked on a timer that starts at
  *   2 seconds and doubles to 30, and whenever this window regains focus.
  * - At `expiresAt` the server's signed state is no longer accepted, so watching ends.
@@ -101,9 +112,20 @@ export function watchPullRequestSignIn(
     }, wait);
   };
   const onSignal = () => void check();
+  const onSettled = (event: MessageEvent) => {
+    const settlement: unknown = event.data;
+    if (!isSettlement(settlement) || settlement.outcome === 'succeeded') {
+      void check();
+      return;
+    }
+    const mine = settlement.flowId != null ? settlement.flowId === flowId : watches.size === 1;
+    if (mine) {
+      stop();
+    }
+  };
   const channel =
     typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(OAUTH_SETTLED_CHANNEL);
-  channel?.addEventListener('message', onSignal);
+  channel?.addEventListener('message', onSettled);
   const expiry = setTimeout(() => stop(), Math.max(0, expiresAt - Date.now()));
 
   function stop() {

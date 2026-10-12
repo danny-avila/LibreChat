@@ -99,11 +99,13 @@ describe('watchPullRequestSignIn', () => {
 
     await pass(PULL_REQUEST_CONNECT_POLL_MS);
     expect(mockGetConnection).toHaveBeenCalledTimes(1);
-    expect(invalidate).not.toHaveBeenCalled();
+    /** The session's first status. */
+    expect(invalidate).toHaveBeenCalledTimes(1);
 
     mockGetConnection.mockResolvedValue(connection(true));
     await focus();
-    expect(invalidate).toHaveBeenCalledWith([QueryKeys.conversationPullRequest]);
+    expect(invalidate).toHaveBeenCalledTimes(2);
+    expect(invalidate).toHaveBeenLastCalledWith([QueryKeys.conversationPullRequest]);
     expect(client.getQueryData([QueryKeys.pullRequestConnection])).toEqual(connection(true));
 
     const asked = mockGetConnection.mock.calls.length;
@@ -121,7 +123,7 @@ describe('watchPullRequestSignIn', () => {
     mockGetConnection.mockResolvedValue(connection(true));
 
     /** Before any timer is due: only the announcement can explain this ask. */
-    announceOAuthSettled();
+    announceOAuthSettled({ outcome: 'succeeded' });
     await pass(0);
     expect(mockGetConnection).toHaveBeenCalledTimes(1);
     expect(invalidate).toHaveBeenCalledWith([QueryKeys.conversationPullRequest]);
@@ -153,7 +155,7 @@ describe('watchPullRequestSignIn', () => {
 
     await pass(5 * MINUTE);
     await focus();
-    announceOAuthSettled();
+    announceOAuthSettled({ outcome: 'succeeded' });
     await pass(0);
     expect(mockGetConnection).toHaveBeenCalledTimes(asked);
   });
@@ -166,7 +168,7 @@ describe('watchPullRequestSignIn', () => {
       expiresAt: Date.now() + 10 * MINUTE,
       flowId: 'flow-b',
     });
-    announceOAuthSettled();
+    announceOAuthSettled({ outcome: 'succeeded' });
     await pass(0);
     expect(invalidate).toHaveBeenCalledTimes(1);
 
@@ -238,7 +240,7 @@ describe('watchPullRequestSignIn', () => {
     endPullRequestSession();
     await pass(10 * MINUTE);
     await focus();
-    announceOAuthSettled();
+    announceOAuthSettled({ outcome: 'succeeded' });
     await pass(0);
     expect(mockGetConnection).not.toHaveBeenCalled();
   });
@@ -252,5 +254,45 @@ describe('watchPullRequestSignIn', () => {
     await pass(10 * MINUTE);
     await focus();
     expect(mockGetConnection).not.toHaveBeenCalled();
+  });
+
+  describe('a failed sign-in', () => {
+    const watchFlow = (client: QueryClient, flowId?: string) =>
+      watchPullRequestSignIn(client, {
+        startedIn: pullRequestSignInSession(),
+        expiresAt: Date.now() + 60 * MINUTE,
+        flowId,
+      });
+
+    const askedAfter = async (ms: number) => {
+      const before = mockGetConnection.mock.calls.length;
+      await pass(ms);
+      return mockGetConnection.mock.calls.length - before;
+    };
+
+    it('ends the watch on the flow it names', async () => {
+      watchFlow(setup().client, 'flow-a');
+      announceOAuthSettled({ outcome: 'failed', flowId: 'flow-a' });
+      expect(await askedAfter(10 * MINUTE)).toBe(0);
+    });
+
+    it('leaves the watch on another flow running', async () => {
+      watchFlow(setup().client, 'flow-b');
+      announceOAuthSettled({ outcome: 'failed', flowId: 'flow-a' });
+      expect(await askedAfter(10 * MINUTE)).toBeGreaterThan(0);
+    });
+
+    it('ends the only watch when the failure names no flow', async () => {
+      watchFlow(setup().client, 'flow-a');
+      announceOAuthSettled({ outcome: 'failed' });
+      expect(await askedAfter(10 * MINUTE)).toBe(0);
+    });
+
+    it('ends none of several watches when the failure names no flow', async () => {
+      watchFlow(setup().client, 'flow-a');
+      watchFlow(setup().client, 'flow-b');
+      announceOAuthSettled({ outcome: 'failed' });
+      expect(await askedAfter(10 * MINUTE)).toBeGreaterThan(0);
+    });
   });
 });

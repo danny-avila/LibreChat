@@ -281,13 +281,16 @@ describe('ConnectedAccounts', () => {
     );
     await waitFor(() => expect(popup.location.href).not.toBe(''));
     unmount();
+    const before = invalidate.mock.calls.length;
     mockGetConnection.mockResolvedValue(connection(true));
 
     await waitFor(
-      () => expect(invalidate).toHaveBeenCalledWith([QueryKeys.conversationPullRequest]),
+      () =>
+        expect(client.getQueryData([QueryKeys.pullRequestConnection])).toEqual(connection(true)),
       { timeout: 5000 },
     );
-    expect(client.getQueryData([QueryKeys.pullRequestConnection])).toEqual(connection(true));
+    expect(invalidate.mock.calls.length).toBeGreaterThan(before);
+    expect(invalidate).toHaveBeenLastCalledWith([QueryKeys.conversationPullRequest]);
   }, 10000);
 
   it('closes the opened window and explains when the connection cannot start', async () => {

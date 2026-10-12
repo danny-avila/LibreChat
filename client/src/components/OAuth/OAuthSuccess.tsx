@@ -8,11 +8,12 @@ export default function OAuthSuccess() {
   const [searchParams] = useSearchParams();
   const [secondsLeft, setSecondsLeft] = useState(3);
   const serverName = searchParams.get('serverName');
+  const flowId = searchParams.get('flow') ?? undefined;
 
   useEffect(() => {
     /** Reaches the window that started the sign-in even when the provider severed the popup. */
-    announceOAuthSettled();
-  }, []);
+    announceOAuthSettled({ outcome: 'succeeded', flowId });
+  }, [flowId]);
 
   useEffect(() => {
     const countdown = setInterval(() => {
