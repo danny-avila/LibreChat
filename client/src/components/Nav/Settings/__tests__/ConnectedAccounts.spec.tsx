@@ -476,6 +476,31 @@ describe('ConnectedAccounts', () => {
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
   });
 
+  it('asks for the status again when a disconnect fails, since the grant may be gone', async () => {
+    mockGetConnection.mockResolvedValue(connection(true));
+    mockDisconnect.mockRejectedValue(new Error('500'));
+    const { invalidate } = renderRow();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /com_ui_pr_account_disconnect_aria/ }),
+    );
+    const asked = mockGetConnection.mock.calls.length;
+    invalidate.mockClear();
+    mockGetConnection.mockResolvedValue(connection(false));
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'com_ui_pr_account_disconnect' }),
+    );
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'com_ui_pr_account_disconnect_error',
+    );
+    await waitFor(() => expect(mockGetConnection.mock.calls.length).toBeGreaterThan(asked));
+    /** The server had ended the connection: pull requests follow the server's token. */
+    await waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith([QueryKeys.conversationPullRequest]),
+    );
+  });
+
   it('keeps the confirmation button named while the disconnect is in flight', async () => {
     mockGetConnection.mockResolvedValue(connection(true));
     let settle: () => void = () => undefined;

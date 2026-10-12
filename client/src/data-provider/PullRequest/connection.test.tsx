@@ -1,9 +1,10 @@
 import React from 'react';
 import { QueryKeys } from 'librechat-data-provider';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryObserver, QueryClientProvider } from '@tanstack/react-query';
 import type { TPullRequestConnection, TStartupConfig } from 'librechat-data-provider';
 import {
+  syncPullRequestConnection,
   resetPullRequestCredentials,
   usePullRequestConnectionQuery,
   useDisconnectPullRequestAccountMutation,
@@ -176,6 +177,36 @@ describe('pull request connection hooks', () => {
       await result.current.refetch();
     });
     await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(2));
+  });
+
+  it('restarts a pull request still on its first load when the credential changes', async () => {
+    const { client } = setup();
+    syncPullRequestConnection(client, connection(false));
+    const loads: Array<(value: unknown) => void> = [];
+    const queryFn = jest.fn(() => new Promise((resolve) => loads.push(resolve)));
+    const observer = new QueryObserver(client, {
+      queryKey: [QueryKeys.conversationPullRequest, 'convo'],
+      queryFn,
+    });
+    const unsubscribe = observer.subscribe(() => undefined);
+    try {
+      await waitFor(() => expect(queryFn).toHaveBeenCalledTimes(1));
+      /** Connected while the first load, under the server's token, is still running. */
+      syncPullRequestConnection(client, { ...connection(true), flowId: 'flow-a' });
+      await waitFor(() => expect(queryFn).toHaveBeenCalledTimes(2));
+      /** The cancelled load answers last, and does not replace the answer under the new token. */
+      loads[1]('new');
+      await waitFor(() =>
+        expect(client.getQueryData([QueryKeys.conversationPullRequest, 'convo'])).toBe('new'),
+      );
+      loads[0]('old');
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(client.getQueryData([QueryKeys.conversationPullRequest, 'convo'])).toBe('new');
+    } finally {
+      unsubscribe();
+    }
   });
 
   it('marks the account disconnected and refetches the status and pull requests', async () => {

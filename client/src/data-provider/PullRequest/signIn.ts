@@ -123,7 +123,9 @@ export function watchPullRequestSignIn(
     }
     /** A failure naming no flow is another sign-in's (an MCP server's, say): ours always name it. */
     if (settlement.flowId != null && settlement.flowId === flowId) {
-      stop();
+      /** The server can store the grant and still report the flow failed (a check after storing
+       *  could not finish), so the status is read once more before the watch ends. */
+      void check().finally(stop);
     }
   };
   const channel =

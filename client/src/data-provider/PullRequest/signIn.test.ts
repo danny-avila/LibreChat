@@ -310,6 +310,18 @@ describe('watchPullRequestSignIn', () => {
       expect(await askedAfter(10 * MINUTE)).toBe(0);
     });
 
+    it('reads the status once before ending, since the grant may have been stored', async () => {
+      const { client, invalidate } = setup();
+      watchFlow(client, 'flow-a');
+      mockGetConnection.mockResolvedValue({ ...connection(true), flowId: 'flow-a' });
+      const before = mockGetConnection.mock.calls.length;
+      announceOAuthSettled({ outcome: 'failed', flowId: 'flow-a' });
+      await pass(0);
+      expect(mockGetConnection.mock.calls.length - before).toBe(1);
+      expect(invalidate).toHaveBeenCalledWith([QueryKeys.conversationPullRequest]);
+      expect(await askedAfter(10 * MINUTE)).toBe(0);
+    });
+
     it('leaves the watch on another flow running', async () => {
       watchFlow(setup().client, 'flow-b');
       announceOAuthSettled({ outcome: 'failed', flowId: 'flow-a' });

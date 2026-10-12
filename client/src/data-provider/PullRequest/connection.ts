@@ -22,6 +22,17 @@ const credentialOf = (status: TPullRequestConnection): string =>
 /** Per app, the credential its cached pull requests were last refreshed under. */
 const refreshedUnder = new Map<QueryClient, string>();
 
+/**
+ * Refetches every cached pull request under the credential the server now uses. In-flight loads
+ * are cancelled first: an invalidation alone joins a first load that is still running, so one
+ * that started with the old credential would land afterwards and stand.
+ */
+function refetchPullRequests(queryClient: QueryClient): void {
+  void queryClient
+    .cancelQueries([QueryKeys.conversationPullRequest])
+    .then(() => queryClient.invalidateQueries([QueryKeys.conversationPullRequest]));
+}
+
 /** Forgets every app's credential with the session, so the next one starts from its own. */
 export function resetPullRequestCredentials(): void {
   refreshedUnder.clear();
@@ -44,7 +55,7 @@ export function syncPullRequestConnection(
   if (previous === credential) {
     return;
   }
-  queryClient.invalidateQueries([QueryKeys.conversationPullRequest]);
+  refetchPullRequests(queryClient);
 }
 
 /**
@@ -129,7 +140,12 @@ export const useDisconnectPullRequestAccountMutation = () => {
         queryClient,
         credentialOf({ configured: true, provider: status?.provider, connected: false }),
       );
-      queryClient.invalidateQueries([QueryKeys.conversationPullRequest]);
+      refetchPullRequests(queryClient);
+    },
+    /** A failed request may still have ended the connection (the server fences the grant before
+     *  removing it), so the status is asked again and a change refetches pull requests. */
+    onError: () => {
+      queryClient.invalidateQueries([QueryKeys.pullRequestConnection]);
     },
   });
 };
