@@ -86,6 +86,8 @@ const skillFileSaveDeps = {
   reserveSkillUploadIntent: db.reserveSkillUploadIntent,
   transitionSkillUploadIntent: db.transitionSkillUploadIntent,
   preserveExistingSkillBlob: db.preserveExistingSkillBlob,
+  queueReplacedSkillBlobCleanup: db.queueReplacedSkillBlobCleanup,
+  markSkillUploadIntentCleaned: db.markSkillUploadIntentCleaned,
 };
 const saveSkillFileContent = createSkillFileSaver(skillFileSaveDeps);
 const saveSkillManagementFileContent = createSkillManagementFileSaver(skillFileSaveDeps);

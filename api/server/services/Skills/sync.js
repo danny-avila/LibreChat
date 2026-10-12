@@ -99,6 +99,8 @@ function createRunner({ getConfig, loadAppConfig, allowServerCredentials = true 
     reserveSkillUploadIntent: db.reserveSkillUploadIntent,
     transitionSkillUploadIntent: db.transitionSkillUploadIntent,
     preserveExistingSkillBlob: db.preserveExistingSkillBlob,
+    queueReplacedSkillBlobCleanup: db.queueReplacedSkillBlobCleanup,
+    markSkillUploadIntentCleaned: db.markSkillUploadIntentCleaned,
     deleteSkillFile: db.deleteSkillFile,
     deleteSkill: deleteSkillForLegacy,
     reserveBlob: async ({ userId, fileName, isImage, tenantId }) => {

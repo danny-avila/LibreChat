@@ -26,6 +26,8 @@ const {
   reserveSkillUploadIntent,
   transitionSkillUploadIntent,
   preserveExistingSkillBlob,
+  queueReplacedSkillBlobCleanup,
+  markSkillUploadIntentCleaned,
   getRoleByName,
 } = require('~/models');
 const { requireJwtAuth, canAccessSkillResource } = require('~/server/middleware');
@@ -183,6 +185,8 @@ const uploadFileHandler = createSkillUploadHandler({
   reserveSkillUploadIntent,
   transitionSkillUploadIntent,
   preserveExistingSkillBlob,
+  queueReplacedSkillBlobCleanup,
+  markSkillUploadIntentCleaned,
 });
 
 // ---------------------------------------------------------------------------
