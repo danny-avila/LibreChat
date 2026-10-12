@@ -121,14 +121,19 @@ test.describe('read-aloud audio cache', () => {
       await readAloud.click();
       await expect.poll(() => speech.requests()).toBe(1);
 
-      /** Same tab, no reload: only the logout can have emptied the in-memory cache. */
+      /** Same tab, no reload: only the logout can have emptied the in-memory cache. The marker
+       *  would be gone if the document had been replaced. */
+      await page.evaluate(() => Object.assign(window, { ttsSameDocument: true }));
       await logOut(page);
-      await logIn(page, user);
-      await page.evaluate((path) => {
-        window.history.pushState({}, '', path);
-        window.dispatchEvent(new PopStateEvent('popstate'));
-      }, conversationPath);
+      await logIn(page, user, /\/c\//);
+      if (new URL(page.url()).pathname !== conversationPath) {
+        await page.evaluate((path) => {
+          window.history.pushState({}, '', path);
+          window.dispatchEvent(new PopStateEvent('popstate'));
+        }, conversationPath);
+      }
       await expect(page).toHaveURL(new RegExp(conversationPath));
+      expect(await page.evaluate(() => 'ttsSameDocument' in window)).toBe(true);
       await page.getByRole('button', { name: 'Read aloud' }).last().click();
       await expect.poll(() => speech.requests()).toBe(2);
     } finally {
@@ -190,11 +195,11 @@ async function signInFreshUser(
   return { context, page, user };
 }
 
-async function logIn(page: Page, user: User): Promise<void> {
+async function logIn(page: Page, user: User, landing = /\/c\/new/): Promise<void> {
   await page.getByLabel('Email').fill(user.email);
   await page.getByLabel('Password').fill(user.password);
   await page.getByTestId('login-button').click();
-  await page.waitForURL(/\/c\/new/, { timeout: 10000 });
+  await page.waitForURL(landing, { timeout: 10000 });
 }
 
 async function logOut(page: Page): Promise<void> {
