@@ -189,17 +189,20 @@ describe('artifact directive grammar', () => {
   const fenced = (header: string) => [header, '````', 'hello', '````', ':::'].join('\n');
 
   /** Fenced text that is not an artifact renders through `CodeBlock`, which observes visibility. */
+  class IntersectionObserverStub implements IntersectionObserver {
+    readonly root = null;
+    readonly rootMargin = '';
+    readonly scrollMargin = '';
+    readonly thresholds: ReadonlyArray<number> = [];
+    observe = jest.fn();
+    unobserve = jest.fn();
+    disconnect = jest.fn();
+    takeRecords = (): IntersectionObserverEntry[] => [];
+  }
+
   const originalObserver = global.IntersectionObserver;
   beforeEach(() => {
-    global.IntersectionObserver = jest.fn(() => ({
-      root: null,
-      rootMargin: '',
-      thresholds: [],
-      observe: jest.fn(),
-      unobserve: jest.fn(),
-      disconnect: jest.fn(),
-      takeRecords: () => [],
-    }));
+    global.IntersectionObserver = IntersectionObserverStub;
   });
   afterEach(() => {
     global.IntersectionObserver = originalObserver;
