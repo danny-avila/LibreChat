@@ -10,7 +10,6 @@ import type {
   SkillFrontmatterValue,
   TCreateSkill,
   TDeleteSkillFileResponse,
-  TDeleteSkillResponse,
   TSkill,
   TUpdateSkillPayload,
 } from 'librechat-data-provider';
@@ -126,11 +125,6 @@ export const skillFileContentSchema: z.AnyZodObject = skillFileSchema.extend({
 export const skillFileUpdateSchema: z.AnyZodObject = z
   .object({ content: z.string().max(1024 * 1024) })
   .strict();
-export const skillDeleteResponseSchema: z.ZodType<TDeleteSkillResponse> = z.object({
-  id: idSchema,
-  deleted: z.literal(true),
-  cleanupComplete: z.boolean().optional(),
-});
 export const skillFileDeleteResponseSchema: z.ZodType<TDeleteSkillFileResponse> = z.object({
   skillId: idSchema,
   relativePath: z.string(),
@@ -239,15 +233,7 @@ async function admitFileWrite(req: Request, res: Response, limiters: RequestHand
 export function createSkillManagementHandlers(
   deps: SkillManagementDeps,
 ): Record<
-  | 'list'
-  | 'create'
-  | 'get'
-  | 'update'
-  | 'delete'
-  | 'listFiles'
-  | 'getFile'
-  | 'updateFile'
-  | 'deleteFile',
+  'list' | 'create' | 'get' | 'update' | 'listFiles' | 'getFile' | 'updateFile' | 'deleteFile',
   (request: Request, res: Response) => Promise<Response>
 > {
   async function canManageSkills(req: ManagementRequest): Promise<boolean> {
@@ -380,12 +366,6 @@ export function createSkillManagementHandlers(
           (body) => projectSkill(body, true),
         );
       },
-      { mutation: true },
-    ),
-    delete: wrap(
-      PermissionBits.DELETE,
-      (req, res) =>
-        runHandler(req, res, deps.handlers.delete, (body) => skillDeleteResponseSchema.parse(body)),
       { mutation: true },
     ),
     listFiles: wrap(PermissionBits.VIEW, (req, res) =>

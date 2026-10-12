@@ -268,7 +268,6 @@ describe('Agents OpenAPI actual HTTP contract', () => {
     app.post('/api/agents/v1/skills', skillHandlers.create);
     app.put('/api/agents/v1/skills/:id/files/*relativePath', skillHandlers.updateFile);
     app.delete('/api/agents/v1/skills/:id/files/*relativePath', skillHandlers.deleteFile);
-    app.delete('/api/agents/v1/skills/:id', skillHandlers.delete);
     app.get('/api/agents/v1/agents/:id', (_req, _res, next) =>
       next(new Error('contract fixture escaped error')),
     );
@@ -358,7 +357,7 @@ describe('Agents OpenAPI actual HTTP contract', () => {
     expect(fs.readFileSync(diskPath, 'utf8')).toBe(content);
   });
 
-  it('documents and validates Skill creation and complete deletion cleanup', async () => {
+  it('documents and validates Skill creation and file deletion', async () => {
     const created = await request(app)
       .post('/api/agents/v1/skills')
       .set('Authorization', `Bearer ${token}`)
@@ -390,13 +389,6 @@ describe('Agents OpenAPI actual HTTP contract', () => {
         relativePath: 'references/delete-me.md',
       }).lean(),
     ).toBeNull();
-
-    const deleted = await request(app)
-      .delete(`/api/agents/v1/skills/${created.body.id}`)
-      .set('Authorization', `Bearer ${token}`);
-    expect(deleted.status).toBe(200);
-    expectResponseToMatchSpec(spec, 'deleteSkill', deleted);
-    expect(await mongoose.models.Skill.findById(created.body.id).lean()).toBeNull();
   });
 
   it('validates parser and normalized management errors against their documented JSON forms', async () => {

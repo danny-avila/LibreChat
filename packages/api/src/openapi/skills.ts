@@ -10,7 +10,6 @@ import {
   skillFileContentSchema,
   skillFileUpdateSchema,
   skillFrontmatterValueSchema,
-  skillDeleteResponseSchema,
   skillFileDeleteResponseSchema,
 } from '../skills/management';
 import {
@@ -47,7 +46,6 @@ export const skillComponentSchemas: Record<string, ZodTypeAny> = {
   SkillList: skillListResponseSchema,
   SkillCreateRequest: skillManagementCreateSchema,
   SkillUpdateRequest: skillManagementUpdateSchema,
-  SkillDeleted: skillDeleteResponseSchema,
   SkillFile: skillFileSchema,
   SkillFileList: skillFileListResponseSchema,
   SkillFileContent: skillFileContentSchema,
@@ -150,19 +148,6 @@ export const skillContracts: EndpointContract[] = [
           'The skill changed since the provided expectedVersion, or the bound account is being deleted',
         schema: z.union([agentManagementErrorSchema, accountDeletionResponseSchema]),
       },
-    ],
-  },
-  {
-    operationId: 'deleteSkill',
-    method: 'delete',
-    path: '/skills/{id}',
-    tags: [TAG],
-    summary: 'Delete a skill',
-    security: SECURITY,
-    pathParams: [{ name: 'id', description: 'The skill id' }],
-    responses: [
-      { status: 200, description: 'The skill was deleted', schema: skillDeleteResponseSchema },
-      ...errorResponses,
     ],
   },
   {
