@@ -126,7 +126,7 @@ describe('ConnectedAccounts', () => {
 
     expect(
       await screen.findByRole('button', {
-        name: 'com_ui_pr_account_disconnect_aria:com_ui_pr_provider_github',
+        name: 'com_ui_pr_account_disconnect_aria:com_ui_settings_label_pull_request_account',
       }),
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /com_ui_pr_account_connect_aria/ })).toBeNull();

@@ -90,7 +90,9 @@ export default function ConnectedAccounts() {
    * revive it.
    */
   const revocable = status.data?.connected === true;
-  const provider = status.data?.provider ?? startupConfig?.pullRequestsConnect;
+  /** The startup config only until the status loads: after that a grant whose app is gone may
+   *  belong to any provider, so the row names it only as an account. */
+  const provider = status.data != null ? status.data.provider : startupConfig?.pullRequestsConnect;
   if (!revocable && (provider == null || status.data?.configured === false)) {
     return null;
   }
