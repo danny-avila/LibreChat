@@ -1,5 +1,6 @@
 const sessionCookie = '__Host-meo-session';
-const stateCookie = '__Secure-meo-oauth';
+const stateCookie = '__Host-meo-oauth';
+const legacyStateCookie = '__Secure-meo-oauth';
 const textEncoder = new TextEncoder();
 
 function base64url(bytes) {
@@ -58,12 +59,18 @@ export function cookieValue(request, name) {
   return '';
 }
 
+export function stateCookieValue(request) {
+  return cookieValue(request, stateCookie) || cookieValue(request, legacyStateCookie);
+}
+
 export function sessionCookieHeader(value, maxAge = 60 * 60 * 24 * 30) {
   return `${sessionCookie}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
 }
 
 export function stateCookieHeader(value, maxAge = 600) {
-  return `${stateCookie}=${value}; Path=/oauth/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
+  // Host-only + Path=/ avoids callback-path mismatches across Pages routing and
+  // still keeps the short-lived PKCE flow cookie inaccessible to JavaScript.
+  return `${stateCookie}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
 }
 
 export const sessionCookieName = sessionCookie;
@@ -72,6 +79,7 @@ export const stateCookieName = stateCookie;
 export function clearCookies() {
   return [
     `${sessionCookie}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`,
-    `${stateCookie}=; Path=/oauth/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`,
+    `${stateCookie}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`,
+    `${legacyStateCookie}=; Path=/oauth/; Max-Age=0; HttpOnly; Secure; SameSite=Lax`,
   ];
 }

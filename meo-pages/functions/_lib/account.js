@@ -23,49 +23,83 @@ export function authHeaders(env, token, extra = {}) {
   return headers;
 }
 
+export class OAuthTokenExchangeError extends Error {
+  constructor(reason) {
+    super('Meo Account token exchange failed');
+    this.name = 'OAuthTokenExchangeError';
+    this.reason = reason;
+  }
+}
+
+function safeOAuthErrorCode(value) {
+  if (typeof value !== 'string') return null;
+  return /^[a-z0-9_]{1,64}$/.test(value) ? value : null;
+}
+
+async function tokenRequest(env, body) {
+  let response;
+  try {
+    // Keep this request intentionally identical to Supabase's documented
+    // public-client OAuth 2.1 example. Extra RequestInit options can change
+    // edge-runtime behaviour and are unnecessary for this POST.
+    response = await fetch(`${accountUrl(env)}/auth/v1/oauth/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: new URLSearchParams(body),
+    });
+  } catch {
+    throw new OAuthTokenExchangeError('token_network_error');
+  }
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    const oauthCode = safeOAuthErrorCode(payload?.error);
+    throw new OAuthTokenExchangeError(
+      oauthCode ? `token_${response.status}_${oauthCode}` : `token_http_${response.status}`,
+    );
+  }
+  return payload;
+}
+
 export async function accountUser(env, accessToken) {
-  const response = await fetch(`${accountUrl(env)}/auth/v1/user`, {
-    headers: authHeaders(env, accessToken),
-    cache: 'no-store',
-    redirect: 'error',
+  // OAuth access tokens issued by Supabase's OAuth 2.1 server use the OIDC
+  // UserInfo endpoint. /auth/v1/user is for a normal Supabase Auth session
+  // and is not the correct post-exchange identity lookup for this client.
+  const response = await fetch(`${accountUrl(env)}/auth/v1/oauth/userinfo`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
   });
   if (!response.ok) return null;
   const user = await response.json().catch(() => null);
-  return user && typeof user.id === 'string' ? user : null;
+  if (!user || typeof user.sub !== 'string' || !user.sub) return null;
+  // Keep the internal session shape stable for existing callers while using
+  // the standards-compliant OIDC subject as the account identity.
+  return { ...user, id: user.sub };
 }
 
 export async function exchangeCode(env, code, verifier, redirectUri) {
-  const response = await fetch(`${accountUrl(env)}/auth/v1/oauth/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'authorization_code',
-      code,
-      code_verifier: verifier,
-      redirect_uri: redirectUri,
-      client_id: env.MEO_OAUTH_CLIENT_ID,
-    }),
-    cache: 'no-store',
-    redirect: 'error',
+  return tokenRequest(env, {
+    grant_type: 'authorization_code',
+    code,
+    code_verifier: verifier,
+    redirect_uri: redirectUri,
+    client_id: env.MEO_OAUTH_CLIENT_ID,
   });
-  if (!response.ok) throw new Error('Meo Account sign-in could not be completed');
-  return response.json();
 }
 
 export async function refreshTokens(env, refreshToken) {
-  const response = await fetch(`${accountUrl(env)}/auth/v1/oauth/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
+  try {
+    return await tokenRequest(env, {
       grant_type: 'refresh_token',
       refresh_token: refreshToken,
       client_id: env.MEO_OAUTH_CLIENT_ID,
-    }),
-    cache: 'no-store',
-    redirect: 'error',
-  });
-  if (!response.ok) return null;
-  return response.json();
+    });
+  } catch {
+    return null;
+  }
 }
 
 export async function loadSession(request, env) {

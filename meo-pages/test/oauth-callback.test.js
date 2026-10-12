@@ -35,7 +35,7 @@ test('callback reports a safe reason when its PKCE state cookie is missing', asy
   assert.doesNotMatch(JSON.stringify(warnings), /one-time-code|opaque-state/);
 });
 
-test('callback exchanges the code and creates an encrypted session cookie', async (t) => {
+async function exerciseSuccessfulCallback(cookieName) {
   const originalFetch = globalThis.fetch;
   const originalWarn = console.warn;
   const warnings = [];
@@ -55,27 +55,36 @@ test('callback exchanges the code and creates an encrypted session cookie', asyn
     }
     throw new Error('Unexpected callback fetch');
   };
-  t.after(() => {
+
+  try {
+    const flow = {
+      state: 'opaque-state',
+      verifier: 'pkce-verifier',
+      returnTo: '/new?connection=credential-id&model=model-id',
+      createdAt: Date.now(),
+    };
+    const sealedFlow = await seal(flow, env);
+    const request = new Request(
+      'https://chat.meoarch.org/oauth/openid/callback?code=one-time-code&state=opaque-state',
+      { headers: { Cookie: `${cookieName}=${sealedFlow}` } },
+    );
+
+    const response = await onRequest({ request, env });
+
+    assert.equal(response.status, 302);
+    assert.equal(response.headers.get('Location'), flow.returnTo);
+    assert.match(response.headers.get('Set-Cookie') ?? '', /^__Host-meo-session=/);
+    assert.deepEqual(warnings, []);
+  } finally {
     globalThis.fetch = originalFetch;
     console.warn = originalWarn;
-  });
+  }
+}
 
-  const flow = {
-    state: 'opaque-state',
-    verifier: 'pkce-verifier',
-    returnTo: '/new?connection=credential-id&model=model-id',
-    createdAt: Date.now(),
-  };
-  const sealedFlow = await seal(flow, env);
-  const request = new Request(
-    'https://chat.meoarch.org/oauth/openid/callback?code=one-time-code&state=opaque-state',
-    { headers: { Cookie: `__Secure-meo-oauth=${sealedFlow}` } },
-  );
+test('callback exchanges the code with the host-only OAuth state cookie', async () => {
+  await exerciseSuccessfulCallback('__Host-meo-oauth');
+});
 
-  const response = await onRequest({ request, env });
-
-  assert.equal(response.status, 302);
-  assert.equal(response.headers.get('Location'), flow.returnTo);
-  assert.match(response.headers.get('Set-Cookie') ?? '', /^__Host-meo-session=/);
-  assert.deepEqual(warnings, []);
+test('callback accepts the legacy OAuth state cookie during migration', async () => {
+  await exerciseSuccessfulCallback('__Secure-meo-oauth');
 });

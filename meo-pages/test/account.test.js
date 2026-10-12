@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { exchangeCode, refreshTokens } from '../functions/_lib/account.js';
+import {
+  OAuthTokenExchangeError,
+  accountUser,
+  exchangeCode,
+  refreshTokens,
+} from '../functions/_lib/account.js';
 
 const env = {
   SUPABASE_URL: 'https://bdyhkkgwhcamfyoqcthx.supabase.co',
@@ -40,13 +45,92 @@ test('OAuth code exchange uses Supabase public-client PKCE contract', async (t) 
   );
 });
 
-test('OAuth refresh uses the registered public client and never logs tokens', async (t) => {
+test('OAuth exchange exposes only safe server error code and status', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async () =>
+    Response.json(
+      { error: 'invalid_grant', error_description: 'sensitive server detail' },
+      { status: 400 },
+    );
+
+  await assert.rejects(
+    exchangeCode(
+      env,
+      'one-time-code',
+      'pkce-verifier',
+      'https://chat.meoarch.org/oauth/openid/callback',
+    ),
+    (error) => {
+      assert.ok(error instanceof OAuthTokenExchangeError);
+      assert.equal(error.reason, 'token_400_invalid_grant');
+      assert.doesNotMatch(error.message, /sensitive server detail/);
+      return true;
+    },
+  );
+});
+
+test('OAuth network failures get a stable diagnostic reason', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async () => {
+    throw new Error('network internals');
+  };
+
+  await assert.rejects(
+    exchangeCode(
+      env,
+      'one-time-code',
+      'pkce-verifier',
+      'https://chat.meoarch.org/oauth/openid/callback',
+    ),
+    (error) => {
+      assert.ok(error instanceof OAuthTokenExchangeError);
+      assert.equal(error.reason, 'token_network_error');
+      return true;
+    },
+  );
+});
+
+test('OAuth UserInfo lookup uses bearer token and OIDC subject identity', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async (input, init) => {
+    assert.equal(input, `${env.SUPABASE_URL}/auth/v1/oauth/userinfo`);
+    assert.equal(init.headers.Authorization, 'Bearer opaque-access');
+    assert.equal(init.headers.apikey, undefined);
+    return Response.json({ sub: 'user-uuid', email: 'user@example.com' });
+  };
+
+  const user = await accountUser(env, 'opaque-access');
+  assert.equal(user.id, 'user-uuid');
+  assert.equal(user.sub, 'user-uuid');
+});
+
+test('OAuth UserInfo lookup rejects payloads without an OIDC subject', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async () => Response.json({ email: 'user@example.com' });
+  assert.equal(await accountUser(env, 'opaque-access'), null);
+});
+
+test('OAuth refresh uses the registered public client', async (t) => {
   const originalFetch = globalThis.fetch;
   t.after(() => {
     globalThis.fetch = originalFetch;
   });
   globalThis.fetch = async (input, init) => {
     assert.equal(input, `${env.SUPABASE_URL}/auth/v1/oauth/token`);
+    assert.equal(init.headers['Content-Type'], 'application/x-www-form-urlencoded');
+    assert.equal(init.headers.apikey, undefined);
     assert.deepEqual(Object.fromEntries(new URLSearchParams(init.body)), {
       grant_type: 'refresh_token',
       refresh_token: 'opaque-refresh',
