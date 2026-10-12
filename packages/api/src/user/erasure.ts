@@ -137,6 +137,14 @@ export async function eraseUserData(
   await deps.deleteUserChatProjects(userId);
   await deps.deleteMessages({ user: userId });
   await deps.deleteAllAgentQueuedTurnsForUser({ user: userObjectId });
+  /** Before user keys: provider-stored files need the user's own assistants credentials. */
+  const files = await deps.getFiles({ user: userId });
+  try {
+    await deps.deleteStoredFiles(files ?? []);
+  } catch (error) {
+    logger.error(`[eraseUserData] Failed to delete stored files for user ${userId}`, error);
+  }
+  await deps.deleteFiles([], userId);
   await deps.deleteAllUserSessions({ userId });
   await deps.deleteRefreshTokenBridges({ userId, tenantId });
   await deps.deletePasskeysByUser(userId);
@@ -148,9 +156,6 @@ export async function eraseUserData(
   await deps.deletePresets(userId);
   await deps.deleteAllUserPluginAuths(userId);
   await deps.deleteSharedLinks(userId);
-  const files = await deps.getFiles({ user: userId });
-  await deps.deleteStoredFiles(files ?? []);
-  await deps.deleteFiles([], userId);
   await deps.deleteToolCalls(userId);
   await deps.deleteUserAgents(userId);
   await deps.deleteAllAgentApiKeys(userObjectId);

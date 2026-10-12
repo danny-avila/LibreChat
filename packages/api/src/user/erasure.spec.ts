@@ -204,4 +204,34 @@ describe('eraseUserData', () => {
     expect(await count('MCPServer', { author: userId })).toBe(2);
     expect(await count('AclEntry', { principalId: userId })).toBeGreaterThan(0);
   });
+
+  it('removes stored files while the user keys their provider clients need still exist', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    await seedUser(userId);
+    const { deps, order } = createDeps();
+    const deleteUserKey = deps.deleteUserKey;
+    const orderedDeps: UserErasureDeps = {
+      ...deps,
+      deleteUserKey: jest.fn(async (params) => {
+        order.push('deleteUserKey');
+        return deleteUserKey(params);
+      }),
+    };
+
+    await eraseUserData({ userId: userId.toString() }, orderedDeps);
+
+    expect(order.indexOf('deleteStoredFiles')).toBeLessThan(order.indexOf('deleteUserKey'));
+  });
+
+  it('still erases the account when the storage provider fails', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    await seedUser(userId);
+    const { deps } = createDeps();
+    (deps.deleteStoredFiles as jest.Mock).mockRejectedValueOnce(new Error('provider down'));
+
+    await eraseUserData({ userId: userId.toString() }, deps);
+
+    expect(await count('File', { user: userId })).toBe(0);
+    expect(await count('Skill', { author: userId })).toBe(0);
+  });
 });

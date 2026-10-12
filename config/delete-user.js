@@ -189,6 +189,9 @@ async function gracefulExit(code = 0) {
     initializeFileStorage(userAppConfig);
     const fileRequest = {
       user: { id: uid, _id: user._id, role: user.role, tenantId: user.tenantId },
+      /** Assistants client setup reads these Express request fields. */
+      baseUrl: '',
+      query: {},
       body: {},
       config: userAppConfig,
     };
