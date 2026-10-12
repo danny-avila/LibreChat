@@ -260,6 +260,12 @@ function eligibleLane(
   };
 }
 
+/** Whether any credential could find a pull request for the lane, so reading the user's token
+ *  (which can refresh and rotate it) is worth it. A lane with a branch and no commit yet (`head`
+ *  null) has nothing to match against: every source answers no pull request for it. */
+const isLookupable = (laneGit: ConversationLaneGit | null | undefined): boolean =>
+  laneGit?.head !== null && eligibleLane(laneGit, ALL_REPOSITORIES) != null;
+
 const agentsPullRequests = (config: AppConfig): PullRequestSettings | undefined =>
   (config.endpoints?.[EModelEndpoint.agents] as TAgentsEndpoint | undefined)?.pullRequests;
 
@@ -387,10 +393,9 @@ export function createConversationPullRequestHandler(deps: {
       }
       /** Reading the user's token can refresh and rotate it, so only a lane that some credential
        *  could look up is worth it; any other conversation has no pull request regardless. */
-      const userToken =
-        eligibleLane(laneGit, ALL_REPOSITORIES) == null
-          ? null
-          : await readUserToken(deps.userToken, userId, settings, deps.env);
+      const userToken = !isLookupable(laneGit)
+        ? null
+        : await readUserToken(deps.userToken, userId, settings, deps.env);
 
       const credential = credentialOf(settings, deps.env, userToken);
       if (userToken === USER_TOKEN_FAILED) {
@@ -487,7 +492,7 @@ export function createConversationPullRequestsHandler(deps: {
         const deadline =
           startedAt + (loaded?.batchTimeoutSeconds ?? DEFAULT_BATCH_TIMEOUT_SECONDS) * 1000;
         if (answered || Date.now() >= deadline) return null;
-        return lanes.some(({ laneGit }) => eligibleLane(laneGit, ALL_REPOSITORIES) != null)
+        return lanes.some(({ laneGit }) => isLookupable(laneGit))
           ? readUserToken(deps.userToken, userId, loaded, deps.env)
           : null;
       });

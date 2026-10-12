@@ -988,6 +988,33 @@ describe('status', () => {
     await expect(oauth.connected(user, github)).resolves.toBe(false);
   });
 
+  it('reports a reconnect that finishes while the status is being read as connected', async () => {
+    const { oauth } = setup([
+      () => json({ access_token: 'old' }),
+      () => json({ access_token: 'new' }),
+    ]);
+    const user = userId();
+    await connect(oauth, user);
+    const original = store.findToken.bind(store);
+    let reconnected = false;
+    const race = jest.spyOn(store, 'findToken').mockImplementation(async (query) => {
+      const row = await original(query);
+      /** The status has just read the old grant: the reconnect finishes before it checks. */
+      if (!reconnected && query.scope?.startsWith(`${PULL_REQUEST_OAUTH_TYPE}:`)) {
+        reconnected = true;
+        await connect(oauth, user);
+      }
+      return row;
+    });
+    try {
+      await expect(oauth.status(user, github)).resolves.toMatchObject({ connected: true });
+    } finally {
+      race.mockRestore();
+    }
+    expect(reconnected).toBe(true);
+    await expect(oauth.token(user, github)).resolves.toBe('new');
+  });
+
   it('reports a stored grant that cannot be read as a failure, without a configuration too', async () => {
     const { oauth } = setup([() => json({ access_token: 'kept' })]);
     const user = userId();

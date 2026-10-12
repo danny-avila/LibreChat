@@ -587,15 +587,21 @@ export function createPullRequestOAuth({
   async function statusOf(
     userId: string,
     config: PullRequestOAuthConfig,
+    attempt = 0,
   ): Promise<PullRequestOAuthStatus> {
     /** Fenced like a token read, so it never reports a connection a finished disconnect removed. */
     const before = await generationOf(userId);
     const current = await read(userId, config, before);
+    /** The generation moved during the read (a disconnect or a sign-in finished): the answer is
+     *  read again under the new one, as `fencedToken` does, so a reconnect is not reported as
+     *  disconnected. */
+    if ((await generationOf(userId)) !== before) {
+      return attempt < 2 ? statusOf(userId, config, attempt + 1) : { connected: false };
+    }
     if (current == null || isRefused(current.record)) return { connected: false };
     const grant = current.record;
     /** The row of a grant that cannot be refreshed outlives it until the TTL reaper runs. */
-    const live = grant.refreshToken != null || isLive(grant, 0);
-    if (!live || (await generationOf(userId)) !== before) return { connected: false };
+    if (grant.refreshToken == null && !isLive(grant, 0)) return { connected: false };
     return grant.flowId != null ? { connected: true, flowId: grant.flowId } : { connected: true };
   }
 
