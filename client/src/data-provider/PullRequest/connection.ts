@@ -33,6 +33,10 @@ function refetchPullRequests(queryClient: QueryClient): void {
     .then(() => queryClient.invalidateQueries([QueryKeys.conversationPullRequest]));
 }
 
+/** Every app that has asked for the status, so the session reset reaches its cache even when no
+ *  answer was ever synced there (Settings closed before the first status arrived). */
+const statusClients = new Set<QueryClient>();
+
 /** Counts sessions, so work a session started does not touch the next one's cache. */
 let epoch = 0;
 
@@ -40,7 +44,7 @@ let epoch = 0;
 export function resetPullRequestCredentials(): void {
   /** The status cached for the account that is leaving is not the next one's: an account switch
    *  without a logout keeps the query cache, so it is reset (and refetched where watched). */
-  for (const queryClient of refreshedUnder.keys()) {
+  for (const queryClient of new Set([...statusClients, ...refreshedUnder.keys()])) {
     void queryClient.resetQueries([QueryKeys.pullRequestConnection]);
   }
   refreshedUnder.clear();
@@ -101,6 +105,7 @@ const isConnectionKnowable = (startupConfig?: Partial<TStartupConfig>): boolean 
  */
 export const usePullRequestConnectionQuery = () => {
   const queryClient = useQueryClient();
+  statusClients.add(queryClient);
   const { data: startupConfig } = useGetStartupConfig();
   const query = useQuery<TPullRequestConnection>(
     [QueryKeys.pullRequestConnection],
@@ -132,6 +137,7 @@ export const usePullRequestConnectionQuery = () => {
  */
 export const usePullRequestConnectionStatus = () => {
   const queryClient = useQueryClient();
+  statusClients.add(queryClient);
   const { data: startupConfig } = useGetStartupConfig();
   const { data } = useQuery<TPullRequestConnection>(
     [QueryKeys.pullRequestConnection],

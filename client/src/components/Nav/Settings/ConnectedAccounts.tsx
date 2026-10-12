@@ -182,10 +182,19 @@ export default function ConnectedAccounts() {
 
   const retry = () => {
     keepFocus.current = true;
+    /** Taken before the request: an answer that the app is gone hides this row, Retry with it. */
+    const fallback = groupRef.current?.closest<HTMLElement>('[role="tabpanel"], [role="dialog"]');
     status.refetch().then((result) => {
       if (result.isError) {
         keepFocus.current = false;
       }
+      /** After React has applied the answer: focus left on nothing goes to the panel. */
+      setTimeout(() => {
+        const lost = document.activeElement == null || document.activeElement === document.body;
+        if (groupRef.current == null && lost) {
+          fallback?.focus();
+        }
+      }, 0);
     });
   };
 

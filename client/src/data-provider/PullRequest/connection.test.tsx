@@ -272,6 +272,26 @@ describe('pull request connection hooks', () => {
     );
   });
 
+  it('resets a status that arrived after Settings closed when the account changes', async () => {
+    mockStartup.current = { pullRequestsEnabled: true };
+    let answer: (status: TPullRequestConnection) => void = () => undefined;
+    mockGetConnection.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)));
+    const { client, wrapper } = setup();
+    const { unmount } = renderHook(() => usePullRequestConnectionStatus(), { wrapper });
+    await waitFor(() => expect(mockGetConnection).toHaveBeenCalledTimes(1));
+    /** Settings closes before the first status arrives; the answer is cached with no observer. */
+    unmount();
+    await act(async () => {
+      answer(connection(true));
+    });
+    expect(client.getQueryData([QueryKeys.pullRequestConnection])).toEqual(connection(true));
+
+    resetPullRequestCredentials();
+    await waitFor(() =>
+      expect(client.getQueryData([QueryKeys.pullRequestConnection])).toBeUndefined(),
+    );
+  });
+
   it('leaves the next session alone when a disconnect answers after the session ended', async () => {
     let answer: (value?: unknown) => void = () => undefined;
     mockDisconnect.mockImplementation(() => new Promise((resolve) => (answer = resolve)));

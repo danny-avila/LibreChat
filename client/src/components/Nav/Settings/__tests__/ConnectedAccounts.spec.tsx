@@ -70,6 +70,20 @@ function SettingsPanel() {
   );
 }
 
+/** Settings with its own visibility rule (context.tsx): the row shows for a known grant, or while
+ *  the startup config offers an app and the server has not said there is none. */
+function ConfigPanel() {
+  const status = usePullRequestConnectionStatus();
+  const shown =
+    status?.connected === true ||
+    (mockStartup.current?.pullRequestsConnect != null && status?.configured !== false);
+  return (
+    <div role="tabpanel" tabIndex={-1}>
+      {shown && <ConnectedAccounts />}
+    </div>
+  );
+}
+
 const renderPanel = () => {
   const client = new QueryClient({ logger, defaultOptions: { queries: { retry: false } } });
   render(
@@ -433,6 +447,23 @@ describe('ConnectedAccounts', () => {
 
     await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
     expect(screen.queryByRole('group')).toBeNull();
+    await waitFor(() => expect(screen.getByRole('tabpanel')).toHaveFocus());
+  });
+
+  it('moves focus to the panel when a retry finds the app gone and hides the row', async () => {
+    mockGetConnection.mockRejectedValueOnce(new Error('500'));
+    const client = new QueryClient({ logger, defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <ConfigPanel />
+      </QueryClientProvider>,
+    );
+
+    const retry = await screen.findByRole('button', { name: 'com_ui_retry' });
+    mockGetConnection.mockResolvedValue({ configured: false, connected: false });
+    await userEvent.click(retry);
+
+    await waitFor(() => expect(screen.queryByRole('group')).toBeNull());
     await waitFor(() => expect(screen.getByRole('tabpanel')).toHaveFocus());
   });
 
