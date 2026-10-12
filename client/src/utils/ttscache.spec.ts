@@ -232,6 +232,25 @@ describe('cross-tab logout', () => {
     expect(del).toHaveBeenCalledWith({ url: 'https://chat.example/raw%20text' });
   });
 
+  it('purges raw keys written back by an older tab after a sign-in', async () => {
+    const stored = new Set<string>();
+    const cache = {
+      keys: async () => Array.from(stored, (url) => ({ url })),
+      delete: async (request: { url: string }) => stored.delete(request.url),
+    };
+    Object.defineProperty(globalThis, 'caches', {
+      value: { open: async () => cache },
+      configurable: true,
+    });
+    const tab = openTab();
+
+    await tab.openTTSCache();
+    stored.add('https://chat.example/previous%20user%20reply');
+    tab.openTTSCacheWrites();
+    await tab.openTTSCache();
+    expect(Array.from(stored)).toEqual([]);
+  });
+
   it('keeps caching after a manual clear from settings', async () => {
     const put = jest.fn();
     Object.defineProperty(globalThis, 'caches', {

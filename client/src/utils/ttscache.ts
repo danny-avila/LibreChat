@@ -50,8 +50,9 @@ export async function getTTSCacheKey(text: string, voice?: string | null): Promi
   }
 }
 
-/** Opens the TTS cache. The first open per page load drops entries that earlier versions
- *  keyed by the raw message text. */
+/** Opens the TTS cache. The first open per page load, and after every clear or sign-in, drops
+ *  entries that earlier versions keyed by the raw message text: a tab still running such a
+ *  version can write them back after a clear. */
 export async function openTTSCache(): Promise<Cache> {
   const cache = await caches.open(TTS_CACHE_NAME);
   legacyPurge ??= Promise.resolve()
@@ -98,6 +99,7 @@ export async function putTTSCache(key: string, response: Response, epoch: number
 /** Deletes every cached TTS response. Safe when the Cache API is missing or rejects. */
 export async function clearTTSCache(): Promise<void> {
   sessionEpoch += 1;
+  legacyPurge = null;
   getChannel()?.postMessage('clear');
   if (typeof caches === 'undefined') {
     return;
@@ -120,4 +122,5 @@ export function endTTSCacheSession(): Promise<void> {
 export function openTTSCacheWrites(): void {
   getChannel();
   writesOpen = true;
+  legacyPurge = null;
 }
