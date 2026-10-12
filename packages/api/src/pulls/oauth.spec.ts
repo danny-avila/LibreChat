@@ -1013,18 +1013,19 @@ describe('the connection generation', () => {
     let answer: () => void = () => undefined;
     const answered = new Promise<void>((resolve) => (answer = resolve));
     let exchanges = 0;
-    const { oauth } = setup([
-      async () => {
+    /** Each sign-in's token follows its own code, whichever reaches the provider first. */
+    const oauth = createPullRequestOAuth({
+      store,
+      fetchFn: jest.fn(async (_input: string, init?: RequestInit) => {
         exchanges += 1;
         await answered;
-        return json({ access_token: 'one' });
-      },
-      async () => {
-        exchanges += 1;
-        await answered;
-        return json({ access_token: 'two' });
-      },
-    ]);
+        return json({ access_token: formOf(init).get('code') === 'code-1' ? 'one' : 'two' });
+      }),
+      secret,
+      redirectUri,
+      encrypt,
+      decrypt,
+    });
     const user = await existing();
     const first = await started(oauth, user);
     const second = await started(oauth, user);
