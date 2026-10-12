@@ -448,7 +448,9 @@ const deleteUserController = async (req, res) => {
         ...db,
         openCheckpointDeletion,
         deleteSharedLinks: deleteAllSharedLinksWithCleanup,
-        deleteStoredFiles: (files) => processDeleteRequest({ req, files }),
+        /** The DELETE carries no body without 2FA, and account erasure targets no assistant. */
+        deleteStoredFiles: (files) =>
+          processDeleteRequest({ req: Object.assign(Object.create(req), { body: {} }), files }),
         ...createMCPServerCleanup(user.id),
       },
     );

@@ -148,12 +148,8 @@ export async function eraseUserData(
   await deps.deletePresets(userId);
   await deps.deleteAllUserPluginAuths(userId);
   await deps.deleteSharedLinks(userId);
-  try {
-    const files = await deps.getFiles({ user: userId });
-    await deps.deleteStoredFiles(files ?? []);
-  } catch (error) {
-    logger.error(`[eraseUserData] Failed to delete stored files for user ${userId}`, error);
-  }
+  const files = await deps.getFiles({ user: userId });
+  await deps.deleteStoredFiles(files ?? []);
   await deps.deleteFiles([], userId);
   await deps.deleteToolCalls(userId);
   await deps.deleteUserAgents(userId);

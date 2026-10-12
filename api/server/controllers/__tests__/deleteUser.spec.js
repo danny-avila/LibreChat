@@ -259,6 +259,22 @@ describe('deleteUserController - session hint', () => {
 });
 
 describe('deleteUserController - 2FA enforcement', () => {
+  it('deletes stored files when the DELETE arrives without a body', async () => {
+    const files = [{ file_id: 'file-1', filepath: '/uploads/a', source: 'local' }];
+    const req = { user: { id: USER_ID, _id: USER_ID, email: 'a@b.com' } };
+    const res = createRes();
+    mockGetUserById.mockResolvedValue({ _id: USER_ID, twoFactorEnabled: false });
+    mockGetFiles.mockResolvedValue(files);
+
+    await deleteUserController(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    const [{ req: fileRequest, files: deleted }] = mockProcessDeleteRequest.mock.calls[0];
+    expect(deleted).toBe(files);
+    expect(fileRequest.body).toEqual({});
+    expect(fileRequest.user).toBe(req.user);
+  });
+
   it('proceeds with deletion when 2FA is not enabled', async () => {
     const req = { user: { id: USER_ID, _id: USER_ID, email: 'a@b.com' }, body: {} };
     const res = createRes();
@@ -279,7 +295,10 @@ describe('deleteUserController - 2FA enforcement', () => {
     expect(mockDeletePasskeysByUser).toHaveBeenCalledWith(USER_ID);
     expect(mockDeleteAllUserPluginAuths).toHaveBeenCalledWith(USER_ID);
     expect(mockDeleteAllSharedLinksWithCleanup).toHaveBeenCalledWith(USER_ID);
-    expect(mockProcessDeleteRequest).toHaveBeenCalledWith({ req, files: [] });
+    expect(mockProcessDeleteRequest).toHaveBeenCalledWith({
+      req: expect.objectContaining({ user: req.user, body: {} }),
+      files: [],
+    });
     expect(mockProcessDeleteRequest.mock.invocationCallOrder[0]).toBeLessThan(
       mockDeleteFiles.mock.invocationCallOrder[0],
     );
