@@ -1061,6 +1061,7 @@ export function createPromptMethods(
       await invalidatePromptGroupAccessContext();
     } catch (error) {
       logger.error('[deleteUserPrompts] General error:', error);
+      throw error;
     }
   }
 

@@ -1976,6 +1976,7 @@ export function createAgentMethods(
       await Agent.deleteMany({ _id: { $in: agentObjectIds } });
     } catch (error) {
       logger.error('[deleteUserAgents] General error:', error);
+      throw error;
     }
   }
 

@@ -234,4 +234,25 @@ describe('eraseUserData', () => {
     expect(await count('File', { user: userId })).toBe(0);
     expect(await count('Skill', { author: userId })).toBe(0);
   });
+
+  for (const modelName of ['Agent', 'PromptGroup']) {
+    it(`keeps the account erasable when the ${modelName} lookup fails`, async () => {
+      const userId = new mongoose.Types.ObjectId();
+      await seedUser(userId);
+      const { deps } = createDeps();
+      const find = jest.spyOn(mongoose.models[modelName], 'find').mockImplementationOnce(() => {
+        throw new Error(`${modelName} store down`);
+      });
+
+      try {
+        await expect(eraseUserData({ userId: userId.toString() }, deps)).rejects.toThrow(
+          `${modelName} store down`,
+        );
+      } finally {
+        find.mockRestore();
+      }
+
+      expect(await count('MCPServer', { author: userId })).toBe(2);
+    });
+  }
 });
