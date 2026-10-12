@@ -902,6 +902,24 @@ describe('status', () => {
     await expect(oauth.storedStatus(user)).resolves.toEqual({ connected: false });
   });
 
+  it('refreshes an access token a lookup was refused with, and ends the connection only if the refresh is refused', async () => {
+    const { oauth, fetchFn } = setup([
+      () => json({ access_token: 'turned-away', refresh_token: 'r1', expires_in: 7200 }),
+      () => json({ access_token: 'fresh', refresh_token: 'r2', expires_in: 7200 }),
+      () => json({ error: 'invalid_grant' }, { status: 400 }),
+    ]);
+    const user = userId();
+    await connect(oauth, user);
+    await oauth.reject(user, github, 'turned-away');
+    /** The refresh token still works: the connection survives with a new access token. */
+    await expect(oauth.token(user, github)).resolves.toBe('fresh');
+    expect(formOf(fetchFn.mock.calls[1][1]).get('refresh_token')).toBe('r1');
+    await oauth.reject(user, github, 'fresh');
+    /** This time the provider refuses the refresh token: now the user is disconnected. */
+    await expect(oauth.token(user, github)).resolves.toBeNull();
+    await expect(oauth.connected(user, github)).resolves.toBe(false);
+  });
+
   it('reports a stored grant that cannot be read as a failure, without a configuration too', async () => {
     const { oauth } = setup([() => json({ access_token: 'kept' })]);
     const user = userId();

@@ -900,6 +900,13 @@ export function createPullRequestOAuth({
       const current = await read(userId, config, await generationOf(userId));
       if (current == null || isRefused(current.record)) return;
       if (current.record.accessToken !== accessToken) return;
+      /** Only the access token was turned away: with a refresh token the next read refreshes it,
+       *  and only a refused refresh ends the connection. */
+      if (current.record.refreshToken != null) {
+        const { v: _v, ...grant } = current.record;
+        await write(userId, config, current.row.token, { ...grant, accessExpiresAt: 0 });
+        return;
+      }
       await write(userId, config, current.row.token, {
         refused: true,
         clientId: current.record.clientId,
