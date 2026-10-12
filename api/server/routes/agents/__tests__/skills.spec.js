@@ -17,6 +17,7 @@ jest.mock('@librechat/api', () => ({
       create: mockWrite,
       get: mockList,
       update: mockWrite,
+      delete: mockWrite,
       listFiles: mockList,
       getFile: mockList,
       updateFile: mockWrite,
@@ -68,4 +69,8 @@ it('keeps authentication ahead of management handlers', async () => {
   mockAuth.mockImplementationOnce((_req, res) => res.sendStatus(401));
   await request(app).get('/skills').expect(401);
   expect(mockList).not.toHaveBeenCalled();
+});
+it('routes whole-Skill deletion through the authorized management handler', async () => {
+  await request(app).delete('/skills/507f1f77bcf86cd799439011').expect(200);
+  expect(mockWrite).toHaveBeenCalledTimes(1);
 });

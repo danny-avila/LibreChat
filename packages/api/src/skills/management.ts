@@ -9,6 +9,7 @@ import {
 import type {
   SkillFrontmatterValue,
   TCreateSkill,
+  TDeleteSkillResponse,
   TDeleteSkillFileResponse,
   TSkill,
   TUpdateSkillPayload,
@@ -130,6 +131,11 @@ export const skillFileDeleteResponseSchema: z.ZodType<TDeleteSkillFileResponse> 
   relativePath: z.string(),
   deleted: z.literal(true),
 });
+export const skillDeleteResponseSchema: z.ZodType<TDeleteSkillResponse> = z.object({
+  id: idSchema,
+  deleted: z.literal(true),
+  cleanupComplete: z.boolean().optional(),
+});
 const listSchema = agentManagementListSchema;
 
 type ManagementRequest = Request &
@@ -233,7 +239,15 @@ async function admitFileWrite(req: Request, res: Response, limiters: RequestHand
 export function createSkillManagementHandlers(
   deps: SkillManagementDeps,
 ): Record<
-  'list' | 'create' | 'get' | 'update' | 'listFiles' | 'getFile' | 'updateFile' | 'deleteFile',
+  | 'list'
+  | 'create'
+  | 'get'
+  | 'update'
+  | 'delete'
+  | 'listFiles'
+  | 'getFile'
+  | 'updateFile'
+  | 'deleteFile',
   (request: Request, res: Response) => Promise<Response>
 > {
   async function canManageSkills(req: ManagementRequest): Promise<boolean> {
@@ -366,6 +380,12 @@ export function createSkillManagementHandlers(
           (body) => projectSkill(body, true),
         );
       },
+      { mutation: true },
+    ),
+    delete: wrap(
+      PermissionBits.DELETE,
+      (req, res) =>
+        runHandler(req, res, deps.handlers.delete, (body) => skillDeleteResponseSchema.parse(body)),
       { mutation: true },
     ),
     listFiles: wrap(PermissionBits.VIEW, (req, res) =>
