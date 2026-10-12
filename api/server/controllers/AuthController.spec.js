@@ -143,6 +143,7 @@ const {
   refreshController,
   registrationController,
   resetPasswordController,
+  resetPasswordRequestController,
 } = require('./AuthController');
 const { getGraphApiToken } = require('~/server/services/GraphTokenService');
 const {
@@ -154,6 +155,7 @@ const {
   setAuthTokens,
   registerUser,
   resetPassword,
+  requestPasswordReset,
 } = require('~/server/services/AuthService');
 const { getOpenIdConfig, getOpenIdEmail } = require('~/strategies');
 const {
@@ -2787,6 +2789,32 @@ describe('registrationController - invite consumption', () => {
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.send).toHaveBeenCalledWith({ message: 'ok' });
     expect(logger.error).toHaveBeenCalled();
+  });
+
+  it('answers an unexpected registration failure generically and logs safe metadata', async () => {
+    registerUser.mockRejectedValue(new Error('smtp rejected leak@example.com'));
+    const res = buildRes();
+
+    await registrationController({ body: {}, invite }, res);
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ message: 'Something went wrong' });
+    expect(logger.error).toHaveBeenCalledWith('[registrationController]', { type: 'Error' });
+    expect(JSON.stringify(logger.error.mock.calls)).not.toContain('leak@example.com');
+  });
+
+  it('answers a failed password reset request generically and logs safe metadata', async () => {
+    requestPasswordReset.mockRejectedValue(new Error('smtp rejected leak@example.com'));
+    const res = buildRes();
+
+    await resetPasswordRequestController({ body: { email: 'leak@example.com' } }, res);
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ message: 'Something went wrong' });
+    expect(logger.error).toHaveBeenCalledWith('[resetPasswordRequestController]', {
+      type: 'Error',
+    });
+    expect(JSON.stringify(logger.error.mock.calls)).not.toContain('leak@example.com');
   });
 
   it('never forwards the creation signal to the client', async () => {
