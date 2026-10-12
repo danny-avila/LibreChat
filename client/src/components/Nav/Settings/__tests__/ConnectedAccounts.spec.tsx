@@ -130,6 +130,19 @@ describe('ConnectedAccounts', () => {
       }),
     ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /com_ui_pr_account_connect_aria/ })).toBeNull();
+    /** No lookup uses a grant whose app is off, so it is not shown as in use. */
+    expect(screen.getByRole('status')).toHaveTextContent('com_ui_pr_account_not_in_use');
+    expect(screen.queryByText('com_ui_pr_account_connected')).toBeNull();
+    expect(screen.getByText('com_ui_pr_account_unused_description')).toBeInTheDocument();
+    expect(screen.queryByText('com_ui_pr_account_description')).toBeNull();
+  });
+
+  it('shows the success status and lookup copy for a grant the current app uses', async () => {
+    mockGetConnection.mockResolvedValue(connection(true));
+    renderRow();
+    await screen.findByRole('button', { name: /com_ui_pr_account_disconnect_aria/ });
+    expect(screen.getByRole('status')).toHaveTextContent('com_ui_pr_account_connected');
+    expect(screen.getByText('com_ui_pr_account_description')).toBeInTheDocument();
   });
 
   it('shows a checking status and no action while the connection loads', () => {

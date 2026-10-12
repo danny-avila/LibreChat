@@ -90,6 +90,8 @@ export default function ConnectedAccounts() {
    * revive it.
    */
   const revocable = status.data?.connected === true;
+  /** A grant whose app is turned off: kept until removed, but no lookup uses it. */
+  const unused = revocable && status.data?.configured === false;
   /** The startup config only until the status loads: after that a grant whose app is gone may
    *  belong to any provider, so the row names it only as an account. */
   const provider = status.data != null ? status.data.provider : startupConfig?.pullRequestsConnect;
@@ -195,7 +197,11 @@ export default function ConnectedAccounts() {
       </Button>
     );
   } else if (status.data?.connected === true) {
-    statusContent = <Chip tone="success">{localize('com_ui_pr_account_connected')}</Chip>;
+    statusContent = unused ? (
+      <Chip tone="neutral">{localize('com_ui_pr_account_not_in_use')}</Chip>
+    ) : (
+      <Chip tone="success">{localize('com_ui_pr_account_connected')}</Chip>
+    );
     action = (
       <AlertDialogTrigger asChild>
         <Button
@@ -267,7 +273,9 @@ export default function ConnectedAccounts() {
               <div role="status">{statusContent}</div>
             </div>
             <p id={descriptionId} className="text-text-secondary text-xs">
-              {localize('com_ui_pr_account_description')}
+              {localize(
+                unused ? 'com_ui_pr_account_unused_description' : 'com_ui_pr_account_description',
+              )}
             </p>
           </div>
           <div className="shrink-0">{action}</div>
