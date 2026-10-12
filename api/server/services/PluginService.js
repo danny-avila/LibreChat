@@ -92,12 +92,13 @@ const getUserPluginAuthValue = async (userId, authField, throwError = true, plug
  * @param {string} authField
  * @param {string} pluginKey
  * @param {string} value
+ * @param {'v3' | 'legacy'} [writeFormat] - `credentials.writeFormat` from the app config
  * @returns {Promise<IPluginAuth>}
  * @throws {Error}
  */
-const updateUserPluginAuth = async (userId, authField, pluginKey, value) => {
+const updateUserPluginAuth = async (userId, authField, pluginKey, value, writeFormat) => {
   try {
-    const encryptedValue = encryptCredential(value);
+    const encryptedValue = await encryptCredential(value, writeFormat);
     return await updatePluginAuth({
       userId,
       authField,

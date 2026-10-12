@@ -29,6 +29,14 @@ projects:
 #   outputChars: 512   # characters of each output kept, half from the start and half from the end
 #   argsChars: 512     # characters of serialized arguments kept; JSON stays valid JSON
 
+# Stored user credentials (tool and web search keys, MCP custom user variables) are
+# written with a random IV per value ("v3", the default). Both formats are always read.
+# During a rolling upgrade of a multi-replica deployment, set "legacy" until every
+# replica runs a release that reads v3, then remove it. A rollback to a release that
+# predates v3 cannot read credentials saved in the v3 format.
+# credentials:
+#   writeFormat: v3
+
 # Langfuse connections are managed through Settings > Langfuse when available.
 # That flow verifies the credentials and stores the secret key encrypted; do not
 # place a plaintext langfuse.secretKey in this file. Environment-managed central

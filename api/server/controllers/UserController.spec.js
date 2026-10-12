@@ -226,6 +226,7 @@ describe('updateUserPluginsController', () => {
     await updateUserPluginsController(
       {
         config: {
+          credentials: { writeFormat: 'legacy' },
           webSearch: {
             keenableApiKey: '${KEENABLE_API_KEY}',
             keenableApiUrl: '${KEENABLE_API_URL}',
@@ -253,12 +254,14 @@ describe('updateUserPluginsController', () => {
       'KEENABLE_API_KEY',
       'web_search',
       'new-key',
+      'legacy',
     );
     for (const selectionField of Object.values(webSearchSelectionFields)) {
       expect(updateUserPluginAuth).not.toHaveBeenCalledWith(
         'user-id',
         selectionField,
         'web_search',
+        expect.anything(),
         expect.anything(),
       );
     }
