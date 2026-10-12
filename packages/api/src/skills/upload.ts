@@ -221,6 +221,9 @@ export function createSkillUploadHandler(
         if (error.code === 'SKILL_FILE_CONFLICT') {
           return res.status(409).json({ error: 'SKILL_FILE_CONFLICT' });
         }
+        if (error.code === 'SKILL_DELETING') {
+          return res.status(409).json({ error: 'SKILL_DELETING' });
+        }
         if (error.code === 'SKILL_FILE_VALIDATION_FAILED') {
           return res.status(400).json({ error: error.message });
         }

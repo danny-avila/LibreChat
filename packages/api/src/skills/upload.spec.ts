@@ -100,6 +100,25 @@ describe('skill upload lookup ordering', () => {
     expect(h.res.status).toHaveBeenCalledWith(200);
   });
 
+  it.each(['reservation', 'persistence'] as const)(
+    'reports a deletion race during %s as a conflict',
+    async (stage) => {
+      const h = harness();
+      const error = Object.assign(new Error('Internal deletion state'), { code: 'SKILL_DELETING' });
+      if (stage === 'reservation') h.deps.reserveSkillUploadIntent.mockRejectedValueOnce(error);
+      else h.deps.upsertSkillFile.mockRejectedValueOnce(error);
+
+      const pending = h.handler(h.req, h.res);
+      h.skill.resolve({ source: 'inline' });
+      h.file.resolve(originalFile);
+      await pending;
+
+      expect(h.res.status).toHaveBeenCalledWith(409);
+      expect(h.res.json).toHaveBeenCalledWith({ error: 'SKILL_DELETING' });
+      if (stage === 'reservation') expect(h.saveBuffer).not.toHaveBeenCalled();
+    },
+  );
+
   it.each(['missing', 'managed', 'conflict', 'lookup failure'] as const)(
     'does not store bytes for %s',
     async (scenario) => {

@@ -48,6 +48,13 @@ async function makeSkill() {
 }
 
 describe('Skill deletion journal', () => {
+  it('indexes only marked Skills for startup and periodic deletion discovery', () => {
+    expect(mongoose.models.Skill.schema.indexes()).toContainEqual([
+      { deletingAt: 1 },
+      expect.objectContaining({ sparse: true }),
+    ]);
+  });
+
   it('marks a skill before recording its retryable tombstone', async () => {
     const { skill } = await makeSkill();
     const result = await lifecycle.beginSkillDeletion(skill.id);
