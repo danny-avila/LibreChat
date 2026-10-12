@@ -1,12 +1,11 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
-import { useAtomValue } from 'jotai';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { ContentTypes, QueryKeys, dataService } from 'librechat-data-provider';
 import type { ParentSubagentSummary, BackgroundTaskIndex, TMessage } from 'librechat-data-provider';
-import type { ActiveSubagentPanel } from '~/components/Chat/Subagents/state';
+import type { JotaiStore } from 'test/harness';
 import { ParentSubagentsProvider } from '~/components/Chat/Subagents/ParentSubagentsProvider';
 import { activeSubagentPanel } from '~/components/Chat/Subagents/state';
 import { ChatSurfaceHarness } from 'test/harness';
@@ -84,18 +83,6 @@ const messages: TMessage[] = [
   } as TMessage,
 ];
 
-const SelectionProbe = () => {
-  const selection = useAtomValue(activeSubagentPanel);
-  return (
-    <pre data-testid="selected-subagent" hidden>
-      {JSON.stringify(selection)}
-    </pre>
-  );
-};
-
-const selectedSubagent = (): ActiveSubagentPanel | null =>
-  JSON.parse(screen.getByTestId('selected-subagent').textContent ?? 'null');
-
 const renderButton = (children: ParentSubagentSummary[] = [], initialMessages = messages) => {
   jest.spyOn(dataService, 'getSubagentThread').mockImplementation(() => new Promise(() => {}));
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -105,19 +92,23 @@ const renderButton = (children: ParentSubagentSummary[] = [], initialMessages = 
     children,
     childrenTruncated: false,
   });
+  let atoms!: JotaiStore;
   const rendered = render(
-    <ChatSurfaceHarness>
+    <ChatSurfaceHarness
+      seed={(store) => {
+        atoms = store;
+      }}
+    >
       <RecoilRoot>
         <QueryClientProvider client={queryClient}>
           <ParentSubagentsProvider conversationId={conversationId} enabled>
             <BackgroundTasksButton conversationId={conversationId} isSubmitting={false} />
-            <SelectionProbe />
           </ParentSubagentsProvider>
         </QueryClientProvider>
       </RecoilRoot>
     </ChatSurfaceHarness>,
   );
-  return { ...rendered, queryClient };
+  return { ...rendered, queryClient, getSelection: () => atoms.get(activeSubagentPanel) };
 };
 
 afterEach(() => jest.restoreAllMocks());
@@ -439,13 +430,16 @@ describe('BackgroundTasksButton', () => {
     expect(screen.getByText('npx jest tasks.spec.ts').closest('[inert]')).not.toBeNull();
   });
 
-  it('provides a tool destination action on every task', async () => {
+  it('provides the appropriate open action for each task kind', async () => {
     jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(index());
     renderButton([runningChild]);
     await userEvent.click(await screen.findByTestId('header-background-tasks-button'));
     expect(
       await screen.findAllByRole('button', { name: /^com_ui_background_tasks_go_to_tool:/ }),
-    ).toHaveLength(3);
+    ).toHaveLength(2);
+    expect(
+      screen.getAllByRole('button', { name: /^com_ui_background_tasks_open_subagent:/ }),
+    ).toHaveLength(1);
   });
 
   it('renders tool navigation as an icon without visible button text', async () => {
@@ -494,7 +488,7 @@ describe('BackgroundTasksButton', () => {
     async (status) => {
       jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(index({ tasks: [] }));
       const before = window.location.href;
-      renderButton([
+      const { getSelection } = renderButton([
         {
           ...runningChild,
           status,
@@ -507,7 +501,7 @@ describe('BackgroundTasksButton', () => {
       await userEvent.click(
         await screen.findByRole('button', { name: /^com_ui_background_tasks_open_subagent:/ }),
       );
-      expect(selectedSubagent()).toMatchObject({
+      expect(getSelection()).toMatchObject({
         parentConversationId: conversationId,
         parentMessageId: 'parent-message',
         toolCallId: 'call-subagent',
@@ -523,7 +517,7 @@ describe('BackgroundTasksButton', () => {
 
   it('opens the exact thread when provider call ids are reused', async () => {
     jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(index({ tasks: [] }));
-    renderButton([
+    const { getSelection } = renderButton([
       runningChild,
       { ...runningChild, threadId: 'other-thread', title: 'Other researcher' },
     ]);
@@ -533,19 +527,21 @@ describe('BackgroundTasksButton', () => {
         name: 'com_ui_background_tasks_open_subagent: Other researcher',
       }),
     );
-    expect(selectedSubagent()).toMatchObject({
+    expect(getSelection()).toMatchObject({
       durable: { threadId: 'other-thread', taskId: 'sub-task-1' },
     });
   });
 
   it('explains an unaddressable subagent without falling back to a tool jump', async () => {
     jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(index({ tasks: [] }));
-    renderButton([{ ...runningChild, latestTaskId: undefined, tasks: [] }]);
+    const { getSelection } = renderButton([
+      { ...runningChild, latestTaskId: undefined, tasks: [] },
+    ]);
     await userEvent.click(await screen.findByTestId('header-background-tasks-button'));
     await userEvent.click(
       await screen.findByRole('button', { name: /^com_ui_background_tasks_open_subagent:/ }),
     );
-    expect(screen.getByTestId('selected-subagent')).toHaveTextContent('null');
+    expect(getSelection()).toBeNull();
     expect(screen.getByRole('status')).toHaveTextContent(
       'com_ui_background_tasks_subagent_unavailable',
     );
@@ -573,14 +569,14 @@ describe('BackgroundTasksButton', () => {
 
   it('opens event subagents with the actor timeline pinned to the requested task', async () => {
     jest.spyOn(dataService, 'getBackgroundTasks').mockResolvedValue(index({ tasks: [] }));
-    renderButton([
+    const { getSelection } = renderButton([
       { ...runningChild, origin: 'event', actorId: 'actor-1', parentToolCallId: undefined },
     ]);
     await userEvent.click(await screen.findByTestId('header-background-tasks-button'));
     await userEvent.click(
       await screen.findByRole('button', { name: /^com_ui_background_tasks_open_subagent:/ }),
     );
-    expect(selectedSubagent()).toMatchObject({
+    expect(getSelection()).toMatchObject({
       durable: { threadId: 'thread-1', taskId: 'sub-task-1' },
       event: { actorId: 'actor-1', pinnedTask: true },
       isSubmitting: false,

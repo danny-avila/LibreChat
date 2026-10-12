@@ -451,6 +451,7 @@ jest.mock('@librechat/client', () => ({
 
 jest.mock('lucide-react', () => ({
   AlertCircle: () => null,
+  ArrowUpRight: () => null,
   CornerUpLeft: () => null,
   CheckCircle2: () => null,
   Clock: () => null,
