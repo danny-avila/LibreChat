@@ -2402,6 +2402,29 @@ describe('bedrockModels defaults', () => {
 });
 
 describe('MCP Apps configuration', () => {
+  it('accepts exact App tool approval targets without enabling them by default', () => {
+    const target = 'mcp:cogsworth:home_bot_message';
+    expect(configSchema.parse({ version: '1.2.1' }).mcpSettings).toBeUndefined();
+    expect(
+      configSchema.parse({
+        version: '1.2.1',
+        mcpSettings: { appToolApproval: { allow: [target] } },
+      }).mcpSettings?.appToolApproval?.allow,
+    ).toEqual([target]);
+  });
+
+  it.each(['*', 'mcp:cogsworth:*', 'cogsworth:home_bot_message', 'mcp::tool', 'mcp:server:'])(
+    'rejects non-exact App tool approval target %j',
+    (target) => {
+      expect(
+        configSchema.safeParse({
+          version: '1.2.1',
+          mcpSettings: { appToolApproval: { allow: [target] } },
+        }).success,
+      ).toBe(false);
+    },
+  );
+
   it.each([
     [
       undefined,
@@ -2548,6 +2571,24 @@ describe('MCP Apps configuration', () => {
       maxActionPreviewChars: 32768,
       sandboxUrl: 'https://mcp-sandbox.example.com/api/mcp/sandbox',
     });
+  });
+
+  it('publishes the configured App tool approval allowlist', () => {
+    const appToolApproval = { allow: ['mcp:cogsworth:home_bot_message'] };
+    expect(
+      resolveMCPAppsPolicy(
+        true,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        appToolApproval,
+      ).appToolApproval,
+    ).toEqual(appToolApproval);
+    expect(resolveMCPAppsPolicy(true).appToolApproval).toBeUndefined();
   });
 
   it('defaults App request limits without requiring the parent rateLimits section', () => {

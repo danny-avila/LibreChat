@@ -29,6 +29,11 @@ function SandboxPolicyProbe() {
   );
 }
 
+function AppToolApprovalProbe() {
+  const { appToolApproval } = useMCPAppsPolicy();
+  return <output>{appToolApproval?.allow?.join(',') ?? 'none'}</output>;
+}
+
 function CachedPolicyProvider({ children }: { children: React.ReactNode }) {
   const { data, isSuccess, error } = useQuery<TStartupConfig>(
     ['startup-policy'],
@@ -121,6 +126,27 @@ describe('MCPAppsPolicyProvider', () => {
     expect(
       screen.getByText('https://mcp-sandbox.example.com/api/mcp/sandbox:480:7:32768'),
     ).toBeInTheDocument();
+  });
+
+  it('preserves the App tool approval allowlist from startup config', () => {
+    render(
+      <MCPAppsPolicyProvider
+        startupConfig={
+          {
+            mcpApps: {
+              enabled: true,
+              legacyHtmlEnabled: true,
+              appToolApproval: { allow: ['mcp:cogsworth:home_bot_message'] },
+            },
+          } as TStartupConfig
+        }
+        ready
+      >
+        <AppToolApprovalProbe />
+      </MCPAppsPolicyProvider>,
+    );
+
+    expect(screen.getByText('mcp:cogsworth:home_bot_message')).toBeInTheDocument();
   });
 
   it('falls back to bounded policy values when a published startup payload is malformed', () => {

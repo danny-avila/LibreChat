@@ -3201,9 +3201,14 @@ export function resolveMCPAppOperationLimits(
   return { ...DEFAULT_MCP_APP_OPERATION_LIMITS, ...limits };
 }
 
+export type TMCPAppToolApprovalPolicy = {
+  allow?: string[];
+};
+
 export type TMCPAppsPolicy = {
   enabled: boolean;
   legacyHtmlEnabled: boolean;
+  appToolApproval?: TMCPAppToolApprovalPolicy;
   cspLimits?: MCPAppCspLimits;
   /** Server-enforced UTF-8 JSON byte cap for one persisted MCP App artifact. */
   maxPersistedAppBytes?: number;
@@ -3248,6 +3253,7 @@ export function resolveMCPAppsPolicy(
   maxActiveViews = DEFAULT_MCP_APP_MAX_ACTIVE_VIEWS,
   maxActionPreviewChars = DEFAULT_MCP_APP_ACTION_PREVIEW_CHARS,
   operationLimits?: Partial<TMCPAppOperationLimits>,
+  appToolApproval?: TMCPAppToolApprovalPolicy,
 ): TMCPAppsPolicy {
   return {
     enabled: value === true,
@@ -3260,6 +3266,7 @@ export function resolveMCPAppsPolicy(
     ...(operationLimits != null
       ? { operationLimits: resolveMCPAppOperationLimits(operationLimits) }
       : {}),
+    ...(appToolApproval != null ? { appToolApproval } : {}),
     ...(sandboxUrl !== undefined ? { sandboxUrl } : {}),
   };
 }
@@ -4183,6 +4190,21 @@ export const configSchema = z.object({
         })
         .default({}),
       apps: z.boolean().optional(),
+      appToolApproval: z
+        .object({
+          allow: z
+            .array(
+              z
+                .string()
+                .min(7)
+                .max(512)
+                .regex(/^mcp:[^*:\s]+:[^*:\s]+$/),
+            )
+            .max(256)
+            .optional(),
+        })
+        .strict()
+        .optional(),
     })
     .optional(),
   interface: interfaceSchema,

@@ -55,6 +55,24 @@ and visibility checks remain in effect. A user who directly calls their own API 
 an allowed tool: this is a consent boundary for embedded App code, not an independent authorization
 mechanism for authenticated API clients.
 
+An administrator can skip this confirmation for specific trusted App tool calls with an exact
+server/tool allowlist:
+
+```yaml
+mcpSettings:
+  appToolApproval:
+    allow:
+      - 'mcp:cogsworth:home_bot_message'
+```
+
+Targets use `mcp:<server>:<tool>` and do not support wildcards. An omitted or empty list keeps the
+default confirmation for every App tool call. This setting affects only App-initiated tool calls;
+App-authored messages still require approval, and Agent tool approval continues to follow
+`endpoints.agents.toolApproval`. Allowlisted Apps can run the named tool without a per-action
+confirmation, so only add tools from Apps you trust. This is not a server authorization control:
+the MCP server's permissions and authenticated route checks still apply. Changes take effect when
+startup configuration is refreshed and open chat pages reload.
+
 Set `mcpSettings.apps: true` to enable MCP Apps and legacy inline HTML. When the field is omitted,
 new MCP Apps stay disabled while existing legacy inline HTML remains enabled for upgrade
 compatibility. An explicit `false` disables both. Authenticated clients fail closed when the

@@ -490,6 +490,18 @@ describe('GET /api/config', () => {
       });
     });
 
+    it('publishes the configured App tool approval allowlist', async () => {
+      const appToolApproval = { allow: ['mcp:cogsworth:home_bot_message'] };
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        mcpSettings: { apps: true, appToolApproval },
+      });
+      const response = await request(createApp(mockUser)).get('/api/config');
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.mcpApps.appToolApproval).toEqual(appToolApproval);
+    });
+
     it('publishes no operation limits override when the deployment sets none', async () => {
       mockGetAppConfig.mockResolvedValue({
         ...baseAppConfig,
