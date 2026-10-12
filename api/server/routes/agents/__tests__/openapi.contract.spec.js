@@ -180,7 +180,6 @@ describe('Agents OpenAPI actual HTTP contract', () => {
       endpoints: {
         agents: {
           managementApi: {
-            skillDeletionEnabled: true,
             auth: {
               oidc: { enabled: true, issuer, audience, jwksUri: `${issuer}/jwks.json` },
               clients: [

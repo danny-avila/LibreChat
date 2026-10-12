@@ -50,11 +50,8 @@ A stale version returns HTTP 409 with `error.code: "conflict"`; retrieve the cur
 retrying. Skill reads require VIEW access; updates require EDIT and the Skills USE/CREATE role
 permissions. Inaccessible and cross-tenant IDs return the same 404 envelope.
 
-Whole-Skill deletion is disabled by default; set
-`endpoints.agents.managementApi.skillDeletionEnabled: true` only after the deletion cleanup
-implementation is deployed across all instances. It requires DELETE access and the same Skills
-USE/CREATE role permissions as other mutations. It returns
-`{ "id": "...", "deleted": true, "cleanupComplete": true }` on
+Whole-Skill deletion requires DELETE access and the same Skills USE/CREATE role permissions as
+other mutations. It returns `{ "id": "...", "deleted": true, "cleanupComplete": true }` on
 complete cleanup. If the existing deletion handler removes the Skill but cannot finish dependent
 cleanup, it returns `cleanupComplete: false`; that result does not promise an automatic retry.
 
