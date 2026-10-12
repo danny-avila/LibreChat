@@ -9,12 +9,13 @@ const TTS_CACHE_PATH = '/tts-cache/v1/';
  *  land in the cache that follows. */
 let sessionEpoch = 0;
 /** Shut when a session ends here or in another tab, and reopened only when this tab
- *  authenticates, so a tab still holding the departed session's token cannot write. */
+ *  authenticates, so a tab still holding the departed session's token cannot read or write. */
 let writesOpen = true;
 /** Set before a delete starts and cleared only when it succeeds; the cache is not opened while it
- *  is set. Kept in localStorage too, so a delete cut short by navigation (an IdP logout redirect)
- *  or still running in another tab is finished before any document reads the cache. */
-const DELETE_PENDING_KEY = `${TTS_CACHE_NAME}:pending`;
+ *  is set. Also recorded as an empty marker cache, which persists wherever the audio cache does,
+ *  so a delete cut short by navigation (an IdP logout redirect) or still running in another tab
+ *  is finished before any document reads the cache. */
+const DELETE_PENDING_CACHE = `${TTS_CACHE_NAME}:pending`;
 let deletePending = false;
 let channel: BroadcastChannel | null = null;
 let joined = false;
@@ -67,24 +68,14 @@ const announce = (notice: Notice): void => {
   }
 };
 
-const setDeletePending = (pending: boolean): void => {
-  deletePending = pending;
-  try {
-    if (pending) {
-      localStorage.setItem(DELETE_PENDING_KEY, '1');
-    } else {
-      localStorage.removeItem(DELETE_PENDING_KEY);
-    }
-  } catch {
-    /** Storage is blocked; the in-memory flag still fences this document. */
+const isDeletePending = async (): Promise<boolean> => {
+  if (deletePending) {
+    return true;
   }
-};
-
-const isDeletePending = (): boolean => {
   try {
-    return deletePending || localStorage.getItem(DELETE_PENDING_KEY) !== null;
+    return await caches.has(DELETE_PENDING_CACHE);
   } catch {
-    return deletePending;
+    return false;
   }
 };
 
@@ -92,13 +83,23 @@ const deleteCache = async (): Promise<void> => {
   if (typeof caches === 'undefined') {
     return;
   }
-  setDeletePending(true);
+  deletePending = true;
+  try {
+    await caches.open(DELETE_PENDING_CACHE);
+  } catch {
+    /** The in-memory flag still fences this document. */
+  }
   try {
     await Promise.all([caches.delete(TTS_CACHE_NAME), caches.delete(LEGACY_TTS_CACHE_NAME)]);
-    setDeletePending(false);
   } catch {
-    /** Stays pending: the next open retries before reading or writing. */
+    /** Stays pending: the next open, in any document, retries before reading or writing. */
+    return;
   }
+  deletePending = false;
+  /** A marker left behind only costs one more delete on the next open. */
+  void Promise.resolve()
+    .then(() => caches.delete(DELETE_PENDING_CACHE))
+    .catch(() => undefined);
 };
 
 const toHex = (buffer: ArrayBuffer): string =>
@@ -123,9 +124,9 @@ export async function getTTSCacheKey(text: string, voice?: string | null): Promi
  *  is still pending, so callers fall back to uncached audio rather than read a departed
  *  session's entries. */
 export async function openTTSCache(): Promise<Cache> {
-  if (isDeletePending()) {
+  if (await isDeletePending()) {
     await deleteCache();
-    if (isDeletePending()) {
+    if (deletePending) {
       throw new Error('TTS cache unavailable until it is cleared');
     }
   }
@@ -137,14 +138,18 @@ export async function openTTSCache(): Promise<Cache> {
   return caches.open(TTS_CACHE_NAME);
 }
 
-/** Reads cached audio for the current session. A lookup that a clear or session change
- *  overtakes, before or while its body is read, is a miss, as is any failure. */
+/** Reads cached audio for the current session. A tab whose session has ended reads nothing, and
+ *  a lookup that a clear or session change overtakes, before or while its body is read, is a
+ *  miss, as is any failure. */
 export async function matchTTSCache(key: string): Promise<Blob | undefined> {
   const epoch = getTTSCacheEpoch();
+  if (!writesOpen) {
+    return undefined;
+  }
   try {
     const response = await (await openTTSCache()).match(key);
     const audio = await response?.blob();
-    return epoch === sessionEpoch ? audio : undefined;
+    return writesOpen && epoch === sessionEpoch ? audio : undefined;
   } catch {
     return undefined;
   }
@@ -195,4 +200,10 @@ export function openTTSCacheWrites(): void {
   join();
   sessionEpoch += 1;
   writesOpen = true;
+  if (typeof caches !== 'undefined') {
+    /** A restored session may never look anything up; drop the raw-text cache now regardless. */
+    void Promise.resolve()
+      .then(() => caches.delete(LEGACY_TTS_CACHE_NAME))
+      .catch(() => undefined);
+  }
 }

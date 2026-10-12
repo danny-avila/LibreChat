@@ -238,22 +238,6 @@ describe('cross-tab logout', () => {
     expect(put).toHaveBeenCalledWith('/tts-cache/new', {});
   });
 
-  it('keeps the cache closed while its delete keeps failing', async () => {
-    const del = jest.fn().mockRejectedValue(new Error('busy'));
-    const open = jest.fn(async () => ({ match: async () => ({}) as Response }));
-    Object.defineProperty(globalThis, 'caches', {
-      value: { open, delete: del },
-      configurable: true,
-    });
-    const tab = openTab();
-
-    await tab.endTTSCacheSession();
-    tab.openTTSCacheWrites();
-    await expect(tab.openTTSCache()).rejects.toThrow();
-    await expect(tab.matchTTSCache('/tts-cache/v1/any')).resolves.toBeUndefined();
-    expect(open).not.toHaveBeenCalled();
-  });
-
   it('drops audio a request started before this tab authenticated', async () => {
     const put = jest.fn();
     Object.defineProperty(globalThis, 'caches', {
@@ -267,24 +251,6 @@ describe('cross-tab logout', () => {
     tab.openTTSCacheWrites();
     await tab.putTTSCache('/tts-cache/stale', {} as Response, epoch);
     expect(put).not.toHaveBeenCalled();
-  });
-
-  it('retries a failed logout delete before the next session reads the cache', async () => {
-    const del = jest.fn().mockRejectedValueOnce(new Error('busy')).mockResolvedValue(true);
-    const open = jest.fn(async () => ({ keys: async () => [] }));
-    Object.defineProperty(globalThis, 'caches', {
-      value: { open, delete: del },
-      configurable: true,
-    });
-    const tab = openTab();
-
-    await tab.endTTSCacheSession();
-    tab.openTTSCacheWrites();
-    await tab.openTTSCache();
-    expect(open).toHaveBeenCalledTimes(1);
-    expect(Math.max(...del.mock.invocationCallOrder)).toBeLessThan(
-      open.mock.invocationCallOrder[0],
-    );
   });
 
   it('carries a logout to other tabs through storage events without BroadcastChannel', async () => {
@@ -309,25 +275,106 @@ describe('cross-tab logout', () => {
     expect(put).not.toHaveBeenCalled();
   });
 
+  /** Cache Storage shared by every tab and document; `failing` names whose delete rejects and
+   *  `hanging` names whose delete never settles. */
+  const fakeStorage = () => {
+    const names = new Set<string>();
+    const failing = new Set<string>();
+    const hanging = new Set<string>();
+    const storage = {
+      names,
+      failing,
+      hanging,
+      has: jest.fn(async (name: string) => names.has(name)),
+      open: jest.fn(async (name: string) => {
+        names.add(name);
+        return { match: async () => ({ blob: async () => new Blob(['old']) }) };
+      }),
+      delete: jest.fn((name: string) => {
+        if (hanging.has(name)) {
+          return new Promise<boolean>(() => undefined);
+        }
+        if (failing.has(name)) {
+          return Promise.reject(new Error('busy'));
+        }
+        return Promise.resolve(names.delete(name));
+      }),
+    };
+    Object.defineProperty(globalThis, 'caches', { value: storage, configurable: true });
+    return storage;
+  };
+
+  it('keeps the cache closed while its delete keeps failing', async () => {
+    const storage = fakeStorage();
+    storage.names.add(TTS_CACHE_NAME);
+    storage.failing.add(TTS_CACHE_NAME);
+    const tab = openTab();
+
+    await tab.endTTSCacheSession();
+    tab.openTTSCacheWrites();
+    await expect(tab.openTTSCache()).rejects.toThrow();
+    await expect(tab.matchTTSCache('/tts-cache/v1/any')).resolves.toBeUndefined();
+    expect(storage.open).not.toHaveBeenCalledWith(TTS_CACHE_NAME);
+  });
+
+  it('retries a failed logout delete before the next session reads the cache', async () => {
+    const storage = fakeStorage();
+    storage.names.add(TTS_CACHE_NAME);
+    storage.failing.add(TTS_CACHE_NAME);
+    const tab = openTab();
+
+    await tab.endTTSCacheSession();
+    storage.failing.clear();
+    tab.openTTSCacheWrites();
+    await tab.openTTSCache();
+    const deletedAt = storage.delete.mock.calls.findIndex(([name], index) => {
+      return name === TTS_CACHE_NAME && index > 0;
+    });
+    const openedAt = storage.open.mock.calls.findIndex(([name]) => name === TTS_CACHE_NAME);
+    expect(storage.delete.mock.invocationCallOrder[deletedAt]).toBeLessThan(
+      storage.open.mock.invocationCallOrder[openedAt],
+    );
+  });
+
   it('finishes a logout delete cut short by navigation before the next document reads', async () => {
-    const del = jest.fn((_name: string) => new Promise<boolean>(() => undefined));
-    const open = jest.fn(async () => ({ match: async () => ({}) as Response }));
-    Object.defineProperty(globalThis, 'caches', {
-      value: { open, delete: del },
-      configurable: true,
+    const storage = fakeStorage();
+    storage.names.add(TTS_CACHE_NAME);
+    storage.hanging.add(TTS_CACHE_NAME);
+    /** localStorage is full, so only Cache Storage can carry the marker across documents. */
+    const setItem = jest.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new Error('QuotaExceededError');
     });
     /** The IdP redirect unloads the page while this delete is still running. */
     void openTab().endTTSCacheSession();
+    await new Promise((resolve) => setTimeout(resolve, 0));
 
-    del.mockImplementation(async (_name: string) => true);
+    storage.hanging.clear();
     const next = openTab();
     next.openTTSCacheWrites();
     await next.openTTSCache();
-    const current = del.mock.calls.filter(([name]) => name === TTS_CACHE_NAME);
-    expect(current).toHaveLength(2);
-    expect(Math.max(...del.mock.invocationCallOrder)).toBeLessThan(
-      open.mock.invocationCallOrder[0],
+    const deletes = storage.delete.mock.calls.filter(([name]) => name === TTS_CACHE_NAME);
+    expect(deletes).toHaveLength(2);
+    const lastDelete = Math.max(
+      ...storage.delete.mock.calls
+        .map(([name], index) => (name === TTS_CACHE_NAME ? index : -1))
+        .filter((index) => index >= 0)
+        .map((index) => storage.delete.mock.invocationCallOrder[index]),
     );
+    const openedAt = storage.open.mock.calls.findIndex(([name]) => name === TTS_CACHE_NAME);
+    expect(lastDelete).toBeLessThan(storage.open.mock.invocationCallOrder[openedAt]);
+    setItem.mockRestore();
+  });
+
+  it('reads nothing in a tab whose session another tab ended', async () => {
+    Object.assign(globalThis, { BroadcastChannel: FakeChannel });
+    const storage = fakeStorage();
+    const stale = openTab();
+    const leaving = openTab();
+    stale.openTTSCacheWrites();
+
+    await leaving.endTTSCacheSession();
+    storage.names.add(TTS_CACHE_NAME);
+    await expect(stale.matchTTSCache('/tts-cache/v1/any')).resolves.toBeUndefined();
   });
 
   it('keeps caching after a manual clear from settings', async () => {
