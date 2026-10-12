@@ -150,6 +150,7 @@ let findUser;
 let findToken;
 let createUser;
 let updateUser;
+let deleteUserById;
 let countUsers;
 let getUserById;
 let generateToken;
@@ -194,6 +195,7 @@ jest.isolateModules(() => {
     findToken,
     createUser,
     updateUser,
+    deleteUserById,
     countUsers,
     getUserById,
     generateToken,
@@ -770,6 +772,17 @@ describe('registerUser', () => {
         }),
       }),
     );
+  });
+
+  it('contains a failed cleanup of the temporary user and logs safe metadata only', async () => {
+    checkEmailConfig.mockReturnValue(true);
+    sendEmail.mockRejectedValueOnce(new Error('smtp rejected leak@example.com'));
+    deleteUserById.mockRejectedValueOnce(new Error('db failure leak@example.com'));
+
+    const result = await registerUser(registrationPayload);
+
+    expect(result).toEqual({ status: 500, message: 'Something went wrong' });
+    expect(loggedText()).not.toContain('leak@example.com');
   });
 
   it('logs a duplicate registration by id without the body or existing user', async () => {

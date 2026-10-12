@@ -445,10 +445,17 @@ const registerUser = async (user, additionalData = {}) => {
   } catch (err) {
     logger.error('[registerUser] Error in registering user:', getSafeErrorMetadata(err));
     if (newUserId) {
-      const result = await deleteUserById(newUserId);
-      logger.warn(
-        `[registerUser] [User ID: ${newUserId}] [Temporary User deleted: ${JSON.stringify(result)}]`,
-      );
+      try {
+        const result = await deleteUserById(newUserId);
+        logger.warn(
+          `[registerUser] [User ID: ${newUserId}] [Temporary User deleted: ${JSON.stringify(result)}]`,
+        );
+      } catch (cleanupError) {
+        logger.error(
+          `[registerUser] [User ID: ${newUserId}] Failed to delete temporary user`,
+          getSafeErrorMetadata(cleanupError),
+        );
+      }
     }
     return { status: 500, message: 'Something went wrong' };
   }
