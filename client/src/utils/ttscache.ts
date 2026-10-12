@@ -2,9 +2,12 @@
  *  message text. Audio is now held only in this tab's memory, so that cache is just deleted. */
 const LEGACY_TTS_CACHE_NAME = 'tts-responses';
 const MAX_ENTRIES = 50;
+/** Long replies make large recordings, so the cache is bounded by size as well as count. */
+const MAX_BYTES = 32 * 1024 * 1024;
 
 /** Spoken audio by hashed key, oldest first; it never leaves this tab and dies with it. */
 const audioByKey = new Map<string, Blob>();
+let totalBytes = 0;
 /** Bumped on every clear, so a request that was in flight across a logout cannot write. */
 let generation = 0;
 
@@ -39,25 +42,36 @@ export function getCachedTTSAudio(key: string): Blob | undefined {
   return audio;
 }
 
-/** Stores audio for a request started at `requestGeneration`; skipped if a clear came since. */
+const removeAudio = (key: string): void => {
+  const audio = audioByKey.get(key);
+  if (audio) {
+    totalBytes -= audio.size;
+    audioByKey.delete(key);
+  }
+};
+
+/** Stores audio for a request started at `requestGeneration`; skipped if a clear came since, or
+ *  if the recording alone exceeds the size budget. */
 export function setCachedTTSAudio(key: string, audio: Blob, requestGeneration: number): void {
-  if (requestGeneration !== generation) {
+  if (requestGeneration !== generation || audio.size > MAX_BYTES) {
     return;
   }
-  audioByKey.delete(key);
+  removeAudio(key);
   audioByKey.set(key, audio);
-  while (audioByKey.size > MAX_ENTRIES) {
+  totalBytes += audio.size;
+  while (audioByKey.size > MAX_ENTRIES || totalBytes > MAX_BYTES) {
     const oldest = audioByKey.keys().next().value;
     if (oldest === undefined) {
       break;
     }
-    audioByKey.delete(oldest);
+    removeAudio(oldest);
   }
 }
 
 /** Drops every cached recording and any audio earlier versions left in Cache Storage. */
 export function clearTTSCache(): void {
   audioByKey.clear();
+  totalBytes = 0;
   generation += 1;
   if (typeof caches === 'undefined') {
     return;

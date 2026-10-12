@@ -63,6 +63,22 @@ describe('in-memory audio cache', () => {
     expect(getCachedTTSAudio('key-50')).toBeDefined();
   });
 
+  it('evicts the oldest recordings once their total size exceeds the budget', () => {
+    const generation = getTTSCacheGeneration();
+    const tenMegabytes = 10 * 1024 * 1024;
+    for (let index = 0; index < 4; index += 1) {
+      setCachedTTSAudio(`long-${index}`, new Blob([new Uint8Array(tenMegabytes)]), generation);
+    }
+    expect(getCachedTTSAudio('long-0')).toBeUndefined();
+    expect(getCachedTTSAudio('long-3')).toBeDefined();
+  });
+
+  it('does not keep a single recording larger than the budget', () => {
+    const huge = new Blob([new Uint8Array(33 * 1024 * 1024)]);
+    setCachedTTSAudio('huge', huge, getTTSCacheGeneration());
+    expect(getCachedTTSAudio('huge')).toBeUndefined();
+  });
+
   it('empties on clear', () => {
     setCachedTTSAudio('one', audio('one'), getTTSCacheGeneration());
     clearTTSCache();
