@@ -367,6 +367,7 @@ describe('createPullRequestConnectionRouter', () => {
       layer.route ? Object.keys(layer.route.methods).map((m) => `${m} ${layer.route!.path}`) : [],
     );
   const callbackLimiter = jest.fn();
+  const markNavigation = jest.fn();
   const deps = {
     store: {
       findToken: jest.fn(),
@@ -379,15 +380,20 @@ describe('createPullRequestConnectionRouter', () => {
     getAppConfig: jest.fn(),
     getUserById: jest.fn(),
     requireJwtAuth: jest.fn(),
+    markNavigation,
     callbackLimiter,
   };
 
-  it('puts the callback, which costs a token exchange and needs no sign-in, behind the limiter', () => {
+  it('marks the callback as a navigation, then puts it behind the limiter', () => {
     const router = createPullRequestConnectionRouter({ ...deps, env }) as unknown as {
       stack: Array<{ route?: { path: string; stack: Array<{ handle: unknown }> } }>;
     };
     const callback = router.stack.find((layer) => layer.route?.path === '/oauth/callback');
-    expect(callback?.route?.stack[0].handle).toBe(callbackLimiter);
+    /** Marked first, so a limited callback lands on the OAuth failure page, not raw JSON. */
+    expect(callback?.route?.stack.map((layer) => layer.handle).slice(0, 2)).toEqual([
+      markNavigation,
+      callbackLimiter,
+    ]);
   });
 
   it('registers the connection routes when states can be signed', () => {

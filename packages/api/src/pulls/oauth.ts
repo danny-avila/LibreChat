@@ -601,10 +601,9 @@ export function createPullRequestOAuth({
     if (isLive(grant, grant.refreshToken == null ? 0 : REFRESH_SKEW_MS)) {
       if (needsRewrite(row, config) && grant.leaseUntil == null) {
         const { v: _v, ...same } = grant;
-        /** Rare (past half the retention, or a shortened one), so the read waits for it. */
-        await write(userId, config, row.token, same).catch((error: unknown) => {
-          logger.warn('[PullRequests] OAuth retention not extended', getSafeErrorMetadata(error));
-        });
+        /** Rare (past half the retention, or a shortened one), so the read waits for it. A failed
+         *  write is an outage, not a successful read: the grant would keep its old deadline. */
+        await write(userId, config, row.token, same);
       }
       return grant.accessToken;
     }

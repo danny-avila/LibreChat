@@ -273,6 +273,9 @@ export function createPullRequestConnectionRouter(
       fieldsToSelect: string,
     ) => Promise<{ role?: string; tenantId?: string; idOnTheSource?: string | null } | null>;
     requireJwtAuth: RequestHandler;
+    /** Marks the callback as a browser navigation, so a limiter or ban answers it with the
+     *  localized OAuth failure page instead of JSON. Runs before the limiter. */
+    markNavigation: RequestHandler;
     /** The app's limiter for unauthenticated OAuth callbacks: each one costs a token exchange. */
     callbackLimiter: RequestHandler;
   },
@@ -298,7 +301,7 @@ export function createPullRequestConnectionRouter(
   /** Behind `requireJwtAuth`, which puts the signed-in user on the request. */
   const authed = (handler: (req: ServerRequest, res: Response) => Promise<void>) =>
     handler as unknown as RequestHandler;
-  router.get('/oauth/callback', deps.callbackLimiter, handlers.callback);
+  router.get('/oauth/callback', deps.markNavigation, deps.callbackLimiter, handlers.callback);
   router.get('/oauth/connect', deps.requireJwtAuth, setOAuthSession, authed(handlers.connect));
   router.get('/oauth/status', deps.requireJwtAuth, authed(handlers.status));
   router.delete('/oauth', deps.requireJwtAuth, authed(handlers.disconnect));

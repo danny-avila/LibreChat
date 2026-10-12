@@ -699,6 +699,23 @@ describe('token', () => {
     await expect(oauth.token(user, config)).resolves.toBe('forever');
   });
 
+  it('reports a failed extension as a failure, not as a successful read', async () => {
+    const { oauth } = setup([() => json({ access_token: 'forever' })]);
+    const user = userId();
+    const config = { ...github, retentionDays: 10 };
+    await connect(oauth, user, config);
+    const tokens = mongoose.connection.db!.collection('tokens');
+    await tokens.updateOne({}, { $set: { expiresAt: new Date(Date.now() + 4 * 86_400_000) } });
+    const write = jest
+      .spyOn(store, 'replaceTokenIfCurrent')
+      .mockRejectedValueOnce(new Error('write failed'));
+    try {
+      await expect(oauth.token(user, config)).rejects.toThrow('write failed');
+    } finally {
+      write.mockRestore();
+    }
+  });
+
   it('takes the grant another replica stored when its refresh lost the race', async () => {
     let clock = 1_000_000;
     const replicaA = setup(
