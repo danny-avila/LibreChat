@@ -31,6 +31,12 @@ const mockSilentExit = jest.fn();
 const mockAskQuestion = jest.fn();
 const mockGetAppConfig = jest.fn();
 const mockRevokeUserCodeEnvironmentWorkers = jest.fn();
+const mockEraseUserData = jest.fn();
+const mockProcessDeleteRequest = jest.fn();
+const mockInvalidateCachedTools = jest.fn();
+const mockInitializeFileStorage = jest.fn();
+const mockOpenCheckpointDeletion = jest.fn();
+const mockDeleteAllSharedLinksWithCleanup = jest.fn();
 
 jest.mock('../connect', () => jest.fn(async () => undefined));
 jest.mock('mongoose', () => ({ disconnect: jest.fn(async () => undefined) }));
@@ -50,10 +56,20 @@ jest.mock('@librechat/api', () => ({
     destroy: (...args) => mockDestroy(...args),
   },
   revokeUserCodeEnvironmentWorkers: (...args) => mockRevokeUserCodeEnvironmentWorkers(...args),
+  eraseUserData: (...args) => mockEraseUserData(...args),
+  initializeFileStorage: (...args) => mockInitializeFileStorage(...args),
+  openCheckpointDeletion: mockOpenCheckpointDeletion,
+  deleteAllSharedLinksWithCleanup: mockDeleteAllSharedLinksWithCleanup,
 }));
 jest.mock('~/cache/getLogStores', () => jest.fn());
 jest.mock('~/server/services/Config', () => ({
   getAppConfig: (...args) => mockGetAppConfig(...args),
+}));
+jest.mock('~/server/services/Files/process', () => ({
+  processDeleteRequest: (...args) => mockProcessDeleteRequest(...args),
+}));
+jest.mock('~/server/services/Config/getCachedTools', () => ({
+  invalidateCachedTools: (...args) => mockInvalidateCachedTools(...args),
 }));
 jest.mock('../helpers', () => ({
   ...jest.requireActual('../helpers'),
@@ -94,6 +110,7 @@ describe('Delete user CLI', () => {
     mockModelFor('User').findOne.mockResolvedValue({
       _id: { toString: () => USER_ID },
       email: 'deleted@example.com',
+      role: 'USER',
       tenantId: 'tenant-1',
     });
     mockMethods.beginAgentTriggerUserDeletion.mockReset().mockResolvedValue('acquired');
@@ -113,6 +130,10 @@ describe('Delete user CLI', () => {
     mockDestroy.mockReset().mockResolvedValue(undefined);
     mockGetAppConfig.mockReset().mockResolvedValue({});
     mockRevokeUserCodeEnvironmentWorkers.mockReset().mockResolvedValue(0);
+    mockEraseUserData.mockReset().mockResolvedValue(undefined);
+    mockProcessDeleteRequest.mockReset().mockResolvedValue({ deletedFileIds: [] });
+    mockInvalidateCachedTools.mockReset().mockResolvedValue(undefined);
+    mockInitializeFileStorage.mockReset();
     mockAskQuestion.mockReset().mockResolvedValueOnce('y').mockResolvedValueOnce('n');
   });
 
@@ -160,10 +181,9 @@ describe('Delete user CLI', () => {
     expect(mockGetCleanupBlockingJobIdsForUser).toHaveBeenCalledWith(USER_ID, 'tenant-1');
     expect(mockAbortJob).toHaveBeenCalledWith('stream-1', { awaitProviderDrain: true });
     expect(mockAbortJob.mock.invocationCallOrder[0]).toBeLessThan(
-      mockModelFor('Message').deleteMany.mock.invocationCallOrder[0],
+      mockEraseUserData.mock.invocationCallOrder[0],
     );
-    expect(mockMethods.deleteSchedulesByUser).toHaveBeenCalledWith(USER_ID);
-    expect(mockMethods.deleteSchedulesByUser.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(mockEraseUserData.mock.invocationCallOrder[0]).toBeLessThan(
       mockMethods.deleteUserById.mock.invocationCallOrder[0],
     );
   });
@@ -175,7 +195,7 @@ describe('Delete user CLI', () => {
 
     expect(await runCli()).toBe(1);
 
-    expect(mockModelFor('Message').deleteMany).not.toHaveBeenCalled();
+    expect(mockEraseUserData).not.toHaveBeenCalled();
     expect(mockMethods.deleteSchedulesByUser).not.toHaveBeenCalled();
     expect(mockMethods.deleteUserById).not.toHaveBeenCalled();
     const deletionFence = mockMethods.beginAgentTriggerUserDeletion.mock.calls[0][1];
@@ -206,7 +226,7 @@ describe('Delete user CLI', () => {
   it('never restores schedules after a committed deletion', async () => {
     expect(await runCli()).toBe(0);
 
-    expect(mockMethods.deleteSchedulesByUser).toHaveBeenCalledWith(USER_ID);
+    expect(mockEraseUserData).toHaveBeenCalled();
     expect(mockMethods.restoreUserSchedulesFromDeletion).not.toHaveBeenCalled();
   });
 
@@ -234,13 +254,83 @@ describe('Delete user CLI', () => {
     expect(mockMethods.deleteUserCodeEnvironments).not.toHaveBeenCalled();
   });
 
+  it('erases account data through the shared cascade before committing the user', async () => {
+    const userConfig = { endpoints: { agents: { checkpointer: { ttl: 60 } } } };
+    mockGetAppConfig.mockImplementation(async (options) => (options?.baseOnly ? {} : userConfig));
+
+    expect(await runCli()).toBe(0);
+
+    expect(mockGetAppConfig).toHaveBeenCalledWith({
+      role: 'USER',
+      userId: USER_ID,
+      tenantId: 'tenant-1',
+    });
+    expect(mockInitializeFileStorage).toHaveBeenCalledWith(userConfig);
+    expect(mockEraseUserData).toHaveBeenCalledTimes(1);
+    const [params, deps] = mockEraseUserData.mock.calls[0];
+    expect(params).toEqual({
+      userId: USER_ID,
+      tenantId: 'tenant-1',
+      checkpointer: { ttl: 60 },
+      keepTransactions: true,
+    });
+    expect(deps).toEqual(
+      expect.objectContaining({
+        ...mockMethods,
+        openCheckpointDeletion: mockOpenCheckpointDeletion,
+        deleteSharedLinks: mockDeleteAllSharedLinksWithCleanup,
+      }),
+    );
+
+    const files = [{ file_id: 'file-1' }];
+    await deps.deleteStoredFiles(files);
+    expect(mockProcessDeleteRequest).toHaveBeenCalledWith({
+      req: expect.objectContaining({
+        user: expect.objectContaining({ id: USER_ID, tenantId: 'tenant-1' }),
+        body: {},
+        config: userConfig,
+      }),
+      files,
+    });
+    await deps.invalidateMCPServerTools('server-1');
+    expect(mockInvalidateCachedTools).toHaveBeenCalledWith({
+      userId: USER_ID,
+      serverName: 'server-1',
+    });
+
+    expect(mockEraseUserData.mock.invocationCallOrder[0]).toBeLessThan(
+      mockMethods.deleteUserById.mock.invocationCallOrder[0],
+    );
+  });
+
+  it('erases the transaction ledger when the operator confirms it', async () => {
+    mockAskQuestion.mockReset().mockResolvedValueOnce('y').mockResolvedValueOnce('y');
+
+    expect(await runCli()).toBe(0);
+
+    expect(mockEraseUserData.mock.calls[0][0]).toEqual(
+      expect.objectContaining({ keepTransactions: false }),
+    );
+  });
+
+  it('keeps the user and releases both fences when the cascade fails', async () => {
+    mockEraseUserData.mockRejectedValueOnce(new Error('storage unavailable'));
+
+    expect(await runCli()).toBe(1);
+
+    expect(mockMethods.deleteUserById).not.toHaveBeenCalled();
+    const deletionFence = mockMethods.beginAgentTriggerUserDeletion.mock.calls[0][1];
+    expect(mockMethods.restoreUserSchedulesFromDeletion).toHaveBeenCalled();
+    expect(mockMethods.cancelAgentTriggerUserDeletion).toHaveBeenCalledWith(USER_ID, deletionFence);
+  });
+
   it('deletes nothing and releases both fences when provider drain fails', async () => {
     mockGetCleanupBlockingJobIdsForUser.mockResolvedValueOnce(['stream-1']);
     mockAbortJob.mockRejectedValueOnce(new Error('provider drain failed'));
 
     expect(await runCli()).toBe(1);
 
-    expect(mockModelFor('Message').deleteMany).not.toHaveBeenCalled();
+    expect(mockEraseUserData).not.toHaveBeenCalled();
     expect(mockMethods.deleteSchedulesByUser).not.toHaveBeenCalled();
     expect(mockMethods.deleteUserById).not.toHaveBeenCalled();
     const deletionFence = mockMethods.beginAgentTriggerUserDeletion.mock.calls[0][1];

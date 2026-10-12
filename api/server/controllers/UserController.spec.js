@@ -56,6 +56,7 @@ jest.mock('~/models', () => {
     updateUserPlugins: jest.fn(),
     deleteAssistants: jest.fn().mockResolvedValue(undefined),
     deleteUserById: jest.fn().mockResolvedValue({ deletedCount: 1 }),
+    deleteAllUserPluginAuths: jest.fn().mockResolvedValue(undefined),
     beginAgentTriggerUserDeletion: jest.fn().mockResolvedValue('acquired'),
     cancelAgentTriggerUserDeletion: jest.fn().mockResolvedValue(true),
     deleteUserPrompts: jest.fn().mockResolvedValue(undefined),

@@ -5,41 +5,22 @@ const path = require('path');
 const mongoose = require('mongoose');
 const { randomUUID } = require('node:crypto');
 const { createModels, createMethods, runAsSystem } = require('@librechat/data-schemas');
-const {
-  Key,
-  User,
-  File,
-  Agent,
-  Token,
-  Group,
-  Action,
-  Preset,
-  Prompt,
-  Balance,
-  Message,
-  Session,
-  Passkey,
-  AclEntry,
-  ToolCall,
-  Assistant,
-  SharedLink,
-  PluginAuth,
-  MemoryEntry,
-  PromptGroup,
-  AgentApiKey,
-  Transaction,
-  Conversation,
-  ConversationTag,
-} = createModels(mongoose);
+const { User } = createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const {
+  eraseUserData,
   GenerationJobManager,
   createStreamServices,
-  revokeUserCodeEnvironmentWorkers,
+  initializeFileStorage,
+  openCheckpointDeletion,
   waitForKeyvRedisClient,
+  revokeUserCodeEnvironmentWorkers,
+  deleteAllSharedLinksWithCleanup,
 } = require('@librechat/api');
 const getLogStores = require('~/cache/getLogStores');
 const { getAppConfig } = require('~/server/services/Config');
+const { processDeleteRequest } = require('~/server/services/Files/process');
+const { invalidateCachedTools } = require('~/server/services/Config/getCachedTools');
 const { askQuestion, silentExit } = require('./helpers');
 const connect = require('./connect');
 
@@ -199,42 +180,38 @@ async function gracefulExit(code = 0) {
 
     const deletionAppConfig = await getAppConfig({ baseOnly: true });
 
-    // 5) Build and run deletion tasks
-    const tasks = [
-      Action.deleteMany({ user: uid }),
-      Agent.deleteMany({ author: uid }),
-      AgentApiKey.deleteMany({ user: uid }),
-      Assistant.deleteMany({ user: uid }),
-      Balance.deleteMany({ user: uid }),
-      ConversationTag.deleteMany({ user: uid }),
-      Conversation.deleteMany({ user: uid }),
-      Message.deleteMany({ user: uid }),
-      File.deleteMany({ user: uid }),
-      Key.deleteMany({ userId: uid }),
-      MemoryEntry.deleteMany({ userId: uid }),
-      PluginAuth.deleteMany({ userId: uid }),
-      Prompt.deleteMany({ author: uid }),
-      PromptGroup.deleteMany({ author: uid }),
-      Preset.deleteMany({ user: uid }),
-      Session.deleteMany({ user: uid }),
-      Passkey.deleteMany({ user: uid }),
-      SharedLink.deleteMany({ user: uid }),
-      ToolCall.deleteMany({ user: uid }),
-      Token.deleteMany({ userId: uid }),
-      AclEntry.deleteMany({ principalId: user._id }),
-    ];
+    // 5) Erase account-owned data through the same cascade as account self-deletion
+    const userAppConfig = await getAppConfig({
+      role: user.role,
+      userId: uid,
+      tenantId: user.tenantId,
+    });
+    initializeFileStorage(userAppConfig);
+    const fileRequest = {
+      user: { id: uid, _id: user._id, role: user.role, tenantId: user.tenantId },
+      body: {},
+      config: userAppConfig,
+    };
+    await runAsSystem(() =>
+      eraseUserData(
+        {
+          userId: uid,
+          tenantId: user.tenantId,
+          checkpointer: userAppConfig?.endpoints?.agents?.checkpointer,
+          keepTransactions: !deleteTx,
+        },
+        {
+          ...methods,
+          openCheckpointDeletion,
+          deleteSharedLinks: deleteAllSharedLinksWithCleanup,
+          deleteStoredFiles: (files) => processDeleteRequest({ req: fileRequest, files }),
+          invalidateMCPServerTools: (serverName) =>
+            invalidateCachedTools({ userId: uid, serverName }),
+        },
+      ),
+    );
 
-    if (deleteTx) {
-      tasks.push(Transaction.deleteMany({ user: uid }));
-    }
-
-    await Promise.all(tasks);
-    await runAsSystem(() => methods.deleteSchedulesByUser(uid));
-
-    // 6) Remove user from all groups
-    await Group.updateMany({ memberIds: uid }, { $pullAll: { memberIds: [uid] } });
-
-    // 7) Finally delete the user document itself
+    // 6) Finally delete the user document itself
     const deletedUser = await runAsSystem(() => methods.deleteUserById(uid));
     if (deletedUser.deletedCount !== 1) {
       throw new Error('User disappeared before account deletion could commit');
