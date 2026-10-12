@@ -1,4 +1,4 @@
-import { useCallback, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { ExternalLink, Gitlab } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import {
@@ -85,6 +85,18 @@ export default function ConnectedAccounts() {
       button.focus();
     }
   }, []);
+
+  /** A disconnect that failed may still have ended the connection: once the status read after it
+   *  says so, the confirmation closes as on success, and focus moves on the same way. */
+  const disconnected = status.data?.connected === false;
+  useEffect(() => {
+    if (!confirmOpen || !disconnectFailed || !disconnected) {
+      return;
+    }
+    keepFocus.current = true;
+    setConfirmOpen(false);
+    setDisconnectFailed(false);
+  }, [confirmOpen, disconnectFailed, disconnected]);
 
   /**
    * The server is the authority: an app it no longer has is nothing to connect to, and once the

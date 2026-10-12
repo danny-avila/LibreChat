@@ -7,6 +7,8 @@ import { syncPullRequestConnection } from './connection';
 export const PULL_REQUEST_CONNECT_POLL_MS = 2000;
 /** Longest wait between status asks, so a sign-in left open costs a few requests a minute. */
 export const PULL_REQUEST_CONNECT_POLL_MAX_MS = 30_000;
+/** How long a settled sign-in keeps retrying its status read after the flow expired. */
+export const PULL_REQUEST_SETTLED_GRACE_MS = 2 * 60_000;
 /** Same-origin pages that end an OAuth sign-in announce it here. */
 export const OAUTH_SETTLED_CHANNEL = 'librechat:oauth-settled';
 
@@ -81,6 +83,9 @@ export function watchPullRequestSignIn(
   /** This flow's sign-in page reported a failure: the next status read that succeeds ends the
    *  watch, whatever it says, since the server may have stored the grant before failing. */
   let failed = false;
+  /** This flow's sign-in page settled, so the server may hold a new grant: the watch outlives the
+   *  flow's expiry, for a bounded grace, until a status read after it succeeds. */
+  let settled = false;
 
   /** `fresh` for a check after the sign-in page settled: a request already in flight may have been
    *  sent before the callback stored the grant, and asking now would only join it. */
@@ -110,7 +115,7 @@ export function watchPullRequestSignIn(
     /** Every answer, so an account removed elsewhere mid-flow also refreshes pull requests. */
     syncPullRequestConnection(queryClient, status);
     const ours = flowId == null || status.flowId == null || status.flowId === flowId;
-    if (failed || (status.connected && ours)) {
+    if (failed || settled || (status.connected && ours)) {
       stop();
     }
   };
@@ -126,6 +131,9 @@ export function watchPullRequestSignIn(
   const onSettled = (event: MessageEvent) => {
     const settlement: unknown = event.data;
     if (!isSettlement(settlement) || settlement.outcome === 'succeeded') {
+      if (isSettlement(settlement) && flowId != null && settlement.flowId === flowId) {
+        settled = true;
+      }
       void check(true);
       return;
     }
@@ -135,13 +143,24 @@ export function watchPullRequestSignIn(
        *  could not finish), so the watch ends only on a status read that succeeds; a failed one
        *  leaves it to the timer, focus and expiry like any other. */
       failed = true;
+      settled = true;
       void check(true);
     }
   };
   const channel =
     typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(OAUTH_SETTLED_CHANNEL);
   channel?.addEventListener('message', onSettled);
-  const expiry = setTimeout(() => stop(), Math.max(0, expiresAt - Date.now()));
+  let expiry: ReturnType<typeof setTimeout> = setTimeout(
+    () => {
+      if (!settled) {
+        stop();
+        return;
+      }
+      /** Settled but not yet read back: keep retrying for a bounded grace, then give up. */
+      expiry = setTimeout(() => stop(), PULL_REQUEST_SETTLED_GRACE_MS);
+    },
+    Math.max(0, expiresAt - Date.now()),
+  );
 
   function stop() {
     stopped = true;

@@ -41,6 +41,7 @@ import {
   useGetUserQuery,
   endPullRequestSession,
   useLoginUserMutation,
+  setPullRequestSessionOwner,
   useLogoutUserMutation,
   useRefreshTokenMutation,
 } from '~/data-provider';
@@ -124,6 +125,7 @@ const AuthContextProvider = ({
           setQueriesEnabled(true);
           /** A different account signing in without a logout must not inherit cached audio. */
           setTTSCacheOwner(user?.id);
+          setPullRequestSessionOwner(user?.id);
           /**
            * Any accepted full-auth response supersedes a staged enrollment, whichever path minted
            * it. The setup endpoints trust the stored bearer independently of the session, so a
@@ -265,6 +267,7 @@ const AuthContextProvider = ({
       setQueriesEnabled(true);
       openFileDeletionRetention();
       setTTSCacheOwner(authenticatedUser.id);
+      setPullRequestSessionOwner(authenticatedUser.id);
       navigate(redirect, { replace: true });
     },
     [navigate, setQueriesEnabled, setUser],

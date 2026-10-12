@@ -476,7 +476,7 @@ describe('ConnectedAccounts', () => {
     expect(screen.getByRole('alertdialog')).toBeInTheDocument();
   });
 
-  it('asks for the status again when a disconnect fails, since the grant may be gone', async () => {
+  it('closes the confirmation when a failed disconnect had ended the connection after all', async () => {
     mockGetConnection.mockResolvedValue(connection(true));
     mockDisconnect.mockRejectedValue(new Error('500'));
     const { invalidate } = renderRow();
@@ -486,19 +486,40 @@ describe('ConnectedAccounts', () => {
     );
     const asked = mockGetConnection.mock.calls.length;
     invalidate.mockClear();
+    /** The server fenced the grant before the request failed. */
     mockGetConnection.mockResolvedValue(connection(false));
     await userEvent.click(
       await screen.findByRole('button', { name: 'com_ui_pr_account_disconnect' }),
     );
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'com_ui_pr_account_disconnect_error',
-    );
     await waitFor(() => expect(mockGetConnection.mock.calls.length).toBeGreaterThan(asked));
-    /** The server had ended the connection: pull requests follow the server's token. */
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+    const connect = await screen.findByRole('button', { name: /com_ui_pr_account_connect_aria/ });
+    await waitFor(() => expect(connect).toHaveFocus());
+    /** Pull requests follow the server's token now. */
     await waitFor(() =>
       expect(invalidate).toHaveBeenCalledWith([QueryKeys.conversationPullRequest]),
     );
+  });
+
+  it('keeps the error when the status read after a failed disconnect still shows the grant', async () => {
+    mockGetConnection.mockResolvedValue(connection(true));
+    mockDisconnect.mockRejectedValue(new Error('500'));
+    renderRow();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /com_ui_pr_account_disconnect_aria/ }),
+    );
+    const asked = mockGetConnection.mock.calls.length;
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'com_ui_pr_account_disconnect' }),
+    );
+
+    await waitFor(() => expect(mockGetConnection.mock.calls.length).toBeGreaterThan(asked));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'com_ui_pr_account_disconnect_error',
+    );
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
   });
 
   it('keeps the confirmation button named while the disconnect is in flight', async () => {

@@ -97,6 +97,24 @@ const batcherFor = (userId: string): RowBatcher => {
  * signing back in as the same account starts a fresh queue and neither waits behind, nor sends,
  * anything the previous session left.
  */
+/** The account the pull request session belongs to. */
+let sessionOwner: string | undefined;
+
+/**
+ * Records who signed in, and ends the pull request session when it is a different account than
+ * the last one: an account switch without a logout passes no teardown, and the sign-in watch,
+ * credential record and queued lookups would otherwise carry over to the next account.
+ */
+export const setPullRequestSessionOwner = (userId?: string | null): void => {
+  if (!userId) {
+    return;
+  }
+  if (sessionOwner !== undefined && sessionOwner !== userId) {
+    endPullRequestSession();
+  }
+  sessionOwner = userId;
+};
+
 export const endPullRequestSession = (): void => {
   rowBatcher?.batcher.dispose();
   rowBatcher = undefined;

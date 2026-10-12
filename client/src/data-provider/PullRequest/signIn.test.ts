@@ -3,12 +3,13 @@ import { QueryClient } from '@tanstack/react-query';
 import type { TPullRequestConnection } from 'librechat-data-provider';
 import {
   PULL_REQUEST_CONNECT_POLL_MS,
+  PULL_REQUEST_SETTLED_GRACE_MS,
   announceOAuthSettled,
   stopPullRequestSignIns,
   pullRequestSignInSession,
   watchPullRequestSignIn,
 } from './signIn';
-import { endPullRequestSession } from './queries';
+import { endPullRequestSession, setPullRequestSessionOwner } from './queries';
 
 const mockGetConnection = jest.fn();
 
@@ -182,6 +183,63 @@ describe('watchPullRequestSignIn', () => {
     await focus();
     announceOAuthSettled({ outcome: 'succeeded' });
     await pass(0);
+    expect(mockGetConnection).toHaveBeenCalledTimes(asked);
+  });
+
+  it('keeps reading past expiry after its own sign-in settled, until a read succeeds', async () => {
+    const { client, invalidate } = setup();
+    watchPullRequestSignIn(client, {
+      startedIn: pullRequestSignInSession(),
+      expiresAt: Date.now() + 1 * MINUTE,
+      flowId: 'flow-a',
+    });
+    await pass(59_000);
+    /** Settled just before expiry, and the read it prompts fails. */
+    mockGetConnection.mockRejectedValue(new Error('offline'));
+    announceOAuthSettled({ outcome: 'succeeded', flowId: 'flow-a' });
+    await pass(2_000);
+
+    mockGetConnection.mockResolvedValue({ ...connection(true), flowId: 'flow-a' });
+    invalidate.mockClear();
+    await focus();
+    expect(invalidate).toHaveBeenCalledWith([QueryKeys.conversationPullRequest]);
+    const asked = mockGetConnection.mock.calls.length;
+    await pass(PULL_REQUEST_SETTLED_GRACE_MS);
+    expect(mockGetConnection).toHaveBeenCalledTimes(asked);
+  });
+
+  it('gives up a settled sign-in whose status cannot be read once the grace passes', async () => {
+    const { client } = setup();
+    watchPullRequestSignIn(client, {
+      startedIn: pullRequestSignInSession(),
+      expiresAt: Date.now() + 1 * MINUTE,
+      flowId: 'flow-a',
+    });
+    mockGetConnection.mockRejectedValue(new Error('offline'));
+    announceOAuthSettled({ outcome: 'succeeded', flowId: 'flow-a' });
+    await pass(1 * MINUTE + PULL_REQUEST_SETTLED_GRACE_MS);
+    const asked = mockGetConnection.mock.calls.length;
+    await pass(10 * MINUTE);
+    await focus();
+    expect(mockGetConnection).toHaveBeenCalledTimes(asked);
+  });
+
+  it('ends the watch when another account signs in without a logout', async () => {
+    const { client } = setup();
+    setPullRequestSessionOwner('first');
+    watchPullRequestSignIn(client, {
+      startedIn: pullRequestSignInSession(),
+      expiresAt: Date.now() + 60 * MINUTE,
+      flowId: 'flow-a',
+    });
+    setPullRequestSessionOwner('first');
+    await focus();
+    const asked = mockGetConnection.mock.calls.length;
+    expect(asked).toBeGreaterThan(0);
+
+    setPullRequestSessionOwner('second');
+    await pass(10 * MINUTE);
+    await focus();
     expect(mockGetConnection).toHaveBeenCalledTimes(asked);
   });
 
