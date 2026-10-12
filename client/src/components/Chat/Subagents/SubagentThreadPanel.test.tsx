@@ -15,6 +15,7 @@ import { activeSubagentPanel, subagentProgressByToolCallId, subagentProgressKey 
 import { initSubagentAggregatorState, initSubagentTickerState } from '~/utils/subagentContent';
 import { ChatSurfaceHarness, testChatSurface } from 'test/harness';
 import SubagentThreadPanel from './SubagentThreadPanel';
+import { useOpenSubagentPanel } from './surface';
 import { getDraft } from '~/utils';
 
 const mockUseSubagentThreadQuery = jest.fn();
@@ -30,6 +31,7 @@ const mockUseSubagentActivityStream = jest.fn();
 const mockForkMutate = jest.fn();
 const mockControlMutate = jest.fn();
 const mockNavigateToConvo = jest.fn();
+const mockNavigate = jest.fn();
 const mockShowToast = jest.fn();
 const mockGetSubagentThread = jest.fn();
 const mockApprovalProviderMounted = jest.fn();
@@ -73,6 +75,11 @@ function Root({
     </QueryClientProvider>
   );
 }
+
+jest.mock('react-router-dom', () => ({
+  ...jest.requireActual('react-router-dom'),
+  useNavigate: () => mockNavigate,
+}));
 
 jest.mock('librechat-data-provider', () => {
   const actual = jest.requireActual('librechat-data-provider');
@@ -525,6 +532,7 @@ describe('SubagentThreadPanel', () => {
     mockForkMutate.mockClear();
     mockControlMutate.mockClear();
     mockNavigateToConvo.mockClear();
+    mockNavigate.mockClear();
     mockShowToast.mockClear();
     mockGetSubagentThread.mockReset();
     mockRefreshParentChildren.mockClear();
@@ -1208,6 +1216,51 @@ describe('SubagentThreadPanel', () => {
     },
   );
 
+  it('focuses the panel when the same task is explicitly reopened', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    const OpenPanel = () => {
+      const open = useOpenSubagentPanel();
+      return <button onClick={() => open?.(selection)}>Open task</button>;
+    };
+    render(
+      <Root>
+        <input aria-label="Main chat draft" />
+        <OpenPanel />
+        <SubagentThreadPanel selection={selection} />
+      </Root>,
+    );
+    screen.getByLabelText('Main chat draft').focus();
+    fireEvent.click(screen.getByRole('button', { name: 'Open task' }));
+    expect(screen.getByRole('region', { name: 'com_ui_subagent_thread_panel' })).toHaveFocus();
+  });
+
+  it('does not steal main-chat focus when the selected task advances', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    const tree = (taskId: string) => (
+      <Root>
+        <input aria-label="Main chat draft" />
+        <SubagentThreadPanel
+          selection={{ ...selection, durable: { threadId: 'child-thread', taskId } }}
+        />
+      </Root>
+    );
+    const view = render(tree('task'));
+    const composer = screen.getByLabelText('Main chat draft');
+    composer.focus();
+    view.rerender(tree('next-task'));
+    expect(composer).toHaveFocus();
+  });
+
   it('only navigates to the parent chat when explicitly requested', () => {
     mockUseSubagentThreadQuery.mockReturnValue({
       data: completedView,
@@ -1221,11 +1274,9 @@ describe('SubagentThreadPanel', () => {
       </Root>,
     );
     expect(screen.getByRole('region', { name: 'com_ui_subagent_thread_panel' })).toHaveFocus();
-    expect(mockNavigateToConvo).not.toHaveBeenCalled();
+    expect(mockNavigate).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_go_to_parent' }));
-    expect(mockNavigateToConvo).toHaveBeenCalledWith({
-      conversationId: 'parent-conversation',
-    });
+    expect(mockNavigate).toHaveBeenCalledWith('/c/parent-conversation');
   });
 
   it('returns focus to the task disclosure when its originating call is not loaded', async () => {

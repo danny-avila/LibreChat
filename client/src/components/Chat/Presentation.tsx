@@ -54,7 +54,8 @@ export default function Presentation({
   useArtifactsRegistryLifetime(conversationId);
 
   useEffect(
-    () => () => setSelectedSubagent((current) => (current?.host === 'conversation' ? null : current)),
+    () => () =>
+      setSelectedSubagent((current) => (current?.host === 'conversation' ? null : current)),
     [setSelectedSubagent],
   );
 
@@ -159,8 +160,7 @@ export default function Presentation({
     if (
       selectedSubagent == null ||
       selectedSubagent.host !== 'conversation' ||
-      (selectedSubagent.durable == null &&
-        selectedSubagent.parentConversationId !== conversationId)
+      (selectedSubagent.durable == null && selectedSubagent.parentConversationId !== conversationId)
     ) {
       return null;
     }

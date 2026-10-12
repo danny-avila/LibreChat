@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { v4 } from 'uuid';
-import { useAtom, useSetAtom, useStore } from 'jotai';
+import { useNavigate } from 'react-router-dom';
 import { dataService, ForkOptions } from 'librechat-data-provider';
+import { useAtom, useAtomValue, useSetAtom, useStore } from 'jotai';
 import { ArrowUpRight, Clock, OctagonPause, X, Zap } from 'lucide-react';
 import {
   Alert,
@@ -38,6 +39,14 @@ import {
   retainBoundedMovingWindowTurns,
 } from './adapters';
 import {
+  activeSubagentPanel,
+  subagentPanelFocusRequest,
+  subagentControlStateByTask,
+  subagentControlStateKey,
+  subagentProgressKey,
+  useSubagentProgress,
+} from './state';
+import {
   agentAuthor,
   resolveSubagentAuthor,
   isSelfSpawn as isSelfSpawnType,
@@ -45,13 +54,6 @@ import {
   readableSubagentType,
   useParentAuthor,
 } from './author';
-import {
-  activeSubagentPanel,
-  subagentControlStateByTask,
-  subagentControlStateKey,
-  subagentProgressKey,
-  useSubagentProgress,
-} from './state';
 import useSubagentActivityStream from '~/data-provider/Subagents/useSubagentActivityStream';
 import SubagentActivity, { SubagentActivityScrollSurface } from './SubagentActivity';
 import ApprovalProvider from '~/components/Chat/Messages/Content/ApprovalContext';
@@ -127,8 +129,10 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const clearsFooter = useConfiguredFooter();
   const localize = useLocalize();
   const panelStore = useStore();
+  const focusRequest = useAtomValue(subagentPanelFocusRequest);
   const { showToast } = useToastContext();
   const { navigateToConvo } = useNavigateToConvo();
+  const navigate = useNavigate();
   const panelRef = useRef<HTMLDivElement>(null);
   const returnFocusRef = useRef(
     document.activeElement instanceof HTMLElement && document.activeElement !== document.body
@@ -804,7 +808,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   useFocusTrap(panelRef, isMobile);
   useEffect(() => {
     if (!isMobile) panelRef.current?.focus({ preventScroll: true });
-  }, [isMobile, selection.parentConversationId, threadId, taskId]);
+  }, [focusRequest, isMobile]);
   const handlePanelKeyDown = useCallback(
     (event: ReactKeyboardEvent<HTMLElement>) => {
       if (!isMobile || event.key !== 'Escape' || event.defaultPrevented) return;
@@ -1604,7 +1608,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
           type="button"
           variant="ghost"
           size="icon"
-          onClick={() => navigateToConvo({ conversationId: selection.parentConversationId })}
+          onClick={() => navigate(`/c/${encodeURIComponent(selection.parentConversationId)}`)}
           aria-label={localize('com_ui_subagent_go_to_parent')}
           title={localize('com_ui_subagent_go_to_parent')}
           className="h-8 w-8 shrink-0"

@@ -54,7 +54,7 @@ jest.mock('~/components/Chat/Subagents/SubagentThreadPanel', () => {
   >('~/components/Chat/Subagents/ParentSubagentsProvider');
   return {
     __esModule: true,
-    default: () => {
+    default: function MockSubagentThreadPanel() {
       const parent = useParentSubagents();
       return (
         <aside>
@@ -145,9 +145,7 @@ const OpenSubagentPanel = ({ durable = true }: { durable?: boolean }) => {
       subagentType: 'researcher',
       initialProgress: 1,
       isSubmitting: false,
-      durable: durable
-        ? { threadId: 'child-thread', taskId: 'background-task' }
-        : undefined,
+      durable: durable ? { threadId: 'child-thread', taskId: 'background-task' } : undefined,
     });
   };
   return (
@@ -261,7 +259,11 @@ describe('Presentation Artifact loading', () => {
   it('clears the durable selection when its authenticated chat host unmounts', async () => {
     let atoms: JotaiStore;
     const view = renderPresentation(
-      <ChatSurfaceHarness seed={(store) => { atoms = store; }}>
+      <ChatSurfaceHarness
+        seed={(store) => {
+          atoms = store;
+        }}
+      >
         <RecoilRoot>
           <Presentation>
             <OpenSubagentPanel />

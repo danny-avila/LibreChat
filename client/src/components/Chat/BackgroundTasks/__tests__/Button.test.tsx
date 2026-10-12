@@ -85,7 +85,11 @@ const messages: TMessage[] = [
 
 const SelectionProbe = () => {
   const selection = useAtomValue(activeSubagentPanel);
-  return <pre data-testid="selected-subagent" hidden>{JSON.stringify(selection)}</pre>;
+  return (
+    <pre data-testid="selected-subagent" hidden>
+      {JSON.stringify(selection)}
+    </pre>
+  );
 };
 
 const renderButton = (children: ParentSubagentSummary[] = [], initialMessages = messages) => {
@@ -499,7 +503,9 @@ describe('BackgroundTasksButton', () => {
       await userEvent.click(
         await screen.findByRole('button', { name: /^com_ui_background_tasks_open_subagent:/ }),
       );
-      expect(JSON.parse(screen.getByTestId('selected-subagent').textContent ?? 'null')).toMatchObject({
+      expect(
+        JSON.parse(screen.getByTestId('selected-subagent').textContent ?? 'null'),
+      ).toMatchObject({
         parentConversationId: conversationId,
         parentMessageId: 'parent-message',
         toolCallId: 'call-subagent',
@@ -525,7 +531,9 @@ describe('BackgroundTasksButton', () => {
         name: 'com_ui_background_tasks_open_subagent: Other researcher',
       }),
     );
-    expect(JSON.parse(screen.getByTestId('selected-subagent').textContent ?? 'null')).toMatchObject({
+    expect(
+      JSON.parse(screen.getByTestId('selected-subagent').textContent ?? 'null'),
+    ).toMatchObject({
       durable: { threadId: 'other-thread', taskId: 'sub-task-1' },
     });
   });
@@ -572,7 +580,9 @@ describe('BackgroundTasksButton', () => {
     await userEvent.click(
       await screen.findByRole('button', { name: /^com_ui_background_tasks_open_subagent:/ }),
     );
-    expect(JSON.parse(screen.getByTestId('selected-subagent').textContent ?? 'null')).toMatchObject({
+    expect(
+      JSON.parse(screen.getByTestId('selected-subagent').textContent ?? 'null'),
+    ).toMatchObject({
       durable: { threadId: 'thread-1', taskId: 'sub-task-1' },
       event: { actorId: 'actor-1', pinnedTask: true },
       isSubmitting: false,

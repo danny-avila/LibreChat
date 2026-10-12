@@ -327,6 +327,7 @@ export type ActiveSubagentPanel = {
 };
 
 export const activeSubagentPanel = atom<ActiveSubagentPanel | null>(null);
+export const subagentPanelFocusRequest = atom(0);
 
 export type SubagentControlUiReceipt = Omit<SubagentControlReceipt, 'status'> & {
   status: SubagentControlReceipt['status'] | 'submitted';
