@@ -1208,6 +1208,52 @@ describe('SubagentThreadPanel', () => {
     },
   );
 
+  it('only navigates to the parent chat when explicitly requested', () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    render(
+      <Root>
+        <SubagentThreadPanel selection={selection} />
+      </Root>,
+    );
+    expect(screen.getByRole('region', { name: 'com_ui_subagent_thread_panel' })).toHaveFocus();
+    expect(mockNavigateToConvo).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'com_ui_subagent_go_to_parent' }));
+    expect(mockNavigateToConvo).toHaveBeenCalledWith({
+      conversationId: 'parent-conversation',
+    });
+  });
+
+  it('returns focus to the task disclosure when its originating call is not loaded', async () => {
+    mockUseSubagentThreadQuery.mockReturnValue({
+      data: completedView,
+      isLoading: false,
+      isError: false,
+      isReadinessPending: false,
+    });
+    const disclosure = document.createElement('button');
+    disclosure.dataset.testid = 'header-background-tasks-button';
+    document.body.append(disclosure);
+    disclosure.focus();
+    try {
+      render(
+        <Root>
+          <SubagentThreadPanel selection={selection} />
+        </Root>,
+      );
+      expect(screen.getByRole('region', { name: 'com_ui_subagent_thread_panel' })).toHaveFocus();
+      fireEvent.click(screen.getByRole('button', { name: 'com_ui_close' }));
+      await waitFor(() => expect(disclosure).toHaveFocus());
+      expect(mockNavigateToConvo).not.toHaveBeenCalled();
+    } finally {
+      disclosure.remove();
+    }
+  });
+
   it('renders a bounded read-only activity timeline and closes its selection', async () => {
     mockUseSubagentThreadQuery.mockReturnValue({
       data: completedView,
