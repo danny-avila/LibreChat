@@ -38,6 +38,12 @@ const PROVIDERS: Record<
   bitbucket: { Icon: ExternalLink, name: 'com_ui_pr_provider_bitbucket' },
 };
 
+/** A grant whose app the server no longer has, so no provider is named for it. */
+const UNNAMED_PROVIDER: (typeof PROVIDERS)[PullRequestProvider] = {
+  Icon: ExternalLink,
+  name: 'com_ui_settings_label_pull_request_account',
+};
+
 type ConnectError = 'com_ui_pr_account_connect_error' | 'com_ui_pr_account_popup_blocked';
 
 /** How long a started sign-in is watched for when the server does not say how long it lasts. */
@@ -85,11 +91,11 @@ export default function ConnectedAccounts() {
    */
   const revocable = status.data?.connected === true;
   const provider = status.data?.provider ?? startupConfig?.pullRequestsConnect;
-  if (provider == null || (!revocable && status.data?.configured === false)) {
+  if (!revocable && (provider == null || status.data?.configured === false)) {
     return null;
   }
 
-  const { Icon, name: nameKey } = PROVIDERS[provider];
+  const { Icon, name: nameKey } = provider != null ? PROVIDERS[provider] : UNNAMED_PROVIDER;
   const name = localize(nameKey);
   const labelId = `${rowId}-label`;
   const descriptionId = `${rowId}-description`;

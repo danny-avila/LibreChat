@@ -53,12 +53,21 @@ describe('pull request connection hooks', () => {
     mockDisconnect.mockReset();
   });
 
-  it('never asks a deployment that offers no account to connect', () => {
-    mockStartup.current = { pullRequestsEnabled: true };
+  it('never asks a deployment with pull requests off', () => {
+    mockStartup.current = {};
     const { wrapper } = setup();
     const { result } = renderHook(() => usePullRequestConnectionQuery(), { wrapper });
     expect(result.current.fetchStatus).toBe('idle');
     expect(mockGetConnection).not.toHaveBeenCalled();
+  });
+
+  it('asks a deployment with pull requests on that no longer offers an app', async () => {
+    mockStartup.current = { pullRequestsEnabled: true };
+    mockGetConnection.mockResolvedValueOnce({ configured: false, connected: true });
+    const { wrapper } = setup();
+    const { result } = renderHook(() => usePullRequestConnectionQuery(), { wrapper });
+    await waitFor(() => expect(result.current.data?.connected).toBe(true));
+    expect(mockGetConnection).toHaveBeenCalledTimes(1);
   });
 
   it('refetches cached pull requests once a connection made elsewhere shows up', async () => {

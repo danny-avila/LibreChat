@@ -89,6 +89,29 @@ describe('ConnectedAccounts', () => {
     expect(mockGetConnection).not.toHaveBeenCalled();
   });
 
+  it('offers Disconnect for a grant whose app is gone from a deployment with pull requests on', async () => {
+    mockStartup.current = { pullRequestsEnabled: true };
+    mockGetConnection.mockResolvedValue({ configured: false, connected: true });
+    renderRow();
+
+    expect(
+      await screen.findByRole('button', {
+        name: 'com_ui_pr_account_disconnect_aria:com_ui_settings_label_pull_request_account',
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it('renders nothing for a deployment with pull requests on and nothing to disconnect', async () => {
+    mockStartup.current = { pullRequestsEnabled: true };
+    mockGetConnection.mockResolvedValue({ configured: false, connected: false });
+    const { client } = renderRow();
+    await waitFor(() => expect(mockGetConnection).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(client.getQueryData([QueryKeys.pullRequestConnection])).toBeDefined(),
+    );
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
   it('renders nothing once the server says no app is configured', async () => {
     mockGetConnection.mockResolvedValue({ configured: false, connected: false });
     renderRow();

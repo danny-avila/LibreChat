@@ -1,7 +1,11 @@
 import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MutationKeys, QueryKeys, dataService } from 'librechat-data-provider';
-import type { TPullRequestConnectStart, TPullRequestConnection } from 'librechat-data-provider';
+import type {
+  TStartupConfig,
+  TPullRequestConnectStart,
+  TPullRequestConnection,
+} from 'librechat-data-provider';
 import type { QueryClient } from '@tanstack/react-query';
 import { useGetStartupConfig } from '../Endpoints';
 
@@ -45,8 +49,16 @@ export function syncPullRequestConnection(
 }
 
 /**
- * Whether the signed-in user has connected their own account. Asked only when the deployment
- * offers connecting one, and again when the window regains focus; a sign-in in progress is
+ * Whether asking for the connection can find anything: on any deployment with pull requests on,
+ * not only one advertising an app to connect, because a grant made before the app was turned off
+ * must still be found to be disconnected.
+ */
+const isConnectionKnowable = (startupConfig?: Partial<TStartupConfig>): boolean =>
+  startupConfig?.pullRequestsEnabled === true || startupConfig?.pullRequestsConnect != null;
+
+/**
+ * Whether the signed-in user has connected their own account. Asked on a deployment with pull
+ * requests on, and again when the window regains focus; a sign-in in progress is
  * watched by `watchPullRequestSignIn`, which outlives this hook. A change in either direction
  * swaps the token the server looks pull requests up with, so every cached pull request is
  * refetched.
@@ -58,7 +70,7 @@ export const usePullRequestConnectionQuery = () => {
     [QueryKeys.pullRequestConnection],
     () => dataService.getPullRequestConnection(),
     {
-      enabled: startupConfig?.pullRequestsConnect != null,
+      enabled: isConnectionKnowable(startupConfig),
       retry: false,
       refetchOnWindowFocus: true,
     },
@@ -85,7 +97,7 @@ export const usePullRequestConnectionStatus = () => {
     [QueryKeys.pullRequestConnection],
     () => dataService.getPullRequestConnection(),
     {
-      enabled: startupConfig?.pullRequestsConnect != null,
+      enabled: isConnectionKnowable(startupConfig),
       retry: false,
       refetchOnWindowFocus: true,
     },
