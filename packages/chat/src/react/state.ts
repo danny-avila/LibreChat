@@ -8,11 +8,15 @@ export type ReactQueryChatStateOptions = {
   queryClient: QueryClient;
   /** The conversation the messages are cached under, `[QueryKeys.messages, key]`. */
   key: string;
-  /** Reads the list instead of the key's cache entry, for a host that also reads other keys. */
-  read?: () => TMessage[] | undefined;
-  /** Writes the list instead of the key's cache entry, for a host that writes more than one key. */
-  write?: (messages: TMessage[]) => void;
-};
+} & (
+  | { read?: undefined; write?: undefined }
+  | {
+      /** Reads the list instead of the key's cache entry, for a host that also reads other keys. */
+      read: () => TMessage[] | undefined;
+      /** Writes the list the same host store `read` reads, so a write is read back. */
+      write: (messages: TMessage[]) => void;
+    }
+);
 
 /** Cache events that add, drop or rewrite a query's data. */
 const dataEvents = new Set<QueryCacheNotifyEvent['type']>(['added', 'removed', 'updated']);
