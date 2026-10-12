@@ -269,6 +269,8 @@ describe('token', () => {
     const user = userId();
     await connect(oauth, user);
     await expect(oauth.token(user, { ...github, clientId: 'client-2' })).resolves.toBeNull();
+    /** Removed, so restoring the old app does not bring the credential back. */
+    await expect(oauth.token(user, github)).resolves.toBeNull();
   });
 
   it('refreshes an expiring token once for concurrent callers and keeps a refresh token that did not rotate', async () => {
@@ -569,7 +571,12 @@ describe('token', () => {
     const replaced = replica.oauth.token(user, { ...gitlab, clientId: 'gl-client-2' });
     await expect(replaced).resolves.toBeNull();
     replica.answer();
-    await expect(old).resolves.toBe('a2');
+    /** The new app removes the old grant, so the old app's refresh may or may not land first;
+     *  either way the new app never receives the old app's token. */
+    expect(['a2', null]).toContain(await old);
+    await expect(
+      replica.oauth.token(user, { ...gitlab, clientId: 'gl-client-2' }),
+    ).resolves.toBeNull();
   });
 
   it('applies a shortened retention to a grant stored under a longer one', async () => {

@@ -954,6 +954,8 @@ endpoints:
   #     # repository access instead of the server's (read from this file only). Register
   #     # <DOMAIN_SERVER>/api/pull-requests/oauth/callback as the app's callback URL. On GitHub a
   #     # GitHub App with read-only Pull requests, Checks and Contents permissions is recommended.
+  #     # Changing clientId, provider or host asks users to connect again; a changed scope only
+  #     # applies to new connections. Disconnecting removes every grant of the user.
   #     # oauth:
   #     #   clientId: "${GITHUB_PR_OAUTH_CLIENT_ID}"
   #     #   clientSecret: "${GITHUB_PR_OAUTH_CLIENT_SECRET}"

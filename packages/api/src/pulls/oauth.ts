@@ -451,7 +451,12 @@ export function createPullRequestOAuth({
      *  propagates. A record of another OAuth app, from before the app was replaced, is no
      *  connection to this one. */
     const parsed = parseStored(await decrypt(row.token));
-    if (parsed.clientId !== config.clientId) return null;
+    /** A record of a replaced app is dead under this one: the user connects again, and the old
+     *  credential is removed now (if still this row) rather than revived by restoring the app. */
+    if (parsed.clientId !== config.clientId) {
+      await store.deleteTokens({ scope: scopeOf(userId, config), token: row.token });
+      return null;
+    }
     if (isRefused(parsed)) return { row, record: parsed };
     /** Unused for longer than the retention now allows: gone, and removed if still this row.
      *  Awaited, and a failure propagates: the caller hears there is no connection only once the
