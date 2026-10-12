@@ -259,4 +259,22 @@ describe('skill file delete handler', () => {
 
     expect(res.status).toHaveBeenCalledWith(409);
   });
+
+  it('reports a conflict when whole-Skill deletion starts before the file row is removed', async () => {
+    const deleteBlob = jest.fn(async () => undefined);
+    const handlers = createSkillsHandlers({
+      getSkillFileByPath: jest.fn(async () => file),
+      deleteSkillFile: jest.fn(async () => {
+        throw Object.assign(new Error('Skill is being deleted'), { code: 'SKILL_DELETING' });
+      }),
+      getStrategyFunctions: jest.fn(() => ({ deleteFile: deleteBlob })),
+    } as unknown as SkillsHandlersDeps);
+    const res = mockResponse();
+
+    await handlers.deleteFile(req, res);
+
+    expect(deleteBlob).toHaveBeenCalledTimes(1);
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({ error: 'SKILL_DELETING' });
+  });
 });

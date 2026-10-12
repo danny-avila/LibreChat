@@ -1803,9 +1803,9 @@ export function createSkillMethods(
     }
     try {
       await deps.removeAllPermissions({ resourceType: ResourceType.SKILL, resourceId: id });
-    } catch (error) {
+    } catch {
       failedCleanupSteps.push('permissions');
-      logger.error(`[finalizeSkillDeletion] Error removing permissions for ${id}:`, error);
+      logger.error(`[finalizeSkillDeletion] Error removing permissions for ${id}`);
     }
     if (failedCleanupSteps.length > 0) {
       return {

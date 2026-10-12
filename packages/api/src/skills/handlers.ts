@@ -37,6 +37,7 @@ import type { ServerRequest, StrategyFunctions } from '~/types';
 import type { SkillDeletionProgress } from './deletion';
 import { extractSkillContent, inspectContentWithTraversal } from '~/protection';
 import { contentFilterBlockResponse } from '~/middleware/contentFilter';
+import { getSafeErrorMetadata } from '~/utils/errors';
 import { getDeploymentSkillIds } from './deployment';
 import { resolveDownloadPath } from '~/storage/path';
 import { resolveSkillFilePathParam } from './path';
@@ -616,7 +617,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
       };
       return res.status(200).json(response);
     } catch (error) {
-      logger.error('[DELETE /skills/:id] Error deleting skill', error);
+      logger.error('[DELETE /skills/:id] Error deleting skill', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Error deleting skill' });
     }
   }
@@ -833,7 +834,10 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
       };
       return res.status(200).json(response);
     } catch (error) {
-      logger.error('[DELETE /skills/:id/files/*relativePath] Error', error);
+      if ((error as { code?: unknown })?.code === 'SKILL_DELETING') {
+        return res.status(409).json({ error: 'SKILL_DELETING' });
+      }
+      logger.error('[DELETE /skills/:id/files/*relativePath] Error', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Error deleting skill file' });
     }
   }

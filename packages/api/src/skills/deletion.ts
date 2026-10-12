@@ -46,9 +46,11 @@ export async function runSkillDeletion(
   deps: SkillDeletionDeps,
   fileCleanupConcurrency: number = DEFAULT_SKILL_DELETION_CLEANUP_CONCURRENCY,
   assertClaim: () => Promise<void> = async () => undefined,
+  loadedJournal?: SkillDeletionRecord,
 ): Promise<SkillDeletionProgress> {
   await assertClaim();
-  const journal = (await deps.beginSkillDeletion(id)) ?? (await deps.getSkillDeletion(id));
+  const journal =
+    loadedJournal ?? (await deps.beginSkillDeletion(id)) ?? (await deps.getSkillDeletion(id));
   if (!journal) {
     return {
       found: false,

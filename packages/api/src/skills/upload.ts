@@ -8,6 +8,7 @@ import type { SaveBufferParams } from '~/storage/types';
 import type { SkillUploadIntentDeps } from './intent';
 import { resolveRequestTenantId } from '~/middleware/tenant';
 import { getStorageMetadata } from '~/storage/metadata';
+import { getSafeErrorMetadata } from '~/utils/errors';
 import { blockFilteredSkillFile } from './protection';
 import { resolveSkillFilePathParam } from './path';
 import { withSkillUploadIntent } from './intent';
@@ -136,7 +137,9 @@ export function createSkillUploadHandler(
             storageRegion: existingFile.storageRegion,
             user: existingFile.author?.toString() ?? userId,
             tenantId: existingFile.tenantId ?? tenantId,
-          }).catch((error: Error) => logger.error('[uploadFile] Old blob cleanup failed:', error));
+          }).catch((error: Error) =>
+            logger.error('[uploadFile] Old blob cleanup failed:', getSafeErrorMetadata(error)),
+          );
         }
       };
       let result: StoredSkillFile;
@@ -192,7 +195,10 @@ export function createSkillUploadHandler(
           const persisted = await deps.getSkillFileByPath(skillId, relativePath);
           if (persisted?.file_id === fileId) cleanupReplacedBlob(persisted.filepath);
         } catch (readError) {
-          logger.error('[uploadFile] Failed to verify stored file after write error:', readError);
+          logger.error(
+            '[uploadFile] Failed to verify stored file after write error:',
+            getSafeErrorMetadata(readError),
+          );
         }
         throw error;
       }
@@ -210,7 +216,7 @@ export function createSkillUploadHandler(
           return res.status(400).json({ error: error.message });
         }
       }
-      logger.error('[uploadFile] Error:', error);
+      logger.error('[uploadFile] Error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to upload file' });
     }
   };

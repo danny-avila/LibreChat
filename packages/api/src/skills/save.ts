@@ -8,6 +8,7 @@ import type { SkillUploadIntentDeps } from './intent';
 import type { StoredSkillFile } from './upload';
 import { resolveRequestTenantId } from '~/middleware/tenant';
 import { getStorageMetadata } from '~/storage/metadata';
+import { getSafeErrorMetadata } from '~/utils/errors';
 import { withSkillUploadIntent } from './intent';
 import { reserveSkillBlob } from './reservation';
 
@@ -116,7 +117,10 @@ async function saveSkillFile(
         user: existingFile.author?.toString() ?? userId,
         tenantId: existingFile.tenantId ?? tenantId,
       }).catch((error: Error) =>
-        logger.error('[saveSkillFileContent] Old blob cleanup failed:', error),
+        logger.error(
+          '[saveSkillFileContent] Old blob cleanup failed:',
+          getSafeErrorMetadata(error),
+        ),
       );
     }
   };
@@ -176,7 +180,10 @@ async function saveSkillFile(
         cleanupPreviousBlob(persisted.filepath);
       }
     } catch (cleanupError) {
-      logger.error('[saveSkillFileContent] Failed to verify stored file:', cleanupError);
+      logger.error(
+        '[saveSkillFileContent] Failed to verify stored file:',
+        getSafeErrorMetadata(cleanupError),
+      );
     }
     throw error;
   }

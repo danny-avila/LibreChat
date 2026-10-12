@@ -9,6 +9,7 @@ import type { SkillDeletionDeps, SkillDeletionProgress } from './deletion';
 import type { ServerRequest, StrategyFunctions } from '~/types';
 import { runSkillDeletion, SkillDeletionClaimLostError } from './deletion';
 import { getStorageMetadata } from '~/storage/metadata';
+import { getSafeErrorMetadata } from '~/utils/errors';
 
 type Persistence = Omit<SkillDeletionDeps, 'deleteBlob' | 'deleteReservedBlob'> & {
   discoverUnjournaledDeletions: (limit: number) => Promise<number>;
@@ -154,7 +155,7 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
     };
     const heartbeat = setInterval(() => {
       void assertClaim().catch((error) =>
-        deps.logger.error('[skill deletion] Claim heartbeat failed:', error),
+        deps.logger.error('[skill deletion] Claim heartbeat failed:', getSafeErrorMetadata(error)),
       );
     }, claimLeaseMs / 4);
     heartbeat.unref?.();
@@ -176,6 +177,7 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
         },
         config?.fileConfig?.skills?.deletionCleanupConcurrency,
         assertClaim,
+        journal,
       );
       if (progress.cleanupComplete) {
         await assertClaim();
@@ -200,13 +202,19 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
           await assertClaim();
           await deps.persistence.noteSkillDeletionAttempt(skillId);
         } catch (error) {
-          deps.logger.error(`[skill deletion] Attempt timestamp failed for ${skillId}:`, error);
+          deps.logger.error(
+            `[skill deletion] Attempt timestamp failed for ${skillId}:`,
+            getSafeErrorMetadata(error),
+          );
         }
       }
       try {
         await deps.persistence.releaseSkillDeletionClaim(skillId, owner);
       } catch (error) {
-        deps.logger.error(`[skill deletion] Claim release failed for ${skillId}:`, error);
+        deps.logger.error(
+          `[skill deletion] Claim release failed for ${skillId}:`,
+          getSafeErrorMetadata(error),
+        );
       }
     }
   }
@@ -269,7 +277,10 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
         };
         const heartbeat = setInterval(() => {
           void assertClaim().catch((error) =>
-            deps.logger.error('[skill upload intent] Claim heartbeat failed:', error),
+            deps.logger.error(
+              '[skill upload intent] Claim heartbeat failed:',
+              getSafeErrorMetadata(error),
+            ),
           );
         }, claimLeaseMs / 4);
         heartbeat.unref?.();
@@ -313,7 +324,10 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
             throw new SkillDeletionClaimLostError();
           }
         } catch (error) {
-          deps.logger.error(`[skill upload intent] Cleanup failed for ${fileId}:`, error);
+          deps.logger.error(
+            `[skill upload intent] Cleanup failed for ${fileId}:`,
+            getSafeErrorMetadata(error),
+          );
         } finally {
           clearInterval(heartbeat);
           if (!lost) {
@@ -323,14 +337,17 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
             } catch (error) {
               deps.logger.error(
                 `[skill upload intent] Attempt timestamp failed for ${fileId}:`,
-                error,
+                getSafeErrorMetadata(error),
               );
             }
           }
           try {
             await deps.persistence.releaseAbandonedSkillUploadIntentClaim(fileId, owner);
           } catch (error) {
-            deps.logger.error(`[skill upload intent] Claim release failed for ${fileId}:`, error);
+            deps.logger.error(
+              `[skill upload intent] Claim release failed for ${fileId}:`,
+              getSafeErrorMetadata(error),
+            );
           }
         }
       }
@@ -355,7 +372,10 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
                   );
                 }
               } catch (error) {
-                deps.logger.error(`[skill deletion] Cleanup failed for ${skillId}:`, error);
+                deps.logger.error(
+                  `[skill deletion] Cleanup failed for ${skillId}:`,
+                  getSafeErrorMetadata(error),
+                );
               }
             }
           } finally {
@@ -364,7 +384,7 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
           }
         });
       } catch (error) {
-        deps.logger.error('[skill deletion] Sweep failed:', error);
+        deps.logger.error('[skill deletion] Sweep failed:', getSafeErrorMetadata(error));
       } finally {
         running = false;
       }

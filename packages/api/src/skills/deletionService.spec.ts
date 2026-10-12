@@ -21,12 +21,11 @@ it('records failed cleanup attempts before releasing the claim', async () => {
       order.push('release');
       released();
     }),
-    beginSkillDeletion: jest
-      .fn()
-      .mockResolvedValueOnce(journal)
-      .mockRejectedValueOnce(new Error('storage unavailable')),
-    getSkillDeletion: jest.fn(async () => journal),
-    listSkillFiles: jest.fn(async () => []),
+    beginSkillDeletion: jest.fn(async () => journal),
+    getSkillDeletion: jest.fn(async (): Promise<typeof journal | null> => journal),
+    listSkillFiles: jest.fn(async () => {
+      throw new Error('storage unavailable');
+    }),
     listSkillUploadIntents: jest.fn(async () => []),
     deleteSkillFileAfterBlob: jest.fn(async () => true),
     finalizeSkillDeletion: jest.fn(async () => ({
@@ -59,6 +58,8 @@ it('records failed cleanup attempts before releasing the claim', async () => {
   await releaseObserved;
   sweep.stop();
   expect(order).toEqual(['attempt', 'release']);
+  expect(persistence.beginSkillDeletion).toHaveBeenCalledTimes(1);
+  expect(persistence.getSkillDeletion).not.toHaveBeenCalled();
   expect(persistence.noteSkillDeletionAttempt).toHaveBeenCalledWith(skillId);
 });
 
@@ -159,7 +160,7 @@ function claimedServiceHarness() {
     }),
     scheduleSkillDeletionRecheck: jest.fn(async () => true),
     beginSkillDeletion: jest.fn(async () => journal),
-    getSkillDeletion: jest.fn(async () => journal),
+    getSkillDeletion: jest.fn(async (): Promise<typeof journal | null> => journal),
     listSkillFiles: jest.fn(async () => files),
     listSkillUploadIntents: jest.fn(async () => []),
     deleteSkillFileAfterBlob: jest.fn(async () => {
@@ -187,14 +188,15 @@ function claimedServiceHarness() {
   };
   const deleteFile = jest.fn(async (): Promise<void> => undefined);
   const loadConfig = jest.fn(async (): Promise<AppConfig | undefined> => undefined);
+  const logger = { error: jest.fn(), warn: jest.fn() };
   const service = createSkillDeletionService({
     persistence,
     loadConfig,
     getStrategyFunctions: jest.fn(() => ({ deleteFile })),
     runAsSystem: async (callback) => callback(),
-    logger: { error: jest.fn(), warn: jest.fn() },
+    logger,
   });
-  return { skillId, persistence, deleteFile, loadConfig, service };
+  return { skillId, persistence, deleteFile, loadConfig, logger, service };
 }
 
 it('uses the configured claim lease for direct deletion', async () => {
@@ -207,6 +209,50 @@ it('uses the configured claim lease for direct deletion', async () => {
     9_000,
   );
   expect(h.loadConfig).toHaveBeenCalled();
+  expect(h.persistence.beginSkillDeletion).toHaveBeenCalledTimes(1);
+  expect(h.persistence.getSkillDeletion).not.toHaveBeenCalled();
+});
+
+it('does not log provider metadata when abandoned-intent cleanup fails', async () => {
+  const h = claimedServiceHarness();
+  const fileId = 'abandoned-file';
+  h.persistence.listSkillDeletionTombstones.mockResolvedValue([]);
+  h.persistence.listAbandonedSkillUploadIntents.mockResolvedValue([
+    {
+      skillId: h.skillId,
+      fileId,
+      source: 'local',
+      storageKey: '/uploads/abandoned-file',
+      author: '507f1f77bcf86cd799439012',
+      state: 'abandoned',
+    },
+  ]);
+  h.persistence.getSkillDeletion.mockResolvedValue(null);
+  h.deleteFile.mockRejectedValue(
+    Object.assign(new Error('signed URL: secret-token'), {
+      status: 403,
+      request: { url: 'https://storage.example/object?signature=secret-token' },
+      response: { headers: { authorization: 'secret-token' } },
+    }),
+  );
+  let released!: () => void;
+  const done = new Promise<void>((resolve) => {
+    released = resolve;
+  });
+  h.persistence.releaseAbandonedSkillUploadIntentClaim.mockImplementation(async () => {
+    released();
+    return undefined;
+  });
+
+  const sweep = h.service.startSkillDeletionSweep();
+  await done;
+  sweep.stop();
+
+  expect(h.logger.error).toHaveBeenCalledWith(
+    `[skill upload intent] Cleanup failed for ${fileId}:`,
+    { type: 'Error', status: 403 },
+  );
+  expect(JSON.stringify(h.logger.error.mock.calls)).not.toContain('secret-token');
 });
 
 it('defers tombstone-owned abandoned intents without deleting their blobs again', async () => {
