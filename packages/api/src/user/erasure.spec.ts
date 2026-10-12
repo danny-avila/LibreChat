@@ -66,6 +66,19 @@ async function seedUser(userId: mongoose.Types.ObjectId) {
   ]);
   await model('Conversation').insertOne({ user, conversationId: `convo-${user}` });
   await model('Transaction').insertOne({ user: userId, tokenType: 'prompt', rawAmount: -1 });
+  await model('ToolFavorite').insertOne({ user: userId, itemType: 'tool', itemId: 'web' });
+  await model('ChatProject').insertOne({ user, name: `project-${user}` });
+  await model('AgentQueuedTurn').insertOne({ user: userId, conversationId: `convo-${user}` });
+  await model('AgentQueuedTurnSequence').insertOne({
+    user: userId,
+    conversationId: `convo-${user}`,
+  });
+  await model('RefreshTokenBridge').insertOne({
+    userId: user,
+    tenantId: 'tenant-1',
+    oldRefreshTokenHash: `hash-${user}`,
+    encryptedNewRefreshToken: 'encrypted',
+  });
   return { skillId, mcpServerId, legacyServerId };
 }
 
@@ -132,12 +145,22 @@ describe('eraseUserData', () => {
     expect(await count('SharedLink', { user })).toBe(0);
     expect(await count('AclEntry', { principalId: userId })).toBe(0);
     expect(await count('Transaction', { user: userId })).toBe(0);
+    expect(await count('ToolFavorite', { user: userId })).toBe(0);
+    expect(await count('ChatProject', { user })).toBe(0);
+    expect(await count('AgentQueuedTurn', { user: userId })).toBe(0);
+    expect(await count('AgentQueuedTurnSequence', { user: userId })).toBe(0);
+    expect(await count('RefreshTokenBridge', { userId: user })).toBe(0);
 
     expect(await count('Skill', { _id: other.skillId })).toBe(1);
     expect(await count('MCPServer', { author: otherId })).toBe(2);
     expect(await count('SharedLink', { user: otherId.toString() })).toBe(1);
     expect(await count('File', { user: otherId })).toBe(2);
     expect(await count('Conversation', { user: otherId.toString() })).toBe(1);
+    expect(await count('ToolFavorite', { user: otherId })).toBe(1);
+    expect(await count('ChatProject', { user: otherId.toString() })).toBe(1);
+    expect(await count('AgentQueuedTurn', { user: otherId })).toBe(1);
+    expect(await count('AgentQueuedTurnSequence', { user: otherId })).toBe(1);
+    expect(await count('RefreshTokenBridge', { userId: otherId.toString() })).toBe(1);
   });
 
   it('keeps the transaction ledger when the operator retains it', async () => {

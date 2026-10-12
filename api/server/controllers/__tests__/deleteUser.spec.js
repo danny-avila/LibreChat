@@ -122,6 +122,10 @@ jest.mock('~/models', () => ({
   deleteTokens: jest.fn(),
   removeUserFromAllGroups: jest.fn(),
   deleteAclEntries: jest.fn(),
+  deleteUserChatProjects: jest.fn(),
+  deleteUserToolFavorites: jest.fn(),
+  deleteRefreshTokenBridges: jest.fn(),
+  deleteAllAgentQueuedTurnsForUser: jest.fn(),
   deleteSchedulesByUser: (...args) => mockDeleteSchedulesByUser(...args),
   getSoleOwnedResourceIds: jest.fn().mockResolvedValue([]),
 }));

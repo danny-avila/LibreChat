@@ -33,6 +33,10 @@ type ErasureMethods = Pick<
   | 'removeUserFromAllGroups'
   | 'deleteAclEntries'
   | 'deleteSchedulesByUser'
+  | 'deleteUserChatProjects'
+  | 'deleteUserToolFavorites'
+  | 'deleteRefreshTokenBridges'
+  | 'deleteAllAgentQueuedTurnsForUser'
 >;
 
 export interface UserErasureDeps extends ErasureMethods {
@@ -168,8 +172,11 @@ export async function eraseUserData(
   await checkpointDeletion.cleanup();
   await checkpointDeletion.acknowledge();
 
+  await deps.deleteUserChatProjects(userId);
   await deps.deleteMessages({ user: userId });
+  await deps.deleteAllAgentQueuedTurnsForUser({ user: userObjectId });
   await deps.deleteAllUserSessions({ userId });
+  await deps.deleteRefreshTokenBridges({ userId, tenantId });
   await deps.deletePasskeysByUser(userId);
   if (!keepTransactions) {
     await deps.deleteTransactions({ user: userId });
@@ -191,6 +198,7 @@ export async function eraseUserData(
   await deps.deleteAllAgentApiKeys(userObjectId);
   await deps.deleteAssistants({ user: userId });
   await deps.deleteConversationTags({ user: userId });
+  await deps.deleteUserToolFavorites(userId);
   await deps.deleteAllUserMemories(userId);
   await deps.deleteUserPrompts(userId);
   await deps.deleteUserSkills(userId);
