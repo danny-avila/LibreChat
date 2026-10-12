@@ -714,6 +714,7 @@ export function createPullRequestOAuth({
     userId: string,
     config: PullRequestOAuthConfig,
     generation: string,
+    attempt = 0,
   ): Promise<string | null> {
     const current = await read(userId, config, generation);
     if (current == null || isRefused(current.record)) return null;
@@ -724,7 +725,12 @@ export function createPullRequestOAuth({
         const { v: _v, ...same } = grant;
         /** Rare (past half the retention, or a shortened one), so the read waits for it. A failed
          *  write is an outage, not a successful read: the grant would keep its old deadline. */
-        await write(userId, config, row.token, same);
+        if ((await write(userId, config, row.token, same)) == null) {
+          /** Another replica changed the row first (an old-config one may have extended it), so the
+           *  current policy is read and applied again rather than assumed to have landed. */
+          if (attempt >= 2) throw new Error('The grant retention could not be updated');
+          return currentToken(userId, config, generation, attempt + 1);
+        }
         await renewGeneration(userId, grant.generation);
       }
       return grant.accessToken;

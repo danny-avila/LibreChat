@@ -633,6 +633,35 @@ describe('token', () => {
     await expect(oauth.connected(user, shortened)).resolves.toBe(false);
   });
 
+  it('applies the current retention again when another replica changed the row first', async () => {
+    const { oauth } = setup([() => json({ access_token: 'kept' })]);
+    const user = userId();
+    await connect(oauth, user, { ...github, retentionDays: 180 });
+    const original = store.replaceTokenIfCurrent.bind(store);
+    let grantWrites = 0;
+    const race = jest
+      .spyOn(store, 'replaceTokenIfCurrent')
+      .mockImplementation(async (scope, expected, row) => {
+        if (row.type === PULL_REQUEST_OAUTH_TYPE) {
+          grantWrites += 1;
+          /** The first rewrite loses to a replica that wrote the row in between. */
+          if (grantWrites === 1) return false;
+        }
+        return original(scope, expected, row);
+      });
+    try {
+      await expect(oauth.token(user, { ...github, retentionDays: 1 })).resolves.toBe('kept');
+    } finally {
+      race.mockRestore();
+    }
+    expect(grantWrites).toBe(2);
+    const row = await tokens().findOne({
+      userId: new mongoose.Types.ObjectId(user),
+      type: PULL_REQUEST_OAUTH_TYPE,
+    });
+    expect(new Date(row?.expiresAt).getTime()).toBeLessThanOrEqual(Date.now() + 86_400_000);
+  });
+
   it('ends a grant unused for longer than the current retention, whatever its row says', async () => {
     let clock = Date.now();
     const { oauth } = setup([() => json({ access_token: 'old' })], () => clock);
