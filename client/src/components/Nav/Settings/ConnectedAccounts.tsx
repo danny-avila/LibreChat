@@ -125,6 +125,13 @@ export default function ConnectedAccounts() {
           popup.close();
           return;
         }
+        /**
+         * Closed while the server answered: the user cancelled, and nothing will sign in. Still the
+         * blank page this window opened, so unlike after navigating, `closed` can be trusted here.
+         */
+        if (popup.closed) {
+          return;
+        }
         popup.location.href = url;
         keepFocus.current = true;
         watchPullRequestSignIn(queryClient, {

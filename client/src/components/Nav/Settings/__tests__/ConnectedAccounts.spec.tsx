@@ -231,6 +231,28 @@ describe('ConnectedAccounts', () => {
     expect(popup.close).not.toHaveBeenCalled();
   });
 
+  it('starts nothing when the window is closed before the server answers', async () => {
+    const popup = { ...fakeWindow(), closed: false };
+    openSpy.mockReturnValue(popup as unknown as Window);
+    mockGetConnection.mockResolvedValue(connection(false));
+    let answer: (value: { url: string }) => void = () => undefined;
+    mockConnect.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+    renderRow();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /com_ui_pr_account_connect_aria/ }),
+    );
+    await waitFor(() => expect(mockConnect).toHaveBeenCalledTimes(1));
+    popup.closed = true;
+    const asked = mockGetConnection.mock.calls.length;
+    answer({ url: 'https://github.com/login/oauth/authorize?x=1' });
+
+    /** Past the first poll: a watch started anyway would have asked by now. */
+    await new Promise((resolve) => setTimeout(resolve, 2500));
+    expect(popup.location.href).toBe('');
+    expect(mockGetConnection).toHaveBeenCalledTimes(asked);
+  }, 10000);
+
   it('closes the window instead of signing in when the session ends first', async () => {
     const popup = fakeWindow();
     openSpy.mockReturnValue(popup as unknown as Window);
