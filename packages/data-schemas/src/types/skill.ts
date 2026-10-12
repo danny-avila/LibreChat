@@ -84,6 +84,7 @@ export interface ISkill {
   fileCount: number;
   deletingAt?: Date;
   deletionNeedsJournal?: boolean;
+  deletionJournalAttemptAt?: Date;
   /**
    * When `true`, the skill is auto-primed into every turn — no user `$`
    * invocation or model discretion required. Mirrors the `always-apply` YAML

@@ -1,3 +1,4 @@
+import type { AppConfig, SkillUploadIntentRecord } from '@librechat/data-schemas';
 import { createSkillDeletionService } from './deletionService';
 
 it('records failed cleanup attempts before releasing the claim', async () => {
@@ -37,7 +38,7 @@ it('records failed cleanup attempts before releasing the claim', async () => {
     completeSkillDeletion: jest.fn(async () => undefined),
     reopenSkillDeletion: jest.fn(async () => undefined),
     markSkillUploadIntentCleaned: jest.fn(async () => undefined),
-    listAbandonedSkillUploadIntents: jest.fn(async () => []),
+    listAbandonedSkillUploadIntents: jest.fn(async (): Promise<SkillUploadIntentRecord[]> => []),
     claimAbandonedSkillUploadIntent: jest.fn(async () => true),
     refreshAbandonedSkillUploadIntentClaim: jest.fn(async () => true),
     noteAbandonedSkillUploadIntentAttempt: jest.fn(async () => undefined),
@@ -171,7 +172,7 @@ function claimedServiceHarness() {
     }),
     reopenSkillDeletion: jest.fn(async () => undefined),
     markSkillUploadIntentCleaned: jest.fn(async () => undefined),
-    listAbandonedSkillUploadIntents: jest.fn(async () => []),
+    listAbandonedSkillUploadIntents: jest.fn(async (): Promise<SkillUploadIntentRecord[]> => []),
     claimAbandonedSkillUploadIntent: jest.fn(async () => true),
     refreshAbandonedSkillUploadIntentClaim: jest.fn(async () => true),
     noteAbandonedSkillUploadIntentAttempt: jest.fn(async () => undefined),
@@ -180,15 +181,58 @@ function claimedServiceHarness() {
     skillFileExistsForIntent: jest.fn(async () => false),
   };
   const deleteFile = jest.fn(async (): Promise<void> => undefined);
+  const loadConfig = jest.fn(async (): Promise<AppConfig | undefined> => undefined);
   const service = createSkillDeletionService({
     persistence,
-    loadConfig: jest.fn(async () => undefined),
+    loadConfig,
     getStrategyFunctions: jest.fn(() => ({ deleteFile })),
     runAsSystem: async (callback) => callback(),
     logger: { error: jest.fn(), warn: jest.fn() },
   });
-  return { skillId, persistence, deleteFile, service };
+  return { skillId, persistence, deleteFile, loadConfig, service };
 }
+
+it('uses the configured claim lease for direct deletion', async () => {
+  const h = claimedServiceHarness();
+  h.loadConfig.mockResolvedValue({ skillDeletion: { claimLeaseMs: 9_000 } } as AppConfig);
+  await h.service.deleteSkillById(h.skillId);
+  expect(h.persistence.claimSkillDeletion).toHaveBeenCalledWith(
+    h.skillId,
+    expect.any(String),
+    9_000,
+  );
+  expect(h.loadConfig).toHaveBeenCalled();
+});
+
+it('defers tombstone-owned abandoned intents without deleting their blobs again', async () => {
+  const h = claimedServiceHarness();
+  const intent = {
+    skillId: h.skillId,
+    fileId: 'tombstone-owned',
+    source: 'local',
+    storageKey: '/uploads/tombstone-owned',
+    author: '507f1f77bcf86cd799439012',
+    state: 'abandoned' as const,
+  };
+  h.persistence.listSkillDeletionTombstones.mockResolvedValue([]);
+  h.persistence.listAbandonedSkillUploadIntents.mockResolvedValue([intent]);
+  let released: (() => void) | undefined;
+  const done = new Promise<void>((resolve) => {
+    released = resolve;
+  });
+  h.persistence.releaseAbandonedSkillUploadIntentClaim.mockImplementation(async () => {
+    released?.();
+  });
+  const sweep = h.service.startSkillDeletionSweep();
+  await done;
+  sweep.stop();
+  expect(h.persistence.scheduleAbandonedSkillUploadIntentRecheck).toHaveBeenCalledWith(
+    intent.fileId,
+    expect.any(String),
+    3_600_000,
+  );
+  expect(h.deleteFile).not.toHaveBeenCalled();
+});
 
 it('returns pending to a direct caller while the sweep owns the same Skill claim', async () => {
   const h = claimedServiceHarness();

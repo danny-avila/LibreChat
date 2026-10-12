@@ -206,6 +206,7 @@ const skillSchema: Schema<ISkillDocument> = new Schema(
     deletingAt: { type: Date, default: undefined },
     /** Cleared only after the retryable deletion journal and legacy blob references are durable. */
     deletionNeedsJournal: { type: Boolean, default: undefined },
+    deletionJournalAttemptAt: { type: Date, default: undefined },
     /**
      * When `true`, the skill's SKILL.md body is auto-primed into every turn
      * without user `$` invocation or model discretion. Mirrors the
@@ -231,7 +232,10 @@ const skillSchema: Schema<ISkillDocument> = new Schema(
 skillSchema.index({ author: 1, tenantId: 1 });
 skillSchema.index({ category: 1, updatedAt: -1 });
 skillSchema.index({ updatedAt: -1, _id: 1 });
-skillSchema.index({ deletionNeedsJournal: 1 }, { sparse: true });
+skillSchema.index(
+  { deletionNeedsJournal: 1, deletionJournalAttemptAt: 1, deletingAt: 1 },
+  { sparse: true },
+);
 skillSchema.index({ name: 1, author: 1, tenantId: 1 }, { unique: true });
 skillSchema.index({ source: 1, 'sourceMetadata.upstreamId': 1, tenantId: 1 });
 skillSchema.index({ source: 1, 'sourceMetadata.sourceId': 1, tenantId: 1 });

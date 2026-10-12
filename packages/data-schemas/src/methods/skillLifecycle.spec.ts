@@ -50,7 +50,7 @@ async function makeSkill() {
 describe('Skill deletion journal', () => {
   it('indexes only marked Skills for startup and periodic deletion discovery', () => {
     expect(mongoose.models.Skill.schema.indexes()).toContainEqual([
-      { deletionNeedsJournal: 1 },
+      { deletionNeedsJournal: 1, deletionJournalAttemptAt: 1, deletingAt: 1 },
       expect.objectContaining({ sparse: true }),
     ]);
   });
@@ -78,6 +78,50 @@ describe('Skill deletion journal', () => {
     expect(await lifecycle.discoverUnjournaledDeletions()).toBe(1);
     expect(await lifecycle.discoverUnjournaledDeletions()).toBe(0);
     expect(await mongoose.models.SkillDeletion.countDocuments({ skillId: skill._id })).toBe(1);
+  });
+
+  it('bounds discovery and rotates a failed backfill behind other marked Skills', async () => {
+    const first = await makeSkill();
+    const second = await makeSkill();
+    const third = await makeSkill();
+    for (const [index, item] of [first, second, third].entries()) {
+      await mongoose.models.Skill.updateOne(
+        { _id: item.skill._id },
+        {
+          $set: {
+            deletingAt: new Date(Date.now() - (3 - index) * 1_000),
+            deletionNeedsJournal: true,
+          },
+        },
+      );
+    }
+    await mongoose.models.SkillFile.create({
+      skillId: first.skill._id,
+      file_id: 'failed-backfill',
+      relativePath: 'references/failed.md',
+      filename: 'failed.md',
+      filepath: `/uploads/${first.author}/failed-backfill`,
+      source: 'local',
+      mimeType: 'text/markdown',
+      bytes: 4,
+      author: first.author,
+      tenantId: 'tenant-a',
+    });
+    const write = jest
+      .spyOn(mongoose.models.SkillUploadIntent, 'bulkWrite')
+      .mockRejectedValueOnce(new Error('temporary database failure'));
+    try {
+      expect(await lifecycle.discoverUnjournaledDeletions(1)).toBe(0);
+    } finally {
+      write.mockRestore();
+    }
+    expect(await lifecycle.discoverUnjournaledDeletions(1)).toBe(1);
+    expect(await mongoose.models.SkillDeletion.exists({ skillId: second.skill._id })).toBeTruthy();
+    expect(await lifecycle.discoverUnjournaledDeletions(1)).toBe(1);
+    expect(await mongoose.models.SkillDeletion.exists({ skillId: third.skill._id })).toBeTruthy();
+    expect(await lifecycle.discoverUnjournaledDeletions(1)).toBe(1);
+    expect(await mongoose.models.SkillDeletion.exists({ skillId: first.skill._id })).toBeTruthy();
+    expect(await lifecycle.discoverUnjournaledDeletions(1)).toBe(0);
   });
 
   it('retries a partially backfilled deletion without rescanning it after success', async () => {
@@ -320,6 +364,51 @@ describe('Skill upload intents', () => {
     expect(await lifecycle.claimSkillDeletion(skill._id, 'worker-b', 60_000)).toBe(true);
   });
 
+  it('retains a lease when a refresh matches without changing its expiry', async () => {
+    const { skill, author } = await makeSkill();
+    await lifecycle.beginSkillDeletion(skill.id);
+    await mongoose.models.SkillUploadIntent.create({
+      skillId: skill._id,
+      fileId: 'abandoned-refresh',
+      source: 'local',
+      storageKey: `/uploads/${author}/abandoned-refresh`,
+      author,
+      writerId: 'stopped',
+      state: 'abandoned',
+    });
+    const deletionWrite = jest
+      .spyOn(mongoose.models.SkillDeletion, 'updateOne')
+      .mockResolvedValueOnce({
+        acknowledged: true,
+        matchedCount: 1,
+        modifiedCount: 0,
+        upsertedCount: 0,
+        upsertedId: null,
+      });
+    const intentWrite = jest
+      .spyOn(mongoose.models.SkillUploadIntent, 'updateOne')
+      .mockResolvedValueOnce({
+        acknowledged: true,
+        matchedCount: 1,
+        modifiedCount: 0,
+        upsertedCount: 0,
+        upsertedId: null,
+      });
+    try {
+      expect(await lifecycle.refreshSkillDeletionClaim(skill._id, 'worker-a', 60_000)).toBe(true);
+      expect(
+        await lifecycle.refreshAbandonedSkillUploadIntentClaim(
+          'abandoned-refresh',
+          'worker-a',
+          60_000,
+        ),
+      ).toBe(true);
+    } finally {
+      deletionWrite.mockRestore();
+      intentWrite.mockRestore();
+    }
+  });
+
   it('defers clean tombstones but admits them after the recheck deadline', async () => {
     const { skill } = await makeSkill();
     await lifecycle.beginSkillDeletion(skill.id);
@@ -447,5 +536,35 @@ describe('Skill upload intents', () => {
     expect(await lifecycle.claimAbandonedSkillUploadIntent('late-blob', 'worker-b', 60_000)).toBe(
       true,
     );
+  });
+
+  it('can defer an uncleaned abandoned intent while its Skill tombstone owns cleanup', async () => {
+    const { skill, author } = await makeSkill();
+    await mongoose.models.SkillUploadIntent.create({
+      skillId: skill._id,
+      fileId: 'tombstone-owned',
+      source: 'local',
+      storageKey: `/uploads/${author}/tombstone-owned`,
+      author,
+      writerId: 'stopped',
+      state: 'abandoned',
+    });
+    expect(
+      await lifecycle.claimAbandonedSkillUploadIntent('tombstone-owned', 'worker-a', 60_000),
+    ).toBe(true);
+    expect(
+      await lifecycle.scheduleAbandonedSkillUploadIntentRecheck(
+        'tombstone-owned',
+        'worker-a',
+        3_600_000,
+      ),
+    ).toBe(true);
+    await lifecycle.releaseAbandonedSkillUploadIntentClaim('tombstone-owned', 'worker-a');
+    expect(await lifecycle.listAbandonedSkillUploadIntents()).toHaveLength(0);
+    await mongoose.models.SkillUploadIntent.updateOne(
+      { fileId: 'tombstone-owned' },
+      { $set: { nextCheckAt: new Date(Date.now() - 1) } },
+    );
+    expect(await lifecycle.listAbandonedSkillUploadIntents()).toHaveLength(1);
   });
 });

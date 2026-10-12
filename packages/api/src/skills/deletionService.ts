@@ -11,7 +11,7 @@ import { runSkillDeletion, SkillDeletionClaimLostError } from './deletion';
 import { getStorageMetadata } from '~/storage/metadata';
 
 type Persistence = Omit<SkillDeletionDeps, 'deleteBlob' | 'deleteReservedBlob'> & {
-  discoverUnjournaledDeletions: () => Promise<number>;
+  discoverUnjournaledDeletions: (limit: number) => Promise<number>;
   listSkillDeletionTombstones: (limit: number) => Promise<SkillDeletionRecord[]>;
   claimSkillDeletion: (id: string, owner: string, leaseMs: number) => Promise<boolean>;
   refreshSkillDeletionClaim: (id: string, owner: string, leaseMs: number) => Promise<boolean>;
@@ -119,6 +119,7 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
   async function deleteWithClaim(
     skillId: string,
     claimLeaseMs: number,
+    loadedConfig: AppConfig | undefined | null = null,
   ): Promise<SkillDeletionProgress> {
     const journal =
       (await deps.persistence.beginSkillDeletion(skillId)) ??
@@ -158,7 +159,7 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
     }, claimLeaseMs / 4);
     heartbeat.unref?.();
     try {
-      const config = await deps.loadConfig();
+      const config = loadedConfig === null ? await deps.loadConfig() : loadedConfig;
       const progress = await runSkillDeletion(
         skillId,
         {
@@ -211,7 +212,8 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
   }
 
   async function deleteSkillById(skillId: string) {
-    return deleteWithClaim(skillId, 120_000);
+    const config = await deps.loadConfig();
+    return deleteWithClaim(skillId, config?.skillDeletion?.claimLeaseMs ?? 120_000, config);
   }
 
   async function deleteSkillForLegacy(skillId: string) {
@@ -229,6 +231,14 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
   function startSkillDeletionSweep(options: Partial<SkillDeletionSweepOptions> = {}) {
     const { sweepIntervalMs = 60_000, claimLeaseMs = 120_000, batchSize = 100 } = options;
     let running = false;
+    async function scheduleIntentRecheck(fileId: string, owner: string) {
+      const config = await deps.loadConfig();
+      return deps.persistence.scheduleAbandonedSkillUploadIntentRecheck(
+        fileId,
+        owner,
+        config?.skillDeletion?.recheckIntervalMs ?? 3_600_000,
+      );
+    }
     async function sweepAbandonedIntents() {
       const intents = await deps.persistence.listAbandonedSkillUploadIntents(batchSize);
       for (const intent of intents) {
@@ -268,6 +278,11 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
           await assertClaim();
           if (await deps.persistence.getSkillDeletion(skillId)) {
             // Whole-Skill deletion owns intents for this Skill.
+            await assertClaim();
+            if (!(await scheduleIntentRecheck(fileId, owner))) {
+              lost = true;
+              throw new SkillDeletionClaimLostError();
+            }
             continue;
           }
           await assertClaim();
@@ -288,14 +303,7 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
           await assertClaim();
           await deps.persistence.markSkillUploadIntentCleaned(fileId);
           await assertClaim();
-          const config = await deps.loadConfig();
-          if (
-            !(await deps.persistence.scheduleAbandonedSkillUploadIntentRecheck(
-              fileId,
-              owner,
-              config?.skillDeletion?.recheckIntervalMs ?? 3_600_000,
-            ))
-          ) {
+          if (!(await scheduleIntentRecheck(fileId, owner))) {
             lost = true;
             throw new SkillDeletionClaimLostError();
           }
@@ -328,7 +336,7 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
       try {
         await deps.runAsSystem(async () => {
           try {
-            await deps.persistence.discoverUnjournaledDeletions();
+            await deps.persistence.discoverUnjournaledDeletions(batchSize);
             const tombstones = await deps.persistence.listSkillDeletionTombstones(batchSize);
             for (const tombstone of tombstones) {
               const skillId = tombstone.skillId;

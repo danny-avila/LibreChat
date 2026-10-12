@@ -8,6 +8,7 @@ import type {
 import type { ISkillFileDocument } from '~/types/skill';
 import type { ISkillDocument } from '~/types/skill';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import logger from '~/config/winston';
 
 type SkillRow = ISkillDocument & { _id: Types.ObjectId };
 const LEGACY_BACKFILL_BATCH_SIZE = 100;
@@ -28,7 +29,7 @@ export type StoppedSkillUploadRecovery =
 export interface SkillLifecycleMethods {
   beginSkillDeletion: (id: string) => Promise<ISkillDeletion | null>;
   getSkillDeletion: (id: string) => Promise<ISkillDeletion | null>;
-  discoverUnjournaledDeletions: () => Promise<number>;
+  discoverUnjournaledDeletions: (limit?: number) => Promise<number>;
   listPendingSkillDeletions: (limit?: number) => Promise<ISkillDeletion[]>;
   listSkillDeletionTombstones: (limit?: number) => Promise<ISkillDeletion[]>;
   noteSkillDeletionAttempt: (skillId: string | Types.ObjectId) => Promise<void>;
@@ -177,14 +178,26 @@ export function createSkillLifecycleMethods(
   }
 
   /** Repairs the mark/outbox crash gap without requiring a MongoDB transaction. */
-  async function discoverUnjournaledDeletions(): Promise<number> {
+  async function discoverUnjournaledDeletions(limit = 100): Promise<number> {
     let count = 0;
-    for await (const skill of skillModel()
+    const pending = await skillModel()
       .find({ deletionNeedsJournal: true })
+      .sort({ deletionJournalAttemptAt: 1, deletingAt: 1 })
+      .limit(limit)
       .select('_id')
-      .cursor()) {
-      await beginSkillDeletion(skill._id.toString());
-      count++;
+      .lean();
+    for (const skill of pending) {
+      await skillModel().updateOne(
+        { _id: skill._id, deletionNeedsJournal: true },
+        { $set: { deletionJournalAttemptAt: new Date() } },
+      );
+      try {
+        await beginSkillDeletion(skill._id.toString());
+        count++;
+      } catch {
+        // Keep the marker and rotate this Skill behind other pending backfills.
+        logger.warn(`[skill deletion] Journal backfill deferred for ${skill._id}`);
+      }
     }
     return count;
   }
@@ -249,7 +262,7 @@ export function createSkillLifecycleMethods(
       },
       { $set: { claimOwner: owner, claimExpiresAt: new Date(now.getTime() + leaseMs) } },
     );
-    return result.modifiedCount === 1;
+    return result.matchedCount === 1;
   }
 
   async function refreshSkillDeletionClaim(
@@ -261,7 +274,7 @@ export function createSkillLifecycleMethods(
       { skillId, claimOwner: owner, claimExpiresAt: { $gt: new Date() } },
       { $set: { claimExpiresAt: new Date(Date.now() + leaseMs) } },
     );
-    return result.modifiedCount === 1;
+    return result.matchedCount === 1;
   }
 
   async function releaseSkillDeletionClaim(
@@ -359,13 +372,7 @@ export function createSkillLifecycleMethods(
         state: 'abandoned',
         $and: [
           { $or: [{ claimExpiresAt: { $exists: false } }, { claimExpiresAt: { $lte: now } }] },
-          {
-            $or: [
-              { cleanedAt: { $exists: false } },
-              { nextCheckAt: { $exists: false } },
-              { nextCheckAt: { $lte: now } },
-            ],
-          },
+          { $or: [{ nextCheckAt: { $exists: false } }, { nextCheckAt: { $lte: now } }] },
         ],
       })
       .sort({ lastCleanupAttemptAt: 1, createdAt: 1 })
@@ -391,18 +398,12 @@ export function createSkillLifecycleMethods(
               { claimOwner: owner },
             ],
           },
-          {
-            $or: [
-              { cleanedAt: { $exists: false } },
-              { nextCheckAt: { $exists: false } },
-              { nextCheckAt: { $lte: now } },
-            ],
-          },
+          { $or: [{ nextCheckAt: { $exists: false } }, { nextCheckAt: { $lte: now } }] },
         ],
       },
       { $set: { claimOwner: owner, claimExpiresAt: new Date(now.getTime() + leaseMs) } },
     );
-    return result.modifiedCount === 1;
+    return result.matchedCount === 1;
   }
 
   async function refreshAbandonedSkillUploadIntentClaim(
@@ -414,7 +415,7 @@ export function createSkillLifecycleMethods(
       { fileId, state: 'abandoned', claimOwner: owner, claimExpiresAt: { $gt: new Date() } },
       { $set: { claimExpiresAt: new Date(Date.now() + leaseMs) } },
     );
-    return result.modifiedCount === 1;
+    return result.matchedCount === 1;
   }
 
   async function noteAbandonedSkillUploadIntentAttempt(fileId: string): Promise<void> {
@@ -449,7 +450,6 @@ export function createSkillLifecycleMethods(
       {
         fileId,
         state: 'abandoned',
-        cleanedAt: { $exists: true },
         claimOwner: owner,
         claimExpiresAt: { $gt: now },
       },
