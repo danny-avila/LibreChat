@@ -208,6 +208,7 @@ const {
   markCompactionOutcome,
   resolvePersistableCodeEnvironmentDecision,
   getChatProjectContextKey,
+  appendHistoricalToolImageContext,
 } = require('@librechat/api');
 const {
   Run,
@@ -241,6 +242,7 @@ const {
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { encodeAndFormat } = require('~/server/services/Files/images/encode');
+const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { createContextHandlers } = require('~/app/clients/prompts');
 const {
   getLinkedInstructionsResolver,
@@ -2800,6 +2802,25 @@ class AgentClient extends BaseClient {
      * (video tokens are reported by the provider) and only on the LLM payload, so
      * the memory copy and persisted message are untouched.
      */
+    promptTokenTotal += await appendHistoricalToolImageContext({
+      req: this.options.req,
+      messages: orderedMessages,
+      filesById: this.authorizedHistoricalFiles,
+      model: this.options.agent?.model_parameters?.model ?? this.options.agent?.model,
+      conversationId: this.conversationId,
+      agentId: this.options.agent?.id,
+      endpoint: this.options.agent?.endpoint ?? this.options.endpoint,
+      endpointType: this.options.endpointType,
+      currentFiles: sharedAttachmentFiles,
+      payload: formattedMessages,
+      indexTokenCountMap,
+      resendFiles: this.options.resendFiles,
+      deps: {
+        getStrategyFunctions,
+        countTokens: (content) => countFormattedMessageTokens({ role: 'user', content }, encoding),
+        admit: (files) => this.assertTurnAttachmentLimits(files, attachmentTelemetryFiles),
+      },
+    });
     const latestOrdered = orderedMessages[orderedMessages.length - 1];
     const provider = this.options.agent?.provider;
     if (

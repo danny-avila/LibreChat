@@ -1558,6 +1558,22 @@ export const agentsEndpointSchema = baseEndpointSchema
   .merge(
     z.object({
       /* agents specific */
+      /** Rebuild recent saved MCP image results as bounded provider context. */
+      historicalToolImages: z
+        .object({
+          enabled: z.boolean().default(false),
+          /** Exact vision-capable model IDs, including gateway aliases. No inference from names. */
+          models: z.array(z.string().min(1)).max(100).default([]),
+          recentTurns: z.number().int().min(1).max(10).default(1),
+          maxImages: z.number().int().min(1).max(10).default(3),
+          maxSourceBytes: z.number().int().min(1024).max(32_000_000).default(8_000_000),
+          maxTotalSourceBytes: z.number().int().min(1024).max(64_000_000).default(16_000_000),
+          maxSourcePixels: z.number().int().min(1).max(64_000_000).default(16_000_000),
+          previewMaxEdge: z.number().int().min(128).max(1568).default(1024),
+          maxPreviewBytes: z.number().int().min(1024).max(4_000_000).default(1_000_000),
+          maxTokens: z.number().int().min(1).max(16_384).default(4096),
+        })
+        .optional(),
       hostFileEdits: hostFileEditLimitsSchema.optional(),
       /** Maximum provider error characters retained in unprotected terminal failures. */
       maxProviderErrorChars: z

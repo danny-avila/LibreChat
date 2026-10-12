@@ -4,3 +4,4 @@ export * from './host';
 export * from './binding';
 export * from './encode';
 export * from './delivery';
+export * from './replay';
