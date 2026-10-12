@@ -1,17 +1,16 @@
 const mockLoggerError = jest.fn();
 const mockFindOnePluginAuth = jest.fn();
 const mockUpdatePluginAuth = jest.fn();
-const mockEncryptCredential = jest.fn();
-const mockDecryptCredential = jest.fn();
 
 jest.mock('@librechat/data-schemas', () => ({
+  ...jest.requireActual('@librechat/data-schemas'),
   logger: { error: mockLoggerError },
 }));
 
-jest.mock('@librechat/api', () => ({
-  encryptCredential: (...args) => mockEncryptCredential(...args),
-  decryptCredential: (...args) => mockDecryptCredential(...args),
-}));
+jest.mock('@librechat/api', () => {
+  const { encryptCredential, decryptCredential } = jest.requireActual('@librechat/api');
+  return { encryptCredential, decryptCredential };
+});
 
 jest.mock('~/models', () => ({
   findOnePluginAuth: (...args) => mockFindOnePluginAuth(...args),
@@ -48,31 +47,29 @@ describe('getUserPluginAuthValue', () => {
   });
 });
 
-describe('plugin auth encryption routing', () => {
+describe('plugin auth encryption', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  it('decrypts stored values through the version-aware helper', async () => {
-    mockFindOnePluginAuth.mockResolvedValue({ value: 'v3:abc:def' });
-    mockDecryptCredential.mockResolvedValue('plain');
-
-    await expect(getUserPluginAuthValue('user-id', 'API_KEY')).resolves.toBe('plain');
-    expect(mockDecryptCredential).toHaveBeenCalledWith('v3:abc:def');
-  });
-
-  it('stores values encrypted by the credential helper', async () => {
-    mockEncryptCredential.mockReturnValue('v3:iv:cipher');
-    mockUpdatePluginAuth.mockResolvedValue({ value: 'v3:iv:cipher' });
+  it('stores a random-IV v3 value that reads back as the plaintext', async () => {
+    mockUpdatePluginAuth.mockImplementation(async (doc) => doc);
 
     await updateUserPluginAuth('user-id', 'API_KEY', 'plugin', 'plain');
+    await updateUserPluginAuth('user-id', 'API_KEY', 'plugin', 'plain');
 
-    expect(mockEncryptCredential).toHaveBeenCalledWith('plain');
-    expect(mockUpdatePluginAuth).toHaveBeenCalledWith({
-      userId: 'user-id',
-      authField: 'API_KEY',
-      pluginKey: 'plugin',
-      value: 'v3:iv:cipher',
-    });
+    const [first, second] = mockUpdatePluginAuth.mock.calls.map(([doc]) => doc.value);
+    expect(first).toMatch(/^v3:[0-9a-f]{32}:[0-9a-f]+$/);
+    expect(second).not.toBe(first);
+
+    mockFindOnePluginAuth.mockResolvedValue({ value: first });
+    await expect(getUserPluginAuthValue('user-id', 'API_KEY')).resolves.toBe('plain');
+  });
+
+  it('reads a value stored in the legacy fixed-IV format', async () => {
+    const { encrypt } = jest.requireActual('@librechat/data-schemas');
+    mockFindOnePluginAuth.mockResolvedValue({ value: await encrypt('legacy-plain') });
+
+    await expect(getUserPluginAuthValue('user-id', 'API_KEY')).resolves.toBe('legacy-plain');
   });
 });
