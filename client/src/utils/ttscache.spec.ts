@@ -273,6 +273,59 @@ describe('cross-tab logout', () => {
     expect(Array.from(stored)).toEqual([]);
   });
 
+  it('drops audio a request started before this tab authenticated', async () => {
+    const put = jest.fn();
+    Object.defineProperty(globalThis, 'caches', {
+      value: { open: async () => ({ keys: async () => [], put }), delete: async () => true },
+      configurable: true,
+    });
+    const tab = openTab();
+    await tab.endTTSCacheSession();
+
+    const epoch = tab.getTTSCacheEpoch();
+    tab.openTTSCacheWrites();
+    await tab.putTTSCache('/tts-cache/stale', {} as Response, epoch);
+    expect(put).not.toHaveBeenCalled();
+  });
+
+  it('retries a failed logout delete before the next session reads the cache', async () => {
+    const del = jest.fn().mockRejectedValueOnce(new Error('busy')).mockResolvedValue(true);
+    const open = jest.fn(async () => ({ keys: async () => [] }));
+    Object.defineProperty(globalThis, 'caches', {
+      value: { open, delete: del },
+      configurable: true,
+    });
+    const tab = openTab();
+
+    await tab.endTTSCacheSession();
+    tab.openTTSCacheWrites();
+    await tab.openTTSCache();
+    expect(del).toHaveBeenCalledTimes(2);
+    expect(del.mock.invocationCallOrder[1]).toBeLessThan(open.mock.invocationCallOrder[0]);
+  });
+
+  it('carries a logout to other tabs through storage events without BroadcastChannel', async () => {
+    const put = jest.fn();
+    Object.defineProperty(globalThis, 'caches', {
+      value: { open: async () => ({ keys: async () => [], put }), delete: async () => true },
+      configurable: true,
+    });
+    const reading = openTab();
+    const leaving = openTab();
+    const epoch = reading.getTTSCacheEpoch();
+
+    await leaving.endTTSCacheSession();
+    window.dispatchEvent(
+      new StorageEvent('storage', {
+        key: 'tts-responses',
+        newValue: localStorage.getItem('tts-responses'),
+      }),
+    );
+    await reading.putTTSCache('/tts-cache/late', {} as Response, epoch);
+    await reading.putTTSCache('/tts-cache/next', {} as Response, reading.getTTSCacheEpoch());
+    expect(put).not.toHaveBeenCalled();
+  });
+
   it('keeps caching after a manual clear from settings', async () => {
     const put = jest.fn();
     Object.defineProperty(globalThis, 'caches', {
