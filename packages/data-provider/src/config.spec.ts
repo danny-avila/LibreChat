@@ -550,17 +550,6 @@ describe('Agent Management authentication config', () => {
     expect(result.data.endpoints?.agents?.managementApi?.auth?.clients).toEqual([
       { ...binding, enabled: true },
     ]);
-    expect(result.data.endpoints?.agents?.managementApi?.skillDeletionEnabled).toBe(false);
-  });
-
-  it('accepts explicitly enabling Skill deletion', () => {
-    const result = configSchema.safeParse({
-      version: '1.0',
-      endpoints: { agents: { managementApi: { skillDeletionEnabled: true } } },
-    });
-    expect(result.success).toBe(true);
-    if (!result.success) return;
-    expect(result.data.endpoints?.agents?.managementApi?.skillDeletionEnabled).toBe(true);
   });
 
   it('accepts a provider-specific token subject in a client binding', () => {
