@@ -159,6 +159,16 @@ async function mcpVarIsSet(request: APIRequestContext, token: string): Promise<b
   return body.authValueFlags?.[MCP_VAR] === true;
 }
 
+/**
+ * The MCP connection circuit breaker is keyed by server name, not user, so parallel projects
+ * reinitializing `e2e-user-vars` can trip its cooldown (15s by default). Retry past one cooldown.
+ */
+async function expectMcpConnects(request: APIRequestContext, token: string): Promise<void> {
+  await expect
+    .poll(() => reinitializeMcp(request, token), { timeout: 45000, intervals: [1000, 5000] })
+    .toBe(true);
+}
+
 async function reinitializeMcp(request: APIRequestContext, token: string): Promise<boolean> {
   const response = await request.post(`/api/mcp/${MCP_SERVER}/reinitialize`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -273,7 +283,7 @@ test.describe('stored credential encryption', () => {
   test('a saved MCP custom user variable is stored as v3 and reaches the server decrypted @scenario:mcp-user-var-save-stores-v3', async ({
     request,
   }) => {
-    test.setTimeout(90000);
+    test.setTimeout(120000);
     const user = newUser('mcp-save');
     try {
       const { token, userId } = await registerAndLogin(request, user);
@@ -288,7 +298,7 @@ test.describe('stored credential encryption', () => {
       expect(stored[0].value).not.toContain(MCP_TOKEN);
 
       expect(await mcpVarIsSet(request, token)).toBe(true);
-      expect(await reinitializeMcp(request, token)).toBe(true);
+      await expectMcpConnects(request, token);
     } finally {
       await cleanupCredentials(user);
     }
@@ -297,7 +307,7 @@ test.describe('stored credential encryption', () => {
   test('an MCP custom user variable stored in the legacy format still connects and is not rewritten @scenario:mcp-user-var-legacy-record-connects', async ({
     request,
   }) => {
-    test.setTimeout(90000);
+    test.setTimeout(120000);
     const user = newUser('mcp-legacy');
     try {
       const { token, userId } = await registerAndLogin(request, user);
@@ -305,7 +315,7 @@ test.describe('stored credential encryption', () => {
       await seedStoredAuth(userId, { authField: MCP_VAR, value, pluginKey: MCP_PLUGIN_KEY });
 
       expect(await mcpVarIsSet(request, token)).toBe(true);
-      expect(await reinitializeMcp(request, token)).toBe(true);
+      await expectMcpConnects(request, token);
 
       const stored = await readStoredAuths(userId, MCP_PLUGIN_KEY);
       expect(stored.map((doc) => doc.value)).toEqual([value]);
@@ -317,7 +327,7 @@ test.describe('stored credential encryption', () => {
   test('with the legacy write format configured, a saved credential is stored in the legacy format and still connects @scenario:credential-legacy-write-format-config', async ({
     request,
   }) => {
-    test.setTimeout(90000);
+    test.setTimeout(120000);
     const user = newUser('legacy-format');
     const adminToken = await loginAdmin(request);
     const adminHeaders = { Authorization: `Bearer ${adminToken}` };
@@ -355,7 +365,7 @@ test.describe('stored credential encryption', () => {
       expect(stored).toHaveLength(1);
       expect(stored[0].value).not.toContain(MCP_TOKEN);
       expect(await mcpVarIsSet(request, token)).toBe(true);
-      expect(await reinitializeMcp(request, token)).toBe(true);
+      await expectMcpConnects(request, token);
     } finally {
       if (userId) {
         const del = await request.delete(`/api/admin/config/user/${userId}`, {
