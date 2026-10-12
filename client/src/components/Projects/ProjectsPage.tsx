@@ -143,10 +143,16 @@ const ProjectsPage: React.FC = () => {
               )}
             </div>
 
-            <p className="-mt-3 mb-6 text-xs leading-relaxed text-text-secondary">
-              프로젝트에 담은 문서는 Harvey(하비) Vault로 보내 Harvey에서 이어서 검토할 수
-              있습니다.
-            </p>
+            <div className="-mt-3 mb-6 text-xs leading-relaxed text-text-secondary">
+              <p>
+                프로젝트에 담은 문서는 Harvey(하비) Vault로 보내 Harvey에서 이어서 검토할 수
+                있습니다.
+              </p>
+              <p className="mt-1 font-semibold text-blue-700 dark:text-blue-400">
+                ※ iManage와 자동 연동된 Vault는 선택하지 마세요. (자동 동기화되어 파일이
+                삭제됩니다.)
+              </p>
+            </div>
 
             {creating && (
               <div className="mb-5 flex items-center gap-2 rounded-xl border border-border-light bg-surface-primary p-3">
