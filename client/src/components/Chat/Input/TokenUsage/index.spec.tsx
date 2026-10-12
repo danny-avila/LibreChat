@@ -164,7 +164,7 @@ describe('TokenUsage gauge', () => {
     mockTokenUsage.mockReturnValue(usage(0));
     rerender(
       <Provider store={store}>
-        <TokenUsage index={0} conversation={conversation} isSubmitting={false} />
+        <TokenUsage index={0} conversation={{ ...conversation }} isSubmitting={false} />
       </Provider>,
     );
     expect(screen.getByTestId('token-usage-card')).toHaveClass('w-72');
