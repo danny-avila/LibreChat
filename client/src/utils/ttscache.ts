@@ -25,6 +25,7 @@ const getChannel = (): BroadcastChannel | null => {
   }
   channel?.addEventListener('message', (event: MessageEvent) => {
     sessionEpoch += 1;
+    legacyPurge = null;
     if (event.data === 'end') {
       writesOpen = false;
     }

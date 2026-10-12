@@ -251,6 +251,28 @@ describe('cross-tab logout', () => {
     expect(Array.from(stored)).toEqual([]);
   });
 
+  it('purges again after another tab clears the cache', async () => {
+    Object.assign(globalThis, { BroadcastChannel: FakeChannel });
+    const stored = new Set<string>();
+    const cache = {
+      keys: async () => Array.from(stored, (url) => ({ url })),
+      delete: async (request: { url: string }) => stored.delete(request.url),
+    };
+    Object.defineProperty(globalThis, 'caches', {
+      value: { open: async () => cache, delete: async () => true },
+      configurable: true,
+    });
+    const tab = openTab();
+    const other = openTab();
+    tab.getTTSCacheEpoch();
+
+    await tab.openTTSCache();
+    await other.endTTSCacheSession();
+    stored.add('https://chat.example/raw%20reply');
+    await tab.openTTSCache();
+    expect(Array.from(stored)).toEqual([]);
+  });
+
   it('keeps caching after a manual clear from settings', async () => {
     const put = jest.fn();
     Object.defineProperty(globalThis, 'caches', {
