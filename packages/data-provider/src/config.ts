@@ -1095,7 +1095,12 @@ const managementApiAuthSchema = z
     }
   });
 
-const managementApiSchema = z.object({ auth: managementApiAuthSchema.optional() }).strict();
+const managementApiSchema = z
+  .object({
+    auth: managementApiAuthSchema.optional(),
+    skillDeletionEnabled: z.boolean().default(false),
+  })
+  .strict();
 
 /**
  * Permission mode applied to a tool call. Mirrors `@librechat/agents`'s

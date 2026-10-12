@@ -30,6 +30,7 @@ let canManage: boolean;
 let authenticated: boolean;
 let saveFile: jest.MockedFunction<SkillManagementDeps['saveFile']>;
 let filters: FiltersConfig | undefined;
+let skillDeletionEnabled: boolean;
 let readSkill: jest.SpyInstance;
 let beforeList: jest.Mock;
 let uploadLimiter: jest.MockedFunction<RequestHandler>;
@@ -65,6 +66,7 @@ beforeEach(async () => {
   canManage = false;
   authenticated = true;
   filters = undefined;
+  skillDeletionEnabled = true;
   readSkill = jest.spyOn(db, 'getSkillById');
   const { skill } = await inTenant(() =>
     db.createSkill({
@@ -122,7 +124,10 @@ beforeEach(async () => {
   app.use(express.json());
   app.use((req, _res, next) => {
     if (authenticated) req.user = user;
-    (req as ServerRequest).config = { filters } as ServerRequest['config'];
+    (req as ServerRequest).config = {
+      filters,
+      endpoints: { agents: { managementApi: { skillDeletionEnabled } } },
+    } as ServerRequest['config'];
     tenantStorage.run({ tenantId }, next);
   });
   app.get('/skills', async (req, res) => {
@@ -202,6 +207,12 @@ it('deletes an inline Skill through the existing cleanup handler', async () => {
   expect(result.body).toEqual({ id: skillId, deleted: true, cleanupComplete: true });
   expect(await inTenant(() => db.getSkillById(skillId))).toBeNull();
   await request(app).delete(`/skills/${skillId}`).expect(404);
+});
+it('keeps whole-Skill deletion disabled until explicitly enabled', async () => {
+  skillDeletionEnabled = false;
+  const response = await request(app).delete(`/skills/${skillId}`).expect(404);
+  expect(response.body).toMatchObject({ error: { code: 'not_found' } });
+  expect(await inTenant(() => db.getSkillById(skillId))).not.toBeNull();
 });
 it('requires DELETE access and hides missing or cross-tenant Skills', async () => {
   allowDelete = false;
