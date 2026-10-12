@@ -77,7 +77,7 @@ export default function Usage({
       className="border-border-light rounded-theme-menu-panel min-w-0 border p-3"
     >
       <Collapsible open={expanded} onOpenChange={setExpanded}>
-        <h3>
+        <h3 aria-labelledby={headingId}>
           <CollapsibleTrigger
             disabled={usage == null}
             className="group flex w-full items-start justify-between gap-3 text-left"

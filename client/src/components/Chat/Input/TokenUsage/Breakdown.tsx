@@ -390,7 +390,10 @@ export default function Breakdown({
             outside the animation, and unmounting the content would drop it in a
             single 12px jump after the height reached zero. */}
         <CollapsibleContent className="data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down overflow-hidden motion-reduce:data-[state=closed]:animate-none motion-reduce:data-[state=open]:animate-none">
-          <div className="mt-3 grid min-w-0 grid-cols-1 items-start gap-3 @min-[38rem]:grid-cols-2">
+          <div
+            className="mt-3 grid min-w-0 grid-cols-1 items-start gap-3 @min-[38rem]:grid-cols-2"
+            data-testid="context-details"
+          >
             <div className="min-w-0 space-y-3">
               {(pressure !== 'none' || insights.length > 0) && (
                 <div className="relative flex items-center justify-between gap-2">
