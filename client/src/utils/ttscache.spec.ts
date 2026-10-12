@@ -19,7 +19,7 @@ describe('getTTSCacheKey', () => {
 
   it('never contains the message text and is a request path', async () => {
     const key = await getTTSCacheKey(text, 'alloy');
-    expect(key).toMatch(/^\/tts-cache\/[0-9a-f]{64}$/);
+    expect(key).toMatch(/^\/tts-cache\/v1\/[0-9a-f]{64}$/);
     expect(key).not.toContain('private');
   });
 
@@ -81,10 +81,11 @@ describe('openTTSCache and putTTSCache', () => {
   it('drops entries keyed by raw message text and keeps hashed ones', async () => {
     entries.set('https://chat.example/a%20private%20assistant%20reply', {} as Response);
     entries.set('https://chat.example/tts-cache/private%20reply', {} as Response);
-    entries.set(`https://chat.example/tts-cache/${'a'.repeat(64)}`, {} as Response);
+    entries.set(`https://chat.example/tts-cache/${'b'.repeat(64)}`, {} as Response);
+    entries.set(`https://chat.example/tts-cache/v1/${'a'.repeat(64)}`, {} as Response);
     await openTTSCache();
     expect(Array.from(entries.keys())).toEqual([
-      `https://chat.example/tts-cache/${'a'.repeat(64)}`,
+      `https://chat.example/tts-cache/v1/${'a'.repeat(64)}`,
     ]);
   });
 

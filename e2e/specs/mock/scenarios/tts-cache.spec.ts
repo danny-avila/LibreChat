@@ -86,7 +86,7 @@ test.describe('read-aloud audio cache', () => {
     await expect.poll(() => cacheKeys(page)).toHaveLength(1);
 
     const [key] = await cacheKeys(page);
-    expect(key).toMatch(/^\/tts-cache\/[0-9a-f]{64}$/);
+    expect(key).toMatch(/^\/tts-cache\/v1\/[0-9a-f]{64}$/);
     expect(key).not.toContain(encodeURIComponent(label));
     expect(key).not.toContain('E2E');
 

@@ -66,7 +66,7 @@ describe('StreamAudio cache', () => {
 
     await waitFor(() => expect(match).toHaveBeenCalled());
     const key = await getTTSCacheKey('The capital of Germany is Berlin.');
-    expect(key).toMatch(/^\/tts-cache\/[0-9a-f]{64}$/);
+    expect(key).toMatch(/^\/tts-cache\/v1\/[0-9a-f]{64}$/);
     expect(match).toHaveBeenCalledWith(key);
   });
 });

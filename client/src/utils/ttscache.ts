@@ -1,7 +1,8 @@
 export const TTS_CACHE_NAME = 'tts-responses';
 
-const TTS_CACHE_PATH = '/tts-cache/';
-const TTS_CACHE_KEY = /^\/tts-cache\/[0-9a-f]{64}$/;
+/** Versioned, so a raw-text key an earlier version wrote matches only by spelling out this path. */
+const TTS_CACHE_PATH = '/tts-cache/v1/';
+const TTS_CACHE_KEY = /^\/tts-cache\/v1\/[0-9a-f]{64}$/;
 
 /** Bumped when the cache is cleared or a session opens, so a write started before then cannot
  *  land in the cache that follows. */
