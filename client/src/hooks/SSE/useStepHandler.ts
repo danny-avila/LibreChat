@@ -8,6 +8,20 @@ import {
   ContentTypes,
   getToolTimingDurations,
 } from 'librechat-data-provider';
+import {
+  applyReasoningDelta,
+  applyToolCallCompleted,
+  isSkillAuthoringToolCall,
+  applyToolCallDelta,
+  applySummarizeDelta,
+  applyRunStepClosed,
+  applyToolCallsStep,
+  applyMessageDelta,
+  finalizeSummaries,
+  applyAgentUpdate,
+  applySummaryStep,
+  getEditPrefix,
+} from '@librechat/chat';
 import type {
   Agents,
   TMessage,
@@ -30,20 +44,6 @@ import {
   takeRegisteredSubagentProgressKeys,
   subagentProgressKey,
 } from '~/components/Chat/Subagents/state';
-import {
-  applyReasoningDelta,
-  applyToolCallCompleted,
-  isSkillAuthoringToolCall,
-  applyToolCallDelta,
-  applySummarizeDelta,
-  applyRunStepClosed,
-  applyToolCallsStep,
-  applyMessageDelta,
-  finalizeSummaries,
-  applyAgentUpdate,
-  applySummaryStep,
-  getEditPrefix,
-} from './steps';
 import {
   sandboxStartingByToolCallId,
   ptcTraceByToolCallId,

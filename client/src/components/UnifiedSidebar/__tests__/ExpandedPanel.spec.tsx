@@ -196,6 +196,34 @@ describe('ExpandedPanel', () => {
       expect(onClick).toHaveBeenCalledTimes(1);
       expect(onNavigate).toHaveBeenCalledTimes(1);
     });
+
+    it('marks only the current panel pressed and paints it with the navigation roles', () => {
+      renderPanel({ expanded: true });
+      const active = screen.getByRole('button', { name: 'com_ui_chat_history' });
+      const idle = screen.getByRole('button', { name: 'com_ui_prompts' });
+
+      expect(active).toHaveAttribute('aria-pressed', 'true');
+      expect(idle).toHaveAttribute('aria-pressed', 'false');
+      for (const button of [active, idle]) {
+        expect(button).toHaveClass(
+          'hover:bg-surface-nav-hover',
+          'aria-pressed:bg-surface-nav-selected',
+        );
+        expect(button).not.toHaveClass('bg-surface-active-alt');
+      }
+
+      fireEvent.click(idle);
+      expect(idle).toHaveAttribute('aria-pressed', 'true');
+      expect(active).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('hovers the sidebar toggle and new chat link in the navigation role', () => {
+      renderPanel({ expanded: true });
+
+      expect(screen.getByTestId('close-sidebar-button')).toHaveClass('hover:bg-surface-nav-hover');
+      expect(screen.getByTestId('new-chat-button')).toHaveClass('hover:bg-surface-nav-hover');
+      expect(screen.getByTestId('new-chat-button')).not.toHaveClass('hover:bg-surface-hover');
+    });
   });
 
   describe('NewChatButton panel switch', () => {

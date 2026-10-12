@@ -223,6 +223,7 @@ const Part = memo(function Part({
         if (isBashProgrammaticToolCall(toolCall.name, toolCall.args)) {
           return (
             <BashCall
+              stepId={toolCall.stepId}
               args={toolCall.args}
               output={toolCall.output ?? ''}
               initialProgress={toolCall.progress ?? 0.1}
@@ -245,6 +246,7 @@ const Part = memo(function Part({
         ) {
           return (
             <ExecuteCode
+              stepId={toolCall.stepId}
               attachments={attachments}
               isSubmitting={isSubmitting}
               runStepStatus={toolCall.runStepStatus}
@@ -267,6 +269,7 @@ const Part = memo(function Part({
           if (isFailedImageCall(toolCall.output, toolCall.runStepStatus)) {
             return (
               <ToolCall
+                stepId={toolCall.stepId}
                 name={toolCall.name}
                 args={toolCall.args ?? ''}
                 output={toolCall.output}
@@ -389,6 +392,8 @@ const Part = memo(function Part({
         } else if (toolCall.name === 'read_file') {
           return (
             <ReadFileCall
+              toolCallId={toolCallId}
+              stepId={toolCall.stepId}
               args={toolCall.args}
               output={toolCall.output ?? ''}
               initialProgress={toolCall.progress ?? 0.1}
@@ -418,6 +423,7 @@ const Part = memo(function Part({
         } else if (toolCall.name === Tools.bash_tool) {
           return (
             <BashCall
+              stepId={toolCall.stepId}
               args={toolCall.args}
               output={toolCall.output ?? ''}
               initialProgress={toolCall.progress ?? 0.1}
@@ -465,6 +471,7 @@ const Part = memo(function Part({
         }
         return (
           <ToolCall
+            stepId={toolCall.stepId}
             args={toolCall.args ?? ''}
             name={toolCall.name || ''}
             toolCallId={toolCallId}

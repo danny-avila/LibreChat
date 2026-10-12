@@ -128,7 +128,7 @@ const sparse = (length: number, slots: Record<number, TMessageContentParts>) => 
 
 /**
  * Content arrays recorded from the stream reducers in
- * `client/src/hooks/SSE/__tests__/steps.spec.ts` (text, tool calls, reasoning, handoff, summary,
+ * `packages/chat/src/core/__tests__/steps.spec.ts` (text, tool calls, reasoning, handoff, summary,
  * image scenarios), captured by running those reducers. Holes are where a later step arrived
  * before an earlier one.
  */
