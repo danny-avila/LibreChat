@@ -22,6 +22,7 @@ import {
   filterExistingSkillIds,
   deriveStructuredFrontmatterFields,
 } from './skill';
+import { createSkillLifecycleMethods } from './skillLifecycle';
 import { createAclEntryMethods } from './aclEntry';
 import { createMethods } from './index';
 
@@ -2456,6 +2457,9 @@ describe('deleteUserSkills', () => {
     expect(await Skill.countDocuments()).toBe(2);
     expect(await Skill.countDocuments({ deletingAt: { $exists: true } })).toBe(1);
     expect(await Skill.countDocuments({ _id: sharedId })).toBe(1);
+    expect(await mongoose.models.SkillDeletion.countDocuments({ skillId: mine._id })).toBe(0);
+    await createSkillLifecycleMethods(mongoose).discoverUnjournaledDeletions();
+    expect(await mongoose.models.SkillDeletion.countDocuments({ skillId: mine._id })).toBe(1);
   });
 
   it('defers allowlist pruning until storage-aware deletion finishes', async () => {

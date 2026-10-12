@@ -14,7 +14,8 @@
     "create-user": "node ./create-user.js",
     "invite-user": "node ./invite-user.js",
     "ban-user": "node ./ban-user.js",
-    "delete-user": "node ./delete-user.js"
+    "delete-user": "node ./delete-user.js",
+    "recover-skill-upload": "node ./recover-skill-upload.js"
   },
   "repository": {
     "type": "git",

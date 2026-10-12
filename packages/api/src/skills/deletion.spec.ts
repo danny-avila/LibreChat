@@ -69,6 +69,32 @@ it('keeps the file row when provider deletion fails and succeeds on retry', asyn
   expect(h.deps.completeSkillDeletion).toHaveBeenCalledTimes(1);
 });
 
+it('preserves idempotent absence and per-call deletion semantics', async () => {
+  const h = harness();
+  (h.deps.beginSkillDeletion as jest.Mock).mockResolvedValueOnce(null);
+  (h.deps.getSkillDeletion as jest.Mock).mockResolvedValueOnce(null);
+  await expect(runSkillDeletion(skillId.toString(), h.deps)).resolves.toMatchObject({
+    found: false,
+    deleted: false,
+    skillAbsent: true,
+    cleanupComplete: true,
+  });
+
+  h.files.length = 0;
+  (h.deps.finalizeSkillDeletion as jest.Mock).mockResolvedValueOnce({
+    deleted: false,
+    skillAbsent: true,
+    cleanupComplete: true,
+    failedCleanupSteps: [],
+  });
+  await expect(runSkillDeletion(skillId.toString(), h.deps)).resolves.toMatchObject({
+    found: true,
+    deleted: false,
+    skillAbsent: true,
+    cleanupComplete: true,
+  });
+});
+
 it.each(['uploading', 'committing'] as const)(
   'leaves an in-flight %s writer pending without deleting its blob',
   async (state) => {

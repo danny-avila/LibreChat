@@ -27,6 +27,9 @@ export interface ISkillUploadIntent {
   writerId: string;
   state: 'uploading' | 'committing' | 'committed' | 'abandoned';
   cleanedAt?: Date;
+  lastCleanupAttemptAt?: Date;
+  claimOwner?: string;
+  claimExpiresAt?: Date;
   createdAt?: Date;
   updatedAt?: Date;
 }

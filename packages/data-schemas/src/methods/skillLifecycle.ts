@@ -19,6 +19,10 @@ type IntentInput = {
   writerId: string;
 };
 
+export type StoppedSkillUploadRecovery =
+  | { status: 'missing' | 'changed' }
+  | { status: 'recovered'; state: 'committed' | 'abandoned' };
+
 export interface SkillLifecycleMethods {
   beginSkillDeletion: (id: string) => Promise<ISkillDeletion | null>;
   getSkillDeletion: (id: string) => Promise<ISkillDeletion | null>;
@@ -47,6 +51,25 @@ export interface SkillLifecycleMethods {
     to: ISkillUploadIntent['state'],
   ) => Promise<boolean>;
   listSkillUploadIntents: (skillId: string | Types.ObjectId) => Promise<ISkillUploadIntent[]>;
+  getSkillUploadIntent: (fileId: string) => Promise<ISkillUploadIntent | null>;
+  recoverStoppedSkillUploadIntent: (
+    fileId: string,
+    expectedWriterId: string,
+  ) => Promise<StoppedSkillUploadRecovery>;
+  listAbandonedSkillUploadIntents: (limit?: number) => Promise<ISkillUploadIntent[]>;
+  claimAbandonedSkillUploadIntent: (
+    fileId: string,
+    owner: string,
+    leaseMs: number,
+  ) => Promise<boolean>;
+  refreshAbandonedSkillUploadIntentClaim: (
+    fileId: string,
+    owner: string,
+    leaseMs: number,
+  ) => Promise<boolean>;
+  noteAbandonedSkillUploadIntentAttempt: (fileId: string) => Promise<void>;
+  releaseAbandonedSkillUploadIntentClaim: (fileId: string, owner: string) => Promise<void>;
+  skillFileExistsForIntent: (skillId: string, fileId: string) => Promise<boolean>;
   markSkillUploadIntentCleaned: (fileId: string) => Promise<void>;
   preserveExistingSkillBlob: (input: {
     skillId: string;
@@ -139,7 +162,9 @@ export function createSkillLifecycleMethods(
 
   async function listSkillDeletionTombstones(limit = 100): Promise<ISkillDeletion[]> {
     return (await deletionModel()
-      .find({})
+      .find({
+        $or: [{ claimExpiresAt: { $exists: false } }, { claimExpiresAt: { $lte: new Date() } }],
+      })
       .sort({ lastAttemptAt: 1, startedAt: 1 })
       .limit(limit)
       .lean()) as ISkillDeletion[];
@@ -229,6 +254,94 @@ export function createSkillLifecycleMethods(
     return (await intentModel().find({ skillId }).lean()) as ISkillUploadIntent[];
   }
 
+  async function getSkillUploadIntent(fileId: string): Promise<ISkillUploadIntent | null> {
+    return (await intentModel().findOne({ fileId }).lean()) as ISkillUploadIntent | null;
+  }
+
+  /** Operator-only recovery: call only after independently confirming the writer has stopped. */
+  async function recoverStoppedSkillUploadIntent(
+    fileId: string,
+    expectedWriterId: string,
+  ): Promise<StoppedSkillUploadRecovery> {
+    const intent = await getSkillUploadIntent(fileId);
+    if (!intent) return { status: 'missing' };
+    if (
+      intent.writerId !== expectedWriterId ||
+      (intent.state !== 'uploading' && intent.state !== 'committing')
+    ) {
+      return { status: 'changed' };
+    }
+    const rowExists = await skillFileExistsForIntent(intent.skillId.toString(), fileId);
+    const state = rowExists ? 'committed' : 'abandoned';
+    const result = await intentModel().updateOne(
+      { fileId, writerId: expectedWriterId, state: intent.state },
+      { $set: { state } },
+    );
+    return result.modifiedCount === 1 ? { status: 'recovered', state } : { status: 'changed' };
+  }
+
+  async function listAbandonedSkillUploadIntents(limit = 100): Promise<ISkillUploadIntent[]> {
+    return (await intentModel()
+      .find({
+        state: 'abandoned',
+        $or: [{ claimExpiresAt: { $exists: false } }, { claimExpiresAt: { $lte: new Date() } }],
+      })
+      .sort({ lastCleanupAttemptAt: 1, createdAt: 1 })
+      .limit(limit)
+      .lean()) as ISkillUploadIntent[];
+  }
+
+  async function claimAbandonedSkillUploadIntent(
+    fileId: string,
+    owner: string,
+    leaseMs: number,
+  ): Promise<boolean> {
+    const now = new Date();
+    const result = await intentModel().updateOne(
+      {
+        fileId,
+        state: 'abandoned',
+        $or: [
+          { claimExpiresAt: { $exists: false } },
+          { claimExpiresAt: { $lte: now } },
+          { claimOwner: owner },
+        ],
+      },
+      { $set: { claimOwner: owner, claimExpiresAt: new Date(now.getTime() + leaseMs) } },
+    );
+    return result.modifiedCount === 1;
+  }
+
+  async function refreshAbandonedSkillUploadIntentClaim(
+    fileId: string,
+    owner: string,
+    leaseMs: number,
+  ): Promise<boolean> {
+    const result = await intentModel().updateOne(
+      { fileId, state: 'abandoned', claimOwner: owner, claimExpiresAt: { $gt: new Date() } },
+      { $set: { claimExpiresAt: new Date(Date.now() + leaseMs) } },
+    );
+    return result.modifiedCount === 1;
+  }
+
+  async function noteAbandonedSkillUploadIntentAttempt(fileId: string): Promise<void> {
+    await intentModel().updateOne({ fileId }, { $set: { lastCleanupAttemptAt: new Date() } });
+  }
+
+  async function releaseAbandonedSkillUploadIntentClaim(
+    fileId: string,
+    owner: string,
+  ): Promise<void> {
+    await intentModel().updateOne(
+      { fileId, claimOwner: owner },
+      { $unset: { claimOwner: '', claimExpiresAt: '' } },
+    );
+  }
+
+  async function skillFileExistsForIntent(skillId: string, fileId: string): Promise<boolean> {
+    return Boolean(await skillFileModel().exists({ skillId, file_id: fileId }));
+  }
+
   async function markSkillUploadIntentCleaned(fileId: string): Promise<void> {
     await intentModel().updateOne({ fileId }, { $set: { cleanedAt: new Date() } });
   }
@@ -275,6 +388,14 @@ export function createSkillLifecycleMethods(
     reserveSkillUploadIntent,
     transitionSkillUploadIntent,
     listSkillUploadIntents,
+    getSkillUploadIntent,
+    recoverStoppedSkillUploadIntent,
+    listAbandonedSkillUploadIntents,
+    claimAbandonedSkillUploadIntent,
+    refreshAbandonedSkillUploadIntentClaim,
+    noteAbandonedSkillUploadIntentAttempt,
+    releaseAbandonedSkillUploadIntentClaim,
+    skillFileExistsForIntent,
     markSkillUploadIntentCleaned,
     preserveExistingSkillBlob,
   };

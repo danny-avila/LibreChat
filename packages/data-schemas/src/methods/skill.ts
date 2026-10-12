@@ -1827,14 +1827,14 @@ export function createSkillMethods(
     if (soleOwned.length === 0) {
       return 0;
     }
-    const lifecycle = createSkillLifecycleMethods(mongoose);
-    let marked = 0;
-    for (const id of soleOwned) {
-      if (await lifecycle.beginSkillDeletion(id.toString())) marked++;
-    }
-    // The storage-aware reconciler drains blobs, rows, ACLs, and allowlists.
-    // In particular, user deletion must never discard the last blob manifest.
-    return marked;
+    // Mark independently owned Skills in one write; the reconciler repairs the
+    // mark-to-journal gap and backfills file references outside this request.
+    const Skill = mongoose.models.Skill as Model<ISkillDocument>;
+    const result = await Skill.updateMany(
+      { _id: { $in: soleOwned }, deletingAt: { $exists: false } },
+      { $set: { deletingAt: new Date() } },
+    );
+    return result.modifiedCount;
   }
 
   async function findSkillBySourceIdentity(params: {

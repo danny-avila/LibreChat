@@ -12,6 +12,29 @@ type Persistence = Omit<SkillDeletionDeps, 'deleteBlob' | 'deleteReservedBlob'> 
   refreshSkillDeletionClaim: (id: string, owner: string, leaseMs: number) => Promise<boolean>;
   noteSkillDeletionAttempt: (id: string) => Promise<void>;
   releaseSkillDeletionClaim: (id: string, owner: string) => Promise<void>;
+  listAbandonedSkillUploadIntents: (limit: number) => Promise<
+    Array<{
+      skillId: { toString(): string };
+      fileId: string;
+      source: string;
+      storageKey: string;
+      author: { toString(): string };
+      tenantId?: string;
+    }>
+  >;
+  claimAbandonedSkillUploadIntent: (
+    fileId: string,
+    owner: string,
+    leaseMs: number,
+  ) => Promise<boolean>;
+  refreshAbandonedSkillUploadIntentClaim: (
+    fileId: string,
+    owner: string,
+    leaseMs: number,
+  ) => Promise<boolean>;
+  noteAbandonedSkillUploadIntentAttempt: (fileId: string) => Promise<void>;
+  releaseAbandonedSkillUploadIntentClaim: (fileId: string, owner: string) => Promise<void>;
+  skillFileExistsForIntent: (skillId: string, fileId: string) => Promise<boolean>;
 };
 
 interface SkillDeletionServiceDeps {
@@ -25,6 +48,7 @@ interface SkillDeletionServiceDeps {
 export interface SkillDeletionSweepOptions {
   sweepIntervalMs: number;
   claimLeaseMs: number;
+  batchSize: number;
 }
 
 export interface SkillDeletionService {
@@ -87,9 +111,9 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
   async function deleteSkillForLegacy(skillId: string) {
     const progress = await deleteSkillById(skillId);
     return {
-      deleted: progress.found && progress.cleanupComplete,
-      skillAbsent: progress.found && progress.cleanupComplete,
-      cleanupComplete: progress.found && progress.cleanupComplete,
+      deleted: progress.deleted,
+      skillAbsent: progress.skillAbsent,
+      cleanupComplete: progress.cleanupComplete,
       failedCleanupSteps: progress.failedSteps,
       blobCleanupManaged: true,
     };
@@ -97,57 +121,119 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
 
   /** Completed tombstones remain eligible: a delayed writer may still surface after a clean pass. */
   function startSkillDeletionSweep(options: Partial<SkillDeletionSweepOptions> = {}) {
-    const { sweepIntervalMs = 60_000, claimLeaseMs = 120_000 } = options;
+    const { sweepIntervalMs = 60_000, claimLeaseMs = 120_000, batchSize = 100 } = options;
     const owner = randomUUID();
     let running = false;
+    async function sweepAbandonedIntents() {
+      const intents = await deps.persistence.listAbandonedSkillUploadIntents(batchSize);
+      for (const intent of intents) {
+        const { fileId } = intent;
+        if (
+          !(await deps.persistence.claimAbandonedSkillUploadIntent(fileId, owner, claimLeaseMs))
+        ) {
+          continue;
+        }
+        const heartbeat = setInterval(() => {
+          deps.persistence
+            .refreshAbandonedSkillUploadIntentClaim(fileId, owner, claimLeaseMs)
+            .catch((error) =>
+              deps.logger.error('[skill upload intent] Claim heartbeat failed:', error),
+            );
+        }, claimLeaseMs / 4);
+        heartbeat.unref?.();
+        try {
+          const skillId = intent.skillId.toString();
+          if (await deps.persistence.getSkillDeletion(skillId)) {
+            // Whole-Skill deletion owns intents for this Skill.
+            continue;
+          }
+          if (await deps.persistence.skillFileExistsForIntent(skillId, fileId)) {
+            deps.logger.warn(
+              `[skill upload intent] ${fileId} still has a file row; retaining blob`,
+            );
+            continue;
+          }
+          await deleteStoredBlob({
+            filepath: intent.storageKey,
+            source: intent.source,
+            ...getStorageMetadata({ filepath: intent.storageKey, source: intent.source }),
+            author: intent.author,
+            tenantId: intent.tenantId,
+          });
+          await deps.persistence.markSkillUploadIntentCleaned(fileId);
+        } catch (error) {
+          deps.logger.error(`[skill upload intent] Cleanup failed for ${fileId}:`, error);
+        } finally {
+          clearInterval(heartbeat);
+          try {
+            await deps.persistence.noteAbandonedSkillUploadIntentAttempt(fileId);
+          } catch (error) {
+            deps.logger.error(
+              `[skill upload intent] Attempt timestamp failed for ${fileId}:`,
+              error,
+            );
+          }
+          try {
+            await deps.persistence.releaseAbandonedSkillUploadIntentClaim(fileId, owner);
+          } catch (error) {
+            deps.logger.error(`[skill upload intent] Claim release failed for ${fileId}:`, error);
+          }
+        }
+      }
+    }
     async function tick() {
       if (running) return;
       running = true;
       try {
         await deps.runAsSystem(async () => {
-          await deps.persistence.discoverUnjournaledDeletions();
-          const tombstones = await deps.persistence.listSkillDeletionTombstones(100);
-          for (const tombstone of tombstones) {
-            const skillId = tombstone.skillId.toString();
-            if (!(await deps.persistence.claimSkillDeletion(skillId, owner, claimLeaseMs))) {
-              continue;
-            }
-            const heartbeat = setInterval(() => {
-              deps.persistence
-                .refreshSkillDeletionClaim(skillId, owner, claimLeaseMs)
-                .catch((error) =>
-                  deps.logger.error('[skill deletion] Claim heartbeat failed:', error),
-                );
-            }, claimLeaseMs / 4);
-            heartbeat.unref?.();
-            try {
-              const progress = await deleteSkillById(skillId);
-              if (!progress.cleanupComplete) {
-                // A live upload is never timed out automatically. Operators must verify
-                // its writer is dead before explicitly abandoning the intent.
-                deps.logger.warn(
-                  `[skill deletion] ${skillId} pending manual/retry cleanup: ${progress.failedSteps.join(', ')}`,
-                );
+          try {
+            await deps.persistence.discoverUnjournaledDeletions();
+            const tombstones = await deps.persistence.listSkillDeletionTombstones(batchSize);
+            for (const tombstone of tombstones) {
+              const skillId = tombstone.skillId.toString();
+              if (!(await deps.persistence.claimSkillDeletion(skillId, owner, claimLeaseMs))) {
+                continue;
               }
-            } catch (error) {
-              deps.logger.error(`[skill deletion] Cleanup failed for ${skillId}:`, error);
-            } finally {
-              clearInterval(heartbeat);
+              const heartbeat = setInterval(() => {
+                deps.persistence
+                  .refreshSkillDeletionClaim(skillId, owner, claimLeaseMs)
+                  .catch((error) =>
+                    deps.logger.error('[skill deletion] Claim heartbeat failed:', error),
+                  );
+              }, claimLeaseMs / 4);
+              heartbeat.unref?.();
               try {
-                // Rotate failed records too, so poison rows cannot starve the bounded queue.
-                await deps.persistence.noteSkillDeletionAttempt(skillId);
+                const progress = await deleteSkillById(skillId);
+                if (!progress.cleanupComplete) {
+                  // A live upload is never timed out automatically. Operators must verify
+                  // its writer is dead before explicitly abandoning the intent.
+                  deps.logger.warn(
+                    `[skill deletion] ${skillId} pending manual/retry cleanup: ${progress.failedSteps.join(', ')}`,
+                  );
+                }
               } catch (error) {
-                deps.logger.error(
-                  `[skill deletion] Attempt timestamp failed for ${skillId}:`,
-                  error,
-                );
-              }
-              try {
-                await deps.persistence.releaseSkillDeletionClaim(skillId, owner);
-              } catch (error) {
-                deps.logger.error(`[skill deletion] Claim release failed for ${skillId}:`, error);
+                deps.logger.error(`[skill deletion] Cleanup failed for ${skillId}:`, error);
+              } finally {
+                clearInterval(heartbeat);
+                try {
+                  // Rotate failed records too, so poison rows cannot starve the bounded queue.
+                  await deps.persistence.noteSkillDeletionAttempt(skillId);
+                } catch (error) {
+                  deps.logger.error(
+                    `[skill deletion] Attempt timestamp failed for ${skillId}:`,
+                    error,
+                  );
+                }
+                try {
+                  await deps.persistence.releaseSkillDeletionClaim(skillId, owner);
+                } catch (error) {
+                  deps.logger.error(`[skill deletion] Claim release failed for ${skillId}:`, error);
+                }
               }
             }
+          } finally {
+            // Active Skills can own abandoned upload intents with no deletion tombstone.
+            await sweepAbandonedIntents();
           }
         });
       } catch (error) {

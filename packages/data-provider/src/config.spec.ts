@@ -74,11 +74,12 @@ describe('skill deletion worker config', () => {
     expect(configSchema.parse({ version: '1.0' }).skillDeletion).toEqual({
       sweepIntervalMs: 60_000,
       claimLeaseMs: 120_000,
+      batchSize: 100,
     });
     expect(
       configSchema.parse({ version: '1.0', skillDeletion: { claimLeaseMs: 180_000 } })
         .skillDeletion,
-    ).toEqual({ sweepIntervalMs: 60_000, claimLeaseMs: 180_000 });
+    ).toEqual({ sweepIntervalMs: 60_000, claimLeaseMs: 180_000, batchSize: 100 });
   });
 
   it('rejects invalid sweep timing', () => {

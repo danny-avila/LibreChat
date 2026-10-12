@@ -182,8 +182,76 @@ describe('Skill upload intents', () => {
     const { skill } = await makeSkill();
     await lifecycle.beginSkillDeletion(skill.id);
     expect(await lifecycle.claimSkillDeletion(skill._id, 'worker-a', 60_000)).toBe(true);
+    expect(await lifecycle.listSkillDeletionTombstones()).toHaveLength(0);
     expect(await lifecycle.claimSkillDeletion(skill._id, 'worker-b', 60_000)).toBe(false);
     await lifecycle.releaseSkillDeletionClaim(skill._id, 'worker-a');
     expect(await lifecycle.claimSkillDeletion(skill._id, 'worker-b', 60_000)).toBe(true);
+  });
+
+  it('recovers a verified-stopped writer without deleting a persisted file', async () => {
+    const { skill, author } = await makeSkill();
+    await lifecycle.reserveSkillUploadIntent({
+      skillId: skill.id,
+      fileId: 'orphan-file',
+      source: 'local',
+      storageKey: `/uploads/${author}/orphan-file`,
+      author: author.toString(),
+      writerId: 'stopped-writer',
+    });
+    expect(await lifecycle.recoverStoppedSkillUploadIntent('orphan-file', 'wrong-writer')).toEqual({
+      status: 'changed',
+    });
+    expect(
+      await lifecycle.recoverStoppedSkillUploadIntent('orphan-file', 'stopped-writer'),
+    ).toEqual({
+      status: 'recovered',
+      state: 'abandoned',
+    });
+    expect((await lifecycle.getSkillUploadIntent('orphan-file'))?.state).toBe('abandoned');
+
+    await lifecycle.reserveSkillUploadIntent({
+      skillId: skill.id,
+      fileId: 'persisted-file',
+      source: 'local',
+      storageKey: `/uploads/${author}/persisted-file`,
+      author: author.toString(),
+      writerId: 'stopped-writer',
+    });
+    await lifecycle.transitionSkillUploadIntent(
+      'persisted-file',
+      'stopped-writer',
+      'uploading',
+      'committing',
+    );
+    await mongoose.models.SkillFile.create({
+      skillId: skill._id,
+      file_id: 'persisted-file',
+      relativePath: 'references/persisted.md',
+      filename: 'persisted.md',
+      filepath: `/uploads/${author}/persisted-file`,
+      source: 'local',
+      mimeType: 'text/markdown',
+      bytes: 4,
+      author,
+    });
+    expect(
+      await lifecycle.recoverStoppedSkillUploadIntent('persisted-file', 'stopped-writer'),
+    ).toEqual({
+      status: 'recovered',
+      state: 'committed',
+    });
+    expect(await lifecycle.listAbandonedSkillUploadIntents()).toHaveLength(1);
+    expect(await lifecycle.claimAbandonedSkillUploadIntent('orphan-file', 'worker-a', 60_000)).toBe(
+      true,
+    );
+    expect(await lifecycle.listAbandonedSkillUploadIntents()).toHaveLength(0);
+    expect(await lifecycle.claimAbandonedSkillUploadIntent('orphan-file', 'worker-b', 60_000)).toBe(
+      false,
+    );
+    await lifecycle.noteAbandonedSkillUploadIntentAttempt('orphan-file');
+    await lifecycle.releaseAbandonedSkillUploadIntentClaim('orphan-file', 'worker-a');
+    expect(
+      (await lifecycle.getSkillUploadIntent('orphan-file'))?.lastCleanupAttemptAt,
+    ).toBeInstanceOf(Date);
   });
 });

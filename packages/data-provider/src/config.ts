@@ -3961,9 +3961,10 @@ export const configSchema = z.object({
     .object({
       sweepIntervalMs: z.number().int().min(1_000).default(60_000),
       claimLeaseMs: z.number().int().min(1_000).default(120_000),
+      batchSize: z.number().int().min(1).max(1_000).default(100),
     })
     .strict()
-    .default(() => ({ sweepIntervalMs: 60_000, claimLeaseMs: 120_000 })),
+    .default(() => ({ sweepIntervalMs: 60_000, claimLeaseMs: 120_000, batchSize: 100 })),
   secureImageLinks: z.boolean().optional(),
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
   conversationList: conversationListConfigSchema.default(() =>

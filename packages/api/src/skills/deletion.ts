@@ -24,6 +24,8 @@ export interface SkillDeletionDeps {
 
 export type SkillDeletionProgress = {
   found: boolean;
+  deleted: boolean;
+  skillAbsent: boolean;
   cleanupComplete: boolean;
   failedSteps: DeleteSkillCleanupStep[];
 };
@@ -37,15 +39,29 @@ export async function runSkillDeletion(
   deps: SkillDeletionDeps,
 ): Promise<SkillDeletionProgress> {
   const journal = (await deps.beginSkillDeletion(id)) ?? (await deps.getSkillDeletion(id));
-  if (!journal) return { found: false, cleanupComplete: false, failedSteps: [] };
+  if (!journal) {
+    return {
+      found: false,
+      deleted: false,
+      skillAbsent: true,
+      cleanupComplete: true,
+      failedSteps: [],
+    };
+  }
   await deps.reopenSkillDeletion(journal.skillId.toString());
   const failedSteps: DeleteSkillCleanupStep[] = [];
   const intents = await deps.listSkillUploadIntents(journal.skillId.toString());
   // A writer may still finish uploading or committing after this scan. An
-  // operator can explicitly abandon an intent after verifying its writer died;
-  // a timer alone must not infer that a slow upload is dead.
+  // operator can inspect and recover an intent with `recover-skill-upload`
+  // after draining writers; a timer must not infer that a slow upload is dead.
   if (intents.some((intent) => intent.state === 'uploading' || intent.state === 'committing')) {
-    return { found: true, cleanupComplete: false, failedSteps: ['upload_intents'] };
+    return {
+      found: true,
+      deleted: false,
+      skillAbsent: journal.completedAt != null,
+      cleanupComplete: false,
+      failedSteps: ['upload_intents'],
+    };
   }
   const files = await deps.listSkillFiles(id);
   const currentFileIds = new Set(files.map((file) => file.file_id));
@@ -87,16 +103,30 @@ export async function runSkillDeletion(
   }
 
   if (failedSteps.length > 0) {
-    return { found: true, cleanupComplete: false, failedSteps };
+    return {
+      found: true,
+      deleted: false,
+      skillAbsent: journal.completedAt != null,
+      cleanupComplete: false,
+      failedSteps,
+    };
   }
   const finalized = await deps.finalizeSkillDeletion(id);
   if (!finalized.cleanupComplete) {
     return {
       found: true,
+      deleted: finalized.deleted,
+      skillAbsent: finalized.skillAbsent,
       cleanupComplete: false,
       failedSteps: finalized.failedCleanupSteps,
     };
   }
   await deps.completeSkillDeletion(journal.skillId.toString());
-  return { found: true, cleanupComplete: true, failedSteps: [] };
+  return {
+    found: true,
+    deleted: finalized.deleted,
+    skillAbsent: finalized.skillAbsent,
+    cleanupComplete: true,
+    failedSteps: [],
+  };
 }

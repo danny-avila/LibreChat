@@ -17,10 +17,14 @@ const skillUploadIntentSchema: Schema<ISkillUploadIntentDocument> =
         required: true,
       },
       cleanedAt: Date,
+      lastCleanupAttemptAt: Date,
+      claimOwner: String,
+      claimExpiresAt: Date,
     },
     { timestamps: true },
   );
 
 skillUploadIntentSchema.index({ skillId: 1, state: 1 });
+skillUploadIntentSchema.index({ state: 1, lastCleanupAttemptAt: 1, createdAt: 1 });
 
 export default skillUploadIntentSchema;
