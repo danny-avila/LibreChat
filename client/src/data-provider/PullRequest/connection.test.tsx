@@ -7,6 +7,7 @@ import {
   syncPullRequestConnection,
   resetPullRequestCredentials,
   usePullRequestConnectionQuery,
+  usePullRequestConnectionStatus,
   useDisconnectPullRequestAccountMutation,
 } from './connection';
 
@@ -109,6 +110,22 @@ describe('pull request connection hooks', () => {
       await result.current.refetch();
     });
     expect(invalidate).toHaveBeenCalledTimes(1);
+  });
+
+  it('refetches cached pull requests from the visibility status alone, with the row hidden', async () => {
+    mockStartup.current = { pullRequestsEnabled: true };
+    mockGetConnection.mockResolvedValue({ configured: false, connected: true });
+    const { client, wrapper, invalidate } = setup();
+    renderHook(() => usePullRequestConnectionStatus(), { wrapper });
+    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(1));
+
+    /** Disconnected in another tab: the section hides, and only this observer sees it. */
+    mockGetConnection.mockResolvedValue({ configured: false, connected: false });
+    await act(async () => {
+      await client.refetchQueries([QueryKeys.pullRequestConnection]);
+    });
+    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(2));
+    expect(invalidate).toHaveBeenLastCalledWith([QueryKeys.conversationPullRequest]);
   });
 
   it('refreshes pull requests once per change, not on every Settings visit', async () => {

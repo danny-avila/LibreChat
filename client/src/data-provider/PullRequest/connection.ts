@@ -102,11 +102,12 @@ export const usePullRequestConnectionQuery = () => {
 /**
  * The same status for what contains the Settings row, so an app the server no longer has hides
  * the whole section, and a later answer that it has one again brings the section back. It shares
- * the row's query and leaves refetching pull requests on a change to the row.
+ * the row's query.
  */
 export const usePullRequestConnectionStatus = () => {
+  const queryClient = useQueryClient();
   const { data: startupConfig } = useGetStartupConfig();
-  return useQuery<TPullRequestConnection>(
+  const { data } = useQuery<TPullRequestConnection>(
     [QueryKeys.pullRequestConnection],
     () => dataService.getPullRequestConnection(),
     {
@@ -114,7 +115,15 @@ export const usePullRequestConnectionStatus = () => {
       retry: false,
       refetchOnWindowFocus: true,
     },
-  ).data;
+  );
+  /** Synced here too: a status that hides the row (a grant removed while its app is off) must
+   *  still refetch pull requests looked up with that grant. A status already synced is a no-op. */
+  useEffect(() => {
+    if (data != null) {
+      syncPullRequestConnection(queryClient, data);
+    }
+  }, [data, queryClient]);
+  return data;
 };
 
 /** Starts the provider's sign-in; the caller navigates a window it opened to the returned url. */
