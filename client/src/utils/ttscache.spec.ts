@@ -132,6 +132,7 @@ describe('cross-tab logout', () => {
   afterEach(() => {
     Reflect.deleteProperty(globalThis, 'BroadcastChannel');
     Reflect.deleteProperty(globalThis, 'caches');
+    localStorage.clear();
   });
 
   /** Each isolated module load is a separate tab sharing one Cache Storage. */
@@ -285,6 +286,27 @@ describe('cross-tab logout', () => {
     await reading.putTTSCache('/tts-cache/late', {} as Response, epoch);
     await reading.putTTSCache('/tts-cache/next', {} as Response, reading.getTTSCacheEpoch());
     expect(put).not.toHaveBeenCalled();
+  });
+
+  it('finishes a logout delete cut short by navigation before the next document reads', async () => {
+    const del = jest.fn((_name: string) => new Promise<boolean>(() => undefined));
+    const open = jest.fn(async () => ({ match: async () => ({}) as Response }));
+    Object.defineProperty(globalThis, 'caches', {
+      value: { open, delete: del },
+      configurable: true,
+    });
+    /** The IdP redirect unloads the page while this delete is still running. */
+    void openTab().endTTSCacheSession();
+
+    del.mockImplementation(async (_name: string) => true);
+    const next = openTab();
+    next.openTTSCacheWrites();
+    await next.openTTSCache();
+    const current = del.mock.calls.filter(([name]) => name === TTS_CACHE_NAME);
+    expect(current).toHaveLength(2);
+    expect(Math.max(...del.mock.invocationCallOrder)).toBeLessThan(
+      open.mock.invocationCallOrder[0],
+    );
   });
 
   it('keeps caching after a manual clear from settings', async () => {

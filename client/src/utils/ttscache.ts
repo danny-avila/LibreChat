@@ -11,7 +11,10 @@ let sessionEpoch = 0;
 /** Shut when a session ends here or in another tab, and reopened only when this tab
  *  authenticates, so a tab still holding the departed session's token cannot write. */
 let writesOpen = true;
-/** Set while deleting the cache keeps failing; the cache is not opened until a delete succeeds. */
+/** Set before a delete starts and cleared only when it succeeds; the cache is not opened while it
+ *  is set. Kept in localStorage too, so a delete cut short by navigation (an IdP logout redirect)
+ *  or still running in another tab is finished before any document reads the cache. */
+const DELETE_PENDING_KEY = `${TTS_CACHE_NAME}:pending`;
 let deletePending = false;
 let channel: BroadcastChannel | null = null;
 let joined = false;
@@ -64,15 +67,37 @@ const announce = (notice: Notice): void => {
   }
 };
 
+const setDeletePending = (pending: boolean): void => {
+  deletePending = pending;
+  try {
+    if (pending) {
+      localStorage.setItem(DELETE_PENDING_KEY, '1');
+    } else {
+      localStorage.removeItem(DELETE_PENDING_KEY);
+    }
+  } catch {
+    /** Storage is blocked; the in-memory flag still fences this document. */
+  }
+};
+
+const isDeletePending = (): boolean => {
+  try {
+    return deletePending || localStorage.getItem(DELETE_PENDING_KEY) !== null;
+  } catch {
+    return deletePending;
+  }
+};
+
 const deleteCache = async (): Promise<void> => {
   if (typeof caches === 'undefined') {
     return;
   }
+  setDeletePending(true);
   try {
     await Promise.all([caches.delete(TTS_CACHE_NAME), caches.delete(LEGACY_TTS_CACHE_NAME)]);
-    deletePending = false;
+    setDeletePending(false);
   } catch {
-    deletePending = true;
+    /** Stays pending: the next open retries before reading or writing. */
   }
 };
 
@@ -98,9 +123,9 @@ export async function getTTSCacheKey(text: string, voice?: string | null): Promi
  *  is still pending, so callers fall back to uncached audio rather than read a departed
  *  session's entries. */
 export async function openTTSCache(): Promise<Cache> {
-  if (deletePending) {
+  if (isDeletePending()) {
     await deleteCache();
-    if (deletePending) {
+    if (isDeletePending()) {
       throw new Error('TTS cache unavailable until it is cleared');
     }
   }
