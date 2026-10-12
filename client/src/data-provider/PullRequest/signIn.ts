@@ -135,6 +135,10 @@ export function watchPullRequestSignIn(
     if (!isSettlement(settlement) || settlement.outcome === 'succeeded') {
       if (isSettlement(settlement) && flowId != null && settlement.flowId === flowId) {
         settled = true;
+        resume();
+      }
+      if (lapsed) {
+        return;
       }
       void check(true);
       return;
@@ -146,23 +150,39 @@ export function watchPullRequestSignIn(
        *  leaves it to the timer, focus and expiry like any other. */
       failed = true;
       settled = true;
+      resume();
       void check(true);
     }
   };
   const channel =
     typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel(OAUTH_SETTLED_CHANNEL);
   channel?.addEventListener('message', onSettled);
+  /** Past the flow's expiry, unsettled: no more polling, but the sign-in page may still announce
+   *  a callback the server accepted just before expiry, so the channel stays open for the grace. */
+  let lapsed = false;
   let expiry: ReturnType<typeof setTimeout> = setTimeout(
     () => {
       if (!settled) {
-        stop();
-        return;
+        lapsed = true;
+        clearTimeout(timer);
+        window.removeEventListener('focus', onSignal);
       }
-      /** Settled but not yet read back: keep retrying for a bounded grace, then give up. */
+      /** Settled but not yet read back, or not settled yet: a bounded grace, then give up. */
       expiry = setTimeout(() => stop(), PULL_REQUEST_SETTLED_GRACE_MS);
     },
     Math.max(0, expiresAt - Date.now()),
   );
+
+  /** A settlement announced during the grace resumes reading until a read succeeds. */
+  const resume = () => {
+    if (!lapsed || stopped) {
+      return;
+    }
+    lapsed = false;
+    wait = PULL_REQUEST_CONNECT_POLL_MS;
+    schedule();
+    window.addEventListener('focus', onSignal);
+  };
 
   function stop() {
     stopped = true;

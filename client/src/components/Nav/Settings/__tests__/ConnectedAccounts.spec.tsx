@@ -321,7 +321,7 @@ describe('ConnectedAccounts', () => {
     expect(popup.location.href).toBe('');
   });
 
-  it('closes the window when the connection fails after Settings closed', async () => {
+  it('shows the sign-in error page in the window when the connection fails after Settings closed', async () => {
     const popup = fakeWindow();
     openSpy.mockReturnValue(popup as unknown as Window);
     mockGetConnection.mockResolvedValue(connection(false));
@@ -336,7 +336,9 @@ describe('ConnectedAccounts', () => {
     unmount();
     fail(new Error('500'));
 
-    await waitFor(() => expect(popup.close).toHaveBeenCalledTimes(1));
+    /** The row is gone, so the window explains the failure instead of vanishing. */
+    await waitFor(() => expect(popup.location.href).toBe('/oauth/error?error=connect_failed'));
+    expect(popup.close).not.toHaveBeenCalled();
   });
 
   it('refreshes pull requests when the sign-in finishes after Settings closed', async () => {

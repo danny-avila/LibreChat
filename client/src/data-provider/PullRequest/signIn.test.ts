@@ -208,6 +208,25 @@ describe('watchPullRequestSignIn', () => {
     expect(mockGetConnection).toHaveBeenCalledTimes(asked);
   });
 
+  it('still reads a settlement announced just after the flow expired', async () => {
+    const { client, invalidate } = setup();
+    watchPullRequestSignIn(client, {
+      startedIn: pullRequestSignInSession(),
+      expiresAt: Date.now() + 1 * MINUTE,
+      flowId: 'flow-a',
+    });
+    await pass(1 * MINUTE + 10_000);
+    /** The callback was accepted just before expiry and announces only now. */
+    mockGetConnection.mockResolvedValue({ ...connection(true), flowId: 'flow-a' });
+    invalidate.mockClear();
+    announceOAuthSettled({ outcome: 'succeeded', flowId: 'flow-a' });
+    await pass(PULL_REQUEST_CONNECT_POLL_MS);
+    expect(invalidate).toHaveBeenCalledWith([QueryKeys.conversationPullRequest]);
+    const asked = mockGetConnection.mock.calls.length;
+    await pass(10 * MINUTE);
+    expect(mockGetConnection).toHaveBeenCalledTimes(asked);
+  });
+
   it('gives up a settled sign-in whose status cannot be read once the grace passes', async () => {
     const { client } = setup();
     watchPullRequestSignIn(client, {

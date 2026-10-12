@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { ExternalLink, Gitlab } from 'lucide-react';
+import { apiBaseUrl } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
 import {
   AlertDialog,
@@ -70,6 +71,14 @@ export default function ConnectedAccounts() {
   /** Where focus goes when a disconnect removes the row along with its trigger. */
   const fallbackRef = useRef<HTMLElement | null>(null);
   const keepFocus = useRef(false);
+  /** Whether the row is still shown, so a failure after Settings closed is reported elsewhere. */
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   /**
    * Callback ref, so a replacement button takes focus as it mounts after an action, but only
@@ -160,6 +169,12 @@ export default function ConnectedAccounts() {
         });
       },
       () => {
+        /** With Settings closed the row cannot explain the failure, so the window it opened does,
+         *  on the sign-in error page. */
+        if (!mounted.current) {
+          popup.location.href = `${apiBaseUrl()}/oauth/error?error=connect_failed`;
+          return;
+        }
         popup.close();
         setConnectError('com_ui_pr_account_connect_error');
       },
