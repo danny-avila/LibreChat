@@ -177,18 +177,19 @@ describe('theme cache storage', () => {
  *   dark only (the other mode absent), with each enum literal, `none` in either case and each
  *   spelling of zero the role accepts as further samples;
  * - every role the resolver derives from others, found by diffing its resolved output against the
- *   bare theme and then, until no source joins, beside each known source and beside all of them,
- *   so a source that acts only beside another joins too; each is generated in every scope with all
- *   of its sources named, with every pair of them, and with the role named as well, every named
- *   role taking its own value, so fallback precedence and opting out are covered without listing
- *   the chains by hand;
+ *   bare theme, then, for a role no single source changes, against every other role named
+ *   together, reduced to the smallest set that still changes it, and then, until no source joins,
+ *   beside each known source and beside all of them, so a source that acts only beside another
+ *   joins too; each is generated in every scope with all of its sources named and with every pair
+ *   of them, each with and without the role named as well, every named role taking its own value,
+ *   so fallback precedence and opting out are covered without listing the chains by hand;
  * - every brand set theme-wide, in light and in dark with conflicting values;
- * - every pair of candidates for roles validated together, theme-wide, in light only and in dark
- *   only;
+ * - every pair of candidates for roles validated together, the pairs found by validating every
+ *   pair of accepted candidates, theme-wide, in light only and in dark only;
  * - definitions with one or both mode blocks absent.
  * A new role, or a new fallback, joins by construction.
  */
-const PIN = { fingerprint: '1.4.dxwdxg', digest: '1se7x01' };
+const PIN = { fingerprint: '1.4.dxwdxg', digest: 'mp6mvh' };
 
 const digestOf = (text: string): string => {
   let hash = 5381;
@@ -238,9 +239,6 @@ const APPEARANCE_CANDIDATES = [
   'Georgia, serif',
   '1.5',
 ].sort(byCodePoint);
-
-/** Roles the validator checks together, so a pair can be rejected though each side is valid alone. */
-const JOINTLY_VALIDATED: ReadonlyArray<[string, string]> = [['switchWidth', 'switchHeight']];
 
 type Scope = 'both' | 'light' | 'dark';
 type Mode = 'light' | 'dark';
@@ -293,6 +291,23 @@ const ACCEPTED: Record<string, string[]> = Object.fromEntries(
       token,
       APPEARANCE_CANDIDATES.filter((value) => isValidAppearance({ [token]: value })),
     ]),
+);
+
+/**
+ * Roles the validator checks together, found by validating every pair of accepted candidates for
+ * every pair of roles, so a pair can be rejected though each side is valid alone and a new joint
+ * rule joins without listing it.
+ */
+const JOINTLY_VALIDATED: ReadonlyArray<[string, string]> = themeAppearanceTokens.flatMap(
+  (first, index) =>
+    themeAppearanceTokens
+      .slice(index + 1)
+      .filter((second) =>
+        ACCEPTED[first].some((a) =>
+          ACCEPTED[second].some((b) => !isValidAppearance({ [first]: a, [second]: b })),
+        ),
+      )
+      .map((second): [string, string] => [first, second]),
 );
 
 /** Every pair of candidates the validator accepts for each jointly validated pair of roles. */
@@ -355,6 +370,39 @@ const resolvedRoles = (kind: Kind, tokens: readonly string[]): Array<Record<stri
       )[kind] as Record<string, unknown>,
   );
 
+/** The resolved roles of one kind in each mode, with each role in `named` set to its value. */
+const resolvedNamed = (
+  kind: Kind,
+  named: (mode: Mode) => Record<string, string>,
+): Array<Record<string, unknown>> =>
+  MODES.map(
+    (mode) =>
+      resolveTheme(
+        define('probe', (current) => ({ [kind]: named(current) }), 'both'),
+        mode,
+      )[kind] as Record<string, unknown>,
+  );
+
+/**
+ * The resolved roles with only `kept` named, each taking the value it has when all of `tokens` are,
+ * so dropping a role leaves the others' values unchanged.
+ */
+const resolvedSubset = (kind: Kind, tokens: readonly string[], kept: readonly string[]) =>
+  resolvedNamed(kind, (mode) => {
+    const values = OVERRIDES[kind](tokens, mode)[kind] ?? {};
+    return Object.fromEntries(kept.map((token) => [token, values[token]]));
+  });
+
+/**
+ * The resolved roles with `source` named alone: a color takes its sentinel, an appearance role each
+ * value the validator accepts, so a fallback that acts only on one value, or a first value equal to
+ * the default, still shows.
+ */
+const soloProbes = (kind: Kind, source: string): Array<Array<Record<string, unknown>>> =>
+  kind === 'colors'
+    ? [resolvedRoles(kind, [source])]
+    : ACCEPTED[source].map((value) => resolvedNamed(kind, () => ({ [source]: value })));
+
 const differs = (
   before: Array<Record<string, unknown>>,
   after: Array<Record<string, unknown>>,
@@ -362,19 +410,35 @@ const differs = (
 ): boolean => before.some((roles, index) => roles[key] !== after[index][key]);
 
 /**
- * Role to the roles that change it, read from the resolver: first each role named alone, then, until
- * no source joins, each further role named beside each known source and beside all of them, which
- * finds a source that only acts jointly even when another source masks it.
+ * Role to the roles that change it, read from the resolver: first each role named alone, an
+ * appearance role with each value it accepts; then, for a role no single source changes but every
+ * other role named together does, the smallest set of them that still changes it, which finds a
+ * fallback that acts only when sources meet; then, until no source joins, each further role named
+ * beside each known source and beside all of them, which finds a source that only acts jointly
+ * even when another source masks it.
  */
 function findDerived(kind: Kind): Map<string, string[]> {
   const base = resolvedRoles(kind, []);
   const found = new Map<string, Set<string>>();
   TOKENS[kind].forEach((source) => {
-    const after = resolvedRoles(kind, [source]);
-    Object.keys(after[0])
-      .filter((key) => key !== source && differs(base, after, key))
+    const probes = soloProbes(kind, source);
+    Object.keys(base[0])
+      .filter((key) => key !== source && probes.some((after) => differs(base, after, key)))
       .forEach((key) => found.set(key, (found.get(key) ?? new Set()).add(source)));
   });
+  TOKENS[kind]
+    .filter((target) => !found.has(target))
+    .forEach((target) => {
+      const others = TOKENS[kind].filter((token) => token !== target);
+      if (!differs(base, resolvedRoles(kind, others), target)) {
+        return;
+      }
+      const needed = others.reduce((kept, token) => {
+        const without = kept.filter((named) => named !== token);
+        return differs(base, resolvedSubset(kind, others, without), target) ? without : kept;
+      }, others);
+      found.set(target, new Set(needed));
+    });
   found.forEach((sources, target) => {
     let grew = true;
     while (grew) {
@@ -442,8 +506,8 @@ function roleFixtures(): Fixture[] {
 }
 
 /**
- * Each derived role with all of its sources named together, with every pair of them, and with the
- * role named as well.
+ * Each derived role with all of its sources named together and with every pair of them, each with
+ * and without the role named as well.
  */
 function derivedFixtures(): Fixture[] {
   const roles = derivedRoles();
@@ -453,10 +517,16 @@ function derivedFixtures(): Fixture[] {
         define(target, (mode) => OVERRIDES[kind](tokens, mode), scope);
       const pairs = sources.flatMap((first, index) =>
         sources.slice(index + 1).flatMap((second) =>
-          SCOPES.map((scope) => ({
-            key: `derived:${kind}:${target}:pair:${first}+${second}:${scope}`,
-            theme: named([first, second], scope),
-          })),
+          SCOPES.flatMap((scope) => [
+            {
+              key: `derived:${kind}:${target}:pair:${first}+${second}:${scope}`,
+              theme: named([first, second], scope),
+            },
+            {
+              key: `derived:${kind}:${target}:pair-named:${first}+${second}:${scope}`,
+              theme: named([first, second, target], scope),
+            },
+          ]),
         ),
       );
       return [

@@ -96,6 +96,18 @@ test.describe('the theme cache resolver output pin', () => {
     expect(result.output).toMatch(BUMP);
   });
 
+  test('a fallback that acts only when two sources meet asks for an epoch bump @scenario:theme-pin-conjunctive-fallback', () => {
+    const result = runPin([
+      {
+        bundle: 'client',
+        from: '...customColors,\n\t\t\t...codeSurfaceFallback,',
+        to: '...customColors,\n\t\t\t...(customColors?.["rgb-status-error"] !== void 0 && customColors?.["rgb-status-warning"] !== void 0 && customColors?.["rgb-border-light"] === void 0 ? { "rgb-border-light": customColors["rgb-status-error"] } : {}),\n\t\t\t...codeSurfaceFallback,',
+      },
+    ]);
+    expect(result.status).not.toBe(0);
+    expect(result.output).toMatch(BUMP);
+  });
+
   test('swapping precedence between sources that share a validator asks for an epoch bump @scenario:theme-pin-shared-validator-precedence', () => {
     const result = runPin([
       {
@@ -138,6 +150,18 @@ test.describe('the theme cache resolver output pin', () => {
         bundle: 'provider',
         from: 'const minimumHeight = height[1] === "px" ? 4 : .5;',
         to: 'const minimumHeight = height[1] === "px" ? 30 : .5;',
+      },
+    ]);
+    expect(result.status).not.toBe(0);
+    expect(result.output).toMatch(BUMP);
+  });
+
+  test('a new rule validating two roles together asks for an epoch bump @scenario:theme-pin-new-joint-rule', () => {
+    const result = runPin([
+      {
+        bundle: 'provider',
+        from: 'function collectSwitchIssues(appearance, base) {',
+        to: 'function collectSwitchIssues(appearance, base) {\n\tif (appearance.textSm !== void 0 && appearance.textSm === appearance.radiusXl) return [issue([...base, "textSm"], "textSm must differ from radiusXl")];',
       },
     ]);
     expect(result.status).not.toBe(0);
