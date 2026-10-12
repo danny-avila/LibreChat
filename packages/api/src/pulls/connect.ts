@@ -66,8 +66,11 @@ export function createPullRequestConnectionHandlers(deps: {
   }
 
   const redirect = (res: Response, page: string) => res.redirect(`${getBasePath()}${page}`);
-  const fail = (res: Response, code: string) =>
-    redirect(res, `/oauth/error?error=${encodeURIComponent(code)}`);
+  /** Names the flow once it is known to be this browser's, so the page that started it can stop
+   *  watching that flow alone; an unbound or unreadable state names none. */
+  const flowParam = (flowId?: string) => (flowId ? `&flow=${encodeURIComponent(flowId)}` : '');
+  const fail = (res: Response, code: string, flowId?: string) =>
+    redirect(res, `/oauth/error?error=${encodeURIComponent(code)}${flowParam(flowId)}`);
 
   async function finishCallback(
     res: Response,
@@ -78,23 +81,23 @@ export function createPullRequestConnectionHandlers(deps: {
       /** The user must still exist, in the tenant the flow started in. */
       const user = await deps.getUser(claims.userId);
       if (user == null || (user.tenantId ?? null) !== (claims.tenantId ?? null)) {
-        fail(res, 'invalid_state');
+        fail(res, 'invalid_state', claims.flowId);
         return;
       }
       /** The same check as starting the flow; a changed app voids flows started before. */
       const config = await configFor({ ...user, id: claims.userId });
       if (config == null || config.provider !== claims.provider || config.host !== claims.host) {
-        fail(res, 'invalid_state');
+        fail(res, 'invalid_state', claims.flowId);
         return;
       }
       await deps.oauth.complete(claims, code, config);
       redirect(
         res,
-        `/oauth/success?serverName=${encodeURIComponent(PROVIDER_NAMES[config.provider])}`,
+        `/oauth/success?serverName=${encodeURIComponent(PROVIDER_NAMES[config.provider])}${flowParam(claims.flowId)}`,
       );
     } catch (caught) {
       logger.warn('[PullRequests] Connection callback failed', getSafeErrorMetadata(caught));
-      fail(res, 'callback_failed');
+      fail(res, 'callback_failed', claims.flowId);
     }
   }
 
@@ -151,11 +154,11 @@ export function createPullRequestConnectionHandlers(deps: {
         return;
       }
       if (typeof error === 'string' && error !== '') {
-        fail(res, 'callback_failed');
+        fail(res, 'callback_failed', claims.flowId);
         return;
       }
       if (typeof code !== 'string' || code === '') {
-        fail(res, 'missing_code');
+        fail(res, 'missing_code', claims.flowId);
         return;
       }
       /**
@@ -165,7 +168,7 @@ export function createPullRequestConnectionHandlers(deps: {
        */
       const current = getTenantId();
       if (current != null && current !== claims.tenantId) {
-        fail(res, 'invalid_state');
+        fail(res, 'invalid_state', claims.flowId);
         return;
       }
       const finish = () => finishCallback(res, claims, code);

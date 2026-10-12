@@ -29,6 +29,8 @@ const claims: PullRequestOAuthState = {
   flowId: 'pull-request-oauth:u1:n',
   generation: 'initial',
 };
+/** How a page that started this flow is told it is the one that finished. */
+const flowParam = `&flow=${encodeURIComponent(claims.flowId)}`;
 
 function makeOAuth(overrides: Partial<PullRequestOAuth> = {}): jest.Mocked<PullRequestOAuth> {
   return {
@@ -186,7 +188,7 @@ describe('callback', () => {
       'c',
       expect.objectContaining({ provider: 'github', host: 'github.com' }),
     );
-    expect(res.redirect).toHaveBeenCalledWith('/oauth/success?serverName=GitHub');
+    expect(res.redirect).toHaveBeenCalledWith(`/oauth/success?serverName=GitHub${flowParam}`);
   });
 
   it('accepts the session cookie of the same user when the flow cookie is gone', async () => {
@@ -195,24 +197,32 @@ describe('callback', () => {
       { [OAUTH_SESSION_COOKIE]: generateOAuthCsrfToken('u1', env.JWT_SECRET) },
     );
     expect(oauth.complete).toHaveBeenCalled();
-    expect(res.redirect).toHaveBeenCalledWith('/oauth/success?serverName=GitHub');
+    expect(res.redirect).toHaveBeenCalledWith(`/oauth/success?serverName=GitHub${flowParam}`);
   });
 
   it.each([
-    ['no state', { code: 'c' }, bound(), 'missing_state'],
-    ['no code', { state: 's' }, bound(), 'missing_code'],
-    ['a browser that did not start the flow', { state: 's', code: 'c' }, {}, 'invalid_state'],
+    /** Before the flow is known to be this browser's, the page names no flow. */
+    ['no state', { code: 'c' }, bound(), 'missing_state', ''],
+    ['no code', { state: 's' }, bound(), 'missing_code', flowParam],
+    ['a browser that did not start the flow', { state: 's', code: 'c' }, {}, 'invalid_state', ''],
     [
       "another user's session",
       { state: 's', code: 'c' },
       { [OAUTH_SESSION_COOKIE]: generateOAuthCsrfToken('u2', env.JWT_SECRET) },
       'invalid_state',
+      '',
     ],
-    ['a refusal by the user', { state: 's', error: 'access_denied' }, bound(), 'callback_failed'],
-  ])('fails for %s, storing nothing', async (_label, query, cookies, code) => {
+    [
+      'a refusal by the user',
+      { state: 's', error: 'access_denied' },
+      bound(),
+      'callback_failed',
+      flowParam,
+    ],
+  ])('fails for %s, storing nothing', async (_label, query, cookies, code, flow) => {
     const { oauth, res } = await run(query, cookies);
     expect(oauth.complete).not.toHaveBeenCalled();
-    expect(res.redirect).toHaveBeenCalledWith(`/oauth/error?error=${code}`);
+    expect(res.redirect).toHaveBeenCalledWith(`/oauth/error?error=${code}${flow}`);
   });
 
   it('fails for a state this server did not issue', async () => {
@@ -228,14 +238,14 @@ describe('callback', () => {
       base: { ...oauthSettings, host: 'ghe.example.com' },
     });
     expect(oauth.complete).not.toHaveBeenCalled();
-    expect(res.redirect).toHaveBeenCalledWith('/oauth/error?error=invalid_state');
+    expect(res.redirect).toHaveBeenCalledWith(`/oauth/error?error=invalid_state${flowParam}`);
   });
 
   it('fails without provider text when the exchange fails', async () => {
     const { res } = await run({ state: 's', code: 'c' }, bound(), {
       oauth: makeOAuth({ complete: jest.fn().mockRejectedValue(new Error('secret detail')) }),
     });
-    expect(res.redirect).toHaveBeenCalledWith('/oauth/error?error=callback_failed');
+    expect(res.redirect).toHaveBeenCalledWith(`/oauth/error?error=callback_failed${flowParam}`);
   });
 
   it('refuses a callback already placed in another tenant than the flow started in', async () => {
@@ -248,7 +258,9 @@ describe('callback', () => {
       ),
     );
     expect(oauth.complete).not.toHaveBeenCalled();
-    expect(context.res.redirect).toHaveBeenCalledWith('/oauth/error?error=invalid_state');
+    expect(context.res.redirect).toHaveBeenCalledWith(
+      `/oauth/error?error=invalid_state${flowParam}`,
+    );
   });
 
   it('restores the tenant the flow started in before storing', async () => {
@@ -275,7 +287,7 @@ describe('callback', () => {
       user: { role: 'BETA' },
     });
     expect(oauth.complete).toHaveBeenCalled();
-    expect(res.redirect).toHaveBeenCalledWith('/oauth/success?serverName=GitHub');
+    expect(res.redirect).toHaveBeenCalledWith(`/oauth/success?serverName=GitHub${flowParam}`);
     expect(getAppConfig).toHaveBeenCalledWith(
       expect.objectContaining({ role: 'BETA', userId: 'u1', failClosed: true }),
     );
@@ -291,7 +303,7 @@ describe('callback', () => {
   ])('refuses the callback when %s, storing nothing', async (_label, options) => {
     const { oauth, res } = await run({ state: 's', code: 'c' }, bound(), options);
     expect(oauth.complete).not.toHaveBeenCalled();
-    expect(res.redirect).toHaveBeenCalledWith('/oauth/error?error=invalid_state');
+    expect(res.redirect).toHaveBeenCalledWith(`/oauth/error?error=invalid_state${flowParam}`);
   });
 });
 
