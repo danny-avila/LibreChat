@@ -1,6 +1,6 @@
 import sharp from 'sharp';
 import { Readable } from 'stream';
-import { agentsEndpointSchema, FileContext } from 'librechat-data-provider';
+import { agentsEndpointSchema, FileContext, FileSources } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { ServerRequest, StrategyFunctions } from '~/types';
 import {
@@ -205,13 +205,14 @@ describe('durable replay projection', () => {
   });
   it('respects endpoint MIME policy and performs no storage read for rejected files', async () => {
     const opts = options();
-    const filteredReq = {
-      ...req,
-      config: {
-        ...req.config,
-        fileConfig: { endpoints: { custom: { supportedMimeTypes: [/^application\/pdf$/] } } },
-      },
-    } as ServerRequest;
+    const filteredReq: ServerRequest = Object.assign({}, req);
+    filteredReq.config = {
+      ...req.config,
+      config: {},
+      fileStrategy: FileSources.local,
+      imageOutputType: 'png',
+      fileConfig: { endpoints: { custom: { supportedMimeTypes: ['application/pdf'] } } },
+    };
     const result = await replayHistoricalToolImages({
       ...opts,
       endpoint: 'custom',
