@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import type { AppConfig, DeleteSkillResult, ISkillDeletion } from '@librechat/data-schemas';
+import type {
+  AppConfig,
+  DeleteSkillResult,
+  SkillDeletionRecord,
+  SkillUploadIntentRecord,
+} from '@librechat/data-schemas';
 import type { SkillDeletionDeps, SkillDeletionProgress } from './deletion';
 import type { ServerRequest, StrategyFunctions } from '~/types';
 import { getStorageMetadata } from '~/storage/metadata';
@@ -7,21 +12,12 @@ import { runSkillDeletion } from './deletion';
 
 type Persistence = Omit<SkillDeletionDeps, 'deleteBlob' | 'deleteReservedBlob'> & {
   discoverUnjournaledDeletions: () => Promise<number>;
-  listSkillDeletionTombstones: (limit: number) => Promise<ISkillDeletion[]>;
+  listSkillDeletionTombstones: (limit: number) => Promise<SkillDeletionRecord[]>;
   claimSkillDeletion: (id: string, owner: string, leaseMs: number) => Promise<boolean>;
   refreshSkillDeletionClaim: (id: string, owner: string, leaseMs: number) => Promise<boolean>;
   noteSkillDeletionAttempt: (id: string) => Promise<void>;
   releaseSkillDeletionClaim: (id: string, owner: string) => Promise<void>;
-  listAbandonedSkillUploadIntents: (limit: number) => Promise<
-    Array<{
-      skillId: { toString(): string };
-      fileId: string;
-      source: string;
-      storageKey: string;
-      author: { toString(): string };
-      tenantId?: string;
-    }>
-  >;
+  listAbandonedSkillUploadIntents: (limit: number) => Promise<SkillUploadIntentRecord[]>;
   claimAbandonedSkillUploadIntent: (
     fileId: string,
     owner: string,
@@ -69,14 +65,14 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
     source: string;
     storageKey?: string | null;
     storageRegion?: string | null;
-    author: { toString(): string };
+    author: string;
     tenantId?: string;
   }) {
     const strategy = deps.getStrategyFunctions(file.source);
     if (!strategy.deleteFile) {
       throw new Error(`Skill storage backend ${file.source} has no deletion strategy`);
     }
-    const ownerId = file.author.toString();
+    const ownerId = file.author;
     const config = await deps.loadConfig();
     await strategy.deleteFile(
       {
@@ -94,18 +90,23 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
   }
 
   async function deleteSkillById(skillId: string) {
-    return runSkillDeletion(skillId, {
-      ...deps.persistence,
-      deleteBlob: deleteStoredBlob,
-      deleteReservedBlob: (intent) =>
-        deleteStoredBlob({
-          filepath: intent.storageKey,
-          source: intent.source,
-          ...getStorageMetadata({ filepath: intent.storageKey, source: intent.source }),
-          author: intent.author,
-          tenantId: intent.tenantId,
-        }),
-    });
+    const config = await deps.loadConfig();
+    return runSkillDeletion(
+      skillId,
+      {
+        ...deps.persistence,
+        deleteBlob: deleteStoredBlob,
+        deleteReservedBlob: (intent) =>
+          deleteStoredBlob({
+            filepath: intent.storageKey,
+            source: intent.source,
+            ...getStorageMetadata({ filepath: intent.storageKey, source: intent.source }),
+            author: intent.author,
+            tenantId: intent.tenantId,
+          }),
+      },
+      config?.fileConfig?.skills?.deletionCleanupConcurrency,
+    );
   }
 
   async function deleteSkillForLegacy(skillId: string) {
@@ -142,7 +143,7 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
         }, claimLeaseMs / 4);
         heartbeat.unref?.();
         try {
-          const skillId = intent.skillId.toString();
+          const skillId = intent.skillId;
           if (await deps.persistence.getSkillDeletion(skillId)) {
             // Whole-Skill deletion owns intents for this Skill.
             continue;
@@ -190,7 +191,7 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
             await deps.persistence.discoverUnjournaledDeletions();
             const tombstones = await deps.persistence.listSkillDeletionTombstones(batchSize);
             for (const tombstone of tombstones) {
-              const skillId = tombstone.skillId.toString();
+              const skillId = tombstone.skillId;
               if (!(await deps.persistence.claimSkillDeletion(skillId, owner, claimLeaseMs))) {
                 continue;
               }

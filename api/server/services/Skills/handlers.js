@@ -1,5 +1,8 @@
 const { createSkillsHandlers } = require('@librechat/api');
-const { isValidObjectIdString } = require('@librechat/data-schemas');
+const {
+  isValidObjectIdString,
+  createSkillDeletionPersistenceAdapter,
+} = require('@librechat/data-schemas');
 const { PermissionBits } = require('librechat-data-provider');
 const {
   createSkill,
@@ -8,6 +11,8 @@ const {
   beginSkillDeletion,
   getSkillDeletion,
   listSkillUploadIntents,
+  listSkillDeletionTombstones,
+  listAbandonedSkillUploadIntents,
   deleteSkillFileAfterBlob,
   finalizeSkillDeletion,
   completeSkillDeletion,
@@ -29,15 +34,24 @@ const { deleteSkillForLegacy } = require('./deletion');
 
 function getSkillsHandlers() {
   const skillDbMethods = getSkillDbMethods();
+  const deletionDb = createSkillDeletionPersistenceAdapter({
+    beginSkillDeletion,
+    getSkillDeletion,
+    listSkillUploadIntents,
+    listSkillDeletionTombstones,
+    listAbandonedSkillUploadIntents,
+    listSkillFiles: skillDbMethods.listSkillFiles,
+  });
   return createSkillsHandlers({
     createSkill,
     getSkillById: skillDbMethods.getSkillById,
     listSkillsByAccess: skillDbMethods.listSkillsByAccess,
     updateSkill,
     deleteSkill: deleteSkillForLegacy,
-    beginSkillDeletion,
-    getSkillDeletion,
-    listSkillUploadIntents,
+    beginSkillDeletion: deletionDb.beginSkillDeletion,
+    getSkillDeletion: deletionDb.getSkillDeletion,
+    listSkillUploadIntents: deletionDb.listSkillUploadIntents,
+    listSkillDeletionFiles: deletionDb.listSkillFiles,
     deleteSkillFileAfterBlob,
     finalizeSkillDeletion,
     completeSkillDeletion,

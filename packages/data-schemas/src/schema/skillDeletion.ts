@@ -15,6 +15,7 @@ const skillDeletionSchema: Schema<ISkillDeletionDocument> = new Schema<ISkillDel
   { timestamps: true },
 );
 
-skillDeletionSchema.index({ completedAt: 1, claimExpiresAt: 1, updatedAt: 1 });
+// The sweep rotates attempted rows and sorts by these fields before its batch limit.
+skillDeletionSchema.index({ lastAttemptAt: 1, startedAt: 1, claimExpiresAt: 1 });
 
 export default skillDeletionSchema;

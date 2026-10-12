@@ -243,6 +243,12 @@ export { MAX_TOOL_FAVORITES };
 export { AgentTriggerDeliveryConflictError };
 export type { PromptGroupListParams };
 export { AGENT_OWNER_CONTACT_RESOLVED_FIELD, AgentSortCursorError } from './agent';
+export { createSkillDeletionPersistenceAdapter } from './skillDeletionAdapter';
+export type {
+  SkillDeletionRecord,
+  SkillUploadIntentRecord,
+  SkillDeletionFileRecord,
+} from './skillDeletionAdapter';
 export {
   AgentQueuedTurnCapacityError,
   AgentQueuedTurnConflictError,

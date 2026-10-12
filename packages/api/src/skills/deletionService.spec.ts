@@ -1,10 +1,8 @@
-import { Types } from 'mongoose';
-import type { ISkillDeletion } from '@librechat/data-schemas';
 import { createSkillDeletionService } from './deletionService';
 
 it('records failed cleanup attempts before releasing the claim', async () => {
-  const skillId = new Types.ObjectId();
-  const journal = { skillId } as ISkillDeletion;
+  const skillId = '507f1f77bcf86cd799439011';
+  const journal = { skillId };
   const order: string[] = [];
   let released: () => void = () => undefined;
   const releaseObserved = new Promise<void>((resolve) => {
@@ -57,20 +55,21 @@ it('records failed cleanup attempts before releasing the claim', async () => {
   await releaseObserved;
   sweep.stop();
   expect(order).toEqual(['attempt', 'release']);
-  expect(persistence.noteSkillDeletionAttempt).toHaveBeenCalledWith(skillId.toString());
+  expect(persistence.noteSkillDeletionAttempt).toHaveBeenCalledWith(skillId);
 });
 
 it.each([false, true])(
   'reconciles an abandoned intent on an active Skill while preserving a live file row: row=%s',
   async (rowExists) => {
-    const skillId = new Types.ObjectId();
-    const author = new Types.ObjectId();
+    const skillId = '507f1f77bcf86cd799439011';
+    const author = '507f1f77bcf86cd799439012';
     const intent = {
       skillId,
       fileId: 'abandoned-file',
       source: 'local',
       storageKey: '/uploads/abandoned-file',
       author,
+      state: 'abandoned' as const,
     };
     let released: () => void = () => undefined;
     const releaseObserved = new Promise<void>((resolve) => {

@@ -1,11 +1,15 @@
-const { logger, runAsSystem } = require('@librechat/data-schemas');
+const {
+  logger,
+  runAsSystem,
+  createSkillDeletionPersistenceAdapter,
+} = require('@librechat/data-schemas');
 const { createSkillDeletionService } = require('@librechat/api');
 const db = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 
 const service = createSkillDeletionService({
-  persistence: db,
+  persistence: { ...db, ...createSkillDeletionPersistenceAdapter(db) },
   loadConfig: () => getAppConfig({ baseOnly: true }),
   getStrategyFunctions,
   runAsSystem,

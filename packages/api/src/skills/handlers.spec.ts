@@ -1,5 +1,5 @@
 import { Types } from 'mongoose';
-import type { DeleteSkillResult, ISkillDeletion, ISkillFile } from '@librechat/data-schemas';
+import type { DeleteSkillResult, ISkillFile } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { SkillsHandlersDeps } from './handlers';
 import type { ServerRequest } from '~/types';
@@ -27,11 +27,14 @@ describe('skill delete handler', () => {
       cleanupComplete: true,
       failedCleanupSteps: [],
     };
-    const journal = { skillId: new Types.ObjectId(id) } as ISkillDeletion;
+    const journal = { skillId: id };
     const deps = {
       beginSkillDeletion: jest.fn(async () => journal),
       getSkillDeletion: jest.fn(async () => journal),
       listSkillFiles: jest.fn(async () => files),
+      listSkillDeletionFiles: jest.fn(async () =>
+        files.map((file) => ({ ...file, author: file.author.toString() })),
+      ),
       listSkillUploadIntents: jest.fn(async () => []),
       deleteSkillFileAfterBlob: jest.fn(async () => true),
       finalizeSkillDeletion: jest.fn(async () => complete),

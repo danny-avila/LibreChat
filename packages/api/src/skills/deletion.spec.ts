@@ -1,28 +1,23 @@
-import { Types } from 'mongoose';
-import type { ISkillDeletion, ISkillUploadIntent } from '@librechat/data-schemas';
+import type { SkillDeletionRecord, SkillUploadIntentRecord } from '@librechat/data-schemas';
 import type { SkillDeletionDeps } from './deletion';
 import { runSkillDeletion } from './deletion';
 
-const skillId = new Types.ObjectId();
-const author = new Types.ObjectId();
+const skillId = '507f1f77bcf86cd799439011';
+const author = '507f1f77bcf86cd799439012';
 const journal = {
   skillId,
-  author,
-  startedAt: new Date(),
-} as ISkillDeletion;
+} satisfies SkillDeletionRecord;
 
 function harness() {
   const files = [
     {
-      _id: new Types.ObjectId(),
-      skillId,
       file_id: 'file-1',
       filepath: '/uploads/owner/file-1',
       source: 'local',
       author,
     },
-  ] as Awaited<ReturnType<SkillDeletionDeps['listSkillFiles']>>;
-  const intents: ISkillUploadIntent[] = [];
+  ] satisfies Awaited<ReturnType<SkillDeletionDeps['listSkillFiles']>>;
+  const intents: SkillUploadIntentRecord[] = [];
   const deps: SkillDeletionDeps = {
     beginSkillDeletion: jest.fn(async () => journal),
     getSkillDeletion: jest.fn(async () => journal),
@@ -105,7 +100,6 @@ it.each(['uploading', 'committing'] as const)(
       fileId: 'file-1',
       source: 'local',
       storageKey: '/uploads/owner/file-1',
-      writerId: 'writer',
       state,
     });
     await expect(runSkillDeletion(skillId.toString(), h.deps)).resolves.toMatchObject({
@@ -126,7 +120,6 @@ it('cleans a committed historical blob after its SkillFile row was replaced', as
     fileId: 'old-file',
     source: 'local',
     storageKey: '/uploads/owner/old-file',
-    writerId: 'writer',
     state: 'committed',
   });
   const first = await runSkillDeletion(skillId.toString(), h.deps);
@@ -145,7 +138,6 @@ it('deletes a current file blob only once when its committed intent points at th
     fileId: 'file-1',
     source: 'local',
     storageKey: '/uploads/owner/file-1',
-    writerId: 'writer',
     state: 'committed',
   });
   await expect(runSkillDeletion(skillId.toString(), h.deps)).resolves.toMatchObject({
@@ -165,10 +157,26 @@ it('resweeps abandoned intents even after an earlier clean pass', async () => {
     fileId: 'zombie',
     source: 'local',
     storageKey: '/uploads/owner/zombie',
-    writerId: 'writer',
     state: 'abandoned',
   });
   await runSkillDeletion(skillId.toString(), h.deps);
   await runSkillDeletion(skillId.toString(), h.deps);
   expect(h.deps.deleteReservedBlob).toHaveBeenCalledTimes(2);
+});
+
+it('bounds independent file cleanup while deleting each row after its blob', async () => {
+  const h = harness();
+  h.files.push({ ...h.files[0], file_id: 'file-2' }, { ...h.files[0], file_id: 'file-3' });
+  let active = 0;
+  let peak = 0;
+  (h.deps.deleteBlob as jest.Mock).mockImplementation(async () => {
+    active++;
+    peak = Math.max(peak, active);
+    await new Promise((resolve) => setImmediate(resolve));
+    active--;
+  });
+  await runSkillDeletion(skillId, h.deps, 2);
+  expect(peak).toBe(2);
+  expect(h.deps.deleteSkillFileAfterBlob).toHaveBeenCalledTimes(3);
+  expect(h.files).toHaveLength(0);
 });

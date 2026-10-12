@@ -3,8 +3,13 @@ import express from 'express';
 import request from 'supertest';
 import mongoose, { Types } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createModels, createMethods, tenantStorage } from '@librechat/data-schemas';
 import { PermissionBits, Permissions, PermissionTypes } from 'librechat-data-provider';
+import {
+  createModels,
+  createMethods,
+  createSkillDeletionPersistenceAdapter,
+  tenantStorage,
+} from '@librechat/data-schemas';
 import type { AllMethods, IRole, IUser } from '@librechat/data-schemas';
 import type { FiltersConfig } from 'librechat-data-provider';
 import type { RequestHandler } from 'express';
@@ -89,6 +94,9 @@ beforeEach(async () => {
   capabilityCheck = jest.fn(async () => canManage);
   skillHandlers = createSkillsHandlers({
     ...db,
+    ...createSkillDeletionPersistenceAdapter(db),
+    listSkillDeletionFiles: createSkillDeletionPersistenceAdapter(db).listSkillFiles,
+    listSkillFiles: db.listSkillFiles,
     findAccessibleResources: accessible,
     findPubliclyAccessibleResources: publiclyAccessible,
     hasPublicPermission: publicStatus,

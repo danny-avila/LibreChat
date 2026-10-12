@@ -1,7 +1,13 @@
 import crypto from 'crypto';
 import mongoose, { Types } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { logger, getTenantId, createModels, createMethods } from '@librechat/data-schemas';
+import {
+  logger,
+  getTenantId,
+  createModels,
+  createMethods,
+  createSkillDeletionPersistenceAdapter,
+} from '@librechat/data-schemas';
 import type {
   ISkill,
   ISkillFile,
@@ -3813,10 +3819,7 @@ describe('steady-state sync of an unchanged source', () => {
   ) {
     const deleteSkillWithStorage = async (id: string): Promise<DeleteSkillResult> => {
       const progress = await runSkillDeletion(id, {
-        beginSkillDeletion: db.beginSkillDeletion,
-        getSkillDeletion: db.getSkillDeletion,
-        listSkillFiles: db.listSkillFiles,
-        listSkillUploadIntents: db.listSkillUploadIntents,
+        ...createSkillDeletionPersistenceAdapter(db),
         deleteSkillFileAfterBlob: db.deleteSkillFileAfterBlob,
         finalizeSkillDeletion: db.finalizeSkillDeletion,
         completeSkillDeletion: db.completeSkillDeletion,

@@ -1,20 +1,20 @@
+import { DEFAULT_SKILL_DELETION_CLEANUP_CONCURRENCY } from 'librechat-data-provider';
 import type {
   DeleteSkillCleanupStep,
   DeleteSkillResult,
-  ISkillFile,
+  SkillDeletionFileRecord,
+  SkillDeletionRecord,
+  SkillUploadIntentRecord,
 } from '@librechat/data-schemas';
-import type { ISkillDeletion, ISkillUploadIntent } from '@librechat/data-schemas';
-import type { Types } from 'mongoose';
-
-type StoredSkillFile = ISkillFile & { _id: Types.ObjectId };
+import { createConcurrencyLimiter } from '~/utils/promise';
 
 export interface SkillDeletionDeps {
-  beginSkillDeletion: (id: string) => Promise<ISkillDeletion | null>;
-  getSkillDeletion: (id: string) => Promise<ISkillDeletion | null>;
-  listSkillFiles: (id: string) => Promise<StoredSkillFile[]>;
-  listSkillUploadIntents: (id: string) => Promise<ISkillUploadIntent[]>;
-  deleteBlob: (file: StoredSkillFile) => Promise<void>;
-  deleteReservedBlob: (intent: ISkillUploadIntent) => Promise<void>;
+  beginSkillDeletion: (id: string) => Promise<SkillDeletionRecord | null>;
+  getSkillDeletion: (id: string) => Promise<SkillDeletionRecord | null>;
+  listSkillFiles: (id: string) => Promise<SkillDeletionFileRecord[]>;
+  listSkillUploadIntents: (id: string) => Promise<SkillUploadIntentRecord[]>;
+  deleteBlob: (file: SkillDeletionFileRecord) => Promise<void>;
+  deleteReservedBlob: (intent: SkillUploadIntentRecord) => Promise<void>;
   deleteSkillFileAfterBlob: (skillId: string, fileId: string) => Promise<boolean>;
   finalizeSkillDeletion: (id: string) => Promise<DeleteSkillResult>;
   completeSkillDeletion: (id: string) => Promise<void>;
@@ -37,6 +37,7 @@ export type SkillDeletionProgress = {
 export async function runSkillDeletion(
   id: string,
   deps: SkillDeletionDeps,
+  fileCleanupConcurrency: number = DEFAULT_SKILL_DELETION_CLEANUP_CONCURRENCY,
 ): Promise<SkillDeletionProgress> {
   const journal = (await deps.beginSkillDeletion(id)) ?? (await deps.getSkillDeletion(id));
   if (!journal) {
@@ -48,9 +49,9 @@ export async function runSkillDeletion(
       failedSteps: [],
     };
   }
-  await deps.reopenSkillDeletion(journal.skillId.toString());
+  await deps.reopenSkillDeletion(journal.skillId);
   const failedSteps: DeleteSkillCleanupStep[] = [];
-  const intents = await deps.listSkillUploadIntents(journal.skillId.toString());
+  const intents = await deps.listSkillUploadIntents(journal.skillId);
   // A writer may still finish uploading or committing after this scan. An
   // operator can inspect and recover an intent with `recover-skill-upload`
   // after draining writers; a timer must not infer that a slow upload is dead.
@@ -66,15 +67,20 @@ export async function runSkillDeletion(
   const files = await deps.listSkillFiles(id);
   const currentFileIds = new Set(files.map((file) => file.file_id));
   const cleanedFileIds = new Set<string>();
-  for (const file of files) {
-    try {
-      await deps.deleteBlob(file);
-      await deps.deleteSkillFileAfterBlob(id, file.file_id);
-      cleanedFileIds.add(file.file_id);
-    } catch {
-      failedSteps.push('skill_files');
-    }
-  }
+  const limit = createConcurrencyLimiter(fileCleanupConcurrency);
+  await Promise.all(
+    files.map((file) =>
+      limit(async () => {
+        try {
+          await deps.deleteBlob(file);
+          await deps.deleteSkillFileAfterBlob(id, file.file_id);
+          cleanedFileIds.add(file.file_id);
+        } catch {
+          failedSteps.push('skill_files');
+        }
+      }),
+    ),
+  );
 
   for (const intent of intents) {
     if (intent.state === 'committed') {
@@ -121,7 +127,7 @@ export async function runSkillDeletion(
       failedSteps: finalized.failedCleanupSteps,
     };
   }
-  await deps.completeSkillDeletion(journal.skillId.toString());
+  await deps.completeSkillDeletion(journal.skillId);
   return {
     found: true,
     deleted: finalized.deleted,
