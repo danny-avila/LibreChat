@@ -921,22 +921,30 @@ export function createPullRequestOAuth({
     },
 
     async reject(userId, config, accessToken) {
-      const current = await read(userId, config, await generationOf(userId));
-      if (current == null || isRefused(current.record)) return;
-      if (current.record.accessToken !== accessToken) return;
-      /** Only the access token was turned away: with a refresh token the next read refreshes it,
-       *  and only a refused refresh ends the connection. */
-      if (current.record.refreshToken != null) {
+      /** A write that loses to another (a retention rewrite of the same grant) is read again, so
+       *  the rejection still lands while the row holds that access token; a row that moved on to
+       *  another token or connection is left alone. */
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const current = await read(userId, config, await generationOf(userId));
+        if (current == null || isRefused(current.record)) return;
+        if (current.record.accessToken !== accessToken) return;
+        /** Only the access token was turned away: with a refresh token the next read refreshes it,
+         *  and only a refused refresh ends the connection. */
         const { v: _v, ...grant } = current.record;
-        await write(userId, config, current.row.token, { ...grant, accessExpiresAt: 0 });
-        return;
+        const written =
+          current.record.refreshToken != null
+            ? await write(userId, config, current.row.token, { ...grant, accessExpiresAt: 0 })
+            : await write(userId, config, current.row.token, {
+                refused: true,
+                clientId: current.record.clientId,
+                lineage: current.record.lineage,
+                ...(current.record.generation != null
+                  ? { generation: current.record.generation }
+                  : {}),
+              });
+        if (written != null) return;
       }
-      await write(userId, config, current.row.token, {
-        refused: true,
-        clientId: current.record.clientId,
-        lineage: current.record.lineage,
-        ...(current.record.generation != null ? { generation: current.record.generation } : {}),
-      });
+      throw new Error('The rejected grant could not be updated');
     },
 
     async disconnect(userId) {

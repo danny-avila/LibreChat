@@ -962,6 +962,32 @@ describe('status', () => {
     await expect(oauth.connected(user, github)).resolves.toBe(false);
   });
 
+  it('still ends a refused grant when another write of the same grant lands first', async () => {
+    const { oauth } = setup([() => json({ access_token: 'revoked' })]);
+    const user = userId();
+    await connect(oauth, user);
+    const original = store.replaceTokenIfCurrent.bind(store);
+    let grantWrites = 0;
+    const race = jest
+      .spyOn(store, 'replaceTokenIfCurrent')
+      .mockImplementation(async (scope, expected, row) => {
+        if (row.type === PULL_REQUEST_OAUTH_TYPE) {
+          grantWrites += 1;
+          /** The first write loses to a replica that rewrote the same grant in between. */
+          if (grantWrites === 1) return false;
+        }
+        return original(scope, expected, row);
+      });
+    try {
+      await oauth.reject(user, github, 'revoked');
+    } finally {
+      race.mockRestore();
+    }
+    expect(grantWrites).toBe(2);
+    await expect(oauth.token(user, github)).resolves.toBeNull();
+    await expect(oauth.connected(user, github)).resolves.toBe(false);
+  });
+
   it('reports a stored grant that cannot be read as a failure, without a configuration too', async () => {
     const { oauth } = setup([() => json({ access_token: 'kept' })]);
     const user = userId();
