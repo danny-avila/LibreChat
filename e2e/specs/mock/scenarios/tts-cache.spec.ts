@@ -185,6 +185,8 @@ async function signInFreshUser(
   const context = await browser.newContext({ storageState: undefined, baseURL });
   await context.addInitScript(() => {
     localStorage.setItem('navVisible', 'true');
+    /** The shared storage state opts into sending with Enter; a fresh account has to as well. */
+    localStorage.setItem('enterToSend', 'true');
   });
   const registered = await context.request.post('/api/auth/register', {
     data: {
