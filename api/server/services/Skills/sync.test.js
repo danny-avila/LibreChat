@@ -16,6 +16,7 @@ jest.mock('@librechat/api', () => {
   return {
     createSkillDeletionService: actualApi.createSkillDeletionService,
     createSkillBlobReserver: actualApi.createSkillBlobReserver,
+    createSkillBufferWriter: actualApi.createSkillBufferWriter,
     createSkillSyncTriggerOrchestrator: actualApi.createSkillSyncTriggerOrchestrator,
     createGitHubSkillSyncRunner: jest.fn((deps) => {
       mockRunnerDeps = deps;

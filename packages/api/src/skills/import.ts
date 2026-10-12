@@ -778,8 +778,8 @@ async function persistArchiveFile(
       if (saved.source !== reserved.source) throw new Error('Skill storage changed during upload');
       return saved.filepath;
     },
-    persist: (filepath) =>
-      deps.upsertSkillFile({
+    persist: async (filepath) => {
+      await deps.upsertSkillFile({
         skillId: context.skillId,
         relativePath: file.relativePath,
         file_id: fileId,
@@ -793,10 +793,14 @@ async function persistArchiveFile(
         isExecutable: false,
         author: context.authorId,
         tenantId: context.tenantId,
-      }),
-    isPersisted: async () =>
+      });
+      return fileId;
+    },
+    readPersisted: async () =>
       (await deps.getSkillFileByPath(context.skillId.toString(), file.relativePath))?.file_id ===
-      fileId,
+      fileId
+        ? fileId
+        : null,
     deleteReserved: (ref, savedPath) =>
       deps.deleteFile!(req, {
         filepath: savedPath ?? ref.filepath,

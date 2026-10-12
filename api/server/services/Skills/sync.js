@@ -1,7 +1,6 @@
-const { FileContext } = require('librechat-data-provider');
 const {
-  getStorageMetadata,
   createSkillBlobReserver,
+  createSkillBufferWriter,
   createGitHubSkillSyncRunner,
   createSkillSyncTriggerOrchestrator,
   startGitHubSkillSyncScheduler,
@@ -18,6 +17,7 @@ const reserveSkillBlobForConfig = createSkillBlobReserver({
   getFileStrategy,
   getStrategyFunctions,
 });
+const saveSkillBuffer = createSkillBufferWriter({ getStrategyFunctions });
 
 let appConfigRef;
 let runner;
@@ -39,16 +39,6 @@ async function loadCurrentAppConfig() {
 async function getSyncConfig(loadAppConfig = loadCurrentAppConfig) {
   const appConfig = await loadAppConfig();
   return appConfig?.skillSync;
-}
-
-async function resolveSkillStorage({ isImage = false, loadAppConfig = loadCurrentAppConfig } = {}) {
-  const appConfig = await loadAppConfig();
-  const source = getFileStrategy(appConfig, { context: FileContext.skill_file, isImage });
-  const strategy = getStrategyFunctions(source);
-  if (!strategy.saveBuffer) {
-    throw new Error(`Storage backend "${source}" does not support file writes`);
-  }
-  return { source, saveBuffer: strategy.saveBuffer };
 }
 
 async function getSyntheticReq({ userId = SYSTEM_USER_ID, tenantId, loadAppConfig } = {}) {
@@ -139,32 +129,7 @@ function createRunner({ getConfig, loadAppConfig, allowServerCredentials = true 
         role._id,
       );
     },
-    saveBuffer: async ({
-      userId,
-      buffer,
-      fileName,
-      expectedSource,
-      basePath,
-      isImage,
-      tenantId,
-    }) => {
-      const storage = await resolveSkillStorage({ isImage, loadAppConfig: resolveAppConfig });
-      if (storage.source !== expectedSource) {
-        throw new Error('Skill storage changed before upload');
-      }
-      const filepath = await storage.saveBuffer({
-        userId: userId ?? SYSTEM_USER_ID,
-        buffer,
-        fileName,
-        basePath,
-        tenantId,
-      });
-      return {
-        filepath,
-        source: storage.source,
-        ...getStorageMetadata({ filepath, source: storage.source }),
-      };
-    },
+    saveBuffer: (params) => saveSkillBuffer({ ...params, userId: params.userId ?? SYSTEM_USER_ID }),
     deleteFile: async (file) => {
       const strategy = getStrategyFunctions(file.source);
       if (!strategy.deleteFile) {

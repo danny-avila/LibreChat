@@ -164,6 +164,33 @@ it('resweeps abandoned intents even after an earlier clean pass', async () => {
   expect(h.deps.deleteReservedBlob).toHaveBeenCalledTimes(2);
 });
 
+it('cleans intent blobs with bounded concurrency', async () => {
+  const h = harness();
+  h.files.length = 0;
+  for (let index = 0; index < 4; index++) {
+    h.intents.push({
+      skillId,
+      author,
+      fileId: `orphan-${index}`,
+      source: 'local',
+      storageKey: `/uploads/owner/orphan-${index}`,
+      state: 'abandoned',
+    });
+  }
+  let active = 0;
+  let peak = 0;
+  h.deps.deleteReservedBlob = jest.fn(async () => {
+    active++;
+    peak = Math.max(peak, active);
+    await new Promise((resolve) => setImmediate(resolve));
+    active--;
+  });
+
+  await runSkillDeletion(skillId, h.deps, 2);
+  expect(h.deps.deleteReservedBlob).toHaveBeenCalledTimes(4);
+  expect(peak).toBe(2);
+});
+
 it('does not reopen or finalize an already-completed tombstone with no late work', async () => {
   const h = harness();
   h.files.length = 0;

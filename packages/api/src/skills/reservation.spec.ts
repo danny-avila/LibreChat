@@ -1,5 +1,10 @@
 import { FileContext, FileSources } from 'librechat-data-provider';
-import { createSkillBlobReserver, reserveSkillBlob } from './reservation';
+import {
+  createSkillBlobReserver,
+  createSkillBufferWriter,
+  createSkillStorageResolver,
+  reserveSkillBlob,
+} from './reservation';
 import { extractFirebaseBlobPath } from '~/storage/ownedBlobDelete';
 
 describe('Skill blob reservation', () => {
@@ -72,5 +77,35 @@ describe('Skill blob reservation', () => {
         },
       ),
     ).rejects.toThrow('Skill storage cannot guarantee cleanup');
+  });
+
+  it('writes to the reserved provider when live config changes before upload', async () => {
+    const localSave = jest.fn(async () => '/uploads/owner/id__note.md');
+    const firebaseSave = jest.fn(async () => 'https://firebase.invalid/o/other');
+    const getFileStrategy = jest.fn(() => FileSources.local);
+    const getStrategyFunctions = jest.fn((source: string) => ({
+      saveBuffer: source === FileSources.local ? localSave : firebaseSave,
+      deleteFile: jest.fn(),
+    }));
+    const resolve = createSkillStorageResolver({ getFileStrategy, getStrategyFunctions });
+    const selected = resolve({}, { isImage: false });
+    getFileStrategy.mockReturnValue(FileSources.firebase);
+    const write = createSkillBufferWriter({ getStrategyFunctions });
+
+    await expect(
+      write({
+        expectedSource: selected.source,
+        userId: 'owner',
+        fileName: 'id__note.md',
+        buffer: Buffer.from('note'),
+        basePath: 'uploads',
+      }),
+    ).resolves.toMatchObject({
+      source: FileSources.local,
+      filepath: '/uploads/owner/id__note.md',
+    });
+    expect(localSave).toHaveBeenCalledTimes(1);
+    expect(firebaseSave).not.toHaveBeenCalled();
+    expect(getFileStrategy).toHaveBeenCalledTimes(1);
   });
 });

@@ -123,6 +123,11 @@ it.each([false, true])(
     sweep.stop();
     expect(deleteFile).toHaveBeenCalledTimes(rowExists ? 0 : 1);
     expect(persistence.markSkillUploadIntentCleaned).toHaveBeenCalledTimes(rowExists ? 0 : 1);
+    expect(persistence.scheduleAbandonedSkillUploadIntentRecheck).toHaveBeenCalledWith(
+      intent.fileId,
+      expect.any(String),
+      3_600_000,
+    );
     expect(persistence.noteAbandonedSkillUploadIntentAttempt).toHaveBeenCalledWith(intent.fileId);
   },
 );

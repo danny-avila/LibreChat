@@ -217,7 +217,10 @@ describe('agent skill file saver', () => {
       file_id: committedRevision,
       filepath: '/uploads/editor/committed',
     }));
-    await expect(h.save(h.params)).rejects.toThrow('parent update failed');
+    await expect(h.save(h.params)).resolves.toEqual({
+      bytes: h.params.content.length,
+      relativePath: h.params.relativePath,
+    });
     expect(committedRevision).not.toBe('');
     expect(h.deleteFile).toHaveBeenCalledWith(
       h.params.req,

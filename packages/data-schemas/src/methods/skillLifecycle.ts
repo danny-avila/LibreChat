@@ -302,14 +302,26 @@ export function createSkillLifecycleMethods(
   }
 
   async function reserveSkillUploadIntent(input: IntentInput): Promise<ISkillUploadIntent> {
-    const skill = await skillModel()
-      .findOne({ _id: input.skillId, deletingAt: { $exists: false } })
-      .select('_id')
-      .lean();
-    if (!skill) {
-      throw Object.assign(new Error('Skill is being deleted'), { code: 'SKILL_DELETING' });
+    // Publish the future blob reference before checking the parent. Deletion
+    // marks the parent first, then scans intents: it must either see this row
+    // or make the check below fail before any bytes are written.
+    const intent = (await intentModel().create({ ...input, state: 'uploading' })).toObject();
+    try {
+      const skill = await skillModel()
+        .findOne({ _id: input.skillId, deletingAt: { $exists: false } })
+        .select('_id')
+        .lean();
+      if (!skill) {
+        throw Object.assign(new Error('Skill is being deleted'), { code: 'SKILL_DELETING' });
+      }
+      return intent;
+    } catch (error) {
+      await intentModel().updateOne(
+        { fileId: input.fileId, writerId: input.writerId, state: 'uploading' },
+        { $set: { state: 'abandoned' } },
+      );
+      throw error;
     }
-    return (await intentModel().create({ ...input, state: 'uploading' })).toObject();
   }
 
   async function transitionSkillUploadIntent(

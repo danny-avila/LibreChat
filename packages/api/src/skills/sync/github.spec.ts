@@ -2979,95 +2979,110 @@ describe('createGitHubSkillSyncRunner', () => {
     expect(deps.updateSkill).not.toHaveBeenCalled();
   });
 
-  it('restores existing skill files when the skill update fails after file sync', async () => {
-    const existing = makeSkill({
-      name: 'research',
-      description: 'Old description',
-      body: 'Old body',
-      author: new Types.ObjectId(),
-      authorName: 'GitHub Sync',
-      source: 'github',
-      sourceMetadata: {
-        provider: 'github',
-        sourceId: 'librechat-skills',
-        upstreamId: 'librechat-skills:skills/research',
-        owner: 'LibreChat',
-        repo: 'skills',
-        ref: 'main',
-        skillPath: 'skills/research',
-      },
-    }) as ISkill & { _id: Types.ObjectId };
-    const oldFile = makeSkillFile(existing);
-    const files = new Map<string, ISkillFile & { _id: Types.ObjectId }>([
-      [oldFile.relativePath, oldFile],
-    ]);
-    const upsertSkillFile = jest.fn(
-      async (
-        row: Parameters<GitHubSkillSyncDeps['upsertSkillFile']>[0],
-      ): Promise<ISkillFile & { _id: Types.ObjectId }> => {
-        const current = files.get(row.relativePath);
-        const next = {
-          _id: current?._id ?? new Types.ObjectId(),
-          skillId: row.skillId as Types.ObjectId,
-          relativePath: row.relativePath,
-          file_id: row.file_id,
-          filename: row.filename,
-          filepath: row.filepath,
-          storageKey: row.storageKey,
-          storageRegion: row.storageRegion,
-          source: row.source,
-          sourceMetadata: row.sourceMetadata,
-          mimeType: row.mimeType,
-          bytes: row.bytes,
-          category: 'script' as const,
-          isExecutable: row.isExecutable ?? false,
-          author: new Types.ObjectId(row.author),
-          tenantId: row.tenantId,
-        };
-        files.set(row.relativePath, next);
-        return next;
-      },
-    );
-    const deps = createDeps({
-      findSkillBySourceIdentity: jest.fn(async () => existing),
-      getSkillById: jest.fn(async () => ({ ...existing, version: existing.version + 1 })),
-      getSkillFileByPath: jest.fn(
-        async (_skillId, relativePath) => files.get(relativePath) ?? null,
-      ),
-      listSkillFiles: jest.fn(async () => Array.from(files.values())),
-      upsertSkillFile,
-      deleteSkillFile: jest.fn(async (_skillId, relativePath) => ({
-        deleted: files.delete(relativePath),
-      })),
-      saveBuffer: jest.fn(async () => ({
-        filepath: '/uploads/new-file-id__run.sh',
-        source: 'local',
-      })),
-      deleteFile: jest.fn(async () => undefined),
-      updateSkill: jest.fn(async () => ({ status: 'conflict' as const, current: existing })),
-    });
-    const runner = createGitHubSkillSyncRunner(deps);
-    const result = await runner.runOnce();
+  it.each([false, true])(
+    'retains a recoverable file when sync rollback cleanup queue fails: queueFailed=%s',
+    async (queueFailed) => {
+      const existing = makeSkill({
+        name: 'research',
+        description: 'Old description',
+        body: 'Old body',
+        author: new Types.ObjectId(),
+        authorName: 'GitHub Sync',
+        source: 'github',
+        sourceMetadata: {
+          provider: 'github',
+          sourceId: 'librechat-skills',
+          upstreamId: 'librechat-skills:skills/research',
+          owner: 'LibreChat',
+          repo: 'skills',
+          ref: 'main',
+          skillPath: 'skills/research',
+        },
+      }) as ISkill & { _id: Types.ObjectId };
+      const oldFile = makeSkillFile(existing);
+      const files = new Map<string, ISkillFile & { _id: Types.ObjectId }>([
+        [oldFile.relativePath, oldFile],
+      ]);
+      const upsertSkillFile = jest.fn(
+        async (
+          row: Parameters<GitHubSkillSyncDeps['upsertSkillFile']>[0],
+        ): Promise<ISkillFile & { _id: Types.ObjectId }> => {
+          const current = files.get(row.relativePath);
+          const next = {
+            _id: current?._id ?? new Types.ObjectId(),
+            skillId: row.skillId as Types.ObjectId,
+            relativePath: row.relativePath,
+            file_id: row.file_id,
+            filename: row.filename,
+            filepath: row.filepath,
+            storageKey: row.storageKey,
+            storageRegion: row.storageRegion,
+            source: row.source,
+            sourceMetadata: row.sourceMetadata,
+            mimeType: row.mimeType,
+            bytes: row.bytes,
+            category: 'script' as const,
+            isExecutable: row.isExecutable ?? false,
+            author: new Types.ObjectId(row.author),
+            tenantId: row.tenantId,
+          };
+          files.set(row.relativePath, next);
+          return next;
+        },
+      );
+      const deps = createDeps({
+        findSkillBySourceIdentity: jest.fn(async () => existing),
+        getSkillById: jest.fn(async () => ({ ...existing, version: existing.version + 1 })),
+        getSkillFileByPath: jest.fn(
+          async (_skillId, relativePath) => files.get(relativePath) ?? null,
+        ),
+        listSkillFiles: jest.fn(async () => Array.from(files.values())),
+        upsertSkillFile,
+        deleteSkillFile: jest.fn(async (_skillId, relativePath) => ({
+          deleted: files.delete(relativePath),
+        })),
+        saveBuffer: jest.fn(async () => ({
+          filepath: '/uploads/new-file-id__run.sh',
+          source: 'local',
+        })),
+        deleteFile: jest.fn(async () => undefined),
+        queueCommittedSkillUploadCleanup: jest.fn(async () => {
+          if (queueFailed) throw new Error('cleanup queue unavailable');
+        }),
+        updateSkill: jest.fn(async () => ({ status: 'conflict' as const, current: existing })),
+      });
+      const runner = createGitHubSkillSyncRunner(deps);
+      const result = await runner.runOnce();
 
-    expect(result.status).toBe('failed');
-    expect(deps.upsertStatus).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        status: 'failed',
-        errorCode: 'SKILL_CONFLICT',
-      }),
-    );
-    expect(files.get('scripts/run.sh')).toEqual(
-      expect.objectContaining({ filepath: oldFile.filepath }),
-    );
-    expect(deps.deleteFile).toHaveBeenCalledWith(
-      expect.objectContaining({ filepath: '/uploads/new-file-id__run.sh' }),
-    );
-    expect(deps.deleteFile).not.toHaveBeenCalledWith(
-      expect.objectContaining({ filepath: oldFile.filepath }),
-    );
-    expect(deps.queueCommittedSkillUploadCleanup).toHaveBeenCalledWith(expect.any(String));
-    expect(deps.markSkillUploadIntentCleaned).toHaveBeenCalledWith(expect.any(String));
-  });
+      expect(result.status).toBe('failed');
+      expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          status: 'failed',
+          errorCode: queueFailed ? 'SYNC_ROLLBACK_FAILED' : 'SKILL_CONFLICT',
+        }),
+      );
+      expect(files.get('scripts/run.sh')).toEqual(
+        expect.objectContaining({
+          filepath: queueFailed ? '/uploads/new-file-id__run.sh' : oldFile.filepath,
+        }),
+      );
+      if (queueFailed) {
+        expect(deps.deleteFile).not.toHaveBeenCalled();
+        expect(deps.upsertStatus).toHaveBeenLastCalledWith(
+          expect.objectContaining({ status: 'failed', errorCode: 'SYNC_ROLLBACK_FAILED' }),
+        );
+      } else {
+        expect(deps.deleteFile).toHaveBeenCalledWith(
+          expect.objectContaining({ filepath: '/uploads/new-file-id__run.sh' }),
+        );
+      }
+      expect(deps.deleteFile).not.toHaveBeenCalledWith(
+        expect.objectContaining({ filepath: oldFile.filepath }),
+      );
+      expect(deps.queueCommittedSkillUploadCleanup).toHaveBeenCalledWith(expect.any(String));
+      expect(deps.markSkillUploadIntentCleaned).toHaveBeenCalledTimes(queueFailed ? 0 : 1);
+    },
+  );
 
   it('fails the source when existing-skill rollback cannot remove replacement storage', async () => {
     const existing = makeSkill({

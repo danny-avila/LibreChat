@@ -121,7 +121,7 @@ async function saveSkillFile(
     }
   };
 
-  let result: StoredSkillFile & { bytes: number; relativePath: string };
+  let result: { filepath: string; bytes: number; relativePath: string };
   try {
     result = await withSkillUploadIntent(deps, {
       skillId,
@@ -153,11 +153,13 @@ async function saveSkillFile(
             code: 'SKILL_FILE_UPSERT_NOT_FOUND',
           });
         }
-        return row;
+        return { filepath: row.filepath, bytes: buffer.length, relativePath };
       },
-      isPersisted: async () => {
+      readPersisted: async () => {
         const persisted = await deps.getSkillFileByPath(skillId, relativePath);
-        return persisted?.file_id === fileId;
+        return persisted?.file_id === fileId
+          ? { filepath: persisted.filepath, bytes: buffer.length, relativePath }
+          : null;
       },
       deleteReserved: (file, savedPath) =>
         strategy.deleteFile!(req, {

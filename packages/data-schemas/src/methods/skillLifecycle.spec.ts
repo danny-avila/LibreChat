@@ -308,6 +308,42 @@ describe('Skill upload intents', () => {
         writerId: 'worker-1',
       }),
     ).rejects.toMatchObject({ code: 'SKILL_DELETING' });
+    expect((await lifecycle.getSkillUploadIntent('file-2'))?.state).toBe('abandoned');
+  });
+
+  it('makes an in-flight reservation visible before deletion marks the Skill', async () => {
+    const { skill, author } = await makeSkill();
+    const model = mongoose.models.Skill;
+    const findOne = jest.spyOn(model, 'findOne').mockImplementationOnce(
+      () =>
+        ({
+          select: () => ({
+            lean: async () => {
+              expect((await lifecycle.getSkillUploadIntent('racing-file'))?.state).toBe(
+                'uploading',
+              );
+              await lifecycle.beginSkillDeletion(skill.id);
+              return null;
+            },
+          }),
+        }) as never,
+    );
+    try {
+      await expect(
+        lifecycle.reserveSkillUploadIntent({
+          skillId: skill.id,
+          fileId: 'racing-file',
+          source: 'local',
+          storageKey: `/uploads/${author}/racing-file`,
+          author: author.toString(),
+          writerId: 'racing-writer',
+        }),
+      ).rejects.toMatchObject({ code: 'SKILL_DELETING' });
+      expect((await lifecycle.getSkillUploadIntent('racing-file'))?.state).toBe('abandoned');
+      expect(await lifecycle.getSkillDeletion(skill.id)).not.toBeNull();
+    } finally {
+      findOne.mockRestore();
+    }
   });
 
   it('backfills a pre-existing blob before its Skill row can be finalized', async () => {

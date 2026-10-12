@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import type { ISkillUploadIntent } from '@librechat/data-schemas';
 import type { SkillBlobReservation } from './reservation';
 
 type ReserveInput = {
@@ -13,12 +12,12 @@ type ReserveInput = {
 };
 
 export interface SkillUploadIntentDeps {
-  reserveSkillUploadIntent: (input: ReserveInput) => Promise<ISkillUploadIntent>;
+  reserveSkillUploadIntent: (input: ReserveInput) => Promise<{ fileId: string }>;
   transitionSkillUploadIntent: (
     fileId: string,
     writerId: string,
-    from: ISkillUploadIntent['state'],
-    to: ISkillUploadIntent['state'],
+    from: 'uploading' | 'committing' | 'committed' | 'abandoned',
+    to: 'uploading' | 'committing' | 'committed' | 'abandoned',
   ) => Promise<boolean>;
 }
 
@@ -31,7 +30,7 @@ export interface SkillUploadOperation<T> {
   reservation: SkillBlobReservation;
   save: () => Promise<string>;
   persist: (filepath: string) => Promise<T>;
-  isPersisted: () => Promise<boolean>;
+  readPersisted: () => Promise<T | null>;
   deleteReserved: (reservation: SkillBlobReservation, savedPath?: string) => Promise<void>;
 }
 
@@ -74,21 +73,21 @@ export async function withSkillUploadIntent<T>(
     if (!committed) throw new Error('Skill upload commit acknowledgement failed');
     return persistedResult.value;
   } catch (error) {
-    let persisted = false;
+    let persisted: T | null;
     try {
-      persisted = await operation.isPersisted();
+      persisted = await operation.readPersisted();
     } catch {
       // Ambiguous database failure: do not delete a blob that may be live.
       throw error;
     }
-    if (persisted) {
+    if (persisted !== null) {
       const committed = await deps.transitionSkillUploadIntent(
         operation.fileId,
         writerId,
         'committing',
         'committed',
       );
-      if (committed && persistedResult) return persistedResult.value;
+      if (committed) return persistedResult ? persistedResult.value : persisted;
       throw error;
     }
     await deps.transitionSkillUploadIntent(operation.fileId, writerId, 'uploading', 'abandoned');

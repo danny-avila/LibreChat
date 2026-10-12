@@ -1,16 +1,9 @@
-import type { ISkillUploadIntent } from '@librechat/data-schemas';
 import type { SkillUploadIntentDeps, SkillUploadOperation } from './intent';
 import { withSkillUploadIntent } from './intent';
 
 function makeDeps(): jest.Mocked<SkillUploadIntentDeps> {
   return {
-    reserveSkillUploadIntent: jest.fn(
-      async (input) =>
-        ({
-          ...input,
-          state: 'uploading' as const,
-        }) as unknown as ISkillUploadIntent,
-    ),
+    reserveSkillUploadIntent: jest.fn(async (input) => ({ fileId: input.fileId })),
     transitionSkillUploadIntent: jest.fn(async (_fileId, _writerId, _from, _to) => true),
   };
 }
@@ -24,7 +17,7 @@ function makeOperation(): SkillUploadOperation<string> {
     reservation: { filepath: '/uploads/owner/file-1' },
     save: jest.fn(async () => '/uploads/owner/file-1'),
     persist: jest.fn(async () => 'saved'),
-    isPersisted: jest.fn(async () => false),
+    readPersisted: jest.fn(async () => null),
     deleteReserved: jest.fn(async () => undefined),
   };
 }
@@ -57,14 +50,14 @@ it('keeps an abandoned intent even when immediate compensation succeeds', async 
   expect(operation.deleteReserved).toHaveBeenCalled();
 });
 
-it('does not delete a blob after an ambiguous database commit', async () => {
+it('returns the persisted row after an ambiguous database commit', async () => {
   const deps = makeDeps();
   const operation = makeOperation();
   operation.persist = jest.fn(async () => {
     throw new Error('lost database reply');
   });
-  operation.isPersisted = jest.fn(async () => true);
-  await expect(withSkillUploadIntent(deps, operation)).rejects.toThrow('lost database reply');
+  operation.readPersisted = jest.fn(async () => 'recovered');
+  await expect(withSkillUploadIntent(deps, operation)).resolves.toBe('recovered');
   expect(operation.deleteReserved).not.toHaveBeenCalled();
 });
 
@@ -73,7 +66,7 @@ it.each(['acknowledgement rejected', 'reply lost'] as const)(
   async (scenario) => {
     const deps = makeDeps();
     const operation = makeOperation();
-    operation.isPersisted = jest.fn(async () => true);
+    operation.readPersisted = jest.fn(async () => 'saved');
     deps.transitionSkillUploadIntent.mockResolvedValueOnce(true);
     if (scenario === 'reply lost') {
       deps.transitionSkillUploadIntent.mockRejectedValueOnce(new Error('lost acknowledgement'));

@@ -290,6 +290,11 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
             deps.logger.warn(
               `[skill upload intent] ${fileId} still has a file row; retaining blob`,
             );
+            await assertClaim();
+            if (!(await scheduleIntentRecheck(fileId, owner))) {
+              lost = true;
+              throw new SkillDeletionClaimLostError();
+            }
             continue;
           }
           await assertClaim();

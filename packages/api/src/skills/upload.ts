@@ -172,9 +172,9 @@ export function createSkillUploadHandler(
               author: userId,
               tenantId,
             }),
-          isPersisted: async () => {
+          readPersisted: async () => {
             const persisted = await deps.getSkillFileByPath(skillId, relativePath);
-            return persisted?.file_id === fileId;
+            return persisted?.file_id === fileId ? persisted : null;
           },
           deleteReserved: (ref, savedPath) =>
             strategy.deleteFile!(req, {

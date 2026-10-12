@@ -1202,6 +1202,9 @@ async function restoreExistingSkillFiles(params: {
       .map((file) => deps.queueCommittedSkillUploadCleanup(file.file_id!)),
   );
   const queueFailure = queued.find((result) => result.status === 'rejected');
+  // Restoring old rows would orphan a committed replacement whose cleanup
+  // intent was not durably queued. Leave the new rows intact for a later sync.
+  if (queueFailure?.status === 'rejected') throw queueFailure.reason;
   const previousByPath = new Map(previousFiles.map((file) => [file.relativePath, file]));
   const currentFiles = await deps.listSkillFiles(skill._id);
 
@@ -1225,7 +1228,6 @@ async function restoreExistingSkillFiles(params: {
   }).catch((error) => {
     cleanupFailure = error;
   });
-  if (queueFailure?.status === 'rejected') throw queueFailure.reason;
   if (cleanupFailure) throw cleanupFailure;
 }
 
@@ -1500,8 +1502,8 @@ async function syncSkillFiles(params: {
         if (saved.source !== reserved.source) throw new Error('Skill storage changed during sync');
         return saved.filepath;
       },
-      persist: (filepath) =>
-        deps.upsertSkillFile({
+      persist: async (filepath) => {
+        await deps.upsertSkillFile({
           skillId: skill._id,
           relativePath,
           file_id: fileId,
@@ -1523,9 +1525,13 @@ async function syncSkillFiles(params: {
           isExecutable: false,
           author: skill.author,
           tenantId: skill.tenantId,
-        }),
-      isPersisted: async () =>
-        (await deps.getSkillFileByPath(skill._id, relativePath))?.file_id === fileId,
+        });
+        return fileId;
+      },
+      readPersisted: async () =>
+        (await deps.getSkillFileByPath(skill._id, relativePath))?.file_id === fileId
+          ? fileId
+          : null,
       deleteReserved: (ref, savedPath) =>
         deps.deleteFile!({
           filepath: savedPath ?? ref.filepath,

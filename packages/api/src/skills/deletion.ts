@@ -113,39 +113,45 @@ export async function runSkillDeletion(
   const rejectedFile = fileResults.find((result) => result.status === 'rejected');
   if (rejectedFile?.status === 'rejected') throw rejectedFile.reason;
 
-  for (const intent of intents) {
-    if (intent.state === 'committed') {
-      if (intent.cleanedAt) continue;
-      if (currentFileIds.has(intent.fileId) && !cleanedFileIds.has(intent.fileId)) {
-        // Keep the intent with its current row for the next retry.
-        continue;
-      }
-      await assertClaim();
-      try {
-        if (!cleanedFileIds.has(intent.fileId)) {
-          await deps.deleteReservedBlob(intent);
+  const intentResults = await Promise.allSettled(
+    intents.map((intent) =>
+      limit(async () => {
+        if (intent.state === 'committed') {
+          if (intent.cleanedAt) return;
+          if (currentFileIds.has(intent.fileId) && !cleanedFileIds.has(intent.fileId)) {
+            // Keep the intent with its current row for the next retry.
+            return;
+          }
+          await assertClaim();
+          try {
+            if (!cleanedFileIds.has(intent.fileId)) {
+              await deps.deleteReservedBlob(intent);
+            }
+          } catch {
+            failedSteps.push('upload_intents');
+            return;
+          }
+          await assertClaim();
+          try {
+            await deps.markSkillUploadIntentCleaned(intent.fileId);
+          } catch {
+            failedSteps.push('upload_intents');
+          }
+          return;
         }
-      } catch {
-        failedSteps.push('upload_intents');
-        continue;
-      }
-      await assertClaim();
-      try {
-        await deps.markSkillUploadIntentCleaned(intent.fileId);
-      } catch {
-        failedSteps.push('upload_intents');
-      }
-      continue;
-    }
-    await assertClaim();
-    try {
-      await deps.deleteReservedBlob(intent);
-      // Keep abandoned intents as tombstones: a zombie upload can finish
-      // after this cleanup and must be discovered on the next sweep.
-    } catch {
-      failedSteps.push('upload_intents');
-    }
-  }
+        await assertClaim();
+        try {
+          await deps.deleteReservedBlob(intent);
+          // Keep abandoned intents as tombstones: a zombie upload can finish
+          // after this cleanup and must be discovered on the next sweep.
+        } catch {
+          failedSteps.push('upload_intents');
+        }
+      }),
+    ),
+  );
+  const rejectedIntent = intentResults.find((result) => result.status === 'rejected');
+  if (rejectedIntent?.status === 'rejected') throw rejectedIntent.reason;
 
   if (failedSteps.length > 0) {
     return {

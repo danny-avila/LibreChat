@@ -1,4 +1,5 @@
 import { FileContext, FileSources } from 'librechat-data-provider';
+import type { SaveBufferParams } from '~/storage/types';
 import { getStorageMetadata } from '~/storage/metadata';
 
 type FutureURL = (params: {
@@ -12,6 +13,62 @@ export interface SkillBlobReservation {
   filepath: string;
   storageKey?: string;
   storageRegion?: string;
+}
+
+type SkillStorageStrategy = {
+  saveBuffer?: (params: SaveBufferParams) => Promise<string>;
+  deleteFile?: unknown;
+  getFileURL?: FutureURL | null;
+};
+
+type ResolvedSkillStorage = {
+  source: string;
+  saveBuffer: (params: SaveBufferParams) => Promise<string>;
+  getFileURL?: FutureURL | null;
+};
+
+type SavedSkillBuffer = {
+  filepath: string;
+  source: string;
+  storageKey?: string;
+  storageRegion?: string;
+};
+
+/** Select and validate one Skill store; callers keep its writer for this upload. */
+export function createSkillStorageResolver<TConfig>(deps: {
+  getFileStrategy: (config: TConfig, options: { context: FileContext; isImage: boolean }) => string;
+  getStrategyFunctions: (source: string) => SkillStorageStrategy;
+}): (config: TConfig, options: { isImage: boolean }) => ResolvedSkillStorage {
+  return (config: TConfig, options: { isImage: boolean }) => {
+    const source = deps.getFileStrategy(config, {
+      context: FileContext.skill_file,
+      isImage: options.isImage,
+    });
+    const strategy = deps.getStrategyFunctions(source);
+    if (!strategy.saveBuffer || !strategy.deleteFile) {
+      throw new Error('Skill storage cannot guarantee cleanup');
+    }
+    return { source, saveBuffer: strategy.saveBuffer, getFileURL: strategy.getFileURL };
+  };
+}
+
+/** Write with the already-reserved provider, even if live configuration changes. */
+export function createSkillBufferWriter(deps: {
+  getStrategyFunctions: (source: string) => SkillStorageStrategy;
+}): (params: SaveBufferParams & { expectedSource: string }) => Promise<SavedSkillBuffer> {
+  return async (params: SaveBufferParams & { expectedSource: string }) => {
+    const { expectedSource, ...saveParams } = params;
+    const strategy = deps.getStrategyFunctions(expectedSource);
+    if (!strategy.saveBuffer || !strategy.deleteFile) {
+      throw new Error('Skill storage cannot guarantee cleanup');
+    }
+    const filepath = await strategy.saveBuffer(saveParams);
+    return {
+      filepath,
+      source: expectedSource,
+      ...getStorageMetadata({ filepath, source: expectedSource }),
+    };
+  };
 }
 
 /**
@@ -52,24 +109,14 @@ export async function reserveSkillBlob(params: {
 /** Selects and validates the provider before reserving a future Skill object. */
 export function createSkillBlobReserver<TConfig>(deps: {
   getFileStrategy: (config: TConfig, options: { context: FileContext; isImage: boolean }) => string;
-  getStrategyFunctions: (source: string) => {
-    saveBuffer?: unknown;
-    deleteFile?: unknown;
-    getFileURL?: FutureURL | null;
-  };
+  getStrategyFunctions: (source: string) => SkillStorageStrategy;
 }) {
+  const resolveStorage = createSkillStorageResolver(deps);
   return async (
     config: TConfig | Promise<TConfig>,
     params: { userId: string; fileName: string; isImage: boolean; tenantId?: string },
   ): Promise<SkillBlobReservation & { source: string }> => {
-    const source = deps.getFileStrategy(await config, {
-      context: FileContext.skill_file,
-      isImage: params.isImage,
-    });
-    const strategy = deps.getStrategyFunctions(source);
-    if (!strategy.saveBuffer || !strategy.deleteFile) {
-      throw new Error('Skill storage cannot guarantee cleanup');
-    }
+    const { source, getFileURL } = resolveStorage(await config, params);
     return {
       source,
       ...(await reserveSkillBlob({
@@ -77,7 +124,7 @@ export function createSkillBlobReserver<TConfig>(deps: {
         userId: params.userId,
         fileName: params.fileName,
         tenantId: params.tenantId,
-        getFileURL: strategy.getFileURL,
+        getFileURL,
       })),
     };
   };

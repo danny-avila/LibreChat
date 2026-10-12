@@ -22,12 +22,12 @@ const {
   createDeploymentSkillMethods,
   createSkillFileSaver,
   createSkillManagementFileSaver,
+  createSkillStorageResolver,
   isDeploymentSkillFileSource,
   getDeploymentSkillDownloadStream,
 } = require('@librechat/api');
 const {
   Permissions,
-  FileContext,
   ResourceType,
   PermissionBits,
   AccessRoleIds,
@@ -69,14 +69,11 @@ function getSkillStrategyFunctions(source) {
   return getStrategyFunctions(source);
 }
 
-function resolveSkillStorage(req, { isImage = false } = {}) {
-  const source = getFileStrategy(req.config, { context: FileContext.skill_file, isImage });
-  const strategy = getStrategyFunctions(source);
-  if (!strategy.saveBuffer) {
-    throw new Error(`Storage backend "${source}" does not support file writes`);
-  }
-  return { saveBuffer: strategy.saveBuffer, source };
-}
+const resolveSkillStorageForConfig = createSkillStorageResolver({
+  getFileStrategy,
+  getStrategyFunctions,
+});
+const resolveSkillStorage = (req, options) => resolveSkillStorageForConfig(req.config, options);
 
 const skillFileSaveDeps = {
   getSkillFileByPath: db.getSkillFileByPath,

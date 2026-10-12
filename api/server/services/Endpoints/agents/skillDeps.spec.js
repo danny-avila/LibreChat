@@ -50,6 +50,12 @@ jest.mock('@librechat/api', () => ({
   createDeploymentSkillMethods: (...args) => mockCreateDeploymentSkillMethods(...args),
   createSkillFileSaver: (...args) => mockCreateSkillFileSaver(...args),
   createSkillManagementFileSaver: (...args) => mockCreateSkillManagementFileSaver(...args),
+  createSkillStorageResolver:
+    ({ getFileStrategy, getStrategyFunctions }) =>
+    (config, { isImage }) => {
+      const source = getFileStrategy(config, { context: 'skill_file', isImage });
+      return { source, saveBuffer: getStrategyFunctions(source).saveBuffer };
+    },
   enrichWithSkillConfigurable: jest.fn(),
   getDeploymentSkillDownloadStream: jest.fn(),
   getStorageMetadata: (...args) => mockGetStorageMetadata(...args),
