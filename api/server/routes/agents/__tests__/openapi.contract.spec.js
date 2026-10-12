@@ -392,7 +392,7 @@ describe('Agents OpenAPI actual HTTP contract', () => {
     ).toBeNull();
 
     const deletedSkill = await request(app)
-      .delete(`/api/agents/v1/skills/${created.body.id}`)
+      .delete(`/api/agents/v1/skills/${created.body.id.toUpperCase()}`)
       .set('Authorization', `Bearer ${token}`);
     expect(deletedSkill.status).toBe(200);
     expectResponseToMatchSpec(spec, 'deleteSkill', deletedSkill);

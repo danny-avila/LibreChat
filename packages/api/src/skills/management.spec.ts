@@ -198,7 +198,7 @@ it('requires create capability for management mutations', async () => {
   await request(app).delete(`/skills/${skillId}`).expect(403);
 });
 it('deletes an inline Skill through the existing cleanup handler', async () => {
-  const result = await request(app).delete(`/skills/${skillId}`).expect(200);
+  const result = await request(app).delete(`/skills/${skillId.toUpperCase()}`).expect(200);
   expect(result.body).toEqual({ id: skillId, deleted: true, cleanupComplete: true });
   expect(await inTenant(() => db.getSkillById(skillId))).toBeNull();
   await request(app).delete(`/skills/${skillId}`).expect(404);

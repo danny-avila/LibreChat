@@ -384,8 +384,12 @@ export function createSkillManagementHandlers(
     ),
     delete: wrap(
       PermissionBits.DELETE,
-      (req, res) =>
-        runHandler(req, res, deps.handlers.delete, (body) => skillDeleteResponseSchema.parse(body)),
+      (req, res) => {
+        req.params.id = req.params.id.toLowerCase();
+        return runHandler(req, res, deps.handlers.delete, (body) =>
+          skillDeleteResponseSchema.parse(body),
+        );
+      },
       { mutation: true },
     ),
     listFiles: wrap(PermissionBits.VIEW, (req, res) =>
