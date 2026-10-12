@@ -27,6 +27,8 @@ import type {
   TextContentFragment,
   SkillContentInput,
 } from '~/protection';
+import type { SkillBlobReservation } from './reservation';
+import type { SkillUploadIntentDeps } from './intent';
 import type { ImportLimits } from './limits';
 import {
   inspectContent,
@@ -45,10 +47,8 @@ import { contentFilterBlockResponse } from '~/middleware/contentFilter';
 import { resolveRequestTenantId } from '~/middleware/tenant';
 import { createConcurrencyLimiter } from '~/utils/promise';
 import { DEFAULT_SKILL_IMPORT_LIMITS } from './limits';
-import { parseSkillMarkdown } from './parse';
 import { withSkillUploadIntent } from './intent';
-import type { SkillUploadIntentDeps } from './intent';
-import type { SkillBlobReservation } from './reservation';
+import { parseSkillMarkdown } from './parse';
 import { isBinaryBuffer } from './binary';
 
 const SKILL_MD = 'SKILL.md';

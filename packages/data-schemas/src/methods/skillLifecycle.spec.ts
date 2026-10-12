@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createModels } from '../models';
 import { createSkillLifecycleMethods } from './skillLifecycle';
+import { createModels } from '../models';
 
 jest.mock('~/config/winston', () => ({
   __esModule: true,

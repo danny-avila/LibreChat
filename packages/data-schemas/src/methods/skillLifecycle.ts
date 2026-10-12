@@ -1,12 +1,12 @@
 import type { Model, Types } from 'mongoose';
-import type { ISkillDocument } from '~/types/skill';
-import type { ISkillFileDocument } from '~/types/skill';
 import type {
   ISkillDeletion,
   ISkillDeletionDocument,
   ISkillUploadIntent,
   ISkillUploadIntentDocument,
 } from '~/types/skillDeletion';
+import type { ISkillFileDocument } from '~/types/skill';
+import type { ISkillDocument } from '~/types/skill';
 
 type SkillRow = ISkillDocument & { _id: Types.ObjectId };
 type IntentInput = {

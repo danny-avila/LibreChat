@@ -33,17 +33,17 @@ import type {
   AssertNotCancelled,
 } from './adapters/types';
 import type { GitHubRepoAdapterConfig } from './adapters/github';
+import type { SkillBlobReservation } from '../reservation';
+import type { SkillUploadIntentDeps } from '../intent';
 import {
   GITHUB_FINE_GRAINED_TOKEN_RECOMMENDATION,
   createGitHubRepoAdapter,
 } from './adapters/github';
 import { DEFAULT_SKILL_IMPORT_LIMITS } from '../limits';
+import { withSkillUploadIntent } from '../intent';
 import { parseSkillMarkdown } from '../parse';
 import { normalizeRepoPath } from './path';
 import { SkillSyncError } from './errors';
-import { withSkillUploadIntent } from '../intent';
-import type { SkillUploadIntentDeps } from '../intent';
-import type { SkillBlobReservation } from '../reservation';
 
 const SYSTEM_AUTHOR_NAME = 'GitHub Sync';
 
@@ -1151,36 +1151,6 @@ function toSkillFileInput(file: ISkillFile & { _id: Types.ObjectId }): UpsertSki
     mimeType: file.mimeType,
     bytes: file.bytes,
     isExecutable: file.isExecutable,
-    author: file.author,
-    tenantId: file.tenantId,
-  };
-}
-
-function toCreateSkillInput(skill: ISkill & { _id: Types.ObjectId }): CreateSkillInput {
-  return {
-    name: skill.name,
-    displayTitle: skill.displayTitle,
-    description: skill.description,
-    body: skill.body,
-    frontmatter: skill.frontmatter,
-    category: skill.category,
-    author: skill.author,
-    authorName: skill.authorName,
-    source: PROVIDER,
-    sourceMetadata: skill.sourceMetadata,
-    alwaysApply: skill.alwaysApply,
-    tenantId: skill.tenantId,
-  };
-}
-
-function toStoredFileRefFromSkillFile(
-  file: ISkillFile & { _id: Types.ObjectId },
-): StoredSkillFileRef {
-  return {
-    filepath: file.filepath,
-    source: file.source,
-    storageKey: file.storageKey,
-    storageRegion: file.storageRegion,
     author: file.author,
     tenantId: file.tenantId,
   };

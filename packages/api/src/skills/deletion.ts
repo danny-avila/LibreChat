@@ -1,4 +1,8 @@
-import type { DeleteSkillResult, ISkillFile } from '@librechat/data-schemas';
+import type {
+  DeleteSkillCleanupStep,
+  DeleteSkillResult,
+  ISkillFile,
+} from '@librechat/data-schemas';
 import type { ISkillDeletion, ISkillUploadIntent } from '@librechat/data-schemas';
 import type { Types } from 'mongoose';
 
@@ -21,7 +25,7 @@ export interface SkillDeletionDeps {
 export type SkillDeletionProgress = {
   found: boolean;
   cleanupComplete: boolean;
-  failedSteps: string[];
+  failedSteps: DeleteSkillCleanupStep[];
 };
 
 /**
@@ -35,7 +39,7 @@ export async function runSkillDeletion(
   const journal = (await deps.beginSkillDeletion(id)) ?? (await deps.getSkillDeletion(id));
   if (!journal) return { found: false, cleanupComplete: false, failedSteps: [] };
   await deps.reopenSkillDeletion(journal.skillId);
-  const failedSteps: string[] = [];
+  const failedSteps: DeleteSkillCleanupStep[] = [];
   const intents = await deps.listSkillUploadIntents(journal.skillId);
   // A writer may still finish uploading or committing after this scan. An
   // operator can explicitly abandon an intent after verifying its writer died;

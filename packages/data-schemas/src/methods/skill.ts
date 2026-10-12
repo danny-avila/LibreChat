@@ -18,12 +18,12 @@ import type {
   ISkillSummary,
 } from '~/types/skill';
 import type { IAgent } from '~/types/agent';
+import { createSkillLifecycleMethods } from './skillLifecycle';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { stripYamlTrailingComment } from '~/utils/yaml';
 import { escapeRegExp } from '~/utils/string';
 import logger from '~/config/winston';
-import { createSkillLifecycleMethods } from './skillLifecycle';
 
 /** ---------- Validation helpers (pure) ---------- */
 
@@ -45,7 +45,11 @@ export type ValidationIssue = {
   severity?: 'error' | 'warning';
 };
 
-export type DeleteSkillCleanupStep = 'agent_allowlists' | 'skill_files' | 'permissions';
+export type DeleteSkillCleanupStep =
+  | 'agent_allowlists'
+  | 'skill_files'
+  | 'permissions'
+  | 'upload_intents';
 
 export type DeleteSkillResult = {
   /** Whether this call removed the Skill row. */

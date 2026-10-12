@@ -4,11 +4,11 @@ import type { UpsertSkillFileInput } from '@librechat/data-schemas';
 import type { TSkillFile } from 'librechat-data-provider';
 import type { ServerRequest, StrategyFunctions } from '~/types';
 import type { SaveBufferParams } from '~/storage/types';
+import type { SkillUploadIntentDeps } from './intent';
 import type { StoredSkillFile } from './upload';
 import { resolveRequestTenantId } from '~/middleware/tenant';
 import { getStorageMetadata } from '~/storage/metadata';
 import { withSkillUploadIntent } from './intent';
-import type { SkillUploadIntentDeps } from './intent';
 import { reserveSkillBlob } from './reservation';
 
 interface SkillFileSaveDeps extends SkillUploadIntentDeps {

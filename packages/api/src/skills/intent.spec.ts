@@ -1,6 +1,6 @@
+import type { ISkillUploadIntent } from '@librechat/data-schemas';
 import type { SkillUploadIntentDeps, SkillUploadOperation } from './intent';
 import { withSkillUploadIntent } from './intent';
-import type { ISkillUploadIntent } from '@librechat/data-schemas';
 
 function makeDeps(): jest.Mocked<SkillUploadIntentDeps> {
   return {

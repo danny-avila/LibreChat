@@ -18,6 +18,7 @@ import type { RepoTreeEntry, GitRepoAdapter } from './adapters/types';
 import type { GitHubSkillSyncDeps } from './github';
 import { DEFAULT_SKILL_IMPORT_LIMITS } from '../limits';
 import { createGitHubSkillSyncRunner } from './github';
+import { runSkillDeletion } from '../deletion';
 
 function response(body: unknown, status = 200, headers: Record<string, string> = {}): Response {
   const normalizedHeaders = new Map(
@@ -3810,6 +3811,27 @@ describe('steady-state sync of an unchanged source', () => {
     repo: ReturnType<typeof createRepo>,
     sourceOverrides: Partial<{ ref: string }> = {},
   ) {
+    const deleteSkillWithStorage = async (id: string): Promise<DeleteSkillResult> => {
+      const progress = await runSkillDeletion(id, {
+        beginSkillDeletion: db.beginSkillDeletion,
+        getSkillDeletion: db.getSkillDeletion,
+        listSkillFiles: db.listSkillFiles,
+        listSkillUploadIntents: db.listSkillUploadIntents,
+        deleteSkillFileAfterBlob: db.deleteSkillFileAfterBlob,
+        finalizeSkillDeletion: db.finalizeSkillDeletion,
+        completeSkillDeletion: db.completeSkillDeletion,
+        reopenSkillDeletion: db.reopenSkillDeletion,
+        markSkillUploadIntentCleaned: db.markSkillUploadIntentCleaned,
+        deleteBlob: async () => undefined,
+        deleteReservedBlob: async () => undefined,
+      });
+      return {
+        deleted: progress.found && progress.cleanupComplete,
+        skillAbsent: progress.found && progress.cleanupComplete,
+        cleanupComplete: progress.found && progress.cleanupComplete,
+        failedCleanupSteps: progress.failedSteps,
+      };
+    };
     return createDeps({
       getConfig: () => ({
         github: {
@@ -3838,7 +3860,7 @@ describe('steady-state sync of an unchanged source', () => {
       getSkillFileByPath: jest.fn(db.getSkillFileByPath),
       upsertSkillFile: jest.fn(db.upsertSkillFile),
       deleteSkillFile: jest.fn(db.deleteSkillFile),
-      deleteSkill: jest.fn(db.deleteSkill),
+      deleteSkill: jest.fn(deleteSkillWithStorage),
       saveBuffer: jest.fn(async ({ fileName }: { fileName: string }) => ({
         filepath: `/uploads/${fileName}`,
         source: 'local',
