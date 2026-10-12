@@ -8,7 +8,7 @@ import type {
   SummaryContentPart,
   TMessageContentParts,
 } from 'librechat-data-provider';
-import { isAskUserQuestionPart, isAnsweredAskUserQuestionPart } from '~/utils/approval';
+import { isAskUserQuestionPart, isAnsweredAskUserQuestionPart } from '../ask';
 
 /**
  * Pure content-part primitives behind `useStepHandler`.
@@ -42,7 +42,7 @@ type AllContentTypes =
   | ContentTypes.SUMMARY
   | ContentTypes.ERROR;
 
-export const isOAuthToolCallName = (name?: string) =>
+export const isOAuthToolCallName = (name?: string): boolean =>
   typeof name === 'string' && name.startsWith(`oauth${Constants.mcp_delimiter}`);
 
 const isOAuthToolCallContent = (part?: Partial<TMessageContentParts>) => {

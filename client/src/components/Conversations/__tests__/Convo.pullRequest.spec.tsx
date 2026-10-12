@@ -5,7 +5,10 @@ import { render, screen } from '@testing-library/react';
 import type { TConversation } from 'librechat-data-provider';
 
 const mockStartup: {
-  current: { pullRequestsEnabled?: boolean; pullRequestsBatchVersion?: number };
+  current: {
+    pullRequestsEnabled?: boolean;
+    pullRequestsBatchVersion?: number;
+  };
 } = {
   current: { pullRequestsEnabled: true, pullRequestsBatchVersion: 1 },
 };
@@ -86,13 +89,21 @@ import Conversation from '../Convo';
 const conversation = {
   conversationId: 'convo-1',
   title: 'Tool Approval UI',
+  codeDecisionListed: true,
+  codeEnvironmentMode: 'attached',
+  codeWorkspaces: [{ environmentId: 'env', workspaceId: 'ws' }],
+} as TConversation;
+const ordinary = {
+  conversationId: 'convo-1',
+  title: 'Tool Approval UI',
+  codeDecisionListed: true,
 } as TConversation;
 
-const renderRow = (props: { isGenerating?: boolean } = {}) =>
+const renderRow = (props: { isGenerating?: boolean; convo?: TConversation } = {}) =>
   render(
     <DndProvider backend={HTML5Backend}>
       <Conversation
-        conversation={conversation}
+        conversation={props.convo ?? conversation}
         retainView={jest.fn()}
         toggleNav={jest.fn()}
         isGenerating={props.isGenerating}
@@ -106,7 +117,10 @@ describe('Conversation row pull request', () => {
   beforeEach(() => {
     mockMarkProps.length = 0;
     mockMarkState.described = true;
-    mockStartup.current = { pullRequestsEnabled: true, pullRequestsBatchVersion: 1 };
+    mockStartup.current = {
+      pullRequestsEnabled: true,
+      pullRequestsBatchVersion: 1,
+    };
   });
 
   it("keeps the title the conversation's own and puts the pull request beside it, outside the row button", () => {
@@ -140,6 +154,12 @@ describe('Conversation row pull request', () => {
     expect(mockMarkProps[0]).toMatchObject({ conversationId: 'convo-1', selected: true });
   });
 
+  it('hands the mark its own row, so hovering anywhere on the row can open the card', () => {
+    renderRow();
+    const rowRef = mockMarkProps[0].rowRef as { current: HTMLElement | null };
+    expect(rowRef.current).toBe(screen.getByTestId('convo-item'));
+  });
+
   it('reserves no space around the mark, since an absent mark must leave the row unchanged', () => {
     renderRow();
     const wrapper = screen.getByTestId('convo-pull-request').parentElement as HTMLElement;
@@ -166,6 +186,24 @@ describe('Conversation row pull request', () => {
     expect(screen.queryByTestId('convo-pull-request')).not.toBeInTheDocument();
     expect(mockMarkProps).toHaveLength(0);
     expect(rowButton().getAttribute('aria-describedby')).toBeNull();
+  });
+
+  it.each([
+    ['has no code decision', ordinary],
+    [
+      'runs without an attached workspace',
+      { ...ordinary, codeEnvironmentMode: 'without_attached' },
+    ],
+  ])('never asks for a chat that %s, so ordinary chats cost no lookup', (_label, convo) => {
+    renderRow({ convo: convo as TConversation });
+    expect(screen.queryByTestId('convo-pull-request')).not.toBeInTheDocument();
+    expect(mockMarkProps).toHaveLength(0);
+    expect(rowButton().getAttribute('aria-describedby')).toBeNull();
+  });
+
+  it('keeps asking for a row its replica did not stamp, since it cannot be told from an ordinary chat', () => {
+    renderRow({ convo: { ...ordinary, codeDecisionListed: undefined } as TConversation });
+    expect(screen.getByTestId('convo-pull-request')).toBeInTheDocument();
   });
 
   it('leaves the mark out while the chat runs, so the ring is the only status', () => {
