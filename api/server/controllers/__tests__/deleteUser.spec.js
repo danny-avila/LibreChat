@@ -275,6 +275,27 @@ describe('deleteUserController - 2FA enforcement', () => {
     expect(mockCancelAgentTriggerUserPurge).not.toHaveBeenCalled();
   });
 
+  it('logs the deleted account by id and tenant without the email address', async () => {
+    const { logger } = require('@librechat/data-schemas');
+    logger.info.mockClear();
+    const req = {
+      user: { id: 'user1', _id: 'user1', email: 'a@b.com', tenantId: 'tenant-1' },
+      body: {},
+    };
+    mockGetUserById.mockResolvedValue({
+      _id: 'user1',
+      email: 'a@b.com',
+      tenantId: 'tenant-1',
+      twoFactorEnabled: false,
+    });
+
+    await deleteUserController(req, createRes());
+
+    const lines = logger.info.mock.calls.map(([line]) => String(line));
+    expect(lines).toContain('User deleted account. ID: user1 Tenant: tenant-1');
+    expect(JSON.stringify(logger.info.mock.calls)).not.toContain('a@b.com');
+  });
+
   it('aborts active generation jobs before deleting account-owned records', async () => {
     const req = {
       user: { id: 'user1', _id: 'user1', email: 'a@b.com', tenantId: 'tenant-1' },

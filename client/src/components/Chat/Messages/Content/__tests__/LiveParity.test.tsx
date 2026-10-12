@@ -1392,9 +1392,11 @@ describe('live disclosure ownership', () => {
     global.IntersectionObserver = originalObserver;
   });
   beforeEach(() => {
-    const observer: IntersectionObserver = {
+    // Unannotated so the extra `scrollMargin` is accepted by DOM libs that predate it.
+    const observer = {
       root: null,
       rootMargin: '',
+      scrollMargin: '',
       thresholds: [],
       observe: jest.fn(),
       unobserve: jest.fn(),

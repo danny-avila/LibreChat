@@ -8,6 +8,7 @@ on:
       - 'packages/client/**'
       - 'packages/chat/**'
       - 'packages/data-provider/**'
+      - 'scripts/typecheck.mts'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/frontend-review.yml'
@@ -23,6 +24,7 @@ on:
       - 'packages/client/**'
       - 'packages/chat/**'
       - 'packages/data-provider/**'
+      - 'scripts/typecheck.mts'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/frontend-review.yml'
@@ -284,6 +286,11 @@ jobs:
           name: build-chat-package
           path: packages/chat/dist
 
+      - name: Use Bun 1.4.3
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.3'
+
       - name: Type check client
         run: npm run typecheck
         working-directory: client
@@ -323,6 +330,11 @@ jobs:
         with:
           name: build-data-provider
           path: packages/data-provider/dist
+
+      - name: Use Bun 1.4.3
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.3'
 
       - name: Type check
         run: npm run typecheck

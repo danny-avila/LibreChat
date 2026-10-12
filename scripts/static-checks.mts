@@ -58,6 +58,7 @@ import {
 
 import type { Dirent } from 'node:fs';
 import { isTranslationReferenced } from './i18n.mts';
+import { resolveTypecheck } from './typecheck.mts';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -156,6 +157,7 @@ const FILTERS = {
   typecheck: [
     'client/**',
     'packages/**',
+    'scripts/typecheck.mts',
     'package.json',
     'package-lock.json',
     '.github/workflows/backend-review.yml',
@@ -1905,12 +1907,16 @@ function findCircularDependencies(): CheckOutcome {
 // --------------------------------------------------------------- TypeScript
 
 /**
- * One entry per `tsc --noEmit` the review workflows run. `paths` includes each
- * project's upstream packages, so an edit to data-provider still typechecks the
- * projects that consume it; `requires` lists the builds its imports resolve
- * through, mirroring those jobs' dependency on the build artifacts.
+ * One entry per type check the review workflows run (`bun check`, or `tsc`
+ * without Bun). `paths` includes each project's upstream packages, so an edit
+ * to data-provider still typechecks the projects that consume it; `requires`
+ * lists the builds its imports resolve through, mirroring those jobs'
+ * dependency on the build artifacts.
  */
 const ROOT_MANIFESTS = ['package.json', 'package-lock.json'];
+
+/** The checker every project runs through, so a change to it rechecks them all. */
+const TYPECHECK_SCRIPT = 'scripts/typecheck.mts';
 
 /** Each imported gate reruns in CI when its owning workflow changes. */
 const BACKEND_REVIEW = '.github/workflows/backend-review.yml';
@@ -1919,7 +1925,13 @@ const FRONTEND_REVIEW = '.github/workflows/frontend-review.yml';
 const TYPECHECK_PROJECTS = [
   {
     project: 'packages/data-provider/tsconfig.json',
-    paths: ['packages/data-provider/**', ...ROOT_MANIFESTS, BACKEND_REVIEW, '!**.md'],
+    paths: [
+      'packages/data-provider/**',
+      ...ROOT_MANIFESTS,
+      TYPECHECK_SCRIPT,
+      BACKEND_REVIEW,
+      '!**.md',
+    ],
     requires: [],
   },
   {
@@ -1928,6 +1940,7 @@ const TYPECHECK_PROJECTS = [
       'packages/data-provider/**',
       'packages/data-schemas/**',
       ...ROOT_MANIFESTS,
+      TYPECHECK_SCRIPT,
       BACKEND_REVIEW,
       '!**.md',
     ],
@@ -1940,6 +1953,7 @@ const TYPECHECK_PROJECTS = [
       'packages/data-schemas/**',
       'packages/api/**',
       ...ROOT_MANIFESTS,
+      TYPECHECK_SCRIPT,
       BACKEND_REVIEW,
       '!**.md',
     ],
@@ -1951,6 +1965,7 @@ const TYPECHECK_PROJECTS = [
       'packages/data-provider/**',
       'packages/client/**',
       ...ROOT_MANIFESTS,
+      TYPECHECK_SCRIPT,
       BACKEND_REVIEW,
       '!**.md',
     ],
@@ -1962,6 +1977,7 @@ const TYPECHECK_PROJECTS = [
       'packages/data-provider/**',
       'packages/chat/**',
       ...ROOT_MANIFESTS,
+      TYPECHECK_SCRIPT,
       FRONTEND_REVIEW,
       '!**.md',
     ],
@@ -1974,6 +1990,7 @@ const TYPECHECK_PROJECTS = [
       'packages/data-provider/**',
       'packages/client/**',
       ...ROOT_MANIFESTS,
+      TYPECHECK_SCRIPT,
       FRONTEND_REVIEW,
       '!**.md',
     ],
@@ -1987,15 +2004,15 @@ function runTypecheck(context: CheckContext): CheckOutcome {
     return { ok: true, skipped: 'no changed TypeScript project' };
   }
 
-  const tsc = resolveBin('typescript', 'tsc');
-  if (!tsc) return missingBin('typescript');
+  const typecheck = resolveTypecheck(ROOT);
+  if (!typecheck) return missingBin('typescript');
 
   const buildFailure = buildWorkspaces([...new Set(selected.flatMap((entry) => entry.requires))]);
   if (buildFailure) return buildFailure;
 
   const failures: string[] = [];
   for (const entry of selected) {
-    const result = runCommand(tsc, ['--noEmit', '-p', entry.project]);
+    const result = runCommand(typecheck, ['-p', entry.project]);
     if (result.status !== 0) {
       failures.push(`${entry.project}:\n${result.output.trim()}`);
     }

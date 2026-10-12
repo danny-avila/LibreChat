@@ -582,7 +582,7 @@ const deleteUserController = async (req, res) => {
       logger.error('[deleteUserController] code environment cache invalidation failed:', error);
     });
     await purgeAgentTriggerDeliveriesForUser(user.id);
-    logger.info(`User deleted account. Email: ${user.email} ID: ${user.id}`);
+    logger.info(`User deleted account. ID: ${user.id} Tenant: ${tenantId ?? 'none'}`);
     res.status(200).send({ message: 'User deleted' });
   } catch (err) {
     // The account survives this failed attempt, so its schedules must too: restore the
