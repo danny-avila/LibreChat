@@ -23,9 +23,11 @@ const getChannel = (): BroadcastChannel | null => {
     /** An opaque origin cannot open a channel; this tab then fences only its own writes. */
     channel = null;
   }
-  channel?.addEventListener('message', () => {
+  channel?.addEventListener('message', (event: MessageEvent) => {
     sessionEpoch += 1;
-    writesOpen = false;
+    if (event.data === 'end') {
+      writesOpen = false;
+    }
   });
   return channel;
 };
@@ -63,7 +65,10 @@ export async function openTTSCache(): Promise<Cache> {
     )
     .then(
       () => undefined,
-      () => undefined,
+      () => {
+        /** Storage may recover; the next open retries rather than leaving raw keys behind. */
+        legacyPurge = null;
+      },
     );
   await legacyPurge;
   return cache;
@@ -93,6 +98,7 @@ export async function putTTSCache(key: string, response: Response, epoch: number
 /** Deletes every cached TTS response. Safe when the Cache API is missing or rejects. */
 export async function clearTTSCache(): Promise<void> {
   sessionEpoch += 1;
+  getChannel()?.postMessage('clear');
   if (typeof caches === 'undefined') {
     return;
   }

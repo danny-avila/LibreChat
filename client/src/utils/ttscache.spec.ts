@@ -107,7 +107,7 @@ describe('openTTSCache and putTTSCache', () => {
 });
 
 describe('cross-tab logout', () => {
-  type Listener = () => void;
+  type Listener = (event: { data: string }) => void;
   const tabs: FakeChannel[] = [];
   class FakeChannel {
     listeners: Listener[] = [];
@@ -119,11 +119,11 @@ describe('cross-tab logout', () => {
       this.listeners.push(listener);
     }
 
-    postMessage() {
+    postMessage(data: string) {
       tabs
         .filter((tab) => tab !== this && tab.name === this.name)
         .forEach((tab) => {
-          tab.listeners.forEach((listener) => listener());
+          tab.listeners.forEach((listener) => listener({ data }));
         });
     }
   }
@@ -193,6 +193,43 @@ describe('cross-tab logout', () => {
 
     await expect(openTab().endTTSCacheSession()).resolves.toBeUndefined();
     expect(del).toHaveBeenCalledWith('tts-responses');
+  });
+
+  it('drops a write in flight in another tab after a manual clear, then caches again', async () => {
+    Object.assign(globalThis, { BroadcastChannel: FakeChannel });
+    const put = jest.fn();
+    Object.defineProperty(globalThis, 'caches', {
+      value: { open: async () => ({ keys: async () => [], put }), delete: async () => true },
+      configurable: true,
+    });
+    const reading = openTab();
+    const clearing = openTab();
+
+    const epoch = reading.getTTSCacheEpoch();
+    await clearing.clearTTSCache();
+    await reading.putTTSCache('/tts-cache/late', {} as Response, epoch);
+    expect(put).not.toHaveBeenCalled();
+
+    await reading.putTTSCache('/tts-cache/new', {} as Response, reading.getTTSCacheEpoch());
+    expect(put).toHaveBeenCalledWith('/tts-cache/new', {});
+  });
+
+  it('retries the legacy purge on the next open after a failed one', async () => {
+    const keys = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('blocked'))
+      .mockResolvedValue([{ url: 'https://chat.example/raw%20text' }]);
+    const del = jest.fn(async () => true);
+    Object.defineProperty(globalThis, 'caches', {
+      value: { open: async () => ({ keys, delete: del }) },
+      configurable: true,
+    });
+    const tab = openTab();
+
+    await tab.openTTSCache();
+    expect(del).not.toHaveBeenCalled();
+    await tab.openTTSCache();
+    expect(del).toHaveBeenCalledWith({ url: 'https://chat.example/raw%20text' });
   });
 
   it('keeps caching after a manual clear from settings', async () => {
