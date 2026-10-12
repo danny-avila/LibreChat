@@ -1,9 +1,7 @@
 import mongoose from 'mongoose';
 import { logger } from '@librechat/data-schemas';
-import { ResourceType } from 'librechat-data-provider';
 import type { AllMethods, IMongoFile } from '@librechat/data-schemas';
 import type { TCheckpointerConfig } from 'librechat-data-provider';
-import type { Model, Types } from 'mongoose';
 import type { CheckpointDeletion } from '~/agents/checkpoints/deletion';
 
 type ErasureMethods = Pick<
@@ -27,7 +25,8 @@ type ErasureMethods = Pick<
   | 'deleteAllUserMemories'
   | 'deleteUserPrompts'
   | 'deleteUserSkills'
-  | 'getSoleOwnedResourceIds'
+  | 'findUserErasableMCPServers'
+  | 'deleteMCPServersWithAcl'
   | 'deleteActions'
   | 'deleteTokens'
   | 'removeUserFromAllGroups'
@@ -64,81 +63,44 @@ export interface UserErasureParams {
 
 export type MCPServerCleanupDeps = Pick<
   UserErasureDeps,
-  'getSoleOwnedResourceIds' | 'invalidateMCPServerTools' | 'disconnectMCPServer'
+  | 'findUserErasableMCPServers'
+  | 'deleteMCPServersWithAcl'
+  | 'invalidateMCPServerTools'
+  | 'disconnectMCPServer'
 >;
-
-interface ServerRef {
-  _id: Types.ObjectId;
-  serverName: string;
-}
 
 /**
  * Deletes MCP servers solely owned by the user, plus legacy (pre-ACL) servers that only carry
  * the author field, and their ACL entries. Servers with other owners are left intact; the
- * user's own principal ACL entries are removed separately by the cascade.
+ * user's own principal ACL entries are removed separately by the cascade. Runtime hooks are
+ * best effort; a database failure propagates so the caller keeps the account and can retry.
  */
 export async function deleteUserMCPServers(
   userId: string,
   deps: MCPServerCleanupDeps,
 ): Promise<void> {
-  try {
-    const userObjectId = new mongoose.Types.ObjectId(userId);
-    const MCPServer = mongoose.models.MCPServer as Model<ServerRef> | undefined;
-    const AclEntry = mongoose.models.AclEntry;
-    if (!MCPServer || !AclEntry) {
-      return;
-    }
-
-    const soleOwnedIds = await deps.getSoleOwnedResourceIds(userObjectId, ResourceType.MCPSERVER);
-    const authoredServers = await MCPServer.find({ author: userObjectId })
-      .select('_id serverName')
-      .lean<ServerRef[]>();
-    const migratedEntries =
-      authoredServers.length > 0
-        ? await AclEntry.find({
-            resourceType: ResourceType.MCPSERVER,
-            resourceId: { $in: authoredServers.map((s) => s._id) },
-          })
-            .select('resourceId')
-            .lean<{ resourceId: Types.ObjectId }[]>()
-        : [];
-    const migratedIds = new Set(migratedEntries.map((e) => e.resourceId.toString()));
-    const legacyServers = authoredServers.filter((s) => !migratedIds.has(s._id.toString()));
-    const serverIds = [...soleOwnedIds, ...legacyServers.map((s) => s._id)];
-    if (serverIds.length === 0) {
-      return;
-    }
-
-    const aclOwnedServers =
-      soleOwnedIds.length > 0
-        ? await MCPServer.find({ _id: { $in: soleOwnedIds } })
-            .select('serverName')
-            .lean<ServerRef[]>()
-        : [];
-    await Promise.allSettled(
-      [...aclOwnedServers, ...legacyServers].map(async ({ serverName }) => {
-        try {
-          await deps.invalidateMCPServerTools?.(serverName);
-        } catch (error) {
-          logger.warn(`[eraseUserData] Failed to invalidate tools for ${serverName}`, error);
-        } finally {
-          try {
-            await deps.disconnectMCPServer?.(serverName);
-          } catch (error) {
-            logger.warn(`[eraseUserData] Failed to disconnect ${serverName}`, error);
-          }
-        }
-      }),
-    );
-
-    await AclEntry.deleteMany({
-      resourceType: ResourceType.MCPSERVER,
-      resourceId: { $in: serverIds },
-    });
-    await MCPServer.deleteMany({ _id: { $in: serverIds } });
-  } catch (error) {
-    logger.error(`[eraseUserData] Failed to delete MCP servers for user ${userId}`, error);
+  const servers = await deps.findUserErasableMCPServers(userId);
+  if (servers.length === 0) {
+    return;
   }
+
+  await Promise.allSettled(
+    servers.map(async ({ serverName }) => {
+      try {
+        await deps.invalidateMCPServerTools?.(serverName);
+      } catch (error) {
+        logger.warn(`[eraseUserData] Failed to invalidate tools for ${serverName}`, error);
+      } finally {
+        try {
+          await deps.disconnectMCPServer?.(serverName);
+        } catch (error) {
+          logger.warn(`[eraseUserData] Failed to disconnect ${serverName}`, error);
+        }
+      }
+    }),
+  );
+
+  await deps.deleteMCPServersWithAcl(servers.map((s) => s.id));
 }
 
 /**

@@ -503,7 +503,9 @@ export function createMethods(
     ...createToolFavoriteMethods(mongoose),
     ...createAgentCategoryMethods(mongoose),
     ...createAgentApiKeyMethods(mongoose),
-    ...createMCPServerMethods(mongoose),
+    ...createMCPServerMethods(mongoose, {
+      getSoleOwnedResourceIds: aclEntryMethods.getSoleOwnedResourceIds,
+    }),
     ...createCodeEnvironmentMethods(mongoose),
     ...createAccessRoleMethods(mongoose),
     ...userGroupMethods,

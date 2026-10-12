@@ -187,4 +187,21 @@ describe('eraseUserData', () => {
     expect(await count('File', { user: userId })).toBe(2);
     expect(await count('Skill', { author: userId })).toBe(1);
   });
+
+  it('stops before group and ACL cleanup when the MCP server lookup fails', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    await seedUser(userId);
+    const { deps } = createDeps();
+    const failingDeps: UserErasureDeps = {
+      ...deps,
+      findUserErasableMCPServers: jest.fn().mockRejectedValue(new Error('mongo down')),
+    };
+
+    await expect(eraseUserData({ userId: userId.toString() }, failingDeps)).rejects.toThrow(
+      'mongo down',
+    );
+
+    expect(await count('MCPServer', { author: userId })).toBe(2);
+    expect(await count('AclEntry', { principalId: userId })).toBeGreaterThan(0);
+  });
 });

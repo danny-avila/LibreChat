@@ -159,7 +159,8 @@ const acceptTermsController = async (req, res) => {
 
 /** Runtime hooks for MCP servers removed with a deleted account. */
 const createMCPServerCleanup = (userId) => ({
-  getSoleOwnedResourceIds: db.getSoleOwnedResourceIds,
+  findUserErasableMCPServers: db.findUserErasableMCPServers,
+  deleteMCPServersWithAcl: db.deleteMCPServersWithAcl,
   invalidateMCPServerTools: (serverName) => invalidateCachedTools({ userId, serverName }),
   disconnectMCPServer: async (serverName) => {
     await getMCPManager()?.disconnectUserConnection(userId, serverName);

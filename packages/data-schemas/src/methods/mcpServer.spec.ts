@@ -3,6 +3,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { MCPOptions } from 'librechat-data-provider';
 import type * as t from '~/types';
 import { createMCPServerMethods } from './mcpServer';
+import { createAclEntryMethods } from './aclEntry';
 import mcpServerSchema from '~/schema/mcpServer';
 
 let mongoServer: MongoMemoryServer;
@@ -13,7 +14,9 @@ beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
   const mongoUri = mongoServer.getUri();
   MCPServer = mongoose.models.MCPServer || mongoose.model('MCPServer', mcpServerSchema);
-  methods = createMCPServerMethods(mongoose);
+  methods = createMCPServerMethods(mongoose, {
+    getSoleOwnedResourceIds: createAclEntryMethods(mongoose).getSoleOwnedResourceIds,
+  });
   await mongoose.connect(mongoUri);
 });
 

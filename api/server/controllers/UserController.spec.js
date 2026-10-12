@@ -57,6 +57,8 @@ jest.mock('~/models', () => {
     deleteUserToolFavorites: jest.fn().mockResolvedValue(0),
     deleteRefreshTokenBridges: jest.fn().mockResolvedValue(undefined),
     deleteAllAgentQueuedTurnsForUser: jest.fn().mockResolvedValue(0),
+    findUserErasableMCPServers: jest.fn().mockResolvedValue([]),
+    deleteMCPServersWithAcl: jest.fn().mockResolvedValue(0),
     updateUserPlugins: jest.fn(),
     deleteAssistants: jest.fn().mockResolvedValue(undefined),
     deleteUserById: jest.fn().mockResolvedValue({ deletedCount: 1 }),

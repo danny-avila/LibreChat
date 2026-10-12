@@ -1,5 +1,5 @@
 import { nanoid } from 'nanoid';
-import { normalizeServerName } from 'librechat-data-provider';
+import { ResourceType, normalizeServerName } from 'librechat-data-provider';
 import type { Model, RootFilterQuery, Types } from 'mongoose';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { MCPServerDocument } from '../types';
@@ -45,7 +45,24 @@ function generateServerNameFromTitle(title: string): string {
   return slug || 'mcp-server'; // Fallback if empty
 }
 
-export function createMCPServerMethods(mongoose: typeof import('mongoose')): {
+export interface MCPServerDeps {
+  /** Returns resource IDs solely owned by the given user. From createAclEntryMethods. */
+  getSoleOwnedResourceIds: (
+    userObjectId: Types.ObjectId,
+    resourceTypes: string | string[],
+  ) => Promise<Types.ObjectId[]>;
+}
+
+/** An MCP server removed with its owner's account. */
+export interface ErasableMCPServer {
+  id: string;
+  serverName: string;
+}
+
+export function createMCPServerMethods(
+  mongoose: typeof import('mongoose'),
+  deps: MCPServerDeps,
+): {
   createMCPServer: (data: {
     config: MCPOptions;
     author: string | Types.ObjectId;
@@ -77,6 +94,8 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')): {
     updateData: { config?: MCPOptions },
   ) => Promise<MCPServerDocument | null>;
   deleteMCPServer: (serverName: string) => Promise<MCPServerDocument | null>;
+  findUserErasableMCPServers: (userId: string) => Promise<ErasableMCPServer[]>;
+  deleteMCPServersWithAcl: (ids: string[]) => Promise<number>;
 } {
   /**
    * Finds the next available server name by checking DB and reserved-name collisions.
@@ -362,7 +381,63 @@ export function createMCPServerMethods(mongoose: typeof import('mongoose')): {
     return { data: servers };
   }
 
+  /**
+   * Account erasure: servers solely owned by the user, plus legacy (pre-ACL) servers that only
+   * carry the author field. Servers shared with another owner are not returned.
+   */
+  async function findUserErasableMCPServers(userId: string): Promise<ErasableMCPServer[]> {
+    const MCPServer = mongoose.models.MCPServer as Model<MCPServerDocument> | undefined;
+    const AclEntry = mongoose.models.AclEntry;
+    if (!MCPServer || !AclEntry) {
+      return [];
+    }
+
+    const userObjectId = new mongoose.Types.ObjectId(userId);
+    const soleOwnedIds = await deps.getSoleOwnedResourceIds(userObjectId, ResourceType.MCPSERVER);
+    const authoredServers = await MCPServer.find({ author: userObjectId })
+      .select('_id serverName')
+      .lean<Array<{ _id: Types.ObjectId; serverName: string }>>();
+    const migratedEntries =
+      authoredServers.length > 0
+        ? await AclEntry.find({
+            resourceType: ResourceType.MCPSERVER,
+            resourceId: { $in: authoredServers.map((s) => s._id) },
+          })
+            .select('resourceId')
+            .lean<Array<{ resourceId: Types.ObjectId }>>()
+        : [];
+    const migratedIds = new Set(migratedEntries.map((e) => e.resourceId.toString()));
+    const legacyServers = authoredServers.filter((s) => !migratedIds.has(s._id.toString()));
+    const aclOwnedServers =
+      soleOwnedIds.length > 0
+        ? await MCPServer.find({ _id: { $in: soleOwnedIds } })
+            .select('_id serverName')
+            .lean<Array<{ _id: Types.ObjectId; serverName: string }>>()
+        : [];
+    return [...aclOwnedServers, ...legacyServers].map((s) => ({
+      id: s._id.toString(),
+      serverName: s.serverName,
+    }));
+  }
+
+  /** Deletes MCP servers by id together with every ACL entry on them. */
+  async function deleteMCPServersWithAcl(ids: string[]): Promise<number> {
+    if (ids.length === 0) {
+      return 0;
+    }
+    const MCPServer = mongoose.models.MCPServer as Model<MCPServerDocument>;
+    const objectIds = ids.map((id) => new mongoose.Types.ObjectId(id));
+    await mongoose.models.AclEntry.deleteMany({
+      resourceType: ResourceType.MCPSERVER,
+      resourceId: { $in: objectIds },
+    });
+    const result = await MCPServer.deleteMany({ _id: { $in: objectIds } });
+    return result.deletedCount ?? 0;
+  }
+
   return {
+    findUserErasableMCPServers,
+    deleteMCPServersWithAcl,
     createMCPServer,
     findMCPServerByServerName,
     findMCPServerByObjectId,
