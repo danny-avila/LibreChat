@@ -20,6 +20,8 @@ interface SkillFileSaveDeps extends SkillUploadIntentDeps {
     author: string;
     tenantId?: string;
   }) => Promise<void>;
+  queueReplacedSkillBlobCleanup: (fileId: string) => Promise<void>;
+  markSkillUploadIntentCleaned: (fileId: string) => Promise<void>;
   getSkillFileByPath: (skillId: string, relativePath: string) => Promise<StoredSkillFile | null>;
   upsertSkillFile: (
     row: Omit<UpsertSkillFileInput, 'skillId' | 'author'> & { skillId: string; author: string },
@@ -121,21 +123,25 @@ async function saveSkillFile(
     tenantId,
     getFileURL: strategy.getFileURL,
   });
-  const cleanupPreviousBlob = (filepath: string): void => {
+  const cleanupPreviousBlob = async (filepath: string): Promise<void> => {
     if (!existingFile || existingFile.filepath === filepath) {
       return;
     }
+    await deps.queueReplacedSkillBlobCleanup(existingFile.file_id);
     const deleteFile = deps.getStrategyFunctions(existingFile.source).deleteFile;
     if (deleteFile) {
-      deleteFile(req, {
-        filepath: existingFile.filepath,
-        storageKey: existingFile.storageKey,
-        storageRegion: existingFile.storageRegion,
-        user: existingFile.author?.toString() ?? userId,
-        tenantId: existingFile.tenantId ?? tenantId,
-      }).catch((error: Error) =>
-        logger.error('[saveSkillFileContent] Old blob cleanup failed:', error),
-      );
+      try {
+        await deleteFile(req, {
+          filepath: existingFile.filepath,
+          storageKey: existingFile.storageKey,
+          storageRegion: existingFile.storageRegion,
+          user: existingFile.author?.toString() ?? userId,
+          tenantId: existingFile.tenantId ?? tenantId,
+        });
+        await deps.markSkillUploadIntentCleaned(existingFile.file_id);
+      } catch (error) {
+        logger.error('[saveSkillFileContent] Old blob cleanup failed:', error);
+      }
     }
   };
 
@@ -189,7 +195,7 @@ async function saveSkillFile(
     try {
       const persisted = await deps.getSkillFileByPath(skillId, relativePath);
       if (persisted?.file_id === fileId) {
-        cleanupPreviousBlob(persisted.filepath);
+        await cleanupPreviousBlob(persisted.filepath);
       }
     } catch (cleanupError) {
       logger.error('[saveSkillFileContent] Failed to verify stored file:', cleanupError);
@@ -197,6 +203,6 @@ async function saveSkillFile(
     throw error;
   }
 
-  cleanupPreviousBlob(result.filepath);
+  await cleanupPreviousBlob(result.filepath);
   return { bytes: result.bytes, relativePath: result.relativePath };
 }

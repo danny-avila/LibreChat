@@ -79,6 +79,7 @@ export interface SkillLifecycleMethods {
   releaseAbandonedSkillUploadIntentClaim: (fileId: string, owner: string) => Promise<void>;
   skillFileExistsForIntent: (skillId: string, fileId: string) => Promise<boolean>;
   markSkillUploadIntentCleaned: (fileId: string) => Promise<void>;
+  queueReplacedSkillBlobCleanup: (fileId: string) => Promise<void>;
   scheduleAbandonedSkillUploadIntentRecheck: (
     fileId: string,
     owner: string,
@@ -440,6 +441,19 @@ export function createSkillLifecycleMethods(
     await intentModel().updateOne({ fileId }, { $set: { cleanedAt: new Date() } });
   }
 
+  /** A replacement is committed: a failed provider delete must remain sweepable. */
+  async function queueReplacedSkillBlobCleanup(fileId: string): Promise<void> {
+    const result = await intentModel().updateOne(
+      { fileId, state: 'committed', cleanedAt: { $exists: false } },
+      { $set: { state: 'abandoned' }, $unset: { nextCheckAt: '' } },
+    );
+    if (result.matchedCount === 1) return;
+    const intent = await intentModel().findOne({ fileId }).lean();
+    if (intent?.state !== 'abandoned' && !intent?.cleanedAt) {
+      throw new Error(`Skill blob cleanup intent is missing or invalid: ${fileId}`);
+    }
+  }
+
   async function scheduleAbandonedSkillUploadIntentRecheck(
     fileId: string,
     owner: string,
@@ -510,6 +524,7 @@ export function createSkillLifecycleMethods(
     releaseAbandonedSkillUploadIntentClaim,
     skillFileExistsForIntent,
     markSkillUploadIntentCleaned,
+    queueReplacedSkillBlobCleanup,
     scheduleAbandonedSkillUploadIntentRecheck,
     preserveExistingSkillBlob,
   };

@@ -345,6 +345,8 @@ function createDeps(
     })),
     transitionSkillUploadIntent: jest.fn(async () => true),
     preserveExistingSkillBlob: jest.fn(async () => undefined),
+    queueReplacedSkillBlobCleanup: jest.fn(async () => undefined),
+    markSkillUploadIntentCleaned: jest.fn(async () => undefined),
     saveBuffer: jest.fn(async () => ({ filepath: '/uploads/file-id__run.sh', source: 'local' })),
     deleteFile: jest.fn(async () => undefined),
     grantPermission: jest.fn(async () => undefined),
@@ -3982,6 +3984,9 @@ describe('steady-state sync of an unchanged source', () => {
     });
 
     const deps = createDbDeps(repo);
+    deps.deleteFile = jest.fn(async () => {
+      throw new Error('storage unavailable');
+    });
     const result = await createGitHubSkillSyncRunner(deps).runOnce();
 
     expect(repo.fetchedPaths().sort()).toEqual([
@@ -3990,6 +3995,8 @@ describe('steady-state sync of an unchanged source', () => {
     ]);
     expect(deps.updateSkill).toHaveBeenCalledTimes(1);
     expect(result.sources[0]).toEqual(expect.objectContaining({ syncedFileCount: 1 }));
+    expect(deps.queueReplacedSkillBlobCleanup).toHaveBeenCalledWith(expect.any(String));
+    expect(deps.markSkillUploadIntentCleaned).not.toHaveBeenCalled();
     const mirror = await getMirror();
     const file = await db.getSkillFileByPath(mirror._id, 'scripts/run.sh');
     expect(file?.sourceMetadata?.blobSha).toBe('skills/research/scripts/run.sh@2');

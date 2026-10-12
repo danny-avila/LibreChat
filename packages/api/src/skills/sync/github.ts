@@ -137,6 +137,7 @@ type SaveBufferResult = {
 };
 
 type StoredSkillFileRef = {
+  file_id?: string;
   filepath: string;
   source: string;
   storageKey?: string;
@@ -169,6 +170,8 @@ export type GitHubSkillSyncDeps = SkillUploadIntentDeps & {
     author: string;
     tenantId?: string;
   }) => Promise<void>;
+  queueReplacedSkillBlobCleanup: (fileId: string) => Promise<void>;
+  markSkillUploadIntentCleaned: (fileId: string) => Promise<void>;
   getConfig: () => MaybePromise<SkillSyncConfig | undefined>;
   getCredentialToken: (
     provider: SkillSyncProvider,
@@ -1184,6 +1187,26 @@ async function cleanupStoredFiles(params: {
   }
 }
 
+/** The sync committed, so these former file rows can now be safely retried by the sweeper. */
+async function cleanupReplacedSyncFiles(
+  deps: GitHubSkillSyncDeps,
+  files: StoredSkillFileRef[],
+): Promise<void> {
+  const seen = new Set<string>();
+  for (const file of files) {
+    if (!file.file_id || seen.has(file.file_id)) continue;
+    seen.add(file.file_id);
+    await deps.queueReplacedSkillBlobCleanup(file.file_id);
+    try {
+      if (!deps.deleteFile) throw new Error('Skill storage has no deletion strategy');
+      await cleanupFile(deps, file);
+      await deps.markSkillUploadIntentCleaned(file.file_id);
+    } catch (error) {
+      logger.error('[GitHubSkillSync] Failed to clean up replaced synced file:', error);
+    }
+  }
+}
+
 async function restoreExistingSkillFiles(params: {
   deps: GitHubSkillSyncDeps;
   skill: ISkill & { _id: Types.ObjectId };
@@ -1992,11 +2015,7 @@ async function syncSource(params: {
           }
           throw rollbackFailed ? makeRollbackFailure(error) : error;
         }
-        await cleanupStoredFiles({
-          deps,
-          files: fileCounts.staleFiles,
-          logMessage: '[GitHubSkillSync] Failed to clean up replaced synced file:',
-        });
+        await cleanupReplacedSyncFiles(deps, fileCounts.staleFiles);
         counts.syncedSkillCount++;
         counts.syncedFileCount += fileCounts.syncedFileCount;
         counts.deletedFileCount += fileCounts.deletedFileCount;

@@ -30,10 +30,16 @@ function harness() {
   const deps = {
     getSkillById: jest.fn(() => skill.promise),
     getSkillFileByPath: jest.fn(() => file.promise),
-    upsertSkillFile: jest.fn(async () => ({ ...originalFile, file_id: 'saved' })),
+    upsertSkillFile: jest.fn(async (row) => ({
+      ...originalFile,
+      file_id: row.file_id,
+      filepath: row.filepath,
+    })),
     resolveStorage: jest.fn(() => ({ source: FileSources.local, saveBuffer })),
     getStrategyFunctions: jest.fn(() => ({ deleteFile: jest.fn(async () => undefined) })),
     preserveExistingSkillBlob: jest.fn(async () => undefined),
+    queueReplacedSkillBlobCleanup: jest.fn(async () => undefined),
+    markSkillUploadIntentCleaned: jest.fn(async () => undefined),
     reserveSkillUploadIntent: jest.fn(async (input) => ({
       ...input,
       skillId: new Types.ObjectId(),
@@ -86,6 +92,8 @@ describe('skill upload lookup ordering', () => {
           tenantId: 'tenant-id',
         }),
       );
+      expect(h.deps.queueReplacedSkillBlobCleanup).toHaveBeenCalledWith('original');
+      expect(h.deps.markSkillUploadIntentCleaned).toHaveBeenCalledWith('original');
     },
   );
 

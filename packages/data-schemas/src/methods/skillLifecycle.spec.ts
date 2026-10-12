@@ -354,6 +354,24 @@ describe('Skill upload intents', () => {
     );
   });
 
+  it('queues a committed replacement for retry and records successful cleanup', async () => {
+    const { skill, author } = await makeSkill();
+    await lifecycle.preserveExistingSkillBlob({
+      skillId: skill.id,
+      fileId: 'retired-file',
+      source: 'local',
+      storageKey: `/uploads/${author}/retired-file`,
+      author: author.toString(),
+      tenantId: 'tenant-a',
+    });
+    await lifecycle.queueReplacedSkillBlobCleanup('retired-file');
+    expect(
+      (await lifecycle.listAbandonedSkillUploadIntents()).map((intent) => intent.fileId),
+    ).toContain('retired-file');
+    await lifecycle.markSkillUploadIntentCleaned('retired-file');
+    expect((await lifecycle.getSkillUploadIntent('retired-file'))?.cleanedAt).toBeInstanceOf(Date);
+  });
+
   it('serializes sweep claims and permits retry after expiry', async () => {
     const { skill } = await makeSkill();
     await lifecycle.beginSkillDeletion(skill.id);
