@@ -11,12 +11,16 @@ const env = {
 };
 const userId = '00000000-0000-4000-8000-000000000001';
 
+function oidcUser(email = '') {
+  return { sub: userId, ...(email ? { email } : {}) };
+}
+
 test('session exposes the current account email for the switcher', async (t) => {
   const originalFetch = globalThis.fetch;
   t.after(() => {
     globalThis.fetch = originalFetch;
   });
-  globalThis.fetch = async () => Response.json({ id: userId, email: 'tester@example.com' });
+  globalThis.fetch = async () => Response.json(oidcUser('tester@example.com'));
   const response = await onRequest({ request: await request('/api/session'), env });
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { userId, email: 'tester@example.com' });
@@ -52,7 +56,7 @@ test('history pagination uses an owner-scoped stable cursor', async (t) => {
   }));
   const dbUrls = [];
   globalThis.fetch = async (input) => {
-    if (String(input).endsWith('/auth/v1/user')) return Response.json({ id: userId });
+    if (String(input).endsWith('/auth/v1/oauth/userinfo')) return Response.json(oidcUser());
     dbUrls.push(String(input));
     return Response.json(rows);
   };
@@ -82,7 +86,7 @@ test('stream failure keeps status and hides provider response text', async (t) =
     globalThis.fetch = originalFetch;
   });
   globalThis.fetch = async (input) => {
-    if (String(input).endsWith('/auth/v1/user')) return Response.json({ id: userId });
+    if (String(input).endsWith('/auth/v1/oauth/userinfo')) return Response.json(oidcUser());
     return Response.json({ error: 'private provider diagnostic' }, { status: 429 });
   };
   const result = await onRequest({
