@@ -431,10 +431,17 @@ export function createPullRequestOAuth({
     userId: string,
     config: PullRequestOAuthConfig,
   ): Promise<string | null> {
-    const before = await generationOf(userId);
-    const token = await currentToken(userId, config, before);
-    if (token == null) return null;
-    return (await generationOf(userId)) === before ? token : null;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const before = await generationOf(userId);
+      const token = await currentToken(userId, config, before);
+      /**
+       * The connection changed under this read: a sign-in or a disconnect, on any replica or any
+       * instance, including one whose pending reads this instance cannot drop. It is read again
+       * under the new one, so neither this caller nor any that joined it answers for the old.
+       */
+      if ((await generationOf(userId)) === before) return token;
+    }
+    return null;
   }
 
   /** A flow may store a grant only for an active user still in the generation it started in. */

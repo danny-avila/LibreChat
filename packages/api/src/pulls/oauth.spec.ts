@@ -1028,7 +1028,8 @@ describe('the connection generation', () => {
     const { claims } = await started(connector, user);
     await connector.complete(claims, 'code', github);
     reader.release();
-    await expect(pending).resolves.toBeNull();
+    /** Read again under the new connection, on an instance that could not drop its pending read. */
+    await expect(pending).resolves.toBe('current');
     await expect(reader.oauth.token(user, github)).resolves.toBe('current');
   });
 
@@ -1115,7 +1116,7 @@ describe('the connection generation', () => {
     /** A request after the sign-in does not join the read that found the previous account. */
     await expect(reader.oauth.token(user, github)).resolves.toBe('current');
     reader.release();
-    await expect(pending).resolves.toBeNull();
+    await expect(pending).resolves.toBe('current');
   });
 
   it('keeps a grant a stale sign-in stored unusable when removing it fails', async () => {
@@ -1486,11 +1487,14 @@ describe('disconnect', () => {
     const later = oauth.token(user, github);
     await waitFor(() => releases.length === 2);
     releases[0]();
-    await earlier;
+    /** The earlier read saw the connection change under it, so it reads again under the new one. */
+    await waitFor(() => releases.length === 3);
+    releases[2]();
+    await expect(earlier).resolves.toBe('second');
     /** A third caller joins the later read rather than starting its own. */
     const third = oauth.token(user, github);
     await new Promise((resolve) => setImmediate(resolve));
-    expect(grantReads).toBe(2);
+    expect(grantReads).toBe(3);
     releases[1]();
     await expect(Promise.all([later, third])).resolves.toEqual(['second', 'second']);
   });
