@@ -16,6 +16,7 @@ import type { RequestHandler } from 'express';
 import type { SkillManagementDeps } from './management';
 import type { SkillsHandlers } from './handlers';
 import type { ServerRequest } from '~/types';
+import { createSkillDeletionService } from './deletionService';
 import { createSkillManagementHandlers } from './management';
 import { createSkillsHandlers } from './handlers';
 
@@ -92,10 +93,16 @@ beforeEach(async () => {
   publiclyAccessible = jest.fn(async () => []);
   publicStatus = jest.fn(async () => false);
   capabilityCheck = jest.fn(async () => canManage);
+  const deletionService = createSkillDeletionService({
+    persistence: { ...db, ...createSkillDeletionPersistenceAdapter(db) },
+    loadConfig: async () => undefined,
+    getStrategyFunctions: () => ({ deleteFile: async () => undefined }),
+    runAsSystem: async (callback) => callback(),
+    logger: { error: jest.fn(), warn: jest.fn() },
+  });
   skillHandlers = createSkillsHandlers({
     ...db,
-    ...createSkillDeletionPersistenceAdapter(db),
-    listSkillDeletionFiles: createSkillDeletionPersistenceAdapter(db).listSkillFiles,
+    deleteSkillById: deletionService.deleteSkillById,
     listSkillFiles: db.listSkillFiles,
     findAccessibleResources: accessible,
     findPubliclyAccessibleResources: publiclyAccessible,

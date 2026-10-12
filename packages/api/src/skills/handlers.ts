@@ -6,22 +6,6 @@ import {
   PermissionBits,
 } from 'librechat-data-provider';
 import type {
-  ISkill,
-  ISkillFile,
-  ISkillSummary,
-  CreateSkillInput,
-  CreateSkillResult,
-  UpdateSkillInput,
-  ListSkillsByAccessResult,
-  ListSkillsByAccessParams,
-  UpdateSkillResult,
-  ValidationIssue,
-  DeleteSkillResult,
-  SkillDeletionFileRecord,
-  SkillDeletionRecord,
-  SkillUploadIntentRecord,
-} from '@librechat/data-schemas';
-import type {
   TSkill,
   TSkillFile,
   TSkillSummary,
@@ -34,16 +18,29 @@ import type {
   TSkillConflictResponse,
   TSkillFileContentResponse,
 } from 'librechat-data-provider';
+import type {
+  ISkill,
+  ISkillFile,
+  ISkillSummary,
+  CreateSkillInput,
+  CreateSkillResult,
+  UpdateSkillInput,
+  ListSkillsByAccessResult,
+  ListSkillsByAccessParams,
+  UpdateSkillResult,
+  ValidationIssue,
+  DeleteSkillResult,
+} from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { Types } from 'mongoose';
 import type { ServerRequest, StrategyFunctions } from '~/types';
+import type { SkillDeletionProgress } from './deletion';
 import { extractSkillContent, inspectContentWithTraversal } from '~/protection';
 import { contentFilterBlockResponse } from '~/middleware/contentFilter';
 import { getDeploymentSkillIds } from './deployment';
 import { resolveDownloadPath } from '~/storage/path';
 import { resolveSkillFilePathParam } from './path';
 import { deleteSkillWithRetry } from './cleanup';
-import { runSkillDeletion } from './deletion';
 import { parseSkillMarkdown } from './parse';
 import { isBinaryBuffer } from './binary';
 
@@ -69,15 +66,7 @@ export interface SkillsHandlersDeps {
     update: UpdateSkillInput;
   }) => Promise<UpdateSkillResult>;
   deleteSkill: (id: string) => Promise<DeleteSkillResult>;
-  beginSkillDeletion: (id: string) => Promise<SkillDeletionRecord | null>;
-  getSkillDeletion: (id: string) => Promise<SkillDeletionRecord | null>;
-  listSkillUploadIntents: (id: string) => Promise<SkillUploadIntentRecord[]>;
-  listSkillDeletionFiles: (id: string) => Promise<SkillDeletionFileRecord[]>;
-  deleteSkillFileAfterBlob: (skillId: string, fileId: string) => Promise<boolean>;
-  finalizeSkillDeletion: (id: string) => Promise<DeleteSkillResult>;
-  completeSkillDeletion: (id: string) => Promise<void>;
-  reopenSkillDeletion: (id: string) => Promise<void>;
-  markSkillUploadIntentCleaned: (fileId: string) => Promise<void>;
+  deleteSkillById: (id: string) => Promise<SkillDeletionProgress>;
   listSkillFiles: (
     skillId: string | Types.ObjectId,
   ) => Promise<Array<ISkillFile & { _id: Types.ObjectId }>>;
@@ -343,15 +332,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
     listSkillsByAccess,
     updateSkill,
     deleteSkill,
-    beginSkillDeletion,
-    getSkillDeletion,
-    listSkillUploadIntents,
-    listSkillDeletionFiles,
-    deleteSkillFileAfterBlob,
-    finalizeSkillDeletion,
-    completeSkillDeletion,
-    reopenSkillDeletion,
-    markSkillUploadIntentCleaned,
+    deleteSkillById,
     listSkillFiles,
     deleteSkillFile,
     getSkillFileByPath,
@@ -624,41 +605,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
         return res.status(400).json({ error: 'Invalid skill id' });
       }
 
-      const progress = await runSkillDeletion(
-        id,
-        {
-          beginSkillDeletion,
-          getSkillDeletion,
-          listSkillFiles: listSkillDeletionFiles,
-          listSkillUploadIntents,
-          deleteSkillFileAfterBlob,
-          finalizeSkillDeletion,
-          completeSkillDeletion,
-          reopenSkillDeletion,
-          markSkillUploadIntentCleaned,
-          deleteBlob: async (file) => {
-            const strategy = getStrategyFunctions(file.source);
-            if (!strategy.deleteFile) throw new Error('Skill storage has no deletion strategy');
-            await strategy.deleteFile(req, {
-              filepath: file.filepath,
-              storageKey: file.storageKey,
-              storageRegion: file.storageRegion,
-              user: file.author,
-              tenantId: file.tenantId,
-            });
-          },
-          deleteReservedBlob: async (intent) => {
-            const strategy = getStrategyFunctions(intent.source);
-            if (!strategy.deleteFile) throw new Error('Skill storage has no deletion strategy');
-            await strategy.deleteFile(req, {
-              filepath: intent.storageKey,
-              user: intent.author,
-              tenantId: intent.tenantId,
-            });
-          },
-        },
-        req.config?.fileConfig?.skills?.deletionCleanupConcurrency,
-      );
+      const progress = await deleteSkillById(id);
       if (!progress.found) {
         return res.status(404).json({ error: 'Skill not found' });
       }

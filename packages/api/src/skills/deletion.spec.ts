@@ -1,6 +1,6 @@
 import type { SkillDeletionRecord, SkillUploadIntentRecord } from '@librechat/data-schemas';
 import type { SkillDeletionDeps } from './deletion';
-import { runSkillDeletion } from './deletion';
+import { runSkillDeletion, SkillDeletionClaimLostError } from './deletion';
 
 const skillId = '507f1f77bcf86cd799439011';
 const author = '507f1f77bcf86cd799439012';
@@ -162,6 +162,87 @@ it('resweeps abandoned intents even after an earlier clean pass', async () => {
   await runSkillDeletion(skillId.toString(), h.deps);
   await runSkillDeletion(skillId.toString(), h.deps);
   expect(h.deps.deleteReservedBlob).toHaveBeenCalledTimes(2);
+});
+
+it('does not reopen or finalize an already-completed tombstone with no late work', async () => {
+  const h = harness();
+  h.files.length = 0;
+  (h.deps.beginSkillDeletion as jest.Mock).mockResolvedValue({
+    skillId,
+    completedAt: new Date(),
+  });
+  await expect(runSkillDeletion(skillId, h.deps)).resolves.toMatchObject({
+    cleanupComplete: true,
+    skillAbsent: true,
+  });
+  expect(h.deps.reopenSkillDeletion).not.toHaveBeenCalled();
+  expect(h.deps.finalizeSkillDeletion).not.toHaveBeenCalled();
+  expect(h.deps.completeSkillDeletion).not.toHaveBeenCalled();
+});
+
+it('cold-audits an abandoned intent without rerunning completed dependent cleanup', async () => {
+  const h = harness();
+  h.files.length = 0;
+  h.intents.push({
+    skillId,
+    author,
+    fileId: 'late-write',
+    source: 'local',
+    storageKey: '/uploads/late-write',
+    state: 'abandoned',
+    cleanedAt: new Date(),
+  });
+  (h.deps.beginSkillDeletion as jest.Mock).mockResolvedValue({
+    skillId,
+    completedAt: new Date(),
+  });
+  await expect(runSkillDeletion(skillId, h.deps)).resolves.toMatchObject({
+    cleanupComplete: true,
+  });
+  expect(h.deps.deleteReservedBlob).toHaveBeenCalledTimes(1);
+  expect(h.deps.reopenSkillDeletion).not.toHaveBeenCalled();
+  expect(h.deps.finalizeSkillDeletion).not.toHaveBeenCalled();
+});
+
+it('reopens completed deletion only when a late file needs cleanup', async () => {
+  const h = harness();
+  (h.deps.beginSkillDeletion as jest.Mock).mockResolvedValue({
+    skillId,
+    completedAt: new Date(),
+  });
+  await expect(runSkillDeletion(skillId, h.deps)).resolves.toMatchObject({
+    cleanupComplete: true,
+  });
+  expect(h.deps.reopenSkillDeletion).toHaveBeenCalledWith(skillId);
+  expect(h.deps.deleteBlob).toHaveBeenCalledTimes(1);
+  expect(h.deps.finalizeSkillDeletion).toHaveBeenCalledTimes(1);
+});
+
+it('does not mutate a file row after losing the claim during its provider delete', async () => {
+  const h = harness();
+  let releaseBlob: (() => void) | undefined;
+  let startedBlob: (() => void) | undefined;
+  const started = new Promise<void>((resolve) => {
+    startedBlob = resolve;
+  });
+  (h.deps.deleteBlob as jest.Mock).mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        releaseBlob = resolve;
+        startedBlob?.();
+      }),
+  );
+  let lost = false;
+  const assertClaim = jest.fn(async () => {
+    if (lost) throw new SkillDeletionClaimLostError();
+  });
+  const deletion = runSkillDeletion(skillId, h.deps, 1, assertClaim);
+  await started;
+  lost = true;
+  releaseBlob?.();
+  await expect(deletion).rejects.toBeInstanceOf(SkillDeletionClaimLostError);
+  expect(h.deps.deleteSkillFileAfterBlob).not.toHaveBeenCalled();
+  expect(h.deps.finalizeSkillDeletion).not.toHaveBeenCalled();
 });
 
 it('bounds independent file cleanup while deleting each row after its blob', async () => {

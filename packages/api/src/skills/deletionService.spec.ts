@@ -16,13 +16,14 @@ it('records failed cleanup attempts before releasing the claim', async () => {
     noteSkillDeletionAttempt: jest.fn(async () => {
       order.push('attempt');
     }),
-    releaseSkillDeletionClaim: jest.fn(async () => {
+    releaseSkillDeletionClaim: jest.fn(async (): Promise<void> => {
       order.push('release');
       released();
     }),
-    beginSkillDeletion: jest.fn(async () => {
-      throw new Error('storage unavailable');
-    }),
+    beginSkillDeletion: jest
+      .fn()
+      .mockResolvedValueOnce(journal)
+      .mockRejectedValueOnce(new Error('storage unavailable')),
     getSkillDeletion: jest.fn(async () => journal),
     listSkillFiles: jest.fn(async () => []),
     listSkillUploadIntents: jest.fn(async () => []),
@@ -41,6 +42,8 @@ it('records failed cleanup attempts before releasing the claim', async () => {
     refreshAbandonedSkillUploadIntentClaim: jest.fn(async () => true),
     noteAbandonedSkillUploadIntentAttempt: jest.fn(async () => undefined),
     releaseAbandonedSkillUploadIntentClaim: jest.fn(async () => undefined),
+    scheduleSkillDeletionRecheck: jest.fn(async () => true),
+    scheduleAbandonedSkillUploadIntentRecheck: jest.fn(async () => true),
     skillFileExistsForIntent: jest.fn(async () => false),
   };
   const service = createSkillDeletionService({
@@ -102,6 +105,8 @@ it.each([false, true])(
       refreshAbandonedSkillUploadIntentClaim: jest.fn(async () => true),
       noteAbandonedSkillUploadIntentAttempt: jest.fn(async () => undefined),
       releaseAbandonedSkillUploadIntentClaim: jest.fn(async () => released()),
+      scheduleSkillDeletionRecheck: jest.fn(async () => true),
+      scheduleAbandonedSkillUploadIntentRecheck: jest.fn(async () => true),
       skillFileExistsForIntent: jest.fn(async () => rowExists),
     };
     const service = createSkillDeletionService({
@@ -120,3 +125,145 @@ it.each([false, true])(
     expect(persistence.noteAbandonedSkillUploadIntentAttempt).toHaveBeenCalledWith(intent.fileId);
   },
 );
+
+function claimedServiceHarness() {
+  const skillId = '507f1f77bcf86cd799439011';
+  const journal = { skillId, completedAt: undefined as Date | undefined };
+  const files = [
+    {
+      file_id: 'file-1',
+      filepath: '/uploads/file-1',
+      source: 'local',
+      author: '507f1f77bcf86cd799439012',
+    },
+  ];
+  let held = false;
+  const persistence = {
+    discoverUnjournaledDeletions: jest.fn(async () => 0),
+    listSkillDeletionTombstones: jest.fn(async () => [journal]),
+    claimSkillDeletion: jest.fn(async () => {
+      if (held) return false;
+      held = true;
+      return true;
+    }),
+    refreshSkillDeletionClaim: jest.fn(async () => held),
+    noteSkillDeletionAttempt: jest.fn(async () => undefined),
+    releaseSkillDeletionClaim: jest.fn(async (): Promise<void> => {
+      held = false;
+    }),
+    scheduleSkillDeletionRecheck: jest.fn(async () => true),
+    beginSkillDeletion: jest.fn(async () => journal),
+    getSkillDeletion: jest.fn(async () => journal),
+    listSkillFiles: jest.fn(async () => files),
+    listSkillUploadIntents: jest.fn(async () => []),
+    deleteSkillFileAfterBlob: jest.fn(async () => {
+      files.length = 0;
+      return true;
+    }),
+    finalizeSkillDeletion: jest.fn(async () => ({
+      deleted: true,
+      skillAbsent: true,
+      cleanupComplete: true,
+      failedCleanupSteps: [],
+    })),
+    completeSkillDeletion: jest.fn(async () => {
+      journal.completedAt = new Date();
+    }),
+    reopenSkillDeletion: jest.fn(async () => undefined),
+    markSkillUploadIntentCleaned: jest.fn(async () => undefined),
+    listAbandonedSkillUploadIntents: jest.fn(async () => []),
+    claimAbandonedSkillUploadIntent: jest.fn(async () => true),
+    refreshAbandonedSkillUploadIntentClaim: jest.fn(async () => true),
+    noteAbandonedSkillUploadIntentAttempt: jest.fn(async () => undefined),
+    releaseAbandonedSkillUploadIntentClaim: jest.fn(async () => undefined),
+    scheduleAbandonedSkillUploadIntentRecheck: jest.fn(async () => true),
+    skillFileExistsForIntent: jest.fn(async () => false),
+  };
+  const deleteFile = jest.fn(async (): Promise<void> => undefined);
+  const service = createSkillDeletionService({
+    persistence,
+    loadConfig: jest.fn(async () => undefined),
+    getStrategyFunctions: jest.fn(() => ({ deleteFile })),
+    runAsSystem: async (callback) => callback(),
+    logger: { error: jest.fn(), warn: jest.fn() },
+  });
+  return { skillId, persistence, deleteFile, service };
+}
+
+it('returns pending to a direct caller while the sweep owns the same Skill claim', async () => {
+  const h = claimedServiceHarness();
+  let releasedClaim: (() => void) | undefined;
+  const released = new Promise<void>((resolve) => {
+    releasedClaim = resolve;
+  });
+  h.persistence.releaseSkillDeletionClaim.mockImplementation(async () => {
+    releasedClaim?.();
+  });
+  let releaseBlob: (() => void) | undefined;
+  let startedBlob: (() => void) | undefined;
+  const started = new Promise<void>((resolve) => {
+    startedBlob = resolve;
+  });
+  h.deleteFile.mockImplementation(
+    () =>
+      new Promise<void>((resolve) => {
+        releaseBlob = resolve;
+        startedBlob?.();
+      }),
+  );
+  const sweep = h.service.startSkillDeletionSweep();
+  await started;
+  const pending = await h.service.deleteSkillById(h.skillId);
+  expect(pending).toMatchObject({ found: true, cleanupComplete: false });
+  expect(h.deleteFile).toHaveBeenCalledTimes(1);
+  releaseBlob?.();
+  await released;
+  sweep.stop();
+  expect(h.persistence.finalizeSkillDeletion).toHaveBeenCalledTimes(1);
+});
+
+it('treats a deferred completed tombstone as an idempotent direct deletion', async () => {
+  const h = claimedServiceHarness();
+  const completed = { skillId: h.skillId, completedAt: new Date() };
+  h.persistence.beginSkillDeletion.mockResolvedValue(completed);
+  h.persistence.getSkillDeletion.mockResolvedValue(completed);
+  h.persistence.claimSkillDeletion.mockResolvedValue(false);
+  await expect(h.service.deleteSkillById(h.skillId)).resolves.toMatchObject({
+    found: true,
+    skillAbsent: true,
+    cleanupComplete: true,
+  });
+  expect(h.deleteFile).not.toHaveBeenCalled();
+});
+
+it('does not delete a file row after the heartbeat reports a lost claim', async () => {
+  jest.useFakeTimers();
+  try {
+    const h = claimedServiceHarness();
+    let releaseBlob: (() => void) | undefined;
+    let startedBlob: (() => void) | undefined;
+    const started = new Promise<void>((resolve) => {
+      startedBlob = resolve;
+    });
+    h.deleteFile.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseBlob = resolve;
+          startedBlob?.();
+        }),
+    );
+    h.persistence.refreshSkillDeletionClaim
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    const deletion = h.service.deleteSkillById(h.skillId);
+    await started;
+    await jest.advanceTimersByTimeAsync(30_000);
+    releaseBlob?.();
+    await expect(deletion).resolves.toMatchObject({ found: true, cleanupComplete: false });
+    expect(h.persistence.deleteSkillFileAfterBlob).not.toHaveBeenCalled();
+    expect(h.persistence.finalizeSkillDeletion).not.toHaveBeenCalled();
+  } finally {
+    jest.useRealTimers();
+  }
+});

@@ -30,6 +30,13 @@ export type SkillDeletionProgress = {
   failedSteps: DeleteSkillCleanupStep[];
 };
 
+export class SkillDeletionClaimLostError extends Error {
+  constructor() {
+    super('Skill deletion claim was lost');
+    this.name = 'SkillDeletionClaimLostError';
+  }
+}
+
 /**
  * Every externally stored object has a persistent Mongo reference until its
  * provider and RAG cleanup succeeds. Failures remain retryable after restart.
@@ -38,7 +45,9 @@ export async function runSkillDeletion(
   id: string,
   deps: SkillDeletionDeps,
   fileCleanupConcurrency: number = DEFAULT_SKILL_DELETION_CLEANUP_CONCURRENCY,
+  assertClaim: () => Promise<void> = async () => undefined,
 ): Promise<SkillDeletionProgress> {
+  await assertClaim();
   const journal = (await deps.beginSkillDeletion(id)) ?? (await deps.getSkillDeletion(id));
   if (!journal) {
     return {
@@ -49,9 +58,23 @@ export async function runSkillDeletion(
       failedSteps: [],
     };
   }
-  await deps.reopenSkillDeletion(journal.skillId);
   const failedSteps: DeleteSkillCleanupStep[] = [];
-  const intents = await deps.listSkillUploadIntents(journal.skillId);
+  const [intents, files] = await Promise.all([
+    deps.listSkillUploadIntents(journal.skillId),
+    deps.listSkillFiles(id),
+  ]);
+  const requiresFullCleanup =
+    files.length > 0 ||
+    intents.some(
+      (intent) =>
+        intent.state === 'uploading' ||
+        intent.state === 'committing' ||
+        (intent.state === 'committed' && !intent.cleanedAt),
+    );
+  if (journal.completedAt && requiresFullCleanup) {
+    await assertClaim();
+    await deps.reopenSkillDeletion(journal.skillId);
+  }
   // A writer may still finish uploading or committing after this scan. An
   // operator can inspect and recover an intent with `recover-skill-upload`
   // after draining writers; a timer must not infer that a slow upload is dead.
@@ -64,15 +87,21 @@ export async function runSkillDeletion(
       failedSteps: ['upload_intents'],
     };
   }
-  const files = await deps.listSkillFiles(id);
   const currentFileIds = new Set(files.map((file) => file.file_id));
   const cleanedFileIds = new Set<string>();
   const limit = createConcurrencyLimiter(fileCleanupConcurrency);
-  await Promise.all(
+  const fileResults = await Promise.allSettled(
     files.map((file) =>
       limit(async () => {
+        await assertClaim();
         try {
           await deps.deleteBlob(file);
+        } catch {
+          failedSteps.push('skill_files');
+          return;
+        }
+        await assertClaim();
+        try {
           await deps.deleteSkillFileAfterBlob(id, file.file_id);
           cleanedFileIds.add(file.file_id);
         } catch {
@@ -81,6 +110,8 @@ export async function runSkillDeletion(
       }),
     ),
   );
+  const rejectedFile = fileResults.find((result) => result.status === 'rejected');
+  if (rejectedFile?.status === 'rejected') throw rejectedFile.reason;
 
   for (const intent of intents) {
     if (intent.state === 'committed') {
@@ -89,16 +120,24 @@ export async function runSkillDeletion(
         // Keep the intent with its current row for the next retry.
         continue;
       }
+      await assertClaim();
       try {
         if (!cleanedFileIds.has(intent.fileId)) {
           await deps.deleteReservedBlob(intent);
         }
+      } catch {
+        failedSteps.push('upload_intents');
+        continue;
+      }
+      await assertClaim();
+      try {
         await deps.markSkillUploadIntentCleaned(intent.fileId);
       } catch {
         failedSteps.push('upload_intents');
       }
       continue;
     }
+    await assertClaim();
     try {
       await deps.deleteReservedBlob(intent);
       // Keep abandoned intents as tombstones: a zombie upload can finish
@@ -117,6 +156,16 @@ export async function runSkillDeletion(
       failedSteps,
     };
   }
+  if (journal.completedAt && !requiresFullCleanup) {
+    return {
+      found: true,
+      deleted: true,
+      skillAbsent: true,
+      cleanupComplete: true,
+      failedSteps: [],
+    };
+  }
+  await assertClaim();
   const finalized = await deps.finalizeSkillDeletion(id);
   if (!finalized.cleanupComplete) {
     return {
@@ -127,6 +176,7 @@ export async function runSkillDeletion(
       failedSteps: finalized.failedCleanupSteps,
     };
   }
+  await assertClaim();
   await deps.completeSkillDeletion(journal.skillId);
   return {
     found: true,

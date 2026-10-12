@@ -95,7 +95,7 @@ describe('Skill deletion journal', () => {
       tenantId: 'tenant-a',
     });
     const write = jest
-      .spyOn(mongoose.models.SkillUploadIntent, 'updateOne')
+      .spyOn(mongoose.models.SkillUploadIntent, 'bulkWrite')
       .mockRejectedValueOnce(new Error('database unavailable'));
     try {
       await expect(lifecycle.beginSkillDeletion(skill.id)).rejects.toThrow('database unavailable');
@@ -107,6 +107,87 @@ describe('Skill deletion journal', () => {
     expect(await lifecycle.listSkillUploadIntents(skill._id)).toMatchObject([
       { fileId: 'legacy-file', state: 'committed' },
     ]);
+    expect(await lifecycle.discoverUnjournaledDeletions()).toBe(0);
+  });
+
+  it('backfills many legacy file references in bounded batches before clearing the marker', async () => {
+    const { skill, author } = await makeSkill();
+    await mongoose.models.SkillFile.insertMany(
+      Array.from({ length: 205 }, (_, index) => ({
+        skillId: skill._id,
+        file_id: `legacy-file-${index}`,
+        relativePath: `references/${index}.md`,
+        filename: `${index}.md`,
+        filepath: `/uploads/${author}/legacy-file-${index}`,
+        source: 'local',
+        mimeType: 'text/markdown',
+        bytes: 4,
+        author,
+        tenantId: 'tenant-a',
+      })),
+    );
+    const write = jest.spyOn(mongoose.models.SkillUploadIntent, 'bulkWrite');
+    try {
+      await lifecycle.beginSkillDeletion(skill.id);
+      expect(write.mock.calls.map(([operations]) => operations.length)).toEqual([100, 100, 5]);
+    } finally {
+      write.mockRestore();
+    }
+    expect(await mongoose.models.SkillUploadIntent.countDocuments({ skillId: skill._id })).toBe(
+      205,
+    );
+    expect(
+      await mongoose.models.SkillUploadIntent.countDocuments({
+        skillId: skill._id,
+        tenantId: 'tenant-a',
+      }),
+    ).toBe(205);
+    expect(
+      (
+        (await mongoose.models.Skill.findById(skill.id).lean()) as {
+          deletionNeedsJournal?: boolean;
+        }
+      )?.deletionNeedsJournal,
+    ).toBeUndefined();
+  });
+
+  it('resumes after a later backfill batch fails without losing acknowledged references', async () => {
+    const { skill, author } = await makeSkill();
+    await mongoose.models.SkillFile.insertMany(
+      Array.from({ length: 101 }, (_, index) => ({
+        skillId: skill._id,
+        file_id: `resume-file-${index}`,
+        relativePath: `references/${index}.md`,
+        filename: `${index}.md`,
+        filepath: `/uploads/${author}/resume-file-${index}`,
+        source: 'local',
+        mimeType: 'text/markdown',
+        bytes: 4,
+        author,
+        tenantId: 'tenant-a',
+      })),
+    );
+    const intentModel = mongoose.models.SkillUploadIntent;
+    const originalWrite = intentModel.bulkWrite.bind(intentModel);
+    const write = jest
+      .spyOn(intentModel, 'bulkWrite')
+      .mockImplementationOnce((...args) => originalWrite(...args))
+      .mockRejectedValueOnce(new Error('second batch failed'));
+    try {
+      await expect(lifecycle.beginSkillDeletion(skill.id)).rejects.toThrow('second batch failed');
+    } finally {
+      write.mockRestore();
+    }
+    expect(await intentModel.countDocuments({ skillId: skill._id })).toBe(100);
+    expect(
+      (
+        (await mongoose.models.Skill.findById(skill.id).lean()) as {
+          deletionNeedsJournal?: boolean;
+        }
+      )?.deletionNeedsJournal,
+    ).toBe(true);
+    expect(await lifecycle.discoverUnjournaledDeletions()).toBe(1);
+    expect(await intentModel.countDocuments({ skillId: skill._id })).toBe(101);
     expect(await lifecycle.discoverUnjournaledDeletions()).toBe(0);
   });
 
@@ -239,6 +320,32 @@ describe('Skill upload intents', () => {
     expect(await lifecycle.claimSkillDeletion(skill._id, 'worker-b', 60_000)).toBe(true);
   });
 
+  it('defers clean tombstones but admits them after the recheck deadline', async () => {
+    const { skill } = await makeSkill();
+    await lifecycle.beginSkillDeletion(skill.id);
+    await lifecycle.completeSkillDeletion(skill._id);
+    expect(await lifecycle.claimSkillDeletion(skill._id, 'worker-a', 60_000)).toBe(true);
+    expect(await lifecycle.scheduleSkillDeletionRecheck(skill._id, 'worker-b', 3_600_000)).toBe(
+      false,
+    );
+    expect(await lifecycle.scheduleSkillDeletionRecheck(skill._id, 'worker-a', 3_600_000)).toBe(
+      true,
+    );
+    await lifecycle.releaseSkillDeletionClaim(skill._id, 'worker-a');
+    expect(await lifecycle.listSkillDeletionTombstones()).toHaveLength(0);
+    expect(await lifecycle.claimSkillDeletion(skill._id, 'worker-b', 60_000)).toBe(false);
+    await mongoose.models.SkillDeletion.updateOne(
+      { skillId: skill._id },
+      { $set: { nextCheckAt: new Date(Date.now() - 1) } },
+    );
+    expect(await lifecycle.listSkillDeletionTombstones()).toHaveLength(1);
+    expect(await lifecycle.claimSkillDeletion(skill._id, 'worker-b', 60_000)).toBe(true);
+    await lifecycle.reopenSkillDeletion(skill._id);
+    const reopened = await lifecycle.getSkillDeletion(skill.id);
+    expect(reopened?.completedAt).toBeUndefined();
+    expect(reopened?.nextCheckAt).toBeUndefined();
+  });
+
   it('recovers a verified-stopped writer without deleting a persisted file', async () => {
     const { skill, author } = await makeSkill();
     await lifecycle.reserveSkillUploadIntent({
@@ -304,5 +411,41 @@ describe('Skill upload intents', () => {
     expect(
       (await lifecycle.getSkillUploadIntent('orphan-file'))?.lastCleanupAttemptAt,
     ).toBeInstanceOf(Date);
+  });
+
+  it('keeps cleaned abandoned intents as deferred late-upload sentinels', async () => {
+    const { skill, author } = await makeSkill();
+    await lifecycle.reserveSkillUploadIntent({
+      skillId: skill.id,
+      fileId: 'late-blob',
+      source: 'local',
+      storageKey: `/uploads/${author}/late-blob`,
+      author: author.toString(),
+      writerId: 'writer-a',
+    });
+    await lifecycle.transitionSkillUploadIntent('late-blob', 'writer-a', 'uploading', 'abandoned');
+    expect(await lifecycle.claimAbandonedSkillUploadIntent('late-blob', 'worker-a', 60_000)).toBe(
+      true,
+    );
+    await lifecycle.markSkillUploadIntentCleaned('late-blob');
+    expect(
+      await lifecycle.scheduleAbandonedSkillUploadIntentRecheck('late-blob', 'worker-b', 3_600_000),
+    ).toBe(false);
+    expect(
+      await lifecycle.scheduleAbandonedSkillUploadIntentRecheck('late-blob', 'worker-a', 3_600_000),
+    ).toBe(true);
+    await lifecycle.releaseAbandonedSkillUploadIntentClaim('late-blob', 'worker-a');
+    expect(await lifecycle.listAbandonedSkillUploadIntents()).toHaveLength(0);
+    expect(await lifecycle.claimAbandonedSkillUploadIntent('late-blob', 'worker-b', 60_000)).toBe(
+      false,
+    );
+    await mongoose.models.SkillUploadIntent.updateOne(
+      { fileId: 'late-blob' },
+      { $set: { nextCheckAt: new Date(Date.now() - 1) } },
+    );
+    expect(await lifecycle.listAbandonedSkillUploadIntents()).toHaveLength(1);
+    expect(await lifecycle.claimAbandonedSkillUploadIntent('late-blob', 'worker-b', 60_000)).toBe(
+      true,
+    );
   });
 });

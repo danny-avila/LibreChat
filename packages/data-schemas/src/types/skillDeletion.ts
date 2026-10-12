@@ -8,6 +8,7 @@ export interface ISkillDeletion {
   startedAt: Date;
   lastAttemptAt?: Date;
   completedAt?: Date;
+  nextCheckAt?: Date;
   claimOwner?: string;
   claimExpiresAt?: Date;
   createdAt?: Date;
@@ -27,6 +28,7 @@ export interface ISkillUploadIntent {
   writerId: string;
   state: 'uploading' | 'committing' | 'committed' | 'abandoned';
   cleanedAt?: Date;
+  nextCheckAt?: Date;
   lastCleanupAttemptAt?: Date;
   claimOwner?: string;
   claimExpiresAt?: Date;

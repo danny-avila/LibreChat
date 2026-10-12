@@ -1,4 +1,4 @@
-import type { Model, Types } from 'mongoose';
+import type { AnyBulkWriteOperation, Model, Types } from 'mongoose';
 import type {
   ISkillDeletion,
   ISkillDeletionDocument,
@@ -7,8 +7,10 @@ import type {
 } from '~/types/skillDeletion';
 import type { ISkillFileDocument } from '~/types/skill';
 import type { ISkillDocument } from '~/types/skill';
+import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 
 type SkillRow = ISkillDocument & { _id: Types.ObjectId };
+const LEGACY_BACKFILL_BATCH_SIZE = 100;
 type IntentInput = {
   skillId: string;
   author: string;
@@ -43,6 +45,11 @@ export interface SkillLifecycleMethods {
   releaseSkillDeletionClaim: (skillId: string | Types.ObjectId, owner: string) => Promise<void>;
   completeSkillDeletion: (skillId: string | Types.ObjectId) => Promise<void>;
   reopenSkillDeletion: (skillId: string | Types.ObjectId) => Promise<void>;
+  scheduleSkillDeletionRecheck: (
+    skillId: string | Types.ObjectId,
+    owner: string,
+    delayMs: number,
+  ) => Promise<boolean>;
   reserveSkillUploadIntent: (input: IntentInput) => Promise<ISkillUploadIntent>;
   transitionSkillUploadIntent: (
     fileId: string,
@@ -71,6 +78,11 @@ export interface SkillLifecycleMethods {
   releaseAbandonedSkillUploadIntentClaim: (fileId: string, owner: string) => Promise<void>;
   skillFileExistsForIntent: (skillId: string, fileId: string) => Promise<boolean>;
   markSkillUploadIntentCleaned: (fileId: string) => Promise<void>;
+  scheduleAbandonedSkillUploadIntentRecheck: (
+    fileId: string,
+    owner: string,
+    delayMs: number,
+  ) => Promise<boolean>;
   preserveExistingSkillBlob: (input: {
     skillId: string;
     fileId: string;
@@ -120,15 +132,35 @@ export function createSkillLifecycleMethods(
     if (existing.deletionNeedsJournal) {
       // The marker also covers crashes after the journal insert but before
       // every legacy file has a durable blob reference.
+      let writes: AnyBulkWriteOperation[] = [];
       for await (const file of skillFileModel().find({ skillId }).cursor()) {
-        await preserveExistingSkillBlob({
-          skillId: skillId.toString(),
-          fileId: file.file_id,
-          source: file.source,
-          storageKey: file.filepath,
-          author: file.author.toString(),
-          tenantId: file.tenantId,
+        writes.push({
+          updateOne: {
+            filter: {
+              fileId: file.file_id,
+              ...(file.tenantId ? { tenantId: file.tenantId } : {}),
+            },
+            update: {
+              $setOnInsert: {
+                skillId,
+                fileId: file.file_id,
+                source: file.source,
+                storageKey: file.filepath,
+                author: file.author,
+                writerId: 'legacy-backfill',
+                state: 'committed',
+              },
+            },
+            upsert: true,
+          },
         });
+        if (writes.length === LEGACY_BACKFILL_BATCH_SIZE) {
+          await tenantSafeBulkWrite(intentModel(), writes, { ordered: false });
+          writes = [];
+        }
+      }
+      if (writes.length > 0) {
+        await tenantSafeBulkWrite(intentModel(), writes, { ordered: false });
       }
       await skillModel().updateOne(
         { _id: skillId, deletionNeedsJournal: true },
@@ -166,9 +198,19 @@ export function createSkillLifecycleMethods(
   }
 
   async function listSkillDeletionTombstones(limit = 100): Promise<ISkillDeletion[]> {
+    const now = new Date();
     return (await deletionModel()
       .find({
-        $or: [{ claimExpiresAt: { $exists: false } }, { claimExpiresAt: { $lte: new Date() } }],
+        $and: [
+          { $or: [{ claimExpiresAt: { $exists: false } }, { claimExpiresAt: { $lte: now } }] },
+          {
+            $or: [
+              { completedAt: { $exists: false } },
+              { nextCheckAt: { $exists: false } },
+              { nextCheckAt: { $lte: now } },
+            ],
+          },
+        ],
       })
       .sort({ lastAttemptAt: 1, startedAt: 1 })
       .limit(limit)
@@ -188,10 +230,21 @@ export function createSkillLifecycleMethods(
     const result = await deletionModel().updateOne(
       {
         skillId,
-        $or: [
-          { claimExpiresAt: { $exists: false } },
-          { claimExpiresAt: { $lte: now } },
-          { claimOwner: owner },
+        $and: [
+          {
+            $or: [
+              { claimExpiresAt: { $exists: false } },
+              { claimExpiresAt: { $lte: now } },
+              { claimOwner: owner },
+            ],
+          },
+          {
+            $or: [
+              { completedAt: { $exists: false } },
+              { nextCheckAt: { $exists: false } },
+              { nextCheckAt: { $lte: now } },
+            ],
+          },
         ],
       },
       { $set: { claimOwner: owner, claimExpiresAt: new Date(now.getTime() + leaseMs) } },
@@ -226,7 +279,20 @@ export function createSkillLifecycleMethods(
   }
 
   async function reopenSkillDeletion(skillId: string | Types.ObjectId): Promise<void> {
-    await deletionModel().updateOne({ skillId }, { $unset: { completedAt: '' } });
+    await deletionModel().updateOne({ skillId }, { $unset: { completedAt: '', nextCheckAt: '' } });
+  }
+
+  async function scheduleSkillDeletionRecheck(
+    skillId: string | Types.ObjectId,
+    owner: string,
+    delayMs: number,
+  ): Promise<boolean> {
+    const now = new Date();
+    const result = await deletionModel().updateOne(
+      { skillId, claimOwner: owner, claimExpiresAt: { $gt: now }, completedAt: { $exists: true } },
+      { $set: { nextCheckAt: new Date(now.getTime() + delayMs) } },
+    );
+    return result.modifiedCount === 1;
   }
 
   async function reserveSkillUploadIntent(input: IntentInput): Promise<ISkillUploadIntent> {
@@ -287,10 +353,20 @@ export function createSkillLifecycleMethods(
   }
 
   async function listAbandonedSkillUploadIntents(limit = 100): Promise<ISkillUploadIntent[]> {
+    const now = new Date();
     return (await intentModel()
       .find({
         state: 'abandoned',
-        $or: [{ claimExpiresAt: { $exists: false } }, { claimExpiresAt: { $lte: new Date() } }],
+        $and: [
+          { $or: [{ claimExpiresAt: { $exists: false } }, { claimExpiresAt: { $lte: now } }] },
+          {
+            $or: [
+              { cleanedAt: { $exists: false } },
+              { nextCheckAt: { $exists: false } },
+              { nextCheckAt: { $lte: now } },
+            ],
+          },
+        ],
       })
       .sort({ lastCleanupAttemptAt: 1, createdAt: 1 })
       .limit(limit)
@@ -307,10 +383,21 @@ export function createSkillLifecycleMethods(
       {
         fileId,
         state: 'abandoned',
-        $or: [
-          { claimExpiresAt: { $exists: false } },
-          { claimExpiresAt: { $lte: now } },
-          { claimOwner: owner },
+        $and: [
+          {
+            $or: [
+              { claimExpiresAt: { $exists: false } },
+              { claimExpiresAt: { $lte: now } },
+              { claimOwner: owner },
+            ],
+          },
+          {
+            $or: [
+              { cleanedAt: { $exists: false } },
+              { nextCheckAt: { $exists: false } },
+              { nextCheckAt: { $lte: now } },
+            ],
+          },
         ],
       },
       { $set: { claimOwner: owner, claimExpiresAt: new Date(now.getTime() + leaseMs) } },
@@ -352,6 +439,25 @@ export function createSkillLifecycleMethods(
     await intentModel().updateOne({ fileId }, { $set: { cleanedAt: new Date() } });
   }
 
+  async function scheduleAbandonedSkillUploadIntentRecheck(
+    fileId: string,
+    owner: string,
+    delayMs: number,
+  ): Promise<boolean> {
+    const now = new Date();
+    const result = await intentModel().updateOne(
+      {
+        fileId,
+        state: 'abandoned',
+        cleanedAt: { $exists: true },
+        claimOwner: owner,
+        claimExpiresAt: { $gt: now },
+      },
+      { $set: { nextCheckAt: new Date(now.getTime() + delayMs) } },
+    );
+    return result.modifiedCount === 1;
+  }
+
   /** Backfill a legacy file before replacing/removing its only row reference. */
   async function preserveExistingSkillBlob(input: {
     skillId: string;
@@ -391,6 +497,7 @@ export function createSkillLifecycleMethods(
     releaseSkillDeletionClaim,
     completeSkillDeletion,
     reopenSkillDeletion,
+    scheduleSkillDeletionRecheck,
     reserveSkillUploadIntent,
     transitionSkillUploadIntent,
     listSkillUploadIntents,
@@ -403,6 +510,7 @@ export function createSkillLifecycleMethods(
     releaseAbandonedSkillUploadIntentClaim,
     skillFileExistsForIntent,
     markSkillUploadIntentCleaned,
+    scheduleAbandonedSkillUploadIntentRecheck,
     preserveExistingSkillBlob,
   };
 }
