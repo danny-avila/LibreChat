@@ -137,10 +137,14 @@ export async function openTTSCache(): Promise<Cache> {
   return caches.open(TTS_CACHE_NAME);
 }
 
-/** Opens the cache for a lookup; any failure reads as a miss. */
-export async function matchTTSCache(key: string): Promise<Response | undefined> {
+/** Reads cached audio for the current session. A lookup that a clear or session change
+ *  overtakes, before or while its body is read, is a miss, as is any failure. */
+export async function matchTTSCache(key: string): Promise<Blob | undefined> {
+  const epoch = getTTSCacheEpoch();
   try {
-    return await (await openTTSCache()).match(key);
+    const response = await (await openTTSCache()).match(key);
+    const audio = await response?.blob();
+    return epoch === sessionEpoch ? audio : undefined;
   } catch {
     return undefined;
   }

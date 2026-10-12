@@ -563,6 +563,25 @@ describe('AuthContextProvider — logout onSuccess/onError handling', () => {
     Reflect.deleteProperty(globalThis, 'caches');
   });
 
+  it('keeps TTS caching closed when only the token rotates after logout', async () => {
+    const put = jest.fn();
+    Object.defineProperty(globalThis, 'caches', {
+      value: { open: async () => ({ put }), delete: async () => true },
+      configurable: true,
+    });
+    renderProvider();
+
+    act(() => {
+      mockCapturedLogoutOptions.onSuccess({ message: 'Logout successful' });
+    });
+    act(() => {
+      window.dispatchEvent(new CustomEvent('tokenUpdated', { detail: 'rotated-token' }));
+    });
+    await putTTSCache('/tts-cache/v1/rotated', {} as Response, getTTSCacheEpoch());
+    expect(put).not.toHaveBeenCalled();
+    Reflect.deleteProperty(globalThis, 'caches');
+  });
+
   it('reopens TTS caching when a session is completed in place', async () => {
     const put = jest.fn();
     Object.defineProperty(globalThis, 'caches', {

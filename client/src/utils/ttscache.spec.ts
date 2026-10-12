@@ -3,6 +3,7 @@ import { webcrypto } from 'crypto';
 import {
   putTTSCache,
   openTTSCache,
+  matchTTSCache,
   clearTTSCache,
   TTS_CACHE_NAME,
   getTTSCacheKey,
@@ -97,6 +98,26 @@ describe('openTTSCache and putTTSCache', () => {
     await clearTTSCache();
     await putTTSCache('/tts-cache/two', {} as Response, epoch);
     expect(cache.put).toHaveBeenCalledTimes(1);
+  });
+
+  it('treats a lookup that a clear overtakes as a miss', async () => {
+    let release: () => void = () => undefined;
+    entries.set('https://chat.example/tts-cache/v1/hit', {
+      blob: () => new Promise<Blob>((resolve) => (release = () => resolve(new Blob(['a'])))),
+    } as Response);
+    const match = jest.fn(async (url: string) => entries.get(`https://chat.example${url}`));
+    Object.assign(cache, { match });
+
+    const lookup = matchTTSCache('/tts-cache/v1/hit');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await clearTTSCache();
+    release();
+    await expect(lookup).resolves.toBeUndefined();
+
+    entries.set('https://chat.example/tts-cache/v1/hit', {
+      blob: async () => new Blob(['a']),
+    } as Response);
+    await expect(matchTTSCache('/tts-cache/v1/hit')).resolves.toBeDefined();
   });
 
   it('swallows a rejected write so playback is unaffected', async () => {

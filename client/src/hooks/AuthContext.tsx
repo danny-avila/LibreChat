@@ -132,7 +132,6 @@ const AuthContextProvider = ({
            * cannot write the departing account's payload back in. This is the only place that
            * knows a new session exists to reopen it for. */
           openFileDeletionRetention();
-          openTTSCacheWrites();
         } else {
           /** Cleanup still queued from a failed delete belongs to the account that uploaded
            * those files, and losing the session passes through here every way it can happen: the
@@ -188,6 +187,8 @@ const AuthContextProvider = ({
       setError(undefined);
       const redirect =
         getPostLoginRedirect(new URLSearchParams(window.location.search)) ?? '/c/new';
+      /** A new session starts here, unlike a token rotation, so only here does caching reopen. */
+      openTTSCacheWrites();
       setUserContext({ token, isAuthenticated: true, user, redirect });
     },
     onError: (error: TResError | unknown) => {
@@ -344,6 +345,7 @@ const AuthContextProvider = ({
           const fallbackRedirect = isSafeRedirect(currentUrl) ? currentUrl : '/c/new';
           const redirect =
             getPostLoginRedirect(new URLSearchParams(window.location.search)) ?? fallbackRedirect;
+          openTTSCacheWrites();
           setUserContext({ user, token, isAuthenticated: true, redirect });
           return;
         }

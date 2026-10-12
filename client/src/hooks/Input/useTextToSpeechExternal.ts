@@ -154,12 +154,11 @@ function useTextToSpeechExternal({
 
   const handleCachedResponse = async (text: string, download: boolean) => {
     const cacheKey = await getTTSCacheKey(text, voice ?? '');
-    const cachedResponse = cacheKey ? await matchTTSCache(cacheKey) : undefined;
-    if (!cachedResponse) {
+    const cachedAudio = cacheKey ? await matchTTSCache(cacheKey) : undefined;
+    if (!cachedAudio) {
       return startMutation(text, download);
     }
-    const audioBlob = await cachedResponse.blob();
-    const blobUrl = URL.createObjectURL(audioBlob);
+    const blobUrl = URL.createObjectURL(cachedAudio);
     if (download) {
       downloadAudio(blobUrl);
     } else {

@@ -72,13 +72,12 @@ export default function StreamAudio({ index = 0 }) {
         let cacheKey = latestMessage
           ? await getTTSCacheKey(getSpeechText(latestMessage), voice)
           : null;
-        const cachedResponse = cacheKey ? await matchTTSCache(cacheKey) : undefined;
+        const cachedAudio = cacheKey ? await matchTTSCache(cacheKey) : undefined;
 
         setAudioRunId(activeRunId);
-        if (cachedResponse) {
+        if (cachedAudio) {
           logger.log('Audio found in cache');
-          const audioBlob = await cachedResponse.blob();
-          const blobUrl = URL.createObjectURL(audioBlob);
+          const blobUrl = URL.createObjectURL(cachedAudio);
           setGlobalAudioURL(blobUrl);
           setIsFetching(false);
           return;
