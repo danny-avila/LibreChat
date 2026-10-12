@@ -83,7 +83,7 @@ async function connect(
     { $setOnInsert: { email: `${user}@example.com` } },
     { upsert: true },
   );
-  const { url } = oauth.authorizationUrl({ id: user }, config);
+  const { url } = await oauth.authorizationUrl({ id: user }, config);
   const state = new URL(url).searchParams.get('state') ?? '';
   const claims = oauth.verifyState(state);
   if (claims == null) throw new Error('state did not verify');
@@ -102,9 +102,9 @@ describe('oauthEndpoints', () => {
 });
 
 describe('authorizationUrl and verifyState', () => {
-  it('sends the user to the provider with a signed state and an S256 challenge', () => {
+  it('sends the user to the provider with a signed state and an S256 challenge', async () => {
     const { oauth } = setup([]);
-    const { url, flowId } = oauth.authorizationUrl({ id: 'u1', tenantId: 't1' }, gitlab);
+    const { url, flowId } = await oauth.authorizationUrl({ id: 'u1', tenantId: 't1' }, gitlab);
     const parsed = new URL(url);
     expect(parsed.origin + parsed.pathname).toBe('https://gitlab.example.com/oauth/authorize');
     expect(parsed.searchParams.get('client_id')).toBe('gl-client');
@@ -122,19 +122,19 @@ describe('authorizationUrl and verifyState', () => {
     });
   });
 
-  it('asks GitHub for no scope unless one is configured', () => {
+  it('asks GitHub for no scope unless one is configured', async () => {
     const { oauth } = setup([]);
     expect(
-      new URL(oauth.authorizationUrl({ id: 'u1' }, github).url).searchParams.has('scope'),
+      new URL((await oauth.authorizationUrl({ id: 'u1' }, github)).url).searchParams.has('scope'),
     ).toBe(false);
-    const scoped = oauth.authorizationUrl({ id: 'u1' }, { ...github, scope: 'repo' });
+    const scoped = await oauth.authorizationUrl({ id: 'u1' }, { ...github, scope: 'repo' });
     expect(new URL(scoped.url).searchParams.get('scope')).toBe('repo');
   });
 
-  it('starts a new flow each time', () => {
+  it('starts a new flow each time', async () => {
     const { oauth } = setup([]);
-    const first = oauth.authorizationUrl({ id: 'u1' }, github);
-    const second = oauth.authorizationUrl({ id: 'u1' }, github);
+    const first = await oauth.authorizationUrl({ id: 'u1' }, github);
+    const second = await oauth.authorizationUrl({ id: 'u1' }, github);
     expect(first.flowId).not.toBe(second.flowId);
   });
 
@@ -174,7 +174,7 @@ describe('complete', () => {
       _id: new mongoose.Types.ObjectId(user),
       email: `${user}@example.com`,
     });
-    const { url } = oauth.authorizationUrl({ id: user }, github);
+    const { url } = await oauth.authorizationUrl({ id: user }, github);
     const challenge = new URL(url).searchParams.get('code_challenge');
     const claims = oauth.verifyState(new URL(url).searchParams.get('state') ?? '');
     await oauth.complete(claims!, 'the-code', github);
@@ -485,7 +485,12 @@ describe('token', () => {
     replica.answer();
     await expect(pending).resolves.toBeNull();
     await expect(replica.oauth.connected(user, gitlab)).resolves.toBe(false);
-    expect(await tokens().countDocuments({ userId: new mongoose.Types.ObjectId(user) })).toBe(0);
+    expect(
+      await tokens().countDocuments({
+        userId: new mongoose.Types.ObjectId(user),
+        type: PULL_REQUEST_OAUTH_TYPE,
+      }),
+    ).toBe(0);
   });
 
   it('releases its claim after an outage, so the next attempt need not wait it out', async () => {
@@ -499,6 +504,42 @@ describe('token', () => {
       () => clock,
     );
     await expect(other.oauth.token(user, gitlab)).resolves.toBe('a2');
+  });
+
+  it('does not hand a read under a shortened retention the answer of one under the old', async () => {
+    let clock = Date.now();
+    const long = { ...github, retentionDays: 180 };
+    const { oauth: connector } = setup([() => json({ access_token: 'kept' })], () => clock);
+    const user = userId();
+    await connect(connector, user, long);
+    clock += 2 * 24 * 60 * 60 * 1000;
+    /** The read under the old retention is held at the store until the new one has answered. */
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => (release = resolve));
+    let reads = 0;
+    const heldStore: PullRequestOAuthStore = {
+      ...store,
+      findToken: async (query) => {
+        reads += 1;
+        if (reads === 1) await held;
+        return store.findToken(query);
+      },
+    };
+    const oauth = createPullRequestOAuth({
+      store: heldStore,
+      fetchFn: jest.fn(),
+      secret,
+      redirectUri,
+      encrypt,
+      decrypt,
+      now: () => clock,
+    });
+    const old = oauth.token(user, long);
+    /** Unused for two days: under a one-day retention it is gone, whatever the old read says. */
+    const shortened = oauth.token(user, { ...github, retentionDays: 1 });
+    await expect(Promise.race([shortened, held.then(() => 'joined')])).resolves.toBeNull();
+    release();
+    await old;
   });
 
   it("does not hand a replaced app's token to a read under the new app", async () => {
@@ -593,7 +634,7 @@ describe('token', () => {
         }),
     );
     const oauth = createPullRequestOAuth({ store, fetchFn, secret, redirectUri, encrypt, decrypt });
-    const { url } = oauth.authorizationUrl({ id: userId() }, github);
+    const { url } = await oauth.authorizationUrl({ id: userId() }, github);
     const claims = oauth.verifyState(new URL(url).searchParams.get('state') ?? '');
     const started = Date.now();
     await expect(
@@ -711,7 +752,7 @@ describe('reject', () => {
 
 describe('completion during account deletion', () => {
   async function complete(oauth: ReturnType<typeof setup>['oauth'], user: string) {
-    const { url } = oauth.authorizationUrl({ id: user }, github);
+    const { url } = await oauth.authorizationUrl({ id: user }, github);
     const claims = oauth.verifyState(new URL(url).searchParams.get('state') ?? '');
     if (claims == null) throw new Error('state did not verify');
     return oauth.complete(claims, 'the-code', github);
@@ -751,13 +792,62 @@ describe('completion during account deletion', () => {
 });
 
 describe('disconnect', () => {
+  it('voids a flow started before it, even one whose exchange is under way', async () => {
+    const { oauth } = setup([
+      () => json({ access_token: 'first' }),
+      () => json({ access_token: 'late' }),
+    ]);
+    const user = userId();
+    await connect(oauth, user);
+    /** A flow started while connected, then the user disconnects before it comes back. */
+    const { url } = await oauth.authorizationUrl({ id: user }, github);
+    const claims = oauth.verifyState(new URL(url).searchParams.get('state') ?? '');
+    await oauth.disconnect(user);
+    await expect(oauth.complete(claims!, 'the-code', github)).rejects.toThrow(
+      'before a disconnect',
+    );
+    await expect(oauth.connected(user, github)).resolves.toBe(false);
+  });
+
+  it('removes a grant a flow stored while the disconnect ran', async () => {
+    const user = userId();
+    const { oauth } = setup([
+      async () => {
+        await oauth.disconnect(user);
+        return json({ access_token: 'late' });
+      },
+    ]);
+    await users().insertOne({
+      _id: new mongoose.Types.ObjectId(user),
+      email: `${user}@example.com`,
+    });
+    const { url } = await oauth.authorizationUrl({ id: user }, github);
+    const claims = oauth.verifyState(new URL(url).searchParams.get('state') ?? '');
+    await expect(oauth.complete(claims!, 'the-code', github)).rejects.toThrow(
+      'before a disconnect',
+    );
+    expect(await tokens().countDocuments({ type: PULL_REQUEST_OAUTH_TYPE })).toBe(0);
+  });
+
+  it('lets a flow started after it connect again', async () => {
+    const { oauth } = setup([
+      () => json({ access_token: 'first' }),
+      () => json({ access_token: 'again' }),
+    ]);
+    const user = userId();
+    await connect(oauth, user);
+    await oauth.disconnect(user);
+    await connect(oauth, user);
+    await expect(oauth.token(user, github)).resolves.toBe('again');
+  });
+
   it('removes the stored grant', async () => {
     const { oauth } = setup([() => json({ access_token: 'gone' })]);
     const user = userId();
     await connect(oauth, user);
     await oauth.disconnect(user);
     await expect(oauth.token(user, github)).resolves.toBeNull();
-    expect(await mongoose.connection.db!.collection('tokens').countDocuments({})).toBe(0);
+    expect(await tokens().countDocuments({ type: PULL_REQUEST_OAUTH_TYPE })).toBe(0);
   });
 
   it("removes grants made under an earlier app or host, and only that user's", async () => {
@@ -779,9 +869,12 @@ describe('disconnect', () => {
 });
 
 describe('flow timeout', () => {
-  it('signs the state for the configured number of minutes', () => {
+  it('signs the state for the configured number of minutes', async () => {
     const { oauth } = setup([]);
-    const { url } = oauth.authorizationUrl({ id: userId() }, { ...github, flowTimeoutMinutes: 3 });
+    const { url } = await oauth.authorizationUrl(
+      { id: userId() },
+      { ...github, flowTimeoutMinutes: 3 },
+    );
     const claims = jwt.decode(new URL(url).searchParams.get('state') ?? '') as {
       iat: number;
       exp: number;

@@ -110,7 +110,7 @@ export function createPullRequestConnectionHandlers(deps: {
           return;
         }
         const tenantId = getTenantId() ?? user.tenantId;
-        const { url, flowId } = deps.oauth.authorizationUrl(
+        const { url, flowId } = await deps.oauth.authorizationUrl(
           { id: user.id, ...(tenantId ? { tenantId } : {}) },
           config,
         );

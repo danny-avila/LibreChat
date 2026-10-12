@@ -9,6 +9,10 @@ import { getSafeErrorMetadata } from '~/utils';
 import { isRecord } from './shared';
 
 export const PULL_REQUEST_OAUTH_TYPE = 'pr_oauth';
+/** One row per user: the connection generation a disconnect replaces, which every flow binds to. */
+export const PULL_REQUEST_OAUTH_GENERATION_TYPE = 'pr_oauth_generation';
+/** The generation of a user who never disconnected. */
+const FIRST_GENERATION = 'initial';
 export const PULL_REQUEST_OAUTH_CALLBACK_PATH = '/api/pull-requests/oauth/callback';
 const STATE_AUDIENCE = 'librechat:pull-request-oauth';
 /** Defaults for `pullRequests.oauth.flowTimeoutMinutes`, `requestTimeoutSeconds` and
@@ -96,6 +100,8 @@ export type PullRequestOAuthState = {
   /** Binds the CSRF cookie to this one flow. */
   flowId: string;
   nonce: string;
+  /** The user's connection generation when the flow started; a disconnect since voids it. */
+  generation: string;
 };
 
 /** What the provider issued. */
@@ -160,6 +166,14 @@ class GrantRefreshPendingError extends Error {
   }
 }
 
+/** The user disconnected after this flow started, so it may not connect them again. */
+class StaleFlowError extends Error {
+  constructor() {
+    super('The flow started before a disconnect');
+    this.name = 'StaleFlowError';
+  }
+}
+
 /** The user was deleted, or its deletion started, while the connection was being made. */
 class InactivePrincipalError extends Error {
   constructor() {
@@ -181,7 +195,7 @@ export type PullRequestOAuth = {
   authorizationUrl(
     user: { id: string; tenantId?: string },
     config: PullRequestOAuthConfig,
-  ): { url: string; flowId: string };
+  ): Promise<{ url: string; flowId: string }>;
   /** The claims of a `state` this server issued and that has not expired; null otherwise. */
   verifyState(state: string): PullRequestOAuthState | null;
   /** Exchanges the code and stores the grant for the user the state names. */
@@ -234,9 +248,30 @@ export function createPullRequestOAuth({
   const verifierOf = (nonce: string) =>
     base64url(createHmac('sha256', secret).update(`pull-request-oauth:${nonce}`).digest());
 
-  /** Token reads in flight in this process, keyed by everything that changes the answer (user,
-   *  provider, host and app), so concurrent lookups share one read and at most one refresh. */
+  /** Token reads in flight in this process, so concurrent lookups share one read and at most one
+   *  refresh. Keyed by the user and every setting of the app config, since any of them (the app,
+   *  the retention, the timeouts) can change the answer. */
   const reading = new Map<string, Promise<string | null>>();
+  const configKeyOf = (config: PullRequestOAuthConfig): string =>
+    createHash('sha256')
+      .update(JSON.stringify(config, Object.keys(config).sort()))
+      .digest('hex');
+
+  const generationScopeOf = (userId: string) => `${PULL_REQUEST_OAUTH_GENERATION_TYPE}:${userId}`;
+  async function generationOf(userId: string): Promise<string> {
+    const row = await store.findToken({ scope: generationScopeOf(userId) });
+    return row?.token ?? FIRST_GENERATION;
+  }
+
+  /** A flow may store a grant only for an active user still in the generation it started in. */
+  async function assertCurrent(state: PullRequestOAuthState): Promise<void> {
+    const [active, generation] = await Promise.all([
+      store.isAgentTriggerPrincipalActive(state.userId),
+      generationOf(state.userId),
+    ]);
+    if (!active) throw new InactivePrincipalError();
+    if (generation !== state.generation) throw new StaleFlowError();
+  }
 
   async function requestGrant(
     config: PullRequestOAuthConfig,
@@ -515,14 +550,16 @@ export function createPullRequestOAuth({
   }
 
   return {
-    authorizationUrl(user, config) {
+    async authorizationUrl(user, config) {
       const nonce = base64url(randomBytes(16));
+      const generation = await generationOf(user.id);
       const state = jwt.sign(
         {
           sub: user.id,
           p: config.provider,
           h: config.host,
           n: nonce,
+          g: generation,
           ...(user.tenantId ? { t: user.tenantId } : {}),
         },
         secret,
@@ -561,6 +598,7 @@ export function createPullRequestOAuth({
         typeof claims.sub !== 'string' ||
         typeof claims.h !== 'string' ||
         typeof claims.n !== 'string' ||
+        typeof claims.g !== 'string' ||
         (claims.p !== 'github' && claims.p !== 'gitlab' && claims.p !== 'bitbucket') ||
         (claims.t !== undefined && typeof claims.t !== 'string')
       ) {
@@ -571,16 +609,15 @@ export function createPullRequestOAuth({
         provider: claims.p,
         host: claims.h,
         nonce: claims.n,
+        generation: claims.g,
         flowId: flowIdOf(claims.sub, claims.n),
         ...(typeof claims.t === 'string' ? { tenantId: claims.t } : {}),
       };
     },
 
     async complete(state, code, config) {
-      /** No code is spent for a user that is gone or being deleted. */
-      if (!(await store.isAgentTriggerPrincipalActive(state.userId))) {
-        throw new InactivePrincipalError();
-      }
+      /** No code is spent for a user that is gone, being deleted, or disconnected since. */
+      await assertCurrent(state);
       const response = await requestGrant(
         config,
         {
@@ -600,13 +637,16 @@ export function createPullRequestOAuth({
       }
       if (stored == null) throw new Error('The grant could not be stored');
       /**
-       * Account deletion sets its fence, then removes the user's tokens, then the user. A grant
-       * stored before that removal goes with it; one stored after it finds the fence (or no user)
-       * here and removes itself, so no credential outlives the account.
+       * Account deletion sets its fence and then removes the user's tokens; a disconnect replaces
+       * the generation and then removes the grants. A grant stored before that removal goes with
+       * it; one stored after it finds the fence, no user, or a new generation here and removes
+       * itself, so neither a deletion nor a disconnect is undone by a flow started before it.
        */
-      if (!(await store.isAgentTriggerPrincipalActive(state.userId))) {
+      try {
+        await assertCurrent(state);
+      } catch (error) {
         await store.deleteTokens({ scope: scopeOf(state.userId, config), token: stored });
-        throw new InactivePrincipalError();
+        throw error;
       }
     },
 
@@ -614,7 +654,7 @@ export function createPullRequestOAuth({
       /** Concurrent callers share one read and at most one refresh. Joining only the refresh is
        *  not enough: a caller whose read answered after another's refresh had already finished
        *  would refresh the grant that refresh replaced. */
-      const key = `${scopeOf(userId, config)}\0${config.clientId}`;
+      const key = `${userId}\0${configKeyOf(config)}`;
       const pending = reading.get(key);
       if (pending != null) return pending;
       const started = currentToken(userId, config);
@@ -645,6 +685,21 @@ export function createPullRequestOAuth({
     },
 
     async disconnect(userId) {
+      /** A new generation first, so a flow started before this cannot store a grant after it. */
+      const scope = generationScopeOf(userId);
+      let replaced = false;
+      for (let attempt = 0; attempt < 3 && !replaced; attempt++) {
+        const current = await store.findToken({ scope });
+        replaced = await store.replaceTokenIfCurrent(scope, current?.token ?? null, {
+          userId,
+          type: PULL_REQUEST_OAUTH_GENERATION_TYPE,
+          identifier: 'generation',
+          token: randomUUID(),
+          /** Outlives the longest flow a state could still be valid for. */
+          expiresIn: DAY_SECONDS,
+        });
+      }
+      if (!replaced) throw new Error('The connection generation could not be replaced');
       await store.deleteTokens({ userId, type: PULL_REQUEST_OAUTH_TYPE });
     },
   };

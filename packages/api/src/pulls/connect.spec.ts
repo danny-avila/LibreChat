@@ -27,6 +27,7 @@ const claims: PullRequestOAuthState = {
   host: 'github.com',
   nonce: 'n',
   flowId: 'pull-request-oauth:u1:n',
+  generation: 'initial',
 };
 
 function makeOAuth(overrides: Partial<PullRequestOAuth> = {}): jest.Mocked<PullRequestOAuth> {
