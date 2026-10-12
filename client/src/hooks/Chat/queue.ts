@@ -246,27 +246,59 @@ export const detachedRunByConvoId = atomFamily((_conversationId: string) =>
   atom<DetachedRun | null>(null),
 );
 
-/** The user pressed Stop on the conversation's current run. A stopped run's response persists
- *  like a completed one, so a run stopped and then left before its abort event arrived must not
- *  be resolved as detached and drain the queue. Reset when the next run starts. */
-export const stopRequestedByConvoId = atomFamily((_conversationId: string) => atom(false));
+/** The run the user pressed Stop on, named by its generation epoch. A stopped run's response
+ *  persists like a completed one, so a run stopped and then left before its abort event arrived
+ *  must not be resolved as detached and drain the queue. Only a different run resets it, so a
+ *  stopped run the user leaves, reattaches to and leaves again stays stopped. */
+export type StoppedRun = { generationCreatedAt: number };
+
+export const stopRequestedByConvoId = atomFamily((_conversationId: string) =>
+  atom<StoppedRun | null>(null),
+);
+
+/** Whether a Stop marker belongs to the run with this epoch. A run whose epoch is unknown cannot
+ *  be told apart from the stopped one, so it is treated as stopped. */
+export function isStoppedRun(stopped: StoppedRun | null, generationCreatedAt?: number): boolean {
+  if (stopped == null) {
+    return false;
+  }
+  return generationCreatedAt == null || stopped.generationCreatedAt === generationCreatedAt;
+}
+
+/** Whether persisted history can ever name the detached run's response. A regeneration leaves the
+ *  previous reply under the same user message, so without the run's epoch to date the rows by,
+ *  no read can tell the old reply from the new one. */
+export function canResolveDetachedRun(run: DetachedRun): boolean {
+  return run.isRegenerate !== true || run.generationCreatedAt != null;
+}
+
+const writtenAt = (message: TMessage): number => {
+  const stamp = message.updatedAt ?? message.createdAt;
+  return stamp == null ? Number.NaN : Date.parse(stamp);
+};
 
 /**
- * The run end a detached run implies, read from the persisted response: `completed` lets the
- * queue drain, while a stopped (`unfinished`) or failed response leaves the queue for a manual
- * send, as it would had the stream been attached. Returns `null` while no response to the run is
- * persisted, so nothing is drained on a guess.
+ * The run end a detached run implies, read from persisted history: `completed` lets the queue
+ * drain, while a stopped (`unfinished`) or failed response leaves the queue for a manual send, as
+ * it would had the stream been attached. With the run's epoch, only a response the server wrote at
+ * or after the run started can be its response, which rules out the reply a regeneration replaces
+ * and any row the run never touched. Returns `null` while no such response is persisted, so
+ * nothing is drained on a guess.
  */
 export function resolveDetachedRunEnd(
   conversationId: string,
   run: DetachedRun,
   messages: TMessage[] | undefined,
 ): RunEnd | null {
-  if (run.isRegenerate === true) {
+  if (!canResolveDetachedRun(run)) {
     return null;
   }
+  const epoch = run.generationCreatedAt;
   const responses = (messages ?? []).filter(
-    (message) => message.isCreatedByUser === false && message.parentMessageId === run.userMessageId,
+    (message) =>
+      message.isCreatedByUser === false &&
+      message.parentMessageId === run.userMessageId &&
+      (epoch == null || writtenAt(message) >= epoch),
   );
   /** A fresh turn's placeholder is the user message id padded with `_`, which names no response;
    *  a real id is matched exactly first, since persisted ids may themselves end in `_`. */
@@ -278,7 +310,8 @@ export function resolveDetachedRunEnd(
     response =
       responses.find((message) => message.messageId === exact) ??
       responses.find((message) => message.messageId === unpadded);
-  } else if (responses.length === 1) {
+  }
+  if (response == null && (!namesResponse || epoch != null) && responses.length === 1) {
     response = responses[0];
   }
   if (response == null) {
@@ -294,7 +327,7 @@ export function resolveDetachedRunEnd(
     conversationId,
     outcome,
     endedAt: Date.now(),
-    ...(run.generationCreatedAt != null && { generationCreatedAt: run.generationCreatedAt }),
+    ...(epoch != null && { generationCreatedAt: epoch }),
     ...(outcome === 'completed' && { responseMessageId: response.messageId }),
   };
 }

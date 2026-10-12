@@ -1,5 +1,5 @@
 import type { TMessage } from 'librechat-data-provider';
-import { resolveDetachedRunEnd } from '../queue';
+import { resolveDetachedRunEnd, canResolveDetachedRun, isStoppedRun } from '../queue';
 
 const CONVO_ID = 'convo-detached';
 const USER_ID = 'user-1';
@@ -15,6 +15,8 @@ const response = (overrides: Partial<TMessage> = {}): TMessage =>
   }) as TMessage;
 
 const userMessage = { messageId: USER_ID, isCreatedByUser: true } as TMessage;
+
+const writtenAt = (epoch: number) => new Date(epoch).toISOString();
 
 describe('resolveDetachedRunEnd', () => {
   it('reports a completed run with its persisted response', () => {
@@ -88,7 +90,7 @@ describe('resolveDetachedRunEnd', () => {
     expect(end?.responseMessageId).toBe('server-response');
   });
 
-  it('leaves a regeneration unresolved, since history still holds the reply it replaces', () => {
+  it('leaves a regeneration without its epoch unresolved, since history still holds the reply it replaces', () => {
     expect(
       resolveDetachedRunEnd(
         CONVO_ID,
@@ -102,9 +104,38 @@ describe('resolveDetachedRunEnd', () => {
     const end = resolveDetachedRunEnd(
       CONVO_ID,
       { userMessageId: USER_ID, generationCreatedAt: 4200 },
-      [response()],
+      [response({ updatedAt: writtenAt(4300) })],
     );
     expect(end?.generationCreatedAt).toBe(4200);
+  });
+
+  it('rejects the reply a regeneration replaces and resolves the one the run wrote', () => {
+    const run = {
+      userMessageId: USER_ID,
+      responseMessageId: 'response-1_',
+      isRegenerate: true,
+      generationCreatedAt: 5000,
+    };
+    const replaced = response({ messageId: 'response-1', updatedAt: writtenAt(4000) });
+    expect(resolveDetachedRunEnd(CONVO_ID, run, [replaced])).toBeNull();
+    const end = resolveDetachedRunEnd(CONVO_ID, run, [
+      replaced,
+      response({ messageId: 'response-2', unfinished: true, updatedAt: writtenAt(6000) }),
+    ]);
+    expect(end).toEqual(expect.objectContaining({ outcome: 'aborted', generationCreatedAt: 5000 }));
+  });
+
+  it('ignores a row the run never wrote, even under the id it named', () => {
+    expect(
+      resolveDetachedRunEnd(
+        CONVO_ID,
+        { userMessageId: USER_ID, responseMessageId: 'response-1', generationCreatedAt: 5000 },
+        [
+          response({ messageId: 'response-1', updatedAt: writtenAt(4999) }),
+          response({ messageId: 'other' }),
+        ],
+      ),
+    ).toBeNull();
   });
 
   it('does not guess between siblings when the run named no response', () => {
@@ -114,5 +145,25 @@ describe('resolveDetachedRunEnd', () => {
         response({ messageId: 'response-2' }),
       ]),
     ).toBeNull();
+  });
+});
+
+describe('canResolveDetachedRun', () => {
+  it('can date a regeneration only by its epoch', () => {
+    expect(canResolveDetachedRun({ userMessageId: USER_ID })).toBe(true);
+    expect(canResolveDetachedRun({ userMessageId: USER_ID, isRegenerate: true })).toBe(false);
+    expect(
+      canResolveDetachedRun({ userMessageId: USER_ID, isRegenerate: true, generationCreatedAt: 1 }),
+    ).toBe(true);
+  });
+});
+
+describe('isStoppedRun', () => {
+  it('holds a Stop to the run it was pressed on', () => {
+    const stopped = { generationCreatedAt: 1000 };
+    expect(isStoppedRun(null, 1000)).toBe(false);
+    expect(isStoppedRun(stopped, 1000)).toBe(true);
+    expect(isStoppedRun(stopped, 2000)).toBe(false);
+    expect(isStoppedRun(stopped, undefined)).toBe(true);
   });
 });

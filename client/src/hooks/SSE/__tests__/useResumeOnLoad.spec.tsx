@@ -2935,6 +2935,7 @@ describe('useResumeOnLoad', () => {
             conversationId: CONVERSATION_ID,
             isCreatedByUser: false,
             text: 'finished while away',
+            updatedAt: new Date(42).toISOString(),
           } as TMessage,
         ],
         detachedRun: { userMessageId: USER_MESSAGE_ID, generationCreatedAt: 41 },
@@ -2975,6 +2976,56 @@ describe('useResumeOnLoad', () => {
       });
 
       expect(jotaiStore.get(pendingRunEndByConvoId(CONVERSATION_ID))).toBeNull();
+    });
+
+    it('keeps the detached run while its job is active, so a job gone before the attach still resolves', async () => {
+      mockUseStreamStatus.mockReturnValue({
+        isSuccess: true,
+        isFetching: false,
+        data: {
+          active: true,
+          status: 'running',
+          createdAt: 4242,
+          streamId: CONVERSATION_ID,
+          resumeState: {
+            aggregatedContent: [{ type: ContentTypes.TEXT, text: 'partial' }],
+            responseMessageId: RESPONSE_MESSAGE_ID,
+            userMessage: { messageId: USER_MESSAGE_ID, conversationId: CONVERSATION_ID },
+          },
+        },
+      });
+      const detachedRun = { userMessageId: USER_MESSAGE_ID, generationCreatedAt: 4242 };
+      const { jotaiStore } = renderUseResumeOnLoad({
+        messages: [buildUserMessage(CONVERSATION_ID)],
+        detachedRun,
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(jotaiStore.get(detachedRunByConvoId(CONVERSATION_ID))).toEqual(detachedRun);
+      expect(jotaiStore.get(pendingRunEndByConvoId(CONVERSATION_ID))).toBeNull();
+    });
+
+    it('retires a regeneration history can never date without reading history again', async () => {
+      mockUseStreamStatus.mockReturnValue({
+        isSuccess: true,
+        isFetching: false,
+        data: { active: false },
+      });
+      const refetch = jest.spyOn(QueryClient.prototype, 'refetchQueries');
+      const { jotaiStore } = renderUseResumeOnLoad({
+        messages: [buildUserMessage(CONVERSATION_ID)],
+        detachedRun: { userMessageId: USER_MESSAGE_ID, isRegenerate: true },
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(jotaiStore.get(detachedRunByConvoId(CONVERSATION_ID))).toBeNull();
+      expect(jotaiStore.get(pendingRunEndByConvoId(CONVERSATION_ID))).toBeNull();
+      expect(refetch).not.toHaveBeenCalled();
+      refetch.mockRestore();
     });
 
     it('converts resumeState.pendingSteers to queued when inactive (expired action, unparked queue)', async () => {

@@ -88,8 +88,10 @@ import {
   GENERATION_PROTOCOL_VERSION,
 } from '~/data-provider';
 import {
+  resolveDetachedRunEnd,
   stopRequestedByConvoId,
   detachedRunByConvoId,
+  isStoppedRun,
   drainAfterAbortByIndex,
   queuedMessagesByConvoId,
   runEndByIndex,
@@ -1377,9 +1379,23 @@ export default function useResumableSSE(
   const setRunEnd = useCallback(
     (end: RunEnd) => {
       runEndPublishedRef.current = true;
+      /** The run's end reached the drain here, so a marker this pane left for the same run is
+       *  settled and must not be resolved a second time on a later visit. */
+      if (end.conversationId != null) {
+        const detachedFamily = detachedRunByConvoId(end.conversationId);
+        const detached = jotaiStore.get(detachedFamily);
+        if (
+          detached != null &&
+          (detached.generationCreatedAt == null ||
+            end.generationCreatedAt == null ||
+            detached.generationCreatedAt === end.generationCreatedAt)
+        ) {
+          jotaiStore.set(detachedFamily, null);
+        }
+      }
       publishRunEnd(end);
     },
-    [publishRunEnd],
+    [jotaiStore, publishRunEnd],
   );
   const setDrainAfterAbort = useSetAtom(drainAfterAbortByIndex(runIndex));
   const clearDrainAfterAbort = useCallback(
@@ -3476,12 +3492,20 @@ export default function useResumableSSE(
           }
           // The true outcome is unknown here (job record already cleaned up):
           // a non-'completed' outcome releases parked interrupt flags without
-          // auto-sending queued messages the user may not want fired.
+          // auto-sending queued messages the user may not want fired. A run this
+          // pane left and came back to is the exception: the history just read
+          // names its response by epoch, which is the outcome it would have had.
+          const detachedRun = jotaiStore.get(detachedRunByConvoId(recoveryConvoId));
+          const detachedEnd =
+            detachedRun != null && persistedMessages != null
+              ? resolveDetachedRunEnd(recoveryConvoId, detachedRun, persistedMessages)
+              : null;
           setRunEnd({
             conversationId: recoveryConvoId,
             outcome: 'aborted',
-            startedAsNewConvo: optimisticStreamIdsRef.current.has(currentStreamId),
             endedAt: Date.now(),
+            ...detachedEnd,
+            startedAsNewConvo: optimisticStreamIdsRef.current.has(currentStreamId),
           });
           setStreamId(null);
           optimisticStreamIdsRef.current.delete(currentStreamId);
@@ -4315,10 +4339,23 @@ export default function useResumableSSE(
     submissionRef.current = submission;
     runEndPublishedRef.current = false;
     if (submission.conversation?.conversationId != null) {
-      /** A run starting here owns the conversation's end from now on: an earlier run this pane
-       *  left is superseded, and a Stop belonged to that earlier run. */
-      jotaiStore.set(stopRequestedByConvoId(submission.conversation.conversationId), false);
-      jotaiStore.set(detachedRunByConvoId(submission.conversation.conversationId), null);
+      /** A different run starting here owns the conversation's end from now on: an earlier run
+       *  this pane left is superseded, and a Stop belonged to that earlier run. Reattaching to
+       *  the same generation keeps both, since that run's end is still owed and it was stopped. */
+      const startingConvoId = submission.conversation.conversationId;
+      const stopFamily = stopRequestedByConvoId(startingConvoId);
+      if (jotaiStore.get(stopFamily)?.generationCreatedAt !== resumeGenerationCreatedAt) {
+        jotaiStore.set(stopFamily, null);
+      }
+      const detachedFamily = detachedRunByConvoId(startingConvoId);
+      const detached = jotaiStore.get(detachedFamily);
+      if (
+        detached != null &&
+        (resumeGenerationCreatedAt == null ||
+          detached.generationCreatedAt !== resumeGenerationCreatedAt)
+      ) {
+        jotaiStore.set(detachedFamily, null);
+      }
     }
     const startController = new AbortController();
     const { signal } = startController;
@@ -4862,8 +4899,7 @@ export default function useResumableSSE(
         !runEndPublishedRef.current &&
         closingConvoId != null &&
         closingConvoId !== Constants.NEW_CONVO &&
-        closingUserMessageId != null &&
-        !jotaiStore.get(stopRequestedByConvoId(closingConvoId))
+        closingUserMessageId != null
       ) {
         const liveEpoch = liveEpochRef.current;
         const generationCreatedAt =
@@ -4871,12 +4907,15 @@ export default function useResumableSSE(
             ? liveEpoch.createdAt
             : (closing as TSubmission & { resumeGenerationCreatedAt?: number })
                 .resumeGenerationCreatedAt;
-        jotaiStore.set(detachedRunByConvoId(closingConvoId), {
-          userMessageId: closingUserMessageId,
-          responseMessageId: closing?.initialResponse?.messageId,
-          ...(generationCreatedAt != null && { generationCreatedAt }),
-          ...(closing?.isRegenerate === true && { isRegenerate: true }),
-        });
+        const stopped = jotaiStore.get(stopRequestedByConvoId(closingConvoId));
+        if (!isStoppedRun(stopped, generationCreatedAt)) {
+          jotaiStore.set(detachedRunByConvoId(closingConvoId), {
+            userMessageId: closingUserMessageId,
+            responseMessageId: closing?.initialResponse?.messageId,
+            ...(generationCreatedAt != null && { generationCreatedAt }),
+            ...(closing?.isRegenerate === true && { isRegenerate: true }),
+          });
+        }
       }
       streamRef.current?.abort();
       streamRef.current = null;

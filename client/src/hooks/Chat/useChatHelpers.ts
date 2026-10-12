@@ -234,7 +234,9 @@ export default function useChatHelpers(index = 0, paramId?: string): ChatContrac
       // start the NEXT submission) while the abort response is in flight;
       // the fallback clear below must not tear down that new run.
       const submissionAtAbort = captureSubmission();
-      queueStore.set(stopRequestedByConvoId(conversationId), true);
+      const stoppedRun = { generationCreatedAt: activeGenerationCreatedAt };
+      const stopFamily = stopRequestedByConvoId(conversationId);
+      queueStore.set(stopFamily, stoppedRun);
       try {
         console.log('[useChatHelpers] Calling abort mutation for:', conversationId);
         const response = await abortStream({
@@ -253,8 +255,12 @@ export default function useChatHelpers(index = 0, paramId?: string): ChatContrac
         if (canUseV2AbortResponse && response?.settled === true) {
           /** Natural completion/error won the terminal CAS, so this request did
            * not emit an abort FINAL and must not release the abort-drain queue.
-           * The winning terminal event/status owns reconciliation. */
+           * The winning terminal event/status owns reconciliation, and the run
+           * was not stopped, so its persisted outcome may still drain. */
           clearInterruptDrain(conversationId, activeGenerationCreatedAt);
+          if (queueStore.get(stopFamily) === stoppedRun) {
+            queueStore.set(stopFamily, null);
+          }
           queryClient.invalidateQueries({
             queryKey: [QueryKeys.messages, conversationId],
             refetchType: 'all',

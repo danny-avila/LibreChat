@@ -1098,9 +1098,83 @@ describe('useResumableSSE', () => {
       unmount();
     });
 
+    const resumeOf = (generationCreatedAt: number) =>
+      ({
+        ...buildSubmission(),
+        resumeStreamId: CONV_ID,
+        resumeGenerationCreatedAt: generationCreatedAt,
+      }) as TSubmission;
+
+    it('resolves a reattached run from history when its job is gone before the attach', async () => {
+      getDefaultStore().set(detachedRunByConvoId(CONV_ID), {
+        userMessageId: 'msg-1',
+        responseMessageId: 'resp-1',
+        generationCreatedAt: 4200,
+      });
+      mockFetchStreamStatus.mockResolvedValue({ active: false });
+      mockGetQueryData.mockImplementation((queryKey: unknown[]) =>
+        queryKey[0] === QueryKeys.messages
+          ? [
+              {
+                messageId: 'resp-1',
+                parentMessageId: 'msg-1',
+                conversationId: CONV_ID,
+                isCreatedByUser: false,
+                text: 'finished while away',
+                updatedAt: new Date(5000).toISOString(),
+              },
+            ]
+          : undefined,
+      );
+      const resumed = resumeOf(4200);
+      const chatHelpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useResumableSSE(resumed, chatHelpers));
+      await flushMicrotasks();
+      expect(detachedRun()).not.toBeNull();
+      await act(async () => {
+        getLastSSE()._emit('error', { responseCode: 404 });
+      });
+      await waitFor(() =>
+        expect(mockSetRunEnd).toHaveBeenCalledWith(
+          expect.objectContaining({
+            outcome: 'completed',
+            responseMessageId: 'resp-1',
+            generationCreatedAt: 4200,
+          }),
+        ),
+      );
+      expect(mockSetRunEnd).toHaveBeenCalledTimes(1);
+      expect(detachedRun()).toBeNull();
+      unmount();
+    });
+
+    it('keeps a Stop through a reattach to the stopped run, so leaving again records nothing', async () => {
+      getDefaultStore().set(stopRequestedByConvoId(CONV_ID), { generationCreatedAt: 4200 });
+      const resumed = resumeOf(4200);
+      const chatHelpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useResumableSSE(resumed, chatHelpers));
+      await flushMicrotasks();
+      unmount();
+      expect(detachedRun()).toBeNull();
+      expect(getDefaultStore().get(stopRequestedByConvoId(CONV_ID))).toEqual({
+        generationCreatedAt: 4200,
+      });
+    });
+
+    it('drops a Stop once a different run reattaches, and remembers that run when left', async () => {
+      getDefaultStore().set(stopRequestedByConvoId(CONV_ID), { generationCreatedAt: 4200 });
+      const resumed = resumeOf(9000);
+      const chatHelpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useResumableSSE(resumed, chatHelpers));
+      await flushMicrotasks();
+      expect(getDefaultStore().get(stopRequestedByConvoId(CONV_ID))).toBeNull();
+      unmount();
+      expect(detachedRun()).toEqual(expect.objectContaining({ generationCreatedAt: 9000 }));
+    });
+
     it('records no detached run for a run the user stopped before leaving', async () => {
       const { rerender, unmount } = await renderLeavable();
-      getDefaultStore().set(stopRequestedByConvoId(CONV_ID), true);
+      getDefaultStore().set(stopRequestedByConvoId(CONV_ID), { generationCreatedAt: 1000 });
       rerender({ current: {} as TSubmission });
       expect(detachedRun()).toBeNull();
       unmount();

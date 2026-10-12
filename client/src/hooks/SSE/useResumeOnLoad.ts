@@ -38,6 +38,7 @@ import {
   settledQueuedTurnReceiptsByConvoId,
   queuedMessagesByConvoId,
   resolveDetachedRunEnd,
+  canResolveDetachedRun,
   pendingRunEndByConvoId,
   detachedRunByConvoId,
 } from '~/hooks/Chat/queue';
@@ -1039,7 +1040,11 @@ export default function useResumeOnLoad(
         jotaiStore.set(detachedFamily, null);
         jotaiStore.set(pendingRunEndByConvoId(conversationId), end);
       };
-      if (detachedRun != null) {
+      /** A run history can never name is retired without a read, leaving the queue for a manual
+       *  send instead of refetching on every visit. */
+      if (detachedRun != null && !canResolveDetachedRun(detachedRun)) {
+        jotaiStore.set(detachedFamily, null);
+      } else if (detachedRun != null) {
         queryClient
           .refetchQueries(
             { queryKey: [QueryKeys.messages, conversationId], exact: true },
@@ -1051,8 +1056,9 @@ export default function useResumeOnLoad(
       return;
     }
 
-    /** Still generating: the stream this resume attaches will deliver the run's own end. */
-    jotaiStore.set(detachedRunByConvoId(conversationId), null);
+    /** Still generating: a marker left for this run stays until the resume's stream delivers its
+     *  end or its recovery reads it from history, and the resume's start retires a marker left
+     *  for any other run, so the job deleted between this read and the attach is not lost. */
     processedConvoRef.current = conversationId;
     if (handoffGenerationKey != null) {
       consumedHandoffGenerationRef.current = handoffGenerationKey;
