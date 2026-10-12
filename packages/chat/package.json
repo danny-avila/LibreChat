@@ -53,7 +53,7 @@
     "build": "npm run clean && tsdown",
     "b:build": "bun run b:clean && bun run tsdown",
     "build:watch": "tsdown --watch",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "node ../../scripts/typecheck.mts",
     "test": "jest",
     "test:ci": "jest --ci"
   },
