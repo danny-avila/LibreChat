@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID } from 'crypto';
 import { expect, test } from '@playwright/test';
+import cleanupUser from '../../../setup/cleanupUser';
 
 /**
  * The admin panel auth flow logs user ids instead of emails. The success paths that
@@ -58,6 +59,7 @@ test.describe('admin panel auth after log id change', () => {
       expect(await response.text()).not.toContain(user.email);
     } finally {
       await request.dispose();
+      await cleanupUser(user);
     }
   });
 });
