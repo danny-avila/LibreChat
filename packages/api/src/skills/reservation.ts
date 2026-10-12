@@ -1,4 +1,4 @@
-import { FileSources } from 'librechat-data-provider';
+import { FileContext, FileSources } from 'librechat-data-provider';
 import { getStorageMetadata } from '~/storage/metadata';
 
 type FutureURL = (params: {
@@ -47,4 +47,38 @@ export async function reserveSkillBlob(params: {
   const filepath = await getFileURL({ userId, fileName, basePath: 'uploads', tenantId });
   if (!filepath) throw new Error('Skill storage strategy returned no reserved object');
   return { filepath, ...getStorageMetadata({ filepath, source }) };
+}
+
+/** Selects and validates the provider before reserving a future Skill object. */
+export function createSkillBlobReserver<TConfig>(deps: {
+  getFileStrategy: (config: TConfig, options: { context: FileContext; isImage: boolean }) => string;
+  getStrategyFunctions: (source: string) => {
+    saveBuffer?: unknown;
+    deleteFile?: unknown;
+    getFileURL?: FutureURL | null;
+  };
+}) {
+  return async (
+    config: TConfig | Promise<TConfig>,
+    params: { userId: string; fileName: string; isImage: boolean; tenantId?: string },
+  ): Promise<SkillBlobReservation & { source: string }> => {
+    const source = deps.getFileStrategy(await config, {
+      context: FileContext.skill_file,
+      isImage: params.isImage,
+    });
+    const strategy = deps.getStrategyFunctions(source);
+    if (!strategy.saveBuffer || !strategy.deleteFile) {
+      throw new Error('Skill storage cannot guarantee cleanup');
+    }
+    return {
+      source,
+      ...(await reserveSkillBlob({
+        source,
+        userId: params.userId,
+        fileName: params.fileName,
+        tenantId: params.tenantId,
+        getFileURL: strategy.getFileURL,
+      })),
+    };
+  };
 }

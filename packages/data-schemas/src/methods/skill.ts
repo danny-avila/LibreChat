@@ -1001,7 +1001,10 @@ export async function filterExistingSkillIds(
   }
   const Skill = mongoose.models.Skill as Model<ISkillDocument>;
   const docs = await Skill.find(
-    { _id: { $in: candidates.map((id) => new mongoose.Types.ObjectId(id)) } },
+    {
+      _id: { $in: candidates.map((id) => new mongoose.Types.ObjectId(id)) },
+      deletingAt: { $exists: false },
+    },
     { _id: 1 },
   ).lean<Array<{ _id: Types.ObjectId }>>();
   const existing = new Set(docs.map((doc) => doc._id.toString()));

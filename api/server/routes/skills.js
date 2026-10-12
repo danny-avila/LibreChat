@@ -4,7 +4,7 @@ const express = require('express');
 const {
   createImportHandler,
   createSkillUploadHandler,
-  reserveSkillBlob,
+  createSkillBlobReserver,
   generateCheckAccess,
   getStorageMetadata,
   resolveRequestTenantId,
@@ -25,9 +25,6 @@ const {
   getSkillFileByPath,
   reserveSkillUploadIntent,
   transitionSkillUploadIntent,
-  preserveExistingSkillBlob,
-  queueReplacedSkillBlobCleanup,
-  markSkillUploadIntentCleaned,
   getRoleByName,
 } = require('~/models');
 const { requireJwtAuth, canAccessSkillResource } = require('~/server/middleware');
@@ -40,6 +37,10 @@ const configMiddleware = require('~/server/middleware/config/app');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 
 const router = express.Router();
+const reserveSkillBlobForConfig = createSkillBlobReserver({
+  getFileStrategy,
+  getStrategyFunctions,
+});
 
 // ---------------------------------------------------------------------------
 // Multer: memory storage for skill imports (zip processed in-memory)
@@ -133,24 +134,7 @@ const importHandler = createImportHandler({
   getSkillFileByPath,
   reserveSkillUploadIntent,
   transitionSkillUploadIntent,
-  preserveExistingSkillBlob,
-  reserveBlob: async (req, { userId, fileName, isImage, tenantId }) => {
-    const source = getFileStrategy(req.config, { context: FileContext.skill_file, isImage });
-    const strategy = getStrategyFunctions(source);
-    if (!strategy.saveBuffer || !strategy.deleteFile) {
-      throw new Error('Skill storage cannot guarantee cleanup');
-    }
-    return {
-      source,
-      ...(await reserveSkillBlob({
-        source,
-        userId,
-        fileName,
-        tenantId,
-        getFileURL: strategy.getFileURL,
-      })),
-    };
-  },
+  reserveBlob: (req, options) => reserveSkillBlobForConfig(req.config, options),
   saveBuffer: (req, { userId, buffer, fileName, expectedSource, basePath, isImage, tenantId }) => {
     const requestTenantId = tenantId ?? resolveRequestTenantId(req);
     const storage = resolveSkillStorage(req, { isImage });
@@ -184,9 +168,6 @@ const uploadFileHandler = createSkillUploadHandler({
   getStrategyFunctions,
   reserveSkillUploadIntent,
   transitionSkillUploadIntent,
-  preserveExistingSkillBlob,
-  queueReplacedSkillBlobCleanup,
-  markSkillUploadIntentCleaned,
 });
 
 // ---------------------------------------------------------------------------

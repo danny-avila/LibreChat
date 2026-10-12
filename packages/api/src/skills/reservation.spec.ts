@@ -1,6 +1,6 @@
-import { FileSources } from 'librechat-data-provider';
+import { FileContext, FileSources } from 'librechat-data-provider';
+import { createSkillBlobReserver, reserveSkillBlob } from './reservation';
 import { extractFirebaseBlobPath } from '~/storage/ownedBlobDelete';
-import { reserveSkillBlob } from './reservation';
 
 describe('Skill blob reservation', () => {
   it('reserves local and Firebase owner-scoped paths before upload', async () => {
@@ -40,5 +40,37 @@ describe('Skill blob reservation', () => {
     await expect(
       reserveSkillBlob({ source: FileSources.openai, userId: 'owner', fileName: 'id__note.md' }),
     ).rejects.toThrow('Unsupported Skill storage strategy');
+  });
+
+  it('selects a Skill provider from config and requires save and delete capabilities', async () => {
+    const getFileStrategy = jest.fn(() => FileSources.local);
+    let canDelete = true;
+    const getStrategyFunctions = jest.fn(() => ({
+      saveBuffer: jest.fn(),
+      deleteFile: canDelete ? jest.fn() : undefined,
+    }));
+    const reserve = createSkillBlobReserver({ getFileStrategy, getStrategyFunctions });
+    await expect(
+      reserve(Promise.resolve({ fileStrategy: FileSources.local }), {
+        userId: 'owner',
+        fileName: 'id__note.md',
+        isImage: false,
+      }),
+    ).resolves.toEqual({ source: FileSources.local, filepath: '/uploads/owner/id__note.md' });
+    expect(getFileStrategy).toHaveBeenCalledWith(
+      { fileStrategy: FileSources.local },
+      { context: FileContext.skill_file, isImage: false },
+    );
+    canDelete = false;
+    await expect(
+      reserve(
+        { fileStrategy: FileSources.local },
+        {
+          userId: 'owner',
+          fileName: 'id__note.md',
+          isImage: false,
+        },
+      ),
+    ).rejects.toThrow('Skill storage cannot guarantee cleanup');
   });
 });

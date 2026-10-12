@@ -12,16 +12,6 @@ import { withSkillUploadIntent } from './intent';
 import { reserveSkillBlob } from './reservation';
 
 interface SkillFileSaveDeps extends SkillUploadIntentDeps {
-  preserveExistingSkillBlob: (input: {
-    skillId: string;
-    fileId: string;
-    source: string;
-    storageKey: string;
-    author: string;
-    tenantId?: string;
-  }) => Promise<void>;
-  queueReplacedSkillBlobCleanup: (fileId: string) => Promise<void>;
-  markSkillUploadIntentCleaned: (fileId: string) => Promise<void>;
   getSkillFileByPath: (skillId: string, relativePath: string) => Promise<StoredSkillFile | null>;
   upsertSkillFile: (
     row: Omit<UpsertSkillFileInput, 'skillId' | 'author'> & { skillId: string; author: string },
@@ -92,16 +82,6 @@ async function saveSkillFile(
   }
 
   const tenantId = resolveRequestTenantId(req);
-  if (existingFile) {
-    await deps.preserveExistingSkillBlob({
-      skillId,
-      fileId: existingFile.file_id,
-      source: existingFile.source,
-      storageKey: existingFile.filepath,
-      author: existingFile.author?.toString() ?? userId,
-      tenantId: existingFile.tenantId ?? tenantId,
-    });
-  }
   const fileId = randomUUID();
   const filename = relativePath.slice(relativePath.lastIndexOf('/') + 1);
   const buffer = Buffer.from(content, 'utf8');
@@ -123,25 +103,21 @@ async function saveSkillFile(
     tenantId,
     getFileURL: strategy.getFileURL,
   });
-  const cleanupPreviousBlob = async (filepath: string): Promise<void> => {
+  const cleanupPreviousBlob = (filepath: string): void => {
     if (!existingFile || existingFile.filepath === filepath) {
       return;
     }
-    await deps.queueReplacedSkillBlobCleanup(existingFile.file_id);
     const deleteFile = deps.getStrategyFunctions(existingFile.source).deleteFile;
     if (deleteFile) {
-      try {
-        await deleteFile(req, {
-          filepath: existingFile.filepath,
-          storageKey: existingFile.storageKey,
-          storageRegion: existingFile.storageRegion,
-          user: existingFile.author?.toString() ?? userId,
-          tenantId: existingFile.tenantId ?? tenantId,
-        });
-        await deps.markSkillUploadIntentCleaned(existingFile.file_id);
-      } catch (error) {
-        logger.error('[saveSkillFileContent] Old blob cleanup failed:', error);
-      }
+      deleteFile(req, {
+        filepath: existingFile.filepath,
+        storageKey: existingFile.storageKey,
+        storageRegion: existingFile.storageRegion,
+        user: existingFile.author?.toString() ?? userId,
+        tenantId: existingFile.tenantId ?? tenantId,
+      }).catch((error: Error) =>
+        logger.error('[saveSkillFileContent] Old blob cleanup failed:', error),
+      );
     }
   };
 
@@ -195,7 +171,7 @@ async function saveSkillFile(
     try {
       const persisted = await deps.getSkillFileByPath(skillId, relativePath);
       if (persisted?.file_id === fileId) {
-        await cleanupPreviousBlob(persisted.filepath);
+        cleanupPreviousBlob(persisted.filepath);
       }
     } catch (cleanupError) {
       logger.error('[saveSkillFileContent] Failed to verify stored file:', cleanupError);
@@ -203,6 +179,6 @@ async function saveSkillFile(
     throw error;
   }
 
-  await cleanupPreviousBlob(result.filepath);
+  cleanupPreviousBlob(result.filepath);
   return { bytes: result.bytes, relativePath: result.relativePath };
 }

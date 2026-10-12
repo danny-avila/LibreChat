@@ -37,9 +37,6 @@ function harness() {
     })),
     resolveStorage: jest.fn(() => ({ source: FileSources.local, saveBuffer })),
     getStrategyFunctions: jest.fn(() => ({ deleteFile: jest.fn(async () => undefined) })),
-    preserveExistingSkillBlob: jest.fn(async () => undefined),
-    queueReplacedSkillBlobCleanup: jest.fn(async () => undefined),
-    markSkillUploadIntentCleaned: jest.fn(async () => undefined),
     reserveSkillUploadIntent: jest.fn(async (input) => ({
       ...input,
       skillId: new Types.ObjectId(),
@@ -92,8 +89,6 @@ describe('skill upload lookup ordering', () => {
           tenantId: 'tenant-id',
         }),
       );
-      expect(h.deps.queueReplacedSkillBlobCleanup).toHaveBeenCalledWith('original');
-      expect(h.deps.markSkillUploadIntentCleaned).toHaveBeenCalledWith('original');
     },
   );
 

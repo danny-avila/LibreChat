@@ -79,20 +79,12 @@ export interface SkillLifecycleMethods {
   releaseAbandonedSkillUploadIntentClaim: (fileId: string, owner: string) => Promise<void>;
   skillFileExistsForIntent: (skillId: string, fileId: string) => Promise<boolean>;
   markSkillUploadIntentCleaned: (fileId: string) => Promise<void>;
-  queueReplacedSkillBlobCleanup: (fileId: string) => Promise<void>;
+  queueCommittedSkillUploadCleanup: (fileId: string) => Promise<void>;
   scheduleAbandonedSkillUploadIntentRecheck: (
     fileId: string,
     owner: string,
     delayMs: number,
   ) => Promise<boolean>;
-  preserveExistingSkillBlob: (input: {
-    skillId: string;
-    fileId: string;
-    source: string;
-    storageKey: string;
-    author: string;
-    tenantId?: string;
-  }) => Promise<void>;
 }
 
 /** Durable bookkeeping only. Provider effects are owned by the API-layer cleanup worker. */
@@ -441,8 +433,8 @@ export function createSkillLifecycleMethods(
     await intentModel().updateOne({ fileId }, { $set: { cleanedAt: new Date() } });
   }
 
-  /** A replacement is committed: a failed provider delete must remain sweepable. */
-  async function queueReplacedSkillBlobCleanup(fileId: string): Promise<void> {
+  /** A committed upload rolled back before publication must remain sweepable. */
+  async function queueCommittedSkillUploadCleanup(fileId: string): Promise<void> {
     const result = await intentModel().updateOne(
       { fileId, state: 'committed', cleanedAt: { $exists: false } },
       { $set: { state: 'abandoned' }, $unset: { nextCheckAt: '' } },
@@ -472,33 +464,6 @@ export function createSkillLifecycleMethods(
     return result.modifiedCount === 1;
   }
 
-  /** Backfill a legacy file before replacing/removing its only row reference. */
-  async function preserveExistingSkillBlob(input: {
-    skillId: string;
-    fileId: string;
-    source: string;
-    storageKey: string;
-    author: string;
-    tenantId?: string;
-  }): Promise<void> {
-    await intentModel().updateOne(
-      { fileId: input.fileId },
-      {
-        $setOnInsert: {
-          skillId: input.skillId,
-          fileId: input.fileId,
-          source: input.source,
-          storageKey: input.storageKey,
-          author: input.author,
-          tenantId: input.tenantId,
-          writerId: 'legacy-backfill',
-          state: 'committed',
-        },
-      },
-      { upsert: true },
-    );
-  }
-
   return {
     beginSkillDeletion,
     getSkillDeletion,
@@ -524,8 +489,7 @@ export function createSkillLifecycleMethods(
     releaseAbandonedSkillUploadIntentClaim,
     skillFileExistsForIntent,
     markSkillUploadIntentCleaned,
-    queueReplacedSkillBlobCleanup,
+    queueCommittedSkillUploadCleanup,
     scheduleAbandonedSkillUploadIntentRecheck,
-    preserveExistingSkillBlob,
   };
 }

@@ -3837,6 +3837,9 @@ async function writeBundledSkillFile({
           : `Skill file changed while editing. Re-read ${displayPath} and retry.`,
       );
     }
+    if (error instanceof Error && 'code' in error && error.code === 'SKILL_DELETING') {
+      return errorResult(tc, `Skill is being deleted. Re-read ${displayPath} before retrying.`);
+    }
     throw error;
   }
   const action = created ? 'Created' : 'Updated';

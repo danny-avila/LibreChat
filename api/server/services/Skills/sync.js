@@ -1,7 +1,7 @@
 const { FileContext } = require('librechat-data-provider');
 const {
   getStorageMetadata,
-  reserveSkillBlob,
+  createSkillBlobReserver,
   createGitHubSkillSyncRunner,
   createSkillSyncTriggerOrchestrator,
   startGitHubSkillSyncScheduler,
@@ -14,6 +14,10 @@ const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 const { deleteSkillForLegacy } = require('./deletion');
 
 const SYSTEM_USER_ID = '000000000000000000000000';
+const reserveSkillBlobForConfig = createSkillBlobReserver({
+  getFileStrategy,
+  getStrategyFunctions,
+});
 
 let appConfigRef;
 let runner;
@@ -98,26 +102,11 @@ function createRunner({ getConfig, loadAppConfig, allowServerCredentials = true 
     upsertSkillFile: db.upsertSkillFile,
     reserveSkillUploadIntent: db.reserveSkillUploadIntent,
     transitionSkillUploadIntent: db.transitionSkillUploadIntent,
-    preserveExistingSkillBlob: db.preserveExistingSkillBlob,
-    queueReplacedSkillBlobCleanup: db.queueReplacedSkillBlobCleanup,
+    queueCommittedSkillUploadCleanup: db.queueCommittedSkillUploadCleanup,
     markSkillUploadIntentCleaned: db.markSkillUploadIntentCleaned,
     deleteSkillFile: db.deleteSkillFile,
     deleteSkill: deleteSkillForLegacy,
-    reserveBlob: async ({ userId, fileName, isImage, tenantId }) => {
-      const storage = await resolveSkillStorage({ isImage, loadAppConfig: resolveAppConfig });
-      const strategy = getStrategyFunctions(storage.source);
-      if (!strategy.deleteFile) throw new Error('Skill storage has no deletion strategy');
-      return {
-        source: storage.source,
-        ...(await reserveSkillBlob({
-          source: storage.source,
-          userId,
-          fileName,
-          tenantId,
-          getFileURL: strategy.getFileURL,
-        })),
-      };
-    },
+    reserveBlob: (options) => reserveSkillBlobForConfig(resolveAppConfig(), options),
     grantPermission: async ({
       principalType,
       principalId,

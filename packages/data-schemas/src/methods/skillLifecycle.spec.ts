@@ -338,38 +338,26 @@ describe('Skill upload intents', () => {
     expect((await lifecycle.listSkillUploadIntents(skill._id))[0].cleanedAt).toBeInstanceOf(Date);
   });
 
-  it('preserves a replaced blob after its visible file row disappears', async () => {
+  it('queues a committed rolled-back upload for retry and records successful cleanup', async () => {
     const { skill, author } = await makeSkill();
-    await lifecycle.preserveExistingSkillBlob({
-      skillId: skill.id,
-      fileId: 'replaced-file',
+    await mongoose.models.SkillUploadIntent.create({
+      skillId: skill._id,
+      fileId: 'rolled-back-file',
       source: 'local',
-      storageKey: `/uploads/${author}/replaced-file`,
-      author: author.toString(),
+      storageKey: `/uploads/${author}/rolled-back-file`,
+      author,
       tenantId: 'tenant-a',
+      writerId: 'sync-writer',
+      state: 'committed',
     });
-    await lifecycle.beginSkillDeletion(skill.id);
-    expect((await lifecycle.listSkillUploadIntents(skill._id))[0].storageKey).toBe(
-      `/uploads/${author}/replaced-file`,
-    );
-  });
-
-  it('queues a committed replacement for retry and records successful cleanup', async () => {
-    const { skill, author } = await makeSkill();
-    await lifecycle.preserveExistingSkillBlob({
-      skillId: skill.id,
-      fileId: 'retired-file',
-      source: 'local',
-      storageKey: `/uploads/${author}/retired-file`,
-      author: author.toString(),
-      tenantId: 'tenant-a',
-    });
-    await lifecycle.queueReplacedSkillBlobCleanup('retired-file');
+    await lifecycle.queueCommittedSkillUploadCleanup('rolled-back-file');
     expect(
       (await lifecycle.listAbandonedSkillUploadIntents()).map((intent) => intent.fileId),
-    ).toContain('retired-file');
-    await lifecycle.markSkillUploadIntentCleaned('retired-file');
-    expect((await lifecycle.getSkillUploadIntent('retired-file'))?.cleanedAt).toBeInstanceOf(Date);
+    ).toContain('rolled-back-file');
+    await lifecycle.markSkillUploadIntentCleaned('rolled-back-file');
+    expect((await lifecycle.getSkillUploadIntent('rolled-back-file'))?.cleanedAt).toBeInstanceOf(
+      Date,
+    );
   });
 
   it('serializes sweep claims and permits retry after expiry', async () => {

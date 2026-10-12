@@ -813,6 +813,12 @@ describe('Skill CRUD methods', () => {
     expect(filtered).toEqual([canonical]);
   });
 
+  it('does not admit a Skill already fenced for deletion into a new agent allowlist', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'deleting-allowlist' }));
+    await Skill.updateOne({ _id: skill._id }, { $set: { deletingAt: new Date() } });
+    expect(await filterExistingSkillIds(mongoose, [skill._id.toString()])).toEqual([]);
+  });
+
   it('deleteSkill retains its retry journal instead of removing file rows', async () => {
     const { skill } = await methods.createSkill(makeSkillInput({ name: 'flaky-files' }));
     const Agent = mongoose.models.Agent;

@@ -433,7 +433,11 @@ export function createSkillManagementHandlers(
           });
           return res.status(200).json({ relativePath: result.relativePath, bytes: result.bytes });
         } catch (error) {
-          if (error instanceof Error && 'code' in error && error.code === 'SKILL_FILE_CONFLICT') {
+          if (
+            error instanceof Error &&
+            'code' in error &&
+            (error.code === 'SKILL_FILE_CONFLICT' || error.code === 'SKILL_DELETING')
+          ) {
             return sendError(res, 'conflict');
           }
           throw error;

@@ -39,9 +39,6 @@ function harness() {
     upsertSkillFile,
     resolveStorage: jest.fn(() => ({ source: FileSources.local, saveBuffer })),
     getStrategyFunctions: jest.fn(() => ({ deleteFile })),
-    preserveExistingSkillBlob: jest.fn(async () => undefined),
-    queueReplacedSkillBlobCleanup: jest.fn(async () => undefined),
-    markSkillUploadIntentCleaned: jest.fn(async () => undefined),
     reserveSkillUploadIntent: jest.fn(async (input) => ({
       ...input,
       skillId: new Types.ObjectId(),
@@ -103,19 +100,6 @@ describe('management skill file saver', () => {
       h.params.req,
       expect.objectContaining({ filepath: '/uploads/initial', user: 'original-owner' }),
     );
-    expect(h.deps.queueReplacedSkillBlobCleanup).toHaveBeenCalledWith('initial');
-    expect(h.deps.markSkillUploadIntentCleaned).toHaveBeenCalledWith('initial');
-  });
-
-  it('leaves a failed old-blob delete queued for the retry worker', async () => {
-    const h = harness();
-    h.deleteFile.mockRejectedValueOnce(new Error('storage unavailable'));
-    await expect(h.saveManagement(h.managementParams)).resolves.toEqual({
-      bytes: 9,
-      relativePath: 'references/a.md',
-    });
-    expect(h.deps.queueReplacedSkillBlobCleanup).toHaveBeenCalledWith('initial');
-    expect(h.deps.markSkillUploadIntentCleaned).not.toHaveBeenCalled();
   });
 
   it('rejects and removes only its upload if a concurrent browser edit wins', async () => {

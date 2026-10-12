@@ -499,6 +499,17 @@ it('returns a documented 409 when another writer changes the skill file during t
   expect(result.body).toEqual({ error: { code: 'conflict', message: 'Resource conflict' } });
 });
 
+it('returns a documented 409 when Skill deletion wins the file-write race', async () => {
+  saveFile.mockRejectedValueOnce(
+    Object.assign(new Error('Skill is being deleted'), { code: 'SKILL_DELETING' }),
+  );
+  const result = await request(app)
+    .put(`/skills/${skillId}/files/notes.md`)
+    .send({ content: 'Notes' })
+    .expect(409);
+  expect(result.body).toEqual({ error: { code: 'conflict', message: 'Resource conflict' } });
+});
+
 it('returns safe errors for storage failures', async () => {
   saveFile.mockRejectedValueOnce(new Error('secret-storage-path'));
   const result = await request(app)

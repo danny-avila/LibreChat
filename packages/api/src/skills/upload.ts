@@ -26,16 +26,6 @@ export interface StoredSkillFile {
 }
 
 interface SkillUploadDeps extends SkillUploadIntentDeps {
-  preserveExistingSkillBlob: (input: {
-    skillId: string;
-    fileId: string;
-    source: string;
-    storageKey: string;
-    author: string;
-    tenantId?: string;
-  }) => Promise<void>;
-  queueReplacedSkillBlobCleanup: (fileId: string) => Promise<void>;
-  markSkillUploadIntentCleaned: (fileId: string) => Promise<void>;
   getSkillFileByPath: (skillId: string, relativePath: string) => Promise<StoredSkillFile | null>;
   getSkillById: (id: string) => Promise<Pick<TSkill, 'source'> | null>;
   upsertSkillFile: (
@@ -115,16 +105,6 @@ export function createSkillUploadHandler(
         return res.status(409).json({ error: 'SKILL_FILE_CONFLICT' });
       }
       const tenantId = resolveRequestTenantId(req);
-      if (existingFile) {
-        await deps.preserveExistingSkillBlob({
-          skillId,
-          fileId: existingFile.file_id,
-          source: existingFile.source,
-          storageKey: existingFile.filepath,
-          author: existingFile.author?.toString() ?? userId,
-          tenantId: existingFile.tenantId ?? tenantId,
-        });
-      }
       const storage = deps.resolveStorage(req, { isImage: file.mimetype.startsWith('image/') });
       const fileId = randomUUID();
       const fileName = `${fileId}__${file.originalname}`;
@@ -144,25 +124,19 @@ export function createSkillUploadHandler(
         tenantId,
         getFileURL: strategy.getFileURL,
       });
-      const cleanupReplacedBlob = async (filepath: string): Promise<void> => {
+      const cleanupReplacedBlob = (filepath: string): void => {
         if (!existingFile || existingFile.filepath === filepath) {
           return;
         }
-        await deps.queueReplacedSkillBlobCleanup(existingFile.file_id);
         const deleteFile = deps.getStrategyFunctions(existingFile.source).deleteFile;
         if (deleteFile) {
-          try {
-            await deleteFile(req, {
-              filepath: existingFile.filepath,
-              storageKey: existingFile.storageKey,
-              storageRegion: existingFile.storageRegion,
-              user: existingFile.author?.toString() ?? userId,
-              tenantId: existingFile.tenantId ?? tenantId,
-            });
-            await deps.markSkillUploadIntentCleaned(existingFile.file_id);
-          } catch (error) {
-            logger.error('[uploadFile] Old blob cleanup failed:', error);
-          }
+          deleteFile(req, {
+            filepath: existingFile.filepath,
+            storageKey: existingFile.storageKey,
+            storageRegion: existingFile.storageRegion,
+            user: existingFile.author?.toString() ?? userId,
+            tenantId: existingFile.tenantId ?? tenantId,
+          }).catch((error: Error) => logger.error('[uploadFile] Old blob cleanup failed:', error));
         }
       };
       let result: StoredSkillFile;
@@ -216,13 +190,13 @@ export function createSkillUploadHandler(
       } catch (error) {
         try {
           const persisted = await deps.getSkillFileByPath(skillId, relativePath);
-          if (persisted?.file_id === fileId) await cleanupReplacedBlob(persisted.filepath);
+          if (persisted?.file_id === fileId) cleanupReplacedBlob(persisted.filepath);
         } catch (readError) {
           logger.error('[uploadFile] Failed to verify stored file after write error:', readError);
         }
         throw error;
       }
-      await cleanupReplacedBlob(result.filepath);
+      cleanupReplacedBlob(result.filepath);
       return res.status(200).json(result);
     } catch (error) {
       if (error instanceof Error && 'code' in error) {
