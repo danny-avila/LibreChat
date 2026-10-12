@@ -349,6 +349,37 @@ describe('Chat', () => {
     expect(chat.status).toBe('ready');
   });
 
+  it('rejects a stop the server answered without stopping, and keeps streaming', async () => {
+    const { chat, stream, transport } = setup();
+    transport.abort.mockResolvedValueOnce({ success: false, error: 'Not the running generation' });
+
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    stream.push(stepEvent);
+    await flush();
+
+    await expect(chat.stop()).rejects.toThrow('Not the running generation');
+    expect(chat.status).toBe('streaming');
+    stream.push(finalEvent());
+    await sent;
+  });
+
+  it('drops its stream on dispose without reporting an error', async () => {
+    const { chat, stream, onError, onFinish } = setup();
+
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    stream.push(stepEvent);
+    await flush();
+    chat.dispose();
+    await sent;
+
+    expect(stream.closed()).toBe(true);
+    expect(onError).not.toHaveBeenCalled();
+    expect(onFinish).not.toHaveBeenCalled();
+    expect(chat.status).toBe('streaming');
+  });
+
   it('settles a start the server already finished, and attaches to the generation replacing it', async () => {
     const settled = setup(
       {},
@@ -386,7 +417,7 @@ describe('Chat', () => {
   });
 
   it('regenerates a given message', async () => {
-    const { chat, stream, transport } = setup();
+    const { stream, transport } = setup();
     const prepareRequest = jest.fn(() => ({ payload }));
     const regenerating = new Chat({
       id: 'convo-1',
@@ -405,7 +436,7 @@ describe('Chat', () => {
     expect(transport.sendMessages).toHaveBeenCalledWith(
       expect.objectContaining({ trigger: 'regenerate-message', messageId: 'response-1' }),
     );
-    expect(chat.status).toBe('ready');
+    expect(regenerating.status).toBe('ready');
   });
 
   it('resumes without flashing submitted, and stays ready when nothing is running', async () => {
@@ -510,6 +541,49 @@ describe('Chat', () => {
 
       stream.push(finalEvent());
       await sent;
+    });
+
+    it('resumes a batch once when its last decisions arrive together', async () => {
+      const { chat, transport, stream, sent } = await pause(approvalAction);
+      transport.resume.mockImplementationOnce(
+        () =>
+          new Promise((resolve) =>
+            setTimeout(
+              () => resolve({ streamId: 'convo-1', conversationId: 'convo-1', status: 'resuming' }),
+              10,
+            ),
+          ),
+      );
+
+      await Promise.all([
+        chat.addToolApprovalResponse({ id: 'call-1', approved: true }),
+        chat.addToolApprovalResponse({ id: 'call-2', approved: true }),
+      ]);
+
+      expect(transport.resume).toHaveBeenCalledTimes(1);
+      stream.push(finalEvent());
+      await sent;
+    });
+
+    it('attaches to the continuation of a pause restored without a stream', async () => {
+      const continuation = createStream();
+      const { chat, transport } = setup(
+        {},
+        { reconnectToStream: jest.fn(async () => continuation) },
+      );
+
+      chat.restorePendingAction(askAction, 500);
+      await chat.addToolOutput({ toolCallId: 'ask-1', output: 'Blue' });
+      await flush();
+
+      expect(transport.reconnectToStream).toHaveBeenCalledWith(
+        expect.objectContaining({ streamId: 'convo-1', generationCreatedAt: 500, resume: true }),
+      );
+      continuation.push(stepEvent);
+      continuation.push(finalEvent());
+      await flush();
+      expect(chat.status).toBe('ready');
+      expect(chat.messages[1].text).toBe('Hello');
     });
 
     it('refuses a decision for a call the pause does not hold', async () => {

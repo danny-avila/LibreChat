@@ -249,6 +249,8 @@ export class Chat {
   private active?: ActiveRequest;
   private action?: Agents.PendingAction;
   private generationCreatedAt?: number;
+  /** The pause whose resume request is in flight, so a second submit cannot send it again. */
+  private resuming?: Agents.PendingAction;
   private readonly decisions = new Map<string, Agents.ToolApprovalResolution>();
 
   constructor(init: ChatInit) {
@@ -337,12 +339,15 @@ export class Chat {
       await active.finished;
       return;
     }
-    await this.init.transport.abort({
+    const result = await this.init.transport.abort({
       chatId: this.id,
       endpoint: active.endpoint,
       streamId: active.stream.streamId,
       generationCreatedAt: active.stream.generationCreatedAt,
     });
+    if (result && 'success' in result && !result.success) {
+      throw new Error(result.error ?? 'The server refused the stop');
+    }
     await active.finished;
   }
 
@@ -435,8 +440,10 @@ export class Chat {
 
   /** Drops the local stream and every listener; the server's generation keeps running. */
   dispose(): void {
-    this.active?.controller.abort();
-    this.active?.stream?.close();
+    const active = this.active;
+    this.active = undefined;
+    active?.controller.abort();
+    active?.stream?.close();
     this.listeners.clear();
     this.releaseState?.();
     this.releaseState = undefined;
@@ -603,20 +610,35 @@ export class Chat {
     if (!resume) {
       throw new Error('The transport cannot resume a paused generation');
     }
-    if (this.generationCreatedAt == null) {
+    const generationCreatedAt = this.generationCreatedAt;
+    if (generationCreatedAt == null) {
       throw new Error('The paused generation is unknown');
     }
-    await resume.call(this.init.transport, {
-      ...this.init.resumeSelection?.(),
-      ...resolution,
-      conversationId: action.conversationId ?? this.id,
-      generationCreatedAt: this.generationCreatedAt,
-      actionId: action.actionId,
-    });
-    if (this.action === action) {
-      this.action = undefined;
-      this.decisions.clear();
-      this.notify();
+    if (this.resuming === action) {
+      return;
+    }
+    this.resuming = action;
+    try {
+      const result = await resume.call(this.init.transport, {
+        ...this.init.resumeSelection?.(),
+        ...resolution,
+        conversationId: action.conversationId ?? this.id,
+        generationCreatedAt,
+        actionId: action.actionId,
+      });
+      if (this.action === action) {
+        this.action = undefined;
+        this.decisions.clear();
+        this.notify();
+      }
+      if (!this.active) {
+        /** A pause restored after a reload has no stream attached for the continuation. */
+        void this.resumeStream({ streamId: result.streamId, generationCreatedAt });
+      }
+    } finally {
+      if (this.resuming === action) {
+        this.resuming = undefined;
+      }
     }
   }
 
