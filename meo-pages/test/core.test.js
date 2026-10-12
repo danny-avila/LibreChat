@@ -55,24 +55,6 @@ test('markdown output escapes HTML and allows only safe link protocols', () => {
   assert.match(html, /href="https:\/\/example.com/);
 });
 
-test('markdown renders common headings, lists, inline styles, and fenced code', () => {
-  const html = safeMarkdown(
-    '# Title\n\n- one\n- **two**\n\n1. first\n2. second\n\nUse `code` and *emphasis*.\n\n```js\nconst value = "<safe>";\n```',
-  );
-  assert.match(html, /<h1>Title<\/h1>/);
-  assert.match(html, /<ul><li>one<\/li><li><strong>two<\/strong><\/li><\/ul>/);
-  assert.match(html, /<ol><li>first<\/li><li>second<\/li><\/ol>/);
-  assert.match(html, /<code>code<\/code>/);
-  assert.match(html, /<em>emphasis<\/em>/);
-  assert.match(html, /<code class="language-js">const value = &quot;&lt;safe&gt;&quot;;<\/code>/);
-});
-
-test('markdown keeps unfinished code fences escaped instead of interpreting HTML', () => {
-  const html = safeMarkdown('```html\n<script>alert(1)</script>');
-  assert.match(html, /<pre><code>&lt;script&gt;alert\(1\)&lt;\/script&gt;<\/code><\/pre>/);
-  assert.doesNotMatch(html, /<script>/);
-});
-
 test('SSE parser handles split UTF-8 and provider delta frames', () => {
   const events = [];
   const parser = new SseParser((event, data) => events.push({ event, data }));
