@@ -4,6 +4,7 @@ import { Alert, DelayedRender } from '@librechat/client';
 import { Constants, parseThinkingContent } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageContentProps, TDisplayProps } from '~/common';
+import AttachmentRecoveryActions from '~/components/Messages/Content/Error/recovery';
 import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
 import Error from '~/components/Messages/Content/Error';
 import ToolCallLimitNotice from './ToolCallLimitNotice';
@@ -85,6 +86,7 @@ export const ErrorMessage = ({
     <Container message={message}>
       <ErrorBox className={className}>
         <Error text={text} message={message} />
+        <AttachmentRecoveryActions text={text} messageId={message?.messageId} />
       </ErrorBox>
     </Container>
   );
@@ -118,7 +120,7 @@ export const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: T
       <CollapsibleText enabled={isCreatedByUser && collapseLongUserMessages}>
         <div
           className={cn(
-            'markdown prose message-content dark:prose-invert light w-full break-words',
+            'markdown prose message-content light w-full break-words',
             isSubmitting && 'submitting',
             showCursorState && text.length > 0 && 'result-streaming',
             isCreatedByUser && !enableUserMsgMarkdown && 'whitespace-pre-wrap',
