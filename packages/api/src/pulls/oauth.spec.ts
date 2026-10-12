@@ -1016,6 +1016,49 @@ describe('the connection generation', () => {
     await expect(oauth.token(user, github)).resolves.toBe(connectedBefore ? 'previous' : null);
   });
 
+  it.each([
+    [
+      'its grant write applied but did not answer, so the sign-in is finished',
+      PULL_REQUEST_OAUTH_TYPE,
+      'current',
+      true,
+    ],
+    [
+      'its generation write applied but did not answer, so the previous connection is back',
+      PULL_REQUEST_OAUTH_GENERATION_TYPE,
+      'previous',
+      false,
+    ],
+  ])('when %s', async (_label, failingType, answer, completes) => {
+    const { oauth } = setup([
+      () => json({ access_token: 'previous' }),
+      () => json({ access_token: 'current' }),
+    ]);
+    const user = await existing();
+    await connect(oauth, user);
+    const { claims } = await started(oauth, user);
+    const original = store.replaceTokenIfCurrent.bind(store);
+    let failed = false;
+    const write = jest
+      .spyOn(store, 'replaceTokenIfCurrent')
+      .mockImplementation(async (scope, expected, row) => {
+        const applied = await original(scope, expected, row);
+        if (!failed && row.type === failingType) {
+          failed = true;
+          throw new Error('no answer');
+        }
+        return applied;
+      });
+    try {
+      const completion = oauth.complete(claims, 'code', github);
+      if (completes) await expect(completion).resolves.toBeUndefined();
+      else await expect(completion).rejects.toThrow('no answer');
+    } finally {
+      write.mockRestore();
+    }
+    await expect(oauth.token(user, github)).resolves.toBe(answer);
+  });
+
   it('drops reads of this process that started before a sign-in it completed', async () => {
     const user = await existing();
     const { oauth: connector } = setup([() => json({ access_token: 'previous' })]);

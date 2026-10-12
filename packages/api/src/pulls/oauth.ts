@@ -338,6 +338,27 @@ export function createPullRequestOAuth({
     throw new Error('The connection generation could not be replaced');
   }
 
+  /**
+   * After a sign-in's writes failed without a known outcome: returns the stored grant's row token
+   * when both the generation and the grant landed, and otherwise puts the previous generation back
+   * if this sign-in's generation is the current one.
+   */
+  async function reconcileSignIn(
+    state: PullRequestOAuthState,
+    config: PullRequestOAuthConfig,
+    generation: string,
+    lineage: string,
+  ): Promise<string | null> {
+    if ((await generationOf(state.userId)) !== generation) return null;
+    const row = await store.findToken({ scope: scopeOf(state.userId, config) });
+    if (row != null) {
+      const record = parseStored(await decrypt(row.token));
+      if (!isRefused(record) && record.lineage === lineage) return row.token;
+    }
+    await restoreGeneration(state.userId, generation, state.generation);
+    return null;
+  }
+
   /** Moves the user back from `from` to `to`, only while `from` is still current. */
   async function restoreGeneration(userId: string, from: string, to: string): Promise<void> {
     const scope = generationScopeOf(userId);
@@ -379,8 +400,7 @@ export function createPullRequestOAuth({
    * Moves the user from the generation a flow started in to a new one, or fails as stale: one
    * sign-in at a time, and none across a disconnect. Returns the new generation.
    */
-  async function advanceGeneration(userId: string, from: string): Promise<string> {
-    const next = randomUUID();
+  async function advanceGeneration(userId: string, from: string, next: string): Promise<string> {
     const advanced = await store.replaceTokenIfCurrent(
       generationScopeOf(userId),
       from === FIRST_GENERATION ? null : from,
@@ -793,22 +813,27 @@ export function createPullRequestOAuth({
        * stored under it, so every earlier grant, and every read that found one, stops answering.
        * After the exchange, so a failed sign-in leaves the existing connection alone.
        */
-      const generation = await advanceGeneration(state.userId, state.generation);
-      dropPendingReads(state.userId);
+      const generation = randomUUID();
       const record = { ...response, lineage: randomUUID(), flowId: state.flowId, generation };
       /** Replaces whatever the user had connected before, read first so the swap is exact. */
       let stored: string | null = null;
       try {
+        await advanceGeneration(state.userId, state.generation, generation);
+        dropPendingReads(state.userId);
         for (let attempt = 0; attempt < 3 && stored == null; attempt++) {
           const current = await store.findToken({ scope: scopeOf(state.userId, config) });
           stored = await write(state.userId, config, current?.token ?? null, record);
         }
         if (stored == null) throw new Error('The grant could not be stored');
       } catch (error) {
-        /** Nothing replaced the previous grant, so it is the connection again: the generation goes
-         *  back to the one it had, unless something moved it on since. */
-        await restoreGeneration(state.userId, generation, state.generation);
-        throw error;
+        if (error instanceof StaleFlowError) throw error;
+        /**
+         * A write can apply and still fail to answer, so what was stored decides, not the error:
+         * the new grant under the new generation is a finished sign-in; the new generation without
+         * it goes back to the previous one, whose grant is untouched; anything else moved on.
+         */
+        stored = await reconcileSignIn(state, config, generation, record.lineage);
+        if (stored == null) throw error;
       }
       /**
        * Account deletion sets its fence and then removes the user's tokens; a disconnect replaces
