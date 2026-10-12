@@ -113,6 +113,14 @@ describe('in-memory audio cache', () => {
     expect(getCachedTTSAudio('unowned')).toBeUndefined();
   });
 
+  it('drops audio from a request started before an account signed in', () => {
+    clearTTSCache();
+    const generation = getTTSCacheGeneration();
+    setTTSCacheOwner('arriving');
+    setCachedTTSAudio('early', audio('early'), generation);
+    expect(getCachedTTSAudio('early')).toBeUndefined();
+  });
+
   it('drops audio from a request that was in flight across a clear', () => {
     const generation = getTTSCacheGeneration();
     clearTTSCache();

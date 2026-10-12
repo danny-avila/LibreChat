@@ -116,6 +116,9 @@ export function setTTSCacheOwner(userId?: string | null): void {
   /** Audio recorded while no owner was set (after a clear) is not handed to whoever signs in. */
   if (ownerId !== userId && (ownerId !== undefined || audioByKey.size > 0)) {
     void clearTTSCache();
+  } else if (ownerId !== userId) {
+    /** A request started before this account signed in cannot write into its cache. */
+    generation += 1;
   }
   ownerId = userId;
 }
