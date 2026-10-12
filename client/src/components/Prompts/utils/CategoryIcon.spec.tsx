@@ -16,26 +16,26 @@ const renderIcon = (category: string, configured: TCategory[] = []) => {
 };
 
 const categoryColors = {
-  code: 'text-series-5',
-  misc: 'text-series-1',
-  shop: 'text-series-6',
-  idea: 'text-series-4',
-  write: 'text-series-6',
-  travel: 'text-series-4',
-  finance: 'text-series-2',
-  roleplay: 'text-series-2',
-  teach_or_explain: 'text-series-1',
-  general: 'text-series-1',
-  hr: 'text-series-7',
-  rd: 'text-series-6',
-  it: 'text-series-5',
-  sales: 'text-series-2',
-  aftersales: 'text-series-4',
+  code: 'text-category-icon-5',
+  misc: 'text-category-icon-1',
+  shop: 'text-category-icon-6',
+  idea: 'text-category-icon-4',
+  write: 'text-category-icon-6',
+  travel: 'text-category-icon-4',
+  finance: 'text-category-icon-2',
+  roleplay: 'text-category-icon-2',
+  teach_or_explain: 'text-category-icon-1',
+  general: 'text-category-icon-1',
+  hr: 'text-category-icon-7',
+  rd: 'text-category-icon-6',
+  it: 'text-category-icon-5',
+  sales: 'text-category-icon-2',
+  aftersales: 'text-category-icon-4',
 };
 
 describe('CategoryIcon', () => {
   it.each(Object.entries(categoryColors))(
-    'uses the semantic series color for %s',
+    'uses the semantic color role for %s',
     (category, color) => {
       const { container } = renderIcon(category);
       const icon = container.querySelector('svg');
@@ -71,6 +71,9 @@ describe('CategoryIcon', () => {
   it('keeps the built-in icon and color when the config has no entry', () => {
     const { container } = renderIcon('code', [{ value: 'other', label: 'Other' }]);
 
-    expect(container.querySelector('svg')).toHaveClass('lucide-square-terminal', 'text-series-5');
+    expect(container.querySelector('svg')).toHaveClass(
+      'lucide-square-terminal',
+      'text-category-icon-5',
+    );
   });
 });

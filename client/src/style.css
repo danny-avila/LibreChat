@@ -39,9 +39,6 @@
 
 /* Custom Variables */
 :root {
-  --gizmo-gray-500: 153 153 153;
-  --gizmo-gray-600: 102 102 102;
-  --gizmo-gray-950: 15 15 15;
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.875rem;
   --font-size-base: 1rem;
@@ -122,41 +119,6 @@ html {
     transition: none !important;
     transform: none !important;
   }
-}
-
-.gizmo {
-  --text-primary: var(--gizmo-gray-950);
-  --text-secondary: var(--gizmo-gray-600);
-  --text-tertiary: var(--gizmo-gray-500);
-  --text-muted: 105 110 121; /* Click UI global.color.text.muted #696e79 */
-  --surface-primary: var(--white);
-  --chart-widget-surface: 255 255 255; /* Click UI dashboards.chartWidget.color.background.default #ffffff */
-  --chart-widget-stroke: 230 231 233; /* Click UI dashboards.chartWidget.color.stroke.default #e6e7e9 */
-  --surface-secondary: var(--gray-50);
-  --surface-tertiary: var(--gray-100);
-  --border-light: 0 0 0;
-  --border-light-alpha: 0.1;
-  --border-medium: 0 0 0;
-  --border-medium-alpha: 0.15;
-  --border-heavy: 0 0 0;
-  --border-heavy-alpha: 0.2;
-  --border-xheavy: 0 0 0;
-  --border-xheavy-alpha: 0.25;
-}
-.gizmo.dark {
-  --text-primary: var(--gray-100);
-  --text-secondary: var(--gray-300);
-  --text-tertiary: var(--gizmo-gray-500);
-  --text-muted: 179 182 189; /* Click UI global.color.text.muted #b3b6bd */
-  --surface-primary: var(--gray-900);
-  --chart-widget-surface: 40 40 40; /* Click UI dashboards.chartWidget.color.background.default #282828 */
-  --chart-widget-stroke: 50 50 50; /* Click UI dashboards.chartWidget.color.stroke.default #323232 */
-  --surface-secondary: var(--gray-800);
-  --surface-tertiary: var(--gray-700);
-  --border-light: 217 217 227;
-  --border-medium: 217 217 227;
-  --border-heavy: 217 217 227;
-  --border-xheavy: 217 217 227;
 }
 
 /* High contrast appearance modes.
@@ -348,8 +310,8 @@ html.high-contrast.dark .btn-neutral:hover {
   width: 2rem;
 }
 
-/* Forced-colors overrides the inline `background-color: currentColor` a masked
- * CustomIcon paints with; `!important` is needed to beat that inline style. */
+/* Forced-colors overrides the `background-color: currentColor` a masked CustomIcon
+ * paints with. */
 @media (forced-colors: active) {
   .custom-icon-tint {
     background-color: CanvasText !important;
@@ -434,8 +396,10 @@ p > small {
   }
 }
 
-/* Show the message time when the row is hovered. Tailwind group-hover
-   loses to `[@media(hover:hover)]:opacity-0` (same specificity, :where()).
+/* Show the message time when the row is hovered. Hidden only where hover
+   exists and no pointer is coarse: `(hover: hover)` alone is true on a 2-in-1,
+   whose trackpad hovers while its touchscreen cannot, and the coarse check
+   alone matches pointerless and print contexts, where nothing reveals it.
 
    Keyboard focus reveals it too, but only `:focus-visible`: a pointer that
    clicks a tool card or an expand toggle inside the row leaves focus sitting
@@ -448,15 +412,17 @@ p > small {
    match `:focus-visible` on a plain mouse click. See `revealOnRowHoverClasses`
    in `components/Chat/Messages/styles.ts` for the full reasoning. */
 @media (hover: hover) {
-  .message-render .message-timestamp {
-    opacity: 0;
-  }
+  @media not all and (any-pointer: coarse) {
+    .message-render .message-timestamp {
+      opacity: 0;
+    }
 
-  .message-render:hover .message-timestamp,
-  .message-render:focus-visible .message-timestamp,
-  .message-render:has(:focus-visible:not(:is(input, textarea, [contenteditable])))
-    .message-timestamp {
-    opacity: 1;
+    .message-render:hover .message-timestamp,
+    .message-render:focus-visible .message-timestamp,
+    .message-render:has(:focus-visible:not(:is(input, textarea, [contenteditable])))
+      .message-timestamp {
+      opacity: 1;
+    }
   }
 }
 
@@ -992,7 +958,7 @@ pre[class*='language-'] {
   --tw-bg-opacity: 1;
   --tw-text-opacity: 1;
   background-color: rgb(var(--surface-secondary));
-  border-color: rgb(var(--button-neutral-border) / var(--button-neutral-border-alpha, 1));
+  border-color: rgb(var(--button-neutral-border) / var(--theme-button-neutral-border-opacity, 0.1));
   border-width: 1px;
   color: rgb(var(--button-neutral-text) / var(--tw-text-opacity));
   font-size: 0.875rem;
@@ -1011,11 +977,10 @@ pre[class*='language-'] {
 }
 
 .dark .btn-neutral {
-  --tw-border-opacity: 1;
   --tw-bg-opacity: 1;
   --tw-text-opacity: 1;
   background-color: transparent;
-  border-color: rgb(var(--button-neutral-border) / var(--tw-border-opacity));
+  border-color: rgb(var(--button-neutral-border) / var(--theme-button-neutral-border-opacity, 1));
   color: rgb(var(--button-neutral-text) / var(--tw-text-opacity));
 }
 
@@ -1114,12 +1079,6 @@ html {
 html[data-drawer-nav],
 html[data-drawer-nav] body {
   overscroll-behavior: none;
-}
-
-.dark body,
-.dark html {
-  --tw-bg-opacity: 1;
-  background-color: rgb(var(--page-canvas) / var(--tw-bg-opacity));
 }
 
 #__next,
@@ -1289,7 +1248,7 @@ html {
 }
 .dark body,
 .dark html {
-  background-color: rgb(var(--surface-primary-alt));
+  background-color: rgb(var(--page-canvas));
 }
 #__next,
 #root {
@@ -1870,6 +1829,14 @@ html {
   font-size: calc(0.9 * var(--markdown-font-size, var(--font-size-base)));
 }
 
+/* iOS zooms into a focused field under 16px and the installed PWA never zooms back out. */
+@media (any-pointer: coarse) {
+  .message-editor-text,
+  .composer-text {
+    font-size: max(16px, var(--markdown-font-size, var(--font-size-base)));
+  }
+}
+
 .message-content pre {
   font-size: var(--markdown-font-size, var(--font-size-base));
 }
@@ -2148,6 +2115,10 @@ html[data-input-modality='keyboard']
     opacity 190ms cubic-bezier(0.32, 0.72, 0, 1),
     transform 260ms cubic-bezier(0.32, 0.72, 0, 1);
   will-change: transform, opacity;
+}
+/* Resizable anchored panels share the composer entrance and exit clock. */
+.animate-composer-popover-resize {
+  transition-property: opacity, transform, width, max-height;
 }
 .animate-composer-popover[data-enter] {
   opacity: 1;

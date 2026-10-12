@@ -1,7 +1,8 @@
 import { memo, useRef, useMemo, useEffect, useState, useCallback } from 'react';
+import { useAtom } from 'jotai';
+import { useRecoilValue } from 'recoil';
 import { useWatch } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
-import { useRecoilState, useRecoilValue } from 'recoil';
 import {
   composerSurfaceClasses,
   composerSurfaceShadow,
@@ -60,6 +61,7 @@ import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskUserQuestionPopover from './AskUserQuestionPopover';
 import useComposerItems from '~/hooks/Input/useComposerItems';
 import useAttachTarget from '~/hooks/Input/useAttachTarget';
+import { showStopButtonByIndex } from '~/store/generation';
 import Hints, { composerHintId } from './Composer/Hints';
 import PastedTextDialog from './Files/PastedTextDialog';
 import DuringRunSendButton from './DuringRunSendButton';
@@ -210,7 +212,7 @@ const ChatForm = memo(function ChatForm({
   const maximizeChatSpace = useRecoilValue(store.maximizeChatSpace);
   const { isTemporary } = useChatSettings();
 
-  const [showStopButton, setShowStopButton] = useRecoilState(store.showStopButtonByIndex(index));
+  const [showStopButton, setShowStopButton] = useAtom(showStopButtonByIndex(index));
   const plusPopoverAtom = useMemo(() => store.showPlusPopoverFamily(index), [index]);
   const mentionPopoverAtom = useMemo(() => store.showMentionPopoverFamily(index), [index]);
 
@@ -703,7 +705,7 @@ const ChatForm = memo(function ChatForm({
   const baseClasses = useMemo(
     () =>
       cn(
-        'md:py-3.5 m-0 w-full resize-none py-3.25 placeholder:text-text-tertiary bg-transparent [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
+        'composer-text md:py-3.5 m-0 w-full resize-none py-3.25 placeholder:text-text-tertiary bg-transparent [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
         isCollapsed ? 'max-h-[3.25rem]' : 'max-h-[45vh] md:max-h-[55vh]',
         'px-5',
       ),
@@ -1081,9 +1083,9 @@ function ChatFormWrapper({
   project,
   routePending = false,
   isLandingPage,
-  /** Defaults to the atom's own default (`atomWithLocalStorage('enterToSend',
-   *  true)`) so call sites that predate this prop, mainly tests, keep their
-   *  prior behavior without passing it explicitly. */
+  /** Enter sends unless told otherwise, so call sites that predate this prop,
+   *  mainly tests, keep their prior behavior without passing it explicitly.
+   *  ChatView always passes the user's preference, whose default is false. */
   enterToSend = true,
   /** Same reason, from `atomWithLocalStorage('autoSendText', -1)`. */
   autoSendText = -1,
