@@ -459,6 +459,23 @@ describe('ConnectedAccounts', () => {
     expect(mockGetConnection).toHaveBeenCalledTimes(2);
   });
 
+  it('keeps Disconnect for a known grant when a later status check fails', async () => {
+    mockGetConnection.mockResolvedValueOnce(connection(true));
+    const { client } = renderRow();
+    await screen.findByRole('button', { name: /com_ui_pr_account_disconnect_aria/ });
+
+    mockGetConnection.mockRejectedValueOnce(new Error('500'));
+    await client.refetchQueries([QueryKeys.pullRequestConnection]);
+
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveTextContent('com_ui_pr_account_status_error'),
+    );
+    expect(
+      screen.getByRole('button', { name: /com_ui_pr_account_disconnect_aria/ }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'com_ui_retry' })).toBeNull();
+  });
+
   it('keeps the retry button named while a failed refresh is retried', async () => {
     mockGetConnection.mockResolvedValueOnce(connection(false));
     const { client } = renderRow();

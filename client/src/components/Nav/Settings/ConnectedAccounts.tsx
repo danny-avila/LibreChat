@@ -170,12 +170,15 @@ export default function ConnectedAccounts() {
   let statusContent = <Chip tone="neutral">{localize('com_ui_pr_account_checking')}</Chip>;
   let action = <Skeleton className="h-9 w-24" aria-hidden="true" />;
 
-  if (status.isError) {
-    statusContent = (
-      <span className="text-text-destructive text-xs">
-        {localize('com_ui_pr_account_status_error')}
-      </span>
-    );
+  const statusError = (
+    <span className="text-text-destructive text-xs">
+      {localize('com_ui_pr_account_status_error')}
+    </span>
+  );
+
+  /** A grant known to be removable stays removable while a later status check fails. */
+  if (status.isError && !revocable) {
+    statusContent = statusError;
     action = (
       <Button
         ref={bindAction}
@@ -224,6 +227,10 @@ export default function ConnectedAccounts() {
         )}
       </Button>
     );
+  }
+
+  if (status.isError && revocable) {
+    statusContent = statusError;
   }
 
   return (
