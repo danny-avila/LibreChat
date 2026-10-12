@@ -599,15 +599,21 @@ describe('createConversationPullRequestsHandler', () => {
       lookup?: jest.Mock;
       env?: Record<string, string | undefined>;
       userToken?: jest.Mock;
+      /** Answers the config read only when this resolves. */
+      configGate?: Promise<void>;
     } = {},
   ) {
     const settings = options.settings === undefined ? enabled : (options.settings ?? undefined);
     const lanes = options.lanes ?? [lane('a'), lane('b')];
+    const gate = options.configGate;
     const lookup = options.lookup ?? jest.fn().mockResolvedValue({ ok: true, value: pr });
     const getConvosLaneGit = jest.fn().mockResolvedValue(lanes);
     const handler = createConversationPullRequestsHandler({
       getConvosLaneGit,
-      getAppConfig: jest.fn().mockResolvedValue(configWith(settings)),
+      getAppConfig: jest.fn().mockImplementation(async () => {
+        await gate;
+        return configWith(settings);
+      }),
       lookup,
       env: options.env ?? { GH_TOKEN: 'ghp_secret' },
       ...(options.userToken ? { userToken: options.userToken } : {}),
@@ -624,6 +630,58 @@ describe('createConversationPullRequestsHandler', () => {
     };
     return { run, res, lookup, getConvosLaneGit };
   }
+
+  describe('a token read the request no longer waits for', () => {
+    const connectable = {
+      ...enabled,
+      oauth: { clientId: '${GH_CLIENT_ID}', clientSecret: '${GH_CLIENT_SECRET}' },
+    };
+    const env = { GH_CLIENT_ID: 'id', GH_CLIENT_SECRET: 'secret' };
+
+    it('is not started once the configured deadline has passed', async () => {
+      let open: () => void = () => undefined;
+      const configGate = new Promise<void>((resolve) => (open = resolve));
+      const userToken = jest.fn().mockResolvedValue('gho_user');
+      const { run, res } = batch({
+        settings: { ...connectable, batchTimeoutSeconds: 1 },
+        env,
+        userToken,
+        configGate,
+      });
+      const running = run();
+      await new Promise((resolve) => setTimeout(resolve, 1_100));
+      open();
+      await running;
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(userToken).not.toHaveBeenCalled();
+    });
+
+    it('is not started after the request was answered for a config read that took too long', async () => {
+      jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+      try {
+        let open: () => void = () => undefined;
+        const configGate = new Promise<void>((resolve) => (open = resolve));
+        const userToken = jest.fn().mockResolvedValue('gho_user');
+        const { run, res } = batch({
+          settings: { ...connectable, batchTimeoutSeconds: 120 },
+          env,
+          userToken,
+          configGate,
+        });
+        const running = run();
+        await jest.advanceTimersByTimeAsync(20_001);
+        await running;
+        expect(res.status).toHaveBeenCalledWith(503);
+        /** The config arrives within its own, longer deadline, but nobody is waiting any more. */
+        open();
+        for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
+        expect(userToken).not.toHaveBeenCalled();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
 
   it("looks the batch up with the user's own token", async () => {
     const { run, lookup } = batch({

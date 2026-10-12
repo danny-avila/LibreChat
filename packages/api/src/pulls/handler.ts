@@ -422,7 +422,8 @@ export function createConversationPullRequestHandler(deps: {
       const result = await deps.lookup(lookupInput(settings, credential, lane));
       if (!result.ok) {
         if (result.error.code === 'CREDENTIAL_REJECTED') {
-          await invalidateRejected(deps.userToken, userId, settings, credential);
+          /** In the background: the answer does not wait on it, and it fails only to a log. */
+          void invalidateRejected(deps.userToken, userId, settings, credential);
         }
         res.status(503).json({
           error: 'Pull request lookup is unavailable',
@@ -466,6 +467,8 @@ export function createConversationPullRequestsHandler(deps: {
       res.status(400).json({ error: 'Invalid conversation list' });
       return;
     }
+    /** Set once the request is answered, however it ended. */
+    let answered = false;
     try {
       /**
        * The clock starts when the request arrives. The configured deadline lives in the config,
@@ -478,11 +481,16 @@ export function createConversationPullRequestsHandler(deps: {
       const laneRead = deps.getConvosLaneGit(userId, ids);
       /** Once the settings and the lanes are in, and only if some lane could be looked up: reading
        *  the user's token can refresh and rotate it. */
-      const userTokenRead = Promise.all([configRead, laneRead]).then(([loaded, lanes]) =>
-        lanes.some(({ laneGit }) => eligibleLane(laneGit, ALL_REPOSITORIES) != null)
+      const userTokenRead = Promise.all([configRead, laneRead]).then(([loaded, lanes]) => {
+        /** Never started for a request already answered or out of time: nobody would wait for
+         *  it, and it could still refresh, extend or refuse the stored grant. */
+        const deadline =
+          startedAt + (loaded?.batchTimeoutSeconds ?? DEFAULT_BATCH_TIMEOUT_SECONDS) * 1000;
+        if (answered || Date.now() >= deadline) return null;
+        return lanes.some(({ laneGit }) => eligibleLane(laneGit, ALL_REPOSITORIES) != null)
           ? readUserToken(deps.userToken, userId, loaded, deps.env)
-          : null,
-      );
+          : null;
+      });
       /** A read nobody waits for (feature off, config timed out) must not fail unhandled. */
       laneRead.catch(() => undefined);
       userTokenRead.catch(() => undefined);
@@ -621,7 +629,8 @@ export function createConversationPullRequestsHandler(deps: {
         );
       });
       if ([...outcomes.values()].some((o) => !o.ok && o.code === 'CREDENTIAL_REJECTED')) {
-        await invalidateRejected(deps.userToken, userId, settings, credential);
+        /** In the background: the answer does not wait on it, and it fails only to a log. */
+        void invalidateRejected(deps.userToken, userId, settings, credential);
       }
       const looked = ids.map((conversationId): TConversationPullRequestsEntry => {
         const lane = eligible.get(conversationId);
@@ -635,6 +644,8 @@ export function createConversationPullRequestsHandler(deps: {
     } catch (error) {
       logger.error('[PullRequests] Batch handler failed', getSafeErrorMetadata(error));
       res.status(500).json({ error: 'Failed to load the pull requests' });
+    } finally {
+      answered = true;
     }
   };
 }
