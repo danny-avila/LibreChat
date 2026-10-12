@@ -4,6 +4,7 @@ import {
   clearTTSCache,
   getTTSCacheKey,
   hasCachedTTSAudio,
+  hasLegacyTTSCache,
   setCachedTTSAudio,
   setTTSCacheOwner,
   getCachedTTSAudio,
@@ -128,6 +129,17 @@ describe('legacy Cache Storage cleanup', () => {
     expect(del).toHaveBeenCalledWith('tts-responses');
     expect(del).toHaveBeenCalledWith('tts-responses-v1');
     expect(del).toHaveBeenCalledWith('tts-responses-v1:pending');
+  });
+
+  it("reports an earlier build's cache that is still on disk", async () => {
+    const has = jest.fn(async (name: string) => name === 'tts-responses');
+    Object.defineProperty(globalThis, 'caches', { value: { has }, configurable: true });
+    await expect(hasLegacyTTSCache()).resolves.toBe(true);
+
+    has.mockResolvedValue(false);
+    await expect(hasLegacyTTSCache()).resolves.toBe(false);
+    Reflect.deleteProperty(globalThis, 'caches');
+    await expect(hasLegacyTTSCache()).resolves.toBe(false);
   });
 
   it('tolerates a missing Cache API and a rejected delete', async () => {

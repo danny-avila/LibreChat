@@ -9,7 +9,7 @@ import {
   InfoHoverCard,
   useOnClickOutside,
 } from '@librechat/client';
-import { clearTTSCache, hasCachedTTSAudio } from '~/utils';
+import { clearTTSCache, hasLegacyTTSCache, hasCachedTTSAudio } from '~/utils';
 import { useLocalize } from '~/hooks';
 import { ESide } from '~/common';
 
@@ -22,8 +22,8 @@ export const DeleteCache = ({ disabled = false }: { disabled?: boolean }) => {
   const contentRef = useRef(null);
   useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);
 
-  const checkCache = useCallback(() => {
-    setIsCacheEmpty(!hasCachedTTSAudio());
+  const checkCache = useCallback(async () => {
+    setIsCacheEmpty(!hasCachedTTSAudio() && !(await hasLegacyTTSCache()));
   }, []);
 
   useEffect(() => {

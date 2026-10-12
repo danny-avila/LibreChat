@@ -39,6 +39,19 @@ export const getTTSCacheGeneration = (): number => generation;
 
 export const hasCachedTTSAudio = (): boolean => audioByKey.size > 0;
 
+/** Whether an earlier build's audio is still on disk (its delete failed), so it can be retried. */
+export async function hasLegacyTTSCache(): Promise<boolean> {
+  if (typeof caches === 'undefined') {
+    return false;
+  }
+  try {
+    const found = await Promise.all(LEGACY_TTS_CACHE_NAMES.map((name) => caches.has(name)));
+    return found.some(Boolean);
+  } catch {
+    return false;
+  }
+}
+
 export function getCachedTTSAudio(key: string): Blob | undefined {
   const audio = audioByKey.get(key);
   if (audio) {
