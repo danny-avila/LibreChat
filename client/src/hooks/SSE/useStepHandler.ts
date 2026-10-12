@@ -8,6 +8,7 @@ import {
   resetStreamState,
   syncStreamMessage,
   createStreamState,
+  subagentProgressKey,
 } from '@librechat/chat';
 import type {
   TMessage,
