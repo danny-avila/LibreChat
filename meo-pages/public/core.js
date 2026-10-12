@@ -31,12 +31,22 @@ export function chatContext(messages) {
   let characters = 0;
   for (let index = messages.length - 1; index >= 0 && selected.length < 80; index -= 1) {
     const message = messages[index];
+    if (message.transient) continue;
     const cost = message.content.length + 32;
     if (selected.length && characters + cost > 36_000) break;
     selected.unshift({ role: message.role, content: message.content });
     characters += cost;
   }
   return selected;
+}
+
+export function retryableUserContent(messages) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message.transient) continue;
+    return message.role === 'user' ? message.content : '';
+  }
+  return '';
 }
 
 export function safeMarkdown(markdown) {

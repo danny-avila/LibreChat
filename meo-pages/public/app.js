@@ -1,4 +1,10 @@
-import { chatContext, requestedSelection, safeMarkdown, SseParser } from './core.js';
+import {
+  chatContext,
+  requestedSelection,
+  retryableUserContent,
+  safeMarkdown,
+  SseParser,
+} from './core.js';
 
 const root = document.querySelector('#app');
 const state = {
@@ -18,6 +24,8 @@ const state = {
   models: [],
   modelSupported: false,
   busy: false,
+  streaming: false,
+  stopController: null,
   draft: '',
   retryAvailable: false,
   error: '',
@@ -354,6 +362,14 @@ function renderTopbar() {
 function renderMessage(message) {
   const body = el('div', { class: 'message-body' });
   body.innerHTML = safeMarkdown(message.content);
+  if (message.transient)
+    body.append(
+      el('div', {
+        class: 'message-status',
+        text:
+          message.transient === 'stopped' ? '已停止 · 这段回复未保存' : '回复中断 · 这段回复未保存',
+      }),
+    );
   return el('article', { class: `message ${message.role}` }, [
     el('div', { class: 'avatar', text: message.role === 'user' ? '你' : 'm' }),
     body,
@@ -405,7 +421,7 @@ async function persistMessage(conversationId, role, content) {
 }
 
 async function sendMessage(text, retry = false) {
-  const content = retry ? (state.messages.at(-1)?.content ?? '') : text.trim();
+  const content = retry ? retryableUserContent(state.messages) : text.trim();
   if (
     !content ||
     state.busy ||
@@ -420,6 +436,7 @@ async function sendMessage(text, retry = false) {
   state.busy = true;
   state.error = '';
   state.notice = '';
+  if (state.messages.at(-1)?.transient) state.messages.pop();
   render();
   try {
     if (!retry) {
@@ -468,8 +485,13 @@ async function sendMessage(text, retry = false) {
     assistant = { id: crypto.randomUUID(), role: 'assistant', content: '' };
     state.messages.push(assistant);
     render();
+    const controller = new AbortController();
+    state.stopController = controller;
+    state.streaming = true;
+    render();
     const response = await api('/api/chat/stream', {
       method: 'POST',
+      signal: controller.signal,
       body: JSON.stringify({
         credentialId: state.connection.id,
         model: state.model,
@@ -494,17 +516,28 @@ async function sendMessage(text, retry = false) {
       if (done) break;
     }
     if (!completed || !assistant.content) throw new Error('AI 回复未完整结束，请重试。');
+    state.streaming = false;
+    state.stopController = null;
+    render();
     await persistMessage(state.conversationId, 'assistant', assistant.content);
     assistantPersisted = true;
     state.retryAvailable = false;
     state.notice = t('saved');
     await loadHistory();
   } catch (error) {
-    if (error.message !== 'Request cancelled') state.error = error.message;
-    if (!assistantPersisted && assistant && state.messages.at(-1) === assistant)
-      state.messages.pop();
+    const stopped = state.stopController?.signal.aborted === true;
+    if (stopped) state.notice = '已停止生成。用户消息已保存，可重试回复。';
+    else if (error.message === 'Request cancelled')
+      state.notice = '已取消发送。用户消息已保存，可重试回复。';
+    else state.error = error.message;
+    if (!assistantPersisted && assistant && state.messages.at(-1) === assistant) {
+      if (assistant.content) assistant.transient = stopped ? 'stopped' : 'failed';
+      else state.messages.pop();
+    }
     state.retryAvailable = savedUser && !assistantPersisted;
   } finally {
+    state.streaming = false;
+    state.stopController = null;
     state.busy = false;
     render();
   }
@@ -586,6 +619,20 @@ function renderMain() {
   send.disabled = !state.draft.trim() || state.busy || !state.connection || !state.model;
   const composer = el('footer', { class: 'composer-wrap' }, [
     el('div', { class: 'composer' }, [textarea, send]),
+    ...(state.streaming
+      ? [
+          el('button', {
+            class: 'button stop-button',
+            text: '停止生成',
+            onclick: () => {
+              state.stopController?.abort();
+              state.streaming = false;
+              state.notice = '正在停止生成…';
+              render();
+            },
+          }),
+        ]
+      : []),
     ...(state.retryAvailable
       ? [
           el('button', {

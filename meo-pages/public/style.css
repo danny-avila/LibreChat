@@ -74,12 +74,14 @@ button { cursor: pointer; }
 .message-body code { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; background:var(--surface-2); border:1px solid var(--line); border-radius:5px; padding:1px 5px; font-size:.9em; }
 .message-body pre { overflow:auto; border:1px solid var(--line); background:var(--surface-2); border-radius:12px; padding:14px 16px; margin:12px 0; }
 .message-body pre code { border:0; padding:0; background:transparent; }
+.message-status { margin-top:9px; color:var(--muted); font-size:12px; }
 .composer-wrap { padding:15px 22px 20px; border-top:1px solid var(--line); }
 .composer { max-width:850px; margin:auto; position:relative; }
 .composer textarea { resize:vertical; width:100%; min-height:58px; max-height:220px; padding:16px 62px 16px 17px; border:1px solid var(--line); border-radius:17px; outline:0; background:var(--surface); box-shadow:0 5px 18px rgb(27 36 63 / 5%); }
 .composer textarea:focus { border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 16%,transparent); }
 .send { position:absolute; right:9px; bottom:9px; width:40px; height:40px; border:0; border-radius:12px; background:var(--accent); color:white; font-size:19px; }
 .send:disabled { opacity:.5; cursor:default; }
+.stop-button { display:block; margin:10px auto 0; }
 .hint { max-width:850px; margin:9px auto 0; text-align:center; color:var(--muted); font-size:11px; }
 .notice { max-width:850px; margin:14px auto 0; padding:11px 14px; border:1px solid var(--line); border-radius:12px; color:var(--muted); font-size:13px; }
 .notice.error { color:#bf3549; border-color:color-mix(in srgb,#bf3549 32%,var(--line)); background:color-mix(in srgb,#bf3549 6%,var(--surface)); }

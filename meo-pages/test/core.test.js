@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chatContext, requestedSelection, safeMarkdown, SseParser } from '../public/core.js';
+import {
+  chatContext,
+  requestedSelection,
+  retryableUserContent,
+  safeMarkdown,
+  SseParser,
+} from '../public/core.js';
 
 test('long conversations retain recent context within broker limits', () => {
   const history = Array.from({ length: 100 }, (_, index) => ({
@@ -18,6 +24,16 @@ test('long conversations retain recent context within broker limits', () => {
     ]),
     [{ role: 'user', content: 'new' }],
   );
+});
+
+test('stopped partial reply is excluded from context and retry uses saved user message', () => {
+  const messages = [
+    { role: 'user', content: '请解释同步' },
+    { role: 'assistant', content: '未完成的片段', transient: 'stopped' },
+  ];
+  assert.deepEqual(chatContext(messages), [messages[0]]);
+  assert.equal(retryableUserContent(messages), '请解释同步');
+  assert.equal(retryableUserContent([...messages, { role: 'assistant', content: '完整回复' }]), '');
 });
 
 test('deep links select only a connection and model available to that account', () => {
