@@ -250,7 +250,9 @@ test('a deployment theme removed since the last visit wins once the config answe
 /**
  * The session cookies are unreadable before the bundle runs, so the cache is replayed only
  * in a tab that last saw its owner signed in. A cache left by another identity, or a tab
- * with no signed-in owner yet, paints the default shell until the config answers.
+ * with no signed-in owner yet, paints the default shell until the config answers. The
+ * signed-out answer counts: it carries the deployment theme too, and with no cache replayed
+ * it is the first source the app may paint it from.
  */
 async function expectNoCachedPaint(page: Page, open: (page: Page) => Promise<void>) {
   let held = false;
@@ -258,6 +260,7 @@ async function expectNoCachedPaint(page: Page, open: (page: Page) => Promise<voi
     page,
     () => 'clickhouse',
     () => held,
+    false,
   );
   await openChat(page);
   await expect
