@@ -59,6 +59,7 @@ jest.mock('@librechat/api', () => {
 });
 
 jest.mock('@librechat/data-schemas', () => ({
+  createSkillDeletionPersistenceAdapter: jest.fn(() => ({})),
   logger: {
     error: jest.fn(),
     warn: jest.fn(),
