@@ -35,6 +35,7 @@ export * from './prompts';
 /* Skills */
 export * from './skill';
 export * from './skillSync';
+export * from './skillDeletion';
 export * from './triggerDelivery';
 export * from './queuedTurn';
 export * from './schedule';

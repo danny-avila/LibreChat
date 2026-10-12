@@ -329,6 +329,15 @@ function createDeps(
     }),
     deleteSkillFile: jest.fn(async () => ({ deleted: true })),
     deleteSkill: jest.fn(async () => completeSkillDeletion(true)),
+    reserveBlob: jest.fn(async () => ({ filepath: '/uploads/file-id__run.sh', source: 'local' })),
+    reserveSkillUploadIntent: jest.fn(async (input) => ({
+      ...input,
+      skillId: new Types.ObjectId(input.skillId),
+      author: new Types.ObjectId(input.author),
+      state: 'uploading' as const,
+    })),
+    transitionSkillUploadIntent: jest.fn(async () => true),
+    preserveExistingSkillBlob: jest.fn(async () => undefined),
     saveBuffer: jest.fn(async () => ({ filepath: '/uploads/file-id__run.sh', source: 'local' })),
     deleteFile: jest.fn(async () => undefined),
     grantPermission: jest.fn(async () => undefined),
@@ -1815,7 +1824,7 @@ describe('createGitHubSkillSyncRunner', () => {
     );
   });
 
-  it('fails the source when recreating a stale mirror cannot preserve its dependent state', async () => {
+  it('fails the source without recreating a stale mirror whose blobs were deleted', async () => {
     const staleId = new Types.ObjectId();
     const existingId = new Types.ObjectId();
     const author = makeSourceAuthorId();
@@ -1869,18 +1878,9 @@ describe('createGitHubSkillSyncRunner', () => {
     expect(result.status).toBe('failed');
     expect(deleteSkill).toHaveBeenCalledWith(staleId.toString());
     expect(deleteSkill).toHaveBeenCalledTimes(1);
-    expect(createSkill).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: 'renamed',
-        sourceMetadata: expect.objectContaining({
-          upstreamId: 'librechat-skills:skills/removed',
-        }),
-      }),
-    );
-    expect(deps.grantPermission).toHaveBeenCalledWith(
-      expect.objectContaining({ resourceId: restoredSkill?._id }),
-    );
-    expect(persistedSkills.has(restoredSkill?._id.toString() ?? '')).toBe(true);
+    expect(createSkill).not.toHaveBeenCalled();
+    expect(restoredSkill).toBeUndefined();
+    expect(persistedSkills.has(staleId.toString())).toBe(false);
     expect(deps.upsertStatus).toHaveBeenLastCalledWith(
       expect.objectContaining({
         status: 'failed',
@@ -1894,7 +1894,7 @@ describe('createGitHubSkillSyncRunner', () => {
 
   it.each([
     { failedStep: 'skill_files' as const, expectedBlobDeletes: 0 },
-    { failedStep: 'permissions' as const, expectedBlobDeletes: 1 },
+    { failedStep: 'permissions' as const, expectedBlobDeletes: 0 },
   ])(
     'fails the source and safely handles blobs when stale deletion leaves $failedStep incomplete',
     async ({ failedStep, expectedBlobDeletes }) => {
@@ -2548,12 +2548,12 @@ describe('createGitHubSkillSyncRunner', () => {
     );
   });
 
-  it('fails the source when rollback cannot remove a stored skill file', async () => {
+  it('fails the source when durable rollback cannot finish storage cleanup', async () => {
     const storedFiles: Array<ISkillFile & { _id: Types.ObjectId }> = [];
     const deleteFile = jest.fn(async () => {
       throw new Error('storage cleanup unavailable');
     });
-    const deleteSkill = jest.fn(async () => completeSkillDeletion(true));
+    const deleteSkill = jest.fn(async () => incompleteSkillDeletion(['skill_files']));
     const deps = createDeps({
       listSkillFiles: jest.fn(async () => storedFiles),
       upsertSkillFile: jest.fn(async (input: UpsertSkillFileInput) => {
@@ -2573,7 +2573,7 @@ describe('createGitHubSkillSyncRunner', () => {
     const result = await runner.runOnce();
 
     expect(result.status).toBe('failed');
-    expect(deleteFile).toHaveBeenCalledTimes(1);
+    expect(deleteFile).not.toHaveBeenCalled();
     expect(deleteSkill).toHaveBeenCalledTimes(1);
     expect(deps.upsertStatus).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -2584,7 +2584,7 @@ describe('createGitHubSkillSyncRunner', () => {
     );
   });
 
-  it('fails the source when an unpersisted upload cannot be cleaned up', async () => {
+  it('retains an unpersisted upload intent when immediate cleanup fails', async () => {
     const deleteFile = jest.fn(async () => {
       throw new Error('orphan cleanup unavailable');
     });
@@ -2603,8 +2603,8 @@ describe('createGitHubSkillSyncRunner', () => {
     expect(deps.upsertStatus).toHaveBeenLastCalledWith(
       expect.objectContaining({
         status: 'failed',
-        errorCode: 'SYNC_ROLLBACK_FAILED',
-        errorMessage: 'Rollback failed after: database unavailable',
+        errorCode: 'SYNC_FAILED',
+        errorMessage: 'database unavailable',
       }),
     );
   });

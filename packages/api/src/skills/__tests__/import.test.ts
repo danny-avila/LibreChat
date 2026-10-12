@@ -71,6 +71,15 @@ function mockImportDeps(limits?: ImportSkillDeps['limits']): ImportSkillDeps {
       failedCleanupSteps: [],
     })),
     upsertSkillFile: jest.fn(async () => skillFile),
+    getSkillFileByPath: jest.fn(async () => null),
+    reserveBlob: jest.fn(async () => ({ filepath: '/tmp/imported-file', source: 'local' })),
+    reserveSkillUploadIntent: jest.fn(async (input) => ({
+      ...input,
+      skillId: new Types.ObjectId(input.skillId),
+      author: new Types.ObjectId(input.author),
+      state: 'uploading' as const,
+    })),
+    transitionSkillUploadIntent: jest.fn(async () => true),
     saveBuffer: jest.fn(async () => ({ filepath: '/tmp/imported-file', source: 'local' })),
     deleteFile: jest.fn(async () => undefined),
     grantPermission: jest.fn(async () => undefined),
@@ -601,7 +610,7 @@ describe('createImportHandler', () => {
     );
   });
 
-  it('retries an orphan blob after SkillFile cleanup remains incomplete', async () => {
+  it('retains an orphan intent after immediate cleanup fails', async () => {
     const deps = mockImportDeps();
     deps.deleteSkill = jest.fn(async () => ({
       deleted: true,
@@ -624,7 +633,7 @@ describe('createImportHandler', () => {
     await handler(mockZipRequest(await zipWithAdditionalFiles(1, 64)), res);
 
     expect(deps.deleteSkill).toHaveBeenCalledTimes(2);
-    expect(deps.deleteFile).toHaveBeenCalledTimes(2);
+    expect(deps.deleteFile).toHaveBeenCalledTimes(1);
     expect(res.status).toHaveBeenCalledWith(500);
     expect(importFailure(res.body).error).toBe('skill_import_cleanup_incomplete');
   });

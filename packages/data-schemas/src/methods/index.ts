@@ -176,6 +176,7 @@ import {
   type AgentEventActorReceiptStorageMetrics,
 } from './triggerDelivery';
 import { createSkillSyncMethods, type SkillSyncMethods } from './skillSync';
+import { createSkillLifecycleMethods, type SkillLifecycleMethods } from './skillLifecycle';
 import type {
   SkillSyncStatusInput,
   SkillSyncCredentialSummary,
@@ -288,6 +289,7 @@ export type AllMethods = ToolApprovalGrantStorage &
   PromptMethods &
   SkillMethods &
   SkillSyncMethods &
+  SkillLifecycleMethods &
   AgentTriggerDeliveryMethods &
   AgentQueuedTurnMethods &
   ScheduleMCPConsentStorage &
@@ -529,6 +531,7 @@ export function createMethods(
     ...promptMethods,
     ...skillMethods,
     ...createSkillSyncMethods(mongoose),
+    ...createSkillLifecycleMethods(mongoose),
     ...agentTriggerDeliveryMethods,
     ...agentQueuedTurnMethods,
     ...createScheduleMethods(mongoose),
@@ -620,6 +623,7 @@ export type {
   SkillSyncCredentialSummary,
   UpsertSkillSyncCredentialInput,
   SkillSyncMethods,
+  SkillLifecycleMethods,
   AgentTriggerDeliveryMethods,
   AgentQueuedTurnMethods,
   AgentTriggerProducerLeaseStatus,

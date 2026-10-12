@@ -1,4 +1,5 @@
 import { FileSources } from 'librechat-data-provider';
+import { Types } from 'mongoose';
 import type { SaveBufferParams } from '~/storage/types';
 import { createSkillFileSaver, createSkillManagementFileSaver } from './save';
 
@@ -16,7 +17,9 @@ const existing = {
 };
 
 function harness() {
-  const saveBuffer = jest.fn(async (_input: SaveBufferParams) => '/uploads/new');
+  const saveBuffer = jest.fn(
+    async (input: SaveBufferParams) => `/uploads/${input.userId}/${input.fileName}`,
+  );
   const deleteFile = jest.fn(async () => undefined);
   const getSkillFileByPath = jest.fn(
     async (): ReturnType<SaverDeps['getSkillFileByPath']> => existing,
@@ -27,7 +30,7 @@ function harness() {
     ): ReturnType<SaverDeps['upsertSkillFile']> => ({
       ...existing,
       file_id: row.file_id,
-      filepath: '/uploads/new',
+      filepath: row.filepath,
       bytes: 9,
     }),
   );
@@ -36,6 +39,14 @@ function harness() {
     upsertSkillFile,
     resolveStorage: jest.fn(() => ({ source: FileSources.local, saveBuffer })),
     getStrategyFunctions: jest.fn(() => ({ deleteFile })),
+    preserveExistingSkillBlob: jest.fn(async () => undefined),
+    reserveSkillUploadIntent: jest.fn(async (input) => ({
+      ...input,
+      skillId: new Types.ObjectId(),
+      author: new Types.ObjectId(),
+      state: 'uploading' as const,
+    })),
+    transitionSkillUploadIntent: jest.fn(async () => true),
   } satisfies SaverDeps;
   const req = { user: { id: 'editor', _id: 'editor' }, config: {} } as never;
   const params = {
@@ -109,7 +120,10 @@ describe('management skill file saver', () => {
     expect(h.deleteFile).toHaveBeenCalledTimes(1);
     expect(h.deleteFile).toHaveBeenCalledWith(
       h.params.req,
-      expect.objectContaining({ filepath: '/uploads/new', user: 'editor' }),
+      expect.objectContaining({
+        filepath: expect.stringMatching(/^\/uploads\/editor\//),
+        user: 'editor',
+      }),
     );
   });
 });
@@ -181,7 +195,10 @@ describe('agent skill file saver', () => {
     await expect(h.save(h.params)).rejects.toMatchObject({ code: 'SKILL_FILE_CONFLICT' });
     expect(h.deleteFile).toHaveBeenCalledWith(
       h.params.req,
-      expect.objectContaining({ filepath: '/uploads/new', user: 'editor' }),
+      expect.objectContaining({
+        filepath: expect.stringMatching(/^\/uploads\/editor\//),
+        user: 'editor',
+      }),
     );
     expect(h.deleteFile).not.toHaveBeenCalledWith(
       h.params.req,
@@ -196,10 +213,10 @@ describe('agent skill file saver', () => {
       committedRevision = row.file_id;
       throw new Error('parent update failed');
     });
-    h.getSkillFileByPath.mockResolvedValueOnce(existing).mockImplementationOnce(async () => ({
+    h.getSkillFileByPath.mockResolvedValueOnce(existing).mockImplementation(async () => ({
       ...existing,
       file_id: committedRevision,
-      filepath: '/uploads/new',
+      filepath: '/uploads/editor/committed',
     }));
     await expect(h.save(h.params)).rejects.toThrow('parent update failed');
     expect(committedRevision).not.toBe('');
@@ -224,7 +241,10 @@ describe('agent skill file saver', () => {
     });
     expect(h.deleteFile).toHaveBeenCalledWith(
       h.params.req,
-      expect.objectContaining({ filepath: '/uploads/new', user: 'editor' }),
+      expect.objectContaining({
+        filepath: expect.stringMatching(/^\/uploads\/editor\//),
+        user: 'editor',
+      }),
     );
   });
 });

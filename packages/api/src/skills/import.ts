@@ -46,6 +46,9 @@ import { resolveRequestTenantId } from '~/middleware/tenant';
 import { createConcurrencyLimiter } from '~/utils/promise';
 import { DEFAULT_SKILL_IMPORT_LIMITS } from './limits';
 import { parseSkillMarkdown } from './parse';
+import { withSkillUploadIntent } from './intent';
+import type { SkillUploadIntentDeps } from './intent';
+import type { SkillBlobReservation } from './reservation';
 import { isBinaryBuffer } from './binary';
 
 const SKILL_MD = 'SKILL.md';
@@ -130,18 +133,24 @@ function isDuplicateKeyError(error: unknown): boolean {
   );
 }
 
-export interface ImportSkillDeps {
+export interface ImportSkillDeps extends SkillUploadIntentDeps {
   limits?: Partial<ImportLimits> | ((req: ServerRequest) => Partial<ImportLimits> | undefined);
   createSkill: (data: CreateSkillInput) => Promise<CreateSkillResult>;
   getSkillById: (id: string | Types.ObjectId) => Promise<(ISkill & { _id: Types.ObjectId }) | null>;
   deleteSkill: (id: string) => Promise<DeleteSkillResult>;
   upsertSkillFile: (row: UpsertSkillFileInput) => Promise<ISkillFile & { _id: Types.ObjectId }>;
+  getSkillFileByPath: (skillId: string, relativePath: string) => Promise<ISkillFile | null>;
+  reserveBlob: (
+    req: Request,
+    params: { userId: string; fileName: string; isImage: boolean; tenantId?: string },
+  ) => Promise<SkillBlobReservation & { source: string }>;
   saveBuffer: (
     req: Request,
     params: {
       userId: string;
       buffer: Buffer;
       fileName: string;
+      expectedSource: string;
       basePath?: string;
       isImage?: boolean;
       tenantId?: string;
@@ -741,65 +750,69 @@ async function persistArchiveFile(
 ): Promise<void> {
   const fileId = crypto.randomUUID();
   const storageFileName = `${fileId}__${file.filename}`;
-  const { filepath, source, storageKey, storageRegion } = await deps.saveBuffer(req, {
+  const reserved = await deps.reserveBlob(req, {
     userId: context.userId,
-    buffer,
     fileName: storageFileName,
-    basePath: 'uploads',
     isImage: file.mimeType.startsWith('image/'),
     tenantId: context.tenantId,
   });
-  const persistedBlob: PersistedArchiveBlob = {
+  if (!deps.deleteFile) throw new Error('Skill storage has no deletion strategy');
+  let saved: Awaited<ReturnType<ImportSkillDeps['saveBuffer']>> | undefined;
+  await withSkillUploadIntent(deps, {
+    skillId: context.skillId.toString(),
+    author: context.authorId.toString(),
+    tenantId: context.tenantId,
+    fileId,
+    source: reserved.source,
+    reservation: reserved,
+    save: async () => {
+      saved = await deps.saveBuffer(req, {
+        userId: context.userId,
+        buffer,
+        fileName: storageFileName,
+        expectedSource: reserved.source,
+        basePath: 'uploads',
+        isImage: file.mimeType.startsWith('image/'),
+        tenantId: context.tenantId,
+      });
+      if (saved.source !== reserved.source) throw new Error('Skill storage changed during upload');
+      return saved.filepath;
+    },
+    persist: (filepath) =>
+      deps.upsertSkillFile({
+        skillId: context.skillId,
+        relativePath: file.relativePath,
+        file_id: fileId,
+        filename: file.filename,
+        filepath,
+        storageKey: saved?.storageKey,
+        storageRegion: saved?.storageRegion,
+        source: reserved.source,
+        mimeType: file.mimeType,
+        bytes: buffer.length,
+        isExecutable: false,
+        author: context.authorId,
+        tenantId: context.tenantId,
+      }),
+    isPersisted: async () =>
+      (await deps.getSkillFileByPath(context.skillId.toString(), file.relativePath))?.file_id ===
+      fileId,
+    deleteReserved: (ref, savedPath) =>
+      deps.deleteFile!(req, {
+        filepath: savedPath ?? ref.filepath,
+        storageKey: saved?.storageKey ?? ref.storageKey,
+        storageRegion: saved?.storageRegion ?? ref.storageRegion,
+        source: reserved.source,
+        user: context.authorId,
+        tenantId: context.tenantId,
+      }),
+  });
+  if (!saved) throw new Error('Skill upload returned no stored file');
+  context.persisted.push({
     relativePath: file.relativePath,
-    filepath,
-    source,
-    storageKey,
-    storageRegion,
-    rowPersisted: false,
-  };
-
-  try {
-    await deps.upsertSkillFile({
-      skillId: context.skillId,
-      relativePath: file.relativePath,
-      file_id: fileId,
-      filename: file.filename,
-      filepath,
-      storageKey,
-      storageRegion,
-      source,
-      mimeType: file.mimeType,
-      bytes: buffer.length,
-      isExecutable: false,
-      author: context.authorId,
-      tenantId: context.tenantId,
-    });
-  } catch (dbError) {
-    let blobRemoved = false;
-    if (deps.deleteFile) {
-      await deps
-        .deleteFile(req, {
-          filepath,
-          storageKey,
-          storageRegion,
-          source,
-          user: context.authorId,
-          tenantId: context.tenantId,
-        })
-        .then(() => {
-          blobRemoved = true;
-        })
-        .catch((error) =>
-          logger.error(`[importSkill] Orphan cleanup failed for ${file.relativePath}:`, error),
-        );
-    }
-    if (!blobRemoved) {
-      context.persisted.push(persistedBlob);
-    }
-    throw dbError;
-  }
-
-  context.persisted.push({ ...persistedBlob, rowPersisted: true });
+    ...saved,
+    rowPersisted: true,
+  });
 }
 
 async function cleanupArchiveBlobs(

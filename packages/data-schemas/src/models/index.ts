@@ -9,6 +9,8 @@ import { createRefreshTokenBridgeModel } from './refreshTokenBridge';
 import { createAgentTriggerDeliveryModel } from './triggerDelivery';
 import { createToolApprovalGrantModel } from './toolApprovalGrant';
 import { createSkillSyncStatusModel } from './skillSyncStatus';
+import { createSkillDeletionModel } from './skillDeletion';
+import { createSkillUploadIntentModel } from './skillUploadIntent';
 import { createConversationTagModel } from './conversationTag';
 import { createCodeEnvironmentModel } from './codeEnvironment';
 import { createAgentCategoryModel } from './agentCategory';
@@ -79,6 +81,8 @@ export function createModels(mongoose: typeof import('mongoose')): {
   PromptGroup: ReturnType<typeof createPromptGroupModel>;
   Skill: ReturnType<typeof createSkillModel>;
   SkillFile: ReturnType<typeof createSkillFileModel>;
+  SkillDeletion: ReturnType<typeof createSkillDeletionModel>;
+  SkillUploadIntent: ReturnType<typeof createSkillUploadIntentModel>;
   SkillSyncCredential: ReturnType<typeof createSkillSyncCredentialModel>;
   SkillSyncStatus: ReturnType<typeof createSkillSyncStatusModel>;
   ConversationTag: ReturnType<typeof createConversationTagModel>;
@@ -130,6 +134,8 @@ export function createModels(mongoose: typeof import('mongoose')): {
     PromptGroup: createPromptGroupModel(mongoose),
     Skill: createSkillModel(mongoose),
     SkillFile: createSkillFileModel(mongoose),
+    SkillDeletion: createSkillDeletionModel(mongoose),
+    SkillUploadIntent: createSkillUploadIntentModel(mongoose),
     SkillSyncCredential: createSkillSyncCredentialModel(mongoose),
     SkillSyncStatus: createSkillSyncStatusModel(mongoose),
     ConversationTag: createConversationTagModel(mongoose),

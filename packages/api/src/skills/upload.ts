@@ -7,6 +7,9 @@ import type { StrategyFunctions, ServerRequest } from '~/types';
 import type { SaveBufferParams } from '~/storage/types';
 import { resolveRequestTenantId } from '~/middleware/tenant';
 import { getStorageMetadata } from '~/storage/metadata';
+import { withSkillUploadIntent } from './intent';
+import type { SkillUploadIntentDeps } from './intent';
+import { reserveSkillBlob } from './reservation';
 import { blockFilteredSkillFile } from './protection';
 import { resolveSkillFilePathParam } from './path';
 
@@ -22,7 +25,15 @@ export interface StoredSkillFile {
   isExecutable?: boolean;
 }
 
-interface SkillUploadDeps {
+interface SkillUploadDeps extends SkillUploadIntentDeps {
+  preserveExistingSkillBlob: (input: {
+    skillId: string;
+    fileId: string;
+    source: string;
+    storageKey: string;
+    author: string;
+    tenantId?: string;
+  }) => Promise<void>;
   getSkillFileByPath: (skillId: string, relativePath: string) => Promise<StoredSkillFile | null>;
   getSkillById: (id: string) => Promise<Pick<TSkill, 'source'> | null>;
   upsertSkillFile: (
@@ -102,16 +113,36 @@ export function createSkillUploadHandler(
         return res.status(409).json({ error: 'SKILL_FILE_CONFLICT' });
       }
       const tenantId = resolveRequestTenantId(req);
+      if (existingFile) {
+        await deps.preserveExistingSkillBlob({
+          skillId,
+          fileId: existingFile.file_id,
+          source: existingFile.source,
+          storageKey: existingFile.filepath,
+          author: existingFile.author?.toString() ?? userId,
+          tenantId: existingFile.tenantId ?? tenantId,
+        });
+      }
       const storage = deps.resolveStorage(req, { isImage: file.mimetype.startsWith('image/') });
       const fileId = randomUUID();
-      const filepath = await storage.saveBuffer({
+      const fileName = `${fileId}__${file.originalname}`;
+      const strategy = deps.getStrategyFunctions(storage.source) as Partial<StrategyFunctions> & {
+        getFileURL?: (params: {
+          userId: string;
+          fileName: string;
+          basePath: string;
+          tenantId?: string;
+        }) => Promise<string>;
+      };
+      if (!strategy.deleteFile) throw new Error('Skill storage has no deletion strategy');
+      const reservation = await reserveSkillBlob({
+        source: storage.source,
         userId,
-        buffer: file.buffer,
-        fileName: `${fileId}__${file.originalname}`,
-        basePath: 'uploads',
+        fileName,
         tenantId,
+        getFileURL: strategy.getFileURL,
       });
-      const cleanupReplacedBlob = (): void => {
+      const cleanupReplacedBlob = (filepath: string): void => {
         if (!existingFile || existingFile.filepath === filepath) {
           return;
         }
@@ -128,42 +159,62 @@ export function createSkillUploadHandler(
       };
       let result: StoredSkillFile;
       try {
-        result = await deps.upsertSkillFile({
+        result = await withSkillUploadIntent(deps, {
           skillId,
-          relativePath,
-          expectedFileId,
-          file_id: fileId,
-          filename: file.originalname,
-          filepath,
-          ...getStorageMetadata({ filepath, source: storage.source }),
-          source: storage.source,
-          mimeType: file.mimetype || 'application/octet-stream',
-          bytes: file.size,
-          isExecutable: existingFile?.isExecutable ?? false,
           author: userId,
           tenantId,
+          fileId,
+          source: storage.source,
+          reservation,
+          save: () =>
+            storage.saveBuffer({
+              userId,
+              buffer: file.buffer,
+              fileName,
+              basePath: 'uploads',
+              tenantId,
+            }),
+          persist: (filepath) =>
+            deps.upsertSkillFile({
+              skillId,
+              relativePath,
+              expectedFileId,
+              file_id: fileId,
+              filename: file.originalname,
+              filepath,
+              ...getStorageMetadata({ filepath, source: storage.source }),
+              source: storage.source,
+              mimeType: file.mimetype || 'application/octet-stream',
+              bytes: file.size,
+              isExecutable: existingFile?.isExecutable ?? false,
+              author: userId,
+              tenantId,
+            }),
+          isPersisted: async () => {
+            const persisted = await deps.getSkillFileByPath(skillId, relativePath);
+            return persisted?.file_id === fileId;
+          },
+          deleteReserved: (ref, savedPath) =>
+            strategy.deleteFile!(req, {
+              filepath: savedPath ?? ref.filepath,
+              ...getStorageMetadata({
+                filepath: savedPath ?? ref.filepath,
+                source: storage.source,
+              }),
+              user: userId,
+              tenantId,
+            }),
         });
       } catch (error) {
         try {
-          // A parent-version update can fail after the file row committed. Never
-          // delete its live blob on that ambiguous failure; retain it for reread.
           const persisted = await deps.getSkillFileByPath(skillId, relativePath);
-          if (persisted?.file_id === fileId) {
-            cleanupReplacedBlob();
-          } else {
-            await deps.getStrategyFunctions(storage.source).deleteFile?.(req, {
-              filepath,
-              ...getStorageMetadata({ filepath, source: storage.source }),
-              user: userId,
-              tenantId,
-            });
-          }
-        } catch (cleanupError) {
-          logger.error('[uploadFile] Failed to clean up orphaned blob:', cleanupError);
+          if (persisted?.file_id === fileId) cleanupReplacedBlob(persisted.filepath);
+        } catch (readError) {
+          logger.error('[uploadFile] Failed to verify stored file after write error:', readError);
         }
         throw error;
       }
-      cleanupReplacedBlob();
+      cleanupReplacedBlob(result.filepath);
       return res.status(200).json(result);
     } catch (error) {
       if (error instanceof Error && 'code' in error) {

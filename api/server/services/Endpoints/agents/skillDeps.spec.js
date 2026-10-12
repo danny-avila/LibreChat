@@ -74,6 +74,10 @@ jest.mock('~/server/services/PermissionService', () => ({
   grantPermission: jest.fn(),
 }));
 
+jest.mock('~/server/services/Skills/deletion', () => ({
+  deleteSkillForLegacy: jest.fn(),
+}));
+
 jest.mock('~/server/utils/getFileStrategy', () => ({
   getFileStrategy: (...args) => mockGetFileStrategy(...args),
 }));

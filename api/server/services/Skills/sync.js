@@ -1,6 +1,7 @@
 const { FileContext } = require('librechat-data-provider');
 const {
   getStorageMetadata,
+  reserveSkillBlob,
   createGitHubSkillSyncRunner,
   createSkillSyncTriggerOrchestrator,
   startGitHubSkillSyncScheduler,
@@ -10,6 +11,7 @@ const db = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
+const { deleteSkillForLegacy } = require('./deletion');
 
 const SYSTEM_USER_ID = '000000000000000000000000';
 
@@ -94,8 +96,26 @@ function createRunner({ getConfig, loadAppConfig, allowServerCredentials = true 
     listSkillFiles: db.listSkillFiles,
     getSkillFileByPath: db.getSkillFileByPath,
     upsertSkillFile: db.upsertSkillFile,
+    reserveSkillUploadIntent: db.reserveSkillUploadIntent,
+    transitionSkillUploadIntent: db.transitionSkillUploadIntent,
+    preserveExistingSkillBlob: db.preserveExistingSkillBlob,
     deleteSkillFile: db.deleteSkillFile,
-    deleteSkill: db.deleteSkill,
+    deleteSkill: deleteSkillForLegacy,
+    reserveBlob: async ({ userId, fileName, isImage, tenantId }) => {
+      const storage = await resolveSkillStorage({ isImage, loadAppConfig: resolveAppConfig });
+      const strategy = getStrategyFunctions(storage.source);
+      if (!strategy.deleteFile) throw new Error('Skill storage has no deletion strategy');
+      return {
+        source: storage.source,
+        ...(await reserveSkillBlob({
+          source: storage.source,
+          userId,
+          fileName,
+          tenantId,
+          getFileURL: strategy.getFileURL,
+        })),
+      };
+    },
     grantPermission: async ({
       principalType,
       principalId,
@@ -128,8 +148,19 @@ function createRunner({ getConfig, loadAppConfig, allowServerCredentials = true 
         role._id,
       );
     },
-    saveBuffer: async ({ userId, buffer, fileName, basePath, isImage, tenantId }) => {
+    saveBuffer: async ({
+      userId,
+      buffer,
+      fileName,
+      expectedSource,
+      basePath,
+      isImage,
+      tenantId,
+    }) => {
       const storage = await resolveSkillStorage({ isImage, loadAppConfig: resolveAppConfig });
+      if (storage.source !== expectedSource) {
+        throw new Error('Skill storage changed before upload');
+      }
       const filepath = await storage.saveBuffer({
         userId: userId ?? SYSTEM_USER_ID,
         buffer,
@@ -146,7 +177,7 @@ function createRunner({ getConfig, loadAppConfig, allowServerCredentials = true 
     deleteFile: async (file) => {
       const strategy = getStrategyFunctions(file.source);
       if (!strategy.deleteFile) {
-        return;
+        throw new Error(`Skill storage backend ${file.source} cannot delete files`);
       }
       await strategy.deleteFile(
         await getSyntheticReq({

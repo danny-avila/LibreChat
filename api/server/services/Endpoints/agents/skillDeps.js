@@ -39,6 +39,7 @@ const {
 const { checkPermission, grantPermission } = require('~/server/services/PermissionService');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 const db = require('~/models');
+const { deleteSkillForLegacy } = require('~/server/services/Skills/deletion');
 
 const deploymentSkillMethods = createDeploymentSkillMethods({
   getSkillById: db.getSkillById,
@@ -82,6 +83,9 @@ const skillFileSaveDeps = {
   upsertSkillFile: db.upsertSkillFile,
   resolveStorage: resolveSkillStorage,
   getStrategyFunctions,
+  reserveSkillUploadIntent: db.reserveSkillUploadIntent,
+  transitionSkillUploadIntent: db.transitionSkillUploadIntent,
+  preserveExistingSkillBlob: db.preserveExistingSkillBlob,
 };
 const saveSkillFileContent = createSkillFileSaver(skillFileSaveDeps);
 const saveSkillManagementFileContent = createSkillManagementFileSaver(skillFileSaveDeps);
@@ -328,7 +332,7 @@ const skillToolDeps = {
   getAuthorSkillByName,
   createSkill: db.createSkill,
   updateSkill: db.updateSkill,
-  deleteSkill: db.deleteSkill,
+  deleteSkill: deleteSkillForLegacy,
   canCreateSkill,
   canEditSkill,
   grantSkillOwner,

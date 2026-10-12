@@ -511,8 +511,14 @@ describe('Skill routes', () => {
       const saveBuffer = jest.fn().mockResolvedValue(savedFilepath);
       const { getFileStrategy } = require('~/server/utils/getFileStrategy');
       const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-      getFileStrategy.mockReturnValueOnce('cloudfront');
-      getStrategyFunctions.mockReturnValueOnce({ saveBuffer });
+      const defaultStrategy = getStrategyFunctions();
+      getFileStrategy.mockReturnValue('cloudfront');
+      const cloudfrontStrategy = {
+        saveBuffer,
+        deleteFile: jest.fn().mockResolvedValue(undefined),
+        getFileURL: jest.fn().mockResolvedValue(savedFilepath),
+      };
+      getStrategyFunctions.mockReturnValue(cloudfrontStrategy);
 
       const zip = new JSZip();
       zip.file(
@@ -532,6 +538,8 @@ describe('Skill routes', () => {
         filename: 'imported-skill.skill',
         contentType: 'application/zip',
       });
+      getFileStrategy.mockReturnValue('local');
+      getStrategyFunctions.mockReturnValue(defaultStrategy);
 
       expect(res.status).toBe(201);
       expect(saveBuffer).toHaveBeenCalledWith(
@@ -810,7 +818,11 @@ describe('Skill routes', () => {
         }
         return Readable.from([buffer]);
       });
-      getStrategyFunctions.mockReturnValue({ saveBuffer, getDownloadStream });
+      getStrategyFunctions.mockReturnValue({
+        saveBuffer,
+        getDownloadStream,
+        deleteFile: jest.fn().mockResolvedValue(undefined),
+      });
 
       try {
         const created = await createSkillAsOwner();

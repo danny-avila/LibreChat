@@ -1,4 +1,5 @@
 import { FileSources } from 'librechat-data-provider';
+import { Types } from 'mongoose';
 import type { Response } from 'express';
 import { createSkillUploadHandler } from './upload';
 
@@ -31,7 +32,15 @@ function harness() {
     getSkillFileByPath: jest.fn(() => file.promise),
     upsertSkillFile: jest.fn(async () => ({ ...originalFile, file_id: 'saved' })),
     resolveStorage: jest.fn(() => ({ source: FileSources.local, saveBuffer })),
-    getStrategyFunctions: jest.fn(() => ({})),
+    getStrategyFunctions: jest.fn(() => ({ deleteFile: jest.fn(async () => undefined) })),
+    preserveExistingSkillBlob: jest.fn(async () => undefined),
+    reserveSkillUploadIntent: jest.fn(async (input) => ({
+      ...input,
+      skillId: new Types.ObjectId(),
+      author: new Types.ObjectId(),
+      state: 'uploading' as const,
+    })),
+    transitionSkillUploadIntent: jest.fn(async () => true),
   } satisfies UploadDeps;
   const req = {
     params: { id: 'skill-id', relativePath: ['references', 'guide.md'] },

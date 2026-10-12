@@ -7,8 +7,19 @@ import type { SaveBufferParams } from '~/storage/types';
 import type { StoredSkillFile } from './upload';
 import { resolveRequestTenantId } from '~/middleware/tenant';
 import { getStorageMetadata } from '~/storage/metadata';
+import { withSkillUploadIntent } from './intent';
+import type { SkillUploadIntentDeps } from './intent';
+import { reserveSkillBlob } from './reservation';
 
-interface SkillFileSaveDeps {
+interface SkillFileSaveDeps extends SkillUploadIntentDeps {
+  preserveExistingSkillBlob: (input: {
+    skillId: string;
+    fileId: string;
+    source: string;
+    storageKey: string;
+    author: string;
+    tenantId?: string;
+  }) => Promise<void>;
   getSkillFileByPath: (skillId: string, relativePath: string) => Promise<StoredSkillFile | null>;
   upsertSkillFile: (
     row: Omit<UpsertSkillFileInput, 'skillId' | 'author'> & { skillId: string; author: string },
@@ -79,19 +90,38 @@ async function saveSkillFile(
   }
 
   const tenantId = resolveRequestTenantId(req);
+  if (existingFile) {
+    await deps.preserveExistingSkillBlob({
+      skillId,
+      fileId: existingFile.file_id,
+      source: existingFile.source,
+      storageKey: existingFile.filepath,
+      author: existingFile.author?.toString() ?? userId,
+      tenantId: existingFile.tenantId ?? tenantId,
+    });
+  }
   const fileId = randomUUID();
   const filename = relativePath.slice(relativePath.lastIndexOf('/') + 1);
   const buffer = Buffer.from(content, 'utf8');
   const storage = deps.resolveStorage(req, { isImage: mimeType.startsWith('image/') });
-  const filepath = await storage.saveBuffer({
+  const strategy = deps.getStrategyFunctions(storage.source) as Partial<StrategyFunctions> & {
+    getFileURL?: (params: {
+      userId: string;
+      fileName: string;
+      basePath: string;
+      tenantId?: string;
+    }) => Promise<string>;
+  };
+  if (!strategy.deleteFile) throw new Error('Skill storage has no deletion strategy');
+  const fileName = `${fileId}__${filename}`;
+  const reservation = await reserveSkillBlob({
+    source: storage.source,
     userId,
-    buffer,
-    fileName: `${fileId}__${filename}`,
-    basePath: 'uploads',
+    fileName,
     tenantId,
+    getFileURL: strategy.getFileURL,
   });
-  const storageMetadata = getStorageMetadata({ filepath, source: storage.source });
-  const cleanupPreviousBlob = (): void => {
+  const cleanupPreviousBlob = (filepath: string): void => {
     if (!existingFile || existingFile.filepath === filepath) {
       return;
     }
@@ -111,47 +141,62 @@ async function saveSkillFile(
 
   let result: StoredSkillFile & { bytes: number; relativePath: string };
   try {
-    const saved = await deps.upsertSkillFile({
+    result = await withSkillUploadIntent(deps, {
       skillId,
-      relativePath,
-      expectedFileId: revision,
-      createOnly: insertOnly,
-      file_id: fileId,
-      filename,
-      filepath,
-      ...storageMetadata,
-      source: storage.source,
-      mimeType,
-      bytes: buffer.length,
-      isExecutable: existingFile?.isExecutable ?? false,
       author: user._id?.toString() ?? userId,
       tenantId,
+      fileId,
+      source: storage.source,
+      reservation,
+      save: () => storage.saveBuffer({ userId, buffer, fileName, basePath: 'uploads', tenantId }),
+      persist: async (filepath) => {
+        const row = await deps.upsertSkillFile({
+          skillId,
+          relativePath,
+          expectedFileId: revision,
+          createOnly: insertOnly,
+          file_id: fileId,
+          filename,
+          filepath,
+          ...getStorageMetadata({ filepath, source: storage.source }),
+          source: storage.source,
+          mimeType,
+          bytes: buffer.length,
+          isExecutable: existingFile?.isExecutable ?? false,
+          author: user._id?.toString() ?? userId,
+          tenantId,
+        });
+        if (!row) {
+          throw Object.assign(new Error('Skill file upsert returned no row'), {
+            code: 'SKILL_FILE_UPSERT_NOT_FOUND',
+          });
+        }
+        return row;
+      },
+      isPersisted: async () => {
+        const persisted = await deps.getSkillFileByPath(skillId, relativePath);
+        return persisted?.file_id === fileId;
+      },
+      deleteReserved: (file, savedPath) =>
+        strategy.deleteFile!(req, {
+          filepath: savedPath ?? file.filepath,
+          ...getStorageMetadata({ filepath: savedPath ?? file.filepath, source: storage.source }),
+          user: userId,
+          tenantId,
+        }),
     });
-    if (!saved) {
-      throw Object.assign(new Error('Skill file save failed to persist metadata'), {
-        code: 'SKILL_FILE_UPSERT_NOT_FOUND',
-      });
-    }
-    result = saved;
   } catch (error) {
     try {
       const persisted = await deps.getSkillFileByPath(skillId, relativePath);
       if (persisted?.file_id === fileId) {
-        cleanupPreviousBlob();
-      } else {
-        await deps.getStrategyFunctions(storage.source).deleteFile?.(req, {
-          filepath,
-          ...storageMetadata,
-          user: userId,
-          tenantId,
-        });
+        cleanupPreviousBlob(persisted.filepath);
       }
     } catch (cleanupError) {
-      logger.error('[saveSkillFileContent] Failed to clean up uploaded blob:', cleanupError);
+      logger.error('[saveSkillFileContent] Failed to verify stored file:', cleanupError);
     }
     throw error;
   }
 
-  cleanupPreviousBlob();
+  cleanupPreviousBlob(result.filepath);
   return { bytes: result.bytes, relativePath: result.relativePath };
 }

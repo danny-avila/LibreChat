@@ -202,6 +202,8 @@ const skillSchema: Schema<ISkillDocument> = new Schema(
       default: 0,
       min: 0,
     },
+    /** Hidden immediately after deletion begins; retained until dependent cleanup completes. */
+    deletingAt: { type: Date, default: undefined },
     /**
      * When `true`, the skill's SKILL.md body is auto-primed into every turn
      * without user `$` invocation or model discretion. Mirrors the

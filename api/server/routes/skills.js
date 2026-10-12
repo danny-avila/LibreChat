@@ -4,6 +4,7 @@ const express = require('express');
 const {
   createImportHandler,
   createSkillUploadHandler,
+  reserveSkillBlob,
   generateCheckAccess,
   getStorageMetadata,
   resolveRequestTenantId,
@@ -20,9 +21,11 @@ const {
 const {
   createSkill,
   getSkillById,
-  deleteSkill,
   upsertSkillFile,
   getSkillFileByPath,
+  reserveSkillUploadIntent,
+  transitionSkillUploadIntent,
+  preserveExistingSkillBlob,
   getRoleByName,
 } = require('~/models');
 const { requireJwtAuth, canAccessSkillResource } = require('~/server/middleware');
@@ -30,6 +33,7 @@ const { grantPermission } = require('~/server/services/PermissionService');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { createFileLimiters } = require('~/server/middleware/limiters/uploadLimiters');
 const { maybeRunGitHubSkillSyncForRequest } = require('~/server/services/Skills/sync');
+const { deleteSkillForLegacy } = require('~/server/services/Skills/deletion');
 const configMiddleware = require('~/server/middleware/config/app');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
 
@@ -122,11 +126,35 @@ const importHandler = createImportHandler({
   }),
   createSkill,
   getSkillById,
-  deleteSkill,
+  deleteSkill: deleteSkillForLegacy,
   upsertSkillFile,
-  saveBuffer: (req, { userId, buffer, fileName, basePath, isImage, tenantId }) => {
+  getSkillFileByPath,
+  reserveSkillUploadIntent,
+  transitionSkillUploadIntent,
+  preserveExistingSkillBlob,
+  reserveBlob: async (req, { userId, fileName, isImage, tenantId }) => {
+    const source = getFileStrategy(req.config, { context: FileContext.skill_file, isImage });
+    const strategy = getStrategyFunctions(source);
+    if (!strategy.saveBuffer || !strategy.deleteFile) {
+      throw new Error('Skill storage cannot guarantee cleanup');
+    }
+    return {
+      source,
+      ...(await reserveSkillBlob({
+        source,
+        userId,
+        fileName,
+        tenantId,
+        getFileURL: strategy.getFileURL,
+      })),
+    };
+  },
+  saveBuffer: (req, { userId, buffer, fileName, expectedSource, basePath, isImage, tenantId }) => {
     const requestTenantId = tenantId ?? resolveRequestTenantId(req);
     const storage = resolveSkillStorage(req, { isImage });
+    if (storage.source !== expectedSource) {
+      throw new Error('Skill storage changed before upload');
+    }
     return storage
       .saveBuffer({ userId, buffer, fileName, basePath, tenantId: requestTenantId })
       .then((filepath) => ({
@@ -137,10 +165,8 @@ const importHandler = createImportHandler({
   },
   deleteFile: (req, file) => {
     const { deleteFile } = getStrategyFunctions(file.source);
-    if (deleteFile) {
-      return deleteFile(req, file);
-    }
-    return Promise.resolve();
+    if (!deleteFile) throw new Error(`Skill storage backend ${file.source} cannot delete files`);
+    return deleteFile(req, file);
   },
   grantPermission,
 });
@@ -154,6 +180,9 @@ const uploadFileHandler = createSkillUploadHandler({
   upsertSkillFile,
   resolveStorage: resolveSkillStorage,
   getStrategyFunctions,
+  reserveSkillUploadIntent,
+  transitionSkillUploadIntent,
+  preserveExistingSkillBlob,
 });
 
 // ---------------------------------------------------------------------------

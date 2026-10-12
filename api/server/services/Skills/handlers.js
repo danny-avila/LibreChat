@@ -1,7 +1,19 @@
 const { createSkillsHandlers } = require('@librechat/api');
 const { isValidObjectIdString } = require('@librechat/data-schemas');
 const { PermissionBits } = require('librechat-data-provider');
-const { createSkill, updateSkill, deleteSkill, deleteSkillFile } = require('~/models');
+const {
+  createSkill,
+  updateSkill,
+  deleteSkillFile,
+  beginSkillDeletion,
+  getSkillDeletion,
+  listSkillUploadIntents,
+  deleteSkillFileAfterBlob,
+  finalizeSkillDeletion,
+  completeSkillDeletion,
+  reopenSkillDeletion,
+  markSkillUploadIntentCleaned,
+} = require('~/models');
 const {
   findAccessibleResources,
   findPubliclyAccessibleResources,
@@ -13,6 +25,7 @@ const {
   withDeploymentSkillIds,
   getSkillStrategyFunctions,
 } = require('~/server/services/Endpoints/agents/skillDeps');
+const { deleteSkillForLegacy } = require('./deletion');
 
 function getSkillsHandlers() {
   const skillDbMethods = getSkillDbMethods();
@@ -21,7 +34,15 @@ function getSkillsHandlers() {
     getSkillById: skillDbMethods.getSkillById,
     listSkillsByAccess: skillDbMethods.listSkillsByAccess,
     updateSkill,
-    deleteSkill,
+    deleteSkill: deleteSkillForLegacy,
+    beginSkillDeletion,
+    getSkillDeletion,
+    listSkillUploadIntents,
+    deleteSkillFileAfterBlob,
+    finalizeSkillDeletion,
+    completeSkillDeletion,
+    reopenSkillDeletion,
+    markSkillUploadIntentCleaned,
     listSkillFiles: skillDbMethods.listSkillFiles,
     deleteSkillFile,
     getSkillFileByPath: skillDbMethods.getSkillFileByPath,
