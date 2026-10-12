@@ -1,5 +1,4 @@
-import React, { useEffect, memo } from 'react';
-import TagManager from 'react-gtm-module';
+import React, { memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Constants, hasConfiguredFooter } from 'librechat-data-provider';
 import type { TStartupConfig } from 'librechat-data-provider';
@@ -19,7 +18,7 @@ type FooterProps = {
   configuredOnly?: boolean;
 };
 
-type FooterStartupConfig = Pick<Partial<TStartupConfig>, 'analyticsGtmId' | 'customFooter'> & {
+type FooterStartupConfig = Pick<Partial<TStartupConfig>, 'customFooter'> & {
   interface?: Pick<NonNullable<TStartupConfig['interface']>, 'privacyPolicy' | 'termsOfService'>;
 };
 
@@ -86,15 +85,6 @@ function Footer({ className, startupConfig, configuredOnly = false }: FooterProp
       localize('com_ui_latest_footer');
   const mainContent = configuredFooter ?? genericFooter;
   const mainContentParts = mainContent === '' ? [] : mainContent.split('|');
-
-  useEffect(() => {
-    if (config?.analyticsGtmId != null && typeof window.google_tag_manager === 'undefined') {
-      const tagManagerArgs = {
-        gtmId: config.analyticsGtmId,
-      };
-      TagManager.initialize(tagManagerArgs);
-    }
-  }, [config?.analyticsGtmId]);
 
   const mainContentRender = mainContentParts.map((text, index) => (
     <React.Fragment key={`main-content-part-${index}`}>
