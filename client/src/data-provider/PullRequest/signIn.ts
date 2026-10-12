@@ -106,10 +106,12 @@ export function watchPullRequestSignIn(
     } catch {
       return;
     }
-    /** An answer already asked for still counts once the watch expires or is replaced, since a
-     *  sign-in that landed just before expiry must refresh pull requests; only a session that
-     *  ended in between discards it, as it would apply to whoever signs in next. */
-    if (startedIn !== session) {
+    /** An answer already asked for still counts once the watch expires, since a sign-in that
+     *  landed just before expiry must refresh pull requests. It is discarded once another sign-in
+     *  replaced this watch, whose own reads now speak for the connection, or once the session
+     *  ended, as it would apply to whoever signs in next. */
+    const current = watches.get(queryClient);
+    if (startedIn !== session || (current != null && current !== watch)) {
       return;
     }
     /** Every answer, so an account removed elsewhere mid-flow also refreshes pull requests. */

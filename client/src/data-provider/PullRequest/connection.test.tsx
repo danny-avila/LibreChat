@@ -262,6 +262,16 @@ describe('pull request connection hooks', () => {
     expect(invalidate).toHaveBeenLastCalledWith([QueryKeys.conversationPullRequest]);
   });
 
+  it("resets the leaving account's cached status when the session ends", async () => {
+    const { client } = setup();
+    client.setQueryData([QueryKeys.pullRequestConnection], connection(true));
+    syncPullRequestConnection(client, connection(true));
+    resetPullRequestCredentials();
+    await waitFor(() =>
+      expect(client.getQueryData([QueryKeys.pullRequestConnection])).toBeUndefined(),
+    );
+  });
+
   it('leaves the next session alone when a disconnect answers after the session ended', async () => {
     let answer: (value?: unknown) => void = () => undefined;
     mockDisconnect.mockImplementation(() => new Promise((resolve) => (answer = resolve)));

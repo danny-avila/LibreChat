@@ -38,6 +38,11 @@ let epoch = 0;
 
 /** Forgets every app's credential with the session, so the next one starts from its own. */
 export function resetPullRequestCredentials(): void {
+  /** The status cached for the account that is leaving is not the next one's: an account switch
+   *  without a logout keeps the query cache, so it is reset (and refetched where watched). */
+  for (const queryClient of refreshedUnder.keys()) {
+    void queryClient.resetQueries([QueryKeys.pullRequestConnection]);
+  }
   refreshedUnder.clear();
   epoch += 1;
 }

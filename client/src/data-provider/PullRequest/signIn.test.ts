@@ -224,6 +224,28 @@ describe('watchPullRequestSignIn', () => {
     expect(mockGetConnection).toHaveBeenCalledTimes(asked);
   });
 
+  it("drops a replaced watch's late answer, leaving the new watch to speak", async () => {
+    const { client, invalidate } = setup();
+    let answerA: (status: TPullRequestConnection) => void = () => undefined;
+    mockGetConnection.mockImplementationOnce(() => new Promise((resolve) => (answerA = resolve)));
+    watchPullRequestSignIn(client, {
+      startedIn: pullRequestSignInSession(),
+      expiresAt: Date.now() + 60 * MINUTE,
+      flowId: 'flow-a',
+    });
+    await focus();
+    /** Flow B replaces A while A's read is still out. */
+    watchPullRequestSignIn(client, {
+      startedIn: pullRequestSignInSession(),
+      expiresAt: Date.now() + 60 * MINUTE,
+      flowId: 'flow-b',
+    });
+    invalidate.mockClear();
+    answerA({ ...connection(true), flowId: 'flow-a' });
+    await pass(0);
+    expect(invalidate).not.toHaveBeenCalledWith([QueryKeys.conversationPullRequest]);
+  });
+
   it('ends the watch when another account signs in without a logout', async () => {
     const { client } = setup();
     setPullRequestSessionOwner('first');
