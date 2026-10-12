@@ -4,6 +4,7 @@ import { expect, test } from '@playwright/test';
 import type { APIRequestContext } from '@playwright/test';
 import type { User } from '../../../types';
 import cleanupUser from '../../../setup/cleanupUser';
+import { loginAdmin } from '../content-filters.helpers';
 import { withMongo } from '../db';
 
 /**
@@ -11,7 +12,8 @@ import { withMongo } from '../db';
  * written in the random-IV `v3:` format and read by format, so records written in the
  * legacy fixed-IV format keep working next to new ones. The `e2e-user-vars` MCP fixture
  * starts only when the token it receives equals the expected plaintext, so a successful
- * reinitialize proves the server decrypted the stored value exactly.
+ * reinitialize proves the server decrypted the stored value exactly. `credentials.writeFormat:
+ * legacy` switches new writes back to the fixed-IV format for rolling upgrades.
  */
 
 const MCP_SERVER = 'e2e-user-vars';
@@ -308,6 +310,54 @@ test.describe('stored credential encryption', () => {
       const stored = await readStoredAuths(userId, MCP_PLUGIN_KEY);
       expect(stored.map((doc) => doc.value)).toEqual([value]);
     } finally {
+      await cleanupCredentials(user);
+    }
+  });
+
+  test('with the legacy write format configured, a saved credential is stored in the legacy format and still connects @scenario:credential-legacy-write-format-config', async ({
+    request,
+  }) => {
+    test.setTimeout(90000);
+    const user = newUser('legacy-format');
+    const adminToken = await loginAdmin(request);
+    const adminHeaders = { Authorization: `Bearer ${adminToken}` };
+    let userId: string | undefined;
+    try {
+      const login = await registerAndLogin(request, user);
+      userId = login.userId;
+      const { token } = login;
+
+      /** Per-user override, so only this fresh user's writes change format. */
+      const put = await request.put(`/api/admin/config/user/${userId}`, {
+        headers: adminHeaders,
+        data: { overrides: { credentials: { writeFormat: 'legacy' } } },
+      });
+      expect(put.status(), await put.text()).toBe(200);
+
+      /** The override reaches the merged config after an async cache invalidation. */
+      await expect
+        .poll(
+          async () => {
+            await installPluginAuth(request, token, MCP_PLUGIN_KEY, { [MCP_VAR]: MCP_TOKEN });
+            const [stored] = await readStoredAuths(login.userId, MCP_PLUGIN_KEY);
+            return LEGACY_FORMAT.test(stored?.value ?? '') ? 'legacy' : stored?.value;
+          },
+          { timeout: 30000, intervals: [500, 1000, 2000] },
+        )
+        .toBe('legacy');
+
+      const stored = await readStoredAuths(userId, MCP_PLUGIN_KEY);
+      expect(stored).toHaveLength(1);
+      expect(stored[0].value).not.toContain(MCP_TOKEN);
+      expect(await mcpVarIsSet(request, token)).toBe(true);
+      expect(await reinitializeMcp(request, token)).toBe(true);
+    } finally {
+      if (userId) {
+        const del = await request.delete(`/api/admin/config/user/${userId}`, {
+          headers: adminHeaders,
+        });
+        expect([200, 204, 404]).toContain(del.status());
+      }
       await cleanupCredentials(user);
     }
   });

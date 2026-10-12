@@ -66,6 +66,18 @@ describe('plugin auth encryption', () => {
     await expect(getUserPluginAuthValue('user-id', 'API_KEY')).resolves.toBe('plain');
   });
 
+  it('stores the legacy fixed-IV format when the write format is legacy', async () => {
+    const { encrypt } = jest.requireActual('@librechat/data-schemas');
+    mockUpdatePluginAuth.mockImplementation(async (doc) => doc);
+
+    await updateUserPluginAuth('user-id', 'API_KEY', 'plugin', 'plain', 'legacy');
+
+    const [[{ value }]] = mockUpdatePluginAuth.mock.calls;
+    expect(value).toBe(await encrypt('plain'));
+    mockFindOnePluginAuth.mockResolvedValue({ value });
+    await expect(getUserPluginAuthValue('user-id', 'API_KEY')).resolves.toBe('plain');
+  });
+
   it('reads a value stored in the legacy fixed-IV format', async () => {
     const { encrypt } = jest.requireActual('@librechat/data-schemas');
     mockFindOnePluginAuth.mockResolvedValue({ value: await encrypt('legacy-plain') });

@@ -1,12 +1,22 @@
-import { encryptV3, decryptV3, decrypt } from '@librechat/data-schemas';
+import { encryptV3, decryptV3, encrypt, decrypt } from '@librechat/data-schemas';
+import type { TCredentialsConfig } from 'librechat-data-provider';
 
 const V3_PREFIX = 'v3:';
 
+export type CredentialWriteFormat = TCredentialsConfig['writeFormat'];
+
 /**
- * Encrypts a stored user credential (plugin, tool, or MCP custom user variable)
- * with a random IV per value. Output carries the `v3:` prefix.
+ * Encrypts a stored user credential (plugin, tool, or MCP custom user variable).
+ * `v3` (the default) uses a random IV per value and carries the `v3:` prefix;
+ * `legacy` writes the fixed-IV format that releases predating `v3` can read.
  */
-export function encryptCredential(value: string): string {
+export async function encryptCredential(
+  value: string,
+  format: CredentialWriteFormat = 'v3',
+): Promise<string> {
+  if (format === 'legacy') {
+    return encrypt(value);
+  }
   return encryptV3(value);
 }
 
