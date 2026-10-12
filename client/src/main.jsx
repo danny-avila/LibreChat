@@ -12,7 +12,7 @@ import 'katex/dist/katex.min.css';
 import 'katex/dist/contrib/copy-tex.js';
 
 /** Read-aloud audio lives in memory now; drop what earlier versions persisted to disk. */
-clearTTSCache();
+void clearTTSCache();
 
 const container = document.getElementById('root');
 const root = createRoot(container);

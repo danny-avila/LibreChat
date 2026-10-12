@@ -39,7 +39,8 @@ export const getTTSCacheGeneration = (): number => generation;
 
 export const hasCachedTTSAudio = (): boolean => audioByKey.size > 0;
 
-/** Whether an earlier build's audio is still on disk (its delete failed), so it can be retried. */
+/** Whether an earlier build's audio may still be on disk (its delete failed), so it can be
+ *  retried. A check that fails reads as "may be", which keeps the retry available. */
 export async function hasLegacyTTSCache(): Promise<boolean> {
   if (typeof caches === 'undefined') {
     return false;
@@ -48,7 +49,7 @@ export async function hasLegacyTTSCache(): Promise<boolean> {
     const found = await Promise.all(LEGACY_TTS_CACHE_NAMES.map((name) => caches.has(name)));
     return found.some(Boolean);
   } catch {
-    return false;
+    return true;
   }
 }
 
@@ -89,19 +90,22 @@ export function setCachedTTSAudio(key: string, audio: Blob, requestGeneration: n
 }
 
 /** Drops every cached recording and any audio earlier versions left in Cache Storage. */
-export function clearTTSCache(): void {
+export function clearTTSCache(): Promise<void> {
   audioByKey.clear();
   totalBytes = 0;
   generation += 1;
   ownerId = undefined;
   if (typeof caches === 'undefined') {
-    return;
+    return Promise.resolve();
   }
-  for (const name of LEGACY_TTS_CACHE_NAMES) {
-    void Promise.resolve()
-      .then(() => caches.delete(name))
-      .catch(() => undefined);
-  }
+  /** Settles when the legacy deletes do; callers that need not know can ignore it. */
+  return Promise.all(
+    LEGACY_TTS_CACHE_NAMES.map((name) =>
+      Promise.resolve()
+        .then(() => caches.delete(name))
+        .catch(() => false),
+    ),
+  ).then(() => undefined);
 }
 
 /** Records the signed-in account; signing in as a different one in this tab empties the cache. */
@@ -109,8 +113,9 @@ export function setTTSCacheOwner(userId?: string | null): void {
   if (!userId) {
     return;
   }
-  if (ownerId !== undefined && ownerId !== userId) {
-    clearTTSCache();
+  /** Audio recorded while no owner was set (after a clear) is not handed to whoever signs in. */
+  if (ownerId !== userId && (ownerId !== undefined || audioByKey.size > 0)) {
+    void clearTTSCache();
   }
   ownerId = userId;
 }

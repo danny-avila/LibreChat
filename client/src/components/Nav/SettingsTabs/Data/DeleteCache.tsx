@@ -32,10 +32,11 @@ export const DeleteCache = ({ disabled = false }: { disabled?: boolean }) => {
 
   const revokeAllUserKeys = useCallback(async () => {
     setIsLoading(true);
-    clearTTSCache();
-    setIsCacheEmpty(true);
+    await clearTTSCache();
+    /** A legacy delete that failed leaves the action available for another try. */
+    await checkCache();
     setIsLoading(false);
-  }, []);
+  }, [checkCache]);
 
   return (
     <div className="flex items-center justify-between">

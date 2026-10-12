@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { clearTTSCache, setCachedTTSAudio, getTTSCacheGeneration } from '~/utils';
 import { DeleteCache } from '../DeleteCache';
 
@@ -41,5 +41,19 @@ describe('DeleteCache', () => {
     has.mockImplementation(async (name: string) => name === 'tts-responses');
     render(<DeleteCache />);
     await waitFor(() => expect(deleteButton()).toBeEnabled());
+  });
+
+  it('stays available after a delete whose legacy cache could not be removed', async () => {
+    setCachedTTSAudio('key', new Blob(['audio']), getTTSCacheGeneration());
+    has.mockImplementation(async (name: string) => name === 'tts-responses');
+    render(<DeleteCache />);
+    await waitFor(() => expect(deleteButton()).toBeEnabled());
+
+    has.mockClear();
+    fireEvent.click(deleteButton());
+    fireEvent.click(await screen.findByRole('button', { name: 'com_ui_delete' }));
+    /** The recheck after the delete finds the legacy cache still there. */
+    await waitFor(() => expect(has).toHaveBeenCalled());
+    expect(deleteButton()).toBeEnabled();
   });
 });

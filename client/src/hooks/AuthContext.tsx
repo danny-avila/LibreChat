@@ -68,7 +68,7 @@ const endSessionClientState = (): void => {
   clearRetainedFileDeletions();
   clearComposerDraftStorage();
   endPullRequestSession();
-  clearTTSCache();
+  void clearTTSCache();
 };
 /**
  * Only recognized codes override the HTTP status used by the login error translation.

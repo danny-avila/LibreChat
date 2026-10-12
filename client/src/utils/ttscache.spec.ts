@@ -105,6 +105,14 @@ describe('in-memory audio cache', () => {
     expect(getCachedTTSAudio('mine')).toBeUndefined();
   });
 
+  it('does not hand audio recorded after a clear to the next account that signs in', () => {
+    setTTSCacheOwner('first');
+    clearTTSCache();
+    setCachedTTSAudio('unowned', audio('unowned'), getTTSCacheGeneration());
+    setTTSCacheOwner('second');
+    expect(getCachedTTSAudio('unowned')).toBeUndefined();
+  });
+
   it('drops audio from a request that was in flight across a clear', () => {
     const generation = getTTSCacheGeneration();
     clearTTSCache();
@@ -138,6 +146,9 @@ describe('legacy Cache Storage cleanup', () => {
 
     has.mockResolvedValue(false);
     await expect(hasLegacyTTSCache()).resolves.toBe(false);
+    /** An unreadable state keeps the retry available rather than reporting it empty. */
+    has.mockRejectedValue(new Error('blocked'));
+    await expect(hasLegacyTTSCache()).resolves.toBe(true);
     Reflect.deleteProperty(globalThis, 'caches');
     await expect(hasLegacyTTSCache()).resolves.toBe(false);
   });
@@ -149,7 +160,7 @@ describe('legacy Cache Storage cleanup', () => {
     const del = jest.fn().mockRejectedValue(new Error('blocked'));
     Object.defineProperty(globalThis, 'caches', { value: { delete: del }, configurable: true });
     expect(() => clearTTSCache()).not.toThrow();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await expect(clearTTSCache()).resolves.toBeUndefined();
     expect(del).toHaveBeenCalled();
   });
 });
