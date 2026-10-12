@@ -4,8 +4,8 @@ import type { ServerRequest } from '~/types';
 import {
   createConversationPullRequestHandler,
   createConversationPullRequestsHandler,
-  resolveTokenReference,
 } from './handler';
+import { resolveTokenReference } from './settings';
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
@@ -34,7 +34,12 @@ const configWith = (pullRequests?: Record<string, unknown>) => ({
   endpoints: { agents: { pullRequests } },
 });
 
-type Lane = { branch: string | null; head: string | null; repo?: string } | null;
+type Lane = {
+  branch: string | null;
+  head: string | null;
+  repo?: string;
+  pullRequest?: number;
+} | null;
 
 function setup(
   options: {
@@ -85,9 +90,14 @@ describe('createConversationPullRequestHandler', () => {
       branch: 'feat/x',
       token: 'ghp_secret',
       head: null,
+      provider: 'github',
+      host: 'github.com',
       ttlMs: 30_000,
       cacheMaxEntries: 500,
       cacheMaxCredentials: 256,
+      sharedCache: false,
+      sharedCacheTimeoutMs: 250,
+      sharedCacheSlots: 65_536,
       allowedRepositories: ['o/r'],
       limits: {
         requestTimeoutMs: 10_000,
@@ -100,6 +110,92 @@ describe('createConversationPullRequestHandler', () => {
     });
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ pullRequest: pr });
+  });
+
+  it('looks up on the configured GitHub host, normalized', async () => {
+    const { run, lookup } = setup({ settings: { ...enabled, host: ' GHE.Example.com ' } });
+    await run();
+    expect(lookup).toHaveBeenCalledWith(expect.objectContaining({ host: 'ghe.example.com' }));
+  });
+
+  /** The operator's YAML holds `base`; a role, group or user override in the database holds `override`. */
+  async function hostFor(base: Record<string, unknown>, override: Record<string, unknown>) {
+    const lookup = jest.fn().mockResolvedValue({ ok: true, value: pr });
+    const handler = createConversationPullRequestHandler({
+      getConvoLaneGit: jest.fn().mockResolvedValue({ branch: 'feat/x', head: null, repo: 'o/r' }),
+      getAppConfig: jest
+        .fn()
+        .mockImplementation(async (options: { baseOnly?: boolean }) =>
+          configWith(options.baseOnly ? base : override),
+        ),
+      lookup,
+      env: { GH_TOKEN: 'ghp_secret' },
+    });
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await handler(
+      { user: { id: 'u1' }, params: { conversationId: 'c1' } } as unknown as ServerRequest,
+      res as unknown as Response,
+    );
+    return lookup.mock.calls[0]?.[0]?.host;
+  }
+
+  it('takes the provider from the operator config, never from a database override', async () => {
+    const lookup = jest.fn().mockResolvedValue({ ok: true, value: pr });
+    const handler = createConversationPullRequestHandler({
+      getConvoLaneGit: jest.fn().mockResolvedValue({ branch: 'feat/x', head: null, repo: 'o/r' }),
+      getAppConfig: jest
+        .fn()
+        .mockImplementation(async (options: { baseOnly?: boolean }) =>
+          configWith(options.baseOnly ? enabled : { ...enabled, provider: 'gitlab' }),
+        ),
+      lookup,
+      env: { GH_TOKEN: 'ghp_secret', GITLAB_TOKEN: 'glpat_other' },
+    });
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await handler(
+      { user: { id: 'u1' }, params: { conversationId: 'c1' } } as unknown as ServerRequest,
+      res as unknown as Response,
+    );
+    expect(lookup).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'github', host: 'github.com', token: 'ghp_secret' }),
+    );
+  });
+
+  it('looks a GitLab lane up with the GitLab token on the GitLab host', async () => {
+    const { run, lookup } = setup({
+      settings: { ...enabled, token: undefined, provider: 'gitlab' },
+      env: { GH_TOKEN: 'ghp_secret', GITLAB_TOKEN: 'glpat_secret' },
+    });
+    await run();
+    expect(lookup).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'gitlab', host: 'gitlab.com', token: 'glpat_secret' }),
+    );
+  });
+
+  it('takes the host from the operator config, never from a database override', async () => {
+    const override = { ...enabled, host: 'attacker.example' };
+    expect(await hostFor({ ...enabled, host: 'ghe.example.com' }, override)).toBe(
+      'ghe.example.com',
+    );
+    expect(await hostFor(enabled, override)).toBe('github.com');
+  });
+
+  it('never sends the token anywhere when the host is not a host name', async () => {
+    const { run, res, lookup } = setup({
+      settings: { ...enabled, host: 'https://ghe.example.com' },
+    });
+    await run();
+    expect(lookup).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ pullRequest: null });
+  });
+
+  it('passes the pull request the conversation linked to', async () => {
+    const { run, lookup } = setup({
+      laneGit: { branch: 'feat/x', head: null, repo: 'o/r', pullRequest: 7 },
+    });
+    await run();
+    expect(lookup).toHaveBeenCalledWith(expect.objectContaining({ pullRequest: 7 }));
   });
 
   it('passes the configured lookup bounds to GitHub', async () => {
@@ -138,6 +234,79 @@ describe('createConversationPullRequestHandler', () => {
     const { run, lookup } = setup({ laneGit: { branch: 'feat/x', head, repo: 'o/r' } });
     await run();
     expect(lookup).toHaveBeenCalledWith(expect.objectContaining({ head }));
+  });
+
+  describe('without an enabled switch or a token reference', () => {
+    const scoped = { allowedRepositories: ['o/r'] };
+
+    it('looks the pull request up, using the deployment GitHub token', async () => {
+      const { run, res, lookup } = setup({ settings: scoped, env: { GITHUB_TOKEN: 'ghp_deploy' } });
+      await run();
+      expect(lookup).toHaveBeenCalledWith(expect.objectContaining({ token: 'ghp_deploy' }));
+      expect(res.json).toHaveBeenCalledWith({ pullRequest: pr });
+    });
+
+    it('answers no pull request, and reads nothing, with no token anywhere', async () => {
+      const { run, res, lookup } = setup({ settings: scoped, env: {} });
+      await run();
+      expect(lookup).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith({ pullRequest: null });
+    });
+
+    it('still reports a configured reference that does not resolve', async () => {
+      const { run, res } = setup({
+        settings: { ...scoped, token: '${MISSING}' },
+        env: { GITHUB_TOKEN: 'ghp_deploy' },
+      });
+      await run();
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'NOT_CONFIGURED' }));
+    });
+
+    it('is off when switched off, even with a token and a scope', async () => {
+      const { run, res, lookup } = setup({
+        settings: { ...scoped, enabled: false },
+        env: { GITHUB_TOKEN: 'ghp_deploy' },
+      });
+      await run();
+      expect(lookup).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith({ pullRequest: null });
+    });
+  });
+
+  describe('allowAllRepositories', () => {
+    const lane = { branch: 'feat/x', head: null, repo: 'someone/else' };
+    const open = { allowAllRepositories: true };
+
+    it('looks up a repository nobody listed, when the administrator opted in', async () => {
+      const { run, lookup } = setup({
+        settings: open,
+        laneGit: lane,
+        env: { GITHUB_TOKEN: 'ghp_deploy' },
+      });
+      await run();
+      expect(lookup).toHaveBeenCalledWith(expect.objectContaining({ repo: 'someone/else' }));
+    });
+
+    it('passes the open scope on, so a fork named by the worker is authorized the same way', async () => {
+      const { run, lookup } = setup({
+        settings: open,
+        laneGit: lane,
+        env: { GITHUB_TOKEN: 'ghp_deploy' },
+      });
+      await run();
+      expect(lookup.mock.calls[0][0].allowedRepositories).toEqual(['*/*']);
+    });
+
+    it('does not look it up without the opt-in, even with a token', async () => {
+      const { run, lookup } = setup({
+        settings: { allowedRepositories: ['o/r'] },
+        laneGit: lane,
+        env: { GITHUB_TOKEN: 'ghp_deploy' },
+      });
+      await run();
+      expect(lookup).not.toHaveBeenCalled();
+    });
   });
 
   describe('repository allowlist', () => {
@@ -194,12 +363,13 @@ describe('createConversationPullRequestHandler', () => {
 
   it('starts the config and the owner-scoped lane reads together, not one after the other', async () => {
     const order: string[] = [];
-    let releaseConfig: (config: unknown) => void = () => undefined;
+    const pending: Array<(config: unknown) => void> = [];
+    const releaseConfig = (config: unknown) => pending.forEach((resolve) => resolve(config));
     const getAppConfig = jest.fn(
       () =>
         new Promise((resolve) => {
           order.push('config:start');
-          releaseConfig = resolve;
+          pending.push(resolve);
         }),
     );
     const getConvoLaneGit = jest.fn(async () => {
@@ -218,7 +388,8 @@ describe('createConversationPullRequestHandler', () => {
       res as unknown as Response,
     );
     await new Promise((resolve) => setImmediate(resolve));
-    expect(order).toEqual(['config:start', 'lane:start']);
+    /** The resolved config and the operator's base config, then the lane, all before any settles. */
+    expect(order).toEqual(['config:start', 'config:start', 'lane:start']);
     releaseConfig(configWith(enabled));
     await done;
     expect(res.json).toHaveBeenCalledWith({ pullRequest: pr });
@@ -330,6 +501,50 @@ describe('createConversationPullRequestsHandler', () => {
     };
     return { run, res, lookup, getConvosLaneGit };
   }
+
+  it('takes the host from the operator config for the batch too', async () => {
+    const lookup = jest.fn().mockResolvedValue({ ok: true, value: pr });
+    const handler = createConversationPullRequestsHandler({
+      getConvosLaneGit: jest.fn().mockResolvedValue([lane('a')]),
+      getAppConfig: jest
+        .fn()
+        .mockImplementation(async (options: { baseOnly?: boolean }) =>
+          configWith(options.baseOnly ? enabled : { ...enabled, host: 'attacker.example' }),
+        ),
+      lookup,
+      env: { GH_TOKEN: 'ghp_secret' },
+    });
+    const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    await handler(
+      { user: { id: 'u1' }, body: { conversationIds: ['a'] } } as unknown as ServerRequest,
+      res as unknown as Response,
+    );
+    expect(lookup).toHaveBeenCalledWith(expect.objectContaining({ host: 'github.com' }));
+  });
+
+  it('keeps conversations on one lane apart when they linked different pull requests', async () => {
+    const linked = (conversationId: string, pullRequest: number) => ({
+      conversationId,
+      laneGit: { branch: 'feat/x', head: null, repo: 'o/r', pullRequest },
+    });
+    const { run, lookup } = batch({ lanes: [linked('a', 7), linked('b', 9)] });
+    await run({ conversationIds: ['a', 'b'] });
+    expect(lookup).toHaveBeenCalledTimes(2);
+    expect(lookup).toHaveBeenCalledWith(expect.objectContaining({ pullRequest: 7 }));
+    expect(lookup).toHaveBeenCalledWith(expect.objectContaining({ pullRequest: 9 }));
+  });
+
+  it('looks up any repository on the batch route too, when the administrator opted in', async () => {
+    const { run, lookup } = batch({
+      settings: { allowAllRepositories: true },
+      lanes: [
+        { conversationId: 'a', laneGit: { branch: 'feat/x', head: null, repo: 'someone/else' } },
+      ],
+      env: { GITHUB_TOKEN: 'ghp_deploy' },
+    });
+    await run({ conversationIds: ['a'] });
+    expect(lookup).toHaveBeenCalledWith(expect.objectContaining({ repo: 'someone/else' }));
+  });
 
   it('answers each conversation in the order asked, from one owner-scoped read', async () => {
     const { run, res, getConvosLaneGit, lookup } = batch();
@@ -869,6 +1084,107 @@ describe('createConversationPullRequestsHandler', () => {
           { conversationId: 'e', pullRequest: pr },
         ],
       });
+    });
+
+    it('does not join a lookup started for another host', async () => {
+      const hosts: Array<string | undefined> = [];
+      const lookup = jest.fn(
+        (input: { host?: string }) =>
+          new Promise(() => {
+            hosts.push(input.host);
+          }),
+      );
+      const settings = { ...enabled, batchTimeoutSeconds: 1 };
+      const getAppConfig = jest
+        .fn()
+        .mockResolvedValueOnce(configWith(settings))
+        .mockResolvedValueOnce(configWith(settings))
+        .mockResolvedValue(configWith({ ...settings, host: 'ghe.example.com' }));
+      const handler = createConversationPullRequestsHandler({
+        getConvosLaneGit: jest.fn(async () => [lane('a', 'o/r', 'feat/shared')]),
+        getAppConfig,
+        lookup: lookup as never,
+        env: { GH_TOKEN: 'ghp_secret' },
+      });
+      const call = () =>
+        handler(
+          { user: { id: 'u1' }, body: { conversationIds: ['a'] } } as unknown as ServerRequest,
+          { status: jest.fn().mockReturnThis(), json: jest.fn() } as unknown as Response,
+        );
+      void call();
+      await flush();
+      void call();
+      await flush();
+      expect(hosts).toEqual(['github.com', 'ghe.example.com']);
+    });
+
+    it.each([
+      ['sharing setting', { sharedCache: true }],
+      ['shared cache deadline', { sharedCache: true, sharedCacheTimeoutMs: 10 }],
+      ['cache capacity', { cacheMaxEntries: 50 }],
+    ])('does not join a lookup started with another %s', async (_label, changed) => {
+      const inputs: unknown[] = [];
+      const lookup = jest.fn(
+        (input: unknown) =>
+          new Promise(() => {
+            inputs.push(input);
+          }),
+      );
+      const settings = { ...enabled, batchTimeoutSeconds: 1 };
+      const getAppConfig = jest
+        .fn()
+        .mockResolvedValueOnce(configWith(settings))
+        .mockResolvedValueOnce(configWith(settings))
+        .mockResolvedValue(configWith({ ...settings, ...changed }));
+      const handler = createConversationPullRequestsHandler({
+        getConvosLaneGit: jest.fn(async () => [lane('a', 'o/r', 'feat/shared')]),
+        getAppConfig,
+        lookup: lookup as never,
+        env: { GH_TOKEN: 'ghp_secret' },
+      });
+      const call = () =>
+        handler(
+          { user: { id: 'u1' }, body: { conversationIds: ['a'] } } as unknown as ServerRequest,
+          { status: jest.fn().mockReturnThis(), json: jest.fn() } as unknown as Response,
+        );
+      void call();
+      await flush();
+      void call();
+      await flush();
+      expect(inputs).toHaveLength(2);
+      expect(inputs[1]).toMatchObject(changed);
+    });
+
+    it('does not join a lookup started for another provider on the same host', async () => {
+      const providers: Array<string | undefined> = [];
+      const lookup = jest.fn(
+        (input: { provider?: string }) =>
+          new Promise(() => {
+            providers.push(input.provider);
+          }),
+      );
+      const settings = { ...enabled, host: 'git.example.com', batchTimeoutSeconds: 1 };
+      const getAppConfig = jest
+        .fn()
+        .mockResolvedValueOnce(configWith(settings))
+        .mockResolvedValueOnce(configWith(settings))
+        .mockResolvedValue(configWith({ ...settings, provider: 'gitlab' as const }));
+      const handler = createConversationPullRequestsHandler({
+        getConvosLaneGit: jest.fn(async () => [lane('a', 'o/r', 'feat/shared')]),
+        getAppConfig,
+        lookup: lookup as never,
+        env: { GH_TOKEN: 'ghp_secret' },
+      });
+      const call = () =>
+        handler(
+          { user: { id: 'u1' }, body: { conversationIds: ['a'] } } as unknown as ServerRequest,
+          { status: jest.fn().mockReturnThis(), json: jest.fn() } as unknown as Response,
+        );
+      void call();
+      await flush();
+      void call();
+      await flush();
+      expect(providers).toEqual(['github', 'gitlab']);
     });
 
     it('gives every conversation on a shared branch the same failure when that lookup fails', async () => {
