@@ -34,6 +34,7 @@ import type {
 import type { SetterOrUpdater } from 'recoil';
 import type { AnnounceOptions } from '~/common';
 import {
+  activeSubagentPanel,
   closeParentSubagentProgress,
   listRegisteredSubagentProgressKeys,
   reduceSubagentProgress,
@@ -225,27 +226,34 @@ export default function useStepHandler({
     [resolveSubagentInvocationKey, subagentStore],
   );
 
-  /**
-   * Resets all accumulated subagent state. Kept for conversation-switch
-   * cleanup (see top-level hook usage) but NOT called from `clearStepMaps`:
-   * the collapsed SubagentCall ticker and its panel read from these atoms to
-   * render the child's content parts, and we want that history to remain
-   * visible after the stream ends so the user can reopen the panel for
-   * auditability. The atoms are bounded by aggregated structure and
-   * per-conversation (one atom per subagent spawn), so growth is proportional
-   * to messages: the same growth profile as the rest of the conversation
-   * state.
-   */
-  const resetSubagentAtoms = useCallback((): void => {
-    for (const invocationKey of takeRegisteredSubagentProgressKeys()) {
-      /** Clear before freeing: `remove` drops the cached family member but
-       *  tells nothing still subscribed to it, so anything mounted at this
-       *  boundary has to see the empty value first. */
-      subagentStore.set(subagentProgressByToolCallId(invocationKey), null);
-      subagentStore.set(subagentParentStreamOpenByToolCallId(invocationKey), false);
-      removeSubagentProgressAtoms(invocationKey);
-    }
-  }, [subagentStore]);
+  /** Navigation retains the selected durable task; host teardown drains every invocation. */
+  const resetSubagentAtoms = useCallback(
+    ({ preserveSelectedTask = false }: { preserveSelectedTask?: boolean } = {}): void => {
+      const selected = preserveSelectedTask ? subagentStore.get(activeSubagentPanel) : null;
+      const retainedKey =
+        selected?.host === 'conversation' && selected.durable != null
+          ? subagentProgressKey(
+              selected.parentMessageId,
+              selected.event?.progressKey ?? selected.toolCallId,
+              selected.partIndex,
+            )
+          : null;
+      for (const invocationKey of takeRegisteredSubagentProgressKeys()) {
+        subagentStore.set(subagentParentStreamOpenByToolCallId(invocationKey), false);
+        if (invocationKey === retainedKey) {
+          registerSubagentProgressKey(invocationKey);
+          subagentStore.set(
+            subagentProgressByToolCallId(invocationKey),
+            closeParentSubagentProgress,
+          );
+          continue;
+        }
+        subagentStore.set(subagentProgressByToolCallId(invocationKey), null);
+        removeSubagentProgressAtoms(invocationKey);
+      }
+    },
+    [subagentStore],
+  );
 
   const closeParentSubagentStreams = useCallback((): void => {
     for (const invocationKey of listRegisteredSubagentProgressKeys()) {
