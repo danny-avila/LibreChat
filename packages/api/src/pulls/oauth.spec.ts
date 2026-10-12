@@ -953,6 +953,32 @@ describe('the connection generation', () => {
     return user;
   }
 
+  it('keeps the new connection when only the final check of a sign-in fails to read', async () => {
+    const { oauth } = setup([
+      () => json({ access_token: 'previous' }),
+      () => json({ access_token: 'current' }),
+    ]);
+    const user = await existing();
+    await connect(oauth, user);
+    const { claims } = await started(oauth, user);
+    const original = store.isAgentTriggerPrincipalActive.bind(store);
+    let calls = 0;
+    const check = jest
+      .spyOn(store, 'isAgentTriggerPrincipalActive')
+      .mockImplementation(async (id) => {
+        calls += 1;
+        /** The check before the exchange reads; the one after storing hits an outage. */
+        if (calls === 2) throw new Error('mongo down');
+        return original(id);
+      });
+    try {
+      await expect(oauth.complete(claims, 'code', github)).rejects.toThrow('mongo down');
+    } finally {
+      check.mockRestore();
+    }
+    await expect(oauth.token(user, github)).resolves.toBe('current');
+  });
+
   it('lets one of two sign-ins completing together connect, and refuses the other as stale', async () => {
     /** Both exchanges are under way before either stores, so both passed the check before it. */
     let answer: () => void = () => undefined;

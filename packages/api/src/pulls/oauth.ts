@@ -844,6 +844,11 @@ export function createPullRequestOAuth({
       try {
         await assertCurrent({ ...state, generation });
       } catch (error) {
+        /** Only a confirmed fence undoes the sign-in; a failed check read is an outage, and the
+         *  stored grant under the new generation stays the user's connection. */
+        if (!(error instanceof InactivePrincipalError || error instanceof StaleFlowError)) {
+          throw error;
+        }
         /**
          * Both undone, each attempted whatever the other does: the grant, and the generation this
          * sign-in set (only while it is still current). Either alone keeps the grant unusable, so
