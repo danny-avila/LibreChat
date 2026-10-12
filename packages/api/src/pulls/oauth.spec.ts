@@ -1226,6 +1226,40 @@ describe('completion during account deletion', () => {
     await expect(complete(oauth, user)).rejects.toThrow('not active');
     expect(await tokens().countDocuments({ userId: _id, type: PULL_REQUEST_OAUTH_TYPE })).toBe(0);
   });
+
+  it('keeps its grant unusable when its removal fails and the deletion is then cancelled', async () => {
+    const user = userId();
+    const _id = new mongoose.Types.ObjectId(user);
+    await users().insertOne({ _id, email: `${user}@example.com` });
+    /** Removing the grant fails; rolling back the generation does not. */
+    const failing: PullRequestOAuthStore = {
+      ...store,
+      deleteTokens: async (query) => {
+        if ('scope' in query && query.scope.startsWith(`${PULL_REQUEST_OAUTH_TYPE}:`)) {
+          throw new Error('mongo down');
+        }
+        return store.deleteTokens(query);
+      },
+    };
+    const oauth = createPullRequestOAuth({
+      store: failing,
+      fetchFn: jest.fn(async () => {
+        /** The deletion starts during the exchange: its fence, then every token of the user. */
+        await users().updateOne({ _id }, { $set: { agentTriggerDeletionStartedAt: new Date() } });
+        await tokens().deleteMany({ userId: _id });
+        return json({ access_token: 'late' });
+      }),
+      secret,
+      redirectUri,
+      encrypt,
+      decrypt,
+    });
+    await expect(complete(oauth, user)).rejects.toThrow('not active');
+    /** The deletion fails and is cancelled: the fence goes, the leftover grant stays. */
+    await users().updateOne({ _id }, { $unset: { agentTriggerDeletionStartedAt: '' } });
+    expect(await tokens().countDocuments({ userId: _id, type: PULL_REQUEST_OAUTH_TYPE })).toBe(1);
+    await expect(oauth.token(user, github)).resolves.toBeNull();
+  });
 });
 
 describe('disconnect', () => {

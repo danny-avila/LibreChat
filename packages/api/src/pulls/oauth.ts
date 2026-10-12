@@ -844,8 +844,15 @@ export function createPullRequestOAuth({
       try {
         await assertCurrent({ ...state, generation });
       } catch (error) {
-        /** Best effort: should it fail, the grant's generation is no longer the user's anyway. */
-        await store.deleteTokens({ scope: scopeOf(state.userId, config), token: stored });
+        /**
+         * Both undone, each attempted whatever the other does: the grant, and the generation this
+         * sign-in set (only while it is still current). Either alone keeps the grant unusable, so
+         * a deletion that is later cancelled cannot make it a connection.
+         */
+        await Promise.allSettled([
+          store.deleteTokens({ scope: scopeOf(state.userId, config), token: stored }),
+          restoreGeneration(state.userId, generation, state.generation),
+        ]);
         throw error;
       }
     },
