@@ -72,6 +72,9 @@ export const usePullRequestConnectionQuery = () => {
       enabled: isConnectionKnowable(startupConfig),
       retry: false,
       refetchOnWindowFocus: true,
+      /** The row renders inside Settings, whose visibility check (`usePullRequestConnectionStatus`)
+       *  asks as Settings mounts; the row reuses that answer instead of asking again. */
+      refetchOnMount: false,
     },
   );
 

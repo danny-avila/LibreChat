@@ -66,6 +66,9 @@ export default function ConnectedAccounts() {
   const [connectError, setConnectError] = useState<ConnectError | null>(null);
   const [disconnectFailed, setDisconnectFailed] = useState(false);
   const actionRef = useRef<HTMLButtonElement | null>(null);
+  const groupRef = useRef<HTMLDivElement | null>(null);
+  /** Where focus goes when a disconnect removes the row along with its trigger. */
+  const fallbackRef = useRef<HTMLElement | null>(null);
   const keepFocus = useRef(false);
 
   /**
@@ -153,6 +156,9 @@ export default function ConnectedAccounts() {
 
   const disconnect = () => {
     setDisconnectFailed(false);
+    /** Taken before the request: removing a grant whose app is off removes this row too. */
+    fallbackRef.current =
+      groupRef.current?.closest<HTMLElement>('[role="tabpanel"], [role="dialog"]') ?? null;
     disconnectMutation.mutate(undefined, {
       onSuccess: () => {
         keepFocus.current = true;
@@ -254,6 +260,7 @@ export default function ConnectedAccounts() {
       }}
     >
       <div
+        ref={groupRef}
         role="group"
         aria-labelledby={labelId}
         aria-describedby={descriptionId}
@@ -291,7 +298,12 @@ export default function ConnectedAccounts() {
         className="w-11/12 max-w-md"
         onCloseAutoFocus={(event) => {
           event.preventDefault();
-          actionRef.current?.focus();
+          const action = actionRef.current;
+          if (action?.isConnected === true) {
+            action.focus();
+          } else {
+            fallbackRef.current?.focus();
+          }
         }}
       >
         <AlertDialogHeader>

@@ -5,6 +5,7 @@ import { QueryKeys } from 'librechat-data-provider';
 import { render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TPullRequestConnection, TStartupConfig } from 'librechat-data-provider';
+import { usePullRequestConnectionStatus } from '~/data-provider/PullRequest/connection';
 import { stopPullRequestSignIns } from '~/data-provider/PullRequest/signIn';
 import { endPullRequestSession } from '~/data-provider/PullRequest/queries';
 import ConnectedAccounts from '../ConnectedAccounts';
@@ -57,6 +58,26 @@ const renderRow = () => {
     </QueryClientProvider>,
   );
   return { client, invalidate, unmount };
+};
+
+/** Settings as the registry shows the row: inside a tab panel, only while the status allows it. */
+function SettingsPanel() {
+  const status = usePullRequestConnectionStatus();
+  return (
+    <div role="tabpanel" tabIndex={-1}>
+      {status?.connected === true && <ConnectedAccounts />}
+    </div>
+  );
+}
+
+const renderPanel = () => {
+  const client = new QueryClient({ logger, defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={client}>
+      <SettingsPanel />
+    </QueryClientProvider>,
+  );
+  return { client };
 };
 
 const fakeWindow = () => ({ opener: {} as unknown, location: { href: '' }, close: jest.fn() });
@@ -384,6 +405,35 @@ describe('ConnectedAccounts', () => {
     const connect = await screen.findByRole('button', { name: /com_ui_pr_account_connect_aria/ });
     expect(screen.getByRole('status')).toHaveTextContent('com_ui_pr_account_not_connected');
     await waitFor(() => expect(connect).toHaveFocus());
+  });
+
+  it('asks for the status once when Settings reveals a grant whose app is off', async () => {
+    mockStartup.current = { pullRequestsEnabled: true };
+    mockGetConnection.mockResolvedValue({ configured: false, connected: true });
+    renderPanel();
+
+    expect(
+      await screen.findByRole('button', { name: /com_ui_pr_account_disconnect_aria/ }),
+    ).toBeInTheDocument();
+    expect(mockGetConnection).toHaveBeenCalledTimes(1);
+  });
+
+  it('moves focus to the panel when disconnecting removes the last row', async () => {
+    mockStartup.current = { pullRequestsEnabled: true };
+    mockGetConnection.mockResolvedValue({ configured: false, connected: true });
+    mockDisconnect.mockResolvedValue(undefined);
+    renderPanel();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /com_ui_pr_account_disconnect_aria/ }),
+    );
+    await screen.findByRole('alertdialog');
+    mockGetConnection.mockResolvedValue({ configured: false, connected: false });
+    await userEvent.click(screen.getByRole('button', { name: 'com_ui_pr_account_disconnect' }));
+
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+    expect(screen.queryByRole('group')).toBeNull();
+    await waitFor(() => expect(screen.getByRole('tabpanel')).toHaveFocus());
   });
 
   it('cannot be cancelled or dismissed once the disconnect is sent', async () => {
