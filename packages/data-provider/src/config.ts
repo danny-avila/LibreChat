@@ -3957,6 +3957,13 @@ export const configSchema = z.object({
   memory: memorySchema.optional(),
   summarization: summarizationConfigSchema.optional(),
   skillSync: skillSyncConfigSchema,
+  skillDeletion: z
+    .object({
+      sweepIntervalMs: z.number().int().min(1_000).default(60_000),
+      claimLeaseMs: z.number().int().min(1_000).default(120_000),
+    })
+    .strict()
+    .default(() => ({ sweepIntervalMs: 60_000, claimLeaseMs: 120_000 })),
   secureImageLinks: z.boolean().optional(),
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
   conversationList: conversationListConfigSchema.default(() =>

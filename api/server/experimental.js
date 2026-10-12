@@ -495,7 +495,7 @@ if (cluster.isMaster) {
     const appConfig = await getAppConfig();
     initializeFileStorage(appConfig);
     initializeGitHubSkillSync(appConfig);
-    startSkillDeletionSweep();
+    startSkillDeletionSweep(appConfig.skillDeletion);
     // Register configured tool-approval policy hooks (mirrors the standard startup path).
     // Honors the `enabled` kill switch; hooks are base-config-only, registered process-wide.
     // Read from the BASE config specifically — `appConfig` above (getAppConfig() with no

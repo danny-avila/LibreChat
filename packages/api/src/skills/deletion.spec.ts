@@ -111,6 +111,25 @@ it('cleans a committed historical blob after its SkillFile row was replaced', as
   expect(h.deps.deleteReservedBlob).toHaveBeenCalledTimes(1);
 });
 
+it('deletes a current file blob only once when its committed intent points at the same upload', async () => {
+  const h = harness();
+  h.intents.push({
+    skillId,
+    author,
+    fileId: 'file-1',
+    source: 'local',
+    storageKey: '/uploads/owner/file-1',
+    writerId: 'writer',
+    state: 'committed',
+  });
+  await expect(runSkillDeletion(skillId.toString(), h.deps)).resolves.toMatchObject({
+    cleanupComplete: true,
+  });
+  expect(h.deps.deleteBlob).toHaveBeenCalledTimes(1);
+  expect(h.deps.deleteReservedBlob).not.toHaveBeenCalled();
+  expect(h.intents[0].cleanedAt).toBeDefined();
+});
+
 it('resweeps abandoned intents even after an earlier clean pass', async () => {
   const h = harness();
   h.files.length = 0;

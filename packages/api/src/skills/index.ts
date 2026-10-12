@@ -12,4 +12,5 @@ export * from './management';
 export * from './upload';
 export * from './save';
 export * from './deletion';
+export * from './deletionService';
 export * from './reservation';

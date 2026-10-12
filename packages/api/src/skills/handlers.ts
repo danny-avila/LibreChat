@@ -73,12 +73,12 @@ export interface SkillsHandlersDeps {
     id: string,
   ) => Promise<import('@librechat/data-schemas').ISkillDeletion | null>;
   listSkillUploadIntents: (
-    id: Types.ObjectId,
+    id: string,
   ) => Promise<import('@librechat/data-schemas').ISkillUploadIntent[]>;
   deleteSkillFileAfterBlob: (skillId: string, fileId: string) => Promise<boolean>;
   finalizeSkillDeletion: (id: string) => Promise<DeleteSkillResult>;
-  completeSkillDeletion: (id: Types.ObjectId) => Promise<void>;
-  reopenSkillDeletion: (id: Types.ObjectId) => Promise<void>;
+  completeSkillDeletion: (id: string) => Promise<void>;
+  reopenSkillDeletion: (id: string) => Promise<void>;
   markSkillUploadIntentCleaned: (fileId: string) => Promise<void>;
   listSkillFiles: (
     skillId: string | Types.ObjectId,

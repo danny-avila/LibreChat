@@ -25,16 +25,20 @@ export interface SkillLifecycleMethods {
   discoverUnjournaledDeletions: () => Promise<number>;
   listPendingSkillDeletions: (limit?: number) => Promise<ISkillDeletion[]>;
   listSkillDeletionTombstones: (limit?: number) => Promise<ISkillDeletion[]>;
-  noteSkillDeletionAttempt: (skillId: Types.ObjectId) => Promise<void>;
-  claimSkillDeletion: (skillId: Types.ObjectId, owner: string, leaseMs: number) => Promise<boolean>;
-  refreshSkillDeletionClaim: (
-    skillId: Types.ObjectId,
+  noteSkillDeletionAttempt: (skillId: string | Types.ObjectId) => Promise<void>;
+  claimSkillDeletion: (
+    skillId: string | Types.ObjectId,
     owner: string,
     leaseMs: number,
   ) => Promise<boolean>;
-  releaseSkillDeletionClaim: (skillId: Types.ObjectId, owner: string) => Promise<void>;
-  completeSkillDeletion: (skillId: Types.ObjectId) => Promise<void>;
-  reopenSkillDeletion: (skillId: Types.ObjectId) => Promise<void>;
+  refreshSkillDeletionClaim: (
+    skillId: string | Types.ObjectId,
+    owner: string,
+    leaseMs: number,
+  ) => Promise<boolean>;
+  releaseSkillDeletionClaim: (skillId: string | Types.ObjectId, owner: string) => Promise<void>;
+  completeSkillDeletion: (skillId: string | Types.ObjectId) => Promise<void>;
+  reopenSkillDeletion: (skillId: string | Types.ObjectId) => Promise<void>;
   reserveSkillUploadIntent: (input: IntentInput) => Promise<ISkillUploadIntent>;
   transitionSkillUploadIntent: (
     fileId: string,
@@ -42,7 +46,7 @@ export interface SkillLifecycleMethods {
     from: ISkillUploadIntent['state'],
     to: ISkillUploadIntent['state'],
   ) => Promise<boolean>;
-  listSkillUploadIntents: (skillId: Types.ObjectId) => Promise<ISkillUploadIntent[]>;
+  listSkillUploadIntents: (skillId: string | Types.ObjectId) => Promise<ISkillUploadIntent[]>;
   markSkillUploadIntentCleaned: (fileId: string) => Promise<void>;
   preserveExistingSkillBlob: (input: {
     skillId: string;
@@ -141,12 +145,12 @@ export function createSkillLifecycleMethods(
       .lean()) as ISkillDeletion[];
   }
 
-  async function noteSkillDeletionAttempt(skillId: Types.ObjectId): Promise<void> {
+  async function noteSkillDeletionAttempt(skillId: string | Types.ObjectId): Promise<void> {
     await deletionModel().updateOne({ skillId }, { $set: { lastAttemptAt: new Date() } });
   }
 
   async function claimSkillDeletion(
-    skillId: Types.ObjectId,
+    skillId: string | Types.ObjectId,
     owner: string,
     leaseMs: number,
   ): Promise<boolean> {
@@ -166,7 +170,7 @@ export function createSkillLifecycleMethods(
   }
 
   async function refreshSkillDeletionClaim(
-    skillId: Types.ObjectId,
+    skillId: string | Types.ObjectId,
     owner: string,
     leaseMs: number,
   ): Promise<boolean> {
@@ -177,18 +181,21 @@ export function createSkillLifecycleMethods(
     return result.modifiedCount === 1;
   }
 
-  async function releaseSkillDeletionClaim(skillId: Types.ObjectId, owner: string): Promise<void> {
+  async function releaseSkillDeletionClaim(
+    skillId: string | Types.ObjectId,
+    owner: string,
+  ): Promise<void> {
     await deletionModel().updateOne(
       { skillId, claimOwner: owner },
       { $unset: { claimOwner: '', claimExpiresAt: '' } },
     );
   }
 
-  async function completeSkillDeletion(skillId: Types.ObjectId): Promise<void> {
+  async function completeSkillDeletion(skillId: string | Types.ObjectId): Promise<void> {
     await deletionModel().updateOne({ skillId }, { $set: { completedAt: new Date() } });
   }
 
-  async function reopenSkillDeletion(skillId: Types.ObjectId): Promise<void> {
+  async function reopenSkillDeletion(skillId: string | Types.ObjectId): Promise<void> {
     await deletionModel().updateOne({ skillId }, { $unset: { completedAt: '' } });
   }
 
@@ -216,7 +223,9 @@ export function createSkillLifecycleMethods(
     return result.modifiedCount === 1;
   }
 
-  async function listSkillUploadIntents(skillId: Types.ObjectId): Promise<ISkillUploadIntent[]> {
+  async function listSkillUploadIntents(
+    skillId: string | Types.ObjectId,
+  ): Promise<ISkillUploadIntent[]> {
     return (await intentModel().find({ skillId }).lean()) as ISkillUploadIntent[];
   }
 

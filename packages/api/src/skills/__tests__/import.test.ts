@@ -821,6 +821,41 @@ describe('createImportHandler', () => {
     expect(res.body).not.toHaveProperty('_importSummary');
   });
 
+  it('does not delete persisted blobs twice when durable skill deletion owns storage cleanup', async () => {
+    const deps = mockImportDeps();
+    let savedFiles = 0;
+    deps.saveBuffer = jest.fn(async () => ({
+      filepath: `/tmp/imported-${savedFiles++}`,
+      source: 'local',
+    })) as ImportSkillDeps['saveBuffer'];
+    deps.upsertSkillFile = jest
+      .fn()
+      .mockResolvedValueOnce({ _id: new Types.ObjectId() })
+      .mockRejectedValueOnce(
+        new Error('write conflict'),
+      ) as unknown as ImportSkillDeps['upsertSkillFile'];
+    deps.deleteSkill = jest.fn(async () => ({
+      deleted: true,
+      skillAbsent: true,
+      cleanupComplete: true,
+      failedCleanupSteps: [],
+      blobCleanupManaged: true,
+    }));
+    deps.deleteFile = jest.fn(async () => undefined);
+    const handler = createImportHandler(deps);
+    const res = mockResponse();
+
+    await handler(mockZipRequest(await zipWithAdditionalFiles(2, 64)), res);
+
+    expect(deps.deleteSkill).toHaveBeenCalledTimes(1);
+    // The failed, rowless upload is cleaned inline; the durable worker owns the first file.
+    expect(deps.deleteFile).toHaveBeenCalledTimes(1);
+    expect(deps.deleteFile).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ filepath: '/tmp/imported-0' }),
+    );
+  });
+
   it('rolls back an archive whose entry path is unsafe instead of importing it partially', async () => {
     const deps = mockImportDeps();
     deps.deleteFile = jest.fn(async () => undefined);

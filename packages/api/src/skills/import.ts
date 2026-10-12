@@ -137,7 +137,7 @@ export interface ImportSkillDeps extends SkillUploadIntentDeps {
   limits?: Partial<ImportLimits> | ((req: ServerRequest) => Partial<ImportLimits> | undefined);
   createSkill: (data: CreateSkillInput) => Promise<CreateSkillResult>;
   getSkillById: (id: string | Types.ObjectId) => Promise<(ISkill & { _id: Types.ObjectId }) | null>;
-  deleteSkill: (id: string) => Promise<DeleteSkillResult>;
+  deleteSkill: (id: string) => Promise<DeleteSkillResult & { blobCleanupManaged?: boolean }>;
   upsertSkillFile: (row: UpsertSkillFileInput) => Promise<ISkillFile & { _id: Types.ObjectId }>;
   getSkillFileByPath: (skillId: string, relativePath: string) => Promise<ISkillFile | null>;
   reserveBlob: (
@@ -880,7 +880,7 @@ async function rollbackArchiveImport(
   context: ArchivePersistenceContext,
 ): Promise<{ skillRemoved: boolean; cleanupComplete: boolean }> {
   const skillId = context.skillId.toString();
-  let deletion: DeleteSkillResult;
+  let deletion: DeleteSkillResult & { blobCleanupManaged?: boolean };
   try {
     deletion = await deps.deleteSkill(skillId);
   } catch (error) {
@@ -899,7 +899,11 @@ async function rollbackArchiveImport(
 
   if (deletion.skillAbsent && !deletion.cleanupComplete) {
     try {
-      deletion = mergeDeleteSkillResults(deletion, await deps.deleteSkill(skillId));
+      const retried = await deps.deleteSkill(skillId);
+      deletion = {
+        ...mergeDeleteSkillResults(deletion, retried),
+        blobCleanupManaged: deletion.blobCleanupManaged || retried.blobCleanupManaged,
+      };
     } catch (error) {
       logger.error(`[importSkill] Rollback cleanup retry failed for skill ${skillId}:`, error);
     }
@@ -927,9 +931,10 @@ async function rollbackArchiveImport(
   }
 
   const skillFileCleanupIncomplete = deletion.failedCleanupSteps.includes('skill_files');
-  const blobsToDelete = skillFileCleanupIncomplete
-    ? context.persisted.filter((blob) => !blob.rowPersisted)
-    : context.persisted;
+  const blobsToDelete =
+    deletion.blobCleanupManaged || skillFileCleanupIncomplete
+      ? context.persisted.filter((blob) => !blob.rowPersisted)
+      : context.persisted;
 
   const blobCleanupComplete = await cleanupArchiveBlobs(req, deps, context, blobsToDelete);
   return {

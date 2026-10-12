@@ -258,7 +258,7 @@ const startServer = async () => {
     additionalSkills: getDeploymentPluginSkills(),
   });
   initializeGitHubSkillSync(appConfig);
-  startSkillDeletionSweep();
+  startSkillDeletionSweep(appConfig.skillDeletion);
   startExpiredFileSweep({ appConfig, loadAppConfig: getAppConfig });
   // Register any programmatic tool-approval policy hooks declared in
   // `endpoints.agents.toolApproval.hooks`. Honor the `enabled` kill switch: when tool

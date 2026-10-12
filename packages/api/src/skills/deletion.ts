@@ -12,13 +12,13 @@ export interface SkillDeletionDeps {
   beginSkillDeletion: (id: string) => Promise<ISkillDeletion | null>;
   getSkillDeletion: (id: string) => Promise<ISkillDeletion | null>;
   listSkillFiles: (id: string) => Promise<StoredSkillFile[]>;
-  listSkillUploadIntents: (id: Types.ObjectId) => Promise<ISkillUploadIntent[]>;
+  listSkillUploadIntents: (id: string) => Promise<ISkillUploadIntent[]>;
   deleteBlob: (file: StoredSkillFile) => Promise<void>;
   deleteReservedBlob: (intent: ISkillUploadIntent) => Promise<void>;
   deleteSkillFileAfterBlob: (skillId: string, fileId: string) => Promise<boolean>;
   finalizeSkillDeletion: (id: string) => Promise<DeleteSkillResult>;
-  completeSkillDeletion: (id: Types.ObjectId) => Promise<void>;
-  reopenSkillDeletion: (id: Types.ObjectId) => Promise<void>;
+  completeSkillDeletion: (id: string) => Promise<void>;
+  reopenSkillDeletion: (id: string) => Promise<void>;
   markSkillUploadIntentCleaned: (fileId: string) => Promise<void>;
 }
 
@@ -38,9 +38,9 @@ export async function runSkillDeletion(
 ): Promise<SkillDeletionProgress> {
   const journal = (await deps.beginSkillDeletion(id)) ?? (await deps.getSkillDeletion(id));
   if (!journal) return { found: false, cleanupComplete: false, failedSteps: [] };
-  await deps.reopenSkillDeletion(journal.skillId);
+  await deps.reopenSkillDeletion(journal.skillId.toString());
   const failedSteps: DeleteSkillCleanupStep[] = [];
-  const intents = await deps.listSkillUploadIntents(journal.skillId);
+  const intents = await deps.listSkillUploadIntents(journal.skillId.toString());
   // A writer may still finish uploading or committing after this scan. An
   // operator can explicitly abandon an intent after verifying its writer died;
   // a timer alone must not infer that a slow upload is dead.
@@ -48,10 +48,13 @@ export async function runSkillDeletion(
     return { found: true, cleanupComplete: false, failedSteps: ['upload_intents'] };
   }
   const files = await deps.listSkillFiles(id);
+  const currentFileIds = new Set(files.map((file) => file.file_id));
+  const cleanedFileIds = new Set<string>();
   for (const file of files) {
     try {
       await deps.deleteBlob(file);
       await deps.deleteSkillFileAfterBlob(id, file.file_id);
+      cleanedFileIds.add(file.file_id);
     } catch {
       failedSteps.push('skill_files');
     }
@@ -60,8 +63,14 @@ export async function runSkillDeletion(
   for (const intent of intents) {
     if (intent.state === 'committed') {
       if (intent.cleanedAt) continue;
+      if (currentFileIds.has(intent.fileId) && !cleanedFileIds.has(intent.fileId)) {
+        // Keep the intent with its current row for the next retry.
+        continue;
+      }
       try {
-        await deps.deleteReservedBlob(intent);
+        if (!cleanedFileIds.has(intent.fileId)) {
+          await deps.deleteReservedBlob(intent);
+        }
         await deps.markSkillUploadIntentCleaned(intent.fileId);
       } catch {
         failedSteps.push('upload_intents');
@@ -88,6 +97,6 @@ export async function runSkillDeletion(
       failedSteps: finalized.failedCleanupSteps,
     };
   }
-  await deps.completeSkillDeletion(journal.skillId);
+  await deps.completeSkillDeletion(journal.skillId.toString());
   return { found: true, cleanupComplete: true, failedSteps: [] };
 }
