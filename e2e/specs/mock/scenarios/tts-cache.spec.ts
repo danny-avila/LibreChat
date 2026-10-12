@@ -134,6 +134,13 @@ test.describe('read-aloud audio cache', () => {
       }
       await expect(page).toHaveURL(new RegExp(conversationPath));
       expect(await page.evaluate(() => 'ttsSameDocument' in window)).toBe(true);
+      /** On a phone the sidebar drawer reopens over the conversation after signing in. */
+      if ((page.viewportSize()?.width ?? 0) < 768) {
+        const closeSidebar = page.getByTestId('close-sidebar-button');
+        if (await closeSidebar.isVisible()) {
+          await closeSidebar.click();
+        }
+      }
       await page.getByRole('button', { name: 'Read aloud' }).last().click();
       await expect.poll(() => speech.requests()).toBe(2);
     } finally {
