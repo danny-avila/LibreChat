@@ -287,6 +287,8 @@ export function createGitHubPullRequestSource({
     if ((notFoundIsAbsent && response.status === 404) || absent.includes(response.status)) {
       return null;
     }
+    /** The provider no longer accepts the token: revoked, or expired without a refresh. */
+    if (response.status === 401) throw new PullRequestSourceError('CREDENTIAL_REJECTED');
     throw new PullRequestSourceError('UPSTREAM_ERROR');
   }
 

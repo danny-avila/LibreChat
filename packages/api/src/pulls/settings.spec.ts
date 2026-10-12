@@ -1,4 +1,5 @@
 import {
+  resolvePullRequestOAuth,
   resolveTokenReference,
   resolvePullRequestHost,
   resolvePullRequestToken,
@@ -6,6 +7,38 @@ import {
   resolvePullRequestRecording,
   resolvePullRequestProvider,
 } from './settings';
+
+describe('resolvePullRequestOAuth', () => {
+  const oauth = { clientId: '${ID}', clientSecret: '${SECRET}' };
+  const env = { ID: 'client', SECRET: 'secret' };
+
+  it('resolves the app on the provider host', () => {
+    expect(
+      resolvePullRequestOAuth({ provider: 'gitlab', host: 'GitLab.Example.com', oauth }, env),
+    ).toEqual({
+      provider: 'gitlab',
+      host: 'gitlab.example.com',
+      clientId: 'client',
+      clientSecret: 'secret',
+    });
+    expect(resolvePullRequestOAuth({ oauth: { ...oauth, scope: ' repo ' } }, env)).toMatchObject({
+      provider: 'github',
+      host: 'github.com',
+      scope: 'repo',
+    });
+  });
+
+  it('is null without an app, or when a reference does not resolve', () => {
+    expect(resolvePullRequestOAuth({}, env)).toBeNull();
+    expect(resolvePullRequestOAuth({ oauth }, { ID: 'client' })).toBeNull();
+    expect(resolvePullRequestOAuth({ oauth: { ...oauth, clientId: 'literal' } }, env)).toBeNull();
+  });
+
+  it('turns the feature on without a server token or a repository list', () => {
+    expect(isPullRequestFeatureActive({ oauth }, env)).toBe(true);
+    expect(isPullRequestFeatureActive({ oauth, enabled: false }, env)).toBe(false);
+  });
+});
 
 describe('resolvePullRequestProvider', () => {
   it('is GitHub when none is configured', () => {
