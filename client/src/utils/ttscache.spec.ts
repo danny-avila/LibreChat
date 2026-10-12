@@ -65,28 +65,28 @@ describe('openTTSCache and putTTSCache', () => {
     }),
   };
 
-  beforeEach(() => {
+  beforeEach(async () => {
     entries.clear();
-    jest.clearAllMocks();
     Object.defineProperty(globalThis, 'caches', {
       value: { open: jest.fn(async () => cache), delete: jest.fn(async () => true) },
       configurable: true,
     });
+    /** A delete an earlier test left failing would otherwise be retried here. */
+    await clearTTSCache();
+    jest.clearAllMocks();
   });
 
   afterEach(() => {
     Reflect.deleteProperty(globalThis, 'caches');
   });
 
-  it('drops entries keyed by raw message text and keeps hashed ones', async () => {
-    entries.set('https://chat.example/a%20private%20assistant%20reply', {} as Response);
-    entries.set('https://chat.example/tts-cache/private%20reply', {} as Response);
-    entries.set(`https://chat.example/tts-cache/${'b'.repeat(64)}`, {} as Response);
-    entries.set(`https://chat.example/tts-cache/v1/${'a'.repeat(64)}`, {} as Response);
+  it('deletes the legacy raw-text cache on every open and never opens it', async () => {
     await openTTSCache();
-    expect(Array.from(entries.keys())).toEqual([
-      `https://chat.example/tts-cache/v1/${'a'.repeat(64)}`,
-    ]);
+    await openTTSCache();
+    expect(caches.delete).toHaveBeenCalledTimes(2);
+    expect(caches.delete).toHaveBeenCalledWith('tts-responses');
+    expect(caches.open).toHaveBeenCalledWith(TTS_CACHE_NAME);
+    expect(caches.open).not.toHaveBeenCalledWith('tts-responses');
   });
 
   it('writes under the current session and skips a write started before logout', async () => {
@@ -193,6 +193,7 @@ describe('cross-tab logout', () => {
     Object.defineProperty(globalThis, 'caches', { value: { delete: del }, configurable: true });
 
     await expect(openTab().endTTSCacheSession()).resolves.toBeUndefined();
+    expect(del).toHaveBeenCalledWith(TTS_CACHE_NAME);
     expect(del).toHaveBeenCalledWith('tts-responses');
   });
 
@@ -215,63 +216,20 @@ describe('cross-tab logout', () => {
     expect(put).toHaveBeenCalledWith('/tts-cache/new', {});
   });
 
-  it('retries the legacy purge on the next open after a failed one', async () => {
-    const keys = jest
-      .fn()
-      .mockRejectedValueOnce(new Error('blocked'))
-      .mockResolvedValue([{ url: 'https://chat.example/raw%20text' }]);
-    const del = jest.fn(async () => true);
+  it('keeps the cache closed while its delete keeps failing', async () => {
+    const del = jest.fn().mockRejectedValue(new Error('busy'));
+    const open = jest.fn(async () => ({ match: async () => ({}) as Response }));
     Object.defineProperty(globalThis, 'caches', {
-      value: { open: async () => ({ keys, delete: del }) },
+      value: { open, delete: del },
       configurable: true,
     });
     const tab = openTab();
 
-    await tab.openTTSCache();
-    expect(del).not.toHaveBeenCalled();
-    await tab.openTTSCache();
-    expect(del).toHaveBeenCalledWith({ url: 'https://chat.example/raw%20text' });
-  });
-
-  it('purges raw keys written back by an older tab after a sign-in', async () => {
-    const stored = new Set<string>();
-    const cache = {
-      keys: async () => Array.from(stored, (url) => ({ url })),
-      delete: async (request: { url: string }) => stored.delete(request.url),
-    };
-    Object.defineProperty(globalThis, 'caches', {
-      value: { open: async () => cache },
-      configurable: true,
-    });
-    const tab = openTab();
-
-    await tab.openTTSCache();
-    stored.add('https://chat.example/previous%20user%20reply');
+    await tab.endTTSCacheSession();
     tab.openTTSCacheWrites();
-    await tab.openTTSCache();
-    expect(Array.from(stored)).toEqual([]);
-  });
-
-  it('purges again after another tab clears the cache', async () => {
-    Object.assign(globalThis, { BroadcastChannel: FakeChannel });
-    const stored = new Set<string>();
-    const cache = {
-      keys: async () => Array.from(stored, (url) => ({ url })),
-      delete: async (request: { url: string }) => stored.delete(request.url),
-    };
-    Object.defineProperty(globalThis, 'caches', {
-      value: { open: async () => cache, delete: async () => true },
-      configurable: true,
-    });
-    const tab = openTab();
-    const other = openTab();
-    tab.getTTSCacheEpoch();
-
-    await tab.openTTSCache();
-    await other.endTTSCacheSession();
-    stored.add('https://chat.example/raw%20reply');
-    await tab.openTTSCache();
-    expect(Array.from(stored)).toEqual([]);
+    await expect(tab.openTTSCache()).rejects.toThrow();
+    await expect(tab.matchTTSCache('/tts-cache/v1/any')).resolves.toBeUndefined();
+    expect(open).not.toHaveBeenCalled();
   });
 
   it('drops audio a request started before this tab authenticated', async () => {
@@ -301,8 +259,10 @@ describe('cross-tab logout', () => {
     await tab.endTTSCacheSession();
     tab.openTTSCacheWrites();
     await tab.openTTSCache();
-    expect(del).toHaveBeenCalledTimes(2);
-    expect(del.mock.invocationCallOrder[1]).toBeLessThan(open.mock.invocationCallOrder[0]);
+    expect(open).toHaveBeenCalledTimes(1);
+    expect(Math.max(...del.mock.invocationCallOrder)).toBeLessThan(
+      open.mock.invocationCallOrder[0],
+    );
   });
 
   it('carries a logout to other tabs through storage events without BroadcastChannel', async () => {
@@ -318,8 +278,8 @@ describe('cross-tab logout', () => {
     await leaving.endTTSCacheSession();
     window.dispatchEvent(
       new StorageEvent('storage', {
-        key: 'tts-responses',
-        newValue: localStorage.getItem('tts-responses'),
+        key: TTS_CACHE_NAME,
+        newValue: localStorage.getItem(TTS_CACHE_NAME),
       }),
     );
     await reading.putTTSCache('/tts-cache/late', {} as Response, epoch);

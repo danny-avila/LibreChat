@@ -499,8 +499,8 @@ describe('AuthContextProvider — logout onSuccess/onError handling', () => {
 
   it('leaves for the IdP only after the TTS cache delete settles', async () => {
     const replaceSpy = jest.spyOn(window.location, 'replace').mockImplementation(() => {});
-    let settle: (value: boolean) => void = () => undefined;
-    const del = jest.fn(() => new Promise<boolean>((resolve) => (settle = resolve)));
+    const pending: Array<(value: boolean) => void> = [];
+    const del = jest.fn(() => new Promise<boolean>((resolve) => pending.push(resolve)));
     Object.defineProperty(globalThis, 'caches', { value: { delete: del }, configurable: true });
     renderProvider();
 
@@ -511,13 +511,13 @@ describe('AuthContextProvider — logout onSuccess/onError handling', () => {
       });
     });
 
-    expect(del).toHaveBeenCalledWith('tts-responses');
+    expect(del).toHaveBeenCalledWith('tts-responses-v1');
     await act(async () => {
       await Promise.resolve();
     });
     expect(replaceSpy).not.toHaveBeenCalled();
 
-    settle(true);
+    pending.forEach((resolve) => resolve(true));
     await waitFor(() => expect(replaceSpy).toHaveBeenCalled());
     Reflect.deleteProperty(globalThis, 'caches');
   });
@@ -559,7 +559,7 @@ describe('AuthContextProvider — logout onSuccess/onError handling', () => {
       mockCapturedLogoutOptions.onSuccess({ message: 'Logout successful' });
     });
 
-    expect(del).toHaveBeenCalledWith('tts-responses');
+    expect(del).toHaveBeenCalledWith('tts-responses-v1');
     Reflect.deleteProperty(globalThis, 'caches');
   });
 

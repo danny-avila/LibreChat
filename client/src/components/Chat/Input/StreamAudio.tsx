@@ -10,7 +10,7 @@ import {
   MediaSourceAppender,
   usePauseGlobalAudio,
 } from '~/hooks/Audio';
-import { logger, putTTSCache, openTTSCache, getTTSCacheKey, getTTSCacheEpoch } from '~/utils';
+import { logger, putTTSCache, matchTTSCache, getTTSCacheKey, getTTSCacheEpoch } from '~/utils';
 import { useAuthContext } from '~/hooks';
 import { globalAudioId } from '~/common';
 import store from '~/store';
@@ -72,8 +72,7 @@ export default function StreamAudio({ index = 0 }) {
         let cacheKey = latestMessage
           ? await getTTSCacheKey(getSpeechText(latestMessage), voice)
           : null;
-        const cache = await openTTSCache();
-        const cachedResponse = cacheKey ? await cache.match(cacheKey) : undefined;
+        const cachedResponse = cacheKey ? await matchTTSCache(cacheKey) : undefined;
 
         setAudioRunId(activeRunId);
         if (cachedResponse) {

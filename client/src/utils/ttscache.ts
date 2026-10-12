@@ -1,8 +1,9 @@
-export const TTS_CACHE_NAME = 'tts-responses';
+export const TTS_CACHE_NAME = 'tts-responses-v1';
 
-/** Versioned, so a raw-text key an earlier version wrote matches only by spelling out this path. */
+/** Earlier versions keyed this cache by the raw message text, and a tab still running one can
+ *  keep writing to it, so it is never read and is deleted whole on every open and clear. */
+const LEGACY_TTS_CACHE_NAME = 'tts-responses';
 const TTS_CACHE_PATH = '/tts-cache/v1/';
-const TTS_CACHE_KEY = /^\/tts-cache\/v1\/[0-9a-f]{64}$/;
 
 /** Bumped when the cache is cleared or a session opens, so a write started before then cannot
  *  land in the cache that follows. */
@@ -10,9 +11,8 @@ let sessionEpoch = 0;
 /** Shut when a session ends here or in another tab, and reopened only when this tab
  *  authenticates, so a tab still holding the departed session's token cannot write. */
 let writesOpen = true;
-/** Set when deleting the cache failed, so the next open retries before reading or writing. */
+/** Set while deleting the cache keeps failing; the cache is not opened until a delete succeeds. */
 let deletePending = false;
-let legacyPurge: Promise<void> | null = null;
 let channel: BroadcastChannel | null = null;
 let joined = false;
 
@@ -20,7 +20,6 @@ type Notice = 'clear' | 'end';
 
 const onNotice = (notice: string): void => {
   sessionEpoch += 1;
-  legacyPurge = null;
   if (notice === 'end') {
     writesOpen = false;
   }
@@ -70,7 +69,7 @@ const deleteCache = async (): Promise<void> => {
     return;
   }
   try {
-    await caches.delete(TTS_CACHE_NAME);
+    await Promise.all([caches.delete(TTS_CACHE_NAME), caches.delete(LEGACY_TTS_CACHE_NAME)]);
     deletePending = false;
   } catch {
     deletePending = true;
@@ -95,32 +94,31 @@ export async function getTTSCacheKey(text: string, voice?: string | null): Promi
   }
 }
 
-/** Opens the TTS cache. The first open per page load, and after every clear or sign-in, drops
- *  entries that earlier versions keyed by the raw message text: a tab still running such a
- *  version can write them back after a clear. */
+/** Opens the TTS cache, deleting the legacy raw-text cache first. Rejects while a failed delete
+ *  is still pending, so callers fall back to uncached audio rather than read a departed
+ *  session's entries. */
 export async function openTTSCache(): Promise<Cache> {
   if (deletePending) {
     await deleteCache();
+    if (deletePending) {
+      throw new Error('TTS cache unavailable until it is cleared');
+    }
   }
-  const cache = await caches.open(TTS_CACHE_NAME);
-  legacyPurge ??= Promise.resolve()
-    .then(() => cache.keys())
-    .then((keys) =>
-      Promise.all(
-        keys
-          .filter((key) => !TTS_CACHE_KEY.test(new URL(key.url).pathname))
-          .map((key) => cache.delete(key)),
-      ),
-    )
-    .then(
-      () => undefined,
-      () => {
-        /** Storage may recover; the next open retries rather than leaving raw keys behind. */
-        legacyPurge = null;
-      },
-    );
-  await legacyPurge;
-  return cache;
+  try {
+    await caches.delete(LEGACY_TTS_CACHE_NAME);
+  } catch {
+    /** The legacy cache is never read, so failing to drop it only delays its removal. */
+  }
+  return caches.open(TTS_CACHE_NAME);
+}
+
+/** Opens the cache for a lookup; any failure reads as a miss. */
+export async function matchTTSCache(key: string): Promise<Response | undefined> {
+  try {
+    return await (await openTTSCache()).match(key);
+  } catch {
+    return undefined;
+  }
 }
 
 export const getTTSCacheEpoch = (): number => {
@@ -146,13 +144,12 @@ export async function putTTSCache(key: string, response: Response, epoch: number
 
 const clear = (notice: Notice): Promise<void> => {
   sessionEpoch += 1;
-  legacyPurge = null;
   announce(notice);
   return deleteCache();
 };
 
 /** Deletes every cached TTS response. Safe when the Cache API is missing or rejects; a failed
- *  delete is retried by the next open. */
+ *  delete keeps the cache closed until a later attempt succeeds. */
 export function clearTTSCache(): Promise<void> {
   return clear('clear');
 }
@@ -169,5 +166,4 @@ export function openTTSCacheWrites(): void {
   join();
   sessionEpoch += 1;
   writesOpen = true;
-  legacyPurge = null;
 }

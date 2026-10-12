@@ -21,7 +21,9 @@ import cleanupUser from '../../../setup/cleanupUser';
 
 test.describe.configure({ timeout: 120_000 });
 
-const TTS_CACHE = 'tts-responses';
+const TTS_CACHE = 'tts-responses-v1';
+/** The cache earlier versions keyed by raw message text. */
+const LEGACY_TTS_CACHE = 'tts-responses';
 const createdConversationIds: string[] = [];
 
 test.afterAll(async () => {
@@ -64,15 +66,18 @@ test.describe('read-aloud audio cache', () => {
     const speech = await routeExternalSpeech(page);
 
     await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
-    /** An entry an earlier version keyed by the raw message text. */
-    await page.evaluate(async (name) => {
-      await caches.delete(name);
-      const cache = await caches.open(name);
-      await cache.put(
-        '/E2E%20legacy%20reply%20text',
-        new Response(new Blob([new Uint8Array([1])])),
-      );
-    }, TTS_CACHE);
+    /** An entry an earlier version keyed by the raw message text, in the cache it used. */
+    await page.evaluate(
+      async ([name, legacy]) => {
+        await caches.delete(name);
+        const cache = await caches.open(legacy);
+        await cache.put(
+          '/E2E%20legacy%20reply%20text',
+          new Response(new Blob([new Uint8Array([1])])),
+        );
+      },
+      [TTS_CACHE, LEGACY_TTS_CACHE],
+    );
     await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
     const label = `tts-${randomUUID().slice(0, 8)}`;
     await sendMessageAndWaitForCompletion(page, replyPrompt(label));
@@ -89,6 +94,7 @@ test.describe('read-aloud audio cache', () => {
     expect(key).toMatch(/^\/tts-cache\/v1\/[0-9a-f]{64}$/);
     expect(key).not.toContain(encodeURIComponent(label));
     expect(key).not.toContain('E2E');
+    expect(await page.evaluate((legacy) => caches.has(legacy), LEGACY_TTS_CACHE)).toBe(false);
 
     await expect(readAloud).toHaveAccessibleName('Read aloud');
     await readAloud.click();

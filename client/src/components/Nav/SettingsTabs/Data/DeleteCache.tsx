@@ -23,9 +23,14 @@ export const DeleteCache = ({ disabled = false }: { disabled?: boolean }) => {
   useOnClickOutside(contentRef, () => confirmClear && setConfirmClear(false), []);
 
   const checkCache = useCallback(async () => {
-    const cache = await openTTSCache();
-    const keys = await cache.keys();
-    setIsCacheEmpty(keys.length === 0);
+    try {
+      const cache = await openTTSCache();
+      const keys = await cache.keys();
+      setIsCacheEmpty(keys.length === 0);
+    } catch {
+      /** A delete that has not succeeded yet leaves entries behind; keep the action available. */
+      setIsCacheEmpty(false);
+    }
   }, []);
 
   useEffect(() => {

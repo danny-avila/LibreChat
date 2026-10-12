@@ -1,7 +1,7 @@
 import { useState, useMemo, useRef, useCallback, useEffect } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useToastContext } from '@librechat/client';
-import { putTTSCache, openTTSCache, getTTSCacheKey, getTTSCacheEpoch } from '~/utils';
+import { putTTSCache, matchTTSCache, getTTSCacheKey, getTTSCacheEpoch } from '~/utils';
 import { useTextToSpeechMutation, useVoicesQuery } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 import store from '~/store';
@@ -154,9 +154,7 @@ function useTextToSpeechExternal({
 
   const handleCachedResponse = async (text: string, download: boolean) => {
     const cacheKey = await getTTSCacheKey(text, voice ?? '');
-    const cachedResponse = cacheKey
-      ? await openTTSCache().then((cache) => cache.match(cacheKey))
-      : undefined;
+    const cachedResponse = cacheKey ? await matchTTSCache(cacheKey) : undefined;
     if (!cachedResponse) {
       return startMutation(text, download);
     }
