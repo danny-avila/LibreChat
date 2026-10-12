@@ -7,6 +7,9 @@ cache: true
 interface:
   # Isolated test fleet contains only ownership-aware replicas.
   runningChatRename: true
+  # Off the 300 ms default, so highlight-throttle.spec.ts can tell a configured
+  # cadence from the schema default in the served config.
+  codeHighlightThrottleMs: 250
   # Exercises the cost row in the context usage gauge (off by default).
   # Mock models price at the default rate, so synthetic usage yields a value.
   contextCost: true
@@ -143,6 +146,14 @@ endpoints:
       - run_in_background
       - stateful_code_sessions
     # __E2E_CODE_BRIDGE_CONFIG__
+    # Pull request lookups reach the fake GitHub Enterprise host
+    # (e2e/setup/fake-git-host-server.js), and only for the repository the pull request
+    # scenarios seed, so no other conversation ever starts a lookup.
+    pullRequests:
+      host: localhost:8793
+      token: '${E2E_GIT_HOST_TOKEN}'
+      allowedRepositories:
+        - e2e-org/e2e-app
     # Keep the shared mock profile non-interactive except for the dedicated
     # approval probe. This exercises real HITL pause/resume without wedging the
     # existing file-authoring, steering, background-tool, or MCP specs.

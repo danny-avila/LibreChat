@@ -17,6 +17,7 @@ const {
   getValidOpenIDReuseCredential,
   isTokenRetired,
   isTwoFactorEnrollmentRequired,
+  getSafeErrorMetadata,
   sanitizeUserForAuthResponse,
 } = require('@librechat/api');
 const {
@@ -78,13 +79,16 @@ const registrationController = async (req, res) => {
       try {
         await deleteTokens({ token: req.invite.token });
       } catch (error) {
-        logger.error('[registrationController] Failed to consume invite after registration', error);
+        logger.error(
+          '[registrationController] Failed to consume invite after registration',
+          getSafeErrorMetadata(error),
+        );
       }
     }
     res.status(status).send({ message });
   } catch (err) {
-    logger.error('[registrationController]', err);
-    return res.status(500).json({ message: err.message });
+    logger.error('[registrationController]', getSafeErrorMetadata(err));
+    return res.status(500).json({ message: 'Something went wrong' });
   }
 };
 
@@ -288,8 +292,8 @@ const resetPasswordRequestController = async (req, res) => {
       return res.status(200).json(resetService);
     }
   } catch (e) {
-    logger.error('[resetPasswordRequestController]', e);
-    return res.status(400).json({ message: e.message });
+    logger.error('[resetPasswordRequestController]', getSafeErrorMetadata(e));
+    return res.status(400).json({ message: 'Something went wrong' });
   }
 };
 

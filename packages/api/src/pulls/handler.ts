@@ -11,34 +11,34 @@ import type {
 import type { AppConfig } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { GetAppConfigOptions } from '~/app/service';
+import type { PullRequestSettings } from './settings';
 import type { PullRequestLookup } from './types';
 import type { ServerRequest } from '~/types';
+import {
+  resolvePullRequestHost,
+  resolvePullRequestToken,
+  isPullRequestFeatureActive,
+  resolvePullRequestProvider,
+} from './settings';
+import { ALL_REPOSITORIES, isAllowedRepository } from './repository';
 import { getAppConfigOptionsFromUser } from '~/app/service';
-import { isAllowedRepository } from './repository';
 import { getSafeErrorMetadata } from '~/utils';
 
 const MAX_CONVERSATION_ID_LENGTH = 256;
-const TOKEN_REFERENCE = /^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$/;
 
-export type ConversationLaneGit = { branch: string | null; head: string | null; repo?: string };
-
-/** Resolves `${NAME}` against the environment; the config never holds the token itself. */
-export function resolveTokenReference(
-  reference: string | undefined,
-  env: Readonly<Record<string, string | undefined>>,
-): string | null {
-  const name = reference == null ? undefined : TOKEN_REFERENCE.exec(reference)?.[1];
-  if (name == null) return null;
-  return env[name]?.trim() || null;
-}
+export type ConversationLaneGit = {
+  branch: string | null;
+  head: string | null;
+  repo?: string;
+  pullRequest?: number;
+};
 
 const validConversationId = (value: string | undefined): value is string =>
   value != null && value.trim() !== '' && value.length <= MAX_CONVERSATION_ID_LENGTH;
 
 const NONE: TConversationPullRequestResponse = { pullRequest: null };
 
-type PullRequestSettings = NonNullable<TAgentsEndpoint['pullRequests']>;
-type EligibleLane = { branch: string; head: string | null; repo: string };
+type EligibleLane = { branch: string; head: string | null; repo: string; pullRequest?: number };
 
 /** Lookups in flight at once for one batch, unless configured. */
 const DEFAULT_BATCH_CONCURRENCY = 4;
@@ -163,14 +163,53 @@ async function withDeadline<T>(work: Promise<T>, ms: number): Promise<T | typeof
   }
 }
 
+/** The list a lane's repository is checked against, and a fork's checks are authorized by. */
+const repositoryScope = (settings: PullRequestSettings): readonly string[] =>
+  settings.allowAllRepositories === true ? ALL_REPOSITORIES : (settings.allowedRepositories ?? []);
+
 /** A lane the server's token may be used for: it names a branch and an allowed repository. */
 function eligibleLane(
   laneGit: ConversationLaneGit | null | undefined,
   settings: PullRequestSettings,
 ): EligibleLane | null {
   if (laneGit?.branch == null || laneGit.repo == null) return null;
-  if (!isAllowedRepository(laneGit.repo, settings.allowedRepositories)) return null;
-  return { branch: laneGit.branch, head: laneGit.head, repo: laneGit.repo };
+  if (!isAllowedRepository(laneGit.repo, repositoryScope(settings))) return null;
+  return {
+    branch: laneGit.branch,
+    head: laneGit.head,
+    repo: laneGit.repo,
+    ...(laneGit.pullRequest != null ? { pullRequest: laneGit.pullRequest } : {}),
+  };
+}
+
+type ServerUser = ServerRequest['user'];
+
+const agentsPullRequests = (config: AppConfig): PullRequestSettings | undefined =>
+  (config.endpoints?.[EModelEndpoint.agents] as TAgentsEndpoint | undefined)?.pullRequests;
+
+/**
+ * The user's settings, with `provider` and `host` taken from the operator's YAML alone. Role, group
+ * and user overrides live in the database and may be edited by delegated administrators; letting
+ * one choose either would let it send the deployment's token to a server of its choosing.
+ */
+async function readSettings(
+  getAppConfig: (options: GetAppConfigOptions) => Promise<AppConfig>,
+  user: ServerUser,
+): Promise<PullRequestSettings | undefined> {
+  const options = { ...getAppConfigOptionsFromUser(user), skipRuntimeAugmentation: true };
+  const [resolved, base] = await Promise.all([
+    getAppConfig({ ...options, failClosed: true }),
+    getAppConfig({ ...options, baseOnly: true }),
+  ]);
+  const settings = agentsPullRequests(resolved);
+  if (settings == null) return undefined;
+  const { host: _host, provider: _provider, ...rest } = settings;
+  const operator = agentsPullRequests(base);
+  return {
+    ...rest,
+    ...(operator?.provider != null ? { provider: operator.provider } : {}),
+    ...(operator?.host != null ? { host: operator.host } : {}),
+  };
 }
 
 /** Everything one lookup needs from the settings, so the single and batch routes cannot differ. */
@@ -179,11 +218,21 @@ function lookupInput(settings: PullRequestSettings, token: string, lane: Eligibl
     repo: lane.repo,
     branch: lane.branch,
     head: lane.head,
+    ...(lane.pullRequest != null ? { pullRequest: lane.pullRequest } : {}),
+    provider: resolvePullRequestProvider(settings.provider) ?? undefined,
+    host:
+      resolvePullRequestHost(
+        settings.host,
+        resolvePullRequestProvider(settings.provider) ?? undefined,
+      ) ?? undefined,
     token,
     ttlMs: (settings.cacheTtlSeconds ?? 30) * 1000,
     cacheMaxEntries: settings.cacheMaxEntries ?? 500,
     cacheMaxCredentials: settings.cacheMaxCredentials ?? 256,
-    allowedRepositories: settings.allowedRepositories ?? [],
+    sharedCache: settings.sharedCache === true,
+    sharedCacheTimeoutMs: settings.sharedCacheTimeoutMs ?? 250,
+    sharedCacheSlots: settings.sharedCacheSlots ?? 65_536,
+    allowedRepositories: repositoryScope(settings),
     limits: {
       requestTimeoutMs: (settings.requestTimeoutSeconds ?? 10) * 1000,
       lookupTimeoutMs: (settings.lookupTimeoutSeconds ?? 30) * 1000,
@@ -248,17 +297,11 @@ export function createConversationPullRequestHandler(deps: {
        * used when the resolved config turns the feature on, which keeps a disabled deployment's
        * answer the same as before.
        */
-      const [appConfig, laneGit] = await Promise.all([
-        deps.getAppConfig({
-          ...getAppConfigOptionsFromUser(req.user),
-          skipRuntimeAugmentation: true,
-          failClosed: true,
-        }),
+      const [settings, laneGit] = await Promise.all([
+        readSettings(deps.getAppConfig, req.user),
         deps.getConvoLaneGit(userId, conversationId),
       ]);
-      const settings = (appConfig.endpoints?.[EModelEndpoint.agents] as TAgentsEndpoint | undefined)
-        ?.pullRequests;
-      if (settings?.enabled !== true) {
+      if (!settings || !isPullRequestFeatureActive(settings, deps.env)) {
         res.status(200).json(NONE);
         return;
       }
@@ -272,7 +315,11 @@ export function createConversationPullRequestHandler(deps: {
         return;
       }
 
-      const token = resolveTokenReference(settings.token, deps.env);
+      const token = resolvePullRequestToken(
+        settings.token,
+        deps.env,
+        resolvePullRequestProvider(settings.provider) ?? undefined,
+      );
       if (token == null) {
         logger.warn('[PullRequests] Enabled without a usable token reference');
         res.status(503).json({ error: 'Pull requests are not configured', code: 'NOT_CONFIGURED' });
@@ -329,11 +376,7 @@ export function createConversationPullRequestsHandler(deps: {
        * overlapped.
        */
       const startedAt = Date.now();
-      const configRead = deps.getAppConfig({
-        ...getAppConfigOptionsFromUser(req.user),
-        skipRuntimeAugmentation: true,
-        failClosed: true,
-      });
+      const configRead = readSettings(deps.getAppConfig, req.user);
       const laneRead = deps.getConvosLaneGit(userId, ids);
       /** A lane read nobody waits for (feature off, config timed out) must not fail unhandled. */
       laneRead.catch(() => undefined);
@@ -346,15 +389,13 @@ export function createConversationPullRequestsHandler(deps: {
         unavailable();
         return;
       }
-      const appConfig = loaded;
-      const settings = (appConfig.endpoints?.[EModelEndpoint.agents] as TAgentsEndpoint | undefined)
-        ?.pullRequests;
+      const settings = loaded;
       const deadline =
         startedAt + (settings?.batchTimeoutSeconds ?? DEFAULT_BATCH_TIMEOUT_SECONDS) * 1000;
       const none = (): TConversationPullRequestsResponse => ({
         results: ids.map((conversationId) => ({ conversationId, pullRequest: null })),
       });
-      if (settings?.enabled !== true) {
+      if (!settings || !isPullRequestFeatureActive(settings, deps.env)) {
         res.status(200).json(none());
         return;
       }
@@ -379,7 +420,11 @@ export function createConversationPullRequestsHandler(deps: {
        * A missing token is a fact about the conversations that needed one, not about the request:
        * those entries say so, and every other conversation keeps its correct "no pull request".
        */
-      const token = resolveTokenReference(settings.token, deps.env);
+      const token = resolvePullRequestToken(
+        settings.token,
+        deps.env,
+        resolvePullRequestProvider(settings.provider) ?? undefined,
+      );
       if (token == null) {
         logger.warn('[PullRequests] Enabled without a usable token reference');
         res.status(200).json({
@@ -407,7 +452,8 @@ export function createConversationPullRequestsHandler(deps: {
        * already coalesces them, so each distinct lookup takes one slot and one deadline, not one
        * per conversation. Otherwise duplicates would hold every slot while a single request ran.
        */
-      const keyOf = (lane: EligibleLane) => `${lane.repo}\0${lane.branch}\0${lane.head ?? ''}`;
+      const keyOf = (lane: EligibleLane) =>
+        `${lane.repo}\0${lane.branch}\0${lane.head ?? ''}\0${lane.pullRequest ?? ''}`;
       const distinct = new Map<string, EligibleLane>();
       for (const lane of eligible.values()) distinct.set(keyOf(lane), lane);
       type Outcome =
@@ -424,12 +470,20 @@ export function createConversationPullRequestsHandler(deps: {
         const input = lookupInput(settings, token, lane);
         /** The same lane under the same policy is one lookup for every request that wants it. */
         const shareKey = `${scope}\0${JSON.stringify([
+          input.provider,
+          input.host,
           input.repo,
           input.branch,
           input.head,
+          input.pullRequest,
           input.ttlMs,
           input.limits,
           input.allowedRepositories,
+          /** Where the lookup caches and shares its answer, so each caller's own policy holds. */
+          input.cacheMaxEntries,
+          input.cacheMaxCredentials,
+          input.sharedCache,
+          input.sharedCacheTimeoutMs,
         ])}`;
         const joined = sharedLookups.join(shareKey, scope, limit, input);
         const result = await withDeadline(joined.promise, remaining);
