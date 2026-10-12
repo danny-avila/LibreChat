@@ -11,7 +11,8 @@ import { isRecord } from './shared';
 export const PULL_REQUEST_OAUTH_TYPE = 'pr_oauth';
 /** One row per user: the connection generation a disconnect replaces, which every flow binds to. */
 export const PULL_REQUEST_OAUTH_GENERATION_TYPE = 'pr_oauth_generation';
-/** The generation of a user who never disconnected. */
+/** The generation of a user with no generation row: never connected, or deleted. No grant is ever
+ *  stored under it, so reverting to it leaves every stored grant unusable. */
 const FIRST_GENERATION = 'initial';
 export const PULL_REQUEST_OAUTH_CALLBACK_PATH = '/api/pull-requests/oauth/callback';
 const STATE_AUDIENCE = 'librechat:pull-request-oauth';
@@ -23,6 +24,9 @@ export const DEFAULT_PULL_REQUEST_OAUTH_RETENTION_DAYS = 180;
 /** An access token this close to expiring is refreshed first, so a lookup never starts with it. */
 const REFRESH_SKEW_MS = 60_000;
 const DAY_SECONDS = 24 * 60 * 60;
+/** A generation row outlives every grant made under it: the longest `retentionDays` allowed. If it
+ *  expired first, the generation would revert and silently disconnect the user. */
+const GENERATION_LIFETIME_SECONDS = 3650 * DAY_SECONDS;
 const MAX_TOKEN_LENGTH = 8_192;
 /**
  * The token endpoint errors that mean the grant itself is dead: RFC 6749 `invalid_grant`, and the
@@ -124,7 +128,15 @@ type Issued = {
  * stores a fresh `v`, which makes the ciphertext a version: every write and delete compares and
  * swaps on the exact row it read, never on equal content.
  */
-type Versioned = { lineage: string; v: string };
+type Versioned = {
+  lineage: string;
+  v: string;
+  /** The user's connection generation the record was made under. Only a record of the current
+   *  generation is a connection, so a sign-in, a disconnect or an account deletion, each of
+   *  which replaces or removes the generation, leaves every older record unusable even where
+   *  removing it failed. Absent from a record that predates it, which is therefore never one. */
+  generation?: string;
+};
 
 /** A grant as stored, encrypted, in one row per user and provider host. `leaseUntil` marks the
  *  one replica allowed to refresh it, so no two spend the same refresh token. */
@@ -209,7 +221,8 @@ function parseStored(plaintext: string): Stored {
     !isRecord(parsed) ||
     typeof parsed.clientId !== 'string' ||
     typeof parsed.lineage !== 'string' ||
-    typeof parsed.v !== 'string'
+    typeof parsed.v !== 'string' ||
+    (parsed.generation !== undefined && typeof parsed.generation !== 'string')
   ) {
     throw new MalformedGrantError();
   }
@@ -317,13 +330,39 @@ export function createPullRequestOAuth({
         type: PULL_REQUEST_OAUTH_GENERATION_TYPE,
         identifier: 'generation',
         token: randomUUID(),
-        /** Outlives the longest flow a state could still be valid for. */
-        expiresIn: DAY_SECONDS,
+        expiresIn: GENERATION_LIFETIME_SECONDS,
       });
       if (replaced) return;
     }
     throw new Error('The connection generation could not be replaced');
   }
+
+  /**
+   * Moves the user from the generation a flow started in to a new one, or fails as stale: one
+   * sign-in at a time, and none across a disconnect. Returns the new generation.
+   */
+  async function advanceGeneration(userId: string, from: string): Promise<string> {
+    const next = randomUUID();
+    const advanced = await store.replaceTokenIfCurrent(
+      generationScopeOf(userId),
+      from === FIRST_GENERATION ? null : from,
+      {
+        userId,
+        type: PULL_REQUEST_OAUTH_GENERATION_TYPE,
+        identifier: 'generation',
+        token: next,
+        expiresIn: GENERATION_LIFETIME_SECONDS,
+      },
+    );
+    if (!advanced) throw new StaleFlowError();
+    return next;
+  }
+
+  const dropPendingReads = (userId: string): void => {
+    for (const key of reading.keys()) {
+      if (key.startsWith(`${userId}\0`)) reading.delete(key);
+    }
+  };
 
   /**
    * A token, or null when the user disconnected while it was being read. The generation is read
@@ -335,7 +374,7 @@ export function createPullRequestOAuth({
     config: PullRequestOAuthConfig,
   ): Promise<string | null> {
     const before = await generationOf(userId);
-    const token = await currentToken(userId, config);
+    const token = await currentToken(userId, config, before);
     if (token == null) return null;
     return (await generationOf(userId)) === before ? token : null;
   }
@@ -443,6 +482,7 @@ export function createPullRequestOAuth({
   async function read(
     userId: string,
     config: PullRequestOAuthConfig,
+    generation: string,
   ): Promise<{ row: PullRequestOAuthRow; record: Stored } | null> {
     const row = await store.findToken({ scope: scopeOf(userId, config) });
     if (row == null) return null;
@@ -459,6 +499,9 @@ export function createPullRequestOAuth({
      *  this replica's config may be the stale one, and deleting would destroy the user's new
      *  connection. It expires with the retention, and disconnecting removes it. */
     if (parsed.clientId !== config.clientId) return null;
+    /** A record of an earlier generation is no connection, and is left alone like one of
+     *  another app: the disconnect or sign-in that replaced its generation owns its removal. */
+    if (parsed.generation !== generation) return null;
     if (isRefused(parsed)) return { row, record: parsed };
     /** Unused for longer than the retention now allows: gone, and removed if still this row.
      *  Awaited, and a failure propagates: the caller hears there is no connection only once the
@@ -476,7 +519,7 @@ export function createPullRequestOAuth({
   ): Promise<PullRequestOAuthStatus> {
     /** Fenced like a token read, so it never reports a connection a finished disconnect removed. */
     const before = await generationOf(userId);
-    const current = await read(userId, config);
+    const current = await read(userId, config, before);
     if (current == null || isRefused(current.record)) return { connected: false };
     const grant = current.record;
     /** The row of a grant that cannot be refreshed outlives it until the TTL reaper runs. */
@@ -527,7 +570,7 @@ export function createPullRequestOAuth({
     let version = expected;
     for (let attempt = 0; attempt < 3; attempt++) {
       if ((await write(userId, config, version, next)) != null) return next.accessToken;
-      const current = await read(userId, config);
+      const current = await read(userId, config, next.generation ?? FIRST_GENERATION);
       if (current == null) return null;
       if (current.record.lineage !== next.lineage) {
         return isRefused(current.record) || !isLive(current.record, 0)
@@ -554,7 +597,7 @@ export function createPullRequestOAuth({
       leaseUntil: now() + leaseOf(config),
     });
     if (claimed == null) {
-      const current = await read(userId, config);
+      const current = await read(userId, config, grant.generation ?? FIRST_GENERATION);
       if (current == null || isRefused(current.record)) return null;
       if (current.record.leaseUntil == null && isLive(current.record, REFRESH_SKEW_MS)) {
         return current.record.accessToken;
@@ -575,9 +618,10 @@ export function createPullRequestOAuth({
           refused: true,
           clientId: grant.clientId,
           lineage: grant.lineage,
+          ...(grant.generation != null ? { generation: grant.generation } : {}),
         });
         if (refused != null) return null;
-        const current = await read(userId, config);
+        const current = await read(userId, config, grant.generation ?? FIRST_GENERATION);
         return current == null || isRefused(current.record) || !isLive(current.record, 0)
           ? null
           : current.record.accessToken;
@@ -594,14 +638,16 @@ export function createPullRequestOAuth({
       refreshToken: issued.refreshToken ?? grant.refreshToken,
       lineage: grant.lineage,
       ...(grant.flowId != null ? { flowId: grant.flowId } : {}),
+      ...(grant.generation != null ? { generation: grant.generation } : {}),
     });
   }
 
   async function currentToken(
     userId: string,
     config: PullRequestOAuthConfig,
+    generation: string,
   ): Promise<string | null> {
-    const current = await read(userId, config);
+    const current = await read(userId, config, generation);
     if (current == null || isRefused(current.record)) return null;
     const { row, record: grant } = current;
     /** Without a refresh token there is nothing to refresh with, so it serves until it expires. */
@@ -700,7 +746,14 @@ export function createPullRequestOAuth({
         },
         config.clientId,
       );
-      const record = { ...response, lineage: randomUUID(), flowId: state.flowId };
+      /**
+       * The sign-in is an identity boundary: the user moves to a new generation before the grant is
+       * stored under it, so every earlier grant, and every read that found one, stops answering.
+       * After the exchange, so a failed sign-in leaves the existing connection alone.
+       */
+      const generation = await advanceGeneration(state.userId, state.generation);
+      dropPendingReads(state.userId);
+      const record = { ...response, lineage: randomUUID(), flowId: state.flowId, generation };
       /** Replaces whatever the user had connected before, read first so the swap is exact. */
       let stored: string | null = null;
       for (let attempt = 0; attempt < 3 && stored == null; attempt++) {
@@ -715,8 +768,9 @@ export function createPullRequestOAuth({
        * itself, so neither a deletion nor a disconnect is undone by a flow started before it.
        */
       try {
-        await assertCurrent(state);
+        await assertCurrent({ ...state, generation });
       } catch (error) {
+        /** Best effort: should it fail, the grant's generation is no longer the user's anyway. */
         await store.deleteTokens({ scope: scopeOf(state.userId, config), token: stored });
         throw error;
       }
@@ -752,7 +806,7 @@ export function createPullRequestOAuth({
         if (row.expiresAt != null && new Date(row.expiresAt).getTime() <= now()) continue;
         /** A row that cannot be read is a failure, as for a configured read. */
         const parsed = parseStored(await decrypt(row.token));
-        if (isRefused(parsed)) continue;
+        if (isRefused(parsed) || parsed.generation !== before) continue;
         if ((await generationOf(userId)) !== before) return { connected: false };
         return parsed.flowId != null
           ? { connected: true, flowId: parsed.flowId }
@@ -762,13 +816,14 @@ export function createPullRequestOAuth({
     },
 
     async reject(userId, config, accessToken) {
-      const current = await read(userId, config);
+      const current = await read(userId, config, await generationOf(userId));
       if (current == null || isRefused(current.record)) return;
       if (current.record.accessToken !== accessToken) return;
       await write(userId, config, current.row.token, {
         refused: true,
         clientId: current.record.clientId,
         lineage: current.record.lineage,
+        ...(current.record.generation != null ? { generation: current.record.generation } : {}),
       });
     },
 
@@ -782,9 +837,7 @@ export function createPullRequestOAuth({
       await replaceGeneration(userId);
       await store.deleteTokens({ userId, type: PULL_REQUEST_OAUTH_TYPE });
       await replaceGeneration(userId);
-      for (const key of reading.keys()) {
-        if (key.startsWith(`${userId}\0`)) reading.delete(key);
-      }
+      dropPendingReads(userId);
     },
   };
 }

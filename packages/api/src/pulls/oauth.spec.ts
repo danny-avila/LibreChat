@@ -101,6 +101,41 @@ async function connect(
   await oauth.complete(claims, 'the-code', config);
 }
 
+/** A replica whose next read of the grant row waits until released. */
+function heldReplica(responses: Array<() => Response> = []) {
+  let release: () => void = () => undefined;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  let reached: () => void = () => undefined;
+  const waiting = new Promise<void>((resolve) => (reached = resolve));
+  let holding = true;
+  const heldStore: PullRequestOAuthStore = {
+    ...store,
+    findToken: async (query) => {
+      if (holding && query.scope.startsWith(`${PULL_REQUEST_OAUTH_TYPE}:`)) {
+        holding = false;
+        const row = await store.findToken(query);
+        reached();
+        await held;
+        return row;
+      }
+      return store.findToken(query);
+    },
+  };
+  const oauth = createPullRequestOAuth({
+    store: heldStore,
+    fetchFn: jest.fn(async () => {
+      const next = responses.shift();
+      if (next == null) throw new Error('unexpected request');
+      return next();
+    }),
+    secret,
+    redirectUri,
+    encrypt,
+    decrypt,
+  });
+  return { oauth, release, waiting };
+}
+
 describe('oauthEndpoints', () => {
   it.each([
     ['github', 'github.com', 'https://github.com/login/oauth/authorize'],
@@ -234,7 +269,7 @@ describe('complete', () => {
     expect(
       await mongoose.connection
         .db!.collection('tokens')
-        .countDocuments({ userId: { $exists: true } }),
+        .countDocuments({ type: PULL_REQUEST_OAUTH_TYPE }),
     ).toBe(1);
   });
 
@@ -606,7 +641,12 @@ describe('token', () => {
     clock += 2 * 24 * 60 * 60 * 1000;
     await expect(oauth.token(user, { ...github, retentionDays: 1 })).resolves.toBeNull();
     await settle();
-    expect(await tokens().countDocuments({ userId: new mongoose.Types.ObjectId(user) })).toBe(0);
+    expect(
+      await tokens().countDocuments({
+        userId: new mongoose.Types.ObjectId(user),
+        type: PULL_REQUEST_OAUTH_TYPE,
+      }),
+    ).toBe(0);
   });
 
   it('reports a failed removal of a grant past the retention as a failure, not as absence', async () => {
@@ -687,20 +727,25 @@ describe('token', () => {
     const config = { ...github, retentionDays: 10 };
     await connect(oauth, user, config);
     const tokens = mongoose.connection.db!.collection('tokens');
-    const first = (await tokens.findOne({}))!.expiresAt as Date;
+    const first = (await tokens.findOne({ type: PULL_REQUEST_OAUTH_TYPE }))!.expiresAt as Date;
     expect(first.getTime() - Date.now()).toBeGreaterThan(9.9 * 86_400_000);
 
     /** Used early: nothing to extend. */
     await expect(oauth.token(user, config)).resolves.toBe('forever');
     await new Promise((resolve) => setImmediate(resolve));
-    expect(((await tokens.findOne({}))!.expiresAt as Date).getTime()).toBe(first.getTime());
+    expect(
+      ((await tokens.findOne({ type: PULL_REQUEST_OAUTH_TYPE }))!.expiresAt as Date).getTime(),
+    ).toBe(first.getTime());
 
     /** Two days in, well before half the retention: using it still starts the retention again, so
      *  the grant stays for the whole window after its last use. */
-    await tokens.updateOne({}, { $set: { expiresAt: new Date(Date.now() + 8 * 86_400_000) } });
+    await tokens.updateOne(
+      { type: PULL_REQUEST_OAUTH_TYPE },
+      { $set: { expiresAt: new Date(Date.now() + 8 * 86_400_000) } },
+    );
     await expect(oauth.token(user, config)).resolves.toBe('forever');
     await new Promise((resolve) => setTimeout(resolve, 100));
-    const extended = (await tokens.findOne({}))!.expiresAt as Date;
+    const extended = (await tokens.findOne({ type: PULL_REQUEST_OAUTH_TYPE }))!.expiresAt as Date;
     expect(extended.getTime() - Date.now()).toBeGreaterThan(9.9 * 86_400_000);
     await expect(oauth.token(user, config)).resolves.toBe('forever');
   });
@@ -711,7 +756,10 @@ describe('token', () => {
     const config = { ...github, retentionDays: 10 };
     await connect(oauth, user, config);
     const tokens = mongoose.connection.db!.collection('tokens');
-    await tokens.updateOne({}, { $set: { expiresAt: new Date(Date.now() + 4 * 86_400_000) } });
+    await tokens.updateOne(
+      { type: PULL_REQUEST_OAUTH_TYPE },
+      { $set: { expiresAt: new Date(Date.now() + 4 * 86_400_000) } },
+    );
     const write = jest
       .spyOn(store, 'replaceTokenIfCurrent')
       .mockRejectedValueOnce(new Error('write failed'));
@@ -845,6 +893,163 @@ describe('status', () => {
   });
 });
 
+describe('the connection generation', () => {
+  async function started(oauth: ReturnType<typeof setup>['oauth'], user: string, config = github) {
+    const { url, flowId } = await oauth.authorizationUrl({ id: user }, config);
+    const claims = oauth.verifyState(new URL(url).searchParams.get('state') ?? '');
+    if (claims == null) throw new Error('state did not verify');
+    return { claims, flowId };
+  }
+
+  async function existing(): Promise<string> {
+    const user = userId();
+    await users().insertOne({
+      _id: new mongoose.Types.ObjectId(user),
+      email: `${user}@example.com`,
+    });
+    return user;
+  }
+
+  it('lets one of two sign-ins completing together connect, and refuses the other as stale', async () => {
+    /** Both exchanges are under way before either stores, so both passed the check before it. */
+    let answer: () => void = () => undefined;
+    const answered = new Promise<void>((resolve) => (answer = resolve));
+    let exchanges = 0;
+    const { oauth } = setup([
+      async () => {
+        exchanges += 1;
+        await answered;
+        return json({ access_token: 'one' });
+      },
+      async () => {
+        exchanges += 1;
+        await answered;
+        return json({ access_token: 'two' });
+      },
+    ]);
+    const user = await existing();
+    const first = await started(oauth, user);
+    const second = await started(oauth, user);
+    const outcomes = Promise.allSettled([
+      oauth.complete(first.claims, 'code-1', github),
+      oauth.complete(second.claims, 'code-2', github),
+    ]);
+    await waitFor(() => exchanges === 2);
+    answer();
+    const [one, two] = await outcomes;
+    expect([one.status, two.status].sort()).toEqual(['fulfilled', 'rejected']);
+    const winner = one.status === 'fulfilled' ? first : second;
+    await expect(oauth.status(user, github)).resolves.toEqual({
+      connected: true,
+      flowId: winner.flowId,
+    });
+    await expect(oauth.token(user, github)).resolves.toBe(winner === first ? 'one' : 'two');
+  });
+
+  it("does not answer with the previous account's token once a new sign-in has landed", async () => {
+    const { oauth: connector } = setup([
+      () => json({ access_token: 'previous' }),
+      () => json({ access_token: 'current' }),
+    ]);
+    const user = await existing();
+    await connect(connector, user);
+    const reader = heldReplica();
+    const pending = reader.oauth.token(user, github);
+    await reader.waiting;
+    const { claims } = await started(connector, user);
+    await connector.complete(claims, 'code', github);
+    reader.release();
+    await expect(pending).resolves.toBeNull();
+    await expect(reader.oauth.token(user, github)).resolves.toBe('current');
+  });
+
+  it('drops reads of this process that started before a sign-in it completed', async () => {
+    const user = await existing();
+    const { oauth: connector } = setup([() => json({ access_token: 'previous' })]);
+    await connect(connector, user);
+    const reader = heldReplica([() => json({ access_token: 'current' })]);
+    const pending = reader.oauth.token(user, github);
+    await reader.waiting;
+    const { claims } = await started(reader.oauth, user);
+    await reader.oauth.complete(claims, 'code', github);
+    /** A request after the sign-in does not join the read that found the previous account. */
+    await expect(reader.oauth.token(user, github)).resolves.toBe('current');
+    reader.release();
+    await expect(pending).resolves.toBeNull();
+  });
+
+  it('keeps a grant a stale sign-in stored unusable when removing it fails', async () => {
+    const user = await existing();
+    const { oauth: connector } = setup([() => json({ access_token: 'kept' })]);
+    await connect(connector, user);
+    /** The sign-in's own cleanup fails after a disconnect made its flow stale mid-exchange. */
+    const failingStore: PullRequestOAuthStore = {
+      ...store,
+      deleteTokens: async (query) => {
+        if ('scope' in query && query.token != null) throw new Error('mongo down');
+        return store.deleteTokens(query);
+      },
+    };
+    const oauth = createPullRequestOAuth({
+      store: failingStore,
+      fetchFn: jest.fn(async () => {
+        await connector.disconnect(user);
+        return json({ access_token: 'stale' });
+      }),
+      secret,
+      redirectUri,
+      encrypt,
+      decrypt,
+    });
+    const { claims } = await started(oauth, user);
+    await expect(oauth.complete(claims, 'code', github)).rejects.toThrow();
+    await expect(oauth.token(user, github)).resolves.toBeNull();
+    await expect(oauth.status(user, github)).resolves.toEqual({ connected: false });
+    await expect(oauth.storedStatus(user)).resolves.toEqual({ connected: false });
+  });
+
+  it('leaves a grant of an earlier generation in place, but no connection', async () => {
+    const { oauth } = setup([() => json({ access_token: 'old' })]);
+    const user = userId();
+    await connect(oauth, user);
+    await tokens().updateOne(
+      { type: PULL_REQUEST_OAUTH_GENERATION_TYPE, userId: new mongoose.Types.ObjectId(user) },
+      { $set: { token: 'another-generation' } },
+    );
+    await expect(oauth.token(user, github)).resolves.toBeNull();
+    await expect(oauth.connected(user, github)).resolves.toBe(false);
+    expect(
+      await tokens().countDocuments({
+        userId: new mongoose.Types.ObjectId(user),
+        type: PULL_REQUEST_OAUTH_TYPE,
+      }),
+    ).toBe(1);
+  });
+
+  it('leaves every grant unusable once the generation row is removed, as account deletion does', async () => {
+    const { oauth } = setup([() => json({ access_token: 'orphan' })]);
+    const user = userId();
+    await connect(oauth, user);
+    await tokens().deleteMany({
+      type: PULL_REQUEST_OAUTH_GENERATION_TYPE,
+      userId: new mongoose.Types.ObjectId(user),
+    });
+    await expect(oauth.token(user, github)).resolves.toBeNull();
+    await expect(oauth.storedStatus(user)).resolves.toEqual({ connected: false });
+  });
+
+  it('keeps the generation row as long as the longest retention a grant may have', async () => {
+    const { oauth } = setup([() => json({ access_token: 'long' })]);
+    const user = userId();
+    await connect(oauth, user, { ...github, retentionDays: 3650 });
+    const row = await tokens().findOne({
+      type: PULL_REQUEST_OAUTH_GENERATION_TYPE,
+      userId: new mongoose.Types.ObjectId(user),
+    });
+    expect(new Date(row?.expiresAt).getTime() - Date.now()).toBeGreaterThan(3649 * 86_400_000);
+  });
+});
+
 describe('reject', () => {
   it('disconnects a grant the provider refused on a lookup', async () => {
     const { oauth } = setup([() => json({ access_token: 'revoked' })]);
@@ -904,7 +1109,12 @@ describe('completion during account deletion', () => {
     const { oauth, fetchFn } = setup([() => json({ access_token: 'late' })]);
     await expect(complete(oauth, user)).rejects.toThrow('not active');
     expect(fetchFn).not.toHaveBeenCalled();
-    expect(await tokens().countDocuments({ userId: new mongoose.Types.ObjectId(user) })).toBe(0);
+    expect(
+      await tokens().countDocuments({
+        userId: new mongoose.Types.ObjectId(user),
+        type: PULL_REQUEST_OAUTH_TYPE,
+      }),
+    ).toBe(0);
   });
 
   it('removes the grant it stored when the deletion started during the exchange', async () => {
@@ -918,42 +1128,11 @@ describe('completion during account deletion', () => {
       },
     ]);
     await expect(complete(oauth, user)).rejects.toThrow('not active');
-    expect(await tokens().countDocuments({ userId: _id })).toBe(0);
+    expect(await tokens().countDocuments({ userId: _id, type: PULL_REQUEST_OAUTH_TYPE })).toBe(0);
   });
 });
 
 describe('disconnect', () => {
-  /** A replica whose next read of the grant row waits until released. */
-  function heldReplica() {
-    let release: () => void = () => undefined;
-    const held = new Promise<void>((resolve) => (release = resolve));
-    let reached: () => void = () => undefined;
-    const waiting = new Promise<void>((resolve) => (reached = resolve));
-    let holding = true;
-    const heldStore: PullRequestOAuthStore = {
-      ...store,
-      findToken: async (query) => {
-        if (holding && query.scope.startsWith(`${PULL_REQUEST_OAUTH_TYPE}:`)) {
-          holding = false;
-          const row = await store.findToken(query);
-          reached();
-          await held;
-          return row;
-        }
-        return store.findToken(query);
-      },
-    };
-    const oauth = createPullRequestOAuth({
-      store: heldStore,
-      fetchFn: jest.fn(),
-      secret,
-      redirectUri,
-      encrypt,
-      decrypt,
-    });
-    return { oauth, release, waiting };
-  }
-
   /** A replica whose disconnect pauses at `step` ('delete': before removing the grants;
    *  'last': before replacing the generation after it) until resumed. */
   function pausedDisconnect(step: 'delete' | 'last') {
