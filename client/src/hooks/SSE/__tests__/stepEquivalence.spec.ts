@@ -61,7 +61,7 @@ type Row = {
 const user = (overrides: Partial<TMessage> = {}): TMessage => ({
   messageId: 'user-1',
   conversationId: 'conv-1',
-  parentMessageId: Constants.NO_PARENT,
+  parentMessageId: Constants.NO_PARENT as string,
   isCreatedByUser: true,
   text: 'Hello',
   sender: 'User',
@@ -386,7 +386,7 @@ const rows: Row[] = [
     steps: [
       ptc({ call_id: 'c:0', args: 'a' }),
       ptc({ call_id: 'c:1' }),
-      ptc({ call_id: 'c:0', status: 'completed', durationMs: 5 }),
+      ptc({ call_id: 'c:0', status: 'success', durationMs: 5 }),
       ptc({ call_id: 'c:9', status: 'error', error: 'late' }),
       ptc({ call_id: 'c:2', runId: PRELIM }),
       { call: 'prunePtcTraces' },
@@ -396,7 +396,7 @@ const rows: Row[] = [
       ['resp-1', 'call_ptc'],
       ['resp-prelim', 'call_ptc'],
     ],
-    digest: '574046928a1a938b',
+    digest: '9d1bb17142716632',
   },
   {
     name: 'restores a user turn missing from another tab',
