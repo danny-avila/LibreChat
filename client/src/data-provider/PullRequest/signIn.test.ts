@@ -227,6 +227,29 @@ describe('watchPullRequestSignIn', () => {
     expect(mockGetConnection).toHaveBeenCalledTimes(asked);
   });
 
+  it('still hears a failure that settles after the grant already showed connected', async () => {
+    const { client, invalidate } = setup();
+    watchPullRequestSignIn(client, {
+      startedIn: pullRequestSignInSession(),
+      expiresAt: Date.now() + 60 * MINUTE,
+      flowId: 'flow-a',
+    });
+    /** A poll sees the grant the callback stored before its final check. */
+    mockGetConnection.mockResolvedValue({ ...connection(true), flowId: 'flow-a' });
+    await focus();
+    const polled = mockGetConnection.mock.calls.length;
+    await pass(10 * MINUTE);
+    expect(mockGetConnection).toHaveBeenCalledTimes(polled);
+
+    /** The callback then removes it and lands on the error page for this flow. */
+    mockGetConnection.mockResolvedValue(connection(false));
+    invalidate.mockClear();
+    announceOAuthSettled({ outcome: 'failed', flowId: 'flow-a' });
+    await pass(0);
+    expect(mockGetConnection).toHaveBeenCalledTimes(polled + 1);
+    expect(invalidate).toHaveBeenCalledWith([QueryKeys.conversationPullRequest]);
+  });
+
   it('gives up a settled sign-in whose status cannot be read once the grace passes', async () => {
     const { client } = setup();
     watchPullRequestSignIn(client, {

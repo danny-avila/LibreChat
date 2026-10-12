@@ -117,8 +117,13 @@ export function watchPullRequestSignIn(
     /** Every answer, so an account removed elsewhere mid-flow also refreshes pull requests. */
     syncPullRequestConnection(queryClient, status);
     const ours = flowId == null || status.flowId == null || status.flowId === flowId;
-    if (failed || settled || (status.connected && ours)) {
+    if (failed || settled) {
       stop();
+    } else if (status.connected && ours) {
+      /** Connected, but the sign-in page has not settled: the callback can still fail after
+       *  storing (a disconnect racing it, say), so polling ends while the channel keeps
+       *  listening until it settles or the grace passes. */
+      quiet();
     }
   };
 
@@ -163,15 +168,20 @@ export function watchPullRequestSignIn(
   let expiry: ReturnType<typeof setTimeout> = setTimeout(
     () => {
       if (!settled) {
-        lapsed = true;
-        clearTimeout(timer);
-        window.removeEventListener('focus', onSignal);
+        quiet();
       }
       /** Settled but not yet read back, or not settled yet: a bounded grace, then give up. */
       expiry = setTimeout(() => stop(), PULL_REQUEST_SETTLED_GRACE_MS);
     },
     Math.max(0, expiresAt - Date.now()),
   );
+
+  /** Stops polling and focus checks, keeping the announcement channel open. */
+  function quiet() {
+    lapsed = true;
+    clearTimeout(timer);
+    window.removeEventListener('focus', onSignal);
+  }
 
   /** A settlement announced during the grace resumes reading until a read succeeds. */
   const resume = () => {

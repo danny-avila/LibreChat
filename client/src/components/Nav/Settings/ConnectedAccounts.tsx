@@ -77,6 +77,15 @@ export default function ConnectedAccounts() {
     mounted.current = true;
     return () => {
       mounted.current = false;
+      /** A status that hides the row while a handoff is armed takes the focused button with it. */
+      if (keepFocus.current) {
+        const fallback = fallbackRef.current;
+        setTimeout(() => {
+          if (document.activeElement == null || document.activeElement === document.body) {
+            fallback?.focus();
+          }
+        }, 0);
+      }
     };
   }, []);
 
@@ -290,6 +299,11 @@ export default function ConnectedAccounts() {
         /** A disconnect already sent cannot be taken back, so it is not dismissed mid-request. */
         if (!open && disconnectMutation.isLoading) {
           return;
+        }
+        /** Dismissed after a failed disconnect whose status read is still out: that read may
+         *  replace or hide the trigger focus returns to, so the handoff stays armed. */
+        if (!open && disconnectFailed) {
+          keepFocus.current = true;
         }
         setConfirmOpen(open);
         setDisconnectFailed(false);

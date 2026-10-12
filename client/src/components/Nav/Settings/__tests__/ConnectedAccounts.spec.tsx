@@ -2,7 +2,7 @@ import React from 'react';
 import '@testing-library/jest-dom';
 import userEvent from '@testing-library/user-event';
 import { QueryKeys } from 'librechat-data-provider';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TPullRequestConnection, TStartupConfig } from 'librechat-data-provider';
 import { usePullRequestConnectionStatus } from '~/data-provider/PullRequest/connection';
@@ -533,6 +533,31 @@ describe('ConnectedAccounts', () => {
     await waitFor(() =>
       expect(invalidate).toHaveBeenCalledWith([QueryKeys.conversationPullRequest]),
     );
+  });
+
+  it('hands focus on when a dismissed failed disconnect turns out to have ended the connection', async () => {
+    mockGetConnection.mockResolvedValue(connection(true));
+    mockDisconnect.mockRejectedValue(new Error('500'));
+    renderRow();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /com_ui_pr_account_disconnect_aria/ }),
+    );
+    /** The status read after the failure is slow. */
+    let answer: (status: TPullRequestConnection) => void = () => undefined;
+    mockGetConnection.mockImplementation(() => new Promise((resolve) => (answer = resolve)));
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'com_ui_pr_account_disconnect' }),
+    );
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'com_ui_pr_account_disconnect_error',
+    );
+    await userEvent.click(screen.getByRole('button', { name: 'com_ui_cancel' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+
+    act(() => answer(connection(false)));
+    const connect = await screen.findByRole('button', { name: /com_ui_pr_account_connect_aria/ });
+    await waitFor(() => expect(connect).toHaveFocus());
   });
 
   it('keeps the error when the status read after a failed disconnect still shows the grant', async () => {
