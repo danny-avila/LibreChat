@@ -59,6 +59,7 @@ import ProviderKeys from '../SettingsTabs/ProviderKeys';
 import { showLiaAtom } from '~/components/Lia/store';
 import { autoScrollAtom } from '~/store/autoScroll';
 import Avatar from '../SettingsTabs/Account/Avatar';
+import ConnectedAccounts from './ConnectedAccounts';
 import CodeEnvironments from './CodeEnvironments';
 import About from '../SettingsTabs/About/About';
 import ApiKeys from '../SettingsTabs/ApiKeys';
@@ -828,6 +829,16 @@ export const registry: SettingEntry[] = [
     keywords: ['passkey', 'webauthn', 'fido', 'security key', 'passwordless'],
     show: (ctx) => ctx.passkeyLoginEnabled,
     Component: Passkeys,
+  },
+  // Account · Connected accounts
+  {
+    id: 'pullRequestAccount',
+    tab: ACCOUNT,
+    section: 'connections',
+    labelKey: 'com_ui_settings_label_pull_request_account',
+    keywords: ['github', 'gitlab', 'bitbucket', 'pull request', 'oauth', 'connect'],
+    show: (ctx) => ctx.hasPullRequestConnect,
+    Component: ConnectedAccounts,
   },
   // Account · Billing
   {

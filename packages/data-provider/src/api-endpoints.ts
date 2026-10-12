@@ -173,6 +173,14 @@ export const conversationPullRequest = (conversationId: string) =>
 
 export const conversationPullRequests = () => `${conversationsRoot}/pull-requests`;
 
+const pullRequestOAuthRoot = `${BASE_URL}/api/pull-requests/oauth`;
+
+export const pullRequestConnection = () => `${pullRequestOAuthRoot}/status`;
+
+export const pullRequestConnect = () => `${pullRequestOAuthRoot}/connect`;
+
+export const pullRequestDisconnect = () => pullRequestOAuthRoot;
+
 export const genTitle = (conversationId: string) =>
   `${conversationsRoot}/gen_title/${encodeURIComponent(conversationId)}`;
 

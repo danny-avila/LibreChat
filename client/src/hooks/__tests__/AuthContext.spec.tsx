@@ -88,6 +88,7 @@ jest.mock('~/data-provider', () => ({
   })),
   useGetRole: jest.fn(() => ({ data: null })),
   endPullRequestSession: jest.fn(() => mockEndPullRequestSession()),
+  setPullRequestSessionOwner: jest.fn(),
   useListRoles: jest.fn(() => ({ data: undefined })),
 }));
 
