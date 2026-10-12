@@ -75,6 +75,22 @@ mcpServers:
     title: E2E Memory
     description: Local MCP fixture used by mock end-to-end tests.
     timeout: 30000
+  e2e-user-vars:
+    type: stdio
+    command: node
+    args:
+      - e2e/setup/fake-mcp-server.js
+    startup: false
+    env:
+      E2E_MCP_USER_TOKEN: '{{E2E_MCP_USER_TOKEN}}'
+      E2E_MCP_EXPECTED_USER_TOKEN: e2e-user-token-secret
+    customUserVars:
+      E2E_MCP_USER_TOKEN:
+        title: E2E User Token
+        description: Per-user token the fixture refuses to start without.
+    title: E2E User Vars
+    description: Stdio MCP fixture that starts only with the expected per-user token.
+    timeout: 30000
   e2e-http:
     type: streamable-http
     url: http://127.0.0.1:8765/mcp
