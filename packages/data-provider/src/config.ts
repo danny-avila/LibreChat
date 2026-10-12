@@ -1927,9 +1927,9 @@ export const agentsEndpointSchema = baseEndpointSchema
            *  as the callback URL. On GitHub, a GitHub App with read-only permissions is the
            *  recommended client: its user tokens need no scope. A connection belongs to the app
            *  it was made with: changing `clientId`, `provider` or `host` asks users to connect
-           *  again. A grant of a replaced `clientId` is removed when next read; one for another
-           *  provider or host is never used and expires with `retentionDays`. A changed `scope`
-           *  applies to new connections only. Disconnecting removes every grant of the user. */
+           *  again. A grant made with another `clientId`, provider or host is never used and
+           *  expires with `retentionDays`. A changed `scope` applies to new connections only.
+           *  Disconnecting removes every grant of the user. */
           oauth: z
             .object({
               /** Environment variable references, never the values. */

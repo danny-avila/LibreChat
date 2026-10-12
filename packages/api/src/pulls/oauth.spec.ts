@@ -269,8 +269,8 @@ describe('token', () => {
     const user = userId();
     await connect(oauth, user);
     await expect(oauth.token(user, { ...github, clientId: 'client-2' })).resolves.toBeNull();
-    /** Removed, so restoring the old app does not bring the credential back. */
-    await expect(oauth.token(user, github)).resolves.toBeNull();
+    /** Left alone: a replica still on the other config, mid-rollout, must not destroy it. */
+    await expect(oauth.token(user, github)).resolves.toBe('old-app');
   });
 
   it('refreshes an expiring token once for concurrent callers and keeps a refresh token that did not rotate', async () => {
@@ -571,9 +571,7 @@ describe('token', () => {
     const replaced = replica.oauth.token(user, { ...gitlab, clientId: 'gl-client-2' });
     await expect(replaced).resolves.toBeNull();
     replica.answer();
-    /** The new app removes the old grant, so the old app's refresh may or may not land first;
-     *  either way the new app never receives the old app's token. */
-    expect(['a2', null]).toContain(await old);
+    await expect(old).resolves.toBe('a2');
     await expect(
       replica.oauth.token(user, { ...gitlab, clientId: 'gl-client-2' }),
     ).resolves.toBeNull();
@@ -683,7 +681,7 @@ describe('token', () => {
     expect(Date.now() - started).toBeLessThan(5_000);
   });
 
-  it('extends a grant that never expires each time it is used past half its retention', async () => {
+  it('extends a grant that never expires on its first use each day', async () => {
     const { oauth } = setup([() => json({ access_token: 'forever' })]);
     const user = userId();
     const config = { ...github, retentionDays: 10 };
@@ -697,8 +695,9 @@ describe('token', () => {
     await new Promise((resolve) => setImmediate(resolve));
     expect(((await tokens.findOne({}))!.expiresAt as Date).getTime()).toBe(first.getTime());
 
-    /** Six days in, the row would go in four: using it starts the retention again. */
-    await tokens.updateOne({}, { $set: { expiresAt: new Date(Date.now() + 4 * 86_400_000) } });
+    /** Two days in, well before half the retention: using it still starts the retention again, so
+     *  the grant stays for the whole window after its last use. */
+    await tokens.updateOne({}, { $set: { expiresAt: new Date(Date.now() + 8 * 86_400_000) } });
     await expect(oauth.token(user, config)).resolves.toBe('forever');
     await new Promise((resolve) => setTimeout(resolve, 100));
     const extended = (await tokens.findOne({}))!.expiresAt as Date;

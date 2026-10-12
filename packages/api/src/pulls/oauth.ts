@@ -420,14 +420,18 @@ export function createPullRequestOAuth({
     return retentionOf(config);
   };
 
-  /** Whether using a grant should rewrite its row: past half its retention, so it is extended (a
-   *  grant that never expires is otherwise never rewritten, and would be removed while in use),
-   *  or set to outlive the current retention, so a shortened retention takes hold. */
+  /** Whether using a grant should rewrite its row: once it was last stamped more than a day ago
+   *  (half the retention, if that is shorter), so the retention runs from the last use within a
+   *  day without a write per use, or when it is set to outlive the current retention, so a
+   *  shortened retention takes hold. */
   const needsRewrite = (row: PullRequestOAuthRow, config: PullRequestOAuthConfig): boolean => {
     if (row.expiresAt == null) return false;
     const remaining = new Date(row.expiresAt).getTime() - now();
     const retention = retentionOf(config) * 1000;
-    return Number.isFinite(remaining) && (remaining < retention / 2 || remaining > retention);
+    const interval = Math.min(DAY_SECONDS * 1000, retention / 2);
+    return (
+      Number.isFinite(remaining) && (remaining < retention - interval || remaining > retention)
+    );
   };
 
   /** Whether a grant can answer now, or never will without a refresh. */
@@ -451,12 +455,10 @@ export function createPullRequestOAuth({
      *  propagates. A record of another OAuth app, from before the app was replaced, is no
      *  connection to this one. */
     const parsed = parseStored(await decrypt(row.token));
-    /** A record of a replaced app is dead under this one: the user connects again, and the old
-     *  credential is removed now (if still this row) rather than revived by restoring the app. */
-    if (parsed.clientId !== config.clientId) {
-      await store.deleteTokens({ scope: scopeOf(userId, config), token: row.token });
-      return null;
-    }
+    /** A record of another app is no connection to this one, and is left alone: during a rollout
+     *  this replica's config may be the stale one, and deleting would destroy the user's new
+     *  connection. It expires with the retention, and disconnecting removes it. */
+    if (parsed.clientId !== config.clientId) return null;
     if (isRefused(parsed)) return { row, record: parsed };
     /** Unused for longer than the retention now allows: gone, and removed if still this row.
      *  Awaited, and a failure propagates: the caller hears there is no connection only once the
