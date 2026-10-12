@@ -25,6 +25,7 @@ import {
   useConnectPullRequestAccountMutation,
   useDisconnectPullRequestAccountMutation,
   watchPullRequestSignIn,
+  pullRequestSignInSession,
 } from '~/data-provider';
 import { useLocalize } from '~/hooks';
 
@@ -107,11 +108,18 @@ export default function ConnectedAccounts() {
      * sign-in page (or closed) when Settings is closed before the server answers. The watch on the
      * sign-in lives outside this row for the same reason.
      */
+    const startedIn = pullRequestSignInSession();
     connectMutation.mutateAsync().then(
       ({ url, expiresInSeconds }) => {
+        /** Signed out meanwhile: the sign-in belongs to a session that is over. */
+        if (startedIn !== pullRequestSignInSession()) {
+          popup.close();
+          return;
+        }
         popup.location.href = url;
         keepFocus.current = true;
         watchPullRequestSignIn(queryClient, {
+          startedIn,
           expiresAt: Date.now() + (expiresInSeconds ?? DEFAULT_CONNECT_FLOW_SECONDS) * 1000,
         });
       },

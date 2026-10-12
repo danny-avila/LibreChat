@@ -6,6 +6,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { TPullRequestConnection, TStartupConfig } from 'librechat-data-provider';
 import { stopPullRequestSignIns } from '~/data-provider/PullRequest/signIn';
+import { endPullRequestSession } from '~/data-provider/PullRequest/queries';
 import ConnectedAccounts from '../ConnectedAccounts';
 
 const mockGetConnection = jest.fn();
@@ -193,6 +194,26 @@ describe('ConnectedAccounts', () => {
       expect(popup.location.href).toBe('https://github.com/login/oauth/authorize?x=1'),
     );
     expect(popup.close).not.toHaveBeenCalled();
+  });
+
+  it('closes the window instead of signing in when the session ends first', async () => {
+    const popup = fakeWindow();
+    openSpy.mockReturnValue(popup as unknown as Window);
+    mockGetConnection.mockResolvedValue(connection(false));
+    let answer: (value: { url: string }) => void = () => undefined;
+    mockConnect.mockReturnValueOnce(new Promise((resolve) => (answer = resolve)));
+    const { unmount } = renderRow();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /com_ui_pr_account_connect_aria/ }),
+    );
+    await waitFor(() => expect(mockConnect).toHaveBeenCalledTimes(1));
+    unmount();
+    endPullRequestSession();
+    answer({ url: 'https://github.com/login/oauth/authorize?x=1' });
+
+    await waitFor(() => expect(popup.close).toHaveBeenCalledTimes(1));
+    expect(popup.location.href).toBe('');
   });
 
   it('closes the window when the connection fails after Settings closed', async () => {

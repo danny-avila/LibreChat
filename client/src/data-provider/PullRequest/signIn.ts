@@ -14,6 +14,13 @@ type Watch = { stop: () => void };
 
 /** One sign-in per app at a time: starting another replaces the watch on the first. */
 const watches = new Map<QueryClient, Watch>();
+/** Counts ended sessions, so work started in one session can tell it has ended. */
+let session = 0;
+
+/** The current session; a sign-in started now is watched only while this stays current. */
+export function pullRequestSignInSession(): number {
+  return session;
+}
 
 /**
  * Announces, from the page an OAuth sign-in lands on, that it has settled. The page shares this
@@ -47,8 +54,12 @@ export function announceOAuthSettled(): void {
  */
 export function watchPullRequestSignIn(
   queryClient: QueryClient,
-  { expiresAt }: { expiresAt: number },
+  { expiresAt, startedIn }: { expiresAt: number; startedIn: number },
 ): () => void {
+  /** Started before the session ended: nothing to watch for whoever signs in next. */
+  if (startedIn !== session) {
+    return () => undefined;
+  }
   watches.get(queryClient)?.stop();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let wait = PULL_REQUEST_CONNECT_POLL_MS;
@@ -111,6 +122,7 @@ export function watchPullRequestSignIn(
 
 /** Ends every sign-in watch, as the session ending does: none may ask for the next user. */
 export function stopPullRequestSignIns(): void {
+  session += 1;
   for (const watch of [...watches.values()]) {
     watch.stop();
   }
