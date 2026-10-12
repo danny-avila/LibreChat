@@ -988,6 +988,34 @@ describe('the connection generation', () => {
     await expect(reader.oauth.token(user, github)).resolves.toBe('current');
   });
 
+  it.each([
+    ['the first connection', false],
+    ['a reconnection', true],
+  ])('keeps the previous state when storing %s fails', async (_label, connectedBefore) => {
+    const { oauth } = setup([
+      () => json({ access_token: 'previous' }),
+      () => json({ access_token: 'current' }),
+    ]);
+    const user = await existing();
+    if (connectedBefore) await connect(oauth, user);
+    const { claims } = await started(oauth, user);
+    const original = store.replaceTokenIfCurrent.bind(store);
+    const write = jest
+      .spyOn(store, 'replaceTokenIfCurrent')
+      .mockImplementation(async (scope, expected, row) =>
+        row.type === PULL_REQUEST_OAUTH_TYPE
+          ? Promise.reject(new Error('write failed'))
+          : original(scope, expected, row),
+      );
+    try {
+      await expect(oauth.complete(claims, 'code', github)).rejects.toThrow('write failed');
+    } finally {
+      write.mockRestore();
+    }
+    /** The earlier connection answers again, or there is still none; a new sign-in works. */
+    await expect(oauth.token(user, github)).resolves.toBe(connectedBefore ? 'previous' : null);
+  });
+
   it('drops reads of this process that started before a sign-in it completed', async () => {
     const user = await existing();
     const { oauth: connector } = setup([() => json({ access_token: 'previous' })]);

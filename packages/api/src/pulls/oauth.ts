@@ -338,6 +338,22 @@ export function createPullRequestOAuth({
     throw new Error('The connection generation could not be replaced');
   }
 
+  /** Moves the user back from `from` to `to`, only while `from` is still current. */
+  async function restoreGeneration(userId: string, from: string, to: string): Promise<void> {
+    const scope = generationScopeOf(userId);
+    if (to === FIRST_GENERATION) {
+      await store.deleteTokens({ scope, token: from });
+      return;
+    }
+    await store.replaceTokenIfCurrent(scope, from, {
+      userId,
+      type: PULL_REQUEST_OAUTH_GENERATION_TYPE,
+      identifier: 'generation',
+      token: to,
+      expiresIn: GENERATION_LIFETIME_SECONDS,
+    });
+  }
+
   /**
    * Starts the generation's lifetime again, at most once a day, whenever a grant under it is
    * extended or refreshed. The same value is written back only while it is current, so a
@@ -782,11 +798,18 @@ export function createPullRequestOAuth({
       const record = { ...response, lineage: randomUUID(), flowId: state.flowId, generation };
       /** Replaces whatever the user had connected before, read first so the swap is exact. */
       let stored: string | null = null;
-      for (let attempt = 0; attempt < 3 && stored == null; attempt++) {
-        const current = await store.findToken({ scope: scopeOf(state.userId, config) });
-        stored = await write(state.userId, config, current?.token ?? null, record);
+      try {
+        for (let attempt = 0; attempt < 3 && stored == null; attempt++) {
+          const current = await store.findToken({ scope: scopeOf(state.userId, config) });
+          stored = await write(state.userId, config, current?.token ?? null, record);
+        }
+        if (stored == null) throw new Error('The grant could not be stored');
+      } catch (error) {
+        /** Nothing replaced the previous grant, so it is the connection again: the generation goes
+         *  back to the one it had, unless something moved it on since. */
+        await restoreGeneration(state.userId, generation, state.generation);
+        throw error;
       }
-      if (stored == null) throw new Error('The grant could not be stored');
       /**
        * Account deletion sets its fence and then removes the user's tokens; a disconnect replaces
        * the generation and then removes the grants. A grant stored before that removal goes with
