@@ -524,17 +524,23 @@ export function createPullRequestOAuth({
     return retentionOf(config);
   };
 
-  /** Whether using a grant should rewrite its row: once it was last stamped more than a day ago
-   *  (half the retention, if that is shorter), so the retention runs from the last use within a
-   *  day without a write per use, or when it is set to outlive the current retention, so a
-   *  shortened retention takes hold. */
-  const needsRewrite = (row: PullRequestOAuthRow, config: PullRequestOAuthConfig): boolean => {
+  /** Whether using a grant should rewrite its row: once a write would extend its deadline by more
+   *  than a day (half the retention, if that is shorter), so the retention runs from the last use
+   *  within a day without a write per use, or when it is set to outlive what the current retention
+   *  allows (past the second `lifetimeOf` rounds up to), so a shortened retention takes hold. A
+   *  grant whose access token expires without a refresh token already lives until that expiry, so
+   *  using it never needs a write. */
+  const needsRewrite = (
+    row: PullRequestOAuthRow,
+    grant: Grant,
+    config: PullRequestOAuthConfig,
+  ): boolean => {
     if (row.expiresAt == null) return false;
     const remaining = new Date(row.expiresAt).getTime() - now();
-    const retention = retentionOf(config) * 1000;
-    const interval = Math.min(DAY_SECONDS * 1000, retention / 2);
+    const lifetime = lifetimeOf(grant, config) * 1000;
+    const interval = Math.min(DAY_SECONDS * 1000, (retentionOf(config) * 1000) / 2);
     return (
-      Number.isFinite(remaining) && (remaining < retention - interval || remaining > retention)
+      Number.isFinite(remaining) && (remaining < lifetime - interval || remaining > lifetime + 1000)
     );
   };
 
@@ -721,7 +727,7 @@ export function createPullRequestOAuth({
     const { row, record: grant } = current;
     /** Without a refresh token there is nothing to refresh with, so it serves until it expires. */
     if (isLive(grant, grant.refreshToken == null ? 0 : REFRESH_SKEW_MS)) {
-      if (needsRewrite(row, config) && grant.leaseUntil == null) {
+      if (needsRewrite(row, grant, config) && grant.leaseUntil == null) {
         const { v: _v, ...same } = grant;
         /** Rare (past half the retention, or a shortened one), so the read waits for it. A failed
          *  write is an outage, not a successful read: the grant would keep its old deadline. */

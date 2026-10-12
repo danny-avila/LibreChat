@@ -633,6 +633,19 @@ describe('token', () => {
     await expect(oauth.connected(user, shortened)).resolves.toBe(false);
   });
 
+  it('serves a grant that expires without a refresh token without rewriting it on every use', async () => {
+    const { oauth } = setup([() => json({ access_token: 'fixed', expires_in: 7200 })]);
+    const user = userId();
+    await connect(oauth, user, gitlab);
+    const writes = jest.spyOn(store, 'replaceTokenIfCurrent');
+    for (let i = 0; i < 3; i++) {
+      await expect(oauth.token(user, gitlab)).resolves.toBe('fixed');
+    }
+    await settle();
+    expect(writes).not.toHaveBeenCalled();
+    writes.mockRestore();
+  });
+
   it('applies the current retention again when another replica changed the row first', async () => {
     const { oauth } = setup([() => json({ access_token: 'kept' })]);
     const user = userId();
