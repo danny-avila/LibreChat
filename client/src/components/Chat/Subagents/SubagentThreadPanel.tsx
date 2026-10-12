@@ -784,18 +784,27 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const close = useCallback(() => {
     resetSelection();
     requestAnimationFrame(() => {
+      const available = (element: HTMLElement | null | undefined) =>
+        element != null &&
+        element.isConnected &&
+        !element.matches(':disabled, [aria-disabled="true"]') &&
+        element.closest('[hidden], [inert], [aria-hidden="true"]') == null;
       const trigger = Array.from(
         document.querySelectorAll<HTMLElement>('[data-subagent-tool-call]'),
       ).find(
         (element) =>
           element.dataset.subagentToolCall === selection.toolCallId &&
           element.dataset.subagentParentMessage === selection.parentMessageId &&
-          element.dataset.subagentPartIndex === String(selection.partIndex),
+          element.dataset.subagentPartIndex === String(selection.partIndex) &&
+          available(element),
+      );
+      const disclosure = document.querySelector<HTMLElement>(
+        '[data-testid="header-background-tasks-button"]',
       );
       const destination =
         trigger ??
-        (returnFocusRef.current?.isConnected ? returnFocusRef.current : null) ??
-        document.querySelector<HTMLElement>('[data-testid="header-background-tasks-button"]');
+        (available(returnFocusRef.current) ? returnFocusRef.current : null) ??
+        (available(disclosure) ? disclosure : null);
       destination?.focus({ preventScroll: true });
     });
   }, [resetSelection, selection.parentMessageId, selection.partIndex, selection.toolCallId]);

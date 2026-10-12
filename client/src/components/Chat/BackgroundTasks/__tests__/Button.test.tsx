@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, render, screen, waitFor, within } from '@testing-library/react';
 import { ContentTypes, QueryKeys, dataService } from 'librechat-data-provider';
 import type { ParentSubagentSummary, BackgroundTaskIndex, TMessage } from 'librechat-data-provider';
+import type { ActiveSubagentPanel } from '~/components/Chat/Subagents/state';
 import { ParentSubagentsProvider } from '~/components/Chat/Subagents/ParentSubagentsProvider';
 import { activeSubagentPanel } from '~/components/Chat/Subagents/state';
 import { ChatSurfaceHarness } from 'test/harness';
@@ -91,6 +92,9 @@ const SelectionProbe = () => {
     </pre>
   );
 };
+
+const selectedSubagent = (): ActiveSubagentPanel | null =>
+  JSON.parse(screen.getByTestId('selected-subagent').textContent ?? 'null');
 
 const renderButton = (children: ParentSubagentSummary[] = [], initialMessages = messages) => {
   jest.spyOn(dataService, 'getSubagentThread').mockImplementation(() => new Promise(() => {}));
@@ -503,9 +507,7 @@ describe('BackgroundTasksButton', () => {
       await userEvent.click(
         await screen.findByRole('button', { name: /^com_ui_background_tasks_open_subagent:/ }),
       );
-      expect(
-        JSON.parse(screen.getByTestId('selected-subagent').textContent ?? 'null'),
-      ).toMatchObject({
+      expect(selectedSubagent()).toMatchObject({
         parentConversationId: conversationId,
         parentMessageId: 'parent-message',
         toolCallId: 'call-subagent',
@@ -531,9 +533,7 @@ describe('BackgroundTasksButton', () => {
         name: 'com_ui_background_tasks_open_subagent: Other researcher',
       }),
     );
-    expect(
-      JSON.parse(screen.getByTestId('selected-subagent').textContent ?? 'null'),
-    ).toMatchObject({
+    expect(selectedSubagent()).toMatchObject({
       durable: { threadId: 'other-thread', taskId: 'sub-task-1' },
     });
   });
@@ -580,9 +580,7 @@ describe('BackgroundTasksButton', () => {
     await userEvent.click(
       await screen.findByRole('button', { name: /^com_ui_background_tasks_open_subagent:/ }),
     );
-    expect(
-      JSON.parse(screen.getByTestId('selected-subagent').textContent ?? 'null'),
-    ).toMatchObject({
+    expect(selectedSubagent()).toMatchObject({
       durable: { threadId: 'thread-1', taskId: 'sub-task-1' },
       event: { actorId: 'actor-1', pinnedTask: true },
       isSubmitting: false,

@@ -1223,9 +1223,14 @@ describe('SubagentThreadPanel', () => {
       isError: false,
       isReadinessPending: false,
     });
+    const openTaskLabel = 'Open task';
     const OpenPanel = () => {
       const open = useOpenSubagentPanel();
-      return <button onClick={() => open?.(selection)}>Open task</button>;
+      return (
+        <button type="button" onClick={() => open?.(selection)}>
+          {openTaskLabel}
+        </button>
+      );
     };
     render(
       <Root>
@@ -1304,6 +1309,41 @@ describe('SubagentThreadPanel', () => {
       disclosure.remove();
     }
   });
+
+  it.each(['hidden', 'inert', 'aria-hidden', 'disabled'])(
+    'skips an originating trigger blocked by %s when returning focus',
+    async (blocked) => {
+      mockUseSubagentThreadQuery.mockReturnValue({
+        data: completedView,
+        isLoading: false,
+        isError: false,
+        isReadinessPending: false,
+      });
+      const disclosure = document.createElement('button');
+      const group = document.createElement('section');
+      const trigger = document.createElement('button');
+      trigger.dataset.subagentToolCall = 'tool-call';
+      trigger.dataset.subagentParentMessage = 'parent-message';
+      trigger.dataset.subagentPartIndex = '2';
+      if (blocked === 'disabled') trigger.disabled = true;
+      else group.setAttribute(blocked, blocked === 'aria-hidden' ? 'true' : '');
+      group.append(trigger);
+      document.body.append(disclosure, group);
+      disclosure.focus();
+      try {
+        render(
+          <Root>
+            <SubagentThreadPanel selection={selection} />
+          </Root>,
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'com_ui_close' }));
+        await waitFor(() => expect(disclosure).toHaveFocus());
+      } finally {
+        disclosure.remove();
+        group.remove();
+      }
+    },
+  );
 
   it('renders a bounded read-only activity timeline and closes its selection', async () => {
     mockUseSubagentThreadQuery.mockReturnValue({
