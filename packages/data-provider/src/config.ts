@@ -67,6 +67,7 @@ import {
   PULL_REQUEST_BATCH_VERSION,
   PULL_REQUEST_BATCH_TIMEOUT_MAX_SECONDS,
 } from './types/pullRequest';
+import type { PullRequestProvider } from './types/pullRequest';
 import { isActionTool } from './types/tools';
 import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
@@ -114,11 +115,13 @@ export const BASE_ONLY_CONFIG_SECTIONS = ['filters', 'mcpAppSandbox'] as const;
 export const BASE_PRINCIPAL_CONFIG_SECTIONS = ['langfuse'] as const;
 /** Fields inside overridable sections that only the operator's YAML sets: a role, group, user
  * or tenant config document can neither change nor remove them. The pull request provider and
- * host decide where the deployment's token is sent, and the shared cache's slot count where
- * every replica looks for a shared answer. */
+ * host decide where the deployment's token is sent, the OAuth app which credentials users grant
+ * and which environment secret is sent with them, and the shared cache's slot count where every
+ * replica looks for a shared answer. */
 export const BASE_ONLY_CONFIG_PATHS = [
   'endpoints.agents.pullRequests.provider',
   'endpoints.agents.pullRequests.host',
+  'endpoints.agents.pullRequests.oauth',
   'endpoints.agents.pullRequests.sharedCacheSlots',
 ] as const;
 
@@ -1918,6 +1921,36 @@ export const agentsEndpointSchema = baseEndpointSchema
            *  `${GITHUB_PULL_REQUEST_TOKEN}`. Never the token itself. Optional: without it the first
            *  of `GITHUB_PULL_REQUEST_TOKEN`, `GITHUB_TOKEN` and `GH_TOKEN` that is set is used. */
           token: pullRequestTokenReferenceSchema.optional(),
+          /** Lets each user connect their own account, so lookups use that user's token, rate
+           *  limit and repository access instead of the server's. Read from the YAML only, as
+           *  `provider` and `host` are. Register `<DOMAIN_SERVER>/api/pull-requests/oauth/callback`
+           *  as the callback URL. On GitHub, a GitHub App with read-only permissions is the
+           *  recommended client: its user tokens need no scope. A connection belongs to the app
+           *  it was made with: changing `clientId`, `provider` or `host` asks users to connect
+           *  again. A grant made with another `clientId`, provider or host is never used and
+           *  expires with `retentionDays`. A changed `scope` applies to new connections only.
+           *  Disconnecting removes every grant of the user. */
+          oauth: z
+            .object({
+              /** Environment variable references, never the values. */
+              clientId: pullRequestTokenReferenceSchema,
+              clientSecret: pullRequestTokenReferenceSchema,
+              /** Space separated scopes to request. Defaults: none on GitHub, `read_api` on
+               *  GitLab, and the consumer's own on Bitbucket. */
+              scope: z
+                .string()
+                .trim()
+                .max(256)
+                .regex(/^[A-Za-z0-9_:.\- ]*$/)
+                .optional(),
+              /** Minutes a user may take to approve the connection at the provider. Default 10. */
+              flowTimeoutMinutes: z.number().int().min(1).max(60).optional(),
+              /** Seconds a code exchange or token refresh may take. Default 10. */
+              requestTimeoutSeconds: z.number().int().min(1).max(60).optional(),
+              /** Days a connection is kept without being used; every use extends it. Default 180. */
+              retentionDays: z.number().int().min(1).max(3650).optional(),
+            })
+            .optional(),
           /** Repositories the token may be used for, as `owner/name` or `owner/*`. A worker reports
            *  its own repository, so without this list a user could point the server's token at any
            *  repository it can read. */
@@ -3259,6 +3292,8 @@ export type TStartupConfig = {
   /** `endpoints.agents.pullRequests.maxConcurrentLookups`, so the single-route fallback of an
    *  upgrade in progress keeps to the limit the operator configured. */
   pullRequestsMaxConcurrentLookups?: number;
+  /** The provider users can connect their own account to, from `pullRequests.oauth`. */
+  pullRequestsConnect?: PullRequestProvider;
   /** Manual context compaction, gated by the same `summarization.enabled`
    *  switch that governs the automatic detour. */
   compactionEnabled?: boolean;
