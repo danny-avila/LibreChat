@@ -23,6 +23,9 @@ const {
   createPullRequestSource,
   createProxyAwareFetch,
   createPullRequestLookup,
+  createPullRequestLookupStore,
+  keyvRedisClient,
+  cacheConfig,
   createConversationPullRequestsHandler,
   backgroundTaskRegistry,
   createSubagentThreadViewHandler,
@@ -175,6 +178,7 @@ const backgroundTaskCancelHandler = createBackgroundTaskCancelHandler({
 /** One lookup, so the header's single route and the sidebar's batch route share its cache. */
 const pullRequestLookup = createPullRequestLookup({
   source: createPullRequestSource({ fetchFn: createProxyAwareFetch() }),
+  store: createPullRequestLookupStore({ client: keyvRedisClient, config: cacheConfig }),
 });
 const conversationPullRequestHandler = createConversationPullRequestHandler({
   getConvoLaneGit: db.getConvoLaneGit,

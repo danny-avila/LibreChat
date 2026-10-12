@@ -168,6 +168,11 @@ describe('mergeConfigOverrides', () => {
     ]);
     expect(provider.provider).toBeUndefined();
 
+    const slots = read([
+      fakeConfig({ endpoints: { agents: { pullRequests: { sharedCacheSlots: 64 } } } }, 10),
+    ]);
+    expect(slots.sharedCacheSlots).toBeUndefined();
+
     const removed = read([fakeConfig({}, 10, ['endpoints.agents.pullRequests.host'])]);
     expect(removed.host).toBe('ghe.example.com');
 

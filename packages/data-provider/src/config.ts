@@ -114,10 +114,12 @@ export const BASE_ONLY_CONFIG_SECTIONS = ['filters', 'mcpAppSandbox'] as const;
 export const BASE_PRINCIPAL_CONFIG_SECTIONS = ['langfuse'] as const;
 /** Fields inside overridable sections that only the operator's YAML sets: a role, group, user
  * or tenant config document can neither change nor remove them. The pull request provider and
- * host decide where the deployment's token is sent. */
+ * host decide where the deployment's token is sent, and the shared cache's slot count where
+ * every replica looks for a shared answer. */
 export const BASE_ONLY_CONFIG_PATHS = [
   'endpoints.agents.pullRequests.provider',
   'endpoints.agents.pullRequests.host',
+  'endpoints.agents.pullRequests.sharedCacheSlots',
 ] as const;
 
 export const defaultRetrievalModels = [
@@ -1960,6 +1962,20 @@ export const agentsEndpointSchema = baseEndpointSchema
           maxCandidatePages: z.number().int().min(1).max(10).optional().default(1),
           /** Candidates compared with that commit before the search gives up. Each is one request. */
           maxHeadComparisons: z.number().int().min(0).max(20).optional().default(3),
+          /** Share looked-up pull requests and GitHub rate limit cooldowns between replicas
+           *  through Redis, so each replica does not spend the token on the same answer. Takes
+           *  effect only when the deployment runs with Redis (`USE_REDIS`); each replica keeps its
+           *  own in-memory cache either way. Only found pull requests and rate limits are shared;
+           *  a failed lookup stays with the replica that saw it. */
+          sharedCache: z.boolean().optional().default(false),
+          /** Longest one shared cache read or write may take, in milliseconds, before a lookup
+           *  carries on without it, so a slow Redis cannot hold the header request. A command
+           *  still queued at that point, as during a disconnect, is dropped rather than sent later. */
+          sharedCacheTimeoutMs: z.number().int().min(10).max(5000).optional().default(250),
+          /** Redis keys the shared cache uses at most, for results and again for rate limits:
+           *  each goes in a slot picked from its key, replacing what was there. Read from the
+           *  YAML only, so every replica and principal addresses the same slot for a lookup. */
+          sharedCacheSlots: z.number().int().min(64).max(1_000_000).optional().default(65_536),
         })
         .optional(),
       /** Conversational background-task delivery policy. Automatic completion wakeups are
@@ -4698,6 +4714,10 @@ export enum CacheKeys {
    * Key for the per-model reasoning effort cache of OpenRouter endpoints.
    */
   REASONING_CAPABILITIES = 'REASONING_CAPABILITIES',
+  /**
+   * Key for pull request lookups and GitHub rate limit cooldowns shared across replicas.
+   */
+  PULL_REQUESTS = 'PULL_REQUESTS',
   /**
    * Key for the app config namespace.
    */

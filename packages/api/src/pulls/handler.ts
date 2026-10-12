@@ -229,6 +229,9 @@ function lookupInput(settings: PullRequestSettings, token: string, lane: Eligibl
     ttlMs: (settings.cacheTtlSeconds ?? 30) * 1000,
     cacheMaxEntries: settings.cacheMaxEntries ?? 500,
     cacheMaxCredentials: settings.cacheMaxCredentials ?? 256,
+    sharedCache: settings.sharedCache === true,
+    sharedCacheTimeoutMs: settings.sharedCacheTimeoutMs ?? 250,
+    sharedCacheSlots: settings.sharedCacheSlots ?? 65_536,
     allowedRepositories: repositoryScope(settings),
     limits: {
       requestTimeoutMs: (settings.requestTimeoutSeconds ?? 10) * 1000,
@@ -476,6 +479,11 @@ export function createConversationPullRequestsHandler(deps: {
           input.ttlMs,
           input.limits,
           input.allowedRepositories,
+          /** Where the lookup caches and shares its answer, so each caller's own policy holds. */
+          input.cacheMaxEntries,
+          input.cacheMaxCredentials,
+          input.sharedCache,
+          input.sharedCacheTimeoutMs,
         ])}`;
         const joined = sharedLookups.join(shareKey, scope, limit, input);
         const result = await withDeadline(joined.promise, remaining);
