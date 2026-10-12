@@ -555,9 +555,9 @@ describe('TokenUsage Breakdown', () => {
       await userEvent.click(toggle());
 
       const totals = within(screen.getByTestId('token-usage-totals'));
-      expect(
-        totals.getByText('com_ui_context_subagents_all').nextElementSibling,
-      ).toHaveTextContent('1K');
+      expect(totals.getByText('com_ui_context_subagents_all').nextElementSibling).toHaveTextContent(
+        '1K',
+      );
     });
   });
 

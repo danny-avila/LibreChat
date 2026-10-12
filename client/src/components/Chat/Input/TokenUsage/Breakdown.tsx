@@ -609,7 +609,6 @@ export default function Breakdown({
                   </>
                 )}
               </div>
-
             </div>
             <div className="min-w-0 space-y-3">
               <Usage
@@ -622,7 +621,9 @@ export default function Breakdown({
                     ? 'com_ui_context_waiting_usage'
                     : 'com_ui_context_unavailable_usage',
                 )}
-                cost={showCost && view.lastTurnUsage?.costKnown ? view.lastTurnUsage.cost : undefined}
+                cost={
+                  showCost && view.lastTurnUsage?.costKnown ? view.lastTurnUsage.cost : undefined
+                }
                 costLabel={localize(
                   view.turnInProgress
                     ? 'com_ui_context_cost_current_turn'
@@ -637,7 +638,9 @@ export default function Breakdown({
                   subtitle={localize('com_ui_context_this_branch')}
                   usage={branchUsage}
                   cost={showCost && branchUsage.costKnown ? view.branchCost : undefined}
-                  costLabel={localize(showTotal ? 'com_ui_context_cost_branch' : 'com_ui_context_cost')}
+                  costLabel={localize(
+                    showTotal ? 'com_ui_context_cost_branch' : 'com_ui_context_cost',
+                  )}
                   currency={currency}
                   subagentTokens={subagentTokens}
                   testId="token-usage-totals"
