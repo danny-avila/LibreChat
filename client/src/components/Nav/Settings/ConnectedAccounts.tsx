@@ -258,15 +258,17 @@ export default function ConnectedAccounts() {
             <Icon className="h-5 w-5" />
           </span>
           <div className="min-w-0 flex-1">
-            <p id={labelId} className="text-text-primary text-sm font-medium">
-              {name}
-            </p>
+            {/** The status sits beside the name, not in the row, so the description keeps the
+             *  column's width on a phone. */}
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <p id={labelId} className="text-text-primary text-sm font-medium">
+                {name}
+              </p>
+              <div role="status">{statusContent}</div>
+            </div>
             <p id={descriptionId} className="text-text-secondary text-xs">
               {localize('com_ui_pr_account_description')}
             </p>
-          </div>
-          <div role="status" className="shrink-0">
-            {statusContent}
           </div>
           <div className="shrink-0">{action}</div>
         </div>
