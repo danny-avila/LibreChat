@@ -282,15 +282,14 @@ describe('watchPullRequestSignIn', () => {
       expect(await askedAfter(10 * MINUTE)).toBeGreaterThan(0);
     });
 
-    it('ends the only watch when the failure names no flow', async () => {
+    it('ignores a failure that names no flow, such as another OAuth sign-in', async () => {
       watchFlow(setup().client, 'flow-a');
       announceOAuthSettled({ outcome: 'failed' });
-      expect(await askedAfter(10 * MINUTE)).toBe(0);
+      expect(await askedAfter(10 * MINUTE)).toBeGreaterThan(0);
     });
 
-    it('ends none of several watches when the failure names no flow', async () => {
-      watchFlow(setup().client, 'flow-a');
-      watchFlow(setup().client, 'flow-b');
+    it('ignores a failure when its own server names no flow either', async () => {
+      watchFlow(setup().client);
       announceOAuthSettled({ outcome: 'failed' });
       expect(await askedAfter(10 * MINUTE)).toBeGreaterThan(0);
     });

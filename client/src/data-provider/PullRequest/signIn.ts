@@ -52,8 +52,8 @@ export function announceOAuthSettled(settlement: OAuthSettlement): void {
  *
  * - The landing page's announcement asks the status at once; it is the signal that survives the
  *   provider severing the popup, so the popup handle is not consulted at all. A failure ends the
- *   watch when it names this sign-in's flow, or, naming none, when this is the only sign-in being
- *   watched, since a page that cannot say which flow failed cannot be matched more closely.
+ *   watch only when it names this sign-in's flow: the server names it on every failure after the
+ *   flow is bound, so one naming none belongs to another sign-in or never reached this one.
  * - Without it (an older page, no BroadcastChannel) the status is asked on a timer that starts at
  *   2 seconds and doubles to 30, and whenever this window regains focus.
  * - At `expiresAt` the server's signed state is no longer accepted, so watching ends.
@@ -118,8 +118,8 @@ export function watchPullRequestSignIn(
       void check();
       return;
     }
-    const mine = settlement.flowId != null ? settlement.flowId === flowId : watches.size === 1;
-    if (mine) {
+    /** A failure naming no flow is another sign-in's (an MCP server's, say): ours always name it. */
+    if (settlement.flowId != null && settlement.flowId === flowId) {
       stop();
     }
   };
