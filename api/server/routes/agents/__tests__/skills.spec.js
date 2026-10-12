@@ -17,7 +17,6 @@ jest.mock('@librechat/api', () => ({
       create: mockWrite,
       get: mockList,
       update: mockWrite,
-      delete: mockWrite,
       listFiles: mockList,
       getFile: mockList,
       updateFile: mockWrite,

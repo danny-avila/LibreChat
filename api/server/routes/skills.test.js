@@ -58,6 +58,7 @@ jest.mock('~/server/middleware/config/app', () => (req, _res, next) => {
 jest.mock('~/server/services/Files/strategies', () => ({
   getStrategyFunctions: jest.fn().mockReturnValue({
     saveBuffer: jest.fn().mockResolvedValue('/uploads/test/file.txt'),
+    deleteFile: jest.fn().mockResolvedValue(undefined),
     getDownloadStream: jest.fn().mockResolvedValue({
       pipe: jest.fn(),
       on: jest.fn(),
@@ -871,7 +872,7 @@ describe('Skill routes', () => {
       expect((await upload('stale', initial.body.file_id)).status).toBe(409);
       const stored = await SkillFile.findOne({ skillId: created.body._id });
       expect(stored.file_id).toBe(replaced.body.file_id);
-      await request(app).delete(`${url}/references/revision.md`);
+      await request(app).delete(`${url}/references/revision.md`).expect(200);
       expect((await upload('resurrect', replaced.body.file_id)).status).toBe(409);
       expect(await SkillFile.countDocuments({ skillId: created.body._id })).toBe(0);
     });
