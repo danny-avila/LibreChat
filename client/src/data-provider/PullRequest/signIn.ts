@@ -79,12 +79,17 @@ export function watchPullRequestSignIn(
   let wait = PULL_REQUEST_CONNECT_POLL_MS;
   let stopped = false;
 
-  const check = async (): Promise<void> => {
+  /** `fresh` for a check after the sign-in page settled: a request already in flight may have been
+   *  sent before the callback stored the grant, and asking now would only join it. */
+  const check = async (fresh = false): Promise<void> => {
     if (stopped) {
       return;
     }
     let status: TPullRequestConnection;
     try {
+      if (fresh) {
+        await queryClient.cancelQueries([QueryKeys.pullRequestConnection]);
+      }
       status = await queryClient.fetchQuery<TPullRequestConnection>(
         [QueryKeys.pullRequestConnection],
         () => dataService.getPullRequestConnection(),
@@ -118,14 +123,14 @@ export function watchPullRequestSignIn(
   const onSettled = (event: MessageEvent) => {
     const settlement: unknown = event.data;
     if (!isSettlement(settlement) || settlement.outcome === 'succeeded') {
-      void check();
+      void check(true);
       return;
     }
     /** A failure naming no flow is another sign-in's (an MCP server's, say): ours always name it. */
     if (settlement.flowId != null && settlement.flowId === flowId) {
       /** The server can store the grant and still report the flow failed (a check after storing
        *  could not finish), so the status is read once more before the watch ends. */
-      void check().finally(stop);
+      void check(true).finally(stop);
     }
   };
   const channel =

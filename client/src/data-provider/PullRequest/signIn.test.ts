@@ -129,6 +129,31 @@ describe('watchPullRequestSignIn', () => {
     expect(invalidate).toHaveBeenCalledWith([QueryKeys.conversationPullRequest]);
   });
 
+  it('asks again after the announcement instead of joining a request sent before it', async () => {
+    const { client, invalidate } = setup();
+    watchPullRequestSignIn(client, {
+      startedIn: pullRequestSignInSession(),
+      expiresAt: Date.now() + 10 * MINUTE,
+    });
+    /** A focus asks while the callback has not stored the grant yet; that answer is slow. */
+    let answerEarly: (status: TPullRequestConnection) => void = () => undefined;
+    mockGetConnection.mockImplementationOnce(
+      () => new Promise((resolve) => (answerEarly = resolve)),
+    );
+    await focus();
+    expect(mockGetConnection).toHaveBeenCalledTimes(1);
+
+    mockGetConnection.mockResolvedValue(connection(true));
+    invalidate.mockClear();
+    announceOAuthSettled({ outcome: 'succeeded' });
+    await pass(0);
+    answerEarly(connection(false));
+    await pass(0);
+    expect(mockGetConnection).toHaveBeenCalledTimes(2);
+    expect(client.getQueryData([QueryKeys.pullRequestConnection])).toEqual(connection(true));
+    expect(invalidate).toHaveBeenCalledWith([QueryKeys.conversationPullRequest]);
+  });
+
   it('backs off asking on a timer, so a sign-in left open costs few requests', async () => {
     const { client } = setup();
     watchPullRequestSignIn(client, {
@@ -304,10 +329,11 @@ describe('watchPullRequestSignIn', () => {
       return mockGetConnection.mock.calls.length - before;
     };
 
-    it('ends the watch on the flow it names', async () => {
+    it('ends the watch on the flow it names, after one last read', async () => {
       watchFlow(setup().client, 'flow-a');
       announceOAuthSettled({ outcome: 'failed', flowId: 'flow-a' });
-      expect(await askedAfter(10 * MINUTE)).toBe(0);
+      /** The read the failure itself asks for, and none after it. */
+      expect(await askedAfter(10 * MINUTE)).toBe(1);
     });
 
     it('reads the status once before ending, since the grant may have been stored', async () => {
