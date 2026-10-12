@@ -1,6 +1,10 @@
 import express from 'express';
 import { logger, getTenantId, tenantStorage } from '@librechat/data-schemas';
-import type { PullRequestProvider, TPullRequestConnection } from 'librechat-data-provider';
+import type {
+  PullRequestProvider,
+  TPullRequestConnection,
+  TPullRequestConnectStart,
+} from 'librechat-data-provider';
 import type { Request, Response, Router, RequestHandler } from 'express';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { AppConfigUserLike, GetAppConfigOptions } from '~/app/service';
@@ -114,14 +118,13 @@ export function createPullRequestConnectionHandlers(deps: {
           { id: user.id, ...(tenantId ? { tenantId } : {}) },
           config,
         );
-        /** As long as the signed state is valid, so an approval inside the window can finish. */
-        setOAuthCsrfCookie(
-          res,
-          flowId,
-          PULL_REQUEST_OAUTH_CALLBACK_PATH,
-          (config.flowTimeoutMinutes ?? DEFAULT_PULL_REQUEST_OAUTH_FLOW_MINUTES) * 60_000,
-        );
-        res.status(200).json({ url });
+        /** How long the signed state stays valid: the binding cookie lives as long, and the
+         *  client watches for exactly that long, so an approval inside the window can finish. */
+        const expiresInSeconds =
+          (config.flowTimeoutMinutes ?? DEFAULT_PULL_REQUEST_OAUTH_FLOW_MINUTES) * 60;
+        setOAuthCsrfCookie(res, flowId, PULL_REQUEST_OAUTH_CALLBACK_PATH, expiresInSeconds * 1000);
+        const body: TPullRequestConnectStart = { url, expiresInSeconds, flowId };
+        res.status(200).json(body);
       } catch (error) {
         logger.error('[PullRequests] Could not start a connection', getSafeErrorMetadata(error));
         res.status(500).json({ error: 'Failed to start the connection', code: 'CONNECT_FAILED' });
@@ -181,14 +184,18 @@ export function createPullRequestConnectionHandlers(deps: {
       }
       try {
         const config = await configFor(req.user);
-        const body: TPullRequestConnection =
+        /** Without a usable app the grant is read under any app or host, so one made before the
+         *  app was turned off still shows, and the user can still remove it. */
+        const stored =
           config == null
-            ? { configured: false, connected: false }
-            : {
-                configured: true,
-                provider: config.provider,
-                connected: await deps.oauth.connected(userId, config),
-              };
+            ? await deps.oauth.storedStatus(userId)
+            : await deps.oauth.status(userId, config);
+        const body: TPullRequestConnection = {
+          configured: config != null,
+          ...(config != null ? { provider: config.provider } : {}),
+          connected: stored.connected,
+          ...(stored.flowId != null ? { flowId: stored.flowId } : {}),
+        };
         res.status(200).json(body);
       } catch (error) {
         logger.error('[PullRequests] Could not read the connection', getSafeErrorMetadata(error));

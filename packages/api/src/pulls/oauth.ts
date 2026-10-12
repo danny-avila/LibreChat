@@ -89,7 +89,11 @@ export type PullRequestOAuthStore = {
   ): Promise<unknown>;
   /** Whether the user exists and no account deletion has started for it (its deletion fence). */
   isAgentTriggerPrincipalActive(userId: string): Promise<boolean>;
+  /** Every row of one type the user holds, whatever app or host made it. */
+  findTokensOfUser(query: { userId: string; type: string }): Promise<PullRequestOAuthRow[]>;
 };
+
+export type PullRequestOAuthStatus = { connected: boolean; flowId?: string };
 
 /** What a verified `state` carries back to the callback. */
 export type PullRequestOAuthState = {
@@ -130,6 +134,9 @@ type Grant = Issued &
     /** Epoch milliseconds of the last write, which every use makes; the retention counts from it
      *  under the current `retentionDays`, so a shortened retention applies to existing grants. */
     usedAt?: number;
+    /** The sign-in that made the connection, kept through refreshes, so a client can tell its
+     *  own sign-in landed from an older connection still being there. */
+    flowId?: string;
   };
 
 /** What a definite refusal leaves behind: no connection, but the lineage, so a slower replica
@@ -187,6 +194,39 @@ const base64url = (value: Buffer): string => value.toString('base64url');
 const isToken = (value: unknown): value is string =>
   typeof value === 'string' && value.length > 0 && value.length <= MAX_TOKEN_LENGTH;
 
+/**
+ * A stored record, from its decrypted text. Only this service writes the row, so text that is
+ * not one of its records is a failure (corruption), never an absent connection.
+ */
+function parseStored(plaintext: string): Stored {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(plaintext);
+  } catch {
+    throw new MalformedGrantError();
+  }
+  if (
+    !isRecord(parsed) ||
+    typeof parsed.clientId !== 'string' ||
+    typeof parsed.lineage !== 'string' ||
+    typeof parsed.v !== 'string'
+  ) {
+    throw new MalformedGrantError();
+  }
+  if (parsed.refused === true) return parsed as Refused;
+  if (
+    !isToken(parsed.accessToken) ||
+    (parsed.refreshToken !== undefined && !isToken(parsed.refreshToken)) ||
+    (parsed.accessExpiresAt !== undefined && typeof parsed.accessExpiresAt !== 'number') ||
+    (parsed.leaseUntil !== undefined && typeof parsed.leaseUntil !== 'number') ||
+    (parsed.usedAt !== undefined && typeof parsed.usedAt !== 'number') ||
+    (parsed.flowId !== undefined && typeof parsed.flowId !== 'string')
+  ) {
+    throw new MalformedGrantError();
+  }
+  return parsed as Grant;
+}
+
 const isSeconds = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value) && value > 0;
 
@@ -209,6 +249,11 @@ export type PullRequestOAuth = {
    *  another replica's refresh may still overtake. */
   token(userId: string, config: PullRequestOAuthConfig): Promise<string | null>;
   connected(userId: string, config: PullRequestOAuthConfig): Promise<boolean>;
+  /** `connected`, with the sign-in that made the connection. */
+  status(userId: string, config: PullRequestOAuthConfig): Promise<PullRequestOAuthStatus>;
+  /** Whether the user holds a grant under any app or host, read without a configuration, so a
+   *  grant made before the app was turned off still shows, and can still be disconnected. */
+  storedStatus(userId: string): Promise<PullRequestOAuthStatus>;
   /** Marks the grant refused when the provider rejected `accessToken` on a lookup, only while it
    *  is still the stored one: a grant refreshed or reconnected since stands. */
   reject(userId: string, config: PullRequestOAuthConfig, accessToken: string): Promise<void>;
@@ -405,34 +450,9 @@ export function createPullRequestOAuth({
      *  key) or is not one of its records is a failure, not an absent connection, and it
      *  propagates. A record of another OAuth app, from before the app was replaced, is no
      *  connection to this one. */
-    const plaintext = await decrypt(row.token);
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(plaintext);
-    } catch {
-      throw new MalformedGrantError();
-    }
-    if (
-      !isRecord(parsed) ||
-      typeof parsed.clientId !== 'string' ||
-      typeof parsed.lineage !== 'string' ||
-      typeof parsed.v !== 'string'
-    ) {
-      throw new MalformedGrantError();
-    }
-    if (parsed.refused === true) {
-      return parsed.clientId === config.clientId ? { row, record: parsed as Refused } : null;
-    }
-    if (
-      !isToken(parsed.accessToken) ||
-      (parsed.refreshToken !== undefined && !isToken(parsed.refreshToken)) ||
-      (parsed.accessExpiresAt !== undefined && typeof parsed.accessExpiresAt !== 'number') ||
-      (parsed.leaseUntil !== undefined && typeof parsed.leaseUntil !== 'number') ||
-      (parsed.usedAt !== undefined && typeof parsed.usedAt !== 'number')
-    ) {
-      throw new MalformedGrantError();
-    }
+    const parsed = parseStored(await decrypt(row.token));
     if (parsed.clientId !== config.clientId) return null;
+    if (isRefused(parsed)) return { row, record: parsed };
     /** Unused for longer than the retention now allows: gone, and removed if still this row.
      *  Awaited, and a failure propagates: the caller hears there is no connection only once the
      *  credential is actually gone. */
@@ -440,7 +460,22 @@ export function createPullRequestOAuth({
       await store.deleteTokens({ scope: scopeOf(userId, config), token: row.token });
       return null;
     }
-    return { row, record: parsed as Grant };
+    return { row, record: parsed };
+  }
+
+  async function statusOf(
+    userId: string,
+    config: PullRequestOAuthConfig,
+  ): Promise<PullRequestOAuthStatus> {
+    /** Fenced like a token read, so it never reports a connection a finished disconnect removed. */
+    const before = await generationOf(userId);
+    const current = await read(userId, config);
+    if (current == null || isRefused(current.record)) return { connected: false };
+    const grant = current.record;
+    /** The row of a grant that cannot be refreshed outlives it until the TTL reaper runs. */
+    const live = grant.refreshToken != null || isLive(grant, 0);
+    if (!live || (await generationOf(userId)) !== before) return { connected: false };
+    return grant.flowId != null ? { connected: true, flowId: grant.flowId } : { connected: true };
   }
 
   /**
@@ -551,6 +586,7 @@ export function createPullRequestOAuth({
       ...issued,
       refreshToken: issued.refreshToken ?? grant.refreshToken,
       lineage: grant.lineage,
+      ...(grant.flowId != null ? { flowId: grant.flowId } : {}),
     });
   }
 
@@ -658,7 +694,7 @@ export function createPullRequestOAuth({
         },
         config.clientId,
       );
-      const record = { ...response, lineage: randomUUID() };
+      const record = { ...response, lineage: randomUUID(), flowId: state.flowId };
       /** Replaces whatever the user had connected before, read first so the swap is exact. */
       let stored: string | null = null;
       for (let attempt = 0; attempt < 3 && stored == null; attempt++) {
@@ -698,13 +734,25 @@ export function createPullRequestOAuth({
     },
 
     async connected(userId, config) {
-      /** Fenced like a token read, so it never reports a connection a finished disconnect removed. */
+      return (await statusOf(userId, config)).connected;
+    },
+
+    status: statusOf,
+
+    async storedStatus(userId) {
       const before = await generationOf(userId);
-      const current = await read(userId, config);
-      if (current == null || isRefused(current.record)) return false;
-      /** The row of a grant that cannot be refreshed outlives it until the TTL reaper runs. */
-      const live = current.record.refreshToken != null || isLive(current.record, 0);
-      return live && (await generationOf(userId)) === before;
+      const rows = await store.findTokensOfUser({ userId, type: PULL_REQUEST_OAUTH_TYPE });
+      for (const row of rows) {
+        if (row.expiresAt != null && new Date(row.expiresAt).getTime() <= now()) continue;
+        /** A row that cannot be read is a failure, as for a configured read. */
+        const parsed = parseStored(await decrypt(row.token));
+        if (isRefused(parsed)) continue;
+        if ((await generationOf(userId)) !== before) return { connected: false };
+        return parsed.flowId != null
+          ? { connected: true, flowId: parsed.flowId }
+          : { connected: true };
+      }
+      return { connected: false };
     },
 
     async reject(userId, config, accessToken) {

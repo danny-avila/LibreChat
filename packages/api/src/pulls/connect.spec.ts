@@ -40,6 +40,9 @@ function makeOAuth(overrides: Partial<PullRequestOAuth> = {}): jest.Mocked<PullR
     complete: jest.fn(async () => undefined),
     token: jest.fn(async () => 'user-token'),
     connected: jest.fn(async () => true),
+    status: jest.fn(async () => ({ connected: true, flowId: 'pull-request-oauth:u1:n' })),
+    storedStatus: jest.fn(async () => ({ connected: false })),
+    reject: jest.fn(async () => undefined),
     disconnect: jest.fn(async () => undefined),
     ...overrides,
   } as jest.Mocked<PullRequestOAuth>;
@@ -93,7 +96,11 @@ describe('connect', () => {
     const { handlers, oauth, res } = setup();
     await handlers.connect(signedIn(), asRes(res));
     expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json).toHaveBeenCalledWith({ url: 'https://github.com/login/oauth/authorize?x=1' });
+    expect(res.json).toHaveBeenCalledWith({
+      url: 'https://github.com/login/oauth/authorize?x=1',
+      expiresInSeconds: 600,
+      flowId: claims.flowId,
+    });
     expect(oauth.authorizationUrl).toHaveBeenCalledWith(
       { id: 'u1' },
       expect.objectContaining({ provider: 'github', clientId: 'client-1' }),
@@ -108,7 +115,7 @@ describe('connect', () => {
   it.each([
     ['the default flow timeout', {}, 10 * 60_000],
     ['a configured flow timeout', { flowTimeoutMinutes: 45 }, 45 * 60_000],
-  ])('keeps the binding cookie for %s', async (_label, flow, maxAge) => {
+  ])('keeps the binding cookie, and tells the client, for %s', async (_label, flow, maxAge) => {
     const { handlers, res } = setup({
       settings: { ...oauthSettings, oauth: { ...oauthSettings.oauth, ...flow } },
     });
@@ -117,6 +124,10 @@ describe('connect', () => {
       OAUTH_CSRF_COOKIE,
       expect.any(String),
       expect.objectContaining({ maxAge }),
+    );
+    /** The client watches the sign-in for exactly as long. */
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({ expiresInSeconds: maxAge / 1000 }),
     );
   });
 
@@ -292,6 +303,7 @@ describe('status and disconnect', () => {
       configured: true,
       provider: 'github',
       connected: true,
+      flowId: 'pull-request-oauth:u1:n',
     });
   });
 
@@ -299,7 +311,21 @@ describe('status and disconnect', () => {
     const { handlers, oauth, res } = setup({ settings: { allowedRepositories: ['o/r'] } });
     await handlers.status(signedIn(), asRes(res));
     expect(res.json).toHaveBeenCalledWith({ configured: false, connected: false });
-    expect(oauth.connected).not.toHaveBeenCalled();
+    expect(oauth.status).not.toHaveBeenCalled();
+    expect(oauth.storedStatus).toHaveBeenCalledWith('u1');
+  });
+
+  it('reports a grant that outlived the app being turned off, so it can be removed', async () => {
+    const oauth = makeOAuth({
+      storedStatus: jest.fn(async () => ({ connected: true, flowId: 'pull-request-oauth:u1:old' })),
+    });
+    const { handlers, res } = setup({ settings: { allowedRepositories: ['o/r'] }, oauth });
+    await handlers.status(signedIn(), asRes(res));
+    expect(res.json).toHaveBeenCalledWith({
+      configured: false,
+      connected: true,
+      flowId: 'pull-request-oauth:u1:old',
+    });
   });
 
   it('removes the connection', async () => {
@@ -318,7 +344,7 @@ describe('status and disconnect', () => {
 
   it('answers a status or disconnect failure with a stable code', async () => {
     const failing = makeOAuth({
-      connected: jest.fn(async () => {
+      status: jest.fn(async () => {
         throw new Error('key unavailable');
       }),
       disconnect: jest.fn(async () => {
@@ -347,6 +373,7 @@ describe('createPullRequestConnectionRouter', () => {
       replaceTokenIfCurrent: jest.fn(),
       deleteTokens: jest.fn(),
       isAgentTriggerPrincipalActive: jest.fn(),
+      findTokensOfUser: jest.fn(),
     },
     fetchFn: jest.fn(),
     getAppConfig: jest.fn(),

@@ -760,6 +760,68 @@ describe('a grant that cannot be read', () => {
   });
 });
 
+describe('status', () => {
+  it('names the sign-in that made the connection, and keeps it through a refresh', async () => {
+    let clock = 1_000_000;
+    const { oauth } = setup(
+      [
+        () => json({ access_token: 'a1', refresh_token: 'r1', expires_in: 60 }),
+        () => json({ access_token: 'a2', refresh_token: 'r2', expires_in: 7200 }),
+      ],
+      () => clock,
+    );
+    const user = userId();
+    await users().updateOne(
+      { _id: new mongoose.Types.ObjectId(user) },
+      { $setOnInsert: { email: `${user}@example.com` } },
+      { upsert: true },
+    );
+    const { url, flowId } = await oauth.authorizationUrl({ id: user }, gitlab);
+    const claims = oauth.verifyState(new URL(url).searchParams.get('state') ?? '');
+    await oauth.complete(claims!, 'the-code', gitlab);
+    await expect(oauth.status(user, gitlab)).resolves.toEqual({ connected: true, flowId });
+    clock += 120 * 1000;
+    await expect(oauth.token(user, gitlab)).resolves.toBe('a2');
+    await expect(oauth.status(user, gitlab)).resolves.toEqual({ connected: true, flowId });
+  });
+
+  it('reports a grant without any configuration, whatever app or host made it', async () => {
+    const { oauth } = setup([() => json({ access_token: 'kept' })]);
+    const user = userId();
+    await connect(oauth, user, gitlab);
+    await expect(oauth.storedStatus(user)).resolves.toEqual({
+      connected: true,
+      flowId: expect.stringContaining(`pull-request-oauth:${user}:`),
+    });
+    await oauth.disconnect(user);
+    await expect(oauth.storedStatus(user)).resolves.toEqual({ connected: false });
+  });
+
+  it('does not report a refused grant, or a user who never connected, without a configuration', async () => {
+    const { oauth } = setup([() => json({ access_token: 'revoked' })]);
+    const user = userId();
+    await expect(oauth.storedStatus(user)).resolves.toEqual({ connected: false });
+    await connect(oauth, user);
+    await oauth.reject(user, github, 'revoked');
+    await expect(oauth.storedStatus(user)).resolves.toEqual({ connected: false });
+  });
+
+  it('reports a stored grant that cannot be read as a failure, without a configuration too', async () => {
+    const { oauth } = setup([() => json({ access_token: 'kept' })]);
+    const user = userId();
+    await connect(oauth, user);
+    const garbled = createPullRequestOAuth({
+      store,
+      fetchFn: jest.fn(),
+      secret,
+      redirectUri,
+      encrypt,
+      decrypt: async () => 'not json',
+    });
+    await expect(garbled.storedStatus(user)).rejects.toThrow('malformed');
+  });
+});
+
 describe('reject', () => {
   it('disconnects a grant the provider refused on a lookup', async () => {
     const { oauth } = setup([() => json({ access_token: 'revoked' })]);

@@ -27,12 +27,25 @@ export type TConversationPullRequest = {
   checks: PullRequestChecks;
 };
 
+/** A started connection: the provider page to send the user to, and how long the flow lasts. */
+export type TPullRequestConnectStart = {
+  url: string;
+  /** Seconds the signed flow stays valid. Absent from a server that predates it: 600. */
+  expiresInSeconds?: number;
+  /** Names this sign-in, so the client knows when the grant it produced is the stored one. */
+  flowId?: string;
+};
+
 /** Whether the signed-in user has connected their own account for pull request lookups. */
 export type TPullRequestConnection = {
   /** Whether users can connect an account on this deployment at all. */
   configured: boolean;
   provider?: PullRequestProvider;
+  /** Whether the user has a stored grant. It can be true while `configured` is false: a grant
+   *  made before the app was turned off can, and should, still be disconnected. */
   connected: boolean;
+  /** The sign-in that produced the stored grant, so replacing it with another is a change. */
+  flowId?: string;
 };
 
 /** Most conversations one batch lookup may name. It bounds the fan-out to GitHub of a single
