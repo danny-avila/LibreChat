@@ -39,6 +39,22 @@ describe('findTokensOfUser', () => {
     ]);
   });
 
+  it('leaves out expired rows and returns the newest first', async () => {
+    const user = new mongoose.Types.ObjectId();
+    await add(user, 'pr_oauth', 'older');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await add(user, 'pr_oauth', 'newer');
+    await tokens.createToken({
+      userId: user,
+      type: 'pr_oauth',
+      identifier: 'expired',
+      token: 'pr_oauth:expired',
+      expiresIn: -60,
+    });
+    const found = await methods.findTokensOfUser({ userId: user.toString(), type: 'pr_oauth' });
+    expect(found.map((token) => token.identifier)).toEqual(['newer', 'older']);
+  });
+
   it('returns nothing for a user without any', async () => {
     const found = await methods.findTokensOfUser({
       userId: new mongoose.Types.ObjectId().toString(),
