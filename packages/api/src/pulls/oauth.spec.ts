@@ -54,6 +54,12 @@ const userId = () => new mongoose.Types.ObjectId().toString();
 const json = (body: unknown, init?: ResponseInit) => Response.json(body, init);
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
+async function waitFor(condition: () => boolean): Promise<void> {
+  for (let i = 0; i < 200 && !condition(); i++) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  if (!condition()) throw new Error('condition not reached');
+}
 const users = () => mongoose.connection.db!.collection('users');
 const tokens = () => mongoose.connection.db!.collection('tokens');
 
@@ -778,6 +784,19 @@ describe('reject', () => {
 });
 
 describe('completion during account deletion', () => {
+  it('spends no code on a flow started for another provider or host', async () => {
+    const user = userId();
+    await users().insertOne({
+      _id: new mongoose.Types.ObjectId(user),
+      email: `${user}@example.com`,
+    });
+    const { oauth, fetchFn } = setup([() => json({ access_token: 'wrong' })]);
+    const { url } = await oauth.authorizationUrl({ id: user }, github);
+    const claims = oauth.verifyState(new URL(url).searchParams.get('state') ?? '');
+    await expect(oauth.complete(claims!, 'the-code', gitlab)).rejects.toThrow('another provider');
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
   async function complete(oauth: ReturnType<typeof setup>['oauth'], user: string) {
     const { url } = await oauth.authorizationUrl({ id: user }, github);
     const claims = oauth.verifyState(new URL(url).searchParams.get('state') ?? '');
@@ -981,6 +1000,61 @@ describe('disconnect', () => {
       'before a disconnect',
     );
     expect(await tokens().countDocuments({ type: PULL_REQUEST_OAUTH_TYPE })).toBe(0);
+  });
+
+  it('does not report a connection a disconnect on another replica removed during the read', async () => {
+    const { oauth: connector } = setup([() => json({ access_token: 'old' })]);
+    const user = userId();
+    await connect(connector, user);
+    const reader = heldReplica();
+    const pending = reader.oauth.connected(user, github);
+    await reader.waiting;
+    await connector.disconnect(user);
+    reader.release();
+    await expect(pending).resolves.toBe(false);
+  });
+
+  it('keeps a read started after a disconnect joinable when an earlier read finishes', async () => {
+    const { oauth: connector } = setup([
+      () => json({ access_token: 'first' }),
+      () => json({ access_token: 'second' }),
+    ]);
+    const user = userId();
+    await connect(connector, user);
+    /** Each read of the grant waits for its own release. */
+    const releases: Array<() => void> = [];
+    let grantReads = 0;
+    const gated: PullRequestOAuthStore = {
+      ...store,
+      findToken: async (query) => {
+        if (!query.scope.startsWith(`${PULL_REQUEST_OAUTH_TYPE}:`)) return store.findToken(query);
+        grantReads += 1;
+        await new Promise<void>((resolve) => releases.push(resolve));
+        return store.findToken(query);
+      },
+    };
+    const oauth = createPullRequestOAuth({
+      store: gated,
+      fetchFn: jest.fn(),
+      secret,
+      redirectUri,
+      encrypt,
+      decrypt,
+    });
+    const earlier = oauth.token(user, github);
+    await waitFor(() => releases.length === 1);
+    await oauth.disconnect(user);
+    await connect(connector, user);
+    const later = oauth.token(user, github);
+    await waitFor(() => releases.length === 2);
+    releases[0]();
+    await earlier;
+    /** A third caller joins the later read rather than starting its own. */
+    const third = oauth.token(user, github);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(grantReads).toBe(2);
+    releases[1]();
+    await expect(Promise.all([later, third])).resolves.toEqual(['second', 'second']);
   });
 
   it('lets a flow started after it connect again', async () => {

@@ -169,7 +169,7 @@ class GrantRefreshPendingError extends Error {
 /** The user disconnected after this flow started, so it may not connect them again. */
 class StaleFlowError extends Error {
   constructor() {
-    super('The flow started before a disconnect');
+    super('The flow started before a disconnect, or for another provider');
     this.name = 'StaleFlowError';
   }
 }
@@ -642,6 +642,10 @@ export function createPullRequestOAuth({
     },
 
     async complete(state, code, config) {
+      /** The code is exchanged only with the provider the flow was started for. */
+      if (state.provider !== config.provider || state.host !== config.host) {
+        throw new StaleFlowError();
+      }
       /** No code is spent for a user that is gone, being deleted, or disconnected since. */
       await assertCurrent(state);
       const response = await requestGrant(
@@ -688,15 +692,19 @@ export function createPullRequestOAuth({
       try {
         return await started;
       } finally {
-        reading.delete(key);
+        /** Only its own entry: a disconnect may have cleared it and a newer read taken the key. */
+        if (reading.get(key) === started) reading.delete(key);
       }
     },
 
     async connected(userId, config) {
+      /** Fenced like a token read, so it never reports a connection a finished disconnect removed. */
+      const before = await generationOf(userId);
       const current = await read(userId, config);
       if (current == null || isRefused(current.record)) return false;
       /** The row of a grant that cannot be refreshed outlives it until the TTL reaper runs. */
-      return current.record.refreshToken != null || isLive(current.record, 0);
+      const live = current.record.refreshToken != null || isLive(current.record, 0);
+      return live && (await generationOf(userId)) === before;
     },
 
     async reject(userId, config, accessToken) {
