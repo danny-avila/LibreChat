@@ -49,9 +49,9 @@ async function exerciseSuccessfulCallback(cookieName) {
         expires_in: 3600,
       });
     }
-    if (input === `${env.SUPABASE_URL}/auth/v1/user`) {
+    if (input === `${env.SUPABASE_URL}/auth/v1/oauth/userinfo`) {
       assert.equal(init.headers.Authorization, 'Bearer opaque-access-token');
-      return Response.json({ id: 'account-user-id' });
+      return Response.json({ sub: 'account-user-id' });
     }
     throw new Error('Unexpected callback fetch');
   };
