@@ -1,25 +1,26 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { useSetAtom, useStore } from 'jotai';
+import { useAtom, useSetAtom, useStore } from 'jotai';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import { Constants, QueryKeys, isAssistantsEndpoint } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { ChatContract } from './contract';
-import {
-  useGetStartupConfig,
-  useAbortStreamMutation,
-  supportsGenerationProtocolV2,
-} from '~/data-provider';
 import { useLatestMessage, useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
+import { useAbortStreamMutation, supportsGenerationProtocolV2 } from '~/data-provider';
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
 import { drainAfterAbortByIndex, runEndByIndex } from '~/hooks/Chat/queue';
+import { useChatSettings } from '~/Providers/ChatSettingsContext';
 import useChatFunctions from '~/hooks/Chat/useChatFunctions';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
+import { abortScrollFamily } from '~/store/generation';
 import { resolveAbortSteerTarget } from '~/utils';
 import useNewConvo from '~/hooks/useNewConvo';
 import { getMessageCacheIds } from './cache';
 import { useAbortCleanup } from './abort';
 import store from '~/store';
+
+/** The live attachments map the stream and preview polling write. */
+const useLiveAttachments = () => useRecoilValue(store.messageAttachmentsMap);
 
 // this to be set somewhere else
 export default function useChatHelpers(index = 0, paramId?: string): ChatContract {
@@ -384,15 +385,12 @@ export default function useChatHelpers(index = 0, paramId?: string): ChatContrac
 
   const [preset, setPreset] = useRecoilState(store.presetByIndex(index));
   const [showPopover, setShowPopover] = useRecoilState(store.showPopoverFamily(index));
-  const [abortScroll, setAbortScroll] = useRecoilState(store.abortScrollFamily(index));
+  const [abortScroll, setAbortScroll] = useAtom(abortScrollFamily(index));
   const [optionSettings, setOptionSettings] = useRecoilState(store.optionSettingsFamily(index));
 
   /** Read once per chat rather than per message row: message rows never unmount, so a
-   *  per-row config observer would accumulate for the length of the conversation.
-   *  Stays disabled until the config resolves, so a `feedback: false` deployment never
-   *  flashes controls whose writes the server rejects. */
-  const { data: startupConfig } = useGetStartupConfig();
-  const feedbackEnabled = startupConfig != null && startupConfig.interface?.feedback !== false;
+   *  per-row settings read would accumulate for the length of the conversation. */
+  const { feedbackEnabled } = useChatSettings().config;
 
   return useMemo(
     (): ChatContract => ({
@@ -407,6 +405,7 @@ export default function useChatHelpers(index = 0, paramId?: string): ChatContrac
       setSiblingIdx,
       latestMessageId,
       latestMessageDepth,
+      useLiveAttachments,
       ask,
       index,
       regenerate,

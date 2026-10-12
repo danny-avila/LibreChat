@@ -63,6 +63,7 @@ import { STATEFUL_CODE_ENVIRONMENTS } from './stateful-code';
 import { specsConfigSchema, TSpecsConfig } from './models';
 import { fileConfigSchema } from './file-config';
 import {
+  PULL_REQUEST_PROVIDERS,
   PULL_REQUEST_BATCH_VERSION,
   PULL_REQUEST_BATCH_TIMEOUT_MAX_SECONDS,
 } from './types/pullRequest';
@@ -111,6 +112,15 @@ export const BASE_ONLY_CONFIG_SECTIONS = ['filters', 'mcpAppSandbox'] as const;
 /** Sections that may be stored in the tenant's base config document but must
  * not be overridden or tombstoned by role, group, or user config documents. */
 export const BASE_PRINCIPAL_CONFIG_SECTIONS = ['langfuse'] as const;
+/** Fields inside overridable sections that only the operator's YAML sets: a role, group, user
+ * or tenant config document can neither change nor remove them. The pull request provider and
+ * host decide where the deployment's token is sent, and the shared cache's slot count where
+ * every replica looks for a shared answer. */
+export const BASE_ONLY_CONFIG_PATHS = [
+  'endpoints.agents.pullRequests.provider',
+  'endpoints.agents.pullRequests.host',
+  'endpoints.agents.pullRequests.sharedCacheSlots',
+] as const;
 
 export const defaultRetrievalModels = [
   'gpt-4o',
@@ -506,12 +516,29 @@ const skillSyncTenantIdSchema = z
 const pullRequestRepositorySchema = z
   .string()
   .trim()
-  .regex(/^[A-Za-z0-9_.-]+\/(?:[A-Za-z0-9_.-]+|\*)$/, {
-    message: 'must be owner/name or owner/*',
+  .regex(/^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+){0,18}\/(?:[A-Za-z0-9_.-]+|\*)$/, {
+    message: 'must be owner/name or owner/*, or a nested group path such as group/sub/name',
   })
   .refine((value) => value.split('/').every((segment) => segment !== '.' && segment !== '..'), {
     message: 'must not contain dot segments',
   });
+
+/** A GitHub host name, optionally with a port: `github.com`, an Enterprise Server host such as
+ *  `github.example.com`, or a data residency tenant such as `acme.ghe.com`. Never a URL. */
+const pullRequestHostSchema = z
+  .string()
+  .trim()
+  .max(253)
+  .regex(/^(?=[a-z0-9])[a-z0-9.-]*[a-z0-9](?::[0-9]{1,5})?$/i, {
+    message: 'must be a host name like github.example.com, without a scheme or path',
+  })
+  .refine(
+    (value) => {
+      const port = value.split(':')[1];
+      return port == null || (Number(port) >= 1 && Number(port) <= 65535);
+    },
+    { message: 'must use a port from 1 to 65535' },
+  );
 
 const pullRequestTokenReferenceSchema = z
   .string()
@@ -1480,6 +1507,9 @@ export const DEFAULT_AVATAR_REFRESH_COVERAGE_LIMIT = 1000;
 export const DEFAULT_MAX_PROVIDER_ERROR_CHARS = 2000;
 export const DEFAULT_AGENT_MODEL_RESPONSE_BODY_TIMEOUT_MS = 900_000;
 export const DEFAULT_AGENT_MODEL_RESPONSE_HEADERS_TIMEOUT_MS = 300_000;
+/** Below the idle cutoff of common proxies (nginx 60 s, Cloudflare 100 s), so a
+ * stream that is silent while a tool runs is not closed underneath the client. */
+export const DEFAULT_STREAM_KEEPALIVE_INTERVAL_MS = 25_000;
 export const DEFAULT_CACHE_CLEAR_TIMEOUT_MS = 1000;
 
 export const HOST_FILE_EDIT_HARD_MAX_COUNT = 100;
@@ -1547,6 +1577,17 @@ export const agentsEndpointSchema = baseEndpointSchema
         .min(0)
         .max(86_400_000)
         .default(DEFAULT_AGENT_MODEL_RESPONSE_HEADERS_TIMEOUT_MS),
+      /** Interval between SSE comment frames on an otherwise silent chat stream, so
+       * proxies with an idle timeout keep it open; 0 disables the keepalive. */
+      streamKeepaliveIntervalMs: z
+        .number()
+        .int()
+        .min(0)
+        .max(3_600_000)
+        .refine((ms) => ms === 0 || ms >= 1_000, {
+          message: 'Use 0 to disable, or at least 1000 ms',
+        })
+        .default(DEFAULT_STREAM_KEEPALIVE_INTERVAL_MS),
       recursionLimit: z.number().optional(),
       disableBuilder: z.boolean().optional().default(false),
       /** Optional workspace guidance acquisition budget, separate from command execution. */
@@ -1865,6 +1906,14 @@ export const agentsEndpointSchema = baseEndpointSchema
       pullRequests: z
         .object({
           enabled: z.boolean().optional(),
+          /** Where pull requests live: `github` (the default), `gitlab` for merge requests on
+           *  gitlab.com or a self-managed GitLab, or `bitbucket` for Bitbucket Cloud. Read from the
+           *  YAML only, as `host` is, so an override cannot send the token to another service. */
+          provider: z.enum(PULL_REQUEST_PROVIDERS).optional(),
+          /** The host the token belongs to: by default `github.com`, `gitlab.com` or `bitbucket.org`
+           *  for the provider; a GitHub Enterprise Server or `*.ghe.com` host, or a self-managed
+           *  GitLab host. Bitbucket is Cloud only. Read from the YAML only, never an override. */
+          host: pullRequestHostSchema.optional(),
           /** Environment variable reference holding a read-only GitHub token, e.g.
            *  `${GITHUB_PULL_REQUEST_TOKEN}`. Never the token itself. Optional: without it the first
            *  of `GITHUB_PULL_REQUEST_TOKEN`, `GITHUB_TOKEN` and `GH_TOKEN` that is set is used. */
@@ -1913,6 +1962,20 @@ export const agentsEndpointSchema = baseEndpointSchema
           maxCandidatePages: z.number().int().min(1).max(10).optional().default(1),
           /** Candidates compared with that commit before the search gives up. Each is one request. */
           maxHeadComparisons: z.number().int().min(0).max(20).optional().default(3),
+          /** Share looked-up pull requests and GitHub rate limit cooldowns between replicas
+           *  through Redis, so each replica does not spend the token on the same answer. Takes
+           *  effect only when the deployment runs with Redis (`USE_REDIS`); each replica keeps its
+           *  own in-memory cache either way. Only found pull requests and rate limits are shared;
+           *  a failed lookup stays with the replica that saw it. */
+          sharedCache: z.boolean().optional().default(false),
+          /** Longest one shared cache read or write may take, in milliseconds, before a lookup
+           *  carries on without it, so a slow Redis cannot hold the header request. A command
+           *  still queued at that point, as during a disconnect, is dropped rather than sent later. */
+          sharedCacheTimeoutMs: z.number().int().min(10).max(5000).optional().default(250),
+          /** Redis keys the shared cache uses at most, for results and again for rate limits:
+           *  each goes in a slot picked from its key, replacing what was there. Read from the
+           *  YAML only, so every replica and principal addresses the same slot for a lookup. */
+          sharedCacheSlots: z.number().int().min(64).max(1_000_000).optional().default(65_536),
         })
         .optional(),
       /** Conversational background-task delivery policy. Automatic completion wakeups are
@@ -2071,6 +2134,26 @@ export const endpointSchema = baseEndpointSchema.merge(
         /** Also reconstructs `reasoning_content` from persisted history across turns (implies `includeReasoningContent`). */
         includeReasoningHistory: z.boolean().optional(),
         paramDefinitions: z.array(paramDefinitionSchema).optional(),
+        /**
+         * Milliseconds to wait for each request when reading an OpenRouter endpoint's
+         * per-model reasoning efforts. Omission keeps 5000.
+         */
+        reasoningCatalogTimeoutMs: z.number().int().min(500).max(30000).optional(),
+        /**
+         * Most pages of an OpenRouter endpoint's model catalog to read before treating it as
+         * unavailable. Omission keeps 20.
+         */
+        reasoningCatalogMaxPages: z.number().int().min(1).max(200).optional(),
+        /**
+         * Milliseconds a failed or unreadable OpenRouter catalog is remembered before it is
+         * requested again; 0 retries on every request. Omission keeps 30000.
+         */
+        reasoningCatalogFailureTtlMs: z.number().int().min(0).max(600000).optional(),
+        /**
+         * Milliseconds a successfully read OpenRouter catalog is kept before it is read again.
+         * Omission keeps 3600000 (one hour).
+         */
+        reasoningCatalogTtlMs: z.number().int().min(60000).max(86400000).optional(),
       })
       .strict()
       .optional(),
@@ -2620,6 +2703,21 @@ export type TThemeDefinitionConfig = z.infer<typeof themeDefinitionSchema>;
 
 /** A bundled theme name or an inline theme definition applied to every user. */
 export const deploymentThemeSchema = z.union([z.string().trim().min(1), themeDefinitionSchema]);
+/** Single source for the quiet period between syntax highlights while a code block streams, and
+ *  its bounds; the schema default and the client's normalizer both read them. */
+export const DEFAULT_CODE_HIGHLIGHT_THROTTLE_MS = 300;
+export const MAX_CODE_HIGHLIGHT_THROTTLE_MS = 60_000;
+
+/** A configured highlight cadence the schema would accept, or the default. */
+export function normalizeCodeHighlightThrottleMs(value: unknown): number {
+  return typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= MAX_CODE_HIGHLIGHT_THROTTLE_MS
+    ? value
+    : DEFAULT_CODE_HIGHLIGHT_THROTTLE_MS;
+}
+
 /** Single source for the agents panel selector's unsearched list cap; the
  * schema default and the client fallback both read it. */
 export const DEFAULT_AGENT_SELECTOR_LIMIT = 10;
@@ -2662,7 +2760,12 @@ export const interfaceSchema = z
     /** Set to false during a rolling upgrade, until every API replica supports title ownership and old title jobs drain. */
     runningChatRename: z.boolean().default(true),
     /** Milliseconds between syntax highlights while a code block streams. */
-    codeHighlightThrottleMs: z.number().int().min(0).max(60_000).default(300),
+    codeHighlightThrottleMs: z
+      .number()
+      .int()
+      .min(0)
+      .max(MAX_CODE_HIGHLIGHT_THROTTLE_MS)
+      .default(DEFAULT_CODE_HIGHLIGHT_THROTTLE_MS),
     /** Most agents the agents panel selector lists before a search term is
      * typed; typing lifts the cap so search reaches every agent. */
     agentSelectorLimit: z
@@ -2911,7 +3014,7 @@ export const interfaceSchema = z
   .default({
     modelSelect: true,
     runningChatRename: true,
-    codeHighlightThrottleMs: 300,
+    codeHighlightThrottleMs: DEFAULT_CODE_HIGHLIGHT_THROTTLE_MS,
     agentSelectorLimit: DEFAULT_AGENT_SELECTOR_LIMIT,
     parameters: true,
     presets: true,
@@ -4607,6 +4710,14 @@ export enum CacheKeys {
    * Key for accessing the model token config cache.
    */
   TOKEN_CONFIG = 'TOKEN_CONFIG',
+  /**
+   * Key for the per-model reasoning effort cache of OpenRouter endpoints.
+   */
+  REASONING_CAPABILITIES = 'REASONING_CAPABILITIES',
+  /**
+   * Key for pull request lookups and GitHub rate limit cooldowns shared across replicas.
+   */
+  PULL_REQUESTS = 'PULL_REQUESTS',
   /**
    * Key for the app config namespace.
    */
