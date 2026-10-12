@@ -154,6 +154,19 @@ describe('pull request connection hooks', () => {
     await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(2));
   });
 
+  it('refetches cached pull requests when another sign-in replaces the grant', async () => {
+    mockGetConnection.mockResolvedValueOnce({ ...connection(true), flowId: 'flow-a' });
+    const { wrapper, invalidate } = setup();
+    const { result } = renderHook(() => usePullRequestConnectionQuery(), { wrapper });
+    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(1));
+
+    mockGetConnection.mockResolvedValueOnce({ ...connection(true), flowId: 'flow-b' });
+    await act(async () => {
+      await result.current.refetch();
+    });
+    await waitFor(() => expect(invalidate).toHaveBeenCalledTimes(2));
+  });
+
   it('marks the account disconnected and refetches the status and pull requests', async () => {
     mockDisconnect.mockResolvedValue(undefined);
     const { client, wrapper, invalidate } = setup();

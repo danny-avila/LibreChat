@@ -46,15 +46,18 @@ export function announceOAuthSettled(): void {
  * - Without it (an older page, no BroadcastChannel) the status is asked on a timer that starts at
  *   2 seconds and doubles to 30, and whenever this window regains focus.
  * - At `expiresAt` the server's signed state is no longer accepted, so watching ends.
- * - Seeing the account connected ends watching. Every answer goes through the same check a
- *   mounted status row uses, so a change of credential refetches cached pull requests once.
+ * - Seeing the grant this sign-in produced ends watching. A server that names grants by the flow
+ *   behind them lets another flow's grant (a second tab, an earlier click) be told apart, and that
+ *   one does not end this watch; an older server's connected status does. Every answer goes
+ *   through the same check a mounted status row uses, so a change of credential, a replaced grant
+ *   included, refetches cached pull requests once.
  *
  * A failed status read is not an answer, so watching continues; the row shows the failure.
  * Returns a function that ends the watch; ending the session ends every watch.
  */
 export function watchPullRequestSignIn(
   queryClient: QueryClient,
-  { expiresAt, startedIn }: { expiresAt: number; startedIn: number },
+  { expiresAt, startedIn, flowId }: { expiresAt: number; startedIn: number; flowId?: string },
 ): () => void {
   /** Started before the session ended: nothing to watch for whoever signs in next. */
   if (startedIn !== session) {
@@ -84,7 +87,8 @@ export function watchPullRequestSignIn(
     }
     /** Every answer, so an account removed elsewhere mid-flow also refreshes pull requests. */
     syncPullRequestConnection(queryClient, status);
-    if (status.connected) {
+    const ours = flowId == null || status.flowId == null || status.flowId === flowId;
+    if (status.connected && ours) {
       stop();
     }
   };

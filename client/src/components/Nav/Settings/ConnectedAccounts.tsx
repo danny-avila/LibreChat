@@ -80,9 +80,12 @@ export default function ConnectedAccounts() {
   /**
    * The server is the authority: an app it no longer has is nothing to connect to, and once the
    * status loads its provider is the one a connection goes to, whatever the cached startup says.
+   * A grant still stored stays removable after the app is turned off, or turning it back on would
+   * revive it.
    */
+  const revocable = status.data?.connected === true;
   const provider = status.data?.provider ?? startupConfig?.pullRequestsConnect;
-  if (provider == null || status.data?.configured === false) {
+  if (provider == null || (!revocable && status.data?.configured === false)) {
     return null;
   }
 
@@ -110,7 +113,7 @@ export default function ConnectedAccounts() {
      */
     const startedIn = pullRequestSignInSession();
     connectMutation.mutateAsync().then(
-      ({ url, expiresInSeconds }) => {
+      ({ url, expiresInSeconds, flowId }) => {
         /** Signed out meanwhile: the sign-in belongs to a session that is over. */
         if (startedIn !== pullRequestSignInSession()) {
           popup.close();
@@ -120,6 +123,7 @@ export default function ConnectedAccounts() {
         keepFocus.current = true;
         watchPullRequestSignIn(queryClient, {
           startedIn,
+          flowId,
           expiresAt: Date.now() + (expiresInSeconds ?? DEFAULT_CONNECT_FLOW_SECONDS) * 1000,
         });
       },

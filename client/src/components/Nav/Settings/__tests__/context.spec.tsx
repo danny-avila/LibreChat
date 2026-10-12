@@ -100,6 +100,12 @@ describe('useSettingsContext connected accounts', () => {
     expect(hasConnect()).toBe(false);
   });
 
+  it('keeps the section while a stored grant outlives its app', () => {
+    mockStartup = { pullRequestsConnect: 'github' };
+    mockConnection = { configured: false, connected: true };
+    expect(hasConnect()).toBe(true);
+  });
+
   it('never offers the section when the deployment advertises no app', () => {
     mockConnection = { configured: true, provider: 'github', connected: false };
     expect(hasConnect()).toBe(false);

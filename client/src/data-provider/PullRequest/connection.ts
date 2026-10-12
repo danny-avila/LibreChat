@@ -7,10 +7,13 @@ import { useGetStartupConfig } from '../Endpoints';
 
 /**
  * The credential the server looks this user's pull requests up with, as the status shows it:
- * the user's own account or the server's token, on the provider the deployment now uses.
+ * the user's own account (the grant a given sign-in produced, when the server names it) or the
+ * server's token, on the provider the deployment now uses.
  */
 const credentialOf = (status: TPullRequestConnection): string =>
-  `${status.connected ? 'user' : 'server'}:${status.provider ?? ''}`;
+  status.connected
+    ? `user:${status.provider ?? ''}:${status.flowId ?? ''}`
+    : `server:${status.provider ?? ''}`;
 
 /** Per app, the credential its cached pull requests were last refreshed under. */
 const refreshedUnder = new Map<QueryClient, string>();

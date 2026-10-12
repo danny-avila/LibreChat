@@ -97,6 +97,18 @@ describe('ConnectedAccounts', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument();
   });
 
+  it('keeps Disconnect for a grant that outlives a turned-off app', async () => {
+    mockGetConnection.mockResolvedValue({ configured: false, connected: true });
+    renderRow();
+
+    expect(
+      await screen.findByRole('button', {
+        name: 'com_ui_pr_account_disconnect_aria:com_ui_pr_provider_github',
+      }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /com_ui_pr_account_connect_aria/ })).toBeNull();
+  });
+
   it('shows a checking status and no action while the connection loads', () => {
     mockGetConnection.mockReturnValue(new Promise(() => undefined));
     renderRow();

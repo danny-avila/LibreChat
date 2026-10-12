@@ -41,8 +41,10 @@ export function useSettingsContext(): SettingsContextValue {
   const emailEnabled = startupConfig?.emailEnabled === true;
   const allowEmailChange = startupConfig?.allowEmailChange === true;
   const passkeyLoginEnabled = startupConfig?.passkeyLoginEnabled === true;
+  /** Also while a stored grant outlives its app, so it can still be disconnected. */
   const hasPullRequestConnect =
-    startupConfig?.pullRequestsConnect != null && pullRequestConnection?.configured !== false;
+    pullRequestConnection?.connected === true ||
+    (startupConfig?.pullRequestsConnect != null && pullRequestConnection?.configured !== false);
   const twoFactorPolicyProvider = user != null && isTwoFactorPolicyProvider(user.provider);
   const twoFactorEnabled = user?.twoFactorEnabled === true;
   const allowAccountDeletion = startupConfig?.allowAccountDeletion !== false;

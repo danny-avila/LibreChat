@@ -158,6 +158,27 @@ describe('watchPullRequestSignIn', () => {
     expect(mockGetConnection).toHaveBeenCalledTimes(asked);
   });
 
+  it("keeps watching when another flow's grant shows up, and stops on its own", async () => {
+    const { client, invalidate } = setup();
+    mockGetConnection.mockResolvedValue({ ...connection(true), flowId: 'flow-a' });
+    watchPullRequestSignIn(client, {
+      startedIn: pullRequestSignInSession(),
+      expiresAt: Date.now() + 10 * MINUTE,
+      flowId: 'flow-b',
+    });
+    announceOAuthSettled();
+    await pass(0);
+    expect(invalidate).toHaveBeenCalledTimes(1);
+
+    /** Still watching: the second sign-in replacing the first grant is a change. */
+    mockGetConnection.mockResolvedValue({ ...connection(true), flowId: 'flow-b' });
+    await focus();
+    expect(invalidate).toHaveBeenCalledTimes(2);
+    const asked = mockGetConnection.mock.calls.length;
+    await pass(5 * MINUTE);
+    expect(mockGetConnection).toHaveBeenCalledTimes(asked);
+  });
+
   it('keeps watching through a failed status read', async () => {
     const { client, invalidate } = setup();
     mockGetConnection.mockRejectedValueOnce(new Error('500'));
