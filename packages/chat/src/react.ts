@@ -13,5 +13,9 @@ export type {
   MessagePartsMarkdownProps,
   MessagePartsUserTextPreferences,
 } from './react/host';
+export { useChat } from './react/useChat';
+export { useSnapshot } from './react/snapshot';
 export { ReactQueryChatState } from './react/state';
+export type { Subscribe, SnapshotOptions } from './react/snapshot';
+export type { UseChatOptions, UseChatHelpers } from './react/useChat';
 export type { ReactQueryChatStateOptions } from './react/state';

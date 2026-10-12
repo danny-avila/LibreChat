@@ -1,44 +1,19 @@
-import { useRef, useMemo, useCallback, useSyncExternalStore } from 'react';
+import { useMemo, useEffect, useReducer, useCallback, useRef } from 'react';
 import { useStore } from 'jotai';
-import { hashQueryKey, useQueryClient } from '@tanstack/react-query';
-import {
-  QueryKeys,
-  Constants,
-  ContentTypes,
-  fromUIMessage,
-  toUIMessage,
-} from 'librechat-data-provider';
-import type {
-  TMessage,
-  UIMessage,
-  UITextPart,
-  TAttachment,
-  UIMappingOptions,
-  UIMessageMetadata,
-} from 'librechat-data-provider';
-import type { QueryCacheNotifyEvent } from '@tanstack/react-query';
+import { Constants } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
+import { useSnapshot, ReactQueryChatState } from '@librechat/chat/react';
+import { toView, findLatest, getErrorText, getChatStatus, toStoredMessages } from '@librechat/chat';
+import type { ChatStatus, SendMessageInput } from '@librechat/chat';
+import type { TMessage, UIMessage } from 'librechat-data-provider';
 import type { TAskProps, TOptions } from '~/common';
 import type { ChatContract } from './contract';
-import { isMemoryFailureOutput } from '~/components/Chat/Messages/Content/Parts/MemoryCall';
-import { getToolMeta } from '~/components/Chat/Messages/Content/outcome';
 import { useChatContext } from '~/Providers/ChatContext';
-import { mergeAttachments } from '~/utils/attachments';
-import { isEmptyContentPart } from '~/utils/messages';
+import { resolveToolFailure } from './outcome';
 import { resumeRequestsAtom } from './resume';
-import { mapAttachments } from '~/utils/map';
 
-/** AI SDK `ChatStatus`. */
-export type ChatStatus = 'submitted' | 'streaming' | 'ready' | 'error';
-
-/**
- * A user turn in the AI SDK's `sendMessage` shape: its text parts, plus the message it attaches
- * under. It goes to the facade's own chat, as AI SDK `useChat` does, so it names no conversation.
- * File parts are left out because the turn takes its files from the composer, not the message.
- */
-export type SendMessageInput = {
-  parts: UITextPart[];
-  metadata?: Partial<Pick<UIMessageMetadata, 'parentMessageId'>>;
-};
+export type { ChatStatus, SendMessageInput };
+export { getChatStatus };
 
 /**
  * Submits a turn. Takes the contract's `ask` arguments, or a user message in the AI SDK shape,
@@ -51,8 +26,9 @@ export type SendMessage = (
 
 /**
  * The `useChat` surface of `@ai-sdk/react@4.0.117` (`UseChatHelpers`), over LibreChat's chat
- * contract. Members the contract cannot back (`addToolOutput`, `clearError`) are left out rather
- * than stubbed.
+ * contract. A host that runs its own core `Chat` uses `useChat` from `@librechat/chat/react`
+ * instead. Tool decisions and answers (`addToolApprovalResponse`, `addToolOutput`) are left out:
+ * the contract's turns run outside a `Chat`, which is what holds the pending pause.
  */
 export type UseChatHelpers = {
   /** The conversation the messages are read from (the contract's `messagesKey`); AI SDK's chat id. */
@@ -76,6 +52,11 @@ export type UseChatHelpers = {
    */
   resumeStream: () => Promise<void>;
   /**
+   * Returns an `error` chat to `ready`. The failed message stays in the list; the chat reads as
+   * `ready` until its latest message changes.
+   */
+  clearError: () => void;
+  /**
    * Writes messages back to the cache, keeping the stored fields the UI view omits. A message
    * with no stored counterpart joins the active conversation under the message before it, or
    * under the active branch's tail when the message before it is on another branch, unless its
@@ -84,246 +65,44 @@ export type UseChatHelpers = {
   setMessages: (messages: UIMessage[] | ((messages: UIMessage[]) => UIMessage[])) => void;
 };
 
-type ToolContext = {
-  content: TMessage['content'];
-  attachments: TMessage['attachments'];
-  live: TAttachment[] | undefined;
-  byToolCall: Record<string, TAttachment[] | undefined>;
-  /** Step ids each provider tool-call id already owns, for calls that have no step yet. */
-  stepIdsById: Map<string, Set<string>>;
+export type UseChatOptions = {
+  /** Renders message updates at most once per interval, in ms. Status renders at once. */
+  throttle?: number;
+  /** Requests a reattach to the running generation on mount; see `resumeStream`. */
+  resume?: boolean;
 };
 
-const toolContexts = new WeakMap<TMessage, ToolContext>();
+const viewOptions = { resolveToolFailure };
 
-/**
- * Built once per message snapshot and live attachment list. The stream reuses a response object
- * across frames and replaces its `content` and `attachments` arrays, so both are checked, not only
- * the object. A tool's attachments reach the live list before the message cache holds them.
- */
-const getToolContext = (message: TMessage, live: TAttachment[] | undefined): ToolContext => {
-  const cached = toolContexts.get(message);
-  if (
-    cached &&
-    cached.content === message.content &&
-    cached.attachments === message.attachments &&
-    cached.live === live
-  ) {
-    return cached;
-  }
-  const stepIdsById = new Map<string, Set<string>>();
-  for (const part of message.content ?? []) {
-    if (part?.type !== ContentTypes.TOOL_CALL) {
-      continue;
-    }
-    const { id, stepId } = (part.tool_call ?? {}) as { id?: string; stepId?: string };
-    if (!id || !stepId) {
-      continue;
-    }
-    const owned = stepIdsById.get(id) ?? new Set<string>();
-    owned.add(stepId);
-    stepIdsById.set(id, owned);
-  }
-  const context: ToolContext = {
-    content: message.content,
-    attachments: message.attachments,
-    live,
-    byToolCall: mapAttachments(mergeAttachments(message.attachments, live)),
-    stepIdsById,
-  };
-  toolContexts.set(message, context);
-  return context;
-};
+/** Failed messages whose error a caller cleared, shared by every consumer of the chat. */
+const clearedErrors = new WeakSet<TMessage>();
 
-type MemoryToolName = Parameters<typeof isMemoryFailureOutput>[0];
-
-const isMemoryTool = (name: string | undefined): name is MemoryToolName =>
-  name === 'set_memory' || name === 'delete_memory';
-
-type StoredToolCall = Parameters<NonNullable<UIMappingOptions['resolveToolFailure']>>[0];
-
-/**
- * A memory call's output is its own failure message; a background task's output is only its
- * dispatch handle, so its reason stands instead.
- */
-const getFailureProse = (toolCall: StoredToolCall, background: boolean) => {
-  const { name, output } = toolCall as { name?: string; output?: unknown };
-  if (background || typeof output !== 'string' || !output) {
-    return undefined;
-  }
-  if (!isMemoryTool(name)) {
-    return undefined;
-  }
-  return isMemoryFailureOutput(name, output) ? output : undefined;
+const readStatus = (isSubmitting: boolean, latest: TMessage | undefined): ChatStatus => {
+  const status = getChatStatus(isSubmitting, latest);
+  return status === 'error' && latest && clearedErrors.has(latest) ? 'ready' : status;
 };
 
 /**
- * The client's own tool outcome rules (`getToolMeta`: memory failure prose, background task
- * status attachments), handed to the parts mapping, which reads only markers stored on the call.
- * A call with no step yet is scoped away from attachments its repeated provider id's other
- * steps own, as `summarizeSpan` does.
+ * The pane's message cache entry as a chat state. Writes go through the contract, which writes
+ * every key the pane reads; the subscription delivers each write after the task that made it.
  */
-const resolveToolFailure = (
-  toolCall: StoredToolCall,
-  context: ToolContext | undefined,
-): ReturnType<NonNullable<UIMappingOptions['resolveToolFailure']>> => {
-  const { id, stepId } = toolCall as { id?: string; stepId?: string };
-  const siblingStepIds = stepId == null && id ? context?.stepIdsById.get(id) : undefined;
-  const meta = getToolMeta(
-    { type: ContentTypes.TOOL_CALL, tool_call: toolCall },
-    context?.byToolCall,
-    siblingStepIds,
-  );
-  if (meta?.cancelled) {
-    return 'cancelled';
-  }
-  if (!meta?.failed) {
-    return undefined;
-  }
-  return getFailureProse(toolCall, meta.background != null) ?? 'failed';
-};
-
-/** Mapping options that resolve a message's tool outcomes against its live attachments too. */
-const getMappingOptions = (live: TAttachment[] | undefined): UIMappingOptions => ({
-  resolveToolFailure: (toolCall, message) =>
-    resolveToolFailure(toolCall, message ? getToolContext(message, live) : undefined),
-});
-
-/**
- * Every message field a view is built from, identity and metadata included: a stream frame or a
- * new chat's promotion can replace these on the same object.
- */
-const viewSourceKeys = [
-  'messageId',
-  'isCreatedByUser',
-  'conversationId',
-  'parentMessageId',
-  'content',
-  'text',
-  'files',
-  'attachments',
-  'error',
-  'unfinished',
-  'sender',
-  'model',
-  'endpoint',
-  'createdAt',
-] as const;
-
-type CachedView = {
-  view: UIMessage;
-  source: Pick<TMessage, (typeof viewSourceKeys)[number]>;
-  live: TAttachment[] | undefined;
-};
-
-const views = new WeakMap<TMessage, CachedView>();
-
-const isSameSource = (cached: CachedView, message: TMessage, live: TAttachment[] | undefined) =>
-  cached.live === live && viewSourceKeys.every((key) => cached.source[key] === message[key]);
-
-/**
- * Cached per message, per snapshot of the fields a view reads and per live attachment list: a
- * stream frame that replaces a response's content, or an attachment that arrives for it, remaps
- * that response, while untouched messages keep their views.
- */
-const toView = (message: TMessage, live: TAttachment[] | undefined) => {
-  const cached = views.get(message);
-  if (cached && isSameSource(cached, message, live)) {
-    return cached.view;
-  }
-  const view = toUIMessage(message, getMappingOptions(live));
-  const source = {} as CachedView['source'];
-  for (const key of viewSourceKeys) {
-    Object.assign(source, { [key]: message[key] });
-  }
-  views.set(message, { view, source, live });
-  return view;
-};
-
-/**
- * Placeholder slots (empty text or think, lane placeholders) are not streamed output. A rerun edit
- * seeds its response with the retained prefix, which reads as streamed from the start: the
- * contract carries no first-delta signal a restored or replaced run could keep correct.
- */
-const hasStreamed = (message: TMessage) =>
-  (message.text?.length ?? 0) > 0 ||
-  (message.files?.length ?? 0) > 0 ||
-  (message.content?.some((part) => part != null && !isEmptyContentPart(part)) ?? false);
-
-/**
- * The error part names the failure; top-level text is only the fallback for legacy error rows,
- * and never for a failed user message, whose text is what the user sent.
- */
-const getErrorText = (message: TMessage) => {
-  const part = message.content?.find((item) => item?.type === ContentTypes.ERROR);
-  if (part?.type !== ContentTypes.ERROR) {
-    return message.isCreatedByUser ? '' : (message.text ?? '');
-  }
-  const text = typeof part.text === 'string' ? part.text : part.text?.value;
-  return part.error || text || message.text || '';
-};
-
-const isErrorMessage = (message: TMessage) =>
-  message.error === true ||
-  (message.content?.some((part) => part?.type === ContentTypes.ERROR) ?? false);
-
-/**
- * `submitted` until the response for the in-flight turn has content, then `streaming`; once the
- * turn ends, `error` when the latest message failed (a user message that never got a response
- * included) and `ready` otherwise, a stopped turn included.
- * `abortScroll` is a scroll hold rather than an abort flag, so a stop is read from the settled
- * message, not from it.
- */
-export const getChatStatus = (isSubmitting: boolean, latest: TMessage | undefined): ChatStatus => {
-  if (isSubmitting) {
-    return latest && !latest.isCreatedByUser && hasStreamed(latest) ? 'streaming' : 'submitted';
-  }
-  return latest && isErrorMessage(latest) ? 'error' : 'ready';
-};
-
-/** Cache events that add, drop or rewrite a query's data. */
-const dataEvents = new Set<QueryCacheNotifyEvent['type']>(['added', 'removed', 'updated']);
-
-/** Ids on the active branch: the contract's tail and its ancestors. */
-const getActiveBranch = (byId: Map<string, TMessage>, tailId: string | undefined) => {
-  const branch = new Set<string>();
-  let id: string | null | undefined = tailId;
-  while (id != null && !branch.has(id)) {
-    branch.add(id);
-    id = byId.get(id)?.parentMessageId;
-  }
-  return branch;
-};
-
-/**
- * Subscribes to writes of one conversation's cached messages. Only events that can change the
- * data count: observers mount inside other components' renders and the cache notifies
- * synchronously, so the change is delivered after the current task instead of inside someone
- * else's render.
- */
-const useMessagesSubscription = (messagesKey: string) => {
+const useChatState = (contract: ChatContract) => {
   const queryClient = useQueryClient();
-  const queryHash = useMemo(() => hashQueryKey([QueryKeys.messages, messagesKey]), [messagesKey]);
-  const subscribe = useCallback(
-    (onChange: () => void) => {
-      let active = true;
-      const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
-        if (event.query.queryHash !== queryHash || !dataEvents.has(event.type)) {
-          return;
-        }
-        queueMicrotask(() => {
-          if (active) {
-            onChange();
-          }
-        });
-      });
-      return () => {
-        active = false;
-        unsubscribe();
-      };
-    },
-    [queryClient, queryHash],
+  const latest = useRef(contract);
+  latest.current = contract;
+  const { messagesKey } = contract;
+  const state = useMemo(
+    () =>
+      new ReactQueryChatState({
+        queryClient,
+        key: messagesKey,
+        read: () => latest.current.getMessages(),
+        write: (messages) => latest.current.setMessages(messages),
+      }),
+    [queryClient, messagesKey],
   );
-  return { queryClient, queryHash, subscribe };
+  const subscribe = useCallback((listener: () => void) => state.subscribe(listener), [state]);
+  return { state, subscribe };
 };
 
 /** Regenerates the response to `messageId`, or the latest message of the branch. */
@@ -349,19 +128,6 @@ const useRegenerate = (
     [getMessages, latestMessageId, regenerateTarget],
   );
 
-/** The latest message, searched from the tail, where it almost always is. */
-const findLatest = (stored: TMessage[] | undefined, latestMessageId: string | undefined) => {
-  if (!stored || latestMessageId == null) {
-    return undefined;
-  }
-  for (let i = stored.length - 1; i >= 0; i--) {
-    if (stored[i].messageId === latestMessageId) {
-      return stored[i];
-    }
-  }
-  return undefined;
-};
-
 /** The `useChat` members that need no message list. */
 export type ChatActions = Pick<
   UseChatHelpers,
@@ -384,8 +150,11 @@ const toAskProps = (message: TAskProps | SendMessageInput): TAskProps => {
   };
 };
 
-/** `sendMessage` and `resumeStream` for the chat `id`, shared by `useChat` and `useChatActions`. */
-function useTurnActions(ask: ChatContract['ask'], id?: string) {
+/**
+ * `sendMessage` and `resumeStream` for the chat `id`, shared by `useChat` and `useChatActions`.
+ * Resume requests are a set per conversation, so every consumer that asks shares one reattach.
+ */
+function useTurnActions(ask: ChatContract['ask'], id: string | undefined, resume = false) {
   const jotaiStore = useStore();
   const sendMessage = useCallback<SendMessage>(
     (message, options) => ask(toAskProps(message), options),
@@ -399,6 +168,11 @@ function useTurnActions(ask: ChatContract['ask'], id?: string) {
       pending.has(id) ? pending : new Set(pending).add(id),
     );
   }, [id, jotaiStore]);
+  useEffect(() => {
+    if (resume) {
+      void resumeStream();
+    }
+  }, [resume, resumeStream]);
   return { sendMessage, resumeStream };
 }
 
@@ -407,6 +181,7 @@ function useTurnActions(ask: ChatContract['ask'], id?: string) {
  * status changes, not on every stream frame, and never maps the conversation.
  */
 export function useChatActions(): ChatActions {
+  const contract = useChatContext();
   const {
     conversation,
     getMessages,
@@ -416,13 +191,11 @@ export function useChatActions(): ChatActions {
     ask,
     regenerate: regenerateTarget,
     stopGenerating,
-  } = useChatContext();
-  const { subscribe } = useMessagesSubscription(messagesKey);
-  const readStatus = useCallback(
-    () => getChatStatus(isSubmitting, findLatest(getMessages(), latestMessageId)),
-    [getMessages, isSubmitting, latestMessageId],
+  } = contract;
+  const { subscribe } = useChatState(contract);
+  const status = useSnapshot(subscribe, () =>
+    readStatus(isSubmitting, findLatest(getMessages(), latestMessageId)),
   );
-  const status = useSyncExternalStore(subscribe, readStatus, readStatus);
   const regenerate = useRegenerate(getMessages, latestMessageId, regenerateTarget);
   const id = messagesKey || conversation?.conversationId || undefined;
   const { sendMessage, resumeStream } = useTurnActions(ask, id);
@@ -433,27 +206,29 @@ export function useChatActions(): ChatActions {
   );
 }
 
+const increment = (count: number) => count + 1;
+
 /**
  * AI SDK `useChat`, read and called through `ChatContext`. It holds no state of its own:
  * `messages` is `getMessages()` mapped per message, re-read when the message query cache is
  * written, and every action forwards to the contract.
  */
-export function useChat(): UseChatHelpers {
+export function useChat({ throttle, resume }: UseChatOptions = {}): UseChatHelpers {
+  const contract = useChatContext();
   const {
     conversation,
     getMessages,
-    messagesKey,
-    setMessages: setStoredMessages,
-    latestMessageId,
     useLiveAttachments,
+    latestMessageId,
     isSubmitting,
     ask,
     regenerate: regenerateTarget,
     stopGenerating,
-  } = useChatContext();
+  } = contract;
   const liveAttachments = useLiveAttachments();
+  const { state, subscribe } = useChatState(contract);
+  const [, render] = useReducer(increment, 0);
 
-  const { queryClient, queryHash, subscribe } = useMessagesSubscription(messagesKey);
   const snapshot = useRef<{ writes: number; stored?: TMessage[] }>();
   /**
    * A stream frame replaces a response's content on the same object, so structural sharing can
@@ -463,21 +238,21 @@ export function useChat(): UseChatHelpers {
    */
   const readSnapshot = useCallback(() => {
     const stored = getMessages();
-    const writes = queryClient.getQueryCache().get(queryHash)?.state.dataUpdateCount ?? 0;
+    const writes = state.version;
     const current = snapshot.current;
     if (current?.writes === writes && current.stored === stored) {
       return current;
     }
     snapshot.current = { writes, stored };
     return snapshot.current;
-  }, [getMessages, queryClient, queryHash]);
-  const cache = useSyncExternalStore(subscribe, readSnapshot, readSnapshot);
+  }, [getMessages, state]);
+  const cache = useSnapshot(subscribe, readSnapshot, { throttle });
 
   const { messages, latest } = useMemo(() => {
     const list: UIMessage[] = [];
     let latestMessage: TMessage | undefined;
     for (const message of cache.stored ?? []) {
-      list.push(toView(message, liveAttachments[message.messageId]));
+      list.push(toView(message, liveAttachments[message.messageId], viewOptions));
       if (message.messageId === latestMessageId) {
         latestMessage = message;
       }
@@ -485,8 +260,8 @@ export function useChat(): UseChatHelpers {
     return { messages: list, latest: latestMessage };
   }, [cache, latestMessageId, liveAttachments]);
 
-  const chatId = messagesKey || conversation?.conversationId || undefined;
-  const status = getChatStatus(isSubmitting, latest);
+  const chatId = contract.messagesKey || conversation?.conversationId || undefined;
+  const status = readStatus(isSubmitting, latest);
   const errorText = status === 'error' && latest ? getErrorText(latest) : undefined;
   const error = useMemo(
     () => (errorText === undefined ? undefined : new Error(errorText)),
@@ -494,37 +269,30 @@ export function useChat(): UseChatHelpers {
   );
 
   const regenerate = useRegenerate(getMessages, latestMessageId, regenerateTarget);
-  const { sendMessage, resumeStream } = useTurnActions(ask, chatId);
+  const { sendMessage, resumeStream } = useTurnActions(ask, chatId, resume);
+
+  const clearError = useCallback(() => {
+    if (status !== 'error' || !latest) {
+      return;
+    }
+    clearedErrors.add(latest);
+    render();
+  }, [latest, status]);
 
   const setMessages = useCallback(
     (update: UIMessage[] | ((messages: UIMessage[]) => UIMessage[])) => {
       const current = getMessages() ?? [];
       const next =
         typeof update === 'function'
-          ? update(current.map((message) => toView(message, liveAttachments[message.messageId])))
+          ? update(
+              current.map((message) =>
+                toView(message, liveAttachments[message.messageId], viewOptions),
+              ),
+            )
           : update;
-      const byId = new Map(current.map((message) => [message.messageId, message]));
-      const branch = getActiveBranch(byId, latestMessageId);
-      const conversationId = chatId === Constants.NEW_CONVO ? null : (chatId ?? null);
-      let previous: { id: string; joined: boolean } | null = null;
-      const stored = next.map((view) => {
-        const base = byId.get(view.id);
-        const message = fromUIMessage(view, base);
-        message.conversationId = base ? base.conversationId : conversationId;
-        if (!base) {
-          if (view.metadata?.parentMessageId === undefined) {
-            message.parentMessageId =
-              previous == null || previous.joined
-                ? (previous?.id ?? null)
-                : (latestMessageId ?? null);
-          }
-        }
-        previous = { id: message.messageId, joined: !base || branch.has(message.messageId) };
-        return message;
-      });
-      setStoredMessages(stored);
+      state.replaceMessages(toStoredMessages(next, current, { chatId, latestMessageId }));
     },
-    [chatId, getMessages, latestMessageId, liveAttachments, setStoredMessages],
+    [chatId, getMessages, latestMessageId, liveAttachments, state],
   );
 
   return {
@@ -536,6 +304,7 @@ export function useChat(): UseChatHelpers {
     regenerate,
     stop: stopGenerating,
     resumeStream,
+    clearError,
     setMessages,
   };
 }

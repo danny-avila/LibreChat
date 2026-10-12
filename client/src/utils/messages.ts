@@ -1,3 +1,4 @@
+import { isEmptyContentPart } from '@librechat/chat';
 import {
   QueryKeys,
   Constants,
@@ -17,6 +18,8 @@ import type {
 } from 'librechat-data-provider';
 import type { QueryClient } from '@tanstack/react-query';
 import type { LocalizeFunction, TMessageProps } from '~/common';
+
+export { isEmptyContentPart };
 
 export const TEXT_KEY_DIVIDER = '|||';
 export const STREAM_START_FAILED_METADATA_KEY = 'streamStartFailed';
@@ -238,25 +241,6 @@ const getPartToolCall = (part: TMessageContentParts): Agents.ToolCall | undefine
   part.type === ContentTypes.TOOL_CALL
     ? (part[ContentTypes.TOOL_CALL] as Agents.ToolCall | undefined)
     : undefined;
-
-/** Slots the persistence compaction leaves nothing behind for: the
- * dual-message `type: ''` placeholders, text/think parts that never received a
- * delta, and tool calls missing their `tool_call` payload. */
-export const isEmptyContentPart = (part: TMessageContentParts): boolean => {
-  if (!part.type) {
-    return true;
-  }
-  if (part.type === ContentTypes.TEXT) {
-    return getPartTextValue(part.text).length === 0;
-  }
-  if (part.type === ContentTypes.THINK) {
-    return getPartTextValue(part.think).length === 0;
-  }
-  if (part.type === ContentTypes.TOOL_CALL) {
-    return getPartToolCall(part) == null;
-  }
-  return false;
-};
 
 /** One side extending the other is the same part observed at two moments —
  * a flushed tail or a server-side trim — while divergent content is a
