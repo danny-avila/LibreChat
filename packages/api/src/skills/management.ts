@@ -384,7 +384,10 @@ export function createSkillManagementHandlers(
     ),
     delete: wrap(
       PermissionBits.DELETE,
-      (req, res) => {
+      async (req, res) => {
+        if (req.config?.endpoints?.agents?.managementApi?.skillDeletionEnabled !== true) {
+          return sendError(res, 'not_found');
+        }
         req.params.id = req.params.id.toLowerCase();
         return runHandler(req, res, deps.handlers.delete, (body) =>
           skillDeleteResponseSchema.parse(body),
