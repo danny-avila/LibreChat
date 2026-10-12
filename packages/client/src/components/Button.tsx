@@ -27,6 +27,7 @@ type ButtonVariantOptions =
         | 'inline-link'
         | 'carousel-nav'
         | 'toolbar'
+        | 'nav'
         | 'media'
         | 'row-action'
         | 'row-action-reveal'
@@ -50,6 +51,8 @@ type ButtonVariantOptions =
         | 'xs'
         | 'sm'
         | 'lg'
+        | 'auth'
+        | 'auth-action'
         | 'wide'
         | 'snug'
         | 'bare'
@@ -58,7 +61,7 @@ type ButtonVariantOptions =
         | 'tile'
         | null
         | undefined;
-      shape?: 'default' | 'soft' | 'theme' | 'round' | null | undefined;
+      shape?: 'default' | 'soft' | 'auth-action' | 'theme' | 'round' | null | undefined;
     } & ClassProp)
   | undefined;
 
@@ -114,7 +117,7 @@ const buttonVariantRecipe = cva(
           'text-text-secondary hover:bg-surface-hover hover:active:bg-surface-pressed hover:text-text-primary',
         /** An icon action under a message: a small padded square that rests in the alt secondary ink. */
         'message-action':
-          'size-auto rounded-lg p-1.5 text-text-secondary-alt hover:bg-surface-hover hover:text-text-primary',
+          'size-auto rounded-lg p-1.5 text-text-secondary-alt hover:bg-surface-hover hover:active:bg-surface-pressed hover:text-text-primary',
         /** A text action that reads as a link in a list or footer: no fill at rest or under the pointer,
          *  and a ring flush against the control. */
         'inline-link':
@@ -125,6 +128,9 @@ const buttonVariantRecipe = cva(
         /** A compact text action in a toolbar, quiet until hovered. */
         toolbar:
           'rounded-sm bg-transparent px-2 py-1 text-xs font-normal text-text-secondary hover:bg-surface-hover',
+        /** A destination in a navigation rail. The fills are the theme's navigation roles, and the
+         *  current destination is marked with `aria-pressed`, so a caller sets no class for it. */
+        nav: 'text-text-secondary hover:bg-surface-nav-hover hover:text-text-primary hover:active:bg-surface-pressed aria-pressed:bg-surface-nav-selected aria-pressed:text-text-primary aria-pressed:hover:bg-surface-nav-selected',
         /**
          * A control drawn over the user's own media (a lightbox toolbar, an image preview's close):
          * ghost-shaped, with the media ink and a tint of it on hover, so it stays legible on the
@@ -139,9 +145,10 @@ const buttonVariantRecipe = cva(
          */
         'row-action': 'rounded-md hover:bg-surface-hover-alt hover:text-text-primary',
         /** A row action revealed by hover or keyboard focus, and kept visible
-         * while its dialog or menu is open. Touch users always see it. */
+         * while its dialog or menu is open. Any touchscreen, including the one on
+         * a 2-in-1 whose trackpad reports hover, always sees it. */
         'row-action-reveal':
-          'shrink-0 rounded-md text-text-secondary transition-opacity hover:bg-surface-hover-alt hover:text-text-primary data-[open]:bg-surface-active data-[open]:text-text-primary data-[open]:opacity-100 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:focus-visible:opacity-100 [@media(hover:hover)]:group-focus-within:opacity-100 [@media(hover:hover)]:group-hover:opacity-100',
+          'shrink-0 rounded-md text-text-secondary transition-opacity hover:bg-surface-hover-alt hover:text-text-primary data-[open]:bg-surface-active data-[open]:text-text-primary data-[open]:opacity-100 no-touch:opacity-0 no-touch:focus-visible:opacity-100 no-touch:group-focus-within:opacity-100 no-touch:group-hover:opacity-100',
         link: 'text-text-primary underline-offset-4 hover:underline',
         /** A link-weight action in the accent color, such as the alternate way to confirm a sign-in. */
         'link-accent':
@@ -235,6 +242,10 @@ const buttonVariantRecipe = cva(
         xs: 'h-theme-button-xs rounded-md px-2.5 text-xs',
         sm: 'h-theme-button-sm rounded-lg px-3',
         lg: 'h-theme-button-lg rounded-lg px-8',
+        /** The height of a sign-in form's submit button, the `authButtonHeight` role. */
+        auth: 'h-theme-auth-button px-theme-button-x',
+        /** The other actions of the sign-in flow, the `authActionHeight` role. */
+        'auth-action': 'h-theme-auth-action px-theme-button-x',
         /** Default height with the generous pad of a dialog's confirming action. */
         wide: 'h-theme-button px-8',
         /** Default height with a snug pad, for a text action that sits close to its neighbors. */
@@ -258,8 +269,10 @@ const buttonVariantRecipe = cva(
       },
       shape: {
         default: 'rounded-lg',
-        /** The generous corner of a sign-in form's controls. */
-        soft: 'rounded-2xl',
+        /** The corner of a sign-in form's controls, the `authControlRadius` role. */
+        soft: 'rounded-theme-auth-control',
+        /** The corner of the sign-in flow's other actions, the `authActionRadius` role. */
+        'auth-action': 'rounded-theme-auth-action',
         theme: 'rounded-theme-control',
         round: 'rounded-theme-control-round',
         unset: '',

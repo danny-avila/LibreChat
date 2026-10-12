@@ -104,6 +104,7 @@ export const themeColorTokens = Object.freeze([
   'rgb-border-menu',
   'rgb-surface-composer',
   'rgb-surface-search',
+  'rgb-surface-sidebar',
   'rgb-surface-disabled',
   'rgb-text-disabled',
   'rgb-border-disabled',
@@ -136,6 +137,16 @@ export const themeColorTokens = Object.freeze([
   'rgb-illustration-subtle',
   'rgb-illustration',
   'rgb-illustration-strong',
+  'rgb-scrollbar-thumb',
+  'rgb-page-canvas',
+  'rgb-select-fill',
+  'rgb-select-edge',
+  'rgb-button-neutral-border',
+  'rgb-button-neutral-text',
+  'rgb-button-neutral-hover',
+  'rgb-link-inline',
+  'rgb-toast-edge',
+  'rgb-stroke-ink',
   'rgb-file-document',
   'rgb-file-sheet',
   'rgb-file-code',
@@ -160,14 +171,29 @@ export const themeColorTokens = Object.freeze([
   'rgb-series-6',
   'rgb-series-7',
   'rgb-series-8',
+  'rgb-category-icon-1',
+  'rgb-category-icon-2',
+  'rgb-category-icon-4',
+  'rgb-category-icon-5',
+  'rgb-category-icon-6',
+  'rgb-category-icon-7',
   'rgb-switch-unchecked',
   'rgb-switch-thumb',
+  'rgb-checkbox-fill',
   'rgb-table-header-text',
   'rgb-table-header-fill',
   'rgb-presentation',
 ] as const);
 
 export type ThemeColorToken = (typeof themeColorTokens)[number];
+
+/** Role names a release shipped and a later one renamed. */
+export type RenamedThemeColorToken = 'rgb-category-icon';
+
+/** Each renamed role paired with the name it has now; readers carry a value to the current name. */
+export const renamedThemeColorTokens: ReadonlyArray<
+  readonly [RenamedThemeColorToken, ThemeColorToken]
+> = Object.freeze([['rgb-category-icon', 'rgb-category-icon-4']] as const);
 
 export const themeBrandTokens = Object.freeze([
   'provider-openai',
@@ -441,6 +467,13 @@ const appearanceValidators = {
    *  field's edge color. */
   fieldHeight: isLength,
   fieldHeightLg: isTargetSize,
+  /** The sign-in field and submit button heights, each a pointer target, and their corner. */
+  authFieldHeight: isTargetSize,
+  authButtonHeight: isTargetSize,
+  authControlRadius: isLength,
+  /** The second-factor and reset-success actions' height and corner. */
+  authActionHeight: isTargetSize,
+  authActionRadius: isLength,
   fieldPaddingY: isLength,
   fieldFocusStyle: (value: unknown) => value === 'ring' || value === 'border',
   /** Whether a field stays transparent or paints `field-fill`. */
@@ -456,6 +489,10 @@ const appearanceValidators = {
   switchHeight: isSwitchLength,
   /** A checkbox's box and the check inside it, 1 to 1.5rem: never smaller than the box it was. */
   checkboxSize: lengthWithin(16, 24),
+  /** The checkbox's corner, and whether an unchecked box stays transparent or paints
+   *  `checkbox-fill`. */
+  checkboxRadius: isLength,
+  checkboxFillStyle: (value: unknown) => value === 'transparent' || value === 'fill',
   tableCellSpaceY: isTableLength,
   tableRowStroke: isTableLength,
   spaceCompact: isLength,
@@ -475,12 +512,14 @@ const appearanceValidators = {
   text2xs: isLength,
   text1xs: isLength,
   text1sm: isLength,
+  text3xl: isLength,
   leadingXs: isLineHeight,
   leadingSm: isLineHeight,
   leadingBase: isLineHeight,
   leadingLg: isLineHeight,
   leadingXl: isLineHeight,
   leading2xl: isLineHeight,
+  leading3xl: isLineHeight,
   /** A dialog's edge stroke width, inline padding and title-to-description gap, and its title's
    *  size, leading, weight and family. */
   dialogStroke: isLength,
@@ -494,6 +533,7 @@ const appearanceValidators = {
   scrimOpacity: isOpacity,
   alertScrimOpacity: isOpacity,
   modalScrimOpacity: isOpacity,
+  buttonNeutralBorderOpacity: isOpacity,
   /** Released themes may hold `var()` here, so this role keeps its original, looser check. */
   elevationSurface: (value: unknown) =>
     typeof value === 'string' && value.trim().length > 0 && !/[;{}]|url\s*\(/i.test(value),
@@ -529,7 +569,7 @@ export const themeAppearanceTokens = Object.freeze(
  * Bumped by hand when a release changes what resolving a theme emits without changing its roles
  * (a palette value, a fallback derivation, an emitted attribute), so cached entries are rebuilt.
  */
-export const THEME_CACHE_EPOCH = 1 as const;
+export const THEME_CACHE_EPOCH = 3 as const;
 
 /**
  * Names the role set a stored resolved theme was built against: any color, brand or appearance
@@ -551,6 +591,9 @@ export const isThemeAppearanceToken = (key: string): key is ThemeAppearanceToken
   Object.prototype.hasOwnProperty.call(appearanceValidators, key);
 
 const colorTokenSet: ReadonlySet<string> = new Set<string>(themeColorTokens);
+const renamedColorTokenSet: ReadonlySet<string> = new Set<string>(
+  renamedThemeColorTokens.map(([from]) => from),
+);
 const brandTokenSet: ReadonlySet<string> = new Set<string>(themeBrandTokens);
 const themeModes = ['light', 'dark'] as const;
 
@@ -646,7 +689,11 @@ export function collectThemeWarningIssues(theme: unknown): ThemeIssue[] {
     const futureColors = isPlainThemeRecord(colors)
       ? Object.entries(colors)
           .filter(
-            ([key, value]) => !colorTokenSet.has(key) && isColorTokenName(key) && isThemeRGB(value),
+            ([key, value]) =>
+              !colorTokenSet.has(key) &&
+              !renamedColorTokenSet.has(key) &&
+              isColorTokenName(key) &&
+              isThemeRGB(value),
           )
           .map(([key]) =>
             issue(['modes', mode, 'colors', key], `Unknown ${mode} color token ignored: ${key}`),

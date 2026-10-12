@@ -1,8 +1,9 @@
 /**
  * Finds colour literals in CSS. The design lint reads JSX, so a stylesheet under
  * `client/src` or `packages/client/src` is outside it; this is the gate for those files.
- * A colour belongs to a theme role (`rgb(var(--black) / 0.1)`), so only the theme token
- * sources and the files `packages/client/src/theme/allowlist.md` records may hold a literal.
+ * A colour belongs to a theme role (`rgb(var(--black) / 0.1)`), so only the custom properties of the theme
+ * token sources and the rules `packages/client/src/theme/allowlist.md` records may hold a literal, and a
+ * channel triplet (`--x: 255 0 0`) is a literal in a custom property, so it lives in those sources too.
  */
 
 import { readFileSync, readdirSync } from 'node:fs';
@@ -15,9 +16,9 @@ export interface CssColorFinding {
   literal: string;
 }
 
-export const CSS_ROOTS = ['client/src', 'packages/client/src'];
+export const CSS_ROOTS = ['client/src', 'packages/client/src', 'packages/chat/src'];
 
-/** Theme token sources (allowlist.md entry 1). */
+/** Theme token sources (allowlist.md entry 1): their custom property declarations may hold a literal or a channel triplet. */
 export const CSS_COLOR_ALLOWED_FILES = [
   'packages/client/src/theme/defaults.css',
   'packages/client/src/theme/tokens.css',
@@ -43,14 +44,40 @@ const NAMED_COLORS =
   );
 
 const HEX = /#[0-9a-fA-F]{3,8}(?![\w-])/g;
-const FUNCTION =
-  /(?<![\w-])(?:(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\(\s*var\(\s*--[\w-]+\s*,\s*[\d.+-]|(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\(\s*from\s+(?:var\([^)]*\)|[^\s)]+)\s+[\d.+-]|(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\(\s*(?:[\d.+-]|none\b|(?:calc|min|max|clamp|abs|sign|round|mod|rem|sin|cos|tan|asin|acos|atan2?|pow|sqrt|hypot|log|exp)\(|(?:var\([^)]*\)\s*,?\s*)+[\d.+-])|color\(\s*(?!from\b)[a-z0-9-]+\s+(?:(?:var\([^)]*\)\s*,?\s*)*[\d.+-]|none\b))/gi;
+const MATH_FUNCTIONS =
+  'calc|min|max|clamp|abs|sign|round|mod|rem|sin|cos|tan|asin|acos|atan2?|pow|sqrt|hypot|log|exp';
+const FUNCTION = new RegExp(
+  String.raw`(?<![\w-])(?:(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\(\s*var\(\s*--[\w-]+\s*,\s*[\d.+-]|(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\(\s*(?:[\d.+-]|none\b|(?:${MATH_FUNCTIONS})\(|(?:var\([^)]*\)\s*,?\s*)+[\d.+-])|color\(\s*(?!from\b)[a-z0-9-]+\s+(?:(?:var\([^)]*\)\s*,?\s*)*[\d.+-]|none\b))`,
+  'gi',
+);
+const RELATIVE_COLOR = /(?<![\w-])(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\(\s*from\s+/gi;
+const CHANNEL_KEYWORD = /(?<![\w-])(?:[rgbhslwcaxyz]|alpha)(?![\w-])/i;
+const CHANNEL = '[+-]?(?:\\d+\\.?\\d*|\\.\\d+)(?:e[+-]?\\d+)?%?';
+/** An innermost math function, or grouping parenthesis, over numbers alone: no `var()` and no unit. */
+const NUMERIC_MATH = new RegExp(
+  String.raw`(?<![\w-])(?:${MATH_FUNCTIONS})?\((?:[\d.%+*/,\s-]|e|pi|infinity|nan|nearest|up|down|to-zero)*\)`,
+  'gi',
+);
+const SEPARATOR = '(?:\\s*,\\s*|\\s+)';
+const BARE_TRIPLET = `${CHANNEL}${SEPARATOR}${CHANNEL}${SEPARATOR}${CHANNEL}(?:\\s*/\\s*(?:${CHANNEL}|var\\([^)]*\\)))?`;
+/** The whole value is three bare channels, or one is the fallback of a `var()`. */
+const TRIPLET = new RegExp(
+  `^\\s*${BARE_TRIPLET}\\s*$|var\\(\\s*--[\\w-]+\\s*,\\s*${BARE_TRIPLET}\\s*\\)`,
+  'i',
+);
+const TRIPLET_FALLBACK = new RegExp(`^var\\(\\s*--[\\w-]+\\s*,\\s*${BARE_TRIPLET}\\s*\\)$`, 'i');
 const NAMED = new RegExp(`(?<![\\w.-])(?:${NAMED_COLORS.join('|')})(?![\\w.-])`, 'gi');
 /** Properties whose values are identifiers or names, where a colour keyword is not a colour. */
 const NON_COLOR_PROPERTY =
   /^(?:font|animation|transition|grid|counter|content|will-change|view-transition|container|src|list-style|quotes|cursor|appearance|mask-(?:mode|type|composite|repeat|clip|origin|position|size)|clip|anchor|position-anchor|scroll-timeline|view-timeline|timeline-scope)/i;
 
 const blank = (match: string): string => match.replace(/[^\n]/g, ' ');
+
+/** A math function over numbers (`calc(255)`, `min(100, max(0, 255))`) is a fixed channel, so it reads as one. */
+function collapseMath(text: string): string {
+  const collapsed = text.replace(NUMERIC_MATH, '0');
+  return collapsed === text ? text : collapseMath(collapsed);
+}
 
 const URL_FUNCTION = /url\(\s*(?:"(?:[^"\\]|\\[\s\S])*"|'(?:[^'\\]|\\[\s\S])*'|[^)]*)\)/gi;
 const STRING = /"(?:[^"\\\n]|\\[\s\S])*"|'(?:[^'\\\n]|\\[\s\S])*'/g;
@@ -82,15 +109,84 @@ function colourText(value: string): string {
     .replace(STRING, blank);
 }
 
+interface Token {
+  text: string;
+  end: number;
+}
+
+/** The top-level, space-separated tokens of a function body, up to its closing parenthesis or the alpha slash. */
+function relativeTokens(text: string, start: number): Token[] {
+  const tokens: Token[] = [];
+  let depth = 0;
+  let tokenStart = -1;
+  const close = (end: number): void => {
+    if (tokenStart >= 0) tokens.push({ text: text.slice(tokenStart, end), end });
+    tokenStart = -1;
+  };
+  for (let i = start; i < text.length; i++) {
+    const char = text[i];
+    if (depth === 0 && (char === ')' || char === '/')) {
+      close(i);
+      return tokens;
+    }
+    if (depth === 0 && /[\s,]/.test(char)) {
+      close(i);
+      continue;
+    }
+    if (tokenStart < 0) tokenStart = i;
+    if (char === '(') depth++;
+    if (char === ')') depth--;
+  }
+  close(text.length);
+  return tokens;
+}
+
+const isFixedFallback = (channel: string): boolean => {
+  const fallback = /^var\(\s*--[\w-]+\s*,\s*([\s\S]*)\)$/i.exec(channel)?.[1];
+  return fallback !== undefined && isFixedChannel(fallback.trim());
+};
+
+function isFixedChannel(channel: string): boolean {
+  return (
+    /^[\d.+-]/.test(channel) ||
+    /^none$/i.test(channel) ||
+    isFixedFallback(channel) ||
+    (/^[\w-]+\(/.test(channel) && !/^var\(/i.test(channel) && !CHANNEL_KEYWORD.test(channel))
+  );
+}
+
+/**
+ * A relative colour keeps its origin's channels by name (`r g b`); a number, `none` or a function
+ * that names no channel replaces one with a fixed value, so the colour no longer follows the theme.
+ * The alpha after the slash is not a colour channel.
+ */
+function relativeLiterals(text: string): Array<{ literal: string; offset: number }> {
+  return Array.from(text.matchAll(RELATIVE_COLOR)).flatMap((match) => {
+    const offset = match.index ?? 0;
+    const bodyStart = offset + match[0].length;
+    const isColorFunction = /^color\(/i.test(match[0]);
+    const [origin, ...rest] = relativeTokens(text, bodyStart);
+    if (origin && TRIPLET_FALLBACK.test(collapseMath(origin.text))) {
+      return [{ literal: text.slice(offset, origin.end), offset }];
+    }
+    const channels = rest.slice(isColorFunction ? 1 : 0, isColorFunction ? 4 : 3);
+    const fixed = channels.find((channel) => isFixedChannel(channel.text));
+    return fixed ? [{ literal: text.slice(offset, fixed.end), offset }] : [];
+  });
+}
+
 function literalsIn(property: string, value: string): Array<{ literal: string; offset: number }> {
   const text = colourText(value);
   const patterns = NON_COLOR_PROPERTY.test(property) ? [HEX, FUNCTION] : [HEX, FUNCTION, NAMED];
-  return patterns.flatMap((pattern) =>
-    Array.from(text.matchAll(pattern), (match) => ({
-      literal: match[0],
-      offset: match.index ?? 0,
-    })),
-  );
+  return [
+    ...patterns.flatMap((pattern) =>
+      Array.from(text.matchAll(pattern), (match) => ({
+        literal: match[0],
+        offset: match.index ?? 0,
+      })),
+    ),
+    ...relativeLiterals(text),
+  ];
 }
 
 const isAllowed = (allowedRules: AllowedRule[], selector: string, property: string): boolean =>
@@ -99,17 +195,28 @@ const isAllowed = (allowedRules: AllowedRule[], selector: string, property: stri
       rule.selector === selector && (rule.property === undefined || rule.property === property),
   );
 
-/** Parses the stylesheet so a declaration is read whole, whatever lines it spans or shares. */
+/**
+ * Parses the stylesheet so a declaration is read whole, whatever lines it spans or shares.
+ * A token source may declare custom properties with literals and channel triplets, so
+ * `tokenSource` skips those declarations and still checks every other one.
+ */
 export function findCssColorLiterals(
   css: string,
   allowedRules: AllowedRule[] = [],
+  tokenSource = false,
 ): CssColorFinding[] {
   const findings: CssColorFinding[] = [];
   postcss.parse(css).walkDecls((declaration) => {
+    const isCustomProperty = declaration.prop.startsWith('--');
+    if (tokenSource && isCustomProperty) return;
     const parent = declaration.parent;
     const selector = parent?.type === 'rule' ? parent.selector : '';
     if (isAllowed(allowedRules, selector, declaration.prop)) return;
     const line = declaration.source?.start?.line ?? 1;
+    if (isCustomProperty && TRIPLET.test(collapseMath(colourText(declaration.value)))) {
+      findings.push({ line, literal: declaration.value.trim() });
+      return;
+    }
     literalsIn(declaration.prop, declaration.value).forEach(({ literal, offset }) => {
       const before = colourText(declaration.value).slice(0, offset);
       findings.push({ line: line + before.split('\n').length - 1, literal });
@@ -127,15 +234,15 @@ function listCssFiles(directory: string): string[] {
   });
 }
 
-/** Every finding outside the allowed files, as `path:line literal` lines. */
+/** Every finding, as `path:line literal` lines; the token sources are read for everything but their custom properties. */
 export function scanCssColors(root: string): string[] {
   return CSS_ROOTS.flatMap((directory) => listCssFiles(join(root, directory)))
     .map((path) => relative(root, path).split('\\').join('/'))
-    .filter((path) => !CSS_COLOR_ALLOWED_FILES.includes(path))
     .flatMap((path) =>
       findCssColorLiterals(
         readFileSync(join(root, path), 'utf8'),
         CSS_COLOR_ALLOWED_RULES[path],
+        CSS_COLOR_ALLOWED_FILES.includes(path),
       ).map(({ line, literal }) => `${path}:${line} ${literal}`),
     );
 }

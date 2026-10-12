@@ -1,7 +1,10 @@
+/** Where pull requests are looked up; one per deployment, set by the operator. */
+export const PULL_REQUEST_PROVIDERS = ['github', 'gitlab', 'bitbucket'] as const;
 export const PULL_REQUEST_STATES = ['open', 'closed', 'merged'] as const;
 export const PULL_REQUEST_MERGEABLE = ['clean', 'conflicting', 'unknown'] as const;
 export const PULL_REQUEST_CHECKS = ['passing', 'failing', 'running', 'none'] as const;
 
+export type PullRequestProvider = (typeof PULL_REQUEST_PROVIDERS)[number];
 export type PullRequestState = (typeof PULL_REQUEST_STATES)[number];
 export type PullRequestMergeable = (typeof PULL_REQUEST_MERGEABLE)[number];
 export type PullRequestChecks = (typeof PULL_REQUEST_CHECKS)[number];
@@ -10,8 +13,10 @@ export type PullRequestChecks = (typeof PULL_REQUEST_CHECKS)[number];
 export type TConversationPullRequest = {
   number: number;
   title: string;
-  /** GitHub page for the pull request. */
+  /** Page of the pull request (a merge request on GitLab) on its provider. */
   url: string;
+  /** Where the pull request lives. Absent from a server that predates providers: GitHub. */
+  provider?: PullRequestProvider;
   additions: number;
   deletions: number;
   state: PullRequestState;
