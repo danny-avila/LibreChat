@@ -1,33 +1,15 @@
 import { PermissionBits, PrincipalType, ResourceType, SystemRoles } from 'librechat-data-provider';
-import type {
-  IAclEntry,
-  RecordAuditEntryInput,
-  RecordAuditEntryOptions,
-} from '@librechat/data-schemas';
+import type { RecordAuditEntryInput, RecordAuditEntryOptions } from '@librechat/data-schemas';
 import type { TPrincipal } from 'librechat-data-provider';
-import type { Types } from 'mongoose';
+import type { InsightsPermissionChange } from './types';
 import type { ServerRequest } from '~/types';
 import { planInsightsAudit, runAuditPlan } from './audit';
 
-export type InsightsPermissionPrincipal = {
-  type: PrincipalType;
-  id?: string | Types.ObjectId | null;
-  name?: string;
-};
-
-export type InsightsWrittenEntry = {
-  permBits: number;
-  roleId: Types.ObjectId;
-  grantedBy: string | Types.ObjectId;
-  grantedAt: Date;
-};
-
-export type InsightsPermissionChange = {
-  action: 'assigned' | 'removed';
-  previousEntry: IAclEntry | null;
-  writtenEntry: InsightsWrittenEntry | null;
-  principal: InsightsPermissionPrincipal;
-};
+export type {
+  InsightsPermissionPrincipal,
+  InsightsPermissionChange,
+  InsightsWrittenEntry,
+} from './types';
 
 type ValidationResult = { status: 400 | 403; error: string } | null;
 

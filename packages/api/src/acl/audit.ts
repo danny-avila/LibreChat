@@ -1,7 +1,7 @@
 import { PrincipalType } from 'librechat-data-provider';
 import type { RecordAuditEntryInput } from '@librechat/data-schemas';
 import type { ResourceType } from 'librechat-data-provider';
-import type { InsightsPermissionChange } from './insightsPermissions';
+import type { InsightsPermissionChange } from './types';
 import type { RecordAuditEntry } from '~/admin/audit';
 import type { ServerRequest } from '~/types';
 import { buildAuditContext } from '~/admin/context';
