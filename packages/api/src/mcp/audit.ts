@@ -14,6 +14,15 @@ export interface MCPServerAuditEvent {
   next?: ServerConfigLike;
 }
 
+/** JSON with object keys sorted, so entry order never reads as a change. */
+function stableStringify(value: unknown): string {
+  return JSON.stringify(value, (_key, val) =>
+    val && typeof val === 'object' && !Array.isArray(val)
+      ? Object.fromEntries(Object.entries(val).sort(([a], [b]) => a.localeCompare(b)))
+      : val,
+  );
+}
+
 /**
  * Lists the user-input fields that differ between two server configs. Only
  * field names are returned, so headers, env values and credentials never reach
@@ -27,7 +36,7 @@ export function diffMCPServerFields(previous: ServerConfigLike, next: ServerConf
     if (before === undefined && after === undefined) {
       continue;
     }
-    if (JSON.stringify(before) !== JSON.stringify(after)) {
+    if (stableStringify(before) !== stableStringify(after)) {
       changed.push(field);
     }
   }

@@ -187,7 +187,10 @@ export function createAdminCodeEnvironmentHandlers(deps: AdminCodeEnvironmentDep
         severity: 'warning',
         target: { type: 'code_worker', id: payload.workerId, name: resolved.id },
         tenantId: undefined,
-        metadata: { environmentId: resolved.id, expiresAt: payload.expiresAt },
+        metadata: {
+          environmentId: resolved.id,
+          expiresAt: new Date(payload.expiresAt).toISOString(),
+        },
       });
       return res.status(200).json({
         environmentId: resolved.id,

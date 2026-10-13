@@ -591,16 +591,20 @@ const updateMCPServerController = async (req, res) => {
       });
       throw error;
     }
-    await auditMCPServer(req, {
-      action: 'mcp_server.updated',
-      serverName,
-      previous: existingConfig,
-      next: parsedConfig,
-    });
     /** Fence connections another replica could have created from the old DB
-     * config between the pre-commit fence and the committed update. */
-    await fenceCommittedMCPMutation({ userId, serverName });
-    await disconnectLocalMCPServer(userId, serverName);
+     * config between the pre-commit fence and the committed update. The audit
+     * write follows so its latency never delays the fence. */
+    try {
+      await fenceCommittedMCPMutation({ userId, serverName });
+      await disconnectLocalMCPServer(userId, serverName);
+    } finally {
+      await auditMCPServer(req, {
+        action: 'mcp_server.updated',
+        serverName,
+        previous: existingConfig,
+        next: parsedConfig,
+      });
+    }
 
     res.status(200).json(redactServerSecrets(parsedConfig, { canEdit: true }));
   } catch (error) {
@@ -656,14 +660,18 @@ const deleteMCPServerController = async (req, res, uninstallOAuthMCP) => {
       });
       throw error;
     }
-    await auditMCPServer(req, {
-      action: 'mcp_server.deleted',
-      serverName,
-      previous: existingConfig,
-    });
-    /** Fence connections another replica could have created before deletion committed. */
-    await fenceCommittedMCPMutation({ userId, serverName });
-    await disconnectLocalMCPServer(userId, serverName);
+    /** Fence connections another replica could have created before deletion committed.
+     * The audit write follows so its latency never delays the fence. */
+    try {
+      await fenceCommittedMCPMutation({ userId, serverName });
+      await disconnectLocalMCPServer(userId, serverName);
+    } finally {
+      await auditMCPServer(req, {
+        action: 'mcp_server.deleted',
+        serverName,
+        previous: existingConfig,
+      });
+    }
     try {
       await cleanupDeletedMCPServerOAuthUsers({
         ownerUserId: userId,

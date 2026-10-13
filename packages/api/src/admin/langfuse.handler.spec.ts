@@ -578,6 +578,27 @@ describe('createAdminLangfuseHandlers', () => {
       expect(JSON.stringify(input)).not.toContain('pk-lf-1');
     });
 
+    it('starts cache invalidation before waiting on the audit write', async () => {
+      const order: string[] = [];
+      const recordAuditEntry = jest.fn().mockImplementation(async () => {
+        order.push('audit');
+      });
+      const invalidateConfigCaches = jest.fn().mockImplementation(async () => {
+        order.push('invalidate');
+      });
+      const { handlers } = createHandlers({ recordAuditEntry, invalidateConfigCaches });
+
+      await handlers.updateConnection(
+        mockReq({
+          body: { enabled: true, destination: 'eu', publicKey: 'pk-lf-1', secretKey: 'sk-lf-2' },
+        }),
+        mockRes(),
+      );
+
+      expect(order[0]).toBe('invalidate');
+      expect(order).toContain('audit');
+    });
+
     it('records nothing when the update is rejected', async () => {
       const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
       const { handlers } = createHandlers({ recordAuditEntry });

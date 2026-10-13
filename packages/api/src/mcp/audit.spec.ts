@@ -13,6 +13,12 @@ describe('diffMCPServerFields', () => {
     ).toEqual(['headers', 'url']);
   });
 
+  it('ignores key order inside record fields', () => {
+    expect(
+      diffMCPServerFields({ headers: { A: '1', B: '2' } }, { headers: { B: '2', A: '1' } }),
+    ).toEqual([]);
+  });
+
   it('treats a missing side as all-new', () => {
     expect(diffMCPServerFields(undefined, { type: 'sse', url: 'https://a' })).toEqual([
       'type',

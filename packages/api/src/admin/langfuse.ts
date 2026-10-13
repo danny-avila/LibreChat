@@ -477,7 +477,11 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
         changes,
         verification_result: connectionChanged ? 'success' : 'skipped',
       });
-      /** Records which parts changed, never the keys themselves. */
+      invalidateConfigCaches?.(getTenantId(req))?.catch((err) =>
+        logger.error('[adminLangfuse] Cache invalidation failed after update:', err),
+      );
+
+      /** Recorded after the cache invalidation starts so audit latency never delays it. Records which parts changed, never the keys themselves. */
       await emitAudit(req, {
         action: 'langfuse.updated',
         severity: 'warning',
@@ -488,10 +492,6 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
           ...(status.destination ? { destination: status.destination } : {}),
         },
       });
-
-      invalidateConfigCaches?.(getTenantId(req))?.catch((err) =>
-        logger.error('[adminLangfuse] Cache invalidation failed after update:', err),
-      );
 
       return res.status(200).json(status);
     } catch (error) {

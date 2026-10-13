@@ -504,6 +504,7 @@ describe('createAdminAuditLogHandlers', () => {
           actorQuery: 'alice@example.com',
           search: 'secret-term',
           capability: 'private@example.com',
+          targetType: 'user-typed-text',
         },
       });
 
@@ -520,13 +521,14 @@ describe('createAdminAuditLogHandlers', () => {
             action: 'group.created,role.created',
             outcome: 'success',
             from: '2025-01-01T00:00:00.000Z',
-            freeTextFilters: 'search,actorQuery,capability',
+            freeTextFilters: 'search,actorQuery,targetType,capability',
           },
         }),
       );
       expect(JSON.stringify(input)).not.toContain('alice@example.com');
       expect(JSON.stringify(input)).not.toContain('secret-term');
       expect(JSON.stringify(input)).not.toContain('private@example.com');
+      expect(JSON.stringify(input)).not.toContain('user-typed-text');
     });
 
     it('records audit.read for a single entry only when it exists', async () => {
