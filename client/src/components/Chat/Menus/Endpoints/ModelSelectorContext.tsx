@@ -111,12 +111,20 @@ export function ModelSelectorProvider({ children, startupConfig }: ModelSelector
     { select: selectAgents },
   );
 
-  const { mappedEndpoints, endpointRequiresUserKey } = useEndpoints({
+  const { mappedEndpoints: allMappedEndpoints, endpointRequiresUserKey } = useEndpoints({
     agents,
     assistantsMap,
     startupConfig,
     endpointsConfig,
   });
+
+  const mappedEndpoints = useMemo(
+    () =>
+      (allMappedEndpoints ?? []).filter(
+        (endpoint) => endpointsConfig?.[endpoint.value]?.visible !== false,
+      ),
+    [allMappedEndpoints, endpointsConfig],
+  );
 
   const getModelDisplayName = useCallback(
     (endpoint: Endpoint, model: string): string => {
