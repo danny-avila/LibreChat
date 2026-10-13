@@ -3385,6 +3385,16 @@ describe('useResumableSSE', () => {
     unmount();
   });
 
+  it('refetches the terms status when a send is refused for unaccepted terms', async () => {
+    (request.post as jest.Mock).mockRejectedValueOnce({
+      response: { status: 403, data: { code: 'terms_not_accepted' } },
+    });
+    const { unmount } = renderHook(() => useResumableSSE(buildSubmission(), buildChatHelpers()));
+    await waitFor(() => expect(mockSetSubmission).toHaveBeenCalledWith(null));
+    expect(mockInvalidateQueries).toHaveBeenCalledWith([QueryKeys.userTerms]);
+    unmount();
+  });
+
   it('does not dispatch a recovery cancelled between dequeuing and startup', async () => {
     getDefaultStore().set(recoveryDispositionsFamily(CONV_ID), { source: 'cancelled' });
     const submission = buildSubmission({ recoverySteerId: 'source', clientRequestId: 'attempt' });

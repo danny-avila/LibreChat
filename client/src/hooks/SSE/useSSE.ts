@@ -2,7 +2,14 @@ import { useEffect, useState } from 'react';
 import { v4 } from 'uuid';
 import { useSetRecoilState } from 'recoil';
 import { useStore, useSetAtom } from 'jotai';
-import { StepEvents, createPayload, removeNullishValues } from 'librechat-data-provider';
+import { useQueryClient } from '@tanstack/react-query';
+import {
+  QueryKeys,
+  StepEvents,
+  createPayload,
+  removeNullishValues,
+  TERMS_NOT_ACCEPTED_CODE,
+} from 'librechat-data-provider';
 import type {
   Agents,
   TMessage,
@@ -82,6 +89,7 @@ export default function useSSE(
     setShowStopButton,
   });
 
+  const queryClient = useQueryClient();
   const { data: startupConfig } = useGetStartupConfig();
   const balanceQuery = useGetUserBalance({
     enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
@@ -207,6 +215,10 @@ export default function useSSE(
 
     const handleError = (data: ChatErrorData | null | undefined) => {
       console.log('error in server stream.');
+      /** Terms were reset mid-session: refetching the status reopens the acceptance modal. */
+      if ((data as { code?: unknown } | null | undefined)?.code === TERMS_NOT_ACCEPTED_CODE) {
+        void queryClient.invalidateQueries([QueryKeys.userTerms]);
+      }
       (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
       resetLive(currentSubmission);
       if (data === undefined) {

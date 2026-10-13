@@ -23,7 +23,11 @@ const requireLdapAuth = require('./requireLdapAuth');
 const abortMiddleware = require('./abortMiddleware');
 const checkInviteUser = require('./checkInviteUser');
 const requireJwtAuth = require('./requireJwtAuth');
-const { requireRumProxyAuth, requireTermsAcceptance } = require('./requireJwtAuth');
+const {
+  requireRumProxyAuth,
+  requireTermsAcceptance,
+  isTermsAcceptanceRequired,
+} = require('./requireJwtAuth');
 const configMiddleware = require('./config/app');
 const { strictConfigMiddleware, loadStreamKeepaliveMs } = require('./config/app');
 const validateModel = require('./validateModel');
@@ -54,6 +58,7 @@ module.exports = {
   requireJwtAuth,
   requireRumProxyAuth,
   requireTermsAcceptance,
+  isTermsAcceptanceRequired,
   setTwoFactorTempUser,
   setTwoFactorAcknowledgementTempUser,
   setTwoFactorFinalizationTempUser,

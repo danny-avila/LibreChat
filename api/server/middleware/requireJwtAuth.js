@@ -13,6 +13,7 @@ const {
   recordRumProxyRequest,
   getValidOpenIdReuseUserId,
   generateTwoFactorSetupToken,
+  createTermsBlockCheck,
   createTermsAcceptanceGate,
   isTwoFactorEnrollmentRequired,
 } = require('@librechat/api');
@@ -83,6 +84,7 @@ const requiredTwoFactorGate = createRequiredTwoFactorGate({
 });
 
 const requireTermsAcceptance = createTermsAcceptanceGate({ getAppConfig });
+const isTermsAcceptanceRequired = createTermsBlockCheck({ getAppConfig });
 
 /**
  * Custom Middleware to handle JWT authentication, with support for OpenID token reuse.
@@ -266,3 +268,4 @@ const requireRumProxyAuth = (req, res, next) => {
 module.exports = requireJwtAuth;
 module.exports.requireRumProxyAuth = requireRumProxyAuth;
 module.exports.requireTermsAcceptance = requireTermsAcceptance;
+module.exports.isTermsAcceptanceRequired = isTermsAcceptanceRequired;

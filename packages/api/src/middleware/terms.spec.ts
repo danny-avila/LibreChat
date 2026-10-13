@@ -1,7 +1,7 @@
 import { TERMS_NOT_ACCEPTED_CODE } from 'librechat-data-provider';
 import type { NextFunction, Request, Response } from 'express';
 import type { AppConfig } from '@librechat/data-schemas';
-import { createTermsAcceptanceGate } from './terms';
+import { createTermsAcceptanceGate, createTermsBlockCheck } from './terms';
 
 const configWith = (modalAcceptance?: boolean): AppConfig =>
   ({ interfaceConfig: { termsOfService: { modalAcceptance } } }) as unknown as AppConfig;
@@ -136,5 +136,27 @@ describe('createTermsAcceptanceGate', () => {
     await gate(createRequest('POST', '/api/files'), res, next);
     expect(next).toHaveBeenCalledWith(error);
     expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it('resolves the config fail-closed so an override lookup failure cannot fall back to the base', async () => {
+    const { getAppConfig } = await run(createRequest('POST', '/api/files'));
+    expect(getAppConfig).toHaveBeenCalledWith(expect.objectContaining({ failClosed: true }));
+  });
+});
+
+describe('createTermsBlockCheck', () => {
+  const check = (config: AppConfig | undefined) =>
+    createTermsBlockCheck({ getAppConfig: jest.fn().mockResolvedValue(config) });
+
+  it('blocks an unaccepted user when modalAcceptance is on, regardless of method', async () => {
+    expect(await check(configWith(true))({ id: 'user-1', termsAccepted: false })).toBe(true);
+  });
+
+  it.each([
+    ['accepted', { id: 'user-1', termsAccepted: true }, configWith(true)],
+    ['modalAcceptance off', { id: 'user-1' }, configWith(false)],
+    ['no user', undefined, configWith(true)],
+  ])('does not block when %s', async (_label, user, config) => {
+    expect(await check(config)(user)).toBe(false);
   });
 });

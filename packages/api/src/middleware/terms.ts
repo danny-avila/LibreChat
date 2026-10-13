@@ -2,7 +2,7 @@ import { TERMS_NOT_ACCEPTED_CODE } from 'librechat-data-provider';
 import type { NextFunction, Request, Response } from 'express';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { AppConfigUserLike, GetAppConfigOptions } from '~/app/service';
-import { getAppConfigOptionsFromUser } from '~/app/service';
+import { resolveStrictAppConfig } from '~/app/service';
 
 type TermsUser = AppConfigUserLike & { termsAccepted?: boolean };
 
@@ -31,6 +31,21 @@ function getPathname(req: Request): string {
 }
 
 /**
+ * Whether the user must accept the terms before anything is processed on their behalf. The
+ * config is read only for a user who has not accepted, and fails closed: an override lookup
+ * failure throws rather than falling back to a base config that may leave the gate off.
+ */
+export function createTermsBlockCheck(deps: TermsAcceptanceGateDependencies) {
+  return async (user: TermsUser | undefined): Promise<boolean> => {
+    if (user == null || user.termsAccepted === true) {
+      return false;
+    }
+    const appConfig = await resolveStrictAppConfig(deps.getAppConfig, user);
+    return appConfig?.interfaceConfig?.termsOfService?.modalAcceptance === true;
+  };
+}
+
+/**
  * Enforces `interface.termsOfService.modalAcceptance` on the server: an authenticated user who has
  * not accepted the terms may read but not write, so a client that skips the modal cannot start
  * chats, uploads or any other processing. Runs after authentication and reads `termsAccepted` from
@@ -38,21 +53,16 @@ function getPathname(req: Request): string {
  * accepted and is attempting a write.
  */
 export function createTermsAcceptanceGate(deps: TermsAcceptanceGateDependencies) {
+  const isBlocked = createTermsBlockCheck(deps);
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const user = req.user as TermsUser | undefined;
-    if (
-      user == null ||
-      user.termsAccepted === true ||
-      SAFE_METHODS.has(req.method) ||
-      isExempt(req.method, getPathname(req))
-    ) {
+    if (SAFE_METHODS.has(req.method) || isExempt(req.method, getPathname(req))) {
       next();
       return;
     }
 
     try {
-      const appConfig = await deps.getAppConfig(getAppConfigOptionsFromUser(user));
-      if (appConfig?.interfaceConfig?.termsOfService?.modalAcceptance !== true) {
+      if (!(await isBlocked(user))) {
         next();
         return;
       }

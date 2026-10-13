@@ -21,6 +21,7 @@ import {
   ApprovalEvents,
   ViolationTypes,
   removeNullishValues,
+  TERMS_NOT_ACCEPTED_CODE,
 } from 'librechat-data-provider';
 import type {
   Agents,
@@ -360,6 +361,12 @@ const getStreamStartFailureText = (errorData?: unknown): string => {
     ? JSON.stringify(errorData)
     : 'Error connecting to server, try refreshing the page.';
 };
+
+/** Terms were reset mid-session: refetching the status reopens the acceptance modal. */
+const hasTermsNotAcceptedCode = (errorData: unknown): boolean =>
+  errorData != null &&
+  typeof errorData === 'object' &&
+  (errorData as { code?: unknown }).code === TERMS_NOT_ACCEPTED_CODE;
 
 const getStreamStartFailureData = (errorData?: unknown): TResData =>
   ({
@@ -4235,6 +4242,9 @@ export default function useResumableSSE(
       if (signal?.aborted) {
         return null;
       }
+      if (hasTermsNotAcceptedCode(errorData)) {
+        void queryClient.invalidateQueries([QueryKeys.userTerms]);
+      }
       errorHandler({
         data: getStreamStartFailureData(errorData),
         submission: currentSubmission as EventSubmission,
@@ -4250,6 +4260,7 @@ export default function useResumableSSE(
       errorHandler,
       jotaiStore,
       localize,
+      queryClient,
       restoreQueuedSubmission,
       setIsSubmitting,
       setShowStopButton,
