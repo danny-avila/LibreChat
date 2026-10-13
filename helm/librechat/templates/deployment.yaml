@@ -117,7 +117,7 @@ spec:
                   key: mongodb-root-password
           {{- end }}
             - name: MONGO_URI
-              value: mongodb://{{ .Values.mongodb.auth.rootUser | default "root" }}:$(MONGODB_ROOT_PASSWORD)@{{ include "mongodb.service.nameOverride" .Subcharts.mongodb }}.{{ .Release.Namespace | lower }}.svc.cluster.local:27017/LibreChat?authSource=admin
+              value: mongodb://{{ .Values.mongodb.auth.rootUser | default "root" | urlquery | replace "+" "%20" }}:$(MONGODB_ROOT_PASSWORD)@{{ include "mongodb.service.nameOverride" .Subcharts.mongodb }}.{{ .Release.Namespace | lower }}.svc.cluster.local:27017/LibreChat?authSource=admin
           {{- end }}
           {{- if include "librechat.bundledRedisAuth" . }}
             - name: REDIS_PASSWORD
