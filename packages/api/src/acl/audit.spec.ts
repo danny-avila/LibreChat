@@ -1,58 +1,73 @@
 import { PrincipalType, ResourceType } from 'librechat-data-provider';
-import type { InsightsPermissionChange } from './insightsPermissions';
+import type { PermissionChange } from './types';
 import type { ServerRequest } from '~/types';
-import { auditResourcePermissionChanges } from './audit';
+import { runAuditedPermissionUpdate } from './audit';
 
 const req = {
   user: { _id: { toString: () => 'actor-id' }, id: 'actor-id', name: 'Actor', tenantId: 't1' },
   headers: {},
 } as unknown as ServerRequest;
 
-const grantChange = (id: string, permBits = 3): InsightsPermissionChange =>
-  ({
-    action: 'assigned',
-    previousEntry: null,
-    writtenEntry: { permBits, roleId: 'r1' },
-    principal: { type: PrincipalType.USER, id, name: 'Secret Name' },
-  }) as unknown as InsightsPermissionChange;
+const grantChange = (id: string, permBits = 3): PermissionChange => ({
+  action: 'assigned',
+  previous: null,
+  written: { permBits, roleId: 'r1' },
+  principal: { type: PrincipalType.USER, id },
+});
+
+const revokeChange = (type: PrincipalType, id: string | null): PermissionChange => ({
+  action: 'removed',
+  previous: { permBits: 1, roleId: 'r1' },
+  written: null,
+  principal: { type, id },
+});
 
 function setup(recordImpl?: jest.Mock) {
   const recordAuditEntry = recordImpl ?? jest.fn().mockResolvedValue(null);
-  const restorePermissionChanges = jest.fn().mockResolvedValue(undefined);
   const logger = { error: jest.fn() };
-  const run = (changes: InsightsPermissionChange[], failClosed: boolean, r = req) =>
-    auditResourcePermissionChanges({
-      req: r,
-      resourceType: ResourceType.PROMPTGROUP,
+  const write = jest.fn().mockResolvedValue('written');
+  const run = (
+    aclChanges: PermissionChange[],
+    failClosed: boolean,
+    options: {
+      insightsChanges?: PermissionChange[];
+      getAgent?: jest.Mock;
+      resourceType?: ResourceType;
+      r?: ServerRequest;
+    } = {},
+  ) =>
+    runAuditedPermissionUpdate({
+      req: options.r ?? req,
+      resourceType: options.resourceType ?? ResourceType.PROMPTGROUP,
       resourceId: 'res-1',
-      changes,
+      getAgent: options.getAgent,
       failClosed,
-      deps: { recordAuditEntry, restorePermissionChanges, logger },
+      deps: { recordAuditEntry, logger },
+      update: async (beforeWrite) => {
+        await beforeWrite({ aclChanges, insightsChanges: options.insightsChanges ?? [] });
+        return write();
+      },
     });
-  return { recordAuditEntry, restorePermissionChanges, logger, run };
+  return { recordAuditEntry, logger, write, run };
 }
 
-describe('auditResourcePermissionChanges', () => {
-  test('records grant, revoke and public entries with ids and bits only', async () => {
-    const { recordAuditEntry, run } = setup();
-    await run(
-      [
-        grantChange('u1'),
-        {
-          action: 'removed',
-          previousEntry: { permBits: 1, roleId: 'r1' },
-          writtenEntry: null,
-          principal: { type: PrincipalType.GROUP, id: 'g1', name: 'Secret Name' },
-        } as unknown as InsightsPermissionChange,
-        {
-          action: 'removed',
-          previousEntry: { permBits: 1, roleId: 'r1' },
-          writtenEntry: null,
-          principal: { type: PrincipalType.PUBLIC, id: null },
-        } as unknown as InsightsPermissionChange,
-      ],
-      true,
-    );
+describe('runAuditedPermissionUpdate', () => {
+  test('records grant, revoke and public entries with ids and bits only, before the write', async () => {
+    const { recordAuditEntry, write, run } = setup();
+    recordAuditEntry.mockImplementation(async () => {
+      expect(write).not.toHaveBeenCalled();
+    });
+
+    await expect(
+      run(
+        [
+          grantChange('u1'),
+          revokeChange(PrincipalType.GROUP, 'g1'),
+          revokeChange(PrincipalType.PUBLIC, null),
+        ],
+        true,
+      ),
+    ).resolves.toBe('written');
 
     const inputs = recordAuditEntry.mock.calls.map(([input]) => input);
     expect(inputs.map((i) => i.action)).toEqual([
@@ -62,89 +77,148 @@ describe('auditResourcePermissionChanges', () => {
     ]);
     expect(inputs[0]).toEqual(
       expect.objectContaining({
+        outcome: 'success',
         target: { type: ResourceType.PROMPTGROUP, id: 'res-1' },
         tenantId: 't1',
         metadata: { principalType: 'user', principalId: 'u1', permBits: 3, previousPermBits: 0 },
       }),
     );
     expect(inputs[2].metadata).toEqual(expect.objectContaining({ enabled: false }));
-    expect(JSON.stringify(inputs)).not.toContain('Secret Name');
     expect(recordAuditEntry.mock.calls[0][1]).toEqual({ failClosed: true });
   });
 
   test('skips a grant that changes nothing', async () => {
-    const { recordAuditEntry, run } = setup();
-    await run(
-      [
-        {
-          ...grantChange('u1'),
-          previousEntry: { permBits: 3, roleId: 'r1' },
-        } as unknown as InsightsPermissionChange,
-      ],
-      true,
-    );
+    const { recordAuditEntry, write, run } = setup();
+    await run([{ ...grantChange('u1'), previous: { permBits: 3, roleId: 'r1' } }], true);
     expect(recordAuditEntry).not.toHaveBeenCalled();
+    expect(write).toHaveBeenCalledTimes(1);
   });
 
-  test('fail-closed: restores the unaudited tail and throws', async () => {
+  test('fail-closed: a failed audit write rejects the request and nothing is written', async () => {
     const record = jest.fn().mockResolvedValueOnce(null).mockRejectedValueOnce(new Error('down'));
-    const { restorePermissionChanges, run } = setup(record);
-    const changes = [grantChange('u1'), grantChange('u2'), grantChange('u3')];
+    const { write, run } = setup(record);
 
-    await expect(run(changes, true)).rejects.toMatchObject({ statusCode: 500 });
-    expect(restorePermissionChanges).toHaveBeenCalledWith(changes.slice(1));
+    await expect(run([grantChange('u1'), grantChange('u2')], true)).rejects.toMatchObject({
+      statusCode: 500,
+    });
+    expect(write).not.toHaveBeenCalled();
+    /** The entry already recorded is withdrawn with a matching failure entry. */
+    expect(record.mock.calls.map(([input]) => input.outcome)).toEqual([
+      'success',
+      'success',
+      'failure',
+    ]);
   });
 
-  test('fail-closed: restores everything when there is no authenticated actor', async () => {
-    const { recordAuditEntry, restorePermissionChanges, run } = setup();
-    const changes = [grantChange('u1')];
+  test('fail-closed: no authenticated actor rejects before any write', async () => {
+    const { recordAuditEntry, write, run } = setup();
 
-    await expect(run(changes, true, { headers: {} } as unknown as ServerRequest)).rejects.toThrow();
-    expect(restorePermissionChanges).toHaveBeenCalledWith(changes);
+    await expect(
+      run([grantChange('u1')], true, { r: { headers: {} } as unknown as ServerRequest }),
+    ).rejects.toThrow();
     expect(recordAuditEntry).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
   });
 
-  test('opt-out: logs a failed write, keeps the change and continues', async () => {
+  test('opt-out: logs a failed audit write and applies the change anyway', async () => {
     const record = jest.fn().mockRejectedValue(new Error('down'));
-    const { restorePermissionChanges, logger, run } = setup(record);
+    const { write, logger, run } = setup(record);
 
-    await expect(run([grantChange('u1'), grantChange('u2')], false)).resolves.toBeUndefined();
+    await expect(run([grantChange('u1'), grantChange('u2')], false)).resolves.toBe('written');
     expect(record).toHaveBeenCalledTimes(2);
-    expect(restorePermissionChanges).not.toHaveBeenCalled();
+    expect(write).toHaveBeenCalledTimes(1);
     expect(logger.error).toHaveBeenCalledTimes(2);
   });
 
-  test('mixed ACL and Insights changes run as one pass and restore the unaudited tail', async () => {
+  test('a failed ACL write appends failure entries for the recorded changes and rethrows', async () => {
+    const { recordAuditEntry } = setup();
+    const writeError = new Error('acl write down');
+
+    await expect(
+      runAuditedPermissionUpdate({
+        req,
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId: 'res-1',
+        failClosed: true,
+        deps: { recordAuditEntry, logger: { error: jest.fn() } },
+        update: async (beforeWrite) => {
+          await beforeWrite({
+            aclChanges: [grantChange('u1'), revokeChange(PrincipalType.GROUP, 'g1')],
+            insightsChanges: [],
+          });
+          throw writeError;
+        },
+      }),
+    ).rejects.toBe(writeError);
+
+    expect(recordAuditEntry.mock.calls.map(([input]) => [input.action, input.outcome])).toEqual([
+      ['acl.granted', 'success'],
+      ['acl.revoked', 'success'],
+      ['acl.granted', 'failure'],
+      ['acl.revoked', 'failure'],
+    ]);
+  });
+
+  test('a failure entry that cannot be persisted does not mask the write error', async () => {
     const record = jest
       .fn()
       .mockResolvedValueOnce(null)
-      .mockResolvedValueOnce(null)
-      .mockRejectedValueOnce(new Error('down'));
-    const { restorePermissionChanges } = setup(record);
-    const acl = [grantChange('u1'), grantChange('u2')];
-    const insightsChange = {
-      ...grantChange('u2'),
-      action: 'assigned',
-    } as InsightsPermissionChange;
-    const getAgent = jest.fn().mockResolvedValue({ id: 'res-1', name: 'Agent' });
+      .mockRejectedValueOnce(new Error('audit down'));
+    const logger = { error: jest.fn() };
+    const writeError = new Error('acl write down');
 
     await expect(
-      auditResourcePermissionChanges({
+      runAuditedPermissionUpdate({
         req,
-        resourceType: ResourceType.AGENT,
+        resourceType: ResourceType.PROMPTGROUP,
         resourceId: 'res-1',
-        changes: acl,
-        insights: { changes: [insightsChange], getAgent },
         failClosed: true,
-        deps: { recordAuditEntry: record, restorePermissionChanges, logger: { error: jest.fn() } },
+        deps: { recordAuditEntry: record, logger },
+        update: async (beforeWrite) => {
+          await beforeWrite({ aclChanges: [grantChange('u1')], insightsChanges: [] });
+          throw writeError;
+        },
       }),
-    ).rejects.toMatchObject({ statusCode: 500 });
+    ).rejects.toBe(writeError);
+    expect(logger.error).toHaveBeenCalled();
+  });
 
-    expect(record.mock.calls.map(([input]) => input.action)).toEqual([
-      'acl.granted',
+  test('audits ACL and Insights changes together, ACL entries first', async () => {
+    const { recordAuditEntry, write, run } = setup();
+    const getAgent = jest.fn().mockResolvedValue({ id: 'res-1', name: 'Agent' });
+
+    await run([grantChange('u1')], true, {
+      resourceType: ResourceType.AGENT,
+      insightsChanges: [grantChange('u1')],
+      getAgent,
+    });
+
+    expect(recordAuditEntry.mock.calls.map(([input]) => input.action)).toEqual([
       'acl.granted',
       'permission.insights_assigned',
     ]);
-    expect(restorePermissionChanges).toHaveBeenCalledWith([insightsChange]);
+    expect(write).toHaveBeenCalledTimes(1);
   });
+
+  test.each([true, false])(
+    'still audits Insights with the resource id when the agent lookup fails (failClosed=%p)',
+    async (failClosed) => {
+      const { recordAuditEntry, logger, run } = setup();
+
+      await run([], failClosed, {
+        resourceType: ResourceType.AGENT,
+        insightsChanges: [grantChange('u1')],
+        getAgent: jest.fn().mockRejectedValue(new Error('lookup down')),
+      });
+
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'permission.insights_assigned',
+          target: { type: ResourceType.AGENT, id: 'res-1', name: 'res-1' },
+        }),
+        { failClosed },
+      );
+      expect(logger.error).toHaveBeenCalled();
+    },
+  );
 });

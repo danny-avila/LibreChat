@@ -20,13 +20,10 @@ export type AdminAuditEvent = Omit<RecordAuditEntryInput, 'actor' | 'context'>;
 export type AdminAuditEmitter = (req: ServerRequest, event: AdminAuditEvent) => Promise<void>;
 
 /**
- * Whether request-driven audit writes fail closed. On unless the operator
- * opts out with `AUDIT_LOG_FAIL_CLOSED=false`; any other value keeps the
- * secure default so a typo cannot silently disable it.
- *
- * Only wire this into handlers that can undo the mutation when the audit write
- * fails (grants, resource ACLs). Elsewhere a 5xx would report a failure for a
- * change that was already applied, so those handlers stay fail-open.
+ * Whether resource permission updates fail closed. Their audit entry is written
+ * before the ACL changes, so a failed write rejects the request with nothing
+ * applied. On unless the operator opts out with `AUDIT_LOG_FAIL_CLOSED=false`;
+ * any other value keeps the secure default so a typo cannot silently disable it.
  */
 export function isAuditFailClosed(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.AUDIT_LOG_FAIL_CLOSED !== 'false';
@@ -48,9 +45,9 @@ export function getAuditActor(req: ServerRequest): AuditActorInput | null {
  * the caller's tenant unless the event sets the key (even to `undefined`, which
  * routes the entry to the platform chain).
  *
- * With `failClosed` (the deployment default, see `isAuditFailClosed`), the
- * write error propagates so the handler's catch turns it into a 5xx. Otherwise
- * a failed write is logged and the already-persisted mutation stands.
+ * Fail-open by default: a failed write is logged and the already-persisted
+ * mutation stands. With `failClosed`, the write error propagates so the
+ * handler's catch turns it into a 5xx.
  */
 export function createAdminAuditEmitter(options: {
   recordAuditEntry?: RecordAuditEntry;

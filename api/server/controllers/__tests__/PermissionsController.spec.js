@@ -33,11 +33,17 @@ jest.mock('~/server/services/Config', () => ({
 }));
 
 const mockBulkUpdateResourcePermissions = jest.fn();
-const mockRestoreInsightsPermissionChanges = jest.fn();
 
 jest.mock('~/server/services/PermissionService', () => ({
-  bulkUpdateResourcePermissions: (...args) => mockBulkUpdateResourcePermissions(...args),
-  restoreInsightsPermissionChanges: (...args) => mockRestoreInsightsPermissionChanges(...args),
+  /** The service audits through `beforeWrite` before writing; the mock result stands in for the computed plan. */
+  bulkUpdateResourcePermissions: async (params) => {
+    const results = await mockBulkUpdateResourcePermissions(params);
+    await params.beforeWrite?.({
+      aclChanges: results?.aclChanges ?? [],
+      insightsChanges: results?.insightsChanges ?? [],
+    });
+    return results;
+  },
   ensureGroupPrincipalExists: jest.fn(),
   getEffectivePermissions: jest.fn(),
   ensurePrincipalExists: jest.fn(),
@@ -249,7 +255,6 @@ describe('PermissionsController', () => {
       mockRemoveAgentFromUserFavorites.mockResolvedValue(undefined);
       db.getAgent.mockResolvedValue({ _id: agentObjectId, id: 'agent-a', name: 'Agent A' });
       mockRecordAuditEntry.mockResolvedValue({});
-      mockRestoreInsightsPermissionChanges.mockResolvedValue(undefined);
     });
 
     it('rejects Insights permission changes from non-admin users', async () => {
@@ -360,7 +365,7 @@ describe('PermissionsController', () => {
       );
     });
 
-    it('restores unaudited Insights transitions when fail-closed auditing fails', async () => {
+    it('fails the request before writing when fail-closed Insights auditing fails', async () => {
       process.env.AUDIT_LOG_FAIL_CLOSED = 'true';
       const changes = [{ action: 'assigned', principal: { type: PrincipalType.ROLE, id: 'USER' } }];
       mockBulkUpdateResourcePermissions.mockResolvedValue({
@@ -390,11 +395,6 @@ describe('PermissionsController', () => {
 
       await updateResourcePermissions(req, res);
 
-      expect(mockRestoreInsightsPermissionChanges).toHaveBeenCalledWith({
-        resourceType: ResourceType.AGENT,
-        resourceId: agentObjectId,
-        changes,
-      });
       expect(res.status).toHaveBeenCalledWith(500);
     });
 
@@ -417,7 +417,6 @@ describe('PermissionsController', () => {
 
       await updateResourcePermissions(req, res);
 
-      expect(mockRestoreInsightsPermissionChanges).not.toHaveBeenCalled();
       expect(mockRecordAuditEntry).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'permission.insights_assigned',
@@ -432,20 +431,20 @@ describe('PermissionsController', () => {
       const aclChanges = [
         {
           action: 'assigned',
-          previousEntry: null,
-          writtenEntry: { permBits: 3, roleId: 'role-1' },
+          previous: null,
+          written: { permBits: 3, roleId: 'role-1' },
           principal: { type: PrincipalType.USER, id: revokedUserId, name: 'Jane Doe' },
         },
         {
           action: 'removed',
-          previousEntry: { permBits: 1, roleId: 'role-2' },
-          writtenEntry: null,
+          previous: { permBits: 1, roleId: 'role-2' },
+          written: null,
           principal: { type: PrincipalType.GROUP, id: 'group-1', name: 'Team' },
         },
         {
           action: 'assigned',
-          previousEntry: null,
-          writtenEntry: { permBits: 1, roleId: 'role-2' },
+          previous: null,
+          written: { permBits: 1, roleId: 'role-2' },
           principal: { type: PrincipalType.PUBLIC, id: null },
         },
       ];
@@ -486,12 +485,12 @@ describe('PermissionsController', () => {
       expect(res.status).toHaveBeenCalledWith(200);
     });
 
-    it('restores ACL changes and fails the request when the audit write fails closed', async () => {
+    it('fails the request before writing when the ACL audit write fails closed', async () => {
       const aclChanges = [
         {
           action: 'assigned',
-          previousEntry: null,
-          writtenEntry: { permBits: 3, roleId: 'role-1' },
+          previous: null,
+          written: { permBits: 3, roleId: 'role-1' },
           principal: { type: PrincipalType.USER, id: revokedUserId },
         },
       ];
@@ -512,15 +511,10 @@ describe('PermissionsController', () => {
 
       await updateResourcePermissions(req, res);
 
-      expect(mockRestoreInsightsPermissionChanges).toHaveBeenCalledWith({
-        resourceType: ResourceType.PROMPTGROUP,
-        resourceId: agentObjectId,
-        changes: aclChanges,
-      });
       expect(res.status).toHaveBeenCalledWith(500);
     });
 
-    it('keeps the permissions and logs when the audit write fails with the opt-out', async () => {
+    it('applies the permissions and logs when the audit write fails with the opt-out', async () => {
       process.env.AUDIT_LOG_FAIL_CLOSED = 'false';
       mockBulkUpdateResourcePermissions.mockResolvedValue({
         granted: [],
@@ -529,8 +523,8 @@ describe('PermissionsController', () => {
         aclChanges: [
           {
             action: 'removed',
-            previousEntry: { permBits: 1, roleId: 'role-2' },
-            writtenEntry: null,
+            previous: { permBits: 1, roleId: 'role-2' },
+            written: null,
             principal: { type: PrincipalType.USER, id: revokedUserId },
           },
         ],
@@ -547,7 +541,6 @@ describe('PermissionsController', () => {
       await updateResourcePermissions(req, res);
 
       expect(mockRecordAuditEntry).toHaveBeenCalledWith(expect.anything(), { failClosed: false });
-      expect(mockRestoreInsightsPermissionChanges).not.toHaveBeenCalled();
       expect(res.status).toHaveBeenCalledWith(200);
     });
 

@@ -1,22 +1,18 @@
 import { PrincipalType } from 'librechat-data-provider';
 import type { RecordAuditEntryInput } from '@librechat/data-schemas';
 import type { ResourceType } from 'librechat-data-provider';
-import type { InsightsPermissionChange } from './types';
 import type { RecordAuditEntry } from '~/admin/audit';
+import type { PermissionChange } from './types';
 import type { ServerRequest } from '~/types';
 import { buildAuditContext } from '~/admin/context';
 import { getAuditActor } from '~/admin/audit';
 
 export type AuditPlanItem = {
   input: RecordAuditEntryInput;
-  /** The persisted change this entry describes; restored if the entry cannot be written. */
-  change: InsightsPermissionChange;
 };
 
 type AclAuditDeps = {
   recordAuditEntry: RecordAuditEntry;
-  /** Reverts persisted changes so a mutation that could not be audited does not stand. */
-  restorePermissionChanges: (changes: InsightsPermissionChange[]) => Promise<void>;
   logger: { error: (message: string, error?: unknown) => void };
 };
 
@@ -25,17 +21,17 @@ function statusError(message: string): Error & { statusCode: number } {
 }
 
 function buildEvent(
-  change: InsightsPermissionChange,
+  change: PermissionChange,
 ): Pick<RecordAuditEntryInput, 'action' | 'metadata'> | null {
-  const { previousEntry, writtenEntry, principal } = change;
+  const { previous, written, principal } = change;
   const isPublic = principal.type === PrincipalType.PUBLIC;
-  const previousBits = previousEntry?.permBits ?? 0;
-  const permBits = writtenEntry?.permBits ?? 0;
+  const previousBits = previous?.permBits ?? 0;
+  const permBits = written?.permBits ?? 0;
   if (change.action === 'assigned') {
     const unchanged =
-      previousEntry != null &&
-      writtenEntry != null &&
-      previousEntry.roleId?.toString() === writtenEntry.roleId?.toString() &&
+      previous != null &&
+      written != null &&
+      previous.roleId === written.roleId &&
       previousBits === permBits;
     if (unchanged) {
       return null;
@@ -73,7 +69,7 @@ export async function planInsightsAudit({
 }: {
   req: ServerRequest;
   resourceId: string;
-  changes: InsightsPermissionChange[];
+  changes: PermissionChange[];
   deps: InsightsPlanDeps;
 }): Promise<AuditPlanItem[]> {
   if (changes.length === 0) {
@@ -101,7 +97,6 @@ export async function planInsightsAudit({
   const target = { id: agent?.id ?? resourceId, name: agent?.name || agent?.id || resourceId };
   const context = buildAuditContext(req);
   return changes.map((change) => ({
-    change,
     input: {
       action:
         change.action === 'assigned'
@@ -131,7 +126,7 @@ export function planResourceAudit({
   req: ServerRequest;
   resourceType: ResourceType;
   resourceId: string;
-  changes: InsightsPermissionChange[];
+  changes: PermissionChange[];
 }): AuditPlanItem[] {
   if (changes.length === 0) {
     return [];
@@ -146,7 +141,6 @@ export function planResourceAudit({
     const event = buildEvent(change);
     if (event) {
       items.push({
-        change,
         input: {
           ...event,
           outcome: 'success',
@@ -162,103 +156,87 @@ export function planResourceAudit({
   return items;
 }
 
-/**
- * Writes the planned entries in order. With `failClosed`, a failed write
- * restores every change whose entry was not yet written and throws, so the
- * request fails and the log never lags the ACL. Otherwise the failure is
- * logged and the updated permissions stand.
- */
-export async function runAuditPlan({
-  items,
-  failClosed,
-  deps,
-}: {
-  items: AuditPlanItem[];
-  failClosed: boolean;
-  deps: AclAuditDeps;
-}): Promise<void> {
-  for (let index = 0; index < items.length; index++) {
-    try {
-      await deps.recordAuditEntry(items[index].input, { failClosed });
-    } catch (error) {
-      if (!failClosed) {
-        deps.logger.error('[ResourcePermissions] Audit persistence failed', error);
-        continue;
-      }
-      await deps
-        .restorePermissionChanges(items.slice(index).map((item) => item.change))
-        .catch((restoreError) =>
-          deps.logger.error('[ResourcePermissions] Permission rollback failed', restoreError),
-        );
-      throw statusError('Permission change could not be audited');
-    }
-  }
-}
-
-const principalKey = (change: InsightsPermissionChange) =>
-  `${change.principal.type}:${change.principal.id?.toString() ?? ''}`;
+export type PermissionPlan = {
+  aclChanges: PermissionChange[];
+  insightsChanges: PermissionChange[];
+};
 
 /**
- * Audits a resource permission update: `acl.*` entries for every grant, revoke
- * and public change, plus the agent Insights entries when `insights` is given.
- * Both streams run as one pass, grouped by principal, so a fail-closed failure
- * restores every change not yet audited across both. Entries carry ids and
- * permission bits only, never principal names or emails.
+ * Audits a resource permission update before it is written. `update` receives a
+ * `beforeWrite` hook to call with the computed changes ahead of any ACL write:
+ * it records one `acl.*` entry per grant, revoke and public change, plus the
+ * agent Insights entries when `getAgent` is given. With `failClosed`, a failed
+ * audit write throws, so the request fails with the ACL untouched. If the ACL
+ * write then fails, the entries already recorded are followed by matching
+ * `failure` entries (best effort), so the log never claims a change that did
+ * not happen. Entries carry ids and permission bits only, never names or emails.
  */
-export async function auditResourcePermissionChanges({
+export async function runAuditedPermissionUpdate<T>({
   req,
   resourceType,
   resourceId,
-  changes,
-  insights,
+  getAgent,
   failClosed,
   deps,
+  update,
 }: {
   req: ServerRequest;
   resourceType: ResourceType;
   resourceId: string;
-  changes: InsightsPermissionChange[];
-  insights?: { changes: InsightsPermissionChange[]; getAgent: InsightsPlanDeps['getAgent'] };
+  getAgent?: InsightsPlanDeps['getAgent'];
   failClosed: boolean;
   deps: AclAuditDeps;
-}): Promise<void> {
-  const insightsChanges = insights?.changes ?? [];
-  if (changes.length === 0 && insightsChanges.length === 0) {
-    return;
-  }
-  let items: AuditPlanItem[];
-  try {
-    items = [
-      ...planResourceAudit({ req, resourceType, resourceId, changes }),
-      ...(insights
-        ? await planInsightsAudit({
-            req,
-            resourceId,
-            changes: insightsChanges,
-            deps: { getAgent: insights.getAgent, logger: deps.logger },
-          })
-        : []),
-    ];
-  } catch (error) {
-    if (failClosed) {
-      await deps
-        .restorePermissionChanges(changes)
-        .catch((restoreError) =>
-          deps.logger.error('[ResourcePermissions] Permission rollback failed', restoreError),
-        );
-    } else {
-      deps.logger.error('[ResourcePermissions] Audit skipped', error);
-      return;
+  update: (beforeWrite: (plan: PermissionPlan) => Promise<void>) => Promise<T>;
+}): Promise<T> {
+  const recorded: AuditPlanItem[] = [];
+  const recordFailures = async () => {
+    const items = recorded.splice(0);
+    for (const item of items) {
+      try {
+        await deps.recordAuditEntry({ ...item.input, outcome: 'failure' });
+      } catch (error) {
+        deps.logger.error('[ResourcePermissions] Audit failure entry not persisted', error);
+      }
     }
+  };
+  try {
+    return await update(async ({ aclChanges, insightsChanges }) => {
+      let items: AuditPlanItem[];
+      try {
+        items = [
+          ...planResourceAudit({ req, resourceType, resourceId, changes: aclChanges }),
+          ...(getAgent
+            ? await planInsightsAudit({
+                req,
+                resourceId,
+                changes: insightsChanges,
+                deps: { getAgent, logger: deps.logger },
+              })
+            : []),
+        ];
+      } catch (error) {
+        if (failClosed) {
+          throw error;
+        }
+        deps.logger.error('[ResourcePermissions] Audit skipped', error);
+        return;
+      }
+      for (const item of items) {
+        try {
+          await deps.recordAuditEntry(item.input, { failClosed });
+          recorded.push(item);
+        } catch (error) {
+          if (!failClosed) {
+            deps.logger.error('[ResourcePermissions] Audit persistence failed', error);
+            continue;
+          }
+          await recordFailures();
+          throw statusError('Permission change could not be audited');
+        }
+      }
+    });
+  } catch (error) {
+    await recordFailures();
     throw error;
   }
-  const order = new Map<string, number>();
-  for (const { change } of items) {
-    const key = principalKey(change);
-    if (!order.has(key)) {
-      order.set(key, order.size);
-    }
-  }
-  items.sort((a, b) => order.get(principalKey(a.change))! - order.get(principalKey(b.change))!);
-  await runAuditPlan({ items, failClosed, deps });
 }

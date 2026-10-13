@@ -205,59 +205,6 @@ describe('AccessControlService', () => {
       ).toBe(true);
     });
 
-    test('removes Insights from every duplicate when an assignment is rolled back', async () => {
-      await service.bulkUpdateResourcePermissions({
-        resourceType: ResourceType.AGENT,
-        resourceId,
-        updatedPrincipals: [
-          {
-            type: PrincipalType.USER,
-            id: userId.toString(),
-            accessRoleId: AccessRoleIds.AGENT_VIEWER,
-            viewInsights: false,
-          },
-        ],
-        grantedBy: grantedById,
-      });
-      const entry = await AclEntry.findOne({
-        principalType: PrincipalType.USER,
-        principalId: userId,
-        resourceType: ResourceType.AGENT,
-        resourceId,
-      }).lean();
-      await AclEntry.create({ ...entry, _id: new Types.ObjectId() });
-
-      const result = await service.bulkUpdateResourcePermissions({
-        resourceType: ResourceType.AGENT,
-        resourceId,
-        updatedPrincipals: [
-          {
-            type: PrincipalType.USER,
-            id: userId.toString(),
-            accessRoleId: AccessRoleIds.AGENT_VIEWER,
-            viewInsights: true,
-          },
-        ],
-        grantedBy: grantedById,
-      });
-      await service.restoreInsightsPermissionChanges({
-        resourceType: ResourceType.AGENT,
-        resourceId,
-        changes: result.insightsChanges,
-      });
-
-      const entries = await AclEntry.find({
-        principalType: PrincipalType.USER,
-        principalId: userId,
-        resourceType: ResourceType.AGENT,
-        resourceId,
-      }).lean();
-      expect(entries).toHaveLength(2);
-      expect(
-        entries.every((candidate) => (candidate.permBits & PermissionBits.VIEW_INSIGHTS) === 0),
-      ).toBe(true);
-    });
-
     test('audits a revoke when any duplicate ACL entry has Insights access', async () => {
       const viewerRole = await dbMethods.findRoleByIdentifier(AccessRoleIds.AGENT_VIEWER);
       await AclEntry.create([
@@ -295,14 +242,14 @@ describe('AccessControlService', () => {
       expect(result.insightsChanges).toEqual([
         expect.objectContaining({
           action: 'removed',
-          previousEntry: expect.objectContaining({
+          previous: expect.objectContaining({
             permBits: PermissionBits.VIEW | PermissionBits.VIEW_INSIGHTS,
           }),
         }),
       ]);
     });
 
-    test('reports every effective ACL change and restores it on rollback', async () => {
+    test('reports every effective ACL change as plain ids and bits', async () => {
       const principal = { type: PrincipalType.USER, id: userId.toString() };
       const grant = (accessRoleId: AccessRoleIds) =>
         service.bulkUpdateResourcePermissions({
@@ -323,7 +270,7 @@ describe('AccessControlService', () => {
       const created = await grant(AccessRoleIds.PROMPTGROUP_VIEWER);
       expect(created.insightsChanges).toEqual([]);
       expect(created.aclChanges).toEqual([
-        expect.objectContaining({ action: 'assigned', previousEntry: null }),
+        { action: 'assigned', previous: null, written: expect.any(Object), principal },
       ]);
       const viewerBits = await entryBits();
 
@@ -331,15 +278,10 @@ describe('AccessControlService', () => {
       expect(updated.aclChanges).toEqual([
         expect.objectContaining({
           action: 'assigned',
-          previousEntry: expect.objectContaining({ permBits: viewerBits }),
+          previous: { permBits: viewerBits, roleId: expect.any(String) },
+          written: { permBits: await entryBits(), roleId: expect.any(String) },
         }),
       ]);
-      await service.restoreInsightsPermissionChanges({
-        resourceType: ResourceType.PROMPTGROUP,
-        resourceId,
-        changes: updated.aclChanges,
-      });
-      expect(await entryBits()).toBe(viewerBits);
 
       const revoked = await service.bulkUpdateResourcePermissions({
         resourceType: ResourceType.PROMPTGROUP,
@@ -348,15 +290,9 @@ describe('AccessControlService', () => {
         grantedBy: grantedById,
       });
       expect(revoked.aclChanges).toEqual([
-        expect.objectContaining({ action: 'removed', writtenEntry: null }),
+        expect.objectContaining({ action: 'removed', written: null }),
       ]);
       expect(await entryBits()).toBeUndefined();
-      await service.restoreInsightsPermissionChanges({
-        resourceType: ResourceType.PROMPTGROUP,
-        resourceId,
-        changes: revoked.aclChanges,
-      });
-      expect(await entryBits()).toBe(viewerBits);
 
       const noop = await service.bulkUpdateResourcePermissions({
         resourceType: ResourceType.PROMPTGROUP,
@@ -367,64 +303,63 @@ describe('AccessControlService', () => {
       expect(noop.aclChanges).toEqual([]);
     });
 
-    test('records exact rollback data for role-only writes next to bulk writes', async () => {
+    test('calls beforeWrite with the changes before any ACL write, and a throw leaves the ACL untouched', async () => {
+      const seen: unknown[] = [];
+      const entryCount = () =>
+        AclEntry.countDocuments({ resourceType: ResourceType.PROMPTGROUP, resourceId });
+
+      await expect(
+        service.bulkUpdateResourcePermissions({
+          resourceType: ResourceType.PROMPTGROUP,
+          resourceId,
+          updatedPrincipals: [
+            {
+              type: PrincipalType.USER,
+              id: userId.toString(),
+              accessRoleId: AccessRoleIds.PROMPTGROUP_VIEWER,
+            },
+          ],
+          grantedBy: grantedById,
+          beforeWrite: async (plan) => {
+            seen.push(plan.aclChanges.length, await entryCount());
+            throw new Error('audit unavailable');
+          },
+        }),
+      ).rejects.toThrow('audit unavailable');
+
+      expect(seen).toEqual([1, 0]);
+      expect(await entryCount()).toBe(0);
+    });
+
+    test('revoking snapshots the principal without loading the rest of the ACL', async () => {
       const otherUserId = new Types.ObjectId();
-      const viewerRole = await dbMethods.findRoleByIdentifier(AccessRoleIds.AGENT_VIEWER);
-      const previous = await AclEntry.create({
-        principalType: PrincipalType.USER,
-        principalId: userId,
-        principalModel: PrincipalModel.USER,
-        resourceType: ResourceType.AGENT,
-        resourceId,
-        permBits: PermissionBits.VIEW | PermissionBits.VIEW_INSIGHTS,
-        roleId: viewerRole?._id,
-        grantedBy: grantedById,
-        grantedAt: new Date(),
-      });
+      const viewerRole = await dbMethods.findRoleByIdentifier(AccessRoleIds.PROMPTGROUP_VIEWER);
+      for (const principalId of [userId, otherUserId]) {
+        await AclEntry.create({
+          principalType: PrincipalType.USER,
+          principalId,
+          principalModel: PrincipalModel.USER,
+          resourceType: ResourceType.PROMPTGROUP,
+          resourceId,
+          permBits: PermissionBits.VIEW,
+          roleId: viewerRole?._id,
+          grantedBy: grantedById,
+          grantedAt: new Date(),
+        });
+      }
 
       const result = await service.bulkUpdateResourcePermissions({
-        resourceType: ResourceType.AGENT,
+        resourceType: ResourceType.PROMPTGROUP,
         resourceId,
-        updatedPrincipals: [
-          {
-            type: PrincipalType.USER,
-            id: userId.toString(),
-            accessRoleId: AccessRoleIds.AGENT_EDITOR,
-          },
-          {
-            type: PrincipalType.USER,
-            id: otherUserId.toString(),
-            accessRoleId: AccessRoleIds.AGENT_VIEWER,
-            viewInsights: true,
-          },
-        ],
+        revokedPrincipals: [{ type: PrincipalType.USER, id: userId.toString() }],
         grantedBy: grantedById,
       });
 
-      const roleChange = result.aclChanges.find(
-        (change) => change.principal.id === userId.toString(),
-      );
-      const stored = await AclEntry.findById(previous._id);
-      expect(roleChange?.previousEntry).toEqual(expect.objectContaining({ _id: previous._id }));
-      expect(roleChange?.writtenEntry).toEqual(
-        expect.objectContaining({
-          permBits: stored?.permBits,
-          roleId: stored?.roleId,
-        }),
-      );
-      expect(stored?.permBits).not.toBe(previous.permBits);
-
-      await service.restoreInsightsPermissionChanges({
-        resourceType: ResourceType.AGENT,
-        resourceId,
-        changes: result.aclChanges,
-      });
-      const restored = await AclEntry.findById(previous._id);
-      expect(restored?.permBits).toBe(previous.permBits);
-      expect(restored?.roleId).toEqual(previous.roleId);
+      expect(result.aclChanges).toHaveLength(1);
+      expect(result.aclChanges[0].principal.id).toBe(userId.toString());
       await expect(
-        AclEntry.exists({ principalId: otherUserId, resourceType: ResourceType.AGENT, resourceId }),
-      ).resolves.toBeNull();
+        AclEntry.exists({ principalId: otherUserId, resourceType: ResourceType.PROMPTGROUP }),
+      ).resolves.not.toBeNull();
     });
 
     test('does not treat a non-agent permission bit as an Insights revocation', async () => {

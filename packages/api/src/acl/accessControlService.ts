@@ -16,8 +16,9 @@ import {
 import type { AllMethods, IAclEntry } from '@librechat/data-schemas';
 import type { ClientSession, DeleteResult } from 'mongoose';
 import type { TPrincipal } from 'librechat-data-provider';
-import type { InsightsPermissionChange, InsightsWrittenEntry } from './insightsPermissions';
+import type { PermissionChange, PermissionSnapshot } from './types';
 import type { ResolvedPrincipal } from '~/types/principal';
+import type { PermissionPlan } from './audit';
 import { userPrincipalsCache } from '~/cache';
 
 type BulkPrincipal = Omit<TPrincipal, 'id'> & {
@@ -28,13 +29,16 @@ type BulkPrincipal = Omit<TPrincipal, 'id'> & {
 const ROLE_MASK =
   PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE;
 
+const snapshotOf = (entry?: IAclEntry | null): PermissionSnapshot | null =>
+  entry ? { permBits: entry.permBits, roleId: entry.roleId?.toString() ?? '' } : null;
+
 export type BulkPermissionUpdateResult = {
   granted: BulkPrincipal[];
   updated: BulkPrincipal[];
   revoked: BulkPrincipal[];
-  insightsChanges: InsightsPermissionChange[];
-  /** Every effective grant, update and revoke, with the state to restore on rollback. */
-  aclChanges: InsightsPermissionChange[];
+  insightsChanges: PermissionChange[];
+  /** Every grant, update and revoke, as the state before and after the write. */
+  aclChanges: PermissionChange[];
   errors: Array<{ principal: BulkPrincipal; error: string }>;
 };
 
@@ -416,6 +420,7 @@ export class AccessControlService {
     grantedBy,
     session,
     maxWriteAttempts,
+    beforeWrite,
   }: {
     resourceType: ResourceType;
     resourceId: string | Types.ObjectId;
@@ -424,6 +429,8 @@ export class AccessControlService {
     grantedBy: string | Types.ObjectId;
     session?: ClientSession;
     maxWriteAttempts?: number;
+    /** Called with the computed changes before any ACL write; a throw leaves the ACL untouched. */
+    beforeWrite?: (plan: PermissionPlan) => Promise<void>;
   }): Promise<BulkPermissionUpdateResult> {
     const supportsTransactions = await getTransactionSupport(
       this._mongoose,
@@ -450,9 +457,45 @@ export class AccessControlService {
         shouldEndSession = true;
       }
       const sessionOptions = localSession ? { session: localSession } : {};
+      const queryPrincipalId = (principal: BulkPrincipal) => {
+        if (principal.type === PrincipalType.ROLE) {
+          if (typeof principal.id !== 'string' || principal.id.trim().length === 0) {
+            throw new Error(`Invalid role ID: ${principal.id}`);
+          }
+          return principal.id;
+        }
+        const id = principal.id?.toString();
+        if (!id || !Types.ObjectId.isValid(id)) {
+          throw new Error(`Invalid principal ID: ${principal.id}`);
+        }
+        return new Types.ObjectId(id);
+      };
+      const affectedPrincipals: Array<{
+        principalType: string;
+        principalId?: string | Types.ObjectId;
+      }> = [];
+      for (const principal of [...updatedPrincipals, ...revokedPrincipals]) {
+        if (!principal?.type) continue;
+        try {
+          affectedPrincipals.push({
+            principalType: principal.type,
+            ...(principal.type !== PrincipalType.PUBLIC && {
+              principalId: queryPrincipalId(principal),
+            }),
+          });
+        } catch {
+          /** An invalid id is reported per principal below. */
+        }
+      }
       const [roles, currentEntries] = await Promise.all([
         this._dbMethods.findRolesByResourceType(resourceType),
-        this._dbMethods.findEntriesByResource(resourceType, resourceId, localSession),
+        affectedPrincipals.length > 0
+          ? this._dbMethods.findEntriesByPrincipalsAndResource(
+              affectedPrincipals,
+              resourceType,
+              resourceId,
+            )
+          : Promise.resolve([]),
       ]);
       const rolesMap = new Map(roles.map((role) => [role.accessRoleId, role]));
       const results: BulkPermissionUpdateResult = {
@@ -466,8 +509,6 @@ export class AccessControlService {
       const bulkWrites: Parameters<AllMethods['bulkWriteAclEntries']>[0] = [];
       /** Role-only edits go through the atomic guarded write, not this batch. */
       const roleBitsWrites: Parameters<AllMethods['replaceRoleBits']>[0] = [];
-      const insightsChangesByBulkWriteIndex = new Map<number, InsightsPermissionChange>();
-      const aclChangesByBulkWriteIndex = new Map<number, InsightsPermissionChange>();
 
       const updatedPrincipalKey = (principal: BulkPrincipal | null | undefined) => {
         if (!principal?.type) return null;
@@ -491,19 +532,6 @@ export class AccessControlService {
        */
       const grantedPrincipalKeys = new Set<string>();
       const principalKey = (principal: BulkPrincipal) => `${principal.type}:${principal.id}`;
-      const queryPrincipalId = (principal: BulkPrincipal) => {
-        if (principal.type === PrincipalType.ROLE) {
-          if (typeof principal.id !== 'string' || principal.id.trim().length === 0) {
-            throw new Error(`Invalid role ID: ${principal.id}`);
-          }
-          return principal.id;
-        }
-        const id = principal.id?.toString();
-        if (!id || !Types.ObjectId.isValid(id)) {
-          throw new Error(`Invalid principal ID: ${principal.id}`);
-        }
-        return new Types.ObjectId(id);
-      };
       const currentEntriesByPrincipal = new Map<string, IAclEntry>();
       for (const entry of currentEntries) {
         const key = `${entry.principalType}:${entry.principalId == null ? 'null' : entry.principalId.toString()}`;
@@ -590,7 +618,6 @@ export class AccessControlService {
               }),
             },
           };
-          const bulkWriteIndex = bulkWrites.length;
           /** `replaceRoleBits` swaps only the role mask and keeps every other stored bit. */
           const writtenBits = preserveInsights
             ? ((existingEntry?.permBits ?? 0) & ~ROLE_MASK) | (role.permBits & ROLE_MASK)
@@ -621,31 +648,18 @@ export class AccessControlService {
             memberIds: principal.memberIds,
             ...(resourceType === ResourceType.AGENT ? { viewInsights: wantsInsights } : {}),
           });
-          const writtenEntry: InsightsWrittenEntry = {
-            permBits: writtenBits,
-            roleId: role._id,
-            grantedBy,
-            grantedAt,
-          };
-          const aclChange: InsightsPermissionChange = {
+          const aclChange: PermissionChange = {
             action: 'assigned',
-            previousEntry: existingEntry ?? null,
-            writtenEntry,
-            principal: { type: principal.type, id: principal.id, name: principal.name },
+            principal: { type: principal.type, id: principal.id?.toString() ?? null },
+            previous: snapshotOf(existingEntry),
+            written: { permBits: writtenBits, roleId: role._id.toString() },
           };
           results.aclChanges.push(aclChange);
           if (hadInsights !== wantsInsights) {
-            const change: InsightsPermissionChange = {
+            results.insightsChanges.push({
               ...aclChange,
               action: wantsInsights ? 'assigned' : 'removed',
-            };
-            results.insightsChanges.push(change);
-            if (!preserveInsights) {
-              insightsChangesByBulkWriteIndex.set(bulkWriteIndex, change);
-            }
-          }
-          if (!preserveInsights) {
-            aclChangesByBulkWriteIndex.set(bulkWriteIndex, aclChange);
+            });
           }
           if (principal.type !== PrincipalType.PUBLIC) {
             grantedPrincipalKeys.add(principalKey(principal));
@@ -658,27 +672,7 @@ export class AccessControlService {
         }
       }
 
-      if (roleBitsWrites.length > 0) {
-        await this._dbMethods.replaceRoleBits(roleBitsWrites, {
-          ...sessionOptions,
-          maxAttempts: maxWriteAttempts,
-        });
-      }
-
-      if (bulkWrites.length > 0) {
-        const bulkWriteResult = await this._dbMethods.bulkWriteAclEntries(
-          bulkWrites,
-          sessionOptions,
-        );
-        for (const changes of [insightsChangesByBulkWriteIndex, aclChangesByBulkWriteIndex]) {
-          for (const [writeIndex, change] of changes) {
-            if (bulkWriteResult.upsertedIds?.[writeIndex] && change.previousEntry) {
-              change.previousEntry = null;
-            }
-          }
-        }
-      }
-
+      const revokeQueries: Array<{ principal: BulkPrincipal; query: Record<string, unknown> }> = [];
       for (const principal of revokedPrincipals) {
         try {
           if (
@@ -696,41 +690,25 @@ export class AccessControlService {
           if (principal.type !== PrincipalType.PUBLIC) {
             query.principalId = queryPrincipalId(principal);
           }
-          const deleteResult = await this._dbMethods.deleteAclEntries(query, sessionOptions);
           const existingEntry = currentEntriesByPrincipal.get(
             `${principal.type}:${principal.type === PrincipalType.PUBLIC ? 'null' : principal.id}`,
           );
-          results.revoked.push({
-            type: principal.type,
-            id: principal.id,
-            name: principal.name,
-            email: principal.email,
-            source: principal.source,
-            avatar: principal.avatar,
-            description: principal.description,
-            idOnTheSource: principal.idOnTheSource,
-            memberCount: principal.memberCount,
-          });
-          if (deleteResult.deletedCount > 0) {
-            results.aclChanges.push({
-              action: 'removed',
-              previousEntry: existingEntry ?? null,
-              writtenEntry: null,
-              principal: { type: principal.type, id: principal.id, name: principal.name },
-            });
+          revokeQueries.push({ principal, query });
+          if (!existingEntry) {
+            continue;
           }
+          const change: PermissionChange = {
+            action: 'removed',
+            principal: { type: principal.type, id: principal.id?.toString() ?? null },
+            previous: snapshotOf(existingEntry),
+            written: null,
+          };
+          results.aclChanges.push(change);
           if (
             resourceType === ResourceType.AGENT &&
-            deleteResult.deletedCount > 0 &&
-            existingEntry &&
             (existingEntry.permBits & PermissionBits.VIEW_INSIGHTS) === PermissionBits.VIEW_INSIGHTS
           ) {
-            results.insightsChanges.push({
-              action: 'removed',
-              previousEntry: existingEntry,
-              writtenEntry: null,
-              principal: { type: principal.type, id: principal.id, name: principal.name },
-            });
+            results.insightsChanges.push(change);
           }
         } catch (error) {
           results.errors.push({
@@ -738,6 +716,39 @@ export class AccessControlService {
             error: error instanceof Error ? error.message : String(error),
           });
         }
+      }
+
+      if (beforeWrite && (results.aclChanges.length > 0 || results.insightsChanges.length > 0)) {
+        await beforeWrite({
+          aclChanges: results.aclChanges,
+          insightsChanges: results.insightsChanges,
+        });
+      }
+
+      if (roleBitsWrites.length > 0) {
+        await this._dbMethods.replaceRoleBits(roleBitsWrites, {
+          ...sessionOptions,
+          maxAttempts: maxWriteAttempts,
+        });
+      }
+
+      if (bulkWrites.length > 0) {
+        await this._dbMethods.bulkWriteAclEntries(bulkWrites, sessionOptions);
+      }
+
+      for (const { principal, query } of revokeQueries) {
+        await this._dbMethods.deleteAclEntries(query, sessionOptions);
+        results.revoked.push({
+          type: principal.type,
+          id: principal.id,
+          name: principal.name,
+          email: principal.email,
+          source: principal.source,
+          avatar: principal.avatar,
+          description: principal.description,
+          idOnTheSource: principal.idOnTheSource,
+          memberCount: principal.memberCount,
+        });
       }
 
       if (shouldEndSession && supportsTransactions) {
@@ -768,91 +779,6 @@ export class AccessControlService {
       if (shouldEndSession && localSession) {
         await localSession.endSession();
       }
-    }
-  }
-
-  public async restoreInsightsPermissionChanges({
-    resourceType,
-    resourceId,
-    changes = [],
-  }: {
-    resourceType: ResourceType;
-    resourceId: string | Types.ObjectId;
-    changes?: InsightsPermissionChange[];
-  }): Promise<void> {
-    const operations: Parameters<AllMethods['bulkWriteAclEntries']>[0] = changes.flatMap(
-      (change): Parameters<AllMethods['bulkWriteAclEntries']>[0] => {
-        const filter: Record<string, unknown> = {
-          principalType: change.principal.type,
-          resourceType,
-          resourceId,
-        };
-        if (change.principal.type !== PrincipalType.PUBLIC) {
-          if (change.principal.type === PrincipalType.ROLE) {
-            filter.principalId = change.principal.id;
-          } else {
-            const id = change.principal.id?.toString();
-            if (!id || !Types.ObjectId.isValid(id)) {
-              throw new Error(`Invalid principal ID: ${change.principal.id}`);
-            }
-            filter.principalId = new Types.ObjectId(id);
-          }
-        }
-        if (change.previousEntry && change.writtenEntry) {
-          return [
-            {
-              replaceOne: {
-                filter: { _id: change.previousEntry._id, ...change.writtenEntry },
-                replacement: change.previousEntry,
-                timestamps: false,
-              },
-            },
-            {
-              updateMany: {
-                filter: {
-                  ...filter,
-                  ...change.writtenEntry,
-                  _id: { $ne: change.previousEntry._id },
-                },
-                update: {
-                  $set: {
-                    permBits: change.previousEntry.permBits,
-                    roleId: change.previousEntry.roleId,
-                    grantedBy: change.previousEntry.grantedBy,
-                    grantedAt: change.previousEntry.grantedAt,
-                  },
-                },
-                timestamps: false,
-              },
-            },
-          ];
-        }
-        if (!change.previousEntry && !change.writtenEntry) {
-          return [];
-        }
-        if (change.previousEntry) {
-          return [
-            {
-              updateOne: {
-                filter,
-                update: { $setOnInsert: change.previousEntry },
-                upsert: true,
-                timestamps: false,
-              },
-            },
-          ];
-        }
-        return [
-          {
-            deleteMany: {
-              filter: { ...filter, ...change.writtenEntry },
-            },
-          },
-        ];
-      },
-    );
-    if (operations.length > 0) {
-      await this._dbMethods.bulkWriteAclEntries(operations);
     }
   }
 

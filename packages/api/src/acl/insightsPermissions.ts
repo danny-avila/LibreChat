@@ -1,32 +1,9 @@
 import { PermissionBits, PrincipalType, ResourceType, SystemRoles } from 'librechat-data-provider';
-import type { RecordAuditEntryInput, RecordAuditEntryOptions } from '@librechat/data-schemas';
 import type { TPrincipal } from 'librechat-data-provider';
-import type { InsightsPermissionChange } from './types';
-import type { ServerRequest } from '~/types';
-import { planInsightsAudit, runAuditPlan } from './audit';
 
-export type {
-  InsightsPermissionPrincipal,
-  InsightsPermissionChange,
-  InsightsWrittenEntry,
-} from './types';
+export type { PermissionChange, PermissionSnapshot } from './types';
 
 type ValidationResult = { status: 400 | 403; error: string } | null;
-
-type AuditDeps = {
-  getAgent: (
-    filter: Record<string, unknown>,
-    projection: string,
-  ) => Promise<{ id: string; name?: string } | null>;
-  recordAuditEntry: (
-    input: RecordAuditEntryInput,
-    options?: RecordAuditEntryOptions,
-  ) => Promise<unknown>;
-  restoreInsightsPermissionChanges: (changes: InsightsPermissionChange[]) => Promise<void>;
-  logger: {
-    error: (message: string, error?: unknown) => void;
-  };
-};
 
 const hasOwn = (value: unknown, key: string): boolean =>
   value != null && typeof value === 'object' && Object.prototype.hasOwnProperty.call(value, key);
@@ -118,29 +95,4 @@ export function getInsightsPrincipalState({
         }
       : {}),
   };
-}
-
-export async function auditInsightsPermissionChanges({
-  req,
-  resourceId,
-  changes,
-  failClosed,
-  deps,
-}: {
-  req: ServerRequest;
-  resourceId: string;
-  changes: InsightsPermissionChange[];
-  failClosed: boolean;
-  deps: AuditDeps;
-}): Promise<void> {
-  const items = await planInsightsAudit({ req, resourceId, changes, deps });
-  await runAuditPlan({
-    items,
-    failClosed,
-    deps: {
-      recordAuditEntry: deps.recordAuditEntry,
-      restorePermissionChanges: deps.restoreInsightsPermissionChanges,
-      logger: deps.logger,
-    },
-  });
 }

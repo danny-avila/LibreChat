@@ -1,23 +1,14 @@
 import type { PrincipalType } from 'librechat-data-provider';
-import type { IAclEntry } from '@librechat/data-schemas';
-import type { Types } from 'mongoose';
 
-export type InsightsPermissionPrincipal = {
-  type: PrincipalType;
-  id?: string | Types.ObjectId | null;
-  name?: string;
-};
-
-export type InsightsWrittenEntry = {
+export type PermissionSnapshot = {
   permBits: number;
-  roleId: Types.ObjectId;
-  grantedBy: string | Types.ObjectId;
-  grantedAt: Date;
+  roleId: string;
 };
 
-export type InsightsPermissionChange = {
+/** A grant, update or revoke on one principal, as plain ids and bits. */
+export type PermissionChange = {
   action: 'assigned' | 'removed';
-  previousEntry: IAclEntry | null;
-  writtenEntry: InsightsWrittenEntry | null;
-  principal: InsightsPermissionPrincipal;
+  principal: { type: PrincipalType; id?: string | null };
+  previous: PermissionSnapshot | null;
+  written: PermissionSnapshot | null;
 };

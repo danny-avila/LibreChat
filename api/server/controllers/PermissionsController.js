@@ -9,7 +9,7 @@ const {
   enrichRemoteAgentPrincipals,
   createPrincipalSearch,
   backfillRemoteAgentPermissions,
-  auditResourcePermissionChanges,
+  runAuditedPermissionUpdate,
   isAuditFailClosed,
   getInsightsPrincipalState,
   maskAgentInsightsBit,
@@ -18,7 +18,6 @@ const {
 } = require('@librechat/api');
 const {
   bulkUpdateResourcePermissions,
-  restoreInsightsPermissionChanges,
   ensureGroupPrincipalExists,
   getResourcePermissionsMap,
   findAccessibleResources,
@@ -171,28 +170,23 @@ const updateResourcePermissions = async (req, res) => {
       });
     }
 
-    const results = await bulkUpdateResourcePermissions({
-      resourceType,
-      resourceId,
-      maxWriteAttempts: req.config?.config?.permissions?.maxWriteAttempts,
-      updatedPrincipals: validatedPrincipals,
-      revokedPrincipals,
-      grantedBy: userId,
-    });
-
-    await auditResourcePermissionChanges({
+    const results = await runAuditedPermissionUpdate({
       req,
       resourceType,
       resourceId,
-      changes: results.aclChanges ?? [],
-      insights: { changes: results.insightsChanges ?? [], getAgent: db.getAgent },
+      getAgent: resourceType === ResourceType.AGENT ? db.getAgent : undefined,
       failClosed: isAuditFailClosed(),
-      deps: {
-        recordAuditEntry: db.recordAuditEntry,
-        restorePermissionChanges: (changes) =>
-          restoreInsightsPermissionChanges({ resourceType, resourceId, changes }),
-        logger,
-      },
+      deps: { recordAuditEntry: db.recordAuditEntry, logger },
+      update: (beforeWrite) =>
+        bulkUpdateResourcePermissions({
+          resourceType,
+          resourceId,
+          maxWriteAttempts: req.config?.config?.permissions?.maxWriteAttempts,
+          updatedPrincipals: validatedPrincipals,
+          revokedPrincipals,
+          grantedBy: userId,
+          beforeWrite,
+        }),
     });
 
     if (resourceType === ResourceType.CODE_ENVIRONMENT) {
