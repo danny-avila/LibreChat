@@ -4,6 +4,12 @@
 version: 1.3.11
 cache: true
 
+# The isolated E2E fleet has only upload-intent-aware writers, so it can
+# exercise whole-Skill finalization instead of the mixed-version rollout gate.
+skillDeletion:
+  finalizationEnabled: true
+  sweepIntervalMs: 1000
+
 interface:
   # Isolated test fleet contains only ownership-aware replicas.
   runningChatRename: true
