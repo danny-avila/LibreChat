@@ -136,6 +136,20 @@ const createActiveRequest = (): ActiveRequest => {
   return { controller: new AbortController(), finished, finish };
 };
 
+/** Settles with `value`, or rejects once `signal` aborts, so a stop never waits on it. */
+const untilAborted = <T>(value: T | Promise<T>, signal: AbortSignal): Promise<T> =>
+  new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason);
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener('abort', onAbort, { once: true });
+    Promise.resolve(value)
+      .then(resolve, reject)
+      .finally(() => signal.removeEventListener('abort', onAbort));
+  });
+
 const streamingEvents = new Set<ChatEvent['type']>(['created', 'sync', 'step', 'content', 'text']);
 
 const getErrorMessage = (data: ChatErrorData | null | undefined): string | undefined => {
@@ -301,7 +315,11 @@ export class Chat {
       return;
     }
     const active = createActiveRequest();
+    active.endpoint = this.resumeEndpoint();
     this.active = active;
+    if (options.generationCreatedAt != null) {
+      this.generationCreatedAt = options.generationCreatedAt;
+    }
     try {
       const stream = await this.init.transport.reconnectToStream({
         ...options,
@@ -331,6 +349,7 @@ export class Chat {
   async stop(): Promise<void> {
     const active = this.active;
     if (!active) {
+      await this.stopPaused();
       return;
     }
     if (!active.stream || !active.endpoint) {
@@ -349,6 +368,41 @@ export class Chat {
       throw new Error(result.error ?? 'The server refused the stop');
     }
     await active.finished;
+  }
+
+  /** Stops a pause restored without a stream on the server, which frees the chat for a turn. */
+  private async stopPaused(): Promise<void> {
+    const action = this.action;
+    const endpoint = this.resumeEndpoint();
+    if (!action) {
+      return;
+    }
+    if (!endpoint) {
+      throw new Error('The paused generation cannot be stopped without its endpoint');
+    }
+    const result = await this.init.transport.abort({
+      chatId: this.id,
+      endpoint,
+      streamId: action.streamId,
+      generationCreatedAt: this.generationCreatedAt,
+    });
+    if (result && 'success' in result && !result.success) {
+      throw new Error(result.error ?? 'The server refused the stop');
+    }
+    if (this.action === action) {
+      this.clearAction();
+    }
+  }
+
+  /** The endpoint a generation this chat did not start runs on, as the host selects it. */
+  private resumeEndpoint(): string | undefined {
+    return this.init.resumeSelection?.().endpoint ?? undefined;
+  }
+
+  private clearAction(): void {
+    this.action = undefined;
+    this.decisions.clear();
+    this.notify();
   }
 
   /** Returns a failed chat to `ready`. AI SDK: `clearError`. */
@@ -456,18 +510,19 @@ export class Chat {
     if (this.active) {
       throw new Error('A turn is already in flight for this chat');
     }
+    if (this.action) {
+      throw new Error('A paused generation is waiting for a decision; answer or stop it first');
+    }
     const active = createActiveRequest();
     this.active = active;
-    this.action = undefined;
-    this.decisions.clear();
+    this.generationCreatedAt = undefined;
     this.init.state.error = undefined;
     this.setStatus('submitted');
     try {
-      const prepared = await this.init.prepareRequest({
-        ...request,
-        chatId: this.id,
-        messages: this.messages,
-      });
+      const prepared = await untilAborted(
+        this.init.prepareRequest({ ...request, chatId: this.id, messages: this.messages }),
+        active.controller.signal,
+      );
       if (prepared.messages) {
         const optimistic = prepared.messages;
         await this.executor.run(() => this.write(optimistic));
@@ -554,8 +609,12 @@ export class Chat {
       this.action = undefined;
       outcome = getFinalOutcome(event.data);
     } else if (event.type === 'abort') {
+      this.action = undefined;
+      this.decisions.clear();
       outcome = { kind: 'abort' };
     } else if (event.type === 'error') {
+      this.action = undefined;
+      this.decisions.clear();
       const message = getErrorMessage(event.data) ?? 'The response failed';
       outcome = { kind: 'error', error: new Error(message), disconnect: event.status === 0 };
     }
@@ -627,9 +686,7 @@ export class Chat {
         actionId: action.actionId,
       });
       if (this.action === action) {
-        this.action = undefined;
-        this.decisions.clear();
-        this.notify();
+        this.clearAction();
       }
       if (!this.active) {
         /** A pause restored after a reload has no stream attached for the continuation. */
