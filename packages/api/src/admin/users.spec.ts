@@ -537,6 +537,20 @@ describe('createAdminUsersHandlers', () => {
       ).toBeLessThan(jest.mocked(deps.cancelAgentTriggerUserDeletion).mock.invocationCallOrder[0]);
     });
 
+    it('takes the trigger deletion fence before listing generations to stop', async () => {
+      const deps = createDeps();
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res } = createReqRes({ params: { id: validUserId } });
+
+      await handlers.deleteUser(req, res);
+
+      expect(
+        jest.mocked(deps.beginAgentTriggerUserDeletion).mock.invocationCallOrder[0],
+      ).toBeLessThan(
+        jest.mocked(deps.generationJobs.getAccountCleanupJobIdsForUser).mock.invocationCallOrder[0],
+      );
+    });
+
     it('does not erase when schedules cannot be confirmed stopped', async () => {
       const deps = createDeps({ quiesceUserSchedules: jest.fn().mockResolvedValue(false) });
       const handlers = createAdminUsersHandlers(deps);
