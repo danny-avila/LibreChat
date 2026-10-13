@@ -2011,6 +2011,32 @@ describe('SkillFile methods', () => {
     });
   });
 
+  it('rejects moving a blob while reusing its file id', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput());
+    const input = {
+      skillId: skill._id,
+      relativePath: 'references/stable.md',
+      file_id: 'stable-id',
+      filename: 'stable.md',
+      filepath: '/tmp/stable-id',
+      source: 'local',
+      mimeType: 'text/markdown',
+      bytes: 10,
+      author: owner._id,
+    };
+    await methods.upsertSkillFile(input);
+    await expect(
+      methods.upsertSkillFile({ ...input, filepath: '/tmp/other-object' }),
+    ).rejects.toMatchObject({
+      code: 'SKILL_FILE_CONFLICT',
+    });
+    expect(await methods.getSkillFileByPath(skill._id, input.relativePath)).toMatchObject({
+      file_id: 'stable-id',
+      filepath: '/tmp/stable-id',
+    });
+    expect(await mongoose.models.SkillUploadIntent.countDocuments({ fileId: 'stable-id' })).toBe(0);
+  });
+
   it('creates only absent skill files and leaves the winner intact when creation races', async () => {
     await SkillFile.init();
     const { skill } = await methods.createSkill(makeSkillInput());

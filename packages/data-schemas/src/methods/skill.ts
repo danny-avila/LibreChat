@@ -1919,6 +1919,18 @@ export function createSkillMethods(
         relativePath: row.relativePath,
         ...(row.expectedFileId != null ? { file_id: row.expectedFileId } : {}),
       }).lean();
+      if (
+        previous &&
+        previous.file_id === row.file_id &&
+        (previous.filepath !== row.filepath ||
+          previous.source !== row.source ||
+          (previous.storageKey ?? null) !== (row.storageKey ?? null) ||
+          (previous.storageRegion ?? null) !== (row.storageRegion ?? null))
+      ) {
+        throw Object.assign(new Error('Skill file identity cannot change storage location'), {
+          code: 'SKILL_FILE_CONFLICT',
+        });
+      }
       if (previous && previous.file_id !== row.file_id) {
         // Queue the old blob before changing its only live file row. A failed
         // CAS leaves the row in place, so the sweeper will retain its blob.
