@@ -1,8 +1,9 @@
 import { COLOR_MODE_FROM_URL_ATTRIBUTE, injectColorModeHandoff } from './handoff';
 
 const SHELL =
-  '<!DOCTYPE html><html lang="en-US"><head><title>LibreChat</title></head>' +
-  '<body><div id="root"></div></body></html>';
+  '<!DOCTYPE html><html lang="en-US"><head><title>LibreChat</title>' +
+  `<script>if (document.documentElement.hasAttribute('${COLOR_MODE_FROM_URL_ATTRIBUTE}')) {}</script>` +
+  '</head><body><div id="root"></div></body></html>';
 
 describe('injectColorModeHandoff', () => {
   it('marks the root element when the deployment enables the handoff', () => {
@@ -20,7 +21,8 @@ describe('injectColorModeHandoff', () => {
   it('marks the shell once when served through the injector twice', () => {
     const html = injectColorModeHandoff(injectColorModeHandoff(SHELL, true), true);
 
-    expect(html.split(COLOR_MODE_FROM_URL_ATTRIBUTE)).toHaveLength(2);
+    expect(html.split(COLOR_MODE_FROM_URL_ATTRIBUTE)).toHaveLength(3);
+    expect(html).toContain(`<html ${COLOR_MODE_FROM_URL_ATTRIBUTE} lang="en-US">`);
   });
 
   it('keeps the per-request language rewrite matching the marked tag', () => {

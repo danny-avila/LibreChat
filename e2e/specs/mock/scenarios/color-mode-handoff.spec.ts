@@ -55,65 +55,85 @@ async function expectSettled(page: Page, mode: Mode) {
 
 const storedMode = (page: Page) => page.evaluate(() => localStorage.getItem('color-theme'));
 
-test.describe('colour-mode handoff', () => {
-  for (const mode of ['dark', 'light'] as const) {
-    test(`a fresh profile lands in ?theme=${mode} and keeps it @scenario:color-mode-handoff-fresh-${mode}`, async ({
-      browser,
-      context,
-    }) => {
-      test.setTimeout(90000);
-      const profile = await freshProfile(browser, context);
-      const page = await profile.newPage();
-      await page.emulateMedia({ colorScheme: opposite(mode) });
-      await recordModes(page);
-      try {
-        await page.goto(`/c/new?theme=${mode}`);
-        await expectSettled(page, mode);
-        expect(
-          await page.evaluate(() =>
-            document.documentElement.hasAttribute('data-color-mode-from-url'),
-          ),
-        ).toBe(true);
-        expect(new URL(page.url()).searchParams.has('theme')).toBe(false);
-        expect(await storedMode(page)).toBe(mode);
+/** Follows `?theme=<mode>` from a profile with nothing stored and an OS asking for the other scheme. */
+async function landsFresh(browser: Browser, context: BrowserContext, mode: Mode) {
+  const profile = await freshProfile(browser, context);
+  const page = await profile.newPage();
+  await page.emulateMedia({ colorScheme: opposite(mode) });
+  await recordModes(page);
+  try {
+    await page.goto(`/c/new?theme=${mode}`);
+    await expectSettled(page, mode);
+    expect(
+      await page.evaluate(() => document.documentElement.hasAttribute('data-color-mode-from-url')),
+    ).toBe(true);
+    expect(new URL(page.url()).searchParams.has('theme')).toBe(false);
+    expect(await storedMode(page)).toBe(mode);
+    await page.screenshot({ path: test.info().outputPath(`handoff-${mode}.png`) });
 
-        await page.reload();
-        await expectSettled(page, mode);
-        expect(await storedMode(page)).toBe(mode);
-      } finally {
-        await profile.close();
-      }
-    });
-
-    test(`?theme=${mode} replaces a stored ${opposite(mode)} mode without a flash @scenario:color-mode-handoff-over-stored-${mode}`, async ({
-      browser,
-      context,
-    }) => {
-      test.setTimeout(90000);
-      const profile = await freshProfile(browser, context);
-      const page = await profile.newPage();
-      await recordModes(page);
-      try {
-        await page.goto('/c/new');
-        await page.evaluate(
-          (stored) => localStorage.setItem('color-theme', stored),
-          opposite(mode),
-        );
-        await page.goto('/c/new');
-        await expectSettled(page, opposite(mode));
-
-        await page.goto(`/c/new?theme=${mode}`);
-        await expectSettled(page, mode);
-        expect(new URL(page.url()).searchParams.has('theme')).toBe(false);
-        expect(await storedMode(page)).toBe(mode);
-
-        await page.reload();
-        await expectSettled(page, mode);
-      } finally {
-        await profile.close();
-      }
-    });
+    await page.reload();
+    await expectSettled(page, mode);
+    expect(await storedMode(page)).toBe(mode);
+  } finally {
+    await profile.close();
   }
+}
+
+/** Follows `?theme=<mode>` from a profile that stored the other mode. */
+async function replacesStored(browser: Browser, context: BrowserContext, mode: Mode) {
+  const profile = await freshProfile(browser, context);
+  const page = await profile.newPage();
+  await recordModes(page);
+  try {
+    await page.goto('/c/new');
+    await page.evaluate((stored) => localStorage.setItem('color-theme', stored), opposite(mode));
+    await page.goto('/c/new');
+    await expectSettled(page, opposite(mode));
+
+    await page.goto(`/c/new?theme=${mode}`);
+    await expectSettled(page, mode);
+    expect(new URL(page.url()).searchParams.has('theme')).toBe(false);
+    expect(await storedMode(page)).toBe(mode);
+
+    await page.reload();
+    await expectSettled(page, mode);
+  } finally {
+    await profile.close();
+  }
+}
+
+test.describe('colour-mode handoff', () => {
+  test('a fresh profile lands in ?theme=dark and keeps it @scenario:color-mode-handoff-fresh-dark', async ({
+    browser,
+    context,
+  }) => {
+    test.setTimeout(90000);
+    await landsFresh(browser, context, 'dark');
+  });
+
+  test('a fresh profile lands in ?theme=light and keeps it @scenario:color-mode-handoff-fresh-light', async ({
+    browser,
+    context,
+  }) => {
+    test.setTimeout(90000);
+    await landsFresh(browser, context, 'light');
+  });
+
+  test('?theme=dark replaces a stored light mode without a flash @scenario:color-mode-handoff-over-stored-dark', async ({
+    browser,
+    context,
+  }) => {
+    test.setTimeout(90000);
+    await replacesStored(browser, context, 'dark');
+  });
+
+  test('?theme=light replaces a stored dark mode without a flash @scenario:color-mode-handoff-over-stored-light', async ({
+    browser,
+    context,
+  }) => {
+    test.setTimeout(90000);
+    await replacesStored(browser, context, 'light');
+  });
 
   test('an unsupported value is ignored @scenario:color-mode-handoff-ignores-invalid', async ({
     browser,

@@ -10,9 +10,14 @@ export const COLOR_MODE_FROM_URL_ATTRIBUTE = 'data-color-mode-from-url';
  * is served before there is a caller whose overrides could be resolved.
  */
 export const injectColorModeHandoff = (html: string, enabled?: boolean | null): string => {
-  if (enabled !== true || html.includes(COLOR_MODE_FROM_URL_ATTRIBUTE)) {
+  if (enabled !== true) {
     return html;
   }
 
-  return html.replace(/<html\b/i, () => `<html ${COLOR_MODE_FROM_URL_ATTRIBUTE}`);
+  /* Only the tag is inspected: the boot script names the attribute it reads. */
+  return html.replace(/<html\b[^>]*>/i, (tag) =>
+    tag.includes(COLOR_MODE_FROM_URL_ATTRIBUTE)
+      ? tag
+      : `<html ${COLOR_MODE_FROM_URL_ATTRIBUTE}${tag.slice('<html'.length)}`,
+  );
 };
