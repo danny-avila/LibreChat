@@ -144,20 +144,33 @@ Bundled Redis URI used when the Redis subchart is enabled.
 {{- end }}
 
 {{/*
+Whether global.librechat.env already defines an env var. Args: dict "root" . "name" NAME.
+*/}}
+{{- define "librechat.userEnvHas" -}}
+{{- range .root.Values.global.librechat.env -}}
+{{- if eq .name $.name -}}true{{- end -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 Whether the chart wires LibreChat to the bundled MongoDB with generated credentials.
-Skipped when the operator supplies their own MONGO_URI or turns subchart auth off.
+Skipped when the operator supplies MONGO_URI (configEnv or global.librechat.env),
+turns subchart auth off, or sets librechat.injectBundledCredentials=false (needed when
+MONGO_URI comes from the Secret named by global.librechat.existingSecretName, which
+the chart cannot inspect).
 */}}
 {{- define "librechat.bundledMongoAuth" -}}
-{{- if and .Values.mongodb.enabled .Values.mongodb.auth.enabled (not (get (default dict .Values.librechat.configEnv) "MONGO_URI")) -}}
+{{- if and .Values.mongodb.enabled .Values.mongodb.auth.enabled (ne (toString .Values.librechat.injectBundledCredentials) "false") (not (get (default dict .Values.librechat.configEnv) "MONGO_URI")) (not (include "librechat.userEnvHas" (dict "root" . "name" "MONGO_URI"))) -}}
 true
 {{- end -}}
 {{- end }}
 
 {{/*
 Whether the chart wires LibreChat to the bundled Redis with its generated password.
+Same opt-outs as the MongoDB helper, for REDIS_URI and REDIS_PASSWORD.
 */}}
 {{- define "librechat.bundledRedisAuth" -}}
-{{- if and .Values.redis.enabled .Values.redis.auth.enabled (not (get (default dict .Values.librechat.configEnv) "REDIS_URI")) (not (get (default dict .Values.librechat.configEnv) "REDIS_PASSWORD")) -}}
+{{- if and .Values.redis.enabled .Values.redis.auth.enabled (ne (toString .Values.librechat.injectBundledCredentials) "false") (not (get (default dict .Values.librechat.configEnv) "REDIS_URI")) (not (get (default dict .Values.librechat.configEnv) "REDIS_PASSWORD")) (not (include "librechat.userEnvHas" (dict "root" . "name" "REDIS_PASSWORD"))) -}}
 true
 {{- end -}}
 {{- end }}

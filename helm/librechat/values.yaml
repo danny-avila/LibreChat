@@ -43,6 +43,10 @@ librechat:
   # Example: https://admin.example.com/admin
   adminPanelUrl: ""
 
+  # Inject MONGO_URI / REDIS_PASSWORD built from the bundled subchart Secrets. Set to
+  # false when those values come from global.librechat.existingSecretName.
+  injectBundledCredentials: true
+
   configEnv:
     # Set unique, persistent values in global.librechat.existingSecretName before production use.
     # If omitted, LibreChat generates temporary values in .env.temp when the container filesystem is persistent.
