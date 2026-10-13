@@ -46,7 +46,7 @@ describe('Langfuse config secrets', () => {
 
     expect(out['langfuse.secretKey']).toMatch(/^v3:/);
     expect(decryptV3(out['langfuse.secretKey'] as string)).toBe('sk-lf-secret');
-    expect(out['langfuse.secretKeyPreview']).toBe('sk-lf-...cret');
+    expect(out['langfuse.secretKeyPreview']).toBe('************');
     expect(out['langfuse.publicKey']).toBe('pk-lf-1');
   });
 
@@ -61,7 +61,7 @@ describe('Langfuse config secrets', () => {
 
     expect(out.langfuse.secretKey).toMatch(/^v3:/);
     expect(decryptV3(out.langfuse.secretKey)).toBe('sk-lf-secret');
-    expect(out.langfuse.secretKeyPreview).toBe('sk-lf-...cret');
+    expect(out.langfuse.secretKeyPreview).toBe('************');
     expect(out.langfuse.publicKey).toBe('pk-lf-1');
   });
 
@@ -259,7 +259,7 @@ describe('Langfuse config secrets', () => {
       langfuse: { secretKey: 'sk-lf-new-secret', displaySecretKey: 'sk-lf-...old' },
     }).langfuse as Record<string, string>;
     expect(encrypted.displaySecretKey).toBeUndefined();
-    expect(encrypted.secretKeyPreview).toBe('sk-lf-...cret');
+    expect(encrypted.secretKeyPreview).toBe('...cret');
 
     const existing = {
       langfuse: {
@@ -387,7 +387,13 @@ describe('Config secret registry fields', () => {
   it('masks short credentials fully instead of disclosing them via the preview companion', () => {
     expect(getSecretPreview('short12')).toBe('*******');
     expect(getSecretPreview('0123456789')).toBe('**********');
-    expect(getSecretPreview('sk-longer-secret-value')).toBe('sk-lon...alue');
+    expect(getSecretPreview('0123456789abcde')).toBe('***************');
+  });
+
+  it('reveals only the last four characters of a long secret, never a prefix', () => {
+    const preview = getSecretPreview('sk-longer-secret-value');
+    expect(preview).toBe('...alue');
+    expect(preview).not.toContain('sk-');
   });
 
   it('encrypts dotted patch writes and sets a masked preview companion for every field', () => {
@@ -696,7 +702,7 @@ describe('Custom endpoint config secrets', () => {
 
     expect(entry.apiKey).toMatch(/^v3:/);
     expect(decryptV3(entry.apiKey)).toBe('sk-or-super-secret');
-    expect(entry.apiKeyPreview).toBe('sk-or-...cret');
+    expect(entry.apiKeyPreview).toBe('...cret');
     expect(entry.baseURL).toBe('https://openrouter.ai');
   });
 
@@ -722,14 +728,14 @@ describe('Custom endpoint config secrets', () => {
     const sectionEntry = (viaSection.endpoints as { custom: Array<Record<string, string>> })
       .custom[0];
     expect(decryptV3(sectionEntry.apiKey)).toBe('sk-section-key');
-    expect(sectionEntry.apiKeyPreview).toBe('sk-sec...-key');
+    expect(sectionEntry.apiKeyPreview).toBe('**************');
 
     const viaArray = encryptConfigSecretFields({
-      'endpoints.custom': [{ name: 'A', apiKey: 'sk-array-key0' }],
+      'endpoints.custom': [{ name: 'A', apiKey: '*************' }],
     });
     const arrayEntry = (viaArray['endpoints.custom'] as Array<Record<string, string>>)[0];
-    expect(decryptV3(arrayEntry.apiKey)).toBe('sk-array-key0');
-    expect(arrayEntry.apiKeyPreview).toBe('sk-arr...key0');
+    expect(decryptV3(arrayEntry.apiKey)).toBe('*************');
+    expect(arrayEntry.apiKeyPreview).toBe('*************');
   });
 
   it('clears empty, non-string, or pre-encrypted API key submissions', () => {
@@ -848,7 +854,7 @@ describe('Custom endpoint config secrets', () => {
     const [openRouter, brandNew] = preserved.endpoints.custom as Array<Record<string, string>>;
 
     expect(decryptV3(openRouter.apiKey)).toBe('sk-or-old-secret');
-    expect(openRouter.apiKeyPreview).toBe('sk-or-...cret');
+    expect(openRouter.apiKeyPreview).toBe('...cret');
     expect(brandNew.apiKey).toBeUndefined();
   });
 
@@ -869,7 +875,7 @@ describe('Custom endpoint config secrets', () => {
 
     expect(legacy.apiKey).toMatch(/^v3:/);
     expect(decryptV3(legacy.apiKey)).toBe('sk-legacy-plaintext');
-    expect(legacy.apiKeyPreview).toBe('sk-leg...text');
+    expect(legacy.apiKeyPreview).toBe('...text');
     expect(envRef.apiKey).toBeUndefined();
   });
 

@@ -109,11 +109,16 @@ const SECRET_SECTIONS: readonly string[] = [
   ]),
 ];
 
+/** Shortest secret that earns a hint; below this, even four characters reveal too much. */
+const PREVIEW_MIN_LENGTH = 16;
+const PREVIEW_VISIBLE = 4;
+
+/** Masked hint for admin display: only the last four characters of a long secret, never a prefix. */
 export function getSecretPreview(secret: string): string {
-  if (secret.length <= 10) {
+  if (secret.length < PREVIEW_MIN_LENGTH) {
     return '*'.repeat(secret.length);
   }
-  return secret.slice(0, 6) + '...' + secret.slice(-4);
+  return '...' + secret.slice(-PREVIEW_VISIBLE);
 }
 
 /** Top-level config sections containing registered secret fields. */
