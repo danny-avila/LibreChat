@@ -2591,7 +2591,12 @@ describe('deleteUserSkills', () => {
     expect(await Skill.countDocuments()).toBe(2);
     expect(await Skill.countDocuments({ deletingAt: { $exists: true } })).toBe(1);
     expect(await Skill.countDocuments({ deletionNeedsJournal: true })).toBe(1);
+    expect(((await Skill.findById(mine._id).lean()) as { name: string } | null)?.name).toBe(
+      `__deleted__${mine._id}`,
+    );
     expect(await Skill.countDocuments({ _id: sharedId })).toBe(1);
+    const { skill: replacement } = await methods.createSkill(makeSkillInput({ name: 'mine' }));
+    expect(replacement._id.toString()).not.toBe(mine._id.toString());
     expect(await mongoose.models.SkillDeletion.countDocuments({ skillId: mine._id })).toBe(0);
     await createSkillLifecycleMethods(mongoose).discoverUnjournaledDeletions();
     expect(await mongoose.models.SkillDeletion.countDocuments({ skillId: mine._id })).toBe(1);

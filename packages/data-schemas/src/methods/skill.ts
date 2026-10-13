@@ -1807,12 +1807,26 @@ export function createSkillMethods(
     if (soleOwned.length === 0) {
       return 0;
     }
-    // Mark independently owned Skills in one write; the reconciler repairs the
-    // mark-to-journal gap and backfills file references outside this request.
+    // Mark each Skill and release its public name in the same document write.
+    // The reconciler repairs the mark-to-journal gap and backfills file
+    // references outside this request.
     const Skill = mongoose.models.Skill as Model<ISkillDocument>;
-    const result = await Skill.updateMany(
-      { _id: { $in: soleOwned }, deletingAt: { $exists: false } },
-      { $set: { deletingAt: new Date(), deletionNeedsJournal: true } },
+    const deletingAt = new Date();
+    const result = await tenantSafeBulkWrite(
+      Skill,
+      soleOwned.map((id) => ({
+        updateOne: {
+          filter: { _id: id, deletingAt: { $exists: false } },
+          update: {
+            $set: {
+              name: `__deleted__${id.toString()}`,
+              deletingAt,
+              deletionNeedsJournal: true,
+            },
+          },
+        },
+      })),
+      { ordered: false },
     );
     return result.modifiedCount;
   }
