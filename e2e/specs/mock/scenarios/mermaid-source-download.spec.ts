@@ -187,10 +187,11 @@ test.describe('Mermaid source downloads', () => {
       const downloadBox = await download.boundingBox();
       expect(rowBox).not.toBeNull();
       expect(downloadBox).not.toBeNull();
-      expect(downloadBox!.y).toBeGreaterThanOrEqual(rowBox!.y - 1);
-      expect(downloadBox!.y + downloadBox!.height).toBeLessThanOrEqual(
-        rowBox!.y + rowBox!.height + 1,
-      );
+      /* The download target is taller than the 20px tool row for easier
+       * pointer access, but stays centered on the row's trigger. */
+      expect(
+        Math.abs(downloadBox!.y + downloadBox!.height / 2 - (rowBox!.y + rowBox!.height / 2)),
+      ).toBeLessThanOrEqual(1);
 
       /* On a phone the artifact opens as a sheet over the message list, so
        * dismiss the panel with its own close control before reaching the

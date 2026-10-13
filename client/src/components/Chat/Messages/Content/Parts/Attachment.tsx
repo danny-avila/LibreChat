@@ -14,11 +14,11 @@ import {
   isTextAttachment,
   renderAttachmentKey,
 } from './attachmentTypes';
+import { ARTIFACT_ROW_NAV_SPACING, ROW_GLYPH_SLOT, TOOL_ROW_CLASSES } from '../rows';
 import { useLocalize, useAttachmentPreviewSync, useExpandCollapse } from '~/hooks';
 import FileContainer from '~/components/Chat/Input/Files/FileContainer';
 import { fileToArtifact, TOOL_ARTIFACT_TYPES } from '~/utils/artifacts';
 import Image from '~/components/Chat/Messages/Content/Image';
-import { ROW_GLYPH_SLOT, TOOL_ROW_CLASSES } from '../rows';
 import ToolMermaidArtifact from './ToolMermaidArtifact';
 import ToolArtifactCard from './ToolArtifactCard';
 import { useAttachmentLink } from './LogLink';
@@ -64,7 +64,9 @@ const PreviewPlaceholderRow = memo(
         ? localize('com_ui_preview_preparing')
         : localize('com_ui_preview_failed');
     return (
-      <div className={cn(TOOL_ROW_CLASSES, 'text-text-secondary text-sm')}>
+      <div
+        className={cn(TOOL_ROW_CLASSES, ARTIFACT_ROW_NAV_SPACING, 'text-text-secondary text-sm')}
+      >
         <span className={ROW_GLYPH_SLOT} aria-hidden="true">
           {status === 'pending' ? (
             <Loader2 className="size-4 shrink-0 animate-spin" />
@@ -86,7 +88,7 @@ const PreviewPlaceholderRow = memo(
           size="icon"
           onClick={handleDownload}
           aria-label={`${localize('com_ui_download')} ${visibleFilename}`}
-          className="size-5 shrink-0 rounded focus-visible:ring-offset-0"
+          className="size-7 shrink-0 rounded focus-visible:ring-offset-0"
         >
           <Download className="size-4" aria-hidden="true" />
         </Button>
