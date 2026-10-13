@@ -7,9 +7,18 @@ root user in the existing database first (see the chart readme, "Upgrading from 
 {{ end -}}
 1. Get the application URL by running these commands:
 {{- if .Values.ingress.enabled }}
-{{- if not .Values.ingress.tls }}
+{{- $covered := list }}
+{{- $tlsAll := false }}
+{{- range .Values.ingress.tls }}
+{{- if .hosts }}{{ $covered = concat $covered .hosts }}{{ else }}{{ $tlsAll = true }}{{ end }}
+{{- end }}
+{{- $plain := list }}
+{{- range .Values.ingress.hosts }}
+{{- if not (or $tlsAll (has .host $covered)) }}{{ $plain = append $plain .host }}{{ end }}
+{{- end }}
+{{- if $plain }}
 
-WARNING: ingress.tls is empty, so traffic (including credentials and session cookies) is served over plain HTTP.
+WARNING: no ingress.tls entry covers {{ join ", " $plain }}, so traffic (including credentials and session cookies) is served over plain HTTP.
 Set ingress.tls with a secretName and hosts, or terminate TLS at your load balancer.
 
 {{- end }}

@@ -8,7 +8,7 @@ In this Chart, LibreChat will only work with environment Variables. You can Spec
 
 The bundled MongoDB and Redis subcharts run with authentication enabled. Their generated passwords stay in the subchart Secrets and reach LibreChat through `secretKeyRef` (`MONGODB_ROOT_PASSWORD`, `REDIS_PASSWORD`); `MONGO_URI` is assembled in the Deployment. Set `librechat.configEnv.MONGO_URI` (or `REDIS_URI`) to use your own database. Set `mongodb.auth.enabled=false` or `redis.auth.enabled=false` only to restore the old unauthenticated behavior; custom root passwords must be URL-safe because they are placed in `MONGO_URI`.
 
-If `MONGO_URI` or `REDIS_PASSWORD` comes from the Secret named by `global.librechat.existingSecretName`, set `librechat.injectBundledCredentials.mongodb=false` (for `MONGO_URI`) or `librechat.injectBundledCredentials.redis=false` (for `REDIS_PASSWORD`): the chart cannot see inside that Secret, and the generated values would otherwise override it. The two are independent, so overriding one database keeps the generated credentials for the other. Entries with the same names in `global.librechat.env` are respected and not duplicated.
+If `MONGO_URI` or `REDIS_PASSWORD` comes from the Secret named by `global.librechat.existingSecretName`, set `librechat.injectBundledCredentials.mongodb=false` (for `MONGO_URI`) or `librechat.injectBundledCredentials.redis=false` (for `REDIS_PASSWORD`): the chart cannot see inside that Secret, and the generated values would otherwise override it. The two are independent, so overriding one database keeps the generated credentials for the other. Entries with the same names in `global.librechat.env` are respected and not duplicated. The credentials are read when a pod starts, so after rotating a database password run `kubectl rollout restart deployment/<release>-librechat` (or use a rollout controller such as Reloader).
 
 ### Upgrading from an unauthenticated bundled MongoDB
 
@@ -19,7 +19,7 @@ Releases installed before auth became the default have a data volume with no roo
 
 The chart does not detect this case at render time (it cannot tell a fresh install from an unauthenticated volume), so `NOTES.txt` prints a notice on every upgrade with auth enabled.
 
-The ingress is enabled by default. Set `ingress.tls` (a `secretName` and `hosts`) for any non-local install; `helm install` prints a warning when it is empty.
+The ingress is enabled by default. Set `ingress.tls` (a `secretName` and `hosts`) for any non-local install; `helm install` prints a warning for every ingress host that no `ingress.tls` entry covers.
 
 ## Setup
 
