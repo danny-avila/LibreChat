@@ -7,13 +7,13 @@ import { HTML5Backend } from 'react-dnd-html5-backend';
 import { Toast, ToastViewport, ToastProvider, useInputModality } from '@librechat/client';
 import { QueryClient, QueryClientProvider, QueryCache, MutationCache } from '@tanstack/react-query';
 import { ScreenshotProvider, useApiErrorBoundary } from './hooks';
-import { reopenTermsOnRefusal } from '~/utils/terms';
 import WakeLockManager from '~/components/System/WakeLockManager';
 import QueryDevtoolsGate from '~/components/QueryDevtoolsGate';
 import LanguageSync from '~/components/System/LanguageSync';
 import DeploymentTheme from '~/Providers/DeploymentTheme';
 import UiScaleSync from '~/components/System/UiScaleSync';
 import { initializeFontSize } from '~/store/fontSize';
+import { reopenTermsOnRefusal } from '~/utils/terms';
 import { LiveAnnouncer } from '~/a11y';
 import { router } from './routes';
 

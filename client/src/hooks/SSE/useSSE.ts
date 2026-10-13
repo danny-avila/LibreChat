@@ -17,17 +17,17 @@ import type {
 } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData, TFinalResData } from '~/common';
-import { reopenTermsOnRefusal } from '~/utils/terms';
 import { clearComposerDrafts, applyPendingAction, findPendingActionMessageIndex } from '~/utils';
 import { startedAsNewConversation, buildCreatedInitialResponse } from './useEventHandlers';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import { abortScrollFamily, showStopButtonByIndex } from '~/store/generation';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useChatTransport } from '~/Providers/ChatTransportContext';
+import { reopenTermsOnRefusal } from '~/utils/terms';
 import { useAuthContext } from '~/hooks/AuthContext';
-import useLocalize from '~/hooks/useLocalize';
 import useEventHandlers from './useEventHandlers';
 import useUsageHandler from './useUsageHandler';
+import useLocalize from '~/hooks/useLocalize';
 import store from '~/store';
 
 type ChatHelpers = Pick<

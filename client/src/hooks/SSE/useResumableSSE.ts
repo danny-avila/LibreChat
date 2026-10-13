@@ -75,7 +75,6 @@ import {
   hydrateFileDeliveryMetadata,
   isCompactionAnchorProjection,
 } from '~/utils';
-import { reopenTermsOnRefusal } from '~/utils/terms';
 import {
   useGetUserBalance,
   fetchStreamStatus,
@@ -104,6 +103,7 @@ import { withSubmittedCodeDecision } from '~/hooks/Agents/codeDecision';
 import { useChatTransport } from '~/Providers/ChatTransportContext';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { liveAppliedSteerIdsAtom } from '~/store/steer';
+import { reopenTermsOnRefusal } from '~/utils/terms';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { fetchConvoSnapshot } from '~/utils/convos';
 import { useFileMapContext } from '~/Providers';
