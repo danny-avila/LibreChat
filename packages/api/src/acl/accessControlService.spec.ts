@@ -74,7 +74,7 @@ describe('AccessControlService', () => {
   const grantedById = new Types.ObjectId();
 
   describe('bulkUpdateResourcePermissions', () => {
-    test('records only the revocation that actually deleted Insights access', async () => {
+    test('plans the Insights revocation per request and leaves the access removed', async () => {
       await service.bulkUpdateResourcePermissions({
         resourceType: ResourceType.AGENT,
         resourceId,
@@ -98,7 +98,9 @@ describe('AccessControlService', () => {
         });
       const results = await Promise.all([revoke(), revoke()]);
 
+      /** Audit precedes the write, so each racing request plans the revocation it read. */
       expect(results.flatMap((result) => result.insightsChanges)).toEqual([
+        expect.objectContaining({ action: 'removed' }),
         expect.objectContaining({ action: 'removed' }),
       ]);
       await expect(
