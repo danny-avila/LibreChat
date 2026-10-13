@@ -49,7 +49,9 @@ function ActiveMCPAppView({
   ordinal: number;
 }) {
   const localize = useLocalize();
-  const approval = useMCPAppApproval();
+  const { policy } = useMCPAppsHost();
+  // Reuse the deployment operation limit to bound requests awaiting consent in this View.
+  const approval = useMCPAppApproval(policy.operationLimits?.maxActive);
   const frame = useMCPAppFrame(app, {
     defaultHeight: DEFAULT_APP_VIEW_HEIGHT,
     toolArgs: app.toolArgs,
@@ -89,7 +91,10 @@ function ActiveMCPAppView({
     );
   } else if (frame.status !== 'tornDown') {
     body = (
-      <div className="relative my-2 overflow-hidden" style={{ height: frame.height }}>
+      <div
+        className="relative my-2 overflow-hidden"
+        style={{ height: frame.height, width: frame.width, maxWidth: '100%' }}
+      >
         <MCPAppFrame frame={frame} resource={app} spinner />
       </div>
     );

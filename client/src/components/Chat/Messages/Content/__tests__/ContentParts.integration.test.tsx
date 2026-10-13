@@ -41,6 +41,10 @@ jest.mock('~/hooks/MCP', () => {
   };
 });
 
+jest.mock('~/Providers/MCPAppsPolicyContext', () => ({
+  useMCPAppsPolicy: () => ({ enabled: true }),
+}));
+
 jest.mock('~/components/MCPUIResource', () => {
   const ReactActual = jest.requireActual('react') as typeof React;
   const MCPAppSuppressionContext = ReactActual.createContext<ReadonlySet<TAttachment> | null>(null);
@@ -582,7 +586,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     renderContentParts({ ...baseProps, content, attachments });
 
     expect(screen.getAllByTestId('mcp-app-attachments').map((view) => view.dataset.owners)).toEqual(
-      ['agent-a/step-1/alpha,agent-a/step-2/beta,agent-b/step-1/gamma'],
+      ['agent-a/step-1/alpha', 'agent-a/step-2/beta', 'agent-b/step-1/gamma'],
     );
   });
 
@@ -674,6 +678,12 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     );
     const { rerender } = render(frame([appCall]));
     const appView = screen.getByTestId('mcp-app-attachments');
+    rerender(frame([appCall, makeTextPart('after the app')]));
+    expect(
+      appView.compareDocumentPosition(screen.getByText('after the app')) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(screen.getByTestId('mcp-app-attachments')).toBe(appView);
 
     /** A second adjacent call changes the sequential card presentation. */
     rerender(frame([appCall, otherCall]));
@@ -865,7 +875,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     fireEvent.click(screen.getByRole('button', { name: 'stream beta' }));
 
     expect(screen.getAllByTestId('mcp-app-attachments').map((view) => view.dataset.owners)).toEqual(
-      ['agent-a/step-1/alpha,agent-a/step-2/beta'],
+      ['agent-a/step-1/alpha', 'agent-a/step-2/beta'],
     );
   });
 

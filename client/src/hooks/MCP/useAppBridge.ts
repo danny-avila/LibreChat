@@ -23,6 +23,7 @@ import {
   getInlineResourceHtml,
   isAllowedAppLink,
   withSandboxCsp,
+  MAX_APP_VIEW_HEIGHT,
 } from '~/utils/mcpApps';
 import {
   useOptionalMessagesOperations,
@@ -271,6 +272,17 @@ export function useAppBridge({
     };
 
     const { locale, timeZone } = Intl.DateTimeFormat().resolvedOptions();
+    const bounds = iframe.getBoundingClientRect();
+    let hostContext = {
+      theme: readHostTheme(),
+      platform: 'web' as const,
+      locale,
+      timeZone,
+      displayMode: 'inline' as const,
+      availableDisplayModes: ['inline' as const],
+      containerDimensions: { width: Math.round(bounds.width), maxHeight: MAX_APP_VIEW_HEIGHT },
+      styles: { variables: buildHostStyleVariables() },
+    };
     const bridge = new AppBridge(
       null,
       { name: 'LibreChat', version: '1.0.0' },
@@ -288,18 +300,21 @@ export function useAppBridge({
           : {}),
       },
       {
-        hostContext: {
-          theme: readHostTheme(),
-          platform: 'web',
-          locale,
-          timeZone,
-          displayMode: 'inline',
-          availableDisplayModes: ['inline'],
-          styles: { variables: buildHostStyleVariables() },
-        },
+        hostContext,
       },
     );
 
+    const resizeObserver = new ResizeObserver(() => {
+      if (cancelled) return;
+      const width = Math.round(iframe.getBoundingClientRect().width);
+      if (width === hostContext.containerDimensions.width) return;
+      hostContext = {
+        ...hostContext,
+        containerDimensions: { width, maxHeight: MAX_APP_VIEW_HEIGHT },
+      };
+      bridge.setHostContext(hostContext);
+    });
+    resizeObserver.observe(iframe);
     let lastTheme = readHostTheme();
     const themeObserver = new MutationObserver(() => {
       if (cancelled) {
@@ -310,12 +325,12 @@ export function useAppBridge({
         return;
       }
       lastTheme = nextTheme;
-      Promise.resolve(
-        bridge.sendHostContextChange({
-          theme: nextTheme,
-          styles: { variables: buildHostStyleVariables() },
-        }),
-      ).catch((err: unknown) => logger.error('[MCP App] sendHostContextChange failed', err));
+      hostContext = {
+        ...hostContext,
+        theme: nextTheme,
+        styles: { variables: buildHostStyleVariables() },
+      };
+      bridge.setHostContext(hostContext);
     });
 
     let disposed = false;
@@ -326,6 +341,7 @@ export function useAppBridge({
       viewAbort.abort();
       cancelActionRef.current?.();
       themeObserver.disconnect();
+      resizeObserver.disconnect();
       bridge.close();
       // React Strict Mode immediately replays effects in development. Let an equivalent successor
       // share the in-flight resource read instead of cancelling the query it has just joined. A real

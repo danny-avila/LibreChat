@@ -38,6 +38,8 @@ import { isPreviewedToolCallPart, PreviewedToolCallPart } from './hydration';
 import { MediaContext, MessageContext, SearchContext } from '~/Providers';
 import MemoryArtifacts, { hasMemoryArtifacts } from './MemoryArtifacts';
 import { hasParallelLanes, parallelLaneGroups } from '~/utils/lanes';
+import { useMCPAppsPolicy } from '~/Providers/MCPAppsPolicyContext';
+import { selectToolCallUIResources } from '~/utils/mcpApps';
 import PendingSkillCall from './Parts/PendingSkillCall';
 import ActivityPhaseGroup from './ActivityPhaseGroup';
 import { hasPendingApprovalInPart } from '~/utils';
@@ -126,14 +128,13 @@ const buildToolCallStepOwners = (
 const collectMessageAppAttachments = (
   content: Array<TMessageContentParts | undefined> | undefined,
   attachments: TAttachment[] | undefined,
-): TAttachment[] => {
+): { attachments: TAttachment[]; atIndex: Map<number, TAttachment[]> } => {
+  const atIndex = new Map<number, TAttachment[]>();
   const attachmentMap = mapAttachments(attachments ?? []);
   const ownersByToolCallId = buildToolCallStepOwners(content);
   const collected = new Set<TAttachment>();
-  for (const part of content ?? []) {
-    if (part == null) {
-      continue;
-    }
+  (content ?? []).forEach((part, index) => {
+    if (part == null) return;
     const routed = filterAttachmentsForPart(
       attachmentMap[getToolCallId(part)],
       getPartAgentId(part),
@@ -141,12 +142,19 @@ const collectMessageAppAttachments = (
       getSiblingStepIds(part, ownersByToolCallId),
     );
     for (const attachment of routed ?? []) {
-      if (attachment.type === Tools.ui_resources) {
+      if (
+        attachment.type === Tools.ui_resources &&
+        !collected.has(attachment) &&
+        selectToolCallUIResources([attachment]).length > 0
+      ) {
         collected.add(attachment);
+        const entries = atIndex.get(index) ?? [];
+        entries.push(attachment);
+        atIndex.set(index, entries);
       }
     }
-  }
-  return Array.from(collected);
+  });
+  return { attachments: Array.from(collected), atIndex };
 };
 
 const getToolGroupId = (parts: PartWithIndex[], fallbackScope: number): string => {
@@ -311,6 +319,8 @@ type ContentPartsProps = {
   foldLiveActivity?: boolean;
   /** Internal recursion guard for nested phase segments. */
   nestedActivityPhase?: boolean;
+  /** Subsequent slices around stable App outputs must not repeat message decorations. */
+  continuation?: boolean;
   /** Internal signal that the parent phase card lifted this segment's
    *  attachments into its own media row — the parts below must not render
    *  them a second time inside the fold. */
@@ -369,6 +379,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
   createdAt,
   foldLiveActivity = true,
   nestedActivityPhase = false,
+  continuation = false,
   withinActivityPhase = false,
   parentPhaseOwnsFailurePill = false,
   cursorOwnedElsewhere = false,
@@ -1188,7 +1199,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
   if (hasParallelContent && phaseContent == null) {
     const parallelContent = (
       <>
-        {renderPendingSkills()}
+        {!continuation && renderPendingSkills()}
         <ParallelContentRenderer
           content={content}
           messageId={messageId}
@@ -1199,7 +1210,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
           isSubmitting={effectiveIsSubmitting}
           renderPart={renderPart}
           renderResumeAttribution={renderResumeAttribution}
-          showDecorations={!nestedActivityPhase}
+          showDecorations={!nestedActivityPhase && !continuation}
           contentIndexOffset={contentIndexOffset}
           contentIndices={contentIndices}
           laneGroups={messageLaneGroups}
@@ -1217,11 +1228,11 @@ const ContentPartsBody = memo(function ContentPartsBody({
   // Sequential content: render parts in order (90% of cases)
   const sequentialContent = (
     <SearchContext.Provider value={{ searchResults }}>
-      {!nestedActivityPhase && <MemoryArtifacts attachments={attachments} />}
-      {phaseContent != null && hasParallelContent && (
+      {!nestedActivityPhase && !continuation && <MemoryArtifacts attachments={attachments} />}
+      {phaseContent != null && hasParallelContent && !continuation && (
         <Sources messageId={messageId} conversationId={conversationId || undefined} />
       )}
-      {!nestedActivityPhase && renderPendingSkills()}
+      {!nestedActivityPhase && !continuation && renderPendingSkills()}
       {showEmptyCursor && (
         <Container>
           {/** Nudge only when the dot is truly first under the header — leading
@@ -1244,6 +1255,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
 });
 
 const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
+  const { enabled: appsEnabled } = useMCPAppsPolicy();
   const {
     attachments,
     messageId,
@@ -1326,13 +1338,13 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
     previousIdentity.isSubmitting = isSubmitting;
   }
   const appRenderScope = appRenderIdentity.current!.scope;
-  const messageAppAttachments = useMemo(
+  const messageApps = useMemo(
     () => collectMessageAppAttachments(props.content, attachments),
     [props.content, attachments],
   );
   const suppressedAppAttachments = useMemo<ReadonlySet<TAttachment>>(
-    () => new Set(messageAppAttachments),
-    [messageAppAttachments],
+    () => new Set(messageApps.attachments),
+    [messageApps.attachments],
   );
   const messageContext = useMemo(
     () => ({
@@ -1374,6 +1386,50 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
     reasoningState.current = { messageId, disclosures: new Map() };
   }
   const reasoningDisclosures = reasoningState.current.disclosures;
+  const appContent = useMemo(() => {
+    if (!appsEnabled || messageApps.atIndex.size === 0 || props.edit) return null;
+    const owners = buildToolCallStepOwners(props.content);
+    const lanes = parallelLaneGroups(props.content);
+    const { inlineAttachments, workspaceChanges } = partitionWorkspaceChanges(attachments);
+    const rows: ReactNode[] = [];
+    let start = 0;
+    const renderSlice = (end: number) => {
+      if (end <= start) return;
+      // Sparse slices preserve provider/phase indices. App siblings never belong to a fold,
+      // parallel column, or tool card that can change parents while the response streams.
+      const slice: Array<TMessageContentParts | undefined> = [];
+      for (let index = start; index < end; index++) {
+        const part = props.content?.[index];
+        if (part != null) slice[index] = part;
+      }
+      rows.push(
+        <MCPAppSuppressionContext.Provider key={`body-${start}`} value={suppressedAppAttachments}>
+          <SoleToolContext.Provider value={undefined}>
+            <ContentPartsBody
+              {...props}
+              content={slice}
+              attachments={inlineAttachments}
+              workspaceAttachmentsPartitioned
+              continuation={start > 0}
+              isLast={props.isLast && end === props.content?.length}
+              laneGroups={lanes}
+              toolCallStepOwnersById={owners}
+            />
+          </SoleToolContext.Provider>
+        </MCPAppSuppressionContext.Provider>,
+      );
+    };
+    for (const [index, appAttachments] of messageApps.atIndex) {
+      renderSlice(index + 1);
+      rows.push(
+        <MCPAppViews key={`apps-${appRenderScope}-${index}`} attachments={appAttachments} />,
+      );
+      start = index + 1;
+    }
+    renderSlice(props.content?.length ?? 0);
+    rows.push(<WorkspaceChanges key="workspace" attachments={workspaceChanges} />);
+    return rows;
+  }, [props, attachments, messageApps, suppressedAppAttachments, appRenderScope, appsEnabled]);
   /** Published once for the whole message so every markdown block below —
    *  including the ones nested inside phase cards — resolves a bare
    *  `![DTI](5_dti.png)` against the files this turn actually produced.
@@ -1394,16 +1450,13 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
       <MediaContext.Provider value={media}>
         <ReasoningDisclosureContext.Provider value={reasoningDisclosures}>
           <ToolDisclosureContext.Provider value={toolDisclosures}>
-            <MCPAppSuppressionContext.Provider value={suppressedAppAttachments}>
-              {/* A nested message (a subagent's) is not the sole call of the group around it. */}
-              <SoleToolContext.Provider value={undefined}>
-                <ContentPartsBody {...props} />
-              </SoleToolContext.Provider>
-            </MCPAppSuppressionContext.Provider>
-            <MCPAppViews
-              key={`message-apps-${appRenderScope}`}
-              attachments={messageAppAttachments}
-            />
+            {appContent ?? (
+              <MCPAppSuppressionContext.Provider value={suppressedAppAttachments}>
+                <SoleToolContext.Provider value={undefined}>
+                  <ContentPartsBody {...props} />
+                </SoleToolContext.Provider>
+              </MCPAppSuppressionContext.Provider>
+            )}
           </ToolDisclosureContext.Provider>
         </ReasoningDisclosureContext.Provider>
       </MediaContext.Provider>

@@ -38,6 +38,7 @@
 
       const SANDBOX_PREFIX = 'ui/notifications/sandbox-';
       const ATTEST_METHOD = 'ui/notifications/sandbox-frame-attest';
+      const CHALLENGE_METHOD = 'ui/notifications/sandbox-frame-challenge';
       const DETACH_METHOD = 'ui/notifications/sandbox-frame-detach';
       const RESOURCE_READY_METHOD = 'ui/notifications/sandbox-resource-ready';
       const PROXY_READY_METHOD = 'ui/notifications/sandbox-proxy-ready';
@@ -54,6 +55,7 @@
       let readyInterval = null;
       let readyRetries = 0;
       let attestNonce = null;
+      let pendingChallenge = null;
       let attestedAt = 0;
       let pendingToInner = [];
       let pendingToParent = [];
@@ -192,7 +194,12 @@
 
         const attested = !!attestNonce && !!msg.params && msg.params.nonce === attestNonce;
         if (msg.method === ATTEST_METHOD) {
-          if (attested && frameUsable()) {
+          if (
+            attested &&
+            frameUsable() &&
+            (pendingChallenge === null || msg.params.challenge === pendingChallenge)
+          ) {
+            pendingChallenge = null;
             attestedAt = Date.now();
             flushPending();
           }
@@ -223,6 +230,11 @@
           '<script>(function(){var N=' +
           JSON.stringify(nonce) +
           ';var post=function(m){parent.postMessage({jsonrpc:"2.0",method:m,params:{nonce:N}},"*")};' +
+          'addEventListener("message",function(e){if(e.source===parent&&e.data&&e.data.method===' +
+          JSON.stringify(CHALLENGE_METHOD) +
+          '){parent.postMessage({jsonrpc:"2.0",method:' +
+          JSON.stringify(ATTEST_METHOD) +
+          ',params:{nonce:N,challenge:e.data.params.challenge}},"*")}});' +
           'post(' +
           JSON.stringify(ATTEST_METHOD) +
           ');setInterval(function(){post(' +
@@ -253,7 +265,7 @@
           return;
         }
         // One resource per sandbox document. Replacing the app in place would leave the previous
-        // document's pending messages, blob URL and load events racing the new one.
+        // document's pending messages and load events racing the new one.
         if (resourceApplied || !trustedOrigin) {
           return;
         }
@@ -295,6 +307,19 @@
         // location (Blob URL pathnames are not hierarchical URLs).
         innerFrame.srcdoc = injectIntoHead(html, buildViewInjection(attestNonce));
         innerFrame.style.cssText = 'width:100%;height:100%;border:none;display:block';
+        // WindowProxy identity survives navigation. Every document load invalidates liveness;
+        // only the injected bootstrap in the loaded realm can answer this fresh challenge.
+        // Unlike load counting, this also tolerates an initial about:blank or duplicate load.
+        frame.addEventListener('load', () => {
+          if (innerFrame !== frame) return;
+          attestedAt = 0;
+          discardPending();
+          pendingChallenge = mintNonce();
+          frame.contentWindow.postMessage(
+            { jsonrpc: '2.0', method: CHALLENGE_METHOD, params: { challenge: pendingChallenge } },
+            '*',
+          );
+        });
 
         document.body.appendChild(innerFrame);
       }
@@ -385,7 +410,7 @@
       }
 
       function injectIntoHead(html, injection) {
-        // The bootstrap must run before any app script, and the app's bytes must reach the blob
+        // The bootstrap must run before any app script, and the app's bytes must reach the View
         // verbatim: inject, never rewrap. Prefixing a document that opens with a doctype would push
         // the doctype down and flip the app into quirks mode.
         const at = findDocumentInjectionPoint(html);

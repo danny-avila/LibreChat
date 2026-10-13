@@ -304,6 +304,7 @@ async function expectAppHeight(page: Page, occurrence: number) {
   const outerFrame = page.locator('iframe[title="MCP App: show_app"]').nth(occurrence);
   const container = outerFrame.locator('..');
   await expect(outerFrame).toHaveCSS('height', '260px');
+  await expect(outerFrame).toHaveCSS('width', '640px');
   await expect(container).toHaveCSS('height', '260px');
 }
 
@@ -509,6 +510,24 @@ test.describe('MCP Apps full integration', () => {
     await toolDialog.getByRole('button', { name: 'Run tool' }).click();
     expect((await approvedTool).ok()).toBeTruthy();
     await expect(app.getByTestId('operation')).toContainText('"followUp":"from-view"');
+    // Both requests arrive together, but consent authorizes only the displayed request.
+    await app.getByTestId('call-two-tools').click();
+    await expect(toolDialog).toContainText('queued-first');
+    const queuedCalls = async () =>
+      (await readEvents(page)).filter(
+        (event) =>
+          event.method === 'tools/call:follow_up' &&
+          String(event.params.label).startsWith('queued-'),
+      );
+    expect(await queuedCalls()).toHaveLength(0);
+    await toolDialog.getByRole('button', { name: 'Run tool' }).click();
+    await expect(toolDialog).toContainText('queued-second');
+    await expect
+      .poll(queuedCalls)
+      .toEqual([expect.objectContaining({ params: { label: 'queued-first' } })]);
+    await toolDialog.getByRole('button', { name: 'Run tool' }).click();
+    await expect(app.getByTestId('operation')).toContainText('"followUp":"queued-first"');
+    await expect(app.getByTestId('operation')).toContainText('"followUp":"queued-second"');
     await page.screenshot({ path: testInfo.outputPath('settled-app.png'), fullPage: true });
 
     await clickAndExpectRoute(page, app, 'read-resource', '/api/mcp/resources/read');
@@ -763,6 +782,31 @@ test.describe('MCP Apps full integration', () => {
     expect(
       (await readEvents(page)).filter((event) => event.method.startsWith('resources/read:show_')),
     ).toEqual([]);
+
+    // Leaving the injected document revokes its relay, even though WindowProxy identity remains.
+    await app.getByTestId('navigate-view').click();
+    await expect(app.getByTestId('status')).toHaveCount(0);
+    const navigatedRead = page
+      .waitForRequest((request) => new URL(request.url()).pathname === '/api/mcp/resources/read', {
+        timeout: 1500,
+      })
+      .then(
+        () => true,
+        () => false,
+      );
+    await app.locator('body').evaluate(() => {
+      window.parent.postMessage(
+        {
+          jsonrpc: '2.0',
+          id: 'navigated-document',
+          method: 'resources/read',
+          params: { uri: 'ui://e2e/details/current' },
+        },
+        '*',
+      );
+    });
+    expect(await navigatedRead).toBe(false);
+    await expect(page.getByRole('alertdialog')).toHaveCount(0);
 
     const share = await createShare(page, conversationId!);
     expect(share.shareId).toBeTruthy();

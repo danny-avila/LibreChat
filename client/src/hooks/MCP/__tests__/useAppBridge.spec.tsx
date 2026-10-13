@@ -92,7 +92,7 @@ class FakeAppBridge {
     this.toolResults.push(params);
   }
 
-  async sendHostContextChange(params: unknown) {
+  setHostContext(params: unknown) {
     this.hostContextChanges.push(params);
   }
 
@@ -1440,6 +1440,28 @@ describe('useAppBridge', () => {
         await Promise.resolve();
       });
       expect(bridge.hostContextChanges).toHaveLength(0);
+    });
+
+    it('publishes width changes without feeding content height changes back into the App', async () => {
+      const measure = jest.spyOn(HTMLIFrameElement.prototype, 'getBoundingClientRect');
+      measure.mockReturnValue(new DOMRect(0, 0, 600, 320));
+      const mounted = mountBridge(makeResource(), client);
+      await flush();
+      const observers = window.ResizeObserver as jest.MockedClass<typeof ResizeObserver>;
+      const callback = observers.mock.calls.at(-1)![0];
+      const observer = observers.mock.results.at(-1)!.value as ResizeObserver;
+      measure.mockReturnValue(new DOMRect(0, 0, 600, 1000));
+      act(() => callback([], observer));
+      expect(latest().hostContextChanges).toHaveLength(0);
+      measure.mockReturnValue(new DOMRect(0, 0, 400, 1000));
+      act(() => callback([], observer));
+      expect(latest().hostContextChanges).toEqual([
+        expect.objectContaining({ containerDimensions: { width: 400, maxHeight: 4000 } }),
+      ]);
+      mounted.view.unmount();
+      act(() => callback([], observer));
+      expect(latest().hostContextChanges).toHaveLength(1);
+      measure.mockRestore();
     });
 
     it('pushes theme changes to a live bridge', async () => {

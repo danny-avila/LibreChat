@@ -490,18 +490,41 @@ describe('mcp-sandbox proxy', () => {
       ).toHaveLength(0);
     });
 
-    it('does not mistake duplicate load events for an app navigation', () => {
+    it('invalidates every load and requires a fresh bootstrap challenge response', () => {
       const sandbox = loadSandbox();
       sandbox.deliverResource();
       sandbox.attest();
       sandbox.loadFrame();
+      const challenge = sandbox.innerPosts().at(-1)?.params?.challenge;
+      const forwarded = () => sandbox.innerPosts().filter((msg) => msg.id === HOST_REQUEST.id);
       sandbox.fromParent(HOST_REQUEST);
-      expect(sandbox.innerPosts()).toHaveLength(1);
-
+      sandbox.attest(); // A queued heartbeat from the old realm cannot restore authority.
+      expect(forwarded()).toHaveLength(0);
+      sandbox.fromInner({
+        jsonrpc: '2.0',
+        method: ATTEST,
+        params: { nonce: sandbox.bootstrapNonce(), challenge },
+      });
+      expect(forwarded()).toHaveLength(1);
       sandbox.loadFrame();
-      expect(sandbox.frame()).not.toBeNull();
       sandbox.fromParent(HOST_REQUEST);
-      expect(sandbox.innerPosts()).toHaveLength(2);
+      sandbox.fromInner({
+        jsonrpc: '2.0',
+        method: ATTEST,
+        params: { nonce: sandbox.bootstrapNonce(), challenge },
+      });
+      expect(forwarded()).toHaveLength(1);
+      const nextChallenge = sandbox
+        .innerPosts()
+        .filter((msg) => msg.method === 'ui/notifications/sandbox-frame-challenge')
+        .at(-1)?.params?.challenge;
+      sandbox.fromInner({
+        jsonrpc: '2.0',
+        method: ATTEST,
+        params: { nonce: sandbox.bootstrapNonce(), challenge: nextChallenge },
+      });
+      expect(forwarded()).toHaveLength(2);
+      expect(sandbox.frame()).not.toBeNull();
     });
 
     it('does not let stale load events restore a detached frame', () => {
