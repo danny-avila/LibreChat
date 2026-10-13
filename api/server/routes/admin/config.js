@@ -1,5 +1,5 @@
 const express = require('express');
-const { createAdminConfigHandlers, isAuditFailClosed } = require('@librechat/api');
+const { createAdminConfigHandlers } = require('@librechat/api');
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const {
   hasCapability,
@@ -32,7 +32,6 @@ const handlers = createAdminConfigHandlers({
   getAppConfig,
   invalidateConfigCaches,
   recordAuditEntry: db.recordAuditEntry,
-  auditFailClosed: isAuditFailClosed(),
 });
 
 router.use(requireJwtAuth, requireAdminAccess);

@@ -1,5 +1,5 @@
 const express = require('express');
-const { createAdminGroupsHandlers, isAuditFailClosed } = require('@librechat/api');
+const { createAdminGroupsHandlers } = require('@librechat/api');
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const { requireCapability } = require('~/server/middleware/roles/capabilities');
 const { requireJwtAuth } = require('~/server/middleware');
@@ -25,7 +25,6 @@ const handlers = createAdminGroupsHandlers({
   deleteConfig: db.deleteConfig,
   deleteAclEntries: db.deleteAclEntries,
   recordAuditEntry: db.recordAuditEntry,
-  auditFailClosed: isAuditFailClosed(),
 });
 
 router.use(requireJwtAuth, requireAdminAccess);

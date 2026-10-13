@@ -23,6 +23,10 @@ export type AdminAuditEmitter = (req: ServerRequest, event: AdminAuditEvent) => 
  * Whether request-driven audit writes fail closed. On unless the operator
  * opts out with `AUDIT_LOG_FAIL_CLOSED=false`; any other value keeps the
  * secure default so a typo cannot silently disable it.
+ *
+ * Only wire this into handlers that can undo the mutation when the audit write
+ * fails (grants, resource ACLs). Elsewhere a 5xx would report a failure for a
+ * change that was already applied, so those handlers stay fail-open.
  */
 export function isAuditFailClosed(env: NodeJS.ProcessEnv = process.env): boolean {
   return env.AUDIT_LOG_FAIL_CLOSED !== 'false';

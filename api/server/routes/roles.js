@@ -13,7 +13,7 @@ const {
   remoteAgentsPermissionsSchema,
   skillPermissionsSchema,
 } = require('librechat-data-provider');
-const { createRolePermissionsUpdateHandler, isAuditFailClosed } = require('@librechat/api');
+const { createRolePermissionsUpdateHandler } = require('@librechat/api');
 const { hasCapability, requireCapability } = require('~/server/middleware/roles/capabilities');
 const { updateRoleByName, getRoleByName, recordAuditEntry } = require('~/models');
 const { requireJwtAuth } = require('~/server/middleware');
@@ -76,7 +76,7 @@ const permissionConfigs = {
  */
 const createPermissionUpdateHandler = (permissionKey) =>
   createRolePermissionsUpdateHandler(
-    { getRoleByName, updateRoleByName, recordAuditEntry, auditFailClosed: isAuditFailClosed() },
+    { getRoleByName, updateRoleByName, recordAuditEntry },
     permissionConfigs[permissionKey],
   );
 
