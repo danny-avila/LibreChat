@@ -567,14 +567,23 @@ export function createUserMethods(
     /** Every user, not only those read as accepted beforehand: an acceptance racing the update may be cached. */
     const cursor = User.find({}).select('_id').lean().cursor();
     let batch: string[] = [];
+    let evicted = true;
     for await (const user of cursor) {
       batch.push(String(user._id));
       if (batch.length === TERMS_RESET_EVICTION_BATCH) {
-        await Promise.all(batch.map(invalidateAuthUserDocCache));
+        evicted =
+          (await Promise.all(batch.map(invalidateAuthUserDocCache))).every(Boolean) && evicted;
         batch = [];
       }
     }
-    await Promise.all(batch.map(invalidateAuthUserDocCache));
+    evicted = (await Promise.all(batch.map(invalidateAuthUserDocCache))).every(Boolean) && evicted;
+    if (!evicted) {
+      logger.warn(
+        '[resetTermsAcceptance] Cached auth documents were not all evicted; waiting for them to expire',
+        { waitMs: AUTH_USER_DOC_CACHE_TTL_MS + AUTH_USER_DOC_EXPIRY_MARGIN_MS },
+      );
+      await (deps.delay ?? wait)(AUTH_USER_DOC_CACHE_TTL_MS + AUTH_USER_DOC_EXPIRY_MARGIN_MS);
+    }
     return { modifiedCount: result.modifiedCount };
   }
 

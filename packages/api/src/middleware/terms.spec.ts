@@ -74,6 +74,7 @@ describe('createTermsAcceptanceGate', () => {
     ['HEAD', '/api/files'],
     ['OPTIONS', '/api/agents/chat/agents'],
     ['POST', '/api/user/terms/accept'],
+    ['POST', '/api/agents/chat/abort'],
     ['POST', '/api/user/terms/accept/'],
     ['POST', '/api/auth/logout'],
     ['POST', '/api/auth/cloudfront/refresh'],

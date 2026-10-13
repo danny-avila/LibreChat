@@ -217,6 +217,7 @@ export default function useSSE(
       console.log('error in server stream.');
       /** Terms were reset mid-session: refetching the status reopens the acceptance modal. */
       if ((data as { code?: unknown } | null | undefined)?.code === TERMS_NOT_ACCEPTED_CODE) {
+        void queryClient.invalidateQueries([QueryKeys.startupConfig]);
         void queryClient.invalidateQueries([QueryKeys.userTerms]);
       }
       (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();

@@ -3392,6 +3392,7 @@ describe('useResumableSSE', () => {
     const { unmount } = renderHook(() => useResumableSSE(buildSubmission(), buildChatHelpers()));
     await waitFor(() => expect(mockSetSubmission).toHaveBeenCalledWith(null));
     expect(mockInvalidateQueries).toHaveBeenCalledWith([QueryKeys.userTerms]);
+    expect(mockInvalidateQueries).toHaveBeenCalledWith([QueryKeys.startupConfig]);
     unmount();
   });
 

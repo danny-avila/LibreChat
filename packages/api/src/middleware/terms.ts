@@ -13,12 +13,15 @@ export interface TermsAcceptanceGateDependencies {
 /** Reads never start new processing, so the app can load behind the acceptance modal. */
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
-/** Writes a user must be able to make without having accepted: sign-in flows, accepting, or leaving. */
+/** Writes a user must be able to make without having accepted: sign-in flows, accepting, leaving, or stopping a run already in progress. */
 function isExempt(method: string, pathname: string): boolean {
   if (pathname === '/api/auth' || pathname.startsWith('/api/auth/')) {
     return true;
   }
-  if (method === 'POST' && pathname === '/api/user/terms/accept') {
+  if (
+    method === 'POST' &&
+    (pathname === '/api/user/terms/accept' || pathname === '/api/agents/chat/abort')
+  ) {
     return true;
   }
   return method === 'DELETE' && pathname === '/api/user/delete';

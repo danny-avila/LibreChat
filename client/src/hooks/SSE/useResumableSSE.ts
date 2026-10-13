@@ -368,9 +368,9 @@ const hasTermsNotAcceptedCode = (errorData: unknown): boolean =>
   typeof errorData === 'object' &&
   (errorData as { code?: unknown }).code === TERMS_NOT_ACCEPTED_CODE;
 
-const getStreamStartFailureData = (errorData?: unknown): TResData =>
+const getStreamStartFailureData = (errorData?: unknown, termsRefusalText?: string): TResData =>
   ({
-    text: getStreamStartFailureText(errorData),
+    text: termsRefusalText ?? getStreamStartFailureText(errorData),
     metadata: markStreamStartFailedMetadata(),
   }) as unknown as TResData;
 
@@ -4243,10 +4243,14 @@ export default function useResumableSSE(
         return null;
       }
       if (hasTermsNotAcceptedCode(errorData)) {
+        void queryClient.invalidateQueries([QueryKeys.startupConfig]);
         void queryClient.invalidateQueries([QueryKeys.userTerms]);
       }
       errorHandler({
-        data: getStreamStartFailureData(errorData),
+        data: getStreamStartFailureData(
+          errorData,
+          hasTermsNotAcceptedCode(errorData) ? localize('com_error_terms_not_accepted') : undefined,
+        ),
         submission: currentSubmission as EventSubmission,
       });
       setShowStopButton(false);

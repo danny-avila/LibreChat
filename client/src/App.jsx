@@ -43,6 +43,7 @@ const App = () => {
       onError: (error) => {
         /** Terms were reset mid-session: refetch the status so the acceptance modal reopens. */
         if (error?.response?.data?.code === TERMS_NOT_ACCEPTED_CODE) {
+          queryClient.invalidateQueries([QueryKeys.startupConfig]);
           queryClient.invalidateQueries([QueryKeys.userTerms]);
         }
       },

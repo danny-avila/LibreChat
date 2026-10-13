@@ -1316,6 +1316,28 @@ describe('User Methods - Database Tests', () => {
       expect(stored?.termsAcceptedSource).toBeUndefined();
       expect(cache.delete).toHaveBeenCalledWith('cached-accepted');
     });
+
+    it('waits out the cache TTL when a cached document cannot be evicted', async () => {
+      enableAuthUserDocCache();
+      await User.create({
+        name: 'Stuck',
+        email: 'stuck-reset@example.com',
+        provider: 'local',
+        termsAccepted: true,
+        termsAcceptedAt: new Date(),
+      });
+      const cache = {
+        get: jest.fn().mockResolvedValue(['cached-stuck']),
+        set: jest.fn().mockResolvedValue(true),
+        delete: jest.fn().mockRejectedValue(new Error('delete failed')),
+      };
+      const delay = jest.fn().mockResolvedValue(undefined);
+      const stuck = createUserMethods(mongoose, { getCache: () => cache, delay });
+
+      await stuck.resetTermsAcceptance();
+
+      expect(delay).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('acceptTerms', () => {
