@@ -338,7 +338,9 @@ export function resolveDetachedRunEnd(
       responses.find((message) => message.messageId === exact) ??
       responses.find((message) => message.messageId === unpadded);
   }
-  if (response == null && (!namesResponse || epoch != null) && responses.length === 1) {
+  /** Only a regeneration writes its reply under an id other than the one it named, so the lone
+   *  response written since the epoch stands in for a named response only there. */
+  if (response == null && (!namesResponse || run.isRegenerate === true) && responses.length === 1) {
     response = responses[0];
   }
   if (response == null) {

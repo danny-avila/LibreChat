@@ -1248,6 +1248,34 @@ describe('useResumableSSE', () => {
       unmount();
     });
 
+    it('does not date a fresh run left before its start response with the previous epoch', async () => {
+      const chatHelpers = buildChatHelpers();
+      const rendered = renderHook(
+        ({ current }: { current: TSubmission | null }) => useResumableSSE(current, chatHelpers),
+        { initialProps: { current: resumeOf(4200) as TSubmission | null } },
+      );
+      await flushMicrotasks();
+      rendered.rerender({ current: null });
+      expect(detachedRun()).toEqual(expect.objectContaining({ generationCreatedAt: 4200 }));
+      rendered.rerender({
+        current: buildSubmission({
+          userMessage: {
+            messageId: 'msg-2',
+            conversationId: CONV_ID,
+            text: 'Next',
+            isCreatedByUser: true,
+            sender: 'User',
+            parentMessageId: 'resp-1',
+          },
+        }),
+      });
+      await flushMicrotasks();
+      rendered.rerender({ current: null });
+      expect(detachedRun()).toEqual(expect.objectContaining({ userMessageId: 'msg-2' }));
+      expect(detachedRun()?.generationCreatedAt).toBeUndefined();
+      rendered.unmount();
+    });
+
     it('keeps a Stop through a reattach to the stopped run, so leaving again records nothing', async () => {
       getDefaultStore().set(stopRequestedByConvoId(CONV_ID), { generationCreatedAt: 4200 });
       const resumed = resumeOf(4200);

@@ -90,6 +90,19 @@ describe('resolveDetachedRunEnd', () => {
     ).toBeNull();
   });
 
+  it('does not stand a sibling in for the response a fresh run named', () => {
+    const run = {
+      userMessageId: USER_ID,
+      responseMessageId: 'response-a',
+      generationCreatedAt: 5000,
+    };
+    expect(
+      resolveDetachedRunEnd(CONVO_ID, run, [
+        response({ messageId: 'response-b', updatedAt: writtenAt(6000) }),
+      ]),
+    ).toBeNull();
+  });
+
   it('treats the padded user id placeholder as naming no response', () => {
     const end = resolveDetachedRunEnd(
       CONVO_ID,
