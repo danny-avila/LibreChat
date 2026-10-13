@@ -189,7 +189,7 @@ describe('theme cache storage', () => {
  * - definitions with one or both mode blocks absent.
  * A new role, or a new fallback, joins by construction.
  */
-const PIN = { fingerprint: '1.4.dxwdxg', digest: '1ah8qx9' };
+const PIN = { fingerprint: '1.4.dxwdxg', digest: '39up6s' };
 
 const digestOf = (text: string): string => {
   let hash = 5381;
@@ -204,8 +204,8 @@ const byCodePoint = (a: string, b: string): number => (a < b ? -1 : Number(a > b
 
 /**
  * Values a role may switch on or canonicalize: every enum literal an appearance validator names,
- * `none` in either case for the composable shadows, and zero written more than one way. The
- * validators are predicates, so these are listed, not read from them.
+ * `none` in either case and padded for the composable shadows, and zero written more than one way,
+ * padded among them. The validators are predicates, so these are listed, not read from them.
  */
 const SPECIAL_CANDIDATES = [
   'soft',
@@ -217,9 +217,11 @@ const SPECIAL_CANDIDATES = [
   'border',
   'none',
   'None',
+  ' none ',
   '0',
   '.0',
   '0.0',
+  ' 0 ',
 ];
 
 const APPEARANCE_CANDIDATES = [
