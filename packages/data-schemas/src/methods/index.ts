@@ -18,6 +18,7 @@ import {
   createOpenIDRefreshFlightMethods,
   type OpenIDRefreshFlightMethods,
 } from './openidRefreshFlight';
+import { createResourceLockMethods, type ResourceLockMethods } from './resourceLock';
 export {
   createMCPAuthorizationFenceRetryStorage,
   type MCPAuthorizationFenceRetryStorage,
@@ -256,6 +257,7 @@ export type AllMethods = ToolApprovalGrantStorage &
   TokenListMethods &
   RefreshTokenBridgeMethods &
   OpenIDRefreshFlightMethods &
+  ResourceLockMethods &
   PasskeyMethods &
   RoleMethods &
   KeyMethods &
@@ -495,6 +497,7 @@ export function createMethods(
     ...createTokenListMethods(mongoose),
     ...createRefreshTokenBridgeMethods(mongoose),
     ...createOpenIDRefreshFlightMethods(mongoose),
+    ...createResourceLockMethods(mongoose),
     ...createPasskeyMethods(mongoose),
     ...roleMethods,
     ...createKeyMethods(mongoose),
@@ -563,6 +566,7 @@ export type {
   TokenMethods,
   RefreshTokenBridgeMethods,
   OpenIDRefreshFlightMethods,
+  ResourceLockMethods,
   RoleMethods,
   KeyMethods,
   MemoryMethods,

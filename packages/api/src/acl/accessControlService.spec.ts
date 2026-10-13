@@ -497,6 +497,59 @@ describe('AccessControlService', () => {
       expect(result.aclChanges).toHaveLength(1);
     });
 
+    test('serializes concurrent updates of one resource so each audit precedes its own write', async () => {
+      const events: string[] = [];
+      const acquire = jest.spyOn(service['_dbMethods'], 'acquireResourceLock');
+      const update = (label: string, id: Types.ObjectId, hold: number) =>
+        service
+          .bulkUpdateResourcePermissions({
+            resourceType: ResourceType.PROMPTGROUP,
+            resourceId,
+            updatedPrincipals: [
+              {
+                type: PrincipalType.USER,
+                id: id.toString(),
+                accessRoleId: AccessRoleIds.PROMPTGROUP_VIEWER,
+              },
+            ],
+            grantedBy: grantedById,
+            beforeWrite: async () => {
+              events.push(`${label}:audit`);
+              await new Promise((resolve) => setTimeout(resolve, hold));
+            },
+          })
+          .then(() => events.push(`${label}:done`));
+
+      await Promise.all([update('A', userId, 150), update('B', new Types.ObjectId(), 0)]);
+
+      const first = events[0].split(':')[0];
+      expect(events.slice(0, 2)).toEqual([`${first}:audit`, `${first}:done`]);
+      expect(events).toHaveLength(4);
+      expect(acquire.mock.calls.length).toBeGreaterThanOrEqual(2);
+      acquire.mockRestore();
+    });
+
+    test('reports a conflict when the resource lease cannot be taken in time', async () => {
+      const key = `acl:${ResourceType.PROMPTGROUP}:${resourceId}`;
+      await service['_dbMethods'].acquireResourceLock({ key, ownerId: 'other', ttlMs: 60_000 });
+
+      await expect(
+        service.bulkUpdateResourcePermissions({
+          resourceType: ResourceType.PROMPTGROUP,
+          resourceId,
+          updatedPrincipals: [
+            {
+              type: PrincipalType.USER,
+              id: userId.toString(),
+              accessRoleId: AccessRoleIds.PROMPTGROUP_VIEWER,
+            },
+          ],
+          grantedBy: grantedById,
+        }),
+      ).rejects.toMatchObject({ statusCode: 409, code: 'RESOURCE_PERMISSIONS_BUSY' });
+      await service['_dbMethods'].releaseResourceLock({ key, ownerId: 'other' });
+    }, 15000);
+
     test('revoking snapshots the principal without loading the rest of the ACL', async () => {
       const otherUserId = new Types.ObjectId();
       const viewerRole = await dbMethods.findRoleByIdentifier(AccessRoleIds.PROMPTGROUP_VIEWER);

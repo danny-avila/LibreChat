@@ -19,6 +19,7 @@ import type { TPrincipal } from 'librechat-data-provider';
 import type { PermissionChange, PermissionSnapshot } from './types';
 import type { ResolvedPrincipal } from '~/types/principal';
 import type { PermissionPlan } from './audit';
+import { getSafeErrorMetadata } from '~/utils/errors';
 import { userPrincipalsCache } from '~/cache';
 
 type BulkPrincipal = Omit<TPrincipal, 'id'> & {
@@ -45,6 +46,20 @@ const principalIdentity = (type: string, id: unknown): string => {
       : raw;
   return `${type}:${normalized}`;
 };
+
+/** A holder that crashes frees its lock after this long. */
+const RESOURCE_LOCK_TTL_MS = 30_000;
+const RESOURCE_LOCK_WAIT_MS = 3_000;
+const RESOURCE_LOCK_POLL_MS = 50;
+
+export class ResourcePermissionsBusyError extends Error {
+  readonly statusCode = 409;
+  readonly code = 'RESOURCE_PERMISSIONS_BUSY';
+
+  constructor() {
+    super('Permissions for this resource are being updated, try again');
+  }
+}
 
 const snapshotOf = (
   entry?: Pick<IAclEntry, 'permBits' | 'roleId'> | null,
@@ -458,6 +473,11 @@ export class AccessControlService {
     this._transactionSupportCache = supportsTransactions;
     let localSession = session;
     let shouldEndSession = false;
+    const lock = {
+      key: `acl:${resourceType}:${resourceId}`,
+      ownerId: new Types.ObjectId().toString(),
+    };
+    let lockHeld = false;
 
     try {
       if (!Array.isArray(updatedPrincipals)) {
@@ -470,6 +490,24 @@ export class AccessControlService {
         throw new Error(`Invalid resource ID: ${resourceId}`);
       }
 
+      if (!supportsTransactions) {
+        /**
+         * Without transactions nothing else orders the audited read and the write, so a
+         * per-resource lease serializes concurrent updates of the same resource.
+         */
+        const deadline = Date.now() + RESOURCE_LOCK_WAIT_MS;
+        while (
+          !(lockHeld = await this._dbMethods.acquireResourceLock({
+            ...lock,
+            ttlMs: RESOURCE_LOCK_TTL_MS,
+          }))
+        ) {
+          if (Date.now() >= deadline) {
+            throw new ResourcePermissionsBusyError();
+          }
+          await new Promise((resolve) => setTimeout(resolve, RESOURCE_LOCK_POLL_MS));
+        }
+      }
       if (!localSession && supportsTransactions) {
         localSession = await this._mongoose.startSession();
         localSession.startTransaction();
@@ -827,6 +865,13 @@ export class AccessControlService {
     } finally {
       if (shouldEndSession && localSession) {
         await localSession.endSession();
+      }
+      if (lockHeld) {
+        await this._dbMethods.releaseResourceLock(lock).catch((error) =>
+          logger.error('[AccessControlService.bulkUpdateResourcePermissions] Lock release failed', {
+            ...getSafeErrorMetadata(error),
+          }),
+        );
       }
     }
   }
