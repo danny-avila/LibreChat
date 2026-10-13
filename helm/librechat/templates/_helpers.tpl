@@ -176,6 +176,19 @@ true
 {{- end }}
 
 {{/*
+Literal value an operator supplied for an env var through librechat.configEnv or a
+global.librechat.env entry with a value. Empty when absent or sourced from a Secret.
+Args: dict "root" . "name" NAME.
+*/}}
+{{- define "librechat.suppliedEnvValue" -}}
+{{- $v := toString (default "" (get (default dict .root.Values.librechat.configEnv) .name)) -}}
+{{- range .root.Values.global.librechat.env -}}
+{{- if and (eq .name $.name) .value -}}{{- $v = toString .value -}}{{- end -}}
+{{- end -}}
+{{- $v -}}
+{{- end }}
+
+{{/*
 Fail when the operator supplies REDIS_PASSWORD (or MONGODB_ROOT_PASSWORD) but LibreChat still
 connects to the bundled authenticated database without the subchart knowing that password. Either set redis.auth.password
 or redis.auth.existingSecret, point REDIS_URI at another server, or opt out with
@@ -189,6 +202,14 @@ librechat.injectBundledCredentials.redis=false.
 {{- end -}}
 {{- if and (include "librechat.bundledMongoAuth" .) (or (get (default dict .Values.librechat.configEnv) "MONGODB_ROOT_PASSWORD") (include "librechat.userEnvHas" (dict "root" . "name" "MONGODB_ROOT_PASSWORD"))) (not .Values.mongodb.auth.rootPassword) (not .Values.mongodb.auth.existingSecret) -}}
 {{- fail "MONGODB_ROOT_PASSWORD is set for LibreChat but the bundled MongoDB generates its own password. Set mongodb.auth.rootPassword (or mongodb.auth.existingSecret) to the same value, set MONGO_URI to your own server, or set librechat.injectBundledCredentials.mongodb=false." -}}
+{{- end -}}
+{{- $redisLiteral := include "librechat.suppliedEnvValue" (dict "root" . "name" "REDIS_PASSWORD") -}}
+{{- if and .Values.redis.enabled .Values.redis.auth.enabled (not $suppliedURI) (ne (toString (default dict .Values.librechat.injectBundledCredentials).redis) "false") $redisLiteral .Values.redis.auth.password (ne $redisLiteral (toString .Values.redis.auth.password)) -}}
+{{- fail "REDIS_PASSWORD for LibreChat differs from redis.auth.password. Use the same value for both." -}}
+{{- end -}}
+{{- $mongoLiteral := include "librechat.suppliedEnvValue" (dict "root" . "name" "MONGODB_ROOT_PASSWORD") -}}
+{{- if and (include "librechat.bundledMongoAuth" .) $mongoLiteral .Values.mongodb.auth.rootPassword (ne $mongoLiteral (toString .Values.mongodb.auth.rootPassword)) -}}
+{{- fail "MONGODB_ROOT_PASSWORD for LibreChat differs from mongodb.auth.rootPassword. Use the same value for both." -}}
 {{- end -}}
 {{- end }}
 
