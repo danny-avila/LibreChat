@@ -5,6 +5,11 @@ import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 import type { AdminUsersDeps } from './users';
 import { createAdminUsersHandlers } from './users';
+import { eraseUserData } from '~/user/erasure';
+
+jest.mock('~/user/erasure', () => ({
+  eraseUserData: jest.fn().mockResolvedValue(undefined),
+}));
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
@@ -68,12 +73,24 @@ function createDeps(overrides: Partial<AdminUsersDeps> = {}): AdminUsersDeps {
     deleteConfig: jest.fn().mockResolvedValue(null),
     deleteAclEntries: jest.fn().mockResolvedValue(undefined),
     deletePasskeysByUser: jest.fn().mockResolvedValue(0),
-    deleteTokens: jest.fn().mockResolvedValue({ deletedCount: 0 }),
+    resolveErasure: jest.fn().mockResolvedValue({ deps: {} }),
+    cancelSubagentTasks: jest.fn().mockResolvedValue(undefined),
+    quiesceUserSchedules: jest.fn().mockResolvedValue(true),
+    restoreUserSchedulesFromDeletion: jest.fn().mockResolvedValue(undefined),
+    generationJobs: {
+      getAccountCleanupJobIdsForUser: jest.fn().mockResolvedValue([]),
+      getCleanupJob: jest.fn().mockResolvedValue(undefined),
+      abortJob: jest.fn().mockResolvedValue(null),
+    },
     ...overrides,
   };
 }
 
 describe('createAdminUsersHandlers', () => {
+  beforeEach(() => {
+    jest.mocked(eraseUserData).mockClear();
+  });
+
   describe('listUsers', () => {
     it('returns paginated users with total count', async () => {
       const users = [
@@ -462,32 +479,100 @@ describe('createAdminUsersHandlers', () => {
       expect(deps.deletePasskeysByUser).toHaveBeenCalledWith(validUserId);
     });
 
-    it("removes the user's stored credentials before the user", async () => {
-      const deps = createDeps();
-      const handlers = createAdminUsersHandlers(deps);
-      const { req, res, status } = createReqRes({ params: { id: validUserId } });
-
-      await handlers.deleteUser(req, res);
-
-      expect(status).toHaveBeenCalledWith(200);
-      expect(deps.deleteTokens).toHaveBeenCalledWith({ userId: validUserId });
-      expect(jest.mocked(deps.deleteTokens).mock.invocationCallOrder[0]).toBeLessThan(
-        jest.mocked(deps.deleteUserById).mock.invocationCallOrder[0],
-      );
-    });
-
-    it('keeps the user, and releases the fence, when its credentials cannot be removed', async () => {
+    it('runs the shared erasure cascade for the target before removing the user', async () => {
+      const checkpointer = { ttl: 60 };
+      const erasureDeps = { marker: true };
       const deps = createDeps({
-        deleteTokens: jest.fn().mockRejectedValue(new Error('mongo down')),
+        findUsers: jest.fn().mockResolvedValue([mockUser({ role: 'USER', tenantId: 'tenant-1' })]),
+        resolveErasure: jest.fn().mockResolvedValue({ deps: erasureDeps, checkpointer }),
       });
       const handlers = createAdminUsersHandlers(deps);
       const { req, res, status } = createReqRes({ params: { id: validUserId } });
 
       await handlers.deleteUser(req, res);
 
+      expect(status).toHaveBeenCalledWith(200);
+      expect(deps.resolveErasure).toHaveBeenCalledWith({
+        id: validUserId,
+        role: 'USER',
+        tenantId: 'tenant-1',
+      });
+      expect(eraseUserData).toHaveBeenCalledWith(
+        { userId: validUserId, tenantId: 'tenant-1', checkpointer },
+        erasureDeps,
+      );
+      expect(jest.mocked(eraseUserData).mock.invocationCallOrder[0]).toBeLessThan(
+        jest.mocked(deps.deleteUserById).mock.invocationCallOrder[0],
+      );
+    });
+
+    it('keeps the user, and releases the fence, when the erasure cascade fails', async () => {
+      jest.mocked(eraseUserData).mockRejectedValueOnce(new Error('storage down'));
+      const deps = createDeps();
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { id: validUserId } });
+
+      await handlers.deleteUser(req, res);
+
       expect(status).toHaveBeenCalledWith(500);
+      expect(json).toHaveBeenCalledWith({ error: 'Failed to delete user' });
       expect(deps.deleteUserById).not.toHaveBeenCalled();
       expect(deps.cancelAgentTriggerUserDeletion).toHaveBeenCalled();
+      expect(deps.cancelAgentTriggerUserPurge).toHaveBeenCalled();
+    });
+
+    it('suspends schedules before erasing and restores them when the deletion fails', async () => {
+      jest.mocked(eraseUserData).mockRejectedValueOnce(new Error('storage down'));
+      const deps = createDeps();
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status } = createReqRes({ params: { id: validUserId } });
+
+      await handlers.deleteUser(req, res);
+
+      const token = jest.mocked(deps.quiesceUserSchedules).mock.calls[0][1];
+      expect(status).toHaveBeenCalledWith(500);
+      expect(deps.restoreUserSchedulesFromDeletion).toHaveBeenCalledWith(validUserId, token);
+      expect(
+        jest.mocked(deps.restoreUserSchedulesFromDeletion).mock.invocationCallOrder[0],
+      ).toBeLessThan(jest.mocked(deps.cancelAgentTriggerUserDeletion).mock.invocationCallOrder[0]);
+    });
+
+    it('does not erase when schedules cannot be confirmed stopped', async () => {
+      const deps = createDeps({ quiesceUserSchedules: jest.fn().mockResolvedValue(false) });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status } = createReqRes({ params: { id: validUserId } });
+
+      await handlers.deleteUser(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(eraseUserData).not.toHaveBeenCalled();
+      expect(deps.deleteUserById).not.toHaveBeenCalled();
+    });
+
+    it('aborts the cleanup jobs of the target and refuses to erase when a stop is unconfirmed', async () => {
+      const abortJob = jest.fn().mockResolvedValue(null);
+      const deps = createDeps({
+        generationJobs: {
+          getAccountCleanupJobIdsForUser: jest.fn().mockResolvedValue(['s1', 's2']),
+          getCleanupJob: jest.fn(async (id: string) => ({
+            createdAt: 5,
+            metadata: { userId: id === 's1' ? validUserId : 'someone-else' },
+          })),
+          abortJob,
+        } as unknown as AdminUsersDeps['generationJobs'],
+      });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status } = createReqRes({ params: { id: validUserId } });
+
+      await handlers.deleteUser(req, res);
+
+      expect(abortJob).toHaveBeenCalledTimes(1);
+      expect(abortJob).toHaveBeenCalledWith('s1', {
+        expectedCreatedAt: 5,
+        awaitProviderDrain: true,
+      });
+      expect(status).toHaveBeenCalledWith(500);
+      expect(eraseUserData).not.toHaveBeenCalled();
     });
 
     it('returns success even when cascade cleanup partially fails', async () => {
