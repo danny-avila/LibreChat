@@ -121,6 +121,24 @@ export function getSecretPreview(secret: string): string {
   return '...' + secret.slice(-PREVIEW_VISIBLE);
 }
 
+/**
+ * Re-derives a stored preview under the current policy. Previews persisted by
+ * earlier releases carry a leading prefix (`sk-lf-...cret`); they are cut down
+ * to the last four characters, and anything unrecognised is fully masked.
+ */
+export function normalizeStoredPreview(preview: string): string {
+  if (preview === '' || /^\*+$/.test(preview)) {
+    return preview;
+  }
+  if (preview.startsWith('...') && preview.length <= 3 + PREVIEW_VISIBLE) {
+    return preview;
+  }
+  if (preview.includes('...')) {
+    return '...' + preview.slice(preview.lastIndexOf('...') + 3).slice(-PREVIEW_VISIBLE);
+  }
+  return '*'.repeat(preview.length);
+}
+
 /** Top-level config sections containing registered secret fields. */
 export function getConfigSecretSections(): readonly string[] {
   return SECRET_SECTIONS;
@@ -448,7 +466,9 @@ function preserveArraySecrets(result: unknown, existing: unknown, basePath: stri
       if (isEncryptedConfigSecret(existingSecret)) {
         entry[field.secretKey] = existingSecret;
         if (typeof existingEntry[field.previewKey] === 'string') {
-          entry[field.previewKey] = existingEntry[field.previewKey];
+          entry[field.previewKey] = normalizeStoredPreview(
+            existingEntry[field.previewKey] as string,
+          );
         }
         continue;
       }
@@ -775,7 +795,7 @@ export function preserveConfigSecrets<T>(next: T, existing?: unknown, basePath =
       const legacyPreview = legacyPath ? existingSection[lastSegment(legacyPath)] : undefined;
       const existingPreview = existingSection[previewKey] ?? legacyPreview;
       if (typeof existingPreview === 'string') {
-        section[previewKey] = existingPreview;
+        section[previewKey] = normalizeStoredPreview(existingPreview);
       } else if (!isAlreadyEncrypted && !isPlaceholder) {
         section[previewKey] = getSecretPreview(existingSecret);
       }
@@ -874,6 +894,10 @@ export function redactConfigSecrets<T>(root: T): T {
       continue;
     }
     migrateLegacyPreviewKey(section, field);
+    const previewKey = lastSegment(field.previewPath);
+    if (typeof section[previewKey] === 'string') {
+      section[previewKey] = normalizeStoredPreview(section[previewKey]);
+    }
     const key = segments[segments.length - 1];
     if (!(key in section)) {
       continue;
@@ -892,6 +916,9 @@ export function redactConfigSecrets<T>(root: T): T {
     }
     for (const item of entries) {
       const entry = getPlainRecord(item);
+      if (entry && typeof entry[field.previewKey] === 'string') {
+        entry[field.previewKey] = normalizeStoredPreview(entry[field.previewKey] as string);
+      }
       if (entry && shouldRedactArraySecretValue(entry[field.secretKey], field)) {
         delete entry[field.secretKey];
       }

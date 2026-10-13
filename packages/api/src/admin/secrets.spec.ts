@@ -204,7 +204,7 @@ describe('Langfuse config secrets', () => {
       enabled: true,
       destination: 'eu',
       publicKey: 'pk-lf-1',
-      secretKeyPreview: 'sk-lf-...cret',
+      secretKeyPreview: '...cret',
     });
   });
 
@@ -244,7 +244,7 @@ describe('Langfuse config secrets', () => {
     const redacted = redactConfigSecrets({
       langfuse: { publicKey: 'pk-lf-1', secretKey: 'v3:abc:def', displaySecretKey: 'sk-lf-...old' },
     });
-    expect(redacted.langfuse).toEqual({ publicKey: 'pk-lf-1', secretKeyPreview: 'sk-lf-...old' });
+    expect(redacted.langfuse).toEqual({ publicKey: 'pk-lf-1', secretKeyPreview: '...old' });
 
     const alreadyMigrated = redactConfigSecrets({
       langfuse: {
@@ -253,7 +253,7 @@ describe('Langfuse config secrets', () => {
         displaySecretKey: 'sk-lf-...old',
       },
     });
-    expect(alreadyMigrated.langfuse).toEqual({ secretKeyPreview: 'sk-lf-...new' });
+    expect(alreadyMigrated.langfuse).toEqual({ secretKeyPreview: '...new' });
 
     const encrypted = encryptConfigSecrets({
       langfuse: { secretKey: 'sk-lf-new-secret', displaySecretKey: 'sk-lf-...old' },
@@ -271,7 +271,7 @@ describe('Langfuse config secrets', () => {
     const preserved = preserveConfigSecrets({ langfuse: { publicKey: 'pk-new' } }, existing);
     const preservedLangfuse = preserved.langfuse as Record<string, string>;
     expect(decryptV3(preservedLangfuse.secretKey)).toBe('sk-lf-old-secret');
-    expect(preservedLangfuse.secretKeyPreview).toBe('sk-lf-...cret');
+    expect(preservedLangfuse.secretKeyPreview).toBe('...cret');
     expect(preservedLangfuse.displaySecretKey).toBeUndefined();
 
     expect(getConfigSecretInputError('langfuse.displaySecretKey', 'spoofed')).toContain(
@@ -508,7 +508,7 @@ describe('Config secret registry fields', () => {
       model: 'tts-1',
     });
     expect(redacted.speech.stt.openai).toEqual({
-      apiKeyPreview: 'sk-old...-old',
+      apiKeyPreview: '...-old',
       model: 'whisper-1',
     });
     expect(redacted.ocr).toEqual({
@@ -516,7 +516,7 @@ describe('Config secret registry fields', () => {
       mistralModel: 'mistral-ocr-latest',
     });
     expect(redacted.webSearch).toEqual({
-      serperApiKeyPreview: 'sk-lite...eral',
+      serperApiKeyPreview: '...eral',
       searchProvider: 'serper',
     });
   });
@@ -721,6 +721,25 @@ describe('Custom endpoint config secrets', () => {
     expect(b.apiKeyPreview).toBeUndefined();
   });
 
+  it('re-derives previews stored under the old prefix policy on read and preserve', () => {
+    const stored = {
+      langfuse: { secretKey: 'v3:abc:def', secretKeyPreview: 'sk-lf-...cret' },
+      endpoints: {
+        custom: [{ name: 'A', apiKey: 'v3:abc:def', apiKeyPreview: 'sk-or-...cret' }],
+      },
+    };
+    const redacted = redactConfigSecrets(structuredClone(stored)) as typeof stored;
+    expect(redacted.langfuse.secretKeyPreview).toBe('...cret');
+    expect(redacted.endpoints.custom[0].apiKeyPreview).toBe('...cret');
+
+    const preserved = preserveConfigSecrets(
+      { langfuse: { publicKey: 'pk' }, endpoints: { custom: [{ name: 'A' }] } },
+      structuredClone(stored),
+    ) as unknown as typeof stored;
+    expect(preserved.langfuse.secretKeyPreview).toBe('...cret');
+    expect(preserved.endpoints.custom[0].apiKeyPreview).toBe('...cret');
+  });
+
   it('encrypts section and array patched values from field maps', () => {
     const viaSection = encryptConfigSecretFields({
       endpoints: { custom: [{ name: 'A', apiKey: 'sk-section-key' }] },
@@ -731,10 +750,10 @@ describe('Custom endpoint config secrets', () => {
     expect(sectionEntry.apiKeyPreview).toBe('**************');
 
     const viaArray = encryptConfigSecretFields({
-      'endpoints.custom': [{ name: 'A', apiKey: '*************' }],
+      'endpoints.custom': [{ name: 'A', apiKey: 'sk-array-key0' }],
     });
     const arrayEntry = (viaArray['endpoints.custom'] as Array<Record<string, string>>)[0];
-    expect(decryptV3(arrayEntry.apiKey)).toBe('*************');
+    expect(decryptV3(arrayEntry.apiKey)).toBe('sk-array-key0');
     expect(arrayEntry.apiKeyPreview).toBe('*************');
   });
 
@@ -946,7 +965,7 @@ describe('Custom endpoint config secrets', () => {
     const [a, b, c, d, e] = redacted.endpoints.custom as Array<Record<string, string>>;
 
     expect(a.apiKey).toBeUndefined();
-    expect(a.apiKeyPreview).toBe('sk-a...key');
+    expect(a.apiKeyPreview).toBe('...key');
     expect(b.apiKey).toBeUndefined();
     expect(c.apiKey).toBe('user_provided');
     expect(d.apiKey).toBe('${OPENROUTER_KEY}');
