@@ -3,13 +3,7 @@ import { v4 } from 'uuid';
 import { useSetRecoilState } from 'recoil';
 import { useStore, useSetAtom } from 'jotai';
 import { useQueryClient } from '@tanstack/react-query';
-import {
-  QueryKeys,
-  StepEvents,
-  createPayload,
-  removeNullishValues,
-  TERMS_NOT_ACCEPTED_CODE,
-} from 'librechat-data-provider';
+import { StepEvents, createPayload, removeNullishValues } from 'librechat-data-provider';
 import type {
   Agents,
   TMessage,
@@ -23,6 +17,7 @@ import type {
 } from 'librechat-data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData, TFinalResData } from '~/common';
+import { reopenTermsOnRefusal } from '~/utils/terms';
 import { clearComposerDrafts, applyPendingAction, findPendingActionMessageIndex } from '~/utils';
 import { startedAsNewConversation, buildCreatedInitialResponse } from './useEventHandlers';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
@@ -30,6 +25,7 @@ import { abortScrollFamily, showStopButtonByIndex } from '~/store/generation';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useChatTransport } from '~/Providers/ChatTransportContext';
 import { useAuthContext } from '~/hooks/AuthContext';
+import useLocalize from '~/hooks/useLocalize';
 import useEventHandlers from './useEventHandlers';
 import useUsageHandler from './useUsageHandler';
 import store from '~/store';
@@ -90,6 +86,7 @@ export default function useSSE(
   });
 
   const queryClient = useQueryClient();
+  const localize = useLocalize();
   const { data: startupConfig } = useGetStartupConfig();
   const balanceQuery = useGetUserBalance({
     enabled: !!isAuthenticated && startupConfig?.balance?.enabled,
@@ -215,11 +212,7 @@ export default function useSSE(
 
     const handleError = (data: ChatErrorData | null | undefined) => {
       console.log('error in server stream.');
-      /** Terms were reset mid-session: refetching the status reopens the acceptance modal. */
-      if ((data as { code?: unknown } | null | undefined)?.code === TERMS_NOT_ACCEPTED_CODE) {
-        void queryClient.invalidateQueries([QueryKeys.startupConfig]);
-        void queryClient.invalidateQueries([QueryKeys.userTerms]);
-      }
+      const termsRefused = reopenTermsOnRefusal(queryClient, data);
       (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
       resetLive(currentSubmission);
       if (data === undefined) {
@@ -230,7 +223,9 @@ export default function useSSE(
        * the last queued tokens must land before it is synthesized. */
       flushPendingDeltas();
       errorHandler({
-        data: data as TResData | undefined,
+        data: termsRefused
+          ? ({ text: localize('com_error_terms_not_accepted') } as unknown as TResData)
+          : (data as TResData | undefined),
         submission: currentSubmission,
       });
     };

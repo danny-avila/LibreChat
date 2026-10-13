@@ -54,6 +54,11 @@ describe('createTermsAcceptanceGate', () => {
     ['POST', '/api/files'],
     ['DELETE', '/api/convos'],
     ['POST', '/api/agents/v1/chat/completions'],
+    ['POST', '/api/auth/2fa/disable'],
+    ['POST', '/api/auth/2fa/backup/regenerate'],
+    ['POST', '/api/auth/passkey/register'],
+    ['PATCH', '/api/auth/passkey/passkey-1'],
+    ['DELETE', '/api/auth/passkey/passkey-1'],
   ])('blocks %s %s for a user who has not accepted', async (method, url) => {
     expect(outcome(await run(createRequest(method, url)))).toBe('blocked');
   });
@@ -137,6 +142,22 @@ describe('createTermsAcceptanceGate', () => {
     await gate(createRequest('POST', '/api/files'), res, next);
     expect(next).toHaveBeenCalledWith(error);
     expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it('answers in the nested error envelope for remote agent boundaries', async () => {
+    const gate = createTermsAcceptanceGate(
+      { getAppConfig: jest.fn().mockResolvedValue(configWith(true)) },
+      { envelope: 'nested' },
+    );
+    const res = createResponse();
+    await gate(createRequest('POST', '/api/agents/v1/chat/completions'), res, jest.fn());
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({
+      error: expect.objectContaining({
+        code: TERMS_NOT_ACCEPTED_CODE,
+        type: 'invalid_request_error',
+      }),
+    });
   });
 
   it('resolves the config fail-closed so an override lookup failure cannot fall back to the base', async () => {

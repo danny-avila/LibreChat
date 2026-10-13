@@ -10,19 +10,27 @@ export interface TermsAcceptanceGateDependencies {
   getAppConfig: (options: GetAppConfigOptions) => Promise<AppConfig | undefined>;
 }
 
+export interface TermsAcceptanceGateOptions {
+  /** `nested` answers in the `{ error: { ... } }` envelope the remote agent boundaries expose. */
+  envelope?: 'flat' | 'nested';
+}
+
+const TERMS_NOT_ACCEPTED_MESSAGE = 'Terms of service must be accepted before using this feature';
+
 /** Reads never start new processing, so the app can load behind the acceptance modal. */
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 
-/** Writes a user must be able to make without having accepted: sign-in flows, accepting, leaving, or stopping a run already in progress. */
+/** Session upkeep, accepting, leaving, and stopping a run; credential management under /api/auth is not exempt. */
+const EXEMPT_POSTS = new Set([
+  '/api/auth/logout',
+  '/api/auth/cloudfront/refresh',
+  '/api/user/terms/accept',
+  '/api/agents/chat/abort',
+]);
+
 function isExempt(method: string, pathname: string): boolean {
-  if (pathname === '/api/auth' || pathname.startsWith('/api/auth/')) {
-    return true;
-  }
-  if (
-    method === 'POST' &&
-    (pathname === '/api/user/terms/accept' || pathname === '/api/agents/chat/abort')
-  ) {
-    return true;
+  if (method === 'POST') {
+    return EXEMPT_POSTS.has(pathname);
   }
   return method === 'DELETE' && pathname === '/api/user/delete';
 }
@@ -55,7 +63,10 @@ export function createTermsBlockCheck(deps: TermsAcceptanceGateDependencies) {
  * the user document already on the request; the config is resolved only for a user who has not
  * accepted and is attempting a write.
  */
-export function createTermsAcceptanceGate(deps: TermsAcceptanceGateDependencies) {
+export function createTermsAcceptanceGate(
+  deps: TermsAcceptanceGateDependencies,
+  options: TermsAcceptanceGateOptions = {},
+) {
   const isBlocked = createTermsBlockCheck(deps);
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     const user = req.user as TermsUser | undefined;
@@ -74,10 +85,18 @@ export function createTermsAcceptanceGate(deps: TermsAcceptanceGateDependencies)
       return;
     }
 
-    res.status(403).json({
-      code: TERMS_NOT_ACCEPTED_CODE,
-      message: 'Terms of service must be accepted before using this feature',
-    });
+    res.status(403).json(
+      options.envelope === 'nested'
+        ? {
+            error: {
+              type: 'invalid_request_error',
+              code: TERMS_NOT_ACCEPTED_CODE,
+              message: TERMS_NOT_ACCEPTED_MESSAGE,
+              param: null,
+            },
+          }
+        : { code: TERMS_NOT_ACCEPTED_CODE, message: TERMS_NOT_ACCEPTED_MESSAGE },
+    );
   };
 }
 

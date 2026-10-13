@@ -82,7 +82,9 @@ const requiredTwoFactorGate = createRequiredTwoFactorGate({
   tokenRetired: isTokenRetired,
 });
 
-const requireTermsAcceptance = createTermsAcceptanceGate({ getAppConfig });
+const requireJwtTermsAcceptance = createTermsAcceptanceGate({ getAppConfig });
+/** Remote agent and management boundaries answer in the nested error envelope. */
+const requireTermsAcceptance = createTermsAcceptanceGate({ getAppConfig }, { envelope: 'nested' });
 
 /**
  * Custom Middleware to handle JWT authentication, with support for OpenID token reuse.
@@ -209,7 +211,7 @@ const requireJwtAuth = (req, res, next) => {
           if (tenantErr) {
             return next(tenantErr);
           }
-          requireTermsAcceptance(req, res, (termsErr) => {
+          requireJwtTermsAcceptance(req, res, (termsErr) => {
             if (termsErr) {
               return next(termsErr);
             }

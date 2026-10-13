@@ -567,21 +567,22 @@ export function createUserMethods(
     /** Every user, not only those read as accepted beforehand: an acceptance racing the update may be cached. */
     const cursor = User.find({}).select('_id').lean().cursor();
     let batch: string[] = [];
-    let evicted = true;
     for await (const user of cursor) {
       batch.push(String(user._id));
       if (batch.length === TERMS_RESET_EVICTION_BATCH) {
-        evicted =
-          (await Promise.all(batch.map(invalidateAuthUserDocCache))).every(Boolean) && evicted;
+        await Promise.all(batch.map(invalidateAuthUserDocCache));
         batch = [];
       }
     }
-    evicted = (await Promise.all(batch.map(invalidateAuthUserDocCache))).every(Boolean) && evicted;
-    if (!evicted) {
-      logger.warn(
-        '[resetTermsAcceptance] Cached auth documents were not all evicted; waiting for them to expire',
-        { waitMs: AUTH_USER_DOC_CACHE_TTL_MS + AUTH_USER_DOC_EXPIRY_MARGIN_MS },
-      );
+    await Promise.all(batch.map(invalidateAuthUserDocCache));
+    if (isAuthUserDocCacheEnabled()) {
+      /**
+       * A request that read the old document before the update can still fill the cache after
+       * the eviction above, so no eviction result proves the reset took effect. Only expiry does.
+       */
+      logger.info('[resetTermsAcceptance] Waiting for cached auth documents to expire', {
+        waitMs: AUTH_USER_DOC_CACHE_TTL_MS + AUTH_USER_DOC_EXPIRY_MARGIN_MS,
+      });
       await (deps.delay ?? wait)(AUTH_USER_DOC_CACHE_TTL_MS + AUTH_USER_DOC_EXPIRY_MARGIN_MS);
     }
     return { modifiedCount: result.modifiedCount };

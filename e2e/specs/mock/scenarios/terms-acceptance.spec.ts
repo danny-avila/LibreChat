@@ -145,6 +145,13 @@ test.describe('Server-enforced terms acceptance', () => {
     expect(blocked.status()).toBe(403);
     expect(((await blocked.json()) as { code: string }).code).toBe('terms_not_accepted');
 
+    const credentialWrite = await request.post('/api/auth/2fa/disable', {
+      headers: session.headers,
+      failOnStatusCode: false,
+    });
+    expect(credentialWrite.status()).toBe(403);
+    expect(((await credentialWrite.json()) as { code: string }).code).toBe('terms_not_accepted');
+
     const read = await request.get('/api/user/terms', { headers: session.headers });
     expect(read.ok()).toBeTruthy();
     expect(((await read.json()) as { termsAccepted: boolean }).termsAccepted).toBe(false);

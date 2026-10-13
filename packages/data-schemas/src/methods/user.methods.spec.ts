@@ -1305,7 +1305,8 @@ describe('User Methods - Database Tests', () => {
         set: jest.fn().mockResolvedValue(true),
         delete: jest.fn().mockResolvedValue(true),
       };
-      const cached = createUserMethods(mongoose, { getCache: () => cache });
+      const delay = jest.fn().mockResolvedValue(undefined);
+      const cached = createUserMethods(mongoose, { getCache: () => cache, delay });
 
       const { modifiedCount } = await cached.resetTermsAcceptance();
 
@@ -1315,28 +1316,28 @@ describe('User Methods - Database Tests', () => {
       expect(stored?.termsAcceptedAt).toBeNull();
       expect(stored?.termsAcceptedSource).toBeUndefined();
       expect(cache.delete).toHaveBeenCalledWith('cached-accepted');
+      expect(delay).toHaveBeenCalledTimes(1);
     });
 
-    it('waits out the cache TTL when a cached document cannot be evicted', async () => {
-      enableAuthUserDocCache();
+    it('does not wait when the auth user cache is off', async () => {
       await User.create({
-        name: 'Stuck',
-        email: 'stuck-reset@example.com',
+        name: 'Cache Off',
+        email: 'cache-off-reset@example.com',
         provider: 'local',
         termsAccepted: true,
         termsAcceptedAt: new Date(),
       });
       const cache = {
-        get: jest.fn().mockResolvedValue(['cached-stuck']),
+        get: jest.fn().mockResolvedValue(null),
         set: jest.fn().mockResolvedValue(true),
-        delete: jest.fn().mockRejectedValue(new Error('delete failed')),
+        delete: jest.fn().mockResolvedValue(true),
       };
       const delay = jest.fn().mockResolvedValue(undefined);
-      const stuck = createUserMethods(mongoose, { getCache: () => cache, delay });
+      const off = createUserMethods(mongoose, { getCache: () => cache, delay });
 
-      await stuck.resetTermsAcceptance();
+      await off.resetTermsAcceptance();
 
-      expect(delay).toHaveBeenCalledTimes(1);
+      expect(delay).not.toHaveBeenCalled();
     });
   });
 

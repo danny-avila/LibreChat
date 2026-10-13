@@ -4,10 +4,10 @@ import { DndProvider } from 'react-dnd';
 import { RouterProvider } from 'react-router-dom';
 import * as RadixToast from '@radix-ui/react-toast';
 import { HTML5Backend } from 'react-dnd-html5-backend';
-import { QueryKeys, TERMS_NOT_ACCEPTED_CODE } from 'librechat-data-provider';
 import { Toast, ToastViewport, ToastProvider, useInputModality } from '@librechat/client';
 import { QueryClient, QueryClientProvider, QueryCache, MutationCache } from '@tanstack/react-query';
 import { ScreenshotProvider, useApiErrorBoundary } from './hooks';
+import { reopenTermsOnRefusal } from '~/utils/terms';
 import WakeLockManager from '~/components/System/WakeLockManager';
 import QueryDevtoolsGate from '~/components/QueryDevtoolsGate';
 import LanguageSync from '~/components/System/LanguageSync';
@@ -41,11 +41,7 @@ const App = () => {
     }),
     mutationCache: new MutationCache({
       onError: (error) => {
-        /** Terms were reset mid-session: refetch the status so the acceptance modal reopens. */
-        if (error?.response?.data?.code === TERMS_NOT_ACCEPTED_CODE) {
-          queryClient.invalidateQueries([QueryKeys.startupConfig]);
-          queryClient.invalidateQueries([QueryKeys.userTerms]);
-        }
+        reopenTermsOnRefusal(queryClient, error?.response?.data);
       },
     }),
   });
