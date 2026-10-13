@@ -776,6 +776,7 @@ describe('Prompt group list projections include `command`', () => {
       await PromptGroup.create({
         name: 'Command Projection Group',
         command: 'mytest-cmd',
+        productionId: new ObjectId(),
         author: testUsers.owner._id,
         authorName: testUsers.owner.name,
       })
