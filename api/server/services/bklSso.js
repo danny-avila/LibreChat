@@ -168,6 +168,44 @@ function toBklFields(data, loginId) {
  * @param {Record<string, unknown>} user      processOpenIDAuth 결과
  * @returns {Promise<{ok: boolean, sid?: number|null, message?: string}>}
  */
+const LOG_VALUE_MAX = 48;
+
+/**
+ * 클레임을 로그용으로 압축한다.
+ *
+ * **키는 하나도 거르지 않는다.** 어느 키에 UPN 성 값이 실려 오는지가 바로
+ * 우리가 모르는 것이라, 미리 고른 키만 찍으면 그 고름이 틀렸을 때 전부 '-' 로
+ * 보일 뿐 실마리가 남지 않는다. 대신 Azure 내부용 불투명 blob(`aio`, `rh` 등)이
+ * 길어서 줄을 덮으므로 긴 값만 잘라낸다 — 키 이름과 길이는 그대로 보인다.
+ */
+function claimsForLog(claims) {
+  if (!claims || typeof claims !== 'object') {
+    return claims;
+  }
+  const out = {};
+  for (const [key, value] of Object.entries(claims)) {
+    const text = typeof value === 'string' ? value : JSON.stringify(value);
+    out[key] =
+      typeof text === 'string' && text.length > LOG_VALUE_MAX
+        ? `${text.slice(0, 12)}…(${text.length})`
+        : value;
+  }
+  return out;
+}
+
+/**
+ * tokenset 에 어떤 토큰이 실려 왔는지만 남긴다.
+ *
+ * 원문을 찍지 않는 이유: access_token / id_token / refresh_token 이 그대로
+ * 들어 있어 로그 열람자가 해당 사용자의 토큰을 계속 재발급할 수 있게 되고,
+ * 로그는 수집기로 흘러가 회수가 어렵다. 디버깅에 필요한 내용물은 이미 위의
+ * 클레임으로 다 나온다.
+ */
+function presentTokenNames(tokenset) {
+  const names = ['id_token', 'access_token', 'refresh_token'].filter((key) => tokenset?.[key]);
+  return names.length ? names.join(',') : 'none';
+}
+
 async function linkBimsIdentity(tokenset, user) {
   const claims = tokenset?.claims ? tokenset.claims() : tokenset;
   const userId = user?._id;
@@ -180,30 +218,18 @@ async function linkBimsIdentity(tokenset, user) {
   const existing = await readUserDoc(userId);
   const candidates = bklIdCandidates(claims, existing?.bkl_login_id);
 
-  // 후보 산출 근거를 남긴다. `upn` 은 Azure v2.0 의 선택적 클레임이라 앱 등록
-  // 설정에 따라 통째로 빠질 수 있고, 그러면 조용히 preferred_username 으로
-  // 내려간다 — 로그가 없으면 "왜 이 id 로 붙었지?" 를 추적할 길이 없다.
-  //
-  // tokenset 전체를 찍지 않는 이유: access_token / id_token / refresh_token 이
-  // 원문 그대로 들어 있어, 로그 열람자가 해당 사용자의 토큰을 계속 재발급할 수
-  // 있게 된다. 식별에 필요한 클레임만 고른다.
+  // 클레임 원문과 거기서 나온 후보를 남긴다. `upn` 은 Azure v2.0 의 선택적
+  // 클레임이라 앱 등록 설정에 따라 통째로 빠질 수 있고, 그러면 조용히
+  // preferred_username 으로 내려간다 — 로그가 없으면 "왜 이 id 로 붙었지?" 를
+  // 추적할 길이 없다.
   logger.info(
-    `[BKL SSO] 후보 산출 [upn: ${claims?.upn ?? '-'}] ` +
-      `[preferred_username: ${claims?.preferred_username ?? '-'}] ` +
-      `[email: ${claims?.email ?? '-'}] [cached: ${existing?.bkl_login_id ?? '-'}] ` +
+    `[BKL SSO] id_token claims ${JSON.stringify(claimsForLog(claims))} ` +
+      `[tokens: ${presentTokenNames(tokenset)}]`,
+  );
+  logger.info(
+    `[BKL SSO] 후보 산출 [cached: ${existing?.bkl_login_id ?? '-'}] ` +
       `→ ${candidates.join(' → ') || '(없음)'}`,
   );
-
-  // 전체 클레임은 DEBUG_LOGGING=true 일 때만. 토큰 자체는 존재 여부만 남긴다.
-  logger.debug('[BKL SSO] id_token claims', {
-    claims,
-    tokens: {
-      id_token: tokenset?.id_token ? 'present' : 'absent',
-      access_token: tokenset?.access_token ? 'present' : 'absent',
-      refresh_token: tokenset?.refresh_token ? 'present' : 'absent',
-      expires_in: tokenset?.expires_in ?? null,
-    },
-  });
 
   if (!candidates.length) {
     logger.error(
