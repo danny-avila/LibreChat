@@ -25,11 +25,7 @@ const {
   getSkillFileByPath,
   getRoleByName,
 } = require('~/models');
-const {
-  requireJwtAuth,
-  canAccessSkillResource,
-  isTermsAcceptanceRequired,
-} = require('~/server/middleware');
+const { requireJwtAuth, canAccessSkillResource } = require('~/server/middleware');
 const { grantPermission } = require('~/server/services/PermissionService');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { createFileLimiters } = require('~/server/middleware/limiters/uploadLimiters');
@@ -165,9 +161,6 @@ const uploadFileHandler = createSkillUploadHandler({
 // ---------------------------------------------------------------------------
 async function maybeStartRequestSkillSync(req, _res, next) {
   try {
-    if (await isTermsAcceptanceRequired(req.user)) {
-      return next();
-    }
     await maybeRunGitHubSkillSyncForRequest(req);
   } catch (error) {
     logger.error('[GET /skills] Failed to start request-scoped skill sync:', error);

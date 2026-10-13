@@ -36,7 +36,6 @@ const { CONTENT_TRAVERSAL_MAX_DEPTH } = require('@librechat/api');
 let mockFileConfig;
 let mockFilters;
 const mockMaybeRunGitHubSkillSyncForRequest = jest.fn(async () => false);
-const mockIsTermsAcceptanceRequired = jest.fn(async () => false);
 
 jest.mock('~/server/services/Config', () => ({
   getCachedTools: jest.fn().mockResolvedValue({}),
@@ -99,7 +98,6 @@ jest.mock('~/models', () => {
 
 jest.mock('~/server/middleware', () => ({
   requireJwtAuth: (req, res, next) => next(),
-  isTermsAcceptanceRequired: (...args) => mockIsTermsAcceptanceRequired(...args),
   canAccessSkillResource: jest.requireActual('~/server/middleware').canAccessSkillResource,
 }));
 
@@ -665,14 +663,6 @@ describe('Skill routes', () => {
       );
       expect(res.body.skills.length).toBe(1);
       expect(res.body.skills[0].name).toBe('mine-skill');
-    });
-
-    it('lists without starting a skill sync for a user who must accept the terms first', async () => {
-      mockMaybeRunGitHubSkillSyncForRequest.mockClear();
-      mockIsTermsAcceptanceRequired.mockResolvedValueOnce(true);
-      const res = await request(app).get('/api/skills');
-      expect(res.status).toBe(200);
-      expect(mockMaybeRunGitHubSkillSyncForRequest).not.toHaveBeenCalled();
     });
   });
 

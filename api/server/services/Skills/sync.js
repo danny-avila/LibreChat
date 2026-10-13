@@ -1,6 +1,7 @@
 const { FileContext } = require('librechat-data-provider');
 const {
   getStorageMetadata,
+  createTermsBlockCheck,
   createGitHubSkillSyncRunner,
   createSkillSyncTriggerOrchestrator,
   startGitHubSkillSyncScheduler,
@@ -10,6 +11,8 @@ const db = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { getFileStrategy } = require('~/server/utils/getFileStrategy');
+
+const isTermsAcceptanceRequired = createTermsBlockCheck({ getAppConfig });
 
 const SYSTEM_USER_ID = '000000000000000000000000';
 
@@ -175,6 +178,10 @@ function getGitHubSkillSyncRunnerForRequest(req) {
 }
 
 async function maybeRunGitHubSkillSyncForRequest(req) {
+  /** The list route is a read the terms gate lets through; the sync it starts is processing. */
+  if (await isTermsAcceptanceRequired(req.user)) {
+    return false;
+  }
   const baseConfig = await loadCurrentAppConfig();
   return triggerOrchestrator.maybeRunForRequest({
     ...withBaseSkillSyncConfig(req, baseConfig),
