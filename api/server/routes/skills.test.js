@@ -108,6 +108,7 @@ let mongoServer;
 let skillRoutes;
 let Skill;
 let SkillFile;
+let SkillUploadIntent;
 let AclEntry;
 let AccessRole;
 let User;
@@ -127,6 +128,7 @@ beforeAll(async () => {
   const dbModels = require('~/db/models');
   Skill = dbModels.Skill;
   SkillFile = dbModels.SkillFile;
+  SkillUploadIntent = dbModels.SkillUploadIntent;
   AclEntry = dbModels.AclEntry;
   AccessRole = dbModels.AccessRole;
   User = dbModels.User;
@@ -161,6 +163,7 @@ beforeAll(async () => {
 afterEach(async () => {
   await Skill.deleteMany({});
   await SkillFile.deleteMany({});
+  await SkillUploadIntent.deleteMany({});
   await AclEntry.deleteMany({});
   currentTestUser = testUsers.owner;
   mockFileConfig = undefined;
@@ -1177,7 +1180,7 @@ describe('Skill routes', () => {
       }
     });
 
-    it('acknowledges a replacement and cleans up the superseded blob if the parent bump fails', async () => {
+    it('acknowledges a replacement and queues the superseded blob if the parent bump fails', async () => {
       const { getStrategyFunctions } = require('~/server/services/Files/strategies');
       const { upsertSkillFile } = require('~/models');
       const originalStrategy = getStrategyFunctions.getMockImplementation();
@@ -1223,12 +1226,13 @@ describe('Skill routes', () => {
           file_id: expect.not.stringMatching('original'),
         });
         expect(saveBuffer).toHaveBeenCalledTimes(1);
-        expect(deleteFile).toHaveBeenCalledTimes(1);
-        expect(deleteFile.mock.calls[0][1]).toMatchObject({
-          filepath: oldPath,
-          user: testUsers.editor._id.toString(),
+        expect(deleteFile).not.toHaveBeenCalled();
+        expect(await SkillUploadIntent.findOne({ fileId: 'original' }).lean()).toMatchObject({
+          state: 'committed',
+          storageKey: oldPath,
+          cleanupRequestedAt: expect.any(Date),
         });
-        expect(stored.has(oldPath)).toBe(false);
+        expect(stored.has(oldPath)).toBe(true);
         expect(stored.has(newPath)).toBe(true);
       } finally {
         bump.mockRestore();
