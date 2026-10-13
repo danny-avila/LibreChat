@@ -2146,7 +2146,6 @@ export const endpointSchema = baseEndpointSchema.merge(
     }),
     iconURL: z.string().optional(),
     modelDisplayLabel: z.string().optional(),
-    requiredMcpServers: z.array(z.string().min(1)).optional(),
     visible: z.boolean().optional(),
     /**
      * Forces the endpoint to use a provider's native client / request format
