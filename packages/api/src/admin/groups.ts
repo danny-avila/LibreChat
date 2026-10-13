@@ -355,11 +355,15 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
       if (!isValidObjectIdString(id)) {
         return res.status(400).json({ error: 'Invalid group ID format' });
       }
-      const deleted = await deleteGroup(id);
-      if (!deleted) {
+      const existing = await findGroupById(id);
+      if (!existing) {
         return res.status(404).json({ error: 'Group not found' });
       }
       /**
+       * Config overrides and ACL entries are keyed by group id, so they are
+       * removed before the group itself: if any removal fails the group stays
+       * and the admin can retry, instead of leaving orphaned entries that a
+       * later principal could inherit. Every removal is idempotent.
        * deleteAclEntries is a raw deleteMany wrapper with no type casting.
        * grantPermission stores group principalId as ObjectId, so we must
        * cast here. deleteConfig normalizes internally.
@@ -371,10 +375,19 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
           principalId: new Types.ObjectId(id),
         }),
       ]);
-      for (const result of cleanupResults) {
-        if (result.status === 'rejected') {
-          logger.error('[adminGroups] cascade cleanup step failed for group:', id, result.reason);
+      const cleanupFailed = cleanupResults.filter((result) => result.status === 'rejected');
+      if (cleanupFailed.length > 0) {
+        for (const result of cleanupFailed) {
+          logger.error('[adminGroups] cascade cleanup failed for group:', id, result.reason);
         }
+        return res.status(500).json({
+          error: 'Failed to remove the group permissions and config; the group was not deleted',
+          code: 'GROUP_CLEANUP_FAILED',
+        });
+      }
+      const deleted = await deleteGroup(id);
+      if (!deleted) {
+        return res.status(404).json({ error: 'Group not found' });
       }
       /** Every member loses group-scoped access, so the affected accounts are recorded (chunked). */
       const revoked = [...new Set(deleted.memberIds ?? [])];
