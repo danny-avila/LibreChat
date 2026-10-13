@@ -24,7 +24,7 @@ Set ingress.tls with a secretName and hosts, or terminate TLS at your load balan
 {{- end }}
 {{- range $host := .Values.ingress.hosts }}
   {{- range .paths }}
-  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}{{ .path }}
+  http{{ if or $tlsAll (has $host.host $covered) }}s{{ end }}://{{ $host.host }}{{ .path }}
   {{- end }}
 {{- end }}
 {{- else if contains "NodePort" .Values.service.type }}

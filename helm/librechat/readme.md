@@ -19,7 +19,7 @@ kubectl get secret <release>-mongodb -o jsonpath='{.data.mongodb-root-password}'
 helm upgrade <release> ... --set mongodb.auth.rootPassword=<password>
 ```
 
-Redis needs `--set redis.auth.password=<password>` the same way (`redis-password` in the `<release>-redis` Secret).
+Redis needs `--set redis.auth.password=<password>` the same way (`redis-password` in the `<release>-redis` Secret). With `mongodb.architecture=replicaset`, also keep the replica set key: read `mongodb-replica-set-key` from the same Secret and pass it as `--set mongodb.auth.replicaSetKey=<key>`.
 
 ### Upgrading from an unauthenticated bundled MongoDB
 
