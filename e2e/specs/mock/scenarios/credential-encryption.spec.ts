@@ -1,5 +1,4 @@
-import { ObjectId } from 'mongodb';
-import { randomUUID } from 'crypto';
+import { createCipheriv, randomUUID } from 'crypto';
 import { expect, test } from '@playwright/test';
 import type { APIRequestContext } from '@playwright/test';
 import type { User } from '../../../types';
@@ -90,32 +89,17 @@ async function readStoredAuths(userId: string, pluginKey: string): Promise<Store
 }
 
 /**
- * Produces a value in the legacy fixed-IV format by letting the server encrypt it on a
- * path that still writes that format (user endpoint keys), then removes the key record.
+ * Produces a value in the legacy fixed-IV format with the server's credential key and IV,
+ * which the mock config exports to the test runner. No current write path emits this
+ * format by default, so a legacy record has to be built the way an old install stored it.
  */
-async function legacyCiphertext(
-  request: APIRequestContext,
-  token: string,
-  userId: string,
-  plaintext: string,
-): Promise<string> {
-  const name = `e2e-legacy-${randomUUID()}`;
-  const response = await request.put('/api/keys', {
-    headers: { Authorization: `Bearer ${token}` },
-    data: { name, value: plaintext },
-  });
-  expect(response.status()).toBe(201);
-  return withMongo(async (db) => {
-    const doc = await db
-      .collection('keys')
-      .findOneAndDelete({ userId: new ObjectId(userId), name });
-    const value = (doc as { value?: unknown } | null)?.value;
-    if (typeof value !== 'string') {
-      throw new Error('Expected the legacy key record to carry an encrypted value');
-    }
-    expect(value).toMatch(LEGACY_FORMAT);
-    return value;
-  });
+function legacyCiphertext(plaintext: string): string {
+  const key = Buffer.from(process.env.CREDS_KEY ?? '', 'hex');
+  const iv = Buffer.from(process.env.CREDS_IV ?? '', 'hex');
+  const cipher = createCipheriv('aes-256-cbc', key, iv);
+  const value = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]).toString('hex');
+  expect(value).toMatch(LEGACY_FORMAT);
+  return value;
 }
 
 async function seedStoredAuth(userId: string, auth: StoredAuth): Promise<void> {
@@ -231,7 +215,7 @@ test.describe('stored credential encryption', () => {
 
       const seeded: StoredAuth[] = [];
       for (const authField of Object.values(WEB_SEARCH_FIELDS)) {
-        const value = await legacyCiphertext(request, token, userId, `e2e-legacy-${authField}`);
+        const value = legacyCiphertext(`e2e-legacy-${authField}`);
         const auth = { authField, value, pluginKey: WEB_SEARCH };
         await seedStoredAuth(userId, auth);
         seeded.push(auth);
@@ -259,7 +243,7 @@ test.describe('stored credential encryption', () => {
         firecrawlApiKey: secret,
         jinaApiKey: secret,
       });
-      const legacy = await legacyCiphertext(request, token, userId, secret);
+      const legacy = legacyCiphertext(secret);
       await seedStoredAuth(userId, {
         authField: WEB_SEARCH_FIELDS.serperApiKey,
         value: legacy,
@@ -311,7 +295,7 @@ test.describe('stored credential encryption', () => {
     const user = newUser('mcp-legacy');
     try {
       const { token, userId } = await registerAndLogin(request, user);
-      const value = await legacyCiphertext(request, token, userId, MCP_TOKEN);
+      const value = legacyCiphertext(MCP_TOKEN);
       await seedStoredAuth(userId, { authField: MCP_VAR, value, pluginKey: MCP_PLUGIN_KEY });
 
       expect(await mcpVarIsSet(request, token)).toBe(true);
