@@ -77,6 +77,19 @@ describe('redactMessage', () => {
     expect(redactMessage('user@उदाहरण.भारत ok')).toBe('[REDACTED_EMAIL] ok');
   });
 
+  it('masks address-literal domains without eating the closing bracket of a label', () => {
+    expect(redactMessage('user@[192.0.2.1] ok')).toBe('[REDACTED_EMAIL] ok');
+    expect(redactMessage('[Email: a@b.com]')).toBe('[Email: [REDACTED_EMAIL]]');
+  });
+
+  it('does not let a truncated address slip past the matcher', () => {
+    const lead = `${'x '.repeat(4090)}`;
+    const input = `${lead}janedoe123@example.com and more`;
+    const out = String(runRedactFormat({ level: 'info', message: input }).message);
+    expect(out).not.toContain('janedoe');
+    expect(out).toContain('truncated');
+  });
+
   it('masks quoted local parts', () => {
     expect(redactMessage('user "jane.doe"@example.com ok')).toBe('user [REDACTED_EMAIL] ok');
     expect(redactMessage('user "jane\\"doe"@example.com ok')).toBe('user [REDACTED_EMAIL] ok');

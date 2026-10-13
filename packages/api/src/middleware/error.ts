@@ -8,7 +8,7 @@ import { OpenIDReauthRequiredError } from '~/utils/oidc';
 
 const handleDuplicateKeyError = (err: MongoServerError, res: Response) => {
   logger.warn('Duplicate key error', {
-    code: err.code,
+    mongoCode: err.code,
     fields: err.keyValue ? Object.keys(err.keyValue) : [],
   });
   const field = err.keyValue ? `${JSON.stringify(Object.keys(err.keyValue))}` : 'unknown';

@@ -106,7 +106,7 @@ describe('ErrorController', () => {
         fields: '["email"]',
       });
       expect(logger.warn).toHaveBeenCalledWith('Duplicate key error', {
-        code: 11000,
+        mongoCode: 11000,
         fields: ['email'],
       });
       expect(JSON.stringify((logger.warn as jest.Mock).mock.calls)).not.toContain(
@@ -132,7 +132,7 @@ describe('ErrorController', () => {
         fields: '["email","username"]',
       });
       expect(logger.warn).toHaveBeenCalledWith('Duplicate key error', {
-        code: 11000,
+        mongoCode: 11000,
         fields: ['email', 'username'],
       });
     });
