@@ -68,6 +68,29 @@ describe('Skill deletion journal', () => {
     expect(await mongoose.models.SkillDeletion.countDocuments({ skillId: skill._id })).toBe(1);
   });
 
+  it('releases the public name at the deletion mark without dropping the unique index', async () => {
+    const { skill, author } = await makeSkill();
+    await mongoose.models.Skill.init();
+
+    await lifecycle.beginSkillDeletion(skill.id);
+    expect(
+      ((await mongoose.models.Skill.findById(skill.id).lean()) as { name: string } | null)?.name,
+    ).toBe(`__deleted__${skill.id}`);
+    const replacement = await mongoose.models.Skill.create({
+      name: 'example',
+      description: 'Replacement',
+      body: '',
+      author,
+      authorName: 'Example',
+      tenantId: 'tenant-a',
+    });
+    expect(replacement.name).toBe('example');
+    await lifecycle.beginSkillDeletion(skill.id);
+    expect(
+      ((await mongoose.models.Skill.findById(skill.id).lean()) as { name: string } | null)?.name,
+    ).toBe(`__deleted__${skill.id}`);
+  });
+
   it('repairs a crash between the Skill mark and tombstone insert', async () => {
     const { skill } = await makeSkill();
     await mongoose.models.Skill.updateOne(

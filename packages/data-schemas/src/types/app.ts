@@ -69,6 +69,7 @@ export interface AppConfig {
   webSearch?: TCustomConfig['webSearch'];
   githubCompare?: TCustomConfig['githubCompare'];
   skillDeletion?: {
+    finalizationEnabled?: boolean;
     sweepIntervalMs?: number;
     claimLeaseMs?: number;
     batchSize?: number;

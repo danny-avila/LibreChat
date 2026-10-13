@@ -399,7 +399,7 @@ export type TSkillImportFailedResponse = {
 export type TDeleteSkillResponse = {
   id: string;
   deleted: true;
-  /** False when the Skill row is gone but a dependent cleanup step needs repair. */
+  /** False while provider cleanup or final removal is still pending. */
   cleanupComplete?: boolean;
 };
 

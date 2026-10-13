@@ -128,6 +128,8 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
       (await deps.persistence.beginSkillDeletion(skillId)) ??
       (await deps.persistence.getSkillDeletion(skillId));
     if (!journal) return pendingDeletion(false);
+    const config = loadedConfig === null ? await deps.loadConfig() : loadedConfig;
+    if (config?.skillDeletion?.finalizationEnabled !== true) return pendingDeletion(true);
     const owner = randomUUID();
     if (!(await deps.persistence.claimSkillDeletion(skillId, owner, claimLeaseMs))) {
       // A completed tombstone may be deliberately deferred until its next cold audit.
@@ -162,7 +164,6 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
     }, claimLeaseMs / 4);
     heartbeat.unref?.();
     try {
-      const config = loadedConfig === null ? await deps.loadConfig() : loadedConfig;
       const progress = await runSkillDeletion(
         skillId,
         {
@@ -391,23 +392,34 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
           try {
             await deps.persistence.discoverUnjournaledDeletions(batchSize);
             const tombstones = await deps.persistence.listSkillDeletionTombstones(batchSize);
-            for (const tombstone of tombstones) {
-              const skillId = tombstone.skillId;
-              try {
-                const progress = await deleteWithClaim(skillId, claimLeaseMs);
-                if (!progress.cleanupComplete) {
-                  // A live upload is never timed out automatically. Operators must verify
-                  // its writer is dead before explicitly abandoning the intent.
-                  deps.logger.warn(
-                    `[skill deletion] ${skillId} pending manual/retry cleanup: ${progress.failedSteps.join(', ')}`,
-                  );
-                }
-              } catch (error) {
-                deps.logger.error(
-                  `[skill deletion] Cleanup failed for ${skillId}:`,
-                  getSafeErrorMetadata(error),
-                );
-              }
+            const config = await deps.loadConfig();
+            if (config?.skillDeletion?.finalizationEnabled === true) {
+              const limit = createConcurrencyLimiter(
+                config?.fileConfig?.skills?.deletionCleanupConcurrency ??
+                  DEFAULT_SKILL_DELETION_CLEANUP_CONCURRENCY,
+              );
+              await Promise.all(
+                tombstones.map((tombstone) =>
+                  limit(async () => {
+                    const skillId = tombstone.skillId;
+                    try {
+                      const progress = await deleteWithClaim(skillId, claimLeaseMs, config);
+                      if (!progress.cleanupComplete) {
+                        // A live upload is never timed out automatically. Operators must verify
+                        // its writer is dead before explicitly abandoning the intent.
+                        deps.logger.warn(
+                          `[skill deletion] ${skillId} pending manual/retry cleanup: ${progress.failedSteps.join(', ')}`,
+                        );
+                      }
+                    } catch (error) {
+                      deps.logger.error(
+                        `[skill deletion] Cleanup failed for ${skillId}:`,
+                        getSafeErrorMetadata(error),
+                      );
+                    }
+                  }),
+                ),
+              );
             }
           } finally {
             // Active Skills can own abandoned upload intents with no deletion tombstone.

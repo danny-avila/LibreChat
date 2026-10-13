@@ -48,7 +48,9 @@ it('records failed cleanup attempts before releasing the claim', async () => {
   };
   const service = createSkillDeletionService({
     persistence,
-    loadConfig: jest.fn(async () => undefined),
+    loadConfig: jest.fn(
+      async () => ({ skillDeletion: { finalizationEnabled: true } }) as unknown as AppConfig,
+    ),
     getStrategyFunctions: jest.fn(() => ({})),
     runAsSystem: async (callback) => callback(),
     logger: { error: jest.fn(), warn: jest.fn() },
@@ -187,7 +189,10 @@ function claimedServiceHarness() {
     skillFileExistsForIntent: jest.fn(async () => false),
   };
   const deleteFile = jest.fn(async (): Promise<void> => undefined);
-  const loadConfig = jest.fn(async (): Promise<AppConfig | undefined> => undefined);
+  const loadConfig = jest.fn(
+    async (): Promise<AppConfig | undefined> =>
+      ({ skillDeletion: { finalizationEnabled: true } }) as unknown as AppConfig,
+  );
   const logger = { error: jest.fn(), warn: jest.fn() };
   const service = createSkillDeletionService({
     persistence,
@@ -199,9 +204,99 @@ function claimedServiceHarness() {
   return { skillId, persistence, deleteFile, loadConfig, logger, service };
 }
 
+it('marks deletion but cannot finalize until the writer-drain gate is enabled', async () => {
+  const h = claimedServiceHarness();
+  h.loadConfig.mockResolvedValue({
+    skillDeletion: { finalizationEnabled: false },
+  } as unknown as AppConfig);
+
+  const pending = await h.service.deleteSkillById(h.skillId);
+  expect(pending).toMatchObject({ found: true, deleted: false, cleanupComplete: false });
+  expect(h.persistence.beginSkillDeletion).toHaveBeenCalledWith(h.skillId);
+  expect(h.persistence.claimSkillDeletion).not.toHaveBeenCalled();
+  expect(h.persistence.finalizeSkillDeletion).not.toHaveBeenCalled();
+
+  h.loadConfig.mockResolvedValue({
+    skillDeletion: { finalizationEnabled: true },
+  } as unknown as AppConfig);
+  const completed = await h.service.deleteSkillById(h.skillId);
+  expect(completed.cleanupComplete).toBe(true);
+  expect(h.persistence.finalizeSkillDeletion).toHaveBeenCalledTimes(1);
+});
+
+it('processes independent deletion tombstones with bounded concurrency', async () => {
+  const h = claimedServiceHarness();
+  h.persistence.listSkillDeletionTombstones.mockResolvedValue(
+    ['507f1f77bcf86cd799439011', '507f1f77bcf86cd799439012', '507f1f77bcf86cd799439013'].map(
+      (skillId) => ({ skillId, completedAt: undefined }),
+    ),
+  );
+  h.persistence.claimSkillDeletion.mockResolvedValue(true);
+  h.persistence.refreshSkillDeletionClaim.mockResolvedValue(true);
+  h.persistence.listSkillFiles.mockImplementation(async () => [
+    {
+      file_id: 'file-1',
+      filepath: '/uploads/file-1',
+      source: 'local',
+      author: '507f1f77bcf86cd799439012',
+    },
+  ]);
+  h.persistence.deleteSkillFileAfterBlob.mockResolvedValue(true);
+  h.loadConfig.mockResolvedValue({
+    skillDeletion: { finalizationEnabled: true },
+    fileConfig: { skills: { deletionCleanupConcurrency: 2 } },
+  } as unknown as AppConfig);
+  let active = 0;
+  let peak = 0;
+  let started = 0;
+  let twoStarted!: () => void;
+  let threeStarted!: () => void;
+  let allCompleted!: () => void;
+  const firstPair = new Promise<void>((resolve) => {
+    twoStarted = resolve;
+  });
+  const third = new Promise<void>((resolve) => {
+    threeStarted = resolve;
+  });
+  const done = new Promise<void>((resolve) => {
+    allCompleted = resolve;
+  });
+  const releases: Array<() => void> = [];
+  let completed = 0;
+  h.persistence.releaseSkillDeletionClaim.mockImplementation(async () => {
+    completed++;
+    if (completed === 3) allCompleted();
+  });
+  h.deleteFile.mockImplementation(async () => {
+    active++;
+    peak = Math.max(peak, active);
+    started++;
+    if (started === 2) twoStarted();
+    if (started === 3) threeStarted();
+    await new Promise<void>((resolve) => releases.push(resolve));
+    active--;
+  });
+
+  const sweep = h.service.startSkillDeletionSweep();
+  try {
+    await firstPair;
+    expect(h.deleteFile).toHaveBeenCalledTimes(2);
+    releases[0]();
+    await third;
+    expect(peak).toBe(2);
+    for (const release of releases.slice(1)) release();
+    await done;
+    expect(h.persistence.finalizeSkillDeletion).toHaveBeenCalledTimes(3);
+  } finally {
+    sweep.stop();
+  }
+});
+
 it('uses the configured claim lease for direct deletion', async () => {
   const h = claimedServiceHarness();
-  h.loadConfig.mockResolvedValue({ skillDeletion: { claimLeaseMs: 9_000 } } as AppConfig);
+  h.loadConfig.mockResolvedValue({
+    skillDeletion: { finalizationEnabled: true, claimLeaseMs: 9_000 },
+  } as unknown as AppConfig);
   await h.service.deleteSkillById(h.skillId);
   expect(h.persistence.claimSkillDeletion).toHaveBeenCalledWith(
     h.skillId,

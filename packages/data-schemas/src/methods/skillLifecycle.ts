@@ -103,7 +103,10 @@ export function createSkillLifecycleMethods(
     const skill = (await skillModel()
       .findOneAndUpdate(
         { _id: skillId, deletingAt: { $exists: false } },
-        { $set: { deletingAt: new Date(), deletionNeedsJournal: true } },
+        // The reserved name cannot be created through Skill validation. Moving
+        // it in the same write as the deletion mark releases the public name
+        // under the existing unique index, without an index migration.
+        { $set: { name: `__deleted__${id}`, deletingAt: new Date(), deletionNeedsJournal: true } },
         { new: true },
       )
       .lean()) as SkillRow | null;
