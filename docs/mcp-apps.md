@@ -62,16 +62,19 @@ server/tool allowlist:
 mcpSettings:
   appToolApproval:
     allow:
-      - 'mcp:cogsworth:home_bot_message'
+      - server: cogsworth
+        tool: home_bot_message
 ```
 
-Targets use `mcp:<server>:<tool>` and do not support wildcards. An omitted or empty list keeps the
-default confirmation for every App tool call. This setting affects only App-initiated tool calls;
-App-authored messages still require approval, and Agent tool approval continues to follow
-`endpoints.agents.toolApproval`. Allowlisted Apps can run the named tool without a per-action
-confirmation, so only add tools from Apps you trust. This is not a server authorization control:
-the MCP server's permissions and authenticated route checks still apply. Changes take effect when
-startup configuration is refreshed and open chat pages reload.
+Each entry identifies the raw MCP server name and tool name exactly; wildcard matching is not
+used. Structured fields support server or tool names containing spaces or colons. An omitted or
+empty list keeps the default confirmation for every App tool call. This setting affects only
+App-initiated tool calls; App-authored messages still require approval, and Agent tool approval
+continues to follow `endpoints.agents.toolApproval`. The setting does not identify an individual
+App resource: every App served by the listed MCP server may call the named tool without a
+per-action confirmation. Only allow tools trusted for every App on that server. This is not a
+server authorization control: the MCP server's permissions and authenticated route checks still
+apply. Changes take effect when startup configuration is refreshed and open chat pages reload.
 
 Set `mcpSettings.apps: true` to enable MCP Apps and legacy inline HTML. When the field is omitted,
 new MCP Apps stay disabled while existing legacy inline HTML remains enabled for upgrade

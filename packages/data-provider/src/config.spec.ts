@@ -22,6 +22,7 @@ import {
   DEFAULT_MCP_APP_OPERATION_LIMITS,
   MAX_MCP_APP_PERSISTED_BYTES,
   resolveMCPAppRateLimits,
+  resolveMCPAppToolApprovalPolicy,
   resolveMCPAppsPolicy,
   endpointSchema,
   isTwoFactorPolicyProvider,
@@ -2402,8 +2403,8 @@ describe('bedrockModels defaults', () => {
 });
 
 describe('MCP Apps configuration', () => {
-  it('accepts exact App tool approval targets without enabling them by default', () => {
-    const target = 'mcp:cogsworth:home_bot_message';
+  it('accepts exact structured App tool approval targets without enabling them by default', () => {
+    const target = { server: 'Connector: Company', tool: 'remove item' };
     expect(configSchema.parse({ version: '1.2.1' }).mcpSettings).toBeUndefined();
     expect(
       configSchema.parse({
@@ -2411,17 +2412,28 @@ describe('MCP Apps configuration', () => {
         mcpSettings: { appToolApproval: { allow: [target] } },
       }).mcpSettings?.appToolApproval?.allow,
     ).toEqual([target]);
+    expect(resolveMCPAppToolApprovalPolicy({ allow: [target] })).toEqual({ allow: [target] });
   });
 
-  it.each(['*', 'mcp:cogsworth:*', 'cogsworth:home_bot_message', 'mcp::tool', 'mcp:server:'])(
-    'rejects non-exact App tool approval target %j',
-    (target) => {
-      expect(
-        configSchema.safeParse({
-          version: '1.2.1',
-          mcpSettings: { appToolApproval: { allow: [target] } },
-        }).success,
-      ).toBe(false);
+  it.each([
+    { server: '', tool: 'read' },
+    { server: 'server', tool: '' },
+    { server: 'server', tool: 'read', app: 'ui://app' },
+    'mcp:server:read',
+    null,
+  ])('rejects malformed App tool approval targets %p', (target) => {
+    expect(
+      configSchema.safeParse({
+        version: '1.2.1',
+        mcpSettings: { appToolApproval: { allow: [target] } },
+      }).success,
+    ).toBe(false);
+  });
+
+  it.each(['mcp:server:tool', { allow: 'mcp:server:tool' }, { allow: [null] }])(
+    'fails closed when resolving malformed startup approval policy %p',
+    (policy) => {
+      expect(resolveMCPAppToolApprovalPolicy(policy)).toBeUndefined();
     },
   );
 

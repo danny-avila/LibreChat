@@ -31,7 +31,11 @@ function SandboxPolicyProbe() {
 
 function AppToolApprovalProbe() {
   const { appToolApproval } = useMCPAppsPolicy();
-  return <output>{appToolApproval?.allow?.join(',') ?? 'none'}</output>;
+  return (
+    <output>
+      {appToolApproval?.allow?.map(({ server, tool }) => `${server}:${tool}`).join(',') ?? 'none'}
+    </output>
+  );
 }
 
 function CachedPolicyProvider({ children }: { children: React.ReactNode }) {
@@ -136,7 +140,9 @@ describe('MCPAppsPolicyProvider', () => {
             mcpApps: {
               enabled: true,
               legacyHtmlEnabled: true,
-              appToolApproval: { allow: ['mcp:cogsworth:home_bot_message'] },
+              appToolApproval: {
+                allow: [{ server: 'cogsworth', tool: 'home_bot_message' }],
+              },
             },
           } as TStartupConfig
         }
@@ -146,7 +152,33 @@ describe('MCPAppsPolicyProvider', () => {
       </MCPAppsPolicyProvider>,
     );
 
-    expect(screen.getByText('mcp:cogsworth:home_bot_message')).toBeInTheDocument();
+    expect(screen.getByText('cogsworth:home_bot_message')).toBeInTheDocument();
+  });
+
+  it.each([
+    'mcp:cogsworth:home_bot_message',
+    { allow: 'mcp:cogsworth:home_bot_message' },
+    { allow: [null] },
+    { allow: [{ server: 'cogsworth', tool: 'home_bot_message', extra: true }] },
+  ])('fails closed for a malformed startup App tool approval policy %p', (appToolApproval) => {
+    render(
+      <MCPAppsPolicyProvider
+        startupConfig={
+          {
+            mcpApps: {
+              enabled: true,
+              legacyHtmlEnabled: true,
+              appToolApproval,
+            },
+          } as unknown as TStartupConfig
+        }
+        ready
+      >
+        <AppToolApprovalProbe />
+      </MCPAppsPolicyProvider>,
+    );
+
+    expect(screen.getByText('none')).toBeInTheDocument();
   });
 
   it('falls back to bounded policy values when a published startup payload is malformed', () => {

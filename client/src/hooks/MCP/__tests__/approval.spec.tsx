@@ -1,5 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render, screen } from '@testing-library/react';
+import type { TMCPAppToolApprovalTarget } from 'librechat-data-provider';
 import { MCPAppApproval, useMCPAppApproval } from '../approval';
 
 jest.mock('~/hooks', () => ({ useLocalize: () => (key: string) => key }));
@@ -18,7 +19,7 @@ function Harness({
 }: {
   onReady: (approval: ReturnType<typeof useMCPAppApproval>) => void;
   onClose?: () => void;
-  allowlistedTools?: string[];
+  allowlistedTools?: TMCPAppToolApprovalTarget[];
 }) {
   const approval = useMCPAppApproval(allowlistedTools);
   onReady(approval);
@@ -42,7 +43,10 @@ function Harness({
 test('auto-approves an exactly allowlisted App tool without showing the dialog', async () => {
   let approval!: ReturnType<typeof useMCPAppApproval>;
   const view = render(
-    <Harness onReady={(value) => (approval = value)} allowlistedTools={['mcp:fixture:remove']} />,
+    <Harness
+      onReady={(value) => (approval = value)}
+      allowlistedTools={[{ server: 'fixture', tool: 'remove' }]}
+    />,
   );
   let result!: Promise<boolean>;
   act(() => {
@@ -54,8 +58,8 @@ test('auto-approves an exactly allowlisted App tool without showing the dialog',
   view.unmount();
 });
 
-test.each([['mcp:other:remove'], ['mcp:fixture:other']])(
-  'still prompts when the allowlist does not exactly match %s',
+test.each([[{ server: 'other', tool: 'remove' }], [{ server: 'fixture', tool: 'other' }]])(
+  'still prompts when the allowlist does not exactly match %p',
   async (allowlistEntry) => {
     let approval!: ReturnType<typeof useMCPAppApproval>;
     const view = render(
@@ -73,10 +77,34 @@ test.each([['mcp:other:remove'], ['mcp:fixture:other']])(
   },
 );
 
+test('matches raw MCP server and tool names containing colons and spaces', async () => {
+  let approval!: ReturnType<typeof useMCPAppApproval>;
+  const view = render(
+    <Harness
+      onReady={(value) => (approval = value)}
+      allowlistedTools={[{ server: 'Connector: Company', tool: 'remove item' }]}
+    />,
+  );
+  let result!: Promise<boolean>;
+  act(() => {
+    result = approval.request(
+      { ...action, serverName: 'Connector: Company', toolName: 'remove item' },
+      new AbortController().signal,
+    );
+  });
+
+  await expect(result).resolves.toBe(true);
+  expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+  view.unmount();
+});
+
 test('does not auto-approve App-authored messages for an allowlisted tool', async () => {
   let approval!: ReturnType<typeof useMCPAppApproval>;
   const view = render(
-    <Harness onReady={(value) => (approval = value)} allowlistedTools={['mcp:fixture:remove']} />,
+    <Harness
+      onReady={(value) => (approval = value)}
+      allowlistedTools={[{ server: 'fixture', tool: 'remove' }]}
+    />,
   );
   let result!: Promise<boolean>;
   act(() => {
@@ -95,7 +123,10 @@ test('does not auto-approve App-authored messages for an allowlisted tool', asyn
 test('keeps an allowlisted tool suspended after an App action is cancelled', async () => {
   let approval!: ReturnType<typeof useMCPAppApproval>;
   const view = render(
-    <Harness onReady={(value) => (approval = value)} allowlistedTools={['mcp:fixture:remove']} />,
+    <Harness
+      onReady={(value) => (approval = value)}
+      allowlistedTools={[{ server: 'fixture', tool: 'remove' }]}
+    />,
   );
   let pendingMessage!: Promise<boolean>;
   act(() => {

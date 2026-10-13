@@ -9,6 +9,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@librechat/client';
+import type { TMCPAppToolApprovalTarget } from 'librechat-data-provider';
 import type { ComponentProps } from 'react';
 import { useLocalize } from '~/hooks';
 
@@ -22,7 +23,7 @@ type Pending = {
 };
 
 /** An App can request an action but only a host-controlled button can grant it. */
-export function useMCPAppApproval(allowlistedTools?: readonly string[]) {
+export function useMCPAppApproval(allowlistedTools?: readonly TMCPAppToolApprovalTarget[]) {
   const [pending, setPending] = useState<Pending | null>(null);
   const pendingRef = useRef<Pending | null>(null);
   const suspendedRef = useRef(false);
@@ -32,7 +33,14 @@ export function useMCPAppApproval(allowlistedTools?: readonly string[]) {
         return Promise.resolve(false);
       if (
         action.kind === 'tool' &&
-        allowlistedTools?.includes(`mcp:${action.serverName}:${action.toolName}`)
+        Array.isArray(allowlistedTools) &&
+        allowlistedTools.some(
+          (target) =>
+            typeof target?.server === 'string' &&
+            typeof target.tool === 'string' &&
+            target.server === action.serverName &&
+            target.tool === action.toolName,
+        )
       ) {
         return Promise.resolve(true);
       }

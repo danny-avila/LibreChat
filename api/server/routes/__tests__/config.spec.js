@@ -491,7 +491,9 @@ describe('GET /api/config', () => {
     });
 
     it('publishes the configured App tool approval allowlist', async () => {
-      const appToolApproval = { allow: ['mcp:cogsworth:home_bot_message'] };
+      const appToolApproval = {
+        allow: [{ server: 'Connector: Company', tool: 'home bot message' }],
+      };
       mockGetAppConfig.mockResolvedValue({
         ...baseAppConfig,
         mcpSettings: { apps: true, appToolApproval },

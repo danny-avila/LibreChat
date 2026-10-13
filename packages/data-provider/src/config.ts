@@ -3201,8 +3201,30 @@ export function resolveMCPAppOperationLimits(
   return { ...DEFAULT_MCP_APP_OPERATION_LIMITS, ...limits };
 }
 
+export const mcpAppToolApprovalTargetSchema = z
+  .object({
+    server: z.string().min(1).max(512),
+    tool: z.string().min(1).max(512),
+  })
+  .strict();
+
+export const mcpAppToolApprovalPolicySchema = z
+  .object({
+    allow: z.array(mcpAppToolApprovalTargetSchema).max(256).optional(),
+  })
+  .strict();
+
+export function resolveMCPAppToolApprovalPolicy(
+  value: unknown,
+): TMCPAppToolApprovalPolicy | undefined {
+  if (value === undefined) return undefined;
+  const parsed = mcpAppToolApprovalPolicySchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
+}
+
+export type TMCPAppToolApprovalTarget = z.infer<typeof mcpAppToolApprovalTargetSchema>;
 export type TMCPAppToolApprovalPolicy = {
-  allow?: string[];
+  allow?: TMCPAppToolApprovalTarget[];
 };
 
 export type TMCPAppsPolicy = {
@@ -4190,21 +4212,7 @@ export const configSchema = z.object({
         })
         .default({}),
       apps: z.boolean().optional(),
-      appToolApproval: z
-        .object({
-          allow: z
-            .array(
-              z
-                .string()
-                .min(7)
-                .max(512)
-                .regex(/^mcp:[^*:\s]+:[^*:\s]+$/),
-            )
-            .max(256)
-            .optional(),
-        })
-        .strict()
-        .optional(),
+      appToolApproval: mcpAppToolApprovalPolicySchema.optional(),
     })
     .optional(),
   interface: interfaceSchema,
