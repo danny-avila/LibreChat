@@ -339,4 +339,76 @@ describe('createAdminCodeEnvironmentHandlers', () => {
     expect(response.statusCode).toBe(502);
     expect(response.body).toEqual({ error: 'Code API returned an invalid revocation response' });
   });
+
+  describe('audit entries', () => {
+    function build(fetchImpl: jest.Mock, recordAuditEntry: jest.Mock) {
+      return createAdminCodeEnvironmentHandlers({
+        getAppConfig: jest.fn().mockResolvedValue(config()),
+        readSecret: jest.fn().mockReturnValue('administrator-bootstrap-token'),
+        fetchImpl,
+        recordAuditEntry,
+      });
+    }
+
+    it('records code_worker.paired without the pairing code', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const fetchImpl = jest.fn().mockResolvedValue(
+        Response.json({
+          protocolVersion: 1,
+          workerId: 'vm-1',
+          code: 'one-time-code-value-that-is-long',
+          expiresAt: '2099-08-30T12:00:00.000Z',
+        }),
+      );
+
+      await build(fetchImpl, recordAuditEntry).createPairing(request(), mockResponse());
+
+      expect(recordAuditEntry).toHaveBeenCalledTimes(1);
+      const input = recordAuditEntry.mock.calls[0][0];
+      expect(input).toEqual(
+        expect.objectContaining({
+          action: 'code_worker.paired',
+          target: { type: 'code_worker', id: 'vm-1', name: 'attached-vm' },
+        }),
+      );
+      expect(JSON.stringify(input)).not.toContain('one-time-code-value-that-is-long');
+      expect(JSON.stringify(input)).not.toContain('administrator-bootstrap-token');
+    });
+
+    it('records code_worker.revoked on success only', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const ok = jest.fn().mockResolvedValue(Response.json({ protocolVersion: 1, revoked: true }));
+      const bad = jest
+        .fn()
+        .mockResolvedValue(Response.json({ protocolVersion: 1, revoked: false }));
+
+      await build(bad, recordAuditEntry).revokeWorker(request(), mockResponse());
+      expect(recordAuditEntry).not.toHaveBeenCalled();
+
+      await build(ok, recordAuditEntry).revokeWorker(request(), mockResponse());
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'code_worker.revoked',
+          target: { type: 'code_worker', id: 'vm-1', name: 'attached-vm' },
+        }),
+      );
+    });
+
+    it('does not fail the pairing when the audit write fails (fail-open)', async () => {
+      const recordAuditEntry = jest.fn().mockRejectedValue(new Error('audit down'));
+      const fetchImpl = jest.fn().mockResolvedValue(
+        Response.json({
+          protocolVersion: 1,
+          workerId: 'vm-1',
+          code: 'one-time-code-value-that-is-long',
+          expiresAt: '2099-08-30T12:00:00.000Z',
+        }),
+      );
+      const response = mockResponse();
+
+      await build(fetchImpl, recordAuditEntry).createPairing(request(), response);
+
+      expect(response.statusCode).toBe(200);
+    });
+  });
 });

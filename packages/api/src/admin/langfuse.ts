@@ -14,12 +14,14 @@ import type { Types, ClientSession } from 'mongoose';
 import type { Response } from 'express';
 import type { LangfuseTenantDestination } from '~/langfuse/tenantDestinations';
 import type { ServerRequest } from '~/types/http';
+import type { RecordAuditEntry } from './audit';
 import {
   getLangfuseTenantDestinations,
   resolveLangfuseTenantDestination,
 } from '~/langfuse/tenantDestinations';
 import { redirectPolicyFor, resolveLangfuseHeaders } from '~/langfuse/utils';
 import { decryptConfigSecret, encryptConfigSecretFields } from './secrets';
+import { createAdminAuditEmitter } from './audit';
 import { scopeHeadersToDestination } from '~/langfuse/destinations';
 import { isLangfuseConnectionAvailable } from '~/langfuse/policy';
 import { resolveLangfuseSession } from '~/langfuse/session';
@@ -73,6 +75,9 @@ export interface AdminLangfuseDeps {
   getMessages: MessageMethods['getMessages'];
   invalidateConfigCaches?: (tenantId?: string) => Promise<void>;
   recordConnectionUpdate?: (event: LangfuseConnectionEvent) => void;
+  /** Optional audit emission for connection updates; fail-open unless `auditFailClosed`. */
+  recordAuditEntry?: RecordAuditEntry;
+  auditFailClosed?: boolean;
 }
 
 function getTenantId(req: ServerRequest): string | undefined {
@@ -294,7 +299,14 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
     invalidateConfigCaches,
     recordConnectionUpdate = (event) =>
       logger.info({ message: '[adminLangfuse] Connection updated', ...event }),
+    recordAuditEntry,
+    auditFailClosed,
   } = deps;
+  const emitAudit = createAdminAuditEmitter({
+    recordAuditEntry,
+    failClosed: auditFailClosed,
+    logPrefix: '[adminLangfuse]',
+  });
 
   function findBaseConfig(options?: { includeInactive?: boolean }): Promise<IConfig | null> {
     return options
@@ -464,6 +476,17 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
         change: changes[0],
         changes,
         verification_result: connectionChanged ? 'success' : 'skipped',
+      });
+      /** Records which parts changed, never the keys themselves. */
+      await emitAudit(req, {
+        action: 'langfuse.updated',
+        severity: 'warning',
+        target: { type: 'langfuse', id: 'connection' },
+        metadata: {
+          changes: [...changes].sort().join(','),
+          enabled: status.enabled,
+          ...(status.destination ? { destination: status.destination } : {}),
+        },
       });
 
       invalidateConfigCaches?.(getTenantId(req))?.catch((err) =>

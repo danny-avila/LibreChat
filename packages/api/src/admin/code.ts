@@ -4,8 +4,10 @@ import type { AppConfig } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { GetAppConfigOptions } from '~/app/service';
 import type { ServerRequest } from '~/types/http';
+import type { RecordAuditEntry } from './audit';
 
 import { getCodeApiTenantId } from '~/auth/codeapi';
+import { createAdminAuditEmitter } from './audit';
 
 const CODE_BRIDGE_REQUEST_TIMEOUT_MS = 10_000;
 
@@ -36,6 +38,9 @@ export interface AdminCodeEnvironmentDeps {
   resolveTenantId?: (req: ServerRequest) => string;
   readSecret?: (name: string) => string | undefined;
   fetchImpl?: FetchImpl;
+  /** Optional audit emission for pairing and revocation; fail-open unless `auditFailClosed`. */
+  recordAuditEntry?: RecordAuditEntry;
+  auditFailClosed?: boolean;
 }
 
 function environmentId(req: ServerRequest): string {
@@ -95,6 +100,11 @@ export function createAdminCodeEnvironmentHandlers(deps: AdminCodeEnvironmentDep
 } {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const resolveTenantId = deps.resolveTenantId ?? getCodeApiTenantId;
+  const emitAudit = createAdminAuditEmitter({
+    recordAuditEntry: deps.recordAuditEntry,
+    failClosed: deps.auditFailClosed,
+    logPrefix: '[adminCode]',
+  });
   const readSecret =
     deps.readSecret ??
     ((name: string) =>
@@ -171,6 +181,12 @@ export function createAdminCodeEnvironmentHandlers(deps: AdminCodeEnvironmentDep
       if (!validPairingResponse(payload, resolved.pairing.workerId)) {
         return res.status(502).json({ error: 'Code API returned an invalid pairing response' });
       }
+      await emitAudit(req, {
+        action: 'code_worker.paired',
+        severity: 'warning',
+        target: { type: 'code_worker', id: payload.workerId, name: resolved.id },
+        metadata: { environmentId: resolved.id, expiresAt: payload.expiresAt },
+      });
       return res.status(200).json({
         environmentId: resolved.id,
         workerId: payload.workerId,
@@ -213,6 +229,12 @@ export function createAdminCodeEnvironmentHandlers(deps: AdminCodeEnvironmentDep
       if (!validRevocationResponse(payload)) {
         return res.status(502).json({ error: 'Code API returned an invalid revocation response' });
       }
+      await emitAudit(req, {
+        action: 'code_worker.revoked',
+        severity: 'warning',
+        target: { type: 'code_worker', id: resolved.pairing.workerId, name: resolved.id },
+        metadata: { environmentId: resolved.id },
+      });
       return res.status(200).json({
         environmentId: resolved.id,
         workerId: resolved.pairing.workerId,

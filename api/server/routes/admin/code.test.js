@@ -44,6 +44,10 @@ jest.mock('~/server/services/Config', () => ({
   getAppConfig: mockGetAppConfig,
 }));
 
+jest.mock('~/models', () => ({
+  recordAuditEntry: jest.fn(),
+}));
+
 function createApp() {
   delete require.cache[require.resolve('./code')];
   const router = require('./code');

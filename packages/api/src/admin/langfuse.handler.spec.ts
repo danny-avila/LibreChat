@@ -547,6 +547,48 @@ describe('createAdminLangfuseHandlers', () => {
       expect(JSON.stringify(deps.recordConnectionUpdate.mock.calls)).not.toContain('pk-lf-1');
     });
 
+    it('records langfuse.updated with the changes and never the keys', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const { handlers } = createHandlers({ recordAuditEntry });
+      const res = mockRes();
+
+      await handlers.updateConnection(
+        mockReq({
+          body: {
+            enabled: true,
+            destination: 'eu',
+            publicKey: 'pk-lf-1',
+            secretKey: 'sk-lf-secret',
+          },
+        }),
+        res,
+      );
+
+      expect(res.statusCode).toBe(200);
+      expect(recordAuditEntry).toHaveBeenCalledTimes(1);
+      const input = recordAuditEntry.mock.calls[0][0];
+      expect(input).toEqual(
+        expect.objectContaining({
+          action: 'langfuse.updated',
+          target: { type: 'langfuse', id: 'connection' },
+          metadata: { changes: 'created', enabled: true, destination: 'eu' },
+        }),
+      );
+      expect(JSON.stringify(input)).not.toContain('sk-lf-secret');
+      expect(JSON.stringify(input)).not.toContain('pk-lf-1');
+    });
+
+    it('records nothing when the update is rejected', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const { handlers } = createHandlers({ recordAuditEntry });
+      const res = mockRes();
+
+      await handlers.updateConnection(mockReq({ body: { enabled: true } }), res);
+
+      expect(res.statusCode).toBe(400);
+      expect(recordAuditEntry).not.toHaveBeenCalled();
+    });
+
     it('requires a new secret when connection fields change', async () => {
       const { handlers, deps } = createHandlers({
         findConfigByPrincipal: jest
