@@ -4,6 +4,7 @@ import { render, waitFor } from '@testing-library/react';
 import { clickDropdown, flushDropdownEffects } from 'test/dropdown';
 import '@testing-library/jest-dom/extend-expect';
 import { RecoilRoot } from 'recoil';
+import { createStore, Provider as JotaiProvider } from 'jotai';
 import { LangSelector } from './Selectors';
 import store from '~/store';
 
@@ -65,9 +66,13 @@ describe('LangSelector', () => {
       unobserve = jest.fn();
       disconnect = jest.fn();
     };
+    const jotaiStore = createStore();
+    jotaiStore.set(store.languageLoading, true);
     const { getByRole } = render(
-      <RecoilRoot initializeState={({ set }) => set(store.languageLoading, true)}>
-        <LangSelector langcode="en-US" onChange={mockOnChange} />
+      <RecoilRoot>
+        <JotaiProvider store={jotaiStore}>
+          <LangSelector langcode="en-US" onChange={mockOnChange} />
+        </JotaiProvider>
       </RecoilRoot>,
     );
 

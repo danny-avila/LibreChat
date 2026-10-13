@@ -1,16 +1,16 @@
-import { useRecoilValue } from 'recoil';
+import { useAtomValue } from 'jotai';
 import store from '~/store';
 
 type LocalizedValue = string | Record<string, string> | undefined;
 
 /**
  * Hook to resolve localized config values based on current user language.
- * Automatically retrieves the current language from Recoil state.
+ * Automatically retrieves the current language from Jotai state.
  *
  * @returns A function to resolve localized values
  */
 export default function useLocalizedConfig() {
-  const lang = useRecoilValue(store.lang);
+  const lang = useAtomValue(store.lang);
 
   /**
    * Resolves a localized config value.
