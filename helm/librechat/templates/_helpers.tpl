@@ -183,7 +183,7 @@ Args: dict "root" . "name" NAME.
 {{- define "librechat.suppliedEnvValue" -}}
 {{- $v := toString (default "" (get (default dict .root.Values.librechat.configEnv) .name)) -}}
 {{- range .root.Values.global.librechat.env -}}
-{{- if and (eq .name $.name) .value -}}{{- $v = toString .value -}}{{- end -}}
+{{- if eq .name $.name -}}{{- $v = toString (default "" .value) -}}{{- end -}}
 {{- end -}}
 {{- $v -}}
 {{- end }}
