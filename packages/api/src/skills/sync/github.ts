@@ -223,20 +223,15 @@ export type GitHubSkillSyncDeps = SkillUploadIntentDeps & {
   ) => Promise<{ deleted: boolean }>;
   deleteSkill: (id: string) => Promise<DeleteSkillResult>;
   saveBuffer: (params: {
-    userId: string;
+    reservation: SkillBlobReservation;
     buffer: Buffer;
-    fileName: string;
-    expectedSource: string;
-    basePath?: string;
-    isImage?: boolean;
-    tenantId?: string;
   }) => Promise<SaveBufferResult>;
   reserveBlob: (params: {
     userId: string;
     fileName: string;
     isImage?: boolean;
     tenantId?: string;
-  }) => Promise<SkillBlobReservation & { source: string }>;
+  }) => Promise<SkillBlobReservation>;
   deleteFile?: (file: {
     filepath: string;
     source: string;
@@ -1491,13 +1486,8 @@ async function syncSkillFiles(params: {
       reservation: reserved,
       save: async () => {
         saved = await deps.saveBuffer({
-          userId: skill.author.toString(),
+          reservation: reserved,
           buffer,
-          fileName,
-          expectedSource: reserved.source,
-          basePath: 'uploads',
-          isImage: mimeType.startsWith('image/'),
-          tenantId: skill.tenantId,
         });
         if (saved.source !== reserved.source) throw new Error('Skill storage changed during sync');
         return saved.filepath;

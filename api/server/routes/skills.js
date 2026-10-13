@@ -8,7 +8,6 @@ const {
   createSkillBufferWriter,
   createSkillStorageResolver,
   generateCheckAccess,
-  resolveRequestTenantId,
   restoreTenantContextFromReq,
 } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
@@ -133,8 +132,7 @@ const importHandler = createImportHandler({
   reserveSkillUploadIntent,
   transitionSkillUploadIntent,
   reserveBlob: (req, options) => reserveSkillBlobForConfig(req.config, options),
-  saveBuffer: (req, options) =>
-    saveSkillBuffer({ ...options, tenantId: options.tenantId ?? resolveRequestTenantId(req) }),
+  saveBuffer: (_req, options) => saveSkillBuffer(options),
   deleteFile: (req, file) => {
     const { deleteFile } = getStrategyFunctions(file.source);
     if (!deleteFile) throw new Error(`Skill storage backend ${file.source} cannot delete files`);

@@ -72,7 +72,11 @@ function mockImportDeps(limits?: ImportSkillDeps['limits']): ImportSkillDeps {
     })),
     upsertSkillFile: jest.fn(async () => skillFile),
     getSkillFileByPath: jest.fn(async () => null),
-    reserveBlob: jest.fn(async () => ({ filepath: '/tmp/imported-file', source: 'local' })),
+    reserveBlob: jest.fn(async (_req, { userId, fileName, tenantId }) => ({
+      filepath: '/tmp/imported-file',
+      source: 'local',
+      writeLocation: { userId, fileName, basePath: 'uploads' as const, tenantId },
+    })),
     reserveSkillUploadIntent: jest.fn(async (input) => ({
       ...input,
       skillId: new Types.ObjectId(input.skillId),
@@ -788,6 +792,12 @@ describe('createImportHandler', () => {
   it('rolls back the skill and its stored blobs when one archive file fails', async () => {
     const deps = mockImportDeps();
     let savedFiles = 0;
+    let reservedFiles = 0;
+    deps.reserveBlob = jest.fn(async (_req, { userId, fileName, tenantId }) => ({
+      filepath: `/tmp/imported-${reservedFiles++}`,
+      source: 'local',
+      writeLocation: { userId, fileName, basePath: 'uploads' as const, tenantId },
+    }));
     deps.saveBuffer = jest.fn(async () => ({
       filepath: `/tmp/imported-${savedFiles++}`,
       source: 'local',
@@ -824,6 +834,12 @@ describe('createImportHandler', () => {
   it('does not delete persisted blobs twice when durable skill deletion owns storage cleanup', async () => {
     const deps = mockImportDeps();
     let savedFiles = 0;
+    let reservedFiles = 0;
+    deps.reserveBlob = jest.fn(async (_req, { userId, fileName, tenantId }) => ({
+      filepath: `/tmp/imported-${reservedFiles++}`,
+      source: 'local',
+      writeLocation: { userId, fileName, basePath: 'uploads' as const, tenantId },
+    }));
     deps.saveBuffer = jest.fn(async () => ({
       filepath: `/tmp/imported-${savedFiles++}`,
       source: 'local',

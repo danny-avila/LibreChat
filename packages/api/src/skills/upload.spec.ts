@@ -26,7 +26,7 @@ const originalFile = {
 function harness() {
   const skill = deferred<Awaited<ReturnType<UploadDeps['getSkillById']>>>();
   const file = deferred<Awaited<ReturnType<UploadDeps['getSkillFileByPath']>>>();
-  const saveBuffer = jest.fn(async () => '/uploads/replacement');
+  const saveBuffer = jest.fn(async ({ userId, fileName }) => `/uploads/${userId}/${fileName}`);
   const deleteFile = jest.fn(async () => undefined);
   const deps = {
     getSkillById: jest.fn(() => skill.promise),

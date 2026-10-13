@@ -109,7 +109,7 @@ async function saveSkillFile(
     fileId,
     source: storage.source,
     reservation,
-    save: () => storage.saveBuffer({ userId, buffer, fileName, basePath: 'uploads', tenantId }),
+    save: () => storage.saveBuffer({ ...reservation.writeLocation, buffer }),
     persist: async (filepath) => {
       const row = await deps.upsertSkillFile({
         skillId,

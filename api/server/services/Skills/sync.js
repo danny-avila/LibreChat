@@ -133,7 +133,7 @@ function createRunner({ getConfig, loadAppConfig, allowServerCredentials = true 
         role._id,
       );
     },
-    saveBuffer: (params) => saveSkillBuffer({ ...params, userId: params.userId ?? SYSTEM_USER_ID }),
+    saveBuffer: saveSkillBuffer,
     deleteFile: async (file) => {
       const strategy = getStrategyFunctions(file.source);
       if (!strategy.deleteFile) {

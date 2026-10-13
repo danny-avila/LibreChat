@@ -336,7 +336,11 @@ function createDeps(
     }),
     deleteSkillFile: jest.fn(async () => ({ deleted: true })),
     deleteSkill: jest.fn(async () => completeSkillDeletion(true)),
-    reserveBlob: jest.fn(async () => ({ filepath: '/uploads/file-id__run.sh', source: 'local' })),
+    reserveBlob: jest.fn(async ({ userId, fileName, tenantId }) => ({
+      filepath: '/uploads/file-id__run.sh',
+      source: 'local',
+      writeLocation: { userId, fileName, basePath: 'uploads' as const, tenantId },
+    })),
     reserveSkillUploadIntent: jest.fn(async (input) => ({
       ...input,
       skillId: new Types.ObjectId(input.skillId),
@@ -3041,6 +3045,11 @@ describe('createGitHubSkillSyncRunner', () => {
         deleteSkillFile: jest.fn(async (_skillId, relativePath) => ({
           deleted: files.delete(relativePath),
         })),
+        reserveBlob: jest.fn(async ({ userId, fileName, tenantId }) => ({
+          filepath: '/uploads/new-file-id__run.sh',
+          source: 'local',
+          writeLocation: { userId, fileName, basePath: 'uploads' as const, tenantId },
+        })),
         saveBuffer: jest.fn(async () => ({
           filepath: '/uploads/new-file-id__run.sh',
           source: 'local',
@@ -3117,6 +3126,11 @@ describe('createGitHubSkillSyncRunner', () => {
         _id: oldFile._id,
         skillId: row.skillId as Types.ObjectId,
         author: new Types.ObjectId(row.author),
+      })),
+      reserveBlob: jest.fn(async ({ userId, fileName, tenantId }) => ({
+        filepath: '/uploads/new-file-id__run.sh',
+        source: 'local',
+        writeLocation: { userId, fileName, basePath: 'uploads' as const, tenantId },
       })),
       saveBuffer: jest.fn(async () => ({
         filepath: '/uploads/new-file-id__run.sh',
@@ -3842,7 +3856,11 @@ describe('steady-state sync of an unchanged source', () => {
         ...createSkillDeletionPersistenceAdapter(db),
         deleteSkillFileAfterBlob: db.deleteSkillFileAfterBlob,
         finalizeSkillDeletion: db.finalizeSkillDeletion,
-        completeSkillDeletion: db.completeSkillDeletion,
+        completeSkillDeletion: async (skillId) => {
+          const owner = 'sync-test-worker';
+          if (!(await db.claimSkillDeletion(skillId, owner, 60_000))) return false;
+          return db.completeSkillDeletion(skillId, owner);
+        },
         reopenSkillDeletion: db.reopenSkillDeletion,
         markSkillUploadIntentCleaned: db.markSkillUploadIntentCleaned,
         deleteBlob: async () => undefined,
@@ -3884,8 +3902,8 @@ describe('steady-state sync of an unchanged source', () => {
       upsertSkillFile: jest.fn(db.upsertSkillFile),
       deleteSkillFile: jest.fn(db.deleteSkillFile),
       deleteSkill: jest.fn(deleteSkillWithStorage),
-      saveBuffer: jest.fn(async ({ fileName }: { fileName: string }) => ({
-        filepath: `/uploads/${fileName}`,
+      saveBuffer: jest.fn(async ({ reservation }) => ({
+        filepath: reservation.filepath,
         source: 'local',
       })),
     });

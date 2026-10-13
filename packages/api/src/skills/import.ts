@@ -143,18 +143,10 @@ export interface ImportSkillDeps extends SkillUploadIntentDeps {
   reserveBlob: (
     req: Request,
     params: { userId: string; fileName: string; isImage: boolean; tenantId?: string },
-  ) => Promise<SkillBlobReservation & { source: string }>;
+  ) => Promise<SkillBlobReservation>;
   saveBuffer: (
     req: Request,
-    params: {
-      userId: string;
-      buffer: Buffer;
-      fileName: string;
-      expectedSource: string;
-      basePath?: string;
-      isImage?: boolean;
-      tenantId?: string;
-    },
+    params: { reservation: SkillBlobReservation; buffer: Buffer },
   ) => Promise<{ filepath: string; source: string; storageKey?: string; storageRegion?: string }>;
   deleteFile?: (
     req: Request,
@@ -767,13 +759,8 @@ async function persistArchiveFile(
     reservation: reserved,
     save: async () => {
       saved = await deps.saveBuffer(req, {
-        userId: context.userId,
+        reservation: reserved,
         buffer,
-        fileName: storageFileName,
-        expectedSource: reserved.source,
-        basePath: 'uploads',
-        isImage: file.mimeType.startsWith('image/'),
-        tenantId: context.tenantId,
       });
       if (saved.source !== reserved.source) throw new Error('Skill storage changed during upload');
       return saved.filepath;

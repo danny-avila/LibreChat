@@ -134,11 +134,8 @@ export function createSkillUploadHandler(
         reservation,
         save: () =>
           storage.saveBuffer({
-            userId,
+            ...reservation.writeLocation,
             buffer: file.buffer,
-            fileName,
-            basePath: 'uploads',
-            tenantId,
           }),
         persist: (filepath) =>
           deps.upsertSkillFile({
