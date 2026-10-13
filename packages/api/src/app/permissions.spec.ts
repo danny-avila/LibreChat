@@ -3222,6 +3222,32 @@ describe('updateInterfacePermissions - role.synced audit', () => {
     expect(recordAuditEntry).not.toHaveBeenCalled();
   });
 
+  it('records a change the updater persisted even when the requested values already matched', async () => {
+    const user = fullPermissions(SystemRoles.USER);
+    const admin = fullPermissions(SystemRoles.ADMIN);
+    user[PermissionTypes.BOOKMARKS] = { [Permissions.USE]: false };
+    admin[PermissionTypes.BOOKMARKS] = { [Permissions.USE]: false };
+    const store = createRoleStore({ [SystemRoles.USER]: user, [SystemRoles.ADMIN]: admin });
+    const write = store.updateAccessPermissions.getMockImplementation()!;
+    /** A legacy-document migration changes a flag the config never requested. */
+    store.updateAccessPermissions.mockImplementation(async (name, update) => {
+      await write(name, update);
+      if (name === SystemRoles.USER) {
+        await write(name, { [PermissionTypes.PROMPTS]: { [Permissions.USE]: false } });
+      }
+    });
+    const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+
+    await run({ interface: { bookmarks: false } }, store, recordAuditEntry);
+
+    expect(recordAuditEntry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'role.synced',
+        target: { type: 'role', id: SystemRoles.USER, name: SystemRoles.USER },
+      }),
+    );
+  });
+
   it('records nothing when the write did not persist', async () => {
     const user = fullPermissions(SystemRoles.USER);
     user[PermissionTypes.BOOKMARKS] = { [Permissions.USE]: true };

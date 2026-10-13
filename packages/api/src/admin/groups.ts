@@ -434,6 +434,13 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
     }
   }
 
+  /** Member count before a mutation, so an idempotent retry that changed nothing is
+   * not recorded as a membership change. */
+  async function memberCount(groupId: string): Promise<number | undefined> {
+    const current = await findGroupById(groupId, { memberIds: 1 });
+    return current?.memberIds?.length;
+  }
+
   async function addGroupMemberHandler(req: ServerRequest, res: Response) {
     try {
       const { id } = req.params as GroupIdParams;
@@ -450,16 +457,19 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
           .json({ error: 'Only native user ObjectIds can be added via this endpoint' });
       }
 
+      const before = await memberCount(id);
       const { group } = await addUserToGroup(userId, id);
       if (!group) {
         return res.status(404).json({ error: 'Group not found' });
       }
-      await emitAudit(req, {
-        action: 'group.member_added',
-        severity: 'warning',
-        target: groupTarget(group, id),
-        metadata: { userId },
-      });
+      if (before !== group.memberIds?.length) {
+        await emitAudit(req, {
+          action: 'group.member_added',
+          severity: 'warning',
+          target: groupTarget(group, id),
+          metadata: { userId },
+        });
+      }
       return res.status(200).json({ group });
     } catch (error) {
       const message = error instanceof Error ? error.message : '';
@@ -497,6 +507,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
         return res.status(400).json({ error: 'Invalid group ID format' });
       }
 
+      const before = await memberCount(id);
       const group = isValidObjectIdString(userId)
         ? await removeObjectIdMember(id, userId)
         : await removeMemberById(id, userId);
@@ -504,12 +515,14 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
       if (!group) {
         return res.status(404).json({ error: 'Group not found' });
       }
-      await emitAudit(req, {
-        action: 'group.member_removed',
-        severity: 'warning',
-        target: groupTarget(group, id),
-        metadata: { userId },
-      });
+      if (before !== group.memberIds?.length) {
+        await emitAudit(req, {
+          action: 'group.member_removed',
+          severity: 'warning',
+          target: groupTarget(group, id),
+          metadata: { userId },
+        });
+      }
       return res.status(200).json({ success: true });
     } catch (error) {
       logger.error('[adminGroups] removeGroupMember error:', error);

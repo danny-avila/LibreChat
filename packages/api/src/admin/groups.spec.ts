@@ -1409,9 +1409,23 @@ describe('createAdminGroupsHandlers', () => {
       );
     });
 
-    it('records group.member_added and group.member_removed', async () => {
+    it('records group.member_added and group.member_removed when membership changes', async () => {
       const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
-      const deps = createDeps({ recordAuditEntry });
+      const deps = createDeps({
+        recordAuditEntry,
+        findGroupById: jest
+          .fn()
+          .mockResolvedValueOnce(mockGroup({ memberIds: [] }))
+          .mockResolvedValueOnce(mockGroup({ memberIds: ['m1'] })),
+        addUserToGroup: jest.fn().mockResolvedValue({
+          user: mockUser(),
+          group: mockGroup({ memberIds: ['m1'] }),
+        }),
+        removeUserFromGroup: jest.fn().mockResolvedValue({
+          user: mockUser(),
+          group: mockGroup({ memberIds: [] }),
+        }),
+      });
       const handlers = createAdminGroupsHandlers(deps);
       const add = withUser(
         createReqRes({ params: { id: validId }, body: { userId: validUserId } }),
@@ -1437,6 +1451,34 @@ describe('createAdminGroupsHandlers', () => {
           metadata: { userId: validUserId },
         }),
       );
+    });
+
+    it('does not record an idempotent add or a removal of a non-member', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = createDeps({
+        recordAuditEntry,
+        findGroupById: jest.fn().mockResolvedValue(mockGroup({ memberIds: ['m1'] })),
+        addUserToGroup: jest.fn().mockResolvedValue({
+          user: mockUser(),
+          group: mockGroup({ memberIds: ['m1'] }),
+        }),
+        removeUserFromGroup: jest.fn().mockResolvedValue({
+          user: mockUser(),
+          group: mockGroup({ memberIds: ['m1'] }),
+        }),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const add = withUser(
+        createReqRes({ params: { id: validId }, body: { userId: validUserId } }),
+      );
+      const remove = withUser(createReqRes({ params: { id: validId, userId: validUserId } }));
+
+      await handlers.addGroupMember(add.req, add.res);
+      await handlers.removeGroupMember(remove.req, remove.res);
+
+      expect(add.status).toHaveBeenCalledWith(200);
+      expect(remove.status).toHaveBeenCalledWith(200);
+      expect(recordAuditEntry).not.toHaveBeenCalled();
     });
 
     it('does not record when the group is missing', async () => {

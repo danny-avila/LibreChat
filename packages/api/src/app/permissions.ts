@@ -13,19 +13,6 @@ import { isMemoryEnabled } from '~/memory/config';
 
 type RolePermissions = Partial<Record<PermissionTypes, Record<string, boolean | undefined>>>;
 
-/** Whether applying `update` would change any flag stored in `existing`. */
-function wouldChangePermissions(
-  existing: RolePermissions | undefined,
-  update: RolePermissions,
-): boolean {
-  return Object.entries(update).some(([permType, fields]) =>
-    Object.entries(fields ?? {}).some(
-      ([field, value]) =>
-        value !== undefined && existing?.[permType as PermissionTypes]?.[field] !== value,
-    ),
-  );
-}
-
 /**
  * Checks if a permission type has explicit configuration
  */
@@ -865,7 +852,7 @@ export async function updateInterfacePermissions({
     // Update permissions if any need updating
     if (Object.keys(permissionsToUpdate).length > 0) {
       await updateAccessPermissions(roleName, permissionsToUpdate, existingRole);
-      if (recordAuditEntry && wouldChangePermissions(existingPermissions, permissionsToUpdate)) {
+      if (recordAuditEntry) {
         await recordRoleSync(roleName, existingPermissions);
       }
     }

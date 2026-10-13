@@ -139,25 +139,19 @@ export interface AdminRolesDeps {
    * the cascade already removed. Each is the matching data-schemas method. */
   findAclEntriesByPrincipal?: (
     principalType: PrincipalType,
-    principalId: string | Types.ObjectId,
+    principalId: string,
   ) => Promise<Array<Record<string, unknown>>>;
   bulkWriteAclEntries?: (ops: Array<Record<string, unknown>>) => Promise<unknown>;
-  upsertConfig?: (
-    principalType: PrincipalType,
-    principalId: string | Types.ObjectId,
-    principalModel: IConfig['principalModel'],
-    overrides: IConfig['overrides'],
-    priority: number,
-    session?: undefined,
-    options?: { expectEmpty?: boolean },
-  ) => Promise<IConfig | null>;
+  /** Re-creates a deleted config document in full, only if none exists. Resolves
+   * to whether it inserted. */
+  restoreConfig?: (snapshot: Record<string, unknown>) => Promise<boolean>;
   grantCapability?: (grant: {
     principalType: PrincipalType;
-    principalId: string | Types.ObjectId;
+    principalId: string;
     capability: ISystemGrant['capability'];
     tenantId?: string;
-    grantedBy?: string | Types.ObjectId;
-  }) => Promise<{ created?: boolean } | unknown>;
+    grantedBy?: string;
+  }) => Promise<unknown>;
   /** Optional audit emission for role mutations and the grants removed by the
    * role-deletion cascade. Failure is logged unless `auditFailClosed` is set. */
   recordAuditEntry?: RecordAuditEntry;
@@ -206,7 +200,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
     deleteGrantsForPrincipal,
     findAclEntriesByPrincipal,
     bulkWriteAclEntries,
-    upsertConfig,
+    restoreConfig,
     grantCapability,
     recordAuditEntry,
     auditFailClosed,
@@ -536,22 +530,16 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
           cascadeStep(
             'config',
             () => deleteConfig(PrincipalType.ROLE, name),
-            upsertConfig
+            restoreConfig
               ? async (config) => {
-                  if (config) {
-                    /** Insert-only: an override written after the snapshot is kept. */
-                    const restored = await upsertConfig(
-                      PrincipalType.ROLE,
-                      name,
-                      config.principalModel,
-                      config.overrides,
-                      config.priority,
-                      undefined,
-                      { expectEmpty: true },
-                    );
-                    if (!restored) {
-                      logger.warn('[adminRoles] config restore skipped, override exists:', name);
-                    }
+                  if (!config) {
+                    return;
+                  }
+                  /** Insert-only: an override written after the snapshot is kept. */
+                  const snapshot = (config as { toObject?: () => unknown }).toObject?.() ?? config;
+                  const restored = await restoreConfig(snapshot as Record<string, unknown>);
+                  if (!restored) {
+                    logger.warn('[adminRoles] config restore skipped, override exists:', name);
                   }
                 }
               : undefined,
@@ -586,7 +574,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
                       principalId: name,
                       capability: grant.capability,
                       tenantId: grant.tenantId,
-                      grantedBy: grant.grantedBy,
+                      grantedBy: grant.grantedBy?.toString(),
                     });
                   }
                 }

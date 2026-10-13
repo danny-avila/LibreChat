@@ -1107,17 +1107,29 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           : null;
 
       let config: IConfig | null = null;
-      for (const path of getConfigSecretMutationPaths(fieldPath)) {
-        const fieldConfig = await writeConfigTombstone(
-          principalType,
-          principalId,
-          principalModel(principalType),
-          path,
-          requestedPriority ?? existing?.priority ?? DEFAULT_PRIORITY,
-        );
-        if (fieldConfig) {
-          config = fieldConfig;
+      try {
+        for (const path of getConfigSecretMutationPaths(fieldPath)) {
+          const fieldConfig = await writeConfigTombstone(
+            principalType,
+            principalId,
+            principalModel(principalType),
+            path,
+            requestedPriority ?? existing?.priority ?? DEFAULT_PRIORITY,
+          );
+          if (fieldConfig) {
+            config = fieldConfig;
+          }
         }
+      } catch (writeError) {
+        /** An earlier path in the loop may already have been written. */
+        if (config) {
+          await emitAudit(req, {
+            action: 'config.updated',
+            target: configTarget(principalType, principalId),
+            metadata: { operation: 'tombstone', fieldPath, partial: true },
+          });
+        }
+        throw writeError;
       }
 
       invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
@@ -1208,11 +1220,23 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
 
       let config: IConfig | null = null;
-      for (const path of getConfigSecretMutationPaths(fieldPath)) {
-        const fieldConfig = await unsetConfigField(principalType, principalId, path);
-        if (fieldConfig) {
-          config = fieldConfig;
+      try {
+        for (const path of getConfigSecretMutationPaths(fieldPath)) {
+          const fieldConfig = await unsetConfigField(principalType, principalId, path);
+          if (fieldConfig) {
+            config = fieldConfig;
+          }
         }
+      } catch (writeError) {
+        /** An earlier path in the loop may already have been written. */
+        if (config) {
+          await emitAudit(req, {
+            action: 'config.updated',
+            target: configTarget(principalType, principalId),
+            metadata: { operation: 'unset', fieldPath, partial: true },
+          });
+        }
+        throw writeError;
       }
       if (!config) {
         return res.status(404).json({ error: 'Config not found' });

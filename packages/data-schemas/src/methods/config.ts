@@ -68,6 +68,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     session?: ClientSession,
     options?: { expectEmpty?: boolean },
   ) => Promise<IConfig | null>;
+  restoreConfig: (snapshot: Record<string, unknown>) => Promise<boolean>;
   toggleConfigActive: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
@@ -345,6 +346,22 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     );
   }
 
+  /**
+   * Re-creates a deleted config document exactly as it was (tombstones, active flag,
+   * version), only when no document exists for the principal. Returns whether it
+   * inserted, so a document written after the snapshot is never overwritten.
+   */
+  async function restoreConfig(snapshot: Record<string, unknown>): Promise<boolean> {
+    const Config = mongoose.models.Config as Model<IConfig>;
+    const { principalType, principalId } = snapshot;
+    const result = await Config.updateOne(
+      { principalType, principalId },
+      { $setOnInsert: snapshot },
+      { upsert: true, timestamps: false },
+    );
+    return result.upsertedCount > 0;
+  }
+
   return {
     listAllConfigs,
     findConfigByPrincipal,
@@ -354,6 +371,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     tombstoneConfigField,
     unsetConfigField,
     deleteConfig,
+    restoreConfig,
     toggleConfigActive,
   };
 }

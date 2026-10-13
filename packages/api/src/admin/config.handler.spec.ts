@@ -2582,6 +2582,30 @@ describe('createAdminConfigHandlers', () => {
     const target = { type: 'config', id: 'role:editor', name: 'role:editor' };
     const params = { principalType: 'role', principalId: 'editor' };
 
+    it('records a partial secret-field delete when the preview write fails', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const { handlers } = createHandlers({
+        recordAuditEntry,
+        unsetConfigField: jest
+          .fn()
+          .mockResolvedValueOnce({ _id: 'c1', overrides: {} })
+          .mockRejectedValueOnce(new Error('preview write failed')),
+      });
+      const req = mockReq({ params, query: { fieldPath: 'ocr.apiKey' } });
+      const res = mockRes();
+
+      await handlers.deleteConfigField(req, res);
+
+      expect(res.statusCode).toBe(500);
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'config.updated',
+          target,
+          metadata: { operation: 'unset', fieldPath: 'ocr.apiKey', partial: true },
+        }),
+      );
+    });
+
     it('records config.created for a new override document', async () => {
       const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
       const { handlers } = createHandlers({

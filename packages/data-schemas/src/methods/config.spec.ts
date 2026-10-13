@@ -27,6 +27,34 @@ beforeEach(async () => {
   await mongoose.models.Config.deleteMany({});
 });
 
+describe('restoreConfig', () => {
+  it('restores tombstones and the inactive flag, and never overwrites a newer document', async () => {
+    await methods.upsertConfig(PrincipalType.ROLE, 'admin', PrincipalModel.ROLE, {}, 10);
+    await methods.tombstoneConfigField(PrincipalType.ROLE, 'admin', PrincipalModel.ROLE, 'a.b', 10);
+    await methods.toggleConfigActive(PrincipalType.ROLE, 'admin', false);
+    const deleted = await methods.deleteConfig(PrincipalType.ROLE, 'admin');
+    const snapshot = deleted!.toObject() as Record<string, unknown>;
+
+    expect(await methods.restoreConfig(snapshot)).toBe(true);
+    const restored = await methods.findConfigByPrincipal(PrincipalType.ROLE, 'admin', {
+      includeInactive: true,
+    });
+    expect(restored!.isActive).toBe(false);
+    expect(restored!.tombstones).toContain('a.b');
+
+    await methods.upsertConfig(
+      PrincipalType.ROLE,
+      'admin',
+      PrincipalModel.ROLE,
+      { interface: { modelSelect: false } },
+      99,
+    );
+    expect(await methods.restoreConfig(snapshot)).toBe(false);
+    const kept = await methods.findConfigByPrincipal(PrincipalType.ROLE, 'admin');
+    expect(kept!.priority).toBe(99);
+  });
+});
+
 describe('upsertConfig tombstone preservation', () => {
   it('creates a new config document', async () => {
     const result = await methods.upsertConfig(
