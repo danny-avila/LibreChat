@@ -8,9 +8,10 @@ export type StoredUploadRef = {
   storageRegion?: string;
 };
 
-export type StoredUploadCleanupDeps = {
-  /** The strategy's delete function; absent when the strategy cannot delete. */
-  deleteFile?: (req: never, file: StoredUploadRef) => Promise<unknown>;
+export type StoredUploadCleanup = {
+  stored: StoredUploadRef;
+  /** Looks up the strategy's delete function; called only after a failure. */
+  resolveDeleteFile: () => ((req: never, file: StoredUploadRef) => Promise<unknown>) | undefined;
   req: unknown;
   logger: { error: (message: string, meta?: unknown) => void };
 };
@@ -21,22 +22,19 @@ export type StoredUploadCleanupDeps = {
  * The original failure is rethrown; a failed cleanup is logged and never replaces it.
  */
 export async function withStoredUploadCleanup<T>(
-  stored: StoredUploadRef,
-  deps: StoredUploadCleanupDeps,
+  { stored, resolveDeleteFile, req, logger }: StoredUploadCleanup,
   next: () => Promise<T>,
 ): Promise<T> {
   try {
     return await next();
   } catch (error) {
-    if (deps.deleteFile != null) {
-      try {
-        await deps.deleteFile(deps.req as never, stored);
-      } catch (cleanupError) {
-        deps.logger.error(
-          '[withStoredUploadCleanup] Failed to delete stored upload',
-          getSafeErrorMetadata(cleanupError),
-        );
-      }
+    try {
+      await resolveDeleteFile()?.(req as never, stored);
+    } catch (cleanupError) {
+      logger.error(
+        '[withStoredUploadCleanup] Failed to delete stored upload',
+        getSafeErrorMetadata(cleanupError),
+      );
     }
     throw error;
   }

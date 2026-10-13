@@ -220,16 +220,6 @@ const createDeleteFileWithSecondaryStorage = ({ source, deleteFile, deletionMeth
 // TODO: refactor as currently only image files can be deleted this way
 // as other filetypes will not reside in public path
 /**
- * Removes an object a strategy already stored when a later step fails, because no file record
- * exists yet for retention, expiry or erasure to find it through.
- */
-const cleanupStoredUpload = ({ req, source, stored }) => {
-  /* Resolved on failure only, so the success path never looks the strategy up again. */
-  const deleteFile = (request, file) => getStrategyFunctions(source).deleteFile?.(request, file);
-  return (next) => withStoredUploadCleanup(stored, { deleteFile, req, logger }, next);
-};
-
-/**
  * Deletes a list of files from the server filesystem and the database.
  *
  * @param {Object} params - The params object.
@@ -442,9 +432,10 @@ const processFileURL = async ({
     });
 
     const file_id = v4();
-    const cleanupStored = cleanupStoredUpload({
+    const storedCleanup = {
       req,
-      source: fileStrategy,
+      logger,
+      resolveDeleteFile: () => getStrategyFunctions(fileStrategy).deleteFile,
       stored: {
         file_id,
         filepath,
@@ -452,8 +443,8 @@ const processFileURL = async ({
         storageKey: typeof savedFile === 'string' ? undefined : savedFile.storageKey,
         storageRegion: typeof savedFile === 'string' ? undefined : savedFile.storageRegion,
       },
-    });
-    return await cleanupStored(async () =>
+    };
+    return await withStoredUploadCleanup(storedCleanup, async () =>
       db.createFile(
         {
           user: userId,
@@ -522,12 +513,16 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
   const storageMetadata = getStorageMetadata({ filepath, source, storageKey, storageRegion });
   /* The object is stored before its record exists, so a failure past this point has to remove
    * it, or no retention or erasure pass can ever find it. */
-  const cleanupStored = cleanupStoredUpload({
+  const storedCleanup = {
     req,
-    source,
+    logger,
+    resolveDeleteFile: () => getStrategyFunctions(source).deleteFile,
     stored: { file_id, filepath, source, storageKey, storageRegion },
-  });
-  const retentionExpiry = await cleanupStored(() => retentionExpiryPromise);
+  };
+  const retentionExpiry = await withStoredUploadCleanup(
+    storedCleanup,
+    () => retentionExpiryPromise,
+  );
 
   const fileInfo = {
     user: req.user.id,
@@ -563,7 +558,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
     return fileInfo;
   }
 
-  const result = await cleanupStored(() => db.createFile(fileInfo, true));
+  const result = await withStoredUploadCleanup(storedCleanup, () => db.createFile(fileInfo, true));
   sendUploadSuccess(res, sseStream, 'File uploaded and processed successfully', result);
 };
 
@@ -603,12 +598,13 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
     tenantId: req.user.tenantId,
   });
   const storageMetadata = getStorageMetadata({ filepath, source });
-  const cleanupStored = cleanupStoredUpload({
+  const storedCleanup = {
     req,
-    source,
+    logger,
+    resolveDeleteFile: () => getStrategyFunctions(source).deleteFile,
     stored: { file_id, filepath, source, ...storageMetadata },
-  });
-  return await cleanupStored(async () =>
+  };
+  return await withStoredUploadCleanup(storedCleanup, async () =>
     db.createFile(
       {
         user: req.user.id,
@@ -726,21 +722,28 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
 
   /* Assistants storage lives with the provider and is released through its own file lifecycle,
    * so only an object this process stored itself is removed. */
-  let cleanupStored = (next) => next();
+  let storedCleanup = {
+    req,
+    logger,
+    resolveDeleteFile: () => undefined,
+    stored: { file_id: id ?? file_id, filepath, source },
+  };
   if (!isAssistantUpload) {
-    cleanupStored = cleanupStoredUpload({
+    storedCleanup = {
       req,
-      source,
+      logger,
+      resolveDeleteFile: () => getStrategyFunctions(source).deleteFile,
       stored: { file_id: id ?? file_id, filepath, source, ...storageMetadata },
-    });
+    };
   } else if (convertedImage != null) {
-    cleanupStored = cleanupStoredUpload({
+    storedCleanup = {
       req,
-      source: convertedImage.source,
+      logger,
+      resolveDeleteFile: () => getStrategyFunctions(convertedImage.source).deleteFile,
       stored: { ...convertedImage, ...storageMetadata },
-    });
+    };
   }
-  const result = await cleanupStored(async () =>
+  const result = await withStoredUploadCleanup(storedCleanup, async () =>
     db.createFile(
       {
         user: req.user.id,
@@ -1032,9 +1035,10 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         entity_id,
       });
       const { bytes, filename, filepath, embedded, height, width } = storageResult;
-      const cleanupStored = cleanupStoredUpload({
+      const storedCleanup = {
         req,
-        source,
+        logger,
+        resolveDeleteFile: () => getStrategyFunctions(source).deleteFile,
         stored: {
           file_id,
           filepath,
@@ -1046,9 +1050,12 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
             storageRegion: storageResult.storageRegion,
           }),
         },
-      });
+      };
 
-      const retentionExpiry = await cleanupStored(() => retentionExpiryPromise);
+      const retentionExpiry = await withStoredUploadCleanup(
+        storedCleanup,
+        () => retentionExpiryPromise,
+      );
       const fileInfo = {
         ...removeNullishValues({
           text,
@@ -1072,7 +1079,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         ...retentionExpiry,
       };
 
-      const result = await cleanupStored(async () => {
+      const result = await withStoredUploadCleanup(storedCleanup, async () => {
         if (!messageAttachment && effectiveToolResource) {
           await db.addAgentResourceFile({
             file_id,
@@ -1252,27 +1259,30 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     // SECOND: Upload to Vector DB
     const { uploadVectors } = require('./VectorDB/crud');
 
-    embeddingResult = await cleanupStoredUpload({
-      req,
-      source,
-      stored: {
-        file_id,
-        source,
-        filepath: storageResult.filepath,
-        ...getStorageMetadata({
-          filepath: storageResult.filepath,
-          source,
-          storageKey: storageResult.storageKey,
-          storageRegion: storageResult.storageRegion,
-        }),
-      },
-    })(() =>
-      uploadVectors({
+    embeddingResult = await withStoredUploadCleanup(
+      {
         req,
-        file,
-        file_id,
-        entity_id,
-      }),
+        logger,
+        resolveDeleteFile: () => getStrategyFunctions(source).deleteFile,
+        stored: {
+          file_id,
+          source,
+          filepath: storageResult.filepath,
+          ...getStorageMetadata({
+            filepath: storageResult.filepath,
+            source,
+            storageKey: storageResult.storageKey,
+            storageRegion: storageResult.storageRegion,
+          }),
+        },
+      },
+      () =>
+        uploadVectors({
+          req,
+          file,
+          file_id,
+          entity_id,
+        }),
     );
 
     /* Vectors live under the entity that embedded them, and priming asks which namespaces
@@ -1404,12 +1414,16 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     storageRegion: _storageRegion,
   });
 
-  const cleanupStored = cleanupStoredUpload({
+  const storedCleanup = {
     req,
-    source,
+    logger,
+    resolveDeleteFile: () => getStrategyFunctions(source).deleteFile,
     stored: { file_id, filepath, source, ...storageMetadata },
-  });
-  const retentionExpiry = await cleanupStored(() => retentionExpiryPromise);
+  };
+  const retentionExpiry = await withStoredUploadCleanup(
+    storedCleanup,
+    () => retentionExpiryPromise,
+  );
   const fileInfo = {
     ...removeNullishValues({
       user: req.user.id,
@@ -1441,7 +1455,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     ...retentionExpiry,
   };
 
-  const result = await cleanupStored(async () => {
+  const result = await withStoredUploadCleanup(storedCleanup, async () => {
     if (!messageAttachment && effectiveToolResource) {
       await db.addAgentResourceFile({
         file_id,
@@ -1710,12 +1724,13 @@ async function saveBase64Image(
     tenantId: req.user.tenantId,
   });
   const storageMetadata = getStorageMetadata({ filepath, source });
-  const cleanupStored = cleanupStoredUpload({
+  const storedCleanup = {
     req,
-    source,
+    logger,
+    resolveDeleteFile: () => getStrategyFunctions(source).deleteFile,
     stored: { file_id, filepath, source, ...storageMetadata },
-  });
-  return await cleanupStored(async () =>
+  };
+  return await withStoredUploadCleanup(storedCleanup, async () =>
     db.createFile(
       {
         type,
