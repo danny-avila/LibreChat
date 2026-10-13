@@ -71,6 +71,19 @@ describe('redactMessage', () => {
     expect(redactMessage('mention @handle and v1.2.3')).toBe('mention @handle and v1.2.3');
   });
 
+  it('masks quoted local parts', () => {
+    expect(redactMessage('user "jane.doe"@example.com ok')).toBe('user [REDACTED_EMAIL] ok');
+  });
+
+  it('scans long non-email text in linear time', () => {
+    const inputs = ['_'.repeat(100_000), `${'_'.repeat(50_000)}@${'-'.repeat(50_000)}`];
+    const start = Date.now();
+    for (const input of inputs) {
+      expect(redactMessage(input)).toBe(input);
+    }
+    expect(Date.now() - start).toBeLessThan(1000);
+  });
+
   it('masks email addresses in metadata values and nested objects', () => {
     const info = runRedactSplatFormat({
       level: 'info',
