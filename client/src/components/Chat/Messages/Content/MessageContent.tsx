@@ -11,6 +11,7 @@ import Thinking from './Parts/Thinking';
 import { useLocalize } from '~/hooks';
 import Container from './Container';
 import Markdown from './Markdown';
+import { applyBklAnswerHyperlinks, useBklAnswerHyperlinks } from './useBklAnswerHyperlinks';
 import { cn, getBklDisplayText } from '~/utils';
 import store from '~/store';
 
@@ -102,7 +103,13 @@ const DisplayMessage = ({ text, isCreatedByUser, message, showCursor }: TDisplay
 
   // Strip BKL control tags from both user and assistant messages. Assistant-side
   // BKL_QUERY_CHOICES is rendered by ChatForm as the A/B/C choice panel.
-  const displayText = useMemo(() => getBklDisplayText(text), [text]);
+  // 답변 끝 "검색 문서 리스트" 의 『파일명』은 iManage 링크로 바꾼다 — 스트리밍
+  // 경로는 서버가 본문에 링크를 못 박으므로 클라이언트가 맵을 받아 치환한다.
+  const hyperlinks = useBklAnswerHyperlinks(message.messageId, text, message, !isCreatedByUser);
+  const displayText = useMemo(() => {
+    const stripped = getBklDisplayText(text);
+    return isCreatedByUser ? stripped : applyBklAnswerHyperlinks(stripped, hyperlinks);
+  }, [text, isCreatedByUser, hyperlinks]);
 
   const content = useMemo(() => {
     if (!isCreatedByUser) {

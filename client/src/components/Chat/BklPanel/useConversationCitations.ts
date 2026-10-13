@@ -91,6 +91,13 @@ function sourceDocId(source: BklSource): string | null {
   return typeof meta?.doc_id === 'string' && meta.doc_id ? (meta.doc_id as string) : null;
 }
 
+function sourceMatterUid(source: BklSource): string | null {
+  const meta = source.metadata?.[0] as Record<string, unknown> | undefined;
+  return typeof meta?.matter_uid === 'string' && meta.matter_uid
+    ? (meta.matter_uid as string)
+    : null;
+}
+
 export type CitedChunk = {
   messageId: string;
   n: number;
@@ -109,6 +116,9 @@ export type MentionedFile = {
   /** doc_id 우선, 없으면 파일명 — 유니크 집계 키. */
   key: string;
   fileName: string;
+  /** 인덱스 문서 id. 없으면(업로드 파일 등) 프로젝트에 담을 수 없다. */
+  docId: string | null;
+  matterUid: string | null;
   /** 이 파일에서 인용된 청크 수. */
   count: number;
   imanageUrl: string | null;
@@ -220,15 +230,19 @@ export function useConversationCitations(conversationId: string | null | undefin
         const fileName = extractFileName(source);
         chunks.push({ messageId: msg.messageId, n, source, fileName });
 
-        const key = sourceDocId(source) ?? fileName;
+        const docId = sourceDocId(source);
+        const key = docId ?? fileName;
         const existing = fileMap.get(key);
         if (existing) {
           existing.count += 1;
           if (!existing.imanageUrl) existing.imanageUrl = sourceImanageUrl(source);
+          if (!existing.matterUid) existing.matterUid = sourceMatterUid(source);
         } else {
           fileMap.set(key, {
             key,
             fileName,
+            docId,
+            matterUid: sourceMatterUid(source),
             count: 1,
             imanageUrl: sourceImanageUrl(source),
             sample: source,
