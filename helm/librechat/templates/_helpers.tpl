@@ -176,6 +176,20 @@ true
 {{- end }}
 
 {{/*
+Fail when the operator supplies REDIS_PASSWORD but LibreChat still connects to the bundled
+authenticated Redis without the subchart knowing that password. Either set redis.auth.password
+or redis.auth.existingSecret, point REDIS_URI at another server, or opt out with
+librechat.injectBundledCredentials.redis=false.
+*/}}
+{{- define "librechat.validateRedisPassword" -}}
+{{- $suppliedPassword := or (get (default dict .Values.librechat.configEnv) "REDIS_PASSWORD") (include "librechat.userEnvHas" (dict "root" . "name" "REDIS_PASSWORD")) -}}
+{{- $suppliedURI := or (get (default dict .Values.librechat.configEnv) "REDIS_URI") (include "librechat.userEnvHas" (dict "root" . "name" "REDIS_URI")) -}}
+{{- if and .Values.redis.enabled .Values.redis.auth.enabled $suppliedPassword (not $suppliedURI) (ne (toString (default dict .Values.librechat.injectBundledCredentials).redis) "false") (not .Values.redis.auth.password) (not .Values.redis.auth.existingSecret) -}}
+{{- fail "REDIS_PASSWORD is set for LibreChat but the bundled Redis generates its own password. Set redis.auth.password (or redis.auth.existingSecret) to the same value, set REDIS_URI to your own server, or set librechat.injectBundledCredentials.redis=false." -}}
+{{- end -}}
+{{- end }}
+
+{{/*
 RAG Selector labels
 */}}
 {{- define "rag.selectorLabels" -}}
