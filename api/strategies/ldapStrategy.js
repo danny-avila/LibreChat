@@ -131,7 +131,7 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
     const baseConfig = await getAppConfig({ baseOnly: true });
     if (!isEmailDomainAllowed(mail, baseConfig?.registration?.allowedDomains)) {
       logger.error(
-        `[LDAP Strategy] Authentication blocked - email domain not allowed [Email: ${mail}]`,
+        `[LDAP Strategy] Authentication blocked - email domain not allowed [ldapId: ${ldapId}]`,
       );
       return done(null, false, { message: 'Email domain not allowed' });
     }
@@ -147,7 +147,7 @@ const ldapLogin = new LdapStrategy(ldapOptions, async (userinfo, done) => {
 
     if (!isEmailDomainAllowed(mail, appConfig?.registration?.allowedDomains)) {
       logger.error(
-        `[LDAP Strategy] Authentication blocked - email domain not allowed [Email: ${mail}]`,
+        `[LDAP Strategy] Authentication blocked - email domain not allowed [user: ${found.user?._id ?? ldapId}]`,
       );
       return done(null, false, { message: 'Email domain not allowed' });
     }
