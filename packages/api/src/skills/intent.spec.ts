@@ -63,6 +63,67 @@ it('keeps an abandoned intent even when immediate compensation succeeds', async 
   expect(operation.deleteReserved).toHaveBeenCalled();
 });
 
+it.each([null, '', '   '])('compensates a storage write with no usable path (%p)', async (path) => {
+  const deps = makeDeps();
+  const operation = makeOperation();
+  operation.save = jest.fn(async () => path as string);
+
+  await expect(withSkillUploadIntent(deps, operation)).rejects.toThrow(
+    'Skill storage returned no saved object path',
+  );
+  expect(operation.persist).not.toHaveBeenCalled();
+  expect(operation.deleteReserved).toHaveBeenCalledWith(operation.reservation, undefined);
+});
+
+it.each(['uploading', 'committing'] as const)(
+  'compensates the reserved blob even when the %s abandonment update throws',
+  async (failedState) => {
+    const deps = makeDeps();
+    const operation = makeOperation();
+    operation.save = jest.fn(async () => {
+      throw new Error('provider timeout');
+    });
+    deps.transitionSkillUploadIntent.mockImplementation(async (_fileId, _writerId, from, to) => {
+      if (from === failedState && to === 'abandoned') throw new Error('database unavailable');
+      return true;
+    });
+
+    await expect(withSkillUploadIntent(deps, operation)).rejects.toThrow('provider timeout');
+    expect(deps.transitionSkillUploadIntent).toHaveBeenCalledWith(
+      'file-1',
+      expect.any(String),
+      'uploading',
+      'abandoned',
+    );
+    expect(deps.transitionSkillUploadIntent).toHaveBeenCalledWith(
+      'file-1',
+      expect.any(String),
+      'committing',
+      'abandoned',
+    );
+    expect(operation.deleteReserved).toHaveBeenCalledWith(operation.reservation, undefined);
+  },
+);
+
+it('preserves the original failure for stopped-writer recovery if journal and cleanup both fail', async () => {
+  const deps = makeDeps();
+  const operation = makeOperation();
+  operation.save = jest.fn(async () => {
+    throw new Error('provider timeout');
+  });
+  deps.transitionSkillUploadIntent.mockRejectedValue(new Error('database unavailable'));
+  operation.deleteReserved = jest.fn(async () => {
+    throw new Error('storage unavailable');
+  });
+
+  await expect(withSkillUploadIntent(deps, operation)).rejects.toThrow('provider timeout');
+  expect(deps.reserveSkillUploadIntent).toHaveBeenCalledTimes(1);
+  expect(deps.transitionSkillUploadIntent).toHaveBeenCalledTimes(2);
+  expect(operation.deleteReserved).toHaveBeenCalledTimes(1);
+  // The intent is intentionally retained. If both stores stay unavailable,
+  // an operator must recover the stopped writer before background cleanup.
+});
+
 it('returns the persisted row after an ambiguous database commit', async () => {
   const deps = makeDeps();
   const operation = makeOperation();

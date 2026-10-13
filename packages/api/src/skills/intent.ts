@@ -53,6 +53,9 @@ export async function withSkillUploadIntent<T>(
   let persistedResult: { value: T } | undefined;
   try {
     const filepath = await operation.save();
+    if (typeof filepath !== 'string' || filepath.trim().length === 0) {
+      throw new Error('Skill storage returned no saved object path');
+    }
     savedPath = filepath;
     const claimed = await deps.transitionSkillUploadIntent(
       operation.fileId,
@@ -90,8 +93,16 @@ export async function withSkillUploadIntent<T>(
       if (committed) return persistedResult ? persistedResult.value : persisted;
       throw error;
     }
-    await deps.transitionSkillUploadIntent(operation.fileId, writerId, 'uploading', 'abandoned');
-    await deps.transitionSkillUploadIntent(operation.fileId, writerId, 'committing', 'abandoned');
+    // A transient journal error must not skip immediate blob compensation.
+    // If both journal updates and compensation fail, the reserved intent still
+    // supports explicit stopped-writer recovery once the database is healthy.
+    for (const from of ['uploading', 'committing'] as const) {
+      try {
+        await deps.transitionSkillUploadIntent(operation.fileId, writerId, from, 'abandoned');
+      } catch {
+        // Preserve the original upload failure after attempting both states.
+      }
+    }
     try {
       await operation.deleteReserved(operation.reservation, savedPath);
     } catch {
