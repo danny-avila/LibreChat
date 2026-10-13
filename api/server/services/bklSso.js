@@ -180,6 +180,31 @@ async function linkBimsIdentity(tokenset, user) {
   const existing = await readUserDoc(userId);
   const candidates = bklIdCandidates(claims, existing?.bkl_login_id);
 
+  // 후보 산출 근거를 남긴다. `upn` 은 Azure v2.0 의 선택적 클레임이라 앱 등록
+  // 설정에 따라 통째로 빠질 수 있고, 그러면 조용히 preferred_username 으로
+  // 내려간다 — 로그가 없으면 "왜 이 id 로 붙었지?" 를 추적할 길이 없다.
+  //
+  // tokenset 전체를 찍지 않는 이유: access_token / id_token / refresh_token 이
+  // 원문 그대로 들어 있어, 로그 열람자가 해당 사용자의 토큰을 계속 재발급할 수
+  // 있게 된다. 식별에 필요한 클레임만 고른다.
+  logger.info(
+    `[BKL SSO] 후보 산출 [upn: ${claims?.upn ?? '-'}] ` +
+      `[preferred_username: ${claims?.preferred_username ?? '-'}] ` +
+      `[email: ${claims?.email ?? '-'}] [cached: ${existing?.bkl_login_id ?? '-'}] ` +
+      `→ ${candidates.join(' → ') || '(없음)'}`,
+  );
+
+  // 전체 클레임은 DEBUG_LOGGING=true 일 때만. 토큰 자체는 존재 여부만 남긴다.
+  logger.debug('[BKL SSO] id_token claims', {
+    claims,
+    tokens: {
+      id_token: tokenset?.id_token ? 'present' : 'absent',
+      access_token: tokenset?.access_token ? 'present' : 'absent',
+      refresh_token: tokenset?.refresh_token ? 'present' : 'absent',
+      expires_in: tokenset?.expires_in ?? null,
+    },
+  });
+
   if (!candidates.length) {
     logger.error(
       '[BKL SSO] AD ID 를 만들 클레임이 없음 (upn / preferred_username / email 모두 비어 있음)',
