@@ -53,6 +53,14 @@ export function useConfiguredFooter(): boolean {
   return isSuccess ? hasConfiguredFooter(config) : shellHasConfiguredFooter;
 }
 
+/** Whether the welcome screen carries the generic disclaimer and policy links.
+ *  Off, it keeps only a configured footer, the same as a conversation. */
+export function useLandingFooter(): boolean {
+  const { data: config } = useGetStartupConfig();
+
+  return config?.interface?.landingFooter !== false;
+}
+
 function Footer({ className, startupConfig, configuredOnly = false }: FooterProps) {
   const shouldFetchConfig = startupConfig === undefined;
   const { data: fetchedConfig } = useGetStartupConfig({ enabled: shouldFetchConfig });

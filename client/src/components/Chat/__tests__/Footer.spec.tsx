@@ -1,7 +1,8 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, renderHook } from '@testing-library/react';
 import '@testing-library/jest-dom/extend-expect';
-import Footer from '../Footer';
+import { useGetStartupConfig } from '~/data-provider';
+import Footer, { useLandingFooter } from '../Footer';
 
 jest.mock('~/data-provider', () => ({
   useGetStartupConfig: jest.fn(() => ({ data: undefined, isFetching: false, error: null })),
@@ -101,5 +102,25 @@ describe('Footer', () => {
     );
 
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe('useLandingFooter', () => {
+  const mockUseGetStartupConfig = useGetStartupConfig as jest.Mock;
+
+  afterEach(() => {
+    mockUseGetStartupConfig.mockImplementation(() => ({ data: undefined }));
+  });
+
+  test('keeps the welcome screen footer unless the deployment turns it off', () => {
+    expect(renderHook(() => useLandingFooter()).result.current).toBe(true);
+
+    mockUseGetStartupConfig.mockImplementation(() => ({ data: { interface: {} } }));
+    expect(renderHook(() => useLandingFooter()).result.current).toBe(true);
+
+    mockUseGetStartupConfig.mockImplementation(() => ({
+      data: { interface: { landingFooter: false } },
+    }));
+    expect(renderHook(() => useLandingFooter()).result.current).toBe(false);
   });
 });

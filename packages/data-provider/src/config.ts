@@ -2788,6 +2788,13 @@ export const interfaceSchema = z
       .optional(),
     termsOfService: termsOfServiceSchema.optional(),
     customWelcome: z.string().optional(),
+    /** What heads the welcome screen when an agent, assistant or branded spec is
+     *  selected: its name (`entity`), or the time-of-day greeting with the user's
+     *  name (`greeting`) for deployments whose header selector already names it. */
+    landingHeading: z.enum(['entity', 'greeting']).optional(),
+    /** Shows the generic disclaimer and policy links beneath the welcome screen's
+     *  composer. A configured `customFooter` still renders when this is false. */
+    landingFooter: z.boolean().optional(),
     mcpServers: mcpServersSchema.optional(),
     modelSelect: z.boolean().optional(),
     /** Set to false during a rolling upgrade, until every API replica supports title ownership and old title jobs drain. */
@@ -3092,6 +3099,8 @@ export const interfaceSchema = z
     fileCitations: true,
     buildInfo: true,
     mascot: true,
+    landingHeading: 'entity',
+    landingFooter: true,
     remoteAgents: {
       use: false,
       create: false,

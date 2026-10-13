@@ -471,3 +471,23 @@ describe('running chat rename deployment fence', () => {
     expect(interfaceConfig?.runningChatRename).toBe(expected);
   });
 });
+
+describe('welcome screen heading and footer', () => {
+  it('keeps the entity heading and the full footer by default', async () => {
+    const interfaceConfig = await loadDefaultInterface({
+      config: {},
+      configDefaults: getConfigDefaults(),
+    });
+    expect(interfaceConfig?.landingHeading).toBe('entity');
+    expect(interfaceConfig?.landingFooter).toBe(true);
+  });
+
+  it('copies the configured settings through', async () => {
+    const interfaceConfig = await loadDefaultInterface({
+      config: { interface: { landingHeading: 'greeting', landingFooter: false } },
+      configDefaults: getConfigDefaults(),
+    });
+    expect(interfaceConfig?.landingHeading).toBe('greeting');
+    expect(interfaceConfig?.landingFooter).toBe(false);
+  });
+});
