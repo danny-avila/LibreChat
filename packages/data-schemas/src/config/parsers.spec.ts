@@ -64,6 +64,10 @@ describe('redactMessage', () => {
       'login for [REDACTED_EMAIL] | ok',
     );
     expect(redactMessage('a@b.com and c@d.org')).toBe('[REDACTED_EMAIL] and [REDACTED_EMAIL]');
+    expect(redactMessage('user jöhn@example.com ok')).toBe('user [REDACTED_EMAIL] ok');
+    expect(redactMessage('user 用户@例子.公司 ok')).toBe('user [REDACTED_EMAIL] ok');
+    expect(redactMessage('user user@bücher.de ok')).toBe('user [REDACTED_EMAIL] ok');
+    expect(redactMessage('a@b and user@localhost')).toBe('a@b and user@localhost');
     expect(redactMessage('mention @handle and v1.2.3')).toBe('mention @handle and v1.2.3');
   });
 

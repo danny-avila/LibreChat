@@ -52,7 +52,8 @@ const sensitiveKeys: RegExp[] = [
   /([a-z][a-z0-9+.-]*:\/\/)[^/\s:@]*:[^/\s@]+(?=@)/gi,
 ];
 
-const EMAIL_PATTERN = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b/g;
+const EMAIL_PATTERN =
+  /[\p{L}\p{M}\p{N}._%+-]+@[\p{L}\p{M}\p{N}-]+(?:\.[\p{L}\p{M}\p{N}-]+)*\.\p{L}{2,}/gu;
 const REDACTED_EMAIL_VALUE = '[REDACTED_EMAIL]';
 
 const sensitiveMetadataKey =
