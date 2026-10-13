@@ -144,6 +144,25 @@ Bundled Redis URI used when the Redis subchart is enabled.
 {{- end }}
 
 {{/*
+Whether the chart wires LibreChat to the bundled MongoDB with generated credentials.
+Skipped when the operator supplies their own MONGO_URI or turns subchart auth off.
+*/}}
+{{- define "librechat.bundledMongoAuth" -}}
+{{- if and .Values.mongodb.enabled .Values.mongodb.auth.enabled (not (get (default dict .Values.librechat.configEnv) "MONGO_URI")) -}}
+true
+{{- end -}}
+{{- end }}
+
+{{/*
+Whether the chart wires LibreChat to the bundled Redis with its generated password.
+*/}}
+{{- define "librechat.bundledRedisAuth" -}}
+{{- if and .Values.redis.enabled .Values.redis.auth.enabled (not (get (default dict .Values.librechat.configEnv) "REDIS_URI")) (not (get (default dict .Values.librechat.configEnv) "REDIS_PASSWORD")) -}}
+true
+{{- end -}}
+{{- end }}
+
+{{/*
 RAG Selector labels
 */}}
 {{- define "rag.selectorLabels" -}}

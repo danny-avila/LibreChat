@@ -1,5 +1,11 @@
 1. Get the application URL by running these commands:
 {{- if .Values.ingress.enabled }}
+{{- if not .Values.ingress.tls }}
+
+WARNING: ingress.tls is empty, so traffic (including credentials and session cookies) is served over plain HTTP.
+Set ingress.tls with a secretName and hosts, or terminate TLS at your load balancer.
+
+{{- end }}
 {{- range $host := .Values.ingress.hosts }}
   {{- range .paths }}
   http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}{{ .path }}

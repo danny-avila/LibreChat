@@ -72,6 +72,13 @@ spec:
                   name: {{ . | quote }}
                   key: {{ $.Values.langfuseFanout.redis.passwordSecret.key | quote }}
             {{- end }}
+            {{- if and (not .Values.langfuseFanout.redis.passwordSecret.name) (not .Values.langfuseFanout.redis.uri) .Values.redis.enabled .Values.redis.auth.enabled }}
+            - name: LANGFUSE_FANOUT_REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.redis.auth.existingSecret | default (include "common.names.fullname" .Subcharts.redis) | quote }}
+                  key: {{ .Values.redis.auth.existingSecretPasswordKey | default "redis-password" | quote }}
+            {{- end }}
             - name: LANGFUSE_FANOUT_REDIS_KEY_PREFIX
               value: {{ .Values.langfuseFanout.redis.keyPrefix | quote }}
             - name: LANGFUSE_FANOUT_PUBLIC_URL

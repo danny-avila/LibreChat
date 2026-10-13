@@ -103,9 +103,27 @@ spec:
               name: {{ .Values.global.librechat.existingSecretName }}
               optional: false
           {{- end }}
-          {{- with .Values.global.librechat.env }}
+          {{- if or (include "librechat.bundledMongoAuth" .) (include "librechat.bundledRedisAuth" .) .Values.global.librechat.env }}
           env:
+          {{- if include "librechat.bundledMongoAuth" . }}
+            - name: MONGODB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.mongodb.auth.existingSecret | default (include "common.names.fullname" .Subcharts.mongodb) }}
+                  key: mongodb-root-password
+            - name: MONGO_URI
+              value: mongodb://{{ .Values.mongodb.auth.rootUser | default "root" }}:$(MONGODB_ROOT_PASSWORD)@{{ include "mongodb.service.nameOverride" .Subcharts.mongodb }}.{{ .Release.Namespace | lower }}.svc.cluster.local:27017/LibreChat?authSource=admin
+          {{- end }}
+          {{- if include "librechat.bundledRedisAuth" . }}
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.redis.auth.existingSecret | default (include "common.names.fullname" .Subcharts.redis) }}
+                  key: {{ .Values.redis.auth.existingSecretPasswordKey | default "redis-password" }}
+          {{- end }}
+          {{- with .Values.global.librechat.env }}
           {{- toYaml . | nindent 12 }}
+          {{- end }}
           {{- end }}
       volumes:
       {{- if or .Values.librechat.configYamlContent .Values.librechat.existingConfigYaml }}
