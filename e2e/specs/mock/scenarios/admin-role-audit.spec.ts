@@ -27,7 +27,7 @@ async function auditActions(
   headers: Record<string, string>,
   roleName: string,
 ): Promise<string[]> {
-  const res = await request.get('/api/admin/audit', {
+  const res = await request.get('/api/admin/audit-log', {
     headers,
     params: { search: roleName, limit: 50 },
   });
@@ -113,7 +113,7 @@ test.describe('admin role audit trail', () => {
       const { token } = (await login.json()) as { token: string };
       const headers = { Authorization: `Bearer ${token}` };
 
-      expect((await request.get('/api/admin/audit', { headers })).status()).toBe(403);
+      expect((await request.get('/api/admin/audit-log', { headers })).status()).toBe(403);
       const create = await request.post('/api/admin/roles', {
         headers,
         data: { name: 'audit-denied' },
