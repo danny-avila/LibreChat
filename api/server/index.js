@@ -512,6 +512,7 @@ const startServer = async () => {
           appConfig?.endpoints?.agents?.backgroundTasks?.completionResultBatchSize,
         completionReceiptBatching:
           appConfig?.endpoints?.agents?.backgroundTasks?.completionReceiptBatching,
+        deadLetterRetentionDays: appConfig?.endpoints?.agents?.eventDriven?.deadLetterRetentionDays,
         idlePolling: appConfig?.endpoints?.agents?.eventDriven?.idlePolling,
       });
       const scheduleEngineArmed = (await initializeScheduleEngine()) != null;

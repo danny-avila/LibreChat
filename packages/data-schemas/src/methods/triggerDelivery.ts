@@ -527,6 +527,8 @@ export interface AgentTriggerDeliveryMethods {
       attempt: number;
       error: AgentTriggerDeliveryFailure;
       settledAt: Date;
+      /** When the dead letter expires; absent keeps it until an operator acts. */
+      expiresAt?: Date;
       receiptRetryAt?: Date;
     },
     recovery?: { required: boolean },
@@ -1817,6 +1819,7 @@ export function createAgentTriggerDeliveryMethods(
       workerId: string;
       status: 'succeeded' | 'dead';
       settledAt: Date;
+      expiresAt?: Date;
       result?: unknown;
       error?: AgentTriggerDeliveryFailure;
     },
@@ -1848,6 +1851,7 @@ export function createAgentTriggerDeliveryMethods(
               attempts: input.attempt,
               settledAt: input.settledAt,
               lastError: error,
+              ...(input.expiresAt != null && { expiresAt: input.expiresAt }),
               batchRootId: root._id,
             };
       await Delivery().updateMany(
@@ -1953,6 +1957,7 @@ export function createAgentTriggerDeliveryMethods(
         status: root.status,
         settledAt: root.settledAt,
         ...(root.status === 'succeeded' ? { result: root.result } : {}),
+        ...(root.status === 'dead' && root.expiresAt != null ? { expiresAt: root.expiresAt } : {}),
         ...(error == null ? {} : { error }),
       });
       if (root.status === 'succeeded') {
@@ -4442,6 +4447,8 @@ export function createAgentTriggerDeliveryMethods(
       attempt: number;
       error: AgentTriggerDeliveryFailure;
       settledAt: Date;
+      /** When the dead letter expires; absent keeps it until an operator acts. */
+      expiresAt?: Date;
       receiptRetryAt?: Date;
     },
     recovery?: { required: boolean },
@@ -4461,8 +4468,18 @@ export function createAgentTriggerDeliveryMethods(
         ? { backgroundToolResult: { $exists: false } }
         : {};
     const deadUpdate = (status: 'dead' | 'capability_dead') => ({
-      $set: { status, settledAt: input.settledAt, lastError: error },
-      $unset: { leaseBy: 1, leaseUntil: 1, claimToken: 1, expiresAt: 1 },
+      $set: {
+        status,
+        settledAt: input.settledAt,
+        lastError: error,
+        ...(input.expiresAt != null && { expiresAt: input.expiresAt }),
+      },
+      $unset: {
+        leaseBy: 1,
+        leaseUntil: 1,
+        claimToken: 1,
+        ...(input.expiresAt == null && { expiresAt: 1 }),
+      },
       $push: {
         history: {
           $each: [
@@ -4489,6 +4506,7 @@ export function createAgentTriggerDeliveryMethods(
           capabilityStatus: 'dead',
           settledAt: input.settledAt,
           lastError: error,
+          ...(input.expiresAt != null && { expiresAt: input.expiresAt }),
         },
         $unset: {
           leaseBy: 1,
@@ -4497,7 +4515,7 @@ export function createAgentTriggerDeliveryMethods(
           capabilityLeaseBy: 1,
           capabilityLeaseUntil: 1,
           capabilityClaimToken: 1,
-          expiresAt: 1,
+          ...(input.expiresAt == null && { expiresAt: 1 }),
         },
         $push: deadUpdate('dead').$push,
       },
@@ -4536,6 +4554,7 @@ export function createAgentTriggerDeliveryMethods(
         workerId: input.workerId,
         status: 'dead',
         settledAt: input.settledAt,
+        ...(input.expiresAt != null && { expiresAt: input.expiresAt }),
         error,
       });
     } catch (settlementError) {

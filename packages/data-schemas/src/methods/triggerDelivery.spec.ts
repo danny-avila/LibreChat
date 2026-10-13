@@ -2811,6 +2811,45 @@ describe('agent trigger delivery methods', () => {
     expect(rows.find((row) => row.status === 'batched')?.batchRootRequeueCount).toBe(1);
   });
 
+  it('expires dead letters at their retention deadline and clears it on requeue', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const now = new Date(Date.now() - 1_000);
+    const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60_000);
+    const queued = await methods.enqueueAgentTriggerDelivery(
+      enqueueInput({ user, orderingKey: 'dead-retention-lane', availableAt: now }),
+    );
+    const claim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now,
+      leaseUntil: new Date(now.getTime() + 60_000),
+    });
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: claim!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now,
+    });
+    await methods.deadLetterAgentTriggerDelivery({
+      id: claim!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      attempt: attempt!,
+      error: transientFailure({ retryable: false }),
+      settledAt: now,
+      expiresAt,
+    });
+
+    const dead = await Delivery.findById(queued.delivery.id).lean();
+    expect(dead?.status).toBe('dead');
+    expect(dead?.expiresAt?.getTime()).toBe(expiresAt.getTime());
+
+    await methods.requeueAgentTriggerDelivery(queued.delivery.id, now);
+    const requeued = await Delivery.findById(queued.delivery.id).lean();
+    expect(requeued?.status).toBe('pending');
+    expect(requeued?.expiresAt).toBeUndefined();
+  });
+
   it('does not let stale batch operations overwrite a receipt from a newer generation', async () => {
     const user = new mongoose.Types.ObjectId();
     const coalesceUntil = new Date(Date.now() + 60_000);

@@ -1863,6 +1863,9 @@ export const agentsEndpointSchema = baseEndpointSchema
       eventDriven: z
         .object({
           selfUrl: z.string().url().optional(),
+          /** Days a dead-lettered trigger delivery stays available for operator review and
+           * requeue before it is removed with its event payload. Defaults to 30. */
+          deadLetterRetentionDays: z.number().int().min(1).max(3650).optional(),
           /** Every replica keeps polling Mongo as a crash-recovery fallback. Wakes
            * keep local delivery prompt; these caps bound work missed across replicas. */
           idlePolling: z
