@@ -879,6 +879,21 @@ describe('createAdminGroupsHandlers', () => {
       expect(deps.deleteGroup).not.toHaveBeenCalled();
     });
 
+    it('leaves ACL entries untouched when the config removal fails', async () => {
+      const deps = createDeps({
+        findGroupById: jest.fn().mockResolvedValue(mockGroup()),
+        deleteConfig: jest.fn().mockRejectedValue(new Error('config down')),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status } = createReqRes({ params: { id: validId } });
+
+      await handlers.deleteGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(deps.deleteAclEntries).not.toHaveBeenCalled();
+      expect(deps.deleteGroup).not.toHaveBeenCalled();
+    });
+
     it('removes dependents before the group', async () => {
       const order: string[] = [];
       const deps = createDeps({

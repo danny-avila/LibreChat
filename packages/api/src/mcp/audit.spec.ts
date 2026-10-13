@@ -42,6 +42,22 @@ describe('createMCPServerAuditor', () => {
     );
   });
 
+  it('does not record a preserved OAuth secret as a change', async () => {
+    const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+    const audit = createMCPServerAuditor({ recordAuditEntry });
+
+    await audit(req, {
+      action: 'mcp_server.updated',
+      serverName: 'srv',
+      previous: { title: 'Old', oauth: { client_id: 'id', client_secret: 'stored' } },
+      next: { title: 'New', oauth: { client_id: 'id' } },
+    });
+
+    expect(recordAuditEntry).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: { source: 'DB', fields: 'title' } }),
+    );
+  });
+
   it('is a no-op without a recorder', async () => {
     await expect(
       createMCPServerAuditor({})(req, { action: 'mcp_server.created', serverName: 'srv' }),

@@ -181,10 +181,12 @@ export function createAdminCodeEnvironmentHandlers(deps: AdminCodeEnvironmentDep
       if (!validPairingResponse(payload, resolved.pairing.workerId)) {
         return res.status(502).json({ error: 'Code API returned an invalid pairing response' });
       }
+      /** Workers belong to the deployment's YAML environments, so entries go to the platform chain. */
       await emitAudit(req, {
         action: 'code_worker.paired',
         severity: 'warning',
         target: { type: 'code_worker', id: payload.workerId, name: resolved.id },
+        tenantId: undefined,
         metadata: { environmentId: resolved.id, expiresAt: payload.expiresAt },
       });
       return res.status(200).json({
@@ -233,6 +235,7 @@ export function createAdminCodeEnvironmentHandlers(deps: AdminCodeEnvironmentDep
         action: 'code_worker.revoked',
         severity: 'warning',
         target: { type: 'code_worker', id: resolved.pairing.workerId, name: resolved.id },
+        tenantId: undefined,
         metadata: { environmentId: resolved.id },
       });
       return res.status(200).json({

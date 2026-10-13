@@ -371,6 +371,7 @@ describe('createAdminCodeEnvironmentHandlers', () => {
           target: { type: 'code_worker', id: 'vm-1', name: 'attached-vm' },
         }),
       );
+      expect(input.tenantId).toBeUndefined();
       expect(JSON.stringify(input)).not.toContain('one-time-code-value-that-is-long');
       expect(JSON.stringify(input)).not.toContain('administrator-bootstrap-token');
     });

@@ -361,25 +361,22 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
       }
       /**
        * Config overrides and ACL entries are keyed by group id, so they are
-       * removed before the group itself: if any removal fails the group stays
-       * and the admin can retry, instead of leaving orphaned entries that a
+       * removed in turn (config first, so a config failure leaves ACLs and their
+       * caches untouched) before the group itself: if any removal fails the group
+       * stays and the admin can retry, instead of leaving orphaned entries that a
        * later principal could inherit. Every removal is idempotent.
        * deleteAclEntries is a raw deleteMany wrapper with no type casting.
        * grantPermission stores group principalId as ObjectId, so we must
        * cast here. deleteConfig normalizes internally.
        */
-      const cleanupResults = await Promise.allSettled([
-        deleteConfig(PrincipalType.GROUP, id),
-        deleteAclEntries({
+      try {
+        await deleteConfig(PrincipalType.GROUP, id);
+        await deleteAclEntries({
           principalType: PrincipalType.GROUP,
           principalId: new Types.ObjectId(id),
-        }),
-      ]);
-      const cleanupFailed = cleanupResults.filter((result) => result.status === 'rejected');
-      if (cleanupFailed.length > 0) {
-        for (const result of cleanupFailed) {
-          logger.error('[adminGroups] cascade cleanup failed for group:', id, result.reason);
-        }
+        });
+      } catch (cleanupError) {
+        logger.error('[adminGroups] cascade cleanup failed for group:', id, cleanupError);
         return res.status(500).json({
           error: 'Failed to remove the group permissions and config; the group was not deleted',
           code: 'GROUP_CLEANUP_FAILED',

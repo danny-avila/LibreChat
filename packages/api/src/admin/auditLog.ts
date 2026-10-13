@@ -294,10 +294,9 @@ function describeFilters(filters: ParsedFilters): AuditMetadata {
   }
   if (filters.actorType) metadata.actorType = filters.actorType;
   if (filters.targetType) metadata.targetType = filters.targetType;
-  if (filters.capability) metadata.capability = filters.capability;
   if (filters.from) metadata.from = filters.from.toISOString();
   if (filters.to) metadata.to = filters.to.toISOString();
-  const freeText = (['search', 'actorQuery', 'targetQuery'] as const).filter(
+  const freeText = (['search', 'actorQuery', 'targetQuery', 'capability'] as const).filter(
     (key) => filters[key] != null,
   );
   if (freeText.length > 0) metadata.freeTextFilters = freeText.join(',');

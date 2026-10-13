@@ -34,6 +34,23 @@ export function diffMCPServerFields(previous: ServerConfigLike, next: ServerConf
   return changed.sort();
 }
 
+/**
+ * An update that omits `oauth.client_secret` keeps the stored one, so the secret
+ * is carried onto the incoming config before comparing; otherwise a title-only
+ * edit would be recorded as an oauth change.
+ */
+function withPreservedOAuthSecret(
+  previous: ServerConfigLike,
+  next: ServerConfigLike,
+): ServerConfigLike {
+  const before = previous?.oauth as Record<string, unknown> | undefined;
+  const after = next?.oauth as Record<string, unknown> | undefined;
+  if (!next || !before?.client_secret || !after || after.client_secret) {
+    return next;
+  }
+  return { ...next, oauth: { ...after, client_secret: before.client_secret } };
+}
+
 function serverTitle(config: ServerConfigLike): string | undefined {
   const title = config?.title;
   return typeof title === 'string' && title.length > 0 ? title : undefined;
@@ -51,7 +68,10 @@ export function createMCPServerAuditor(options: {
   return async function auditMCPServer(req, { action, serverName, previous, next }) {
     const name = serverTitle(next) ?? serverTitle(previous);
     const before = action === 'mcp_server.created' ? undefined : previous;
-    const changed = action === 'mcp_server.deleted' ? [] : diffMCPServerFields(before, next);
+    const changed =
+      action === 'mcp_server.deleted'
+        ? []
+        : diffMCPServerFields(before, withPreservedOAuthSecret(before, next));
     await emit(req, {
       action,
       severity: action === 'mcp_server.deleted' ? 'warning' : 'info',
