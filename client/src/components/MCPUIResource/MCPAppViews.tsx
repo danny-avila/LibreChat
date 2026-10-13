@@ -33,6 +33,76 @@ function CapacityNotice() {
  */
 export const MCPAppSuppressionContext = React.createContext<ReadonlySet<TAttachment> | null>(null);
 
+/** The message owns live frames; tool layouts contribute only the space they occupy. */
+export const MCPAppPlacementContext = React.createContext<ReadonlyMap<
+  TAttachment,
+  string[]
+> | null>(null);
+
+function PositionedMCPAppView({
+  app,
+  userId,
+  ordinal,
+  viewKey,
+  layoutRoot,
+}: {
+  app: UIResource;
+  userId: string;
+  ordinal: number;
+  viewKey: string;
+  layoutRoot: HTMLDivElement | null;
+}) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const place = useCallback(() => {
+    const root = layoutRoot;
+    const host = hostRef.current;
+    if (!root || !host) return;
+    const anchor = Array.from(root.querySelectorAll<HTMLElement>('[data-mcp-app-anchor]')).find(
+      (element) => element.dataset.mcpAppAnchor === viewKey,
+    );
+    if (!anchor) {
+      host.style.position = '';
+      host.style.top = '';
+      host.style.left = '';
+      host.style.width = '';
+      return;
+    }
+    const rootRect = root.getBoundingClientRect();
+    const anchorRect = anchor.getBoundingClientRect();
+    host.style.position = 'absolute';
+    host.style.top = `${anchorRect.top - rootRect.top + root.scrollTop}px`;
+    host.style.left = `${anchorRect.left - rootRect.left + root.scrollLeft}px`;
+    host.style.width = `${anchorRect.width}px`;
+    const height = `${host.getBoundingClientRect().height}px`;
+    if (anchor.style.height !== height) anchor.style.height = height;
+  }, [layoutRoot, viewKey]);
+
+  useLayoutEffect(() => {
+    place();
+    const root = layoutRoot;
+    const host = hostRef.current;
+    if (!root || !host) return;
+    const resize = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(place);
+    resize?.observe(host);
+    resize?.observe(root);
+    const changes = new MutationObserver(place);
+    changes.observe(root, { childList: true, subtree: true });
+    window.addEventListener('resize', place);
+    return () => {
+      resize?.disconnect();
+      changes.disconnect();
+      window.removeEventListener('resize', place);
+    };
+  }, [layoutRoot, place]);
+  useLayoutEffect(place);
+
+  return (
+    <div ref={hostRef} className="flow-root">
+      <MCPAppView app={app} userId={userId} ordinal={ordinal} />
+    </div>
+  );
+}
+
 function ActiveMCPAppView({
   app,
   userId,
@@ -229,9 +299,18 @@ const MCPAppView = React.memo(function MCPAppView({
   );
 });
 
-export function MCPAppViews({ attachments }: { attachments?: TAttachment[] }) {
+export function MCPAppViews({
+  attachments,
+  layoutRoot,
+}: {
+  attachments?: TAttachment[];
+  layoutRoot?: HTMLDivElement | null;
+}) {
   const suppressedAttachments = React.useContext(MCPAppSuppressionContext);
+  const placement = React.useContext(MCPAppPlacementContext);
   const { policy, userId } = useMCPAppsHost();
+  const anchorKeys =
+    placement == null ? [] : (attachments ?? []).flatMap((a) => placement.get(a) ?? []);
   const visibleAttachments = useMemo(
     () =>
       suppressedAttachments == null
@@ -241,20 +320,34 @@ export function MCPAppViews({ attachments }: { attachments?: TAttachment[] }) {
   );
   const apps = useMemo(() => selectToolCallUIResources(visibleAttachments), [visibleAttachments]);
 
-  if (!policy.enabled || !userId || apps.length === 0) {
+  if (!policy.enabled || !userId || (apps.length === 0 && anchorKeys.length === 0)) {
     return null;
   }
 
   return (
     <>
-      {apps.map(({ key, resource }, index) => (
-        <MCPAppView
-          key={JSON.stringify([userId, key])}
-          app={resource}
-          userId={userId}
-          ordinal={index + 1}
-        />
+      {anchorKeys.map((key) => (
+        <div key={key} data-mcp-app-anchor={key} className="w-full" />
       ))}
+      {apps.map(({ key, resource }, index) =>
+        layoutRoot !== undefined ? (
+          <PositionedMCPAppView
+            key={JSON.stringify([userId, key])}
+            app={resource}
+            userId={userId}
+            ordinal={index + 1}
+            viewKey={key}
+            layoutRoot={layoutRoot}
+          />
+        ) : (
+          <MCPAppView
+            key={JSON.stringify([userId, key])}
+            app={resource}
+            userId={userId}
+            ordinal={index + 1}
+          />
+        ),
+      )}
     </>
   );
 }
