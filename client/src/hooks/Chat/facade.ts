@@ -1,10 +1,11 @@
-import { useMemo, useEffect, useReducer, useCallback, useRef } from 'react';
+import { useMemo, useState, useEffect, useReducer, useCallback, useRef } from 'react';
 import { useStore } from 'jotai';
 import { Constants } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
-import { useSnapshot, ReactQueryChatState } from '@librechat/chat/react';
+import { useSnapshot, ReactQueryChatState, useChat as useCoreChat } from '@librechat/chat/react';
 import { toView, findLatest, getErrorText, getChatStatus, toStoredMessages } from '@librechat/chat';
-import type { ChatStatus, SendMessageInput } from '@librechat/chat';
+import type { UseChatHelpers as CoreChatHelpers } from '@librechat/chat/react';
+import type { Chat, ChatStatus, SendMessageInput } from '@librechat/chat';
 import type { TMessage, UIMessage } from 'librechat-data-provider';
 import type { TAskProps, TOptions } from '~/common';
 import type { ChatContract } from './contract';
@@ -26,9 +27,9 @@ export type SendMessage = (
 
 /**
  * The `useChat` surface of `@ai-sdk/react@4.0.117` (`UseChatHelpers`), over LibreChat's chat
- * contract. A host that runs its own core `Chat` uses `useChat` from `@librechat/chat/react`
- * instead. Tool decisions and answers (`addToolApprovalResponse`, `addToolOutput`) are left out:
- * the contract's turns run outside a `Chat`, which is what holds the pending pause.
+ * contract. Passing a core `Chat` returns that chat's helpers instead. Tool decisions and answers
+ * (`addToolApprovalResponse`, `addToolOutput`) are left out here: the contract's turns run outside
+ * a `Chat`, which is what holds the pending pause.
  */
 export type UseChatHelpers = {
   /** The conversation the messages are read from (the contract's `messagesKey`); AI SDK's chat id. */
@@ -71,6 +72,9 @@ export type UseChatOptions = {
   /** Requests a reattach to the running generation on mount; see `resumeStream`. */
   resume?: boolean;
 };
+
+/** Options for a `useChat` that runs on a core `Chat` (AI SDK: the `chat` option). */
+export type UseCoreChatOptions = UseChatOptions & { chat: Chat };
 
 const viewOptions = { resolveToolFailure };
 
@@ -213,7 +217,7 @@ const increment = (count: number) => count + 1;
  * `messages` is `getMessages()` mapped per message, re-read when the message query cache is
  * written, and every action forwards to the contract.
  */
-export function useChat({ throttle, resume }: UseChatOptions = {}): UseChatHelpers {
+function useContractChat({ throttle, resume }: UseChatOptions): UseChatHelpers {
   const contract = useChatContext();
   const {
     conversation,
@@ -307,4 +311,27 @@ export function useChat({ throttle, resume }: UseChatOptions = {}): UseChatHelpe
     clearError,
     setMessages,
   };
+}
+
+type ChatOptions = UseChatOptions & { chat?: Chat };
+
+const useChatOnCore = ({ chat, throttle, resume }: ChatOptions): CoreChatHelpers => {
+  if (!chat) {
+    throw new Error('useChat lost its `chat` after mount; key the component on the chat instead');
+  }
+  return useCoreChat({ chat, throttle, resume, view: viewOptions });
+};
+
+/**
+ * AI SDK `useChat`. With a core `Chat` it returns that chat's helpers, mapped with the client's
+ * tool rules; without one it reads and calls the pane's chat contract. Whether a `chat` is passed
+ * is read once, on mount: a component that switches between the two remounts (key it on the chat).
+ */
+export function useChat(options: UseCoreChatOptions): CoreChatHelpers;
+export function useChat(options?: UseChatOptions): UseChatHelpers;
+export function useChat(options: ChatOptions = {}): UseChatHelpers | CoreChatHelpers {
+  const [useImplementation] = useState<(o: ChatOptions) => UseChatHelpers | CoreChatHelpers>(() =>
+    options.chat ? useChatOnCore : useContractChat,
+  );
+  return useImplementation(options);
 }
