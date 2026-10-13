@@ -488,4 +488,115 @@ describe('createAdminAuditLogHandlers', () => {
       expect(ctx.endCalled()).toBe(true);
     });
   });
+
+  describe('audit entries', () => {
+    const user = { _id: new Types.ObjectId(), role: 'admin' };
+
+    it('records audit.read for a list with filters but not free-text values', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const handlers = createAdminAuditLogHandlers(createDeps({ recordAuditEntry }));
+      const { req, res, status } = createReqRes({
+        user,
+        query: {
+          action: ['role.created', 'group.created'],
+          outcome: 'success',
+          from: '2025-01-01',
+          actorQuery: 'alice@example.com',
+          search: 'secret-term',
+        },
+      });
+
+      await handlers.listAuditLog(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(recordAuditEntry).toHaveBeenCalledTimes(1);
+      const input = recordAuditEntry.mock.calls[0][0];
+      expect(input).toEqual(
+        expect.objectContaining({
+          action: 'audit.read',
+          target: { type: 'audit_log' },
+          metadata: {
+            action: 'group.created,role.created',
+            outcome: 'success',
+            from: '2025-01-01T00:00:00.000Z',
+            freeTextFilters: 'search,actorQuery',
+          },
+        }),
+      );
+      expect(JSON.stringify(input)).not.toContain('alice@example.com');
+      expect(JSON.stringify(input)).not.toContain('secret-term');
+    });
+
+    it('records audit.read for a single entry only when it exists', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const found = createAdminAuditLogHandlers(
+        createDeps({
+          recordAuditEntry,
+          findAuditLogEntry: jest.fn().mockResolvedValue(mockEntry()),
+        }),
+      );
+      const missing = createAdminAuditLogHandlers(createDeps({ recordAuditEntry }));
+
+      const a = createReqRes({ user, params: { id: validObjectId } });
+      await missing.getAuditLogEntry(a.req, a.res);
+      expect(recordAuditEntry).not.toHaveBeenCalled();
+
+      const b = createReqRes({ user, params: { id: validObjectId } });
+      await found.getAuditLogEntry(b.req, b.res);
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'audit.read',
+          target: { type: 'audit_log', id: validObjectId },
+        }),
+      );
+    });
+
+    it('records audit.exported before the first row is written', async () => {
+      const order: string[] = [];
+      const recordAuditEntry = jest.fn().mockImplementation(async () => {
+        order.push('audit');
+      });
+      const deps = createDeps({
+        recordAuditEntry,
+        streamAuditLogEntries: jest.fn().mockImplementation(async () => {
+          order.push('stream');
+          return { count: 0, truncated: false };
+        }),
+      });
+      const handlers = createAdminAuditLogHandlers(deps);
+      const ctx = createCsvContext({ user, query: { severity: 'critical' } });
+
+      await handlers.exportAuditLogCsv(ctx.req, ctx.res);
+
+      expect(order).toEqual(['audit', 'stream']);
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'audit.exported',
+          metadata: { format: 'csv', severity: 'critical' },
+        }),
+      );
+    });
+
+    it('does not record an export that fails filter validation', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const handlers = createAdminAuditLogHandlers(createDeps({ recordAuditEntry }));
+      const ctx = createCsvContext({ user, query: { action: 'nope.nope' } });
+
+      await handlers.exportAuditLogCsv(ctx.req, ctx.res);
+
+      expect(recordAuditEntry).not.toHaveBeenCalled();
+    });
+
+    it('blocks the export when failClosed and the audit write fails', async () => {
+      const recordAuditEntry = jest.fn().mockRejectedValue(new Error('audit down'));
+      const deps = createDeps({ recordAuditEntry, auditFailClosed: true });
+      const handlers = createAdminAuditLogHandlers(deps);
+      const ctx = createCsvContext({ user });
+
+      await handlers.exportAuditLogCsv(ctx.req, ctx.res);
+
+      expect(deps.streamAuditLogEntries).not.toHaveBeenCalled();
+      expect(ctx.chunks).toHaveLength(0);
+    });
+  });
 });

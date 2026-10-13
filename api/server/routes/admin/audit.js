@@ -15,6 +15,7 @@ const handlers = createAdminAuditLogHandlers({
   findAuditLogEntry: db.findAuditLogEntry,
   streamAuditLogEntries: db.streamAuditLogEntries,
   verifyAuditChain: db.verifyAuditChain,
+  recordAuditEntry: db.recordAuditEntry,
 });
 
 /**
