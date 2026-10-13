@@ -1,7 +1,7 @@
 import { TERMS_NOT_ACCEPTED_CODE } from 'librechat-data-provider';
 import type { NextFunction, Request, Response } from 'express';
 import type { AppConfig } from '@librechat/data-schemas';
-import { createTermsAcceptanceGate, createTermsBlockCheck } from './terms';
+import { afterTermsGate, createTermsAcceptanceGate, createTermsBlockCheck } from './terms';
 
 const configWith = (modalAcceptance?: boolean): AppConfig =>
   ({ interfaceConfig: { termsOfService: { modalAcceptance } } }) as unknown as AppConfig;
@@ -180,5 +180,27 @@ describe('createTermsBlockCheck', () => {
     ['no user', undefined, configWith(true)],
   ])('does not block when %s', async (_label, user, config) => {
     expect(await check(config)(user)).toBe(false);
+  });
+});
+
+describe('afterTermsGate', () => {
+  const req = createRequest('POST', '/api/files');
+
+  it('runs the handler after the gate passes', async () => {
+    const handler = jest.fn();
+    const next = jest.fn();
+    const gate = jest.fn((_req, _res, done) => done());
+    await afterTermsGate(gate, handler)(req, createResponse(), next);
+    expect(handler).toHaveBeenCalledWith(req, expect.anything(), next);
+  });
+
+  it('forwards a gate error without running the handler', async () => {
+    const error = new Error('config unavailable');
+    const handler = jest.fn();
+    const next = jest.fn();
+    const gate = jest.fn((_req, _res, done) => done(error));
+    await afterTermsGate(gate, handler)(req, createResponse(), next);
+    expect(next).toHaveBeenCalledWith(error);
+    expect(handler).not.toHaveBeenCalled();
   });
 });

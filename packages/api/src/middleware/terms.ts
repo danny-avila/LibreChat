@@ -112,3 +112,11 @@ export function skipUntilTermsAccepted<T>(
   return async (req: { user?: TermsUser }): Promise<T> =>
     (await isBlocked(req.user)) ? fallback : job(req);
 }
+
+type RequestHandler = (req: Request, res: Response, next: NextFunction) => unknown;
+
+/** Runs `handler` only once the gate has passed the request; a gate error goes straight to `next`. */
+export function afterTermsGate(gate: RequestHandler, handler: RequestHandler): RequestHandler {
+  return (req, res, next) =>
+    gate(req, res, (error?: unknown) => (error ? next(error) : handler(req, res, next)));
+}

@@ -13,6 +13,7 @@ const {
   recordRumProxyRequest,
   getValidOpenIdReuseUserId,
   generateTwoFactorSetupToken,
+  afterTermsGate,
   createTermsAcceptanceGate,
   isTwoFactorEnrollmentRequired,
 } = require('@librechat/api');
@@ -211,12 +212,7 @@ const requireJwtAuth = (req, res, next) => {
           if (tenantErr) {
             return next(tenantErr);
           }
-          requireJwtTermsAcceptance(req, res, (termsErr) => {
-            if (termsErr) {
-              return next(termsErr);
-            }
-            refreshCloudFrontCookies(req, res, next);
-          });
+          afterTermsGate(requireJwtTermsAcceptance, refreshCloudFrontCookies)(req, res, next);
         });
       });
     })(req, res, next);
