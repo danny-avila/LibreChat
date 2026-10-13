@@ -6,22 +6,22 @@
     <meta name="theme-color" content="#f4f5f8" />
     <meta
       name="description"
-      content="Meo AI is a local-first AI workspace for MeoArch: chat, multimodal input, automatic model routing, agent work, safe system actions, web access and remote-device orchestration."
+      content="Meo AI turns user-owned AI APIs into a complete personal AI experience: one account, conversations, model routing, files, agents, permissions, web access and local-device execution."
     />
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="Meo AI — One assistant, multiple surfaces" />
+    <meta property="og:title" content="Meo AI — The product layer for your AI APIs" />
     <meta
       property="og:description"
-      content="A local-first AI workspace for MeoArch, built around the right model for each job and explicit authority for every action."
+      content="Bring your own models. Keep the product experience: chat, history, routing, multimodal input, agents, permissions and cross-surface continuity."
     />
     <meta property="og:site_name" content="Meo AI" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Meo AI" />
+    <meta name="twitter:title" content="Meo AI — Bring your own models. Keep the experience." />
     <meta
       name="twitter:description"
-      content="Chat, route, execute and continue across Meo AI surfaces without turning the model into the security boundary."
+      content="AI APIs provide model access. Meo AI builds the product around them."
     />
-    <title>Meo AI — Product overview</title>
+    <title>Meo AI — The product layer for your AI APIs</title>
     <link
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='20' fill='%235365d8'/%3E%3Ctext x='32' y='43' text-anchor='middle' font-family='system-ui,sans-serif' font-size='38' font-weight='800' fill='white'%3Em%3C/text%3E%3C/svg%3E"
@@ -35,6 +35,7 @@
         <span>Meo AI</span>
       </a>
       <nav class="site-nav" aria-label="Product navigation">
+        <a href="#why">Why Meo AI</a>
         <a href="#features">Features</a>
         <a href="#routing">Routing</a>
         <a href="#architecture">Architecture</a>
@@ -47,23 +48,23 @@
       <section class="hero section-shell">
         <div class="hero-copy">
           <div class="eyebrow"><span class="pulse-dot"></span> Development preview</div>
-          <h1>One AI workspace.<br /><span>Different models. Real tools.</span></h1>
+          <h1>Bring your own models.<br /><span>Keep the full AI experience.</span></h1>
           <p class="hero-lead">
-            Meo AI is the local-first AI workspace for MeoArch. Use it as a normal chat when the
-            task is simple, then let it progressively bring in files, images, model routing,
-            agent execution and typed system capabilities when the work becomes more serious.
+            An API gives you access to a model. Meo AI builds the product around it: account,
+            conversations, history, files, images, model routing, agent execution, permissions and
+            a path from the browser back to your own devices.
           </p>
           <div class="hero-actions">
             <a class="button primary" href="/new">Try the web preview</a>
-            <a class="button" href="#status">See what is implemented</a>
+            <a class="button" href="#why">See what Meo adds</a>
           </div>
           <p class="hero-note">
-            Meo AI does not treat model output as permission. Credentials, device authority and
-            privileged system actions stay behind their owning services.
+            Models remain replaceable. Conversation identity, provider credentials, local workspaces
+            and operating-system authority belong to explicit Meo services instead of one model prompt.
           </p>
         </div>
 
-        <div class="hero-visual" aria-label="Illustration of Meo AI routing an execution request">
+        <div class="hero-visual" aria-label="Illustration of Meo AI turning model APIs into a product experience">
           <div class="window desktop-window">
             <div class="window-bar">
               <div class="traffic"><i></i><i></i><i></i></div>
@@ -83,19 +84,19 @@
                 <div class="route-strip">
                   <span>Execution</span><span>coding</span><span>high complexity</span>
                 </div>
-                <div class="bubble user">Fix the installer issue, run the checks, then explain what changed.</div>
+                <div class="bubble user">Inspect this project, fix the issue, and verify the result.</div>
                 <div class="activity-card">
-                  <div class="activity-head"><strong>Working</strong><span>3 coordinated tasks</span></div>
-                  <div>✓ Inspected the relevant files</div>
-                  <div>✓ Applied the implementation</div>
+                  <div class="activity-head"><strong>Working</strong><span>coordinated execution</span></div>
+                  <div>✓ Routed to an execution-capable model</div>
+                  <div>✓ Prepared bounded subagent context</div>
                   <div class="working">● Verifying the result…</div>
                 </div>
                 <div class="bubble assistant">
-                  The change is complete. The execution result passed the verification step before
-                  being shown here.
+                  The result is ready. The conversation keeps its identity even though different
+                  models can handle different parts of the work.
                 </div>
                 <div class="response-details">
-                  <span>Judge verified</span><span>Title saved</span><span>Execution summary</span>
+                  <span>Judge verified</span><span>Title saved</span><span>History retained</span>
                 </div>
               </div>
             </div>
@@ -108,12 +109,12 @@
               <span class="status-live">Meo Account</span>
             </div>
             <div class="web-card">
-              <strong>Conversation history</strong>
-              <span>Synced through Meo Cloud</span>
+              <strong>Same conversation</strong>
+              <span>Account-owned cloud history</span>
             </div>
             <div class="web-card muted-card">
-              <strong>Provider broker</strong>
-              <span>API keys stay outside the browser</span>
+              <strong>Your provider</strong>
+              <span>Credentials stay behind Meo Account</span>
             </div>
           </div>
         </div>
@@ -127,214 +128,169 @@
         <div><span class="status-dot preview"></span><strong>Remote device</strong><small>Integration preview</small></div>
       </section>
 
-      <section id="features" class="section-shell content-section">
-        <div class="section-heading">
-          <span class="kicker">What it actually does</span>
-          <h2>More than a chat window</h2>
-          <p>
-            Meo AI separates the conversation experience, model choice, execution lifecycle,
-            credentials and operating-system authority instead of putting every responsibility in
-            one prompt.
-          </p>
-        </div>
-
-        <div class="feature-grid">
-          <article class="feature-card large accent-card">
-            <div class="feature-icon">↯</div>
-            <span class="feature-state implemented">Implemented</span>
-            <h3>Reliable conversation runtime</h3>
-            <p>
-              Streaming is treated as a real request state, not just text appearing on screen.
-            </p>
-            <ul>
-              <li>Streaming replies with ordered request events</li>
-              <li>Real Stop / cancellation semantics</li>
-              <li>Reconnect after transport loss without replaying the request</li>
-              <li>Duplicate event suppression and bounded reconnect attempts</li>
-              <li>Persisted conversation identity, history, title and summary metadata</li>
-              <li>Typed failure state and safe retry for eligible text requests</li>
-            </ul>
-          </article>
-
-          <article class="feature-card">
-            <div class="feature-icon">◎</div>
-            <span class="feature-state implemented">Implemented</span>
-            <h3>Files, images and vision</h3>
-            <p>Resources are first-class request inputs rather than paths pasted into a prompt.</p>
-            <ul>
-              <li>Native file attachments</li>
-              <li>Clipboard image input</li>
-              <li>Queued and retained attachment state</li>
-              <li>Vision-capability checks before routing</li>
-              <li>Automatic selection of a vision-capable role for image requests</li>
-            </ul>
-          </article>
-
-          <article class="feature-card">
-            <div class="feature-icon">◇</div>
-            <span class="feature-state implemented">Implemented</span>
-            <h3>Native presentation cards</h3>
-            <p>
-              Models can request bounded data-only cards while the installed client decides how to
-              render them.
-            </p>
-            <div class="chip-row">
-              <span>Info</span><span>Status</span><span>Metric</span><span>File</span><span>System</span>
-            </div>
-            <p class="small-copy">No arbitrary QML, HTML or JavaScript is executed from model output.</p>
-          </article>
-
-          <article class="feature-card">
-            <div class="feature-icon">✓</div>
-            <span class="feature-state implemented">Implemented</span>
-            <h3>Observable agent work</h3>
-            <p>
-              Complex execution can expose coordination and verification information instead of
-              hiding everything behind a spinner.
-            </p>
-            <ul>
-              <li>Tool decisions and explicit approval states</li>
-              <li>Coordinator progress surfaced with MeoUI status cards</li>
-              <li>Execution routing details and response summary metadata</li>
-              <li>Bounded verification / repair step for execution responses</li>
-            </ul>
-          </article>
-        </div>
-      </section>
-
-      <section id="routing" class="routing-section">
-        <div class="section-shell content-section">
-          <div class="section-heading split-heading">
-            <div>
-              <span class="kicker">Model routing</span>
-              <h2>The same model does not need to do every job.</h2>
-            </div>
-            <p>
-              Meo AI can assign different models to different workloads. A small deterministic
-              router classifies each request first, then selects an eligible model role without
-              making the model itself the security policy.
-            </p>
-          </div>
-
-          <div class="role-stage">
-            <div class="request-card">
-              <span>User request</span>
-              <strong>“Compare the options, edit the code, and verify the result.”</strong>
-              <div class="request-arrow">↓</div>
-              <div class="router-card">
-                <small>Deterministic request router</small>
-                <strong>Intent · capabilities · complexity</strong>
-              </div>
-            </div>
-
-            <div class="roles-grid">
-              <article class="role-card primary-role">
-                <span class="role-label">Primary</span>
-                <h3>Chat</h3>
-                <p>Fast conversational work that does not need tools or deep reasoning.</p>
-              </article>
-              <article class="role-card primary-role">
-                <span class="role-label">Primary</span>
-                <h3>Reasoning</h3>
-                <p>Planning, analysis, architecture, difficult comparisons and answer composition.</p>
-              </article>
-              <article class="role-card primary-role">
-                <span class="role-label">Primary</span>
-                <h3>Execution</h3>
-                <p>Coding, implementation and tool-oriented work.</p>
-              </article>
-              <article class="role-card primary-role">
-                <span class="role-label">Primary</span>
-                <h3>Vision</h3>
-                <p>Image requests, restricted to models that advertise vision capability.</p>
-              </article>
-              <article class="role-card auxiliary-role">
-                <span class="role-label">Auxiliary</span>
-                <h3>Judge</h3>
-                <p>Bounded verification, ranking and repair support. Never a security approver.</p>
-              </article>
-              <article class="role-card auxiliary-role">
-                <span class="role-label">Auxiliary</span>
-                <h3>Title & summary</h3>
-                <p>Cheap background generation for conversation names and compact summaries.</p>
-              </article>
-            </div>
-          </div>
-
-          <div class="routing-notes">
-            <article>
-              <span>01</span>
-              <div><strong>Capability aware</strong><p>Image input cannot silently fall through to a text-only model.</p></div>
-            </article>
-            <article>
-              <span>02</span>
-              <div><strong>Fallback aware</strong><p>If a preferred model is unavailable, routing can fall back to an eligible model.</p></div>
-            </article>
-            <article>
-              <span>03</span>
-              <div><strong>Bounded coordination</strong><p>High-complexity execution can prepare a small set of local subagent tasks before the main run.</p></div>
-            </article>
-            <article>
-              <span>04</span>
-              <div><strong>Visible outcome</strong><p>Routing, coordination, verification and title-summary activity can be exposed in response details.</p></div>
-            </article>
-          </div>
-        </div>
-      </section>
-
-      <section class="section-shell content-section">
+      <section id="why" class="section-shell content-section">
         <div class="section-heading split-heading">
           <div>
-            <span class="kicker">Web + Meo Account</span>
-            <h2>Your provider connection stays yours.</h2>
+            <span class="kicker">The missing product layer</span>
+            <h2>An API gives you a model. A subscription gives you an experience.</h2>
           </div>
           <p>
-            The browser client signs in through Meo Account and asks the Account provider broker to
-            perform inference. Provider secrets do not need to be copied into the web chat.
+            Meo AI is an attempt to build that experience without tying it to one model vendor.
+            Bring user-owned providers or local models, then keep the useful product layer above them.
           </p>
-        </div>
-
-        <div class="account-flow">
-          <div class="flow-node browser-node"><small>Surface</small><strong>Meo AI Web</strong><span>Cloudflare Pages</span></div>
-          <div class="flow-arrow">→</div>
-          <div class="flow-node account-node"><small>Identity + credential authority</small><strong>Meo Account</strong><span>OAuth / OIDC · encrypted BYOK</span></div>
-          <div class="flow-arrow">→</div>
-          <div class="flow-node provider-node"><small>Inference</small><strong>Your provider</strong><span>Selected connection + model</span></div>
         </div>
 
         <div class="feature-grid compact-grid">
-          <article class="feature-card">
-            <span class="feature-state implemented">Web preview</span>
-            <h3>Browser chat</h3>
+          <article class="feature-card accent-card">
+            <div class="feature-icon">API</div>
+            <h3>What the raw API gives you</h3>
+            <p>Inference: messages in, model output out. Everything around that request is your responsibility.</p>
             <ul>
-              <li>Meo Account OAuth/OIDC sign-in</li>
-              <li>Provider connection and model selection</li>
-              <li>Streaming replies with real abort propagation</li>
-              <li>Stop and retry behavior</li>
-              <li>Per-conversation browser-session drafts</li>
+              <li>Model endpoint and capabilities</li>
+              <li>Usage billed by the selected provider</li>
+              <li>No shared product identity by itself</li>
+              <li>No built-in history, projects, permissions or device workflow</li>
             </ul>
           </article>
           <article class="feature-card">
-            <span class="feature-state implemented">Web preview</span>
-            <h3>Cloud conversation history</h3>
+            <div class="feature-icon">m</div>
+            <h3>What Meo AI adds</h3>
+            <p>A persistent product experience above interchangeable models.</p>
             <ul>
-              <li>Conversation and message persistence in Meo Cloud / Supabase</li>
-              <li>User-scoped row-level ownership</li>
-              <li>History pagination and resume</li>
-              <li>Provider/model deep-link validation</li>
-              <li>Responsive mobile layout and IME-safe input</li>
+              <li>Meo Account and provider broker</li>
+              <li>Conversation identity and cloud history</li>
+              <li>Files, images and rich native presentation</li>
+              <li>Stop, retry, reconnect and visible agent work</li>
             </ul>
           </article>
           <article class="feature-card">
-            <span class="feature-state implemented">Account boundary</span>
-            <h3>Provider broker</h3>
+            <div class="feature-icon">↗</div>
+            <h3>What goes beyond normal chat</h3>
+            <p>The same conversation can grow into real work without handing authority to the model.</p>
             <ul>
-              <li>Credentials stay encrypted behind Meo Account</li>
-              <li>Browser receives connection metadata, not raw API keys</li>
-              <li>Consent details are shown before provider submission</li>
-              <li>OpenAI, Gemini, DeepSeek, OpenRouter and compatible profiles are supported by the account-side broker path</li>
+              <li>Workload-aware model routing</li>
+              <li>Execution, bounded subagents and Judge verification</li>
+              <li>Typed system capabilities and explicit approval</li>
+              <li>Remote AgentRuns on a user-owned Linux device</li>
             </ul>
           </article>
+        </div>
+      </section>
+
+      <section id="features" class="routing-section">
+        <div class="section-shell content-section">
+          <div class="section-heading">
+            <span class="kicker">Complete experience</span>
+            <h2>The parts that make an API feel like a product</h2>
+            <p>
+              The goal is not to clone one subscription service screen-for-screen. It is to provide
+              the product primitives people expect while keeping provider choice and local execution open.
+            </p>
+          </div>
+
+          <div class="feature-grid">
+            <article class="feature-card large accent-card">
+              <span class="feature-state implemented">Implemented</span>
+              <h3>Conversation runtime</h3>
+              <ul>
+                <li>Streaming responses with real request state</li>
+                <li>Stop / cancellation and safe reconnect</li>
+                <li>Persistent conversation history</li>
+                <li>Generated and restored titles / summaries</li>
+                <li>Actionable failures and eligible retry paths</li>
+              </ul>
+            </article>
+            <article class="feature-card">
+              <span class="feature-state implemented">Implemented</span>
+              <h3>Multimodal context</h3>
+              <ul>
+                <li>File attachments</li>
+                <li>Clipboard image input</li>
+                <li>Retained resource state</li>
+                <li>Vision-capability checks before routing</li>
+              </ul>
+            </article>
+            <article class="feature-card">
+              <span class="feature-state implemented">Implemented</span>
+              <h3>Account + BYOK</h3>
+              <ul>
+                <li>Meo Account OAuth/OIDC identity</li>
+                <li>Encrypted provider credentials behind the Account broker</li>
+                <li>Provider/model selection without exposing raw keys to the browser</li>
+                <li>OpenAI, Gemini, DeepSeek, OpenRouter and compatible broker profiles</li>
+              </ul>
+            </article>
+            <article class="feature-card">
+              <span class="feature-state implemented">Implemented</span>
+              <h3>Agent experience</h3>
+              <ul>
+                <li>Observable tool activity and decisions</li>
+                <li>Bounded coordination for complex execution</li>
+                <li>Judge verification / repair before final display</li>
+                <li>Native data-only presentation cards</li>
+              </ul>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="routing" class="section-shell content-section">
+        <div class="section-heading split-heading">
+          <div>
+            <span class="kicker">Model routing</span>
+            <h2>Use the right model for the job, not one expensive model for everything.</h2>
+          </div>
+          <p>
+            Meo AI classifies ordinary requests before execution and can route them by workload and
+            capability. The model choice changes; the conversation does not.
+          </p>
+        </div>
+
+        <div class="roles-grid">
+          <article class="role-card primary-role"><span class="role-label">Primary</span><h3>Chat</h3><p>Fast everyday conversation.</p></article>
+          <article class="role-card primary-role"><span class="role-label">Primary</span><h3>Reasoning</h3><p>Planning, analysis and difficult composition.</p></article>
+          <article class="role-card primary-role"><span class="role-label">Primary</span><h3>Execution</h3><p>Coding, implementation and tool-oriented work.</p></article>
+          <article class="role-card primary-role"><span class="role-label">Primary</span><h3>Vision</h3><p>Image requests routed only to vision-capable models.</p></article>
+          <article class="role-card auxiliary-role"><span class="role-label">Auxiliary</span><h3>Judge</h3><p>Bounded verification, ranking and repair support.</p></article>
+          <article class="role-card auxiliary-role"><span class="role-label">Auxiliary</span><h3>Title & summary</h3><p>Cheap background naming and conversation digests.</p></article>
+        </div>
+
+        <div class="routing-notes">
+          <article><span>01</span><div><strong>Intent aware</strong><p>Chat, reasoning, coding and action requests do not have to share one route.</p></div></article>
+          <article><span>02</span><div><strong>Capability aware</strong><p>Vision requests require an eligible multimodal model instead of silently dropping the image.</p></div></article>
+          <article><span>03</span><div><strong>Cost aware by design</strong><p>Small auxiliary jobs such as titles can use a cheaper role than the main reasoning path.</p></div></article>
+          <article><span>04</span><div><strong>Security stays outside</strong><p>Judge and Execution models can never grant themselves system permission.</p></div></article>
+        </div>
+      </section>
+
+      <section class="remote-section">
+        <div class="section-shell content-section">
+          <div class="section-heading split-heading">
+            <div>
+              <span class="kicker">One account · several surfaces</span>
+              <h2>The conversation belongs to you, not to one browser or one model.</h2>
+            </div>
+            <p>
+              Web and Native are intended to reopen the same cloud conversation. A turn may be
+              answered by a provider model or become an AgentRun on a registered local device while
+              preserving one conversation identity.
+            </p>
+          </div>
+
+          <div class="account-flow">
+            <div class="flow-node browser-node"><small>Surface</small><strong>Web / Native</strong><span>same Meo Account</span></div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-node account-node"><small>Product state</small><strong>Meo AI Cloud</strong><span>conversation · messages · AgentRuns</span></div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-node provider-node"><small>Executor</small><strong>Provider or your device</strong><span>model inference · local AgentService</span></div>
+          </div>
+
+          <div class="remote-details">
+            <div><strong>Cloud conversation</strong><span>The stable identity survives model changes.</span></div>
+            <div><strong>Provider broker</strong><span>API keys remain Account-owned instead of being copied into each client.</span></div>
+            <div><strong>Device relay</strong><span><code>meo-agentd</code> uses an outbound authenticated connection rather than a public AgentService port.</span></div>
+            <div><strong>Local workspace</strong><span>Source files can remain on the device behind opaque workspace references.</span></div>
+          </div>
         </div>
       </section>
 
@@ -342,10 +298,10 @@
         <div class="section-shell content-section">
           <div class="section-heading">
             <span class="kicker">Architecture</span>
-            <h2>One product, several authority boundaries.</h2>
+            <h2>Models are replaceable. Authority is not.</h2>
             <p>
-              The point of the architecture is not to create more boxes. It is to make sure chat,
-              credentials, local execution and privileged system control can evolve independently.
+              Meo AI separates user experience from credential ownership and system authority, so
+              adding another model does not also grant it another set of secrets or privileges.
             </p>
           </div>
 
@@ -353,137 +309,81 @@
             <div class="arch-column surfaces">
               <span class="arch-title">Surfaces</span>
               <div class="arch-node"><strong>Native MeoUI</strong><small>C++ / QML desktop</small></div>
-              <div class="arch-node"><strong>Meo AI Web</strong><small>Browser surface</small></div>
+              <div class="arch-node"><strong>Meo AI Web</strong><small>browser surface</small></div>
             </div>
             <div class="arch-connector"><span>→</span></div>
             <div class="arch-column core">
-              <span class="arch-title">Meo AI</span>
+              <span class="arch-title">Product layer</span>
               <div class="arch-node accent"><strong>AgentService</strong><small>request lifecycle · tools · routing</small></div>
               <div class="arch-node"><strong>Meo Cloud</strong><small>conversation · AgentRun · relay state</small></div>
             </div>
             <div class="arch-connector"><span>→</span></div>
             <div class="arch-column authorities">
               <span class="arch-title">Authorities</span>
-              <div class="arch-node"><strong>Meo Account</strong><small>identity · provider keys · consent</small></div>
+              <div class="arch-node"><strong>Meo Account</strong><small>identity · provider credentials · consent</small></div>
               <div class="arch-node"><strong>System AI Router</strong><small>typed OS capabilities · policy</small></div>
-              <div class="arch-node"><strong>Device / meo-agentd</strong><small>local workspace · remote AgentRun bridge</small></div>
+              <div class="arch-node"><strong>Device / meo-agentd</strong><small>local workspace · AgentRun bridge</small></div>
             </div>
           </div>
 
           <div class="principles-grid">
-            <article><strong>Conversation ≠ model</strong><p>A conversation keeps its identity even when a different model or executor handles a later turn.</p></article>
-            <article><strong>Prompt ≠ permission</strong><p>Skills, MCP descriptions and model text cannot grant themselves system authority.</p></article>
-            <article><strong>Cloud ≠ local filesystem</strong><p>Remote work can use opaque workspace references instead of publishing local paths.</p></article>
-            <article><strong>Disconnect ≠ cancel</strong><p>Transport loss can reconnect to the same request instead of accidentally submitting a new side effect.</p></article>
-          </div>
-        </div>
-      </section>
-
-      <section class="section-shell content-section">
-        <div class="section-heading split-heading">
-          <div>
-            <span class="kicker">System actions</span>
-            <h2>Useful access without giving the model the keys.</h2>
-          </div>
-          <p>
-            The native SystemTool path is an explicit opt-in preview. It consumes capabilities and
-            argument schemas from the System AI Router rather than exposing one generic “run anything”
-            system function.
-          </p>
-        </div>
-
-        <div class="system-demo">
-          <div class="system-step"><small>1 · Model proposes</small><strong>Set volume to 30%</strong></div>
-          <div class="system-line"></div>
-          <div class="system-step"><small>2 · Typed capability</small><strong>audio.volume.set</strong></div>
-          <div class="system-line"></div>
-          <div class="system-step emphasized"><small>3 · Policy / confirmation</small><strong>Approve exact request</strong></div>
-          <div class="system-line"></div>
-          <div class="system-step"><small>4 · Owning service</small><strong>Execute + report result</strong></div>
-        </div>
-        <p class="center-note">
-          Approval is bound to the Router-issued request identity. A model, Skill or presentation card cannot approve itself.
-        </p>
-      </section>
-
-      <section class="remote-section">
-        <div class="section-shell content-section">
-          <div class="section-heading split-heading">
-            <div>
-              <span class="kicker">Remote agent bridge</span>
-              <h2>Your browser can target your own Linux device — without opening a public AgentService port.</h2>
-            </div>
-            <p>
-              The cloud/device protocol and <code>meo-agentd</code> implementation exist, but this path
-              is still presented as an integration preview until the full live acceptance path is
-              repeatedly validated.
-            </p>
-          </div>
-
-          <div class="remote-flow">
-            <div class="device-card browser-device"><span>Browser</span><strong>AgentRun</strong><small>conversation + task</small></div>
-            <div class="relay-path"><span>Outbound relay</span><i></i></div>
-            <div class="device-card linux-device"><span>Linux device</span><strong>meo-agentd</strong><small>local AgentService</small></div>
-          </div>
-
-          <div class="remote-details">
-            <div><strong>Pair deliberately</strong><span>Short-lived browser-approved device enrollment.</span></div>
-            <div><strong>Store narrowly</strong><span>Device credential goes to KWallet, not a JSON config.</span></div>
-            <div><strong>Connect outbound</strong><span>No public inbound port or router forwarding required.</span></div>
-            <div><strong>Resume safely</strong><span>Cancellation, approval and reconnect preserve exact request identity.</span></div>
+            <article><strong>Conversation ≠ model</strong><p>GPT, Claude, a local model or a device agent can participate without replacing the conversation.</p></article>
+            <article><strong>Prompt ≠ permission</strong><p>Model output, Skills and MCP descriptions are input to policy, never authority.</p></article>
+            <article><strong>Cloud ≠ filesystem</strong><p>Remote orchestration does not require publishing the user's local workspace path.</p></article>
+            <article><strong>Disconnect ≠ retry</strong><p>Reconnect semantics preserve exact request identity instead of duplicating side effects.</p></article>
           </div>
         </div>
       </section>
 
       <section id="status" class="section-shell content-section status-section">
         <div class="section-heading">
-          <span class="kicker">Honest status</span>
-          <h2>What is productized, what is preview, and what is still upstream capability.</h2>
+          <span class="kicker">From API wrapper to subscription-quality product</span>
+          <h2>What is already real — and what still needs to close the experience gap.</h2>
           <p>
-            Meo AI is intentionally not presented as a finished release. The distinction matters:
-            an inherited engine feature is not a finished Meo feature until it has crossed the Meo
-            service, UI, persistence and security boundaries and passed live acceptance.
+            The important line is not whether code exists somewhere upstream. A capability counts as
+            a Meo AI product feature only when its UI, persistence, security semantics and live path
+            are integrated and testable.
           </p>
         </div>
 
         <div class="status-columns">
           <article class="status-column ready-column">
-            <div class="status-column-head"><span class="status-dot live"></span><strong>Implemented in the Meo path</strong></div>
+            <div class="status-column-head"><span class="status-dot live"></span><strong>Productized now</strong></div>
             <ul>
-              <li>Native C++/QML MeoUI chat surface</li>
-              <li>AgentService streaming, Stop, cancellation and reconnect</li>
-              <li>Persistent history plus generated/restored title and summary metadata</li>
-              <li>Active Chat / Reasoning / Execution / Vision request routing</li>
-              <li>Judge verification/repair and bounded high-complexity coordination</li>
-              <li>File and clipboard-image attachment flow with vision-aware routing</li>
-              <li>Native presentation/status cards and tool confirmation path</li>
-              <li>Web Meo Account sign-in, provider broker, model selection and streaming chat</li>
-              <li>Web conversation history persisted through Meo Cloud / Supabase</li>
-              <li>Actionable failure and retry states on supported request paths</li>
+              <li>Native MeoUI and browser chat surfaces</li>
+              <li>Streaming, Stop, cancellation, reconnect and retry states</li>
+              <li>Cloud conversation history plus title / summary metadata</li>
+              <li>Chat / Reasoning / Execution / Vision routing</li>
+              <li>Judge verification and bounded coordination</li>
+              <li>Files, clipboard images and vision-aware routing</li>
+              <li>Meo Account provider broker and BYOK boundary</li>
+              <li>Tool confirmation and typed native presentation</li>
             </ul>
           </article>
 
           <article class="status-column preview-column">
-            <div class="status-column-head"><span class="status-dot preview"></span><strong>Implemented as preview / still under acceptance</strong></div>
+            <div class="status-column-head"><span class="status-dot preview"></span><strong>Closing the complete-experience gap</strong></div>
             <ul>
-              <li>Typed System AI Router integration for native system actions</li>
-              <li>Remote AgentRun cloud service and device relay</li>
-              <li>Device enrollment, narrow credentials and KWallet-backed <code>meo-agentd</code></li>
-              <li>Full cross-surface Native ↔ Cloud conversation unification</li>
-              <li>Complete live-provider / Plasma acceptance for every supported path</li>
-              <li>Long-running durability across service restart</li>
+              <li>Full Native ↔ Web conversation parity</li>
+              <li>Projects / durable workspace experience</li>
+              <li>Memory review, scope and deletion UX</li>
+              <li>Richer artifacts, files and diff workflows</li>
+              <li>Usage / cost dashboard across providers</li>
+              <li>Background tasks and notifications</li>
+              <li>Remote device AgentRun live acceptance</li>
+              <li>Polished onboarding that hides provider plumbing from normal use</li>
             </ul>
           </article>
 
           <article class="status-column upstream-column">
-            <div class="status-column-head"><span class="status-dot inherited"></span><strong>Useful upstream capability, not yet claimed as finished Meo product</strong></div>
+            <div class="status-column-head"><span class="status-dot inherited"></span><strong>Available building blocks, not yet claimed as finished Meo UX</strong></div>
             <ul>
-              <li>Full Skills management experience</li>
-              <li>Full MCP management experience</li>
-              <li>Long-term memory product UI</li>
-              <li>Document/RAG workflows</li>
-              <li>Web search product surface</li>
-              <li>Image generation workflow</li>
+              <li>Full Skills management</li>
+              <li>Full MCP management</li>
+              <li>Long-term memory engine</li>
+              <li>Document / RAG workflows</li>
+              <li>Web search</li>
+              <li>Image generation</li>
               <li>Scheduled tasks</li>
               <li>Broad terminal / extension ecosystem</li>
             </ul>
@@ -495,10 +395,10 @@
         <div class="final-card">
           <div>
             <span class="kicker">Meo AI</span>
-            <h2>Simple when you want chat.<br />Structured when you need an agent.</h2>
+            <h2>Your models.<br />One product experience.</h2>
             <p>
-              One product direction across native and web, with model choice, execution and system
-              authority kept explicit instead of hidden behind a single AI box.
+              The goal is simple: keep the flexibility and pricing of APIs while rebuilding the
+              continuity, polish and agent experience people normally expect from an AI subscription.
             </p>
           </div>
           <div class="final-actions">
