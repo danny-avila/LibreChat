@@ -23,8 +23,6 @@ const TENANT_ISOLATION_APPLIED = Symbol.for('librechat:tenantIsolation');
 const MANUAL_TENANT_SCOPING = new Set<string>([
   'SystemGrant',
   'SkillSyncStatus',
-  'SkillDeletion',
-  'SkillUploadIntent',
   'AuditLog',
   'RefreshTokenBridge',
 ]);

@@ -8,6 +8,7 @@ import type {
 import type { ISkillFileDocument } from '~/types/skill';
 import type { ISkillDocument } from '~/types/skill';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import { runAsSystem } from '~/config/tenantContext';
 import logger from '~/config/winston';
 
 type SkillRow = ISkillDocument & { _id: Types.ObjectId };
@@ -112,20 +113,24 @@ export function createSkillLifecycleMethods(
       .lean()) as SkillRow | null;
     const existing = skill ?? ((await skillModel().findById(skillId).lean()) as SkillRow | null);
     if (!existing?.deletingAt) return null;
-    const journal = (await deletionModel()
-      .findOneAndUpdate(
-        { skillId },
-        {
-          $setOnInsert: {
-            skillId,
-            author: existing.author,
-            tenantId: existing.tenantId,
-            startedAt: existing.deletingAt,
+    // The parent was resolved under the caller's tenant scope above. Preserve
+    // its tenant on the journal even when a legacy caller has no ALS context.
+    const journal = (await runAsSystem(async () =>
+      deletionModel()
+        .findOneAndUpdate(
+          { skillId },
+          {
+            $setOnInsert: {
+              skillId,
+              author: existing.author,
+              tenantId: existing.tenantId,
+              startedAt: existing.deletingAt,
+            },
           },
-        },
-        { upsert: true, new: true },
-      )
-      .lean()) as ISkillDeletion;
+          { upsert: true, new: true },
+        )
+        .lean(),
+    )) as ISkillDeletion;
     if (existing.deletionNeedsJournal) {
       // The marker also covers crashes after the journal insert but before
       // every legacy file has a durable blob reference.
@@ -142,7 +147,7 @@ export function createSkillLifecycleMethods(
                 skillId,
                 fileId: file.file_id,
                 source: file.source,
-                storageKey: file.filepath,
+                storageKey: file.storageKey ?? file.filepath,
                 author: file.author,
                 writerId: 'legacy-backfill',
                 state: 'committed',

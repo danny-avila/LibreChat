@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import { runAsSystem, tenantStorage } from '~/config/tenantContext';
 import { createSkillLifecycleMethods } from './skillLifecycle';
 import { createModels } from '../models';
 
@@ -66,6 +67,43 @@ describe('Skill deletion journal', () => {
     expect(await lifecycle.discoverUnjournaledDeletions()).toBe(0);
     await lifecycle.beginSkillDeletion(skill.id);
     expect(await mongoose.models.SkillDeletion.countDocuments({ skillId: skill._id })).toBe(1);
+  });
+
+  it('scopes lifecycle journals and upload intents to the active tenant', async () => {
+    const { skill, author } = await makeSkill();
+    await lifecycle.beginSkillDeletion(skill.id);
+    await expect(
+      lifecycle.reserveSkillUploadIntent({
+        skillId: skill.id,
+        fileId: 'tenant-a-intent',
+        source: 'local',
+        storageKey: `/uploads/${author}/tenant-a-intent`,
+        author: author.toString(),
+        tenantId: 'tenant-a',
+        writerId: 'tenant-a-writer',
+      }),
+    ).rejects.toMatchObject({ code: 'SKILL_DELETING' });
+
+    await tenantStorage.run({ tenantId: 'tenant-b' }, async () => {
+      expect(await lifecycle.beginSkillDeletion(skill.id)).toBeNull();
+      expect(await lifecycle.getSkillDeletion(skill.id)).toBeNull();
+      expect(await lifecycle.getSkillUploadIntent('tenant-a-intent')).toBeNull();
+      expect(await lifecycle.listPendingSkillDeletions()).toEqual([]);
+      expect(await lifecycle.listAbandonedSkillUploadIntents()).toEqual([]);
+      expect(
+        await lifecycle.transitionSkillUploadIntent(
+          'tenant-a-intent',
+          'tenant-a-writer',
+          'abandoned',
+          'committed',
+        ),
+      ).toBe(false);
+    });
+
+    expect(await runAsSystem(() => lifecycle.getSkillDeletion(skill.id))).not.toBeNull();
+    expect(
+      await runAsSystem(() => lifecycle.getSkillUploadIntent('tenant-a-intent')),
+    ).not.toBeNull();
   });
 
   it('releases the public name at the deletion mark without dropping the unique index', async () => {
@@ -422,6 +460,29 @@ describe('Skill upload intents', () => {
     expect(await lifecycle.listSkillUploadIntents(skill._id)).toHaveLength(1);
     await lifecycle.markSkillUploadIntentCleaned('legacy-file');
     expect((await lifecycle.listSkillUploadIntents(skill._id))[0].cleanedAt).toBeInstanceOf(Date);
+  });
+
+  it('backfills the canonical storage key instead of a public file URL', async () => {
+    const { skill, author } = await makeSkill();
+    await mongoose.models.SkillFile.create({
+      skillId: skill._id,
+      file_id: 'remote-legacy-file',
+      relativePath: 'references/remote.md',
+      filename: 'remote.md',
+      filepath: 'https://cdn.example.test/temporary-signed-url',
+      storageKey: `skills/${author}/remote-legacy-file`,
+      source: 's3',
+      mimeType: 'text/markdown',
+      bytes: 4,
+      author,
+      tenantId: 'tenant-a',
+    });
+
+    await lifecycle.beginSkillDeletion(skill.id);
+    expect(await lifecycle.getSkillUploadIntent('remote-legacy-file')).toMatchObject({
+      storageKey: `skills/${author}/remote-legacy-file`,
+      tenantId: 'tenant-a',
+    });
   });
 
   it('queues a committed rolled-back upload for retry and records successful cleanup', async () => {
