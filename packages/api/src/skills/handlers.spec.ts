@@ -2,8 +2,9 @@ import os from 'os';
 import path from 'path';
 import { Types } from 'mongoose';
 import { promises as fs } from 'fs';
-import type { DeleteSkillResult, ISkillFile } from '@librechat/data-schemas';
+import type { ISkillFile } from '@librechat/data-schemas';
 import type { Response } from 'express';
+import type { SkillDeletionProgress } from './deletion';
 import type { SkillsHandlersDeps } from './handlers';
 import type { ServerRequest } from '~/types';
 import {
@@ -22,99 +23,70 @@ function mockResponse(): Response {
 }
 
 describe('skill delete handler', () => {
-  it('retries dependent cleanup before the deleted skill becomes unreachable', async () => {
+  function deletionHarness() {
     const id = new Types.ObjectId().toString();
-    const deleteBlob = jest.fn(async () => undefined);
-    const incomplete: DeleteSkillResult = {
+    const complete: SkillDeletionProgress = {
+      found: true,
       deleted: true,
-      skillAbsent: true,
-      cleanupComplete: false,
-      failedCleanupSteps: ['skill_files'],
-    };
-    const complete: DeleteSkillResult = {
-      deleted: false,
       skillAbsent: true,
       cleanupComplete: true,
-      failedCleanupSteps: [],
+      failedSteps: [],
     };
-    const deleteSkill = jest.fn().mockResolvedValueOnce(incomplete).mockResolvedValueOnce(complete);
-    const file = {
-      relativePath: 'references/query.sql',
-      filepath: '/uploads/query.sql',
-      source: 'local',
-      author: new Types.ObjectId(),
-    } as ISkillFile & { _id: Types.ObjectId };
-    const handlers = createSkillsHandlers({
-      deleteSkill,
-      listSkillFiles: jest.fn(async () => [file]),
-      getStrategyFunctions: jest.fn(() => ({ deleteFile: deleteBlob })),
+    const deps = {
+      deleteSkillById: jest.fn(async () => complete),
       isValidObjectIdString: jest.fn(() => true),
-    } as unknown as SkillsHandlersDeps);
-    const req = { params: { id }, user: { id: 'manager-1' } } as unknown as ServerRequest;
-    const res = mockResponse();
-
-    await handlers.delete(req, res);
-
-    expect(deleteSkill).toHaveBeenCalledTimes(2);
-    expect(deleteBlob).toHaveBeenCalledTimes(1);
-    expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json).toHaveBeenCalledWith({ id, deleted: true, cleanupComplete: true });
-  });
-
-  it('returns an evictable response when only non-file cleanup remains incomplete', async () => {
-    const id = new Types.ObjectId().toString();
-    const incomplete: DeleteSkillResult = {
-      deleted: true,
-      skillAbsent: true,
-      cleanupComplete: false,
-      failedCleanupSteps: ['permissions'],
     };
-    const deleteSkill = jest.fn(async () => incomplete);
-    const handlers = createSkillsHandlers({
-      deleteSkill,
-      listSkillFiles: jest.fn(async () => []),
-      getStrategyFunctions: jest.fn(),
-      isValidObjectIdString: jest.fn(() => true),
-    } as unknown as SkillsHandlersDeps);
+    return { id, deps };
+  }
+
+  it('delegates deletion through the claimed service before returning success', async () => {
+    const { id, deps } = deletionHarness();
+    const handlers = createSkillsHandlers(deps as unknown as SkillsHandlersDeps);
     const req = { params: { id } } as unknown as ServerRequest;
     const res = mockResponse();
 
     await handlers.delete(req, res);
 
-    expect(deleteSkill).toHaveBeenCalledTimes(2);
+    expect(deps.deleteSkillById).toHaveBeenCalledWith(id);
     expect(res.status).toHaveBeenCalledWith(200);
-    expect(res.json).toHaveBeenCalledWith({ id, deleted: true, cleanupComplete: false });
+    expect(res.json).toHaveBeenCalledWith({ id, deleted: true, cleanupComplete: true });
   });
 
-  it('awaits blob cleanup and reports a partial deletion when storage rejects it', async () => {
-    const id = new Types.ObjectId().toString();
-    const deleteBlob = jest.fn(async () => {
-      throw new Error('storage unavailable');
+  it('leaves the deletion pending when non-file cleanup is incomplete', async () => {
+    const { id, deps } = deletionHarness();
+    deps.deleteSkillById.mockResolvedValueOnce({
+      found: true,
+      deleted: false,
+      skillAbsent: false,
+      cleanupComplete: false,
+      failedSteps: ['permissions'],
     });
-    const handlers = createSkillsHandlers({
-      deleteSkill: jest.fn(async () => ({
-        deleted: true,
-        skillAbsent: true,
-        cleanupComplete: true,
-        failedCleanupSteps: [],
-      })),
-      listSkillFiles: jest.fn(async () => [
-        {
-          relativePath: 'references/query.sql',
-          filepath: '/uploads/query.sql',
-          source: 'local',
-          author: new Types.ObjectId(),
-        } as ISkillFile & { _id: Types.ObjectId },
-      ]),
-      getStrategyFunctions: jest.fn(() => ({ deleteFile: deleteBlob })),
-      isValidObjectIdString: jest.fn(() => true),
-    } as unknown as SkillsHandlersDeps);
-    const req = { params: { id }, user: { id: 'manager-1' } } as unknown as ServerRequest;
+    const handlers = createSkillsHandlers(deps as unknown as SkillsHandlersDeps);
+    const req = { params: { id } } as unknown as ServerRequest;
     const res = mockResponse();
 
     await handlers.delete(req, res);
 
-    expect(deleteBlob).toHaveBeenCalledTimes(1);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ id, deleted: true, cleanupComplete: false });
+  });
+
+  it('reports pending cleanup when another worker holds the claim', async () => {
+    const { id, deps } = deletionHarness();
+    deps.deleteSkillById.mockResolvedValueOnce({
+      found: true,
+      deleted: false,
+      skillAbsent: false,
+      cleanupComplete: false,
+      failedSteps: [],
+    });
+    const handlers = createSkillsHandlers(deps as unknown as SkillsHandlersDeps);
+    const req = { params: { id } } as unknown as ServerRequest;
+    const res = mockResponse();
+
+    await handlers.delete(req, res);
+
+    expect(deps.deleteSkillById).toHaveBeenCalledWith(id);
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith({ id, deleted: true, cleanupComplete: false });
   });
@@ -373,5 +345,23 @@ describe('skill file delete handler', () => {
     await handlers.deleteFile(req, res);
 
     expect(res.status).toHaveBeenCalledWith(409);
+  });
+
+  it('reports a conflict when whole-Skill deletion starts before the file row is removed', async () => {
+    const deleteBlob = jest.fn(async () => undefined);
+    const handlers = createSkillsHandlers({
+      getSkillFileByPath: jest.fn(async () => file),
+      deleteSkillFile: jest.fn(async () => {
+        throw Object.assign(new Error('Skill is being deleted'), { code: 'SKILL_DELETING' });
+      }),
+      getStrategyFunctions: jest.fn(() => ({ deleteFile: deleteBlob })),
+    } as unknown as SkillsHandlersDeps);
+    const res = mockResponse();
+
+    await handlers.deleteFile(req, res);
+
+    expect(deleteBlob).toHaveBeenCalledTimes(1);
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({ error: 'SKILL_DELETING' });
   });
 });

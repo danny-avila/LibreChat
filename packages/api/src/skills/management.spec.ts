@@ -3,14 +3,20 @@ import express from 'express';
 import request from 'supertest';
 import mongoose, { Types } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { createModels, createMethods, tenantStorage } from '@librechat/data-schemas';
 import { PermissionBits, Permissions, PermissionTypes } from 'librechat-data-provider';
-import type { AllMethods, IRole, IUser } from '@librechat/data-schemas';
+import {
+  createModels,
+  createMethods,
+  createSkillDeletionPersistenceAdapter,
+  tenantStorage,
+} from '@librechat/data-schemas';
+import type { AllMethods, AppConfig, IRole, IUser } from '@librechat/data-schemas';
 import type { FiltersConfig } from 'librechat-data-provider';
 import type { RequestHandler } from 'express';
 import type { SkillManagementDeps } from './management';
 import type { SkillsHandlers } from './handlers';
 import type { ServerRequest } from '~/types';
+import { createSkillDeletionService } from './deletionService';
 import { createSkillManagementHandlers } from './management';
 import { createSkillsHandlers } from './handlers';
 
@@ -87,8 +93,18 @@ beforeEach(async () => {
   publiclyAccessible = jest.fn(async () => []);
   publicStatus = jest.fn(async () => false);
   capabilityCheck = jest.fn(async () => canManage);
+  const deletionService = createSkillDeletionService({
+    persistence: { ...db, ...createSkillDeletionPersistenceAdapter(db) },
+    loadConfig: async () =>
+      ({ skillDeletion: { finalizationEnabled: true } }) as unknown as AppConfig,
+    getStrategyFunctions: () => ({ deleteFile: async () => undefined }),
+    runAsSystem: async (callback) => callback(),
+    logger: { error: jest.fn(), warn: jest.fn() },
+  });
   skillHandlers = createSkillsHandlers({
     ...db,
+    deleteSkillById: deletionService.deleteSkillById,
+    listSkillFiles: db.listSkillFiles,
     findAccessibleResources: accessible,
     findPubliclyAccessibleResources: publiclyAccessible,
     hasPublicPermission: publicStatus,
@@ -476,6 +492,17 @@ it('classifies content-policy blocks as invalid input and never writes the file'
 it('returns a documented 409 when another writer changes the skill file during the save', async () => {
   saveFile.mockRejectedValueOnce(
     Object.assign(new Error('private file storage revision'), { code: 'SKILL_FILE_CONFLICT' }),
+  );
+  const result = await request(app)
+    .put(`/skills/${skillId}/files/notes.md`)
+    .send({ content: 'Notes' })
+    .expect(409);
+  expect(result.body).toEqual({ error: { code: 'conflict', message: 'Resource conflict' } });
+});
+
+it('returns a documented 409 when Skill deletion wins the file-write race', async () => {
+  saveFile.mockRejectedValueOnce(
+    Object.assign(new Error('Skill is being deleted'), { code: 'SKILL_DELETING' }),
   );
   const result = await request(app)
     .put(`/skills/${skillId}/files/notes.md`)

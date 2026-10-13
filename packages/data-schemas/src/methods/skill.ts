@@ -18,6 +18,7 @@ import type {
   ISkillSummary,
 } from '~/types/skill';
 import type { IAgent } from '~/types/agent';
+import { createSkillLifecycleMethods } from './skillLifecycle';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { stripYamlTrailingComment } from '~/utils/yaml';
@@ -1000,7 +1001,10 @@ export async function filterExistingSkillIds(
   }
   const Skill = mongoose.models.Skill as Model<ISkillDocument>;
   const docs = await Skill.find(
-    { _id: { $in: candidates.map((id) => new mongoose.Types.ObjectId(id)) } },
+    {
+      _id: { $in: candidates.map((id) => new mongoose.Types.ObjectId(id)) },
+      deletingAt: { $exists: false },
+    },
     { _id: 1 },
   ).lean<Array<{ _id: Types.ObjectId }>>();
   const existing = new Set(docs.map((doc) => doc._id.toString()));
@@ -1053,6 +1057,8 @@ export function createSkillMethods(
     update: UpdateSkillInput;
   }) => Promise<UpdateSkillResult>;
   deleteSkill: (id: string) => Promise<DeleteSkillResult>;
+  deleteSkillFileAfterBlob: (skillId: string, fileId: string) => Promise<boolean>;
+  finalizeSkillDeletion: (id: string) => Promise<DeleteSkillResult>;
   deleteUserSkills: (userId: Types.ObjectId | string) => Promise<number>;
   findSkillBySourceIdentity: (params: {
     source: 'github' | 'notion';
@@ -1099,8 +1105,8 @@ export function createSkillMethods(
     >,
   ): FilterQuery<ISkillDocument> {
     const filter: FilterQuery<ISkillDocument> = params.manageTenantId
-      ? { tenantId: params.manageTenantId }
-      : { _id: { $in: params.accessibleIds } };
+      ? { tenantId: params.manageTenantId, deletingAt: { $exists: false } }
+      : { _id: { $in: params.accessibleIds }, deletingAt: { $exists: false } };
     if (params.category && params.category.length > 0) {
       filter.category = params.category;
     }
@@ -1250,7 +1256,7 @@ export function createSkillMethods(
       return null;
     }
     const Skill = mongoose.models.Skill as Model<ISkillDocument>;
-    const doc = await Skill.findById(id).lean();
+    const doc = await Skill.findOne({ _id: id, deletingAt: { $exists: false } }).lean();
     return (doc as unknown as (ISkill & { _id: Types.ObjectId }) | null) ?? null;
   }
 
@@ -1288,7 +1294,11 @@ export function createSkillMethods(
        the previous performance characteristics for callers that just
        want "newest match". */
     if (!preferUserInvocable && !preferModelInvocable) {
-      const doc = await Skill.findOne({ name, _id: { $in: accessibleIds } })
+      const doc = await Skill.findOne({
+        name,
+        _id: { $in: accessibleIds },
+        deletingAt: { $exists: false },
+      })
         .sort({ updatedAt: -1 })
         .lean();
       return backfillDerivedFromFrontmatter(
@@ -1298,7 +1308,11 @@ export function createSkillMethods(
     /* Multi-doc path: fetch all matching docs (typically 1, rarely 2+
        across same-name duplicates) and pick the first satisfying the
        caller's preference; fall back to newest. */
-    const docs = (await Skill.find({ name, _id: { $in: accessibleIds } })
+    const docs = (await Skill.find({
+      name,
+      _id: { $in: accessibleIds },
+      deletingAt: { $exists: false },
+    })
       .sort({ updatedAt: -1 })
       .lean()) as unknown as Array<ISkill & { _id: Types.ObjectId }>;
     if (docs.length === 0) {
@@ -1327,6 +1341,7 @@ export function createSkillMethods(
       name: params.name,
       author: params.author,
       tenantId: params.tenantId ?? null,
+      deletingAt: { $exists: false },
     })
       .sort({ updatedAt: -1 })
       .lean();
@@ -1410,6 +1425,7 @@ export function createSkillMethods(
     const baseFilter: FilterQuery<ISkillDocument> = {
       _id: { $in: params.accessibleIds },
       alwaysApply: true,
+      deletingAt: { $exists: false },
     };
     const cursor = decodeCursor(params.cursor);
 
@@ -1621,7 +1637,7 @@ export function createSkillMethods(
       updateOps.$unset = unsetPayload;
     }
     const result = await Skill.findOneAndUpdate(
-      { _id: new ObjectId(id), version: expectedVersion },
+      { _id: new ObjectId(id), version: expectedVersion, deletingAt: { $exists: false } },
       updateOps,
       { new: true },
     ).lean();
@@ -1634,7 +1650,7 @@ export function createSkillMethods(
       };
     }
 
-    const current = await Skill.findById(id).lean();
+    const current = await Skill.findOne({ _id: id, deletingAt: { $exists: false } }).lean();
     if (!current) {
       return { status: 'not_found' };
     }
@@ -1712,67 +1728,92 @@ export function createSkillMethods(
         failedCleanupSteps: [],
       };
     }
+    // Legacy callers may still reach this data-only method. It must never
+    // discard the last reference to an external blob. The storage-aware API
+    // reconciler owns provider deletion and finalization.
+    const lifecycle = createSkillLifecycleMethods(mongoose);
+    const journal = await lifecycle.beginSkillDeletion(id);
+    return {
+      deleted: false,
+      skillAbsent: !journal,
+      cleanupComplete: !journal,
+      failedCleanupSteps: journal ? ['skill_files'] : [],
+    };
+  }
+
+  /** Blob deletion is idempotent; the file row remains the retry manifest until it succeeds. */
+  async function deleteSkillFileAfterBlob(skillId: string, fileId: string): Promise<boolean> {
+    const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
+    const result = await SkillFile.deleteOne({
+      skillId: new ObjectId(skillId),
+      file_id: fileId,
+    });
+    return result.deletedCount === 1;
+  }
+
+  /** Finalize only after blob rows are drained; never remove late rows without deleting blobs. */
+  async function finalizeSkillDeletion(id: string): Promise<DeleteSkillResult> {
     const Skill = mongoose.models.Skill as Model<ISkillDocument>;
     const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
     const objectId = new ObjectId(id);
-    const res = await Skill.deleteOne({ _id: objectId });
+    const skill = await Skill.findById(objectId).select('_id deletingAt').lean();
+    if (skill && !skill.deletingAt) {
+      return {
+        deleted: false,
+        skillAbsent: false,
+        cleanupComplete: false,
+        failedCleanupSteps: ['skill_files'],
+      };
+    }
+    if (await SkillFile.exists({ skillId: objectId })) {
+      return {
+        deleted: false,
+        skillAbsent: false,
+        cleanupComplete: false,
+        failedCleanupSteps: ['skill_files'],
+      };
+    }
     const failedCleanupSteps: DeleteSkillCleanupStep[] = [];
-    const allowlistsRemoved = await removeSkillsFromAgentAllowlists([id]);
-    if (!allowlistsRemoved) {
+    if (!(await removeSkillsFromAgentAllowlists([id]))) {
       failedCleanupSteps.push('agent_allowlists');
     }
-
-    const [filesResult, permissionsResult] = await Promise.allSettled([
-      SkillFile.deleteMany({ skillId: objectId }),
-      deps.removeAllPermissions({ resourceType: ResourceType.SKILL, resourceId: id }),
-    ]);
-    if (filesResult.status === 'rejected') {
-      failedCleanupSteps.push('skill_files');
-      logger.error(`[deleteSkill] Error removing files for ${id}:`, filesResult.reason);
-    }
-    if (permissionsResult.status === 'rejected') {
+    try {
+      await deps.removeAllPermissions({ resourceType: ResourceType.SKILL, resourceId: id });
+    } catch {
       failedCleanupSteps.push('permissions');
-      logger.error(`[deleteSkill] Error removing permissions for ${id}:`, permissionsResult.reason);
+      logger.error(`[finalizeSkillDeletion] Error removing permissions for ${id}`);
     }
-
+    if (failedCleanupSteps.length > 0) {
+      return {
+        deleted: false,
+        skillAbsent: false,
+        cleanupComplete: false,
+        failedCleanupSteps,
+      };
+    }
+    const result = await Skill.deleteOne({ _id: objectId, deletingAt: { $exists: true } });
     return {
-      deleted: Boolean(res.deletedCount),
+      deleted: result.deletedCount === 1,
       skillAbsent: true,
-      cleanupComplete: failedCleanupSteps.length === 0,
-      failedCleanupSteps,
+      cleanupComplete: true,
+      failedCleanupSteps: [],
     };
   }
 
   async function deleteUserSkills(userId: Types.ObjectId | string): Promise<number> {
     const userObjectId = typeof userId === 'string' ? new ObjectId(userId) : userId;
-    const Skill = mongoose.models.Skill as Model<ISkillDocument>;
     const soleOwned = await deps.getSoleOwnedResourceIds(userObjectId, ResourceType.SKILL);
     if (soleOwned.length === 0) {
       return 0;
     }
-    const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
-    await SkillFile.deleteMany({ skillId: { $in: soleOwned } });
-    const res = await Skill.deleteMany({ _id: { $in: soleOwned } });
-    if (!(await removeSkillsFromAgentAllowlists(soleOwned.map((rid) => rid.toString())))) {
-      throw new Error('Agent skill allowlists could not be cleaned up');
-    }
-    /** Permission entries are the retry discovery key for sole-owned skills, so a failure keeps them. */
-    const permissionResults = await Promise.allSettled(
-      soleOwned.map((rid) =>
-        deps.removeAllPermissions({
-          resourceType: ResourceType.SKILL,
-          resourceId: rid.toString(),
-        }),
-      ),
+    // Mark independently owned Skills in one write; the reconciler repairs the
+    // mark-to-journal gap and backfills file references outside this request.
+    const Skill = mongoose.models.Skill as Model<ISkillDocument>;
+    const result = await Skill.updateMany(
+      { _id: { $in: soleOwned }, deletingAt: { $exists: false } },
+      { $set: { deletingAt: new Date(), deletionNeedsJournal: true } },
     );
-    const failedPermission = permissionResults.find(
-      (result): result is PromiseRejectedResult => result.status === 'rejected',
-    );
-    if (failedPermission) {
-      logger.error('[deleteUserSkills] Error removing permissions:', failedPermission.reason);
-      throw failedPermission.reason;
-    }
-    return res.deletedCount ?? 0;
+    return result.modifiedCount;
   }
 
   async function findSkillBySourceIdentity(params: {
@@ -1787,6 +1828,7 @@ export function createSkillMethods(
     const doc = await Skill.findOne({
       source: params.source,
       'sourceMetadata.upstreamId': params.upstreamId,
+      deletingAt: { $exists: false },
       ...tenantFilter,
     }).lean();
     return (doc as unknown as (ISkill & { _id: Types.ObjectId }) | null) ?? null;
@@ -1800,6 +1842,7 @@ export function createSkillMethods(
     const rows = await Skill.find({
       source: params.source,
       'sourceMetadata.sourceId': params.sourceId,
+      deletingAt: { $exists: false },
     }).lean();
     return rows as unknown as Array<ISkill & { _id: Types.ObjectId }>;
   }
@@ -1851,6 +1894,16 @@ export function createSkillMethods(
   async function upsertSkillFile(
     row: UpsertSkillFileInput,
   ): Promise<ISkillFile & { _id: Types.ObjectId }> {
+    const Skill = mongoose.models.Skill as Model<ISkillDocument>;
+    const parent = await Skill.findOne({
+      _id: row.skillId,
+      deletingAt: { $exists: false },
+    })
+      .select('_id')
+      .lean();
+    if (!parent) {
+      throw Object.assign(new Error('Skill is being deleted'), { code: 'SKILL_DELETING' });
+    }
     const issues = validateRelativePath(row.relativePath);
     if (issues.length > 0) {
       const error = new Error('Skill file validation failed');
@@ -1927,6 +1980,16 @@ export function createSkillMethods(
     relativePath: string,
     expectedFileId?: string,
   ): Promise<{ deleted: boolean }> {
+    const Skill = mongoose.models.Skill as Model<ISkillDocument>;
+    const parent = await Skill.findOne({
+      _id: skillId,
+      deletingAt: { $exists: false },
+    })
+      .select('_id')
+      .lean();
+    if (!parent) {
+      throw Object.assign(new Error('Skill is being deleted'), { code: 'SKILL_DELETING' });
+    }
     const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
     const res = await SkillFile.deleteOne({
       skillId,
@@ -2012,6 +2075,8 @@ export function createSkillMethods(
     listAlwaysApplySkills,
     updateSkill,
     deleteSkill,
+    deleteSkillFileAfterBlob,
+    finalizeSkillDeletion,
     deleteUserSkills,
     findSkillBySourceIdentity,
     listSkillsBySource,

@@ -22,6 +22,7 @@ import {
   filterExistingSkillIds,
   deriveStructuredFrontmatterFields,
 } from './skill';
+import { createSkillLifecycleMethods } from './skillLifecycle';
 import { createAclEntryMethods } from './aclEntry';
 import { createMethods } from './index';
 
@@ -775,7 +776,20 @@ describe('Skill CRUD methods', () => {
     }
   });
 
-  it('deleteSkill cascades ACL entries and skill files', async () => {
+  it('does not expose a deleting Skill as the current version after a missed update', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput());
+    await mongoose.models.Skill.updateOne({ _id: skill._id }, { $set: { deletingAt: new Date() } });
+
+    await expect(
+      methods.updateSkill({
+        id: skill._id.toString(),
+        expectedVersion: skill.version,
+        update: { description: 'Updated description (long enough).' },
+      }),
+    ).resolves.toEqual({ status: 'not_found' });
+  });
+
+  it('queues blob cleanup before finalizing ACL and file rows', async () => {
     const { skill } = await methods.createSkill(makeSkillInput());
     await grantOwner(skill._id);
     await methods.upsertSkillFile({
@@ -794,7 +808,12 @@ describe('Skill CRUD methods', () => {
     expect(await SkillFile.countDocuments({ skillId: skill._id })).toBe(1);
 
     const res = await methods.deleteSkill(skill._id.toString());
-    expect(res.deleted).toBe(true);
+    expect(res.cleanupComplete).toBe(false);
+    expect(await AclEntry.countDocuments({ resourceId: skill._id })).toBe(1);
+    expect(await SkillFile.countDocuments({ skillId: skill._id })).toBe(1);
+    expect((await methods.finalizeSkillDeletion(skill._id.toString())).cleanupComplete).toBe(false);
+    await methods.deleteSkillFileAfterBlob(skill._id.toString(), 'file-123');
+    expect((await methods.finalizeSkillDeletion(skill._id.toString())).cleanupComplete).toBe(true);
     expect(await AclEntry.countDocuments({ resourceId: skill._id })).toBe(0);
     expect(await SkillFile.countDocuments({ skillId: skill._id })).toBe(0);
   });
@@ -807,40 +826,30 @@ describe('Skill CRUD methods', () => {
     expect(filtered).toEqual([canonical]);
   });
 
-  it('deleteSkill remains retryable after skill file cleanup fails', async () => {
+  it('does not admit a Skill already fenced for deletion into a new agent allowlist', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput({ name: 'deleting-allowlist' }));
+    await Skill.updateOne({ _id: skill._id }, { $set: { deletingAt: new Date() } });
+    expect(await filterExistingSkillIds(mongoose, [skill._id.toString()])).toEqual([]);
+  });
+
+  it('deleteSkill retains its retry journal instead of removing file rows', async () => {
     const { skill } = await methods.createSkill(makeSkillInput({ name: 'flaky-files' }));
     const Agent = mongoose.models.Agent;
     const agent = await Agent.create(makeAgentDoc([skill._id.toString()]));
 
-    const deleteManySpy = jest
-      .spyOn(SkillFile, 'deleteMany')
-      .mockRejectedValueOnce(new Error('transient storage failure'));
-    try {
-      const first = await methods.deleteSkill(skill._id.toString());
-      expect(first).toEqual({
-        deleted: true,
-        skillAbsent: true,
-        cleanupComplete: false,
-        failedCleanupSteps: ['skill_files'],
-      });
-
-      const retry = await methods.deleteSkill(skill._id.toString());
-      expect(retry).toEqual({
-        deleted: false,
-        skillAbsent: true,
-        cleanupComplete: true,
-        failedCleanupSteps: [],
-      });
-    } finally {
-      deleteManySpy.mockRestore();
-    }
+    const first = await methods.deleteSkill(skill._id.toString());
+    expect(first).toMatchObject({ cleanupComplete: false, failedCleanupSteps: ['skill_files'] });
+    const retry = await methods.deleteSkill(skill._id.toString());
+    expect(retry).toMatchObject({ cleanupComplete: false, failedCleanupSteps: ['skill_files'] });
+    expect(await Skill.countDocuments({ _id: skill._id })).toBe(1);
+    expect(await mongoose.models.SkillDeletion.countDocuments({ skillId: skill._id })).toBe(1);
 
     const agentAfter = (await Agent.findById(agent._id).lean()) as {
       skills?: string[];
       skills_enabled?: boolean;
     } | null;
-    expect(agentAfter?.skills).toEqual([]);
-    expect(agentAfter?.skills_enabled).toBe(false);
+    expect(agentAfter?.skills).toEqual([skill._id.toString()]);
+    expect(agentAfter?.skills_enabled).toBe(true);
   });
 
   it('deleteSkill disables skills when the deleted id was the entire allowlist', async () => {
@@ -849,7 +858,8 @@ describe('Skill CRUD methods', () => {
     const agent = await Agent.create(makeAgentDoc([skill._id.toString()]));
 
     const res = await methods.deleteSkill(skill._id.toString().toUpperCase());
-    expect(res.deleted).toBe(true);
+    expect(res.cleanupComplete).toBe(false);
+    expect((await methods.finalizeSkillDeletion(skill._id.toString())).cleanupComplete).toBe(true);
 
     const agentAfter = (await Agent.findById(agent._id).lean()) as {
       skills?: string[];
@@ -865,7 +875,8 @@ describe('Skill CRUD methods', () => {
     const agent = await Agent.create(makeAgentDoc([skill._id.toString()], { skills_scope: 'all' }));
 
     const res = await methods.deleteSkill(skill._id.toString());
-    expect(res.deleted).toBe(true);
+    expect(res.cleanupComplete).toBe(false);
+    expect((await methods.finalizeSkillDeletion(skill._id.toString())).cleanupComplete).toBe(true);
 
     const agentAfter = (await Agent.findById(agent._id).lean()) as {
       skills?: string[];
@@ -887,7 +898,8 @@ describe('Skill CRUD methods', () => {
     );
 
     const res = await methods.deleteSkill(skill._id.toString());
-    expect(res.deleted).toBe(true);
+    expect(res.cleanupComplete).toBe(false);
+    expect((await methods.finalizeSkillDeletion(skill._id.toString())).cleanupComplete).toBe(true);
 
     const agentAfter = (await Agent.findById(agent._id).lean()) as {
       skills?: string[];
@@ -911,7 +923,8 @@ describe('Skill CRUD methods', () => {
     );
 
     const res = await methods.deleteSkill(skill._id.toString());
-    expect(res.deleted).toBe(true);
+    expect(res.cleanupComplete).toBe(false);
+    expect((await methods.finalizeSkillDeletion(skill._id.toString())).cleanupComplete).toBe(true);
 
     const agentAfter = (await Agent.findById(agent._id).lean()) as {
       skills?: string[];
@@ -933,7 +946,8 @@ describe('Skill CRUD methods', () => {
     );
 
     const res = await methods.deleteSkill(doomed._id.toString());
-    expect(res.deleted).toBe(true);
+    expect(res.cleanupComplete).toBe(false);
+    expect((await methods.finalizeSkillDeletion(doomed._id.toString())).cleanupComplete).toBe(true);
 
     const scopedAfter = (await Agent.findById(scoped._id).lean()) as {
       skills?: string[];
@@ -2457,11 +2471,19 @@ describe('deleteUserSkills', () => {
 
     const deleted = await methods.deleteUserSkills(owner._id as mongoose.Types.ObjectId);
     expect(deleted).toBe(1);
-    expect(await Skill.countDocuments()).toBe(1);
+    // Account deletion queues storage-aware cleanup; it must not remove the
+    // Skill row before its blobs have been reconciled.
+    expect(await Skill.countDocuments()).toBe(2);
+    expect(await Skill.countDocuments({ deletingAt: { $exists: true } })).toBe(1);
+    expect(await Skill.countDocuments({ deletionNeedsJournal: true })).toBe(1);
     expect(await Skill.countDocuments({ _id: sharedId })).toBe(1);
+    expect(await mongoose.models.SkillDeletion.countDocuments({ skillId: mine._id })).toBe(0);
+    await createSkillLifecycleMethods(mongoose).discoverUnjournaledDeletions();
+    expect(await mongoose.models.SkillDeletion.countDocuments({ skillId: mine._id })).toBe(1);
+    expect(await Skill.countDocuments({ deletionNeedsJournal: true })).toBe(0);
   });
 
-  it('prunes deleted sole-owned skill ids from agent allowlists', async () => {
+  it('defers allowlist pruning until storage-aware deletion finishes', async () => {
     const { skill: mine } = await methods.createSkill(makeSkillInput({ name: 'mine' }));
     await grantOwner(mine._id);
     const Agent = mongoose.models.Agent;
@@ -2474,8 +2496,8 @@ describe('deleteUserSkills', () => {
       skills?: string[];
       skills_enabled?: boolean;
     } | null;
-    expect(agentAfter?.skills).toEqual([]);
-    expect(agentAfter?.skills_enabled).toBe(false);
+    expect(agentAfter?.skills).toEqual([mine._id.toString()]);
+    expect(agentAfter?.skills_enabled).toBe(true);
   });
 
   it('fails and keeps the retry anchor when agent allowlist cleanup fails', async () => {

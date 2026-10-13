@@ -32,6 +32,7 @@ const { createMulterInstance } = require('~/server/routes/files/multer');
 
 jest.mock('~/server/services/Config', () => ({
   checkCapability: jest.fn().mockResolvedValue(true),
+  getAppConfig: jest.fn(),
 }));
 
 const specPath = path.resolve(__dirname, '../../../../../packages/api/openapi/agents.openapi.json');
@@ -175,6 +176,7 @@ describe('Agents OpenAPI actual HTTP contract', () => {
 
     const appConfig = {
       fileStrategy: 'local',
+      skillDeletion: { finalizationEnabled: true },
       paths: { uploads: uploadsPath },
       fileConfig: {},
       endpoints: {
@@ -195,6 +197,7 @@ describe('Agents OpenAPI actual HTTP contract', () => {
         },
       },
     };
+    require('~/server/services/Config').getAppConfig.mockResolvedValue(appConfig);
     const auth = createAgentManagementAuth({
       findUser: (filter) => mongoose.models.User.findOne(filter),
       getAppConfig: async () => appConfig,

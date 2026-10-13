@@ -41,6 +41,7 @@ jest.mock('~/server/services/Config', () => ({
   getCachedTools: jest.fn().mockResolvedValue({}),
   getAppConfig: jest.fn().mockResolvedValue({
     fileStrategy: 'local',
+    skillDeletion: { finalizationEnabled: true },
     paths: { uploads: '/tmp/uploads', images: '/tmp/images' },
   }),
 }));
@@ -153,6 +154,8 @@ beforeAll(async () => {
   currentTestUser = testUsers.owner;
   skillRoutes = require('./skills');
   app.use('/api/skills', skillRoutes);
+  const { getSkillStatesController } = require('~/server/controllers/SkillStatesController');
+  app.get('/api/skill-states-probe', getSkillStatesController);
 });
 
 afterEach(async () => {
@@ -261,6 +264,22 @@ describe('Skill routes', () => {
     errSpy = jest.spyOn(console, 'error').mockImplementation();
   });
   afterEach(() => errSpy.mockRestore());
+
+  it('prunes a logically deleted Skill from user Skill states before ACL cleanup', async () => {
+    const created = await createSkillAsOwner({ name: 'state-fence-skill' });
+    expect(created.status).toBe(201);
+    const id = created.body._id;
+    await User.updateOne({ _id: testUsers.owner._id }, { $set: { skillStates: { [id]: false } } });
+
+    const before = await request(app).get('/api/skill-states-probe');
+    expect(before.status).toBe(200);
+    expect(before.body[id]).toBe(false);
+
+    await Skill.updateOne({ _id: id }, { $set: { deletingAt: new Date() } });
+    const after = await request(app).get('/api/skill-states-probe');
+    expect(after.status).toBe(200);
+    expect(after.body[id]).toBeUndefined();
+  });
 
   describe('POST /api/skills', () => {
     it('creates a skill and grants SKILL_OWNER ACL', async () => {
@@ -511,8 +530,14 @@ describe('Skill routes', () => {
       const saveBuffer = jest.fn().mockResolvedValue(savedFilepath);
       const { getFileStrategy } = require('~/server/utils/getFileStrategy');
       const { getStrategyFunctions } = require('~/server/services/Files/strategies');
-      getFileStrategy.mockReturnValueOnce('cloudfront');
-      getStrategyFunctions.mockReturnValueOnce({ saveBuffer });
+      const defaultStrategy = getStrategyFunctions();
+      getFileStrategy.mockReturnValue('cloudfront');
+      const cloudfrontStrategy = {
+        saveBuffer,
+        deleteFile: jest.fn().mockResolvedValue(undefined),
+        getFileURL: jest.fn().mockResolvedValue(savedFilepath),
+      };
+      getStrategyFunctions.mockReturnValue(cloudfrontStrategy);
 
       const zip = new JSZip();
       zip.file(
@@ -532,6 +557,8 @@ describe('Skill routes', () => {
         filename: 'imported-skill.skill',
         contentType: 'application/zip',
       });
+      getFileStrategy.mockReturnValue('local');
+      getStrategyFunctions.mockReturnValue(defaultStrategy);
 
       expect(res.status).toBe(201);
       expect(saveBuffer).toHaveBeenCalledWith(
@@ -810,7 +837,11 @@ describe('Skill routes', () => {
         }
         return Readable.from([buffer]);
       });
-      getStrategyFunctions.mockReturnValue({ saveBuffer, getDownloadStream });
+      getStrategyFunctions.mockReturnValue({
+        saveBuffer,
+        getDownloadStream,
+        deleteFile: jest.fn().mockResolvedValue(undefined),
+      });
 
       try {
         const created = await createSkillAsOwner();
@@ -1115,7 +1146,7 @@ describe('Skill routes', () => {
       }
     });
 
-    it('does not delete committed file bytes if the parent version bump fails', async () => {
+    it('acknowledges committed file bytes if the parent version bump fails', async () => {
       const created = await createSkillAsOwner();
       const { getStrategyFunctions } = require('~/server/services/Files/strategies');
       const originalStrategy = getStrategyFunctions.getMockImplementation();
@@ -1135,7 +1166,7 @@ describe('Skill routes', () => {
             filename: 'committed.md',
             contentType: 'text/markdown',
           });
-        expect(response.status).toBe(500);
+        expect(response.status).toBe(200);
         expect(await SkillFile.findOne({ skillId: created.body._id }).lean()).toMatchObject({
           filepath: '/uploads/committed',
         });
@@ -1146,7 +1177,7 @@ describe('Skill routes', () => {
       }
     });
 
-    it('cleans up the superseded blob when a replacement commits but the parent bump fails', async () => {
+    it('acknowledges a replacement and cleans up the superseded blob if the parent bump fails', async () => {
       const { getStrategyFunctions } = require('~/server/services/Files/strategies');
       const { upsertSkillFile } = require('~/models');
       const originalStrategy = getStrategyFunctions.getMockImplementation();
@@ -1186,7 +1217,7 @@ describe('Skill routes', () => {
             filename: 'committed.md',
             contentType: 'text/markdown',
           });
-        expect(response.status).toBe(500);
+        expect(response.status).toBe(200);
         expect(await SkillFile.findOne({ skillId }).lean()).toMatchObject({
           filepath: newPath,
           file_id: expect.not.stringMatching('original'),

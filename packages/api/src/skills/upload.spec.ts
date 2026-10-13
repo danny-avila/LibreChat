@@ -1,3 +1,4 @@
+import { Types } from 'mongoose';
 import { FileSources } from 'librechat-data-provider';
 import type { Response } from 'express';
 import { createSkillUploadHandler } from './upload';
@@ -29,9 +30,20 @@ function harness() {
   const deps = {
     getSkillById: jest.fn(() => skill.promise),
     getSkillFileByPath: jest.fn(() => file.promise),
-    upsertSkillFile: jest.fn(async () => ({ ...originalFile, file_id: 'saved' })),
+    upsertSkillFile: jest.fn(async (row) => ({
+      ...originalFile,
+      file_id: row.file_id,
+      filepath: row.filepath,
+    })),
     resolveStorage: jest.fn(() => ({ source: FileSources.local, saveBuffer })),
-    getStrategyFunctions: jest.fn(() => ({})),
+    getStrategyFunctions: jest.fn(() => ({ deleteFile: jest.fn(async () => undefined) })),
+    reserveSkillUploadIntent: jest.fn(async (input) => ({
+      ...input,
+      skillId: new Types.ObjectId(),
+      author: new Types.ObjectId(),
+      state: 'uploading' as const,
+    })),
+    transitionSkillUploadIntent: jest.fn(async () => true),
   } satisfies UploadDeps;
   const req = {
     params: { id: 'skill-id', relativePath: ['references', 'guide.md'] },
@@ -90,6 +102,25 @@ describe('skill upload lookup ordering', () => {
     await pending;
     expect(h.res.status).toHaveBeenCalledWith(200);
   });
+
+  it.each(['reservation', 'persistence'] as const)(
+    'reports a deletion race during %s as a conflict',
+    async (stage) => {
+      const h = harness();
+      const error = Object.assign(new Error('Internal deletion state'), { code: 'SKILL_DELETING' });
+      if (stage === 'reservation') h.deps.reserveSkillUploadIntent.mockRejectedValueOnce(error);
+      else h.deps.upsertSkillFile.mockRejectedValueOnce(error);
+
+      const pending = h.handler(h.req, h.res);
+      h.skill.resolve({ source: 'inline' });
+      h.file.resolve(originalFile);
+      await pending;
+
+      expect(h.res.status).toHaveBeenCalledWith(409);
+      expect(h.res.json).toHaveBeenCalledWith({ error: 'SKILL_DELETING' });
+      if (stage === 'reservation') expect(h.saveBuffer).not.toHaveBeenCalled();
+    },
+  );
 
   it.each(['missing', 'managed', 'conflict', 'lookup failure'] as const)(
     'does not store bytes for %s',
