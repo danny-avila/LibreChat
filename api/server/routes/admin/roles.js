@@ -33,6 +33,8 @@ const handlers = createAdminRolesHandlers({
   bulkWriteAclEntries: db.bulkWriteAclEntries,
   restoreConfig: db.restoreConfig,
   restoreGrants: db.restoreGrants,
+  findConfigByPrincipal: db.findConfigByPrincipal,
+  findGrantsForPrincipal: db.findGrantsForPrincipal,
   recordAuditEntry: db.recordAuditEntry,
   invalidatePromptGroupAccessContext: db.invalidatePromptGroupAccessContext,
 });

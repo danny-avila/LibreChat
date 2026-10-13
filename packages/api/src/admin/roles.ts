@@ -13,6 +13,7 @@ import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 import type { RecordAuditEntry } from './audit';
 import { createAdminAuditEmitter, diffRolePermissions } from './audit';
+import { getSafeErrorMetadata } from '~/utils/errors';
 import { cascadeStep, runCascade } from './cascade';
 import { parsePagination } from './pagination';
 
@@ -145,6 +146,18 @@ export interface AdminRolesDeps {
   /** Re-creates a deleted config document in full, only if none exists. Resolves
    * to whether it inserted. */
   restoreConfig?: (snapshot: Record<string, unknown>) => Promise<boolean>;
+  /** Reads the config document, ACL entries and grants before the cascade removes them,
+   * so a removal that rejects after committing can still be restored. */
+  findConfigByPrincipal?: (
+    principalType: PrincipalType,
+    principalId: string,
+    options?: { includeInactive?: boolean },
+  ) => Promise<IConfig | null>;
+  findGrantsForPrincipal?: (
+    principalType: PrincipalType,
+    principalId: string,
+    options?: { tenantId?: string },
+  ) => Promise<ISystemGrant[]>;
   /** Re-creates deleted grants in full, inserting only those that no longer exist. */
   restoreGrants?: (snapshots: Array<Record<string, unknown>>) => Promise<number>;
   /** Optional audit emission for role mutations and the grants removed by the
@@ -197,6 +210,8 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
     bulkWriteAclEntries,
     restoreConfig,
     restoreGrants,
+    findConfigByPrincipal,
+    findGrantsForPrincipal,
     recordAuditEntry,
     auditFailClosed,
     invalidatePromptGroupAccessContext,
@@ -507,7 +522,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
       const tenantId = req.user?.tenantId;
       /** Insert-only by _id: entries recreated since the snapshot are left as they are. */
       const restoreAclEntries = async (entries: Array<Record<string, unknown>>) => {
-        if (!bulkWriteAclEntries || entries.length === 0) {
+        if (!bulkWriteAclEntries || !entries?.length) {
           return;
         }
         await bulkWriteAclEntries(
@@ -531,31 +546,26 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
                     return;
                   }
                   /** Insert-only: an override written after the snapshot is kept. */
-                  const snapshot = (config as { toObject?: () => unknown }).toObject?.() ?? config;
-                  const restored = await restoreConfig(snapshot as Record<string, unknown>);
+                  const plain = (config as { toObject?: () => unknown }).toObject?.() ?? config;
+                  const restored = await restoreConfig(plain as Record<string, unknown>);
                   if (!restored) {
                     logger.warn('[adminRoles] config restore skipped, override exists:', name);
                   }
                 }
               : undefined,
+            findConfigByPrincipal
+              ? () => findConfigByPrincipal(PrincipalType.ROLE, name, { includeInactive: true })
+              : undefined,
           ),
           cascadeStep(
             'acl',
             async () => {
-              const entries = (await findAclEntriesByPrincipal?.(PrincipalType.ROLE, name)) ?? [];
-              try {
-                await deleteAclEntries({ principalType: PrincipalType.ROLE, principalId: name });
-              } catch (error) {
-                /** The delete may have committed before it threw, and a rejected step is
-                 * not compensated by the runner, so put the snapshot back here. */
-                await restoreAclEntries(entries).catch((restoreError) =>
-                  logger.error('[adminRoles] acl restore failed:', restoreError),
-                );
-                throw error;
-              }
-              return entries;
+              await deleteAclEntries({ principalType: PrincipalType.ROLE, principalId: name });
             },
             bulkWriteAclEntries ? restoreAclEntries : undefined,
+            findAclEntriesByPrincipal
+              ? () => findAclEntriesByPrincipal(PrincipalType.ROLE, name)
+              : undefined,
           ),
           cascadeStep(
             'grants',
@@ -570,6 +580,9 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
                   );
                 }
               : undefined,
+            findGrantsForPrincipal
+              ? () => findGrantsForPrincipal(PrincipalType.ROLE, name, { tenantId })
+              : undefined,
           ),
         ],
         '[adminRoles]',
@@ -578,7 +591,15 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
       /** The removed ACL entries can include PROMPTGROUP grants feeding the access
        * cache; the cache is stale after both a removal and a restore. */
       const invalidateAccess = async () => {
-        await invalidatePromptGroupAccessContext?.();
+        try {
+          await invalidatePromptGroupAccessContext?.();
+        } catch (error) {
+          /** The deletion already committed; a cache failure must not hide it from the audit trail. */
+          logger.error(
+            '[adminRoles] access cache invalidation failed:',
+            getSafeErrorMetadata(error),
+          );
+        }
       };
       const cleanupFailedResponse = () =>
         res.status(500).json({

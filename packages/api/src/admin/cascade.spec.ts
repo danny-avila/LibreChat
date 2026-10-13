@@ -35,4 +35,41 @@ describe('runCascade', () => {
     await expect(outcome.compensate()).resolves.toBeUndefined();
     expect(restoreB).toHaveBeenCalledWith(2);
   });
+
+  it('restores a snapshot immediately when a removal rejects after committing', async () => {
+    const restore = jest.fn().mockResolvedValue(undefined);
+    const outcome = await runCascade(
+      [
+        cascadeStep(
+          'a',
+          async () => Promise.reject(new Error('response lost')),
+          restore,
+          async () => ['before'],
+        ),
+      ],
+      '[test]',
+    );
+
+    expect(outcome.failed).toEqual(['a']);
+    expect(restore).toHaveBeenCalledWith(['before']);
+  });
+
+  it('compensates from the snapshot rather than the removal result', async () => {
+    const restore = jest.fn().mockResolvedValue(undefined);
+    const outcome = await runCascade(
+      [
+        cascadeStep(
+          'a',
+          async () => 'removed',
+          restore,
+          async () => 'snapshot',
+        ),
+      ],
+      '[test]',
+    );
+
+    await outcome.compensate();
+    expect(restore).toHaveBeenCalledTimes(1);
+    expect(restore).toHaveBeenCalledWith('snapshot');
+  });
 });

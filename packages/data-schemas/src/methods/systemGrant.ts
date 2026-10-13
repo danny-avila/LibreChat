@@ -139,6 +139,11 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')): {
     principalId: string | Types.ObjectId,
     options?: { tenantId?: string; session?: ClientSession },
   ) => Promise<ISystemGrant[]>;
+  findGrantsForPrincipal: (
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+    options?: { tenantId?: string },
+  ) => Promise<ISystemGrant[]>;
   restoreGrants: (snapshots: Array<Record<string, unknown>>) => Promise<number>;
 } {
   function tenantCondition(tenantId?: string): FilterQuery<ISystemGrant> {
@@ -591,6 +596,20 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')): {
     return removed;
   }
 
+  /** Reads the grants {@link deleteGrantsForPrincipal} would remove, without removing them. */
+  async function findGrantsForPrincipal(
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+    options?: { tenantId?: string },
+  ): Promise<ISystemGrant[]> {
+    const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
+    return SystemGrant.find({
+      principalType,
+      principalId: normalizePrincipalId(principalId, principalType),
+      ...(options?.tenantId != null && { tenantId: options.tenantId }),
+    }).lean<ISystemGrant[]>();
+  }
+
   /**
    * Re-creates grants removed by {@link deleteGrantsForPrincipal} exactly as they were
    * (grant time, grantor, expiry), inserting only those that no longer exist so a grant
@@ -630,6 +649,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')): {
     getCapabilitiesForPrincipal,
     getCapabilitiesForPrincipals,
     deleteGrantsForPrincipal,
+    findGrantsForPrincipal,
     restoreGrants,
   };
 }

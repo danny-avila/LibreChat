@@ -1216,6 +1216,49 @@ describe('createAdminRolesHandlers', () => {
       expect(deps.invalidatePromptGroupAccessContext).toHaveBeenCalled();
     });
 
+    it('restores config and grants from a pre-delete snapshot when their deletes reject', async () => {
+      const config = { principalModel: 'Role', overrides: { a: 1 }, priority: 4 };
+      const grants = [{ capability: 'read:users' }];
+      const deps = deleteDeps({
+        findConfigByPrincipal: jest.fn().mockResolvedValue(config),
+        findGrantsForPrincipal: jest.fn().mockResolvedValue(grants),
+        deleteConfig: jest.fn().mockRejectedValue(new Error('response lost')),
+        deleteGrantsForPrincipal: jest.fn().mockRejectedValue(new Error('response lost')),
+        restoreConfig: jest.fn().mockResolvedValue(true),
+        restoreGrants: jest.fn().mockResolvedValue(1),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { name: 'editor' } });
+
+      await handlers.deleteRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(json).toHaveBeenCalledWith(expect.objectContaining({ code: 'ROLE_CLEANUP_FAILED' }));
+      expect(deps.restoreConfig).toHaveBeenCalledWith(config);
+      expect(deps.restoreGrants).toHaveBeenCalledWith(grants);
+      expect(deps.deleteRoleByName).not.toHaveBeenCalled();
+    });
+
+    it('still audits a committed deletion when the access cache invalidation fails', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = deleteDeps({
+        recordAuditEntry,
+        invalidatePromptGroupAccessContext: jest.fn().mockRejectedValue(new Error('cache down')),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status } = createReqRes({
+        params: { name: 'editor' },
+        user: { _id: new Types.ObjectId(), role: 'admin' },
+      });
+
+      await handlers.deleteRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'role.deleted' }),
+      );
+    });
+
     it('does not restore anything when the cascade and role deletion succeed', async () => {
       const deps = deleteDeps({
         restoreConfig: jest.fn(),

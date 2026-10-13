@@ -57,21 +57,22 @@ export interface AdminGroupsDeps {
     groupId: string | Types.ObjectId,
     session?: ClientSession,
   ) => Promise<IGroup | null>;
+  /** `changed` is decided by the write itself: true only when the membership was altered. */
   addUserToGroup: (
     userId: string | Types.ObjectId,
     groupId: string | Types.ObjectId,
     session?: ClientSession,
-  ) => Promise<{ user: IUser; group: IGroup | null }>;
+  ) => Promise<{ user: IUser; group: IGroup | null; changed: boolean }>;
   removeUserFromGroup: (
     userId: string | Types.ObjectId,
     groupId: string | Types.ObjectId,
     session?: ClientSession,
-  ) => Promise<{ user: IUser; group: IGroup | null }>;
-  removeMemberById: (
+  ) => Promise<{ user: IUser; group: IGroup | null; changed: boolean }>;
+  removeMemberByIdTracked: (
     groupId: string | Types.ObjectId,
     memberId: string,
     session?: ClientSession,
-  ) => Promise<IGroup | null>;
+  ) => Promise<{ group: IGroup | null; changed: boolean }>;
   findUsers: (
     searchCriteria: FilterQuery<IUser>,
     fieldsToSelect?: string | string[] | null,
@@ -114,7 +115,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
     deleteGroup,
     addUserToGroup,
     removeUserFromGroup,
-    removeMemberById,
+    removeMemberByIdTracked,
     findUsers,
     deleteConfig,
     deleteAclEntries,
@@ -434,13 +435,6 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
     }
   }
 
-  /** Member count before a mutation, so an idempotent retry that changed nothing is
-   * not recorded as a membership change. */
-  async function memberCount(groupId: string): Promise<number | undefined> {
-    const current = await findGroupById(groupId, { memberIds: 1 });
-    return current?.memberIds?.length;
-  }
-
   async function addGroupMemberHandler(req: ServerRequest, res: Response) {
     try {
       const { id } = req.params as GroupIdParams;
@@ -457,12 +451,11 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
           .json({ error: 'Only native user ObjectIds can be added via this endpoint' });
       }
 
-      const before = await memberCount(id);
-      const { group } = await addUserToGroup(userId, id);
+      const { group, changed } = await addUserToGroup(userId, id);
       if (!group) {
         return res.status(404).json({ error: 'Group not found' });
       }
-      if (before !== group.memberIds?.length) {
+      if (changed) {
         await emitAudit(req, {
           action: 'group.member_added',
           severity: 'warning',
@@ -487,14 +480,17 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
    * (which resolves the user), falling back to a raw $pull if the user record
    * no longer exists. Returns null only when the group itself is not found.
    */
-  async function removeObjectIdMember(groupId: string, userId: string): Promise<IGroup | null> {
+  async function removeObjectIdMember(
+    groupId: string,
+    userId: string,
+  ): Promise<{ group: IGroup | null; changed: boolean }> {
     try {
-      const { group } = await removeUserFromGroup(userId, groupId);
-      return group;
+      const { group, changed } = await removeUserFromGroup(userId, groupId);
+      return { group, changed };
     } catch (err) {
       const msg = err instanceof Error ? err.message : '';
       if (msg === 'User not found' || msg.startsWith('User not found:')) {
-        return removeMemberById(groupId, userId);
+        return removeMemberByIdTracked(groupId, userId);
       }
       throw err;
     }
@@ -507,15 +503,14 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
         return res.status(400).json({ error: 'Invalid group ID format' });
       }
 
-      const before = await memberCount(id);
-      const group = isValidObjectIdString(userId)
+      const { group, changed } = isValidObjectIdString(userId)
         ? await removeObjectIdMember(id, userId)
-        : await removeMemberById(id, userId);
+        : await removeMemberByIdTracked(id, userId);
 
       if (!group) {
         return res.status(404).json({ error: 'Group not found' });
       }
-      if (before !== group.memberIds?.length) {
+      if (changed) {
         await emitAudit(req, {
           action: 'group.member_removed',
           severity: 'warning',
