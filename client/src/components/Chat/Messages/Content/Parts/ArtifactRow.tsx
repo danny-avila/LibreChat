@@ -79,7 +79,15 @@ const ArtifactRow = forwardRef<HTMLButtonElement, ArtifactRowProps>(function Art
   }
 
   return (
-    <div className={cn(TOOL_ROW_CLASSES, 'text-text-secondary text-sm')}>
+    <div
+      className={cn(
+        TOOL_ROW_CLASSES,
+        'text-text-secondary text-sm',
+        // MessageNav overlays the right edge at md and above. Leave its
+        // 68px-wide hit area clear so it cannot intercept the download.
+        onDownload != null && 'pr-3 md:pr-16',
+      )}
+    >
       <Button
         ref={ref}
         type="button"
@@ -128,7 +136,7 @@ const ArtifactRow = forwardRef<HTMLButtonElement, ArtifactRowProps>(function Art
           size="icon"
           onClick={onDownload}
           aria-label={`${localize('com_ui_download')} ${title}`}
-          className="size-5 shrink-0 rounded focus-visible:ring-offset-0"
+          className="size-7 shrink-0 rounded focus-visible:ring-offset-0"
         >
           <Download className="size-4" aria-hidden="true" />
         </Button>
