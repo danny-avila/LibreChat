@@ -73,6 +73,10 @@ describe('redactMessage', () => {
 
   it('masks quoted local parts', () => {
     expect(redactMessage('user "jane.doe"@example.com ok')).toBe('user [REDACTED_EMAIL] ok');
+    expect(redactMessage('user "jane doe"@example.com ok')).toBe('user [REDACTED_EMAIL] ok');
+    expect(redactMessage('user customer/dept=ship@example.com ok')).toBe(
+      'user [REDACTED_EMAIL] ok',
+    );
   });
 
   it('scans long non-email text in linear time', () => {

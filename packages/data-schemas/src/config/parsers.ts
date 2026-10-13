@@ -54,7 +54,7 @@ const sensitiveKeys: RegExp[] = [
 
 /** Local part and domain labels are length-bounded (RFC 5321) so scanning stays linear on long non-email text. */
 const EMAIL_PATTERN =
-  /(?:[\p{L}\p{M}\p{N}._%+-]{1,64}|"[^"\s]{1,64}")@[\p{L}\p{M}\p{N}-]{1,63}(?:\.[\p{L}\p{M}\p{N}-]{1,63})*\.\p{L}{2,63}/gu;
+  /(?:[\p{L}\p{M}\p{N}._%+\-!#$&'*/=?^`{|}~]{1,64}|"[^"\r\n]{1,64}")@[\p{L}\p{M}\p{N}-]{1,63}(?:\.[\p{L}\p{M}\p{N}-]{1,63})*\.\p{L}{2,63}/gu;
 const REDACTED_EMAIL_VALUE = '[REDACTED_EMAIL]';
 
 const sensitiveMetadataKey =
