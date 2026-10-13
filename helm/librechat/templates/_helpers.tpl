@@ -204,11 +204,11 @@ librechat.injectBundledCredentials.redis=false.
 {{- fail "MONGODB_ROOT_PASSWORD is set for LibreChat but the bundled MongoDB generates its own password. Set mongodb.auth.rootPassword (or mongodb.auth.existingSecret) to the same value, set MONGO_URI to your own server, or set librechat.injectBundledCredentials.mongodb=false." -}}
 {{- end -}}
 {{- $redisLiteral := include "librechat.suppliedEnvValue" (dict "root" . "name" "REDIS_PASSWORD") -}}
-{{- if and .Values.redis.enabled .Values.redis.auth.enabled (not $suppliedURI) (ne (toString (default dict .Values.librechat.injectBundledCredentials).redis) "false") $redisLiteral .Values.redis.auth.password (ne $redisLiteral (toString .Values.redis.auth.password)) -}}
+{{- if and .Values.redis.enabled .Values.redis.auth.enabled (not $suppliedURI) (ne (toString (default dict .Values.librechat.injectBundledCredentials).redis) "false") $redisLiteral .Values.redis.auth.password (not .Values.redis.auth.existingSecret) (ne $redisLiteral (toString .Values.redis.auth.password)) -}}
 {{- fail "REDIS_PASSWORD for LibreChat differs from redis.auth.password. Use the same value for both." -}}
 {{- end -}}
 {{- $mongoLiteral := include "librechat.suppliedEnvValue" (dict "root" . "name" "MONGODB_ROOT_PASSWORD") -}}
-{{- if and (include "librechat.bundledMongoAuth" .) $mongoLiteral .Values.mongodb.auth.rootPassword (ne $mongoLiteral (toString .Values.mongodb.auth.rootPassword)) -}}
+{{- if and (include "librechat.bundledMongoAuth" .) $mongoLiteral .Values.mongodb.auth.rootPassword (not .Values.mongodb.auth.existingSecret) (ne $mongoLiteral (toString .Values.mongodb.auth.rootPassword)) -}}
 {{- fail "MONGODB_ROOT_PASSWORD for LibreChat differs from mongodb.auth.rootPassword. Use the same value for both." -}}
 {{- end -}}
 {{- end }}
