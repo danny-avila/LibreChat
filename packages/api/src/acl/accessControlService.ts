@@ -46,7 +46,9 @@ const principalIdentity = (type: string, id: unknown): string => {
   return `${type}:${normalized}`;
 };
 
-const snapshotOf = (entry?: IAclEntry | null): PermissionSnapshot | null =>
+const snapshotOf = (
+  entry?: Pick<IAclEntry, 'permBits' | 'roleId'> | null,
+): PermissionSnapshot | null =>
   entry ? { permBits: entry.permBits, roleId: entry.roleId?.toString() ?? '' } : null;
 
 export type BulkPermissionUpdateResult = {
@@ -558,7 +560,7 @@ export class AccessControlService {
       const grantedPrincipalKeys = new Set<string>();
       const principalKey = (principal: BulkPrincipal) =>
         principalIdentity(principal.type, principal.id);
-      const currentEntriesByPrincipal = new Map<string, IAclEntry>();
+      const currentEntriesByPrincipal = new Map<string, Pick<IAclEntry, 'permBits' | 'roleId'>>();
       for (const entry of currentEntries) {
         const key = principalIdentity(entry.principalType, entry.principalId);
         const current = currentEntriesByPrincipal.get(key);
@@ -567,8 +569,12 @@ export class AccessControlService {
         const currentHasInsights =
           current != null &&
           (current.permBits & PermissionBits.VIEW_INSIGHTS) === PermissionBits.VIEW_INSIGHTS;
+        /** Duplicate rows are audited as their combined permissions. */
+        const combinedBits = (current?.permBits ?? 0) | entry.permBits;
         if (!current || (entryHasInsights && !currentHasInsights)) {
-          currentEntriesByPrincipal.set(key, entry);
+          currentEntriesByPrincipal.set(key, { roleId: entry.roleId, permBits: combinedBits });
+        } else {
+          currentEntriesByPrincipal.set(key, { roleId: current.roleId, permBits: combinedBits });
         }
       }
 
@@ -603,8 +609,9 @@ export class AccessControlService {
             principalIdentity(principal.type, principal.id),
           );
           const hadInsights =
+            resourceType === ResourceType.AGENT &&
             ((existingEntry?.permBits ?? 0) & PermissionBits.VIEW_INSIGHTS) ===
-            PermissionBits.VIEW_INSIGHTS;
+              PermissionBits.VIEW_INSIGHTS;
           const roleCanView = (role.permBits & PermissionBits.VIEW) === PermissionBits.VIEW;
           const requestedInsights =
             typeof principal.viewInsights === 'boolean' ? principal.viewInsights : undefined;

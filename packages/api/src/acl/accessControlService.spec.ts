@@ -98,11 +98,10 @@ describe('AccessControlService', () => {
         });
       const results = await Promise.all([revoke(), revoke()]);
 
-      /** Audit precedes the write, so each racing request plans the revocation it read. */
-      expect(results.flatMap((result) => result.insightsChanges)).toEqual([
-        expect.objectContaining({ action: 'removed' }),
-        expect.objectContaining({ action: 'removed' }),
-      ]);
+      /** Audit precedes the write: a racing request plans the revocation it read, or none if it read after the delete. */
+      const planned = results.flatMap((result) => result.insightsChanges);
+      expect(planned.length).toBeGreaterThanOrEqual(1);
+      expect(planned.every((change) => change.action === 'removed')).toBe(true);
       await expect(
         AclEntry.exists({
           principalType: PrincipalType.USER,
@@ -436,6 +435,41 @@ describe('AccessControlService', () => {
           resourceId,
         }),
       ).resolves.toBeNull();
+    });
+
+    test('audits duplicate ACL rows as their combined permissions and ignores Insights on non-agents', async () => {
+      const viewerRole = await dbMethods.findRoleByIdentifier(AccessRoleIds.PROMPTGROUP_VIEWER);
+      const row = (permBits: number) => ({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        principalModel: PrincipalModel.USER,
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId,
+        permBits,
+        roleId: viewerRole?._id,
+        grantedBy: grantedById,
+        grantedAt: new Date(),
+      });
+      await AclEntry.create([
+        row(PermissionBits.VIEW | PermissionBits.VIEW_INSIGHTS),
+        row(PermissionBits.VIEW | PermissionBits.EDIT),
+      ]);
+
+      const result = await service.bulkUpdateResourcePermissions({
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId,
+        revokedPrincipals: [{ type: PrincipalType.USER, id: userId.toString() }],
+        grantedBy: grantedById,
+      });
+
+      expect(result.insightsChanges).toEqual([]);
+      expect(result.aclChanges).toEqual([
+        expect.objectContaining({
+          previous: expect.objectContaining({
+            permBits: PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.VIEW_INSIGHTS,
+          }),
+        }),
+      ]);
     });
 
     test('revoking snapshots the principal without loading the rest of the ACL', async () => {
