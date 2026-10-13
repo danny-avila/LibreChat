@@ -94,6 +94,8 @@ let userSession: Session | undefined;
 
 test.describe('Server-enforced terms acceptance', () => {
   test.describe.configure({ mode: 'serial' });
+  /** The default session belongs to the primary user; each scenario signs the target user in itself. */
+  test.use({ storageState: { cookies: [], origins: [] } });
 
   test.beforeAll(async ({ request }) => {
     const res = await request.post('/api/auth/register', {

@@ -44,6 +44,9 @@ const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(
 /** Timers can fire a millisecond early, so the wait outlasts the cache TTL by this much. */
 const AUTH_USER_DOC_EXPIRY_MARGIN_MS = 100;
 
+/** Cached auth documents evicted at once when a reset touches every user. */
+const TERMS_RESET_EVICTION_BATCH = 100;
+
 function isAuthUserDocCacheEnabled(): boolean {
   return process.env.AUTH_USER_CACHE_MODE === 'on';
 }
@@ -562,8 +565,16 @@ export function createUserMethods(
       },
     );
     /** Every user, not only those read as accepted beforehand: an acceptance racing the update may be cached. */
-    const users = await User.find({}).select('_id').lean();
-    await Promise.all(users.map((user) => invalidateAuthUserDocCache(String(user._id))));
+    const cursor = User.find({}).select('_id').lean().cursor();
+    let batch: string[] = [];
+    for await (const user of cursor) {
+      batch.push(String(user._id));
+      if (batch.length === TERMS_RESET_EVICTION_BATCH) {
+        await Promise.all(batch.map(invalidateAuthUserDocCache));
+        batch = [];
+      }
+    }
+    await Promise.all(batch.map(invalidateAuthUserDocCache));
     return { modifiedCount: result.modifiedCount };
   }
 
