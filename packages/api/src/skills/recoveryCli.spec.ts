@@ -1,4 +1,4 @@
-import { runSkillUploadRecoveryCli } from './recoveryCli';
+import { runSkillUploadRecoveryCli, runSkillUploadRecoveryCommand } from './recoveryCli';
 
 function harness() {
   const messages: string[] = [];
@@ -62,3 +62,20 @@ it('inspects and recovers a matching stopped writer through system context', asy
   expect(h.deps.recoverStoppedIntent).toHaveBeenCalledWith('file-1', 'writer-1');
   expect(h.deps.disconnect).toHaveBeenCalledTimes(3);
 });
+
+it.each(['connect', 'getIntent', 'disconnect'] as const)(
+  'reports bounded metadata when %s fails without logging driver details',
+  async (step) => {
+    const h = harness();
+    h.deps[step].mockRejectedValueOnce(
+      Object.assign(new Error('mongodb://user:secret@db.example/private'), {
+        status: 503,
+        query: { token: 'secret' },
+      }),
+    );
+
+    expect(await runSkillUploadRecoveryCommand(['inspect', 'file-1'], h.deps)).toBe(1);
+    expect(h.errors).toEqual(['{"type":"Error","status":503}']);
+    expect(JSON.stringify(h.errors)).not.toContain('secret');
+  },
+);

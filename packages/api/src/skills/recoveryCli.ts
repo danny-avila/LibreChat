@@ -1,3 +1,5 @@
+import { getSafeErrorMetadata } from '~/utils/errors';
+
 interface RecoveryIntent {
   fileId: string;
   writerId: string;
@@ -94,5 +96,18 @@ export async function runSkillUploadRecoveryCli(
     return 0;
   } finally {
     if (connected) await deps.disconnect();
+  }
+}
+
+/** Keep operational errors at the process boundary without exposing driver details. */
+export async function runSkillUploadRecoveryCommand(
+  args: string[],
+  deps: SkillUploadRecoveryCliDeps,
+): Promise<number> {
+  try {
+    return await runSkillUploadRecoveryCli(args, deps);
+  } catch (error) {
+    deps.writeError(JSON.stringify(getSafeErrorMetadata(error)));
+    return 1;
   }
 }

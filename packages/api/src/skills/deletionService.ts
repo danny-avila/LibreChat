@@ -71,20 +71,22 @@ type CleanupLimiter = ReturnType<typeof createConcurrencyLimiter>;
 
 /** The legacy server supplies storage, database, and context dependencies; it owns no worker logic. */
 export function createSkillDeletionService(deps: SkillDeletionServiceDeps): SkillDeletionService {
-  async function deleteStoredBlob(file: {
-    filepath: string;
-    source: string;
-    storageKey?: string | null;
-    storageRegion?: string | null;
-    author: string;
-    tenantId?: string;
-  }) {
+  async function deleteStoredBlob(
+    file: {
+      filepath: string;
+      source: string;
+      storageKey?: string | null;
+      storageRegion?: string | null;
+      author: string;
+      tenantId?: string;
+    },
+    config: AppConfig | undefined,
+  ) {
     const strategy = deps.getStrategyFunctions(file.source);
     if (!strategy.deleteFile) {
       throw new Error(`Skill storage backend ${file.source} has no deletion strategy`);
     }
     const ownerId = file.author;
-    const config = await deps.loadConfig();
     await strategy.deleteFile(
       {
         config,
@@ -172,16 +174,21 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
         {
           ...deps.persistence,
           deleteBlob: (file) =>
-            limitBlob ? limitBlob(() => deleteStoredBlob(file)) : deleteStoredBlob(file),
+            limitBlob
+              ? limitBlob(() => deleteStoredBlob(file, config ?? undefined))
+              : deleteStoredBlob(file, config ?? undefined),
           deleteReservedBlob: (intent) => {
             const deleteIntentBlob = () =>
-              deleteStoredBlob({
-                filepath: intent.storageKey,
-                source: intent.source,
-                ...getStorageMetadata({ filepath: intent.storageKey, source: intent.source }),
-                author: intent.author,
-                tenantId: intent.tenantId,
-              });
+              deleteStoredBlob(
+                {
+                  filepath: intent.storageKey,
+                  source: intent.source,
+                  ...getStorageMetadata({ filepath: intent.storageKey, source: intent.source }),
+                  author: intent.author,
+                  tenantId: intent.tenantId,
+                },
+                config ?? undefined,
+              );
             return limitBlob ? limitBlob(deleteIntentBlob) : deleteIntentBlob();
           },
         },
@@ -332,13 +339,16 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
                 return;
               }
               await assertClaim();
-              await deleteStoredBlob({
-                filepath: intent.storageKey,
-                source: intent.source,
-                ...getStorageMetadata({ filepath: intent.storageKey, source: intent.source }),
-                author: intent.author,
-                tenantId: intent.tenantId,
-              });
+              await deleteStoredBlob(
+                {
+                  filepath: intent.storageKey,
+                  source: intent.source,
+                  ...getStorageMetadata({ filepath: intent.storageKey, source: intent.source }),
+                  author: intent.author,
+                  tenantId: intent.tenantId,
+                },
+                config,
+              );
               await assertClaim();
               await deps.persistence.markSkillUploadIntentCleaned(fileId);
               await assertClaim();

@@ -1,12 +1,12 @@
 require('module-alias/register');
 const mongoose = require('mongoose');
 const { createModels, createMethods, runAsSystem } = require('@librechat/data-schemas');
-const { runSkillUploadRecoveryCli } = require('@librechat/api');
+const { runSkillUploadRecoveryCommand } = require('@librechat/api');
 
 createModels(mongoose);
 const methods = createMethods(mongoose);
 
-runSkillUploadRecoveryCli(process.argv.slice(2), {
+runSkillUploadRecoveryCommand(process.argv.slice(2), {
   connect: () => require('./db/connect').connectDb(),
   disconnect: () => mongoose.disconnect(),
   runAsSystem,
@@ -19,7 +19,7 @@ runSkillUploadRecoveryCli(process.argv.slice(2), {
   .then((code) => {
     process.exitCode = code;
   })
-  .catch((error) => {
-    console.error(error);
+  .catch(() => {
+    console.error('Skill upload recovery failed');
     process.exitCode = 1;
   });

@@ -276,6 +276,7 @@ it('processes independent deletion tombstones with bounded concurrency', async (
     expect(peak).toBe(2);
     expect(h.deleteFile).toHaveBeenCalledTimes(6);
     expect(h.persistence.finalizeSkillDeletion).toHaveBeenCalledTimes(3);
+    expect(h.loadConfig).toHaveBeenCalledTimes(1);
   } finally {
     sweep.stop();
   }
@@ -292,7 +293,7 @@ it('uses the configured claim lease for direct deletion', async () => {
     expect.any(String),
     9_000,
   );
-  expect(h.loadConfig).toHaveBeenCalled();
+  expect(h.loadConfig).toHaveBeenCalledTimes(1);
   expect(h.persistence.beginSkillDeletion).toHaveBeenCalledTimes(1);
   expect(h.persistence.getSkillDeletion).not.toHaveBeenCalled();
 });
@@ -398,6 +399,7 @@ it('bounds independent abandoned-intent cleanup without serializing the batch', 
     for (const release of releases.slice(1)) release();
     await done;
     expect(h.persistence.markSkillUploadIntentCleaned).toHaveBeenCalledTimes(3);
+    expect(h.loadConfig).toHaveBeenCalledTimes(2);
   } finally {
     sweep.stop();
   }
