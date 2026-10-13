@@ -367,6 +367,66 @@ describe('AccessControlService', () => {
       expect(noop.aclChanges).toEqual([]);
     });
 
+    test('records exact rollback data for role-only writes next to bulk writes', async () => {
+      const otherUserId = new Types.ObjectId();
+      const viewerRole = await dbMethods.findRoleByIdentifier(AccessRoleIds.AGENT_VIEWER);
+      const previous = await AclEntry.create({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        principalModel: PrincipalModel.USER,
+        resourceType: ResourceType.AGENT,
+        resourceId,
+        permBits: PermissionBits.VIEW | PermissionBits.VIEW_INSIGHTS,
+        roleId: viewerRole?._id,
+        grantedBy: grantedById,
+        grantedAt: new Date(),
+      });
+
+      const result = await service.bulkUpdateResourcePermissions({
+        resourceType: ResourceType.AGENT,
+        resourceId,
+        updatedPrincipals: [
+          {
+            type: PrincipalType.USER,
+            id: userId.toString(),
+            accessRoleId: AccessRoleIds.AGENT_EDITOR,
+          },
+          {
+            type: PrincipalType.USER,
+            id: otherUserId.toString(),
+            accessRoleId: AccessRoleIds.AGENT_VIEWER,
+            viewInsights: true,
+          },
+        ],
+        grantedBy: grantedById,
+      });
+
+      const roleChange = result.aclChanges.find(
+        (change) => change.principal.id === userId.toString(),
+      );
+      const stored = await AclEntry.findById(previous._id);
+      expect(roleChange?.previousEntry).toEqual(expect.objectContaining({ _id: previous._id }));
+      expect(roleChange?.writtenEntry).toEqual(
+        expect.objectContaining({
+          permBits: stored?.permBits,
+          roleId: stored?.roleId,
+        }),
+      );
+      expect(stored?.permBits).not.toBe(previous.permBits);
+
+      await service.restoreInsightsPermissionChanges({
+        resourceType: ResourceType.AGENT,
+        resourceId,
+        changes: result.aclChanges,
+      });
+      const restored = await AclEntry.findById(previous._id);
+      expect(restored?.permBits).toBe(previous.permBits);
+      expect(restored?.roleId).toEqual(previous.roleId);
+      await expect(
+        AclEntry.exists({ principalId: otherUserId, resourceType: ResourceType.AGENT, resourceId }),
+      ).resolves.toBeNull();
+    });
+
     test('does not treat a non-agent permission bit as an Insights revocation', async () => {
       await AclEntry.create({
         principalType: PrincipalType.USER,

@@ -25,6 +25,9 @@ type BulkPrincipal = Omit<TPrincipal, 'id'> & {
   memberIds?: string[];
 };
 
+const ROLE_MASK =
+  PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE;
+
 export type BulkPermissionUpdateResult = {
   granted: BulkPrincipal[];
   updated: BulkPrincipal[];
@@ -588,6 +591,10 @@ export class AccessControlService {
             },
           };
           const bulkWriteIndex = bulkWrites.length;
+          /** `replaceRoleBits` swaps only the role mask and keeps every other stored bit. */
+          const writtenBits = preserveInsights
+            ? ((existingEntry?.permBits ?? 0) & ~ROLE_MASK) | (role.permBits & ROLE_MASK)
+            : permBits;
           if (preserveInsights) {
             roleBitsWrites.push({
               filter: query,
@@ -615,7 +622,7 @@ export class AccessControlService {
             ...(resourceType === ResourceType.AGENT ? { viewInsights: wantsInsights } : {}),
           });
           const writtenEntry: InsightsWrittenEntry = {
-            permBits,
+            permBits: writtenBits,
             roleId: role._id,
             grantedBy,
             grantedAt,
@@ -633,9 +640,13 @@ export class AccessControlService {
               action: wantsInsights ? 'assigned' : 'removed',
             };
             results.insightsChanges.push(change);
-            insightsChangesByBulkWriteIndex.set(bulkWriteIndex, change);
+            if (!preserveInsights) {
+              insightsChangesByBulkWriteIndex.set(bulkWriteIndex, change);
+            }
           }
-          aclChangesByBulkWriteIndex.set(bulkWriteIndex, aclChange);
+          if (!preserveInsights) {
+            aclChangesByBulkWriteIndex.set(bulkWriteIndex, aclChange);
+          }
           if (principal.type !== PrincipalType.PUBLIC) {
             grantedPrincipalKeys.add(principalKey(principal));
           }

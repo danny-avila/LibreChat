@@ -113,4 +113,38 @@ describe('auditResourcePermissionChanges', () => {
     expect(restorePermissionChanges).not.toHaveBeenCalled();
     expect(logger.error).toHaveBeenCalledTimes(2);
   });
+
+  test('mixed ACL and Insights changes run as one pass and restore the unaudited tail', async () => {
+    const record = jest
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockRejectedValueOnce(new Error('down'));
+    const { restorePermissionChanges } = setup(record);
+    const acl = [grantChange('u1'), grantChange('u2')];
+    const insightsChange = {
+      ...grantChange('u2'),
+      action: 'assigned',
+    } as InsightsPermissionChange;
+    const getAgent = jest.fn().mockResolvedValue({ id: 'res-1', name: 'Agent' });
+
+    await expect(
+      auditResourcePermissionChanges({
+        req,
+        resourceType: ResourceType.AGENT,
+        resourceId: 'res-1',
+        changes: acl,
+        insights: { changes: [insightsChange], getAgent },
+        failClosed: true,
+        deps: { recordAuditEntry: record, restorePermissionChanges, logger: { error: jest.fn() } },
+      }),
+    ).rejects.toMatchObject({ statusCode: 500 });
+
+    expect(record.mock.calls.map(([input]) => input.action)).toEqual([
+      'acl.granted',
+      'acl.granted',
+      'permission.insights_assigned',
+    ]);
+    expect(restorePermissionChanges).toHaveBeenCalledWith([insightsChange]);
+  });
 });
