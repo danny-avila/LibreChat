@@ -616,6 +616,27 @@ describe('createAdminAuditLogHandlers', () => {
       );
     });
 
+    it('appends a failure entry when the export fails after it was recorded', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = createDeps({
+        recordAuditEntry,
+        streamAuditLogEntries: jest.fn().mockRejectedValue(new Error('cursor failed')),
+      });
+      const handlers = createAdminAuditLogHandlers(deps);
+      const ctx = createCsvContext({ user, query: { severity: 'critical' } });
+
+      await handlers.exportAuditLogCsv(ctx.req, ctx.res);
+
+      expect(recordAuditEntry).toHaveBeenCalledTimes(2);
+      expect(recordAuditEntry).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          action: 'audit.exported',
+          outcome: 'failure',
+          metadata: { format: 'csv', severity: 'critical', code: 'export_failed' },
+        }),
+      );
+    });
+
     it('does not record an export that fails filter validation', async () => {
       const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
       const handlers = createAdminAuditLogHandlers(createDeps({ recordAuditEntry }));

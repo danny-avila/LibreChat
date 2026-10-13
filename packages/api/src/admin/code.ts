@@ -105,6 +105,11 @@ export function createAdminCodeEnvironmentHandlers(deps: AdminCodeEnvironmentDep
     failClosed: deps.auditFailClosed,
     logPrefix: '[adminCode]',
   });
+  /** Revoking a worker removes access, so an audit outage never blocks it. */
+  const emitRevocationAudit = createAdminAuditEmitter({
+    recordAuditEntry: deps.recordAuditEntry,
+    logPrefix: '[adminCode]',
+  });
   const readSecret =
     deps.readSecret ??
     ((name: string) =>
@@ -154,6 +159,27 @@ export function createAdminCodeEnvironmentHandlers(deps: AdminCodeEnvironmentDep
     } catch {
       return res.status(503).json({ error: 'Code environment tenant context is unavailable' });
     }
+    /**
+     * Recorded before the bridge mints the one-time code, so no audit latency sits
+     * between minting and delivering it; a `failure` entry follows if no code is
+     * returned. Workers belong to the deployment's YAML environments, so entries go
+     * to the platform chain.
+     */
+    const pairingEvent = {
+      action: 'code_worker.paired' as const,
+      severity: 'warning' as const,
+      target: { type: 'code_worker', id: resolved.pairing.workerId, name: resolved.id },
+      tenantId: undefined,
+    };
+    const pairingMetadata = { environmentId: resolved.id, boundTenantId: tenantId };
+    await emitAudit(req, { ...pairingEvent, metadata: pairingMetadata });
+    const pairingFailed = async (code: string) => {
+      await emitAudit(req, {
+        ...pairingEvent,
+        outcome: 'failure',
+        metadata: { ...pairingMetadata, code },
+      });
+    };
     try {
       const response = await fetchImpl(bridgeUrl(resolved.environment, '/bridge/pairings'), {
         method: 'POST',
@@ -172,6 +198,7 @@ export function createAdminCodeEnvironmentHandlers(deps: AdminCodeEnvironmentDep
         signal: AbortSignal.timeout(CODE_BRIDGE_REQUEST_TIMEOUT_MS),
       });
       if (!response.ok) {
+        await pairingFailed('bridge_rejected');
         return res.status(502).json({
           error: 'Code API rejected the pairing request',
           upstreamStatus: response.status,
@@ -179,20 +206,9 @@ export function createAdminCodeEnvironmentHandlers(deps: AdminCodeEnvironmentDep
       }
       const payload = (await response.json()) as unknown;
       if (!validPairingResponse(payload, resolved.pairing.workerId)) {
+        await pairingFailed('invalid_response');
         return res.status(502).json({ error: 'Code API returned an invalid pairing response' });
       }
-      /** Workers belong to the deployment's YAML environments, so entries go to the platform chain. */
-      await emitAudit(req, {
-        action: 'code_worker.paired',
-        severity: 'warning',
-        target: { type: 'code_worker', id: payload.workerId, name: resolved.id },
-        tenantId: undefined,
-        metadata: {
-          environmentId: resolved.id,
-          boundTenantId: tenantId,
-          expiresAt: new Date(payload.expiresAt).toISOString(),
-        },
-      });
       return res.status(200).json({
         environmentId: resolved.id,
         workerId: payload.workerId,
@@ -201,6 +217,7 @@ export function createAdminCodeEnvironmentHandlers(deps: AdminCodeEnvironmentDep
       });
     } catch (error) {
       const timedOut = error instanceof Error && error.name === 'TimeoutError';
+      await pairingFailed(timedOut ? 'timeout' : 'request_failed');
       return res.status(timedOut ? 504 : 502).json({
         error: timedOut ? 'Code API pairing request timed out' : 'Code API pairing request failed',
       });
@@ -210,6 +227,21 @@ export function createAdminCodeEnvironmentHandlers(deps: AdminCodeEnvironmentDep
   async function revokeWorker(req: ServerRequest, res: Response): Promise<Response> {
     const resolved = await resolve(req, res);
     if ('statusCode' in resolved) return resolved;
+    /** Recorded before the revocation is sent; a `failure` entry follows if it is not confirmed. */
+    const revokeEvent = {
+      action: 'code_worker.revoked' as const,
+      severity: 'warning' as const,
+      target: { type: 'code_worker', id: resolved.pairing.workerId, name: resolved.id },
+      tenantId: undefined,
+    };
+    await emitRevocationAudit(req, { ...revokeEvent, metadata: { environmentId: resolved.id } });
+    const revokeFailed = async (code: string) => {
+      await emitRevocationAudit(req, {
+        ...revokeEvent,
+        outcome: 'failure',
+        metadata: { environmentId: resolved.id, code },
+      });
+    };
     try {
       const workerId = encodeURIComponent(resolved.pairing.workerId);
       const response = await fetchImpl(
@@ -226,6 +258,7 @@ export function createAdminCodeEnvironmentHandlers(deps: AdminCodeEnvironmentDep
         },
       );
       if (!response.ok) {
+        await revokeFailed('bridge_rejected');
         return res.status(502).json({
           error: 'Code API rejected the revocation request',
           upstreamStatus: response.status,
@@ -233,15 +266,9 @@ export function createAdminCodeEnvironmentHandlers(deps: AdminCodeEnvironmentDep
       }
       const payload = (await response.json()) as unknown;
       if (!validRevocationResponse(payload)) {
+        await revokeFailed('invalid_response');
         return res.status(502).json({ error: 'Code API returned an invalid revocation response' });
       }
-      await emitAudit(req, {
-        action: 'code_worker.revoked',
-        severity: 'warning',
-        target: { type: 'code_worker', id: resolved.pairing.workerId, name: resolved.id },
-        tenantId: undefined,
-        metadata: { environmentId: resolved.id },
-      });
       return res.status(200).json({
         environmentId: resolved.id,
         workerId: resolved.pairing.workerId,
@@ -249,6 +276,7 @@ export function createAdminCodeEnvironmentHandlers(deps: AdminCodeEnvironmentDep
       });
     } catch (error) {
       const timedOut = error instanceof Error && error.name === 'TimeoutError';
+      await revokeFailed(timedOut ? 'timeout' : 'request_failed');
       return res.status(timedOut ? 504 : 502).json({
         error: timedOut
           ? 'Code API revocation request timed out'

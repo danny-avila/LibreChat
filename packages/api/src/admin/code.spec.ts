@@ -377,23 +377,64 @@ describe('createAdminCodeEnvironmentHandlers', () => {
       expect(JSON.stringify(input)).not.toContain('administrator-bootstrap-token');
     });
 
-    it('records code_worker.revoked on success only', async () => {
+    it('records code_worker.revoked before the call and a failure entry when it is not confirmed', async () => {
       const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
       const ok = jest.fn().mockResolvedValue(Response.json({ protocolVersion: 1, revoked: true }));
       const bad = jest
         .fn()
         .mockResolvedValue(Response.json({ protocolVersion: 1, revoked: false }));
 
-      await build(bad, recordAuditEntry).revokeWorker(request(), mockResponse());
-      expect(recordAuditEntry).not.toHaveBeenCalled();
-
       await build(ok, recordAuditEntry).revokeWorker(request(), mockResponse());
+      expect(recordAuditEntry).toHaveBeenCalledTimes(1);
       expect(recordAuditEntry).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'code_worker.revoked',
           target: { type: 'code_worker', id: 'vm-1', name: 'attached-vm' },
         }),
       );
+
+      recordAuditEntry.mockClear();
+      await build(bad, recordAuditEntry).revokeWorker(request(), mockResponse());
+      expect(recordAuditEntry).toHaveBeenCalledTimes(2);
+      expect(recordAuditEntry).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          outcome: 'failure',
+          metadata: { environmentId: 'attached-vm', code: 'invalid_response' },
+        }),
+      );
+    });
+
+    it('records the pairing before the bridge call and a failure entry when no code is minted', async () => {
+      const order: string[] = [];
+      const recordAuditEntry = jest.fn().mockImplementation(async (input) => {
+        order.push(`audit:${input.outcome ?? 'success'}`);
+      });
+      const fetchImpl = jest.fn().mockImplementation(async () => {
+        order.push('bridge');
+        return new Response('nope', { status: 500 });
+      });
+
+      await build(fetchImpl, recordAuditEntry).createPairing(request(), mockResponse());
+
+      expect(order).toEqual(['audit:success', 'bridge', 'audit:failure']);
+      expect(recordAuditEntry).toHaveBeenLastCalledWith(
+        expect.objectContaining({ metadata: expect.objectContaining({ code: 'bridge_rejected' }) }),
+      );
+    });
+
+    it('never blocks a revocation on an audit outage, even when fail-closed', async () => {
+      const ok = jest.fn().mockResolvedValue(Response.json({ protocolVersion: 1, revoked: true }));
+      const response = mockResponse();
+
+      await createAdminCodeEnvironmentHandlers({
+        getAppConfig: jest.fn().mockResolvedValue(config()),
+        readSecret: jest.fn().mockReturnValue('administrator-bootstrap-token'),
+        fetchImpl: ok,
+        recordAuditEntry: jest.fn().mockRejectedValue(new Error('audit down')),
+        auditFailClosed: true,
+      }).revokeWorker(request(), response);
+
+      expect(response.statusCode).toBe(200);
     });
 
     it('does not fail the pairing when the audit write fails (fail-open)', async () => {

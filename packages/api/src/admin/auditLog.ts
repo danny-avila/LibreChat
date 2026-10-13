@@ -315,6 +315,12 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps): {
     logPrefix: '[adminAuditLog]',
   });
 
+  /** Follow-up entries describe an attempt that already happened, so they never fail the caller. */
+  const emitFollowUp = createAdminAuditEmitter({
+    recordAuditEntry: deps.recordAuditEntry,
+    logPrefix: '[adminAuditLog]',
+  });
+
   async function listAuditLogHandler(req: ServerRequest, res: Response) {
     try {
       const caller = resolveCaller(req);
@@ -409,6 +415,8 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps): {
   }
 
   async function exportAuditLogCsvHandler(req: ServerRequest, res: Response) {
+    let exportRecorded = false;
+    let exportFailed: ((code: string) => Promise<void>) | undefined;
     try {
       const caller = resolveCaller(req);
       if (!caller) return res.status(401).json({ error: 'Authentication required' });
@@ -431,12 +439,20 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps): {
       const isCancelled = () => clientAborted;
 
       /** Recorded before any row is streamed, so an export is never unaudited. */
-      await emitAudit(req, {
-        action: 'audit.exported',
-        severity: 'warning',
+      const exportEvent = {
+        action: 'audit.exported' as const,
+        severity: 'warning' as const,
         target: { type: 'audit_log' },
         metadata: { format: 'csv', ...describeFilters(filters.value) },
-      });
+      };
+      await emitAudit(req, exportEvent);
+      exportRecorded = true;
+      exportFailed = (code: string) =>
+        emitFollowUp(req, {
+          ...exportEvent,
+          outcome: 'failure',
+          metadata: { ...exportEvent.metadata, code },
+        });
 
       const filenameStamp = new Date().toISOString().slice(0, 10);
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -483,6 +499,9 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps): {
 
       res.removeListener('close', markAborted);
       req.removeListener('aborted', markAborted);
+      if (clientAborted) {
+        await exportFailed('client_aborted');
+      }
       if (!clientAborted) {
         /**
          * `truncated` is true only when rows existed beyond the cap (an exact-cap
@@ -503,6 +522,9 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps): {
       }
     } catch (err) {
       logger.error('[adminAuditLog] export error:', err);
+      if (exportRecorded) {
+        await exportFailed?.('export_failed');
+      }
       if (!res.headersSent) {
         return res.status(500).json({ error: 'Failed to export audit log' });
       }
