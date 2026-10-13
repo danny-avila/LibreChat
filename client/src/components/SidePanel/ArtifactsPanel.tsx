@@ -36,9 +36,7 @@ const ArtifactsPanel = memo(function ArtifactsPanel({
 
   return (
     <>
-      {panel != null && (
-        <ResizableHandleAlt withHandle className="bg-border-medium text-text-primary" />
-      )}
+      {panel != null && <ResizableHandleAlt withHandle className="text-text-primary" />}
       <ResizablePanel
         defaultSize="50"
         maxSize="70"
@@ -48,7 +46,7 @@ const ArtifactsPanel = memo(function ArtifactsPanel({
         panelRef={artifactsPanelRef}
         id="artifacts-panel"
       >
-        <div className="h-full min-w-[400px] overflow-hidden">{panel}</div>
+        <div className="h-full min-w-[min(25rem,100%)] overflow-hidden">{panel}</div>
       </ResizablePanel>
     </>
   );

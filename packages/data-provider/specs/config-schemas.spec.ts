@@ -1,14 +1,23 @@
+import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 import {
   paramDefinitionSchema,
   agentsEndpointSchema,
   azureEndpointSchema,
   endpointSchema,
   RetentionMode,
+  isAllDataRetention,
+  isForcedTemporaryRetention,
   configSchema,
+  balanceSchema,
   interfaceSchema,
   fileStorageSchema,
   fileStrategiesSchema,
   normalizeAgentSelectorLimit,
+  getConfigDefaults,
+  MAX_CODE_HIGHLIGHT_THROTTLE_MS,
+  normalizeCodeHighlightThrottleMs,
+  DEFAULT_CODE_HIGHLIGHT_THROTTLE_MS,
   SKILL_SYNC_MAX_INTERVAL_MINUTES,
   summarizationTriggerSchema,
   summarizationConfigSchema,
@@ -375,6 +384,84 @@ describe('endpointSchema addParams validation', () => {
       customParams: {
         reasoningFormat: 'provider_magic',
       },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts a reasoning catalog timeout within bounds', () => {
+    const result = endpointSchema.safeParse({
+      ...validEndpoint,
+      customParams: { reasoningCatalogTimeoutMs: 8000 },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.customParams?.reasoningCatalogTimeoutMs).toBe(8000);
+    }
+  });
+
+  it.each([0, 100, 60000, 1.5])('rejects reasoning catalog timeout %s', (value) => {
+    const result = endpointSchema.safeParse({
+      ...validEndpoint,
+      customParams: { reasoningCatalogTimeoutMs: value },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it('accepts a reasoning catalog page limit within bounds', () => {
+    const result = endpointSchema.safeParse({
+      ...validEndpoint,
+      customParams: { reasoningCatalogMaxPages: 50 },
+    });
+
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.customParams?.reasoningCatalogMaxPages).toBe(50);
+    }
+  });
+
+  it.each([0, 201, 1.5])('rejects reasoning catalog page limit %s', (value) => {
+    const result = endpointSchema.safeParse({
+      ...validEndpoint,
+      customParams: { reasoningCatalogMaxPages: value },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it.each([0, 30000, 600000])('accepts a reasoning catalog failure window of %s', (value) => {
+    const result = endpointSchema.safeParse({
+      ...validEndpoint,
+      customParams: { reasoningCatalogFailureTtlMs: value },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it.each([-1, 600001, 1.5])('rejects reasoning catalog failure window %s', (value) => {
+    const result = endpointSchema.safeParse({
+      ...validEndpoint,
+      customParams: { reasoningCatalogFailureTtlMs: value },
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it.each([60000, 3600000, 86400000])('accepts a reasoning catalog lifetime of %s', (value) => {
+    const result = endpointSchema.safeParse({
+      ...validEndpoint,
+      customParams: { reasoningCatalogTtlMs: value },
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it.each([0, 59999, 86400001, 1.5])('rejects reasoning catalog lifetime %s', (value) => {
+    const result = endpointSchema.safeParse({
+      ...validEndpoint,
+      customParams: { reasoningCatalogTtlMs: value },
     });
 
     expect(result.success).toBe(false);
@@ -1127,6 +1214,25 @@ describe('configSchema fileStrategy', () => {
   });
 });
 
+describe('configSchema fileListLimit', () => {
+  it('defaults fileListLimit to 100 for existing configurations', () => {
+    const result = configSchema.parse({ version: '1.3.7' });
+    expect(result.fileListLimit).toBe(100);
+  });
+
+  it('accepts a positive integer override', () => {
+    const result = configSchema.safeParse({ version: '1.3.7', fileListLimit: 250 });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.fileListLimit).toBe(250);
+    }
+  });
+
+  it.each([0, -1, 1.5])('rejects invalid fileListLimit %p', (fileListLimit) => {
+    expect(configSchema.safeParse({ version: '1.3.7', fileListLimit }).success).toBe(false);
+  });
+});
+
 describe('configSchema skillSync', () => {
   it('accepts a GitHub skill sync source with explicit paths and credential key', () => {
     const result = configSchema.safeParse({
@@ -1415,6 +1521,38 @@ describe('configSchema skillSync', () => {
   });
 });
 
+describe('codeHighlightThrottleMs', () => {
+  it('defaults to the one cadence the schema, the config defaults and the client fallback share', () => {
+    expect(DEFAULT_CODE_HIGHLIGHT_THROTTLE_MS).toBe(300);
+    expect(interfaceSchema.parse({}).codeHighlightThrottleMs).toBe(
+      DEFAULT_CODE_HIGHLIGHT_THROTTLE_MS,
+    );
+    expect(getConfigDefaults().interface?.codeHighlightThrottleMs).toBe(
+      DEFAULT_CODE_HIGHLIGHT_THROTTLE_MS,
+    );
+    expect(normalizeCodeHighlightThrottleMs(undefined)).toBe(DEFAULT_CODE_HIGHLIGHT_THROTTLE_MS);
+  });
+
+  it('accepts and normalizes the same range', () => {
+    for (const value of [0, 1, 300, MAX_CODE_HIGHLIGHT_THROTTLE_MS]) {
+      expect(
+        interfaceSchema.parse({ codeHighlightThrottleMs: value }).codeHighlightThrottleMs,
+      ).toBe(value);
+      expect(normalizeCodeHighlightThrottleMs(value)).toBe(value);
+    }
+    for (const value of [-1, 1.5, MAX_CODE_HIGHLIGHT_THROTTLE_MS + 1, Number.NaN, '300']) {
+      expect(interfaceSchema.safeParse({ codeHighlightThrottleMs: value }).success).toBe(false);
+      expect(normalizeCodeHighlightThrottleMs(value)).toBe(DEFAULT_CODE_HIGHLIGHT_THROTTLE_MS);
+    }
+  });
+
+  it('documents the same default in librechat.example.yaml', () => {
+    const example = readFileSync(join(__dirname, '../../../librechat.example.yaml'), 'utf8');
+    expect(example).toContain(`(default: ${DEFAULT_CODE_HIGHLIGHT_THROTTLE_MS} ms)`);
+    expect(example).toContain(`# codeHighlightThrottleMs: ${DEFAULT_CODE_HIGHLIGHT_THROTTLE_MS}\n`);
+  });
+});
+
 describe('interfaceSchema', () => {
   it('accepts independent retention periods', () => {
     expect(
@@ -1470,6 +1608,24 @@ describe('interfaceSchema', () => {
     const result = interfaceSchema.parse({ modelSelect: true });
 
     expect(result.defaultPinnedTools).toBeUndefined();
+  });
+
+  it('accepts the ephemeral retention mode', () => {
+    const result = interfaceSchema.parse({ retentionMode: RetentionMode.EPHEMERAL });
+    expect(result.retentionMode).toBe(RetentionMode.EPHEMERAL);
+    expect(RetentionMode.EPHEMERAL).toBe('ephemeral');
+  });
+
+  it('classifies ephemeral as forced-temporary, all-data retention', () => {
+    expect(isAllDataRetention(RetentionMode.EPHEMERAL)).toBe(true);
+    expect(isAllDataRetention(RetentionMode.ALL)).toBe(true);
+    expect(isAllDataRetention(RetentionMode.TEMPORARY)).toBe(false);
+    expect(isAllDataRetention(undefined)).toBe(false);
+
+    expect(isForcedTemporaryRetention(RetentionMode.EPHEMERAL)).toBe(true);
+    expect(isForcedTemporaryRetention(RetentionMode.ALL)).toBe(false);
+    expect(isForcedTemporaryRetention(RetentionMode.TEMPORARY)).toBe(false);
+    expect(isForcedTemporaryRetention(undefined)).toBe(false);
   });
 });
 
@@ -1953,4 +2109,41 @@ describe('interfaceSchema agentSelectorLimit', () => {
     expect(normalizeAgentSelectorLimit(101)).toBe(10);
     expect(normalizeAgentSelectorLimit('10')).toBe(10);
   });
+});
+
+describe('balance refill mode', () => {
+  test('keeps additive refill as the default for existing configurations', () => {
+    expect(balanceSchema.parse({ autoRefillEnabled: true }).refillMode).toBe('add');
+  });
+  test('accepts weekly non-accumulating reset with percentage display', () => {
+    expect(
+      balanceSchema.parse({
+        enabled: true,
+        startBalance: 300000000,
+        autoRefillEnabled: true,
+        refillIntervalValue: 1,
+        refillIntervalUnit: 'weeks',
+        refillAmount: 300000000,
+        refillMode: 'reset',
+        display: 'percent',
+      }),
+    ).toMatchObject({ refillMode: 'reset', display: 'percent' });
+  });
+  test('rejects unsupported refill modes', () => {
+    expect(balanceSchema.safeParse({ refillMode: 'rollover' }).success).toBe(false);
+  });
+});
+
+describe('reset interval validation', () => {
+  test.each([0, -1, 0.5, 1.5])(
+    'rejects reset interval %s while preserving additive settings',
+    (refillIntervalValue) => {
+      expect(balanceSchema.safeParse({ refillMode: 'reset', refillIntervalValue }).success).toBe(
+        false,
+      );
+      expect(balanceSchema.safeParse({ refillMode: 'add', refillIntervalValue }).success).toBe(
+        true,
+      );
+    },
+  );
 });

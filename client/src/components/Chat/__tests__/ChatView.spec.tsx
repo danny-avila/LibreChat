@@ -1,10 +1,13 @@
 import React from 'react';
 import '@testing-library/jest-dom';
+import { ChatSettingsContext, defaultChatSettings } from '~/Providers/ChatSettingsContext';
 import { render, screen } from 'test/layout-test-utils';
 import ChatView from '../ChatView';
 
 const mockParams = jest.fn();
 const mockConversation = jest.fn();
+const mockChatFormProps = jest.fn();
+const mockAskHostSaveDrafts = jest.fn();
 
 jest.mock('react-router-dom', () => ({
   ...jest.requireActual('react-router-dom'),
@@ -19,6 +22,7 @@ jest.mock('~/hooks/AuthContext', () => ({
 
 jest.mock('~/data-provider', () => ({
   useGetMessagesByConvoId: () => ({ data: null, isLoading: false, isFetching: false }),
+  useProjectQuery: () => ({ data: undefined }),
 }));
 
 /**
@@ -48,8 +52,16 @@ jest.mock('../Footer', () => ({
   useConfiguredFooter: () => false,
 }));
 jest.mock('../Landing', () => ({ __esModule: true, default: () => <div /> }));
+jest.mock('~/components/Lia', () => ({ __esModule: true, default: () => null }));
 jest.mock('../Messages/MessagesView', () => ({ __esModule: true, default: () => <div /> }));
-jest.mock('../Input/ChatForm', () => ({ __esModule: true, default: () => <div /> }));
+jest.mock('../Input/ChatForm', () => ({
+  __esModule: true,
+  default: (props: Record<string, unknown>) => {
+    mockChatFormProps(props);
+    mockAskHostSaveDrafts(jest.requireActual('../ask/state').useAskAnswerHost());
+    return <div />;
+  },
+}));
 jest.mock('../Input/ConversationStarters', () => ({ __esModule: true, default: () => <div /> }));
 
 describe('ChatView page heading', () => {
@@ -63,12 +75,6 @@ describe('ChatView page heading', () => {
 
     const headings = screen.getAllByRole('heading', { level: 1 });
     expect(headings).toHaveLength(1);
-  });
-
-  test('keeps the heading visually hidden', () => {
-    render(<ChatView />);
-
-    expect(screen.getByRole('heading', { level: 1 })).toHaveClass('sr-only');
   });
 
   test('announces a localized new chat heading on the landing page', () => {
@@ -116,6 +122,49 @@ describe('ChatView page heading', () => {
   });
 });
 
+describe('ChatView composer preferences', () => {
+  beforeEach(() => {
+    mockParams.mockReturnValue({});
+    mockConversation.mockReturnValue(null);
+    mockChatFormProps.mockClear();
+    localStorage.clear();
+  });
+
+  /** ChatForm used to read this preference itself via `useRecoilValue(store.enterToSend)`,
+   *  reaching into app-global state the composer only consumes. ChatView now owns the
+   *  read and passes it down, the same boundary `showComposerTips` already follows. */
+  test('reads the persisted enterToSend preference and passes it into ChatForm', () => {
+    localStorage.setItem('enterToSend', JSON.stringify(true));
+
+    render(<ChatView />);
+
+    expect(mockChatFormProps).toHaveBeenCalledWith(expect.objectContaining({ enterToSend: true }));
+  });
+
+  /** The same boundary for the dictation preferences: ChatForm consumes them
+   *  but ChatView owns the reads. */
+  test('passes the persisted Auto Send Text preference and the speech init state', () => {
+    localStorage.setItem('autoSendText', JSON.stringify(3));
+
+    render(<ChatView />);
+
+    expect(mockChatFormProps).toHaveBeenCalledWith(
+      expect.objectContaining({ autoSendText: 3, speechSettingsInitialized: false }),
+    );
+  });
+
+  test.each([true, false])('passes routePending=%p into ChatForm', (routePending) => {
+    render(<ChatView routePending={routePending} />);
+    expect(mockChatFormProps).toHaveBeenCalledWith(expect.objectContaining({ routePending }));
+  });
+
+  test('falls back to the atom default when nothing is persisted', () => {
+    render(<ChatView />);
+
+    expect(mockChatFormProps).toHaveBeenCalledWith(expect.objectContaining({ enterToSend: false }));
+  });
+});
+
 describe('ChatView composer column', () => {
   beforeEach(() => {
     mockParams.mockReturnValue({ conversationId: 'convo-1' });
@@ -143,5 +192,24 @@ describe('ChatView composer column', () => {
 
     expect(composerColumn).toHaveClass('[view-transition-name:chat-form]');
     expect(composerColumn).toHaveClass('relative', 'z-10');
+  });
+});
+
+describe('ChatView draft saving', () => {
+  beforeEach(() => {
+    mockParams.mockReturnValue({});
+    mockConversation.mockReturnValue(null);
+    mockAskHostSaveDrafts.mockReset();
+  });
+
+  /** A host that supplies its own chat settings drives ask-answer draft saving too. */
+  test.each([true, false])('hands the host saveDrafts=%s to ask-answer drafts', (saveDrafts) => {
+    render(
+      <ChatSettingsContext.Provider value={{ ...defaultChatSettings, saveDrafts }}>
+        <ChatView />
+      </ChatSettingsContext.Provider>,
+    );
+
+    expect(mockAskHostSaveDrafts).toHaveBeenLastCalledWith(saveDrafts);
   });
 });

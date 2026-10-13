@@ -1,3 +1,4 @@
+import type { ScheduledMCPIdentity } from 'librechat-data-provider';
 /** Deadline after which an invocation owner requests cancellation. */
 export const BACKGROUND_TASK_TIMEOUT_MS: number = 30 * 60 * 1000;
 /** Gives a cooperative tool a short window to settle after cancellation before
@@ -6,9 +7,18 @@ export const BACKGROUND_TASK_ABORT_GRACE_MS: number = 60 * 1000;
 /** Three missed heartbeats prove the process-local executor has been lost. */
 export const BACKGROUND_TOOL_PRODUCER_LEASE_MS: number = 30_000;
 export const BACKGROUND_TOOL_PRODUCER_HEARTBEAT_MS: number = 10_000;
+/** Recorded as the result of a background tool the server had to stop while shutting down. */
+export const BACKGROUND_TASK_SHUTDOWN_MESSAGE: string =
+  'Background task was interrupted because its server shut down before it finished. Run it again if you still need the result.';
+/** Kept at the end of the background drain for the final durable receipt writes. */
+export const BACKGROUND_SHUTDOWN_FLUSH_RESERVE_MS: number = 2_000;
+/** Left after the background drain for the shutdown tasks that run after it. */
+export const BACKGROUND_SHUTDOWN_TEARDOWN_RESERVE_MS: number = 2_000;
 
 /** Host-owned identity recorded before ordinary background tool work begins. */
 export interface BackgroundToolWakeupRegistration {
+  /** Origin captured by the generation's host, null for an ordinary turn. */
+  scheduleMCPIdentity?: ScheduledMCPIdentity | null;
   taskId: string;
   toolCallId: string;
   toolName: string;
@@ -58,6 +68,9 @@ export interface BackgroundToolDeadClaimRecoveryInput {
   conversationId: string;
   messageId: string;
   claimId: string;
+  batchId?: string;
+  /** Automatic repair cannot reopen a committed manual handoff. */
+  onlyIfUnreconciled?: true;
   /** Omitted for the legacy automatic-wakeup recovery path. */
   kind?: 'manual' | 'wakeup';
   /** Required to prove that a manual claim's owning generation is no longer active. */
@@ -72,6 +85,7 @@ export type BackgroundToolDeadClaimRecovery = (
  * read from the durable delivery store rather than a process-local registry. */
 export interface PendingBackgroundCompletion {
   taskId: string;
+  toolCallId: string;
   toolName: string;
   dispatchedAt: Date;
   /** The tool's terminal outcome once it settled; absent while it still runs. */
@@ -94,7 +108,7 @@ export type BackgroundCompletionDiscardOutcome =
 
 /** Durable view and control of one principal's undelivered background completions. */
 export interface PendingBackgroundCompletionControls {
-  /** `complete` is false when more undelivered completions exist than were listed. */
+  /** `complete` is false when undelivered or dead-lettered results were truncated. */
   list: (input: { userId: string; conversationId: string }) => Promise<{
     completions: PendingBackgroundCompletion[];
     /** Completions whose automatic delivery dead-lettered; only a poll recovers them. */

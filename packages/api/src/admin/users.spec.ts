@@ -67,6 +67,8 @@ function createDeps(overrides: Partial<AdminUsersDeps> = {}): AdminUsersDeps {
     invalidateCodeEnvironmentConfigCache: jest.fn().mockResolvedValue(undefined),
     deleteConfig: jest.fn().mockResolvedValue(null),
     deleteAclEntries: jest.fn().mockResolvedValue(undefined),
+    deletePasskeysByUser: jest.fn().mockResolvedValue(0),
+    deleteTokens: jest.fn().mockResolvedValue({ deletedCount: 0 }),
     ...overrides,
   };
 }
@@ -457,6 +459,35 @@ describe('createAdminUsersHandlers', () => {
         principalType: PrincipalType.USER,
         principalId: expect.any(Types.ObjectId),
       });
+      expect(deps.deletePasskeysByUser).toHaveBeenCalledWith(validUserId);
+    });
+
+    it("removes the user's stored credentials before the user", async () => {
+      const deps = createDeps();
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status } = createReqRes({ params: { id: validUserId } });
+
+      await handlers.deleteUser(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(deps.deleteTokens).toHaveBeenCalledWith({ userId: validUserId });
+      expect(jest.mocked(deps.deleteTokens).mock.invocationCallOrder[0]).toBeLessThan(
+        jest.mocked(deps.deleteUserById).mock.invocationCallOrder[0],
+      );
+    });
+
+    it('keeps the user, and releases the fence, when its credentials cannot be removed', async () => {
+      const deps = createDeps({
+        deleteTokens: jest.fn().mockRejectedValue(new Error('mongo down')),
+      });
+      const handlers = createAdminUsersHandlers(deps);
+      const { req, res, status } = createReqRes({ params: { id: validUserId } });
+
+      await handlers.deleteUser(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(deps.deleteUserById).not.toHaveBeenCalled();
+      expect(deps.cancelAgentTriggerUserDeletion).toHaveBeenCalled();
     });
 
     it('returns success even when cascade cleanup partially fails', async () => {

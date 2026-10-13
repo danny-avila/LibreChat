@@ -1,5 +1,6 @@
 import {
   AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
+  AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_BATCH_V3,
   AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
   AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
   AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
@@ -185,6 +186,7 @@ describe('durable agent trigger service', () => {
       expect.objectContaining({
         workerCapabilities: [
           AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
+          AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_BATCH_V3,
           AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
           AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
           AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V2,
@@ -209,6 +211,19 @@ describe('durable agent trigger service', () => {
       availableAt: START,
     });
     await service.stop();
+  });
+
+  it('batches receipts by default and honors an explicit opt-out', async () => {
+    const service = createAgentTriggerService({ mintToken: () => 'test' });
+    expect(service.getBackgroundCompletionReceiptBatching()).toBe(true);
+    await service.initialize({ address: '127.0.0.1' });
+    expect(service.getBackgroundCompletionReceiptBatching()).toBe(true);
+    await service.stop();
+
+    const optedOut = createAgentTriggerService({ mintToken: () => 'test' });
+    await optedOut.initialize({ address: '127.0.0.1', completionReceiptBatching: false });
+    expect(optedOut.getBackgroundCompletionReceiptBatching()).toBe(false);
+    await optedOut.stop();
   });
 
   describe('waiting completion deliveries', () => {
@@ -290,6 +305,39 @@ describe('durable agent trigger service', () => {
 
       expect(methods.expediteAgentTriggerDeliveries).not.toHaveBeenCalled();
       await service.stop();
+    });
+
+    it('keeps background producer writes available after the delivery engine stops for shutdown', async () => {
+      const methods = deliveryMethods({
+        persistAgentBackgroundToolResult: jest.fn(async () => true),
+        renewAgentTriggerDeliveryProducerLease: jest.fn(async () => true),
+        expediteAgentTriggerDeliveries: jest.fn(async () => ({ expedited: 1, held: 0 })),
+      });
+      const service = createAgentTriggerService({ methods });
+      await service.initialize({ address });
+      await service.stop();
+
+      await expect(
+        service.renewProducerLease(
+          'trigger_background',
+          'background-tool-completion',
+          new Date(START.getTime() + 30_000),
+        ),
+      ).resolves.toBe(true);
+      await expect(
+        service.persistBackgroundToolResult({
+          deliveryKey: 'trigger_background',
+          sourceId: 'background-tool-completion',
+          result,
+        }),
+      ).resolves.toBe(true);
+      await flush();
+
+      expect(methods.persistAgentBackgroundToolResult).toHaveBeenCalledTimes(1);
+      expect(methods.expediteAgentTriggerDeliveries).not.toHaveBeenCalled();
+      await expect(service.enqueue(envelope())).rejects.toBeInstanceOf(
+        AgentTriggerServiceUnavailableError,
+      );
     });
 
     it("expedites a principal's completion deliveries when one of its generations settles", async () => {
@@ -374,6 +422,7 @@ describe('durable agent trigger service', () => {
       expect.objectContaining({
         workerCapabilities: [
           AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
+          AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_BATCH_V3,
           AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
           AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
           AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V2,
