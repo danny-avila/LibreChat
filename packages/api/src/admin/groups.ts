@@ -16,6 +16,7 @@ import type { ServerRequest } from '~/types/http';
 import type { RecordAuditEntry } from './audit';
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { createAdminAuditEmitter } from './audit';
+import { cascadeStep, runCascade } from './cascade';
 import { parsePagination } from './pagination';
 
 type GroupListFilter = Pick<GroupFilterOptions, 'source' | 'search'>;
@@ -88,6 +89,16 @@ export interface AdminGroupsDeps {
     principalType: PrincipalType;
     principalId: string | Types.ObjectId;
   }) => Promise<DeleteResult>;
+  /** Snapshot source and restore sinks for the group-deletion cascade. When all are
+   * supplied, a failed cleanup step or a failed group deletion puts back whatever
+   * the cascade already removed. Each is the matching data-schemas method. */
+  findAclEntriesByPrincipal?: (
+    principalType: PrincipalType,
+    principalId: string,
+  ) => Promise<Array<Record<string, unknown>>>;
+  bulkWriteAclEntries?: (ops: Array<Record<string, unknown>>) => Promise<unknown>;
+  /** Re-creates a deleted config document in full, only if none exists. */
+  restoreConfig?: (snapshot: Record<string, unknown>) => Promise<boolean>;
   /** Optional audit emission for group mutations; fail-open unless `auditFailClosed`. */
   recordAuditEntry?: RecordAuditEntry;
   /** When true, a failed audit write surfaces as a 5xx after the mutation has
@@ -122,10 +133,17 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
     findUsers,
     deleteConfig,
     deleteAclEntries,
+    findAclEntriesByPrincipal,
+    bulkWriteAclEntries,
+    restoreConfig,
     recordAuditEntry,
     auditFailClosed,
   } = deps;
 
+  const emitRevocationAudit = createAdminAuditEmitter({
+    recordAuditEntry,
+    logPrefix: '[adminGroups]',
+  });
   const emitAudit = createAdminAuditEmitter({
     recordAuditEntry,
     failClosed: auditFailClosed,
@@ -359,31 +377,126 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
       if (!existing) {
         return res.status(404).json({ error: 'Group not found' });
       }
+      const target = groupTarget(existing, id);
+      /**
+       * Recorded before any removal so a crash mid-cascade still leaves a trail.
+       * Deleting a group revokes access, so this write never blocks the delete,
+       * and a follow-up `failure` entry is appended if the delete does not happen.
+       */
+      await emitRevocationAudit(req, { action: 'group.deleted', severity: 'warning', target });
+      const recordFailure = (code: string) =>
+        emitRevocationAudit(req, {
+          action: 'group.deleted',
+          outcome: 'failure',
+          severity: 'warning',
+          target,
+          metadata: { code },
+        });
       /**
        * Config overrides and ACL entries are keyed by group id, so they are
-       * removed in turn (config first, so a config failure leaves ACLs and their
-       * caches untouched) before the group itself: if any removal fails the group
-       * stays and the admin can retry, instead of leaving orphaned entries that a
-       * later principal could inherit. Every removal is idempotent.
+       * removed before the group itself: if any removal fails the group stays,
+       * what was removed is restored (insert-only, so entries written since are
+       * kept) and the admin can retry, instead of leaving orphaned entries that a
+       * later principal could inherit or a live group stripped of its config.
        * deleteAclEntries is a raw deleteMany wrapper with no type casting.
        * grantPermission stores group principalId as ObjectId, so we must
        * cast here. deleteConfig normalizes internally.
        */
-      try {
-        await deleteConfig(PrincipalType.GROUP, id);
-        await deleteAclEntries({
-          principalType: PrincipalType.GROUP,
-          principalId: new Types.ObjectId(id),
-        });
-      } catch (cleanupError) {
-        logger.error('[adminGroups] cascade cleanup failed for group:', id, cleanupError);
+      const restoreAclEntries = async (entries: Array<Record<string, unknown>>) => {
+        if (!bulkWriteAclEntries || entries.length === 0) {
+          return;
+        }
+        await bulkWriteAclEntries(
+          entries.map((entry) => ({
+            updateOne: {
+              filter: { _id: entry._id },
+              update: { $setOnInsert: entry },
+              upsert: true,
+            },
+          })),
+        );
+      };
+      const cascade = await runCascade(
+        [
+          cascadeStep(
+            'config',
+            () => deleteConfig(PrincipalType.GROUP, id),
+            restoreConfig
+              ? async (config) => {
+                  if (!config) {
+                    return;
+                  }
+                  const snapshot = (config as { toObject?: () => unknown }).toObject?.() ?? config;
+                  const restored = await restoreConfig(snapshot as Record<string, unknown>);
+                  if (!restored) {
+                    logger.warn('[adminGroups] config restore skipped, override exists:', id);
+                  }
+                }
+              : undefined,
+          ),
+          cascadeStep(
+            'acl',
+            async () => {
+              const entries = (await findAclEntriesByPrincipal?.(PrincipalType.GROUP, id)) ?? [];
+              try {
+                await deleteAclEntries({
+                  principalType: PrincipalType.GROUP,
+                  principalId: new Types.ObjectId(id),
+                });
+              } catch (error) {
+                /** The delete may have committed before it threw, and a rejected step is
+                 * not compensated by the runner, so put the snapshot back here. */
+                await restoreAclEntries(entries).catch((restoreError) =>
+                  logger.error('[adminGroups] acl restore failed:', restoreError),
+                );
+                throw error;
+              }
+              return entries;
+            },
+            bulkWriteAclEntries ? restoreAclEntries : undefined,
+          ),
+        ],
+        '[adminGroups]',
+      );
+      const cleanupFailedResponse = async () => {
+        await recordFailure('GROUP_CLEANUP_FAILED');
         return res.status(500).json({
           error: 'Failed to remove the group permissions and config; the group was not deleted',
           code: 'GROUP_CLEANUP_FAILED',
         });
+      };
+
+      if (cascade.failed.length > 0) {
+        await cascade.compensate();
+        return cleanupFailedResponse();
       }
-      const deleted = await deleteGroup(id);
+
+      let deleted: IGroup | null;
+      try {
+        deleted = await deleteGroup(id);
+      } catch (error) {
+        logger.error('[adminGroups] deleteGroup failed after cascade cleanup:', error);
+        /** The delete may have committed before it threw. Restoring dependents for a
+         * group that is gone would orphan them. */
+        const lookup = await findGroupById(id).then(
+          (group) => ({ known: true, group }),
+          () => ({ known: false, group: null }),
+        );
+        if (lookup.known && lookup.group) {
+          await cascade.compensate();
+          await recordFailure('GROUP_CLEANUP_FAILED');
+          return res.status(500).json({ error: 'Failed to delete group' });
+        }
+        if (!lookup.known) {
+          logger.error('[adminGroups] dependents not restored, group state unverifiable:', id);
+          await recordFailure('GROUP_STATE_UNVERIFIABLE');
+          return res.status(500).json({ error: 'Failed to delete group' });
+        }
+        /** Confirmed absent: the deletion did commit. */
+        deleted = existing;
+      }
       if (!deleted) {
+        await recordFailure('not_found');
         return res.status(404).json({ error: 'Group not found' });
       }
       /** Every member loses group-scoped access, so the affected accounts are recorded (chunked). */
@@ -397,11 +510,6 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
           metadata: { userIds: chunk.join(','), count: chunk.length, cause: 'group_deleted' },
         });
       }
-      await emitAudit(req, {
-        action: 'group.deleted',
-        severity: 'warning',
-        target: groupTarget(deleted, id),
-      });
       return res.status(200).json({ success: true, id });
     } catch (error) {
       logger.error('[adminGroups] deleteGroup error:', getSafeErrorMetadata(error));

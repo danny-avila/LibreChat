@@ -88,24 +88,29 @@ test.describe('admin integration auditing', () => {
     expect(result.threw).toBe(false);
   });
 
-  test('a group with failing cleanup is not deleted and reports GROUP_CLEANUP_FAILED @scenario:group-delete-keeps-the-group-when-cleanup-fails', () => {
+  test('a group whose cleanup fails is kept with its config restored and reports GROUP_CLEANUP_FAILED @scenario:group-delete-keeps-the-group-when-cleanup-fails', () => {
     const result = probe(`
       const id = new Types.ObjectId().toString();
       let deleted = false;
+      const restored = [];
       const noop = async () => undefined;
       const handlers = api.createAdminGroupsHandlers({
         listGroups: noop, countGroups: noop, createGroup: noop, updateGroupById: noop,
         findGroupById: async () => ({ _id: new Types.ObjectId(id), name: 'G', memberIds: [] }),
         deleteGroup: async () => { deleted = true; return { _id: id }; },
-        deleteConfig: async () => { throw new Error('config store down'); },
-        deleteAclEntries: async () => ({ deletedCount: 0 }),
+        findAclEntriesByPrincipal: async () => [],
+        bulkWriteAclEntries: async () => undefined,
+        restoreConfig: async () => { restored.push('config'); return true; },
+        deleteConfig: async () => ({ principalType: 'group', principalId: id, overrides: {} }),
+        deleteAclEntries: async () => { throw new Error('acl store down'); },
       });
       const res = makeRes();
       await handlers.deleteGroup({ params: { id }, query: {}, body: {}, user }, res);
-      out({ status: res.statusCode, code: res.body && res.body.code, deleted });
-    `) as { status: number; code?: string; deleted: boolean };
+      out({ status: res.statusCode, code: res.body && res.body.code, deleted, restored });
+    `) as { status: number; code?: string; deleted: boolean; restored: string[] };
     expect(result.status).toBe(500);
     expect(result.code).toBe('GROUP_CLEANUP_FAILED');
     expect(result.deleted).toBe(false);
+    expect(result.restored).toEqual(['config']);
   });
 });

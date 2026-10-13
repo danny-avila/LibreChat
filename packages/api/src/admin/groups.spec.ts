@@ -879,19 +879,156 @@ describe('createAdminGroupsHandlers', () => {
       expect(deps.deleteGroup).not.toHaveBeenCalled();
     });
 
-    it('leaves ACL entries untouched when the config removal fails', async () => {
-      const deps = createDeps({
-        findGroupById: jest.fn().mockResolvedValue(mockGroup()),
-        deleteConfig: jest.fn().mockRejectedValue(new Error('config down')),
+    describe('compensation and audit', () => {
+      const withUser = <T extends { req: ServerRequest }>(reqRes: T): T => {
+        (reqRes.req as unknown as { user: Partial<IUser> }).user = {
+          _id: new Types.ObjectId(),
+          name: 'Admin',
+        };
+        return reqRes;
+      };
+      const config = { principalType: 'group', principalId: 'p', overrides: {} };
+      const aclEntry = { _id: new Types.ObjectId(), principalType: 'group', resourceType: 'agent' };
+
+      function compensationDeps(overrides: Partial<AdminGroupsDeps> = {}) {
+        return createDeps({
+          findGroupById: jest.fn().mockResolvedValue(mockGroup()),
+          deleteConfig: jest.fn().mockResolvedValue(config),
+          findAclEntriesByPrincipal: jest.fn().mockResolvedValue([aclEntry]),
+          bulkWriteAclEntries: jest.fn().mockResolvedValue({}),
+          restoreConfig: jest.fn().mockResolvedValue(true),
+          ...overrides,
+        });
+      }
+
+      it('restores the config when the ACL removal fails after it', async () => {
+        const deps = compensationDeps({
+          deleteAclEntries: jest.fn().mockRejectedValue(new Error('acl down')),
+        });
+        const handlers = createAdminGroupsHandlers(deps);
+        const { req, res, status, json } = createReqRes({ params: { id: validId } });
+
+        await handlers.deleteGroup(req, res);
+
+        expect(status).toHaveBeenCalledWith(500);
+        expect(json).toHaveBeenCalledWith(
+          expect.objectContaining({ code: 'GROUP_CLEANUP_FAILED' }),
+        );
+        expect(deps.restoreConfig).toHaveBeenCalledWith(config);
+        expect(deps.deleteGroup).not.toHaveBeenCalled();
       });
-      const handlers = createAdminGroupsHandlers(deps);
-      const { req, res, status } = createReqRes({ params: { id: validId } });
 
-      await handlers.deleteGroup(req, res);
+      it('restores the ACL entries when the config removal fails', async () => {
+        const deps = compensationDeps({
+          deleteConfig: jest.fn().mockRejectedValue(new Error('config down')),
+        });
+        const handlers = createAdminGroupsHandlers(deps);
+        const { req, res, status } = createReqRes({ params: { id: validId } });
 
-      expect(status).toHaveBeenCalledWith(500);
-      expect(deps.deleteAclEntries).not.toHaveBeenCalled();
-      expect(deps.deleteGroup).not.toHaveBeenCalled();
+        await handlers.deleteGroup(req, res);
+
+        expect(status).toHaveBeenCalledWith(500);
+        expect(deps.bulkWriteAclEntries).toHaveBeenCalled();
+        expect(deps.deleteGroup).not.toHaveBeenCalled();
+      });
+
+      it('restores config and ACL entries insert-only when the group delete fails', async () => {
+        const deps = compensationDeps({
+          deleteGroup: jest.fn().mockRejectedValue(new Error('db down')),
+        });
+        const handlers = createAdminGroupsHandlers(deps);
+        const { req, res, status } = createReqRes({ params: { id: validId } });
+
+        await handlers.deleteGroup(req, res);
+
+        expect(status).toHaveBeenCalledWith(500);
+        expect(deps.restoreConfig).toHaveBeenCalledWith(config);
+        expect(deps.bulkWriteAclEntries).toHaveBeenCalledWith([
+          {
+            updateOne: {
+              filter: { _id: aclEntry._id },
+              update: { $setOnInsert: aclEntry },
+              upsert: true,
+            },
+          },
+        ]);
+      });
+
+      it('does not restore dependents of a group that is already gone', async () => {
+        const deps = compensationDeps({
+          findGroupById: jest.fn().mockResolvedValueOnce(mockGroup()).mockResolvedValue(null),
+          deleteGroup: jest.fn().mockRejectedValue(new Error('db down')),
+        });
+        const handlers = createAdminGroupsHandlers(deps);
+        const { req, res, status } = createReqRes({ params: { id: validId } });
+
+        await handlers.deleteGroup(req, res);
+
+        expect(status).toHaveBeenCalledWith(200);
+        expect(deps.restoreConfig).not.toHaveBeenCalled();
+        expect(deps.bulkWriteAclEntries).not.toHaveBeenCalled();
+      });
+
+      it('records group.deleted before any removal and a failure entry after a failed cleanup', async () => {
+        const order: string[] = [];
+        const recordAuditEntry = jest.fn().mockImplementation(async (input) => {
+          order.push(`audit:${input.outcome ?? 'success'}`);
+        });
+        const deps = compensationDeps({
+          recordAuditEntry,
+          deleteConfig: jest.fn().mockImplementation(async () => {
+            order.push('config');
+            return config;
+          }),
+          deleteAclEntries: jest.fn().mockRejectedValue(new Error('acl down')),
+        });
+        const handlers = createAdminGroupsHandlers(deps);
+        const { req, res } = withUser(createReqRes({ params: { id: validId } }));
+
+        await handlers.deleteGroup(req, res);
+
+        expect(order).toEqual(['audit:success', 'config', 'audit:failure']);
+        expect(recordAuditEntry).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            action: 'group.deleted',
+            outcome: 'failure',
+            metadata: { code: 'GROUP_CLEANUP_FAILED' },
+          }),
+        );
+      });
+
+      it('appends a not_found failure entry when the request loses the race', async () => {
+        const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+        const deps = compensationDeps({
+          recordAuditEntry,
+          deleteGroup: jest.fn().mockResolvedValue(null),
+        });
+        const handlers = createAdminGroupsHandlers(deps);
+        const { req, res, status } = withUser(createReqRes({ params: { id: validId } }));
+
+        await handlers.deleteGroup(req, res);
+
+        expect(status).toHaveBeenCalledWith(404);
+        expect(recordAuditEntry).toHaveBeenLastCalledWith(
+          expect.objectContaining({ outcome: 'failure', metadata: { code: 'not_found' } }),
+        );
+        expect(deps.restoreConfig).not.toHaveBeenCalled();
+      });
+
+      it('never blocks the delete on an audit outage, even when fail-closed', async () => {
+        const deps = compensationDeps({
+          recordAuditEntry: jest.fn().mockRejectedValue(new Error('audit down')),
+          auditFailClosed: true,
+          deleteGroup: jest.fn().mockResolvedValue(mockGroup()),
+        });
+        const handlers = createAdminGroupsHandlers(deps);
+        const { req, res, status } = withUser(createReqRes({ params: { id: validId } }));
+
+        await handlers.deleteGroup(req, res);
+
+        expect(status).toHaveBeenCalledWith(200);
+        expect(deps.deleteGroup).toHaveBeenCalled();
+      });
     });
 
     it('removes dependents before the group', async () => {
