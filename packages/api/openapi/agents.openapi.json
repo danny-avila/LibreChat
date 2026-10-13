@@ -4428,7 +4428,8 @@
         },
         "required": [
           "id",
-          "deleted"
+          "deleted",
+          "cleanupComplete"
         ]
       },
       "ErrorMessage": {

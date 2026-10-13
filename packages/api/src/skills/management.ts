@@ -134,7 +134,7 @@ export const skillFileDeleteResponseSchema: z.ZodType<TDeleteSkillFileResponse> 
 export const skillDeleteResponseSchema: z.ZodType<TDeleteSkillResponse> = z.object({
   id: idSchema,
   deleted: z.literal(true),
-  cleanupComplete: z.boolean().optional(),
+  cleanupComplete: z.boolean(),
 });
 const listSchema = agentManagementListSchema;
 
