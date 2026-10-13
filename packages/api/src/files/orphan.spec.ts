@@ -146,7 +146,7 @@ describe('resolveStoredUploadTarget', () => {
         convertedImage: converted,
         storageMetadata: { storageKey: 'k' },
       }),
-    ).toEqual({ source: 's3', stored: { ...converted, storageKey: 'k' } });
+    ).toEqual({ source: 's3', stored: { ...converted, storageKey: 'k', recordId: 'f' } });
   });
 
   it('targets nothing for an Assistants upload without a converted image', () => {

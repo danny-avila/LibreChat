@@ -6,6 +6,8 @@ export type StoredUploadRef = {
   source: string;
   storageKey?: string;
   storageRegion?: string;
+  /** Id of the file record that points at the object, when it differs from `file_id`. */
+  recordId?: string;
   /** Owner of the stored object; defaults to the requesting user. */
   user?: string;
   tenantId?: string;
@@ -78,7 +80,7 @@ export function resolveStoredUploadTarget({
   if (convertedImage != null) {
     return {
       source: convertedImage.source,
-      stored: { ...convertedImage, ...storageMetadata },
+      stored: { ...convertedImage, ...storageMetadata, recordId: stored.file_id },
     };
   }
   return undefined;

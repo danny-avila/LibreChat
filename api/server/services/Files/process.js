@@ -369,7 +369,8 @@ function startExpiredFileSweep(options = {}) {
 }
 
 /** A rejected write may have committed, so cleanup only removes an object no record points at. */
-const fileRecordExists = async ({ file_id }) => (await db.findFileById(file_id)) != null;
+const fileRecordExists = async ({ file_id, recordId }) =>
+  (await db.findFileById(recordId ?? file_id)) != null;
 
 /**
  * Processes a file URL using a specified file handling strategy. This function accepts a strategy name,
