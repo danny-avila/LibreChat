@@ -439,6 +439,8 @@ const processFileURL = async ({
       stored: {
         file_id,
         filepath,
+        user: userId,
+        tenantId,
         source: fileStrategy,
         storageKey: typeof savedFile === 'string' ? undefined : savedFile.storageKey,
         storageRegion: typeof savedFile === 'string' ? undefined : savedFile.storageRegion,

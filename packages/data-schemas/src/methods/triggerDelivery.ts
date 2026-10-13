@@ -1876,7 +1876,7 @@ export function createAgentTriggerDeliveryMethods(
                   lastError: 1,
                   ...(awaitsTerminalHandling && { expiresAt: 1 }),
                 }
-              : { result: 1, expiresAt: 1 }),
+              : { result: 1, ...(input.expiresAt == null && { expiresAt: 1 }) }),
           },
           $push: {
             history: {

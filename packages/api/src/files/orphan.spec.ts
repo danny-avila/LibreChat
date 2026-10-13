@@ -10,7 +10,7 @@ const stored: StoredUploadRef = {
 
 describe('withStoredUploadCleanup', () => {
   const logger = { error: jest.fn() };
-  const req = { user: { id: 'u1' } };
+  const req = { user: { id: 'u1', tenantId: 't1' } };
   beforeEach(() => logger.error.mockClear());
 
   it('returns the result without resolving or calling delete when the next step succeeds', async () => {
@@ -34,7 +34,7 @@ describe('withStoredUploadCleanup', () => {
         },
       ),
     ).rejects.toBe(failure);
-    expect(deleteFile).toHaveBeenCalledWith(req, stored);
+    expect(deleteFile).toHaveBeenCalledWith(req, { ...stored, user: 'u1', tenantId: 't1' });
   });
 
   it('logs a failed cleanup without replacing the original error', async () => {

@@ -2917,6 +2917,52 @@ describe('agent trigger delivery methods', () => {
     expect((await Delivery.findById(root!._id).lean())?.batchMembersSettledAt).toBeUndefined();
   });
 
+  it('carries the dead-letter deadline to every coalesced batch member', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const coalesceUntil = new Date(Date.now() + 60_000);
+    const expiresAt = new Date(coalesceUntil.getTime() + 7 * 24 * 60 * 60_000);
+    const shared = {
+      user,
+      orderingKey: 'batch-dead-retention-lane',
+      coalesceKey: 'trigger_batch_dead_retention',
+      coalesceFrom: new Date(coalesceUntil.getTime() - 750),
+      coalesceUntil,
+      availableAt: coalesceUntil,
+      envelopeBytes: 128,
+    };
+    await Promise.all(
+      Array.from({ length: 2 }, () => methods.enqueueAgentTriggerDelivery(enqueueInput(shared))),
+    );
+    const claim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: coalesceUntil,
+      leaseUntil: new Date(coalesceUntil.getTime() + 60_000),
+    });
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: claim!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: coalesceUntil,
+    });
+    await methods.deadLetterAgentTriggerDelivery({
+      id: claim!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      attempt: attempt!,
+      error: transientFailure({ retryable: false }),
+      settledAt: coalesceUntil,
+      expiresAt,
+    });
+
+    const rows = await Delivery.find({ orderingKey: shared.orderingKey }).lean();
+    expect(rows).toHaveLength(2);
+    for (const row of rows) {
+      expect(row.status).toBe('dead');
+      expect(row.expiresAt?.getTime()).toBe(expiresAt.getTime());
+    }
+  });
+
   it('recovers batch requeue after claiming the root before member preparation', async () => {
     const user = new mongoose.Types.ObjectId();
     const coalesceUntil = new Date(Date.now() + 60_000);

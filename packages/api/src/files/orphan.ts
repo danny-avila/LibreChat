@@ -6,13 +6,16 @@ export type StoredUploadRef = {
   source: string;
   storageKey?: string;
   storageRegion?: string;
+  /** Owner of the stored object; defaults to the requesting user. */
+  user?: string;
+  tenantId?: string;
 };
 
 export type StoredUploadCleanup = {
   stored: StoredUploadRef;
   /** Looks up the strategy's delete function; called only after a failure. */
   resolveDeleteFile: () => ((req: never, file: StoredUploadRef) => Promise<unknown>) | undefined;
-  req: unknown;
+  req: { user?: { id?: string; tenantId?: string } };
   logger: { error: (message: string, meta?: unknown) => void };
 };
 
@@ -29,7 +32,13 @@ export async function withStoredUploadCleanup<T>(
     return await next();
   } catch (error) {
     try {
-      await resolveDeleteFile()?.(req as never, stored);
+      /* Storage strategies validate ownership and tenant against the object key. */
+      const ref: StoredUploadRef = {
+        user: req.user?.id,
+        tenantId: req.user?.tenantId,
+        ...stored,
+      };
+      await resolveDeleteFile()?.(req as never, ref);
     } catch (cleanupError) {
       logger.error(
         '[withStoredUploadCleanup] Failed to delete stored upload',
