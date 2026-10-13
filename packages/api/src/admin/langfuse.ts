@@ -21,10 +21,10 @@ import {
 } from '~/langfuse/tenantDestinations';
 import { redirectPolicyFor, resolveLangfuseHeaders } from '~/langfuse/utils';
 import { decryptConfigSecret, encryptConfigSecretFields } from './secrets';
-import { createAdminAuditEmitter } from './audit';
 import { scopeHeadersToDestination } from '~/langfuse/destinations';
 import { isLangfuseConnectionAvailable } from '~/langfuse/policy';
 import { resolveLangfuseSession } from '~/langfuse/session';
+import { createAdminAuditEmitter } from './audit';
 import { mergeHeaders } from '~/utils/headers';
 
 const DEFAULT_PRIORITY = 10;

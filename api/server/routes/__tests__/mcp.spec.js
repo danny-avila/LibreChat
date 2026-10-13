@@ -137,6 +137,7 @@ jest.mock('~/models', () => ({
   deleteTokens: jest.fn(),
   findPluginAuthsByKeys: jest.fn(),
   getRoleByName: jest.fn(),
+  recordAuditEntry: jest.fn(),
 }));
 
 jest.mock('~/server/services/Config', () => ({
@@ -4063,6 +4064,35 @@ describe('MCP Routes', () => {
       expect(MCPConnection.clearCooldown).toHaveBeenCalledWith(inspectionServerName);
     });
 
+    it('records mcp_server.created with field names and no secret values', async () => {
+      const { recordAuditEntry } = require('~/models');
+      recordAuditEntry.mockClear();
+      const validConfig = {
+        type: 'sse',
+        url: 'https://mcp-server.example.com/sse',
+        title: 'Audited Server',
+        headers: { Authorization: 'Bearer super-secret-token' },
+      };
+      mockRegistryInstance.addServer.mockResolvedValue({
+        serverName: 'audited-server',
+        config: { ...validConfig, source: 'user' },
+      });
+
+      const response = await request(app).post('/api/mcp/servers').send({ config: validConfig });
+
+      expect(response.status).toBe(201);
+      expect(recordAuditEntry).toHaveBeenCalledTimes(1);
+      const input = recordAuditEntry.mock.calls[0][0];
+      expect(input).toEqual(
+        expect.objectContaining({
+          action: 'mcp_server.created',
+          target: { type: 'mcp_server', id: 'audited-server', name: 'Audited Server' },
+          metadata: { source: 'DB', fields: 'headers,title,type,url' },
+        }),
+      );
+      expect(JSON.stringify(input)).not.toContain('super-secret-token');
+    });
+
     it('should reserve config-managed server names when creating MCP server', async () => {
       const validConfig = {
         type: 'sse',
@@ -4585,6 +4615,41 @@ describe('MCP Routes', () => {
       );
     });
 
+    it('records mcp_server.updated with only the changed field names', async () => {
+      const { recordAuditEntry } = require('~/models');
+      recordAuditEntry.mockClear();
+      const existing = {
+        type: 'sse',
+        url: 'https://old.example.com/sse',
+        title: 'Same Title',
+        headers: { Authorization: 'Bearer old-secret' },
+      };
+      const updated = {
+        ...existing,
+        url: 'https://new.example.com/sse',
+        headers: { Authorization: 'Bearer new-secret' },
+      };
+      mockRegistryInstance.getServerConfig.mockResolvedValueOnce(existing);
+      mockRegistryInstance.inspectServerUpdate.mockResolvedValue({ ...updated, source: 'user' });
+      mockRegistryInstance.commitServerUpdate.mockResolvedValue(undefined);
+
+      const response = await request(app)
+        .patch('/api/mcp/servers/test-server')
+        .send({ config: updated });
+
+      expect(response.status).toBe(200);
+      expect(recordAuditEntry).toHaveBeenCalledTimes(1);
+      const input = recordAuditEntry.mock.calls[0][0];
+      expect(input).toEqual(
+        expect.objectContaining({
+          action: 'mcp_server.updated',
+          target: { type: 'mcp_server', id: 'test-server', name: 'Same Title' },
+          metadata: { source: 'DB', fields: 'headers,url' },
+        }),
+      );
+      expect(JSON.stringify(input)).not.toContain('secret');
+    });
+
     it('should redact secrets from update response', async () => {
       const validConfig = {
         type: 'sse',
@@ -4756,6 +4821,26 @@ describe('MCP Routes', () => {
         'test-server',
         'DB',
         'test-user-id',
+      );
+    });
+
+    it('records mcp_server.deleted only after the removal succeeds', async () => {
+      const { recordAuditEntry } = require('~/models');
+      recordAuditEntry.mockClear();
+      mockRegistryInstance.removeServer.mockRejectedValueOnce(new Error('Deletion failed'));
+      await request(app).delete('/api/mcp/servers/audited-server');
+      expect(recordAuditEntry).not.toHaveBeenCalled();
+
+      mockRegistryInstance.removeServer.mockResolvedValue(undefined);
+      const response = await request(app).delete('/api/mcp/servers/audited-server');
+
+      expect(response.status).toBe(200);
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'mcp_server.deleted',
+          target: { type: 'mcp_server', id: 'audited-server' },
+          metadata: { source: 'DB' },
+        }),
       );
     });
 

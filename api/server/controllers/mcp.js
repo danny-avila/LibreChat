@@ -20,6 +20,7 @@ const {
   redactServerSecrets,
   sanitizeMcpIconPath,
   redactAllServerSecrets,
+  createMCPServerAuditor,
   getMCPErrorResponse,
   prepareMCPServerOAuthDeletion,
   cleanupDeletedMCPServerOAuthUsers,
@@ -51,6 +52,8 @@ const { getResourcePermissionsMap } = require('~/server/services/PermissionServi
 const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { getMCPManager, getMCPServersRegistry } = require('~/config');
 const db = require('~/models');
+
+const auditMCPServer = createMCPServerAuditor({ recordAuditEntry: db.recordAuditEntry });
 
 /**
  * Handles MCP-specific errors and sends appropriate HTTP responses.
@@ -469,6 +472,11 @@ const createMCPServerController = async (req, res) => {
     } finally {
       MCPConnection.clearCooldown(inspectionServerName);
     }
+    await auditMCPServer(req, {
+      action: 'mcp_server.created',
+      serverName: result.serverName,
+      next: result.config,
+    });
     res.status(201).json({
       serverName: result.serverName,
       ...redactServerSecrets(result.config, { canEdit: true }),
@@ -583,6 +591,12 @@ const updateMCPServerController = async (req, res) => {
       });
       throw error;
     }
+    await auditMCPServer(req, {
+      action: 'mcp_server.updated',
+      serverName,
+      previous: existingConfig,
+      next: parsedConfig,
+    });
     /** Fence connections another replica could have created from the old DB
      * config between the pre-commit fence and the committed update. */
     await fenceCommittedMCPMutation({ userId, serverName });
@@ -642,6 +656,11 @@ const deleteMCPServerController = async (req, res, uninstallOAuthMCP) => {
       });
       throw error;
     }
+    await auditMCPServer(req, {
+      action: 'mcp_server.deleted',
+      serverName,
+      previous: existingConfig,
+    });
     /** Fence connections another replica could have created before deletion committed. */
     await fenceCommittedMCPMutation({ userId, serverName });
     await disconnectLocalMCPServer(userId, serverName);
