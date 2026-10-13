@@ -38,6 +38,7 @@ describe('resolveProviderId', () => {
     expect(resolveProviderId('Together AI')).toBe(ProviderId.together);
     expect(resolveProviderId('hugging-face')).toBe(ProviderId.huggingface);
     expect(resolveProviderId('open_router')).toBe(ProviderId.openrouter);
+    expect(resolveProviderId('Cheaper Inference')).toBe(ProviderId.cheaperinference);
   });
 
   it('resolves brand aliases to their provider', () => {
