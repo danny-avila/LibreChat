@@ -9,7 +9,13 @@ router.put('/', requireJwtAuth, async (req, res) => {
     return res.status(400).send({ error: 'Invalid request body.' });
   }
   const { name, value, expiresAt } = req.body;
-  await updateUserKey({ userId: req.user.id, name, value, expiresAt });
+  await updateUserKey({
+    userId: req.user.id,
+    name,
+    value,
+    expiresAt,
+    writeFormat: req.config?.credentials?.writeFormat,
+  });
   res.status(201).send();
 });
 
