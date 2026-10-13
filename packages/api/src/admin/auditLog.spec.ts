@@ -549,6 +549,23 @@ describe('createAdminAuditLogHandlers', () => {
       expect(JSON.stringify(input)).not.toContain('user-typed-text');
     });
 
+    it('withholds the rows and answers 500 when a fail-closed audit write fails', async () => {
+      const recordAuditEntry = jest.fn().mockRejectedValue(new Error('audit down'));
+      const listAuditLogPage = jest
+        .fn()
+        .mockResolvedValue({ entries: [mockEntry()], nextCursor: null });
+      const handlers = createAdminAuditLogHandlers(
+        createDeps({ recordAuditEntry, auditFailClosed: true, listAuditLogPage }),
+      );
+      const { req, res, status, json } = createReqRes({ user });
+
+      await handlers.listAuditLog(req, res);
+
+      expect(recordAuditEntry).toHaveBeenCalledWith(expect.anything(), { failClosed: true });
+      expect(status).toHaveBeenCalledWith(500);
+      expect(JSON.stringify(json.mock.calls)).not.toContain('entries');
+    });
+
     it('records audit.read for a single entry only when it exists', async () => {
       const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
       const found = createAdminAuditLogHandlers(

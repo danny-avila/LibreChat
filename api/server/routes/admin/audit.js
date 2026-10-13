@@ -1,5 +1,5 @@
 const express = require('express');
-const { createAdminAuditLogHandlers } = require('@librechat/api');
+const { createAdminAuditLogHandlers, isAuditFailClosed } = require('@librechat/api');
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const { requireCapability } = require('~/server/middleware/roles/capabilities');
 const { requireJwtAuth } = require('~/server/middleware');
@@ -16,6 +16,7 @@ const handlers = createAdminAuditLogHandlers({
   streamAuditLogEntries: db.streamAuditLogEntries,
   verifyAuditChain: db.verifyAuditChain,
   recordAuditEntry: db.recordAuditEntry,
+  auditFailClosed: isAuditFailClosed(),
 });
 
 /**
