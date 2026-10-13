@@ -1342,4 +1342,116 @@ describe('createAdminGroupsHandlers', () => {
       expect(json).toHaveBeenCalledWith({ success: true });
     });
   });
+
+  describe('audit entries', () => {
+    function withUser<T extends { req: ServerRequest }>(reqRes: T, tenantId?: string): T {
+      (reqRes.req as unknown as { user: Partial<IUser> }).user = {
+        _id: new Types.ObjectId(),
+        name: 'Admin',
+        tenantId,
+      };
+      return reqRes;
+    }
+
+    it('records group.created', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = createDeps({ recordAuditEntry });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status } = withUser(createReqRes({ body: { name: 'Test Group' } }), 't1');
+
+      await handlers.createGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(201);
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'group.created',
+          actor: expect.objectContaining({ type: 'user', name: 'Admin' }),
+          target: { type: 'group', id: validId, name: 'Test Group' },
+          metadata: { source: 'local', memberCount: 0 },
+          tenantId: 't1',
+        }),
+      );
+    });
+
+    it('records group.updated with the changed field names only', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = createDeps({ recordAuditEntry });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status } = withUser(
+        createReqRes({ params: { id: validId }, body: { name: 'Renamed', description: 'd' } }),
+      );
+
+      await handlers.updateGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'group.updated',
+          metadata: { fields: 'description,name' },
+        }),
+      );
+    });
+
+    it('records group.deleted', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = createDeps({ recordAuditEntry });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status } = withUser(createReqRes({ params: { id: validId } }));
+
+      await handlers.deleteGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'group.deleted',
+          target: { type: 'group', id: validId, name: 'Test Group' },
+        }),
+      );
+    });
+
+    it('records group.member_added and group.member_removed', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = createDeps({ recordAuditEntry });
+      const handlers = createAdminGroupsHandlers(deps);
+      const add = withUser(
+        createReqRes({ params: { id: validId }, body: { userId: validUserId } }),
+      );
+      const remove = withUser(createReqRes({ params: { id: validId, userId: validUserId } }));
+
+      await handlers.addGroupMember(add.req, add.res);
+      await handlers.removeGroupMember(remove.req, remove.res);
+
+      expect(add.status).toHaveBeenCalledWith(200);
+      expect(remove.status).toHaveBeenCalledWith(200);
+      expect(recordAuditEntry).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          action: 'group.member_added',
+          metadata: { userId: validUserId },
+        }),
+      );
+      expect(recordAuditEntry).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          action: 'group.member_removed',
+          metadata: { userId: validUserId },
+        }),
+      );
+    });
+
+    it('does not record when the group is missing', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = createDeps({
+        deleteGroup: jest.fn().mockResolvedValue(null),
+        recordAuditEntry,
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status } = withUser(createReqRes({ params: { id: validId } }));
+
+      await handlers.deleteGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(404);
+      expect(recordAuditEntry).not.toHaveBeenCalled();
+    });
+  });
 });

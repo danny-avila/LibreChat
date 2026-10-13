@@ -6,14 +6,14 @@ import type {
   IConfig,
   AdminMember,
   ISystemGrant,
-  RecordAuditEntryInput,
-  RecordAuditEntryOptions,
+  AuditSeverity,
 } from '@librechat/data-schemas';
 import type { FilterQuery, Types } from 'mongoose';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
+import type { RecordAuditEntry } from './audit';
+import { createAdminAuditEmitter, diffRolePermissions } from './audit';
 import { parsePagination } from './pagination';
-import { buildAuditContext } from './context';
 
 const systemRoleValues = new Set<string>(Object.values(SystemRoles));
 
@@ -133,12 +133,21 @@ export interface AdminRolesDeps {
     principalId: string | Types.ObjectId,
     options?: { tenantId?: string },
   ) => Promise<ISystemGrant[]>;
-  /** Optional audit emission for grants removed by the role-deletion cascade.
-   * Failure is logged but never blocks the deletion (which has already happened). */
-  recordAuditEntry?: (
-    input: RecordAuditEntryInput,
-    options?: RecordAuditEntryOptions,
-  ) => Promise<void>;
+  /** Optional audit emission for role mutations and the grants removed by the
+   * role-deletion cascade. Failure is logged unless `auditFailClosed` is set. */
+  recordAuditEntry?: RecordAuditEntry;
+  /** When true, a failed audit write surfaces as a 5xx after the mutation has
+   * been persisted. Defaults to fail-open. */
+  auditFailClosed?: boolean;
+}
+
+/** Changing who holds ADMIN is the most sensitive membership change. */
+function memberChangeSeverity(...roles: Array<string | undefined>): AuditSeverity {
+  return roles.includes(SystemRoles.ADMIN) ? 'critical' : 'warning';
+}
+
+function roleTarget(name: string) {
+  return { type: 'role', id: name, name };
 }
 
 export function createAdminRolesHandlers(deps: AdminRolesDeps): {
@@ -171,42 +180,35 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
     deleteAclEntries,
     deleteGrantsForPrincipal,
     recordAuditEntry,
+    auditFailClosed,
     invalidatePromptGroupAccessContext,
   } = deps;
 
+  const emitAudit = createAdminAuditEmitter({
+    recordAuditEntry,
+    failClosed: auditFailClosed,
+    logPrefix: '[adminRoles]',
+  });
+
   /** Emits a `grant.removed` audit entry for each grant the role-deletion cascade
    * removed, so the cascade leaves the same forensic trail as an explicit revoke.
-   * Fail-open: the role is already deleted, so a failed audit is logged, not
-   * propagated. Sequential to keep the per-tenant hash chain ordered. */
+   * Sequential to keep the per-tenant hash chain ordered. */
   async function emitGrantRemovals(
     req: ServerRequest,
     roleName: string,
     grants: ISystemGrant[],
   ): Promise<void> {
-    if (!recordAuditEntry || grants.length === 0) return;
-    const user = req.user;
-    const userId = user?._id?.toString() ?? user?.id;
-    if (!user || !userId) return;
-    const actorName = user.name || user.username || user.email || userId;
-    const context = buildAuditContext(req);
     for (const grant of grants) {
-      try {
-        await recordAuditEntry({
-          action: 'grant.removed',
-          outcome: 'success',
-          severity: 'warning',
-          actor: { type: 'user', id: userId, name: actorName },
-          target: { type: PrincipalType.ROLE, id: roleName, name: roleName },
-          metadata: { capability: grant.capability },
-          context,
-          /** Scope each entry to the removed grant's own tenant — a platform
-           * admin's role deletion can remove tenant-scoped grants, and those
-           * removals must land in the affected tenant's chain, not the caller's. */
-          tenantId: grant.tenantId,
-        });
-      } catch (err) {
-        logger.error('[adminRoles] grant.removed audit failed during role deletion', err);
-      }
+      await emitAudit(req, {
+        action: 'grant.removed',
+        severity: 'warning',
+        target: { type: PrincipalType.ROLE, id: roleName, name: roleName },
+        metadata: { capability: grant.capability },
+        /** Scope each entry to the removed grant's own tenant: a platform
+         * admin's role deletion can remove tenant-scoped grants, and those
+         * removals must land in the affected tenant's chain, not the caller's. */
+        tenantId: grant.tenantId,
+      });
     }
   }
 
@@ -268,6 +270,12 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
         roleData.description = description;
       }
       const role = await createRoleByName(roleData);
+      const changes = diffRolePermissions(undefined, role.permissions);
+      await emitAudit(req, {
+        action: 'role.created',
+        target: roleTarget(role.name),
+        metadata: { permissions: changes.join(', ') || null },
+      });
       return res.status(201).json({ role });
     } catch (error) {
       logger.error('[adminRoles] createRole error:', error);
@@ -382,6 +390,11 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
         if (!role) {
           return res.status(404).json({ error: 'Role not found' });
         }
+        await emitAudit(req, {
+          action: 'role.updated',
+          target: roleTarget(trimmedName),
+          metadata: { previousName: name, descriptionChanged: descUpdate !== undefined },
+        });
         return res.status(200).json({ role });
       }
 
@@ -389,6 +402,11 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
       if (!role) {
         return res.status(404).json({ error: 'Role not found' });
       }
+      await emitAudit(req, {
+        action: 'role.updated',
+        target: roleTarget(name),
+        metadata: { descriptionChanged: true },
+      });
       return res.status(200).json({ role });
     } catch (error) {
       if (error instanceof RoleConflictError) {
@@ -430,6 +448,15 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
       if (!updated) {
         return res.status(404).json({ error: 'Role not found' });
       }
+      const changes = diffRolePermissions(existing.permissions, updated.permissions);
+      if (changes.length > 0) {
+        await emitAudit(req, {
+          action: 'role.permissions_updated',
+          severity: 'warning',
+          target: roleTarget(name),
+          metadata: { changes: changes.join(', '), changeCount: changes.length },
+        });
+      }
       return res.status(200).json({ role: updated });
     } catch (error) {
       logger.error('[adminRoles] updateRolePermissions error:', error);
@@ -448,22 +475,23 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
         return res.status(403).json({ error: 'Cannot delete system role' });
       }
 
-      const deleted = await deleteRoleByName(name);
-      if (!deleted) {
+      const existing = await getRoleByName(name);
+      if (!existing) {
         return res.status(404).json({ error: 'Role not found' });
       }
 
+      /**
+       * Grants, ACL entries and config overrides are keyed by role name, so they
+       * are removed before the role itself: if any removal fails the role stays
+       * and the admin can retry, instead of a later role with the same name
+       * inheriting the leftovers. Every removal is idempotent.
+       */
       const tenantId = req.user?.tenantId;
       const [configResult, aclResult, grantsResult] = await Promise.allSettled([
         deleteConfig(PrincipalType.ROLE, name),
         deleteAclEntries({ principalType: PrincipalType.ROLE, principalId: name }),
         deleteGrantsForPrincipal(PrincipalType.ROLE, name, { tenantId }),
       ]);
-      for (const result of [configResult, aclResult, grantsResult]) {
-        if (result.status === 'rejected') {
-          logger.error('[adminRoles] cascade cleanup failed for role:', name, result.reason);
-        }
-      }
       if (aclResult.status === 'fulfilled') {
         /** The removed entries can include PROMPTGROUP grants feeding the access cache */
         await invalidatePromptGroupAccessContext?.();
@@ -471,6 +499,31 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
       if (grantsResult.status === 'fulfilled') {
         await emitGrantRemovals(req, name, grantsResult.value);
       }
+      const cleanupFailed = [configResult, aclResult, grantsResult].filter(
+        (result) => result.status === 'rejected',
+      );
+      if (cleanupFailed.length > 0) {
+        for (const result of cleanupFailed) {
+          logger.error('[adminRoles] cascade cleanup failed for role:', name, result.reason);
+        }
+        return res.status(500).json({
+          error: 'Failed to remove the role grants and permissions; the role was not deleted',
+          code: 'ROLE_CLEANUP_FAILED',
+        });
+      }
+
+      const deleted = await deleteRoleByName(name);
+      if (!deleted) {
+        return res.status(404).json({ error: 'Role not found' });
+      }
+      await emitAudit(req, {
+        action: 'role.deleted',
+        severity: 'warning',
+        target: roleTarget(name),
+        metadata: {
+          grantsRemoved: grantsResult.status === 'fulfilled' ? grantsResult.value.length : 0,
+        },
+      });
 
       return res.status(200).json({ success: true });
     } catch (error) {
@@ -571,6 +624,12 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
         }
       }
 
+      await emitAudit(req, {
+        action: 'role.member_added',
+        severity: memberChangeSeverity(name, user.role),
+        target: roleTarget(name),
+        metadata: { userId, previousRole: user.role ?? null },
+      });
       return res.status(200).json({ success: true });
     } catch (error) {
       logger.error('[adminRoles] addRoleMember error:', error);
@@ -634,6 +693,12 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
         }
       }
 
+      await emitAudit(req, {
+        action: 'role.member_removed',
+        severity: memberChangeSeverity(name),
+        target: roleTarget(name),
+        metadata: { userId, newRole: SystemRoles.USER },
+      });
       return res.status(200).json({ success: true });
     } catch (error) {
       logger.error('[adminRoles] removeRoleMember error:', error);
@@ -651,5 +716,91 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
     getRoleMembers: getRoleMembersHandler,
     addRoleMember: addRoleMemberHandler,
     removeRoleMember: removeRoleMemberHandler,
+  };
+}
+
+export interface RolePermissionsUpdateDeps {
+  getRoleByName: (name: string, fields?: string | string[] | null) => Promise<IRole | null>;
+  updateRoleByName: (name: string, updates: Partial<IRole>) => Promise<IRole | null>;
+  recordAuditEntry?: RecordAuditEntry;
+  /** When true, a failed audit write surfaces as a 5xx after the update has
+   * been persisted. Defaults to fail-open. */
+  auditFailClosed?: boolean;
+}
+
+export interface RolePermissionsUpdateConfig {
+  /** Zod object schema for one permission type; parsed as a partial update. */
+  schema: { partial: () => { parse: (value: unknown) => Record<string, boolean | undefined> } };
+  permissionType: string;
+  errorMessage: string;
+}
+
+/**
+ * Builds the `PUT /api/roles/:roleName/<type>` handler for one permission type:
+ * merges the validated partial update into the role's permissions and records
+ * a `role.permissions_updated` audit entry when a flag actually changed.
+ */
+export function createRolePermissionsUpdateHandler(
+  deps: RolePermissionsUpdateDeps,
+  config: RolePermissionsUpdateConfig,
+): (req: ServerRequest, res: Response) => Promise<Response> {
+  const { getRoleByName, updateRoleByName, recordAuditEntry, auditFailClosed } = deps;
+  const emitAudit = createAdminAuditEmitter({
+    recordAuditEntry,
+    failClosed: auditFailClosed,
+    logPrefix: '[roles]',
+  });
+
+  return async function updateRolePermissions(req, res) {
+    const { roleName } = req.params as { roleName: string };
+    let parsedUpdates: Record<string, boolean | undefined>;
+    try {
+      parsedUpdates = config.schema.partial().parse(req.body);
+    } catch (error) {
+      return res
+        .status(400)
+        .send({ message: config.errorMessage, error: (error as { errors?: unknown }).errors });
+    }
+
+    try {
+      const role = await getRoleByName(roleName);
+      if (!role) {
+        return res.status(404).send({ message: 'Role not found' });
+      }
+
+      const permissions = (role.permissions ?? {}) as Record<
+        string,
+        Record<string, boolean | undefined> | undefined
+      >;
+      const legacyPermissions = (role as unknown as Record<string, unknown>)[
+        config.permissionType
+      ] as Record<string, boolean | undefined> | undefined;
+      const currentPermissions = permissions[config.permissionType] || legacyPermissions || {};
+
+      const mergedPermissions = {
+        ...permissions,
+        [config.permissionType]: { ...currentPermissions, ...parsedUpdates },
+      };
+      const updatedRole = await updateRoleByName(roleName, {
+        permissions: mergedPermissions as IRole['permissions'],
+      });
+
+      const changes = diffRolePermissions(
+        { [config.permissionType]: currentPermissions },
+        { [config.permissionType]: mergedPermissions[config.permissionType] },
+      );
+      if (updatedRole && changes.length > 0) {
+        await emitAudit(req, {
+          action: 'role.permissions_updated',
+          severity: 'warning',
+          target: roleTarget(roleName),
+          metadata: { changes: changes.join(', '), changeCount: changes.length },
+        });
+      }
+      return res.status(200).send(updatedRole);
+    } catch (error) {
+      logger.error(`[roles] ${config.permissionType} permission update failed:`, error);
+      return res.status(500).send({ message: 'Failed to update role permissions' });
+    }
   };
 }

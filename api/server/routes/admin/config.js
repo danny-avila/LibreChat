@@ -31,6 +31,7 @@ const handlers = createAdminConfigHandlers({
   hasCapability,
   getAppConfig,
   invalidateConfigCaches,
+  recordAuditEntry: db.recordAuditEntry,
 });
 
 router.use(requireJwtAuth, requireAdminAccess);

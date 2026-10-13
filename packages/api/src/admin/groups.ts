@@ -13,6 +13,8 @@ import type { FilterQuery, ClientSession, DeleteResult } from 'mongoose';
 import type { Response } from 'express';
 import type { ValidationError } from '~/types/error';
 import type { ServerRequest } from '~/types/http';
+import type { RecordAuditEntry } from './audit';
+import { createAdminAuditEmitter } from './audit';
 import { parsePagination } from './pagination';
 
 type GroupListFilter = Pick<GroupFilterOptions, 'source' | 'search'>;
@@ -82,6 +84,15 @@ export interface AdminGroupsDeps {
     principalType: PrincipalType;
     principalId: string | Types.ObjectId;
   }) => Promise<DeleteResult>;
+  /** Optional audit emission for group mutations; fail-open unless `auditFailClosed`. */
+  recordAuditEntry?: RecordAuditEntry;
+  /** When true, a failed audit write surfaces as a 5xx after the mutation has
+   * been persisted. Defaults to fail-open. */
+  auditFailClosed?: boolean;
+}
+
+function groupTarget(group: Pick<IGroup, 'name'> & { _id?: unknown }, id?: string) {
+  return { type: 'group', id: id ?? String(group._id ?? ''), name: group.name };
 }
 
 export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
@@ -107,7 +118,15 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
     findUsers,
     deleteConfig,
     deleteAclEntries,
+    recordAuditEntry,
+    auditFailClosed,
   } = deps;
+
+  const emitAudit = createAdminAuditEmitter({
+    recordAuditEntry,
+    failClosed: auditFailClosed,
+    logPrefix: '[adminGroups]',
+  });
 
   async function listGroupsHandler(req: ServerRequest, res: Response) {
     try {
@@ -222,6 +241,11 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
         memberIds,
         ...(body.idOnTheSource ? { idOnTheSource: body.idOnTheSource } : {}),
       });
+      await emitAudit(req, {
+        action: 'group.created',
+        target: groupTarget(group),
+        metadata: { source: group.source ?? null, memberCount: memberIds.length },
+      });
       return res.status(201).json({ group });
     } catch (error) {
       if ((error as ValidationError).name === 'ValidationError') {
@@ -289,6 +313,11 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
       if (!group) {
         return res.status(404).json({ error: 'Group not found' });
       }
+      await emitAudit(req, {
+        action: 'group.updated',
+        target: groupTarget(group, id),
+        metadata: { fields: Object.keys(updateData).sort().join(',') },
+      });
       return res.status(200).json({ group });
     } catch (error) {
       if ((error as ValidationError).name === 'ValidationError') {
@@ -326,6 +355,11 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
           logger.error('[adminGroups] cascade cleanup step failed for group:', id, result.reason);
         }
       }
+      await emitAudit(req, {
+        action: 'group.deleted',
+        severity: 'warning',
+        target: groupTarget(deleted, id),
+      });
       return res.status(200).json({ success: true, id });
     } catch (error) {
       logger.error('[adminGroups] deleteGroup error:', error);
@@ -420,6 +454,12 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
       if (!group) {
         return res.status(404).json({ error: 'Group not found' });
       }
+      await emitAudit(req, {
+        action: 'group.member_added',
+        severity: 'warning',
+        target: groupTarget(group, id),
+        metadata: { userId },
+      });
       return res.status(200).json({ group });
     } catch (error) {
       const message = error instanceof Error ? error.message : '';
@@ -464,6 +504,12 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
       if (!group) {
         return res.status(404).json({ error: 'Group not found' });
       }
+      await emitAudit(req, {
+        action: 'group.member_removed',
+        severity: 'warning',
+        target: groupTarget(group, id),
+        metadata: { userId },
+      });
       return res.status(200).json({ success: true });
     } catch (error) {
       logger.error('[adminGroups] removeGroupMember error:', error);
