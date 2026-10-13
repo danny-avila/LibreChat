@@ -21,6 +21,9 @@ import { eraseUserData } from '~/user/erasure';
 
 const MAX_SEARCH_LENGTH = 200;
 
+const ERASURE_TARGET_FIELDS =
+  'role tenantId name username email provider googleId facebookId openidId samlId ldapId githubId discordId appleId emailVerified twoFactorEnabled termsAccepted termsAcceptedAt';
+
 const USER_LIST_FIELDS = '_id name username email avatar role provider createdAt updatedAt';
 
 /** The target account's identity, from which the caller builds storage and MCP cleanup. */
@@ -28,6 +31,8 @@ export interface AdminErasureTarget {
   id: string;
   role?: string;
   tenantId?: string;
+  /** The target's profile fields, which storage header templates such as the user email read. */
+  profile?: Partial<IUser>;
 }
 
 export interface AdminErasureContext {
@@ -213,7 +218,7 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
         return res.status(403).json({ error: 'Cannot delete your own account' });
       }
 
-      const [targetUser] = await findUsers({ _id: id }, 'role tenantId', { limit: 1 });
+      const [targetUser] = await findUsers({ _id: id }, ERASURE_TARGET_FIELDS, { limit: 1 });
       if (targetUser?.role === SystemRoles.ADMIN) {
         const adminCount = await countUsers({ role: SystemRoles.ADMIN });
         if (adminCount <= 1) {
@@ -245,6 +250,7 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
         id,
         role: targetUser?.role,
         tenantId: targetUser?.tenantId,
+        profile: targetUser,
       });
       await eraseUserData(
         { userId: id, tenantId: targetUser?.tenantId, checkpointer },

@@ -62,6 +62,30 @@ describe('createErasureResolver', () => {
     });
   });
 
+  it('carries the target profile fields for header templates', async () => {
+    const { deps } = createDeps();
+    const { deps: erasure } = await createErasureResolver(deps)({
+      ...target,
+      profile: { email: 'target@example.com', name: 'Target' },
+    });
+
+    await erasure.deleteStoredFiles([]);
+
+    expect(deps.processDeleteRequest).toHaveBeenCalledWith({
+      req: expect.objectContaining({
+        user: {
+          email: 'target@example.com',
+          name: 'Target',
+          id: 'user-1',
+          _id: 'user-1',
+          role: 'USER',
+          tenantId: 'tenant-1',
+        },
+      }),
+      files: [],
+    });
+  });
+
   it('scopes MCP runtime cleanup to the target user', async () => {
     const { deps, disconnectUserConnection } = createDeps();
     const { deps: erasure } = await createErasureResolver(deps)(target);

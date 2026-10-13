@@ -492,11 +492,14 @@ describe('createAdminUsersHandlers', () => {
       await handlers.deleteUser(req, res);
 
       expect(status).toHaveBeenCalledWith(200);
-      expect(deps.resolveErasure).toHaveBeenCalledWith({
-        id: validUserId,
-        role: 'USER',
-        tenantId: 'tenant-1',
-      });
+      expect(deps.resolveErasure).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: validUserId,
+          role: 'USER',
+          tenantId: 'tenant-1',
+          profile: expect.objectContaining({ role: 'USER' }),
+        }),
+      );
       expect(eraseUserData).toHaveBeenCalledWith(
         { userId: validUserId, tenantId: 'tenant-1', checkpointer },
         erasureDeps,

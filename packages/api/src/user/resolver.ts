@@ -44,11 +44,12 @@ export function createErasureResolver(deps: ErasureResolverDeps) {
     id,
     role,
     tenantId,
+    profile,
   }: AdminErasureTarget): Promise<AdminErasureContext> {
     /** A failed override lookup must abort the deletion, not fall back to a base config that cannot reach the target's storage. */
     const appConfig = await deps.getAppConfig({ role, userId: id, tenantId, failClosed: true });
     const fileRequest = {
-      user: { id, _id: id, role, tenantId },
+      user: { ...profile, id, _id: id, role, tenantId },
       /** Assistants client setup reads these Express request fields. */
       baseUrl: '',
       query: {},
