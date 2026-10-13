@@ -134,7 +134,9 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
       (await deps.persistence.getSkillDeletion(skillId));
     if (!journal) return pendingDeletion(false);
     const config = loadedConfig === null ? await deps.loadConfig() : loadedConfig;
-    if (config?.skillDeletion?.finalizationEnabled !== true) return pendingDeletion(true);
+    if (config?.skillDeletion?.finalizationEnabled !== true) {
+      return journal.completedAt ? completedDeletion() : pendingDeletion(true);
+    }
     const owner = randomUUID();
     if (!(await deps.persistence.claimSkillDeletion(skillId, owner, claimLeaseMs))) {
       // A completed tombstone may be deliberately deferred until its next cold audit.

@@ -481,6 +481,29 @@ it('treats a deferred completed tombstone as an idempotent direct deletion', asy
   expect(h.deleteFile).not.toHaveBeenCalled();
 });
 
+it('preserves a completed deletion result when finalization is later disabled', async () => {
+  const h = claimedServiceHarness();
+  const completed = { skillId: h.skillId, completedAt: new Date() };
+  h.persistence.beginSkillDeletion.mockResolvedValue(completed);
+  h.loadConfig.mockResolvedValue({
+    skillDeletion: { finalizationEnabled: false },
+  } as unknown as AppConfig);
+
+  await expect(h.service.deleteSkillById(h.skillId)).resolves.toMatchObject({
+    found: true,
+    deleted: true,
+    skillAbsent: true,
+    cleanupComplete: true,
+  });
+  await expect(h.service.deleteSkillForLegacy(h.skillId)).resolves.toMatchObject({
+    deleted: true,
+    skillAbsent: true,
+    cleanupComplete: true,
+  });
+  expect(h.persistence.claimSkillDeletion).not.toHaveBeenCalled();
+  expect(h.persistence.finalizeSkillDeletion).not.toHaveBeenCalled();
+});
+
 it('does not delete a file row after the heartbeat reports a lost claim', async () => {
   jest.useFakeTimers();
   try {
