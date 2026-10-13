@@ -336,18 +336,17 @@ async function selectOpenIdRoleForOpenIdSync(
 async function updateResolvedUser(
   userResolution: Extract<UserResolution, { status: 'resolved' }>,
   updateUser: RemoteAgentAuthDeps['updateUser'],
-): Promise<void> {
+): Promise<boolean> {
   if (Object.keys(userResolution.updateData).length === 0) {
-    return;
+    return true;
   }
 
   const update = async () => updateUser(userResolution.user.id, userResolution.updateData);
   if (userResolution.user.tenantId && getTenantId() !== userResolution.user.tenantId) {
-    await tenantStorage.run({ tenantId: userResolution.user.tenantId }, update);
-    return;
+    return Boolean(await tenantStorage.run({ tenantId: userResolution.user.tenantId }, update));
   }
 
-  await update();
+  return Boolean(await update());
 }
 
 /**
@@ -515,8 +514,8 @@ export function createRemoteAgentAuth({
         return;
       }
 
-      await updateResolvedUser(userResolution, updateUser);
-      if (roleChanged) {
+      const persisted = await updateResolvedUser(userResolution, updateUser);
+      if (roleChanged && persisted) {
         await recordIdpRoleChange({
           recordAuditEntry,
           userId: userResolution.user.id,

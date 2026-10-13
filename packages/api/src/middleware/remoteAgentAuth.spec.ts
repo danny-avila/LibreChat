@@ -224,7 +224,7 @@ function makeFindUser(...users: IUser[]): jest.MockedFunction<UserMethods['findU
 function makeDeps(appConfig: AppConfig = makeConfig()) {
   return {
     findUser: makeFindUser(makeUser()),
-    updateUser: jest.fn(),
+    updateUser: jest.fn().mockResolvedValue({ _id: 'uid123' }),
     getRolesByNames: jest.fn(async (roleNames: string[]) =>
       roleNames.map((roleName) => ({ name: roleName })),
     ),
@@ -1643,6 +1643,23 @@ describe('createRemoteAgentAuth', () => {
         }),
       );
       expect(mockNext).toHaveBeenCalled();
+    });
+
+    it('does not record an audit entry when the synced role was not persisted', async () => {
+      enableApiRoleSync();
+      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com', roles: ['STANDARD-USER'] });
+
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const base = makeDeps();
+      const deps = { ...base, updateUser: jest.fn().mockResolvedValue(null), recordAuditEntry };
+      await createRemoteAgentAuth(asDeps(deps))(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        makeRes().res,
+        mockNext,
+      );
+
+      expect(deps.updateUser).toHaveBeenCalled();
+      expect(recordAuditEntry).not.toHaveBeenCalled();
     });
 
     it('does not record an audit entry when role sync keeps the current role', async () => {
