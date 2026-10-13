@@ -143,6 +143,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
     resourceType: string,
     resourceId: string | Types.ObjectId,
     session?: ClientSession,
+    readPrimary?: boolean,
   ) => Promise<IAclEntry[]>;
   hasPermission: (
     principalsList: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
@@ -274,6 +275,7 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
     resourceType: string,
     resourceId: string | Types.ObjectId,
     session?: ClientSession,
+    readPrimary?: boolean,
   ): Promise<IAclEntry[]> {
     const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
     const principalsQuery = principalsList.map((p) => ({
@@ -288,6 +290,9 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
     });
     if (session) {
       query.session(session);
+    } else if (readPrimary) {
+      /** Mutation snapshots must not come from a lagging secondary. */
+      query.read('primary');
     }
     return await query.lean<IAclEntry[]>();
   }

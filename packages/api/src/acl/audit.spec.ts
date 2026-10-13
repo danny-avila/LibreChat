@@ -40,9 +40,8 @@ function setup(recordImpl?: jest.Mock) {
       req: options.r ?? req,
       resourceType: options.resourceType ?? ResourceType.PROMPTGROUP,
       resourceId: 'res-1',
-      getAgent: options.getAgent,
       failClosed,
-      deps: { recordAuditEntry, logger },
+      deps: { recordAuditEntry, logger, getAgent: options.getAgent },
       update: async (beforeWrite) => {
         await beforeWrite({ aclChanges, insightsChanges: options.insightsChanges ?? [] });
         return write();
@@ -218,7 +217,7 @@ describe('runAuditedPermissionUpdate', () => {
 
   test('audits ACL and Insights changes together, ACL entries first', async () => {
     const { recordAuditEntry, write, run } = setup();
-    const getAgent = jest.fn().mockResolvedValue({ id: 'res-1', name: 'Agent' });
+    const getAgent = jest.fn().mockResolvedValue({ id: 'agent-logical', name: 'Agent' });
 
     await run([grantChange('u1')], true, {
       resourceType: ResourceType.AGENT,
@@ -230,6 +229,12 @@ describe('runAuditedPermissionUpdate', () => {
       'acl.granted',
       'permission.insights_assigned',
     ]);
+    /** Both event families name the agent by the same id. */
+    expect(recordAuditEntry.mock.calls.map(([input]) => input.target.id)).toEqual([
+      'agent-logical',
+      'agent-logical',
+    ]);
+    expect(getAgent).toHaveBeenCalledTimes(1);
     expect(write).toHaveBeenCalledTimes(1);
   });
 

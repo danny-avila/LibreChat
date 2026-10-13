@@ -514,6 +514,7 @@ export class AccessControlService {
               resourceType,
               resourceId,
               localSession,
+              true,
             )
           : Promise.resolve([]),
       ]);
@@ -709,8 +710,16 @@ export class AccessControlService {
         principal: BulkPrincipal;
         query: Record<string, unknown> | null;
       }> = [];
+      const plannedRevokes = new Set<string>();
       for (const principal of revokedPrincipals) {
         try {
+          if (principal?.type) {
+            const identity = principalIdentity(principal.type, principal.id);
+            if (plannedRevokes.has(identity)) {
+              continue;
+            }
+            plannedRevokes.add(identity);
+          }
           if (
             principal?.type !== PrincipalType.PUBLIC &&
             principal != null &&

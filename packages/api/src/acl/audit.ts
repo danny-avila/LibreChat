@@ -1,12 +1,11 @@
-import { PrincipalType } from 'librechat-data-provider';
+import { PrincipalType, ResourceType } from 'librechat-data-provider';
 import type { RecordAuditEntryInput } from '@librechat/data-schemas';
-import type { ResourceType } from 'librechat-data-provider';
 import type { RecordAuditEntry } from '~/admin/audit';
 import type { PermissionChange } from './types';
 import type { ServerRequest } from '~/types';
+import { getAuditActor, isAuditFailClosed } from '~/admin/audit';
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { buildAuditContext } from '~/admin/context';
-import { getAuditActor } from '~/admin/audit';
 
 export type AuditPlanItem = {
   input: RecordAuditEntryInput;
@@ -70,26 +69,18 @@ type InsightsPlanDeps = {
   logger: AclAuditDeps['logger'];
 };
 
-/** Builds one `permission.insights_*` entry per Insights transition. */
-export async function planInsightsAudit({
+type AgentTarget = { id: string; name: string };
+
+/** The lookup only decorates the entry; a failure must not skip the audit. */
+async function lookupAgentTarget({
   req,
   resourceId,
-  changes,
   deps,
 }: {
   req: ServerRequest;
   resourceId: string;
-  changes: PermissionChange[];
   deps: InsightsPlanDeps;
-}): Promise<AuditPlanItem[]> {
-  if (changes.length === 0) {
-    return [];
-  }
-  const actor = getAuditActor(req);
-  if (!actor) {
-    throw statusError('Authenticated user required for Insights permission audit');
-  }
-  /** The lookup only decorates the entry; a failure must not skip the audit. */
+}): Promise<AgentTarget> {
   let agent: { id: string; name?: string } | null = null;
   try {
     agent = await deps.getAgent(
@@ -104,7 +95,27 @@ export async function planInsightsAudit({
   } catch (error) {
     deps.logger.error('[InsightsPermissions] Audit target lookup failed', safeMeta(error));
   }
-  const target = { id: agent?.id ?? resourceId, name: agent?.name || agent?.id || resourceId };
+  return { id: agent?.id ?? resourceId, name: agent?.name || agent?.id || resourceId };
+}
+
+/** Builds one `permission.insights_*` entry per Insights transition. */
+export async function planInsightsAudit(args: {
+  req: ServerRequest;
+  resourceId: string;
+  changes: PermissionChange[];
+  deps: InsightsPlanDeps;
+  /** The resolved agent target, when the caller already looked it up. */
+  target?: AgentTarget;
+}): Promise<AuditPlanItem[]> {
+  const { req, resourceId, changes, deps } = args;
+  if (changes.length === 0) {
+    return [];
+  }
+  const actor = getAuditActor(req);
+  if (!actor) {
+    throw statusError('Authenticated user required for Insights permission audit');
+  }
+  const target = args.target ?? (await lookupAgentTarget({ req, resourceId, deps }));
   const context = buildAuditContext(req);
   return changes.map((change) => ({
     widening: change.action === 'assigned',
@@ -133,11 +144,14 @@ export function planResourceAudit({
   resourceType,
   resourceId,
   changes,
+  targetId = resourceId,
 }: {
   req: ServerRequest;
   resourceType: ResourceType;
   resourceId: string;
   changes: PermissionChange[];
+  /** The id the resource is audited under; defaults to the route id. */
+  targetId?: string;
 }): AuditPlanItem[] {
   if (changes.length === 0) {
     return [];
@@ -158,7 +172,7 @@ export function planResourceAudit({
           outcome: 'success',
           severity: 'warning',
           actor,
-          target: { type: resourceType, id: resourceId },
+          target: { type: resourceType, id: targetId },
           context,
           tenantId: req.user?.tenantId,
         },
@@ -187,17 +201,16 @@ export async function runAuditedPermissionUpdate<T>({
   req,
   resourceType,
   resourceId,
-  getAgent,
-  failClosed,
+  failClosed = isAuditFailClosed(),
   deps,
   update,
 }: {
   req: ServerRequest;
   resourceType: ResourceType;
   resourceId: string;
-  getAgent?: InsightsPlanDeps['getAgent'];
-  failClosed: boolean;
-  deps: AclAuditDeps;
+  /** Overrides `isAuditFailClosed()`. */
+  failClosed?: boolean;
+  deps: AclAuditDeps & { getAgent?: InsightsPlanDeps['getAgent'] };
   update: (beforeWrite: (plan: PermissionPlan) => Promise<void>) => Promise<T>;
 }): Promise<T> {
   const recorded: AuditPlanItem[] = [];
@@ -219,14 +232,29 @@ export async function runAuditedPermissionUpdate<T>({
     const result = await update(async ({ aclChanges, insightsChanges }) => {
       let items: AuditPlanItem[];
       try {
+        const insightsDeps =
+          resourceType === ResourceType.AGENT && deps.getAgent
+            ? { getAgent: deps.getAgent, logger: deps.logger }
+            : null;
+        const target =
+          insightsDeps && (aclChanges.length > 0 || insightsChanges.length > 0)
+            ? await lookupAgentTarget({ req, resourceId, deps: insightsDeps })
+            : undefined;
         items = [
-          ...planResourceAudit({ req, resourceType, resourceId, changes: aclChanges }),
-          ...(getAgent
+          ...planResourceAudit({
+            req,
+            resourceType,
+            resourceId,
+            changes: aclChanges,
+            targetId: target?.id,
+          }),
+          ...(insightsDeps
             ? await planInsightsAudit({
                 req,
                 resourceId,
                 changes: insightsChanges,
-                deps: { getAgent, logger: deps.logger },
+                deps: insightsDeps,
+                target,
               })
             : []),
         ];

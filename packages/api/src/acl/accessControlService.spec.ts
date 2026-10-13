@@ -472,6 +472,31 @@ describe('AccessControlService', () => {
       ]);
     });
 
+    test('plans one revocation when the same principal is revoked twice', async () => {
+      const viewerRole = await dbMethods.findRoleByIdentifier(AccessRoleIds.PROMPTGROUP_VIEWER);
+      await AclEntry.create({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        principalModel: PrincipalModel.USER,
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId,
+        permBits: PermissionBits.VIEW,
+        roleId: viewerRole?._id,
+        grantedBy: grantedById,
+        grantedAt: new Date(),
+      });
+      const principal = { type: PrincipalType.USER, id: userId.toString() };
+
+      const result = await service.bulkUpdateResourcePermissions({
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId,
+        revokedPrincipals: [principal, { ...principal, id: principal.id.toUpperCase() }],
+        grantedBy: grantedById,
+      });
+
+      expect(result.aclChanges).toHaveLength(1);
+    });
+
     test('revoking snapshots the principal without loading the rest of the ACL', async () => {
       const otherUserId = new Types.ObjectId();
       const viewerRole = await dbMethods.findRoleByIdentifier(AccessRoleIds.PROMPTGROUP_VIEWER);

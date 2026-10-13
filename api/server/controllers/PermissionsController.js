@@ -10,7 +10,6 @@ const {
   createPrincipalSearch,
   backfillRemoteAgentPermissions,
   runAuditedPermissionUpdate,
-  isAuditFailClosed,
   getInsightsPrincipalState,
   maskAgentInsightsBit,
   sanitizeInsightsPermissionPrincipals,
@@ -174,9 +173,7 @@ const updateResourcePermissions = async (req, res) => {
       req,
       resourceType,
       resourceId,
-      getAgent: resourceType === ResourceType.AGENT ? db.getAgent : undefined,
-      failClosed: isAuditFailClosed(),
-      deps: { recordAuditEntry: db.recordAuditEntry, logger },
+      deps: { recordAuditEntry: db.recordAuditEntry, getAgent: db.getAgent, logger },
       update: (beforeWrite) =>
         bulkUpdateResourcePermissions({
           resourceType,
