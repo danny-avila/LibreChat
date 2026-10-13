@@ -30,10 +30,18 @@ describe('createErasureResolver', () => {
       role: 'USER',
       userId: 'user-1',
       tenantId: 'tenant-1',
+      failClosed: true,
     });
     expect(result.checkpointer).toEqual({ ttl: 5 });
     expect(result.deps.openCheckpointDeletion).toBe(deps.openCheckpointDeletion);
     expect(result.deps.deleteSharedLinks).toBe(deps.deleteSharedLinks);
+  });
+
+  it('rejects when the target config cannot be resolved', async () => {
+    const { deps } = createDeps({
+      getAppConfig: jest.fn().mockRejectedValue(new Error('override store down')),
+    });
+    await expect(createErasureResolver(deps)(target)).rejects.toThrow('override store down');
   });
 
   it('deletes stored files with a request that carries the target user', async () => {
