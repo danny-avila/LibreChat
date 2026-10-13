@@ -4080,6 +4080,23 @@ export const configSchema = z.object({
   memory: memorySchema.optional(),
   summarization: summarizationConfigSchema.optional(),
   skillSync: skillSyncConfigSchema,
+  skillDeletion: z
+    .object({
+      /** Enable only after every server that can write Skill files uses upload intents. */
+      finalizationEnabled: z.boolean().default(false),
+      sweepIntervalMs: z.number().int().min(1_000).default(60_000),
+      claimLeaseMs: z.number().int().min(1_000).default(120_000),
+      batchSize: z.number().int().min(1).max(1_000).default(100),
+      recheckIntervalMs: z.number().int().min(60_000).default(3_600_000),
+    })
+    .strict()
+    .default(() => ({
+      finalizationEnabled: false,
+      sweepIntervalMs: 60_000,
+      claimLeaseMs: 120_000,
+      batchSize: 100,
+      recheckIntervalMs: 3_600_000,
+    })),
   secureImageLinks: z.boolean().optional(),
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
   conversationList: conversationListConfigSchema.default(() =>

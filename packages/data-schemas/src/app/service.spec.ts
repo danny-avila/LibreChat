@@ -221,6 +221,14 @@ describe('loadFiltersConfig', () => {
 });
 
 describe('AppService assistants config', () => {
+  it('exposes Skill deletion recheck timing to the server worker', async () => {
+    const config = {
+      skillDeletion: { recheckIntervalMs: 3_600_000 },
+    } as unknown as DeepPartial<TCustomConfig>;
+    const result = await AppService({ config });
+    expect(result.skillDeletion?.recheckIntervalMs).toBe(3_600_000);
+  });
+
   it('preserves configured Assistants API versions', async () => {
     const config = {
       endpoints: {
