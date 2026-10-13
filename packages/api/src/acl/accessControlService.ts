@@ -494,6 +494,7 @@ export class AccessControlService {
               affectedPrincipals,
               resourceType,
               resourceId,
+              localSession,
             )
           : Promise.resolve([]),
       ]);
