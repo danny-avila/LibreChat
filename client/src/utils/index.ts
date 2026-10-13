@@ -4,6 +4,7 @@ import type { TAskFunction } from '~/common';
 import logger from './logger';
 
 export * from './map';
+export * from './ttscache';
 export * from './policies';
 export * from './json';
 export * from './icons';

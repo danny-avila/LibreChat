@@ -148,13 +148,19 @@ function getOAuthCookiePath(cookiePath: string): string {
   }
 }
 
-/** Sets a SameSite=Lax CSRF cookie bound to a specific OAuth flow */
-export function setOAuthCsrfCookie(res: Response, flowId: string, cookiePath: string): void {
+/** Sets a SameSite=Lax CSRF cookie bound to a specific OAuth flow. `maxAge` follows the flow's own
+ *  approval window when it has one, so the cookie lives as long as the state it binds. */
+export function setOAuthCsrfCookie(
+  res: Response,
+  flowId: string,
+  cookiePath: string,
+  maxAge: number = OAUTH_CSRF_MAX_AGE,
+): void {
   res.cookie(OAUTH_CSRF_COOKIE, generateOAuthCsrfToken(flowId), {
     httpOnly: true,
     secure: shouldUseSecureCookie(),
     sameSite: 'lax',
-    maxAge: OAUTH_CSRF_MAX_AGE,
+    maxAge,
     path: getOAuthCookiePath(cookiePath),
   });
 }

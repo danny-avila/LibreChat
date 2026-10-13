@@ -17,9 +17,6 @@ import { useLatestMessage } from '~/hooks/Messages';
 import { useLocalize } from '~/hooks';
 import SteerPart from './SteerPart';
 
-const ACTION_CLASS =
-  'rounded text-xs font-medium text-text-secondary hover:text-text-primary focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-border-xheavy';
-
 /**
  * Steers that have not been confirmed by the server yet, rendered at the tail
  * of the streaming reply (the place the words will land) instead of in a
@@ -182,31 +179,27 @@ function PendingSteers({ conversationId, index = 0, fullWidth = false }: Pending
                   )}
                 </span>
                 {retrySafe && (
-                  <button
-                    type="button"
-                    onClick={() => retry(steer.steerId)}
-                    className={ACTION_CLASS}
-                  >
+                  <Button type="button" onClick={() => retry(steer.steerId)} variant="text-action">
                     {localize('com_ui_retry')}
-                  </button>
+                  </Button>
                 )}
                 {!deliveryUncertain && (
-                  <button
+                  <Button
                     type="button"
                     onClick={() => editFailedSteer(steer)}
-                    className={ACTION_CLASS}
+                    variant="text-action"
                   >
                     {localize('com_ui_edit')}
-                  </button>
+                  </Button>
                 )}
                 {!deliveryUncertain && (
-                  <button
+                  <Button
                     type="button"
                     onClick={() => sendAsNew(steer.steerId)}
-                    className={ACTION_CLASS}
+                    variant="text-action"
                   >
                     {localize('com_ui_send_as_new')}
-                  </button>
+                  </Button>
                 )}
               </div>
             ) : (

@@ -173,6 +173,20 @@ describe('mergeConfigOverrides', () => {
     ]);
     expect(slots.sharedCacheSlots).toBeUndefined();
 
+    const oauth = read([
+      fakeConfig(
+        {
+          endpoints: {
+            agents: {
+              pullRequests: { oauth: { clientId: 'x', clientSecret: '${OTHER_SECRET}' } },
+            },
+          },
+        },
+        10,
+      ),
+    ]);
+    expect(oauth.oauth).toBeUndefined();
+
     const removed = read([fakeConfig({}, 10, ['endpoints.agents.pullRequests.host'])]);
     expect(removed.host).toBe('ghe.example.com');
 
