@@ -17,6 +17,7 @@ import type {
   ISkillFileDocument,
   ISkillSummary,
 } from '~/types/skill';
+import type { ISkillUploadIntentDocument } from '~/types/skillDeletion';
 import type { IAgent } from '~/types/agent';
 import { createSkillLifecycleMethods } from './skillLifecycle';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
@@ -1912,6 +1913,42 @@ export function createSkillMethods(
       throw error;
     }
     const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
+    if (!row.createOnly) {
+      const previous = await SkillFile.findOne({
+        skillId: row.skillId,
+        relativePath: row.relativePath,
+        ...(row.expectedFileId != null ? { file_id: row.expectedFileId } : {}),
+      }).lean();
+      if (previous && previous.file_id !== row.file_id) {
+        // Queue the old blob before changing its only live file row. A failed
+        // CAS leaves the row in place, so the sweeper will retain its blob.
+        const SkillUploadIntent = mongoose.models
+          .SkillUploadIntent as Model<ISkillUploadIntentDocument>;
+        const intentFilter = { fileId: previous.file_id };
+        const intentUpdate = {
+          $setOnInsert: {
+            skillId: row.skillId,
+            fileId: previous.file_id,
+            source: previous.source,
+            storageKey: previous.filepath,
+            author: previous.author,
+            tenantId: previous.tenantId,
+            writerId: 'legacy-replacement',
+            state: 'committed',
+          },
+          $set: { cleanupRequestedAt: new Date() },
+          $unset: { cleanedAt: '', nextCheckAt: '' },
+        };
+        try {
+          await SkillUploadIntent.updateOne(intentFilter, intentUpdate, { upsert: true });
+        } catch (error) {
+          // Concurrent replacements can both attempt the legacy upsert.
+          // The winner has already published the same cleanup reference.
+          if (!(error instanceof Error && 'code' in error && error.code === 11000)) throw error;
+          await SkillUploadIntent.updateOne(intentFilter, intentUpdate);
+        }
+      }
+    }
     const fields = {
       skillId: row.skillId,
       relativePath: row.relativePath,

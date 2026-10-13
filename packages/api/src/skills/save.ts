@@ -1,5 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { logger } from '@librechat/data-schemas';
 import type { UpsertSkillFileInput } from '@librechat/data-schemas';
 import type { TSkillFile } from 'librechat-data-provider';
 import type { ServerRequest, StrategyFunctions } from '~/types';
@@ -8,7 +7,6 @@ import type { SkillUploadIntentDeps } from './intent';
 import type { StoredSkillFile } from './upload';
 import { resolveRequestTenantId } from '~/middleware/tenant';
 import { getStorageMetadata } from '~/storage/metadata';
-import { getSafeErrorMetadata } from '~/utils/errors';
 import { withSkillUploadIntent } from './intent';
 import { reserveSkillBlob } from './reservation';
 
@@ -104,90 +102,51 @@ async function saveSkillFile(
     tenantId,
     getFileURL: strategy.getFileURL,
   });
-  const cleanupPreviousBlob = (filepath: string): void => {
-    if (!existingFile || existingFile.filepath === filepath) {
-      return;
-    }
-    const deleteFile = deps.getStrategyFunctions(existingFile.source).deleteFile;
-    if (deleteFile) {
-      deleteFile(req, {
-        filepath: existingFile.filepath,
-        storageKey: existingFile.storageKey,
-        storageRegion: existingFile.storageRegion,
-        user: existingFile.author?.toString() ?? userId,
-        tenantId: existingFile.tenantId ?? tenantId,
-      }).catch((error: Error) =>
-        logger.error(
-          '[saveSkillFileContent] Old blob cleanup failed:',
-          getSafeErrorMetadata(error),
-        ),
-      );
-    }
-  };
-
-  let result: { filepath: string; bytes: number; relativePath: string };
-  try {
-    result = await withSkillUploadIntent(deps, {
-      skillId,
-      author: user._id?.toString() ?? userId,
-      tenantId,
-      fileId,
-      source: storage.source,
-      reservation,
-      save: () => storage.saveBuffer({ userId, buffer, fileName, basePath: 'uploads', tenantId }),
-      persist: async (filepath) => {
-        const row = await deps.upsertSkillFile({
-          skillId,
-          relativePath,
-          expectedFileId: revision,
-          createOnly: insertOnly,
-          file_id: fileId,
-          filename,
-          filepath,
-          ...getStorageMetadata({ filepath, source: storage.source }),
-          source: storage.source,
-          mimeType,
-          bytes: buffer.length,
-          isExecutable: existingFile?.isExecutable ?? false,
-          author: user._id?.toString() ?? userId,
-          tenantId,
+  const result = await withSkillUploadIntent(deps, {
+    skillId,
+    author: user._id?.toString() ?? userId,
+    tenantId,
+    fileId,
+    source: storage.source,
+    reservation,
+    save: () => storage.saveBuffer({ userId, buffer, fileName, basePath: 'uploads', tenantId }),
+    persist: async (filepath) => {
+      const row = await deps.upsertSkillFile({
+        skillId,
+        relativePath,
+        expectedFileId: revision,
+        createOnly: insertOnly,
+        file_id: fileId,
+        filename,
+        filepath,
+        ...getStorageMetadata({ filepath, source: storage.source }),
+        source: storage.source,
+        mimeType,
+        bytes: buffer.length,
+        isExecutable: existingFile?.isExecutable ?? false,
+        author: user._id?.toString() ?? userId,
+        tenantId,
+      });
+      if (!row) {
+        throw Object.assign(new Error('Skill file upsert returned no row'), {
+          code: 'SKILL_FILE_UPSERT_NOT_FOUND',
         });
-        if (!row) {
-          throw Object.assign(new Error('Skill file upsert returned no row'), {
-            code: 'SKILL_FILE_UPSERT_NOT_FOUND',
-          });
-        }
-        return { filepath: row.filepath, bytes: buffer.length, relativePath };
-      },
-      readPersisted: async () => {
-        const persisted = await deps.getSkillFileByPath(skillId, relativePath);
-        return persisted?.file_id === fileId
-          ? { filepath: persisted.filepath, bytes: buffer.length, relativePath }
-          : null;
-      },
-      deleteReserved: (file, savedPath) =>
-        strategy.deleteFile!(req, {
-          filepath: savedPath ?? file.filepath,
-          ...getStorageMetadata({ filepath: savedPath ?? file.filepath, source: storage.source }),
-          user: userId,
-          tenantId,
-        }),
-    });
-  } catch (error) {
-    try {
-      const persisted = await deps.getSkillFileByPath(skillId, relativePath);
-      if (persisted?.file_id === fileId) {
-        cleanupPreviousBlob(persisted.filepath);
       }
-    } catch (cleanupError) {
-      logger.error(
-        '[saveSkillFileContent] Failed to verify stored file:',
-        getSafeErrorMetadata(cleanupError),
-      );
-    }
-    throw error;
-  }
-
-  cleanupPreviousBlob(result.filepath);
+      return { filepath: row.filepath, bytes: buffer.length, relativePath };
+    },
+    readPersisted: async () => {
+      const persisted = await deps.getSkillFileByPath(skillId, relativePath);
+      return persisted?.file_id === fileId
+        ? { filepath: persisted.filepath, bytes: buffer.length, relativePath }
+        : null;
+    },
+    deleteReserved: (file, savedPath) =>
+      strategy.deleteFile!(req, {
+        filepath: savedPath ?? file.filepath,
+        ...getStorageMetadata({ filepath: savedPath ?? file.filepath, source: storage.source }),
+        user: userId,
+        tenantId,
+      }),
+  });
   return { bytes: result.bytes, relativePath: result.relativePath };
 }

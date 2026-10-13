@@ -66,7 +66,7 @@ it('records failed cleanup attempts before releasing the claim', async () => {
 });
 
 it.each([false, true])(
-  'reconciles an abandoned intent on an active Skill while preserving a live file row: row=%s',
+  'reconciles an old intent on an active Skill while preserving a live file row: row=%s',
   async (rowExists) => {
     const skillId = '507f1f77bcf86cd799439011';
     const author = '507f1f77bcf86cd799439012';
@@ -76,7 +76,7 @@ it.each([false, true])(
       source: 'local',
       storageKey: '/uploads/abandoned-file',
       author,
-      state: 'abandoned' as const,
+      state: rowExists ? ('committed' as const) : ('abandoned' as const),
     };
     let released: () => void = () => undefined;
     const releaseObserved = new Promise<void>((resolve) => {
@@ -204,6 +204,38 @@ function claimedServiceHarness() {
   });
   return { skillId, persistence, deleteFile, loadConfig, logger, service };
 }
+
+it('retries a superseded committed blob after a transient provider failure', async () => {
+  const h = claimedServiceHarness();
+  const oldIntent: SkillUploadIntentRecord = {
+    skillId: h.skillId,
+    fileId: 'old-revision',
+    source: 'local',
+    storageKey: '/uploads/old-revision',
+    author: '507f1f77bcf86cd799439012',
+    state: 'committed',
+  };
+  h.persistence.listSkillDeletionTombstones.mockResolvedValue([]);
+  h.persistence.getSkillDeletion.mockResolvedValue(null);
+  h.persistence.listAbandonedSkillUploadIntents.mockResolvedValue([oldIntent]);
+  h.deleteFile.mockRejectedValueOnce(new Error('temporary storage outage'));
+  let releaseFirst!: () => void;
+  const firstAttempt = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+  h.persistence.releaseAbandonedSkillUploadIntentClaim.mockImplementationOnce(async () => {
+    releaseFirst();
+    return undefined;
+  });
+  const sweep = h.service.startSkillDeletionSweep();
+  await firstAttempt;
+  expect(h.persistence.markSkillUploadIntentCleaned).not.toHaveBeenCalled();
+  await new Promise((resolve) => setImmediate(resolve));
+  await sweep.runOnce();
+  sweep.stop();
+  expect(h.deleteFile).toHaveBeenCalledTimes(2);
+  expect(h.persistence.markSkillUploadIntentCleaned).toHaveBeenCalledWith('old-revision');
+});
 
 it('marks deletion but cannot finalize until the writer-drain gate is enabled', async () => {
   const h = claimedServiceHarness();

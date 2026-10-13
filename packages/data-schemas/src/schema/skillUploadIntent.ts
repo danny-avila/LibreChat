@@ -16,6 +16,7 @@ const skillUploadIntentSchema: Schema<ISkillUploadIntentDocument> =
         enum: ['uploading', 'committing', 'committed', 'abandoned'],
         required: true,
       },
+      cleanupRequestedAt: Date,
       cleanedAt: Date,
       nextCheckAt: Date,
       lastCleanupAttemptAt: Date,
@@ -28,5 +29,6 @@ const skillUploadIntentSchema: Schema<ISkillUploadIntentDocument> =
 skillUploadIntentSchema.index({ skillId: 1, state: 1 });
 skillUploadIntentSchema.index({ state: 1, lastCleanupAttemptAt: 1, createdAt: 1 });
 skillUploadIntentSchema.index({ state: 1, cleanedAt: 1, nextCheckAt: 1 });
+skillUploadIntentSchema.index({ cleanupRequestedAt: 1, state: 1, nextCheckAt: 1 });
 
 export default skillUploadIntentSchema;

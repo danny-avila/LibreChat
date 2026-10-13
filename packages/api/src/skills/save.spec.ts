@@ -72,6 +72,11 @@ function harness() {
 }
 
 describe('management skill file saver', () => {
+  it('leaves superseded blob cleanup to the durable persistence queue', async () => {
+    const h = harness();
+    await h.saveManagement(h.managementParams);
+    expect(h.deleteFile).not.toHaveBeenCalled();
+  });
   it('creates a missing path with an insert-only write and no second lookup', async () => {
     const h = harness();
     h.getSkillFileByPath.mockResolvedValueOnce(null);
@@ -96,10 +101,7 @@ describe('management skill file saver', () => {
     expect(h.upsertSkillFile).toHaveBeenCalledWith(
       expect.objectContaining({ createOnly: false, expectedFileId: 'initial' }),
     );
-    expect(h.deleteFile).toHaveBeenCalledWith(
-      h.params.req,
-      expect.objectContaining({ filepath: '/uploads/initial', user: 'original-owner' }),
-    );
+    expect(h.deleteFile).not.toHaveBeenCalled();
   });
 
   it('rejects and removes only its upload if a concurrent browser edit wins', async () => {
@@ -159,7 +161,7 @@ describe('agent skill file saver', () => {
     );
   });
 
-  it('preserves executable metadata and deletes the original blob under its owner on replacement', async () => {
+  it('preserves executable metadata and queues the original blob through persistence', async () => {
     const h = harness();
     await expect(h.save(h.params)).resolves.toEqual({
       bytes: 9,
@@ -168,13 +170,7 @@ describe('agent skill file saver', () => {
     expect(h.upsertSkillFile).toHaveBeenCalledWith(
       expect.objectContaining({ expectedFileId: 'initial', createOnly: false, isExecutable: true }),
     );
-    expect(h.deleteFile).toHaveBeenCalledWith(h.params.req, {
-      filepath: '/uploads/initial',
-      storageKey: undefined,
-      storageRegion: undefined,
-      user: 'original-owner',
-      tenantId: 'original-tenant',
-    });
+    expect(h.deleteFile).not.toHaveBeenCalled();
     expect(h.deleteFile).not.toHaveBeenCalledWith(
       h.params.req,
       expect.objectContaining({ filepath: '/uploads/new' }),
@@ -205,7 +201,7 @@ describe('agent skill file saver', () => {
     );
   });
 
-  it('retains committed bytes and cleans up the superseded blob if the parent bump fails', async () => {
+  it('retains committed bytes if the parent bump fails', async () => {
     const h = harness();
     let committedRevision = '';
     h.upsertSkillFile.mockImplementationOnce(async (row) => {
@@ -222,10 +218,7 @@ describe('agent skill file saver', () => {
       relativePath: h.params.relativePath,
     });
     expect(committedRevision).not.toBe('');
-    expect(h.deleteFile).toHaveBeenCalledWith(
-      h.params.req,
-      expect.objectContaining({ filepath: '/uploads/initial', user: 'original-owner' }),
-    );
+    expect(h.deleteFile).not.toHaveBeenCalled();
     expect(h.deleteFile).not.toHaveBeenCalledWith(
       h.params.req,
       expect.objectContaining({ filepath: '/uploads/new' }),

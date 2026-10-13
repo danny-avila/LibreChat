@@ -27,6 +27,7 @@ function harness() {
   const skill = deferred<Awaited<ReturnType<UploadDeps['getSkillById']>>>();
   const file = deferred<Awaited<ReturnType<UploadDeps['getSkillFileByPath']>>>();
   const saveBuffer = jest.fn(async () => '/uploads/replacement');
+  const deleteFile = jest.fn(async () => undefined);
   const deps = {
     getSkillById: jest.fn(() => skill.promise),
     getSkillFileByPath: jest.fn(() => file.promise),
@@ -36,7 +37,7 @@ function harness() {
       filepath: row.filepath,
     })),
     resolveStorage: jest.fn(() => ({ source: FileSources.local, saveBuffer })),
-    getStrategyFunctions: jest.fn(() => ({ deleteFile: jest.fn(async () => undefined) })),
+    getStrategyFunctions: jest.fn(() => ({ deleteFile })),
     reserveSkillUploadIntent: jest.fn(async (input) => ({
       ...input,
       skillId: new Types.ObjectId(),
@@ -59,10 +60,31 @@ function harness() {
   const res = {} as Response;
   res.status = jest.fn(() => res);
   res.json = jest.fn(() => res);
-  return { skill, file, deps, saveBuffer, req, res, handler: createSkillUploadHandler(deps) };
+  return {
+    skill,
+    file,
+    deps,
+    saveBuffer,
+    deleteFile,
+    req,
+    res,
+    handler: createSkillUploadHandler(deps),
+  };
 }
 
 describe('skill upload lookup ordering', () => {
+  it('leaves old-blob cleanup to the durable persistence queue after browser replacement', async () => {
+    const h = harness();
+    const pending = h.handler(h.req, h.res);
+    h.skill.resolve({ source: 'inline' });
+    h.file.resolve(originalFile);
+    await pending;
+    expect(h.res.status).toHaveBeenCalledWith(200);
+    expect(h.deps.upsertSkillFile).toHaveBeenCalledWith(
+      expect.objectContaining({ expectedFileId: 'original' }),
+    );
+    expect(h.deleteFile).not.toHaveBeenCalled();
+  });
   it.each(['skill', 'file'] as const)(
     'starts both privileged lookups before either resolves (%s first)',
     async (first) => {

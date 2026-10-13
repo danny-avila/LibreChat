@@ -52,8 +52,10 @@ permissions. Inaccessible and cross-tenant IDs return the same 404 envelope.
 
 Whole-Skill deletion requires DELETE access and the same Skills USE/CREATE role permissions as
 other mutations. It returns `{ "id": "...", "deleted": true, "cleanupComplete": true }` on
-complete cleanup. If the existing deletion handler removes the Skill but cannot finish dependent
-cleanup, it returns `cleanupComplete: false`; that result does not promise an automatic retry.
+complete cleanup. If cleanup is still pending, it returns `cleanupComplete: false`. The Skill is
+hidden immediately, and the background sweeper retries durable cleanup after transient failures.
+Physical finalization requires `skillDeletion.finalizationEnabled: true` after older Skill writers
+have drained; without it, deletion stays pending.
 
 Text-file writes accept `{ "content": "replacement text" }`, capped at 1 MiB of UTF-8 data.
 Use a relative path such as `references/guide.md`. Absolute paths, traversal, and NUL bytes are
@@ -63,6 +65,8 @@ a version precondition; serialize writers to the same path. After a file write, 
 before a versioned metadata/body update: file writes also increment the parent version. Storage selection stays server-controlled. File JSON reads omit content for
 binary or oversized files; raw download mode is not supported on this surface. File deletion completes
 storage cleanup before returning success and reports a conflict if another writer replaced the path.
+Replacing a file queues the previous blob for durable background cleanup. If the replacement fails,
+the sweeper retains any blob still referenced by the current file row.
 
 Git-synced and deployment-provided Skills are readable but cannot be changed through this API.
 Change their upstream source instead. Browser routes keep their existing behavior.

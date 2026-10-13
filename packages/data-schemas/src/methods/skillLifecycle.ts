@@ -389,7 +389,14 @@ export function createSkillLifecycleMethods(
     const now = new Date();
     return (await intentModel()
       .find({
-        state: 'abandoned',
+        $or: [
+          { state: 'abandoned' },
+          {
+            state: 'committed',
+            cleanupRequestedAt: { $exists: true },
+            cleanedAt: { $exists: false },
+          },
+        ],
         $and: [
           { $or: [{ claimExpiresAt: { $exists: false } }, { claimExpiresAt: { $lte: now } }] },
           { $or: [{ nextCheckAt: { $exists: false } }, { nextCheckAt: { $lte: now } }] },
@@ -409,7 +416,14 @@ export function createSkillLifecycleMethods(
     const result = await intentModel().updateOne(
       {
         fileId,
-        state: 'abandoned',
+        $or: [
+          { state: 'abandoned' },
+          {
+            state: 'committed',
+            cleanupRequestedAt: { $exists: true },
+            cleanedAt: { $exists: false },
+          },
+        ],
         $and: [
           {
             $or: [
@@ -432,7 +446,19 @@ export function createSkillLifecycleMethods(
     leaseMs: number,
   ): Promise<boolean> {
     const result = await intentModel().updateOne(
-      { fileId, state: 'abandoned', claimOwner: owner, claimExpiresAt: { $gt: new Date() } },
+      {
+        fileId,
+        claimOwner: owner,
+        claimExpiresAt: { $gt: new Date() },
+        $or: [
+          { state: 'abandoned' },
+          {
+            state: 'committed',
+            cleanupRequestedAt: { $exists: true },
+            cleanedAt: { $exists: false },
+          },
+        ],
+      },
       { $set: { claimExpiresAt: new Date(Date.now() + leaseMs) } },
     );
     return result.matchedCount === 1;
@@ -482,9 +508,16 @@ export function createSkillLifecycleMethods(
     const result = await intentModel().updateOne(
       {
         fileId,
-        state: 'abandoned',
         claimOwner: owner,
         claimExpiresAt: { $gt: now },
+        $or: [
+          { state: 'abandoned' },
+          {
+            state: 'committed',
+            cleanupRequestedAt: { $exists: true },
+            cleanedAt: { $exists: false },
+          },
+        ],
       },
       { $set: { nextCheckAt: new Date(now.getTime() + delayMs) } },
     );

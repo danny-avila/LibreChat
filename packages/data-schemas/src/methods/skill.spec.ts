@@ -112,6 +112,7 @@ afterAll(async () => {
 afterEach(async () => {
   await Skill.deleteMany({});
   await SkillFile.deleteMany({});
+  await mongoose.models.SkillUploadIntent.deleteMany({});
   await AclEntry.deleteMany({});
   await mongoose.models.Agent.deleteMany({});
 });
@@ -1876,6 +1877,7 @@ describe('Skill CRUD methods', () => {
 
 describe('SkillFile methods', () => {
   it('allows exactly one conditional writer and rejects a stale or deleted revision', async () => {
+    await mongoose.models.SkillUploadIntent.init();
     const { skill } = await methods.createSkill(makeSkillInput());
     const input = {
       skillId: skill._id,
@@ -1900,6 +1902,18 @@ describe('SkillFile methods', () => {
     });
     const current = await methods.getSkillFileByPath(skill._id, input.relativePath);
     expect(['a', 'b']).toContain(current?.file_id);
+    expect(
+      await mongoose.models.SkillUploadIntent.findOne({ fileId: 'original' }).lean(),
+    ).toMatchObject({
+      state: 'committed',
+      storageKey: '/tmp/original',
+      cleanupRequestedAt: expect.any(Date),
+    });
+    expect(
+      (await createSkillLifecycleMethods(mongoose).listAbandonedSkillUploadIntents()).filter(
+        (intent) => intent.fileId === 'original',
+      ),
+    ).toHaveLength(1);
     expect(await methods.getSkillById(skill._id)).toMatchObject({ version: 3, fileCount: 1 });
 
     // An unconditional authoring/agent write also invalidates a captured editor revision.
@@ -1920,6 +1934,81 @@ describe('SkillFile methods', () => {
       }),
     ).rejects.toMatchObject({ code: 'SKILL_FILE_CONFLICT' });
     expect(await methods.getSkillFileByPath(skill._id, input.relativePath)).toBeNull();
+  });
+
+  it('keeps a queued blob safe when replacement CAS fails, then retries it after replacement', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput());
+    const input = {
+      skillId: skill._id,
+      relativePath: 'references/queued.md',
+      file_id: 'legacy-original',
+      filename: 'queued.md',
+      filepath: '/tmp/legacy-original',
+      source: 'local',
+      mimeType: 'text/markdown',
+      bytes: 10,
+      author: owner._id,
+    };
+    await methods.upsertSkillFile(input);
+    const spy = jest.spyOn(SkillFile, 'findOneAndUpdate').mockImplementationOnce(
+      () =>
+        ({
+          lean: async () => {
+            throw new Error('CAS unavailable');
+          },
+        }) as never,
+    );
+    try {
+      await expect(
+        methods.upsertSkillFile({
+          ...input,
+          expectedFileId: input.file_id,
+          file_id: 'replacement',
+        }),
+      ).rejects.toThrow('CAS unavailable');
+    } finally {
+      spy.mockRestore();
+    }
+    const lifecycle = createSkillLifecycleMethods(mongoose);
+    expect(await lifecycle.skillFileExistsForIntent(skill._id.toString(), input.file_id)).toBe(
+      true,
+    );
+    const queued = await lifecycle.listAbandonedSkillUploadIntents();
+    expect(queued).toEqual([expect.objectContaining({ fileId: input.file_id })]);
+    const ownerId = 'cleanup-worker';
+    expect(await lifecycle.claimAbandonedSkillUploadIntent(input.file_id, ownerId, 120_000)).toBe(
+      true,
+    );
+    expect(
+      await lifecycle.scheduleAbandonedSkillUploadIntentRecheck(input.file_id, ownerId, 3_600_000),
+    ).toBe(true);
+    await lifecycle.releaseAbandonedSkillUploadIntentClaim(input.file_id, ownerId);
+    expect(await lifecycle.listAbandonedSkillUploadIntents()).toHaveLength(0);
+    await methods.upsertSkillFile({
+      ...input,
+      expectedFileId: input.file_id,
+      file_id: 'replacement',
+    });
+    expect(await lifecycle.skillFileExistsForIntent(skill._id.toString(), input.file_id)).toBe(
+      false,
+    );
+    expect(await lifecycle.listAbandonedSkillUploadIntents()).toEqual([
+      expect.objectContaining({ fileId: input.file_id }),
+    ]);
+    expect(
+      await mongoose.models.SkillUploadIntent.findOne({ fileId: input.file_id }).lean(),
+    ).toMatchObject({
+      storageKey: input.filepath,
+      cleanupRequestedAt: expect.any(Date),
+    });
+    await lifecycle.beginSkillDeletion(skill._id.toString());
+    await lifecycle.beginSkillDeletion(skill._id.toString());
+    expect(await mongoose.models.SkillUploadIntent.countDocuments({ skillId: skill._id })).toBe(2);
+    expect(
+      await mongoose.models.SkillUploadIntent.findOne({ fileId: input.file_id }).lean(),
+    ).toMatchObject({
+      cleanupRequestedAt: expect.any(Date),
+    });
   });
 
   it('creates only absent skill files and leaves the winner intact when creation races', async () => {
