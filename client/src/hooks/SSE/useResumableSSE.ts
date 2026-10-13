@@ -89,7 +89,7 @@ import {
 } from '~/data-provider';
 import {
   resolveDetachedRunEnd,
-  isDetachedRunUnmatchable,
+  isDetachedRunManual,
   stopRequestedByConvoId,
   detachedRunByConvoId,
   isStoppedRun,
@@ -1378,11 +1378,12 @@ export default function useResumableSSE(
    *  ended attached must not also be resolved as detached when the user later leaves. */
   const runEndPublishedRef = useRef(false);
   const setRunEnd = useCallback(
-    (end: RunEnd) => {
+    (end: RunEnd, options?: { retainDetached?: boolean }) => {
       runEndPublishedRef.current = true;
       /** The run's end reached the drain here, so a marker this pane left for the same run is
-       *  settled and must not be resolved a second time on a later visit. */
-      if (end.conversationId != null) {
+       *  settled and must not be resolved a second time on a later visit. A provisional end that
+       *  cannot drain the queue keeps the marker, so a later read of history can still settle it. */
+      if (end.conversationId != null && options?.retainDetached !== true) {
         const detachedFamily = detachedRunByConvoId(end.conversationId);
         const detached = jotaiStore.get(detachedFamily);
         if (
@@ -3496,20 +3497,26 @@ export default function useResumableSSE(
           // auto-sending queued messages the user may not want fired. A run this
           // pane left and came back to is the exception: the history just read
           // names its response by epoch, which is the outcome it would have had.
+          // History read before the job finished may not hold that response yet,
+          // so an unresolved marker outlives this end for the next visit to read.
           const detachedRun = jotaiStore.get(detachedRunByConvoId(recoveryConvoId));
-          const detachedEnd =
+          const detachedResolvable =
             detachedRun != null &&
-            persistedMessages != null &&
-            !isDetachedRunUnmatchable(jotaiStore.get, recoveryConvoId, detachedRun)
+            !isDetachedRunManual(jotaiStore.get, recoveryConvoId, detachedRun);
+          const detachedEnd =
+            detachedResolvable && persistedMessages != null
               ? resolveDetachedRunEnd(recoveryConvoId, detachedRun, persistedMessages)
               : null;
-          setRunEnd({
-            conversationId: recoveryConvoId,
-            outcome: 'aborted',
-            endedAt: Date.now(),
-            ...detachedEnd,
-            startedAsNewConvo: optimisticStreamIdsRef.current.has(currentStreamId),
-          });
+          setRunEnd(
+            {
+              conversationId: recoveryConvoId,
+              outcome: 'aborted',
+              endedAt: Date.now(),
+              ...detachedEnd,
+              startedAsNewConvo: optimisticStreamIdsRef.current.has(currentStreamId),
+            },
+            { retainDetached: detachedResolvable && detachedEnd == null },
+          );
           setStreamId(null);
           optimisticStreamIdsRef.current.delete(currentStreamId);
           createdStreamIdsRef.current.delete(currentStreamId);

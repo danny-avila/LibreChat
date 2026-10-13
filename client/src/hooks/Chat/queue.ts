@@ -272,14 +272,24 @@ export function canResolveDetachedRun(run: DetachedRun): boolean {
   return run.isRegenerate !== true || run.generationCreatedAt != null;
 }
 
-/** Whether a detached run's end must be left for a manual send. Without the run's epoch the drain
- *  cannot match a server admission receipt, so a run whose queue the server shares cannot be
- *  resolved without guessing whether a server-queued successor already owns the conversation. */
-export function isDetachedRunUnmatchable(
+/**
+ * Whether a detached run's end must be left for a manual send instead of read from history, which
+ * retires its marker. Three runs qualify: one the user stopped, whose response persists like a
+ * completed one (a stopped compaction even settles with `unfinished: false`); a regeneration with
+ * no epoch, whose new reply history cannot tell from the old one; and a run with no epoch whose
+ * queue the server shares, since the drain cannot match its end to a server admission receipt.
+ */
+export function isDetachedRunManual(
   get: Getter,
   conversationId: string,
   run: DetachedRun,
 ): boolean {
+  if (!canResolveDetachedRun(run)) {
+    return true;
+  }
+  if (isStoppedRun(get(stopRequestedByConvoId(conversationId)), run.generationCreatedAt)) {
+    return true;
+  }
   if (run.generationCreatedAt != null) {
     return false;
   }

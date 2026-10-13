@@ -35,9 +35,8 @@ import {
   ACTIVE_JOBS_SUCCESSOR_GRACE_MS,
 } from '~/data-provider';
 import {
-  isDetachedRunUnmatchable,
+  isDetachedRunManual,
   resolveDetachedRunEnd,
-  canResolveDetachedRun,
   pendingRunEndByConvoId,
   detachedRunByConvoId,
 } from '~/hooks/Chat/queue';
@@ -1021,7 +1020,7 @@ export default function useResumeOnLoad(
         if (detachedRun == null || jotaiStore.get(detachedFamily) !== detachedRun) {
           return;
         }
-        if (isDetachedRunUnmatchable(jotaiStore.get, conversationId, detachedRun)) {
+        if (isDetachedRunManual(jotaiStore.get, conversationId, detachedRun)) {
           jotaiStore.set(detachedFamily, null);
           return;
         }
@@ -1032,9 +1031,9 @@ export default function useResumeOnLoad(
         jotaiStore.set(detachedFamily, null);
         jotaiStore.set(pendingRunEndByConvoId(conversationId), end);
       };
-      /** A run history can never name is retired without a read, leaving the queue for a manual
-       *  send instead of refetching on every visit. */
-      if (detachedRun != null && !canResolveDetachedRun(detachedRun)) {
+      /** A run left for a manual send is retired without a read instead of refetching on every
+       *  visit; the check repeats after the read, since a receipt can settle meanwhile. */
+      if (detachedRun != null && isDetachedRunManual(jotaiStore.get, conversationId, detachedRun)) {
         jotaiStore.set(detachedFamily, null);
       } else if (detachedRun != null) {
         queryClient

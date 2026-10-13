@@ -10,6 +10,7 @@ import type { QueuedMessage, PendingSteer, DetachedRun } from '~/hooks/Chat/queu
 import {
   settledQueuedTurnReceiptsByConvoId,
   queuedMessagesByConvoId,
+  stopRequestedByConvoId,
   pendingRunEndByConvoId,
   detachedRunByConvoId,
   resetQueueFamilies,
@@ -2911,6 +2912,37 @@ describe('useResumeOnLoad', () => {
           store.set(settledQueuedTurnReceiptsByConvoId(CONVERSATION_ID), [
             { clientRequestId: 'queued-1', status: 'admitted', effectivePredecessorCreatedAt: 41 },
           ]),
+      });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(jotaiStore.get(pendingRunEndByConvoId(CONVERSATION_ID))).toBeNull();
+      expect(jotaiStore.get(detachedRunByConvoId(CONVERSATION_ID))).toBeNull();
+    });
+
+    it('retires a retained marker for a run the user stopped on a later visit', async () => {
+      mockUseStreamStatus.mockReturnValue({
+        isSuccess: true,
+        isFetching: false,
+        data: { active: false },
+      });
+      const { jotaiStore } = renderUseResumeOnLoad({
+        messages: [
+          buildUserMessage(CONVERSATION_ID),
+          {
+            messageId: 'response-detached',
+            parentMessageId: USER_MESSAGE_ID,
+            conversationId: CONVERSATION_ID,
+            isCreatedByUser: false,
+            text: 'stopped compaction settles as finished',
+            unfinished: false,
+            updatedAt: new Date(42).toISOString(),
+          } as TMessage,
+        ],
+        detachedRun: { userMessageId: USER_MESSAGE_ID, generationCreatedAt: 41 },
+        seedJotai: (store) =>
+          store.set(stopRequestedByConvoId(CONVERSATION_ID), { generationCreatedAt: 41 }),
       });
       await act(async () => {
         await Promise.resolve();

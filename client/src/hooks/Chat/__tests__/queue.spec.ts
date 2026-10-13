@@ -1,5 +1,14 @@
+import { createStore } from 'jotai';
 import type { TMessage } from 'librechat-data-provider';
-import { resolveDetachedRunEnd, canResolveDetachedRun, isStoppedRun } from '../queue';
+import {
+  settledQueuedTurnReceiptsByConvoId,
+  queuedMessagesByConvoId,
+  stopRequestedByConvoId,
+  resolveDetachedRunEnd,
+  canResolveDetachedRun,
+  isDetachedRunManual,
+  isStoppedRun,
+} from '../queue';
 
 const CONVO_ID = 'convo-detached';
 const USER_ID = 'user-1';
@@ -165,5 +174,48 @@ describe('isStoppedRun', () => {
     expect(isStoppedRun(stopped, 1000)).toBe(true);
     expect(isStoppedRun(stopped, 2000)).toBe(false);
     expect(isStoppedRun(stopped, undefined)).toBe(true);
+  });
+});
+
+describe('isDetachedRunManual', () => {
+  const CONVO = 'convo-manual';
+  const epochRun = { userMessageId: USER_ID, generationCreatedAt: 1000 };
+  const epochless = { userMessageId: USER_ID };
+
+  it('resolves an ordinary run from history', () => {
+    const store = createStore();
+    expect(isDetachedRunManual(store.get, CONVO, epochRun)).toBe(false);
+    expect(isDetachedRunManual(store.get, CONVO, epochless)).toBe(false);
+  });
+
+  it('leaves the run the user stopped, and only that run, for a manual send', () => {
+    const store = createStore();
+    store.set(stopRequestedByConvoId(CONVO), { generationCreatedAt: 1000 });
+    expect(isDetachedRunManual(store.get, CONVO, epochRun)).toBe(true);
+    expect(isDetachedRunManual(store.get, CONVO, { ...epochRun, generationCreatedAt: 2000 })).toBe(
+      false,
+    );
+    expect(isDetachedRunManual(store.get, CONVO, epochless)).toBe(true);
+  });
+
+  it('leaves an epochless regeneration for a manual send', () => {
+    const store = createStore();
+    expect(isDetachedRunManual(store.get, CONVO, { ...epochless, isRegenerate: true })).toBe(true);
+    expect(isDetachedRunManual(store.get, CONVO, { ...epochRun, isRegenerate: true })).toBe(false);
+  });
+
+  it('leaves an epochless run whose queue the server shares for a manual send', () => {
+    const receipts = createStore();
+    receipts.set(settledQueuedTurnReceiptsByConvoId(CONVO), [
+      { clientRequestId: 'queued-1', status: 'admitted', effectivePredecessorCreatedAt: 41 },
+    ]);
+    expect(isDetachedRunManual(receipts.get, CONVO, epochless)).toBe(true);
+    expect(isDetachedRunManual(receipts.get, CONVO, epochRun)).toBe(false);
+
+    const serverRow = createStore();
+    serverRow.set(queuedMessagesByConvoId(CONVO), [
+      { id: 'row-1', text: 'next', createdAt: 1, server: { status: 'queued' } },
+    ]);
+    expect(isDetachedRunManual(serverRow.get, CONVO, epochless)).toBe(true);
   });
 });
