@@ -41,6 +41,7 @@ jest.mock('~/server/services/Config', () => ({
   getCachedTools: jest.fn().mockResolvedValue({}),
   getAppConfig: jest.fn().mockResolvedValue({
     fileStrategy: 'local',
+    skillDeletion: { finalizationEnabled: true },
     paths: { uploads: '/tmp/uploads', images: '/tmp/images' },
   }),
 }));
@@ -153,6 +154,8 @@ beforeAll(async () => {
   currentTestUser = testUsers.owner;
   skillRoutes = require('./skills');
   app.use('/api/skills', skillRoutes);
+  const { getSkillStatesController } = require('~/server/controllers/SkillStatesController');
+  app.get('/api/skill-states-probe', getSkillStatesController);
 });
 
 afterEach(async () => {
@@ -261,6 +264,22 @@ describe('Skill routes', () => {
     errSpy = jest.spyOn(console, 'error').mockImplementation();
   });
   afterEach(() => errSpy.mockRestore());
+
+  it('prunes a logically deleted Skill from user Skill states before ACL cleanup', async () => {
+    const created = await createSkillAsOwner({ name: 'state-fence-skill' });
+    expect(created.status).toBe(201);
+    const id = created.body._id;
+    await User.updateOne({ _id: testUsers.owner._id }, { $set: { skillStates: { [id]: false } } });
+
+    const before = await request(app).get('/api/skill-states-probe');
+    expect(before.status).toBe(200);
+    expect(before.body[id]).toBe(false);
+
+    await Skill.updateOne({ _id: id }, { $set: { deletingAt: new Date() } });
+    const after = await request(app).get('/api/skill-states-probe');
+    expect(after.status).toBe(200);
+    expect(after.body[id]).toBeUndefined();
+  });
 
   describe('POST /api/skills', () => {
     it('creates a skill and grants SKILL_OWNER ACL', async () => {

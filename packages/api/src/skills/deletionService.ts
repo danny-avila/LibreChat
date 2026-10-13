@@ -67,6 +67,8 @@ export interface SkillDeletionService {
   };
 }
 
+type CleanupLimiter = ReturnType<typeof createConcurrencyLimiter>;
+
 /** The legacy server supplies storage, database, and context dependencies; it owns no worker logic. */
 export function createSkillDeletionService(deps: SkillDeletionServiceDeps): SkillDeletionService {
   async function deleteStoredBlob(file: {
@@ -123,6 +125,7 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
     skillId: string,
     claimLeaseMs: number,
     loadedConfig: AppConfig | undefined | null = null,
+    limitBlob?: CleanupLimiter,
   ): Promise<SkillDeletionProgress> {
     const journal =
       (await deps.persistence.beginSkillDeletion(skillId)) ??
@@ -168,15 +171,19 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
         skillId,
         {
           ...deps.persistence,
-          deleteBlob: deleteStoredBlob,
-          deleteReservedBlob: (intent) =>
-            deleteStoredBlob({
-              filepath: intent.storageKey,
-              source: intent.source,
-              ...getStorageMetadata({ filepath: intent.storageKey, source: intent.source }),
-              author: intent.author,
-              tenantId: intent.tenantId,
-            }),
+          deleteBlob: (file) =>
+            limitBlob ? limitBlob(() => deleteStoredBlob(file)) : deleteStoredBlob(file),
+          deleteReservedBlob: (intent) => {
+            const deleteIntentBlob = () =>
+              deleteStoredBlob({
+                filepath: intent.storageKey,
+                source: intent.source,
+                ...getStorageMetadata({ filepath: intent.storageKey, source: intent.source }),
+                author: intent.author,
+                tenantId: intent.tenantId,
+              });
+            return limitBlob ? limitBlob(deleteIntentBlob) : deleteIntentBlob();
+          },
         },
         config?.fileConfig?.skills?.deletionCleanupConcurrency,
         assertClaim,
@@ -394,16 +401,24 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
             const tombstones = await deps.persistence.listSkillDeletionTombstones(batchSize);
             const config = await deps.loadConfig();
             if (config?.skillDeletion?.finalizationEnabled === true) {
-              const limit = createConcurrencyLimiter(
+              const concurrency =
                 config?.fileConfig?.skills?.deletionCleanupConcurrency ??
-                  DEFAULT_SKILL_DELETION_CLEANUP_CONCURRENCY,
-              );
+                DEFAULT_SKILL_DELETION_CLEANUP_CONCURRENCY;
+              // Bound both active tombstones and their aggregate provider calls;
+              // each Skill also bounds its own file fanout in runSkillDeletion.
+              const limitTombstones = createConcurrencyLimiter(concurrency);
+              const limitBlob = createConcurrencyLimiter(concurrency);
               await Promise.all(
                 tombstones.map((tombstone) =>
-                  limit(async () => {
+                  limitTombstones(async () => {
                     const skillId = tombstone.skillId;
                     try {
-                      const progress = await deleteWithClaim(skillId, claimLeaseMs, config);
+                      const progress = await deleteWithClaim(
+                        skillId,
+                        claimLeaseMs,
+                        config,
+                        limitBlob,
+                      );
                       if (!progress.cleanupComplete) {
                         // A live upload is never timed out automatically. Operators must verify
                         // its writer is dead before explicitly abandoning the intent.

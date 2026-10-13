@@ -176,6 +176,7 @@ describe('Agents OpenAPI actual HTTP contract', () => {
 
     const appConfig = {
       fileStrategy: 'local',
+      skillDeletion: { finalizationEnabled: true },
       paths: { uploads: uploadsPath },
       fileConfig: {},
       endpoints: {

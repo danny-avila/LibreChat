@@ -27,6 +27,7 @@ export {
   validateSkillBody,
   validateRelativePath,
   inferSkillFileCategory,
+  filterExistingSkillIds,
   validateSkillFrontmatter,
   getCanonicalSkillFrontmatterKey,
   normalizeSkillFrontmatterKeys,

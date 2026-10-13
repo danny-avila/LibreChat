@@ -144,6 +144,7 @@ import {
   validateSkillDescription,
   deriveStructuredFrontmatterFields,
   inferSkillFileCategory,
+  filterExistingSkillIds,
   type SkillMethods,
   type SkillDeps,
   type CreateSkillInput,
@@ -237,6 +238,7 @@ export {
   validateSkillDescription,
   deriveStructuredFrontmatterFields,
   inferSkillFileCategory,
+  filterExistingSkillIds,
 };
 export { AUDIT_SCHEMA_VERSION, MAX_AUDIT_EXPORT_ROWS, MAX_AUDIT_LOG_LIMIT, MAX_AUDIT_VERIFY_ROWS };
 export { MAX_TOOL_FAVORITES };

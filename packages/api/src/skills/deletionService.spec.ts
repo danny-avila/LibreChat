@@ -240,6 +240,12 @@ it('processes independent deletion tombstones with bounded concurrency', async (
       source: 'local',
       author: '507f1f77bcf86cd799439012',
     },
+    {
+      file_id: 'file-2',
+      filepath: '/uploads/file-2',
+      source: 'local',
+      author: '507f1f77bcf86cd799439012',
+    },
   ]);
   h.persistence.deleteSkillFileAfterBlob.mockResolvedValue(true);
   h.loadConfig.mockResolvedValue({
@@ -248,20 +254,10 @@ it('processes independent deletion tombstones with bounded concurrency', async (
   } as unknown as AppConfig);
   let active = 0;
   let peak = 0;
-  let started = 0;
-  let twoStarted!: () => void;
-  let threeStarted!: () => void;
   let allCompleted!: () => void;
-  const firstPair = new Promise<void>((resolve) => {
-    twoStarted = resolve;
-  });
-  const third = new Promise<void>((resolve) => {
-    threeStarted = resolve;
-  });
   const done = new Promise<void>((resolve) => {
     allCompleted = resolve;
   });
-  const releases: Array<() => void> = [];
   let completed = 0;
   h.persistence.releaseSkillDeletionClaim.mockImplementation(async () => {
     completed++;
@@ -270,22 +266,15 @@ it('processes independent deletion tombstones with bounded concurrency', async (
   h.deleteFile.mockImplementation(async () => {
     active++;
     peak = Math.max(peak, active);
-    started++;
-    if (started === 2) twoStarted();
-    if (started === 3) threeStarted();
-    await new Promise<void>((resolve) => releases.push(resolve));
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
     active--;
   });
 
   const sweep = h.service.startSkillDeletionSweep();
   try {
-    await firstPair;
-    expect(h.deleteFile).toHaveBeenCalledTimes(2);
-    releases[0]();
-    await third;
-    expect(peak).toBe(2);
-    for (const release of releases.slice(1)) release();
     await done;
+    expect(peak).toBe(2);
+    expect(h.deleteFile).toHaveBeenCalledTimes(6);
     expect(h.persistence.finalizeSkillDeletion).toHaveBeenCalledTimes(3);
   } finally {
     sweep.stop();
