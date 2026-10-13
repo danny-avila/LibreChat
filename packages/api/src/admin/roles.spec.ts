@@ -1026,15 +1026,23 @@ describe('createAdminRolesHandlers', () => {
       );
     });
 
-    it('still audits the grants it removed when another cleanup step fails', async () => {
+    it('restores the removed config overrides when ACL cleanup fails', async () => {
       const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const config = {
+        principalModel: 'Role',
+        overrides: { interface: { customWelcome: 'hi' } },
+        priority: 7,
+      };
       const deps = deleteDeps({
+        deleteConfig: jest.fn().mockResolvedValue(config),
         deleteAclEntries: jest.fn().mockRejectedValue(new Error('acl cleanup failed')),
         deleteGrantsForPrincipal: jest.fn().mockResolvedValue([{ capability: 'read:users' }]),
+        upsertConfig: jest.fn().mockResolvedValue(null),
+        grantCapability: jest.fn().mockResolvedValue(undefined),
         recordAuditEntry,
       });
       const handlers = createAdminRolesHandlers(deps);
-      const { req, res, status } = createReqRes({
+      const { req, res, status, json } = createReqRes({
         params: { name: 'editor' },
         user: { _id: new Types.ObjectId(), role: 'admin' },
       });
@@ -1042,11 +1050,67 @@ describe('createAdminRolesHandlers', () => {
       await handlers.deleteRole(req, res);
 
       expect(status).toHaveBeenCalledWith(500);
+      expect(json).toHaveBeenCalledWith(expect.objectContaining({ code: 'ROLE_CLEANUP_FAILED' }));
       expect(deps.deleteRoleByName).not.toHaveBeenCalled();
-      expect(recordAuditEntry).toHaveBeenCalledTimes(1);
-      expect(recordAuditEntry).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'grant.removed' }),
+      expect(deps.upsertConfig).toHaveBeenCalledWith(
+        PrincipalType.ROLE,
+        'editor',
+        'Role',
+        config.overrides,
+        7,
       );
+      expect(deps.grantCapability).toHaveBeenCalledWith(
+        expect.objectContaining({ principalId: 'editor', capability: 'read:users' }),
+      );
+      expect(recordAuditEntry).not.toHaveBeenCalled();
+    });
+
+    it('restores config, ACL entries and grants when the role deletion itself fails', async () => {
+      const aclEntry = { _id: new Types.ObjectId(), resourceType: 'agent', permBits: 1 };
+      const deps = deleteDeps({
+        deleteConfig: jest.fn().mockResolvedValue({
+          principalModel: 'Role',
+          overrides: {},
+          priority: 3,
+        }),
+        findAclEntriesByPrincipal: jest.fn().mockResolvedValue([aclEntry]),
+        deleteGrantsForPrincipal: jest.fn().mockResolvedValue([{ capability: 'read:users' }]),
+        deleteRoleByName: jest.fn().mockRejectedValue(new Error('db down')),
+        upsertConfig: jest.fn().mockResolvedValue(null),
+        bulkWriteAclEntries: jest.fn().mockResolvedValue(undefined),
+        grantCapability: jest.fn().mockResolvedValue(undefined),
+        invalidatePromptGroupAccessContext: jest.fn().mockResolvedValue(undefined),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { name: 'editor' } });
+
+      await handlers.deleteRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(json).toHaveBeenCalledWith({ error: 'Failed to delete role' });
+      expect(deps.upsertConfig).toHaveBeenCalledTimes(1);
+      expect(deps.bulkWriteAclEntries).toHaveBeenCalledWith([
+        expect.objectContaining({ updateOne: expect.objectContaining({ upsert: true }) }),
+      ]);
+      expect(deps.grantCapability).toHaveBeenCalledTimes(1);
+      expect(deps.invalidatePromptGroupAccessContext).toHaveBeenCalled();
+    });
+
+    it('does not restore anything when the cascade and role deletion succeed', async () => {
+      const deps = deleteDeps({
+        upsertConfig: jest.fn(),
+        bulkWriteAclEntries: jest.fn(),
+        grantCapability: jest.fn(),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status } = createReqRes({ params: { name: 'editor' } });
+
+      await handlers.deleteRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(deps.upsertConfig).not.toHaveBeenCalled();
+      expect(deps.bulkWriteAclEntries).not.toHaveBeenCalled();
+      expect(deps.grantCapability).not.toHaveBeenCalled();
     });
 
     it('emits a grant.removed audit entry for each grant removed by the cascade', async () => {

@@ -12,6 +12,7 @@ import type { FilterQuery, Types } from 'mongoose';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 import type { RecordAuditEntry } from './audit';
+import { cascadeStep, runCascade } from './cascade';
 import { createAdminAuditEmitter, diffRolePermissions } from './audit';
 import { parsePagination } from './pagination';
 
@@ -133,6 +134,28 @@ export interface AdminRolesDeps {
     principalId: string | Types.ObjectId,
     options?: { tenantId?: string },
   ) => Promise<ISystemGrant[]>;
+  /** Snapshot source and restore sinks for the role-deletion cascade. When all are
+   * supplied, a failed cleanup step or a failed role deletion puts back whatever
+   * the cascade already removed. Each is the matching data-schemas method. */
+  findAclEntriesByPrincipal?: (
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+  ) => Promise<Array<Record<string, unknown>>>;
+  bulkWriteAclEntries?: (ops: Array<Record<string, unknown>>) => Promise<unknown>;
+  upsertConfig?: (
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+    principalModel: IConfig['principalModel'],
+    overrides: IConfig['overrides'],
+    priority: number,
+  ) => Promise<IConfig | null>;
+  grantCapability?: (grant: {
+    principalType: PrincipalType;
+    principalId: string | Types.ObjectId;
+    capability: ISystemGrant['capability'];
+    tenantId?: string;
+    grantedBy?: string | Types.ObjectId;
+  }) => Promise<unknown>;
   /** Optional audit emission for role mutations and the grants removed by the
    * role-deletion cascade. Failure is logged unless `auditFailClosed` is set. */
   recordAuditEntry?: RecordAuditEntry;
@@ -179,6 +202,10 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
     deleteConfig,
     deleteAclEntries,
     deleteGrantsForPrincipal,
+    findAclEntriesByPrincipal,
+    bulkWriteAclEntries,
+    upsertConfig,
+    grantCapability,
     recordAuditEntry,
     auditFailClosed,
     invalidatePromptGroupAccessContext,
@@ -487,41 +514,109 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
        * inheriting the leftovers. Every removal is idempotent.
        */
       const tenantId = req.user?.tenantId;
-      const [configResult, aclResult, grantsResult] = await Promise.allSettled([
-        deleteConfig(PrincipalType.ROLE, name),
-        deleteAclEntries({ principalType: PrincipalType.ROLE, principalId: name }),
-        deleteGrantsForPrincipal(PrincipalType.ROLE, name, { tenantId }),
-      ]);
-      if (aclResult.status === 'fulfilled') {
-        /** The removed entries can include PROMPTGROUP grants feeding the access cache */
-        await invalidatePromptGroupAccessContext?.();
-      }
-      if (grantsResult.status === 'fulfilled') {
-        await emitGrantRemovals(req, name, grantsResult.value);
-      }
-      const cleanupFailed = [configResult, aclResult, grantsResult].filter(
-        (result) => result.status === 'rejected',
+      const cascade = await runCascade(
+        [
+          cascadeStep(
+            'config',
+            () => deleteConfig(PrincipalType.ROLE, name),
+            upsertConfig
+              ? async (config) => {
+                  if (config) {
+                    await upsertConfig(
+                      PrincipalType.ROLE,
+                      name,
+                      config.principalModel,
+                      config.overrides,
+                      config.priority,
+                    );
+                  }
+                }
+              : undefined,
+          ),
+          cascadeStep(
+            'acl',
+            async () => {
+              const entries = (await findAclEntriesByPrincipal?.(PrincipalType.ROLE, name)) ?? [];
+              await deleteAclEntries({ principalType: PrincipalType.ROLE, principalId: name });
+              return entries;
+            },
+            bulkWriteAclEntries
+              ? async (entries) => {
+                  if (entries.length > 0) {
+                    await bulkWriteAclEntries(
+                      entries.map((entry) => ({
+                        updateOne: {
+                          filter: { _id: entry._id },
+                          update: { $setOnInsert: entry },
+                          upsert: true,
+                        },
+                      })),
+                    );
+                  }
+                }
+              : undefined,
+          ),
+          cascadeStep(
+            'grants',
+            () => deleteGrantsForPrincipal(PrincipalType.ROLE, name, { tenantId }),
+            grantCapability
+              ? async (grants) => {
+                  for (const grant of grants) {
+                    await grantCapability({
+                      principalType: PrincipalType.ROLE,
+                      principalId: name,
+                      capability: grant.capability,
+                      tenantId: grant.tenantId,
+                      grantedBy: grant.grantedBy,
+                    });
+                  }
+                }
+              : undefined,
+          ),
+        ],
+        '[adminRoles]',
       );
-      if (cleanupFailed.length > 0) {
-        for (const result of cleanupFailed) {
-          logger.error('[adminRoles] cascade cleanup failed for role:', name, result.reason);
+
+      /** The removed ACL entries can include PROMPTGROUP grants feeding the access
+       * cache; the cache is stale after both a removal and a restore. */
+      const invalidateAccess = async () => {
+        if ('acl' in cascade.removed) {
+          await invalidatePromptGroupAccessContext?.();
         }
-        return res.status(500).json({
+      };
+      const cleanupFailedResponse = () =>
+        res.status(500).json({
           error: 'Failed to remove the role grants and permissions; the role was not deleted',
           code: 'ROLE_CLEANUP_FAILED',
         });
+
+      if (cascade.failed.length > 0) {
+        await cascade.compensate();
+        await invalidateAccess();
+        return cleanupFailedResponse();
       }
 
-      const deleted = await deleteRoleByName(name);
+      let deleted: IRole | null;
+      try {
+        deleted = await deleteRoleByName(name);
+      } catch (error) {
+        logger.error('[adminRoles] deleteRole failed after cascade cleanup:', error);
+        await cascade.compensate();
+        await invalidateAccess();
+        return res.status(500).json({ error: 'Failed to delete role' });
+      }
+      await invalidateAccess();
       if (!deleted) {
         return res.status(404).json({ error: 'Role not found' });
       }
+      const removedGrants = cascade.removed.grants as ISystemGrant[];
+      await emitGrantRemovals(req, name, removedGrants);
       await emitAudit(req, {
         action: 'role.deleted',
         severity: 'warning',
         target: roleTarget(name),
         metadata: {
-          grantsRemoved: grantsResult.status === 'fulfilled' ? grantsResult.value.length : 0,
+          grantsRemoved: removedGrants.length,
         },
       });
 

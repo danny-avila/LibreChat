@@ -8,6 +8,7 @@ export { createAdminUsersHandlers } from './users';
 export { createAdminAuditLogHandlers } from './auditLog';
 export { createAdminCodeEnvironmentHandlers } from './code';
 export { buildAuditContext } from './context';
+export { cascadeStep, runCascade } from './cascade';
 export { createAdminAuditEmitter, recordSystemAuditEntry, diffRolePermissions } from './audit';
 export { resolveConfigSecret, redactConfigSecretMaps } from './secrets';
 export type { AdminConfigDeps } from './config';
@@ -22,5 +23,6 @@ export type {
 export type { AdminSkillSyncAccessDeps, AdminSkillSyncDeps } from './skills';
 export type { AdminUsersDeps } from './users';
 export type { AdminAuditLogDeps } from './auditLog';
+export type { CascadeStep, CascadeOutcome } from './cascade';
 export type { AdminCodeEnvironmentDeps } from './code';
 export type { AdminAuditEmitter, AdminAuditEvent, RecordAuditEntry } from './audit';
