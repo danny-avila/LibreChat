@@ -1,4 +1,5 @@
 import { createCipheriv, randomUUID } from 'crypto';
+import { ObjectId } from 'mongodb';
 import { expect, test } from '@playwright/test';
 import type { APIRequestContext } from '@playwright/test';
 import type { User } from '../../../types';
@@ -350,6 +351,21 @@ test.describe('stored credential encryption', () => {
       expect(stored[0].value).not.toContain(MCP_TOKEN);
       expect(await mcpVarIsSet(request, token)).toBe(true);
       await expectMcpConnects(request, token);
+
+      /** The user provider key route reads the same override. */
+      const keyName = `e2e-legacy-key-${randomUUID()}`;
+      const keyPut = await request.put('/api/keys', {
+        headers: { Authorization: `Bearer ${token}` },
+        data: { name: keyName, value: 'e2e-provider-key' },
+      });
+      expect(keyPut.status()).toBe(201);
+      const keyValue = await withMongo(async (db) => {
+        const doc = await db
+          .collection('keys')
+          .findOne({ userId: new ObjectId(userId), name: keyName });
+        return (doc as { value?: string } | null)?.value ?? '';
+      });
+      expect(keyValue).toMatch(LEGACY_FORMAT);
     } finally {
       if (userId) {
         const del = await request.delete(`/api/admin/config/user/${userId}`, {

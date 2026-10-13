@@ -123,8 +123,10 @@ export function getSecretPreview(secret: string): string {
 
 /**
  * Re-derives a stored preview under the current policy. Previews persisted by
- * earlier releases carry a leading prefix (`sk-lf-...cret`); they are cut down
- * to the last four characters, and anything unrecognised is fully masked.
+ * earlier releases carry a fixed-width leading prefix (`sk-lf-...cret`) whatever
+ * the secret length, so the original length cannot be established and they are
+ * fully masked until the secret is next written. Anything unrecognised is also
+ * fully masked.
  */
 export function normalizeStoredPreview(preview: string): string {
   if (preview === '' || /^\*+$/.test(preview)) {
@@ -132,9 +134,6 @@ export function normalizeStoredPreview(preview: string): string {
   }
   if (preview.startsWith('...') && preview.length <= 3 + PREVIEW_VISIBLE) {
     return preview;
-  }
-  if (preview.includes('...')) {
-    return '...' + preview.slice(preview.lastIndexOf('...') + 3).slice(-PREVIEW_VISIBLE);
   }
   return '*'.repeat(preview.length);
 }

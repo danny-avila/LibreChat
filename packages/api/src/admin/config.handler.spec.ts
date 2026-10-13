@@ -110,7 +110,7 @@ describe('createAdminConfigHandlers', () => {
       }>;
       expect(configs[0].overrides.langfuse).toEqual({
         publicKey: 'pk-lf-1',
-        secretKeyPreview: '...cret',
+        secretKeyPreview: '*************',
       });
     });
   });
@@ -2392,11 +2392,11 @@ describe('createAdminConfigHandlers', () => {
       };
       expect(responseConfig.langfuse).toEqual({
         publicKey: 'pk-lf-1',
-        secretKeyPreview: '...cret',
+        secretKeyPreview: '*************',
       });
       expect(responseConfig.config.langfuse).toEqual({
         publicKey: 'pk-lf-1',
-        secretKeyPreview: '...cret',
+        secretKeyPreview: '*************',
       });
     });
 

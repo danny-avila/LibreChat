@@ -204,7 +204,7 @@ describe('Langfuse config secrets', () => {
       enabled: true,
       destination: 'eu',
       publicKey: 'pk-lf-1',
-      secretKeyPreview: '...cret',
+      secretKeyPreview: '*************',
     });
   });
 
@@ -244,7 +244,7 @@ describe('Langfuse config secrets', () => {
     const redacted = redactConfigSecrets({
       langfuse: { publicKey: 'pk-lf-1', secretKey: 'v3:abc:def', displaySecretKey: 'sk-lf-...old' },
     });
-    expect(redacted.langfuse).toEqual({ publicKey: 'pk-lf-1', secretKeyPreview: '...old' });
+    expect(redacted.langfuse).toEqual({ publicKey: 'pk-lf-1', secretKeyPreview: '************' });
 
     const alreadyMigrated = redactConfigSecrets({
       langfuse: {
@@ -253,7 +253,7 @@ describe('Langfuse config secrets', () => {
         displaySecretKey: 'sk-lf-...old',
       },
     });
-    expect(alreadyMigrated.langfuse).toEqual({ secretKeyPreview: '...new' });
+    expect(alreadyMigrated.langfuse).toEqual({ secretKeyPreview: '************' });
 
     const encrypted = encryptConfigSecrets({
       langfuse: { secretKey: 'sk-lf-new-secret', displaySecretKey: 'sk-lf-...old' },
@@ -271,7 +271,7 @@ describe('Langfuse config secrets', () => {
     const preserved = preserveConfigSecrets({ langfuse: { publicKey: 'pk-new' } }, existing);
     const preservedLangfuse = preserved.langfuse as Record<string, string>;
     expect(decryptV3(preservedLangfuse.secretKey)).toBe('sk-lf-old-secret');
-    expect(preservedLangfuse.secretKeyPreview).toBe('...cret');
+    expect(preservedLangfuse.secretKeyPreview).toBe('*************');
     expect(preservedLangfuse.displaySecretKey).toBeUndefined();
 
     expect(getConfigSecretInputError('langfuse.displaySecretKey', 'spoofed')).toContain(
@@ -508,7 +508,7 @@ describe('Config secret registry fields', () => {
       model: 'tts-1',
     });
     expect(redacted.speech.stt.openai).toEqual({
-      apiKeyPreview: '...-old',
+      apiKeyPreview: '*************',
       model: 'whisper-1',
     });
     expect(redacted.ocr).toEqual({
@@ -516,7 +516,7 @@ describe('Config secret registry fields', () => {
       mistralModel: 'mistral-ocr-latest',
     });
     expect(redacted.webSearch).toEqual({
-      serperApiKeyPreview: '...eral',
+      serperApiKeyPreview: '**************',
       searchProvider: 'serper',
     });
   });
@@ -721,7 +721,7 @@ describe('Custom endpoint config secrets', () => {
     expect(b.apiKeyPreview).toBeUndefined();
   });
 
-  it('re-derives previews stored under the old prefix policy on read and preserve', () => {
+  it('fully masks previews stored under the old prefix policy on read and preserve', () => {
     const stored = {
       langfuse: { secretKey: 'v3:abc:def', secretKeyPreview: 'sk-lf-...cret' },
       endpoints: {
@@ -729,15 +729,15 @@ describe('Custom endpoint config secrets', () => {
       },
     };
     const redacted = redactConfigSecrets(structuredClone(stored)) as typeof stored;
-    expect(redacted.langfuse.secretKeyPreview).toBe('...cret');
-    expect(redacted.endpoints.custom[0].apiKeyPreview).toBe('...cret');
+    expect(redacted.langfuse.secretKeyPreview).toBe('*************');
+    expect(redacted.endpoints.custom[0].apiKeyPreview).toBe('*************');
 
     const preserved = preserveConfigSecrets(
       { langfuse: { publicKey: 'pk' }, endpoints: { custom: [{ name: 'A' }] } },
       structuredClone(stored),
     ) as unknown as typeof stored;
-    expect(preserved.langfuse.secretKeyPreview).toBe('...cret');
-    expect(preserved.endpoints.custom[0].apiKeyPreview).toBe('...cret');
+    expect(preserved.langfuse.secretKeyPreview).toBe('*************');
+    expect(preserved.endpoints.custom[0].apiKeyPreview).toBe('*************');
   });
 
   it('encrypts section and array patched values from field maps', () => {
@@ -965,7 +965,7 @@ describe('Custom endpoint config secrets', () => {
     const [a, b, c, d, e] = redacted.endpoints.custom as Array<Record<string, string>>;
 
     expect(a.apiKey).toBeUndefined();
-    expect(a.apiKeyPreview).toBe('...key');
+    expect(a.apiKeyPreview).toBe('**********');
     expect(b.apiKey).toBeUndefined();
     expect(c.apiKey).toBe('user_provided');
     expect(d.apiKey).toBe('${OPENROUTER_KEY}');
