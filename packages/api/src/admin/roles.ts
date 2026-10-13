@@ -148,6 +148,8 @@ export interface AdminRolesDeps {
     principalModel: IConfig['principalModel'],
     overrides: IConfig['overrides'],
     priority: number,
+    session?: undefined,
+    options?: { expectEmpty?: boolean },
   ) => Promise<IConfig | null>;
   grantCapability?: (grant: {
     principalType: PrincipalType;
@@ -155,7 +157,7 @@ export interface AdminRolesDeps {
     capability: ISystemGrant['capability'];
     tenantId?: string;
     grantedBy?: string | Types.ObjectId;
-  }) => Promise<unknown>;
+  }) => Promise<{ created?: boolean } | unknown>;
   /** Optional audit emission for role mutations and the grants removed by the
    * role-deletion cascade. Failure is logged unless `auditFailClosed` is set. */
   recordAuditEntry?: RecordAuditEntry;
@@ -522,13 +524,19 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
             upsertConfig
               ? async (config) => {
                   if (config) {
-                    await upsertConfig(
+                    /** Insert-only: an override written after the snapshot is kept. */
+                    const restored = await upsertConfig(
                       PrincipalType.ROLE,
                       name,
                       config.principalModel,
                       config.overrides,
                       config.priority,
+                      undefined,
+                      { expectEmpty: true },
                     );
+                    if (!restored) {
+                      logger.warn('[adminRoles] config restore skipped, override exists:', name);
+                    }
                   }
                 }
               : undefined,
@@ -562,6 +570,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
             grantCapability
               ? async (grants) => {
                   for (const grant of grants) {
+                    /** Insert-only by design: an existing grant is left untouched. */
                     await grantCapability({
                       principalType: PrincipalType.ROLE,
                       principalId: name,
@@ -601,8 +610,18 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
         deleted = await deleteRoleByName(name);
       } catch (error) {
         logger.error('[adminRoles] deleteRole failed after cascade cleanup:', error);
-        await cascade.compensate();
-        await invalidateAccess();
+        /** The delete may have committed before it threw. Restoring dependents for a
+         * role that is gone would orphan them for a later role with the same name. */
+        const stillExists = await getRoleByName(name).then(
+          (role) => role != null,
+          () => false,
+        );
+        if (stillExists) {
+          await cascade.compensate();
+          await invalidateAccess();
+        } else {
+          logger.error('[adminRoles] dependents not restored, role absent or unverifiable:', name);
+        }
         return res.status(500).json({ error: 'Failed to delete role' });
       }
       await invalidateAccess();

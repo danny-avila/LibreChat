@@ -1058,6 +1058,8 @@ describe('createAdminRolesHandlers', () => {
         'Role',
         config.overrides,
         7,
+        undefined,
+        { expectEmpty: true },
       );
       expect(deps.grantCapability).toHaveBeenCalledWith(
         expect.objectContaining({ principalId: 'editor', capability: 'read:users' }),
@@ -1075,6 +1077,7 @@ describe('createAdminRolesHandlers', () => {
         }),
         findAclEntriesByPrincipal: jest.fn().mockResolvedValue([aclEntry]),
         deleteGrantsForPrincipal: jest.fn().mockResolvedValue([{ capability: 'read:users' }]),
+        getRoleByName: jest.fn().mockResolvedValue(mockRole()),
         deleteRoleByName: jest.fn().mockRejectedValue(new Error('db down')),
         upsertConfig: jest.fn().mockResolvedValue(null),
         bulkWriteAclEntries: jest.fn().mockResolvedValue(undefined),
@@ -1094,6 +1097,57 @@ describe('createAdminRolesHandlers', () => {
       ]);
       expect(deps.grantCapability).toHaveBeenCalledTimes(1);
       expect(deps.invalidatePromptGroupAccessContext).toHaveBeenCalled();
+    });
+
+    it('does not restore dependents when the role deletion threw after it committed', async () => {
+      const deps = deleteDeps({
+        getRoleByName: jest.fn().mockResolvedValueOnce(mockRole()).mockResolvedValue(null),
+        deleteConfig: jest.fn().mockResolvedValue({
+          principalModel: 'Role',
+          overrides: {},
+          priority: 3,
+        }),
+        deleteGrantsForPrincipal: jest.fn().mockResolvedValue([{ capability: 'read:users' }]),
+        deleteRoleByName: jest.fn().mockRejectedValue(new Error('connection lost')),
+        upsertConfig: jest.fn(),
+        grantCapability: jest.fn(),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status } = createReqRes({ params: { name: 'editor' } });
+
+      await handlers.deleteRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(deps.upsertConfig).not.toHaveBeenCalled();
+      expect(deps.grantCapability).not.toHaveBeenCalled();
+    });
+
+    it('restores config insert-only so an override written after the snapshot is kept', async () => {
+      const deps = deleteDeps({
+        deleteConfig: jest.fn().mockResolvedValue({
+          principalModel: 'Role',
+          overrides: { old: true },
+          priority: 3,
+        }),
+        deleteAclEntries: jest.fn().mockRejectedValue(new Error('acl failed')),
+        /** null: a config document already exists, so the insert-only write was refused */
+        upsertConfig: jest.fn().mockResolvedValue(null),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status } = createReqRes({ params: { name: 'editor' } });
+
+      await handlers.deleteRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(deps.upsertConfig).toHaveBeenCalledWith(
+        PrincipalType.ROLE,
+        'editor',
+        'Role',
+        { old: true },
+        3,
+        undefined,
+        { expectEmpty: true },
+      );
     });
 
     it('does not restore anything when the cascade and role deletion succeed', async () => {
