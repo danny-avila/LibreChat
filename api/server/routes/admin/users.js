@@ -4,6 +4,7 @@ const {
   GenerationJobManager,
   openCheckpointDeletion,
   deleteAllSharedLinksWithCleanup,
+  createErasureResolver,
   createAdminUsersHandlers,
   revokeUserCodeEnvironmentWorkers,
 } = require('@librechat/api');
@@ -29,30 +30,15 @@ const { getAppConfig, invalidateCodeEnvironmentConfigCache } = require('~/server
 
 const router = express.Router();
 
-/** Same dependencies the self-service controller passes, with storage cleanup run as the target. */
-const resolveErasure = async ({ id, role, tenantId }) => {
-  const appConfig = await getAppConfig({ role, userId: id, tenantId });
-  const fileRequest = {
-    user: { id, _id: id, role, tenantId },
-    baseUrl: '',
-    query: {},
-    body: {},
-    config: appConfig,
-  };
-  return {
-    checkpointer: appConfig?.endpoints?.agents?.checkpointer,
-    deps: {
-      ...db,
-      openCheckpointDeletion,
-      deleteSharedLinks: deleteAllSharedLinksWithCleanup,
-      deleteStoredFiles: (files) => processDeleteRequest({ req: fileRequest, files }),
-      invalidateMCPServerTools: (serverName) => invalidateCachedTools({ userId: id, serverName }),
-      disconnectMCPServer: async (serverName) => {
-        await getMCPManager()?.disconnectUserConnection(id, serverName);
-      },
-    },
-  };
-};
+const resolveErasure = createErasureResolver({
+  db,
+  getAppConfig,
+  getMCPManager,
+  processDeleteRequest,
+  invalidateCachedTools,
+  openCheckpointDeletion,
+  deleteSharedLinks: deleteAllSharedLinksWithCleanup,
+});
 
 const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);
 const requireReadUsers = requireCapability(SystemCapabilities.READ_USERS);
