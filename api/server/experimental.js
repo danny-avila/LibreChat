@@ -75,6 +75,7 @@ const {
   getRoleByName,
   updateAccessPermissions,
   seedDatabase,
+  recordAuditEntry,
   sweepOrphanedPreviews,
 } = require('~/models');
 const { checkMigrations } = require('./services/start/migration');
@@ -513,7 +514,12 @@ if (cluster.isMaster) {
     expiredFileSweep.configure({ appConfig, loadAppConfig: getAppConfig });
     await runAsSystem(async () => {
       await performStartupChecks(appConfig);
-      await updateInterfacePerms({ appConfig, getRoleByName, updateAccessPermissions });
+      await updateInterfacePerms({
+        appConfig,
+        getRoleByName,
+        updateAccessPermissions,
+        recordAuditEntry,
+      });
     });
 
     /* Route modules build their rate limiters as they load, so they load only after the

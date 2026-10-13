@@ -1618,6 +1618,53 @@ describe('createRemoteAgentAuth', () => {
       expect(mockNext).toHaveBeenCalled();
     });
 
+    it('records a user.role_changed audit entry after persisting a synced role', async () => {
+      enableApiRoleSync();
+      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com', roles: ['STANDARD-USER'] });
+
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = { ...makeDeps(), recordAuditEntry };
+      await createRemoteAgentAuth(asDeps(deps))(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        makeRes().res,
+        mockNext,
+      );
+
+      expect(deps.updateUser).toHaveBeenCalledWith('uid123', { role: 'STANDARD-USER' });
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'user.role_changed',
+          actor: expect.objectContaining({ type: 'system' }),
+          target: { type: 'user', id: 'uid123' },
+          metadata: expect.objectContaining({
+            role: 'STANDARD-USER',
+            source: 'remote_agent_oidc',
+          }),
+        }),
+      );
+      expect(mockNext).toHaveBeenCalled();
+    });
+
+    it('does not record an audit entry when role sync keeps the current role', async () => {
+      enableApiRoleSync();
+      setupOidcMocks({ sub: 'sub123', email: 'agent@test.com', roles: ['STANDARD-USER'] });
+
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = {
+        ...makeDeps(),
+        findUser: makeFindUser(makeUser({ role: 'STANDARD-USER' })),
+        recordAuditEntry,
+      };
+      await createRemoteAgentAuth(asDeps(deps))(
+        makeReq({ authorization: `Bearer ${FAKE_TOKEN}` }) as Request,
+        makeRes().res,
+        mockNext,
+      );
+
+      expect(recordAuditEntry).not.toHaveBeenCalled();
+      expect(mockNext).toHaveBeenCalled();
+    });
+
     it('applies fallback when the verified payload has no configured role match', async () => {
       enableApiRoleSync();
       setupOidcMocks({

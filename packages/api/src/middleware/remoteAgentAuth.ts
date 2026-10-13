@@ -5,6 +5,7 @@ import type { RequestHandler, Request, Response, NextFunction } from 'express';
 import type { TAgentsEndpoint } from 'librechat-data-provider';
 import type { JwtPayload } from 'jsonwebtoken';
 import type { GetAppConfigOptions } from '../app/service';
+import type { RecordAuditEntry } from '~/admin/audit';
 import type { ServerRequest } from '~/types/http';
 import type { ContextRequest } from './tenant';
 import {
@@ -12,6 +13,7 @@ import {
   getOpenIdRolesForOpenIdSync,
   getOpenIdRoleSyncOptions,
   selectOpenIdRole,
+  recordIdpRoleChange,
 } from '../auth/openidRoleSync';
 import { clearOidcAccessTokenCache, extractBearerToken, verifyOidcAccessToken } from '../auth/oidc';
 import { findOpenIDUser, getOpenIdEmail, normalizeOpenIdIssuer } from '../auth/openid';
@@ -24,6 +26,8 @@ export interface RemoteAgentAuthDeps {
   updateUser: UserMethods['updateUser'];
   isPrincipalActive: (userId: string) => Promise<boolean>;
   getAppConfig: (options?: GetAppConfigOptions) => Promise<AppConfig>;
+  /** Records role changes made by OpenID role sync; fail-open. */
+  recordAuditEntry?: RecordAuditEntry;
 }
 
 type OidcConfig = NonNullable<
@@ -374,6 +378,7 @@ export function createRemoteAgentAuth({
   updateUser,
   isPrincipalActive,
   getAppConfig,
+  recordAuditEntry,
 }: RemoteAgentAuthDeps): RequestHandler {
   /**
    * Annotated as `express.Request` (and helpers below take the same type)
@@ -477,6 +482,7 @@ export function createRemoteAgentAuth({
         return;
       }
 
+      const previousRole = userResolution.user.role;
       const selectedRole = await selectOpenIdRoleForOpenIdSync(
         payload,
         userResolution.user,
@@ -510,6 +516,16 @@ export function createRemoteAgentAuth({
       }
 
       await updateResolvedUser(userResolution, updateUser);
+      if (roleChanged) {
+        await recordIdpRoleChange({
+          recordAuditEntry,
+          userId: userResolution.user.id,
+          previousRole,
+          role: selectedRole,
+          source: 'remote_agent_oidc',
+          tenantId: userResolution.user.tenantId,
+        });
+      }
 
       req.user = userResolution.user;
       return continueWithAuthenticatedTenantContext(req, res, next);
