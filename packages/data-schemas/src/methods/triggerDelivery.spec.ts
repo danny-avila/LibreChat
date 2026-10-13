@@ -2963,6 +2963,62 @@ describe('agent trigger delivery methods', () => {
     }
   });
 
+  it('arms a dead batch root deadline only after its members are settled', async () => {
+    const user = new mongoose.Types.ObjectId();
+    const coalesceUntil = new Date(Date.now() + 60_000);
+    const expiresAt = new Date(coalesceUntil.getTime() + 7 * 24 * 60 * 60_000);
+    const shared = {
+      user,
+      orderingKey: 'batch-dead-deferred-lane',
+      coalesceKey: 'trigger_batch_dead_deferred',
+      coalesceFrom: new Date(coalesceUntil.getTime() - 750),
+      coalesceUntil,
+      availableAt: coalesceUntil,
+      envelopeBytes: 128,
+    };
+    await Promise.all(
+      Array.from({ length: 2 }, () => methods.enqueueAgentTriggerDelivery(enqueueInput(shared))),
+    );
+    const claim = await methods.claimNextAgentTriggerDelivery({
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: coalesceUntil,
+      leaseUntil: new Date(coalesceUntil.getTime() + 60_000),
+    });
+    const attempt = await methods.beginAgentTriggerDeliveryAttempt({
+      id: claim!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      now: coalesceUntil,
+    });
+    const interrupted = jest.spyOn(Delivery, 'updateMany').mockImplementationOnce(() => {
+      throw new Error('process interrupted before member settlement');
+    });
+    await methods.deadLetterAgentTriggerDelivery({
+      id: claim!.id,
+      workerId: 'worker-1',
+      claimToken: 'claim-1',
+      attempt: attempt!,
+      error: transientFailure({ retryable: false }),
+      settledAt: coalesceUntil,
+      expiresAt,
+    });
+    interrupted.mockRestore();
+
+    const root = await Delivery.findById(claim!.id).lean();
+    expect(root?.status).toBe('dead');
+    expect(root?.expiresAt).toBeUndefined();
+    expect(root?.deadLetterExpiresAt?.getTime()).toBe(expiresAt.getTime());
+
+    await expect(methods.recoverAgentTriggerBatchReceipts()).resolves.toBeGreaterThan(0);
+    const settled = await Delivery.find({ orderingKey: shared.orderingKey }).lean();
+    for (const row of settled) {
+      expect(row.status).toBe('dead');
+      expect(row.expiresAt?.getTime()).toBe(expiresAt.getTime());
+      expect(row.deadLetterExpiresAt).toBeUndefined();
+    }
+  });
+
   it('recovers batch requeue after claiming the root before member preparation', async () => {
     const user = new mongoose.Types.ObjectId();
     const coalesceUntil = new Date(Date.now() + 60_000);

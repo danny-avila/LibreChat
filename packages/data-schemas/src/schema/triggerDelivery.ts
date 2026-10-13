@@ -234,6 +234,8 @@ const triggerDeliverySchema: Schema<IAgentTriggerDeliveryDocument> = new Schema(
     history: { type: [historySchema], default: undefined },
     settledAt: { type: Date },
     expiresAt: { type: Date },
+    /** Deadline of a dead batch root, armed into expiresAt once its members are settled. */
+    deadLetterExpiresAt: { type: Date },
     requeueCount: { type: Number, default: 0, min: 0 },
     stagingRecoveryAt: { type: Date },
     laneCleanupPendingAt: { type: Date },

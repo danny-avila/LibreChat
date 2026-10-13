@@ -1009,6 +1009,7 @@ export function createAgentTriggerDeliveryMethods(
           result: 1,
           settledAt: 1,
           expiresAt: 1,
+          deadLetterExpiresAt: 1,
           handling: 1,
         },
       },
@@ -1923,7 +1924,13 @@ export function createAgentTriggerDeliveryMethods(
         status: input.status,
         batchMembersSettledAt: { $exists: false },
       },
-      { $set: { batchMembersSettledAt: input.settledAt } },
+      {
+        $set: {
+          batchMembersSettledAt: input.settledAt,
+          ...(input.status === 'dead' && input.expiresAt != null && { expiresAt: input.expiresAt }),
+        },
+        $unset: { deadLetterExpiresAt: 1 },
+      },
       { timestamps: false },
     );
   }
@@ -1957,7 +1964,9 @@ export function createAgentTriggerDeliveryMethods(
         status: root.status,
         settledAt: root.settledAt,
         ...(root.status === 'succeeded' ? { result: root.result } : {}),
-        ...(root.status === 'dead' && root.expiresAt != null ? { expiresAt: root.expiresAt } : {}),
+        ...(root.status === 'dead' && (root.deadLetterExpiresAt ?? root.expiresAt) != null
+          ? { expiresAt: root.deadLetterExpiresAt ?? root.expiresAt }
+          : {}),
         ...(error == null ? {} : { error }),
       });
       if (root.status === 'succeeded') {
@@ -4467,18 +4476,23 @@ export function createAgentTriggerDeliveryMethods(
       error.retryable || error.code === 'BACKGROUND_TOOL_PRODUCER_LOST'
         ? { backgroundToolResult: { $exists: false } }
         : {};
-    const deadUpdate = (status: 'dead' | 'capability_dead') => ({
+    /** A batch root keeps its deadline aside until its members are settled, so the TTL index
+     * cannot remove the only record recovery can rediscover them through. */
+    const deadUpdate = (status: 'dead' | 'capability_dead', deferExpiry = false) => ({
       $set: {
         status,
         settledAt: input.settledAt,
         lastError: error,
-        ...(input.expiresAt != null && { expiresAt: input.expiresAt }),
+        ...(input.expiresAt != null &&
+          (deferExpiry
+            ? { deadLetterExpiresAt: input.expiresAt }
+            : { expiresAt: input.expiresAt })),
       },
       $unset: {
         leaseBy: 1,
         leaseUntil: 1,
         claimToken: 1,
-        ...(input.expiresAt == null && { expiresAt: 1 }),
+        ...((input.expiresAt == null || deferExpiry) && { expiresAt: 1 }),
       },
       $push: {
         history: {
@@ -4530,21 +4544,25 @@ export function createAgentTriggerDeliveryMethods(
     if (capabilityDead.modifiedCount === 1) {
       return true;
     }
-    const dead = await Delivery()
-      .findOneAndUpdate(
-        { _id: input.id, ...ordinaryFence(input), ...receiptFence },
-        deadUpdate('dead'),
-        {
-          new: true,
-        },
-      )
-      .select('_id orderingKey batchMemberIds batchMembersSettledAt requeueCount')
-      .lean<
-        Pick<
-          IAgentTriggerDelivery,
-          '_id' | 'orderingKey' | 'batchMemberIds' | 'batchMembersSettledAt' | 'requeueCount'
-        >
-      >();
+    const settleDead = (filter: Record<string, unknown>, deferExpiry: boolean) =>
+      Delivery()
+        .findOneAndUpdate(
+          { _id: input.id, ...ordinaryFence(input), ...receiptFence, ...filter },
+          deadUpdate('dead', deferExpiry),
+          {
+            new: true,
+          },
+        )
+        .select('_id orderingKey batchMemberIds batchMembersSettledAt requeueCount')
+        .lean<
+          Pick<
+            IAgentTriggerDelivery,
+            '_id' | 'orderingKey' | 'batchMemberIds' | 'batchMembersSettledAt' | 'requeueCount'
+          >
+        >();
+    const dead =
+      (await settleDead({ batchMemberIds: { $exists: true, $ne: [] } }, true)) ??
+      (await settleDead({}, false));
     if (dead?._id == null) {
       return false;
     }
@@ -4722,6 +4740,7 @@ export function createAgentTriggerDeliveryMethods(
             result: 1,
             settledAt: 1,
             expiresAt: 1,
+            deadLetterExpiresAt: 1,
             laneCleanupPendingAt: 1,
             batchMembersSettledAt: 1,
             handling: 1,
