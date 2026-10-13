@@ -603,13 +603,20 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
           (role) => ({ known: true, role }),
           () => ({ known: false, role: null }),
         );
-        if (lookup.known && lookup.role) {
+        /** A role recreated under the same name since the delete is a different role and
+         * must not inherit the old one's dependents. */
+        const sameRole =
+          lookup.role != null &&
+          (existing._id == null ||
+            lookup.role._id == null ||
+            String(existing._id) === String(lookup.role._id));
+        if (lookup.known && lookup.role && sameRole) {
           await cascade.compensate();
           await invalidateAccess();
           return res.status(500).json({ error: 'Failed to delete role' });
         }
         await invalidateAccess();
-        if (!lookup.known) {
+        if (!lookup.known || lookup.role) {
           logger.error('[adminRoles] dependents not restored, role state unverifiable:', name);
           return res.status(500).json({ error: 'Failed to delete role' });
         }

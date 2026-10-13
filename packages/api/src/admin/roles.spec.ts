@@ -1121,6 +1121,25 @@ describe('createAdminRolesHandlers', () => {
       );
     });
 
+    it('does not restore dependents onto a role recreated under the same name', async () => {
+      const original = mockRole({ _id: new Types.ObjectId() } as Partial<IRole>);
+      const replacement = mockRole({ _id: new Types.ObjectId() } as Partial<IRole>);
+      const deps = deleteDeps({
+        getRoleByName: jest.fn().mockResolvedValueOnce(original).mockResolvedValue(replacement),
+        deleteRoleByName: jest.fn().mockRejectedValue(new Error('connection lost')),
+        restoreConfig: jest.fn(),
+        restoreGrants: jest.fn(),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status } = createReqRes({ params: { name: 'editor' } });
+
+      await handlers.deleteRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(deps.restoreConfig).not.toHaveBeenCalled();
+      expect(deps.restoreGrants).not.toHaveBeenCalled();
+    });
+
     it('restores nothing and reports a failure when the role state cannot be verified', async () => {
       const deps = deleteDeps({
         getRoleByName: jest
