@@ -37,7 +37,7 @@ function harness() {
       cleanupComplete: true,
       failedCleanupSteps: [],
     })),
-    completeSkillDeletion: jest.fn(async () => undefined),
+    completeSkillDeletion: jest.fn(async () => true),
     reopenSkillDeletion: jest.fn(async () => undefined),
     markSkillUploadIntentCleaned: jest.fn(async (fileId) => {
       const intent = intents.find((row) => row.fileId === fileId);
@@ -62,6 +62,16 @@ it('keeps the file row when provider deletion fails and succeeds on retry', asyn
   });
   expect(h.files).toHaveLength(0);
   expect(h.deps.completeSkillDeletion).toHaveBeenCalledTimes(1);
+});
+
+it('does not report completion when the claim transfers after its final refresh', async () => {
+  const h = harness();
+  h.files.length = 0;
+  (h.deps.completeSkillDeletion as jest.Mock).mockResolvedValueOnce(false);
+  await expect(runSkillDeletion(skillId, h.deps)).rejects.toBeInstanceOf(
+    SkillDeletionClaimLostError,
+  );
+  expect(h.deps.completeSkillDeletion).toHaveBeenCalledWith(skillId);
 });
 
 it('preserves idempotent absence and per-call deletion semantics', async () => {

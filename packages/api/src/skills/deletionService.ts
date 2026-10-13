@@ -13,7 +13,11 @@ import { createConcurrencyLimiter } from '~/utils/promise';
 import { getStorageMetadata } from '~/storage/metadata';
 import { getSafeErrorMetadata } from '~/utils/errors';
 
-type Persistence = Omit<SkillDeletionDeps, 'deleteBlob' | 'deleteReservedBlob'> & {
+type Persistence = Omit<
+  SkillDeletionDeps,
+  'deleteBlob' | 'deleteReservedBlob' | 'completeSkillDeletion'
+> & {
+  completeSkillDeletion: (id: string, owner: string) => Promise<boolean>;
   discoverUnjournaledDeletions: (limit: number) => Promise<number>;
   listSkillDeletionTombstones: (limit: number) => Promise<SkillDeletionRecord[]>;
   claimSkillDeletion: (id: string, owner: string, leaseMs: number) => Promise<boolean>;
@@ -175,6 +179,7 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
         skillId,
         {
           ...deps.persistence,
+          completeSkillDeletion: (id) => deps.persistence.completeSkillDeletion(id, owner),
           deleteBlob: (file) =>
             limitBlob
               ? limitBlob(() => deleteStoredBlob(file, config ?? undefined))

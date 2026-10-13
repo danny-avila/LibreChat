@@ -34,7 +34,7 @@ it('records failed cleanup attempts before releasing the claim', async () => {
       cleanupComplete: true,
       failedCleanupSteps: [],
     })),
-    completeSkillDeletion: jest.fn(async () => undefined),
+    completeSkillDeletion: jest.fn(async () => true),
     reopenSkillDeletion: jest.fn(async () => undefined),
     markSkillUploadIntentCleaned: jest.fn(async () => undefined),
     listAbandonedSkillUploadIntents: jest.fn(async (): Promise<SkillUploadIntentRecord[]> => []),
@@ -101,7 +101,7 @@ it.each([false, true])(
         cleanupComplete: true,
         failedCleanupSteps: [],
       })),
-      completeSkillDeletion: jest.fn(async () => undefined),
+      completeSkillDeletion: jest.fn(async () => true),
       reopenSkillDeletion: jest.fn(async () => undefined),
       markSkillUploadIntentCleaned: jest.fn(async () => undefined),
       listAbandonedSkillUploadIntents: jest.fn(async () => [intent]),
@@ -177,6 +177,7 @@ function claimedServiceHarness() {
     })),
     completeSkillDeletion: jest.fn(async () => {
       journal.completedAt = new Date();
+      return true;
     }),
     reopenSkillDeletion: jest.fn(async () => undefined),
     markSkillUploadIntentCleaned: jest.fn(async () => undefined),
@@ -222,6 +223,16 @@ it('marks deletion but cannot finalize until the writer-drain gate is enabled', 
   const completed = await h.service.deleteSkillById(h.skillId);
   expect(completed.cleanupComplete).toBe(true);
   expect(h.persistence.finalizeSkillDeletion).toHaveBeenCalledTimes(1);
+});
+
+it('returns pending when the claim transfers between its final check and completion write', async () => {
+  const h = claimedServiceHarness();
+  h.persistence.completeSkillDeletion.mockResolvedValueOnce(false);
+
+  const progress = await h.service.deleteSkillById(h.skillId);
+  expect(progress).toMatchObject({ found: true, deleted: false, cleanupComplete: false });
+  expect(h.persistence.completeSkillDeletion).toHaveBeenCalledWith(h.skillId, expect.any(String));
+  expect(h.persistence.releaseSkillDeletionClaim).toHaveBeenCalledTimes(1);
 });
 
 it('processes independent deletion tombstones with bounded concurrency', async () => {

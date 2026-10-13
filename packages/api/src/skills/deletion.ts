@@ -17,7 +17,7 @@ export interface SkillDeletionDeps {
   deleteReservedBlob: (intent: SkillUploadIntentRecord) => Promise<void>;
   deleteSkillFileAfterBlob: (skillId: string, fileId: string) => Promise<boolean>;
   finalizeSkillDeletion: (id: string) => Promise<DeleteSkillResult>;
-  completeSkillDeletion: (id: string) => Promise<void>;
+  completeSkillDeletion: (id: string) => Promise<boolean>;
   reopenSkillDeletion: (id: string) => Promise<void>;
   markSkillUploadIntentCleaned: (fileId: string) => Promise<void>;
 }
@@ -185,7 +185,9 @@ export async function runSkillDeletion(
     };
   }
   await assertClaim();
-  await deps.completeSkillDeletion(journal.skillId);
+  if (!(await deps.completeSkillDeletion(journal.skillId))) {
+    throw new SkillDeletionClaimLostError();
+  }
   return {
     found: true,
     deleted: finalized.deleted,
