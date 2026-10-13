@@ -523,6 +523,38 @@ describe('auditLog methods', () => {
       expect(remaining.map((r) => r.seq)).toEqual([1, 2, 3, 4]);
     });
 
+    it('records audit.purged after a purge that removed rows, and not after a no-op', async () => {
+      for (let i = 0; i < 4; i++) {
+        await methods.recordAuditEntry(baseInput());
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      const third = await AuditLog.findOne({ chainKey: CK_A, seq: 3 }).lean();
+
+      await methods.purgeAuditLogEntries('tenant-a', {
+        before: new Date(Date.now() - 60_000),
+        confirm: true,
+      });
+      expect(await AuditLog.countDocuments({ chainKey: CK_A, action: 'audit.purged' })).toBe(0);
+
+      const result = await methods.purgeAuditLogEntries('tenant-a', {
+        before: third!.createdAt,
+        confirm: true,
+      });
+
+      const entry = await AuditLog.findOne({ chainKey: CK_A, action: 'audit.purged' }).lean();
+      expect(entry).toMatchObject({
+        category: 'audit',
+        severity: 'critical',
+        actor: { type: 'system', name: 'audit-retention' },
+        target: { type: 'audit_log' },
+        metadata: { deletedCount: result.deletedCount, throughSeq: result.checkpoint?.throughSeq },
+      });
+      const verified = await methods.verifyAuditChain('tenant-a', {
+        trustedCheckpoint: result.checkpoint,
+      });
+      expect(verified.ok).toBe(true);
+    });
+
     it('does not mint a checkpoint when a confirmed purge removed nothing', async () => {
       await seed(2);
       const result = await methods.purgeAuditLogEntries('tenant-a', {

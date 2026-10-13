@@ -710,6 +710,21 @@ export function createAuditLogMethods(
       .select('seq prevHash')
       .lean<{ seq: number; prevHash: string }>();
 
+    /** The purge itself is audited after the checkpoint is read, so the new
+     * entry cannot shift the boundary; a failed write is logged, not thrown. */
+    await recordAuditEntry({
+      action: 'audit.purged',
+      severity: 'critical',
+      actor: { type: 'system', name: 'audit-retention' },
+      target: { type: 'audit_log' },
+      metadata: {
+        deletedCount,
+        before: options.before.toISOString(),
+        ...(newFirst ? { throughSeq: newFirst.seq - 1 } : {}),
+      },
+      tenantId,
+    });
+
     return {
       deletedCount,
       /** Boundary for `verifyAuditChain`: the new earliest entry resumes the
