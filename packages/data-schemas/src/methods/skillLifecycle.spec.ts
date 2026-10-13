@@ -48,6 +48,12 @@ async function makeSkill() {
   return { skill, author };
 }
 
+async function completeWithClaim(skillId: mongoose.Types.ObjectId) {
+  expect(await lifecycle.claimSkillDeletion(skillId, 'test-worker', 60_000)).toBe(true);
+  expect(await lifecycle.completeSkillDeletion(skillId, 'test-worker')).toBe(true);
+  await lifecycle.releaseSkillDeletionClaim(skillId, 'test-worker');
+}
+
 describe('Skill deletion journal', () => {
   it('indexes only marked Skills for startup and periodic deletion discovery', () => {
     expect(mongoose.models.Skill.schema.indexes()).toContainEqual([
@@ -299,7 +305,7 @@ describe('Skill deletion journal', () => {
   it('retains completed tombstones for late file reconciliation', async () => {
     const { skill } = await makeSkill();
     await lifecycle.beginSkillDeletion(skill.id);
-    await lifecycle.completeSkillDeletion(skill._id);
+    await completeWithClaim(skill._id);
     expect(await lifecycle.listPendingSkillDeletions()).toHaveLength(0);
     expect(await lifecycle.listSkillDeletionTombstones()).toHaveLength(1);
     await lifecycle.reopenSkillDeletion(skill._id);
@@ -309,7 +315,7 @@ describe('Skill deletion journal', () => {
   it('rediscovers a late upload intent after completion and method reconstruction', async () => {
     const { skill, author } = await makeSkill();
     await lifecycle.beginSkillDeletion(skill.id);
-    await lifecycle.completeSkillDeletion(skill._id);
+    await completeWithClaim(skill._id);
     // An upload that passed the initial Skill check before deletion may commit
     // its intent after an earlier clean sweep. The tombstone must survive it.
     await mongoose.models.SkillUploadIntent.create({
@@ -517,6 +523,22 @@ describe('Skill upload intents', () => {
     expect(await lifecycle.claimSkillDeletion(skill._id, 'worker-b', 60_000)).toBe(true);
   });
 
+  it('does not complete a deletion after its claim expires or transfers', async () => {
+    const { skill } = await makeSkill();
+    await lifecycle.beginSkillDeletion(skill.id);
+    expect(await lifecycle.claimSkillDeletion(skill._id, 'worker-a', 60_000)).toBe(true);
+    await mongoose.models.SkillDeletion.updateOne(
+      { skillId: skill._id },
+      { $set: { claimExpiresAt: new Date(Date.now() - 1) } },
+    );
+    expect(await lifecycle.completeSkillDeletion(skill._id, 'worker-a')).toBe(false);
+    expect(await lifecycle.claimSkillDeletion(skill._id, 'worker-b', 60_000)).toBe(true);
+    expect(await lifecycle.completeSkillDeletion(skill._id, 'worker-a')).toBe(false);
+    expect((await lifecycle.getSkillDeletion(skill.id))?.completedAt).toBeUndefined();
+    expect(await lifecycle.completeSkillDeletion(skill._id, 'worker-b')).toBe(true);
+    expect((await lifecycle.getSkillDeletion(skill.id))?.completedAt).toBeInstanceOf(Date);
+  });
+
   it('retains a lease when a refresh matches without changing its expiry', async () => {
     const { skill, author } = await makeSkill();
     await lifecycle.beginSkillDeletion(skill.id);
@@ -565,7 +587,7 @@ describe('Skill upload intents', () => {
   it('defers clean tombstones but admits them after the recheck deadline', async () => {
     const { skill } = await makeSkill();
     await lifecycle.beginSkillDeletion(skill.id);
-    await lifecycle.completeSkillDeletion(skill._id);
+    await completeWithClaim(skill._id);
     expect(await lifecycle.claimSkillDeletion(skill._id, 'worker-a', 60_000)).toBe(true);
     expect(await lifecycle.scheduleSkillDeletionRecheck(skill._id, 'worker-b', 3_600_000)).toBe(
       false,

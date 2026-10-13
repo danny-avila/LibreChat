@@ -45,7 +45,7 @@ export interface SkillLifecycleMethods {
     leaseMs: number,
   ) => Promise<boolean>;
   releaseSkillDeletionClaim: (skillId: string | Types.ObjectId, owner: string) => Promise<void>;
-  completeSkillDeletion: (skillId: string | Types.ObjectId) => Promise<void>;
+  completeSkillDeletion: (skillId: string | Types.ObjectId, owner: string) => Promise<boolean>;
   reopenSkillDeletion: (skillId: string | Types.ObjectId) => Promise<void>;
   scheduleSkillDeletionRecheck: (
     skillId: string | Types.ObjectId,
@@ -288,8 +288,15 @@ export function createSkillLifecycleMethods(
     );
   }
 
-  async function completeSkillDeletion(skillId: string | Types.ObjectId): Promise<void> {
-    await deletionModel().updateOne({ skillId }, { $set: { completedAt: new Date() } });
+  async function completeSkillDeletion(
+    skillId: string | Types.ObjectId,
+    owner: string,
+  ): Promise<boolean> {
+    const result = await deletionModel().updateOne(
+      { skillId, claimOwner: owner, claimExpiresAt: { $gt: new Date() } },
+      { $set: { completedAt: new Date() } },
+    );
+    return result.matchedCount === 1;
   }
 
   async function reopenSkillDeletion(skillId: string | Types.ObjectId): Promise<void> {
