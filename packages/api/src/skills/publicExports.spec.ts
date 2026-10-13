@@ -1,10 +1,9 @@
-import { createRequire } from 'node:module';
+import * as skillExports from './index';
 
-it('exports Skill upload helpers from the built public API', () => {
-  const api = createRequire(__filename)('@librechat/api') as typeof import('../index');
-  expect(typeof api.withSkillUploadIntent).toBe('function');
-  expect(typeof api.reserveSkillBlob).toBe('function');
-  expect(typeof api.createSkillBlobReserver).toBe('function');
-  expect(typeof api.createSkillStorageResolver).toBe('function');
-  expect(typeof api.createSkillBufferWriter).toBe('function');
+it('exports Skill upload helpers from the source barrel without a package build', () => {
+  expect(typeof skillExports.withSkillUploadIntent).toBe('function');
+  expect(typeof skillExports.reserveSkillBlob).toBe('function');
+  expect(typeof skillExports.createSkillBlobReserver).toBe('function');
+  expect(typeof skillExports.createSkillStorageResolver).toBe('function');
+  expect(typeof skillExports.createSkillBufferWriter).toBe('function');
 });
