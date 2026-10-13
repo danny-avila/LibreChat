@@ -17,6 +17,7 @@ import type { Response } from 'express';
 import type { Types } from 'mongoose';
 import type { ResolvedPrincipal } from '~/types/principal';
 import type { ServerRequest } from '~/types/http';
+import { getSafeErrorMetadata } from '~/utils/errors';
 import { parsePagination } from './pagination';
 import { buildAuditContext } from './context';
 
@@ -87,10 +88,9 @@ export interface AdminGrantsDeps {
     options?: RecordAuditEntryOptions,
   ) => Promise<void>;
   /**
-   * When true, a failed audit write surfaces as a 5xx instead of being
-   * swallowed. The grant itself is already persisted (and grant writes are
-   * idempotent upserts), so a client retry is safe; an operator must reconcile
-   * the missing audit row. Defaults to fail-open.
+   * When true, a failed audit write on an assignment rolls the grant back and
+   * surfaces as a 5xx. A revoke only removes access, so it always stands and
+   * its entry is retried. Defaults to fail-open.
    */
   auditFailClosed?: boolean;
 }
@@ -129,6 +129,8 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
     principalId: string;
     capability: SystemCapability;
     context?: AuditContext;
+    /** Never fail the caller on an audit failure, regardless of `auditFailClosed`. */
+    failOpen?: boolean;
   }): Promise<void> {
     if (!recordAuditEntry) return;
     /** The grants surface is ROLE-only today (see `MANAGE_CAPABILITY_BY_TYPE`),
@@ -145,7 +147,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
       context: args.context,
       tenantId: args.caller.tenantId,
     };
-    if (auditFailClosed) {
+    if (auditFailClosed && !args.failOpen) {
       /** Let the failure propagate to the handler (→ 5xx); see `auditFailClosed`. */
       await recordAuditEntry(input, { failClosed: true });
       return;
@@ -501,24 +503,21 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
             context: buildAuditContext(req),
           });
         } catch (auditErr) {
-          /** Fail-closed only (emitAudit rethrows here): restore the grant we
-           * just removed so a 5xx never leaves an unaudited revoke. The original
-           * `grantedBy`/`grantedAt` are not recoverable here; restoring access is
-           * the priority on this rare error path. */
-          await grantCapability({
+          /** A revoke only removes access, so an audit outage must not keep it live:
+           * the revoke stands, the failure is logged with safe metadata, and the
+           * entry is attempted once more without failing the request. */
+          logger.error('[adminGrants] revokeGrant audit failed, revoke kept', {
+            ...getSafeErrorMetadata(auditErr),
+          });
+          await emitAudit({
+            action: 'grant.removed',
+            caller,
             principalType: principalType as PrincipalType,
             principalId,
             capability: capability as SystemCapability,
-            tenantId,
-            grantedBy: caller.userId,
-          }).catch((e) =>
-            logger.error('[adminGrants] compensating re-grant after audit failure failed', e),
-          );
-          logger.error(
-            '[adminGrants] revokeGrant audit failed (fail-closed) — restored grant',
-            auditErr,
-          );
-          return res.status(500).json({ error: 'Failed to record audit entry' });
+            context: buildAuditContext(req),
+            failOpen: true,
+          });
         }
       }
       return res.status(200).json({ success: true });

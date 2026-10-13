@@ -4,11 +4,14 @@ import type { ResourceType } from 'librechat-data-provider';
 import type { RecordAuditEntry } from '~/admin/audit';
 import type { PermissionChange } from './types';
 import type { ServerRequest } from '~/types';
+import { getSafeErrorMetadata } from '~/utils/errors';
 import { buildAuditContext } from '~/admin/context';
 import { getAuditActor } from '~/admin/audit';
 
 export type AuditPlanItem = {
   input: RecordAuditEntryInput;
+  /** Grants or widens access; only these are held back when the audit store is down. */
+  widening: boolean;
 };
 
 type AclAuditDeps = {
@@ -16,9 +19,16 @@ type AclAuditDeps = {
   logger: { error: (message: string, error?: unknown) => void };
 };
 
+const safeMeta = (error: unknown) => ({ ...getSafeErrorMetadata(error) });
+
 function statusError(message: string): Error & { statusCode: number } {
   return Object.assign(new Error(message), { statusCode: 500 });
 }
+
+/** A new grant, an added permission bit or a public enable; anything else only narrows access. */
+const widensAccess = (change: PermissionChange): boolean =>
+  change.action === 'assigned' &&
+  (change.previous == null || ((change.written?.permBits ?? 0) & ~change.previous.permBits) !== 0);
 
 function buildEvent(
   change: PermissionChange,
@@ -92,11 +102,12 @@ export async function planInsightsAudit({
       '_id id name',
     );
   } catch (error) {
-    deps.logger.error('[InsightsPermissions] Audit target lookup failed', error);
+    deps.logger.error('[InsightsPermissions] Audit target lookup failed', safeMeta(error));
   }
   const target = { id: agent?.id ?? resourceId, name: agent?.name || agent?.id || resourceId };
   const context = buildAuditContext(req);
   return changes.map((change) => ({
+    widening: change.action === 'assigned',
     input: {
       action:
         change.action === 'assigned'
@@ -141,6 +152,7 @@ export function planResourceAudit({
     const event = buildEvent(change);
     if (event) {
       items.push({
+        widening: widensAccess(change),
         input: {
           ...event,
           outcome: 'success',
@@ -195,12 +207,16 @@ export async function runAuditedPermissionUpdate<T>({
       try {
         await deps.recordAuditEntry({ ...item.input, outcome: 'failure' });
       } catch (error) {
-        deps.logger.error('[ResourcePermissions] Audit failure entry not persisted', error);
+        deps.logger.error(
+          '[ResourcePermissions] Audit failure entry not persisted',
+          safeMeta(error),
+        );
       }
     }
   };
+  const deferred: AuditPlanItem[] = [];
   try {
-    return await update(async ({ aclChanges, insightsChanges }) => {
+    const result = await update(async ({ aclChanges, insightsChanges }) => {
       let items: AuditPlanItem[];
       try {
         items = [
@@ -218,16 +234,27 @@ export async function runAuditedPermissionUpdate<T>({
         if (failClosed) {
           throw error;
         }
-        deps.logger.error('[ResourcePermissions] Audit skipped', error);
+        deps.logger.error('[ResourcePermissions] Audit skipped', safeMeta(error));
         return;
       }
-      for (const item of items) {
+      /** Widening entries go first so their failure aborts before anything is recorded. */
+      const ordered = [
+        ...items.filter((item) => item.widening),
+        ...items.filter((item) => !item.widening),
+      ];
+      for (const item of ordered) {
         try {
           await deps.recordAuditEntry(item.input, { failClosed });
           recorded.push(item);
         } catch (error) {
           if (!failClosed) {
-            deps.logger.error('[ResourcePermissions] Audit persistence failed', error);
+            deps.logger.error('[ResourcePermissions] Audit persistence failed', safeMeta(error));
+            continue;
+          }
+          if (!item.widening) {
+            /** Removing access must not wait on the audit store; the entry is retried after the write. */
+            deps.logger.error('[ResourcePermissions] Revocation audit deferred', safeMeta(error));
+            deferred.push(item);
             continue;
           }
           await recordFailures();
@@ -235,6 +262,14 @@ export async function runAuditedPermissionUpdate<T>({
         }
       }
     });
+    for (const item of deferred) {
+      try {
+        await deps.recordAuditEntry(item.input);
+      } catch (error) {
+        deps.logger.error('[ResourcePermissions] Revocation audit not persisted', safeMeta(error));
+      }
+    }
+    return result;
   } catch (error) {
     await recordFailures();
     throw error;

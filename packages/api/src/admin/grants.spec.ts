@@ -1295,9 +1295,9 @@ describe('createAdminGrantsHandlers', () => {
       expect(status).toHaveBeenCalledWith(500);
     });
 
-    it('fail-closed: a failed revoke audit restores the grant and 500s', async () => {
+    it('fail-closed: a failed revoke audit keeps the revoke, retries the entry and returns 200', async () => {
       const recordAuditEntry = jest.fn().mockRejectedValue(new Error('audit down'));
-      const grantCapability = jest.fn().mockResolvedValue({ grant: { id: 'g1' }, created: true });
+      const grantCapability = jest.fn();
       const deps = createDeps({
         recordAuditEntry,
         auditFailClosed: true,
@@ -1309,15 +1309,9 @@ describe('createAdminGrantsHandlers', () => {
 
       await handlers.revokeGrant(req, res);
 
-      // compensating re-grant restores access removed before the audit failed
-      expect(grantCapability).toHaveBeenCalledWith(
-        expect.objectContaining({
-          principalType: PrincipalType.ROLE,
-          principalId: 'editor',
-          capability: SystemCapabilities.READ_USERS,
-        }),
-      );
-      expect(status).toHaveBeenCalledWith(500);
+      expect(grantCapability).not.toHaveBeenCalled();
+      expect(recordAuditEntry).toHaveBeenCalledTimes(2);
+      expect(status).toHaveBeenCalledWith(200);
     });
   });
 });

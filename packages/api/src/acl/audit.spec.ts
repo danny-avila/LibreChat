@@ -130,6 +130,39 @@ describe('runAuditedPermissionUpdate', () => {
     expect(logger.error).toHaveBeenCalledTimes(2);
   });
 
+  test('an audit outage blocks a widening change but not a revocation', async () => {
+    const down = jest.fn().mockRejectedValue(new Error('down'));
+    const widen = setup(down);
+    await expect(widen.run([grantChange('u1')], true)).rejects.toMatchObject({ statusCode: 500 });
+    expect(widen.write).not.toHaveBeenCalled();
+
+    const record = jest.fn().mockRejectedValue(new Error('down'));
+    const narrow = setup(record);
+    await expect(
+      narrow.run(
+        [revokeChange(PrincipalType.USER, 'u1'), revokeChange(PrincipalType.PUBLIC, null)],
+        true,
+      ),
+    ).resolves.toBe('written');
+    expect(narrow.write).toHaveBeenCalledTimes(1);
+    /** Each entry is attempted before the write and once more after it. */
+    expect(record).toHaveBeenCalledTimes(4);
+    expect(narrow.logger.error).toHaveBeenCalled();
+  });
+
+  test('a reduced permission set is a narrowing change, an added bit is a widening one', async () => {
+    const record = jest.fn().mockRejectedValue(new Error('down'));
+    const { write, run } = setup(record);
+    const lowered = { ...grantChange('u1', 1), previous: { permBits: 3, roleId: 'r2' } };
+    await expect(run([lowered], true)).resolves.toBe('written');
+    expect(write).toHaveBeenCalledTimes(1);
+
+    const raised = { ...grantChange('u1', 3), previous: { permBits: 1, roleId: 'r2' } };
+    const blocked = setup(record);
+    await expect(blocked.run([raised], true)).rejects.toMatchObject({ statusCode: 500 });
+    expect(blocked.write).not.toHaveBeenCalled();
+  });
+
   test('a failed ACL write appends failure entries for the recorded changes and rethrows', async () => {
     const { recordAuditEntry } = setup();
     const writeError = new Error('acl write down');

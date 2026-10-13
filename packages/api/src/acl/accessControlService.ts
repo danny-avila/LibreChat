@@ -29,6 +29,23 @@ type BulkPrincipal = Omit<TPrincipal, 'id'> & {
 const ROLE_MASK =
   PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE;
 
+/**
+ * One key for a principal, shared by the audit snapshot and the write filter so
+ * both see the same row: ObjectId hex is case-folded and the public principal
+ * has no id.
+ */
+const principalIdentity = (type: string, id: unknown): string => {
+  if (type === PrincipalType.PUBLIC) {
+    return `${type}:null`;
+  }
+  const raw = id == null ? '' : id.toString();
+  const normalized =
+    type !== PrincipalType.ROLE && Types.ObjectId.isValid(raw)
+      ? new Types.ObjectId(raw).toString()
+      : raw;
+  return `${type}:${normalized}`;
+};
+
 const snapshotOf = (entry?: IAclEntry | null): PermissionSnapshot | null =>
   entry ? { permBits: entry.permBits, roleId: entry.roleId?.toString() ?? '' } : null;
 
@@ -513,8 +530,8 @@ export class AccessControlService {
 
       const updatedPrincipalKey = (principal: BulkPrincipal | null | undefined) => {
         if (!principal?.type) return null;
-        if (principal.type === PrincipalType.PUBLIC) return `${PrincipalType.PUBLIC}:null`;
-        return principal.id == null ? null : `${principal.type}:${principal.id}`;
+        if (principal.type === PrincipalType.PUBLIC) return principalIdentity(principal.type, null);
+        return principal.id == null ? null : principalIdentity(principal.type, principal.id);
       };
       const lastUpdateIndexByPrincipal = new Map<string, number>();
       updatedPrincipals.forEach((principal, index) => {
@@ -532,10 +549,11 @@ export class AccessControlService {
        * the permission just written. Public access is excluded because an explicit disable must win.
        */
       const grantedPrincipalKeys = new Set<string>();
-      const principalKey = (principal: BulkPrincipal) => `${principal.type}:${principal.id}`;
+      const principalKey = (principal: BulkPrincipal) =>
+        principalIdentity(principal.type, principal.id);
       const currentEntriesByPrincipal = new Map<string, IAclEntry>();
       for (const entry of currentEntries) {
-        const key = `${entry.principalType}:${entry.principalId == null ? 'null' : entry.principalId.toString()}`;
+        const key = principalIdentity(entry.principalType, entry.principalId);
         const current = currentEntriesByPrincipal.get(key);
         const entryHasInsights =
           (entry.permBits & PermissionBits.VIEW_INSIGHTS) === PermissionBits.VIEW_INSIGHTS;
@@ -575,7 +593,7 @@ export class AccessControlService {
           }
 
           const existingEntry = currentEntriesByPrincipal.get(
-            `${principal.type}:${principal.type === PrincipalType.PUBLIC ? 'null' : principal.id}`,
+            principalIdentity(principal.type, principal.id),
           );
           const hadInsights =
             ((existingEntry?.permBits ?? 0) & PermissionBits.VIEW_INSIGHTS) ===
@@ -695,7 +713,7 @@ export class AccessControlService {
             query.principalId = queryPrincipalId(principal);
           }
           const existingEntry = currentEntriesByPrincipal.get(
-            `${principal.type}:${principal.type === PrincipalType.PUBLIC ? 'null' : principal.id}`,
+            principalIdentity(principal.type, principal.id),
           );
           if (!existingEntry) {
             /** Nothing was audited for it; deleting a row that appeared since the read would be unaudited. */

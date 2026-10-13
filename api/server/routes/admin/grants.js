@@ -1,5 +1,9 @@
 const express = require('express');
-const { createAdminGrantsHandlers, getCachedPrincipals } = require('@librechat/api');
+const {
+  createAdminGrantsHandlers,
+  getCachedPrincipals,
+  isAuditFailClosed,
+} = require('@librechat/api');
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const { requireCapability } = require('~/server/middleware/roles/capabilities');
 const { requireJwtAuth } = require('~/server/middleware');
@@ -22,8 +26,7 @@ const handlers = createAdminGrantsHandlers({
   getCachedPrincipals,
   checkRoleExists: async (name) => (await db.getRoleByName(name)) != null,
   recordAuditEntry: db.recordAuditEntry,
-  /** Opt-in: fail the grant request if its audit entry can't be persisted. */
-  auditFailClosed: process.env.AUDIT_LOG_FAIL_CLOSED === 'true',
+  auditFailClosed: isAuditFailClosed(),
 });
 
 router.use(requireJwtAuth, requireAdminAccess);

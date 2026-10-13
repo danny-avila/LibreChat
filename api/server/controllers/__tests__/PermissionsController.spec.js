@@ -467,8 +467,8 @@ describe('PermissionsController', () => {
       const entries = mockRecordAuditEntry.mock.calls.map(([input]) => input);
       expect(entries.map((entry) => entry.action)).toEqual([
         'acl.granted',
-        'acl.revoked',
         'acl.public_changed',
+        'acl.revoked',
       ]);
       expect(entries[0]).toEqual(
         expect.objectContaining({

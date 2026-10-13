@@ -381,6 +381,42 @@ describe('AccessControlService', () => {
       ).resolves.not.toBeNull();
     });
 
+    test('audits a revoke whose principal id differs only in case from the stored id', async () => {
+      const viewerRole = await dbMethods.findRoleByIdentifier(AccessRoleIds.PROMPTGROUP_VIEWER);
+      await AclEntry.create({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        principalModel: PrincipalModel.USER,
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId,
+        permBits: PermissionBits.VIEW,
+        roleId: viewerRole?._id,
+        grantedBy: grantedById,
+        grantedAt: new Date(),
+      });
+      const planned: number[] = [];
+
+      const result = await service.bulkUpdateResourcePermissions({
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId,
+        revokedPrincipals: [{ type: PrincipalType.USER, id: userId.toString().toUpperCase() }],
+        grantedBy: grantedById,
+        beforeWrite: async (plan) => {
+          planned.push(plan.aclChanges.length);
+        },
+      });
+
+      expect(planned).toEqual([1]);
+      expect(result.aclChanges).toEqual([expect.objectContaining({ action: 'removed' })]);
+      await expect(
+        AclEntry.exists({
+          principalId: userId,
+          resourceType: ResourceType.PROMPTGROUP,
+          resourceId,
+        }),
+      ).resolves.toBeNull();
+    });
+
     test('revoking snapshots the principal without loading the rest of the ACL', async () => {
       const otherUserId = new Types.ObjectId();
       const viewerRole = await dbMethods.findRoleByIdentifier(AccessRoleIds.PROMPTGROUP_VIEWER);
