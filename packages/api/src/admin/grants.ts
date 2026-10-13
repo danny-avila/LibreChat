@@ -88,9 +88,9 @@ export interface AdminGrantsDeps {
     options?: RecordAuditEntryOptions,
   ) => Promise<void>;
   /**
-   * When true, a failed audit write on an assignment rolls the grant back and
-   * surfaces as a 5xx. A revoke only removes access, so it always stands and
-   * its entry is retried. Defaults to fail-open.
+   * When true, an assignment is audited before it is written, and a failed audit
+   * write surfaces as a 5xx with nothing granted. A revoke only removes access,
+   * so it always stands and its entry is retried. Defaults to fail-open.
    */
   auditFailClosed?: boolean;
 }
@@ -131,6 +131,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
     context?: AuditContext;
     /** Never fail the caller on an audit failure, regardless of `auditFailClosed`. */
     failOpen?: boolean;
+    outcome?: 'success' | 'failure';
   }): Promise<void> {
     if (!recordAuditEntry) return;
     /** The grants surface is ROLE-only today (see `MANAGE_CAPABILITY_BY_TYPE`),
@@ -139,7 +140,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
      * When USER and GROUP grants are enabled, resolve the display name here. */
     const input: RecordAuditEntryInput = {
       action: args.action,
-      outcome: 'success',
+      outcome: args.outcome ?? 'success',
       severity: 'warning',
       actor: { type: 'user', id: args.caller.userId, name: args.caller.actorName },
       target: { type: args.principalType, id: args.principalId, name: args.principalId },
@@ -406,42 +407,59 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
         }
       }
 
-      /** `created` comes from the atomic upsert result, so a re-assert of a
-       * capability the role already holds (or a concurrent double-assign) is not
-       * audited as a new change — and a new tenant-scoped grant is correctly
-       * distinguished from an inherited platform-level one. */
-      const { grant, created } = await grantCapability({
+      /** A re-assert of a capability the principal already holds (in this tenant scope, not
+       * merely inherited from the platform) changes nothing and is not audited. */
+      const existingGrants = await getCapabilitiesForPrincipal({
         principalType,
         principalId,
-        capability,
         tenantId,
-        grantedBy: caller.userId,
       });
-      if (!grant) {
-        return res.status(500).json({ error: 'Grant operation returned no result' });
-      }
-      if (created) {
+      const alreadyGranted = existingGrants.some(
+        (existing) => existing.capability === capability && existing.tenantId == tenantId,
+      );
+      const auditAssignment = (outcome: 'success' | 'failure') =>
+        emitAudit({
+          action: 'grant.assigned',
+          caller,
+          principalType,
+          principalId,
+          capability,
+          context: buildAuditContext(req),
+          outcome,
+          failOpen: outcome === 'failure',
+        });
+      /** Audit first: with fail-closed auditing a grant that cannot be recorded is never written. */
+      if (!alreadyGranted) {
         try {
-          await emitAudit({
-            action: 'grant.assigned',
-            caller,
-            principalType,
-            principalId,
-            capability,
-            context: buildAuditContext(req),
-          });
+          await auditAssignment('success');
         } catch (auditErr) {
-          /** Fail-closed only (emitAudit rethrows here): roll back the grant we
-           * just created so a 5xx never leaves an unaudited grant in place. */
-          await revokeCapability({ principalType, principalId, capability, tenantId }).catch((e) =>
-            logger.error('[adminGrants] compensating revoke after audit failure failed', e),
-          );
-          logger.error(
-            '[adminGrants] assignGrant audit failed (fail-closed) — rolled back grant',
-            auditErr,
-          );
+          logger.error('[adminGrants] assignGrant audit failed (fail-closed), nothing granted', {
+            ...getSafeErrorMetadata(auditErr),
+          });
           return res.status(500).json({ error: 'Failed to record audit entry' });
         }
+      }
+      let result: Awaited<ReturnType<typeof grantCapability>>;
+      try {
+        result = await grantCapability({
+          principalType,
+          principalId,
+          capability,
+          tenantId,
+          grantedBy: caller.userId,
+        });
+      } catch (writeErr) {
+        if (!alreadyGranted) {
+          await auditAssignment('failure');
+        }
+        throw writeErr;
+      }
+      const { grant } = result;
+      if (!grant) {
+        if (!alreadyGranted) {
+          await auditAssignment('failure');
+        }
+        return res.status(500).json({ error: 'Grant operation returned no result' });
       }
       return res.status(201).json({ grant });
     } catch (error) {

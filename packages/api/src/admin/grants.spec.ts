@@ -1249,7 +1249,10 @@ describe('createAdminGrantsHandlers', () => {
       const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
       const deps = createDeps({
         recordAuditEntry,
-        // the upsert reports created:false → idempotent re-assert, no change
+        // the principal already holds the capability in this tenant scope → idempotent re-assert
+        getCapabilitiesForPrincipal: jest
+          .fn()
+          .mockResolvedValue([mockGrant({ tenantId: 'tenant-1' })]),
         grantCapability: jest.fn().mockResolvedValue({ grant: mockGrant(), created: false }),
       });
       const handlers = createAdminGrantsHandlers(deps);
@@ -1272,7 +1275,7 @@ describe('createAdminGrantsHandlers', () => {
       expect(status).toHaveBeenCalledWith(201);
     });
 
-    it('fail-closed: a failed assign audit rolls back the grant and 500s', async () => {
+    it('fail-closed: an audit outage blocks an assign and nothing is granted', async () => {
       const recordAuditEntry = jest.fn().mockRejectedValue(new Error('audit down'));
       const deps = createDeps({ recordAuditEntry, auditFailClosed: true });
       const handlers = createAdminGrantsHandlers(deps);
@@ -1281,17 +1284,31 @@ describe('createAdminGrantsHandlers', () => {
       await handlers.assignGrant(req, res);
 
       expect(recordAuditEntry).toHaveBeenCalledWith(
-        expect.anything(),
+        expect.objectContaining({ action: 'grant.assigned', outcome: 'success' }),
         expect.objectContaining({ failClosed: true }),
       );
-      // compensating rollback removes the grant we just created
-      expect(deps.revokeCapability).toHaveBeenCalledWith(
-        expect.objectContaining({
-          principalType: PrincipalType.ROLE,
-          principalId: 'editor',
-          capability: SystemCapabilities.READ_USERS,
-        }),
-      );
+      expect(deps.grantCapability).not.toHaveBeenCalled();
+      expect(deps.revokeCapability).not.toHaveBeenCalled();
+      expect(status).toHaveBeenCalledWith(500);
+    });
+
+    it('a failed grant write leaves a failure entry and surfaces the error', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = createDeps({
+        recordAuditEntry,
+        auditFailClosed: true,
+        grantCapability: jest.fn().mockRejectedValue(new Error('write failed')),
+      });
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res, status } = createReqRes({ body: assignBody, user: reqUser() });
+
+      await handlers.assignGrant(req, res);
+
+      expect(recordAuditEntry.mock.calls.map(([input]) => input.outcome)).toEqual([
+        'success',
+        'failure',
+      ]);
+      expect(deps.revokeCapability).not.toHaveBeenCalled();
       expect(status).toHaveBeenCalledWith(500);
     });
 
