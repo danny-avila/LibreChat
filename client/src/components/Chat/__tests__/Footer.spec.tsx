@@ -3,11 +3,6 @@ import { render, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/extend-expect';
 import Footer from '../Footer';
 
-jest.mock('react-gtm-module', () => ({
-  __esModule: true,
-  default: { initialize: jest.fn() },
-}));
-
 jest.mock('~/data-provider', () => ({
   useGetStartupConfig: jest.fn(() => ({ data: undefined, isFetching: false, error: null })),
 }));

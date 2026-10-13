@@ -38,6 +38,7 @@ const {
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
   injectConfiguredFooterBootstrap,
+  injectColorModeHandoff,
   preAuthTenantMiddleware,
   requestContextMiddleware,
   configureServerTimeouts,
@@ -439,7 +440,6 @@ if (cluster.isMaster) {
     logger.info(`Worker ${process.pid} initializing...`);
 
     await waitForKeyvRedisClient();
-    await configureSubagentTaskRouting();
 
     if (typeof Bun !== 'undefined') {
       axios.defaults.headers.common['Accept-Encoding'] = 'gzip';
@@ -501,6 +501,7 @@ if (cluster.isMaster) {
     // principal) still merges DB `__base__` overrides, which must not drive which hook
     // modules load in every worker (matches api/server/index.js's baseOnly usage).
     const baseAppConfig = await getAppConfig({ baseOnly: true });
+    await configureSubagentTaskRouting(baseAppConfig?.endpoints?.agents?.subagentActivity);
     registerBackgroundTaskShutdown({
       interruptGraceMs: baseAppConfig?.endpoints?.agents?.backgroundTasks?.shutdownInterruptGraceMs,
       getBudgetMs: clusterShutdownBudgetMs,
@@ -543,6 +544,8 @@ if (cluster.isMaster) {
     indexHTML = injectConfiguredFooterBootstrap(indexHTML, {
       customFooter: process.env.CUSTOM_FOOTER,
     });
+
+    indexHTML = injectColorModeHandoff(indexHTML, baseAppConfig?.interfaceConfig?.colorModeFromUrl);
 
     const cspPolicy = createCspPolicy();
     const shellCache = shellCacheHeaders(cspPolicy != null);
@@ -641,6 +644,7 @@ if (cluster.isMaster) {
     app.use('/api/search', routes.search);
     app.use('/api/messages', routes.messages);
     app.use('/api/convos', routes.convos);
+    app.use('/api/pull-requests', preAuthTenantMiddleware, routes.pullRequests);
     app.use('/api/presets', routes.presets);
     app.use('/api/projects', routes.projects);
     app.use('/api/prompts', routes.prompts);
@@ -709,6 +713,8 @@ if (cluster.isMaster) {
           address: server.address(),
           completionResultBatchSize:
             baseAppConfig?.endpoints?.agents?.backgroundTasks?.completionResultBatchSize,
+          completionReceiptBatching:
+            baseAppConfig?.endpoints?.agents?.backgroundTasks?.completionReceiptBatching,
           idlePolling: baseAppConfig?.endpoints?.agents?.eventDriven?.idlePolling,
         });
       } catch (initErr) {

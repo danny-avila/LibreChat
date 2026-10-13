@@ -19,7 +19,7 @@ import {
   branchTotalsFamily,
   pendingUsageFamily,
   removeUsageAtoms,
-} from '~/store/usage';
+} from '~/components/Chat/Input/TokenUsage/store';
 import { recoveryDispositionsFamily } from '~/components/Chat/Steering/recovery';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 
@@ -75,12 +75,16 @@ jest.mock('sse.js', () => {
   return { SSE };
 });
 
+const mockRedirectIfTwoFactorSetupPayload = jest.fn((_payload: unknown) => false);
 const mockSetQueryData = jest.fn();
 const mockGetQueryData = jest.fn();
 const mockFetchQuery = jest.fn();
 const mockInvalidateQueries = jest.fn();
 const mockRemoveQueries = jest.fn();
 const mockBackingQueryClient = new QueryClient();
+const mockCancelQueries = jest.fn(
+  mockBackingQueryClient.cancelQueries.bind(mockBackingQueryClient),
+);
 const mockQueryCache = mockBackingQueryClient.getQueryCache();
 const mockFindAll = jest.fn((_queryKey?: QueryKey): Query[] => []);
 const mockQueryClient = {
@@ -89,6 +93,8 @@ const mockQueryClient = {
   fetchQuery: mockFetchQuery,
   invalidateQueries: mockInvalidateQueries,
   removeQueries: mockRemoveQueries,
+  cancelQueries: mockCancelQueries,
+  getQueryState: mockBackingQueryClient.getQueryState.bind(mockBackingQueryClient),
   getQueryCache: () => ({
     findAll: mockFindAll,
     getAll: mockQueryCache.getAll.bind(mockQueryCache),
@@ -98,9 +104,7 @@ const mockQueryClient = {
 };
 
 const mockActiveRunAtom = { key: 'activeRun' };
-const mockAbortScrollAtom = { key: 'abortScroll' };
 const mockSubmissionAtom = { key: 'submission' };
-const mockShowStopButtonAtom = { key: 'showStopButton' };
 const mockPendingSteersAtom = { key: 'pendingSteers' };
 /** The follow-up queue a restored submission lands back in. */
 const queuedIn = (conversationId: string) =>
@@ -134,14 +138,8 @@ const mockUseSetRecoilStateMock = jest.fn((atom: unknown) => {
   if (atom === mockActiveRunAtom) {
     return mockSetActiveRun;
   }
-  if (atom === mockAbortScrollAtom) {
-    return mockSetAbortScroll;
-  }
   if (atom === mockSubmissionAtom) {
     return mockSetSubmission;
-  }
-  if (atom === mockShowStopButtonAtom) {
-    return mockSetShowStopButton;
   }
   return jest.fn();
 });
@@ -181,8 +179,8 @@ jest.mock('recoil', () => ({
   useRecoilCallback: mockUseRecoilCallback,
 }));
 
-/** The run-end and interrupt-drain signals are Jotai atoms; their pane setters are swapped for
- *  spies, the same way the Recoil setters above are. */
+/** The run-end, interrupt-drain, abort-scroll and stop-button state are Jotai atoms; their pane
+ *  setters are swapped for spies, the same way the Recoil setters above are. */
 jest.mock('jotai', () => {
   const actual = jest.requireActual('jotai');
   return {
@@ -195,6 +193,13 @@ jest.mock('jotai', () => {
       if (atom === queue.drainAfterAbortByIndex(0)) {
         return mockSetDrainAfterAbort;
       }
+      const generation = jest.requireActual('~/store/generation');
+      if (atom === generation.abortScrollFamily(0)) {
+        return mockSetAbortScroll;
+      }
+      if (atom === generation.showStopButtonByIndex(0)) {
+        return mockSetShowStopButton;
+      }
       return actual.useSetAtom(atom);
     },
   };
@@ -204,9 +209,7 @@ jest.mock('~/store', () => ({
   __esModule: true,
   default: {
     activeRunFamily: jest.fn(() => mockActiveRunAtom),
-    abortScrollFamily: jest.fn(() => mockAbortScrollAtom),
     submissionByIndex: jest.fn(() => mockSubmissionAtom),
-    showStopButtonByIndex: jest.fn(() => mockShowStopButtonAtom),
     pendingSteersByConvoId: jest.fn(() => mockPendingSteersAtom),
   },
 }));
@@ -311,6 +314,8 @@ jest.mock('librechat-data-provider', () => {
       }),
       refreshToken: jest.fn(),
       dispatchTokenUpdatedEvent: jest.fn(),
+      redirectIfTwoFactorSetupPayload: (payload: unknown) =>
+        mockRedirectIfTwoFactorSetupPayload(payload),
     },
   };
 });
@@ -423,6 +428,7 @@ describe('useResumableSSE', () => {
     );
     mockInvalidateQueries.mockClear();
     mockRemoveQueries.mockClear();
+    mockCancelQueries.mockClear();
     mockFindAll.mockReset();
     mockFindAll.mockReturnValue([]);
     mockBackingQueryClient.clear();
@@ -449,6 +455,8 @@ describe('useResumableSSE', () => {
       conversationId: CONV_ID,
       endpoint: 'agents',
     });
+    mockRedirectIfTwoFactorSetupPayload.mockReset();
+    mockRedirectIfTwoFactorSetupPayload.mockReturnValue(false);
     (request.post as jest.Mock).mockReset();
     (request.post as jest.Mock).mockResolvedValue({
       streamId: 'stream-123',
@@ -775,6 +783,11 @@ describe('useResumableSSE', () => {
     });
     expect(mockRemoveQueries).toHaveBeenCalledWith({
       queryKey: ['streamStatus', 'stream-123'],
+    });
+
+    expect(mockCancelQueries).toHaveBeenCalledWith({
+      queryKey: [QueryKeys.runningConversation, 'stream-123'],
+      exact: true,
     });
 
     const allConversationWrites = mockSetQueryData.mock.calls.filter(
@@ -1145,6 +1158,36 @@ describe('useResumableSSE', () => {
     );
     expect(mockFindAll).toHaveBeenCalledWith([QueryKeys.allConversations], { exact: false });
 
+    unmount();
+  });
+
+  it.each([
+    {
+      codeEnvironmentMode: 'attached' as const,
+      codeWorkspaces: [{ environmentId: 'vm', workspaceId: 'project' }],
+    },
+    { codeWorkspaces: [{ environmentId: 'vm', workspaceId: 'project' }] },
+    { codeEnvironmentMode: 'without_attached' as const },
+  ])('caches the acknowledged code decision for navigation: %j', async (decision) => {
+    const submission = {
+      ...buildSubmission({ conversation: { conversationId: String(Constants.NEW_CONVO) } }),
+      ...decision,
+    };
+    const { unmount } = renderHook(() => useResumableSSE(submission, buildChatHelpers()));
+    await flushMicrotasks();
+
+    const cacheWrite = mockSetQueryData.mock.calls.find(
+      ([key]) => key[0] === QueryKeys.conversation && key[1] === 'stream-123',
+    );
+    expect(cacheWrite).toBeDefined();
+    const cached = cacheWrite![1](undefined);
+    expect(cached).toMatchObject({
+      conversationId: 'stream-123',
+      codeEnvironmentMode: decision.codeEnvironmentMode ?? 'attached',
+    });
+    expect(cached.codeWorkspaces).toEqual(decision.codeWorkspaces);
+    const newer = { ...cached, codeEnvironmentMode: 'without_attached', codeWorkspaces: undefined };
+    expect(cacheWrite![1](newer)).toBe(newer);
     unmount();
   });
 
@@ -4743,6 +4786,97 @@ describe('useResumableSSE', () => {
       expect.objectContaining({ outcome: 'completed' }),
     );
     expect(mockConvertLocalSteersToQueued).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  /**
+   * The stream runs on a raw XHR, so the interceptor that turns an enrollment 403 into the setup
+   * redirect never sees it. Without the explicit branch the condition looks like a transport
+   * failure and burns the whole reconnect ladder on a request the server is bound to refuse.
+   */
+  const enrollmentBody = JSON.stringify({
+    code: 'two_factor_enrollment_required',
+    twoFASetupRequired: true,
+    tempToken: 'setup-token',
+  });
+
+  it('leaves for setup on an enrollment 403 instead of reconnecting', async () => {
+    jest.useFakeTimers();
+    mockRedirectIfTwoFactorSetupPayload.mockReturnValue(true);
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    const sse = getLastSSE();
+    const sseCount = mockSSEInstances.length;
+
+    await act(async () => {
+      sse._emit('error', { responseCode: 403, data: enrollmentBody });
+    });
+    await advanceRetryTimer(60000);
+
+    expect(mockRedirectIfTwoFactorSetupPayload).toHaveBeenCalledWith(enrollmentBody);
+    expect(mockSSEInstances.length).toBe(sseCount);
+    expect(mockErrorHandler).not.toHaveBeenCalled();
+    unmount();
+  });
+
+  it('keeps reconnecting on a 403 that is not an enrollment response', async () => {
+    jest.useFakeTimers();
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    const sse = getLastSSE();
+    const sseCount = mockSSEInstances.length;
+
+    await act(async () => {
+      sse._emit('error', { responseCode: 403, data: JSON.stringify({ message: 'Forbidden' }) });
+    });
+    await advanceRetryTimer(60000);
+
+    /** Only enrollment may short-circuit; every other 403 keeps the existing recovery. */
+    expect(mockSSEInstances.length).toBeGreaterThan(sseCount);
+    unmount();
+  });
+
+  /**
+   * An access token that expired first turns enforcement into a 401, so the refresh is where the
+   * setup credential arrives. It answers successfully and without a token, which reads as a failed
+   * refresh unless the payload is inspected.
+   */
+  it('leaves for setup when the 401 refresh answers with enrollment', async () => {
+    jest.useFakeTimers();
+    const enrollmentPayload = {
+      code: 'two_factor_enrollment_required',
+      twoFASetupRequired: true,
+      tempToken: 'setup-token',
+    };
+    (request.refreshToken as jest.Mock).mockResolvedValueOnce(enrollmentPayload);
+    mockRedirectIfTwoFactorSetupPayload.mockReturnValue(true);
+    const submission = buildSubmission();
+    const chatHelpers = buildChatHelpers();
+
+    const { unmount } = renderHook(() => useResumableSSE(submission, chatHelpers));
+    await flushMicrotasks();
+
+    const sse = getLastSSE();
+    const sseCount = mockSSEInstances.length;
+
+    await act(async () => {
+      sse._emit('error', { responseCode: 401 });
+      await Promise.resolve();
+    });
+    await advanceRetryTimer(60000);
+
+    expect(mockRedirectIfTwoFactorSetupPayload).toHaveBeenCalledWith(enrollmentPayload);
+    expect(sse.stream).toHaveBeenCalledTimes(1);
+    expect(mockSSEInstances.length).toBe(sseCount);
+    expect(mockErrorHandler).not.toHaveBeenCalled();
     unmount();
   });
 

@@ -211,6 +211,7 @@ jobs:
             node_modules
             client/node_modules
             packages/client/node_modules
+            packages/chat/node_modules
             packages/data-provider/node_modules
             packages/data-schemas/node_modules
             packages/api/node_modules
@@ -268,12 +269,16 @@ jobs:
         if: steps.cache-client-package.outputs.cache-hit != 'true'
         run: npm run build:client-package
 
+      # About a second, so it is not cached; the chat-package scenarios load the built entries.
+      - name: Build chat package
+        run: npm run build:chat
+
       - name: Restore client app build cache
         id: cache-client-app
         uses: actions/cache@v5
         with:
           path: client/dist
-          key: build-client-app-e2e-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'client/src/**', 'client/public/**', 'client/index.html', 'client/package.json', 'client/vite.config.*', 'client/tsconfig*.json', 'client/tailwind.config.*', 'client/postcss.config.*', 'packages/client/src/**', 'packages/client/tailwind.preset.cjs', 'packages/client/tsconfig*.json', 'packages/client/tsdown.config.mjs', 'packages/client/package.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/tsdown.config.mjs', 'packages/data-provider/package.json') }}
+          key: build-client-app-e2e-${{ runner.os }}-${{ hashFiles('package.json', 'package-lock.json', 'client/src/**', 'client/public/**', 'client/index.html', 'client/package.json', 'client/vite.config.*', 'client/tsconfig*.json', 'client/tailwind.config.*', 'client/postcss.config.*', 'packages/client/src/**', 'packages/chat/src/**', 'packages/client/tailwind.preset.cjs', 'packages/client/tsconfig*.json', 'packages/client/tsdown.config.mjs', 'packages/client/package.json', 'packages/data-provider/src/**', 'packages/data-provider/tsconfig*.json', 'packages/data-provider/tsdown.config.mjs', 'packages/data-provider/package.json') }}
 
       - name: Build client app
         if: steps.cache-client-app.outputs.cache-hit != 'true'
@@ -404,6 +409,25 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+      - name: Run first-turn title ownership regressions
+        if: ${{ !cancelled() && matrix.stream_store == 'memory' && startsWith(matrix.shard, '1/') }}
+        env:
+          CI: 'true'
+          E2E_TITLE_CONVO: 'true'
+        run: >-
+          npx playwright test --config=e2e/playwright.config.mock.ts
+          conversation-management.spec.ts --grep 'first-turn|final-title polling' --reporter=line
+          --output=e2e/specs/.test-results/title-ownership
+
+      - name: Upload title ownership diagnostics
+        if: ${{ always() && matrix.stream_store == 'memory' && startsWith(matrix.shard, '1/') }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: playwright-title-ownership-${{ matrix.artifact }}
+          path: e2e/specs/.test-results/title-ownership/**
+          retention-days: 7
+          if-no-files-found: ignore
+
   mcp_tool_list_changed:
     name: MCP list_changed (replica count ${{ matrix.replicas }})
     needs: [codegraph_select]
@@ -443,6 +467,7 @@ jobs:
             node_modules
             client/node_modules
             packages/client/node_modules
+            packages/chat/node_modules
             packages/data-provider/node_modules
             packages/data-schemas/node_modules
             packages/api/node_modules
@@ -589,6 +614,7 @@ jobs:
             node_modules
             client/node_modules
             packages/client/node_modules
+            packages/chat/node_modules
             packages/data-provider/node_modules
             packages/data-schemas/node_modules
             packages/api/node_modules

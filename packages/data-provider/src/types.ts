@@ -21,10 +21,10 @@ import type {
   CodeEnvironmentUserSettings,
   TAgentsEndpoint,
 } from './config';
+import type { BalanceRefillMode, RefillIntervalUnit } from './balance';
 import type { StatefulCodeEnvironment } from './stateful-code';
 import type { CodeApprovalMode } from './code/approval';
 import type { EToolResources } from './types/tools';
-import type { RefillIntervalUnit } from './balance';
 import type { SettingDefinition } from './generate';
 import type { TMinimalFeedback } from './feedback';
 import type { ContentTypes } from './types/runs';
@@ -34,6 +34,7 @@ import type { Agent } from './types/agents';
 export * from './schemas';
 export * from './types/subagents';
 export * from './types/background';
+export * from './types/pullRequest';
 
 export type TMessages = TMessage[];
 
@@ -513,6 +514,8 @@ export type TMarkConversationUnreadResponse = {
   lastResponseMessageId?: string;
   /** True only when the settled stamp is the synthetic mark-unread marker. */
   lastResponseIsManual?: boolean;
+  /** True: manual reminder; false: real reply; absent: legacy/unknown intent. */
+  isMarkedUnread?: boolean;
 };
 
 export type TSharedMessagesResponse = Omit<TSharedLink, 'messages'> & {
@@ -574,6 +577,8 @@ export type TForkConvoRequest = {
   option?: string;
   splitAtTarget?: boolean;
   latestMessageId?: string;
+  /** Copy without uploads or code outputs, and without the conversation's file list. */
+  excludeFiles?: boolean;
 };
 
 export type TForkConvoResponse = {
@@ -712,6 +717,9 @@ export type TConfig = {
     allowedEnvironments: StatefulCodeEnvironment[];
     environments?: TPublicCodeEnvironment[];
     approvalsEnabled?: boolean;
+    /** Allow new chats to choose among the agent's explicitly listed machines. */
+    allowEnvironmentSelection?: boolean;
+    maxEnvironmentChoices?: number;
     /** Approval modes the endpoint policy permits the client to offer. */
     approvalModes?: CodeApprovalMode[];
   };
@@ -729,6 +737,10 @@ export type TConfig = {
     includeReasoningContent?: boolean;
     includeReasoningHistory?: boolean;
     paramDefinitions?: Partial<SettingDefinition>[];
+    reasoningCatalogTimeoutMs?: number;
+    reasoningCatalogMaxPages?: number;
+    reasoningCatalogFailureTtlMs?: number;
+    reasoningCatalogTtlMs?: number;
   };
 };
 
@@ -745,6 +757,33 @@ export type TModelTokenomics = {
   completion?: number;
   cacheWrite?: number;
   cacheRead?: number;
+};
+
+/**
+ * The reasoning efforts one model accepts, as the provider reports them
+ * (OpenRouter's per-model `reasoning.supported_efforts` and `reasoning.mandatory`).
+ */
+export type TModelReasoning = {
+  efforts: string[];
+  /** Reasoning cannot be turned off, so `none` is not a valid choice. */
+  mandatory?: boolean;
+};
+
+/**
+ * endpoint → model → reasoning efforts, from GET /api/endpoints/reasoning-capabilities. A model
+ * with an empty `efforts` list is listed by the provider and exposes no effort selection; a
+ * model absent from the map is unknown.
+ */
+export type TReasoningCapabilityMap = Record<string, Record<string, TModelReasoning>>;
+
+/**
+ * What the capabilities route returns: the efforts, and how long the server will keep the catalog
+ * they came from. The client revalidates when that time has passed, so it never holds a list longer
+ * than the server does, however old the server's entry was when it was fetched.
+ */
+export type TReasoningCapabilitiesResponse = {
+  capabilities: TReasoningCapabilityMap;
+  expiresInMs: number;
 };
 
 /** endpoint → model → resolved tokenomics, from GET /api/endpoints/token-config */
@@ -784,7 +823,9 @@ export type TLoginResponse = {
   token?: string;
   user?: TUser;
   twoFAPending?: boolean;
+  twoFASetupRequired?: boolean;
   tempToken?: string;
+  code?: 'TWO_FACTOR_ENROLLMENT_REQUIRED';
 };
 
 /** Shared payload for any operation that requires OTP or backup-code verification. */
@@ -799,6 +840,37 @@ export type TEnable2FAResponse = {
   otpauthUrl: string;
   backupCodes: string[];
   message?: string;
+};
+
+export type TEnable2FASetupRequest = {
+  tempToken: string;
+};
+
+export type TConfirm2FASetupRequest = {
+  tempToken: string;
+  token: string;
+};
+
+export type TConfirm2FASetupResponse = {
+  backupCodes: string[];
+  acknowledgementToken: string;
+};
+
+export type TAcknowledge2FASetupRequest = {
+  acknowledgementToken: string;
+};
+
+export type TAcknowledge2FASetupResponse = {
+  finalizationToken: string;
+};
+
+export type TFinalize2FASetupRequest = {
+  finalizationToken: string;
+};
+
+export type TFinalize2FASetupResponse = {
+  token: string;
+  user: TUser;
 };
 
 export type TVerify2FARequest = TOTPVerificationPayload;
@@ -1032,8 +1104,12 @@ export type TEmailChangeResponse = {
 };
 
 export type TRefreshTokenResponse = {
-  token: string;
-  user: TUser;
+  token?: string;
+  user?: TUser;
+  twoFAPending?: boolean;
+  twoFASetupRequired?: boolean;
+  tempToken?: string;
+  code?: 'TWO_FACTOR_ENROLLMENT_REQUIRED';
 };
 
 export type TCheckUserKeyResponse = {
@@ -1215,6 +1291,7 @@ export type TBalanceResponse = {
   refillIntervalUnit?: RefillIntervalUnit;
   lastRefill?: Date | string;
   refillAmount?: number;
+  refillMode?: BalanceRefillMode;
 };
 
 /* -------------------------------------------------------------------------- */

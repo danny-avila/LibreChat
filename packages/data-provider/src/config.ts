@@ -22,6 +22,13 @@ import {
   MAX_PII_PATTERN_LENGTH,
 } from './filters';
 import {
+  REFILL_INTERVAL_UNITS,
+  BALANCE_DISPLAY_MODES,
+  BALANCE_REFILL_MODES,
+  MIN_BALANCE_RESERVATION_TTL_MS,
+  DEFAULT_BALANCE_RESERVATION_TTL_MS,
+} from './balance';
+import {
   EModelEndpoint,
   eModelEndpointSchema,
   isAgentsEndpoint,
@@ -29,13 +36,14 @@ import {
   eReasoningResponseKeySchema,
 } from './schemas';
 import {
-  REFILL_INTERVAL_UNITS,
-  MIN_BALANCE_RESERVATION_TTL_MS,
-  DEFAULT_BALANCE_RESERVATION_TTL_MS,
-} from './balance';
+  scheduledMCPResourceBindingSchema,
+  scheduledMCPReadOnlyPolicySchema,
+} from './types/scheduleConsent';
 
 export const AGENT_BACKGROUND_COMPLETION_RESULT_MAX_CHARS_DEFAULT = 24 * 1024;
 export const AGENT_BACKGROUND_COMPLETION_RESULT_MAX_CHARS_HARD_MAX = 64 * 1024;
+/** Coalesces a conversation's ready background results into one wake-up turn. */
+export const AGENT_BACKGROUND_COMPLETION_RECEIPT_BATCHING_DEFAULT: boolean = true;
 export const AGENT_BACKGROUND_SHUTDOWN_INTERRUPT_GRACE_MS_DEFAULT = 5_000;
 import {
   DEFAULT_MCP_APP_CSP_LIMITS,
@@ -47,11 +55,19 @@ import {
   CODE_ENVIRONMENT_MOVE_VERSION,
   CODE_ENVIRONMENT_TRANSITION_VERSION,
   CODE_WORKSPACE_RECOVERY_VERSION,
+  CODE_WORKSPACE_INHERITANCE_VERSION,
+  MAX_AGENT_CODE_ENVIRONMENT_CHOICES,
 } from './code/workspace';
 import { ComponentTypes, SettingTypes, OptionTypes } from './generate';
 import { STATEFUL_CODE_ENVIRONMENTS } from './stateful-code';
 import { specsConfigSchema, TSpecsConfig } from './models';
 import { fileConfigSchema } from './file-config';
+import {
+  PULL_REQUEST_PROVIDERS,
+  PULL_REQUEST_BATCH_VERSION,
+  PULL_REQUEST_BATCH_TIMEOUT_MAX_SECONDS,
+} from './types/pullRequest';
+import type { PullRequestProvider } from './types/pullRequest';
 import { isActionTool } from './types/tools';
 import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
@@ -73,7 +89,22 @@ export {
   MAX_CHAT_PROJECT_INSTRUCTIONS_LENGTH_CEILING,
 } from './limits';
 
+/** Legacy mark-unread writers remove this catch-up watermark too. */
+export const UNSEEN_REPLY_WATERMARK = '1970-01-01T00:00:00.000Z' as const;
+
 export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'discord', 'saml'];
+
+export const TWO_FACTOR_ENROLLMENT_REQUIRED_CODE = 'TWO_FACTOR_ENROLLMENT_REQUIRED' as const;
+
+/** A federated record was refused a password login, so the only way in is its identity provider. */
+export const TWO_FACTOR_FEDERATED_LOGIN_BLOCKED_CODE =
+  'TWO_FACTOR_FEDERATED_LOGIN_BLOCKED' as const;
+
+const TWO_FACTOR_POLICY_PROVIDERS = new Set(['local', 'ldap']);
+
+export function isTwoFactorPolicyProvider(provider: string | null | undefined): boolean {
+  return provider == null || TWO_FACTOR_POLICY_PROVIDERS.has(provider);
+}
 
 /** How long a started social login may take to return to its callback before its `state` expires. */
 export const DEFAULT_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
@@ -82,6 +113,17 @@ export const BASE_ONLY_CONFIG_SECTIONS = ['filters', 'mcpAppSandbox'] as const;
 /** Sections that may be stored in the tenant's base config document but must
  * not be overridden or tombstoned by role, group, or user config documents. */
 export const BASE_PRINCIPAL_CONFIG_SECTIONS = ['langfuse'] as const;
+/** Fields inside overridable sections that only the operator's YAML sets: a role, group, user
+ * or tenant config document can neither change nor remove them. The pull request provider and
+ * host decide where the deployment's token is sent, the OAuth app which credentials users grant
+ * and which environment secret is sent with them, and the shared cache's slot count where every
+ * replica looks for a shared answer. */
+export const BASE_ONLY_CONFIG_PATHS = [
+  'endpoints.agents.pullRequests.provider',
+  'endpoints.agents.pullRequests.host',
+  'endpoints.agents.pullRequests.oauth',
+  'endpoints.agents.pullRequests.sharedCacheSlots',
+] as const;
 
 export const defaultRetrievalModels = [
   'gpt-4o',
@@ -117,6 +159,8 @@ export const excludedKeys = new Set([
   'agentEventActorLegacyTurn',
   'subagentThread',
   'title',
+  'titleSetByUser',
+  'titleRevision',
   'iconURL',
   'greeting',
   'endpoint',
@@ -142,6 +186,7 @@ export const excludedKeys = new Set([
   'lastResponseAt',
   'lastResponseMessageId',
   'lastResponseIsManual',
+  'isMarkedUnread',
   'lastSeenAt',
 ]);
 
@@ -470,6 +515,41 @@ const skillSyncTenantIdSchema = z
     message: 'must not be the reserved system tenant id',
   });
 
+/** `owner/name`, or `owner/*` for every repository of one owner; never a bare `*`. */
+const pullRequestRepositorySchema = z
+  .string()
+  .trim()
+  .regex(/^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+){0,18}\/(?:[A-Za-z0-9_.-]+|\*)$/, {
+    message: 'must be owner/name or owner/*, or a nested group path such as group/sub/name',
+  })
+  .refine((value) => value.split('/').every((segment) => segment !== '.' && segment !== '..'), {
+    message: 'must not contain dot segments',
+  });
+
+/** A GitHub host name, optionally with a port: `github.com`, an Enterprise Server host such as
+ *  `github.example.com`, or a data residency tenant such as `acme.ghe.com`. Never a URL. */
+const pullRequestHostSchema = z
+  .string()
+  .trim()
+  .max(253)
+  .regex(/^(?=[a-z0-9])[a-z0-9.-]*[a-z0-9](?::[0-9]{1,5})?$/i, {
+    message: 'must be a host name like github.example.com, without a scheme or path',
+  })
+  .refine(
+    (value) => {
+      const port = value.split(':')[1];
+      return port == null || (Number(port) >= 1 && Number(port) <= 65535);
+    },
+    { message: 'must use a port from 1 to 65535' },
+  );
+
+const pullRequestTokenReferenceSchema = z
+  .string()
+  .trim()
+  .regex(/^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/, {
+    message: 'must be an environment variable reference like ${GITHUB_PULL_REQUEST_TOKEN}',
+  });
+
 export const skillSyncGitHubSourceSchema = z
   .object({
     id: skillSyncIdentifierSchema,
@@ -684,6 +764,7 @@ export enum AgentCapabilities {
   memory = 'memory',
   ask_user_question = 'ask_user_question',
   tools = 'tools',
+  /** @deprecated Retained for legacy configuration. Chain authoring is retired. */
   chain = 'chain',
   ocr = 'ocr',
   run_in_background = 'run_in_background',
@@ -862,7 +943,6 @@ export const defaultAgentCapabilities = [
   AgentCapabilities.memory,
   AgentCapabilities.ask_user_question,
   AgentCapabilities.tools,
-  AgentCapabilities.chain,
   AgentCapabilities.ocr,
 ];
 
@@ -1075,11 +1155,32 @@ export const toolApprovalPolicySchema = z
   .object({
     enabled: z.boolean().optional(),
     mode: toolApprovalModeSchema.optional(),
+    /** Enable after all replicas support agent-scoped approval modes and grants. */
+    agentModes: z.boolean().optional(),
+    /** Bounded grant lookups fail back to manual review, never automatic approval. */
+    grantLookupTimeoutMs: z.number().int().min(100).max(5000).optional(),
     allow: z.array(z.string()).optional(),
     deny: z.array(z.string()).optional(),
     ask: z.array(z.string()).optional(),
     /** Optional reason template surfaced in the prompt; `{tool}` is interpolated. */
     reason: z.string().optional(),
+    /**
+     * Offer "Always allow" on the approval card. Choosing it auto-approves that exact tool
+     * (MCP names include their server) for the rest of the conversation. The server stores
+     * and enforces the choice; `deny` and `ask` rules and programmatic hooks still win, and
+     * stored choices are ignored under `mode: 'dontAsk'` or once this is turned off.
+     * Defaults to `false`: every paused call keeps prompting. Enable it only once every
+     * replica runs a version that supports it: older replicas ignore the choice and keep
+     * prompting, so during a rolling upgrade it may not stick.
+     */
+    allowAlways: z.boolean().optional(),
+    /**
+     * Most tools one conversation may remember with "Always allow". Once reached, the card
+     * stops offering the choice for new tools. Defaults to 64.
+     */
+    allowAlwaysMaxTools: z.number().int().min(1).max(1024).optional(),
+    /** Longest tool name that may be remembered. Defaults to 256. */
+    allowAlwaysMaxToolNameLength: z.number().int().min(1).max(1024).optional(),
     /**
      * Programmatic policy hooks loaded from modules at startup. They layer on top of the
      * static lists above for dynamic, context-aware decisions the lists can't express
@@ -1219,6 +1320,10 @@ const codeEnvironmentPermissionFieldSchema = z
 export const CODE_ENVIRONMENT_COMMAND_TIMEOUT_DEFAULT_MS = 30_000;
 /** Protocol-level ceiling; deployments may only lower this value. */
 export const CODE_ENVIRONMENT_COMMAND_TIMEOUT_HARD_MAX_MS = 5 * 60_000;
+/** Historical line window for attached workspace reads. */
+export const CODE_ENVIRONMENT_READ_FILE_DEFAULT_LINES = 200;
+/** Protocol-v1 read ceiling supported by existing workers. */
+export const CODE_ENVIRONMENT_READ_FILE_HARD_MAX_LINES = 500;
 /**
  * Client retry horizon across Code API admission windows. Also the hard cap:
  * deployments may only lower it. `0` disables client retries, not the server's
@@ -1237,6 +1342,25 @@ export const CODE_ENVIRONMENT_REQUEST_TIMEOUT_HARD_MAX_MS =
   CODE_ENVIRONMENT_COMMAND_TIMEOUT_HARD_MAX_MS +
   CODE_ENVIRONMENT_COMMAND_BUDGET_GRACE_MS;
 
+export const codeEnvironmentAdmissionSchema = z
+  .object({
+    durableRequests: z.boolean().optional(),
+    transportTimeoutMs: z.number().int().min(1000).max(30000).optional(),
+    pollIntervalMs: z.number().int().min(100).max(5000).optional(),
+    /** Optional per-request queue ceiling, bounded by transport and execution reserves. */
+    queueWaitMs: z.number().int().min(1).max(CODE_ENVIRONMENT_ADMISSION_MAX_MS).optional(),
+    initialDelayMs: z.number().int().min(100).max(30_000).optional().default(1_000),
+    maxDelayMs: z.number().int().min(100).max(300_000).optional().default(30_000),
+    multiplier: z.number().min(1).max(10).optional().default(1),
+    /** Additive jitter never advances a server's Retry-After hint. */
+    jitterRatio: z.number().min(0).max(1).optional().default(0),
+  })
+  .strict()
+  .refine((policy) => policy.maxDelayMs >= policy.initialDelayMs, {
+    path: ['maxDelayMs'],
+    message: 'Maximum retry delay must cover the initial delay',
+  });
+
 /**
  * Typed user-tunable surface for one attached code environment. Omitted fields
  * remain fixed at LibreChat's safe baseline. Isolation, networking, mounts,
@@ -1251,8 +1375,25 @@ export const codeEnvironmentUserConfigSchema = z
       })
       .strict()
       .optional(),
+    admission: codeEnvironmentAdmissionSchema.optional(),
     limits: z
       .object({
+        /** Foreground Bash timeout when the call omits timeoutMs. Omission keeps 30 seconds;
+         * the effective command ceiling may lower this value. */
+        defaultCommandTimeoutMs: z
+          .number()
+          .int()
+          .min(1)
+          .max(CODE_ENVIRONMENT_COMMAND_TIMEOUT_HARD_MAX_MS)
+          .optional(),
+        /** Attached read_file line window when max_lines is omitted. Omission keeps 200 lines;
+         * the existing byte budget can truncate the result sooner. */
+        defaultReadFileLines: z
+          .number()
+          .int()
+          .min(1)
+          .max(CODE_ENVIRONMENT_READ_FILE_HARD_MAX_LINES)
+          .optional(),
         /** Maximum timeout a Bash invocation may request. Omission preserves
          * the historical 30-second command budget. */
         maxCommandTimeoutMs: z
@@ -1271,19 +1412,25 @@ export const codeEnvironmentUserConfigSchema = z
           .min(0)
           .max(CODE_ENVIRONMENT_QUEUE_WAIT_DEFAULT_MS)
           .optional(),
-        /** Total HTTP budget for one workspace tool call, including retries,
-         * execution, settlement, and delivery. Only set this after verifying
-         * the shortest timeout on the actual Code API path and updating Code API
-         * to honor per-request queue allowances. Omission keeps the 30-second
-         * per-attempt admission budget. */
+        /** Transport ceiling after verifying the shortest timeout on the Code API path.
+         * Also the overall call budget unless maxRunTimeoutMs is set. Omission keeps
+         * the legacy per-attempt admission and execution budgets. */
         maxRequestTimeoutMs: z
           .number()
           .int()
           .min(1)
           .max(CODE_ENVIRONMENT_REQUEST_TIMEOUT_HARD_MAX_MS)
           .optional(),
+        /** Separate overall call deadline across credentials, backoff, and HTTP attempts.
+         * Omission preserves maxRequestTimeoutMs as the total budget. */
+        maxRunTimeoutMs: z
+          .number()
+          .int()
+          .min(1)
+          .max(CODE_ENVIRONMENT_REQUEST_TIMEOUT_HARD_MAX_MS)
+          .optional(),
         /** Admission allowance before local dispatch overhead for a Bash command inside
-         * maxRequestTimeoutMs. Omission reserves ten seconds; ignored without a total HTTP budget. */
+         * the transport/run budgets. Omission reserves ten seconds. */
         minCommandAdmissionMs: z
           .number()
           .int()
@@ -1293,19 +1440,22 @@ export const codeEnvironmentUserConfigSchema = z
       })
       .strict()
       .superRefine((limits, context) => {
+        const budgetMs = Math.min(
+          limits.maxRequestTimeoutMs ?? Infinity,
+          limits.maxRunTimeoutMs ?? Infinity,
+        );
         if (
-          limits.maxRequestTimeoutMs == null ||
-          limits.maxRequestTimeoutMs >
-            (limits.minCommandAdmissionMs ?? CODE_ENVIRONMENT_COMMAND_ADMISSION_DEFAULT_MS) +
-              CODE_ENVIRONMENT_COMMAND_BUDGET_GRACE_MS
+          budgetMs >
+          (limits.minCommandAdmissionMs ?? CODE_ENVIRONMENT_COMMAND_ADMISSION_DEFAULT_MS) +
+            CODE_ENVIRONMENT_COMMAND_BUDGET_GRACE_MS
         ) {
           return;
         }
+        const field =
+          limits.maxRunTimeoutMs === budgetMs ? 'maxRunTimeoutMs' : 'maxRequestTimeoutMs';
         context.addIssue({
           code: z.ZodIssueCode.custom,
-          path: [
-            limits.minCommandAdmissionMs == null ? 'maxRequestTimeoutMs' : 'minCommandAdmissionMs',
-          ],
+          path: [limits.minCommandAdmissionMs == null ? field : 'minCommandAdmissionMs'],
           message: 'Command admission and settlement reserves must leave time for execution',
         });
       })
@@ -1313,9 +1463,12 @@ export const codeEnvironmentUserConfigSchema = z
     workspaces: z
       .object({
         /** Run requests aimed at `.worktrees/<name>` in that worktree's own lane when the
-         * worker advertises linked-worktree lanes. Omission keeps every request scoped to
-         * its checkout. */
+         * worker advertises linked-worktree lanes. Omission allows it; `false` keeps every
+         * request scoped to its checkout. */
         linkedWorktrees: z.boolean().optional(),
+        /** Permit explicit per-conversation checkout choices after every API replica supports
+         * them. Omission preserves automatic worker isolation and hides the selector. */
+        allowCheckoutSelection: z.boolean().optional().default(false),
       })
       .strict()
       .optional(),
@@ -1357,12 +1510,55 @@ export const DEFAULT_AVATAR_REFRESH_COVERAGE_LIMIT = 1000;
 export const DEFAULT_MAX_PROVIDER_ERROR_CHARS = 2000;
 export const DEFAULT_AGENT_MODEL_RESPONSE_BODY_TIMEOUT_MS = 900_000;
 export const DEFAULT_AGENT_MODEL_RESPONSE_HEADERS_TIMEOUT_MS = 300_000;
+/** Below the idle cutoff of common proxies (nginx 60 s, Cloudflare 100 s), so a
+ * stream that is silent while a tool runs is not closed underneath the client. */
+export const DEFAULT_STREAM_KEEPALIVE_INTERVAL_MS = 25_000;
+export const DEFAULT_CACHE_CLEAR_TIMEOUT_MS = 1000;
+
+export const HOST_FILE_EDIT_HARD_MAX_COUNT = 100;
+
+/** Host-side skill/sandbox edit budgets. Attached workers retain their own limits. */
+export const hostFileEditLimitsSchema = z
+  .object({
+    maxEdits: z
+      .number()
+      .int()
+      .min(1)
+      .max(HOST_FILE_EDIT_HARD_MAX_COUNT)
+      .default(HOST_FILE_EDIT_HARD_MAX_COUNT),
+    maxWorkBytes: z
+      .number()
+      .int()
+      .min(1024)
+      .max(256 * 1024 * 1024)
+      .default(64 * 1024 * 1024),
+    maxOccurrences: z.number().int().min(1).max(1_000_000).default(100_000),
+    timeoutMs: z.number().int().min(100).max(10_000).default(2000),
+    maxConcurrent: z.number().int().min(1).max(8).default(2),
+  })
+  .strict();
+
+export type HostFileEditLimits = z.infer<typeof hostFileEditLimitsSchema>;
+
+/** Server-side resource and recovery policy for ephemeral child activity. */
+export const subagentActivityConfigSchema = z.object({
+  replayTtlMs: z.number().int().min(1_000).max(86_400_000).default(300_000),
+  publicationTimeoutMs: z.number().int().min(100).max(60_000).default(1_000),
+  retryAttempts: z.number().int().min(1).max(10).default(3),
+  retryBaseDelayMs: z.number().int().min(1).max(10_000).default(100),
+  recoveryDelayMs: z.number().int().min(100).max(60_000).default(1_000),
+  memoryMaxStreams: z.number().int().min(1).max(100_000).default(1_000),
+  memoryMaxBytes: z.number().int().min(65_536).max(1_073_741_824).default(16_777_216),
+});
+
+export type TSubagentActivityConfig = z.infer<typeof subagentActivityConfigSchema>;
 
 export const agentsEndpointSchema = baseEndpointSchema
   .omit({ baseURL: true })
   .merge(
     z.object({
       /* agents specific */
+      hostFileEdits: hostFileEditLimitsSchema.optional(),
       /** Maximum provider error characters retained in unprotected terminal failures. */
       maxProviderErrorChars: z
         .number()
@@ -1384,12 +1580,46 @@ export const agentsEndpointSchema = baseEndpointSchema
         .min(0)
         .max(86_400_000)
         .default(DEFAULT_AGENT_MODEL_RESPONSE_HEADERS_TIMEOUT_MS),
+      /** Interval between SSE comment frames on an otherwise silent chat stream, so
+       * proxies with an idle timeout keep it open; 0 disables the keepalive. */
+      streamKeepaliveIntervalMs: z
+        .number()
+        .int()
+        .min(0)
+        .max(3_600_000)
+        .refine((ms) => ms === 0 || ms >= 1_000, {
+          message: 'Use 0 to disable, or at least 1000 ms',
+        })
+        .default(DEFAULT_STREAM_KEEPALIVE_INTERVAL_MS),
       recursionLimit: z.number().optional(),
       disableBuilder: z.boolean().optional().default(false),
       /** Optional workspace guidance acquisition budget, separate from command execution. */
       repositoryInstructions: z
         .object({
           timeoutMs: z.number().int().min(100).max(30_000).optional().default(2000),
+        })
+        .optional(),
+      /** Budget and cache configuration for resolving an agent's linked prompt-group
+       * instructions. Omitting the block applies the defaults below. */
+      linkedInstructions: z
+        .object({
+          timeoutMs: z.number().int().min(100).max(30_000).optional().default(2000),
+          native: z
+            .object({
+              /** Content cache TTL for a resolved native prompt link; `0` disables the cache. */
+              cacheTtlMs: z.number().int().min(0).max(3_600_000).optional().default(300_000),
+              /** Max wait for the cache clear a prompt write triggers before the write's
+               * response continues without it. */
+              cacheClearTimeoutMs: z
+                .number()
+                .int()
+                .min(1)
+                .max(30_000)
+                .optional()
+                .default(DEFAULT_CACHE_CLEAR_TIMEOUT_MS),
+            })
+            .optional()
+            .default({}),
         })
         .optional(),
       maxRecursionLimit: z.number().optional(),
@@ -1427,6 +1657,8 @@ export const agentsEndpointSchema = baseEndpointSchema
         .max(MAX_SUBAGENTS_CEILING)
         .optional()
         .default(MAX_SUBAGENTS),
+      /** Live replay retention, publication recovery and process-local cache budgets. */
+      subagentActivity: subagentActivityConfigSchema.optional(),
       /** Run-scoped file access for explicitly opted-in subagent delegations. */
       fileSharing: z
         .object({
@@ -1474,6 +1706,16 @@ export const agentsEndpointSchema = baseEndpointSchema
       statefulCodeSessions: z
         .object({
           allowedEnvironments: z.array(z.enum(STATEFUL_CODE_ENVIRONMENTS)).min(1),
+          /** Let new chats pick a machine from their agent's saved allowlist instead of its default.
+           * Omission allows it; `false` keeps every agent on its fixed machine. */
+          allowEnvironmentSelection: z.boolean().optional(),
+          /** Maximum additional machine choices saved on an agent (wire ceiling: 128). */
+          maxEnvironmentChoices: z
+            .number()
+            .int()
+            .min(1)
+            .max(MAX_AGENT_CODE_ENVIRONMENT_CHOICES)
+            .optional(),
           /** Server-only personal worker enrollment policy. Effective principal
            * policy may tighten, but never raise, the deployment ceiling. */
           principalWorkers: z
@@ -1660,6 +1902,115 @@ export const agentsEndpointSchema = baseEndpointSchema
             .optional(),
         })
         .optional(),
+      /** Header pull request chip: finds the pull request for the branch a conversation's code
+       *  workspace reports, using a server-held GitHub token. On by default once a token is found
+       *  (`token`, else `GITHUB_PULL_REQUEST_TOKEN`, `GITHUB_TOKEN` or `GH_TOKEN`) and a repository
+       *  scope is set; `enabled: false` turns it off. */
+      pullRequests: z
+        .object({
+          enabled: z.boolean().optional(),
+          /** Where pull requests live: `github` (the default), `gitlab` for merge requests on
+           *  gitlab.com or a self-managed GitLab, or `bitbucket` for Bitbucket Cloud. Read from the
+           *  YAML only, as `host` is, so an override cannot send the token to another service. */
+          provider: z.enum(PULL_REQUEST_PROVIDERS).optional(),
+          /** The host the token belongs to: by default `github.com`, `gitlab.com` or `bitbucket.org`
+           *  for the provider; a GitHub Enterprise Server or `*.ghe.com` host, or a self-managed
+           *  GitLab host. Bitbucket is Cloud only. Read from the YAML only, never an override. */
+          host: pullRequestHostSchema.optional(),
+          /** Environment variable reference holding a read-only GitHub token, e.g.
+           *  `${GITHUB_PULL_REQUEST_TOKEN}`. Never the token itself. Optional: without it the first
+           *  of `GITHUB_PULL_REQUEST_TOKEN`, `GITHUB_TOKEN` and `GH_TOKEN` that is set is used. */
+          token: pullRequestTokenReferenceSchema.optional(),
+          /** Lets each user connect their own account, so lookups use that user's token, rate
+           *  limit and repository access instead of the server's. Read from the YAML only, as
+           *  `provider` and `host` are. Register `<DOMAIN_SERVER>/api/pull-requests/oauth/callback`
+           *  as the callback URL. On GitHub, a GitHub App with read-only permissions is the
+           *  recommended client: its user tokens need no scope. A connection belongs to the app
+           *  it was made with: changing `clientId`, `provider` or `host` asks users to connect
+           *  again. A grant made with another `clientId`, provider or host is never used and
+           *  expires with `retentionDays`. A changed `scope` applies to new connections only.
+           *  Disconnecting removes every grant of the user. */
+          oauth: z
+            .object({
+              /** Environment variable references, never the values. */
+              clientId: pullRequestTokenReferenceSchema,
+              clientSecret: pullRequestTokenReferenceSchema,
+              /** Space separated scopes to request. Defaults: none on GitHub, `read_api` on
+               *  GitLab, and the consumer's own on Bitbucket. */
+              scope: z
+                .string()
+                .trim()
+                .max(256)
+                .regex(/^[A-Za-z0-9_:.\- ]*$/)
+                .optional(),
+              /** Minutes a user may take to approve the connection at the provider. Default 10. */
+              flowTimeoutMinutes: z.number().int().min(1).max(60).optional(),
+              /** Seconds a code exchange or token refresh may take. Default 10. */
+              requestTimeoutSeconds: z.number().int().min(1).max(60).optional(),
+              /** Days a connection is kept without being used; every use extends it. Default 180. */
+              retentionDays: z.number().int().min(1).max(3650).optional(),
+            })
+            .optional(),
+          /** Repositories the token may be used for, as `owner/name` or `owner/*`. A worker reports
+           *  its own repository, so without this list a user could point the server's token at any
+           *  repository it can read. */
+          allowedRepositories: z.array(pullRequestRepositorySchema).max(256).optional(),
+          /** Look up every repository a worker reports, limited only by what the token can read.
+           *  Off by default: a worker names its own repository, so with this on any user can point
+           *  the server's token at any repository it can see. Use a read-only token scoped to the
+           *  repositories you are willing to show. */
+          allowAllRepositories: z.boolean().optional(),
+          /** Seconds a looked-up pull request is reused before GitHub is asked again. */
+          cacheTtlSeconds: z.number().int().min(5).max(3600).optional().default(30),
+          /** Pull requests cached per credential before the oldest is evicted. Size it to the
+           *  distinct repository and branch combinations seen within one cache lifetime, or fresh
+           *  results are evicted and GitHub is asked again. */
+          cacheMaxEntries: z.number().int().min(10).max(100_000).optional().default(500),
+          /** Credentials whose results are cached at once; past it the one idle longest is dropped.
+           *  Deployment-wide: when principals configure different values, the largest applies.
+           *  Raise it when many tenants each configure their own token. */
+          cacheMaxCredentials: z.number().int().min(1).max(10_000).optional().default(256),
+          /** Pull request lookups a single sidebar request runs at once. Each lookup is a few
+           *  GitHub requests, so this bounds how hard one request leans on the token. */
+          maxConcurrentLookups: z.number().int().min(1).max(16).optional().default(4),
+          /** Seconds one sidebar request may stay open in total, whatever its lookups are doing. */
+          batchTimeoutSeconds: z
+            .number()
+            .int()
+            .min(1)
+            .max(PULL_REQUEST_BATCH_TIMEOUT_MAX_SECONDS)
+            .optional()
+            .default(20),
+          /** Longest one GitHub request may take. Raise it behind a slow proxy. */
+          requestTimeoutSeconds: z.number().int().min(1).max(60).optional().default(10),
+          /** Longest a whole lookup, every request together, may hold the header request. */
+          lookupTimeoutSeconds: z.number().int().min(1).max(120).optional().default(30),
+          /** Pages of 100 check runs read before the rollup is reported as still running. */
+          maxCheckRunPages: z.number().int().min(1).max(50).optional().default(10),
+          /** Pull requests listed per state when matching a branch's history to the commit a chat
+           *  last ran at. Raise it for branch names that are reused many times. */
+          maxCandidatePullRequests: z.number().int().min(1).max(100).optional().default(10),
+          /** Pages of those candidates read per state, so a branch name reused more often than one
+           *  page holds can still reach an older match. Each page is one request. */
+          maxCandidatePages: z.number().int().min(1).max(10).optional().default(1),
+          /** Candidates compared with that commit before the search gives up. Each is one request. */
+          maxHeadComparisons: z.number().int().min(0).max(20).optional().default(3),
+          /** Share looked-up pull requests and GitHub rate limit cooldowns between replicas
+           *  through Redis, so each replica does not spend the token on the same answer. Takes
+           *  effect only when the deployment runs with Redis (`USE_REDIS`); each replica keeps its
+           *  own in-memory cache either way. Only found pull requests and rate limits are shared;
+           *  a failed lookup stays with the replica that saw it. */
+          sharedCache: z.boolean().optional().default(false),
+          /** Longest one shared cache read or write may take, in milliseconds, before a lookup
+           *  carries on without it, so a slow Redis cannot hold the header request. A command
+           *  still queued at that point, as during a disconnect, is dropped rather than sent later. */
+          sharedCacheTimeoutMs: z.number().int().min(10).max(5000).optional().default(250),
+          /** Redis keys the shared cache uses at most, for results and again for rate limits:
+           *  each goes in a slot picked from its key, replacing what was there. Read from the
+           *  YAML only, so every replica and principal addresses the same slot for a lookup. */
+          sharedCacheSlots: z.number().int().min(64).max(1_000_000).optional().default(65_536),
+        })
+        .optional(),
       /** Conversational background-task delivery policy. Automatic completion wakeups are
        * enabled unless an administrator explicitly restores poll-only behavior. */
       backgroundTasks: z
@@ -1674,8 +2025,13 @@ export const agentsEndpointSchema = baseEndpointSchema
             .max(AGENT_BACKGROUND_COMPLETION_RESULT_MAX_CHARS_HARD_MAX)
             .optional()
             .default(AGENT_BACKGROUND_COMPLETION_RESULT_MAX_CHARS_DEFAULT),
-          /** Maximum message-backed sibling results in one continuation.
-           * Independent receipts retain task-local delivery ownership. */
+          /** Set `false` while replicas older than receipt batching still serve
+           * traffic; those replicas cannot read batched (v3) receipts. */
+          completionReceiptBatching: z
+            .boolean()
+            .optional()
+            .default(AGENT_BACKGROUND_COMPLETION_RECEIPT_BATCHING_DEFAULT),
+          /** Maximum compatible sibling results in one continuation. */
           completionResultBatchSize: z.number().int().min(1).max(16).optional().default(8),
           /** Cooperative cancellation for process-local ordinary tools. Off
            * by default so existing deployments opt into the new control. */
@@ -1811,6 +2167,26 @@ export const endpointSchema = baseEndpointSchema.merge(
         /** Also reconstructs `reasoning_content` from persisted history across turns (implies `includeReasoningContent`). */
         includeReasoningHistory: z.boolean().optional(),
         paramDefinitions: z.array(paramDefinitionSchema).optional(),
+        /**
+         * Milliseconds to wait for each request when reading an OpenRouter endpoint's
+         * per-model reasoning efforts. Omission keeps 5000.
+         */
+        reasoningCatalogTimeoutMs: z.number().int().min(500).max(30000).optional(),
+        /**
+         * Most pages of an OpenRouter endpoint's model catalog to read before treating it as
+         * unavailable. Omission keeps 20.
+         */
+        reasoningCatalogMaxPages: z.number().int().min(1).max(200).optional(),
+        /**
+         * Milliseconds a failed or unreadable OpenRouter catalog is remembered before it is
+         * requested again; 0 retries on every request. Omission keeps 30000.
+         */
+        reasoningCatalogFailureTtlMs: z.number().int().min(0).max(600000).optional(),
+        /**
+         * Milliseconds a successfully read OpenRouter catalog is kept before it is read again.
+         * Omission keeps 3600000 (one hour).
+         */
+        reasoningCatalogTtlMs: z.number().int().min(60000).max(86400000).optional(),
       })
       .strict()
       .optional(),
@@ -1931,6 +2307,17 @@ export type TVertexAIConfig = TVertexAISchema & {
  * Anthropic endpoint schema with optional Vertex AI configuration.
  * Extends baseEndpointSchema with Vertex AI support.
  */
+/**
+ * A built-in endpoint whose configured `models` list replaces its `*_MODELS`
+ * environment list. Read from the per-request config, so principal overrides
+ * can narrow it.
+ */
+export const modelListEndpointSchema = baseEndpointSchema.merge(
+  z.object({
+    models: z.array(z.string()).optional(),
+  }),
+);
+
 export const anthropicEndpointSchema = baseEndpointSchema.merge(
   z.object({
     /** Vertex AI configuration for running Anthropic models on Google Cloud */
@@ -2203,6 +2590,10 @@ export const DEFAULT_QUEUED_TURN_RECONCILIATION_TIMEOUT_MS = 60_000;
 export const DEFAULT_QUEUED_SEND_LOCK_TIMEOUT_MS = 60_000;
 /** How many recently touched files the composer palette offers to reuse. */
 export const DEFAULT_COMPOSER_RECENT_FILES = 5;
+/** Milliseconds a left conversation's message history stays cached in the browser. */
+export const DEFAULT_HISTORY_CACHE_TTL_MS = 60_000;
+/** Most recently left conversations whose message history keeps that grace. */
+export const DEFAULT_HISTORY_CACHE_RECENT = 1;
 
 const mcpServersSchema = z
   .object({
@@ -2345,6 +2736,21 @@ export type TThemeDefinitionConfig = z.infer<typeof themeDefinitionSchema>;
 
 /** A bundled theme name or an inline theme definition applied to every user. */
 export const deploymentThemeSchema = z.union([z.string().trim().min(1), themeDefinitionSchema]);
+/** Single source for the quiet period between syntax highlights while a code block streams, and
+ *  its bounds; the schema default and the client's normalizer both read them. */
+export const DEFAULT_CODE_HIGHLIGHT_THROTTLE_MS = 300;
+export const MAX_CODE_HIGHLIGHT_THROTTLE_MS = 60_000;
+
+/** A configured highlight cadence the schema would accept, or the default. */
+export function normalizeCodeHighlightThrottleMs(value: unknown): number {
+  return typeof value === 'number' &&
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= MAX_CODE_HIGHLIGHT_THROTTLE_MS
+    ? value
+    : DEFAULT_CODE_HIGHLIGHT_THROTTLE_MS;
+}
+
 /** Single source for the agents panel selector's unsearched list cap; the
  * schema default and the client fallback both read it. */
 export const DEFAULT_AGENT_SELECTOR_LIMIT = 10;
@@ -2384,8 +2790,15 @@ export const interfaceSchema = z
     customWelcome: z.string().optional(),
     mcpServers: mcpServersSchema.optional(),
     modelSelect: z.boolean().optional(),
+    /** Set to false during a rolling upgrade, until every API replica supports title ownership and old title jobs drain. */
+    runningChatRename: z.boolean().default(true),
     /** Milliseconds between syntax highlights while a code block streams. */
-    codeHighlightThrottleMs: z.number().int().min(0).max(60_000).default(300),
+    codeHighlightThrottleMs: z
+      .number()
+      .int()
+      .min(0)
+      .max(MAX_CODE_HIGHLIGHT_THROTTLE_MS)
+      .default(DEFAULT_CODE_HIGHLIGHT_THROTTLE_MS),
     /** Most agents the agents panel selector lists before a search term is
      * typed; typing lifts the cap so search reaches every agent. */
     agentSelectorLimit: z
@@ -2425,6 +2838,8 @@ export const interfaceSchema = z
     temporaryChatRetention: z.number().min(1).max(8760).optional(),
     generalChatRetention: z.number().min(1).max(8760).optional(),
     autoSubmitFromUrl: z.boolean().optional(),
+    /** Accept `?theme=dark|light|system` on an entry link as the user's colour mode, so another app can hand its mode over. */
+    colorModeFromUrl: z.boolean().optional(),
     retentionMode: z.nativeEnum(RetentionMode).default(RetentionMode.TEMPORARY),
     retainAgentFiles: z.boolean().optional(),
     runCode: z.boolean().optional(),
@@ -2464,6 +2879,8 @@ export const interfaceSchema = z
     /** Tool keys (and `'mcp'` or an MCP server name) pinned to the prompt bar by default */
     defaultPinnedTools: z.array(z.string()).optional(),
     buildInfo: z.boolean().optional(),
+    /** Allows Lia, the welcome screen mascot. Users still opt in from Settings. */
+    mascot: z.boolean().optional(),
     remoteAgents: z
       .object({
         use: z.boolean().optional(),
@@ -2550,6 +2967,26 @@ export const interfaceSchema = z
           autoDisableAfterFailures: z.number().int().min(1).optional(),
           admissionConcurrency: z.number().int().min(1).max(100).optional(),
           fireConcurrency: z.number().int().min(1).optional(),
+          mcpConsent: z
+            .object({
+              enabled: z.boolean().optional(),
+              maxLifetimeHours: z.number().int().min(1).max(8760).optional(),
+              resources: z.record(scheduledMCPResourceBindingSchema).optional(),
+              /** Trusted service declarations, keyed by raw server and upstream tool name. */
+              readOnlyPolicy: z.record(scheduledMCPReadOnlyPolicySchema).optional(),
+            })
+            .optional(),
+          /** Bounded exponential receipt retry interval; equal jitter prevents outage waves. */
+          mcpReceiptRetry: z
+            .object({
+              baseMs: z.number().int().min(100).max(60_000).optional(),
+              maxMs: z.number().int().min(100).max(600_000).optional(),
+            })
+            .refine(
+              (value) => (value.maxMs ?? 30_000) >= (value.baseMs ?? 250),
+              'Receipt retry maxMs must be at least baseMs',
+            )
+            .optional(),
           mcpPreflightConcurrency: z.number().int().min(1).max(10).optional(),
           mcpPreflightTimeoutMs: z.number().int().min(1000).max(600000).optional(),
           /** Refuse schedules that are not filed under a chat project. Enforced on
@@ -2596,10 +3033,23 @@ export const interfaceSchema = z
      *  own default maximum (`fileListLimit`) so the palette can never ask for
      *  more than a typical deployment will return. */
     composerRecentFiles: z.number().int().min(0).max(100).default(DEFAULT_COMPOSER_RECENT_FILES),
+    /** Milliseconds a conversation's message history stays cached in the browser after the
+     *  user leaves it, so returning soon renders without refetching. Long agent transcripts
+     *  run to tens of megabytes each, so mobile browsers need this short. */
+    historyCacheTtlMs: z
+      .number()
+      .int()
+      .min(0)
+      .max(60 * 60_000)
+      .default(DEFAULT_HISTORY_CACHE_TTL_MS),
+    /** How many of the most recently left conversations keep that grace; older ones are
+     *  released at the next conversation switch. */
+    historyCacheRecent: z.number().int().min(0).max(20).default(DEFAULT_HISTORY_CACHE_RECENT),
   })
   .default({
     modelSelect: true,
-    codeHighlightThrottleMs: 300,
+    runningChatRename: true,
+    codeHighlightThrottleMs: DEFAULT_CODE_HIGHLIGHT_THROTTLE_MS,
     agentSelectorLimit: DEFAULT_AGENT_SELECTOR_LIMIT,
     parameters: true,
     presets: true,
@@ -2620,6 +3070,7 @@ export const interfaceSchema = z
     },
     temporaryChat: true,
     autoSubmitFromUrl: true,
+    colorModeFromUrl: false,
     runCode: true,
     webSearch: true,
     contextUsage: true,
@@ -2643,6 +3094,7 @@ export const interfaceSchema = z
     fileSearch: true,
     fileCitations: true,
     buildInfo: true,
+    mascot: true,
     remoteAgents: {
       use: false,
       create: false,
@@ -2679,6 +3131,8 @@ export const interfaceSchema = z
     queuedTurnReconciliationTimeoutMs: DEFAULT_QUEUED_TURN_RECONCILIATION_TIMEOUT_MS,
     queuedSendLockTimeoutMs: DEFAULT_QUEUED_SEND_LOCK_TIMEOUT_MS,
     composerRecentFiles: DEFAULT_COMPOSER_RECENT_FILES,
+    historyCacheTtlMs: DEFAULT_HISTORY_CACHE_TTL_MS,
+    historyCacheRecent: DEFAULT_HISTORY_CACHE_RECENT,
   });
 
 export type TInterfaceConfig = z.infer<typeof interfaceSchema>;
@@ -2703,6 +3157,9 @@ export const turnstileSchema = z.object({
 
 export type TTurnstileConfig = z.infer<typeof turnstileSchema>;
 
+/** Distinguishes collector acceptance from the proxy's silent 204 authentication drop. */
+export const RUM_COLLECTOR_ACK_HEADER = 'x-librechat-rum-accepted';
+
 export type TRumConfig = {
   provider: 'hyperdx';
   enabled: boolean;
@@ -2716,6 +3173,8 @@ export type TRumConfig = {
   advancedNetworkCapture?: boolean;
   sampleRate?: number;
   environment?: string;
+  /** Opt-in, proxy mode only: export client logger warnings/errors as OTLP logs via the RUM proxy. */
+  clientLogs?: boolean;
 };
 
 export type StartupConfigContext = 'share';
@@ -2808,12 +3267,36 @@ export function resolveMCPAppsPolicy(
   };
 }
 
+export const CONVERSATION_TITLE_OWNERSHIP_VERSION = 1 as const;
+
+/** Missing capability means an older replica, even when its YAML has the new option. */
+export function supportsConversationTitleOwnership(config?: {
+  conversationTitleOwnershipVersion?: typeof CONVERSATION_TITLE_OWNERSHIP_VERSION;
+  interface?: Pick<TInterfaceConfig, 'runningChatRename'>;
+}): boolean {
+  return (
+    config?.conversationTitleOwnershipVersion === CONVERSATION_TITLE_OWNERSHIP_VERSION &&
+    config.interface?.runningChatRename === true
+  );
+}
+
 export type TStartupConfig = {
+  conversationTitleOwnershipVersion?: typeof CONVERSATION_TITLE_OWNERSHIP_VERSION;
   appTitle: string;
   socialLogins?: string[];
   langfuseFanoutEnabled?: boolean;
   langfuseConnectionAccess?: boolean;
   insightsEnabled?: boolean;
+  /** Whether pull requests are active (on unless turned off, with a token and a repository scope);
+   *  the header does not ask for a pull request without it. */
+  pullRequestsEnabled?: boolean;
+  /** Present with `pullRequestsEnabled` once this server has the batch route the sidebar uses. */
+  pullRequestsBatchVersion?: typeof PULL_REQUEST_BATCH_VERSION;
+  /** `endpoints.agents.pullRequests.maxConcurrentLookups`, so the single-route fallback of an
+   *  upgrade in progress keeps to the limit the operator configured. */
+  pullRequestsMaxConcurrentLookups?: number;
+  /** The provider users can connect their own account to, from `pullRequests.oauth`. */
+  pullRequestsConnect?: PullRequestProvider;
   /** Manual context compaction, gated by the same `summarization.enabled`
    *  switch that governs the automatic detour. */
   compactionEnabled?: boolean;
@@ -2829,6 +3312,9 @@ export type TStartupConfig = {
   /** Additive recovery support. Clients require this and the move capability before replacing
    * a missing workspace. Keeping it separate preserves exact-version checks in older clients. */
   codeWorkspaceRecoveryVersion?: typeof CODE_WORKSPACE_RECOVERY_VERSION;
+  /** Subagents follow their parent's attached machine. Clients mirror that routing only when this
+   * is advertised. */
+  codeWorkspaceInheritanceVersion?: typeof CODE_WORKSPACE_INHERITANCE_VERSION;
   interface?: TInterfaceConfig;
   turnstile?: TTurnstileConfig;
   balance?: TBalanceConfig;
@@ -2863,6 +3349,7 @@ export type TStartupConfig = {
   registrationEnabled: boolean;
   socialLoginEnabled: boolean;
   passwordResetEnabled: boolean;
+  twoFactorAuthenticationRequired?: boolean;
   emailEnabled: boolean;
   allowEmailChange: boolean;
   showBirthdayIcon: boolean;
@@ -3128,20 +3615,37 @@ export const ocrSchema = z.object({
   strategy: z.nativeEnum(OCRStrategy).default(OCRStrategy.MISTRAL_OCR),
 });
 
-export const balanceSchema = z.object({
-  enabled: z.boolean().optional().default(false),
-  startBalance: z.number().optional().default(20000),
-  autoRefillEnabled: z.boolean().optional().default(false),
-  refillIntervalValue: z.number().optional().default(30),
-  refillIntervalUnit: z.enum(REFILL_INTERVAL_UNITS).optional().default('days'),
-  refillAmount: z.number().optional().default(10000),
-  reservationTtlMs: z
-    .number()
-    .int()
-    .min(MIN_BALANCE_RESERVATION_TTL_MS)
-    .optional()
-    .default(DEFAULT_BALANCE_RESERVATION_TTL_MS),
-});
+export const balanceSchema = z
+  .object({
+    enabled: z.boolean().optional().default(false),
+    startBalance: z.number().optional().default(20000),
+    autoRefillEnabled: z.boolean().optional().default(false),
+    refillIntervalValue: z.number().optional().default(30),
+    refillIntervalUnit: z.enum(REFILL_INTERVAL_UNITS).optional().default('days'),
+    refillAmount: z.number().optional().default(10000),
+    /** Add credits on exhaustion, or replace the allowance on the next read/request once due. */
+    refillMode: z.enum(BALANCE_REFILL_MODES).optional().default('add'),
+    reservationTtlMs: z
+      .number()
+      .int()
+      .min(MIN_BALANCE_RESERVATION_TTL_MS)
+      .optional()
+      .default(DEFAULT_BALANCE_RESERVATION_TTL_MS),
+    /** How the UI presents the balance; `credits` keeps the raw figure. */
+    display: z.enum(BALANCE_DISPLAY_MODES).optional().default('credits'),
+  })
+  .superRefine((balance, ctx) => {
+    if (
+      balance.refillMode === 'reset' &&
+      !(Number.isInteger(balance.refillIntervalValue) && balance.refillIntervalValue > 0)
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['refillIntervalValue'],
+        message: 'Reset intervals must be positive integers',
+      });
+    }
+  });
 
 export const transactionsSchema = z.object({
   enabled: z.boolean().optional().default(true),
@@ -3381,6 +3885,19 @@ export const langfuseTraceConfigSchema = z.object({
 
 export type LangfuseTraceConfig = z.infer<typeof langfuseTraceConfigSchema>;
 
+/**
+ * Format new stored user credentials (tool, web search and MCP custom user variable values)
+ * are written in. Both formats are always readable; `legacy` keeps writes readable by
+ * replicas on releases that predate `v3` during a rolling upgrade.
+ */
+export const credentialsConfigSchema = z
+  .object({
+    writeFormat: z.enum(['v3', 'legacy']).default('v3'),
+  })
+  .strict();
+
+export type TCredentialsConfig = z.infer<typeof credentialsConfigSchema>;
+
 export const langfuseConfigSchema = z.object({
   enabled: z.boolean().optional(),
   publicKey: z.string().optional(),
@@ -3478,6 +3995,24 @@ export const conversationListConfigSchema = z.object({
 
 export type TConversationListConfig = z.infer<typeof conversationListConfigSchema>;
 
+/**
+ * Bounded previews of settled tool calls on conversation loads. A client that asks for them
+ * receives the start and end of each long output and argument string, without subagent
+ * transcripts, and fetches a part in full only when the reader opens it. `enabled: false` sends
+ * every load in full, as before previews existed.
+ */
+export const toolCallPreviewsConfigSchema = z.object({
+  enabled: z.boolean().default(true),
+  /** Characters of `output` kept per tool call, half from the start and half from the end.
+   *  JSON output stays valid JSON, and an exit-status trailer is always kept whole. */
+  outputChars: z.number().int().min(256).max(1_000_000).default(512),
+  /** Characters of serialized `args` kept per tool call. JSON arguments stay valid JSON with
+   *  every field present; only the longest strings are shortened. */
+  argsChars: z.number().int().min(256).max(1_000_000).default(512),
+});
+
+export type TToolCallPreviewsConfig = z.infer<typeof toolCallPreviewsConfigSchema>;
+
 export const configSchema = z.object({
   version: z.string(),
   permissions: z
@@ -3492,7 +4027,15 @@ export const configSchema = z.object({
   projects: chatProjectsConfigSchema,
   ocr: ocrSchema.optional(),
   webSearch: webSearchSchema.optional(),
+  githubCompare: z
+    .object({
+      enabled: z.boolean().default(false),
+      timeoutMs: z.number().int().min(1).max(30000).default(10000),
+    })
+    .strict()
+    .optional(),
   langfuse: langfuseConfigSchema.optional(),
+  credentials: credentialsConfigSchema.optional(),
   memory: memorySchema.optional(),
   summarization: summarizationConfigSchema.optional(),
   skillSync: skillSyncConfigSchema,
@@ -3500,6 +4043,9 @@ export const configSchema = z.object({
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
   conversationList: conversationListConfigSchema.default(() =>
     conversationListConfigSchema.parse({}),
+  ),
+  toolCallPreviews: toolCallPreviewsConfigSchema.default(() =>
+    toolCallPreviewsConfigSchema.parse({}),
   ),
   includedTools: z.array(z.string()).optional(),
   filteredTools: z.array(z.string()).optional(),
@@ -3715,8 +4261,8 @@ export const configSchema = z.object({
        * endpoint > a custom endpoint's own config.
        */
       all: baseEndpointSchema.omit({ baseURL: true }).optional(),
-      [EModelEndpoint.openAI]: baseEndpointSchema.optional(),
-      [EModelEndpoint.google]: baseEndpointSchema.optional(),
+      [EModelEndpoint.openAI]: modelListEndpointSchema.optional(),
+      [EModelEndpoint.google]: modelListEndpointSchema.optional(),
       [EModelEndpoint.anthropic]: anthropicEndpointSchema.optional(),
       [EModelEndpoint.azureOpenAI]: azureEndpointSchema.optional(),
       [EModelEndpoint.azureAssistants]: assistantEndpointSchema.optional(),
@@ -4188,6 +4734,10 @@ export enum CacheKeys {
    */
   PROMPT_GROUPS_ACCESS = 'PROMPT_GROUPS_ACCESS',
   /**
+   * Key for cached resolved content of an agent's linked native prompt-group instructions.
+   */
+  AGENT_LINKED_INSTRUCTIONS = 'AGENT_LINKED_INSTRUCTIONS',
+  /**
    * Key for per-conversation stateful code sandbox prewarm/warm state.
    */
   SANDBOX_PREWARM = 'SANDBOX_PREWARM',
@@ -4219,6 +4769,14 @@ export enum CacheKeys {
    * Key for accessing the model token config cache.
    */
   TOKEN_CONFIG = 'TOKEN_CONFIG',
+  /**
+   * Key for the per-model reasoning effort cache of OpenRouter endpoints.
+   */
+  REASONING_CAPABILITIES = 'REASONING_CAPABILITIES',
+  /**
+   * Key for pull request lookups and GitHub rate limit cooldowns shared across replicas.
+   */
+  PULL_REQUESTS = 'PULL_REQUESTS',
   /**
    * Key for the app config namespace.
    */

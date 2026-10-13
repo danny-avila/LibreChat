@@ -99,6 +99,9 @@ export const highContrastLightTheme: IThemeRGB = {
   'rgb-surface-chat': '255 255 255', // #ffffff
   'rgb-surface-code': '255 255 255', // #ffffff, matching surface-primary-alt
   'rgb-surface-code-body': '255 255 255', // #ffffff, matching surface-chat
+  'rgb-surface-code-inline': '212 212 212', // #d4d4d4, matching surface-active-alt
+  'rgb-prose-bullet': '0 0 0', // #000000
+  'rgb-prose-quote-bar': '0 0 0', // #000000
   'rgb-surface-qr': '255 255 255', // #ffffff
   'rgb-surface-inverted': '0 0 0', // #000000
   'rgb-surface-inverted-hover': '51 51 51', // #333333
@@ -116,9 +119,30 @@ export const highContrastLightTheme: IThemeRGB = {
   'rgb-border-medium-alt': '0 0 0', // #000000
   'rgb-border-heavy': '0 0 0', // #000000
   'rgb-border-xheavy': '0 0 0', // #000000
+  'rgb-drawer-edge': '255 255 255', // #ffffff (the drawer's own fill)
   'rgb-border-destructive': '161 0 0', // #a10000
   'rgb-border-control': '0 0 0', // #000000
   'rgb-border-field-focus': '0 0 0', // #000000 (matching focus-control)
+  'rgb-focus-subtle': '0 0 0', // #000000 (matching border-heavy)
+  'rgb-field-fill': '255 255 255', // #ffffff (matching surface-primary)
+  'rgb-field-text': '0 0 0', // #000000 (matching text-primary)
+  'rgb-surface-tooltip': '255 255 255', // matching surface-primary
+  'rgb-text-tooltip': '0 0 0', // matching text-primary
+  'rgb-alert-error-fill': '255 255 255', // matching status-error-subtle
+  'rgb-alert-error-border': '161 0 0', // matching status-error-border
+  'rgb-surface-canvas': '255 255 255', // matching surface-primary-alt
+  'rgb-surface-user-message': '255 255 255', // matching surface-tertiary
+  'rgb-surface-card': '255 255 255', // matching surface-secondary
+  'rgb-surface-card-hover': '255 255 255', // matching surface-tertiary
+  'rgb-surface-nav-hover': '212 212 212', // matching surface-active-alt
+  'rgb-surface-nav-selected': '212 212 212', // matching surface-active-alt
+  'rgb-surface-tab-selected': '255 255 255', // matching surface-tertiary
+  'rgb-surface-menu': '255 255 255', // matching presentation
+  'rgb-surface-popover': '255 255 255', // matching surface-primary
+  'rgb-border-menu': '0 0 0', // matching border-light
+  'rgb-surface-composer': '255 255 255', // matching surface-chat
+  'rgb-surface-search': '255 255 255', // matching surface-secondary
+  'rgb-surface-sidebar': '255 255 255', // matching surface-primary-alt
   'rgb-surface-disabled': '255 255 255', // #ffffff
   'rgb-text-disabled': '87 87 87', // #575757
   'rgb-border-disabled': '87 87 87', // #575757
@@ -157,6 +181,16 @@ export const highContrastLightTheme: IThemeRGB = {
   'rgb-illustration-subtle': '175 193 255', // #afc1ff
   'rgb-illustration': '121 137 255', // #7989ff
   'rgb-illustration-strong': '60 70 255', // #3c46ff
+  'rgb-scrollbar-thumb': '0 0 0', // #000000
+  'rgb-page-canvas': '255 255 255', // #ffffff (matching surface-primary)
+  'rgb-select-fill': '255 255 255', // #ffffff
+  'rgb-select-edge': '142 142 160', // #8e8ea0
+  'rgb-button-neutral-border': '0 0 0', // #000000 at 10%
+  'rgb-button-neutral-text': '64 65 79', // #40414f
+  'rgb-button-neutral-hover': '236 236 241', // #ececf1 (gray-20)
+  'rgb-link-inline': '0 102 204', // #0066cc
+  'rgb-toast-edge': '67 90 111', // #435a6f
+  'rgb-stroke-ink': '0 0 0', // #000000 at 10%
   /** File-type tiles: each hue stepped so the glyph clears 6.5:1 on it (white glyph). */
   'rgb-file-document': '176 0 78', // #b0004e
   'rgb-file-sheet': '0 107 79', // #006b4f
@@ -192,6 +226,12 @@ export const highContrastLightTheme: IThemeRGB = {
   'rgb-series-6': '77 26 153', // #4d1a99
   'rgb-series-7': '15 92 15', // #0f5c0f
   'rgb-series-8': '0 0 0', // #000000 (neutral text stop)
+  'rgb-category-icon-1': '11 79 160', // #0b4fa0 (matching series-1)
+  'rgb-category-icon-2': '143 59 0', // #8f3b00 (matching series-2)
+  'rgb-category-icon-4': '92 74 0', // #5c4a00 (matching series-4)
+  'rgb-category-icon-5': '148 0 92', // #94005c (matching series-5)
+  'rgb-category-icon-6': '77 26 153', // #4d1a99 (matching series-6)
+  'rgb-category-icon-7': '15 92 15', // #0f5c0f (matching series-7)
 
   /** Unchecked switch track. The stock 58%/40% greys land at 2.9:1 and 2.2:1
    *  against these canvases. This clears 3:1 three ways at once: 5.74:1 against
@@ -199,6 +239,7 @@ export const highContrastLightTheme: IThemeRGB = {
    *  `surface-inverted` track. */
   'rgb-switch-unchecked': '102 102 102', // #666666
   'rgb-switch-thumb': '255 255 255', // #ffffff (matching surface-primary)
+  'rgb-checkbox-fill': '255 255 255', // #ffffff (matching surface-primary)
   'rgb-table-header-text': '0 0 0', // #000000 (matching text-secondary)
   'rgb-table-header-fill': '255 255 255', // #ffffff (matching surface-dialog)
 
@@ -276,6 +317,9 @@ export const highContrastDarkTheme: IThemeRGB = {
   'rgb-surface-chat': '0 0 0', // #000000
   'rgb-surface-code': '0 0 0', // #000000, matching presentation
   'rgb-surface-code-body': '0 0 0', // #000000, matching surface-primary-alt
+  'rgb-surface-code-inline': '87 87 87', // #575757, matching surface-hover-alt
+  'rgb-prose-bullet': '255 255 255', // #ffffff
+  'rgb-prose-quote-bar': '255 255 255', // #ffffff
   'rgb-surface-qr': '255 255 255', // #ffffff, so the code stays scannable
   'rgb-surface-inverted': '255 255 255', // #ffffff
   'rgb-surface-inverted-hover': '212 212 212', // #d4d4d4
@@ -293,9 +337,30 @@ export const highContrastDarkTheme: IThemeRGB = {
   'rgb-border-medium-alt': '255 255 255', // #ffffff
   'rgb-border-heavy': '255 255 255', // #ffffff
   'rgb-border-xheavy': '255 255 255', // #ffffff
+  'rgb-drawer-edge': '255 255 255', // #ffffff (matching border-xheavy)
   'rgb-border-destructive': '255 143 143', // #ff8f8f
   'rgb-border-control': '255 255 255', // #ffffff
   'rgb-border-field-focus': '255 255 255', // #ffffff (matching focus-control)
+  'rgb-focus-subtle': '255 255 255', // #ffffff (matching border-heavy)
+  'rgb-field-fill': '0 0 0', // #000000 (matching surface-primary)
+  'rgb-field-text': '255 255 255', // #ffffff (matching text-primary)
+  'rgb-surface-tooltip': '0 0 0', // matching surface-primary
+  'rgb-text-tooltip': '255 255 255', // matching text-primary
+  'rgb-alert-error-fill': '0 0 0', // matching status-error-subtle
+  'rgb-alert-error-border': '255 143 143', // matching status-error-border
+  'rgb-surface-canvas': '0 0 0', // matching surface-primary-alt
+  'rgb-surface-user-message': '0 0 0', // matching surface-tertiary
+  'rgb-surface-card': '0 0 0', // matching surface-secondary
+  'rgb-surface-card-hover': '0 0 0', // matching surface-tertiary
+  'rgb-surface-nav-hover': '61 61 61', // matching surface-active-alt
+  'rgb-surface-nav-selected': '61 61 61', // matching surface-active-alt
+  'rgb-surface-tab-selected': '0 0 0', // matching surface-tertiary
+  'rgb-surface-menu': '0 0 0', // matching presentation
+  'rgb-surface-popover': '0 0 0', // matching surface-secondary
+  'rgb-border-menu': '255 255 255', // matching border-light
+  'rgb-surface-composer': '0 0 0', // matching surface-chat
+  'rgb-surface-search': '0 0 0', // matching surface-secondary
+  'rgb-surface-sidebar': '0 0 0', // matching surface-primary-alt
   'rgb-surface-disabled': '0 0 0', // #000000
   'rgb-text-disabled': '184 184 184', // #b8b8b8
   'rgb-border-disabled': '184 184 184', // #b8b8b8
@@ -334,6 +399,16 @@ export const highContrastDarkTheme: IThemeRGB = {
   'rgb-illustration-subtle': '175 193 255', // #afc1ff
   'rgb-illustration': '121 137 255', // #7989ff
   'rgb-illustration-strong': '60 70 255', // #3c46ff
+  'rgb-scrollbar-thumb': '255 255 255', // #ffffff
+  'rgb-page-canvas': '0 0 0', // #000000 (matching surface-primary)
+  'rgb-select-fill': '255 255 255', // #ffffff
+  'rgb-select-edge': '142 142 160', // #8e8ea0
+  'rgb-button-neutral-border': '66 66 66', // #424242 (gray-600)
+  'rgb-button-neutral-text': '255 255 240', // #fffff0
+  'rgb-button-neutral-hover': '66 66 66', // #424242 (gray-600)
+  'rgb-link-inline': '82 160 255', // #52a0ff
+  'rgb-toast-edge': '67 90 111', // #435a6f
+  'rgb-stroke-ink': '255 255 255', // #ffffff at 30%
   /** File-type tiles: each hue stepped so the glyph clears 6.5:1 on it (black glyph, light tiles on the black canvas). */
   'rgb-file-document': '255 158 194', // #ff9ec2
   'rgb-file-sheet': '95 224 184', // #5fe0b8
@@ -368,11 +443,18 @@ export const highContrastDarkTheme: IThemeRGB = {
   'rgb-series-6': '200 163 255', // #c8a3ff
   'rgb-series-7': '140 230 140', // #8ce68c
   'rgb-series-8': '255 255 255', // #ffffff (neutral text stop)
+  'rgb-category-icon-1': '107 184 255', // #6bb8ff (matching series-1)
+  'rgb-category-icon-2': '255 179 102', // #ffb366 (matching series-2)
+  'rgb-category-icon-4': '255 224 102', // #ffe066 (matching series-4)
+  'rgb-category-icon-5': '255 153 194', // #ff99c2 (matching series-5)
+  'rgb-category-icon-6': '200 163 255', // #c8a3ff (matching series-6)
+  'rgb-category-icon-7': '140 230 140', // #8ce68c (matching series-7)
 
   /** Unchecked switch track: 5.32:1 against the page and the `surface-primary`
    *  thumb, 3.95:1 against the checked `surface-inverted` track. */
   'rgb-switch-unchecked': '128 128 128', // #808080
   'rgb-switch-thumb': '0 0 0', // #000000 (matching surface-primary)
+  'rgb-checkbox-fill': '0 0 0', // #000000 (matching surface-primary)
   'rgb-table-header-text': '255 255 255', // #ffffff (matching text-secondary)
   'rgb-table-header-fill': '0 0 0', // #000000 (matching surface-dialog)
 

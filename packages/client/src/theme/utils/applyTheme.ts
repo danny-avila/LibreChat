@@ -1,7 +1,9 @@
 import type { IThemeAppearance, IThemeBrands, IThemeRGB, ResolvedThemeDefinition } from '../types';
+import type { RenamedThemeRGB } from '../registry';
 import {
   controlBorderFallback,
   focusFallbacks,
+  overlayFallbacks,
   pressedFallbacks,
   primaryButtonFallbacks,
   primaryInkFallbacks,
@@ -10,6 +12,7 @@ import {
   themeAppearanceProperties,
   themeBrandTokens,
   themeColorTokens,
+  withRenamedColors,
 } from '../registry';
 
 const colorProperty = (token: keyof IThemeRGB): `--${string}` => `--${token.slice(4)}`;
@@ -31,7 +34,8 @@ function validateRGB(rgb: string): boolean {
 /** `base` is the bundled palette for the mode being applied. The adapter writes
  *  only the keys a theme names, so a derivation whose source the theme inherits
  *  rather than restates has nothing to read without it. */
-function mapColors(colors: IThemeRGB, base?: IThemeRGB): Array<[string, string]> {
+function mapColors(input: RenamedThemeRGB, base?: IThemeRGB): Array<[string, string]> {
+  const colors = withRenamedColors(input);
   const variables = themeColorTokens.reduce<Array<[string, string]>>((result, token) => {
     const value = colors[token];
     if (value !== undefined) {
@@ -61,6 +65,11 @@ function mapColors(colors: IThemeRGB, base?: IThemeRGB): Array<[string, string]>
     variables.push(['--shimmer-base', colors['rgb-text-primary']]);
   }
 
+  /** The dark page was `surface-primary-alt` before it had a role, as in `resolveTheme`. */
+  if (colors['rgb-page-canvas'] === undefined && colors['rgb-surface-primary-alt'] !== undefined) {
+    variables.push(['--page-canvas', colors['rgb-surface-primary-alt']]);
+  }
+
   if (colors['rgb-text-muted'] === undefined && colors['rgb-text-tertiary'] !== undefined) {
     variables.push(['--text-muted', colors['rgb-text-tertiary']]);
   }
@@ -77,6 +86,20 @@ function mapColors(colors: IThemeRGB, base?: IThemeRGB): Array<[string, string]>
     variables.push(['--switch-thumb', colors['rgb-surface-primary']]);
   }
 
+  /** The field fill follows the canvas, as in `resolveTheme`. */
+  if (colors['rgb-field-fill'] === undefined && colors['rgb-surface-primary'] !== undefined) {
+    variables.push(['--field-fill', colors['rgb-surface-primary']]);
+  }
+
+  /** The checkbox fill follows the canvas, as in `resolveTheme`. */
+  if (colors['rgb-checkbox-fill'] === undefined && colors['rgb-surface-primary'] !== undefined) {
+    variables.push(['--checkbox-fill', colors['rgb-surface-primary']]);
+  }
+
+  Object.entries(overlayFallbacks(colors)).forEach(([role, value]) => {
+    variables.push([colorProperty(role as keyof IThemeRGB), value]);
+  });
+
   if (colors['rgb-table-header-text'] === undefined && colors['rgb-text-secondary'] !== undefined) {
     variables.push(['--table-header-text', colors['rgb-text-secondary']]);
   }
@@ -87,6 +110,10 @@ function mapColors(colors: IThemeRGB, base?: IThemeRGB): Array<[string, string]>
 
   if (colors['rgb-chart-widget-stroke'] === undefined && colors['rgb-border-light'] !== undefined) {
     variables.push(['--chart-widget-stroke', colors['rgb-border-light']]);
+  }
+
+  if (colors['rgb-focus-subtle'] === undefined && colors['rgb-border-heavy'] !== undefined) {
+    variables.push(['--focus-subtle', colors['rgb-border-heavy']]);
   }
 
   const legacyControlBorder = controlBorderFallback(colors);
@@ -159,10 +186,15 @@ function mapColors(colors: IThemeRGB, base?: IThemeRGB): Array<[string, string]>
   return variables;
 }
 
+/** The `theme-chrome-quiet:` variant matches the literal `0`, so every spelling of zero is written as it. */
+function canonicalAppearance(key: keyof IThemeAppearance, value: string): string {
+  return key === 'chromeBorderAlpha' && Number(value) === 0 ? '0' : value;
+}
+
 function mapAppearance(appearance: IThemeAppearance): Array<[string, string]> {
   return Object.entries(themeAppearanceProperties).map(([key, property]) => [
     property,
-    appearance[key as keyof IThemeAppearance],
+    canonicalAppearance(key as keyof IThemeAppearance, appearance[key as keyof IThemeAppearance]),
   ]);
 }
 

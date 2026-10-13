@@ -1,7 +1,11 @@
 import type {
   TFile,
+  TUser,
   TPreset,
   TMessage,
+  TModelSpec,
+  TAttachment,
+  RetentionMode,
   TConversation,
   ChatTransport,
   ChatTransportRequest,
@@ -87,6 +91,13 @@ export type ChatMessagesContract = {
   latestMessageId: string | undefined;
   /** Depth of the tail of the active branch, if loaded. */
   latestMessageDepth: number | undefined;
+  /**
+   * Attachments delivered by message id while the message cache holds none of them yet: tool
+   * artifacts streamed mid-run and previews resolved after it. A hook, so only a caller that
+   * merges them re-renders when one arrives; stable across renders. AI SDK: the data parts a
+   * stream writes onto its message.
+   */
+  useLiveAttachments: () => Record<string, TAttachment[] | undefined>;
 };
 
 /** Sending, regenerating and continuing turns. AI SDK: `sendMessage` / `regenerate` / `status`. */
@@ -168,7 +179,31 @@ export type AddedChatContract = {
 };
 
 /** Composer action while a run is in flight: fold the text into the run, or queue a new turn. */
-export type DuringRunAction = 'steer' | 'queue';
+export type DuringRunAction = 'steer' | 'interrupt' | 'queue';
+
+/** The deployment settings the chat hooks act on, resolved by the host from its startup config.
+ *  An unset timeout falls back to the chat's own default. */
+export type ChatConfig = {
+  /** How long the deployment keeps conversations; forced temporary retention hides the paths
+   *  that would keep one. */
+  retentionMode?: RetentionMode;
+  /** Whether replies offer rating feedback; off until the deployment has answered. */
+  feedbackEnabled: boolean;
+  /** Whether a running chat can be renamed, because the deployment protects a manual title from
+   *  the pending generated one. */
+  canRenameRunningChat: boolean;
+  /** Model specs the deployment offers, for presets and token limits a spec carries. */
+  modelSpecs?: TModelSpec[];
+  queuedSendLockTimeoutMs?: number;
+  queuedTurnReconciliationTimeoutMs?: number;
+  steerArmConfirmationTimeoutMs?: number;
+};
+
+/** The signed-in account, as far as the chat reads it. */
+export type ChatAuth = {
+  /** Fills user variables such as `{{current_user}}` in a conversation's prompt prefix. */
+  user?: TUser;
+};
 
 /**
  * App-global preferences the chat reads but does not own. The host supplies them, so the chat
@@ -180,8 +215,6 @@ export type ChatSettings = {
   /** Default composer action while a run is in flight. */
   duringRunDefaultAction: DuringRunAction;
   setDuringRunDefaultAction: (action: DuringRunAction) => void;
-  /** Whether a steer interrupts the running step instead of waiting for the next one. */
-  steerInterruptsByDefault: boolean;
   /** Closes the artifacts panel, called when the active conversation changes. */
   resetVisibleArtifacts: () => void;
   /** Whether composer text and attachments are kept as drafts across navigation. */
@@ -190,6 +223,8 @@ export type ChatSettings = {
   isTemporary: boolean;
   /** Turns temporary chat on or off for the next conversation. */
   setIsTemporary: Dispatch<SetStateAction<boolean>>;
+  config: ChatConfig;
+  auth: ChatAuth;
 };
 
 /** The assistants abort route and the run it stops. */
@@ -304,6 +339,8 @@ export type MessagePartsHost = {
   useFontSize: () => string;
   /** Whether the viewer wants reasoning expanded by default. */
   useShowThinking: () => boolean;
+  /** Whether the viewer wants tool cards and tool groups expanded by default. */
+  useAutoExpandTools: () => boolean;
   /** How the viewer prefers user-authored text to display. */
   useUserTextPreferences: () => MessagePartsUserTextPreferences;
   /** The signed-in user. */

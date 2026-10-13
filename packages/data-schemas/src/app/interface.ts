@@ -32,6 +32,7 @@ export async function loadDefaultInterface({
     modelSelect:
       interfaceConfig?.modelSelect ??
       (hasModelSpecs ? includesAddedEndpoints : defaults.modelSelect),
+    runningChatRename: interfaceConfig?.runningChatRename ?? defaults.runningChatRename,
     codeHighlightThrottleMs:
       interfaceConfig?.codeHighlightThrottleMs ?? defaults.codeHighlightThrottleMs,
     agentSelectorLimit: interfaceConfig?.agentSelectorLimit ?? defaults.agentSelectorLimit,
@@ -42,7 +43,9 @@ export async function loadDefaultInterface({
     mcpServers: interfaceConfig?.mcpServers ?? defaults.mcpServers,
     customWelcome: interfaceConfig?.customWelcome ?? defaults.customWelcome,
     autoSubmitFromUrl: interfaceConfig?.autoSubmitFromUrl ?? defaults.autoSubmitFromUrl,
+    colorModeFromUrl: interfaceConfig?.colorModeFromUrl ?? defaults.colorModeFromUrl,
     buildInfo: interfaceConfig?.buildInfo ?? defaults.buildInfo,
+    mascot: interfaceConfig?.mascot ?? defaults.mascot,
     contextUsage: interfaceConfig?.contextUsage ?? defaults.contextUsage,
     artifactUndocking: interfaceConfig?.artifactUndocking ?? defaults.artifactUndocking,
     contextCost: interfaceConfig?.contextCost ?? defaults.contextCost,
@@ -57,6 +60,8 @@ export async function loadDefaultInterface({
     queuedSendLockTimeoutMs:
       interfaceConfig?.queuedSendLockTimeoutMs ?? defaults.queuedSendLockTimeoutMs,
     composerRecentFiles: interfaceConfig?.composerRecentFiles ?? defaults.composerRecentFiles,
+    historyCacheTtlMs: interfaceConfig?.historyCacheTtlMs ?? defaults.historyCacheTtlMs,
+    historyCacheRecent: interfaceConfig?.historyCacheRecent ?? defaults.historyCacheRecent,
 
     // Permissions and related settings - only include if explicitly configured
     bookmarks: interfaceConfig?.bookmarks,

@@ -38,7 +38,9 @@ import { recoveryDispositionsFamily } from '~/components/Chat/Steering/recovery'
 import { claimQueuedIntent, releaseQueuedIntent } from '~/utils/queueIntent';
 import useUpdateFiles from '~/hooks/Files/useUpdateFiles';
 import ChatSettingsProvider from '~/routes/ChatSettings';
+import { duringRunActionAtom } from '~/store/duringRun';
 import { applyPendingAction } from '~/utils/approval';
+import English from '~/locales/en/translation.json';
 import useQueueDrain from '../useQueueDrain';
 import store from '~/store';
 
@@ -67,6 +69,10 @@ jest.mock('~/hooks/Agents/useCodeApprovalMode', () => ({
 
 jest.mock('~/Providers', () => ({
   useFileMapContext: () => mockFileMap,
+}));
+
+jest.mock('~/hooks/AuthContext', () => ({
+  useAuthContext: () => ({ user: undefined }),
 }));
 
 /** The reconciliation window is an operator lever; these specs exercise the
@@ -204,6 +210,7 @@ beforeEach(() => resetQueueFamilies());
 
 describe('useSteering', () => {
   beforeEach(() => {
+    getDefaultStore().set(duringRunActionAtom, 'steer');
     getDefaultStore().set(recoveryDispositionsFamily(CONVO_ID), {});
     jest.clearAllMocks();
     mockApprovalMode = undefined;
@@ -212,6 +219,50 @@ describe('useSteering', () => {
     mockLatestMessage = undefined;
     mockServerQueuedTurns = undefined;
     mockFileMap = {};
+  });
+
+  it.each([
+    'steerFromComposer',
+    'queueFromComposer',
+    'interruptAndSend',
+    'interruptSteer',
+    'submitDuringRun',
+  ] as const)('holds captured %s callbacks without consuming composer context', (action) => {
+    const consumeDraft = jest.fn();
+    const setFiles = jest.fn();
+    const files = new Map<string, ExtendedFile>([
+      ['file-one', { file_id: 'file-one', type: 'text/plain', progress: 1 } as ExtendedFile],
+    ]);
+    const params: HookParams = {
+      composerDisabled: false,
+      conversation: { ...agentsConversation, endpoint: EModelEndpoint.openAI },
+      files,
+      setFiles,
+      consumeDraft,
+    };
+    const { result, rerender, stopGenerating, sendNow } = setup(params, ({ set }) => {
+      set(store.pendingQuotesByConvoId(CONVO_ID), ['preserved quote']);
+    });
+    const captured = result.current[action];
+    params.composerDisabled = true;
+    rerender();
+    act(() => expect(captured('hi')).toBe(false));
+    expect(consumeDraft).not.toHaveBeenCalled();
+    expect(setFiles).not.toHaveBeenCalled();
+    expect(mockMutate).not.toHaveBeenCalled();
+    expect(mockEnqueueQueuedTurn).not.toHaveBeenCalled();
+    expect(stopGenerating).not.toHaveBeenCalled();
+    expect(sendNow).not.toHaveBeenCalled();
+    expect(getDefaultStore().get(queuedMessagesByConvoId(CONVO_ID))).toEqual([]);
+    params.composerDisabled = false;
+    rerender();
+    act(() => expect(result.current.queueFromComposer('hi')).toBe(true));
+    expect(consumeDraft).toHaveBeenCalledTimes(1);
+    expect(getDefaultStore().get(queuedMessagesByConvoId(CONVO_ID))[0]).toMatchObject({
+      text: 'hi',
+      quotes: ['preserved quote'],
+      files: [expect.objectContaining({ file_id: 'file-one' })],
+    });
   });
 
   it.each([true, false])(
@@ -435,8 +486,8 @@ describe('useSteering', () => {
     });
 
     it('honors the queue preference while keeping the steer override available', () => {
-      const { result } = setup({}, ({ set }) => {
-        set(store.duringRunDefaultAction, 'queue');
+      const { result } = setup({}, () => {
+        getDefaultStore().set(duringRunActionAtom, 'queue');
       });
       expect(result.current.effectiveAction).toBe('queue');
       // The per-send menu can still override to steer: availability is
@@ -446,8 +497,8 @@ describe('useSteering', () => {
 
     it('degrades to queue without a real conversation id', () => {
       // Explicitly request steer so this verifies the missing-id fallback to queue.
-      const { result } = setup({ conversationId: Constants.NEW_CONVO as string }, ({ set }) => {
-        set(store.duringRunDefaultAction, 'steer');
+      const { result } = setup({ conversationId: Constants.NEW_CONVO as string }, () => {
+        getDefaultStore().set(duringRunActionAtom, 'steer');
       });
       expect(result.current.effectiveAction).toBe('queue');
     });
@@ -471,8 +522,8 @@ describe('useSteering', () => {
         } as unknown as TMessage,
       ];
       // Explicitly request steer so this verifies the pause fallback to queue.
-      const { result } = setup({}, ({ set }) => {
-        set(store.duringRunDefaultAction, 'steer');
+      const { result } = setup({}, () => {
+        getDefaultStore().set(duringRunActionAtom, 'steer');
       });
       expect(result.current.pausedOnApproval).toBe(true);
       expect(result.current.effectiveAction).toBe('queue');
@@ -613,6 +664,7 @@ describe('useSteering', () => {
     function setupServerQueue(
       initializer = withActiveGeneration(),
       addedConversation?: TConversation,
+      codeEnvironmentMode?: TConversation['codeEnvironmentMode'],
     ) {
       const sendNow = jest.fn();
       const wrapper = ({ children }: { children: React.ReactNode }) => (
@@ -626,6 +678,7 @@ describe('useSteering', () => {
             conversationId: CONVO_ID,
             conversation: agentsConversation,
             addedConversation,
+            codeEnvironmentMode,
             isSubmitting: true,
             answerModeActive: false,
             sendNow,
@@ -673,8 +726,21 @@ describe('useSteering', () => {
         result.current.steering.queueFromComposer('run later');
         await Promise.resolve();
       });
-      expect(mockCodeApprovalMode).toHaveBeenLastCalledWith(agentsConversation, addedConversation);
+      expect(mockCodeApprovalMode).toHaveBeenLastCalledWith(
+        agentsConversation,
+        addedConversation,
+        undefined,
+      );
       expect(mockEnqueueQueuedTurn.mock.calls[0]?.[0].codeApprovalMode).toBe('ask');
+    });
+
+    it('gates the queued mode on the workspace mode the composer resolved', () => {
+      setupServerQueue(withActiveGeneration(), undefined, 'without_attached');
+      expect(mockCodeApprovalMode).toHaveBeenLastCalledWith(
+        agentsConversation,
+        undefined,
+        'without_attached',
+      );
     });
 
     it('keeps startup turns local until the server generation epoch exists', async () => {
@@ -2140,8 +2206,8 @@ describe('useSteering', () => {
 
   describe('submitDuringRun', () => {
     it('routes to the steer POST with an optimistic sending chip', () => {
-      const { result } = setup({}, ({ set }) => {
-        set(store.duringRunDefaultAction, 'steer');
+      const { result } = setup({}, () => {
+        getDefaultStore().set(duringRunActionAtom, 'steer');
       });
       let consumed = false;
       act(() => {
@@ -2159,8 +2225,8 @@ describe('useSteering', () => {
     });
 
     it('routes to the client queue when the preference is queue', () => {
-      const { result } = setup({}, ({ set }) => {
-        set(store.duringRunDefaultAction, 'queue');
+      const { result } = setup({}, () => {
+        getDefaultStore().set(duringRunActionAtom, 'queue');
       });
       act(() => {
         result.current.submitDuringRun('after the run');
@@ -2170,8 +2236,8 @@ describe('useSteering', () => {
 
     it('ignores empty submissions', () => {
       // Explicitly request steer so blank-text validation exercises the steer path.
-      const { result } = setup({}, ({ set }) => {
-        set(store.duringRunDefaultAction, 'steer');
+      const { result } = setup({}, () => {
+        getDefaultStore().set(duringRunActionAtom, 'steer');
       });
       let consumed = true;
       act(() => {
@@ -2295,7 +2361,7 @@ describe('useSteering', () => {
      * a real conversationId. Without this fallback the always-visible button
      * would be dead for the whole first turn.
      */
-    it('falls back to interruptAndSend before a conversation exists', () => {
+    it('refuses Interrupt before a conversation exists without aborting it', () => {
       const { result, stopGenerating } = setup({
         conversationId: Constants.NEW_CONVO as string,
       });
@@ -2303,9 +2369,9 @@ describe('useSteering', () => {
       act(() => {
         consumed = result.current.interruptSteer('turn one interrupt');
       });
-      expect(consumed).toBe(true);
+      expect(consumed).toBe(false);
       expect(mockMutate).not.toHaveBeenCalled();
-      expect(stopGenerating).toHaveBeenCalled();
+      expect(stopGenerating).not.toHaveBeenCalled();
     });
 
     it('refuses empty text without touching the run', () => {
@@ -2359,8 +2425,8 @@ describe('useSteering', () => {
      * non-preempting, or they become indistinguishable from Interrupt & steer.
      */
     it('leaves the explicit Steer action non-preempting even with the preference on', () => {
-      const { result } = setup({}, ({ set }) => {
-        set(store.steerInterruptsByDefault, true);
+      const { result } = setup({}, () => {
+        getDefaultStore().set(duringRunActionAtom, 'interrupt');
       });
       act(() => {
         result.current.steerFromComposer('explicit steer row');
@@ -2375,8 +2441,8 @@ describe('useSteering', () => {
        thread's pending block renders; its own spec covers the preempt carry. */
 
     it('an ordinary steer does not preempt by default', () => {
-      const { result } = setup({}, ({ set }) => {
-        set(store.duringRunDefaultAction, 'steer');
+      const { result } = setup({}, () => {
+        getDefaultStore().set(duringRunActionAtom, 'steer');
       });
       act(() => {
         result.current.submitDuringRun('just steer');
@@ -2387,10 +2453,10 @@ describe('useSteering', () => {
       );
     });
 
-    it('steerInterruptsByDefault makes the default Enter route preempt', () => {
-      const { result } = setup({}, ({ set }) => {
-        set(store.duringRunDefaultAction, 'steer');
-        set(store.steerInterruptsByDefault, true);
+    it('the Interrupt default makes Enter preempt', () => {
+      const { result } = setup({}, () => {
+        getDefaultStore().set(duringRunActionAtom, 'steer');
+        getDefaultStore().set(duringRunActionAtom, 'interrupt');
       });
       act(() => {
         result.current.submitDuringRun('enter should interrupt');
@@ -2423,6 +2489,10 @@ describe('useSteering', () => {
         expect.objectContaining({ preempt: true }),
         expect.anything(),
       );
+      expect(mockShowToast).toHaveBeenCalledWith({
+        message: English.com_ui_steer_preempt_unsupported,
+        status: 'warning',
+      });
     });
 
     it('serializes rapid steer POSTs in submission order', () => {
@@ -3430,8 +3500,8 @@ describe('useSteering', () => {
     });
 
     it('sendQueuedNow steers whenever steering is available, even under the queue preference', () => {
-      const { result } = setupWithState({}, ({ set }) => {
-        set(store.duringRunDefaultAction, 'queue');
+      const { result } = setupWithState({}, () => {
+        getDefaultStore().set(duringRunActionAtom, 'queue');
       });
       act(() => {
         result.current.steering.enqueue('send me now');
@@ -3730,8 +3800,8 @@ describe('useSteering', () => {
     }
 
     it('steers with the composer attachments as one unit', () => {
-      const { result, setFiles } = setupWithFiles({}, ({ set }) => {
-        set(store.duringRunDefaultAction, 'steer');
+      const { result, setFiles } = setupWithFiles({}, () => {
+        getDefaultStore().set(duringRunActionAtom, 'steer');
       });
       let consumed = false;
       act(() => {
@@ -3772,7 +3842,7 @@ describe('useSteering', () => {
         type: 'image/png',
       });
 
-      function setupComposer() {
+      function setupComposer(initialFiles = new Map<string, ExtendedFile>()) {
         const sendNow = jest.fn();
         const stopGenerating = jest.fn();
         const observed: { files: Map<string, ExtendedFile> } = { files: new Map() };
@@ -3782,7 +3852,7 @@ describe('useSteering', () => {
         /** Real composer state, so `useUpdateFiles` and `useSteering` write
          *  through the same setter they share in `ChatForm`. */
         const Composer = () => {
-          const [files, setFiles] = React.useState<Map<string, ExtendedFile>>(new Map());
+          const [files, setFiles] = React.useState(initialFiles);
           observed.files = files;
           updates = useUpdateFiles(setFiles);
           steering = useSteering({
@@ -3811,6 +3881,59 @@ describe('useSteering', () => {
           getSteering: () => steering!,
         };
       }
+
+      const uploadedFile = {
+        ...extended('file-uploaded', 1),
+        temp_file_id: 'upload-key',
+      };
+
+      it('clears a queued attachment stored under its temporary upload key', () => {
+        const { observed, getSteering } = setupComposer(new Map([['upload-key', uploadedFile]]));
+
+        act(() => {
+          getSteering().queueFromComposer('use the uploaded image');
+        });
+
+        expect(observed.files.size).toBe(0);
+      });
+
+      it('does not attach a previously queued upload to the next queued message', () => {
+        const { getSteering } = setupComposer(new Map([['upload-key', uploadedFile]]));
+
+        act(() => {
+          getSteering().queueFromComposer('use the uploaded image');
+        });
+        act(() => {
+          getSteering().queueFromComposer('next message without attachments');
+        });
+
+        expect(getDefaultStore().get(queuedMessagesByConvoId(CONVO_ID))[1].files).toBeUndefined();
+      });
+
+      it('ignores a late callback using the queued attachment temporary upload id', () => {
+        const { observed, getUpdates, getSteering } = setupComposer(
+          new Map([['upload-key', uploadedFile]]),
+        );
+
+        act(() => {
+          getSteering().queueFromComposer('use the uploaded image');
+        });
+        act(() => getUpdates().replaceFile(extended('upload-key', 1)));
+
+        expect(observed.files.size).toBe(0);
+      });
+
+      it('keeps the server file reference on the queued message', () => {
+        const { getSteering } = setupComposer(new Map([['upload-key', uploadedFile]]));
+
+        act(() => {
+          getSteering().queueFromComposer('use the uploaded image');
+        });
+
+        expect(getDefaultStore().get(queuedMessagesByConvoId(CONVO_ID))[0].files).toEqual([
+          expect.objectContaining({ file_id: 'file-uploaded' }),
+        ]);
+      });
 
       it('ignores a late callback for an attachment the steer already took', () => {
         const { observed, getUpdates, getSteering } = setupComposer();
@@ -3887,8 +4010,8 @@ describe('useSteering', () => {
       // Seed 'steer' so this covers steerFromComposer's own filesLoading
       // guard; the queue-path guard is covered separately (queueFromComposer
       // is exercised directly with filesLoading in the composer-draft tests).
-      const { result } = setupWithFiles({ filesLoading: true }, ({ set }) => {
-        set(store.duringRunDefaultAction, 'steer');
+      const { result } = setupWithFiles({ filesLoading: true }, () => {
+        getDefaultStore().set(duringRunActionAtom, 'steer');
       });
       let consumed = true;
       act(() => {
@@ -4007,8 +4130,8 @@ describe('useSteering', () => {
     });
 
     it('does not mark usage on the steer path (the 202 already marked)', () => {
-      const { result } = setupWithFiles({}, ({ set }) => {
-        set(store.duringRunDefaultAction, 'steer');
+      const { result } = setupWithFiles({}, () => {
+        getDefaultStore().set(duringRunActionAtom, 'steer');
       });
       act(() => {
         result.current.steering.submitDuringRun('steer with media');

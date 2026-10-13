@@ -1,5 +1,4 @@
-import React, { useEffect, memo } from 'react';
-import TagManager from 'react-gtm-module';
+import React, { memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { Constants, hasConfiguredFooter } from 'librechat-data-provider';
 import type { TStartupConfig } from 'librechat-data-provider';
@@ -19,7 +18,7 @@ type FooterProps = {
   configuredOnly?: boolean;
 };
 
-type FooterStartupConfig = Pick<Partial<TStartupConfig>, 'analyticsGtmId' | 'customFooter'> & {
+type FooterStartupConfig = Pick<Partial<TStartupConfig>, 'customFooter'> & {
   interface?: Pick<NonNullable<TStartupConfig['interface']>, 'privacyPolicy' | 'termsOfService'>;
 };
 
@@ -87,15 +86,6 @@ function Footer({ className, startupConfig, configuredOnly = false }: FooterProp
   const mainContent = configuredFooter ?? genericFooter;
   const mainContentParts = mainContent === '' ? [] : mainContent.split('|');
 
-  useEffect(() => {
-    if (config?.analyticsGtmId != null && typeof window.google_tag_manager === 'undefined') {
-      const tagManagerArgs = {
-        gtmId: config.analyticsGtmId,
-      };
-      TagManager.initialize(tagManagerArgs);
-    }
-  }, [config?.analyticsGtmId]);
-
   const mainContentRender = mainContentParts.map((text, index) => (
     <React.Fragment key={`main-content-part-${index}`}>
       <ReactMarkdown
@@ -146,7 +136,7 @@ function Footer({ className, startupConfig, configuredOnly = false }: FooterProp
              rather than the brighter `text-secondary`: the underline carries the
              affordance, and a link that outshines its own sentence puts the
              emphasis back where this change takes it from. */
-          'text-text-muted absolute right-0 bottom-0 left-0 hidden items-center justify-center gap-2 px-2 py-2 text-center text-xs sm:flex md:px-[60px]'
+          'text-text-muted absolute right-0 bottom-0 left-0 hidden items-center justify-center gap-2 px-2 py-2 text-center text-xs sm:flex md:px-15'
         }
       >
         {footerElements.map((contentRender, index) => {
@@ -155,10 +145,7 @@ function Footer({ className, startupConfig, configuredOnly = false }: FooterProp
             <React.Fragment key={`footer-element-${index}`}>
               {contentRender}
               {!isLastElement && (
-                <div
-                  key={`separator-${index}`}
-                  className="border-border-medium h-2 border-r-[1px]"
-                />
+                <div key={`separator-${index}`} className="border-border-medium h-2 border-r" />
               )}
             </React.Fragment>
           );

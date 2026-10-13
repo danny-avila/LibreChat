@@ -5,11 +5,12 @@ import type { ChatSettings } from '~/hooks/Chat/contract';
 export const defaultChatSettings: ChatSettings = {
   duringRunDefaultAction: 'steer',
   setDuringRunDefaultAction: () => undefined,
-  steerInterruptsByDefault: false,
   resetVisibleArtifacts: () => undefined,
   saveDrafts: true,
   isTemporary: false,
   setIsTemporary: () => undefined,
+  config: { feedbackEnabled: false, canRenameRunningChat: false },
+  auth: {},
 };
 
 export const ChatSettingsContext = createContext<ChatSettings>(defaultChatSettings);

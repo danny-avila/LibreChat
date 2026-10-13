@@ -340,24 +340,32 @@ export function ErrorActions({ children }: { children: React.ReactNode }) {
 export function ErrorAction({
   onClick,
   children,
+  variant,
+  disabled = false,
 }: {
   onClick: () => void;
   children: React.ReactNode;
+  /** A second action next to the primary one reads as the alternative, not a peer. */
+  variant?: 'outline';
+  disabled?: boolean;
 }) {
   return (
     /** One step tighter than the button default (8px) so the control reads as nested inside the
      *  error card's 12px corner rather than echoing it. */
-    <Button type="button" size="sm" className="rounded-md" onClick={onClick}>
+    <Button
+      type="button"
+      size="sm"
+      variant={variant}
+      className="rounded-md"
+      onClick={onClick}
+      disabled={disabled}
+    >
       {children}
     </Button>
   );
 }
 
 export const formatNumber = (value: number): string => new Intl.NumberFormat().format(value);
-
-/** Token credits are a float balance; two decimals, matching the balance settings row. */
-export const formatCredits = (value: number): string =>
-  new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value);
 
 const isoTimestamp = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/;
 

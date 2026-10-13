@@ -136,12 +136,11 @@ function MessagesViewContent({
       <div className="relative flex-1 overflow-hidden overflow-y-auto">
         <div className="relative h-full">
           <div
-            className="scrollbar-gutter-stable"
+            className="scrollbar-gutter-stable overflow-y-auto"
             onScroll={debouncedHandleScroll}
             ref={scrollableRef}
             style={{
               height: '100%',
-              overflowY: 'auto',
               width: '100%',
               /** The mount hook pins the anchor row itself (document-space
                *  measurement); native scroll anchoring reacting to the same
@@ -161,7 +160,12 @@ function MessagesViewContent({
                 </div>
               ) : (
                 <>
-                  <div ref={screenshotTargetRef} data-testid="screenshot-target">
+                  <div
+                    key={treeConversationId}
+                    ref={screenshotTargetRef}
+                    data-conversation-id={treeConversationId}
+                    data-testid="screenshot-target"
+                  >
                     <RowMountProvider mountWindow={mountWindow}>
                       {FLAT_THREAD && threadRows ? (
                         <ThreadList

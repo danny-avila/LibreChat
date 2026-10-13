@@ -11,6 +11,7 @@ import {
   useReplyWatcher,
   useSearchEnabled,
   useCatalogWarmup,
+  useMessagesRetention,
   useAssistantsMap,
   useUnseenConversations,
 } from '~/hooks';
@@ -38,6 +39,7 @@ import KeyboardShortcutsDialog from '~/components/Nav/KeyboardShortcutsDialog';
 import KeyboardDeleteDialog from '~/components/Nav/KeyboardDeleteDialog';
 import { useUserTermsQuery, useGetStartupConfig } from '~/data-provider';
 import { MobileDrawerScrim } from '~/components/UnifiedSidebar/mobile';
+import AnalyticsConsent from '~/components/System/AnalyticsConsent';
 import useKeyboardShortcuts from '~/hooks/useKeyboardShortcuts';
 import useDrawerDismiss from '~/hooks/Nav/useDrawerDismiss';
 import useSidebarToggle from '~/hooks/Nav/useSidebarToggle';
@@ -46,6 +48,7 @@ import { TermsAndConditionsModal } from '~/components/ui';
 import useDrawerSwipe from '~/hooks/Nav/useDrawerSwipe';
 import ChatSettingsProvider from './ChatSettings';
 import { useHealthCheck } from '~/data-provider';
+import Settings from '~/components/Nav/Settings';
 import { Banner } from '~/components/Banners';
 import store from '~/store';
 
@@ -55,6 +58,12 @@ function ReplyNotifications() {
   useReplyWatcher();
   useUnseenBadge(replyState?.unseen.length ?? 0);
   useReplyAlerts(replyState);
+  return null;
+}
+
+/** Isolates the route subscription that keeps the routed conversation's history cached. */
+function MessagesRetention() {
+  useMessagesRetention();
   return null;
 }
 
@@ -146,6 +155,14 @@ function RootLayout() {
     }
   }, [termsData]);
 
+  /** The overscroll guard in style.css keys off this attribute: drawer mode is decided
+   *  against the scaled root font size, which a media query cannot read. */
+  useEffect(() => {
+    const root = document.documentElement;
+    root.toggleAttribute('data-drawer-nav', isSmallScreen);
+    return () => root.removeAttribute('data-drawer-nav');
+  }, [isSmallScreen]);
+
   const handleAcceptTerms = () => {
     setShowTerms(false);
   };
@@ -231,8 +248,11 @@ function RootLayout() {
                   </div>
                 </div>
               </PromptGroupsProvider>
+              <Settings />
               <KeyboardShortcutsProvider />
               <ReplyNotifications />
+              <MessagesRetention />
+              <AnalyticsConsent gtmId={config?.analyticsGtmId} />
             </AgentsMapContext.Provider>
             {config?.interface?.termsOfService?.modalAcceptance === true && (
               <TermsAndConditionsModal

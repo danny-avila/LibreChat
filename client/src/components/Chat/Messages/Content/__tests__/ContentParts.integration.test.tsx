@@ -5,7 +5,10 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import type { EventSubmission, TAttachment, TMessageContentParts } from 'librechat-data-provider';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useAttachments from '~/hooks/Messages/useAttachments';
+import { ParallelColumns } from '../ParallelContent';
 import ContentParts from '../ContentParts';
+import { FOLD_GLYPH_CLASS } from '../rows';
+import { litFoldPath } from '../rail';
 import { Text } from '../Parts';
 
 jest.mock('~/hooks', () => ({
@@ -97,6 +100,7 @@ jest.mock('lucide-react', () => ({
   ...jest.requireActual('lucide-react'),
   ChevronDown: () => <span>{'chevron'}</span>,
   TriangleAlert: () => <span>{'alert'}</span>,
+  CircleX: () => <span>{'failed'}</span>,
   Users: () => <span>{'users'}</span>,
 }));
 
@@ -1061,7 +1065,7 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
   });
 });
 
-describe('ContentParts — synthesized activity folds', () => {
+describe('ContentParts: synthesized activity folds', () => {
   /** Settled by default: the fold is content-derived, so history and a live
    *  run partition identically. The streaming case gets its own test below. */
   const baseProps = {
@@ -1131,7 +1135,9 @@ describe('ContentParts — synthesized activity folds', () => {
     const { rerender } = renderContentParts(props);
 
     const phase = screen.getByTestId('activity-phase-card');
-    expect(within(phase).getByTestId('failed-reveal-pill')).toHaveTextContent('1/2 failed');
+    expect(within(phase).getByTestId('failed-reveal-pill')).toHaveTextContent(
+      'com_ui_n_actions_failed',
+    );
     fireEvent.click(within(phase).getAllByRole('button')[0]);
 
     const group = screen.getByRole('button', { name: /Running 2 actions.*1\/2 failed/ });
@@ -2219,5 +2225,54 @@ describe('ContentParts — live activity fold', () => {
       'aria-expanded',
       'true',
     );
+  });
+});
+
+describe('fold paths in parallel columns', () => {
+  it('marks real lane boundaries and selects the header owning each output', () => {
+    const { container } = render(
+      <div data-fold-root="">
+        <div data-fold-panel="">
+          <button type="button" tabIndex={-1} aria-hidden="true" data-fold-rail="" />
+          <ParallelColumns
+            columns={[
+              {
+                agentId: 'left',
+                parts: [{ idx: 0, part: { type: ContentTypes.TEXT, text: 'left' } }],
+              },
+              {
+                agentId: 'right',
+                parts: [{ idx: 1, part: { type: ContentTypes.TEXT, text: 'right' } }],
+              },
+            ]}
+            groupId={1}
+            messageId="parallel-fold"
+            isSubmitting={false}
+            lastContentIdx={1}
+            renderPart={(_part, idx) => (
+              <div key={idx}>
+                <span className={FOLD_GLYPH_CLASS} data-testid={`lane-glyph-${idx}`} />
+                <pre data-testid={`lane-output-${idx}`} />
+              </div>
+            )}
+          />
+        </div>
+      </div>,
+    );
+    expect(container.querySelectorAll('[data-fold-column]')).toHaveLength(2);
+    const root = container.querySelector('[data-fold-root]')!;
+    const rail = container.querySelector<HTMLElement>('[data-fold-rail]')!;
+    rail.getBoundingClientRect = () => ({ top: 40 }) as DOMRect;
+    screen.getByTestId('lane-glyph-0').getBoundingClientRect = () =>
+      ({ top: 300, height: 20 }) as DOMRect;
+    screen.getByTestId('lane-glyph-1').getBoundingClientRect = () =>
+      ({ top: 50, height: 20 }) as DOMRect;
+    const cache = new WeakMap<Element, Element[]>();
+    expect(litFoldPath(root, screen.getByTestId('lane-output-0'), 350, cache)).toEqual([
+      { rail, length: 268, end: true },
+    ]);
+    expect(litFoldPath(root, screen.getByTestId('lane-output-1'), 350, cache)).toEqual([
+      { rail, length: 18, end: true },
+    ]);
   });
 });

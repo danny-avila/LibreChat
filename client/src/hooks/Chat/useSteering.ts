@@ -15,6 +15,7 @@ import type {
   TAgentQueuedTurnFileRef,
   TMessage,
   TConversation,
+  CodeEnvironmentMode,
   TMessageContentParts,
 } from 'librechat-data-provider';
 import type { CallbackInterface } from 'recoil';
@@ -30,7 +31,6 @@ import type { ExtendedFile, FileSetter } from '~/common';
 import type { PendingSteer } from '~/hooks/Chat/queue';
 import type { DuringRunAction } from './contract';
 import {
-  useGetStartupConfig,
   useCancelSteerMutation,
   useSteerMessageMutation,
   useMarkFilesUsageMutation,
@@ -544,8 +544,12 @@ export interface UseSteeringParams {
   conversationId: string;
   conversation: TConversation | null;
   addedConversation?: TConversation | null;
+  /** The workspace mode the composer resolved for the next turn. */
+  codeEnvironmentMode?: CodeEnvironmentMode;
   isSubmitting: boolean;
   answerModeActive: boolean;
+  /** Host-owned preparation hold; existing queued-message and Stop actions remain independent. */
+  composerDisabled?: boolean;
   /** Composer attachments: consumed into queued items (steering is text-only). */
   files?: Map<string, ExtendedFile>;
   setFiles?: FileSetter;
@@ -579,8 +583,10 @@ export default function useSteering({
   conversationId,
   conversation,
   addedConversation,
+  codeEnvironmentMode,
   isSubmitting,
   answerModeActive,
+  composerDisabled = false,
   files,
   setFiles,
   filesLoading = false,
@@ -588,6 +594,8 @@ export default function useSteering({
   stopGenerating,
 }: UseSteeringParams) {
   const localize = useLocalize();
+  const composerDisabledRef = useRef(composerDisabled);
+  composerDisabledRef.current = composerDisabled;
   const reasoningStore = useStore();
   const { showToast } = useToastContext();
   const jotaiStore = useStore();
@@ -605,12 +613,16 @@ export default function useSteering({
   const { mutate: enqueueAgentQueuedTurn } = useEnqueueAgentQueuedTurnMutation();
   const { mutateAsync: cancelAgentQueuedTurn } = useCancelAgentQueuedTurnMutation();
   const {
+    config,
     duringRunDefaultAction: defaultAction,
     setDuringRunDefaultAction: setDefaultAction,
-    steerInterruptsByDefault,
   } = useChatSettings();
 
-  const { selected: codeApprovalMode } = useCodeApprovalMode(conversation, addedConversation);
+  const { selected: codeApprovalMode } = useCodeApprovalMode(
+    conversation,
+    addedConversation,
+    codeEnvironmentMode,
+  );
   const endpoint = conversation?.endpointType ?? conversation?.endpoint;
   const steerable = !isAssistantsEndpoint(endpoint);
   const hasRealConvoId =
@@ -623,16 +635,13 @@ export default function useSteering({
   const queuedMessages = useAtomValue(queuedMessagesByConvoId(queueKey));
   const pendingReasoningOverride = useAtomValue(pendingReasoningOverrideFamily(reasoningStateKey));
   const setQueuedMessages = useSetAtom(queuedMessagesByConvoId(queueKey));
-  const { data: startupConfig } = useGetStartupConfig();
   /** Bound transport-outcome reconciliation while still guaranteeing several
    * list reads after the enqueue promise settles. Focus/remount remains a later
    * reconciliation path; a slow proxy or a delayed read replica needs the
    * operator to widen this rather than wait for one. */
   const reconciliationWindowMs =
-    startupConfig?.interface?.queuedTurnReconciliationTimeoutMs ??
-    DEFAULT_QUEUED_TURN_RECONCILIATION_TIMEOUT_MS;
-  const sendLockTimeoutMs =
-    startupConfig?.interface?.queuedSendLockTimeoutMs ?? DEFAULT_QUEUED_SEND_LOCK_TIMEOUT_MS;
+    config.queuedTurnReconciliationTimeoutMs ?? DEFAULT_QUEUED_TURN_RECONCILIATION_TIMEOUT_MS;
+  const sendLockTimeoutMs = config.queuedSendLockTimeoutMs ?? DEFAULT_QUEUED_SEND_LOCK_TIMEOUT_MS;
   const knownClientRequestIds = useMemo(
     () =>
       Array.from(
@@ -1292,7 +1301,12 @@ export default function useSteering({
       return undefined;
     }
     const staged = Array.from(files.values());
-    const takenIds = staged.map((file) => file.file_id);
+    // Completed uploads keep their temporary map key after receiving a server id.
+    const takenIds = Array.from(files.entries()).flatMap(([key, file]) => [
+      key,
+      file.file_id,
+      ...(file.temp_file_id ? [file.temp_file_id] : []),
+    ]);
     const taken = staged.map((file) => ({
       file_id: file.file_id,
       filepath: file.filepath,
@@ -1436,6 +1450,23 @@ export default function useSteering({
    *  already reached the composer while their parked copy could not be let go. */
   const holdQueued = useCallback(
     (id: string) => updateQueuedMessage(id, (item) => ({ ...item, needsExplicitSend: true })),
+    [updateQueuedMessage],
+  );
+
+  /** The user's own hold on a local row: out of the run-end drain until released.
+   *  A hold that came from a rejected steer is not the user's to release. */
+  const toggleQueuedHold = useCallback(
+    (id: string, held: boolean) =>
+      updateQueuedMessage(id, (item) => {
+        if (held) {
+          return { ...item, needsExplicitSend: true, heldByUser: true };
+        }
+        if (item.heldByUser !== true) {
+          return item;
+        }
+        const { needsExplicitSend: _held, heldByUser: _byUser, ...rest } = item;
+        return rest;
+      }),
     [updateQueuedMessage],
   );
 
@@ -1948,10 +1979,18 @@ export default function useSteering({
                     }
                     return;
                   }
-                  /** The server's echo is authoritative: a deployment whose SDK
-                   *  cannot seal mid-stream still queues the steer and answers
-                   *  `preempt: false`, which relabels the chip to the ordinary
-                   *  wording instead of surfacing an error. */
+                  /** Unsupported runs retain the words as Steer, but never silently
+                   * claim to have requested tool cancellation. */
+                  if (
+                    preempt &&
+                    response.preempt !== true &&
+                    visibleConversationRef.current === conversationId
+                  ) {
+                    showToast({
+                      message: localize('com_ui_steer_preempt_unsupported'),
+                      status: 'warning',
+                    });
+                  }
                   const acknowledged = {
                     steerId: response.steerId,
                     clientSteerId: localId,
@@ -2199,7 +2238,7 @@ export default function useSteering({
   const steerFromComposer = useCallback(
     (text: string, preempt = false): boolean => {
       const trimmed = text.trim();
-      if (trimmed.length === 0 || filesLoading || !canSteer) {
+      if (composerDisabledRef.current || trimmed.length === 0 || filesLoading || !canSteer) {
         return false;
       }
       /** A live steer cannot change the provider request already in flight.
@@ -2238,7 +2277,7 @@ export default function useSteering({
   const queueFromComposer = useCallback(
     (text: string): boolean => {
       const trimmed = text.trim();
-      if (trimmed.length === 0 || filesLoading) {
+      if (composerDisabledRef.current || trimmed.length === 0 || filesLoading) {
         return false;
       }
       enqueue(trimmed, {
@@ -2481,7 +2520,12 @@ export default function useSteering({
   const interruptAndSend = useCallback(
     (text: string): boolean => {
       const trimmed = text.trim();
-      if (trimmed.length === 0 || filesLoading || !canControlGeneration) {
+      if (
+        composerDisabledRef.current ||
+        trimmed.length === 0 ||
+        filesLoading ||
+        !canControlGeneration
+      ) {
         return false;
       }
       enqueue(trimmed, {
@@ -2506,29 +2550,18 @@ export default function useSteering({
     ],
   );
 
-  /**
-   * Interrupt & steer: the same POST, queue, chip lifecycle and degradation
-   * ladder as an ordinary steer: the only difference is that the server asks
-   * the generating replica to seal its model stream at the next
-   * provider-safe boundary instead of waiting for a tool step. The partial
-   * answer is kept and generation resumes in the same message.
-   *
-   * Falls back to `interruptAndSend` ONLY before a conversation exists:
-   * steering needs a server-side job, so `submitSteer` hard-refuses without a
-   * real conversationId, and an always-visible button would otherwise be dead
-   * for the entire first turn, exactly when a user most wants to stop a long
-   * answer.
-   *
-   * A run paused on tool approval refuses outright instead. `canSteer` is
-   * false there too, but routing that into `interruptAndSend` would hard-abort
-   * the run and discard the partial answer: the exact opposite of what this
-   * action promises. The standalone button is disabled while paused; the
-   * keyboard and hovercard paths reach here, so the guard lives here.
-   */
+  /** Preempt the active step and continue the same response with the message. */
   const interruptSteer = useCallback(
     (text: string): boolean => {
       const trimmed = text.trim();
-      if (trimmed.length === 0 || filesLoading || pausedOnApproval || !canControlGeneration) {
+      if (
+        composerDisabledRef.current ||
+        trimmed.length === 0 ||
+        filesLoading ||
+        pausedOnApproval ||
+        !canControlGeneration ||
+        !hasRealConvoId
+      ) {
         return false;
       }
       /* A staged reasoning choice belongs to a new generation, which a steer
@@ -2539,9 +2572,6 @@ export default function useSteering({
          turn of their own. */
       if (pendingReasoningOverride != null) {
         return false;
-      }
-      if (!hasRealConvoId) {
-        return interruptAndSend(trimmed);
       }
       const consumed = submitSteer(trimmed, takeComposerFiles(), takeComposerQuotes(), {
         preempt: true,
@@ -2557,7 +2587,6 @@ export default function useSteering({
       canControlGeneration,
       hasRealConvoId,
       pendingReasoningOverride,
-      interruptAndSend,
       takeComposerFiles,
       takeComposerQuotes,
       takeComposerDraft,
@@ -2568,24 +2597,18 @@ export default function useSteering({
   /** Routes a during-run submit to the effective action. Returns true when consumed. */
   const submitDuringRun = useCallback(
     (text: string): boolean => {
-      if (!duringRunActive) {
+      if (composerDisabledRef.current || !duringRunActive) {
         return false;
       }
+      if (effectiveAction === 'interrupt') {
+        return interruptSteer(text);
+      }
       if (effectiveAction === 'steer') {
-        /** Only the DEFAULT route honours the preference: the explicit Steer
-         *  row and the Ctrl/Cmd+Enter alternate stay non-preempting, or they
-         *  would become indistinguishable from Interrupt & steer. */
-        return steerFromComposer(text, steerInterruptsByDefault);
+        return steerFromComposer(text);
       }
       return queueFromComposer(text);
     },
-    [
-      duringRunActive,
-      effectiveAction,
-      steerInterruptsByDefault,
-      steerFromComposer,
-      queueFromComposer,
-    ],
+    [duringRunActive, effectiveAction, interruptSteer, steerFromComposer, queueFromComposer],
   );
 
   /** Memoized so consumers like `memo(Bar)` and `memo(Queue)` can bail on the
@@ -2600,7 +2623,6 @@ export default function useSteering({
       canSendQueuedNow,
       effectiveAction,
       defaultAction,
-      steerInterruptsByDefault,
       pendingReasoningOverride,
       pausedOnApproval,
       setDefaultAction,
@@ -2615,6 +2637,7 @@ export default function useSteering({
       enqueue,
       removeQueued,
       holdQueued,
+      toggleQueuedHold,
       discardQueued,
       dismissRecovery,
       rewakeDrain,
@@ -2632,7 +2655,6 @@ export default function useSteering({
       duringRunActive,
       canSendQueuedNow,
       effectiveAction,
-      steerInterruptsByDefault,
       defaultAction,
       pendingReasoningOverride,
       pausedOnApproval,
@@ -2648,6 +2670,7 @@ export default function useSteering({
       enqueue,
       removeQueued,
       holdQueued,
+      toggleQueuedHold,
       discardQueued,
       dismissRecovery,
       rewakeDrain,

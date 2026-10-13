@@ -84,6 +84,7 @@ import {
   generationProtocolHeaders,
   getGenerationProtocolVersion,
   supportsGenerationProtocolV2,
+  fetchConversationMessages,
   GENERATION_PROTOCOL_VERSION,
 } from '~/data-provider';
 import {
@@ -97,10 +98,13 @@ import useEventHandlers, {
 } from './useEventHandlers';
 import { drainAfterAbortByIndex, queuedMessagesByConvoId, runEndByIndex } from '~/hooks/Chat/queue';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
+import { abortScrollFamily, showStopButtonByIndex } from '~/store/generation';
+import { withSubmittedCodeDecision } from '~/hooks/Agents/codeDecision';
 import { useChatTransport } from '~/Providers/ChatTransportContext';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { liveAppliedSteerIdsAtom } from '~/store/steer';
 import { useAuthContext } from '~/hooks/AuthContext';
+import { fetchConvoSnapshot } from '~/utils/convos';
 import { useFileMapContext } from '~/Providers';
 import useUsageHandler from './useUsageHandler';
 import useLocalize from '~/hooks/useLocalize';
@@ -581,7 +585,7 @@ const buildOptimisticConversation = (
     submission.initialResponse?.messageId,
   ].filter((messageId): messageId is string => typeof messageId === 'string' && messageId !== '');
 
-  return {
+  const conversation = {
     ...submission.conversation,
     conversationId,
     endpoint: submission.conversation.endpoint ?? null,
@@ -595,6 +599,7 @@ const buildOptimisticConversation = (
      * when true, leaving the legacy `expiredAt` inference untouched otherwise. */
     ...(submission.isTemporary === true ? { isTemporary: true } : {}),
   } as TConversation;
+  return withSubmittedCodeDecision(conversation, submission)!;
 };
 
 const hydrateSubmissionMessages = (
@@ -965,9 +970,9 @@ export default function useResumableSSE(
   );
   const [_completed, setCompleted] = useState(new Set());
   const [streamId, setStreamId] = useState<string | null>(null);
-  const setAbortScroll = useSetRecoilState(store.abortScrollFamily(runIndex));
+  const setAbortScroll = useSetAtom(abortScrollFamily(runIndex));
   const setSubmission = useSetRecoilState(store.submissionByIndex(runIndex));
-  const setShowStopButton = useSetRecoilState(store.showStopButtonByIndex(runIndex));
+  const setShowStopButton = useSetAtom(showStopButtonByIndex(runIndex));
   const setLiveAppliedSteerIds = useSetAtom(liveAppliedSteerIdsAtom);
 
   const streamRef = useRef<AbortController | null>(null);
@@ -3228,7 +3233,7 @@ export default function useResumableSSE(
               const fetched = await queryClient.fetchQuery<TMessage[]>({
                 queryKey: messageQueryKey,
                 // The first stream can finish before CREATED mounts the saved-chat query.
-                queryFn: () => dataService.getMessagesByConvoId(convoId),
+                queryFn: () => fetchConversationMessages(convoId),
               });
               if (!isCurrentSubscription()) {
                 return;
@@ -3400,11 +3405,13 @@ export default function useResumableSSE(
             // Both fresh and resumed subscriptions can miss every event of a fast turn.
             // A missing job proves neither that the conversation was saved nor that it failed.
             try {
-              const persisted = await dataService.getConversationById(recoveryConvoId);
+              const persisted = await fetchConvoSnapshot(queryClient, recoveryConvoId, () =>
+                dataService.getConversationById(recoveryConvoId),
+              );
               if (!isCurrentSubscription()) return;
               if (persisted?.conversationId === recoveryConvoId) {
                 queryClient.setQueryData([QueryKeys.conversation, recoveryConvoId], persisted);
-                upsertConvoInAllQueries(queryClient, persisted);
+                upsertConvoInAllQueries(queryClient, persisted, true, 'snapshot');
                 if (!isAddedRequest) {
                   setConversation?.((current) => {
                     if (
@@ -4613,7 +4620,11 @@ export default function useResumableSSE(
             let persistedConversation: TConversation | undefined;
             let conversationLookup: 'found' | 'not_found' | 'inconclusive' = 'inconclusive';
             try {
-              persistedConversation = await dataService.getConversationById(settledConversationId);
+              persistedConversation = await fetchConvoSnapshot(
+                queryClient,
+                settledConversationId,
+                () => dataService.getConversationById(settledConversationId),
+              );
               if (!isCurrentEffect()) {
                 return;
               }
@@ -4654,7 +4665,7 @@ export default function useResumableSSE(
                 [QueryKeys.conversation, settledConversationId],
                 conversationRecord,
               );
-              upsertConvoInAllQueries(queryClient, conversationRecord);
+              upsertConvoInAllQueries(queryClient, conversationRecord, true, 'snapshot');
               setConversation?.((current) =>
                 keepLocalCodeApprovalMode(settledCopy, current, localConversationId),
               );

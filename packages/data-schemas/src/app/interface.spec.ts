@@ -75,6 +75,18 @@ describe('loadDefaultInterface', () => {
     expect(configuredInterface?.queuedTurnReconciliationTimeoutMs).toBe(180_000);
   });
 
+  it('allows the mascot by default and preserves an explicit opt-out', async () => {
+    const configDefaults = getConfigDefaults();
+    const defaultInterface = await loadDefaultInterface({ config: {}, configDefaults });
+    expect(defaultInterface?.mascot).toBe(true);
+
+    const disabledInterface = await loadDefaultInterface({
+      config: { interface: { mascot: false } },
+      configDefaults,
+    });
+    expect(disabledInterface?.mascot).toBe(false);
+  });
+
   it('uses and preserves the schema default for the queued-send lock expiry', async () => {
     const configDefaults = getConfigDefaults();
     const defaultInterface = await loadDefaultInterface({
@@ -103,6 +115,23 @@ describe('loadDefaultInterface', () => {
       configDefaults,
     });
     expect(configuredInterface?.composerRecentFiles).toBe(10);
+  });
+
+  it('uses and preserves the schema defaults for the client history cache', async () => {
+    const configDefaults = getConfigDefaults();
+    const defaultInterface = await loadDefaultInterface({
+      config: {},
+      configDefaults,
+    });
+    expect(defaultInterface?.historyCacheTtlMs).toBe(60_000);
+    expect(defaultInterface?.historyCacheRecent).toBe(1);
+
+    const configuredInterface = await loadDefaultInterface({
+      config: { interface: { historyCacheTtlMs: 0, historyCacheRecent: 3 } },
+      configDefaults,
+    });
+    expect(configuredInterface?.historyCacheTtlMs).toBe(0);
+    expect(configuredInterface?.historyCacheRecent).toBe(3);
   });
 
   it('uses and preserves the schema default for steer arm confirmation', async () => {
@@ -138,6 +167,20 @@ describe('loadDefaultInterface', () => {
     });
 
     expect(interfaceConfig?.autoSubmitFromUrl).toBe(false);
+  });
+
+  it('keeps the colour-mode URL handoff off unless configured', async () => {
+    const unset = await loadDefaultInterface({
+      config: {},
+      configDefaults: getConfigDefaults(),
+    });
+    const enabled = await loadDefaultInterface({
+      config: { interface: { colorModeFromUrl: true } },
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(unset?.colorModeFromUrl).toBe(false);
+    expect(enabled?.colorModeFromUrl).toBe(true);
   });
 
   it('preserves a disabled build info flag', async () => {
@@ -425,5 +468,20 @@ describe('loadDefaultInterface', () => {
     });
 
     expect(interfaceConfig).not.toHaveProperty('theme');
+  });
+});
+
+describe('running chat rename deployment fence', () => {
+  it.each([
+    [undefined, true],
+    [false, false],
+    [true, true],
+  ])('resolves runningChatRename %s to %s', async (configured, expected) => {
+    const configDefaults = getConfigDefaults();
+    const interfaceConfig = await loadDefaultInterface({
+      config: { interface: configured === undefined ? {} : { runningChatRename: configured } },
+      configDefaults,
+    });
+    expect(interfaceConfig?.runningChatRename).toBe(expected);
   });
 });

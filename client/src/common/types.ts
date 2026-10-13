@@ -508,6 +508,7 @@ export type TAuthContext = {
   error: string | undefined;
   login: (data: t.TLoginUser) => void;
   logout: (redirect?: string) => void;
+  completeAuthentication: (token: string, user: t.TUser) => void;
   setError: React.Dispatch<React.SetStateAction<string | undefined>>;
   roles?: Record<string, t.TRole | null | undefined>;
 };
@@ -682,6 +683,8 @@ export type TThread = { id: string; createdAt: string };
 declare global {
   interface Window {
     google_tag_manager?: unknown;
+    /** Google Tag Manager's command queue, present once the container has loaded. */
+    dataLayer?: unknown[];
     /** Answers the server emits with the document, ahead of the app's own
      *  scripts, for questions the first render must not guess at. */
     __LIBRECHAT_CONFIG__?: {

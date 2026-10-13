@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { v4 } from 'uuid';
-import { useStore } from 'jotai';
+import { useStore, useSetAtom } from 'jotai';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSetRecoilState, useRecoilCallback } from 'recoil';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
@@ -22,10 +22,9 @@ import type {
   ChatCreatedFrame,
   TMessageContentParts,
 } from 'librechat-data-provider';
-import type { InfiniteData } from '@tanstack/react-query';
 import type { SetterOrUpdater } from 'recoil';
 import type { TResData, TFinalResData, ConvoGenerator } from '~/common';
-import type { ConversationCursorData } from '~/utils';
+import type { ConvoTitleState } from '~/utils/convos';
 import {
   logger,
   setDraft,
@@ -41,7 +40,8 @@ import {
   applyServerReplyStamp,
   markLocallyCommittedReply,
   removeConvoFromAllQueries,
-  findConversationInInfinite,
+  findConvoInAllQueries,
+  findManualConvoTitleInAllQueries,
   preserveStreamedContentIdentity,
   isEmptyContentPart,
   getPartKeyIndex,
@@ -65,6 +65,7 @@ import { shouldResetSubagentAtomsOnConversationChange } from './cleanup';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import { useChatTransport } from '~/Providers/ChatTransportContext';
 import useContentHandler from '~/hooks/SSE/useContentHandler';
+import { submissionStartFamily } from '~/store/generation';
 import useStepHandler from '~/hooks/SSE/useStepHandler';
 import { useApplyAgentTemplate } from '~/hooks/Agents';
 import { useAuthContext } from '~/hooks/AuthContext';
@@ -533,34 +534,44 @@ export const buildRecoveryPreset = (
   );
 
 export const getConvoTitle = ({
-  parentId,
   queryClient,
   currentTitle,
   conversationId,
+  titleSetByUser,
+  titleRevision,
+  authoritative = false,
 }: {
-  parentId?: string | null;
   queryClient: ReturnType<typeof useQueryClient>;
   currentTitle?: string | null;
   conversationId?: string | null;
-}): string | null | undefined => {
-  if (
-    parentId !== Constants.NO_PARENT &&
-    (currentTitle?.toLowerCase().includes('new chat') ?? false)
-  ) {
-    const currentConvo = queryClient.getQueryData<TConversation>([
-      QueryKeys.conversation,
-      conversationId,
-    ]);
-    if (currentConvo?.title) {
-      return currentConvo.title;
-    }
-    const convos = queryClient.getQueryData<InfiniteData<ConversationCursorData>>([
-      QueryKeys.allConversations,
-    ]);
-    const cachedConvo = findConversationInInfinite(convos, conversationId ?? '');
-    return cachedConvo?.title ?? currentConvo?.title ?? null;
+  titleSetByUser?: boolean;
+  titleRevision?: number;
+  authoritative?: boolean;
+}): ConvoTitleState => {
+  const incoming = { title: currentTitle ?? null, titleSetByUser, titleRevision };
+  if (!conversationId) {
+    return incoming;
   }
-  return currentTitle;
+  const cached = queryClient.getQueryData<TConversation>([QueryKeys.conversation, conversationId]);
+  const owned = findManualConvoTitleInAllQueries(queryClient, conversationId, incoming);
+  const listed = owned ? undefined : findConvoInAllQueries(queryClient, conversationId);
+  let selected = owned;
+  if (!selected) {
+    if (authoritative && hasRealTitle(incoming.title)) {
+      selected = incoming;
+    } else if (hasRealTitle(cached?.title)) {
+      selected = cached;
+    } else if (hasRealTitle(listed?.title)) {
+      selected = listed;
+    } else {
+      selected = incoming;
+    }
+  }
+  return {
+    title: selected?.title ?? null,
+    titleSetByUser: selected?.titleSetByUser,
+    titleRevision: selected?.titleRevision,
+  };
 };
 
 export default function useEventHandlers({
@@ -583,7 +594,7 @@ export default function useEventHandlers({
    *  its generation, or a later externally-started run attached at this index
    *  would inherit a stale baseline. Navigation teardown deliberately does not
    *  clear it: a reattach to a still-live run keeps its original start. */
-  const setSubmissionStart = useSetRecoilState(store.submissionStartFamily(runIndex));
+  const setSubmissionStart = useSetAtom(submissionStartFamily(runIndex));
   const { mutate: reconcileCodeDecision } =
     useReconcileConversationCodeEnvironmentMutation(setConversation);
   const reconcileFailedCodeDecision = useCallback(
@@ -842,19 +853,19 @@ export default function useEventHandlers({
       let update = {} as TConversation;
       if (setConversation && !isAddedRequest) {
         setConversation((prevState) => {
-          const parentId = requestMessage.parentMessageId;
-          const title = getConvoTitle({
-            parentId,
+          const titleState = getConvoTitle({
             queryClient,
             conversationId,
             currentTitle: prevState?.title,
+            titleSetByUser: prevState?.titleSetByUser,
+            titleRevision: prevState?.titleRevision,
           });
           update = tConvoUpdateSchema.parse({
             ...prevState,
             ...acknowledgedCodeEnvironment(prevState, submission),
             conversationId,
             thread_id,
-            title,
+            ...titleState,
             messages: [requestMessage.messageId, responseMessage.messageId],
           }) as TConversation;
           return update;
@@ -927,18 +938,18 @@ export default function useEventHandlers({
       let update = {} as TConversation;
       if (setConversation && !isAddedRequest) {
         setConversation((prevState) => {
-          const parentId = isRegenerate ? userMessage.overrideParentMessageId : parentMessageId;
-          const title = getConvoTitle({
-            parentId,
+          const titleState = getConvoTitle({
             queryClient,
             conversationId,
             currentTitle: prevState?.title,
+            titleSetByUser: prevState?.titleSetByUser,
+            titleRevision: prevState?.titleRevision,
           });
           update = tConvoUpdateSchema.parse({
             ...prevState,
             ...acknowledgedCodeEnvironment(prevState, submission),
             conversationId,
-            title,
+            ...titleState,
           }) as TConversation;
           return update;
         });
@@ -992,15 +1003,25 @@ export default function useEventHandlers({
 
   const titleHandler = useCallback(
     (event: TTitleEvent) => {
-      const { conversationId, title } = event.data ?? {};
-      if (!conversationId || !hasRealTitle(title)) {
+      const { conversationId, title: generatedTitle } = event.data ?? {};
+      if (!conversationId || !hasRealTitle(generatedTitle)) {
         return;
       }
+      const titleState = getConvoTitle({
+        queryClient,
+        conversationId,
+        currentTitle: generatedTitle,
+      });
+      const title = titleState.title ?? generatedTitle;
 
       queryClient.setQueryData<TConversation>([QueryKeys.conversation, conversationId], (convo) =>
-        convo ? { ...convo, title } : convo,
+        convo ? { ...convo, ...titleState, title } : convo,
       );
-      updateConvoInAllQueries(queryClient, conversationId, (convo) => ({ ...convo, title }));
+      updateConvoInAllQueries(queryClient, conversationId, (convo) => ({
+        ...convo,
+        ...titleState,
+        title,
+      }));
       markTitleGenerationProcessed(conversationId);
 
       if (location.pathname.includes(conversationId)) {
@@ -1018,6 +1039,7 @@ export default function useEventHandlers({
           return {
             ...prevState,
             conversationId,
+            ...titleState,
             title,
           };
         });
@@ -1223,12 +1245,7 @@ export default function useEventHandlers({
           removeConvoFromAllQueries(queryClient, submissionConvo.conversationId);
         }
 
-        /** A title applied locally (e.g. an immediate-mode title fetched while the
-         *  response was still streaming) must survive the final event, whose
-         *  `conversation` was built before the title was saved and so carries no
-         *  title yet, otherwise the chat reverts to "New Chat" until reload. This
-         *  holds for a stopped turn too: the server persists a title that finished
-         *  generating before the Stop, so the local one stays in sync. */
+        /** Stream snapshots cannot overwrite a rename or generated title already in the cache. */
         if (setConversation && isAddedRequest !== true) {
           /* Pair the durable server stamp with the exact final messages cache object before
            * point/list cache events can ask useConversationSeen to acknowledge it. */
@@ -1254,11 +1271,26 @@ export default function useEventHandlers({
             if (prevState?.model != null && prevState.model !== submissionConvo.model) {
               update.model = prevState.model;
             }
-            const prevTitle = prevState?.title;
-            if (!hasRealTitle(conversation.title) && hasRealTitle(prevTitle)) {
-              update.title = prevTitle;
-            }
+            const titleState = getConvoTitle({
+              queryClient,
+              conversationId: conversation.conversationId,
+              titleSetByUser: conversation.titleSetByUser,
+              titleRevision: conversation.titleRevision,
+              authoritative: true,
+              currentTitle:
+                !conversation.titleSetByUser &&
+                !hasRealTitle(conversation.title) &&
+                prevState?.conversationId === conversation.conversationId &&
+                hasRealTitle(prevState.title)
+                  ? prevState.title
+                  : conversation.title,
+            });
+            Object.assign(update, titleState);
             if (conversation.conversationId) {
+              updateConvoInAllQueries(queryClient, conversation.conversationId, (convo) => ({
+                ...convo,
+                ...titleState,
+              }));
               queryClient.setQueryData<TConversation>(
                 [QueryKeys.conversation, conversation.conversationId],
                 (cachedConvo) => {
@@ -1269,10 +1301,7 @@ export default function useEventHandlers({
                       : cachedConvo,
                     conversation.conversationId,
                   );
-                  const cachedTitle = cachedConvo?.title;
-                  if (!hasRealTitle(serverConversation.title) && hasRealTitle(cachedTitle)) {
-                    merged.title = cachedTitle;
-                  }
+                  Object.assign(merged, titleState);
                   return merged;
                 },
               );

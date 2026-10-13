@@ -1,3 +1,9 @@
+import type { ToolApprovalGrantStorage } from 'librechat-data-provider';
+import type { ScheduleMCPConsentStorage } from './scheduleConsent';
+import { createToolApprovalGrantMethods } from './toolApprovalGrant';
+import { createScheduleMCPConsentStorage } from './scheduleConsent';
+export { createScheduleMCPConsentStorage } from './scheduleConsent';
+export type { ScheduleMCPConsentStorage, ScheduleConsentSnapshot } from './scheduleConsent';
 import type {
   FileMethods,
   FileOwnerScope,
@@ -24,6 +30,7 @@ import { createSessionMethods, DEFAULT_REFRESH_TOKEN_EXPIRY, type SessionMethods
 import { createPasskeyMethods, type PasskeyMethods } from './passkey';
 import { createUserMethods, DEFAULT_SESSION_EXPIRY, type UserMethods } from './user';
 import { createTokenMethods, type TokenMethods } from './token';
+import { createTokenListMethods, type TokenListMethods } from './tokenList';
 import { createRoleMethods, RoleConflictError } from './role';
 import { createKeyMethods, type KeyMethods } from './key';
 import { createFileMethods } from './file';
@@ -120,7 +127,12 @@ import {
 } from './tx';
 import { createTransactionMethods, type TransactionMethods } from './transaction';
 import { createSpendTokensMethods, type SpendTokensMethods } from './spendTokens';
-import { createPromptMethods, type PromptMethods, type PromptDeps } from './prompt';
+import {
+  createPromptMethods,
+  type PromptMethods,
+  type PromptDeps,
+  type PromptGroupListParams,
+} from './prompt';
 import {
   createSkillMethods,
   partitionIssues,
@@ -229,6 +241,7 @@ export {
 export { AUDIT_SCHEMA_VERSION, MAX_AUDIT_EXPORT_ROWS, MAX_AUDIT_LOG_LIMIT, MAX_AUDIT_VERIFY_ROWS };
 export { MAX_TOOL_FAVORITES };
 export { AgentTriggerDeliveryConflictError };
+export type { PromptGroupListParams };
 export { AGENT_OWNER_CONTACT_RESOLVED_FIELD, AgentSortCursorError } from './agent';
 export {
   AgentQueuedTurnCapacityError,
@@ -236,9 +249,11 @@ export {
   AgentQueuedTurnLaneRetiredError,
 };
 
-export type AllMethods = UserMethods &
+export type AllMethods = ToolApprovalGrantStorage &
+  UserMethods &
   SessionMethods &
   TokenMethods &
+  TokenListMethods &
   RefreshTokenBridgeMethods &
   OpenIDRefreshFlightMethods &
   PasskeyMethods &
@@ -277,6 +292,7 @@ export type AllMethods = UserMethods &
   SkillSyncMethods &
   AgentTriggerDeliveryMethods &
   AgentQueuedTurnMethods &
+  ScheduleMCPConsentStorage &
   ScheduleMethods &
   AgentMethods &
   ConfigMethods &
@@ -336,6 +352,7 @@ export function createMethods(
 
   const agentQueuedTurnMethods = createAgentQueuedTurnMethods(mongoose);
   const agentTriggerDeliveryMethods = createAgentTriggerDeliveryMethods(mongoose, {
+    releaseBatchProjections: messageMethods.releaseBackgroundToolResultClaims,
     purgeQueuedTurnsForUser: (user) =>
       agentQueuedTurnMethods.deleteAllAgentQueuedTurnsForUser({
         user: typeof user === 'string' ? new mongoose.Types.ObjectId(user) : user,
@@ -472,8 +489,10 @@ export function createMethods(
   const agentMethods = createAgentMethods(mongoose, agentDeps);
   return {
     ...createUserMethods(mongoose, { getCache: deps.getCache }),
+    ...createToolApprovalGrantMethods(mongoose),
     ...createSessionMethods(mongoose),
     ...createTokenMethods(mongoose),
+    ...createTokenListMethods(mongoose),
     ...createRefreshTokenBridgeMethods(mongoose),
     ...createOpenIDRefreshFlightMethods(mongoose),
     ...createPasskeyMethods(mongoose),
@@ -516,6 +535,7 @@ export function createMethods(
     ...agentTriggerDeliveryMethods,
     ...agentQueuedTurnMethods,
     ...createScheduleMethods(mongoose),
+    ...createScheduleMCPConsentStorage(mongoose),
     /* Tier 5 */
     ...agentMethods,
     /* Config */

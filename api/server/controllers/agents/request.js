@@ -39,7 +39,7 @@ const {
   getAttachmentTitleText,
   createMCPRuntimeRequestBody,
   resolveRunCodeWorkspaces,
-  getSafeErrorText,
+  logGenerationStartFailure,
   isAgentEventRetentionActive,
   createAgentEventActorTurn,
   createAgentEventActorDetachedActionLifecycle,
@@ -58,8 +58,14 @@ const {
   resolvePersistableCodeEnvironmentDecision,
   getFailedTurnTraceFields,
   resolveFailedTurnContent,
+  savePrivateTextMessage,
+  savePrivateTextErrorTurn,
+  stampPreliminaryPrivateTextMessage,
   announceReply,
   announceErrorTurn,
+  settleExistingRowsBeforeErrorTurn,
+  resolveDisconnectSnapshotMode,
+  markAbortedCompactionContent,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -454,23 +460,6 @@ async function saveErrorTurn(
     }
 
     const userId = req.user.id;
-    const existing = await getMessages(
-      { user: userId, messageId: errorMessageId, conversationId },
-      '_id',
-    );
-    if (existing.length > 0) {
-      return;
-    }
-    if (liveResponseMessageId != null && liveResponseMessageId !== errorMessageId) {
-      const partial = await getMessages(
-        { user: userId, messageId: liveResponseMessageId, conversationId },
-        '_id',
-      );
-      if (partial.length > 0) {
-        return;
-      }
-    }
-
     const reqCtx = {
       userId,
       isTemporary:
@@ -481,13 +470,47 @@ async function saveErrorTurn(
         req?._agentEventBindingRetention?.expiredAt ?? req?.resolvedConversation?.expiredAt,
       interfaceConfig: req?.config?.interfaceConfig,
     };
+    /** The existing-row settlement (which row a failed turn settles, and
+     *  whether its error row may be written at all) lives in @librechat/api;
+     *  this supplies the caller's reads and write. */
+    const settlement = await settleExistingRowsBeforeErrorTurn(req.body, {
+      userId,
+      conversationId,
+      errorMessageId,
+      liveResponseMessageId,
+      getMessages,
+      saveFinalizedTurn: (message) =>
+        saveMessage(reqCtx, message, {
+          context: 'api/server/controllers/agents/request.js - finalize failed compaction turn',
+        }),
+      announceSettledTurn: (messageId) =>
+        announceErrorTurn(
+          { stampConvoLastResponse },
+          {
+            userId,
+            conversationId,
+            messageId,
+            isTemporary: reqCtx.isTemporary,
+            context: 'AgentController - finalized failed compaction turn',
+          },
+        ),
+    });
+    if (settlement.covered) {
+      return;
+    }
+    /** The settlement names the error row's id, so an anchor-shaped
+     *  collision can never overwrite the anchor. */
+    errorMessageId = settlement.errorRowMessageId;
+
     const context = 'api/server/controllers/agents/request.js - failed turn';
     const endpoint = endpointOption?.endpoint;
     const model = getAgentResponseModel(req, endpointOption);
     const iconURL = getEndpointIconURL(req, endpointOption);
 
     if (userMessage) {
-      const savedUserMessage = await saveMessage(
+      const savedUserMessage = await savePrivateTextMessage(
+        saveMessage,
+        req,
         reqCtx,
         {
           ...userMessage,
@@ -1648,10 +1671,13 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     const responseModel = getAgentResponseModel(req, endpointOption);
     const preliminaryUserMessage = isCompaction
       ? projectCompactionAnchor({ messageId: parentMessageId, conversationId })
-      : getPreliminaryUserMessage(
-          { ...req.body, messageId: preallocatedUserMessageId },
-          conversationId,
-          req._agentEventTriggerProjection,
+      : stampPreliminaryPrivateTextMessage(
+          req,
+          getPreliminaryUserMessage(
+            { ...req.body, messageId: preallocatedUserMessageId },
+            conversationId,
+            req._agentEventTriggerProjection,
+          ),
         );
     const job = await GenerationJobManager.createJob(streamId, userId, conversationId, {
       startupTelemetry,
@@ -1704,6 +1730,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
          *  no user message of its own, the response parented onto an
          *  existing message. A reconnecting client rebuilds it that way. */
         ...((isRegenerate || isCompaction) && { isRegenerate: true }),
+        /** The job record is where the abort paths learn the turn was a
+         *  compaction: they run after the request that created the job. */
+        ...(isCompaction && { compact: true }),
         ...(scheduleId
           ? {
               scheduleId,
@@ -1894,7 +1923,14 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         return;
       }
 
-      const persistableContent = filterPersistableAbortContent(aggregatedContent);
+      /** The run is still live here: mark what streamed, but leave the outcome
+       *  to whichever path settles the turn (the terminal abort synthesizes
+       *  the typed failure a stopped compaction with no summary needs). */
+      const persistableContent = markAbortedCompactionContent(
+        filterPersistableAbortContent(aggregatedContent),
+        isCompaction,
+        { synthesizeFailure: false },
+      );
       if (persistableContent.length === 0) {
         logger.debug('[ResumableAgentController] No persistable content to save partial response');
         return;
@@ -1918,6 +1954,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
        * record is the source, since the client-facing resume snapshot never
        * carries server-private state. */
       const contextMeta = jobRecord?.createdAt === jobCreatedAt ? jobRecord.contextMeta : undefined;
+      if (resolveDisconnectSnapshotMode(isCompaction, jobRecord, jobCreatedAt) === 'skip') {
+        logger.debug(
+          '[ResumableAgentController] Skipping compaction partial save for a settled job',
+        );
+        return;
+      }
 
       try {
         const partialMessage = {
@@ -2345,6 +2387,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                 conversationId: userMsg.conversationId,
                 text: userMsg.text,
                 quotes: userMsg.quotes,
+                privacyRevision: userMsg.privacyRevision,
                 reasoningOverride: userMsg.reasoningOverride,
                 // Persist the turn's uploaded files here (authoritative job metadata) so a
                 // HITL resume sources them from the job, not the user DB row — which the
@@ -2772,7 +2815,9 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                   convoSignal.observeMessageWrite(Promise.resolve(savedUserTurn));
                 } else {
                   // Custom clients used by integrations/tests may not inherit BaseClient.
-                  const savedUserMessage = await saveMessage(
+                  const savedUserMessage = await savePrivateTextMessage(
+                    saveMessage,
+                    req,
                     {
                       userId,
                       isTemporary:
@@ -3026,9 +3071,15 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
           if (!userMessage) {
             throw new Error('User message was unavailable before terminal persistence');
           }
-          const savedUserMessage = await saveMessage(reqCtx, userMessage, {
-            context: 'api/server/controllers/agents/request.js - resumable user message',
-          });
+          const savedUserMessage = await savePrivateTextMessage(
+            saveMessage,
+            req,
+            reqCtx,
+            userMessage,
+            {
+              context: 'api/server/controllers/agents/request.js - resumable user message',
+            },
+          );
           if (!savedUserMessage) {
             throw new Error('User message could not be persisted before terminal publication');
           }
@@ -3353,17 +3404,19 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             ownsScheduledFailure =
               (await GenerationJobManager.completeJob(streamId, generationError, jobCreatedAt, {
                 beforeErrorPublication: () =>
-                  saveErrorTurn(req, {
-                    conversationId,
-                    endpointOption,
-                    isNewConvo,
-                    errorText: generationError,
-                    liveUserMessage: userMessage,
-                    liveResponseMessageId,
-                    runCreated: client?.run != null,
-                    sender: client?.sender,
-                    initialAgentId: verifiedInitialAgentId,
-                  }),
+                  savePrivateTextErrorTurn(req, error, () =>
+                    saveErrorTurn(req, {
+                      conversationId,
+                      endpointOption,
+                      isNewConvo,
+                      errorText: generationError,
+                      liveUserMessage: userMessage,
+                      liveResponseMessageId,
+                      runCreated: client?.run != null,
+                      sender: client?.sender,
+                      initialAgentId: verifiedInitialAgentId,
+                    }),
+                  ),
               })) === true;
             /** A true completion means this owner won the terminal CAS and
              * the beforeErrorPublication barrier above finished. Only that
@@ -3464,7 +3517,12 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
         );
       });
   } catch (error) {
-    logger.error(`[ResumableAgentController] Initialization error: ${getSafeErrorText(error)}`);
+    logGenerationStartFailure(error, {
+      streamId,
+      conversationId,
+      continuation: isTriggerContinuation,
+      expectedPredecessorCreatedAt,
+    });
     const initializationFailure = getInitializationFailure(error);
     const streamStarted = res.headersSent;
     try {
@@ -3565,13 +3623,15 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
       const completionPromise = persistInitializationError
         ? GenerationJobManager.completeJob(streamId, initializationError, jobCreatedAt, {
             beforeErrorPublication: () =>
-              saveErrorTurn(req, {
-                conversationId,
-                endpointOption,
-                isNewConvo,
-                errorText: initializationError,
-                initialAgentId: verifiedInitialAgentId,
-              }),
+              savePrivateTextErrorTurn(req, error, () =>
+                saveErrorTurn(req, {
+                  conversationId,
+                  endpointOption,
+                  isNewConvo,
+                  errorText: initializationError,
+                  initialAgentId: verifiedInitialAgentId,
+                }),
+              ),
           })
         : GenerationJobManager.completeJob(streamId, initializationError, jobCreatedAt);
       initializationFinalized =

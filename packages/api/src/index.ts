@@ -11,6 +11,7 @@ export * from './artifacts';
 export * from './admin';
 export * from './cdn';
 export * from './code';
+export * from './pulls';
 /* Auth */
 export * from './auth';
 /* API Keys */
@@ -85,6 +86,8 @@ export * from './prompts';
 export * from './projects';
 /* Conversations */
 export * from './conversations';
+/* Messages */
+export * from './messages';
 /* Skills */
 export * from './schedules';
 export * from './schedules/service';
@@ -129,6 +132,7 @@ export * from './stream';
 export { memoryDiagnostics } from './utils/memory';
 /* RUM */
 export * from './rum/proxy';
+export * from './rum/limiter';
 /* OpenAPI */
 export { createOpenApiRouter } from './openapi/router';
 export type { OpenApiRouterDeps } from './openapi/router';
@@ -136,3 +140,7 @@ export type { OpenApiRouterDeps } from './openapi/router';
 export type * from './mcp/types';
 export type * from './flow/types';
 export type * from './types';
+
+export * from './tools/approval';
+
+export * from './mcp/approval';
