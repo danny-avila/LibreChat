@@ -185,8 +185,16 @@ export async function updateInterfacePermissions({
    * requested (`updateAccessPermissions` logs and swallows its own failures).
    */
   const recordRoleSync = async (roleName: string, before: RolePermissions | undefined) => {
-    const after = await getRoleByName(roleName);
-    const changes = diffRolePermissions(before, after?.permissions as RolePermissions | undefined);
+    let after: IRole | null;
+    let changes: string[];
+    try {
+      after = await getRoleByName(roleName);
+      changes = diffRolePermissions(before, after?.permissions as RolePermissions | undefined);
+    } catch (err) {
+      /** The verification read is part of auditing, which must not fail startup. */
+      logger.error(`[updateInterfacePermissions] could not verify '${roleName}' for audit`, err);
+      return;
+    }
     if (!after || changes.length === 0) {
       return;
     }

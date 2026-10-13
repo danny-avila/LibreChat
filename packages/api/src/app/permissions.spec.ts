@@ -3237,6 +3237,34 @@ describe('updateInterfacePermissions - role.synced audit', () => {
     expect(recordAuditEntry).not.toHaveBeenCalled();
   });
 
+  it('does not fail startup when the verification read fails', async () => {
+    const user = fullPermissions(SystemRoles.USER);
+    user[PermissionTypes.BOOKMARKS] = { [Permissions.USE]: true };
+    const store = createRoleStore({
+      [SystemRoles.USER]: user,
+      [SystemRoles.ADMIN]: fullPermissions(SystemRoles.ADMIN),
+    });
+    const read = store.getRoleByName.getMockImplementation()!;
+    let calls = 0;
+    store.getRoleByName.mockImplementation(async (name: string) => {
+      calls += 1;
+      /** The first read per role loads it; the second is the post-sync verification. */
+      if (calls === 2) {
+        throw new Error('mongo unavailable');
+      }
+      return read(name);
+    });
+    const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+
+    await expect(
+      run({ interface: { bookmarks: false } }, store, recordAuditEntry),
+    ).resolves.toBeUndefined();
+    expect(store.updateAccessPermissions).toHaveBeenCalledTimes(2);
+    expect(recordAuditEntry).not.toHaveBeenCalledWith(
+      expect.objectContaining({ target: expect.objectContaining({ id: SystemRoles.USER }) }),
+    );
+  });
+
   it('does not fail startup when the audit write fails', async () => {
     const user = fullPermissions(SystemRoles.USER);
     user[PermissionTypes.BOOKMARKS] = { [Permissions.USE]: true };
