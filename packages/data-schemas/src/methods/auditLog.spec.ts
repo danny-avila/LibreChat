@@ -3,6 +3,7 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { RecordAuditEntryInput } from '~/types';
 import type * as t from '~/types';
 import auditLogSchema, { GENESIS_HASH, PLATFORM_CHAIN_KEY } from '~/schema/auditLog';
+import { AUDIT_ACTIONS, AUDIT_ACTION_CATEGORY } from '~/types/admin';
 import { auditChainKey, createAuditLogMethods } from './auditLog';
 
 jest.mock('~/config/winston', () => ({
@@ -77,6 +78,17 @@ describe('auditLog methods', () => {
       });
       expect(persisted?.hash).toMatch(/^[a-f0-9]{64}$/);
       expect(persisted?.createdAt).toBeInstanceOf(Date);
+    });
+
+    it('accepts every registered action and derives its category', async () => {
+      for (const action of AUDIT_ACTIONS) {
+        await methods.recordAuditEntry(baseInput({ action }), { failClosed: true });
+      }
+      const persisted = await AuditLog.find({ chainKey: CK_A }).sort({ seq: 1 }).lean();
+      expect(persisted.map((entry) => entry.action)).toEqual([...AUDIT_ACTIONS]);
+      for (const entry of persisted) {
+        expect(entry.category).toBe(AUDIT_ACTION_CATEGORY[entry.action]);
+      }
     });
 
     it('derives a warning severity for non-success outcomes', async () => {
