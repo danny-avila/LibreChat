@@ -98,8 +98,6 @@ test.describe('admin integration auditing', () => {
         listGroups: noop, countGroups: noop, createGroup: noop, updateGroupById: noop,
         findGroupById: async () => ({ _id: new Types.ObjectId(id), name: 'G', memberIds: [] }),
         deleteGroup: async () => { deleted = true; return { _id: id }; },
-        findAclEntriesByPrincipal: async () => [],
-        bulkWriteAclEntries: async () => undefined,
         restoreConfig: async () => { restored.push('config'); return true; },
         deleteConfig: async () => ({ principalType: 'group', principalId: id, overrides: {} }),
         deleteAclEntries: async () => { throw new Error('acl store down'); },

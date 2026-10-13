@@ -89,15 +89,8 @@ export interface AdminGroupsDeps {
     principalType: PrincipalType;
     principalId: string | Types.ObjectId;
   }) => Promise<DeleteResult>;
-  /** Snapshot source and restore sinks for the group-deletion cascade. When all are
-   * supplied, a failed cleanup step or a failed group deletion puts back whatever
-   * the cascade already removed. Each is the matching data-schemas method. */
-  findAclEntriesByPrincipal?: (
-    principalType: PrincipalType,
-    principalId: string,
-  ) => Promise<Array<Record<string, unknown>>>;
-  bulkWriteAclEntries?: (ops: Array<Record<string, unknown>>) => Promise<unknown>;
-  /** Re-creates a deleted config document in full, only if none exists. */
+  /** Re-creates a removed config override in full, only if none exists, when the group
+   * deletion cannot finish. ACL entries are never restored. Resolves to whether it inserted. */
   restoreConfig?: (snapshot: Record<string, unknown>) => Promise<boolean>;
   /** Optional audit emission for group mutations; fail-open unless `auditFailClosed`. */
   recordAuditEntry?: RecordAuditEntry;
@@ -133,8 +126,6 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
     findUsers,
     deleteConfig,
     deleteAclEntries,
-    findAclEntriesByPrincipal,
-    bulkWriteAclEntries,
     restoreConfig,
     recordAuditEntry,
     auditFailClosed,
@@ -394,28 +385,16 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
         });
       /**
        * Config overrides and ACL entries are keyed by group id, so they are
-       * removed before the group itself: if any removal fails the group stays,
-       * what was removed is restored (insert-only, so entries written since are
-       * kept) and the admin can retry, instead of leaving orphaned entries that a
-       * later principal could inherit or a live group stripped of its config.
+       * removed before the group itself: if any removal fails the group stays
+       * and the admin can retry, instead of leaving orphaned entries that a later
+       * principal could inherit. Only the config override is put back (insert-only,
+       * so one written since is kept): removing it can widen what members may do,
+       * while ACL entries stay removed because that only narrows access and
+       * re-inserting them could resurrect a grant revoked in the meantime.
        * deleteAclEntries is a raw deleteMany wrapper with no type casting.
        * grantPermission stores group principalId as ObjectId, so we must
        * cast here. deleteConfig normalizes internally.
        */
-      const restoreAclEntries = async (entries: Array<Record<string, unknown>>) => {
-        if (!bulkWriteAclEntries || entries.length === 0) {
-          return;
-        }
-        await bulkWriteAclEntries(
-          entries.map((entry) => ({
-            updateOne: {
-              filter: { _id: entry._id },
-              update: { $setOnInsert: entry },
-              upsert: true,
-            },
-          })),
-        );
-      };
       const cascade = await runCascade(
         [
           cascadeStep(
@@ -434,26 +413,11 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
                 }
               : undefined,
           ),
-          cascadeStep(
-            'acl',
-            async () => {
-              const entries = (await findAclEntriesByPrincipal?.(PrincipalType.GROUP, id)) ?? [];
-              try {
-                await deleteAclEntries({
-                  principalType: PrincipalType.GROUP,
-                  principalId: new Types.ObjectId(id),
-                });
-              } catch (error) {
-                /** The delete may have committed before it threw, and a rejected step is
-                 * not compensated by the runner, so put the snapshot back here. */
-                await restoreAclEntries(entries).catch((restoreError) =>
-                  logger.error('[adminGroups] acl restore failed:', restoreError),
-                );
-                throw error;
-              }
-              return entries;
-            },
-            bulkWriteAclEntries ? restoreAclEntries : undefined,
+          cascadeStep('acl', () =>
+            deleteAclEntries({
+              principalType: PrincipalType.GROUP,
+              principalId: new Types.ObjectId(id),
+            }),
           ),
         ],
         '[adminGroups]',
