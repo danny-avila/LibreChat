@@ -1090,8 +1090,10 @@ describe('createAdminRolesHandlers', () => {
       expect(deps.invalidatePromptGroupAccessContext).toHaveBeenCalled();
     });
 
-    it('does not restore dependents when the role deletion threw after it committed', async () => {
+    it('does not restore dependents and audits the delete when the role is confirmed gone after a thrown delete', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
       const deps = deleteDeps({
+        recordAuditEntry,
         getRoleByName: jest.fn().mockResolvedValueOnce(mockRole()).mockResolvedValue(null),
         deleteConfig: jest.fn().mockResolvedValue({
           principalModel: 'Role',
@@ -1099,6 +1101,32 @@ describe('createAdminRolesHandlers', () => {
           priority: 3,
         }),
         deleteGrantsForPrincipal: jest.fn().mockResolvedValue([{ capability: 'read:users' }]),
+        deleteRoleByName: jest.fn().mockRejectedValue(new Error('connection lost')),
+        restoreConfig: jest.fn(),
+        restoreGrants: jest.fn(),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status } = createReqRes({
+        params: { name: 'editor' },
+        user: { _id: new Types.ObjectId(), role: 'admin' },
+      });
+
+      await handlers.deleteRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(deps.restoreConfig).not.toHaveBeenCalled();
+      expect(deps.restoreGrants).not.toHaveBeenCalled();
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'role.deleted' }),
+      );
+    });
+
+    it('restores nothing and reports a failure when the role state cannot be verified', async () => {
+      const deps = deleteDeps({
+        getRoleByName: jest
+          .fn()
+          .mockResolvedValueOnce(mockRole())
+          .mockRejectedValue(new Error('mongo down')),
         deleteRoleByName: jest.fn().mockRejectedValue(new Error('connection lost')),
         restoreConfig: jest.fn(),
         restoreGrants: jest.fn(),

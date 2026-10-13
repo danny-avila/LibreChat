@@ -599,17 +599,22 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
         logger.error('[adminRoles] deleteRole failed after cascade cleanup:', error);
         /** The delete may have committed before it threw. Restoring dependents for a
          * role that is gone would orphan them for a later role with the same name. */
-        const stillExists = await getRoleByName(name).then(
-          (role) => role != null,
-          () => false,
+        const lookup = await getRoleByName(name).then(
+          (role) => ({ known: true, role }),
+          () => ({ known: false, role: null }),
         );
-        if (stillExists) {
+        if (lookup.known && lookup.role) {
           await cascade.compensate();
-        } else {
-          logger.error('[adminRoles] dependents not restored, role absent or unverifiable:', name);
+          await invalidateAccess();
+          return res.status(500).json({ error: 'Failed to delete role' });
         }
         await invalidateAccess();
-        return res.status(500).json({ error: 'Failed to delete role' });
+        if (!lookup.known) {
+          logger.error('[adminRoles] dependents not restored, role state unverifiable:', name);
+          return res.status(500).json({ error: 'Failed to delete role' });
+        }
+        /** Confirmed absent: the deletion did commit, so it is audited and reported as one. */
+        deleted = existing;
       }
       await invalidateAccess();
       if (!deleted) {
