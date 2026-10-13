@@ -169,6 +169,20 @@ describe('loadDefaultInterface', () => {
     expect(interfaceConfig?.autoSubmitFromUrl).toBe(false);
   });
 
+  it('keeps the colour-mode URL handoff off unless configured', async () => {
+    const unset = await loadDefaultInterface({
+      config: {},
+      configDefaults: getConfigDefaults(),
+    });
+    const enabled = await loadDefaultInterface({
+      config: { interface: { colorModeFromUrl: true } },
+      configDefaults: getConfigDefaults(),
+    });
+
+    expect(unset?.colorModeFromUrl).toBe(false);
+    expect(enabled?.colorModeFromUrl).toBe(true);
+  });
+
   it('preserves a disabled build info flag', async () => {
     const config: Partial<TCustomConfig> = {
       interface: {

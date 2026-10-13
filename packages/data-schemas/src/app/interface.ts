@@ -43,6 +43,7 @@ export async function loadDefaultInterface({
     mcpServers: interfaceConfig?.mcpServers ?? defaults.mcpServers,
     customWelcome: interfaceConfig?.customWelcome ?? defaults.customWelcome,
     autoSubmitFromUrl: interfaceConfig?.autoSubmitFromUrl ?? defaults.autoSubmitFromUrl,
+    colorModeFromUrl: interfaceConfig?.colorModeFromUrl ?? defaults.colorModeFromUrl,
     buildInfo: interfaceConfig?.buildInfo ?? defaults.buildInfo,
     mascot: interfaceConfig?.mascot ?? defaults.mascot,
     contextUsage: interfaceConfig?.contextUsage ?? defaults.contextUsage,

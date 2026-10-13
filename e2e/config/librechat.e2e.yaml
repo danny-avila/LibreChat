@@ -17,6 +17,9 @@ interface:
   # control in the composer. Mock Provider A resolves Anthropic's adaptive
   # `effort` setting through its custom endpoint configuration below.
   parameters: true
+  # Opts the shell into the `?theme=` colour-mode handoff (off by default).
+  # color-mode-handoff.spec.ts follows links that carry it.
+  colorModeFromUrl: true
   # Grants MULTI_CONVO.USE so the composer's `+` command opens the added-model
   # popover. agent-skills-added.spec.ts drives that flow; without an explicit
   # value the permission falls through to the seeded role default and

@@ -45,6 +45,7 @@ const {
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
   injectConfiguredFooterBootstrap,
+  injectColorModeHandoff,
   preAuthTenantMiddleware,
   requestContextMiddleware,
   registerShutdownTask,
@@ -301,6 +302,8 @@ const startServer = async () => {
   indexHTML = injectConfiguredFooterBootstrap(indexHTML, {
     customFooter: process.env.CUSTOM_FOOTER,
   });
+
+  indexHTML = injectColorModeHandoff(indexHTML, appConfig.interfaceConfig?.colorModeFromUrl);
 
   const cspPolicy = createCspPolicy();
   const shellCache = shellCacheHeaders(cspPolicy != null);

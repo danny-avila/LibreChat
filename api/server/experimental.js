@@ -38,6 +38,7 @@ const {
   loadToolApprovalHooks,
   maybeInjectQueryDevtoolsBootstrap,
   injectConfiguredFooterBootstrap,
+  injectColorModeHandoff,
   preAuthTenantMiddleware,
   requestContextMiddleware,
   configureServerTimeouts,
@@ -543,6 +544,8 @@ if (cluster.isMaster) {
     indexHTML = injectConfiguredFooterBootstrap(indexHTML, {
       customFooter: process.env.CUSTOM_FOOTER,
     });
+
+    indexHTML = injectColorModeHandoff(indexHTML, baseAppConfig?.interfaceConfig?.colorModeFromUrl);
 
     const cspPolicy = createCspPolicy();
     const shellCache = shellCacheHeaders(cspPolicy != null);
