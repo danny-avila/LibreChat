@@ -3,9 +3,8 @@ import { Tools } from 'librechat-data-provider';
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { TAttachment, TStartupConfig, UIResource } from 'librechat-data-provider';
 import type { MCPAppFrameState } from '~/hooks/MCP';
-import { MCPAppPlacementContext, MCPAppSuppressionContext, MCPAppViews } from '../MCPAppViews';
 import { MCPAppsPolicyProvider } from '~/Providers/MCPAppsPolicyContext';
-import { selectToolCallUIResources } from '~/utils/mcpApps';
+import { MCPAppSuppressionContext, MCPAppViews } from '../MCPAppViews';
 import { useAppBridge, useMCPAppFrame } from '~/hooks/MCP';
 
 jest.mock('~/hooks', () => ({
@@ -353,43 +352,6 @@ describe('MCPAppViews', () => {
 
     view.rerender(renderViews([unrelatedAttachment, targetAttachment]));
     expect(view.getByTitle('MCP App: target')).toBe(targetFrame);
-  });
-
-  it('keeps an open frame when its tool layout becomes a group, phase, or parallel lane', () => {
-    const owned = attachment({ toolCallId: 'call-app', agentId: 'agent', stepId: 'step' }, [
-      app({ resourceId: 'stable', toolName: 'stable' }),
-    ]);
-    const key = selectToolCallUIResources([owned])[0].key;
-    const placement = new Map([[owned, [key]]]);
-    const suppressed = new Set([owned]);
-    const Frame = ({ layout }: { layout: string }) => {
-      const [root, setRoot] = React.useState<HTMLDivElement | null>(null);
-      return (
-        <MCPAppsPolicyProvider startupConfig={enabledConfig} ready userId="user-1">
-          <div ref={setRoot} className="relative">
-            <MCPAppPlacementContext.Provider value={placement}>
-              <MCPAppSuppressionContext.Provider value={suppressed}>
-                <div key={layout} data-testid={`layout-${layout}`}>
-                  <MCPAppViews attachments={[owned]} />
-                </div>
-              </MCPAppSuppressionContext.Provider>
-            </MCPAppPlacementContext.Provider>
-            <MCPAppViews attachments={[owned]} layoutRoot={root} />
-          </div>
-        </MCPAppsPolicyProvider>
-      );
-    };
-    const view = render(<Frame layout="single" />);
-    expect(view.container.querySelectorAll('[data-mcp-app-anchor]')).toHaveLength(1);
-    fireEvent.click(view.getByRole('button', { name: /com_ui_mcp_app_open_named/ }));
-    const iframe = view.getByTitle('MCP App: stable');
-    expect(iframe.closest('.flow-root')).toHaveStyle({ position: 'absolute' });
-
-    for (const layout of ['group', 'phase', 'parallel']) {
-      view.rerender(<Frame layout={layout} />);
-      expect(view.getByTitle('MCP App: stable')).toBe(iframe);
-      expect(view.container.querySelectorAll('[data-mcp-app-anchor]')).toHaveLength(1);
-    }
   });
 
   it('suppresses only attachments owned by an ancestor App surface', () => {

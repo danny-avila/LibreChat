@@ -1,13 +1,4 @@
-import {
-  memo,
-  useRef,
-  useMemo,
-  useEffect,
-  useCallback,
-  useContext,
-  useState,
-  Fragment,
-} from 'react';
+import { memo, useRef, useMemo, useEffect, useCallback, useContext, Fragment } from 'react';
 import { useStore } from 'jotai';
 import { Constants, ContentTypes, Tools } from 'librechat-data-provider';
 import type {
@@ -36,22 +27,17 @@ import {
   SoleToolContext,
 } from './disclosure';
 import {
-  MCPAppPlacementContext,
-  MCPAppSuppressionContext,
-  MCPAppViews,
-} from '~/components/MCPUIResource';
-import {
   groupActivityPhases,
   lastCursorContentIdx,
   getActivityLabelText,
 } from '~/utils/activityLabels';
 import WorkspaceChanges, { partitionWorkspaceChanges } from './Parts/WorkspaceChanges';
+import { MCPAppSuppressionContext, MCPAppViews } from '~/components/MCPUIResource';
 import { ParallelContentRenderer, type PartWithIndex } from './ParallelContent';
 import { isPreviewedToolCallPart, PreviewedToolCallPart } from './hydration';
 import { MediaContext, MessageContext, SearchContext } from '~/Providers';
 import MemoryArtifacts, { hasMemoryArtifacts } from './MemoryArtifacts';
 import { hasParallelLanes, parallelLaneGroups } from '~/utils/lanes';
-import { selectToolCallUIResources } from '~/utils/mcpApps';
 import PendingSkillCall from './Parts/PendingSkillCall';
 import ActivityPhaseGroup from './ActivityPhaseGroup';
 import { hasPendingApprovalInPart } from '~/utils';
@@ -1348,16 +1334,6 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
     () => new Set(messageAppAttachments),
     [messageAppAttachments],
   );
-  const appPlacement = useMemo(() => {
-    const keys = new Map<TAttachment, string[]>();
-    for (const occurrence of selectToolCallUIResources(messageAppAttachments)) {
-      const attachmentKeys = keys.get(occurrence.attachment) ?? [];
-      attachmentKeys.push(occurrence.key);
-      keys.set(occurrence.attachment, attachmentKeys);
-    }
-    return keys;
-  }, [messageAppAttachments]);
-  const [appLayoutRoot, setAppLayoutRoot] = useState<HTMLDivElement | null>(null);
   const messageContext = useMemo(
     () => ({
       messageId,
@@ -1418,21 +1394,16 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
       <MediaContext.Provider value={media}>
         <ReasoningDisclosureContext.Provider value={reasoningDisclosures}>
           <ToolDisclosureContext.Provider value={toolDisclosures}>
-            <div ref={setAppLayoutRoot} className="relative">
-              <MCPAppPlacementContext.Provider value={appPlacement}>
-                <MCPAppSuppressionContext.Provider value={suppressedAppAttachments}>
-                  {/* A nested message (a subagent's) is not the sole call of the group around it. */}
-                  <SoleToolContext.Provider value={undefined}>
-                    <ContentPartsBody {...props} />
-                  </SoleToolContext.Provider>
-                </MCPAppSuppressionContext.Provider>
-              </MCPAppPlacementContext.Provider>
-              <MCPAppViews
-                key={`message-apps-${appRenderScope}`}
-                attachments={messageAppAttachments}
-                layoutRoot={appLayoutRoot}
-              />
-            </div>
+            <MCPAppSuppressionContext.Provider value={suppressedAppAttachments}>
+              {/* A nested message (a subagent's) is not the sole call of the group around it. */}
+              <SoleToolContext.Provider value={undefined}>
+                <ContentPartsBody {...props} />
+              </SoleToolContext.Provider>
+            </MCPAppSuppressionContext.Provider>
+            <MCPAppViews
+              key={`message-apps-${appRenderScope}`}
+              attachments={messageAppAttachments}
+            />
           </ToolDisclosureContext.Provider>
         </ReasoningDisclosureContext.Provider>
       </MediaContext.Provider>
