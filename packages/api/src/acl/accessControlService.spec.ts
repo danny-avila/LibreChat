@@ -333,6 +333,54 @@ describe('AccessControlService', () => {
       expect(await entryCount()).toBe(0);
     });
 
+    test('a revoke with nothing audited does not delete an entry that appeared after the read', async () => {
+      const viewerRole = await dbMethods.findRoleByIdentifier(AccessRoleIds.PROMPTGROUP_VIEWER);
+
+      const result = await service.bulkUpdateResourcePermissions({
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId,
+        revokedPrincipals: [{ type: PrincipalType.USER, id: userId.toString() }],
+        grantedBy: grantedById,
+        beforeWrite: async () => {
+          throw new Error('beforeWrite must not run for an empty plan');
+        },
+      });
+      expect(result.aclChanges).toEqual([]);
+
+      const entry = {
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        principalModel: PrincipalModel.USER,
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId,
+        permBits: PermissionBits.VIEW,
+        roleId: viewerRole?._id,
+        grantedBy: grantedById,
+        grantedAt: new Date(),
+      };
+      const spy = jest
+        .spyOn(service['_dbMethods'], 'findEntriesByPrincipalsAndResource')
+        .mockImplementationOnce(async () => {
+          await AclEntry.create(entry);
+          return [];
+        });
+      await service.bulkUpdateResourcePermissions({
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId,
+        revokedPrincipals: [{ type: PrincipalType.USER, id: userId.toString() }],
+        grantedBy: grantedById,
+      });
+      spy.mockRestore();
+
+      await expect(
+        AclEntry.exists({
+          principalId: userId,
+          resourceType: ResourceType.PROMPTGROUP,
+          resourceId,
+        }),
+      ).resolves.not.toBeNull();
+    });
+
     test('revoking snapshots the principal without loading the rest of the ACL', async () => {
       const otherUserId = new Types.ObjectId();
       const viewerRole = await dbMethods.findRoleByIdentifier(AccessRoleIds.PROMPTGROUP_VIEWER);

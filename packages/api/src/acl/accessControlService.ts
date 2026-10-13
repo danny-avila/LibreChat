@@ -672,7 +672,10 @@ export class AccessControlService {
         }
       }
 
-      const revokeQueries: Array<{ principal: BulkPrincipal; query: Record<string, unknown> }> = [];
+      const revokeQueries: Array<{
+        principal: BulkPrincipal;
+        query: Record<string, unknown> | null;
+      }> = [];
       for (const principal of revokedPrincipals) {
         try {
           if (
@@ -693,10 +696,12 @@ export class AccessControlService {
           const existingEntry = currentEntriesByPrincipal.get(
             `${principal.type}:${principal.type === PrincipalType.PUBLIC ? 'null' : principal.id}`,
           );
-          revokeQueries.push({ principal, query });
           if (!existingEntry) {
+            /** Nothing was audited for it; deleting a row that appeared since the read would be unaudited. */
+            revokeQueries.push({ principal, query: null });
             continue;
           }
+          revokeQueries.push({ principal, query });
           const change: PermissionChange = {
             action: 'removed',
             principal: { type: principal.type, id: principal.id?.toString() ?? null },
@@ -737,7 +742,9 @@ export class AccessControlService {
       }
 
       for (const { principal, query } of revokeQueries) {
-        await this._dbMethods.deleteAclEntries(query, sessionOptions);
+        if (query) {
+          await this._dbMethods.deleteAclEntries(query, sessionOptions);
+        }
         results.revoked.push({
           type: principal.type,
           id: principal.id,
