@@ -392,6 +392,11 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps): {
         });
 
         if (clientAborted) return res;
+        await emitAudit(req, {
+          action: 'audit.read',
+          target: { type: 'audit_log' },
+          metadata: { operation: 'verify' },
+        });
         return res.status(200).json(result);
       } finally {
         res.removeListener('close', markAborted);

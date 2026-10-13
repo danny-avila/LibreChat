@@ -351,6 +351,24 @@ describe('createAdminAuditLogHandlers', () => {
       expect(status).toHaveBeenCalledWith(401);
     });
 
+    it('records audit.read for an integrity verification', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const handlers = createAdminAuditLogHandlers(createDeps({ recordAuditEntry }));
+      const { req, res } = createReqRes({
+        user: { _id: new Types.ObjectId(), role: 'admin' },
+      });
+
+      await handlers.verifyAuditLog(req, res);
+
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'audit.read',
+          target: { type: 'audit_log' },
+          metadata: { operation: 'verify' },
+        }),
+      );
+    });
+
     it('returns the verification result scoped to the caller tenant', async () => {
       const verification = mockVerification({ ok: false, brokenAt: 2, reason: 'hash mismatch' });
       const deps = createDeps({ verifyAuditChain: jest.fn().mockResolvedValue(verification) });

@@ -64,6 +64,21 @@ describe('createMCPServerAuditor', () => {
     );
   });
 
+  it('runs the post-commit steps before the audit write and still audits when they throw', async () => {
+    const order: string[] = [];
+    const recordAuditEntry = jest.fn().mockImplementation(async () => void order.push('audit'));
+    const audit = createMCPServerAuditor({ recordAuditEntry });
+
+    await expect(
+      audit(req, { action: 'mcp_server.deleted', serverName: 'srv' }, async () => {
+        order.push('fence');
+        throw new Error('fence failed');
+      }),
+    ).rejects.toThrow('fence failed');
+
+    expect(order).toEqual(['fence', 'audit']);
+  });
+
   it('is a no-op without a recorder', async () => {
     await expect(
       createMCPServerAuditor({})(req, { action: 'mcp_server.created', serverName: 'srv' }),

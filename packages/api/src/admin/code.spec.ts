@@ -372,6 +372,7 @@ describe('createAdminCodeEnvironmentHandlers', () => {
         }),
       );
       expect(input.tenantId).toBeUndefined();
+      expect(input.metadata.boundTenantId).toEqual(expect.any(String));
       expect(JSON.stringify(input)).not.toContain('one-time-code-value-that-is-long');
       expect(JSON.stringify(input)).not.toContain('administrator-bootstrap-token');
     });

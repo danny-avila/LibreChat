@@ -189,6 +189,7 @@ export function createAdminCodeEnvironmentHandlers(deps: AdminCodeEnvironmentDep
         tenantId: undefined,
         metadata: {
           environmentId: resolved.id,
+          boundTenantId: tenantId,
           expiresAt: new Date(payload.expiresAt).toISOString(),
         },
       });

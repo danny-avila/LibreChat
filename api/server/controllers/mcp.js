@@ -592,19 +592,15 @@ const updateMCPServerController = async (req, res) => {
       throw error;
     }
     /** Fence connections another replica could have created from the old DB
-     * config between the pre-commit fence and the committed update. The audit
-     * write follows so its latency never delays the fence. */
-    try {
-      await fenceCommittedMCPMutation({ userId, serverName });
-      await disconnectLocalMCPServer(userId, serverName);
-    } finally {
-      await auditMCPServer(req, {
-        action: 'mcp_server.updated',
-        serverName,
-        previous: existingConfig,
-        next: parsedConfig,
-      });
-    }
+     * config between the pre-commit fence and the committed update. */
+    await auditMCPServer(
+      req,
+      { action: 'mcp_server.updated', serverName, previous: existingConfig, next: parsedConfig },
+      async () => {
+        await fenceCommittedMCPMutation({ userId, serverName });
+        await disconnectLocalMCPServer(userId, serverName);
+      },
+    );
 
     res.status(200).json(redactServerSecrets(parsedConfig, { canEdit: true }));
   } catch (error) {
@@ -660,18 +656,15 @@ const deleteMCPServerController = async (req, res, uninstallOAuthMCP) => {
       });
       throw error;
     }
-    /** Fence connections another replica could have created before deletion committed.
-     * The audit write follows so its latency never delays the fence. */
-    try {
-      await fenceCommittedMCPMutation({ userId, serverName });
-      await disconnectLocalMCPServer(userId, serverName);
-    } finally {
-      await auditMCPServer(req, {
-        action: 'mcp_server.deleted',
-        serverName,
-        previous: existingConfig,
-      });
-    }
+    /** Fence connections another replica could have created before deletion committed. */
+    await auditMCPServer(
+      req,
+      { action: 'mcp_server.deleted', serverName, previous: existingConfig },
+      async () => {
+        await fenceCommittedMCPMutation({ userId, serverName });
+        await disconnectLocalMCPServer(userId, serverName);
+      },
+    );
     try {
       await cleanupDeletedMCPServerOAuthUsers({
         ownerUserId: userId,

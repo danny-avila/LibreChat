@@ -72,9 +72,16 @@ function serverTitle(config: ServerConfigLike): string | undefined {
 export function createMCPServerAuditor(options: {
   recordAuditEntry?: RecordAuditEntry;
   failClosed?: boolean;
-}): (req: Parameters<AdminAuditEmitter>[0], event: MCPServerAuditEvent) => Promise<void> {
+}): (
+  req: Parameters<AdminAuditEmitter>[0],
+  event: MCPServerAuditEvent,
+  afterCommit?: () => Promise<void>,
+) => Promise<void> {
   const emit = createAdminAuditEmitter({ ...options, logPrefix: '[mcpServers]' });
-  return async function auditMCPServer(req, { action, serverName, previous, next }) {
+  async function record(
+    req: Parameters<AdminAuditEmitter>[0],
+    { action, serverName, previous, next }: MCPServerAuditEvent,
+  ): Promise<void> {
     const name = serverTitle(next) ?? serverTitle(previous);
     const before = action === 'mcp_server.created' ? undefined : previous;
     const changed =
@@ -90,5 +97,19 @@ export function createMCPServerAuditor(options: {
         ...(changed.length > 0 ? { fields: changed.join(',') } : {}),
       },
     });
+  }
+
+  /**
+   * `afterCommit` carries the security-critical steps that follow a committed
+   * change (connection fences); they run first, and the audit write follows even
+   * when they throw, so audit latency never delays them and a failure never
+   * drops the entry.
+   */
+  return async function auditMCPServer(req, event, afterCommit) {
+    try {
+      await afterCommit?.();
+    } finally {
+      await record(req, event);
+    }
   };
 }
