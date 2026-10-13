@@ -368,6 +368,9 @@ function startExpiredFileSweep(options = {}) {
   });
 }
 
+/** A rejected write may have committed, so cleanup only removes an object no record points at. */
+const fileRecordExists = async ({ file_id }) => (await db.findFileById(file_id)) != null;
+
 /**
  * Processes a file URL using a specified file handling strategy. This function accepts a strategy name,
  * fetches the corresponding file processing functions (for saving and retrieving file URLs), and then
@@ -436,6 +439,7 @@ const processFileURL = async ({
     const storedCleanup = {
       req,
       logger,
+      recordExists: fileRecordExists,
       resolveDeleteFile: () => getStrategyFunctions(fileStrategy).deleteFile,
       stored: {
         file_id,
@@ -519,6 +523,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
   const storedCleanup = {
     req,
     logger,
+    recordExists: fileRecordExists,
     resolveDeleteFile: () => getStrategyFunctions(source).deleteFile,
     stored: { file_id, filepath, source, storageKey, storageRegion },
   };
@@ -604,6 +609,7 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
   const storedCleanup = {
     req,
     logger,
+    recordExists: fileRecordExists,
     resolveDeleteFile: () => getStrategyFunctions(source).deleteFile,
     stored: { file_id, filepath, source, ...storageMetadata },
   };
@@ -732,6 +738,7 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
   const storedCleanup = {
     req,
     logger,
+    recordExists: fileRecordExists,
     resolveDeleteFile: () => target && getStrategyFunctions(target.source).deleteFile,
     stored: target?.stored ?? { file_id: id ?? file_id, filepath, source },
   };
@@ -1030,6 +1037,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       const storedCleanup = {
         req,
         logger,
+        recordExists: fileRecordExists,
         resolveDeleteFile: () => getStrategyFunctions(source).deleteFile,
         stored: {
           file_id,
@@ -1255,6 +1263,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       {
         req,
         logger,
+        recordExists: fileRecordExists,
         resolveDeleteFile: () => getStrategyFunctions(source).deleteFile,
         stored: {
           file_id,
@@ -1409,6 +1418,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
   const storedCleanup = {
     req,
     logger,
+    recordExists: fileRecordExists,
     resolveDeleteFile: () => getStrategyFunctions(source).deleteFile,
     stored: { file_id, filepath, source, ...storageMetadata },
   };
@@ -1719,6 +1729,7 @@ async function saveBase64Image(
   const storedCleanup = {
     req,
     logger,
+    recordExists: fileRecordExists,
     resolveDeleteFile: () => getStrategyFunctions(source).deleteFile,
     stored: { file_id, filepath, source, ...storageMetadata },
   };

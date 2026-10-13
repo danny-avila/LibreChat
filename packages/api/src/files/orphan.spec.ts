@@ -10,14 +10,21 @@ const stored: StoredUploadRef = {
 
 describe('withStoredUploadCleanup', () => {
   const logger = { error: jest.fn() };
+  const recordExists = jest.fn().mockResolvedValue(false);
   const req = { user: { id: 'u1', tenantId: 't1' } };
-  beforeEach(() => logger.error.mockClear());
+  beforeEach(() => {
+    logger.error.mockClear();
+    recordExists.mockReset().mockResolvedValue(false);
+  });
 
   it('returns the result without resolving or calling delete when the next step succeeds', async () => {
     const deleteFile = jest.fn();
     const resolveDeleteFile = jest.fn(() => deleteFile);
     await expect(
-      withStoredUploadCleanup({ stored, resolveDeleteFile, req, logger }, async () => 'ok'),
+      withStoredUploadCleanup(
+        { stored, resolveDeleteFile, recordExists, req, logger },
+        async () => 'ok',
+      ),
     ).resolves.toBe('ok');
     expect(resolveDeleteFile).not.toHaveBeenCalled();
     expect(deleteFile).not.toHaveBeenCalled();
@@ -28,7 +35,7 @@ describe('withStoredUploadCleanup', () => {
     const failure = new Error('createFile failed');
     await expect(
       withStoredUploadCleanup(
-        { stored, resolveDeleteFile: () => deleteFile, req, logger },
+        { stored, resolveDeleteFile: () => deleteFile, recordExists, req, logger },
         async () => {
           throw failure;
         },
@@ -37,12 +44,43 @@ describe('withStoredUploadCleanup', () => {
     expect(deleteFile).toHaveBeenCalledWith(req, { ...stored, user: 'u1', tenantId: 't1' });
   });
 
+  it('keeps the stored object when the rejected write actually committed a record', async () => {
+    const deleteFile = jest.fn();
+    recordExists.mockResolvedValue(true);
+    const failure = new Error('lost acknowledgement');
+    await expect(
+      withStoredUploadCleanup(
+        { stored, resolveDeleteFile: () => deleteFile, recordExists, req, logger },
+        async () => {
+          throw failure;
+        },
+      ),
+    ).rejects.toBe(failure);
+    expect(deleteFile).not.toHaveBeenCalled();
+  });
+
+  it('keeps the stored object and logs when the record lookup itself fails', async () => {
+    const deleteFile = jest.fn();
+    recordExists.mockRejectedValue(new Error('db down'));
+    const failure = new Error('createFile failed');
+    await expect(
+      withStoredUploadCleanup(
+        { stored, resolveDeleteFile: () => deleteFile, recordExists, req, logger },
+        async () => {
+          throw failure;
+        },
+      ),
+    ).rejects.toBe(failure);
+    expect(deleteFile).not.toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalledTimes(1);
+  });
+
   it('logs a failed cleanup without replacing the original error', async () => {
     const deleteFile = jest.fn().mockRejectedValue(new Error('storage down'));
     const failure = new Error('createFile failed');
     await expect(
       withStoredUploadCleanup(
-        { stored, resolveDeleteFile: () => deleteFile, req, logger },
+        { stored, resolveDeleteFile: () => deleteFile, recordExists, req, logger },
         async () => {
           throw failure;
         },
@@ -60,6 +98,7 @@ describe('withStoredUploadCleanup', () => {
           resolveDeleteFile: () => {
             throw new Error('no strategy');
           },
+          recordExists,
           req,
           logger,
         },
@@ -75,7 +114,7 @@ describe('withStoredUploadCleanup', () => {
     const failure = new Error('createFile failed');
     await expect(
       withStoredUploadCleanup(
-        { stored, resolveDeleteFile: () => undefined, req, logger },
+        { stored, resolveDeleteFile: () => undefined, recordExists, req, logger },
         async () => {
           throw failure;
         },

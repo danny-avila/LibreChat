@@ -13,7 +13,6 @@ const DEFAULT_RETRY_BASE_MS = 1_000;
 const DEFAULT_RETRY_CAP_MS = 5 * 60_000;
 const DEFAULT_TICK_MS = 1_000;
 const DEFAULT_MAX_IDLE_TICK_MS = 15_000;
-const DEFAULT_DEAD_LETTER_RETENTION_MS = 30 * 24 * 60 * 60_000;
 const ORDERING_RECHECK_MS = 250;
 const ACTIVE_HANDLING_RECHECK_MS = 5_000;
 const DEFAULT_DEFER_MS = 5_000;
@@ -201,7 +200,7 @@ export interface AgentTriggerDeliveryEngineOptions {
   /** Ceiling for the poll interval while the queue stays empty; any wake or claimed
    *  delivery snaps polling back to `tickMs`, so only true idleness ever waits this long. */
   maxIdleTickMs?: number;
-  /** How long a dead-lettered delivery is kept for review before it expires. */
+  /** How long a dead-lettered delivery is kept for review before it expires; unset keeps it until an operator acts. */
   deadLetterRetentionMs?: number;
 }
 
@@ -358,11 +357,10 @@ export function createAgentTriggerDeliveryEngine(
   const retryBaseMs = positiveInteger(options.retryBaseMs, DEFAULT_RETRY_BASE_MS, 'retryBaseMs');
   const retryCapMs = positiveInteger(options.retryCapMs, DEFAULT_RETRY_CAP_MS, 'retryCapMs');
   const tickMs = positiveInteger(options.tickMs, DEFAULT_TICK_MS, 'tickMs');
-  const deadLetterRetentionMs = positiveInteger(
-    options.deadLetterRetentionMs,
-    DEFAULT_DEAD_LETTER_RETENTION_MS,
-    'deadLetterRetentionMs',
-  );
+  const deadLetterRetentionMs =
+    options.deadLetterRetentionMs == null
+      ? undefined
+      : positiveInteger(options.deadLetterRetentionMs, 1, 'deadLetterRetentionMs');
   const maxIdleTickMs = Math.max(
     tickMs,
     positiveInteger(options.maxIdleTickMs, DEFAULT_MAX_IDLE_TICK_MS, 'maxIdleTickMs'),
@@ -444,7 +442,9 @@ export function createAgentTriggerDeliveryEngine(
         attempt: delivery.attempts,
         error: recorded,
         settledAt: now(),
-        expiresAt: new Date(now().getTime() + deadLetterRetentionMs),
+        ...(deadLetterRetentionMs != null && {
+          expiresAt: new Date(now().getTime() + deadLetterRetentionMs),
+        }),
         ...(recorded.retryable && {
           receiptRetryAt: new Date(now().getTime() + retryCapMs),
         }),
@@ -579,7 +579,9 @@ export function createAgentTriggerDeliveryEngine(
             attempt,
             error: recorded,
             settledAt: attemptedAt,
-            expiresAt: new Date(attemptedAt.getTime() + deadLetterRetentionMs),
+            ...(deadLetterRetentionMs != null && {
+              expiresAt: new Date(attemptedAt.getTime() + deadLetterRetentionMs),
+            }),
             ...(recorded.retryable && {
               receiptRetryAt: new Date(attemptedAt.getTime() + retryCapMs),
             }),

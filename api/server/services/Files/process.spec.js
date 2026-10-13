@@ -158,12 +158,14 @@ jest.mock('@librechat/api', () => {
     getCodeApiUploadOptions,
     withCodeApiUploadRecovery,
     /** Mirrors the package helper; its own cases live in packages/api. */
-    withStoredUploadCleanup: async ({ stored, resolveDeleteFile, req }, next) => {
+    withStoredUploadCleanup: async ({ stored, resolveDeleteFile, recordExists, req }, next) => {
       try {
         return await next();
       } catch (error) {
         try {
-          await resolveDeleteFile()?.(req, stored);
+          if (!(await recordExists(stored))) {
+            await resolveDeleteFile()?.(req, stored);
+          }
         } catch {
           /* the helper logs cleanup failures; the original error wins */
         }

@@ -15,6 +15,8 @@ export type StoredUploadCleanup = {
   stored: StoredUploadRef;
   /** Looks up the strategy's delete function; called only after a failure. */
   resolveDeleteFile: () => ((req: never, file: StoredUploadRef) => Promise<unknown>) | undefined;
+  /** Settles whether a file record exists, since a rejected write may have committed. */
+  recordExists: (stored: StoredUploadRef) => Promise<boolean>;
   req: { user?: { id?: string; tenantId?: string } };
   logger: { error: (message: string, meta?: unknown) => void };
 };
@@ -25,20 +27,23 @@ export type StoredUploadCleanup = {
  * The original failure is rethrown; a failed cleanup is logged and never replaces it.
  */
 export async function withStoredUploadCleanup<T>(
-  { stored, resolveDeleteFile, req, logger }: StoredUploadCleanup,
+  { stored, resolveDeleteFile, recordExists, req, logger }: StoredUploadCleanup,
   next: () => Promise<T>,
 ): Promise<T> {
   try {
     return await next();
   } catch (error) {
     try {
-      /* Storage strategies validate ownership and tenant against the object key. */
-      const ref: StoredUploadRef = {
-        user: req.user?.id,
-        tenantId: req.user?.tenantId,
-        ...stored,
-      };
-      await resolveDeleteFile()?.(req as never, ref);
+      /* A rejected write can still have committed; deleting then would strand the record. */
+      if (!(await recordExists(stored))) {
+        /* Storage strategies validate ownership and tenant against the object key. */
+        const ref: StoredUploadRef = {
+          user: req.user?.id,
+          tenantId: req.user?.tenantId,
+          ...stored,
+        };
+        await resolveDeleteFile()?.(req as never, ref);
+      }
     } catch (cleanupError) {
       logger.error(
         '[withStoredUploadCleanup] Failed to delete stored upload',

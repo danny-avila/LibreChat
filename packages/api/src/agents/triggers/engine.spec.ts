@@ -655,6 +655,24 @@ describe('createAgentTriggerDeliveryEngine', () => {
     );
   });
 
+  it('leaves dead letters without a deadline when no retention is configured', async () => {
+    const store = storeWith();
+    const engine = createAgentTriggerDeliveryEngine(
+      {
+        store,
+        dispatch: async () => Promise.reject(new AgentTriggerDispatchError('invalid envelope')),
+        now: () => START,
+      },
+      { concurrency: 1 },
+    );
+
+    await engine.runTick();
+
+    expect(store.dead).toHaveBeenCalledWith(
+      expect.not.objectContaining({ expiresAt: expect.anything() }),
+    );
+  });
+
   it('dead-letters invalid envelopes without retrying', async () => {
     const transitions: string[] = [];
     const store = storeWith({
