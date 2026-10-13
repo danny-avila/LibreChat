@@ -5,8 +5,8 @@ import { getSafeErrorMetadata } from '~/utils/errors';
 export interface CascadeStep {
   name: string;
   /** Reads the dependents before they are removed. When supplied, a removal that
-   * rejects (it may still have committed) is restored from it immediately, and it
-   * is what `restore` receives instead of the removal result. */
+   * rejects (it may still have committed) is restored from it immediately. It is also
+   * what `restore` receives later when the removal returned nothing. */
   snapshot?: () => Promise<unknown>;
   /** Removes the dependents and returns whatever is needed to restore them. */
   remove: () => Promise<unknown>;
@@ -73,7 +73,9 @@ export async function runCascade(steps: CascadeStep[], logPrefix: string): Promi
       }
       throw error;
     }
-    restoreArgs[step.name] = step.snapshot ? snapshot : value;
+    /** What the removal actually returned beats the earlier snapshot, which may predate a
+     * concurrent write; the snapshot covers steps that return nothing. */
+    restoreArgs[step.name] = value !== undefined ? value : snapshot;
     return value;
   }
 

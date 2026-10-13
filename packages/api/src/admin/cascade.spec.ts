@@ -54,14 +54,21 @@ describe('runCascade', () => {
     expect(restore).toHaveBeenCalledWith(['before']);
   });
 
-  it('compensates from the snapshot rather than the removal result', async () => {
-    const restore = jest.fn().mockResolvedValue(undefined);
+  it('compensates from what the removal returned, falling back to the snapshot', async () => {
+    const restoreReturned = jest.fn().mockResolvedValue(undefined);
+    const restoreVoid = jest.fn().mockResolvedValue(undefined);
     const outcome = await runCascade(
       [
         cascadeStep(
           'a',
           async () => 'removed',
-          restore,
+          restoreReturned,
+          async () => 'snapshot',
+        ),
+        cascadeStep(
+          'b',
+          async (): Promise<void> => undefined,
+          restoreVoid,
           async () => 'snapshot',
         ),
       ],
@@ -69,7 +76,7 @@ describe('runCascade', () => {
     );
 
     await outcome.compensate();
-    expect(restore).toHaveBeenCalledTimes(1);
-    expect(restore).toHaveBeenCalledWith('snapshot');
+    expect(restoreReturned).toHaveBeenCalledWith('removed');
+    expect(restoreVoid).toHaveBeenCalledWith('snapshot');
   });
 });
