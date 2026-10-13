@@ -79,6 +79,7 @@ describe('redactMessage', () => {
 
   it('masks quoted local parts', () => {
     expect(redactMessage('user "jane.doe"@example.com ok')).toBe('user [REDACTED_EMAIL] ok');
+    expect(redactMessage('user "jane\\"doe"@example.com ok')).toBe('user [REDACTED_EMAIL] ok');
     expect(redactMessage('user "jane doe"@example.com ok')).toBe('user [REDACTED_EMAIL] ok');
     expect(redactMessage('user customer/dept=ship@example.com ok')).toBe(
       'user [REDACTED_EMAIL] ok',
@@ -167,11 +168,14 @@ describe('redactFormat', () => {
       contact: 'jane@example.com',
       stack: 'Error: failed for jane@example.com\n    at x',
       token: 'sk-abcdef',
+      'top@example.net': 'missing',
       nested: { 'k@example.org': 1, 'j@example.org': 2, other: 3 },
     });
     expect(info.contact).toBe('[REDACTED_EMAIL]');
     expect(info.stack).toBe('Error: failed for [REDACTED_EMAIL]\n    at x');
     expect(info.token).toBe('[REDACTED]');
+    expect(info['[REDACTED_EMAIL]']).toBe('missing');
+    expect(info).not.toHaveProperty(['top@example.net']);
     expect(info.nested).toEqual({ '[REDACTED_EMAIL]': 1, '[REDACTED_EMAIL]#2': 2, other: 3 });
   });
 

@@ -57,7 +57,7 @@ const sensitiveKeys: RegExp[] = [
  * only at a token boundary, so long non-email text is scanned once instead of once per character.
  */
 const EMAIL_PATTERN =
-  /(?:"[^"\r\n]{1,64}"|(?<![^\s<>()[\],;"])[^\s<>()[\],;"]+)@[^\s<>()[\],;"@]+\.[^\s<>()[\],;"@]{2,}/gu;
+  /(?:"(?:[^"\\\r\n]|\\.){1,64}"|(?<![^\s<>()[\],;"])[^\s<>()[\],;"]+)@[^\s<>()[\],;"@]+\.[^\s<>()[\],;"@]{2,}/gu;
 const REDACTED_EMAIL_VALUE = '[REDACTED_EMAIL]';
 
 const sensitiveMetadataKey =
@@ -408,7 +408,12 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
       if (key === 'message' || key === 'level') {
         continue;
       }
-      infoRecord[key] = redactRecordValue(key, infoRecord[key], new WeakMap(), 0);
+      const value = redactRecordValue(key, infoRecord[key], new WeakMap(), 0);
+      const safeKey = redactLogKey(key, info);
+      if (safeKey !== key) {
+        delete infoRecord[key];
+      }
+      infoRecord[safeKey] = value;
     }
     return info;
   },
