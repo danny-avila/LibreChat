@@ -58,6 +58,35 @@ describe('ReactQueryChatState', () => {
     expect(queryClient.getQueryData([QueryKeys.messages, 'convo-1'])).toBeUndefined();
   });
 
+  it('reports writes to a host store that bypass the cache', async () => {
+    const queryClient = new QueryClient();
+    let stored = [message('a')];
+    const hostListeners = new Set<() => void>();
+    const state = new ReactQueryChatState({
+      queryClient,
+      key: 'convo-1',
+      read: () => stored,
+      write: (next) => {
+        stored = next;
+        hostListeners.forEach((notify) => notify());
+      },
+      subscribe: (notify) => {
+        hostListeners.add(notify);
+        return () => hostListeners.delete(notify);
+      },
+    });
+    const listener = jest.fn();
+    const unsubscribe = state.subscribe(listener);
+
+    state.replaceMessages([message('b')]);
+    await flushMicrotasks();
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(state.messages).toEqual([message('b')]);
+
+    unsubscribe();
+    expect(hostListeners.size).toBe(0);
+  });
+
   it('reports writes to its own key only, after the writing call returns', async () => {
     const queryClient = new QueryClient();
     const state = new ReactQueryChatState({ queryClient, key: 'convo-1' });

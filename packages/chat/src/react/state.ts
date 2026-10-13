@@ -9,12 +9,17 @@ export type ReactQueryChatStateOptions = {
   /** The conversation the messages are cached under, `[QueryKeys.messages, key]`. */
   key: string;
 } & (
-  | { read?: undefined; write?: undefined }
+  | { read?: undefined; write?: undefined; subscribe?: undefined }
   | {
       /** Reads the list instead of the key's cache entry, for a host that also reads other keys. */
       read: () => TMessage[] | undefined;
       /** Writes the list the same host store `read` reads, so a write is read back. */
       write: (messages: TMessage[]) => void;
+      /**
+       * Reports writes to that store which do not reach the key's cache entry. Without it, only
+       * the key's cache entry is watched, which suits a host that writes the list there too.
+       */
+      subscribe?: (listener: () => void) => () => void;
     }
 );
 
@@ -69,19 +74,22 @@ export class ReactQueryChatState implements ChatState {
    */
   subscribe(listener: () => void): () => void {
     let active = true;
-    const unsubscribe = this.options.queryClient.getQueryCache().subscribe((event) => {
-      if (event.query.queryHash !== this.queryHash || !dataEvents.has(event.type)) {
-        return;
-      }
+    const deliver = () =>
       queueMicrotask(() => {
         if (active) {
           listener();
         }
       });
+    const unsubscribe = this.options.queryClient.getQueryCache().subscribe((event) => {
+      if (event.query.queryHash === this.queryHash && dataEvents.has(event.type)) {
+        deliver();
+      }
     });
+    const unsubscribeHost = this.options.subscribe?.(deliver);
     return () => {
       active = false;
       unsubscribe();
+      unsubscribeHost?.();
     };
   }
 }
