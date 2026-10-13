@@ -1289,6 +1289,35 @@ describe('User Methods - Database Tests', () => {
     });
   });
 
+  describe('resetTermsAcceptance', () => {
+    it('withdraws every acceptance, clears the source, and evicts cached auth documents', async () => {
+      enableAuthUserDocCache();
+      const accepted = await User.create({
+        name: 'Accepted',
+        email: 'accepted-reset@example.com',
+        provider: 'local',
+        termsAccepted: true,
+        termsAcceptedAt: new Date(),
+        termsAcceptedSource: 'migration',
+      });
+      const cache = {
+        get: jest.fn().mockResolvedValue(['cached-accepted']),
+        set: jest.fn().mockResolvedValue(true),
+        delete: jest.fn().mockResolvedValue(true),
+      };
+      const cached = createUserMethods(mongoose, { getCache: () => cache });
+
+      const { modifiedCount } = await cached.resetTermsAcceptance();
+
+      const stored = await User.findById(accepted._id).lean();
+      expect(modifiedCount).toBeGreaterThanOrEqual(1);
+      expect(stored?.termsAccepted).toBe(false);
+      expect(stored?.termsAcceptedAt).toBeNull();
+      expect(stored?.termsAcceptedSource).toBeUndefined();
+      expect(cache.delete).toHaveBeenCalledWith('cached-accepted');
+    });
+  });
+
   describe('acceptTerms', () => {
     test('sets termsAccepted and stamps termsAcceptedAt on first acceptance', async () => {
       const user = await User.create({

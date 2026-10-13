@@ -95,6 +95,7 @@ export function createUserMethods(
     updateData: TwoFactorEnrollmentUpdate,
   ) => Promise<IUser | null>;
   acceptTerms: (userId: string) => Promise<IUser | null>;
+  resetTermsAcceptance: () => Promise<{ modifiedCount: number }>;
   searchUsers: ({
     searchPattern,
     limit,
@@ -550,6 +551,21 @@ export function createUserMethods(
    * updates are used instead of an aggregation pipeline with $$NOW, which
    * Amazon DocumentDB rejects.
    */
+  /** Withdraws every user's acceptance and evicts their cached auth documents, so a reset takes effect at once. */
+  async function resetTermsAcceptance(): Promise<{ modifiedCount: number }> {
+    const User = mongoose.models.User;
+    const users = await User.find({ termsAccepted: true }).select('_id').lean();
+    const result = await User.updateMany(
+      {},
+      {
+        $set: { termsAccepted: false, termsAcceptedAt: null },
+        $unset: { termsAcceptedSource: 1 },
+      },
+    );
+    await Promise.all(users.map((user) => invalidateAuthUserDocCache(String(user._id))));
+    return { modifiedCount: result.modifiedCount };
+  }
+
   async function acceptTerms(userId: string): Promise<IUser | null> {
     const User = mongoose.models.User;
     const maxAttempts = 3;
@@ -1035,6 +1051,7 @@ export function createUserMethods(
     claimSamlIdentity,
     updateTwoFactorEnrollment,
     acceptTerms,
+    resetTermsAcceptance,
     searchUsers,
     getUserById,
     generateToken,
