@@ -1674,7 +1674,7 @@ export function createSkillMethods(
       };
     }
 
-    const current = await Skill.findById(id).lean();
+    const current = await Skill.findOne({ _id: id, deletingAt: { $exists: false } }).lean();
     if (!current) {
       return { status: 'not_found' };
     }

@@ -305,8 +305,8 @@ export function createSkillLifecycleMethods(
     // Publish the future blob reference before checking the parent. Deletion
     // marks the parent first, then scans intents: it must either see this row
     // or make the check below fail before any bytes are written.
-    const intent = (await intentModel().create({ ...input, state: 'uploading' })).toObject();
     try {
+      const intent = (await intentModel().create({ ...input, state: 'uploading' })).toObject();
       const skill = await skillModel()
         .findOne({ _id: input.skillId, deletingAt: { $exists: false } })
         .select('_id')

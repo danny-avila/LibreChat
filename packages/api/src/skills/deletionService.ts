@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { DEFAULT_SKILL_DELETION_CLEANUP_CONCURRENCY } from 'librechat-data-provider';
 import type {
   AppConfig,
   DeleteSkillResult,
@@ -8,6 +9,7 @@ import type {
 import type { SkillDeletionDeps, SkillDeletionProgress } from './deletion';
 import type { ServerRequest, StrategyFunctions } from '~/types';
 import { runSkillDeletion, SkillDeletionClaimLostError } from './deletion';
+import { createConcurrencyLimiter } from '~/utils/promise';
 import { getStorageMetadata } from '~/storage/metadata';
 import { getSafeErrorMetadata } from '~/utils/errors';
 
@@ -239,116 +241,145 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
   function startSkillDeletionSweep(options: Partial<SkillDeletionSweepOptions> = {}) {
     const { sweepIntervalMs = 60_000, claimLeaseMs = 120_000, batchSize = 100 } = options;
     let running = false;
-    async function scheduleIntentRecheck(fileId: string, owner: string) {
-      const config = await deps.loadConfig();
-      return deps.persistence.scheduleAbandonedSkillUploadIntentRecheck(
-        fileId,
-        owner,
-        config?.skillDeletion?.recheckIntervalMs ?? 3_600_000,
-      );
-    }
     async function sweepAbandonedIntents() {
       const intents = await deps.persistence.listAbandonedSkillUploadIntents(batchSize);
-      for (const intent of intents) {
-        const { fileId } = intent;
-        const owner = randomUUID();
-        if (
-          !(await deps.persistence.claimAbandonedSkillUploadIntent(fileId, owner, claimLeaseMs))
-        ) {
-          continue;
-        }
-        let lost = false;
-        const assertClaim = async () => {
-          if (lost) throw new SkillDeletionClaimLostError();
-          try {
-            const retained = await deps.persistence.refreshAbandonedSkillUploadIntentClaim(
-              fileId,
-              owner,
-              claimLeaseMs,
-            );
-            if (!retained) {
-              lost = true;
-              throw new SkillDeletionClaimLostError();
+      if (intents.length === 0) return;
+      const config = await deps.loadConfig();
+      const recheckIntervalMs = config?.skillDeletion?.recheckIntervalMs ?? 3_600_000;
+      const limit = createConcurrencyLimiter(
+        config?.fileConfig?.skills?.deletionCleanupConcurrency ??
+          DEFAULT_SKILL_DELETION_CLEANUP_CONCURRENCY,
+      );
+      const results = await Promise.allSettled(
+        intents.map((intent) =>
+          limit(async () => {
+            const { fileId } = intent;
+            const owner = randomUUID();
+            if (
+              !(await deps.persistence.claimAbandonedSkillUploadIntent(fileId, owner, claimLeaseMs))
+            ) {
+              return;
             }
-          } catch (error) {
-            lost = true;
-            throw error;
-          }
-        };
-        const heartbeat = setInterval(() => {
-          void assertClaim().catch((error) =>
-            deps.logger.error(
-              '[skill upload intent] Claim heartbeat failed:',
-              getSafeErrorMetadata(error),
-            ),
-          );
-        }, claimLeaseMs / 4);
-        heartbeat.unref?.();
-        try {
-          const skillId = intent.skillId;
-          await assertClaim();
-          if (await deps.persistence.getSkillDeletion(skillId)) {
-            // Whole-Skill deletion owns intents for this Skill.
-            await assertClaim();
-            if (!(await scheduleIntentRecheck(fileId, owner))) {
-              lost = true;
-              throw new SkillDeletionClaimLostError();
-            }
-            continue;
-          }
-          await assertClaim();
-          if (await deps.persistence.skillFileExistsForIntent(skillId, fileId)) {
-            deps.logger.warn(
-              `[skill upload intent] ${fileId} still has a file row; retaining blob`,
-            );
-            await assertClaim();
-            if (!(await scheduleIntentRecheck(fileId, owner))) {
-              lost = true;
-              throw new SkillDeletionClaimLostError();
-            }
-            continue;
-          }
-          await assertClaim();
-          await deleteStoredBlob({
-            filepath: intent.storageKey,
-            source: intent.source,
-            ...getStorageMetadata({ filepath: intent.storageKey, source: intent.source }),
-            author: intent.author,
-            tenantId: intent.tenantId,
-          });
-          await assertClaim();
-          await deps.persistence.markSkillUploadIntentCleaned(fileId);
-          await assertClaim();
-          if (!(await scheduleIntentRecheck(fileId, owner))) {
-            lost = true;
-            throw new SkillDeletionClaimLostError();
-          }
-        } catch (error) {
-          deps.logger.error(
-            `[skill upload intent] Cleanup failed for ${fileId}:`,
-            getSafeErrorMetadata(error),
-          );
-        } finally {
-          clearInterval(heartbeat);
-          if (!lost) {
+            let lost = false;
+            const assertClaim = async () => {
+              if (lost) throw new SkillDeletionClaimLostError();
+              try {
+                const retained = await deps.persistence.refreshAbandonedSkillUploadIntentClaim(
+                  fileId,
+                  owner,
+                  claimLeaseMs,
+                );
+                if (!retained) {
+                  lost = true;
+                  throw new SkillDeletionClaimLostError();
+                }
+              } catch (error) {
+                lost = true;
+                throw error;
+              }
+            };
+            const heartbeat = setInterval(() => {
+              void assertClaim().catch((error) =>
+                deps.logger.error(
+                  '[skill upload intent] Claim heartbeat failed:',
+                  getSafeErrorMetadata(error),
+                ),
+              );
+            }, claimLeaseMs / 4);
+            heartbeat.unref?.();
             try {
+              const skillId = intent.skillId;
               await assertClaim();
-              await deps.persistence.noteAbandonedSkillUploadIntentAttempt(fileId);
+              if (await deps.persistence.getSkillDeletion(skillId)) {
+                // Whole-Skill deletion owns intents for this Skill.
+                await assertClaim();
+                if (
+                  !(await deps.persistence.scheduleAbandonedSkillUploadIntentRecheck(
+                    fileId,
+                    owner,
+                    recheckIntervalMs,
+                  ))
+                ) {
+                  lost = true;
+                  throw new SkillDeletionClaimLostError();
+                }
+                return;
+              }
+              await assertClaim();
+              if (await deps.persistence.skillFileExistsForIntent(skillId, fileId)) {
+                deps.logger.warn(
+                  `[skill upload intent] ${fileId} still has a file row; retaining blob`,
+                );
+                await assertClaim();
+                if (
+                  !(await deps.persistence.scheduleAbandonedSkillUploadIntentRecheck(
+                    fileId,
+                    owner,
+                    recheckIntervalMs,
+                  ))
+                ) {
+                  lost = true;
+                  throw new SkillDeletionClaimLostError();
+                }
+                return;
+              }
+              await assertClaim();
+              await deleteStoredBlob({
+                filepath: intent.storageKey,
+                source: intent.source,
+                ...getStorageMetadata({ filepath: intent.storageKey, source: intent.source }),
+                author: intent.author,
+                tenantId: intent.tenantId,
+              });
+              await assertClaim();
+              await deps.persistence.markSkillUploadIntentCleaned(fileId);
+              await assertClaim();
+              if (
+                !(await deps.persistence.scheduleAbandonedSkillUploadIntentRecheck(
+                  fileId,
+                  owner,
+                  recheckIntervalMs,
+                ))
+              ) {
+                lost = true;
+                throw new SkillDeletionClaimLostError();
+              }
             } catch (error) {
               deps.logger.error(
-                `[skill upload intent] Attempt timestamp failed for ${fileId}:`,
+                `[skill upload intent] Cleanup failed for ${fileId}:`,
                 getSafeErrorMetadata(error),
               );
+            } finally {
+              clearInterval(heartbeat);
+              if (!lost) {
+                try {
+                  await assertClaim();
+                  await deps.persistence.noteAbandonedSkillUploadIntentAttempt(fileId);
+                } catch (error) {
+                  deps.logger.error(
+                    `[skill upload intent] Attempt timestamp failed for ${fileId}:`,
+                    getSafeErrorMetadata(error),
+                  );
+                }
+              }
+              try {
+                await deps.persistence.releaseAbandonedSkillUploadIntentClaim(fileId, owner);
+              } catch (error) {
+                deps.logger.error(
+                  `[skill upload intent] Claim release failed for ${fileId}:`,
+                  getSafeErrorMetadata(error),
+                );
+              }
             }
-          }
-          try {
-            await deps.persistence.releaseAbandonedSkillUploadIntentClaim(fileId, owner);
-          } catch (error) {
-            deps.logger.error(
-              `[skill upload intent] Claim release failed for ${fileId}:`,
-              getSafeErrorMetadata(error),
-            );
-          }
+          }),
+        ),
+      );
+      for (const result of results) {
+        if (result.status === 'rejected') {
+          deps.logger.error(
+            '[skill upload intent] Sweep item failed:',
+            getSafeErrorMetadata(result.reason),
+          );
         }
       }
     }

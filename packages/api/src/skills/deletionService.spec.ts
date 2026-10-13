@@ -255,6 +255,70 @@ it('does not log provider metadata when abandoned-intent cleanup fails', async (
   expect(JSON.stringify(h.logger.error.mock.calls)).not.toContain('secret-token');
 });
 
+it('bounds independent abandoned-intent cleanup without serializing the batch', async () => {
+  const h = claimedServiceHarness();
+  h.persistence.listSkillDeletionTombstones.mockResolvedValue([]);
+  h.persistence.listAbandonedSkillUploadIntents.mockResolvedValue(
+    ['file-1', 'file-2', 'file-3'].map((fileId) => ({
+      skillId: h.skillId,
+      fileId,
+      source: 'local',
+      storageKey: `/uploads/${fileId}`,
+      author: '507f1f77bcf86cd799439012',
+      state: 'abandoned' as const,
+    })),
+  );
+  h.persistence.getSkillDeletion.mockResolvedValue(null);
+  h.loadConfig.mockResolvedValue({
+    fileConfig: { skills: { deletionCleanupConcurrency: 2 } },
+  } as AppConfig);
+  let active = 0;
+  let peak = 0;
+  let started = 0;
+  let completed = 0;
+  const releases: Array<() => void> = [];
+  let twoStarted!: () => void;
+  let threeStarted!: () => void;
+  let allReleased!: () => void;
+  const firstPair = new Promise<void>((resolve) => {
+    twoStarted = resolve;
+  });
+  const third = new Promise<void>((resolve) => {
+    threeStarted = resolve;
+  });
+  const done = new Promise<void>((resolve) => {
+    allReleased = resolve;
+  });
+  h.deleteFile.mockImplementation(async () => {
+    active++;
+    peak = Math.max(peak, active);
+    started++;
+    if (started === 2) twoStarted();
+    if (started === 3) threeStarted();
+    await new Promise<void>((resolve) => releases.push(resolve));
+    active--;
+  });
+  h.persistence.releaseAbandonedSkillUploadIntentClaim.mockImplementation(async () => {
+    completed++;
+    if (completed === 3) allReleased();
+    return undefined;
+  });
+
+  const sweep = h.service.startSkillDeletionSweep();
+  try {
+    await firstPair;
+    expect(h.deleteFile).toHaveBeenCalledTimes(2);
+    releases[0]();
+    await third;
+    expect(peak).toBe(2);
+    for (const release of releases.slice(1)) release();
+    await done;
+    expect(h.persistence.markSkillUploadIntentCleaned).toHaveBeenCalledTimes(3);
+  } finally {
+    sweep.stop();
+  }
+});
+
 it('defers tombstone-owned abandoned intents without deleting their blobs again', async () => {
   const h = claimedServiceHarness();
   const intent = {

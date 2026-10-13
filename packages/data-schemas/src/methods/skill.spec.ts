@@ -776,6 +776,19 @@ describe('Skill CRUD methods', () => {
     }
   });
 
+  it('does not expose a deleting Skill as the current version after a missed update', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput());
+    await mongoose.models.Skill.updateOne({ _id: skill._id }, { $set: { deletingAt: new Date() } });
+
+    await expect(
+      methods.updateSkill({
+        id: skill._id.toString(),
+        expectedVersion: skill.version,
+        update: { description: 'Updated description (long enough).' },
+      }),
+    ).resolves.toEqual({ status: 'not_found' });
+  });
+
   it('queues blob cleanup before finalizing ACL and file rows', async () => {
     const { skill } = await methods.createSkill(makeSkillInput());
     await grantOwner(skill._id);

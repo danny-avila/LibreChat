@@ -346,6 +346,33 @@ describe('Skill upload intents', () => {
     }
   });
 
+  it('abandons a persisted reservation when its insert acknowledgement is lost', async () => {
+    const { skill, author } = await makeSkill();
+    const model = mongoose.models.SkillUploadIntent;
+    const create = model.create.bind(model);
+    const spy = jest.spyOn(model, 'create').mockImplementationOnce(async (input) => {
+      await create(input);
+      throw new Error('insert acknowledgement lost');
+    });
+    try {
+      await expect(
+        lifecycle.reserveSkillUploadIntent({
+          skillId: skill.id,
+          fileId: 'unacknowledged-file',
+          source: 'local',
+          storageKey: `/uploads/${author}/unacknowledged-file`,
+          author: author.toString(),
+          writerId: 'unacknowledged-writer',
+        }),
+      ).rejects.toThrow('insert acknowledgement lost');
+      expect((await lifecycle.getSkillUploadIntent('unacknowledged-file'))?.state).toBe(
+        'abandoned',
+      );
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('backfills a pre-existing blob before its Skill row can be finalized', async () => {
     const { skill, author } = await makeSkill();
     await mongoose.models.SkillFile.create({
