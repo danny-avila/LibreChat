@@ -76,8 +76,8 @@ spec:
             - name: LANGFUSE_FANOUT_REDIS_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.redis.auth.existingSecret | default (include "common.names.fullname" .Subcharts.redis) | quote }}
-                  key: {{ .Values.redis.auth.existingSecretPasswordKey | default "redis-password" | quote }}
+                  name: {{ include "redis.secretName" .Subcharts.redis | quote }}
+                  key: {{ include "redis.secretPasswordKey" .Subcharts.redis | quote }}
             {{- end }}
             - name: LANGFUSE_FANOUT_REDIS_KEY_PREFIX
               value: {{ .Values.langfuseFanout.redis.keyPrefix | quote }}

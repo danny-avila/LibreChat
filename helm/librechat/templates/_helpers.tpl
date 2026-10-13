@@ -155,22 +155,22 @@ Whether global.librechat.env already defines an env var. Args: dict "root" . "na
 {{/*
 Whether the chart wires LibreChat to the bundled MongoDB with generated credentials.
 Skipped when the operator supplies MONGO_URI (configEnv or global.librechat.env),
-turns subchart auth off, or sets librechat.injectBundledCredentials=false (needed when
+turns subchart auth off, or sets librechat.injectBundledCredentials.mongodb=false (needed when
 MONGO_URI comes from the Secret named by global.librechat.existingSecretName, which
 the chart cannot inspect).
 */}}
 {{- define "librechat.bundledMongoAuth" -}}
-{{- if and .Values.mongodb.enabled .Values.mongodb.auth.enabled (ne (toString .Values.librechat.injectBundledCredentials) "false") (not (get (default dict .Values.librechat.configEnv) "MONGO_URI")) (not (include "librechat.userEnvHas" (dict "root" . "name" "MONGO_URI"))) -}}
+{{- if and .Values.mongodb.enabled .Values.mongodb.auth.enabled (ne (toString (default dict .Values.librechat.injectBundledCredentials).mongodb) "false") (not (get (default dict .Values.librechat.configEnv) "MONGO_URI")) (not (include "librechat.userEnvHas" (dict "root" . "name" "MONGO_URI"))) -}}
 true
 {{- end -}}
 {{- end }}
 
 {{/*
 Whether the chart wires LibreChat to the bundled Redis with its generated password.
-Same opt-outs as the MongoDB helper, for REDIS_URI and REDIS_PASSWORD.
+Same opt-outs as the MongoDB helper (librechat.injectBundledCredentials.redis), for REDIS_URI and REDIS_PASSWORD.
 */}}
 {{- define "librechat.bundledRedisAuth" -}}
-{{- if and .Values.redis.enabled .Values.redis.auth.enabled (ne (toString .Values.librechat.injectBundledCredentials) "false") (not (get (default dict .Values.librechat.configEnv) "REDIS_URI")) (not (get (default dict .Values.librechat.configEnv) "REDIS_PASSWORD")) (not (include "librechat.userEnvHas" (dict "root" . "name" "REDIS_PASSWORD"))) -}}
+{{- if and .Values.redis.enabled .Values.redis.auth.enabled (ne (toString (default dict .Values.librechat.injectBundledCredentials).redis) "false") (not (get (default dict .Values.librechat.configEnv) "REDIS_URI")) (not (get (default dict .Values.librechat.configEnv) "REDIS_PASSWORD")) (not (include "librechat.userEnvHas" (dict "root" . "name" "REDIS_URI"))) (not (include "librechat.userEnvHas" (dict "root" . "name" "REDIS_PASSWORD"))) -}}
 true
 {{- end -}}
 {{- end }}
