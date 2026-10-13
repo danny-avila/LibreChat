@@ -2,6 +2,7 @@ const { FileContext } = require('librechat-data-provider');
 const {
   getStorageMetadata,
   createTermsBlockCheck,
+  skipUntilTermsAccepted,
   createGitHubSkillSyncRunner,
   createSkillSyncTriggerOrchestrator,
   startGitHubSkillSyncScheduler,
@@ -177,17 +178,20 @@ function getGitHubSkillSyncRunnerForRequest(req) {
   return triggerOrchestrator.getRunnerForAdminRequest(withBaseSkillSyncConfig(req, appConfigRef));
 }
 
-async function maybeRunGitHubSkillSyncForRequest(req) {
-  /** The list route is a read the terms gate lets through; the sync it starts is processing. */
-  if (await isTermsAcceptanceRequired(req.user)) {
-    return false;
-  }
+async function runGitHubSkillSyncForRequest(req) {
   const baseConfig = await loadCurrentAppConfig();
   return triggerOrchestrator.maybeRunForRequest({
     ...withBaseSkillSyncConfig(req, baseConfig),
     skillSyncAllowServerCredentials: false,
   });
 }
+
+/** The list route is a read the terms gate lets through; the sync it starts is processing. */
+const maybeRunGitHubSkillSyncForRequest = skipUntilTermsAccepted(
+  isTermsAcceptanceRequired,
+  runGitHubSkillSyncForRequest,
+  false,
+);
 
 function initializeGitHubSkillSync(appConfig) {
   appConfigRef = appConfig;

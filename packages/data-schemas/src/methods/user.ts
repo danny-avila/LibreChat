@@ -554,7 +554,6 @@ export function createUserMethods(
   /** Withdraws every user's acceptance and evicts their cached auth documents, so a reset takes effect at once. */
   async function resetTermsAcceptance(): Promise<{ modifiedCount: number }> {
     const User = mongoose.models.User;
-    const users = await User.find({ termsAccepted: true }).select('_id').lean();
     const result = await User.updateMany(
       {},
       {
@@ -562,6 +561,8 @@ export function createUserMethods(
         $unset: { termsAcceptedSource: 1 },
       },
     );
+    /** Every user, not only those read as accepted beforehand: an acceptance racing the update may be cached. */
+    const users = await User.find({}).select('_id').lean();
     await Promise.all(users.map((user) => invalidateAuthUserDocCache(String(user._id))));
     return { modifiedCount: result.modifiedCount };
   }

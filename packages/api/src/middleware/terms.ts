@@ -77,3 +77,16 @@ export function createTermsAcceptanceGate(deps: TermsAcceptanceGateDependencies)
     });
   };
 }
+
+/**
+ * Wraps a request-scoped job that a read route starts, so a user who must still accept the terms
+ * does not trigger processing; the route itself stays readable behind the modal.
+ */
+export function skipUntilTermsAccepted<T>(
+  isBlocked: (user: TermsUser | undefined) => Promise<boolean>,
+  job: (req: { user?: TermsUser }) => Promise<T>,
+  fallback: T,
+) {
+  return async (req: { user?: TermsUser }): Promise<T> =>
+    (await isBlocked(req.user)) ? fallback : job(req);
+}
