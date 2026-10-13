@@ -47,7 +47,7 @@ export async function stopUserGenerations(
   }
   await Promise.all(
     owned.map(({ streamId, job }) =>
-      waitForGenerationPersistence(streamId, job!.createdAt, control.getCleanupJob),
+      waitForGenerationPersistence(streamId, job!.createdAt, (id) => control.getCleanupJob(id)),
     ),
   );
 }
