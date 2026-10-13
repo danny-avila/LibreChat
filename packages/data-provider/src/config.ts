@@ -96,6 +96,9 @@ export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'd
 
 export const TWO_FACTOR_ENROLLMENT_REQUIRED_CODE = 'TWO_FACTOR_ENROLLMENT_REQUIRED' as const;
 
+/** A write was refused because the deployment requires terms acceptance the user has not given. */
+export const TERMS_NOT_ACCEPTED_CODE = 'terms_not_accepted' as const;
+
 /** A federated record was refused a password login, so the only way in is its identity provider. */
 export const TWO_FACTOR_FEDERATED_LOGIN_BLOCKED_CODE =
   'TWO_FACTOR_FEDERATED_LOGIN_BLOCKED' as const;
