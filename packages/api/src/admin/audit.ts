@@ -19,6 +19,15 @@ export type AdminAuditEvent = Omit<RecordAuditEntryInput, 'actor' | 'context'>;
 
 export type AdminAuditEmitter = (req: ServerRequest, event: AdminAuditEvent) => Promise<void>;
 
+/**
+ * Whether request-driven audit writes fail closed. On unless the operator
+ * opts out with `AUDIT_LOG_FAIL_CLOSED=false`; any other value keeps the
+ * secure default so a typo cannot silently disable it.
+ */
+export function isAuditFailClosed(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.AUDIT_LOG_FAIL_CLOSED !== 'false';
+}
+
 /** Resolves the authenticated caller as an audit actor; null when unauthenticated. */
 export function getAuditActor(req: ServerRequest): AuditActorInput | null {
   const user = req.user;
@@ -35,9 +44,9 @@ export function getAuditActor(req: ServerRequest): AuditActorInput | null {
  * the caller's tenant unless the event sets the key (even to `undefined`, which
  * routes the entry to the platform chain).
  *
- * Fail-open by default: a failed write is logged and the already-persisted
- * mutation stands. With `failClosed`, the write error propagates so the
- * handler's catch turns it into a 5xx.
+ * With `failClosed` (the deployment default, see `isAuditFailClosed`), the
+ * write error propagates so the handler's catch turns it into a 5xx. Otherwise
+ * a failed write is logged and the already-persisted mutation stands.
  */
 export function createAdminAuditEmitter(options: {
   recordAuditEntry?: RecordAuditEntry;

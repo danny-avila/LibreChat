@@ -166,7 +166,8 @@ export async function auditInsightsPermissionChanges({
     throw statusError('Authenticated user required for Insights permission audit');
   }
 
-  let agent: { id: string; name?: string } | null;
+  /** The lookup only decorates the entry; a failure must not skip the audit. */
+  let agent: { id: string; name?: string } | null = null;
   try {
     agent = await deps.getAgent(
       {
@@ -175,23 +176,10 @@ export async function auditInsightsPermissionChanges({
       },
       '_id id name',
     );
-    if (!agent) {
-      throw new Error('Agent not found for Insights permission audit');
-    }
   } catch (error) {
-    if (!failClosed) {
-      deps.logger.error('[InsightsPermissions] Audit target lookup failed', error);
-      return;
-    }
-    await deps
-      .restoreInsightsPermissionChanges(changes)
-      .catch((restoreError) =>
-        deps.logger.error('[InsightsPermissions] Permission rollback failed', restoreError),
-      );
-    throw statusError(
-      error instanceof Error ? error.message : 'Insights audit target lookup failed',
-    );
+    deps.logger.error('[InsightsPermissions] Audit target lookup failed', error);
   }
+  const target = { id: agent?.id ?? resourceId, name: agent?.name || agent?.id || resourceId };
 
   const actorName = user.name || user.username || user.email || actorId;
   for (let index = 0; index < changes.length; index++) {
@@ -204,7 +192,7 @@ export async function auditInsightsPermissionChanges({
       outcome: 'success',
       severity: 'warning',
       actor: { type: 'user', id: actorId, name: actorName },
-      target: { type: ResourceType.AGENT, id: agent.id, name: agent.name || agent.id },
+      target: { type: ResourceType.AGENT, ...target },
       metadata: {
         principalType: change.principal.type,
         principalId: change.principal.id?.toString() ?? '',

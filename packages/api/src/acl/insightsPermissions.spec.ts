@@ -70,4 +70,47 @@ describe('Insights permissions', () => {
     ).rejects.toMatchObject({ statusCode: 500 });
     expect(restore).toHaveBeenCalledWith([change]);
   });
+
+  test.each([true, false])(
+    'still audits with the resource id when the agent lookup fails (failClosed=%p)',
+    async (failClosed) => {
+      const restore = jest.fn().mockResolvedValue(undefined);
+      const record = jest.fn().mockResolvedValue(null);
+      const logger = { error: jest.fn() };
+      const req = {
+        user: { _id: { toString: () => 'admin-id' }, id: 'admin-id', role: SystemRoles.ADMIN },
+        headers: {},
+      } as unknown as ServerRequest;
+
+      await auditInsightsPermissionChanges({
+        req,
+        resourceId: 'resource-id',
+        changes: [
+          {
+            action: 'assigned',
+            previousEntry: null,
+            writtenEntry: null,
+            principal: { type: PrincipalType.ROLE, id: SystemRoles.USER },
+          },
+        ],
+        failClosed,
+        deps: {
+          getAgent: jest.fn().mockRejectedValue(new Error('lookup down')),
+          recordAuditEntry: record,
+          restoreInsightsPermissionChanges: restore,
+          logger,
+        },
+      });
+
+      expect(record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'permission.insights_assigned',
+          target: { type: ResourceType.AGENT, id: 'resource-id', name: 'resource-id' },
+        }),
+        { failClosed },
+      );
+      expect(restore).not.toHaveBeenCalled();
+      expect(logger.error).toHaveBeenCalled();
+    },
+  );
 });

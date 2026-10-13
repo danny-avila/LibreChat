@@ -30,6 +30,8 @@ export type BulkPermissionUpdateResult = {
   updated: BulkPrincipal[];
   revoked: BulkPrincipal[];
   insightsChanges: InsightsPermissionChange[];
+  /** Every effective grant, update and revoke, with the state to restore on rollback. */
+  aclChanges: InsightsPermissionChange[];
   errors: Array<{ principal: BulkPrincipal; error: string }>;
 };
 
@@ -447,9 +449,7 @@ export class AccessControlService {
       const sessionOptions = localSession ? { session: localSession } : {};
       const [roles, currentEntries] = await Promise.all([
         this._dbMethods.findRolesByResourceType(resourceType),
-        resourceType === ResourceType.AGENT
-          ? this._dbMethods.findEntriesByResource(resourceType, resourceId, localSession)
-          : Promise.resolve([]),
+        this._dbMethods.findEntriesByResource(resourceType, resourceId, localSession),
       ]);
       const rolesMap = new Map(roles.map((role) => [role.accessRoleId, role]));
       const results: BulkPermissionUpdateResult = {
@@ -457,12 +457,14 @@ export class AccessControlService {
         updated: [],
         revoked: [],
         insightsChanges: [],
+        aclChanges: [],
         errors: [],
       };
       const bulkWrites: Parameters<AllMethods['bulkWriteAclEntries']>[0] = [];
       /** Role-only edits go through the atomic guarded write, not this batch. */
       const roleBitsWrites: Parameters<AllMethods['replaceRoleBits']>[0] = [];
       const insightsChangesByBulkWriteIndex = new Map<number, InsightsPermissionChange>();
+      const aclChangesByBulkWriteIndex = new Map<number, InsightsPermissionChange>();
 
       const updatedPrincipalKey = (principal: BulkPrincipal | null | undefined) => {
         if (!principal?.type) return null;
@@ -612,22 +614,28 @@ export class AccessControlService {
             memberIds: principal.memberIds,
             ...(resourceType === ResourceType.AGENT ? { viewInsights: wantsInsights } : {}),
           });
+          const writtenEntry: InsightsWrittenEntry = {
+            permBits,
+            roleId: role._id,
+            grantedBy,
+            grantedAt,
+          };
+          const aclChange: InsightsPermissionChange = {
+            action: 'assigned',
+            previousEntry: existingEntry ?? null,
+            writtenEntry,
+            principal: { type: principal.type, id: principal.id, name: principal.name },
+          };
+          results.aclChanges.push(aclChange);
           if (hadInsights !== wantsInsights) {
-            const writtenEntry: InsightsWrittenEntry = {
-              permBits,
-              roleId: role._id,
-              grantedBy,
-              grantedAt,
-            };
             const change: InsightsPermissionChange = {
+              ...aclChange,
               action: wantsInsights ? 'assigned' : 'removed',
-              previousEntry: existingEntry ?? null,
-              writtenEntry,
-              principal: { type: principal.type, id: principal.id, name: principal.name },
             };
             results.insightsChanges.push(change);
             insightsChangesByBulkWriteIndex.set(bulkWriteIndex, change);
           }
+          aclChangesByBulkWriteIndex.set(bulkWriteIndex, aclChange);
           if (principal.type !== PrincipalType.PUBLIC) {
             grantedPrincipalKeys.add(principalKey(principal));
           }
@@ -651,9 +659,11 @@ export class AccessControlService {
           bulkWrites,
           sessionOptions,
         );
-        for (const [writeIndex, change] of insightsChangesByBulkWriteIndex) {
-          if (bulkWriteResult.upsertedIds?.[writeIndex] && change.previousEntry) {
-            change.previousEntry = null;
+        for (const changes of [insightsChangesByBulkWriteIndex, aclChangesByBulkWriteIndex]) {
+          for (const [writeIndex, change] of changes) {
+            if (bulkWriteResult.upsertedIds?.[writeIndex] && change.previousEntry) {
+              change.previousEntry = null;
+            }
           }
         }
       }
@@ -690,6 +700,14 @@ export class AccessControlService {
             idOnTheSource: principal.idOnTheSource,
             memberCount: principal.memberCount,
           });
+          if (deleteResult.deletedCount > 0) {
+            results.aclChanges.push({
+              action: 'removed',
+              previousEntry: existingEntry ?? null,
+              writtenEntry: null,
+              principal: { type: principal.type, id: principal.id, name: principal.name },
+            });
+          }
           if (
             resourceType === ResourceType.AGENT &&
             deleteResult.deletedCount > 0 &&
@@ -797,6 +815,9 @@ export class AccessControlService {
               },
             },
           ];
+        }
+        if (!change.previousEntry && !change.writtenEntry) {
+          return [];
         }
         if (change.previousEntry) {
           return [

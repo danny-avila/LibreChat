@@ -9,7 +9,9 @@ const {
   enrichRemoteAgentPrincipals,
   createPrincipalSearch,
   backfillRemoteAgentPermissions,
+  auditResourcePermissionChanges,
   auditInsightsPermissionChanges,
+  isAuditFailClosed,
   getInsightsPrincipalState,
   maskAgentInsightsBit,
   sanitizeInsightsPermissionPrincipals,
@@ -179,11 +181,26 @@ const updateResourcePermissions = async (req, res) => {
       grantedBy: userId,
     });
 
+    const auditFailClosed = isAuditFailClosed();
+    await auditResourcePermissionChanges({
+      req,
+      resourceType,
+      resourceId,
+      changes: results.aclChanges ?? [],
+      failClosed: auditFailClosed,
+      deps: {
+        recordAuditEntry: db.recordAuditEntry,
+        restorePermissionChanges: (changes) =>
+          restoreInsightsPermissionChanges({ resourceType, resourceId, changes }),
+        logger,
+      },
+    });
+
     await auditInsightsPermissionChanges({
       req,
       resourceId,
       changes: results.insightsChanges ?? [],
-      failClosed: process.env.AUDIT_LOG_FAIL_CLOSED === 'true',
+      failClosed: auditFailClosed,
       deps: {
         getAgent: db.getAgent,
         recordAuditEntry: db.recordAuditEntry,

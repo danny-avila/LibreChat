@@ -215,6 +215,7 @@ describe('PUT /api/roles/:roleName/prompts', () => {
         target: { type: 'role', id: 'STAFF', name: 'STAFF' },
         metadata: { changes: 'PROMPTS.CREATE=true', changeCount: 1 },
       }),
+      { failClosed: true },
     );
   });
 

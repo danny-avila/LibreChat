@@ -302,6 +302,71 @@ describe('AccessControlService', () => {
       ]);
     });
 
+    test('reports every effective ACL change and restores it on rollback', async () => {
+      const principal = { type: PrincipalType.USER, id: userId.toString() };
+      const grant = (accessRoleId: AccessRoleIds) =>
+        service.bulkUpdateResourcePermissions({
+          resourceType: ResourceType.PROMPTGROUP,
+          resourceId,
+          updatedPrincipals: [{ ...principal, accessRoleId }],
+          grantedBy: grantedById,
+        });
+      const entryBits = async () =>
+        (
+          await AclEntry.findOne({
+            principalId: userId,
+            resourceType: ResourceType.PROMPTGROUP,
+            resourceId,
+          })
+        )?.permBits;
+
+      const created = await grant(AccessRoleIds.PROMPTGROUP_VIEWER);
+      expect(created.insightsChanges).toEqual([]);
+      expect(created.aclChanges).toEqual([
+        expect.objectContaining({ action: 'assigned', previousEntry: null }),
+      ]);
+      const viewerBits = await entryBits();
+
+      const updated = await grant(AccessRoleIds.PROMPTGROUP_EDITOR);
+      expect(updated.aclChanges).toEqual([
+        expect.objectContaining({
+          action: 'assigned',
+          previousEntry: expect.objectContaining({ permBits: viewerBits }),
+        }),
+      ]);
+      await service.restoreInsightsPermissionChanges({
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId,
+        changes: updated.aclChanges,
+      });
+      expect(await entryBits()).toBe(viewerBits);
+
+      const revoked = await service.bulkUpdateResourcePermissions({
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId,
+        revokedPrincipals: [principal],
+        grantedBy: grantedById,
+      });
+      expect(revoked.aclChanges).toEqual([
+        expect.objectContaining({ action: 'removed', writtenEntry: null }),
+      ]);
+      expect(await entryBits()).toBeUndefined();
+      await service.restoreInsightsPermissionChanges({
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId,
+        changes: revoked.aclChanges,
+      });
+      expect(await entryBits()).toBe(viewerBits);
+
+      const noop = await service.bulkUpdateResourcePermissions({
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId,
+        revokedPrincipals: [{ type: PrincipalType.USER, id: new Types.ObjectId().toString() }],
+        grantedBy: grantedById,
+      });
+      expect(noop.aclChanges).toEqual([]);
+    });
+
     test('does not treat a non-agent permission bit as an Insights revocation', async () => {
       await AclEntry.create({
         principalType: PrincipalType.USER,
