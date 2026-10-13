@@ -516,6 +516,21 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
        * inheriting the leftovers. Every removal is idempotent.
        */
       const tenantId = req.user?.tenantId;
+      /** Insert-only by _id: entries recreated since the snapshot are left as they are. */
+      const restoreAclEntries = async (entries: Array<Record<string, unknown>>) => {
+        if (!bulkWriteAclEntries || entries.length === 0) {
+          return;
+        }
+        await bulkWriteAclEntries(
+          entries.map((entry) => ({
+            updateOne: {
+              filter: { _id: entry._id },
+              update: { $setOnInsert: entry },
+              upsert: true,
+            },
+          })),
+        );
+      };
       const cascade = await runCascade(
         [
           cascadeStep(
@@ -545,24 +560,19 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
             'acl',
             async () => {
               const entries = (await findAclEntriesByPrincipal?.(PrincipalType.ROLE, name)) ?? [];
-              await deleteAclEntries({ principalType: PrincipalType.ROLE, principalId: name });
+              try {
+                await deleteAclEntries({ principalType: PrincipalType.ROLE, principalId: name });
+              } catch (error) {
+                /** The delete may have committed before it threw, and a rejected step is
+                 * not compensated by the runner, so put the snapshot back here. */
+                await restoreAclEntries(entries).catch((restoreError) =>
+                  logger.error('[adminRoles] acl restore failed:', restoreError),
+                );
+                throw error;
+              }
               return entries;
             },
-            bulkWriteAclEntries
-              ? async (entries) => {
-                  if (entries.length > 0) {
-                    await bulkWriteAclEntries(
-                      entries.map((entry) => ({
-                        updateOne: {
-                          filter: { _id: entry._id },
-                          update: { $setOnInsert: entry },
-                          upsert: true,
-                        },
-                      })),
-                    );
-                  }
-                }
-              : undefined,
+            bulkWriteAclEntries ? restoreAclEntries : undefined,
           ),
           cascadeStep(
             'grants',
@@ -589,9 +599,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
       /** The removed ACL entries can include PROMPTGROUP grants feeding the access
        * cache; the cache is stale after both a removal and a restore. */
       const invalidateAccess = async () => {
-        if ('acl' in cascade.removed) {
-          await invalidatePromptGroupAccessContext?.();
-        }
+        await invalidatePromptGroupAccessContext?.();
       };
       const cleanupFailedResponse = () =>
         res.status(500).json({
@@ -618,10 +626,10 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
         );
         if (stillExists) {
           await cascade.compensate();
-          await invalidateAccess();
         } else {
           logger.error('[adminRoles] dependents not restored, role absent or unverifiable:', name);
         }
+        await invalidateAccess();
         return res.status(500).json({ error: 'Failed to delete role' });
       }
       await invalidateAccess();

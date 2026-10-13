@@ -1150,6 +1150,38 @@ describe('createAdminRolesHandlers', () => {
       );
     });
 
+    it('puts the ACL snapshot back when the ACL delete itself rejects', async () => {
+      const aclEntry = { _id: new Types.ObjectId(), resourceType: 'agent', permBits: 1 };
+      const deps = deleteDeps({
+        findAclEntriesByPrincipal: jest.fn().mockResolvedValue([aclEntry]),
+        deleteAclEntries: jest.fn().mockRejectedValue(new Error('response lost')),
+        bulkWriteAclEntries: jest.fn().mockResolvedValue(undefined),
+        invalidatePromptGroupAccessContext: jest.fn().mockResolvedValue(undefined),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status } = createReqRes({ params: { name: 'editor' } });
+
+      await handlers.deleteRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(deps.bulkWriteAclEntries).toHaveBeenCalledTimes(1);
+      expect(deps.invalidatePromptGroupAccessContext).toHaveBeenCalled();
+    });
+
+    it('invalidates the access cache even when the role is gone after a failed delete', async () => {
+      const deps = deleteDeps({
+        getRoleByName: jest.fn().mockResolvedValueOnce(mockRole()).mockResolvedValue(null),
+        deleteRoleByName: jest.fn().mockRejectedValue(new Error('connection lost')),
+        invalidatePromptGroupAccessContext: jest.fn().mockResolvedValue(undefined),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res } = createReqRes({ params: { name: 'editor' } });
+
+      await handlers.deleteRole(req, res);
+
+      expect(deps.invalidatePromptGroupAccessContext).toHaveBeenCalled();
+    });
+
     it('does not restore anything when the cascade and role deletion succeed', async () => {
       const deps = deleteDeps({
         upsertConfig: jest.fn(),
