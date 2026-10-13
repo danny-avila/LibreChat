@@ -556,7 +556,10 @@ export function createUserMethods(
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const firstAcceptance = await User.findOneAndUpdate(
         { _id: userId, termsAcceptedAt: null },
-        { $set: { termsAccepted: true, termsAcceptedAt: new Date() } },
+        {
+          $set: { termsAccepted: true, termsAcceptedAt: new Date() },
+          $unset: { termsAcceptedSource: 1 },
+        },
         { new: true, runValidators: true },
       ).lean<IUser>();
       if (firstAcceptance) {

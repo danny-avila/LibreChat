@@ -23,7 +23,10 @@ const connect = require('./connect');
   try {
     const result = await User.updateMany(
       {},
-      { $set: { termsAccepted: false, termsAcceptedAt: null } },
+      {
+        $set: { termsAccepted: false, termsAcceptedAt: null },
+        $unset: { termsAcceptedSource: 1 },
+      },
     );
     console.green(`Updated ${result.modifiedCount} user(s).`);
   } catch (error) {

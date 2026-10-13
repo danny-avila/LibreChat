@@ -1367,6 +1367,33 @@ describe('User Methods - Database Tests', () => {
       );
     });
 
+    test('keeps the backfill marker only while the backfilled timestamp stands', async () => {
+      const backfilledAt = new Date('2023-01-01T00:00:00.000Z');
+      const user = await User.create({
+        name: 'Backfilled User',
+        email: 'backfilled-terms@example.com',
+        provider: 'local',
+        termsAccepted: true,
+        termsAcceptedAt: backfilledAt,
+        termsAcceptedSource: 'migration',
+      });
+      const userId = user._id?.toString() ?? '';
+
+      const repeat = await methods.acceptTerms(userId);
+      expect((repeat?.termsAcceptedAt as Date).getTime()).toBe(backfilledAt.getTime());
+      expect(repeat?.termsAcceptedSource).toBe('migration');
+
+      await User.updateOne(
+        { _id: userId },
+        { $set: { termsAccepted: false, termsAcceptedAt: null } },
+      );
+      const reaccepted = await methods.acceptTerms(userId);
+
+      expect(reaccepted?.termsAcceptedAt).toBeInstanceOf(Date);
+      expect((reaccepted?.termsAcceptedAt as Date).getTime()).not.toBe(backfilledAt.getTime());
+      expect(reaccepted?.termsAcceptedSource).toBeUndefined();
+    });
+
     test('stamps termsAcceptedAt for a legacy document missing the field entirely', async () => {
       const legacyId = new mongoose.Types.ObjectId();
       await User.collection.insertOne({
