@@ -1,7 +1,9 @@
+import { createHash } from 'node:crypto';
 import { Providers } from '@librechat/agents';
 import { mbToBytes, EModelEndpoint, isOpenAILikeProvider } from 'librechat-data-provider';
-import { getModelMaxTokens } from '~/utils/tokens';
 import type { PDFDocumentLoadingTask } from 'pdfjs-dist/types/src/display/api';
+import { runGuardedEncode } from '~/files/encode/memoryGuard';
+import { getModelMaxTokens } from '~/utils/tokens';
 
 export interface ValidationResult {
   isValid: boolean;
@@ -72,12 +74,37 @@ export function getAnthropicPdfPageLimit(model?: string): number {
     : ANTHROPIC_PDF_MAX_PAGES_200K;
 }
 
+const PDF_PAGE_COUNT_CACHE_MAX = 256;
+const pdfPageCountCache = new Map<string, number | null>();
+
 /**
  * Counts a PDF's pages by parsing it, so pages superseded by incremental
- * updates are not counted twice.
+ * updates are not counted twice. History attachments are re-validated on every
+ * turn, so counts are cached (LRU, keyed by content digest) and parsing runs
+ * under the shared encode limiter.
  * @returns The page count, or `null` if the PDF cannot be parsed.
  */
 export async function countPdfPages(pdfBuffer: Buffer): Promise<number | null> {
+  const key = createHash('sha256').update(pdfBuffer).digest('hex');
+  if (pdfPageCountCache.has(key)) {
+    const cached = pdfPageCountCache.get(key) ?? null;
+    pdfPageCountCache.delete(key);
+    pdfPageCountCache.set(key, cached);
+    return cached;
+  }
+
+  const count = await runGuardedEncode(pdfBuffer.length, () => parsePdfPageCount(pdfBuffer));
+  if (pdfPageCountCache.size >= PDF_PAGE_COUNT_CACHE_MAX) {
+    const oldest = pdfPageCountCache.keys().next().value;
+    if (oldest !== undefined) {
+      pdfPageCountCache.delete(oldest);
+    }
+  }
+  pdfPageCountCache.set(key, count);
+  return count;
+}
+
+async function parsePdfPageCount(pdfBuffer: Buffer): Promise<number | null> {
   let loadingTask: PDFDocumentLoadingTask | undefined;
   try {
     const { getDocument } = await import('pdfjs-dist/legacy/build/pdf.mjs');

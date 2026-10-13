@@ -160,7 +160,12 @@ describe('PDF Validation with fileConfig.endpoints.*.fileSizeLimit', () => {
 
   describe('validatePdf - Anthropic page limit', () => {
     const provider = Providers.ANTHROPIC;
-    const pdfBuffer = Buffer.from('%PDF-1.7\n', 'latin1');
+    /** Page counts are cached by content, so every test gets its own bytes. */
+    let pdfId = 0;
+    let pdfBuffer: Buffer;
+    beforeEach(() => {
+      pdfBuffer = Buffer.from(`%PDF-1.7\n% test ${++pdfId}\n`, 'latin1');
+    });
 
     const parsesWithPages = (numPages: number) =>
       mockGetDocument.mockReturnValue({
@@ -228,6 +233,17 @@ describe('PDF Validation with fileConfig.endpoints.*.fileSizeLimit', () => {
 
       expect(result.isValid).toBe(false);
       expect(result.error).toBe("PDF has 601 pages, exceeding Anthropic's 600-page limit");
+    });
+
+    it('should parse each PDF only once across repeated validations', async () => {
+      parsesWithPages(101);
+
+      const first = await validatePdf(pdfBuffer, pdfBuffer.length, provider);
+      const second = await validatePdf(pdfBuffer, pdfBuffer.length, provider);
+
+      expect(first).toEqual(second);
+      expect(second.isValid).toBe(false);
+      expect(mockGetDocument).toHaveBeenCalledTimes(1);
     });
 
     it('should leave the page limit to the provider when the PDF cannot be parsed', async () => {
