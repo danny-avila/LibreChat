@@ -555,6 +555,27 @@ describe('auditLog methods', () => {
       expect(verified.ok).toBe(true);
     });
 
+    it('still returns the purge result when the audit write rejects', async () => {
+      for (let i = 0; i < 4; i++) {
+        await methods.recordAuditEntry(baseInput());
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      const third = await AuditLog.findOne({ chainKey: CK_A, seq: 3 }).lean();
+      const spy = jest.spyOn(AuditLog, 'create').mockRejectedValue(new Error('audit store down'));
+
+      try {
+        const result = await methods.purgeAuditLogEntries('tenant-a', {
+          before: third!.createdAt,
+          confirm: true,
+        });
+        expect(result.deletedCount).toBeGreaterThanOrEqual(1);
+        expect(result.checkpoint).toBeDefined();
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await AuditLog.countDocuments({ chainKey: CK_A, action: 'audit.purged' })).toBe(0);
+    });
+
     it('does not mint a checkpoint when a confirmed purge removed nothing', async () => {
       await seed(2);
       const result = await methods.purgeAuditLogEntries('tenant-a', {
