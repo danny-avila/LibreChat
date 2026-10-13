@@ -46,7 +46,7 @@ export async function withSkillUploadIntent<T>(
     tenantId: operation.tenantId,
     fileId: operation.fileId,
     source: operation.source,
-    storageKey: operation.reservation.filepath,
+    storageKey: operation.reservation.storageKey ?? operation.reservation.filepath,
     writerId,
   });
   let savedPath: string | undefined;

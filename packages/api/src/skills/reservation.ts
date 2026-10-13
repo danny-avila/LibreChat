@@ -45,7 +45,7 @@ export function createSkillStorageResolver<TConfig>(deps: {
       isImage: options.isImage,
     });
     const strategy = deps.getStrategyFunctions(source);
-    if (!strategy.saveBuffer || !strategy.deleteFile) {
+    if (typeof strategy.saveBuffer !== 'function' || typeof strategy.deleteFile !== 'function') {
       throw new Error('Skill storage cannot guarantee cleanup');
     }
     return { source, saveBuffer: strategy.saveBuffer, getFileURL: strategy.getFileURL };
@@ -59,7 +59,7 @@ export function createSkillBufferWriter(deps: {
   return async (params: SaveBufferParams & { expectedSource: string }) => {
     const { expectedSource, ...saveParams } = params;
     const strategy = deps.getStrategyFunctions(expectedSource);
-    if (!strategy.saveBuffer || !strategy.deleteFile) {
+    if (typeof strategy.saveBuffer !== 'function' || typeof strategy.deleteFile !== 'function') {
       throw new Error('Skill storage cannot guarantee cleanup');
     }
     const filepath = await strategy.saveBuffer(saveParams);

@@ -34,6 +34,19 @@ it('persists intent before writing bytes and acknowledges only after row commit'
   );
 });
 
+it('persists the canonical provider key instead of a public URL', async () => {
+  const deps = makeDeps();
+  const operation = makeOperation();
+  operation.reservation = {
+    filepath: 'https://cdn.example.test/temporary-signed-url',
+    storageKey: 'skills/owner/file-1',
+  };
+  await withSkillUploadIntent(deps, operation);
+  expect(deps.reserveSkillUploadIntent).toHaveBeenCalledWith(
+    expect.objectContaining({ storageKey: 'skills/owner/file-1' }),
+  );
+});
+
 it('keeps an abandoned intent even when immediate compensation succeeds', async () => {
   const deps = makeDeps();
   const operation = makeOperation();

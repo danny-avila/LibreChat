@@ -79,6 +79,29 @@ describe('Skill blob reservation', () => {
     ).rejects.toThrow('Skill storage cannot guarantee cleanup');
   });
 
+  it('rejects truthy non-function cleanup capabilities before reserving or writing', async () => {
+    const getStrategyFunctions = () => ({
+      saveBuffer: jest.fn(async () => '/uploads/owner/file-1'),
+      deleteFile: true,
+    });
+    const resolve = createSkillStorageResolver({
+      getFileStrategy: () => FileSources.local,
+      getStrategyFunctions,
+    });
+    expect(() => resolve({}, { isImage: false })).toThrow('Skill storage cannot guarantee cleanup');
+
+    const write = createSkillBufferWriter({ getStrategyFunctions });
+    await expect(
+      write({
+        expectedSource: FileSources.local,
+        userId: 'owner',
+        fileName: 'file-1',
+        buffer: Buffer.from('content'),
+        basePath: 'uploads',
+      }),
+    ).rejects.toThrow('Skill storage cannot guarantee cleanup');
+  });
+
   it('writes to the reserved provider when live config changes before upload', async () => {
     const localSave = jest.fn(async () => '/uploads/owner/id__note.md');
     const firebaseSave = jest.fn(async () => 'https://firebase.invalid/o/other');
