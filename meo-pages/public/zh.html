@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="zh-Hans">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f4f5f8" />
+    <meta
+      name="description"
+      content="Meo AI 把用户自己的 AI API 变成完整的个人 AI 体验：统一账号、会话、模型路由、文件、Agent、权限、网页访问和本地设备执行。"
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Meo AI — 把 AI API 变成完整产品体验" />
+    <meta
+      property="og:description"
+      content="使用你自己的模型，同时保留聊天、历史、路由、多模态、Agent、权限和跨端连续性。"
+    />
+    <meta property="og:site_name" content="Meo AI" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Meo AI — 用自己的模型，保留完整体验" />
+    <meta
+      name="twitter:description"
+      content="AI API 提供模型能力，Meo AI 把完整产品体验补在它之上。"
+    />
+    <title>Meo AI — 把 AI API 变成完整产品体验</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='20' fill='%235365d8'/%3E%3Ctext x='32' y='43' text-anchor='middle' font-family='system-ui,sans-serif' font-size='38' font-weight='800' fill='white'%3Em%3C/text%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="/about.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/zh" aria-label="Meo AI 产品介绍">
+        <span class="brand-mark" aria-hidden="true">m</span>
+        <span>Meo AI</span>
+      </a>
+      <nav class="site-nav" aria-label="产品导航">
+        <a href="#why">为什么做 Meo AI</a>
+        <a href="#features">功能</a>
+        <a href="#routing">模型路由</a>
+        <a href="#architecture">架构</a>
+        <a href="#status">状态</a>
+      </nav>
+      <a class="button compact" href="/about" hreflang="en">EN</a>
+      <a class="button compact" href="/new">打开 Meo AI</a>
+    </header>
+
+    <main>
+      <section class="hero section-shell">
+        <div class="hero-copy">
+          <div class="eyebrow"><span class="pulse-dot"></span> 开发预览版</div>
+          <h1>带上你的模型。<br /><span>保留完整的 AI 体验。</span></h1>
+          <p class="hero-lead">
+            API 只给你模型能力。Meo AI 把真正的产品补在它周围：账号、会话、历史、文件、图片、
+            模型路由、Agent 执行、权限，以及从浏览器回到你自己设备的完整路径。
+          </p>
+          <div class="hero-actions">
+            <a class="button primary" href="/new">试用网页版</a>
+            <a class="button" href="#why">看看 Meo 补了什么</a>
+          </div>
+          <p class="hero-note">
+            模型可以随时替换，但会话身份、Provider 凭据、本地工作区和操作系统权限，
+            都由明确的 Meo 服务管理，而不是交给某一个模型 Prompt。
+          </p>
+        </div>
+
+        <div class="hero-visual" aria-label="Meo AI 把模型 API 变成完整产品体验的示意图">
+          <div class="window desktop-window">
+            <div class="window-bar">
+              <div class="traffic"><i></i><i></i><i></i></div>
+              <span>Meo AI</span>
+              <span class="window-meta">Native · MeoUI</span>
+            </div>
+            <div class="window-body">
+              <aside class="mock-sidebar">
+                <div class="mini-brand"><span class="brand-mark tiny">m</span> Meo AI</div>
+                <div class="mock-new">＋ 新对话</div>
+                <p>最近</p>
+                <div class="mock-row active"></div>
+                <div class="mock-row short"></div>
+                <div class="mock-row"></div>
+              </aside>
+              <div class="mock-chat">
+                <div class="route-strip">
+                  <span>Execution</span><span>coding</span><span>高复杂度</span>
+                </div>
+                <div class="bubble user">检查这个项目，修复问题，然后验证结果。</div>
+                <div class="activity-card">
+                  <div class="activity-head"><strong>正在处理</strong><span>协同执行</span></div>
+                  <div>✓ 已路由到可执行任务的模型</div>
+                  <div>✓ 已准备受限的 Subagent 上下文</div>
+                  <div class="working">● 正在验证结果…</div>
+                </div>
+                <div class="bubble assistant">
+                  结果已经准备好。即使不同模型负责不同部分，这个会话仍然保持同一个身份。
+                </div>
+                <div class="response-details">
+                  <span>Judge 已验证</span><span>标题已保存</span><span>历史已保留</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="window web-window">
+            <div class="window-bar">
+              <span class="brand-mark tiny">m</span>
+              <span>Web</span>
+              <span class="status-live">Meo Account</span>
+            </div>
+            <div class="web-card">
+              <strong>同一个会话</strong>
+              <span>账号拥有的云端历史</span>
+            </div>
+            <div class="web-card muted-card">
+              <strong>你的 Provider</strong>
+              <span>凭据留在 Meo Account 后面</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="status-ribbon section-shell" aria-label="当前产品状态">
+        <div><span class="status-dot live"></span><strong>Native 桌面端</strong><small>可用预览</small></div>
+        <div><span class="status-dot live"></span><strong>Web 聊天</strong><small>可用预览</small></div>
+        <div><span class="status-dot live"></span><strong>模型路由</strong><small>已启用</small></div>
+        <div><span class="status-dot preview"></span><strong>系统操作</strong><small>可选预览</small></div>
+        <div><span class="status-dot preview"></span><strong>远程设备</strong><small>集成预览</small></div>
+      </section>
+
+      <section id="why" class="section-shell content-section">
+        <div class="section-heading split-heading">
+          <div>
+            <span class="kicker">API 缺少的产品层</span>
+            <h2>API 给你一个模型。订阅产品给你一整套体验。</h2>
+          </div>
+          <p>
+            Meo AI 想把这套体验重新做出来，同时不把用户锁死在某一家模型厂商里。
+            你可以使用自己的 Provider 或本地模型，再把真正有用的产品体验保留在上面。
+          </p>
+        </div>
+
+        <div class="feature-grid compact-grid">
+          <article class="feature-card accent-card">
+            <div class="feature-icon">API</div>
+            <h3>原始 API 给你的东西</h3>
+            <p>输入消息，返回模型输出。围绕一次请求的其他体验，都需要你自己处理。</p>
+            <ul>
+              <li>模型端点和模型能力</li>
+              <li>按所选 Provider 的规则计费</li>
+              <li>本身没有统一的产品身份</li>
+              <li>没有内置历史、Projects、权限或设备工作流</li>
+            </ul>
+          </article>
+          <article class="feature-card">
+            <div class="feature-icon">m</div>
+            <h3>Meo AI 补上的东西</h3>
+            <p>把可替换的模型放进一个持续存在的产品体验里。</p>
+            <ul>
+              <li>Meo Account 和 Provider Broker</li>
+              <li>统一会话身份和云端历史</li>
+              <li>文件、图片和丰富的 Native 展示</li>
+              <li>停止、重试、重连和可见的 Agent 工作过程</li>
+            </ul>
+          </article>
+          <article class="feature-card">
+            <div class="feature-icon">↗</div>
+            <h3>不只是普通聊天</h3>
+            <p>同一个会话可以继续变成真实任务，而不是把系统权限直接交给模型。</p>
+            <ul>
+              <li>根据任务类型自动选择模型</li>
+              <li>Execution、受限 Subagent 和 Judge 验证</li>
+              <li>类型化系统能力和明确授权</li>
+              <li>在用户自己的 Linux 设备上执行远程 AgentRun</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section id="features" class="routing-section">
+        <div class="section-shell content-section">
+          <div class="section-heading">
+            <span class="kicker">完整体验</span>
+            <h2>让 API 真正像产品一样好用的那些部分</h2>
+            <p>
+              目标不是一比一复制某个订阅服务，而是补齐用户真正需要的产品基础能力，
+              同时保留 Provider 选择自由和本地执行能力。
+            </p>
+          </div>
+
+          <div class="feature-grid">
+            <article class="feature-card large accent-card">
+              <span class="feature-state implemented">已实现</span>
+              <h3>会话运行时</h3>
+              <ul>
+                <li>带真实请求状态的流式输出</li>
+                <li>Stop / 取消与安全重连</li>
+                <li>持久化会话历史</li>
+                <li>自动生成并恢复标题 / 摘要</li>
+                <li>可操作的错误状态和符合条件的重试</li>
+              </ul>
+            </article>
+            <article class="feature-card">
+              <span class="feature-state implemented">已实现</span>
+              <h3>多模态上下文</h3>
+              <ul>
+                <li>文件附件</li>
+                <li>剪贴板图片输入</li>
+                <li>资源状态保留</li>
+                <li>路由前检查 Vision 能力</li>
+              </ul>
+            </article>
+            <article class="feature-card">
+              <span class="feature-state implemented">已实现</span>
+              <h3>账号 + BYOK</h3>
+              <ul>
+                <li>Meo Account OAuth/OIDC 身份</li>
+                <li>加密 Provider 凭据放在 Account Broker 后面</li>
+                <li>浏览器不接触原始 API Key 也能选择 Provider / 模型</li>
+                <li>OpenAI、Gemini、DeepSeek、OpenRouter 和兼容 Broker Profile</li>
+              </ul>
+            </article>
+            <article class="feature-card">
+              <span class="feature-state implemented">已实现</span>
+              <h3>Agent 体验</h3>
+              <ul>
+                <li>可观察的工具活动和决策过程</li>
+                <li>复杂执行任务的受限协同</li>
+                <li>最终展示前经过 Judge 验证 / 修复</li>
+                <li>只接收数据的 Native 展示卡片</li>
+              </ul>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="routing" class="section-shell content-section">
+        <div class="section-heading split-heading">
+          <div>
+            <span class="kicker">模型路由</span>
+            <h2>让合适的模型做合适的工作，而不是所有事情都用同一个昂贵模型。</h2>
+          </div>
+          <p>
+            Meo AI 会在执行前识别普通请求，并根据工作类型和能力需求进行路由。
+            模型可以改变，但会话不会因此改变。
+          </p>
+        </div>
+
+        <div class="roles-grid">
+          <article class="role-card primary-role"><span class="role-label">主要</span><h3>Chat</h3><p>快速的日常聊天。</p></article>
+          <article class="role-card primary-role"><span class="role-label">主要</span><h3>Reasoning</h3><p>规划、分析和复杂内容生成。</p></article>
+          <article class="role-card primary-role"><span class="role-label">主要</span><h3>Execution</h3><p>编程、实现和工具型任务。</p></article>
+          <article class="role-card primary-role"><span class="role-label">主要</span><h3>Vision</h3><p>图片请求只会路由到支持视觉能力的模型。</p></article>
+          <article class="role-card auxiliary-role"><span class="role-label">辅助</span><h3>Judge</h3><p>受限验证、排序和修复支持。</p></article>
+          <article class="role-card auxiliary-role"><span class="role-label">辅助</span><h3>Title & summary</h3><p>用更便宜的模型在后台生成标题和会话摘要。</p></article>
+        </div>
+
+        <div class="routing-notes">
+          <article><span>01</span><div><strong>理解任务类型</strong><p>聊天、推理、编程和执行请求不必走同一条模型路径。</p></div></article>
+          <article><span>02</span><div><strong>理解能力要求</strong><p>图片请求必须进入支持多模态的模型，而不是悄悄丢掉图片。</p></div></article>
+          <article><span>03</span><div><strong>从设计上控制成本</strong><p>标题之类的小任务，可以使用比主推理模型更便宜的辅助角色。</p></div></article>
+          <article><span>04</span><div><strong>安全权限独立在模型外</strong><p>Judge 和 Execution 模型永远不能自己给自己系统权限。</p></div></article>
+        </div>
+      </section>
+
+      <section class="remote-section">
+        <div class="section-shell content-section">
+          <div class="section-heading split-heading">
+            <div>
+              <span class="kicker">一个账号 · 多个界面</span>
+              <h2>会话属于你，而不是属于某一个浏览器或某一个模型。</h2>
+            </div>
+            <p>
+              Web 和 Native 的目标是重新打开同一个云端会话。一次任务可以由 Provider 模型回答，
+              也可以变成注册本地设备上的 AgentRun，同时保留同一个会话身份。
+            </p>
+          </div>
+
+          <div class="account-flow">
+            <div class="flow-node browser-node"><small>界面</small><strong>Web / Native</strong><span>同一个 Meo Account</span></div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-node account-node"><small>产品状态</small><strong>Meo AI Cloud</strong><span>会话 · 消息 · AgentRuns</span></div>
+            <div class="flow-arrow">→</div>
+            <div class="flow-node provider-node"><small>执行方</small><strong>Provider 或你的设备</strong><span>模型推理 · 本地 AgentService</span></div>
+          </div>
+
+          <div class="remote-details">
+            <div><strong>云端会话</strong><span>更换模型后，会话身份仍然保持不变。</span></div>
+            <div><strong>Provider Broker</strong><span>API Key 由 Account 管理，不需要复制到每个客户端。</span></div>
+            <div><strong>设备 Relay</strong><span><code>meo-agentd</code> 使用向外建立的认证连接，不暴露公共 AgentService 端口。</span></div>
+            <div><strong>本地工作区</strong><span>源文件可以继续留在设备上，云端只使用不透明的 workspace reference。</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="architecture" class="architecture-section">
+        <div class="section-shell content-section">
+          <div class="section-heading">
+            <span class="kicker">架构</span>
+            <h2>模型可以替换，权限不能跟着一起乱换。</h2>
+            <p>
+              Meo AI 把用户体验、凭据所有权和系统权限拆开。这样增加一个模型，
+              不会顺便把更多秘密或系统权限一起交给它。
+            </p>
+          </div>
+
+          <div class="architecture-map" aria-label="Meo AI 架构图">
+            <div class="arch-column surfaces">
+              <span class="arch-title">界面</span>
+              <div class="arch-node"><strong>Native MeoUI</strong><small>C++ / QML 桌面端</small></div>
+              <div class="arch-node"><strong>Meo AI Web</strong><small>浏览器界面</small></div>
+            </div>
+            <div class="arch-connector"><span>→</span></div>
+            <div class="arch-column core">
+              <span class="arch-title">产品层</span>
+              <div class="arch-node accent"><strong>AgentService</strong><small>请求生命周期 · 工具 · 路由</small></div>
+              <div class="arch-node"><strong>Meo Cloud</strong><small>会话 · AgentRun · relay 状态</small></div>
+            </div>
+            <div class="arch-connector"><span>→</span></div>
+            <div class="arch-column authorities">
+              <span class="arch-title">权限与所有权</span>
+              <div class="arch-node"><strong>Meo Account</strong><small>身份 · Provider 凭据 · consent</small></div>
+              <div class="arch-node"><strong>System AI Router</strong><small>类型化 OS 能力 · policy</small></div>
+              <div class="arch-node"><strong>Device / meo-agentd</strong><small>本地工作区 · AgentRun bridge</small></div>
+            </div>
+          </div>
+
+          <div class="principles-grid">
+            <article><strong>会话 ≠ 模型</strong><p>GPT、Claude、本地模型或设备 Agent 都可以参与，而不需要替换整个会话。</p></article>
+            <article><strong>Prompt ≠ 权限</strong><p>模型输出、Skills 和 MCP 描述只能作为 policy 的输入，不能直接成为系统权限。</p></article>
+            <article><strong>Cloud ≠ 文件系统</strong><p>远程协同不需要公开用户本地工作区的真实路径。</p></article>
+            <article><strong>断线 ≠ 重做一遍</strong><p>重连会保留准确的请求身份，避免重复产生有副作用的操作。</p></article>
+          </div>
+        </div>
+      </section>
+
+      <section id="status" class="section-shell content-section status-section">
+        <div class="section-heading">
+          <span class="kicker">从 API Wrapper 到订阅级产品体验</span>
+          <h2>哪些已经是真的，哪些还需要继续补齐。</h2>
+          <p>
+            重点不是某段上游代码里“有没有这个功能”。只有当 UI、持久化、安全语义和真实路径
+            都被整合起来并且可以测试时，它才算真正的 Meo AI 产品功能。
+          </p>
+        </div>
+
+        <div class="status-columns">
+          <article class="status-column ready-column">
+            <div class="status-column-head"><span class="status-dot live"></span><strong>现在已经产品化</strong></div>
+            <ul>
+              <li>Native MeoUI 和浏览器聊天界面</li>
+              <li>流式输出、Stop、取消、重连和重试状态</li>
+              <li>云端会话历史 + 标题 / 摘要 metadata</li>
+              <li>Chat / Reasoning / Execution / Vision 路由</li>
+              <li>Judge 验证和受限协同</li>
+              <li>文件、剪贴板图片和 Vision-aware 路由</li>
+              <li>Meo Account Provider Broker 和 BYOK 边界</li>
+              <li>工具确认和类型化 Native 展示</li>
+            </ul>
+          </article>
+
+          <article class="status-column preview-column">
+            <div class="status-column-head"><span class="status-dot preview"></span><strong>正在补齐完整体验</strong></div>
+            <ul>
+              <li>完整 Native ↔ Web 会话一致性</li>
+              <li>Projects / 持久工作区体验</li>
+              <li>Memory 查看、范围和删除 UX</li>
+              <li>更完整的 artifacts、文件和 diff 工作流</li>
+              <li>跨 Provider 的用量 / 成本面板</li>
+              <li>后台任务和通知</li>
+              <li>远程设备 AgentRun 的真实验收</li>
+              <li>把 Provider 配置细节隐藏起来的完整 onboarding</li>
+            </ul>
+          </article>
+
+          <article class="status-column upstream-column">
+            <div class="status-column-head"><span class="status-dot inherited"></span><strong>已有构建基础，但暂时不算完成的 Meo UX</strong></div>
+            <ul>
+              <li>完整 Skills 管理</li>
+              <li>完整 MCP 管理</li>
+              <li>长期 Memory 引擎</li>
+              <li>文档 / RAG 工作流</li>
+              <li>Web Search</li>
+              <li>图片生成</li>
+              <li>Scheduled Tasks</li>
+              <li>更广泛的 Terminal / Extension 生态</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="section-shell content-section final-section">
+        <div class="final-card">
+          <div>
+            <span class="kicker">Meo AI</span>
+            <h2>你的模型。<br />一个完整产品体验。</h2>
+            <p>
+              目标很简单：保留 API 的灵活性和价格优势，同时重新做出大家通常只有在 AI 订阅产品里
+              才能得到的连续性、完成度和 Agent 体验。
+            </p>
+          </div>
+          <div class="final-actions">
+            <a class="button primary" href="/new">打开 Web 预览</a>
+            <a class="button" href="https://github.com/QwQdoge/meo-ai">查看源码</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer section-shell">
+      <div><span class="brand-mark tiny">m</span><strong>Meo AI</strong></div>
+      <p>MeoArch Personal Project · 开发预览版 · GPL-3.0 衍生项目，保留上游归属说明。</p>
+    </footer>
+  </body>
+</html>
