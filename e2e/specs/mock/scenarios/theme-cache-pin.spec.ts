@@ -132,6 +132,18 @@ test.describe('the theme cache resolver output pin', () => {
     expect(result.output).toMatch(BUMP);
   });
 
+  test('a shadow role that stops trimming None asks for an epoch bump @scenario:theme-pin-shadow-none-padding', () => {
+    const result = runPin([
+      {
+        bundle: 'client',
+        from: 'result[key].trim().toLowerCase() === "none"',
+        to: 'result[key].toLowerCase() === "none"',
+      },
+    ]);
+    expect(result.status).not.toBe(0);
+    expect(result.output).toMatch(BUMP);
+  });
+
   test('narrowing an enum literal asks for an epoch bump @scenario:theme-pin-enum-literal', () => {
     const result = runPin([
       {
