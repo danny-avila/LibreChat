@@ -1803,6 +1803,22 @@ describe('ServerConfigsDB', () => {
     });
 
     describe('agent-based access (consumeOnly)', () => {
+      it('resolves user principals once for direct and agent access', async () => {
+        const created = await serverConfigsDB.add(
+          'temp-name',
+          createSSEConfig('Shared Lookup'),
+          userId,
+        );
+        const findByIdSpy = jest.spyOn(mongoose.models.User, 'findById');
+
+        try {
+          await serverConfigsDB.get(created.serverName, userId2, 'USER');
+          expect(findByIdSpy).toHaveBeenCalledTimes(1);
+        } finally {
+          findByIdSpy.mockRestore();
+        }
+      });
+
       it('should return server with consumeOnly when user has access via agent', async () => {
         const config = createSSEConfig('Agent Accessible Server');
         const created = await serverConfigsDB.add('temp-name', config, userId);
