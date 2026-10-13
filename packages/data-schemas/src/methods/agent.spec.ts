@@ -1340,6 +1340,41 @@ describe('Agent Methods', () => {
       ]);
     });
 
+    test('keeps a sole-owned agent discoverable when the agent delete fails, so a retry erases it', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const authorId = new mongoose.Types.ObjectId();
+      const agent = await createAgent({
+        id: `agent_${uuidv4()}`,
+        name: 'Owned But Authored Elsewhere',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+      await AclEntry.create({
+        principalType: PrincipalType.USER,
+        principalId: ownerId,
+        principalModel: PrincipalModel.USER,
+        resourceType: ResourceType.AGENT,
+        resourceId: agent._id,
+        permBits:
+          PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE,
+        grantedBy: ownerId,
+      });
+
+      const failure = jest
+        .spyOn(mongoose.models.Agent, 'deleteMany')
+        .mockRejectedValueOnce(new Error('transient outage'));
+      await expect(deleteUserAgents(ownerId.toString())).rejects.toThrow('transient outage');
+      failure.mockRestore();
+
+      expect(await AclEntry.countDocuments({ resourceId: agent._id })).toBe(1);
+
+      await deleteUserAgents(ownerId.toString());
+
+      expect(await getAgent({ id: agent.id })).toBeNull();
+      expect(await AclEntry.countDocuments({ resourceId: agent._id })).toBe(0);
+    });
+
     test('keeps an edge added to the graph while the cleanup was running', async () => {
       const authorId = new mongoose.Types.ObjectId();
       const deletedAgentId = `agent_${uuidv4()}`;

@@ -86,6 +86,9 @@ export async function deleteUserMCPServers(
 
   await Promise.allSettled(
     servers.map(async ({ serverName }) => {
+      if (!serverName) {
+        return;
+      }
       try {
         await deps.invalidateMCPServerTools?.(serverName);
       } catch (error) {

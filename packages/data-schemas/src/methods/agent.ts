@@ -1945,18 +1945,15 @@ export function createAgentMethods(
           : [];
 
       const allAgents = [...soleOwnedAgents, ...legacyAgents];
+      /** Sole-owned ids whose agent is already gone: ACLs left by an interrupted earlier attempt. */
+      const aclResourceIds = [...soleOwnedObjectIds, ...legacyAgents.map((a) => a._id)];
 
-      if (allAgents.length === 0) {
+      if (aclResourceIds.length === 0) {
         return;
       }
 
       const agentIds = allAgents.map((agent) => agent.id);
       const agentObjectIds = allAgents.map((agent) => agent._id);
-
-      await AclEntry.deleteMany({
-        resourceType: { $in: [ResourceType.AGENT, ResourceType.REMOTE_AGENT] },
-        resourceId: { $in: agentObjectIds },
-      });
 
       try {
         await removeAgentIdsFromEdges(Agent, agentIds);
@@ -1974,6 +1971,11 @@ export function createAgentMethods(
       }
 
       await Agent.deleteMany({ _id: { $in: agentObjectIds } });
+      /** ACL entries are the retry discovery key for sole-owned agents, so they go last. */
+      await AclEntry.deleteMany({
+        resourceType: { $in: [ResourceType.AGENT, ResourceType.REMOTE_AGENT] },
+        resourceId: { $in: aclResourceIds },
+      });
     } catch (error) {
       logger.error('[deleteUserAgents] General error:', error);
       throw error;

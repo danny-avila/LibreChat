@@ -414,10 +414,18 @@ export function createMCPServerMethods(
             .select('_id serverName')
             .lean<Array<{ _id: Types.ObjectId; serverName: string }>>()
         : [];
-    return [...aclOwnedServers, ...legacyServers].map((s) => ({
-      id: s._id.toString(),
-      serverName: s.serverName,
-    }));
+    const found = new Set(aclOwnedServers.map((s) => s._id.toString()));
+    /** Sole-owned ids whose server is already gone keep an empty name so the ACLs still get cleaned. */
+    const residual = soleOwnedIds
+      .filter((id) => !found.has(id.toString()))
+      .map((id) => ({ id: id.toString(), serverName: '' }));
+    return [
+      ...[...aclOwnedServers, ...legacyServers].map((s) => ({
+        id: s._id.toString(),
+        serverName: s.serverName,
+      })),
+      ...residual,
+    ];
   }
 
   /** Deletes MCP servers by id together with every ACL entry on them. */
@@ -427,11 +435,12 @@ export function createMCPServerMethods(
     }
     const MCPServer = mongoose.models.MCPServer as Model<MCPServerDocument>;
     const objectIds = ids.map((id) => new mongoose.Types.ObjectId(id));
+    const result = await MCPServer.deleteMany({ _id: { $in: objectIds } });
+    /** ACL entries are the retry discovery key for sole-owned servers, so they go last. */
     await mongoose.models.AclEntry.deleteMany({
       resourceType: ResourceType.MCPSERVER,
       resourceId: { $in: objectIds },
     });
-    const result = await MCPServer.deleteMany({ _id: { $in: objectIds } });
     return result.deletedCount ?? 0;
   }
 

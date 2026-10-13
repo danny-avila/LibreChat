@@ -1,10 +1,17 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import {
+  PrincipalType,
+  PrincipalModel,
+  ResourceType,
+  PermissionBits,
+} from 'librechat-data-provider';
 import type { MCPOptions } from 'librechat-data-provider';
 import type * as t from '~/types';
 import { createMCPServerMethods } from './mcpServer';
 import { createAclEntryMethods } from './aclEntry';
 import mcpServerSchema from '~/schema/mcpServer';
+import aclEntrySchema from '~/schema/aclEntry';
 
 let mongoServer: MongoMemoryServer;
 let MCPServer: mongoose.Model<t.MCPServerDocument>;
@@ -14,6 +21,9 @@ beforeAll(async () => {
   mongoServer = await MongoMemoryServer.create();
   const mongoUri = mongoServer.getUri();
   MCPServer = mongoose.models.MCPServer || mongoose.model('MCPServer', mcpServerSchema);
+  if (!mongoose.models.AclEntry) {
+    mongoose.model('AclEntry', aclEntrySchema);
+  }
   methods = createMCPServerMethods(mongoose, {
     getSoleOwnedResourceIds: createAclEntryMethods(mongoose).getSoleOwnedResourceIds,
   });
@@ -674,6 +684,41 @@ describe('MCPServer Model Tests', () => {
       const deleted = await methods.deleteMCPServer(created.serverName);
 
       expect(deleted?.config.description).toBe('Will be deleted');
+    });
+  });
+
+  describe('deleteMCPServersWithAcl', () => {
+    test('keeps the owner ACL until the server is gone so a failed delete can be retried', async () => {
+      const ownerId = new mongoose.Types.ObjectId();
+      const created = await methods.createMCPServer({
+        config: createSSEConfig('Erase Retry'),
+        author: authorId,
+      });
+      await mongoose.model('AclEntry').create({
+        principalType: PrincipalType.USER,
+        principalId: ownerId,
+        principalModel: PrincipalModel.USER,
+        resourceType: ResourceType.MCPSERVER,
+        resourceId: created._id,
+        permBits:
+          PermissionBits.VIEW | PermissionBits.EDIT | PermissionBits.DELETE | PermissionBits.SHARE,
+        grantedBy: ownerId,
+      });
+
+      const failure = jest
+        .spyOn(MCPServer, 'deleteMany')
+        .mockRejectedValueOnce(new Error('transient outage'));
+      await expect(methods.deleteMCPServersWithAcl([created._id.toString()])).rejects.toThrow(
+        'transient outage',
+      );
+      failure.mockRestore();
+
+      const found = await methods.findUserErasableMCPServers(ownerId.toString());
+      expect(found.map((s) => s.id)).toEqual([created._id.toString()]);
+
+      await methods.deleteMCPServersWithAcl(found.map((s) => s.id));
+      expect(await methods.findMCPServerByServerName(created.serverName)).toBeNull();
+      expect(await methods.findUserErasableMCPServers(ownerId.toString())).toEqual([]);
     });
   });
 
