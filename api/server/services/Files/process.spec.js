@@ -170,6 +170,17 @@ jest.mock('@librechat/api', () => {
         throw error;
       }
     },
+    resolveStoredUploadTarget: ({ isAssistantUpload, stored, convertedImage, storageMetadata }) => {
+      if (!isAssistantUpload) {
+        return { source: stored.source, stored: { ...stored, ...storageMetadata } };
+      }
+      return convertedImage == null
+        ? undefined
+        : {
+            source: convertedImage.source,
+            stored: { ...convertedImage, ...storageMetadata },
+          };
+    },
     getAgentFileRetentionExpiry: jest.fn(({ req, messageAttachment, toolResource }) => {
       const interfaceConfig = req?.config?.interfaceConfig;
       if (

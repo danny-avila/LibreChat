@@ -47,6 +47,7 @@ const {
   contentFilterBlockResponse,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
   withStoredUploadCleanup,
+  resolveStoredUploadTarget,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
   resolveToolRoleGrants,
   createCodeApiRateLimitBudget,
@@ -722,29 +723,18 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
     });
   }
 
-  /* Assistants storage lives with the provider and is released through its own file lifecycle,
-   * so only an object this process stored itself is removed. */
-  let storedCleanup = {
+  const target = resolveStoredUploadTarget({
+    isAssistantUpload,
+    stored: { file_id: id ?? file_id, filepath, source },
+    convertedImage,
+    storageMetadata,
+  });
+  const storedCleanup = {
     req,
     logger,
-    resolveDeleteFile: () => undefined,
-    stored: { file_id: id ?? file_id, filepath, source },
+    resolveDeleteFile: () => target && getStrategyFunctions(target.source).deleteFile,
+    stored: target?.stored ?? { file_id: id ?? file_id, filepath, source },
   };
-  if (!isAssistantUpload) {
-    storedCleanup = {
-      req,
-      logger,
-      resolveDeleteFile: () => getStrategyFunctions(source).deleteFile,
-      stored: { file_id: id ?? file_id, filepath, source, ...storageMetadata },
-    };
-  } else if (convertedImage != null) {
-    storedCleanup = {
-      req,
-      logger,
-      resolveDeleteFile: () => getStrategyFunctions(convertedImage.source).deleteFile,
-      stored: { ...convertedImage, ...storageMetadata },
-    };
-  }
   const result = await withStoredUploadCleanup(storedCleanup, async () =>
     db.createFile(
       {

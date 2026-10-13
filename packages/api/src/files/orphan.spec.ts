@@ -1,5 +1,5 @@
 import type { StoredUploadRef } from './orphan';
-import { withStoredUploadCleanup } from './orphan';
+import { resolveStoredUploadTarget, withStoredUploadCleanup } from './orphan';
 
 const stored: StoredUploadRef = {
   file_id: 'file-1',
@@ -82,5 +82,35 @@ describe('withStoredUploadCleanup', () => {
       ),
     ).rejects.toBe(failure);
     expect(logger.error).not.toHaveBeenCalled();
+  });
+});
+
+describe('resolveStoredUploadTarget', () => {
+  const base = { file_id: 'f', filepath: '/images/f.png', source: 'local' };
+  const converted = { file_id: 'c', filepath: '/images/c.png', source: 's3' };
+
+  it('targets the stored object for a non-Assistants upload, with storage metadata', () => {
+    expect(
+      resolveStoredUploadTarget({
+        isAssistantUpload: false,
+        stored: base,
+        storageMetadata: { storageKey: 'k' },
+      }),
+    ).toEqual({ source: 'local', stored: { ...base, storageKey: 'k' } });
+  });
+
+  it('targets only the converted image for an Assistants upload', () => {
+    expect(
+      resolveStoredUploadTarget({
+        isAssistantUpload: true,
+        stored: base,
+        convertedImage: converted,
+        storageMetadata: { storageKey: 'k' },
+      }),
+    ).toEqual({ source: 's3', stored: { ...converted, storageKey: 'k' } });
+  });
+
+  it('targets nothing for an Assistants upload without a converted image', () => {
+    expect(resolveStoredUploadTarget({ isAssistantUpload: true, stored: base })).toBeUndefined();
   });
 });

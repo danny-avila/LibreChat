@@ -48,3 +48,33 @@ export async function withStoredUploadCleanup<T>(
     throw error;
   }
 }
+
+export type StoredUploadTarget = { source: string; stored: StoredUploadRef };
+
+/**
+ * Picks the object an upload failure should remove. Assistants storage lives with the provider
+ * and is released through its own file lifecycle, so only an object this process stored itself
+ * (a locally stored upload, or the image converted for an Assistants upload) is returned.
+ */
+export function resolveStoredUploadTarget({
+  isAssistantUpload,
+  stored,
+  convertedImage,
+  storageMetadata,
+}: {
+  isAssistantUpload: boolean;
+  stored: StoredUploadRef;
+  convertedImage?: StoredUploadRef;
+  storageMetadata?: Partial<StoredUploadRef>;
+}): StoredUploadTarget | undefined {
+  if (!isAssistantUpload) {
+    return { source: stored.source, stored: { ...stored, ...storageMetadata } };
+  }
+  if (convertedImage != null) {
+    return {
+      source: convertedImage.source,
+      stored: { ...convertedImage, ...storageMetadata },
+    };
+  }
+  return undefined;
+}
