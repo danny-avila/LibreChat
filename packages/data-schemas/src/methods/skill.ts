@@ -44,7 +44,11 @@ export type ValidationIssue = {
   severity?: 'error' | 'warning';
 };
 
-export type DeleteSkillCleanupStep = 'agent_allowlists' | 'skill_files' | 'permissions';
+export type DeleteSkillCleanupStep =
+  | 'agent_allowlists'
+  | 'skill_files'
+  | 'permissions'
+  | 'upload_intents';
 
 export type DeleteSkillResult = {
   /** Whether this call removed the Skill row. */
