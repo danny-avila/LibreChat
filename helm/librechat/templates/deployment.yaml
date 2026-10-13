@@ -103,7 +103,7 @@ spec:
               name: {{ .Values.global.librechat.existingSecretName }}
               optional: false
           {{- end }}
-          {{- include "librechat.validateRedisPassword" . }}
+          {{- include "librechat.validateBundledPasswords" . }}
           {{- if or (include "librechat.bundledMongoAuth" .) (include "librechat.bundledRedisAuth" .) .Values.global.librechat.env }}
           env:
           {{- with .Values.global.librechat.env }}
