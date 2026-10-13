@@ -1,5 +1,7 @@
+import { FileSources } from 'librechat-data-provider';
 import type { SkillUploadIntentDeps, SkillUploadOperation } from './intent';
 import { withSkillUploadIntent } from './intent';
+import { reserveSkillBlob } from './reservation';
 
 function makeDeps(): jest.Mocked<SkillUploadIntentDeps> {
   return {
@@ -14,7 +16,11 @@ function makeOperation(): SkillUploadOperation<string> {
     author: '507f1f77bcf86cd799439012',
     fileId: 'file-1',
     source: 'local',
-    reservation: { filepath: '/uploads/owner/file-1' },
+    reservation: {
+      source: 'local',
+      filepath: '/uploads/owner/file-1',
+      writeLocation: { userId: 'owner', fileName: 'file-1', basePath: 'uploads' },
+    },
     save: jest.fn(async () => '/uploads/owner/file-1'),
     persist: jest.fn(async () => 'saved'),
     readPersisted: jest.fn(async () => null),
@@ -34,17 +40,103 @@ it('persists intent before writing bytes and acknowledges only after row commit'
   );
 });
 
+it('rejects a provider mismatch before journaling or writing bytes', async () => {
+  const deps = makeDeps();
+  const operation = makeOperation();
+  operation.source = FileSources.s3;
+  await expect(withSkillUploadIntent(deps, operation)).rejects.toThrow(
+    'Skill upload source differs from its reserved provider',
+  );
+  expect(deps.reserveSkillUploadIntent).not.toHaveBeenCalled();
+  expect(operation.save).not.toHaveBeenCalled();
+});
+
 it('persists the canonical provider key instead of a public URL', async () => {
   const deps = makeDeps();
   const operation = makeOperation();
   operation.reservation = {
-    filepath: 'https://cdn.example.test/temporary-signed-url',
-    storageKey: 'skills/owner/file-1',
+    source: 's3',
+    filepath: 'https://cdn.example.test/uploads/owner/file-1?signature=old',
+    storageKey: 'uploads/owner/file-1',
+    writeLocation: { userId: 'owner', fileName: 'file-1', basePath: 'uploads' },
   };
+  operation.source = FileSources.s3;
+  operation.save = jest.fn(
+    async () => 'https://cdn.example.test/uploads/owner/file-1?signature=new',
+  );
   await withSkillUploadIntent(deps, operation);
   expect(deps.reserveSkillUploadIntent).toHaveBeenCalledWith(
-    expect.objectContaining({ storageKey: 'skills/owner/file-1' }),
+    expect.objectContaining({ storageKey: 'uploads/owner/file-1' }),
   );
+});
+
+it('journals the regional object key and compensates a mismatched provider result before persistence', async () => {
+  const deps = makeDeps();
+  const operation = makeOperation();
+  operation.reservation = await reserveSkillBlob({
+    source: FileSources.s3,
+    userId: 'owner',
+    fileName: 'file-1',
+    tenantId: 'tenant-a',
+    storageRegion: 'us-east-1',
+    includeRegionInPath: true,
+    getFileURL: async () =>
+      'https://cdn.example.test/r/us-east-1/t/tenant-a/uploads/owner/file-1?old=signature',
+  });
+  operation.source = FileSources.s3;
+  operation.save = jest.fn(
+    async () =>
+      'https://cdn.example.test/r/eu-west-1/t/tenant-a/uploads/owner/file-1?new=signature',
+  );
+  await expect(withSkillUploadIntent(deps, operation)).rejects.toThrow(
+    'Skill storage wrote outside its reserved location',
+  );
+  expect(deps.reserveSkillUploadIntent).toHaveBeenCalledWith(
+    expect.objectContaining({ storageKey: operation.reservation.storageKey }),
+  );
+  expect(operation.persist).not.toHaveBeenCalled();
+  expect(operation.deleteReserved).toHaveBeenCalledWith(
+    operation.reservation,
+    'https://cdn.example.test/r/eu-west-1/t/tenant-a/uploads/owner/file-1?new=signature',
+  );
+});
+
+it('retains the actual regional key for stopped-writer cleanup after bytes were written', async () => {
+  const deps = makeDeps();
+  const operation = makeOperation();
+  operation.reservation = await reserveSkillBlob({
+    source: FileSources.cloudfront,
+    userId: 'owner',
+    fileName: 'file-1',
+    tenantId: 'tenant-a',
+    storageRegion: 'us-east-1',
+    includeRegionInPath: true,
+    getFileURL: async () => 'https://cdn.example.test/r/us-east-1/t/tenant-a/uploads/owner/file-1',
+  });
+  operation.source = FileSources.cloudfront;
+  operation.save = jest.fn(
+    async () =>
+      'https://cdn.example.test/r/us-east-1/t/tenant-a/uploads/owner/file-1?signature=refreshed',
+  );
+  operation.persist = jest.fn(async () => {
+    throw new Error('database unavailable');
+  });
+  operation.deleteReserved = jest.fn(async () => {
+    throw new Error('storage unavailable');
+  });
+
+  await expect(withSkillUploadIntent(deps, operation)).rejects.toThrow('database unavailable');
+  expect(deps.reserveSkillUploadIntent).toHaveBeenCalledWith(
+    expect.objectContaining({
+      storageKey: 'r/us-east-1/t/tenant-a/uploads/owner/file-1',
+    }),
+  );
+  expect(operation.deleteReserved).toHaveBeenCalledWith(
+    operation.reservation,
+    expect.stringContaining('/r/us-east-1/t/tenant-a/uploads/owner/file-1'),
+  );
+  // A stopped writer leaves the pre-written canonical key in the durable intent.
+  expect(deps.reserveSkillUploadIntent).toHaveBeenCalledTimes(1);
 });
 
 it('keeps an abandoned intent even when immediate compensation succeeds', async () => {

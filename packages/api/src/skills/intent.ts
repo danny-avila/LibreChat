@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { SkillBlobReservation } from './reservation';
+import { assertSavedSkillBlobMatchesReservation } from './reservation';
 
 type ReserveInput = {
   skillId: string;
@@ -39,6 +40,9 @@ export async function withSkillUploadIntent<T>(
   deps: SkillUploadIntentDeps,
   operation: SkillUploadOperation<T>,
 ): Promise<T> {
+  if (operation.source !== operation.reservation.source) {
+    throw new Error('Skill upload source differs from its reserved provider');
+  }
   const writerId = randomUUID();
   await deps.reserveSkillUploadIntent({
     skillId: operation.skillId,
@@ -58,6 +62,7 @@ export async function withSkillUploadIntent<T>(
       throw new Error('Skill storage returned no saved object path');
     }
     savedPath = filepath;
+    assertSavedSkillBlobMatchesReservation(operation.reservation, filepath);
     const claimed = await deps.transitionSkillUploadIntent(
       operation.fileId,
       writerId,
