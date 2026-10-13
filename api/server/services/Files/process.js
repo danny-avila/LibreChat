@@ -46,6 +46,7 @@ const {
   getStorageMetadata,
   contentFilterBlockResponse,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
+  withStoredUploadCleanup,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
   resolveToolRoleGrants,
   createCodeApiRateLimitBudget,
@@ -471,7 +472,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
   const { file } = req;
   const appConfig = req.config;
   const source = getFileStrategy(appConfig, { isImage: true });
-  const { handleImageUpload } = getStrategyFunctions(source);
+  const { handleImageUpload, deleteFile } = getStrategyFunctions(source);
   const { file_id, temp_file_id, endpoint } = metadata;
   const fileConfig = mergeFileConfig(appConfig?.fileConfig);
   /* The route resolved the agent's provider before validating, so the same endpoint
@@ -495,6 +496,15 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
     endpoint,
   });
   const storageMetadata = getStorageMetadata({ filepath, source, storageKey, storageRegion });
+  /* The object is stored before its record exists, so a failure past this point has to remove
+   * it, or no retention or erasure pass can ever find it. */
+  const cleanupStored = (next) =>
+    withStoredUploadCleanup(
+      { file_id, filepath, source, storageKey, storageRegion },
+      { deleteFile, req, logger },
+      next,
+    );
+  const retentionExpiry = await cleanupStored(() => retentionExpiryPromise);
 
   const fileInfo = {
     user: req.user.id,
@@ -507,7 +517,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
     context: FileContext.message_attachment,
     source,
     type: `image/${appConfig.imageOutputType}`,
-    ...(await retentionExpiryPromise),
+    ...retentionExpiry,
     width,
     height,
     tenantId: req.user.tenantId,
@@ -530,7 +540,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
     return fileInfo;
   }
 
-  const result = await db.createFile(fileInfo, true);
+  const result = await cleanupStored(() => db.createFile(fileInfo, true));
   sendUploadSuccess(res, sseStream, 'File uploaded and processed successfully', result);
 };
 

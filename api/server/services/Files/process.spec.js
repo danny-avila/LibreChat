@@ -157,6 +157,15 @@ jest.mock('@librechat/api', () => {
     createCodeApiRateLimitBudget,
     getCodeApiUploadOptions,
     withCodeApiUploadRecovery,
+    /** Mirrors the package helper; its own cases live in packages/api. */
+    withStoredUploadCleanup: async (stored, deps, next) => {
+      try {
+        return await next();
+      } catch (error) {
+        await deps.deleteFile?.(deps.req, stored).catch(() => {});
+        throw error;
+      }
+    },
     getAgentFileRetentionExpiry: jest.fn(({ req, messageAttachment, toolResource }) => {
       const interfaceConfig = req?.config?.interfaceConfig;
       if (
@@ -2149,6 +2158,38 @@ describe('processImageFile', () => {
         llmDeliveryPath: 'none',
       }),
       true,
+    );
+  });
+
+  test('deletes the stored object when the file record cannot be created', async () => {
+    const { createFile } = require('~/models');
+    const handleImageUpload = jest.fn().mockResolvedValue({
+      filepath: 'https://bucket.example/images/user-123/image.webp',
+      storageKey: 'images/user-123/image.webp',
+      bytes: 256,
+      width: 100,
+      height: 80,
+    });
+    const deleteFile = jest.fn().mockResolvedValue(undefined);
+    createFile.mockRejectedValueOnce(new Error('db down'));
+    getStrategyFunctions.mockReturnValue({ handleImageUpload, deleteFile });
+    const req = makeReq({ mimetype: 'image/png', ocrConfig: null });
+
+    await expect(
+      processImageFile({
+        req,
+        res: mockRes,
+        metadata: { file_id: 'image-file-id', endpoint: EModelEndpoint.agents },
+      }),
+    ).rejects.toThrow('db down');
+
+    expect(deleteFile).toHaveBeenCalledWith(
+      req,
+      expect.objectContaining({
+        file_id: 'image-file-id',
+        filepath: 'https://bucket.example/images/user-123/image.webp',
+        storageKey: 'images/user-123/image.webp',
+      }),
     );
   });
 
