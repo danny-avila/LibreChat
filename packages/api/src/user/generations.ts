@@ -1,6 +1,6 @@
-import type { GenerationJob } from '~/types/stream';
-import { waitForGenerationPersistence } from '~/stream/persistence';
-import { isStopConfirmed } from '~/stream/interfaces/IJobStore';
+import type { GenerationJob } from '../types/stream';
+import { waitForGenerationPersistence } from '../stream/persistence';
+import { isStopConfirmed } from '../stream/interfaces/IJobStore';
 
 type AbortOutcome = Parameters<typeof isStopConfirmed>[0];
 type CleanupJob = Pick<GenerationJob, 'createdAt' | 'metadata'>;
