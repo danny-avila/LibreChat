@@ -137,7 +137,7 @@ describe('POST /users/sync-groups', () => {
     const res = await request(app).post('/users/sync-groups').send({});
 
     expect(res.body).toMatchObject({ processed: 3, synced: 2, failed: 1 });
-    expect(res.body.errors[0]).toMatch(/미개방|인증 필요/);
+    expect(res.body.errors[0]).toMatch(/리다이렉트|BIMS_ORG_BASE/);
   });
 
   test('그룹이 없는 사용자는 empty 로 집계한다', async () => {

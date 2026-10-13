@@ -266,7 +266,7 @@ router.post('/users/sync-groups', async (req, res) => {
       return res.json({
         synced: 0,
         message:
-          '조직 API 미연동 (BIMS_ORG_BASE 미설정). BIMS 운영 개방 후 환경변수를 설정하세요.',
+          '조직 API 미연동 (BIMS_ORG_BASE 미설정). 운영은 https://nb.bkl.co.kr/apis/mentat 입니다.',
       });
     }
 

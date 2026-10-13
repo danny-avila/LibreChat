@@ -139,14 +139,14 @@ describe('bklOrg', () => {
     });
 
     /**
-     * 운영은 미개방 상태에서 Azure AD 로그인으로 307 을 돌려준다.
-     * 따라가면 HTML 을 JSON 으로 파싱하려다 엉뚱한 오류가 나므로,
-     * 리다이렉트 자체를 "미개방" 으로 보고해야 한다.
+     * base URL 이 API 경로가 아니면 BIMS 웹앱이 요청을 가로채 Azure 로그인으로
+     * 307 을 낸다. 따라가면 HTML 을 JSON 으로 파싱하려다 엉뚱한 오류가 나므로,
+     * 리다이렉트 자체를 설정 오류로 보고해야 한다.
      */
-    test('리다이렉트는 미개방으로 보고한다', async () => {
+    test('리다이렉트는 base URL 설정 오류로 보고한다', async () => {
       global.fetch.mockResolvedValue({ ok: false, status: 307, json: async () => ({}) });
 
-      await expect(fetchUserOrg(1)).rejects.toThrow(/미개방|인증 필요/);
+      await expect(fetchUserOrg(1)).rejects.toThrow(/리다이렉트|BIMS_ORG_BASE/);
     });
 
     test('4xx/5xx 는 오류로 올린다', async () => {

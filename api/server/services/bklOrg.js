@@ -9,12 +9,16 @@
  *    133~405 로 class 62/63/66 과 겹치지도 않는다.
  *  - base URL 이 기존 `BKL_BIMS_BASE`(/apis/case/mentat) 와 경로 체계가 달라
  *    `BIMS_ORG_BASE` 로 분리한다. 절대 공유하지 않는다.
+ *  - 경로 체계가 운영과 테스트에서 다르다 (BIMS 팀 확인, 2026-09-29):
+ *        운영   https://nb.bkl.co.kr/apis/mentat
+ *        테스트 https://nbtest.bkl.co.kr/mentat-api/api/mentat
+ *    운영에 테스트 경로를 쓰면 API 가 아니라 BIMS 웹앱이 받아 307 을 낸다.
  *  - 배치 조회가 없어 사용자 1명당 1콜이다. 그래서 결과를 user document 에
  *    저장해 영구 캐시로 쓰고, 만료됐을 때만 다시 부른다.
- *  - `BIMS_ORG_BASE` 미설정 시 전체 기능이 비활성이다 (운영 개방 전 상태).
+ *  - `BIMS_ORG_BASE` 미설정 시 전체 기능이 비활성이다.
  *
  * 환경변수:
- *   BIMS_ORG_BASE         조직 API base (예: https://nbtest.bkl.co.kr/mentat-api/api/mentat)
+ *   BIMS_ORG_BASE         조직 API base (운영: https://nb.bkl.co.kr/apis/mentat)
  *   BIMS_ORG_AUTH_HEADER  인증 헤더 이름 (운영이 인증을 요구할 경우)
  *   BIMS_ORG_AUTH_VALUE   인증 헤더 값
  *   BIMS_ORG_TIMEOUT_MS   요청 타임아웃 (기본 8000)
@@ -87,9 +91,10 @@ function parseOrgResponse(payload) {
 /**
  * `GET {base}/User/group/{sid}` 로 한 사용자의 조직 정보를 읽는다.
  *
- * 리다이렉트를 따라가지 않는다 — 운영은 미개방 상태에서 Azure AD 로그인으로
- * 307 을 돌려주는데, 따라가면 HTML 을 JSON 으로 파싱하려다 엉뚱한 오류가 난다.
- * 3xx 를 그대로 "미개방" 신호로 보고한다.
+ * 리다이렉트를 따라가지 않는다. 운영에서 3xx 가 오면 대개 base URL 이 틀린
+ * 것이다 — API 경로가 아니면 BIMS 웹앱(Auth.js)이 요청을 가로채 Azure 로그인
+ * (`/login-azure`) 으로 307 을 낸다. 따라가면 HTML 을 JSON 으로 파싱하려다
+ * 엉뚱한 오류가 나므로, 3xx 를 그대로 설정 오류 신호로 보고한다.
  *
  * @param {number|string} sid BIMS 사용자 sid
  * @returns {Promise<Record<string, unknown>|null>} 저장할 필드 또는 null
@@ -108,7 +113,8 @@ async function fetchUserOrg(sid) {
 
   if (res.status >= 300 && res.status < 400) {
     throw new Error(
-      `조직 API 가 리다이렉트를 반환했습니다 (HTTP ${res.status}) — 엔드포인트 미개방 또는 인증 필요`,
+      `조직 API 가 리다이렉트를 반환했습니다 (HTTP ${res.status}) — ` +
+        `BIMS_ORG_BASE 경로를 확인하세요 (운영: https://nb.bkl.co.kr/apis/mentat)`,
     );
   }
   if (!res.ok) {
