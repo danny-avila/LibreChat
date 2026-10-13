@@ -5,12 +5,17 @@ interface RecoveryIntent {
   writerId: string;
   state: string;
   skillId: { toString(): string };
+  cleanupHoldOwner?: string;
 }
 
 interface RecoveryResult {
   status: 'missing' | 'changed' | 'recovered';
   state?: 'committed' | 'abandoned';
 }
+
+type CleanupHoldRecoveryResult =
+  | { status: 'missing' | 'changed' }
+  | { status: 'recovered'; cleanup: boolean };
 
 export interface SkillUploadRecoveryCliDeps {
   connect: () => Promise<unknown>;
@@ -19,34 +24,43 @@ export interface SkillUploadRecoveryCliDeps {
   getIntent: (fileId: string) => Promise<RecoveryIntent | null>;
   listIntents: (skillId: string) => Promise<RecoveryIntent[]>;
   recoverStoppedIntent: (fileId: string, writerId: string) => Promise<RecoveryResult>;
+  recoverStoppedCleanupHold: (
+    fileId: string,
+    holdOwner: string,
+  ) => Promise<CleanupHoldRecoveryResult>;
   write: (message: string) => void;
   writeError: (message: string) => void;
 }
 
-/** Operator entry point: the confirmation means all API upload writers were stopped or drained. */
+const usage =
+  'Usage: recover-skill-upload inspect-skill <skillId> | inspect <fileId> | recover <fileId> <writerId> --confirm-writers-drained | recover-cleanup <fileId> <holdOwner> --confirm-writers-drained. Stop or drain all Skill upload and sync writers before recovery.';
+
+/** Operator entry point: the confirmation means all Skill upload and sync writers were drained. */
 export async function runSkillUploadRecoveryCli(
   args: string[],
   deps: SkillUploadRecoveryCliDeps,
 ): Promise<number> {
-  const [action, fileId, writerId, confirmation] = args;
+  const [action, fileId, owner, confirmation] = args;
   const inspect = action === 'inspect' && args.length === 2 && Boolean(fileId);
   const inspectSkill = action === 'inspect-skill' && args.length === 2 && Boolean(fileId);
   const recover =
     action === 'recover' &&
     args.length === 4 &&
     Boolean(fileId) &&
-    Boolean(writerId) &&
+    Boolean(owner) &&
+    confirmation === '--confirm-writers-drained';
+  const recoverCleanup =
+    action === 'recover-cleanup' &&
+    args.length === 4 &&
+    Boolean(fileId) &&
+    Boolean(owner) &&
     confirmation === '--confirm-writers-drained';
   if (args.length === 1 && (action === '--help' || action === '-h')) {
-    deps.write(
-      'Usage: recover-skill-upload inspect-skill <skillId> | inspect <fileId> | recover <fileId> <writerId> --confirm-writers-drained. Stop or drain all API upload writers before recovery.',
-    );
+    deps.write(usage);
     return 0;
   }
-  if (!inspect && !inspectSkill && !recover) {
-    deps.writeError(
-      'Usage: recover-skill-upload inspect-skill <skillId> | inspect <fileId> | recover <fileId> <writerId> --confirm-writers-drained. Stop or drain all API upload writers before recovery.',
-    );
+  if (!inspect && !inspectSkill && !recover && !recoverCleanup) {
+    deps.writeError(usage);
     return 2;
   }
 
@@ -63,6 +77,7 @@ export async function runSkillUploadRecoveryCli(
             writerId: intent.writerId,
             skillId: intent.skillId.toString(),
             state: intent.state,
+            cleanupHoldOwner: intent.cleanupHoldOwner,
           })),
         ),
       );
@@ -80,12 +95,29 @@ export async function runSkillUploadRecoveryCli(
           writerId: intent.writerId,
           skillId: intent.skillId.toString(),
           state: intent.state,
+          cleanupHoldOwner: intent.cleanupHoldOwner,
         }),
       );
       return 0;
     }
 
-    const result = await deps.runAsSystem(() => deps.recoverStoppedIntent(fileId, writerId));
+    if (recoverCleanup) {
+      const result = await deps.runAsSystem(() => deps.recoverStoppedCleanupHold(fileId, owner));
+      if (result.status !== 'recovered') {
+        deps.writeError(
+          `Upload cleanup hold ${fileId} was ${result.status}; inspect it again before retrying`,
+        );
+        return 1;
+      }
+      deps.write(
+        result.cleanup
+          ? `Recovered cleanup hold ${fileId}; cleanup queued`
+          : `Recovered cleanup hold ${fileId}; file retained`,
+      );
+      return 0;
+    }
+
+    const result = await deps.runAsSystem(() => deps.recoverStoppedIntent(fileId, owner));
     if (result.status !== 'recovered') {
       deps.writeError(
         `Upload intent ${fileId} was ${result.status}; inspect it again before retrying`,

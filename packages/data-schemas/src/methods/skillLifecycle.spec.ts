@@ -742,4 +742,131 @@ describe('Skill upload intents', () => {
     );
     expect(await lifecycle.listAbandonedSkillUploadIntents()).toHaveLength(1);
   });
+
+  it('keeps a held committed intent outside every cleanup sweep path until its owner releases it', async () => {
+    const { skill, author } = await makeSkill();
+    await mongoose.models.SkillUploadIntent.create({
+      skillId: skill._id,
+      fileId: 'held-file',
+      source: 'local',
+      storageKey: `/uploads/${author}/held-file`,
+      author,
+      writerId: 'old-writer',
+      state: 'committed',
+      cleanupRequestedAt: new Date(),
+      cleanupHoldOwner: 'replacement-writer',
+      claimOwner: 'sweeper',
+      claimExpiresAt: new Date(Date.now() + 60_000),
+    });
+
+    expect(await lifecycle.listAbandonedSkillUploadIntents()).toEqual([]);
+    expect(await lifecycle.claimAbandonedSkillUploadIntent('held-file', 'sweeper', 60_000)).toBe(
+      false,
+    );
+    expect(
+      await lifecycle.refreshAbandonedSkillUploadIntentClaim('held-file', 'sweeper', 60_000),
+    ).toBe(false);
+    expect(
+      await lifecycle.scheduleAbandonedSkillUploadIntentRecheck('held-file', 'sweeper', 60_000),
+    ).toBe(false);
+    expect(await lifecycle.finishSkillUploadCleanupHold('held-file', 'wrong-writer', true)).toBe(
+      false,
+    );
+    expect(
+      await lifecycle.finishSkillUploadCleanupHold('held-file', 'replacement-writer', false),
+    ).toBe(true);
+    expect((await lifecycle.getSkillUploadIntent('held-file'))?.cleanupRequestedAt).toBeUndefined();
+    expect((await lifecycle.getSkillUploadIntent('held-file'))?.cleanupHoldOwner).toBeUndefined();
+    expect(await lifecycle.listAbandonedSkillUploadIntents()).toEqual([]);
+    expect(
+      await lifecycle.finishSkillUploadCleanupHold('held-file', 'replacement-writer', true),
+    ).toBe(false);
+  });
+
+  it('releases a held original for cleanup when the replacement removed its file row', async () => {
+    const { skill, author } = await makeSkill();
+    await mongoose.models.SkillUploadIntent.create({
+      skillId: skill._id,
+      fileId: 'replaced-file',
+      source: 'local',
+      storageKey: `/uploads/${author}/replaced-file`,
+      author,
+      writerId: 'old-writer',
+      state: 'committed',
+      cleanupHoldOwner: 'replacement-writer',
+      nextCheckAt: new Date(Date.now() + 3_600_000),
+    });
+
+    expect(
+      await lifecycle.finishSkillUploadCleanupHold('replaced-file', 'replacement-writer', true),
+    ).toBe(true);
+    const intent = await lifecycle.getSkillUploadIntent('replaced-file');
+    expect(intent?.cleanupHoldOwner).toBeUndefined();
+    expect(intent?.cleanupRequestedAt).toBeInstanceOf(Date);
+    expect(intent?.nextCheckAt).toBeUndefined();
+    expect(
+      (await lifecycle.listAbandonedSkillUploadIntents()).map((item) => item.fileId),
+    ).toContain('replaced-file');
+  });
+
+  it('recovers a stopped cleanup hold according to the original file row', async () => {
+    const { skill, author } = await makeSkill();
+    await mongoose.models.SkillUploadIntent.create([
+      {
+        skillId: skill._id,
+        fileId: 'still-present',
+        source: 'local',
+        storageKey: `/uploads/${author}/still-present`,
+        author,
+        writerId: 'old-writer',
+        state: 'committed',
+        cleanupHoldOwner: 'stopped-writer',
+      },
+      {
+        skillId: skill._id,
+        fileId: 'removed',
+        source: 'local',
+        storageKey: `/uploads/${author}/removed`,
+        author,
+        writerId: 'old-writer',
+        state: 'committed',
+        cleanupHoldOwner: 'stopped-writer',
+      },
+    ]);
+    await mongoose.models.SkillFile.create({
+      skillId: skill._id,
+      file_id: 'still-present',
+      relativePath: 'references/still-present.md',
+      filename: 'still-present.md',
+      filepath: `/uploads/${author}/still-present`,
+      source: 'local',
+      mimeType: 'text/markdown',
+      bytes: 4,
+      author,
+    });
+
+    expect(
+      await lifecycle.recoverStoppedSkillUploadCleanupHold('missing', 'stopped-writer'),
+    ).toEqual({
+      status: 'missing',
+    });
+    expect(
+      await lifecycle.recoverStoppedSkillUploadCleanupHold('still-present', 'wrong-writer'),
+    ).toEqual({ status: 'changed' });
+    expect(
+      await lifecycle.recoverStoppedSkillUploadCleanupHold('still-present', 'stopped-writer'),
+    ).toEqual({ status: 'recovered', cleanup: false });
+    expect(
+      (await lifecycle.getSkillUploadIntent('still-present'))?.cleanupRequestedAt,
+    ).toBeUndefined();
+    expect(
+      await lifecycle.recoverStoppedSkillUploadCleanupHold('removed', 'stopped-writer'),
+    ).toEqual({
+      status: 'recovered',
+      cleanup: true,
+    });
+    expect((await lifecycle.listAbandonedSkillUploadIntents()).map((item) => item.fileId)).toEqual([
+      'removed',
+    ]);
+  });
 });

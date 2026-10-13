@@ -756,6 +756,8 @@ export type UpsertSkillFileInput = {
   expectedFileId?: string;
   /** Insert only when the path is absent, even if another writer creates it first. */
   createOnly?: boolean;
+  /** Keep the superseded blob until a multi-step writer commits or restores this file. */
+  cleanupHoldOwner?: string;
   skillId: Types.ObjectId | string;
   relativePath: string;
   file_id: string;
@@ -1950,19 +1952,36 @@ export function createSkillMethods(
         // CAS leaves the row in place, so the sweeper will retain its blob.
         const SkillUploadIntent = mongoose.models
           .SkillUploadIntent as Model<ISkillUploadIntentDocument>;
-        const intentFilter = { fileId: previous.file_id };
+        // A multi-step writer may roll this replacement back. Its hold and the
+        // sweeper's claim must contend on the same intent before the file CAS;
+        // an already-claimed blob is not a safe rollback candidate.
+        const intentFilter = row.cleanupHoldOwner
+          ? {
+              fileId: previous.file_id,
+              state: 'committed',
+              cleanedAt: { $exists: false },
+              claimOwner: { $exists: false },
+              $or: [
+                { cleanupHoldOwner: { $exists: false } },
+                { cleanupHoldOwner: row.cleanupHoldOwner },
+              ],
+            }
+          : { fileId: previous.file_id };
         const intentUpdate = {
           $setOnInsert: {
             skillId: row.skillId,
             fileId: previous.file_id,
             source: previous.source,
-            storageKey: previous.filepath,
+            storageKey: previous.storageKey ?? previous.filepath,
             author: previous.author,
             tenantId: previous.tenantId,
             writerId: 'legacy-replacement',
             state: 'committed',
           },
-          $set: { cleanupRequestedAt: new Date() },
+          $set: {
+            cleanupRequestedAt: new Date(),
+            ...(row.cleanupHoldOwner ? { cleanupHoldOwner: row.cleanupHoldOwner } : {}),
+          },
           $unset: { cleanedAt: '', nextCheckAt: '' },
         };
         try {
@@ -1971,7 +1990,12 @@ export function createSkillMethods(
           // Concurrent replacements can both attempt the legacy upsert.
           // The winner has already published the same cleanup reference.
           if (!(error instanceof Error && 'code' in error && error.code === 11000)) throw error;
-          await SkillUploadIntent.updateOne(intentFilter, intentUpdate);
+          const result = await SkillUploadIntent.updateOne(intentFilter, intentUpdate);
+          if (row.cleanupHoldOwner && result.matchedCount !== 1) {
+            throw Object.assign(new Error('Skill blob cleanup is already claimed'), {
+              code: 'SKILL_FILE_CONFLICT',
+            });
+          }
         }
       }
     }

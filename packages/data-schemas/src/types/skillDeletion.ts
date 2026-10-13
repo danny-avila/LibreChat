@@ -27,6 +27,7 @@ export interface ISkillUploadIntent {
   tenantId?: string;
   writerId: string;
   state: 'uploading' | 'committing' | 'committed' | 'abandoned';
+  cleanupHoldOwner?: string;
   cleanupRequestedAt?: Date;
   cleanedAt?: Date;
   nextCheckAt?: Date;

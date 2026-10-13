@@ -1979,6 +1979,17 @@ describe('SkillFile methods', () => {
     expect(await lifecycle.claimAbandonedSkillUploadIntent(input.file_id, ownerId, 120_000)).toBe(
       true,
     );
+    await expect(
+      methods.upsertSkillFile({
+        ...input,
+        expectedFileId: input.file_id,
+        file_id: 'held-replacement',
+        cleanupHoldOwner: 'sync-hold',
+      }),
+    ).rejects.toMatchObject({ code: 'SKILL_FILE_CONFLICT' });
+    expect((await methods.getSkillFileByPath(skill._id, input.relativePath))?.file_id).toBe(
+      input.file_id,
+    );
     expect(
       await lifecycle.scheduleAbandonedSkillUploadIntentRecheck(input.file_id, ownerId, 3_600_000),
     ).toBe(true);
@@ -2009,6 +2020,33 @@ describe('SkillFile methods', () => {
     ).toMatchObject({
       cleanupRequestedAt: expect.any(Date),
     });
+  });
+
+  it('records the storage key rather than a legacy URL for replacement cleanup', async () => {
+    const { skill } = await methods.createSkill(makeSkillInput());
+    const input = {
+      skillId: skill._id,
+      relativePath: 'references/legacy-cloud.md',
+      file_id: 'legacy-cloud-original',
+      filename: 'legacy-cloud.md',
+      filepath: 'https://stale.example.invalid/legacy-cloud.md',
+      storageKey: 'eu-west-1/skills/legacy-cloud-original.md',
+      storageRegion: 'eu-west-1',
+      source: 's3',
+      mimeType: 'text/markdown',
+      bytes: 10,
+      author: owner._id,
+    };
+    await methods.upsertSkillFile(input);
+    await methods.upsertSkillFile({
+      ...input,
+      file_id: 'legacy-cloud-replacement',
+      filepath: 'https://current.example.invalid/legacy-cloud.md',
+      storageKey: 'eu-west-1/skills/legacy-cloud-replacement.md',
+    });
+    expect(
+      await mongoose.models.SkillUploadIntent.findOne({ fileId: input.file_id }).lean(),
+    ).toMatchObject({ storageKey: input.storageKey });
   });
 
   it('rejects moving a blob while reusing its file id', async () => {

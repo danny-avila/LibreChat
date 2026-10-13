@@ -154,6 +154,7 @@ type DeletedSyncedSkillJournal = {
 type SyncSkillFilesJournal = {
   staleFiles: StoredSkillFileRef[];
   savedFiles: StoredSkillFileRef[];
+  heldSupersededFileIds: string[];
 };
 
 type SyncSkillFilesResult = Pick<SyncCounters, 'syncedFileCount' | 'deletedFileCount'> &
@@ -164,6 +165,11 @@ type MaybePromise<T> = T | Promise<T>;
 export type GitHubSkillSyncDeps = SkillUploadIntentDeps & {
   queueCommittedSkillUploadCleanup: (fileId: string) => Promise<void>;
   markSkillUploadIntentCleaned: (fileId: string) => Promise<void>;
+  finishSkillUploadCleanupHold: (
+    fileId: string,
+    holdOwner: string,
+    cleanup: boolean,
+  ) => Promise<boolean>;
   getConfig: () => MaybePromise<SkillSyncConfig | undefined>;
   getCredentialToken: (
     provider: SkillSyncProvider,
@@ -1188,8 +1194,11 @@ async function restoreExistingSkillFiles(params: {
   skill: ISkill & { _id: Types.ObjectId };
   previousFiles: Array<ISkillFile & { _id: Types.ObjectId }>;
   savedFiles: StoredSkillFileRef[];
+  heldSupersededFileIds: string[];
+  cleanupHoldOwner: string;
 }): Promise<void> {
-  const { deps, skill, previousFiles, savedFiles } = params;
+  const { deps, skill, previousFiles, savedFiles, heldSupersededFileIds, cleanupHoldOwner } =
+    params;
   // Queue new blobs before restoring old rows so failed provider cleanup is retryable.
   const queued = await Promise.allSettled(
     savedFiles
@@ -1211,6 +1220,11 @@ async function restoreExistingSkillFiles(params: {
   }
   for (const file of previousFiles) {
     await deps.upsertSkillFile(toSkillFileInput(file));
+  }
+  // The old rows are live again before their cleanup holds are removed.
+  // If release fails, retain the durable hold for stopped-writer recovery.
+  for (const fileId of new Set(heldSupersededFileIds)) {
+    await deps.finishSkillUploadCleanupHold(fileId, cleanupHoldOwner, false);
   }
   let cleanupFailure: unknown;
   await cleanupStoredFiles({
@@ -1441,9 +1455,11 @@ async function syncSkillFiles(params: {
   discovered: DiscoveredSkill;
   assertNotCancelled: AssertNotCancelled;
   journal?: SyncSkillFilesJournal;
+  cleanupHoldOwner?: string;
 }): Promise<SyncSkillFilesResult> {
-  const { deps, adapter, commit, source, skill, discovered, assertNotCancelled } = params;
-  const journal = params.journal ?? { staleFiles: [], savedFiles: [] };
+  const { deps, adapter, commit, source, skill, discovered, assertNotCancelled, cleanupHoldOwner } =
+    params;
+  const journal = params.journal ?? { staleFiles: [], savedFiles: [], heldSupersededFileIds: [] };
   const remotePaths = new Set<string>();
   let syncedFileCount = 0;
   let deletedFileCount = 0;
@@ -1466,6 +1482,11 @@ async function syncSkillFiles(params: {
     assertNotCancelled();
     assertGitHubBufferSize(buffer, relativePath);
     const fileId = crypto.randomUUID();
+    if (existing && cleanupHoldOwner) {
+      // Record before the DB write: even a failed CAS may have acquired the
+      // hold, and rollback must release it only after restoring the old row.
+      journal.heldSupersededFileIds.push(existing.file_id);
+    }
     const filename = getFilename(relativePath);
     const mimeType = guessMimeType(filename);
     const fileName = `${fileId}__${filename}`;
@@ -1497,6 +1518,7 @@ async function syncSkillFiles(params: {
           skillId: skill._id,
           relativePath,
           file_id: fileId,
+          ...(existing && cleanupHoldOwner ? { cleanupHoldOwner } : {}),
           filename,
           filepath,
           storageKey: saved?.storageKey,
@@ -1931,7 +1953,12 @@ async function syncSource(params: {
         }
         await ensurePublicViewer(deps, effectivePrepared.existing._id);
         const previousFiles = await deps.listSkillFiles(effectivePrepared.existing._id);
-        const journal: SyncSkillFilesJournal = { staleFiles: [], savedFiles: [] };
+        const cleanupHoldOwner = crypto.randomUUID();
+        const journal: SyncSkillFilesJournal = {
+          staleFiles: [],
+          savedFiles: [],
+          heldSupersededFileIds: [],
+        };
         let fileCounts: SyncSkillFilesResult;
         let staleConflictCleanup:
           | Awaited<ReturnType<typeof deleteNameConflictingStaleSkill>>
@@ -1946,6 +1973,7 @@ async function syncSource(params: {
             discovered,
             assertNotCancelled,
             journal,
+            cleanupHoldOwner,
           });
           if (prepared.existing && canReconcileStaleSkills) {
             staleConflictCleanup = await deleteNameConflictingStaleSkill({
@@ -1978,6 +2006,8 @@ async function syncSource(params: {
             skill: effectivePrepared.existing,
             previousFiles,
             savedFiles: journal.savedFiles,
+            heldSupersededFileIds: journal.heldSupersededFileIds,
+            cleanupHoldOwner,
           }).catch((cleanupError) => {
             rollbackFailed = true;
             logger.error(
@@ -1997,7 +2027,15 @@ async function syncSource(params: {
           deps,
           files: fileCounts.staleFiles,
           logMessage: '[GitHubSkillSync] Failed to clean up replaced synced file:',
+          onCleaned: (file) =>
+            file.file_id ? deps.markSkillUploadIntentCleaned(file.file_id) : Promise.resolve(),
         });
+        // Metadata has committed: do not roll back if cleanup release fails.
+        // Retained holds are safe and can be recovered after the writer stops.
+        for (const fileId of new Set(journal.heldSupersededFileIds)) {
+          const released = await deps.finishSkillUploadCleanupHold(fileId, cleanupHoldOwner, true);
+          if (!released) throw new Error(`Skill cleanup hold was lost for ${fileId}`);
+        }
         counts.syncedSkillCount++;
         counts.syncedFileCount += fileCounts.syncedFileCount;
         counts.deletedFileCount += fileCounts.deletedFileCount;

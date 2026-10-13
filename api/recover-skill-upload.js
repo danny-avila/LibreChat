@@ -13,6 +13,7 @@ runSkillUploadRecoveryCommand(process.argv.slice(2), {
   getIntent: methods.getSkillUploadIntent,
   listIntents: methods.listSkillUploadIntents,
   recoverStoppedIntent: methods.recoverStoppedSkillUploadIntent,
+  recoverStoppedCleanupHold: methods.recoverStoppedSkillUploadCleanupHold,
   write: console.log,
   writeError: console.error,
 })

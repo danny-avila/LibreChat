@@ -27,6 +27,10 @@ export type StoppedSkillUploadRecovery =
   | { status: 'missing' | 'changed' }
   | { status: 'recovered'; state: 'committed' | 'abandoned' };
 
+export type StoppedSkillUploadCleanupHoldRecovery =
+  | { status: 'missing' | 'changed' }
+  | { status: 'recovered'; cleanup: boolean };
+
 export interface SkillLifecycleMethods {
   beginSkillDeletion: (id: string) => Promise<ISkillDeletion | null>;
   getSkillDeletion: (id: string) => Promise<ISkillDeletion | null>;
@@ -65,6 +69,15 @@ export interface SkillLifecycleMethods {
     fileId: string,
     expectedWriterId: string,
   ) => Promise<StoppedSkillUploadRecovery>;
+  finishSkillUploadCleanupHold: (
+    fileId: string,
+    owner: string,
+    cleanup: boolean,
+  ) => Promise<boolean>;
+  recoverStoppedSkillUploadCleanupHold: (
+    fileId: string,
+    expectedOwner: string,
+  ) => Promise<StoppedSkillUploadCleanupHoldRecovery>;
   listAbandonedSkillUploadIntents: (limit?: number) => Promise<ISkillUploadIntent[]>;
   claimAbandonedSkillUploadIntent: (
     fileId: string,
@@ -385,10 +398,44 @@ export function createSkillLifecycleMethods(
     return result.modifiedCount === 1 ? { status: 'recovered', state } : { status: 'changed' };
   }
 
+  async function finishSkillUploadCleanupHold(
+    fileId: string,
+    owner: string,
+    cleanup: boolean,
+  ): Promise<boolean> {
+    const result = await intentModel().updateOne(
+      { fileId, state: 'committed', cleanupHoldOwner: owner },
+      cleanup
+        ? {
+            $set: { cleanupRequestedAt: new Date() },
+            $unset: { cleanupHoldOwner: '', nextCheckAt: '' },
+          }
+        : { $unset: { cleanupHoldOwner: '', cleanupRequestedAt: '' } },
+    );
+    return result.matchedCount === 1;
+  }
+
+  /** Operator-only recovery after confirming the replacement writer has stopped. */
+  async function recoverStoppedSkillUploadCleanupHold(
+    fileId: string,
+    expectedOwner: string,
+  ): Promise<StoppedSkillUploadCleanupHoldRecovery> {
+    const intent = await getSkillUploadIntent(fileId);
+    if (!intent) return { status: 'missing' };
+    if (intent.state !== 'committed' || intent.cleanupHoldOwner !== expectedOwner) {
+      return { status: 'changed' };
+    }
+    const rowExists = await skillFileExistsForIntent(intent.skillId.toString(), fileId);
+    const cleanup = !rowExists;
+    const released = await finishSkillUploadCleanupHold(fileId, expectedOwner, cleanup);
+    return released ? { status: 'recovered', cleanup } : { status: 'changed' };
+  }
+
   async function listAbandonedSkillUploadIntents(limit = 100): Promise<ISkillUploadIntent[]> {
     const now = new Date();
     return (await intentModel()
       .find({
+        cleanupHoldOwner: { $exists: false },
         $or: [
           { state: 'abandoned' },
           {
@@ -416,6 +463,7 @@ export function createSkillLifecycleMethods(
     const result = await intentModel().updateOne(
       {
         fileId,
+        cleanupHoldOwner: { $exists: false },
         $or: [
           { state: 'abandoned' },
           {
@@ -448,6 +496,7 @@ export function createSkillLifecycleMethods(
     const result = await intentModel().updateOne(
       {
         fileId,
+        cleanupHoldOwner: { $exists: false },
         claimOwner: owner,
         claimExpiresAt: { $gt: new Date() },
         $or: [
@@ -508,6 +557,7 @@ export function createSkillLifecycleMethods(
     const result = await intentModel().updateOne(
       {
         fileId,
+        cleanupHoldOwner: { $exists: false },
         claimOwner: owner,
         claimExpiresAt: { $gt: now },
         $or: [
@@ -542,6 +592,8 @@ export function createSkillLifecycleMethods(
     listSkillUploadIntents,
     getSkillUploadIntent,
     recoverStoppedSkillUploadIntent,
+    finishSkillUploadCleanupHold,
+    recoverStoppedSkillUploadCleanupHold,
     listAbandonedSkillUploadIntents,
     claimAbandonedSkillUploadIntent,
     refreshAbandonedSkillUploadIntentClaim,

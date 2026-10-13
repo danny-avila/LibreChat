@@ -98,6 +98,7 @@ function createRunner({ getConfig, loadAppConfig, allowServerCredentials = true 
     transitionSkillUploadIntent: db.transitionSkillUploadIntent,
     queueCommittedSkillUploadCleanup: db.queueCommittedSkillUploadCleanup,
     markSkillUploadIntentCleaned: db.markSkillUploadIntentCleaned,
+    finishSkillUploadCleanupHold: db.finishSkillUploadCleanupHold,
     deleteSkillFile: db.deleteSkillFile,
     deleteSkill: deleteSkillForLegacy,
     reserveBlob: (options) => reserveSkillBlobForConfig(resolveAppConfig(), options),

@@ -16,6 +16,7 @@ const skillUploadIntentSchema: Schema<ISkillUploadIntentDocument> =
         enum: ['uploading', 'committing', 'committed', 'abandoned'],
         required: true,
       },
+      cleanupHoldOwner: String,
       cleanupRequestedAt: Date,
       cleanedAt: Date,
       nextCheckAt: Date,
