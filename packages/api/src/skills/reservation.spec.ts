@@ -131,4 +131,24 @@ describe('Skill blob reservation', () => {
     expect(firebaseSave).not.toHaveBeenCalled();
     expect(getFileStrategy).toHaveBeenCalledTimes(1);
   });
+
+  it.each([undefined, 'images'])(
+    'writes to the reserved uploads path when basePath is %p',
+    async (basePath) => {
+      const saveBuffer = jest.fn(async () => '/uploads/owner/id__note.md');
+      const write = createSkillBufferWriter({
+        getStrategyFunctions: () => ({ saveBuffer, deleteFile: jest.fn() }),
+      });
+      await write({
+        expectedSource: FileSources.local,
+        userId: 'owner',
+        fileName: 'id__note.md',
+        buffer: Buffer.from('note'),
+        basePath,
+      });
+      expect(saveBuffer).toHaveBeenCalledWith(
+        expect.objectContaining({ basePath: 'uploads', userId: 'owner', fileName: 'id__note.md' }),
+      );
+    },
+  );
 });

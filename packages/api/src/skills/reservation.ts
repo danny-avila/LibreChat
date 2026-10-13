@@ -62,7 +62,9 @@ export function createSkillBufferWriter(deps: {
     if (typeof strategy.saveBuffer !== 'function' || typeof strategy.deleteFile !== 'function') {
       throw new Error('Skill storage cannot guarantee cleanup');
     }
-    const filepath = await strategy.saveBuffer(saveParams);
+    // Skill reservations always journal an uploads/ object, regardless of the
+    // storage provider's image-oriented default or a caller-supplied path.
+    const filepath = await strategy.saveBuffer({ ...saveParams, basePath: 'uploads' });
     return {
       filepath,
       source: expectedSource,
