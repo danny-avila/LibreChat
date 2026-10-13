@@ -352,7 +352,7 @@ export const documentParserMimeTypes = [
   /^application\/vnd\.oasis\.opendocument\.text$/,
 ];
 
-export const defaultTextMimeTypes = [/^[\w.-]+\/[\w.-]+$/];
+export const defaultTextMimeTypes = [/^[\w.-]+\/[\w.+-]+$/];
 
 export const defaultSTTMimeTypes = [audioMimeTypes];
 
