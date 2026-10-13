@@ -11,6 +11,7 @@ import type { ReactNode, ReactElement } from 'react';
 import type { ReasoningDisclosures, ToolDisclosures } from './disclosure';
 import type { ToolCallGroupExpansionState } from './ToolCallGroup';
 import type { ActivityPhaseSegment } from '~/utils/activityLabels';
+import type { MCPAppResourceOccurrence } from '~/utils/mcpApps';
 import {
   mapAttachments,
   getPartKeyIndex,
@@ -1391,6 +1392,15 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
     const owners = buildToolCallStepOwners(props.content);
     const lanes = parallelLaneGroups(props.content);
     const { inlineAttachments, workspaceChanges } = partitionWorkspaceChanges(attachments);
+    const resourcesByAttachment = new Map<
+      TAttachment,
+      Array<{ resource: MCPAppResourceOccurrence; ordinal: number }>
+    >();
+    selectToolCallUIResources(messageApps.attachments).forEach((resource, index) => {
+      const entries = resourcesByAttachment.get(resource.attachment) ?? [];
+      entries.push({ resource, ordinal: index + 1 });
+      resourcesByAttachment.set(resource.attachment, entries);
+    });
     const rows: ReactNode[] = [];
     let start = 0;
     const renderSlice = (end: number) => {
@@ -1421,9 +1431,17 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
     };
     for (const [index, appAttachments] of messageApps.atIndex) {
       renderSlice(index + 1);
-      rows.push(
-        <MCPAppViews key={`apps-${appRenderScope}-${index}`} attachments={appAttachments} />,
-      );
+      for (const attachment of appAttachments) {
+        for (const { resource, ordinal } of resourcesByAttachment.get(attachment) ?? []) {
+          rows.push(
+            <MCPAppViews
+              key={`app-${appRenderScope}-${resource.key}`}
+              resources={[resource]}
+              ordinalStart={ordinal}
+            />,
+          );
+        }
+      }
       start = index + 1;
     }
     renderSlice(props.content?.length ?? 0);

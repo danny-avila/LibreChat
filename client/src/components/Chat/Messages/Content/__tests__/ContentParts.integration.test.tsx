@@ -3,6 +3,7 @@ import { RecoilRoot } from 'recoil';
 import { Constants, ContentTypes, Tools } from 'librechat-data-provider';
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import type { EventSubmission, TAttachment, TMessageContentParts } from 'librechat-data-provider';
+import type { MCPAppResourceOccurrence } from '~/utils/mcpApps';
 import useAttachmentHandler from '~/hooks/SSE/useAttachmentHandler';
 import useAttachments from '~/hooks/Messages/useAttachments';
 import { ParallelColumns } from '../ParallelContent';
@@ -50,9 +51,22 @@ jest.mock('~/components/MCPUIResource', () => {
   const MCPAppSuppressionContext = ReactActual.createContext<ReadonlySet<TAttachment> | null>(null);
   return {
     MCPAppSuppressionContext,
-    MCPAppViews: ({ attachments }: { attachments?: TAttachment[] }) => {
+    MCPAppViews: ({
+      attachments,
+      resources,
+    }: {
+      attachments?: TAttachment[];
+      resources?: MCPAppResourceOccurrence[];
+    }) => {
       const suppressed = ReactActual.useContext(MCPAppSuppressionContext);
-      const visible = (attachments ?? []).filter((attachment) => !suppressed?.has(attachment));
+      const selectedAttachments =
+        resources?.map(({ attachment, resource }) => ({
+          ...attachment,
+          ui_resources: [resource],
+        })) ?? attachments;
+      const visible = (selectedAttachments ?? []).filter(
+        (attachment) => !suppressed?.has(attachment),
+      );
       if (visible.length === 0) {
         return null;
       }
@@ -624,12 +638,18 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
         />
       </RecoilRoot>
     );
-    const { rerender } = render(frame({}));
+    const { rerender } = render(frame({ content: [undefined, ...content] }));
     const appView = screen.getByTestId('mcp-app-attachments');
 
     /** `createdHandler` replaces both the user-derived response id and new-chat conversation id,
      * while `clientQueueParentMessageId` keeps this response linked to its submission. */
-    rerender(frame({ messageId: 'server-user_', conversationId: 'conversation-1' }));
+    rerender(
+      frame({
+        messageId: 'server-user_',
+        conversationId: 'conversation-1',
+        content: [undefined, ...content],
+      }),
+    );
     expect(screen.getByTestId('mcp-app-attachments')).toBe(appView);
 
     /** `finalHandler` installs the durable response and drops the client-only owner anchor. */
@@ -678,6 +698,8 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     );
     const { rerender } = render(frame([appCall]));
     const appView = screen.getByTestId('mcp-app-attachments');
+    rerender(frame([makeTextPart('inserted preface'), appCall]));
+    expect(screen.getByTestId('mcp-app-attachments')).toBe(appView);
     rerender(frame([appCall, makeTextPart('after the app')]));
     expect(
       appView.compareDocumentPosition(screen.getByText('after the app')) &
@@ -700,6 +722,47 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
     ] as unknown as TMessageContentParts[];
     rerender(frame(parallel));
     expect(screen.getByTestId('mcp-app-attachments')).toBe(appView);
+  });
+
+  it('retains an existing resource when another App is inserted into its tool result', () => {
+    const call = makeMcpToolCall('call_app', true, 'step-1', 'agent-a');
+    const resource = (resourceId: string) => ({
+      resourceId,
+      uri: 'ui://demo/view',
+      mimeType: 'text/html;profile=mcp-app',
+      toolName: 'show_app',
+      serverName: 'demo',
+    });
+    const alpha = resource('alpha');
+    const beta = resource('beta');
+    const frame = (resources: (typeof alpha)[]) => (
+      <RecoilRoot>
+        <ContentParts
+          {...baseProps}
+          content={[call]}
+          attachments={[
+            {
+              type: Tools.ui_resources,
+              toolCallId: 'call_app',
+              agentId: 'agent-a',
+              stepId: 'step-1',
+              [Tools.ui_resources]: resources,
+            } as unknown as TAttachment,
+          ]}
+        />
+      </RecoilRoot>
+    );
+    const { rerender } = render(frame([alpha]));
+    const original = screen.getByTestId('mcp-app-attachments');
+    rerender(frame([beta, alpha]));
+    const views = screen.getAllByTestId('mcp-app-attachments');
+    expect(views.map((view) => view.dataset.owners)).toEqual([
+      'agent-a/step-1/beta',
+      'agent-a/step-1/alpha',
+    ]);
+    expect(views[1]).toBe(original);
+    rerender(frame([alpha]));
+    expect(screen.getByTestId('mcp-app-attachments')).toBe(original);
   });
 
   it('remounts an App for a same-parent regeneration and a real sibling switch', () => {

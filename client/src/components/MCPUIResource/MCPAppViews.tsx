@@ -9,6 +9,7 @@ import React, {
 } from 'react';
 import { Button } from '@librechat/client';
 import type { TAttachment, UIResource } from 'librechat-data-provider';
+import type { MCPAppResourceOccurrence } from '~/utils/mcpApps';
 import { useMCPAppsHost, useMCPAppViewAtCapacity } from '~/Providers/MCPAppsPolicyContext';
 import { selectToolCallUIResources, getInlineResourceHtml } from '~/utils/mcpApps';
 import { useIsMessagesViewReadOnly } from '~/Providers/MessagesViewContext';
@@ -234,7 +235,15 @@ const MCPAppView = React.memo(function MCPAppView({
   );
 });
 
-export function MCPAppViews({ attachments }: { attachments?: TAttachment[] }) {
+export function MCPAppViews({
+  attachments,
+  resources,
+  ordinalStart = 1,
+}: {
+  attachments?: TAttachment[];
+  resources?: MCPAppResourceOccurrence[];
+  ordinalStart?: number;
+}) {
   const suppressedAttachments = React.useContext(MCPAppSuppressionContext);
   const { policy, userId } = useMCPAppsHost();
   const visibleAttachments = useMemo(
@@ -244,7 +253,12 @@ export function MCPAppViews({ attachments }: { attachments?: TAttachment[] }) {
         : attachments?.filter((attachment) => !suppressedAttachments.has(attachment)),
     [attachments, suppressedAttachments],
   );
-  const apps = useMemo(() => selectToolCallUIResources(visibleAttachments), [visibleAttachments]);
+  const apps = useMemo(
+    () =>
+      resources?.filter(({ attachment }) => !suppressedAttachments?.has(attachment)) ??
+      selectToolCallUIResources(visibleAttachments),
+    [resources, suppressedAttachments, visibleAttachments],
+  );
 
   if (!policy.enabled || !userId || apps.length === 0) {
     return null;
@@ -257,7 +271,7 @@ export function MCPAppViews({ attachments }: { attachments?: TAttachment[] }) {
           key={JSON.stringify([userId, key])}
           app={resource}
           userId={userId}
-          ordinal={index + 1}
+          ordinal={ordinalStart + index}
         />
       ))}
     </>
