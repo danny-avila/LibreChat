@@ -2838,6 +2838,8 @@ export const interfaceSchema = z
     temporaryChatRetention: z.number().min(1).max(8760).optional(),
     generalChatRetention: z.number().min(1).max(8760).optional(),
     autoSubmitFromUrl: z.boolean().optional(),
+    /** Accept `?theme=dark|light|system` on an entry link as the user's colour mode, so another app can hand its mode over. */
+    colorModeFromUrl: z.boolean().optional(),
     retentionMode: z.nativeEnum(RetentionMode).default(RetentionMode.TEMPORARY),
     retainAgentFiles: z.boolean().optional(),
     runCode: z.boolean().optional(),
@@ -3068,6 +3070,7 @@ export const interfaceSchema = z
     },
     temporaryChat: true,
     autoSubmitFromUrl: true,
+    colorModeFromUrl: false,
     runCode: true,
     webSearch: true,
     contextUsage: true,

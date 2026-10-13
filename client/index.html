@@ -53,6 +53,32 @@
         } catch (e) {
           /* Web Storage denied by browser policy: the shell falls back to the system theme. */
         }
+        /* `interface.colorModeFromUrl` marks the shell (packages/api/src/html/handoff.ts)
+         * so a link from another app can hand over its colour mode as `?theme=`. It is
+         * stored as the user's own choice, which a later in-app change replaces, and
+         * leaves the address before the router reads it. A high-contrast choice of the
+         * same scheme is kept, since the link asks for a scheme, not less contrast. */
+        if (document.documentElement.hasAttribute('data-color-mode-from-url')) {
+          const params = new URLSearchParams(location.search);
+          const handoff = params.get('theme');
+          if (handoff === 'dark' || handoff === 'light' || handoff === 'system') {
+            if (theme !== 'high-contrast-' + handoff) {
+              theme = handoff;
+              try {
+                localStorage.setItem('color-theme', handoff);
+              } catch (e) {
+                /* Unstored, the handed-over mode still paints this page. */
+              }
+            }
+            params.delete('theme');
+            const query = params.toString();
+            history.replaceState(
+              history.state,
+              '',
+              location.pathname + (query ? '?' + query : '') + location.hash,
+            );
+          }
+        }
         const loadingContainerStyle = document.createElement('style');
         let dark;
         let contrast;
