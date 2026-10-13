@@ -8,14 +8,25 @@ In this Chart, LibreChat will only work with environment Variables. You can Spec
 
 The bundled MongoDB and Redis subcharts run with authentication enabled. Their generated passwords stay in the subchart Secrets and reach LibreChat through `secretKeyRef` (`MONGODB_ROOT_PASSWORD`, `REDIS_PASSWORD`); `MONGO_URI` is assembled in the Deployment. Set `librechat.configEnv.MONGO_URI` (or `REDIS_URI`) to use your own database. Set `mongodb.auth.enabled=false` or `redis.auth.enabled=false` only to restore the old unauthenticated behavior; custom root passwords must be URL-safe because they are placed in `MONGO_URI`.
 
-If `MONGO_URI` or `REDIS_PASSWORD` comes from the Secret named by `global.librechat.existingSecretName`, set `librechat.injectBundledCredentials.mongodb=false` (for `MONGO_URI`) or `librechat.injectBundledCredentials.redis=false` (for `REDIS_PASSWORD`): the chart cannot see inside that Secret, and the generated values would otherwise override it. The two are independent, so overriding one database keeps the generated credentials for the other. Entries with the same names in `global.librechat.env` are respected and not duplicated. The credentials are read when a pod starts, so after rotating a database password run `kubectl rollout restart deployment/<release>-librechat` (or use a rollout controller such as Reloader).
+If `MONGO_URI`, `REDIS_URI` or `REDIS_PASSWORD` comes from the Secret named by `global.librechat.existingSecretName`, set `librechat.injectBundledCredentials.mongodb=false` (for `MONGO_URI`) or `librechat.injectBundledCredentials.redis=false` (for `REDIS_URI` or `REDIS_PASSWORD`): the chart cannot see inside that Secret, and the generated values would otherwise override it. The two are independent, so overriding one database keeps the generated credentials for the other. Entries with the same names in `global.librechat.env` are respected and not duplicated. The credentials are read when a pod starts, so after rotating a database password run `kubectl rollout restart deployment/<release>-librechat` (or use a rollout controller such as Reloader).
+
+### Keeping the generated passwords across upgrades
+
+With the defaults the subcharts generate the passwords on first install, and the MongoDB subchart refuses later upgrades that do not repeat them ("PASSWORDS ERROR"). Read the current values and pass them on every `helm upgrade`, or point `mongodb.auth.existingSecret` and `redis.auth.existingSecret` at Secrets you manage:
+
+```
+kubectl get secret <release>-mongodb -o jsonpath='{.data.mongodb-root-password}' | base64 -d
+helm upgrade <release> ... --set mongodb.auth.rootPassword=<password>
+```
+
+Redis needs `--set redis.auth.password=<password>` the same way (`redis-password` in the `<release>-redis` Secret).
 
 ### Upgrading from an unauthenticated bundled MongoDB
 
 Releases installed before auth became the default have a data volume with no root user, and the persisted data is not re-initialized on upgrade, so LibreChat cannot authenticate after `helm upgrade`. Pick one path:
 
 1. Keep the old behavior: `--set mongodb.auth.enabled=false`.
-2. Create the root user first: on the running pre-upgrade pod, run `mongosh admin --eval 'db.createUser({user: "root", pwd: "<password>", roles: ["root"]})'`, then upgrade with `--set mongodb.auth.rootPassword=<password>` (URL-safe). Keep the same password on every later upgrade. An upgrade without `mongodb.auth.rootPassword` is refused by the MongoDB subchart ("PASSWORDS ERROR") because no Secret exists yet.
+2. Create the root user first: on the running pre-upgrade pod, run `mongosh admin --eval 'db.createUser({user: "<rootUser>", pwd: "<password>", roles: ["root"]})'` (`<rootUser>` is `mongodb.auth.rootUser`, `root` by default), then upgrade with `--set mongodb.auth.rootPassword=<password>` (URL-safe) and the same `mongodb.auth.rootUser` if you changed it. Keep the same password on every later upgrade. An upgrade without `mongodb.auth.rootPassword` is refused by the MongoDB subchart ("PASSWORDS ERROR") because no Secret exists yet.
 
 The chart does not detect this case at render time (it cannot tell a fresh install from an unauthenticated volume), so `NOTES.txt` prints a notice on every upgrade with auth enabled.
 
