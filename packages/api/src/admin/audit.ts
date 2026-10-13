@@ -5,6 +5,7 @@ import type {
   RecordAuditEntryOptions,
 } from '@librechat/data-schemas';
 import type { ServerRequest } from '~/types/http';
+import { getSafeErrorMetadata } from '~/utils/errors';
 import { buildAuditContext } from './context';
 
 /** The `recordAuditEntry` data-schemas method, as handler factories receive it. */
@@ -65,7 +66,10 @@ export function createAdminAuditEmitter(options: {
     try {
       await recordAuditEntry(input);
     } catch (err) {
-      logger.error(`${logPrefix} audit write failed for ${event.action}`, err);
+      logger.error(
+        `${logPrefix} audit write failed for ${event.action}`,
+        getSafeErrorMetadata(err),
+      );
     }
   };
 }
@@ -86,7 +90,7 @@ export async function recordSystemAuditEntry(
   try {
     await recordAuditEntry(input);
   } catch (err) {
-    logger.error(`${logPrefix} audit write failed for ${input.action}`, err);
+    logger.error(`${logPrefix} audit write failed for ${input.action}`, getSafeErrorMetadata(err));
   }
 }
 

@@ -1137,7 +1137,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       );
       if (config) {
         await emitAudit(req, {
-          action: 'config.updated',
+          action: config.configVersion === 1 ? 'config.created' : 'config.updated',
           target: configTarget(principalType, principalId),
           metadata: { operation: 'tombstone', fieldPath },
         });

@@ -2655,6 +2655,24 @@ describe('createAdminConfigHandlers', () => {
       );
     });
 
+    it('records config.created when the first tombstone creates the document', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const { handlers } = createHandlers({
+        recordAuditEntry,
+        tombstoneConfigField: jest.fn().mockResolvedValue({ _id: 'c1', configVersion: 1 }),
+      });
+      const res = mockRes();
+
+      await handlers.tombstoneConfigField(
+        mockReq({ params, body: { fieldPath: 'mcpServers.github' } }),
+        res,
+      );
+
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'config.created' }),
+      );
+    });
+
     it('records tombstone and unset field operations', async () => {
       const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
       const { handlers } = createHandlers({ recordAuditEntry });

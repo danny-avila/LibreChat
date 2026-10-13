@@ -776,6 +776,43 @@ describe('systemGrant methods', () => {
     });
   });
 
+  describe('restoreGrants', () => {
+    it('restores removed grants with their original metadata and keeps newer ones', async () => {
+      const roleName = 'restore-role';
+      await methods.grantCapability({
+        principalType: PrincipalType.ROLE,
+        principalId: roleName,
+        capability: SystemCapabilities.READ_USERS,
+      });
+      await methods.grantCapability({
+        principalType: PrincipalType.ROLE,
+        principalId: roleName,
+        capability: SystemCapabilities.READ_CONFIGS,
+      });
+      const removed = await methods.deleteGrantsForPrincipal(PrincipalType.ROLE, roleName);
+      const snapshots = removed.map((grant) => ({ ...grant }) as Record<string, unknown>);
+      const originalTimes = new Map(removed.map((g) => [g.capability, g.grantedAt?.getTime()]));
+
+      /** One grant is re-made before the restore and must be left as it is. */
+      await methods.grantCapability({
+        principalType: PrincipalType.ROLE,
+        principalId: roleName,
+        capability: SystemCapabilities.READ_USERS,
+      });
+
+      expect(await methods.restoreGrants(snapshots)).toBe(1);
+      const after = await SystemGrant.find({
+        principalType: PrincipalType.ROLE,
+        principalId: roleName,
+      });
+      expect(after).toHaveLength(2);
+      const restored = after.find((g) => g.capability === SystemCapabilities.READ_CONFIGS);
+      expect(restored?.grantedAt?.getTime()).toBe(
+        originalTimes.get(SystemCapabilities.READ_CONFIGS),
+      );
+    });
+  });
+
   describe('deleteGrantsForPrincipal', () => {
     it('deletes all grants for a principal', async () => {
       const groupId = new Types.ObjectId();

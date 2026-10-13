@@ -145,13 +145,8 @@ export interface AdminRolesDeps {
   /** Re-creates a deleted config document in full, only if none exists. Resolves
    * to whether it inserted. */
   restoreConfig?: (snapshot: Record<string, unknown>) => Promise<boolean>;
-  grantCapability?: (grant: {
-    principalType: PrincipalType;
-    principalId: string;
-    capability: ISystemGrant['capability'];
-    tenantId?: string;
-    grantedBy?: string;
-  }) => Promise<unknown>;
+  /** Re-creates deleted grants in full, inserting only those that no longer exist. */
+  restoreGrants?: (snapshots: Array<Record<string, unknown>>) => Promise<number>;
   /** Optional audit emission for role mutations and the grants removed by the
    * role-deletion cascade. Failure is logged unless `auditFailClosed` is set. */
   recordAuditEntry?: RecordAuditEntry;
@@ -201,7 +196,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
     findAclEntriesByPrincipal,
     bulkWriteAclEntries,
     restoreConfig,
-    grantCapability,
+    restoreGrants,
     recordAuditEntry,
     auditFailClosed,
     invalidatePromptGroupAccessContext,
@@ -565,18 +560,14 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
           cascadeStep(
             'grants',
             () => deleteGrantsForPrincipal(PrincipalType.ROLE, name, { tenantId }),
-            grantCapability
+            restoreGrants
               ? async (grants) => {
-                  for (const grant of grants) {
-                    /** Insert-only by design: an existing grant is left untouched. */
-                    await grantCapability({
-                      principalType: PrincipalType.ROLE,
-                      principalId: name,
-                      capability: grant.capability,
-                      tenantId: grant.tenantId,
-                      grantedBy: grant.grantedBy?.toString(),
-                    });
-                  }
+                  await restoreGrants(
+                    grants.map((grant) => {
+                      const plain = (grant as { toObject?: () => unknown }).toObject?.() ?? grant;
+                      return plain as Record<string, unknown>;
+                    }),
+                  );
                 }
               : undefined,
           ),
