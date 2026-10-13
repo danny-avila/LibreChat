@@ -12,7 +12,9 @@ const logHeaders = (req, res, next) => {
   try {
     const forwardedHeaders = {};
     if (req.headers['x-forwarded-for']) {
-      forwardedHeaders['x-forwarded-for'] = req.headers['x-forwarded-for'];
+      forwardedHeaders['x-forwarded-for-hops'] = String(req.headers['x-forwarded-for']).split(
+        ',',
+      ).length;
     }
     if (req.headers['x-forwarded-host']) {
       forwardedHeaders['x-forwarded-host'] = req.headers['x-forwarded-host'];

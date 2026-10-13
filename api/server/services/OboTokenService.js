@@ -111,7 +111,7 @@ async function performOboExchange({ user, accessToken, scopes, config, tokensCac
     }
 
     logger.warn(
-      `[OboTokenService] Transient OBO exchange failure for user: ${user.openidId}, retrying once`,
+      `[OboTokenService] Transient OBO exchange failure for user: ${user._id ?? user.id}, retrying once`,
       error,
     );
     await delay(OBO_RETRY_DELAY_MS);
@@ -141,7 +141,7 @@ async function performOboExchange({ user, accessToken, scopes, config, tokensCac
   await tokensCache.set(cacheKey, tokenResponse, getSkewedTokenCacheTtlMs(expiresAt, now));
 
   logger.debug(
-    `[OboTokenService] Successfully obtained and cached OBO token for user: ${user.openidId}`,
+    `[OboTokenService] Successfully obtained and cached OBO token for user: ${user._id ?? user.id}`,
   );
   return tokenResponse;
 }
@@ -192,23 +192,25 @@ async function exchangeOboToken(user, accessToken, scopes, fromCache = true, ide
     const cachedToken = await tokensCache.get(cacheKey);
     if (cachedToken) {
       if (hasUsableTokenExpiry(cachedToken.expires_at)) {
-        logger.debug(`[OboTokenService] Using cached token for user: ${user.openidId}`);
+        logger.debug(`[OboTokenService] Using cached token for user: ${user._id ?? user.id}`);
         return cachedToken;
       }
       logger.debug(
-        `[OboTokenService] Ignoring cached OBO token without usable expiry for user: ${user.openidId}`,
+        `[OboTokenService] Ignoring cached OBO token without usable expiry for user: ${user._id ?? user.id}`,
       );
     }
 
     const inFlight = inFlightExchanges.get(cacheKey);
     if (inFlight) {
-      logger.debug(`[OboTokenService] Joining in-flight OBO exchange for user: ${user.openidId}`);
+      logger.debug(
+        `[OboTokenService] Joining in-flight OBO exchange for user: ${user._id ?? user.id}`,
+      );
       return inFlight;
     }
   }
 
   logger.debug(
-    `[OboTokenService] Requesting new OBO token for user: ${user.openidId}, scopes: ${scopes}`,
+    `[OboTokenService] Requesting new OBO token for user: ${user._id ?? user.id}, scopes: ${scopes}`,
   );
 
   const exchangePromise = performOboExchange({

@@ -52,6 +52,9 @@ const sensitiveKeys: RegExp[] = [
   /([a-z][a-z0-9+.-]*:\/\/)[^/\s:@]*:[^/\s@]+(?=@)/gi,
 ];
 
+const EMAIL_PATTERN = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}\b/g;
+const REDACTED_EMAIL_VALUE = '[REDACTED_EMAIL]';
+
 const sensitiveMetadataKey =
   /^(authorization|proxy-authorization|cookie|set-cookie|x-api-key|api[-_]?key|access[-_]?token|refresh[-_]?token|id[-_]?token|token|secret|password|assertion|client[-_]?assertion|client[-_]?secret|code[-_]?verifier|credential|signature|connection[-_]?string)$/i;
 const errorStringProperties = new Set(['name', 'message', 'stack']);
@@ -67,10 +70,9 @@ function redactMessage(str: string, trimLength?: number): string {
     return '';
   }
 
-  const redacted = sensitiveKeys.reduce(
-    (currentMessage, pattern) => currentMessage.replace(pattern, '$1[REDACTED]'),
-    str,
-  );
+  const redacted = sensitiveKeys
+    .reduce((currentMessage, pattern) => currentMessage.replace(pattern, '$1[REDACTED]'), str)
+    .replace(EMAIL_PATTERN, REDACTED_EMAIL_VALUE);
 
   if (trimLength !== undefined && redacted.length > trimLength) {
     return `${redacted.substring(0, trimLength)}...`;

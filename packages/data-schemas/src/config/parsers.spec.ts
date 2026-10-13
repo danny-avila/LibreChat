@@ -59,6 +59,25 @@ describe('redactMessage', () => {
     );
   });
 
+  it('masks email addresses in messages', () => {
+    expect(redactMessage('login for jane.doe+tag@example.co.uk | ok')).toBe(
+      'login for [REDACTED_EMAIL] | ok',
+    );
+    expect(redactMessage('a@b.com and c@d.org')).toBe('[REDACTED_EMAIL] and [REDACTED_EMAIL]');
+    expect(redactMessage('mention @handle and v1.2.3')).toBe('mention @handle and v1.2.3');
+  });
+
+  it('masks email addresses in metadata values and nested objects', () => {
+    const info = runRedactSplatFormat({
+      level: 'info',
+      message: 'x',
+      [SPLAT_SYMBOL]: [{ user: { contact: 'jane@example.com' }, list: ['a@b.io'] }],
+    });
+    const [meta] = info[SPLAT_SYMBOL] as Array<{ user: { contact: string }; list: string[] }>;
+    expect(meta.user.contact).toBe('[REDACTED_EMAIL]');
+    expect(meta.list).toEqual(['[REDACTED_EMAIL]']);
+  });
+
   it('does not redact ordinary words containing sensitive prefixes', () => {
     expect(redactMessage('task-runner failed')).toBe('task-runner failed');
     expect(redactMessage('mask-value computed')).toBe('mask-value computed');
