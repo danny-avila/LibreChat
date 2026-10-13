@@ -71,6 +71,12 @@ describe('redactMessage', () => {
     expect(redactMessage('mention @handle and v1.2.3')).toBe('mention @handle and v1.2.3');
   });
 
+  it('masks the whole token for apostrophes, long local parts and combining-mark domains', () => {
+    expect(redactMessage("mary.jane'o_connor@example.com")).toBe('[REDACTED_EMAIL]');
+    expect(redactMessage(`${'a'.repeat(100)}@example.com ok`)).toBe('[REDACTED_EMAIL] ok');
+    expect(redactMessage('user@उदाहरण.भारत ok')).toBe('[REDACTED_EMAIL] ok');
+  });
+
   it('masks quoted local parts', () => {
     expect(redactMessage('user "jane.doe"@example.com ok')).toBe('user [REDACTED_EMAIL] ok');
     expect(redactMessage('user "jane doe"@example.com ok')).toBe('user [REDACTED_EMAIL] ok');
@@ -154,6 +160,21 @@ describe('redactMessage', () => {
 });
 
 describe('redactFormat', () => {
+  it('masks emails in top-level fields, stack traces and metadata keys', () => {
+    const info = runRedactFormat({
+      level: 'error',
+      message: 'lookup',
+      contact: 'jane@example.com',
+      stack: 'Error: failed for jane@example.com\n    at x',
+      token: 'sk-abcdef',
+      nested: { 'k@example.org': 1, 'j@example.org': 2, other: 3 },
+    });
+    expect(info.contact).toBe('[REDACTED_EMAIL]');
+    expect(info.stack).toBe('Error: failed for [REDACTED_EMAIL]\n    at x');
+    expect(info.token).toBe('[REDACTED]');
+    expect(info.nested).toEqual({ '[REDACTED_EMAIL]': 1, '[REDACTED_EMAIL]#2': 2, other: 3 });
+  });
+
   it.each(['error', 'warn', 'info', 'debug'])('redacts info.message for %s level', (level) => {
     const info = runRedactFormat({ level, message: 'Bearer secretvalue' });
     expect(info.message).toBe('Bearer [REDACTED]');

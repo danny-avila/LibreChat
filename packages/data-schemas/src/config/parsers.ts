@@ -52,9 +52,12 @@ const sensitiveKeys: RegExp[] = [
   /([a-z][a-z0-9+.-]*:\/\/)[^/\s:@]*:[^/\s@]+(?=@)/gi,
 ];
 
-/** Local part and domain labels are length-bounded (RFC 5321) so scanning stays linear on long non-email text. */
+/**
+ * Matches a whole delimiter-bounded token that holds an address. The lookbehind lets the scan start
+ * only at a token boundary, so long non-email text is scanned once instead of once per character.
+ */
 const EMAIL_PATTERN =
-  /(?:[\p{L}\p{M}\p{N}._%+\-!#$&'*/=?^`{|}~]{1,64}|"[^"\r\n]{1,64}")@[\p{L}\p{M}\p{N}-]{1,63}(?:\.[\p{L}\p{M}\p{N}-]{1,63})*\.\p{L}{2,63}/gu;
+  /(?:"[^"\r\n]{1,64}"|(?<![^\s<>()[\],;"])[^\s<>()[\],;"]+)@[^\s<>()[\],;"@]+\.[^\s<>()[\],;"@]{2,}/gu;
 const REDACTED_EMAIL_VALUE = '[REDACTED_EMAIL]';
 
 const sensitiveMetadataKey =
@@ -95,6 +98,32 @@ function redactLogString(str: string): string {
 function isPlainRecord(value: object): value is Record<string, unknown> {
   const prototype = Object.getPrototypeOf(value);
   return prototype === Object.prototype || prototype === null;
+}
+
+function redactLogKey(key: string, used: object): string {
+  if (!key.includes('@')) {
+    return key;
+  }
+
+  const base = redactMessage(key);
+  if (base === key) {
+    return key;
+  }
+
+  let candidate = base;
+  for (let suffix = 2; Object.prototype.hasOwnProperty.call(used, candidate); suffix++) {
+    candidate = `${base}#${suffix}`;
+  }
+  return candidate;
+}
+
+function redactMapKey(key: string, used: Map<unknown, unknown>): string {
+  const base = redactLogKey(key, {});
+  let candidate = base;
+  for (let suffix = 2; base !== key && used.has(candidate); suffix++) {
+    candidate = `${base}#${suffix}`;
+  }
+  return candidate;
 }
 
 function isSensitiveMetadataKey(key: string): boolean {
@@ -214,8 +243,9 @@ function redactMapValue(
       redacted.set(REDACTION_TRUNCATED_KEY, 'Additional map entries omitted');
       break;
     }
+    const safeKey = typeof mapKey === 'string' ? redactMapKey(mapKey, redacted) : mapKey;
     redacted.set(
-      mapKey,
+      safeKey,
       typeof mapKey === 'string'
         ? redactRecordValue(mapKey, mapValue, seen, depth + 1)
         : redactLogValue(mapValue, seen, depth + 1),
@@ -265,7 +295,7 @@ function redactObjectEntries(
       redacted[REDACTION_TRUNCATED_KEY] = 'Additional object properties omitted';
       break;
     }
-    redacted[key] = redactRecordValue(key, record[key], seen, depth + 1);
+    redacted[redactLogKey(key, redacted)] = redactRecordValue(key, record[key], seen, depth + 1);
     count += 1;
   }
 
@@ -372,6 +402,13 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
 
     if (infoRecord[SPLAT_SYMBOL] !== undefined) {
       infoRecord[SPLAT_SYMBOL] = redactLogValue(infoRecord[SPLAT_SYMBOL]);
+    }
+
+    for (const key of Object.keys(info)) {
+      if (key === 'message' || key === 'level') {
+        continue;
+      }
+      infoRecord[key] = redactRecordValue(key, infoRecord[key], new WeakMap(), 0);
     }
     return info;
   },
