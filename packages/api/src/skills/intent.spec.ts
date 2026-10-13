@@ -118,11 +118,70 @@ it('preserves the original failure for stopped-writer recovery if journal and cl
 
   await expect(withSkillUploadIntent(deps, operation)).rejects.toThrow('provider timeout');
   expect(deps.reserveSkillUploadIntent).toHaveBeenCalledTimes(1);
-  expect(deps.transitionSkillUploadIntent).toHaveBeenCalledTimes(2);
+  expect(deps.transitionSkillUploadIntent).toHaveBeenCalledTimes(3);
   expect(operation.deleteReserved).toHaveBeenCalledTimes(1);
   // The intent is intentionally retained. If both stores stay unavailable,
   // an operator must recover the stopped writer before background cleanup.
 });
+
+it.each(['save', 'first transition'] as const)(
+  'compensates a %s failure without reading persistence that was never attempted',
+  async (failurePoint) => {
+    const deps = makeDeps();
+    const operation = makeOperation();
+    operation.readPersisted = jest.fn(async () => {
+      throw new Error('database unavailable');
+    });
+    if (failurePoint === 'save') {
+      operation.save = jest.fn(async () => {
+        throw new Error('provider timeout');
+      });
+    } else {
+      deps.transitionSkillUploadIntent.mockRejectedValueOnce(new Error('database unavailable'));
+    }
+
+    await expect(withSkillUploadIntent(deps, operation)).rejects.toThrow(
+      failurePoint === 'save' ? 'provider timeout' : 'database unavailable',
+    );
+    expect(operation.persist).not.toHaveBeenCalled();
+    expect(operation.readPersisted).not.toHaveBeenCalled();
+    expect(operation.deleteReserved).toHaveBeenCalledTimes(1);
+  },
+);
+
+it.each(['missing', 'replaced'] as const)(
+  'abandons an acknowledged commit after the original row is %s and cleanup fails',
+  async (rowState) => {
+    const deps = makeDeps();
+    const operation = makeOperation();
+    let intentState = 'uploading';
+    deps.transitionSkillUploadIntent.mockImplementation(async (_fileId, _writerId, from, to) => {
+      if (intentState !== from) return intentState === to;
+      intentState = to;
+      if (from === 'committing' && to === 'committed') {
+        throw new Error('commit reply lost');
+      }
+      return true;
+    });
+    operation.readPersisted = jest.fn(async () => {
+      const row = rowState === 'replaced' ? { fileId: 'replacement' } : null;
+      return row?.fileId === operation.fileId ? 'saved' : null;
+    });
+    operation.deleteReserved = jest.fn(async () => {
+      throw new Error('storage unavailable');
+    });
+
+    await expect(withSkillUploadIntent(deps, operation)).rejects.toThrow('commit reply lost');
+    expect(intentState).toBe('abandoned');
+    expect(deps.transitionSkillUploadIntent).toHaveBeenCalledWith(
+      operation.fileId,
+      expect.any(String),
+      'committed',
+      'abandoned',
+    );
+    expect(operation.deleteReserved).toHaveBeenCalledTimes(1);
+  },
+);
 
 it('returns the persisted row after an ambiguous database commit', async () => {
   const deps = makeDeps();

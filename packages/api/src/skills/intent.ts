@@ -51,6 +51,7 @@ export async function withSkillUploadIntent<T>(
   });
   let savedPath: string | undefined;
   let persistedResult: { value: T } | undefined;
+  let persistStarted = false;
   try {
     const filepath = await operation.save();
     if (typeof filepath !== 'string' || filepath.trim().length === 0) {
@@ -66,6 +67,7 @@ export async function withSkillUploadIntent<T>(
     if (!claimed) {
       throw Object.assign(new Error('Skill upload was cancelled'), { code: 'SKILL_DELETING' });
     }
+    persistStarted = true;
     persistedResult = { value: await operation.persist(filepath) };
     const committed = await deps.transitionSkillUploadIntent(
       operation.fileId,
@@ -76,12 +78,15 @@ export async function withSkillUploadIntent<T>(
     if (!committed) throw new Error('Skill upload commit acknowledgement failed');
     return persistedResult.value;
   } catch (error) {
-    let persisted: T | null;
-    try {
-      persisted = await operation.readPersisted();
-    } catch {
-      // Ambiguous database failure: do not delete a blob that may be live.
-      throw error;
+    let persisted: T | null = null;
+    if (persistStarted) {
+      try {
+        persisted = await operation.readPersisted();
+      } catch {
+        // An attempted database write may have succeeded despite its error.
+        // Do not delete a blob that may now belong to a live file row.
+        throw error;
+      }
     }
     if (persisted !== null) {
       const committed = await deps.transitionSkillUploadIntent(
@@ -94,9 +99,11 @@ export async function withSkillUploadIntent<T>(
       throw error;
     }
     // A transient journal error must not skip immediate blob compensation.
+    // The final commit acknowledgement may have succeeded in Mongo before
+    // its reply was lost, so include that state once the row is known absent.
     // If both journal updates and compensation fail, the reserved intent still
     // supports explicit stopped-writer recovery once the database is healthy.
-    for (const from of ['uploading', 'committing'] as const) {
+    for (const from of ['uploading', 'committing', 'committed'] as const) {
       try {
         await deps.transitionSkillUploadIntent(operation.fileId, writerId, from, 'abandoned');
       } catch {
