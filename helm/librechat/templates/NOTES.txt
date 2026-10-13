@@ -1,3 +1,10 @@
+{{- if and .Release.IsUpgrade .Values.mongodb.enabled .Values.mongodb.auth.enabled }}
+UPGRADE NOTICE: the bundled MongoDB now runs with authentication enabled by default.
+If this release was installed with the previous unauthenticated default, its existing data volume has no root user
+and LibreChat will fail to connect. Either set mongodb.auth.enabled=false to keep the old behavior, or create the
+root user in the existing database first (see the chart readme, "Upgrading from an unauthenticated bundled MongoDB").
+
+{{ end -}}
 1. Get the application URL by running these commands:
 {{- if .Values.ingress.enabled }}
 {{- if not .Values.ingress.tls }}
