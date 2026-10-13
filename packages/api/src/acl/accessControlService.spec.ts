@@ -417,6 +417,27 @@ describe('AccessControlService', () => {
       ).resolves.toBeNull();
     });
 
+    test('an explicit public disable wins over a public update in the same request', async () => {
+      const result = await service.bulkUpdateResourcePermissions({
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId,
+        updatedPrincipals: [
+          { type: PrincipalType.PUBLIC, accessRoleId: AccessRoleIds.PROMPTGROUP_VIEWER },
+        ],
+        revokedPrincipals: [{ type: PrincipalType.PUBLIC }],
+        grantedBy: grantedById,
+      });
+
+      expect(result.aclChanges).toEqual([]);
+      await expect(
+        AclEntry.exists({
+          principalType: PrincipalType.PUBLIC,
+          resourceType: ResourceType.PROMPTGROUP,
+          resourceId,
+        }),
+      ).resolves.toBeNull();
+    });
+
     test('revoking snapshots the principal without loading the rest of the ACL', async () => {
       const otherUserId = new Types.ObjectId();
       const viewerRole = await dbMethods.findRoleByIdentifier(AccessRoleIds.PROMPTGROUP_VIEWER);

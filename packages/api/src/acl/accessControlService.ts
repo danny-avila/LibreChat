@@ -538,7 +538,14 @@ export class AccessControlService {
         const key = updatedPrincipalKey(principal);
         if (key != null) lastUpdateIndexByPrincipal.set(key, index);
       });
+      /** An explicit public disable wins over a public update in the same request. */
+      const revokesPublic = revokedPrincipals.some(
+        (principal) => principal?.type === PrincipalType.PUBLIC,
+      );
       const effectiveUpdatedPrincipals = updatedPrincipals.filter((principal, index) => {
+        if (revokesPublic && principal?.type === PrincipalType.PUBLIC) {
+          return false;
+        }
         const key = updatedPrincipalKey(principal);
         return key == null || lastUpdateIndexByPrincipal.get(key) === index;
       });
