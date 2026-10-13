@@ -89,6 +89,7 @@ import {
 } from '~/data-provider';
 import {
   resolveDetachedRunEnd,
+  isDetachedRunUnmatchable,
   stopRequestedByConvoId,
   detachedRunByConvoId,
   isStoppedRun,
@@ -3497,7 +3498,9 @@ export default function useResumableSSE(
           // names its response by epoch, which is the outcome it would have had.
           const detachedRun = jotaiStore.get(detachedRunByConvoId(recoveryConvoId));
           const detachedEnd =
-            detachedRun != null && persistedMessages != null
+            detachedRun != null &&
+            persistedMessages != null &&
+            !isDetachedRunUnmatchable(jotaiStore.get, recoveryConvoId, detachedRun)
               ? resolveDetachedRunEnd(recoveryConvoId, detachedRun, persistedMessages)
               : null;
           setRunEnd({

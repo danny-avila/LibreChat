@@ -326,6 +326,7 @@ import useResumableSSE, {
 } from '~/hooks/SSE/useResumableSSE';
 import useSSE from '~/hooks/SSE/useSSE';
 import {
+  settledQueuedTurnReceiptsByConvoId,
   queuedMessagesByConvoId,
   stopRequestedByConvoId,
   detachedRunByConvoId,
@@ -1144,6 +1145,46 @@ describe('useResumableSSE', () => {
         ),
       );
       expect(mockSetRunEnd).toHaveBeenCalledTimes(1);
+      expect(detachedRun()).toBeNull();
+      unmount();
+    });
+
+    it('leaves an epochless run whose queue the server shares for a manual send on 404', async () => {
+      mockFetchStreamStatus.mockResolvedValue({ active: false });
+      mockGetQueryData.mockImplementation((queryKey: unknown[]) =>
+        queryKey[0] === QueryKeys.messages
+          ? [
+              {
+                messageId: 'resp-1',
+                parentMessageId: 'msg-1',
+                conversationId: CONV_ID,
+                isCreatedByUser: false,
+                text: 'finished while away',
+              },
+            ]
+          : undefined,
+      );
+      const resumed = resumeOf(4200);
+      const chatHelpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useResumableSSE(resumed, chatHelpers));
+      await flushMicrotasks();
+      getDefaultStore().set(detachedRunByConvoId(CONV_ID), {
+        userMessageId: 'msg-1',
+        responseMessageId: 'resp-1',
+      });
+      getDefaultStore().set(settledQueuedTurnReceiptsByConvoId(CONV_ID), [
+        { clientRequestId: 'queued-1', status: 'admitted', effectivePredecessorCreatedAt: 41 },
+      ]);
+      await act(async () => {
+        getLastSSE()._emit('error', { responseCode: 404 });
+      });
+      await waitFor(() => expect(mockSetRunEnd).toHaveBeenCalledTimes(1));
+      expect(mockSetRunEnd).toHaveBeenCalledWith(
+        expect.objectContaining({ conversationId: CONV_ID, outcome: 'aborted' }),
+      );
+      expect(mockSetRunEnd).not.toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: 'completed' }),
+      );
       expect(detachedRun()).toBeNull();
       unmount();
     });

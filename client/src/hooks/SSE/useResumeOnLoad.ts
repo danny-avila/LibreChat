@@ -35,8 +35,7 @@ import {
   ACTIVE_JOBS_SUCCESSOR_GRACE_MS,
 } from '~/data-provider';
 import {
-  settledQueuedTurnReceiptsByConvoId,
-  queuedMessagesByConvoId,
+  isDetachedRunUnmatchable,
   resolveDetachedRunEnd,
   canResolveDetachedRun,
   pendingRunEndByConvoId,
@@ -1022,14 +1021,7 @@ export default function useResumeOnLoad(
         if (detachedRun == null || jotaiStore.get(detachedFamily) !== detachedRun) {
           return;
         }
-        /** Without the run's epoch the drain cannot match a server admission receipt, so a run
-         *  whose queue the server shares is left for a manual send rather than guessed at. */
-        const serverSharesQueue =
-          jotaiStore.get(settledQueuedTurnReceiptsByConvoId(conversationId)).length > 0 ||
-          jotaiStore
-            .get(queuedMessagesByConvoId(conversationId))
-            .some((item) => item.server != null);
-        if (detachedRun.generationCreatedAt == null && serverSharesQueue) {
+        if (isDetachedRunUnmatchable(jotaiStore.get, conversationId, detachedRun)) {
           jotaiStore.set(detachedFamily, null);
           return;
         }

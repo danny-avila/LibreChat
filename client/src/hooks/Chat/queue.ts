@@ -1,7 +1,7 @@
 import { atom } from 'jotai';
 import { atomFamily, RESET } from 'jotai/utils';
 import type { TMessage } from 'librechat-data-provider';
-import type { PrimitiveAtom } from 'jotai';
+import type { PrimitiveAtom, Getter } from 'jotai';
 import type { GenerationProtocolVersion } from '~/data-provider/SSE/protocol';
 
 /**
@@ -270,6 +270,23 @@ export function isStoppedRun(stopped: StoppedRun | null, generationCreatedAt?: n
  *  no read can tell the old reply from the new one. */
 export function canResolveDetachedRun(run: DetachedRun): boolean {
   return run.isRegenerate !== true || run.generationCreatedAt != null;
+}
+
+/** Whether a detached run's end must be left for a manual send. Without the run's epoch the drain
+ *  cannot match a server admission receipt, so a run whose queue the server shares cannot be
+ *  resolved without guessing whether a server-queued successor already owns the conversation. */
+export function isDetachedRunUnmatchable(
+  get: Getter,
+  conversationId: string,
+  run: DetachedRun,
+): boolean {
+  if (run.generationCreatedAt != null) {
+    return false;
+  }
+  return (
+    get(settledQueuedTurnReceiptsByConvoId(conversationId)).length > 0 ||
+    get(queuedMessagesByConvoId(conversationId)).some((item) => item.server != null)
+  );
 }
 
 const writtenAt = (message: TMessage): number => {
