@@ -220,6 +220,16 @@ const createDeleteFileWithSecondaryStorage = ({ source, deleteFile, deletionMeth
 // TODO: refactor as currently only image files can be deleted this way
 // as other filetypes will not reside in public path
 /**
+ * Removes an object a strategy already stored when a later step fails, because no file record
+ * exists yet for retention, expiry or erasure to find it through.
+ */
+const cleanupStoredUpload = ({ req, source, stored }) => {
+  /* Resolved on failure only, so the success path never looks the strategy up again. */
+  const deleteFile = (request, file) => getStrategyFunctions(source).deleteFile?.(request, file);
+  return (next) => withStoredUploadCleanup(stored, { deleteFile, req, logger }, next);
+};
+
+/**
  * Deletes a list of files from the server filesystem and the database.
  *
  * @param {Object} params - The params object.
@@ -431,23 +441,37 @@ const processFileURL = async ({
       storageRegion: typeof savedFile === 'string' ? undefined : savedFile.storageRegion,
     });
 
-    return await db.createFile(
-      {
-        user: userId,
-        file_id: v4(),
-        bytes,
+    const file_id = v4();
+    const cleanupStored = cleanupStoredUpload({
+      req,
+      source: fileStrategy,
+      stored: {
+        file_id,
         filepath,
-        ...storageMetadata,
-        filename: fileName,
         source: fileStrategy,
-        type,
-        context,
-        ...(await retentionExpiryPromise),
-        tenantId,
-        width: dimensions.width,
-        height: dimensions.height,
+        storageKey: typeof savedFile === 'string' ? undefined : savedFile.storageKey,
+        storageRegion: typeof savedFile === 'string' ? undefined : savedFile.storageRegion,
       },
-      true,
+    });
+    return await cleanupStored(async () =>
+      db.createFile(
+        {
+          user: userId,
+          file_id,
+          bytes,
+          filepath,
+          ...storageMetadata,
+          filename: fileName,
+          source: fileStrategy,
+          type,
+          context,
+          ...(await retentionExpiryPromise),
+          tenantId,
+          width: dimensions.width,
+          height: dimensions.height,
+        },
+        true,
+      ),
     );
   } catch (error) {
     logger.error(`Error while processing the image with ${fileStrategy}:`, error);
@@ -472,7 +496,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
   const { file } = req;
   const appConfig = req.config;
   const source = getFileStrategy(appConfig, { isImage: true });
-  const { handleImageUpload, deleteFile } = getStrategyFunctions(source);
+  const { handleImageUpload } = getStrategyFunctions(source);
   const { file_id, temp_file_id, endpoint } = metadata;
   const fileConfig = mergeFileConfig(appConfig?.fileConfig);
   /* The route resolved the agent's provider before validating, so the same endpoint
@@ -498,12 +522,11 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
   const storageMetadata = getStorageMetadata({ filepath, source, storageKey, storageRegion });
   /* The object is stored before its record exists, so a failure past this point has to remove
    * it, or no retention or erasure pass can ever find it. */
-  const cleanupStored = (next) =>
-    withStoredUploadCleanup(
-      { file_id, filepath, source, storageKey, storageRegion },
-      { deleteFile, req, logger },
-      next,
-    );
+  const cleanupStored = cleanupStoredUpload({
+    req,
+    source,
+    stored: { file_id, filepath, source, storageKey, storageRegion },
+  });
   const retentionExpiry = await cleanupStored(() => retentionExpiryPromise);
 
   const fileInfo = {
@@ -580,23 +603,30 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
     tenantId: req.user.tenantId,
   });
   const storageMetadata = getStorageMetadata({ filepath, source });
-  return await db.createFile(
-    {
-      user: req.user.id,
-      file_id,
-      bytes,
-      filepath,
-      ...storageMetadata,
-      filename,
-      context,
-      source,
-      type,
-      width,
-      ...(await retentionExpiryPromise),
-      height,
-      tenantId: req.user.tenantId,
-    },
-    true,
+  const cleanupStored = cleanupStoredUpload({
+    req,
+    source,
+    stored: { file_id, filepath, source, ...storageMetadata },
+  });
+  return await cleanupStored(async () =>
+    db.createFile(
+      {
+        user: req.user.id,
+        file_id,
+        bytes,
+        filepath,
+        ...storageMetadata,
+        filename,
+        context,
+        source,
+        type,
+        width,
+        ...(await retentionExpiryPromise),
+        height,
+        tenantId: req.user.tenantId,
+      },
+      true,
+    ),
   );
 };
 
@@ -676,6 +706,7 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
     storageKey: _storageKey,
     storageRegion: _storageRegion,
   });
+  let convertedImage;
   if (isAssistantUpload && file.mimetype.startsWith('image')) {
     const result = await processImageFile({
       req,
@@ -684,6 +715,7 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
       returnFile: true,
     });
     filepath = result.filepath;
+    convertedImage = { file_id: result.file_id, filepath, source: result.source };
     storageMetadata = getStorageMetadata({
       filepath,
       source: result.source,
@@ -692,26 +724,44 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
     });
   }
 
-  const result = await db.createFile(
-    {
-      user: req.user.id,
-      file_id: id ?? file_id,
-      temp_file_id,
-      bytes,
-      filepath,
-      ...storageMetadata,
-      filename: filename ?? sanitizeFilename(file.originalname),
-      context: isAssistantUpload ? FileContext.assistants : FileContext.message_attachment,
-      model: isAssistantUpload ? req.body.model : undefined,
-      type: file.mimetype,
-      ...(await retentionExpiryPromise),
-      embedded,
+  /* Assistants storage lives with the provider and is released through its own file lifecycle,
+   * so only an object this process stored itself is removed. */
+  let cleanupStored = (next) => next();
+  if (!isAssistantUpload) {
+    cleanupStored = cleanupStoredUpload({
+      req,
       source,
-      height,
-      width,
-      tenantId: req.user.tenantId,
-    },
-    true,
+      stored: { file_id: id ?? file_id, filepath, source, ...storageMetadata },
+    });
+  } else if (convertedImage != null) {
+    cleanupStored = cleanupStoredUpload({
+      req,
+      source: convertedImage.source,
+      stored: { ...convertedImage, ...storageMetadata },
+    });
+  }
+  const result = await cleanupStored(async () =>
+    db.createFile(
+      {
+        user: req.user.id,
+        file_id: id ?? file_id,
+        temp_file_id,
+        bytes,
+        filepath,
+        ...storageMetadata,
+        filename: filename ?? sanitizeFilename(file.originalname),
+        context: isAssistantUpload ? FileContext.assistants : FileContext.message_attachment,
+        model: isAssistantUpload ? req.body.model : undefined,
+        type: file.mimetype,
+        ...(await retentionExpiryPromise),
+        embedded,
+        source,
+        height,
+        width,
+        tenantId: req.user.tenantId,
+      },
+      true,
+    ),
   );
   sendUploadSuccess(res, sseStream, 'File uploaded and processed successfully', result);
 };
@@ -982,8 +1032,23 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         entity_id,
       });
       const { bytes, filename, filepath, embedded, height, width } = storageResult;
+      const cleanupStored = cleanupStoredUpload({
+        req,
+        source,
+        stored: {
+          file_id,
+          filepath,
+          source,
+          ...getStorageMetadata({
+            filepath,
+            source,
+            storageKey: storageResult.storageKey,
+            storageRegion: storageResult.storageRegion,
+          }),
+        },
+      });
 
-      const retentionExpiry = await retentionExpiryPromise;
+      const retentionExpiry = await cleanupStored(() => retentionExpiryPromise);
       const fileInfo = {
         ...removeNullishValues({
           text,
@@ -1007,15 +1072,17 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         ...retentionExpiry,
       };
 
-      if (!messageAttachment && effectiveToolResource) {
-        await db.addAgentResourceFile({
-          file_id,
-          agent_id,
-          tool_resource: effectiveToolResource,
-          updatingUserId: req?.user?.id,
-        });
-      }
-      const result = await db.createFile(fileInfo, true);
+      const result = await cleanupStored(async () => {
+        if (!messageAttachment && effectiveToolResource) {
+          await db.addAgentResourceFile({
+            file_id,
+            agent_id,
+            tool_resource: effectiveToolResource,
+            updatingUserId: req?.user?.id,
+          });
+        }
+        return db.createFile(fileInfo, true);
+      });
       sendUploadSuccess(res, sseStream, 'Agent file uploaded and processed successfully', result);
     };
 
@@ -1185,12 +1252,28 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     // SECOND: Upload to Vector DB
     const { uploadVectors } = require('./VectorDB/crud');
 
-    embeddingResult = await uploadVectors({
+    embeddingResult = await cleanupStoredUpload({
       req,
-      file,
-      file_id,
-      entity_id,
-    });
+      source,
+      stored: {
+        file_id,
+        source,
+        filepath: storageResult.filepath,
+        ...getStorageMetadata({
+          filepath: storageResult.filepath,
+          source,
+          storageKey: storageResult.storageKey,
+          storageRegion: storageResult.storageRegion,
+        }),
+      },
+    })(() =>
+      uploadVectors({
+        req,
+        file,
+        file_id,
+        entity_id,
+      }),
+    );
 
     /* Vectors live under the entity that embedded them, and priming asks which namespaces
      * hold them rather than reading the root flag. Omitting it here re-embeds the file on
@@ -1321,16 +1404,12 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     storageRegion: _storageRegion,
   });
 
-  if (!messageAttachment && effectiveToolResource) {
-    await db.addAgentResourceFile({
-      file_id,
-      agent_id,
-      tool_resource: effectiveToolResource,
-      updatingUserId: req?.user?.id,
-    });
-  }
-
-  const retentionExpiry = await retentionExpiryPromise;
+  const cleanupStored = cleanupStoredUpload({
+    req,
+    source,
+    stored: { file_id, filepath, source, ...storageMetadata },
+  });
+  const retentionExpiry = await cleanupStored(() => retentionExpiryPromise);
   const fileInfo = {
     ...removeNullishValues({
       user: req.user.id,
@@ -1362,7 +1441,17 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     ...retentionExpiry,
   };
 
-  const result = await db.createFile(fileInfo, true);
+  const result = await cleanupStored(async () => {
+    if (!messageAttachment && effectiveToolResource) {
+      await db.addAgentResourceFile({
+        file_id,
+        agent_id,
+        tool_resource: effectiveToolResource,
+        updatingUserId: req?.user?.id,
+      });
+    }
+    return db.createFile(fileInfo, true);
+  });
 
   sendUploadSuccess(res, sseStream, 'Agent file uploaded and processed successfully', result);
 };
@@ -1621,23 +1710,30 @@ async function saveBase64Image(
     tenantId: req.user.tenantId,
   });
   const storageMetadata = getStorageMetadata({ filepath, source });
-  return await db.createFile(
-    {
-      type,
-      source,
-      context,
-      file_id,
-      filepath,
-      ...storageMetadata,
-      filename,
-      user: req.user.id,
-      bytes: image.bytes,
-      width: image.width,
-      ...(await retentionExpiryPromise),
-      height: image.height,
-      tenantId: req.user.tenantId,
-    },
-    true,
+  const cleanupStored = cleanupStoredUpload({
+    req,
+    source,
+    stored: { file_id, filepath, source, ...storageMetadata },
+  });
+  return await cleanupStored(async () =>
+    db.createFile(
+      {
+        type,
+        source,
+        context,
+        file_id,
+        filepath,
+        ...storageMetadata,
+        filename,
+        user: req.user.id,
+        bytes: image.bytes,
+        width: image.width,
+        ...(await retentionExpiryPromise),
+        height: image.height,
+        tenantId: req.user.tenantId,
+      },
+      true,
+    ),
   );
 }
 

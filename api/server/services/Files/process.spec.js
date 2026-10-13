@@ -162,7 +162,11 @@ jest.mock('@librechat/api', () => {
       try {
         return await next();
       } catch (error) {
-        await deps.deleteFile?.(deps.req, stored).catch(() => {});
+        try {
+          await deps.deleteFile?.(deps.req, stored);
+        } catch {
+          /* the helper logs cleanup failures; the original error wins */
+        }
         throw error;
       }
     },
@@ -283,6 +287,7 @@ const {
   processDeleteRequest,
   processFileUpload,
   processFileURL,
+  uploadImageBuffer,
   retrieveAndProcessFile,
   sweepExpiredFiles,
   startExpiredFileSweep,
@@ -3416,5 +3421,141 @@ describe('fallback text for uploads left to tools', () => {
       expect.objectContaining({ llmDeliveryPath: 'none', text: 'region,total' }),
       true,
     );
+  });
+});
+
+describe('stored upload cleanup across storage-before-record paths', () => {
+  const storedFile = {
+    filepath: 'https://bucket.example/uploads/user-123/stored.bin',
+    storageKey: 'uploads/user-123/stored.bin',
+    bytes: 42,
+  };
+  let deleteFile;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockRes.status.mockReturnThis();
+    mockRes.json.mockReturnValue({});
+    mergeFileConfig.mockReturnValue(makeFileConfig());
+    inspectContent.mockReturnValue(null);
+    checkCapability.mockResolvedValue(true);
+    uploadVectors.mockResolvedValue({ embedded: true, filename: 'embedded.bin' });
+    deleteFile = jest.fn().mockResolvedValue(undefined);
+    db.createFile.mockRejectedValue(new Error('db down'));
+  });
+
+  afterEach(() => {
+    db.createFile.mockReset();
+  });
+
+  const expectStoredObjectDeleted = (req, extra = {}) =>
+    expect(deleteFile).toHaveBeenCalledWith(
+      req,
+      expect.objectContaining({ filepath: storedFile.filepath, ...extra }),
+    );
+
+  it('deletes the object when saveURL stored it but the record fails', async () => {
+    const saveURL = jest.fn().mockResolvedValue({ ...storedFile, type: 'image/png' });
+    getStrategyFunctions.mockReturnValue({ saveURL, getFileURL: jest.fn(), deleteFile });
+    const req = makeReq();
+
+    await expect(
+      processFileURL({
+        req,
+        fileStrategy: FileSources.s3,
+        userId: 'user-123',
+        URL: 'https://example.com/image.png',
+        fileName: 'image.png',
+        basePath: 'images',
+        context: FileContext.image_generation,
+        tenantId: 'tenant-a',
+      }),
+    ).rejects.toThrow('db down');
+
+    expectStoredObjectDeleted(req, { storageKey: storedFile.storageKey });
+  });
+
+  it('deletes the object when uploadImageBuffer saved it but the record fails', async () => {
+    const saveBuffer = jest.fn().mockResolvedValue(storedFile.filepath);
+    getStrategyFunctions.mockReturnValue({ saveBuffer, deleteFile });
+    const req = makeReq({ mimetype: 'image/png' });
+    req.config.imageOutputType = 'webp';
+
+    await expect(
+      uploadImageBuffer({
+        req,
+        context: FileContext.avatar,
+        resize: false,
+        metadata: {
+          buffer: Buffer.from('img'),
+          file_id: 'avatar-id',
+          filename: 'a.webp',
+          type: 'image/webp',
+          bytes: 3,
+          width: 1,
+          height: 1,
+        },
+      }),
+    ).rejects.toThrow('db down');
+
+    expectStoredObjectDeleted(req, { file_id: 'avatar-id' });
+  });
+
+  it('deletes the object when processFileUpload stored it but the record fails', async () => {
+    const handleFileUpload = jest.fn().mockResolvedValue(storedFile);
+    getStrategyFunctions.mockReturnValue({ handleFileUpload, deleteFile });
+    const req = makeReq();
+    req.config.fileStrategy = FileSources.s3;
+
+    await expect(
+      processFileUpload({
+        req,
+        res: mockRes,
+        metadata: { file_id: 'plain-file', endpoint: EModelEndpoint.agents },
+      }),
+    ).rejects.toThrow('db down');
+
+    expectStoredObjectDeleted(req, { file_id: 'plain-file' });
+  });
+
+  it('deletes the object when processAgentFileUpload stored it but the record fails', async () => {
+    const handleFileUpload = jest.fn().mockResolvedValue(storedFile);
+    getStrategyFunctions.mockReturnValue({ handleFileUpload, deleteFile });
+    const req = makeReq();
+
+    await expect(
+      processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          agent_id: 'agent-abc',
+          tool_resource: EToolResources.file_search,
+          file_id: 'agent-file',
+        },
+      }),
+    ).rejects.toThrow('db down');
+
+    expectStoredObjectDeleted(req, { file_id: 'agent-file' });
+  });
+
+  it('deletes the stored object when the vector upload fails', async () => {
+    const handleFileUpload = jest.fn().mockResolvedValue(storedFile);
+    getStrategyFunctions.mockReturnValue({ handleFileUpload, deleteFile });
+    uploadVectors.mockRejectedValue(new Error('rag unavailable'));
+    const req = makeReq();
+
+    await expect(
+      processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          agent_id: 'agent-abc',
+          tool_resource: EToolResources.file_search,
+          file_id: 'agent-file',
+        },
+      }),
+    ).rejects.toThrow('rag unavailable');
+
+    expectStoredObjectDeleted(req, { file_id: 'agent-file' });
   });
 });
