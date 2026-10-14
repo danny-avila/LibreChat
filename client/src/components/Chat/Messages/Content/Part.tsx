@@ -6,8 +6,10 @@ import {
   ToolCallTypes,
   imageGenTools,
   isImageVisionTool,
+  hasToolCallPreview,
+  getToolCallPreviewRevision,
 } from 'librechat-data-provider';
-import type { TMessageContentParts, TAttachment } from 'librechat-data-provider';
+import type { TMessageContentParts, TAttachment, PartMetadata } from 'librechat-data-provider';
 import {
   ImageGen,
   ExecuteCode,
@@ -25,10 +27,19 @@ import {
   SubagentCall,
   SteerPart,
 } from './Parts';
-import { getCachedPreview, getActivityLabelPart, getActivityLabelText } from '~/utils';
+import {
+  getCachedPreview,
+  getActivityLabelPart,
+  getActivityLabelText,
+  getPartKeyIndex,
+} from '~/utils';
+import BackgroundTaskCall from './Parts/BackgroundTaskCall';
 import { getAskUserQuestionPart } from '~/utils/approval';
 import AskUserQuestionCall from './AskUserQuestionCall';
 import { isBashProgrammaticToolCall } from './routing';
+import { isError } from './ToolOutput/OutputRenderer';
+import { ToolPreparation } from './preparation';
+import { useMessageContext } from '~/Providers';
 import { ErrorMessage } from './MessageContent';
 import AskUserQuestion from './AskUserQuestion';
 import RetrievalCall from './RetrievalCall';
@@ -39,6 +50,13 @@ import Container from './Container';
 import WebSearch from './WebSearch';
 import ToolCall from './ToolCall';
 import Image from './Image';
+
+const isFailedImageCall = (
+  output: string | null | undefined,
+  runStepStatus: PartMetadata['runStepStatus'],
+): boolean =>
+  runStepStatus !== 'cancelled' &&
+  (runStepStatus === 'failed' || (typeof output === 'string' && isError(output)));
 
 type PartProps = {
   part?: TMessageContentParts;
@@ -61,6 +79,7 @@ const Part = memo(function Part({
   hideAttachments,
   onToolExpand,
 }: PartProps) {
+  const { partIndex } = useMessageContext();
   if (!part) {
     return null;
   }
@@ -153,6 +172,7 @@ const Part = memo(function Part({
     }
     return (
       <Reasoning
+        partKeyIndex={getPartKeyIndex(part, partIndex ?? 0)}
         reasoning={reasoning}
         isLast={isLast ?? false}
         reasoningLabel={part.reasoning_label}
@@ -181,7 +201,7 @@ const Part = memo(function Part({
     const failed = part.status === 'failed' || part.status === 'partial';
     return (
       <div
-        className={`my-1 break-words pl-1 text-sm italic ${failed ? 'text-text-warning' : 'text-text-secondary'}`}
+        className={`my-1 pl-1 text-sm break-words italic ${failed ? 'text-text-warning' : 'text-text-secondary'}`}
       >
         {display}
       </div>
@@ -243,6 +263,22 @@ const Part = memo(function Part({
           toolCall.name === 'image_edit_oai' ||
           toolCall.name === 'gemini_image_gen'
         ) {
+          if (isFailedImageCall(toolCall.output, toolCall.runStepStatus)) {
+            return (
+              <ToolCall
+                name={toolCall.name}
+                args={toolCall.args ?? ''}
+                output={toolCall.output}
+                initialProgress={toolCall.progress ?? 0.1}
+                isSubmitting={isSubmitting}
+                isLast={isLast}
+                runStepStatus={toolCall.runStepStatus}
+                attachments={attachments}
+                hideAttachments={hideAttachments}
+                onExpand={onToolExpand}
+              />
+            );
+          }
           return (
             <ImageGen
               initialProgress={toolCall.progress ?? 0.1}
@@ -268,6 +304,21 @@ const Part = memo(function Part({
               showCursor={showCursor}
               failed={'inputValidationError' in toolCall && toolCall.inputValidationError === true}
               onExpand={onToolExpand}
+            />
+          );
+        } else if (toolCall.name === Constants.CHECK_BACKGROUND_TASK) {
+          return (
+            <BackgroundTaskCall
+              args={toolCall.args}
+              output={toolCall.output ?? ''}
+              initialProgress={toolCall.progress ?? 0.1}
+              isSubmitting={isSubmitting}
+              runStepStatus={toolCall.runStepStatus}
+              runStepDurationMs={toolCall.runStepDurationMs}
+              attachments={attachments}
+              hideAttachments={hideAttachments}
+              onExpand={onToolExpand}
+              toolCallId={toolCallId}
             />
           );
         } else if (toolCall.name === 'skill') {
@@ -306,6 +357,15 @@ const Part = memo(function Part({
               runStepStatus={toolCall.runStepStatus}
               attachments={attachments}
               persistedContent={persistedContent}
+              contentPreview={
+                hasToolCallPreview(toolCall)
+                  ? {
+                      revision: getToolCallPreviewRevision(toolCall),
+                      stepId: toolCall.stepId,
+                      agentId: part.agentId,
+                    }
+                  : undefined
+              }
               subagentIdentity={toolCall.subagentIdentity}
               hideAttachments={hideAttachments}
             />
@@ -365,6 +425,7 @@ const Part = memo(function Part({
               runStepDurationMs={toolCall.runStepDurationMs}
               backgrounded={toolCall.backgrounded}
               backgroundCancelled={toolCall.backgroundTask?.cancelled === true}
+              executor={toolCall.executor}
               attachments={attachments}
               hideAttachments={hideAttachments}
               onExpand={onToolExpand}
@@ -418,9 +479,18 @@ const Part = memo(function Part({
               toolCall.backgroundTask?.cancelled === true ? 'cancelled' : toolCall.runStepStatus
             }
             runStepDurationMs={toolCall.runStepDurationMs}
+            toolPreparationStartedAt={toolCall.toolPreparationStartedAt}
+            toolDispatchedAt={toolCall.toolDispatchedAt}
+            toolPreparationDurationMs={toolCall.toolPreparationDurationMs}
+            toolExecutionDurationMs={toolCall.toolExecutionDurationMs}
           />
         );
       })();
+      const preparedCard = (
+        <ToolPreparation call={toolCall} isSubmitting={isSubmitting}>
+          {card}
+        </ToolPreparation>
+      );
 
       /** Render approval controls for ANY paused agent tool — not just the generic
        *  card — so a HITL policy that gates a specialized tool (bash, code, file…)
@@ -429,7 +499,7 @@ const Part = memo(function Part({
       if (toolCall.approval != null && (toolCall.output?.length ?? 0) === 0) {
         return (
           <>
-            {card}
+            {preparedCard}
             <ToolApproval
               approval={toolCall.approval}
               toolCallId={toolCall.id ?? ''}
@@ -438,7 +508,7 @@ const Part = memo(function Part({
           </>
         );
       }
-      return card;
+      return preparedCard;
     } else if (toolCall.type === ToolCallTypes.CODE_INTERPRETER) {
       const code_interpreter = toolCall[ToolCallTypes.CODE_INTERPRETER];
       return (
@@ -469,15 +539,44 @@ const Part = memo(function Part({
       ToolCallTypes.FUNCTION in toolCall &&
       imageGenTools.has(toolCall.function.name)
     ) {
+      if (isFailedImageCall(toolCall.function.output, toolCall.runStepStatus)) {
+        return (
+          <ToolCall
+            name={toolCall.function.name}
+            args={toolCall.function.arguments as string}
+            output={toolCall.function.output}
+            initialProgress={toolCall.progress ?? 0.1}
+            isSubmitting={isSubmitting}
+            isLast={isLast}
+            runStepStatus={toolCall.runStepStatus}
+            attachments={attachments}
+            hideAttachments={hideAttachments}
+            onExpand={onToolExpand}
+          />
+        );
+      }
       return (
-        <ImageGen
-          initialProgress={toolCall.progress ?? 0.1}
-          args={toolCall.function.arguments as string}
+        <ToolPreparation
+          call={{
+            args: toolCall.function.arguments as string,
+            name: toolCall.function.name,
+            output: toolCall.function.output,
+            progress: toolCall.progress,
+            runStepStatus: toolCall.runStepStatus,
+            toolPreparationStartedAt: toolCall.toolPreparationStartedAt,
+            toolDispatchedAt: toolCall.toolDispatchedAt,
+          }}
           isSubmitting={isSubmitting}
-          runStepStatus={toolCall.runStepStatus}
-          toolName={toolCall.function.name}
-          output={toolCall.function.output ?? ''}
-        />
+        >
+          <ImageGen
+            initialProgress={toolCall.progress ?? 0.1}
+            args={toolCall.function.arguments as string}
+            isSubmitting={isSubmitting}
+            runStepStatus={toolCall.runStepStatus}
+            toolName={toolCall.function.name}
+            output={toolCall.function.output ?? ''}
+          />
+        </ToolPreparation>
       );
     } else if (toolCall.type === ToolCallTypes.FUNCTION && ToolCallTypes.FUNCTION in toolCall) {
       if (isImageVisionTool(toolCall)) {
@@ -498,6 +597,12 @@ const Part = memo(function Part({
           args={toolCall.function.arguments as string}
           name={toolCall.function.name}
           output={toolCall.function.output}
+          runStepStatus={toolCall.runStepStatus}
+          runStepDurationMs={toolCall.runStepDurationMs}
+          toolPreparationStartedAt={toolCall.toolPreparationStartedAt}
+          toolDispatchedAt={toolCall.toolDispatchedAt}
+          toolPreparationDurationMs={toolCall.toolPreparationDurationMs}
+          toolExecutionDurationMs={toolCall.toolExecutionDurationMs}
           isLast={isLast}
           hideAttachments={hideAttachments}
           onExpand={onToolExpand}
@@ -511,6 +616,7 @@ const Part = memo(function Part({
       <Image
         imagePath={cached ?? imageFile.filepath}
         altText={imageFile.filename ?? 'Uploaded Image'}
+        alignRight={isCreatedByUser}
         width={imageFile.width}
         height={imageFile.height}
       />
