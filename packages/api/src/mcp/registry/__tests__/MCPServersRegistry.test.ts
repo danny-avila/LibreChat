@@ -16,7 +16,7 @@ import {
 import { ServerConfigsCacheInMemory } from '~/mcp/registry/cache/ServerConfigsCacheInMemory';
 import { getMCPAppToolsPublicationGeneration } from '~/mcp/toolsChanged';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
-import { MCPInspectionFailedError } from '~/mcp/errors';
+import { MCPCommittedInvalidationError, MCPInspectionFailedError } from '~/mcp/errors';
 import { processMCPEnv } from '~/utils/env';
 
 // Mock MCPServerInspector to avoid actual server connections
@@ -840,6 +840,51 @@ describe('MCPServersRegistry', () => {
         // Verify server is removed from underlying cache repository
         const config = await registry['cacheConfigsRepo'].get('cache_server');
         expect(config).toBeUndefined();
+      });
+    });
+
+    describe('cache invalidation failure after a committed write', () => {
+      const failInvalidation = () =>
+        jest
+          .spyOn(
+            registry as unknown as { invalidateServerReadCaches: () => Promise<void> },
+            'invalidateServerReadCaches',
+          )
+          .mockRejectedValue(new Error('redis down'));
+
+      it('reports what addServer persisted', async () => {
+        failInvalidation();
+
+        const failure = await registry
+          .addServer('cache_server', testParsedConfig, 'CACHE')
+          .catch((error) => error);
+
+        expect(failure).toBeInstanceOf(MCPCommittedInvalidationError);
+        expect(failure.committed.serverName).toBe('cache_server');
+        expect(await registry['cacheConfigsRepo'].get('cache_server')).toBeDefined();
+      });
+
+      it('reports what commitServerUpdate persisted', async () => {
+        await registry.addServer('cache_server', testParsedConfig, 'CACHE');
+        failInvalidation();
+        const updated = { ...testParsedConfig, command: 'python' } as t.ParsedServerConfig;
+
+        const failure = await registry
+          .commitServerUpdate('cache_server', updated, 'CACHE')
+          .catch((error) => error);
+
+        expect(failure).toBeInstanceOf(MCPCommittedInvalidationError);
+        expect(failure.committed.command).toBe('python');
+      });
+
+      it('still reports a removal that committed', async () => {
+        await registry.addServer('cache_server', testParsedConfig, 'CACHE');
+        failInvalidation();
+
+        await expect(registry.removeServer('cache_server', 'CACHE')).rejects.toBeInstanceOf(
+          MCPCommittedInvalidationError,
+        );
+        expect(await registry['cacheConfigsRepo'].get('cache_server')).toBeUndefined();
       });
     });
 

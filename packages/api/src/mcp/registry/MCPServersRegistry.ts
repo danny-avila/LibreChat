@@ -14,7 +14,11 @@ import {
   APP_CACHE_NAMESPACE,
   CONFIG_CACHE_NAMESPACE,
 } from './cache/ServerConfigsCacheFactory';
-import { MCPInspectionFailedError, isMCPDomainNotAllowedError } from '~/mcp/errors';
+import {
+  MCPCommittedInvalidationError,
+  MCPInspectionFailedError,
+  isMCPDomainNotAllowedError,
+} from '~/mcp/errors';
 import { normalizeLegacyHeaderMaps, normalizeLegacyHeaderMapsIn } from './compat';
 import { canBackfillSharedServerInstructions, isUserSourced } from '~/mcp/utils';
 import { ReadThroughAllCache } from './cache/ReadThroughAllCache';
@@ -681,11 +685,29 @@ export class MCPServersRegistry {
             await this.getOperatorManagedServerNames(reservedServerNames),
           )
         : await configRepo.add(serverName, tagged, userId);
-    await this.invalidateServerReadCaches(result.serverName, userId, storageLocation);
+    await this.invalidateCommitted(result, () =>
+      this.invalidateServerReadCaches(result.serverName, userId, storageLocation),
+    );
     if (storageLocation === 'CACHE') {
       this.resetYamlServerNamesMemo();
     }
     return result;
+  }
+
+  /**
+   * Runs the cache invalidation that follows a committed write. A failure is rethrown as
+   * `MCPCommittedInvalidationError` carrying what was persisted, so the caller can record
+   * the committed change instead of mistaking it for a write that never happened.
+   */
+  private async invalidateCommitted<T>(
+    committed: T | undefined,
+    invalidate: () => Promise<void>,
+  ): Promise<void> {
+    try {
+      await invalidate();
+    } catch (error) {
+      throw new MCPCommittedInvalidationError(committed, error);
+    }
   }
 
   /**
@@ -1059,9 +1081,11 @@ export class MCPServersRegistry {
     userId?: string,
   ): Promise<t.ParsedServerConfig> {
     const configRepo = this.getConfigRepository(storageLocation);
-    await configRepo.update(serverName, parsedConfig, userId);
-    await this.invalidateServerReadCaches(serverName, userId, storageLocation);
-    return parsedConfig;
+    const persisted = (await configRepo.update(serverName, parsedConfig, userId)) ?? parsedConfig;
+    await this.invalidateCommitted(persisted, () =>
+      this.invalidateServerReadCaches(serverName, userId, storageLocation),
+    );
+    return persisted;
   }
 
   public async updateServer(
@@ -1326,7 +1350,9 @@ export class MCPServersRegistry {
   ): Promise<void> {
     const configRepo = this.getConfigRepository(storageLocation);
     await configRepo.remove(serverName, userId);
-    await this.invalidateServerReadCaches(serverName, userId, storageLocation);
+    await this.invalidateCommitted(undefined, () =>
+      this.invalidateServerReadCaches(serverName, userId, storageLocation),
+    );
     if (storageLocation === 'CACHE') {
       this.resetYamlServerNamesMemo();
     }

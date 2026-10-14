@@ -1,5 +1,6 @@
 import type { ServerRequest } from '~/types/http';
-import { createMCPServerAuditor, diffMCPServerFields } from './audit';
+import { MCPCommittedInvalidationError } from '~/mcp/errors';
+import { createMCPServerAuditor, settleMCPCommit, diffMCPServerFields } from './audit';
 
 const req = { user: { id: 'user-1', name: 'Alice' }, headers: {} } as unknown as ServerRequest;
 
@@ -88,7 +89,7 @@ describe('createMCPServerAuditor', () => {
     );
   });
 
-  it('diffs against the committed config when it can be read', async () => {
+  it('diffs against the persisted config, not the submission', async () => {
     const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
     const audit = createMCPServerAuditor({ recordAuditEntry });
     const headers = { Authorization: 'Bearer {{MCP_API_KEY_srv}}' };
@@ -97,8 +98,7 @@ describe('createMCPServerAuditor', () => {
       action: 'mcp_server.updated',
       serverName: 'srv',
       previous: { title: 'Old', headers },
-      next: { title: 'New' },
-      resolveCommitted: async () => ({ title: 'New', headers }),
+      next: { title: 'New', headers },
     });
 
     expect(recordAuditEntry).toHaveBeenCalledWith(
@@ -106,46 +106,50 @@ describe('createMCPServerAuditor', () => {
     );
   });
 
-  it('lists no fields when the committed read fails', async () => {
+  it('marks the entry when the cache refresh failed after the commit', async () => {
     const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
     const audit = createMCPServerAuditor({ recordAuditEntry });
 
     await audit(req, {
-      action: 'mcp_server.updated',
+      action: 'mcp_server.deleted',
       serverName: 'srv',
       previous: { title: 'Old' },
-      next: { title: 'New' },
-      resolveCommitted: async () => {
-        throw new Error('read failed');
-      },
+      invalidationFailed: true,
     });
 
     expect(recordAuditEntry).toHaveBeenCalledWith(
-      expect.objectContaining({ metadata: { source: 'DB', diff: 'unavailable' } }),
+      expect.objectContaining({
+        action: 'mcp_server.deleted',
+        metadata: { source: 'DB', cacheInvalidation: 'failed' },
+      }),
     );
   });
 
-  it('still runs the post-commit steps when the committed read throws synchronously', async () => {
-    const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
-    const audit = createMCPServerAuditor({ recordAuditEntry });
-    const afterCommit = jest.fn().mockResolvedValue(undefined);
+  describe('settleMCPCommit', () => {
+    it('returns the committed result when the write succeeds', async () => {
+      await expect(settleMCPCommit(async () => ({ title: 'x' }))).resolves.toEqual({
+        committed: { title: 'x' },
+      });
+    });
 
-    await audit(
-      req,
-      {
-        action: 'mcp_server.updated',
-        serverName: 'srv',
-        previous: { title: 'Old' },
-        next: { title: 'New' },
-        resolveCommitted: () => {
-          throw new Error('sync failure');
-        },
-      },
-      afterCommit,
-    );
+    it('returns the committed result together with an invalidation failure', async () => {
+      const failure = new MCPCommittedInvalidationError({ title: 'x' }, new Error('redis down'));
 
-    expect(afterCommit).toHaveBeenCalled();
-    expect(recordAuditEntry).toHaveBeenCalled();
+      const settled = await settleMCPCommit(async () => {
+        throw failure;
+      });
+
+      expect(settled.committed).toEqual({ title: 'x' });
+      expect(settled.invalidationError).toBe(failure);
+    });
+
+    it('rethrows any other failure as an uncommitted write', async () => {
+      await expect(
+        settleMCPCommit(async () => {
+          throw new Error('write failed');
+        }),
+      ).rejects.toThrow('write failed');
+    });
   });
 
   it('runs the post-commit steps before the audit write and still audits when they throw', async () => {

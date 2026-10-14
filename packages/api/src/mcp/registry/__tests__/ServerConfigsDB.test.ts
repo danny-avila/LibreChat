@@ -204,6 +204,24 @@ describe('ServerConfigsDB', () => {
       expect(retrieved?.description).toBe('Updated description');
     });
 
+    it('returns the config as persisted, so an overlapping update is not mistaken for this one', async () => {
+      const created = await serverConfigsDB.add(
+        'temp-name',
+        createSSEConfig('Title', 'First'),
+        userId,
+      );
+
+      const firstWrite = await serverConfigsDB.update(
+        created.serverName,
+        createSSEConfig('Title', 'Second'),
+        userId,
+      );
+      await serverConfigsDB.update(created.serverName, createSSEConfig('Title', 'Third'), userId);
+
+      expect(firstWrite?.description).toBe('Second');
+      expect((await serverConfigsDB.get(created.serverName, userId))?.description).toBe('Third');
+    });
+
     it('should preserve oauth.client_secret when not provided in update', async () => {
       const config: ParsedServerConfig = {
         type: 'sse',

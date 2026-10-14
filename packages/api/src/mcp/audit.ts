@@ -1,4 +1,5 @@
 import { MCP_USER_INPUT_FIELDS } from 'librechat-data-provider';
+import { MCPCommittedInvalidationError } from '~/mcp/errors';
 import type { AdminAuditEmitter, RecordAuditEntry } from '~/admin/audit';
 import { createAdminAuditEmitter } from '~/admin/audit';
 
@@ -12,9 +13,8 @@ export interface MCPServerAuditEvent {
   previous?: ServerConfigLike;
   /** Config after the change; omitted on delete. */
   next?: ServerConfigLike;
-  /** Reads the committed config, so the diff reflects what persistence stored (generated
-   * headers, preserved secrets) rather than what the editor submitted. */
-  resolveCommitted?: () => Promise<ServerConfigLike>;
+  /** The write committed but refreshing the read caches failed afterwards. */
+  invalidationFailed?: boolean;
 }
 
 /** JSON with object keys sorted, so entry order never reads as a change. */
@@ -97,15 +97,9 @@ export function createMCPServerAuditor(options: {
   async function record(
     req: Parameters<AdminAuditEmitter>[0],
     event: MCPServerAuditEvent,
-    committedRead?: Promise<ServerConfigLike | undefined>,
   ): Promise<void> {
-    const { action, serverName, previous, next: submitted } = event;
-    /** A failed reread must not fall back to the submission: persistence generates headers and
-     * keeps omitted fields, so that diff would invent changes. The entry then lists no fields. */
-    const committed = await committedRead;
-    const diffUnavailable = event.resolveCommitted != null && committed == null;
-    const next = event.resolveCommitted ? (committed ?? previous) : submitted;
-    const name = serverTitle(next) ?? serverTitle(submitted) ?? serverTitle(previous);
+    const { action, serverName, previous, next, invalidationFailed } = event;
+    const name = serverTitle(next) ?? serverTitle(previous);
     const before = action === 'mcp_server.created' ? undefined : previous;
     const changed =
       action === 'mcp_server.deleted'
@@ -118,7 +112,7 @@ export function createMCPServerAuditor(options: {
       metadata: {
         source: 'DB',
         ...(changed.length > 0 ? { fields: changed.join(',') } : {}),
-        ...(diffUnavailable ? { diff: 'unavailable' } : {}),
+        ...(invalidationFailed ? { cacheInvalidation: 'failed' } : {}),
       },
     });
   }
@@ -130,16 +124,31 @@ export function createMCPServerAuditor(options: {
    * drops the entry.
    */
   return async function auditMCPServer(req, event, afterCommit) {
-    /** Started before the post-commit steps, so a later update by someone else is not attributed to this one. */
-    const committedRead = event.resolveCommitted
-      ? Promise.resolve()
-          .then(event.resolveCommitted)
-          .catch(() => undefined)
-      : undefined;
     try {
       await afterCommit?.();
     } finally {
-      await record(req, event, committedRead);
+      await record(req, event);
     }
   };
+}
+
+/**
+ * Runs a registry write and reports what it persisted. When the write committed but the
+ * cache refresh after it failed, the committed result is still returned together with that
+ * failure, so the caller can audit the change and then surface the error.
+ */
+export async function settleMCPCommit<T>(
+  write: () => Promise<T>,
+): Promise<{ committed: T | undefined; invalidationError?: MCPCommittedInvalidationError<T> }> {
+  try {
+    return { committed: await write() };
+  } catch (error) {
+    if (error instanceof MCPCommittedInvalidationError) {
+      return {
+        committed: error.committed as T | undefined,
+        invalidationError: error as MCPCommittedInvalidationError<T>,
+      };
+    }
+    throw error;
+  }
 }

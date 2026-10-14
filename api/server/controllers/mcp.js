@@ -21,6 +21,7 @@ const {
   sanitizeMcpIconPath,
   redactAllServerSecrets,
   createMCPServerAuditor,
+  settleMCPCommit,
   getMCPErrorResponse,
   prepareMCPServerOAuthDeletion,
   cleanupDeletedMCPServerOAuthUsers,
@@ -460,23 +461,30 @@ const createMCPServerController = async (req, res) => {
       ...new Set([...configNames, ...configNames.map(normalizeServerName)]),
     ];
     const inspectionServerName = `temp_server_${randomUUID()}`;
-    let result;
+    let settled;
     try {
-      result = await getMCPServersRegistry().addServer(
-        inspectionServerName,
-        validation.data,
-        'DB',
-        userId,
-        reservedServerNames,
+      settled = await settleMCPCommit(() =>
+        getMCPServersRegistry().addServer(
+          inspectionServerName,
+          validation.data,
+          'DB',
+          userId,
+          reservedServerNames,
+        ),
       );
     } finally {
       MCPConnection.clearCooldown(inspectionServerName);
     }
+    const result = settled.committed;
     await auditMCPServer(req, {
       action: 'mcp_server.created',
       serverName: result.serverName,
       next: result.config,
+      invalidationFailed: settled.invalidationError != null,
     });
+    if (settled.invalidationError) {
+      throw settled.invalidationError;
+    }
     res.status(201).json({
       serverName: result.serverName,
       ...redactServerSecrets(result.config, { canEdit: true }),
@@ -580,8 +588,11 @@ const updateMCPServerController = async (req, res) => {
     );
     const retainedTools = await getMCPServerTools(userId, serverName, existingConfig);
     await invalidateCachedTools({ userId, serverName });
+    let settled;
     try {
-      await registry.commitServerUpdate(serverName, parsedConfig, 'DB', userId);
+      settled = await settleMCPCommit(() =>
+        registry.commitServerUpdate(serverName, parsedConfig, 'DB', userId),
+      );
     } catch (error) {
       await restoreRetainedServerCatalog({
         userId,
@@ -591,6 +602,7 @@ const updateMCPServerController = async (req, res) => {
       });
       throw error;
     }
+    const committedConfig = settled.committed ?? parsedConfig;
     /** Fence connections another replica could have created from the old DB
      * config between the pre-commit fence and the committed update. */
     await auditMCPServer(
@@ -599,16 +611,19 @@ const updateMCPServerController = async (req, res) => {
         action: 'mcp_server.updated',
         serverName,
         previous: existingConfig,
-        next: parsedConfig,
-        resolveCommitted: () => registry.getServerConfig(serverName, userId),
+        next: committedConfig,
+        invalidationFailed: settled.invalidationError != null,
       },
       async () => {
         await fenceCommittedMCPMutation({ userId, serverName });
         await disconnectLocalMCPServer(userId, serverName);
       },
     );
+    if (settled.invalidationError) {
+      throw settled.invalidationError;
+    }
 
-    res.status(200).json(redactServerSecrets(parsedConfig, { canEdit: true }));
+    res.status(200).json(redactServerSecrets(committedConfig, { canEdit: true }));
   } catch (error) {
     logger.error('[updateMCPServer]', error);
     const mcpErrorResponse = handleMCPError(error, res);
@@ -651,8 +666,9 @@ const deleteMCPServerController = async (req, res, uninstallOAuthMCP) => {
       getMCPServerTools(userId, serverName, existingConfig),
     ]);
     await invalidateCachedTools({ userId, serverName });
+    let settled;
     try {
-      await registry.removeServer(serverName, 'DB', userId);
+      settled = await settleMCPCommit(() => registry.removeServer(serverName, 'DB', userId));
     } catch (error) {
       await restoreRetainedServerCatalog({
         userId,
@@ -666,7 +682,12 @@ const deleteMCPServerController = async (req, res, uninstallOAuthMCP) => {
      * for every user holding a token, before the audit write is awaited. */
     await auditMCPServer(
       req,
-      { action: 'mcp_server.deleted', serverName, previous: existingConfig },
+      {
+        action: 'mcp_server.deleted',
+        serverName,
+        previous: existingConfig,
+        invalidationFailed: settled.invalidationError != null,
+      },
       async () => {
         await fenceCommittedMCPMutation({ userId, serverName });
         await disconnectLocalMCPServer(userId, serverName);
@@ -699,6 +720,9 @@ const deleteMCPServerController = async (req, res, uninstallOAuthMCP) => {
         }
       },
     );
+    if (settled.invalidationError) {
+      throw settled.invalidationError;
+    }
     res.status(200).json({ message: 'MCP server deleted successfully' });
   } catch (error) {
     logger.error('[deleteMCPServer]', error);

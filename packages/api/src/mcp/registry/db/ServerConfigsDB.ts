@@ -340,7 +340,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
     serverName: string,
     config: ParsedServerConfig,
     userId?: string,
-  ): Promise<void> {
+  ): Promise<ParsedServerConfig | undefined> {
     if (!userId) {
       throw new Error(
         '[ServerConfigsDB.update] User ID is required to update a database-stored MCP server.',
@@ -405,7 +405,8 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
       };
     }
 
-    await this._dbMethods.updateMCPServer(serverName, { config: configToSave });
+    const saved = await this._dbMethods.updateMCPServer(serverName, { config: configToSave });
+    return saved ? await this.mapDBServerToParsedConfig(saved) : undefined;
   }
 
   /**
@@ -424,7 +425,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
           'Config-source servers should use configCacheRepo, not dbConfigsRepo.',
       );
     }
-    return this.update(serverName, config, userId);
+    await this.update(serverName, config, userId);
   }
 
   /**

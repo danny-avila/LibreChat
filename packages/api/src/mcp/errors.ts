@@ -527,3 +527,24 @@ export function createScheduledMCPTransportError(
     agentId,
   );
 }
+
+/**
+ * Thrown when a registry write committed but invalidating the read caches afterwards
+ * failed. The write stands; `committed` carries what was persisted (undefined for a
+ * removal) so a caller can still record it before surfacing the failure.
+ */
+export class MCPCommittedInvalidationError<T = unknown> extends Error {
+  public readonly committed: T | undefined;
+
+  constructor(committed: T | undefined, cause: unknown) {
+    super(
+      cause instanceof Error
+        ? cause.message
+        : 'MCP server change was saved but its caches could not be refreshed',
+    );
+    this.name = 'MCPCommittedInvalidationError';
+    this.committed = committed;
+    this.cause = cause;
+    Object.setPrototypeOf(this, MCPCommittedInvalidationError.prototype);
+  }
+}

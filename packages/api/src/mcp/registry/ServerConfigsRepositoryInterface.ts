@@ -7,7 +7,12 @@ export interface IServerConfigsRepositoryInterface {
   add(serverName: string, config: ParsedServerConfig, userId?: string): Promise<AddServerResult>;
 
   //ACL Entry check if update is possible
-  update(serverName: string, config: ParsedServerConfig, userId?: string): Promise<void>;
+  /** Resolves to the config as persisted when the store can report it. */
+  update(
+    serverName: string,
+    config: ParsedServerConfig,
+    userId?: string,
+  ): Promise<ParsedServerConfig | void>;
 
   /** Atomic add-or-update without requiring callers to inspect error messages. */
   upsert(serverName: string, config: ParsedServerConfig, userId?: string): Promise<void>;
