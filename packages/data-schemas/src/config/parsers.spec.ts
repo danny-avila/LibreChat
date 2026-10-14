@@ -329,6 +329,14 @@ describe('redactMessage', () => {
     expect(out['[REDACTED_EMAIL]']).toBe('missing');
   });
 
+  it('redacts enumerable getter values on nested Error objects', () => {
+    const error = new Error('boom');
+    Object.defineProperty(error, 'detail', { enumerable: true, get: () => 'jane@example.com' });
+    const info = runRedactFormat({ level: 'info', message: 'm', [SPLAT_SYMBOL]: [error] });
+    const [out] = info[SPLAT_SYMBOL] as Array<{ detail: string }>;
+    expect(out.detail).not.toContain('jane');
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),

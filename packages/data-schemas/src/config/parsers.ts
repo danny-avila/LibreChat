@@ -224,9 +224,22 @@ function redactErrorValue(error: Error, seen: WeakMap<object, unknown>, depth: n
     if (typeof key === 'string' && errorStringProperties.has(key)) {
       return;
     }
-    const descriptor = Object.getOwnPropertyDescriptor(error, key);
+    let descriptor = Object.getOwnPropertyDescriptor(error, key);
     if (descriptor === undefined) {
       return;
+    }
+    if (descriptor.enumerable && descriptor.get !== undefined) {
+      /** An enumerable getter is serialized by value, so it is materialized and redacted like data. */
+      try {
+        descriptor = {
+          value: descriptor.get.call(error),
+          writable: true,
+          enumerable: true,
+          configurable: true,
+        };
+      } catch {
+        return;
+      }
     }
     if (skipHeavyErrorFields && typeof key === 'string') {
       const isAxios = (error as { isAxiosError?: unknown }).isAxiosError === true;
