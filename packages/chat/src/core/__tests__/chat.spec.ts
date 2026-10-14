@@ -960,6 +960,52 @@ describe('Chat', () => {
       await sent;
     });
 
+    it('keeps the decisions of a pause a status check restores again', async () => {
+      const { chat, transport } = setup();
+      chat.restorePendingAction(approvalAction, 500);
+      await chat.addToolApprovalResponse({ id: 'call-1', approved: true });
+      chat.restorePendingAction({ ...approvalAction }, 500);
+
+      await chat.addToolApprovalResponse({ id: 'call-2', approved: true });
+
+      expect(transport.resume).toHaveBeenCalledWith(
+        expect.objectContaining({
+          decisions: [
+            { tool_call_id: 'call-1', decision: 'approve' },
+            { tool_call_id: 'call-2', decision: 'approve' },
+          ],
+        }),
+      );
+    });
+
+    it('does not reattach for a pause replaced while its resume was in flight', async () => {
+      let accept: (() => void) | undefined;
+      const { chat, transport } = setup(
+        { resumeSelection: () => ({ endpoint: 'agents' }) },
+        {
+          resume: jest.fn(
+            () =>
+              new Promise((resolve) => {
+                accept = () =>
+                  resolve({ streamId: 'convo-1', conversationId: 'convo-1', status: 'resuming' });
+              }),
+          ),
+        },
+      );
+      chat.restorePendingAction(askAction, 500);
+      const answered = chat.addToolOutput({ toolCallId: 'ask-1', output: 'Blue' });
+      await flush();
+      const next = { ...approvalAction, actionId: 'action-9' } as Agents.PendingAction;
+      chat.restorePendingAction(next, 900);
+
+      accept?.();
+      await answered;
+      await flush();
+
+      expect(transport.reconnectToStream).not.toHaveBeenCalled();
+      expect(chat.pendingAction).toBe(next);
+    });
+
     it('resumes a batch once when its last decisions arrive together', async () => {
       const { chat, transport, stream, sent } = await pause(approvalAction);
       transport.resume.mockImplementationOnce(
