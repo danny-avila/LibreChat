@@ -1614,6 +1614,10 @@ export enum ErrorTypes {
    */
   AUTH_FAILED = 'auth_failed',
   /**
+   * Login rate limit hit during a browser-navigated OAuth flow
+   */
+  LOGIN_RATE_LIMITED = 'login_rate_limited',
+  /**
    * Model refused to respond (content policy violation)
    */
   REFUSAL = 'refusal',

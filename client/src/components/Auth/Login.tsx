@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react';
 import { ErrorTypes } from 'librechat-data-provider';
 import { OpenIDIcon, useToastContext } from '@librechat/client';
 import { useOutletContext, useSearchParams, useLocation } from 'react-router-dom';
+import type { TShowToast } from '@librechat/client';
 import type { TLoginLayoutContext } from '~/common';
+import type { TranslationKeys } from '~/hooks';
 import { getLoginError, persistRedirectToSession } from '~/utils';
 import { ErrorMessage } from '~/components/Auth/ErrorMessage';
 import SocialButton from '~/components/Auth/SocialButton';
@@ -13,6 +15,14 @@ import LoginForm from './LoginForm';
 interface LoginLocationState {
   redirect_to?: string;
 }
+
+type OAuthErrorToast = { key: TranslationKeys; status: TShowToast['status'] };
+
+/** 서버가 `?error=` 로 돌려보내는 OAuth 실패 사유 → 토스트 */
+const OAUTH_ERROR_TOASTS = new Map<string, OAuthErrorToast>([
+  [ErrorTypes.AUTH_FAILED, { key: 'com_auth_error_oauth_failed', status: 'error' }],
+  [ErrorTypes.LOGIN_RATE_LIMITED, { key: 'com_auth_error_login_rl', status: 'warning' }],
+]);
 
 function Login() {
   const localize = useLocalize();
@@ -38,10 +48,11 @@ function Login() {
     }
 
     const oauthError = searchParams?.get('error');
-    if (oauthError && oauthError === ErrorTypes.AUTH_FAILED) {
+    const oauthToast = oauthError ? OAUTH_ERROR_TOASTS.get(oauthError) : undefined;
+    if (oauthToast) {
       showToast({
-        message: localize('com_auth_error_oauth_failed'),
-        status: 'error',
+        message: localize(oauthToast.key),
+        status: oauthToast.status,
       });
       const newParams = new URLSearchParams(searchParams);
       newParams.delete('error');

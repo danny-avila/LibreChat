@@ -23,7 +23,18 @@ const domains = {
 };
 
 router.use(logHeaders);
-router.use(loginLimiter);
+
+/**
+ * OAuth 콜백만 로그인 시도로 센다.
+ *
+ * 시작(`/openid` 등)과 `/error` 는 IdP 나 로그인 화면으로 보내는 리다이렉트일 뿐
+ * 자격증명을 받지 않는다. 이 리미터는 비밀번호 대입 방어용인데 OAuth 는 인증을
+ * IdP 가 하고 state·PKCE 로 보호된다. 시작까지 세면 로그인 1번이 한도 2~3칸을
+ * 먹어, 5분 7회 한도가 실제로는 3번 남짓이 된다.
+ */
+router.use((req, res, next) =>
+  req.path.endsWith('/callback') ? loginLimiter(req, res, next) : next(),
+);
 
 const oauthHandler = createOAuthHandler();
 
