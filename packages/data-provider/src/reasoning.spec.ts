@@ -2,6 +2,7 @@ import type { OpaqueReasoningCursor } from './reasoning';
 import {
   isOpaqueReasoning,
   stripOpaqueReasoning,
+  sliceReasoningTail,
   advanceOpaqueReasoning,
   OPAQUE_REASONING_START,
 } from './reasoning';
@@ -119,9 +120,33 @@ describe('advanceOpaqueReasoning', () => {
     const result = stream([
       'Checking the retry policy. ',
       ...chunks(bedrockRedacted, 100),
-      'Backoff fits the burst pattern.',
+      ' Backoff fits the burst pattern.',
     ]);
-    expect(result.readable).toBe('Checking the retry policy. Backoff fits the burst pattern.');
+    expect(result.readable).toBe('Checking the retry policy.  Backoff fits the burst pattern.');
     expect(result.cursor).toEqual({ tail: '', opaque: false });
+  });
+
+  it('never releases the end of a payload that shares a delta with readable text', () => {
+    const payload = chunks(bedrockRedacted, 100);
+    const last = payload.pop() ?? '';
+    const result = stream(['Checking. ', ...payload, `${last}. Rolling back.`]);
+    expect(result.readable).toBe('Checking. . Rolling back.');
+  });
+});
+
+describe('sliceReasoningTail', () => {
+  it('keeps short reasoning whole', () => {
+    expect(sliceReasoningTail('Checking the manifest.', 600)).toBe('Checking the manifest.');
+  });
+
+  it('starts after a payload the window would cut', () => {
+    const text = `${bedrockRedacted}\nRolling back the deploy.`;
+    const tail = sliceReasoningTail(text, 100);
+    expect(tail).toBe('\nRolling back the deploy.');
+    expect(isOpaqueReasoning(tail)).toBe(false);
+  });
+
+  it('cuts at the window boundary when it falls between words', () => {
+    expect(sliceReasoningTail('alpha beta gamma', 6)).toBe(' gamma');
   });
 });

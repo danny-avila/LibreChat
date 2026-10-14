@@ -2,7 +2,6 @@ import { GraphEvents } from '@librechat/agents';
 import {
   StepTypes,
   ContentTypes,
-  stripOpaqueReasoning,
   advanceOpaqueReasoning,
   OPAQUE_REASONING_START,
 } from 'librechat-data-provider';
@@ -113,6 +112,7 @@ const MAX_TRACKED_REASONING_CHARS = 8_000;
  * completion rewrite; a smaller tail only upgrades the current status. */
 const FINAL_UPDATE_CHAR_LIMIT = 120;
 const OUTPUT_CHAR_LIMIT = 120;
+const THINK_TAGS = /<\/?think>/g;
 const MAX_PENDING_WORD_CHARS = 32;
 const REQUEST_TIMEOUT_MS = 12_000;
 
@@ -563,7 +563,16 @@ export function createReasoningLabelWiring(deps: ReasoningLabelHostDeps): Reason
       ownsExistingStep && typeof part.reasoning_label === 'string'
         ? part.reasoning_label
         : undefined;
-    const existingText = ownsExistingStep ? stripOpaqueReasoning(textValue(part?.think)) : '';
+    /** Replayed through the stream filter so a payload that was still
+     *  undecided at the snapshot keeps its cursor and is dropped once the
+     *  continuation classifies it, instead of settling as readable text. */
+    const resumed = ownsExistingStep
+      ? advanceOpaqueReasoning(
+          OPAQUE_REASONING_START,
+          textValue(part?.think).replace(THINK_TAGS, ''),
+        )
+      : { readable: '', cursor: OPAQUE_REASONING_START };
+    const existingText = resumed.readable;
     const persistedSubmittedChars =
       ownsExistingStep && typeof part.reasoning_label_submitted_chars === 'number'
         ? Math.min(part.reasoning_label_submitted_chars, existingText.trim().length)
@@ -582,7 +591,7 @@ export function createReasoningLabelWiring(deps: ReasoningLabelHostDeps): Reason
       ...(index != null && { index }),
       text: appendBoundedReasoning('', existingText),
       totalChars: existingText.trim().length,
-      cursor: OPAQUE_REASONING_START,
+      cursor: resumed.cursor,
       ...(existingLabel != null && { label: existingLabel }),
       ...(existingLabel != null && {
         labelStatus: part?.reasoning_label_status === 'complete' ? 'complete' : 'streaming',

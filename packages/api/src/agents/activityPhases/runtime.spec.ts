@@ -901,6 +901,50 @@ describe('createActivityPhaseWiring', () => {
     expect(parts).toHaveLength(1);
   });
 
+  it('never starts the rolling reasoning excerpt inside an encrypted payload', () => {
+    const encoded = Buffer.from(
+      Array.from({ length: 1_050 }, (_, i) => (i * 37 + 3) % 256),
+    ).toString('base64');
+    const readable = 'Checking the manifest before rolling back the deploy. '
+      .repeat(11)
+      .slice(0, 590);
+    const wiring = createActivityPhaseWiring({
+      getContentParts: () => [],
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async () => ({ label: 'unused' })),
+    });
+    const handlers = wiring.handlers({
+      [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
+      [GraphEvents.ON_REASONING_DELTA]: { handle: jest.fn() },
+    });
+    handlers?.[GraphEvents.ON_RUN_STEP]?.handle(
+      GraphEvents.ON_RUN_STEP,
+      {
+        id: 'reasoning-step',
+        stepDetails: {
+          type: StepTypes.MESSAGE_CREATION,
+          message_creation: { message_id: 'm', content_type: 'think' },
+        },
+      } as never,
+      undefined,
+      undefined,
+    );
+    for (const think of [encoded, `\n${readable}`]) {
+      handlers?.[GraphEvents.ON_REASONING_DELTA]?.handle(
+        GraphEvents.ON_REASONING_DELTA,
+        { id: 'reasoning-step', delta: { content: { type: ContentTypes.THINK, think } } } as never,
+        undefined,
+        undefined,
+      );
+    }
+
+    expect(wiring.snapshot().pendingReasoning).toEqual([
+      expect.objectContaining({ key: 'root', text: `\n${readable}` }),
+    ]);
+  });
+
   it('keeps reasoning attached to a tool batch across commentary', async () => {
     const parts: LooseContentPart[] = [];
     const generatePhase = jest.fn(async () => ({ label: 'unused' }));

@@ -978,7 +978,7 @@ describe('reasoning labels for encoded reasoning', () => {
     await harness.append('Comparing the retry policy against the queue backoff. ');
     await harness.settle();
     await harness.append(payload);
-    await harness.append('Exponential backoff fits the burst pattern, so the queue keeps it. ');
+    await harness.append(' Exponential backoff fits the burst pattern, so the queue keeps it. ');
     await harness.append(
       'Jitter spreads the retries across the window to avoid a thundering herd.',
     );
@@ -994,7 +994,7 @@ describe('reasoning labels for encoded reasoning', () => {
     expect(generate).toHaveBeenLastCalledWith(
       expect.objectContaining({
         status: 'complete',
-        visibleReasoning: expect.stringContaining('backoff. Exponential backoff fits'),
+        visibleReasoning: expect.stringContaining('backoff.  Exponential backoff fits'),
       }),
     );
     expect(harness.parts[0]?.reasoning_label).toBe('Comparing retry backoff strategies');
@@ -1034,7 +1034,7 @@ describe('reasoning labels for encoded reasoning', () => {
     await harness.settle();
     expect(generate).not.toHaveBeenCalled();
 
-    await harness.append('Checking the tool result.');
+    await harness.append(' Checking the tool result.');
     await harness.close();
     await harness.settle();
 
@@ -1042,5 +1042,36 @@ describe('reasoning labels for encoded reasoning', () => {
     expect(generate).toHaveBeenCalledWith(
       expect.objectContaining({ visibleReasoning: 'Checking the tool result.' }),
     );
+  });
+  it('drops a payload prefix that was still undecided when a resumed step continues', async () => {
+    const generate = jest.fn(async () => ({ label: 'Rolling back the deploy' }));
+    const payload = encodedReasoning();
+    const harness = createHarness(generate, {
+      minChars: 30,
+      updateChars: 8,
+      updateIntervalMs: 0,
+      preservePartOnStart: true,
+      initialParts: [
+        {
+          type: ContentTypes.THINK,
+          think: `Checking. ${payload.slice(0, 100)}`,
+          reasoning_label_step_id: 'reasoning-1',
+          reasoning_label_attempts: 0,
+        },
+      ],
+    });
+    await harness.start();
+    await harness.append(payload.slice(100));
+    await harness.append(' Rolling back the deploy now.');
+    await harness.close();
+    await harness.settle();
+
+    expect(generate).toHaveBeenCalled();
+    for (const [payloadArg] of generate.mock.calls as unknown as Array<
+      [{ visibleReasoning: string }]
+    >) {
+      expect(payloadArg.visibleReasoning).not.toContain(payload.slice(0, 32));
+      expect(payloadArg.visibleReasoning).toContain('Rolling back the deploy now.');
+    }
   });
 });

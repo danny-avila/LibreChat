@@ -1,5 +1,10 @@
 import { GraphEvents } from '@librechat/agents';
-import { ContentTypes, StepTypes, stripOpaqueReasoning } from 'librechat-data-provider';
+import {
+  StepTypes,
+  ContentTypes,
+  sliceReasoningTail,
+  stripOpaqueReasoning,
+} from 'librechat-data-provider';
 import type { EventHandler, HookCallback, HookInputByEvent } from '@librechat/agents';
 import type { LooseContentPart } from '~/agents/activityLabels/wiring';
 import { stringifyActivityEvidence } from '~/agents/activityLabels/runtime';
@@ -858,7 +863,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
     .map((entry) => (typeof entry === 'string' ? { text: entry } : { ...entry }));
   const pendingReasoning = new Map<string, { text: string; agentId?: string; startIndex?: number }>(
     (initialSnapshot?.pendingReasoning ?? []).map(({ key, text, agentId, startIndex }) => {
-      const boundedText = text.slice(-MAX_EXCERPT_CHARS);
+      const boundedText = sliceReasoningTail(text, MAX_EXCERPT_CHARS);
       const needle = boundedText.trim().slice(0, REASONING_ANCHOR_CHARS);
       const rebasedStartIndex = needle ? findReasoningStart(content, boundedText, startIndex) : -1;
       /** The anchor is a prefix, so two lanes can share it. Binding to the
@@ -1013,7 +1018,9 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
         })),
       }),
       ...(activity.thinkingExcerpts != null && {
-        thinkingExcerpts: activity.thinkingExcerpts.map((text) => text.slice(-MAX_EXCERPT_CHARS)),
+        thinkingExcerpts: activity.thinkingExcerpts.map((text) =>
+          sliceReasoningTail(text, MAX_EXCERPT_CHARS),
+        ),
       }),
     })),
     assistantContext: assistantContext
@@ -1023,7 +1030,7 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
       ),
     pendingReasoning: [...pendingReasoning].map(([key, reasoning]) => ({
       key,
-      text: reasoning.text.slice(-MAX_EXCERPT_CHARS),
+      text: sliceReasoningTail(reasoning.text, MAX_EXCERPT_CHARS),
       ...(reasoning.agentId != null && { agentId: reasoning.agentId }),
       ...(reasoning.startIndex != null && { startIndex: reasoning.startIndex }),
     })),
@@ -1598,8 +1605,11 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
           const reasoningKey = id ? reasoningStepKeys.get(id) : undefined;
           const reasoning = reasoningKey ? pendingReasoning.get(reasoningKey) : undefined;
           if (reasoning != null) {
-            reasoning.text = `${reasoning.text}${deltaText(data, 'think')}`.slice(
-              -MAX_EXCERPT_CHARS,
+            /** Bounded without starting mid-run, so an encrypted payload cut by
+             *  the window cannot leave an unclassifiable fragment in the excerpt. */
+            reasoning.text = sliceReasoningTail(
+              `${reasoning.text}${deltaText(data, 'think')}`,
+              MAX_EXCERPT_CHARS,
             );
           }
           return reasoningHandler.handle(event, data, metadata, graph);

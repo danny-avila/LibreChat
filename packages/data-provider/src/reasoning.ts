@@ -51,13 +51,12 @@ export interface OpaqueReasoningCursor {
 
 export const OPAQUE_REASONING_START: OpaqueReasoningCursor = { tail: '', opaque: false };
 
-function isPayloadOnly(text: string): boolean {
-  for (let i = 0; i < text.length; i += 1) {
-    if (!isPayloadChar(text.charCodeAt(i))) {
-      return false;
-    }
+function payloadRunEnd(text: string, from: number): number {
+  let end = from;
+  while (end < text.length && isPayloadChar(text.charCodeAt(end))) {
+    end += 1;
   }
-  return true;
+  return end;
 }
 
 /**
@@ -65,19 +64,20 @@ function isPayloadOnly(text: string): boolean {
  * split across deltas shorter than the classification threshold, so a trailing
  * run is held in the cursor until a non-payload character settles it; readable
  * words are held only until the next space or punctuation. Once a run is known
- * to be a payload, deltas made only of payload characters continue it, and the
- * first delta with any other character starts fresh, since providers stream a
- * payload and the reasoning after it as separate blocks. Returns the settled
- * readable text, which callers can count and accumulate directly.
+ * to be a payload, it continues through the next non-payload character, even
+ * across deltas, so no fragment of it is ever released as readable text.
+ * Returns the settled readable text, which callers can count and accumulate
+ * directly.
  */
 export function advanceOpaqueReasoning(
   cursor: OpaqueReasoningCursor,
   delta: string,
 ): { readable: string; cursor: OpaqueReasoningCursor } {
-  if (cursor.opaque && isPayloadOnly(delta)) {
+  const start = cursor.opaque ? payloadRunEnd(delta, 0) : 0;
+  if (start === delta.length && cursor.opaque) {
     return { readable: '', cursor };
   }
-  const combined = `${cursor.opaque ? '' : cursor.tail}${delta}`;
+  const combined = `${cursor.opaque ? '' : cursor.tail}${delta.slice(start)}`;
   let end = combined.length;
   while (end > 0 && isPayloadChar(combined.charCodeAt(end - 1))) {
     end -= 1;
@@ -88,4 +88,20 @@ export function advanceOpaqueReasoning(
     return { readable, cursor: { tail: '', opaque: true } };
   }
   return { readable, cursor: { tail: trailing, opaque: false } };
+}
+
+/**
+ * The last `maxChars` of reasoning for a rolling excerpt. A cut inside an
+ * unbroken run would leave a fragment too short to classify, so a window that
+ * starts mid-run skips to the end of that run.
+ */
+export function sliceReasoningTail(text: string, maxChars: number): string {
+  if (text.length <= maxChars) {
+    return text;
+  }
+  const start = text.length - maxChars;
+  if (!isPayloadChar(text.charCodeAt(start - 1))) {
+    return text.slice(start);
+  }
+  return text.slice(payloadRunEnd(text, start));
 }
