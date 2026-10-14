@@ -694,7 +694,12 @@ export class Chat {
     }
     active.stream = stream;
     if (stream.generationCreatedAt != null) {
+      const previous = this.generationCreatedAt;
       this.generationCreatedAt = stream.generationCreatedAt;
+      if (this.action && previous != null && previous !== stream.generationCreatedAt) {
+        /** A restored pause belongs to the generation it was restored with, not this one. */
+        this.clearAction();
+      }
     }
     this.setConnection('live');
     let outcome: Outcome | undefined;
