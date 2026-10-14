@@ -815,14 +815,17 @@ export class AccessControlService {
         });
       }
 
-      if (
-        lockHeld &&
-        !(await this._dbMethods.renewResourceLock({ ...lock, ttlMs: RESOURCE_LOCK_TTL_MS }))
-      ) {
-        /** The lease expired and may have been taken over while the audit ran; the plan is stale. */
-        throw new ResourcePermissionsBusyError();
-      }
+      /** Re-validates and extends the lease before each write; a lost lease writes nothing more. */
+      const fence = async () => {
+        if (
+          lockHeld &&
+          !(await this._dbMethods.renewResourceLock({ ...lock, ttlMs: RESOURCE_LOCK_TTL_MS }))
+        ) {
+          throw new ResourcePermissionsBusyError();
+        }
+      };
 
+      await fence();
       if (roleBitsWrites.length > 0) {
         await this._dbMethods.replaceRoleBits(roleBitsWrites, {
           ...sessionOptions,
@@ -831,11 +834,13 @@ export class AccessControlService {
       }
 
       if (bulkWrites.length > 0) {
+        await fence();
         await this._dbMethods.bulkWriteAclEntries(bulkWrites, sessionOptions);
       }
 
       for (const { principal, query } of revokeQueries) {
         if (query) {
+          await fence();
           await this._dbMethods.deleteAclEntries(query, sessionOptions);
         }
         results.revoked.push({
