@@ -656,6 +656,7 @@ export class Chat {
         this.init.prepareRequest({ ...request, chatId: this.id, messages: this.messages }),
         active.controller.signal,
       );
+      active.responseId = prepared.responseMessageId;
       if (prepared.messages) {
         const optimistic = prepared.messages;
         await this.executor.run(() => {
@@ -668,7 +669,6 @@ export class Chat {
         throw active.controller.signal.reason;
       }
       active.endpoint = prepared.payload.endpoint ?? undefined;
-      active.responseId = prepared.responseMessageId;
       const { signal } = active.controller;
       const result = await openUntilAborted(
         this.init.transport.sendMessages({
