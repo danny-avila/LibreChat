@@ -127,6 +127,15 @@ describe('redactMessage', () => {
     expect(JSON.stringify(info)).not.toContain('example.com');
   });
 
+  it('masks serialized escaped-quote locals and long-scheme credential URLs', () => {
+    expect(redactMessage(JSON.stringify({ email: '"jane\\"doe"@example.com' }))).not.toMatch(
+      /jane/,
+    );
+    expect(
+      redactMessage('company-specific-connection-protocol://alice:s3cr3t@localhost'),
+    ).not.toContain('s3cr3t');
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),
