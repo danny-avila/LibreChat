@@ -425,6 +425,22 @@ describe('Chat', () => {
     expect(transport.sendMessages).not.toHaveBeenCalled();
   });
 
+  it('does not prepare a turn stopped as soon as it was submitted', async () => {
+    const prepareRequest = jest.fn(() => ({ payload, messages: [userMessage, placeholder] }));
+    const { chat, onFinish } = setup({ prepareRequest });
+    const unsubscribe = chat.subscribe(() => {
+      if (chat.status === 'submitted') {
+        void chat.stop();
+      }
+    });
+
+    await chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    unsubscribe();
+
+    expect(prepareRequest).not.toHaveBeenCalled();
+    expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isAbort: true }));
+  });
+
   it('cancels a start whose request is still being prepared, without writing it', async () => {
     let prepare: (value: { payload: TPayload; messages: TMessage[] }) => void = () => {};
     const { chat, transport, state, onFinish } = setup({
@@ -856,6 +872,90 @@ describe('Chat', () => {
       });
       expect(chat.pendingAction).toBeUndefined();
 
+      stream.push(finalEvent());
+      await sent;
+    });
+
+    it('keeps the decisions of a pause the stream replays after a reconnect', async () => {
+      const { chat, transport, stream, sent } = await pause(approvalAction);
+      await chat.addToolApprovalResponse({ id: 'call-1', approved: true });
+      stream.push({ type: 'pending_action', data: { ...approvalAction } });
+      await flush();
+
+      await chat.addToolApprovalResponse({ id: 'call-2', approved: false });
+
+      expect(transport.resume).toHaveBeenCalledWith(
+        expect.objectContaining({
+          decisions: [
+            { tool_call_id: 'call-1', decision: 'approve' },
+            { tool_call_id: 'call-2', decision: 'reject' },
+          ],
+        }),
+      );
+      stream.push(finalEvent());
+      await sent;
+    });
+
+    it('does not resume a batch whose pause was replaced while its last decision was shown', async () => {
+      const { chat, transport, stream, sent } = await pause(approvalAction);
+      await chat.addToolApprovalResponse({ id: 'call-1', approved: true });
+      const unsubscribe = chat.subscribe(() => {
+        if (chat.pendingAction === approvalAction) {
+          chat.restorePendingAction(askAction, 500);
+        }
+      });
+
+      await chat.addToolApprovalResponse({ id: 'call-2', approved: true });
+      unsubscribe();
+      expect(transport.resume).not.toHaveBeenCalled();
+      stream.push(finalEvent());
+      await sent;
+    });
+
+    it('lets a subscriber start a turn once a reconnect drops a pause that ended elsewhere', async () => {
+      const { chat, transport, stream } = setup();
+      chat.restorePendingAction(askAction, 500);
+      let next: Promise<void> | undefined;
+      const unsubscribe = chat.subscribe(() => {
+        if (!chat.pendingAction && !next) {
+          next = Promise.resolve();
+          next = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+        }
+      });
+
+      await chat.resumeStream({ streamId: 'convo-1' });
+      unsubscribe();
+
+      expect(chat.status).toBe('submitted');
+      await flush();
+      expect(transport.sendMessages).toHaveBeenCalled();
+      stream.push(finalEvent());
+      await next;
+    });
+
+    it('resumes a replayed pause once, with the decisions made before the replay', async () => {
+      const { chat, transport, stream, sent } = await pause(approvalAction);
+      let accept: (() => void) | undefined;
+      transport.resume.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            accept = () =>
+              resolve({ streamId: 'convo-1', conversationId: 'convo-1', status: 'resuming' });
+          }),
+      );
+      await chat.addToolApprovalResponse({ id: 'call-1', approved: true });
+      const resumed = chat.addToolApprovalResponse({ id: 'call-2', approved: true });
+      await flush();
+      stream.push({ type: 'pending_action', data: { ...approvalAction } });
+      await flush();
+
+      await expect(chat.addToolApprovalResponse({ id: 'call-2', approved: false })).rejects.toThrow(
+        'already being resumed',
+      );
+      accept?.();
+      await resumed;
+      expect(transport.resume).toHaveBeenCalledTimes(1);
+      expect(chat.pendingAction).toBeUndefined();
       stream.push(finalEvent());
       await sent;
     });

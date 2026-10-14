@@ -143,6 +143,7 @@ const untilAborted = <T>(value: T | Promise<T>, signal: AbortSignal): Promise<T>
   new Promise<T>((resolve, reject) => {
     const onAbort = () => reject(signal.reason);
     if (signal.aborted) {
+      Promise.resolve(value).catch(() => undefined);
       onAbort();
       return;
     }
@@ -283,7 +284,7 @@ export class Chat {
   private action?: Agents.PendingAction;
   private generationCreatedAt?: number;
   /** The pause whose resume request is in flight, so a second submit cannot send it again. */
-  private resuming?: Agents.PendingAction;
+  private resuming?: string;
   private disposed = false;
   private readonly decisions = new Map<string, Agents.ToolApprovalResolution>();
 
@@ -353,13 +354,14 @@ export class Chat {
         (opened) => opened,
       );
       if (!stream) {
-        if (this.action) {
-          /** Nothing is running, so a restored pause ended elsewhere. */
-          this.clearAction();
-        }
+        /** Nothing is running, so a restored pause ended elsewhere; published as one change. */
         if (this.status === 'submitted' || this.status === 'streaming') {
-          this.setStatus('ready');
+          this.init.state.status = 'ready';
         }
+        this.action = undefined;
+        this.decisions.clear();
+        this.release(active);
+        this.notify();
         return;
       }
       await this.consume(stream, active);
@@ -430,7 +432,7 @@ export class Chat {
       streamId: action.streamId,
       generationCreatedAt: this.generationCreatedAt,
     });
-    if (this.action === action) {
+    if (this.action?.actionId === action.actionId) {
       this.clearAction();
     }
   }
@@ -444,7 +446,7 @@ export class Chat {
     if (this.disposed) {
       throw new Error('The chat was disposed');
     }
-    if (this.resuming === action) {
+    if (this.resuming === action.actionId) {
       throw new Error('This pause is already being resumed');
     }
   }
@@ -575,6 +577,9 @@ export class Chat {
     this.init.state.error = undefined;
     this.setStatus('submitted');
     try {
+      if (active.controller.signal.aborted) {
+        throw active.controller.signal.reason;
+      }
       const prepared = await untilAborted(
         this.init.prepareRequest({ ...request, chatId: this.id, messages: this.messages }),
         active.controller.signal,
@@ -689,8 +694,11 @@ export class Chat {
     if (streamingEvents.has(event.type) && this.status !== 'streaming') {
       this.setStatus('streaming');
     } else if (event.type === 'pending_action') {
+      if (this.action?.actionId !== event.data.actionId) {
+        /** A reconnect replays the same pause; decisions already made for it still stand. */
+        this.decisions.clear();
+      }
       this.action = event.data;
-      this.decisions.clear();
       this.notify();
     } else if (event.type === 'final') {
       this.action = undefined;
@@ -777,10 +785,13 @@ export class Chat {
     if (this.disposed) {
       throw new Error('The chat was disposed');
     }
-    if (this.resuming === action) {
+    if (this.action?.actionId !== action.actionId) {
+      throw new Error('The pause ended before it was resumed');
+    }
+    if (this.resuming === action.actionId) {
       return;
     }
-    this.resuming = action;
+    this.resuming = action.actionId;
     try {
       const result = await resume.call(this.init.transport, {
         ...this.init.resumeSelection?.(),
@@ -793,17 +804,20 @@ export class Chat {
         /** A pause restored after a reload has no stream attached for the continuation. */
         void this.resumeStream({ streamId: result.streamId, generationCreatedAt });
       }
-      if (this.action === action) {
+      if (this.action?.actionId === action.actionId) {
         this.clearAction();
       }
     } finally {
-      if (this.resuming === action) {
+      if (this.resuming === action.actionId) {
         this.resuming = undefined;
       }
     }
   }
 
   private write(messages: TMessage[]): void {
+    if (this.disposed) {
+      return;
+    }
     this.init.state.replaceMessages(messages);
     this.notify();
   }
