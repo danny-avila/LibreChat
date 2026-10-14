@@ -43,6 +43,13 @@ export function diffMCPServerFields(previous: ServerConfigLike, next: ServerConf
   return changed.sort();
 }
 
+/** Optional OAuth fields the data layer also keeps when an update omits them alongside the secret. */
+const OMITTED_OAUTH_BINDING_FIELDS = [
+  'token_endpoint_auth_methods_supported',
+  'revocation_endpoint',
+  'revocation_endpoint_auth_methods_supported',
+] as const;
+
 /**
  * An update that omits `oauth.client_secret` keeps the stored one, so the secret
  * is carried onto the incoming config before comparing; otherwise a title-only
@@ -57,7 +64,13 @@ function withPreservedOAuthSecret(
   if (!next || !before?.client_secret || !after || after.client_secret) {
     return next;
   }
-  return { ...next, oauth: { ...after, client_secret: before.client_secret } };
+  const carried = { ...after, client_secret: before.client_secret } as Record<string, unknown>;
+  for (const field of OMITTED_OAUTH_BINDING_FIELDS) {
+    if (carried[field] === undefined && before[field] !== undefined) {
+      carried[field] = before[field];
+    }
+  }
+  return { ...next, oauth: carried };
 }
 
 function serverTitle(config: ServerConfigLike): string | undefined {

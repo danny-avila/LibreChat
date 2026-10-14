@@ -656,41 +656,43 @@ const deleteMCPServerController = async (req, res, uninstallOAuthMCP) => {
       });
       throw error;
     }
-    /** Fence connections another replica could have created before deletion committed. */
+    /** Fence connections another replica could have created before deletion committed,
+     * for every user holding a token, before the audit write is awaited. */
     await auditMCPServer(
       req,
       { action: 'mcp_server.deleted', serverName, previous: existingConfig },
       async () => {
         await fenceCommittedMCPMutation({ userId, serverName });
         await disconnectLocalMCPServer(userId, serverName);
+        try {
+          await cleanupDeletedMCPServerOAuthUsers({
+            ownerUserId: userId,
+            serverName,
+            serverConfig: existingConfig,
+            snapshot: oauthDeletionSnapshot,
+            getTokenUserIds,
+            getUserPrincipals: (candidateUserId) =>
+              db.getUserPrincipals({ userId: candidateUserId }),
+            resolveAllowlists: (candidateUserId) =>
+              registry.resolveAllowlists({ userId: candidateUserId }),
+            fenceAndDisconnectUser: async (candidateUserId) => {
+              if (candidateUserId === userId) {
+                return;
+              }
+              await fenceCommittedMCPMutation({ userId: candidateUserId, serverName });
+              await disconnectLocalMCPServer(candidateUserId, serverName);
+            },
+            uninstallOAuthMCP,
+          });
+        } catch (error) {
+          logger.warn(
+            `[deleteMCPServer] Server ${serverName} was deleted, but OAuth cleanup failed for user ${userId}:`,
+            error,
+          );
+          throw error;
+        }
       },
     );
-    try {
-      await cleanupDeletedMCPServerOAuthUsers({
-        ownerUserId: userId,
-        serverName,
-        serverConfig: existingConfig,
-        snapshot: oauthDeletionSnapshot,
-        getTokenUserIds,
-        getUserPrincipals: (candidateUserId) => db.getUserPrincipals({ userId: candidateUserId }),
-        resolveAllowlists: (candidateUserId) =>
-          registry.resolveAllowlists({ userId: candidateUserId }),
-        fenceAndDisconnectUser: async (candidateUserId) => {
-          if (candidateUserId === userId) {
-            return;
-          }
-          await fenceCommittedMCPMutation({ userId: candidateUserId, serverName });
-          await disconnectLocalMCPServer(candidateUserId, serverName);
-        },
-        uninstallOAuthMCP,
-      });
-    } catch (error) {
-      logger.warn(
-        `[deleteMCPServer] Server ${serverName} was deleted, but OAuth cleanup failed for user ${userId}:`,
-        error,
-      );
-      throw error;
-    }
     res.status(200).json({ message: 'MCP server deleted successfully' });
   } catch (error) {
     logger.error('[deleteMCPServer]', error);

@@ -64,6 +64,30 @@ describe('createMCPServerAuditor', () => {
     );
   });
 
+  it('does not record omitted optional OAuth binding fields as a change', async () => {
+    const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+    const audit = createMCPServerAuditor({ recordAuditEntry });
+
+    await audit(req, {
+      action: 'mcp_server.updated',
+      serverName: 'srv',
+      previous: {
+        title: 'Old',
+        oauth: {
+          client_id: 'id',
+          client_secret: 'stored',
+          revocation_endpoint: 'https://idp.example/revoke',
+          token_endpoint_auth_methods_supported: ['client_secret_basic'],
+        },
+      },
+      next: { title: 'New', oauth: { client_id: 'id' } },
+    });
+
+    expect(recordAuditEntry).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: { source: 'DB', fields: 'title' } }),
+    );
+  });
+
   it('runs the post-commit steps before the audit write and still audits when they throw', async () => {
     const order: string[] = [];
     const recordAuditEntry = jest.fn().mockImplementation(async () => void order.push('audit'));
