@@ -116,6 +116,17 @@ describe('redactMessage', () => {
     expect(out).not.toMatch(/jane/);
   });
 
+  it('masks serialized quoted addresses and many colliding keys in linear time', () => {
+    expect(redactMessage(JSON.stringify({ email: '"jane doe"@example.com' }))).not.toMatch(/jane/);
+    const keys = Object.fromEntries(
+      Array.from({ length: 5000 }, (_, index) => [`u${index}@example.com`, index]),
+    );
+    const started = Date.now();
+    const info = runRedactFormat({ level: 'info', message: 'm', ...keys });
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(JSON.stringify(info)).not.toContain('example.com');
+  });
+
   it('keeps redaction of a long run without an address bounded', () => {
     const started = Date.now();
     const out = String(

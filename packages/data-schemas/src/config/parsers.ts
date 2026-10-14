@@ -57,7 +57,7 @@ const sensitiveKeys: RegExp[] = [
  * only at a token boundary, so long non-email text is scanned once instead of once per character.
  */
 const EMAIL_PATTERN =
-  /(?:"(?:[^"\\\r\n]|\\.){1,64}"|(?<![^\s<>()[\],;"])[^\s<>()[\],;"]+)@(?:\[[^\]\s@]{1,64}\]|[^\s<>()[\],;"@]+\.[^\s<>()[\],;"@]{2,})/gu;
+  /(?:\\"[^"\\\r\n]{1,64}\\"|"(?:[^"\\\r\n]|\\.){1,64}"|(?<![^\s<>()[\],;"])[^\s<>()[\],;"]+)@(?:\[[^\]\s@]{1,64}\]|[^\s<>()[\],;"@]+\.[^\s<>()[\],;"@]{2,})/gu;
 const REDACTION_WINDOW_SLACK = 1024;
 const REDACTED_EMAIL_VALUE = '[REDACTED_EMAIL]';
 
@@ -107,11 +107,21 @@ function isPlainRecord(value: object): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null;
 }
 
-function redactLogKey(key: string, isUsed: (candidate: string) => boolean): string {
+/** `cursors` remembers the next free suffix per base so many colliding keys stay linear. */
+function redactLogKey(
+  key: string,
+  isUsed: (candidate: string) => boolean,
+  cursors: Map<string, number>,
+): string {
   const base = key.includes('@') ? redactMessage(key) : key;
   let candidate = base;
-  for (let suffix = 2; isUsed(candidate); suffix++) {
+  let suffix = cursors.get(base) ?? 2;
+  while (isUsed(candidate)) {
     candidate = `${base}#${suffix}`;
+    suffix++;
+  }
+  if (candidate !== base) {
+    cursors.set(base, suffix);
   }
   return candidate;
 }
@@ -226,6 +236,7 @@ function redactMapValue(
   depth: number,
 ): Map<unknown, unknown> {
   const redacted = new Map<unknown, unknown>();
+  const cursors = new Map<string, number>();
   seen.set(value, redacted);
   let count = 0;
   for (const [mapKey, mapValue] of value) {
@@ -235,7 +246,7 @@ function redactMapValue(
     }
     const safeKey =
       typeof mapKey === 'string'
-        ? redactLogKey(mapKey, (candidate) => redacted.has(candidate))
+        ? redactLogKey(mapKey, (candidate) => redacted.has(candidate), cursors)
         : redactLogValue(mapKey, seen, depth + 1);
     redacted.set(
       safeKey,
@@ -274,6 +285,7 @@ function redactObjectEntries(
 ): Record<string, unknown> | undefined {
   const record = value as Record<string, unknown>;
   let redacted: Record<string, unknown> | undefined;
+  const cursors = new Map<string, number>();
   let count = 0;
 
   for (const key in record) {
@@ -289,7 +301,11 @@ function redactObjectEntries(
       break;
     }
     redacted[
-      redactLogKey(key, (candidate) => Object.prototype.hasOwnProperty.call(redacted, candidate))
+      redactLogKey(
+        key,
+        (candidate) => Object.prototype.hasOwnProperty.call(redacted, candidate),
+        cursors,
+      )
     ] = redactRecordValue(key, record[key], seen, depth + 1);
     count += 1;
   }
@@ -399,6 +415,7 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
       infoRecord[SPLAT_SYMBOL] = redactLogValue(infoRecord[SPLAT_SYMBOL]);
     }
 
+    const cursors = new Map<string, number>();
     for (const key of Object.keys(info)) {
       if (key === 'message' || key === 'level') {
         continue;
@@ -407,6 +424,7 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
       const safeKey = redactLogKey(
         key,
         (candidate) => candidate !== key && Object.prototype.hasOwnProperty.call(info, candidate),
+        cursors,
       );
       if (safeKey !== key) {
         delete infoRecord[key];
