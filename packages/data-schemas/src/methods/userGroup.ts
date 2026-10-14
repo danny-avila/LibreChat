@@ -221,7 +221,7 @@ export function createUserGroupMethods(
   updateGroupFieldsTracked: (
     groupId: string | Types.ObjectId,
     data: Partial<Pick<IGroup, 'name' | 'description' | 'email' | 'avatar'>>,
-  ) => Promise<{ group: IGroup; changed: boolean } | null>;
+  ) => Promise<{ group: IGroup; changed: boolean; changedFields: string[] } | null>;
   updateGroupById: (
     groupId: string | Types.ObjectId,
     data: Record<string, unknown>,
@@ -1267,24 +1267,31 @@ export function createUserGroupMethods(
   async function updateGroupFieldsTracked(
     groupId: string | Types.ObjectId,
     data: Partial<Pick<IGroup, 'name' | 'description' | 'email' | 'avatar'>>,
-  ): Promise<{ group: IGroup; changed: boolean } | null> {
+  ): Promise<{ group: IGroup; changed: boolean; changedFields: string[] } | null> {
     const Group = mongoose.models.Group as Model<IGroup>;
     const entries = Object.entries(data);
-    if (entries.length === 0) {
+    const unchanged = async () => {
       const current = await Group.findById(groupId).lean<IGroup>();
-      return current ? { group: current, changed: false } : null;
+      return current ? { group: current, changed: false, changedFields: [] as string[] } : null;
+    };
+    if (entries.length === 0) {
+      return unchanged();
     }
-    /** The filter matches only a group that differs, so a match is exactly one real change. */
-    const changed = await Group.findOneAndUpdate(
+    /** The filter matches only a group that differs, and the pre-image names exactly the fields
+     * this write changed, so overlapping identical requests record one change. */
+    const previous = await Group.findOneAndUpdate(
       { _id: groupId, $or: entries.map(([key, value]) => ({ [key]: { $ne: value } })) },
       { $set: data },
-      { new: true },
+      { new: false },
     ).lean<IGroup>();
-    if (changed) {
-      return { group: changed, changed: true };
+    if (!previous) {
+      return unchanged();
     }
-    const current = await Group.findById(groupId).lean<IGroup>();
-    return current ? { group: current, changed: false } : null;
+    const changedFields = entries
+      .filter(([key, value]) => (previous as unknown as Record<string, unknown>)[key] !== value)
+      .map(([key]) => key);
+    const group = (await Group.findById(groupId).lean<IGroup>()) ?? previous;
+    return { group, changed: true, changedFields };
   }
 
   async function updateGroupById(

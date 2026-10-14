@@ -443,6 +443,11 @@ describe('UserGroup Methods - Detailed Tests', () => {
       expect(await methods.updateGroupFieldsTracked(groupId, { name: 'Renamed' })).toMatchObject({
         changed: false,
       });
+      const mixed = await methods.updateGroupFieldsTracked(groupId, {
+        name: 'Renamed',
+        description: 'new description',
+      });
+      expect(mixed).toMatchObject({ changed: true, changedFields: ['description'] });
     });
 
     test('should remove user from group', async () => {

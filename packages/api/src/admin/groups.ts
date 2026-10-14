@@ -54,7 +54,7 @@ export interface AdminGroupsDeps {
   updateGroupFieldsTracked: (
     groupId: string | Types.ObjectId,
     data: Partial<Pick<IGroup, 'name' | 'description' | 'email' | 'avatar'>>,
-  ) => Promise<{ group: IGroup; changed: boolean } | null>;
+  ) => Promise<{ group: IGroup; changed: boolean; changedFields: string[] } | null>;
   deleteGroup: (
     groupId: string | Types.ObjectId,
     session?: ClientSession,
@@ -330,12 +330,12 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
       if (!result) {
         return res.status(404).json({ error: 'Group not found' });
       }
-      const { group, changed } = result;
+      const { group, changed, changedFields } = result;
       if (changed) {
         await emitAudit(req, {
           action: 'group.updated',
           target: groupTarget(group, id),
-          metadata: { fields: Object.keys(updateData).sort().join(',') },
+          metadata: { fields: [...changedFields].sort().join(',') },
         });
       }
       return res.status(200).json({ group });

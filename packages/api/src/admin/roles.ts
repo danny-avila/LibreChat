@@ -168,8 +168,6 @@ export interface AdminRolesDeps {
   auditFailClosed?: boolean;
 }
 
-/** Upper bound on per-account entries written when a deleted role still has members. */
-const MAX_AUDITED_REASSIGNMENTS = 1000;
 /** Account ids per entry, so a large role is audited in a few ordered writes. */
 const AUDIT_MEMBER_CHUNK = 100;
 
@@ -701,8 +699,8 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
       }
       const removedGrants = cascade.removed.grants as ISystemGrant[];
       await auditRemovedGrants();
-      /** Each reassigned account is recorded (bounded) before the outcome entry. */
-      const audited = memberIds.slice(0, MAX_AUDITED_REASSIGNMENTS);
+      /** Each reassigned account is recorded (chunked) before the outcome entry. */
+      const audited = memberIds;
       for (let i = 0; i < audited.length; i += AUDIT_MEMBER_CHUNK) {
         const chunk = audited.slice(i, i + AUDIT_MEMBER_CHUNK);
         await emitRevocationAudit(req, {

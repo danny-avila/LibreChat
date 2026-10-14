@@ -47,17 +47,22 @@ export function cascadeStep<T, S = T>(
 export async function runCascade(steps: CascadeStep[], logPrefix: string): Promise<CascadeOutcome> {
   const restoreArgs: Record<string, unknown> = {};
 
-  async function restoreStep(step: CascadeStep, arg: unknown): Promise<void> {
+  /** Steps whose immediate restore failed; `compensate` tries them again. */
+  const unrestored: Array<{ step: CascadeStep; arg: unknown }> = [];
+
+  async function restoreStep(step: CascadeStep, arg: unknown): Promise<boolean> {
     if (!step.restore) {
-      return;
+      return true;
     }
     try {
       await step.restore(arg);
+      return true;
     } catch (error) {
       logger.error(
         `${logPrefix} cascade restore failed: ${step.name}`,
         getSafeErrorMetadata(error),
       );
+      return false;
     }
   }
 
@@ -68,8 +73,8 @@ export async function runCascade(steps: CascadeStep[], logPrefix: string): Promi
       value = await step.remove();
     } catch (error) {
       /** The removal may have committed before it rejected; put the snapshot back. */
-      if (step.snapshot) {
-        await restoreStep(step, snapshot);
+      if (step.snapshot && !(await restoreStep(step, snapshot))) {
+        unrestored.push({ step, arg: snapshot });
       }
       throw error;
     }
@@ -96,6 +101,9 @@ export async function runCascade(steps: CascadeStep[], logPrefix: string): Promi
   });
 
   async function compensate(): Promise<void> {
+    for (const { step, arg } of unrestored) {
+      await restoreStep(step, arg);
+    }
     for (const step of steps) {
       if (step.name in removed) {
         await restoreStep(step, restoreArgs[step.name]);

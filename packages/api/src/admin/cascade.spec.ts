@@ -54,6 +54,29 @@ describe('runCascade', () => {
     expect(restore).toHaveBeenCalledWith(['before']);
   });
 
+  it('retries a snapshot restore that failed transiently when compensating', async () => {
+    const restore = jest
+      .fn()
+      .mockRejectedValueOnce(new Error('transient'))
+      .mockResolvedValue(undefined);
+    const outcome = await runCascade(
+      [
+        cascadeStep(
+          'a',
+          async () => Promise.reject(new Error('response lost')),
+          restore,
+          async () => 'snap',
+        ),
+      ],
+      '[test]',
+    );
+
+    expect(restore).toHaveBeenCalledTimes(1);
+    await outcome.compensate();
+    expect(restore).toHaveBeenCalledTimes(2);
+    expect(restore).toHaveBeenLastCalledWith('snap');
+  });
+
   it('compensates from what the removal returned, falling back to the snapshot', async () => {
     const restoreReturned = jest.fn().mockResolvedValue(undefined);
     const restoreVoid = jest.fn().mockResolvedValue(undefined);
