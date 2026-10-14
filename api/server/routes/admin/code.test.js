@@ -30,6 +30,7 @@ jest.mock('@librechat/data-schemas', () => ({
 
 jest.mock('@librechat/api', () => ({
   createAdminCodeEnvironmentHandlers: jest.fn(() => mockHandlers),
+  isAuditFailClosed: jest.fn(() => true),
 }));
 
 jest.mock('~/server/middleware/roles/capabilities', () => ({
