@@ -158,12 +158,22 @@ jest.mock('@librechat/api', () => {
     getCodeApiUploadOptions,
     withCodeApiUploadRecovery,
     /** Mirrors the package helper; its own cases live in packages/api. */
-    withStoredUploadCleanup: async ({ stored, resolveDeleteFile, recordExists, req }, next) => {
+    createRecordExists:
+      (findFileById) =>
+      async ({ file_id, recordId }) =>
+        (await findFileById(recordId ?? file_id)) != null,
+    withStoredUploadCleanup: async (
+      { stored, resolveDeleteFile, recordExists, req, trackWrite },
+      next,
+    ) => {
+      let writeBegun = trackWrite !== true;
       try {
-        return await next();
+        return await next(() => {
+          writeBegun = true;
+        });
       } catch (error) {
         try {
-          if (!(await recordExists(stored))) {
+          if (!writeBegun || !(await recordExists(stored))) {
             await resolveDeleteFile()?.(req, stored);
           }
         } catch {

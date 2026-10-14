@@ -46,6 +46,7 @@ const {
   getStorageMetadata,
   contentFilterBlockResponse,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
+  createRecordExists,
   withStoredUploadCleanup,
   resolveStoredUploadTarget,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
@@ -368,9 +369,7 @@ function startExpiredFileSweep(options = {}) {
   });
 }
 
-/** A rejected write may have committed, so cleanup only removes an object no record points at. */
-const fileRecordExists = async ({ file_id, recordId }) =>
-  (await db.findFileById(recordId ?? file_id)) != null;
+const fileRecordExists = createRecordExists((id) => db.findFileById(id));
 
 /**
  * Processes a file URL using a specified file handling strategy. This function accepts a strategy name,
@@ -529,7 +528,7 @@ const processImageFile = async ({ req, res, metadata, returnFile = false, sseStr
     stored: { file_id, filepath, source, storageKey, storageRegion },
   };
   const retentionExpiry = await withStoredUploadCleanup(
-    storedCleanup,
+    { ...storedCleanup, trackWrite: true },
     () => retentionExpiryPromise,
   );
 
@@ -1054,7 +1053,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       };
 
       const retentionExpiry = await withStoredUploadCleanup(
-        storedCleanup,
+        { ...storedCleanup, trackWrite: true },
         () => retentionExpiryPromise,
       );
       const fileInfo = {
@@ -1268,6 +1267,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
       {
         req,
         logger,
+        trackWrite: true,
         recordExists: fileRecordExists,
         resolveDeleteFile: () => getStrategyFunctions(source).deleteFile,
         stored: {
@@ -1428,7 +1428,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     stored: { file_id, filepath, source, ...storageMetadata },
   };
   const retentionExpiry = await withStoredUploadCleanup(
-    storedCleanup,
+    { ...storedCleanup, trackWrite: true },
     () => retentionExpiryPromise,
   );
   const fileInfo = {

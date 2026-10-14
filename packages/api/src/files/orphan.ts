@@ -26,6 +26,12 @@ export type StoredUploadCleanup = {
   logger: { error: (message: string, meta?: unknown) => void };
 };
 
+/** A rejected write may have committed, so cleanup only removes an object no record points at. */
+export const createRecordExists =
+  (findFileById: (id: string) => Promise<unknown>) =>
+  async ({ file_id, recordId }: StoredUploadRef): Promise<boolean> =>
+    (await findFileById(recordId ?? file_id)) != null;
+
 /**
  * Runs the steps that follow a storage upload and removes the stored object when one fails,
  * since no file record exists yet for retention, expiry or erasure to find it through.
