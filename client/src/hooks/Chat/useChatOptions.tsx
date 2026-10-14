@@ -3,34 +3,23 @@ import { useRecoilValue } from 'recoil';
 import { useToastContext } from '@librechat/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
-import { supportsConversationTitleOwnership } from 'librechat-data-provider';
-import {
-  Pen,
-  Pin,
-  Trash,
-  Archive,
-  FolderX,
-  CopyPlus,
-  FolderInput,
-  ArchiveRestore,
-} from 'lucide-react';
+import { Pen, Pin, Trash, Archive, CopyPlus, ArchiveRestore } from 'lucide-react';
 import type { TConversation } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import type * as t from '~/common';
 import {
   useActiveJobs,
   useGetConvoIdQuery,
-  useGetStartupConfig,
   useArchiveConvoMutation,
   usePinConversationMutation,
   useDuplicateConversationMutation,
-  useAssignConversationToProjectMutation,
 } from '~/data-provider';
 import { findConvoInAllQueries, isTemporaryConversation, hasRealTitle } from '~/utils';
 import DeleteButton from '~/components/Conversations/ConvoOptions/DeleteButton';
-import { ProjectButton } from '~/components/Conversations/ConvoOptions';
 import { useLocalize, useNavigateToConvo, useNewConvo } from '~/hooks';
+import { useChatSettings } from '~/Providers/ChatSettingsContext';
 import { useChatContext, useLiveAnnouncer } from '~/Providers';
+import useProjectMenuItem from './useProjectMenuItem';
 import { NotificationSeverity } from '~/common';
 import useExportShare from './useExportShare';
 import Rename from '~/components/Chat/Rename';
@@ -44,7 +33,7 @@ export type UseChatOptionsResult = {
   dialogs: ReactNode;
 };
 
-type DialogKind = 'rename' | 'project' | 'delete';
+type DialogKind = 'rename' | 'delete';
 
 const iconClass = 'size-4 text-text-secondary';
 const noop = () => {};
@@ -57,10 +46,13 @@ const noop = () => {};
 export default function useChatOptions({
   isSharedButtonEnabled,
   closeMenu,
+  isMenuOpen = false,
   readOnly = false,
 }: {
   isSharedButtonEnabled: boolean;
   closeMenu: () => void;
+  /** The project list behind "Change project" is only fetched while the menu is open. */
+  isMenuOpen?: boolean;
   /** A durable subagent thread is a canonical record of its parent's run: only share and export apply. */
   readOnly?: boolean;
 }): UseChatOptionsResult {
@@ -71,7 +63,7 @@ export default function useChatOptions({
   const { newConversation } = useNewConvo();
   const { setConversation } = useChatContext();
   const { navigateToConvo } = useNavigateToConvo(0);
-  const { data: startupConfig } = useGetStartupConfig();
+  const { config } = useChatSettings();
   const { data: activeJobs } = useActiveJobs();
   const { conversationId: routeConversationId } = useParams();
   /** A request outlives the click: the route that matters is the one open when it resolves. */
@@ -98,11 +90,10 @@ export default function useChatOptions({
   /** The sidebar's rule: a running chat can only be renamed where the deployment can protect
    *  the manual title from the pending generated one. */
   const canRename =
-    supportsConversationTitleOwnership(startupConfig) ||
+    config.canRenameRunningChat ||
     (!isGenerating && (current?.titleSetByUser === true || hasRealTitle(title)));
 
   const renameRef = useRef<HTMLButtonElement>(null);
-  const projectRef = useRef<HTMLButtonElement>(null);
   const deleteRef = useRef<HTMLButtonElement>(null);
   /** ChatView stays mounted across a route change, so a dialog is tied to the chat it was opened
    *  for rather than to whichever chat is open when it renders. */
@@ -127,7 +118,6 @@ export default function useChatOptions({
     openDialog.id === conversationId &&
     (routeConversationId == null || routeConversationId === conversationId);
   const showRename = isDialogOpen('rename');
-  const showProject = isDialogOpen('project');
   const showDelete = isDialogOpen('delete');
   /** A close only clears the dialog it belongs to: a delete that settles after another chat
    *  opened its own dialog must not take that one down. */
@@ -139,12 +129,10 @@ export default function useChatOptions({
       return prev?.kind === kind && prev.id === conversationId ? null : prev;
     });
   const setShowRename = toggleDialog('rename');
-  const setShowProject = toggleDialog('project');
   const setShowDelete = toggleDialog('delete');
 
   const pinMutation = usePinConversationMutation();
   const archiveMutation = useArchiveConvoMutation();
-  const assignMutation = useAssignConversationToProjectMutation();
   const duplicateMutation = useDuplicateConversationMutation({
     onSuccess: (data) => {
       navigateToConvo(data.conversation);
@@ -181,22 +169,13 @@ export default function useChatOptions({
     );
   };
 
-  const removeFromProject = () => {
-    assignMutation.mutate(
-      { conversationId, projectId: null },
-      {
-        onSuccess: () => {
-          mirrorToOpenChat({ chatProjectId: null });
-          showToast({
-            message: localize('com_ui_project_updated'),
-            severity: NotificationSeverity.SUCCESS,
-            showIcon: true,
-          });
-        },
-        onError: () => showError('com_ui_project_update_error'),
-      },
-    );
-  };
+  const projectItem = useProjectMenuItem({
+    conversationId,
+    chatProjectId,
+    /** The header omits this whole group for a conversation that is not saved yet. */
+    enabled: isMenuOpen && exportShare.show && !readOnly && !isTemporary,
+    onAssigned: (projectId) => mirrorToOpenChat({ chatProjectId: projectId }),
+  });
 
   const toggleArchive = () => {
     archiveMutation.mutate(
@@ -246,24 +225,7 @@ export default function useChatOptions({
       show: canOrganize,
       icon: <Pin className={iconClass} aria-hidden="true" />,
     },
-    {
-      label: localize('com_ui_change_project'),
-      onClick: () => setShowProject(true),
-      show: canOrganize,
-      icon: <FolderInput className={iconClass} aria-hidden="true" />,
-      ariaHasPopup: 'dialog',
-      ariaControls: 'project-conversation-dialog',
-      /** NOTE: THE FOLLOWING PROPS ARE REQUIRED FOR MENU ITEMS THAT OPEN DIALOGS */
-      hideOnClick: false,
-      ref: projectRef,
-      render: (props) => <button {...props} />,
-    },
-    {
-      label: localize('com_ui_remove_from_project'),
-      onClick: removeFromProject,
-      show: canOrganize && chatProjectId != null,
-      icon: <FolderX className={iconClass} aria-hidden="true" />,
-    },
+    { ...projectItem, show: canOrganize },
     {
       label: localize('com_ui_duplicate'),
       onClick: () => duplicateMutation.mutate({ conversationId }),
@@ -308,17 +270,6 @@ export default function useChatOptions({
             title={title}
             titleSetByUser={current?.titleSetByUser === true}
             triggerRef={renameRef}
-          />
-        )}
-        {showProject && (
-          <ProjectButton
-            conversationId={conversationId}
-            chatProjectId={chatProjectId}
-            setMenuOpen={closeMenu}
-            triggerRef={projectRef}
-            onAssigned={(projectId) => mirrorToOpenChat({ chatProjectId: projectId })}
-            showProjectDialog={showProject}
-            setShowProjectDialog={setShowProject}
           />
         )}
         {showDelete && (
