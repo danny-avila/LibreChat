@@ -1831,6 +1831,7 @@ describe('createAdminGroupsHandlers', () => {
       const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
       const deps = createDeps({
         recordAuditEntry,
+        findGroupById: jest.fn().mockResolvedValue(mockGroup({ memberIds: ['m1', 'm2'] })),
         deleteGroup: jest.fn().mockResolvedValue(mockGroup({ memberIds: ['m1', 'm2'] })),
       });
       const handlers = createAdminGroupsHandlers(deps);

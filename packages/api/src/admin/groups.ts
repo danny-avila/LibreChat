@@ -468,8 +468,22 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
           return 'stuck';
         }
       };
+      /** Every member loses group-scoped access, so the affected accounts are recorded (chunked). */
+      const recordMemberRemovals = async (group: IGroup) => {
+        const revoked = [...new Set(group.memberIds ?? [])];
+        for (let i = 0; i < revoked.length; i += AUDIT_MEMBER_CHUNK) {
+          const chunk = revoked.slice(i, i + AUDIT_MEMBER_CHUNK);
+          await emitAudit(req, {
+            action: 'group.member_removed',
+            severity: 'warning',
+            target: groupTarget(group, id),
+            metadata: { userIds: chunk.join(','), count: chunk.length, cause: 'group_deleted' },
+          });
+        }
+      };
       const compensatedResponse = async (outcome: 'deleted' | 'stuck') => {
         if (outcome === 'deleted') {
+          await recordMemberRemovals(existing);
           res.status(200).json({ success: true, id });
           await record('success');
           return res;
@@ -541,17 +555,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
         await recordFailure('not_found');
         return res.status(404).json({ error: 'Group not found' });
       }
-      /** Every member loses group-scoped access, so the affected accounts are recorded (chunked). */
-      const revoked = [...new Set(deleted.memberIds ?? [])];
-      for (let i = 0; i < revoked.length; i += AUDIT_MEMBER_CHUNK) {
-        const chunk = revoked.slice(i, i + AUDIT_MEMBER_CHUNK);
-        await emitAudit(req, {
-          action: 'group.member_removed',
-          severity: 'warning',
-          target: groupTarget(deleted, id),
-          metadata: { userIds: chunk.join(','), count: chunk.length, cause: 'group_deleted' },
-        });
-      }
+      await recordMemberRemovals(deleted);
       res.status(200).json({ success: true, id });
       await record('success');
       return res;
