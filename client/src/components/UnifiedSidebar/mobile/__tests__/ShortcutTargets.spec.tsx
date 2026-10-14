@@ -1,7 +1,12 @@
+import { getDefaultStore } from 'jotai';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { BarChart3, MessagesSquare, NotebookPen } from 'lucide-react';
 import type { NavLink } from '~/common';
-import { ActivePanelProvider } from '~/Providers/ActivePanelContext';
+import {
+  DEFAULT_PANEL,
+  activePanelAtom,
+  ActivePanelProvider,
+} from '~/Providers/ActivePanelContext';
 import ShortcutTargets from '../ShortcutTargets';
 
 const links = [
@@ -29,10 +34,7 @@ const renderTargets = ({
   );
 
 describe('ShortcutTargets', () => {
-  beforeEach(() => {
-    localStorage.clear();
-    sessionStorage.clear();
-  });
+  beforeEach(() => getDefaultStore().set(activePanelAtom, DEFAULT_PANEL));
 
   /**
    * `useKeyboardShortcuts` locates panels by these ids, reads `aria-pressed`,
@@ -59,7 +61,7 @@ describe('ShortcutTargets', () => {
     fireEvent.click(screen.getByTestId('nav-panel-prompts'));
 
     expect(screen.getByTestId('nav-panel-prompts')).toHaveAttribute('aria-pressed', 'true');
-    expect(sessionStorage.getItem('side:active-panel')).toBe('prompts');
+    expect(getDefaultStore().get(activePanelAtom)).toBe('prompts');
   });
 
   it('uses a route link callback without changing the active panel', () => {
@@ -78,7 +80,7 @@ describe('ShortcutTargets', () => {
     fireEvent.click(screen.getByTestId('nav-panel-insights'));
 
     expect(onClick).toHaveBeenCalledTimes(1);
-    expect(sessionStorage.getItem('side:active-panel')).toBeNull();
+    expect(getDefaultStore().get(activePanelAtom)).toBe(DEFAULT_PANEL);
   });
 
   it('leaves a route when a panel target is selected', () => {
@@ -88,7 +90,7 @@ describe('ShortcutTargets', () => {
     fireEvent.click(screen.getByTestId('nav-panel-prompts'));
 
     expect(onLeaveInsights).toHaveBeenCalledTimes(1);
-    expect(sessionStorage.getItem('side:active-panel')).toBe('prompts');
+    expect(getDefaultStore().get(activePanelAtom)).toBe('prompts');
   });
 
   it('offers no target for a panel this endpoint does not have', () => {

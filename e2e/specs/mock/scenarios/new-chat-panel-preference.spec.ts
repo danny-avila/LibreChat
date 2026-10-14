@@ -15,7 +15,7 @@ async function load(page: Page, switchToHistory: boolean) {
   await page.addInitScript((value) => {
     localStorage.setItem('newChatSwitchToHistory', JSON.stringify(value));
     localStorage.setItem('unifiedSidebarExpanded', JSON.stringify(true));
-    sessionStorage.removeItem('side:active-panel');
+    localStorage.removeItem('side:active-panel');
   }, switchToHistory);
   await page.goto(NEW_CHAT_PATH, { timeout: 15000 });
   await expect(page.getByRole('textbox', { name: 'Message input' })).toBeVisible({

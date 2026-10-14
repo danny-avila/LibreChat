@@ -1,44 +1,14 @@
-import {
-  useMemo,
-  useState,
-  useEffect,
-  ReactNode,
-  useContext,
-  useCallback,
-  createContext,
-} from 'react';
+import { createContext, useContext, useEffect, useMemo, ReactNode } from 'react';
+import { atom, useAtom } from 'jotai';
 
-const STORAGE_KEY = 'side:active-panel';
-const ENTRY_KEY = 'side:active-panel:entry';
 export const DEFAULT_PANEL = 'conversations';
 
-/** True only when this document was loaded by reloading the tab, not by opening or duplicating one. */
-function isReload(): boolean {
-  if (typeof performance.getEntriesByType !== 'function') {
-    return false;
-  }
-  const [entry] = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
-  return entry?.type === 'reload';
-}
-
 /**
- * Settles the stored panel once per document, keyed by its time origin so a tab whose session
- * storage was cloned from its opener still counts as a new entry: a reload keeps the panel the
- * tab had open, any other entry starts on chat history. Later mounts in the same document (the
- * sidebar remounts its provider when it crosses the mobile breakpoint) read the session value as
- * is. The legacy localStorage copy is dropped so an old panel cannot resurface on entry.
+ * Held in memory for the life of the document rather than in Web Storage, so every entry
+ * (a new visit, a reload, a tab opened from the app or duplicated) starts on chat history,
+ * while the sidebar remounting its provider at the mobile breakpoint keeps the selection.
  */
-function getInitialActivePanel(): string {
-  const entry = String(performance.timeOrigin);
-  if (sessionStorage.getItem(ENTRY_KEY) !== entry) {
-    sessionStorage.setItem(ENTRY_KEY, entry);
-    localStorage.removeItem(STORAGE_KEY);
-    if (!isReload()) {
-      sessionStorage.removeItem(STORAGE_KEY);
-    }
-  }
-  return sessionStorage.getItem(STORAGE_KEY) || DEFAULT_PANEL;
-}
+export const activePanelAtom = atom<string>(DEFAULT_PANEL);
 
 interface ActivePanelContextType {
   active: string;
@@ -48,24 +18,17 @@ interface ActivePanelContextType {
 const ActivePanelContext = createContext<ActivePanelContextType | undefined>(undefined);
 
 export function ActivePanelProvider({ children }: { children: ReactNode }) {
-  const [active, _setActive] = useState<string>(getInitialActivePanel);
-
-  const setActive = useCallback((id: string) => {
-    sessionStorage.setItem(STORAGE_KEY, id);
-    _setActive(id);
-  }, []);
+  const [active, setActive] = useAtom(activePanelAtom);
 
   useEffect(() => {
     const onPageShow = (event: PageTransitionEvent) => {
-      if (!event.persisted) {
-        return;
+      if (event.persisted) {
+        setActive(DEFAULT_PANEL);
       }
-      sessionStorage.removeItem(STORAGE_KEY);
-      _setActive(DEFAULT_PANEL);
     };
     window.addEventListener('pageshow', onPageShow);
     return () => window.removeEventListener('pageshow', onPageShow);
-  }, []);
+  }, [setActive]);
 
   const value = useMemo(() => ({ active, setActive }), [active, setActive]);
 

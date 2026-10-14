@@ -1,12 +1,13 @@
 import React from 'react';
 import { RecoilRoot } from 'recoil';
+import { getDefaultStore } from 'jotai';
 import '@testing-library/jest-dom/extend-expect';
 import { MemoryRouter } from 'react-router-dom';
 import { MessagesSquare, NotebookPen } from 'lucide-react';
 import { render, fireEvent, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { NavLink } from '~/common';
-import { ActivePanelProvider, DEFAULT_PANEL } from '~/Providers';
+import { ActivePanelProvider, DEFAULT_PANEL, activePanelAtom } from '~/Providers';
 
 const mockNewConversation = jest.fn();
 const mockClearMessagesCache = jest.fn();
@@ -114,13 +115,7 @@ function renderPanel({
   initialPanel?: string;
   switchToHistory?: boolean;
 } = {}) {
-  if (initialPanel !== DEFAULT_PANEL) {
-    Object.defineProperty(performance, 'getEntriesByType', {
-      configurable: true,
-      value: () => [{ type: 'reload' }],
-    });
-    sessionStorage.setItem('side:active-panel', initialPanel);
-  }
+  getDefaultStore().set(activePanelAtom, initialPanel);
 
   const result = render(
     <MemoryRouter>
@@ -148,11 +143,6 @@ describe('ExpandedPanel', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     localStorage.clear();
-    sessionStorage.clear();
-  });
-
-  afterEach(() => {
-    Reflect.deleteProperty(performance, 'getEntriesByType');
   });
 
   describe('NavIconButton collapse toggle', () => {
@@ -168,7 +158,7 @@ describe('ExpandedPanel', () => {
       const inactiveButton = screen.getByRole('button', { name: 'com_ui_prompts' });
       fireEvent.click(inactiveButton);
       expect(onCollapse).not.toHaveBeenCalled();
-      expect(sessionStorage.getItem('side:active-panel')).toBe('prompts');
+      expect(getDefaultStore().get(activePanelAtom)).toBe('prompts');
     });
 
     it('expands sidebar when clicking any icon while collapsed', () => {
@@ -183,7 +173,7 @@ describe('ExpandedPanel', () => {
       const inactiveButton = screen.getByRole('button', { name: 'com_ui_prompts' });
       fireEvent.click(inactiveButton);
       expect(onExpand).toHaveBeenCalledTimes(1);
-      expect(sessionStorage.getItem('side:active-panel')).toBe('prompts');
+      expect(getDefaultStore().get(activePanelAtom)).toBe('prompts');
     });
 
     it('notifies mobile navigation after a route link is selected', () => {
@@ -243,7 +233,7 @@ describe('ExpandedPanel', () => {
       fireEvent.click(newChatLink);
 
       expect(mockNewConversation).toHaveBeenCalledTimes(1);
-      expect(sessionStorage.getItem('side:active-panel')).toBe(DEFAULT_PANEL);
+      expect(getDefaultStore().get(activePanelAtom)).toBe(DEFAULT_PANEL);
     });
 
     it('does not switch panel on new chat click when setting is disabled', () => {
@@ -257,7 +247,7 @@ describe('ExpandedPanel', () => {
       fireEvent.click(newChatLink);
 
       expect(mockNewConversation).toHaveBeenCalledTimes(1);
-      expect(sessionStorage.getItem('side:active-panel')).toBe('prompts');
+      expect(getDefaultStore().get(activePanelAtom)).toBe('prompts');
     });
   });
 });

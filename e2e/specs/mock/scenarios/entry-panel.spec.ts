@@ -2,8 +2,8 @@ import { expect, test } from '@playwright/test';
 import { NEW_CHAT_PATH } from '../helpers';
 
 /**
- * Entering the app lands on chat history whatever panel the user had open last visit, while a
- * reload inside the same tab session keeps the panel the user picked.
+ * Entering the app, by a new visit, a reload or a tab opened from it, lands on chat history
+ * whatever panel was open before, while the sidebar crossing the mobile breakpoint keeps it.
  */
 
 test.describe('sidebar panel on entry', () => {
@@ -29,9 +29,7 @@ test.describe('sidebar panel on entry', () => {
     await expect(page.getByTestId('nav-panel-bookmarks')).toHaveAttribute('aria-pressed', 'false');
   });
 
-  test('a reload in the same session keeps the chosen panel @scenario:entry-reload-keeps-panel', async ({
-    page,
-  }) => {
+  test('a reload lands on chat history @scenario:entry-reload-lands-on-chat', async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('unifiedSidebarExpanded', JSON.stringify(true));
     });
@@ -42,14 +40,14 @@ test.describe('sidebar panel on entry', () => {
 
     await page.reload();
 
-    await expect(page.getByTestId('nav-panel-bookmarks')).toHaveAttribute('aria-pressed', 'true');
     await expect(page.getByTestId('nav-panel-conversations')).toHaveAttribute(
       'aria-pressed',
-      'false',
+      'true',
     );
+    await expect(page.getByTestId('nav-panel-bookmarks')).toHaveAttribute('aria-pressed', 'false');
   });
 
-  test('a tab opened from the app lands on chat history even with a cloned session @scenario:entry-opened-tab-lands-on-chat', async ({
+  test('a tab opened from the app lands on chat history @scenario:entry-opened-tab-lands-on-chat', async ({
     page,
   }) => {
     await page.addInitScript(() => {
@@ -60,9 +58,6 @@ test.describe('sidebar panel on entry', () => {
     await bookmarks.click();
     await expect(bookmarks).toHaveAttribute('aria-pressed', 'true');
 
-    await page.context().addInitScript(() => {
-      localStorage.setItem('e2e:cloned-panel', sessionStorage.getItem('side:active-panel') ?? '');
-    });
     const [opened] = await Promise.all([
       page.waitForEvent('popup'),
       page.evaluate((path) => {
@@ -73,7 +68,6 @@ test.describe('sidebar panel on entry', () => {
     await expect(opened.getByRole('textbox', { name: 'Message input' })).toBeVisible({
       timeout: 30000,
     });
-    expect(await opened.evaluate(() => localStorage.getItem('e2e:cloned-panel'))).toBe('bookmarks');
     await expect(opened.getByTestId('nav-panel-conversations')).toHaveAttribute(
       'aria-pressed',
       'true',
