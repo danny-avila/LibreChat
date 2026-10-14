@@ -12,6 +12,12 @@ type ErasureBaseDeps = Omit<
   | 'disconnectMCPServer'
 >;
 
+/** The stored-file fields deletion reads, without the document members of the persisted model. */
+export type ErasureFile = Pick<
+  IMongoFile,
+  'file_id' | 'filepath' | 'filename' | 'source' | 'type' | 'bytes' | 'embedded' | 'temp_file_id'
+>;
+
 export interface ErasureResolverDeps {
   /** Data-layer methods used by the cascade. */
   db: ErasureBaseDeps;
@@ -24,7 +30,7 @@ export interface ErasureResolverDeps {
   }) => Promise<{ endpoints?: { agents?: { checkpointer?: TCheckpointerConfig } } } | undefined>;
   processDeleteRequest: (params: {
     req: Record<string, unknown>;
-    files: IMongoFile[];
+    files: ErasureFile[];
   }) => Promise<unknown>;
   invalidateCachedTools: (params: { userId: string; serverName: string }) => Promise<unknown>;
   getMCPManager: () =>
