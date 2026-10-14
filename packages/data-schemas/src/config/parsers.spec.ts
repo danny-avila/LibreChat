@@ -136,6 +136,26 @@ describe('redactMessage', () => {
     ).not.toContain('s3cr3t');
   });
 
+  it('redacts every secret shape in long strings, inside and straddling the cap', () => {
+    const secrets = [
+      'sk-secretcanary123',
+      'Bearer secretcanary123',
+      'api_key=secretcanary123',
+      'Authorization: secretcanary123',
+      'Cookie: sid=secretcanary123',
+      'postgresql://user:secretcanary123@example.test/app',
+      'eyJsecretcanary.eyJsecretcanary.secretcanary',
+      'secretcanary@example.com',
+    ];
+    for (const secret of secrets) {
+      for (const offset of [0, 4000, 8100, 8192 - secret.length / 2]) {
+        const input = `${'x '.repeat(Math.floor(offset / 2))}${secret} ${'y '.repeat(3000)}`;
+        const out = String(runRedactFormat({ level: 'info', message: input }).message);
+        expect(out).not.toContain('secretcanary');
+      }
+    }
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),
