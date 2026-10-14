@@ -156,6 +156,19 @@ describe('redactMessage', () => {
     }
   });
 
+  it('masks one-character final labels, direct Error stacks and tokens crossing the window edge', () => {
+    expect(redactMessage('user@example.c ok')).toBe('[REDACTED_EMAIL] ok');
+    const error = new Error('failed for jane@example.com');
+    void error.stack;
+    const info = runRedactFormat(error as unknown as RedactInfo);
+    expect(String((info as unknown as Error).stack)).not.toContain('jane');
+    const long = `${' '.repeat(8000)}sk-${'a'.repeat(1500)}${' '.repeat(10)}`;
+    const out = String(runRedactFormat({ level: 'info', message: `${long}tail` }).message);
+    expect(out).not.toContain('aaaa');
+    const edge = `${' '.repeat(8100)}postgresql://user:${'p'.repeat(1300)}@host/db end`;
+    expect(String(runRedactFormat({ level: 'info', message: edge }).message)).not.toContain('pppp');
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),

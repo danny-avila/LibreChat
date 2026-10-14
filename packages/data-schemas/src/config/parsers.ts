@@ -57,7 +57,7 @@ const sensitiveKeys: RegExp[] = [
  * only at a token boundary, so long non-email text is scanned once instead of once per character.
  */
 const EMAIL_PATTERN =
-  /(?:\\"(?:[^"\\\r\n]|\\{3}"){1,64}\\"|"(?:[^"\\\r\n]|\\.){1,64}"|(?<![^\s<>()[\],;"])[^\s<>()[\],;"]+)@(?:\[[^\]\s@]{1,64}\]|[^\s<>()[\],;"@]+\.[^\s<>()[\],;"@]{2,})/gu;
+  /(?:\\"(?:[^"\\\r\n]|\\{3}"){1,64}\\"|"(?:[^"\\\r\n]|\\.){1,64}"|(?<![^\s<>()[\],;"])[^\s<>()[\],;"]+)@(?:\[[^\]\s@]{1,64}\]|[^\s<>()[\],;"@]+\.[^\s<>()[\],;"@]+)/gu;
 const REDACTION_WINDOW_SLACK = 1024;
 const REDACTED_EMAIL_VALUE = '[REDACTED_EMAIL]';
 
@@ -87,6 +87,20 @@ function redactMessage(str: string, trimLength?: number): string {
   return redacted;
 }
 
+const EMAIL_TOKEN_DELIMITER = /[\s<>()[\],;"]/u;
+
+/** Drops a token cut by the window edge: its terminator is unseen, so no pattern could match it. */
+function trimUnfinishedToken(full: string, window: string): string {
+  if (EMAIL_TOKEN_DELIMITER.test(full[window.length])) {
+    return window;
+  }
+  let end = window.length;
+  while (end > 0 && !EMAIL_TOKEN_DELIMITER.test(window[end - 1])) {
+    end--;
+  }
+  return window.substring(0, end);
+}
+
 function redactLogString(str: string): string {
   if (str.length <= MAX_REDACTION_STRING_LENGTH) {
     return redactMessage(str);
@@ -94,9 +108,12 @@ function redactLogString(str: string): string {
 
   /**
    * Redacts a bounded window past the cutoff before cutting, so an address that straddles the limit
-   * is matched whole. Only a local part longer than the slack could still be split by the window.
+   * is matched whole. The unfinished token at the window edge is dropped rather than kept unmatched.
    */
-  const window = str.substring(0, MAX_REDACTION_STRING_LENGTH + REDACTION_WINDOW_SLACK);
+  const window = trimUnfinishedToken(
+    str,
+    str.substring(0, MAX_REDACTION_STRING_LENGTH + REDACTION_WINDOW_SLACK),
+  );
   const redacted = redactMessage(window);
   const kept = redacted.substring(0, MAX_REDACTION_STRING_LENGTH);
   return `${kept}... [truncated ${str.length - kept.length} chars]`;
@@ -404,6 +421,11 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
 
     if (info.message !== undefined) {
       info.message = redactLogValue(info.message);
+    }
+
+    /** A direct `logger.error(error)` makes `info` the Error, whose stack is non-enumerable. */
+    if (typeof infoRecord.stack === 'string') {
+      infoRecord.stack = redactLogString(infoRecord.stack);
     }
 
     const symbolValue = infoRecord[MESSAGE_SYMBOL];
