@@ -31,6 +31,7 @@ export type {
 export {
   GenerationPublicationFencedError,
   JobPredecessorMismatchError,
+  GenerationAdmissionDeniedError,
   isPendingActionExpired,
   isPendingActionStale,
 } from './interfaces/IJobStore';
