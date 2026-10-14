@@ -429,19 +429,20 @@ function setLogField(
   safeKey: string,
   value: unknown,
 ): boolean {
+  let removed = true;
   try {
     if (safeKey !== key) {
-      delete target[key];
+      removed = Reflect.deleteProperty(target, key);
     }
     target[safeKey] = value;
-    return true;
+    return removed;
   } catch {
     try {
       Object.defineProperty(target, safeKey, { value, configurable: true, writable: true });
-      return true;
     } catch {
-      return false;
+      /* handled by the caller through the false return */
     }
+    return false;
   }
 }
 
@@ -449,6 +450,7 @@ function setLogField(
 function sanitizedCopy(
   info: Record<string | symbol, unknown>,
   fields: Record<string, unknown>,
+  stack: string | undefined,
 ): winston.Logform.TransformableInfo {
   const copy: Record<string | symbol, unknown> = {};
   for (const symbol of Object.getOwnPropertySymbols(info)) {
@@ -456,8 +458,8 @@ function sanitizedCopy(
   }
   copy.level = info.level;
   copy.message = info.message;
-  if (typeof info.stack === 'string') {
-    copy.stack = info.stack;
+  if (stack !== undefined) {
+    copy.stack = stack;
   }
   return Object.assign(copy, fields) as winston.Logform.TransformableInfo;
 }
@@ -477,8 +479,15 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
     }
 
     /** A direct `logger.error(error)` makes `info` the Error, whose stack is non-enumerable. */
+    let redactedStack: string | undefined;
+    let replaceFailed = false;
     if (typeof infoRecord.stack === 'string') {
-      infoRecord.stack = redactLogString(infoRecord.stack);
+      redactedStack = redactLogString(infoRecord.stack);
+      try {
+        infoRecord.stack = redactedStack;
+      } catch {
+        replaceFailed = true;
+      }
     }
 
     const symbolValue = infoRecord[MESSAGE_SYMBOL];
@@ -492,7 +501,6 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
 
     const cursors = new Map<string, number>();
     const fields: Record<string, unknown> = {};
-    let replaceFailed = false;
     for (const key of Object.keys(info)) {
       if (key === 'message' || key === 'level') {
         continue;
@@ -508,7 +516,7 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
         replaceFailed = true;
       }
     }
-    return replaceFailed ? sanitizedCopy(infoRecord, fields) : info;
+    return replaceFailed ? sanitizedCopy(infoRecord, fields, redactedStack) : info;
   },
 );
 

@@ -244,6 +244,16 @@ describe('redactMessage', () => {
     expect(out.detail).not.toContain('jane');
   });
 
+  it('sanitizes a copy when a stack or key cannot be replaced in place', () => {
+    const error = new Error('failed for jane@example.com');
+    Object.defineProperty(error, 'stack', { value: 'at jane@example.com', writable: false });
+    const out = runRedactFormat(error as unknown as RedactInfo) as unknown as { stack: string };
+    expect(out.stack).not.toContain('jane');
+    const frozen = { level: 'info', message: 'm' } as RedactInfo;
+    Object.defineProperty(frozen, 'jane@example.com', { value: 1, enumerable: true });
+    expect(JSON.stringify(runRedactFormat(frozen))).not.toContain('jane');
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),
