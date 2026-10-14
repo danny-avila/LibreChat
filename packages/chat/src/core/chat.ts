@@ -132,6 +132,8 @@ type ActiveRequest = {
   reattach?: { streamId?: string };
   /** The pause this request's generation reported, which a confirmed stop ends. */
   paused?: string;
+  /** The response this request produces: its placeholder, then the one its final frame names. */
+  responseId?: string;
   /** Resolves once the request settled and released the chat. */
   finished: Promise<void>;
   finish: () => void;
@@ -252,16 +254,18 @@ const markApproval = (
         return;
       }
       content ??= [...(message.content ?? [])];
+      const approval = {
+        ...toolCall.approval,
+        decision: decision.decision,
+        reason: decision.reason,
+      };
+      if (decision.reason === undefined) {
+        /** A changed decision shows only its own reason. */
+        delete approval.reason;
+      }
       content[index] = {
         ...part,
-        tool_call: {
-          ...toolCall,
-          approval: {
-            ...toolCall.approval,
-            decision: decision.decision,
-            ...(decision.reason !== undefined && { reason: decision.reason }),
-          },
-        },
+        tool_call: { ...toolCall, approval },
       } as (typeof content)[number];
     });
     if (!content) {
@@ -623,7 +627,9 @@ export class Chat {
         const optimistic = prepared.messages;
         await this.executor.run(() => {
           if (!active.controller.signal.aborted) {
-            this.write(typeof optimistic === 'function' ? optimistic(this.messages) : optimistic);
+            const list = typeof optimistic === 'function' ? optimistic(this.messages) : optimistic;
+            active.responseId = list[list.length - 1]?.messageId;
+            this.write(list);
           }
         });
       }
@@ -704,6 +710,8 @@ export class Chat {
         });
         if (event.type === 'pending_action') {
           active.paused = event.data.actionId;
+        } else if (event.type === 'final' && event.data.responseMessage?.messageId) {
+          active.responseId = event.data.responseMessage.messageId;
         }
         if (outcome) {
           break;
@@ -792,12 +800,16 @@ export class Chat {
     }
     state.error = outcome.kind === 'error' ? outcome.error : undefined;
     const messages = this.messages;
+    const message =
+      (active.responseId !== undefined
+        ? messages.find((stored) => stored.messageId === active.responseId)
+        : undefined) ?? messages[messages.length - 1];
     this.notify();
     if (outcome.kind === 'error') {
       this.init.onError?.(outcome.error);
     }
     this.init.onFinish?.({
-      message: messages[messages.length - 1],
+      message,
       messages,
       isAbort: outcome.kind === 'abort',
       isDisconnect: outcome.kind === 'error' && outcome.disconnect,
