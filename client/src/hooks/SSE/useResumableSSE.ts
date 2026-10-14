@@ -112,6 +112,7 @@ import { withSubmittedCodeDecision } from '~/hooks/Agents/codeDecision';
 import { useChatTransport } from '~/Providers/ChatTransportContext';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { liveAppliedSteerIdsAtom } from '~/store/steer';
+import { reopenTermsOnRefusal } from '~/utils/terms';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { fetchConvoSnapshot } from '~/utils/convos';
 import { useFileMapContext } from '~/Providers';
@@ -370,9 +371,9 @@ const getStreamStartFailureText = (errorData?: unknown): string => {
     : 'Error connecting to server, try refreshing the page.';
 };
 
-const getStreamStartFailureData = (errorData?: unknown): TResData =>
+const getStreamStartFailureData = (errorData?: unknown, termsRefusalText?: string): TResData =>
   ({
-    text: getStreamStartFailureText(errorData),
+    text: termsRefusalText ?? getStreamStartFailureText(errorData),
     metadata: markStreamStartFailedMetadata(),
   }) as unknown as TResData;
 
@@ -4300,8 +4301,12 @@ export default function useResumableSSE(
       if (signal?.aborted) {
         return null;
       }
+      const termsRefused = reopenTermsOnRefusal(queryClient, errorData);
       errorHandler({
-        data: getStreamStartFailureData(errorData),
+        data: getStreamStartFailureData(
+          errorData,
+          termsRefused ? localize('com_error_terms_not_accepted') : undefined,
+        ),
         submission: currentSubmission as EventSubmission,
       });
       setShowStopButton(false);
@@ -4315,6 +4320,7 @@ export default function useResumableSSE(
       errorHandler,
       jotaiStore,
       localize,
+      queryClient,
       restoreQueuedSubmission,
       setIsSubmitting,
       setShowStopButton,

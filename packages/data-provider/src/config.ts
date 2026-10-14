@@ -96,6 +96,9 @@ export const defaultSocialLogins = ['google', 'facebook', 'openid', 'github', 'd
 
 export const TWO_FACTOR_ENROLLMENT_REQUIRED_CODE = 'TWO_FACTOR_ENROLLMENT_REQUIRED' as const;
 
+/** A write was refused because the deployment requires terms acceptance the user has not given. */
+export const TERMS_NOT_ACCEPTED_CODE = 'terms_not_accepted' as const;
+
 /** A federated record was refused a password login, so the only way in is its identity provider. */
 export const TWO_FACTOR_FEDERATED_LOGIN_BLOCKED_CODE =
   'TWO_FACTOR_FEDERATED_LOGIN_BLOCKED' as const;
@@ -1865,6 +1868,10 @@ export const agentsEndpointSchema = baseEndpointSchema
       eventDriven: z
         .object({
           selfUrl: z.string().url().optional(),
+          /** Days a dead-lettered trigger delivery stays available for operator review and
+           * requeue before it is removed with its event payload. Unset keeps dead letters until
+           * an operator acts. */
+          deadLetterRetentionDays: z.number().int().min(1).max(3650).optional(),
           /** Every replica keeps polling Mongo as a crash-recovery fallback. Wakes
            * keep local delivery prompt; these caps bound work missed across replicas. */
           idlePolling: z
