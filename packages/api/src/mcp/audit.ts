@@ -12,6 +12,9 @@ export interface MCPServerAuditEvent {
   previous?: ServerConfigLike;
   /** Config after the change; omitted on delete. */
   next?: ServerConfigLike;
+  /** Reads the committed config, so the diff reflects what persistence stored (generated
+   * headers, preserved secrets) rather than what the editor submitted. */
+  resolveCommitted?: () => Promise<ServerConfigLike>;
 }
 
 /** JSON with object keys sorted, so entry order never reads as a change. */
@@ -93,8 +96,10 @@ export function createMCPServerAuditor(options: {
   const emit = createAdminAuditEmitter({ ...options, logPrefix: '[mcpServers]' });
   async function record(
     req: Parameters<AdminAuditEmitter>[0],
-    { action, serverName, previous, next }: MCPServerAuditEvent,
+    { action, serverName, previous, next: submitted, resolveCommitted }: MCPServerAuditEvent,
   ): Promise<void> {
+    const committed = await resolveCommitted?.().catch(() => undefined);
+    const next = committed ?? submitted;
     const name = serverTitle(next) ?? serverTitle(previous);
     const before = action === 'mcp_server.created' ? undefined : previous;
     const changed =

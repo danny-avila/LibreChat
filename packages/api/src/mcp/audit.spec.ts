@@ -88,6 +88,43 @@ describe('createMCPServerAuditor', () => {
     );
   });
 
+  it('diffs against the committed config when it can be read', async () => {
+    const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+    const audit = createMCPServerAuditor({ recordAuditEntry });
+    const headers = { Authorization: 'Bearer {{MCP_API_KEY_srv}}' };
+
+    await audit(req, {
+      action: 'mcp_server.updated',
+      serverName: 'srv',
+      previous: { title: 'Old', headers },
+      next: { title: 'New' },
+      resolveCommitted: async () => ({ title: 'New', headers }),
+    });
+
+    expect(recordAuditEntry).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: { source: 'DB', fields: 'title' } }),
+    );
+  });
+
+  it('falls back to the submitted config when the committed read fails', async () => {
+    const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+    const audit = createMCPServerAuditor({ recordAuditEntry });
+
+    await audit(req, {
+      action: 'mcp_server.updated',
+      serverName: 'srv',
+      previous: { title: 'Old' },
+      next: { title: 'New' },
+      resolveCommitted: async () => {
+        throw new Error('read failed');
+      },
+    });
+
+    expect(recordAuditEntry).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: { source: 'DB', fields: 'title' } }),
+    );
+  });
+
   it('runs the post-commit steps before the audit write and still audits when they throw', async () => {
     const order: string[] = [];
     const recordAuditEntry = jest.fn().mockImplementation(async () => void order.push('audit'));

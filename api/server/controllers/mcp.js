@@ -595,7 +595,13 @@ const updateMCPServerController = async (req, res) => {
      * config between the pre-commit fence and the committed update. */
     await auditMCPServer(
       req,
-      { action: 'mcp_server.updated', serverName, previous: existingConfig, next: parsedConfig },
+      {
+        action: 'mcp_server.updated',
+        serverName,
+        previous: existingConfig,
+        next: parsedConfig,
+        resolveCommitted: () => registry.getServerConfig(serverName, userId),
+      },
       async () => {
         await fenceCommittedMCPMutation({ userId, serverName });
         await disconnectLocalMCPServer(userId, serverName);
