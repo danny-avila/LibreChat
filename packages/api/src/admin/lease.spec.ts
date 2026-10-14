@@ -31,11 +31,23 @@ describe('withLease', () => {
     };
     await expect(
       withLease(lease, 'k', async (fence) => {
-        await expect(fence()).rejects.toThrow('blip');
+        await expect(fence()).rejects.toMatchObject({ code: 'RESOURCE_PERMISSIONS_UNAVAILABLE' });
         await fence();
         return 'ok';
       }),
     ).resolves.toBe('ok');
+  });
+
+  it('turns a lock-store failure on acquire into the unavailable error', async () => {
+    const lease = {
+      acquireResourceLock: jest.fn().mockRejectedValue(new Error('mongo secret detail')),
+      renewResourceLock: jest.fn(),
+      releaseResourceLock: jest.fn(),
+    };
+    await expect(withLease(lease, 'k', async () => 'x')).rejects.toMatchObject({
+      statusCode: 503,
+      message: expect.not.stringContaining('secret'),
+    });
   });
 
   it('keys one grant the same for a user ObjectId in either case', () => {

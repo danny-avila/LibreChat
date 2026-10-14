@@ -18,7 +18,10 @@ import type { Types } from 'mongoose';
 import type { ResolvedPrincipal } from '~/types/principal';
 import type { ServerRequest } from '~/types/http';
 import type { LeaseDeps } from './lease';
-import { ResourcePermissionsBusyError } from '~/acl/accessControlService';
+import {
+  ResourcePermissionsBusyError,
+  ResourcePermissionsUnavailableError,
+} from '~/acl/accessControlService';
 import { PERMISSION_AUDIT_UNAVAILABLE } from '~/acl/codes';
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { grantLeaseKey, withLease } from './lease';
@@ -475,8 +478,11 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
         },
       );
     } catch (error) {
-      if (error instanceof ResourcePermissionsBusyError) {
-        return res.status(409).json({ error: error.message, code: error.code });
+      if (
+        error instanceof ResourcePermissionsBusyError ||
+        error instanceof ResourcePermissionsUnavailableError
+      ) {
+        return res.status(error.statusCode).json({ error: error.message, code: error.code });
       }
       logger.error('[adminGrants] assignGrant error:', error);
       return res.status(500).json({ error: 'Failed to assign grant' });
@@ -562,8 +568,11 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
         },
       );
     } catch (error) {
-      if (error instanceof ResourcePermissionsBusyError) {
-        return res.status(409).json({ error: error.message, code: error.code });
+      if (
+        error instanceof ResourcePermissionsBusyError ||
+        error instanceof ResourcePermissionsUnavailableError
+      ) {
+        return res.status(error.statusCode).json({ error: error.message, code: error.code });
       }
       logger.error('[adminGrants] revokeGrant error:', error);
       return res.status(500).json({ error: 'Failed to revoke grant' });

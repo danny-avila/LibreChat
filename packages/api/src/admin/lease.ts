@@ -1,6 +1,9 @@
 import { Types } from 'mongoose';
 import { PrincipalType } from 'librechat-data-provider';
-import { ResourcePermissionsBusyError } from '~/acl/accessControlService';
+import {
+  ResourcePermissionsBusyError,
+  ResourcePermissionsUnavailableError,
+} from '~/acl/accessControlService';
 
 export interface LeaseDeps {
   acquireResourceLock: (data: { key: string; ownerId: string; ttlMs: number }) => Promise<boolean>;
@@ -27,6 +30,11 @@ export function grantLeaseKey(
   return `grant:${principalType.toLowerCase()}:${id}:${capability}:${tenantId ?? ''}`;
 }
 
+/** A lock-store failure is a retryable 503, never a raw driver error. */
+const unavailable = (): never => {
+  throw new ResourcePermissionsUnavailableError();
+};
+
 /**
  * Runs `fn` while holding a lease on `key`, so the audit entry and the write of one
  * grant are ordered against a concurrent change of the same grant. `fence` re-validates
@@ -43,7 +51,7 @@ export async function withLease<T>(
   }
   const lock = { key, ownerId: new Types.ObjectId().toString() };
   const deadline = Date.now() + LEASE_WAIT_MS;
-  while (!(await deps.acquireResourceLock({ ...lock, ttlMs: LEASE_TTL_MS }))) {
+  while (!(await deps.acquireResourceLock({ ...lock, ttlMs: LEASE_TTL_MS }).catch(unavailable))) {
     if (Date.now() >= deadline) {
       throw new ResourcePermissionsBusyError();
     }
@@ -52,7 +60,10 @@ export async function withLease<T>(
   let lost = false;
   const renew = async () => {
     /** Only a definitive "not the holder" answer loses the lease; a transient error may be retried. */
-    if (lost || !(await deps.renewResourceLock({ ...lock, ttlMs: LEASE_TTL_MS }))) {
+    if (
+      lost ||
+      !(await deps.renewResourceLock({ ...lock, ttlMs: LEASE_TTL_MS }).catch(unavailable))
+    ) {
       lost = true;
       throw new ResourcePermissionsBusyError();
     }
