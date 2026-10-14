@@ -568,6 +568,7 @@ describe('deleteUserController', () => {
     status: jest.fn().mockReturnThis(),
     send: jest.fn().mockReturnThis(),
     json: jest.fn().mockReturnThis(),
+    clearCookie: jest.fn(),
   };
 
   beforeEach(() => {
@@ -584,6 +585,7 @@ describe('deleteUserController', () => {
 
     expect(mockRes.status).toHaveBeenCalledWith(200);
     expect(mockRes.send).toHaveBeenCalledWith({ message: 'User deleted' });
+    expect(mockRes.clearCookie).toHaveBeenCalledWith('session_hint');
     expect(deletePasskeysByUser).toHaveBeenCalledWith(userIdStr);
     expect(beginAgentTriggerUserDeletion).toHaveBeenCalledWith(userId.toString(), expect.any(Date));
     expect(mockPrepareAgentTriggerUserPurge).toHaveBeenCalledWith(

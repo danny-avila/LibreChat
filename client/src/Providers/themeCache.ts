@@ -1,5 +1,10 @@
-import { themeRoleFingerprint } from 'librechat-data-provider';
 import { resolveTheme, describeResolvedTheme } from '@librechat/client';
+import {
+  themeOwnerKey,
+  parseSessionHint,
+  SESSION_HINT_COOKIE,
+  themeRoleFingerprint,
+} from 'librechat-data-provider';
 import type { ResolvedThemeStyle, ThemeDefinition } from '@librechat/client';
 import type { TInterfaceConfig, TUser } from 'librechat-data-provider';
 
@@ -16,6 +21,13 @@ export const THEME_CACHE_KEY = 'deployment-theme';
  * `client/vite.config.ts` writes the same value into the boot script's version check.
  */
 export const THEME_CACHE_VERSION = themeRoleFingerprint();
+/**
+ * The owner this tab last saw signed in. Session storage lives and dies with the tab, so
+ * the cache is replayed only on a reload of a tab that was serving its owner; a new tab,
+ * or one whose identity changed elsewhere, waits for its own answer. The boot script
+ * reads this key too.
+ */
+export const THEME_OWNER_KEY = 'deployment-theme-owner';
 
 export type ThemeCacheEntry = {
   v: string;
@@ -65,7 +77,7 @@ export function isPublicRoute(pathname: string, basePath = '/'): boolean {
 }
 
 export const themeOwner = (user?: Pick<TUser, 'id' | 'tenantId'>): string | undefined =>
-  user?.id ? `${user.tenantId ?? ''}:${user.id}` : undefined;
+  user?.id ? themeOwnerKey(user.id, user.tenantId) : undefined;
 
 const isStyle = (value: unknown): value is ResolvedThemeStyle =>
   typeof value === 'object' &&
@@ -95,6 +107,42 @@ export function readThemeCache(): ThemeCacheEntry | undefined {
     // Storage is an optional adapter: denied or corrupt storage paints no cached theme.
   }
   return undefined;
+}
+
+const sessionHintPattern = new RegExp(`(?:^|;\\s*)${SESSION_HINT_COOKIE}=([^;]*)`);
+
+/** Whether the server's readable session hint names a live session of `owner`. */
+export function isLiveSessionOf(owner: string): boolean {
+  const value = sessionHintPattern.exec(document.cookie)?.[1];
+  const hint = value ? parseSessionHint(decodeURIComponent(value)) : undefined;
+  return hint != null && hint.expires > Date.now() && hint.owner === owner;
+}
+
+/**
+ * The cache, only when this tab last saw its owner signed in and the browser's live session is
+ * that owner's, so the replay cannot cross identities or outlive the session.
+ */
+export function readOwnedThemeCache(): ThemeCacheEntry | undefined {
+  try {
+    const tabOwner = sessionStorage.getItem(THEME_OWNER_KEY);
+    const entry = tabOwner && isLiveSessionOf(tabOwner) ? readThemeCache() : undefined;
+    return entry?.owner === tabOwner ? entry : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Records the tab's signed-in owner, or forgets it once no one is signed in. */
+export function setThemeOwner(owner?: string): void {
+  try {
+    if (owner) {
+      sessionStorage.setItem(THEME_OWNER_KEY, owner);
+    } else {
+      sessionStorage.removeItem(THEME_OWNER_KEY);
+    }
+  } catch {
+    // Without session storage no owner is known, so the cache is never replayed.
+  }
 }
 
 export function clearThemeCache(): void {

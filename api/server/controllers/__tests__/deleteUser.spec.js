@@ -49,6 +49,7 @@ jest.mock('librechat-data-provider', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  clearSessionHintCookie: jest.fn(),
   createEmailChangeService: jest.fn(() => ({
     requestEmailChange: jest.fn(),
     confirmEmailChange: jest.fn(),
@@ -180,7 +181,7 @@ jest.mock('~/cache', () => ({
 }));
 
 const { deleteUserController } = require('~/server/controllers/UserController');
-const { deleteOwnedAgentCheckpoints } = require('@librechat/api');
+const { deleteOwnedAgentCheckpoints, clearSessionHintCookie } = require('@librechat/api');
 
 function createRes() {
   const res = {};
@@ -227,6 +228,24 @@ function stubDeletionMocks() {
 beforeEach(() => {
   jest.clearAllMocks();
   stubDeletionMocks();
+});
+
+describe('deleteUserController - session hint', () => {
+  it('retires the session hint once sessions are revoked, even when a later cleanup fails', async () => {
+    const req = { user: { id: 'user1', _id: 'user1', email: 'a@b.com' }, body: {} };
+    const res = createRes();
+    mockGetUserById.mockResolvedValue({ _id: 'user1', twoFactorEnabled: false });
+    mockDeletePresets.mockRejectedValue(new Error('preset store unavailable'));
+
+    await deleteUserController(req, res);
+
+    expect(mockDeleteAllUserSessions).toHaveBeenCalledWith({ userId: 'user1' });
+    expect(clearSessionHintCookie).toHaveBeenCalledWith(res);
+    expect(mockDeleteAllUserSessions.mock.invocationCallOrder[0]).toBeLessThan(
+      clearSessionHintCookie.mock.invocationCallOrder[0],
+    );
+    expect(res.status).toHaveBeenCalledWith(500);
+  });
 });
 
 describe('deleteUserController - 2FA enforcement', () => {
