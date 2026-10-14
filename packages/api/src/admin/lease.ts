@@ -6,7 +6,12 @@ import {
 } from '~/acl/accessControlService';
 
 export interface LeaseDeps {
-  acquireResourceLock: (data: { key: string; ownerId: string; ttlMs: number }) => Promise<boolean>;
+  acquireResourceLock: (data: {
+    key: string;
+    ownerId: string;
+    ttlMs: number;
+    readyWaitMs?: number;
+  }) => Promise<boolean>;
   renewResourceLock: (data: { key: string; ownerId: string; ttlMs: number }) => Promise<boolean>;
   releaseResourceLock: (data: { key: string; ownerId: string }) => Promise<boolean>;
 }
@@ -54,7 +59,11 @@ export async function withLease<T>(
   }
   const lock = { key, ownerId: new Types.ObjectId().toString() };
   const deadline = Date.now() + waitMs;
-  while (!(await deps.acquireResourceLock({ ...lock, ttlMs }).catch(unavailable))) {
+  while (
+    !(await deps
+      .acquireResourceLock({ ...lock, ttlMs, readyWaitMs: Math.max(0, deadline - Date.now()) })
+      .catch(unavailable))
+  ) {
     if (Date.now() >= deadline) {
       throw new ResourcePermissionsBusyError();
     }

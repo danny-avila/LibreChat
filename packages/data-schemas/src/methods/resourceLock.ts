@@ -30,10 +30,10 @@ export function createResourceLockMethods(mongoose: typeof import('mongoose')): 
   }
 
   /** Resolves false instead of waiting past the deadline on a stuck index build. */
-  async function indexesReady(): Promise<boolean> {
+  async function indexesReady(maxWaitMs: number): Promise<boolean> {
     let timer: NodeJS.Timeout | undefined;
     const timeout = new Promise<false>((resolve) => {
-      timer = setTimeout(() => resolve(false), INDEX_BUILD_WAIT_MS);
+      timer = setTimeout(() => resolve(false), maxWaitMs);
     });
     try {
       return await Promise.race([ensureIndexes().then(() => true as const), timeout]);
@@ -57,9 +57,10 @@ export function createResourceLockMethods(mongoose: typeof import('mongoose')): 
     key,
     ownerId,
     ttlMs,
+    readyWaitMs,
   }: ResourceLockAcquireData): Promise<boolean> {
     const ResourceLock = mongoose.models.ResourceLock as Model<IResourceLock>;
-    if (!(await indexesReady())) {
+    if (!(await indexesReady(Math.min(readyWaitMs ?? INDEX_BUILD_WAIT_MS, INDEX_BUILD_WAIT_MS)))) {
       return false;
     }
     const now = new Date();

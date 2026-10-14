@@ -148,6 +148,8 @@ export async function planInsightsAudit(args: {
       metadata: {
         principalType: change.principal.type,
         principalId: canonicalPrincipalId(change.principal.type, change.principal.id),
+        /** The database id, present however the agent's logical id resolved, for correlation. */
+        resourceId,
       },
       context,
       tenantId: req.user?.tenantId,
@@ -186,6 +188,7 @@ export function planResourceAudit({
         widening: widensAccess(change),
         input: {
           ...event,
+          metadata: { ...event.metadata, resourceId },
           outcome: 'success',
           severity: 'warning',
           actor,

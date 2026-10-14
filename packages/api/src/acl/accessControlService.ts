@@ -536,12 +536,18 @@ export class AccessControlService {
          */
         const deadline = Date.now() + leaseWaitMs;
         const tryAcquire = () =>
-          this._dbMethods.acquireResourceLock({ ...lock, ttlMs: leaseTtlMs }).catch((error) => {
-            logger.error('[AccessControlService.bulkUpdateResourcePermissions] Lock failed', {
-              ...getSafeErrorMetadata(error),
+          this._dbMethods
+            .acquireResourceLock({
+              ...lock,
+              ttlMs: leaseTtlMs,
+              readyWaitMs: Math.max(0, deadline - Date.now()),
+            })
+            .catch((error) => {
+              logger.error('[AccessControlService.bulkUpdateResourcePermissions] Lock failed', {
+                ...getSafeErrorMetadata(error),
+              });
+              throw new ResourcePermissionsUnavailableError();
             });
-            throw new ResourcePermissionsUnavailableError();
-          });
         while (!(lockHeld = await tryAcquire())) {
           if (Date.now() >= deadline) {
             throw new ResourcePermissionsBusyError();

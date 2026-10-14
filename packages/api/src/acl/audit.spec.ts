@@ -96,6 +96,7 @@ describe('runAuditedPermissionUpdate', () => {
           previousPermBits: 0,
           roleId: 'r1',
           previousRoleId: '',
+          resourceId: 'res-1',
         },
       }),
     );
@@ -225,6 +226,18 @@ describe('runAuditedPermissionUpdate', () => {
       }),
     ).rejects.toThrow('cache down');
     expect(recordAuditEntry.mock.calls.map(([i]) => i.outcome)).toEqual(['success']);
+  });
+
+  test('every entry carries the database resource id, with or without the agent lookup', async () => {
+    const { recordAuditEntry, run } = setup();
+    await run([grantChange('u1')], true, {
+      resourceType: ResourceType.AGENT,
+      getAgent: jest.fn().mockRejectedValue(new Error('down')),
+      insightsChanges: [grantChange('u1')],
+    });
+    const metas = recordAuditEntry.mock.calls.map(([i]) => i.metadata.resourceId);
+    expect(metas.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(metas)).toEqual(new Set(['res-1']));
   });
 
   test('audits principals and role ids in canonical form', async () => {

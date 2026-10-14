@@ -10,6 +10,8 @@ export interface ResourceLockAcquireData {
   key: string;
   ownerId: string;
   ttlMs: number;
+  /** Longest wait for the lock index to be ready; defaults to a short internal bound. */
+  readyWaitMs?: number;
 }
 
 export interface ResourceLockReleaseData {
