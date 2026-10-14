@@ -211,13 +211,15 @@ export function createAdminCodeEnvironmentHandlers(deps: AdminCodeEnvironmentDep
         await pairingFailed('invalid_response');
         return res.status(502).json({ error: 'Code API returned an invalid pairing response' });
       }
-      await emitRevocationAudit(req, { ...pairingEvent, metadata: pairingMetadata });
-      return res.status(200).json({
+      /** The code is delivered first: it expires, so audit latency must not sit in front of it. */
+      res.status(200).json({
         environmentId: resolved.id,
         workerId: payload.workerId,
         code: payload.code,
         expiresAt: payload.expiresAt,
       });
+      await emitRevocationAudit(req, { ...pairingEvent, metadata: pairingMetadata });
+      return res;
     } catch (error) {
       const timedOut = error instanceof Error && error.name === 'TimeoutError';
       await pairingFailed(timedOut ? 'timeout' : 'request_failed');

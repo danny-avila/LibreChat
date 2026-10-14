@@ -454,6 +454,31 @@ describe('createAdminCodeEnvironmentHandlers', () => {
       expect(order).toEqual(['bridge', 'audit:pending', 'audit:success']);
     });
 
+    it('delivers the pairing code before the terminal audit write settles', async () => {
+      let release: () => void = () => undefined;
+      const response = mockResponse();
+      const recordAuditEntry = jest.fn().mockImplementation(async (input) => {
+        if (input.outcome === undefined || input.outcome === 'success') {
+          expect(response.body).toEqual(expect.objectContaining({ workerId: 'vm-1' }));
+          await new Promise<void>((resolve) => (release = resolve));
+        }
+      });
+      const fetchImpl = jest.fn().mockResolvedValue(
+        Response.json({
+          protocolVersion: 1,
+          workerId: 'vm-1',
+          code: 'one-time-code-value-that-is-long',
+          expiresAt: '2099-08-30T12:00:00.000Z',
+        }),
+      );
+
+      const pending = build(fetchImpl, recordAuditEntry).createPairing(request(), response);
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(response.statusCode).toBe(200);
+      release();
+      await pending;
+    });
+
     it('never blocks a revocation on an audit outage, even when fail-closed', async () => {
       const ok = jest.fn().mockResolvedValue(Response.json({ protocolVersion: 1, revoked: true }));
       const response = mockResponse();
