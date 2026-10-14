@@ -478,6 +478,8 @@ describe('PermissionsController', () => {
             principalId: revokedUserId,
             permBits: 3,
             previousPermBits: 0,
+            roleId: 'role-1',
+            previousRoleId: '',
           },
         }),
       );
