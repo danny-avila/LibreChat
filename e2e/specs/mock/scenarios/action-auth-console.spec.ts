@@ -102,7 +102,9 @@ test.describe('action auth console', () => {
       );
       await page.getByRole('button', { name: 'Create', exact: true }).click();
       expect((await saveRequest).postData() ?? '').toContain(API_KEY);
-      await expect(page.getByText('Successfully created or updated Action')).toBeVisible();
+      await expect(
+        page.getByText('Successfully created or updated Action', { exact: true }).first(),
+      ).toBeVisible();
 
       const logged = await Promise.all(pending);
       expect(logged.filter((line) => line.includes(API_KEY))).toEqual([]);
