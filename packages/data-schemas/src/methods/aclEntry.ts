@@ -142,6 +142,8 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
     principalsList: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
     resourceType: string,
     resourceId: string | Types.ObjectId,
+    session?: ClientSession,
+    readPrimary?: boolean,
   ) => Promise<IAclEntry[]>;
   hasPermission: (
     principalsList: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
@@ -272,6 +274,8 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
     principalsList: Array<{ principalType: string; principalId?: string | Types.ObjectId }>,
     resourceType: string,
     resourceId: string | Types.ObjectId,
+    session?: ClientSession,
+    readPrimary?: boolean,
   ): Promise<IAclEntry[]> {
     const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
     const principalsQuery = principalsList.map((p) => ({
@@ -279,11 +283,19 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
       ...(p.principalType !== PrincipalType.PUBLIC && { principalId: p.principalId }),
     }));
 
-    return await AclEntry.find({
+    const query = AclEntry.find({
       $or: principalsQuery,
       resourceType,
       resourceId,
-    }).lean<IAclEntry[]>();
+    });
+    if (session) {
+      query.session(session);
+    }
+    if (readPrimary && !session?.inTransaction()) {
+      /** Mutation snapshots must not come from a lagging secondary; a transaction already reads from the primary. */
+      query.read('primary');
+    }
+    return await query.lean<IAclEntry[]>();
   }
 
   /**

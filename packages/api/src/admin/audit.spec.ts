@@ -1,5 +1,5 @@
 import type { RecordAuditEntryInput } from '@librechat/data-schemas';
-import { recordSystemAuditEntry } from './audit';
+import { isAuditFailClosed, recordSystemAuditEntry } from './audit';
 
 const input = { action: 'role.synced' } as unknown as RecordAuditEntryInput;
 
@@ -25,5 +25,19 @@ describe('recordSystemAuditEntry', () => {
         '[test]',
       ),
     ).resolves.toBeUndefined();
+  });
+});
+
+describe('isAuditFailClosed', () => {
+  it.each([
+    [undefined, true],
+    ['', true],
+    ['true', true],
+    ['False', true],
+    ['0', true],
+    ['false', false],
+  ])('AUDIT_LOG_FAIL_CLOSED=%p -> %p', (value, expected) => {
+    const env = value === undefined ? {} : { AUDIT_LOG_FAIL_CLOSED: value };
+    expect(isAuditFailClosed(env as NodeJS.ProcessEnv)).toBe(expected);
   });
 });

@@ -19,6 +19,16 @@ export type AdminAuditEvent = Omit<RecordAuditEntryInput, 'actor' | 'context'>;
 
 export type AdminAuditEmitter = (req: ServerRequest, event: AdminAuditEvent) => Promise<void>;
 
+/**
+ * Whether resource permission updates fail closed. Their audit entry is written
+ * before the ACL changes, so a failed write rejects the request with nothing
+ * applied. On unless the operator opts out with `AUDIT_LOG_FAIL_CLOSED=false`;
+ * any other value keeps the secure default so a typo cannot silently disable it.
+ */
+export function isAuditFailClosed(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.AUDIT_LOG_FAIL_CLOSED !== 'false';
+}
+
 /** Resolves the authenticated caller as an audit actor; null when unauthenticated. */
 export function getAuditActor(req: ServerRequest): AuditActorInput | null {
   const user = req.user;
