@@ -592,6 +592,14 @@ describe('redactMessage', () => {
     );
   });
 
+  it('keeps encoded-email matching linear at repeated URL boundaries', () => {
+    const started = Date.now();
+    redactMessage('?a%40'.repeat(30000));
+    redactMessage('&a%40'.repeat(30000));
+    redactMessage('/a%40'.repeat(30000));
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),
