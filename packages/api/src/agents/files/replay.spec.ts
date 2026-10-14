@@ -1,7 +1,10 @@
 import sharp from 'sharp';
 import { Readable } from 'stream';
 import { randomBytes } from 'crypto';
+import { createPruneMessages } from '@librechat/agents';
+import { AIMessage, HumanMessage } from '@langchain/core/messages';
 import { agentsEndpointSchema, FileContext, FileSources } from 'librechat-data-provider';
+import type { MessageContent } from '@langchain/core/messages';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { ServerRequest, StrategyFunctions } from '~/types';
 import {
@@ -10,6 +13,7 @@ import {
   appendHistoricalToolImageContext,
   canReplayHistoricalToolImages,
 } from './replay';
+import { countFormattedMessageTokens } from '../client';
 
 const config = agentsEndpointSchema.parse({
   historicalToolImages: { enabled: true, models: ['vision'] },
@@ -333,6 +337,48 @@ describe('durable replay projection', () => {
       expect.arrayContaining([expect.objectContaining({ type: 'image_url' })]),
     );
     expect(JSON.stringify(messages)).toBe(before);
+  });
+  it('charges previews to the real SDK pruner while retaining the current user request', async () => {
+    const payload = [
+      { role: 'user', content: 'Earlier context. '.repeat(5000) },
+      { role: 'assistant', content: 'Earlier reply. '.repeat(5000) },
+      { role: 'user', content: 'Inspect the prior image.' },
+    ];
+    const counter = (role: string, content: MessageContent) =>
+      countFormattedMessageTokens({ role, content }, 'o200k_base');
+    const indexTokenCountMap: Record<number, number> = Object.fromEntries(
+      payload.map((message, i) => [i, counter(message.role, message.content)]),
+    );
+    const before = indexTokenCountMap[2];
+    const delta = await appendHistoricalToolImageContext({
+      ...options(),
+      payload,
+      indexTokenCountMap,
+      deps: { ...options().deps, countTokens: (content) => counter('user', content) },
+    });
+    expect(indexTokenCountMap[2]).toBe(before + delta);
+    const graphMessages = payload.map(({ role, content }) =>
+      role === 'user' ? new HumanMessage(content) : new AIMessage(content),
+    );
+    const snapshot = JSON.stringify(graphMessages);
+    const prune = createPruneMessages({
+      provider: 'openAI',
+      maxTokens: indexTokenCountMap[2] + 512,
+      startIndex: 2,
+      reserveRatio: 0,
+      indexTokenCountMap,
+      tokenCounter: (message) =>
+        counter(message.getType() === 'human' ? 'user' : 'assistant', message.content),
+    });
+    const result = prune({ messages: graphMessages });
+    expect(result.context.length).toBeLessThan(graphMessages.length);
+    expect(result.context[result.context.length - 1]?.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ type: 'image_url' }),
+        expect.objectContaining({ type: 'text', text: 'Inspect the prior image.' }),
+      ]),
+    );
+    expect(JSON.stringify(graphMessages)).toBe(snapshot);
   });
   it('honors resendFiles=false and does no storage work by default', async () => {
     const opts = options();
