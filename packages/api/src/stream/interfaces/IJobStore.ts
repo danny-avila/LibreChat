@@ -471,6 +471,17 @@ export class GenerationAdmissionDeniedError extends Error {
   }
 }
 
+/** Thrown by `createJob` when the account admission check itself failed; carries no lookup diagnostics. */
+export class GenerationAdmissionUnavailableError extends Error {
+  readonly code = 'GENERATION_ADMISSION_UNAVAILABLE';
+  readonly status = 503;
+
+  constructor() {
+    super('Generation admission could not be verified');
+    this.name = 'GenerationAdmissionUnavailableError';
+  }
+}
+
 export type JobMetadataPatch = Partial<
   Pick<
     SerializableJobData,

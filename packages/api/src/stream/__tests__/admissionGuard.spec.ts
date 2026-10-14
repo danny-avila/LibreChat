@@ -41,13 +41,23 @@ describe('GenerationJobManager admission guard', () => {
     expect(guard).not.toHaveBeenCalled();
   });
 
-  it('retires the committed job and propagates the failure when the guard rejects', async () => {
+  it('retires the committed job and refuses with a sanitized code when the guard rejects', async () => {
     manager.setAdmissionGuard(async () => {
-      throw new Error('lookup down');
+      throw new Error('mongodb://internal-host:27017 lookup down');
     });
 
-    await expect(manager.createJob('failed', 'user-1', 'failed')).rejects.toThrow('lookup down');
+    await expect(manager.createJob('failed', 'user-1', 'failed')).rejects.toMatchObject({
+      code: 'GENERATION_ADMISSION_UNAVAILABLE',
+      message: 'Generation admission could not be verified',
+    });
     expect(await store.getJob('failed')).toBeNull();
+  });
+
+  it('fails the request when a refused job cannot be purged', async () => {
+    manager.setAdmissionGuard(async () => false);
+    jest.spyOn(store, 'deleteJob').mockRejectedValueOnce(new Error('store down'));
+
+    await expect(manager.createJob('stuck', 'user-1', 'stuck')).rejects.toThrow('store down');
   });
 
   it('admits jobs while the account is active', async () => {

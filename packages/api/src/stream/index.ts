@@ -32,6 +32,7 @@ export {
   GenerationPublicationFencedError,
   JobPredecessorMismatchError,
   GenerationAdmissionDeniedError,
+  GenerationAdmissionUnavailableError,
   isPendingActionExpired,
   isPendingActionStale,
 } from './interfaces/IJobStore';

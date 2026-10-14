@@ -49,6 +49,7 @@ import {
   JobCreationSupersededError,
   JobPredecessorMismatchError,
   GenerationAdmissionDeniedError,
+  GenerationAdmissionUnavailableError,
   isPendingActionStale,
   isPendingActionExpired,
   PAUSE_PERSISTENCE_TIMEOUT_ERROR,
@@ -2766,35 +2767,38 @@ class GenerationJobManagerClass {
           return false;
         },
       );
-      await this.completeJob(
-        streamId,
-        admissionRefused ? ACCOUNT_DELETION_JOB_ERROR : SHUTDOWN_JOB_ERROR,
-        jobData.createdAt,
-      );
-      if (jobData.providerExecutionId) {
-        await this.markProviderExecutionDrained(
+      try {
+        await this.completeJob(
           streamId,
+          admissionRefused ? ACCOUNT_DELETION_JOB_ERROR : SHUTDOWN_JOB_ERROR,
           jobData.createdAt,
-          jobData.providerExecutionId,
         );
-      }
-      const replacedLocal = this.runtimeState.get(streamId);
-      if (replacedLocal != null && replacedLocal.createdAt < jobData.createdAt) {
-        replacedLocal.abortController.abort();
-        this.retireStoppedPredecessorRuntime(streamId, jobData.createdAt);
-      }
-      if (admissionRefused) {
-        /** A refused job never ran, and its metadata holds the user's message; the erasure that
-         * refused it will not list it again, so purge it instead of retaining the error job. */
-        await this.jobStore.deleteJob(streamId, jobData.createdAt).catch((purgeError) => {
-          logger.error(
-            `[GenerationJobManager] Failed to purge refused generation ${streamId}:`,
-            purgeError,
+        if (jobData.providerExecutionId) {
+          await this.markProviderExecutionDrained(
+            streamId,
+            jobData.createdAt,
+            jobData.providerExecutionId,
           );
-        });
+        }
+        const replacedLocal = this.runtimeState.get(streamId);
+        if (replacedLocal != null && replacedLocal.createdAt < jobData.createdAt) {
+          replacedLocal.abortController.abort();
+          this.retireStoppedPredecessorRuntime(streamId, jobData.createdAt);
+        }
+      } finally {
+        if (admissionRefused) {
+          /** A refused job never ran, and its metadata holds the user's message; the erasure that
+           * refused it will not list it again, so purge it even when retiring it failed. A purge
+           * failure propagates so the caller fails instead of reporting a clean refusal. */
+          await this.jobStore.deleteJob(streamId, jobData.createdAt);
+        }
       }
       if (admissionFailure != null) {
-        throw admissionFailure;
+        logger.error(
+          `[GenerationJobManager] Admission check failed for ${streamId}:`,
+          admissionFailure,
+        );
+        throw new GenerationAdmissionUnavailableError();
       }
       throw admissionDenied ? new GenerationAdmissionDeniedError() : new Error(SHUTTING_DOWN_ERROR);
     }
