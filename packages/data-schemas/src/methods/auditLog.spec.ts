@@ -1,11 +1,11 @@
 import mongoose, { Types } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import logger from '~/config/winston';
 import type { RecordAuditEntryInput } from '~/types';
 import type * as t from '~/types';
 import auditLogSchema, { GENESIS_HASH, PLATFORM_CHAIN_KEY } from '~/schema/auditLog';
 import { AUDIT_ACTIONS, AUDIT_ACTION_CATEGORY } from '~/types/admin';
 import { auditChainKey, createAuditLogMethods } from './auditLog';
+import logger from '~/config/winston';
 
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),
