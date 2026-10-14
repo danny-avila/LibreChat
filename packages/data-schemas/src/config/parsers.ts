@@ -235,7 +235,7 @@ function redactErrorValue(error: Error, seen: WeakMap<object, unknown>, depth: n
   defineRedactedErrorProperty(redacted, 'stack', error.stack);
 
   Reflect.ownKeys(error).forEach((key) => {
-    if (typeof key === 'string' && errorStringProperties.has(key)) {
+    if (typeof key === 'string' && (errorStringProperties.has(key) || key === 'toJSON')) {
       return;
     }
     let descriptor = Object.getOwnPropertyDescriptor(error, key);
@@ -611,6 +611,12 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
     const isAxios = readsTrue(infoRecord, 'isAxiosError');
     for (const key of Object.keys(info)) {
       if (key === 'message' || key === 'level') {
+        continue;
+      }
+      if (key === 'toJSON') {
+        if (!Reflect.deleteProperty(info, key)) {
+          replaceFailed = true;
+        }
         continue;
       }
       /** Past the budget, further top-level fields are dropped rather than scanned. */

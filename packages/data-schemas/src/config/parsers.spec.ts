@@ -539,6 +539,20 @@ describe('redactMessage', () => {
     expect(JSON.stringify(out)).not.toContain('jane');
   });
 
+  it('strips serializer hooks from Error clones and top-level records', () => {
+    const error = Object.assign(new Error('boom'), {
+      toJSON: () => ({ email: 'jane@example.com' }),
+    });
+    const info = runRedactFormat({ level: 'info', message: 'm', [SPLAT_SYMBOL]: [error] });
+    expect(JSON.stringify(info[SPLAT_SYMBOL])).not.toContain('jane');
+    const top = runRedactFormat({
+      level: 'info',
+      message: 'm',
+      toJSON: () => 'jane@example.com',
+    } as RedactInfo);
+    expect(JSON.stringify(top)).not.toContain('jane');
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),
