@@ -1,4 +1,10 @@
-import { isOpaqueReasoning, stripOpaqueReasoning } from './reasoning';
+import type { OpaqueReasoningCursor } from './reasoning';
+import {
+  isOpaqueReasoning,
+  stripOpaqueReasoning,
+  advanceOpaqueReasoning,
+  OPAQUE_REASONING_START,
+} from './reasoning';
 
 const bytes = (length: number, seed: number): Buffer =>
   Buffer.from(Array.from({ length }, (_, i) => (i * 37 + seed) % 256));
@@ -40,6 +46,17 @@ describe('isOpaqueReasoning', () => {
     },
   );
 
+  it('classifies a payload inside the persisted think wrapper as opaque', () => {
+    expect(isOpaqueReasoning(`<think>${bedrockRedacted}</think>`)).toBe(true);
+    expect(
+      isOpaqueReasoning(`<think>
+${anthropicRedacted}
+</think>`),
+    ).toBe(true);
+    expect(isOpaqueReasoning('<think>Checking the manifest.</think>')).toBe(false);
+    expect(isOpaqueReasoning('<think></think>')).toBe(false);
+  });
+
   it('does not treat empty or whitespace-only reasoning as opaque', () => {
     expect(isOpaqueReasoning('')).toBe(false);
     expect(isOpaqueReasoning(' \n\t')).toBe(false);
@@ -68,5 +85,47 @@ describe('stripOpaqueReasoning', () => {
 
   it('returns an empty string for a payload-only text', () => {
     expect(stripOpaqueReasoning(anthropicRedacted)).toBe('');
+    expect(stripOpaqueReasoning(`<think>${anthropicRedacted}</think>`)).toBe('');
+  });
+});
+
+describe('advanceOpaqueReasoning', () => {
+  const stream = (deltas: string[]): { readable: string; cursor: OpaqueReasoningCursor } =>
+    deltas.reduce(
+      (acc, delta) => {
+        const next = advanceOpaqueReasoning(acc.cursor, delta);
+        return { readable: acc.readable + next.readable, cursor: next.cursor };
+      },
+      { readable: '', cursor: OPAQUE_REASONING_START },
+    );
+  const chunks = (text: string, size: number): string[] =>
+    Array.from({ length: Math.ceil(text.length / size) }, (_, i) =>
+      text.slice(i * size, (i + 1) * size),
+    );
+
+  it('passes readable token deltas through, holding only the unfinished word', () => {
+    const result = stream(['Let', ' me', ' check', ' the', ' manifest.', ' Then', ' roll']);
+    expect(result.readable).toBe('Let me check the manifest. Then ');
+    expect(result.cursor).toEqual({ tail: 'roll', opaque: false });
+  });
+
+  it('drops a payload delivered as one delta', () => {
+    expect(stream([bedrockRedacted]).readable).toBe('');
+  });
+
+  it('drops a payload split into deltas shorter than the threshold', () => {
+    const result = stream(chunks(bedrockRedacted, 50));
+    expect(result.readable).toBe('');
+    expect(result.cursor.opaque).toBe(true);
+  });
+
+  it('keeps readable reasoning on both sides of a split payload', () => {
+    const result = stream([
+      'Checking the retry policy. ',
+      ...chunks(bedrockRedacted, 100),
+      'Backoff fits the burst pattern.',
+    ]);
+    expect(result.readable).toBe('Checking the retry policy. Backoff fits the burst pattern.');
+    expect(result.cursor).toEqual({ tail: '', opaque: false });
   });
 });

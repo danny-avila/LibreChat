@@ -299,4 +299,17 @@ describe('Part tool renderer selection', () => {
     expect(marker).not.toHaveTextContent('Inspecting an encoded data snapshot');
     expect(screen.queryByTestId('reasoning')).not.toBeInTheDocument();
   });
+
+  it('renders persisted encrypted reasoning inside think tags as an encrypted marker', () => {
+    const encoded = Buffer.from(Array.from({ length: 900 }, (_, i) => (i * 37 + 3) % 256)).toString(
+      'base64',
+    );
+    renderPart({
+      type: ContentTypes.THINK,
+      think: `<think>${encoded}</think>`,
+    } as TMessageContentParts);
+
+    expect(screen.getByTestId('reasoning-marker')).toHaveAttribute('data-encrypted', 'true');
+    expect(screen.queryByTestId('reasoning')).not.toBeInTheDocument();
+  });
 });

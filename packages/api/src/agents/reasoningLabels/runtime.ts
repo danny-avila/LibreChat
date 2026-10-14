@@ -1,5 +1,12 @@
 import { GraphEvents } from '@librechat/agents';
-import { ContentTypes, StepTypes, stripOpaqueReasoning } from 'librechat-data-provider';
+import {
+  StepTypes,
+  ContentTypes,
+  stripOpaqueReasoning,
+  advanceOpaqueReasoning,
+  OPAQUE_REASONING_START,
+} from 'librechat-data-provider';
+import type { OpaqueReasoningCursor } from 'librechat-data-provider';
 import type { EventHandler } from '@librechat/agents';
 import type { LooseContentPart } from '~/agents/activityLabels/wiring';
 
@@ -76,8 +83,12 @@ interface ReasoningStepState {
   stepId: string;
   agentId?: string;
   index?: number;
+  /** Readable reasoning only; encoded provider payloads never enter it. */
   text: string;
+  /** Settled readable characters, so encoded payloads never advance the gates. */
   totalChars: number;
+  /** Trailing run not yet classified as a word or a payload (under 128 chars). */
+  cursor: OpaqueReasoningCursor;
   label?: string;
   labelStatus?: ReasoningLabelStatus;
   revision: number;
@@ -101,6 +112,7 @@ const MAX_TRACKED_REASONING_CHARS = 8_000;
  * completion rewrite; a smaller tail only upgrades the current status. */
 const FINAL_UPDATE_CHAR_LIMIT = 120;
 const OUTPUT_CHAR_LIMIT = 120;
+const MAX_PENDING_WORD_CHARS = 32;
 const REQUEST_TIMEOUT_MS = 12_000;
 
 function textValue(value: unknown): string {
@@ -123,6 +135,17 @@ function deltaText(data: unknown): string {
     .filter((part) => (part as { type?: unknown } | null)?.type === ContentTypes.THINK)
     .map((part) => textValue((part as { think?: unknown }).think))
     .join('');
+}
+
+/** The undecided tail when it is word-sized. A longer tail is more likely the
+ *  start of a payload split across deltas, so it waits until it settles. */
+function pendingWord(state: Pick<ReasoningStepState, 'cursor'>): string {
+  const { tail } = state.cursor;
+  return tail.length <= MAX_PENDING_WORD_CHARS ? tail : '';
+}
+
+function visibleChars(state: Pick<ReasoningStepState, 'totalChars' | 'cursor'>): number {
+  return state.totalChars + pendingWord(state).length;
 }
 
 function normalizeLabel(value: string | undefined): string {
@@ -334,7 +357,7 @@ export function createReasoningLabelWiring(deps: ReasoningLabelHostDeps): Reason
   };
 
   const shouldGenerate = (state: ReasoningStepState, final: boolean): boolean => {
-    const length = state.totalChars;
+    const length = visibleChars(state);
     if (!state.label) {
       if (length < minChars) {
         return false;
@@ -390,9 +413,7 @@ export function createReasoningLabelWiring(deps: ReasoningLabelHostDeps): Reason
     }
 
     clearTimer(state);
-    /** Per-delta stripping misses an encoded payload split across deltas;
-     *  the accumulated text is the last gate before a billed provider call. */
-    const visibleReasoning = stripOpaqueReasoning(state.text).trim();
+    const visibleReasoning = `${state.text}${pendingWord(state)}`.trim();
     if (!visibleReasoning) {
       if (state.pendingFinal) {
         state.pendingFinal = false;
@@ -402,7 +423,7 @@ export function createReasoningLabelWiring(deps: ReasoningLabelHostDeps): Reason
     }
     const status: ReasoningLabelStatus = state.pendingFinal ? 'complete' : 'streaming';
     state.pendingFinal = false;
-    state.submittedChars = state.totalChars;
+    state.submittedChars = visibleChars(state);
     state.lastSubmittedAt = now();
     generated += 1;
     state.attempts += 1;
@@ -488,7 +509,7 @@ export function createReasoningLabelWiring(deps: ReasoningLabelHostDeps): Reason
       }
     })().finally(() => {
       state.inFlight = undefined;
-      if (state.closed || state.totalChars - state.submittedChars >= updateChars) {
+      if (state.closed || visibleChars(state) - state.submittedChars >= updateChars) {
         schedule(state, state.closed);
       }
     });
@@ -503,6 +524,12 @@ export function createReasoningLabelWiring(deps: ReasoningLabelHostDeps): Reason
     }
     state.closed = true;
     clearTimer(state);
+    const word = pendingWord(state);
+    if (word) {
+      state.text = appendBoundedReasoning(state.text, word);
+      state.totalChars += word.length;
+    }
+    state.cursor = OPAQUE_REASONING_START;
     schedule(state, true);
   };
 
@@ -563,6 +590,7 @@ export function createReasoningLabelWiring(deps: ReasoningLabelHostDeps): Reason
       ...(index != null && { index }),
       text: appendBoundedReasoning('', existingText),
       totalChars: existingText.trim().length,
+      cursor: OPAQUE_REASONING_START,
       ...(existingLabel != null && { label: existingLabel }),
       ...(existingLabel != null && {
         labelStatus: part?.reasoning_label_status === 'complete' ? 'complete' : 'streaming',
@@ -617,12 +645,16 @@ export function createReasoningLabelWiring(deps: ReasoningLabelHostDeps): Reason
           : {}),
       });
     }
-    const text = stripOpaqueReasoning(rawText);
-    if (!text) {
+    const previousTail = state.cursor.tail;
+    const { readable: text, cursor } = advanceOpaqueReasoning(state.cursor, rawText);
+    state.cursor = cursor;
+    if (!text && cursor.tail === previousTail) {
       return;
     }
-    state.text = appendBoundedReasoning(state.text, text);
-    state.totalChars += text.length;
+    if (text) {
+      state.text = appendBoundedReasoning(state.text, text);
+      state.totalChars += text.length;
+    }
     schedule(state);
   };
 

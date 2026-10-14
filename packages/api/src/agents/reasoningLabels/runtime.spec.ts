@@ -356,7 +356,7 @@ describe('reasoning labels', () => {
     await harness.start();
     await harness.append('12345');
     await streamingEmit;
-    await harness.append('x'.repeat(120));
+    await harness.append(' word'.repeat(24));
     await harness.close();
     await terminalEmit;
     await new Promise((resolve) => setImmediate(resolve));
@@ -556,7 +556,7 @@ describe('reasoning labels', () => {
     await harness.start();
     await harness.append('12345');
     await harness.settle();
-    await harness.append('x'.repeat(120));
+    await harness.append(' word'.repeat(24));
     await harness.close();
     await harness.settle();
 
@@ -911,6 +911,29 @@ describe('reasoning labels for encoded reasoning', () => {
 
     expect(generate).not.toHaveBeenCalled();
     expect(harness.attemptEvents).toEqual([]);
+  });
+
+  it('never spends label revisions on a payload split across small deltas', async () => {
+    const generate = jest.fn(async () => ({ label: 'Checking the retry policy' }));
+    const harness = createHarness(generate, { minChars: 10, updateChars: 50, updateIntervalMs: 0 });
+    const payload = encodedReasoning();
+    await harness.start();
+    await harness.append('Checking the retry policy against the queue backoff. ');
+    await harness.settle();
+    expect(generate).toHaveBeenCalledTimes(1);
+
+    for (let offset = 0; offset < payload.length; offset += 100) {
+      await harness.append(payload.slice(offset, offset + 100));
+      await harness.settle();
+    }
+    await harness.close();
+    await harness.settle();
+
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(harness.parts[0]).toMatchObject({
+      reasoning_label: 'Checking the retry policy',
+      reasoning_label_status: 'complete',
+    });
   });
 
   it('labels mixed reasoning from its readable text only', async () => {
