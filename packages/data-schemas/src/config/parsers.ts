@@ -517,6 +517,15 @@ function redactLogValue(value: unknown, seen = new WeakMap<object, unknown>(), d
     return REDACTED_VALUE;
   }
 
+  try {
+    return redactObjectValue(value, seen, depth);
+  } catch {
+    /* revoked proxies and throwing traps must not abort the log call */
+    return '[Unreadable]';
+  }
+}
+
+function redactObjectValue(value: object, seen: WeakMap<object, unknown>, depth: number): unknown {
   if (Array.isArray(value)) {
     const redacted: unknown[] = [];
     seen.set(value, redacted);
@@ -883,7 +892,7 @@ const compactRequestInfo = (config: unknown): { method?: unknown; url?: unknown 
   if (method === undefined && url === undefined) {
     return undefined;
   }
-  return { method, url: redactLogValue(url) };
+  return { method: redactLogValue(method), url: redactLogValue(url) };
 };
 
 const compactResponse = (response: unknown): Record<string, unknown> | undefined => {

@@ -655,6 +655,22 @@ describe('redactMessage', () => {
     ).not.toThrow();
   });
 
+  it('survives revoked proxies and redacts the compact request method', () => {
+    const { proxy, revoke } = Proxy.revocable({}, {});
+    revoke();
+    expect(() =>
+      runRedactFormat({ level: 'info', message: 'm', payload: proxy } as RedactInfo),
+    ).not.toThrow();
+    const config = { method: 'Bearer secretcanary', url: 'https://example.test/' };
+    const out = runRedactFormat({
+      level: 'error',
+      message: 'm',
+      isAxiosError: true,
+      config,
+    } as RedactInfo);
+    expect(JSON.stringify(out)).not.toContain('secretcanary');
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),
