@@ -2423,6 +2423,7 @@ describe('refreshController – OpenID path', () => {
 
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.send).toHaveBeenCalledWith('Refresh token not provided');
+    expect(res.clearCookie).toHaveBeenCalledWith('session_hint');
   });
 });
 
@@ -2719,6 +2720,15 @@ describe('refreshController – LibreChat path', () => {
     expect(setAuthTokens).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(401);
     expect(res.send).toHaveBeenCalledWith('Refresh token expired or not found for this user');
+  });
+
+  it('clears the readable session hint when no refresh token is sent', async () => {
+    req.headers.cookie = '';
+
+    await refreshController(req, res);
+
+    expect(res.send).toHaveBeenCalledWith('Refresh token not provided');
+    expect(res.clearCookie).toHaveBeenCalledWith('session_hint');
   });
 
   it('clears the readable session hint when the refresh session is gone', async () => {

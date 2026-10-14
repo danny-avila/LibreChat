@@ -410,7 +410,7 @@ test.describe('cached theme owner (dark)', () => {
   });
 });
 
-test('a session refresh pushes the readable session hint expiry forward @scenario:session-refresh-extends-expiry', async ({
+test('a session refresh keeps the readable session hint on the refresh session expiry and owner @scenario:session-refresh-keeps-hint-aligned', async ({
   page,
 }) => {
   await openChat(page);
@@ -422,8 +422,12 @@ test('a session refresh pushes the readable session hint expiry forward @scenari
     return response.ok;
   });
   expect(refreshed).toBe(true);
-  await expect
-    .poll(async () => (await sessionHint(page))?.expires)
-    .toBeGreaterThan(before?.expires ?? 0);
-  expect((await sessionHint(page))?.owner).toBe(before?.owner);
+
+  const after = await sessionHint(page);
+  const refreshCookie = (await page.context().cookies()).find(
+    (cookie) => cookie.name === 'refreshToken',
+  );
+  expect(after?.owner).toBe(before?.owner);
+  expect(after?.expires).toBeGreaterThanOrEqual(before?.expires ?? Number.POSITIVE_INFINITY);
+  expect(Math.floor((after?.expires ?? 0) / 1000)).toBe(Math.floor(refreshCookie?.expires ?? -1));
 });

@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import { SESSION_HINT_COOKIE, TWO_FACTOR_ENROLLMENT_REQUIRED_CODE } from 'librechat-data-provider';
+import { TWO_FACTOR_ENROLLMENT_REQUIRED_CODE } from 'librechat-data-provider';
 import type { ISession, OIDCTokens } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import type { TokenIssuance, TwoFactorAccount } from './twoFactor';
@@ -11,6 +11,7 @@ import {
   isTwoFactorEnrollmentRequired,
   TOKEN_RETIREMENT_FIELDS,
 } from './twoFactor';
+import { clearSessionHintCookie } from '~/oauth/csrf';
 
 const EXPIRED_REFRESH_MESSAGE = 'Refresh token expired or not found for this user';
 
@@ -114,6 +115,7 @@ export function createLocalRefreshHandler(deps: LocalRefreshDependencies) {
     refreshToken: string | undefined,
   ): Promise<Response | void> => {
     if (!refreshToken) {
+      clearSessionHintCookie(res);
       return res.status(200).send('Refresh token not provided');
     }
 
@@ -125,7 +127,7 @@ export function createLocalRefreshHandler(deps: LocalRefreshDependencies) {
       const userId = payload.id;
       const user = await deps.getUserById(userId, deps.userProjection);
       if (!user) {
-        res.clearCookie(SESSION_HINT_COOKIE);
+        clearSessionHintCookie(res);
         return res.status(401).redirect('/login');
       }
 
@@ -142,7 +144,7 @@ export function createLocalRefreshHandler(deps: LocalRefreshDependencies) {
           `[refreshController] Refresh token predates enrollment or password reset: userId=${userId}`,
         );
         res.clearCookie('refreshToken');
-        res.clearCookie(SESSION_HINT_COOKIE);
+        clearSessionHintCookie(res);
         return res.status(401).send(EXPIRED_REFRESH_MESSAGE);
       }
 
@@ -156,7 +158,7 @@ export function createLocalRefreshHandler(deps: LocalRefreshDependencies) {
         if (requiresEnrollment(user)) {
           await deps.deleteSession({ sessionId: session._id.toString() });
           res.clearCookie('refreshToken');
-          res.clearCookie(SESSION_HINT_COOKIE);
+          clearSessionHintCookie(res);
           deps.clearCloudFrontCookies(res, {
             userId,
             tenantId: user.tenantId ?? user.orgId,
@@ -185,7 +187,7 @@ export function createLocalRefreshHandler(deps: LocalRefreshDependencies) {
         }
         return res.status(200).send({ token, user: sanitizeUserForAuthResponse(user) });
       }
-      res.clearCookie(SESSION_HINT_COOKIE);
+      clearSessionHintCookie(res);
       if (req.query?.retry) {
         return res.status(403).send('No session found');
       }
@@ -195,7 +197,7 @@ export function createLocalRefreshHandler(deps: LocalRefreshDependencies) {
       return res.status(401).send(EXPIRED_REFRESH_MESSAGE);
     } catch (error) {
       deps.error('[refreshController] Invalid refresh token:', error);
-      res.clearCookie(SESSION_HINT_COOKIE);
+      clearSessionHintCookie(res);
       return res.status(403).send('Invalid refresh token');
     }
   };

@@ -99,6 +99,11 @@ export function setSessionHintCookie(
   });
 }
 
+/** Retires the readable session hint when a request proves there is no session to vouch for. */
+export function clearSessionHintCookie(res: Response): void {
+  res.clearCookie(SESSION_HINT_COOKIE);
+}
+
 export interface OpenIDMarkerCookieOptions {
   userId?: string | null;
   /** Names the session's owner in the readable session hint alongside `userId`. */
