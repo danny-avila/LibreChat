@@ -544,8 +544,15 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
     /** A direct `logger.error(error)` makes `info` the Error, whose stack is non-enumerable. */
     let redactedStack: string | undefined;
     let replaceFailed = false;
-    if (typeof infoRecord.stack === 'string') {
-      redactedStack = redactLogString(infoRecord.stack);
+    let rawStack: unknown;
+    try {
+      rawStack = infoRecord.stack;
+    } catch {
+      rawStack = undefined;
+      replaceFailed = true;
+    }
+    if (typeof rawStack === 'string') {
+      redactedStack = redactLogString(rawStack);
       if (Object.getOwnPropertyDescriptor(info, 'stack')?.get !== undefined) {
         replaceFailed = true;
       }

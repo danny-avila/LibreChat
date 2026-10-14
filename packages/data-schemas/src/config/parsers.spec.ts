@@ -427,6 +427,17 @@ describe('redactMessage', () => {
     expect(out.stack).not.toContain('jane');
   });
 
+  it('survives a throwing stack accessor', () => {
+    const error = new Error('boom');
+    Object.defineProperty(error, 'stack', {
+      get: () => {
+        throw new Error('nope');
+      },
+      configurable: true,
+    });
+    expect(() => runRedactFormat(error as unknown as RedactInfo)).not.toThrow();
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),
