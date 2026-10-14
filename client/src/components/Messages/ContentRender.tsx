@@ -24,6 +24,7 @@ import SiblingSwitch from '~/components/Chat/Messages/SiblingSwitch';
 import HoverButtons from '~/components/Chat/Messages/HoverButtons';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
+import MeoRichContent, { getMeoBlocks } from './MeoRichContent';
 import { showThinkingAtom } from '~/store/showThinking';
 import SubRow from '~/components/Chat/Messages/SubRow';
 import { AuthorContext } from '~/Providers';
@@ -132,6 +133,7 @@ const ContentRender = memo(function ContentRender({
     [msg?.children, msg?.depth, latestMessageDepth],
   );
   const isLatestMessage = msg?.messageId === latestMessageId;
+  const meoBlocks = useMemo(() => getMeoBlocks(msg), [msg]);
 
   const iconData: TMessageIcon = useMemo(
     () => ({
@@ -187,10 +189,6 @@ const ContentRender = memo(function ContentRender({
       isEditing={edit}
       footer={
         <SubRow classes={cn(messageFooterClasses, msg.isCreatedByUser && 'justify-end')}>
-          {/* The reading holds the column start: it takes over the slot the streaming
-              dot vacates, so the retry navigation beside it — whose width the footer
-              reserves whether or not hover has revealed it — must never push the
-              timer inboard of that column. */}
           {shouldShowElapsed({
             isSubmitting,
             isLatestMessage,
@@ -198,9 +196,6 @@ const ContentRender = memo(function ContentRender({
             siblingIdx,
             siblingCount,
           }) && <Elapsed index={index} />}
-          {/* While the answer is generating every other action is withheld, which
-              would otherwise leave this counter sitting alone under a half-written
-              response. It reveals on hover there, like the actions it sits with. */}
           <SiblingSwitch
             siblingIdx={siblingIdx}
             siblingCount={siblingCount}
@@ -251,12 +246,9 @@ const ContentRender = memo(function ContentRender({
               content={msg.content as Array<TMessageContentParts | undefined>}
             />
           )}
+          {!msg.isCreatedByUser && <MeoRichContent blocks={meoBlocks} />}
         </ErrorSourceProvider>
       </AuthorContext.Provider>
-      {/** A turn that ran out of agent steps is incomplete, not broken. Rendered
-       *   here rather than inside `ContentParts` because it is a message-level
-       *   outcome, and `ContentParts` also serves surfaces (subagent panels,
-       *   search) that have no message row behind them. */}
       {msg.unfinished === true &&
         !isSubmitting &&
         msg.finish_reason === Constants.TOOL_CALL_LIMIT_FINISH_REASON && (
