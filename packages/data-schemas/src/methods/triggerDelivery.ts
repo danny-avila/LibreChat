@@ -1901,7 +1901,22 @@ export function createAgentTriggerDeliveryMethods(
         status: input.status,
       });
       if (settledCount !== memberIds.length) {
-        throw new Error('Not every agent trigger batch receipt could be settled');
+        /** Past a dead batch's deadline the TTL index may already have removed settled members, which
+         * cannot be recreated, so only a member that still exists unsettled blocks the root. */
+        const expired =
+          input.status === 'dead' &&
+          input.expiresAt != null &&
+          input.expiresAt.getTime() <= Date.now();
+        const unsettled = expired
+          ? await Delivery().countDocuments({
+              _id: { $in: memberIds },
+              orderingKey: root.orderingKey,
+              status: { $ne: input.status },
+            })
+          : 1;
+        if (unsettled > 0) {
+          throw new Error('Not every agent trigger batch receipt could be settled');
+        }
       }
       if (input.status === 'succeeded' && root.handling != null) {
         const authoritative = await Delivery()

@@ -20,6 +20,9 @@ export type StoredUploadCleanup = {
   /** Settles whether a file record exists, since a rejected write may have committed. */
   recordExists: (stored: StoredUploadRef) => Promise<boolean>;
   req: { user?: { id?: string; tenantId?: string } };
+  /** Set when `next` calls its `beginWrite` argument just before the record write; a failure
+   * earlier than that cannot have committed a record, so the lookup is skipped. */
+  trackWrite?: boolean;
   logger: { error: (message: string, meta?: unknown) => void };
 };
 
@@ -29,15 +32,18 @@ export type StoredUploadCleanup = {
  * The original failure is rethrown; a failed cleanup is logged and never replaces it.
  */
 export async function withStoredUploadCleanup<T>(
-  { stored, resolveDeleteFile, recordExists, req, logger }: StoredUploadCleanup,
-  next: () => Promise<T>,
+  { stored, resolveDeleteFile, recordExists, req, logger, trackWrite }: StoredUploadCleanup,
+  next: (beginWrite: () => void) => Promise<T>,
 ): Promise<T> {
+  let writeBegun = trackWrite !== true;
   try {
-    return await next();
+    return await next(() => {
+      writeBegun = true;
+    });
   } catch (error) {
     try {
       /* A rejected write can still have committed; deleting then would strand the record. */
-      if (!(await recordExists(stored))) {
+      if (!writeBegun || !(await recordExists(stored))) {
         /* Storage strategies validate ownership and tenant against the object key. */
         const ref: StoredUploadRef = {
           user: req.user?.id,

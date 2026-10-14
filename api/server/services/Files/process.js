@@ -1080,17 +1080,21 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         ...retentionExpiry,
       };
 
-      const result = await withStoredUploadCleanup(storedCleanup, async () => {
-        if (!messageAttachment && effectiveToolResource) {
-          await db.addAgentResourceFile({
-            file_id,
-            agent_id,
-            tool_resource: effectiveToolResource,
-            updatingUserId: req?.user?.id,
-          });
-        }
-        return db.createFile(fileInfo, true);
-      });
+      const result = await withStoredUploadCleanup(
+        { ...storedCleanup, trackWrite: true },
+        async (beginWrite) => {
+          if (!messageAttachment && effectiveToolResource) {
+            await db.addAgentResourceFile({
+              file_id,
+              agent_id,
+              tool_resource: effectiveToolResource,
+              updatingUserId: req?.user?.id,
+            });
+          }
+          beginWrite();
+          return db.createFile(fileInfo, true);
+        },
+      );
       sendUploadSuccess(res, sseStream, 'Agent file uploaded and processed successfully', result);
     };
 
@@ -1458,17 +1462,21 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     ...retentionExpiry,
   };
 
-  const result = await withStoredUploadCleanup(storedCleanup, async () => {
-    if (!messageAttachment && effectiveToolResource) {
-      await db.addAgentResourceFile({
-        file_id,
-        agent_id,
-        tool_resource: effectiveToolResource,
-        updatingUserId: req?.user?.id,
-      });
-    }
-    return db.createFile(fileInfo, true);
-  });
+  const result = await withStoredUploadCleanup(
+    { ...storedCleanup, trackWrite: true },
+    async (beginWrite) => {
+      if (!messageAttachment && effectiveToolResource) {
+        await db.addAgentResourceFile({
+          file_id,
+          agent_id,
+          tool_resource: effectiveToolResource,
+          updatingUserId: req?.user?.id,
+        });
+      }
+      beginWrite();
+      return db.createFile(fileInfo, true);
+    },
+  );
 
   sendUploadSuccess(res, sseStream, 'Agent file uploaded and processed successfully', result);
 };

@@ -44,6 +44,53 @@ describe('withStoredUploadCleanup', () => {
     expect(deleteFile).toHaveBeenCalledWith(req, { ...stored, user: 'u1', tenantId: 't1' });
   });
 
+  it('deletes without a record lookup when the failure precedes the record write', async () => {
+    const deleteFile = jest.fn().mockResolvedValue(undefined);
+    recordExists.mockRejectedValue(new Error('database unavailable'));
+    const failure = new Error('addAgentResourceFile failed');
+    await expect(
+      withStoredUploadCleanup(
+        {
+          stored,
+          resolveDeleteFile: () => deleteFile,
+          recordExists,
+          req,
+          logger,
+          trackWrite: true,
+        },
+        async () => {
+          throw failure;
+        },
+      ),
+    ).rejects.toBe(failure);
+    expect(recordExists).not.toHaveBeenCalled();
+    expect(deleteFile).toHaveBeenCalledTimes(1);
+  });
+
+  it('still consults the record once the write has begun', async () => {
+    const deleteFile = jest.fn();
+    recordExists.mockResolvedValue(true);
+    const failure = new Error('lost acknowledgement');
+    await expect(
+      withStoredUploadCleanup(
+        {
+          stored,
+          resolveDeleteFile: () => deleteFile,
+          recordExists,
+          req,
+          logger,
+          trackWrite: true,
+        },
+        async (beginWrite) => {
+          beginWrite();
+          throw failure;
+        },
+      ),
+    ).rejects.toBe(failure);
+    expect(recordExists).toHaveBeenCalledTimes(1);
+    expect(deleteFile).not.toHaveBeenCalled();
+  });
+
   it('keeps the stored object when the rejected write actually committed a record', async () => {
     const deleteFile = jest.fn();
     recordExists.mockResolvedValue(true);
