@@ -557,6 +557,16 @@ describe('AccessControlService', () => {
       expect(permissionErrorCode(new ResourcePermissionsBusyError())).toEqual({
         code: 'RESOURCE_PERMISSIONS_BUSY',
       });
+      expect(
+        permissionErrorCode(
+          Object.assign(new Error('x'), { code: 'PERMISSION_AUDIT_UNAVAILABLE' }),
+        ),
+      ).toEqual({
+        code: 'PERMISSION_AUDIT_UNAVAILABLE',
+      });
+      expect(
+        permissionErrorCode(Object.assign(new Error('x'), { code: 'EOTHER' })),
+      ).toBeUndefined();
       expect(permissionErrorCode(new Error('x'))).toBeUndefined();
     });
 

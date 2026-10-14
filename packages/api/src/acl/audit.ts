@@ -3,6 +3,7 @@ import type { RecordAuditEntryInput } from '@librechat/data-schemas';
 import type { RecordAuditEntry } from '~/admin/audit';
 import type { PermissionChange } from './types';
 import type { ServerRequest } from '~/types';
+import { PERMISSION_AUDIT_UNAVAILABLE } from './accessControlService';
 import { getAuditActor, isAuditFailClosed } from '~/admin/audit';
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { buildAuditContext } from '~/admin/context';
@@ -28,8 +29,8 @@ type AclAuditDeps = {
 
 const safeMeta = (error: unknown) => ({ ...getSafeErrorMetadata(error) });
 
-function statusError(message: string): Error & { statusCode: number } {
-  return Object.assign(new Error(message), { statusCode: 500 });
+function statusError(message: string, code?: string): Error & { statusCode: number } {
+  return Object.assign(new Error(message), { statusCode: 500, ...(code && { code }) });
 }
 
 /** A new grant, an added permission bit or a public enable; anything else only narrows access. */
@@ -68,7 +69,13 @@ function buildEvent(
       metadata: { ...metadata, enabled: change.action === 'assigned' },
     };
   }
-  return { action: change.action === 'assigned' ? 'acl.granted' : 'acl.revoked', metadata };
+  /** A pure reduction of bits removes access, so it is reported as a revocation. */
+  const reduced =
+    previous != null && (previousBits & ~permBits) !== 0 && (permBits & ~previousBits) === 0;
+  return {
+    action: change.action === 'assigned' && !reduced ? 'acl.granted' : 'acl.revoked',
+    metadata,
+  };
 }
 
 type InsightsPlanDeps = {
@@ -246,6 +253,12 @@ export async function runAuditedPermissionUpdate<T>({
     }
   };
   const deferred: AuditPlanItem[] = [];
+  /** Set once the write is durable; a later error must not relabel recorded changes as failed. */
+  let committed = false;
+  const afterWrite = async () => {
+    committed = true;
+    await flushDeferred();
+  };
   const flushDeferred = async () => {
     for (const item of deferred.splice(0)) {
       try {
@@ -313,14 +326,16 @@ export async function runAuditedPermissionUpdate<T>({
             continue;
           }
           await recordFailures();
-          throw statusError('Permission change could not be audited');
+          throw statusError('Permission change could not be audited', PERMISSION_AUDIT_UNAVAILABLE);
         }
       }
-    }, flushDeferred);
+    }, afterWrite);
     await flushDeferred();
     return result;
   } catch (error) {
-    await recordFailures();
+    if (!committed) {
+      await recordFailures();
+    }
     throw error;
   }
 }

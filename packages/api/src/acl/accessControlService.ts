@@ -61,9 +61,15 @@ export class ResourcePermissionsBusyError extends Error {
   }
 }
 
-/** The machine-readable code of a failed permission update, for the HTTP error body. */
-export const permissionErrorCode = (error: unknown): { code: string } | undefined =>
-  error instanceof ResourcePermissionsBusyError ? { code: error.code } : undefined;
+export const PERMISSION_AUDIT_UNAVAILABLE = 'PERMISSION_AUDIT_UNAVAILABLE';
+
+const APPROVED_ERROR_CODES = new Set(['RESOURCE_PERMISSIONS_BUSY', PERMISSION_AUDIT_UNAVAILABLE]);
+
+/** The approved machine-readable code of a failed permission update, for the HTTP error body. */
+export const permissionErrorCode = (error: unknown): { code: string } | undefined => {
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === 'string' && APPROVED_ERROR_CODES.has(code) ? { code } : undefined;
+};
 
 const snapshotOf = (
   entry?: Pick<IAclEntry, 'permBits' | 'roleId'> | null,

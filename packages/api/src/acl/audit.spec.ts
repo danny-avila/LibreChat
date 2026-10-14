@@ -194,6 +194,39 @@ describe('runAuditedPermissionUpdate', () => {
     expect(order).toEqual(['record:acl.revoked', 'write', 'record:acl.revoked', 'lease-released']);
   });
 
+  test('reports a pure bit reduction as a revocation', async () => {
+    const { recordAuditEntry, run } = setup();
+    const lowered = { ...grantChange('u1', 1), previous: { permBits: 3, roleId: 'r2' } };
+    await run([lowered], true);
+    expect(recordAuditEntry.mock.calls[0][0].action).toBe('acl.revoked');
+  });
+
+  test('an audit outage on a widening change carries a stable code', async () => {
+    const { run } = setup(jest.fn().mockRejectedValue(new Error('down')));
+    await expect(run([grantChange('u1')], true)).rejects.toMatchObject({
+      code: 'PERMISSION_AUDIT_UNAVAILABLE',
+    });
+  });
+
+  test('keeps success entries when the update fails after the write committed', async () => {
+    const { recordAuditEntry } = setup();
+    await expect(
+      runAuditedPermissionUpdate({
+        req,
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId: 'res-1',
+        failClosed: true,
+        deps: { recordAuditEntry, logger: { error: jest.fn() } },
+        update: async (beforeWrite, afterWrite) => {
+          await beforeWrite({ aclChanges: [grantChange('u1')], insightsChanges: [] });
+          await afterWrite();
+          throw new Error('cache down');
+        },
+      }),
+    ).rejects.toThrow('cache down');
+    expect(recordAuditEntry.mock.calls.map(([i]) => i.outcome)).toEqual(['success']);
+  });
+
   test('audits principals and role ids in canonical form', async () => {
     const { recordAuditEntry, run } = setup();
     const hex = 'ABCDEF0123456789ABCDEF01';
