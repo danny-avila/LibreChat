@@ -160,7 +160,7 @@ function redactLogKey(
   isUsed: (candidate: string) => boolean,
   cursors: Map<string, number>,
 ): string {
-  const base = key.includes('@') || key.includes('%40') ? redactLogString(key) : key;
+  const base = /@|%(?:25)*40/i.test(key) ? redactLogString(key) : key;
   let candidate = base;
   let suffix = cursors.get(base) ?? 2;
   while (isUsed(candidate)) {

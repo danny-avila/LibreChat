@@ -627,6 +627,15 @@ describe('redactMessage', () => {
     ).not.toContain('jane');
   });
 
+  it('redacts multiply encoded address keys', () => {
+    const out = runRedactFormat({
+      level: 'info',
+      message: 'm',
+      'jane%2540example.com': 1,
+    } as RedactInfo);
+    expect(JSON.stringify(out)).not.toContain('jane');
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),
