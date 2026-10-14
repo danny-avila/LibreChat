@@ -19,6 +19,7 @@ import type { TPrincipal } from 'librechat-data-provider';
 import type { PermissionChange, PermissionSnapshot } from './types';
 import type { ResolvedPrincipal } from '~/types/principal';
 import type { PermissionPlan } from './audit';
+import { PERMISSION_AUDIT_UNAVAILABLE } from './codes';
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { userPrincipalsCache } from '~/cache';
 
@@ -60,8 +61,6 @@ export class ResourcePermissionsBusyError extends Error {
     super('Permissions for this resource are being updated, try again');
   }
 }
-
-export const PERMISSION_AUDIT_UNAVAILABLE = 'PERMISSION_AUDIT_UNAVAILABLE';
 
 const APPROVED_ERROR_CODES = new Set(['RESOURCE_PERMISSIONS_BUSY', PERMISSION_AUDIT_UNAVAILABLE]);
 

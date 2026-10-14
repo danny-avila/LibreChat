@@ -3,8 +3,8 @@ import type { RecordAuditEntryInput } from '@librechat/data-schemas';
 import type { RecordAuditEntry } from '~/admin/audit';
 import type { PermissionChange } from './types';
 import type { ServerRequest } from '~/types';
-import { PERMISSION_AUDIT_UNAVAILABLE } from './accessControlService';
 import { getAuditActor, isAuditFailClosed } from '~/admin/audit';
+import { PERMISSION_AUDIT_UNAVAILABLE } from './codes';
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { buildAuditContext } from '~/admin/context';
 
