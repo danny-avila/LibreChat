@@ -366,10 +366,10 @@ function redactSetValue(
 
 /** Shadows an inherited `toJSON` with an inert own property so no hook runs after redaction. */
 function neutralizeSerializer(target: object): boolean {
-  if (typeof (target as { toJSON?: unknown }).toJSON !== 'function') {
-    return true;
-  }
   try {
+    if (typeof (target as { toJSON?: unknown }).toJSON !== 'function') {
+      return true;
+    }
     Object.defineProperty(target, 'toJSON', {
       value: undefined,
       enumerable: false,

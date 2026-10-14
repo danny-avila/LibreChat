@@ -569,6 +569,17 @@ describe('redactMessage', () => {
     expect(JSON.stringify(nested[SPLAT_SYMBOL])).not.toContain('jane');
   });
 
+  it('survives a throwing toJSON getter', () => {
+    const record = { level: 'info', message: 'm' } as RedactInfo;
+    Object.defineProperty(record, 'toJSON', {
+      get: () => {
+        throw new Error('nope');
+      },
+      configurable: false,
+    });
+    expect(() => runRedactFormat(record)).not.toThrow();
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),
