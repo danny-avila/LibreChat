@@ -600,6 +600,20 @@ describe('redactMessage', () => {
     expect(Date.now() - started).toBeLessThan(500);
   });
 
+  it('shadows an inherited throwing serializer getter on nested errors', () => {
+    class Throwing extends Error {
+      get toJSON(): never {
+        throw new Error('nope');
+      }
+    }
+    const info = runRedactFormat({
+      level: 'info',
+      message: 'm',
+      [SPLAT_SYMBOL]: [new Throwing('x')],
+    });
+    expect(() => JSON.stringify(info[SPLAT_SYMBOL])).not.toThrow();
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),
