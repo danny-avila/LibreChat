@@ -32,6 +32,8 @@ export type OAuthClientSource = 'configured' | 'dynamic';
 export interface OAuthStoredClientMetadata extends OAuthMetadata {
   /** Random identifier shared by the access, refresh, and client records from one authorization. */
   credential_set_id?: string;
+  /** Internal upstream rejection marker, valid only while it matches this credential generation. */
+  rejected_credential_set_id?: string;
   /** Canonical MCP server URL the tokens and client registration are bound to. */
   server_url: string;
   /** Whether the client came from server configuration or dynamic client registration. */
@@ -99,6 +101,8 @@ export interface MCPOAuthFlowMetadata extends FlowMetadata {
   serverUrl: string;
   /** Identity of the effective server definition that admitted this authorization attempt. */
   serverGeneration?: string;
+  /** Persistence wait admitted with the server configuration; preserved across the OAuth redirect. */
+  oauthPersistenceWaitTimeout?: number;
   state: string;
   codeVerifier?: string;
   clientInfo?: OAuthClientInformation;
@@ -119,6 +123,12 @@ export interface MCPOAuthFlowMetadata extends FlowMetadata {
   reusedClientCredentialSetId?: string;
   /** Tenant context captured at flow initiation for callback replay (SameSite cookies unavailable on cross-origin redirects) */
   tenantId?: string;
+  /**
+   * False when `oauth.send_resource_parameter` opted this server out of RFC 8707
+   * `resource`. Captured at flow initiation so the token exchange sends the same
+   * parameters as the authorization request that produced the code.
+   */
+  sendResourceParameter?: boolean;
 }
 
 export interface MCPOAuthTokens extends OAuthTokens {
