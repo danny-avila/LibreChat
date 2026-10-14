@@ -1027,7 +1027,7 @@ describe('createAdminRolesHandlers', () => {
       );
     });
 
-    it('restores the removed config overrides when ACL cleanup fails', async () => {
+    it('restores config but leaves ACL entries and grants removed, and audits the grants, when a cleanup step fails', async () => {
       const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
       const config = {
         principalModel: 'Role',
@@ -1053,7 +1053,15 @@ describe('createAdminRolesHandlers', () => {
       expect(json).toHaveBeenCalledWith(expect.objectContaining({ code: 'ROLE_CLEANUP_FAILED' }));
       expect(deps.deleteRoleByName).not.toHaveBeenCalled();
       expect(deps.restoreConfig).toHaveBeenCalledWith(config);
-      expect(recordAuditEntry).not.toHaveBeenCalled();
+      expect(deps.deleteAclEntries).toHaveBeenCalledTimes(1);
+      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledTimes(1);
+      expect(recordAuditEntry).toHaveBeenCalledTimes(1);
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'grant.removed' }),
+      );
+      expect(recordAuditEntry).not.toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'role.deleted' }),
+      );
     });
 
     it('restores only the config override when the role deletion itself fails', async () => {

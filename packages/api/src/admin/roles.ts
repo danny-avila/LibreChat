@@ -554,9 +554,14 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
           code: 'ROLE_CLEANUP_FAILED',
         });
 
+      /** Grants are never restored, so a failed delete still changed access and is audited. */
+      const auditRemovedGrants = () =>
+        emitGrantRemovals(req, name, (cascade.removed.grants as ISystemGrant[] | undefined) ?? []);
+
       if (cascade.failed.length > 0) {
         await cascade.compensate();
         await invalidateAccess();
+        await auditRemovedGrants();
         return cleanupFailedResponse();
       }
 
@@ -581,6 +586,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
         if (lookup.known && lookup.role && sameRole) {
           await cascade.compensate();
           await invalidateAccess();
+          await auditRemovedGrants();
           return res.status(500).json({ error: 'Failed to delete role' });
         }
         await invalidateAccess();
@@ -596,7 +602,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
         return res.status(404).json({ error: 'Role not found' });
       }
       const removedGrants = cascade.removed.grants as ISystemGrant[];
-      await emitGrantRemovals(req, name, removedGrants);
+      await auditRemovedGrants();
       await emitAudit(req, {
         action: 'role.deleted',
         severity: 'warning',
