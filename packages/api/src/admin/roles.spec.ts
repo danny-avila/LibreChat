@@ -441,6 +441,26 @@ describe('createAdminRolesHandlers', () => {
       expect(deps.updateRoleByName).toHaveBeenCalledWith('editor', { name: 'senior-editor' });
     });
 
+    it('writes and audits nothing when the description already matches', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = createDeps({
+        recordAuditEntry,
+        getRoleByName: jest.fn().mockResolvedValue(mockRole({ description: 'Can edit content' })),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status } = createReqRes({
+        params: { name: 'editor' },
+        body: { description: 'Can edit content' },
+        user: { _id: new Types.ObjectId(), role: 'admin' },
+      });
+
+      await handlers.updateRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(deps.updateRoleByName).not.toHaveBeenCalled();
+      expect(recordAuditEntry).not.toHaveBeenCalled();
+    });
+
     it('trims name before storage', async () => {
       const role = mockRole({ name: 'trimmed' });
       const deps = createDeps({

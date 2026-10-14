@@ -247,6 +247,16 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
         target: groupTarget(group),
         metadata: { source: group.source ?? null, memberCount: memberIds.length },
       });
+      /** The initial members gain group-scoped access, so each is recorded like a member add
+       * (bounded by MAX_CREATE_MEMBER_IDS; sequential to keep the audit chain ordered). */
+      for (const memberId of new Set(memberIds)) {
+        await emitAudit(req, {
+          action: 'group.member_added',
+          severity: 'warning',
+          target: groupTarget(group),
+          metadata: { userId: memberId },
+        });
+      }
       return res.status(201).json({ group });
     } catch (error) {
       if ((error as ValidationError).name === 'ValidationError') {

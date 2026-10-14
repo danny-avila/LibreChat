@@ -1385,6 +1385,24 @@ describe('createAdminGroupsHandlers', () => {
       );
     });
 
+    it('records a member_added entry for each initial member', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = createDeps({ recordAuditEntry });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status } = withUser(
+        createReqRes({ body: { name: 'Test Group', memberIds: ['ext-1', 'ext-2', 'ext-1'] } }),
+        't1',
+      );
+
+      await handlers.createGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(201);
+      const added = recordAuditEntry.mock.calls
+        .map(([entry]) => entry)
+        .filter((entry) => entry.action === 'group.member_added');
+      expect(added.map((entry) => entry.metadata.userId)).toEqual(['ext-1', 'ext-2']);
+    });
+
     it('records group.updated with the changed field names only', async () => {
       const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
       const deps = createDeps({ recordAuditEntry });

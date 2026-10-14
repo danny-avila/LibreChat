@@ -398,7 +398,8 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
       if (isRename) {
         updates.name = trimmedName;
       }
-      if (body.description !== undefined) {
+      /** A description equal to the stored one is not a change: no write and no audit entry. */
+      if (body.description !== undefined && body.description !== existing.description) {
         updates.description = body.description;
       }
 
@@ -408,7 +409,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
 
       if (isRename) {
         const descUpdate =
-          body.description !== undefined ? { description: body.description } : undefined;
+          updates.description !== undefined ? { description: updates.description } : undefined;
         const role = await renameRole(name, trimmedName, descUpdate);
         if (!role) {
           return res.status(404).json({ error: 'Role not found' });
