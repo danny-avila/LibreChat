@@ -24,7 +24,9 @@
  * 보장이 없어서 로컬파트 → 전체 UPN 순으로 시도하고, 성공한 값을
  * `bkl_login_id` 에 캐시해 다음 로그인부터는 한 번에 맞춘다.
  *
- * UPN 자체는 `upn` 클레임에서 읽는다 (bklIdCandidates 주석 참고).
+ * UPN 은 `upn` 클레임에서 읽고, 그 로컬파트가 곧 BIMS userId 다. `email` 은
+ * 쓰지 않는다 — 로컬파트가 남의 BIMS userId 와 겹칠 수 있다 (bklIdCandidates
+ * 주석 참고).
  *
  * 실패 정책
  * ---------
@@ -85,20 +87,29 @@ async function readUserDoc(userId) {
 /**
  * OIDC 클레임에서 BIMS 로그인 id 후보를 우선순위대로 만든다.
  *
- * UPN 은 `upn` 클레임에서 읽는다. `preferred_username` 은 OIDC 명세상
- * "표시용이며 고유하지도 불변하지도 않다"고 못박힌 값이라 계정 식별에 쓸
- * 물건이 아니다 — Azure 도 로그인 이름 변경 / 대체 로그인 ID 설정에 따라
- * `upn` 과 다른 값을 실어 보낸다. `upn` 은 Azure v2.0 토큰에서 선택적
- * 클레임이므로, 없으면 기존 순서(preferred_username → email)로 내려간다.
+ * **BIMS userId 는 UPN 의 로컬파트다.** 2026-10-13 실측으로 확정했다:
+ *
+ *     claims  upn/preferred_username = PYH@bkl.co.kr, email = boyoul.hur@BKL.co.kr
+ *     BIMS    id="PYH"        → 200, sid 100051, userNm 허보열
+ *             id="boyoul.hur" → 401 LOGIN02 (아이디가 없음)
+ *
+ * `email` 은 후보에서 뺀다. 단순히 빗나가서가 아니라 **남의 계정에 붙을 수
+ * 있어서**다 — BIMS userId 에는 "soohyun.kim", "chanyeong.jeong" 처럼 email
+ * 로컬파트와 같은 꼴이 섞여 있다. A 의 email 로컬파트가 B 의 BIMS userId 와
+ * 겹치면 200 이 떨어지고, 그 sid 로 ACL 이 돌아 **B 의 사건이 A 에게 보인다.**
+ * 실패는 로그인 거부로 끝나지만 오인은 조용히 통과한다.
+ *
+ * `upn` 이 1순위인 이유: `preferred_username` 은 OIDC 명세상 "표시용이며
+ * 고유하지도 불변하지도 않다"고 못박힌 값이고, Azure 도 로그인 이름 변경 /
+ * 대체 로그인 ID 설정에 따라 `upn` 과 다른 값을 실어 보낸다. 다만 `upn` 은
+ * v2.0 의 선택적 클레임이라 앱 등록에서 꺼지면 사라지므로 2순위로 남긴다.
  *
  * @param {Record<string, unknown>} claims  id_token 클레임
  * @param {string|null} [cachedLoginId]     지난 로그인에서 성공한 id
  * @returns {string[]} 중복 제거된 후보 목록
  */
 function bklIdCandidates(claims, cachedLoginId) {
-  const upn = String(
-    claims?.upn || claims?.preferred_username || claims?.email || '',
-  ).trim();
+  const upn = String(claims?.upn || claims?.preferred_username || '').trim();
   const candidates = [];
 
   if (cachedLoginId) {
@@ -233,7 +244,7 @@ async function linkBimsIdentity(tokenset, user) {
 
   if (!candidates.length) {
     logger.error(
-      '[BKL SSO] AD ID 를 만들 클레임이 없음 (upn / preferred_username / email 모두 비어 있음)',
+      '[BKL SSO] AD ID 를 만들 클레임이 없음 (upn / preferred_username 모두 비어 있음)',
     );
     return { ok: false, message: 'BIMS 계정 연동에 실패했습니다.' };
   }
