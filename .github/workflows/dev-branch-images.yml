@@ -17,10 +17,6 @@ on:
       - 'Dockerfile.multi'
       - '.dockerignore'
       - '!**.md'
-      # Deployment skills are Markdown the image ships and reads at runtime
-      # (skill/<name>/SKILL.md plus md resources); re-include them after the
-      # !**.md exclusion (later patterns win), keeping the top-level README
-      # documentation-only.
       - 'skill/**/*.md'
       - '!skill/README.md'
 
@@ -34,6 +30,7 @@ concurrency:
 
 jobs:
   publish:
+    if: github.ref == 'refs/heads/dev'
     uses: ./.github/workflows/docker-publish.yml
     with:
       images: >-
