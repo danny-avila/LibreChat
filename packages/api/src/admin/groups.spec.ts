@@ -992,6 +992,7 @@ describe('createAdminGroupsHandlers', () => {
         await handlers.deleteGroup(req, res);
 
         expect(deps.deleteGroup).toHaveBeenCalledWith(validId);
+        expect(deps.deleteAclEntries).toHaveBeenCalledTimes(2);
         expect(status).toHaveBeenCalledWith(200);
       });
 

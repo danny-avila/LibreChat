@@ -461,7 +461,15 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
         }
         logger.error('[adminGroups] config restore failed, completing the deletion:', id);
         try {
-          return (await deleteGroup(id)) ?? existing;
+          const removed = (await deleteGroup(id)) ?? existing;
+          /** The group is gone for good, so a leftover ACL entry is orphaned: retry its removal once. */
+          await deleteAclEntries({
+            principalType: PrincipalType.GROUP,
+            principalId: new Types.ObjectId(id),
+          }).catch((aclError) =>
+            logger.error('[adminGroups] acl cleanup retry failed after group deletion:', aclError),
+          );
+          return removed;
         } catch (error) {
           logger.error('[adminGroups] group left without its config override:', id, error);
           return 'stuck';
