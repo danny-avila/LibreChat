@@ -1,3 +1,4 @@
+import { inspect } from 'util';
 import { Types } from 'mongoose';
 import { PrincipalType } from 'librechat-data-provider';
 import { SystemCapabilities, expandImplications, logger } from '@librechat/data-schemas';
@@ -1279,7 +1280,9 @@ describe('createAdminGrantsHandlers', () => {
 
       await handlers.assignGrant(req, res);
 
-      expect(JSON.stringify((logger.error as jest.Mock).mock.calls)).not.toContain('SELECT secret');
+      const args = (logger.error as jest.Mock).mock.calls.flat();
+      expect(args.some((arg) => arg instanceof Error)).toBe(false);
+      expect(inspect(args, { depth: 5 })).not.toContain('SELECT secret');
     });
 
     it('fail-closed: an audit outage answers with the stable audit code', async () => {
