@@ -110,17 +110,63 @@ describe('useLandingFooter', () => {
 
   afterEach(() => {
     mockUseGetStartupConfig.mockImplementation(() => ({ data: undefined }));
+    delete window.__LIBRECHAT_CONFIG__;
   });
 
-  test('keeps the welcome screen footer unless the deployment turns it off', () => {
+  /** The shell's answer is read once at module load, so each case loads Footer
+   *  fresh against the document it is given. */
+  const loadHook = (shell?: { landingFooter?: boolean }): typeof useLandingFooter => {
+    if (shell) {
+      window.__LIBRECHAT_CONFIG__ = shell;
+    }
+    let hook: typeof useLandingFooter = useLandingFooter;
+    jest.isolateModules(() => {
+      hook = (jest.requireActual('../Footer') as typeof import('../Footer')).useLandingFooter;
+    });
+    return hook;
+  };
+
+  test('keeps the welcome screen footer unless the resolved config turns it off', () => {
+    mockUseGetStartupConfig.mockImplementation(() => ({ data: {}, isSuccess: true }));
     expect(renderHook(() => useLandingFooter()).result.current).toBe(true);
 
-    mockUseGetStartupConfig.mockImplementation(() => ({ data: { interface: {} } }));
+    mockUseGetStartupConfig.mockImplementation(() => ({
+      data: { interface: {} },
+      isSuccess: true,
+    }));
     expect(renderHook(() => useLandingFooter()).result.current).toBe(true);
 
     mockUseGetStartupConfig.mockImplementation(() => ({
       data: { interface: { landingFooter: false } },
+      isSuccess: true,
     }));
     expect(renderHook(() => useLandingFooter()).result.current).toBe(false);
+  });
+
+  test('holds the shell answer while the config is unresolved', () => {
+    mockUseGetStartupConfig.mockImplementation(() => ({ data: undefined, isSuccess: false }));
+
+    const off = loadHook({ landingFooter: false });
+    expect(renderHook(() => off()).result.current).toBe(false);
+
+    const on = loadHook({ landingFooter: true });
+    expect(renderHook(() => on()).result.current).toBe(true);
+  });
+
+  test('reads a shell that carries no answer as the default', () => {
+    mockUseGetStartupConfig.mockImplementation(() => ({ data: undefined, isSuccess: false }));
+
+    const hook = loadHook();
+    expect(renderHook(() => hook()).result.current).toBe(true);
+  });
+
+  test('prefers the resolved config over the shell', () => {
+    mockUseGetStartupConfig.mockImplementation(() => ({
+      data: { interface: { landingFooter: true } },
+      isSuccess: true,
+    }));
+
+    const hook = loadHook({ landingFooter: false });
+    expect(renderHook(() => hook()).result.current).toBe(true);
   });
 });

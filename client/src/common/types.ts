@@ -692,6 +692,9 @@ declare global {
       /** Whether this deployment configured footer content of its own, so the
        *  composer reserves the footer bar's band on its first frame. */
       hasConfiguredFooter?: boolean;
+      /** The deployment's `interface.landingFooter`, so the welcome screen does
+       *  not paint a footer the config is about to remove. */
+      landingFooter?: boolean;
     };
   }
 }

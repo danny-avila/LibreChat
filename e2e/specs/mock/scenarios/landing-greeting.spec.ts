@@ -54,6 +54,13 @@ async function openAgentLanding(page: Page, agentId: string) {
   return main;
 }
 
+/** The room the composer leaves beneath itself for a footer bar, in pixels. */
+function composerClearance(page: Page) {
+  return page
+    .locator('form:has(#prompt-textarea)')
+    .evaluate((form) => parseFloat(getComputedStyle(form).marginBottom));
+}
+
 test.describe('welcome screen heading and footer', () => {
   test('the agent name heads the welcome screen above the footer by default @scenario:landing-names-the-agent-by-default', async ({
     page,
@@ -68,6 +75,7 @@ test.describe('welcome screen heading and footer', () => {
 
       await expect(main.getByText(name, { exact: true }).last()).toBeVisible();
       await expect(page.getByText(DISCLAIMER)).toBeVisible();
+      await expect.poll(() => composerClearance(page)).toBeGreaterThan(16);
     } finally {
       await cleanupAgent(page, agentId);
     }
@@ -92,6 +100,8 @@ test.describe('welcome screen heading and footer', () => {
 
       await expect(main.getByText(welcome)).toBeVisible();
       await expect(page.getByText(DISCLAIMER)).toHaveCount(0);
+      /** No footer beneath it, so the composer keeps only its shadow clearance. */
+      await expect.poll(() => composerClearance(page)).toBe(16);
       /** The header selector still names the agent; the welcome screen does not repeat it. */
       const inSelector = await page
         .locator('button, [role="combobox"]')

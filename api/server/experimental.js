@@ -542,6 +542,7 @@ if (cluster.isMaster) {
        so the answer is the deployment's base configuration, like index.js. */
     indexHTML = injectConfiguredFooterBootstrap(indexHTML, {
       customFooter: process.env.CUSTOM_FOOTER,
+      landingFooter: baseAppConfig?.interfaceConfig?.landingFooter,
     });
 
     const cspPolicy = createCspPolicy();
