@@ -48,4 +48,38 @@ test.describe('sidebar panel on entry', () => {
       'false',
     );
   });
+
+  test('a tab opened from the app lands on chat history even with a cloned session @scenario:entry-opened-tab-lands-on-chat', async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('unifiedSidebarExpanded', JSON.stringify(true));
+    });
+    await page.goto(NEW_CHAT_PATH, { timeout: 15000 });
+    const bookmarks = page.getByTestId('nav-panel-bookmarks');
+    await bookmarks.click();
+    await expect(bookmarks).toHaveAttribute('aria-pressed', 'true');
+
+    const [opened] = await Promise.all([
+      page.waitForEvent('popup'),
+      page.evaluate((path) => {
+        window.open(path, '_blank');
+      }, NEW_CHAT_PATH),
+    ]);
+
+    await expect(opened.getByRole('textbox', { name: 'Message input' })).toBeVisible({
+      timeout: 30000,
+    });
+    expect(await opened.evaluate(() => sessionStorage.getItem('side:active-panel'))).toBe(
+      'bookmarks',
+    );
+    await expect(opened.getByTestId('nav-panel-conversations')).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    await expect(opened.getByTestId('nav-panel-bookmarks')).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+  });
 });

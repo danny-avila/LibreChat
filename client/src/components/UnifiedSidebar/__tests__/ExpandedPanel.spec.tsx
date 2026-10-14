@@ -115,6 +115,10 @@ function renderPanel({
   switchToHistory?: boolean;
 } = {}) {
   if (initialPanel !== DEFAULT_PANEL) {
+    Object.defineProperty(performance, 'getEntriesByType', {
+      configurable: true,
+      value: () => [{ type: 'reload' }],
+    });
     sessionStorage.setItem('side:active-panel', initialPanel);
   }
 
@@ -145,6 +149,10 @@ describe('ExpandedPanel', () => {
     jest.clearAllMocks();
     localStorage.clear();
     sessionStorage.clear();
+  });
+
+  afterEach(() => {
+    Reflect.deleteProperty(performance, 'getEntriesByType');
   });
 
   describe('NavIconButton collapse toggle', () => {

@@ -19,10 +19,21 @@ function TestConsumer() {
   );
 }
 
+/** jsdom has no Navigation Timing, so the entry type is supplied as an own property. */
+const mockNavigationType = (type: NavigationTimingType) =>
+  Object.defineProperty(performance, 'getEntriesByType', {
+    configurable: true,
+    value: () => [{ type }],
+  });
+
 describe('ActivePanelContext', () => {
   beforeEach(() => {
     localStorage.clear();
     sessionStorage.clear();
+  });
+
+  afterEach(() => {
+    Reflect.deleteProperty(performance, 'getEntriesByType');
   });
 
   const renderProvider = () =>
@@ -44,11 +55,22 @@ describe('ActivePanelContext', () => {
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 
-  it('restores the panel chosen earlier in the same session', () => {
+  it('restores the panel chosen earlier in the same tab on reload', () => {
+    mockNavigationType('reload');
     sessionStorage.setItem(STORAGE_KEY, 'memories');
     renderProvider();
     expect(screen.getByTestId('active')).toHaveTextContent('memories');
   });
+
+  it.each<NavigationTimingType>(['navigate', 'back_forward'])(
+    'lands a %s entry on conversations even when session storage carries a panel',
+    (type) => {
+      mockNavigationType(type);
+      sessionStorage.setItem(STORAGE_KEY, 'skills');
+      renderProvider();
+      expect(screen.getByTestId('active')).toHaveTextContent('conversations');
+    },
+  );
 
   it('setActive updates state and keeps it for the session only', () => {
     renderProvider();

@@ -3,13 +3,23 @@ import { createContext, useCallback, useContext, useMemo, useState, ReactNode } 
 const STORAGE_KEY = 'side:active-panel';
 export const DEFAULT_PANEL = 'conversations';
 
+/** True only when this document was loaded by reloading the tab, not by opening or duplicating one. */
+function isReload(): boolean {
+  if (typeof performance.getEntriesByType !== 'function') {
+    return false;
+  }
+  const [entry] = performance.getEntriesByType('navigation') as PerformanceNavigationTiming[];
+  return entry?.type === 'reload';
+}
+
 /**
- * Session-scoped so a reload keeps the panel while a new visit lands on chat history;
- * the legacy localStorage copy is dropped so an old panel cannot resurface on entry.
+ * A reload keeps the panel the tab had open; any other entry, including a tab whose session
+ * storage was cloned from its opener, lands on chat history. The legacy localStorage copy is
+ * dropped so an old panel cannot resurface on entry.
  */
 function getInitialActivePanel(): string {
   localStorage.removeItem(STORAGE_KEY);
-  const saved = sessionStorage.getItem(STORAGE_KEY);
+  const saved = isReload() ? sessionStorage.getItem(STORAGE_KEY) : null;
   return saved ? saved : DEFAULT_PANEL;
 }
 
