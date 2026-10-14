@@ -65,7 +65,7 @@ const EMAIL_PATTERN =
 let skipHeavyErrorFields = false;
 /** URL-encoded addresses (`user%40host.tld`), anchored at a token start so scans stay linear. */
 const ENCODED_EMAIL_PATTERN =
-  /(?<![^\s<>"&=?/#])[^\s<>"&=?/#]{1,320}%40[^\s<>"&#]{1,255}\.[^\s<>"&#]{1,255}/giu;
+  /(?<![^\s<>"&=?/#])(?:(?!%40)[^\s<>"&=?/#])+%40[^\s<>"&#]+\.[^\s<>"&#]+/giu;
 const REDACTION_WINDOW_SLACK = 1024;
 const REDACTED_EMAIL_VALUE = '[REDACTED_EMAIL]';
 
@@ -408,6 +408,10 @@ function redactObjectEntries(
     if (redacted === undefined) {
       redacted = {};
       seen.set(value, redacted);
+    }
+    /** A serialization hook would run after redaction and could re-emit the raw values. */
+    if (key === 'toJSON') {
+      continue;
     }
     if (count >= MAX_REDACTION_ENTRIES) {
       redacted[REDACTION_TRUNCATED_KEY] = 'Additional object properties omitted';

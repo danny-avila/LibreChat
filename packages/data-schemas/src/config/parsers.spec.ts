@@ -523,6 +523,22 @@ describe('redactMessage', () => {
     expect(JSON.stringify(out)).not.toMatch(/secretcanary|jane/);
   });
 
+  it('masks long encoded addresses linearly and strips serializer hooks', () => {
+    expect(redactMessage(`?e=${'a'.repeat(400)}%40${'b'.repeat(300)}.com&x=1`)).toBe(
+      '?e=[REDACTED_EMAIL]&x=1',
+    );
+    const started = Date.now();
+    redactMessage('a%40'.repeat(50000));
+    redactMessage('a'.repeat(100000));
+    expect(Date.now() - started).toBeLessThan(500);
+    const out = runRedactFormat({
+      level: 'info',
+      message: 'm',
+      payload: { email: 'jane@example.com', toJSON: () => ({ email: 'jane@example.com' }) },
+    } as RedactInfo);
+    expect(JSON.stringify(out)).not.toContain('jane');
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),
