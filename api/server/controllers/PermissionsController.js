@@ -10,6 +10,7 @@ const {
   createPrincipalSearch,
   backfillRemoteAgentPermissions,
   runAuditedPermissionUpdate,
+  permissionErrorCode,
   getInsightsPrincipalState,
   maskAgentInsightsBit,
   sanitizeInsightsPermissionPrincipals,
@@ -228,7 +229,7 @@ const updateResourcePermissions = async (req, res) => {
     res.status(error.statusCode ?? 400).json({
       error: 'Failed to update permissions',
       details: error.message,
-      ...(error.code === 'RESOURCE_PERMISSIONS_BUSY' && { code: error.code }),
+      ...permissionErrorCode(error),
     });
   }
 };

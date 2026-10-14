@@ -9,7 +9,11 @@ import {
   PrincipalType,
 } from 'librechat-data-provider';
 import type { IAclEntry } from '@librechat/data-schemas';
-import { AccessControlService } from './accessControlService';
+import {
+  AccessControlService,
+  permissionErrorCode,
+  ResourcePermissionsBusyError,
+} from './accessControlService';
 
 // Mock the logger
 jest.mock('@librechat/data-schemas', () => ({
@@ -547,6 +551,13 @@ describe('AccessControlService', () => {
 
       expect(afterWrite).toHaveBeenCalledTimes(1);
       invalidate.mockRestore();
+    });
+
+    test('exposes the busy code for the HTTP error body only', () => {
+      expect(permissionErrorCode(new ResourcePermissionsBusyError())).toEqual({
+        code: 'RESOURCE_PERMISSIONS_BUSY',
+      });
+      expect(permissionErrorCode(new Error('x'))).toBeUndefined();
     });
 
     test('keys the lease on the canonical resource id', async () => {
