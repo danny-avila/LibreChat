@@ -4,6 +4,7 @@ const {
   sleep,
   createToolSearch,
   createBashExecutionTool,
+  TOOL_DISPATCHER_NAME,
   Constants: AgentConstants,
 } = require('@librechat/agents');
 const {
@@ -1411,6 +1412,7 @@ async function loadToolDefinitionsWrapper({
       mcpServerNames,
       rawServerNames: mcpRawServerNames,
       accessibleServerNames: defsAccessibleServerNames,
+      sortMcpTools: isStableContextEnabled(appConfig),
     },
     {
       isBuiltInTool,
@@ -1514,6 +1516,7 @@ async function loadToolDefinitionsWrapper({
           mcpServerNames,
           rawServerNames: mcpRawServerNames,
           accessibleServerNames: defsAccessibleServerNames,
+          sortMcpTools: isStableContextEnabled(appConfig),
         },
         {
           isBuiltInTool,
@@ -2168,6 +2171,7 @@ async function loadAgentTools({
  * @param {string} [params.conversationId] - Resolved conversation identity for this request
  * @param {boolean} [params.actionsEnabled] - Whether the actions capability is enabled
  * @param {readonly string[]} [params.accessibleMcpServerNames] - COMPLETE accessible-server audit resolved at initialization
+ * @param {boolean} [params.toolDispatch] - The agent reaches deferred tools through the SDK's dispatcher
  * @returns {Promise<{ loadedTools: Array, configurable: Object }>}
  */
 async function loadToolsForExecution({
@@ -2194,6 +2198,7 @@ async function loadToolsForExecution({
   actionsEnabled,
   accessibleMcpServerNames,
   runFileCodeExecutionContext,
+  toolDispatch = false,
 }) {
   const appConfig = req.config;
   const allLoadedTools = [];
@@ -2325,9 +2330,11 @@ async function loadToolsForExecution({
   );
 
   if (isToolSearch && toolRegistry) {
+    /** With the dispatcher, found tools stay deferred: results carry their schemas. */
     const toolSearchTool = createToolSearch({
       mode: 'local',
       toolRegistry,
+      ...(toolDispatch && { toolDispatch: TOOL_DISPATCHER_NAME }),
     });
     allLoadedTools.push(toolSearchTool);
     configurable.toolRegistry = toolRegistry;
