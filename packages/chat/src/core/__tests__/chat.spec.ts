@@ -735,6 +735,25 @@ describe('Chat', () => {
     unsubscribe();
   });
 
+  it('finishes with the response the turn produced, not the tail of another branch', async () => {
+    const otherBranch: TMessage = { ...placeholder, messageId: 'other-1', parentMessageId: 'x' };
+    const { chat, stream, onFinish } = setup({
+      prepareRequest: jest.fn(() => ({
+        payload,
+        messages: [userMessage, placeholder, otherBranch],
+      })),
+    });
+
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    stream.push(finalEvent());
+    await sent;
+
+    expect(onFinish).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.objectContaining({ messageId: 'response-1' }) }),
+    );
+  });
+
   it('regenerates a given message', async () => {
     const { stream, transport } = setup();
     const prepareRequest = jest.fn(() => ({ payload }));
@@ -1039,6 +1058,20 @@ describe('Chat', () => {
 
       expect(transport.reconnectToStream).not.toHaveBeenCalled();
       expect(chat.pendingAction).toBe(next);
+    });
+
+    it('shows only the reason of the latest decision for a call', async () => {
+      const { chat, stream, sent } = await pause(approvalAction);
+      await chat.addToolApprovalResponse({ id: 'call-1', approved: false, reason: 'No' });
+      await chat.addToolApprovalResponse({ id: 'call-1', approved: true });
+
+      const call = chat.messages[1].content?.[0] as { tool_call: Agents.ToolCall };
+      expect(call.tool_call).toMatchObject({ approval: { decision: 'approve' } });
+      expect((call.tool_call as { approval?: { reason?: string } }).approval).not.toHaveProperty(
+        'reason',
+      );
+      stream.push(finalEvent());
+      await sent;
     });
 
     it('resumes a batch once when its last decisions arrive together', async () => {
