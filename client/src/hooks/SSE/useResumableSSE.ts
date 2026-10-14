@@ -1345,8 +1345,9 @@ export default function useResumableSSE(
     [convertSteersToQueued],
   );
 
-  /** The epoch this pane last installed, kept so a run left mid-stream can carry it. */
-  const liveEpochRef = useRef<{ conversationId: string; createdAt: number } | null>(null);
+  /** The generation epoch the pane's stream is attached to, kept so a run left mid-stream can
+   *  carry it. A server that reports no epoch leaves it unset. */
+  const subscribedEpochRef = useRef<number | null>(null);
   /** Conversation ids are reused by successive agent turns. Keep the exact
    * live epoch beside the UI controls, and only clear it if the terminal event
    * still belongs to the epoch that installed it. */
@@ -1363,7 +1364,6 @@ export default function useResumableSSE(
           return false;
         }
         set(state, next);
-        liveEpochRef.current = next == null ? null : { conversationId, createdAt: next };
         set(
           store.activeGenerationProtocolVersionByConvoId(conversationId),
           next == null ? 1 : generationProtocolVersion,
@@ -1377,6 +1377,9 @@ export default function useResumableSSE(
   /** Whether the current submission's run end already reached the queue drain. A run that
    *  ended attached must not also be resolved as detached when the user later leaves. */
   const runEndPublishedRef = useRef(false);
+  /** Whether the server named the current submission's user message (`created`, or a resume's
+   *  sync). Only a run whose identity it confirmed is remembered when the user leaves. */
+  const identityConfirmedRef = useRef(false);
   const setRunEnd = useCallback(
     (end: RunEnd, options?: { retainDetached?: boolean }) => {
       runEndPublishedRef.current = true;
@@ -1388,8 +1391,7 @@ export default function useResumableSSE(
         const detached = jotaiStore.get(detachedFamily);
         if (
           detached != null &&
-          (detached.generationCreatedAt == null ||
-            end.generationCreatedAt == null ||
+          (end.generationCreatedAt == null ||
             detached.generationCreatedAt === end.generationCreatedAt)
         ) {
           jotaiStore.set(detachedFamily, null);
@@ -1502,6 +1504,7 @@ export default function useResumableSSE(
       if (lifecycleSignal?.aborted || submissionRef.current !== currentSubmission) {
         return;
       }
+      subscribedEpochRef.current = generationCreatedAt ?? null;
       const startedAsNewConversation = optimisticStreamIdsRef.current.has(currentStreamId);
       /** Terminal handlers below are fenced by this subscription and its generation.
        * Clear every key the same run may have occupied, including the temporary
@@ -2313,6 +2316,7 @@ export default function useResumableSSE(
               initialResponse: createdInitialResponse,
             };
             submissionRef.current = currentSubmission;
+            identityConfirmedRef.current = true;
             bindResponse(currentSubmission);
             createdHandler(data, currentSubmission as EventSubmission);
             replayPreCreatedStepEvents();
@@ -2416,6 +2420,9 @@ export default function useResumableSSE(
             currentSubmission = resumeSubmission;
             submissionRef.current = resumeSubmission;
             userMessage = resumeSubmission.userMessage;
+            if (data.resumeState?.userMessage != null) {
+              identityConfirmedRef.current = true;
+            }
             /**
              * Totals rebuild from the persisted backfill at sync. Replayed or
              * gap usage events already represented in the snapshot are skipped
@@ -4353,40 +4360,26 @@ export default function useResumableSSE(
 
     submissionRef.current = submission;
     runEndPublishedRef.current = false;
+    identityConfirmedRef.current = false;
+    subscribedEpochRef.current = null;
     if (submission.conversation?.conversationId != null) {
       /** A different run starting here owns the conversation's end from now on: an earlier run
        *  this pane left is superseded, and a Stop belonged to that earlier run. Reattaching to
-       *  the same generation keeps both, since that run's end is still owed and it was stopped.
-       *  A reattach whose epoch is unknown keeps a Stop, as `isStoppedRun` does. A marker left
-       *  without an epoch is the same generation when the reattached turn answers its user
-       *  message, and takes the resumed epoch when the server reports one. */
+       *  the same generation keeps both, since that run's end is still owed and it was stopped. */
       const startingConvoId = submission.conversation.conversationId;
+      const sameGeneration = (generationCreatedAt?: number) =>
+        resumeStreamId != null &&
+        resumeGenerationCreatedAt != null &&
+        generationCreatedAt === resumeGenerationCreatedAt;
       const stopFamily = stopRequestedByConvoId(startingConvoId);
       const stopped = jotaiStore.get(stopFamily);
-      if (
-        stopped != null &&
-        (resumeStreamId == null ||
-          (resumeGenerationCreatedAt != null &&
-            stopped.generationCreatedAt !== resumeGenerationCreatedAt))
-      ) {
+      if (stopped != null && !sameGeneration(stopped.generationCreatedAt)) {
         jotaiStore.set(stopFamily, null);
       }
       const detachedFamily = detachedRunByConvoId(startingConvoId);
       const detached = jotaiStore.get(detachedFamily);
-      const sameEpoch =
-        resumeGenerationCreatedAt != null &&
-        detached?.generationCreatedAt === resumeGenerationCreatedAt;
-      const sameEpochlessTurn =
-        resumeStreamId != null &&
-        detached?.generationCreatedAt == null &&
-        detached?.userMessageId === submission.userMessage?.messageId;
-      if (detached != null && !sameEpoch && !sameEpochlessTurn) {
+      if (detached != null && !sameGeneration(detached.generationCreatedAt)) {
         jotaiStore.set(detachedFamily, null);
-      } else if (sameEpochlessTurn && resumeGenerationCreatedAt != null) {
-        jotaiStore.set(detachedFamily, {
-          ...detached,
-          generationCreatedAt: resumeGenerationCreatedAt,
-        });
       }
     }
     const startController = new AbortController();
@@ -4921,33 +4914,29 @@ export default function useResumableSSE(
       /** The pane is moving off a run that is still generating (another chat, a new chat, or
        *  an unmount): the server keeps going with no subscriber and deletes the job when done,
        *  so no terminal event will reach the queue drain. Remember the run; on return its end is
-       *  read from history. A run that already published its end, or that the user stopped, is
-       *  not remembered. */
+       *  read from history. Only a run whose identity the server confirmed (its epoch, and the
+       *  user message `created` or a resume's sync named) is remembered, and not a regeneration,
+       *  a run that already published its end, or one the user stopped. */
       const closing = submissionRef.current;
       const closingConvoId = closing?.conversation?.conversationId;
       const closingUserMessageId = closing?.userMessage?.messageId;
+      const generationCreatedAt = subscribedEpochRef.current;
       if (
         streamRef.current != null &&
+        identityConfirmedRef.current &&
         !runEndPublishedRef.current &&
+        closing?.isRegenerate !== true &&
         closingConvoId != null &&
         closingConvoId !== Constants.NEW_CONVO &&
-        closingUserMessageId != null
+        closingUserMessageId != null &&
+        generationCreatedAt != null &&
+        !isStoppedRun(jotaiStore.get(stopRequestedByConvoId(closingConvoId)), generationCreatedAt)
       ) {
-        const liveEpoch = liveEpochRef.current;
-        const generationCreatedAt =
-          liveEpoch?.conversationId === closingConvoId
-            ? liveEpoch.createdAt
-            : (closing as TSubmission & { resumeGenerationCreatedAt?: number })
-                .resumeGenerationCreatedAt;
-        const stopped = jotaiStore.get(stopRequestedByConvoId(closingConvoId));
-        if (!isStoppedRun(stopped, generationCreatedAt)) {
-          jotaiStore.set(detachedRunByConvoId(closingConvoId), {
-            userMessageId: closingUserMessageId,
-            responseMessageId: closing?.initialResponse?.messageId,
-            ...(generationCreatedAt != null && { generationCreatedAt }),
-            ...(closing?.isRegenerate === true && { isRegenerate: true }),
-          });
-        }
+        jotaiStore.set(detachedRunByConvoId(closingConvoId), {
+          userMessageId: closingUserMessageId,
+          responseMessageId: closing?.initialResponse?.messageId,
+          generationCreatedAt,
+        });
       }
       streamRef.current?.abort();
       streamRef.current = null;

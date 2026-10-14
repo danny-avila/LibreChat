@@ -413,6 +413,27 @@ describe('useChatHelpers stopGenerating (abort steer targeting)', () => {
     expect(getDefaultStore().get(stopRequestedByConvoId('convo-held'))).toBeNull();
   });
 
+  it('keeps Stop when another Stop already aborted the run', async () => {
+    mockAbortMutateAsync.mockResolvedValue({
+      success: false,
+      settled: true,
+      code: 'RUN_ALREADY_SETTLED',
+      streamId: 'convo-held',
+      terminalStatus: 'aborted',
+      generationProtocolVersion: 2,
+    });
+    const { result } = setupStop('convo-held');
+
+    await act(async () => {
+      await result.current.stopGenerating();
+    });
+
+    expect(observed.runEnd).toBeNull();
+    expect(getDefaultStore().get(stopRequestedByConvoId('convo-held'))).toEqual({
+      generationCreatedAt: 41,
+    });
+  });
+
   it('does not let a late abort response clear another conversation epoch', async () => {
     let resolveAbort: ((value: unknown) => void) | undefined;
     mockAbortMutateAsync.mockReturnValue(

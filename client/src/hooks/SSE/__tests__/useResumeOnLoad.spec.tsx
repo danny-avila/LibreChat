@@ -2761,11 +2761,12 @@ describe('useResumeOnLoad', () => {
         conversationId: CONVERSATION_ID,
         isCreatedByUser: false,
         text: 'finished while away',
+        updatedAt: new Date(42).toISOString(),
       } as TMessage;
 
       const { jotaiStore } = renderUseResumeOnLoad({
         messages: [buildUserMessage(CONVERSATION_ID), completedResponse],
-        detachedRun: { userMessageId: USER_MESSAGE_ID },
+        detachedRun: { userMessageId: USER_MESSAGE_ID, generationCreatedAt: 41 },
       });
       await act(async () => {
         await Promise.resolve();
@@ -2790,7 +2791,7 @@ describe('useResumeOnLoad', () => {
       let history: TMessage[] = [buildUserMessage(CONVERSATION_ID)];
       const { jotaiStore } = renderUseResumeOnLoad({
         getMessages: () => history,
-        detachedRun: { userMessageId: USER_MESSAGE_ID },
+        detachedRun: { userMessageId: USER_MESSAGE_ID, generationCreatedAt: 41 },
       });
       /** The first read found no response; it is saved before the history refetch settles. */
       expect(jotaiStore.get(pendingRunEndByConvoId(CONVERSATION_ID))).toBeNull();
@@ -2803,6 +2804,7 @@ describe('useResumeOnLoad', () => {
           conversationId: CONVERSATION_ID,
           isCreatedByUser: false,
           text: 'saved after the first read',
+          updatedAt: new Date(42).toISOString(),
         } as TMessage,
       ];
 
@@ -2827,11 +2829,16 @@ describe('useResumeOnLoad', () => {
         conversationId: CONVERSATION_ID,
         isCreatedByUser: false,
         text: 'streamed before leaving',
+        updatedAt: new Date(42).toISOString(),
       } as TMessage;
       let client: QueryClient | undefined;
       const { jotaiStore } = renderUseResumeOnLoad({
         getMessages: () => client?.getQueryData<TMessage[]>(historyKey),
-        detachedRun: { userMessageId: USER_MESSAGE_ID, responseMessageId: 'response-detached' },
+        detachedRun: {
+          userMessageId: USER_MESSAGE_ID,
+          responseMessageId: 'response-detached',
+          generationCreatedAt: 41,
+        },
         seedQueryClient: (queryClient) => {
           client = queryClient;
           queryClient.setQueryDefaults(historyKey, {
@@ -2865,7 +2872,11 @@ describe('useResumeOnLoad', () => {
       let client: QueryClient | undefined;
       const { jotaiStore } = renderUseResumeOnLoad({
         getMessages: () => client?.getQueryData<TMessage[]>(historyKey),
-        detachedRun: { userMessageId: USER_MESSAGE_ID, responseMessageId: 'response-detached' },
+        detachedRun: {
+          userMessageId: USER_MESSAGE_ID,
+          responseMessageId: 'response-detached',
+          generationCreatedAt: 41,
+        },
         seedQueryClient: (queryClient) => {
           client = queryClient;
           queryClient.setQueryDefaults(historyKey, { queryFn });
@@ -2877,6 +2888,7 @@ describe('useResumeOnLoad', () => {
               conversationId: CONVERSATION_ID,
               isCreatedByUser: false,
               text: 'streamed before leaving',
+              updatedAt: new Date(42).toISOString(),
             } as TMessage,
           ]);
         },
@@ -2888,37 +2900,6 @@ describe('useResumeOnLoad', () => {
       });
       expect(jotaiStore.get(pendingRunEndByConvoId(CONVERSATION_ID))).toBeNull();
       expect(jotaiStore.get(detachedRunByConvoId(CONVERSATION_ID))).not.toBeNull();
-    });
-
-    it('leaves a run without an epoch for a manual send when the server shares the queue', async () => {
-      mockUseStreamStatus.mockReturnValue({
-        isSuccess: true,
-        isFetching: false,
-        data: { active: false },
-      });
-      const { jotaiStore } = renderUseResumeOnLoad({
-        messages: [
-          buildUserMessage(CONVERSATION_ID),
-          {
-            messageId: 'response-detached',
-            parentMessageId: USER_MESSAGE_ID,
-            conversationId: CONVERSATION_ID,
-            isCreatedByUser: false,
-            text: 'finished while away',
-          } as TMessage,
-        ],
-        detachedRun: { userMessageId: USER_MESSAGE_ID },
-        seedJotai: (store) =>
-          store.set(settledQueuedTurnReceiptsByConvoId(CONVERSATION_ID), [
-            { clientRequestId: 'queued-1', status: 'admitted', effectivePredecessorCreatedAt: 41 },
-          ]),
-      });
-      await act(async () => {
-        await Promise.resolve();
-      });
-
-      expect(jotaiStore.get(pendingRunEndByConvoId(CONVERSATION_ID))).toBeNull();
-      expect(jotaiStore.get(detachedRunByConvoId(CONVERSATION_ID))).toBeNull();
     });
 
     it('retires a retained marker for a run the user stopped on a later visit', async () => {
@@ -3037,27 +3018,6 @@ describe('useResumeOnLoad', () => {
 
       expect(jotaiStore.get(detachedRunByConvoId(CONVERSATION_ID))).toEqual(detachedRun);
       expect(jotaiStore.get(pendingRunEndByConvoId(CONVERSATION_ID))).toBeNull();
-    });
-
-    it('retires a regeneration history can never date without reading history again', async () => {
-      mockUseStreamStatus.mockReturnValue({
-        isSuccess: true,
-        isFetching: false,
-        data: { active: false },
-      });
-      const refetch = jest.spyOn(QueryClient.prototype, 'refetchQueries');
-      const { jotaiStore } = renderUseResumeOnLoad({
-        messages: [buildUserMessage(CONVERSATION_ID)],
-        detachedRun: { userMessageId: USER_MESSAGE_ID, isRegenerate: true },
-      });
-      await act(async () => {
-        await Promise.resolve();
-      });
-
-      expect(jotaiStore.get(detachedRunByConvoId(CONVERSATION_ID))).toBeNull();
-      expect(jotaiStore.get(pendingRunEndByConvoId(CONVERSATION_ID))).toBeNull();
-      expect(refetch).not.toHaveBeenCalled();
-      refetch.mockRestore();
     });
 
     it('converts resumeState.pendingSteers to queued when inactive (expired action, unparked queue)', async () => {

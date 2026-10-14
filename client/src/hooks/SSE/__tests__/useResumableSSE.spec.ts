@@ -326,7 +326,6 @@ import useResumableSSE, {
 } from '~/hooks/SSE/useResumableSSE';
 import useSSE from '~/hooks/SSE/useSSE';
 import {
-  settledQueuedTurnReceiptsByConvoId,
   queuedMessagesByConvoId,
   stopRequestedByConvoId,
   detachedRunByConvoId,
@@ -1027,44 +1026,93 @@ describe('useResumableSSE', () => {
       );
       await flushMicrotasks();
       expect(mockSSEInstances.length).toBeGreaterThan(0);
+      await confirmCreated();
       return rendered;
     };
     const detachedRun = () => getDefaultStore().get(detachedRunByConvoId(CONV_ID));
+    /** The server names the run's user message, which differs from the optimistic one. */
+    const confirmCreated = async () => {
+      await act(async () => {
+        getLastSSE()._emit('message', {
+          data: JSON.stringify({
+            created: true,
+            message: { messageId: 'server-msg-1', conversationId: CONV_ID },
+          }),
+        });
+      });
+    };
+    const confirmResume = async () => {
+      await act(async () => {
+        getLastSSE()._emit('message', {
+          data: JSON.stringify({
+            sync: true,
+            resumeState: {
+              runSteps: [],
+              userMessage: { messageId: 'msg-1', conversationId: CONV_ID },
+            },
+          }),
+        });
+      });
+    };
+    const leftRun = expect.objectContaining({
+      userMessageId: 'server-msg-1',
+      generationCreatedAt: 1000,
+    });
 
     it('remembers the run when navigation clears the submission, so its end is read on return', async () => {
       const { rerender, unmount } = await renderLeavable();
       rerender({ current: {} as TSubmission });
-      expect(detachedRun()).toEqual({ userMessageId: 'msg-1', responseMessageId: 'resp-1' });
+      expect(detachedRun()).toEqual(leftRun);
       unmount();
     });
 
     it('remembers the run when switching to a saved chat clears the submission to null', async () => {
       const { rerender, unmount } = await renderLeavable();
       rerender({ current: null });
-      expect(detachedRun()).toEqual({ userMessageId: 'msg-1', responseMessageId: 'resp-1' });
+      expect(detachedRun()).toEqual(leftRun);
       unmount();
     });
 
-    it('marks a regeneration and carries a resumed epoch when the user leaves', async () => {
+    it('records nothing for a run left before created names its user message', async () => {
       const chatHelpers = buildChatHelpers();
-      const resumed = {
-        ...buildSubmission(),
-        isRegenerate: true,
-        resumeStreamId: CONV_ID,
-        resumeGenerationCreatedAt: 4200,
-      } as TSubmission;
-      const { unmount } = renderHook(() => useResumableSSE(resumed, chatHelpers));
+      const { unmount } = renderHook(() => useResumableSSE(buildSubmission(), chatHelpers));
       await flushMicrotasks();
       unmount();
+      expect(detachedRun()).toBeNull();
+    });
+
+    it('records nothing for a run on a server that reports no epoch', async () => {
+      (request.post as jest.Mock).mockResolvedValue({ streamId: 'stream-without-epoch' });
+      const { unmount } = await renderLeavable();
+      unmount();
+      expect(detachedRun()).toBeNull();
+    });
+
+    it('records nothing for a regeneration, which waits for a manual send', async () => {
+      const chatHelpers = buildChatHelpers();
+      const resumed = { ...resumeOf(4200), isRegenerate: true } as TSubmission;
+      const { unmount } = renderHook(() => useResumableSSE(resumed, chatHelpers));
+      await flushMicrotasks();
+      await confirmResume();
+      unmount();
+      expect(detachedRun()).toBeNull();
+    });
+
+    it('carries a resumed epoch once the resume names its user message', async () => {
+      const chatHelpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useResumableSSE(resumeOf(4200), chatHelpers));
+      await flushMicrotasks();
+      await confirmResume();
+      unmount();
       expect(detachedRun()).toEqual(
-        expect.objectContaining({ isRegenerate: true, generationCreatedAt: 4200 }),
+        expect.objectContaining({ userMessageId: 'msg-1', generationCreatedAt: 4200 }),
       );
     });
 
     it('remembers the run when the chat unmounts mid-stream', async () => {
       const { unmount } = await renderLeavable();
       unmount();
-      expect(detachedRun()).toEqual({ userMessageId: 'msg-1', responseMessageId: 'resp-1' });
+      expect(detachedRun()).toEqual(leftRun);
     });
 
     it('forgets a left run once a new run starts in that conversation', async () => {
@@ -1145,100 +1193,6 @@ describe('useResumableSSE', () => {
         ),
       );
       expect(mockSetRunEnd).toHaveBeenCalledTimes(1);
-      expect(detachedRun()).toBeNull();
-      unmount();
-    });
-
-    it('leaves an epochless run whose queue the server shares for a manual send on 404', async () => {
-      mockFetchStreamStatus.mockResolvedValue({ active: false });
-      mockGetQueryData.mockImplementation((queryKey: unknown[]) =>
-        queryKey[0] === QueryKeys.messages
-          ? [
-              {
-                messageId: 'resp-1',
-                parentMessageId: 'msg-1',
-                conversationId: CONV_ID,
-                isCreatedByUser: false,
-                text: 'finished while away',
-              },
-            ]
-          : undefined,
-      );
-      const resumed = resumeOf(4200);
-      const chatHelpers = buildChatHelpers();
-      const { unmount } = renderHook(() => useResumableSSE(resumed, chatHelpers));
-      await flushMicrotasks();
-      getDefaultStore().set(detachedRunByConvoId(CONV_ID), {
-        userMessageId: 'msg-1',
-        responseMessageId: 'resp-1',
-      });
-      getDefaultStore().set(settledQueuedTurnReceiptsByConvoId(CONV_ID), [
-        { clientRequestId: 'queued-1', status: 'admitted', effectivePredecessorCreatedAt: 41 },
-      ]);
-      await act(async () => {
-        getLastSSE()._emit('error', { responseCode: 404 });
-      });
-      await waitFor(() => expect(mockSetRunEnd).toHaveBeenCalledTimes(1));
-      expect(mockSetRunEnd).toHaveBeenCalledWith(
-        expect.objectContaining({ conversationId: CONV_ID, outcome: 'aborted' }),
-      );
-      expect(mockSetRunEnd).not.toHaveBeenCalledWith(
-        expect.objectContaining({ outcome: 'completed' }),
-      );
-      expect(detachedRun()).toBeNull();
-      unmount();
-    });
-
-    it.each([
-      ['an epochless server', undefined],
-      ['a server that dates the resumed run', 4200],
-    ])('keeps an epochless marker through a reattach to the same turn on %s', async (_, epoch) => {
-      getDefaultStore().set(detachedRunByConvoId(CONV_ID), {
-        userMessageId: 'msg-1',
-        responseMessageId: 'resp-1',
-      });
-      mockFetchStreamStatus.mockResolvedValue({ active: false });
-      mockGetQueryData.mockImplementation((queryKey: unknown[]) =>
-        queryKey[0] === QueryKeys.messages
-          ? [
-              {
-                messageId: 'resp-1',
-                parentMessageId: 'msg-1',
-                conversationId: CONV_ID,
-                isCreatedByUser: false,
-                text: 'finished while away',
-                updatedAt: new Date(5000).toISOString(),
-              },
-            ]
-          : undefined,
-      );
-      const resumed = resumeOf(epoch);
-      const chatHelpers = buildChatHelpers();
-      const { unmount } = renderHook(() => useResumableSSE(resumed, chatHelpers));
-      await flushMicrotasks();
-      expect(detachedRun()).toEqual({
-        userMessageId: 'msg-1',
-        responseMessageId: 'resp-1',
-        ...(epoch != null && { generationCreatedAt: epoch }),
-      });
-      await act(async () => {
-        getLastSSE()._emit('error', { responseCode: 404 });
-      });
-      await waitFor(() =>
-        expect(mockSetRunEnd).toHaveBeenCalledWith(
-          expect.objectContaining({ outcome: 'completed', responseMessageId: 'resp-1' }),
-        ),
-      );
-      expect(detachedRun()).toBeNull();
-      unmount();
-    });
-
-    it('drops an epochless marker when the reattached run is a different turn', async () => {
-      getDefaultStore().set(detachedRunByConvoId(CONV_ID), { userMessageId: 'other-turn' });
-      const resumed = resumeOf();
-      const chatHelpers = buildChatHelpers();
-      const { unmount } = renderHook(() => useResumableSSE(resumed, chatHelpers));
-      await flushMicrotasks();
       expect(detachedRun()).toBeNull();
       unmount();
     });
@@ -1340,13 +1294,14 @@ describe('useResumableSSE', () => {
       unmount();
     });
 
-    it('does not date a fresh run left before its start response with the previous epoch', async () => {
+    it('does not carry a resumed run into a fresh run left before created', async () => {
       const chatHelpers = buildChatHelpers();
       const rendered = renderHook(
         ({ current }: { current: TSubmission | null }) => useResumableSSE(current, chatHelpers),
         { initialProps: { current: resumeOf(4200) as TSubmission | null } },
       );
       await flushMicrotasks();
+      await confirmResume();
       rendered.rerender({ current: null });
       expect(detachedRun()).toEqual(expect.objectContaining({ generationCreatedAt: 4200 }));
       rendered.rerender({
@@ -1363,8 +1318,7 @@ describe('useResumableSSE', () => {
       });
       await flushMicrotasks();
       rendered.rerender({ current: null });
-      expect(detachedRun()).toEqual(expect.objectContaining({ userMessageId: 'msg-2' }));
-      expect(detachedRun()?.generationCreatedAt).toBeUndefined();
+      expect(detachedRun()).toBeNull();
       rendered.unmount();
     });
 
@@ -1374,6 +1328,7 @@ describe('useResumableSSE', () => {
       const chatHelpers = buildChatHelpers();
       const { unmount } = renderHook(() => useResumableSSE(resumed, chatHelpers));
       await flushMicrotasks();
+      await confirmResume();
       unmount();
       expect(detachedRun()).toBeNull();
       expect(getDefaultStore().get(stopRequestedByConvoId(CONV_ID))).toEqual({
@@ -1381,17 +1336,16 @@ describe('useResumableSSE', () => {
       });
     });
 
-    it('keeps a Stop through a reattach whose epoch the server does not report', async () => {
+    it('drops a Stop for a reattach whose epoch the server does not report, and records nothing', async () => {
       getDefaultStore().set(stopRequestedByConvoId(CONV_ID), { generationCreatedAt: 4200 });
       const resumed = resumeOf();
       const chatHelpers = buildChatHelpers();
       const { unmount } = renderHook(() => useResumableSSE(resumed, chatHelpers));
       await flushMicrotasks();
+      await confirmResume();
+      expect(getDefaultStore().get(stopRequestedByConvoId(CONV_ID))).toBeNull();
       unmount();
       expect(detachedRun()).toBeNull();
-      expect(getDefaultStore().get(stopRequestedByConvoId(CONV_ID))).toEqual({
-        generationCreatedAt: 4200,
-      });
     });
 
     it('drops a Stop once a different run reattaches, and remembers that run when left', async () => {
@@ -1401,6 +1355,7 @@ describe('useResumableSSE', () => {
       const { unmount } = renderHook(() => useResumableSSE(resumed, chatHelpers));
       await flushMicrotasks();
       expect(getDefaultStore().get(stopRequestedByConvoId(CONV_ID))).toBeNull();
+      await confirmResume();
       unmount();
       expect(detachedRun()).toEqual(expect.objectContaining({ generationCreatedAt: 9000 }));
     });

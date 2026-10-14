@@ -255,10 +255,11 @@ export default function useChatHelpers(index = 0, paramId?: string): ChatContrac
         if (canUseV2AbortResponse && response?.settled === true) {
           /** Natural completion/error won the terminal CAS, so this request did
            * not emit an abort FINAL and must not release the abort-drain queue.
-           * The winning terminal event/status owns reconciliation, and the run
-           * was not stopped, so its persisted outcome may still drain. */
+           * The winning terminal event/status owns reconciliation. A run that
+           * completed or failed was not stopped, so its persisted outcome may
+           * still drain; one another Stop already aborted stays stopped. */
           clearInterruptDrain(conversationId, activeGenerationCreatedAt);
-          if (queueStore.get(stopFamily) === stoppedRun) {
+          if (response.terminalStatus !== 'aborted' && queueStore.get(stopFamily) === stoppedRun) {
             queueStore.set(stopFamily, null);
           }
           queryClient.invalidateQueries({

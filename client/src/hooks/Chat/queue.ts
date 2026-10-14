@@ -229,18 +229,19 @@ export const drainAfterAbortByIndex = atomFamily((_index: string | number) =>
 
 /** A run whose stream this pane closed while it was still generating, because the user left its
  *  chat. The server keeps going and deletes the job once it finishes, so the run's end is learned
- *  from the persisted response when the user comes back instead of from the stream. */
+ *  from the persisted response when the user comes back instead of from the stream. Only a run
+ *  whose identity the server confirmed is remembered: its epoch, and the user message `created`
+ *  or a resume's sync named. A run left before then, a regeneration (whose new reply history
+ *  cannot tell from the one it replaces), or a run on a server that reports no epoch is not, and
+ *  its follow-up waits for a manual send. */
 export type DetachedRun = {
-  /** The user message the run answers. */
+  /** The user message the run answers, as the server named it. */
   userMessageId: string;
   /** The response placeholder's id, when the submission carried one. */
   responseMessageId?: string;
-  /** The run's generation epoch, when the start response installed one. The queue drain matches
-   *  server admission receipts against it. */
-  generationCreatedAt?: number;
-  /** A regeneration rewrites a response that already exists in history, and nothing persisted
-   *  belongs to the run alone, so history cannot tell the old reply from the new one. */
-  isRegenerate?: boolean;
+  /** The run's generation epoch. It dates the run's response and lets the queue drain match
+   *  server admission receipts. */
+  generationCreatedAt: number;
 };
 
 export const detachedRunByConvoId = atomFamily((_conversationId: string) =>
@@ -257,53 +258,20 @@ export const stopRequestedByConvoId = atomFamily((_conversationId: string) =>
   atom<StoppedRun | null>(null),
 );
 
-/** Whether a Stop marker belongs to the run with this epoch. A run whose epoch is unknown cannot
- *  be told apart from the stopped one, so it is treated as stopped. */
-export function isStoppedRun(stopped: StoppedRun | null, generationCreatedAt?: number): boolean {
-  if (stopped == null) {
-    return false;
-  }
-  return generationCreatedAt == null || stopped.generationCreatedAt === generationCreatedAt;
+/** Whether a Stop marker belongs to the run with this epoch. */
+export function isStoppedRun(stopped: StoppedRun | null, generationCreatedAt: number): boolean {
+  return stopped?.generationCreatedAt === generationCreatedAt;
 }
 
-/** Whether persisted history can ever name the detached run's response. A regeneration leaves the
- *  previous reply under the same user message, and even its epoch cannot date the rows, since any
- *  later write to the old reply (feedback, an edit from another client) moves its timestamp past
- *  the epoch; no read can tell the old reply from the new one, so a regeneration never resolves. */
-export function canResolveDetachedRun(run: DetachedRun): boolean {
-  return run.isRegenerate !== true;
-}
-
-/** A cancelled or dead receipt settled without starting a successor, so it never owns a boundary. */
-const mayHaveAdmitted = (receipt: SettledQueuedTurnReceipt): boolean =>
-  receipt.status !== 'cancelled' && receipt.status !== 'dead';
-
-/**
- * Whether a detached run's end must be left for a manual send instead of read from history, which
- * retires its marker. Three runs qualify: one the user stopped, whose response persists like a
- * completed one (a stopped compaction even settles with `unfinished: false`); a regeneration,
- * whose new reply history cannot tell from the old one; and a run with no epoch whose
- * queue the server shares, since the drain cannot match its end to a server admission receipt.
- * Receipts that settled without an admission do not count as sharing it.
- */
+/** Whether a detached run's end must be left for a manual send instead of read from history, which
+ *  retires its marker: the user stopped it, and a stopped response persists like a completed one
+ *  (a stopped compaction even settles with `unfinished: false`). */
 export function isDetachedRunManual(
   get: Getter,
   conversationId: string,
   run: DetachedRun,
 ): boolean {
-  if (!canResolveDetachedRun(run)) {
-    return true;
-  }
-  if (isStoppedRun(get(stopRequestedByConvoId(conversationId)), run.generationCreatedAt)) {
-    return true;
-  }
-  if (run.generationCreatedAt != null) {
-    return false;
-  }
-  return (
-    get(settledQueuedTurnReceiptsByConvoId(conversationId)).some(mayHaveAdmitted) ||
-    get(queuedMessagesByConvoId(conversationId)).some((item) => item.server != null)
-  );
+  return isStoppedRun(get(stopRequestedByConvoId(conversationId)), run.generationCreatedAt);
 }
 
 /** A compaction's outcome is the part the server stamps `initiatedBy: 'user'`. One that ended
@@ -337,25 +305,21 @@ const writtenAt = (message: TMessage): number => {
 /**
  * The run end a detached run implies, read from persisted history: `completed` lets the queue
  * drain, while a stopped (`unfinished`) or failed response leaves the queue for a manual send, as
- * it would had the stream been attached. With the run's epoch, only a response the server wrote at
- * or after the run started can be its response, which rules out any row the run never touched.
- * Returns `null` for a regeneration and while no such response is persisted, so nothing is
- * drained on a guess.
+ * it would had the stream been attached. Only a response the server wrote at or after the run's
+ * epoch can be its response, which rules out any row the run never touched. Returns `null` while
+ * no such response is persisted, so nothing is drained on a guess.
  */
 export function resolveDetachedRunEnd(
   conversationId: string,
   run: DetachedRun,
   messages: TMessage[] | undefined,
 ): RunEnd | null {
-  if (!canResolveDetachedRun(run)) {
-    return null;
-  }
   const epoch = run.generationCreatedAt;
   const responses = (messages ?? []).filter(
     (message) =>
       message.isCreatedByUser === false &&
       message.parentMessageId === run.userMessageId &&
-      (epoch == null || writtenAt(message) >= epoch),
+      writtenAt(message) >= epoch,
   );
   /** A fresh turn's placeholder is the user message id padded with `_`, which names no response;
    *  a real id is matched exactly first, since persisted ids may themselves end in `_`. */
@@ -384,7 +348,7 @@ export function resolveDetachedRunEnd(
     conversationId,
     outcome,
     endedAt: Date.now(),
-    ...(epoch != null && { generationCreatedAt: epoch }),
+    generationCreatedAt: epoch,
     ...(outcome === 'completed' && { responseMessageId: response.messageId }),
   };
 }
