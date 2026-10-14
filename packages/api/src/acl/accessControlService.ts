@@ -858,10 +858,18 @@ export class AccessControlService {
 
       /** Re-validates and extends the lease before each write; a lost lease writes nothing more. */
       const fence = async () => {
-        if (
-          lockHeld &&
-          !(await this._dbMethods.renewResourceLock({ ...lock, ttlMs: RESOURCE_LOCK_TTL_MS }))
-        ) {
+        if (!lockHeld) {
+          return;
+        }
+        const renewed = await this._dbMethods
+          .renewResourceLock({ ...lock, ttlMs: RESOURCE_LOCK_TTL_MS })
+          .catch((error) => {
+            logger.error('[AccessControlService.bulkUpdateResourcePermissions] Renewal failed', {
+              ...getSafeErrorMetadata(error),
+            });
+            throw new ResourcePermissionsUnavailableError();
+          });
+        if (!renewed) {
           throw new ResourcePermissionsBusyError();
         }
       };

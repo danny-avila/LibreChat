@@ -573,6 +573,24 @@ describe('AccessControlService', () => {
       acquire.mockRestore();
     });
 
+    test('answers a retryable 503 when the lease renewal fails', async () => {
+      const renew = jest
+        .spyOn(service['_dbMethods'], 'renewResourceLock')
+        .mockRejectedValue(new Error('mongo secret detail'));
+
+      await expect(
+        service.bulkUpdateResourcePermissions({
+          resourceType: ResourceType.PROMPTGROUP,
+          resourceId,
+          updatedPrincipals: [],
+          grantedBy: grantedById,
+          maxWriteAttempts: 1,
+          beforeWrite: async () => undefined,
+        }),
+      ).rejects.toMatchObject({ statusCode: 503, message: expect.not.stringContaining('secret') });
+      renew.mockRestore();
+    });
+
     test('exposes the busy code for the HTTP error body only', () => {
       expect(permissionErrorCode(new ResourcePermissionsBusyError())).toEqual({
         code: 'RESOURCE_PERMISSIONS_BUSY',
