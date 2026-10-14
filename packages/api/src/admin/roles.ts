@@ -230,7 +230,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
     grants: ISystemGrant[],
   ): Promise<void> {
     for (const grant of grants) {
-      await emitAudit(req, {
+      await emitRevocationAudit(req, {
         action: 'grant.removed',
         severity: 'warning',
         target: { type: PrincipalType.ROLE, id: roleName, name: roleName },
@@ -687,7 +687,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
       await auditRemovedGrants();
       /** Each reassigned account is recorded (bounded) before the outcome entry. */
       for (const userId of memberIds.slice(0, MAX_AUDITED_REASSIGNMENTS)) {
-        await emitAudit(req, {
+        await emitRevocationAudit(req, {
           action: 'role.member_removed',
           severity: memberChangeSeverity(name),
           target: roleTarget(name),

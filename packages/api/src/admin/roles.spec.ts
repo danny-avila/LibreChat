@@ -1434,6 +1434,31 @@ describe('createAdminRolesHandlers', () => {
       );
     });
 
+    it('keeps a committed deletion successful when a cascade audit write fails under auditFailClosed', async () => {
+      const recordAuditEntry = jest.fn().mockImplementation(async (entry: { action: string }) => {
+        if (entry.action === 'grant.removed' || entry.action === 'role.member_removed') {
+          throw new Error('audit store down');
+        }
+      });
+      const deps = deleteDeps({
+        recordAuditEntry,
+        auditFailClosed: true,
+        deleteGrantsForPrincipal: jest.fn().mockResolvedValue([{ capability: 'read:users' }]),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status } = createReqRes({
+        params: { name: 'editor' },
+        user: { _id: new Types.ObjectId(), role: 'admin' },
+      });
+
+      await handlers.deleteRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(recordAuditEntry).toHaveBeenLastCalledWith(
+        expect.objectContaining({ action: 'role.deleted', outcome: 'success' }),
+      );
+    });
+
     it('records role.deleted as pending before any removal, then success, in order', async () => {
       const order: string[] = [];
       const recordAuditEntry = jest.fn(async (entry: { action: string; outcome?: string }) => {
