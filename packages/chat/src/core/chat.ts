@@ -137,6 +137,8 @@ type ActiveRequest = {
   reattach?: { streamId?: string };
   /** The pause this request's generation reported, which a confirmed stop ends. */
   paused?: string;
+  /** Set once a stop was sent for this request, so a stream that drops instead of ending aborts. */
+  stopping?: boolean;
   /** The response this request produces: its placeholder, then the one its final frame names. */
   responseId?: string;
   /** Resolves once the request settled and released the chat. */
@@ -408,11 +410,17 @@ export class Chat {
       throw new Error('The generation cannot be stopped without its endpoint');
     }
     active.paused ??= this.action?.actionId;
-    await this.abortOnServer({
-      endpoint: active.endpoint,
-      streamId: active.stream?.streamId ?? active.reattach?.streamId,
-      generationCreatedAt: active.stream?.generationCreatedAt ?? this.generationCreatedAt,
-    });
+    active.stopping = true;
+    try {
+      await this.abortOnServer({
+        endpoint: active.endpoint,
+        streamId: active.stream?.streamId ?? active.reattach?.streamId,
+        generationCreatedAt: active.stream?.generationCreatedAt ?? this.generationCreatedAt,
+      });
+    } catch (error) {
+      active.stopping = false;
+      throw error;
+    }
     if (!active.stream) {
       /** Still reattaching: nothing will report the end, so the stop ends the request here. */
       active.controller.abort();
@@ -439,7 +447,9 @@ export class Chat {
       sent.status === 'stream'
         ? { streamId: sent.stream.streamId, generationCreatedAt: sent.stream.generationCreatedAt }
         : { streamId: sent.streamId, generationCreatedAt: sent.generationCreatedAt };
-    void this.abortOnServer({ endpoint: active.endpoint, ...target }).catch(() => undefined);
+    void this.abortOnServer({ endpoint: active.endpoint, ...target }).catch((error: unknown) =>
+      this.init.onError?.(error instanceof Error ? error : new Error(String(error))),
+    );
   }
 
   private async abortOnServer(target: {
@@ -735,6 +745,9 @@ export class Chat {
       stream.close();
     }
     if (!outcome && signal.aborted) {
+      outcome = { kind: 'abort' };
+    }
+    if (active.stopping && (!outcome || (outcome.kind === 'error' && outcome.disconnect))) {
       outcome = { kind: 'abort' };
     }
     this.settle(
