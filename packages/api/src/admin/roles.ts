@@ -102,12 +102,19 @@ export interface AdminRolesDeps {
     perms: Record<string, Record<string, boolean>>,
     roleData?: IRole,
   ) => Promise<void>;
-  deleteRoleByName: (name: string) => Promise<IRole | null>;
+  /** With `options.id`, deletes only the role that still has that `_id`, so a role recreated
+   * under the same name is never removed by a request that targeted the original. */
+  deleteRoleByName: (name: string, options?: { id?: string }) => Promise<IRole | null>;
   findUser: (
     criteria: FilterQuery<IUser>,
     fields?: string | string[] | null,
   ) => Promise<IUser | null>;
-  updateUser: (userId: string, data: Partial<IUser>) => Promise<IUser | null>;
+  /** `expectedState` makes the write conditional: it resolves to null when the user no longer matches. */
+  updateUser: (
+    userId: string,
+    data: Partial<IUser>,
+    expectedState?: Record<string, unknown>,
+  ) => Promise<IUser | null>;
   updateUsersByRole: (oldRole: string, newRole: string) => Promise<void>;
   findUserIdsByRole: (roleName: string) => Promise<string[]>;
   updateUsersRoleByIds: (userIds: string[], newRole: string) => Promise<void>;
@@ -567,9 +574,14 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
 
       let deleted: IRole | null;
       try {
-        deleted = await deleteRoleByName(name);
+        deleted = await deleteRoleByName(name, {
+          id: existing._id != null ? String(existing._id) : undefined,
+        });
       } catch (error) {
-        logger.error('[adminRoles] deleteRole failed after cascade cleanup:', error);
+        logger.error(
+          '[adminRoles] deleteRole failed after cascade cleanup:',
+          getSafeErrorMetadata(error),
+        );
         /** The delete may have committed before it threw. Restoring dependents for a
          * role that is gone would orphan them for a later role with the same name. */
         const lookup = await getRoleByName(name).then(
@@ -693,9 +705,18 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
         }
       }
 
-      const updated = await updateUser(userId, { role: name });
+      /** Conditional on the role read above: an overlapping identical request matches nothing,
+       * so exactly one request records the transition. */
+      const updated = await updateUser(userId, { role: name }, { role: user.role });
       if (!updated) {
-        return res.status(404).json({ error: 'User not found' });
+        const current = await findUser({ _id: userId });
+        if (!current) {
+          return res.status(404).json({ error: 'User not found' });
+        }
+        if (current.role === name) {
+          return res.status(200).json({ success: true });
+        }
+        return res.status(409).json({ error: 'User role changed concurrently' });
       }
 
       if (user.role === SystemRoles.ADMIN && name !== SystemRoles.ADMIN) {
@@ -762,9 +783,16 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
         }
       }
 
-      const removed = await updateUser(userId, { role: SystemRoles.USER });
+      const removed = await updateUser(userId, { role: SystemRoles.USER }, { role: name });
       if (!removed) {
-        return res.status(404).json({ error: 'User not found' });
+        const current = await findUser({ _id: userId });
+        if (!current) {
+          return res.status(404).json({ error: 'User not found' });
+        }
+        if (current.role !== name) {
+          return res.status(400).json({ error: 'User is not a member of this role' });
+        }
+        return res.status(409).json({ error: 'User role changed concurrently' });
       }
 
       if (name === SystemRoles.ADMIN) {

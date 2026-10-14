@@ -929,7 +929,7 @@ describe('createAdminRolesHandlers', () => {
 
       await handlers.deleteRole(req, res);
 
-      expect(deps.deleteRoleByName).toHaveBeenCalledWith('editor');
+      expect(deps.deleteRoleByName).toHaveBeenCalledWith('editor', expect.any(Object));
       expect(status).toHaveBeenCalledWith(200);
       expect(json).toHaveBeenCalledWith({ success: true });
     });
@@ -1088,6 +1088,31 @@ describe('createAdminRolesHandlers', () => {
       expect(deps.deleteAclEntries).toHaveBeenCalledTimes(1);
       expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledTimes(1);
       expect(deps.invalidatePromptGroupAccessContext).toHaveBeenCalled();
+    });
+
+    it('deletes only the role it targeted and audits grants when that role is already replaced', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const original = mockRole({ _id: new Types.ObjectId() } as Partial<IRole>);
+      const deps = deleteDeps({
+        recordAuditEntry,
+        getRoleByName: jest.fn().mockResolvedValue(original),
+        deleteGrantsForPrincipal: jest.fn().mockResolvedValue([{ capability: 'read:users' }]),
+        /** The id-conditional delete matched nothing: the name now belongs to another role. */
+        deleteRoleByName: jest.fn().mockResolvedValue(null),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status } = createReqRes({
+        params: { name: 'editor' },
+        user: { _id: new Types.ObjectId(), role: 'admin' },
+      });
+
+      await handlers.deleteRole(req, res);
+
+      expect(deps.deleteRoleByName).toHaveBeenCalledWith('editor', { id: String(original._id) });
+      expect(status).toHaveBeenCalledWith(404);
+      expect(recordAuditEntry).not.toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'role.deleted' }),
+      );
     });
 
     it('does not restore dependents and audits the delete when the role is confirmed gone after a thrown delete', async () => {
@@ -1540,9 +1565,38 @@ describe('createAdminRolesHandlers', () => {
 
       await handlers.addRoleMember(req, res);
 
-      expect(deps.updateUser).toHaveBeenCalledWith(validUserId, { role: 'editor' });
+      expect(deps.updateUser).toHaveBeenCalledWith(
+        validUserId,
+        { role: 'editor' },
+        expect.any(Object),
+      );
       expect(status).toHaveBeenCalledWith(200);
       expect(json).toHaveBeenCalledWith({ success: true });
+    });
+
+    it('records no membership entry when an overlapping request already moved the user', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = createDeps({
+        recordAuditEntry,
+        getRoleByName: jest.fn().mockResolvedValue(mockRole()),
+        findUser: jest
+          .fn()
+          .mockResolvedValueOnce(mockUser({ role: 'viewer' }))
+          .mockResolvedValue(mockUser({ role: 'editor' })),
+        /** The conditional write matched nothing: the other request got there first. */
+        updateUser: jest.fn().mockResolvedValue(null),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status } = createReqRes({
+        params: { name: 'editor' },
+        body: { userId: validUserId },
+        user: { _id: new Types.ObjectId(), role: 'admin' },
+      });
+
+      await handlers.addRoleMember(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(recordAuditEntry).not.toHaveBeenCalled();
     });
 
     it('skips DB write when user already has the target role', async () => {
@@ -1657,7 +1711,11 @@ describe('createAdminRolesHandlers', () => {
       await handlers.addRoleMember(req, res);
 
       expect(status).toHaveBeenCalledWith(200);
-      expect(deps.updateUser).toHaveBeenCalledWith(validUserId, { role: 'editor' });
+      expect(deps.updateUser).toHaveBeenCalledWith(
+        validUserId,
+        { role: 'editor' },
+        expect.any(Object),
+      );
     });
 
     it('rolls back assignment when post-write admin count is zero', async () => {
@@ -1712,7 +1770,11 @@ describe('createAdminRolesHandlers', () => {
 
       await handlers.addRoleMember(req, res);
 
-      expect(deps.updateUser).toHaveBeenCalledWith(validUserId, { role: SystemRoles.ADMIN });
+      expect(deps.updateUser).toHaveBeenCalledWith(
+        validUserId,
+        { role: SystemRoles.ADMIN },
+        expect.any(Object),
+      );
       expect(status).toHaveBeenCalledWith(200);
       expect(json).toHaveBeenCalledWith({ success: true });
     });
@@ -1749,9 +1811,36 @@ describe('createAdminRolesHandlers', () => {
 
       await handlers.removeRoleMember(req, res);
 
-      expect(deps.updateUser).toHaveBeenCalledWith(validUserId, { role: SystemRoles.USER });
+      expect(deps.updateUser).toHaveBeenCalledWith(
+        validUserId,
+        { role: SystemRoles.USER },
+        expect.any(Object),
+      );
       expect(status).toHaveBeenCalledWith(200);
       expect(json).toHaveBeenCalledWith({ success: true });
+    });
+
+    it('records no entry when an overlapping request already removed the member', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = createDeps({
+        recordAuditEntry,
+        getRoleByName: jest.fn().mockResolvedValue(mockRole()),
+        findUser: jest
+          .fn()
+          .mockResolvedValueOnce(mockUser({ role: 'editor' }))
+          .mockResolvedValue(mockUser({ role: SystemRoles.USER })),
+        updateUser: jest.fn().mockResolvedValue(null),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status } = createReqRes({
+        params: { name: 'editor', userId: validUserId },
+        user: { _id: new Types.ObjectId(), role: 'admin' },
+      });
+
+      await handlers.removeRoleMember(req, res);
+
+      expect(status).toHaveBeenCalledWith(400);
+      expect(recordAuditEntry).not.toHaveBeenCalled();
     });
 
     it('returns 403 when removing from a non-ADMIN system role', async () => {
@@ -1862,7 +1951,11 @@ describe('createAdminRolesHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(200);
       expect(json).toHaveBeenCalledWith({ success: true });
-      expect(deps.updateUser).toHaveBeenCalledWith(validUserId, { role: SystemRoles.USER });
+      expect(deps.updateUser).toHaveBeenCalledWith(
+        validUserId,
+        { role: SystemRoles.USER },
+        expect.any(Object),
+      );
     });
 
     it('rolls back removal when post-write check finds zero admins', async () => {
@@ -1881,9 +1974,12 @@ describe('createAdminRolesHandlers', () => {
       expect(status).toHaveBeenCalledWith(400);
       expect(json).toHaveBeenCalledWith({ error: 'Cannot remove the last admin user' });
       expect(deps.updateUser).toHaveBeenCalledTimes(2);
-      expect(deps.updateUser).toHaveBeenNthCalledWith(1, validUserId, {
-        role: SystemRoles.USER,
-      });
+      expect(deps.updateUser).toHaveBeenNthCalledWith(
+        1,
+        validUserId,
+        { role: SystemRoles.USER },
+        { role: SystemRoles.ADMIN },
+      );
       expect(deps.updateUser).toHaveBeenNthCalledWith(2, validUserId, {
         role: SystemRoles.ADMIN,
       });

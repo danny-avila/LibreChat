@@ -230,7 +230,9 @@ export interface AdminConfigDeps {
     principalId: string | Types.ObjectId,
     isActive: boolean,
     session?: ClientSession,
-    options?: { expectEmpty?: boolean },
+    /** `returnPrevious` resolves to the document as it was before the write, so the caller
+     * learns atomically whether the write changed `isActive`. */
+    options?: { expectEmpty?: boolean; returnPrevious?: boolean },
   ) => Promise<IConfig | null>;
   hasConfigCapability: (
     user: CapabilityUser,
@@ -1356,10 +1358,11 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
-      const config = await toggleConfigActive(principalType, principalId, isActive, undefined, {
+      const previous = await toggleConfigActive(principalType, principalId, isActive, undefined, {
         expectEmpty: !hasBroadManage,
+        returnPrevious: true,
       });
-      if (!config) {
+      if (!previous) {
         if (!hasBroadManage) {
           const exists = await findConfigByPrincipal(principalType, principalId, {
             includeInactive: true,
@@ -1371,15 +1374,20 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(404).json({ error: 'Config not found' });
       }
 
+      const plain = (previous as { toObject?: () => IConfig }).toObject?.() ?? previous;
+      const config = { ...plain, isActive } as IConfig;
       invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
         logger.error('[adminConfig] Cache invalidation failed after toggle:', err),
       );
-      await emitAudit(req, {
-        action: 'config.toggled',
-        severity: 'warning',
-        target: configTarget(principalType, principalId),
-        metadata: { isActive },
-      });
+      /** A retry that finds the requested state already set changed nothing and is not recorded. */
+      if (previous.isActive !== isActive) {
+        await emitAudit(req, {
+          action: 'config.toggled',
+          severity: 'warning',
+          target: configTarget(principalType, principalId),
+          metadata: { isActive },
+        });
+      }
       return res.status(200).json({ config: redactConfigForResponse(config) });
     } catch (error) {
       logger.error('[adminConfig] toggleConfig error:', error);

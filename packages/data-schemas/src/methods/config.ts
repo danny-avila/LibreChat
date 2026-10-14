@@ -74,7 +74,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     principalId: string | Types.ObjectId,
     isActive: boolean,
     session?: ClientSession,
-    options?: { expectEmpty?: boolean },
+    options?: { expectEmpty?: boolean; returnPrevious?: boolean },
   ) => Promise<IConfig | null>;
 } {
   async function findConfigByPrincipal(
@@ -326,7 +326,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     principalId: string | Types.ObjectId,
     isActive: boolean,
     session?: ClientSession,
-    options?: { expectEmpty?: boolean },
+    options?: { expectEmpty?: boolean; returnPrevious?: boolean },
   ): Promise<IConfig | null> {
     const Config = mongoose.models.Config as Model<IConfig>;
     const filter: FilterQuery<IConfig> = {
@@ -342,7 +342,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     return await Config.findOneAndUpdate(
       filter,
       { $set: { isActive } },
-      { new: true, ...(session ? { session } : {}) },
+      { new: !options?.returnPrevious, ...(session ? { session } : {}) },
     );
   }
 

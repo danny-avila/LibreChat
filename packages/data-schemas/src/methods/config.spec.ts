@@ -674,3 +674,19 @@ describe('expectEmpty atomic guard', () => {
     expect(Object.keys(doc!.overrides ?? {}).length).toBeGreaterThan(0);
   });
 });
+
+describe('toggleConfigActive returnPrevious', () => {
+  it('returns the document as it was before the write', async () => {
+    await methods.upsertConfig(PrincipalType.ROLE, 'admin', PrincipalModel.ROLE, {}, 10);
+
+    const first = await methods.toggleConfigActive(PrincipalType.ROLE, 'admin', false, undefined, {
+      returnPrevious: true,
+    });
+    const second = await methods.toggleConfigActive(PrincipalType.ROLE, 'admin', false, undefined, {
+      returnPrevious: true,
+    });
+
+    expect(first!.isActive).toBe(true);
+    expect(second!.isActive).toBe(false);
+  });
+});

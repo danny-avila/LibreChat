@@ -68,7 +68,8 @@ function createHandlers(overrides = {}) {
       .mockResolvedValue({ _id: 'c1', tombstones: ['mcpServers.github'] }),
     unsetConfigField: jest.fn().mockResolvedValue({ _id: 'c1', overrides: {} }),
     deleteConfig: jest.fn().mockResolvedValue({ _id: 'c1' }),
-    toggleConfigActive: jest.fn().mockResolvedValue({ _id: 'c1', isActive: false }),
+    /** The document as it was before the write. */
+    toggleConfigActive: jest.fn().mockResolvedValue({ _id: 'c1', isActive: true }),
     hasConfigCapability: jest.fn().mockResolvedValue(true),
     hasAnyConfigReadAccess: jest.fn().mockResolvedValue(true),
     hasCapability: jest.fn().mockResolvedValue(true),
@@ -2156,7 +2157,7 @@ describe('createAdminConfigHandlers', () => {
         expect.anything(),
         expect.anything(),
         undefined,
-        { expectEmpty: true },
+        { expectEmpty: true, returnPrevious: true },
       );
     });
 
@@ -2229,7 +2230,8 @@ describe('createAdminConfigHandlers', () => {
         tombstoneConfigField: jest.fn(),
         unsetConfigField: jest.fn(),
         deleteConfig: jest.fn().mockResolvedValue({ _id: 'c1' }),
-        toggleConfigActive: jest.fn().mockResolvedValue({ _id: 'c1', isActive: false }),
+        /** The document as it was before the write. */
+        toggleConfigActive: jest.fn().mockResolvedValue({ _id: 'c1', isActive: true }),
         hasConfigCapability: jest.fn().mockResolvedValue(false),
       };
       const handlers = createAdminConfigHandlers(deps);
@@ -2725,6 +2727,20 @@ describe('createAdminConfigHandlers', () => {
           metadata: { isActive: false },
         }),
       );
+    });
+
+    it('does not record a toggle that leaves isActive unchanged', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const { handlers } = createHandlers({
+        recordAuditEntry,
+        toggleConfigActive: jest.fn().mockResolvedValue({ _id: 'c1', isActive: false }),
+      });
+      const res = mockRes();
+
+      await handlers.toggleConfig(mockReq({ params, body: { isActive: false } }), res);
+
+      expect(res.statusCode).toBe(200);
+      expect(recordAuditEntry).not.toHaveBeenCalled();
     });
 
     it('does not record when the override document is missing', async () => {
