@@ -116,6 +116,22 @@ describe('createErasureResolver', () => {
     expect(Object.values(seen).every((tenant) => tenant === 'tenant-1')).toBe(true);
   });
 
+  it('resolves the target config under the target tenant, not the calling admin tenant', async () => {
+    let seen: string | undefined;
+    const { deps } = createDeps({
+      getAppConfig: jest.fn(async () => {
+        seen = tenantStorage.getStore()?.tenantId;
+        return {};
+      }),
+    });
+
+    await tenantStorage.run({ tenantId: 'admin-tenant' }, () =>
+      createErasureResolver(deps)(target),
+    );
+
+    expect(seen).toBe('tenant-1');
+  });
+
   it('rejects when the target config cannot be resolved', async () => {
     const { deps } = createDeps({
       getAppConfig: jest.fn().mockRejectedValue(new Error('override store down')),

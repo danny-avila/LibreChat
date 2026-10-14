@@ -72,18 +72,20 @@ export function createErasureResolver(deps: ErasureResolverDeps) {
     idOnTheSource,
     profile,
   }: AdminErasureTarget): Promise<AdminErasureContext> {
-    /** A failed override lookup must abort the deletion, not fall back to a base config that cannot reach the target's storage. */
-    const appConfig = await deps.getAppConfig({
-      role,
-      userId: id,
-      tenantId,
-      idOnTheSource,
-      failClosed: true,
-    });
-    const oauth = deps.mcpOAuth;
     /** The calling admin's tenant context must not decide whose rows an id-keyed lookup reads. */
     const inTargetTenant = <T>(operation: () => Promise<T>): Promise<T> =>
       tenantId ? tenantStorage.run({ tenantId, userId: id }, operation) : runAsSystem(operation);
+    /** A failed override lookup must abort the deletion, not fall back to a base config that cannot reach the target's storage. */
+    const appConfig = await inTargetTenant(async () =>
+      deps.getAppConfig({
+        role,
+        userId: id,
+        tenantId,
+        idOnTheSource,
+        failClosed: true,
+      }),
+    );
+    const oauth = deps.mcpOAuth;
     const fileRequest = {
       user: { ...profile, id, _id: id, role, tenantId },
       /** Assistants client setup reads these Express request fields. */
