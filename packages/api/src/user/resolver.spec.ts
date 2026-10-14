@@ -60,10 +60,11 @@ describe('createErasureResolver', () => {
     const { deps } = createDeps({ mcpOAuth });
     const { deps: erasure } = await createErasureResolver(deps)(target);
 
-    await erasure.mcpOAuth?.getServerConfig?.('srv');
+    await erasure.mcpOAuth?.getServerConfig?.('srv', 'srv-id');
     await erasure.mcpOAuth?.getUserPrincipals('other-user');
     await erasure.mcpOAuth?.resolveAllowlists('other-user');
-    await erasure.mcpOAuth?.fenceAndDisconnectUser?.('other-user', 'srv');
+    await erasure.mcpOAuth?.invalidateUserTools?.('other-user', 'srv');
+    await erasure.mcpOAuth?.disconnectUser?.('other-user', 'srv');
 
     expect(registry.getServerConfig).toHaveBeenCalledWith('srv', 'user-1');
     expect(mcpOAuth.getUserPrincipals).toHaveBeenCalledWith({ userId: 'other-user' });
@@ -107,11 +108,12 @@ describe('createErasureResolver', () => {
       await erasure.findMCPServerOAuthTokenUserIds?.('srv');
       await erasure.findMCPServerViewerEntries?.('srv-id');
       await erasure.deleteStoredFiles([]);
-      await erasure.mcpOAuth?.getServerConfig?.('srv');
+      await erasure.mcpOAuth?.getServerConfig?.('srv', 'srv-id');
       await erasure.mcpOAuth?.getUserPrincipals('other');
       await erasure.mcpOAuth?.resolveAllowlists('other');
       await erasure.mcpOAuth?.uninstallOAuthMCP('other', 'mcp_srv', {});
-      await erasure.mcpOAuth?.fenceAndDisconnectUser?.('other', 'srv');
+      await erasure.mcpOAuth?.invalidateUserTools?.('other', 'srv');
+      await erasure.mcpOAuth?.disconnectUser?.('other', 'srv');
     });
 
     expect(Object.keys(seen)).toHaveLength(9);

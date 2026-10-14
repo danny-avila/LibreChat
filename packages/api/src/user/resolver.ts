@@ -125,11 +125,14 @@ export function createErasureResolver(deps: ErasureResolverDeps) {
             inTargetTenant(async () =>
               oauth.uninstallOAuthMCP(candidateId, pluginKey, cleanupConfig, serverConfig),
             ),
-          fenceAndDisconnectUser: (candidateId, serverName) =>
-            inTargetTenant(async () => {
-              await deps.invalidateCachedTools({ userId: candidateId, serverName });
-              await deps.getMCPManager()?.disconnectUserConnection(candidateId, serverName);
-            }),
+          invalidateUserTools: (candidateId, serverName) =>
+            inTargetTenant(async () =>
+              deps.invalidateCachedTools({ userId: candidateId, serverName }),
+            ),
+          disconnectUser: (candidateId, serverName) =>
+            inTargetTenant(async () =>
+              deps.getMCPManager()?.disconnectUserConnection(candidateId, serverName),
+            ),
         },
       },
     };
