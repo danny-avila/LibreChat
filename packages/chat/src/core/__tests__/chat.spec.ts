@@ -1208,6 +1208,19 @@ describe('Chat', () => {
       await sent;
     });
 
+    it('drops the pause of a stopped generation whose stream disconnects instead of aborting', async () => {
+      const { chat, transport, stream, sent } = await pause(askAction);
+      transport.abort.mockImplementation(async () => {
+        stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+        return { success: true };
+      });
+
+      await chat.stop();
+      await sent;
+
+      expect(chat.pendingAction).toBeUndefined();
+    });
+
     it('drops the pause when the generation aborts or fails', async () => {
       const aborted = await pause(askAction);
       aborted.stream.push({ type: 'abort', data: {} } as ChatEvent);
