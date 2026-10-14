@@ -529,22 +529,24 @@ export function createScheduledMCPTransportError(
 }
 
 /**
- * Thrown when a registry write committed but invalidating the read caches afterwards
- * failed. The write stands; `committed` carries what was persisted (undefined for a
- * removal) so a caller can still record it before surfacing the failure.
+ * Thrown when a registry write committed but a step after it failed (permission
+ * bookkeeping, cache invalidation). The write stands; `committed` carries what was
+ * persisted (undefined for a removal) so a caller can still record it before surfacing
+ * the failure. The persisted config can hold decrypted secrets, so the property is
+ * non-enumerable and never reaches a serialized or logged error.
  */
-export class MCPCommittedInvalidationError<T = unknown> extends Error {
-  public readonly committed: T | undefined;
+export class MCPCommittedWriteError<T = unknown> extends Error {
+  public readonly committed!: T | undefined;
 
   constructor(committed: T | undefined, cause: unknown) {
     super(
       cause instanceof Error
         ? cause.message
-        : 'MCP server change was saved but its caches could not be refreshed',
+        : 'MCP server change was saved but a step after it failed',
     );
-    this.name = 'MCPCommittedInvalidationError';
-    this.committed = committed;
+    this.name = 'MCPCommittedWriteError';
+    Object.defineProperty(this, 'committed', { value: committed, enumerable: false });
     this.cause = cause;
-    Object.setPrototypeOf(this, MCPCommittedInvalidationError.prototype);
+    Object.setPrototypeOf(this, MCPCommittedWriteError.prototype);
   }
 }

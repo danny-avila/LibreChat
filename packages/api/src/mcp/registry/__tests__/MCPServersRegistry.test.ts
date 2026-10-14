@@ -14,7 +14,7 @@ import {
   MCPConfigInitializationCanceledError,
 } from '~/mcp/registry/MCPServersRegistry';
 import { ServerConfigsCacheInMemory } from '~/mcp/registry/cache/ServerConfigsCacheInMemory';
-import { MCPCommittedInvalidationError, MCPInspectionFailedError } from '~/mcp/errors';
+import { MCPCommittedWriteError, MCPInspectionFailedError } from '~/mcp/errors';
 import { getMCPAppToolsPublicationGeneration } from '~/mcp/toolsChanged';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
 import { processMCPEnv } from '~/utils/env';
@@ -859,7 +859,7 @@ describe('MCPServersRegistry', () => {
           .addServer('cache_server', testParsedConfig, 'CACHE')
           .catch((error) => error);
 
-        expect(failure).toBeInstanceOf(MCPCommittedInvalidationError);
+        expect(failure).toBeInstanceOf(MCPCommittedWriteError);
         expect(failure.committed.serverName).toBe('cache_server');
         expect(await registry['cacheConfigsRepo'].get('cache_server')).toBeDefined();
       });
@@ -873,7 +873,7 @@ describe('MCPServersRegistry', () => {
           .commitServerUpdate('cache_server', updated, 'CACHE')
           .catch((error) => error);
 
-        expect(failure).toBeInstanceOf(MCPCommittedInvalidationError);
+        expect(failure).toBeInstanceOf(MCPCommittedWriteError);
         expect(failure.committed.command).toBe('python');
       });
 
@@ -882,7 +882,7 @@ describe('MCPServersRegistry', () => {
         failInvalidation();
 
         await expect(registry.removeServer('cache_server', 'CACHE')).rejects.toBeInstanceOf(
-          MCPCommittedInvalidationError,
+          MCPCommittedWriteError,
         );
         expect(await registry['cacheConfigsRepo'].get('cache_server')).toBeUndefined();
       });

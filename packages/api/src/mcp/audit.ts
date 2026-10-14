@@ -1,7 +1,7 @@
 import { MCP_USER_INPUT_FIELDS } from 'librechat-data-provider';
 import type { AdminAuditEmitter, RecordAuditEntry } from '~/admin/audit';
-import { MCPCommittedInvalidationError } from '~/mcp/errors';
 import { createAdminAuditEmitter } from '~/admin/audit';
+import { MCPCommittedWriteError } from '~/mcp/errors';
 
 type MCPServerAction = 'mcp_server.created' | 'mcp_server.updated' | 'mcp_server.deleted';
 type ServerConfigLike = Record<string, unknown> | null | undefined;
@@ -14,7 +14,7 @@ export interface MCPServerAuditEvent {
   /** Config after the change; omitted on delete. */
   next?: ServerConfigLike;
   /** The write committed but refreshing the read caches failed afterwards. */
-  invalidationFailed?: boolean;
+  postWriteFailed?: boolean;
 }
 
 /** JSON with object keys sorted, so entry order never reads as a change. */
@@ -98,7 +98,7 @@ export function createMCPServerAuditor(options: {
     req: Parameters<AdminAuditEmitter>[0],
     event: MCPServerAuditEvent,
   ): Promise<void> {
-    const { action, serverName, previous, next, invalidationFailed } = event;
+    const { action, serverName, previous, next, postWriteFailed } = event;
     const name = serverTitle(next) ?? serverTitle(previous);
     const before = action === 'mcp_server.created' ? undefined : previous;
     const changed =
@@ -112,7 +112,7 @@ export function createMCPServerAuditor(options: {
       metadata: {
         source: 'DB',
         ...(changed.length > 0 ? { fields: changed.join(',') } : {}),
-        ...(invalidationFailed ? { cacheInvalidation: 'failed' } : {}),
+        ...(postWriteFailed ? { postWrite: 'failed' } : {}),
       },
     });
   }
@@ -139,14 +139,14 @@ export function createMCPServerAuditor(options: {
  */
 export async function settleMCPCommit<T>(
   write: () => Promise<T>,
-): Promise<{ committed: T | undefined; invalidationError?: MCPCommittedInvalidationError<T> }> {
+): Promise<{ committed: T | undefined; postWriteError?: MCPCommittedWriteError<T> }> {
   try {
     return { committed: await write() };
   } catch (error) {
-    if (error instanceof MCPCommittedInvalidationError) {
+    if (error instanceof MCPCommittedWriteError) {
       return {
         committed: error.committed as T | undefined,
-        invalidationError: error as MCPCommittedInvalidationError<T>,
+        postWriteError: error as MCPCommittedWriteError<T>,
       };
     }
     throw error;

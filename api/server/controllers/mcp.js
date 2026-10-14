@@ -480,10 +480,10 @@ const createMCPServerController = async (req, res) => {
       action: 'mcp_server.created',
       serverName: result.serverName,
       next: result.config,
-      invalidationFailed: settled.invalidationError != null,
+      postWriteFailed: settled.postWriteError != null,
     });
-    if (settled.invalidationError) {
-      throw settled.invalidationError;
+    if (settled.postWriteError) {
+      throw settled.postWriteError;
     }
     res.status(201).json({
       serverName: result.serverName,
@@ -612,15 +612,15 @@ const updateMCPServerController = async (req, res) => {
         serverName,
         previous: existingConfig,
         next: committedConfig,
-        invalidationFailed: settled.invalidationError != null,
+        postWriteFailed: settled.postWriteError != null,
       },
       async () => {
         await fenceCommittedMCPMutation({ userId, serverName });
         await disconnectLocalMCPServer(userId, serverName);
       },
     );
-    if (settled.invalidationError) {
-      throw settled.invalidationError;
+    if (settled.postWriteError) {
+      throw settled.postWriteError;
     }
 
     res.status(200).json(redactServerSecrets(committedConfig, { canEdit: true }));
@@ -686,7 +686,7 @@ const deleteMCPServerController = async (req, res, uninstallOAuthMCP) => {
         action: 'mcp_server.deleted',
         serverName,
         previous: existingConfig,
-        invalidationFailed: settled.invalidationError != null,
+        postWriteFailed: settled.postWriteError != null,
       },
       async () => {
         await fenceCommittedMCPMutation({ userId, serverName });
@@ -720,8 +720,8 @@ const deleteMCPServerController = async (req, res, uninstallOAuthMCP) => {
         }
       },
     );
-    if (settled.invalidationError) {
-      throw settled.invalidationError;
+    if (settled.postWriteError) {
+      throw settled.postWriteError;
     }
     res.status(200).json({ message: 'MCP server deleted successfully' });
   } catch (error) {

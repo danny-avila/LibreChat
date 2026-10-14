@@ -15,7 +15,7 @@ import {
   CONFIG_CACHE_NAMESPACE,
 } from './cache/ServerConfigsCacheFactory';
 import {
-  MCPCommittedInvalidationError,
+  MCPCommittedWriteError,
   MCPInspectionFailedError,
   isMCPDomainNotAllowedError,
 } from '~/mcp/errors';
@@ -696,7 +696,7 @@ export class MCPServersRegistry {
 
   /**
    * Runs the cache invalidation that follows a committed write. A failure is rethrown as
-   * `MCPCommittedInvalidationError` carrying what was persisted, so the caller can record
+   * `MCPCommittedWriteError` carrying what was persisted, so the caller can record
    * the committed change instead of mistaking it for a write that never happened.
    */
   private async invalidateCommitted<T>(
@@ -706,7 +706,7 @@ export class MCPServersRegistry {
     try {
       await invalidate();
     } catch (error) {
-      throw new MCPCommittedInvalidationError(committed, error);
+      throw new MCPCommittedWriteError(committed, error);
     }
   }
 

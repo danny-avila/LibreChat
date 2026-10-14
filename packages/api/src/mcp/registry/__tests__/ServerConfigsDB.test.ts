@@ -222,6 +222,19 @@ describe('ServerConfigsDB', () => {
       expect((await serverConfigsDB.get(created.serverName, userId))?.description).toBe('Third');
     });
 
+    it('rejects an update when the server was deleted after the lookup', async () => {
+      const created = await serverConfigsDB.add(
+        'temp-name',
+        createSSEConfig('Title', 'First'),
+        userId,
+      );
+      await serverConfigsDB.remove(created.serverName, userId);
+
+      await expect(
+        serverConfigsDB.update(created.serverName, createSSEConfig('Title', 'Second'), userId),
+      ).rejects.toThrow('no longer exists');
+    });
+
     it('should preserve oauth.client_secret when not provided in update', async () => {
       const config: ParsedServerConfig = {
         type: 'sse',
@@ -1442,6 +1455,34 @@ describe('ServerConfigsDB', () => {
 
       expect(retrievedWithHeaders?.headers?.['X-Auth']).toBe('key={{MCP_API_KEY}}&token=&user=');
       expect(retrievedWithHeaders?.headers?.['X-Info']).toBe('app=librechat;email=;version=1.0');
+    });
+  });
+
+  describe('post-write failures', () => {
+    it('reports the created server when granting its owner access fails', async () => {
+      jest
+        .spyOn(serverConfigsDB['_aclService'], 'grantPermission')
+        .mockRejectedValueOnce(new Error('acl down'));
+
+      const failure = await serverConfigsDB
+        .add('temp-name', createSSEConfig('Orphan Risk'), userId)
+        .catch((error) => error);
+
+      expect(failure.name).toBe('MCPCommittedWriteError');
+      expect(failure.committed.config.title).toBe('Orphan Risk');
+      expect(await mongoose.models.MCPServer.countDocuments({})).toBe(1);
+    });
+
+    it('reports the removal when cleaning up its permissions fails', async () => {
+      const created = await serverConfigsDB.add('temp-name', createSSEConfig('Remove Me'), userId);
+      jest
+        .spyOn(serverConfigsDB['_aclService'], 'removeAllPermissions')
+        .mockRejectedValueOnce(new Error('acl down'));
+
+      await expect(serverConfigsDB.remove(created.serverName, userId)).rejects.toMatchObject({
+        name: 'MCPCommittedWriteError',
+      });
+      expect(await mongoose.models.MCPServer.countDocuments({})).toBe(0);
     });
   });
 

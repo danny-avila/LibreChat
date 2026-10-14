@@ -1,5 +1,5 @@
 const express = require('express');
-const { createAdminCodeEnvironmentHandlers } = require('@librechat/api');
+const { createAdminCodeEnvironmentHandlers, isAuditFailClosed } = require('@librechat/api');
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const { requireCapability } = require('~/server/middleware/roles/capabilities');
 const { getAppConfig } = require('~/server/services/Config');
@@ -15,6 +15,7 @@ const requireCodeEnvironmentManage = requireCapability(
 const handlers = createAdminCodeEnvironmentHandlers({
   getAppConfig,
   recordAuditEntry: db.recordAuditEntry,
+  auditFailClosed: isAuditFailClosed(),
 });
 
 router.use(requireJwtAuth, requireAdminAccess, requireCodeEnvironmentManage);

@@ -1,6 +1,6 @@
 import type { ServerRequest } from '~/types/http';
 import { createMCPServerAuditor, settleMCPCommit, diffMCPServerFields } from './audit';
-import { MCPCommittedInvalidationError } from '~/mcp/errors';
+import { MCPCommittedWriteError } from '~/mcp/errors';
 
 const req = { user: { id: 'user-1', name: 'Alice' }, headers: {} } as unknown as ServerRequest;
 
@@ -114,15 +114,28 @@ describe('createMCPServerAuditor', () => {
       action: 'mcp_server.deleted',
       serverName: 'srv',
       previous: { title: 'Old' },
-      invalidationFailed: true,
+      postWriteFailed: true,
     });
 
     expect(recordAuditEntry).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'mcp_server.deleted',
-        metadata: { source: 'DB', cacheInvalidation: 'failed' },
+        metadata: { source: 'DB', postWrite: 'failed' },
       }),
     );
+  });
+
+  describe('MCPCommittedWriteError', () => {
+    it('keeps the persisted config out of serialized and logged errors', () => {
+      const error = new MCPCommittedWriteError(
+        { oauth: { client_secret: 'super-secret' } },
+        new Error('redis down'),
+      );
+
+      expect(error.committed).toEqual({ oauth: { client_secret: 'super-secret' } });
+      expect(JSON.stringify(error)).not.toContain('super-secret');
+      expect(Object.keys(error)).not.toContain('committed');
+    });
   });
 
   describe('settleMCPCommit', () => {
@@ -133,14 +146,14 @@ describe('createMCPServerAuditor', () => {
     });
 
     it('returns the committed result together with an invalidation failure', async () => {
-      const failure = new MCPCommittedInvalidationError({ title: 'x' }, new Error('redis down'));
+      const failure = new MCPCommittedWriteError({ title: 'x' }, new Error('redis down'));
 
       const settled = await settleMCPCommit(async () => {
         throw failure;
       });
 
       expect(settled.committed).toEqual({ title: 'x' });
-      expect(settled.invalidationError).toBe(failure);
+      expect(settled.postWriteError).toBe(failure);
     });
 
     it('rethrows any other failure as an uncommitted write', async () => {

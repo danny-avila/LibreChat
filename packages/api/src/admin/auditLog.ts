@@ -438,14 +438,14 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps): {
       req.once('aborted', markAborted);
       const isCancelled = () => clientAborted;
 
-      /** Recorded before any row is streamed, so an export is never unaudited. */
+      /** Recorded as pending before any row is streamed, so an export is never unaudited; `success` follows once the stream ends. */
       const exportEvent = {
         action: 'audit.exported' as const,
         severity: 'warning' as const,
         target: { type: 'audit_log' },
         metadata: { format: 'csv', ...describeFilters(filters.value) },
       };
-      await emitAudit(req, exportEvent);
+      await emitAudit(req, { ...exportEvent, outcome: 'pending' });
       exportRecorded = true;
       exportFailed = (code: string) =>
         emitFollowUp(req, {
@@ -519,6 +519,7 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps): {
           );
         }
         res.end();
+        await emitFollowUp(req, exportEvent);
       }
     } catch (err) {
       logger.error('[adminAuditLog] export error:', err);

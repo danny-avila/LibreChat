@@ -607,13 +607,18 @@ describe('createAdminAuditLogHandlers', () => {
 
       await handlers.exportAuditLogCsv(ctx.req, ctx.res);
 
-      expect(order).toEqual(['audit', 'stream']);
-      expect(recordAuditEntry).toHaveBeenCalledWith(
+      expect(order).toEqual(['audit', 'stream', 'audit']);
+      expect(recordAuditEntry).toHaveBeenNthCalledWith(
+        1,
         expect.objectContaining({
           action: 'audit.exported',
+          outcome: 'pending',
           metadata: { format: 'csv', severity: 'critical' },
         }),
       );
+      const terminal = recordAuditEntry.mock.calls[recordAuditEntry.mock.calls.length - 1][0];
+      expect(terminal).toEqual(expect.objectContaining({ action: 'audit.exported' }));
+      expect(terminal.outcome).toBeUndefined();
     });
 
     it('appends a failure entry when the export fails after it was recorded', async () => {

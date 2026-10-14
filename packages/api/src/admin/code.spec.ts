@@ -480,6 +480,23 @@ describe('createAdminCodeEnvironmentHandlers', () => {
       expect(deliveredAtTerminalWrite).toEqual(expect.objectContaining({ workerId: 'vm-1' }));
     });
 
+    it('does not pair a worker when the pending audit write fails under fail-closed', async () => {
+      const fetchImpl = jest.fn();
+      const response = mockResponse();
+
+      await createAdminCodeEnvironmentHandlers({
+        getAppConfig: jest.fn().mockResolvedValue(config()),
+        readSecret: jest.fn().mockReturnValue('administrator-bootstrap-token'),
+        fetchImpl,
+        recordAuditEntry: jest.fn().mockRejectedValue(new Error('audit down')),
+        auditFailClosed: true,
+      })
+        .createPairing(request(), response)
+        .catch(() => undefined);
+
+      expect(fetchImpl).not.toHaveBeenCalled();
+    });
+
     it('never blocks a revocation on an audit outage, even when fail-closed', async () => {
       const ok = jest.fn().mockResolvedValue(Response.json({ protocolVersion: 1, revoked: true }));
       const response = mockResponse();
