@@ -28,7 +28,17 @@ describe('GenerationJobManager admission guard', () => {
     await expect(manager.createJob('denied-2', 'user-1', 'denied-2')).rejects.toMatchObject({
       code: 'ACCOUNT_DELETION_IN_PROGRESS',
     });
-    expect((await store.getJob('denied'))?.status).not.toBe('running');
+    expect(await store.getJob('denied')).toBeNull();
+  });
+
+  it('skips the guard for callers that run their own admission check', async () => {
+    const guard = jest.fn(async () => false);
+    manager.setAdmissionGuard(guard);
+
+    await expect(
+      manager.createJob('own-check', 'user-1', 'own-check', { skipAdmissionGuard: true }),
+    ).resolves.toMatchObject({ streamId: 'own-check' });
+    expect(guard).not.toHaveBeenCalled();
   });
 
   it('retires the committed job and propagates the failure when the guard rejects', async () => {
@@ -37,7 +47,7 @@ describe('GenerationJobManager admission guard', () => {
     });
 
     await expect(manager.createJob('failed', 'user-1', 'failed')).rejects.toThrow('lookup down');
-    expect((await store.getJob('failed'))?.status).not.toBe('running');
+    expect(await store.getJob('failed')).toBeNull();
   });
 
   it('admits jobs while the account is active', async () => {

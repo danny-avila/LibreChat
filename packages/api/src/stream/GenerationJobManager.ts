@@ -664,6 +664,8 @@ export type TerminalHostActionHandler = (
 ) => void | Promise<void>;
 
 export interface CreateGenerationJobOptions {
+  /** For callers that run their own post-commit account admission check (remote agent runs). */
+  skipAdmissionGuard?: boolean;
   startupTelemetry?: AgentStartupTelemetry;
   initialMetadata?: Partial<t.GenerationJobMetadata>;
   /** A terminal steer being handed off as this new normal turn. The store
@@ -2746,7 +2748,7 @@ class GenerationJobManagerClass {
     }
     let admissionDenied = false;
     let admissionFailure: unknown;
-    if (!this.shuttingDown && this.admissionGuard != null) {
+    if (!this.shuttingDown && this.admissionGuard != null && options.skipAdmissionGuard !== true) {
       try {
         admissionDenied = !(await this.admissionGuard(userId));
       } catch (error) {
@@ -2780,6 +2782,16 @@ class GenerationJobManagerClass {
       if (replacedLocal != null && replacedLocal.createdAt < jobData.createdAt) {
         replacedLocal.abortController.abort();
         this.retireStoppedPredecessorRuntime(streamId, jobData.createdAt);
+      }
+      if (admissionRefused) {
+        /** A refused job never ran, and its metadata holds the user's message; the erasure that
+         * refused it will not list it again, so purge it instead of retaining the error job. */
+        await this.jobStore.deleteJob(streamId, jobData.createdAt).catch((purgeError) => {
+          logger.error(
+            `[GenerationJobManager] Failed to purge refused generation ${streamId}:`,
+            purgeError,
+          );
+        });
       }
       if (admissionFailure != null) {
         throw admissionFailure;

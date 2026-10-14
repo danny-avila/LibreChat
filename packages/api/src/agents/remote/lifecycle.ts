@@ -203,6 +203,8 @@ export async function enrollAgentExecution(
 ): Promise<AgentExecutionEnrollment> {
   const { runId, userId, conversationId, agentId, protocol, isPrincipalActive } = params;
   const job = await deps.manager.createJob(runId, userId, conversationId, {
+    /** The principal check below is this path's single post-commit admission read. */
+    skipAdmissionGuard: true,
     initialMetadata: {
       agent_id: agentId,
       endpoint: protocol,
