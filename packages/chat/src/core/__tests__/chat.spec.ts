@@ -600,6 +600,38 @@ describe('Chat', () => {
     },
   );
 
+  it('keeps the failure of a newer turn when a delayed stop of an older one is confirmed', async () => {
+    const first = createStream({ streamId: 'convo-1' });
+    const { chat, transport } = setup(
+      {},
+      {
+        sendMessages: jest
+          .fn()
+          .mockResolvedValueOnce({ status: 'stream', stream: first })
+          .mockRejectedValueOnce(new Error('newer failed')),
+      },
+    );
+    let answer: (() => void) | undefined;
+    transport.abort.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answer = () => resolve({ success: true });
+        }),
+    );
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    const stopped = chat.stop();
+    first.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+    await sent;
+
+    await chat.sendMessage({ parts: [{ type: 'text', text: 'Again' }] });
+    answer?.();
+    await stopped;
+
+    expect(chat.status).toBe('error');
+    expect(chat.error?.message).toBe('newer failed');
+  });
+
   it('rejects a refused stop and keeps streaming', async () => {
     const failure = new Error('abort failed');
     const { chat, stream, transport } = setup();
