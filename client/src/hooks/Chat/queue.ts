@@ -1,5 +1,6 @@
 import { atom } from 'jotai';
 import { atomFamily, RESET } from 'jotai/utils';
+import { ContentTypes } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { PrimitiveAtom, Getter } from 'jotai';
 import type { GenerationProtocolVersion } from '~/data-provider/SSE/protocol';
@@ -304,6 +305,17 @@ export function isDetachedRunManual(
   );
 }
 
+/** A compaction that ended without a usable summary persists the same failed summary or
+ *  user-initiated error part whether it failed or was stopped, from this tab or another, and is
+ *  settled rather than `unfinished`; history cannot tell which, so it never drains the queue. */
+const endedWithoutSummary = (message: TMessage): boolean =>
+  Array.isArray(message.content) &&
+  message.content.some(
+    (part) =>
+      (part?.type === ContentTypes.SUMMARY && part.failed === true) ||
+      (part?.type === ContentTypes.ERROR && part.initiatedBy === 'user'),
+  );
+
 const writtenAt = (message: TMessage): number => {
   const stamp = message.updatedAt ?? message.createdAt;
   return stamp == null ? Number.NaN : Date.parse(stamp);
@@ -354,7 +366,7 @@ export function resolveDetachedRunEnd(
   let outcome: RunEnd['outcome'] = 'completed';
   if (response.error === true) {
     outcome = 'error';
-  } else if (response.unfinished === true) {
+  } else if (response.unfinished === true || endedWithoutSummary(response)) {
     outcome = 'aborted';
   }
   return {

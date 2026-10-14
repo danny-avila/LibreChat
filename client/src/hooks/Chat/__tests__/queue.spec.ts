@@ -1,4 +1,5 @@
 import { createStore } from 'jotai';
+import { ContentTypes } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import {
   settledQueuedTurnReceiptsByConvoId,
@@ -55,6 +56,25 @@ describe('resolveDetachedRunEnd', () => {
       response({ unfinished: true }),
     ]);
     expect(end?.outcome).toBe('aborted');
+  });
+
+  it('reports a compaction that ended without a summary as aborted, as a Stop and a failure persist alike', () => {
+    const failedSummary = resolveDetachedRunEnd(CONVO_ID, { userMessageId: USER_ID }, [
+      response({
+        content: [
+          { type: ContentTypes.SUMMARY, content: [], failed: true, initiatedBy: 'user' },
+        ] as TMessage['content'],
+      }),
+    ]);
+    expect(failedSummary?.outcome).toBe('aborted');
+    const errorPart = resolveDetachedRunEnd(CONVO_ID, { userMessageId: USER_ID }, [
+      response({
+        content: [
+          { type: ContentTypes.ERROR, error: 'stopped', initiatedBy: 'user' },
+        ] as TMessage['content'],
+      }),
+    ]);
+    expect(errorPart?.outcome).toBe('aborted');
   });
 
   it('returns nothing while no response to the run is persisted', () => {
