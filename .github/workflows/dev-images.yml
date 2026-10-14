@@ -30,6 +30,7 @@ permissions:
 
 jobs:
   publish:
+    if: github.ref == 'refs/heads/main'
     uses: ./.github/workflows/docker-publish.yml
     with:
       images: >-
