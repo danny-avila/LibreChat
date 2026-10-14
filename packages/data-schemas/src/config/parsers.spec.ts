@@ -200,6 +200,12 @@ describe('redactMessage', () => {
     expect(out).not.toContain('jane');
   });
 
+  it('keeps a completed quoted address redacted when a stray quote precedes the edge', () => {
+    const input = `note: " ${' '.repeat(8172)}"jane doe"@example.com ${'x'.repeat(2000)}`;
+    const out = String(runRedactFormat({ level: 'info', message: input }).message);
+    expect(out).not.toContain('jane');
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),

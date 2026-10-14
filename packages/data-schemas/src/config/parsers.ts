@@ -102,13 +102,15 @@ function trimUnfinishedToken(full: string, window: string): string {
   }
   const trimmed = window.substring(0, end);
   let quotes = 0;
+  let lastOpen = -1;
   for (let index = 0; index < trimmed.length; index++) {
-    if (trimmed[index] === '"') {
+    if (trimmed[index] === '"' && trimmed[index + 1] !== '@') {
       quotes++;
+      lastOpen = index;
     }
   }
-  /** An odd quote count means the cut fell inside a quoted local part: drop it whole. */
-  return quotes % 2 === 1 ? trimmed.substring(0, trimmed.lastIndexOf('"')) : trimmed;
+  /** An odd count of quotes not closing an address means the cut fell inside a quoted local part. */
+  return quotes % 2 === 1 ? trimmed.substring(0, lastOpen) : trimmed;
 }
 
 function redactLogString(str: string): string {
