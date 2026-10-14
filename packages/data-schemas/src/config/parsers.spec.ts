@@ -580,6 +580,12 @@ describe('redactMessage', () => {
     expect(() => runRedactFormat(record)).not.toThrow();
   });
 
+  it('replaces function values so their serializers never run', () => {
+    const fn = Object.assign(() => undefined, { toString: () => 'jane@example.com' });
+    const out = runRedactFormat({ level: 'info', message: fn as unknown as string });
+    expect(String(out.message)).not.toContain('jane');
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),

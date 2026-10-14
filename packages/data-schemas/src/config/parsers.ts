@@ -490,6 +490,11 @@ function redactLogValue(value: unknown, seen = new WeakMap<object, unknown>(), d
     return redactLogString(value);
   }
 
+  /** A function's `toString`/`toJSON` would run after redaction, so only a marker is kept. */
+  if (typeof value === 'function') {
+    return '[Function]';
+  }
+
   if (value === null || typeof value !== 'object') {
     return value;
   }
