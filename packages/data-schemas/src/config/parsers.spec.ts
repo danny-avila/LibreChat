@@ -416,6 +416,17 @@ describe('redactMessage', () => {
     expect(out.detail).not.toContain('jane');
   });
 
+  it('rebuilds the record when a stack accessor ignores writes', () => {
+    const error = new Error('boom');
+    Object.defineProperty(error, 'stack', {
+      get: () => 'at jane@example.com',
+      set: () => undefined,
+      configurable: true,
+    });
+    const out = runRedactFormat(error as unknown as RedactInfo) as unknown as { stack: string };
+    expect(out.stack).not.toContain('jane');
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),

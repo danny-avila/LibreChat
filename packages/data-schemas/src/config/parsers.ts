@@ -546,6 +546,9 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
     let replaceFailed = false;
     if (typeof infoRecord.stack === 'string') {
       redactedStack = redactLogString(infoRecord.stack);
+      if (Object.getOwnPropertyDescriptor(info, 'stack')?.get !== undefined) {
+        replaceFailed = true;
+      }
       try {
         infoRecord.stack = redactedStack;
       } catch {
