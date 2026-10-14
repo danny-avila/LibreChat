@@ -89,7 +89,14 @@ describe('runAuditedPermissionUpdate', () => {
         outcome: 'success',
         target: { type: ResourceType.PROMPTGROUP, id: 'res-1' },
         tenantId: 't1',
-        metadata: { principalType: 'user', principalId: 'u1', permBits: 3, previousPermBits: 0 },
+        metadata: {
+          principalType: 'user',
+          principalId: 'u1',
+          permBits: 3,
+          previousPermBits: 0,
+          roleId: 'r1',
+          previousRoleId: '',
+        },
       }),
     );
     expect(inputs[2].metadata).toEqual(expect.objectContaining({ enabled: false }));
@@ -157,6 +164,43 @@ describe('runAuditedPermissionUpdate', () => {
     /** Each entry is attempted before the write and once more after it. */
     expect(record).toHaveBeenCalledTimes(4);
     expect(narrow.logger.error).toHaveBeenCalled();
+  });
+
+  test('retries deferred revocation entries before the update returns, inside its lease', async () => {
+    const record = jest.fn();
+    const order: string[] = [];
+    record.mockImplementation(async (input) => {
+      order.push(`record:${input.action}`);
+      if (order.length === 1) throw new Error('down');
+    });
+    const { logger } = setup(record);
+    await runAuditedPermissionUpdate({
+      req,
+      resourceType: ResourceType.PROMPTGROUP,
+      resourceId: 'res-1',
+      failClosed: true,
+      deps: { recordAuditEntry: record, logger },
+      update: async (beforeWrite, afterWrite) => {
+        await beforeWrite({
+          aclChanges: [revokeChange(PrincipalType.USER, 'u1')],
+          insightsChanges: [],
+        });
+        order.push('write');
+        await afterWrite();
+        order.push('lease-released');
+        return 'written';
+      },
+    });
+    expect(order).toEqual(['record:acl.revoked', 'write', 'record:acl.revoked', 'lease-released']);
+  });
+
+  test('audits principals and role ids in canonical form', async () => {
+    const { recordAuditEntry, run } = setup();
+    const hex = 'ABCDEF0123456789ABCDEF01';
+    await run([revokeChange(PrincipalType.USER, hex)], true);
+    expect(recordAuditEntry.mock.calls[0][0].metadata).toEqual(
+      expect.objectContaining({ principalId: hex.toLowerCase(), previousRoleId: 'r1', roleId: '' }),
+    );
   });
 
   test('a reduced permission set is a narrowing change, an added bit is a widening one', async () => {

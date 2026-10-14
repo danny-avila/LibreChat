@@ -9,6 +9,12 @@ import { buildAuditContext } from '~/admin/context';
 
 const OBJECT_ID_HEX = /^[0-9a-f]{24}$/i;
 
+/** Mongo casts ObjectId hex of any case to one id, so non-role principals are audited in lowercase. */
+const canonicalPrincipalId = (type: string, id: unknown): string => {
+  const raw = id == null ? '' : id.toString();
+  return type !== PrincipalType.ROLE && OBJECT_ID_HEX.test(raw) ? raw.toLowerCase() : raw;
+};
+
 export type AuditPlanItem = {
   input: RecordAuditEntryInput;
   /** Grants or widens access; only these are held back when the audit store is down. */
@@ -50,9 +56,11 @@ function buildEvent(
   }
   const metadata = {
     principalType: principal.type,
-    principalId: principal.id?.toString() ?? '',
+    principalId: canonicalPrincipalId(principal.type, principal.id),
     permBits,
     previousPermBits: previousBits,
+    roleId: written?.roleId ?? '',
+    previousRoleId: previous?.roleId ?? '',
   };
   if (isPublic) {
     return {
@@ -132,7 +140,7 @@ export async function planInsightsAudit(args: {
       target: { type: 'agent', ...target },
       metadata: {
         principalType: change.principal.type,
-        principalId: change.principal.id?.toString() ?? '',
+        principalId: canonicalPrincipalId(change.principal.type, change.principal.id),
       },
       context,
       tenantId: req.user?.tenantId,
@@ -213,7 +221,11 @@ export async function runAuditedPermissionUpdate<T>({
   /** Overrides `isAuditFailClosed()`. */
   failClosed?: boolean;
   deps: AclAuditDeps & { getAgent?: InsightsPlanDeps['getAgent'] };
-  update: (beforeWrite: (plan: PermissionPlan) => Promise<void>) => Promise<T>;
+  /** `afterWrite` retries deferred revocation entries; call it while the resource lease is still held. */
+  update: (
+    beforeWrite: (plan: PermissionPlan) => Promise<void>,
+    afterWrite: () => Promise<void>,
+  ) => Promise<T>;
 }): Promise<T> {
   /** Mongoose casts uppercase and lowercase ObjectId hex to one id, so audit targets use the lowercase form. */
   const resourceId = OBJECT_ID_HEX.test(rawResourceId)
@@ -234,6 +246,15 @@ export async function runAuditedPermissionUpdate<T>({
     }
   };
   const deferred: AuditPlanItem[] = [];
+  const flushDeferred = async () => {
+    for (const item of deferred.splice(0)) {
+      try {
+        await deps.recordAuditEntry(item.input);
+      } catch (error) {
+        deps.logger.error('[ResourcePermissions] Revocation audit not persisted', safeMeta(error));
+      }
+    }
+  };
   try {
     const result = await update(async ({ aclChanges, insightsChanges }) => {
       let items: AuditPlanItem[];
@@ -295,14 +316,8 @@ export async function runAuditedPermissionUpdate<T>({
           throw statusError('Permission change could not be audited');
         }
       }
-    });
-    for (const item of deferred) {
-      try {
-        await deps.recordAuditEntry(item.input);
-      } catch (error) {
-        deps.logger.error('[ResourcePermissions] Revocation audit not persisted', safeMeta(error));
-      }
-    }
+    }, flushDeferred);
+    await flushDeferred();
     return result;
   } catch (error) {
     await recordFailures();

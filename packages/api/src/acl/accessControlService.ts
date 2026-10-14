@@ -455,6 +455,7 @@ export class AccessControlService {
     session,
     maxWriteAttempts,
     beforeWrite,
+    afterWrite,
   }: {
     resourceType: ResourceType;
     resourceId: string | Types.ObjectId;
@@ -465,6 +466,8 @@ export class AccessControlService {
     maxWriteAttempts?: number;
     /** Called with the computed changes before any ACL write; a throw leaves the ACL untouched. */
     beforeWrite?: (plan: PermissionPlan) => Promise<void>;
+    /** Runs after the write while the resource lease is still held; its failure never fails the update. */
+    afterWrite?: () => Promise<void>;
   }): Promise<BulkPermissionUpdateResult> {
     const supportsTransactions = await getTransactionSupport(
       this._mongoose,
@@ -875,6 +878,11 @@ export class AccessControlService {
           this._dbMethods.invalidatePromptGroupAccessContext(),
         );
       }
+      await afterWrite?.().catch((error) =>
+        logger.error('[AccessControlService.bulkUpdateResourcePermissions] afterWrite failed', {
+          ...getSafeErrorMetadata(error),
+        }),
+      );
       return results;
     } catch (error) {
       if (shouldEndSession && supportsTransactions) {

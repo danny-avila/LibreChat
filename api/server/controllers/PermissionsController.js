@@ -174,7 +174,7 @@ const updateResourcePermissions = async (req, res) => {
       resourceType,
       resourceId,
       deps: { recordAuditEntry: db.recordAuditEntry, getAgent: db.getAgent, logger },
-      update: (beforeWrite) =>
+      update: (beforeWrite, afterWrite) =>
         bulkUpdateResourcePermissions({
           resourceType,
           resourceId,
@@ -183,6 +183,7 @@ const updateResourcePermissions = async (req, res) => {
           revokedPrincipals,
           grantedBy: userId,
           beforeWrite,
+          afterWrite,
         }),
     });
 
