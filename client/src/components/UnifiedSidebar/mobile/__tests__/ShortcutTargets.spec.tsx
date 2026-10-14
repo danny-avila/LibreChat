@@ -29,7 +29,10 @@ const renderTargets = ({
   );
 
 describe('ShortcutTargets', () => {
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+  });
 
   /**
    * `useKeyboardShortcuts` locates panels by these ids, reads `aria-pressed`,
@@ -56,7 +59,7 @@ describe('ShortcutTargets', () => {
     fireEvent.click(screen.getByTestId('nav-panel-prompts'));
 
     expect(screen.getByTestId('nav-panel-prompts')).toHaveAttribute('aria-pressed', 'true');
-    expect(localStorage.getItem('side:active-panel')).toBe('prompts');
+    expect(sessionStorage.getItem('side:active-panel')).toBe('prompts');
   });
 
   it('uses a route link callback without changing the active panel', () => {
@@ -75,7 +78,7 @@ describe('ShortcutTargets', () => {
     fireEvent.click(screen.getByTestId('nav-panel-insights'));
 
     expect(onClick).toHaveBeenCalledTimes(1);
-    expect(localStorage.getItem('side:active-panel')).toBeNull();
+    expect(sessionStorage.getItem('side:active-panel')).toBeNull();
   });
 
   it('leaves a route when a panel target is selected', () => {
@@ -85,7 +88,7 @@ describe('ShortcutTargets', () => {
     fireEvent.click(screen.getByTestId('nav-panel-prompts'));
 
     expect(onLeaveInsights).toHaveBeenCalledTimes(1);
-    expect(localStorage.getItem('side:active-panel')).toBe('prompts');
+    expect(sessionStorage.getItem('side:active-panel')).toBe('prompts');
   });
 
   it('offers no target for a panel this endpoint does not have', () => {

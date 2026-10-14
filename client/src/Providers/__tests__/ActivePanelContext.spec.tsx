@@ -22,36 +22,40 @@ function TestConsumer() {
 describe('ActivePanelContext', () => {
   beforeEach(() => {
     localStorage.clear();
+    sessionStorage.clear();
   });
 
-  it('defaults to conversations when no localStorage value exists', () => {
+  const renderProvider = () =>
     render(
       <ActivePanelProvider>
         <TestConsumer />
       </ActivePanelProvider>,
     );
+
+  it('lands a first visit on conversations', () => {
+    renderProvider();
     expect(screen.getByTestId('active')).toHaveTextContent('conversations');
   });
 
-  it('reads initial value from localStorage', () => {
-    localStorage.setItem(STORAGE_KEY, 'memories');
-    render(
-      <ActivePanelProvider>
-        <TestConsumer />
-      </ActivePanelProvider>,
-    );
+  it('lands a returning visit on conversations instead of the last persisted panel', () => {
+    localStorage.setItem(STORAGE_KEY, 'skills');
+    renderProvider();
+    expect(screen.getByTestId('active')).toHaveTextContent('conversations');
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
+
+  it('restores the panel chosen earlier in the same session', () => {
+    sessionStorage.setItem(STORAGE_KEY, 'memories');
+    renderProvider();
     expect(screen.getByTestId('active')).toHaveTextContent('memories');
   });
 
-  it('setActive updates state and writes to localStorage', () => {
-    render(
-      <ActivePanelProvider>
-        <TestConsumer />
-      </ActivePanelProvider>,
-    );
+  it('setActive updates state and keeps it for the session only', () => {
+    renderProvider();
     fireEvent.click(screen.getByTestId('switch-btn'));
     expect(screen.getByTestId('active')).toHaveTextContent('bookmarks');
-    expect(localStorage.getItem(STORAGE_KEY)).toBe('bookmarks');
+    expect(sessionStorage.getItem(STORAGE_KEY)).toBe('bookmarks');
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
 
   it('throws when useActivePanel is called outside provider', () => {

@@ -3,8 +3,13 @@ import { createContext, useCallback, useContext, useMemo, useState, ReactNode } 
 const STORAGE_KEY = 'side:active-panel';
 export const DEFAULT_PANEL = 'conversations';
 
+/**
+ * Session-scoped so a reload keeps the panel while a new visit lands on chat history;
+ * the legacy localStorage copy is dropped so an old panel cannot resurface on entry.
+ */
 function getInitialActivePanel(): string {
-  const saved = localStorage.getItem(STORAGE_KEY);
+  localStorage.removeItem(STORAGE_KEY);
+  const saved = sessionStorage.getItem(STORAGE_KEY);
   return saved ? saved : DEFAULT_PANEL;
 }
 
@@ -19,7 +24,7 @@ export function ActivePanelProvider({ children }: { children: ReactNode }) {
   const [active, _setActive] = useState<string>(getInitialActivePanel);
 
   const setActive = useCallback((id: string) => {
-    localStorage.setItem(STORAGE_KEY, id);
+    sessionStorage.setItem(STORAGE_KEY, id);
     _setActive(id);
   }, []);
 

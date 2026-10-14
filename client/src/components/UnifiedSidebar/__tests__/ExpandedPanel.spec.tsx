@@ -115,7 +115,7 @@ function renderPanel({
   switchToHistory?: boolean;
 } = {}) {
   if (initialPanel !== DEFAULT_PANEL) {
-    localStorage.setItem('side:active-panel', initialPanel);
+    sessionStorage.setItem('side:active-panel', initialPanel);
   }
 
   const result = render(
@@ -144,6 +144,7 @@ describe('ExpandedPanel', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     localStorage.clear();
+    sessionStorage.clear();
   });
 
   describe('NavIconButton collapse toggle', () => {
@@ -159,7 +160,7 @@ describe('ExpandedPanel', () => {
       const inactiveButton = screen.getByRole('button', { name: 'com_ui_prompts' });
       fireEvent.click(inactiveButton);
       expect(onCollapse).not.toHaveBeenCalled();
-      expect(localStorage.getItem('side:active-panel')).toBe('prompts');
+      expect(sessionStorage.getItem('side:active-panel')).toBe('prompts');
     });
 
     it('expands sidebar when clicking any icon while collapsed', () => {
@@ -174,7 +175,7 @@ describe('ExpandedPanel', () => {
       const inactiveButton = screen.getByRole('button', { name: 'com_ui_prompts' });
       fireEvent.click(inactiveButton);
       expect(onExpand).toHaveBeenCalledTimes(1);
-      expect(localStorage.getItem('side:active-panel')).toBe('prompts');
+      expect(sessionStorage.getItem('side:active-panel')).toBe('prompts');
     });
 
     it('notifies mobile navigation after a route link is selected', () => {
@@ -234,7 +235,7 @@ describe('ExpandedPanel', () => {
       fireEvent.click(newChatLink);
 
       expect(mockNewConversation).toHaveBeenCalledTimes(1);
-      expect(localStorage.getItem('side:active-panel')).toBe(DEFAULT_PANEL);
+      expect(sessionStorage.getItem('side:active-panel')).toBe(DEFAULT_PANEL);
     });
 
     it('does not switch panel on new chat click when setting is disabled', () => {
@@ -248,7 +249,7 @@ describe('ExpandedPanel', () => {
       fireEvent.click(newChatLink);
 
       expect(mockNewConversation).toHaveBeenCalledTimes(1);
-      expect(localStorage.getItem('side:active-panel')).toBe('prompts');
+      expect(sessionStorage.getItem('side:active-panel')).toBe('prompts');
     });
   });
 });
