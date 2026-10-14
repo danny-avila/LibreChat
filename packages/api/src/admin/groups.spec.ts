@@ -915,6 +915,20 @@ describe('createAdminGroupsHandlers', () => {
         expect(deps.deleteGroup).not.toHaveBeenCalled();
       });
 
+      it('does not restore the config when a concurrent delete already removed the group', async () => {
+        const deps = compensationDeps({
+          findGroupById: jest.fn().mockResolvedValueOnce(mockGroup()).mockResolvedValueOnce(null),
+          deleteAclEntries: jest.fn().mockRejectedValue(new Error('acl down')),
+        });
+        const handlers = createAdminGroupsHandlers(deps);
+        const { req, res, status } = createReqRes({ params: { id: validId } });
+
+        await handlers.deleteGroup(req, res);
+
+        expect(status).toHaveBeenCalledWith(500);
+        expect(deps.restoreConfig).not.toHaveBeenCalled();
+      });
+
       it('restores the config but never the ACL entries when the group delete fails', async () => {
         const deps = compensationDeps({
           deleteGroup: jest.fn().mockRejectedValue(new Error('db down')),

@@ -441,7 +441,14 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
       };
 
       if (cascade.failed.length > 0) {
-        await cascade.compensate();
+        /** A concurrent delete may have removed the group meanwhile; restoring its config would orphan it. */
+        const stillExists = await findGroupById(id).then(
+          (group) => group != null,
+          () => false,
+        );
+        if (stillExists) {
+          await cascade.compensate();
+        }
         return cleanupFailedResponse();
       }
 
