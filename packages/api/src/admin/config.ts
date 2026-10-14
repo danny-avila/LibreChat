@@ -42,6 +42,7 @@ import {
   preserveConfigSecrets,
   redactConfigSecrets,
 } from './secrets';
+import { getSafeErrorMetadata } from '~/utils/errors';
 import { createAdminAuditEmitter } from './audit';
 
 const UNSAFE_SEGMENTS = /(?:^|\.)(__[\w]*|constructor|prototype)(?:\.|$)/;
@@ -1127,7 +1128,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         /** An earlier path in the loop may already have been written. */
         if (config) {
           invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
-            logger.error('[adminConfig] Cache invalidation failed after partial write:', err),
+            logger.error(
+              '[adminConfig] Cache invalidation failed after partial write:',
+              getSafeErrorMetadata(err),
+            ),
           );
           await emitAudit(req, {
             action: created ? 'config.created' : 'config.updated',
@@ -1237,7 +1241,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         /** An earlier path in the loop may already have been written. */
         if (config) {
           invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
-            logger.error('[adminConfig] Cache invalidation failed after partial write:', err),
+            logger.error(
+              '[adminConfig] Cache invalidation failed after partial write:',
+              getSafeErrorMetadata(err),
+            ),
           );
           await emitAudit(req, {
             action: 'config.updated',
