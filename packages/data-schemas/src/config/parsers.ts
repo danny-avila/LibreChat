@@ -252,7 +252,7 @@ function redactErrorValue(error: Error, seen: WeakMap<object, unknown>, depth: n
       }
     }
     if (skipHeavyErrorFields && typeof key === 'string') {
-      const isAxios = (error as { isAxiosError?: unknown }).isAxiosError === true;
+      const isAxios = readsTrue(error as unknown as Record<string, unknown>, 'isAxiosError');
       if (isAxios && key === 'config') {
         const compact = compactRequestInfo(descriptor.value);
         if (compact !== undefined) {
