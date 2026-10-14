@@ -307,6 +307,8 @@ export class Chat {
   private resuming?: string;
   private disposed = false;
   private readonly decisions = new Map<string, Agents.ToolApprovalResolution>();
+  /** Pauses already resumed, whose replay by a reattached stream is stale. */
+  private readonly resumed = new Set<string>();
 
   constructor(init: ChatInit) {
     this.id = init.id;
@@ -359,6 +361,15 @@ export class Chat {
     active.endpoint = this.resumeEndpoint();
     active.reattach = { streamId: options.streamId };
     this.active = active;
+    if (
+      this.action &&
+      options.generationCreatedAt != null &&
+      this.generationCreatedAt != null &&
+      options.generationCreatedAt !== this.generationCreatedAt
+    ) {
+      /** A restored pause belongs to the generation it was restored with, not this one. */
+      this.clearAction();
+    }
     /** Only a restored pause vouches for the timestamp of the generation it belongs to. */
     this.generationCreatedAt =
       options.generationCreatedAt ?? (this.action ? this.generationCreatedAt : undefined);
@@ -634,6 +645,7 @@ export class Chat {
     const active = createActiveRequest();
     this.active = active;
     this.generationCreatedAt = undefined;
+    this.resumed.clear();
     this.init.state.error = undefined;
     this.setStatus('submitted');
     try {
@@ -773,7 +785,8 @@ export class Chat {
     let outcome: Outcome | undefined;
     if (streamingEvents.has(event.type) && this.status !== 'streaming') {
       this.setStatus('streaming');
-    } else if (event.type === 'pending_action') {
+    } else if (event.type === 'pending_action' && !this.resumed.has(event.data.actionId)) {
+      /** A pause this chat already resumed is stale when a reattached stream replays it. */
       if (this.action?.actionId !== event.data.actionId) {
         /** A reconnect replays the same pause; decisions already made for it still stand. */
         this.decisions.clear();
@@ -887,6 +900,7 @@ export class Chat {
         generationCreatedAt,
         actionId: action.actionId,
       });
+      this.resumed.add(action.actionId);
       /** A pause stopped or replaced while the request was in flight is no longer this one's. */
       if (this.action?.actionId !== action.actionId) {
         return;
