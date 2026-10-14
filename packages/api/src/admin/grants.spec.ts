@@ -1334,5 +1334,97 @@ describe('createAdminGrantsHandlers', () => {
       expect(recordAuditEntry).toHaveBeenCalledTimes(2);
       expect(status).toHaveBeenCalledWith(200);
     });
+
+    describe('grant lease', () => {
+      function memoryLease() {
+        const held = new Map<string, string>();
+        return {
+          acquireResourceLock: jest.fn(async ({ key, ownerId }) => {
+            if (held.has(key)) return false;
+            held.set(key, ownerId);
+            return true;
+          }),
+          renewResourceLock: jest.fn(async ({ key, ownerId }) => held.get(key) === ownerId),
+          releaseResourceLock: jest.fn(async ({ key, ownerId }) => {
+            if (held.get(key) !== ownerId) return false;
+            held.delete(key);
+            return true;
+          }),
+          held,
+        };
+      }
+
+      it('ends with the state named by the last audit entry when a reassert races a revoke', async () => {
+        const lease = memoryLease();
+        const log: string[] = [];
+        let active = true;
+        const delay = () => new Promise((resolve) => setTimeout(resolve, 20));
+        const deps = createDeps({
+          lease,
+          auditFailClosed: true,
+          recordAuditEntry: jest.fn(async (input) => {
+            await delay();
+            log.push(input.action);
+          }),
+          getCapabilitiesForPrincipal: jest.fn(async () => (active ? [mockGrant()] : [])),
+          grantCapability: jest.fn(async () => {
+            active = true;
+            return { grant: mockGrant(), created: false };
+          }),
+          revokeCapability: jest.fn(async () => {
+            const deletedCount = active ? 1 : 0;
+            active = false;
+            return { deletedCount };
+          }),
+        });
+        const handlers = createAdminGrantsHandlers(deps);
+        const assign = createReqRes({ body: assignBody, user: reqUser() });
+        const revoke = createReqRes({
+          params: { ...assignBody },
+          user: reqUser(),
+        });
+
+        await Promise.all([
+          handlers.assignGrant(assign.req, assign.res),
+          handlers.revokeGrant(revoke.req, revoke.res),
+        ]);
+
+        const last = log[log.length - 1];
+        expect(active).toBe(last === 'grant.assigned');
+        expect(lease.held.size).toBe(0);
+      });
+
+      it('answers 409 with the busy code and writes nothing when the lease stays taken', async () => {
+        const lease = memoryLease();
+        lease.acquireResourceLock.mockResolvedValue(false);
+        const deps = createDeps({ lease, auditFailClosed: true });
+        const handlers = createAdminGrantsHandlers(deps);
+        const { req, res, status, json } = createReqRes({ body: assignBody, user: reqUser() });
+
+        await handlers.assignGrant(req, res);
+
+        expect(status).toHaveBeenCalledWith(409);
+        expect(json).toHaveBeenCalledWith(
+          expect.objectContaining({ code: 'RESOURCE_PERMISSIONS_BUSY' }),
+        );
+        expect(deps.grantCapability).not.toHaveBeenCalled();
+      });
+
+      it('aborts the revoke without deleting when the lease was lost', async () => {
+        const lease = memoryLease();
+        lease.renewResourceLock.mockResolvedValue(false);
+        const deps = createDeps({ lease });
+        const handlers = createAdminGrantsHandlers(deps);
+        const { req, res, status } = createReqRes({
+          params: { ...assignBody },
+          user: reqUser(),
+        });
+
+        await handlers.revokeGrant(req, res);
+
+        expect(status).toHaveBeenCalledWith(409);
+        expect(deps.revokeCapability).not.toHaveBeenCalled();
+      });
+    });
   });
 });

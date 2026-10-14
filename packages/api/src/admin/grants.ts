@@ -17,7 +17,10 @@ import type { Response } from 'express';
 import type { Types } from 'mongoose';
 import type { ResolvedPrincipal } from '~/types/principal';
 import type { ServerRequest } from '~/types/http';
+import type { LeaseDeps } from './lease';
+import { ResourcePermissionsBusyError } from '~/acl/accessControlService';
 import { getSafeErrorMetadata } from '~/utils/errors';
+import { grantLeaseKey, withLease } from './lease';
 import { parsePagination } from './pagination';
 import { buildAuditContext } from './context';
 
@@ -93,6 +96,8 @@ export interface AdminGrantsDeps {
    * so it always stands and its entry is retried. Defaults to fail-open.
    */
   auditFailClosed?: boolean;
+  /** Serializes the audit and write of one grant against concurrent assign/revoke of it. */
+  lease?: LeaseDeps;
 }
 
 /** Currently ROLE-only; Record/Set structure preserved for future principal-type expansion. */
@@ -120,6 +125,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
     checkRoleExists,
     recordAuditEntry,
     auditFailClosed,
+    lease,
   } = deps;
 
   async function emitAudit(args: {
@@ -408,57 +414,67 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
         }
       }
 
-      /** A re-assert is still audited: a concurrent revoke can remove the grant between this
-       * read and the write, so skipping it could leave a live grant without an entry. */
-      const existingGrants = await getCapabilitiesForPrincipal({
-        principalType,
-        principalId,
-        tenantId,
-      });
-      const reassert = existingGrants.some(
-        (existing) => existing.capability === capability && existing.tenantId == tenantId,
+      return await withLease(
+        lease,
+        grantLeaseKey(principalType, principalId, capability, tenantId),
+        async (fence) => {
+          /** A re-assert is still audited: a concurrent revoke can remove the grant between this
+           * read and the write, so skipping it could leave a live grant without an entry. */
+          const existingGrants = await getCapabilitiesForPrincipal({
+            principalType,
+            principalId,
+            tenantId,
+          });
+          const reassert = existingGrants.some(
+            (existing) => existing.capability === capability && existing.tenantId == tenantId,
+          );
+          const auditAssignment = (outcome: 'success' | 'failure') =>
+            emitAudit({
+              action: 'grant.assigned',
+              caller,
+              principalType,
+              principalId,
+              capability,
+              context: buildAuditContext(req),
+              outcome,
+              failOpen: outcome === 'failure',
+              metadata: reassert ? { reassert: true } : undefined,
+            });
+          /** Audit first: with fail-closed auditing a grant that cannot be recorded is never written. */
+          try {
+            await auditAssignment('success');
+          } catch (auditErr) {
+            logger.error('[adminGrants] assignGrant audit failed (fail-closed), nothing granted', {
+              ...getSafeErrorMetadata(auditErr),
+            });
+            return res.status(500).json({ error: 'Failed to record audit entry' });
+          }
+          let result: Awaited<ReturnType<typeof grantCapability>>;
+          try {
+            await fence();
+            result = await grantCapability({
+              principalType,
+              principalId,
+              capability,
+              tenantId,
+              grantedBy: caller.userId,
+            });
+          } catch (writeErr) {
+            await auditAssignment('failure');
+            throw writeErr;
+          }
+          const { grant } = result;
+          if (!grant) {
+            await auditAssignment('failure');
+            return res.status(500).json({ error: 'Grant operation returned no result' });
+          }
+          return res.status(201).json({ grant });
+        },
       );
-      const auditAssignment = (outcome: 'success' | 'failure') =>
-        emitAudit({
-          action: 'grant.assigned',
-          caller,
-          principalType,
-          principalId,
-          capability,
-          context: buildAuditContext(req),
-          outcome,
-          failOpen: outcome === 'failure',
-          metadata: reassert ? { reassert: true } : undefined,
-        });
-      /** Audit first: with fail-closed auditing a grant that cannot be recorded is never written. */
-      try {
-        await auditAssignment('success');
-      } catch (auditErr) {
-        logger.error('[adminGrants] assignGrant audit failed (fail-closed), nothing granted', {
-          ...getSafeErrorMetadata(auditErr),
-        });
-        return res.status(500).json({ error: 'Failed to record audit entry' });
-      }
-      let result: Awaited<ReturnType<typeof grantCapability>>;
-      try {
-        result = await grantCapability({
-          principalType,
-          principalId,
-          capability,
-          tenantId,
-          grantedBy: caller.userId,
-        });
-      } catch (writeErr) {
-        await auditAssignment('failure');
-        throw writeErr;
-      }
-      const { grant } = result;
-      if (!grant) {
-        await auditAssignment('failure');
-        return res.status(500).json({ error: 'Grant operation returned no result' });
-      }
-      return res.status(201).json({ grant });
     } catch (error) {
+      if (error instanceof ResourcePermissionsBusyError) {
+        return res.status(409).json({ error: error.message, code: error.code });
+      }
       logger.error('[adminGrants] assignGrant error:', error);
       return res.status(500).json({ error: 'Failed to assign grant' });
     }
@@ -497,45 +513,55 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
-      const revokeResult = await revokeCapability({
-        principalType: principalType as PrincipalType,
-        principalId,
-        capability: capability as SystemCapability,
-        tenantId,
-      });
-      // Only emit the audit entry when a grant document was actually deleted —
-      // a no-op revoke (the grant never existed) must not appear in the audit
-      // trail or the forensic record becomes misleading.
-      if (revokeResult.deletedCount > 0) {
-        try {
-          await emitAudit({
-            action: 'grant.removed',
-            caller,
+      return await withLease(
+        lease,
+        grantLeaseKey(principalType, principalId, capability, tenantId),
+        async (fence) => {
+          await fence();
+          const revokeResult = await revokeCapability({
             principalType: principalType as PrincipalType,
             principalId,
             capability: capability as SystemCapability,
-            context: buildAuditContext(req),
+            tenantId,
           });
-        } catch (auditErr) {
-          /** A revoke only removes access, so an audit outage must not keep it live:
-           * the revoke stands, the failure is logged with safe metadata, and the
-           * entry is attempted once more without failing the request. */
-          logger.error('[adminGrants] revokeGrant audit failed, revoke kept', {
-            ...getSafeErrorMetadata(auditErr),
-          });
-          await emitAudit({
-            action: 'grant.removed',
-            caller,
-            principalType: principalType as PrincipalType,
-            principalId,
-            capability: capability as SystemCapability,
-            context: buildAuditContext(req),
-            failOpen: true,
-          });
-        }
-      }
-      return res.status(200).json({ success: true });
+          // Only emit the audit entry when a grant document was actually deleted —
+          // a no-op revoke (the grant never existed) must not appear in the audit
+          // trail or the forensic record becomes misleading.
+          if (revokeResult.deletedCount > 0) {
+            try {
+              await emitAudit({
+                action: 'grant.removed',
+                caller,
+                principalType: principalType as PrincipalType,
+                principalId,
+                capability: capability as SystemCapability,
+                context: buildAuditContext(req),
+              });
+            } catch (auditErr) {
+              /** A revoke only removes access, so an audit outage must not keep it live:
+               * the revoke stands, the failure is logged with safe metadata, and the
+               * entry is attempted once more without failing the request. */
+              logger.error('[adminGrants] revokeGrant audit failed, revoke kept', {
+                ...getSafeErrorMetadata(auditErr),
+              });
+              await emitAudit({
+                action: 'grant.removed',
+                caller,
+                principalType: principalType as PrincipalType,
+                principalId,
+                capability: capability as SystemCapability,
+                context: buildAuditContext(req),
+                failOpen: true,
+              });
+            }
+          }
+          return res.status(200).json({ success: true });
+        },
+      );
     } catch (error) {
+      if (error instanceof ResourcePermissionsBusyError) {
+        return res.status(409).json({ error: error.message, code: error.code });
+      }
       logger.error('[adminGrants] revokeGrant error:', error);
       return res.status(500).json({ error: 'Failed to revoke grant' });
     }

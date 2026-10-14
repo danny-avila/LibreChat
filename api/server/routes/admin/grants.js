@@ -27,6 +27,11 @@ const handlers = createAdminGrantsHandlers({
   checkRoleExists: async (name) => (await db.getRoleByName(name)) != null,
   recordAuditEntry: db.recordAuditEntry,
   auditFailClosed: isAuditFailClosed(),
+  lease: {
+    acquireResourceLock: db.acquireResourceLock,
+    renewResourceLock: db.renewResourceLock,
+    releaseResourceLock: db.releaseResourceLock,
+  },
 });
 
 router.use(requireJwtAuth, requireAdminAccess);
