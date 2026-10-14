@@ -1,5 +1,9 @@
 import type { StoredUploadRef } from './orphan';
-import { resolveStoredUploadTarget, withStoredUploadCleanup } from './orphan';
+import {
+  resolveStoredUploadTarget,
+  withStoredUploadCleanup,
+  createStoredUploadDelete,
+} from './orphan';
 
 const stored: StoredUploadRef = {
   file_id: 'file-1',
@@ -198,5 +202,49 @@ describe('resolveStoredUploadTarget', () => {
 
   it('targets nothing for an Assistants upload without a converted image', () => {
     expect(resolveStoredUploadTarget({ isAssistantUpload: true, stored: base })).toBeUndefined();
+  });
+});
+
+describe('createStoredUploadDelete', () => {
+  const req = { user: { id: 'u1' } } as never;
+  const strategies = (map: Record<string, jest.Mock | undefined>) => (source: string) =>
+    map[source];
+
+  it('removes the vector and code environment copies named by the reference', async () => {
+    const primary = jest.fn().mockResolvedValue(undefined);
+    const vector = jest.fn().mockResolvedValue(undefined);
+    const code = jest.fn().mockResolvedValue(undefined);
+    const file = { ...stored, embedded: true, metadata: { codeEnvRef: { file_id: 'c1' } } };
+    await createStoredUploadDelete({
+      source: 's3',
+      getDeleteFile: strategies({ s3: primary, vectordb: vector, execute_code: code }),
+    })(req, file);
+    expect(primary).toHaveBeenCalledWith(req, file);
+    expect(vector).toHaveBeenCalledWith(req, file);
+    expect(code).toHaveBeenCalledWith(req, file);
+  });
+
+  it('skips secondary copies the reference does not name', async () => {
+    const primary = jest.fn().mockResolvedValue(undefined);
+    const vector = jest.fn();
+    await createStoredUploadDelete({
+      source: 's3',
+      getDeleteFile: strategies({ s3: primary, vectordb: vector }),
+    })(req, stored);
+    expect(primary).toHaveBeenCalledTimes(1);
+    expect(vector).not.toHaveBeenCalled();
+  });
+
+  it('still deletes the secondary copies when the primary delete fails, then rethrows', async () => {
+    const failure = new Error('storage down');
+    const primary = jest.fn().mockRejectedValue(failure);
+    const vector = jest.fn().mockResolvedValue(undefined);
+    await expect(
+      createStoredUploadDelete({
+        source: 's3',
+        getDeleteFile: strategies({ s3: primary, vectordb: vector }),
+      })(req, { ...stored, embedded: true }),
+    ).rejects.toBe(failure);
+    expect(vector).toHaveBeenCalledTimes(1);
   });
 });

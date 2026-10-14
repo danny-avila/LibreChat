@@ -1,3 +1,5 @@
+import { FileSources } from 'librechat-data-provider';
+
 import { getSafeErrorMetadata } from '~/utils/errors';
 
 export type StoredUploadRef = {
@@ -100,4 +102,36 @@ export function resolveStoredUploadTarget({
     };
   }
   return undefined;
+}
+
+type DeleteStoredFile = (req: never, file: StoredUploadRef) => Promise<unknown>;
+
+/**
+ * Builds the delete for an upload that has no file record yet. A record-driven delete retries
+ * later, but here nothing does, so the primary object and each secondary copy it names (the
+ * vector document, the code environment file) are attempted independently and the first
+ * failure is rethrown once all have been tried.
+ */
+export function createStoredUploadDelete({
+  source,
+  getDeleteFile,
+}: {
+  source: string;
+  getDeleteFile: (source: string) => DeleteStoredFile | undefined;
+}): DeleteStoredFile {
+  return async (req, file) => {
+    const deleters = [getDeleteFile(source)];
+    if (file.embedded === true && source !== FileSources.vectordb) {
+      deleters.push(getDeleteFile(FileSources.vectordb));
+    }
+    const hasCodeEnvRef = file.metadata?.codeEnvRef != null || file.metadata?.codeEnvRefs != null;
+    if (hasCodeEnvRef && source !== FileSources.execute_code) {
+      deleters.push(getDeleteFile(FileSources.execute_code));
+    }
+    const results = await Promise.allSettled(deleters.map((deleteFile) => deleteFile?.(req, file)));
+    const failed = results.find((result) => result.status === 'rejected');
+    if (failed != null) {
+      throw (failed as PromiseRejectedResult).reason;
+    }
+  };
 }

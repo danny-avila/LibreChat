@@ -162,6 +162,14 @@ jest.mock('@librechat/api', () => {
       (findFileById) =>
       async ({ file_id, recordId }) =>
         (await findFileById(recordId ?? file_id)) != null,
+    createStoredUploadDelete:
+      ({ source, getDeleteFile }) =>
+      async (req, file) => {
+        const deleters = [getDeleteFile(source)];
+        if (file.embedded === true) deleters.push(getDeleteFile('vectordb'));
+        if (file.metadata?.codeEnvRef != null) deleters.push(getDeleteFile('execute_code'));
+        await Promise.all(deleters.map((deleteFile) => deleteFile?.(req, file)));
+      },
     withStoredUploadCleanup: async (
       { stored, resolveDeleteFile, recordExists, req, trackWrite },
       next,
@@ -1404,7 +1412,6 @@ describe('processAgentFileUpload', () => {
           file_id: 'file-orphan',
           metadata: expect.objectContaining({ codeEnvRef: expect.anything() }),
         }),
-        undefined,
       );
       expect(deleteCodeEnvFile).toHaveBeenCalledWith(
         expect.anything(),

@@ -47,6 +47,7 @@ const {
   contentFilterBlockResponse,
   sweepExpiredFiles: sweepExpiredFilesWithDeps,
   createRecordExists,
+  createStoredUploadDelete,
   withStoredUploadCleanup,
   resolveStoredUploadTarget,
   startExpiredFileSweep: startExpiredFileSweepWithDeps,
@@ -219,13 +220,10 @@ const createDeleteFileWithSecondaryStorage = ({ source, deleteFile, deletionMeth
   };
 };
 
-/** Deletes an upload's primary object together with the vector and code environment copies
- * its file record would name, for a failure before that record exists. */
 const resolveUploadDeleteFile = (source) =>
-  createDeleteFileWithSecondaryStorage({
+  createStoredUploadDelete({
     source,
-    deleteFile: getStrategyFunctions(source).deleteFile,
-    deletionMethods: {},
+    getDeleteFile: (src) => getStrategyFunctions(src).deleteFile,
   });
 
 // TODO: refactor as currently only image files can be deleted this way
