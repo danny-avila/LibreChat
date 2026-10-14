@@ -455,7 +455,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
        * Puts the config override back. When that restore itself fails the group would live on
        * without its restriction, so the deletion is completed instead of retaining it.
        */
-      const compensate = async (): Promise<'restored' | 'stuck' | IGroup> => {
+      const compensate = async (): Promise<'restored' | 'stuck' | 'missing' | IGroup> => {
         await cascade.compensate();
         if (!restoreFailed) {
           return 'restored';
@@ -463,7 +463,11 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
         logger.error('[adminGroups] config restore failed, completing the deletion:', id);
         let removed: IGroup | null = null;
         try {
-          removed = (await deleteGroup(id)) ?? existing;
+          removed = await deleteGroup(id);
+          if (!removed) {
+            /** Another request deleted the group first; this one removed nothing. */
+            return 'missing';
+          }
         } catch (error) {
           /** The delete may have committed before it threw (post-delete cache work); a confirmed
            * absence is a completed deletion. */
@@ -472,7 +476,11 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
             () => false,
           );
           if (!absent) {
-            logger.error('[adminGroups] group left without its config override:', id, error);
+            logger.error(
+              '[adminGroups] group left without its config override:',
+              id,
+              getSafeErrorMetadata(error),
+            );
             return 'stuck';
           }
           removed = existing;
@@ -504,7 +512,11 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
           });
         }
       };
-      const compensatedResponse = async (outcome: 'stuck' | IGroup) => {
+      const compensatedResponse = async (outcome: 'stuck' | 'missing' | IGroup) => {
+        if (outcome === 'missing') {
+          await recordFailure('not_found');
+          return res.status(404).json({ error: 'Group not found' });
+        }
         if (outcome !== 'stuck') {
           await recordMemberRemovals(outcome);
           res.status(200).json({ success: true, id });
@@ -546,7 +558,10 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
       try {
         deleted = await deleteGroup(id);
       } catch (error) {
-        logger.error('[adminGroups] deleteGroup failed after cascade cleanup:', error);
+        logger.error(
+          '[adminGroups] deleteGroup failed after cascade cleanup:',
+          getSafeErrorMetadata(error),
+        );
         /** The delete may have committed before it threw. Restoring dependents for a
          * group that is gone would orphan them. */
         const lookup = await findGroupById(id).then(

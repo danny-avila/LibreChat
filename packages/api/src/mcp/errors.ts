@@ -543,7 +543,8 @@ export class MCPCommittedWriteError<T = unknown> extends Error {
     super('MCP server change was saved but a step after it failed');
     this.name = 'MCPCommittedWriteError';
     Object.defineProperty(this, 'committed', { value: committed, enumerable: false });
-    this.cause = cause;
+    /** Non-enumerable, so structured loggers never serialize driver or cache details. */
+    Object.defineProperty(this, 'cause', { value: cause, enumerable: false, configurable: true });
     Object.setPrototypeOf(this, MCPCommittedWriteError.prototype);
   }
 }

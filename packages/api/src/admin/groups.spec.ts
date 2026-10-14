@@ -1016,6 +1016,20 @@ describe('createAdminGroupsHandlers', () => {
         expect(status).toHaveBeenCalledWith(200);
       });
 
+      it('reports not found when a concurrent delete won the race during the compensating deletion', async () => {
+        const deps = compensationDeps({
+          restoreConfig: jest.fn().mockRejectedValue(new Error('restore down')),
+          deleteAclEntries: jest.fn().mockRejectedValue(new Error('acl down')),
+          deleteGroup: jest.fn().mockResolvedValue(null),
+        });
+        const handlers = createAdminGroupsHandlers(deps);
+        const { req, res, status } = createReqRes({ params: { id: validId } });
+
+        await handlers.deleteGroup(req, res);
+
+        expect(status).toHaveBeenCalledWith(404);
+      });
+
       it('reports GROUP_RESTORE_FAILED when neither the restore nor the deletion succeeds', async () => {
         const deps = compensationDeps({
           restoreConfig: jest.fn().mockRejectedValue(new Error('restore down')),

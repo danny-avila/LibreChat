@@ -135,6 +135,8 @@ describe('createMCPServerAuditor', () => {
       expect(error.committed).toEqual({ oauth: { client_secret: 'super-secret' } });
       expect(JSON.stringify(error)).not.toContain('super-secret');
       expect(Object.keys(error)).not.toContain('committed');
+      expect(Object.keys(error)).not.toContain('cause');
+      expect(error.cause).toBeInstanceOf(Error);
     });
   });
 
