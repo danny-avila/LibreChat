@@ -169,6 +169,13 @@ describe('redactMessage', () => {
     expect(String(runRedactFormat({ level: 'info', message: edge }).message)).not.toContain('pppp');
   });
 
+  it('masks delimiter-bearing identifiers and keeps a complete 8.5k input intact', () => {
+    expect(redactMessage('user(comment)@blocked.example ok')).toBe('[REDACTED_EMAIL] ok');
+    const input = `${'a'.repeat(8500)}`;
+    const out = String(runRedactFormat({ level: 'info', message: input }).message);
+    expect(out).toContain('aaaa');
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),

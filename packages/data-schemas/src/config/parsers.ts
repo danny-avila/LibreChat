@@ -57,7 +57,7 @@ const sensitiveKeys: RegExp[] = [
  * only at a token boundary, so long non-email text is scanned once instead of once per character.
  */
 const EMAIL_PATTERN =
-  /(?:\\"(?:[^"\\\r\n]|\\{3}"){1,64}\\"|"(?:[^"\\\r\n]|\\.){1,64}"|(?<![^\s<>()[\],;"])[^\s<>()[\],;"]+)@(?:\[[^\]\s@]{1,64}\]|[^\s<>()[\],;"@]+\.[^\s<>()[\],;"@]+)/gu;
+  /(?:\\"(?:[^"\\\r\n]|\\{3}"){1,64}\\"|"(?:[^"\\\r\n]|\\.){1,64}"|(?<![^\s<>[\],;"])[^\s<>[\],;"]+)@(?:\[[^\]\s@]{1,64}\]|[^\s<>[\],;"@]+\.[^\s<>[\],;"@]+)/gu;
 const REDACTION_WINDOW_SLACK = 1024;
 const REDACTED_EMAIL_VALUE = '[REDACTED_EMAIL]';
 
@@ -87,11 +87,11 @@ function redactMessage(str: string, trimLength?: number): string {
   return redacted;
 }
 
-const EMAIL_TOKEN_DELIMITER = /[\s<>()[\],;"]/u;
+const EMAIL_TOKEN_DELIMITER = /[\s<>[\],;"]/u;
 
 /** Drops a token cut by the window edge: its terminator is unseen, so no pattern could match it. */
 function trimUnfinishedToken(full: string, window: string): string {
-  if (EMAIL_TOKEN_DELIMITER.test(full[window.length])) {
+  if (window.length === full.length || EMAIL_TOKEN_DELIMITER.test(full[window.length])) {
     return window;
   }
   let end = window.length;
