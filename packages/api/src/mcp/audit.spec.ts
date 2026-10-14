@@ -106,7 +106,7 @@ describe('createMCPServerAuditor', () => {
     );
   });
 
-  it('falls back to the submitted config when the committed read fails', async () => {
+  it('lists no fields when the committed read fails', async () => {
     const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
     const audit = createMCPServerAuditor({ recordAuditEntry });
 
@@ -121,7 +121,7 @@ describe('createMCPServerAuditor', () => {
     });
 
     expect(recordAuditEntry).toHaveBeenCalledWith(
-      expect.objectContaining({ metadata: { source: 'DB', fields: 'title' } }),
+      expect.objectContaining({ metadata: { source: 'DB' } }),
     );
   });
 

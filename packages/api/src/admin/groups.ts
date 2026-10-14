@@ -413,6 +413,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
        * grantPermission stores group principalId as ObjectId, so we must
        * cast here. deleteConfig normalizes internally.
        */
+      let restoreFailed = false;
       const cascade = await runCascade(
         [
           cascadeStep(
@@ -424,7 +425,13 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
                     return;
                   }
                   const snapshot = (config as { toObject?: () => unknown }).toObject?.() ?? config;
-                  const restored = await restoreConfig(snapshot as Record<string, unknown>);
+                  let restored: boolean;
+                  try {
+                    restored = await restoreConfig(snapshot as Record<string, unknown>);
+                  } catch (error) {
+                    restoreFailed = true;
+                    throw error;
+                  }
                   if (!restored) {
                     logger.warn('[adminGroups] config restore skipped, override exists:', id);
                   }
@@ -443,6 +450,36 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
         ],
         '[adminGroups]',
       );
+      /**
+       * Puts the config override back. When that restore itself fails the group would live on
+       * without its restriction, so the deletion is completed instead of retaining it.
+       */
+      const compensate = async (): Promise<'restored' | 'deleted' | 'stuck'> => {
+        await cascade.compensate();
+        if (!restoreFailed) {
+          return 'restored';
+        }
+        logger.error('[adminGroups] config restore failed, completing the deletion:', id);
+        try {
+          await deleteGroup(id);
+          return 'deleted';
+        } catch (error) {
+          logger.error('[adminGroups] group left without its config override:', id, error);
+          return 'stuck';
+        }
+      };
+      const compensatedResponse = async (outcome: 'deleted' | 'stuck') => {
+        if (outcome === 'deleted') {
+          res.status(200).json({ success: true, id });
+          await record('success');
+          return res;
+        }
+        await recordFailure('GROUP_RESTORE_FAILED');
+        return res.status(500).json({
+          error: 'Failed to delete group and its config override could not be restored',
+          code: 'GROUP_RESTORE_FAILED',
+        });
+      };
       const cleanupFailedResponse = async () => {
         await recordFailure('GROUP_CLEANUP_FAILED');
         return res.status(500).json({
@@ -460,7 +497,10 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
           () => false,
         );
         if (!gone) {
-          await cascade.compensate();
+          const outcome = await compensate();
+          if (outcome !== 'restored') {
+            return compensatedResponse(outcome);
+          }
         }
         return cleanupFailedResponse();
       }
@@ -477,13 +517,19 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
           () => ({ known: false, group: null }),
         );
         if (lookup.known && lookup.group) {
-          await cascade.compensate();
+          const outcome = await compensate();
+          if (outcome !== 'restored') {
+            return compensatedResponse(outcome);
+          }
           await recordFailure('GROUP_CLEANUP_FAILED');
           return res.status(500).json({ error: 'Failed to delete group' });
         }
         if (!lookup.known) {
           /** Unknown state favors the restriction: a leftover override narrows access, a lost one widens it. */
-          await cascade.compensate();
+          const outcome = await compensate();
+          if (outcome !== 'restored') {
+            return compensatedResponse(outcome);
+          }
           logger.error('[adminGroups] group state unverifiable after delete failure:', id);
           await recordFailure('GROUP_STATE_UNVERIFIABLE');
           return res.status(500).json({ error: 'Failed to delete group' });

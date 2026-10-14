@@ -96,11 +96,15 @@ export function createMCPServerAuditor(options: {
   const emit = createAdminAuditEmitter({ ...options, logPrefix: '[mcpServers]' });
   async function record(
     req: Parameters<AdminAuditEmitter>[0],
-    { action, serverName, previous, next: submitted }: MCPServerAuditEvent,
+    event: MCPServerAuditEvent,
     committedRead?: Promise<ServerConfigLike | undefined>,
   ): Promise<void> {
-    const next = (await committedRead) ?? submitted;
-    const name = serverTitle(next) ?? serverTitle(previous);
+    const { action, serverName, previous, next: submitted } = event;
+    /** A failed reread must not fall back to the submission: persistence generates headers and
+     * keeps omitted fields, so that diff would invent changes. The entry then lists no fields. */
+    const committed = await committedRead;
+    const next = event.resolveCommitted ? (committed ?? previous) : submitted;
+    const name = serverTitle(next) ?? serverTitle(submitted) ?? serverTitle(previous);
     const before = action === 'mcp_server.created' ? undefined : previous;
     const changed =
       action === 'mcp_server.deleted'

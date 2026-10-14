@@ -455,8 +455,15 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
         encryptConfigSecretFields(fields),
         existing?.priority ?? DEFAULT_PRIORITY,
       );
+      /** The patch has committed by now, so a failed activation must not skip the cache
+       * invalidation or the audit entry; it is rethrown once both have started. */
+      let activationError: unknown;
       if (updated?.isActive === false) {
-        updated = await toggleConfigActive(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID, true);
+        try {
+          updated = await toggleConfigActive(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID, true);
+        } catch (error) {
+          activationError = error;
+        }
       }
 
       const status = buildStatus(updated ?? existing);
@@ -493,6 +500,9 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
         },
       });
 
+      if (activationError) {
+        throw activationError;
+      }
       return res.status(200).json(status);
     } catch (error) {
       logger.error('[adminLangfuse] updateConnection error:', error);
