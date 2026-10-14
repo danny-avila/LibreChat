@@ -17,7 +17,10 @@ import type {
   ChatConnection,
   ChatRequestOptions,
   ChatSendResult,
+  ChatAbortResult,
+  ChatAbortRequest,
   ChatResumeSelection,
+  ChatTransportError,
 } from './types';
 import { SerialJobExecutor } from './executor';
 
@@ -79,12 +82,22 @@ export type ChatEventContext = {
 };
 
 export type ChatFinishResult = {
-  /** The tail of the list once the turn ended. */
+  /**
+   * The turn's response: the one its final frame named, else the prepared `responseMessageId`,
+   * else the tail of the list. `undefined` when a named response is no longer in the list.
+   */
   message: TMessage | undefined;
   messages: TMessage[];
   isAbort: boolean;
   isDisconnect: boolean;
   isError: boolean;
+  /**
+   * The server finished the turn without this chat receiving its final frame, so `messages` are
+   * what the chat held; the host reloads the conversation to reconcile them.
+   */
+  isSettled: boolean;
+  /** The conversation the server settled the turn under, when it said. */
+  conversationId?: string;
 };
 
 export type ChatInit = {
@@ -116,6 +129,11 @@ export type ToolApprovalResponse = {
   id: string;
   approved: boolean;
   reason?: string;
+  /** A decision other than approve or reject, such as `edit` or `respond`; it overrides `approved`. */
+  decision?: Agents.ToolApprovalResolution['decision'];
+  editedArguments?: Agents.ToolApprovalResolution['editedArguments'];
+  responseText?: Agents.ToolApprovalResolution['responseText'];
+  scope?: Agents.ToolApprovalResolution['scope'];
 };
 
 /** The answer to an `ask_user_question` pause: free text, or answers keyed by question id. */
@@ -125,9 +143,14 @@ export type ToolOutput = {
 };
 
 type Outcome =
-  | { kind: 'complete' }
+  | { kind: 'complete'; settled?: { conversationId?: string } }
   | { kind: 'abort' }
   | { kind: 'error'; error: Error; disconnect: boolean };
+
+type DetachedGeneration = {
+  error: Error;
+  target: Omit<ChatAbortRequest, 'chatId'>;
+};
 
 type ActiveRequest = {
   controller: AbortController;
@@ -141,6 +164,8 @@ type ActiveRequest = {
   stopped?: boolean;
   /** The error the request settled with when its connection dropped. */
   disconnected?: Error;
+  /** The conversation the request's payload names, which an Assistants stop addresses. */
+  conversationId?: string;
   /** The response this request produces: its placeholder, then the one its final frame names. */
   responseId?: string;
   /** Resolves once the request settled and released the chat. */
@@ -214,15 +239,19 @@ const getFinalOutcome = (data: ChatFinalFrame): Outcome => {
 };
 
 /** Merges the messages a `final` event carries onto the stored ones, by id. */
-const mergeFinal = (data: ChatFinalFrame, context: ChatEventContext) => {
-  const finals = [data.requestMessage, data.responseMessage].filter(
+/** Merges `finals` onto `messages` by id, appending the ones the list does not hold. */
+const mergeById = (
+  messages: TMessage[],
+  finals: Array<Partial<TMessage> | null | undefined>,
+): TMessage[] | undefined => {
+  const known = finals.filter(
     (message): message is Partial<TMessage> & { messageId: string } => !!message?.messageId,
   );
-  if (finals.length === 0) {
-    return;
+  if (known.length === 0) {
+    return undefined;
   }
-  const next = [...context.messages];
-  for (const final of finals) {
+  const next = [...messages];
+  for (const final of known) {
     const index = next.findIndex((message) => message.messageId === final.messageId);
     if (index === -1) {
       next.push(final as TMessage);
@@ -230,7 +259,14 @@ const mergeFinal = (data: ChatFinalFrame, context: ChatEventContext) => {
       next[index] = { ...next[index], ...final };
     }
   }
-  context.write(next);
+  return next;
+};
+
+const mergeFinal = (data: ChatFinalFrame, context: ChatEventContext) => {
+  const next = mergeById(context.messages, [data.requestMessage, data.responseMessage]);
+  if (next) {
+    context.write(next);
+  }
 };
 
 const defaultApplyEvent = (event: ChatEvent, context: ChatEventContext) => {
@@ -306,6 +342,8 @@ export class Chat {
   /** The pause whose resume request is in flight, so a second submit cannot send it again. */
   private resuming?: string;
   private disposed = false;
+  /** A generation whose stream dropped while the server kept it running. */
+  private detached?: DetachedGeneration;
   private readonly decisions = new Map<string, Agents.ToolApprovalResolution>();
   /** Pauses already resumed, whose replay by a reattached stream is stale. */
   private readonly resumed = new Set<string>();
@@ -347,16 +385,34 @@ export class Chat {
     return this.request({ trigger: 'regenerate-message', messageId }, requestOptions);
   }
 
+  /** Continues the response `messageId` where it stopped. */
+  continue(options: { messageId: string } & ChatRequestOptions): Promise<void> {
+    const { messageId, ...requestOptions } = options;
+    return this.request({ trigger: 'continue-message', messageId }, requestOptions);
+  }
+
   /**
    * Reattaches to the generation the server is still running. The status stays as it is until a
    * stream is returned, so a chat with nothing running never flashes `submitted`.
    */
-  async resumeStream(
+  resumeStream(
     options: { streamId?: string; generationCreatedAt?: number } & ChatRequestOptions = {},
+  ): Promise<void> {
+    return this.reattach(options, false);
+  }
+
+  /**
+   * Reattaches to a running generation. A `continuation` follows an answered pause, so finding
+   * nothing running means the continuation already finished, which the turn reports as settled.
+   */
+  private async reattach(
+    options: { streamId?: string; generationCreatedAt?: number } & ChatRequestOptions,
+    continuation: boolean,
   ): Promise<void> {
     if (this.active || this.disposed) {
       return;
     }
+    this.detached = undefined;
     const active = createActiveRequest();
     active.endpoint = this.resumeEndpoint();
     active.reattach = { streamId: options.streamId };
@@ -384,6 +440,10 @@ export class Chat {
         active.controller.signal,
         (opened) => opened?.close(),
       );
+      if (!stream && continuation) {
+        this.settle({ kind: 'complete', settled: { conversationId: this.id } }, active);
+        return;
+      }
       if (!stream) {
         /** Nothing is running, so a restored pause ended elsewhere; published as one change. */
         if (this.status === 'submitted' || this.status === 'streaming') {
@@ -410,6 +470,10 @@ export class Chat {
    */
   async stop(): Promise<void> {
     const active = this.active;
+    if (!active && this.detached) {
+      await this.stopDetached(this.detached);
+      return;
+    }
     if (!active) {
       await this.stopPaused();
       return;
@@ -423,13 +487,26 @@ export class Chat {
       throw new Error('The generation cannot be stopped without its endpoint');
     }
     active.paused ??= this.action?.actionId;
-    await this.abortOnServer({
+    const streamId = active.stream?.streamId ?? active.reattach?.streamId;
+    const result = await this.abortOnServer({
       endpoint: active.endpoint,
-      streamId: active.stream?.streamId ?? active.reattach?.streamId,
+      streamId,
       generationCreatedAt: active.stream?.generationCreatedAt ?? this.generationCreatedAt,
+      abortKey: streamId == null ? this.abortKey(active) : undefined,
     });
     active.stopped = true;
-    if (!active.stream) {
+    if (result && 'runMessages' in result) {
+      /** An Assistants run's stream ends without a final frame; the stop's answer carries it. */
+      const { runMessages } = result;
+      await this.executor.run(() => {
+        const next = mergeById(this.messages, runMessages);
+        if (next) {
+          this.write(next);
+        }
+      });
+      active.controller.abort();
+      active.stream?.close();
+    } else if (!active.stream) {
       /** Still reattaching: nothing will report the end, so the stop ends the request here. */
       active.controller.abort();
     }
@@ -454,26 +531,52 @@ export class Chat {
     if (sent.status === 'stream') {
       sent.stream.close();
     }
-    if (this.disposed || !active.endpoint || sent.status === 'settled') {
+    /** A `replaced` result names a newer generation this request does not own, so it is left alone. */
+    if (this.disposed || !active.endpoint || sent.status !== 'stream') {
       return;
     }
-    const target =
-      sent.status === 'stream'
-        ? { streamId: sent.stream.streamId, generationCreatedAt: sent.stream.generationCreatedAt }
-        : { streamId: sent.streamId, generationCreatedAt: sent.generationCreatedAt };
+    const target = {
+      streamId: sent.stream.streamId,
+      generationCreatedAt: sent.stream.generationCreatedAt,
+    };
     void this.abortOnServer({ endpoint: active.endpoint, ...target }).catch((error: unknown) =>
       this.init.onError?.(error instanceof Error ? error : new Error(String(error))),
     );
   }
 
-  private async abortOnServer(target: {
-    endpoint: string;
-    streamId?: string;
-    generationCreatedAt?: number;
-  }): Promise<void> {
+  /** `conversationId:responseMessageId` of a run with no resumable stream (Assistants). */
+  private abortKey(active: ActiveRequest): string | undefined {
+    const conversationId = active.conversationId ?? this.id;
+    return active.responseId ? `${conversationId}:${active.responseId}` : undefined;
+  }
+
+  /**
+   * Stops a generation on the server. A run that already reached its own end counts as stopped;
+   * a refusal rejects.
+   */
+  private async abortOnServer(target: Omit<ChatAbortRequest, 'chatId'>): Promise<ChatAbortResult> {
     const result = await this.init.transport.abort({ chatId: this.id, ...target });
-    if (result && 'success' in result && !result.success) {
+    if (result && 'success' in result && !result.success && !result.settled) {
       throw new Error(result.error ?? 'The server refused the stop');
+    }
+    return result;
+  }
+
+  /** Stops a generation whose stream dropped, which the server keeps running. */
+  private async stopDetached(detached: DetachedGeneration): Promise<void> {
+    await this.abortOnServer(detached.target);
+    if (this.detached !== detached) {
+      return;
+    }
+    this.detached = undefined;
+    if (this.error === detached.error) {
+      this.init.state.error = undefined;
+      this.init.state.status = 'ready';
+    }
+    if (this.action) {
+      this.clearAction();
+    } else {
+      this.notify();
     }
   }
 
@@ -563,10 +666,22 @@ export class Chat {
       throw new Error(`Tool call ${response.id} is not awaiting approval`);
     }
     this.assertNotResuming(action);
+    const {
+      id,
+      approved,
+      decision: chosen,
+      reason,
+      editedArguments,
+      responseText,
+      scope,
+    } = response;
     const decision: Agents.ToolApprovalResolution = {
-      tool_call_id: response.id,
-      decision: response.approved ? 'approve' : 'reject',
-      ...(response.reason !== undefined && { reason: response.reason }),
+      tool_call_id: id,
+      decision: chosen ?? (approved ? 'approve' : 'reject'),
+      ...(reason !== undefined && { reason }),
+      ...(editedArguments !== undefined && { editedArguments }),
+      ...(responseText !== undefined && { responseText }),
+      ...(scope !== undefined && { scope }),
     };
     this.decisions.set(response.id, decision);
     await this.executor.run(() => {
@@ -645,6 +760,7 @@ export class Chat {
     const active = createActiveRequest();
     this.active = active;
     this.generationCreatedAt = undefined;
+    this.detached = undefined;
     this.resumed.clear();
     this.init.state.error = undefined;
     this.setStatus('submitted');
@@ -669,6 +785,7 @@ export class Chat {
         throw active.controller.signal.reason;
       }
       active.endpoint = prepared.payload.endpoint ?? undefined;
+      active.conversationId = prepared.payload.conversationId ?? undefined;
       const { signal } = active.controller;
       const result = await openUntilAborted(
         this.init.transport.sendMessages({
@@ -705,7 +822,9 @@ export class Chat {
         );
       }
       if (!stream) {
-        this.settle({ kind: 'complete' }, active);
+        /** The server finished the turn, or the generation replacing it, before it attached. */
+        const conversationId = result.status === 'stream' ? undefined : result.conversationId;
+        this.settle({ kind: 'complete', settled: { conversationId } }, active);
         return;
       }
       await this.consume(stream, active);
@@ -725,6 +844,7 @@ export class Chat {
       return;
     }
     active.stream = stream;
+    this.detached = undefined;
     if (stream.generationCreatedAt != null) {
       const previous = this.generationCreatedAt;
       this.generationCreatedAt = stream.generationCreatedAt;
@@ -819,7 +939,9 @@ export class Chat {
       return { kind: 'abort' };
     }
     const failure = error instanceof Error ? error : new Error(String(error));
-    return { kind: 'error', error: failure, disconnect: false };
+    /** A request that never got a response may still be running on the server. */
+    const disconnect = (failure as ChatTransportError).code === 'ERR_NETWORK';
+    return { kind: 'error', error: failure, disconnect };
   }
 
   private settle(outcome: Outcome, active: ActiveRequest): void {
@@ -828,6 +950,18 @@ export class Chat {
     }
     if (outcome.kind === 'error' && outcome.disconnect) {
       active.disconnected = outcome.error;
+      if (active.stream && active.endpoint && !active.stopped) {
+        /** The server keeps the generation running, so a later stop still reaches it. */
+        this.detached = {
+          error: outcome.error,
+          target: {
+            endpoint: active.endpoint,
+            streamId: active.stream.streamId,
+            generationCreatedAt: active.stream.generationCreatedAt ?? this.generationCreatedAt,
+            abortKey: active.stream.streamId == null ? this.abortKey(active) : undefined,
+          },
+        };
+      }
     }
     /**
      * Released and published as one change before anyone is told, so a subscriber or callback
@@ -845,9 +979,10 @@ export class Chat {
     state.error = outcome.kind === 'error' ? outcome.error : undefined;
     const messages = this.messages;
     const message =
-      (active.responseId !== undefined
+      active.responseId !== undefined
         ? messages.find((stored) => stored.messageId === active.responseId)
-        : undefined) ?? messages[messages.length - 1];
+        : messages[messages.length - 1];
+    const settled = outcome.kind === 'complete' ? outcome.settled : undefined;
     this.notify();
     if (outcome.kind === 'error') {
       this.init.onError?.(outcome.error);
@@ -858,6 +993,8 @@ export class Chat {
       isAbort: outcome.kind === 'abort',
       isDisconnect: outcome.kind === 'error' && outcome.disconnect,
       isError: outcome.kind === 'error',
+      isSettled: settled !== undefined,
+      ...(settled?.conversationId !== undefined && { conversationId: settled.conversationId }),
     });
   }
 
@@ -907,7 +1044,7 @@ export class Chat {
       }
       if (!this.active && !this.disposed) {
         /** A pause restored after a reload has no stream attached for the continuation. */
-        void this.resumeStream({ streamId: result.streamId, generationCreatedAt });
+        void this.reattach({ streamId: result.streamId, generationCreatedAt }, true);
       }
       this.clearAction();
     } finally {

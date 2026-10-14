@@ -894,6 +894,160 @@ describe('Chat', () => {
     },
   );
 
+  it('stops an Assistants run by its abort key and merges the messages the stop returns', async () => {
+    const stream = createStream();
+    const { chat, transport, onFinish } = setup(
+      {
+        prepareRequest: jest.fn(() => ({
+          payload: { endpoint: 'assistants', conversationId: 'convo-1', text: 'Hi' } as TPayload,
+          messages: [userMessage, placeholder],
+          responseMessageId: 'response-1',
+        })),
+      },
+      { sendMessages: jest.fn(async () => ({ status: 'stream' as const, stream })) },
+    );
+    transport.abort.mockResolvedValue({
+      final: true,
+      conversation: {},
+      runMessages: [{ ...placeholder, text: 'Partial' }],
+    });
+
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    await chat.stop();
+    await sent;
+
+    expect(transport.abort).toHaveBeenCalledWith(
+      expect.objectContaining({ endpoint: 'assistants', abortKey: 'convo-1:response-1' }),
+    );
+    expect(chat.messages[1].text).toBe('Partial');
+    expect(chat.status).toBe('ready');
+    expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isAbort: true }));
+  });
+
+  it('accepts a stop the run had already settled', async () => {
+    const { chat, stream, transport } = setup();
+    transport.abort.mockImplementation(async () => {
+      stream.push(finalEvent());
+      return { success: false, settled: true, terminalStatus: 'complete' };
+    });
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+
+    await expect(chat.stop()).resolves.toBeUndefined();
+    await sent;
+    expect(chat.status).toBe('ready');
+  });
+
+  it('reports a start that never got a response as a disconnect', async () => {
+    const failure = Object.assign(new Error('Network Error'), { code: 'ERR_NETWORK' });
+    const { chat, onFinish } = setup(
+      {},
+      { sendMessages: jest.fn(async () => Promise.reject(failure)) },
+    );
+
+    await chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+
+    expect(onFinish).toHaveBeenCalledWith(
+      expect.objectContaining({ isError: true, isDisconnect: true }),
+    );
+  });
+
+  it('leaves a replacing generation running when the start it replaced was stopped', async () => {
+    let open: (() => void) | undefined;
+    const { chat, transport } = setup(
+      {},
+      {
+        sendMessages: jest.fn(
+          () =>
+            new Promise((resolve) => {
+              open = () =>
+                resolve({
+                  status: 'replaced',
+                  conversationId: 'convo-1',
+                  streamId: 'stream-2',
+                  generationCreatedAt: 200,
+                });
+            }),
+        ),
+      },
+    );
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    await chat.stop();
+    await sent;
+    open?.();
+    await flush();
+
+    expect(transport.abort).not.toHaveBeenCalled();
+  });
+
+  it('reports a start the server settled before attaching for the host to reconcile', async () => {
+    const { chat, onFinish } = setup(
+      {},
+      {
+        sendMessages: jest.fn(async () => ({ status: 'settled' as const, conversationId: 'c-9' })),
+      },
+    );
+
+    await chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+
+    expect(onFinish).toHaveBeenCalledWith(
+      expect.objectContaining({ isSettled: true, conversationId: 'c-9' }),
+    );
+  });
+
+  it('reports no message when the named response left the list', async () => {
+    const { chat, stream, state, onFinish } = setup({
+      prepareRequest: jest.fn(() => ({
+        payload,
+        messages: [userMessage, placeholder],
+        responseMessageId: 'response-1',
+      })),
+    });
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    state.replaceMessages([userMessage]);
+    stream.push({ type: 'abort', data: {} } as ChatEvent);
+    await sent;
+
+    expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ message: undefined }));
+  });
+
+  it('stops a generation whose stream dropped, which the server kept running', async () => {
+    const { chat, stream, transport } = setup();
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    stream.push(stepEvent);
+    stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+    await sent;
+    expect(chat.status).toBe('error');
+
+    await chat.stop();
+
+    expect(transport.abort).toHaveBeenCalledWith(
+      expect.objectContaining({
+        endpoint: 'agents',
+        streamId: 'convo-1',
+        generationCreatedAt: 100,
+      }),
+    );
+    expect(chat.status).toBe('ready');
+    expect(chat.error).toBeUndefined();
+  });
+
+  it('continues a response with the continue trigger', async () => {
+    const { chat, stream, transport } = setup();
+    const sent = chat.continue({ messageId: 'response-1' });
+    await flush();
+    stream.push(finalEvent());
+    await sent;
+
+    expect(transport.sendMessages).toHaveBeenCalledWith(
+      expect.objectContaining({ trigger: 'continue-message', messageId: 'response-1' }),
+    );
+  });
+
   it('regenerates a given message', async () => {
     const { stream, transport } = setup();
     const prepareRequest = jest.fn(() => ({ payload }));
@@ -1420,6 +1574,42 @@ describe('Chat', () => {
       expect(chat.pendingAction).toBeUndefined();
       continuation.push(finalEvent());
       await resumed;
+    });
+
+    it('reports a continuation that finished before it attached as settled', async () => {
+      const { chat, state, onFinish } = setup();
+      state.error = new Error('dropped');
+      state.status = 'error';
+      chat.restorePendingAction(askAction, 500);
+
+      await chat.addToolOutput({ toolCallId: 'ask-1', output: 'Blue' });
+      await flush();
+
+      expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isSettled: true }));
+      expect(chat.status).toBe('ready');
+      expect(chat.error).toBeUndefined();
+    });
+
+    it('submits edit, respond and session-scoped decisions as given', async () => {
+      const { chat, transport, stream, sent } = await pause(approvalAction);
+      await chat.addToolApprovalResponse({
+        id: 'call-1',
+        approved: true,
+        decision: 'edit',
+        editedArguments: { q: 'cats' },
+      });
+      await chat.addToolApprovalResponse({ id: 'call-2', approved: true, scope: 'session' });
+
+      expect(transport.resume).toHaveBeenCalledWith(
+        expect.objectContaining({
+          decisions: [
+            { tool_call_id: 'call-1', decision: 'edit', editedArguments: { q: 'cats' } },
+            { tool_call_id: 'call-2', decision: 'approve', scope: 'session' },
+          ],
+        }),
+      );
+      stream.push(finalEvent());
+      await sent;
     });
 
     it('holds new turns behind a restored pause until it is stopped on the server', async () => {
