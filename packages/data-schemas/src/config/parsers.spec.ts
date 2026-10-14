@@ -385,6 +385,25 @@ describe('redactMessage', () => {
     );
   });
 
+  it('counts strings against the budget and survives nested throwing getters', () => {
+    const strings = Object.fromEntries(
+      Array.from({ length: 50000 }, (_, index) => [`s${index}`, 'x'.repeat(8000)]),
+    );
+    const started = Date.now();
+    runRedactFormat({ level: 'info', message: 'm', payload: strings } as RedactInfo);
+    expect(Date.now() - started).toBeLessThan(500);
+    const payload = {};
+    Object.defineProperty(payload, 'bad', {
+      enumerable: true,
+      get: () => {
+        throw new Error('nope');
+      },
+    });
+    expect(() =>
+      runRedactFormat({ level: 'info', message: 'm', payload } as RedactInfo),
+    ).not.toThrow();
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),

@@ -123,6 +123,11 @@ function trimUnfinishedToken(full: string, window: string): string {
 }
 
 function redactLogString(str: string): string {
+  /** A string costs one node plus one per 512 scanned characters, so wide payloads stay bounded. */
+  redactionNodeBudget -= 1 + Math.floor(Math.min(str.length, MAX_REDACTION_STRING_LENGTH) / 512);
+  if (redactionNodeBudget < 0) {
+    return REDACTED_VALUE;
+  }
   if (str.length <= MAX_REDACTION_STRING_LENGTH) {
     return redactMessage(str);
   }
@@ -354,6 +359,14 @@ function redactSetValue(
   return redacted;
 }
 
+function readField(record: Record<string, unknown>, key: string): unknown {
+  try {
+    return record[key];
+  } catch {
+    return '[Unreadable]';
+  }
+}
+
 function redactObjectEntries(
   value: object,
   seen: WeakMap<object, unknown>,
@@ -382,7 +395,7 @@ function redactObjectEntries(
         (candidate) => Object.prototype.hasOwnProperty.call(redacted, candidate),
         cursors,
       )
-    ] = redactRecordValue(key, record[key], seen, depth + 1);
+    ] = redactRecordValue(key, readField(record, key), seen, depth + 1);
     count += 1;
   }
 
