@@ -1,4 +1,4 @@
-import { accountUser, authHeaders, brokerUrl, loadSession } from '../_lib/account.js';
+import { accountUser, apiUrl, authHeaders, brokerUrl, loadSession } from '../_lib/account.js';
 import { clearCookies } from '../_lib/session.js';
 
 const jsonHeaders = {
@@ -130,8 +130,8 @@ async function broker(request, env, session, body, acceptStream = false) {
   });
 }
 
-async function db(request, env, session, path, init = {}) {
-  return fetch(`${env.SUPABASE_URL}/rest/v1/${path}`, {
+async function meoApi(request, env, session, path, init = {}) {
+  return fetch(`${apiUrl(env)}/v1/${path}`, {
     ...init,
     headers: authHeaders(env, session.accessToken, {
       'Content-Type': 'application/json',
@@ -178,102 +178,57 @@ async function route(request, env, session, user, pathname) {
   }
   if (pathname === '/api/conversations' && method === 'GET') {
     const before = parseConversationCursor(url.searchParams.get('cursor'));
-    const query = new URLSearchParams({
-      select: 'id,title,created_at,updated_at',
-      user_id: `eq.${userId}`,
-      order: 'updated_at.desc,id.desc',
-      limit: '51',
-    });
-    if (before)
-      query.set(
-        'or',
-        `(updated_at.lt.${before.updatedAt},and(updated_at.eq.${before.updatedAt},id.lt.${before.id}))`,
-      );
     const rows = await responseJson(
-      await db(request, env, session, `ai_conversations?${query}`),
+      await meoApi(
+        request,
+        env,
+        session,
+        `conversations${before ? `?cursor=${encodeURIComponent(encodeConversationCursor({ updated_at: before.updatedAt, id: before.id }))}` : ''}`,
+      ),
       'Conversation history is unavailable',
     );
-    if (!Array.isArray(rows)) throw new ApiFailure(502, '会话列表无法读取。');
-    const conversations = rows.slice(0, 50);
+    if (!Array.isArray(rows?.conversations)) throw new ApiFailure(502, '会话列表无法读取。');
+    const conversations = rows.conversations;
     return json({
       conversations,
-      nextCursor: rows.length > 50 ? encodeConversationCursor(conversations.at(-1)) : null,
+      nextCursor: typeof rows.nextCursor === 'string' ? rows.nextCursor : null,
     });
   }
   if (pathname === '/api/conversations' && method === 'POST') {
     const body = await bodyJson(request);
     const title = typeof body.title === 'string' ? body.title.trim().slice(0, 200) : '';
-    const result = await db(
-      request,
-      env,
-      session,
-      'ai_conversations?select=id,title,created_at,updated_at',
-      {
-        method: 'POST',
-        headers: { Prefer: 'return=representation' },
-        body: JSON.stringify({ user_id: userId, title }),
-      },
-    );
+    const result = await meoApi(request, env, session, 'conversations', {
+      method: 'POST',
+      body: JSON.stringify({ title }),
+    });
     const rows = await responseJson(result, 'Conversation could not be created');
-    if (!Array.isArray(rows) || !rows[0]) throw new ApiFailure(502, '无法创建会话。');
-    return json({ conversation: rows[0] }, 201);
+    if (!rows?.conversation) throw new ApiFailure(502, '无法创建会话。');
+    return json({ conversation: rows.conversation }, 201);
   }
   const messagesMatch = pathname.match(/^\/api\/conversations\/([^/]+)\/messages$/);
   if (messagesMatch && uuidPattern.test(messagesMatch[1])) {
     const conversationId = messagesMatch[1];
     if (method === 'GET') {
-      const query = new URLSearchParams({
-        select: 'id,conversation_id,role,executor,content,created_at',
-        user_id: `eq.${userId}`,
-        conversation_id: `eq.${conversationId}`,
-        order: 'created_at.asc,id.asc',
-        limit: '500',
-      });
       const rows = await responseJson(
-        await db(request, env, session, `ai_messages?${query}`),
+        await meoApi(request, env, session, `conversations/${conversationId}/messages`),
         'Conversation messages are unavailable',
       );
-      return json({ messages: Array.isArray(rows) ? rows : [] });
+      return json({ messages: Array.isArray(rows?.messages) ? rows.messages : [] });
     }
     if (method === 'POST') {
       const body = await bodyJson(request);
       const role = body.role;
       if (!['user', 'assistant'].includes(role)) throw new ApiFailure(400, '消息角色无效。');
       const content = requiredText(body.content, 40_000, 'Message');
-      const params = new URLSearchParams({
-        select: 'id,conversation_id,role,executor,content,created_at',
-      });
       const inserted = await responseJson(
-        await db(request, env, session, `ai_messages?${params}`, {
+        await meoApi(request, env, session, `conversations/${conversationId}/messages`, {
           method: 'POST',
-          headers: { Prefer: 'return=representation' },
-          body: JSON.stringify({
-            user_id: userId,
-            conversation_id: conversationId,
-            role,
-            executor: 'chat',
-            content: [{ type: 'text', text: content }],
-          }),
+          body: JSON.stringify({ role, content }),
         }),
         'Message could not be saved',
       );
-      const updatedAt = new Date().toISOString();
-      await responseJson(
-        await db(
-          request,
-          env,
-          session,
-          `ai_conversations?id=eq.${conversationId}&user_id=eq.${userId}`,
-          {
-            method: 'PATCH',
-            headers: { Prefer: 'return=minimal' },
-            body: JSON.stringify({ updated_at: updatedAt }),
-          },
-        ),
-        'Conversation timestamp could not be updated',
-      );
-      if (!Array.isArray(inserted) || !inserted[0]) throw new ApiFailure(502, '消息未能保存。');
-      return json({ message: inserted[0] }, 201);
+      if (!inserted?.message) throw new ApiFailure(502, '消息未能保存。');
+      return json({ message: inserted.message }, 201);
     }
   }
   if (pathname === '/api/chat/prepare' && method === 'POST') {

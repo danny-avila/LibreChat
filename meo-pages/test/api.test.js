@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { onRequest, parseConversationCursor } from '../functions/api/[[path]].js';
+import { onRequest } from '../functions/api/[[path]].js';
 import { seal, sessionCookieHeader } from '../functions/_lib/session.js';
 
 const env = {
-  SUPABASE_URL: 'https://bdyhkkgwhcamfyoqcthx.supabase.co',
-  SUPABASE_ANON_KEY: 'public-test-key',
+  MEO_ACCOUNT_URL: 'https://account.meoarch.org',
+  MEO_API_URL: 'https://api.meoarch.org',
   MEO_OAUTH_CLIENT_ID: 'public-test-client',
   SESSION_SECRET: 'A'.repeat(43),
 };
@@ -54,28 +54,31 @@ test('history pagination uses an owner-scoped stable cursor', async (t) => {
     title: `Chat ${index}`,
     updated_at: '2026-10-11T09:00:00+00:00',
   }));
-  const dbUrls = [];
+  const upstreamCursor = Buffer.from(JSON.stringify([rows[49].updated_at, rows[49].id])).toString(
+    'base64url',
+  );
+  const apiUrls = [];
   globalThis.fetch = async (input) => {
-    if (String(input).endsWith('/auth/v1/oauth/userinfo')) return Response.json(oidcUser());
-    dbUrls.push(String(input));
-    return Response.json(rows);
+    if (String(input).endsWith('/v1/auth/oauth2/userinfo')) return Response.json(oidcUser());
+    apiUrls.push(String(input));
+    const url = new URL(String(input));
+    const cursor = url.searchParams.get('cursor');
+    return Response.json({
+      conversations: rows.slice(0, 50),
+      nextCursor: cursor ? null : upstreamCursor,
+    });
   };
   const first = await onRequest({ request: await request('/api/conversations'), env });
   assert.equal(first.status, 200);
   const page = await first.json();
   assert.equal(page.conversations.length, 50);
-  assert.deepEqual(parseConversationCursor(page.nextCursor), {
-    updatedAt: '2026-10-11T09:00:00+00:00',
-    id: rows[49].id,
-  });
-  assert.equal(new URL(dbUrls[0]).searchParams.get('user_id'), `eq.${userId}`);
-  assert.equal(new URL(dbUrls[0]).searchParams.get('limit'), '51');
+  assert.equal(page.nextCursor, upstreamCursor);
+  assert.equal(new URL(apiUrls[0]).pathname, '/v1/conversations');
   await onRequest({
     request: await request(`/api/conversations?cursor=${encodeURIComponent(page.nextCursor)}`),
     env,
   });
-  assert.match(new URL(dbUrls[1]).searchParams.get('or'), /id\.lt\./);
-  assert.equal(new URL(dbUrls[1]).searchParams.get('user_id'), `eq.${userId}`);
+  assert.equal(new URL(apiUrls[1]).searchParams.get('cursor'), upstreamCursor);
   const invalid = await onRequest({ request: await request('/api/conversations?cursor=bad'), env });
   assert.equal(invalid.status, 400);
 });
@@ -86,7 +89,7 @@ test('stream failure keeps status and hides provider response text', async (t) =
     globalThis.fetch = originalFetch;
   });
   globalThis.fetch = async (input) => {
-    if (String(input).endsWith('/auth/v1/oauth/userinfo')) return Response.json(oidcUser());
+    if (String(input).endsWith('/v1/auth/oauth2/userinfo')) return Response.json(oidcUser());
     return Response.json({ error: 'private provider diagnostic' }, { status: 429 });
   };
   const result = await onRequest({

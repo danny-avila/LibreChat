@@ -1,6 +1,6 @@
 # Meo AI on Cloudflare Pages
 
-This is a small Cloudflare Pages app for `chat.meoarch.org`. It keeps the Meo Account broker as the only provider-key authority and stores conversation history in the existing Supabase `ai_conversations` and `ai_messages` tables under their user-scoped RLS policies.
+This is a small Cloudflare Pages app for `chat.meoarch.org`. It uses Meo Account for OAuth and Meo API for provider-key operations and conversation history. The browser only calls same-origin Pages Functions; the server-side functions exchange tokens and call versioned Meo endpoints.
 
 ## Free-tier deployment
 
@@ -16,12 +16,12 @@ Set these for Production (and Preview only when using a registered OAuth callbac
 
 | Variable | Value |
 | --- | --- |
-| `SUPABASE_URL` | `https://bdyhkkgwhcamfyoqcthx.supabase.co` |
-| `SUPABASE_ANON_KEY` | Existing public/publishable key for this Supabase project; never use a service-role key |
+| `MEO_ACCOUNT_URL` | `https://account.meoarch.org` |
+| `MEO_API_URL` | `https://api.meoarch.org` |
 | `MEO_OAUTH_CLIENT_ID` | `8f2e0255-187d-448f-9e25-bc275d1b6015` |
 | `SESSION_SECRET` | A random 32-byte base64url secret stored as a Cloudflare secret; never commit or print it |
 
-The existing public OAuth client already registers `https://chat.meoarch.org/oauth/openid/callback`. The app uses PKCE and the Supabase OAuth token endpoint. Access and refresh tokens are encrypted in a `Secure`, `HttpOnly`, `SameSite=Lax` cookie and are never exposed to browser JavaScript or local storage. Provider keys never leave Meo Account.
+The public OAuth client must register `https://chat.meoarch.org/oauth/openid/callback` with the new Meo Account OAuth server and request `https://api.meoarch.org` as its resource. The app uses PKCE. Access and refresh tokens are encrypted in a `Secure`, `HttpOnly`, `SameSite=Lax` cookie and are never exposed to browser JavaScript or local storage. Provider keys never leave Meo Account/Meo API.
 
 ## Local checks
 
@@ -29,7 +29,7 @@ No package installation is needed. Run `npm test` and `npm run build` from this 
 
 ## Runtime contract
 
-- Browser → same-origin Pages Functions → Meo Account `ai-provider-broker` for connection metadata, model discovery, consent and streaming inference.
+- Browser → same-origin Pages Functions → Meo API `/v1/ai/provider-broker` for connection metadata, model discovery, consent and streaming inference.
 - Streaming responses are passed through as SSE; request abort signals propagate to the broker fetch.
-- Browser → Supabase PostgREST with the signed-in user's OAuth access token for conversation and message rows. Existing RLS enforces ownership and cross-user isolation.
+- Browser → same-origin Pages Functions → Meo API `/v1/conversations*` for conversation and message rows. Meo API authenticates the account token and enforces ownership in each query.
 - `?connection=<credential-id>&model=<model-id>` is validated against the signed-in user's accessible connections and available models. Invalid values fall back to the selector.

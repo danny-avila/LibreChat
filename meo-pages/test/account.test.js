@@ -8,18 +8,18 @@ import {
 } from '../functions/_lib/account.js';
 
 const env = {
-  SUPABASE_URL: 'https://bdyhkkgwhcamfyoqcthx.supabase.co',
-  SUPABASE_ANON_KEY: 'public-anon-key',
+  MEO_ACCOUNT_URL: 'https://account.meoarch.org',
+  MEO_API_URL: 'https://api.meoarch.org',
   MEO_OAUTH_CLIENT_ID: 'public-client-id',
 };
 
-test('OAuth code exchange uses Supabase public-client PKCE contract', async (t) => {
+test('OAuth code exchange uses Meo Account OAuth PKCE contract', async (t) => {
   const originalFetch = globalThis.fetch;
   t.after(() => {
     globalThis.fetch = originalFetch;
   });
   globalThis.fetch = async (input, init) => {
-    assert.equal(input, `${env.SUPABASE_URL}/auth/v1/oauth/token`);
+    assert.equal(input, `${env.MEO_ACCOUNT_URL}/v1/auth/oauth2/token`);
     assert.equal(init.method, 'POST');
     assert.equal(init.headers['Content-Type'], 'application/x-www-form-urlencoded');
     assert.equal(init.headers.apikey, undefined);
@@ -29,6 +29,7 @@ test('OAuth code exchange uses Supabase public-client PKCE contract', async (t) 
       code_verifier: 'pkce-verifier',
       redirect_uri: 'https://chat.meoarch.org/oauth/openid/callback',
       client_id: 'public-client-id',
+      resource: 'https://api.meoarch.org',
     });
     return Response.json({ access_token: 'opaque-access', refresh_token: 'opaque-refresh' });
   };
@@ -102,7 +103,7 @@ test('OAuth UserInfo lookup uses bearer token and OIDC subject identity', async 
     globalThis.fetch = originalFetch;
   });
   globalThis.fetch = async (input, init) => {
-    assert.equal(input, `${env.SUPABASE_URL}/auth/v1/oauth/userinfo`);
+    assert.equal(input, `${env.MEO_ACCOUNT_URL}/v1/auth/oauth2/userinfo`);
     assert.equal(init.headers.Authorization, 'Bearer opaque-access');
     assert.equal(init.headers.apikey, undefined);
     return Response.json({ sub: 'user-uuid', email: 'user@example.com' });
@@ -128,13 +129,14 @@ test('OAuth refresh uses the registered public client', async (t) => {
     globalThis.fetch = originalFetch;
   });
   globalThis.fetch = async (input, init) => {
-    assert.equal(input, `${env.SUPABASE_URL}/auth/v1/oauth/token`);
+    assert.equal(input, `${env.MEO_ACCOUNT_URL}/v1/auth/oauth2/token`);
     assert.equal(init.headers['Content-Type'], 'application/x-www-form-urlencoded');
     assert.equal(init.headers.apikey, undefined);
     assert.deepEqual(Object.fromEntries(new URLSearchParams(init.body)), {
       grant_type: 'refresh_token',
       refresh_token: 'opaque-refresh',
       client_id: 'public-client-id',
+      resource: 'https://api.meoarch.org',
     });
     return Response.json({ access_token: 'rotated-access', refresh_token: 'rotated-refresh' });
   };

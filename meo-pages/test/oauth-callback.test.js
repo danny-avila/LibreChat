@@ -5,8 +5,8 @@ import { seal } from '../functions/_lib/session.js';
 
 const env = {
   SESSION_SECRET: 'A'.repeat(43),
-  SUPABASE_URL: 'https://example.supabase.co',
-  SUPABASE_ANON_KEY: 'public-anon-key',
+  MEO_ACCOUNT_URL: 'https://account.meoarch.org',
+  MEO_API_URL: 'https://api.meoarch.org',
   MEO_OAUTH_CLIENT_ID: 'public-client-id',
 };
 
@@ -41,7 +41,7 @@ async function exerciseSuccessfulCallback(cookieName) {
   const warnings = [];
   console.warn = (...args) => warnings.push(args);
   globalThis.fetch = async (input, init) => {
-    if (input === `${env.SUPABASE_URL}/auth/v1/oauth/token`) {
+    if (input === `${env.MEO_ACCOUNT_URL}/v1/auth/oauth2/token`) {
       assert.equal(init.method, 'POST');
       return Response.json({
         access_token: 'opaque-access-token',
@@ -49,7 +49,7 @@ async function exerciseSuccessfulCallback(cookieName) {
         expires_in: 3600,
       });
     }
-    if (input === `${env.SUPABASE_URL}/auth/v1/oauth/userinfo`) {
+    if (input === `${env.MEO_ACCOUNT_URL}/v1/auth/oauth2/userinfo`) {
       assert.equal(init.headers.Authorization, 'Bearer opaque-access-token');
       return Response.json({ sub: 'account-user-id' });
     }

@@ -4,12 +4,14 @@ const { requireJwtAuth } = require('~/server/middleware');
 
 const router = express.Router();
 
-const cleanBaseUrl = (value) => String(value || '').trim().replace(/\/$/, '');
+const cleanBaseUrl = (value) =>
+  String(value || '')
+    .trim()
+    .replace(/\/$/, '');
 
 router.get('/', requireJwtAuth, async (req, res) => {
-  const supabaseUrl = cleanBaseUrl(process.env.MEO_SUPABASE_URL);
-  const publishableKey = String(process.env.MEO_SUPABASE_PUBLISHABLE_KEY || '').trim();
-  if (!supabaseUrl || !publishableKey || !supabaseUrl.startsWith('https://')) {
+  const apiUrl = cleanBaseUrl(process.env.MEO_API_URL || 'https://api.meoarch.org');
+  if (!apiUrl.startsWith('https://')) {
     return res.status(503).json({
       error: 'Meo activity cloud is not configured on this deployment.',
       code: 'MEO_ACTIVITY_NOT_CONFIGURED',
@@ -23,9 +25,7 @@ router.get('/', requireJwtAuth, async (req, res) => {
    * strategy, which exposes the same credential only on req.user in memory.
    */
   const accessToken =
-    req.session?.openidTokens?.accessToken ||
-    req.user?.federatedTokens?.access_token ||
-    '';
+    req.session?.openidTokens?.accessToken || req.user?.federatedTokens?.access_token || '';
   if (!accessToken) {
     return res.status(401).json({
       error: 'Reconnect Meo Account so AI activity can be read securely.',
@@ -37,19 +37,14 @@ router.get('/', requireJwtAuth, async (req, res) => {
   const days = Number.isFinite(requestedDays) ? Math.max(7, Math.min(requestedDays, 730)) : 365;
 
   try {
-    const response = await axios.post(
-      `${supabaseUrl}/rest/v1/rpc/get_ai_usage_dashboard`,
-      { p_days: days },
-      {
-        timeout: 15_000,
-        headers: {
-          apikey: publishableKey,
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
+    const response = await axios.get(`${apiUrl}/v1/usage-dashboard`, {
+      params: { days },
+      timeout: 15_000,
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/json',
       },
-    );
+    });
     res.set('Cache-Control', 'private, no-store');
     return res.status(200).json(response.data || {});
   } catch (error) {

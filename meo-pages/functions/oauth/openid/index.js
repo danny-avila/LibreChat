@@ -20,12 +20,13 @@ export async function onRequest({ request, env }) {
     new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))),
   );
   const sealed = await seal({ state, verifier, returnTo, createdAt: Date.now() }, env);
-  const authorize = new URL(`${accountUrl(env)}/auth/v1/oauth/authorize`);
+  const authorize = new URL(`${accountUrl(env)}/v1/auth/oauth2/authorize`);
   authorize.search = new URLSearchParams({
     client_id: env.MEO_OAUTH_CLIENT_ID,
     redirect_uri: callbackUrl(request),
     response_type: 'code',
-    scope: 'openid email profile',
+    scope: 'openid email profile meo:read meo:write',
+    resource: 'https://api.meoarch.org',
     state,
     code_challenge: challenge,
     code_challenge_method: 'S256',

@@ -1,7 +1,15 @@
 export function accountUrl(env) {
-  const url = new URL(env.SUPABASE_URL ?? '');
-  if (url.protocol !== 'https:' || !url.hostname.endsWith('.supabase.co')) {
-    throw new Error('Supabase origin is not configured');
+  const url = new URL(env.MEO_ACCOUNT_URL ?? 'https://account.meoarch.org');
+  if (url.protocol !== 'https:' || url.hostname !== 'account.meoarch.org') {
+    throw new Error('Meo Account origin is not configured');
+  }
+  return url.origin;
+}
+
+export function apiUrl(env) {
+  const url = new URL(env.MEO_API_URL ?? 'https://api.meoarch.org');
+  if (url.protocol !== 'https:' || url.hostname !== 'api.meoarch.org') {
+    throw new Error('Meo API origin is not configured');
   }
   return url.origin;
 }
@@ -11,14 +19,11 @@ export function callbackUrl(request) {
 }
 
 export function brokerUrl(env) {
-  return `${accountUrl(env)}/functions/v1/ai-provider-broker`;
+  return `${apiUrl(env)}/v1/ai/provider-broker`;
 }
 
 export function authHeaders(env, token, extra = {}) {
-  const headers = {
-    apikey: env.SUPABASE_ANON_KEY,
-    ...extra,
-  };
+  const headers = { ...extra };
   if (token) headers.Authorization = `Bearer ${token}`;
   return headers;
 }
@@ -39,10 +44,7 @@ function safeOAuthErrorCode(value) {
 async function tokenRequest(env, body) {
   let response;
   try {
-    // Keep this request intentionally identical to Supabase's documented
-    // public-client OAuth 2.1 example. Extra RequestInit options can change
-    // edge-runtime behaviour and are unnecessary for this POST.
-    response = await fetch(`${accountUrl(env)}/auth/v1/oauth/token`, {
+    response = await fetch(`${accountUrl(env)}/v1/auth/oauth2/token`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
@@ -64,10 +66,7 @@ async function tokenRequest(env, body) {
 }
 
 export async function accountUser(env, accessToken) {
-  // OAuth access tokens issued by Supabase's OAuth 2.1 server use the OIDC
-  // UserInfo endpoint. /auth/v1/user is for a normal Supabase Auth session
-  // and is not the correct post-exchange identity lookup for this client.
-  const response = await fetch(`${accountUrl(env)}/auth/v1/oauth/userinfo`, {
+  const response = await fetch(`${accountUrl(env)}/v1/auth/oauth2/userinfo`, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
     },
@@ -87,6 +86,7 @@ export async function exchangeCode(env, code, verifier, redirectUri) {
     code_verifier: verifier,
     redirect_uri: redirectUri,
     client_id: env.MEO_OAUTH_CLIENT_ID,
+    resource: 'https://api.meoarch.org',
   });
 }
 
@@ -96,6 +96,7 @@ export async function refreshTokens(env, refreshToken) {
       grant_type: 'refresh_token',
       refresh_token: refreshToken,
       client_id: env.MEO_OAUTH_CLIENT_ID,
+      resource: 'https://api.meoarch.org',
     });
   } catch {
     return null;
