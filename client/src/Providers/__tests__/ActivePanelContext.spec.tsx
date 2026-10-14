@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, fireEvent, screen } from '@testing-library/react';
+import { act, render, fireEvent, screen } from '@testing-library/react';
 import '@testing-library/jest-dom/extend-expect';
 import {
   ActivePanelProvider,
@@ -72,6 +72,40 @@ describe('ActivePanelContext', () => {
       expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull();
     },
   );
+
+  it('lands a tab with a cloned session on conversations', () => {
+    mockNavigationType('navigate');
+    sessionStorage.setItem('side:active-panel:entry', 'opener-time-origin');
+    sessionStorage.setItem(STORAGE_KEY, 'skills');
+    renderProvider();
+    expect(screen.getByTestId('active')).toHaveTextContent('conversations');
+  });
+
+  it('keeps the chosen panel when the provider remounts in the same document', () => {
+    mockNavigationType('navigate');
+    const { unmount } = renderProvider();
+    fireEvent.click(screen.getByTestId('switch-btn'));
+    unmount();
+
+    renderProvider();
+    expect(screen.getByTestId('active')).toHaveTextContent('bookmarks');
+  });
+
+  it('returns to conversations when the page is restored from the back-forward cache', () => {
+    renderProvider();
+    fireEvent.click(screen.getByTestId('switch-btn'));
+
+    act(() => {
+      window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: false }));
+    });
+    expect(screen.getByTestId('active')).toHaveTextContent('bookmarks');
+
+    act(() => {
+      window.dispatchEvent(Object.assign(new Event('pageshow'), { persisted: true }));
+    });
+    expect(screen.getByTestId('active')).toHaveTextContent('conversations');
+    expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull();
+  });
 
   it('setActive updates state and keeps it for the session only', () => {
     renderProvider();

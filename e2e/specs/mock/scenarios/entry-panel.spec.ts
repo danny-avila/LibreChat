@@ -94,4 +94,27 @@ test.describe('sidebar panel on entry', () => {
       'false',
     );
   });
+
+  test('crossing the mobile breakpoint keeps the chosen panel @scenario:entry-resize-keeps-panel', async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('unifiedSidebarExpanded', JSON.stringify(true));
+    });
+    await page.goto(NEW_CHAT_PATH, { timeout: 15000 });
+    const bookmarks = page.getByTestId('nav-panel-bookmarks');
+    await bookmarks.click();
+    await expect(bookmarks).toHaveAttribute('aria-pressed', 'true');
+
+    await page.setViewportSize({ width: 390, height: 800 });
+    await expect(page.getByTestId('nav-panel-bookmarks')).toHaveCount(1);
+    await expect(page.getByTestId('nav-panel-bookmarks')).toHaveAttribute('aria-pressed', 'true');
+    await page.setViewportSize({ width: 1280, height: 800 });
+
+    await expect(page.getByTestId('nav-panel-bookmarks')).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByTestId('nav-panel-conversations')).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+  });
 });

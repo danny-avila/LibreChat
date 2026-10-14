@@ -1,6 +1,15 @@
-import { createContext, useCallback, useContext, useMemo, useState, ReactNode } from 'react';
+import {
+  useMemo,
+  useState,
+  useEffect,
+  ReactNode,
+  useContext,
+  useCallback,
+  createContext,
+} from 'react';
 
 const STORAGE_KEY = 'side:active-panel';
+const ENTRY_KEY = 'side:active-panel:entry';
 export const DEFAULT_PANEL = 'conversations';
 
 /** True only when this document was loaded by reloading the tab, not by opening or duplicating one. */
@@ -13,15 +22,20 @@ function isReload(): boolean {
 }
 
 /**
- * A reload keeps the panel the tab had open; any other entry, including a tab whose session
- * storage was cloned from its opener, lands on chat history. The legacy localStorage copy is
- * dropped so an old panel cannot resurface on entry.
+ * Settles the stored panel once per document, keyed by its time origin so a tab whose session
+ * storage was cloned from its opener still counts as a new entry: a reload keeps the panel the
+ * tab had open, any other entry starts on chat history. Later mounts in the same document (the
+ * sidebar remounts its provider when it crosses the mobile breakpoint) read the session value as
+ * is. The legacy localStorage copy is dropped so an old panel cannot resurface on entry.
  */
 function getInitialActivePanel(): string {
-  localStorage.removeItem(STORAGE_KEY);
-  if (!isReload()) {
-    sessionStorage.removeItem(STORAGE_KEY);
-    return DEFAULT_PANEL;
+  const entry = String(performance.timeOrigin);
+  if (sessionStorage.getItem(ENTRY_KEY) !== entry) {
+    sessionStorage.setItem(ENTRY_KEY, entry);
+    localStorage.removeItem(STORAGE_KEY);
+    if (!isReload()) {
+      sessionStorage.removeItem(STORAGE_KEY);
+    }
   }
   return sessionStorage.getItem(STORAGE_KEY) || DEFAULT_PANEL;
 }
@@ -39,6 +53,18 @@ export function ActivePanelProvider({ children }: { children: ReactNode }) {
   const setActive = useCallback((id: string) => {
     sessionStorage.setItem(STORAGE_KEY, id);
     _setActive(id);
+  }, []);
+
+  useEffect(() => {
+    const onPageShow = (event: PageTransitionEvent) => {
+      if (!event.persisted) {
+        return;
+      }
+      sessionStorage.removeItem(STORAGE_KEY);
+      _setActive(DEFAULT_PANEL);
+    };
+    window.addEventListener('pageshow', onPageShow);
+    return () => window.removeEventListener('pageshow', onPageShow);
   }, []);
 
   const value = useMemo(() => ({ active, setActive }), [active, setActive]);
