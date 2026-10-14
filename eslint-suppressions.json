@@ -1251,11 +1251,6 @@
       "count": 4
     }
   },
-  "client/src/components/SidePanel/MCPBuilder/MCPServerDialog/sections/BasicInfoSection.tsx": {
-    "shadcn/no-restyle": {
-      "count": 1
-    }
-  },
   "client/src/components/SidePanel/MCPBuilder/MCPServerDialog/sections/ConnectionSection.tsx": {
     "shadcn/no-restyle": {
       "count": 1

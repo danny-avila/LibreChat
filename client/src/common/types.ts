@@ -188,6 +188,7 @@ export type AgentPanelProps = {
 
 export interface MCPServerInfo {
   serverName: string;
+  dbId?: string;
   tools: t.AgentToolType[];
   isConfigured: boolean;
   isConnected: boolean;
@@ -196,6 +197,8 @@ export interface MCPServerInfo {
   /** True when tools can only be discovered with live chat request fields. */
   requestScoped?: boolean;
   consumeOnly?: boolean;
+  support_contact?: t.SupportContact;
+  owner_contact?: t.MCPServerOwnerContact;
   metadata: t.TPlugin;
 }
 

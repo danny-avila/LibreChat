@@ -141,6 +141,7 @@ jest.mock('~/components/MCP/McpOAuthDialog', () => ({
 jest.mock('@librechat/client', () => {
   const React = jest.requireActual('react');
   return {
+    Skeleton: ({ className }: { className?: string }) => React.createElement('div', { className }),
     TooltipAnchor: ({ render }: { render: React.ReactElement }) => render,
     Spinner: ({ className }: { className?: string }) => React.createElement('span', { className }),
     Button: ({
@@ -165,7 +166,6 @@ jest.mock('@librechat/client', () => {
         'aria-label': ariaLabel,
         onChange: (e: { target: { checked: boolean } }) => onCheckedChange(e.target.checked),
       }),
-    Skeleton: ({ className }: { className?: string }) => React.createElement('div', { className }),
   };
 });
 
@@ -223,6 +223,35 @@ describe('McpSection', () => {
     render(<McpSection item={item} />);
     expect(screen.getByTestId('tool-mcp:srv:a')).toBeInTheDocument();
     expect(screen.getByTestId('tool-mcp:srv:b')).toBeInTheDocument();
+  });
+
+  test('does not render contact information for a YAML server without a configured contact', () => {
+    render(<McpSection item={item} />);
+
+    expect(screen.queryByText('com_ui_mcp_contact:')).not.toBeInTheDocument();
+    expect(screen.queryByText('com_ui_mcp_no_contact_available')).not.toBeInTheDocument();
+  });
+
+  test('renders the server contact once above connection status', () => {
+    mockMcpServersMap.mockReturnValue(
+      new Map([
+        [
+          'srv',
+          {
+            ...item.server,
+            support_contact: { name: 'Platform Support', email: 'support@example.com' },
+          },
+        ],
+      ]),
+    );
+
+    render(<McpSection item={item} />);
+
+    expect(screen.getByRole('link', { name: 'Platform Support' })).toHaveAttribute(
+      'href',
+      'mailto:support@example.com',
+    );
+    expect(screen.getAllByText('com_ui_mcp_contact:')).toHaveLength(1);
   });
 
   test('interpolates the server name when another manager reports a connecting state', () => {
