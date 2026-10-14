@@ -14,7 +14,10 @@ const REDACTED_VALUE = '[REDACTED]';
 const REDACTION_TRUNCATED_KEY = '__redaction_truncated__';
 const MAX_REDACTION_DEPTH = 8;
 const MAX_REDACTION_ENTRIES = 50;
-/** Objects one log record may visit while redacting, so a broad payload cannot stall the event loop. */
+/**
+ * Objects one log record may visit while redacting, so a broad payload cannot stall the event loop.
+ * Env-only like CONSOLE_JSON_STRING_LENGTH: the logger is built at import, before librechat.yaml loads.
+ */
 const MAX_REDACTION_NODES: number = parseInt(process.env.LOG_REDACTION_MAX_NODES || '', 10) || 5000;
 let redactionNodeBudget = Number.POSITIVE_INFINITY;
 const DEFAULT_REDACTION_STRING_LENGTH = 8192;
@@ -289,12 +292,12 @@ function isBufferValue(value: object): value is Buffer {
 }
 
 function getJsonValue(value: object): unknown {
-  const toJSON = (value as { toJSON?: unknown }).toJSON;
-  if (typeof toJSON !== 'function') {
-    return undefined;
-  }
-
   try {
+    const toJSON = (value as { toJSON?: unknown }).toJSON;
+    if (typeof toJSON !== 'function') {
+      return undefined;
+    }
+
     const jsonValue = toJSON.call(value);
     return jsonValue === value ? undefined : jsonValue;
   } catch {
@@ -598,8 +601,15 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
 
     let redactedMessage: unknown;
     let replaceFailed = false;
-    if (info.message !== undefined) {
-      redactedMessage = redactLogValue(info.message);
+    let rawMessage: unknown;
+    try {
+      rawMessage = info.message;
+    } catch {
+      rawMessage = '[Unreadable]';
+      replaceFailed = true;
+    }
+    if (rawMessage !== undefined) {
+      redactedMessage = redactLogValue(rawMessage);
       if (Object.getOwnPropertyDescriptor(info, 'message')?.get !== undefined) {
         replaceFailed = true;
       }

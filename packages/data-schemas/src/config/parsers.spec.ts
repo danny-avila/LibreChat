@@ -636,6 +636,25 @@ describe('redactMessage', () => {
     expect(JSON.stringify(out)).not.toContain('jane');
   });
 
+  it('survives throwing message getters and nested serializer getters', () => {
+    const record = { level: 'info' } as RedactInfo;
+    Object.defineProperty(record, 'message', {
+      enumerable: true,
+      get: () => {
+        throw new Error('nope');
+      },
+    });
+    expect(() => runRedactFormat(record)).not.toThrow();
+    class Nested {
+      get toJSON(): never {
+        throw new Error('nope');
+      }
+    }
+    expect(() =>
+      runRedactFormat({ level: 'info', message: 'm', payload: new Nested() } as RedactInfo),
+    ).not.toThrow();
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),
