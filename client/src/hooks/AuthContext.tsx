@@ -25,7 +25,9 @@ import {
 import type * as t from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import {
+  clearTTSCache,
   isSafeRedirect,
+  setTTSCacheOwner,
   getPostLoginRedirect,
   clearPostLoginRedirect,
   persistRedirectToSession,
@@ -37,7 +39,9 @@ import {
 import {
   useGetRole,
   useGetUserQuery,
+  endPullRequestSession,
   useLoginUserMutation,
+  setPullRequestSessionOwner,
   useLogoutUserMutation,
   useRefreshTokenMutation,
 } from '~/data-provider';
@@ -64,6 +68,8 @@ const endSessionClientState = (): void => {
   getDefaultStore().set(resetFacetsAtom);
   clearRetainedFileDeletions();
   clearComposerDraftStorage();
+  endPullRequestSession();
+  void clearTTSCache();
 };
 /**
  * Only recognized codes override the HTTP status used by the login error translation.
@@ -117,6 +123,9 @@ const AuthContextProvider = ({
         setIsAuthReady(true);
         if (isAuthenticated) {
           setQueriesEnabled(true);
+          /** A different account signing in without a logout must not inherit cached audio. */
+          setTTSCacheOwner(user?.id);
+          setPullRequestSessionOwner(user?.id);
           /**
            * Any accepted full-auth response supersedes a staged enrollment, whichever path minted
            * it. The setup endpoints trust the stored bearer independently of the session, so a
@@ -257,6 +266,8 @@ const AuthContextProvider = ({
       setIsAuthReady(true);
       setQueriesEnabled(true);
       openFileDeletionRetention();
+      setTTSCacheOwner(authenticatedUser.id);
+      setPullRequestSessionOwner(authenticatedUser.id);
       navigate(redirect, { replace: true });
     },
     [navigate, setQueriesEnabled, setUser],
