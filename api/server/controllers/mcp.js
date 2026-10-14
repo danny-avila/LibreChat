@@ -591,9 +591,6 @@ const updateMCPServerController = async (req, res) => {
       });
       throw error;
     }
-    /** Read at commit time, so a later update by someone else is not attributed to this one. */
-    const committedRead = registry.getServerConfig(serverName, userId);
-    committedRead.catch(() => undefined);
     /** Fence connections another replica could have created from the old DB
      * config between the pre-commit fence and the committed update. */
     await auditMCPServer(
@@ -603,7 +600,7 @@ const updateMCPServerController = async (req, res) => {
         serverName,
         previous: existingConfig,
         next: parsedConfig,
-        resolveCommitted: () => committedRead,
+        resolveCommitted: () => registry.getServerConfig(serverName, userId),
       },
       async () => {
         await fenceCommittedMCPMutation({ userId, serverName });

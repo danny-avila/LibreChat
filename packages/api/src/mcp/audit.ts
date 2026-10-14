@@ -96,10 +96,10 @@ export function createMCPServerAuditor(options: {
   const emit = createAdminAuditEmitter({ ...options, logPrefix: '[mcpServers]' });
   async function record(
     req: Parameters<AdminAuditEmitter>[0],
-    { action, serverName, previous, next: submitted, resolveCommitted }: MCPServerAuditEvent,
+    { action, serverName, previous, next: submitted }: MCPServerAuditEvent,
+    committedRead?: Promise<ServerConfigLike | undefined>,
   ): Promise<void> {
-    const committed = await resolveCommitted?.().catch(() => undefined);
-    const next = committed ?? submitted;
+    const next = (await committedRead) ?? submitted;
     const name = serverTitle(next) ?? serverTitle(previous);
     const before = action === 'mcp_server.created' ? undefined : previous;
     const changed =
@@ -124,10 +124,12 @@ export function createMCPServerAuditor(options: {
    * drops the entry.
    */
   return async function auditMCPServer(req, event, afterCommit) {
+    /** Started before the post-commit steps, so a later update by someone else is not attributed to this one. */
+    const committedRead = event.resolveCommitted?.().catch(() => undefined);
     try {
       await afterCommit?.();
     } finally {
-      await record(req, event);
+      await record(req, event, committedRead);
     }
   };
 }
