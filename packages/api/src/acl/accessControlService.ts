@@ -483,6 +483,8 @@ export class AccessControlService {
       ownerId: new Types.ObjectId().toString(),
     };
     let lockHeld = false;
+    /** Keeps the lease alive through slow audit writes between fences. */
+    let heartbeat: NodeJS.Timeout | undefined;
 
     try {
       if (!Array.isArray(updatedPrincipals)) {
@@ -512,6 +514,15 @@ export class AccessControlService {
           }
           await new Promise((resolve) => setTimeout(resolve, RESOURCE_LOCK_POLL_MS));
         }
+      }
+      if (lockHeld) {
+        heartbeat = setInterval(
+          () =>
+            void this._dbMethods
+              .renewResourceLock({ ...lock, ttlMs: RESOURCE_LOCK_TTL_MS })
+              .catch(() => undefined),
+          RESOURCE_LOCK_TTL_MS / 3,
+        );
       }
       if (!localSession && supportsTransactions) {
         localSession = await this._mongoose.startSession();
@@ -884,6 +895,7 @@ export class AccessControlService {
       if (shouldEndSession && localSession) {
         await localSession.endSession();
       }
+      clearInterval(heartbeat);
       if (lockHeld) {
         await this._dbMethods.releaseResourceLock(lock).catch((error) =>
           logger.error('[AccessControlService.bulkUpdateResourcePermissions] Lock release failed', {

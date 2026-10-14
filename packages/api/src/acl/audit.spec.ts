@@ -34,12 +34,13 @@ function setup(recordImpl?: jest.Mock) {
       getAgent?: jest.Mock;
       resourceType?: ResourceType;
       r?: ServerRequest;
+      resourceId?: string;
     } = {},
   ) =>
     runAuditedPermissionUpdate({
       req: options.r ?? req,
       resourceType: options.resourceType ?? ResourceType.PROMPTGROUP,
-      resourceId: 'res-1',
+      resourceId: options.resourceId ?? 'res-1',
       failClosed,
       deps: { recordAuditEntry, logger, getAgent: options.getAgent },
       update: async (beforeWrite) => {
@@ -51,6 +52,15 @@ function setup(recordImpl?: jest.Mock) {
 }
 
 describe('runAuditedPermissionUpdate', () => {
+  test('targets an uppercase ObjectId hex by its lowercase form', async () => {
+    const { recordAuditEntry, run } = setup();
+    const hex = 'ABCDEF0123456789ABCDEF01';
+
+    await run([grantChange('u1')], true, { resourceId: hex });
+
+    expect(recordAuditEntry.mock.calls[0][0].target.id).toBe(hex.toLowerCase());
+  });
+
   test('records grant, revoke and public entries with ids and bits only, before the write', async () => {
     const { recordAuditEntry, write, run } = setup();
     recordAuditEntry.mockImplementation(async () => {

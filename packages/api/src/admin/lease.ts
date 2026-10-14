@@ -46,13 +46,19 @@ export async function withLease<T>(
     }
     await new Promise((resolve) => setTimeout(resolve, LEASE_POLL_MS));
   }
+  let lost = false;
+  const renew = async () => {
+    if (lost || !(await deps.renewResourceLock({ ...lock, ttlMs: LEASE_TTL_MS }))) {
+      lost = true;
+      throw new ResourcePermissionsBusyError();
+    }
+  };
+  /** Keeps the lease alive through slow audit writes between fences. */
+  const heartbeat = setInterval(() => void renew().catch(() => undefined), LEASE_TTL_MS / 3);
   try {
-    return await fn(async () => {
-      if (!(await deps.renewResourceLock({ ...lock, ttlMs: LEASE_TTL_MS }))) {
-        throw new ResourcePermissionsBusyError();
-      }
-    });
+    return await fn(renew);
   } finally {
+    clearInterval(heartbeat);
     await deps.releaseResourceLock(lock).catch(() => undefined);
   }
 }

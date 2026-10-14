@@ -7,6 +7,8 @@ import { getAuditActor, isAuditFailClosed } from '~/admin/audit';
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { buildAuditContext } from '~/admin/context';
 
+const OBJECT_ID_HEX = /^[0-9a-f]{24}$/i;
+
 export type AuditPlanItem = {
   input: RecordAuditEntryInput;
   /** Grants or widens access; only these are held back when the audit store is down. */
@@ -200,7 +202,7 @@ export type PermissionPlan = {
 export async function runAuditedPermissionUpdate<T>({
   req,
   resourceType,
-  resourceId,
+  resourceId: rawResourceId,
   failClosed = isAuditFailClosed(),
   deps,
   update,
@@ -213,6 +215,10 @@ export async function runAuditedPermissionUpdate<T>({
   deps: AclAuditDeps & { getAgent?: InsightsPlanDeps['getAgent'] };
   update: (beforeWrite: (plan: PermissionPlan) => Promise<void>) => Promise<T>;
 }): Promise<T> {
+  /** Mongoose casts uppercase and lowercase ObjectId hex to one id, so audit targets use the lowercase form. */
+  const resourceId = OBJECT_ID_HEX.test(rawResourceId)
+    ? rawResourceId.toLowerCase()
+    : rawResourceId;
   const recorded: AuditPlanItem[] = [];
   const recordFailures = async () => {
     const items = recorded.splice(0);

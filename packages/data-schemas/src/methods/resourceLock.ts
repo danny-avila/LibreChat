@@ -29,6 +29,19 @@ export function createResourceLockMethods(mongoose: typeof import('mongoose')): 
     return indexesPromise;
   }
 
+  /** Resolves false instead of waiting past the deadline on a stuck index build. */
+  async function indexesReady(): Promise<boolean> {
+    let timer: NodeJS.Timeout | undefined;
+    const timeout = new Promise<false>((resolve) => {
+      timer = setTimeout(() => resolve(false), INDEX_BUILD_WAIT_MS);
+    });
+    try {
+      return await Promise.race([ensureIndexes().then(() => true as const), timeout]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   /**
    * Takes the lease for `key`, or takes over one whose holder let it expire.
    * Returns false while another owner holds a live lease.
@@ -39,7 +52,9 @@ export function createResourceLockMethods(mongoose: typeof import('mongoose')): 
     ttlMs,
   }: ResourceLockAcquireData): Promise<boolean> {
     const ResourceLock = mongoose.models.ResourceLock as Model<IResourceLock>;
-    await ensureIndexes();
+    if (!(await indexesReady())) {
+      return false;
+    }
     const now = new Date();
     const expiresAt = new Date(now.getTime() + ttlMs);
     try {
