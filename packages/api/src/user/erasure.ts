@@ -154,9 +154,9 @@ export async function deleteUserMCPServers(
       )
     : [];
 
-  const cleanupSharedUsers = async (removed: typeof prepared) => {
+  const cleanupSharedUsers = async (removed: typeof prepared): Promise<number> => {
     if (!oauth) {
-      return;
+      return 0;
     }
     const results = await Promise.allSettled(
       removed.map(({ serverName, serverConfig, snapshot }) =>
@@ -174,11 +174,11 @@ export async function deleteUserMCPServers(
         }),
       ),
     );
-    for (const result of results) {
-      if (result.status === 'rejected') {
-        logger.error(`[eraseUserData] MCP OAuth cleanup failed for user ${userId}`, result.reason);
-      }
+    const failures = results.filter((result) => result.status === 'rejected');
+    for (const failure of failures) {
+      logger.error(`[eraseUserData] MCP OAuth cleanup failed for user ${userId}`, failure.reason);
     }
+    return failures.length;
   };
 
   try {
@@ -198,7 +198,10 @@ export async function deleteUserMCPServers(
     }
     throw error;
   }
-  await cleanupSharedUsers(prepared);
+  /** Shared-user credentials cannot be rediscovered once the server is gone, so surface the failure. */
+  if ((await cleanupSharedUsers(prepared)) > 0) {
+    throw new Error('MCP OAuth cleanup failed for users of a removed server');
+  }
 }
 
 /**

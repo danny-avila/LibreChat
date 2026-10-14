@@ -225,13 +225,20 @@ async function gracefulExit(code = 0) {
           deleteStoredFiles: (files) =>
             runInUserTenant(async () => processDeleteRequest({ req: fileRequest, files })),
           deleteUserAgents: (id) => runInUserTenant(async () => methods.deleteUserAgents(id)),
+          /** Server names are unique per tenant, so these lookups stay in the deleted user's tenant. */
+          findMCPServerOAuthTokenUserIds: (serverName) =>
+            runInUserTenant(async () => methods.findMCPServerOAuthTokenUserIds(serverName)),
+          findMCPServerViewerEntries: (serverId) =>
+            runInUserTenant(async () => methods.findMCPServerViewerEntries(serverId)),
           invalidateMCPServerTools: (serverName) =>
             invalidateCachedTools({ userId: uid, serverName }),
           /** The CLI has no MCP registry or live connections, so shared users get local token and cache cleanup. */
           mcpOAuth: {
             getUserPrincipals: (candidateId) => methods.getUserPrincipals({ userId: candidateId }),
-            getServerConfig: async (serverName) =>
-              (await methods.findMCPServerByServerName(serverName))?.config,
+            getServerConfig: (serverName) =>
+              runInUserTenant(
+                async () => (await methods.findMCPServerByServerName(serverName))?.config,
+              ),
             resolveAllowlists: async () => ({
               allowedDomains: userAppConfig?.mcpSettings?.allowedDomains,
               allowedAddresses: userAppConfig?.mcpSettings?.allowedAddresses,

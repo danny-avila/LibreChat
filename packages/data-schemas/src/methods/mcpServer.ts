@@ -3,6 +3,7 @@ import { ResourceType, PermissionBits, normalizeServerName } from 'librechat-dat
 import type { Model, RootFilterQuery, Types } from 'mongoose';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { MCPServerDocument } from '../types';
+import { permissionBitSupersets } from './aclEntry';
 import logger from '~/config/winston';
 
 const NORMALIZED_LIMIT_DEFAULT = 20;
@@ -453,7 +454,7 @@ export function createMCPServerMethods(
     const entries = await mongoose.models.AclEntry.find({
       resourceType: ResourceType.MCPSERVER,
       resourceId: new mongoose.Types.ObjectId(serverId),
-      permBits: { $bitsAnySet: PermissionBits.VIEW },
+      permBits: { $in: permissionBitSupersets(PermissionBits.VIEW) },
     })
       .select('principalType principalId')
       .lean<Array<{ principalType: string; principalId?: Types.ObjectId | string }>>();

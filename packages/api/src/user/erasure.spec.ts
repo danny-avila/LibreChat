@@ -249,6 +249,24 @@ describe('eraseUserData', () => {
     expect(await count('MCPServer', { author: userId })).toBe(0);
   });
 
+  it('fails the erasure when shared-user OAuth cleanup fails', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    await seedUser(userId);
+    const { deps } = createDeps();
+    deps.mcpOAuth = {
+      getUserPrincipals: jest.fn(async () => []),
+      resolveAllowlists: jest.fn(async () => ({})),
+      fenceAndDisconnectUser: jest.fn(async () => {
+        throw new Error('redis down');
+      }),
+      uninstallOAuthMCP: jest.fn(async () => undefined),
+    };
+
+    await expect(eraseUserData({ userId: userId.toString() }, deps)).rejects.toThrow(
+      'MCP OAuth cleanup failed',
+    );
+  });
+
   it('still cleans shared users when the ACL delete fails after the server is gone', async () => {
     const userId = new mongoose.Types.ObjectId();
     const viewerId = new mongoose.Types.ObjectId();

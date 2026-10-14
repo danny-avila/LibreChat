@@ -316,12 +316,17 @@ describe('Delete user CLI', () => {
     mockMethods.deleteUserAgents = jest.fn(async () => {
       scopes.agents = mockTenantStorage.getStore();
     });
+    mockMethods.findMCPServerOAuthTokenUserIds = jest.fn(async () => {
+      scopes.tokens = mockTenantStorage.getStore();
+      return [];
+    });
     mockProcessDeleteRequest.mockImplementation(async () => {
       scopes.files = mockTenantStorage.getStore();
     });
     mockEraseUserData.mockImplementation(async (_params, deps) => {
       scopes.cascade = mockTenantStorage.getStore();
       await deps.deleteUserAgents(USER_ID);
+      await deps.findMCPServerOAuthTokenUserIds('server-1');
       await deps.deleteStoredFiles([{ file_id: 'file-1' }]);
     });
 
@@ -330,6 +335,7 @@ describe('Delete user CLI', () => {
     expect(scopes.cascade).toBeUndefined();
     expect(scopes.agents).toEqual({ tenantId: 'tenant-1', userId: USER_ID });
     expect(scopes.files).toEqual({ tenantId: 'tenant-1', userId: USER_ID });
+    expect(scopes.tokens).toEqual({ tenantId: 'tenant-1', userId: USER_ID });
   });
 
   it('supplies shared-user MCP OAuth cleanup to the cascade', async () => {
