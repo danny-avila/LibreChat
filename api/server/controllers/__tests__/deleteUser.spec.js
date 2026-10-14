@@ -299,7 +299,9 @@ describe('deleteUserController - 2FA enforcement', () => {
     );
     expect(mockDeletePasskeysByUser).toHaveBeenCalledWith(USER_ID);
     expect(mockDeleteAllUserPluginAuths).toHaveBeenCalledWith(USER_ID);
-    expect(mockDeleteAllSharedLinksWithCleanup).toHaveBeenCalledWith(USER_ID);
+    expect(mockDeleteAllSharedLinksWithCleanup).toHaveBeenCalledWith(USER_ID, {
+      awaitCleanup: true,
+    });
     expect(mockProcessDeleteRequest).toHaveBeenCalledWith({
       req: expect.objectContaining({ user: req.user, body: {} }),
       files: [],

@@ -205,12 +205,12 @@ async function gracefulExit(code = 0) {
       body: {},
       config: userAppConfig,
     };
-    /** Same tenant scope as account self-deletion, so id-keyed cleanup cannot reach other tenants. */
-    const runInUserScope = (operation) =>
+    /** ID-keyed cleanup (agent references, file metadata) stays in the deleted user's tenant. */
+    const runInUserTenant = (operation) =>
       user.tenantId
         ? tenantStorage.run({ tenantId: user.tenantId, userId: uid }, operation)
-        : runAsSystem(operation);
-    await runInUserScope(() =>
+        : operation();
+    await runAsSystem(() =>
       eraseUserData(
         {
           userId: uid,
@@ -221,14 +221,21 @@ async function gracefulExit(code = 0) {
         {
           ...methods,
           openCheckpointDeletion,
-          deleteSharedLinks: deleteAllSharedLinksWithCleanup,
-          deleteStoredFiles: (files) => processDeleteRequest({ req: fileRequest, files }),
+          deleteSharedLinks: (id) => deleteAllSharedLinksWithCleanup(id, { awaitCleanup: true }),
+          deleteStoredFiles: (files) =>
+            runInUserTenant(async () => processDeleteRequest({ req: fileRequest, files })),
+          deleteUserAgents: (id) => runInUserTenant(async () => methods.deleteUserAgents(id)),
           invalidateMCPServerTools: (serverName) =>
             invalidateCachedTools({ userId: uid, serverName }),
           /** The CLI has no MCP registry or live connections, so shared users get local token and cache cleanup. */
           mcpOAuth: {
             getUserPrincipals: (candidateId) => methods.getUserPrincipals({ userId: candidateId }),
-            resolveAllowlists: async () => ({}),
+            getServerConfig: async (serverName) =>
+              (await methods.findMCPServerByServerName(serverName))?.config,
+            resolveAllowlists: async () => ({
+              allowedDomains: userAppConfig?.mcpSettings?.allowedDomains,
+              allowedAddresses: userAppConfig?.mcpSettings?.allowedAddresses,
+            }),
             fenceAndDisconnectUser: (candidateId, serverName) =>
               invalidateCachedTools({ userId: candidateId, serverName }),
             uninstallOAuthMCP: (candidateId, pluginKey, cleanupConfig, serverConfig) =>

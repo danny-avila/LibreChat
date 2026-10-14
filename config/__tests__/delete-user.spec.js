@@ -282,9 +282,13 @@ describe('Delete user CLI', () => {
       expect.objectContaining({
         ...mockMethods,
         openCheckpointDeletion: mockOpenCheckpointDeletion,
-        deleteSharedLinks: mockDeleteAllSharedLinksWithCleanup,
+        deleteSharedLinks: expect.any(Function),
       }),
     );
+    await deps.deleteSharedLinks(USER_ID);
+    expect(mockDeleteAllSharedLinksWithCleanup).toHaveBeenCalledWith(USER_ID, {
+      awaitCleanup: true,
+    });
 
     const files = [{ file_id: 'file-1' }];
     await deps.deleteStoredFiles(files);
@@ -307,15 +311,25 @@ describe('Delete user CLI', () => {
     );
   });
 
-  it('runs the cascade in the deleted user tenant scope', async () => {
-    let scope;
-    mockEraseUserData.mockImplementation(async () => {
-      scope = mockTenantStorage.getStore();
+  it('keeps id-keyed cleanup in the deleted user tenant scope', async () => {
+    const scopes = {};
+    mockMethods.deleteUserAgents = jest.fn(async () => {
+      scopes.agents = mockTenantStorage.getStore();
+    });
+    mockProcessDeleteRequest.mockImplementation(async () => {
+      scopes.files = mockTenantStorage.getStore();
+    });
+    mockEraseUserData.mockImplementation(async (_params, deps) => {
+      scopes.cascade = mockTenantStorage.getStore();
+      await deps.deleteUserAgents(USER_ID);
+      await deps.deleteStoredFiles([{ file_id: 'file-1' }]);
     });
 
     expect(await runCli()).toBe(0);
 
-    expect(scope).toEqual({ tenantId: 'tenant-1', userId: USER_ID });
+    expect(scopes.cascade).toBeUndefined();
+    expect(scopes.agents).toEqual({ tenantId: 'tenant-1', userId: USER_ID });
+    expect(scopes.files).toEqual({ tenantId: 'tenant-1', userId: USER_ID });
   });
 
   it('supplies shared-user MCP OAuth cleanup to the cascade', async () => {
@@ -323,6 +337,7 @@ describe('Delete user CLI', () => {
 
     const [, deps] = mockEraseUserData.mock.calls[0];
     expect(deps.mcpOAuth).toEqual({
+      getServerConfig: expect.any(Function),
       getUserPrincipals: expect.any(Function),
       resolveAllowlists: expect.any(Function),
       fenceAndDisconnectUser: expect.any(Function),
