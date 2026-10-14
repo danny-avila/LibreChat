@@ -49,7 +49,7 @@ const sensitiveKeys: RegExp[] = [
   /(\b)eyJ[a-zA-Z0-9_-]{5,}\.[a-zA-Z0-9_-]{5,}\.[a-zA-Z0-9_-]+/g,
   /\b((?:Proxy-)?Authorization:\s*)[^\r\n]+/gi,
   /\b((?:Cookie|Set-Cookie):\s*)[^\r\n]+/gi,
-  /(?<![a-z0-9+.-])([a-z][a-z0-9+.-]*:\/\/)[^/\s:@]*:[^/\s@]+(?=@)/gi,
+  /(?<![a-z0-9])([a-z][a-z0-9+.-]{0,255}:\/\/)[^/\s:@]*:[^/\s@]+(?=@)/gi,
 ];
 
 /**
@@ -57,7 +57,7 @@ const sensitiveKeys: RegExp[] = [
  * only at a token boundary, so long non-email text is scanned once instead of once per character.
  */
 const EMAIL_PATTERN =
-  /(?:\\"(?:[^"\\\r\n]|\\{3}"){1,64}\\"|(?<!\\)"(?:[^"\\\r\n]|\\.)+"|(?<![^\s<>[\],;"])[^\s<>[\],;"]+)@(?:\[[^\]\s@]{1,64}\]|[^\s<>[\],;"@]+\.[^\s<>[\],;"@]+)/gu;
+  /(?:\\"(?:[^"\\\r\n]|\\{3}")+\\"|(?<!\\)"(?:[^"\\\r\n]|\\.)+"|(?<![^\s<>[\],;"])[^\s<>[\],;"]+)@(?:\[[^\]\s@]+\]|[^\s<>[\],;"@]+\.[^\s<>[\],;"@]+)/gu;
 const REDACTION_WINDOW_SLACK = 1024;
 const REDACTED_EMAIL_VALUE = '[REDACTED_EMAIL]';
 

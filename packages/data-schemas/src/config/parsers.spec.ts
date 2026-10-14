@@ -213,6 +213,20 @@ describe('redactMessage', () => {
     expect(out).not.toContain('jane');
   });
 
+  it('has no residual caps and masks credential URIs after scheme punctuation', () => {
+    expect(
+      redactMessage(JSON.stringify({ email: `"${'a'.repeat(65)}"@example.com` })),
+    ).not.toContain('aaaa');
+    expect(redactMessage(`u@[${'a'.repeat(64)}.x] ok`)).toBe('[REDACTED_EMAIL] ok');
+    expect(redactMessage('-redis://:pw0rd@redis:6379')).not.toContain('pw0rd');
+    expect(redactMessage('...postgresql://user:pw0rd@db/database')).not.toContain('pw0rd');
+    for (const input of ['a-'.repeat(50000), '\\"a'.repeat(30000), 'u@['.repeat(30000)]) {
+      const started = Date.now();
+      redactMessage(input);
+      expect(Date.now() - started).toBeLessThan(500);
+    }
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),
