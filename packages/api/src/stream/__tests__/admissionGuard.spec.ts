@@ -31,14 +31,15 @@ describe('GenerationJobManager admission guard', () => {
     expect(await store.getJob('denied')).toBeNull();
   });
 
-  it('skips the guard for callers that run their own admission check', async () => {
-    const guard = jest.fn(async () => false);
+  it('uses a per-job admission check in place of the installed guard', async () => {
+    const guard = jest.fn(async () => true);
     manager.setAdmissionGuard(guard);
 
     await expect(
-      manager.createJob('own-check', 'user-1', 'own-check', { skipAdmissionGuard: true }),
-    ).resolves.toMatchObject({ streamId: 'own-check' });
+      manager.createJob('own-check', 'user-1', 'own-check', { admissionCheck: async () => false }),
+    ).rejects.toBeInstanceOf(GenerationAdmissionDeniedError);
     expect(guard).not.toHaveBeenCalled();
+    expect(await store.getJob('own-check')).toBeNull();
   });
 
   it('retires the committed job and refuses with a sanitized code when the guard rejects', async () => {
@@ -57,7 +58,10 @@ describe('GenerationJobManager admission guard', () => {
     manager.setAdmissionGuard(async () => false);
     jest.spyOn(store, 'deleteJob').mockRejectedValueOnce(new Error('store down'));
 
-    await expect(manager.createJob('stuck', 'user-1', 'stuck')).rejects.toThrow('store down');
+    await expect(manager.createJob('stuck', 'user-1', 'stuck')).rejects.toMatchObject({
+      code: 'GENERATION_ADMISSION_UNAVAILABLE',
+      message: 'Generation admission could not be verified',
+    });
   });
 
   it('admits jobs while the account is active', async () => {

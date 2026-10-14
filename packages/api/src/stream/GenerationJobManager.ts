@@ -665,8 +665,8 @@ export type TerminalHostActionHandler = (
 ) => void | Promise<void>;
 
 export interface CreateGenerationJobOptions {
-  /** For callers that run their own post-commit account admission check (remote agent runs). */
-  skipAdmissionGuard?: boolean;
+  /** Replaces the installed admission guard for this job, for callers with a stricter predicate. */
+  admissionCheck?: (userId: string) => Promise<boolean>;
   startupTelemetry?: AgentStartupTelemetry;
   initialMetadata?: Partial<t.GenerationJobMetadata>;
   /** A terminal steer being handed off as this new normal turn. The store
@@ -2749,24 +2749,27 @@ class GenerationJobManagerClass {
     }
     let admissionDenied = false;
     let admissionFailure: unknown;
-    if (!this.shuttingDown && this.admissionGuard != null && options.skipAdmissionGuard !== true) {
+    const admissionCheck = options.admissionCheck ?? this.admissionGuard;
+    if (!this.shuttingDown && admissionCheck != null) {
       try {
-        admissionDenied = !(await this.admissionGuard(userId));
+        admissionDenied = !(await admissionCheck(userId));
       } catch (error) {
         admissionFailure = error;
       }
     }
     const admissionRefused = admissionDenied || admissionFailure != null;
     if (this.shuttingDown || admissionRefused) {
-      await this.processDurableReplacementReceipts(streamId, jobData, conversationId).catch(
-        (handoffError) => {
-          logger.error(
-            `[GenerationJobManager] Failed to hand off predecessor during refused admission ${streamId}:`,
-            handoffError,
-          );
-          return false;
-        },
-      );
+      const handoffConfirmed = await this.processDurableReplacementReceipts(
+        streamId,
+        jobData,
+        conversationId,
+      ).catch((handoffError) => {
+        logger.error(
+          `[GenerationJobManager] Failed to hand off predecessor during refused admission ${streamId}:`,
+          handoffError,
+        );
+        return false;
+      });
       try {
         await this.completeJob(
           streamId,
@@ -2786,18 +2789,27 @@ class GenerationJobManagerClass {
           this.retireStoppedPredecessorRuntime(streamId, jobData.createdAt);
         }
       } finally {
-        if (admissionRefused) {
+        if (admissionRefused && handoffConfirmed) {
           /** A refused job never ran, and its metadata holds the user's message; the erasure that
-           * refused it will not list it again, so purge it even when retiring it failed. A purge
-           * failure propagates so the caller fails instead of reporting a clean refusal. */
-          await this.jobStore.deleteJob(streamId, jobData.createdAt);
+           * refused it will not list it again, so purge it even when retiring it failed. It stays
+           * until the displaced predecessor is confirmed drained, because the replacement receipt
+           * is the only durable link to that provider. A purge failure fails the request. */
+          await this.jobStore.deleteJob(streamId, jobData.createdAt).catch((purgeError) => {
+            logger.error(
+              `[GenerationJobManager] Failed to purge refused generation ${streamId}:`,
+              purgeError,
+            );
+            throw new GenerationAdmissionUnavailableError();
+          });
         }
       }
-      if (admissionFailure != null) {
-        logger.error(
-          `[GenerationJobManager] Admission check failed for ${streamId}:`,
-          admissionFailure,
-        );
+      if (admissionFailure != null || (admissionRefused && !handoffConfirmed)) {
+        if (admissionFailure != null) {
+          logger.error(
+            `[GenerationJobManager] Admission check failed for ${streamId}:`,
+            admissionFailure,
+          );
+        }
         throw new GenerationAdmissionUnavailableError();
       }
       throw admissionDenied ? new GenerationAdmissionDeniedError() : new Error(SHUTTING_DOWN_ERROR);
