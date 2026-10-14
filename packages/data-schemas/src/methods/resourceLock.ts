@@ -43,6 +43,13 @@ export function createResourceLockMethods(mongoose: typeof import('mongoose')): 
   }
 
   /**
+   * Expiry is computed on the application clock ($$NOW pipelines are avoided for DocumentDB
+   * compatibility). Clock skew between instances only affects liveness: every write is fenced by
+   * `renewResourceLock`, which succeeds only for the current owner token, so a skew-induced early
+   * takeover changes the owner and the previous holder's next renewal fails and aborts with a 409
+   * instead of writing. Exclusivity therefore holds; the delay a skew can cause is bounded by the
+   * skew relative to the TTL. Tracked as a liveness improvement in berry-13/LibreChat#354.
+   *
    * Takes the lease for `key`, or takes over one whose holder let it expire.
    * Returns false while another owner holds a live lease.
    */
