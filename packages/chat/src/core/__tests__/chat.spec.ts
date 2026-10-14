@@ -338,6 +338,36 @@ describe('Chat', () => {
     },
   );
 
+  it.each(['sendMessages', 'reconnectToStream'] as const)(
+    'stops while %s ignores the abort signal, closing the stream it opens later',
+    async (opener) => {
+      let open: (() => void) | undefined;
+      const stream = createStream({ streamId: 'convo-1' });
+      const pending = jest.fn(
+        () =>
+          new Promise((resolve) => {
+            open = () => resolve(opener === 'sendMessages' ? { status: 'stream', stream } : stream);
+          }),
+      );
+      const { chat, onFinish } = setup({}, { [opener]: pending });
+
+      const started =
+        opener === 'sendMessages'
+          ? chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] })
+          : chat.resumeStream({ streamId: 'convo-1' });
+      await flush();
+      await chat.stop();
+      await started;
+      expect(chat.status).toBe('ready');
+      open?.();
+      await flush();
+
+      expect(stream.closed()).toBe(true);
+      expect(onFinish).toHaveBeenCalledTimes(1);
+      expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isAbort: true }));
+    },
+  );
+
   it('cancels a start whose request is still being prepared, without writing it', async () => {
     let prepare: (value: { payload: TPayload; messages: TMessage[] }) => void = () => {};
     const { chat, transport, state, onFinish } = setup({
@@ -714,6 +744,30 @@ describe('Chat', () => {
       await expect(chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] })).rejects.toThrow(
         'disposed',
       );
+    });
+
+    it('stops the continuation of a restored pause with the generation it resumed', async () => {
+      const continuation = createStream({ streamId: 'convo-1' });
+      const { chat, transport } = setup(
+        { resumeSelection: () => ({ endpoint: 'agents' }) },
+        { reconnectToStream: jest.fn(async () => continuation) },
+      );
+      transport.abort.mockImplementation(async () => {
+        continuation.push(finalEvent({ terminalStatus: 'aborted' }));
+        return { success: true };
+      });
+
+      chat.restorePendingAction(askAction, 500);
+      await chat.addToolOutput({ toolCallId: 'ask-1', output: 'Blue' });
+      await flush();
+      continuation.push(stepEvent);
+      await flush();
+      await chat.stop();
+
+      expect(transport.abort).toHaveBeenCalledWith(
+        expect.objectContaining({ endpoint: 'agents', generationCreatedAt: 500 }),
+      );
+      expect(chat.status).toBe('ready');
     });
 
     it('holds new turns behind a restored pause until it is stopped on the server', async () => {

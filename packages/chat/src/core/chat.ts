@@ -150,6 +150,23 @@ const untilAborted = <T>(value: T | Promise<T>, signal: AbortSignal): Promise<T>
       .finally(() => signal.removeEventListener('abort', onAbort));
   });
 
+/** Races opening a stream with cancellation, and closes a stream that opens after it. */
+const openUntilAborted = <T>(
+  opening: Promise<T>,
+  signal: AbortSignal,
+  toStream: (value: T) => ChatStream | null,
+): Promise<T> => {
+  void opening.then(
+    (value) => {
+      if (signal.aborted) {
+        toStream(value)?.close();
+      }
+    },
+    () => undefined,
+  );
+  return untilAborted(opening, signal);
+};
+
 const streamingEvents = new Set<ChatEvent['type']>(['created', 'sync', 'step', 'content', 'text']);
 
 const getErrorMessage = (data: ChatErrorData | null | undefined): string | undefined => {
@@ -322,12 +339,16 @@ export class Chat {
       this.generationCreatedAt = options.generationCreatedAt;
     }
     try {
-      const stream = await this.init.transport.reconnectToStream({
-        ...options,
-        chatId: this.id,
-        resume: true,
-        abortSignal: active.controller.signal,
-      });
+      const stream = await openUntilAborted(
+        this.init.transport.reconnectToStream({
+          ...options,
+          chatId: this.id,
+          resume: true,
+          abortSignal: active.controller.signal,
+        }),
+        active.controller.signal,
+        (opened) => opened,
+      );
       if (!stream) {
         if (this.status === 'submitted' || this.status === 'streaming') {
           this.setStatus('ready');
@@ -365,7 +386,7 @@ export class Chat {
       chatId: this.id,
       endpoint: active.endpoint,
       streamId: active.stream.streamId,
-      generationCreatedAt: active.stream.generationCreatedAt,
+      generationCreatedAt: active.stream.generationCreatedAt ?? this.generationCreatedAt,
     });
     if (result && 'success' in result && !result.success) {
       throw new Error(result.error ?? 'The server refused the stop');
@@ -535,25 +556,34 @@ export class Chat {
         await this.executor.run(() => this.write(optimistic));
       }
       active.endpoint = prepared.payload.endpoint ?? undefined;
-      const result = await this.init.transport.sendMessages({
-        ...options,
-        trigger: request.trigger,
-        chatId: this.id,
-        messageId: request.messageId,
-        payload: prepared.payload,
-        abortSignal: active.controller.signal,
-      });
+      const { signal } = active.controller;
+      const result = await openUntilAborted(
+        this.init.transport.sendMessages({
+          ...options,
+          trigger: request.trigger,
+          chatId: this.id,
+          messageId: request.messageId,
+          payload: prepared.payload,
+          abortSignal: signal,
+        }),
+        signal,
+        (sent) => (sent.status === 'stream' ? sent.stream : null),
+      );
       let stream: ChatStream | null = null;
       if (result.status === 'stream') {
         stream = result.stream;
       } else if (result.status === 'replaced') {
-        stream = await this.init.transport.reconnectToStream({
-          chatId: result.conversationId,
-          streamId: result.streamId,
-          generationCreatedAt: result.generationCreatedAt,
-          resume: true,
-          abortSignal: active.controller.signal,
-        });
+        stream = await openUntilAborted(
+          this.init.transport.reconnectToStream({
+            chatId: result.conversationId,
+            streamId: result.streamId,
+            generationCreatedAt: result.generationCreatedAt,
+            resume: true,
+            abortSignal: signal,
+          }),
+          signal,
+          (opened) => opened,
+        );
       }
       if (!stream) {
         this.settle({ kind: 'complete' }, active);
