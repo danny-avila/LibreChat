@@ -735,24 +735,28 @@ describe('Chat', () => {
     unsubscribe();
   });
 
-  it('finishes with the response the turn produced, not the tail of another branch', async () => {
-    const otherBranch: TMessage = { ...placeholder, messageId: 'other-1', parentMessageId: 'x' };
-    const { chat, stream, onFinish } = setup({
-      prepareRequest: jest.fn(() => ({
-        payload,
-        messages: [userMessage, placeholder, otherBranch],
-      })),
-    });
+  it.each(['final', 'abort'] as const)(
+    'finishes on %s with the response the turn produced, not the tail of another branch',
+    async (end) => {
+      const otherBranch: TMessage = { ...placeholder, messageId: 'other-1', parentMessageId: 'x' };
+      const { chat, stream, onFinish } = setup({
+        prepareRequest: jest.fn(() => ({
+          payload,
+          messages: [userMessage, placeholder, otherBranch],
+          responseMessageId: 'response-1',
+        })),
+      });
 
-    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
-    await flush();
-    stream.push(finalEvent());
-    await sent;
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push(end === 'final' ? finalEvent() : ({ type: 'abort', data: {} } as ChatEvent));
+      await sent;
 
-    expect(onFinish).toHaveBeenCalledWith(
-      expect.objectContaining({ message: expect.objectContaining({ messageId: 'response-1' }) }),
-    );
-  });
+      expect(onFinish).toHaveBeenCalledWith(
+        expect.objectContaining({ message: expect.objectContaining({ messageId: 'response-1' }) }),
+      );
+    },
+  );
 
   it('regenerates a given message', async () => {
     const { stream, transport } = setup();

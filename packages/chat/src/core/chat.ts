@@ -65,6 +65,11 @@ export type ChatPreparedRequest = {
    * prepared are kept; a list replaces it as prepared.
    */
   messages?: TMessage[] | ((current: TMessage[]) => TMessage[]);
+  /**
+   * The placeholder reply's id, which `onFinish` reports when the turn ends without a final frame.
+   * Without it, that is the list's last message.
+   */
+  responseMessageId?: string;
 };
 
 /** The message list as an event handler reads and writes it. */
@@ -630,9 +635,7 @@ export class Chat {
         const optimistic = prepared.messages;
         await this.executor.run(() => {
           if (!active.controller.signal.aborted) {
-            const list = typeof optimistic === 'function' ? optimistic(this.messages) : optimistic;
-            active.responseId = list[list.length - 1]?.messageId;
-            this.write(list);
+            this.write(typeof optimistic === 'function' ? optimistic(this.messages) : optimistic);
           }
         });
       }
@@ -640,6 +643,7 @@ export class Chat {
         throw active.controller.signal.reason;
       }
       active.endpoint = prepared.payload.endpoint ?? undefined;
+      active.responseId = prepared.responseMessageId;
       const { signal } = active.controller;
       const result = await openUntilAborted(
         this.init.transport.sendMessages({
