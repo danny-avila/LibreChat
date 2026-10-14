@@ -2590,8 +2590,10 @@ describe('createAdminConfigHandlers', () => {
 
     it('records a partial secret-field delete when the preview write fails', async () => {
       const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const invalidateConfigCaches = jest.fn().mockResolvedValue(undefined);
       const { handlers } = createHandlers({
         recordAuditEntry,
+        invalidateConfigCaches,
         unsetConfigField: jest
           .fn()
           .mockResolvedValueOnce({ _id: 'c1', overrides: {} })
@@ -2603,6 +2605,7 @@ describe('createAdminConfigHandlers', () => {
       await handlers.deleteConfigField(req, res);
 
       expect(res.statusCode).toBe(500);
+      expect(invalidateConfigCaches).toHaveBeenCalled();
       expect(recordAuditEntry).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'config.updated',
