@@ -39,7 +39,10 @@ export class ReactQueryChatState implements ChatState {
 
   constructor(options: ReactQueryChatStateOptions) {
     this.options = options;
-    this.queryHash = hashQueryKey([QueryKeys.messages, options.key]);
+    const queryKey = [QueryKeys.messages, options.key];
+    /** The hash `setQueryData` files the key under, including a host's `queryKeyHashFn`. */
+    this.queryHash =
+      options.queryClient.defaultQueryOptions({ queryKey }).queryHash ?? hashQueryKey(queryKey);
   }
 
   get messages(): TMessage[] {

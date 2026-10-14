@@ -28,6 +28,23 @@ describe('ReactQueryChatState', () => {
     expect(state.version).toBe(1);
   });
 
+  it('reads back its writes and reports them under a host key hash', async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { queryKeyHashFn: (key) => `custom:${JSON.stringify(key)}` } },
+    });
+    const state = new ReactQueryChatState({ queryClient, key: 'convo-1' });
+    const listener = jest.fn();
+    const unsubscribe = state.subscribe(listener);
+
+    state.replaceMessages([message('a')]);
+    await flushMicrotasks();
+
+    expect(state.messages).toEqual([message('a')]);
+    expect(state.version).toBe(1);
+    expect(listener).toHaveBeenCalled();
+    unsubscribe();
+  });
+
   it('counts a write that keeps the same array', () => {
     const queryClient = new QueryClient();
     const state = new ReactQueryChatState({ queryClient, key: 'convo-1' });

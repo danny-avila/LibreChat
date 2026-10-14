@@ -252,6 +252,21 @@ describe('Chat', () => {
     expect(ended.onFinish).toHaveBeenCalledWith(expect.objectContaining({ isDisconnect: true }));
   });
 
+  it('clears a dropped connection error once a reconnect finishes the turn', async () => {
+    const stream = createStream({ streamId: 'convo-1' });
+    const { chat, state } = setup({}, { reconnectToStream: jest.fn(async () => stream) });
+    state.error = new Error('dropped');
+    state.status = 'error';
+
+    const resumed = chat.resumeStream({ streamId: 'convo-1' });
+    await flush();
+    stream.push(finalEvent());
+    await resumed;
+
+    expect(chat.status).toBe('ready');
+    expect(chat.error).toBeUndefined();
+  });
+
   it('reports a failed start as an error and frees the chat for the next turn', async () => {
     const failure = new Error('start failed');
     const { chat, transport } = setup(

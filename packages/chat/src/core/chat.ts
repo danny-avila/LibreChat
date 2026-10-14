@@ -690,6 +690,7 @@ export class Chat {
       this.setStatus('error');
       this.init.onError?.(outcome.error);
     } else {
+      this.init.state.error = undefined;
       this.setStatus('ready');
     }
     const messages = this.messages;
