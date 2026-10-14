@@ -515,6 +515,7 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
   (info: winston.Logform.TransformableInfo) => {
     const infoRecord = info as Record<string | symbol, unknown>;
     const stripsHeavyFields = info.level === 'error' || info.level === 'warn';
+    const skipsHeavyTopLevel = stripsHeavyFields && isErrorLike(info);
 
     if (info.message !== undefined) {
       info.message = redactLogValue(info.message);
@@ -555,12 +556,18 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
       }
       /** `stripHeavyErrorFields` drops these later; cloning the graph here would only burn time. */
       if (
-        stripsHeavyFields &&
+        skipsHeavyTopLevel &&
         (HEAVY_ERROR_KEYS.has(key) || (isAxios && AXIOS_ONLY_HEAVY_KEYS.has(key)))
       ) {
         continue;
       }
-      const value = redactRecordValue(key, infoRecord[key], new WeakMap(), 0);
+      let raw: unknown;
+      try {
+        raw = infoRecord[key];
+      } catch {
+        raw = '[Unreadable]';
+      }
+      const value = redactRecordValue(key, raw, new WeakMap(), 0);
       const safeKey = redactLogKey(
         key,
         (candidate) => candidate !== key && Object.prototype.hasOwnProperty.call(info, candidate),

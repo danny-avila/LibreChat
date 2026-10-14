@@ -337,6 +337,23 @@ describe('redactMessage', () => {
     expect(out.detail).not.toContain('jane');
   });
 
+  it('survives throwing top-level getters and redacts heavy-named fields on plain records', () => {
+    const error = new Error('boom');
+    Object.defineProperty(error, 'detail', {
+      enumerable: true,
+      get: () => {
+        throw new Error('nope');
+      },
+    });
+    expect(() => runRedactFormat(error as unknown as RedactInfo)).not.toThrow();
+    const out = runRedactFormat({
+      level: 'error',
+      message: 'failed',
+      socket: { note: 'Bearer secretcanary' },
+    } as RedactInfo);
+    expect(JSON.stringify(out)).not.toContain('secretcanary');
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),
