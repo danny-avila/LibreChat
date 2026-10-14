@@ -2962,6 +2962,7 @@ class AgentClient extends BaseClient {
     });
     const turnContext = preparedTurnContext?.plan ?? null;
     this.pendingContextAnchor = preparedTurnContext?.pending;
+    this.promptCacheReset = preparedTurnContext?.promptCacheReset;
     promptTokens += addedTokens;
     const hasPromptOnlyContext = hasFileContext || applied;
     if (hasPromptOnlyContext) {
@@ -3770,6 +3771,7 @@ class AgentClient extends BaseClient {
      *   thoughtSignatures?: Record<string, string>,
      *   contextUsage?: import('librechat-data-provider').TContextUsageEvent,
      *   usage?: import('librechat-data-provider').TResponseUsage,
+     *   promptCacheReset?: string[],
      * }} */
     const metadata = {};
     const signatures = this.collectedThoughtSignatures;
@@ -3836,6 +3838,9 @@ class AgentClient extends BaseClient {
     const usage = aggregateEmittedUsage(usageEvents);
     if (usage) {
       metadata.usage = usage;
+    }
+    if (this.promptCacheReset?.length > 0) {
+      metadata.promptCacheReset = this.promptCacheReset;
     }
     return Object.keys(metadata).length > 0 ? metadata : undefined;
   }
