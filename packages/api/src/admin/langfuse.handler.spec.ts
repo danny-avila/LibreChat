@@ -879,6 +879,47 @@ describe('createAdminLangfuseHandlers', () => {
     });
   });
 
+  describe('updateConnection activation returning null', () => {
+    it('treats a vanished config as a failed activation', async () => {
+      const inactive = {
+        ...baseConfigDoc({
+          enabled: true,
+          destination: 'eu',
+          publicKey: 'pk-lf-1',
+          secretKey: encryptV3('sk-lf-secret'),
+        }),
+        isActive: false,
+      };
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const { handlers } = createHandlers({
+        findConfigByPrincipal: jest.fn().mockResolvedValue(inactive),
+        patchConfigFields: jest.fn().mockResolvedValue(inactive),
+        toggleConfigActive: jest.fn().mockResolvedValue(null),
+        recordAuditEntry,
+      });
+      const res = mockRes();
+
+      await handlers.updateConnection(
+        mockReq({
+          body: {
+            enabled: true,
+            destination: 'eu',
+            publicKey: 'pk-lf-1',
+            secretKey: 'sk-lf-secret',
+          },
+        }),
+        res,
+      );
+
+      expect(res.statusCode).toBe(500);
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ enabled: false, activation: 'failed' }),
+        }),
+      );
+    });
+  });
+
   describe('testConnection', () => {
     it('requires destination and publicKey', async () => {
       const { handlers } = createHandlers();

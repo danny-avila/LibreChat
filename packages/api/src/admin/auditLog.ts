@@ -24,6 +24,7 @@ import type { AuditMetadata } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
 import type { RecordAuditEntry } from './audit';
+import { getSafeErrorMetadata } from '~/utils/errors';
 import { createAdminAuditEmitter } from './audit';
 
 const FORMULA_PREFIX = /^[=+\-@\t\r]/;
@@ -351,7 +352,7 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps): {
       });
       return res.status(200).json(page);
     } catch (err) {
-      logger.error('[adminAuditLog] list error:', err);
+      logger.error('[adminAuditLog] list error:', getSafeErrorMetadata(err));
       return res.status(500).json({ error: 'Failed to fetch audit log' });
     }
   }
@@ -374,7 +375,7 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps): {
       });
       return res.status(200).json({ entry });
     } catch (err) {
-      logger.error('[adminAuditLog] get error:', err);
+      logger.error('[adminAuditLog] get error:', getSafeErrorMetadata(err));
       return res.status(500).json({ error: 'Failed to fetch audit log entry' });
     }
   }
@@ -409,7 +410,7 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps): {
         req.removeListener('aborted', markAborted);
       }
     } catch (err) {
-      logger.error('[adminAuditLog] verify error:', err);
+      logger.error('[adminAuditLog] verify error:', getSafeErrorMetadata(err));
       return res.status(500).json({ error: 'Failed to verify audit log integrity' });
     }
   }
@@ -538,7 +539,7 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps): {
         }
       }
     } catch (err) {
-      logger.error('[adminAuditLog] export error:', err);
+      logger.error('[adminAuditLog] export error:', getSafeErrorMetadata(err));
       if (exportRecorded) {
         await exportFailed?.('export_failed');
       }

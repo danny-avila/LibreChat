@@ -460,7 +460,17 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
       let activationError: unknown;
       if (updated?.isActive === false) {
         try {
-          updated = await toggleConfigActive(PrincipalType.ROLE, BASE_CONFIG_PRINCIPAL_ID, true);
+          const activated = await toggleConfigActive(
+            PrincipalType.ROLE,
+            BASE_CONFIG_PRINCIPAL_ID,
+            true,
+          );
+          if (activated) {
+            updated = activated;
+          } else {
+            /** A null result means the config vanished meanwhile (a concurrent delete). */
+            activationError = new Error('Langfuse base config no longer exists');
+          }
         } catch (error) {
           activationError = error;
         }

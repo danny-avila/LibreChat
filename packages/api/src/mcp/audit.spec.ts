@@ -180,6 +180,9 @@ describe('createMCPServerAuditor', () => {
     ).rejects.toThrow('fence failed');
 
     expect(order).toEqual(['fence', 'audit']);
+    expect(recordAuditEntry).toHaveBeenCalledWith(
+      expect.objectContaining({ metadata: { source: 'DB', postWrite: 'failed' } }),
+    );
   });
 
   it('is a no-op without a recorder', async () => {

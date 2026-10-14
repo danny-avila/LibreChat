@@ -126,11 +126,18 @@ export function createMCPServerAuditor(options: {
    * drops the entry.
    */
   return async function auditMCPServer(req, event, afterCommit) {
+    let afterCommitFailed = false;
     try {
       await afterCommit?.();
+    } catch (error) {
+      afterCommitFailed = true;
+      throw error;
     } finally {
       if (!event.noop) {
-        await record(req, event);
+        await record(req, {
+          ...event,
+          postWriteFailed: event.postWriteFailed || afterCommitFailed,
+        });
       }
     }
   };
