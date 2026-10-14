@@ -1,10 +1,8 @@
-import { memo, useMemo, ReactElement } from 'react';
-import MarkdownLite from '~/components/Chat/Messages/Content/MarkdownLite';
-import { useMessagePartsHost } from '~/Providers/MessagePartsHostContext';
-import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
-import Markdown from '~/components/Chat/Messages/Content/Markdown';
+import { memo, useMemo } from 'react';
+import { cn } from '@librechat/client';
+import type { ReactNode, NamedExoticComponent } from 'react';
+import { useMessagePartsHost } from '../react/host';
 import CollapsibleText from './CollapsibleText';
-import { cn } from '~/utils';
 
 type TextPartProps = {
   text: string;
@@ -12,13 +10,13 @@ type TextPartProps = {
   isCreatedByUser: boolean;
 };
 
-type ContentType =
-  | ReactElement<React.ComponentProps<typeof Markdown>>
-  | ReactElement<React.ComponentProps<typeof MarkdownLite>>
-  | ReactElement;
-
-const TextPart = memo(function TextPart({ text, isCreatedByUser, showCursor }: TextPartProps) {
-  const { useMessage, useUserTextPreferences } = useMessagePartsHost();
+const TextPart: NamedExoticComponent<TextPartProps> = memo(function TextPart({
+  text,
+  isCreatedByUser,
+  showCursor,
+}: TextPartProps) {
+  const { useMessage, useUserTextPreferences, useSmoothStreaming, renderMarkdown } =
+    useMessagePartsHost();
   const { isSubmitting = false, isLatestMessage = false } = useMessage();
   const { enableUserMsgMarkdown, collapseLongUserMessages } = useUserTextPreferences();
   const smoothStreaming = useSmoothStreaming();
@@ -29,15 +27,15 @@ const TextPart = memo(function TextPart({ text, isCreatedByUser, showCursor }: T
     [showCursor, isSubmitting, smoothStreaming, isCreatedByUser],
   );
 
-  const content: ContentType = useMemo(() => {
+  const content: ReactNode = useMemo(() => {
     if (!isCreatedByUser) {
-      return <Markdown content={text} isLatestMessage={isLatestMessage} />;
+      return renderMarkdown({ content: text, variant: 'full', isLatestMessage });
     } else if (enableUserMsgMarkdown) {
-      return <MarkdownLite content={text} />;
+      return renderMarkdown({ content: text, variant: 'lite', isLatestMessage });
     } else {
       return <>{text}</>;
     }
-  }, [isCreatedByUser, enableUserMsgMarkdown, text, isLatestMessage]);
+  }, [isCreatedByUser, enableUserMsgMarkdown, text, isLatestMessage, renderMarkdown]);
 
   return (
     <CollapsibleText enabled={isCreatedByUser && collapseLongUserMessages}>

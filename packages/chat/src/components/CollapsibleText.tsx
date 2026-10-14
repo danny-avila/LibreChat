@@ -1,9 +1,12 @@
 import { useLayoutEffect, memo, useId, useRef, useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
-import { Button, useRemScale } from '@librechat/client';
-import type { ReactNode } from 'react';
-import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
+import { cn, Button, useLocalize, useRemScale } from '@librechat/client';
+import type { ReactNode, NamedExoticComponent } from 'react';
+
+type CollapsibleTextProps = {
+  enabled: boolean;
+  children: ReactNode;
+};
 
 /** Collapsed preview height (baseline px) for a long message before "Show more". The
  *  tolerance below only decides whether the toggle appears: it absorbs the
@@ -21,13 +24,10 @@ const OVERFLOW_TOLERANCE = 8;
  * in-page search. Renders children untouched while `enabled` is false, keeping
  * the DOM identical when the preference is off.
  */
-const CollapsibleText = memo(function CollapsibleText({
+const CollapsibleText: NamedExoticComponent<CollapsibleTextProps> = memo(function CollapsibleText({
   enabled,
   children,
-}: {
-  enabled: boolean;
-  children: ReactNode;
-}) {
+}: CollapsibleTextProps) {
   const localize = useLocalize();
   const remScale = useRemScale();
   const collapsedMaxHeight = COLLAPSED_MAX_HEIGHT * remScale;

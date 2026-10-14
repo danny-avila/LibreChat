@@ -325,11 +325,6 @@
       "count": 1
     }
   },
-  "client/src/components/Chat/Messages/Content/Parts/CollapsibleText.tsx": {
-    "shadcn/no-restyle": {
-      "count": 2
-    }
-  },
   "client/src/components/Chat/Messages/Content/Parts/ExecuteCode.tsx": {
     "shadcn/no-inline-styles": {
       "count": 1
@@ -365,20 +360,6 @@
   },
   "client/src/components/Chat/Messages/Content/Parts/SubagentCall.tsx": {
     "design/disabled-recipe": {
-      "count": 1
-    }
-  },
-  "client/src/components/Chat/Messages/Content/Parts/Summary.tsx": {
-    "shadcn/no-arbitrary-values": {
-      "count": 1
-    },
-    "shadcn/no-inline-styles": {
-      "count": 1
-    },
-    "shadcn/no-restyle": {
-      "count": 9
-    },
-    "shadcn/require-static-classes": {
       "count": 1
     }
   },
@@ -1490,6 +1471,25 @@
   "client/src/utils/index.ts": {
     "design/disabled-recipe": {
       "count": 2
+    }
+  },
+  "packages/chat/src/components/CollapsibleText.tsx": {
+    "shadcn/no-restyle": {
+      "count": 2
+    }
+  },
+  "packages/chat/src/components/Summary.tsx": {
+    "shadcn/no-arbitrary-values": {
+      "count": 1
+    },
+    "shadcn/no-inline-styles": {
+      "count": 1
+    },
+    "shadcn/no-restyle": {
+      "count": 9
+    },
+    "shadcn/require-static-classes": {
+      "count": 1
     }
   },
   "packages/client/src/components/Badge.tsx": {
