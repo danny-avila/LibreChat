@@ -168,7 +168,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
       await recordAuditEntry(input);
     } catch (err) {
       /** Fail-open: audit failure must not roll back the grant. */
-      logger.error('[adminGrants] audit write failed', err);
+      logger.error('[adminGrants] audit write failed', { ...getSafeErrorMetadata(err) });
     }
   }
 

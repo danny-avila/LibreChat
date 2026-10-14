@@ -1,6 +1,6 @@
 import { Types } from 'mongoose';
 import { PrincipalType } from 'librechat-data-provider';
-import { SystemCapabilities, expandImplications } from '@librechat/data-schemas';
+import { SystemCapabilities, expandImplications, logger } from '@librechat/data-schemas';
 import type { ISystemGrant } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { ServerRequest } from '~/types/http';
@@ -1266,6 +1266,20 @@ describe('createAdminGrantsHandlers', () => {
         action: 'grant.assigned',
         metadata: { reassert: true },
       });
+    });
+
+    it('logs a failed fail-open audit write without the raw error', async () => {
+      const recordAuditEntry = jest
+        .fn()
+        .mockRejectedValue(new Error('SELECT secret FROM audit WHERE token=abc'));
+      const deps = createDeps({ recordAuditEntry });
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res } = createReqRes({ body: assignBody, user: reqUser() });
+      (logger.error as jest.Mock).mockClear();
+
+      await handlers.assignGrant(req, res);
+
+      expect(JSON.stringify((logger.error as jest.Mock).mock.calls)).not.toContain('SELECT secret');
     });
 
     it('fail-closed: an audit outage answers with the stable audit code', async () => {
