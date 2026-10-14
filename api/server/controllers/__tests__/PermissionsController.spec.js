@@ -344,18 +344,23 @@ describe('PermissionsController', () => {
       });
       const res = createMockRes();
 
-      req.config = { config: { permissions: { maxWriteAttempts: 7 } } };
+      req.config = {
+        config: { permissions: { maxWriteAttempts: 7, leaseTtlMs: 45000, leaseWaitMs: 1500 } },
+      };
       await updateResourcePermissions(req, res);
 
       expect(mockBulkUpdateResourcePermissions).toHaveBeenCalledWith(
-        expect.objectContaining({ maxWriteAttempts: 7 }),
+        expect.objectContaining({ maxWriteAttempts: 7, leaseTtlMs: 45000, leaseWaitMs: 1500 }),
       );
       expect(mockRecordAuditEntry).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'permission.insights_assigned',
           tenantId: 'tenant-a',
           target: expect.objectContaining({ id: 'agent-a' }),
-          metadata: { principalType: PrincipalType.ROLE, principalId: 'USER' },
+          metadata: expect.objectContaining({
+            principalType: PrincipalType.ROLE,
+            principalId: 'USER',
+          }),
         }),
         { failClosed: true },
       );
@@ -480,6 +485,7 @@ describe('PermissionsController', () => {
             previousPermBits: 0,
             roleId: 'role-1',
             previousRoleId: '',
+            resourceId: agentObjectId,
           },
         }),
       );

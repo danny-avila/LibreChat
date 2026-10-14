@@ -1426,6 +1426,22 @@ describe('createAdminGrantsHandlers', () => {
         expect(lease.held.size).toBe(0);
       });
 
+      it('uses the lease limits from the loaded librechat.yaml config', async () => {
+        const lease = memoryLease();
+        const deps = createDeps({ lease });
+        const handlers = createAdminGrantsHandlers(deps);
+        const { req, res } = createReqRes({ body: assignBody, user: reqUser() });
+        (req as unknown as { config: unknown }).config = {
+          config: { permissions: { leaseTtlMs: 45_000, leaseWaitMs: 1_500 } },
+        };
+
+        await handlers.assignGrant(req, res);
+
+        expect(lease.acquireResourceLock).toHaveBeenCalledWith(
+          expect.objectContaining({ ttlMs: 45_000 }),
+        );
+      });
+
       it('answers 409 with the busy code and writes nothing when the lease stays taken', async () => {
         const lease = memoryLease();
         lease.acquireResourceLock.mockResolvedValue(false);
