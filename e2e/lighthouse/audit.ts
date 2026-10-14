@@ -77,6 +77,7 @@ export async function auditPage({
     `--extra-headers=${JSON.stringify({ Cookie: cookie })}`,
     '--output=json',
     '--output=html',
+    ...(process.env.LIGHTHOUSE_PORT ? [`--port=${process.env.LIGHTHOUSE_PORT}`] : []),
   ];
 
   try {
@@ -96,7 +97,11 @@ export async function auditPage({
           break;
         } catch (error) {
           if (attempt >= RUN_ATTEMPTS) {
-            throw error;
+            throw new Error(
+              error instanceof Error && cookie
+                ? error.message.replaceAll(cookie, '[redacted]')
+                : `Lighthouse run ${run} failed after ${attempt} attempts`,
+            );
           }
           /** Lighthouse crashes out of a run it could not trace — NO_NAVSTART is
            *  the usual one, and its own message is "run Lighthouse again". The
@@ -104,9 +109,7 @@ export async function auditPage({
            *  process should cost a repeat, not the lane. A page that is really
            *  broken fails every attempt and still fails here. */
           console.log(
-            `Lighthouse run ${run}/${runs} attempt ${attempt} did not complete, retrying: ${
-              error instanceof Error ? error.message.split('\n')[0] : String(error)
-            }`,
+            `Lighthouse run ${run}/${runs} attempt ${attempt} did not complete, retrying.`,
           );
         }
       }

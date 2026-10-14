@@ -17,13 +17,18 @@ endpoints:
 
 Use the exact resolved model ID, including any gateway prefix. Administrators
 must list only models that support image input. Shared handoff history is enabled
-only when all configured recipient models are listed. `resendFiles: false`
+only when all top-level recipient models and their configured summary models are
+listed. Lazy subagents run with isolated transcripts and do not inherit these
+parent previews; they use their own authorized file inputs or explicit tools.
+`resendFiles: false`
 disables replay. Omit this configuration or set `enabled: false` to restore the
 existing behavior; no stored file or message migration is required.
 
 Replay uses the existing authenticated owner/tenant file lookup, the active
 conversation branch, and the saved producing MCP call/message association.
-Canonical file metadata supplies storage paths and eligibility. An attachment
+Canonical file metadata supplies storage paths and eligibility. Client-submitted
+assistant rows are excluded, and decoded bytes must match the canonical MIME.
+An attachment
 snapshot cannot supply a replacement path or bypass file/content policy.
 Code Interpreter output, PDFs, unrelated agent outputs, and files with delivery
 explicitly disabled are excluded.

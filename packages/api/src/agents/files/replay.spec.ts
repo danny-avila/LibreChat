@@ -7,6 +7,7 @@ import {
   selectHistoricalToolImages,
   replayHistoricalToolImages,
   appendHistoricalToolImageContext,
+  canReplayHistoricalToolImages,
 } from './replay';
 
 const config = agentsEndpointSchema.parse({
@@ -49,6 +50,62 @@ const countTokens = (parts: { type: string }[]) =>
   parts.filter((p) => p.type === 'image_url').length * 1000 + parts.length;
 
 describe('historical MCP image admission', () => {
+  it('checks shared handoff and summary recipients, leaving isolated subagents independent', () => {
+    const resolve = jest.fn();
+    const root = { model: 'vision', lazySubagentConfigs: [{ model: 'text-only', resolve }] };
+    expect(canReplayHistoricalToolImages([root], config)).toBe(true);
+    expect(canReplayHistoricalToolImages([root, { model: 'text-only' }], config)).toBe(false);
+    expect(canReplayHistoricalToolImages([{}], config)).toBe(false);
+    expect(
+      canReplayHistoricalToolImages(
+        [{ model: 'vision', model_parameters: { model: 'text-only' } }],
+        config,
+      ),
+    ).toBe(false);
+    expect(
+      canReplayHistoricalToolImages([root], config, { enabled: true, model: 'text-only' }),
+    ).toBe(false);
+    expect(
+      canReplayHistoricalToolImages(
+        [{ ...root, summarization: { enabled: false, model: 'text-only' } }],
+        config,
+      ),
+    ).toBe(true);
+    expect(resolve).not.toHaveBeenCalled();
+  });
+  it('rejects client-submitted assistant provenance', () => {
+    expect(
+      selectHistoricalToolImages({
+        ...selection(),
+        messages: [messages[0], { ...messages[1], isUserSubmitted: true }, messages[2]],
+      }),
+    ).toEqual([]);
+  });
+  it('keeps the newest bounded images in producing order', () => {
+    const refs = Array.from({ length: 4 }, (_, i) => ({
+      file_id: `image-${i}`,
+      messageId: 'a1',
+      toolCallId: `call-${i}`,
+    }));
+    const history = [
+      messages[0],
+      {
+        ...messages[1],
+        attachments: refs,
+        content: refs.map((ref) => ({
+          type: 'tool_call',
+          tool_call: { id: ref.toolCallId, name: 'read_file_mcp_fixture' },
+        })),
+      },
+      messages[2],
+    ];
+    const canonical = new Map(refs.map((ref) => [ref.file_id, { ...file, file_id: ref.file_id }]));
+    expect(
+      selectHistoricalToolImages({ ...selection(), messages: history, filesById: canonical }).map(
+        ({ file: selected }) => selected.file_id,
+      ),
+    ).toEqual(['image-1', 'image-2', 'image-3']);
+  });
   it('selects a saved, authorized tool image without changing history or file records', () => {
     const before = JSON.stringify({ messages, file });
     expect(selectHistoricalToolImages(selection())).toEqual([
@@ -176,6 +233,13 @@ describe('durable replay projection', () => {
       expect.objectContaining({ type: 'text', text: expect.stringContaining('unavailable') }),
     ]);
   });
+  it('does not admit bytes whose decoded format differs from canonical MIME policy', async () => {
+    const result = await replayHistoricalToolImages({
+      ...options(),
+      filesById: new Map([[file.file_id, { ...file, type: 'image/jpeg' }]]),
+    });
+    expect(result.files).toEqual([]);
+  });
   it('bounds actual reads even if canonical byte metadata is stale', async () => {
     const result = await replayHistoricalToolImages({
       ...options(Buffer.alloc(2048)),
@@ -265,5 +329,19 @@ describe('durable replay projection', () => {
       (await replayHistoricalToolImages({ ...opts, req: { ...req, config: {} } as ServerRequest }))
         .content,
     ).toEqual([]);
+  });
+  it('rejects mixed handoff recipients before any storage read or prompt mutation', async () => {
+    const opts = options();
+    const payload = [{ role: 'user', content: 'Follow-up' }];
+    expect(
+      await appendHistoricalToolImageContext({
+        ...opts,
+        payload,
+        indexTokenCountMap: {},
+        recipients: [{ model: 'vision' }, { model: 'text-only' }],
+      }),
+    ).toBe(0);
+    expect(opts.getDownloadStream).not.toHaveBeenCalled();
+    expect(payload[0].content).toBe('Follow-up');
   });
 });

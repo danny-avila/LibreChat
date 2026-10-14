@@ -2793,33 +2793,26 @@ class AgentClient extends BaseClient {
       return formattedMessage;
     });
 
-    // Shared handoff history must be supported by every configured recipient model.
-    const replayModels = this.options.req.config?.endpoints?.agents?.historicalToolImages?.models;
-    const canReplayImages = allAgents.every(({ agent }) =>
-      replayModels?.includes(agent.model_parameters?.model ?? agent.model),
-    );
-    if (canReplayImages) {
-      promptTokenTotal += await appendHistoricalToolImageContext({
-        req: this.options.req,
-        messages: orderedMessages,
-        filesById: this.authorizedHistoricalFiles,
-        model: this.options.agent?.model_parameters?.model ?? this.options.agent?.model,
-        conversationId: this.conversationId,
-        agentId: this.options.agent?.id,
-        endpoint: this.options.agent?.endpoint ?? this.options.endpoint,
-        endpointType: this.options.endpointType,
-        currentFiles: sharedAttachmentFiles,
-        payload: formattedMessages,
-        indexTokenCountMap,
-        resendFiles: this.options.resendFiles,
-        deps: {
-          getStrategyFunctions,
-          countTokens: (content) =>
-            countFormattedMessageTokens({ role: 'user', content }, encoding),
-          admit: (files) => this.assertTurnAttachmentLimits(files, attachmentTelemetryFiles),
-        },
-      });
-    }
+    promptTokenTotal += await appendHistoricalToolImageContext({
+      recipients: [this.options.agent, ...(this.agentConfigs?.values() ?? [])],
+      req: this.options.req,
+      messages: orderedMessages,
+      filesById: this.authorizedHistoricalFiles,
+      model: this.options.agent?.model_parameters?.model ?? this.options.agent?.model,
+      conversationId: this.conversationId,
+      agentId: this.options.agent?.id,
+      endpoint: this.options.agent?.endpoint ?? this.options.endpoint,
+      endpointType: this.options.endpointType,
+      currentFiles: sharedAttachmentFiles,
+      payload: formattedMessages,
+      indexTokenCountMap,
+      resendFiles: this.options.resendFiles,
+      deps: {
+        getStrategyFunctions,
+        countTokens: (content) => countFormattedMessageTokens({ role: 'user', content }, encoding),
+        admit: (files) => this.assertTurnAttachmentLimits(files, attachmentTelemetryFiles),
+      },
+    });
     /**
      * Native YouTube -> video understanding: when Google `url_context` is enabled
      * (resolved to the native `urlContext` provider tool), inject any YouTube URLs

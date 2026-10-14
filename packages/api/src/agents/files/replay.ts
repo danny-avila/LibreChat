@@ -6,7 +6,7 @@ import {
   FileSources,
   messageFilterPiiSchema,
 } from 'librechat-data-provider';
-import type { TAgentsEndpoint } from 'librechat-data-provider';
+import type { TAgentsEndpoint, SummarizationConfig } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { ServerRequest, StrategyFunctions } from '~/types';
 import { assertModelBoundContent } from '~/middleware/modelBoundContent';
@@ -17,6 +17,7 @@ import { resolveDownloadPath } from '~/storage/path';
 
 type ReplayConfig = NonNullable<TAgentsEndpoint['historicalToolImages']>;
 type HistoryMessage = {
+  isUserSubmitted?: boolean;
   messageId?: string;
   conversationId?: string | null;
   isCreatedByUser?: boolean;
@@ -32,6 +33,30 @@ type ReplayDependencies = {
   countTokens: (content: ReplayPart[]) => number;
   admit: (files: IMongoFile[]) => void;
 };
+
+type ReplayRecipient = {
+  model?: string;
+  model_parameters?: { model?: string };
+  summarization?: SummarizationConfig;
+};
+
+/** Only top-level handoffs share this prompt; subagents have isolated transcripts. */
+export function canReplayHistoricalToolImages(
+  agents: readonly ReplayRecipient[],
+  config?: ReplayConfig,
+  summarization?: SummarizationConfig,
+): boolean {
+  if (!config?.enabled || agents.length === 0) return false;
+  for (const agent of agents) {
+    const model = agent.model_parameters?.model ?? agent.model;
+    if (!model || !config.models.includes(model)) return false;
+    const summary = agent.summarization ?? summarization;
+    if (summary?.enabled !== false && summary?.model && !config.models.includes(summary.model)) {
+      return false;
+    }
+  }
+  return true;
+}
 
 /** Records come from the existing owner/tenant query; snapshots never supply paths or bytes. */
 export function selectHistoricalToolImages({
@@ -63,7 +88,12 @@ export function selectHistoricalToolImages({
       if (++turns >= config.recentTurns) break;
       continue;
     }
-    if (!message.messageId || message.conversationId !== conversationId) continue;
+    if (
+      message.isUserSubmitted === true ||
+      !message.messageId ||
+      message.conversationId !== conversationId
+    )
+      continue;
     const toolIds = new Set(
       (message.content ?? [])
         .filter(
@@ -198,10 +228,14 @@ export async function replayHistoricalToolImages({
     let width: number;
     let height: number;
     try {
-      const rendered = await sharp(input, {
+      const image = sharp(input, {
         limitInputPixels: config.maxSourcePixels,
         animated: false,
-      })
+      });
+      const metadata = await image.metadata();
+      const decodedMime = metadata.format === 'jpeg' ? 'image/jpeg' : `image/${metadata.format}`;
+      if (decodedMime !== file.type) continue;
+      const rendered = await image
         .rotate()
         .resize(config.previewMaxEdge, config.previewMaxEdge, {
           fit: 'inside',
@@ -261,15 +295,26 @@ export async function appendHistoricalToolImageContext({
   payload,
   indexTokenCountMap,
   resendFiles,
+  recipients,
   ...options
 }: Parameters<typeof replayHistoricalToolImages>[0] & {
   payload: { role: string; content: string | ReplayPart[] }[];
   indexTokenCountMap: Record<number, number>;
   resendFiles?: boolean;
+  recipients?: readonly ReplayRecipient[];
 }): Promise<number> {
   const lastIndex = payload.length - 1;
   const last = payload[lastIndex];
   if (resendFiles === false || !last || last.role !== 'user') return 0;
+  if (
+    recipients &&
+    !canReplayHistoricalToolImages(
+      recipients,
+      options.req.config?.endpoints?.agents?.historicalToolImages,
+      options.req.config?.summarization,
+    )
+  )
+    return 0;
   const replay = await replayHistoricalToolImages(options);
   if (replay.content.length === 0) return 0;
   const before =

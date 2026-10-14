@@ -19,6 +19,12 @@ server, registers a local user, and seeds a conversation. No model inference is 
 Do not point this test at a deployed service. Playwright refuses to reuse an existing
 server.
 
+On Windows, if Chrome's temporary-profile cleanup fails with `EPERM`, launch a
+disposable Chrome with a loopback remote-debugging port, set `LIGHTHOUSE_PORT` to
+that port, and run the same gate. Lighthouse attaches to that browser instead of
+owning its profile. Close the disposable browser after the gate. Do not attach to
+a personal browsing session.
+
 The existing `benchmarks/mongoose-latency-hook.cjs` adds **250 ms per Mongoose
 Query/Aggregate execution** in the server process. Independent queries can overlap;
 serial queries compound. This is a deterministic approximation of remote database
@@ -45,11 +51,11 @@ login page, spinner, or empty shell cannot pass.
    request suggests server work or serial database reads.
 3. Inspect the relevant path before changing the budget:
 
-| Request / symptom                           | Code to inspect                                                                           | Performance change this protects                                                                                                                                                            |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Config waits for repeated user lookups      | `packages/api/src/app/service.ts`, `api/server/middleware/config/app.js`                  | [#14101](https://github.com/LibreChat-AI/LibreChat/pull/14101)                                                                                                                               |
-| Message authorization and read run serially | `api/server/routes/messages.js`, `packages/api/src/middleware/messageValidation.ts`       | [#14101](https://github.com/LibreChat-AI/LibreChat/pull/14101)                                                                                                                               |
-| Messages wait for the file map              | `client/src/data-provider/Messages/queries.ts`, `client/src/components/Chat/ChatView.tsx` | [#14188](https://github.com/LibreChat-AI/LibreChat/pull/14188)                                                                                                                               |
+| Request / symptom                           | Code to inspect                                                                           | Performance change this protects                                                                                                                                                               |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Config waits for repeated user lookups      | `packages/api/src/app/service.ts`, `api/server/middleware/config/app.js`                  | [#14101](https://github.com/LibreChat-AI/LibreChat/pull/14101)                                                                                                                                 |
+| Message authorization and read run serially | `api/server/routes/messages.js`, `packages/api/src/middleware/messageValidation.ts`       | [#14101](https://github.com/LibreChat-AI/LibreChat/pull/14101)                                                                                                                                 |
+| Messages wait for the file map              | `client/src/data-provider/Messages/queries.ts`, `client/src/components/Chat/ChatView.tsx` | [#14188](https://github.com/LibreChat-AI/LibreChat/pull/14188)                                                                                                                                 |
 | Startup repeats auth user reads             | `api/server/controllers/AuthController.js`, `packages/api/src/auth/userDocCache.ts`       | [#14187](https://github.com/LibreChat-AI/LibreChat/pull/14187), [#14343](https://github.com/LibreChat-AI/LibreChat/pull/14343), [#14747](https://github.com/LibreChat-AI/LibreChat/pull/14747) |
 
 Reuse already-loaded user/config data. Start independent reads together, but keep
