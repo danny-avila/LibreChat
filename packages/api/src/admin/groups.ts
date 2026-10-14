@@ -495,8 +495,9 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
           metadata: { userIds: chunk.join(','), count: chunk.length, cause: 'group_deleted' },
         });
       }
+      res.status(200).json({ success: true, id });
       await record('success');
-      return res.status(200).json({ success: true, id });
+      return res;
     } catch (error) {
       logger.error('[adminGroups] deleteGroup error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to delete group' });

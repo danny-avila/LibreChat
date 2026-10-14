@@ -285,12 +285,13 @@ export function createAdminCodeEnvironmentHandlers(deps: AdminCodeEnvironmentDep
         await revokeFailed('invalid_response');
         return res.status(502).json({ error: 'Code API returned an invalid revocation response' });
       }
-      await revokeSettled('success');
-      return res.status(200).json({
+      res.status(200).json({
         environmentId: resolved.id,
         workerId: resolved.pairing.workerId,
         revoked: true,
       });
+      await revokeSettled('success');
+      return res;
     } catch (error) {
       const timedOut = error instanceof Error && error.name === 'TimeoutError';
       await revokeFailed(timedOut ? 'timeout' : 'request_failed');
