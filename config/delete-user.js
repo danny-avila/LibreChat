@@ -239,28 +239,41 @@ async function gracefulExit(code = 0) {
               runInUserTenant(
                 async () => (await methods.findMCPServerByServerName(serverName))?.config,
               ),
-            resolveAllowlists: async () => ({
-              allowedDomains: userAppConfig?.mcpSettings?.allowedDomains,
-              allowedAddresses: userAppConfig?.mcpSettings?.allowedAddresses,
-            }),
-            fenceAndDisconnectUser: (candidateId, serverName) =>
-              invalidateCachedTools({ userId: candidateId, serverName }),
-            uninstallOAuthMCP: (candidateId, pluginKey, cleanupConfig, serverConfig) =>
-              cleanupMCPServerOAuth({
-                userId: candidateId,
-                pluginKey,
-                appConfig: cleanupConfig,
-                serverConfigOverride: serverConfig,
-                dependencies: {
-                  flowManager: getFlowStateManager(getLogStores(CacheKeys.FLOWS)),
-                  oauthHandler: MCPOAuthHandler,
-                  tokenStorage: MCPTokenStorage,
-                  findToken: methods.findToken,
-                  deleteTokens: methods.deleteTokens,
-                  getServerConfig: async () => undefined,
-                  isRegisteredOAuthServer: async () => false,
-                },
+            resolveAllowlists: (candidateId) =>
+              runInUserTenant(async () => {
+                const candidate = await methods.getUserById(candidateId, 'role');
+                const candidateConfig = await getAppConfig({
+                  role: candidate?.role,
+                  userId: candidateId,
+                  tenantId: user.tenantId,
+                });
+                return {
+                  allowedDomains: candidateConfig?.mcpSettings?.allowedDomains,
+                  allowedAddresses: candidateConfig?.mcpSettings?.allowedAddresses,
+                };
               }),
+            fenceAndDisconnectUser: (candidateId, serverName) =>
+              runInUserTenant(async () =>
+                invalidateCachedTools({ userId: candidateId, serverName }),
+              ),
+            uninstallOAuthMCP: (candidateId, pluginKey, cleanupConfig, serverConfig) =>
+              runInUserTenant(async () =>
+                cleanupMCPServerOAuth({
+                  userId: candidateId,
+                  pluginKey,
+                  appConfig: cleanupConfig,
+                  serverConfigOverride: serverConfig,
+                  dependencies: {
+                    flowManager: getFlowStateManager(getLogStores(CacheKeys.FLOWS)),
+                    oauthHandler: MCPOAuthHandler,
+                    tokenStorage: MCPTokenStorage,
+                    findToken: methods.findToken,
+                    deleteTokens: methods.deleteTokens,
+                    getServerConfig: async () => undefined,
+                    isRegisteredOAuthServer: async () => false,
+                  },
+                }),
+              ),
           },
         },
       ),

@@ -349,6 +349,19 @@ describe('Delete user CLI', () => {
       fenceAndDisconnectUser: expect.any(Function),
       uninstallOAuthMCP: expect.any(Function),
     });
+    mockMethods.getUserById = jest.fn(async () => ({ role: 'VIEWER' }));
+    mockGetAppConfig.mockImplementation(async (options) =>
+      options?.userId === 'viewer-1' ? { mcpSettings: { allowedDomains: ['viewer.example'] } } : {},
+    );
+    expect(await deps.mcpOAuth.resolveAllowlists('viewer-1')).toEqual({
+      allowedDomains: ['viewer.example'],
+      allowedAddresses: undefined,
+    });
+    expect(mockGetAppConfig).toHaveBeenCalledWith({
+      role: 'VIEWER',
+      userId: 'viewer-1',
+      tenantId: 'tenant-1',
+    });
     await deps.mcpOAuth.fenceAndDisconnectUser('viewer-1', 'server-1');
     expect(mockInvalidateCachedTools).toHaveBeenCalledWith({
       userId: 'viewer-1',
