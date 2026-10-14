@@ -206,6 +206,13 @@ describe('redactMessage', () => {
     expect(out).not.toContain('jane');
   });
 
+  it('keeps text after a completed quoted address', () => {
+    const input = `prefix "jane doe"@example.com diagnostic-code ${'x'.repeat(10000)}`;
+    const out = String(runRedactFormat({ level: 'info', message: input }).message);
+    expect(out).toContain('diagnostic-code');
+    expect(out).not.toContain('jane');
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),

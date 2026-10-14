@@ -88,6 +88,7 @@ function redactMessage(str: string, trimLength?: number): string {
 }
 
 const EMAIL_TOKEN_DELIMITER = /[\s<>[\],;"]/u;
+const QUOTE_OR_ADDRESS = /"(?:[^"\\\r\n]|\\.)*"@|"/gu;
 
 /** Drops a token cut by the window edge: its terminator is unseen, so no pattern could match it. */
 function trimUnfinishedToken(full: string, window: string): string {
@@ -103,13 +104,13 @@ function trimUnfinishedToken(full: string, window: string): string {
   const trimmed = window.substring(0, end);
   let quotes = 0;
   let lastOpen = -1;
-  for (let index = 0; index < trimmed.length; index++) {
-    if (trimmed[index] === '"' && trimmed[index + 1] !== '@') {
+  for (const match of trimmed.matchAll(QUOTE_OR_ADDRESS)) {
+    if (match[0] === '"') {
       quotes++;
-      lastOpen = index;
+      lastOpen = match.index;
     }
   }
-  /** An odd count of quotes not closing an address means the cut fell inside a quoted local part. */
+  /** An odd count of quotes outside completed addresses means the cut fell inside a quoted local. */
   return quotes % 2 === 1 ? trimmed.substring(0, lastOpen) : trimmed;
 }
 
