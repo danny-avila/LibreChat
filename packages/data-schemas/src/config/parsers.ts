@@ -52,7 +52,7 @@ const sensitiveKeys: RegExp[] = [
   /(\b)eyJ[a-zA-Z0-9_-]{5,}\.[a-zA-Z0-9_-]{5,}\.[a-zA-Z0-9_-]+/g,
   /\b((?:Proxy-)?Authorization:\s*)[^\r\n]+/gi,
   /\b((?:Cookie|Set-Cookie):\s*)[^\r\n]+/gi,
-  /(?<![a-z0-9])([a-z][a-z0-9+.-]{0,255}:\/\/)[^/\s:@]*:[^/\s@]+(?=@)/gi,
+  /(:\/\/)[^/\s:@]*:[^/\s@]+(?=@)/g,
 ];
 
 /**

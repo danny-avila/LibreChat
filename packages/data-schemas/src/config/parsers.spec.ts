@@ -379,6 +379,12 @@ describe('redactMessage', () => {
     expect(Date.now() - started).toBeLessThan(500);
   });
 
+  it('masks credentials after a scheme of any length', () => {
+    expect(redactMessage(`${'a'.repeat(300)}://alice:secretcanary@localhost`)).not.toContain(
+      'secretcanary',
+    );
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),
