@@ -503,6 +503,15 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps): {
         await exportFailed('client_aborted');
       }
       if (!clientAborted) {
+        /** `end()` only queues the last bytes, so success waits for the response to finish. */
+        const settled = new Promise<boolean>((resolve) => {
+          if (res.destroyed) {
+            resolve(false);
+            return;
+          }
+          res.once('finish', () => resolve(true));
+          res.once('close', () => resolve(res.writableFinished === true));
+        });
         /**
          * `truncated` is true only when rows existed beyond the cap (an exact-cap
          * match is reported as complete). Surfacing this is a compliance
@@ -518,11 +527,6 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps): {
             `# TRUNCATED: export capped at ${MAX_AUDIT_EXPORT_ROWS} rows — narrow the from/to range to export the complete set\r\n`,
           );
         }
-        /** `end()` only queues the last bytes, so success waits for the response to finish. */
-        const settled = new Promise<boolean>((resolve) => {
-          res.once('finish', () => resolve(true));
-          res.once('close', () => resolve(res.writableFinished === true));
-        });
         res.end();
         if (await settled) {
           await emitFollowUp(req, exportEvent);
