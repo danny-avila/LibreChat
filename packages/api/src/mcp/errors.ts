@@ -539,11 +539,8 @@ export class MCPCommittedWriteError<T = unknown> extends Error {
   public readonly committed!: T | undefined;
 
   constructor(committed: T | undefined, cause: unknown) {
-    super(
-      cause instanceof Error
-        ? cause.message
-        : 'MCP server change was saved but a step after it failed',
-    );
+    /** Fixed text: this message reaches API responses, and the cause may carry driver or cache details. */
+    super('MCP server change was saved but a step after it failed');
     this.name = 'MCPCommittedWriteError';
     Object.defineProperty(this, 'committed', { value: committed, enumerable: false });
     this.cause = cause;

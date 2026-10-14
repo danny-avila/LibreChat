@@ -48,7 +48,7 @@ export interface LangfuseConnectionEvent {
   destination?: string;
   change: LangfuseConnectionChange;
   changes: LangfuseConnectionChange[];
-  verification_result: 'skipped' | 'success';
+  verification_result: 'skipped' | 'success' | 'failed';
 }
 
 export interface AdminLangfuseDeps {
@@ -474,15 +474,21 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
         publicKey,
         secretKey,
       );
+      let verificationResult: LangfuseConnectionEvent['verification_result'] = 'skipped';
+      if (activationError) {
+        verificationResult = 'failed';
+      } else if (connectionChanged) {
+        verificationResult = 'success';
+      }
       recordConnectionUpdate({
         event_name: 'librechat.langfuse.connection.changed',
         tenant_id: getTenantId(req),
         configured: status.configured,
-        enabled: status.enabled,
+        enabled: activationError ? false : status.enabled,
         destination: status.destination,
         change: changes[0],
         changes,
-        verification_result: connectionChanged ? 'success' : 'skipped',
+        verification_result: verificationResult,
       });
       invalidateConfigCaches?.(getTenantId(req))?.catch((err) =>
         logger.error('[adminLangfuse] Cache invalidation failed after update:', err),

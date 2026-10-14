@@ -729,7 +729,7 @@ export function createAuditLogMethods(
       logger.error('[auditLog] failed to record retention purge', {
         chainKey,
         deletedCount,
-        error: err instanceof Error ? err.message : 'unknown error',
+        error: err instanceof Error ? err.name : 'unknown error',
       });
     }
 

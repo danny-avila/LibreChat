@@ -114,6 +114,7 @@ function createCsvContext(
     }),
     end: jest.fn(() => {
       ended = true;
+      emitter.emit('finish');
     }),
     headersSent: false,
     status: jest.fn().mockReturnValue({ json: jest.fn() }),
@@ -619,6 +620,28 @@ describe('createAdminAuditLogHandlers', () => {
       const terminal = recordAuditEntry.mock.calls[recordAuditEntry.mock.calls.length - 1][0];
       expect(terminal).toEqual(expect.objectContaining({ action: 'audit.exported' }));
       expect(terminal.outcome).toBeUndefined();
+    });
+
+    it('records a client that disconnects during the final flush as a failed export', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = createDeps({
+        recordAuditEntry,
+        streamAuditLogEntries: jest.fn().mockResolvedValue({ count: 0, truncated: false }),
+      });
+      const handlers = createAdminAuditLogHandlers(deps);
+      const ctx = createCsvContext({ user, query: { severity: 'critical' } });
+      (ctx.res.end as jest.Mock).mockImplementation(() => {
+        (ctx.res as unknown as EventEmitter).emit('close');
+      });
+
+      await handlers.exportAuditLogCsv(ctx.req, ctx.res);
+
+      expect(recordAuditEntry).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          outcome: 'failure',
+          metadata: expect.objectContaining({ code: 'client_aborted' }),
+        }),
+      );
     });
 
     it('appends a failure entry when the export fails after it was recorded', async () => {

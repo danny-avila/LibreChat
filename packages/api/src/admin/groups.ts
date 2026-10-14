@@ -428,6 +428,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
                   let restored: boolean;
                   try {
                     restored = await restoreConfig(snapshot as Record<string, unknown>);
+                    restoreFailed = false;
                   } catch (error) {
                     restoreFailed = true;
                     throw error;

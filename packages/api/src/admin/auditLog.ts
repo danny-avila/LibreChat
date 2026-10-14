@@ -518,8 +518,17 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps): {
             `# TRUNCATED: export capped at ${MAX_AUDIT_EXPORT_ROWS} rows — narrow the from/to range to export the complete set\r\n`,
           );
         }
+        /** `end()` only queues the last bytes, so success waits for the response to finish. */
+        const settled = new Promise<boolean>((resolve) => {
+          res.once('finish', () => resolve(true));
+          res.once('close', () => resolve(res.writableFinished === true));
+        });
         res.end();
-        await emitFollowUp(req, exportEvent);
+        if (await settled) {
+          await emitFollowUp(req, exportEvent);
+        } else {
+          await exportFailed('client_aborted');
+        }
       }
     } catch (err) {
       logger.error('[adminAuditLog] export error:', err);
