@@ -5,9 +5,11 @@ const {
   logAxiosError,
   getSafeErrorMetadata,
   getApprovalTtlMs,
+  handleFileListRequest,
   refreshS3FileUrls,
   handleFilesUsageRequest,
   buildDeleteFilesResponse,
+  deleteAgentResourceFiles,
   shouldUseUploadSse,
   startUploadSseStream,
   sendUploadPolicyError,
@@ -23,9 +25,7 @@ const {
   resolveDownloadPath,
 } = require('@librechat/api');
 const {
-  Time,
   isUUID,
-  CacheKeys,
   FileSources,
   ResourceType,
   EModelEndpoint,
@@ -54,8 +54,8 @@ const { hasCapability } = require('~/server/middleware/roles/capabilities');
 const { getRoleByName } = require('~/models');
 const { checkPermission } = require('~/server/services/PermissionService');
 const { cleanFileName, getContentDisposition } = require('~/server/utils/files');
-const { getLogStores } = require('~/cache');
 const { Readable } = require('stream');
+const { getLogStores } = require('~/cache');
 const db = require('~/models');
 
 const router = express.Router();
@@ -70,23 +70,23 @@ const AGENT_TOOL_RESOURCE_KEYS = new Set([
 const isAgentToolResourceKey = (toolResource) =>
   typeof toolResource === 'string' && AGENT_TOOL_RESOURCE_KEYS.has(toolResource);
 
+/** Register the list endpoint as a thin adapter around the shared file-list policy. */
 router.get('/', async (req, res) => {
   try {
-    const appConfig = req.config;
-    const files = await db.getFiles({ user: req.user.id });
-    if (appConfig.fileStrategy === FileSources.s3) {
-      try {
-        const cache = getLogStores(CacheKeys.S3_EXPIRY_INTERVAL);
-        const alreadyChecked = await cache.get(req.user.id);
-        if (!alreadyChecked) {
-          await refreshS3FileUrls(files, db.batchUpdateFiles);
-          await cache.set(req.user.id, true, Time.THIRTY_MINUTES);
-        }
-      } catch (error) {
-        logger.warn('[/files] Error refreshing S3 file URLs:', error);
-      }
-    }
-    res.status(200).send(files);
+    const responseFiles = await handleFileListRequest({
+      userId: req.user.id,
+      rawLimit: req.query.limit,
+      fileStrategy: req.config?.fileStrategy,
+      maxLimit: req.config?.fileListLimit,
+      dependencies: {
+        getFiles: db.getFiles,
+        batchUpdateFiles: db.batchUpdateFiles,
+        refreshS3FileUrls,
+        getLogStores,
+        logger,
+      },
+    });
+    res.status(200).send(responseFiles);
   } catch (error) {
     logger.error('[/files] Error getting files:', error);
     res.status(400).json({ message: 'Error in request', error: error.message });
@@ -245,20 +245,36 @@ router.delete('/', async (req, res) => {
         });
       }
 
-      const toolResourceFiles = agent.tool_resources?.[req.body.tool_resource]?.file_ids ?? [];
-      const agentFiles = files
-        .filter((f) => toolResourceFiles.includes(f.file_id))
-        .map((file) => ({ tool_resource: req.body.tool_resource, file_id: file.file_id }));
-      if (agentFiles.length === 0) {
+      const agentDeletion = await deleteAgentResourceFiles(
+        {
+          agentId: req.body.agent_id,
+          agentObjectId: agent._id.toString(),
+          toolResource: req.body.tool_resource,
+          requestedFileIds: fileIds,
+          attachedFileIds: agent.tool_resources?.[req.body.tool_resource]?.file_ids ?? [],
+          files: dbFiles.map((file) => ({
+            file_id: file.file_id,
+            owner: file.user?.toString() ?? null,
+            file,
+          })),
+          userId: req.user.id.toString(),
+        },
+        {
+          getSharedResourceFileIds: db.getSharedResourceFileIds,
+          removeAgentResourceFiles: db.removeAgentResourceFiles,
+          deleteFiles: (agentFiles) => processDeleteRequest({ req, files: agentFiles }),
+        },
+      );
+
+      if (agentDeletion.outcome == null) {
         res.status(200).json({ message: 'File associations removed successfully from agent' });
         return;
       }
 
-      await db.removeAgentResourceFiles({
-        agent_id: req.body.agent_id,
-        files: agentFiles,
-      });
-      res.status(200).json({ message: 'File associations removed successfully from agent' });
+      logger.debug(
+        `[/files] Agent files deleted successfully: ${agentDeletion.destroyedFileIds.join(', ')}`,
+      );
+      sendDeleteResult(agentDeletion.outcome, 'Files deleted successfully');
       return;
     }
 

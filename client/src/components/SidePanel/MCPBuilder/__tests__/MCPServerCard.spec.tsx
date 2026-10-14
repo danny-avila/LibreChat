@@ -4,6 +4,7 @@ import MCPServerCard from '../MCPServerCard';
 
 jest.mock('../MCPCardActions', () => () => <div data-testid="actions" />);
 jest.mock('../MCPServerDialog', () => () => null);
+jest.mock('~/components/MCP/McpOAuthDialog', () => () => null);
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => {
@@ -17,6 +18,7 @@ jest.mock('~/hooks', () => ({
   useMCPServerManager: () => ({
     initializeServer: jest.fn(),
     revokeOAuthForServer: jest.fn(),
+    getOAuthUrl: jest.fn(() => undefined),
   }),
 }));
 

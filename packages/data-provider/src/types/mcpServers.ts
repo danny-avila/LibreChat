@@ -1,5 +1,5 @@
 import type { MCPOptions, MCPServerUserInput } from '../mcp';
-import type { SupportContact } from './assistants';
+import type { SupportContact } from './agents';
 
 /**
  * Base MCP Server interface
