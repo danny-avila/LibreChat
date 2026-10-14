@@ -529,8 +529,60 @@ describe('AccessControlService', () => {
       acquire.mockRestore();
     });
 
+    test('keys the lease on the canonical resource id', async () => {
+      const acquire = jest.spyOn(service['_dbMethods'], 'acquireResourceLock');
+      for (const id of [resourceId.toString(), resourceId.toString().toUpperCase()]) {
+        await service.bulkUpdateResourcePermissions({
+          resourceType: ResourceType.PROMPTGROUP,
+          resourceId: id,
+          updatedPrincipals: [],
+          grantedBy: grantedById,
+        });
+      }
+      const keys = acquire.mock.calls.map(([data]) => data.key);
+      expect(new Set(keys).size).toBe(1);
+      acquire.mockRestore();
+    });
+
+    test('refuses to write once the lease was taken over', async () => {
+      const key = `acl:${ResourceType.PROMPTGROUP.toLowerCase()}:${resourceId}`;
+      await expect(
+        service.bulkUpdateResourcePermissions({
+          resourceType: ResourceType.PROMPTGROUP,
+          resourceId,
+          updatedPrincipals: [
+            {
+              type: PrincipalType.USER,
+              id: userId.toString(),
+              accessRoleId: AccessRoleIds.PROMPTGROUP_VIEWER,
+            },
+          ],
+          grantedBy: grantedById,
+          beforeWrite: async () => {
+            await mongoose.models.ResourceLock.updateOne(
+              { key },
+              { $set: { expiresAt: new Date(Date.now() - 1) } },
+            );
+            await service['_dbMethods'].acquireResourceLock({
+              key,
+              ownerId: 'taker',
+              ttlMs: 60_000,
+            });
+          },
+        }),
+      ).rejects.toMatchObject({ code: 'RESOURCE_PERMISSIONS_BUSY' });
+      await expect(
+        AclEntry.exists({
+          principalId: userId,
+          resourceType: ResourceType.PROMPTGROUP,
+          resourceId,
+        }),
+      ).resolves.toBeNull();
+      await service['_dbMethods'].releaseResourceLock({ key, ownerId: 'taker' });
+    });
+
     test('reports a conflict when the resource lease cannot be taken in time', async () => {
-      const key = `acl:${ResourceType.PROMPTGROUP}:${resourceId}`;
+      const key = `acl:${ResourceType.PROMPTGROUP.toLowerCase()}:${resourceId}`;
       await service['_dbMethods'].acquireResourceLock({ key, ownerId: 'other', ttlMs: 60_000 });
 
       await expect(

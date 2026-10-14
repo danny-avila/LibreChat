@@ -132,6 +132,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
     /** Never fail the caller on an audit failure, regardless of `auditFailClosed`. */
     failOpen?: boolean;
     outcome?: 'success' | 'failure';
+    metadata?: Record<string, unknown>;
   }): Promise<void> {
     if (!recordAuditEntry) return;
     /** The grants surface is ROLE-only today (see `MANAGE_CAPABILITY_BY_TYPE`),
@@ -144,7 +145,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
       severity: 'warning',
       actor: { type: 'user', id: args.caller.userId, name: args.caller.actorName },
       target: { type: args.principalType, id: args.principalId, name: args.principalId },
-      metadata: { capability: args.capability },
+      metadata: { capability: args.capability, ...args.metadata },
       context: args.context,
       tenantId: args.caller.tenantId,
     };
@@ -407,14 +408,14 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
         }
       }
 
-      /** A re-assert of a capability the principal already holds (in this tenant scope, not
-       * merely inherited from the platform) changes nothing and is not audited. */
+      /** A re-assert is still audited: a concurrent revoke can remove the grant between this
+       * read and the write, so skipping it could leave a live grant without an entry. */
       const existingGrants = await getCapabilitiesForPrincipal({
         principalType,
         principalId,
         tenantId,
       });
-      const alreadyGranted = existingGrants.some(
+      const reassert = existingGrants.some(
         (existing) => existing.capability === capability && existing.tenantId == tenantId,
       );
       const auditAssignment = (outcome: 'success' | 'failure') =>
@@ -427,17 +428,16 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
           context: buildAuditContext(req),
           outcome,
           failOpen: outcome === 'failure',
+          metadata: reassert ? { reassert: true } : undefined,
         });
       /** Audit first: with fail-closed auditing a grant that cannot be recorded is never written. */
-      if (!alreadyGranted) {
-        try {
-          await auditAssignment('success');
-        } catch (auditErr) {
-          logger.error('[adminGrants] assignGrant audit failed (fail-closed), nothing granted', {
-            ...getSafeErrorMetadata(auditErr),
-          });
-          return res.status(500).json({ error: 'Failed to record audit entry' });
-        }
+      try {
+        await auditAssignment('success');
+      } catch (auditErr) {
+        logger.error('[adminGrants] assignGrant audit failed (fail-closed), nothing granted', {
+          ...getSafeErrorMetadata(auditErr),
+        });
+        return res.status(500).json({ error: 'Failed to record audit entry' });
       }
       let result: Awaited<ReturnType<typeof grantCapability>>;
       try {
@@ -449,16 +449,12 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
           grantedBy: caller.userId,
         });
       } catch (writeErr) {
-        if (!alreadyGranted) {
-          await auditAssignment('failure');
-        }
+        await auditAssignment('failure');
         throw writeErr;
       }
       const { grant } = result;
       if (!grant) {
-        if (!alreadyGranted) {
-          await auditAssignment('failure');
-        }
+        await auditAssignment('failure');
         return res.status(500).json({ error: 'Grant operation returned no result' });
       }
       return res.status(201).json({ grant });

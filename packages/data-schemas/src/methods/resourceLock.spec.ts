@@ -53,4 +53,16 @@ describe('resource locks', () => {
     expect(await methods.releaseResourceLock({ key, ownerId: 'a' })).toBe(true);
     expect(await methods.acquireResourceLock({ key, ownerId: 'b', ttlMs: 30_000 })).toBe(true);
   });
+
+  it('renews only for the live holder', async () => {
+    const key = 'acl:agent:1';
+    await methods.acquireResourceLock({ key, ownerId: 'a', ttlMs: 30_000 });
+    expect(await methods.renewResourceLock({ key, ownerId: 'a', ttlMs: 30_000 })).toBe(true);
+    expect(await methods.renewResourceLock({ key, ownerId: 'b', ttlMs: 30_000 })).toBe(false);
+    await methods.acquireResourceLock({ key: 'acl:agent:2', ownerId: 'c', ttlMs: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(
+      await methods.renewResourceLock({ key: 'acl:agent:2', ownerId: 'c', ttlMs: 30_000 }),
+    ).toBe(false);
+  });
 });

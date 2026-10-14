@@ -1245,15 +1245,15 @@ describe('createAdminGrantsHandlers', () => {
       expect(status).toHaveBeenCalledWith(201);
     });
 
-    it('does not audit re-assigning a capability the role already holds', async () => {
+    it('audits re-assigning a held capability, marked as a re-assert', async () => {
       const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
       const deps = createDeps({
         recordAuditEntry,
-        // the principal already holds the capability in this tenant scope → idempotent re-assert
+        auditFailClosed: true,
         getCapabilitiesForPrincipal: jest
           .fn()
           .mockResolvedValue([mockGrant({ tenantId: 'tenant-1' })]),
-        grantCapability: jest.fn().mockResolvedValue({ grant: mockGrant(), created: false }),
+        grantCapability: jest.fn().mockResolvedValue({ grant: mockGrant(), created: true }),
       });
       const handlers = createAdminGrantsHandlers(deps);
       const { req, res, status } = createReqRes({ body: assignBody, user: reqUser() });
@@ -1261,7 +1261,11 @@ describe('createAdminGrantsHandlers', () => {
       await handlers.assignGrant(req, res);
 
       expect(status).toHaveBeenCalledWith(201);
-      expect(recordAuditEntry).not.toHaveBeenCalled();
+      expect(recordAuditEntry).toHaveBeenCalledTimes(1);
+      expect(recordAuditEntry.mock.calls[0][0]).toMatchObject({
+        action: 'grant.assigned',
+        metadata: { reassert: true },
+      });
     });
 
     it('fail-open: a failed audit write does not fail the grant', async () => {

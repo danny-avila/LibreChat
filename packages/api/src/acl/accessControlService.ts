@@ -473,8 +473,13 @@ export class AccessControlService {
     this._transactionSupportCache = supportsTransactions;
     let localSession = session;
     let shouldEndSession = false;
+    const rawResourceId = resourceId.toString();
     const lock = {
-      key: `acl:${resourceType}:${resourceId}`,
+      key: `acl:${String(resourceType).toLowerCase()}:${
+        Types.ObjectId.isValid(rawResourceId)
+          ? new Types.ObjectId(rawResourceId).toString()
+          : rawResourceId.toLowerCase()
+      }`,
       ownerId: new Types.ObjectId().toString(),
     };
     let lockHeld = false;
@@ -808,6 +813,14 @@ export class AccessControlService {
           aclChanges: results.aclChanges,
           insightsChanges: results.insightsChanges,
         });
+      }
+
+      if (
+        lockHeld &&
+        !(await this._dbMethods.renewResourceLock({ ...lock, ttlMs: RESOURCE_LOCK_TTL_MS }))
+      ) {
+        /** The lease expired and may have been taken over while the audit ran; the plan is stale. */
+        throw new ResourcePermissionsBusyError();
       }
 
       if (roleBitsWrites.length > 0) {
