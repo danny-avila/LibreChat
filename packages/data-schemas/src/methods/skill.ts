@@ -1772,19 +1772,25 @@ export function createSkillMethods(
     const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
     await SkillFile.deleteMany({ skillId: { $in: soleOwned } });
     const res = await Skill.deleteMany({ _id: { $in: soleOwned } });
-    await removeSkillsFromAgentAllowlists(soleOwned.map((rid) => rid.toString()));
-    await Promise.allSettled(
+    if (!(await removeSkillsFromAgentAllowlists(soleOwned.map((rid) => rid.toString())))) {
+      throw new Error('Agent skill allowlists could not be cleaned up');
+    }
+    /** Permission entries are the retry discovery key for sole-owned skills, so a failure keeps them. */
+    const permissionResults = await Promise.allSettled(
       soleOwned.map((rid) =>
-        deps
-          .removeAllPermissions({
-            resourceType: ResourceType.SKILL,
-            resourceId: rid.toString(),
-          })
-          .catch((error) =>
-            logger.error(`[deleteUserSkills] Error removing permissions for ${rid}:`, error),
-          ),
+        deps.removeAllPermissions({
+          resourceType: ResourceType.SKILL,
+          resourceId: rid.toString(),
+        }),
       ),
     );
+    const failedPermission = permissionResults.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+    if (failedPermission) {
+      logger.error('[deleteUserSkills] Error removing permissions:', failedPermission.reason);
+      throw failedPermission.reason;
+    }
     return res.deletedCount ?? 0;
   }
 

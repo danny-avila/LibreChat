@@ -1051,16 +1051,17 @@ export function createPromptMethods(
         return;
       }
 
+      /** ACL entries are the retry discovery key for sole-owned groups, so they go last. */
+      await Prompt.deleteMany({ groupId: { $in: allGroupIdsToDelete } });
+      await PromptGroup.deleteMany({ _id: { $in: allGroupIdsToDelete } });
       await AclEntry.deleteMany({
         resourceType: ResourceType.PROMPTGROUP,
         resourceId: { $in: allGroupIdsToDelete },
       });
-
-      await PromptGroup.deleteMany({ _id: { $in: allGroupIdsToDelete } });
-      await Prompt.deleteMany({ groupId: { $in: allGroupIdsToDelete } });
       await invalidatePromptGroupAccessContext();
     } catch (error) {
       logger.error('[deleteUserPrompts] General error:', error);
+      throw error;
     }
   }
 
