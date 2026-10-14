@@ -141,6 +141,7 @@ const {
   applyAttachmentOnlyText,
   hydrateMissingIndexTokenCounts,
   planSendContext,
+  getMCPServerInstructions,
   prepareResumedTurnContext,
   readConversationAnchor,
   applyTurnContextToRuntime,
@@ -2954,6 +2955,8 @@ class AgentClient extends BaseClient {
       rag: augmentedPrompt,
       conversationId: this.conversationId,
       anchorPromise: contextAnchorPromise,
+      configServers,
+      getServerInstructions: getMCPServerInstructions,
       formattedMessages,
       indexTokenCountMap,
       countTokens: (message) => countFormattedMessageTokens(message, encoding),
@@ -3180,6 +3183,8 @@ class AgentClient extends BaseClient {
         configServers,
         runContext,
         ephemeralAgent: agentId === this.options.agent.id ? ephemeralAgent : undefined,
+        /** The anchor's MCP instructions are added by `applyTurnContext`. */
+        ...(agent === this.options.agent && turnContext?.tools != null && { mcpServers: [] }),
       });
       if (assertLateBoundContent) {
         assertModelBoundContent({
@@ -5677,6 +5682,7 @@ class AgentClient extends BaseClient {
           ]),
       );
       const resumeMcpManager = getMCPManager();
+      const resumeConfigServersPromise = resolveConfigServers(this.options.req);
       const resumedTurnContextPromise = prepareResumedTurnContext({
         req: this.options.req,
         agent: this.options.agent,
@@ -5685,8 +5691,10 @@ class AgentClient extends BaseClient {
         db,
         getBranch: AgentClient.getMessagesForConversation,
         loadMemories: () => AgentClient.prototype.getSharedMemoryContext.call(this),
+        configServers: resumeConfigServersPromise,
+        getServerInstructions: getMCPServerInstructions,
       });
-      const [resumeScopedContext, resumeConfigServers] = await Promise.all([
+      const [resumeScopedContext, resumeConfigServers, resumedTurnContext] = await Promise.all([
         buildAgentScopedContext({
           agentIds: agents.map((agent) => agent?.id).filter(Boolean),
           attachmentsByAgentId: this.options.agentContextAttachmentsByAgentId,
@@ -5699,7 +5707,8 @@ class AgentClient extends BaseClient {
           endpointsByAgentId: resumeEndpointsByAgentId,
           tokenCountFn: (text) => countTokens(text),
         }),
-        resolveConfigServers(this.options.req),
+        resumeConfigServersPromise,
+        resumedTurnContextPromise,
       ]);
       const resumeScopedAttachmentMap = buildAgentScopedAttachmentMap({
         agentIds: agents.map((agent) => agent?.id).filter(Boolean),
@@ -5744,6 +5753,8 @@ class AgentClient extends BaseClient {
               runContext: { agentFiles: scopedContext },
               ephemeralAgent:
                 agent === this.options.agent ? this.options.req.body.ephemeralAgent : undefined,
+              ...(agent === this.options.agent &&
+                resumedTurnContext?.plan.tools != null && { mcpServers: [] }),
             });
             assertModelBoundContent({
               onTraversalFailure: reportLocatorTraversalFailure,
@@ -5755,7 +5766,6 @@ class AgentClient extends BaseClient {
           }),
       );
       /** The resumed run continues the paused turn: same anchor, not the live state. */
-      const resumedTurnContext = await resumedTurnContextPromise;
       if (resumedTurnContext != null) {
         applyTurnContextToRuntime(this.options.agent, resumedTurnContext.plan);
         this.pendingContextAnchor = resumedTurnContext.pending;

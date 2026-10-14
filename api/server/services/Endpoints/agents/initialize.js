@@ -528,6 +528,7 @@ const initializeClientWithProvider = async ({
         tool_resources: ctx.tool_resources,
         actionsEnabled: ctx.actionsEnabled,
         accessibleMcpServerNames: ctx.accessibleMcpServerNames,
+        toolDispatch: ctx.toolDispatch?.() === true,
         jobCreatedAt,
       });
 
