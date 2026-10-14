@@ -364,7 +364,10 @@ describe('Chat', () => {
             open = () => resolve(opener === 'sendMessages' ? { status: 'stream', stream } : stream);
           }),
       );
-      const { chat, onFinish } = setup({}, { [opener]: pending });
+      const { chat, onFinish, transport } = setup(
+        { resumeSelection: () => ({ endpoint: 'agents' }) },
+        { [opener]: pending },
+      );
 
       const started =
         opener === 'sendMessages'
@@ -378,6 +381,7 @@ describe('Chat', () => {
       await flush();
 
       expect(stream.closed()).toBe(true);
+      expect(transport.abort).toHaveBeenCalledTimes(opener === 'sendMessages' ? 0 : 1);
       expect(onFinish).toHaveBeenCalledTimes(1);
       expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isAbort: true }));
     },
@@ -562,6 +566,23 @@ describe('Chat', () => {
     );
     stream.push(finalEvent());
     await sent;
+  });
+
+  it('lets a completion callback start the next turn', async () => {
+    let next: Promise<void> | undefined;
+    const { chat, stream, transport } = setup({
+      onFinish: () => {
+        next ??= chat.sendMessage({ parts: [{ type: 'text', text: 'Again' }] });
+      },
+    });
+
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    stream.push(finalEvent());
+    await sent;
+    await next;
+
+    expect(transport.sendMessages).toHaveBeenCalledTimes(2);
   });
 
   it('regenerates a given message', async () => {
@@ -834,6 +855,39 @@ describe('Chat', () => {
         expect.objectContaining({ endpoint: 'agents', generationCreatedAt: 500 }),
       );
       expect(chat.status).toBe('ready');
+    });
+
+    it('stops a restored pause on the server while its continuation is still attaching', async () => {
+      const { chat, transport } = setup(
+        { resumeSelection: () => ({ endpoint: 'agents' }) },
+        { reconnectToStream: jest.fn(() => new Promise<null>(() => undefined)) },
+      );
+      chat.restorePendingAction(askAction, 500);
+
+      const resumed = chat.resumeStream({ streamId: 'convo-1', generationCreatedAt: 500 });
+      await flush();
+      await chat.stop();
+      await resumed;
+
+      expect(transport.abort).toHaveBeenCalledWith({
+        chatId: 'convo-1',
+        endpoint: 'agents',
+        streamId: 'convo-1',
+        generationCreatedAt: 500,
+      });
+      expect(chat.pendingAction).toBeUndefined();
+      expect(chat.status).toBe('ready');
+    });
+
+    it('refuses decisions and answers once disposed', async () => {
+      const { chat, transport } = setup();
+      chat.restorePendingAction(askAction, 500);
+      chat.dispose();
+
+      await expect(chat.addToolOutput({ toolCallId: 'ask-1', output: 'Blue' })).rejects.toThrow(
+        'disposed',
+      );
+      expect(transport.resume).not.toHaveBeenCalled();
     });
 
     it('holds new turns behind a restored pause until it is stopped on the server', async () => {

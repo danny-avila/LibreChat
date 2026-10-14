@@ -123,6 +123,8 @@ type ActiveRequest = {
   controller: AbortController;
   stream?: ChatStream;
   endpoint?: string;
+  /** Set when reattaching to a generation already running on the server, before it attaches. */
+  reattach?: { streamId?: string };
   /** Resolves once the request settled and released the chat. */
   finished: Promise<void>;
   finish: () => void;
@@ -334,6 +336,7 @@ export class Chat {
     }
     const active = createActiveRequest();
     active.endpoint = this.resumeEndpoint();
+    active.reattach = { streamId: options.streamId };
     this.active = active;
     if (options.generationCreatedAt != null) {
       this.generationCreatedAt = options.generationCreatedAt;
@@ -374,7 +377,7 @@ export class Chat {
       await this.stopPaused();
       return;
     }
-    if (!active.stream) {
+    if (!active.stream && !active.reattach) {
       active.controller.abort();
       await active.finished;
       return;
@@ -382,16 +385,30 @@ export class Chat {
     if (!active.endpoint) {
       throw new Error('The generation cannot be stopped without its endpoint');
     }
-    const result = await this.init.transport.abort({
-      chatId: this.id,
+    await this.abortOnServer({
       endpoint: active.endpoint,
-      streamId: active.stream.streamId,
-      generationCreatedAt: active.stream.generationCreatedAt ?? this.generationCreatedAt,
+      streamId: active.stream?.streamId ?? active.reattach?.streamId,
+      generationCreatedAt: active.stream?.generationCreatedAt ?? this.generationCreatedAt,
     });
+    if (!active.stream) {
+      /** Still reattaching: nothing will report the end, so the stop ends the request here. */
+      active.controller.abort();
+      if (this.action) {
+        this.clearAction();
+      }
+    }
+    await active.finished;
+  }
+
+  private async abortOnServer(target: {
+    endpoint: string;
+    streamId?: string;
+    generationCreatedAt?: number;
+  }): Promise<void> {
+    const result = await this.init.transport.abort({ chatId: this.id, ...target });
     if (result && 'success' in result && !result.success) {
       throw new Error(result.error ?? 'The server refused the stop');
     }
-    await active.finished;
   }
 
   /** Stops a pause restored without a stream on the server, which frees the chat for a turn. */
@@ -404,15 +421,11 @@ export class Chat {
     if (!endpoint) {
       throw new Error('The paused generation cannot be stopped without its endpoint');
     }
-    const result = await this.init.transport.abort({
-      chatId: this.id,
+    await this.abortOnServer({
       endpoint,
       streamId: action.streamId,
       generationCreatedAt: this.generationCreatedAt,
     });
-    if (result && 'success' in result && !result.success) {
-      throw new Error(result.error ?? 'The server refused the stop');
-    }
     if (this.action === action) {
       this.clearAction();
     }
@@ -424,6 +437,9 @@ export class Chat {
   }
 
   private assertNotResuming(action: Agents.PendingAction): void {
+    if (this.disposed) {
+      throw new Error('The chat was disposed');
+    }
     if (this.resuming === action) {
       throw new Error('This pause is already being resumed');
     }
@@ -700,6 +716,8 @@ export class Chat {
     if (this.active !== active) {
       return;
     }
+    /** Released first, so a completion callback can start the next turn. */
+    this.active = undefined;
     this.setConnection('idle');
     if (outcome.kind === 'error') {
       this.init.state.error = outcome.error;
@@ -740,6 +758,9 @@ export class Chat {
     if (generationCreatedAt == null) {
       throw new Error('The paused generation is unknown');
     }
+    if (this.disposed) {
+      throw new Error('The chat was disposed');
+    }
     if (this.resuming === action) {
       return;
     }
@@ -752,12 +773,12 @@ export class Chat {
         generationCreatedAt,
         actionId: action.actionId,
       });
-      if (this.action === action) {
-        this.clearAction();
-      }
       if (!this.active && !this.disposed) {
         /** A pause restored after a reload has no stream attached for the continuation. */
         void this.resumeStream({ streamId: result.streamId, generationCreatedAt });
+      }
+      if (this.action === action) {
+        this.clearAction();
       }
     } finally {
       if (this.resuming === action) {
