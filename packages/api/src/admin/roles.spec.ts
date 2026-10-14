@@ -1137,7 +1137,10 @@ describe('createAdminRolesHandlers', () => {
     });
 
     it('restores nothing and reports a failure when the role state cannot be verified', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
       const deps = deleteDeps({
+        recordAuditEntry,
+        deleteGrantsForPrincipal: jest.fn().mockResolvedValue([{ capability: 'read:users' }]),
         getRoleByName: jest
           .fn()
           .mockResolvedValueOnce(mockRole())
@@ -1146,12 +1149,18 @@ describe('createAdminRolesHandlers', () => {
         restoreConfig: jest.fn(),
       });
       const handlers = createAdminRolesHandlers(deps);
-      const { req, res, status } = createReqRes({ params: { name: 'editor' } });
+      const { req, res, status } = createReqRes({
+        params: { name: 'editor' },
+        user: { _id: new Types.ObjectId(), role: 'admin' },
+      });
 
       await handlers.deleteRole(req, res);
 
       expect(status).toHaveBeenCalledWith(500);
       expect(deps.restoreConfig).not.toHaveBeenCalled();
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'grant.removed' }),
+      );
     });
 
     it('restores config insert-only so an override written after the snapshot is kept', async () => {

@@ -591,6 +591,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
         }
         await invalidateAccess();
         if (!lookup.known || lookup.role) {
+          await auditRemovedGrants();
           logger.error('[adminRoles] dependents not restored, role state unverifiable:', name);
           return res.status(500).json({ error: 'Failed to delete role' });
         }
@@ -599,6 +600,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
       }
       await invalidateAccess();
       if (!deleted) {
+        await auditRemovedGrants();
         return res.status(404).json({ error: 'Role not found' });
       }
       const removedGrants = cascade.removed.grants as ISystemGrant[];
