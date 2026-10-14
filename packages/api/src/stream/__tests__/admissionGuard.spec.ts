@@ -69,17 +69,29 @@ describe('GenerationJobManager admission guard', () => {
     });
   });
 
-  it('stops a job admitted before the fence and refuses one after it', async () => {
-    let active = true;
-    manager.setAdmissionGuard(async () => active);
-    await manager.createJob('before', 'user-1', 'before');
+  it('retires a job committed after the marker was set and fails with the stable code', async () => {
+    let marker = false;
+    manager.setAdmissionGuard(async () => !marker);
+    const created = jest.spyOn(store, 'createJob');
+    created.mockImplementationOnce(async (...args) => {
+      marker = true;
+      return InMemoryJobStore.prototype.createJob.apply(store, args);
+    });
 
-    active = false;
-    await stopUserGenerations('user-1', undefined, manager, 0);
-
-    expect((await store.getJob('before'))?.status).not.toBe('running');
-    await expect(manager.createJob('after', 'user-1', 'after')).rejects.toBeInstanceOf(
+    await expect(manager.createJob('late', 'user-1', 'late')).rejects.toBeInstanceOf(
       GenerationAdmissionDeniedError,
     );
+    expect((await store.getJob('late'))?.status).toBe('error');
+  });
+
+  it('stops a job committed before the deletion listing', async () => {
+    let marker = false;
+    manager.setAdmissionGuard(async () => !marker);
+    await manager.createJob('before', 'user-1', 'before');
+
+    marker = true;
+    await stopUserGenerations('user-1', undefined, manager);
+
+    expect((await store.getJob('before'))?.status).not.toBe('running');
   });
 });

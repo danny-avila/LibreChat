@@ -146,6 +146,7 @@ const IDEMPOTENCY_TTL_SECONDS = 25 * 60 * 60;
 const LEGACY_IDEMPOTENCY_TTL_SECONDS = 26 * 60 * 60;
 const OAUTH_TOOL_CALL_PREFIX = `oauth${Constants.mcp_delimiter}`;
 const SHUTDOWN_SUBSCRIBER_ERROR = 'Server is shutting down';
+const ACCOUNT_DELETION_JOB_ERROR = 'Generation stopped because the account is being deleted';
 const SHUTDOWN_JOB_ERROR = 'Generation interrupted because its server shut down';
 const SHUTTING_DOWN_ERROR = 'Generation job manager is shutting down';
 /** Internal transport signal: durable terminal state exists, but its DONE
@@ -1155,6 +1156,30 @@ class GenerationJobManagerClass {
    */
   setAdmissionGuard(guard?: (userId: string) => Promise<boolean>): void {
     this.admissionGuard = guard;
+  }
+
+  private async assertAdmitted(
+    streamId: string,
+    userId: string,
+    options: CreateGenerationJobOptions,
+  ): Promise<void> {
+    const admissionCheck = options.admissionCheck ?? this.admissionGuard;
+    if (admissionCheck == null) {
+      return;
+    }
+    let admitted: boolean;
+    try {
+      admitted = await admissionCheck(userId);
+    } catch (error) {
+      logger.error(
+        `[GenerationJobManager] Admission check failed for ${streamId}:`,
+        getSafeErrorMetadata(error),
+      );
+      throw new GenerationAdmissionUnavailableError();
+    }
+    if (!admitted) {
+      throw new GenerationAdmissionDeniedError();
+    }
   }
 
   /** Installs a durable, generation-fenced terminal lifecycle adapter. */
@@ -2555,22 +2580,8 @@ class GenerationJobManagerClass {
       throw new Error('Invalid active generation predecessor policy');
     }
 
-    const admissionCheck = options.admissionCheck ?? this.admissionGuard;
-    if (admissionCheck != null) {
-      let admitted: boolean;
-      try {
-        admitted = await admissionCheck(userId);
-      } catch (error) {
-        logger.error(
-          `[GenerationJobManager] Admission check failed for ${streamId}:`,
-          getSafeErrorMetadata(error),
-        );
-        throw new GenerationAdmissionUnavailableError();
-      }
-      if (!admitted) {
-        throw new GenerationAdmissionDeniedError();
-      }
-    }
+    /** Refuse before any durable state exists; the common case leaves nothing to clean up. */
+    await this.assertAdmitted(streamId, userId, options);
 
     const tenantId = getTenantId();
     const safeTenantId = tenantId && tenantId !== SYSTEM_TENANT_ID ? tenantId : undefined;
@@ -2763,7 +2774,21 @@ class GenerationJobManagerClass {
       }
       throw new Error('Generation job was replaced during initialization');
     }
-    if (this.shuttingDown) {
+    /**
+     * Race-free admission: account deletion sets its marker first and then lists this user's jobs.
+     * A job committed before that listing is stopped by the drain; a job committed after it
+     * checks the marker here, after the marker was set, and retires itself through the normal
+     * terminal path. The marker is therefore always seen by one side or the other.
+     */
+    let postCommitRefusal: Error | undefined;
+    if (!this.shuttingDown) {
+      try {
+        await this.assertAdmitted(streamId, userId, options);
+      } catch (error) {
+        postCommitRefusal = error as Error;
+      }
+    }
+    if (this.shuttingDown || postCommitRefusal != null) {
       await this.processDurableReplacementReceipts(streamId, jobData, conversationId).catch(
         (handoffError) => {
           logger.error(
@@ -2773,7 +2798,11 @@ class GenerationJobManagerClass {
           return false;
         },
       );
-      await this.completeJob(streamId, SHUTDOWN_JOB_ERROR, jobData.createdAt);
+      await this.completeJob(
+        streamId,
+        postCommitRefusal != null ? ACCOUNT_DELETION_JOB_ERROR : SHUTDOWN_JOB_ERROR,
+        jobData.createdAt,
+      );
       if (jobData.providerExecutionId) {
         await this.markProviderExecutionDrained(
           streamId,
@@ -2786,7 +2815,7 @@ class GenerationJobManagerClass {
         replacedLocal.abortController.abort();
         this.retireStoppedPredecessorRuntime(streamId, jobData.createdAt);
       }
-      throw new Error(SHUTTING_DOWN_ERROR);
+      throw postCommitRefusal ?? new Error(SHUTTING_DOWN_ERROR);
     }
 
     if (!(await this.processDurableReplacementReceipts(streamId, jobData, conversationId))) {
