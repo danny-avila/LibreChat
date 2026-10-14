@@ -586,6 +586,12 @@ describe('redactMessage', () => {
     expect(String(out.message)).not.toContain('jane');
   });
 
+  it('masks encoded domain separators', () => {
+    expect(redactMessage('GET /v1?email=jane%40example%2Ecom&x=1')).toBe(
+      'GET /v1?email=[REDACTED_EMAIL]&x=1',
+    );
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),

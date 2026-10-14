@@ -65,7 +65,7 @@ const EMAIL_PATTERN =
 let skipHeavyErrorFields = false;
 /** URL-encoded addresses (`user%40host.tld`), anchored at a token start so scans stay linear. */
 const ENCODED_EMAIL_PATTERN =
-  /(?<![^\s<>"&=?/#])(?:(?!%40)[^\s<>"&=?/#])+%40[^\s<>"&#]+\.[^\s<>"&#]+/giu;
+  /(?<![^\s<>"&=?/#])(?:(?!%40)[^\s<>"&=?/#])+%40[^\s<>"&#]+(?:\.|%2e)[^\s<>"&#]+/giu;
 const REDACTION_WINDOW_SLACK = 1024;
 const REDACTED_EMAIL_VALUE = '[REDACTED_EMAIL]';
 
