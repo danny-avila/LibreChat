@@ -212,6 +212,11 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
     failClosed: auditFailClosed,
     logPrefix: '[adminRoles]',
   });
+  /** Role deletion revokes access, so its lifecycle entries are always fail-open. */
+  const emitRevocationAudit = createAdminAuditEmitter({
+    recordAuditEntry,
+    logPrefix: '[adminRoles]',
+  });
 
   /** Emits a `grant.removed` audit entry for each grant the role-deletion cascade
    * removed, so the cascade leaves the same forensic trail as an explicit revoke.
@@ -489,6 +494,15 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
   }
 
   async function deleteRoleHandler(req: ServerRequest, res: Response) {
+    /** Set once the deletion attempt is recorded; the outer catch uses it for unexpected failures. */
+    let recordOutcome:
+      | ((
+          outcome: 'success' | 'failure',
+          code?: string,
+          metadata?: Record<string, number>,
+        ) => Promise<void>)
+      | undefined;
+    let waitForAttempt: () => Promise<void> = async () => undefined;
     try {
       const { name } = req.params as RoleNameParams;
       const paramError = validateNameParam(name);
@@ -503,6 +517,30 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
       if (!existing) {
         return res.status(404).json({ error: 'Role not found' });
       }
+
+      /**
+       * The attempt is recorded as `pending` before any removal so a crash mid-cascade still
+       * leaves a trail. The write is started without being awaited, so audit latency never
+       * delays the revocation; every later entry waits for it to keep the chain ordered.
+       */
+      const target = roleTarget(name);
+      const attempt = emitRevocationAudit(req, {
+        action: 'role.deleted',
+        outcome: 'pending',
+        severity: 'warning',
+        target,
+      });
+      waitForAttempt = () => attempt;
+      recordOutcome = async (outcome, code, metadata) => {
+        await attempt;
+        await emitRevocationAudit(req, {
+          action: 'role.deleted',
+          outcome,
+          severity: 'warning',
+          target,
+          ...(code || metadata ? { metadata: { ...(code ? { code } : {}), ...metadata } } : {}),
+        });
+      };
 
       /**
        * Grants, ACL entries and config overrides are keyed by role name, so they
@@ -556,15 +594,23 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
           );
         }
       };
-      const cleanupFailedResponse = () =>
-        res.status(500).json({
+      const cleanupFailedResponse = async () => {
+        await recordOutcome?.('failure', 'ROLE_CLEANUP_FAILED');
+        return res.status(500).json({
           error: 'Failed to remove the role grants and permissions; the role was not deleted',
           code: 'ROLE_CLEANUP_FAILED',
         });
+      };
 
       /** Grants are never restored, so a failed delete still changed access and is audited. */
-      const auditRemovedGrants = () =>
-        emitGrantRemovals(req, name, (cascade.removed.grants as ISystemGrant[] | undefined) ?? []);
+      const auditRemovedGrants = async () => {
+        await waitForAttempt();
+        await emitGrantRemovals(
+          req,
+          name,
+          (cascade.removed.grants as ISystemGrant[] | undefined) ?? [],
+        );
+      };
 
       /** Reads the role again to learn whether it still is the one this request targeted. */
       const lookupRole = () =>
@@ -607,11 +653,13 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
           await cascade.compensate();
           await invalidateAccess();
           await auditRemovedGrants();
+          await recordOutcome('failure', 'ROLE_CLEANUP_FAILED');
           return res.status(500).json({ error: 'Failed to delete role' });
         }
         await invalidateAccess();
         if (!lookup.known || lookup.role) {
           await auditRemovedGrants();
+          await recordOutcome('failure', 'ROLE_STATE_UNVERIFIABLE');
           logger.error('[adminRoles] dependents not restored, role state unverifiable:', name);
           return res.status(500).json({ error: 'Failed to delete role' });
         }
@@ -621,22 +669,17 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
       await invalidateAccess();
       if (!deleted) {
         await auditRemovedGrants();
+        await recordOutcome('failure', 'not_found');
         return res.status(404).json({ error: 'Role not found' });
       }
       const removedGrants = cascade.removed.grants as ISystemGrant[];
       await auditRemovedGrants();
-      await emitAudit(req, {
-        action: 'role.deleted',
-        severity: 'warning',
-        target: roleTarget(name),
-        metadata: {
-          grantsRemoved: removedGrants.length,
-        },
-      });
+      await recordOutcome('success', undefined, { grantsRemoved: removedGrants.length });
 
       return res.status(200).json({ success: true });
     } catch (error) {
       logger.error('[adminRoles] deleteRole error:', error);
+      await recordOutcome?.('failure', 'ROLE_DELETE_FAILED').catch(() => undefined);
       return res.status(500).json({ error: 'Failed to delete role' });
     }
   }
