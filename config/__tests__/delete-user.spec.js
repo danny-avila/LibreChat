@@ -346,7 +346,7 @@ describe('Delete user CLI', () => {
       getServerConfig: expect.any(Function),
       getUserPrincipals: expect.any(Function),
       resolveAllowlists: expect.any(Function),
-      fenceAndDisconnectUser: expect.any(Function),
+      invalidateUserTools: expect.any(Function),
       uninstallOAuthMCP: expect.any(Function),
     });
     mockMethods.getUserById = jest.fn(async () => ({ role: 'VIEWER' }));
@@ -362,7 +362,7 @@ describe('Delete user CLI', () => {
       userId: 'viewer-1',
       tenantId: 'tenant-1',
     });
-    await deps.mcpOAuth.fenceAndDisconnectUser('viewer-1', 'server-1');
+    await deps.mcpOAuth.invalidateUserTools('viewer-1', 'server-1');
     expect(mockInvalidateCachedTools).toHaveBeenCalledWith({
       userId: 'viewer-1',
       serverName: 'server-1',

@@ -252,7 +252,7 @@ async function gracefulExit(code = 0) {
                   allowedAddresses: candidateConfig?.mcpSettings?.allowedAddresses,
                 };
               }),
-            fenceAndDisconnectUser: (candidateId, serverName) =>
+            invalidateUserTools: (candidateId, serverName) =>
               runInUserTenant(async () =>
                 invalidateCachedTools({ userId: candidateId, serverName }),
               ),

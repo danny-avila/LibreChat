@@ -74,7 +74,10 @@ export interface MCPOAuthErasureHooks {
   resolveAllowlists: (
     userId: string,
   ) => Promise<{ allowedDomains?: string[] | null; allowedAddresses?: string[] | null }>;
-  fenceAndDisconnectUser?: (userId: string, serverName: string) => Promise<void>;
+  /** Bumps the user's cached catalog generation for the server so loaded tools stop working. */
+  invalidateUserTools?: (userId: string, serverName: string) => Promise<unknown>;
+  /** Closes the user's live connection to the server, where the host holds connections. */
+  disconnectUser?: (userId: string, serverName: string) => Promise<unknown>;
   uninstallOAuthMCP: (
     userId: string,
     pluginKey: string,
@@ -140,7 +143,7 @@ export async function deleteUserMCPServers(
 
   const oauth = deps.mcpOAuth;
   const named = servers.filter((server) => server.serverName);
-  /** Shared users are only discoverable from the ACLs and tokens that the delete removes. */
+  /** Shared users are discovered from the ACLs and tokens, which the delete removes. */
   const prepared = oauth
     ? await Promise.all(
         named.map(async ({ id, serverName }) => ({
@@ -168,8 +171,10 @@ export async function deleteUserMCPServers(
           getTokenUserIds: () => deps.findMCPServerOAuthTokenUserIds(serverName),
           getUserPrincipals: oauth.getUserPrincipals,
           resolveAllowlists: oauth.resolveAllowlists,
-          fenceAndDisconnectUser: (candidateId) =>
-            oauth.fenceAndDisconnectUser?.(candidateId, serverName) ?? Promise.resolve(),
+          fenceAndDisconnectUser: async (candidateId) => {
+            await oauth.invalidateUserTools?.(candidateId, serverName);
+            await oauth.disconnectUser?.(candidateId, serverName);
+          },
           uninstallOAuthMCP: oauth.uninstallOAuthMCP,
         }),
       ),
@@ -181,27 +186,11 @@ export async function deleteUserMCPServers(
     return failures.length;
   };
 
-  try {
-    await deps.deleteMCPServersWithAcl(servers.map((s) => s.id));
-  } catch (error) {
-    /**
-     * A retry sees a server whose document is already gone only as an unnamed ACL, so shared
-     * users of servers that did go away are cleaned now, while their names are still known.
-     */
-    if (prepared.length > 0) {
-      const remaining = new Set(
-        (await deps.findUserErasableMCPServers(userId).catch(() => servers)).map(
-          (server) => server.serverName,
-        ),
-      );
-      await cleanupSharedUsers(prepared.filter(({ serverName }) => !remaining.has(serverName)));
-    }
-    throw error;
-  }
-  /** Shared-user credentials cannot be rediscovered once the server is gone, so surface the failure. */
+  /** The server and its ACLs are the retry anchors, so they outlive a failed teardown. */
   if ((await cleanupSharedUsers(prepared)) > 0) {
-    throw new Error('MCP OAuth cleanup failed for users of a removed server');
+    throw new Error('MCP OAuth cleanup failed for users of a server being removed');
   }
+  await deps.deleteMCPServersWithAcl(servers.map((s) => s.id));
 }
 
 /**

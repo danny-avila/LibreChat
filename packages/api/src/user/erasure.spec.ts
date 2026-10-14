@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { ResourceType, PrincipalType } from 'librechat-data-provider';
-import { createModels, createMethods } from '@librechat/data-schemas';
+import { createModels, createMethods, tenantStorage } from '@librechat/data-schemas';
 import type { CheckpointDeletion } from '~/agents/checkpoints/deletion';
 import type { UserErasureDeps } from './erasure';
 import { deleteAllSharedLinksWithCleanup } from '~/shared-links/service';
@@ -174,6 +174,23 @@ describe('eraseUserData', () => {
     expect(await count('Conversation', { user: userId.toString() })).toBe(0);
   });
 
+  it('deletes pre-tenancy refresh bridges while running in the active tenant context', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    await seedUser(userId);
+    await model('RefreshTokenBridge').insertOne({
+      userId: userId.toString(),
+      oldRefreshTokenHash: 'legacy-hash',
+      encryptedNewRefreshToken: 'encrypted',
+    });
+    const { deps } = createDeps();
+
+    await tenantStorage.run({ tenantId: 'tenant-1' }, async () =>
+      eraseUserData({ userId: userId.toString(), tenantId: 'tenant-1' }, deps),
+    );
+
+    expect(await count('RefreshTokenBridge', { userId: userId.toString() })).toBe(0);
+  });
+
   it('removes refresh bridges written before tenancy for a tenant user', async () => {
     const userId = new mongoose.Types.ObjectId();
     await seedUser(userId);
@@ -228,7 +245,7 @@ describe('eraseUserData', () => {
           : [],
       ),
       resolveAllowlists: jest.fn(async () => ({})),
-      fenceAndDisconnectUser: jest.fn(async (candidate: string, fencedServer: string) => {
+      invalidateUserTools: jest.fn(async (candidate: string, fencedServer: string) => {
         if (fencedServer === serverName) {
           fenced.push(candidate);
         }
@@ -249,25 +266,7 @@ describe('eraseUserData', () => {
     expect(await count('MCPServer', { author: userId })).toBe(0);
   });
 
-  it('fails the erasure when shared-user OAuth cleanup fails', async () => {
-    const userId = new mongoose.Types.ObjectId();
-    await seedUser(userId);
-    const { deps } = createDeps();
-    deps.mcpOAuth = {
-      getUserPrincipals: jest.fn(async () => []),
-      resolveAllowlists: jest.fn(async () => ({})),
-      fenceAndDisconnectUser: jest.fn(async () => {
-        throw new Error('redis down');
-      }),
-      uninstallOAuthMCP: jest.fn(async () => undefined),
-    };
-
-    await expect(eraseUserData({ userId: userId.toString() }, deps)).rejects.toThrow(
-      'MCP OAuth cleanup failed',
-    );
-  });
-
-  it('still cleans shared users when the ACL delete fails after the server is gone', async () => {
+  it('keeps the server and its ACLs when shared-user OAuth cleanup fails, so a retry finishes it', async () => {
     const userId = new mongoose.Types.ObjectId();
     const viewerId = new mongoose.Types.ObjectId();
     const { mcpServerId } = await seedUser(userId);
@@ -288,13 +287,8 @@ describe('eraseUserData', () => {
       expiresAt: new Date(Date.now() + 60_000),
     });
     const { deps } = createDeps();
-    deps.deleteMCPServersWithAcl = jest.fn(async (ids: string[]) => {
-      await model('MCPServer').deleteMany({
-        _id: { $in: ids.map((id) => new mongoose.Types.ObjectId(id)) },
-      });
-      throw new Error('acl store down');
-    });
     const uninstalled: string[] = [];
+    let outage = true;
     deps.mcpOAuth = {
       getUserPrincipals: jest.fn(async (candidate: string) =>
         candidate === viewerId.toString()
@@ -303,6 +297,9 @@ describe('eraseUserData', () => {
       ),
       resolveAllowlists: jest.fn(async () => ({})),
       uninstallOAuthMCP: jest.fn(async (candidate: string, pluginKey: string) => {
+        if (outage) {
+          throw new Error('redis down');
+        }
         if (pluginKey === `mcp_${serverName}`) {
           uninstalled.push(candidate);
         }
@@ -310,10 +307,16 @@ describe('eraseUserData', () => {
     };
 
     await expect(eraseUserData({ userId: userId.toString() }, deps)).rejects.toThrow(
-      'acl store down',
+      'MCP OAuth cleanup failed',
     );
+    expect(await count('MCPServer', { _id: mcpServerId })).toBe(1);
+    expect(await count('AclEntry', { resourceId: mcpServerId })).toBe(2);
+
+    outage = false;
+    await eraseUserData({ userId: userId.toString() }, deps);
 
     expect(uninstalled).toContain(viewerId.toString());
+    expect(await count('MCPServer', { _id: mcpServerId })).toBe(0);
   });
 
   it('signals session revocation even when a later step fails', async () => {

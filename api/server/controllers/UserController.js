@@ -172,10 +172,10 @@ const createMCPServerCleanup = (userId) => ({
     getUserPrincipals: (candidateId) => db.getUserPrincipals({ userId: candidateId }),
     resolveAllowlists: (candidateId) =>
       getMCPServersRegistry().resolveAllowlists({ userId: candidateId }),
-    fenceAndDisconnectUser: async (candidateId, serverName) => {
-      await invalidateCachedTools({ userId: candidateId, serverName });
-      await getMCPManager()?.disconnectUserConnection(candidateId, serverName);
-    },
+    invalidateUserTools: (candidateId, serverName) =>
+      invalidateCachedTools({ userId: candidateId, serverName }),
+    disconnectUser: (candidateId, serverName) =>
+      getMCPManager()?.disconnectUserConnection(candidateId, serverName),
     uninstallOAuthMCP: maybeUninstallOAuthMCP,
   },
 });
