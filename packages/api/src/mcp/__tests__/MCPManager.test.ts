@@ -577,6 +577,22 @@ describe('MCPManager', () => {
       expect(result).not.toContain('database');
     });
 
+    it('should produce identical text regardless of the requested server order', async () => {
+      (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
+        files: { type: 'stdio', command: 'node', args: ['f.js'], serverInstructions: 'Files rule' },
+        github: { type: 'sse', url: 'https://api.github.com', serverInstructions: 'GitHub rule' },
+        database: { type: 'sse', url: 'https://db.example', serverInstructions: 'DB rule' },
+      });
+
+      const manager = await MCPManager.createInstance(newMCPServersConfig());
+      const first = await manager.formatInstructionsForContext(['github', 'files', 'database']);
+      const second = await manager.formatInstructionsForContext(['database', 'github', 'files']);
+
+      expect(second).toBe(first);
+      expect(first.indexOf('## database')).toBeLessThan(first.indexOf('## files'));
+      expect(first.indexOf('## files')).toBeLessThan(first.indexOf('## github'));
+    });
+
     it('should return empty string when filtered servers have no instructions', async () => {
       (mockRegistryInstance.getAllServerConfigs as jest.Mock).mockResolvedValue({
         github: {

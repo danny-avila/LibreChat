@@ -33,6 +33,7 @@ import {
   requiresOAuthMachinery,
   requiresUserScopedConnection,
   resolveServerInstructions,
+  sortNames,
 } from './utils';
 import {
   getMCPConnectionPoolKey,
@@ -898,8 +899,10 @@ export class MCPManager extends UserConnectionManager {
         instructions[serverName] = resolved;
       }
     }
-    if (!serverNames) return instructions;
-    return pick(instructions, serverNames);
+    const selected = serverNames ? pick(instructions, serverNames) : instructions;
+    return Object.fromEntries(
+      sortNames(Object.keys(selected)).map((name) => [name, selected[name]]),
+    );
   }
 
   /**

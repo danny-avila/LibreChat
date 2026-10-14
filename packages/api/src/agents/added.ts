@@ -17,6 +17,7 @@ import {
   requiresEphemeralUserConnection,
   filterChatSelectableMCPServers,
   validateMCPServerConfig,
+  sortNames,
 } from '~/mcp/utils';
 import { ASK_USER_QUESTION_TOOL_NAME } from '~/agents/hitl/askUserQuestionTool';
 import { resolveMCPClientCapabilityProfile } from '~/mcp/capabilities';
@@ -245,7 +246,7 @@ export async function loadAddedAgent(
   }
 
   const addedServers = new Set<string>();
-  for (const mcpServer of mcpServers) {
+  for (const mcpServer of sortNames(mcpServers)) {
     if (addedServers.has(mcpServer)) {
       continue;
     }
@@ -262,7 +263,7 @@ export async function loadAddedAgent(
       addedServers.add(mcpServer);
       continue;
     }
-    tools.push(...Object.keys(serverTools));
+    tools.push(...sortNames(Object.keys(serverTools)));
     addedServers.add(mcpServer);
   }
 

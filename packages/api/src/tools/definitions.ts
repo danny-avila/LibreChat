@@ -24,7 +24,7 @@ import { resolveJsonSchemaRefs, normalizeJsonSchema, sanitizeGeminiSchema } from
 import { buildToolClassification } from './classification';
 import { getToolDefinition } from './registry/definitions';
 import { toolkitExpansion } from './toolkits/mapping';
-import { isMCPAllPlaceholder } from '~/mcp/utils';
+import { isMCPAllPlaceholder, sortNames } from '~/mcp/utils';
 
 export interface MCPServerTool {
   function?: {
@@ -315,7 +315,8 @@ export async function loadToolDefinitions(
     }
 
     if (isMCPAllPlaceholder(toolName)) {
-      for (const [actualToolName, toolDef] of Object.entries(serverTools)) {
+      for (const actualToolName of sortNames(Object.keys(serverTools))) {
+        const toolDef = serverTools[actualToolName];
         if (toolDef?.function) {
           mcpToolDefs.push(
             bindToolApprovalIdentity(
