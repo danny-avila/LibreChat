@@ -127,6 +127,24 @@ describe('redactMessage', () => {
     expect(JSON.stringify(info)).not.toContain('example.com');
   });
 
+  it('stays fast on adversarial 100k inputs for every redaction path', () => {
+    const inputs = [
+      'a@'.repeat(50000),
+      `a@${'a.'.repeat(50000)}`,
+      '"a@'.repeat(30000),
+      '\\"'.repeat(50000),
+      'a'.repeat(100000),
+      `${'a'.repeat(100000)}://h`,
+      'Bearer '.repeat(14000),
+    ];
+    for (const input of inputs) {
+      const started = Date.now();
+      runRedactFormat({ level: 'info', message: input });
+      runRedactFormat({ level: 'info', message: 'm', [input]: 1, nested: { [input]: input } });
+      expect(Date.now() - started).toBeLessThan(1000);
+    }
+  });
+
   it('keeps redaction of a long run without an address bounded', () => {
     const started = Date.now();
     const out = String(

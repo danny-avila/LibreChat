@@ -49,7 +49,7 @@ const sensitiveKeys: RegExp[] = [
   /(\b)eyJ[a-zA-Z0-9_-]{5,}\.[a-zA-Z0-9_-]{5,}\.[a-zA-Z0-9_-]+/g,
   /\b((?:Proxy-)?Authorization:\s*)[^\r\n]+/gi,
   /\b((?:Cookie|Set-Cookie):\s*)[^\r\n]+/gi,
-  /([a-z][a-z0-9+.-]*:\/\/)[^/\s:@]*:[^/\s@]+(?=@)/gi,
+  /(?<![a-z0-9+.-])([a-z][a-z0-9+.-]{0,31}:\/\/)[^/\s:@]*:[^/\s@]+(?=@)/gi,
 ];
 
 /**
@@ -113,7 +113,7 @@ function redactLogKey(
   isUsed: (candidate: string) => boolean,
   cursors: Map<string, number>,
 ): string {
-  const base = key.includes('@') ? redactMessage(key) : key;
+  const base = key.includes('@') ? redactLogString(key) : key;
   let candidate = base;
   let suffix = cursors.get(base) ?? 2;
   while (isUsed(candidate)) {
@@ -762,4 +762,11 @@ const jsonTruncateFormat: winston.Logform.FormatWrap = winston.format(
   },
 );
 
-export { redactFormat, redactMessage, debugTraverse, jsonTruncateFormat, stripHeavyErrorFields };
+export {
+  redactFormat,
+  redactMessage,
+  redactLogString,
+  debugTraverse,
+  jsonTruncateFormat,
+  stripHeavyErrorFields,
+};
