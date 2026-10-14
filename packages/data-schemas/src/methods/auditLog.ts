@@ -427,7 +427,9 @@ export function createAuditLogMethods(
           actorType: actor.type,
           targetType: target.type,
           targetId: target.id ?? null,
-          err,
+          /** Name and driver code only: the message can echo query text or connection details. */
+          errName: err instanceof Error ? err.name : typeof err,
+          errCode: (err as { code?: unknown } | null)?.code ?? null,
         });
         if (options?.failClosed) {
           throw err instanceof Error ? err : new Error('Failed to record audit entry');

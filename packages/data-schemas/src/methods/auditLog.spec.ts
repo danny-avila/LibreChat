@@ -1,5 +1,6 @@
 import mongoose, { Types } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import logger from '~/config/winston';
 import type { RecordAuditEntryInput } from '~/types';
 import type * as t from '~/types';
 import auditLogSchema, { GENESIS_HASH, PLATFORM_CHAIN_KEY } from '~/schema/auditLog';
@@ -164,6 +165,23 @@ describe('auditLog methods', () => {
       );
 
       spy.mockRestore();
+    });
+  });
+
+  describe('write failure logging', () => {
+    it('logs the error name and code, never the message', async () => {
+      const create = jest
+        .spyOn(AuditLog, 'create')
+        .mockRejectedValueOnce(new Error('connect mongodb://user:secret@host failed'));
+      const logSpy = jest.spyOn(logger, 'error').mockImplementation(() => logger);
+
+      await methods.recordAuditEntry(baseInput());
+
+      const logged = JSON.stringify(logSpy.mock.calls);
+      expect(logged).toContain('errName');
+      expect(logged).not.toContain('secret');
+      create.mockRestore();
+      logSpy.mockRestore();
     });
   });
 
