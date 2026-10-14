@@ -437,7 +437,9 @@ const processFileURL = async ({
 
     const file_id = v4();
     const storedCleanup = {
-      req,
+      /* Strategies validate ownership against the request user, which the callers' optional
+       * request may not carry. */
+      req: req ?? { user: { id: userId, tenantId } },
       logger,
       recordExists: fileRecordExists,
       resolveDeleteFile: () => getStrategyFunctions(fileStrategy).deleteFile,

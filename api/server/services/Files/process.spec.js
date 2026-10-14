@@ -3527,6 +3527,28 @@ describe('stored upload cleanup across storage-before-record paths', () => {
     expectStoredObjectDeleted(req, { storageKey: storedFile.storageKey });
   });
 
+  it('deletes the object for a URL upload that was given no request', async () => {
+    const saveURL = jest.fn().mockResolvedValue({ ...storedFile, type: 'image/png' });
+    getStrategyFunctions.mockReturnValue({ saveURL, getFileURL: jest.fn(), deleteFile });
+
+    await expect(
+      processFileURL({
+        fileStrategy: FileSources.s3,
+        userId: 'user-123',
+        URL: 'https://example.com/image.png',
+        fileName: 'image.png',
+        basePath: 'images',
+        context: FileContext.image_generation,
+        tenantId: 'tenant-a',
+      }),
+    ).rejects.toThrow('db down');
+
+    expect(deleteFile).toHaveBeenCalledWith(
+      { user: { id: 'user-123', tenantId: 'tenant-a' } },
+      expect.objectContaining({ filepath: storedFile.filepath, user: 'user-123' }),
+    );
+  });
+
   it('deletes the object when uploadImageBuffer saved it but the record fails', async () => {
     const saveBuffer = jest.fn().mockResolvedValue(storedFile.filepath);
     getStrategyFunctions.mockReturnValue({ saveBuffer, deleteFile });
