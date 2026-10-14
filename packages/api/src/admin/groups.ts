@@ -454,15 +454,14 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
        * Puts the config override back. When that restore itself fails the group would live on
        * without its restriction, so the deletion is completed instead of retaining it.
        */
-      const compensate = async (): Promise<'restored' | 'deleted' | 'stuck'> => {
+      const compensate = async (): Promise<'restored' | 'stuck' | IGroup> => {
         await cascade.compensate();
         if (!restoreFailed) {
           return 'restored';
         }
         logger.error('[adminGroups] config restore failed, completing the deletion:', id);
         try {
-          await deleteGroup(id);
-          return 'deleted';
+          return (await deleteGroup(id)) ?? existing;
         } catch (error) {
           logger.error('[adminGroups] group left without its config override:', id, error);
           return 'stuck';
@@ -481,9 +480,9 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
           });
         }
       };
-      const compensatedResponse = async (outcome: 'deleted' | 'stuck') => {
-        if (outcome === 'deleted') {
-          await recordMemberRemovals(existing);
+      const compensatedResponse = async (outcome: 'stuck' | IGroup) => {
+        if (outcome !== 'stuck') {
+          await recordMemberRemovals(outcome);
           res.status(200).json({ success: true, id });
           await record('success');
           return res;
