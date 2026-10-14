@@ -6,6 +6,8 @@
  * `encrypted_content`, signatures) is one long run of these characters.
  */
 const OPAQUE_REASONING_MIN_RUN = 128;
+/** Longest undecided tail released as a final word once its stream has ended. */
+const OPAQUE_REASONING_MAX_WORD = 32;
 const OPAQUE_REASONING_RUN = new RegExp(`[A-Za-z0-9+/=_-]{${OPAQUE_REASONING_MIN_RUN},}`, 'g');
 /** Persisted reasoning is stored inside `<think>` tags; they are not readable content. */
 const THINK_TAGS = /<\/?think>/g;
@@ -91,17 +93,23 @@ export function advanceOpaqueReasoning(
 }
 
 /**
- * The last `maxChars` of reasoning for a rolling excerpt. A cut inside an
- * unbroken run would leave a fragment too short to classify, so a window that
- * starts mid-run skips to the end of that run.
+ * The undecided tail of a stream that has ended (or of text still streaming,
+ * for display): a word-sized tail is a final word, while a longer one is more
+ * likely the unclassified start of a payload and is withheld.
  */
-export function sliceReasoningTail(text: string, maxChars: number): string {
-  if (text.length <= maxChars) {
-    return text;
+export function flushOpaqueReasoning(cursor: OpaqueReasoningCursor): string {
+  return !cursor.opaque && cursor.tail.length <= OPAQUE_REASONING_MAX_WORD ? cursor.tail : '';
+}
+
+/**
+ * Reasoning text safe to show: encoded payloads removed and, while the text is
+ * still streaming, a trailing run that could still grow into a payload held
+ * back until it is classified.
+ */
+export function readableReasoning(text: string, streaming = false): string {
+  if (!streaming) {
+    return stripOpaqueReasoning(text);
   }
-  const start = text.length - maxChars;
-  if (!isPayloadChar(text.charCodeAt(start - 1))) {
-    return text.slice(start);
-  }
-  return text.slice(payloadRunEnd(text, start));
+  const { readable, cursor } = advanceOpaqueReasoning(OPAQUE_REASONING_START, text);
+  return `${readable}${flushOpaqueReasoning(cursor)}`;
 }

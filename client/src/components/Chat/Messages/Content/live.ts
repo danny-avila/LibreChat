@@ -2,7 +2,7 @@ import {
   Constants,
   ContentTypes,
   isOpaqueReasoning,
-  stripOpaqueReasoning,
+  readableReasoning,
   stripToolCallErrorPrefix,
 } from 'librechat-data-provider';
 import type {
@@ -318,7 +318,8 @@ function newestLine(
       /** Encrypted reasoning has no sentence to preview, and a label generated
        *  from it before labels skipped encoded payloads describes the payload. */
       const opaque = isOpaqueReasoning(think);
-      const reasoning = stripOpaqueReasoning(think);
+      /** The live header only exists while the run streams. */
+      const reasoning = readableReasoning(think, true);
       const label = opaque ? undefined : part.reasoning_label?.trim();
       if (preferLabels) {
         /** Only a generated label will do: the generic thinking line is what

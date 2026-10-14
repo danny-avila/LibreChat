@@ -3,7 +3,7 @@ import { useAtom } from 'jotai';
 import copy from 'copy-to-clipboard';
 import { Lightbulb, ChevronDown } from 'lucide-react';
 import { Button, disclosureChevronVariants } from '@librechat/client';
-import { ContentTypes, stripOpaqueReasoning } from 'librechat-data-provider';
+import { ContentTypes, readableReasoning } from 'librechat-data-provider';
 import type { MouseEvent, FocusEvent } from 'react';
 import {
   ThinkingContent,
@@ -26,10 +26,11 @@ const stripThinkTags = (reasoning: string): string =>
     .replace(/\s*<\/think>$/, '')
     .trim();
 
-/** The readable reasoning to show and copy: wrapper tags and any encoded
- *  provider payload mixed into the step are removed. */
-const readableReasoning = (reasoning: string): string =>
-  stripThinkTags(stripOpaqueReasoning(reasoning));
+/** The reasoning to show and copy: wrapper tags and encoded provider payloads
+ *  are removed, and while it streams, a trailing run that could still grow
+ *  into a payload is held back until it is classified. */
+const displayReasoning = (reasoning: string, streaming: boolean): string =>
+  stripThinkTags(readableReasoning(reasoning, streaming));
 
 const PEEK_SENTENCES = 4;
 
@@ -181,8 +182,13 @@ const Reasoning = memo((props: ReasoningProps) => {
   const { style: expandStyle, ref: expandRef } = useExpandCollapse(isExpanded);
   const { shouldRenderBody, mountBody, handleTransitionEnd } = useLazyCollapseBody(isExpanded);
   const { isSubmitting, isLatestMessage, nextType } = useMessage();
+  const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
+  const streaming = effectiveIsSubmitting === true && isLast;
 
-  const reasoningText = useMemo(() => readableReasoning(reasoning), [reasoning]);
+  const reasoningText = useMemo(
+    () => displayReasoning(reasoning, streaming),
+    [reasoning, streaming],
+  );
 
   const handleClick = useCallback(
     (e: MouseEvent<HTMLButtonElement>) => {
@@ -214,8 +220,6 @@ const Reasoning = memo((props: ReasoningProps) => {
       setIsBarVisible(false);
     }
   }, []);
-
-  const effectiveIsSubmitting = isLatestMessage ? isSubmitting : false;
 
   const label = useMemo(() => {
     const generated = reasoningLabel?.trim();
@@ -346,7 +350,10 @@ export const ReasoningCompact = memo(
      *  more expensive on top of the visible peek. */
     const { shouldRenderBody, mountBody, handleTransitionEnd } = useLazyCollapseBody(isExpanded);
 
-    const reasoningText = useMemo(() => readableReasoning(reasoning), [reasoning]);
+    const reasoningText = useMemo(
+      () => displayReasoning(reasoning, isStreaming),
+      [reasoning, isStreaming],
+    );
 
     const handleToggle = useCallback(
       (e: MouseEvent<HTMLButtonElement>) => {

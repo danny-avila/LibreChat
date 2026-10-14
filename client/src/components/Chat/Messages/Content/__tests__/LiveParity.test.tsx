@@ -1750,6 +1750,15 @@ describe('live activity over encrypted reasoning', () => {
     expect(activity.text).toBe('Comparing both lockfiles.');
   });
 
+  it('never previews the undecided start of a streaming payload', () => {
+    const activity = getLiveActivity(
+      [think(`Comparing both lockfiles. ${encoded.slice(0, 100)}`)],
+      (key) => key,
+      [],
+    );
+    expect(activity.text).toBe('Comparing both lockfiles.');
+  });
+
   it('still previews readable reasoning', () => {
     const activity = getLiveActivity(
       [think('Comparing both lockfiles. The resolver pins an older range.')],

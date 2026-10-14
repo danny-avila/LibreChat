@@ -1,4 +1,4 @@
-import { ContentTypes } from 'librechat-data-provider';
+import { ContentTypes, isOpaqueReasoning, stripOpaqueReasoning } from 'librechat-data-provider';
 import type { TMessage, TMessageContentParts, TextData } from 'librechat-data-provider';
 import { splitMarkdownIntoBlocks } from './splitMarkdown';
 
@@ -19,6 +19,16 @@ export const getPartValue = (part: TMessageContentParts): string | TextData | un
 export const getPartText = (part: TMessageContentParts): string | undefined => {
   const value = getPartValue(part);
   return typeof value === 'string' ? value : value?.value;
+};
+
+/**
+ * The text the editor offers for a part. Encoded provider reasoning is not
+ * prose anyone can edit, so a THINK part offers only its readable text; a part
+ * left unchanged is never written back, which keeps the stored payload intact.
+ */
+export const getEditableText = (part: TMessageContentParts): string | undefined => {
+  const text = getPartText(part);
+  return part.type === ContentTypes.THINK && text != null ? stripOpaqueReasoning(text) : text;
 };
 
 export const withPartText = (part: TMessageContentParts, text: string): string | TextData => {
@@ -50,7 +60,13 @@ export const isEditablePart = (part?: TMessageContentParts | null): boolean => {
     return false;
   }
   const text = getPartText(part);
-  return text != null && !containsArtifact(text);
+  if (text == null) {
+    return false;
+  }
+  if (part.type === ContentTypes.THINK && isOpaqueReasoning(text)) {
+    return false;
+  }
+  return !containsArtifact(text);
 };
 
 /**

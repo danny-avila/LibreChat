@@ -2,7 +2,8 @@ import type { OpaqueReasoningCursor } from './reasoning';
 import {
   isOpaqueReasoning,
   stripOpaqueReasoning,
-  sliceReasoningTail,
+  readableReasoning,
+  flushOpaqueReasoning,
   advanceOpaqueReasoning,
   OPAQUE_REASONING_START,
 } from './reasoning';
@@ -134,19 +135,23 @@ describe('advanceOpaqueReasoning', () => {
   });
 });
 
-describe('sliceReasoningTail', () => {
-  it('keeps short reasoning whole', () => {
-    expect(sliceReasoningTail('Checking the manifest.', 600)).toBe('Checking the manifest.');
+describe('readableReasoning', () => {
+  it('strips payloads from completed reasoning and keeps a long final token', () => {
+    const token = 'a'.repeat(60);
+    expect(readableReasoning(`Done.\n${bedrockRedacted}`)).toBe('Done.\n');
+    expect(readableReasoning(`Hash ${token}`)).toBe(`Hash ${token}`);
   });
 
-  it('starts after a payload the window would cut', () => {
-    const text = `${bedrockRedacted}\nRolling back the deploy.`;
-    const tail = sliceReasoningTail(text, 100);
-    expect(tail).toBe('\nRolling back the deploy.');
-    expect(isOpaqueReasoning(tail)).toBe(false);
+  it('withholds a trailing run that could still become a payload while streaming', () => {
+    const prefix = bedrockRedacted.slice(0, 100);
+    expect(readableReasoning(`Checking. ${prefix}`, true)).toBe('Checking. ');
+    expect(readableReasoning(prefix, true)).toBe('');
+    expect(readableReasoning('Checking the manif', true)).toBe('Checking the manif');
   });
 
-  it('cuts at the window boundary when it falls between words', () => {
-    expect(sliceReasoningTail('alpha beta gamma', 6)).toBe(' gamma');
+  it('flushes only a word-sized tail', () => {
+    expect(flushOpaqueReasoning({ tail: 'manifest', opaque: false })).toBe('manifest');
+    expect(flushOpaqueReasoning({ tail: 'a'.repeat(40), opaque: false })).toBe('');
+    expect(flushOpaqueReasoning({ tail: '', opaque: true })).toBe('');
   });
 });

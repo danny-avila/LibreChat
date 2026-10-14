@@ -500,13 +500,14 @@ describe('createActivityPhaseWiring', () => {
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } },
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-3' } },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-4' } },
     ];
     const payloads: GenerateActivityPhasePayload[] = [];
     const wiring = createActivityPhaseWiring({
       initialSnapshot: {
         version: 3,
         generated: 0,
-        activityCount: 3,
+        activityCount: 4,
         failedActivityCount: 0,
         partialActivityCount: 0,
         agentIds: [],
@@ -528,6 +529,14 @@ describe('createActivityPhaseWiring', () => {
             status: 'success',
             toolCallIds: ['tool-3'],
             thinkingExcerpts: [`Rolling back.\n${encoded}`],
+          },
+          {
+            startIndex: 3,
+            status: 'success',
+            toolCallIds: ['tool-4'],
+            /** A window cut into a payload: only the streamed classification is evidence. */
+            thinkingExcerpts: [`${encoded.slice(-9)} Verified the rollback.`],
+            readableExcerpts: ['Verified the rollback.'],
           },
         ],
         assistantContext: [],
@@ -551,8 +560,10 @@ describe('createActivityPhaseWiring', () => {
       ['Checking the deploy manifest.'],
       undefined,
       ['Rolling back.'],
+      ['Verified the rollback.'],
     ]);
     expect(payloads[0].activities[1]).not.toHaveProperty('thinkingExcerpts');
+    expect(payloads[0].activities[3]).not.toHaveProperty('readableExcerpts');
   });
 
   it('keeps a substantial boundary hard when too little preceding work earns a phase', async () => {
@@ -901,15 +912,16 @@ describe('createActivityPhaseWiring', () => {
     expect(parts).toHaveLength(1);
   });
 
-  it('never starts the rolling reasoning excerpt inside an encrypted payload', () => {
+  it('classifies streamed reasoning before bounding its prompt evidence', async () => {
     const encoded = Buffer.from(
       Array.from({ length: 1_050 }, (_, i) => (i * 37 + 3) % 256),
     ).toString('base64');
     const readable = 'Checking the manifest before rolling back the deploy. '
       .repeat(11)
       .slice(0, 590);
+    const parts: LooseContentPart[] = [];
     const wiring = createActivityPhaseWiring({
-      getContentParts: () => [],
+      getContentParts: () => parts,
       bumpIndexOffset: jest.fn(),
       emitLabelEvent: jest.fn(async () => undefined),
       trackPendingFill: jest.fn(),
@@ -931,7 +943,13 @@ describe('createActivityPhaseWiring', () => {
       undefined,
       undefined,
     );
-    for (const think of [encoded, `\n${readable}`]) {
+    /** A payload-only stream longer than the 600-char window, split so its
+     *  final 50-char fragment shares a delta with the readable reasoning. */
+    const deltas = [
+      ...Array.from({ length: 13 }, (_, i) => encoded.slice(i * 100, (i + 1) * 100)),
+      `${encoded.slice(1_300)}\n${readable}`,
+    ];
+    for (const think of deltas) {
       handlers?.[GraphEvents.ON_REASONING_DELTA]?.handle(
         GraphEvents.ON_REASONING_DELTA,
         { id: 'reasoning-step', delta: { content: { type: ContentTypes.THINK, think } } } as never,
@@ -939,10 +957,15 @@ describe('createActivityPhaseWiring', () => {
         undefined,
       );
     }
+    parts.push({ type: ContentTypes.THINK, think: deltas.join('') });
+    parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } });
+    await wiring.hook(batch('tool-1'), new AbortController().signal);
 
-    expect(wiring.snapshot().pendingReasoning).toEqual([
-      expect.objectContaining({ key: 'root', text: `\n${readable}` }),
-    ]);
+    const [activity] = wiring.snapshot().activities;
+    expect(activity.readableExcerpts).toEqual([readable.trim()]);
+    /** The raw anchor window still starts inside the payload: exactly the
+     *  fragment that must never be prompt evidence. */
+    expect(activity.thinkingExcerpts?.[0]?.startsWith(`${encoded.slice(-9)}\n`)).toBe(true);
   });
 
   it('keeps reasoning attached to a tool batch across commentary', async () => {

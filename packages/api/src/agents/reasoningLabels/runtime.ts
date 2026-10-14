@@ -2,6 +2,7 @@ import { GraphEvents } from '@librechat/agents';
 import {
   StepTypes,
   ContentTypes,
+  flushOpaqueReasoning,
   advanceOpaqueReasoning,
   OPAQUE_REASONING_START,
 } from 'librechat-data-provider';
@@ -113,7 +114,6 @@ const MAX_TRACKED_REASONING_CHARS = 8_000;
 const FINAL_UPDATE_CHAR_LIMIT = 120;
 const OUTPUT_CHAR_LIMIT = 120;
 const THINK_TAGS = /<\/?think>/g;
-const MAX_PENDING_WORD_CHARS = 32;
 const REQUEST_TIMEOUT_MS = 12_000;
 
 function textValue(value: unknown): string {
@@ -516,10 +516,10 @@ export function createReasoningLabelWiring(deps: ReasoningLabelHostDeps): Reason
     clearTimer(state);
     /** The stream is over, so a short undecided tail was a final word; a
      *  longer one is the unfinished start of a payload. */
-    const { tail } = state.cursor;
-    if (tail.length > 0 && tail.length <= MAX_PENDING_WORD_CHARS) {
-      state.text = appendBoundedReasoning(state.text, tail);
-      state.totalChars += tail.length;
+    const word = flushOpaqueReasoning(state.cursor);
+    if (word) {
+      state.text = appendBoundedReasoning(state.text, word);
+      state.totalChars += word.length;
     }
     state.cursor = OPAQUE_REASONING_START;
     schedule(state, true);
