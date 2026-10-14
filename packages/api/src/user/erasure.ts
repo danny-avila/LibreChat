@@ -153,6 +153,10 @@ export async function eraseUserData(
   await deps.deleteAllUserSessions({ userId });
   deps.onSessionsDeleted?.();
   await deps.deleteRefreshTokenBridges({ userId, tenantId });
+  if (tenantId) {
+    /** Bridges written before tenancy carry no tenantId, and the user id is globally unique. */
+    await deps.deleteRefreshTokenBridges({ userId });
+  }
   await deps.deletePasskeysByUser(userId);
   if (!keepTransactions) {
     await deps.deleteTransactions({ user: userId });

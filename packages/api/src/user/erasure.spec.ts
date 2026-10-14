@@ -174,6 +174,26 @@ describe('eraseUserData', () => {
     expect(await count('Conversation', { user: userId.toString() })).toBe(0);
   });
 
+  it('removes refresh bridges written before tenancy for a tenant user', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    await seedUser(userId);
+    const { deps } = createDeps();
+    const calls: unknown[] = [];
+    (deps as { deleteRefreshTokenBridges: unknown }).deleteRefreshTokenBridges = jest.fn(
+      async (data: unknown) => {
+        calls.push(data);
+        return { acknowledged: true, deletedCount: 0 };
+      },
+    );
+
+    await eraseUserData({ userId: userId.toString(), tenantId: 'tenant-1' }, deps);
+
+    expect(calls).toEqual([
+      { userId: userId.toString(), tenantId: 'tenant-1' },
+      { userId: userId.toString() },
+    ]);
+  });
+
   it('signals session revocation even when a later step fails', async () => {
     const userId = new mongoose.Types.ObjectId();
     await seedUser(userId);

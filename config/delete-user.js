@@ -4,7 +4,12 @@
 const path = require('path');
 const mongoose = require('mongoose');
 const { randomUUID } = require('node:crypto');
-const { createModels, createMethods, runAsSystem } = require('@librechat/data-schemas');
+const {
+  createModels,
+  createMethods,
+  runAsSystem,
+  tenantStorage,
+} = require('@librechat/data-schemas');
 const { User } = createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
 const {
@@ -195,7 +200,12 @@ async function gracefulExit(code = 0) {
       body: {},
       config: userAppConfig,
     };
-    await runAsSystem(() =>
+    /** Same tenant scope as account self-deletion, so id-keyed cleanup cannot reach other tenants. */
+    const runInUserScope = (operation) =>
+      user.tenantId
+        ? tenantStorage.run({ tenantId: user.tenantId, userId: uid }, operation)
+        : runAsSystem(operation);
+    await runInUserScope(() =>
       eraseUserData(
         {
           userId: uid,

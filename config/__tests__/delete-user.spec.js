@@ -1,3 +1,6 @@
+const { AsyncLocalStorage } = require('async_hooks');
+
+const mockTenantStorage = new AsyncLocalStorage();
 const mockModelRegistry = {};
 const mockModelFor = (name) => {
   if (!mockModelRegistry[name]) {
@@ -44,6 +47,7 @@ jest.mock('@librechat/data-schemas', () => ({
   createModels: () => new Proxy({}, { get: (_target, prop) => mockModelFor(prop) }),
   createMethods: () => mockMethods,
   runAsSystem: (operation) => operation(),
+  tenantStorage: mockTenantStorage,
 }));
 jest.mock('@librechat/api', () => ({
   waitForKeyvRedisClient: jest.fn(async () => undefined),
@@ -301,6 +305,17 @@ describe('Delete user CLI', () => {
     expect(mockEraseUserData.mock.invocationCallOrder[0]).toBeLessThan(
       mockMethods.deleteUserById.mock.invocationCallOrder[0],
     );
+  });
+
+  it('runs the cascade in the deleted user tenant scope', async () => {
+    let scope;
+    mockEraseUserData.mockImplementation(async () => {
+      scope = mockTenantStorage.getStore();
+    });
+
+    expect(await runCli()).toBe(0);
+
+    expect(scope).toEqual({ tenantId: 'tenant-1', userId: USER_ID });
   });
 
   it('erases the transaction ledger when the operator confirms it', async () => {
