@@ -445,6 +445,37 @@ describe('Chat', () => {
     expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isAbort: true }));
   });
 
+  it('merges a prepared turn into the list as it stands when the turn is written', async () => {
+    const loaded: TMessage = { ...userMessage, messageId: 'loaded-1', text: 'Loaded' };
+    let prepared: (() => void) | undefined;
+    const { chat, state, stream } = setup({
+      prepareRequest: jest.fn(
+        () =>
+          new Promise((resolve) => {
+            prepared = () =>
+              resolve({
+                payload,
+                messages: (current: TMessage[]) => [...current, userMessage, placeholder],
+              });
+          }),
+      ),
+    });
+
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    state.replaceMessages([loaded]);
+    prepared?.();
+    await flush();
+
+    expect(state.messages.map((message) => message.messageId)).toEqual([
+      'loaded-1',
+      'user-1',
+      'response-1',
+    ]);
+    stream.push(finalEvent());
+    await sent;
+  });
+
   it('cancels a start whose request is still being prepared, without writing it', async () => {
     let prepare: (value: { payload: TPayload; messages: TMessage[] }) => void = () => {};
     const { chat, transport, state, onFinish } = setup({
@@ -1286,6 +1317,19 @@ describe('Chat', () => {
       expect(chat.pendingAction).toBe(askAction);
       second.push(finalEvent());
       await secondTurn;
+    });
+
+    it('reports ready once a stop ends a pause its dropped connection left in error', async () => {
+      const { chat, stream, sent } = await pause(askAction);
+      stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+      await sent;
+      expect(chat.status).toBe('error');
+
+      await chat.stop();
+
+      expect(chat.pendingAction).toBeUndefined();
+      expect(chat.status).toBe('ready');
+      expect(chat.error).toBeUndefined();
     });
 
     it('drops the pause when the generation aborts or fails', async () => {
