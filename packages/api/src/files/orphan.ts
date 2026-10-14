@@ -13,6 +13,8 @@ export type StoredUploadRef = {
   tenantId?: string;
   /** Whether a vector copy exists; the delete strategies remove it only when this is set. */
   embedded?: boolean;
+  /** Secondary-copy references, such as a code environment ref, that delete strategies read. */
+  metadata?: Record<string, unknown>;
 };
 
 export type StoredUploadCleanup = {

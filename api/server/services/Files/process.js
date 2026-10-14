@@ -1274,6 +1274,8 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         stored: {
           file_id,
           source,
+          /* The embed request may commit before its response is lost; deleting is idempotent. */
+          embedded: true,
           filepath: storageResult.filepath,
           ...getStorageMetadata({
             filepath: storageResult.filepath,
@@ -1426,7 +1428,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     logger,
     recordExists: fileRecordExists,
     resolveDeleteFile: () => getStrategyFunctions(source).deleteFile,
-    stored: { file_id, filepath, source, embedded, ...storageMetadata },
+    stored: { file_id, filepath, source, embedded, metadata: fileInfoMetadata, ...storageMetadata },
   };
   const retentionExpiry = await withStoredUploadCleanup(
     { ...storedCleanup, trackWrite: true },

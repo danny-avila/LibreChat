@@ -1374,6 +1374,35 @@ describe('processAgentFileUpload', () => {
       return req;
     };
 
+    it('hands the code environment ref to cleanup when the record fails after the Code API upload', async () => {
+      const codeEnvUpload = setupCodeEnvUpload({ storage_session_id: 'sess-z', file_id: 'fid-z' });
+      const deleteFile = jest.fn().mockResolvedValue(undefined);
+      const base = getStrategyFunctions.getMockImplementation();
+      getStrategyFunctions.mockImplementation((src) => ({ ...base(src), deleteFile }));
+      db.createFile.mockRejectedValueOnce(new Error('db down'));
+
+      await expect(
+        processAgentFileUpload({
+          req: agentsZipReq(),
+          res: mockRes,
+          metadata: {
+            agent_id: 'agent-abc',
+            tool_resource: EToolResources.execute_code,
+            file_id: 'file-orphan',
+          },
+        }),
+      ).rejects.toThrow('db down');
+
+      expect(codeEnvUpload).toHaveBeenCalled();
+      expect(deleteFile).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
+          file_id: 'file-orphan',
+          metadata: expect.objectContaining({ codeEnvRef: expect.anything() }),
+        }),
+      );
+    });
+
     it('leaves a promoted code destination for deferred provisioning', async () => {
       /* No explicit choice stands behind a promotion, and the agent's code deployment is
        * resolved per turn, so uploading now names the default route and has to be
@@ -3600,6 +3629,6 @@ describe('stored upload cleanup across storage-before-record paths', () => {
       }),
     ).rejects.toThrow('rag unavailable');
 
-    expectStoredObjectDeleted(req, { file_id: 'agent-file' });
+    expectStoredObjectDeleted(req, { file_id: 'agent-file', embedded: true });
   });
 });
