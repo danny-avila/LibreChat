@@ -1354,7 +1354,7 @@ describe('createAdminRolesHandlers', () => {
       await handlers.deleteRole(req, res);
 
       expect(status).toHaveBeenCalledWith(200);
-      expect(recordAuditEntry).toHaveBeenCalledTimes(4);
+      expect(recordAuditEntry).toHaveBeenCalledTimes(6);
       expect(recordAuditEntry).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'grant.removed',
@@ -1369,7 +1369,7 @@ describe('createAdminRolesHandlers', () => {
           action: 'role.deleted',
           outcome: 'success',
           target: { type: 'role', id: 'editor', name: 'editor' },
-          metadata: { grantsRemoved: 2 },
+          metadata: { grantsRemoved: 2, membersReassigned: 2 },
           tenantId: 'tenant-1',
         }),
       );
@@ -1404,6 +1404,33 @@ describe('createAdminRolesHandlers', () => {
       // tenant grant → that tenant's chain, not the caller's (undefined) scope
       expect(recordAuditEntry).toHaveBeenCalledWith(
         expect.objectContaining({ metadata: { capability: 'manage:users' }, tenantId: 'tenant-x' }),
+      );
+    });
+
+    it('records each account reassigned by the deletion before the outcome', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = deleteDeps({
+        recordAuditEntry,
+        findUserIdsByRole: jest.fn().mockResolvedValue(['u1', 'u2']),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res } = createReqRes({
+        params: { name: 'editor' },
+        user: { _id: new Types.ObjectId(), role: 'admin' },
+      });
+
+      await handlers.deleteRole(req, res);
+
+      const removed = recordAuditEntry.mock.calls
+        .map(([entry]) => entry)
+        .filter((entry) => entry.action === 'role.member_removed');
+      expect(removed.map((entry) => entry.metadata.userId)).toEqual(['u1', 'u2']);
+      expect(recordAuditEntry).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          action: 'role.deleted',
+          outcome: 'success',
+          metadata: { grantsRemoved: 0, membersReassigned: 2 },
+        }),
       );
     });
 
@@ -1486,12 +1513,12 @@ describe('createAdminRolesHandlers', () => {
       await handlers.deleteRole(req, res);
 
       expect(status).toHaveBeenCalledWith(200);
-      expect(recordAuditEntry).toHaveBeenCalledTimes(2);
+      expect(recordAuditEntry).toHaveBeenCalledTimes(4);
       expect(recordAuditEntry).toHaveBeenLastCalledWith(
         expect.objectContaining({
           action: 'role.deleted',
           outcome: 'success',
-          metadata: { grantsRemoved: 0 },
+          metadata: { grantsRemoved: 0, membersReassigned: 2 },
         }),
       );
     });

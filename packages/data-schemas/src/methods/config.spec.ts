@@ -675,18 +675,16 @@ describe('expectEmpty atomic guard', () => {
   });
 });
 
-describe('toggleConfigActive returnPrevious', () => {
-  it('returns the document as it was before the write', async () => {
+describe('toggleConfigActiveTracked', () => {
+  it('reports a change once and returns the persisted document', async () => {
     await methods.upsertConfig(PrincipalType.ROLE, 'admin', PrincipalModel.ROLE, {}, 10);
 
-    const first = await methods.toggleConfigActive(PrincipalType.ROLE, 'admin', false, undefined, {
-      returnPrevious: true,
-    });
-    const second = await methods.toggleConfigActive(PrincipalType.ROLE, 'admin', false, undefined, {
-      returnPrevious: true,
-    });
+    const first = await methods.toggleConfigActiveTracked(PrincipalType.ROLE, 'admin', false);
+    const second = await methods.toggleConfigActiveTracked(PrincipalType.ROLE, 'admin', false);
+    const missing = await methods.toggleConfigActiveTracked(PrincipalType.ROLE, 'none', false);
 
-    expect(first!.isActive).toBe(true);
-    expect(second!.isActive).toBe(false);
+    expect(first).toMatchObject({ changed: true, config: { isActive: false } });
+    expect(second).toMatchObject({ changed: false, config: { isActive: false } });
+    expect(missing).toBeNull();
   });
 });

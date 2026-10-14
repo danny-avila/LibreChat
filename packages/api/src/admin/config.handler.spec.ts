@@ -68,8 +68,9 @@ function createHandlers(overrides = {}) {
       .mockResolvedValue({ _id: 'c1', tombstones: ['mcpServers.github'] }),
     unsetConfigField: jest.fn().mockResolvedValue({ _id: 'c1', overrides: {} }),
     deleteConfig: jest.fn().mockResolvedValue({ _id: 'c1' }),
-    /** The document as it was before the write. */
-    toggleConfigActive: jest.fn().mockResolvedValue({ _id: 'c1', isActive: true }),
+    toggleConfigActiveTracked: jest
+      .fn()
+      .mockResolvedValue({ config: { _id: 'c1', isActive: false }, changed: true }),
     hasConfigCapability: jest.fn().mockResolvedValue(true),
     hasAnyConfigReadAccess: jest.fn().mockResolvedValue(true),
     hasCapability: jest.fn().mockResolvedValue(true),
@@ -1861,7 +1862,7 @@ describe('createAdminConfigHandlers', () => {
       await handlers.toggleConfig(req, res);
 
       expect(res.statusCode).toBe(200);
-      expect(deps.toggleConfigActive).toHaveBeenCalled();
+      expect(deps.toggleConfigActiveTracked).toHaveBeenCalled();
     });
 
     it('rejects toggle when caller has neither broad manage nor ASSIGN_CONFIGS', async () => {
@@ -1878,7 +1879,7 @@ describe('createAdminConfigHandlers', () => {
       await handlers.toggleConfig(req, res);
 
       expect(res.statusCode).toBe(403);
-      expect(deps.toggleConfigActive).not.toHaveBeenCalled();
+      expect(deps.toggleConfigActiveTracked).not.toHaveBeenCalled();
     });
   });
 
@@ -1992,7 +1993,7 @@ describe('createAdminConfigHandlers', () => {
       await handlers.toggleConfig(req, res);
 
       expect(res.statusCode).toBe(403);
-      expect(deps.toggleConfigActive).not.toHaveBeenCalled();
+      expect(deps.toggleConfigActiveTracked).not.toHaveBeenCalled();
     });
 
     it('upsert against __base__ succeeds for broad-manage caller', async () => {
@@ -2135,8 +2136,10 @@ describe('createAdminConfigHandlers', () => {
       const { handlers, deps } = createHandlers({
         hasConfigCapability: jest.fn().mockResolvedValue(false),
         hasCapability: jest.fn().mockResolvedValue(true),
-        toggleConfigActive: jest.fn(async (_pt, _pi, _isActive, _session, opts) => {
-          return opts?.expectEmpty ? null : { _id: 'c1', isActive: false };
+        toggleConfigActiveTracked: jest.fn(async (_pt, _pi, _isActive, opts) => {
+          return opts?.expectEmpty
+            ? null
+            : { config: { _id: 'c1', isActive: false }, changed: true };
         }),
         findConfigByPrincipal: jest.fn().mockResolvedValue({
           _id: 'c1',
@@ -2152,12 +2155,11 @@ describe('createAdminConfigHandlers', () => {
       await handlers.toggleConfig(req, res);
 
       expect(res.statusCode).toBe(403);
-      expect(deps.toggleConfigActive).toHaveBeenCalledWith(
+      expect(deps.toggleConfigActiveTracked).toHaveBeenCalledWith(
         expect.anything(),
         expect.anything(),
         expect.anything(),
-        undefined,
-        { expectEmpty: true, returnPrevious: true },
+        { expectEmpty: true },
       );
     });
 
@@ -2231,7 +2233,9 @@ describe('createAdminConfigHandlers', () => {
         unsetConfigField: jest.fn(),
         deleteConfig: jest.fn().mockResolvedValue({ _id: 'c1' }),
         /** The document as it was before the write. */
-        toggleConfigActive: jest.fn().mockResolvedValue({ _id: 'c1', isActive: true }),
+        toggleConfigActiveTracked: jest
+          .fn()
+          .mockResolvedValue({ config: { _id: 'c1', isActive: false }, changed: true }),
         hasConfigCapability: jest.fn().mockResolvedValue(false),
       };
       const handlers = createAdminConfigHandlers(deps);
@@ -2733,7 +2737,9 @@ describe('createAdminConfigHandlers', () => {
       const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
       const { handlers } = createHandlers({
         recordAuditEntry,
-        toggleConfigActive: jest.fn().mockResolvedValue({ _id: 'c1', isActive: false }),
+        toggleConfigActiveTracked: jest
+          .fn()
+          .mockResolvedValue({ config: { _id: 'c1', isActive: false }, changed: false }),
       });
       const res = mockRes();
 

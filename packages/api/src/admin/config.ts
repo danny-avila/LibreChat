@@ -225,15 +225,13 @@ export interface AdminConfigDeps {
     session?: ClientSession,
     options?: { expectEmpty?: boolean },
   ) => Promise<IConfig | null>;
-  toggleConfigActive: (
+  /** Resolves to the post-write document and whether this write changed `isActive`. */
+  toggleConfigActiveTracked: (
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
     isActive: boolean,
-    session?: ClientSession,
-    /** `returnPrevious` resolves to the document as it was before the write, so the caller
-     * learns atomically whether the write changed `isActive`. */
-    options?: { expectEmpty?: boolean; returnPrevious?: boolean },
-  ) => Promise<IConfig | null>;
+    options?: { expectEmpty?: boolean },
+  ) => Promise<{ config: IConfig; changed: boolean } | null>;
   hasConfigCapability: (
     user: CapabilityUser,
     section: ConfigSection | null,
@@ -482,7 +480,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     tombstoneConfigField: writeConfigTombstone,
     unsetConfigField,
     deleteConfig,
-    toggleConfigActive,
+    toggleConfigActiveTracked,
     hasConfigCapability,
     hasAnyConfigReadAccess = async () => false,
     getReadableConfigSections = async (u, sections) => {
@@ -1358,11 +1356,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(403).json({ error: 'Insufficient permissions' });
       }
 
-      const previous = await toggleConfigActive(principalType, principalId, isActive, undefined, {
+      const toggled = await toggleConfigActiveTracked(principalType, principalId, isActive, {
         expectEmpty: !hasBroadManage,
-        returnPrevious: true,
       });
-      if (!previous) {
+      if (!toggled) {
         if (!hasBroadManage) {
           const exists = await findConfigByPrincipal(principalType, principalId, {
             includeInactive: true,
@@ -1374,13 +1371,12 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         return res.status(404).json({ error: 'Config not found' });
       }
 
-      const plain = (previous as { toObject?: () => IConfig }).toObject?.() ?? previous;
-      const config = { ...plain, isActive } as IConfig;
+      const { config, changed } = toggled;
       invalidateConfigCaches?.(user.tenantId)?.catch((err) =>
         logger.error('[adminConfig] Cache invalidation failed after toggle:', err),
       );
       /** A retry that finds the requested state already set changed nothing and is not recorded. */
-      if (previous.isActive !== isActive) {
+      if (changed) {
         await emitAudit(req, {
           action: 'config.toggled',
           severity: 'warning',

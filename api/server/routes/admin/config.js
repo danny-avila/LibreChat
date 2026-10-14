@@ -24,7 +24,7 @@ const handlers = createAdminConfigHandlers({
   tombstoneConfigField: db.tombstoneConfigField,
   unsetConfigField: db.unsetConfigField,
   deleteConfig: db.deleteConfig,
-  toggleConfigActive: db.toggleConfigActive,
+  toggleConfigActiveTracked: db.toggleConfigActiveTracked,
   hasAnyConfigReadAccess,
   getReadableConfigSections,
   hasConfigCapability,

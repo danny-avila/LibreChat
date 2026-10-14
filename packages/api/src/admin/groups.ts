@@ -320,14 +320,29 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
         return res.status(400).json({ error: 'No valid fields to update' });
       }
 
-      const group = await updateGroupById(id, updateData);
+      const current = await findGroupById(id);
+      if (!current) {
+        return res.status(404).json({ error: 'Group not found' });
+      }
+      /** Values equal to the stored ones are not changes: a retry writes and audits nothing. */
+      const changedData: typeof updateData = {};
+      for (const key of Object.keys(updateData) as Array<keyof typeof updateData>) {
+        if (updateData[key] !== current[key]) {
+          Object.assign(changedData, { [key]: updateData[key] });
+        }
+      }
+      if (Object.keys(changedData).length === 0) {
+        return res.status(200).json({ group: current });
+      }
+
+      const group = await updateGroupById(id, changedData);
       if (!group) {
         return res.status(404).json({ error: 'Group not found' });
       }
       await emitAudit(req, {
         action: 'group.updated',
         target: groupTarget(group, id),
-        metadata: { fields: Object.keys(updateData).sort().join(',') },
+        metadata: { fields: Object.keys(changedData).sort().join(',') },
       });
       return res.status(200).json({ group });
     } catch (error) {

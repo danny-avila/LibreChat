@@ -162,6 +162,9 @@ export interface AdminRolesDeps {
   auditFailClosed?: boolean;
 }
 
+/** Upper bound on per-account entries written when a deleted role still has members. */
+const MAX_AUDITED_REASSIGNMENTS = 1000;
+
 /** Changing who holds ADMIN is the most sensitive membership change. */
 function memberChangeSeverity(...roles: Array<string | undefined>): AuditSeverity {
   return roles.includes(SystemRoles.ADMIN) ? 'critical' : 'warning';
@@ -549,6 +552,14 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
        * inheriting the leftovers. Every removal is idempotent.
        */
       const tenantId = req.user?.tenantId;
+      /** deleteRoleByName reassigns members to USER, so who held the role is read first. */
+      const memberIds = await findUserIdsByRole(name).catch((error) => {
+        logger.error(
+          '[adminRoles] could not list role members for audit:',
+          getSafeErrorMetadata(error),
+        );
+        return [] as string[];
+      });
       const cascade = await runCascade(
         [
           cascadeStep(
@@ -674,7 +685,19 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
       }
       const removedGrants = cascade.removed.grants as ISystemGrant[];
       await auditRemovedGrants();
-      await recordOutcome('success', undefined, { grantsRemoved: removedGrants.length });
+      /** Each reassigned account is recorded (bounded) before the outcome entry. */
+      for (const userId of memberIds.slice(0, MAX_AUDITED_REASSIGNMENTS)) {
+        await emitAudit(req, {
+          action: 'role.member_removed',
+          severity: memberChangeSeverity(name),
+          target: roleTarget(name),
+          metadata: { userId, newRole: SystemRoles.USER, cause: 'role_deleted' },
+        });
+      }
+      await recordOutcome('success', undefined, {
+        grantsRemoved: removedGrants.length,
+        membersReassigned: memberIds.length,
+      });
 
       return res.status(200).json({ success: true });
     } catch (error) {

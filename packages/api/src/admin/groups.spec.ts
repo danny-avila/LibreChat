@@ -496,6 +496,11 @@ describe('createAdminGroupsHandlers', () => {
     it('updates group and returns 200', async () => {
       const group = mockGroup({ name: 'Updated' });
       const deps = createDeps({
+        findGroupById: jest
+          .fn()
+          .mockResolvedValue(
+            mockGroup({ name: 'old', description: 'old', email: 'old@example.com', avatar: 'old' }),
+          ),
         updateGroupById: jest.fn().mockResolvedValue(group),
       });
       const handlers = createAdminGroupsHandlers(deps);
@@ -512,7 +517,14 @@ describe('createAdminGroupsHandlers', () => {
 
     it('updates description only', async () => {
       const group = mockGroup({ description: 'New desc' });
-      const deps = createDeps({ updateGroupById: jest.fn().mockResolvedValue(group) });
+      const deps = createDeps({
+        findGroupById: jest
+          .fn()
+          .mockResolvedValue(
+            mockGroup({ name: 'old', description: 'old', email: 'old@example.com', avatar: 'old' }),
+          ),
+        updateGroupById: jest.fn().mockResolvedValue(group),
+      });
       const handlers = createAdminGroupsHandlers(deps);
       const { req, res, status } = createReqRes({
         params: { id: validId },
@@ -527,7 +539,14 @@ describe('createAdminGroupsHandlers', () => {
 
     it('updates email only', async () => {
       const group = mockGroup({ email: 'team@co.com' });
-      const deps = createDeps({ updateGroupById: jest.fn().mockResolvedValue(group) });
+      const deps = createDeps({
+        findGroupById: jest
+          .fn()
+          .mockResolvedValue(
+            mockGroup({ name: 'old', description: 'old', email: 'old@example.com', avatar: 'old' }),
+          ),
+        updateGroupById: jest.fn().mockResolvedValue(group),
+      });
       const handlers = createAdminGroupsHandlers(deps);
       const { req, res, status } = createReqRes({
         params: { id: validId },
@@ -542,7 +561,14 @@ describe('createAdminGroupsHandlers', () => {
 
     it('updates avatar only', async () => {
       const group = mockGroup({ avatar: 'https://img.co/a.png' });
-      const deps = createDeps({ updateGroupById: jest.fn().mockResolvedValue(group) });
+      const deps = createDeps({
+        findGroupById: jest
+          .fn()
+          .mockResolvedValue(
+            mockGroup({ name: 'old', description: 'old', email: 'old@example.com', avatar: 'old' }),
+          ),
+        updateGroupById: jest.fn().mockResolvedValue(group),
+      });
       const handlers = createAdminGroupsHandlers(deps);
       const { req, res, status } = createReqRes({
         params: { id: validId },
@@ -559,7 +585,14 @@ describe('createAdminGroupsHandlers', () => {
 
     it('updates multiple fields at once', async () => {
       const group = mockGroup({ name: 'New', description: 'Desc', email: 'a@b.com' });
-      const deps = createDeps({ updateGroupById: jest.fn().mockResolvedValue(group) });
+      const deps = createDeps({
+        findGroupById: jest
+          .fn()
+          .mockResolvedValue(
+            mockGroup({ name: 'old', description: 'old', email: 'old@example.com', avatar: 'old' }),
+          ),
+        updateGroupById: jest.fn().mockResolvedValue(group),
+      });
       const handlers = createAdminGroupsHandlers(deps);
       const { req, res, status } = createReqRes({
         params: { id: validId },
@@ -697,6 +730,11 @@ describe('createAdminGroupsHandlers', () => {
 
     it('returns 404 when updateGroupById returns null', async () => {
       const deps = createDeps({
+        findGroupById: jest
+          .fn()
+          .mockResolvedValue(
+            mockGroup({ name: 'old', description: 'old', email: 'old@example.com', avatar: 'old' }),
+          ),
         updateGroupById: jest.fn().mockResolvedValue(null),
       });
       const handlers = createAdminGroupsHandlers(deps);
@@ -715,6 +753,11 @@ describe('createAdminGroupsHandlers', () => {
       const validationError = new Error('invalid field');
       validationError.name = 'ValidationError';
       const deps = createDeps({
+        findGroupById: jest
+          .fn()
+          .mockResolvedValue(
+            mockGroup({ name: 'old', description: 'old', email: 'old@example.com', avatar: 'old' }),
+          ),
         updateGroupById: jest.fn().mockRejectedValue(validationError),
       });
       const handlers = createAdminGroupsHandlers(deps);
@@ -731,6 +774,11 @@ describe('createAdminGroupsHandlers', () => {
 
     it('returns 500 on error', async () => {
       const deps = createDeps({
+        findGroupById: jest
+          .fn()
+          .mockResolvedValue(
+            mockGroup({ name: 'old', description: 'old', email: 'old@example.com', avatar: 'old' }),
+          ),
         updateGroupById: jest.fn().mockRejectedValue(new Error('db down')),
       });
       const handlers = createAdminGroupsHandlers(deps);
@@ -1405,7 +1453,14 @@ describe('createAdminGroupsHandlers', () => {
 
     it('records group.updated with the changed field names only', async () => {
       const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
-      const deps = createDeps({ recordAuditEntry });
+      const deps = createDeps({
+        findGroupById: jest
+          .fn()
+          .mockResolvedValue(
+            mockGroup({ name: 'old', description: 'old', email: 'old@example.com', avatar: 'old' }),
+          ),
+        recordAuditEntry,
+      });
       const handlers = createAdminGroupsHandlers(deps);
       const { req, res, status } = withUser(
         createReqRes({ params: { id: validId }, body: { name: 'Renamed', description: 'd' } }),

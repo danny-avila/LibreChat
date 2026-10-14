@@ -74,8 +74,15 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     principalId: string | Types.ObjectId,
     isActive: boolean,
     session?: ClientSession,
-    options?: { expectEmpty?: boolean; returnPrevious?: boolean },
+    options?: { expectEmpty?: boolean },
   ) => Promise<IConfig | null>;
+  /** Like `toggleConfigActive`, but also reports whether this write changed `isActive`. */
+  toggleConfigActiveTracked: (
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+    isActive: boolean,
+    options?: { expectEmpty?: boolean },
+  ) => Promise<{ config: IConfig; changed: boolean } | null>;
 } {
   async function findConfigByPrincipal(
     principalType: PrincipalType,
@@ -321,17 +328,16 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     return await Config.findOneAndDelete(filter).session(session ?? null);
   }
 
-  async function toggleConfigActive(
+  function toggleFilter(
     principalType: PrincipalType,
     principalId: string | Types.ObjectId,
-    isActive: boolean,
-    session?: ClientSession,
-    options?: { expectEmpty?: boolean; returnPrevious?: boolean },
-  ): Promise<IConfig | null> {
-    const Config = mongoose.models.Config as Model<IConfig>;
+    options?: { expectEmpty?: boolean },
+    extra: FilterQuery<IConfig> = {},
+  ): FilterQuery<IConfig> {
     const filter: FilterQuery<IConfig> = {
       principalType,
       principalId: principalId.toString(),
+      ...extra,
     };
     if (options?.expectEmpty) {
       filter.$and = [
@@ -339,11 +345,42 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
         { $or: [{ tombstones: { $size: 0 } }, { tombstones: { $exists: false } }] },
       ];
     }
+    return filter;
+  }
+
+  async function toggleConfigActive(
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+    isActive: boolean,
+    session?: ClientSession,
+    options?: { expectEmpty?: boolean },
+  ): Promise<IConfig | null> {
+    const Config = mongoose.models.Config as Model<IConfig>;
     return await Config.findOneAndUpdate(
-      filter,
+      toggleFilter(principalType, principalId, options),
       { $set: { isActive } },
-      { new: !options?.returnPrevious, ...(session ? { session } : {}) },
+      { new: true, ...(session ? { session } : {}) },
     );
+  }
+
+  async function toggleConfigActiveTracked(
+    principalType: PrincipalType,
+    principalId: string | Types.ObjectId,
+    isActive: boolean,
+    options?: { expectEmpty?: boolean },
+  ): Promise<{ config: IConfig; changed: boolean } | null> {
+    const Config = mongoose.models.Config as Model<IConfig>;
+    /** The filter matches only a document that differs, so a match is exactly one real change. */
+    const changed = await Config.findOneAndUpdate(
+      toggleFilter(principalType, principalId, options, { isActive: { $ne: isActive } }),
+      { $set: { isActive } },
+      { new: true },
+    );
+    if (changed) {
+      return { config: changed, changed: true };
+    }
+    const current = await Config.findOne(toggleFilter(principalType, principalId, options));
+    return current ? { config: current, changed: false } : null;
   }
 
   /**
@@ -373,6 +410,7 @@ export function createConfigMethods(mongoose: typeof import('mongoose')): {
     deleteConfig,
     restoreConfig,
     toggleConfigActive,
+    toggleConfigActiveTracked,
   };
 }
 
