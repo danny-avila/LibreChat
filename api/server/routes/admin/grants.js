@@ -35,13 +35,14 @@ const handlers = createAdminGrantsHandlers({
   },
 });
 
-router.use(requireJwtAuth, requireAdminAccess, configMiddleware);
+router.use(requireJwtAuth, requireAdminAccess);
 
 router.get('/', handlers.listGrants);
 router.get('/effective', handlers.getEffectiveCapabilities);
 router.get('/:principalType/:principalId', handlers.getPrincipalGrants);
-router.post('/', handlers.assignGrant);
+/** Only the mutations read `permissions.lease*` from the loaded config. */
+router.post('/', configMiddleware, handlers.assignGrant);
 /** Callers should encodeURIComponent the capability for client compatibility (e.g. manage%3Aconfigs%3Aendpoints). */
-router.delete('/:principalType/:principalId/:capability', handlers.revokeGrant);
+router.delete('/:principalType/:principalId/:capability', configMiddleware, handlers.revokeGrant);
 
 module.exports = router;
