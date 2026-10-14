@@ -35,6 +35,12 @@ import {
   ACTIVE_JOBS_SUCCESSOR_GRACE_MS,
 } from '~/data-provider';
 import {
+  isDetachedRunManual,
+  resolveDetachedRunEnd,
+  pendingRunEndByConvoId,
+  detachedRunByConvoId,
+} from '~/hooks/Chat/queue';
+import {
   getGenerationProtocolVersion,
   supportsGenerationProtocolV2,
 } from '~/data-provider/SSE/protocol';
@@ -1002,10 +1008,48 @@ export default function useResumeOnLoad(
       // `unrecoveredSteers` above — same empty-list reconcile as the resume path.
       settleAppliedSteerParts(conversationId, getMessages());
       restoreSteerChips(conversationId, undefined);
+      /** A run this pane stopped watching when the user left has ended on the server, which
+       *  deleted the job. Its persisted response tells how it ended; parking that end lets the
+       *  queue drain send a follow-up queued during the run, as an attached run would have.
+       *  The cached history still holds the optimistic response the pane left, which lacks the
+       *  persisted stop and error flags, so only a successful refetch of history may resolve it;
+       *  when that fails or predates the saved response, the next visit tries again. */
+      const detachedFamily = detachedRunByConvoId(conversationId);
+      const detachedRun = jotaiStore.get(detachedFamily);
+      const parkDetachedEnd = () => {
+        if (detachedRun == null || jotaiStore.get(detachedFamily) !== detachedRun) {
+          return;
+        }
+        if (isDetachedRunManual(jotaiStore.get, conversationId, detachedRun)) {
+          jotaiStore.set(detachedFamily, null);
+          return;
+        }
+        const end = resolveDetachedRunEnd(conversationId, detachedRun, getMessages());
+        if (end == null) {
+          return;
+        }
+        jotaiStore.set(detachedFamily, null);
+        jotaiStore.set(pendingRunEndByConvoId(conversationId), end);
+      };
+      /** A run left for a manual send is retired without a read instead of refetching on every
+       *  visit; the check repeats after the read, since a receipt can settle meanwhile. */
+      if (detachedRun != null && isDetachedRunManual(jotaiStore.get, conversationId, detachedRun)) {
+        jotaiStore.set(detachedFamily, null);
+      } else if (detachedRun != null) {
+        queryClient
+          .refetchQueries(
+            { queryKey: [QueryKeys.messages, conversationId], exact: true },
+            { throwOnError: true },
+          )
+          .then(parkDetachedEnd, () => undefined);
+      }
       processedConvoRef.current = conversationId;
       return;
     }
 
+    /** Still generating: a marker left for this run stays until the resume's stream delivers its
+     *  end or its recovery reads it from history, and the resume's start retires a marker left
+     *  for any other run, so the job deleted between this read and the attach is not lost. */
     processedConvoRef.current = conversationId;
     if (handoffGenerationKey != null) {
       consumedHandoffGenerationRef.current = handoffGenerationKey;

@@ -325,7 +325,12 @@ import useResumableSSE, {
   ABORT_SWEEP_STATUSES,
 } from '~/hooks/SSE/useResumableSSE';
 import useSSE from '~/hooks/SSE/useSSE';
-import { queuedMessagesByConvoId, resetQueueFamilies } from '~/hooks/Chat/queue';
+import {
+  queuedMessagesByConvoId,
+  stopRequestedByConvoId,
+  detachedRunByConvoId,
+  resetQueueFamilies,
+} from '~/hooks/Chat/queue';
 
 const CONV_ID = 'conv-abc-123';
 
@@ -1010,6 +1015,358 @@ describe('useResumableSSE', () => {
       expect.objectContaining({ outcome: 'completed' }),
     );
     unmount();
+  });
+
+  describe('a run the user leaves mid-stream', () => {
+    const renderLeavable = async () => {
+      const chatHelpers = buildChatHelpers();
+      const rendered = renderHook(
+        ({ current }: { current: TSubmission | null }) => useResumableSSE(current, chatHelpers),
+        { initialProps: { current: buildSubmission() as TSubmission | null } },
+      );
+      await flushMicrotasks();
+      expect(mockSSEInstances.length).toBeGreaterThan(0);
+      await confirmCreated();
+      return rendered;
+    };
+    const detachedRun = () => getDefaultStore().get(detachedRunByConvoId(CONV_ID));
+    /** The server names the run's user message, which differs from the optimistic one. */
+    const confirmCreated = async () => {
+      await act(async () => {
+        getLastSSE()._emit('message', {
+          data: JSON.stringify({
+            created: true,
+            message: { messageId: 'server-msg-1', conversationId: CONV_ID },
+          }),
+        });
+      });
+    };
+    const confirmResume = async () => {
+      await act(async () => {
+        getLastSSE()._emit('message', {
+          data: JSON.stringify({
+            sync: true,
+            resumeState: {
+              runSteps: [],
+              userMessage: { messageId: 'msg-1', conversationId: CONV_ID },
+            },
+          }),
+        });
+      });
+    };
+    const leftRun = expect.objectContaining({
+      userMessageId: 'server-msg-1',
+      generationCreatedAt: 1000,
+    });
+
+    it('remembers the run when navigation clears the submission, so its end is read on return', async () => {
+      const { rerender, unmount } = await renderLeavable();
+      rerender({ current: {} as TSubmission });
+      expect(detachedRun()).toEqual(leftRun);
+      unmount();
+    });
+
+    it('remembers the run when switching to a saved chat clears the submission to null', async () => {
+      const { rerender, unmount } = await renderLeavable();
+      rerender({ current: null });
+      expect(detachedRun()).toEqual(leftRun);
+      unmount();
+    });
+
+    it('records nothing for a run left before created names its user message', async () => {
+      const chatHelpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useResumableSSE(buildSubmission(), chatHelpers));
+      await flushMicrotasks();
+      unmount();
+      expect(detachedRun()).toBeNull();
+    });
+
+    it('records nothing for a run on a server that reports no epoch', async () => {
+      (request.post as jest.Mock).mockResolvedValue({ streamId: 'stream-without-epoch' });
+      const { unmount } = await renderLeavable();
+      unmount();
+      expect(detachedRun()).toBeNull();
+    });
+
+    it('records nothing for a regeneration, which waits for a manual send', async () => {
+      const chatHelpers = buildChatHelpers();
+      const resumed = { ...resumeOf(4200), isRegenerate: true } as TSubmission;
+      const { unmount } = renderHook(() => useResumableSSE(resumed, chatHelpers));
+      await flushMicrotasks();
+      await confirmResume();
+      unmount();
+      expect(detachedRun()).toBeNull();
+    });
+
+    it('carries a resumed epoch once the resume names its user message', async () => {
+      const chatHelpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useResumableSSE(resumeOf(4200), chatHelpers));
+      await flushMicrotasks();
+      await confirmResume();
+      unmount();
+      expect(detachedRun()).toEqual(
+        expect.objectContaining({ userMessageId: 'msg-1', generationCreatedAt: 4200 }),
+      );
+    });
+
+    it('remembers the run when the chat unmounts mid-stream', async () => {
+      const { unmount } = await renderLeavable();
+      unmount();
+      expect(detachedRun()).toEqual(leftRun);
+    });
+
+    it('forgets a left run once a new run starts in that conversation', async () => {
+      const { rerender, unmount } = await renderLeavable();
+      rerender({ current: null });
+      expect(detachedRun()).not.toBeNull();
+      rerender({
+        current: buildSubmission({
+          userMessage: {
+            messageId: 'msg-2',
+            conversationId: CONV_ID,
+            text: 'Next',
+            isCreatedByUser: true,
+            sender: 'User',
+            parentMessageId: 'resp-1',
+          },
+        }),
+      });
+      expect(detachedRun()).toBeNull();
+      unmount();
+    });
+
+    it('records no detached run once the run end already reached the drain', async () => {
+      mockFetchStreamStatus.mockResolvedValue({ active: false });
+      const { rerender, unmount } = await renderLeavable();
+      await act(async () => {
+        getLastSSE()._emit('error', { responseCode: 404 });
+      });
+      await waitFor(() => expect(mockSetRunEnd).toHaveBeenCalled());
+      rerender({ current: {} as TSubmission });
+      expect(detachedRun()).toBeNull();
+      unmount();
+    });
+
+    const resumeOf = (generationCreatedAt?: number) =>
+      ({
+        ...buildSubmission(),
+        resumeStreamId: CONV_ID,
+        resumeGenerationCreatedAt: generationCreatedAt,
+      }) as TSubmission;
+
+    it('resolves a reattached run from history when its job is gone before the attach', async () => {
+      getDefaultStore().set(detachedRunByConvoId(CONV_ID), {
+        userMessageId: 'msg-1',
+        responseMessageId: 'resp-1',
+        generationCreatedAt: 4200,
+      });
+      mockFetchStreamStatus.mockResolvedValue({ active: false });
+      mockGetQueryData.mockImplementation((queryKey: unknown[]) =>
+        queryKey[0] === QueryKeys.messages
+          ? [
+              {
+                messageId: 'resp-1',
+                parentMessageId: 'msg-1',
+                conversationId: CONV_ID,
+                isCreatedByUser: false,
+                text: 'finished while away',
+                updatedAt: new Date(5000).toISOString(),
+              },
+            ]
+          : undefined,
+      );
+      const resumed = resumeOf(4200);
+      const chatHelpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useResumableSSE(resumed, chatHelpers));
+      await flushMicrotasks();
+      expect(detachedRun()).not.toBeNull();
+      await act(async () => {
+        getLastSSE()._emit('error', { responseCode: 404 });
+      });
+      await waitFor(() =>
+        expect(mockSetRunEnd).toHaveBeenCalledWith(
+          expect.objectContaining({
+            outcome: 'completed',
+            responseMessageId: 'resp-1',
+            generationCreatedAt: 4200,
+          }),
+        ),
+      );
+      expect(mockSetRunEnd).toHaveBeenCalledTimes(1);
+      expect(detachedRun()).toBeNull();
+      unmount();
+    });
+
+    it('keeps the marker when 404 history has not caught up with the reattached run', async () => {
+      const left = {
+        userMessageId: 'msg-1',
+        responseMessageId: 'resp-1',
+        generationCreatedAt: 4200,
+      };
+      getDefaultStore().set(detachedRunByConvoId(CONV_ID), left);
+      mockFetchStreamStatus.mockResolvedValue({ active: false });
+      mockGetQueryData.mockImplementation((queryKey: unknown[]) =>
+        queryKey[0] === QueryKeys.messages ? [] : undefined,
+      );
+      const resumed = resumeOf(4200);
+      const chatHelpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useResumableSSE(resumed, chatHelpers));
+      await flushMicrotasks();
+      await act(async () => {
+        getLastSSE()._emit('error', { responseCode: 404 });
+      });
+      await waitFor(() => expect(mockSetRunEnd).toHaveBeenCalledTimes(1));
+      expect(mockSetRunEnd).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'aborted' }));
+      expect(detachedRun()).toEqual(left);
+      unmount();
+    });
+
+    it('keeps the marker when 404 history holds only the unfinished disconnect snapshot', async () => {
+      const left = {
+        userMessageId: 'msg-1',
+        responseMessageId: 'resp-1',
+        generationCreatedAt: 4200,
+      };
+      getDefaultStore().set(detachedRunByConvoId(CONV_ID), left);
+      mockFetchStreamStatus.mockResolvedValue({ active: false });
+      mockGetQueryData.mockImplementation((queryKey: unknown[]) =>
+        queryKey[0] === QueryKeys.messages
+          ? [
+              {
+                messageId: 'resp-1',
+                parentMessageId: 'msg-1',
+                conversationId: CONV_ID,
+                isCreatedByUser: false,
+                text: 'partial saved when the pane left',
+                unfinished: true,
+                updatedAt: new Date(5000).toISOString(),
+              },
+            ]
+          : undefined,
+      );
+      const resumed = resumeOf(4200);
+      const chatHelpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useResumableSSE(resumed, chatHelpers));
+      await flushMicrotasks();
+      await act(async () => {
+        getLastSSE()._emit('error', { responseCode: 404 });
+      });
+      await waitFor(() => expect(mockSetRunEnd).toHaveBeenCalledTimes(1));
+      expect(mockSetRunEnd).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: 'aborted', generationCreatedAt: 4200 }),
+      );
+      expect(detachedRun()).toEqual(left);
+      unmount();
+    });
+
+    it('settles a reattached run the user stopped as stopped on 404, even if it persisted as done', async () => {
+      getDefaultStore().set(detachedRunByConvoId(CONV_ID), {
+        userMessageId: 'msg-1',
+        responseMessageId: 'resp-1',
+        generationCreatedAt: 4200,
+      });
+      getDefaultStore().set(stopRequestedByConvoId(CONV_ID), { generationCreatedAt: 4200 });
+      mockFetchStreamStatus.mockResolvedValue({ active: false });
+      mockGetQueryData.mockImplementation((queryKey: unknown[]) =>
+        queryKey[0] === QueryKeys.messages
+          ? [
+              {
+                messageId: 'resp-1',
+                parentMessageId: 'msg-1',
+                conversationId: CONV_ID,
+                isCreatedByUser: false,
+                text: 'stopped compaction settles as finished',
+                updatedAt: new Date(5000).toISOString(),
+              },
+            ]
+          : undefined,
+      );
+      const resumed = resumeOf(4200);
+      const chatHelpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useResumableSSE(resumed, chatHelpers));
+      await flushMicrotasks();
+      await act(async () => {
+        getLastSSE()._emit('error', { responseCode: 404 });
+      });
+      await waitFor(() => expect(mockSetRunEnd).toHaveBeenCalledTimes(1));
+      expect(mockSetRunEnd).toHaveBeenCalledWith(expect.objectContaining({ outcome: 'aborted' }));
+      expect(detachedRun()).toBeNull();
+      unmount();
+    });
+
+    it('does not carry a resumed run into a fresh run left before created', async () => {
+      const chatHelpers = buildChatHelpers();
+      const rendered = renderHook(
+        ({ current }: { current: TSubmission | null }) => useResumableSSE(current, chatHelpers),
+        { initialProps: { current: resumeOf(4200) as TSubmission | null } },
+      );
+      await flushMicrotasks();
+      await confirmResume();
+      rendered.rerender({ current: null });
+      expect(detachedRun()).toEqual(expect.objectContaining({ generationCreatedAt: 4200 }));
+      rendered.rerender({
+        current: buildSubmission({
+          userMessage: {
+            messageId: 'msg-2',
+            conversationId: CONV_ID,
+            text: 'Next',
+            isCreatedByUser: true,
+            sender: 'User',
+            parentMessageId: 'resp-1',
+          },
+        }),
+      });
+      await flushMicrotasks();
+      rendered.rerender({ current: null });
+      expect(detachedRun()).toBeNull();
+      rendered.unmount();
+    });
+
+    it('keeps a Stop through a reattach to the stopped run, so leaving again records nothing', async () => {
+      getDefaultStore().set(stopRequestedByConvoId(CONV_ID), { generationCreatedAt: 4200 });
+      const resumed = resumeOf(4200);
+      const chatHelpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useResumableSSE(resumed, chatHelpers));
+      await flushMicrotasks();
+      await confirmResume();
+      unmount();
+      expect(detachedRun()).toBeNull();
+      expect(getDefaultStore().get(stopRequestedByConvoId(CONV_ID))).toEqual({
+        generationCreatedAt: 4200,
+      });
+    });
+
+    it('drops a Stop for a reattach whose epoch the server does not report, and records nothing', async () => {
+      getDefaultStore().set(stopRequestedByConvoId(CONV_ID), { generationCreatedAt: 4200 });
+      const resumed = resumeOf();
+      const chatHelpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useResumableSSE(resumed, chatHelpers));
+      await flushMicrotasks();
+      await confirmResume();
+      expect(getDefaultStore().get(stopRequestedByConvoId(CONV_ID))).toBeNull();
+      unmount();
+      expect(detachedRun()).toBeNull();
+    });
+
+    it('drops a Stop once a different run reattaches, and remembers that run when left', async () => {
+      getDefaultStore().set(stopRequestedByConvoId(CONV_ID), { generationCreatedAt: 4200 });
+      const resumed = resumeOf(9000);
+      const chatHelpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useResumableSSE(resumed, chatHelpers));
+      await flushMicrotasks();
+      expect(getDefaultStore().get(stopRequestedByConvoId(CONV_ID))).toBeNull();
+      await confirmResume();
+      unmount();
+      expect(detachedRun()).toEqual(expect.objectContaining({ generationCreatedAt: 9000 }));
+    });
+
+    it('records no detached run for a run the user stopped before leaving', async () => {
+      const { rerender, unmount } = await renderLeavable();
+      getDefaultStore().set(stopRequestedByConvoId(CONV_ID), { generationCreatedAt: 1000 });
+      rerender({ current: {} as TSubmission });
+      expect(detachedRun()).toBeNull();
+      unmount();
+    });
   });
 
   it('authorizes only the exact failed recovery source past the conversion tombstone', async () => {
