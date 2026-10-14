@@ -247,6 +247,17 @@ describe('index.html deployment theme boot script', () => {
       expect(root().dataset.theme).toBe('clickhouse');
     });
 
+    it.each([
+      ['has ended', Date.now() - 1000, 'tenant-a:user-1'],
+      ['belongs to someone who signed in since', Date.now() + 60000, 'tenant-b:user-2'],
+    ])('stands in for the owned copy when the session %s', (_, expires, owner) => {
+      writeThemeCache(buildThemeCache('tenant-a:user-1', 'acme', acme));
+      setThemeOwner('tenant-a:user-1');
+      sessionHint(expires, owner);
+      boot();
+      expect(root().dataset.theme).toBe('clickhouse');
+    });
+
     it.each(['/login', '/register', '/oauth/success'])(
       'paints on %s, which renders the same signed-out theme',
       (path) => {
