@@ -98,6 +98,11 @@ export type ChatFinishResult = {
   isSettled: boolean;
   /** The conversation the server settled the turn under, when it said. */
   conversationId?: string;
+  /**
+   * Why a settled turn's final frame carried no messages. `abort_persistence_failed` means the
+   * stop was not saved, so work queued behind it must not run.
+   */
+  reconcileReason?: ChatFinalFrame['reconcileReason'];
 };
 
 export type ChatInit = {
@@ -142,10 +147,17 @@ export type ToolOutput = {
   output: string | Record<string, string>;
 };
 
-type Outcome =
-  | { kind: 'complete'; settled?: { conversationId?: string } }
+/** A turn whose messages the chat could not take from the stream, which the host reloads. */
+type Settled = {
+  conversationId?: string;
+  reason?: ChatFinalFrame['reconcileReason'];
+};
+
+type Outcome = { settled?: Settled } & (
+  | { kind: 'complete' }
   | { kind: 'abort' }
-  | { kind: 'error'; error: Error; disconnect: boolean };
+  | { kind: 'error'; error: Error; disconnect: boolean }
+);
 
 type DetachedGeneration = {
   error: Error;
@@ -228,14 +240,21 @@ const getErrorMessage = (data: ChatErrorData | null | undefined): string | undef
 };
 
 const getFinalOutcome = (data: ChatFinalFrame): Outcome => {
+  /** A `reconcile` frame committed its terminal status without the messages, so it is settled. */
+  const settled: Settled | undefined = data.reconcile
+    ? {
+        conversationId: data.conversation?.conversationId ?? undefined,
+        reason: data.reconcileReason,
+      }
+    : undefined;
   if (data.terminalStatus === 'error' || data.error) {
     const message = data.error?.message ?? 'The response failed';
-    return { kind: 'error', error: new Error(message), disconnect: false };
+    return { kind: 'error', error: new Error(message), disconnect: false, settled };
   }
   if (data.terminalStatus === 'aborted' || data.aborted) {
-    return { kind: 'abort' };
+    return { kind: 'abort', settled };
   }
-  return { kind: 'complete' };
+  return { kind: 'complete', settled };
 };
 
 /** Merges the messages a `final` event carries onto the stored ones, by id. */
@@ -429,6 +448,7 @@ export class Chat {
     /** Only a restored pause vouches for the timestamp of the generation it belongs to. */
     this.generationCreatedAt =
       options.generationCreatedAt ?? (this.action ? this.generationCreatedAt : undefined);
+    this.setConnection('reconnecting');
     try {
       const stream = await openUntilAborted(
         this.init.transport.reconnectToStream({
@@ -449,6 +469,7 @@ export class Chat {
         if (this.status === 'submitted' || this.status === 'streaming') {
           this.init.state.status = 'ready';
         }
+        this.init.state.connection = 'idle';
         this.action = undefined;
         this.decisions.clear();
         this.release(active);
@@ -647,11 +668,19 @@ export class Chat {
 
   /**
    * Restores a pause the server reported outside a stream, such as the status check of a reload,
-   * so its tool decisions and answers can be submitted. Refused while a request is in flight.
+   * so its tool decisions and answers can be submitted. Refused while a request is in flight; an
+   * expired pause is not restored.
    */
   restorePendingAction(action: Agents.PendingAction, generationCreatedAt: number): void {
     if (this.active) {
       throw new Error('A request is in flight; its stream reports the pause');
+    }
+    if (action.expiresAt != null && action.expiresAt <= Date.now()) {
+      /** An expired pause is stale: the server will refuse its resume. */
+      if (this.action?.actionId === action.actionId) {
+        this.clearAction();
+      }
+      return;
     }
     if (this.action?.actionId !== action.actionId) {
       this.decisions.clear();
@@ -816,7 +845,11 @@ export class Chat {
       let stream: ChatStream | null = null;
       if (result.status === 'stream') {
         stream = result.stream;
+      } else if (result.status === 'replaced' && result.generationProtocolVersion !== 2) {
+        /** Only protocol v2 vouches for a replacement; an older server reported a conflict. */
+        throw new Error('Another generation is running in this conversation');
       } else if (result.status === 'replaced') {
+        this.setConnection('reconnecting');
         this.generationCreatedAt = result.generationCreatedAt ?? undefined;
         active.reattach = { streamId: result.streamId };
         stream = await openUntilAborted(
@@ -877,6 +910,10 @@ export class Chat {
         });
         if (event.type === 'pending_action') {
           active.paused = event.data.actionId;
+        } else if (event.type === 'sync') {
+          /** The server's ids for the turn, which an Assistants stop addresses. */
+          active.conversationId = event.data.conversationId ?? active.conversationId;
+          active.responseId = event.data.responseMessage?.messageId ?? active.responseId;
         } else if (event.type === 'final' && event.data.responseMessage?.messageId) {
           active.responseId = event.data.responseMessage.messageId;
         }
@@ -993,7 +1030,7 @@ export class Chat {
       active.responseId !== undefined
         ? messages.find((stored) => stored.messageId === active.responseId)
         : messages[messages.length - 1];
-    const settled = outcome.kind === 'complete' ? outcome.settled : undefined;
+    const { settled } = outcome;
     this.notify();
     if (outcome.kind === 'error') {
       this.init.onError?.(outcome.error);
@@ -1006,6 +1043,7 @@ export class Chat {
       isError: outcome.kind === 'error',
       isSettled: settled !== undefined,
       ...(settled?.conversationId !== undefined && { conversationId: settled.conversationId }),
+      ...(settled?.reason !== undefined && { reconcileReason: settled.reason }),
     });
   }
 
