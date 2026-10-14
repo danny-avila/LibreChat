@@ -4357,11 +4357,18 @@ export default function useResumableSSE(
       /** A different run starting here owns the conversation's end from now on: an earlier run
        *  this pane left is superseded, and a Stop belonged to that earlier run. Reattaching to
        *  the same generation keeps both, since that run's end is still owed and it was stopped.
-       *  A marker left without an epoch is the same generation when the reattached turn answers
-       *  its user message, and takes the resumed epoch when the server reports one. */
+       *  A reattach whose epoch is unknown keeps a Stop, as `isStoppedRun` does. A marker left
+       *  without an epoch is the same generation when the reattached turn answers its user
+       *  message, and takes the resumed epoch when the server reports one. */
       const startingConvoId = submission.conversation.conversationId;
       const stopFamily = stopRequestedByConvoId(startingConvoId);
-      if (jotaiStore.get(stopFamily)?.generationCreatedAt !== resumeGenerationCreatedAt) {
+      const stopped = jotaiStore.get(stopFamily);
+      if (
+        stopped != null &&
+        (resumeStreamId == null ||
+          (resumeGenerationCreatedAt != null &&
+            stopped.generationCreatedAt !== resumeGenerationCreatedAt))
+      ) {
         jotaiStore.set(stopFamily, null);
       }
       const detachedFamily = detachedRunByConvoId(startingConvoId);

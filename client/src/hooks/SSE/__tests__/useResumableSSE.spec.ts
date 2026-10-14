@@ -1381,6 +1381,19 @@ describe('useResumableSSE', () => {
       });
     });
 
+    it('keeps a Stop through a reattach whose epoch the server does not report', async () => {
+      getDefaultStore().set(stopRequestedByConvoId(CONV_ID), { generationCreatedAt: 4200 });
+      const resumed = resumeOf();
+      const chatHelpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useResumableSSE(resumed, chatHelpers));
+      await flushMicrotasks();
+      unmount();
+      expect(detachedRun()).toBeNull();
+      expect(getDefaultStore().get(stopRequestedByConvoId(CONV_ID))).toEqual({
+        generationCreatedAt: 4200,
+      });
+    });
+
     it('drops a Stop once a different run reattaches, and remembers that run when left', async () => {
       getDefaultStore().set(stopRequestedByConvoId(CONV_ID), { generationCreatedAt: 4200 });
       const resumed = resumeOf(9000);
