@@ -338,9 +338,9 @@ export class Chat {
     active.endpoint = this.resumeEndpoint();
     active.reattach = { streamId: options.streamId };
     this.active = active;
-    if (options.generationCreatedAt != null) {
-      this.generationCreatedAt = options.generationCreatedAt;
-    }
+    /** Only a restored pause vouches for the timestamp of the generation it belongs to. */
+    this.generationCreatedAt =
+      options.generationCreatedAt ?? (this.action ? this.generationCreatedAt : undefined);
     try {
       const stream = await openUntilAborted(
         this.init.transport.reconnectToStream({
@@ -601,6 +601,7 @@ export class Chat {
         stream = result.stream;
       } else if (result.status === 'replaced') {
         this.generationCreatedAt = result.generationCreatedAt ?? undefined;
+        active.reattach = { streamId: result.streamId };
         stream = await openUntilAborted(
           this.init.transport.reconnectToStream({
             chatId: result.conversationId,

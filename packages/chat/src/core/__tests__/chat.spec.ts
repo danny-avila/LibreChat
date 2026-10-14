@@ -568,6 +568,62 @@ describe('Chat', () => {
     await sent;
   });
 
+  it('stops a replacing generation on the server while it is still attaching', async () => {
+    const { chat, transport } = setup(
+      {},
+      {
+        sendMessages: jest.fn(async () => ({
+          status: 'replaced' as const,
+          conversationId: 'convo-1',
+          streamId: 'stream-2',
+          generationCreatedAt: 200,
+        })),
+        reconnectToStream: jest.fn(() => new Promise<null>(() => undefined)),
+      },
+    );
+
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    await chat.stop();
+    await sent;
+
+    expect(transport.abort).toHaveBeenCalledWith(
+      expect.objectContaining({
+        endpoint: 'agents',
+        streamId: 'stream-2',
+        generationCreatedAt: 200,
+      }),
+    );
+    expect(chat.status).toBe('ready');
+  });
+
+  it('does not carry a finished generation timestamp into a fresh reattachment', async () => {
+    const resumed = createStream({ streamId: 'convo-1' });
+    const { chat, stream, transport } = setup(
+      { resumeSelection: () => ({ endpoint: 'agents' }) },
+      { reconnectToStream: jest.fn(async () => resumed) },
+    );
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    stream.push(finalEvent());
+    await sent;
+
+    const attached = chat.resumeStream({ streamId: 'convo-1' });
+    await flush();
+    resumed.push(stepEvent);
+    await flush();
+    transport.abort.mockImplementation(async () => {
+      resumed.push(finalEvent({ terminalStatus: 'aborted' }));
+      return { success: true };
+    });
+    await chat.stop();
+    await attached;
+
+    expect(transport.abort).toHaveBeenCalledWith(
+      expect.objectContaining({ streamId: 'convo-1', generationCreatedAt: undefined }),
+    );
+  });
+
   it('lets a completion callback start the next turn', async () => {
     let next: Promise<void> | undefined;
     const { chat, stream, transport } = setup({
