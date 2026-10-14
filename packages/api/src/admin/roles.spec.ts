@@ -1354,7 +1354,7 @@ describe('createAdminRolesHandlers', () => {
       await handlers.deleteRole(req, res);
 
       expect(status).toHaveBeenCalledWith(200);
-      expect(recordAuditEntry).toHaveBeenCalledTimes(6);
+      expect(recordAuditEntry).toHaveBeenCalledTimes(5);
       expect(recordAuditEntry).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'grant.removed',
@@ -1424,7 +1424,8 @@ describe('createAdminRolesHandlers', () => {
       const removed = recordAuditEntry.mock.calls
         .map(([entry]) => entry)
         .filter((entry) => entry.action === 'role.member_removed');
-      expect(removed.map((entry) => entry.metadata.userId)).toEqual(['u1', 'u2']);
+      expect(removed).toHaveLength(1);
+      expect(removed[0].metadata).toMatchObject({ userIds: 'u1,u2', count: 2 });
       expect(recordAuditEntry).toHaveBeenLastCalledWith(
         expect.objectContaining({
           action: 'role.deleted',
@@ -1457,6 +1458,46 @@ describe('createAdminRolesHandlers', () => {
       expect(recordAuditEntry).toHaveBeenLastCalledWith(
         expect.objectContaining({ action: 'role.deleted', outcome: 'success' }),
       );
+    });
+
+    it('audits grants whose removal rejected after committing, from the pre-delete snapshot', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = deleteDeps({
+        recordAuditEntry,
+        findGrantsForPrincipal: jest
+          .fn()
+          .mockResolvedValueOnce([{ capability: 'read:users' }])
+          .mockResolvedValue([]),
+        deleteGrantsForPrincipal: jest.fn().mockRejectedValue(new Error('response lost')),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status } = createReqRes({
+        params: { name: 'editor' },
+        user: { _id: new Types.ObjectId(), role: 'admin' },
+      });
+
+      await handlers.deleteRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'grant.removed',
+          metadata: { capability: 'read:users' },
+        }),
+      );
+    });
+
+    it('fails the delete instead of auditing zero members when the member lookup fails', async () => {
+      const deps = deleteDeps({
+        findUserIdsByRole: jest.fn().mockRejectedValue(new Error('mongo down')),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status } = createReqRes({ params: { name: 'editor' } });
+
+      await handlers.deleteRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(deps.deleteRoleByName).not.toHaveBeenCalled();
     });
 
     it('records role.deleted as pending before any removal, then success, in order', async () => {
@@ -1538,7 +1579,7 @@ describe('createAdminRolesHandlers', () => {
       await handlers.deleteRole(req, res);
 
       expect(status).toHaveBeenCalledWith(200);
-      expect(recordAuditEntry).toHaveBeenCalledTimes(4);
+      expect(recordAuditEntry).toHaveBeenCalledTimes(3);
       expect(recordAuditEntry).toHaveBeenLastCalledWith(
         expect.objectContaining({
           action: 'role.deleted',

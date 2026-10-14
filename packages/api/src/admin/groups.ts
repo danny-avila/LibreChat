@@ -21,6 +21,8 @@ type GroupListFilter = Pick<GroupFilterOptions, 'source' | 'search'>;
 
 const VALID_GROUP_SOURCES: ReadonlySet<string> = new Set(['local', 'entra']);
 const MAX_CREATE_MEMBER_IDS = 500;
+/** Member ids per audit entry, so group creation writes a few ordered entries. */
+const AUDIT_MEMBER_CHUNK = 100;
 const MAX_SEARCH_LENGTH = 200;
 const MAX_NAME_LENGTH = 500;
 const MAX_DESCRIPTION_LENGTH = 2000;
@@ -249,12 +251,14 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
       });
       /** The initial members gain group-scoped access, so each is recorded like a member add
        * (bounded by MAX_CREATE_MEMBER_IDS; sequential to keep the audit chain ordered). */
-      for (const memberId of new Set(memberIds)) {
+      const unique = [...new Set(memberIds)];
+      for (let i = 0; i < unique.length; i += AUDIT_MEMBER_CHUNK) {
+        const chunk = unique.slice(i, i + AUDIT_MEMBER_CHUNK);
         await emitAudit(req, {
           action: 'group.member_added',
           severity: 'warning',
           target: groupTarget(group),
-          metadata: { userId: memberId },
+          metadata: { userIds: chunk.join(','), count: chunk.length },
         });
       }
       return res.status(201).json({ group });

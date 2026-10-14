@@ -146,6 +146,12 @@ export interface AdminRolesDeps {
    * cascade. Only the override is restored on failure: ACL entries and grants are never
    * re-inserted, since that could resurrect access a concurrent request revoked, and
    * their removal only narrows access. */
+  /** Reads the grants before the cascade so their removal is audited even when it rejects after committing. */
+  findGrantsForPrincipal?: (
+    principalType: PrincipalType,
+    principalId: string,
+    options?: { tenantId?: string },
+  ) => Promise<ISystemGrant[]>;
   findConfigByPrincipal?: (
     principalType: PrincipalType,
     principalId: string,
@@ -164,6 +170,8 @@ export interface AdminRolesDeps {
 
 /** Upper bound on per-account entries written when a deleted role still has members. */
 const MAX_AUDITED_REASSIGNMENTS = 1000;
+/** Account ids per entry, so a large role is audited in a few ordered writes. */
+const AUDIT_MEMBER_CHUNK = 100;
 
 /** Changing who holds ADMIN is the most sensitive membership change. */
 function memberChangeSeverity(...roles: Array<string | undefined>): AuditSeverity {
@@ -205,6 +213,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
     deleteGrantsForPrincipal,
     restoreConfig,
     findConfigByPrincipal,
+    findGrantsForPrincipal,
     recordAuditEntry,
     auditFailClosed,
     invalidatePromptGroupAccessContext,
@@ -553,13 +562,11 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
        */
       const tenantId = req.user?.tenantId;
       /** deleteRoleByName reassigns members to USER, so who held the role is read first. */
-      const memberIds = await findUserIdsByRole(name).catch((error) => {
-        logger.error(
-          '[adminRoles] could not list role members for audit:',
-          getSafeErrorMetadata(error),
-        );
-        return [] as string[];
-      });
+      const memberIds = await findUserIdsByRole(name);
+      /** The grants as they were, so removals are audited even when a removal rejects after committing. */
+      const grantSnapshot = findGrantsForPrincipal
+        ? await findGrantsForPrincipal(PrincipalType.ROLE, name, { tenantId }).catch(() => null)
+        : null;
       const cascade = await runCascade(
         [
           cascadeStep(
@@ -616,11 +623,20 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
       /** Grants are never restored, so a failed delete still changed access and is audited. */
       const auditRemovedGrants = async () => {
         await waitForAttempt();
-        await emitGrantRemovals(
-          req,
-          name,
-          (cascade.removed.grants as ISystemGrant[] | undefined) ?? [],
-        );
+        let removed = cascade.removed.grants as ISystemGrant[] | undefined;
+        if (!removed && grantSnapshot?.length && findGrantsForPrincipal) {
+          /** The removal rejected and may have committed: audit what is no longer there. */
+          const remaining = await findGrantsForPrincipal(PrincipalType.ROLE, name, {
+            tenantId,
+          }).then(
+            (grants) => new Set(grants.map((g) => `${g.tenantId ?? ''}:${g.capability}`)),
+            () => null,
+          );
+          removed = remaining
+            ? grantSnapshot.filter((g) => !remaining.has(`${g.tenantId ?? ''}:${g.capability}`))
+            : [];
+        }
+        await emitGrantRemovals(req, name, removed ?? []);
       };
 
       /** Reads the role again to learn whether it still is the one this request targeted. */
@@ -686,12 +702,19 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
       const removedGrants = cascade.removed.grants as ISystemGrant[];
       await auditRemovedGrants();
       /** Each reassigned account is recorded (bounded) before the outcome entry. */
-      for (const userId of memberIds.slice(0, MAX_AUDITED_REASSIGNMENTS)) {
+      const audited = memberIds.slice(0, MAX_AUDITED_REASSIGNMENTS);
+      for (let i = 0; i < audited.length; i += AUDIT_MEMBER_CHUNK) {
+        const chunk = audited.slice(i, i + AUDIT_MEMBER_CHUNK);
         await emitRevocationAudit(req, {
           action: 'role.member_removed',
           severity: memberChangeSeverity(name),
           target: roleTarget(name),
-          metadata: { userId, newRole: SystemRoles.USER, cause: 'role_deleted' },
+          metadata: {
+            userIds: chunk.join(','),
+            count: chunk.length,
+            newRole: SystemRoles.USER,
+            cause: 'role_deleted',
+          },
         });
       }
       await recordOutcome('success', undefined, {

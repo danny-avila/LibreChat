@@ -1107,6 +1107,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           : null;
 
       let config: IConfig | null = null;
+      /** Each write bumps configVersion, so creation is read off the first write only. */
+      let created = false;
       try {
         for (const path of getConfigSecretMutationPaths(fieldPath)) {
           const fieldConfig = await writeConfigTombstone(
@@ -1117,6 +1119,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
             requestedPriority ?? existing?.priority ?? DEFAULT_PRIORITY,
           );
           if (fieldConfig) {
+            created ||= config == null && fieldConfig.configVersion === 1;
             config = fieldConfig;
           }
         }
@@ -1124,7 +1127,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         /** An earlier path in the loop may already have been written. */
         if (config) {
           await emitAudit(req, {
-            action: config.configVersion === 1 ? 'config.created' : 'config.updated',
+            action: created ? 'config.created' : 'config.updated',
             target: configTarget(principalType, principalId),
             metadata: { operation: 'tombstone', fieldPath, partial: true },
           });
@@ -1137,7 +1140,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       );
       if (config) {
         await emitAudit(req, {
-          action: config.configVersion === 1 ? 'config.created' : 'config.updated',
+          action: created ? 'config.created' : 'config.updated',
           target: configTarget(principalType, principalId),
           metadata: { operation: 'tombstone', fieldPath },
         });

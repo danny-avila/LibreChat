@@ -1450,7 +1450,8 @@ describe('createAdminGroupsHandlers', () => {
       const added = recordAuditEntry.mock.calls
         .map(([entry]) => entry)
         .filter((entry) => entry.action === 'group.member_added');
-      expect(added.map((entry) => entry.metadata.userId)).toEqual(['ext-1', 'ext-2']);
+      expect(added).toHaveLength(1);
+      expect(added[0].metadata).toEqual({ userIds: 'ext-1,ext-2', count: 2 });
     });
 
     it('records group.updated with the changed field names only', async () => {
