@@ -98,7 +98,7 @@ export interface AdminGroupsDeps {
     principalType: PrincipalType,
     principalId: string,
     options?: { includeInactive?: boolean },
-  ) => Promise<IConfig | null>;
+  ) => Promise<object | null>;
   /** Optional audit emission for group mutations; fail-open unless `auditFailClosed`. */
   recordAuditEntry?: RecordAuditEntry;
   /** When true, a failed audit write surfaces as a 5xx after the mutation has
