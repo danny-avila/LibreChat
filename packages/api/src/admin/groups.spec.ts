@@ -68,11 +68,19 @@ describe('createAdminGroupsHandlers', () => {
       countGroups: jest.fn().mockResolvedValue(0),
       findGroupById: jest.fn().mockResolvedValue(null),
       createGroup: jest.fn().mockResolvedValue(mockGroup()),
-      updateGroupById: jest.fn().mockResolvedValue(mockGroup()),
+      updateGroupFieldsTracked: jest
+        .fn()
+        .mockResolvedValue({ group: mockGroup(), changed: true, changedFields: ['name'] }),
       deleteGroup: jest.fn().mockResolvedValue(mockGroup()),
-      addUserToGroup: jest.fn().mockResolvedValue({ user: mockUser(), group: mockGroup() }),
-      removeUserFromGroup: jest.fn().mockResolvedValue({ user: mockUser(), group: mockGroup() }),
-      removeMemberById: jest.fn().mockResolvedValue(mockGroup()),
+      addUserToGroup: jest
+        .fn()
+        .mockResolvedValue({ user: mockUser(), group: mockGroup(), changed: true }),
+      removeUserFromGroup: jest
+        .fn()
+        .mockResolvedValue({ user: mockUser(), group: mockGroup(), changed: true }),
+      removeMemberByIdTracked: jest
+        .fn()
+        .mockResolvedValue({ group: mockGroup(), changed: true, changedFields: ['name'] }),
       findUsers: jest.fn().mockResolvedValue([]),
       deleteConfig: jest.fn().mockResolvedValue(null),
       deleteAclEntries: jest.fn().mockResolvedValue({ deletedCount: 0 }),
@@ -492,7 +500,14 @@ describe('createAdminGroupsHandlers', () => {
     it('updates group and returns 200', async () => {
       const group = mockGroup({ name: 'Updated' });
       const deps = createDeps({
-        updateGroupById: jest.fn().mockResolvedValue(group),
+        findGroupById: jest
+          .fn()
+          .mockResolvedValue(
+            mockGroup({ name: 'old', description: 'old', email: 'old@example.com', avatar: 'old' }),
+          ),
+        updateGroupFieldsTracked: jest
+          .fn()
+          .mockResolvedValue({ group: group, changed: true, changedFields: ['name'] }),
       });
       const handlers = createAdminGroupsHandlers(deps);
       const { req, res, status, json } = createReqRes({
@@ -508,7 +523,16 @@ describe('createAdminGroupsHandlers', () => {
 
     it('updates description only', async () => {
       const group = mockGroup({ description: 'New desc' });
-      const deps = createDeps({ updateGroupById: jest.fn().mockResolvedValue(group) });
+      const deps = createDeps({
+        findGroupById: jest
+          .fn()
+          .mockResolvedValue(
+            mockGroup({ name: 'old', description: 'old', email: 'old@example.com', avatar: 'old' }),
+          ),
+        updateGroupFieldsTracked: jest
+          .fn()
+          .mockResolvedValue({ group: group, changed: true, changedFields: ['name'] }),
+      });
       const handlers = createAdminGroupsHandlers(deps);
       const { req, res, status } = createReqRes({
         params: { id: validId },
@@ -518,12 +542,23 @@ describe('createAdminGroupsHandlers', () => {
       await handlers.updateGroup(req, res);
 
       expect(status).toHaveBeenCalledWith(200);
-      expect(deps.updateGroupById).toHaveBeenCalledWith(validId, { description: 'New desc' });
+      expect(deps.updateGroupFieldsTracked).toHaveBeenCalledWith(validId, {
+        description: 'New desc',
+      });
     });
 
     it('updates email only', async () => {
       const group = mockGroup({ email: 'team@co.com' });
-      const deps = createDeps({ updateGroupById: jest.fn().mockResolvedValue(group) });
+      const deps = createDeps({
+        findGroupById: jest
+          .fn()
+          .mockResolvedValue(
+            mockGroup({ name: 'old', description: 'old', email: 'old@example.com', avatar: 'old' }),
+          ),
+        updateGroupFieldsTracked: jest
+          .fn()
+          .mockResolvedValue({ group: group, changed: true, changedFields: ['name'] }),
+      });
       const handlers = createAdminGroupsHandlers(deps);
       const { req, res, status } = createReqRes({
         params: { id: validId },
@@ -533,12 +568,21 @@ describe('createAdminGroupsHandlers', () => {
       await handlers.updateGroup(req, res);
 
       expect(status).toHaveBeenCalledWith(200);
-      expect(deps.updateGroupById).toHaveBeenCalledWith(validId, { email: 'team@co.com' });
+      expect(deps.updateGroupFieldsTracked).toHaveBeenCalledWith(validId, { email: 'team@co.com' });
     });
 
     it('updates avatar only', async () => {
       const group = mockGroup({ avatar: 'https://img.co/a.png' });
-      const deps = createDeps({ updateGroupById: jest.fn().mockResolvedValue(group) });
+      const deps = createDeps({
+        findGroupById: jest
+          .fn()
+          .mockResolvedValue(
+            mockGroup({ name: 'old', description: 'old', email: 'old@example.com', avatar: 'old' }),
+          ),
+        updateGroupFieldsTracked: jest
+          .fn()
+          .mockResolvedValue({ group: group, changed: true, changedFields: ['name'] }),
+      });
       const handlers = createAdminGroupsHandlers(deps);
       const { req, res, status } = createReqRes({
         params: { id: validId },
@@ -548,14 +592,23 @@ describe('createAdminGroupsHandlers', () => {
       await handlers.updateGroup(req, res);
 
       expect(status).toHaveBeenCalledWith(200);
-      expect(deps.updateGroupById).toHaveBeenCalledWith(validId, {
+      expect(deps.updateGroupFieldsTracked).toHaveBeenCalledWith(validId, {
         avatar: 'https://img.co/a.png',
       });
     });
 
     it('updates multiple fields at once', async () => {
       const group = mockGroup({ name: 'New', description: 'Desc', email: 'a@b.com' });
-      const deps = createDeps({ updateGroupById: jest.fn().mockResolvedValue(group) });
+      const deps = createDeps({
+        findGroupById: jest
+          .fn()
+          .mockResolvedValue(
+            mockGroup({ name: 'old', description: 'old', email: 'old@example.com', avatar: 'old' }),
+          ),
+        updateGroupFieldsTracked: jest
+          .fn()
+          .mockResolvedValue({ group: group, changed: true, changedFields: ['name'] }),
+      });
       const handlers = createAdminGroupsHandlers(deps);
       const { req, res, status } = createReqRes({
         params: { id: validId },
@@ -565,7 +618,7 @@ describe('createAdminGroupsHandlers', () => {
       await handlers.updateGroup(req, res);
 
       expect(status).toHaveBeenCalledWith(200);
-      expect(deps.updateGroupById).toHaveBeenCalledWith(validId, {
+      expect(deps.updateGroupFieldsTracked).toHaveBeenCalledWith(validId, {
         name: 'New',
         description: 'Desc',
         email: 'a@b.com',
@@ -626,7 +679,7 @@ describe('createAdminGroupsHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(400);
       expect(json).toHaveBeenCalledWith({ error: 'name must not exceed 500 characters' });
-      expect(deps.updateGroupById).not.toHaveBeenCalled();
+      expect(deps.updateGroupFieldsTracked).not.toHaveBeenCalled();
     });
 
     it('returns 400 when description exceeds max length', async () => {
@@ -643,7 +696,7 @@ describe('createAdminGroupsHandlers', () => {
       expect(json).toHaveBeenCalledWith({
         error: 'description must not exceed 2000 characters',
       });
-      expect(deps.updateGroupById).not.toHaveBeenCalled();
+      expect(deps.updateGroupFieldsTracked).not.toHaveBeenCalled();
     });
 
     it('returns 400 when email exceeds max length', async () => {
@@ -658,7 +711,7 @@ describe('createAdminGroupsHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(400);
       expect(json).toHaveBeenCalledWith({ error: 'email must not exceed 500 characters' });
-      expect(deps.updateGroupById).not.toHaveBeenCalled();
+      expect(deps.updateGroupFieldsTracked).not.toHaveBeenCalled();
     });
 
     it('returns 400 when avatar exceeds max length', async () => {
@@ -673,7 +726,7 @@ describe('createAdminGroupsHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(400);
       expect(json).toHaveBeenCalledWith({ error: 'avatar must not exceed 2000 characters' });
-      expect(deps.updateGroupById).not.toHaveBeenCalled();
+      expect(deps.updateGroupFieldsTracked).not.toHaveBeenCalled();
     });
 
     it('returns 400 when no valid fields provided', async () => {
@@ -688,12 +741,17 @@ describe('createAdminGroupsHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(400);
       expect(json).toHaveBeenCalledWith({ error: 'No valid fields to update' });
-      expect(deps.updateGroupById).not.toHaveBeenCalled();
+      expect(deps.updateGroupFieldsTracked).not.toHaveBeenCalled();
     });
 
-    it('returns 404 when updateGroupById returns null', async () => {
+    it('returns 404 when updateGroupFieldsTracked returns null', async () => {
       const deps = createDeps({
-        updateGroupById: jest.fn().mockResolvedValue(null),
+        findGroupById: jest
+          .fn()
+          .mockResolvedValue(
+            mockGroup({ name: 'old', description: 'old', email: 'old@example.com', avatar: 'old' }),
+          ),
+        updateGroupFieldsTracked: jest.fn().mockResolvedValue(null),
       });
       const handlers = createAdminGroupsHandlers(deps);
       const { req, res, status, json } = createReqRes({
@@ -711,7 +769,12 @@ describe('createAdminGroupsHandlers', () => {
       const validationError = new Error('invalid field');
       validationError.name = 'ValidationError';
       const deps = createDeps({
-        updateGroupById: jest.fn().mockRejectedValue(validationError),
+        findGroupById: jest
+          .fn()
+          .mockResolvedValue(
+            mockGroup({ name: 'old', description: 'old', email: 'old@example.com', avatar: 'old' }),
+          ),
+        updateGroupFieldsTracked: jest.fn().mockRejectedValue(validationError),
       });
       const handlers = createAdminGroupsHandlers(deps);
       const { req, res, status, json } = createReqRes({
@@ -727,7 +790,12 @@ describe('createAdminGroupsHandlers', () => {
 
     it('returns 500 on error', async () => {
       const deps = createDeps({
-        updateGroupById: jest.fn().mockRejectedValue(new Error('db down')),
+        findGroupById: jest
+          .fn()
+          .mockResolvedValue(
+            mockGroup({ name: 'old', description: 'old', email: 'old@example.com', avatar: 'old' }),
+          ),
+        updateGroupFieldsTracked: jest.fn().mockRejectedValue(new Error('db down')),
       });
       const handlers = createAdminGroupsHandlers(deps);
       const { req, res, status, json } = createReqRes({
@@ -1061,7 +1129,7 @@ describe('createAdminGroupsHandlers', () => {
     it('adds member and returns 200', async () => {
       const group = mockGroup();
       const deps = createDeps({
-        addUserToGroup: jest.fn().mockResolvedValue({ user: mockUser(), group }),
+        addUserToGroup: jest.fn().mockResolvedValue({ user: mockUser(), group, changed: true }),
       });
       const handlers = createAdminGroupsHandlers(deps);
       const { req, res, status, json } = createReqRes({
@@ -1122,7 +1190,9 @@ describe('createAdminGroupsHandlers', () => {
 
     it('returns 404 when addUserToGroup returns null group', async () => {
       const deps = createDeps({
-        addUserToGroup: jest.fn().mockResolvedValue({ user: mockUser(), group: null }),
+        addUserToGroup: jest
+          .fn()
+          .mockResolvedValue({ user: mockUser(), group: null, changed: false }),
       });
       const handlers = createAdminGroupsHandlers(deps);
       const { req, res, status, json } = createReqRes({
@@ -1187,7 +1257,9 @@ describe('createAdminGroupsHandlers', () => {
   describe('removeGroupMember', () => {
     it('removes member and returns 200', async () => {
       const deps = createDeps({
-        removeUserFromGroup: jest.fn().mockResolvedValue({ user: mockUser(), group: mockGroup() }),
+        removeUserFromGroup: jest
+          .fn()
+          .mockResolvedValue({ user: mockUser(), group: mockGroup(), changed: true }),
       });
       const handlers = createAdminGroupsHandlers(deps);
       const { req, res, status, json } = createReqRes({
@@ -1214,9 +1286,11 @@ describe('createAdminGroupsHandlers', () => {
       expect(json).toHaveBeenCalledWith({ error: 'Invalid group ID format' });
     });
 
-    it('removes non-ObjectId member via removeMemberById', async () => {
+    it('removes non-ObjectId member via removeMemberByIdTracked', async () => {
       const deps = createDeps({
-        removeMemberById: jest.fn().mockResolvedValue(mockGroup()),
+        removeMemberByIdTracked: jest
+          .fn()
+          .mockResolvedValue({ group: mockGroup(), changed: true, changedFields: ['name'] }),
       });
       const handlers = createAdminGroupsHandlers(deps);
       const { req, res, status, json } = createReqRes({
@@ -1225,7 +1299,7 @@ describe('createAdminGroupsHandlers', () => {
 
       await handlers.removeGroupMember(req, res);
 
-      expect(deps.removeMemberById).toHaveBeenCalledWith(validId, 'ent-abc-123');
+      expect(deps.removeMemberByIdTracked).toHaveBeenCalledWith(validId, 'ent-abc-123');
       expect(deps.removeUserFromGroup).not.toHaveBeenCalled();
       expect(status).toHaveBeenCalledWith(200);
       expect(json).toHaveBeenCalledWith({ success: true });
@@ -1233,7 +1307,7 @@ describe('createAdminGroupsHandlers', () => {
 
     it('returns 404 when removeMemberById returns null', async () => {
       const deps = createDeps({
-        removeMemberById: jest.fn().mockResolvedValue(null),
+        removeMemberByIdTracked: jest.fn().mockResolvedValue({ group: null, changed: false }),
       });
       const handlers = createAdminGroupsHandlers(deps);
       const { req, res, status, json } = createReqRes({
@@ -1249,7 +1323,9 @@ describe('createAdminGroupsHandlers', () => {
     it('falls back to removeMemberById when ObjectId userId not found as user', async () => {
       const deps = createDeps({
         removeUserFromGroup: jest.fn().mockRejectedValue(new Error('User not found')),
-        removeMemberById: jest.fn().mockResolvedValue(mockGroup()),
+        removeMemberByIdTracked: jest
+          .fn()
+          .mockResolvedValue({ group: mockGroup(), changed: true, changedFields: ['name'] }),
       });
       const handlers = createAdminGroupsHandlers(deps);
       const { req, res, status, json } = createReqRes({
@@ -1259,14 +1335,16 @@ describe('createAdminGroupsHandlers', () => {
       await handlers.removeGroupMember(req, res);
 
       expect(deps.removeUserFromGroup).toHaveBeenCalledWith(validUserId, validId);
-      expect(deps.removeMemberById).toHaveBeenCalledWith(validId, validUserId);
+      expect(deps.removeMemberByIdTracked).toHaveBeenCalledWith(validId, validUserId);
       expect(status).toHaveBeenCalledWith(200);
       expect(json).toHaveBeenCalledWith({ success: true });
     });
 
     it('returns 404 when removeUserFromGroup returns null group', async () => {
       const deps = createDeps({
-        removeUserFromGroup: jest.fn().mockResolvedValue({ user: mockUser(), group: null }),
+        removeUserFromGroup: jest
+          .fn()
+          .mockResolvedValue({ user: mockUser(), group: null, changed: false }),
       });
       const handlers = createAdminGroupsHandlers(deps);
       const { req, res, status, json } = createReqRes({
@@ -1282,7 +1360,7 @@ describe('createAdminGroupsHandlers', () => {
     it('returns 404 when fallback removeMemberById also returns null', async () => {
       const deps = createDeps({
         removeUserFromGroup: jest.fn().mockRejectedValue(new Error('User not found')),
-        removeMemberById: jest.fn().mockResolvedValue(null),
+        removeMemberByIdTracked: jest.fn().mockResolvedValue({ group: null, changed: false }),
       });
       const handlers = createAdminGroupsHandlers(deps);
       const { req, res, status, json } = createReqRes({
@@ -1313,7 +1391,9 @@ describe('createAdminGroupsHandlers', () => {
     it('returns 200 when removing ObjectId member not in group (idempotent delete)', async () => {
       const group = mockGroup({ memberIds: [] });
       const deps = createDeps({
-        removeUserFromGroup: jest.fn().mockResolvedValue({ user: mockUser(), group }),
+        removeUserFromGroup: jest
+          .fn()
+          .mockResolvedValue({ user: mockUser(), group, changed: true }),
       });
       const handlers = createAdminGroupsHandlers(deps);
       const { req, res, status, json } = createReqRes({
@@ -1329,7 +1409,7 @@ describe('createAdminGroupsHandlers', () => {
     it('returns 200 when removing non-ObjectId member not in group (idempotent delete)', async () => {
       const group = mockGroup({ memberIds: [] });
       const deps = createDeps({
-        removeMemberById: jest.fn().mockResolvedValue(group),
+        removeMemberByIdTracked: jest.fn().mockResolvedValue({ group, changed: true }),
       });
       const handlers = createAdminGroupsHandlers(deps);
       const { req, res, status, json } = createReqRes({
@@ -1340,6 +1420,225 @@ describe('createAdminGroupsHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(200);
       expect(json).toHaveBeenCalledWith({ success: true });
+    });
+  });
+
+  describe('audit entries', () => {
+    function withUser<T extends { req: ServerRequest }>(reqRes: T, tenantId?: string): T {
+      (reqRes.req as unknown as { user: Partial<IUser> }).user = {
+        _id: new Types.ObjectId(),
+        name: 'Admin',
+        tenantId,
+      };
+      return reqRes;
+    }
+
+    it('records group.created', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = createDeps({ recordAuditEntry });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status } = withUser(createReqRes({ body: { name: 'Test Group' } }), 't1');
+
+      await handlers.createGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(201);
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'group.created',
+          actor: expect.objectContaining({ type: 'user', name: 'Admin' }),
+          target: { type: 'group', id: validId, name: 'Test Group' },
+          metadata: { source: 'local', memberCount: 0 },
+          tenantId: 't1',
+        }),
+      );
+    });
+
+    it('records a member_added entry for each initial member', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = createDeps({ recordAuditEntry });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status } = withUser(
+        createReqRes({ body: { name: 'Test Group', memberIds: ['ext-1', 'ext-2', 'ext-1'] } }),
+        't1',
+      );
+
+      await handlers.createGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(201);
+      const added = recordAuditEntry.mock.calls
+        .map(([entry]) => entry)
+        .filter((entry) => entry.action === 'group.member_added');
+      expect(added).toHaveLength(1);
+      expect(added[0].metadata).toEqual({ userIds: 'ext-1,ext-2', count: 2 });
+    });
+
+    it('records group.updated with the changed field names only', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = createDeps({
+        recordAuditEntry,
+        updateGroupFieldsTracked: jest.fn().mockResolvedValue({
+          group: mockGroup(),
+          changed: true,
+          changedFields: ['name', 'description'],
+        }),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status } = withUser(
+        createReqRes({ params: { id: validId }, body: { name: 'Renamed', description: 'd' } }),
+      );
+
+      await handlers.updateGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'group.updated',
+          metadata: { fields: 'description,name' },
+        }),
+      );
+    });
+
+    it('records no group.updated entry when the write changed nothing', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = createDeps({
+        recordAuditEntry,
+        updateGroupFieldsTracked: jest.fn().mockResolvedValue({
+          group: mockGroup({ name: 'Same' }),
+          changed: false,
+          changedFields: [],
+        }),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status } = withUser(
+        createReqRes({ params: { id: validId }, body: { name: 'Same' } }),
+      );
+
+      await handlers.updateGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(recordAuditEntry).not.toHaveBeenCalled();
+    });
+
+    it('records group.deleted', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = createDeps({ recordAuditEntry });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status } = withUser(createReqRes({ params: { id: validId } }));
+
+      await handlers.deleteGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(200);
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'group.deleted',
+          target: { type: 'group', id: validId, name: 'Test Group' },
+        }),
+      );
+    });
+
+    it('records the members whose access a group deletion revokes', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = createDeps({
+        recordAuditEntry,
+        deleteGroup: jest.fn().mockResolvedValue(mockGroup({ memberIds: ['m1', 'm2'] })),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res } = withUser(createReqRes({ params: { id: validId } }));
+
+      await handlers.deleteGroup(req, res);
+
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'group.member_removed',
+          metadata: { userIds: 'm1,m2', count: 2, cause: 'group_deleted' },
+        }),
+      );
+    });
+
+    it('records group.member_added and group.member_removed when membership changes', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = createDeps({
+        recordAuditEntry,
+        addUserToGroup: jest.fn().mockResolvedValue({
+          user: mockUser(),
+          group: mockGroup({ memberIds: ['m1'] }),
+          changed: true,
+        }),
+        removeUserFromGroup: jest.fn().mockResolvedValue({
+          user: mockUser(),
+          group: mockGroup({ memberIds: [] }),
+          changed: true,
+        }),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const add = withUser(
+        createReqRes({ params: { id: validId }, body: { userId: validUserId } }),
+      );
+      const remove = withUser(createReqRes({ params: { id: validId, userId: validUserId } }));
+
+      await handlers.addGroupMember(add.req, add.res);
+      await handlers.removeGroupMember(remove.req, remove.res);
+
+      expect(add.status).toHaveBeenCalledWith(200);
+      expect(remove.status).toHaveBeenCalledWith(200);
+      expect(recordAuditEntry).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          action: 'group.member_added',
+          metadata: { userId: validUserId },
+        }),
+      );
+      expect(recordAuditEntry).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          action: 'group.member_removed',
+          metadata: { userId: validUserId },
+        }),
+      );
+    });
+
+    it('does not record an idempotent add or a removal of a non-member', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = createDeps({
+        recordAuditEntry,
+        addUserToGroup: jest.fn().mockResolvedValue({
+          user: mockUser(),
+          group: mockGroup({ memberIds: ['m1'] }),
+          changed: false,
+        }),
+        removeUserFromGroup: jest.fn().mockResolvedValue({
+          user: mockUser(),
+          group: mockGroup({ memberIds: ['m1'] }),
+          changed: false,
+        }),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const add = withUser(
+        createReqRes({ params: { id: validId }, body: { userId: validUserId } }),
+      );
+      const remove = withUser(createReqRes({ params: { id: validId, userId: validUserId } }));
+
+      await handlers.addGroupMember(add.req, add.res);
+      await handlers.removeGroupMember(remove.req, remove.res);
+
+      expect(add.status).toHaveBeenCalledWith(200);
+      expect(remove.status).toHaveBeenCalledWith(200);
+      expect(recordAuditEntry).not.toHaveBeenCalled();
+    });
+
+    it('does not record when the group is missing', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = createDeps({
+        deleteGroup: jest.fn().mockResolvedValue(null),
+        recordAuditEntry,
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res, status } = withUser(createReqRes({ params: { id: validId } }));
+
+      await handlers.deleteGroup(req, res);
+
+      expect(status).toHaveBeenCalledWith(404);
+      expect(recordAuditEntry).not.toHaveBeenCalled();
     });
   });
 });

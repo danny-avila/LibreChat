@@ -58,7 +58,7 @@ export function createRoleMethods(
   ) => Promise<void>;
   migrateRoleSchema: (roleName?: string) => Promise<number>;
   createRoleByName: (roleData: Partial<IRole>) => Promise<IRole>;
-  deleteRoleByName: (roleName: string) => Promise<IRole | null>;
+  deleteRoleByName: (roleName: string, options?: { id?: string }) => Promise<IRole | null>;
   updateUsersByRole: (oldRole: string, newRole: string) => Promise<void>;
   findUserIdsByRole: (roleName: string) => Promise<string[]>;
   updateUsersRoleByIds: (userIds: string[], newRole: string) => Promise<void>;
@@ -569,16 +569,26 @@ export function createRoleMethods(
    * the delete call, which will succeed since the `updateMany` is a no-op on
    * the second pass.
    */
-  async function deleteRoleByName(roleName: string): Promise<IRole | null> {
+  async function deleteRoleByName(
+    roleName: string,
+    options?: { id?: string },
+  ): Promise<IRole | null> {
     if (isSystemRoleName(roleName)) {
       throw new Error(`Cannot delete system role: ${roleName}`);
     }
     const Role = mongoose.models.Role;
+    /** A role recreated under this name has another `_id`: leave it and its members alone. */
+    if (options?.id && !(await Role.exists({ _id: options.id, name: roleName }))) {
+      return null;
+    }
     const User = mongoose.models.User as Model<IUser>;
     const affectedUserIds = await findUserIdsByRole(roleName);
     await User.updateMany({ role: roleName }, { $set: { role: SystemRoles.USER } });
     await invalidateAuthUserDocCache(affectedUserIds);
-    const deleted = await Role.findOneAndDelete({ name: roleName }).lean();
+    const deleted = await Role.findOneAndDelete({
+      name: roleName,
+      ...(options?.id ? { _id: options.id } : {}),
+    }).lean();
     try {
       const cache = deps.getCache?.(CacheKeys.ROLES);
       if (cache) {

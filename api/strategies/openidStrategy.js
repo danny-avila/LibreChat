@@ -17,6 +17,7 @@ const {
   getBalanceConfig,
   selectOpenIdRole,
   getTokenCacheTtlMs,
+  recordIdpRoleChange,
   applyOpenIDProfile,
   getAvatarSaveParams,
   isEmailDomainAllowed,
@@ -35,6 +36,7 @@ const {
   updateUser,
   findRolesByNames,
   findBalanceByUser,
+  recordAuditEntry,
   createUserIfAbsent,
 } = require('~/models');
 const { getAppConfig } = require('~/server/services/Config');
@@ -709,6 +711,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     user = applyOpenIDProfile(user, profile);
   }
 
+  const roleBeforeClaims = user.role;
   const adminRole = process.env.OPENID_ADMIN_ROLE;
   const adminRoleParameterPath = process.env.OPENID_ADMIN_ROLE_PARAMETER_PATH;
   const adminRoleTokenKind = process.env.OPENID_ADMIN_ROLE_TOKEN_KIND;
@@ -817,6 +820,14 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
   }
 
   user = await updateUser(user._id, user);
+  await recordIdpRoleChange({
+    recordAuditEntry,
+    userId: String(user._id),
+    previousRole: roleBeforeClaims,
+    role: user.role,
+    source: 'openid_login',
+    tenantId: user.tenantId,
+  });
 
   logger.info(
     `[openidStrategy] login success openidId: ${user.openidId} | email: ${user.email} | username: ${user.username} `,

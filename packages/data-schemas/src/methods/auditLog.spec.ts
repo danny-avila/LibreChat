@@ -3,7 +3,9 @@ import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { RecordAuditEntryInput } from '~/types';
 import type * as t from '~/types';
 import auditLogSchema, { GENESIS_HASH, PLATFORM_CHAIN_KEY } from '~/schema/auditLog';
+import { AUDIT_ACTIONS, AUDIT_ACTION_CATEGORY } from '~/types/admin';
 import { auditChainKey, createAuditLogMethods } from './auditLog';
+import logger from '~/config/winston';
 
 jest.mock('~/config/winston', () => ({
   error: jest.fn(),
@@ -79,6 +81,17 @@ describe('auditLog methods', () => {
       expect(persisted?.createdAt).toBeInstanceOf(Date);
     });
 
+    it('accepts every registered action and derives its category', async () => {
+      for (const action of AUDIT_ACTIONS) {
+        await methods.recordAuditEntry(baseInput({ action }), { failClosed: true });
+      }
+      const persisted = await AuditLog.find({ chainKey: CK_A }).sort({ seq: 1 }).lean();
+      expect(persisted.map((entry) => entry.action)).toEqual([...AUDIT_ACTIONS]);
+      for (const entry of persisted) {
+        expect(entry.category).toBe(AUDIT_ACTION_CATEGORY[entry.action]);
+      }
+    });
+
     it('derives a warning severity for non-success outcomes', async () => {
       await methods.recordAuditEntry(baseInput({ outcome: 'denied' }));
       const persisted = await AuditLog.findOne({ chainKey: CK_A }).lean();
@@ -152,6 +165,23 @@ describe('auditLog methods', () => {
       );
 
       spy.mockRestore();
+    });
+  });
+
+  describe('write failure logging', () => {
+    it('logs the error name and code, never the message', async () => {
+      const create = jest
+        .spyOn(AuditLog, 'create')
+        .mockRejectedValueOnce(new Error('connect mongodb://user:secret@host failed'));
+      const logSpy = jest.spyOn(logger, 'error').mockImplementation(() => logger);
+
+      await methods.recordAuditEntry(baseInput());
+
+      const logged = JSON.stringify(logSpy.mock.calls);
+      expect(logged).toContain('errName');
+      expect(logged).not.toContain('secret');
+      create.mockRestore();
+      logSpy.mockRestore();
     });
   });
 

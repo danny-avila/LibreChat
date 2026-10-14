@@ -412,6 +412,44 @@ describe('UserGroup Methods - Detailed Tests', () => {
       expect(result.group?.memberIds).toContain((user._id as mongoose.Types.ObjectId).toString());
     });
 
+    test('reports a change only for the call that altered membership', async () => {
+      const groupId = group._id as mongoose.Types.ObjectId;
+      const userId = user._id as mongoose.Types.ObjectId;
+
+      const [first, second] = await Promise.all([
+        methods.addUserToGroup(userId, groupId),
+        methods.addUserToGroup(userId, groupId),
+      ]);
+      expect([first.changed, second.changed].filter(Boolean)).toHaveLength(1);
+      expect(first.group?.memberIds).toHaveLength(1);
+
+      const removed = await methods.removeUserFromGroup(userId, groupId);
+      expect(removed.changed).toBe(true);
+      const again = await methods.removeUserFromGroup(userId, groupId);
+      expect(again.changed).toBe(false);
+      expect(again.group).toBeDefined();
+    });
+
+    test('reports a field change only for the call that altered it', async () => {
+      const groupId = group._id as mongoose.Types.ObjectId;
+
+      const [first, second] = await Promise.all([
+        methods.updateGroupFieldsTracked(groupId, { name: 'Renamed' }),
+        methods.updateGroupFieldsTracked(groupId, { name: 'Renamed' }),
+      ]);
+
+      expect([first?.changed, second?.changed].filter(Boolean)).toHaveLength(1);
+      expect(first?.group.name).toBe('Renamed');
+      expect(await methods.updateGroupFieldsTracked(groupId, { name: 'Renamed' })).toMatchObject({
+        changed: false,
+      });
+      const mixed = await methods.updateGroupFieldsTracked(groupId, {
+        name: 'Renamed',
+        description: 'new description',
+      });
+      expect(mixed).toMatchObject({ changed: true, changedFields: ['description'] });
+    });
+
     test('should remove user from group', async () => {
       // First add user
       await methods.addUserToGroup(
@@ -705,6 +743,24 @@ describe('UserGroup Methods - Detailed Tests', () => {
       const result = await methods.deleteGroup(fakeId);
 
       expect(result).toBeNull();
+    });
+  });
+
+  describe('removeMemberByIdTracked', () => {
+    test('reports whether the member was actually removed', async () => {
+      const group = await Group.create({ name: 'Test', source: 'local', memberIds: ['m1', 'm2'] });
+      const groupId = group._id as mongoose.Types.ObjectId;
+
+      const removed = await methods.removeMemberByIdTracked(groupId, 'm1');
+      expect(removed.changed).toBe(true);
+      expect(removed.group?.memberIds).toEqual(['m2']);
+
+      const absent = await methods.removeMemberByIdTracked(groupId, 'm1');
+      expect(absent.changed).toBe(false);
+      expect(absent.group?.memberIds).toEqual(['m2']);
+
+      const missing = await methods.removeMemberByIdTracked(new mongoose.Types.ObjectId(), 'm1');
+      expect(missing).toEqual({ group: null, changed: false });
     });
   });
 
