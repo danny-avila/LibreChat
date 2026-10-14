@@ -23,6 +23,7 @@ import {
 } from 'librechat-data-provider';
 import type {
   Agent,
+  TUser,
   TMessage,
   TSubmission,
   TConversation,
@@ -177,6 +178,27 @@ export function getRegenerateTargetResponseMessage({
   }
 
   return null;
+}
+
+/**
+ * Prompt prefix as sent in the request payload. Only the Assistants routes take
+ * the browser's resolution of special variables; the Agents route receives the
+ * template and resolves it server-side against the conversation start, so the
+ * resolved text is identical on every turn of a conversation.
+ */
+export function resolvePayloadPromptPrefix({
+  promptPrefix,
+  endpoint,
+  user,
+}: {
+  promptPrefix: string;
+  endpoint?: string | null;
+  user?: TUser | null;
+}): string {
+  if (!isAssistantsEndpoint(endpoint)) {
+    return promptPrefix;
+  }
+  return replaceSpecialVars({ text: promptPrefix, user });
 }
 
 export function getRegenerateSubmissionMessages({
@@ -599,8 +621,9 @@ export default function useChatFunctions({
     let currentMessages: TMessage[] = overrideMessages ?? cachedMessages ?? [];
 
     if (conversation?.promptPrefix) {
-      conversation.promptPrefix = replaceSpecialVars({
-        text: conversation.promptPrefix,
+      conversation.promptPrefix = resolvePayloadPromptPrefix({
+        promptPrefix: conversation.promptPrefix,
+        endpoint,
         user: auth.user,
       });
     }
