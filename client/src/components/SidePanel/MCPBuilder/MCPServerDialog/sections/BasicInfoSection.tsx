@@ -126,7 +126,7 @@ export default function BasicInfoSection() {
         <div className="space-y-1.5">
           <Label htmlFor="mcp-support-contact-name" className="text-sm font-medium">
             {localize('com_ui_support_contact_name')}{' '}
-            <span className="text-xs text-text-secondary">{localize('com_ui_optional')}</span>
+            <span className="text-text-secondary text-xs">{localize('com_ui_optional')}</span>
           </Label>
           <Input
             id="mcp-support-contact-name"
@@ -148,7 +148,7 @@ export default function BasicInfoSection() {
             <p
               id="mcp-support-contact-name-error"
               role="alert"
-              className="text-xs text-text-destructive"
+              className="text-text-destructive text-xs"
             >
               {errors.support_contact.name.message}
             </p>
@@ -157,7 +157,7 @@ export default function BasicInfoSection() {
         <div className="space-y-1.5">
           <Label htmlFor="mcp-support-contact-email" className="text-sm font-medium">
             {localize('com_ui_support_contact_email')}{' '}
-            <span className="text-xs text-text-secondary">{localize('com_ui_optional')}</span>
+            <span className="text-text-secondary text-xs">{localize('com_ui_optional')}</span>
           </Label>
           <Input
             id="mcp-support-contact-email"
@@ -178,7 +178,7 @@ export default function BasicInfoSection() {
             <p
               id="mcp-support-contact-email-error"
               role="alert"
-              className="text-xs text-text-destructive"
+              className="text-text-destructive text-xs"
             >
               {errors.support_contact.email.message}
             </p>

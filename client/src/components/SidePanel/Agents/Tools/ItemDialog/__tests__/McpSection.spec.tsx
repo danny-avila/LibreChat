@@ -166,7 +166,6 @@ jest.mock('@librechat/client', () => {
         'aria-label': ariaLabel,
         onChange: (e: { target: { checked: boolean } }) => onCheckedChange(e.target.checked),
       }),
-    Skeleton: ({ className }: { className?: string }) => React.createElement('div', { className }),
   };
 });
 

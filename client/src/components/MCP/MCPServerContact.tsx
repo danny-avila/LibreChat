@@ -34,7 +34,7 @@ export default function MCPServerContact({ server, className = '' }: MCPServerCo
   }
 
   return (
-    <div className={cn('flex min-w-0 items-center gap-1 text-text-secondary', className)}>
+    <div className={cn('text-text-secondary flex min-w-0 items-center gap-1', className)}>
       <span className="shrink-0">{localize('com_ui_mcp_contact')}:</span>
       <span className="min-w-0 truncate">
         {supportEmail ? (
