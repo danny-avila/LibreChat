@@ -1020,7 +1020,7 @@ export class Chat {
 
   private toOutcome(error: unknown, active: ActiveRequest): Outcome {
     if (active.controller.signal.aborted) {
-      return { kind: 'abort' };
+      return active.settledAs ? getSettledOutcome(active.settledAs) : { kind: 'abort' };
     }
     const failure = error instanceof Error ? error : new Error(String(error));
     /** A request that never got a response may still be running on the server. */
