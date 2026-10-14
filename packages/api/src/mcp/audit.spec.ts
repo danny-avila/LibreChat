@@ -121,7 +121,7 @@ describe('createMCPServerAuditor', () => {
     });
 
     expect(recordAuditEntry).toHaveBeenCalledWith(
-      expect.objectContaining({ metadata: { source: 'DB' } }),
+      expect.objectContaining({ metadata: { source: 'DB', diff: 'unavailable' } }),
     );
   });
 

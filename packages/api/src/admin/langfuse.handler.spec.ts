@@ -871,7 +871,10 @@ describe('createAdminLangfuseHandlers', () => {
       expect(res.statusCode).toBe(500);
       expect(invalidateConfigCaches).toHaveBeenCalled();
       expect(recordAuditEntry).toHaveBeenCalledWith(
-        expect.objectContaining({ action: 'langfuse.updated' }),
+        expect.objectContaining({
+          action: 'langfuse.updated',
+          metadata: expect.objectContaining({ enabled: false, activation: 'failed' }),
+        }),
       );
     });
   });

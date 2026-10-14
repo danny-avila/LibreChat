@@ -495,7 +495,8 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
         target: { type: 'langfuse', id: 'connection' },
         metadata: {
           changes: [...changes].sort().join(','),
-          enabled: status.enabled,
+          enabled: activationError ? false : status.enabled,
+          ...(activationError ? { activation: 'failed' } : {}),
           ...(status.destination ? { destination: status.destination } : {}),
         },
       });

@@ -477,6 +477,8 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
       };
       /** Every member loses group-scoped access, so the affected accounts are recorded (chunked). */
       const recordMemberRemovals = async (group: IGroup) => {
+        /** Keeps the chain causal: the pending attempt precedes the member entries. */
+        await attempt;
         const revoked = [...new Set(group.memberIds ?? [])];
         for (let i = 0; i < revoked.length; i += AUDIT_MEMBER_CHUNK) {
           const chunk = revoked.slice(i, i + AUDIT_MEMBER_CHUNK);

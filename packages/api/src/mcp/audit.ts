@@ -103,6 +103,7 @@ export function createMCPServerAuditor(options: {
     /** A failed reread must not fall back to the submission: persistence generates headers and
      * keeps omitted fields, so that diff would invent changes. The entry then lists no fields. */
     const committed = await committedRead;
+    const diffUnavailable = event.resolveCommitted != null && committed == null;
     const next = event.resolveCommitted ? (committed ?? previous) : submitted;
     const name = serverTitle(next) ?? serverTitle(submitted) ?? serverTitle(previous);
     const before = action === 'mcp_server.created' ? undefined : previous;
@@ -117,6 +118,7 @@ export function createMCPServerAuditor(options: {
       metadata: {
         source: 'DB',
         ...(changed.length > 0 ? { fields: changed.join(',') } : {}),
+        ...(diffUnavailable ? { diff: 'unavailable' } : {}),
       },
     });
   }
