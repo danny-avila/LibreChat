@@ -137,9 +137,12 @@ const {
   filterMalformedContentParts,
   countFormattedMessageTokens,
   prependFileContext,
+  prependContextText,
   prependQuotes,
   applyAttachmentOnlyText,
   hydrateMissingIndexTokenCounts,
+  hasConversationDateContext,
+  buildUserMessageContextUpdates,
   injectSkillPrimes,
   buildAgentEventActorSkillMessages,
   collectFreshSkillPrimeNames,
@@ -2624,6 +2627,7 @@ class AgentClient extends BaseClient {
     const tokenCountMap = {};
     const memoryPayload = [];
     let hasFileContext = false;
+    let hasContextUpdate = false;
     let promptTokenTotal = 0;
     const encoding = this.getEncoding();
     /**
@@ -2653,6 +2657,17 @@ class AgentClient extends BaseClient {
     };
     /** Memory copies built for canonical recounts, reused by the memory payload pass. */
     const memoryFormattedMessages = [];
+    /** Date-change and send-time notes, prepended to the prompt copy only. */
+    const req = this.options.req;
+    const contextUpdates = buildUserMessageContextUpdates({
+      messages: orderedMessages,
+      conversationStartedAt: req.conversationCreatedAt,
+      currentTurnStartedAt: req.turnStartedAt,
+      timezone: req.body?.timezone,
+      trackDateChanges: hasConversationDateContext(allAgents.map(({ agent }) => agent)),
+      includeTimestamps:
+        req.config?.endpoints?.[EModelEndpoint.agents]?.promptMessageTimestamps === true,
+    });
 
     const formattedMessages = orderedMessages.map((message, i) => {
       const formattedMessage = formatMessage({
@@ -2701,6 +2716,12 @@ class AgentClient extends BaseClient {
       const turnFiles = this.message_file_map?.[message.messageId] ?? message.files;
       applyAttachmentOnlyText(formattedMessage, turnFiles);
 
+      const contextUpdate = contextUpdates.get(i);
+      if (contextUpdate) {
+        hasContextUpdate = true;
+        prependContextText(formattedMessage, contextUpdate, '\n\n');
+      }
+
       /**
        * A summarize round that errored or was cut off never reaches the model:
        * the formatter would take its partial text as the history boundary and
@@ -2711,6 +2732,8 @@ class AgentClient extends BaseClient {
        * canonical recount reads an unstripped surface instead.
        */
       const droppedPromptSummary = dropUnusableSummaryParts(formattedMessage);
+      const promptDiffersFromStored =
+        Boolean(message.fileContext) || droppedPromptSummary || contextUpdate != null;
 
       const dbTokenCount = Number(orderedMessages[i].tokenCount);
       const hasDbTokenCount = Number.isFinite(dbTokenCount) && dbTokenCount > 0;
@@ -2730,20 +2753,19 @@ class AgentClient extends BaseClient {
       if (needsCanonicalTokenCount) {
         /** Without fileContext the memory copy is content-identical to the
          *  prompt copy, so the prompt copy is the counting surface; with it (or
-         *  with a dropped summary), the canonical count must be taken from the
-         *  message as stored. */
+         *  with a dropped summary or a context update), the canonical count must
+         *  be taken from the message as stored. */
         let countSurface = formattedMessage;
-        if (message.fileContext || droppedPromptSummary) {
+        if (promptDiffersFromStored) {
           memoryFormattedMessages[i] = buildMemoryFormattedMessage(message);
           countSurface = memoryFormattedMessages[i];
         }
         canonicalTokenCount = countFormattedMessageTokens(countSurface, encoding);
       }
 
-      const promptMessageTokenCount =
-        message.fileContext || droppedPromptSummary
-          ? countFormattedMessageTokens(formattedMessage, encoding)
-          : canonicalTokenCount;
+      const promptMessageTokenCount = promptDiffersFromStored
+        ? countFormattedMessageTokens(formattedMessage, encoding)
+        : canonicalTokenCount;
 
       /* If message has files, calculate image token cost */
       if (this.message_file_map && this.message_file_map[message.messageId]) {
@@ -2904,7 +2926,8 @@ class AgentClient extends BaseClient {
     }
     /** After the steer stamp, which adds replayed steers' documents of its own. */
     dedupeDocumentNames(payload);
-    if (hasFileContext) {
+    const hasPromptOnlyContext = hasFileContext || hasContextUpdate;
+    if (hasPromptOnlyContext) {
       for (let i = 0; i < orderedMessages.length; i++) {
         memoryPayload.push(
           memoryFormattedMessages[i] ?? buildMemoryFormattedMessage(orderedMessages[i]),
@@ -2930,7 +2953,7 @@ class AgentClient extends BaseClient {
         });
       }
     }
-    this.memoryPayload = hasFileContext ? memoryPayload : null;
+    this.memoryPayload = hasPromptOnlyContext ? memoryPayload : null;
     messages = orderedMessages;
     promptTokens = promptTokenTotal;
 
