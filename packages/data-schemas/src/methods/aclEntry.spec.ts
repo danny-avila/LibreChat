@@ -207,6 +207,25 @@ describe('AclEntry Model Tests', () => {
       expect(entries).toHaveLength(2);
     });
 
+    test('reads mutation snapshots from the primary even when a session is supplied', async () => {
+      const read = jest.spyOn(mongoose.Query.prototype, 'read');
+      const session = await mongoose.startSession();
+      try {
+        const entries = await methods.findEntriesByPrincipalsAndResource(
+          [{ principalType: PrincipalType.USER, principalId: userId }],
+          ResourceType.AGENT,
+          resourceId,
+          session,
+          true,
+        );
+        expect(entries).toHaveLength(1);
+        expect(read).toHaveBeenCalledWith('primary');
+      } finally {
+        read.mockRestore();
+        await session.endSession();
+      }
+    });
+
     test('should check if user has permission', async () => {
       const principalsList = [{ principalType: PrincipalType.USER, principalId: userId }];
 

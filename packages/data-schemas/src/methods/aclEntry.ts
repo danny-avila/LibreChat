@@ -290,8 +290,9 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
     });
     if (session) {
       query.session(session);
-    } else if (readPrimary) {
-      /** Mutation snapshots must not come from a lagging secondary. */
+    }
+    if (readPrimary && !session?.inTransaction()) {
+      /** Mutation snapshots must not come from a lagging secondary; a transaction already reads from the primary. */
       query.read('primary');
     }
     return await query.lean<IAclEntry[]>();
