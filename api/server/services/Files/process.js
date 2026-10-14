@@ -460,25 +460,30 @@ const processFileURL = async ({
         storageRegion: typeof savedFile === 'string' ? undefined : savedFile.storageRegion,
       },
     };
-    return await withStoredUploadCleanup(storedCleanup, async () =>
-      db.createFile(
-        {
-          user: userId,
-          file_id,
-          bytes,
-          filepath,
-          ...storageMetadata,
-          filename: fileName,
-          source: fileStrategy,
-          type,
-          context,
-          ...(await retentionExpiryPromise),
-          tenantId,
-          width: dimensions.width,
-          height: dimensions.height,
-        },
-        true,
-      ),
+    return await withStoredUploadCleanup(
+      { ...storedCleanup, trackWrite: true },
+      async (beginWrite) => {
+        const retentionExpiry = await retentionExpiryPromise;
+        beginWrite();
+        return db.createFile(
+          {
+            user: userId,
+            file_id,
+            bytes,
+            filepath,
+            ...storageMetadata,
+            filename: fileName,
+            source: fileStrategy,
+            type,
+            context,
+            ...retentionExpiry,
+            tenantId,
+            width: dimensions.width,
+            height: dimensions.height,
+          },
+          true,
+        );
+      },
     );
   } catch (error) {
     logger.error(`Error while processing the image with ${fileStrategy}:`, error);
@@ -622,25 +627,30 @@ const uploadImageBuffer = async ({ req, context, metadata = {}, resize = true })
     resolveDeleteFile: () => getStrategyFunctions(source).deleteFile,
     stored: { file_id, filepath, source, ...storageMetadata },
   };
-  return await withStoredUploadCleanup(storedCleanup, async () =>
-    db.createFile(
-      {
-        user: req.user.id,
-        file_id,
-        bytes,
-        filepath,
-        ...storageMetadata,
-        filename,
-        context,
-        source,
-        type,
-        width,
-        ...(await retentionExpiryPromise),
-        height,
-        tenantId: req.user.tenantId,
-      },
-      true,
-    ),
+  return await withStoredUploadCleanup(
+    { ...storedCleanup, trackWrite: true },
+    async (beginWrite) => {
+      const retentionExpiry = await retentionExpiryPromise;
+      beginWrite();
+      return db.createFile(
+        {
+          user: req.user.id,
+          file_id,
+          bytes,
+          filepath,
+          ...storageMetadata,
+          filename,
+          context,
+          source,
+          type,
+          width,
+          ...retentionExpiry,
+          height,
+          tenantId: req.user.tenantId,
+        },
+        true,
+      );
+    },
   );
 };
 
@@ -751,28 +761,33 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
     resolveDeleteFile: () => target && getStrategyFunctions(target.source).deleteFile,
     stored: target?.stored ?? { file_id: id ?? file_id, filepath, source },
   };
-  const result = await withStoredUploadCleanup(storedCleanup, async () =>
-    db.createFile(
-      {
-        user: req.user.id,
-        file_id: id ?? file_id,
-        temp_file_id,
-        bytes,
-        filepath,
-        ...storageMetadata,
-        filename: filename ?? sanitizeFilename(file.originalname),
-        context: isAssistantUpload ? FileContext.assistants : FileContext.message_attachment,
-        model: isAssistantUpload ? req.body.model : undefined,
-        type: file.mimetype,
-        ...(await retentionExpiryPromise),
-        embedded,
-        source,
-        height,
-        width,
-        tenantId: req.user.tenantId,
-      },
-      true,
-    ),
+  const result = await withStoredUploadCleanup(
+    { ...storedCleanup, trackWrite: true },
+    async (beginWrite) => {
+      const retentionExpiry = await retentionExpiryPromise;
+      beginWrite();
+      return db.createFile(
+        {
+          user: req.user.id,
+          file_id: id ?? file_id,
+          temp_file_id,
+          bytes,
+          filepath,
+          ...storageMetadata,
+          filename: filename ?? sanitizeFilename(file.originalname),
+          context: isAssistantUpload ? FileContext.assistants : FileContext.message_attachment,
+          model: isAssistantUpload ? req.body.model : undefined,
+          type: file.mimetype,
+          ...retentionExpiry,
+          embedded,
+          source,
+          height,
+          width,
+          tenantId: req.user.tenantId,
+        },
+        true,
+      );
+    },
   );
   sendUploadSuccess(res, sseStream, 'File uploaded and processed successfully', result);
 };
@@ -1754,25 +1769,30 @@ async function saveBase64Image(
     resolveDeleteFile: () => getStrategyFunctions(source).deleteFile,
     stored: { file_id, filepath, source, ...storageMetadata },
   };
-  return await withStoredUploadCleanup(storedCleanup, async () =>
-    db.createFile(
-      {
-        type,
-        source,
-        context,
-        file_id,
-        filepath,
-        ...storageMetadata,
-        filename,
-        user: req.user.id,
-        bytes: image.bytes,
-        width: image.width,
-        ...(await retentionExpiryPromise),
-        height: image.height,
-        tenantId: req.user.tenantId,
-      },
-      true,
-    ),
+  return await withStoredUploadCleanup(
+    { ...storedCleanup, trackWrite: true },
+    async (beginWrite) => {
+      const retentionExpiry = await retentionExpiryPromise;
+      beginWrite();
+      return db.createFile(
+        {
+          type,
+          source,
+          context,
+          file_id,
+          filepath,
+          ...storageMetadata,
+          filename,
+          user: req.user.id,
+          bytes: image.bytes,
+          width: image.width,
+          ...retentionExpiry,
+          height: image.height,
+          tenantId: req.user.tenantId,
+        },
+        true,
+      );
+    },
   );
 }
 

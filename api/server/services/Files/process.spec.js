@@ -3593,6 +3593,37 @@ describe('stored upload cleanup across storage-before-record paths', () => {
     expectStoredObjectDeleted(req, { file_id: 'avatar-id' });
   });
 
+  it('deletes the object without a record lookup when retention fails before the write', async () => {
+    const saveBuffer = jest.fn().mockResolvedValue(storedFile.filepath);
+    getStrategyFunctions.mockReturnValue({ saveBuffer, deleteFile });
+    getRetentionExpiry.mockImplementationOnce(() => Promise.reject(new Error('retention down')));
+    db.findFileById.mockReset().mockRejectedValue(new Error('db down'));
+    const req = makeReq({ mimetype: 'image/png' });
+    req.config.imageOutputType = 'webp';
+
+    await expect(
+      uploadImageBuffer({
+        req,
+        context: FileContext.avatar,
+        resize: false,
+        metadata: {
+          buffer: Buffer.from('img'),
+          file_id: 'avatar-id',
+          filename: 'a.webp',
+          type: 'image/webp',
+          bytes: 3,
+          width: 1,
+          height: 1,
+        },
+      }),
+    ).rejects.toThrow('retention down');
+
+    expect(db.createFile).not.toHaveBeenCalled();
+    expect(db.findFileById).not.toHaveBeenCalled();
+    expectStoredObjectDeleted(req, { file_id: 'avatar-id' });
+    db.findFileById.mockReset();
+  });
+
   it('deletes the object when processFileUpload stored it but the record fails', async () => {
     const handleFileUpload = jest.fn().mockResolvedValue(storedFile);
     getStrategyFunctions.mockReturnValue({ handleFileUpload, deleteFile });
