@@ -712,6 +712,8 @@ if (cluster.isMaster) {
             baseAppConfig?.endpoints?.agents?.backgroundTasks?.completionResultBatchSize,
           completionReceiptBatching:
             baseAppConfig?.endpoints?.agents?.backgroundTasks?.completionReceiptBatching,
+          deadLetterRetentionDays:
+            baseAppConfig?.endpoints?.agents?.eventDriven?.deadLetterRetentionDays,
           idlePolling: baseAppConfig?.endpoints?.agents?.eventDriven?.idlePolling,
         });
       } catch (initErr) {
