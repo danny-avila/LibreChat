@@ -476,6 +476,32 @@ describe('Chat', () => {
     await sent;
   });
 
+  it('finishes a turn stopped during its optimistic write with its own response', async () => {
+    const otherBranch: TMessage = { ...placeholder, messageId: 'other-1', parentMessageId: 'x' };
+    const { chat, onFinish } = setup({
+      prepareRequest: jest.fn(() => ({
+        payload,
+        messages: [userMessage, placeholder, otherBranch],
+        responseMessageId: 'response-1',
+      })),
+    });
+    const unsubscribe = chat.subscribe(() => {
+      if (chat.messages.length > 0) {
+        void chat.stop();
+      }
+    });
+
+    await chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    unsubscribe();
+
+    expect(onFinish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        isAbort: true,
+        message: expect.objectContaining({ messageId: 'response-1' }),
+      }),
+    );
+  });
+
   it('cancels a start whose request is still being prepared, without writing it', async () => {
     let prepare: (value: { payload: TPayload; messages: TMessage[] }) => void = () => {};
     const { chat, transport, state, onFinish } = setup({
