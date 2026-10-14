@@ -1355,6 +1355,47 @@ describe('Chat', () => {
       await sent;
     });
 
+    it('drops a restored pause when an explicit reconnect names another generation', async () => {
+      const other = createStream({ streamId: 'convo-1', generationCreatedAt: 200 });
+      const { chat } = setup({}, { reconnectToStream: jest.fn(async () => other) });
+      chat.restorePendingAction(askAction, 100);
+
+      const resumed = chat.resumeStream({ streamId: 'convo-1', generationCreatedAt: 200 });
+      await flush();
+
+      expect(chat.pendingAction).toBeUndefined();
+      other.push(finalEvent());
+      await resumed;
+    });
+
+    it('ignores the replay of a pause it already resumed', async () => {
+      let attach: (() => void) | undefined;
+      const continuation = createStream({ streamId: 'convo-1' });
+      const { chat } = setup(
+        {},
+        {
+          reconnectToStream: jest.fn(
+            () =>
+              new Promise((resolve) => {
+                attach = () => resolve(continuation);
+              }),
+          ),
+        },
+      );
+      chat.restorePendingAction(askAction, 500);
+      const resumed = chat.resumeStream({ streamId: 'convo-1' });
+      await flush();
+      await chat.addToolOutput({ toolCallId: 'ask-1', output: 'Blue' });
+      attach?.();
+      await flush();
+      continuation.push({ type: 'pending_action', data: askAction });
+      await flush();
+
+      expect(chat.pendingAction).toBeUndefined();
+      continuation.push(finalEvent());
+      await resumed;
+    });
+
     it('holds new turns behind a restored pause until it is stopped on the server', async () => {
       const { chat, transport } = setup({ resumeSelection: () => ({ endpoint: 'agents' }) });
       chat.restorePendingAction(askAction, 500);
