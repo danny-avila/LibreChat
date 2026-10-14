@@ -11,6 +11,8 @@ export type StoredUploadRef = {
   /** Owner of the stored object; defaults to the requesting user. */
   user?: string;
   tenantId?: string;
+  /** Whether a vector copy exists; the delete strategies remove it only when this is set. */
+  embedded?: boolean;
 };
 
 export type StoredUploadCleanup = {

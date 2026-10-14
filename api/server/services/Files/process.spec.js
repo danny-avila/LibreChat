@@ -3561,6 +3561,27 @@ describe('stored upload cleanup across storage-before-record paths', () => {
     expectStoredObjectDeleted(req, { file_id: 'agent-file' });
   });
 
+  it('carries the vector copy into cleanup when the record fails after embedding', async () => {
+    const handleFileUpload = jest.fn().mockResolvedValue(storedFile);
+    getStrategyFunctions.mockReturnValue({ handleFileUpload, deleteFile });
+    uploadVectors.mockResolvedValue({ embedded: true, filename: 'doc.pdf' });
+    const req = makeReq();
+
+    await expect(
+      processAgentFileUpload({
+        req,
+        res: mockRes,
+        metadata: {
+          agent_id: 'agent-abc',
+          tool_resource: EToolResources.file_search,
+          file_id: 'agent-file',
+        },
+      }),
+    ).rejects.toThrow('db down');
+
+    expectStoredObjectDeleted(req, { file_id: 'agent-file', embedded: true });
+  });
+
   it('deletes the stored object when the vector upload fails', async () => {
     const handleFileUpload = jest.fn().mockResolvedValue(storedFile);
     getStrategyFunctions.mockReturnValue({ handleFileUpload, deleteFile });

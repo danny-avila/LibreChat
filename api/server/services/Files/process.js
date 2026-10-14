@@ -731,7 +731,7 @@ const processFileUpload = async ({ req, res, metadata, sseStream, openai: provid
 
   const target = resolveStoredUploadTarget({
     isAssistantUpload,
-    stored: { file_id: id ?? file_id, filepath, source },
+    stored: { file_id: id ?? file_id, filepath, source, embedded },
     convertedImage,
     storageMetadata,
   });
@@ -1043,6 +1043,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
           file_id,
           filepath,
           source,
+          embedded,
           ...getStorageMetadata({
             filepath,
             source,
@@ -1425,7 +1426,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     logger,
     recordExists: fileRecordExists,
     resolveDeleteFile: () => getStrategyFunctions(source).deleteFile,
-    stored: { file_id, filepath, source, ...storageMetadata },
+    stored: { file_id, filepath, source, embedded, ...storageMetadata },
   };
   const retentionExpiry = await withStoredUploadCleanup(
     { ...storedCleanup, trackWrite: true },
