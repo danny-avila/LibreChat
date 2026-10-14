@@ -10,5 +10,6 @@ export type {
   MessagePartsUser,
   MessagePartsToast,
   MessagePartMessage,
+  MessagePartsMarkdownProps,
   MessagePartsUserTextPreferences,
 } from './react/host';

@@ -347,6 +347,14 @@ export default [
             'hover-button-active',
             'open',
             'split-parent',
+            // Message-text markers the app's stylesheet paints; a @librechat/chat source cannot see
+            // that stylesheet, so its lint has no Tailwind entry that declares them.
+            'markdown',
+            'prose',
+            'message-content',
+            'submitting',
+            'result-streaming',
+            'result-thinking',
           ],
         },
       ],

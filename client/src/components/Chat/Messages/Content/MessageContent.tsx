@@ -1,6 +1,7 @@
 import { memo, Suspense, useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Alert, DelayedRender } from '@librechat/client';
+import { EmptyText, CollapsibleText } from '@librechat/chat/components';
 import { Constants, parseThinkingContent } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { TMessageContentProps, TDisplayProps } from '~/common';
@@ -8,9 +9,7 @@ import AttachmentRecoveryActions from '~/components/Messages/Content/Error/recov
 import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
 import Error from '~/components/Messages/Content/Error';
 import ToolCallLimitNotice from './ToolCallLimitNotice';
-import CollapsibleText from './Parts/CollapsibleText';
 import { useMessageContext } from '~/Providers';
-import EmptyText from './Parts/EmptyText';
 import MarkdownLite from './MarkdownLite';
 import EditMessage from './EditMessage';
 import Thinking from './Parts/Thinking';

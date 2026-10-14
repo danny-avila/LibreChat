@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react';
 import type { Dispatch, ReactNode, SetStateAction } from 'react';
-import type { TFile } from 'librechat-data-provider';
+import type { Agent, TFile } from 'librechat-data-provider';
 import type { TShowToast } from '@librechat/client';
 
 /** The message a part renders in, as its host reports it. */
@@ -31,10 +31,22 @@ export type MessagePartsUser = { name?: string; username?: string } | undefined;
 /** Shows a transient notification. */
 export type MessagePartsToast = (toast: TShowToast) => void;
 
+/** What a part asks the host's markdown renderer to draw. */
+export type MessagePartsMarkdownProps = {
+  /** The markdown source. */
+  content: string;
+  /** `full` for assistant text, `lite` for user-authored text rendered as markdown. */
+  variant: 'full' | 'lite';
+  /** Whether the text belongs to the tail of the active branch. */
+  isLatestMessage: boolean;
+};
+
 /**
  * Everything the message part components read from the app, supplied by the view that renders
  * them through `MessagePartsHostProvider`. Members are hooks, called unconditionally by the parts
- * that need them, so keyed reads subscribe to one key only. A host must stay the same object for
+ * that need them, so keyed reads subscribe to one key only; `render*` members are slots that return
+ * the app's own elements, for renderers too large to move (markdown) or owned elsewhere (icons).
+ * A host must stay the same object for
  * the life of the tree it wraps. Setters are typed as React dispatchers, so
  * the contract names no state library.
  *
@@ -44,6 +56,14 @@ export type MessagePartsToast = (toast: TShowToast) => void;
 export interface MessagePartsHost {
   /** The message the calling part renders in. */
   useMessage: () => MessagePartMessage;
+  /** Renders markdown with the app's renderer. */
+  renderMarkdown: (props: MessagePartsMarkdownProps) => ReactNode;
+  /** Whether streamed text fades in word by word: the viewer's setting, unless motion is reduced. */
+  useSmoothStreaming: () => boolean;
+  /** An agent the viewer can see, by id. */
+  useAgent: (agentId: string) => Agent | undefined;
+  /** Renders an agent's avatar; `undefined` when the agent is unknown. */
+  renderAgentIcon: (agent: Agent | undefined) => ReactNode;
   /** The viewer's font size utility, applied to reasoning and summary text. */
   useFontSize: () => string;
   /** Whether the viewer wants reasoning expanded by default. */

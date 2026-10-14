@@ -1,3 +1,6 @@
+/**
+ * @jest-environment jsdom
+ */
 import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import CollapsibleText from '../CollapsibleText';
@@ -6,9 +9,6 @@ let mockRemScale = 1;
 jest.mock('@librechat/client', () => ({
   ...jest.requireActual('@librechat/client'),
   useRemScale: () => mockRemScale,
-}));
-
-jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
 }));
 

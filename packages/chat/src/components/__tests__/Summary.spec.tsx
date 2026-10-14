@@ -1,16 +1,23 @@
+/**
+ * @jest-environment jsdom
+ */
 import React from 'react';
 import { render, screen } from '@testing-library/react';
+import type { MessagePartsHost } from '../../react/host';
+import { setDefaultMessagePartsHost } from '../../react/host';
 import Summary from '../Summary';
 
-jest.mock('~/hooks', () => ({
+jest.mock('@librechat/client', () => ({
+  ...jest.requireActual('@librechat/client'),
   useLocalize: () => (key: string) => key,
 }));
 
 const mockMessageContext = { current: { isSubmitting: false, isLatestMessage: false } };
 
-jest.mock('~/Providers', () => ({
-  useMessageContext: () => mockMessageContext.current,
-}));
+setDefaultMessagePartsHost({
+  useMessage: () => ({ messageId: 'msg-1', ...mockMessageContext.current }),
+  useFontSize: () => 'text-base',
+} as MessagePartsHost);
 
 const partialSummary = [{ type: 'text', text: 'Half a summary before the error' }] as never;
 

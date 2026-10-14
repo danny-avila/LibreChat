@@ -7,6 +7,10 @@ import { MessagePartsHostProvider, setDefaultMessagePartsHost, useMessagePartsHo
 
 const createHost = (fontSize: string): MessagePartsHost => ({
   useMessage: () => ({ messageId: 'm1' }),
+  renderMarkdown: ({ content }) => content,
+  useSmoothStreaming: () => false,
+  useAgent: () => undefined,
+  renderAgentIcon: () => null,
   useFontSize: () => fontSize,
   useShowThinking: () => false,
   useAutoExpandTools: () => false,

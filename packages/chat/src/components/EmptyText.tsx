@@ -1,5 +1,6 @@
 import { memo } from 'react';
-import { cn } from '~/utils';
+import { cn } from '@librechat/client';
+import type { NamedExoticComponent } from 'react';
 
 type EmptyTextPartProps = {
   /**
@@ -14,21 +15,23 @@ type EmptyTextPartProps = {
 };
 
 /** Streaming cursor placeholder — no bottom margin to match Container's structure and prevent CLS */
-const EmptyTextPart = memo(({ underHeaderIcon = false }: EmptyTextPartProps) => {
-  return (
-    <div
-      data-message-text
-      className="flex min-h-[1.25rem] flex-col items-start gap-3 overflow-visible"
-    >
-      <div className="markdown prose light w-full break-words">
-        <div className={cn('absolute', underHeaderIcon && 'ps-1.5')}>
-          <p className="submitting relative">
-            <span className="result-thinking" />
-          </p>
+const EmptyTextPart: NamedExoticComponent<EmptyTextPartProps> = memo(
+  ({ underHeaderIcon = false }: EmptyTextPartProps) => {
+    return (
+      <div
+        data-message-text
+        className="flex min-h-[1.25rem] flex-col items-start gap-3 overflow-visible"
+      >
+        <div className="markdown prose light w-full break-words">
+          <div className={cn('absolute', underHeaderIcon && 'ps-1.5')}>
+            <p className="submitting relative">
+              <span className="result-thinking" />
+            </p>
+          </div>
         </div>
       </div>
-    </div>
-  );
-});
+    );
+  },
+);
 
 export default EmptyTextPart;

@@ -1,12 +1,10 @@
 import { memo, useMemo, useState, useCallback, useRef, useId, useEffect } from 'react';
 import { Copy, Check } from 'lucide';
 import { ScrollText, ChevronDown, ChevronUp } from 'lucide-react';
-import { Button, MorphIcon, TooltipAnchor } from '@librechat/client';
+import { cn, Button, MorphIcon, useLocalize, TooltipAnchor } from '@librechat/client';
+import type { MouseEvent, FocusEvent, NamedExoticComponent } from 'react';
 import type { SummaryContentPart } from 'librechat-data-provider';
-import type { MouseEvent, FocusEvent } from 'react';
-import { useMessagePartsHost } from '~/Providers/MessagePartsHostContext';
-import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
+import { useMessagePartsHost } from '../react/host';
 
 type SummaryProps = Pick<
   SummaryContentPart,
@@ -200,7 +198,7 @@ const FloatingSummaryBar = memo(
   },
 );
 
-const Summary = memo(
+const Summary: NamedExoticComponent<SummaryProps> = memo(
   ({ content, model, provider, tokenCount, summarizing, failed, initiatedBy }: SummaryProps) => {
     const contentId = useId();
     const localize = useLocalize();

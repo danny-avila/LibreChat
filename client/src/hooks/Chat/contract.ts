@@ -281,6 +281,7 @@ export type {
   MessagePartsUser,
   MessagePartsToast,
   MessagePartMessage,
+  MessagePartsMarkdownProps,
   MessagePartsUserTextPreferences,
 } from '@librechat/chat/react';
 
