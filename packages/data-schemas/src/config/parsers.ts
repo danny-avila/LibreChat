@@ -359,6 +359,18 @@ function redactSetValue(
   return redacted;
 }
 
+function safely(read: () => boolean): boolean {
+  try {
+    return read();
+  } catch {
+    return false;
+  }
+}
+
+function readsTrue(record: Record<string | symbol, unknown>, key: string): boolean {
+  return safely(() => record[key] === true);
+}
+
 function readField(record: Record<string, unknown>, key: string): unknown {
   try {
     return record[key];
@@ -536,7 +548,7 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
     const outerBudget = redactionNodeBudget;
     redactionNodeBudget = MAX_REDACTION_NODES;
     const topSeen = new WeakMap<object, unknown>();
-    const skipsHeavyTopLevel = stripsHeavyFields && isErrorLike(info);
+    const skipsHeavyTopLevel = stripsHeavyFields && safely(() => isErrorLike(info));
 
     if (info.message !== undefined) {
       info.message = redactLogValue(info.message);
@@ -580,7 +592,7 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
 
     const cursors = new Map<string, number>();
     const fields: Record<string, unknown> = {};
-    const isAxios = infoRecord.isAxiosError === true;
+    const isAxios = readsTrue(infoRecord, 'isAxiosError');
     for (const key of Object.keys(info)) {
       if (key === 'message' || key === 'level') {
         continue;

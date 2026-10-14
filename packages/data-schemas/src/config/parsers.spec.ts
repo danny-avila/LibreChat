@@ -444,6 +444,17 @@ describe('redactMessage', () => {
     );
   });
 
+  it('survives a throwing isAxiosError marker', () => {
+    const record = { level: 'info', message: 'm' } as RedactInfo;
+    Object.defineProperty(record, 'isAxiosError', {
+      enumerable: true,
+      get: () => {
+        throw new Error('nope');
+      },
+    });
+    expect(() => runRedactFormat(record)).not.toThrow();
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),
