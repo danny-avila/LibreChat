@@ -110,6 +110,12 @@ describe('redactMessage', () => {
     expect(out).toContain('"b"');
   });
 
+  it('masks a quoted address whose space sits on the truncation boundary', () => {
+    const input = `${' '.repeat(8187)}"jane doe"@example.com;${'x'.repeat(2000)}`;
+    const out = String(runRedactFormat({ level: 'info', message: input }).message);
+    expect(out).not.toMatch(/jane/);
+  });
+
   it('keeps redaction of a long run without an address bounded', () => {
     const started = Date.now();
     const out = String(

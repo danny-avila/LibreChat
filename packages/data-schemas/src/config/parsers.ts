@@ -93,17 +93,11 @@ function redactLogString(str: string): string {
   }
 
   /**
-   * Redacts a bounded window past the cutoff, ending at whitespace, so an address that straddles
-   * the limit is matched whole before the kept prefix is cut.
+   * Redacts a bounded window past the cutoff before cutting, so an address that straddles the limit
+   * is matched whole. Only a local part longer than the slack could still be split by the window.
    */
   const window = str.substring(0, MAX_REDACTION_STRING_LENGTH + REDACTION_WINDOW_SLACK);
-  let boundary = window.length;
-  while (boundary > 0 && !/\s/u.test(window[boundary - 1])) {
-    boundary--;
-  }
-  const redacted = redactMessage(
-    boundary > MAX_REDACTION_STRING_LENGTH ? window.substring(0, boundary) : window,
-  );
+  const redacted = redactMessage(window);
   const kept = redacted.substring(0, MAX_REDACTION_STRING_LENGTH);
   return `${kept}... [truncated ${str.length - kept.length} chars]`;
 }
