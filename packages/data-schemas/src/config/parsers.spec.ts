@@ -1,5 +1,11 @@
 import winston from 'winston';
-import { debugTraverse, jsonTruncateFormat, redactFormat, redactMessage } from './parsers';
+import {
+  debugTraverse,
+  jsonTruncateFormat,
+  redactFormat,
+  redactMessage,
+  stripHeavyErrorFields,
+} from './parsers';
 
 const SPLAT_SYMBOL = Symbol.for('splat');
 const MESSAGE_SYMBOL = Symbol.for('message');
@@ -281,6 +287,38 @@ describe('redactMessage', () => {
       redactMessage(input);
       expect(Date.now() - started).toBeLessThan(500);
     }
+  });
+
+  it('redacts compact request info, splat errors and comma-edged URIs', () => {
+    const axiosError = Object.assign(new Error('boom'), {
+      isAxiosError: true,
+      config: { method: 'get', url: 'https://user@example.com/?api_key=secret' },
+    });
+    const wrapped = winston.format.combine(redactFormat(), stripHeavyErrorFields());
+    const out = wrapped.transform(
+      { level: 'error', message: 'm', [SPLAT_SYMBOL]: [axiosError] },
+      {},
+    );
+    expect(JSON.stringify(out)).not.toMatch(/secret|user@example/);
+    const topLevel = wrapped.transform(Object.assign(axiosError, { level: 'error' }) as never, {});
+    expect(JSON.stringify(topLevel)).not.toMatch(/secret|user@example/);
+    const edge = `${' '.repeat(8100)}postgresql://user:${'p'.repeat(1050)},${'q'.repeat(60)}@host/db end`;
+    expect(String(runRedactFormat({ level: 'info', message: edge }).message)).not.toContain('pppp');
+  });
+
+  it('does not clone heavy graphs of splat errors', () => {
+    let graph: Record<string, unknown> = { leaf: 'x' };
+    for (let depth = 0; depth < 6; depth++) {
+      graph = Object.fromEntries(Array.from({ length: 10 }, (_, index) => [`k${index}`, graph]));
+    }
+    const error = Object.assign(new Error('boom'), {
+      isAxiosError: true,
+      config: { method: 'get', url: 'https://example.test/', graph },
+      request: graph,
+    });
+    const started = Date.now();
+    runRedactFormat({ level: 'error', message: 'm', [SPLAT_SYMBOL]: [error] });
+    expect(Date.now() - started).toBeLessThan(500);
   });
 
   it('stays fast on adversarial 100k inputs for every redaction path', () => {

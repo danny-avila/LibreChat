@@ -58,6 +58,8 @@ const sensitiveKeys: RegExp[] = [
  */
 const EMAIL_PATTERN =
   /(?:(?<!\\)\\"(?:[^"\\\r\n]|\\{3}"|\\{4}|\\{2}(?!\\))*\\"|(?<!\\)"(?:[^"\\\r\n]|\\.)*"|(?<![^\s<>[\],;"])[^\s<>[\],;"]+)@(?:\[[^\]\s@]+\]|[^\s<>[\],;"@]+\.[^\s<>[\],;"@]+)/gu;
+/** Set while redacting splat arguments at levels whose later format strips heavy error fields. */
+let skipHeavyErrorFields = false;
 const REDACTION_WINDOW_SLACK = 1024;
 const REDACTED_EMAIL_VALUE = '[REDACTED_EMAIL]';
 
@@ -87,7 +89,8 @@ function redactMessage(str: string, trimLength?: number): string {
   return redacted;
 }
 
-const EMAIL_TOKEN_DELIMITER = /[\s<>[\],;"]/u;
+/** Whitespace and angle brackets only: commas, quotes and brackets can sit inside one token. */
+const EMAIL_TOKEN_DELIMITER = /[\s<>]/u;
 const QUOTE_OR_ADDRESS = /"(?:[^"\\\r\n]|\\.)*"@|"/gu;
 
 /** Drops a token cut by the window edge: its terminator is unseen, so no pattern could match it. */
@@ -222,6 +225,25 @@ function redactErrorValue(error: Error, seen: WeakMap<object, unknown>, depth: n
     const descriptor = Object.getOwnPropertyDescriptor(error, key);
     if (descriptor === undefined) {
       return;
+    }
+    if (skipHeavyErrorFields && typeof key === 'string') {
+      const isAxios = (error as { isAxiosError?: unknown }).isAxiosError === true;
+      if (isAxios && key === 'config') {
+        const compact = compactRequestInfo(descriptor.value);
+        if (compact !== undefined) {
+          defineRedactedDescriptor(
+            redacted,
+            key,
+            { ...descriptor, value: compact },
+            seen,
+            depth + 1,
+          );
+        }
+        return;
+      }
+      if (HEAVY_ERROR_KEYS.has(key) || (isAxios && AXIOS_ONLY_HEAVY_KEYS.has(key))) {
+        return;
+      }
     }
     defineRedactedDescriptor(redacted, key, descriptor, seen, depth + 1);
   });
@@ -473,6 +495,7 @@ function sanitizedCopy(
 const redactFormat: winston.Logform.FormatWrap = winston.format(
   (info: winston.Logform.TransformableInfo) => {
     const infoRecord = info as Record<string | symbol, unknown>;
+    const stripsHeavyFields = info.level === 'error' || info.level === 'warn';
 
     if (info.message !== undefined) {
       info.message = redactLogValue(info.message);
@@ -496,12 +519,16 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
     }
 
     if (infoRecord[SPLAT_SYMBOL] !== undefined) {
-      infoRecord[SPLAT_SYMBOL] = redactLogValue(infoRecord[SPLAT_SYMBOL]);
+      skipHeavyErrorFields = stripsHeavyFields;
+      try {
+        infoRecord[SPLAT_SYMBOL] = redactLogValue(infoRecord[SPLAT_SYMBOL]);
+      } finally {
+        skipHeavyErrorFields = false;
+      }
     }
 
     const cursors = new Map<string, number>();
     const fields: Record<string, unknown> = {};
-    const stripsHeavyFields = info.level === 'error' || info.level === 'warn';
     const isAxios = infoRecord.isAxiosError === true;
     for (const key of Object.keys(info)) {
       if (key === 'message' || key === 'level') {
@@ -687,7 +714,7 @@ const compactRequestInfo = (config: unknown): { method?: unknown; url?: unknown 
   if (method === undefined && url === undefined) {
     return undefined;
   }
-  return { method, url };
+  return { method, url: typeof url === 'string' ? redactLogString(url) : url };
 };
 
 const compactResponse = (response: unknown): Record<string, unknown> | undefined => {
