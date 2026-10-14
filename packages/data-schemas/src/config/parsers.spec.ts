@@ -553,6 +553,22 @@ describe('redactMessage', () => {
     expect(JSON.stringify(top)).not.toContain('jane');
   });
 
+  it('neutralizes inherited serializer hooks', () => {
+    class Hooked extends Error {
+      toJSON() {
+        return { email: 'jane@example.com' };
+      }
+    }
+    const direct = runRedactFormat(new Hooked('boom') as unknown as RedactInfo);
+    expect(JSON.stringify(direct)).not.toContain('jane');
+    const nested = runRedactFormat({
+      level: 'info',
+      message: 'm',
+      [SPLAT_SYMBOL]: [new Hooked('x')],
+    });
+    expect(JSON.stringify(nested[SPLAT_SYMBOL])).not.toContain('jane');
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),

@@ -229,6 +229,7 @@ function redactErrorValue(error: Error, seen: WeakMap<object, unknown>, depth: n
   const redacted = Object.create(Object.getPrototypeOf(error)) as Error & Record<string, unknown>;
   seen.set(error, redacted);
   const cursors = new Map<string, number>();
+  neutralizeSerializer(redacted);
 
   defineRedactedErrorProperty(redacted, 'name', error.name);
   defineRedactedErrorProperty(redacted, 'message', error.message);
@@ -361,6 +362,23 @@ function redactSetValue(
     count += 1;
   }
   return redacted;
+}
+
+/** Shadows an inherited `toJSON` with an inert own property so no hook runs after redaction. */
+function neutralizeSerializer(target: object): boolean {
+  if (typeof (target as { toJSON?: unknown }).toJSON !== 'function') {
+    return true;
+  }
+  try {
+    Object.defineProperty(target, 'toJSON', {
+      value: undefined,
+      enumerable: false,
+      configurable: true,
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function safely(read: () => boolean): boolean {
@@ -669,6 +687,9 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
       }
     }
     redactionNodeBudget = outerBudget;
+    if (!neutralizeSerializer(info)) {
+      replaceFailed = true;
+    }
     return replaceFailed ? sanitizedCopy(infoRecord, fields, redactedStack) : info;
   },
 );
