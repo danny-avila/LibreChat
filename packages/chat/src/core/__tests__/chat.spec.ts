@@ -725,6 +725,7 @@ describe('Chat', () => {
       {
         sendMessages: jest.fn(async () => ({
           status: 'replaced' as const,
+          generationProtocolVersion: 2,
           conversationId: 'convo-1',
           streamId: 'stream-2',
           generationCreatedAt: 200,
@@ -749,6 +750,7 @@ describe('Chat', () => {
       {
         sendMessages: jest.fn(async () => ({
           status: 'replaced' as const,
+          generationProtocolVersion: 2,
           conversationId: 'convo-1',
           streamId: 'stream-2',
           generationCreatedAt: 200,
@@ -784,6 +786,7 @@ describe('Chat', () => {
       {
         sendMessages: jest.fn(async () => ({
           status: 'replaced' as const,
+          generationProtocolVersion: 2,
           conversationId: 'convo-1',
           streamId: 'stream-2',
           generationCreatedAt: 200,
@@ -1053,6 +1056,101 @@ describe('Chat', () => {
     await secondTurn;
   });
 
+  it('stops an Assistants run by the ids its sync frame assigned', async () => {
+    const stream = createStream();
+    const { chat, transport } = setup(
+      {
+        id: 'new',
+        prepareRequest: jest.fn(() => ({
+          payload: { endpoint: 'assistants', text: 'Hi' } as TPayload,
+          messages: [userMessage, placeholder],
+          responseMessageId: 'response-1',
+        })),
+      },
+      { sendMessages: jest.fn(async () => ({ status: 'stream' as const, stream })) },
+    );
+    transport.abort.mockResolvedValue({ final: true, conversation: {}, runMessages: [] });
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    stream.push({
+      type: 'sync',
+      data: { sync: true, conversationId: 'convo-9', responseMessage: { messageId: 'server-2' } },
+    } as ChatEvent);
+    await flush();
+
+    await chat.stop();
+    await sent;
+
+    expect(transport.abort).toHaveBeenCalledWith(
+      expect.objectContaining({ abortKey: 'convo-9:server-2' }),
+    );
+  });
+
+  it('refuses a replacement the server did not report under protocol v2', async () => {
+    const { chat, transport, onError } = setup(
+      {},
+      {
+        sendMessages: jest.fn(async () => ({
+          status: 'replaced' as const,
+          conversationId: 'convo-1',
+          streamId: 'stream-2',
+          generationCreatedAt: 200,
+        })),
+      },
+    );
+
+    await chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+
+    expect(transport.reconnectToStream).not.toHaveBeenCalled();
+    expect(chat.status).toBe('error');
+    expect(onError).toHaveBeenCalled();
+  });
+
+  it('reports reconnecting while a reattachment opens', async () => {
+    let attach: ((stream: null) => void) | undefined;
+    const { chat } = setup(
+      {},
+      {
+        reconnectToStream: jest.fn(
+          () =>
+            new Promise<null>((resolve) => {
+              attach = resolve;
+            }),
+        ),
+      },
+    );
+
+    const resumed = chat.resumeStream({ streamId: 'convo-1' });
+    expect(chat.connection).toBe('reconnecting');
+    attach?.(null);
+    await resumed;
+    expect(chat.connection).toBe('idle');
+  });
+
+  it('settles a final frame that asks for reconciliation instead of completing it', async () => {
+    const { chat, stream, onFinish } = setup();
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    stream.push({
+      type: 'final',
+      data: {
+        final: true,
+        reconcile: true,
+        reconcileReason: 'abort_persistence_failed',
+        terminalStatus: 'aborted',
+      },
+    } as ChatEvent);
+    await sent;
+
+    expect(onFinish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        isAbort: true,
+        isSettled: true,
+        reconcileReason: 'abort_persistence_failed',
+      }),
+    );
+  });
+
   it('accepts a stop the run had already settled', async () => {
     const { chat, stream, transport } = setup();
     transport.abort.mockImplementation(async () => {
@@ -1092,6 +1190,7 @@ describe('Chat', () => {
               open = () =>
                 resolve({
                   status: 'replaced',
+                  generationProtocolVersion: 2,
                   conversationId: 'convo-1',
                   streamId: 'stream-2',
                   generationCreatedAt: 200,
@@ -1738,6 +1837,17 @@ describe('Chat', () => {
       );
       stream.push(finalEvent());
       await sent;
+    });
+
+    it('does not restore an expired pause, and drops the one it held', async () => {
+      const { chat } = setup();
+      chat.restorePendingAction(askAction, 500);
+
+      chat.restorePendingAction({ ...askAction, expiresAt: Date.now() - 1 }, 500);
+
+      expect(chat.pendingAction).toBeUndefined();
+      chat.restorePendingAction({ ...approvalAction, expiresAt: Date.now() - 1 }, 500);
+      expect(chat.pendingAction).toBeUndefined();
     });
 
     it('holds new turns behind a restored pause until it is stopped on the server', async () => {
