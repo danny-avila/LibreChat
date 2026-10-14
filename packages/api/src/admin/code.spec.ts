@@ -363,8 +363,11 @@ describe('createAdminCodeEnvironmentHandlers', () => {
 
       await build(fetchImpl, recordAuditEntry).createPairing(request(), mockResponse());
 
-      expect(recordAuditEntry).toHaveBeenCalledTimes(1);
-      const input = recordAuditEntry.mock.calls[0][0];
+      expect(recordAuditEntry.mock.calls.map(([entry]) => entry.outcome ?? 'success')).toEqual([
+        'pending',
+        'success',
+      ]);
+      const input = recordAuditEntry.mock.calls[1][0];
       expect(input).toEqual(
         expect.objectContaining({
           action: 'code_worker.paired',
@@ -373,11 +376,15 @@ describe('createAdminCodeEnvironmentHandlers', () => {
       );
       expect(input.tenantId).toBeUndefined();
       expect(input.metadata.boundTenantId).toEqual(expect.any(String));
-      expect(JSON.stringify(input)).not.toContain('one-time-code-value-that-is-long');
-      expect(JSON.stringify(input)).not.toContain('administrator-bootstrap-token');
+      expect(JSON.stringify(recordAuditEntry.mock.calls)).not.toContain(
+        'one-time-code-value-that-is-long',
+      );
+      expect(JSON.stringify(recordAuditEntry.mock.calls)).not.toContain(
+        'administrator-bootstrap-token',
+      );
     });
 
-    it('records code_worker.revoked before the call and a failure entry when it is not confirmed', async () => {
+    it('records code_worker.revoked as pending, then success or a failure entry when it is not confirmed', async () => {
       const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
       const ok = jest.fn().mockResolvedValue(Response.json({ protocolVersion: 1, revoked: true }));
       const bad = jest
@@ -385,12 +392,17 @@ describe('createAdminCodeEnvironmentHandlers', () => {
         .mockResolvedValue(Response.json({ protocolVersion: 1, revoked: false }));
 
       await build(ok, recordAuditEntry).revokeWorker(request(), mockResponse());
-      expect(recordAuditEntry).toHaveBeenCalledTimes(1);
-      expect(recordAuditEntry).toHaveBeenCalledWith(
+      expect(recordAuditEntry).toHaveBeenCalledTimes(2);
+      expect(recordAuditEntry).toHaveBeenNthCalledWith(
+        1,
         expect.objectContaining({
           action: 'code_worker.revoked',
+          outcome: 'pending',
           target: { type: 'code_worker', id: 'vm-1', name: 'attached-vm' },
         }),
+      );
+      expect(recordAuditEntry).toHaveBeenLastCalledWith(
+        expect.objectContaining({ action: 'code_worker.revoked', outcome: 'success' }),
       );
 
       recordAuditEntry.mockClear();
@@ -416,10 +428,30 @@ describe('createAdminCodeEnvironmentHandlers', () => {
 
       await build(fetchImpl, recordAuditEntry).createPairing(request(), mockResponse());
 
-      expect(order).toEqual(['audit:success', 'bridge', 'audit:failure']);
+      expect(order).toEqual(['audit:pending', 'bridge', 'audit:failure']);
       expect(recordAuditEntry).toHaveBeenLastCalledWith(
         expect.objectContaining({ metadata: expect.objectContaining({ code: 'bridge_rejected' }) }),
       );
+    });
+
+    it('sends the revocation without waiting for a slow pending audit write', async () => {
+      const order: string[] = [];
+      let release: () => void = () => undefined;
+      const recordAuditEntry = jest.fn().mockImplementation(async (input) => {
+        if (input.outcome === 'pending') {
+          await new Promise<void>((resolve) => (release = resolve));
+        }
+        order.push(`audit:${input.outcome ?? 'success'}`);
+      });
+      const fetchImpl = jest.fn().mockImplementation(async () => {
+        order.push('bridge');
+        release();
+        return Response.json({ protocolVersion: 1, revoked: true });
+      });
+
+      await build(fetchImpl, recordAuditEntry).revokeWorker(request(), mockResponse());
+
+      expect(order).toEqual(['bridge', 'audit:pending', 'audit:success']);
     });
 
     it('never blocks a revocation on an audit outage, even when fail-closed', async () => {
