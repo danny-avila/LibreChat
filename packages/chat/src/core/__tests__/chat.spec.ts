@@ -1164,6 +1164,27 @@ describe('Chat', () => {
     expect(chat.status).toBe('ready');
   });
 
+  it('reports a reattachment the stop found already finished as settled', async () => {
+    const { chat, transport, onFinish } = setup(
+      { resumeSelection: () => ({ endpoint: 'agents' }) },
+      { reconnectToStream: jest.fn(() => new Promise<null>(() => undefined)) },
+    );
+    transport.abort.mockResolvedValue({
+      success: false,
+      settled: true,
+      terminalStatus: 'complete',
+    });
+
+    const resumed = chat.resumeStream({ streamId: 'convo-1' });
+    await flush();
+    await chat.stop();
+    await resumed;
+
+    expect(onFinish).toHaveBeenCalledWith(
+      expect.objectContaining({ isAbort: false, isSettled: true }),
+    );
+  });
+
   it('accepts a stop the run had already settled', async () => {
     const { chat, stream, transport } = setup();
     transport.abort.mockImplementation(async () => {
