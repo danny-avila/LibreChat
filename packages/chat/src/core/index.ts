@@ -5,3 +5,4 @@ export * from './types';
 export * from './reducer';
 export * from './executor';
 export * from './transport';
+export * from './view';

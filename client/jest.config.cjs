@@ -35,6 +35,7 @@ module.exports = {
     '^~/(.*)$': '<rootDir>/src/$1',
     '^@librechat/client$': '<rootDir>/../packages/client/dist/index.cjs',
     '^@librechat/chat$': '<rootDir>/../packages/chat/dist/index.cjs',
+    '^@librechat/chat/react$': '<rootDir>/../packages/chat/dist/react.cjs',
     '^librechat-data-provider/react-query$':
       '<rootDir>/../node_modules/librechat-data-provider/src/react-query',
   },
