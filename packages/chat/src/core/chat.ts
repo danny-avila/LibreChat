@@ -16,6 +16,7 @@ import type {
   ChatTransport,
   ChatConnection,
   ChatRequestOptions,
+  ChatSendResult,
   ChatResumeSelection,
 } from './types';
 import { SerialJobExecutor } from './executor';
@@ -155,16 +156,16 @@ const untilAborted = <T>(value: T | Promise<T>, signal: AbortSignal): Promise<T>
       .finally(() => signal.removeEventListener('abort', onAbort));
   });
 
-/** Races opening a stream with cancellation, and closes a stream that opens after it. */
+/** Races opening a stream with cancellation, and hands `onLate` what opens after it. */
 const openUntilAborted = <T>(
   opening: Promise<T>,
   signal: AbortSignal,
-  toStream: (value: T) => ChatStream | null,
+  onLate: (value: T) => void,
 ): Promise<T> => {
   void opening.then(
     (value) => {
       if (signal.aborted) {
-        toStream(value)?.close();
+        onLate(value);
       }
     },
     () => undefined,
@@ -353,7 +354,7 @@ export class Chat {
           abortSignal: active.controller.signal,
         }),
         active.controller.signal,
-        (opened) => opened,
+        (opened) => opened?.close(),
       );
       if (!stream) {
         /** Nothing is running, so a restored pause ended elsewhere; published as one change. */
@@ -408,6 +409,24 @@ export class Chat {
     if (active.paused && this.action?.actionId === active.paused) {
       this.clearAction();
     }
+  }
+
+  /**
+   * Drops a start that reached the server after it was cancelled. A stop also ends its generation
+   * there; a disposal leaves it running, as it does an attached one.
+   */
+  private dropLateStart(active: ActiveRequest, sent: ChatSendResult): void {
+    if (sent.status === 'stream') {
+      sent.stream.close();
+    }
+    if (this.disposed || !active.endpoint || sent.status === 'settled') {
+      return;
+    }
+    const target =
+      sent.status === 'stream'
+        ? { streamId: sent.stream.streamId, generationCreatedAt: sent.stream.generationCreatedAt }
+        : { streamId: sent.streamId, generationCreatedAt: sent.generationCreatedAt };
+    void this.abortOnServer({ endpoint: active.endpoint, ...target }).catch(() => undefined);
   }
 
   private async abortOnServer(target: {
@@ -613,8 +632,12 @@ export class Chat {
           abortSignal: signal,
         }),
         signal,
-        (sent) => (sent.status === 'stream' ? sent.stream : null),
+        (sent) => this.dropLateStart(active, sent),
       );
+      if (signal.aborted) {
+        this.dropLateStart(active, result);
+        throw signal.reason;
+      }
       let stream: ChatStream | null = null;
       if (result.status === 'stream') {
         stream = result.stream;
@@ -630,7 +653,7 @@ export class Chat {
             abortSignal: signal,
           }),
           signal,
-          (opened) => opened,
+          (opened) => opened?.close(),
         );
       }
       if (!stream) {
@@ -665,7 +688,9 @@ export class Chat {
           break;
         }
         await this.executor.run(() => {
-          outcome = this.apply(event);
+          if (!signal.aborted) {
+            outcome = this.apply(event);
+          }
         });
         if (event.type === 'pending_action') {
           active.paused = event.data.actionId;
