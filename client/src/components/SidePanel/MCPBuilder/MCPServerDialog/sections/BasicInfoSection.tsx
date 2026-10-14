@@ -3,7 +3,7 @@ import { useFormContext } from 'react-hook-form';
 import { Input, Label, Textarea } from '@librechat/client';
 import { MAX_MCP_ICON_PATH_LENGTH, MCP_SERVER_TITLE_PATTERN } from 'librechat-data-provider';
 import type { MCPServerFormData } from '../hooks/useMCPServerForm';
-import { cn, sanitizeSvg, svgToDataUri, validateEmail } from '~/utils';
+import { sanitizeSvg, svgToDataUri, validateEmail } from '~/utils';
 import MCPIcon from '~/components/SidePanel/Agents/MCPIcon';
 import { useLocalize } from '~/hooks';
 
@@ -98,7 +98,6 @@ export default function BasicInfoSection() {
                 message: localize('com_ui_mcp_title_invalid'),
               },
             })}
-            className={cn(errors.title && 'border-border-destructive')}
           />
           {errors.title && (
             <p id="mcp-title-error" role="alert" className="text-text-destructive text-xs">
@@ -142,7 +141,6 @@ export default function BasicInfoSection() {
                 message: localize('com_ui_support_contact_name_min_length', { minLength: 3 }),
               },
             })}
-            className={cn(errors.support_contact?.name && 'border-border-destructive')}
           />
           {errors.support_contact?.name && (
             <p
@@ -172,7 +170,6 @@ export default function BasicInfoSection() {
               validate: (value) =>
                 validateEmail(value, localize('com_ui_support_contact_email_invalid')),
             })}
-            className={cn(errors.support_contact?.email && 'border-border-destructive')}
           />
           {errors.support_contact?.email && (
             <p

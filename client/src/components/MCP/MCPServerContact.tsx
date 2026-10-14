@@ -38,7 +38,7 @@ export default function MCPServerContact({ server, className = '' }: MCPServerCo
       <span className="shrink-0">{localize('com_ui_mcp_contact')}:</span>
       <span className="min-w-0 truncate">
         {supportEmail ? (
-          <a href={`mailto:${supportEmail}`} className="text-primary hover:underline">
+          <a href={`mailto:${supportEmail}`} className="text-text-primary hover:underline">
             {name}
           </a>
         ) : (

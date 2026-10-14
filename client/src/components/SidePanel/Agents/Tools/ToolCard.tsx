@@ -117,10 +117,10 @@ function ToolCardImpl({
      description sits under the buttons for as long as the card is on screen. */
     <div
       className={cn(
-        'group relative flex h-32 w-full flex-col overflow-hidden rounded-2xl border touch:h-36',
+        'group touch:h-36 relative flex h-32 w-full flex-col overflow-hidden rounded-2xl border',
         selected
           ? 'border-status-success bg-status-success/10 shadow-xs'
-          : 'border-border-light hover:border-border-medium hover:bg-surface-tertiary hover:shadow-xs bg-transparent',
+          : 'border-border-light hover:border-border-medium hover:bg-surface-tertiary bg-transparent hover:shadow-xs',
       )}
     >
       <button
@@ -128,7 +128,7 @@ function ToolCardImpl({
         onClick={() => onToggle(item)}
         aria-pressed={selected}
         className={cn(
-          'flex h-full w-full cursor-pointer flex-col gap-2 rounded-2xl p-4 text-left touch:pb-9',
+          'touch:pb-9 flex h-full w-full cursor-pointer flex-col gap-2 rounded-2xl p-4 text-left',
           showMcpContact && 'pb-9',
           'focus-visible:ring-ring-primary focus:outline-hidden focus-visible:ring-2',
         )}
@@ -175,7 +175,7 @@ function ToolCardImpl({
         {description ? (
           <p className="text-text-secondary line-clamp-3 text-xs leading-snug">{description}</p>
         ) : (
-          <p className="text-text-tertiary line-clamp-3 text-xs italic leading-snug">
+          <p className="text-text-tertiary line-clamp-3 text-xs leading-snug italic">
             {isNative ? localize('com_ui_tools_native_short') : kindLabel}
           </p>
         )}
@@ -216,11 +216,11 @@ function ToolCardImpl({
       {showMcpContact && item.kind === 'mcp' && (
         <MCPServerContact
           server={item.server}
-          className="[&_a]:!text-text-secondary pointer-events-none absolute bottom-3 left-4 right-20 z-10 text-xs [&_a]:pointer-events-auto [&_a]:font-normal"
+          className="[&_a]:!text-text-secondary pointer-events-none absolute right-20 bottom-3 left-4 z-10 text-xs [&_a]:pointer-events-auto [&_a]:font-normal"
         />
       )}
       {(canFavorite || canConfigure || showInfoOnly) && (
-        <div className="absolute bottom-2 right-2 flex items-center gap-1">
+        <div className="absolute right-2 bottom-2 flex items-center gap-1">
           {(canConfigure || showInfoOnly) && (
             <button
               type="button"
@@ -234,7 +234,7 @@ function ToolCardImpl({
               className={cn(
                 'text-text-secondary flex size-7 items-center justify-center rounded-lg',
                 'hover:bg-surface-hover hover:text-text-primary transition duration-150',
-                'group-focus-within:opacity-100 group-hover:opacity-100 no-touch:opacity-0',
+                'no-touch:opacity-0 group-focus-within:opacity-100 group-hover:opacity-100',
                 'focus-visible:ring-ring-primary focus:outline-hidden focus-visible:opacity-100 focus-visible:ring-2',
               )}
             >
