@@ -422,25 +422,44 @@ function redactLogValue(value: unknown, seen = new WeakMap<object, unknown>(), d
   return redactObjectEntries(value, seen, depth) ?? {};
 }
 
-/** Writes a redacted field back without letting a read-only or getter-only property abort logging. */
+/** Writes a redacted field back; returns false when a read-only property refuses the write. */
 function setLogField(
   target: Record<string, unknown>,
   key: string,
   safeKey: string,
   value: unknown,
-) {
+): boolean {
   try {
     if (safeKey !== key) {
       delete target[key];
     }
     target[safeKey] = value;
+    return true;
   } catch {
     try {
       Object.defineProperty(target, safeKey, { value, configurable: true, writable: true });
+      return true;
     } catch {
-      /* a frozen field is left as-is rather than failing the log call */
+      return false;
     }
   }
+}
+
+/** Rebuilds the record as a plain writable copy when some field could not be replaced in place. */
+function sanitizedCopy(
+  info: Record<string | symbol, unknown>,
+  fields: Record<string, unknown>,
+): winston.Logform.TransformableInfo {
+  const copy: Record<string | symbol, unknown> = {};
+  for (const symbol of Object.getOwnPropertySymbols(info)) {
+    copy[symbol] = info[symbol];
+  }
+  copy.level = info.level;
+  copy.message = info.message;
+  if (typeof info.stack === 'string') {
+    copy.stack = info.stack;
+  }
+  return Object.assign(copy, fields) as winston.Logform.TransformableInfo;
 }
 
 /**
@@ -472,6 +491,8 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
     }
 
     const cursors = new Map<string, number>();
+    const fields: Record<string, unknown> = {};
+    let replaceFailed = false;
     for (const key of Object.keys(info)) {
       if (key === 'message' || key === 'level') {
         continue;
@@ -482,9 +503,12 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
         (candidate) => candidate !== key && Object.prototype.hasOwnProperty.call(info, candidate),
         cursors,
       );
-      setLogField(infoRecord, key, safeKey, value);
+      fields[safeKey] = value;
+      if (!setLogField(infoRecord, key, safeKey, value)) {
+        replaceFailed = true;
+      }
     }
-    return info;
+    return replaceFailed ? sanitizedCopy(infoRecord, fields) : info;
   },
 );
 

@@ -235,8 +235,13 @@ describe('redactMessage', () => {
       }
     }
     const error = new DetailError('boom');
-    Object.defineProperty(error, 'detail', { enumerable: true, get: () => 'jane@example.com' });
-    expect(() => runRedactFormat(error as unknown as RedactInfo)).not.toThrow();
+    Object.defineProperty(error, 'detail', {
+      enumerable: true,
+      configurable: false,
+      get: () => 'jane@example.com',
+    });
+    const out = runRedactFormat(error as unknown as RedactInfo) as unknown as { detail: string };
+    expect(out.detail).not.toContain('jane');
   });
 
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
