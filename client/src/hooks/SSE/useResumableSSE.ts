@@ -3497,8 +3497,10 @@ export default function useResumableSSE(
           // auto-sending queued messages the user may not want fired. A run this
           // pane left and came back to is the exception: the history just read
           // names its response by epoch, which is the outcome it would have had.
-          // History read before the job finished may not hold that response yet,
-          // so an unresolved marker outlives this end for the next visit to read.
+          // History read before the job finished may not hold that response yet, or
+          // may hold only the unfinished snapshot saved when the pane left, so a
+          // marker that read leaves unresolved or stopped outlives this end for the
+          // next visit, which reads history after the job is known to be done.
           const detachedRun = jotaiStore.get(detachedRunByConvoId(recoveryConvoId));
           const detachedResolvable =
             detachedRun != null &&
@@ -3515,7 +3517,10 @@ export default function useResumableSSE(
               ...detachedEnd,
               startedAsNewConvo: optimisticStreamIdsRef.current.has(currentStreamId),
             },
-            { retainDetached: detachedResolvable && detachedEnd == null },
+            {
+              retainDetached:
+                detachedResolvable && (detachedEnd == null || detachedEnd.outcome === 'aborted'),
+            },
           );
           setStreamId(null);
           optimisticStreamIdsRef.current.delete(currentStreamId);
