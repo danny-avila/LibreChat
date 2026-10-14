@@ -176,6 +176,18 @@ describe('redactMessage', () => {
     expect(out).toContain('aaaa');
   });
 
+  it('masks a quoted local part of any length', () => {
+    expect(redactMessage(`"${'a'.repeat(200)}"@blocked.example ok`)).toBe('[REDACTED_EMAIL] ok');
+  });
+
+  it('keeps the uncapped matcher linear on quote and escape floods', () => {
+    for (const input of ['\\"'.repeat(50000), '"\\"'.repeat(30000), '"a'.repeat(50000)]) {
+      const started = Date.now();
+      redactMessage(input);
+      expect(Date.now() - started).toBeLessThan(500);
+    }
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),
