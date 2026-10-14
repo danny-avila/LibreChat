@@ -272,12 +272,17 @@ export function canResolveDetachedRun(run: DetachedRun): boolean {
   return run.isRegenerate !== true || run.generationCreatedAt != null;
 }
 
+/** A cancelled or dead receipt settled without starting a successor, so it never owns a boundary. */
+const mayHaveAdmitted = (receipt: SettledQueuedTurnReceipt): boolean =>
+  receipt.status !== 'cancelled' && receipt.status !== 'dead';
+
 /**
  * Whether a detached run's end must be left for a manual send instead of read from history, which
  * retires its marker. Three runs qualify: one the user stopped, whose response persists like a
  * completed one (a stopped compaction even settles with `unfinished: false`); a regeneration with
  * no epoch, whose new reply history cannot tell from the old one; and a run with no epoch whose
  * queue the server shares, since the drain cannot match its end to a server admission receipt.
+ * Receipts that settled without an admission do not count as sharing it.
  */
 export function isDetachedRunManual(
   get: Getter,
@@ -294,7 +299,7 @@ export function isDetachedRunManual(
     return false;
   }
   return (
-    get(settledQueuedTurnReceiptsByConvoId(conversationId)).length > 0 ||
+    get(settledQueuedTurnReceiptsByConvoId(conversationId)).some(mayHaveAdmitted) ||
     get(queuedMessagesByConvoId(conversationId)).some((item) => item.server != null)
   );
 }

@@ -231,4 +231,22 @@ describe('isDetachedRunManual', () => {
     ]);
     expect(isDetachedRunManual(serverRow.get, CONVO, epochless)).toBe(true);
   });
+
+  it('resolves an epochless run whose only receipts settled without an admission', () => {
+    const store = createStore();
+    store.set(settledQueuedTurnReceiptsByConvoId(CONVO), [
+      { clientRequestId: 'queued-1', status: 'cancelled' },
+      { clientRequestId: 'queued-2', status: 'dead' },
+    ]);
+    store.set(queuedMessagesByConvoId(CONVO), [{ id: 'row-1', text: 'next', createdAt: 1 }]);
+    expect(isDetachedRunManual(store.get, CONVO, epochless)).toBe(false);
+
+    for (const status of ['admitted_pending_boundary', 'indeterminate'] as const) {
+      const pending = createStore();
+      pending.set(settledQueuedTurnReceiptsByConvoId(CONVO), [
+        { clientRequestId: 'queued-1', status },
+      ]);
+      expect(isDetachedRunManual(pending.get, CONVO, epochless)).toBe(true);
+    }
+  });
 });
