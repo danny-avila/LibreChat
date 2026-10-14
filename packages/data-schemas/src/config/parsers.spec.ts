@@ -455,6 +455,41 @@ describe('redactMessage', () => {
     expect(() => runRedactFormat(record)).not.toThrow();
   });
 
+  it('masks URL-encoded addresses, drops fields past the budget and never keeps raw heavy fields', () => {
+    expect(redactMessage('GET /v1?email=jane%40example.com&x=1')).toBe(
+      'GET /v1?email=[REDACTED_EMAIL]&x=1',
+    );
+    const started = Date.now();
+    redactMessage('a'.repeat(100000));
+    redactMessage('a%40'.repeat(30000));
+    expect(Date.now() - started).toBeLessThan(500);
+    const wide = Object.fromEntries(
+      Array.from({ length: 20000 }, (_, index) => [`n${index}`, index]),
+    );
+    const out = runRedactFormat({ level: 'info', message: 'm', ...wide } as RedactInfo);
+    expect(Object.keys(out).length).toBeLessThan(6000);
+    const config = {
+      method: 'get',
+      url: 'https://example.test/',
+      headers: { authorization: 'Bearer secretcanary' },
+    };
+    Object.defineProperty(config, 'method', {
+      enumerable: false,
+      get: () => {
+        throw new Error('nope');
+      },
+    });
+    const axiosRecord = {
+      level: 'error',
+      message: 'm',
+      isAxiosError: true,
+      config,
+      request: { a: 1 },
+    };
+    const result = runRedactFormat(axiosRecord as RedactInfo);
+    expect(JSON.stringify(result)).not.toContain('secretcanary');
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),

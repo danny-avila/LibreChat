@@ -63,6 +63,9 @@ const EMAIL_PATTERN =
   /(?:(?<!\\)\\"(?:[^"\\\r\n]|\\{3}"|\\{4}|\\{2}(?!\\)|\\[bfnrt/]|\\u[0-9a-fA-F]{4})*\\"|(?<!\\)"(?:[^"\\\r\n]|\\.)*"|(?<![^\s<>[\],;"])[^\s<>[\],;"]+)@(?:\[[^\]\s@]+\]|[^\s<>[\],;"@]+\.[^\s<>[\],;"@]+)/gu;
 /** Set while redacting splat arguments at levels whose later format strips heavy error fields. */
 let skipHeavyErrorFields = false;
+/** URL-encoded addresses (`user%40host.tld`), anchored at a token start so scans stay linear. */
+const ENCODED_EMAIL_PATTERN =
+  /(?<![^\s<>"&=?/#])[^\s<>"&=?/#]{1,320}%40[^\s<>"&#]{1,255}\.[^\s<>"&#]{1,255}/giu;
 const REDACTION_WINDOW_SLACK = 1024;
 const REDACTED_EMAIL_VALUE = '[REDACTED_EMAIL]';
 
@@ -83,7 +86,8 @@ function redactMessage(str: string, trimLength?: number): string {
 
   const redacted = sensitiveKeys
     .reduce((currentMessage, pattern) => currentMessage.replace(pattern, '$1[REDACTED]'), str)
-    .replace(EMAIL_PATTERN, REDACTED_EMAIL_VALUE);
+    .replace(EMAIL_PATTERN, REDACTED_EMAIL_VALUE)
+    .replace(ENCODED_EMAIL_PATTERN, REDACTED_EMAIL_VALUE);
 
   if (trimLength !== undefined && redacted.length > trimLength) {
     return `${redacted.substring(0, trimLength)}...`;
@@ -367,6 +371,14 @@ function safely(read: () => boolean): boolean {
   }
 }
 
+function safelyCompact(config: unknown): Record<string, unknown> | undefined {
+  try {
+    return compactRequestInfo(config);
+  } catch {
+    return undefined;
+  }
+}
+
 function readsTrue(record: Record<string | symbol, unknown>, key: string): boolean {
   return safely(() => record[key] === true);
 }
@@ -597,11 +609,32 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
       if (key === 'message' || key === 'level') {
         continue;
       }
-      /** `stripHeavyErrorFields` drops these later; cloning the graph here would only burn time. */
+      /** Past the budget, further top-level fields are dropped rather than scanned. */
+      if (redactionNodeBudget-- <= 0) {
+        if (!Reflect.deleteProperty(info, key)) {
+          replaceFailed = true;
+        }
+        continue;
+      }
+      /**
+       * `stripHeavyErrorFields` drops these later. Cloning the graph here would only burn time, and
+       * leaving the raw value would depend on that later pass succeeding, so the field is replaced
+       * by its redacted compact form (or removed) now.
+       */
       if (
         skipsHeavyTopLevel &&
         (HEAVY_ERROR_KEYS.has(key) || (isAxios && AXIOS_ONLY_HEAVY_KEYS.has(key)))
       ) {
+        const compact =
+          isAxios && key === 'config' ? safelyCompact(readField(infoRecord, key)) : undefined;
+        if (compact !== undefined) {
+          fields[key] = compact;
+          if (!setLogField(infoRecord, key, key, compact)) {
+            replaceFailed = true;
+          }
+        } else if (!Reflect.deleteProperty(info, key)) {
+          replaceFailed = true;
+        }
         continue;
       }
       /** An accessor keeps serving its original value after assignment, so the record is rebuilt. */
