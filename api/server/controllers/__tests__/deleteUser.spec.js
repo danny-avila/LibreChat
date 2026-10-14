@@ -77,13 +77,9 @@ jest.mock('@librechat/api', () => ({
     abortJob: (...args) => mockAbortJob(...args),
   },
   getOwnedAgentCheckpointScope: jest.fn(() => undefined),
-  isStopConfirmed: jest.fn(
-    (result) => result?.success === true || result?.failureReason === 'already_settled',
-  ),
   deleteOwnedAgentCheckpoints: jest.fn(),
-  waitForGenerationPersistence: jest.requireActual(
-    '../../../../packages/api/src/stream/persistence.ts',
-  ).waitForGenerationPersistence,
+  stopUserGenerations: jest.requireActual('../../../../packages/api/src/user/generations.ts')
+    .stopUserGenerations,
   openCheckpointDeletion: jest.fn(async (userId, tenantId, _root, cfg) => ({
     remember: jest.fn(),
     cleanup: () =>

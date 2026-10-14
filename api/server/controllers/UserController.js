@@ -15,8 +15,7 @@ const {
   getWebSearchInstallEntries,
   getWebSearchUninstallFields,
   openCheckpointDeletion,
-  isStopConfirmed,
-  waitForGenerationPersistence,
+  stopUserGenerations,
   deleteAllSharedLinksWithCleanup,
   eraseUserData,
   deleteUserMCPServers,
@@ -410,39 +409,7 @@ const deleteUserController = async (req, res) => {
     if (!(await quiesceUserSchedules(user.id, scheduleSuspensionToken))) {
       throw new Error('Scheduled executions could not be confirmed stopped');
     }
-    const activeAgentRuns = await GenerationJobManager.getAccountCleanupJobIdsForUser(
-      user.id,
-      tenantId,
-    );
-    const activeAgentJobs = await Promise.all(
-      activeAgentRuns.map(async (streamId) => ({
-        streamId,
-        job: await GenerationJobManager.getCleanupJob(streamId),
-      })),
-    );
-    const ownedAgentJobs = activeAgentJobs.filter(
-      ({ job }) =>
-        job?.metadata?.userId === user.id &&
-        (!job.metadata.tenantId || job.metadata.tenantId === tenantId),
-    );
-    const stopResults = await Promise.all(
-      ownedAgentJobs.map(({ streamId, job }) =>
-        GenerationJobManager.abortJob(streamId, {
-          expectedCreatedAt: job.createdAt,
-          awaitProviderDrain: true,
-        }),
-      ),
-    );
-    if (stopResults.some((result) => !isStopConfirmed(result))) {
-      throw new Error('Agent generations could not be confirmed stopped');
-    }
-    await Promise.all(
-      ownedAgentJobs.map(({ streamId, job }) =>
-        waitForGenerationPersistence(streamId, job.createdAt, (id) =>
-          GenerationJobManager.getCleanupJob(id),
-        ),
-      ),
-    );
+    await stopUserGenerations(user.id, tenantId, GenerationJobManager);
 
     const appConfig =
       req.config ??
