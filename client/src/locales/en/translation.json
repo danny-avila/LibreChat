@@ -238,6 +238,8 @@
   "com_document_search_tip_proximity_desc": "`\"phrase\"~N` matches when words appear within N tokens of each other.",
   "com_document_search_result_count": "{{0}} result(s)",
   "com_document_search_result_heading": "{{1}} result(s) for \"{{0}}\"",
+  "com_document_search_similar_breakdown": "({{0}} exact · {{1}} similar)",
+  "com_document_search_similar_divider": "Similar results — partial match",
   "com_document_search_limit_notice": "There are many matches, so only the top {{0}} were retrieved. Add more terms to narrow your search.",
   "com_document_search_page_prev": "Previous",
   "com_document_search_page_next": "Next",

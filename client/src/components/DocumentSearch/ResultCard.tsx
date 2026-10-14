@@ -336,6 +336,14 @@ const ResultCard: React.FC<ResultCardProps> = ({
             파일명
           </span>
         )}
+        {hit.match_tier && hit.match_tier !== 'exact' && (
+          <span
+            title="검색어 일부만 일치하는 유사 결과입니다"
+            className="shrink-0 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
+          >
+            유사
+          </span>
+        )}
         {imanageFileUrl && (
           <SourceExternalLink
             href={imanageFileUrl}

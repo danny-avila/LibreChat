@@ -53,6 +53,8 @@ export interface DocumentHit {
   /** "M"(사건 문서) | "DB"(지식 DB) — 하이라이트 배지용 */
   source_library?: string | null;
   title_match?: boolean;
+  /** 매칭 단계. "exact" 가 아니면 완화 검색으로 보탠 "유사 결과". */
+  match_tier?: 'exact' | 'phrase' | 'token';
   source_url?: string | null;
   imanage_preview_url?: string | null;
   imanage_folder_url?: string | null;
@@ -87,6 +89,11 @@ export interface KeywordSearchResponse {
   total_hit_count?: number;
   /** top_k 상한에서 실제로 잘렸는지. total_hit_count 와 달리 정확하다. */
   truncated?: boolean;
+  /** 반환 문서 중 정확 일치 / 완화 단계(유사) 건수. */
+  exact_total?: number;
+  similar_total?: number;
+  /** 실제로 내려간 가장 깊은 완화 단계. 완화가 안 돌았으면 null. */
+  fallback_tier?: 'phrase' | 'token' | null;
   documents: DocumentHit[];
   facets?: SearchFacets;
 }

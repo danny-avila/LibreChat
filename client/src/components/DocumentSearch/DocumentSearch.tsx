@@ -176,14 +176,31 @@ const DocumentSearch: React.FC = () => {
   // "더 있다" 고 잘못 안내한다. truncated 는 슬라이싱 직전에 잰 정확한 값이다.
   const showLimitNotice = hasResults && search.data?.truncated === true;
 
+  const similarTotal = search.data?.similar_total ?? 0;
+  const exactTotal = search.data?.exact_total ?? 0;
+
   const resultHeading = useMemo(() => {
     if (!hasQuery) return null;
     if (isSearching) return localize('com_document_search_searching');
-    return localize('com_document_search_result_heading', {
+    const heading = localize('com_document_search_result_heading', {
       0: submittedQuery,
       1: String(search.data?.total ?? 0),
     });
-  }, [hasQuery, submittedQuery, search.data?.total, isSearching, localize]);
+    if (similarTotal <= 0) return heading;
+    // 완화 검색으로 보탠 결과가 섞여 있으면 정확 일치/유사 건수를 나눠 보여준다.
+    return `${heading} ${localize('com_document_search_similar_breakdown', {
+      0: String(exactTotal),
+      1: String(similarTotal),
+    })}`;
+  }, [
+    hasQuery,
+    submittedQuery,
+    search.data?.total,
+    similarTotal,
+    exactTotal,
+    isSearching,
+    localize,
+  ]);
 
   const handleNewChat = (e: React.MouseEvent<HTMLButtonElement>) => {
     if (e.button === 0 && (e.ctrlKey || e.metaKey)) {
@@ -329,10 +346,27 @@ const DocumentSearch: React.FC = () => {
               {hasResults && (
                 <>
                   <ul className="flex flex-col">
-                    {pagedDocuments.map((hit) => {
+                    {pagedDocuments.map((hit, i) => {
                       const key = hit.doc_id || hit.file_name;
+                      // 정확 일치 → 유사 결과로 넘어가는 경계에 구분선. 서버가
+                      // exact 를 앞에 정렬해 주므로 페이지 안에서 처음 나오는
+                      // 비-exact 문서 앞에만 그리면 된다.
+                      const isSimilar = Boolean(hit.match_tier && hit.match_tier !== 'exact');
+                      const prev = i > 0 ? pagedDocuments[i - 1] : null;
+                      const prevSimilar = Boolean(prev?.match_tier && prev.match_tier !== 'exact');
+                      const showDivider = isSimilar && exactTotal > 0 && !prevSimilar;
                       return (
                         <li key={key}>
+                          {showDivider && (
+                            <div
+                              role="separator"
+                              className="my-2 flex items-center gap-3 px-1 text-[11px] text-text-tertiary"
+                            >
+                              <span className="h-px flex-1 bg-border-medium" />
+                              {localize('com_document_search_similar_divider')}
+                              <span className="h-px flex-1 bg-border-medium" />
+                            </div>
+                          )}
                           <ResultCard
                             hit={hit}
                             query={submittedQuery}

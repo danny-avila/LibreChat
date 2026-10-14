@@ -185,6 +185,8 @@
   "com_document_search_tip_proximity_desc": "어구 뒤 `~숫자`는 단어 사이 최대 거리(근접 검색)를 지정합니다.",
   "com_document_search_result_count": "총 {{0}}건",
   "com_document_search_result_heading": "{{0}} 에 대한 검색 결과는 {{1}}건입니다.",
+  "com_document_search_similar_breakdown": "(정확 일치 {{0}}건 · 유사 결과 {{1}}건)",
+  "com_document_search_similar_divider": "유사 결과 — 검색어 일부만 일치",
   "com_document_search_limit_notice": "검색 결과가 많아 상위 {{0}}건까지만 조회했습니다. 검색어를 추가하여 범위를 좁혀 주세요.",
   "com_document_search_page_prev": "이전",
   "com_document_search_page_next": "다음",
