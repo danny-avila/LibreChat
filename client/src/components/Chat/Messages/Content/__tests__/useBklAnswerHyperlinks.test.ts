@@ -9,6 +9,9 @@ import {
   applyBklAnswerHyperlinks,
   hyperlinkMapFromSources,
   normalizeFileKey,
+  parseHyperlinksResponse,
+  resolverFromMaps,
+  sourceIndexFromSources,
 } from '../useBklAnswerHyperlinks';
 
 const URL_A = 'https://km.bkl.co.kr/work/link/d/BKL!12345.1';
@@ -74,5 +77,81 @@ describe('hyperlinkMapFromSources', () => {
   it('returns null when the cache is empty', () => {
     expect(hyperlinkMapFromSources(undefined)).toBeNull();
     expect(hyperlinkMapFromSources([])).toBeNull();
+  });
+});
+
+/**
+ * 동명 파일 충돌 (2026-10-14): 『주식매매계약서.docx』가 두 사건에 하나씩 있으면
+ * 파일명 키만으로는 어느 문서인지 알 수 없다. 인용번호 → 출처 doc_id 로 정확히
+ * 고르고, 인용번호가 없으면 이 답변 출처의 doc_id, 그것도 없으면 파일명 지도.
+ */
+describe('doc_id resolution', () => {
+  const URL_C = 'https://km.bkl.co.kr/work/link/d/M!11111.1';
+  const sources = [
+    { document: ['a'], metadata: [{ name: '『주식매매계약서.docx.md』- [1]', doc_id: 'img_a' }] },
+    { document: ['b'], metadata: [{ name: '『주식매매계약서.docx.md』- [2]', doc_id: 'img_b' }] },
+    { document: ['c'], metadata: [{ name: '『의견서.pdf.md』- [3]', doc_id: 'img_c' }] },
+  ];
+
+  it('parses the __by_doc_id__ side map and ignores it as a file name', () => {
+    const maps = parseHyperlinksResponse({
+      mapping: {
+        '『주식매매계약서.docx.md』': `[『주식매매계약서.docx.md』](${URL_A})`,
+        __by_doc_id__: { img_a: URL_A, img_b: URL_B, bad: 'not a url' },
+      },
+    });
+    expect(maps?.byName.get(normalizeFileKey('주식매매계약서.docx'))).toBe(URL_A);
+    expect(maps?.byDocId.get('img_b')).toBe(URL_B);
+    expect(maps?.byDocId.has('bad')).toBe(false);
+    expect(maps?.byName.has(normalizeFileKey('__by_doc_id__'))).toBe(false);
+  });
+
+  it('uses the trailing citation number to pick the right document among same-named files', () => {
+    const resolver = resolverFromMaps(
+      new Map([[normalizeFileKey('주식매매계약서.docx'), URL_A]]),
+      new Map([
+        ['img_a', URL_A],
+        ['img_b', URL_B],
+      ]),
+      sourceIndexFromSources(sources),
+    );
+    const text =
+      '본문 『주식매매계약서.docx』 - [2] 와 『주식매매계약서.docx』 [1] 그리고 『주식매매계약서.docx』.';
+    const out = applyBklAnswerHyperlinks(text, resolver);
+    expect(out).toBe(
+      `본문 [『주식매매계약서.docx』](<${URL_B}>) - [2] 와 [『주식매매계약서.docx』](<${URL_A}>) [1] 그리고 [『주식매매계약서.docx』](<${URL_A}>).`,
+    );
+  });
+
+  it('falls back to this answer’s source doc_id, then to the file-name map', () => {
+    const resolver = resolverFromMaps(
+      new Map([[normalizeFileKey('의견서.pdf'), URL_A]]),
+      new Map([['img_c', URL_C]]),
+      sourceIndexFromSources(sources),
+    );
+    // 출처에 있는 의견서 → doc_id 경로(URL_C)가 파일명 지도(URL_A)보다 우선
+    expect(applyBklAnswerHyperlinks('『의견서.pdf』', resolver)).toBe(
+      `[『의견서.pdf』](<${URL_C}>)`,
+    );
+    // 출처에 없는 파일 → 파일명 지도
+    const r2 = resolverFromMaps(new Map([[normalizeFileKey('기타.pdf'), URL_B]]), null, null);
+    expect(applyBklAnswerHyperlinks('『기타.pdf』', r2)).toBe(`[『기타.pdf』](<${URL_B}>)`);
+  });
+
+  it('indexes citation numbers by source order and takes URLs from the source payload', () => {
+    const idx = sourceIndexFromSources([
+      {
+        document: ['a'],
+        source: { imanage_url: URL_A },
+        metadata: [{ name: '『x.pdf』- [1]', doc_id: 'd1' }],
+      },
+      { document: ['a2'], metadata: [{ name: '『x.pdf』- [2]', doc_id: 'd1' }] },
+      { document: ['b'], metadata: [{ name: '『y.pdf』- [3]' }] }, // doc_id 없음 → 건너뜀
+    ]);
+    expect(idx?.citationDocIds.get(1)).toBe('d1');
+    expect(idx?.citationDocIds.get(2)).toBe('d1');
+    expect(idx?.citationDocIds.has(3)).toBe(false);
+    expect(idx?.byDocId.get('d1')).toBe(URL_A);
+    expect(idx?.nameDocIds.get(normalizeFileKey('x.pdf'))).toEqual(['d1']);
   });
 });
