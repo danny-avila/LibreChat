@@ -383,6 +383,21 @@ describe('Chat', () => {
     },
   );
 
+  it('does not start a turn stopped while its optimistic messages were written', async () => {
+    const { chat, transport, onFinish } = setup();
+    const unsubscribe = chat.subscribe(() => {
+      if (chat.messages.length > 0) {
+        void chat.stop();
+      }
+    });
+
+    await chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    unsubscribe();
+
+    expect(transport.sendMessages).not.toHaveBeenCalled();
+    expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isAbort: true }));
+  });
+
   it('cancels a start whose request is still being prepared, without writing it', async () => {
     let prepare: (value: { payload: TPayload; messages: TMessage[] }) => void = () => {};
     const { chat, transport, state, onFinish } = setup({
@@ -511,6 +526,42 @@ describe('Chat', () => {
       expect.objectContaining({ streamId: 'stream-2', generationCreatedAt: 200, resume: true }),
     );
     expect(replaced.chat.status).toBe('ready');
+  });
+
+  it('resumes a pause of a replacing generation with the timestamp the start reported', async () => {
+    const stream = createStream({ streamId: 'stream-2' });
+    const { chat, transport } = setup(
+      { resumeSelection: () => ({ endpoint: 'agents' }) },
+      {
+        sendMessages: jest.fn(async () => ({
+          status: 'replaced' as const,
+          conversationId: 'convo-1',
+          streamId: 'stream-2',
+          generationCreatedAt: 200,
+        })),
+        reconnectToStream: jest.fn(async () => stream),
+      },
+    );
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    stream.push({
+      type: 'pending_action',
+      data: {
+        actionId: 'action-3',
+        streamId: 'stream-2',
+        conversationId: 'convo-1',
+        createdAt: 1,
+        payload: { type: 'ask_user_question', question: { question: 'Which?' } },
+      } as Agents.PendingAction,
+    });
+    await flush();
+
+    await chat.addToolOutput({ toolCallId: 'action-3', output: 'Blue' });
+    expect(transport.resume).toHaveBeenCalledWith(
+      expect.objectContaining({ generationCreatedAt: 200, actionId: 'action-3' }),
+    );
+    stream.push(finalEvent());
+    await sent;
   });
 
   it('regenerates a given message', async () => {
@@ -802,6 +853,50 @@ describe('Chat', () => {
         generationCreatedAt: 500,
       });
       expect(chat.pendingAction).toBeUndefined();
+    });
+
+    it('keeps the pause when only the connection drops', async () => {
+      const { chat, stream, sent } = await pause(askAction);
+      stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+      await sent;
+
+      expect(chat.status).toBe('error');
+      expect(chat.pendingAction).toBe(askAction);
+    });
+
+    it('refuses a decision once the batch is being resumed', async () => {
+      const single = {
+        ...approvalAction,
+        payload: {
+          ...approvalAction.payload,
+          action_requests: [{ name: 'search', arguments: '{}', tool_call_id: 'call-1' }],
+        },
+      } as Agents.PendingAction;
+      const { chat, transport, stream, sent } = await pause(single);
+      let accept: (() => void) | undefined;
+      transport.resume.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            accept = () =>
+              resolve({ streamId: 'convo-1', conversationId: 'convo-1', status: 'resuming' });
+          }),
+      );
+
+      const approved = chat.addToolApprovalResponse({ id: 'call-1', approved: true });
+      await flush();
+      await expect(chat.addToolApprovalResponse({ id: 'call-1', approved: false })).rejects.toThrow(
+        'already being resumed',
+      );
+      accept?.();
+      await approved;
+
+      expect(transport.resume).toHaveBeenCalledWith(
+        expect.objectContaining({
+          decisions: [{ tool_call_id: 'call-1', decision: 'approve' }],
+        }),
+      );
+      stream.push(finalEvent());
+      await sent;
     });
 
     it('drops the pause when the generation aborts or fails', async () => {
