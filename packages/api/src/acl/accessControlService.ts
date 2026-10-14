@@ -56,7 +56,7 @@ const RESOURCE_LOCK_POLL_MS = 50;
 /** The lock store failed; a safe, retryable 503 instead of a raw driver error. */
 export class ResourcePermissionsUnavailableError extends Error {
   readonly statusCode = 503;
-  readonly code = RESOURCE_PERMISSIONS_UNAVAILABLE;
+  readonly code: string = RESOURCE_PERMISSIONS_UNAVAILABLE;
 
   constructor() {
     super('Permissions for this resource cannot be updated right now, try again');
