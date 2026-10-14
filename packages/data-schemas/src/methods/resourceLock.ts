@@ -86,7 +86,8 @@ export function createResourceLockMethods(mongoose: typeof import('mongoose')): 
     const now = new Date();
     const renewed = await ResourceLock.findOneAndUpdate(
       { key, ownerId, expiresAt: { $gt: now } },
-      { $set: { expiresAt: new Date(now.getTime() + ttlMs) } },
+      /** $max keeps overlapping renewals from moving the expiry backwards. */
+      { $max: { expiresAt: new Date(now.getTime() + ttlMs) } },
       { new: true },
     ).lean();
     return renewed != null;

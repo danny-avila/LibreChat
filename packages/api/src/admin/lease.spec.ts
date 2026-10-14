@@ -23,8 +23,15 @@ describe('withLease', () => {
     expect(lease.releaseResourceLock).toHaveBeenCalledTimes(1);
   });
 
-  it('keys one grant the same for an ObjectId in either case', () => {
+  it('keys one grant the same for a user ObjectId in either case', () => {
     const hex = 'abcdef0123456789abcdef01';
-    expect(grantLeaseKey('role', hex, 'cap')).toBe(grantLeaseKey('ROLE', hex.toUpperCase(), 'cap'));
+    expect(grantLeaseKey('user', hex, 'cap')).toBe(grantLeaseKey('USER', hex.toUpperCase(), 'cap'));
+  });
+
+  it('keeps role names case-sensitive', () => {
+    const hex = 'abcdef0123456789abcdef01';
+    expect(grantLeaseKey('role', hex, 'cap')).not.toBe(
+      grantLeaseKey('role', hex.toUpperCase(), 'cap'),
+    );
   });
 });

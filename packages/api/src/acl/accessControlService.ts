@@ -873,16 +873,16 @@ export class AccessControlService {
       if (shouldEndSession && supportsTransactions) {
         await localSession?.commitTransaction();
       }
-      if (resourceType === ResourceType.PROMPTGROUP) {
-        await runAfterTransaction(localSession, () =>
-          this._dbMethods.invalidatePromptGroupAccessContext(),
-        );
-      }
       await afterWrite?.().catch((error) =>
         logger.error('[AccessControlService.bulkUpdateResourcePermissions] afterWrite failed', {
           ...getSafeErrorMetadata(error),
         }),
       );
+      if (resourceType === ResourceType.PROMPTGROUP) {
+        await runAfterTransaction(localSession, () =>
+          this._dbMethods.invalidatePromptGroupAccessContext(),
+        );
+      }
       return results;
     } catch (error) {
       if (shouldEndSession && supportsTransactions) {

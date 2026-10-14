@@ -1,3 +1,4 @@
+import { PrincipalType } from 'librechat-data-provider';
 import { Types } from 'mongoose';
 import { ResourcePermissionsBusyError } from '~/acl/accessControlService';
 
@@ -18,9 +19,11 @@ export function grantLeaseKey(
   capability: string,
   tenantId?: string,
 ): string {
-  const id = Types.ObjectId.isValid(principalId)
-    ? new Types.ObjectId(principalId).toString()
-    : principalId;
+  /** Role names are case-sensitive strings; only ObjectId-backed principals are canonicalized. */
+  const id =
+    principalType !== PrincipalType.ROLE && Types.ObjectId.isValid(principalId)
+      ? new Types.ObjectId(principalId).toString()
+      : principalId;
   return `grant:${principalType.toLowerCase()}:${id}:${capability}:${tenantId ?? ''}`;
 }
 

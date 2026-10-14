@@ -529,6 +529,26 @@ describe('AccessControlService', () => {
       acquire.mockRestore();
     });
 
+    test('runs afterWrite even when the post-commit prompt invalidation throws', async () => {
+      const invalidate = jest
+        .spyOn(service['_dbMethods'], 'invalidatePromptGroupAccessContext')
+        .mockRejectedValue(new Error('cache down'));
+      const afterWrite = jest.fn().mockResolvedValue(undefined);
+
+      await expect(
+        service.bulkUpdateResourcePermissions({
+          resourceType: ResourceType.PROMPTGROUP,
+          resourceId,
+          updatedPrincipals: [],
+          grantedBy: grantedById,
+          afterWrite,
+        }),
+      ).rejects.toThrow('cache down');
+
+      expect(afterWrite).toHaveBeenCalledTimes(1);
+      invalidate.mockRestore();
+    });
+
     test('keys the lease on the canonical resource id', async () => {
       const acquire = jest.spyOn(service['_dbMethods'], 'acquireResourceLock');
       for (const id of [resourceId.toString(), resourceId.toString().toUpperCase()]) {
