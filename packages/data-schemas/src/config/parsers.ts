@@ -57,7 +57,7 @@ const sensitiveKeys: RegExp[] = [
  * only at a token boundary, so long non-email text is scanned once instead of once per character.
  */
 const EMAIL_PATTERN =
-  /(?:\\"(?:[^"\\\r\n]|\\{3}")*\\"|(?<!\\)"(?:[^"\\\r\n]|\\.)*"|(?<![^\s<>[\],;"])[^\s<>[\],;"]+)@(?:\[[^\]\s@]+\]|[^\s<>[\],;"@]+\.[^\s<>[\],;"@]+)/gu;
+  /(?:\\"(?:[^"\\\r\n]|\\{3}"|\\{4})*\\"|(?<!\\)"(?:[^"\\\r\n]|\\.)*"|(?<![^\s<>[\],;"])[^\s<>[\],;"]+)@(?:\[[^\]\s@]+\]|[^\s<>[\],;"@]+\.[^\s<>[\],;"@]+)/gu;
 const REDACTION_WINDOW_SLACK = 1024;
 const REDACTED_EMAIL_VALUE = '[REDACTED_EMAIL]';
 
@@ -501,8 +501,17 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
 
     const cursors = new Map<string, number>();
     const fields: Record<string, unknown> = {};
+    const stripsHeavyFields = info.level === 'error' || info.level === 'warn';
+    const isAxios = infoRecord.isAxiosError === true;
     for (const key of Object.keys(info)) {
       if (key === 'message' || key === 'level') {
+        continue;
+      }
+      /** `stripHeavyErrorFields` drops these later; cloning the graph here would only burn time. */
+      if (
+        stripsHeavyFields &&
+        (HEAVY_ERROR_KEYS.has(key) || (isAxios && AXIOS_ONLY_HEAVY_KEYS.has(key)))
+      ) {
         continue;
       }
       const value = redactRecordValue(key, infoRecord[key], new WeakMap(), 0);

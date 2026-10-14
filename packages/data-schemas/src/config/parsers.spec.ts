@@ -254,6 +254,24 @@ describe('redactMessage', () => {
     expect(JSON.stringify(runRedactFormat(frozen))).not.toContain('jane');
   });
 
+  it('masks serialized escaped-backslash locals and skips heavy error graphs', () => {
+    expect(redactMessage(JSON.stringify({ email: '"jane\\\\doe"@example.com' }))).not.toContain(
+      'jane',
+    );
+    let graph: Record<string, unknown> = { leaf: 'x' };
+    for (let depth = 0; depth < 6; depth++) {
+      graph = Object.fromEntries(Array.from({ length: 10 }, (_, index) => [`k${index}`, graph]));
+    }
+    const started = Date.now();
+    runRedactFormat({
+      level: 'error',
+      message: 'm',
+      config: graph,
+      isAxiosError: true,
+    } as RedactInfo);
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),
