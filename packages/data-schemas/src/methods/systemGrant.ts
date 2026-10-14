@@ -144,7 +144,6 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')): {
     principalId: string | Types.ObjectId,
     options?: { tenantId?: string },
   ) => Promise<ISystemGrant[]>;
-  restoreGrants: (snapshots: Array<Record<string, unknown>>) => Promise<number>;
 } {
   function tenantCondition(tenantId?: string): FilterQuery<ISystemGrant> {
     return tenantId != null
@@ -610,33 +609,6 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')): {
     }).lean<ISystemGrant[]>();
   }
 
-  /**
-   * Re-creates grants removed by {@link deleteGrantsForPrincipal} exactly as they were
-   * (grant time, grantor, expiry), inserting only those that no longer exist so a grant
-   * made after the snapshot is never overwritten. Returns how many were inserted.
-   */
-  async function restoreGrants(snapshots: Array<Record<string, unknown>>): Promise<number> {
-    if (snapshots.length === 0) {
-      return 0;
-    }
-    const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
-    let inserted = 0;
-    for (const snapshot of snapshots) {
-      const result = await SystemGrant.updateOne(
-        {
-          principalType: snapshot.principalType,
-          principalId: snapshot.principalId,
-          capability: snapshot.capability,
-          tenantId: snapshot.tenantId != null ? snapshot.tenantId : { $exists: false },
-        },
-        { $setOnInsert: snapshot },
-        { upsert: true, timestamps: false },
-      );
-      inserted += result.upsertedCount;
-    }
-    return inserted;
-  }
-
   return {
     grantCapability,
     seedSystemGrants,
@@ -650,7 +622,6 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')): {
     getCapabilitiesForPrincipals,
     deleteGrantsForPrincipal,
     findGrantsForPrincipal,
-    restoreGrants,
   };
 }
 

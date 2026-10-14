@@ -135,31 +135,18 @@ export interface AdminRolesDeps {
     principalId: string | Types.ObjectId,
     options?: { tenantId?: string },
   ) => Promise<ISystemGrant[]>;
-  /** Snapshot source and restore sinks for the role-deletion cascade. When all are
-   * supplied, a failed cleanup step or a failed role deletion puts back whatever
-   * the cascade already removed. Each is the matching data-schemas method. */
-  findAclEntriesByPrincipal?: (
-    principalType: PrincipalType,
-    principalId: string,
-  ) => Promise<Array<Record<string, unknown>>>;
-  bulkWriteAclEntries?: (ops: Array<Record<string, unknown>>) => Promise<unknown>;
-  /** Re-creates a deleted config document in full, only if none exists. Resolves
-   * to whether it inserted. */
-  restoreConfig?: (snapshot: Record<string, unknown>) => Promise<boolean>;
-  /** Reads the config document, ACL entries and grants before the cascade removes them,
-   * so a removal that rejects after committing can still be restored. */
+  /** Snapshot source and restore sink for the config override removed by the role-deletion
+   * cascade. Only the override is restored on failure: ACL entries and grants are never
+   * re-inserted, since that could resurrect access a concurrent request revoked, and
+   * their removal only narrows access. */
   findConfigByPrincipal?: (
     principalType: PrincipalType,
     principalId: string,
     options?: { includeInactive?: boolean },
   ) => Promise<IConfig | null>;
-  findGrantsForPrincipal?: (
-    principalType: PrincipalType,
-    principalId: string,
-    options?: { tenantId?: string },
-  ) => Promise<ISystemGrant[]>;
-  /** Re-creates deleted grants in full, inserting only those that no longer exist. */
-  restoreGrants?: (snapshots: Array<Record<string, unknown>>) => Promise<number>;
+  /** Re-creates a deleted config document in full, only if none exists. Resolves
+   * to whether it inserted. */
+  restoreConfig?: (snapshot: Record<string, unknown>) => Promise<boolean>;
   /** Optional audit emission for role mutations and the grants removed by the
    * role-deletion cascade. Failure is logged unless `auditFailClosed` is set. */
   recordAuditEntry?: RecordAuditEntry;
@@ -206,12 +193,8 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
     deleteConfig,
     deleteAclEntries,
     deleteGrantsForPrincipal,
-    findAclEntriesByPrincipal,
-    bulkWriteAclEntries,
     restoreConfig,
-    restoreGrants,
     findConfigByPrincipal,
-    findGrantsForPrincipal,
     recordAuditEntry,
     auditFailClosed,
     invalidatePromptGroupAccessContext,
@@ -520,21 +503,6 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
        * inheriting the leftovers. Every removal is idempotent.
        */
       const tenantId = req.user?.tenantId;
-      /** Insert-only by _id: entries recreated since the snapshot are left as they are. */
-      const restoreAclEntries = async (entries: Array<Record<string, unknown>>) => {
-        if (!bulkWriteAclEntries || !entries?.length) {
-          return;
-        }
-        await bulkWriteAclEntries(
-          entries.map((entry) => ({
-            updateOne: {
-              filter: { _id: entry._id },
-              update: { $setOnInsert: entry },
-              upsert: true,
-            },
-          })),
-        );
-      };
       const cascade = await runCascade(
         [
           cascadeStep(
@@ -557,32 +525,11 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
               ? () => findConfigByPrincipal(PrincipalType.ROLE, name, { includeInactive: true })
               : undefined,
           ),
-          cascadeStep(
-            'acl',
-            async () => {
-              await deleteAclEntries({ principalType: PrincipalType.ROLE, principalId: name });
-            },
-            bulkWriteAclEntries ? restoreAclEntries : undefined,
-            findAclEntriesByPrincipal
-              ? () => findAclEntriesByPrincipal(PrincipalType.ROLE, name)
-              : undefined,
-          ),
-          cascadeStep(
-            'grants',
-            () => deleteGrantsForPrincipal(PrincipalType.ROLE, name, { tenantId }),
-            restoreGrants
-              ? async (grants) => {
-                  await restoreGrants(
-                    grants.map((grant) => {
-                      const plain = (grant as { toObject?: () => unknown }).toObject?.() ?? grant;
-                      return plain as Record<string, unknown>;
-                    }),
-                  );
-                }
-              : undefined,
-            findGrantsForPrincipal
-              ? () => findGrantsForPrincipal(PrincipalType.ROLE, name, { tenantId })
-              : undefined,
+          cascadeStep('acl', async () => {
+            await deleteAclEntries({ principalType: PrincipalType.ROLE, principalId: name });
+          }),
+          cascadeStep('grants', () =>
+            deleteGrantsForPrincipal(PrincipalType.ROLE, name, { tenantId }),
           ),
         ],
         '[adminRoles]',

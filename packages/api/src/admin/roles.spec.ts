@@ -1039,7 +1039,6 @@ describe('createAdminRolesHandlers', () => {
         deleteAclEntries: jest.fn().mockRejectedValue(new Error('acl cleanup failed')),
         deleteGrantsForPrincipal: jest.fn().mockResolvedValue([{ capability: 'read:users' }]),
         restoreConfig: jest.fn().mockResolvedValue(true),
-        restoreGrants: jest.fn().mockResolvedValue(1),
         recordAuditEntry,
       });
       const handlers = createAdminRolesHandlers(deps);
@@ -1054,25 +1053,20 @@ describe('createAdminRolesHandlers', () => {
       expect(json).toHaveBeenCalledWith(expect.objectContaining({ code: 'ROLE_CLEANUP_FAILED' }));
       expect(deps.deleteRoleByName).not.toHaveBeenCalled();
       expect(deps.restoreConfig).toHaveBeenCalledWith(config);
-      expect(deps.restoreGrants).toHaveBeenCalledWith([{ capability: 'read:users' }]);
       expect(recordAuditEntry).not.toHaveBeenCalled();
     });
 
-    it('restores config, ACL entries and grants when the role deletion itself fails', async () => {
-      const aclEntry = { _id: new Types.ObjectId(), resourceType: 'agent', permBits: 1 };
+    it('restores only the config override when the role deletion itself fails', async () => {
       const deps = deleteDeps({
         deleteConfig: jest.fn().mockResolvedValue({
           principalModel: 'Role',
           overrides: {},
           priority: 3,
         }),
-        findAclEntriesByPrincipal: jest.fn().mockResolvedValue([aclEntry]),
         deleteGrantsForPrincipal: jest.fn().mockResolvedValue([{ capability: 'read:users' }]),
         getRoleByName: jest.fn().mockResolvedValue(mockRole()),
         deleteRoleByName: jest.fn().mockRejectedValue(new Error('db down')),
         restoreConfig: jest.fn().mockResolvedValue(true),
-        bulkWriteAclEntries: jest.fn().mockResolvedValue(undefined),
-        restoreGrants: jest.fn().mockResolvedValue(1),
         invalidatePromptGroupAccessContext: jest.fn().mockResolvedValue(undefined),
       });
       const handlers = createAdminRolesHandlers(deps);
@@ -1083,10 +1077,8 @@ describe('createAdminRolesHandlers', () => {
       expect(status).toHaveBeenCalledWith(500);
       expect(json).toHaveBeenCalledWith({ error: 'Failed to delete role' });
       expect(deps.restoreConfig).toHaveBeenCalledTimes(1);
-      expect(deps.bulkWriteAclEntries).toHaveBeenCalledWith([
-        expect.objectContaining({ updateOne: expect.objectContaining({ upsert: true }) }),
-      ]);
-      expect(deps.restoreGrants).toHaveBeenCalledTimes(1);
+      expect(deps.deleteAclEntries).toHaveBeenCalledTimes(1);
+      expect(deps.deleteGrantsForPrincipal).toHaveBeenCalledTimes(1);
       expect(deps.invalidatePromptGroupAccessContext).toHaveBeenCalled();
     });
 
@@ -1103,7 +1095,6 @@ describe('createAdminRolesHandlers', () => {
         deleteGrantsForPrincipal: jest.fn().mockResolvedValue([{ capability: 'read:users' }]),
         deleteRoleByName: jest.fn().mockRejectedValue(new Error('connection lost')),
         restoreConfig: jest.fn(),
-        restoreGrants: jest.fn(),
       });
       const handlers = createAdminRolesHandlers(deps);
       const { req, res, status } = createReqRes({
@@ -1115,7 +1106,6 @@ describe('createAdminRolesHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(200);
       expect(deps.restoreConfig).not.toHaveBeenCalled();
-      expect(deps.restoreGrants).not.toHaveBeenCalled();
       expect(recordAuditEntry).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'role.deleted' }),
       );
@@ -1128,7 +1118,6 @@ describe('createAdminRolesHandlers', () => {
         getRoleByName: jest.fn().mockResolvedValueOnce(original).mockResolvedValue(replacement),
         deleteRoleByName: jest.fn().mockRejectedValue(new Error('connection lost')),
         restoreConfig: jest.fn(),
-        restoreGrants: jest.fn(),
       });
       const handlers = createAdminRolesHandlers(deps);
       const { req, res, status } = createReqRes({ params: { name: 'editor' } });
@@ -1137,7 +1126,6 @@ describe('createAdminRolesHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(500);
       expect(deps.restoreConfig).not.toHaveBeenCalled();
-      expect(deps.restoreGrants).not.toHaveBeenCalled();
     });
 
     it('restores nothing and reports a failure when the role state cannot be verified', async () => {
@@ -1148,7 +1136,6 @@ describe('createAdminRolesHandlers', () => {
           .mockRejectedValue(new Error('mongo down')),
         deleteRoleByName: jest.fn().mockRejectedValue(new Error('connection lost')),
         restoreConfig: jest.fn(),
-        restoreGrants: jest.fn(),
       });
       const handlers = createAdminRolesHandlers(deps);
       const { req, res, status } = createReqRes({ params: { name: 'editor' } });
@@ -1157,7 +1144,6 @@ describe('createAdminRolesHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(500);
       expect(deps.restoreConfig).not.toHaveBeenCalled();
-      expect(deps.restoreGrants).not.toHaveBeenCalled();
     });
 
     it('restores config insert-only so an override written after the snapshot is kept', async () => {
@@ -1184,12 +1170,9 @@ describe('createAdminRolesHandlers', () => {
       });
     });
 
-    it('puts the ACL snapshot back when the ACL delete itself rejects', async () => {
-      const aclEntry = { _id: new Types.ObjectId(), resourceType: 'agent', permBits: 1 };
+    it('leaves ACL entries removed when the ACL delete itself rejects', async () => {
       const deps = deleteDeps({
-        findAclEntriesByPrincipal: jest.fn().mockResolvedValue([aclEntry]),
         deleteAclEntries: jest.fn().mockRejectedValue(new Error('response lost')),
-        bulkWriteAclEntries: jest.fn().mockResolvedValue(undefined),
         invalidatePromptGroupAccessContext: jest.fn().mockResolvedValue(undefined),
       });
       const handlers = createAdminRolesHandlers(deps);
@@ -1198,7 +1181,6 @@ describe('createAdminRolesHandlers', () => {
       await handlers.deleteRole(req, res);
 
       expect(status).toHaveBeenCalledWith(500);
-      expect(deps.bulkWriteAclEntries).toHaveBeenCalledTimes(1);
       expect(deps.invalidatePromptGroupAccessContext).toHaveBeenCalled();
     });
 
@@ -1216,16 +1198,13 @@ describe('createAdminRolesHandlers', () => {
       expect(deps.invalidatePromptGroupAccessContext).toHaveBeenCalled();
     });
 
-    it('restores config and grants from a pre-delete snapshot when their deletes reject', async () => {
+    it('restores config from a pre-delete snapshot and never restores grants when their deletes reject', async () => {
       const config = { principalModel: 'Role', overrides: { a: 1 }, priority: 4 };
-      const grants = [{ capability: 'read:users' }];
       const deps = deleteDeps({
         findConfigByPrincipal: jest.fn().mockResolvedValue(config),
-        findGrantsForPrincipal: jest.fn().mockResolvedValue(grants),
         deleteConfig: jest.fn().mockRejectedValue(new Error('response lost')),
         deleteGrantsForPrincipal: jest.fn().mockRejectedValue(new Error('response lost')),
         restoreConfig: jest.fn().mockResolvedValue(true),
-        restoreGrants: jest.fn().mockResolvedValue(1),
       });
       const handlers = createAdminRolesHandlers(deps);
       const { req, res, status, json } = createReqRes({ params: { name: 'editor' } });
@@ -1235,7 +1214,6 @@ describe('createAdminRolesHandlers', () => {
       expect(status).toHaveBeenCalledWith(500);
       expect(json).toHaveBeenCalledWith(expect.objectContaining({ code: 'ROLE_CLEANUP_FAILED' }));
       expect(deps.restoreConfig).toHaveBeenCalledWith(config);
-      expect(deps.restoreGrants).toHaveBeenCalledWith(grants);
       expect(deps.deleteRoleByName).not.toHaveBeenCalled();
     });
 
@@ -1262,8 +1240,6 @@ describe('createAdminRolesHandlers', () => {
     it('does not restore anything when the cascade and role deletion succeed', async () => {
       const deps = deleteDeps({
         restoreConfig: jest.fn(),
-        bulkWriteAclEntries: jest.fn(),
-        restoreGrants: jest.fn(),
       });
       const handlers = createAdminRolesHandlers(deps);
       const { req, res, status } = createReqRes({ params: { name: 'editor' } });
@@ -1272,8 +1248,6 @@ describe('createAdminRolesHandlers', () => {
 
       expect(status).toHaveBeenCalledWith(200);
       expect(deps.restoreConfig).not.toHaveBeenCalled();
-      expect(deps.bulkWriteAclEntries).not.toHaveBeenCalled();
-      expect(deps.restoreGrants).not.toHaveBeenCalled();
     });
 
     it('emits a grant.removed audit entry for each grant removed by the cascade', async () => {
