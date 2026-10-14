@@ -90,6 +90,17 @@ describe('redactMessage', () => {
     expect(out).toContain('truncated');
   });
 
+  it('masks quoted and bracketed addresses cut right before the at sign or inside the literal', () => {
+    for (const [addr, cut] of [
+      ['"jane doe"@example.com', '"jane doe"'.length],
+      ['jane@[192.0.2.1]', 'jane@['.length],
+    ] as const) {
+      const input = `${' '.repeat(8192 - cut)}${addr} tail`;
+      const out = String(runRedactFormat({ level: 'info', message: input }).message);
+      expect(out).not.toMatch(/jane/);
+    }
+  });
+
   it('masks quoted local parts', () => {
     expect(redactMessage('user "jane.doe"@example.com ok')).toBe('user [REDACTED_EMAIL] ok');
     expect(redactMessage('user "jane\\"doe"@example.com ok')).toBe('user [REDACTED_EMAIL] ok');

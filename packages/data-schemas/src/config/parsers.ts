@@ -58,8 +58,6 @@ const sensitiveKeys: RegExp[] = [
  */
 const EMAIL_PATTERN =
   /(?:"(?:[^"\\\r\n]|\\.){1,64}"|(?<![^\s<>()[\],;"])[^\s<>()[\],;"]+)@(?:\[[^\]\s@]{1,64}\]|[^\s<>()[\],;"@]+\.[^\s<>()[\],;"@]{2,})/gu;
-const EMAIL_TOKEN_DELIMITER = /[\s<>()[\],;"]/u;
-const MAX_EMAIL_TOKEN_LENGTH = 320;
 const REDACTED_EMAIL_VALUE = '[REDACTED_EMAIL]';
 
 const sensitiveMetadataKey =
@@ -88,28 +86,15 @@ function redactMessage(str: string, trimLength?: number): string {
   return redacted;
 }
 
-/** Cuts at the limit, backing off a split token so a truncated address cannot slip past the matcher. */
-function trimPartialToken(str: string, limit: number): string {
-  if (EMAIL_TOKEN_DELIMITER.test(str[limit] ?? ' ')) {
-    return str.substring(0, limit);
-  }
-
-  const floor = Math.max(0, limit - MAX_EMAIL_TOKEN_LENGTH);
-  for (let index = limit - 1; index >= floor; index--) {
-    if (EMAIL_TOKEN_DELIMITER.test(str[index])) {
-      return str.substring(0, index + 1);
-    }
-  }
-  return str.substring(0, limit);
-}
-
 function redactLogString(str: string): string {
   if (str.length <= MAX_REDACTION_STRING_LENGTH) {
     return redactMessage(str);
   }
 
-  const redacted = redactMessage(trimPartialToken(str, MAX_REDACTION_STRING_LENGTH));
-  return `${redacted}... [truncated ${str.length - MAX_REDACTION_STRING_LENGTH} chars]`;
+  /** Redacts the whole string first so a cutoff can never split an address past the matcher. */
+  const redacted = redactMessage(str);
+  const kept = redacted.substring(0, MAX_REDACTION_STRING_LENGTH);
+  return `${kept}... [truncated ${redacted.length - kept.length} chars]`;
 }
 
 function isPlainRecord(value: object): value is Record<string, unknown> {
