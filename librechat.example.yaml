@@ -175,6 +175,13 @@ projects:
 # Custom interface configuration
 interface:
   customWelcome: 'Welcome to LibreChat! Enjoy your experience.'
+  # What heads the welcome screen when an agent, assistant or model spec is selected (default: entity).
+  # 'entity' shows its name; 'greeting' shows the time-of-day greeting (or customWelcome) with the
+  # user's name, for deployments where the header selector already names the agent.
+  # landingHeading: entity
+  # Show the generic disclaimer and policy links beneath the welcome screen's composer (default: true).
+  # When false, a CUSTOM_FOOTER still renders there, as it does in conversations.
+  # landingFooter: true
   # Allow renaming a running chat or one with a placeholder title (default: true).
   # Set to false during a rolling upgrade, until ALL API replicas are upgraded and old
   # title-generation jobs have drained. While false, rename is disabled for running chats

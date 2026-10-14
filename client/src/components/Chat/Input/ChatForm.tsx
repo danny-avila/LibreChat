@@ -77,6 +77,7 @@ import PromptsCommand from './PromptsCommand';
 import { submitFromComposer } from './submit';
 import SkillsCommand from './SkillsCommand';
 import AutoPlayAudio from './AutoPlayAudio';
+import composerClearance from './clearance';
 import Waveform from './Composer/Waveform';
 import { mainTextareaId } from '~/common';
 import CollapseChat from './CollapseChat';
@@ -712,22 +713,11 @@ const ChatForm = memo(function ChatForm({
     [isCollapsed],
   );
 
-  /* From `sm` up the band leaves room under itself for the disclaimer, which only
-     the landing page carries — doubled while the centred landing composer floats,
-     and dropped back the moment a submission starts the thread. A started
-     conversation has nothing beneath it, so it keeps only enough to clear the
-     surface's own shadow. Below `sm` the composer runs to the viewport floor in
-     every state. */
-  const landingClearance =
-    centerFormOnLanding && !isSubmitting ? 'transition-all duration-200 sm:mb-28' : 'sm:mb-10';
-  let bottomClearance = 'sm:mb-4';
-  if (isLandingPage) {
-    bottomClearance = landingClearance;
-  } else if (footerBelow) {
-    /* A conversation that carries a configured footer keeps the band that bar
-       needs, exactly as the welcome screen does. */
-    bottomClearance = 'sm:mb-10';
-  }
+  const bottomClearance = composerClearance({
+    isLandingPage,
+    footerBelow,
+    floating: centerFormOnLanding && !isSubmitting,
+  });
 
   /** Answer mode, then during-run steering or queueing (a run in flight, or a
    *  queued follow-up about to start), then an ordinary send: the same route

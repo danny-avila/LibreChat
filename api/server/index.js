@@ -301,6 +301,7 @@ const startServer = async () => {
      caller's and the client prefers it. */
   indexHTML = injectConfiguredFooterBootstrap(indexHTML, {
     customFooter: process.env.CUSTOM_FOOTER,
+    landingFooter: appConfig?.interfaceConfig?.landingFooter,
   });
 
   indexHTML = injectColorModeHandoff(indexHTML, appConfig.interfaceConfig?.colorModeFromUrl);
