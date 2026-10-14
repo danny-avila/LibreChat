@@ -125,6 +125,29 @@ describe('createMCPServerAuditor', () => {
     );
   });
 
+  it('still runs the post-commit steps when the committed read throws synchronously', async () => {
+    const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+    const audit = createMCPServerAuditor({ recordAuditEntry });
+    const afterCommit = jest.fn().mockResolvedValue(undefined);
+
+    await audit(
+      req,
+      {
+        action: 'mcp_server.updated',
+        serverName: 'srv',
+        previous: { title: 'Old' },
+        next: { title: 'New' },
+        resolveCommitted: () => {
+          throw new Error('sync failure');
+        },
+      },
+      afterCommit,
+    );
+
+    expect(afterCommit).toHaveBeenCalled();
+    expect(recordAuditEntry).toHaveBeenCalled();
+  });
+
   it('runs the post-commit steps before the audit write and still audits when they throw', async () => {
     const order: string[] = [];
     const recordAuditEntry = jest.fn().mockImplementation(async () => void order.push('audit'));

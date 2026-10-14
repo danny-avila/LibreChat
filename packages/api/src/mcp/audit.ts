@@ -131,7 +131,11 @@ export function createMCPServerAuditor(options: {
    */
   return async function auditMCPServer(req, event, afterCommit) {
     /** Started before the post-commit steps, so a later update by someone else is not attributed to this one. */
-    const committedRead = event.resolveCommitted?.().catch(() => undefined);
+    const committedRead = event.resolveCommitted
+      ? Promise.resolve()
+          .then(event.resolveCommitted)
+          .catch(() => undefined)
+      : undefined;
     try {
       await afterCommit?.();
     } finally {
