@@ -9,6 +9,7 @@ import {
 import type { IRole, AppConfig } from '@librechat/data-schemas';
 import type { RecordAuditEntry } from '~/admin/audit';
 import { diffRolePermissions, recordSystemAuditEntry } from '~/admin/audit';
+import { getSafeErrorMetadata } from '~/utils/errors';
 import { isMemoryEnabled } from '~/memory/config';
 
 type RolePermissions = Partial<Record<PermissionTypes, Record<string, boolean | undefined>>>;
@@ -179,7 +180,10 @@ export async function updateInterfacePermissions({
       changes = diffRolePermissions(before, after?.permissions as RolePermissions | undefined);
     } catch (err) {
       /** The verification read is part of auditing, which must not fail startup. */
-      logger.error(`[updateInterfacePermissions] could not verify '${roleName}' for audit`, err);
+      logger.error(
+        `[updateInterfacePermissions] could not verify '${roleName}' for audit`,
+        getSafeErrorMetadata(err),
+      );
       return;
     }
     if (!after || changes.length === 0) {
