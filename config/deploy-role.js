@@ -22,6 +22,9 @@ const roleDefinitionsSchema = z
           .min(1)
           .refine((name) => !systemRoleNames.has(name.toUpperCase()), {
             message: 'System roles cannot be deployed as custom roles',
+          })
+          .refine((name) => name.toUpperCase() !== 'NONE', {
+            message: 'NONE is reserved as a permission baseline',
           }),
         description: z.string().optional(),
         inheritPermissionsFrom: z.string().trim().min(1),
@@ -96,6 +99,15 @@ function mergePermissions(base, overrides) {
         : structuredClone(value);
   }
   return merged;
+}
+
+function getNoPermissions() {
+  return Object.fromEntries(
+    Object.entries(permissionsSchema.shape).map(([type, schema]) => [
+      type,
+      Object.fromEntries(Object.keys(schema.shape).map((permission) => [permission, false])),
+    ]),
+  );
 }
 
 function rejectUnknownFields(parsed, input, fieldPath = 'definitions') {
@@ -199,6 +211,26 @@ function getDeploymentScope(args) {
 }
 
 async function deployRole(definition, service) {
+  if (definition.inheritPermissionsFrom.toUpperCase() === 'NONE') {
+    const role = {
+      name: definition.name,
+      description: definition.description,
+      permissions: mergePermissions(getNoPermissions(), definition.permissionOverrides),
+    };
+    const existing = await service.getRole(role.name);
+    if (existing) {
+      await service.updateRole(role.name, {
+        ...(role.description !== undefined ? { description: role.description } : {}),
+        permissions: role.permissions,
+      });
+    } else {
+      await service.createRole(role);
+    }
+    await service.upsertRoleConfig(role.name, definition.config);
+    console.green(`Created/updated ${definition.name} role, permissions, and config`);
+    return;
+  }
+
   const normalizedBaseline = definition.inheritPermissionsFrom.toUpperCase();
   const baselineName = systemRoleNames.has(normalizedBaseline)
     ? normalizedBaseline
@@ -306,5 +338,6 @@ module.exports = {
   getDeploymentScope,
   loadRoleDefinitions,
   mergePermissions,
+  getNoPermissions,
   validateRoleDefinitions,
 };

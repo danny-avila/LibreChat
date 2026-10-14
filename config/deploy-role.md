@@ -63,6 +63,11 @@ Every deployment must select exactly one scope:
 - `--base` creates or updates roles without a tenant.
 - `--tenant <tenant-id>` creates or updates roles for that tenant.
 
+Set `inheritPermissionsFrom` to `NONE` to start with every permission disabled. Any permissions
+specified in `permissionOverrides` are then applied on top. This is useful for least-privilege
+roles and avoids relying on an exhaustive list of `false` values. `NONE` is reserved as this
+special baseline name (case-insensitive); it does not look up a role in the database.
+
 For example, replace `--base` in the commands above with `--tenant tenant-123` to deploy the same
 definitions within `tenant-123`.
 

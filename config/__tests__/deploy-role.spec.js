@@ -121,6 +121,48 @@ describe('deploy role script', () => {
     }
   });
 
+  it('starts with every permission disabled when inheriting from NONE', async () => {
+    const green = console.green;
+    console.green = jest.fn();
+    const service = {
+      getRole: jest.fn().mockResolvedValueOnce(null),
+      createRole: jest.fn(async () => undefined),
+      upsertRoleConfig: jest.fn(async () => undefined),
+    };
+
+    try {
+      await deployRole(
+        {
+          name: 'LOCKED',
+          inheritPermissionsFrom: 'NONE',
+          permissionOverrides: { AGENTS: { USE: true } },
+          config: { priority: 10, overrides: {} },
+        },
+        service,
+      );
+
+      const permissions = service.createRole.mock.calls[0][0].permissions;
+      expect(permissions.AGENTS).toEqual({
+        USE: true,
+        CREATE: false,
+        SHARE: false,
+        SHARE_PUBLIC: false,
+      });
+      expect(permissions.PROMPTS).toEqual({ USE: false, CREATE: false, SHARE: false, SHARE_PUBLIC: false });
+      expect(permissions.MEMORIES).toEqual({
+        USE: false,
+        CREATE: false,
+        UPDATE: false,
+        READ: false,
+        OPT_OUT: false,
+      });
+      expect(service.getRole).toHaveBeenCalledTimes(1);
+      expect(service.getRole).toHaveBeenCalledWith('LOCKED');
+    } finally {
+      console.green = green;
+    }
+  });
+
   it('loads definitions from an inline parameter', () => {
     const definitions = loadRoleDefinitions([
       '--roles',
@@ -189,6 +231,17 @@ describe('deploy role script', () => {
         },
       ]),
     ).toThrow('System roles');
+  });
+
+  it('reserves NONE as the empty-permissions baseline', () => {
+    const definition = {
+      name: 'none',
+      inheritPermissionsFrom: 'USER',
+      permissionOverrides: {},
+      config: { priority: 10, overrides: {} },
+    };
+
+    expect(() => validateRoleDefinitions([definition])).toThrow('NONE is reserved');
   });
 
   it('rejects self-referential permission inheritance', () => {
