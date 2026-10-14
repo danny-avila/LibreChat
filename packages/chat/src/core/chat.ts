@@ -505,9 +505,12 @@ export class Chat {
 
   /**
    * Restores a pause the server reported outside a stream, such as the status check of a reload,
-   * so its tool decisions and answers can be submitted.
+   * so its tool decisions and answers can be submitted. Refused while a request is in flight.
    */
   restorePendingAction(action: Agents.PendingAction, generationCreatedAt: number): void {
+    if (this.active) {
+      throw new Error('A request is in flight; its stream reports the pause');
+    }
     if (this.action?.actionId !== action.actionId) {
       this.decisions.clear();
     }

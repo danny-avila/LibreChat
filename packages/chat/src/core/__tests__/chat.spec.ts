@@ -951,7 +951,12 @@ describe('Chat', () => {
     });
 
     it('does not resume a batch whose pause was replaced while its last decision was shown', async () => {
-      const { chat, transport, stream, sent } = await pause(approvalAction);
+      const { chat, transport, state } = setup();
+      state.replaceMessages([
+        userMessage,
+        { ...placeholder, content: [toolCall('call-1'), toolCall('call-2')] } as TMessage,
+      ]);
+      chat.restorePendingAction(approvalAction, 500);
       await chat.addToolApprovalResponse({ id: 'call-1', approved: true });
       const unsubscribe = chat.subscribe(() => {
         if (chat.pendingAction === approvalAction) {
@@ -961,9 +966,9 @@ describe('Chat', () => {
 
       await chat.addToolApprovalResponse({ id: 'call-2', approved: true });
       unsubscribe();
+
       expect(transport.resume).not.toHaveBeenCalled();
-      stream.push(finalEvent());
-      await sent;
+      expect(chat.pendingAction).toBe(askAction);
     });
 
     it('lets a subscriber start a turn once a reconnect drops a pause that ended elsewhere', async () => {
@@ -1226,6 +1231,16 @@ describe('Chat', () => {
       await resumed;
     });
 
+    it('refuses to restore a pause while a stream is attached', async () => {
+      const { chat, stream, sent } = await pause(askAction);
+      const newer = { ...askAction, actionId: 'action-7' } as Agents.PendingAction;
+
+      expect(() => chat.restorePendingAction(newer, 900)).toThrow('in flight');
+      expect(chat.pendingAction).toBe(askAction);
+      stream.push(finalEvent());
+      await sent;
+    });
+
     it('holds new turns behind a restored pause until it is stopped on the server', async () => {
       const { chat, transport } = setup({ resumeSelection: () => ({ endpoint: 'agents' }) });
       chat.restorePendingAction(askAction, 500);
@@ -1451,14 +1466,14 @@ describe('Chat', () => {
         expect.objectContaining({ actionId: 'action-2', answer: 'Blue' }),
       );
 
+      stream.push(finalEvent());
+      await sent;
+
       chat.restorePendingAction(askAction, 400);
       await chat.addToolOutput({ toolCallId: 'ask-1', output: { q1: 'Blue' } });
       expect(transport.resume).toHaveBeenLastCalledWith(
         expect.objectContaining({ generationCreatedAt: 400, answers: { q1: 'Blue' } }),
       );
-
-      stream.push(finalEvent());
-      await sent;
     });
 
     it('refuses to answer over a transport that cannot resume', async () => {
