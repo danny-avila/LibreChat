@@ -1221,6 +1221,31 @@ describe('Chat', () => {
       expect(chat.pendingAction).toBeUndefined();
     });
 
+    it('drops a pause that arrives while a confirmed stop is in flight', async () => {
+      const { chat, transport, stream } = setup();
+      let confirm: (() => void) | undefined;
+      transport.abort.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            confirm = () => resolve({ success: true });
+          }),
+      );
+      const turn = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push(stepEvent);
+      await flush();
+
+      const stopped = chat.stop();
+      stream.push({ type: 'pending_action', data: askAction });
+      await flush();
+      stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+      await turn;
+      confirm?.();
+      await stopped;
+
+      expect(chat.pendingAction).toBeUndefined();
+    });
+
     it('keeps the pause of a turn started while a slow stop was in flight', async () => {
       const first = createStream({ streamId: 'convo-1', generationCreatedAt: 100 });
       const second = createStream({ streamId: 'convo-1', generationCreatedAt: 200 });
