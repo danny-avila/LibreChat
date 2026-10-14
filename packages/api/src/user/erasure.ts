@@ -51,6 +51,8 @@ export interface UserErasureDeps extends ErasureMethods {
   /** Runtime cleanup for a removed MCP server; each hook is best effort. */
   invalidateMCPServerTools?: (serverName: string) => Promise<unknown>;
   disconnectMCPServer?: (serverName: string) => Promise<unknown>;
+  /** Runs once the user's sessions are revoked, before the rest of the cascade can fail. */
+  onSessionsDeleted?: () => void;
 }
 
 export interface UserErasureParams {
@@ -149,6 +151,7 @@ export async function eraseUserData(
   }
   await deps.deleteFiles([], userId);
   await deps.deleteAllUserSessions({ userId });
+  deps.onSessionsDeleted?.();
   await deps.deleteRefreshTokenBridges({ userId, tenantId });
   await deps.deletePasskeysByUser(userId);
   if (!keepTransactions) {

@@ -452,9 +452,9 @@ const deleteUserController = async (req, res) => {
         deleteStoredFiles: (files) =>
           processDeleteRequest({ req: Object.assign(Object.create(req), { body: {} }), files }),
         ...createMCPServerCleanup(user.id),
+        onSessionsDeleted: () => clearSessionHintCookie(res),
       },
     );
-    clearSessionHintCookie(res);
     const deleteResult = await db.deleteUserById(user.id);
     if (deleteResult.deletedCount !== 1) {
       throw new Error('User disappeared before account deletion could commit');

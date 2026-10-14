@@ -242,14 +242,14 @@ beforeEach(() => {
 
 describe('deleteUserController - session hint', () => {
   it('retires the session hint once sessions are revoked, even when a later cleanup fails', async () => {
-    const req = { user: { id: 'user1', _id: 'user1', email: 'a@b.com' }, body: {} };
+    const req = { user: { id: USER_ID, _id: USER_ID, email: 'a@b.com' }, body: {} };
     const res = createRes();
-    mockGetUserById.mockResolvedValue({ _id: 'user1', twoFactorEnabled: false });
+    mockGetUserById.mockResolvedValue({ _id: USER_ID, twoFactorEnabled: false });
     mockDeletePresets.mockRejectedValue(new Error('preset store unavailable'));
 
     await deleteUserController(req, res);
 
-    expect(mockDeleteAllUserSessions).toHaveBeenCalledWith({ userId: 'user1' });
+    expect(mockDeleteAllUserSessions).toHaveBeenCalledWith({ userId: USER_ID });
     expect(clearSessionHintCookie).toHaveBeenCalledWith(res);
     expect(mockDeleteAllUserSessions.mock.invocationCallOrder[0]).toBeLessThan(
       clearSessionHintCookie.mock.invocationCallOrder[0],

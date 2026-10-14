@@ -174,6 +174,20 @@ describe('eraseUserData', () => {
     expect(await count('Conversation', { user: userId.toString() })).toBe(0);
   });
 
+  it('signals session revocation even when a later step fails', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    await seedUser(userId);
+    const { deps } = createDeps();
+    const onSessionsDeleted = jest.fn();
+    (deps.deletePresets as jest.Mock) = jest.fn().mockRejectedValue(new Error('presets down'));
+
+    await expect(
+      eraseUserData({ userId: userId.toString() }, { ...deps, onSessionsDeleted }),
+    ).rejects.toThrow('presets down');
+
+    expect(onSessionsDeleted).toHaveBeenCalledTimes(1);
+  });
+
   it('erases nothing past conversations when checkpoint capture fails', async () => {
     const userId = new mongoose.Types.ObjectId();
     await seedUser(userId);
