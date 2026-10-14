@@ -1,6 +1,6 @@
 import type { ServerRequest } from '~/types/http';
-import { MCPCommittedInvalidationError } from '~/mcp/errors';
 import { createMCPServerAuditor, settleMCPCommit, diffMCPServerFields } from './audit';
+import { MCPCommittedInvalidationError } from '~/mcp/errors';
 
 const req = { user: { id: 'user-1', name: 'Alice' }, headers: {} } as unknown as ServerRequest;
 

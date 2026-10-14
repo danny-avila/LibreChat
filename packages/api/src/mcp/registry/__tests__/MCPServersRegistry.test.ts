@@ -14,9 +14,9 @@ import {
   MCPConfigInitializationCanceledError,
 } from '~/mcp/registry/MCPServersRegistry';
 import { ServerConfigsCacheInMemory } from '~/mcp/registry/cache/ServerConfigsCacheInMemory';
+import { MCPCommittedInvalidationError, MCPInspectionFailedError } from '~/mcp/errors';
 import { getMCPAppToolsPublicationGeneration } from '~/mcp/toolsChanged';
 import { MCPServerInspector } from '~/mcp/registry/MCPServerInspector';
-import { MCPCommittedInvalidationError, MCPInspectionFailedError } from '~/mcp/errors';
 import { processMCPEnv } from '~/utils/env';
 
 // Mock MCPServerInspector to avoid actual server connections
