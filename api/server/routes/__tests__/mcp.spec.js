@@ -4629,7 +4629,9 @@ describe('MCP Routes', () => {
         url: 'https://new.example.com/sse',
         headers: { Authorization: 'Bearer new-secret' },
       };
-      mockRegistryInstance.getServerConfig.mockResolvedValueOnce(existing);
+      mockRegistryInstance.getServerConfig
+        .mockResolvedValueOnce(existing)
+        .mockResolvedValueOnce(updated);
       mockRegistryInstance.inspectServerUpdate.mockResolvedValue({ ...updated, source: 'user' });
       mockRegistryInstance.commitServerUpdate.mockResolvedValue(undefined);
 
