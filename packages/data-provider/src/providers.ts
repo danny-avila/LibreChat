@@ -12,6 +12,7 @@ export enum ProviderId {
   moonshot = 'moonshot',
   anyscale = 'anyscale',
   apipie = 'apipie',
+  cheaperinference = 'cheaperinference',
   cohere = 'cohere',
   deepseek = 'deepseek',
   fireworks = 'fireworks',
@@ -42,6 +43,7 @@ export const endpointToProvider: Partial<Record<EModelEndpoint, ProviderId>> = {
 export const knownEndpointToProvider: Record<KnownEndpoints, ProviderId> = {
   [KnownEndpoints.anyscale]: ProviderId.anyscale,
   [KnownEndpoints.apipie]: ProviderId.apipie,
+  [KnownEndpoints.cheaperinference]: ProviderId.cheaperinference,
   [KnownEndpoints.cohere]: ProviderId.cohere,
   [KnownEndpoints.fireworks]: ProviderId.fireworks,
   [KnownEndpoints.deepseek]: ProviderId.deepseek,

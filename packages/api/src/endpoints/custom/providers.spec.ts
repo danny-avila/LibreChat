@@ -49,6 +49,15 @@ describe('resolveEndpointProviderId', () => {
     ).toBe(ProviderId.helicone);
   });
 
+  it('resolves the Cheaper Inference gateway host', () => {
+    expect(
+      resolveEndpointProviderId({
+        name: 'My Gateway',
+        baseURL: 'https://api.cheaperinference.com/v1',
+      }),
+    ).toBe(ProviderId.cheaperinference);
+  });
+
   it('recognizes the supported Cohere API host', () => {
     expect(
       resolveEndpointProviderId({

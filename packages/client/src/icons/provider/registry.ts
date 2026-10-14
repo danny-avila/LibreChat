@@ -93,6 +93,10 @@ export const providerIcons: Record<ProviderId, ProviderIconDef> = {
   [ProviderId.moonshot]: { art: component(MoonshotIcon), label: 'Moonshot', mono: true },
   [ProviderId.anyscale]: { art: asset('assets/anyscale.png'), label: 'Anyscale' },
   [ProviderId.apipie]: { art: asset('assets/apipie.png'), label: 'APIpie' },
+  [ProviderId.cheaperinference]: {
+    art: asset('assets/cheaperinference.svg'),
+    label: 'Cheaper Inference',
+  },
   [ProviderId.cohere]: {
     art: asset('assets/cohere.png'),
     label: 'Cohere',
