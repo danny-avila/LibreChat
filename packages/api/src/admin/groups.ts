@@ -92,6 +92,13 @@ export interface AdminGroupsDeps {
   /** Re-creates a removed config override in full, only if none exists, when the group
    * deletion cannot finish. ACL entries are never restored. Resolves to whether it inserted. */
   restoreConfig?: (snapshot: Record<string, unknown>) => Promise<boolean>;
+  /** Reads the override before it is removed, so a rejected removal whose commit was
+   * lost in transit can still be put back. */
+  findConfigByPrincipal?: (
+    principalType: PrincipalType,
+    principalId: string,
+    options?: { includeInactive?: boolean },
+  ) => Promise<IConfig | null>;
   /** Optional audit emission for group mutations; fail-open unless `auditFailClosed`. */
   recordAuditEntry?: RecordAuditEntry;
   /** When true, a failed audit write surfaces as a 5xx after the mutation has
@@ -127,6 +134,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
     deleteConfig,
     deleteAclEntries,
     restoreConfig,
+    findConfigByPrincipal,
     recordAuditEntry,
     auditFailClosed,
   } = deps;
@@ -421,6 +429,9 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
                     logger.warn('[adminGroups] config restore skipped, override exists:', id);
                   }
                 }
+              : undefined,
+            findConfigByPrincipal
+              ? () => findConfigByPrincipal(PrincipalType.GROUP, id, { includeInactive: true })
               : undefined,
           ),
           cascadeStep('acl', () =>
