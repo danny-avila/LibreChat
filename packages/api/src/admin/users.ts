@@ -57,6 +57,17 @@ export interface AdminUsersDeps {
     principalType: PrincipalType;
     principalId: string | Types.ObjectId;
   }) => Promise<void>;
+  /**
+   * Credential IDs are globally unique, so passkeys left behind by a deleted user
+   * keep authentication material and can collide with a later registration.
+   */
+  deletePasskeysByUser: (userId: string) => Promise<number>;
+  /**
+   * Stored credentials the user holds, such as a connected account's OAuth grant. Removed before
+   * the user is, as the self-delete flow does, so a failure leaves the account to retry rather
+   * than its credentials behind.
+   */
+  deleteTokens: (query: { userId: string }) => Promise<unknown>;
 }
 
 export function createAdminUsersHandlers(deps: AdminUsersDeps): {
@@ -79,6 +90,8 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
     invalidateCodeEnvironmentConfigCache,
     deleteConfig,
     deleteAclEntries,
+    deletePasskeysByUser,
+    deleteTokens,
   } = deps;
 
   async function listUsersHandler(req: ServerRequest, res: Response) {
@@ -196,6 +209,7 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
       await prepareAgentTriggerUserPurge(id, triggerDeletionFence, targetUser?.tenantId);
       await drainAgentTriggerDeliveriesForUser(id);
 
+      await deleteTokens({ userId: id });
       const result = await deleteUserById(id);
 
       if (result.deletedCount === 0) {
@@ -229,6 +243,7 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
         deleteConfig(PrincipalType.USER, id),
         ...(codeEnvironmentCleanupSafe ? [deleteUserCodeEnvironments(objectId)] : []),
         deleteAclEntries({ principalType: PrincipalType.USER, principalId: objectId }),
+        deletePasskeysByUser(id),
       ]);
       for (const r of cleanupResults) {
         if (r.status === 'rejected') {

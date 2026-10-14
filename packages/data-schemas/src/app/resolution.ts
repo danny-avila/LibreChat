@@ -1,6 +1,7 @@
 import {
   BASE_PRINCIPAL_CONFIG_SECTIONS,
   BASE_ONLY_CONFIG_SECTIONS,
+  BASE_ONLY_CONFIG_PATHS,
   INTERFACE_PERMISSION_FIELDS,
   RUNTIME_CONFIG_INTERFACE_FIELDS,
   PERMISSION_SUB_KEYS,
@@ -34,6 +35,13 @@ const BASE_PRINCIPAL_OVERRIDE_SECTIONS = new Set<string>(BASE_PRINCIPAL_CONFIG_S
 const ARRAY_MERGE_KEYS: Record<string, string> = {
   'endpoints.custom': 'name',
 };
+
+/**
+ * Object-valued paths an override replaces whole instead of merging into. A theme
+ * definition is one coherent value: merging two would keep the base theme's modes,
+ * brands and tokens under the override's name. Uses AppConfig key names.
+ */
+const ATOMIC_MERGE_PATHS = new Set<string>(['interfaceConfig.theme']);
 
 /**
  * Maps YAML-level override keys (TCustomConfig) to their AppConfig equivalents.
@@ -185,6 +193,7 @@ function deepMerge<T extends AnyObject>(target: T, source: AnyObject, depth = 0,
     const targetVal = result[key];
     if (
       depth < MAX_MERGE_DEPTH &&
+      !ATOMIC_MERGE_PATHS.has(currentPath) &&
       sourceVal != null &&
       typeof sourceVal === 'object' &&
       !Array.isArray(sourceVal) &&
@@ -844,7 +853,30 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
     }
   }
 
-  return preserveRuntimeStops(baseConfig, merged);
+  return preserveBaseOnlyPaths(baseConfig, preserveRuntimeStops(baseConfig, merged));
+}
+
+function getPath(target: unknown, segments: string[]): unknown {
+  let current = target;
+  for (const segment of segments) {
+    if (!isPlainObject(current)) return undefined;
+    current = current[segment];
+  }
+  return current;
+}
+
+/**
+ * Puts back the base value of every `BASE_ONLY_CONFIG_PATHS` field, whatever an override set or a
+ * tombstone removed on the way, so every reader of the merged config sees the operator's value.
+ */
+function preserveBaseOnlyPaths<T extends AppConfig>(baseConfig: AppConfig, merged: T): T {
+  let result: unknown = merged;
+  for (const path of BASE_ONLY_CONFIG_PATHS) {
+    const segments = path.split('.');
+    const value = getPath(baseConfig, segments);
+    if (getPath(result, segments) !== value) result = setPath(result, segments, value);
+  }
+  return result as T;
 }
 
 /** Whether a runtime-config interface field reads as OFF in either of its two shapes:

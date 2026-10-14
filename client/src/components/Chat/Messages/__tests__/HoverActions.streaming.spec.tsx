@@ -311,7 +311,7 @@ describe('streaming hover actions', () => {
     renderStreamingRow(structured);
 
     expect(screen.getByRole('navigation', { name: 'com_ui_sibling_navigation' })).toHaveClass(
-      '[@media(hover:hover)]:opacity-0',
+      'no-touch:opacity-0',
     );
   });
 
@@ -326,7 +326,7 @@ describe('streaming hover actions', () => {
   ])('holds the footer height while %s response streams', (_label, structured) => {
     renderStreamingRow(structured);
 
-    expect(screen.getByTestId('hover-buttons').parentElement).toHaveClass('min-h-[31px]');
+    expect(screen.getByTestId('hover-buttons').parentElement).toHaveClass('min-h-[1.9375rem]');
   });
 
   /**

@@ -8,8 +8,7 @@ dotenv.config();
 const timeout = Number(process.env.E2E_AUTH_TIMEOUT ?? 15000);
 const chromiumChannel = process.env.E2E_CHROMIUM_CHANNEL || undefined;
 
-async function register(page: Page, user: User) {
-  await page.getByRole('link', { name: 'Sign up' }).click();
+export async function submitRegistration(page: Page, user: User) {
   await page.getByLabel('Full name').click();
   await page.getByLabel('Full name').fill(user.name);
   await page.getByLabel('Email').click();
@@ -22,6 +21,11 @@ async function register(page: Page, user: User) {
   await page.getByLabel('Submit registration').click();
 }
 
+export async function register(page: Page, user: User) {
+  await page.getByRole('link', { name: 'Sign up' }).click();
+  await submitRegistration(page, user);
+}
+
 async function registrationErrorIsVisible(page: Page) {
   return page
     .getByTestId('registration-error')
@@ -29,13 +33,13 @@ async function registrationErrorIsVisible(page: Page) {
     .catch(() => false);
 }
 
-async function login(page: Page, user: User) {
+export async function login(page: Page, user: User) {
   await page.getByLabel('Email').fill(user.email);
   await page.getByLabel('Password').fill(user.password);
   await page.getByTestId('login-button').click();
 }
 
-function appURL(baseURL: string, pathname = '') {
+export function appURL(baseURL: string, pathname = '') {
   const normalizedBaseURL = baseURL.endsWith('/') ? baseURL : `${baseURL}/`;
   return new URL(pathname.replace(/^\/+/, ''), normalizedBaseURL).toString();
 }
@@ -63,9 +67,11 @@ async function authenticate(config: FullConfig, user: User) {
     const conversationURL = appURL(baseURL, 'c/new');
     const loginURL = appURL(baseURL, 'login');
 
-    // Set localStorage before navigating to the page
+    // Set localStorage before navigating to the page. Specs send with Enter, which the
+    // app no longer does by default, so the saved state opts into it.
     await page.context().addInitScript(() => {
       localStorage.setItem('navVisible', 'true');
+      localStorage.setItem('enterToSend', 'true');
     });
     console.log('🤖: ✔️  localStorage: set Nav as Visible', storageState);
 

@@ -1,26 +1,29 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { useSetAtom } from 'jotai';
+import { useAtom, useSetAtom, useStore } from 'jotai';
 import { useQueryClient } from '@tanstack/react-query';
+import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import { Constants, QueryKeys, isAssistantsEndpoint } from 'librechat-data-provider';
-import { useRecoilState, useRecoilValue, useSetRecoilState, useRecoilCallback } from 'recoil';
 import type { TMessage } from 'librechat-data-provider';
-import {
-  useGetStartupConfig,
-  useAbortStreamMutation,
-  supportsGenerationProtocolV2,
-} from '~/data-provider';
+import type { ChatContract } from './contract';
+import { stopRequestedByConvoId, drainAfterAbortByIndex, runEndByIndex } from '~/hooks/Chat/queue';
 import { useLatestMessage, useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
+import { useAbortStreamMutation, supportsGenerationProtocolV2 } from '~/data-provider';
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
+import { useChatSettings } from '~/Providers/ChatSettingsContext';
 import useChatFunctions from '~/hooks/Chat/useChatFunctions';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
+import { abortScrollFamily } from '~/store/generation';
 import { resolveAbortSteerTarget } from '~/utils';
 import useNewConvo from '~/hooks/useNewConvo';
 import { getMessageCacheIds } from './cache';
 import { useAbortCleanup } from './abort';
 import store from '~/store';
 
+/** The live attachments map the stream and preview polling write. */
+const useLiveAttachments = () => useRecoilValue(store.messageAttachmentsMap);
+
 // this to be set somewhere else
-export default function useChatHelpers(index = 0, paramId?: string) {
+export default function useChatHelpers(index = 0, paramId?: string): ChatContract {
   const clearAllSubmissions = store.useClearSubmissionState();
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
   const [filesLoading, setFilesLoading] = useState(false);
@@ -35,52 +38,43 @@ export default function useChatHelpers(index = 0, paramId?: string) {
   /** Async abort responses can settle after this pane has moved to another
    * conversation and armed its own interrupt. Clear only the intent owned by
    * the request that produced the response. */
-  const clearInterruptDrain = useRecoilCallback(
-    ({ snapshot, set }) =>
-      (convoId: string, generationCreatedAt: number) => {
-        const armed = snapshot.getLoadable(store.drainAfterAbortByIndex(index)).getValue();
-        if (
-          armed !== false &&
-          armed.conversationId === convoId &&
-          armed.generationCreatedAt === generationCreatedAt
-        ) {
-          set(store.drainAfterAbortByIndex(index), false);
-        }
-      },
-    [index],
+  const queueStore = useStore();
+  const clearInterruptDrain = useCallback(
+    (convoId: string, generationCreatedAt: number) => {
+      const armed = queueStore.get(drainAfterAbortByIndex(index));
+      if (
+        armed !== false &&
+        armed.conversationId === convoId &&
+        armed.generationCreatedAt === generationCreatedAt
+      ) {
+        queueStore.set(drainAfterAbortByIndex(index), false);
+      }
+    },
+    [index, queueStore],
   );
 
-  /**
-   * Interrupt & send fallback: clearing submissions below can tear down the
-   * SSE before its aborted-final event is processed, and only that event
-   * writes the run-end signal the queue drain consumes. When the one-shot
-   * interrupt flag is armed and no run-end has landed yet, write it here from
-   * the abort response so the queued follow-up still auto-sends. If the SSE
-   * final DOES arrive later, its signal finds the flag already consumed and
-   * an `aborted` outcome drains nothing — no double fire.
-   */
-  const signalInterruptDrain = useRecoilCallback(
-    ({ snapshot, set }) =>
-      (convoId: string, generationCreatedAt: number, armedConversationId = convoId) => {
-        const armed = snapshot.getLoadable(store.drainAfterAbortByIndex(index)).getValue();
-        const runEnd = snapshot.getLoadable(store.runEndByIndex(index)).getValue();
-        const matchesArm =
-          armed !== false &&
-          armed.conversationId === armedConversationId &&
-          armed.generationCreatedAt === generationCreatedAt;
-        const alreadySignaled =
-          runEnd?.conversationId === convoId && runEnd.generationCreatedAt === generationCreatedAt;
-        if (!matchesArm || alreadySignaled) {
-          return;
-        }
-        set(store.runEndByIndex(index), {
-          conversationId: convoId,
-          outcome: 'aborted',
-          endedAt: Date.now(),
-          generationCreatedAt,
-        });
-      },
-    [index],
+  /** A missing job cannot deliver FINAL, so release its armed interrupt queue. */
+  const signalInterruptDrain = useCallback(
+    (convoId: string, generationCreatedAt: number, armedConversationId = convoId) => {
+      const armed = queueStore.get(drainAfterAbortByIndex(index));
+      const runEnd = queueStore.get(runEndByIndex(index));
+      const matchesArm =
+        armed !== false &&
+        armed.conversationId === armedConversationId &&
+        armed.generationCreatedAt === generationCreatedAt;
+      const alreadySignaled =
+        runEnd?.conversationId === convoId && runEnd.generationCreatedAt === generationCreatedAt;
+      if (!matchesArm || alreadySignaled) {
+        return;
+      }
+      queueStore.set(runEndByIndex(index), {
+        conversationId: convoId,
+        outcome: 'aborted',
+        endedAt: Date.now(),
+        generationCreatedAt,
+      });
+    },
+    [index, queueStore],
   );
 
   const { newConversation } = useNewConvo(index);
@@ -193,7 +187,17 @@ export default function useChatHelpers(index = 0, paramId?: string) {
     );
 
     if (parentMessage && parentMessage.isCreatedByUser) {
-      ask({ ...parentMessage }, { isContinued: true, isRegenerate: true, isEdited: true });
+      ask(
+        { ...parentMessage },
+        {
+          isContinued: true,
+          isRegenerate: true,
+          isEdited: true,
+          overrideManualSkills: parentMessage.manualSkills,
+          overrideQuotes: parentMessage.quotes,
+          overrideReasoning: parentMessage.reasoningOverride ?? null,
+        },
+      );
     } else {
       console.error(
         'Failed to regenerate the message: parentMessage not found, or not created by user.',
@@ -227,9 +231,12 @@ export default function useChatHelpers(index = 0, paramId?: string) {
         return;
       }
       // The aborted run's final SSE can land (and the interrupt drain can
-      // start the NEXT submission) while the abort response is in flight —
+      // start the NEXT submission) while the abort response is in flight;
       // the fallback clear below must not tear down that new run.
       const submissionAtAbort = captureSubmission();
+      const stoppedRun = { generationCreatedAt: activeGenerationCreatedAt };
+      const stopFamily = stopRequestedByConvoId(conversationId);
+      queueStore.set(stopFamily, stoppedRun);
       try {
         console.log('[useChatHelpers] Calling abort mutation for:', conversationId);
         const response = await abortStream({
@@ -248,14 +255,18 @@ export default function useChatHelpers(index = 0, paramId?: string) {
         if (canUseV2AbortResponse && response?.settled === true) {
           /** Natural completion/error won the terminal CAS, so this request did
            * not emit an abort FINAL and must not release the abort-drain queue.
-           * The winning terminal event/status owns reconciliation. */
+           * The winning terminal event/status owns reconciliation. A run that
+           * completed or failed was not stopped, so its persisted outcome may
+           * still drain; one another Stop already aborted stays stopped. */
           clearInterruptDrain(conversationId, activeGenerationCreatedAt);
+          if (response.terminalStatus !== 'aborted' && queueStore.get(stopFamily) === stoppedRun) {
+            queueStore.set(stopFamily, null);
+          }
           queryClient.invalidateQueries({
             queryKey: [QueryKeys.messages, conversationId],
             refetchType: 'all',
           });
           queryClient.invalidateQueries({ queryKey: ['streamStatus', conversationId] });
-          clearSubmissionsUnlessReplaced(submissionAtAbort);
           return;
         }
         if (canUseV2AbortResponse && response?.persistenceFailed === true) {
@@ -273,7 +284,7 @@ export default function useChatHelpers(index = 0, paramId?: string) {
           });
           return;
         }
-        // The response's `aborted` field is the RESOLVED job id — authoritative
+        // The response's `aborted` field is the RESOLVED job id, authoritative
         // when this turn still holds the `new` placeholder. Chips and the drain
         // signal land where the mounted composer's queue machinery looks, while
         // the parked-copy claim uses the resolved id the server keyed it under.
@@ -281,11 +292,12 @@ export default function useChatHelpers(index = 0, paramId?: string) {
           conversationId,
           resolvedId: response?.aborted,
         });
-        // Steers the run never injected ride the abort response. Consume them
-        // here as well as on the SSE final event — clearing submissions below
-        // can close the stream before that event lands, and conversion
-        // dedupes by steer id so double delivery is a no-op. `claimParked`
-        // reconciles the replayable parked copy if the final raced this response.
+        /** Keep the submission attached until FINAL/status reconciles history.
+         * Clearing on the ACK can close SSE during terminal authorization and
+         * strand the preliminary response as an unsaved follow-up parent.
+         * Only terminal reconciliation may release the interrupt queue. */
+        // Restore uninjected steers from the ACK as well as FINAL. Conversion
+        // dedupes by steer id; `claimParked` reconciles the replayable copy.
         if (Array.isArray(response?.pendingSteers)) {
           convertSteersToQueued(chipConvoId, response.pendingSteers, {
             claimParked: true,
@@ -293,10 +305,6 @@ export default function useChatHelpers(index = 0, paramId?: string) {
             generationProtocolVersion: canUseV2AbortResponse ? 2 : 1,
           });
         }
-        signalInterruptDrain(chipConvoId, activeGenerationCreatedAt, conversationId);
-        // The SSE will receive a `done` event with `aborted: true` and clean up
-        // We still clear submissions as a fallback
-        clearSubmissionsUnlessReplaced(submissionAtAbort);
       } catch (error) {
         console.error('[useChatHelpers] Abort failed:', error);
         const errorData = (
@@ -341,6 +349,7 @@ export default function useChatHelpers(index = 0, paramId?: string) {
     conversationId,
     endpoint,
     endpointType,
+    queueStore,
     activeGenerationCreatedAt,
     activeGenerationProtocolVersion,
     abortStream,
@@ -385,28 +394,27 @@ export default function useChatHelpers(index = 0, paramId?: string) {
 
   const [preset, setPreset] = useRecoilState(store.presetByIndex(index));
   const [showPopover, setShowPopover] = useRecoilState(store.showPopoverFamily(index));
-  const [abortScroll, setAbortScroll] = useRecoilState(store.abortScrollFamily(index));
+  const [abortScroll, setAbortScroll] = useAtom(abortScrollFamily(index));
   const [optionSettings, setOptionSettings] = useRecoilState(store.optionSettingsFamily(index));
 
   /** Read once per chat rather than per message row: message rows never unmount, so a
-   *  per-row config observer would accumulate for the length of the conversation.
-   *  Stays disabled until the config resolves, so a `feedback: false` deployment never
-   *  flashes controls whose writes the server rejects. */
-  const { data: startupConfig } = useGetStartupConfig();
-  const feedbackEnabled = startupConfig != null && startupConfig.interface?.feedback !== false;
+   *  per-row settings read would accumulate for the length of the conversation. */
+  const { feedbackEnabled } = useChatSettings().config;
 
   return useMemo(
-    () => ({
+    (): ChatContract => ({
       newConversation,
       conversation,
       setConversation,
       isSubmitting,
       setIsSubmitting,
       getMessages,
+      messagesKey: queryParam,
       setMessages,
       setSiblingIdx,
       latestMessageId,
       latestMessageDepth,
+      useLiveAttachments,
       ask,
       index,
       regenerate,
@@ -435,6 +443,7 @@ export default function useChatHelpers(index = 0, paramId?: string) {
       isSubmitting,
       setIsSubmitting,
       getMessages,
+      queryParam,
       setMessages,
       setSiblingIdx,
       latestMessageId,

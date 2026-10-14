@@ -34,6 +34,7 @@ const mockCancelAndDrainSubagentThreads = jest.fn();
 const mockQuiesceUserSchedules = jest.fn();
 const mockDeleteSchedulesByUser = jest.fn();
 const mockRevokeUserCodeEnvironmentWorkers = jest.fn();
+const mockDeletePasskeysByUser = jest.fn();
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: { error: jest.fn(), info: jest.fn() },
@@ -48,6 +49,12 @@ jest.mock('librechat-data-provider', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  clearSessionHintCookie: jest.fn(),
+  createEmailChangeService: jest.fn(() => ({
+    requestEmailChange: jest.fn(),
+    confirmEmailChange: jest.fn(),
+  })),
+  createEmailChangeDeps: jest.fn(() => ({})),
   MCPOAuthHandler: {},
   MCPTokenStorage: {},
   normalizeHttpError: jest.fn(),
@@ -81,6 +88,7 @@ jest.mock('@librechat/api', () => ({
 
 jest.mock('~/models', () => ({
   deleteAllUserSessions: (...args) => mockDeleteAllUserSessions(...args),
+  deletePasskeysByUser: (...args) => mockDeletePasskeysByUser(...args),
   deleteAllSharedLinks: (...args) => mockDeleteAllSharedLinks(...args),
   updateUserPlugins: (...args) => mockUpdateUserPlugins(...args),
   deleteUserById: (...args) => mockDeleteUserById(...args),
@@ -173,7 +181,7 @@ jest.mock('~/cache', () => ({
 }));
 
 const { deleteUserController } = require('~/server/controllers/UserController');
-const { deleteOwnedAgentCheckpoints } = require('@librechat/api');
+const { deleteOwnedAgentCheckpoints, clearSessionHintCookie } = require('@librechat/api');
 
 function createRes() {
   const res = {};
@@ -214,11 +222,30 @@ function stubDeletionMocks() {
   mockQuiesceUserSchedules.mockResolvedValue(true);
   mockDeleteSchedulesByUser.mockResolvedValue();
   mockRevokeUserCodeEnvironmentWorkers.mockResolvedValue(0);
+  mockDeletePasskeysByUser.mockResolvedValue();
 }
 
 beforeEach(() => {
   jest.clearAllMocks();
   stubDeletionMocks();
+});
+
+describe('deleteUserController - session hint', () => {
+  it('retires the session hint once sessions are revoked, even when a later cleanup fails', async () => {
+    const req = { user: { id: 'user1', _id: 'user1', email: 'a@b.com' }, body: {} };
+    const res = createRes();
+    mockGetUserById.mockResolvedValue({ _id: 'user1', twoFactorEnabled: false });
+    mockDeletePresets.mockRejectedValue(new Error('preset store unavailable'));
+
+    await deleteUserController(req, res);
+
+    expect(mockDeleteAllUserSessions).toHaveBeenCalledWith({ userId: 'user1' });
+    expect(clearSessionHintCookie).toHaveBeenCalledWith(res);
+    expect(mockDeleteAllUserSessions.mock.invocationCallOrder[0]).toBeLessThan(
+      clearSessionHintCookie.mock.invocationCallOrder[0],
+    );
+    expect(res.status).toHaveBeenCalledWith(500);
+  });
 });
 
 describe('deleteUserController - 2FA enforcement', () => {
@@ -239,6 +266,7 @@ describe('deleteUserController - 2FA enforcement', () => {
     expect(mockRevokeUserCodeEnvironmentWorkers).toHaveBeenCalledWith(
       expect.objectContaining({ userId: 'user1' }),
     );
+    expect(mockDeletePasskeysByUser).toHaveBeenCalledWith('user1');
     expect(mockVerifyOTPOrBackupCode).not.toHaveBeenCalled();
     expect(mockBeginAgentTriggerUserDeletion.mock.invocationCallOrder[0]).toBeLessThan(
       mockPrepareAgentTriggerUserPurge.mock.invocationCallOrder[0],
@@ -260,6 +288,27 @@ describe('deleteUserController - 2FA enforcement', () => {
     );
     expect(mockCancelAgentTriggerUserDeletion).not.toHaveBeenCalled();
     expect(mockCancelAgentTriggerUserPurge).not.toHaveBeenCalled();
+  });
+
+  it('logs the deleted account by id and tenant without the email address', async () => {
+    const { logger } = require('@librechat/data-schemas');
+    logger.info.mockClear();
+    const req = {
+      user: { id: 'user1', _id: 'user1', email: 'a@b.com', tenantId: 'tenant-1' },
+      body: {},
+    };
+    mockGetUserById.mockResolvedValue({
+      _id: 'user1',
+      email: 'a@b.com',
+      tenantId: 'tenant-1',
+      twoFactorEnabled: false,
+    });
+
+    await deleteUserController(req, createRes());
+
+    const lines = logger.info.mock.calls.map(([line]) => String(line));
+    expect(lines).toContain('User deleted account. ID: user1 Tenant: tenant-1');
+    expect(JSON.stringify(logger.info.mock.calls)).not.toContain('a@b.com');
   });
 
   it('aborts active generation jobs before deleting account-owned records', async () => {
