@@ -272,6 +272,17 @@ describe('redactMessage', () => {
     expect(Date.now() - started).toBeLessThan(500);
   });
 
+  it('masks serialized locals with a lone escaped backslash and stays linear on backslash runs', () => {
+    expect(redactMessage(JSON.stringify({ email: '"jane\\doe"@example.com' }))).not.toContain(
+      'jane',
+    );
+    for (const input of ['\\"' + '\\'.repeat(60000), '\\"\\\\'.repeat(20000)]) {
+      const started = Date.now();
+      redactMessage(input);
+      expect(Date.now() - started).toBeLessThan(500);
+    }
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),
