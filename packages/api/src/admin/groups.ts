@@ -472,7 +472,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
         const revoked = [...new Set(group.memberIds ?? [])];
         for (let i = 0; i < revoked.length; i += AUDIT_MEMBER_CHUNK) {
           const chunk = revoked.slice(i, i + AUDIT_MEMBER_CHUNK);
-          await emitAudit(req, {
+          await emitRevocationAudit(req, {
             action: 'group.member_removed',
             severity: 'warning',
             target: groupTarget(group, id),

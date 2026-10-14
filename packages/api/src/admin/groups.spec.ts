@@ -1126,6 +1126,30 @@ describe('createAdminGroupsHandlers', () => {
         expect(order).toEqual(['group', 'audit:pending', 'audit:success']);
       });
 
+      it('still appends the terminal outcome when member-removal audits fail under fail-closed', async () => {
+        const recordAuditEntry = jest.fn().mockImplementation(async (input) => {
+          if (input.action === 'group.member_removed') {
+            throw new Error('audit down');
+          }
+        });
+        const group = mockGroup({ memberIds: ['m1'] });
+        const deps = compensationDeps({
+          recordAuditEntry,
+          auditFailClosed: true,
+          findGroupById: jest.fn().mockResolvedValue(group),
+          deleteGroup: jest.fn().mockResolvedValue(group),
+        });
+        const handlers = createAdminGroupsHandlers(deps);
+        const { req, res, status } = withUser(createReqRes({ params: { id: validId } }));
+
+        await handlers.deleteGroup(req, res);
+
+        expect(status).toHaveBeenCalledWith(200);
+        expect(recordAuditEntry).toHaveBeenLastCalledWith(
+          expect.objectContaining({ action: 'group.deleted', outcome: 'success' }),
+        );
+      });
+
       it('never blocks the delete on an audit outage, even when fail-closed', async () => {
         const deps = compensationDeps({
           recordAuditEntry: jest.fn().mockRejectedValue(new Error('audit down')),
