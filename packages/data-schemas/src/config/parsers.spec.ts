@@ -110,6 +110,15 @@ describe('redactMessage', () => {
     expect(out).toContain('"b"');
   });
 
+  it('keeps redaction of a long run without an address bounded', () => {
+    const started = Date.now();
+    const out = String(
+      runRedactFormat({ level: 'info', message: `${'a'.repeat(100000)}://host` }).message,
+    );
+    expect(Date.now() - started).toBeLessThan(500);
+    expect(out).toContain('truncated');
+  });
+
   it('masks quoted and bracketed addresses cut right before the at sign or inside the literal', () => {
     for (const [addr, cut] of [
       ['"jane doe"@example.com', '"jane doe"'.length],

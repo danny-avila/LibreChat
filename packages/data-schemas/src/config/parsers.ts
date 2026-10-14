@@ -58,6 +58,7 @@ const sensitiveKeys: RegExp[] = [
  */
 const EMAIL_PATTERN =
   /(?:"(?:[^"\\\r\n]|\\.){1,64}"|(?<![^\s<>()[\],;"])[^\s<>()[\],;"]+)@(?:\[[^\]\s@]{1,64}\]|[^\s<>()[\],;"@]+\.[^\s<>()[\],;"@]{2,})/gu;
+const REDACTION_WINDOW_SLACK = 1024;
 const REDACTED_EMAIL_VALUE = '[REDACTED_EMAIL]';
 
 const sensitiveMetadataKey =
@@ -91,10 +92,20 @@ function redactLogString(str: string): string {
     return redactMessage(str);
   }
 
-  /** Redacts the whole string first so a cutoff can never split an address past the matcher. */
-  const redacted = redactMessage(str);
+  /**
+   * Redacts a bounded window past the cutoff, ending at whitespace, so an address that straddles
+   * the limit is matched whole before the kept prefix is cut.
+   */
+  const window = str.substring(0, MAX_REDACTION_STRING_LENGTH + REDACTION_WINDOW_SLACK);
+  let boundary = window.length;
+  while (boundary > 0 && !/\s/u.test(window[boundary - 1])) {
+    boundary--;
+  }
+  const redacted = redactMessage(
+    boundary > MAX_REDACTION_STRING_LENGTH ? window.substring(0, boundary) : window,
+  );
   const kept = redacted.substring(0, MAX_REDACTION_STRING_LENGTH);
-  return `${kept}... [truncated ${redacted.length - kept.length} chars]`;
+  return `${kept}... [truncated ${str.length - kept.length} chars]`;
 }
 
 function isPlainRecord(value: object): value is Record<string, unknown> {
