@@ -404,6 +404,18 @@ describe('redactMessage', () => {
     ).not.toThrow();
   });
 
+  it('rebuilds the record when an accessor ignores writes', () => {
+    const error = new Error('boom');
+    Object.defineProperty(error, 'detail', {
+      enumerable: true,
+      configurable: true,
+      get: () => 'jane@example.com',
+      set: () => undefined,
+    });
+    const out = runRedactFormat(error as unknown as RedactInfo) as unknown as { detail: string };
+    expect(out.detail).not.toContain('jane');
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),

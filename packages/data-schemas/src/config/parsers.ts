@@ -581,6 +581,10 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
       ) {
         continue;
       }
+      /** An accessor keeps serving its original value after assignment, so the record is rebuilt. */
+      if (Object.getOwnPropertyDescriptor(info, key)?.get !== undefined) {
+        replaceFailed = true;
+      }
       let raw: unknown;
       try {
         raw = infoRecord[key];
