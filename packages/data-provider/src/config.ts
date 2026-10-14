@@ -1593,6 +1593,8 @@ export const agentsEndpointSchema = baseEndpointSchema
         .default(DEFAULT_STREAM_KEEPALIVE_INTERVAL_MS),
       recursionLimit: z.number().optional(),
       disableBuilder: z.boolean().optional().default(false),
+      /** Prefixes every user message in the prompt with the time it was sent, to the second. */
+      promptMessageTimestamps: z.boolean().optional().default(false),
       /** Optional workspace guidance acquisition budget, separate from command execution. */
       repositoryInstructions: z
         .object({
@@ -2069,6 +2071,7 @@ export const agentsEndpointSchema = baseEndpointSchema
   )
   .default({
     disableBuilder: false,
+    promptMessageTimestamps: false,
     capabilities: defaultAgentCapabilities,
     maxCitations: 30,
     maxCitationsPerFile: 7,
