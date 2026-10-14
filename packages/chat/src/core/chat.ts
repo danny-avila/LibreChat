@@ -496,7 +496,9 @@ export class Chat {
     });
     active.stopped = true;
     if (result && 'runMessages' in result) {
-      await this.mergeRunMessages(result.runMessages);
+      if (this.active === active) {
+        await this.mergeRunMessages(result.runMessages);
+      }
       active.controller.abort();
       active.stream?.close();
     } else if (!active.stream) {
@@ -570,11 +572,11 @@ export class Chat {
   /** Stops a generation whose stream dropped, which the server keeps running. */
   private async stopDetached(detached: DetachedGeneration): Promise<void> {
     const result = await this.abortOnServer(detached.target);
-    if (result && 'runMessages' in result) {
-      await this.mergeRunMessages(result.runMessages);
-    }
     if (this.detached !== detached) {
       return;
+    }
+    if (result && 'runMessages' in result) {
+      await this.mergeRunMessages(result.runMessages);
     }
     this.detached = undefined;
     if (this.error === detached.error) {
@@ -958,15 +960,16 @@ export class Chat {
     }
     if (outcome.kind === 'error' && outcome.disconnect) {
       active.disconnected = outcome.error;
-      if (active.stream && active.endpoint && !active.stopped) {
+      const streamId = active.stream?.streamId ?? active.reattach?.streamId;
+      if ((active.stream || active.reattach) && active.endpoint && !active.stopped) {
         /** The server keeps the generation running, so a later stop still reaches it. */
         this.detached = {
           error: outcome.error,
           target: {
             endpoint: active.endpoint,
-            streamId: active.stream.streamId,
-            generationCreatedAt: active.stream.generationCreatedAt ?? this.generationCreatedAt,
-            abortKey: active.stream.streamId == null ? this.abortKey(active) : undefined,
+            streamId,
+            generationCreatedAt: active.stream?.generationCreatedAt ?? this.generationCreatedAt,
+            abortKey: streamId == null ? this.abortKey(active) : undefined,
           },
         };
       }
