@@ -369,7 +369,7 @@ function startExpiredFileSweep(options = {}) {
   });
 }
 
-const fileRecordExists = createRecordExists((id) => db.findFileById(id));
+const fileRecordExists = (stored) => createRecordExists((id) => db.findFileById(id))(stored);
 
 /**
  * Processes a file URL using a specified file handling strategy. This function accepts a strategy name,
