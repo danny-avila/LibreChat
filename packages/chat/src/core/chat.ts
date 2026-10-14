@@ -19,6 +19,7 @@ import type {
   ChatSendResult,
   ChatAbortResult,
   ChatAbortRequest,
+  ChatStreamAbortResult,
   ChatResumeSelection,
   ChatTransportError,
 } from './types';
@@ -174,6 +175,10 @@ type ActiveRequest = {
   paused?: string;
   /** Set once the server confirmed a stop, so a stream that drops instead of ending aborts. */
   stopped?: boolean;
+  /** The terminal status a stop answer reported for a run that had already ended on its own. */
+  settledAs?: ChatStreamAbortResult['terminalStatus'];
+  /** Resolves once a stop sent for this request was answered, either way. */
+  stopAnswered?: Promise<void>;
   /** The error the request settled with when its connection dropped. */
   disconnected?: Error;
   /** The conversation the request's payload names, which an Assistants stop addresses. */
@@ -237,6 +242,19 @@ const getErrorMessage = (data: ChatErrorData | null | undefined): string | undef
   const nested = typeof data.error === 'object' ? data.error?.message : undefined;
   const reason = typeof data.error === 'string' ? data.error : undefined;
   return data.message || data.text || reason || nested;
+};
+
+/** A run that ended on its own before a stop reached it, whose final frame never arrived. */
+const getSettledOutcome = (status: ChatStreamAbortResult['terminalStatus']): Outcome => {
+  if (status === 'error') {
+    return {
+      kind: 'error',
+      error: new Error('The response failed'),
+      disconnect: false,
+      settled: {},
+    };
+  }
+  return status === 'aborted' ? { kind: 'abort', settled: {} } : { kind: 'complete', settled: {} };
 };
 
 const getFinalOutcome = (data: ChatFinalFrame): Outcome => {
@@ -509,13 +527,23 @@ export class Chat {
     }
     active.paused ??= this.action?.actionId;
     const streamId = active.stream?.streamId ?? active.reattach?.streamId;
-    const result = await this.abortOnServer({
+    const answer = this.abortOnServer({
       endpoint: active.endpoint,
       streamId,
       generationCreatedAt: active.stream?.generationCreatedAt ?? this.generationCreatedAt,
       abortKey: streamId == null ? this.abortKey(active) : undefined,
+    }).then((result) => {
+      active.stopped = true;
+      if (result && 'settled' in result && result.settled) {
+        active.settledAs = result.terminalStatus ?? 'complete';
+      }
+      return result;
     });
-    active.stopped = true;
+    active.stopAnswered = answer.then(
+      () => undefined,
+      () => undefined,
+    );
+    const result = await answer;
     if (result && 'runMessages' in result) {
       if (this.active === active) {
         await this.mergeRunMessages(result.runMessages);
@@ -674,6 +702,10 @@ export class Chat {
   restorePendingAction(action: Agents.PendingAction, generationCreatedAt: number): void {
     if (this.active) {
       throw new Error('A request is in flight; its stream reports the pause');
+    }
+    if (this.detached && this.detached.target.generationCreatedAt !== generationCreatedAt) {
+      /** The pause belongs to a newer generation than the one whose stream dropped. */
+      this.detached = undefined;
     }
     if (action.expiresAt != null && action.expiresAt <= Date.now()) {
       /** An expired pause is stale: the server will refuse its resume. */
@@ -929,8 +961,13 @@ export class Chat {
     if (!outcome && signal.aborted) {
       outcome = { kind: 'abort' };
     }
-    if (active.stopped && (!outcome || (outcome.kind === 'error' && outcome.disconnect))) {
-      outcome = { kind: 'abort' };
+    const unresolved = !outcome || (outcome.kind === 'error' && outcome.disconnect);
+    if (unresolved && active.stopAnswered) {
+      /** A stream that ended during a stop is settled by the server's answer to it. */
+      await active.stopAnswered;
+    }
+    if (active.stopped && unresolved) {
+      outcome = active.settledAs ? getSettledOutcome(active.settledAs) : { kind: 'abort' };
     }
     this.settle(
       outcome ?? {
