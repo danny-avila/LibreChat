@@ -1213,6 +1213,19 @@ describe('Chat', () => {
       expect(chat.pendingAction).toBeUndefined();
     });
 
+    it('drops a restored pause when the reattached stream is another generation', async () => {
+      const other = createStream({ streamId: 'convo-1', generationCreatedAt: 200 });
+      const { chat } = setup({}, { reconnectToStream: jest.fn(async () => other) });
+      chat.restorePendingAction(askAction, 100);
+
+      const resumed = chat.resumeStream({ streamId: 'convo-1' });
+      await flush();
+
+      expect(chat.pendingAction).toBeUndefined();
+      other.push(finalEvent());
+      await resumed;
+    });
+
     it('holds new turns behind a restored pause until it is stopped on the server', async () => {
       const { chat, transport } = setup({ resumeSelection: () => ({ endpoint: 'agents' }) });
       chat.restorePendingAction(askAction, 500);
