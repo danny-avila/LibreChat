@@ -490,6 +490,26 @@ describe('redactMessage', () => {
     expect(JSON.stringify(result)).not.toContain('secretcanary');
   });
 
+  it('redacts encoded address keys and survives throwing nested Axios configs', () => {
+    const out = runRedactFormat({
+      level: 'info',
+      message: 'm',
+      'jane%40example.com': 1,
+    } as RedactInfo);
+    expect(JSON.stringify(out)).not.toContain('jane');
+    const config = { url: 'https://example.test/' };
+    Object.defineProperty(config, 'method', {
+      enumerable: true,
+      get: () => {
+        throw new Error('nope');
+      },
+    });
+    const error = Object.assign(new Error('boom'), { isAxiosError: true, config });
+    expect(() =>
+      runRedactFormat({ level: 'error', message: 'm', [SPLAT_SYMBOL]: [error] }),
+    ).not.toThrow();
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),

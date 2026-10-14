@@ -160,7 +160,7 @@ function redactLogKey(
   isUsed: (candidate: string) => boolean,
   cursors: Map<string, number>,
 ): string {
-  const base = key.includes('@') ? redactLogString(key) : key;
+  const base = key.includes('@') || key.includes('%40') ? redactLogString(key) : key;
   let candidate = base;
   let suffix = cursors.get(base) ?? 2;
   while (isUsed(candidate)) {
@@ -258,7 +258,7 @@ function redactErrorValue(error: Error, seen: WeakMap<object, unknown>, depth: n
     if (skipHeavyErrorFields && typeof key === 'string') {
       const isAxios = readsTrue(error as unknown as Record<string, unknown>, 'isAxiosError');
       if (isAxios && key === 'config') {
-        const compact = compactRequestInfo(descriptor.value);
+        const compact = safelyCompact(descriptor.value);
         if (compact !== undefined) {
           defineRedactedDescriptor(
             redacted,
