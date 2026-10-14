@@ -1,3 +1,4 @@
+import { tenantStorage } from '@librechat/data-schemas';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { ErasureResolverDeps } from './resolver';
 import { createErasureResolver } from './resolver';
@@ -71,7 +72,48 @@ describe('createErasureResolver', () => {
       userId: 'other-user',
       serverName: 'srv',
     });
-    expect(erasure.mcpOAuth?.uninstallOAuthMCP).toBe(mcpOAuth.uninstallOAuthMCP);
+    await erasure.mcpOAuth?.uninstallOAuthMCP('other-user', 'mcp_srv', {});
+    expect(mcpOAuth.uninstallOAuthMCP).toHaveBeenCalledWith('other-user', 'mcp_srv', {}, undefined);
+  });
+
+  it('runs id-keyed lookups in the target tenant, not the calling admin tenant', async () => {
+    const seen: Record<string, unknown> = {};
+    const record = (key: string) => async () => {
+      seen[key] = tenantStorage.getStore()?.tenantId;
+      return [];
+    };
+    const registry = {
+      getServerConfig: jest.fn(record('config')),
+      resolveAllowlists: jest.fn(record('allowlists')),
+    };
+    const { deps } = createDeps({
+      db: {
+        deleteUserAgents: jest.fn(record('agents')),
+        findMCPServerOAuthTokenUserIds: jest.fn(record('tokens')),
+        findMCPServerViewerEntries: jest.fn(record('viewers')),
+      } as unknown as ErasureResolverDeps['db'],
+      processDeleteRequest: jest.fn(record('files')),
+      mcpOAuth: {
+        getRegistry: () => registry,
+        getUserPrincipals: jest.fn(record('principals')),
+        uninstallOAuthMCP: jest.fn(record('uninstall')),
+      },
+    } as unknown as Partial<ErasureResolverDeps>);
+    const { deps: erasure } = await createErasureResolver(deps)(target);
+
+    await tenantStorage.run({ tenantId: 'admin-tenant' }, async () => {
+      await erasure.deleteUserAgents('user-1');
+      await erasure.findMCPServerOAuthTokenUserIds?.('srv');
+      await erasure.findMCPServerViewerEntries?.('srv-id');
+      await erasure.deleteStoredFiles([]);
+      await erasure.mcpOAuth?.getServerConfig?.('srv');
+      await erasure.mcpOAuth?.getUserPrincipals('other');
+      await erasure.mcpOAuth?.resolveAllowlists('other');
+      await erasure.mcpOAuth?.uninstallOAuthMCP('other', 'mcp_srv', {});
+    });
+
+    expect(Object.keys(seen)).toHaveLength(8);
+    expect(Object.values(seen).every((tenant) => tenant === 'tenant-1')).toBe(true);
   });
 
   it('rejects when the target config cannot be resolved', async () => {

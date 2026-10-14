@@ -43,7 +43,7 @@ const resolveErasure = createErasureResolver({
     uninstallOAuthMCP: maybeUninstallOAuthMCP,
   },
   openCheckpointDeletion,
-  deleteSharedLinks: deleteAllSharedLinksWithCleanup,
+  deleteSharedLinks: (userId) => deleteAllSharedLinksWithCleanup(userId, { awaitCleanup: true }),
 });
 
 const requireAdminAccess = requireCapability(SystemCapabilities.ACCESS_ADMIN);

@@ -1,3 +1,4 @@
+import { runAsSystem, tenantStorage } from '@librechat/data-schemas';
 import type { TCheckpointerConfig } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { AdminErasureContext, AdminErasureTarget } from '~/admin/users';
@@ -80,6 +81,9 @@ export function createErasureResolver(deps: ErasureResolverDeps) {
       failClosed: true,
     });
     const oauth = deps.mcpOAuth;
+    /** The calling admin's tenant context must not decide whose rows an id-keyed lookup reads. */
+    const inTargetTenant = <T>(operation: () => Promise<T>): Promise<T> =>
+      tenantId ? tenantStorage.run({ tenantId, userId: id }, operation) : runAsSystem(operation);
     const fileRequest = {
       user: { ...profile, id, _id: id, role, tenantId },
       /** Assistants client setup reads these Express request fields. */
@@ -94,18 +98,31 @@ export function createErasureResolver(deps: ErasureResolverDeps) {
         ...deps.db,
         openCheckpointDeletion: deps.openCheckpointDeletion,
         deleteSharedLinks: deps.deleteSharedLinks,
-        deleteStoredFiles: (files) => deps.processDeleteRequest({ req: fileRequest, files }),
+        deleteUserAgents: (userId) => inTargetTenant(async () => deps.db.deleteUserAgents(userId)),
+        findMCPServerOAuthTokenUserIds: (serverName) =>
+          inTargetTenant(async () => deps.db.findMCPServerOAuthTokenUserIds(serverName)),
+        findMCPServerViewerEntries: (serverId) =>
+          inTargetTenant(async () => deps.db.findMCPServerViewerEntries(serverId)),
+        deleteStoredFiles: (files) =>
+          inTargetTenant(async () => deps.processDeleteRequest({ req: fileRequest, files })),
         invalidateMCPServerTools: (serverName) =>
           deps.invalidateCachedTools({ userId: id, serverName }),
         disconnectMCPServer: async (serverName) => {
           await deps.getMCPManager()?.disconnectUserConnection(id, serverName);
         },
         mcpOAuth: oauth && {
-          getServerConfig: (serverName) => oauth.getRegistry().getServerConfig(serverName, id),
-          getUserPrincipals: (candidateId) => oauth.getUserPrincipals({ userId: candidateId }),
+          getServerConfig: (serverName) =>
+            inTargetTenant(async () => oauth.getRegistry().getServerConfig(serverName, id)),
+          getUserPrincipals: (candidateId) =>
+            inTargetTenant(async () => oauth.getUserPrincipals({ userId: candidateId })),
           resolveAllowlists: (candidateId) =>
-            oauth.getRegistry().resolveAllowlists({ userId: candidateId }),
-          uninstallOAuthMCP: oauth.uninstallOAuthMCP,
+            inTargetTenant(async () =>
+              oauth.getRegistry().resolveAllowlists({ userId: candidateId }),
+            ),
+          uninstallOAuthMCP: (candidateId, pluginKey, cleanupConfig, serverConfig) =>
+            inTargetTenant(async () =>
+              oauth.uninstallOAuthMCP(candidateId, pluginKey, cleanupConfig, serverConfig),
+            ),
           fenceAndDisconnectUser: async (candidateId, serverName) => {
             await deps.invalidateCachedTools({ userId: candidateId, serverName });
             await deps.getMCPManager()?.disconnectUserConnection(candidateId, serverName);
