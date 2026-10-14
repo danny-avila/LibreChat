@@ -353,6 +353,10 @@ export class Chat {
         (opened) => opened,
       );
       if (!stream) {
+        if (this.action) {
+          /** Nothing is running, so a restored pause ended elsewhere. */
+          this.clearAction();
+        }
         if (this.status === 'submitted' || this.status === 'streaming') {
           this.setStatus('ready');
         }
@@ -577,7 +581,11 @@ export class Chat {
       );
       if (prepared.messages) {
         const optimistic = prepared.messages;
-        await this.executor.run(() => this.write(optimistic));
+        await this.executor.run(() => {
+          if (!active.controller.signal.aborted) {
+            this.write(optimistic);
+          }
+        });
       }
       if (active.controller.signal.aborted) {
         throw active.controller.signal.reason;
@@ -717,18 +725,25 @@ export class Chat {
     if (this.active !== active) {
       return;
     }
-    /** Released first, so a completion callback can start the next turn. */
+    /**
+     * Released and published as one change before anyone is told, so a subscriber or callback
+     * that starts the next turn is not overwritten by this one's terminal state.
+     */
     this.active = undefined;
-    this.setConnection('idle');
-    if (outcome.kind === 'error') {
-      this.init.state.error = outcome.error;
-      this.setStatus('error');
-      this.init.onError?.(outcome.error);
-    } else {
-      this.init.state.error = undefined;
-      this.setStatus('ready');
+    const { state } = this.init;
+    const status: ChatStatus = outcome.kind === 'error' ? 'error' : 'ready';
+    if (state.connection !== 'idle') {
+      state.connection = 'idle';
     }
+    if (state.status !== status) {
+      state.status = status;
+    }
+    state.error = outcome.kind === 'error' ? outcome.error : undefined;
     const messages = this.messages;
+    this.notify();
+    if (outcome.kind === 'error') {
+      this.init.onError?.(outcome.error);
+    }
     this.init.onFinish?.({
       message: messages[messages.length - 1],
       messages,

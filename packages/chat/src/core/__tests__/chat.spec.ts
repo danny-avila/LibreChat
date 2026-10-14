@@ -402,6 +402,29 @@ describe('Chat', () => {
     expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isAbort: true }));
   });
 
+  it('does not write the optimistic messages of a turn stopped once its request was prepared', async () => {
+    let prepared: (() => void) | undefined;
+    const { chat, state, transport } = setup({
+      prepareRequest: jest.fn(
+        () =>
+          new Promise((resolve) => {
+            prepared = () => resolve({ payload, messages: [userMessage, placeholder] });
+          }),
+      ),
+    });
+
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    prepared?.();
+    await Promise.resolve();
+    const stopped = chat.stop();
+    await sent;
+    await stopped;
+
+    expect(state.messages).toEqual([]);
+    expect(transport.sendMessages).not.toHaveBeenCalled();
+  });
+
   it('cancels a start whose request is still being prepared, without writing it', async () => {
     let prepare: (value: { payload: TPayload; messages: TMessage[] }) => void = () => {};
     const { chat, transport, state, onFinish } = setup({
@@ -639,6 +662,26 @@ describe('Chat', () => {
     await next;
 
     expect(transport.sendMessages).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps the next turn submitted when a subscriber starts it as the connection goes idle', async () => {
+    let next: Promise<void> | undefined;
+    const { chat, stream } = setup();
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    let started = false;
+    const unsubscribe = chat.subscribe(() => {
+      if (chat.connection === 'idle' && !started) {
+        started = true;
+        next = chat.sendMessage({ parts: [{ type: 'text', text: 'Again' }] });
+      }
+    });
+    stream.push(finalEvent());
+    await sent;
+
+    expect(next).toBeDefined();
+    expect(chat.status).toBe('submitted');
+    unsubscribe();
   });
 
   it('regenerates a given message', async () => {
@@ -944,6 +987,16 @@ describe('Chat', () => {
         'disposed',
       );
       expect(transport.resume).not.toHaveBeenCalled();
+    });
+
+    it('drops a restored pause once a reconnect finds nothing running', async () => {
+      const { chat, transport } = setup();
+      chat.restorePendingAction(askAction, 500);
+
+      await chat.resumeStream({ streamId: 'convo-1' });
+
+      expect(transport.reconnectToStream).toHaveBeenCalled();
+      expect(chat.pendingAction).toBeUndefined();
     });
 
     it('holds new turns behind a restored pause until it is stopped on the server', async () => {
