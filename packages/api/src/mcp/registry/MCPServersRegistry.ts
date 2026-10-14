@@ -27,6 +27,7 @@ import { requireApiKeyReentryForRebinding } from './binding';
 import { ReadThroughCache } from './cache/ReadThroughCache';
 import { MCPServerInspector } from './MCPServerInspector';
 import { ServerConfigsDB } from './db/ServerConfigsDB';
+import { getSafeErrorMetadata } from '~/utils/errors';
 import { cacheConfig } from '~/cache';
 import { withTimeout } from '~/utils';
 
@@ -676,15 +677,21 @@ export class MCPServersRegistry {
       ...parsedConfig,
       source,
     };
-    const result =
-      storageLocation === 'DB'
-        ? await this.dbConfigsRepo.add(
-            serverName,
-            tagged,
-            userId,
-            await this.getOperatorManagedServerNames(reservedServerNames),
-          )
-        : await configRepo.add(serverName, tagged, userId);
+    let result: t.AddServerResult;
+    try {
+      result =
+        storageLocation === 'DB'
+          ? await this.dbConfigsRepo.add(
+              serverName,
+              tagged,
+              userId,
+              await this.getOperatorManagedServerNames(reservedServerNames),
+            )
+          : await configRepo.add(serverName, tagged, userId);
+    } catch (error) {
+      await this.invalidateAfterCommittedFailure(error, serverName, userId, storageLocation);
+      throw error;
+    }
     await this.invalidateCommitted(result, () =>
       this.invalidateServerReadCaches(result.serverName, userId, storageLocation),
     );
@@ -692,6 +699,33 @@ export class MCPServersRegistry {
       this.resetYamlServerNamesMemo();
     }
     return result;
+  }
+
+  /**
+   * A repository step after a committed write failed (for example permission bookkeeping),
+   * so the stored config changed even though the call rejects: refresh the read caches
+   * best-effort before the failure propagates, or they would keep serving the old state.
+   */
+  private async invalidateAfterCommittedFailure(
+    error: unknown,
+    serverName: string,
+    userId: string | undefined,
+    storageLocation: 'CACHE' | 'DB',
+  ): Promise<void> {
+    if (!(error instanceof MCPCommittedWriteError)) {
+      return;
+    }
+    const committed = error.committed as t.AddServerResult | undefined;
+    await this.invalidateServerReadCaches(
+      committed?.serverName ?? serverName,
+      userId,
+      storageLocation,
+    ).catch((invalidationError) =>
+      logger.error(
+        '[MCPServersRegistry] cache invalidation failed after a committed write error:',
+        getSafeErrorMetadata(invalidationError),
+      ),
+    );
   }
 
   /**
@@ -1349,7 +1383,12 @@ export class MCPServersRegistry {
     userId?: string,
   ): Promise<void> {
     const configRepo = this.getConfigRepository(storageLocation);
-    await configRepo.remove(serverName, userId);
+    try {
+      await configRepo.remove(serverName, userId);
+    } catch (error) {
+      await this.invalidateAfterCommittedFailure(error, serverName, userId, storageLocation);
+      throw error;
+    }
     await this.invalidateCommitted(undefined, () =>
       this.invalidateServerReadCaches(serverName, userId, storageLocation),
     );

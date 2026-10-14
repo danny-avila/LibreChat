@@ -877,6 +877,22 @@ describe('MCPServersRegistry', () => {
         expect(failure.committed.command).toBe('python');
       });
 
+      it('refreshes the read caches when a repository step after the write fails', async () => {
+        await registry.addServer('cache_server', testParsedConfig, 'CACHE');
+        const invalidate = jest.spyOn(
+          registry as unknown as { invalidateServerReadCaches: () => Promise<void> },
+          'invalidateServerReadCaches',
+        );
+        jest
+          .spyOn(registry['cacheConfigsRepo'], 'remove')
+          .mockRejectedValueOnce(new MCPCommittedWriteError(undefined, new Error('acl down')));
+
+        await expect(registry.removeServer('cache_server', 'CACHE')).rejects.toBeInstanceOf(
+          MCPCommittedWriteError,
+        );
+        expect(invalidate).toHaveBeenCalledWith('cache_server', undefined, 'CACHE');
+      });
+
       it('still reports a removal that committed', async () => {
         await registry.addServer('cache_server', testParsedConfig, 'CACHE');
         failInvalidation();
