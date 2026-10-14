@@ -16,7 +16,7 @@ const handlers = createAdminGroupsHandlers({
   countGroups: db.countGroups,
   findGroupById: db.findGroupById,
   createGroup: db.createGroup,
-  updateGroupById: db.updateGroupById,
+  updateGroupFieldsTracked: db.updateGroupFieldsTracked,
   deleteGroup: db.deleteGroup,
   addUserToGroup: db.addUserToGroup,
   removeUserFromGroup: db.removeUserFromGroup,

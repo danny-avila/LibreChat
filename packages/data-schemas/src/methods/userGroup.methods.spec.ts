@@ -430,6 +430,21 @@ describe('UserGroup Methods - Detailed Tests', () => {
       expect(again.group).toBeDefined();
     });
 
+    test('reports a field change only for the call that altered it', async () => {
+      const groupId = group._id as mongoose.Types.ObjectId;
+
+      const [first, second] = await Promise.all([
+        methods.updateGroupFieldsTracked(groupId, { name: 'Renamed' }),
+        methods.updateGroupFieldsTracked(groupId, { name: 'Renamed' }),
+      ]);
+
+      expect([first?.changed, second?.changed].filter(Boolean)).toHaveLength(1);
+      expect(first?.group.name).toBe('Renamed');
+      expect(await methods.updateGroupFieldsTracked(groupId, { name: 'Renamed' })).toMatchObject({
+        changed: false,
+      });
+    });
+
     test('should remove user from group', async () => {
       // First add user
       await methods.addUserToGroup(

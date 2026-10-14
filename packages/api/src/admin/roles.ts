@@ -990,7 +990,10 @@ export function createRolePermissionsUpdateHandler(
       }
       return res.status(200).send(updatedRole);
     } catch (error) {
-      logger.error(`[roles] ${config.permissionType} permission update failed:`, error);
+      logger.error(
+        `[roles] ${config.permissionType} permission update failed:`,
+        getSafeErrorMetadata(error),
+      );
       return res.status(500).send({ message: 'Failed to update role permissions' });
     }
   };

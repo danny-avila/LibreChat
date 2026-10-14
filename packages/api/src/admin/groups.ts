@@ -48,11 +48,11 @@ export interface AdminGroupsDeps {
     session?: ClientSession,
   ) => Promise<IGroup | null>;
   createGroup: (groupData: Partial<IGroup>, session?: ClientSession) => Promise<IGroup>;
-  updateGroupById: (
+  /** Sets the fields and reports, from the write itself, whether any value changed. */
+  updateGroupFieldsTracked: (
     groupId: string | Types.ObjectId,
     data: Partial<Pick<IGroup, 'name' | 'description' | 'email' | 'avatar'>>,
-    session?: ClientSession,
-  ) => Promise<IGroup | null>;
+  ) => Promise<{ group: IGroup; changed: boolean } | null>;
   deleteGroup: (
     groupId: string | Types.ObjectId,
     session?: ClientSession,
@@ -111,7 +111,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
     countGroups,
     findGroupById,
     createGroup,
-    updateGroupById,
+    updateGroupFieldsTracked,
     deleteGroup,
     addUserToGroup,
     removeUserFromGroup,
@@ -320,30 +320,20 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
         return res.status(400).json({ error: 'No valid fields to update' });
       }
 
-      const current = await findGroupById(id);
-      if (!current) {
+      /** The write itself reports whether it changed a value, so overlapping identical
+       * requests record one entry. */
+      const result = await updateGroupFieldsTracked(id, updateData);
+      if (!result) {
         return res.status(404).json({ error: 'Group not found' });
       }
-      /** Values equal to the stored ones are not changes: a retry writes and audits nothing. */
-      const changedData: typeof updateData = {};
-      for (const key of Object.keys(updateData) as Array<keyof typeof updateData>) {
-        if (updateData[key] !== current[key]) {
-          Object.assign(changedData, { [key]: updateData[key] });
-        }
+      const { group, changed } = result;
+      if (changed) {
+        await emitAudit(req, {
+          action: 'group.updated',
+          target: groupTarget(group, id),
+          metadata: { fields: Object.keys(updateData).sort().join(',') },
+        });
       }
-      if (Object.keys(changedData).length === 0) {
-        return res.status(200).json({ group: current });
-      }
-
-      const group = await updateGroupById(id, changedData);
-      if (!group) {
-        return res.status(404).json({ error: 'Group not found' });
-      }
-      await emitAudit(req, {
-        action: 'group.updated',
-        target: groupTarget(group, id),
-        metadata: { fields: Object.keys(changedData).sort().join(',') },
-      });
       return res.status(200).json({ group });
     } catch (error) {
       if ((error as ValidationError).name === 'ValidationError') {

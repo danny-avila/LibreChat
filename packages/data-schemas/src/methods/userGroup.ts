@@ -217,6 +217,11 @@ export function createUserGroupMethods(
     filter: Record<string, unknown>,
     session?: ClientSession,
   ) => Promise<IGroup | null>;
+  /** Sets scalar fields and reports atomically whether any value actually changed. */
+  updateGroupFieldsTracked: (
+    groupId: string | Types.ObjectId,
+    data: Partial<Pick<IGroup, 'name' | 'description' | 'email' | 'avatar'>>,
+  ) => Promise<{ group: IGroup; changed: boolean } | null>;
   updateGroupById: (
     groupId: string | Types.ObjectId,
     data: Record<string, unknown>,
@@ -1259,6 +1264,29 @@ export function createUserGroupMethods(
    * @param groupId - The group's ObjectId
    * @param data - Fields to set via $set
    */
+  async function updateGroupFieldsTracked(
+    groupId: string | Types.ObjectId,
+    data: Partial<Pick<IGroup, 'name' | 'description' | 'email' | 'avatar'>>,
+  ): Promise<{ group: IGroup; changed: boolean } | null> {
+    const Group = mongoose.models.Group as Model<IGroup>;
+    const entries = Object.entries(data);
+    if (entries.length === 0) {
+      const current = await Group.findById(groupId).lean<IGroup>();
+      return current ? { group: current, changed: false } : null;
+    }
+    /** The filter matches only a group that differs, so a match is exactly one real change. */
+    const changed = await Group.findOneAndUpdate(
+      { _id: groupId, $or: entries.map(([key, value]) => ({ [key]: { $ne: value } })) },
+      { $set: data },
+      { new: true },
+    ).lean<IGroup>();
+    if (changed) {
+      return { group: changed, changed: true };
+    }
+    const current = await Group.findById(groupId).lean<IGroup>();
+    return current ? { group: current, changed: false } : null;
+  }
+
   async function updateGroupById(
     groupId: string | Types.ObjectId,
     data: Record<string, unknown>,
@@ -1434,6 +1462,7 @@ export function createUserGroupMethods(
     removeUserFromAllGroups,
     findGroupByQuery,
     updateGroupById,
+    updateGroupFieldsTracked,
     bulkUpdateGroups,
     getUserGroups,
     getUserPrincipals,
