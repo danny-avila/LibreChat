@@ -219,6 +219,15 @@ const createDeleteFileWithSecondaryStorage = ({ source, deleteFile, deletionMeth
   };
 };
 
+/** Deletes an upload's primary object together with the vector and code environment copies
+ * its file record would name, for a failure before that record exists. */
+const resolveUploadDeleteFile = (source) =>
+  createDeleteFileWithSecondaryStorage({
+    source,
+    deleteFile: getStrategyFunctions(source).deleteFile,
+    deletionMethods: {},
+  });
+
 // TODO: refactor as currently only image files can be deleted this way
 // as other filetypes will not reside in public path
 /**
@@ -1272,7 +1281,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
         logger,
         trackWrite: true,
         recordExists: fileRecordExists,
-        resolveDeleteFile: () => getStrategyFunctions(source).deleteFile,
+        resolveDeleteFile: () => resolveUploadDeleteFile(source),
         stored: {
           file_id,
           source,
@@ -1429,7 +1438,7 @@ const processAgentFileUpload = async ({ req, res, metadata, sseStream }) => {
     req,
     logger,
     recordExists: fileRecordExists,
-    resolveDeleteFile: () => getStrategyFunctions(source).deleteFile,
+    resolveDeleteFile: () => resolveUploadDeleteFile(source),
     stored: { file_id, filepath, source, embedded, metadata: fileInfoMetadata, ...storageMetadata },
   };
   const retentionExpiry = await withStoredUploadCleanup(

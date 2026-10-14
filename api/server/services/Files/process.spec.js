@@ -1377,8 +1377,12 @@ describe('processAgentFileUpload', () => {
     it('hands the code environment ref to cleanup when the record fails after the Code API upload', async () => {
       const codeEnvUpload = setupCodeEnvUpload({ storage_session_id: 'sess-z', file_id: 'fid-z' });
       const deleteFile = jest.fn().mockResolvedValue(undefined);
+      const deleteCodeEnvFile = jest.fn().mockResolvedValue(undefined);
       const base = getStrategyFunctions.getMockImplementation();
-      getStrategyFunctions.mockImplementation((src) => ({ ...base(src), deleteFile }));
+      getStrategyFunctions.mockImplementation((src) => ({
+        ...base(src),
+        deleteFile: src === FileSources.execute_code ? deleteCodeEnvFile : deleteFile,
+      }));
       db.createFile.mockRejectedValueOnce(new Error('db down'));
 
       await expect(
@@ -1398,6 +1402,13 @@ describe('processAgentFileUpload', () => {
         expect.anything(),
         expect.objectContaining({
           file_id: 'file-orphan',
+          metadata: expect.objectContaining({ codeEnvRef: expect.anything() }),
+        }),
+        undefined,
+      );
+      expect(deleteCodeEnvFile).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({
           metadata: expect.objectContaining({ codeEnvRef: expect.anything() }),
         }),
       );
