@@ -4,6 +4,7 @@ import {
   stripOpaqueReasoning,
   readableReasoning,
   flushOpaqueReasoning,
+  trimTruncatedReasoning,
   advanceOpaqueReasoning,
   OPAQUE_REASONING_START,
 } from './reasoning';
@@ -153,5 +154,14 @@ describe('readableReasoning', () => {
     expect(flushOpaqueReasoning({ tail: 'manifest', opaque: false })).toBe('manifest');
     expect(flushOpaqueReasoning({ tail: 'a'.repeat(40), opaque: false })).toBe('');
     expect(flushOpaqueReasoning({ tail: '', opaque: true })).toBe('');
+  });
+});
+
+describe('trimTruncatedReasoning', () => {
+  it('drops a leading fragment and keeps the rest', () => {
+    expect(trimTruncatedReasoning(`${bedrockRedacted.slice(-40)} Rolling back.`)).toBe(
+      ' Rolling back.',
+    );
+    expect(trimTruncatedReasoning(' Rolling back.')).toBe(' Rolling back.');
   });
 });

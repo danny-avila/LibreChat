@@ -113,3 +113,11 @@ export function readableReasoning(text: string, streaming = false): string {
   const { readable, cursor } = advanceOpaqueReasoning(OPAQUE_REASONING_START, text);
   return `${readable}${flushOpaqueReasoning(cursor)}`;
 }
+
+/**
+ * A bounded window that may have been cut mid-run starts with a fragment too
+ * short to classify, whether of a word or of a payload; drop it.
+ */
+export function trimTruncatedReasoning(text: string): string {
+  return text.slice(payloadRunEnd(text, 0));
+}

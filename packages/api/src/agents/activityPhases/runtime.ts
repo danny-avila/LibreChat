@@ -5,6 +5,7 @@ import {
   stripOpaqueReasoning,
   flushOpaqueReasoning,
   advanceOpaqueReasoning,
+  trimTruncatedReasoning,
   OPAQUE_REASONING_START,
 } from 'librechat-data-provider';
 import type { EventHandler, HookCallback, HookInputByEvent } from '@librechat/agents';
@@ -917,11 +918,18 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
           textValue(content[rebasedStartIndex]?.think).includes(needle);
         /** Older snapshots kept only the raw window. Replaying it through the
          *  stream filter keeps a payload prefix that was still undecided at the
-         *  snapshot in the cursor, where the continuation can classify it. */
+         *  snapshot in the cursor, where the continuation can classify it; a
+         *  full window may have been cut inside a payload, so its leading run
+         *  is dropped. */
         const classified =
           readable != null && cursor != null
             ? { readable, cursor }
-            : advanceOpaqueReasoning(OPAQUE_REASONING_START, boundedText);
+            : advanceOpaqueReasoning(
+                OPAQUE_REASONING_START,
+                text.length > MAX_EXCERPT_CHARS || boundedText.length === MAX_EXCERPT_CHARS
+                  ? trimTruncatedReasoning(boundedText)
+                  : boundedText,
+              );
         return [
           key,
           {

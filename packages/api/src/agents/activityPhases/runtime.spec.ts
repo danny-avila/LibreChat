@@ -968,6 +968,42 @@ describe('createActivityPhaseWiring', () => {
     expect(activity.readableExcerpts).toEqual(['Checking.  Rolling back.']);
   });
 
+  it('drops the cut leading run of a full legacy pending-reasoning window', async () => {
+    const encoded = Buffer.from(
+      Array.from({ length: 1_050 }, (_, i) => (i * 37 + 3) % 256),
+    ).toString('base64');
+    const readable = 'Checking the manifest before rolling back the deploy. '
+      .repeat(11)
+      .slice(0, 549);
+    const legacyWindow = `${encoded.slice(-50)} ${readable}`;
+    expect(legacyWindow).toHaveLength(600);
+    const parts: LooseContentPart[] = [];
+    const wiring = createActivityPhaseWiring({
+      initialSnapshot: {
+        version: 3,
+        generated: 0,
+        activityCount: 0,
+        failedActivityCount: 0,
+        partialActivityCount: 0,
+        agentIds: [],
+        activities: [],
+        assistantContext: [],
+        pendingReasoning: [{ key: 'root', text: legacyWindow }],
+      },
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async () => ({ label: 'unused' })),
+    });
+    parts.push({ type: ContentTypes.THINK, think: `${encoded} ${readable}` });
+    parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } });
+    await wiring.hook(batch('tool-1'), new AbortController().signal);
+
+    const [activity] = wiring.snapshot().activities;
+    expect(activity.readableExcerpts).toEqual([readable.trim()]);
+  });
+
   it('classifies streamed reasoning before bounding its prompt evidence', async () => {
     const encoded = Buffer.from(
       Array.from({ length: 1_050 }, (_, i) => (i * 37 + 3) % 256),
