@@ -15,7 +15,7 @@ const REDACTION_TRUNCATED_KEY = '__redaction_truncated__';
 const MAX_REDACTION_DEPTH = 8;
 const MAX_REDACTION_ENTRIES = 50;
 /** Objects one log record may visit while redacting, so a broad payload cannot stall the event loop. */
-const MAX_REDACTION_NODES = 5000;
+const MAX_REDACTION_NODES: number = parseInt(process.env.LOG_REDACTION_MAX_NODES || '', 10) || 5000;
 let redactionNodeBudget = Number.POSITIVE_INFINITY;
 const DEFAULT_REDACTION_STRING_LENGTH = 8192;
 const MAX_REDACTION_STRING_LENGTH = Math.max(
