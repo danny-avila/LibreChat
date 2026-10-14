@@ -93,6 +93,7 @@ describe('createErasureResolver', () => {
         findMCPServerViewerEntries: jest.fn(record('viewers')),
       } as unknown as ErasureResolverDeps['db'],
       processDeleteRequest: jest.fn(record('files')),
+      invalidateCachedTools: jest.fn(record('fence')),
       mcpOAuth: {
         getRegistry: () => registry,
         getUserPrincipals: jest.fn(record('principals')),
@@ -110,9 +111,10 @@ describe('createErasureResolver', () => {
       await erasure.mcpOAuth?.getUserPrincipals('other');
       await erasure.mcpOAuth?.resolveAllowlists('other');
       await erasure.mcpOAuth?.uninstallOAuthMCP('other', 'mcp_srv', {});
+      await erasure.mcpOAuth?.fenceAndDisconnectUser?.('other', 'srv');
     });
 
-    expect(Object.keys(seen)).toHaveLength(8);
+    expect(Object.keys(seen)).toHaveLength(9);
     expect(Object.values(seen).every((tenant) => tenant === 'tenant-1')).toBe(true);
   });
 
