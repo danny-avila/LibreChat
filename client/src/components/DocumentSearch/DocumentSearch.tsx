@@ -178,6 +178,10 @@ const DocumentSearch: React.FC = () => {
 
   const similarTotal = search.data?.similar_total ?? 0;
   const exactTotal = search.data?.exact_total ?? 0;
+  // 제외(-) 같은 연산자는 지원하지 않는다 — 파일명 3분의 2가 '-' 를 포함해서
+  // 연산자로 읽으면 멀쩡한 질의가 깨진다. 글자로 취급됐음을 알려 "필터가
+  // 먹었다" 는 오해를 막는다.
+  const ignoredOperators = search.data?.unsupported_operators ?? [];
 
   const resultHeading = useMemo(() => {
     if (!hasQuery) return null;
@@ -298,9 +302,19 @@ const DocumentSearch: React.FC = () => {
             {/* Result heading */}
             {hasQuery && (
               <div className="mt-8 flex items-baseline justify-between gap-3 border-b border-border-light pb-3">
-                <p className="flex items-center gap-1.5 text-sm text-text-primary">
+                <p className="flex flex-wrap items-center gap-1.5 text-sm text-text-primary">
                   {resultHeading}
                   {showLimitNotice && <LimitNotice cap={DEFAULT_TOP_K} />}
+                  {!isSearching && ignoredOperators.length > 0 && (
+                    <span
+                      role="note"
+                      className="rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"
+                    >
+                      {localize('com_document_search_operator_notice', {
+                        0: ignoredOperators.join(' '),
+                      })}
+                    </span>
+                  )}
                 </p>
                 {hasResults && (
                   <button

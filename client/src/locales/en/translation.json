@@ -240,6 +240,7 @@
   "com_document_search_result_heading": "{{1}} result(s) for \"{{0}}\"",
   "com_document_search_similar_breakdown": "({{0}} exact · {{1}} similar)",
   "com_document_search_similar_divider": "Similar results — partial match",
+  "com_document_search_operator_notice": "The {{0}} operator is not supported and was searched as plain text. Only quoted phrases (\"…\") are supported.",
   "com_document_search_limit_notice": "There are many matches, so only the top {{0}} were retrieved. Add more terms to narrow your search.",
   "com_document_search_page_prev": "Previous",
   "com_document_search_page_next": "Next",

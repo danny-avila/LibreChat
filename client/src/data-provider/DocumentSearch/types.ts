@@ -94,6 +94,8 @@ export interface KeywordSearchResponse {
   similar_total?: number;
   /** 실제로 내려간 가장 깊은 완화 단계. 완화가 안 돌았으면 null. */
   fallback_tier?: 'phrase' | 'token' | null;
+  /** 질의에 보이는 미지원 연산자 기호("-", "+", "|"). 글자로 취급됐음을 알리는 용도. */
+  unsupported_operators?: string[];
   documents: DocumentHit[];
   facets?: SearchFacets;
 }

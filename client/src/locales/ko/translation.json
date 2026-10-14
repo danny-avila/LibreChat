@@ -187,6 +187,7 @@
   "com_document_search_result_heading": "{{0}} 에 대한 검색 결과는 {{1}}건입니다.",
   "com_document_search_similar_breakdown": "(정확 일치 {{0}}건 · 유사 결과 {{1}}건)",
   "com_document_search_similar_divider": "유사 결과 — 검색어 일부만 일치",
+  "com_document_search_operator_notice": "{{0}} 연산자는 지원하지 않아 일반 글자로 검색했습니다. 구문 검색은 큰따옴표(\"…\")만 지원합니다.",
   "com_document_search_limit_notice": "검색 결과가 많아 상위 {{0}}건까지만 조회했습니다. 검색어를 추가하여 범위를 좁혀 주세요.",
   "com_document_search_page_prev": "이전",
   "com_document_search_page_next": "다음",
