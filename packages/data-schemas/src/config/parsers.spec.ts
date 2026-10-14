@@ -194,6 +194,12 @@ describe('redactMessage', () => {
     expect(out).not.toContain('jane');
   });
 
+  it('drops a quoted address whose window edge falls on an inner space', () => {
+    const input = `${' '.repeat(8180)}"jane ${'x'.repeat(1030)} doe"@example.com tail`;
+    const out = String(runRedactFormat({ level: 'info', message: input }).message);
+    expect(out).not.toContain('jane');
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),

@@ -91,12 +91,14 @@ const EMAIL_TOKEN_DELIMITER = /[\s<>[\],;"]/u;
 
 /** Drops a token cut by the window edge: its terminator is unseen, so no pattern could match it. */
 function trimUnfinishedToken(full: string, window: string): string {
-  if (window.length === full.length || EMAIL_TOKEN_DELIMITER.test(full[window.length])) {
+  if (window.length === full.length) {
     return window;
   }
   let end = window.length;
-  while (end > 0 && !EMAIL_TOKEN_DELIMITER.test(window[end - 1])) {
-    end--;
+  if (!EMAIL_TOKEN_DELIMITER.test(full[end])) {
+    while (end > 0 && !EMAIL_TOKEN_DELIMITER.test(window[end - 1])) {
+      end--;
+    }
   }
   const trimmed = window.substring(0, end);
   let quotes = 0;
