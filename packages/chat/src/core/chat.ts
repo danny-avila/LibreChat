@@ -423,6 +423,12 @@ export class Chat {
     return this.init.resumeSelection?.().endpoint ?? undefined;
   }
 
+  private assertNotResuming(action: Agents.PendingAction): void {
+    if (this.resuming === action) {
+      throw new Error('This pause is already being resumed');
+    }
+  }
+
   private clearAction(): void {
     this.action = undefined;
     this.decisions.clear();
@@ -463,6 +469,7 @@ export class Chat {
     if (!ids.includes(response.id)) {
       throw new Error(`Tool call ${response.id} is not awaiting approval`);
     }
+    this.assertNotResuming(action);
     const decision: Agents.ToolApprovalResolution = {
       tool_call_id: response.id,
       decision: response.approved ? 'approve' : 'reject',
@@ -495,6 +502,7 @@ export class Chat {
     if (toolCallId !== expected) {
       throw new Error(`Tool call ${toolCallId} is not awaiting an answer`);
     }
+    this.assertNotResuming(action);
     await this.resume(
       action,
       typeof output === 'string' ? { answer: output } : { answers: output },
@@ -555,6 +563,9 @@ export class Chat {
         const optimistic = prepared.messages;
         await this.executor.run(() => this.write(optimistic));
       }
+      if (active.controller.signal.aborted) {
+        throw active.controller.signal.reason;
+      }
       active.endpoint = prepared.payload.endpoint ?? undefined;
       const { signal } = active.controller;
       const result = await openUntilAborted(
@@ -573,6 +584,7 @@ export class Chat {
       if (result.status === 'stream') {
         stream = result.stream;
       } else if (result.status === 'replaced') {
+        this.generationCreatedAt = result.generationCreatedAt ?? undefined;
         stream = await openUntilAborted(
           this.init.transport.reconnectToStream({
             chatId: result.conversationId,
@@ -663,10 +675,14 @@ export class Chat {
       this.decisions.clear();
       outcome = { kind: 'abort' };
     } else if (event.type === 'error') {
-      this.action = undefined;
-      this.decisions.clear();
+      const disconnect = event.status === 0;
+      if (!disconnect) {
+        /** A dropped connection leaves the server's generation, and its pause, as it was. */
+        this.action = undefined;
+        this.decisions.clear();
+      }
       const message = getErrorMessage(event.data) ?? 'The response failed';
-      outcome = { kind: 'error', error: new Error(message), disconnect: event.status === 0 };
+      outcome = { kind: 'error', error: new Error(message), disconnect };
     }
     this.init.onEvent?.(event);
     return outcome;
