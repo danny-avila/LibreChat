@@ -69,6 +69,7 @@ describe('ActivePanelContext', () => {
       sessionStorage.setItem(STORAGE_KEY, 'skills');
       renderProvider();
       expect(screen.getByTestId('active')).toHaveTextContent('conversations');
+      expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull();
     },
   );
 

@@ -19,8 +19,11 @@ function isReload(): boolean {
  */
 function getInitialActivePanel(): string {
   localStorage.removeItem(STORAGE_KEY);
-  const saved = isReload() ? sessionStorage.getItem(STORAGE_KEY) : null;
-  return saved ? saved : DEFAULT_PANEL;
+  if (!isReload()) {
+    sessionStorage.removeItem(STORAGE_KEY);
+    return DEFAULT_PANEL;
+  }
+  return sessionStorage.getItem(STORAGE_KEY) || DEFAULT_PANEL;
 }
 
 interface ActivePanelContextType {

@@ -60,6 +60,9 @@ test.describe('sidebar panel on entry', () => {
     await bookmarks.click();
     await expect(bookmarks).toHaveAttribute('aria-pressed', 'true');
 
+    await page.context().addInitScript(() => {
+      localStorage.setItem('e2e:cloned-panel', sessionStorage.getItem('side:active-panel') ?? '');
+    });
     const [opened] = await Promise.all([
       page.waitForEvent('popup'),
       page.evaluate((path) => {
@@ -70,9 +73,18 @@ test.describe('sidebar panel on entry', () => {
     await expect(opened.getByRole('textbox', { name: 'Message input' })).toBeVisible({
       timeout: 30000,
     });
-    expect(await opened.evaluate(() => sessionStorage.getItem('side:active-panel'))).toBe(
-      'bookmarks',
+    expect(await opened.evaluate(() => localStorage.getItem('e2e:cloned-panel'))).toBe('bookmarks');
+    await expect(opened.getByTestId('nav-panel-conversations')).toHaveAttribute(
+      'aria-pressed',
+      'true',
     );
+    await expect(opened.getByTestId('nav-panel-bookmarks')).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+
+    await opened.reload();
+
     await expect(opened.getByTestId('nav-panel-conversations')).toHaveAttribute(
       'aria-pressed',
       'true',
