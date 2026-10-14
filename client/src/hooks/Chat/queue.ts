@@ -238,8 +238,8 @@ export type DetachedRun = {
   /** The run's generation epoch, when the start response installed one. The queue drain matches
    *  server admission receipts against it. */
   generationCreatedAt?: number;
-  /** A regeneration rewrites a response that already exists in history, so history cannot tell
-   *  whether the row it finds is the old reply or the new one. */
+  /** A regeneration rewrites a response that already exists in history, and nothing persisted
+   *  belongs to the run alone, so history cannot tell the old reply from the new one. */
   isRegenerate?: boolean;
 };
 
@@ -267,10 +267,11 @@ export function isStoppedRun(stopped: StoppedRun | null, generationCreatedAt?: n
 }
 
 /** Whether persisted history can ever name the detached run's response. A regeneration leaves the
- *  previous reply under the same user message, so without the run's epoch to date the rows by,
- *  no read can tell the old reply from the new one. */
+ *  previous reply under the same user message, and even its epoch cannot date the rows, since any
+ *  later write to the old reply (feedback, an edit from another client) moves its timestamp past
+ *  the epoch; no read can tell the old reply from the new one, so a regeneration never resolves. */
 export function canResolveDetachedRun(run: DetachedRun): boolean {
-  return run.isRegenerate !== true || run.generationCreatedAt != null;
+  return run.isRegenerate !== true;
 }
 
 /** A cancelled or dead receipt settled without starting a successor, so it never owns a boundary. */
@@ -280,8 +281,8 @@ const mayHaveAdmitted = (receipt: SettledQueuedTurnReceipt): boolean =>
 /**
  * Whether a detached run's end must be left for a manual send instead of read from history, which
  * retires its marker. Three runs qualify: one the user stopped, whose response persists like a
- * completed one (a stopped compaction even settles with `unfinished: false`); a regeneration with
- * no epoch, whose new reply history cannot tell from the old one; and a run with no epoch whose
+ * completed one (a stopped compaction even settles with `unfinished: false`); a regeneration,
+ * whose new reply history cannot tell from the old one; and a run with no epoch whose
  * queue the server shares, since the drain cannot match its end to a server admission receipt.
  * Receipts that settled without an admission do not count as sharing it.
  */
@@ -337,9 +338,9 @@ const writtenAt = (message: TMessage): number => {
  * The run end a detached run implies, read from persisted history: `completed` lets the queue
  * drain, while a stopped (`unfinished`) or failed response leaves the queue for a manual send, as
  * it would had the stream been attached. With the run's epoch, only a response the server wrote at
- * or after the run started can be its response, which rules out the reply a regeneration replaces
- * and any row the run never touched. Returns `null` while no such response is persisted, so
- * nothing is drained on a guess.
+ * or after the run started can be its response, which rules out any row the run never touched.
+ * Returns `null` for a regeneration and while no such response is persisted, so nothing is
+ * drained on a guess.
  */
 export function resolveDetachedRunEnd(
   conversationId: string,
@@ -367,9 +368,7 @@ export function resolveDetachedRunEnd(
       responses.find((message) => message.messageId === exact) ??
       responses.find((message) => message.messageId === unpadded);
   }
-  /** Only a regeneration writes its reply under an id other than the one it named, so the lone
-   *  response written since the epoch stands in for a named response only there. */
-  if (response == null && (!namesResponse || run.isRegenerate === true) && responses.length === 1) {
+  if (response == null && !namesResponse && responses.length === 1) {
     response = responses[0];
   }
   if (response == null) {

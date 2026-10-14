@@ -176,20 +176,21 @@ describe('resolveDetachedRunEnd', () => {
     expect(end?.generationCreatedAt).toBe(4200);
   });
 
-  it('rejects the reply a regeneration replaces and resolves the one the run wrote', () => {
+  it('leaves a regeneration with its epoch unresolved, since a later write to the old reply passes the epoch', () => {
     const run = {
       userMessageId: USER_ID,
       responseMessageId: 'response-1_',
       isRegenerate: true,
       generationCreatedAt: 5000,
     };
-    const replaced = response({ messageId: 'response-1', updatedAt: writtenAt(4000) });
-    expect(resolveDetachedRunEnd(CONVO_ID, run, [replaced])).toBeNull();
-    const end = resolveDetachedRunEnd(CONVO_ID, run, [
-      replaced,
-      response({ messageId: 'response-2', unfinished: true, updatedAt: writtenAt(6000) }),
-    ]);
-    expect(end).toEqual(expect.objectContaining({ outcome: 'aborted', generationCreatedAt: 5000 }));
+    const ratedLater = response({ messageId: 'response-1', updatedAt: writtenAt(6000) });
+    expect(resolveDetachedRunEnd(CONVO_ID, run, [ratedLater])).toBeNull();
+    expect(
+      resolveDetachedRunEnd(CONVO_ID, run, [
+        ratedLater,
+        response({ messageId: 'response-2', updatedAt: writtenAt(6000) }),
+      ]),
+    ).toBeNull();
   });
 
   it('ignores a row the run never wrote, even under the id it named', () => {
@@ -216,12 +217,12 @@ describe('resolveDetachedRunEnd', () => {
 });
 
 describe('canResolveDetachedRun', () => {
-  it('can date a regeneration only by its epoch', () => {
+  it('never resolves a regeneration from history, with or without its epoch', () => {
     expect(canResolveDetachedRun({ userMessageId: USER_ID })).toBe(true);
     expect(canResolveDetachedRun({ userMessageId: USER_ID, isRegenerate: true })).toBe(false);
     expect(
       canResolveDetachedRun({ userMessageId: USER_ID, isRegenerate: true, generationCreatedAt: 1 }),
-    ).toBe(true);
+    ).toBe(false);
   });
 });
 
@@ -256,10 +257,10 @@ describe('isDetachedRunManual', () => {
     expect(isDetachedRunManual(store.get, CONVO, epochless)).toBe(true);
   });
 
-  it('leaves an epochless regeneration for a manual send', () => {
+  it('leaves every regeneration for a manual send', () => {
     const store = createStore();
     expect(isDetachedRunManual(store.get, CONVO, { ...epochless, isRegenerate: true })).toBe(true);
-    expect(isDetachedRunManual(store.get, CONVO, { ...epochRun, isRegenerate: true })).toBe(false);
+    expect(isDetachedRunManual(store.get, CONVO, { ...epochRun, isRegenerate: true })).toBe(true);
   });
 
   it('leaves an epochless run whose queue the server shares for a manual send', () => {
