@@ -925,6 +925,69 @@ describe('Chat', () => {
     expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isAbort: true }));
   });
 
+  it('stops a late Assistants start by its abort key', async () => {
+    let open: (() => void) | undefined;
+    const stream = createStream();
+    const { chat, transport } = setup(
+      {
+        prepareRequest: jest.fn(() => ({
+          payload: { endpoint: 'assistants', conversationId: 'convo-1', text: 'Hi' } as TPayload,
+          messages: [userMessage, placeholder],
+          responseMessageId: 'response-1',
+        })),
+      },
+      {
+        sendMessages: jest.fn(
+          () =>
+            new Promise((resolve) => {
+              open = () => resolve({ status: 'stream', stream });
+            }),
+        ),
+      },
+    );
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    await chat.stop();
+    await sent;
+    open?.();
+    await flush();
+
+    expect(transport.abort).toHaveBeenCalledWith(
+      expect.objectContaining({ endpoint: 'assistants', abortKey: 'convo-1:response-1' }),
+    );
+  });
+
+  it('merges the messages a stop returns for an Assistants run whose stream dropped', async () => {
+    const stream = createStream();
+    const { chat, transport } = setup(
+      {
+        prepareRequest: jest.fn(() => ({
+          payload: { endpoint: 'assistants', conversationId: 'convo-1', text: 'Hi' } as TPayload,
+          messages: [userMessage, placeholder],
+          responseMessageId: 'response-1',
+        })),
+      },
+      { sendMessages: jest.fn(async () => ({ status: 'stream' as const, stream })) },
+    );
+    transport.abort.mockResolvedValue({
+      final: true,
+      conversation: {},
+      runMessages: [{ ...placeholder, text: 'Partial' }],
+    });
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+    await sent;
+
+    await chat.stop();
+
+    expect(transport.abort).toHaveBeenCalledWith(
+      expect.objectContaining({ abortKey: 'convo-1:response-1' }),
+    );
+    expect(chat.messages[1].text).toBe('Partial');
+    expect(chat.status).toBe('ready');
+  });
+
   it('accepts a stop the run had already settled', async () => {
     const { chat, stream, transport } = setup();
     transport.abort.mockImplementation(async () => {

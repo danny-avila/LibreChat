@@ -496,14 +496,7 @@ export class Chat {
     });
     active.stopped = true;
     if (result && 'runMessages' in result) {
-      /** An Assistants run's stream ends without a final frame; the stop's answer carries it. */
-      const { runMessages } = result;
-      await this.executor.run(() => {
-        const next = mergeById(this.messages, runMessages);
-        if (next) {
-          this.write(next);
-        }
-      });
+      await this.mergeRunMessages(result.runMessages);
       active.controller.abort();
       active.stream?.close();
     } else if (!active.stream) {
@@ -535,13 +528,25 @@ export class Chat {
     if (this.disposed || !active.endpoint || sent.status !== 'stream') {
       return;
     }
+    const { streamId, generationCreatedAt } = sent.stream;
     const target = {
-      streamId: sent.stream.streamId,
-      generationCreatedAt: sent.stream.generationCreatedAt,
+      streamId,
+      generationCreatedAt,
+      abortKey: streamId == null ? this.abortKey(active) : undefined,
     };
     void this.abortOnServer({ endpoint: active.endpoint, ...target }).catch((error: unknown) =>
       this.init.onError?.(error instanceof Error ? error : new Error(String(error))),
     );
+  }
+
+  /** An Assistants run's stream ends without a final frame; the stop's answer carries it. */
+  private mergeRunMessages(runMessages: TMessage[]): Promise<void> {
+    return this.executor.run(() => {
+      const next = mergeById(this.messages, runMessages);
+      if (next) {
+        this.write(next);
+      }
+    });
   }
 
   /** `conversationId:responseMessageId` of a run with no resumable stream (Assistants). */
@@ -564,7 +569,10 @@ export class Chat {
 
   /** Stops a generation whose stream dropped, which the server keeps running. */
   private async stopDetached(detached: DetachedGeneration): Promise<void> {
-    await this.abortOnServer(detached.target);
+    const result = await this.abortOnServer(detached.target);
+    if (result && 'runMessages' in result) {
+      await this.mergeRunMessages(result.runMessages);
+    }
     if (this.detached !== detached) {
       return;
     }
