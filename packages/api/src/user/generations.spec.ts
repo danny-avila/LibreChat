@@ -29,7 +29,7 @@ describe('stopUserGenerations', () => {
     const manager = new FakeJobManager();
 
     await expect(
-      stopUserGenerations('u1', undefined, manager as unknown as UserGenerationControl),
+      stopUserGenerations('u1', undefined, manager as unknown as UserGenerationControl, 0),
     ).resolves.toBeUndefined();
 
     expect(manager.aborted).toEqual(['s1']);
@@ -43,7 +43,27 @@ describe('stopUserGenerations', () => {
     };
 
     await expect(
-      stopUserGenerations('u1', undefined, manager as unknown as UserGenerationControl),
+      stopUserGenerations('u1', undefined, manager as unknown as UserGenerationControl, 0),
     ).rejects.toThrow('could not be confirmed stopped');
+  });
+
+  it('catches a job created right after the first drain on the second drain', async () => {
+    const manager = new FakeJobManager();
+    const listed = manager.getAccountCleanupJobIdsForUser.bind(manager);
+    let calls = 0;
+    manager.getAccountCleanupJobIdsForUser = async () => {
+      calls += 1;
+      if (calls === 2) {
+        (manager as unknown as { jobs: Map<string, unknown> }).jobs.set('late', {
+          createdAt: 9,
+          metadata: { userId: 'u1' },
+        });
+      }
+      return listed();
+    };
+
+    await stopUserGenerations('u1', undefined, manager as unknown as UserGenerationControl, 0);
+
+    expect(manager.aborted).toEqual(['s1', 'late']);
   });
 });

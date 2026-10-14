@@ -146,7 +146,6 @@ const IDEMPOTENCY_TTL_SECONDS = 25 * 60 * 60;
 const LEGACY_IDEMPOTENCY_TTL_SECONDS = 26 * 60 * 60;
 const OAUTH_TOOL_CALL_PREFIX = `oauth${Constants.mcp_delimiter}`;
 const SHUTDOWN_SUBSCRIBER_ERROR = 'Server is shutting down';
-const ACCOUNT_DELETION_JOB_ERROR = 'Generation stopped because the account is being deleted';
 const SHUTDOWN_JOB_ERROR = 'Generation interrupted because its server shut down';
 const SHUTTING_DOWN_ERROR = 'Generation job manager is shutting down';
 /** Internal transport signal: durable terminal state exists, but its DONE
@@ -1151,9 +1150,8 @@ class GenerationJobManagerClass {
   }
 
   /**
-   * Installs the account admission check. `createJob` runs it after the job is committed, so an
-   * account deletion either fences first and refuses this job, or starts later and finds it in its
-   * active-generation drain. The caller supplies the check, keeping the stream package storage-free.
+   * Installs the account admission check, which `createJob` runs before it creates any durable
+   * state. The caller supplies it, keeping the stream package storage-free.
    */
   setAdmissionGuard(guard?: (userId: string) => Promise<boolean>): void {
     this.admissionGuard = guard;
@@ -2557,6 +2555,23 @@ class GenerationJobManagerClass {
       throw new Error('Invalid active generation predecessor policy');
     }
 
+    const admissionCheck = options.admissionCheck ?? this.admissionGuard;
+    if (admissionCheck != null) {
+      let admitted: boolean;
+      try {
+        admitted = await admissionCheck(userId);
+      } catch (error) {
+        logger.error(
+          `[GenerationJobManager] Admission check failed for ${streamId}:`,
+          getSafeErrorMetadata(error),
+        );
+        throw new GenerationAdmissionUnavailableError();
+      }
+      if (!admitted) {
+        throw new GenerationAdmissionDeniedError();
+      }
+    }
+
     const tenantId = getTenantId();
     const safeTenantId = tenantId && tenantId !== SYSTEM_TENANT_ID ? tenantId : undefined;
     const creationAttemptId = randomUUID();
@@ -2748,72 +2763,30 @@ class GenerationJobManagerClass {
       }
       throw new Error('Generation job was replaced during initialization');
     }
-    let admissionDenied = false;
-    let admissionFailure: unknown;
-    const admissionCheck = options.admissionCheck ?? this.admissionGuard;
-    if (!this.shuttingDown && admissionCheck != null) {
-      try {
-        admissionDenied = !(await admissionCheck(userId));
-      } catch (error) {
-        admissionFailure = error;
-      }
-    }
-    const admissionRefused = admissionDenied || admissionFailure != null;
-    if (this.shuttingDown || admissionRefused) {
-      const handoffConfirmed = await this.processDurableReplacementReceipts(
-        streamId,
-        jobData,
-        conversationId,
-      ).catch((handoffError) => {
-        logger.error(
-          `[GenerationJobManager] Failed to hand off predecessor during refused admission ${streamId}:`,
-          getSafeErrorMetadata(handoffError),
-        );
-        return false;
-      });
-      try {
-        await this.completeJob(
-          streamId,
-          admissionRefused ? ACCOUNT_DELETION_JOB_ERROR : SHUTDOWN_JOB_ERROR,
-          jobData.createdAt,
-        );
-        if (jobData.providerExecutionId) {
-          await this.markProviderExecutionDrained(
-            streamId,
-            jobData.createdAt,
-            jobData.providerExecutionId,
-          );
-        }
-        const replacedLocal = this.runtimeState.get(streamId);
-        if (replacedLocal != null && replacedLocal.createdAt < jobData.createdAt) {
-          replacedLocal.abortController.abort();
-          this.retireStoppedPredecessorRuntime(streamId, jobData.createdAt);
-        }
-      } finally {
-        if (admissionRefused && handoffConfirmed) {
-          /** A refused job never ran, and its metadata holds the user's message; the erasure that
-           * refused it will not list it again, so purge it even when retiring it failed. It stays
-           * until the displaced predecessor is confirmed drained, because the replacement receipt
-           * is the only durable link to that provider. A purge failure fails the request. */
-          await this.jobStore.deleteJob(streamId, jobData.createdAt).catch((purgeError) => {
-            logger.error(
-              `[GenerationJobManager] Failed to purge refused generation ${streamId}:`,
-              getSafeErrorMetadata(purgeError),
-            );
-            throw new GenerationAdmissionUnavailableError();
-          });
-        }
-      }
-      if (admissionFailure != null || (admissionRefused && !handoffConfirmed)) {
-        if (admissionFailure != null) {
+    if (this.shuttingDown) {
+      await this.processDurableReplacementReceipts(streamId, jobData, conversationId).catch(
+        (handoffError) => {
           logger.error(
-            `[GenerationJobManager] Admission check failed for ${streamId}:`,
-            getSafeErrorMetadata(admissionFailure),
+            `[GenerationJobManager] Failed to hand off predecessor during shutdown ${streamId}:`,
+            handoffError,
           );
-        }
-        throw new GenerationAdmissionUnavailableError();
+          return false;
+        },
+      );
+      await this.completeJob(streamId, SHUTDOWN_JOB_ERROR, jobData.createdAt);
+      if (jobData.providerExecutionId) {
+        await this.markProviderExecutionDrained(
+          streamId,
+          jobData.createdAt,
+          jobData.providerExecutionId,
+        );
       }
-      throw admissionDenied ? new GenerationAdmissionDeniedError() : new Error(SHUTTING_DOWN_ERROR);
+      const replacedLocal = this.runtimeState.get(streamId);
+      if (replacedLocal != null && replacedLocal.createdAt < jobData.createdAt) {
+        replacedLocal.abortController.abort();
+        this.retireStoppedPredecessorRuntime(streamId, jobData.createdAt);
+      }
+      throw new Error(SHUTTING_DOWN_ERROR);
     }
 
     if (!(await this.processDurableReplacementReceipts(streamId, jobData, conversationId))) {

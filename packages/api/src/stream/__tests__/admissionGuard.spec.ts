@@ -1,5 +1,8 @@
+import {
+  GenerationAdmissionDeniedError,
+  GenerationAdmissionUnavailableError,
+} from '~/stream/interfaces/IJobStore';
 import { InMemoryEventTransport } from '~/stream/implementations/InMemoryEventTransport';
-import { GenerationAdmissionDeniedError } from '~/stream/interfaces/IJobStore';
 import { InMemoryJobStore } from '~/stream/implementations/InMemoryJobStore';
 import { GenerationJobManagerClass } from '~/stream/GenerationJobManager';
 import { stopUserGenerations } from '~/user/generations';
@@ -19,16 +22,33 @@ describe('GenerationJobManager admission guard', () => {
     await manager.destroy();
   });
 
-  it('refuses a job admitted while the account deletion has begun, leaving nothing running', async () => {
+  it('refuses before creating any job state while the account deletion has begun', async () => {
     manager.setAdmissionGuard(async () => false);
 
     await expect(manager.createJob('denied', 'user-1', 'denied')).rejects.toBeInstanceOf(
       GenerationAdmissionDeniedError,
     );
-    await expect(manager.createJob('denied-2', 'user-1', 'denied-2')).rejects.toMatchObject({
+    await expect(manager.createJob('denied', 'user-1', 'denied')).rejects.toMatchObject({
       code: 'ACCOUNT_DELETION_IN_PROGRESS',
+      status: 409,
+      message: 'Account deletion is in progress',
     });
     expect(await store.getJob('denied')).toBeNull();
+  });
+
+  it('refuses with a sanitized code when the guard fails and creates nothing', async () => {
+    manager.setAdmissionGuard(async () => {
+      throw new Error('mongodb://internal-host:27017 lookup down');
+    });
+
+    const error = await manager.createJob('failed', 'user-1', 'failed').catch((e) => e);
+
+    expect(error).toBeInstanceOf(GenerationAdmissionUnavailableError);
+    expect(error).toMatchObject({
+      code: 'GENERATION_ADMISSION_UNAVAILABLE',
+      message: 'Generation admission could not be verified',
+    });
+    expect(await store.getJob('failed')).toBeNull();
   });
 
   it('uses a per-job admission check in place of the installed guard', async () => {
@@ -39,29 +59,6 @@ describe('GenerationJobManager admission guard', () => {
       manager.createJob('own-check', 'user-1', 'own-check', { admissionCheck: async () => false }),
     ).rejects.toBeInstanceOf(GenerationAdmissionDeniedError);
     expect(guard).not.toHaveBeenCalled();
-    expect(await store.getJob('own-check')).toBeNull();
-  });
-
-  it('retires the committed job and refuses with a sanitized code when the guard rejects', async () => {
-    manager.setAdmissionGuard(async () => {
-      throw new Error('mongodb://internal-host:27017 lookup down');
-    });
-
-    await expect(manager.createJob('failed', 'user-1', 'failed')).rejects.toMatchObject({
-      code: 'GENERATION_ADMISSION_UNAVAILABLE',
-      message: 'Generation admission could not be verified',
-    });
-    expect(await store.getJob('failed')).toBeNull();
-  });
-
-  it('fails the request when a refused job cannot be purged', async () => {
-    manager.setAdmissionGuard(async () => false);
-    jest.spyOn(store, 'deleteJob').mockRejectedValueOnce(new Error('store down'));
-
-    await expect(manager.createJob('stuck', 'user-1', 'stuck')).rejects.toMatchObject({
-      code: 'GENERATION_ADMISSION_UNAVAILABLE',
-      message: 'Generation admission could not be verified',
-    });
   });
 
   it('admits jobs while the account is active', async () => {
@@ -72,13 +69,13 @@ describe('GenerationJobManager admission guard', () => {
     });
   });
 
-  it('stops a job admitted before the deletion fence through the drain', async () => {
+  it('stops a job admitted before the fence and refuses one after it', async () => {
     let active = true;
     manager.setAdmissionGuard(async () => active);
     await manager.createJob('before', 'user-1', 'before');
 
     active = false;
-    await stopUserGenerations('user-1', undefined, manager);
+    await stopUserGenerations('user-1', undefined, manager, 0);
 
     expect((await store.getJob('before'))?.status).not.toBe('running');
     await expect(manager.createJob('after', 'user-1', 'after')).rejects.toBeInstanceOf(
