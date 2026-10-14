@@ -50,7 +50,8 @@ export interface IServerConfigsRepositoryInterface {
   ): Promise<ParsedServerConfig | undefined>;
 
   //ACL Entry check if remove is possible
-  remove(serverName: string, userId?: string): Promise<void>;
+  /** Resolves to false when the store knew no such server, so a no-op is distinguishable. */
+  remove(serverName: string, userId?: string): Promise<boolean | void>;
 
   //ACL Entry check if read is possible
   get(serverName: string, userId?: string): Promise<ParsedServerConfig | undefined>;

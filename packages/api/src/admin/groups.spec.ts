@@ -996,6 +996,26 @@ describe('createAdminGroupsHandlers', () => {
         expect(status).toHaveBeenCalledWith(200);
       });
 
+      it('treats a compensating deletion that throws after committing as completed', async () => {
+        const group = mockGroup();
+        const deps = compensationDeps({
+          restoreConfig: jest.fn().mockRejectedValue(new Error('restore down')),
+          deleteAclEntries: jest.fn().mockRejectedValue(new Error('acl down')),
+          findGroupById: jest
+            .fn()
+            .mockResolvedValueOnce(group)
+            .mockResolvedValueOnce(group)
+            .mockResolvedValue(null),
+          deleteGroup: jest.fn().mockRejectedValue(new Error('cache invalidation failed')),
+        });
+        const handlers = createAdminGroupsHandlers(deps);
+        const { req, res, status } = createReqRes({ params: { id: validId } });
+
+        await handlers.deleteGroup(req, res);
+
+        expect(status).toHaveBeenCalledWith(200);
+      });
+
       it('reports GROUP_RESTORE_FAILED when neither the restore nor the deletion succeeds', async () => {
         const deps = compensationDeps({
           restoreConfig: jest.fn().mockRejectedValue(new Error('restore down')),

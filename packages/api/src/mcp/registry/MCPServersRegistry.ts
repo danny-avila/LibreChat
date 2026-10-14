@@ -1381,20 +1381,22 @@ export class MCPServersRegistry {
     serverName: string,
     storageLocation: 'CACHE' | 'DB',
     userId?: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const configRepo = this.getConfigRepository(storageLocation);
+    let removed: boolean | void;
     try {
-      await configRepo.remove(serverName, userId);
+      removed = await configRepo.remove(serverName, userId);
     } catch (error) {
       await this.invalidateAfterCommittedFailure(error, serverName, userId, storageLocation);
       throw error;
     }
-    await this.invalidateCommitted(undefined, () =>
+    await this.invalidateCommitted(removed !== false, () =>
       this.invalidateServerReadCaches(serverName, userId, storageLocation),
     );
     if (storageLocation === 'CACHE') {
       this.resetYamlServerNamesMemo();
     }
+    return removed !== false;
   }
 
   private getConfigRepository(storageLocation: 'CACHE' | 'DB'): IServerConfigsRepositoryInterface {

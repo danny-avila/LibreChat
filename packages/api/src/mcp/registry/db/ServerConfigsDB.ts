@@ -442,7 +442,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
    * @param serverName - The serverName of the server to remove
    * @param userId - User performing the deletion (for logging)
    */
-  public async remove(serverName: string, userId?: string): Promise<void> {
+  public async remove(serverName: string, userId?: string): Promise<boolean> {
     logger.debug(`[ServerConfigsDB.remove] removing ${serverName}. UserId: ${userId}`);
     const deletedServer = await this._dbMethods.deleteMCPServer(serverName);
     if (deletedServer && deletedServer._id) {
@@ -453,11 +453,12 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
           resourceId: deletedServer._id!,
         });
       } catch (error) {
-        throw new MCPCommittedWriteError(undefined, error);
+        throw new MCPCommittedWriteError(true, error);
       }
-      return;
+      return true;
     }
     logger.warn(`[ServerConfigsDB.remove] server with serverName ${serverName} does not exist`);
+    return false;
   }
 
   /**

@@ -460,24 +460,35 @@ export function createPasskeyHandlers(deps: PasskeyHandlersDeps): PasskeyHandler
        * the write and rolling this credential back keeps the stored set within
        * the cap without a transaction, at the cost of rejecting the whole race.
        */
+      const auditRegistered = (metadata: Record<string, unknown> = {}) =>
+        emitAudit(req as unknown as ServerRequest, {
+          action: 'passkey.registered',
+          severity: 'warning',
+          target: { type: 'passkey', id: passkey.id, name: passkey.name },
+          metadata: { deviceType: verified.deviceType, backedUp: verified.backedUp, ...metadata },
+        });
+      /** A credential that survives a failed rollback is a usable factor, so it is audited. */
+      const rollBack = async () => {
+        try {
+          await deletePasskey(passkey.id, req.user.id);
+        } catch (rollbackError) {
+          await auditRegistered({ rollback: 'failed' });
+          throw rollbackError;
+        }
+      };
       let countAfterWrite: number;
       try {
         countAfterWrite = await countPasskeysByUser(req.user.id);
       } catch (error) {
-        await deletePasskey(passkey.id, req.user.id);
+        await rollBack();
         throw error;
       }
       if (countAfterWrite > maxPasskeys) {
-        await deletePasskey(passkey.id, req.user.id);
+        await rollBack();
         return res.status(409).json({ message: 'Passkey limit reached' });
       }
 
-      await emitAudit(req as unknown as ServerRequest, {
-        action: 'passkey.registered',
-        severity: 'warning',
-        target: { type: 'passkey', id: passkey.id, name: passkey.name },
-        metadata: { deviceType: verified.deviceType, backedUp: verified.backedUp },
-      });
+      await auditRegistered();
       return res.status(201).json({ passkey: serializePasskey(passkey) });
     } catch (err) {
       if (isDuplicateKeyError(err as MongoWriteError)) {

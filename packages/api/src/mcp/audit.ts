@@ -15,6 +15,8 @@ export interface MCPServerAuditEvent {
   next?: ServerConfigLike;
   /** The write committed but refreshing the read caches failed afterwards. */
   postWriteFailed?: boolean;
+  /** The write found nothing to change (for example a delete that lost a race), so no entry is recorded. */
+  noop?: boolean;
 }
 
 /** JSON with object keys sorted, so entry order never reads as a change. */
@@ -127,7 +129,9 @@ export function createMCPServerAuditor(options: {
     try {
       await afterCommit?.();
     } finally {
-      await record(req, event);
+      if (!event.noop) {
+        await record(req, event);
+      }
     }
   };
 }

@@ -687,6 +687,7 @@ const deleteMCPServerController = async (req, res, uninstallOAuthMCP) => {
         serverName,
         previous: existingConfig,
         postWriteFailed: settled.postWriteError != null,
+        noop: settled.committed === false,
       },
       async () => {
         await fenceCommittedMCPMutation({ userId, serverName });

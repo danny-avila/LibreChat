@@ -486,7 +486,7 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps): {
       await writeChunk(formatCsvHeader());
       await writeChunk('\r\n');
 
-      const { truncated } = await streamAuditLogEntries(
+      const { truncated, count } = await streamAuditLogEntries(
         caller.tenantId,
         filters.value,
         async (entry) => {
@@ -529,7 +529,10 @@ export function createAdminAuditLogHandlers(deps: AdminAuditLogDeps): {
         }
         res.end();
         if (await settled) {
-          await emitFollowUp(req, exportEvent);
+          await emitFollowUp(req, {
+            ...exportEvent,
+            metadata: { ...exportEvent.metadata, rows: count, truncated },
+          });
         } else {
           await exportFailed('client_aborted');
         }

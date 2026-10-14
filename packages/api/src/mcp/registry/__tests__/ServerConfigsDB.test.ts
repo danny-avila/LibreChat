@@ -1491,7 +1491,7 @@ describe('ServerConfigsDB', () => {
       const config = createSSEConfig('Delete Test');
       const created = await serverConfigsDB.add('temp-name', config, userId);
 
-      await serverConfigsDB.remove(created.serverName, userId);
+      await expect(serverConfigsDB.remove(created.serverName, userId)).resolves.toBe(true);
 
       const MCPServer = mongoose.models.MCPServer;
       const server = await MCPServer.findOne({ serverName: created.serverName });
@@ -1520,8 +1520,8 @@ describe('ServerConfigsDB', () => {
     });
 
     it('should handle non-existent server gracefully', async () => {
-      // Should not throw
-      await expect(serverConfigsDB.remove('non-existent-server', userId)).resolves.toBeUndefined();
+      // Should not throw, and reports that nothing was removed
+      await expect(serverConfigsDB.remove('non-existent-server', userId)).resolves.toBe(false);
     });
   });
 

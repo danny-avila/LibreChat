@@ -618,7 +618,12 @@ describe('createAdminAuditLogHandlers', () => {
         }),
       );
       const terminal = recordAuditEntry.mock.calls[recordAuditEntry.mock.calls.length - 1][0];
-      expect(terminal).toEqual(expect.objectContaining({ action: 'audit.exported' }));
+      expect(terminal).toEqual(
+        expect.objectContaining({
+          action: 'audit.exported',
+          metadata: { format: 'csv', severity: 'critical', rows: 0, truncated: false },
+        }),
+      );
       expect(terminal.outcome).toBeUndefined();
     });
 

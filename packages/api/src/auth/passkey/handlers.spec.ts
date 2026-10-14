@@ -397,6 +397,33 @@ describe('passkey registration provider enforcement', () => {
     expect(await methods.countPasskeysByUser(user._id.toString())).toBe(0);
   });
 
+  it('audits a credential that survives a failed rollback', async () => {
+    const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+    const countPasskeysByUser = jest
+      .fn(methods.countPasskeysByUser)
+      .mockResolvedValueOnce(0)
+      .mockRejectedValueOnce(new Error('Count unavailable'));
+    const deletePasskey = jest.fn().mockRejectedValue(new Error('Delete unavailable'));
+    const handlers = createPasskeyHandlers(
+      buildDeps({ countPasskeysByUser, deletePasskey, recordAuditEntry }),
+    );
+    const user = await createUser();
+    const res = buildRes();
+
+    await handlers.registerPasskeyVerify(
+      authedReq(user, { credential: attestation, password: PASSWORD }),
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(recordAuditEntry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'passkey.registered',
+        metadata: expect.objectContaining({ rollback: 'failed' }),
+      }),
+    );
+  });
+
   it('rolls back a credential that wins the enrollment race past the cap', async () => {
     /** Both verifies observe the pre-enrollment count, as two concurrent
      *  ceremonies for the same account do, so both pass the early check. */

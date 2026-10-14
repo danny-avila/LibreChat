@@ -4943,6 +4943,17 @@ describe('MCP Routes', () => {
       );
     });
 
+    it('does not audit a delete that found nothing to remove', async () => {
+      const { recordAuditEntry } = require('~/models');
+      recordAuditEntry.mockClear();
+      mockRegistryInstance.removeServer.mockResolvedValueOnce(false);
+
+      const response = await request(app).delete('/api/mcp/servers/already-gone');
+
+      expect(response.status).toBe(200);
+      expect(recordAuditEntry).not.toHaveBeenCalled();
+    });
+
     it('should return 500 when registry throws error', async () => {
       mockRegistryInstance.removeServer.mockRejectedValue(new Error('Deletion failed'));
 

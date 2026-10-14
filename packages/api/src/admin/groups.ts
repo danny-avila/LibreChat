@@ -461,20 +461,33 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
           return 'restored';
         }
         logger.error('[adminGroups] config restore failed, completing the deletion:', id);
+        let removed: IGroup | null = null;
         try {
-          const removed = (await deleteGroup(id)) ?? existing;
-          /** The group is gone for good, so a leftover ACL entry is orphaned: retry its removal once. */
-          await deleteAclEntries({
-            principalType: PrincipalType.GROUP,
-            principalId: new Types.ObjectId(id),
-          }).catch((aclError) =>
-            logger.error('[adminGroups] acl cleanup retry failed after group deletion:', aclError),
-          );
-          return removed;
+          removed = (await deleteGroup(id)) ?? existing;
         } catch (error) {
-          logger.error('[adminGroups] group left without its config override:', id, error);
-          return 'stuck';
+          /** The delete may have committed before it threw (post-delete cache work); a confirmed
+           * absence is a completed deletion. */
+          const absent = await findGroupById(id).then(
+            (group) => group == null,
+            () => false,
+          );
+          if (!absent) {
+            logger.error('[adminGroups] group left without its config override:', id, error);
+            return 'stuck';
+          }
+          removed = existing;
         }
+        /** The group is gone for good, so a leftover ACL entry is orphaned: retry its removal once. */
+        await deleteAclEntries({
+          principalType: PrincipalType.GROUP,
+          principalId: new Types.ObjectId(id),
+        }).catch((aclError) =>
+          logger.error(
+            '[adminGroups] acl cleanup retry failed after group deletion:',
+            getSafeErrorMetadata(aclError),
+          ),
+        );
+        return removed;
       };
       /** Every member loses group-scoped access, so the affected accounts are recorded (chunked). */
       const recordMemberRemovals = async (group: IGroup) => {
