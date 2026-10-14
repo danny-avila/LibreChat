@@ -1,5 +1,6 @@
 const cookies = require('cookie');
 const jwt = require('jsonwebtoken');
+const { SESSION_HINT_COOKIE } = require('librechat-data-provider');
 const { logger, runAsSystem, tenantStorage } = require('@librechat/data-schemas');
 const {
   math,
@@ -395,6 +396,7 @@ const refreshController = async (req, res) => {
         req.session?.openidTokens?.appUserId ??
         getValidOpenIDReuseCredential(parsedCookies, process.env.JWT_REFRESH_SECRET)?.userId;
       if (!refreshUserId) {
+        res.clearCookie(SESSION_HINT_COOKIE);
         return res.status(403).send('Invalid OpenID refresh token');
       }
 
@@ -402,6 +404,7 @@ const refreshController = async (req, res) => {
         getUserById(refreshUserId, AUTH_REFRESH_USER_PROJECTION),
       );
       if (!refreshUser) {
+        res.clearCookie(SESSION_HINT_COOKIE);
         return res.status(403).send('Invalid OpenID refresh token');
       }
 
@@ -442,6 +445,7 @@ const refreshController = async (req, res) => {
           logger.warn(
             `[refreshController] Redirecting to /login: error=${error ?? 'null'}, user=${user ? 'exists' : 'null'}`,
           );
+          res.clearCookie(SESSION_HINT_COOKIE);
           return res.status(401).redirect('/login');
         }
 
@@ -453,6 +457,7 @@ const refreshController = async (req, res) => {
               resolvedUserId: user._id.toString(),
             },
           );
+          res.clearCookie(SESSION_HINT_COOKIE);
           return res.status(401).redirect('/login');
         }
 
@@ -539,6 +544,7 @@ const refreshController = async (req, res) => {
               getUserById(userId, AUTH_REFRESH_USER_PROJECTION),
             );
             if (!bridgeUser) {
+              res.clearCookie(SESSION_HINT_COOKIE);
               return res.status(403).send('Invalid OpenID refresh token');
             }
 
@@ -598,6 +604,7 @@ const refreshController = async (req, res) => {
         }
       }
 
+      res.clearCookie(SESSION_HINT_COOKIE);
       return res.status(403).send('Invalid OpenID refresh token');
     }
   }

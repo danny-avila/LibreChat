@@ -1574,6 +1574,44 @@ describe('refreshController – OpenID path', () => {
     expect(res.send).toHaveBeenCalledWith('Invalid OpenID refresh token');
   });
 
+  it('retires the readable session hint when the IdP rejects the refresh token', async () => {
+    openIdClient.refreshTokenGrant.mockRejectedValue(new Error('invalid_grant'));
+
+    await refreshController(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.clearCookie).toHaveBeenCalledWith('session_hint');
+  });
+
+  it('retires the readable session hint when the refreshed identity resolves a different user', async () => {
+    findOpenIDUser.mockResolvedValue({
+      user: { ...defaultUser, _id: 'different-user-id' },
+      error: null,
+      migration: false,
+    });
+
+    await refreshController(req, res);
+
+    expect(res.redirect).toHaveBeenCalledWith('/login');
+    expect(res.clearCookie).toHaveBeenCalledWith('session_hint');
+  });
+
+  it('retires the readable session hint when the refresh owner no longer exists', async () => {
+    getUserById.mockResolvedValue(null);
+
+    await refreshController(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.clearCookie).toHaveBeenCalledWith('session_hint');
+  });
+
+  it('keeps the readable session hint on a successful OpenID refresh', async () => {
+    await refreshController(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.clearCookie).not.toHaveBeenCalledWith('session_hint');
+  });
+
   it('does not use the bridge when signed user-id cookie payload is invalid', async () => {
     setOpenIDReuseCookies(jwt.sign({ id: 123 }, process.env.JWT_REFRESH_SECRET));
     openIdClient.refreshTokenGrant.mockRejectedValue(new Error('invalid_grant'));
