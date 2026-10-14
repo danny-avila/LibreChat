@@ -91,7 +91,9 @@ function redactMessage(str: string, trimLength?: number): string {
 
 /** Whitespace and angle brackets only: commas, quotes and brackets can sit inside one token. */
 const EMAIL_TOKEN_DELIMITER = /[\s<>]/u;
-const QUOTE_OR_ADDRESS = /"(?:[^"\\\r\n]|\\.)*"@|"/gu;
+/** Completed addresses and escaped (serialized) quotes are skipped; only a lone plain quote is counted. */
+const QUOTE_OR_ADDRESS =
+  /\\"(?:[^"\\\r\n]|\\{3}"|\\{4}|\\{2}(?!\\))*\\"@|\\"|"(?:[^"\\\r\n]|\\.)*"@|"/gu;
 
 /** Drops a token cut by the window edge: its terminator is unseen, so no pattern could match it. */
 function trimUnfinishedToken(full: string, window: string): string {

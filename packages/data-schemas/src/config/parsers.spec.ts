@@ -354,6 +354,12 @@ describe('redactMessage', () => {
     expect(JSON.stringify(out)).not.toContain('secretcanary');
   });
 
+  it('drops an unfinished serialized quoted address at the window edge', () => {
+    const input = `${' '.repeat(8170)}${JSON.stringify({ email: `"jane ${'x'.repeat(2000)}"@example.com` })}`;
+    const out = String(runRedactFormat({ level: 'info', message: input }).message);
+    expect(out).not.toContain('jane');
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),
