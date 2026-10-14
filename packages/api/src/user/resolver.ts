@@ -1,4 +1,3 @@
-import { runAsSystem, tenantStorage } from '@librechat/data-schemas';
 import type { TCheckpointerConfig } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { AdminErasureContext, AdminErasureTarget } from '~/admin/users';
@@ -21,6 +20,8 @@ export type ErasureFile = Pick<
 >;
 
 export interface ErasureResolverDeps {
+  /** Runs an operation in the given tenant's data scope, or system scope when it has none. */
+  withTenant: <T>(tenantId: string | undefined, operation: () => Promise<T>) => Promise<T>;
   /** Shared-server OAuth cleanup is wired only when the host has an MCP OAuth runtime. */
   mcpOAuth?: {
     getRegistry: () => {
@@ -74,7 +75,7 @@ export function createErasureResolver(deps: ErasureResolverDeps) {
   }: AdminErasureTarget): Promise<AdminErasureContext> {
     /** The calling admin's tenant context must not decide whose rows an id-keyed lookup reads. */
     const inTargetTenant = <T>(operation: () => Promise<T>): Promise<T> =>
-      tenantId ? tenantStorage.run({ tenantId, userId: id }, operation) : runAsSystem(operation);
+      deps.withTenant(tenantId, operation);
     /** A failed override lookup must abort the deletion, not fall back to a base config that cannot reach the target's storage. */
     const appConfig = await inTargetTenant(async () =>
       deps.getAppConfig({

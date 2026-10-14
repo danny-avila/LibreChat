@@ -8,7 +8,7 @@ const {
   createAdminUsersHandlers,
   revokeUserCodeEnvironmentWorkers,
 } = require('@librechat/api');
-const { SystemCapabilities } = require('@librechat/data-schemas');
+const { SystemCapabilities, runAsSystem, tenantStorage } = require('@librechat/data-schemas');
 const { requireCapability } = require('~/server/middleware/roles/capabilities');
 const { requireJwtAuth } = require('~/server/middleware');
 const {
@@ -32,6 +32,8 @@ const { getAppConfig, invalidateCodeEnvironmentConfigCache } = require('~/server
 const router = express.Router();
 
 const resolveErasure = createErasureResolver({
+  withTenant: (tenantId, operation) =>
+    tenantId ? tenantStorage.run({ tenantId }, operation) : runAsSystem(operation),
   db,
   getAppConfig,
   getMCPManager,

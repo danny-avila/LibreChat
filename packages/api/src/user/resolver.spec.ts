@@ -1,4 +1,4 @@
-import { tenantStorage } from '@librechat/data-schemas';
+import { tenantStorage, runAsSystem } from '@librechat/data-schemas';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { ErasureResolverDeps } from './resolver';
 import { createErasureResolver } from './resolver';
@@ -15,6 +15,8 @@ function createDeps(overrides: Partial<ErasureResolverDeps> = {}) {
     getMCPManager: jest.fn(() => ({ disconnectUserConnection })),
     openCheckpointDeletion: jest.fn(),
     deleteSharedLinks: jest.fn(),
+    withTenant: <T>(tenant: string | undefined, operation: () => Promise<T>) =>
+      tenant ? tenantStorage.run({ tenantId: tenant }, operation) : runAsSystem(operation),
     ...overrides,
   } as unknown as ErasureResolverDeps;
   return { deps, disconnectUserConnection };
