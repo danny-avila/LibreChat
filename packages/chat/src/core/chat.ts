@@ -59,8 +59,12 @@ export type ChatPrepareRequest = {
 
 export type ChatPreparedRequest = {
   payload: TPayload;
-  /** The list to show while the request is in flight: the user turn and its placeholder reply. */
-  messages?: TMessage[];
+  /**
+   * The list to show while the request is in flight: the user turn and its placeholder reply. A
+   * function receives the list current when it is written, so writes made while the request was
+   * prepared are kept; a list replaces it as prepared.
+   */
+  messages?: TMessage[] | ((current: TMessage[]) => TMessage[]);
 };
 
 /** The message list as an event handler reads and writes it. */
@@ -455,9 +459,15 @@ export class Chat {
       streamId: action.streamId,
       generationCreatedAt: this.generationCreatedAt,
     });
-    if (this.action?.actionId === action.actionId) {
-      this.clearAction();
+    if (this.action?.actionId !== action.actionId) {
+      return;
     }
+    if (this.status === 'error') {
+      /** The stop confirmed the end a dropped connection left unknown. */
+      this.init.state.error = undefined;
+      this.init.state.status = 'ready';
+    }
+    this.clearAction();
   }
 
   /** The endpoint a generation this chat did not start runs on, as the host selects it. */
@@ -613,7 +623,7 @@ export class Chat {
         const optimistic = prepared.messages;
         await this.executor.run(() => {
           if (!active.controller.signal.aborted) {
-            this.write(optimistic);
+            this.write(typeof optimistic === 'function' ? optimistic(this.messages) : optimistic);
           }
         });
       }
