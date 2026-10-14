@@ -1221,6 +1221,44 @@ describe('Chat', () => {
       expect(chat.pendingAction).toBeUndefined();
     });
 
+    it('keeps the pause of a turn started while a slow stop was in flight', async () => {
+      const first = createStream({ streamId: 'convo-1', generationCreatedAt: 100 });
+      const second = createStream({ streamId: 'convo-1', generationCreatedAt: 200 });
+      let confirm: (() => void) | undefined;
+      const { chat, transport } = setup(
+        {},
+        {
+          sendMessages: jest
+            .fn()
+            .mockResolvedValueOnce({ status: 'stream', stream: first })
+            .mockResolvedValueOnce({ status: 'stream', stream: second }),
+          abort: jest.fn(
+            () =>
+              new Promise((resolve) => {
+                confirm = () => resolve({ success: true });
+              }),
+          ),
+        },
+      );
+      const firstTurn = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      const stopped = chat.stop();
+      first.push(finalEvent());
+      await firstTurn;
+
+      const secondTurn = chat.sendMessage({ parts: [{ type: 'text', text: 'Again' }] });
+      await flush();
+      second.push({ type: 'pending_action', data: askAction });
+      await flush();
+      confirm?.();
+      await stopped;
+
+      expect(transport.abort).toHaveBeenCalledTimes(1);
+      expect(chat.pendingAction).toBe(askAction);
+      second.push(finalEvent());
+      await secondTurn;
+    });
+
     it('drops the pause when the generation aborts or fails', async () => {
       const aborted = await pause(askAction);
       aborted.stream.push({ type: 'abort', data: {} } as ChatEvent);

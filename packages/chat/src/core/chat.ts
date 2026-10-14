@@ -391,13 +391,13 @@ export class Chat {
     if (!active.endpoint) {
       throw new Error('The generation cannot be stopped without its endpoint');
     }
+    /** Once the server confirms the stop, this generation's pause is over however its stream ends. */
+    const stopped = this.action?.actionId;
     await this.abortOnServer({
       endpoint: active.endpoint,
       streamId: active.stream?.streamId ?? active.reattach?.streamId,
       generationCreatedAt: active.stream?.generationCreatedAt ?? this.generationCreatedAt,
     });
-    /** The server confirmed the stop, so a pause of this generation is over however the stream ends. */
-    const stopped = this.action?.actionId;
     if (!active.stream) {
       /** Still reattaching: nothing will report the end, so the stop ends the request here. */
       active.controller.abort();
