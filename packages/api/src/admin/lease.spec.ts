@@ -23,6 +23,21 @@ describe('withLease', () => {
     expect(lease.releaseResourceLock).toHaveBeenCalledTimes(1);
   });
 
+  it('does not lose the lease on a transient renewal error', async () => {
+    const lease = {
+      acquireResourceLock: jest.fn().mockResolvedValue(true),
+      renewResourceLock: jest.fn().mockRejectedValueOnce(new Error('blip')).mockResolvedValue(true),
+      releaseResourceLock: jest.fn().mockResolvedValue(true),
+    };
+    await expect(
+      withLease(lease, 'k', async (fence) => {
+        await expect(fence()).rejects.toThrow('blip');
+        await fence();
+        return 'ok';
+      }),
+    ).resolves.toBe('ok');
+  });
+
   it('keys one grant the same for a user ObjectId in either case', () => {
     const hex = 'abcdef0123456789abcdef01';
     expect(grantLeaseKey('user', hex, 'cap')).toBe(grantLeaseKey('USER', hex.toUpperCase(), 'cap'));

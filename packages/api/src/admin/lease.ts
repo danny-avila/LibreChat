@@ -51,6 +51,7 @@ export async function withLease<T>(
   }
   let lost = false;
   const renew = async () => {
+    /** Only a definitive "not the holder" answer loses the lease; a transient error may be retried. */
     if (lost || !(await deps.renewResourceLock({ ...lock, ttlMs: LEASE_TTL_MS }))) {
       lost = true;
       throw new ResourcePermissionsBusyError();

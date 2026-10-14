@@ -19,7 +19,7 @@ import type { TPrincipal } from 'librechat-data-provider';
 import type { PermissionChange, PermissionSnapshot } from './types';
 import type { ResolvedPrincipal } from '~/types/principal';
 import type { PermissionPlan } from './audit';
-import { PERMISSION_AUDIT_UNAVAILABLE } from './codes';
+import { PERMISSION_AUDIT_UNAVAILABLE, RESOURCE_PERMISSIONS_UNAVAILABLE } from './codes';
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { userPrincipalsCache } from '~/cache';
 
@@ -53,6 +53,16 @@ const RESOURCE_LOCK_TTL_MS = 30_000;
 const RESOURCE_LOCK_WAIT_MS = 3_000;
 const RESOURCE_LOCK_POLL_MS = 50;
 
+/** The lock store failed; a safe, retryable 503 instead of a raw driver error. */
+export class ResourcePermissionsUnavailableError extends Error {
+  readonly statusCode = 503;
+  readonly code = RESOURCE_PERMISSIONS_UNAVAILABLE;
+
+  constructor() {
+    super('Permissions for this resource cannot be updated right now, try again');
+  }
+}
+
 export class ResourcePermissionsBusyError extends Error {
   readonly statusCode = 409;
   readonly code = 'RESOURCE_PERMISSIONS_BUSY';
@@ -62,7 +72,11 @@ export class ResourcePermissionsBusyError extends Error {
   }
 }
 
-const APPROVED_ERROR_CODES = new Set(['RESOURCE_PERMISSIONS_BUSY', PERMISSION_AUDIT_UNAVAILABLE]);
+const APPROVED_ERROR_CODES = new Set([
+  'RESOURCE_PERMISSIONS_BUSY',
+  PERMISSION_AUDIT_UNAVAILABLE,
+  RESOURCE_PERMISSIONS_UNAVAILABLE,
+]);
 
 /** The approved machine-readable code of a failed permission update, for the HTTP error body. */
 export const permissionErrorCode = (error: unknown): { code: string } | undefined => {
@@ -509,18 +523,22 @@ export class AccessControlService {
         throw new Error(`Invalid resource ID: ${resourceId}`);
       }
 
-      if (!supportsTransactions) {
+      if (!supportsTransactions || (localSession && !localSession.inTransaction())) {
         /**
-         * Without transactions nothing else orders the audited read and the write, so a
+         * Without a transaction nothing else orders the audited read and the write, so a
          * per-resource lease serializes concurrent updates of the same resource.
          */
         const deadline = Date.now() + RESOURCE_LOCK_WAIT_MS;
-        while (
-          !(lockHeld = await this._dbMethods.acquireResourceLock({
-            ...lock,
-            ttlMs: RESOURCE_LOCK_TTL_MS,
-          }))
-        ) {
+        const tryAcquire = () =>
+          this._dbMethods
+            .acquireResourceLock({ ...lock, ttlMs: RESOURCE_LOCK_TTL_MS })
+            .catch((error) => {
+              logger.error('[AccessControlService.bulkUpdateResourcePermissions] Lock failed', {
+                ...getSafeErrorMetadata(error),
+              });
+              throw new ResourcePermissionsUnavailableError();
+            });
+        while (!(lockHeld = await tryAcquire())) {
           if (Date.now() >= deadline) {
             throw new ResourcePermissionsBusyError();
           }
@@ -882,11 +900,14 @@ export class AccessControlService {
       if (shouldEndSession && supportsTransactions) {
         await localSession?.commitTransaction();
       }
-      await afterWrite?.().catch((error) =>
-        logger.error('[AccessControlService.bulkUpdateResourcePermissions] afterWrite failed', {
-          ...getSafeErrorMetadata(error),
-        }),
-      );
+      /** A caller-owned transaction may still abort, so only a durable write is finalized. */
+      if (!localSession?.inTransaction()) {
+        await afterWrite?.().catch((error) =>
+          logger.error('[AccessControlService.bulkUpdateResourcePermissions] afterWrite failed', {
+            ...getSafeErrorMetadata(error),
+          }),
+        );
+      }
       if (resourceType === ResourceType.PROMPTGROUP) {
         await runAfterTransaction(localSession, () =>
           this._dbMethods.invalidatePromptGroupAccessContext(),

@@ -19,6 +19,7 @@ import type { ResolvedPrincipal } from '~/types/principal';
 import type { ServerRequest } from '~/types/http';
 import type { LeaseDeps } from './lease';
 import { ResourcePermissionsBusyError } from '~/acl/accessControlService';
+import { PERMISSION_AUDIT_UNAVAILABLE } from '~/acl/codes';
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { grantLeaseKey, withLease } from './lease';
 import { parsePagination } from './pagination';
@@ -447,7 +448,9 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
             logger.error('[adminGrants] assignGrant audit failed (fail-closed), nothing granted', {
               ...getSafeErrorMetadata(auditErr),
             });
-            return res.status(500).json({ error: 'Failed to record audit entry' });
+            return res
+              .status(500)
+              .json({ error: 'Failed to record audit entry', code: PERMISSION_AUDIT_UNAVAILABLE });
           }
           let result: Awaited<ReturnType<typeof grantCapability>>;
           try {

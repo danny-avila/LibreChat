@@ -1268,6 +1268,21 @@ describe('createAdminGrantsHandlers', () => {
       });
     });
 
+    it('fail-closed: an audit outage answers with the stable audit code', async () => {
+      const recordAuditEntry = jest.fn().mockRejectedValue(new Error('audit down'));
+      const deps = createDeps({ recordAuditEntry, auditFailClosed: true });
+      const handlers = createAdminGrantsHandlers(deps);
+      const { req, res, status, json } = createReqRes({ body: assignBody, user: reqUser() });
+
+      await handlers.assignGrant(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(json).toHaveBeenCalledWith(
+        expect.objectContaining({ code: 'PERMISSION_AUDIT_UNAVAILABLE' }),
+      );
+      expect(deps.grantCapability).not.toHaveBeenCalled();
+    });
+
     it('fail-open: a failed audit write does not fail the grant', async () => {
       const recordAuditEntry = jest.fn().mockRejectedValue(new Error('audit down'));
       const deps = createDeps({ recordAuditEntry });
