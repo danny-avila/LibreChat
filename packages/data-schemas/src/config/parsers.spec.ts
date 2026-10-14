@@ -188,6 +188,12 @@ describe('redactMessage', () => {
     }
   });
 
+  it('drops an unfinished quoted address that outruns the window', () => {
+    const input = `${' '.repeat(8180)}"jane ${'x'.repeat(2000)}"@example.com tail`;
+    const out = String(runRedactFormat({ level: 'info', message: input }).message);
+    expect(out).not.toContain('jane');
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),

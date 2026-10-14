@@ -98,7 +98,15 @@ function trimUnfinishedToken(full: string, window: string): string {
   while (end > 0 && !EMAIL_TOKEN_DELIMITER.test(window[end - 1])) {
     end--;
   }
-  return window.substring(0, end);
+  const trimmed = window.substring(0, end);
+  let quotes = 0;
+  for (let index = 0; index < trimmed.length; index++) {
+    if (trimmed[index] === '"') {
+      quotes++;
+    }
+  }
+  /** An odd quote count means the cut fell inside a quoted local part: drop it whole. */
+  return quotes % 2 === 1 ? trimmed.substring(0, trimmed.lastIndexOf('"')) : trimmed;
 }
 
 function redactLogString(str: string): string {
