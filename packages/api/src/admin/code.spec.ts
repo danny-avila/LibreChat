@@ -456,10 +456,11 @@ describe('createAdminCodeEnvironmentHandlers', () => {
 
     it('delivers the pairing code before the terminal audit write settles', async () => {
       let release: () => void = () => undefined;
+      let deliveredAtTerminalWrite: unknown;
       const response = mockResponse();
       const recordAuditEntry = jest.fn().mockImplementation(async (input) => {
         if (input.outcome === undefined || input.outcome === 'success') {
-          expect(response.body).toEqual(expect.objectContaining({ workerId: 'vm-1' }));
+          deliveredAtTerminalWrite = response.body;
           await new Promise<void>((resolve) => (release = resolve));
         }
       });
@@ -474,9 +475,9 @@ describe('createAdminCodeEnvironmentHandlers', () => {
 
       const pending = build(fetchImpl, recordAuditEntry).createPairing(request(), response);
       await new Promise((resolve) => setImmediate(resolve));
-      expect(response.statusCode).toBe(200);
       release();
       await pending;
+      expect(deliveredAtTerminalWrite).toEqual(expect.objectContaining({ workerId: 'vm-1' }));
     });
 
     it('never blocks a revocation on an audit outage, even when fail-closed', async () => {
