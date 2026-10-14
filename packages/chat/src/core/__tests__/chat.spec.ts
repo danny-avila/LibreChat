@@ -567,6 +567,39 @@ describe('Chat', () => {
     expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'busy' }));
   });
 
+  it.each([true, false])(
+    'settles a stream that drops before the stop is answered by the answer (confirmed: %s)',
+    async (confirmed) => {
+      const { chat, stream, transport } = setup();
+      let answer: (() => void) | undefined;
+      transport.abort.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            answer = () => resolve(confirmed ? { success: true } : { success: false });
+          }),
+      );
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push(stepEvent);
+      await flush();
+
+      const stopped = chat.stop();
+      stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+      await sent;
+      expect(chat.status).toBe('error');
+      answer?.();
+
+      if (confirmed) {
+        await stopped;
+        expect(chat.status).toBe('ready');
+        expect(chat.error).toBeUndefined();
+      } else {
+        await expect(stopped).rejects.toThrow('refused');
+        expect(chat.status).toBe('error');
+      }
+    },
+  );
+
   it('rejects a refused stop and keeps streaming', async () => {
     const failure = new Error('abort failed');
     const { chat, stream, transport } = setup();

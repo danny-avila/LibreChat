@@ -137,8 +137,10 @@ type ActiveRequest = {
   reattach?: { streamId?: string };
   /** The pause this request's generation reported, which a confirmed stop ends. */
   paused?: string;
-  /** Set once a stop was sent for this request, so a stream that drops instead of ending aborts. */
-  stopping?: boolean;
+  /** Set once the server confirmed a stop, so a stream that drops instead of ending aborts. */
+  stopped?: boolean;
+  /** Set when the request settled on a dropped connection. */
+  disconnected?: boolean;
   /** The response this request produces: its placeholder, then the one its final frame names. */
   responseId?: string;
   /** Resolves once the request settled and released the chat. */
@@ -410,25 +412,26 @@ export class Chat {
       throw new Error('The generation cannot be stopped without its endpoint');
     }
     active.paused ??= this.action?.actionId;
-    active.stopping = true;
-    try {
-      await this.abortOnServer({
-        endpoint: active.endpoint,
-        streamId: active.stream?.streamId ?? active.reattach?.streamId,
-        generationCreatedAt: active.stream?.generationCreatedAt ?? this.generationCreatedAt,
-      });
-    } catch (error) {
-      active.stopping = false;
-      throw error;
-    }
+    await this.abortOnServer({
+      endpoint: active.endpoint,
+      streamId: active.stream?.streamId ?? active.reattach?.streamId,
+      generationCreatedAt: active.stream?.generationCreatedAt ?? this.generationCreatedAt,
+    });
+    active.stopped = true;
     if (!active.stream) {
       /** Still reattaching: nothing will report the end, so the stop ends the request here. */
       active.controller.abort();
     }
     await active.finished;
-    /** The server confirmed the stop, so this generation's pause is over however its stream ended. */
+    /** The server confirmed the stop, so this generation is over however its stream ended. */
+    if (active.disconnected && !this.active && this.status === 'error') {
+      this.init.state.error = undefined;
+      this.init.state.status = 'ready';
+    }
     if (active.paused && this.action?.actionId === active.paused) {
       this.clearAction();
+    } else {
+      this.notify();
     }
   }
 
@@ -747,7 +750,7 @@ export class Chat {
     if (!outcome && signal.aborted) {
       outcome = { kind: 'abort' };
     }
-    if (active.stopping && (!outcome || (outcome.kind === 'error' && outcome.disconnect))) {
+    if (active.stopped && (!outcome || (outcome.kind === 'error' && outcome.disconnect))) {
       outcome = { kind: 'abort' };
     }
     this.settle(
@@ -810,6 +813,7 @@ export class Chat {
     if (this.active !== active) {
       return;
     }
+    active.disconnected = outcome.kind === 'error' && outcome.disconnect;
     /**
      * Released and published as one change before anyone is told, so a subscriber or callback
      * that starts the next turn is not overwritten by this one's terminal state.
