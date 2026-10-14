@@ -125,6 +125,8 @@ type ActiveRequest = {
   endpoint?: string;
   /** Set when reattaching to a generation already running on the server, before it attaches. */
   reattach?: { streamId?: string };
+  /** The pause this request's generation reported, which a confirmed stop ends. */
+  paused?: string;
   /** Resolves once the request settled and released the chat. */
   finished: Promise<void>;
   finish: () => void;
@@ -391,8 +393,7 @@ export class Chat {
     if (!active.endpoint) {
       throw new Error('The generation cannot be stopped without its endpoint');
     }
-    /** Once the server confirms the stop, this generation's pause is over however its stream ends. */
-    const stopped = this.action?.actionId;
+    active.paused ??= this.action?.actionId;
     await this.abortOnServer({
       endpoint: active.endpoint,
       streamId: active.stream?.streamId ?? active.reattach?.streamId,
@@ -403,7 +404,8 @@ export class Chat {
       active.controller.abort();
     }
     await active.finished;
-    if (stopped && this.action?.actionId === stopped) {
+    /** The server confirmed the stop, so this generation's pause is over however its stream ended. */
+    if (active.paused && this.action?.actionId === active.paused) {
       this.clearAction();
     }
   }
@@ -665,6 +667,9 @@ export class Chat {
         await this.executor.run(() => {
           outcome = this.apply(event);
         });
+        if (event.type === 'pending_action') {
+          active.paused = event.data.actionId;
+        }
         if (outcome) {
           break;
         }
