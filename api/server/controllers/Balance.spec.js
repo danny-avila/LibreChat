@@ -2,6 +2,7 @@ jest.mock('~/models', () => ({
   findBalanceByUser: jest.fn(),
   findPendingBalanceRequestByUser: jest.fn().mockResolvedValue(null),
   createBalanceRequest: jest.fn(),
+  reserveBalance: jest.fn(),
 }));
 
 jest.mock('~/server/services/Config', () => ({

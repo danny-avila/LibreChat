@@ -1,4 +1,11 @@
-import type { IBalance, IBalanceRequest, AppConfig } from '@librechat/data-schemas';
+import { isBalanceRefillDue } from 'librechat-data-provider';
+import type {
+  IBalance,
+  AppConfig,
+  IBalanceRequest,
+  BalanceReservationRequest,
+  BalanceReservationResult,
+} from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { GetAppConfigOptions } from '~/app/service';
 import type { ServerRequest } from '~/types/http';
@@ -20,14 +27,20 @@ export interface BalanceDeps {
   findPendingBalanceRequestByUser: (userId: string) => Promise<IBalanceRequest | null>;
   createBalanceRequest: (userId: string, reason?: string) => Promise<IBalanceRequest>;
   getAppConfig: (options?: GetAppConfigOptions) => Promise<AppConfig>;
+  reserveBalance: (request: BalanceReservationRequest) => Promise<BalanceReservationResult | null>;
 }
 
 export function createBalanceHandlers(deps: BalanceDeps): {
   getBalance: (req: ServerRequest, res: Response) => Promise<Response>;
   requestTopUp: (req: ServerRequest, res: Response) => Promise<Response>;
 } {
-  const { findBalanceByUser, findPendingBalanceRequestByUser, createBalanceRequest, getAppConfig } =
-    deps;
+  const {
+    findBalanceByUser,
+    findPendingBalanceRequestByUser,
+    createBalanceRequest,
+    getAppConfig,
+    reserveBalance,
+  } = deps;
 
   async function getBalanceHandler(req: ServerRequest, res: Response) {
     const balanceLocals = (res.locals ?? {}) as BalanceLocals;
@@ -37,7 +50,7 @@ export function createBalanceHandlers(deps: BalanceDeps): {
     }
 
     const userId = req.user?.id as string;
-    const balanceData = balanceLocals.balanceData ?? (await findBalanceByUser(userId));
+    let balanceData = balanceLocals.balanceData ?? (await findBalanceByUser(userId));
 
     if (!balanceData) {
       return res.status(404).json({ error: 'Balance not found' });
@@ -59,6 +72,31 @@ export function createBalanceHandlers(deps: BalanceDeps): {
     const autoRefillEnabled =
       balanceConfig?.autoRefillEnabled ?? balanceData.autoRefillEnabled ?? false;
     const refillAmount = balanceConfig?.refillAmount ?? balanceData.refillAmount;
+    const refillMode = balanceConfig?.refillMode ?? balanceData.refillMode ?? 'add';
+    const refillIntervalValue =
+      balanceConfig?.refillIntervalValue ?? balanceData.refillIntervalValue;
+    const refillIntervalUnit = balanceConfig?.refillIntervalUnit ?? balanceData.refillIntervalUnit;
+
+    const refillDue = isBalanceRefillDue(
+      {
+        autoRefillEnabled,
+        refillAmount,
+        refillMode,
+        refillIntervalValue,
+        refillIntervalUnit,
+        lastRefill: balanceData.lastRefill,
+      },
+      new Date(),
+    );
+    if (refillDue && (refillMode === 'reset' || balanceData.tokenCredits <= 0)) {
+      await reserveBalance({
+        user: userId,
+        reservationId: '',
+        amount: 0,
+        expiresAt: new Date(),
+      });
+      balanceData = (await findBalanceByUser(userId)) ?? balanceData;
+    }
 
     // Explicit public-field whitelist — never spread `balanceData` directly.
     // It's a raw Balance document, which also carries internal-only fields
@@ -77,10 +115,9 @@ export function createBalanceHandlers(deps: BalanceDeps): {
       responseBody.refillAmount = refillAmount;
     }
     if (autoRefillEnabled) {
-      responseBody.refillIntervalValue =
-        balanceConfig?.refillIntervalValue ?? balanceData.refillIntervalValue;
-      responseBody.refillIntervalUnit =
-        balanceConfig?.refillIntervalUnit ?? balanceData.refillIntervalUnit;
+      responseBody.refillIntervalValue = refillIntervalValue;
+      responseBody.refillIntervalUnit = refillIntervalUnit;
+      responseBody.refillMode = refillMode;
       responseBody.lastRefill = balanceData.lastRefill;
     }
 

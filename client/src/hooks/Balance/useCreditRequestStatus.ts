@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useToastContext } from '@librechat/client';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
@@ -8,6 +9,9 @@ import {
 } from 'librechat-data-provider';
 import { useGetStartupConfig, useGetUserBalance } from '~/data-provider';
 import { useAuthContext, useLocalize } from '~/hooks';
+
+const MAX_SCHEDULE_DELAY_MS = 24 * 60 * 60 * 1000;
+const RETRY_DELAYS_MS = [5_000, 15_000, 30_000, 60_000, 120_000, 300_000];
 
 /**
  * Single source of truth for "does the current user have a pending
@@ -50,6 +54,8 @@ export default function useCreditRequestStatus(): {
   const balanceQuery = useGetUserBalance({ enabled });
 
   const balanceData = balanceQuery.data;
+  const tokenCredits = balanceData?.tokenCredits ?? 0;
+  const refillMode = balanceData?.refillMode ?? 'add';
   const nextRefillAt =
     balanceData?.autoRefillEnabled &&
     balanceData.lastRefill != null &&
@@ -61,6 +67,39 @@ export default function useCreditRequestStatus(): {
           balanceData.refillIntervalUnit,
         )
       : undefined;
+  const nextRefillTime = nextRefillAt?.getTime();
+
+  useEffect(() => {
+    if (nextRefillTime == null || (refillMode !== 'reset' && tokenCredits > 0)) {
+      return;
+    }
+
+    let timeoutId: ReturnType<typeof setTimeout>;
+    let retryAttempt = 0;
+    let cancelled = false;
+    const checkDeadline = () => {
+      if (cancelled) {
+        return;
+      }
+      const msRemaining = nextRefillTime - Date.now();
+      if (msRemaining > 0) {
+        timeoutId = setTimeout(checkDeadline, Math.min(msRemaining, MAX_SCHEDULE_DELAY_MS));
+        return;
+      }
+
+      queryClient.invalidateQueries([QueryKeys.balance]);
+      if (retryAttempt < RETRY_DELAYS_MS.length) {
+        timeoutId = setTimeout(checkDeadline, RETRY_DELAYS_MS[retryAttempt]);
+        retryAttempt += 1;
+      }
+    };
+
+    checkDeadline();
+    return () => {
+      cancelled = true;
+      clearTimeout(timeoutId);
+    };
+  }, [nextRefillTime, queryClient, refillMode, tokenCredits]);
 
   const mutation = useMutation([MutationKeys.requestCredits], {
     mutationFn: (reason?: string) => dataService.requestBalanceTopUp({ reason }),
@@ -82,7 +121,7 @@ export default function useCreditRequestStatus(): {
   return {
     enabled,
     isLoading: enabled && balanceQuery.data == null,
-    tokenCredits: balanceQuery.data?.tokenCredits ?? 0,
+    tokenCredits,
     refillAmount: balanceData?.refillAmount,
     nextRefillAt,
     pendingCreditRequest: balanceQuery.data?.pendingCreditRequest,

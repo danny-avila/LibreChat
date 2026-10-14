@@ -55,6 +55,7 @@ function createDeps(overrides: Partial<BalanceDeps> = {}): BalanceDeps {
     findPendingBalanceRequestByUser: jest.fn().mockResolvedValue(null),
     createBalanceRequest: jest.fn().mockResolvedValue(mockPendingRequest()),
     getAppConfig: jest.fn().mockResolvedValue({ balance: { enabled: true } }),
+    reserveBalance: jest.fn().mockResolvedValue({ reserved: false, balance: 1000 }),
     ...overrides,
   };
 }
@@ -207,9 +208,158 @@ describe('createBalanceHandlers', () => {
           'refillAmount',
           'refillIntervalUnit',
           'refillIntervalValue',
+          'refillMode',
           'tokenCredits',
         ].sort(),
       );
+    });
+
+    describe('auto-refill', () => {
+      it('applies a due add-mode refill for an exhausted balance and returns the refreshed record', async () => {
+        const staleBalance = mockBalance({
+          tokenCredits: 0,
+          autoRefillEnabled: true,
+          refillAmount: 1000,
+          lastRefill: new Date('2020-01-01'),
+        });
+        const refreshedBalance = mockBalance({
+          tokenCredits: 1000,
+          autoRefillEnabled: true,
+          refillAmount: 1000,
+          lastRefill: new Date('2026-10-14'),
+        });
+        const deps = createDeps({
+          findBalanceByUser: jest.fn().mockResolvedValue(refreshedBalance),
+          getAppConfig: jest.fn().mockResolvedValue({
+            balance: {
+              enabled: true,
+              autoRefillEnabled: true,
+              refillAmount: 1000,
+              refillIntervalValue: 1,
+              refillIntervalUnit: 'days',
+            },
+          }),
+        });
+        const handlers = createBalanceHandlers(deps);
+        const { req, res, json } = createReqRes({
+          locals: { balanceConfigEnabled: true, balanceData: staleBalance },
+        });
+
+        await handlers.getBalance(req, res);
+
+        expect(deps.reserveBalance).toHaveBeenCalledWith({
+          user: 'user-1',
+          reservationId: '',
+          amount: 0,
+          expiresAt: expect.any(Date),
+        });
+        expect(deps.findBalanceByUser).toHaveBeenCalledWith('user-1');
+        expect(json.mock.calls[0][0]).toMatchObject({
+          tokenCredits: 1000,
+          lastRefill: new Date('2026-10-14'),
+          refillMode: 'add',
+        });
+      });
+
+      it('does not attempt an add-mode refill while credits remain', async () => {
+        const deps = createDeps({
+          getAppConfig: jest.fn().mockResolvedValue({
+            balance: {
+              enabled: true,
+              autoRefillEnabled: true,
+              refillAmount: 1000,
+              refillIntervalValue: 1,
+              refillIntervalUnit: 'days',
+            },
+          }),
+        });
+        const handlers = createBalanceHandlers(deps);
+        const { req, res } = createReqRes({
+          locals: {
+            balanceConfigEnabled: true,
+            balanceData: mockBalance({
+              tokenCredits: 500,
+              autoRefillEnabled: true,
+              refillAmount: 1000,
+              lastRefill: new Date('2020-01-01'),
+            }),
+          },
+        });
+
+        await handlers.getBalance(req, res);
+
+        expect(deps.reserveBalance).not.toHaveBeenCalled();
+        expect(deps.findBalanceByUser).not.toHaveBeenCalled();
+      });
+
+      it('applies a due reset-mode refill even while credits remain', async () => {
+        const refreshedBalance = mockBalance({
+          tokenCredits: 1000,
+          autoRefillEnabled: true,
+          refillAmount: 1000,
+          refillMode: 'reset',
+          lastRefill: new Date('2026-10-14'),
+        });
+        const deps = createDeps({
+          findBalanceByUser: jest.fn().mockResolvedValue(refreshedBalance),
+          getAppConfig: jest.fn().mockResolvedValue({
+            balance: {
+              enabled: true,
+              autoRefillEnabled: true,
+              refillAmount: 1000,
+              refillMode: 'reset',
+              refillIntervalValue: 1,
+              refillIntervalUnit: 'days',
+            },
+          }),
+        });
+        const handlers = createBalanceHandlers(deps);
+        const { req, res, json } = createReqRes({
+          locals: {
+            balanceConfigEnabled: true,
+            balanceData: mockBalance({
+              tokenCredits: 500,
+              autoRefillEnabled: true,
+              refillAmount: 1000,
+              refillMode: 'reset',
+              lastRefill: new Date('2020-01-01'),
+            }),
+          },
+        });
+
+        await handlers.getBalance(req, res);
+
+        expect(deps.reserveBalance).toHaveBeenCalledTimes(1);
+        expect(json.mock.calls[0][0]).toMatchObject({
+          tokenCredits: 1000,
+          refillMode: 'reset',
+        });
+      });
+
+      it('honors a live config that disables auto-refill', async () => {
+        const deps = createDeps({
+          getAppConfig: jest.fn().mockResolvedValue({
+            balance: { enabled: true, autoRefillEnabled: false },
+          }),
+        });
+        const handlers = createBalanceHandlers(deps);
+        const { req, res, json } = createReqRes({
+          locals: {
+            balanceConfigEnabled: true,
+            balanceData: mockBalance({
+              tokenCredits: 0,
+              autoRefillEnabled: true,
+              refillAmount: 1000,
+              lastRefill: new Date('2020-01-01'),
+            }),
+          },
+        });
+
+        await handlers.getBalance(req, res);
+
+        expect(deps.reserveBalance).not.toHaveBeenCalled();
+        expect(json.mock.calls[0][0].autoRefillEnabled).toBe(false);
+      });
     });
   });
 
