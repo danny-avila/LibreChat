@@ -441,12 +441,14 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
       };
 
       if (cascade.failed.length > 0) {
-        /** A concurrent delete may have removed the group meanwhile; restoring its config would orphan it. */
-        const stillExists = await findGroupById(id).then(
-          (group) => group != null,
+        /** A concurrent delete may have removed the group meanwhile; restoring its config would
+         * orphan it. When the lookup itself fails the group state is unknown, and putting the
+         * override back is the safe side: a leftover override only restricts, a lost one widens. */
+        const gone = await findGroupById(id).then(
+          (group) => group == null,
           () => false,
         );
-        if (stillExists) {
+        if (!gone) {
           await cascade.compensate();
         }
         return cleanupFailedResponse();

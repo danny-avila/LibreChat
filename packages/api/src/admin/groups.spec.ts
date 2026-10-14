@@ -929,6 +929,23 @@ describe('createAdminGroupsHandlers', () => {
         expect(deps.restoreConfig).not.toHaveBeenCalled();
       });
 
+      it('restores the config when the group state recheck fails', async () => {
+        const deps = compensationDeps({
+          findGroupById: jest
+            .fn()
+            .mockResolvedValueOnce(mockGroup())
+            .mockRejectedValueOnce(new Error('db down')),
+          deleteAclEntries: jest.fn().mockRejectedValue(new Error('acl down')),
+        });
+        const handlers = createAdminGroupsHandlers(deps);
+        const { req, res, status } = createReqRes({ params: { id: validId } });
+
+        await handlers.deleteGroup(req, res);
+
+        expect(status).toHaveBeenCalledWith(500);
+        expect(deps.restoreConfig).toHaveBeenCalledWith(config);
+      });
+
       it('restores the config but never the ACL entries when the group delete fails', async () => {
         const deps = compensationDeps({
           deleteGroup: jest.fn().mockRejectedValue(new Error('db down')),
