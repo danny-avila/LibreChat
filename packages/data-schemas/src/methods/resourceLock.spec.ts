@@ -69,9 +69,12 @@ describe('resource locks', () => {
   it('never moves the expiry backwards on an overlapping renewal', async () => {
     const key = 'acl:agent:3';
     await methods.acquireResourceLock({ key, ownerId: 'a', ttlMs: 60_000 });
-    const before = (await mongoose.models.ResourceLock.findOne({ key }).lean())?.expiresAt as Date;
+    const before = (await mongoose.models.ResourceLock.findOne({ key }).lean<{
+      expiresAt: Date;
+    }>())!.expiresAt;
     await methods.renewResourceLock({ key, ownerId: 'a', ttlMs: 1_000 });
-    const after = (await mongoose.models.ResourceLock.findOne({ key }).lean())?.expiresAt as Date;
+    const after = (await mongoose.models.ResourceLock.findOne({ key }).lean<{ expiresAt: Date }>())!
+      .expiresAt;
     expect(after.getTime()).toBeGreaterThanOrEqual(before.getTime());
   });
 });
