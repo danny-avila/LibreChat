@@ -21,8 +21,31 @@ import { eraseUserData } from '~/user/erasure';
 
 const MAX_SEARCH_LENGTH = 200;
 
-const ERASURE_TARGET_FIELDS =
-  'role tenantId name username email provider googleId facebookId openidId samlId ldapId githubId discordId appleId emailVerified twoFactorEnabled termsAccepted termsAcceptedAt';
+const ERASURE_PROFILE_KEYS = [
+  'name',
+  'username',
+  'email',
+  'provider',
+  'googleId',
+  'facebookId',
+  'openidId',
+  'samlId',
+  'ldapId',
+  'githubId',
+  'discordId',
+  'appleId',
+  'emailVerified',
+  'twoFactorEnabled',
+  'termsAccepted',
+  'termsAcceptedAt',
+] as const;
+
+const ERASURE_TARGET_FIELDS = ['role', 'tenantId', 'idOnTheSource', ...ERASURE_PROFILE_KEYS].join(
+  ' ',
+);
+
+/** The target's plain profile fields, which storage header templates such as the user email read. */
+export type ErasureTargetProfile = Partial<Pick<IUser, (typeof ERASURE_PROFILE_KEYS)[number]>>;
 
 const USER_LIST_FIELDS = '_id name username email avatar role provider createdAt updatedAt';
 
@@ -31,8 +54,9 @@ export interface AdminErasureTarget {
   id: string;
   role?: string;
   tenantId?: string;
-  /** The target's profile fields, which storage header templates such as the user email read. */
-  profile?: Partial<IUser>;
+  /** External identity key, so principal resolution reuses the loaded user instead of re-reading it. */
+  idOnTheSource?: string | null;
+  profile?: ErasureTargetProfile;
 }
 
 export interface AdminErasureContext {
@@ -250,6 +274,7 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
         id,
         role: targetUser?.role,
         tenantId: targetUser?.tenantId,
+        idOnTheSource: targetUser?.idOnTheSource ?? null,
         profile: targetUser,
       });
       await eraseUserData(

@@ -497,6 +497,7 @@ describe('createAdminUsersHandlers', () => {
           id: validUserId,
           role: 'USER',
           tenantId: 'tenant-1',
+          idOnTheSource: null,
           profile: expect.objectContaining({ role: 'USER' }),
         }),
       );

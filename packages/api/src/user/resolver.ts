@@ -19,6 +19,7 @@ export interface ErasureResolverDeps {
     role?: string;
     userId: string;
     tenantId?: string;
+    idOnTheSource?: string | null;
     failClosed?: boolean;
   }) => Promise<{ endpoints?: { agents?: { checkpointer?: TCheckpointerConfig } } } | undefined>;
   processDeleteRequest: (params: {
@@ -44,10 +45,17 @@ export function createErasureResolver(deps: ErasureResolverDeps) {
     id,
     role,
     tenantId,
+    idOnTheSource,
     profile,
   }: AdminErasureTarget): Promise<AdminErasureContext> {
     /** A failed override lookup must abort the deletion, not fall back to a base config that cannot reach the target's storage. */
-    const appConfig = await deps.getAppConfig({ role, userId: id, tenantId, failClosed: true });
+    const appConfig = await deps.getAppConfig({
+      role,
+      userId: id,
+      tenantId,
+      idOnTheSource,
+      failClosed: true,
+    });
     const fileRequest = {
       user: { ...profile, id, _id: id, role, tenantId },
       /** Assistants client setup reads these Express request fields. */

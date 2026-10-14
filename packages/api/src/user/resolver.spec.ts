@@ -37,6 +37,15 @@ describe('createErasureResolver', () => {
     expect(result.deps.deleteSharedLinks).toBe(deps.deleteSharedLinks);
   });
 
+  it('passes the loaded external identity so principal resolution does not re-read the user', async () => {
+    const { deps } = createDeps();
+    await createErasureResolver(deps)({ ...target, idOnTheSource: 'ext-1' });
+
+    expect(deps.getAppConfig).toHaveBeenCalledWith(
+      expect.objectContaining({ userId: 'user-1', idOnTheSource: 'ext-1' }),
+    );
+  });
+
   it('rejects when the target config cannot be resolved', async () => {
     const { deps } = createDeps({
       getAppConfig: jest.fn().mockRejectedValue(new Error('override store down')),
