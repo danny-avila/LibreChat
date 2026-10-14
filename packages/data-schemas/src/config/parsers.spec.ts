@@ -360,6 +360,25 @@ describe('redactMessage', () => {
     expect(out).not.toContain('jane');
   });
 
+  it('masks JSON control escapes in serialized quoted locals and bounds wide payloads', () => {
+    expect(redactMessage(JSON.stringify({ email: '"jane\tdoe"@example.com' }))).not.toContain(
+      'jane',
+    );
+    let tree: Record<string, unknown> = { leaf: 'x' };
+    for (let depth = 0; depth < 5; depth++) {
+      tree = Object.fromEntries(Array.from({ length: 8 }, (_, index) => [`k${index}`, tree]));
+    }
+    const started = Date.now();
+    runRedactFormat({
+      level: 'info',
+      message: 'm',
+      a: tree,
+      b: tree,
+      c: { x: tree },
+    } as RedactInfo);
+    expect(Date.now() - started).toBeLessThan(500);
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),

@@ -14,6 +14,9 @@ const REDACTED_VALUE = '[REDACTED]';
 const REDACTION_TRUNCATED_KEY = '__redaction_truncated__';
 const MAX_REDACTION_DEPTH = 8;
 const MAX_REDACTION_ENTRIES = 50;
+/** Objects one log record may visit while redacting, so a broad payload cannot stall the event loop. */
+const MAX_REDACTION_NODES = 5000;
+let redactionNodeBudget = Number.POSITIVE_INFINITY;
 const DEFAULT_REDACTION_STRING_LENGTH = 8192;
 const MAX_REDACTION_STRING_LENGTH = Math.max(
   CONSOLE_JSON_STRING_LENGTH,
@@ -57,7 +60,7 @@ const sensitiveKeys: RegExp[] = [
  * only at a token boundary, so long non-email text is scanned once instead of once per character.
  */
 const EMAIL_PATTERN =
-  /(?:(?<!\\)\\"(?:[^"\\\r\n]|\\{3}"|\\{4}|\\{2}(?!\\))*\\"|(?<!\\)"(?:[^"\\\r\n]|\\.)*"|(?<![^\s<>[\],;"])[^\s<>[\],;"]+)@(?:\[[^\]\s@]+\]|[^\s<>[\],;"@]+\.[^\s<>[\],;"@]+)/gu;
+  /(?:(?<!\\)\\"(?:[^"\\\r\n]|\\{3}"|\\{4}|\\{2}(?!\\)|\\[bfnrt]|\\u[0-9a-fA-F]{4})*\\"|(?<!\\)"(?:[^"\\\r\n]|\\.)*"|(?<![^\s<>[\],;"])[^\s<>[\],;"]+)@(?:\[[^\]\s@]+\]|[^\s<>[\],;"@]+\.[^\s<>[\],;"@]+)/gu;
 /** Set while redacting splat arguments at levels whose later format strips heavy error fields. */
 let skipHeavyErrorFields = false;
 const REDACTION_WINDOW_SLACK = 1024;
@@ -93,7 +96,7 @@ function redactMessage(str: string, trimLength?: number): string {
 const EMAIL_TOKEN_DELIMITER = /[\s<>]/u;
 /** Completed addresses and escaped (serialized) quotes are skipped; only a lone plain quote is counted. */
 const QUOTE_OR_ADDRESS =
-  /\\"(?:[^"\\\r\n]|\\{3}"|\\{4}|\\{2}(?!\\))*\\"@|\\"|"(?:[^"\\\r\n]|\\.)*"@|"/gu;
+  /\\"(?:[^"\\\r\n]|\\{3}"|\\{4}|\\{2}(?!\\)|\\[bfnrt]|\\u[0-9a-fA-F]{4})*\\"@|\\"|"(?:[^"\\\r\n]|\\.)*"@|"/gu;
 
 /** Drops a token cut by the window edge: its terminator is unseen, so no pattern could match it. */
 function trimUnfinishedToken(full: string, window: string): string {
@@ -437,7 +440,7 @@ function redactLogValue(value: unknown, seen = new WeakMap<object, unknown>(), d
     return cached;
   }
 
-  if (depth >= MAX_REDACTION_DEPTH) {
+  if (depth >= MAX_REDACTION_DEPTH || redactionNodeBudget-- <= 0) {
     return REDACTED_VALUE;
   }
 
@@ -517,6 +520,8 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
   (info: winston.Logform.TransformableInfo) => {
     const infoRecord = info as Record<string | symbol, unknown>;
     const stripsHeavyFields = info.level === 'error' || info.level === 'warn';
+    redactionNodeBudget = MAX_REDACTION_NODES;
+    const topSeen = new WeakMap<object, unknown>();
     const skipsHeavyTopLevel = stripsHeavyFields && isErrorLike(info);
 
     if (info.message !== undefined) {
@@ -569,7 +574,7 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
       } catch {
         raw = '[Unreadable]';
       }
-      const value = redactRecordValue(key, raw, new WeakMap(), 0);
+      const value = redactRecordValue(key, raw, topSeen, 0);
       const safeKey = redactLogKey(
         key,
         (candidate) => candidate !== key && Object.prototype.hasOwnProperty.call(info, candidate),
@@ -580,6 +585,7 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
         replaceFailed = true;
       }
     }
+    redactionNodeBudget = Number.POSITIVE_INFINITY;
     return replaceFailed ? sanitizedCopy(infoRecord, fields, redactedStack) : info;
   },
 );
