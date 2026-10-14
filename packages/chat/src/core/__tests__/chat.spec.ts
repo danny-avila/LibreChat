@@ -594,7 +594,7 @@ describe('Chat', () => {
   });
 
   it.each([true, false])(
-    'settles a stream that drops before the stop is answered by the answer (confirmed: %s)',
+    'holds a stream that drops before the stop is answered until the answer (confirmed: %s)',
     async (confirmed) => {
       const { chat, stream, transport } = setup();
       let answer: (() => void) | undefined;
@@ -611,32 +611,25 @@ describe('Chat', () => {
 
       const stopped = chat.stop();
       stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
-      await sent;
-      expect(chat.status).toBe('error');
+      await flush();
+      expect(chat.status).toBe('streaming');
       answer?.();
 
       if (confirmed) {
         await stopped;
+        await sent;
         expect(chat.status).toBe('ready');
         expect(chat.error).toBeUndefined();
       } else {
         await expect(stopped).rejects.toThrow('refused');
+        await sent;
         expect(chat.status).toBe('error');
       }
     },
   );
 
-  it('keeps the failure of a newer turn when a delayed stop of an older one is confirmed', async () => {
-    const first = createStream({ streamId: 'convo-1' });
-    const { chat, transport } = setup(
-      {},
-      {
-        sendMessages: jest
-          .fn()
-          .mockResolvedValueOnce({ status: 'stream', stream: first })
-          .mockRejectedValueOnce(new Error('newer failed')),
-      },
-    );
+  it('holds a dropped turn, and refuses the next one, until its stop is answered', async () => {
+    const { chat, stream, transport } = setup();
     let answer: (() => void) | undefined;
     transport.abort.mockImplementation(
       () =>
@@ -647,15 +640,17 @@ describe('Chat', () => {
     const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
     await flush();
     const stopped = chat.stop();
-    first.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
-    await sent;
+    stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+    await flush();
 
-    await chat.sendMessage({ parts: [{ type: 'text', text: 'Again' }] });
+    await expect(chat.sendMessage({ parts: [{ type: 'text', text: 'Again' }] })).rejects.toThrow(
+      'in flight',
+    );
     answer?.();
     await stopped;
+    await sent;
 
-    expect(chat.status).toBe('error');
-    expect(chat.error?.message).toBe('newer failed');
+    expect(chat.status).toBe('ready');
   });
 
   it('rejects a refused stop and keeps streaming', async () => {
@@ -1149,6 +1144,24 @@ describe('Chat', () => {
         reconcileReason: 'abort_persistence_failed',
       }),
     );
+  });
+
+  it('reports a run the stop found already finished as settled when its final frame is lost', async () => {
+    const { chat, stream, transport, onFinish } = setup();
+    transport.abort.mockImplementation(async () => {
+      stream.close();
+      return { success: false, settled: true, terminalStatus: 'complete' };
+    });
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+
+    await chat.stop();
+    await sent;
+
+    expect(onFinish).toHaveBeenCalledWith(
+      expect.objectContaining({ isAbort: false, isSettled: true }),
+    );
+    expect(chat.status).toBe('ready');
   });
 
   it('accepts a stop the run had already settled', async () => {
@@ -1850,6 +1863,27 @@ describe('Chat', () => {
       expect(chat.pendingAction).toBeUndefined();
     });
 
+    it('stops a restored pause of a newer generation, not an older dropped one', async () => {
+      const { chat, stream, sent, transport } = await pause(askAction, {
+        resumeSelection: () => ({ endpoint: 'agents' }),
+      });
+      stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+      await sent;
+      const newer = {
+        ...askAction,
+        actionId: 'action-8',
+        streamId: 'convo-1',
+      } as Agents.PendingAction;
+      chat.restorePendingAction(newer, 900);
+
+      await chat.stop();
+
+      expect(transport.abort).toHaveBeenCalledWith(
+        expect.objectContaining({ generationCreatedAt: 900 }),
+      );
+      expect(chat.pendingAction).toBeUndefined();
+    });
+
     it('holds new turns behind a restored pause until it is stopped on the server', async () => {
       const { chat, transport } = setup({ resumeSelection: () => ({ endpoint: 'agents' }) });
       chat.restorePendingAction(askAction, 500);
@@ -1944,9 +1978,10 @@ describe('Chat', () => {
       stream.push({ type: 'pending_action', data: askAction });
       await flush();
       stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
-      await turn;
+      await flush();
       confirm?.();
       await stopped;
+      await turn;
 
       expect(chat.pendingAction).toBeUndefined();
     });
