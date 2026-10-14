@@ -6,6 +6,7 @@ const {
 } = require('@librechat/api');
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const { requireCapability } = require('~/server/middleware/roles/capabilities');
+const configMiddleware = require('~/server/middleware/config/app');
 const { requireJwtAuth } = require('~/server/middleware');
 const db = require('~/models');
 
@@ -34,7 +35,7 @@ const handlers = createAdminGrantsHandlers({
   },
 });
 
-router.use(requireJwtAuth, requireAdminAccess);
+router.use(requireJwtAuth, requireAdminAccess, configMiddleware);
 
 router.get('/', handlers.listGrants);
 router.get('/effective', handlers.getEffectiveCapabilities);

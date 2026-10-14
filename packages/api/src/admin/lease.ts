@@ -1,9 +1,11 @@
 import { Types } from 'mongoose';
+import { logger } from '@librechat/data-schemas';
 import { PrincipalType } from 'librechat-data-provider';
 import {
   ResourcePermissionsBusyError,
   ResourcePermissionsUnavailableError,
 } from '~/acl/accessControlService';
+import { getSafeErrorMetadata } from '~/utils/errors';
 
 export interface LeaseDeps {
   acquireResourceLock: (data: {
@@ -83,6 +85,10 @@ export async function withLease<T>(
     return await fn(renew);
   } finally {
     clearInterval(heartbeat);
-    await deps.releaseResourceLock(lock).catch(() => undefined);
+    await deps.releaseResourceLock(lock).catch((error) =>
+      logger.error('[adminGrants] Lease release failed; it expires on its own', {
+        ...getSafeErrorMetadata(error),
+      }),
+    );
   }
 }

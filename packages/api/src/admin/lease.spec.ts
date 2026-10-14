@@ -1,4 +1,11 @@
+import { inspect } from 'util';
+import { logger } from '@librechat/data-schemas';
 import { grantLeaseKey, withLease } from './lease';
+
+jest.mock('@librechat/data-schemas', () => ({
+  ...jest.requireActual('@librechat/data-schemas'),
+  logger: { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
+}));
 
 describe('withLease', () => {
   afterEach(() => jest.useRealTimers());
@@ -67,6 +74,20 @@ describe('withLease', () => {
     expect(lease.acquireResourceLock).toHaveBeenLastCalledWith(
       expect.objectContaining({ ttlMs: 12_345 }),
     );
+  });
+
+  it('logs a failed release with safe metadata and still returns the result', async () => {
+    const lease = {
+      acquireResourceLock: jest.fn().mockResolvedValue(true),
+      renewResourceLock: jest.fn().mockResolvedValue(true),
+      releaseResourceLock: jest.fn().mockRejectedValue(new Error('mongo secret detail')),
+    };
+    (logger.error as jest.Mock).mockClear();
+
+    await expect(withLease(lease, 'k', async () => 'ok')).resolves.toBe('ok');
+
+    expect(logger.error).toHaveBeenCalledTimes(1);
+    expect(inspect((logger.error as jest.Mock).mock.calls)).not.toContain('secret');
   });
 
   it('keys one grant the same for a user ObjectId in either case', () => {
