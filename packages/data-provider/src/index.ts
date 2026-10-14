@@ -18,6 +18,7 @@ export * from './runSteps';
 /* ui parts */
 export * from './parts';
 export * from './toolTiming';
+export * from './toolDispatch';
 /* artifacts  */
 export * from './artifacts';
 /* schema helpers  */
