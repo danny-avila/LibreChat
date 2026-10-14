@@ -912,6 +912,62 @@ describe('createActivityPhaseWiring', () => {
     expect(parts).toHaveLength(1);
   });
 
+  it('replays a legacy pending-reasoning snapshot through the stream filter', async () => {
+    const encoded = Buffer.from(
+      Array.from({ length: 1_050 }, (_, i) => (i * 37 + 3) % 256),
+    ).toString('base64');
+    const parts: LooseContentPart[] = [];
+    const wiring = createActivityPhaseWiring({
+      initialSnapshot: {
+        version: 3,
+        generated: 0,
+        activityCount: 0,
+        failedActivityCount: 0,
+        partialActivityCount: 0,
+        agentIds: [],
+        activities: [],
+        assistantContext: [],
+        /** Written before snapshots carried a readable window or cursor. */
+        pendingReasoning: [{ key: 'root', text: `Checking. ${encoded.slice(0, 100)}` }],
+      },
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async () => ({ label: 'unused' })),
+    });
+    const handlers = wiring.handlers({
+      [GraphEvents.ON_RUN_STEP]: { handle: jest.fn() },
+      [GraphEvents.ON_REASONING_DELTA]: { handle: jest.fn() },
+    });
+    handlers?.[GraphEvents.ON_RUN_STEP]?.handle(
+      GraphEvents.ON_RUN_STEP,
+      {
+        id: 'reasoning-step',
+        stepDetails: {
+          type: StepTypes.MESSAGE_CREATION,
+          message_creation: { message_id: 'm', content_type: 'think' },
+        },
+      } as never,
+      undefined,
+      undefined,
+    );
+    for (const think of [encoded.slice(100), ' Rolling back.']) {
+      handlers?.[GraphEvents.ON_REASONING_DELTA]?.handle(
+        GraphEvents.ON_REASONING_DELTA,
+        { id: 'reasoning-step', delta: { content: { type: ContentTypes.THINK, think } } } as never,
+        undefined,
+        undefined,
+      );
+    }
+    parts.push({ type: ContentTypes.THINK, think: `Checking. ${encoded} Rolling back.` });
+    parts.push({ type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } });
+    await wiring.hook(batch('tool-1'), new AbortController().signal);
+
+    const [activity] = wiring.snapshot().activities;
+    expect(activity.readableExcerpts).toEqual(['Checking.  Rolling back.']);
+  });
+
   it('classifies streamed reasoning before bounding its prompt evidence', async () => {
     const encoded = Buffer.from(
       Array.from({ length: 1_050 }, (_, i) => (i * 37 + 3) % 256),

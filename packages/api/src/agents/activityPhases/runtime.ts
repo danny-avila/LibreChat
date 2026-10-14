@@ -915,14 +915,19 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
           matchingReasoningParts === 1 &&
           content[rebasedStartIndex]?.type === ContentTypes.THINK &&
           textValue(content[rebasedStartIndex]?.think).includes(needle);
+        /** Older snapshots kept only the raw window. Replaying it through the
+         *  stream filter keeps a payload prefix that was still undecided at the
+         *  snapshot in the cursor, where the continuation can classify it. */
+        const classified =
+          readable != null && cursor != null
+            ? { readable, cursor }
+            : advanceOpaqueReasoning(OPAQUE_REASONING_START, boundedText);
         return [
           key,
           {
             text: boundedText,
-            /** Older snapshots kept only the raw window; strip it as the best
-             *  available classification. */
-            readable: readable ?? stripOpaqueReasoning(boundedText),
-            cursor: cursor ?? OPAQUE_REASONING_START,
+            readable: classified.readable,
+            cursor: classified.cursor,
             ...(agentId != null && { agentId }),
             ...(hasMaterializedReasoning && { startIndex: rebasedStartIndex }),
           },
