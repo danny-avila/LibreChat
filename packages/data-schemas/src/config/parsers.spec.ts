@@ -510,6 +510,19 @@ describe('redactMessage', () => {
     ).not.toThrow();
   });
 
+  it('redacts URL objects in compact request info', () => {
+    const error = Object.assign(new Error('boom'), {
+      isAxiosError: true,
+      config: {
+        method: 'get',
+        url: new URL('https://user:secretcanary@example.test/?e=jane@example.com'),
+      },
+    });
+    const wrapped = winston.format.combine(redactFormat(), stripHeavyErrorFields());
+    const out = wrapped.transform({ level: 'error', message: 'm', [SPLAT_SYMBOL]: [error] }, {});
+    expect(JSON.stringify(out)).not.toMatch(/secretcanary|jane/);
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),

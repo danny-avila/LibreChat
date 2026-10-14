@@ -821,7 +821,7 @@ const compactRequestInfo = (config: unknown): { method?: unknown; url?: unknown 
   if (method === undefined && url === undefined) {
     return undefined;
   }
-  return { method, url: typeof url === 'string' ? redactLogString(url) : url };
+  return { method, url: redactLogValue(url) };
 };
 
 const compactResponse = (response: unknown): Record<string, unknown> | undefined => {
