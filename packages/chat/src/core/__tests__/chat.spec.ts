@@ -988,6 +988,71 @@ describe('Chat', () => {
     expect(chat.status).toBe('ready');
   });
 
+  it('keeps the reattachment target of a reconnect that failed on the network', async () => {
+    const failure = Object.assign(new Error('Network Error'), { code: 'ERR_NETWORK' });
+    const { chat, transport } = setup(
+      { resumeSelection: () => ({ endpoint: 'agents' }) },
+      { reconnectToStream: jest.fn(async () => Promise.reject(failure)) },
+    );
+    await chat.resumeStream({ streamId: 'convo-1', generationCreatedAt: 300 });
+    expect(chat.status).toBe('error');
+
+    await chat.stop();
+
+    expect(transport.abort).toHaveBeenCalledWith(
+      expect.objectContaining({
+        endpoint: 'agents',
+        streamId: 'convo-1',
+        generationCreatedAt: 300,
+      }),
+    );
+  });
+
+  it('does not merge a delayed stop of a dropped run into a newer turn', async () => {
+    const first = createStream();
+    const second = createStream();
+    let answer: (() => void) | undefined;
+    const { chat, transport } = setup(
+      {
+        prepareRequest: jest.fn(() => ({
+          payload: { endpoint: 'assistants', conversationId: 'convo-1', text: 'Hi' } as TPayload,
+          messages: [userMessage, placeholder],
+          responseMessageId: 'response-1',
+        })),
+      },
+      {
+        sendMessages: jest
+          .fn()
+          .mockResolvedValueOnce({ status: 'stream', stream: first })
+          .mockResolvedValueOnce({ status: 'stream', stream: second }),
+      },
+    );
+    transport.abort.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answer = () =>
+            resolve({
+              final: true,
+              conversation: {},
+              runMessages: [{ ...placeholder, text: 'Old' }],
+            });
+        }),
+    );
+    const firstTurn = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    first.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+    await firstTurn;
+    const stopped = chat.stop();
+    const secondTurn = chat.continue({ messageId: 'response-1' });
+    await flush();
+    answer?.();
+    await stopped;
+
+    expect(chat.messages[1].text).toBe('');
+    second.push(finalEvent());
+    await secondTurn;
+  });
+
   it('accepts a stop the run had already settled', async () => {
     const { chat, stream, transport } = setup();
     transport.abort.mockImplementation(async () => {
