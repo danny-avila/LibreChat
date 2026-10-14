@@ -60,7 +60,7 @@ const sensitiveKeys: RegExp[] = [
  * only at a token boundary, so long non-email text is scanned once instead of once per character.
  */
 const EMAIL_PATTERN =
-  /(?:(?<!\\)\\"(?:[^"\\\r\n]|\\{3}"|\\{4}|\\{2}(?!\\)|\\[bfnrt]|\\u[0-9a-fA-F]{4})*\\"|(?<!\\)"(?:[^"\\\r\n]|\\.)*"|(?<![^\s<>[\],;"])[^\s<>[\],;"]+)@(?:\[[^\]\s@]+\]|[^\s<>[\],;"@]+\.[^\s<>[\],;"@]+)/gu;
+  /(?:(?<!\\)\\"(?:[^"\\\r\n]|\\{3}"|\\{4}|\\{2}(?!\\)|\\[bfnrt/]|\\u[0-9a-fA-F]{4})*\\"|(?<!\\)"(?:[^"\\\r\n]|\\.)*"|(?<![^\s<>[\],;"])[^\s<>[\],;"]+)@(?:\[[^\]\s@]+\]|[^\s<>[\],;"@]+\.[^\s<>[\],;"@]+)/gu;
 /** Set while redacting splat arguments at levels whose later format strips heavy error fields. */
 let skipHeavyErrorFields = false;
 const REDACTION_WINDOW_SLACK = 1024;
@@ -96,7 +96,7 @@ function redactMessage(str: string, trimLength?: number): string {
 const EMAIL_TOKEN_DELIMITER = /[\s<>]/u;
 /** Completed addresses and escaped (serialized) quotes are skipped; only a lone plain quote is counted. */
 const QUOTE_OR_ADDRESS =
-  /\\"(?:[^"\\\r\n]|\\{3}"|\\{4}|\\{2}(?!\\)|\\[bfnrt]|\\u[0-9a-fA-F]{4})*\\"@|\\"|"(?:[^"\\\r\n]|\\.)*"@|"/gu;
+  /\\"(?:[^"\\\r\n]|\\{3}"|\\{4}|\\{2}(?!\\)|\\[bfnrt/]|\\u[0-9a-fA-F]{4})*\\"@|\\"|"(?:[^"\\\r\n]|\\.)*"@|"/gu;
 
 /** Drops a token cut by the window edge: its terminator is unseen, so no pattern could match it. */
 function trimUnfinishedToken(full: string, window: string): string {
@@ -533,6 +533,7 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
   (info: winston.Logform.TransformableInfo) => {
     const infoRecord = info as Record<string | symbol, unknown>;
     const stripsHeavyFields = info.level === 'error' || info.level === 'warn';
+    const outerBudget = redactionNodeBudget;
     redactionNodeBudget = MAX_REDACTION_NODES;
     const topSeen = new WeakMap<object, unknown>();
     const skipsHeavyTopLevel = stripsHeavyFields && isErrorLike(info);
@@ -612,7 +613,7 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
         replaceFailed = true;
       }
     }
-    redactionNodeBudget = Number.POSITIVE_INFINITY;
+    redactionNodeBudget = outerBudget;
     return replaceFailed ? sanitizedCopy(infoRecord, fields, redactedStack) : info;
   },
 );

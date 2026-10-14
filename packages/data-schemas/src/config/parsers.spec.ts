@@ -438,6 +438,12 @@ describe('redactMessage', () => {
     expect(() => runRedactFormat(error as unknown as RedactInfo)).not.toThrow();
   });
 
+  it('masks serialized locals with an escaped solidus', () => {
+    expect(redactMessage(JSON.stringify({ email: '"a/b"@example.com' }).replace('/', '\\/'))).toBe(
+      '{"email":"[REDACTED_EMAIL]"}',
+    );
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),
