@@ -40,7 +40,7 @@ jest.mock(
           sameSite: 'strict',
         });
       }),
-      setSessionHintCookie: jest.fn(),
+      setLocalSessionCookies: jest.fn(),
       setOpenIDMarkerCookies: jest.fn((res, { userId, expires }) => {
         res.cookie('token_provider', 'openid', {
           expires,
@@ -140,7 +140,7 @@ let isEmailDomainAllowed;
 let resolveAppConfigForUser;
 let setRefreshTokenCookie;
 let setOpenIDMarkerCookies;
-let setSessionHintCookie;
+let setLocalSessionCookies;
 let setCloudFrontCookies;
 let getCloudFrontConfig;
 let parseCloudFrontCookieScope;
@@ -185,7 +185,7 @@ jest.isolateModules(() => {
     commitPasswordReset,
     setRefreshTokenCookie,
     setOpenIDMarkerCookies,
-    setSessionHintCookie,
+    setLocalSessionCookies,
     setCloudFrontCookies,
     getCloudFrontConfig,
     parseCloudFrontCookieScope,
@@ -1713,7 +1713,9 @@ describe('CloudFront cookie integration', () => {
 
       await setAuthTokens('user-123', res);
 
-      expect(setSessionHintCookie).toHaveBeenCalledWith(res, expiration, {
+      expect(setLocalSessionCookies).toHaveBeenCalledWith(res, {
+        refreshToken: 'mock-refresh-token',
+        expires: expiration,
         userId: 'user-123',
         tenantId: 'tenantA',
       });
@@ -1726,7 +1728,9 @@ describe('CloudFront cookie integration', () => {
       await setAuthTokens('user-123', res, { _id: 'session-1', expiration });
 
       expect(createSession).not.toHaveBeenCalled();
-      expect(setSessionHintCookie).toHaveBeenCalledWith(res, expiration, {
+      expect(setLocalSessionCookies).toHaveBeenCalledWith(res, {
+        refreshToken: 'mock-refresh-token',
+        expires: expiration,
         userId: 'user-123',
         tenantId: 'tenantA',
       });

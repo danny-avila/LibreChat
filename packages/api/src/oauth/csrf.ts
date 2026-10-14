@@ -99,6 +99,29 @@ export function setSessionHintCookie(
   });
 }
 
+export interface LocalSessionCookieOptions extends SessionHintOwner {
+  refreshToken: string;
+  expires: Date;
+}
+
+/**
+ * Issues the cookies of a LibreChat-managed session together: the refresh token, its provider
+ * marker and the readable hint naming the owner, so all three share one expiry and owner.
+ */
+export function setLocalSessionCookies(
+  res: Response,
+  { refreshToken, expires, userId, tenantId }: LocalSessionCookieOptions,
+): void {
+  setRefreshTokenCookie(res, refreshToken, expires);
+  res.cookie(TOKEN_PROVIDER_COOKIE, 'librechat', {
+    expires,
+    httpOnly: true,
+    secure: shouldUseSecureCookie(),
+    sameSite: 'strict',
+  });
+  setSessionHintCookie(res, expires, { userId, tenantId });
+}
+
 /** Retires the readable session hint when a request proves there is no session to vouch for. */
 export function clearSessionHintCookie(res: Response): void {
   res.clearCookie(SESSION_HINT_COOKIE);

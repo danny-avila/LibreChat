@@ -538,6 +538,7 @@ const deleteUserController = async (req, res) => {
 
     await db.deleteMessages({ user: user.id });
     await db.deleteAllUserSessions({ userId: user.id });
+    clearSessionHintCookie(res);
     await db.deletePasskeysByUser(user.id);
     await db.deleteTransactions({ user: user.id });
     await db.deleteUserKey({ userId: user.id, all: true });
@@ -589,7 +590,6 @@ const deleteUserController = async (req, res) => {
     });
     await purgeAgentTriggerDeliveriesForUser(user.id);
     logger.info(`User deleted account. ID: ${user.id} Tenant: ${tenantId ?? 'none'}`);
-    clearSessionHintCookie(res);
     res.status(200).send({ message: 'User deleted' });
   } catch (err) {
     // The account survives this failed attempt, so its schedules must too: restore the

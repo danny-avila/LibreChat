@@ -7,6 +7,7 @@ import {
   setRefreshTokenCookie,
   setOpenIDMarkerCookies,
   setSessionHintCookie,
+  setLocalSessionCookies,
   REFRESH_TOKEN_COOKIE,
   TOKEN_PROVIDER_COOKIE,
   OPENID_USER_ID_COOKIE,
@@ -290,6 +291,36 @@ describe('setSessionHintCookie', () => {
 
     expect(res.cookie).not.toHaveBeenCalled();
     expect(res.clearCookie).toHaveBeenCalledWith(SESSION_HINT_COOKIE);
+  });
+});
+
+describe('setLocalSessionCookies', () => {
+  it('issues the refresh token, provider marker and session hint on one expiry and owner', () => {
+    const res = { cookie: jest.fn() } as unknown as Response;
+    const expires = new Date(Date.now() + 3600000);
+
+    setLocalSessionCookies(res, {
+      refreshToken: 'rt-1',
+      expires,
+      userId: 'user-1',
+      tenantId: 'acme',
+    });
+
+    expect(res.cookie).toHaveBeenCalledWith(
+      REFRESH_TOKEN_COOKIE,
+      'rt-1',
+      expect.objectContaining({ expires, httpOnly: true, sameSite: 'strict' }),
+    );
+    expect(res.cookie).toHaveBeenCalledWith(
+      TOKEN_PROVIDER_COOKIE,
+      'librechat',
+      expect.objectContaining({ expires, httpOnly: true, sameSite: 'strict' }),
+    );
+    expect(res.cookie).toHaveBeenCalledWith(
+      SESSION_HINT_COOKIE,
+      `${expires.getTime()}~acme:user-1`,
+      expect.objectContaining({ expires, sameSite: 'strict' }),
+    );
   });
 });
 

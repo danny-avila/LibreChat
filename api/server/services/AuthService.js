@@ -26,7 +26,7 @@ const {
   shouldUseSecureCookie,
   setRefreshTokenCookie,
   setOpenIDMarkerCookies,
-  setSessionHintCookie,
+  setLocalSessionCookies,
   clearCloudFrontCookies,
   normalizeExpiresIn,
   createOpenIDSessionIdentity,
@@ -726,19 +726,9 @@ const setAuthTokens = async (userId, res, _session = null, req = null) => {
     const sessionExpiry = math(process.env.SESSION_EXPIRY, DEFAULT_SESSION_EXPIRY);
     const token = await generateToken(user, sessionExpiry);
 
-    res.cookie('refreshToken', refreshToken, {
+    setLocalSessionCookies(res, {
+      refreshToken,
       expires: new Date(refreshTokenExpires),
-      httpOnly: true,
-      secure: shouldUseSecureCookie(),
-      sameSite: 'strict',
-    });
-    res.cookie('token_provider', 'librechat', {
-      expires: new Date(refreshTokenExpires),
-      httpOnly: true,
-      secure: shouldUseSecureCookie(),
-      sameSite: 'strict',
-    });
-    setSessionHintCookie(res, new Date(refreshTokenExpires), {
       userId: user?._id ?? userId,
       tenantId: user?.tenantId,
     });
