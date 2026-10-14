@@ -1408,6 +1408,48 @@ describe('Agent Methods', () => {
       expect(await getAgent({ id: agent.id })).toBeNull();
     });
 
+    test('does not touch same-id references in another tenant when the author is tenantless', async () => {
+      const authorId = new mongoose.Types.ObjectId();
+      const sharedAgentId = `agent_${uuidv4()}`;
+      const otherGraphId = `agent_${uuidv4()}`;
+      const otherTargetId = `agent_${uuidv4()}`;
+      await createAgent({
+        id: sharedAgentId,
+        name: 'Tenantless Agent',
+        provider: 'test',
+        model: 'test-model',
+        author: authorId,
+      });
+      const Agent = mongoose.models.Agent;
+      await Agent.collection.insertOne({
+        id: otherGraphId,
+        name: 'Other Tenant Graph',
+        provider: 'test',
+        model: 'test-model',
+        author: new mongoose.Types.ObjectId(),
+        tenantId: 'tenant-2',
+        edges: [
+          { from: otherGraphId, to: sharedAgentId, edgeType: 'handoff' },
+          { from: otherGraphId, to: otherTargetId, edgeType: 'handoff' },
+        ],
+      });
+      await mongoose.models.User.collection.insertOne({
+        email: 'tenant2@example.com',
+        tenantId: 'tenant-2',
+        favorites: [{ agentId: sharedAgentId }],
+      });
+
+      await deleteUserAgents(authorId.toString());
+
+      expect(await getAgent({ id: sharedAgentId })).toBeNull();
+      const graph = await Agent.collection.findOne({ id: otherGraphId });
+      expect(graph?.edges).toHaveLength(2);
+      const otherUser = await mongoose.models.User.collection.findOne({
+        email: 'tenant2@example.com',
+      });
+      expect(otherUser?.favorites).toEqual([{ agentId: sharedAgentId }]);
+    });
+
     test('keeps an edge added to the graph while the cleanup was running', async () => {
       const authorId = new mongoose.Types.ObjectId();
       const deletedAgentId = `agent_${uuidv4()}`;

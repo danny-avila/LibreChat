@@ -69,7 +69,7 @@ export interface UserErasureDeps extends ErasureMethods {
 
 export interface MCPOAuthErasureHooks {
   /** Config of the server before it is removed, so stored tokens can still be revoked. */
-  getServerConfig?: (serverName: string) => Promise<MCPOptions | undefined>;
+  getServerConfig?: (serverName: string, serverId: string) => Promise<MCPOptions | undefined>;
   getUserPrincipals: (userId: string) => Promise<OAuthAclSubject[]>;
   resolveAllowlists: (
     userId: string,
@@ -116,6 +116,7 @@ export type MCPServerCleanupDeps = Pick<
 export async function deleteUserMCPServers(
   userId: string,
   deps: MCPServerCleanupDeps,
+  tenantId?: string,
 ): Promise<void> {
   const servers = await deps.findUserErasableMCPServers(userId);
   if (servers.length === 0) {
@@ -148,9 +149,9 @@ export async function deleteUserMCPServers(
     ? await Promise.all(
         named.map(async ({ id, serverName }) => ({
           serverName,
-          serverConfig: await oauth.getServerConfig?.(serverName),
+          serverConfig: await oauth.getServerConfig?.(serverName, id),
           snapshot: await prepareMCPServerOAuthDeletion({
-            getTokenUserIds: () => deps.findMCPServerOAuthTokenUserIds(serverName),
+            getTokenUserIds: () => deps.findMCPServerOAuthTokenUserIds(serverName, tenantId),
             getAclEntries: () => deps.findMCPServerViewerEntries(id),
           }),
         })),
@@ -168,7 +169,7 @@ export async function deleteUserMCPServers(
           serverName,
           serverConfig,
           snapshot,
-          getTokenUserIds: () => deps.findMCPServerOAuthTokenUserIds(serverName),
+          getTokenUserIds: () => deps.findMCPServerOAuthTokenUserIds(serverName, tenantId),
           getUserPrincipals: oauth.getUserPrincipals,
           resolveAllowlists: oauth.resolveAllowlists,
           fenceAndDisconnectUser: async (candidateId) => {
@@ -260,7 +261,7 @@ export async function eraseUserData(
   await deps.deleteAllUserMemories(userId);
   await deps.deleteUserPrompts(userId);
   await deps.deleteUserSkills(userId);
-  await deleteUserMCPServers(userId, deps);
+  await deleteUserMCPServers(userId, deps, tenantId);
   await deps.deleteActions({ user: userId });
   await deps.deleteTokens({ userId });
   await deps.removeUserFromAllGroups(userId);

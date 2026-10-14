@@ -205,7 +205,7 @@ async function gracefulExit(code = 0) {
       body: {},
       config: userAppConfig,
     };
-    /** ID-keyed cleanup (agent references, file metadata) stays in the deleted user's tenant. */
+    /** ID-keyed cleanup (file metadata, MCP lookups) stays in the deleted user's tenant. */
     const runInUserTenant = (operation) =>
       user.tenantId
         ? tenantStorage.run({ tenantId: user.tenantId, userId: uid }, operation)
@@ -224,10 +224,11 @@ async function gracefulExit(code = 0) {
           deleteSharedLinks: (id) => deleteAllSharedLinksWithCleanup(id, { awaitCleanup: true }),
           deleteStoredFiles: (files) =>
             runInUserTenant(async () => processDeleteRequest({ req: fileRequest, files })),
-          deleteUserAgents: (id) => runInUserTenant(async () => methods.deleteUserAgents(id)),
           /** Server names are unique per tenant, so these lookups stay in the deleted user's tenant. */
-          findMCPServerOAuthTokenUserIds: (serverName) =>
-            runInUserTenant(async () => methods.findMCPServerOAuthTokenUserIds(serverName)),
+          findMCPServerOAuthTokenUserIds: (serverName, tenantId) =>
+            runInUserTenant(async () =>
+              methods.findMCPServerOAuthTokenUserIds(serverName, tenantId),
+            ),
           findMCPServerViewerEntries: (serverId) =>
             runInUserTenant(async () => methods.findMCPServerViewerEntries(serverId)),
           invalidateMCPServerTools: (serverName) =>
@@ -235,10 +236,9 @@ async function gracefulExit(code = 0) {
           /** The CLI has no MCP registry or live connections, so shared users get local token and cache cleanup. */
           mcpOAuth: {
             getUserPrincipals: (candidateId) => methods.getUserPrincipals({ userId: candidateId }),
-            getServerConfig: (serverName) =>
-              runInUserTenant(
-                async () => (await methods.findMCPServerByServerName(serverName))?.config,
-              ),
+            /** Looked up by its unique object id, so a server stamped before tenancy is still found. */
+            getServerConfig: async (_serverName, serverId) =>
+              (await methods.findMCPServerByObjectId(serverId))?.config,
             resolveAllowlists: (candidateId) =>
               runInUserTenant(async () => {
                 const candidate = await methods.getUserById(candidateId, 'role');

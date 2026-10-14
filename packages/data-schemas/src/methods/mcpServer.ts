@@ -102,7 +102,7 @@ export function createMCPServerMethods(
   deleteMCPServer: (serverName: string) => Promise<MCPServerDocument | null>;
   findUserErasableMCPServers: (userId: string) => Promise<ErasableMCPServer[]>;
   deleteMCPServersWithAcl: (ids: string[]) => Promise<number>;
-  findMCPServerOAuthTokenUserIds: (serverName: string) => Promise<string[]>;
+  findMCPServerOAuthTokenUserIds: (serverName: string, tenantId?: string) => Promise<string[]>;
   findMCPServerViewerEntries: (serverId: string) => Promise<MCPServerViewerEntry[]>;
 } {
   /**
@@ -437,13 +437,18 @@ export function createMCPServerMethods(
   }
 
   /** Users holding an OAuth credential record for the server, used to fence them on removal. */
-  async function findMCPServerOAuthTokenUserIds(serverName: string): Promise<string[]> {
+  async function findMCPServerOAuthTokenUserIds(
+    serverName: string,
+    tenantId?: string,
+  ): Promise<string[]> {
     const Token = mongoose.models.Token;
     if (!Token) {
       return [];
     }
     const identifier = `mcp:${serverName}`;
+    /** Server names are unique per tenant, so a tenantless owner only matches tenantless tokens. */
     const userIds = await Token.distinct('userId', {
+      tenantId: tenantId ?? null,
       identifier: { $in: [identifier, `${identifier}:client`, `${identifier}:refresh`] },
     });
     return userIds.map(String);

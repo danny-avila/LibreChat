@@ -266,6 +266,36 @@ describe('eraseUserData', () => {
     expect(await count('MCPServer', { author: userId })).toBe(0);
   });
 
+  it('never treats token holders of a same-named server in another tenant as shared users', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const foreignId = new mongoose.Types.ObjectId();
+    await seedUser(userId);
+    const serverName = `acl-${userId}`;
+    await model('Token').insertOne({
+      userId: foreignId,
+      tenantId: 'tenant-2',
+      type: 'mcp_oauth',
+      identifier: `mcp:${serverName}`,
+      token: 'encrypted',
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const { deps } = createDeps();
+    const touched: string[] = [];
+    deps.mcpOAuth = {
+      getUserPrincipals: jest.fn(async (candidate: string) => {
+        touched.push(candidate);
+        return [];
+      }),
+      resolveAllowlists: jest.fn(async () => ({})),
+      uninstallOAuthMCP: jest.fn(async () => undefined),
+    };
+
+    await eraseUserData({ userId: userId.toString() }, deps);
+
+    expect(touched).not.toContain(foreignId.toString());
+    expect(await count('Token', { userId: foreignId })).toBe(1);
+  });
+
   it('keeps the server and its ACLs when shared-user OAuth cleanup fails, so a retry finishes it', async () => {
     const userId = new mongoose.Types.ObjectId();
     const viewerId = new mongoose.Types.ObjectId();

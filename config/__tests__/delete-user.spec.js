@@ -311,11 +311,8 @@ describe('Delete user CLI', () => {
     );
   });
 
-  it('keeps id-keyed cleanup in the deleted user tenant scope', async () => {
+  it('keeps file and MCP id-keyed cleanup in the deleted user tenant scope', async () => {
     const scopes = {};
-    mockMethods.deleteUserAgents = jest.fn(async () => {
-      scopes.agents = mockTenantStorage.getStore();
-    });
     mockMethods.findMCPServerOAuthTokenUserIds = jest.fn(async () => {
       scopes.tokens = mockTenantStorage.getStore();
       return [];
@@ -325,17 +322,16 @@ describe('Delete user CLI', () => {
     });
     mockEraseUserData.mockImplementation(async (_params, deps) => {
       scopes.cascade = mockTenantStorage.getStore();
-      await deps.deleteUserAgents(USER_ID);
-      await deps.findMCPServerOAuthTokenUserIds('server-1');
+      await deps.findMCPServerOAuthTokenUserIds('server-1', 'tenant-1');
       await deps.deleteStoredFiles([{ file_id: 'file-1' }]);
     });
 
     expect(await runCli()).toBe(0);
 
     expect(scopes.cascade).toBeUndefined();
-    expect(scopes.agents).toEqual({ tenantId: 'tenant-1', userId: USER_ID });
     expect(scopes.files).toEqual({ tenantId: 'tenant-1', userId: USER_ID });
     expect(scopes.tokens).toEqual({ tenantId: 'tenant-1', userId: USER_ID });
+    expect(mockMethods.findMCPServerOAuthTokenUserIds).toHaveBeenCalledWith('server-1', 'tenant-1');
   });
 
   it('supplies shared-user MCP OAuth cleanup to the cascade', async () => {
@@ -349,6 +345,9 @@ describe('Delete user CLI', () => {
       invalidateUserTools: expect.any(Function),
       uninstallOAuthMCP: expect.any(Function),
     });
+    mockMethods.findMCPServerByObjectId = jest.fn(async () => ({ config: { type: 'sse' } }));
+    expect(await deps.mcpOAuth.getServerConfig('server-1', 'server-id-1')).toEqual({ type: 'sse' });
+    expect(mockMethods.findMCPServerByObjectId).toHaveBeenCalledWith('server-id-1');
     mockMethods.getUserById = jest.fn(async () => ({ role: 'VIEWER' }));
     mockGetAppConfig.mockImplementation(async (options) =>
       options?.userId === 'viewer-1' ? { mcpSettings: { allowedDomains: ['viewer.example'] } } : {},
