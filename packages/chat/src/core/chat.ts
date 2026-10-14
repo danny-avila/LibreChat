@@ -139,8 +139,8 @@ type ActiveRequest = {
   paused?: string;
   /** Set once the server confirmed a stop, so a stream that drops instead of ending aborts. */
   stopped?: boolean;
-  /** Set when the request settled on a dropped connection. */
-  disconnected?: boolean;
+  /** The error the request settled with when its connection dropped. */
+  disconnected?: Error;
   /** The response this request produces: its placeholder, then the one its final frame names. */
   responseId?: string;
   /** Resolves once the request settled and released the chat. */
@@ -424,7 +424,7 @@ export class Chat {
     }
     await active.finished;
     /** The server confirmed the stop, so this generation is over however its stream ended. */
-    if (active.disconnected && !this.active && this.status === 'error') {
+    if (active.disconnected && this.error === active.disconnected) {
       this.init.state.error = undefined;
       this.init.state.status = 'ready';
     }
@@ -813,7 +813,9 @@ export class Chat {
     if (this.active !== active) {
       return;
     }
-    active.disconnected = outcome.kind === 'error' && outcome.disconnect;
+    if (outcome.kind === 'error' && outcome.disconnect) {
+      active.disconnected = outcome.error;
+    }
     /**
      * Released and published as one change before anyone is told, so a subscriber or callback
      * that starts the next turn is not overwritten by this one's terminal state.
