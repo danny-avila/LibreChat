@@ -132,6 +132,12 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
     lease,
   } = deps;
 
+  /** Lease limits come from `permissions.leaseTtlMs` / `leaseWaitMs` in librechat.yaml. */
+  const leaseOptions = (req: ServerRequest) => ({
+    ttlMs: req.config?.config?.permissions?.leaseTtlMs,
+    waitMs: req.config?.config?.permissions?.leaseWaitMs,
+  });
+
   async function emitAudit(args: {
     action: AuditAction;
     caller: { userId: string; actorName: string; role: string; tenantId?: string };
@@ -476,6 +482,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
           }
           return res.status(201).json({ grant });
         },
+        leaseOptions(req),
       );
     } catch (error) {
       if (
@@ -566,6 +573,7 @@ export function createAdminGrantsHandlers(deps: AdminGrantsDeps): {
           }
           return res.status(200).json({ success: true });
         },
+        leaseOptions(req),
       );
     } catch (error) {
       if (

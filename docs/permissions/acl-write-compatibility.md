@@ -10,7 +10,13 @@ masks. Neither path uses MongoDB bit-update operators.
 ```yaml
 permissions:
   maxWriteAttempts: 3
+  leaseTtlMs: 30000
+  leaseWaitMs: 3000
 ```
+
+`leaseTtlMs` (1000 to 600000) and `leaseWaitMs` (0 to 60000) apply only where transactions are
+unavailable: sharing updates and system grant changes then take a per-resource or per-grant lease,
+renewed while the update runs, and answer 409 when it stays contended past `leaseWaitMs`.
 
 The sharing endpoint passes this setting to the persistence operation. The value must be an integer
 from 1 through 100, including the initial attempt. Internal callers can override the same validated

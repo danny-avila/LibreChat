@@ -4021,6 +4021,12 @@ export type TChatProjectsConfig = z.infer<typeof chatProjectsConfigSchema>;
 /** Maximum CAS attempts per ACL document, including the initial attempt. */
 export const permissionWriteAttemptsSchema = z.number().int().min(1).max(100).default(3);
 
+/** How long a holder keeps the per-resource permission lease without renewing it. */
+export const permissionLeaseTtlSchema = z.number().int().min(1000).max(600000).default(30000);
+
+/** How long a permission update waits for a contended per-resource lease before answering 409. */
+export const permissionLeaseWaitSchema = z.number().int().min(0).max(60000).default(3000);
+
 /**
  * Validation limits for the conversation list's filter facets. The field defaults are the
  * only definition of these values: `getConfigDefaults()` resolves them for AppService, and
@@ -4057,7 +4063,13 @@ export type TToolCallPreviewsConfig = z.infer<typeof toolCallPreviewsConfigSchem
 
 export const configSchema = z.object({
   version: z.string(),
-  permissions: z.object({ maxWriteAttempts: permissionWriteAttemptsSchema }).optional(),
+  permissions: z
+    .object({
+      maxWriteAttempts: permissionWriteAttemptsSchema,
+      leaseTtlMs: permissionLeaseTtlSchema,
+      leaseWaitMs: permissionLeaseWaitSchema,
+    })
+    .optional(),
   cache: z.boolean().default(true),
   projects: chatProjectsConfigSchema,
   ocr: ocrSchema.optional(),

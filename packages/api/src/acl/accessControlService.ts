@@ -477,6 +477,8 @@ export class AccessControlService {
     grantedBy,
     session,
     maxWriteAttempts,
+    leaseTtlMs = RESOURCE_LOCK_TTL_MS,
+    leaseWaitMs = RESOURCE_LOCK_WAIT_MS,
     beforeWrite,
     afterWrite,
   }: {
@@ -487,6 +489,10 @@ export class AccessControlService {
     grantedBy: string | Types.ObjectId;
     session?: ClientSession;
     maxWriteAttempts?: number;
+    /** Per-resource lease lifetime between renewals, from `permissions.leaseTtlMs`. */
+    leaseTtlMs?: number;
+    /** Longest wait for a contended lease, from `permissions.leaseWaitMs`. */
+    leaseWaitMs?: number;
     /** Called with the computed changes before any ACL write; a throw leaves the ACL untouched. */
     beforeWrite?: (plan: PermissionPlan) => Promise<void>;
     /** Runs after the write while the resource lease is still held; its failure never fails the update. */
@@ -528,16 +534,14 @@ export class AccessControlService {
          * Without a transaction nothing else orders the audited read and the write, so a
          * per-resource lease serializes concurrent updates of the same resource.
          */
-        const deadline = Date.now() + RESOURCE_LOCK_WAIT_MS;
+        const deadline = Date.now() + leaseWaitMs;
         const tryAcquire = () =>
-          this._dbMethods
-            .acquireResourceLock({ ...lock, ttlMs: RESOURCE_LOCK_TTL_MS })
-            .catch((error) => {
-              logger.error('[AccessControlService.bulkUpdateResourcePermissions] Lock failed', {
-                ...getSafeErrorMetadata(error),
-              });
-              throw new ResourcePermissionsUnavailableError();
+          this._dbMethods.acquireResourceLock({ ...lock, ttlMs: leaseTtlMs }).catch((error) => {
+            logger.error('[AccessControlService.bulkUpdateResourcePermissions] Lock failed', {
+              ...getSafeErrorMetadata(error),
             });
+            throw new ResourcePermissionsUnavailableError();
+          });
         while (!(lockHeld = await tryAcquire())) {
           if (Date.now() >= deadline) {
             throw new ResourcePermissionsBusyError();
@@ -549,9 +553,9 @@ export class AccessControlService {
         heartbeat = setInterval(
           () =>
             void this._dbMethods
-              .renewResourceLock({ ...lock, ttlMs: RESOURCE_LOCK_TTL_MS })
+              .renewResourceLock({ ...lock, ttlMs: leaseTtlMs })
               .catch(() => undefined),
-          RESOURCE_LOCK_TTL_MS / 3,
+          leaseTtlMs / 3,
         );
       }
       if (!localSession && supportsTransactions) {
@@ -862,7 +866,7 @@ export class AccessControlService {
           return;
         }
         const renewed = await this._dbMethods
-          .renewResourceLock({ ...lock, ttlMs: RESOURCE_LOCK_TTL_MS })
+          .renewResourceLock({ ...lock, ttlMs: leaseTtlMs })
           .catch((error) => {
             logger.error('[AccessControlService.bulkUpdateResourcePermissions] Renewal failed', {
               ...getSafeErrorMetadata(error),

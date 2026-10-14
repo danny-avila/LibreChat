@@ -11,6 +11,8 @@ export interface LeaseDeps {
   releaseResourceLock: (data: { key: string; ownerId: string }) => Promise<boolean>;
 }
 
+export type LeaseOptions = { ttlMs?: number; waitMs?: number };
+
 const LEASE_TTL_MS = 30_000;
 const LEASE_WAIT_MS = 3_000;
 const LEASE_POLL_MS = 50;
@@ -45,13 +47,14 @@ export async function withLease<T>(
   deps: LeaseDeps | undefined,
   key: string,
   fn: (fence: () => Promise<void>) => Promise<T>,
+  { ttlMs = LEASE_TTL_MS, waitMs = LEASE_WAIT_MS }: LeaseOptions = {},
 ): Promise<T> {
   if (!deps) {
     return fn(async () => undefined);
   }
   const lock = { key, ownerId: new Types.ObjectId().toString() };
-  const deadline = Date.now() + LEASE_WAIT_MS;
-  while (!(await deps.acquireResourceLock({ ...lock, ttlMs: LEASE_TTL_MS }).catch(unavailable))) {
+  const deadline = Date.now() + waitMs;
+  while (!(await deps.acquireResourceLock({ ...lock, ttlMs }).catch(unavailable))) {
     if (Date.now() >= deadline) {
       throw new ResourcePermissionsBusyError();
     }
@@ -60,16 +63,13 @@ export async function withLease<T>(
   let lost = false;
   const renew = async () => {
     /** Only a definitive "not the holder" answer loses the lease; a transient error may be retried. */
-    if (
-      lost ||
-      !(await deps.renewResourceLock({ ...lock, ttlMs: LEASE_TTL_MS }).catch(unavailable))
-    ) {
+    if (lost || !(await deps.renewResourceLock({ ...lock, ttlMs }).catch(unavailable))) {
       lost = true;
       throw new ResourcePermissionsBusyError();
     }
   };
   /** Keeps the lease alive through slow audit writes between fences. */
-  const heartbeat = setInterval(() => void renew().catch(() => undefined), LEASE_TTL_MS / 3);
+  const heartbeat = setInterval(() => void renew().catch(() => undefined), ttlMs / 3);
   try {
     return await fn(renew);
   } finally {

@@ -50,6 +50,25 @@ describe('withLease', () => {
     });
   });
 
+  it('honors configured wait and TTL limits', async () => {
+    const lease = {
+      acquireResourceLock: jest.fn().mockResolvedValue(false),
+      renewResourceLock: jest.fn().mockResolvedValue(true),
+      releaseResourceLock: jest.fn().mockResolvedValue(true),
+    };
+    const started = Date.now();
+    await expect(withLease(lease, 'k', async () => 'x', { waitMs: 0 })).rejects.toMatchObject({
+      code: 'RESOURCE_PERMISSIONS_BUSY',
+    });
+    expect(Date.now() - started).toBeLessThan(1000);
+
+    lease.acquireResourceLock.mockResolvedValue(true);
+    await withLease(lease, 'k', async () => 'x', { ttlMs: 12_345 });
+    expect(lease.acquireResourceLock).toHaveBeenLastCalledWith(
+      expect.objectContaining({ ttlMs: 12_345 }),
+    );
+  });
+
   it('keys one grant the same for a user ObjectId in either case', () => {
     const hex = 'abcdef0123456789abcdef01';
     expect(grantLeaseKey('user', hex, 'cap')).toBe(grantLeaseKey('USER', hex.toUpperCase(), 'cap'));

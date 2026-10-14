@@ -591,6 +591,35 @@ describe('AccessControlService', () => {
       renew.mockRestore();
     });
 
+    test('honors the configured lease wait and TTL', async () => {
+      const key = `acl:${ResourceType.PROMPTGROUP.toLowerCase()}:${resourceId}`;
+      await service['_dbMethods'].acquireResourceLock({ key, ownerId: 'other', ttlMs: 60_000 });
+      const started = Date.now();
+
+      await expect(
+        service.bulkUpdateResourcePermissions({
+          resourceType: ResourceType.PROMPTGROUP,
+          resourceId,
+          updatedPrincipals: [],
+          grantedBy: grantedById,
+          leaseWaitMs: 0,
+        }),
+      ).rejects.toMatchObject({ code: 'RESOURCE_PERMISSIONS_BUSY' });
+      expect(Date.now() - started).toBeLessThan(1000);
+
+      await service['_dbMethods'].releaseResourceLock({ key, ownerId: 'other' });
+      const acquire = jest.spyOn(service['_dbMethods'], 'acquireResourceLock');
+      await service.bulkUpdateResourcePermissions({
+        resourceType: ResourceType.PROMPTGROUP,
+        resourceId,
+        updatedPrincipals: [],
+        grantedBy: grantedById,
+        leaseTtlMs: 12_345,
+      });
+      expect(acquire).toHaveBeenCalledWith(expect.objectContaining({ ttlMs: 12_345 }));
+      acquire.mockRestore();
+    });
+
     test('exposes the busy code for the HTTP error body only', () => {
       expect(permissionErrorCode(new ResourcePermissionsBusyError())).toEqual({
         code: 'RESOURCE_PERMISSIONS_BUSY',

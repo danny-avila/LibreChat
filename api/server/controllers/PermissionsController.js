@@ -180,6 +180,8 @@ const updateResourcePermissions = async (req, res) => {
           resourceType,
           resourceId,
           maxWriteAttempts: req.config?.config?.permissions?.maxWriteAttempts,
+          leaseTtlMs: req.config?.config?.permissions?.leaseTtlMs,
+          leaseWaitMs: req.config?.config?.permissions?.leaseWaitMs,
           updatedPrincipals: validatedPrincipals,
           revokedPrincipals,
           grantedBy: userId,
