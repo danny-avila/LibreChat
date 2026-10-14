@@ -1005,7 +1005,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       );
       if (config) {
         await emitAudit(req, {
-          action: existing ? 'config.updated' : 'config.created',
+          action: config.configVersion === 1 ? 'config.created' : 'config.updated',
           target: configTarget(principalType, principalId),
           metadata: { operation: 'patch', fieldPaths: Object.keys(fields).join(',') },
         });

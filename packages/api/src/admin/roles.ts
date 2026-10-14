@@ -565,7 +565,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
       const memberIds = await findUserIdsByRole(name);
       /** The grants as they were, so removals are audited even when a removal rejects after committing. */
       const grantSnapshot = findGrantsForPrincipal
-        ? await findGrantsForPrincipal(PrincipalType.ROLE, name, { tenantId }).catch(() => null)
+        ? await findGrantsForPrincipal(PrincipalType.ROLE, name, { tenantId })
         : null;
       const cascade = await runCascade(
         [
@@ -837,6 +837,15 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
         target: roleTarget(name),
         metadata: { userId, previousRole: user.role ?? null },
       });
+      /** The single-role write also ends the user's membership of the previous role. */
+      if (user.role) {
+        await emitAudit(req, {
+          action: 'role.member_removed',
+          severity: memberChangeSeverity(user.role),
+          target: roleTarget(user.role),
+          metadata: { userId, newRole: name },
+        });
+      }
       return res.status(200).json({ success: true });
     } catch (error) {
       logger.error('[adminRoles] addRoleMember error:', error);

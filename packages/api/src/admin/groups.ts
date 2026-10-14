@@ -375,6 +375,17 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
           logger.error('[adminGroups] cascade cleanup step failed for group:', id, result.reason);
         }
       }
+      /** Every member loses group-scoped access, so the affected accounts are recorded (chunked). */
+      const revoked = [...new Set(deleted.memberIds ?? [])];
+      for (let i = 0; i < revoked.length; i += AUDIT_MEMBER_CHUNK) {
+        const chunk = revoked.slice(i, i + AUDIT_MEMBER_CHUNK);
+        await emitAudit(req, {
+          action: 'group.member_removed',
+          severity: 'warning',
+          target: groupTarget(deleted, id),
+          metadata: { userIds: chunk.join(','), count: chunk.length, cause: 'group_deleted' },
+        });
+      }
       await emitAudit(req, {
         action: 'group.deleted',
         severity: 'warning',

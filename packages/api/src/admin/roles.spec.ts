@@ -1487,6 +1487,19 @@ describe('createAdminRolesHandlers', () => {
       );
     });
 
+    it('aborts before cleanup when the grant snapshot cannot be read', async () => {
+      const deps = deleteDeps({
+        findGrantsForPrincipal: jest.fn().mockRejectedValue(new Error('mongo down')),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status } = createReqRes({ params: { name: 'editor' } });
+
+      await handlers.deleteRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(deps.deleteGrantsForPrincipal).not.toHaveBeenCalled();
+    });
+
     it('fails the delete instead of auditing zero members when the member lookup fails', async () => {
       const deps = deleteDeps({
         findUserIdsByRole: jest.fn().mockRejectedValue(new Error('mongo down')),
@@ -2337,6 +2350,31 @@ describe('admin role audit entries', () => {
 
     expect(status).toHaveBeenCalledWith(200);
     expect(recordAuditEntry).not.toHaveBeenCalled();
+  });
+
+  it('also records the removal from the previous role when a member is reassigned', async () => {
+    const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+    const deps = createDeps({
+      getRoleByName: jest.fn().mockResolvedValue(mockRole()),
+      findUser: jest.fn().mockResolvedValue(mockUser({ role: 'viewer' })),
+      recordAuditEntry,
+    });
+    const handlers = createAdminRolesHandlers(deps);
+    const { req, res } = createReqRes({
+      params: { name: 'editor' },
+      body: { userId: validUserId },
+      user: adminUser(),
+    });
+
+    await handlers.addRoleMember(req, res);
+
+    expect(recordAuditEntry).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'role.member_removed',
+        target: { type: 'role', id: 'viewer', name: 'viewer' },
+        metadata: { userId: validUserId, newRole: 'editor' },
+      }),
+    );
   });
 
   it('records role.member_added as critical when a user is promoted to ADMIN', async () => {

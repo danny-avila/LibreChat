@@ -1516,6 +1516,25 @@ describe('createAdminGroupsHandlers', () => {
       );
     });
 
+    it('records the members whose access a group deletion revokes', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const deps = createDeps({
+        recordAuditEntry,
+        deleteGroup: jest.fn().mockResolvedValue(mockGroup({ memberIds: ['m1', 'm2'] })),
+      });
+      const handlers = createAdminGroupsHandlers(deps);
+      const { req, res } = withUser(createReqRes({ params: { id: validId } }));
+
+      await handlers.deleteGroup(req, res);
+
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'group.member_removed',
+          metadata: { userIds: 'm1,m2', count: 2, cause: 'group_deleted' },
+        }),
+      );
+    });
+
     it('records group.member_added and group.member_removed when membership changes', async () => {
       const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
       const deps = createDeps({
