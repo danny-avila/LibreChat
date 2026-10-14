@@ -1706,3 +1706,45 @@ it.each(['lookup', 'image_gen_oai'])(
     }
   },
 );
+
+describe('live activity over encrypted reasoning', () => {
+  /** Bedrock `redactedContent`, base64-encoded into THINK text by the SDK. */
+  const encoded = Buffer.from(Array.from({ length: 900 }, (_, i) => (i * 37 + 3) % 256)).toString(
+    'base64',
+  );
+  const think = (text: string, label?: string): TMessageContentParts =>
+    ({
+      type: ContentTypes.THINK,
+      think: text,
+      ...(label != null && { reasoning_label: label }),
+    }) as TMessageContentParts;
+
+  it('names an encrypted thought generically instead of previewing the payload', () => {
+    const activity = getLiveActivity(
+      [think(encoded, 'Inspecting an encoded data snapshot')],
+      (key) => key,
+      [],
+    );
+    expect(activity.text).toBe('com_ui_thinking');
+  });
+
+  it('never titles a span with a label generated from an encrypted thought', () => {
+    const activity = getLiveActivity(
+      [think(encoded, 'Inspecting an encoded data snapshot')],
+      (key) => key,
+      [],
+      undefined,
+      true,
+    );
+    expect(activity.text).toBe('com_ui_running');
+  });
+
+  it('still previews readable reasoning', () => {
+    const activity = getLiveActivity(
+      [think('Comparing both lockfiles. The resolver pins an older range.')],
+      (key) => key,
+      [],
+    );
+    expect(activity.text).toBe('The resolver pins an older range.');
+  });
+});

@@ -140,13 +140,23 @@ type ReasoningProps = {
  * For legacy text-based messages, see Thinking.tsx component.
  */
 /** Reasoning that happened but whose text this view cannot show — detached
- *  subagent projections keep only a marker. Renders the shared reasoning
- *  header row without a disclosure. */
-export const ReasoningMarker = memo(({ label }: { label?: string }) => {
-  const localize = useLocalize();
-  const display = label?.trim() || localize('com_ui_thoughts');
-  return <ThinkingLabel label={display} title={localize('com_ui_thoughts_unavailable')} />;
-});
+ *  subagent projections keep only a marker, and providers can return reasoning
+ *  encrypted. Renders the shared reasoning header row without a disclosure. */
+export const ReasoningMarker = memo(
+  ({ label, encrypted = false }: { label?: string; encrypted?: boolean }) => {
+    const localize = useLocalize();
+    if (encrypted) {
+      return (
+        <ThinkingLabel
+          label={localize('com_ui_reasoning_encrypted')}
+          title={localize('com_ui_reasoning_encrypted_description')}
+        />
+      );
+    }
+    const display = label?.trim() || localize('com_ui_thoughts');
+    return <ThinkingLabel label={display} title={localize('com_ui_thoughts_unavailable')} />;
+  },
+);
 
 ReasoningMarker.displayName = 'ReasoningMarker';
 

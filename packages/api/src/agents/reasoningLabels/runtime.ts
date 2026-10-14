@@ -1,5 +1,5 @@
 import { GraphEvents } from '@librechat/agents';
-import { ContentTypes, StepTypes } from 'librechat-data-provider';
+import { ContentTypes, StepTypes, stripOpaqueReasoning } from 'librechat-data-provider';
 import type { EventHandler } from '@librechat/agents';
 import type { LooseContentPart } from '~/agents/activityLabels/wiring';
 
@@ -390,9 +390,18 @@ export function createReasoningLabelWiring(deps: ReasoningLabelHostDeps): Reason
     }
 
     clearTimer(state);
+    /** Per-delta stripping misses an encoded payload split across deltas;
+     *  the accumulated text is the last gate before a billed provider call. */
+    const visibleReasoning = stripOpaqueReasoning(state.text).trim();
+    if (!visibleReasoning) {
+      if (state.pendingFinal) {
+        state.pendingFinal = false;
+        markComplete(state);
+      }
+      return;
+    }
     const status: ReasoningLabelStatus = state.pendingFinal ? 'complete' : 'streaming';
     state.pendingFinal = false;
-    const visibleReasoning = state.text.trim();
     state.submittedChars = state.totalChars;
     state.lastSubmittedAt = now();
     generated += 1;
@@ -535,7 +544,7 @@ export function createReasoningLabelWiring(deps: ReasoningLabelHostDeps): Reason
       ownsExistingStep && typeof part.reasoning_label === 'string'
         ? part.reasoning_label
         : undefined;
-    const existingText = ownsExistingStep ? textValue(part?.think) : '';
+    const existingText = ownsExistingStep ? stripOpaqueReasoning(textValue(part?.think)) : '';
     const persistedSubmittedChars =
       ownsExistingStep && typeof part.reasoning_label_submitted_chars === 'number'
         ? Math.min(part.reasoning_label_submitted_chars, existingText.trim().length)
@@ -583,8 +592,8 @@ export function createReasoningLabelWiring(deps: ReasoningLabelHostDeps): Reason
 
   const appendDelta = (data: unknown): void => {
     const event = data as { id?: string };
-    const text = deltaText(data);
-    if (!event.id || !text) {
+    const rawText = deltaText(data);
+    if (!event.id || !rawText) {
       return;
     }
     const state = steps.get(event.id);
@@ -607,6 +616,10 @@ export function createReasoningLabelWiring(deps: ReasoningLabelHostDeps): Reason
             }
           : {}),
       });
+    }
+    const text = stripOpaqueReasoning(rawText);
+    if (!text) {
+      return;
     }
     state.text = appendBoundedReasoning(state.text, text);
     state.totalChars += text.length;

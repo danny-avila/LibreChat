@@ -873,3 +873,117 @@ describe('reasoning labels', () => {
     ]);
   });
 });
+
+/** Bedrock's Converse stream returns OpenAI (and redacted Anthropic) reasoning
+ *  as `reasoningContent.redactedContent` bytes; the SDK base64-encodes them and
+ *  surfaces the result as THINK text. */
+const encodedReasoning = (bytes = 1_050, seed = 7): string =>
+  Buffer.from(Array.from({ length: bytes }, (_, i) => (i * 37 + seed) % 256)).toString('base64');
+
+describe('reasoning labels for encoded reasoning', () => {
+  const config = { minChars: 10, updateChars: 8, updateIntervalMs: 0 };
+
+  it('never labels a step whose reasoning is an encoded payload', async () => {
+    const generate = jest.fn(async () => ({ label: 'Inspecting an encoded data snapshot' }));
+    const harness = createHarness(generate, config);
+    await harness.start();
+    await harness.append(encodedReasoning());
+    await harness.append(encodedReasoning(300, 11));
+    await harness.close();
+    await harness.settle();
+
+    expect(generate).not.toHaveBeenCalled();
+    expect(harness.attemptEvents).toEqual([]);
+    expect(harness.events).toEqual([]);
+    expect(harness.parts[0]?.reasoning_label).toBeUndefined();
+  });
+
+  it('skips an encoded payload that arrives split across small deltas', async () => {
+    const generate = jest.fn(async () => ({ label: 'Inspecting an encoded data snapshot' }));
+    const harness = createHarness(generate, { updateChars: 400, updateIntervalMs: 0 });
+    const payload = encodedReasoning();
+    await harness.start();
+    for (let offset = 0; offset < payload.length; offset += 100) {
+      await harness.append(payload.slice(offset, offset + 100));
+    }
+    await harness.close();
+    await harness.settle();
+
+    expect(generate).not.toHaveBeenCalled();
+    expect(harness.attemptEvents).toEqual([]);
+  });
+
+  it('labels mixed reasoning from its readable text only', async () => {
+    const generate = jest.fn(async () => ({ label: 'Comparing retry backoff strategies' }));
+    const harness = createHarness(generate, { ...config, updateChars: 1_000 });
+    const payload = encodedReasoning();
+    await harness.start();
+    await harness.append('Comparing the retry policy against the queue backoff. ');
+    await harness.settle();
+    await harness.append(payload);
+    await harness.append('Exponential backoff fits the burst pattern, so the queue keeps it. ');
+    await harness.append(
+      'Jitter spreads the retries across the window to avoid a thundering herd.',
+    );
+    await harness.close();
+    await harness.settle();
+
+    expect(generate).toHaveBeenCalledTimes(2);
+    for (const [payloadArg] of generate.mock.calls as unknown as Array<
+      [{ visibleReasoning: string }]
+    >) {
+      expect(payloadArg.visibleReasoning).not.toContain(payload.slice(0, 64));
+    }
+    expect(generate).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        status: 'complete',
+        visibleReasoning: expect.stringContaining('backoff. Exponential backoff fits'),
+      }),
+    );
+    expect(harness.parts[0]?.reasoning_label).toBe('Comparing retry backoff strategies');
+  });
+
+  it('still labels readable reasoning of the same length', async () => {
+    const generate = jest.fn(async () => ({ label: 'Planning the cache migration' }));
+    const harness = createHarness(generate, config);
+    const readable =
+      'Planning the cache migration: move session keys first, then rebuild the index. ';
+    await harness.start();
+    await harness.append(readable.repeat(18));
+    await harness.close();
+    await harness.settle();
+
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({ visibleReasoning: expect.stringContaining('Planning the cache') }),
+    );
+    expect(harness.parts[0]?.reasoning_label).toBe('Planning the cache migration');
+  });
+
+  it('ignores a persisted encoded payload when a resumed step continues', async () => {
+    const generate = jest.fn(async () => ({ label: 'Checking the resumed tool result' }));
+    const harness = createHarness(generate, {
+      ...config,
+      preservePartOnStart: true,
+      initialParts: [
+        {
+          type: ContentTypes.THINK,
+          think: encodedReasoning(),
+          reasoning_label_step_id: 'reasoning-1',
+          reasoning_label_attempts: 0,
+        },
+      ],
+    });
+    await harness.start();
+    await harness.settle();
+    expect(generate).not.toHaveBeenCalled();
+
+    await harness.append('Checking the tool result.');
+    await harness.close();
+    await harness.settle();
+
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({ visibleReasoning: 'Checking the tool result.' }),
+    );
+  });
+});

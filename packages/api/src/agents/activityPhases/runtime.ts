@@ -1,5 +1,5 @@
 import { GraphEvents } from '@librechat/agents';
-import { ContentTypes, StepTypes } from 'librechat-data-provider';
+import { ContentTypes, StepTypes, stripOpaqueReasoning } from 'librechat-data-provider';
 import type { EventHandler, HookCallback, HookInputByEvent } from '@librechat/agents';
 import type { LooseContentPart } from '~/agents/activityLabels/wiring';
 import { stringifyActivityEvidence } from '~/agents/activityLabels/runtime';
@@ -194,6 +194,18 @@ function deltaText(data: unknown, key: 'text' | 'think'): string {
     parts = [raw];
   }
   return parts.map((part) => textValue((part as DeltaPart | null)?.[key])).join('');
+}
+
+/** Prompt evidence only: anchors keep the raw excerpt so positions still resolve. */
+function withReadableReasoning(activity: ActivityPhaseEntry): ActivityPhaseEntry {
+  if (activity.thinkingExcerpts == null) {
+    return activity;
+  }
+  const { thinkingExcerpts, ...rest } = activity;
+  const readable = thinkingExcerpts
+    .map((excerpt) => stripOpaqueReasoning(excerpt).trim())
+    .filter((excerpt) => excerpt.length > 0);
+  return readable.length > 0 ? { ...rest, thinkingExcerpts: readable } : rest;
 }
 
 function buildSignal(signal?: AbortSignal): AbortSignal {
@@ -1077,11 +1089,13 @@ export function createActivityPhaseWiring(deps: ActivityPhaseHostDeps): Activity
               .find(matchesToolIds);
           }
           if (!matchesToolIds(child)) {
-            return activity;
+            return withReadableReasoning(activity);
           }
           const label =
             child?.pending !== true ? textValue(child?.[ContentTypes.ACTIVITY_LABEL]).trim() : '';
-          return label ? { ...activity, label, entries: undefined } : activity;
+          return withReadableReasoning(
+            label ? { ...activity, label, entries: undefined } : activity,
+          );
         },
       );
   };

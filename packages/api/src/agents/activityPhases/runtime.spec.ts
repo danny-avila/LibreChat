@@ -492,6 +492,69 @@ describe('createActivityPhaseWiring', () => {
     expect(payloads[1]).toMatchObject({ assistantContext: ['Context for the later work.'] });
   });
 
+  it('sends only readable reasoning excerpts to the phase summarizer', async () => {
+    const encoded = Buffer.from(Array.from({ length: 450 }, (_, i) => (i * 37 + 3) % 256)).toString(
+      'base64',
+    );
+    const parts: LooseContentPart[] = [
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-2' } },
+      { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-3' } },
+    ];
+    const payloads: GenerateActivityPhasePayload[] = [];
+    const wiring = createActivityPhaseWiring({
+      initialSnapshot: {
+        version: 3,
+        generated: 0,
+        activityCount: 3,
+        failedActivityCount: 0,
+        partialActivityCount: 0,
+        agentIds: [],
+        activities: [
+          {
+            startIndex: 0,
+            status: 'success',
+            toolCallIds: ['tool-1'],
+            thinkingExcerpts: ['Checking the deploy manifest.'],
+          },
+          {
+            startIndex: 1,
+            status: 'success',
+            toolCallIds: ['tool-2'],
+            thinkingExcerpts: [encoded],
+          },
+          {
+            startIndex: 2,
+            status: 'success',
+            toolCallIds: ['tool-3'],
+            thinkingExcerpts: [`Rolling back.\n${encoded}`],
+          },
+        ],
+        assistantContext: [],
+        pendingReasoning: [],
+      },
+      getContentParts: () => parts,
+      bumpIndexOffset: jest.fn(),
+      emitLabelEvent: jest.fn(async () => undefined),
+      trackPendingFill: jest.fn(),
+      generatePhase: jest.fn(async (payload: GenerateActivityPhasePayload) => {
+        payloads.push(payload);
+        return { label: 'Rolled back the deploy' };
+      }),
+    });
+
+    wiring.complete();
+    await flushDetached();
+
+    expect(payloads).toHaveLength(1);
+    expect(payloads[0].activities.map((activity) => activity.thinkingExcerpts)).toEqual([
+      ['Checking the deploy manifest.'],
+      undefined,
+      ['Rolling back.'],
+    ]);
+    expect(payloads[0].activities[1]).not.toHaveProperty('thinkingExcerpts');
+  });
+
   it('keeps a substantial boundary hard when too little preceding work earns a phase', async () => {
     const parts: LooseContentPart[] = [
       { type: ContentTypes.TOOL_CALL, tool_call: { id: 'tool-1' } },
