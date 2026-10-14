@@ -1955,20 +1955,12 @@ export function createAgentMethods(
       const agentIds = allAgents.map((agent) => agent.id);
       const agentObjectIds = allAgents.map((agent) => agent._id);
 
-      try {
-        await removeAgentIdsFromEdges(Agent, agentIds);
-      } catch (error) {
-        logger.error('[deleteUserAgents] Error removing agents from handoff edges', error);
-      }
-
-      try {
-        await User.updateMany(
-          { 'favorites.agentId': { $in: agentIds } },
-          { $pull: { favorites: { agentId: { $in: agentIds } } } },
-        );
-      } catch (error) {
-        logger.error('[deleteUserAgents] Error removing agents from user favorites', error);
-      }
+      /** Reference cleanup precedes the irreversible delete, so a failure keeps the agent discoverable for retry. */
+      await removeAgentIdsFromEdges(Agent, agentIds);
+      await User.updateMany(
+        { 'favorites.agentId': { $in: agentIds } },
+        { $pull: { favorites: { agentId: { $in: agentIds } } } },
+      );
 
       await Agent.deleteMany({ _id: { $in: agentObjectIds } });
       /** ACL entries are the retry discovery key for sole-owned agents, so they go last. */
