@@ -522,6 +522,51 @@ describe('Chat', () => {
     await sent;
   });
 
+  it('reports a stopped stream that drops instead of ending as aborted', async () => {
+    const { chat, stream, transport, onFinish, onError } = setup();
+    transport.abort.mockImplementation(async () => {
+      stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+      return { success: true };
+    });
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    stream.push(stepEvent);
+    await flush();
+
+    await chat.stop();
+    await sent;
+
+    expect(chat.status).toBe('ready');
+    expect(onError).not.toHaveBeenCalled();
+    expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isAbort: true }));
+  });
+
+  it('reports a failed stop of a start that arrived after it', async () => {
+    let open: (() => void) | undefined;
+    const stream = createStream({ streamId: 'convo-1' });
+    const { chat, transport, onError } = setup(
+      {},
+      {
+        sendMessages: jest.fn(
+          () =>
+            new Promise((resolve) => {
+              open = () => resolve({ status: 'stream', stream });
+            }),
+        ),
+      },
+    );
+    transport.abort.mockImplementation(async () => ({ success: false, error: 'busy' }));
+
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    await chat.stop();
+    await sent;
+    open?.();
+    await flush();
+
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ message: 'busy' }));
+  });
+
   it('rejects a refused stop and keeps streaming', async () => {
     const failure = new Error('abort failed');
     const { chat, stream, transport } = setup();
