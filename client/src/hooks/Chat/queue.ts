@@ -305,16 +305,28 @@ export function isDetachedRunManual(
   );
 }
 
-/** A compaction that ended without a usable summary persists the same failed summary or
- *  user-initiated error part whether it failed or was stopped, from this tab or another, and is
- *  settled rather than `unfinished`; history cannot tell which, so it never drains the queue. */
-const endedWithoutSummary = (message: TMessage): boolean =>
-  Array.isArray(message.content) &&
-  message.content.some(
-    (part) =>
-      (part?.type === ContentTypes.SUMMARY && part.failed === true) ||
-      (part?.type === ContentTypes.ERROR && part.initiatedBy === 'user'),
-  );
+/** A compaction's outcome is the part the server stamps `initiatedBy: 'user'`. One that ended
+ *  without a usable summary persists the same failed summary or error part whether it failed or
+ *  was stopped, from this tab or another, and is settled rather than `unfinished`; history cannot
+ *  tell which, so it never drains the queue. Failed rounds of an ordinary run carry no stamp, and
+ *  a usable summary means the compaction succeeded. */
+const endedWithoutSummary = (message: TMessage): boolean => {
+  if (!Array.isArray(message.content)) {
+    return false;
+  }
+  let failed = false;
+  for (const part of message.content) {
+    if (part?.type === ContentTypes.SUMMARY && part.initiatedBy === 'user') {
+      if (part.failed !== true) {
+        return false;
+      }
+      failed = true;
+    } else if (part?.type === ContentTypes.ERROR && part.initiatedBy === 'user') {
+      failed = true;
+    }
+  }
+  return failed;
+};
 
 const writtenAt = (message: TMessage): number => {
   const stamp = message.updatedAt ?? message.createdAt;

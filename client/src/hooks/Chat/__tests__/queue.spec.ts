@@ -77,6 +77,31 @@ describe('resolveDetachedRunEnd', () => {
     expect(errorPart?.outcome).toBe('aborted');
   });
 
+  it('reads a run as completed when only an ordinary failed round or a superseded failure is persisted', () => {
+    const ordinaryRound = resolveDetachedRunEnd(CONVO_ID, { userMessageId: USER_ID }, [
+      response({
+        content: [
+          { type: ContentTypes.SUMMARY, content: [], failed: true },
+          { type: ContentTypes.TEXT, text: 'answer' },
+        ] as TMessage['content'],
+      }),
+    ]);
+    expect(ordinaryRound?.outcome).toBe('completed');
+    const laterUsable = resolveDetachedRunEnd(CONVO_ID, { userMessageId: USER_ID }, [
+      response({
+        content: [
+          { type: ContentTypes.SUMMARY, content: [], failed: true, initiatedBy: 'user' },
+          {
+            type: ContentTypes.SUMMARY,
+            content: [{ type: ContentTypes.TEXT, text: 'summary' }],
+            initiatedBy: 'user',
+          },
+        ] as TMessage['content'],
+      }),
+    ]);
+    expect(laterUsable?.outcome).toBe('completed');
+  });
+
   it('returns nothing while no response to the run is persisted', () => {
     expect(resolveDetachedRunEnd(CONVO_ID, { userMessageId: USER_ID }, [userMessage])).toBeNull();
     expect(resolveDetachedRunEnd(CONVO_ID, { userMessageId: USER_ID }, undefined)).toBeNull();
