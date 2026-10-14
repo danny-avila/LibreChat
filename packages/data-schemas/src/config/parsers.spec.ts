@@ -614,6 +614,19 @@ describe('redactMessage', () => {
     expect(() => JSON.stringify(info[SPLAT_SYMBOL])).not.toThrow();
   });
 
+  it('rebuilds records with accessor messages and masks doubly encoded addresses', () => {
+    const record = { level: 'info' } as RedactInfo;
+    Object.defineProperty(record, 'message', {
+      enumerable: true,
+      get: () => 'jane@example.com',
+      set: () => undefined,
+    });
+    expect(JSON.stringify(runRedactFormat(record))).not.toContain('jane');
+    expect(
+      redactMessage('redirect_uri=https%3A%2F%2Fx%3Femail%3Djane%2540example.com&a=1'),
+    ).not.toContain('jane');
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),

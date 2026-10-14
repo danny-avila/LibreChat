@@ -65,7 +65,7 @@ const EMAIL_PATTERN =
 let skipHeavyErrorFields = false;
 /** URL-encoded addresses (`user%40host.tld`), anchored at a token start so scans stay linear. */
 const ENCODED_EMAIL_PATTERN =
-  /(?<![^\s<>"&=?/#])(?:(?!%40)[^\s<>"&=?/#])+%40[^\s<>"&=?/#]+(?:\.|%2e)[^\s<>"&=?/#]+/giu;
+  /(?<![^\s<>"&=?/#])(?:(?!%(?:25)*40)[^\s<>"&=?/#])+%(?:25)*40[^\s<>"&=?/#]+(?:\.|%(?:25)*2e)[^\s<>"&=?/#]+/giu;
 const REDACTION_WINDOW_SLACK = 1024;
 const REDACTED_EMAIL_VALUE = '[REDACTED_EMAIL]';
 
@@ -567,13 +567,14 @@ function sanitizedCopy(
   info: Record<string | symbol, unknown>,
   fields: Record<string, unknown>,
   stack: string | undefined,
+  message: unknown,
 ): winston.Logform.TransformableInfo {
   const copy: Record<string | symbol, unknown> = {};
   for (const symbol of Object.getOwnPropertySymbols(info)) {
     copy[symbol] = info[symbol];
   }
   copy.level = info.level;
-  copy.message = info.message;
+  copy.message = message;
   if (stack !== undefined) {
     copy.stack = stack;
   }
@@ -595,13 +596,22 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
     const topSeen = new WeakMap<object, unknown>();
     const skipsHeavyTopLevel = stripsHeavyFields && safely(() => isErrorLike(info));
 
+    let redactedMessage: unknown;
+    let replaceFailed = false;
     if (info.message !== undefined) {
-      info.message = redactLogValue(info.message);
+      redactedMessage = redactLogValue(info.message);
+      if (Object.getOwnPropertyDescriptor(info, 'message')?.get !== undefined) {
+        replaceFailed = true;
+      }
+      try {
+        info.message = redactedMessage as string;
+      } catch {
+        replaceFailed = true;
+      }
     }
 
     /** A direct `logger.error(error)` makes `info` the Error, whose stack is non-enumerable. */
     let redactedStack: string | undefined;
-    let replaceFailed = false;
     let rawStack: unknown;
     try {
       rawStack = infoRecord.stack;
@@ -701,7 +711,7 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
     if (!neutralizeSerializer(info)) {
       replaceFailed = true;
     }
-    return replaceFailed ? sanitizedCopy(infoRecord, fields, redactedStack) : info;
+    return replaceFailed ? sanitizedCopy(infoRecord, fields, redactedStack, redactedMessage) : info;
   },
 );
 
