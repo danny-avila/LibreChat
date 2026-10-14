@@ -1,5 +1,6 @@
 import sharp from 'sharp';
 import { Readable } from 'stream';
+import { randomBytes } from 'crypto';
 import { agentsEndpointSchema, FileContext, FileSources } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { ServerRequest, StrategyFunctions } from '~/types';
@@ -239,6 +240,26 @@ describe('durable replay projection', () => {
       filesById: new Map([[file.file_id, { ...file, type: 'image/jpeg' }]]),
     });
     expect(result.files).toEqual([]);
+  });
+  it('fits a realistic noisy PNG into the byte cap without reducing the bounded edge', async () => {
+    const source = await sharp(randomBytes(1400 * 800 * 3), {
+      raw: { width: 1400, height: 800, channels: 3 },
+    })
+      .png()
+      .toBuffer();
+    const result = await replayHistoricalToolImages(options(source));
+    expect(result.files).toHaveLength(1);
+    expect(result.files[0].type).toBe('image/jpeg');
+    expect(result.files[0].width).toBe(1024);
+    expect(result.files[0].bytes).toBeLessThanOrEqual(config.maxPreviewBytes);
+    expect(file.type).toBe('image/png');
+    expect(result.content[1]).toEqual(
+      expect.objectContaining({
+        image_url: expect.objectContaining({
+          url: expect.stringMatching(/^data:image\/jpeg;base64,/),
+        }),
+      }),
+    );
   });
   it('bounds actual reads even if canonical byte metadata is stale', async () => {
     const result = await replayHistoricalToolImages({

@@ -227,6 +227,7 @@ export async function replayHistoricalToolImages({
     let preview: Buffer;
     let width: number;
     let height: number;
+    let previewMime = 'image/png';
     try {
       const image = sharp(input, {
         limitInputPixels: config.maxSourcePixels,
@@ -235,7 +236,7 @@ export async function replayHistoricalToolImages({
       const metadata = await image.metadata();
       const decodedMime = metadata.format === 'jpeg' ? 'image/jpeg' : `image/${metadata.format}`;
       if (decodedMime !== file.type) continue;
-      const rendered = await image
+      let rendered = await image
         .rotate()
         .resize(config.previewMaxEdge, config.previewMaxEdge, {
           fit: 'inside',
@@ -243,6 +244,12 @@ export async function replayHistoricalToolImages({
         })
         .png()
         .toBuffer({ resolveWithObject: true });
+      if (rendered.data.length > config.maxPreviewBytes) {
+        // A photographic/noisy PNG can exceed the byte cap even at the bounded edge.
+        // JPEG keeps that edge and useful detail before giving up on the preview.
+        rendered = await image.jpeg({ quality: 80 }).toBuffer({ resolveWithObject: true });
+        previewMime = 'image/jpeg';
+      }
       preview = rendered.data;
       width = rendered.info.width;
       height = rendered.info.height;
@@ -257,13 +264,16 @@ export async function replayHistoricalToolImages({
       },
       {
         type: 'image_url',
-        image_url: { url: `data:image/png;base64,${preview.toString('base64')}`, detail: 'auto' },
+        image_url: {
+          url: `data:${previewMime};base64,${preview.toString('base64')}`,
+          detail: 'auto',
+        },
       },
     ];
     if (deps.countTokens([...result.content, ...content]) > config.maxTokens) continue;
     const previewFile = {
       ...file,
-      type: 'image/png',
+      type: previewMime,
       width,
       height,
       bytes: preview.length,
