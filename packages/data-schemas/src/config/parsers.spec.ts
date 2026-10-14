@@ -227,6 +227,18 @@ describe('redactMessage', () => {
     }
   });
 
+  it('masks empty quoted locals and survives read-only error properties', () => {
+    expect(redactMessage('""@blocked.example ok')).toBe('[REDACTED_EMAIL] ok');
+    class DetailError extends Error {
+      get detail() {
+        return 'jane@example.com';
+      }
+    }
+    const error = new DetailError('boom');
+    Object.defineProperty(error, 'detail', { enumerable: true, get: () => 'jane@example.com' });
+    expect(() => runRedactFormat(error as unknown as RedactInfo)).not.toThrow();
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),

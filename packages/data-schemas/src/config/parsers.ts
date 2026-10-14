@@ -57,7 +57,7 @@ const sensitiveKeys: RegExp[] = [
  * only at a token boundary, so long non-email text is scanned once instead of once per character.
  */
 const EMAIL_PATTERN =
-  /(?:\\"(?:[^"\\\r\n]|\\{3}")+\\"|(?<!\\)"(?:[^"\\\r\n]|\\.)+"|(?<![^\s<>[\],;"])[^\s<>[\],;"]+)@(?:\[[^\]\s@]+\]|[^\s<>[\],;"@]+\.[^\s<>[\],;"@]+)/gu;
+  /(?:\\"(?:[^"\\\r\n]|\\{3}")*\\"|(?<!\\)"(?:[^"\\\r\n]|\\.)*"|(?<![^\s<>[\],;"])[^\s<>[\],;"]+)@(?:\[[^\]\s@]+\]|[^\s<>[\],;"@]+\.[^\s<>[\],;"@]+)/gu;
 const REDACTION_WINDOW_SLACK = 1024;
 const REDACTED_EMAIL_VALUE = '[REDACTED_EMAIL]';
 
@@ -422,6 +422,27 @@ function redactLogValue(value: unknown, seen = new WeakMap<object, unknown>(), d
   return redactObjectEntries(value, seen, depth) ?? {};
 }
 
+/** Writes a redacted field back without letting a read-only or getter-only property abort logging. */
+function setLogField(
+  target: Record<string, unknown>,
+  key: string,
+  safeKey: string,
+  value: unknown,
+) {
+  try {
+    if (safeKey !== key) {
+      delete target[key];
+    }
+    target[safeKey] = value;
+  } catch {
+    try {
+      Object.defineProperty(target, safeKey, { value, configurable: true, writable: true });
+    } catch {
+      /* a frozen field is left as-is rather than failing the log call */
+    }
+  }
+}
+
 /**
  * Redacts sensitive information from log messages at every level.
  * Note: Intentionally mutates the object.
@@ -461,10 +482,7 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
         (candidate) => candidate !== key && Object.prototype.hasOwnProperty.call(info, candidate),
         cursors,
       );
-      if (safeKey !== key) {
-        delete infoRecord[key];
-      }
-      infoRecord[safeKey] = value;
+      setLogField(infoRecord, key, safeKey, value);
     }
     return info;
   },
