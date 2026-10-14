@@ -565,8 +565,25 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
       const auditRemovedGrants = () =>
         emitGrantRemovals(req, name, (cascade.removed.grants as ISystemGrant[] | undefined) ?? []);
 
+      /** Reads the role again to learn whether it still is the one this request targeted. */
+      const lookupRole = () =>
+        getRoleByName(name).then(
+          (role) => ({ known: true, role }),
+          () => ({ known: false, role: null }),
+        );
+      /** A role recreated under the same name is a different role and must not inherit the
+       * old one's dependents. */
+      const isTargetedRole = (role: IRole | null) =>
+        role != null &&
+        (existing._id == null || role._id == null || String(existing._id) === String(role._id));
+
       if (cascade.failed.length > 0) {
-        await cascade.compensate();
+        const lookup = await lookupRole();
+        if (lookup.known && isTargetedRole(lookup.role)) {
+          await cascade.compensate();
+        } else {
+          logger.warn('[adminRoles] config not restored, role changed during cleanup:', name);
+        }
         await invalidateAccess();
         await auditRemovedGrants();
         return cleanupFailedResponse();
@@ -584,18 +601,8 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
         );
         /** The delete may have committed before it threw. Restoring dependents for a
          * role that is gone would orphan them for a later role with the same name. */
-        const lookup = await getRoleByName(name).then(
-          (role) => ({ known: true, role }),
-          () => ({ known: false, role: null }),
-        );
-        /** A role recreated under the same name since the delete is a different role and
-         * must not inherit the old one's dependents. */
-        const sameRole =
-          lookup.role != null &&
-          (existing._id == null ||
-            lookup.role._id == null ||
-            String(existing._id) === String(lookup.role._id));
-        if (lookup.known && lookup.role && sameRole) {
+        const lookup = await lookupRole();
+        if (lookup.known && isTargetedRole(lookup.role)) {
           await cascade.compensate();
           await invalidateAccess();
           await auditRemovedGrants();

@@ -1064,6 +1064,23 @@ describe('createAdminRolesHandlers', () => {
       );
     });
 
+    it('skips the config restore when cleanup fails after the role was deleted by another request', async () => {
+      const deps = deleteDeps({
+        getRoleByName: jest.fn().mockResolvedValueOnce(mockRole()).mockResolvedValue(null),
+        deleteConfig: jest.fn().mockResolvedValue({ principalModel: 'Role', overrides: {} }),
+        deleteAclEntries: jest.fn().mockRejectedValue(new Error('acl cleanup failed')),
+        restoreConfig: jest.fn().mockResolvedValue(true),
+      });
+      const handlers = createAdminRolesHandlers(deps);
+      const { req, res, status, json } = createReqRes({ params: { name: 'editor' } });
+
+      await handlers.deleteRole(req, res);
+
+      expect(status).toHaveBeenCalledWith(500);
+      expect(json).toHaveBeenCalledWith(expect.objectContaining({ code: 'ROLE_CLEANUP_FAILED' }));
+      expect(deps.restoreConfig).not.toHaveBeenCalled();
+    });
+
     it('restores only the config override when the role deletion itself fails', async () => {
       const deps = deleteDeps({
         deleteConfig: jest.fn().mockResolvedValue({
