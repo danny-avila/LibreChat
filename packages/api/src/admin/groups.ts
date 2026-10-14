@@ -471,7 +471,9 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
           return res.status(500).json({ error: 'Failed to delete group' });
         }
         if (!lookup.known) {
-          logger.error('[adminGroups] dependents not restored, group state unverifiable:', id);
+          /** Unknown state favors the restriction: a leftover override narrows access, a lost one widens it. */
+          await cascade.compensate();
+          logger.error('[adminGroups] group state unverifiable after delete failure:', id);
           await recordFailure('GROUP_STATE_UNVERIFIABLE');
           return res.status(500).json({ error: 'Failed to delete group' });
         }
