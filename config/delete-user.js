@@ -19,9 +19,14 @@ const {
   initializeFileStorage,
   openCheckpointDeletion,
   waitForKeyvRedisClient,
+  MCPOAuthHandler,
+  MCPTokenStorage,
+  cleanupMCPServerOAuth,
   revokeUserCodeEnvironmentWorkers,
   deleteAllSharedLinksWithCleanup,
 } = require('@librechat/api');
+const { CacheKeys } = require('librechat-data-provider');
+const { getFlowStateManager } = require('~/config');
 const getLogStores = require('~/cache/getLogStores');
 const { getAppConfig } = require('~/server/services/Config');
 const { processDeleteRequest } = require('~/server/services/Files/process');
@@ -220,6 +225,29 @@ async function gracefulExit(code = 0) {
           deleteStoredFiles: (files) => processDeleteRequest({ req: fileRequest, files }),
           invalidateMCPServerTools: (serverName) =>
             invalidateCachedTools({ userId: uid, serverName }),
+          /** The CLI has no MCP registry or live connections, so shared users get local token and cache cleanup. */
+          mcpOAuth: {
+            getUserPrincipals: (candidateId) => methods.getUserPrincipals({ userId: candidateId }),
+            resolveAllowlists: async () => ({}),
+            fenceAndDisconnectUser: (candidateId, serverName) =>
+              invalidateCachedTools({ userId: candidateId, serverName }),
+            uninstallOAuthMCP: (candidateId, pluginKey, cleanupConfig, serverConfig) =>
+              cleanupMCPServerOAuth({
+                userId: candidateId,
+                pluginKey,
+                appConfig: cleanupConfig,
+                serverConfigOverride: serverConfig,
+                dependencies: {
+                  flowManager: getFlowStateManager(getLogStores(CacheKeys.FLOWS)),
+                  oauthHandler: MCPOAuthHandler,
+                  tokenStorage: MCPTokenStorage,
+                  findToken: methods.findToken,
+                  deleteTokens: methods.deleteTokens,
+                  getServerConfig: async () => undefined,
+                  isRegisteredOAuthServer: async () => false,
+                },
+              }),
+          },
         },
       ),
     );

@@ -1,8 +1,13 @@
 import mongoose from 'mongoose';
 import { logger } from '@librechat/data-schemas';
+import type { TCheckpointerConfig, MCPOptions } from 'librechat-data-provider';
 import type { AllMethods, IMongoFile } from '@librechat/data-schemas';
-import type { TCheckpointerConfig } from 'librechat-data-provider';
 import type { CheckpointDeletion } from '~/agents/checkpoints/deletion';
+import type { OAuthAclSubject } from '../mcp/oauth/cleanup';
+import {
+  cleanupDeletedMCPServerOAuthUsers,
+  prepareMCPServerOAuthDeletion,
+} from '../mcp/oauth/cleanup';
 
 type ErasureMethods = Pick<
   AllMethods,
@@ -27,6 +32,8 @@ type ErasureMethods = Pick<
   | 'deleteUserSkills'
   | 'findUserErasableMCPServers'
   | 'deleteMCPServersWithAcl'
+  | 'findMCPServerOAuthTokenUserIds'
+  | 'findMCPServerViewerEntries'
   | 'deleteActions'
   | 'deleteTokens'
   | 'removeUserFromAllGroups'
@@ -51,8 +58,31 @@ export interface UserErasureDeps extends ErasureMethods {
   /** Runtime cleanup for a removed MCP server; each hook is best effort. */
   invalidateMCPServerTools?: (serverName: string) => Promise<unknown>;
   disconnectMCPServer?: (serverName: string) => Promise<unknown>;
+  /**
+   * Cleans OAuth credentials, cached catalogs and connections of every user a removed MCP server
+   * was shared with. Omitted when the host has no OAuth runtime; the owner hooks above still run.
+   */
+  mcpOAuth?: MCPOAuthErasureHooks;
   /** Runs once the user's sessions are revoked, before the rest of the cascade can fail. */
   onSessionsDeleted?: () => void;
+}
+
+export interface MCPOAuthErasureHooks {
+  /** Config of the server before it is removed, so stored tokens can still be revoked. */
+  getServerConfig?: (serverName: string) => Promise<MCPOptions | undefined>;
+  getUserPrincipals: (userId: string) => Promise<OAuthAclSubject[]>;
+  resolveAllowlists: (
+    userId: string,
+  ) => Promise<{ allowedDomains?: string[] | null; allowedAddresses?: string[] | null }>;
+  fenceAndDisconnectUser?: (userId: string, serverName: string) => Promise<void>;
+  uninstallOAuthMCP: (
+    userId: string,
+    pluginKey: string,
+    appConfig: {
+      mcpSettings?: { allowedDomains?: string[] | null; allowedAddresses?: string[] | null };
+    },
+    serverConfig?: MCPOptions,
+  ) => Promise<void>;
 }
 
 export interface UserErasureParams {
@@ -69,6 +99,9 @@ export type MCPServerCleanupDeps = Pick<
   | 'deleteMCPServersWithAcl'
   | 'invalidateMCPServerTools'
   | 'disconnectMCPServer'
+  | 'findMCPServerOAuthTokenUserIds'
+  | 'findMCPServerViewerEntries'
+  | 'mcpOAuth'
 >;
 
 /**
@@ -105,7 +138,67 @@ export async function deleteUserMCPServers(
     }),
   );
 
-  await deps.deleteMCPServersWithAcl(servers.map((s) => s.id));
+  const oauth = deps.mcpOAuth;
+  const named = servers.filter((server) => server.serverName);
+  /** Shared users are only discoverable from the ACLs and tokens that the delete removes. */
+  const prepared = oauth
+    ? await Promise.all(
+        named.map(async ({ id, serverName }) => ({
+          serverName,
+          serverConfig: await oauth.getServerConfig?.(serverName),
+          snapshot: await prepareMCPServerOAuthDeletion({
+            getTokenUserIds: () => deps.findMCPServerOAuthTokenUserIds(serverName),
+            getAclEntries: () => deps.findMCPServerViewerEntries(id),
+          }),
+        })),
+      )
+    : [];
+
+  const cleanupSharedUsers = async (removed: typeof prepared) => {
+    if (!oauth) {
+      return;
+    }
+    const results = await Promise.allSettled(
+      removed.map(({ serverName, serverConfig, snapshot }) =>
+        cleanupDeletedMCPServerOAuthUsers({
+          ownerUserId: userId,
+          serverName,
+          serverConfig,
+          snapshot,
+          getTokenUserIds: () => deps.findMCPServerOAuthTokenUserIds(serverName),
+          getUserPrincipals: oauth.getUserPrincipals,
+          resolveAllowlists: oauth.resolveAllowlists,
+          fenceAndDisconnectUser: (candidateId) =>
+            oauth.fenceAndDisconnectUser?.(candidateId, serverName) ?? Promise.resolve(),
+          uninstallOAuthMCP: oauth.uninstallOAuthMCP,
+        }),
+      ),
+    );
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        logger.error(`[eraseUserData] MCP OAuth cleanup failed for user ${userId}`, result.reason);
+      }
+    }
+  };
+
+  try {
+    await deps.deleteMCPServersWithAcl(servers.map((s) => s.id));
+  } catch (error) {
+    /**
+     * A retry sees a server whose document is already gone only as an unnamed ACL, so shared
+     * users of servers that did go away are cleaned now, while their names are still known.
+     */
+    if (prepared.length > 0) {
+      const remaining = new Set(
+        (await deps.findUserErasableMCPServers(userId).catch(() => servers)).map(
+          (server) => server.serverName,
+        ),
+      );
+      await cleanupSharedUsers(prepared.filter(({ serverName }) => !remaining.has(serverName)));
+    }
+    throw error;
+  }
+  await cleanupSharedUsers(prepared);
 }
 
 /**

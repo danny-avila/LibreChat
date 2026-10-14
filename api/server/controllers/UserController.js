@@ -28,7 +28,7 @@ const { Tools, Constants, FileSources } = require('librechat-data-provider');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
 const { verifyOTPOrBackupCode } = require('~/server/services/twoFactorService');
 const { verifyEmail, resendVerificationEmail } = require('~/server/services/AuthService');
-const { getMCPManager } = require('~/config');
+const { getMCPManager, getMCPServersRegistry } = require('~/config');
 const { maybeUninstallOAuthMCP } = require('~/server/services/MCP/oauthCleanup');
 const { invalidateCachedTools } = require('~/server/services/Config/getCachedTools');
 const {
@@ -164,6 +164,19 @@ const createMCPServerCleanup = (userId) => ({
   invalidateMCPServerTools: (serverName) => invalidateCachedTools({ userId, serverName }),
   disconnectMCPServer: async (serverName) => {
     await getMCPManager()?.disconnectUserConnection(userId, serverName);
+  },
+  findMCPServerOAuthTokenUserIds: db.findMCPServerOAuthTokenUserIds,
+  findMCPServerViewerEntries: db.findMCPServerViewerEntries,
+  mcpOAuth: {
+    getServerConfig: (serverName) => getMCPServersRegistry().getServerConfig(serverName, userId),
+    getUserPrincipals: (candidateId) => db.getUserPrincipals({ userId: candidateId }),
+    resolveAllowlists: (candidateId) =>
+      getMCPServersRegistry().resolveAllowlists({ userId: candidateId }),
+    fenceAndDisconnectUser: async (candidateId, serverName) => {
+      await invalidateCachedTools({ userId: candidateId, serverName });
+      await getMCPManager()?.disconnectUserConnection(candidateId, serverName);
+    },
+    uninstallOAuthMCP: maybeUninstallOAuthMCP,
   },
 });
 

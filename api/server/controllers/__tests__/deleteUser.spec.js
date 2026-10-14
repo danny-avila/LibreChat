@@ -38,6 +38,11 @@ const mockDeleteSchedulesByUser = jest.fn();
 const mockRevokeUserCodeEnvironmentWorkers = jest.fn();
 const mockDeletePasskeysByUser = jest.fn();
 
+jest.mock('../../../../packages/api/src/mcp/oauth/cleanup', () => ({
+  cleanupDeletedMCPServerOAuthUsers: jest.fn(),
+  prepareMCPServerOAuthDeletion: jest.fn(),
+}));
+
 jest.mock('@librechat/data-schemas', () => ({
   logger: { error: jest.fn(), info: jest.fn() },
   webSearchKeys: [],

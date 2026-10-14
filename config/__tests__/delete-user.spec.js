@@ -318,6 +318,23 @@ describe('Delete user CLI', () => {
     expect(scope).toEqual({ tenantId: 'tenant-1', userId: USER_ID });
   });
 
+  it('supplies shared-user MCP OAuth cleanup to the cascade', async () => {
+    expect(await runCli()).toBe(0);
+
+    const [, deps] = mockEraseUserData.mock.calls[0];
+    expect(deps.mcpOAuth).toEqual({
+      getUserPrincipals: expect.any(Function),
+      resolveAllowlists: expect.any(Function),
+      fenceAndDisconnectUser: expect.any(Function),
+      uninstallOAuthMCP: expect.any(Function),
+    });
+    await deps.mcpOAuth.fenceAndDisconnectUser('viewer-1', 'server-1');
+    expect(mockInvalidateCachedTools).toHaveBeenCalledWith({
+      userId: 'viewer-1',
+      serverName: 'server-1',
+    });
+  });
+
   it('erases the transaction ledger when the operator confirms it', async () => {
     mockAskQuestion.mockReset().mockResolvedValueOnce('y').mockResolvedValueOnce('y');
 

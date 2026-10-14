@@ -194,6 +194,110 @@ describe('eraseUserData', () => {
     ]);
   });
 
+  it('cleans OAuth state of users a removed MCP server was shared with', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const viewerId = new mongoose.Types.ObjectId();
+    const strangerId = new mongoose.Types.ObjectId();
+    const { mcpServerId } = await seedUser(userId);
+    await methods.grantPermission(
+      PrincipalType.USER,
+      viewerId,
+      ResourceType.MCPSERVER,
+      mcpServerId,
+      1,
+      userId,
+    );
+    const serverName = `acl-${userId}`;
+    await model('Token').insertMany(
+      [viewerId, strangerId].map((tokenUser) => ({
+        userId: tokenUser,
+        type: 'mcp_oauth',
+        identifier: `mcp:${serverName}`,
+        token: 'encrypted',
+        expiresAt: new Date(Date.now() + 60_000),
+      })),
+    );
+    const { deps } = createDeps();
+    const fenced: string[] = [];
+    const uninstalled: Array<[string, string]> = [];
+    deps.mcpOAuth = {
+      getServerConfig: jest.fn(async () => undefined),
+      getUserPrincipals: jest.fn(async (candidate: string) =>
+        candidate === viewerId.toString()
+          ? [{ principalType: PrincipalType.USER, principalId: candidate }]
+          : [],
+      ),
+      resolveAllowlists: jest.fn(async () => ({})),
+      fenceAndDisconnectUser: jest.fn(async (candidate: string, fencedServer: string) => {
+        if (fencedServer === serverName) {
+          fenced.push(candidate);
+        }
+      }),
+      uninstallOAuthMCP: jest.fn(async (candidate: string, pluginKey: string) => {
+        if (pluginKey === `mcp_${serverName}`) {
+          uninstalled.push([candidate, pluginKey]);
+        }
+      }),
+    };
+
+    await eraseUserData({ userId: userId.toString() }, deps);
+
+    const expected = [userId.toString(), viewerId.toString()].sort();
+    expect([...fenced].sort()).toEqual(expected);
+    expect(uninstalled.map(([candidate]) => candidate).sort()).toEqual(expected);
+    expect(uninstalled.every(([, key]) => key === `mcp_${serverName}`)).toBe(true);
+    expect(await count('MCPServer', { author: userId })).toBe(0);
+  });
+
+  it('still cleans shared users when the ACL delete fails after the server is gone', async () => {
+    const userId = new mongoose.Types.ObjectId();
+    const viewerId = new mongoose.Types.ObjectId();
+    const { mcpServerId } = await seedUser(userId);
+    await methods.grantPermission(
+      PrincipalType.USER,
+      viewerId,
+      ResourceType.MCPSERVER,
+      mcpServerId,
+      1,
+      userId,
+    );
+    const serverName = `acl-${userId}`;
+    await model('Token').insertOne({
+      userId: viewerId,
+      type: 'mcp_oauth',
+      identifier: `mcp:${serverName}`,
+      token: 'encrypted',
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const { deps } = createDeps();
+    deps.deleteMCPServersWithAcl = jest.fn(async (ids: string[]) => {
+      await model('MCPServer').deleteMany({
+        _id: { $in: ids.map((id) => new mongoose.Types.ObjectId(id)) },
+      });
+      throw new Error('acl store down');
+    });
+    const uninstalled: string[] = [];
+    deps.mcpOAuth = {
+      getUserPrincipals: jest.fn(async (candidate: string) =>
+        candidate === viewerId.toString()
+          ? [{ principalType: PrincipalType.USER, principalId: candidate }]
+          : [],
+      ),
+      resolveAllowlists: jest.fn(async () => ({})),
+      uninstallOAuthMCP: jest.fn(async (candidate: string, pluginKey: string) => {
+        if (pluginKey === `mcp_${serverName}`) {
+          uninstalled.push(candidate);
+        }
+      }),
+    };
+
+    await expect(eraseUserData({ userId: userId.toString() }, deps)).rejects.toThrow(
+      'acl store down',
+    );
+
+    expect(uninstalled).toContain(viewerId.toString());
+  });
+
   it('signals session revocation even when a later step fails', async () => {
     const userId = new mongoose.Types.ObjectId();
     await seedUser(userId);

@@ -1,5 +1,5 @@
 import { nanoid } from 'nanoid';
-import { ResourceType, normalizeServerName } from 'librechat-data-provider';
+import { ResourceType, PermissionBits, normalizeServerName } from 'librechat-data-provider';
 import type { Model, RootFilterQuery, Types } from 'mongoose';
 import type { MCPOptions } from 'librechat-data-provider';
 import type { MCPServerDocument } from '../types';
@@ -54,6 +54,11 @@ export interface MCPServerDeps {
 }
 
 /** An MCP server removed with its owner's account. */
+export interface MCPServerViewerEntry {
+  principalType: string;
+  principalId?: string;
+}
+
 export interface ErasableMCPServer {
   id: string;
   serverName: string;
@@ -96,6 +101,8 @@ export function createMCPServerMethods(
   deleteMCPServer: (serverName: string) => Promise<MCPServerDocument | null>;
   findUserErasableMCPServers: (userId: string) => Promise<ErasableMCPServer[]>;
   deleteMCPServersWithAcl: (ids: string[]) => Promise<number>;
+  findMCPServerOAuthTokenUserIds: (serverName: string) => Promise<string[]>;
+  findMCPServerViewerEntries: (serverId: string) => Promise<MCPServerViewerEntry[]>;
 } {
   /**
    * Finds the next available server name by checking DB and reserved-name collisions.
@@ -428,6 +435,34 @@ export function createMCPServerMethods(
     ];
   }
 
+  /** Users holding an OAuth credential record for the server, used to fence them on removal. */
+  async function findMCPServerOAuthTokenUserIds(serverName: string): Promise<string[]> {
+    const Token = mongoose.models.Token;
+    if (!Token) {
+      return [];
+    }
+    const identifier = `mcp:${serverName}`;
+    const userIds = await Token.distinct('userId', {
+      identifier: { $in: [identifier, `${identifier}:client`, `${identifier}:refresh`] },
+    });
+    return userIds.map(String);
+  }
+
+  /** Principals holding view access on the server, used to find users it was shared with. */
+  async function findMCPServerViewerEntries(serverId: string): Promise<MCPServerViewerEntry[]> {
+    const entries = await mongoose.models.AclEntry.find({
+      resourceType: ResourceType.MCPSERVER,
+      resourceId: new mongoose.Types.ObjectId(serverId),
+      permBits: { $bitsAnySet: PermissionBits.VIEW },
+    })
+      .select('principalType principalId')
+      .lean<Array<{ principalType: string; principalId?: Types.ObjectId | string }>>();
+    return entries.map((entry) => ({
+      principalType: entry.principalType,
+      principalId: entry.principalId?.toString(),
+    }));
+  }
+
   /** Deletes MCP servers by id together with every ACL entry on them. */
   async function deleteMCPServersWithAcl(ids: string[]): Promise<number> {
     if (ids.length === 0) {
@@ -447,6 +482,8 @@ export function createMCPServerMethods(
   return {
     findUserErasableMCPServers,
     deleteMCPServersWithAcl,
+    findMCPServerOAuthTokenUserIds,
+    findMCPServerViewerEntries,
     createMCPServer,
     findMCPServerByServerName,
     findMCPServerByObjectId,
