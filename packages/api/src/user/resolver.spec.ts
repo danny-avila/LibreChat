@@ -46,6 +46,34 @@ describe('createErasureResolver', () => {
     );
   });
 
+  it('builds the shared-server OAuth hooks for the target account', async () => {
+    const registry = {
+      getServerConfig: jest.fn().mockResolvedValue({ url: 'https://srv' }),
+      resolveAllowlists: jest.fn().mockResolvedValue({}),
+    };
+    const mcpOAuth = {
+      getRegistry: () => registry,
+      getUserPrincipals: jest.fn().mockResolvedValue([]),
+      uninstallOAuthMCP: jest.fn(),
+    };
+    const { deps } = createDeps({ mcpOAuth });
+    const { deps: erasure } = await createErasureResolver(deps)(target);
+
+    await erasure.mcpOAuth?.getServerConfig?.('srv');
+    await erasure.mcpOAuth?.getUserPrincipals('other-user');
+    await erasure.mcpOAuth?.resolveAllowlists('other-user');
+    await erasure.mcpOAuth?.fenceAndDisconnectUser?.('other-user', 'srv');
+
+    expect(registry.getServerConfig).toHaveBeenCalledWith('srv', 'user-1');
+    expect(mcpOAuth.getUserPrincipals).toHaveBeenCalledWith({ userId: 'other-user' });
+    expect(registry.resolveAllowlists).toHaveBeenCalledWith({ userId: 'other-user' });
+    expect(deps.invalidateCachedTools).toHaveBeenCalledWith({
+      userId: 'other-user',
+      serverName: 'srv',
+    });
+    expect(erasure.mcpOAuth?.uninstallOAuthMCP).toBe(mcpOAuth.uninstallOAuthMCP);
+  });
+
   it('rejects when the target config cannot be resolved', async () => {
     const { deps } = createDeps({
       getAppConfig: jest.fn().mockRejectedValue(new Error('override store down')),

@@ -1,7 +1,7 @@
 import type { TCheckpointerConfig } from 'librechat-data-provider';
 import type { IMongoFile } from '@librechat/data-schemas';
 import type { AdminErasureContext, AdminErasureTarget } from '~/admin/users';
-import type { UserErasureDeps } from './erasure';
+import type { UserErasureDeps, MCPOAuthErasureHooks } from './erasure';
 
 type ErasureBaseDeps = Omit<
   UserErasureDeps,
@@ -10,6 +10,7 @@ type ErasureBaseDeps = Omit<
   | 'deleteStoredFiles'
   | 'invalidateMCPServerTools'
   | 'disconnectMCPServer'
+  | 'mcpOAuth'
 >;
 
 /** The stored-file fields deletion reads, without the document members of the persisted model. */
@@ -19,6 +20,22 @@ export type ErasureFile = Pick<
 >;
 
 export interface ErasureResolverDeps {
+  /** Shared-server OAuth cleanup is wired only when the host has an MCP OAuth runtime. */
+  mcpOAuth?: {
+    getRegistry: () => {
+      getServerConfig: (
+        serverName: string,
+        userId: string,
+      ) => ReturnType<NonNullable<MCPOAuthErasureHooks['getServerConfig']>>;
+      resolveAllowlists: (options: {
+        userId: string;
+      }) => ReturnType<MCPOAuthErasureHooks['resolveAllowlists']>;
+    };
+    getUserPrincipals: (params: {
+      userId: string;
+    }) => ReturnType<MCPOAuthErasureHooks['getUserPrincipals']>;
+    uninstallOAuthMCP: MCPOAuthErasureHooks['uninstallOAuthMCP'];
+  };
   /** Data-layer methods used by the cascade. */
   db: ErasureBaseDeps;
   getAppConfig: (options: {
@@ -62,6 +79,7 @@ export function createErasureResolver(deps: ErasureResolverDeps) {
       idOnTheSource,
       failClosed: true,
     });
+    const oauth = deps.mcpOAuth;
     const fileRequest = {
       user: { ...profile, id, _id: id, role, tenantId },
       /** Assistants client setup reads these Express request fields. */
@@ -81,6 +99,17 @@ export function createErasureResolver(deps: ErasureResolverDeps) {
           deps.invalidateCachedTools({ userId: id, serverName }),
         disconnectMCPServer: async (serverName) => {
           await deps.getMCPManager()?.disconnectUserConnection(id, serverName);
+        },
+        mcpOAuth: oauth && {
+          getServerConfig: (serverName) => oauth.getRegistry().getServerConfig(serverName, id),
+          getUserPrincipals: (candidateId) => oauth.getUserPrincipals({ userId: candidateId }),
+          resolveAllowlists: (candidateId) =>
+            oauth.getRegistry().resolveAllowlists({ userId: candidateId }),
+          uninstallOAuthMCP: oauth.uninstallOAuthMCP,
+          fenceAndDisconnectUser: async (candidateId, serverName) => {
+            await deps.invalidateCachedTools({ userId: candidateId, serverName });
+            await deps.getMCPManager()?.disconnectUserConnection(candidateId, serverName);
+          },
         },
       },
     };

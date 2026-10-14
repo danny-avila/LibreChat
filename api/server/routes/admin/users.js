@@ -19,7 +19,8 @@ const {
 } = require('~/server/services/Agents/triggers');
 const { processDeleteRequest } = require('~/server/services/Files/process');
 const { invalidateCachedTools } = require('~/server/services/Config/getCachedTools');
-const { getMCPManager } = require('~/config');
+const { getMCPManager, getMCPServersRegistry } = require('~/config');
+const { maybeUninstallOAuthMCP } = require('~/server/services/MCP/oauthCleanup');
 const subagentThreadTaskStore = require('~/server/services/Endpoints/agents/subagentThreadStore');
 const {
   quiesceUserSchedules,
@@ -36,6 +37,11 @@ const resolveErasure = createErasureResolver({
   getMCPManager,
   processDeleteRequest,
   invalidateCachedTools,
+  mcpOAuth: {
+    getRegistry: getMCPServersRegistry,
+    getUserPrincipals: db.getUserPrincipals,
+    uninstallOAuthMCP: maybeUninstallOAuthMCP,
+  },
   openCheckpointDeletion,
   deleteSharedLinks: deleteAllSharedLinksWithCleanup,
 });
