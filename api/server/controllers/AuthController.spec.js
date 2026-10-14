@@ -2925,6 +2925,7 @@ describe('resetPasswordController', () => {
     res = {
       status: jest.fn().mockReturnThis(),
       json: jest.fn(),
+      clearCookie: jest.fn(),
     };
   });
 
@@ -2939,6 +2940,7 @@ describe('resetPasswordController', () => {
     expect(resetPassword).toHaveBeenCalledWith('user-123', 'reset-token', 'new-password');
     expect(deleteAllUserSessions).toHaveBeenCalledWith({ userId: 'user-123' });
     expect(deletePasskeysByUser).toHaveBeenCalledWith('user-123');
+    expect(res.clearCookie).toHaveBeenCalledWith('session_hint');
     expect(res.status).toHaveBeenCalledWith(200);
     expect(res.json).toHaveBeenCalledWith(serviceResult);
   });

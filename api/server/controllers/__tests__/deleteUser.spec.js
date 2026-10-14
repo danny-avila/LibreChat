@@ -49,6 +49,7 @@ jest.mock('librechat-data-provider', () => ({
 }));
 
 jest.mock('@librechat/api', () => ({
+  clearSessionHintCookie: jest.fn(),
   createEmailChangeService: jest.fn(() => ({
     requestEmailChange: jest.fn(),
     confirmEmailChange: jest.fn(),
