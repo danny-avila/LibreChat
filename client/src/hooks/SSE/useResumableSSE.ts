@@ -4356,7 +4356,9 @@ export default function useResumableSSE(
     if (submission.conversation?.conversationId != null) {
       /** A different run starting here owns the conversation's end from now on: an earlier run
        *  this pane left is superseded, and a Stop belonged to that earlier run. Reattaching to
-       *  the same generation keeps both, since that run's end is still owed and it was stopped. */
+       *  the same generation keeps both, since that run's end is still owed and it was stopped.
+       *  A marker left without an epoch is the same generation when the reattached turn answers
+       *  its user message, and takes the resumed epoch when the server reports one. */
       const startingConvoId = submission.conversation.conversationId;
       const stopFamily = stopRequestedByConvoId(startingConvoId);
       if (jotaiStore.get(stopFamily)?.generationCreatedAt !== resumeGenerationCreatedAt) {
@@ -4364,12 +4366,20 @@ export default function useResumableSSE(
       }
       const detachedFamily = detachedRunByConvoId(startingConvoId);
       const detached = jotaiStore.get(detachedFamily);
-      if (
-        detached != null &&
-        (resumeGenerationCreatedAt == null ||
-          detached.generationCreatedAt !== resumeGenerationCreatedAt)
-      ) {
+      const sameEpoch =
+        resumeGenerationCreatedAt != null &&
+        detached?.generationCreatedAt === resumeGenerationCreatedAt;
+      const sameEpochlessTurn =
+        resumeStreamId != null &&
+        detached?.generationCreatedAt == null &&
+        detached?.userMessageId === submission.userMessage?.messageId;
+      if (detached != null && !sameEpoch && !sameEpochlessTurn) {
         jotaiStore.set(detachedFamily, null);
+      } else if (sameEpochlessTurn && resumeGenerationCreatedAt != null) {
+        jotaiStore.set(detachedFamily, {
+          ...detached,
+          generationCreatedAt: resumeGenerationCreatedAt,
+        });
       }
     }
     const startController = new AbortController();

@@ -1099,7 +1099,7 @@ describe('useResumableSSE', () => {
       unmount();
     });
 
-    const resumeOf = (generationCreatedAt: number) =>
+    const resumeOf = (generationCreatedAt?: number) =>
       ({
         ...buildSubmission(),
         resumeStreamId: CONV_ID,
@@ -1185,6 +1185,60 @@ describe('useResumableSSE', () => {
       expect(mockSetRunEnd).not.toHaveBeenCalledWith(
         expect.objectContaining({ outcome: 'completed' }),
       );
+      expect(detachedRun()).toBeNull();
+      unmount();
+    });
+
+    it.each([
+      ['an epochless server', undefined],
+      ['a server that dates the resumed run', 4200],
+    ])('keeps an epochless marker through a reattach to the same turn on %s', async (_, epoch) => {
+      getDefaultStore().set(detachedRunByConvoId(CONV_ID), {
+        userMessageId: 'msg-1',
+        responseMessageId: 'resp-1',
+      });
+      mockFetchStreamStatus.mockResolvedValue({ active: false });
+      mockGetQueryData.mockImplementation((queryKey: unknown[]) =>
+        queryKey[0] === QueryKeys.messages
+          ? [
+              {
+                messageId: 'resp-1',
+                parentMessageId: 'msg-1',
+                conversationId: CONV_ID,
+                isCreatedByUser: false,
+                text: 'finished while away',
+                updatedAt: new Date(5000).toISOString(),
+              },
+            ]
+          : undefined,
+      );
+      const resumed = resumeOf(epoch);
+      const chatHelpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useResumableSSE(resumed, chatHelpers));
+      await flushMicrotasks();
+      expect(detachedRun()).toEqual({
+        userMessageId: 'msg-1',
+        responseMessageId: 'resp-1',
+        ...(epoch != null && { generationCreatedAt: epoch }),
+      });
+      await act(async () => {
+        getLastSSE()._emit('error', { responseCode: 404 });
+      });
+      await waitFor(() =>
+        expect(mockSetRunEnd).toHaveBeenCalledWith(
+          expect.objectContaining({ outcome: 'completed', responseMessageId: 'resp-1' }),
+        ),
+      );
+      expect(detachedRun()).toBeNull();
+      unmount();
+    });
+
+    it('drops an epochless marker when the reattached run is a different turn', async () => {
+      getDefaultStore().set(detachedRunByConvoId(CONV_ID), { userMessageId: 'other-turn' });
+      const resumed = resumeOf();
+      const chatHelpers = buildChatHelpers();
+      const { unmount } = renderHook(() => useResumableSSE(resumed, chatHelpers));
+      await flushMicrotasks();
       expect(detachedRun()).toBeNull();
       unmount();
     });
