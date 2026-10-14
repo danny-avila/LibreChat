@@ -3,6 +3,7 @@ import {
   StepTypes,
   ContentTypes,
   flushOpaqueReasoning,
+  isOpaqueReasoning,
   advanceOpaqueReasoning,
   OPAQUE_REASONING_START,
 } from 'librechat-data-provider';
@@ -46,6 +47,14 @@ export interface ReasoningLabelAttemptEvent {
   submittedChars: number;
 }
 
+/** Clears a title the client already holds for a step that keeps its identity. */
+export interface ReasoningLabelResetEvent {
+  index: number;
+  stepId: string;
+  previousStepId: string;
+  attempts: number;
+}
+
 export interface ReasoningLabelHostDeps {
   minChars?: number;
   updateChars?: number;
@@ -60,6 +69,7 @@ export interface ReasoningLabelHostDeps {
   getStepIndex: (stepId: string) => number | undefined;
   emitAttemptEvent: (event: ReasoningLabelAttemptEvent) => Promise<unknown>;
   emitLabelEvent: (event: ReasoningLabelEvent) => Promise<unknown>;
+  emitResetEvent?: (event: ReasoningLabelResetEvent) => Promise<unknown>;
   trackPendingFill: (fillDone: Promise<void>) => void;
   isClosed?: () => boolean;
   generateLabel: (payload: GenerateReasoningLabelPayload) => Promise<GeneratedReasoningLabel>;
@@ -569,10 +579,14 @@ export function createReasoningLabelWiring(deps: ReasoningLabelHostDeps): Reason
         )
       : { readable: '', cursor: OPAQUE_REASONING_START };
     const existingText = resumed.readable;
-    /** A title on a step with no readable reasoning can only describe an
-     *  encoded payload (labeled before payloads were skipped), so it is not
-     *  carried forward where a short readable continuation would revive it. */
-    const staleLabel = ownsExistingStep && existingText.trim().length === 0;
+    /** A title on a step whose reasoning is entirely an encoded payload can
+     *  only describe that payload (labeled before payloads were skipped), so it
+     *  is not carried forward where a short readable continuation would
+     *  revive it. */
+    const staleLabel =
+      ownsExistingStep &&
+      typeof part.reasoning_label === 'string' &&
+      isOpaqueReasoning(textValue(part.think));
     const existingLabel =
       ownsExistingStep && !staleLabel && typeof part.reasoning_label === 'string'
         ? part.reasoning_label
@@ -622,6 +636,21 @@ export function createReasoningLabelWiring(deps: ReasoningLabelHostDeps): Reason
         reasoning_label_step_id: step.id,
         reasoning_label_attempts: generated,
       });
+    }
+    if (staleLabel && index != null && deps.emitResetEvent != null) {
+      /** The resumed client still renders the snapshot's title; the step keeps
+       *  its identity, so only an explicit reset clears it. */
+      const resetTask = Promise.resolve(
+        deps.emitResetEvent({
+          index,
+          stepId: step.id,
+          previousStepId: step.id,
+          attempts: generated,
+        }),
+      )
+        .then(() => undefined)
+        .catch(() => undefined);
+      deps.trackPendingFill(resetTask);
     }
     schedule(state);
   };

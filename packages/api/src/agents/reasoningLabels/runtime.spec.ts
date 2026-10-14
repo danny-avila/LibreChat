@@ -4,6 +4,7 @@ import type { EventHandler } from '@librechat/agents';
 import type {
   GeneratedReasoningLabel,
   ReasoningLabelAttemptEvent,
+  ReasoningLabelResetEvent,
   ReasoningLabelEvent,
 } from './runtime';
 import type { LooseContentPart } from '~/agents/activityLabels/wiring';
@@ -32,6 +33,7 @@ function createHarness(
     preservePartOnStart?: boolean;
     emitAttemptEvent?: (event: ReasoningLabelAttemptEvent) => Promise<void>;
     emitLabelEvent?: (event: ReasoningLabelEvent) => Promise<void>;
+    emitResetEvent?: (event: ReasoningLabelResetEvent) => Promise<void>;
   } = {},
 ) {
   const { initialParts, preservePartOnStart, emitAttemptEvent, emitLabelEvent, ...wiringConfig } =
@@ -1076,8 +1078,10 @@ describe('reasoning labels for encoded reasoning', () => {
   });
   it('does not revive a payload-derived title when a resumed step continues briefly', async () => {
     const generate = jest.fn(async () => ({ label: 'unused' }));
+    const emitResetEvent = jest.fn(async () => undefined);
     const harness = createHarness(generate, {
       updateIntervalMs: 0,
+      emitResetEvent,
       preservePartOnStart: true,
       initialParts: [
         {
@@ -1099,5 +1103,41 @@ describe('reasoning labels for encoded reasoning', () => {
     expect(generate).not.toHaveBeenCalled();
     expect(harness.parts[0]?.reasoning_label).toBeUndefined();
     expect(harness.events).toEqual([]);
+    /** The resumed client still holds the snapshot title for this same step. */
+    expect(emitResetEvent).toHaveBeenCalledWith({
+      index: 0,
+      stepId: 'reasoning-1',
+      previousStepId: 'reasoning-1',
+      attempts: 1,
+    });
+  });
+
+  it('keeps the title of a resumed step whose reasoning is a short readable token', async () => {
+    const generate = jest.fn(async () => ({ label: 'unused' }));
+    const emitResetEvent = jest.fn(async () => undefined);
+    const harness = createHarness(generate, {
+      minChars: 5,
+      updateIntervalMs: 0,
+      emitResetEvent,
+      preservePartOnStart: true,
+      initialParts: [
+        {
+          type: ContentTypes.THINK,
+          think: 'Investigating',
+          reasoning_label: 'Investigating the failure',
+          reasoning_label_step_id: 'reasoning-1',
+          reasoning_label_revision: 1,
+          reasoning_label_status: 'streaming',
+          reasoning_label_attempts: 1,
+          reasoning_label_submitted_chars: 13,
+        },
+      ],
+    });
+    await harness.start();
+    await harness.close();
+    await harness.settle();
+
+    expect(emitResetEvent).not.toHaveBeenCalled();
+    expect(harness.parts[0]?.reasoning_label).toBe('Investigating the failure');
   });
 });
