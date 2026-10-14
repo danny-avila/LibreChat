@@ -327,7 +327,7 @@ describe('Chat', () => {
     'closes a stream that arrives after %s without applying it',
     async (cancel) => {
       let open: (() => void) | undefined;
-      const { chat, stream, state, onError } = setup(
+      const { chat, stream, state, onError, transport } = setup(
         {},
         {
           sendMessages: jest.fn(
@@ -350,6 +350,7 @@ describe('Chat', () => {
       expect(stream.closed()).toBe(true);
       expect(state.messages[1].text).toBe('');
       expect(onError).not.toHaveBeenCalled();
+      expect(transport.abort).toHaveBeenCalledTimes(cancel === 'stop' ? 1 : 0);
     },
   );
 
@@ -381,7 +382,10 @@ describe('Chat', () => {
       await flush();
 
       expect(stream.closed()).toBe(true);
-      expect(transport.abort).toHaveBeenCalledTimes(opener === 'sendMessages' ? 0 : 1);
+      expect(transport.abort).toHaveBeenCalledTimes(1);
+      expect(transport.abort).toHaveBeenCalledWith(
+        expect.objectContaining({ endpoint: 'agents', streamId: 'convo-1' }),
+      );
       expect(onFinish).toHaveBeenCalledTimes(1);
       expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isAbort: true }));
     },
