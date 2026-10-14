@@ -265,6 +265,7 @@ export class Chat {
   private generationCreatedAt?: number;
   /** The pause whose resume request is in flight, so a second submit cannot send it again. */
   private resuming?: Agents.PendingAction;
+  private disposed = false;
   private readonly decisions = new Map<string, Agents.ToolApprovalResolution>();
 
   constructor(init: ChatInit) {
@@ -311,7 +312,7 @@ export class Chat {
   async resumeStream(
     options: { streamId?: string; generationCreatedAt?: number } & ChatRequestOptions = {},
   ): Promise<void> {
-    if (this.active) {
+    if (this.active || this.disposed) {
       return;
     }
     const active = createActiveRequest();
@@ -352,11 +353,13 @@ export class Chat {
       await this.stopPaused();
       return;
     }
-    if (!active.stream || !active.endpoint) {
+    if (!active.stream) {
       active.controller.abort();
-      active.stream?.close();
       await active.finished;
       return;
+    }
+    if (!active.endpoint) {
+      throw new Error('The generation cannot be stopped without its endpoint');
     }
     const result = await this.init.transport.abort({
       chatId: this.id,
@@ -494,6 +497,7 @@ export class Chat {
 
   /** Drops the local stream and every listener; the server's generation keeps running. */
   dispose(): void {
+    this.disposed = true;
     const active = this.active;
     this.active = undefined;
     active?.controller.abort();
@@ -507,6 +511,9 @@ export class Chat {
     request: Omit<ChatPrepareRequest, 'chatId' | 'messages'>,
     options: ChatRequestOptions = {},
   ): Promise<void> {
+    if (this.disposed) {
+      throw new Error('The chat was disposed');
+    }
     if (this.active) {
       throw new Error('A turn is already in flight for this chat');
     }
@@ -561,6 +568,13 @@ export class Chat {
   }
 
   private async consume(stream: ChatStream, active: ActiveRequest): Promise<void> {
+    const { signal } = active.controller;
+    if (signal.aborted) {
+      /** The request was cancelled while the stream was still being opened. */
+      stream.close();
+      this.settle({ kind: 'abort' }, active);
+      return;
+    }
     active.stream = stream;
     if (stream.generationCreatedAt != null) {
       this.generationCreatedAt = stream.generationCreatedAt;
@@ -569,6 +583,9 @@ export class Chat {
     let outcome: Outcome | undefined;
     try {
       for await (const event of stream) {
+        if (signal.aborted) {
+          break;
+        }
         await this.executor.run(() => {
           outcome = this.apply(event);
         });
@@ -580,6 +597,9 @@ export class Chat {
       outcome = this.toOutcome(error, active);
     } finally {
       stream.close();
+    }
+    if (!outcome && signal.aborted) {
+      outcome = { kind: 'abort' };
     }
     this.settle(
       outcome ?? {
@@ -688,7 +708,7 @@ export class Chat {
       if (this.action === action) {
         this.clearAction();
       }
-      if (!this.active) {
+      if (!this.active && !this.disposed) {
         /** A pause restored after a reload has no stream attached for the continuation. */
         void this.resumeStream({ streamId: result.streamId, generationCreatedAt });
       }

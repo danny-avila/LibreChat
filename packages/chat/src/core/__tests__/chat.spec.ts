@@ -308,6 +308,36 @@ describe('Chat', () => {
     expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isAbort: true }));
   });
 
+  it.each(['stop', 'dispose'] as const)(
+    'closes a stream that arrives after %s without applying it',
+    async (cancel) => {
+      let open: (() => void) | undefined;
+      const { chat, stream, state, onError } = setup(
+        {},
+        {
+          sendMessages: jest.fn(
+            () =>
+              new Promise((resolve) => {
+                open = () => resolve({ status: 'stream', stream });
+              }),
+          ),
+        },
+      );
+
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      const cancelled = cancel === 'stop' ? chat.stop() : chat.dispose();
+      stream.push(finalEvent());
+      open?.();
+      await sent;
+      await cancelled;
+
+      expect(stream.closed()).toBe(true);
+      expect(state.messages[1].text).toBe('');
+      expect(onError).not.toHaveBeenCalled();
+    },
+  );
+
   it('cancels a start whose request is still being prepared, without writing it', async () => {
     let prepare: (value: { payload: TPayload; messages: TMessage[] }) => void = () => {};
     const { chat, transport, state, onFinish } = setup({
@@ -508,6 +538,27 @@ describe('Chat', () => {
     expect(chat.status).toBe('ready');
   });
 
+  it('refuses to stop a resumed stream whose endpoint the host does not select', async () => {
+    const stream = createStream({ streamId: 'convo-1' });
+    const { chat, transport, onError } = setup(
+      {},
+      { reconnectToStream: jest.fn(async () => stream) },
+    );
+
+    const resumed = chat.resumeStream({ streamId: 'convo-1' });
+    await flush();
+    stream.push(stepEvent);
+    await flush();
+
+    await expect(chat.stop()).rejects.toThrow('without its endpoint');
+    expect(transport.abort).not.toHaveBeenCalled();
+    expect(stream.closed()).toBe(false);
+    expect(chat.status).toBe('streaming');
+    stream.push(finalEvent());
+    await resumed;
+    expect(onError).not.toHaveBeenCalled();
+  });
+
   describe('paused generations', () => {
     const toolCall = (id: string) => ({
       type: ContentTypes.TOOL_CALL,
@@ -634,6 +685,35 @@ describe('Chat', () => {
       await flush();
       expect(chat.status).toBe('ready');
       expect(chat.messages[1].text).toBe('Hello');
+    });
+
+    it('does not reattach once disposed while a resume is in flight', async () => {
+      let accept: (() => void) | undefined;
+      const { chat, transport } = setup(
+        {},
+        {
+          resume: jest.fn(
+            () =>
+              new Promise((resolve) => {
+                accept = () =>
+                  resolve({ streamId: 'convo-1', conversationId: 'convo-1', status: 'resuming' });
+              }),
+          ),
+        },
+      );
+
+      chat.restorePendingAction(askAction, 500);
+      const answered = chat.addToolOutput({ toolCallId: 'ask-1', output: 'Blue' });
+      await flush();
+      chat.dispose();
+      accept?.();
+      await answered;
+      await flush();
+
+      expect(transport.reconnectToStream).not.toHaveBeenCalled();
+      await expect(chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] })).rejects.toThrow(
+        'disposed',
+      );
     });
 
     it('holds new turns behind a restored pause until it is stopped on the server', async () => {
