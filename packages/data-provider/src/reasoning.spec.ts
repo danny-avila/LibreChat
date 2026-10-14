@@ -48,11 +48,7 @@ describe('isOpaqueReasoning', () => {
 
   it('classifies a payload inside the persisted think wrapper as opaque', () => {
     expect(isOpaqueReasoning(`<think>${bedrockRedacted}</think>`)).toBe(true);
-    expect(
-      isOpaqueReasoning(`<think>
-${anthropicRedacted}
-</think>`),
-    ).toBe(true);
+    expect(isOpaqueReasoning(`<think>\n${anthropicRedacted}\n</think>`)).toBe(true);
     expect(isOpaqueReasoning('<think>Checking the manifest.</think>')).toBe(false);
     expect(isOpaqueReasoning('<think></think>')).toBe(false);
   });

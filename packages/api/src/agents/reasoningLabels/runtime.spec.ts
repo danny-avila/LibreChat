@@ -9,6 +9,8 @@ import type {
 import type { LooseContentPart } from '~/agents/activityLabels/wiring';
 import { createReasoningLabelWiring, synthesizeReasoningLabelGapEvents } from './runtime';
 
+/** Test deltas end on a separator: the payload filter holds an unfinished
+ *  word until the next non-payload character settles it. */
 function reasoningDelta(id: string, think: string) {
   return { id, delta: { content: { type: ContentTypes.THINK, think } } };
 }
@@ -127,15 +129,15 @@ describe('reasoning labels', () => {
     const generate = jest.fn(async () => ({ label: 'Tracing resume ownership' }));
     const harness = createHarness(generate, { minChars: 10, updateChars: 8, updateIntervalMs: 0 });
     await harness.start();
-    await harness.append('123456789');
+    await harness.append('12345678 ');
     expect(generate).not.toHaveBeenCalled();
 
-    await harness.append('0');
+    await harness.append('.');
     await harness.settle();
 
     expect(generate).toHaveBeenCalledTimes(1);
     expect(generate).toHaveBeenCalledWith(
-      expect.objectContaining({ revision: 1, status: 'streaming', visibleReasoning: '1234567890' }),
+      expect.objectContaining({ revision: 1, status: 'streaming', visibleReasoning: '12345678 .' }),
     );
     expect(harness.parts).toHaveLength(1);
     expect(harness.parts[0]).toMatchObject({
@@ -168,16 +170,16 @@ describe('reasoning labels', () => {
     await harness.settle();
     expect(generate).not.toHaveBeenCalled();
 
-    await harness.append('1234', 'reasoning-new');
+    await harness.append('123 ', 'reasoning-new');
     await harness.settle();
     expect(generate).not.toHaveBeenCalled();
 
-    await harness.append('5', 'reasoning-new');
+    await harness.append('.', 'reasoning-new');
     await harness.settle();
 
     expect(generate).toHaveBeenCalledTimes(1);
     expect(generate).toHaveBeenCalledWith(
-      expect.objectContaining({ visibleReasoning: '12345', revision: 2 }),
+      expect.objectContaining({ visibleReasoning: '123 .', revision: 2 }),
     );
   });
 
@@ -195,9 +197,9 @@ describe('reasoning labels', () => {
         updateIntervalMs: 3_000,
       });
       await harness.start();
-      await harness.append('12345');
+      await harness.append('1234 ');
       await harness.settle();
-      await harness.append('6789');
+      await harness.append('678 ');
       expect(generate).toHaveBeenCalledTimes(1);
 
       await jest.advanceTimersByTimeAsync(3_000);
@@ -224,9 +226,9 @@ describe('reasoning labels', () => {
         updateIntervalMs: 3_000,
       });
       await harness.start();
-      await harness.append('12345');
+      await harness.append('1234 ');
       await harness.settle();
-      await harness.append('6789');
+      await harness.append('678 ');
 
       expect(generate).toHaveBeenCalledTimes(1);
       await jest.advanceTimersByTimeAsync(3_000);
@@ -245,7 +247,7 @@ describe('reasoning labels', () => {
       updateIntervalMs: 0,
     });
     await harness.start();
-    await harness.append('12345');
+    await harness.append('1234 ');
     await harness.settle();
 
     expect(collectUsage).toHaveBeenCalledTimes(1);
@@ -264,7 +266,7 @@ describe('reasoning labels', () => {
       },
     });
     await harness.start();
-    await harness.append('12345');
+    await harness.append('1234 ');
     await harness.settle();
 
     expect(collectUsage).toHaveBeenCalledTimes(1);
@@ -302,7 +304,7 @@ describe('reasoning labels', () => {
       },
     );
     await harness.start();
-    await harness.append('12345');
+    await harness.append('1234 ');
     await usageStarted;
     await emitStarted;
     await Promise.resolve();
@@ -354,7 +356,7 @@ describe('reasoning labels', () => {
       },
     });
     await harness.start();
-    await harness.append('12345');
+    await harness.append('1234 ');
     await streamingEmit;
     await harness.append(' word'.repeat(24));
     await harness.close();
@@ -377,13 +379,13 @@ describe('reasoning labels', () => {
     const generate = jest.fn(async () => ({ label: 'Tracing the streaming path' }));
     const harness = createHarness(generate, { minChars: 5, updateChars: 100, updateIntervalMs: 0 });
     await harness.start();
-    await harness.append('12345');
+    await harness.append('1234 ');
     await harness.settle();
 
-    await harness.append(' later');
+    await harness.append(' later.');
 
     expect(harness.parts[0]).toMatchObject({
-      think: '12345 later',
+      think: '1234  later.',
       reasoning_label: 'Tracing the streaming path',
       reasoning_label_step_id: 'reasoning-1',
       reasoning_label_revision: 1,
@@ -410,15 +412,15 @@ describe('reasoning labels', () => {
       },
     });
     await harness.start();
-    await harness.append('12345');
+    await harness.append('1234 ');
     await emitStarted;
 
-    await harness.append(' later');
+    await harness.append(' later.');
     releaseEmit?.();
     await harness.settle();
 
     expect(harness.parts[0]).toMatchObject({
-      think: '12345 later',
+      think: '1234  later.',
       reasoning_label: 'Tracing the concurrent stream',
       reasoning_label_revision: 1,
     });
@@ -443,7 +445,7 @@ describe('reasoning labels', () => {
       },
     });
     await harness.start('reasoning-1', 0);
-    await harness.append('12345', 'reasoning-1');
+    await harness.append('1234 ', 'reasoning-1');
     await emitStarted;
 
     await harness.start('reasoning-2', 0);
@@ -477,7 +479,7 @@ describe('reasoning labels', () => {
       },
     });
     await harness.start('reasoning-1', 0);
-    await harness.append('12345', 'reasoning-1');
+    await harness.append('1234 ', 'reasoning-1');
     await emitStarted;
 
     await harness.start('reasoning-2', 0);
@@ -504,8 +506,8 @@ describe('reasoning labels', () => {
       .mockResolvedValueOnce({ label: 'Resolved the final direction' });
     const harness = createHarness(generate, { minChars: 5, updateChars: 4, updateIntervalMs: 0 });
     await harness.start();
-    await harness.append('12345');
-    await harness.append('6789');
+    await harness.append('1234 ');
+    await harness.append('678 ');
     await harness.close();
     expect(generate).toHaveBeenCalledTimes(1);
 
@@ -517,7 +519,7 @@ describe('reasoning labels', () => {
       revision: 2,
       status: 'complete',
       previousLabel: 'Investigating the direction',
-      visibleReasoning: '123456789',
+      visibleReasoning: '1234 678',
     });
     expect(harness.events[harness.events.length - 1]).toMatchObject({
       revision: 2,
@@ -530,9 +532,9 @@ describe('reasoning labels', () => {
     const generate = jest.fn(async () => ({ label: 'Inspecting the stream' }));
     const harness = createHarness(generate, { minChars: 5, updateChars: 400, updateIntervalMs: 0 });
     await harness.start();
-    await harness.append('12345');
+    await harness.append('1234 ');
     await harness.settle();
-    await harness.append('small tail');
+    await harness.append('small tail.');
     await harness.close();
     await harness.settle();
 
@@ -554,7 +556,7 @@ describe('reasoning labels', () => {
       updateIntervalMs: 3_000,
     });
     await harness.start();
-    await harness.append('12345');
+    await harness.append('1234 ');
     await harness.settle();
     await harness.append(' word'.repeat(24));
     await harness.close();
@@ -577,7 +579,7 @@ describe('reasoning labels', () => {
       last_agent_id: 'final-agent',
       langgraph_node: 'intermediate-agent',
     });
-    await harness.append('12345');
+    await harness.append('1234 ');
     await harness.close();
     await harness.settle();
 
@@ -594,9 +596,9 @@ describe('reasoning labels', () => {
       maxPerRun: 2,
     });
     await firstSegment.start('reasoning-1', 0);
-    await firstSegment.append('12345');
+    await firstSegment.append('1234 ');
     await firstSegment.settle();
-    await firstSegment.append('6789');
+    await firstSegment.append('678 ');
     await firstSegment.settle();
 
     expect(generate).toHaveBeenCalledTimes(2);
@@ -615,7 +617,7 @@ describe('reasoning labels', () => {
       initialParts: firstSegment.parts,
     });
     await resumed.start('reasoning-2', 1);
-    await resumed.append('abcde', 'reasoning-2');
+    await resumed.append('abcd ', 'reasoning-2');
     await resumed.close('reasoning-2');
     await resumed.settle();
 
@@ -641,7 +643,7 @@ describe('reasoning labels', () => {
     });
 
     await resumed.start('reasoning-after-resume', initialParts.length);
-    await resumed.append('abcde', 'reasoning-after-resume');
+    await resumed.append('abcd ', 'reasoning-after-resume');
     await resumed.settle();
 
     expect(generate).toHaveBeenCalledTimes(1);
@@ -667,7 +669,7 @@ describe('reasoning labels', () => {
       ],
     });
     await harness.start('reasoning-new', 1);
-    await harness.append('abcde', 'reasoning-new');
+    await harness.append('abcd ', 'reasoning-new');
     await harness.settle();
 
     expect(generate).toHaveBeenCalledTimes(1);
@@ -683,9 +685,9 @@ describe('reasoning labels', () => {
       maxPerRun: 2,
     });
     await firstSegment.start('reasoning-1', 0);
-    await firstSegment.append('12345', 'reasoning-1');
+    await firstSegment.append('1234 ', 'reasoning-1');
     await firstSegment.settle();
-    await firstSegment.append('6789', 'reasoning-1');
+    await firstSegment.append('678 ', 'reasoning-1');
     await firstSegment.settle();
 
     await firstSegment.start('reasoning-2', 0);
@@ -705,7 +707,7 @@ describe('reasoning labels', () => {
       initialParts: firstSegment.parts.map((part) => ({ ...part })),
     });
     await resumed.start('reasoning-3', 1);
-    await resumed.append('vwxyz', 'reasoning-3');
+    await resumed.append('vwxy ', 'reasoning-3');
     await resumed.close('reasoning-3');
     await resumed.settle();
 
@@ -732,12 +734,12 @@ describe('reasoning labels', () => {
     await harness.start('reasoning-1', 0);
     expect(generate).not.toHaveBeenCalled();
 
-    await harness.append('89', 'reasoning-1');
+    await harness.append('8 ', 'reasoning-1');
     await harness.settle();
 
     expect(generate).toHaveBeenCalledTimes(1);
     expect(generate).toHaveBeenCalledWith(
-      expect.objectContaining({ visibleReasoning: '123456789', revision: 2 }),
+      expect.objectContaining({ visibleReasoning: '12345678', revision: 2 }),
     );
   });
 
@@ -934,6 +936,38 @@ describe('reasoning labels for encoded reasoning', () => {
       reasoning_label: 'Checking the retry policy',
       reasoning_label_status: 'complete',
     });
+  });
+
+  it('never labels the undecided start of a payload under low thresholds', async () => {
+    const generate = jest.fn(async () => ({ label: 'Inspecting an encoded data snapshot' }));
+    const harness = createHarness(generate, { minChars: 5, updateChars: 4, updateIntervalMs: 0 });
+    const payload = encodedReasoning();
+    await harness.start();
+    for (let offset = 0; offset < payload.length; offset += 10) {
+      await harness.append(payload.slice(offset, offset + 10));
+      await harness.settle();
+    }
+    await harness.close();
+    await harness.settle();
+
+    expect(generate).not.toHaveBeenCalled();
+    expect(harness.attemptEvents).toEqual([]);
+  });
+
+  it('settles a final unpunctuated word when the step closes', async () => {
+    const generate = jest.fn(async () => ({ label: 'Checking the result' }));
+    const harness = createHarness(generate, { minChars: 5, updateChars: 4, updateIntervalMs: 0 });
+    await harness.start();
+    await harness.append('Checking');
+    await harness.settle();
+    expect(generate).not.toHaveBeenCalled();
+
+    await harness.close();
+    await harness.settle();
+
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'complete', visibleReasoning: 'Checking' }),
+    );
   });
 
   it('labels mixed reasoning from its readable text only', async () => {

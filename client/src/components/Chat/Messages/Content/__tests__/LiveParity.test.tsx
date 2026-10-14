@@ -1237,7 +1237,9 @@ describe('live activity hardening transitions', () => {
     expect(screen.getByText('Ran agent').closest('[data-testid="activity-phase-card"]')).toBeNull();
   });
 
-  it.each(['x'.repeat(1199), 'Earlier sentence. ' + 'x'.repeat(1199)])(
+  /** A non-ASCII run: an unbroken ASCII alphanumeric run this long is
+   *  classified as an encoded provider payload and never previewed. */
+  it.each(['é'.repeat(1199), 'Earlier sentence. ' + 'é'.repeat(1199)])(
     'does not repeatedly announce one thought as its bounded preview window moves',
     (initial) => {
       jest.useFakeTimers();
@@ -1255,7 +1257,7 @@ describe('live activity hardening transitions', () => {
       expect(screen.getByTestId('activity-phase-announcer')).toBeEmptyDOMElement();
       /** The finished sentence is the long run itself, clamped to one line;
        *  the sentence after it is still being written. */
-      expect(screen.getByRole('button')).toHaveAccessibleName(`${'x'.repeat(255)}…`);
+      expect(screen.getByRole('button')).toHaveAccessibleName(`${'é'.repeat(255)}…`);
     },
   );
 
@@ -1737,6 +1739,15 @@ describe('live activity over encrypted reasoning', () => {
       true,
     );
     expect(activity.text).toBe('com_ui_running');
+  });
+
+  it('previews the readable text of reasoning mixed with an encrypted payload', () => {
+    const activity = getLiveActivity(
+      [think(`Comparing both lockfiles. ${encoded}`)],
+      (key) => key,
+      [],
+    );
+    expect(activity.text).toBe('Comparing both lockfiles.');
   });
 
   it('still previews readable reasoning', () => {

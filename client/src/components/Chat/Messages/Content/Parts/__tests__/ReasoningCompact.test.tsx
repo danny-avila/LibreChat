@@ -116,4 +116,22 @@ describe('ReasoningCompact', () => {
 
     expect(screen.getByText('A long stream of reasoning')).toBeInTheDocument();
   });
+
+  it('shows only the readable text of reasoning mixed with an encrypted payload', () => {
+    const encoded = Buffer.from(Array.from({ length: 900 }, (_, i) => (i * 37 + 3) % 256)).toString(
+      'base64',
+    );
+    render(
+      <ReasoningCompact
+        reasoning={`Checking the manifest.\n${encoded}\nRolling back.`}
+        label="Thoughts"
+        showThinking
+      />,
+    );
+
+    const body = screen.getByRole('group', { hidden: true });
+    expect(body).toHaveTextContent('Checking the manifest.');
+    expect(body).toHaveTextContent('Rolling back.');
+    expect(body.textContent).not.toContain(encoded.slice(0, 64));
+  });
 });

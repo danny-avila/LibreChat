@@ -2,8 +2,8 @@ import { memo, useMemo, useState, useEffect, useCallback, useRef, useId } from '
 import { useAtom } from 'jotai';
 import copy from 'copy-to-clipboard';
 import { Lightbulb, ChevronDown } from 'lucide-react';
-import { ContentTypes } from 'librechat-data-provider';
 import { Button, disclosureChevronVariants } from '@librechat/client';
+import { ContentTypes, stripOpaqueReasoning } from 'librechat-data-provider';
 import type { MouseEvent, FocusEvent } from 'react';
 import {
   ThinkingContent,
@@ -25,6 +25,11 @@ const stripThinkTags = (reasoning: string): string =>
     .replace(/^<think>\s*/, '')
     .replace(/\s*<\/think>$/, '')
     .trim();
+
+/** The readable reasoning to show and copy: wrapper tags and any encoded
+ *  provider payload mixed into the step are removed. */
+const readableReasoning = (reasoning: string): string =>
+  stripThinkTags(stripOpaqueReasoning(reasoning));
 
 const PEEK_SENTENCES = 4;
 
@@ -177,8 +182,7 @@ const Reasoning = memo((props: ReasoningProps) => {
   const { shouldRenderBody, mountBody, handleTransitionEnd } = useLazyCollapseBody(isExpanded);
   const { isSubmitting, isLatestMessage, nextType } = useMessage();
 
-  // Strip <think> tags from the reasoning content (modern format)
-  const reasoningText = useMemo(() => stripThinkTags(reasoning), [reasoning]);
+  const reasoningText = useMemo(() => readableReasoning(reasoning), [reasoning]);
 
   const handleClick = useCallback(
     (e: MouseEvent<HTMLButtonElement>) => {
@@ -342,7 +346,7 @@ export const ReasoningCompact = memo(
      *  more expensive on top of the visible peek. */
     const { shouldRenderBody, mountBody, handleTransitionEnd } = useLazyCollapseBody(isExpanded);
 
-    const reasoningText = useMemo(() => stripThinkTags(reasoning), [reasoning]);
+    const reasoningText = useMemo(() => readableReasoning(reasoning), [reasoning]);
 
     const handleToggle = useCallback(
       (e: MouseEvent<HTMLButtonElement>) => {

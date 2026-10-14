@@ -85,9 +85,10 @@ interface ReasoningStepState {
   index?: number;
   /** Readable reasoning only; encoded provider payloads never enter it. */
   text: string;
-  /** Settled readable characters, so encoded payloads never advance the gates. */
+  /** Settled readable characters only, so encoded payloads never advance the gates. */
   totalChars: number;
-  /** Trailing run not yet classified as a word or a payload (under 128 chars). */
+  /** Trailing run not yet classified as a word or a payload; it joins `text`
+   *  once a later character settles it. */
   cursor: OpaqueReasoningCursor;
   label?: string;
   labelStatus?: ReasoningLabelStatus;
@@ -135,17 +136,6 @@ function deltaText(data: unknown): string {
     .filter((part) => (part as { type?: unknown } | null)?.type === ContentTypes.THINK)
     .map((part) => textValue((part as { think?: unknown }).think))
     .join('');
-}
-
-/** The undecided tail when it is word-sized. A longer tail is more likely the
- *  start of a payload split across deltas, so it waits until it settles. */
-function pendingWord(state: Pick<ReasoningStepState, 'cursor'>): string {
-  const { tail } = state.cursor;
-  return tail.length <= MAX_PENDING_WORD_CHARS ? tail : '';
-}
-
-function visibleChars(state: Pick<ReasoningStepState, 'totalChars' | 'cursor'>): number {
-  return state.totalChars + pendingWord(state).length;
 }
 
 function normalizeLabel(value: string | undefined): string {
@@ -357,7 +347,7 @@ export function createReasoningLabelWiring(deps: ReasoningLabelHostDeps): Reason
   };
 
   const shouldGenerate = (state: ReasoningStepState, final: boolean): boolean => {
-    const length = visibleChars(state);
+    const length = state.totalChars;
     if (!state.label) {
       if (length < minChars) {
         return false;
@@ -413,7 +403,7 @@ export function createReasoningLabelWiring(deps: ReasoningLabelHostDeps): Reason
     }
 
     clearTimer(state);
-    const visibleReasoning = `${state.text}${pendingWord(state)}`.trim();
+    const visibleReasoning = state.text.trim();
     if (!visibleReasoning) {
       if (state.pendingFinal) {
         state.pendingFinal = false;
@@ -423,7 +413,7 @@ export function createReasoningLabelWiring(deps: ReasoningLabelHostDeps): Reason
     }
     const status: ReasoningLabelStatus = state.pendingFinal ? 'complete' : 'streaming';
     state.pendingFinal = false;
-    state.submittedChars = visibleChars(state);
+    state.submittedChars = state.totalChars;
     state.lastSubmittedAt = now();
     generated += 1;
     state.attempts += 1;
@@ -509,7 +499,7 @@ export function createReasoningLabelWiring(deps: ReasoningLabelHostDeps): Reason
       }
     })().finally(() => {
       state.inFlight = undefined;
-      if (state.closed || visibleChars(state) - state.submittedChars >= updateChars) {
+      if (state.closed || state.totalChars - state.submittedChars >= updateChars) {
         schedule(state, state.closed);
       }
     });
@@ -524,10 +514,12 @@ export function createReasoningLabelWiring(deps: ReasoningLabelHostDeps): Reason
     }
     state.closed = true;
     clearTimer(state);
-    const word = pendingWord(state);
-    if (word) {
-      state.text = appendBoundedReasoning(state.text, word);
-      state.totalChars += word.length;
+    /** The stream is over, so a short undecided tail was a final word; a
+     *  longer one is the unfinished start of a payload. */
+    const { tail } = state.cursor;
+    if (tail.length > 0 && tail.length <= MAX_PENDING_WORD_CHARS) {
+      state.text = appendBoundedReasoning(state.text, tail);
+      state.totalChars += tail.length;
     }
     state.cursor = OPAQUE_REASONING_START;
     schedule(state, true);
@@ -645,16 +637,13 @@ export function createReasoningLabelWiring(deps: ReasoningLabelHostDeps): Reason
           : {}),
       });
     }
-    const previousTail = state.cursor.tail;
     const { readable: text, cursor } = advanceOpaqueReasoning(state.cursor, rawText);
     state.cursor = cursor;
-    if (!text && cursor.tail === previousTail) {
+    if (!text) {
       return;
     }
-    if (text) {
-      state.text = appendBoundedReasoning(state.text, text);
-      state.totalChars += text.length;
-    }
+    state.text = appendBoundedReasoning(state.text, text);
+    state.totalChars += text.length;
     schedule(state);
   };
 
