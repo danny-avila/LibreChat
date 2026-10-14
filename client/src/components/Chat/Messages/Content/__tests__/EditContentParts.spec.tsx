@@ -239,14 +239,16 @@ describe('EditContentParts', () => {
     ]);
   });
 
-  it('edits mixed reasoning without showing its encrypted payload', () => {
+  it('keeps reasoning with an encrypted payload out of the editor', () => {
     const encoded = Buffer.from(Array.from({ length: 900 }, (_, i) => (i * 37 + 3) % 256)).toString(
       'base64',
     );
     const mixedContent = [
       { type: ContentTypes.THINK, think: `Checking the manifest.\n${encoded}` },
+      { type: ContentTypes.TEXT, text: 'Original response' },
     ] as TMessageContentParts[];
     message.content = mixedContent;
+    const renderReadOnlyPart = jest.fn(() => null);
 
     render(
       <EditContentParts
@@ -256,14 +258,13 @@ describe('EditContentParts', () => {
         enterEdit={jest.fn()}
         siblingIdx={0}
         setSiblingIdx={jest.fn()}
-        renderReadOnlyPart={() => null}
+        renderReadOnlyPart={renderReadOnlyPart}
       />,
     );
 
-    const editor = screen.getByRole('textbox') as HTMLTextAreaElement;
-    expect(editor.value).toBe('Checking the manifest.\n');
-    /** Unchanged, so nothing is written and the stored payload stays intact. */
-    expect(screen.getByRole('button', { name: 'com_ui_save' })).toBeDisabled();
+    const editors = screen.getAllByRole('textbox') as HTMLTextAreaElement[];
+    expect(editors.map((editor) => editor.value)).toEqual(['Original response']);
+    expect(renderReadOnlyPart).toHaveBeenCalledWith(mixedContent[0], 0, false);
   });
 
   it('reruns an assistant response with the edited content value', () => {

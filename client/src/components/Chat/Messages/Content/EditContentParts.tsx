@@ -9,8 +9,8 @@ import {
 } from 'librechat-data-provider';
 import type { TMessageContentParts } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
-import { getEditableText, isEditablePart, withPartText } from './editableParts';
 import { useMessagesConversation, useMessagesOperations } from '~/Providers';
+import { getPartText, isEditablePart, withPartText } from './editableParts';
 import { findRerunParent } from './rerunParent';
 import { useGetAddedConvo } from '~/hooks/Chat';
 import { useLocalize } from '~/hooks';
@@ -65,7 +65,7 @@ export default function EditContentParts({
       if (!part || !isEditablePart(part)) {
         return;
       }
-      const original = getEditableText(part);
+      const original = getPartText(part);
       if (original == null) {
         return;
       }

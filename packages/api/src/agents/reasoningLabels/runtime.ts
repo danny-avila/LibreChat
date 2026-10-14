@@ -559,10 +559,6 @@ export function createReasoningLabelWiring(deps: ReasoningLabelHostDeps): Reason
     const part = index != null ? deps.getContentParts()[index] : undefined;
     const ownsExistingStep =
       part?.type === ContentTypes.THINK && part.reasoning_label_step_id === step.id;
-    const existingLabel =
-      ownsExistingStep && typeof part.reasoning_label === 'string'
-        ? part.reasoning_label
-        : undefined;
     /** Replayed through the stream filter so a payload that was still
      *  undecided at the snapshot keeps its cursor and is dropped once the
      *  continuation classifies it, instead of settling as readable text. */
@@ -573,6 +569,14 @@ export function createReasoningLabelWiring(deps: ReasoningLabelHostDeps): Reason
         )
       : { readable: '', cursor: OPAQUE_REASONING_START };
     const existingText = resumed.readable;
+    /** A title on a step with no readable reasoning can only describe an
+     *  encoded payload (labeled before payloads were skipped), so it is not
+     *  carried forward where a short readable continuation would revive it. */
+    const staleLabel = ownsExistingStep && existingText.trim().length === 0;
+    const existingLabel =
+      ownsExistingStep && !staleLabel && typeof part.reasoning_label === 'string'
+        ? part.reasoning_label
+        : undefined;
     const persistedSubmittedChars =
       ownsExistingStep && typeof part.reasoning_label_submitted_chars === 'number'
         ? Math.min(part.reasoning_label_submitted_chars, existingText.trim().length)
@@ -610,6 +614,9 @@ export function createReasoningLabelWiring(deps: ReasoningLabelHostDeps): Reason
         delete part.reasoning_label_revision;
         delete part.reasoning_label_status;
         delete part.reasoning_label_submitted_chars;
+      } else if (staleLabel) {
+        delete part.reasoning_label;
+        delete part.reasoning_label_status;
       }
       Object.assign(part, {
         reasoning_label_step_id: step.id,

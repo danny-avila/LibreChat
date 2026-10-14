@@ -1074,4 +1074,30 @@ describe('reasoning labels for encoded reasoning', () => {
       expect(payloadArg.visibleReasoning).toContain('Rolling back the deploy now.');
     }
   });
+  it('does not revive a payload-derived title when a resumed step continues briefly', async () => {
+    const generate = jest.fn(async () => ({ label: 'unused' }));
+    const harness = createHarness(generate, {
+      updateIntervalMs: 0,
+      preservePartOnStart: true,
+      initialParts: [
+        {
+          type: ContentTypes.THINK,
+          think: encodedReasoning(),
+          reasoning_label: 'Inspecting an encoded data snapshot',
+          reasoning_label_step_id: 'reasoning-1',
+          reasoning_label_revision: 1,
+          reasoning_label_status: 'complete',
+          reasoning_label_attempts: 1,
+        },
+      ],
+    });
+    await harness.start();
+    await harness.append(' Checking the tool result.');
+    await harness.close();
+    await harness.settle();
+
+    expect(generate).not.toHaveBeenCalled();
+    expect(harness.parts[0]?.reasoning_label).toBeUndefined();
+    expect(harness.events).toEqual([]);
+  });
 });
