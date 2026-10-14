@@ -68,6 +68,7 @@ import {
 import { isRecoveredSteerPayload, RecoveredSteerPayloadMismatchError } from './SteerRecovery';
 import { projectTerminalEvent } from './terminalProjection';
 import { assertJobStoreV2 } from './jobStoreCapabilities';
+import { getSafeErrorMetadata } from '~/utils/errors';
 
 /**
  * Tombstone budget per generation. Twice the queue depth so a full queue's
@@ -2766,7 +2767,7 @@ class GenerationJobManagerClass {
       ).catch((handoffError) => {
         logger.error(
           `[GenerationJobManager] Failed to hand off predecessor during refused admission ${streamId}:`,
-          handoffError,
+          getSafeErrorMetadata(handoffError),
         );
         return false;
       });
@@ -2797,7 +2798,7 @@ class GenerationJobManagerClass {
           await this.jobStore.deleteJob(streamId, jobData.createdAt).catch((purgeError) => {
             logger.error(
               `[GenerationJobManager] Failed to purge refused generation ${streamId}:`,
-              purgeError,
+              getSafeErrorMetadata(purgeError),
             );
             throw new GenerationAdmissionUnavailableError();
           });
@@ -2807,7 +2808,7 @@ class GenerationJobManagerClass {
         if (admissionFailure != null) {
           logger.error(
             `[GenerationJobManager] Admission check failed for ${streamId}:`,
-            admissionFailure,
+            getSafeErrorMetadata(admissionFailure),
           );
         }
         throw new GenerationAdmissionUnavailableError();
