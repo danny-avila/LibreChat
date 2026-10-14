@@ -14,6 +14,7 @@ import type { Response } from 'express';
 import type { ValidationError } from '~/types/error';
 import type { ServerRequest } from '~/types/http';
 import type { RecordAuditEntry } from './audit';
+import { getSafeErrorMetadata } from '~/utils/errors';
 import { createAdminAuditEmitter } from './audit';
 import { parsePagination } from './pagination';
 
@@ -153,7 +154,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
       ]);
       return res.status(200).json({ groups, total, limit, offset });
     } catch (error) {
-      logger.error('[adminGroups] listGroups error:', error);
+      logger.error('[adminGroups] listGroups error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to list groups' });
     }
   }
@@ -170,7 +171,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
       }
       return res.status(200).json({ group });
     } catch (error) {
-      logger.error('[adminGroups] getGroup error:', error);
+      logger.error('[adminGroups] getGroup error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to get group' });
     }
   }
@@ -266,7 +267,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
       if ((error as ValidationError).name === 'ValidationError') {
         return res.status(400).json({ error: (error as ValidationError).message });
       }
-      logger.error('[adminGroups] createGroup error:', error);
+      logger.error('[adminGroups] createGroup error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to create group' });
     }
   }
@@ -343,7 +344,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
       if ((error as ValidationError).name === 'ValidationError') {
         return res.status(400).json({ error: (error as ValidationError).message });
       }
-      logger.error('[adminGroups] updateGroup error:', error);
+      logger.error('[adminGroups] updateGroup error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to update group' });
     }
   }
@@ -393,7 +394,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
       });
       return res.status(200).json({ success: true, id });
     } catch (error) {
-      logger.error('[adminGroups] deleteGroup error:', error);
+      logger.error('[adminGroups] deleteGroup error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to delete group' });
     }
   }
@@ -460,7 +461,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
 
       return res.status(200).json({ members, total, limit, offset });
     } catch (error) {
-      logger.error('[adminGroups] getGroupMembers error:', error);
+      logger.error('[adminGroups] getGroupMembers error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to get group members' });
     }
   }
@@ -500,7 +501,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
       if (isNotFound) {
         return res.status(404).json({ error: 'User not found' });
       }
-      logger.error('[adminGroups] addGroupMember error:', error);
+      logger.error('[adminGroups] addGroupMember error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to add member' });
     }
   }
@@ -550,7 +551,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
       }
       return res.status(200).json({ success: true });
     } catch (error) {
-      logger.error('[adminGroups] removeGroupMember error:', error);
+      logger.error('[adminGroups] removeGroupMember error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to remove member' });
     }
   }

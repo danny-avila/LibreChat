@@ -87,10 +87,13 @@ export async function recordSystemAuditEntry(
   if (!recordAuditEntry) {
     return;
   }
-  try {
-    await recordAuditEntry(input);
-  } catch (err) {
+  const logFailure = (err: unknown) =>
     logger.error(`${logPrefix} audit write failed for ${input.action}`, getSafeErrorMetadata(err));
+  /** Dispatched without being awaited: login and startup must not wait on the audit store. */
+  try {
+    Promise.resolve(recordAuditEntry(input)).catch(logFailure);
+  } catch (err) {
+    logFailure(err);
   }
 }
 

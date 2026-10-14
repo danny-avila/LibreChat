@@ -256,7 +256,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
       const [roles, total] = await Promise.all([listRoles({ limit, offset }), countRoles()]);
       return res.status(200).json({ roles, total, limit, offset });
     } catch (error) {
-      logger.error('[adminRoles] listRoles error:', error);
+      logger.error('[adminRoles] listRoles error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to list roles' });
     }
   }
@@ -274,7 +274,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
       }
       return res.status(200).json({ role });
     } catch (error) {
-      logger.error('[adminRoles] getRole error:', error);
+      logger.error('[adminRoles] getRole error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to get role' });
     }
   }
@@ -316,7 +316,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
       });
       return res.status(201).json({ role });
     } catch (error) {
-      logger.error('[adminRoles] createRole error:', error);
+      logger.error('[adminRoles] createRole error:', getSafeErrorMetadata(error));
       if (error instanceof RoleConflictError) {
         return res.status(409).json({ error: error.message });
       }
@@ -451,7 +451,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
       if (error instanceof RoleConflictError) {
         return res.status(409).json({ error: error.message });
       }
-      logger.error('[adminRoles] updateRole error:', error);
+      logger.error('[adminRoles] updateRole error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to update role' });
     }
   }
@@ -498,7 +498,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
       }
       return res.status(200).json({ role: updated });
     } catch (error) {
-      logger.error('[adminRoles] updateRolePermissions error:', error);
+      logger.error('[adminRoles] updateRolePermissions error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to update role permissions' });
     }
   }
@@ -722,7 +722,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
 
       return res.status(200).json({ success: true });
     } catch (error) {
-      logger.error('[adminRoles] deleteRole error:', error);
+      logger.error('[adminRoles] deleteRole error:', getSafeErrorMetadata(error));
       await recordOutcome?.('failure', 'ROLE_DELETE_FAILED').catch(() => undefined);
       return res.status(500).json({ error: 'Failed to delete role' });
     }
@@ -754,7 +754,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
       }));
       return res.status(200).json({ members, total, limit, offset });
     } catch (error) {
-      logger.error('[adminRoles] getRoleMembers error:', error);
+      logger.error('[adminRoles] getRoleMembers error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to get role members' });
     }
   }
@@ -846,7 +846,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
       }
       return res.status(200).json({ success: true });
     } catch (error) {
-      logger.error('[adminRoles] addRoleMember error:', error);
+      logger.error('[adminRoles] addRoleMember error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to add role member' });
     }
   }
@@ -922,7 +922,7 @@ export function createAdminRolesHandlers(deps: AdminRolesDeps): {
       });
       return res.status(200).json({ success: true });
     } catch (error) {
-      logger.error('[adminRoles] removeRoleMember error:', error);
+      logger.error('[adminRoles] removeRoleMember error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to remove role member' });
     }
   }

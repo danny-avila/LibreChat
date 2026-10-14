@@ -537,7 +537,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       const safeConfigs = filtered.map(redactConfigForResponse);
       return res.status(200).json({ configs: safeConfigs });
     } catch (error) {
-      logger.error('[adminConfig] listConfigs error:', error);
+      logger.error('[adminConfig] listConfigs error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to list configs' });
     }
   }
@@ -572,7 +572,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       return res.status(200).json({ config: redactAppConfigForResponse(filteredAppConfig) });
     } catch (error) {
-      logger.error('[adminConfig] getBaseConfig error:', error);
+      logger.error('[adminConfig] getBaseConfig error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to get base config' });
     }
   }
@@ -613,7 +613,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       return res.status(200).json({ config: redactConfigForResponse(filteredConfig) });
     } catch (error) {
-      logger.error('[adminConfig] getConfig error:', error);
+      logger.error('[adminConfig] getConfig error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to get config' });
     }
   }
@@ -838,7 +838,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         config: config ? redactConfigForResponse(config) : config,
       });
     } catch (error) {
-      logger.error('[adminConfig] upsertConfigOverrides error:', error);
+      logger.error('[adminConfig] upsertConfigOverrides error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to upsert config' });
     }
   }
@@ -1013,7 +1013,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
       return res.status(200).json({ config: config ? redactConfigForResponse(config) : config });
     } catch (error) {
-      logger.error('[adminConfig] patchConfigField error:', error);
+      logger.error('[adminConfig] patchConfigField error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to patch config fields' });
     }
   }
@@ -1154,7 +1154,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
       return res.status(200).json({ config: config ? redactConfigForResponse(config) : config });
     } catch (error) {
-      logger.error('[adminConfig] tombstoneConfigField error:', error);
+      logger.error('[adminConfig] tombstoneConfigField error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to tombstone config field' });
     }
   }
@@ -1268,7 +1268,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       });
       return res.status(200).json({ config: redactConfigForResponse(config) });
     } catch (error) {
-      logger.error('[adminConfig] deleteConfigField error:', error);
+      logger.error('[adminConfig] deleteConfigField error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to delete config field' });
     }
   }
@@ -1330,7 +1330,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       });
       return res.status(200).json({ success: true });
     } catch (error) {
-      logger.error('[adminConfig] deleteConfigOverrides error:', error);
+      logger.error('[adminConfig] deleteConfigOverrides error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to delete config' });
     }
   }
@@ -1402,7 +1402,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
       return res.status(200).json({ config: redactConfigForResponse(config) });
     } catch (error) {
-      logger.error('[adminConfig] toggleConfig error:', error);
+      logger.error('[adminConfig] toggleConfig error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to toggle config' });
     }
   }
