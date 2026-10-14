@@ -471,9 +471,11 @@ export class Chat {
    * so its tool decisions and answers can be submitted.
    */
   restorePendingAction(action: Agents.PendingAction, generationCreatedAt: number): void {
+    if (this.action?.actionId !== action.actionId) {
+      this.decisions.clear();
+    }
     this.action = action;
     this.generationCreatedAt = generationCreatedAt;
-    this.decisions.clear();
     this.notify();
   }
 
@@ -800,13 +802,15 @@ export class Chat {
         generationCreatedAt,
         actionId: action.actionId,
       });
+      /** A pause stopped or replaced while the request was in flight is no longer this one's. */
+      if (this.action?.actionId !== action.actionId) {
+        return;
+      }
       if (!this.active && !this.disposed) {
         /** A pause restored after a reload has no stream attached for the continuation. */
         void this.resumeStream({ streamId: result.streamId, generationCreatedAt });
       }
-      if (this.action?.actionId === action.actionId) {
-        this.clearAction();
-      }
+      this.clearAction();
     } finally {
       if (this.resuming === action.actionId) {
         this.resuming = undefined;
