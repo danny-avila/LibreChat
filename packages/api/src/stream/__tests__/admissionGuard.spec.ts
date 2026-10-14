@@ -84,6 +84,21 @@ describe('GenerationJobManager admission guard', () => {
     expect((await store.getJob('late'))?.status).toBe('error');
   });
 
+  it('maps a retirement failure after a refused commit to the sanitized error', async () => {
+    let marker = false;
+    manager.setAdmissionGuard(async () => !marker);
+    jest.spyOn(store, 'createJob').mockImplementationOnce(async (...args) => {
+      marker = true;
+      return InMemoryJobStore.prototype.createJob.apply(store, args);
+    });
+    jest.spyOn(manager, 'completeJob').mockRejectedValueOnce(new Error('redis://internal:6379'));
+
+    await expect(manager.createJob('retire-fail', 'user-1', 'retire-fail')).rejects.toMatchObject({
+      code: 'GENERATION_ADMISSION_UNAVAILABLE',
+      message: 'Generation admission could not be verified',
+    });
+  });
+
   it('stops a job committed before the deletion listing', async () => {
     let marker = false;
     manager.setAdmissionGuard(async () => !marker);

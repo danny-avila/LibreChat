@@ -2798,22 +2798,33 @@ class GenerationJobManagerClass {
           return false;
         },
       );
-      await this.completeJob(
-        streamId,
-        postCommitRefusal != null ? ACCOUNT_DELETION_JOB_ERROR : SHUTDOWN_JOB_ERROR,
-        jobData.createdAt,
-      );
-      if (jobData.providerExecutionId) {
-        await this.markProviderExecutionDrained(
+      try {
+        await this.completeJob(
           streamId,
+          postCommitRefusal != null ? ACCOUNT_DELETION_JOB_ERROR : SHUTDOWN_JOB_ERROR,
           jobData.createdAt,
-          jobData.providerExecutionId,
         );
-      }
-      const replacedLocal = this.runtimeState.get(streamId);
-      if (replacedLocal != null && replacedLocal.createdAt < jobData.createdAt) {
-        replacedLocal.abortController.abort();
-        this.retireStoppedPredecessorRuntime(streamId, jobData.createdAt);
+        if (jobData.providerExecutionId) {
+          await this.markProviderExecutionDrained(
+            streamId,
+            jobData.createdAt,
+            jobData.providerExecutionId,
+          );
+        }
+        const replacedLocal = this.runtimeState.get(streamId);
+        if (replacedLocal != null && replacedLocal.createdAt < jobData.createdAt) {
+          replacedLocal.abortController.abort();
+          this.retireStoppedPredecessorRuntime(streamId, jobData.createdAt);
+        }
+      } catch (retireError) {
+        if (postCommitRefusal == null) {
+          throw retireError;
+        }
+        logger.error(
+          `[GenerationJobManager] Failed to retire refused generation ${streamId}:`,
+          getSafeErrorMetadata(retireError),
+        );
+        throw new GenerationAdmissionUnavailableError();
       }
       throw postCommitRefusal ?? new Error(SHUTTING_DOWN_ERROR);
     }
