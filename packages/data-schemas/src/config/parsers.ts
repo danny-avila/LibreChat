@@ -102,27 +102,10 @@ function isPlainRecord(value: object): value is Record<string, unknown> {
   return prototype === Object.prototype || prototype === null;
 }
 
-function redactLogKey(key: string, used: object): string {
-  if (!key.includes('@')) {
-    return key;
-  }
-
-  const base = redactMessage(key);
-  if (base === key) {
-    return key;
-  }
-
+function redactLogKey(key: string, isUsed: (candidate: string) => boolean): string {
+  const base = key.includes('@') ? redactMessage(key) : key;
   let candidate = base;
-  for (let suffix = 2; Object.prototype.hasOwnProperty.call(used, candidate); suffix++) {
-    candidate = `${base}#${suffix}`;
-  }
-  return candidate;
-}
-
-function redactMapKey(key: string, used: Map<unknown, unknown>): string {
-  const base = redactLogKey(key, {});
-  let candidate = base;
-  for (let suffix = 2; base !== key && used.has(candidate); suffix++) {
+  for (let suffix = 2; isUsed(candidate); suffix++) {
     candidate = `${base}#${suffix}`;
   }
   return candidate;
@@ -245,7 +228,10 @@ function redactMapValue(
       redacted.set(REDACTION_TRUNCATED_KEY, 'Additional map entries omitted');
       break;
     }
-    const safeKey = typeof mapKey === 'string' ? redactMapKey(mapKey, redacted) : mapKey;
+    const safeKey =
+      typeof mapKey === 'string'
+        ? redactLogKey(mapKey, (candidate) => redacted.has(candidate))
+        : redactLogValue(mapKey, seen, depth + 1);
     redacted.set(
       safeKey,
       typeof mapKey === 'string'
@@ -297,7 +283,9 @@ function redactObjectEntries(
       redacted[REDACTION_TRUNCATED_KEY] = 'Additional object properties omitted';
       break;
     }
-    redacted[redactLogKey(key, redacted)] = redactRecordValue(key, record[key], seen, depth + 1);
+    redacted[
+      redactLogKey(key, (candidate) => Object.prototype.hasOwnProperty.call(redacted, candidate))
+    ] = redactRecordValue(key, record[key], seen, depth + 1);
     count += 1;
   }
 
@@ -411,7 +399,10 @@ const redactFormat: winston.Logform.FormatWrap = winston.format(
         continue;
       }
       const value = redactRecordValue(key, infoRecord[key], new WeakMap(), 0);
-      const safeKey = redactLogKey(key, info);
+      const safeKey = redactLogKey(
+        key,
+        (candidate) => candidate !== key && Object.prototype.hasOwnProperty.call(info, candidate),
+      );
       if (safeKey !== key) {
         delete infoRecord[key];
       }

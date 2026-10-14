@@ -90,6 +90,26 @@ describe('redactMessage', () => {
     expect(out).toContain('truncated');
   });
 
+  it('keeps both entries when a redacted key collides with an unchanged one, and masks object Map keys', () => {
+    const mapInfo = runRedactFormat({
+      level: 'info',
+      message: 'm',
+      [SPLAT_SYMBOL]: [new Map<unknown, unknown>([[{ contact: 'jane@example.com' }, 'failed']])],
+    });
+    const [mapOut] = mapInfo[SPLAT_SYMBOL] as Map<unknown, unknown>[];
+    expect(JSON.stringify([...mapOut.keys()])).not.toContain('jane');
+
+    const info = runRedactFormat({
+      level: 'info',
+      message: 'm',
+      [SPLAT_SYMBOL]: [{ 'jane@example.com': 'a', '[REDACTED_EMAIL]': 'b' }],
+    });
+    const out = JSON.stringify(info[SPLAT_SYMBOL]);
+    expect(out).not.toContain('jane');
+    expect(out).toContain('"a"');
+    expect(out).toContain('"b"');
+  });
+
   it('masks quoted and bracketed addresses cut right before the at sign or inside the literal', () => {
     for (const [addr, cut] of [
       ['"jane doe"@example.com', '"jane doe"'.length],
