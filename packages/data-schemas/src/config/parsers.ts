@@ -195,13 +195,14 @@ function defineRedactedDescriptor(
   descriptor: PropertyDescriptor,
   seen: WeakMap<object, unknown>,
   depth: number,
+  targetKey: string | symbol = key,
 ): void {
   if (!('value' in descriptor)) {
-    Object.defineProperty(target, key, descriptor);
+    Object.defineProperty(target, targetKey, descriptor);
     return;
   }
 
-  Object.defineProperty(target, key, {
+  Object.defineProperty(target, targetKey, {
     ...descriptor,
     value:
       typeof key === 'string'
@@ -213,6 +214,7 @@ function defineRedactedDescriptor(
 function redactErrorValue(error: Error, seen: WeakMap<object, unknown>, depth: number): Error {
   const redacted = Object.create(Object.getPrototypeOf(error)) as Error & Record<string, unknown>;
   seen.set(error, redacted);
+  const cursors = new Map<string, number>();
 
   defineRedactedErrorProperty(redacted, 'name', error.name);
   defineRedactedErrorProperty(redacted, 'message', error.message);
@@ -245,7 +247,11 @@ function redactErrorValue(error: Error, seen: WeakMap<object, unknown>, depth: n
         return;
       }
     }
-    defineRedactedDescriptor(redacted, key, descriptor, seen, depth + 1);
+    const targetKey =
+      typeof key === 'string'
+        ? redactLogKey(key, (c) => Object.prototype.hasOwnProperty.call(redacted, c), cursors)
+        : key;
+    defineRedactedDescriptor(redacted, key, descriptor, seen, depth + 1, targetKey);
   });
   return redacted;
 }

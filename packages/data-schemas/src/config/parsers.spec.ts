@@ -321,6 +321,14 @@ describe('redactMessage', () => {
     expect(Date.now() - started).toBeLessThan(500);
   });
 
+  it('redacts address keys on nested Error objects', () => {
+    const error = Object.assign(new Error('lookup failed'), { 'jane@example.com': 'missing' });
+    const info = runRedactFormat({ level: 'info', message: 'm', [SPLAT_SYMBOL]: [error] });
+    const [out] = info[SPLAT_SYMBOL] as Array<Record<string, unknown>>;
+    expect(Object.keys(out).join()).not.toContain('jane');
+    expect(out['[REDACTED_EMAIL]']).toBe('missing');
+  });
+
   it('stays fast on adversarial 100k inputs for every redaction path', () => {
     const inputs = [
       'a@'.repeat(50000),
