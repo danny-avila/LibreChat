@@ -370,19 +370,29 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
       }
       const target = groupTarget(existing, id);
       /**
-       * Recorded before any removal so a crash mid-cascade still leaves a trail.
-       * Deleting a group revokes access, so this write never blocks the delete,
-       * and a follow-up `failure` entry is appended if the delete does not happen.
+       * The attempt is recorded as `pending` before any removal so a crash mid-cascade
+       * still leaves a trail, but the write is started without being awaited: deleting a
+       * group revokes access, so audit latency must not delay the cleanup. Every
+       * later entry waits for it to settle to keep the chain ordered.
+       * A `success` or `failure` entry is appended once the outcome is known.
        */
-      await emitRevocationAudit(req, { action: 'group.deleted', severity: 'warning', target });
-      const recordFailure = (code: string) =>
-        emitRevocationAudit(req, {
+      const attempt = emitRevocationAudit(req, {
+        action: 'group.deleted',
+        outcome: 'pending',
+        severity: 'warning',
+        target,
+      });
+      const record = async (outcome: 'success' | 'failure', code?: string) => {
+        await attempt;
+        return emitRevocationAudit(req, {
           action: 'group.deleted',
-          outcome: 'failure',
+          outcome,
           severity: 'warning',
           target,
-          metadata: { code },
+          ...(code ? { metadata: { code } } : {}),
         });
+      };
+      const recordFailure = (code: string) => record('failure', code);
       /**
        * Config overrides and ACL entries are keyed by group id, so they are
        * removed before the group itself: if any removal fails the group stays
@@ -474,6 +484,7 @@ export function createAdminGroupsHandlers(deps: AdminGroupsDeps): {
           metadata: { userIds: chunk.join(','), count: chunk.length, cause: 'group_deleted' },
         });
       }
+      await record('success');
       return res.status(200).json({ success: true, id });
     } catch (error) {
       logger.error('[adminGroups] deleteGroup error:', getSafeErrorMetadata(error));

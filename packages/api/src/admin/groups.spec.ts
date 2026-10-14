@@ -957,7 +957,7 @@ describe('createAdminGroupsHandlers', () => {
         expect(deps.restoreConfig).not.toHaveBeenCalled();
       });
 
-      it('records group.deleted before any removal and a failure entry after a failed cleanup', async () => {
+      it('records a pending group.deleted before any removal and a failure entry after a failed cleanup', async () => {
         const order: string[] = [];
         const recordAuditEntry = jest.fn().mockImplementation(async (input) => {
           order.push(`audit:${input.outcome ?? 'success'}`);
@@ -975,7 +975,7 @@ describe('createAdminGroupsHandlers', () => {
 
         await handlers.deleteGroup(req, res);
 
-        expect(order).toEqual(['audit:success', 'config', 'audit:failure']);
+        expect(order).toEqual(['audit:pending', 'config', 'audit:failure']);
         expect(recordAuditEntry).toHaveBeenLastCalledWith(
           expect.objectContaining({
             action: 'group.deleted',
@@ -1001,6 +1001,32 @@ describe('createAdminGroupsHandlers', () => {
           expect.objectContaining({ outcome: 'failure', metadata: { code: 'not_found' } }),
         );
         expect(deps.restoreConfig).not.toHaveBeenCalled();
+      });
+
+      it('does not wait for a slow pending audit write before removing dependents', async () => {
+        let releaseAudit: () => void = () => undefined;
+        const order: string[] = [];
+        const recordAuditEntry = jest.fn().mockImplementation(async (input) => {
+          if (input.outcome === 'pending') {
+            await new Promise<void>((resolve) => (releaseAudit = resolve));
+          }
+          order.push(`audit:${input.outcome ?? 'success'}`);
+        });
+        const deps = compensationDeps({
+          recordAuditEntry,
+          deleteGroup: jest.fn().mockImplementation(async () => {
+            order.push('group');
+            releaseAudit();
+            return mockGroup();
+          }),
+        });
+        const handlers = createAdminGroupsHandlers(deps);
+        const { req, res, status } = withUser(createReqRes({ params: { id: validId } }));
+
+        await handlers.deleteGroup(req, res);
+
+        expect(status).toHaveBeenCalledWith(200);
+        expect(order).toEqual(['group', 'audit:pending', 'audit:success']);
       });
 
       it('never blocks the delete on an audit outage, even when fail-closed', async () => {
@@ -1695,9 +1721,10 @@ describe('createAdminGroupsHandlers', () => {
       await handlers.deleteGroup(req, res);
 
       expect(status).toHaveBeenCalledWith(200);
-      expect(recordAuditEntry).toHaveBeenCalledWith(
+      expect(recordAuditEntry).toHaveBeenLastCalledWith(
         expect.objectContaining({
           action: 'group.deleted',
+          outcome: 'success',
           target: { type: 'group', id: validId, name: 'Test Group' },
         }),
       );
