@@ -3,6 +3,7 @@ import { useRecoilValue } from 'recoil';
 import { useStore, useAtomValue } from 'jotai';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
+import { isAdmissibleQueuedTurn } from '@librechat/chat';
 import {
   revealedQueuedTurnFamily,
   activeGenerationCreatedAtByConvoId,
@@ -15,32 +16,7 @@ import { agentQueuedTurnsQueryKey } from '~/data-provider/SSE/queuedTurns';
 import { streamStatusQueryKey } from '~/data-provider/SSE/queries';
 import store from '~/store';
 
-const isAdmissible = (item: QueuedMessage): boolean =>
-  item.server?.id != null &&
-  item.clientRequestId != null &&
-  (item.server.status === 'queued' || item.server.status === 'claimed');
-
-/**
- * The server-owned row the backend will admit behind a run that just
- * completed cleanly: the first durably enqueued row that has not settled.
- * Rows ahead of it never stand in for the successor: a local row cannot
- * drain while the server owns the boundary, and a rejected or still-sending
- * server row is not what the backend will admit. A Stop or an error leaves
- * every chip in place.
- */
-export const selectQueuedTurnReveal = (
-  end: RunEnd,
-  queue: QueuedMessage[],
-): QueuedMessage | null => {
-  if (
-    end.outcome !== 'completed' ||
-    end.responseMessageId == null ||
-    end.generationCreatedAt == null
-  ) {
-    return null;
-  }
-  return queue.find(isAdmissible) ?? null;
-};
+export { selectQueuedTurnReveal } from '@librechat/chat';
 
 /** The thread has moved past the response the reveal follows: the admitted
  *  turn, or any other turn, now parents on it. */
@@ -168,7 +144,7 @@ export default function useQueuedTurnReveal(
         end.responseMessageId == null ||
         end.generationCreatedAt == null ||
         item.clientRequestId == null ||
-        !isAdmissible(item)
+        !isAdmissibleQueuedTurn(item)
       ) {
         return;
       }
