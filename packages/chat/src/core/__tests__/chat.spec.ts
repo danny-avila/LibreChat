@@ -2275,6 +2275,18 @@ describe('Chat', () => {
       expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isSettled: true }));
     });
 
+    it('ignores a status read that restores a pause this chat already resumed', async () => {
+      const { chat } = setup();
+      const action = { ...pausedAction, streamId: 'convo-1' };
+      chat.restorePendingAction(action, 500);
+      await chat.addToolOutput({ toolCallId: 'ask-5', output: 'Blue' });
+      await flush();
+
+      chat.restorePendingAction(action, 500);
+
+      expect(chat.pendingAction).toBeUndefined();
+    });
+
     it('reports nothing for a stop answered after the chat was disposed', async () => {
       for (const restore of [false, true]) {
         let answer: ((result: ChatAbortResult) => void) | undefined;

@@ -499,6 +499,8 @@ export class Chat {
     if (this.active || this.disposed) {
       return;
     }
+    /** A turn whose stream dropped: finding nothing running means it ended without this chat. */
+    const dropped = this.detached !== undefined;
     this.detached = undefined;
     const active = createActiveRequest();
     active.endpoint = this.resumeEndpoint();
@@ -533,7 +535,9 @@ export class Chat {
         this.settle(getStopOutcome(active), active);
         return;
       }
-      if (!stream && (continuation || active.reattach.continuation)) {
+      if (!stream && (continuation || dropped || active.reattach.continuation)) {
+        this.action = undefined;
+        this.decisions.clear();
         this.settle({ kind: 'complete', settled: { conversationId } }, active);
         return;
       }
@@ -790,6 +794,10 @@ export class Chat {
     if (this.detached && this.detached.target.generationCreatedAt !== generationCreatedAt) {
       /** The pause belongs to a newer generation than the one whose stream dropped. */
       this.detached = undefined;
+    }
+    if (this.resumed.has(action.actionId) && generationCreatedAt === this.generationCreatedAt) {
+      /** A status read before the answer landed reports a pause this chat already resumed. */
+      return;
     }
     if (action.expiresAt != null && action.expiresAt <= Date.now()) {
       /** An expired pause is stale: the server will refuse its resume. */

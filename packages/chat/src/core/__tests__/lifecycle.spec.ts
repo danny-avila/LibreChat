@@ -345,6 +345,12 @@ const events: Record<string, (h: Harness) => Promise<void>> = {
     });
     await events.stop(h);
   },
+  /** A reconnect that finds nothing running: the generation ended while nothing was attached. */
+  reconnectIdle: async (h) => {
+    h.transport.reconnectToStream.mockResolvedValue(null);
+    await record(h, h.chat.resumeStream({ streamId: 'convo-1', generationCreatedAt: 100 }));
+    await flush();
+  },
   restore: async (h) => {
     try {
       h.chat.restorePendingAction({ ...askAction, actionId: 'action-9' }, 900);
@@ -640,6 +646,9 @@ const table: Array<[keyof typeof states, keyof typeof events, Expected]> = [
       outcome: 'ok',
     },
   ],
+  ['detached', 'reconnectIdle', { status: 'ready', finishes: 2, last: settled, abort: NONE }],
+  ['restored', 'reconnectIdle', { status: 'ready', finishes: 0, action: NONE, abort: NONE }],
+  ['aborted', 'reconnectIdle', { status: 'ready', finishes: 1, last: aborted, abort: NONE }],
   [
     'detached',
     'settledStop',
