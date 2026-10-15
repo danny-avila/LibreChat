@@ -114,6 +114,10 @@ export function getLangfusePrompt(
   return request.get(endpoints.adminLangfusePrompt(params.name, params.version));
 }
 
+export function syncLangfusePrompts(): Promise<t.TLangfusePromptSyncResult> {
+  return request.post(endpoints.adminLangfuseSyncPrompts(), {});
+}
+
 export function revokeUserKey(name: string): Promise<unknown> {
   return request.delete(endpoints.revokeUserKey(name));
 }

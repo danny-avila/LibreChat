@@ -1,10 +1,15 @@
 import { z } from 'zod';
-import { PrincipalType, PrincipalModel } from 'librechat-data-provider';
 import {
   logger,
   BASE_CONFIG_PRINCIPAL_ID,
   isConfigRevisionConflict,
 } from '@librechat/data-schemas';
+import {
+  PrincipalType,
+  PrincipalModel,
+  ResourceType,
+  AccessRoleIds,
+} from 'librechat-data-provider';
 import type {
   TCustomConfig,
   TLangfuseConnectionStatus,
@@ -17,12 +22,15 @@ import type {
   TUpdateLangfusePromptSyncRequest,
   TLangfusePromptListResponse,
   TLangfusePromptGetResponse,
+  TLangfusePromptSyncResult,
   TLangfusePromptErrorBody,
 } from 'librechat-data-provider';
-import type { ConfigRecord, MessageMethods } from '@librechat/data-schemas';
+import type { ConfigRecord, MessageMethods, PromptMethods } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { LangfusePromptConnection, LangfuseTextPromptSelector } from '~/langfuse/prompts';
 import type { LangfuseTenantDestination } from '~/langfuse/tenantDestinations';
+import type { PromptCatalogSyncDeps } from '~/langfuse/promptCatalogSync';
+import type { DistributedLock } from '~/cache/lock';
 import type { ServerRequest } from '~/types/http';
 import type { RecordAuditEntry } from './audit';
 import {
@@ -30,11 +38,14 @@ import {
   isLangfusePromptSyncAvailable,
   getLangfusePromptSyncTimeoutMs,
   getLangfuseConnectionAvailability,
+  getLangfusePromptSyncLockLeaseMs,
+  getLangfusePromptSyncMaxPages,
 } from '~/langfuse/policy';
 import {
   readStoredLangfuse,
   buildPromptSyncConnection,
   toLangfusePromptErrorResponse,
+  getPromptSyncSourceIdentity,
 } from '~/langfuse/promptSync';
 import {
   getLangfuseTenantDestinations,
@@ -47,11 +58,27 @@ import {
 } from '~/langfuse/prompts';
 import { redirectPolicyFor, resolveLangfuseHeaders } from '~/langfuse/utils';
 import { decryptConfigSecret, encryptConfigSecretFields } from './secrets';
+import { syncLangfusePromptCatalog } from '~/langfuse/promptCatalogSync';
 import { scopeHeadersToDestination } from '~/langfuse/destinations';
 import { resolveLangfuseSession } from '~/langfuse/session';
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { createAdminAuditEmitter } from './audit';
 import { mergeHeaders } from '~/utils/headers';
+import { CONSTANTS } from '~/mcp/enum';
+
+/** The AI-2272 partial unique index is defense in depth: this maps the
+ *  resulting duplicate-key race to the runner's `unchanged` outcome. Lives
+ *  here, not in the runner, so `promptCatalogSync.ts` stays storage-agnostic. */
+function isDuplicateKeyError(error: unknown): boolean {
+  return (error as { code?: number } | undefined)?.code === 11000;
+}
+
+/** Storage-agnostic predicate for a document validation failure on
+ *  createLangfusePromptGroup, mapped to the runner's skipped outcome.
+ *  Lives here, not in the runner, for the same reason as isDuplicateKeyError. */
+function isValidationError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'ValidationError';
+}
 
 const ENCRYPTED_PREFIX = 'v3:';
 const LANGFUSE_VERIFICATION_TIMEOUT_MS = 10_000;
@@ -99,6 +126,18 @@ export interface AdminLangfuseDeps {
     isActive: boolean,
   ) => Promise<ConfigRecord | null>;
   getMessages: MessageMethods['getMessages'];
+  findLangfusePromptGroup: PromptMethods['findLangfusePromptGroup'];
+  createLangfusePromptGroup: PromptMethods['createLangfusePromptGroup'];
+  deletePromptGroup: PromptMethods['deletePromptGroup'];
+  lock: DistributedLock;
+  grantPermission: (params: {
+    principalType: PrincipalType;
+    principalId: string | null;
+    resourceType: ResourceType;
+    resourceId: string;
+    accessRoleId: string;
+    grantedBy: string;
+  }) => Promise<unknown>;
   invalidateConfigCaches?: (tenantId?: string) => Promise<void>;
   recordConnectionUpdate?: (event: LangfuseConnectionEvent) => void;
   /** Optional audit emission for connection and prompt sync updates; fail-open unless `auditFailClosed`. */
@@ -212,7 +251,7 @@ function respondToPromptRequestError(res: Response, error: unknown, logPrefix: s
   }
 
   logger.error(logPrefix, error);
-  return res.status(500).json({ code: 'upstream' } satisfies TLangfusePromptErrorBody);
+  return res.status(500).json({ code: 'internal' } satisfies TLangfusePromptErrorBody);
 }
 
 type LangfuseVerificationFailure = {
@@ -367,12 +406,18 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
   updatePromptSync: (req: ServerRequest, res: Response) => Promise<Response>;
   listPrompts: (req: ServerRequest, res: Response) => Promise<Response>;
   getPrompt: (req: ServerRequest, res: Response) => Promise<Response>;
+  syncPrompts: (req: ServerRequest, res: Response) => Promise<Response>;
 } {
   const {
     findConfigByPrincipal,
     patchConfigFields,
     toggleConfigActive,
     getMessages,
+    findLangfusePromptGroup,
+    createLangfusePromptGroup,
+    deletePromptGroup,
+    lock,
+    grantPermission,
     invalidateConfigCaches,
     recordConnectionUpdate = (event) =>
       logger.info({ message: '[adminLangfuse] Connection updated', ...event }),
@@ -843,6 +888,91 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
     }
   }
 
+  /** Syncs every Langfuse text prompt in the tenant's project into the local
+   *  catalog as read-only pointer groups. Gated the same way as `listPrompts`/
+   *  `getPrompt` (deployment, tenant switch, resolvable connection), plus the
+   *  source identity the runner records on each new group. Runs under the
+   *  per-tenant distributed lock the runner itself acquires; a lock already
+   *  held or lost mid-run never reaches this handler as a thrown error, so
+   *  those map to `409`/`503` instead of the generic catch-all.
+   *
+   *  The sync runs inside this HTTP request. The page cap (default 50 pages
+   *  of 100 prompts each, 5,000 prompts) is the request-sized ceiling; a
+   *  larger catalog is truncated at the cap with a warning log, not an error.
+   *  The lock lease (default 300 s) is renewed after every page but the
+   *  last. The sync is append-only: it creates pointers for new Langfuse text
+   *  prompts and never deletes, re-grants or reconciles existing groups, so a
+   *  prompt deleted in Langfuse keeps its local pointer. */
+  async function syncPrompts(req: ServerRequest, res: Response): Promise<Response> {
+    const gate = await gatePromptSyncTenantSwitch(res);
+    if (gate.response) {
+      return gate.response;
+    }
+
+    const connection = resolvePromptSyncConnection(req, gate.stored);
+    if (!connection) {
+      return res.status(409).json({ code: 'not_configured' } satisfies TLangfusePromptErrorBody);
+    }
+
+    const timeoutMs = getLangfusePromptSyncTimeoutMs();
+    try {
+      const identity = await getPromptSyncSourceIdentity(
+        req.config,
+        gate.stored,
+        getTenantId(req),
+        timeoutMs,
+      );
+      if (!identity) {
+        return res.status(409).json({ code: 'not_configured' } satisfies TLangfusePromptErrorBody);
+      }
+
+      const syncDeps: PromptCatalogSyncDeps = {
+        listPrompts: (query) => listLangfusePrompts(connection, query, { timeoutMs }),
+        findPromptGroup: findLangfusePromptGroup,
+        createPromptGroup: createLangfusePromptGroup,
+        isDuplicateKeyError,
+        isValidationError,
+        grantPublicViewer: async (groupId) => {
+          await grantPermission({
+            principalType: PrincipalType.PUBLIC,
+            principalId: null,
+            resourceType: ResourceType.PROMPTGROUP,
+            resourceId: groupId,
+            accessRoleId: AccessRoleIds.PROMPTGROUP_VIEWER,
+            grantedBy: CONSTANTS.SYSTEM_USER_ID,
+          });
+        },
+        deletePromptGroup: async (groupId) => {
+          await deletePromptGroup({ _id: groupId });
+        },
+        lock,
+        lockLeaseMs: getLangfusePromptSyncLockLeaseMs(req.config),
+        maxPages: getLangfusePromptSyncMaxPages(req.config),
+        logger,
+      };
+
+      const result = await syncLangfusePromptCatalog(
+        {
+          destination: identity.destination,
+          projectId: identity.projectId,
+          tenantId: getTenantId(req),
+        },
+        syncDeps,
+      );
+
+      if (!result.ok) {
+        const status = result.error.code === 'already_running' ? 409 : 503;
+        return res
+          .status(status)
+          .json({ code: result.error.code } satisfies TLangfusePromptErrorBody);
+      }
+
+      return res.status(200).json(result.value satisfies TLangfusePromptSyncResult);
+    } catch (error) {
+      return respondToPromptRequestError(res, error, '[adminLangfuse] syncPrompts error:');
+    }
+  }
+
   return {
     getConnection,
     getSessionLink,
@@ -851,5 +981,6 @@ export function createAdminLangfuseHandlers(deps: AdminLangfuseDeps): {
     updatePromptSync,
     listPrompts,
     getPrompt,
+    syncPrompts,
   };
 }
