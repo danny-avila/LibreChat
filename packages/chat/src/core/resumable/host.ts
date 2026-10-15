@@ -4,9 +4,14 @@ import type {
   TSubmission,
   TConversation,
   TPendingSteer,
+  EventSubmission,
+  TSteerAppliedEvent,
+  TActivityLabelEvent,
+  TReasoningLabelEvent,
 } from 'librechat-data-provider';
 import type { GenerationProtocolVersion } from '../protocol';
 import type { RunEnd } from '../steer/types';
+import type { StepEvent } from '../reducer';
 
 /** Where a resumable run reports what it is doing. The app passes its own logger. */
 export interface ResumableLogger {
@@ -99,6 +104,18 @@ export interface SteerQueueOptions {
 
 /** The pane's steer chips: what the composer shows for steers sent into the running turn. */
 export interface ResumableSteers {
+  /**
+   * Removes the pending chip once its steer is injected, records the ids as applied, and
+   * returns the ids applied for the first time.
+   */
+  resolve: (
+    conversationId: string,
+    steerId: string,
+    clientSteerId?: string,
+    appliedPartQuotes?: string[],
+  ) => string[];
+  /** Marks the steer whose inline part just mounted, so it plays its draw-in once. */
+  markLiveApplied: (steerId: string) => void;
   /** Re-seeds the chips from the server's still-queued steers. */
   seed: (
     conversationId: string,
@@ -193,6 +210,9 @@ export interface ResumablePane {
 
 /** What the event handlers that render the stream expose to the run. */
 export interface ResumableEvents {
+  stepHandler: (event: StepEvent, submission: EventSubmission) => void;
+  /** Replaces the step handler's copy of a message the run patched outside it. */
+  syncStepMessage: (message: TMessage) => void;
   clearStepMaps: () => void;
   flushPendingDeltas: () => void;
   /** Discards the live usage estimate for a run that stopped streaming. */
@@ -207,6 +227,33 @@ export interface ResumableMessages {
   set: (messages: TMessage[]) => void;
 }
 
+/**
+ * How the app places the parts a run reports beside its deltas onto a response message, and
+ * finds the response each one targets among the pane's messages.
+ */
+export interface ResumableParts {
+  applySteer: (message: TMessage, event: TSteerAppliedEvent) => TMessage;
+  findSteerTarget: (
+    messages: TMessage[],
+    event: TSteerAppliedEvent,
+    fallbackMessageIds?: readonly (string | null | undefined)[],
+  ) => number;
+  applyActivityLabel: (message: TMessage, event: TActivityLabelEvent) => TMessage;
+  findActivityLabelTarget: (
+    messages: TMessage[],
+    event: TActivityLabelEvent,
+    fallbackMessageIds?: readonly (string | null | undefined)[],
+  ) => number;
+  /** Shifts a phase label's end boundary past an edit's retained prefix. */
+  offsetActivityPhaseBoundary: (
+    endIndex: number,
+    prefixLength: number,
+    foldedFirstPart: boolean,
+  ) => number;
+  applyReasoningLabel: (message: TMessage, event: TReasoningLabelEvent) => TMessage;
+  findReasoningLabelTarget: (messages: TMessage[], event: TReasoningLabelEvent) => number;
+}
+
 /** Everything a resumable run needs from the app it runs in. */
 export interface ResumableHost extends SubscriptionHost {
   cache: ResumableCache;
@@ -214,4 +261,5 @@ export interface ResumableHost extends SubscriptionHost {
   steers: ResumableSteers;
   events: ResumableEvents;
   messages: ResumableMessages;
+  parts: ResumableParts;
 }

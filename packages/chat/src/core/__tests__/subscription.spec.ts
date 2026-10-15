@@ -5,43 +5,9 @@ import type {
   ChatTransport,
   ChatTransportOptions,
 } from 'librechat-data-provider';
-import type {
-  PageVisibility,
-  ResumableScheduler,
-  SubscriptionTarget,
-  StreamStatusResponse,
-} from '../resumable';
+import type { PageVisibility, SubscriptionTarget, StreamStatusResponse } from '../resumable';
 import { ResumableRun, ResumableSubscription } from '../resumable';
-
-/** Timers and frames that run only when the test says so. */
-const createScheduler = () => {
-  let now = 0;
-  const timers = new Map<number, { at: number; callback: () => void }>();
-  let nextId = 1;
-  const scheduler: ResumableScheduler = {
-    setTimeout: (callback, delay) => {
-      const id = nextId++;
-      timers.set(id, { at: now + delay, callback });
-      return id as unknown as ReturnType<typeof setTimeout>;
-    },
-    clearTimeout: (handle) => {
-      timers.delete(handle as unknown as number);
-    },
-    requestFrame: () => nextId++,
-    cancelFrame: () => undefined,
-    now: () => now,
-  };
-  const advance = (ms: number) => {
-    now += ms;
-    for (const [id, timer] of [...timers]) {
-      if (timer.at <= now) {
-        timers.delete(id);
-        timer.callback();
-      }
-    }
-  };
-  return { scheduler, advance, pending: () => timers.size };
-};
+import { createScheduler } from '../__fixtures__/resumable';
 
 const createVisibility = () => {
   let visible = true;
