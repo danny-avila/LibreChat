@@ -1,15 +1,14 @@
 import { createStore } from 'jotai';
 import { ContentTypes } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
-import type { DetachedRun } from '../queue';
+import type { DetachedRun } from '../../../core/steer/types';
 import {
   settledQueuedTurnReceiptsByConvoId,
   queuedMessagesByConvoId,
   stopRequestedByConvoId,
-  resolveDetachedRunEnd,
   isDetachedRunManual,
-  isStoppedRun,
 } from '../queue';
+import { resolveDetachedRunEnd, isStoppedRun } from '../../../core/steer/queue';
 
 const CONVO_ID = 'convo-detached';
 const USER_ID = 'user-1';

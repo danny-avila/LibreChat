@@ -3,6 +3,7 @@ export * from './steps';
 export * from './steer';
 export * from './types';
 export * from './files';
+export * from './composer';
 export * from './reducer';
 export * from './protocol';
 export * from './transport';
