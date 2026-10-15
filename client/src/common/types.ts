@@ -49,8 +49,6 @@ export type AssistantListItem = {
   model: string;
 };
 
-export type TPluginMap = Record<string, t.TPlugin>;
-
 export type GenericSetter<T> = (value: T | ((currentValue: T) => T)) => void;
 
 export type LastSelectedModels = Record<t.EModelEndpoint, string>;
