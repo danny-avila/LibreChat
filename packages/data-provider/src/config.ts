@@ -198,9 +198,6 @@ export enum SettingsViews {
   advanced = 'advanced',
 }
 
-/** Validates any FileSources value — use for file metadata, DB records, and upload routing. */
-export const fileSourceSchema = z.nativeEnum(FileSources);
-
 /**
  * `allowedAddresses` is an SSRF exemption list scoped to private IP space.
  * Validate at config-load time:
@@ -1113,7 +1110,6 @@ const managementApiSchema = z.object({ auth: managementApiAuthSchema.optional() 
  * overridable per-subagent.
  */
 export const toolApprovalModeSchema = z.enum(['default', 'dontAsk', 'bypass']);
-export type ToolApprovalMode = z.infer<typeof toolApprovalModeSchema>;
 
 /**
  * Per-endpoint tool-approval policy.
@@ -2584,7 +2580,7 @@ export type TTermsOfService = z.infer<typeof termsOfServiceSchema>;
 
 // Schema for localized string (either simple string or language-keyed object)
 const localizedStringSchema = z.union([z.string(), z.record(z.string())]);
-export type LocalizedString = z.infer<typeof localizedStringSchema>;
+
 export const mcpRefreshDefaults = {
   toolsRefreshInterval: 5 * 60 * 1000,
   statusRefreshInterval: 30 * 1000,
@@ -2621,8 +2617,6 @@ const mcpServersSchema = z
       .optional(),
   })
   .optional();
-
-export type TMcpServersConfig = z.infer<typeof mcpServersSchema>;
 
 /** Values the trace viewer uses for any `interface.traceViewer` field left unset. */
 export const traceViewerDefaults = {
@@ -4651,71 +4645,9 @@ export const supportsBalanceCheck = {
   [EModelEndpoint.google]: true,
 };
 
-export const visionModels = [
-  'qwen-vl',
-  'grok-vision',
-  'grok-2-vision',
-  'grok-3',
-  'grok-4.7',
-  'grok-4-7',
-  'gpt-4o-mini',
-  'gpt-4o',
-  'gpt-4-turbo',
-  'gpt-4-vision',
-  'o4-mini',
-  'o3',
-  'o1',
-  'gpt-5',
-  'gpt-4.1',
-  'gpt-4.5',
-  'llava',
-  'llava-13b',
-  'gemini-pro-vision',
-  'claude-3',
-  'gemma',
-  'gemini-exp',
-  'gemini-1.5',
-  'gemini-2',
-  'gemini-2.5',
-  'gemini-3',
-  'moondream',
-  'llama3.2-vision',
-  'llama-3.2-11b-vision',
-  'llama-3-2-11b-vision',
-  'llama-3.2-90b-vision',
-  'llama-3-2-90b-vision',
-  'llama-4',
-  'claude-opus-4',
-  'claude-sonnet-4',
-  'claude-haiku-4',
-];
 export enum VisionModes {
   generative = 'generative',
   agents = 'agents',
-}
-
-export function validateVisionModel({
-  model,
-  additionalModels = [],
-  availableModels,
-}: {
-  model: string;
-  additionalModels?: string[];
-  availableModels?: string[];
-}) {
-  if (!model) {
-    return false;
-  }
-
-  if (model.includes('gpt-4-turbo-preview') || model.includes('o1-mini')) {
-    return false;
-  }
-
-  if (availableModels && !availableModels.includes(model)) {
-    return false;
-  }
-
-  return visionModels.concat(additionalModels).some((visionModel) => model.includes(visionModel));
 }
 
 export const imageGenTools = new Set([
@@ -5132,31 +5064,6 @@ export enum AuthKeys {
    * Note: this is not for Environment Variables, but to access encrypted object values.
    */
   ANTHROPIC_API_KEY = 'ANTHROPIC_API_KEY',
-}
-
-/**
- * Enum for Image Detail Cost.
- *
- * **Low Res Fixed Cost:** `85`
- *
- * **High Res Calculation:**
- *
- * Number of `512px` Tiles * `170` + `85` (Additional Cost)
- */
-export enum ImageDetailCost {
-  /**
-   * Low resolution is a fixed value.
-   */
-  LOW = 85,
-  /**
-   * High resolution Cost Per Tile
-   */
-  HIGH = 170,
-  /**
-   * Additional Cost added to High Resolution Total Cost
-   */
-  // eslint-disable-next-line @typescript-eslint/no-duplicate-enum-values
-  ADDITIONAL = 85,
 }
 
 /**

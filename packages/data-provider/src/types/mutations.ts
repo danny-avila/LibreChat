@@ -210,24 +210,9 @@ export type ForkSharedConvoOptions = MutationOptions<
   types.TForkSharedConvoRequest
 >;
 
-export type CreateSharedLinkOptions = MutationOptions<
-  types.TSharedLink,
-  Partial<types.TSharedLink>
->;
-
 export type updateTagsInConvoOptions = MutationOptions<
   types.TTagConversationResponse,
   types.TTagConversationRequest
->;
-
-export type UpdateSharedLinkOptions = MutationOptions<
-  types.TSharedLink,
-  Partial<types.TSharedLink>
->;
-
-export type ArchiveConvoOptions = MutationOptions<
-  types.TArchiveConversationResponse,
-  types.TArchiveConversationRequest
 >;
 
 export type ArchiveAllConversationsOptions = MutationOptions<
@@ -509,11 +494,6 @@ export type TLogoutResponse = {
 };
 
 export type LogoutOptions = MutationOptions<TLogoutResponse, undefined>;
-
-export interface AssistantInitialize {
-  message: string;
-  error?: string;
-}
 
 export interface CancelMCPOAuthResponse {
   success: boolean;
