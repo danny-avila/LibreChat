@@ -56,7 +56,6 @@ export function createRoleMethods(
     permissionsUpdate: Record<string, Record<string, boolean>>,
     roleData?: IRole,
   ) => Promise<void>;
-  migrateRoleSchema: (roleName?: string) => Promise<number>;
   createRoleByName: (roleData: Partial<IRole>) => Promise<IRole>;
   deleteRoleByName: (roleName: string, options?: { id?: string }) => Promise<IRole | null>;
   updateUsersByRole: (oldRole: string, newRole: string) => Promise<void>;
@@ -446,74 +445,6 @@ export function createRoleMethods(
     }
   }
 
-  /**
-   * Migrates roles from old schema to new schema structure.
-   */
-  async function migrateRoleSchema(roleName?: string): Promise<number> {
-    try {
-      const Role = mongoose.models.Role;
-      let roles;
-      if (roleName) {
-        const role = await Role.findOne({ name: roleName });
-        roles = role ? [role] : [];
-      } else {
-        roles = await Role.find({});
-      }
-
-      logger.info(`Migrating ${roles.length} roles to new schema structure`);
-      let migratedCount = 0;
-
-      for (const role of roles) {
-        const permissionTypes = Object.keys(permissionsSchema.shape || {});
-        const unsetFields: Record<string, number> = {};
-        let hasOldSchema = false;
-
-        for (const permType of permissionTypes) {
-          if (role[permType] && typeof role[permType] === 'object') {
-            hasOldSchema = true;
-            role.permissions = role.permissions || {};
-            role.permissions[permType] = {
-              ...role.permissions[permType],
-              ...role[permType],
-            };
-            unsetFields[permType] = 1;
-          }
-        }
-
-        if (hasOldSchema) {
-          try {
-            logger.info(`Migrating role '${role.name}' from old schema structure`);
-
-            await Role.updateOne(
-              { _id: role._id },
-              {
-                $set: { permissions: role.permissions },
-                $unset: unsetFields,
-              },
-            );
-
-            const cache = deps.getCache?.(CacheKeys.ROLES);
-            if (cache) {
-              const updatedRole = await Role.findById(role._id).lean().exec();
-              await cache.set(scopedCacheKey(role.name), updatedRole);
-            }
-
-            migratedCount++;
-            logger.info(`Migrated role '${role.name}'`);
-          } catch (error) {
-            logger.error(`Failed to migrate role '${role.name}': ${(error as Error).message}`);
-          }
-        }
-      }
-
-      logger.info(`Migration complete: ${migratedCount} roles migrated`);
-      return migratedCount;
-    } catch (error) {
-      logger.error(`Role schema migration failed: ${(error as Error).message}`);
-      throw error;
-    }
-  }
-
   /** Rejects names that match system roles. */
   async function createRoleByName(roleData: Partial<IRole>): Promise<IRole> {
     const { name } = roleData;
@@ -680,7 +611,6 @@ export function createRoleMethods(
     findRolesByNames,
     updateRoleByName,
     updateAccessPermissions,
-    migrateRoleSchema,
     createRoleByName,
     deleteRoleByName,
     updateUsersByRole,

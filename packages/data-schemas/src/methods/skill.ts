@@ -1003,30 +1003,6 @@ export async function filterExistingSkillIds(
   return candidates.filter((id) => existing.has(id) || isExternalSkillId?.(id) === true);
 }
 
-/**
- * Validate the `always-apply` value that would be derived from the
- * SKILL.md body's inline frontmatter. Only reports an issue when the
- * key is present with an unparseable value — absent / valid / empty
- * all pass silently so mid-edit saves that haven't touched the flag
- * yet don't get rejected. Wired into both `createSkill` and
- * `updateSkill` so a body PATCH carrying `always-apply: tru` (typo)
- * surfaces as 400 instead of drifting the indexed column.
- */
-export function validateAlwaysApplyInBody(body: string | undefined): ValidationIssue[] {
-  const result = extractAlwaysApplyFromBody(body);
-  if (result.status === 'invalid') {
-    return [
-      {
-        field: 'body.frontmatter.alwaysApply',
-        code: 'INVALID_TYPE',
-        message:
-          '"always-apply" or "alwaysApply" in SKILL.md frontmatter must be a boolean (true or false)',
-      },
-    ];
-  }
-  return [];
-}
-
 export function createSkillMethods(
   mongoose: typeof import('mongoose'),
   deps: SkillDeps,
@@ -1623,7 +1599,7 @@ export function createSkillMethods(
            `alwaysApply: true` would keep auto-priming after the user
            removed the declaration from SKILL.md — a persistent,
            invisible mismatch between the file and runtime behavior.
-           `invalid` is rejected upstream by `validateAlwaysApplyInBody`
+           `invalid` is rejected by the inline check above
            so this branch only handles the legitimate absence case. */
         derivedAlwaysApply = false;
       }

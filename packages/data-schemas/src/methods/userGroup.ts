@@ -191,10 +191,6 @@ export function createUserGroupMethods(
     limit?: number,
     session?: ClientSession,
   ) => Promise<IGroup[]>;
-  findGroupsByMemberId: (
-    userId: string | Types.ObjectId,
-    session?: ClientSession,
-  ) => Promise<IGroup[]>;
   createGroup: (groupData: Partial<IGroup>, session?: ClientSession) => Promise<IGroup>;
   upsertGroupByExternalId: (
     idOnTheSource: string,
@@ -232,7 +228,6 @@ export function createUserGroupMethods(
     update: Record<string, unknown>,
     options?: { session?: ClientSession },
   ) => Promise<import('mongoose').UpdateWriteOpResult>;
-  getUserGroups: (userId: string | Types.ObjectId, session?: ClientSession) => Promise<IGroup[]>;
   getUserPrincipals: (
     params: {
       userId: string | Types.ObjectId;
@@ -241,15 +236,6 @@ export function createUserGroupMethods(
     },
     session?: ClientSession,
   ) => Promise<Array<{ principalType: PrincipalType; principalId?: string | Types.ObjectId }>>;
-  syncUserEntraGroups: (
-    userId: string | Types.ObjectId,
-    entraGroups: Array<{ id: string; name: string; description?: string; email?: string }>,
-    session?: ClientSession,
-  ) => Promise<{
-    user: IUser;
-    addedGroups: IGroup[];
-    removedGroups: IGroup[];
-  }>;
   searchPrincipals: (
     searchPattern: string,
     limitPerType?: number,
@@ -652,38 +638,6 @@ export function createUserGroupMethods(
   }
 
   /**
-   * Find all groups a user is a member of by their ID or idOnTheSource
-   * @param userId - The user ID
-   * @param session - Optional MongoDB session for transactions
-   * @returns Array of groups the user is a member of
-   */
-  async function findGroupsByMemberId(
-    userId: string | Types.ObjectId,
-    session?: ClientSession,
-  ): Promise<IGroup[]> {
-    const User = mongoose.models.User as Model<IUser>;
-    const Group = mongoose.models.Group as Model<IGroup>;
-
-    const userQuery = User.findById(userId, 'idOnTheSource');
-    if (session) {
-      userQuery.session(session);
-    }
-    const user = await userQuery.lean<{ idOnTheSource?: string }>();
-
-    if (!user) {
-      return [];
-    }
-
-    const userIdOnTheSource = user.idOnTheSource || userId.toString();
-
-    const query = Group.find({ memberIds: userIdOnTheSource });
-    if (session) {
-      query.session(session);
-    }
-    return await query.lean<IGroup[]>();
-  }
-
-  /**
    * Create a new group
    * @param groupData - Group data including name, source, and optional idOnTheSource
    * @param session - Optional MongoDB session for transactions
@@ -825,19 +779,6 @@ export function createUserGroupMethods(
   }
 
   /**
-   * Get all groups a user is a member of
-   * @param userId - The user ID
-   * @param session - Optional MongoDB session for transactions
-   * @returns Array of group documents
-   */
-  async function getUserGroups(
-    userId: string | Types.ObjectId,
-    session?: ClientSession,
-  ): Promise<IGroup[]> {
-    return await findGroupsByMemberId(userId, session);
-  }
-
-  /**
    * Get a list of all principal identifiers for a user (user ID + group IDs + public).
    * For use in permission checks.
    *
@@ -919,109 +860,6 @@ export function createUserGroupMethods(
     principals.push({ principalType: PrincipalType.PUBLIC });
 
     return principals;
-  }
-
-  /**
-   * Sync a user's Entra ID group memberships
-   * @param userId - The user ID
-   * @param entraGroups - Array of Entra groups with id and name
-   * @param session - Optional MongoDB session for transactions
-   * @returns The updated user with new group memberships
-   */
-  async function syncUserEntraGroups(
-    userId: string | Types.ObjectId,
-    entraGroups: Array<{ id: string; name: string; description?: string; email?: string }>,
-    session?: ClientSession,
-  ): Promise<{
-    user: IUser;
-    addedGroups: IGroup[];
-    removedGroups: IGroup[];
-  }> {
-    const User = mongoose.models.User as Model<IUser>;
-    const Group = mongoose.models.Group as Model<IGroup>;
-
-    const query = User.findById(userId, { idOnTheSource: 1 });
-    if (session) {
-      query.session(session);
-    }
-    const user = await query.lean<{ idOnTheSource?: string; _id: Types.ObjectId }>();
-
-    if (!user) {
-      throw new Error(`User not found: ${userId}`);
-    }
-
-    /** Get user's idOnTheSource for storing in group.memberIds */
-    const userIdOnTheSource = user.idOnTheSource || userId.toString();
-
-    const entraIdMap = new Map<string, boolean>();
-    const addedGroups: IGroup[] = [];
-    const removedGroups: IGroup[] = [];
-
-    for (const entraGroup of entraGroups) {
-      entraIdMap.set(entraGroup.id, true);
-
-      let group = await findGroupByExternalId(entraGroup.id, 'entra', {}, session);
-
-      if (!group) {
-        group = await createGroup(
-          {
-            name: entraGroup.name,
-            description: entraGroup.description,
-            email: entraGroup.email,
-            idOnTheSource: entraGroup.id,
-            source: 'entra',
-            memberIds: [userIdOnTheSource],
-          },
-          session,
-        );
-
-        addedGroups.push(group);
-      } else if (!group.memberIds?.includes(userIdOnTheSource)) {
-        const { group: updatedGroup } = await addUserToGroup(userId, group._id, session);
-        if (updatedGroup) {
-          addedGroups.push(updatedGroup);
-        }
-      }
-    }
-
-    const groupsQuery = Group.find(
-      { source: 'entra', memberIds: userIdOnTheSource },
-      { _id: 1, idOnTheSource: 1 },
-    );
-    if (session) {
-      groupsQuery.session(session);
-    }
-    const existingGroups = await groupsQuery.lean<
-      Array<{
-        _id: Types.ObjectId;
-        idOnTheSource?: string;
-      }>
-    >();
-
-    for (const group of existingGroups) {
-      if (group.idOnTheSource && !entraIdMap.has(group.idOnTheSource)) {
-        const { group: removedGroup } = await removeUserFromGroup(userId, group._id, session);
-        if (removedGroup) {
-          removedGroups.push(removedGroup);
-        }
-      }
-    }
-
-    const userQuery = User.findById(userId);
-    if (session) {
-      userQuery.session(session);
-    }
-    const updatedUser = await userQuery.lean<IUser>();
-
-    if (!updatedUser) {
-      throw new Error(`User not found after update: ${userId}`);
-    }
-
-    return {
-      user: updatedUser,
-      addedGroups,
-      removedGroups,
-    };
   }
 
   /**
@@ -1461,7 +1299,6 @@ export function createUserGroupMethods(
     findGroupByExternalId,
     findGroupsByExternalIds,
     findGroupsByNamePattern,
-    findGroupsByMemberId,
     createGroup,
     upsertGroupByExternalId,
     addUserToGroup,
@@ -1471,9 +1308,7 @@ export function createUserGroupMethods(
     updateGroupById,
     updateGroupFieldsTracked,
     bulkUpdateGroups,
-    getUserGroups,
     getUserPrincipals,
-    syncUserEntraGroups,
     searchPrincipals,
     calculateRelevanceScore,
     sortPrincipalsByRelevance,
