@@ -1,8 +1,8 @@
 import { atomFamily, atomWithStorage, createJSONStorage } from 'jotai/utils';
-import type { QueuedMessage } from '~/hooks/Chat/queue';
+import type { RecoveryDispositions } from '@librechat/chat';
 
-export type RecoveryDisposition = 'blocked' | 'cancelling' | 'cancelled' | 'dismissed';
-export type RecoveryDispositions = Partial<Record<string, RecoveryDisposition>>;
+export { blockRecovery, canRestoreRecovery, recoveryDisposition } from '@librechat/chat';
+export type { RecoveryDisposition, RecoveryDispositions } from '@librechat/chat';
 
 /** Receipt-scoped safety decisions survive remounts and reloads in this tab.
  * No message content is stored. A crashed cancellation stays held, not sendable. */
@@ -41,24 +41,3 @@ export const recoveryDispositionsFamily = atomFamily((conversationId: string) =>
     { getOnInit: true },
   ),
 );
-
-export function recoveryDisposition(
-  dispositions: RecoveryDispositions,
-  item: Pick<QueuedMessage, 'recoverySteerId'>,
-): RecoveryDisposition | undefined {
-  return item.recoverySteerId == null ? undefined : dispositions?.[item.recoverySteerId];
-}
-
-export function canRestoreRecovery(
-  dispositions: RecoveryDispositions,
-  item: Pick<QueuedMessage, 'recoverySteerId'>,
-): boolean {
-  const disposition = recoveryDisposition(dispositions, item);
-  return disposition !== 'cancelled' && disposition !== 'dismissed';
-}
-
-export function blockRecovery(dispositions: RecoveryDispositions, steerId: string) {
-  return dispositions?.[steerId] != null
-    ? dispositions
-    : { ...dispositions, [steerId]: 'blocked' as const };
-}

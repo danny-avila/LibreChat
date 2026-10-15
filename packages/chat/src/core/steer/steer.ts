@@ -5,8 +5,7 @@ import type {
   TSteerAppliedEvent,
   TMessageContentParts,
 } from 'librechat-data-provider';
-import type { QueuedMessage, QueuedMessageOrigin } from '~/hooks/Chat/queue';
-import type { PendingSteer } from '~/hooks/Chat/queue';
+import type { PendingSteer, QueuedMessage, QueuedMessageOrigin } from './types';
 
 type SteerPart = Extract<TMessageContentParts, { type: ContentTypes.STEER }>;
 

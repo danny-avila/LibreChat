@@ -1,5 +1,5 @@
 import { DEFAULT_QUEUED_SEND_LOCK_TIMEOUT_MS } from 'librechat-data-provider';
-import { acquireQueueSendLock, releaseQueueSendLock } from '../queueIntent';
+import { acquireQueueSendLock, releaseQueueSendLock } from '../intent';
 
 describe('acquireQueueSendLock', () => {
   let now = 1_000_000;
