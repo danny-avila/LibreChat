@@ -48,7 +48,6 @@ export default function useClearStates() {
 
           reset(store.filesByIndex(key));
           reset(store.presetByIndex(key));
-          reset(store.textByIndex(key));
           jotaiStore.set(showStopButtonByIndex(key), false);
           jotaiStore.set(abortScrollFamily(key), false);
           jotaiStore.set(submissionStartFamily(key), null);

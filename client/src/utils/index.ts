@@ -111,13 +111,6 @@ export const defaultTextProps =
 export const optionText =
   'p-0 shadow-none text-right pr-1 h-8 border-transparent hover:bg-surface-hover transition-colors';
 
-export const defaultTextPropsLabel =
-  'rounded-md border border-border-medium bg-transparent text-sm text-text-primary shadow-[0_0_0.625rem_rgba(0,0,0,0.10)] outline-hidden focus-within:placeholder:text-text-primary focus:placeholder:text-text-primary placeholder:text-text-secondary focus:outline-hidden disabled:cursor-not-allowed disabled:opacity-50';
-
-export function capitalizeFirstLetter(string: string) {
-  return string.charAt(0).toUpperCase() + string.slice(1);
-}
-
 export const handleDoubleClick: React.MouseEventHandler<HTMLElement> = (event) => {
   const range = document.createRange();
   range.selectNodeContents(event.target as Node);

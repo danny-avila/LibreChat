@@ -1470,7 +1470,7 @@
   },
   "client/src/utils/index.ts": {
     "design/disabled-recipe": {
-      "count": 2
+      "count": 1
     }
   },
   "packages/chat/src/components/CollapsibleText.tsx": {
