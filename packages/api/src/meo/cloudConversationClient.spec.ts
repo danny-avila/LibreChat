@@ -3,10 +3,13 @@ import { MeoCloudConversationClient } from './cloudConversationClient';
 describe('MeoCloudConversationClient', () => {
   it('uses the Account session server-side and stores only conversation text', async () => {
     const fetcher = jest.fn(async (_input: RequestInfo | URL, _init?: RequestInit) =>
-      Response.json({ conversations: [{ id: 'conversation-1', title: 'Hello', user_id: 'leak' }] }),
+      Response.json({
+        conversations: [{ id: 'conversation-1', title: 'Hello', user_id: 'leak' }],
+        nextCursor: 'fixture-cursor',
+      }),
     );
     const client = new MeoCloudConversationClient({
-      cloudUrl: 'https://ai.meoarch.org',
+      apiUrl: 'https://api.meoarch.org',
       accessToken: async () => 'account-session-token',
       fetcher,
     });
@@ -14,7 +17,7 @@ describe('MeoCloudConversationClient', () => {
     const conversations = await client.listConversations();
     expect(conversations).toEqual({
       conversations: [{ id: 'conversation-1', title: 'Hello', createdAt: '', updatedAt: '' }],
-      nextCursor: null,
+      nextCursor: 'fixture-cursor',
     });
     expect(fetcher.mock.calls[0][1]?.headers).toEqual(
       expect.objectContaining({
@@ -48,7 +51,7 @@ describe('MeoCloudConversationClient', () => {
       Response.json({ error: 'private upstream detail' }, { status: 429 }),
     );
     const client = new MeoCloudConversationClient({
-      cloudUrl: 'https://ai.meoarch.org',
+      apiUrl: 'https://api.meoarch.org',
       accessToken: async () => 'token',
       fetcher,
     });
@@ -60,10 +63,10 @@ describe('MeoCloudConversationClient', () => {
     expect(
       () =>
         new MeoCloudConversationClient({
-          cloudUrl: 'http://ai.meoarch.org',
+          apiUrl: 'http://ai.meoarch.org',
           accessToken: async () => 'token',
         }),
-    ).toThrow('Meo AI Cloud URL must use HTTPS');
+    ).toThrow('Meo API URL must use HTTPS');
     const fetcher = async () =>
       Response.json({
         messages: [
@@ -78,7 +81,7 @@ describe('MeoCloudConversationClient', () => {
         ],
       });
     const client = new MeoCloudConversationClient({
-      cloudUrl: 'https://ai.meoarch.org',
+      apiUrl: 'https://api.meoarch.org',
       accessToken: async () => 'token',
       fetcher,
     });

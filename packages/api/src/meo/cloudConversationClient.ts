@@ -15,26 +15,35 @@ export type MeoConversationMessage = {
 };
 
 type ClientOptions = {
-  cloudUrl: string;
+  apiUrl: string;
   accessToken: () => Promise<string>;
   fetcher?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 };
 
 /** Same-origin API backing for Account-authenticated, cloud-owned chat history. */
 export class MeoCloudConversationClient {
-  private readonly cloudUrl: string;
+  private readonly apiUrl: string;
   private readonly accessToken: () => Promise<string>;
   private readonly fetcher: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
   constructor(options: ClientOptions) {
-    const url = new URL(options.cloudUrl);
-    if (url.protocol !== 'https:' && !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) {
-      throw new Error('Meo AI Cloud URL must use HTTPS');
+    const url = new URL(options.apiUrl);
+    if (
+      url.protocol !== 'https:' &&
+      !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))
+    ) {
+      throw new Error('Meo API URL must use HTTPS');
     }
-    if (url.username || url.password || url.search || url.hash) {
-      throw new Error('Meo AI Cloud URL must be an origin or path without credentials');
+    if (
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      !['', '/'].includes(url.pathname)
+    ) {
+      throw new Error('Meo API URL must be an origin or path without credentials');
     }
-    this.cloudUrl = url.toString().replace(/\/$/, '');
+    this.apiUrl = url.toString().replace(/\/$/, '');
     this.accessToken = options.accessToken;
     this.fetcher = options.fetcher ?? fetch;
   }
@@ -63,7 +72,7 @@ export class MeoCloudConversationClient {
     });
     return {
       conversations,
-      nextCursor: typeof data.next_cursor === 'string' ? data.next_cursor : null,
+      nextCursor: typeof data.nextCursor === 'string' ? data.nextCursor : null,
     };
   }
 
@@ -121,7 +130,7 @@ export class MeoCloudConversationClient {
   private async call(path: string, init?: RequestInit): Promise<Record<string, unknown>> {
     const token = (await this.accessToken()).trim();
     if (!token) throw new MeoHttpError(401, 'Meo Account session is unavailable. Sign in again.');
-    const response = await this.fetcher(`${this.cloudUrl}${path}`, {
+    const response = await this.fetcher(`${this.apiUrl}${path}`, {
       ...init,
       method: init?.method ?? 'GET',
       headers: {

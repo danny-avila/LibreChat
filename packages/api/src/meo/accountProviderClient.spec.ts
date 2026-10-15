@@ -9,7 +9,7 @@ describe('MeoAccountProviderClient', () => {
     fetcher.mockReset();
     fetcher.mockImplementation(async () => Response.json({ credentials: [] }));
     client = new MeoAccountProviderClient({
-      accountUrl: 'https://account.example.org',
+      apiUrl: 'https://api.example.test',
       clientId: 'meo-ai-web',
       accessToken: async () => 'account-session-token',
       fetcher,
@@ -38,6 +38,7 @@ describe('MeoAccountProviderClient', () => {
     expect(JSON.stringify(connections)).not.toContain('apiKey');
     expect(JSON.stringify(connections)).not.toContain('must-not-leak');
     expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0][0]).toBe('https://api.example.test/v1/ai/provider-broker');
     expect(fetcher.mock.calls[0][1]?.headers).toEqual(
       expect.objectContaining({
         Authorization: 'Bearer account-session-token',
@@ -154,7 +155,7 @@ describe('MeoAccountProviderClient', () => {
     expect(
       () =>
         new MeoAccountProviderClient({
-          accountUrl: 'http://account.example.org',
+          apiUrl: 'http://account.example.org',
           clientId: 'meo-ai-web',
           accessToken: async () => 'token',
           fetcher,

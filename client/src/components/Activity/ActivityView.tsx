@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
-import { Activity, Cloud, Download, Folder, RefreshCw, Sparkles } from 'lucide-react';
 import { Button, Spinner } from '@librechat/client';
-import { useAuthContext } from '~/hooks';
+import { Activity, Cloud, Download, Folder, RefreshCw, Sparkles } from 'lucide-react';
+import type { CSSProperties, ReactNode } from 'react';
+import { useAuthContext, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
 type Summary = {
@@ -34,7 +34,9 @@ type Dashboard = {
 };
 
 function compact(value = 0) {
-  return new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(value);
+  return new Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(
+    value,
+  );
 }
 
 function duration(ms = 0) {
@@ -78,20 +80,26 @@ function Metric({ value, label }: { value: string; label: string }) {
 }
 
 function ActivityHeatmap({ daily }: { daily: Daily[] }) {
+  const localize = useLocalize();
   const recent = daily.slice(-154);
   const max = Math.max(1, ...recent.map((item) => item.tokens));
   return (
-    <div className="grid grid-flow-col grid-rows-7 gap-1 overflow-x-auto pb-1" aria-label="Token activity">
+    <div
+      className="grid grid-flow-col grid-rows-7 gap-1 overflow-x-auto pb-1"
+      aria-label={localize('meo_activity_tokens')}
+    >
       {recent.map((item) => {
         const ratio = item.tokens / max;
-        const opacity =
-          item.tokens === 0 ? 0.16 : ratio < 0.08 ? 0.3 : ratio < 0.24 ? 0.5 : ratio < 0.5 ? 0.72 : 1;
+        let opacity = 'opacity-100';
+        if (item.tokens === 0) opacity = 'opacity-20';
+        else if (ratio < 0.08) opacity = 'opacity-30';
+        else if (ratio < 0.24) opacity = 'opacity-50';
+        else if (ratio < 0.5) opacity = 'opacity-75';
         return (
           <div
             key={item.date}
-            title={`${item.date} · ${compact(item.tokens)} tokens`}
-            className="bg-text-primary size-3 rounded-[4px]"
-            style={{ opacity }}
+            title={`${item.date} · ${localize('meo_activity_token_count', { value: compact(item.tokens) })}`}
+            className={cn('bg-text-primary size-3 rounded-sm', opacity)}
           />
         );
       })}
@@ -107,12 +115,18 @@ function UsageBars({ items }: { items: ModelUsage[] }) {
         <div key={`${item.provider}:${item.name}`}>
           <div className="mb-1.5 flex items-center gap-3 text-sm">
             <span className="text-text-primary min-w-0 flex-1 truncate">{item.name}</span>
-            <span className="text-text-secondary shrink-0 tabular-nums">{compact(item.tokens)}</span>
+            <span className="text-text-secondary shrink-0 tabular-nums">
+              {compact(item.tokens)}
+            </span>
           </div>
           <div className="bg-surface-tertiary h-1.5 overflow-hidden rounded-full">
             <div
-              className="bg-text-primary h-full rounded-full transition-[width] duration-300 motion-reduce:transition-none"
-              style={{ width: `${Math.max(2, (item.tokens / max) * 100)}%` }}
+              className="bg-text-primary h-full w-[var(--meo-usage-width)] rounded-full transition-all duration-300 motion-reduce:transition-none"
+              style={
+                {
+                  '--meo-usage-width': `${Math.max(2, (item.tokens / max) * 100)}%`,
+                } as CSSProperties
+              }
             />
           </div>
         </div>
@@ -122,6 +136,7 @@ function UsageBars({ items }: { items: ModelUsage[] }) {
 }
 
 export default function ActivityView() {
+  const localize = useLocalize();
   const { token } = useAuthContext();
   const [data, setData] = useState<Dashboard>();
   const [loading, setLoading] = useState(true);
@@ -131,7 +146,7 @@ export default function ActivityView() {
     setLoading(true);
     setError('');
     if (!token) {
-      setError('Sign in with Meo Account to see activity synced from your devices.');
+      setError(localize('meo_activity_sign_in'));
       setLoading(false);
       return;
     }
@@ -143,14 +158,15 @@ export default function ActivityView() {
       const payload = (await response.json().catch(() => ({}))) as Dashboard & {
         error?: string;
       };
-      if (!response.ok) throw new Error(payload.error || `Meo activity returned ${response.status}`);
+      if (!response.ok)
+        throw new Error(payload.error || `Meo activity returned ${response.status}`);
       setData(payload);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Could not load AI activity.');
+    } catch {
+      setError(localize('meo_activity_load_failed'));
     } finally {
       setLoading(false);
     }
-  }, [token]);
+  }, [token, localize]);
 
   useEffect(() => {
     void refresh();
@@ -159,7 +175,7 @@ export default function ActivityView() {
   const summary = data?.summary ?? {};
   const models = data?.models ?? [];
   const projects = data?.projects ?? [];
-  const sources = data?.sources ?? [];
+  const sources = useMemo(() => data?.sources ?? [], [data?.sources]);
   const daily = data?.daily ?? [];
   const sourceTokens = useMemo(
     () => sources.reduce((total, source) => total + Number(source.tokens || 0), 0),
@@ -173,65 +189,94 @@ export default function ActivityView() {
           <div className="min-w-0 flex-1">
             <div className="text-text-secondary mb-2 flex items-center gap-2 text-sm">
               <Sparkles className="size-4" aria-hidden="true" />
-              Meo AI
+              {localize('meo_activity_brand')}
             </div>
-            <h1 className="text-text-primary text-3xl font-semibold tracking-tight">AI activity</h1>
+            <h1 className="text-text-primary text-3xl font-semibold tracking-tight">
+              {localize('meo_ai_activity')}
+            </h1>
             <p className="text-text-secondary mt-2 max-w-2xl text-sm leading-6">
-              One timeline for Meo AI, Codex and Claude Code. Desktop imports stay synced through your Meo Account.
+              {localize('meo_activity_description')}
             </p>
           </div>
           <Button variant="outline" onClick={() => void refresh()} disabled={loading}>
             <RefreshCw
               className={cn('mr-2 size-4', loading && 'animate-spin motion-reduce:animate-none')}
             />
-            Refresh
+            {localize('meo_activity_refresh')}
           </Button>
         </header>
 
-        {loading && !data ? (
+        {loading && !data && (
           <div className="flex min-h-80 items-center justify-center">
             <Spinner className="size-7" />
           </div>
-        ) : error && !data ? (
+        )}
+        {!loading && error && !data && (
           <Card className="flex min-h-72 flex-col items-center justify-center p-8 text-center">
             <Cloud className="text-text-secondary mb-4 size-8" aria-hidden="true" />
-            <h2 className="text-text-primary font-medium">Activity is ready when your account is</h2>
+            <h2 className="text-text-primary font-medium">{localize('meo_activity_ready')}</h2>
             <p className="text-text-secondary mt-2 max-w-md text-sm leading-6">{error}</p>
           </Card>
-        ) : (
+        )}
+        {(data || (!loading && !error)) && (
           <div className="space-y-5">
             <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-              <Metric value={compact(summary.lifetime_tokens)} label="Lifetime tokens" />
-              <Metric value={compact(summary.peak_day_tokens)} label="Peak day" />
-              <Metric value={duration(summary.longest_session_ms)} label="Longest session" />
-              <Metric value={String(summary.longest_streak ?? 0)} label="Best streak" />
-              <Metric value={String(summary.current_streak ?? 0)} label="Current streak" />
+              <Metric
+                value={compact(summary.lifetime_tokens)}
+                label={localize('meo_activity_lifetime')}
+              />
+              <Metric
+                value={compact(summary.peak_day_tokens)}
+                label={localize('meo_activity_peak')}
+              />
+              <Metric
+                value={duration(summary.longest_session_ms)}
+                label={localize('meo_activity_longest')}
+              />
+              <Metric
+                value={String(summary.longest_streak ?? 0)}
+                label={localize('meo_activity_best_streak')}
+              />
+              <Metric
+                value={String(summary.current_streak ?? 0)}
+                label={localize('meo_activity_current_streak')}
+              />
             </div>
 
             <Card className="p-5 sm:p-6">
               <div className="mb-5 flex items-center gap-3">
                 <Activity className="text-text-secondary size-4" aria-hidden="true" />
-                <h2 className="text-text-primary flex-1 font-medium">Token activity</h2>
-                <span className="text-text-secondary text-xs">{summary.active_days ?? 0} active days</span>
+                <h2 className="text-text-primary flex-1 font-medium">
+                  {localize('meo_activity_tokens')}
+                </h2>
+                <span className="text-text-secondary text-xs">
+                  {localize('meo_activity_active_days', { count: summary.active_days ?? 0 })}
+                </span>
               </div>
               {daily.length ? (
                 <ActivityHeatmap daily={daily} />
               ) : (
-                <p className="text-text-secondary text-sm">Import activity on your Meo desktop to begin.</p>
+                <p className="text-text-secondary text-sm">{localize('meo_activity_import')}</p>
               )}
             </Card>
 
             <div className="grid gap-5 lg:grid-cols-2">
               <Card className="p-5 sm:p-6">
-                <h2 className="text-text-primary mb-5 font-medium">Models</h2>
+                <h2 className="text-text-primary mb-5 font-medium">
+                  {localize('meo_activity_models')}
+                </h2>
                 {models.length ? (
                   <UsageBars items={models} />
                 ) : (
-                  <p className="text-text-secondary text-sm">No model usage yet.</p>
+                  <p className="text-text-secondary text-sm">
+                    {localize('meo_activity_no_models')}
+                  </p>
                 )}
               </Card>
               <Card className="p-5 sm:p-6">
-                <h2 className="text-text-primary mb-4 font-medium">Projects</h2>
+                <h2 className="text-text-primary mb-4 font-medium">
+                  {localize('meo_activity_projects')}
+                </h2>
                 <div className="divide-border-light divide-y">
                   {projects.slice(0, 7).map((project) => (
                     <div
@@ -243,22 +288,32 @@ export default function ActivityView() {
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="text-text-primary truncate text-sm">{project.name}</div>
-                        <div className="text-text-secondary text-xs">{project.sessions ?? 0} sessions</div>
+                        <div className="text-text-secondary text-xs">
+                          {localize('meo_activity_sessions', { count: project.sessions ?? 0 })}
+                        </div>
                       </div>
                       <div className="text-text-secondary text-sm tabular-nums">
                         {compact(project.tokens)}
                       </div>
                     </div>
                   ))}
-                  {!projects.length && <p className="text-text-secondary text-sm">No projects yet.</p>}
+                  {!projects.length && (
+                    <p className="text-text-secondary text-sm">
+                      {localize('meo_activity_no_projects')}
+                    </p>
+                  )}
                 </div>
               </Card>
             </div>
 
             <Card className="p-5 sm:p-6">
               <div className="mb-4 flex items-center gap-3">
-                <h2 className="text-text-primary flex-1 font-medium">Connected sources</h2>
-                <span className="text-text-secondary text-xs">{compact(sourceTokens)} tokens</span>
+                <h2 className="text-text-primary flex-1 font-medium">
+                  {localize('meo_activity_sources')}
+                </h2>
+                <span className="text-text-secondary text-xs">
+                  {localize('meo_activity_token_count', { value: compact(sourceTokens) })}
+                </span>
               </div>
               <div className="flex flex-wrap gap-2">
                 {sources.map((source) => (
@@ -273,14 +328,13 @@ export default function ActivityView() {
                 ))}
                 {!sources.length && (
                   <span className="text-text-secondary text-sm">
-                    Meo desktop can import Codex and Claude Code history.
+                    {localize('meo_activity_source_hint')}
                   </span>
                 )}
               </div>
               <div className="border-border-light text-text-secondary mt-5 flex items-start gap-2 border-t pt-4 text-xs leading-5">
                 <Download className="mt-0.5 size-3.5 shrink-0" />
-                Import happens on your computer; raw local paths are not uploaded. Only normalized usage,
-                project labels and model statistics sync to Supabase.
+                {localize('meo_activity_sync_privacy')}
               </div>
             </Card>
           </div>

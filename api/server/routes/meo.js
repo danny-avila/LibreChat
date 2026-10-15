@@ -7,16 +7,9 @@ const {
 const requireJwtAuth = require('~/server/middleware/requireJwtAuth');
 
 const router = express.Router();
-// The broker is a Supabase Edge Function. The OIDC issuer is the same Supabase
-// project with `/auth/v1` appended, so its origin is the safe API fallback. The
-// Account website origin serves the Flutter app and cannot serve `/functions/v1`.
-const accountUrl =
-  process.env.MEO_ACCOUNT_URL ||
-  (process.env.OPENID_ISSUER
-    ? new URL(process.env.OPENID_ISSUER).origin
-    : 'https://account.meoarch.org');
+// Meo API owns the provider broker and persisted history; Account owns OAuth.
+const apiUrl = process.env.MEO_API_URL || 'https://api.meoarch.org';
 const clientId = process.env.MEO_ACCOUNT_OAUTH_CLIENT_ID || '';
-const cloudUrl = process.env.MEO_CLOUD_URL || 'https://ai.meoarch.org';
 
 router.use((_req, res, next) => {
   res.set({ 'Cache-Control': 'no-store' });
@@ -33,7 +26,7 @@ function sessionAccessToken(req) {
 
 function clientFor(req) {
   return new MeoAccountProviderClient({
-    accountUrl,
+    apiUrl,
     clientId,
     accessToken: async () => sessionAccessToken(req),
   });
@@ -41,7 +34,7 @@ function clientFor(req) {
 
 function cloudFor(req) {
   return new MeoCloudConversationClient({
-    cloudUrl,
+    apiUrl,
     accessToken: async () => sessionAccessToken(req),
   });
 }

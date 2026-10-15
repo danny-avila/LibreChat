@@ -35,7 +35,7 @@ export type MeoConsent = {
 export type MeoChatMessage = { role: 'user' | 'assistant'; content: string };
 
 type ClientOptions = {
-  accountUrl: string;
+  apiUrl: string;
   clientId: string;
   accessToken: () => Promise<string>;
   fetcher?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -43,20 +43,29 @@ type ClientOptions = {
 
 /** Server-side bridge to Meo Account. Provider keys never leave Account. */
 export class MeoAccountProviderClient {
-  private readonly accountUrl: string;
+  private readonly apiUrl: string;
   private readonly clientId: string;
   private readonly accessToken: () => Promise<string>;
   private readonly fetcher: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
   constructor(options: ClientOptions) {
-    const url = new URL(options.accountUrl);
-    if (url.protocol !== 'https:' && !['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)) {
-      throw new Error('Meo Account URL must use HTTPS');
+    const url = new URL(options.apiUrl);
+    if (
+      url.protocol !== 'https:' &&
+      !(url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))
+    ) {
+      throw new Error('Meo API URL must use HTTPS');
     }
-    if (url.username || url.password || url.search || url.hash) {
-      throw new Error('Meo Account URL must be an origin or path without credentials');
+    if (
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      !['', '/'].includes(url.pathname)
+    ) {
+      throw new Error('Meo API URL must be an origin or path without credentials');
     }
-    this.accountUrl = url.toString().replace(/\/$/, '');
+    this.apiUrl = url.toString().replace(/\/$/, '');
     this.clientId = requiredText(options.clientId, 'clientId', 160);
     this.accessToken = options.accessToken;
     this.fetcher = options.fetcher ?? fetch;
@@ -164,7 +173,7 @@ export class MeoAccountProviderClient {
     const token = (await this.accessToken()).trim();
     if (!token) throw new MeoHttpError(401, 'Meo Account session is unavailable. Sign in again.');
     const { userPrompt, categories } = chatPrompt(input.messages);
-    const response = await this.fetcher(`${this.accountUrl}/functions/v1/ai-provider-broker`, {
+    const response = await this.fetcher(`${this.apiUrl}/v1/ai/provider-broker`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -206,7 +215,7 @@ export class MeoAccountProviderClient {
   private async call(body: Record<string, unknown>): Promise<Record<string, unknown>> {
     const token = (await this.accessToken()).trim();
     if (!token) throw new MeoHttpError(401, 'Meo Account session is unavailable. Sign in again.');
-    const response = await this.fetcher(`${this.accountUrl}/functions/v1/ai-provider-broker`, {
+    const response = await this.fetcher(`${this.apiUrl}/v1/ai/provider-broker`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,

@@ -1,4 +1,8 @@
-# Meo AI Web integration
+# Retained LibreChat compatibility integration
+
+The production browser app is `meo-pages/` on Cloudflare Pages. This older
+LibreChat integration is retained for compatibility and is not a second hosted
+identity or cloud authority. Both adapters consume Meo API endpoints.
 
 This is a separate LibreChat fork. LibreChat supplies the responsive chat shell,
 conversation renderer, and account session; Meo-specific behavior is isolated in
@@ -52,8 +56,8 @@ cp meo/librechat.meo.example.yaml librechat.yaml
 Set `MONGO_URI`, `DOMAIN_CLIENT=http://localhost:3080`,
 `DOMAIN_SERVER=http://localhost:3080`, `OPENID_ISSUER`, `OPENID_CLIENT_ID`,
 `OPENID_USE_PKCE=true`, `OPENID_REUSE_TOKENS=true`, `MEO_ACCOUNT_URL`, and
-`MEO_ACCOUNT_OAUTH_CLIENT_ID` in `.env`. Set `MEO_CLOUD_URL` to the Meo Cloud
-origin as well. Leave `OPENID_CLIENT_SECRET` empty for
+`MEO_ACCOUNT_OAUTH_CLIENT_ID` in `.env`. Set `MEO_API_URL=https://api.meoarch.org`
+for the provider broker and conversation history. Leave `OPENID_CLIENT_SECRET` empty for
 the registered public PKCE client. Register `http://localhost:3080/oauth/openid/callback`
 for local development. Never put provider keys in `.env` or `librechat.yaml`.
 
