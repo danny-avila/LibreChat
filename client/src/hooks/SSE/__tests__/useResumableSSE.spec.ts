@@ -263,12 +263,6 @@ jest.mock('~/hooks/SSE/useEventHandlers', () => {
   return {
     __esModule: true,
     ...actual,
-    // Read at call time: the hooks barrel imports useSSE during this factory.
-    startedAsNewConversation: (submission: TSubmission) =>
-      jest.requireActual('~/hooks/SSE/useEventHandlers').startedAsNewConversation(submission),
-    buildCreatedInitialResponse: (
-      submission: Pick<TSubmission, 'initialResponse' | 'userMessage' | 'isRegenerate'>,
-    ) => jest.requireActual('~/hooks/SSE/useEventHandlers').buildCreatedInitialResponse(submission),
     default: jest.fn(() => ({
       errorHandler: mockErrorHandler,
       finalHandler: mockFinalHandler,
