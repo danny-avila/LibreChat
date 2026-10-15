@@ -209,6 +209,7 @@ export default function useStepHandler({
   const resetPtcAtoms = useCallback((): void => {
     for (const atomKey of knownPtcAtomKeys.current) {
       ptcStore.set(ptcTraceByToolCallId(atomKey), EMPTY_PTC_TRACE);
+      ptcTraceByToolCallId.remove(atomKey);
     }
     knownPtcAtomKeys.current.clear();
   }, [ptcStore]);
