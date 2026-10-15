@@ -2456,6 +2456,67 @@ describe('Chat', () => {
       );
     });
 
+    it('stops a replacement from the reconnect notice and reattaches it under its conversation', async () => {
+      const stream = createStream({ generationCreatedAt: 200 });
+      const stops: Promise<unknown>[] = [];
+      const { chat, transport, onFinish } = setup(
+        { id: 'new' },
+        {
+          sendMessages: jest.fn(async () => ({
+            status: 'replaced' as const,
+            generationProtocolVersion: 2,
+            conversationId: 'convo-9',
+            streamId: 'stream-2',
+            generationCreatedAt: 200,
+          })),
+          reconnectToStream: jest.fn(async () => stream),
+        },
+      );
+      transport.abort.mockImplementation(async () => {
+        stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+        return { success: true };
+      });
+      const unsubscribe = chat.subscribe(() => {
+        if (chat.connection === 'reconnecting' && stops.length === 0) {
+          stops.push(chat.stop());
+        }
+      });
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      unsubscribe();
+      await expect(stops[0]).resolves.toEqual({ status: 'stopped' });
+      await sent;
+      expect(transport.abort).toHaveBeenCalledWith(
+        expect.objectContaining({ streamId: 'stream-2', generationCreatedAt: 200 }),
+      );
+      expect(onFinish).toHaveBeenCalledTimes(1);
+
+      const dropped = setup(
+        { id: 'new' },
+        {
+          sendMessages: jest.fn(async () => ({
+            status: 'replaced' as const,
+            generationProtocolVersion: 2,
+            conversationId: 'convo-9',
+            streamId: 'stream-2',
+            generationCreatedAt: 200,
+          })),
+        },
+      );
+      const replacement = createStream({ generationCreatedAt: 200 });
+      dropped.transport.reconnectToStream.mockResolvedValueOnce(replacement);
+      const sentDropped = dropped.chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      replacement.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+      await sentDropped;
+      dropped.transport.reconnectToStream.mockResolvedValueOnce(null);
+      await dropped.chat.resumeStream({ streamId: 'stream-2', generationCreatedAt: 200 });
+
+      expect(dropped.transport.reconnectToStream).toHaveBeenLastCalledWith(
+        expect.objectContaining({ chatId: 'convo-9' }),
+      );
+    });
+
     it('reports nothing to stop as idle', async () => {
       const { chat, transport } = setup();
 

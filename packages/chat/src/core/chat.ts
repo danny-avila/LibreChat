@@ -1073,12 +1073,14 @@ export class Chat {
         /** Only protocol v2 vouches for a replacement; an older server reported a conflict. */
         throw new Error('Another generation is running in this conversation');
       } else if (result.status === 'replaced') {
-        this.setConnection('reconnecting');
+        /** The target is recorded before anyone hears of the reconnect, so a stop can reach it. */
         this.generationCreatedAt = result.generationCreatedAt ?? undefined;
         active.reattach = { streamId: result.streamId };
+        active.conversationId = result.conversationId;
         /** The replacement's response is not this turn's placeholder; its first frame names it. */
         active.responseId = undefined;
         active.responseUnknown = true;
+        this.setConnection('reconnecting');
         stream = await openUntilAborted(
           this.init.transport.reconnectToStream({
             ...options,
