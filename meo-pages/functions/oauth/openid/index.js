@@ -8,6 +8,17 @@ function base64url(bytes) {
 }
 
 export async function onRequest({ request, env }) {
+  const clientId =
+    typeof env.MEO_OAUTH_CLIENT_ID === 'string' ? env.MEO_OAUTH_CLIENT_ID.trim() : '';
+  if (!clientId) {
+    return Response.json(
+      { error: 'oauth_client_not_configured' },
+      {
+        status: 503,
+        headers: { 'Cache-Control': 'no-store' },
+      },
+    );
+  }
   const requestedReturn = new URL(request.url).searchParams.get('return') ?? '/new';
   const returnTo =
     requestedReturn.startsWith('/new') && !requestedReturn.startsWith('//')
@@ -22,10 +33,10 @@ export async function onRequest({ request, env }) {
   const sealed = await seal({ state, verifier, returnTo, createdAt: Date.now() }, env);
   const authorize = new URL(`${accountUrl(env)}/v1/auth/oauth2/authorize`);
   authorize.search = new URLSearchParams({
-    client_id: env.MEO_OAUTH_CLIENT_ID,
+    client_id: clientId,
     redirect_uri: callbackUrl(request),
     response_type: 'code',
-    scope: 'openid email profile meo:read meo:write',
+    scope: 'openid email profile offline_access meo:read meo:write',
     resource: 'https://api.meoarch.org',
     state,
     code_challenge: challenge,

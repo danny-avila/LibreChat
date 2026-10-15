@@ -23,6 +23,14 @@ Set these for Production (and Preview only when using a registered OAuth callbac
 
 The public OAuth client must register `https://chat.meoarch.org/oauth/openid/callback` with the new Meo Account OAuth server and request `https://api.meoarch.org` as its resource. The app uses PKCE. Access and refresh tokens are encrypted in a `Secure`, `HttpOnly`, `SameSite=Lax` cookie and are never exposed to browser JavaScript or local storage. Provider keys never leave Meo Account/Meo API.
 
+The authorization request includes `offline_access`, which Better Auth requires
+to issue the refresh token used by this app. The client ID must also exist in
+the Account production `oauth_client` table: configuring the Pages variable
+alone does not register it. Meo API auth migration
+`0005_meo_ai_web_client.sql` owns the production Web registration. Missing Pages
+client configuration returns a local 503 instead of sending a broken OAuth
+request to Account.
+
 ## Local checks
 
 No package installation is needed. Run `npm test` and `npm run build` from this directory. The build command is a lightweight source-layout check; Cloudflare performs the actual Pages build remotely.
