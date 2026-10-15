@@ -6,32 +6,11 @@ import type {
   ChatTransport,
   ChatStreamConnection,
 } from 'librechat-data-provider';
-import type { ResumableLogger, PageVisibility, FetchStreamStatus } from './host';
+import type { SubscriptionHost, SubscriptionTarget } from './host';
 import type { GenerationProtocolVersion } from '../protocol';
 import type { StepEvent } from '../reducer';
 import type { ResumableRun } from './run';
 import { GENERATION_PROTOCOL_VERSION, generationProtocolHeaders } from '../protocol';
-
-/** The generation one subscription attaches to, and how. */
-export interface SubscriptionTarget {
-  streamId: string;
-  submission: TSubmission;
-  /** Asks the server to replay the run's state (`sync`) before live events. */
-  isResume: boolean;
-  generationCreatedAt?: number;
-  generationProtocolVersion: GenerationProtocolVersion;
-  /** The pane's lifecycle: once aborted, nothing this subscription does lands. */
-  signal?: AbortSignal;
-}
-
-/** How a subscription reaches the stream and decides when to re-attach. */
-export interface SubscriptionHost {
-  logger: ResumableLogger;
-  visibility: PageVisibility;
-  fetchStatus: FetchStreamStatus;
-  /** Attaches a fresh subscription to `target`; how a subscription re-attaches itself. */
-  subscribe: (target: SubscriptionTarget) => void;
-}
 
 /** What a subscription does with the events its connection reports. */
 export interface SubscriptionHandlers {

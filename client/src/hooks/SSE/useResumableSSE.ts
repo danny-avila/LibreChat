@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useMemo, useEffect, useState, useRef, useCallback } from 'react';
 import { v4 } from 'uuid';
 import { useSetRecoilState } from 'recoil';
 import { useStore, useSetAtom } from 'jotai';
@@ -65,6 +65,11 @@ import {
   ResumableRun,
   documentVisibility,
   ResumableSubscription,
+  handoffToReplacement,
+  authorizeTerminalTeardown,
+  reconcileGenerationLifecycle,
+  clearPendingApprovalForTerminal,
+  clearAttachedGenerationCreatedAt,
 } from '@librechat/chat';
 import type {
   Agents,
@@ -79,12 +84,14 @@ import type {
   TSteerUpdatedEvent,
   TActivityLabelEvent,
   TReasoningLabelEvent,
-  ChatFinalFrame,
   TAttachment,
   TTokenUsageEvent,
   TContextUsageEvent,
 } from 'librechat-data-provider';
 import type {
+  ResumableHost,
+  ResumableCache,
+  TerminalContext,
   SubscriptionTarget,
   StartGenerationResult,
   GenerationProtocolVersion,
@@ -248,6 +255,41 @@ export default function useResumableSSE(
       }));
     },
     [queryClient],
+  );
+
+  const resumableCache = useMemo<ResumableCache>(
+    () => ({
+      invalidateMessages: (conversationId, refetch) =>
+        queryClient.invalidateQueries({
+          queryKey: [QueryKeys.messages, conversationId],
+          refetchType: refetch,
+        }),
+      fetchMessages: (conversationId, fallback) =>
+        queryClient.fetchQuery<TMessage[]>({
+          queryKey: [QueryKeys.messages, conversationId],
+          ...(fallback === true && {
+            // The first stream can finish before CREATED mounts the saved-chat query.
+            queryFn: () => fetchConversationMessages(conversationId),
+          }),
+        }),
+      refreshConversation: (conversationId) =>
+        queryClient.invalidateQueries({
+          queryKey: [QueryKeys.conversation, conversationId],
+          refetchType: 'all',
+        }),
+      refreshConversationLists: () => invalidateConversationLists(queryClient),
+      refreshPinnedConversations: () =>
+        queryClient.invalidateQueries({ queryKey: [QueryKeys.pinnedConversations] }),
+      setStreamStatus: (conversationId, status) =>
+        queryClient.setQueryData(streamStatusQueryKey(conversationId), status),
+      removeStreamStatus: (conversationId) =>
+        queryClient.removeQueries({ queryKey: streamStatusQueryKey(conversationId) }),
+      invalidateStreamStatus: (conversationId) =>
+        queryClient.invalidateQueries({ queryKey: streamStatusQueryKey(conversationId) }),
+      addActiveJob,
+      removeActiveJob,
+    }),
+    [addActiveJob, queryClient, removeActiveJob],
   );
 
   const addOptimisticConversation = useCallback(
@@ -427,16 +469,35 @@ export default function useResumableSSE(
       if (target.signal?.aborted || run.submission !== target.submission) {
         return;
       }
-      const sub = new ResumableSubscription(
-        run,
-        {
-          logger,
-          visibility: documentVisibility,
-          fetchStatus: fetchStreamStatus,
-          subscribe: (next) => subscribeToStream(next),
+      const host: ResumableHost = {
+        logger,
+        visibility: documentVisibility,
+        fetchStatus: fetchStreamStatus,
+        subscribe: (next) => subscribeToStream(next),
+        cache: resumableCache,
+        pane: {
+          setIsSubmitting,
+          setShowStopButton,
+          setSubmission,
+          setStreamId,
+          setGenerationEpoch: updateActiveGenerationCreatedAt,
+          setPendingAction: (conversationId, action) =>
+            jotaiStore.set(pendingApprovalActionFamily(conversationId), action),
+          clearComposerDrafts: (conversationId, options) =>
+            clearComposerDrafts(runIndex, conversationId, options),
+          publishRunEnd: setRunEnd,
+          clearDrainAfterAbort,
         },
-        target,
-      );
+        steers: {
+          seed: seedSteerChips,
+          appliedIds: collectAppliedSteerIds,
+          settleApplied: settleAppliedSteerParts,
+          convertToQueued: convertSteersToQueued,
+          convertLocalToQueued: convertLocalSteersToQueued,
+        },
+        events: { clearStepMaps, flushPendingDeltas, resetLive },
+      };
+      const sub = new ResumableSubscription(run, host, target);
       const {
         streamId: currentStreamId,
         isResume,
@@ -445,29 +506,6 @@ export default function useResumableSSE(
         startedAsNewConversation,
       } = sub;
       run.subscribedEpoch = generationCreatedAt ?? null;
-      /** Terminal handlers below are fenced by this subscription and its generation.
-       * Clear every key the same run may have occupied, including the temporary
-       * new-chat key, so aborts and resumes from another tab cannot leave a stale
-       * approval card beside an idle composer. */
-      const clearPendingApprovalForTerminal = (conversationId?: string | null) => {
-        const conversationIds = new Set<string>([
-          currentStreamId,
-          ...(conversationId ? [conversationId] : []),
-          ...(sub.submission.conversation?.conversationId
-            ? [sub.submission.conversation.conversationId]
-            : []),
-          ...(startedAsNewConversation ? [String(Constants.NEW_CONVO)] : []),
-        ]);
-        for (const id of conversationIds) {
-          jotaiStore.set(pendingApprovalActionFamily(id), null);
-        }
-      };
-      const clearAttachedGenerationCreatedAt = () => {
-        updateActiveGenerationCreatedAt(currentStreamId, null, generationCreatedAt);
-        if (startedAsNewConversation) {
-          updateActiveGenerationCreatedAt(Constants.NEW_CONVO, null, generationCreatedAt);
-        }
-      };
       if (generationCreatedAt != null) {
         updateActiveGenerationCreatedAt(
           currentStreamId,
@@ -646,6 +684,12 @@ export default function useResumableSSE(
         } else if (!changed) {
           retryNextFrame();
         }
+      };
+
+      const terminal: TerminalContext = {
+        sub,
+        host,
+        applyPendingAction: (action) => applyPendingActionToMessages(action),
       };
 
       /**
@@ -959,7 +1003,7 @@ export default function useResumableSSE(
             // replacement epoch) instead of passing them to finalHandler.
             sub.finalReceived = true;
             run.cancelSteerRetryFrames();
-            void reconcileGenerationLifecycle(data);
+            void reconcileGenerationLifecycle(terminal, data);
             return;
           }
 
@@ -970,7 +1014,10 @@ export default function useResumableSSE(
               data.conversation?.conversationId ??
               sub.submission.conversation?.conversationId ??
               currentStreamId;
-            if (!(await authorizeTerminalTeardown(finalConvoId, 'FINAL')) || !sub.isCurrent()) {
+            if (
+              !(await authorizeTerminalTeardown(terminal, finalConvoId, 'FINAL')) ||
+              !sub.isCurrent()
+            ) {
               return;
             }
             run.cancelSteerRetryFrames();
@@ -981,7 +1028,7 @@ export default function useResumableSSE(
               conversationId: data.conversation?.conversationId,
               hasResponseMessage: !!data.responseMessage,
             });
-            clearPendingApprovalForTerminal(finalConvoId);
+            clearPendingApprovalForTerminal(terminal, finalConvoId);
             clearComposerDrafts(runIndex, sub.submission.conversation?.conversationId, {
               includeNewChatDraft:
                 !sub.submission.conversation?.conversationId ||
@@ -1069,7 +1116,7 @@ export default function useResumableSSE(
             clearStepMaps();
             // Optimistically remove from active jobs
             removeActiveJob(currentStreamId);
-            clearAttachedGenerationCreatedAt();
+            clearAttachedGenerationCreatedAt(terminal);
             (startupConfig?.balance?.enabled ?? false) && balanceQuery.refetch();
             sub.close();
             setStreamId(null);
@@ -1540,410 +1587,6 @@ export default function useResumableSSE(
         }
       };
 
-      async function handoffToReplacement(
-        conversationId: string,
-        knownStatus?: Awaited<ReturnType<typeof fetchStreamStatus>>,
-      ): Promise<boolean> {
-        if (!sub.isCurrent() || generationProtocolVersion !== GENERATION_PROTOCOL_VERSION) {
-          return false;
-        }
-        let replacementStatus = knownStatus;
-        if (replacementStatus == null) {
-          try {
-            // Deliberately unfenced: this read discovers the newer generation
-            // after the epoch-fenced SSE endpoint rejects the stale attachment.
-            replacementStatus = await fetchStreamStatus(conversationId);
-            if (!sub.isCurrent()) {
-              return false;
-            }
-          } catch (error) {
-            if (!sub.isCurrent()) {
-              return false;
-            }
-            logger.warn('ResumableSSE', 'Could not inspect replacement generation', {
-              conversationId,
-              generationCreatedAt,
-              error,
-            });
-            return false;
-          }
-        }
-
-        if (
-          !supportsGenerationProtocolV2(replacementStatus) ||
-          replacementStatus.active !== true ||
-          !replacementStatus.streamId ||
-          replacementStatus.createdAt == null ||
-          replacementStatus.createdAt === generationCreatedAt
-        ) {
-          return false;
-        }
-
-        logger.log('ResumableSSE', 'Handing stale attachment to replacement generation', {
-          conversationId,
-          staleCreatedAt: generationCreatedAt,
-          replacementCreatedAt: replacementStatus.createdAt,
-        });
-        run.replacementHandoff = true;
-        run.cancelSteerRetryFrames();
-        sub.close();
-        run.clearReconnectTimeout();
-        queryClient.setQueryData(streamStatusQueryKey(conversationId), {
-          ...replacementStatus,
-          generationHandoff: true,
-        });
-        updateActiveGenerationCreatedAt(
-          conversationId,
-          replacementStatus.createdAt,
-          undefined,
-          GENERATION_PROTOCOL_VERSION,
-        );
-        if (startedAsNewConversation) {
-          updateActiveGenerationCreatedAt(
-            Constants.NEW_CONVO,
-            replacementStatus.createdAt,
-            undefined,
-            GENERATION_PROTOCOL_VERSION,
-          );
-        }
-        addActiveJob(replacementStatus.streamId);
-        seedSteerChips(
-          conversationId,
-          (replacementStatus.resumeState?.pendingSteers ?? []) as TPendingSteer[],
-          replacementStatus.createdAt,
-          GENERATION_PROTOCOL_VERSION,
-        );
-        settleAppliedSteerParts(
-          conversationId,
-          replacementStatus.resumeState?.aggregatedContent ?? replacementStatus.aggregatedContent,
-        );
-        if (replacementStatus.pendingAction ?? replacementStatus.resumeState?.pendingAction) {
-          applyPendingActionToMessages(
-            (replacementStatus.pendingAction ??
-              replacementStatus.resumeState?.pendingAction) as Agents.PendingAction,
-          );
-        }
-        resetLive(sub.liveSubmission());
-        clearStepMaps();
-        run.reconnectAttempt = 0;
-        run.submission = null;
-        setIsSubmitting(true);
-        setShowStopButton(true);
-        setSubmission(null);
-        return true;
-      }
-
-      /**
-       * A terminal frame proves only what happened on this SSE attachment. A
-       * fresh status read is the authority for whether terminal UI teardown is
-       * safe: a newer epoch may already own the conversation, while the exact
-       * epoch can still be active despite a racing FINAL/error frame.
-       */
-      function retryFencedTerminalAttachment(reason: string): void {
-        if (!sub.isCurrent()) {
-          return;
-        }
-        logger.warn('ResumableSSE', 'Deferring terminal teardown and retrying fenced attachment', {
-          conversationId: sub.submission.conversation?.conversationId ?? currentStreamId,
-          generationCreatedAt,
-          reason,
-        });
-        run.reconnectAttempt = Math.max(run.reconnectAttempt, 1);
-        sub.close();
-        if (run.reconnectTimeout) {
-          run.scheduler.clearTimeout(run.reconnectTimeout);
-        }
-        sub.scheduleReattach(250);
-      }
-
-      async function authorizeTerminalTeardown(
-        conversationId: string,
-        terminalKind: 'FINAL' | 'error',
-      ): Promise<boolean> {
-        if (!sub.isCurrent()) {
-          return false;
-        }
-        if (generationProtocolVersion !== GENERATION_PROTOCOL_VERSION) {
-          return true;
-        }
-
-        let status: Awaited<ReturnType<typeof fetchStreamStatus>>;
-        try {
-          status = await fetchStreamStatus(conversationId);
-          if (!sub.isCurrent()) {
-            return false;
-          }
-        } catch (error) {
-          if (!sub.isCurrent()) {
-            return false;
-          }
-          logger.warn('ResumableSSE', `Could not verify ${terminalKind} generation status`, {
-            conversationId,
-            generationCreatedAt,
-            error,
-          });
-          retryFencedTerminalAttachment(`${terminalKind.toLowerCase()} status unavailable`);
-          return false;
-        }
-
-        if (!supportsGenerationProtocolV2(status)) {
-          retryFencedTerminalAttachment(`${terminalKind.toLowerCase()} status was unnegotiated`);
-          return false;
-        }
-
-        if (status.active === true) {
-          const handedOff =
-            status.createdAt != null &&
-            generationCreatedAt != null &&
-            status.createdAt !== generationCreatedAt &&
-            (await handoffToReplacement(conversationId, status));
-          if (!sub.isCurrent()) {
-            return false;
-          }
-          if (handedOff) {
-            return false;
-          }
-          retryFencedTerminalAttachment(
-            status.createdAt == null || generationCreatedAt == null
-              ? `${terminalKind.toLowerCase()} status epoch was inconclusive`
-              : `${terminalKind.toLowerCase()} generation remains active`,
-          );
-          return false;
-        }
-
-        if (status.active !== false) {
-          retryFencedTerminalAttachment(`${terminalKind.toLowerCase()} status was inconclusive`);
-          return false;
-        }
-
-        return true;
-      }
-
-      const reconcileGenerationLifecycle = async (
-        event: Pick<
-          ChatFinalFrame,
-          'reconcileReason' | 'terminalStatus' | 'generationCreatedAt' | 'conversation'
-        >,
-      ): Promise<void> => {
-        if (!sub.isCurrent()) {
-          return;
-        }
-        const reconciliationConvoId =
-          event.conversation?.conversationId ??
-          sub.submission.conversation?.conversationId ??
-          currentStreamId;
-        if (
-          generationCreatedAt != null &&
-          event.generationCreatedAt != null &&
-          event.generationCreatedAt !== generationCreatedAt
-        ) {
-          return;
-        }
-
-        if (event.reconcileReason === 'generation_replaced') {
-          const handedOff = await handoffToReplacement(reconciliationConvoId);
-          if (!sub.isCurrent()) {
-            return;
-          }
-          if (handedOff) {
-            return;
-          }
-          // Replacement visibility can lag its notification by a round trip.
-          // Retry the stale epoch; the fenced HTTP endpoint will return the
-          // dedicated replacement response as soon as the new job is visible.
-          run.reconnectAttempt = Math.max(run.reconnectAttempt, 1);
-          sub.close();
-          sub.scheduleReattach(250);
-          return;
-        }
-
-        run.reconnectAttempt = Math.max(run.reconnectAttempt, 1);
-        sub.close();
-        clearStepMaps();
-        let persistedMessages: TMessage[] | undefined;
-        const messageQueryKey = [QueryKeys.messages, reconciliationConvoId] as const;
-        try {
-          /** Force a fetch through the already-registered messages query and
-           *  use its returned value. Merely awaiting invalidateQueries and
-           *  reading the cache can mistake stale pre-run history for a
-           *  successful reconciliation because React Query normally swallows
-           *  refetch errors. */
-          await queryClient.invalidateQueries({
-            queryKey: messageQueryKey,
-            refetchType: 'none',
-          });
-          if (!sub.isCurrent()) {
-            return;
-          }
-          const fetched = await queryClient.fetchQuery<TMessage[]>({
-            queryKey: messageQueryKey,
-          });
-          if (!sub.isCurrent()) {
-            return;
-          }
-          if (Array.isArray(fetched)) {
-            persistedMessages = fetched;
-          }
-        } catch (error) {
-          if (!sub.isCurrent()) {
-            return;
-          }
-          logger.warn('ResumableSSE', 'Could not refetch synthesized terminal state', {
-            conversationId: reconciliationConvoId,
-            error,
-          });
-        }
-        try {
-          await queryClient.invalidateQueries({
-            queryKey: [QueryKeys.conversation, reconciliationConvoId],
-            refetchType: 'all',
-          });
-          if (!sub.isCurrent()) {
-            return;
-          }
-          await invalidateConversationLists(queryClient);
-          if (!sub.isCurrent()) {
-            return;
-          }
-          await queryClient.invalidateQueries({ queryKey: [QueryKeys.pinnedConversations] });
-          if (!sub.isCurrent()) {
-            return;
-          }
-        } catch (error) {
-          if (!sub.isCurrent()) {
-            return;
-          }
-          logger.warn('ResumableSSE', 'Could not refresh synthesized conversation metadata', {
-            conversationId: reconciliationConvoId,
-            error,
-          });
-        }
-
-        let status: Awaited<ReturnType<typeof fetchStreamStatus>> | undefined;
-        try {
-          status = await fetchStreamStatus(reconciliationConvoId);
-          if (!sub.isCurrent()) {
-            return;
-          }
-        } catch (error) {
-          if (!sub.isCurrent()) {
-            return;
-          }
-          logger.warn('ResumableSSE', 'Could not inspect synthesized terminal status', {
-            conversationId: reconciliationConvoId,
-            error,
-          });
-        }
-        if (status != null && !supportsGenerationProtocolV2(status)) {
-          /** A v2 control frame cannot be reconciled with a legacy status
-           * snapshot (for example during a rolling deploy). Preserve the
-           * attachment and retry the exact fenced generation. */
-          sub.scheduleReattach(250);
-          return;
-        }
-        if (
-          status?.active === true &&
-          status.createdAt != null &&
-          (generationCreatedAt == null || status.createdAt !== generationCreatedAt)
-        ) {
-          const handedOff = await handoffToReplacement(reconciliationConvoId, status);
-          if (!sub.isCurrent()) {
-            return;
-          }
-          if (handedOff) {
-            return;
-          }
-        }
-        if (
-          status?.active === true &&
-          (generationCreatedAt == null || status.createdAt === generationCreatedAt)
-        ) {
-          // Durable state still calls this exact epoch active. Prefer another
-          // fenced resume over terminalizing on a racing synthesized frame.
-          sub.scheduleReattach(250);
-          return;
-        }
-
-        const authoritativeValues = [
-          ...(persistedMessages ?? []),
-          ...(status?.resumeState?.aggregatedContent ?? status?.aggregatedContent ?? []),
-        ];
-        const reconciledIds = new Set(collectAppliedSteerIds(authoritativeValues));
-        settleAppliedSteerParts(reconciliationConvoId, authoritativeValues);
-        const unrecovered = status?.unrecoveredSteers ?? [];
-        if (unrecovered.length > 0) {
-          const recoverySteerId = getRecoverySteerId(sub.submission);
-          convertSteersToQueued(reconciliationConvoId, unrecovered, {
-            ...(recoverySteerId != null && {
-              allowPreviouslyConvertedIds: [recoverySteerId],
-            }),
-          });
-          for (const steer of unrecovered) {
-            reconciledIds.add(steer.steerId);
-            if (steer.clientSteerId) {
-              reconciledIds.add(steer.clientSteerId);
-            }
-          }
-        }
-        if (persistedMessages) {
-          convertLocalSteersToQueued(reconciliationConvoId, {
-            excludeSteerIds: reconciledIds,
-            generationProtocolVersion,
-          });
-        }
-
-        resetLive(sub.liveSubmission());
-        removeActiveJob(currentStreamId);
-        clearAttachedGenerationCreatedAt();
-        clearPendingApprovalForTerminal(reconciliationConvoId);
-        clearComposerDrafts(runIndex, reconciliationConvoId, {
-          includeNewChatDraft:
-            !reconciliationConvoId ||
-            reconciliationConvoId === Constants.NEW_CONVO ||
-            run.optimisticStreamIds.has(currentStreamId) ||
-            isInitialNewConversation(sub.submission),
-        });
-        setIsSubmitting(false);
-        setShowStopButton(false);
-        if (event.reconcileReason === 'abort_persistence_failed') {
-          /** Interrupt & send arms an override that drains even an `aborted`
-           * run. This terminal frame explicitly says durable persistence is
-           * unknown, so consume that override before publishing runEnd; the
-           * queued words remain available for a deliberate retry. */
-          clearDrainAfterAbort(
-            sub.submission.conversation?.conversationId || String(Constants.NEW_CONVO),
-            generationCreatedAt,
-          );
-        }
-        let reconciliationOutcome: 'completed' | 'aborted' | 'error' = 'aborted';
-        if (event.terminalStatus === 'complete') {
-          reconciliationOutcome = persistedMessages != null ? 'completed' : 'error';
-        } else if (event.terminalStatus === 'error') {
-          reconciliationOutcome = 'error';
-        }
-        const reconciledResponseMessageId =
-          reconciliationOutcome === 'completed'
-            ? completedResponseMessageId(
-                persistedMessages,
-                sub.userMessage?.messageId,
-                status?.resumeState?.responseMessageId ?? sub.submission.initialResponse?.messageId,
-              )
-            : undefined;
-        setRunEnd({
-          conversationId: reconciliationConvoId,
-          outcome: reconciliationOutcome,
-          endedAt: run.scheduler.now(),
-          generationCreatedAt: status?.createdAt ?? generationCreatedAt,
-          ...(reconciledResponseMessageId != null && {
-            responseMessageId: reconciledResponseMessageId,
-          }),
-        });
-        setSubmission(null);
-        setStreamId(null);
-        run.releaseStream(currentStreamId);
-        run.reconnectAttempt = 0;
-      };
-
       /**
        * Error event handler - handles BOTH:
        * 1. HTTP-level errors (status present) - 404, 409, network failures (0)
@@ -1972,7 +1615,7 @@ export default function useResumableSSE(
 
         if (responseCode === 409) {
           const replacementConvoId = sub.submission.conversation?.conversationId ?? currentStreamId;
-          const handedOff = await handoffToReplacement(replacementConvoId);
+          const handedOff = await handoffToReplacement(terminal, replacementConvoId);
           if (!sub.isCurrent()) {
             return;
           }
@@ -2065,7 +1708,7 @@ export default function useResumableSSE(
               status.createdAt != null &&
               (generationCreatedAt == null || status.createdAt !== generationCreatedAt)
             ) {
-              const handedOff = await handoffToReplacement(recoveryConvoId, status);
+              const handedOff = await handoffToReplacement(terminal, recoveryConvoId, status);
               if (!sub.isCurrent()) {
                 return;
               }
@@ -2147,8 +1790,8 @@ export default function useResumableSSE(
           }
 
           removeActiveJob(currentStreamId);
-          clearAttachedGenerationCreatedAt();
-          clearPendingApprovalForTerminal(recoveryConvoId);
+          clearAttachedGenerationCreatedAt(terminal);
+          clearPendingApprovalForTerminal(terminal, recoveryConvoId);
           if (
             !run.createdStreamIds.has(currentStreamId) &&
             run.optimisticStreamIds.has(currentStreamId)
@@ -2252,7 +1895,10 @@ export default function useResumableSSE(
         if (responseCode == null && data != null) {
           sub.finalReceived = true;
           const recoveryConvoId = sub.submission.conversation?.conversationId ?? currentStreamId;
-          if (!(await authorizeTerminalTeardown(recoveryConvoId, 'error')) || !sub.isCurrent()) {
+          if (
+            !(await authorizeTerminalTeardown(terminal, recoveryConvoId, 'error')) ||
+            !sub.isCurrent()
+          ) {
             return;
           }
           logger.log('ResumableSSE', 'Server-sent error event received:', data);
@@ -2263,8 +1909,8 @@ export default function useResumableSSE(
            * frame must never overwrite the error write. */
           flushPendingDeltas();
           removeActiveJob(currentStreamId);
-          clearAttachedGenerationCreatedAt();
-          clearPendingApprovalForTerminal(recoveryConvoId);
+          clearAttachedGenerationCreatedAt(terminal);
+          clearPendingApprovalForTerminal(terminal, recoveryConvoId);
           resetLive(sub.liveSubmission());
           if (
             !run.createdStreamIds.has(currentStreamId) &&
@@ -2419,7 +2065,7 @@ export default function useResumableSSE(
             status.createdAt != null &&
             (generationCreatedAt == null || status.createdAt !== generationCreatedAt)
           ) {
-            const handedOff = await handoffToReplacement(recoveryConvoId, status);
+            const handedOff = await handoffToReplacement(terminal, recoveryConvoId, status);
             if (!sub.isCurrent()) {
               return;
             }
@@ -2537,8 +2183,8 @@ export default function useResumableSSE(
 
           resetLive(sub.liveSubmission());
           removeActiveJob(currentStreamId);
-          clearAttachedGenerationCreatedAt();
-          clearPendingApprovalForTerminal(recoveryConvoId);
+          clearAttachedGenerationCreatedAt(terminal);
+          clearPendingApprovalForTerminal(terminal, recoveryConvoId);
           if (
             !run.createdStreamIds.has(currentStreamId) &&
             run.optimisticStreamIds.has(currentStreamId)
@@ -2658,6 +2304,7 @@ export default function useResumableSSE(
     },
     [
       run,
+      resumableCache,
       isAddedRequest,
       setConversation,
       runIndex,
