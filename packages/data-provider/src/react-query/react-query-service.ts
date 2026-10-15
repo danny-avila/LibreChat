@@ -302,6 +302,21 @@ export const useResetPasswordMutation = (): UseMutationResult<
   return useMutation((payload: t.TResetPassword) => dataService.resetPassword(payload));
 };
 
+export const useAvailablePluginsQuery = <TData = s.TPlugin[]>(
+  config?: UseQueryOptions<s.TPlugin[], unknown, TData>,
+): QueryObserverResult<TData> => {
+  return useQuery<s.TPlugin[], unknown, TData>(
+    [QueryKeys.availablePlugins],
+    () => dataService.getAvailablePlugins(),
+    {
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
+      refetchOnMount: false,
+      ...config,
+    },
+  );
+};
+
 export const useUpdateUserPluginsMutation = (
   _options?: m.UpdatePluginAuthOptions,
 ): UseMutationResult<t.TUser, unknown, t.TUpdateUserPlugins, unknown> => {

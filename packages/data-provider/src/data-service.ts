@@ -352,6 +352,10 @@ export const resendVerificationEmail = (
   return request.post(endpoints.resendVerificationEmail(), payload);
 };
 
+export const getAvailablePlugins = (): Promise<s.TPlugin[]> => {
+  return request.get(endpoints.plugins());
+};
+
 export const updateUserPlugins = (payload: t.TUpdateUserPlugins) => {
   return request.post(endpoints.userPlugins(), payload);
 };
