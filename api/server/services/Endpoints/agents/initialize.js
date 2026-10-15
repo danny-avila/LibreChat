@@ -2057,6 +2057,7 @@ const initializeClientWithProvider = async ({
     eventChildActivity,
     resolveMcpServerName,
     toolTimingReplayEvents,
+    storeProviderItems: isStableContextEnabled(req.config),
   });
 
   const client = new AgentClient({

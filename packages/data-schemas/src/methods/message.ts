@@ -13,6 +13,7 @@ import { createChatExpirationDate, createTempChatExpirationDate } from '~/utils/
 import { activeExpirationFilter, createFallbackRetentionDate } from '~/utils/retention';
 import { fitBoundAppSnapshots, hasBoundAppSnapshots } from './appSnapshots';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import { splitProviderItems } from '~/utils/providerItems';
 import { tenantStorage } from '~/config/tenantContext';
 import logger from '~/config/winston';
 
@@ -30,10 +31,14 @@ const MAX_SUBAGENT_CONTROL_MESSAGE_LENGTH = 4 * 1024;
 const MAX_SUBAGENT_CONTROL_RECEIPT_CAS_ATTEMPTS = 64;
 const HITL_MESSAGE_FILTER_FIELD_SET = new Set<string>(HITL_MESSAGE_FILTER_FIELDS);
 
-/** Written only through `saveMessage` metadata and `setMessageContextAnchor`, never from input. */
+/**
+ * Written only through `saveMessage` metadata, `setMessageContextAnchor` and the provider items
+ * `saveMessage` splits off a response's content, never from input.
+ */
 function stripContextFields(record: Record<string, unknown>): void {
   delete record.contextUpdates;
   delete record.contextAnchor;
+  delete record.providerItems;
 }
 
 function normalizeUserSubmittedPaths(paths: unknown): string[] {
@@ -1230,6 +1235,13 @@ export function createMessageMethods(
       stripContextFields(update);
       if (metadata?.contextUpdates != null && params.isCreatedByUser === true) {
         update.contextUpdates = metadata.contextUpdates;
+      }
+      const split = splitProviderItems(update.content);
+      if (split != null) {
+        update.content = split.content;
+        if (params.isCreatedByUser !== true && Object.keys(split.providerItems).length > 0) {
+          update.providerItems = split.providerItems;
+        }
       }
       if (metadata?.privateText != null) {
         if (params.isCreatedByUser !== true || typeof params.text !== 'string') {
