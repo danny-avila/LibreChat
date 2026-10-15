@@ -3,6 +3,7 @@ import { useAtom } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { useWatch } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
+import { showStopButtonByIndex } from '@librechat/chat/react';
 import {
   composerSurfaceClasses,
   composerSurfaceShadow,
@@ -61,7 +62,6 @@ import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskUserQuestionPopover from './AskUserQuestionPopover';
 import useComposerItems from '~/hooks/Input/useComposerItems';
 import useAttachTarget from '~/hooks/Input/useAttachTarget';
-import { showStopButtonByIndex } from '~/store/generation';
 import Hints, { composerHintId } from './Composer/Hints';
 import PastedTextDialog from './Files/PastedTextDialog';
 import DuringRunSendButton from './DuringRunSendButton';

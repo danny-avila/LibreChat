@@ -4,13 +4,18 @@ import { useStore, useSetAtom } from 'jotai';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { hasPendingAssistantParent } from '@librechat/chat';
-import { revealedQueuedTurnFamily, isSubmittingFamily } from '@librechat/chat/react';
 import {
   Constants,
   QueryKeys,
   EModelEndpoint,
   isAssistantsEndpoint,
 } from 'librechat-data-provider';
+import {
+  isSubmittingFamily,
+  submissionStartFamily,
+  showStopButtonByIndex,
+  revealedQueuedTurnFamily,
+} from '@librechat/chat/react';
 import type {
   TMessage,
   TSubmission,
@@ -32,7 +37,6 @@ import {
 import { logger, requestChatFocus, markPasteSubmitted, isSubmittableMessage } from '~/utils';
 import { activeUsageResponseIdFamily } from '~/components/Chat/Input/TokenUsage/store';
 import useFocusRegeneratedResponse from '~/hooks/Chat/useFocusRegeneratedResponse';
-import { submissionStartFamily, showStopButtonByIndex } from '~/store/generation';
 import useGetConversation from '~/hooks/Conversations/useGetConversation';
 import useCodeApprovalMode from '~/hooks/Agents/useCodeApprovalMode';
 import useSetFilesToDelete from '~/hooks/Files/useSetFilesToDelete';
