@@ -114,11 +114,10 @@ export const BASE_ONLY_CONFIG_SECTIONS = ['filters', 'mcpAppSandbox'] as const;
  * not be overridden or tombstoned by role, group, or user config documents. */
 export const BASE_PRINCIPAL_CONFIG_SECTIONS = ['langfuse'] as const;
 /** Fields inside overridable sections that only the operator's YAML sets: a role, group, user
- * or tenant config document can neither change nor remove them. The pull request provider and
- * host decide where the deployment's token is sent, the OAuth app which credentials users grant
- * and which environment secret is sent with them, and the shared cache's slot count where every
- * replica looks for a shared answer. */
+ * or tenant config document can neither change nor remove them. This includes endpoint access
+ * policy, provider routing and host settings, OAuth credentials, and shared cache configuration. */
 export const BASE_ONLY_CONFIG_PATHS = [
+  'endpoints.userAccess',
   'endpoints.agents.pullRequests.provider',
   'endpoints.agents.pullRequests.host',
   'endpoints.agents.pullRequests.oauth',

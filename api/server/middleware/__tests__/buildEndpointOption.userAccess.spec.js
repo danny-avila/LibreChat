@@ -3,7 +3,7 @@ const buildEndpointOption = require('../buildEndpointOption');
 describe('buildEndpointOption user endpoint access', () => {
   it('rejects a disallowed provider before building a provider request', async () => {
     const req = {
-      body: { endpoint: 'Abbenay', model: 'openrouter/model' },
+      body: { endpoint: 'Abbenay', endpointType: 'custom', model: 'openrouter/model' },
       user: { id: 'winston-id', username: 'winston' },
       config: {
         endpoints: {
