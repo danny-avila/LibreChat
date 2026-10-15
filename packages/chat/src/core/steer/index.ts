@@ -1,4 +1,6 @@
 export * from './ack';
+export * from './attempt';
+export * from './dispatch';
 export * from './errors';
 export * from './intent';
 export * from './pause';
