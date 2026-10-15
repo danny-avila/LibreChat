@@ -3,6 +3,7 @@ import { v4 } from 'uuid';
 import { useSetRecoilState } from 'recoil';
 import { useStore, useSetAtom } from 'jotai';
 import { useQueryClient } from '@tanstack/react-query';
+import { liveAppliedSteerIdsAtom } from '@librechat/chat/react';
 import { ABORT_SWEEP_STATUSES, selectLocalSteersForQueue } from '@librechat/chat';
 import {
   Constants,
@@ -106,7 +107,6 @@ import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import { abortScrollFamily, showStopButtonByIndex } from '~/store/generation';
 import { withSubmittedCodeDecision } from '~/hooks/Agents/codeDecision';
 import { useChatTransport } from '~/Providers/ChatTransportContext';
-import { liveAppliedSteerIdsAtom } from '~/store/steer';
 import { reopenTermsOnRefusal } from '~/utils/terms';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { fetchConvoSnapshot } from '~/utils/convos';

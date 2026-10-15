@@ -1,13 +1,13 @@
 import { useCallback, useMemo } from 'react';
 import { useStore } from 'jotai';
 import { useToastContext } from '@librechat/client';
+import { revealedQueuedTurnFamily } from '@librechat/chat/react';
 import { blockRecovery, canRestoreRecovery, recoveryDisposition } from '@librechat/chat';
 import type { QueuedMessage } from '@librechat/chat';
 import type { QueuedTurnReceipts } from './receipts';
 import type { QueueRows } from './rows';
 import { useCancelSteerMutation, useCancelAgentQueuedTurnMutation } from '~/data-provider';
 import { recoveryDispositionsFamily } from '~/components/Chat/Steering/recovery';
-import { revealedQueuedTurnFamily } from '~/store/steer';
 import useLocalize from '~/hooks/useLocalize';
 
 /** Lets go of a queued row's server copy (a durable queued turn or a parked

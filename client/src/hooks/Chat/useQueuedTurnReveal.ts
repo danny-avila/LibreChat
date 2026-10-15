@@ -3,13 +3,16 @@ import { useRecoilValue } from 'recoil';
 import { useStore, useAtomValue } from 'jotai';
 import { QueryKeys } from 'librechat-data-provider';
 import { useQueryClient } from '@tanstack/react-query';
+import {
+  revealedQueuedTurnFamily,
+  activeGenerationCreatedAtByConvoId,
+} from '@librechat/chat/react';
 import type { TMessage, TAgentQueuedTurnReceipt } from 'librechat-data-provider';
+import type { RevealedQueuedTurn } from '@librechat/chat/react';
 import type { StreamStatusResponse } from '~/data-provider/SSE/queries';
 import type { QueuedMessage, RunEnd } from '~/hooks/Chat/queue';
-import type { RevealedQueuedTurn } from '~/store/steer';
 import { agentQueuedTurnsQueryKey } from '~/data-provider/SSE/queuedTurns';
 import { streamStatusQueryKey } from '~/data-provider/SSE/queries';
-import { revealedQueuedTurnFamily } from '~/store/steer';
 import store from '~/store';
 
 const isAdmissible = (item: QueuedMessage): boolean =>
@@ -90,7 +93,7 @@ export default function useQueuedTurnReveal(
   const revealKey = conversationId ?? '';
   const reveal = useAtomValue(revealedQueuedTurnFamily(revealKey));
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
-  const activeEpoch = useRecoilValue(store.activeGenerationCreatedAtByConvoId(revealKey));
+  const activeEpoch = useAtomValue(activeGenerationCreatedAtByConvoId(revealKey));
   const readHandoff = useCallback(
     (intent: RevealedQueuedTurn) => {
       const receipts = queryClient.getQueryData<TAgentQueuedTurnReceipt[]>(

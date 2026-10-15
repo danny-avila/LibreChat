@@ -1,5 +1,6 @@
 import { renderHook, act } from '@testing-library/react';
 import { Provider as JotaiProvider, createStore } from 'jotai';
+import { revealedQueuedTurnFamily } from '@librechat/chat/react';
 import {
   Constants,
   ContentTypes,
@@ -25,7 +26,6 @@ import {
 } from '~/components/Chat/Input/TokenUsage/store';
 import { pendingReasoningOverrideFamily } from '~/components/Chat/Input/Composer/state';
 import { submissionStartFamily, showStopButtonByIndex } from '~/store/generation';
-import { revealedQueuedTurnFamily } from '~/store/steer';
 import useChatFunctions from '../useChatFunctions';
 import { isPasteSubmitted } from '~/utils';
 

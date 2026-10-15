@@ -1,7 +1,12 @@
 import { useCallback, useMemo } from 'react';
 import { useAtomValue, useSetAtom } from 'jotai';
 import { useToastContext } from '@librechat/client';
-import { setDefaultMessagePartsHost } from '@librechat/chat/react';
+import { setDefaultMessagePartsHost, pendingSteersByConvoId } from '@librechat/chat/react';
+import {
+  liveAppliedSteerFamily,
+  liveAppliedSteerIdsAtom,
+  escalatingSteerFamily,
+} from '@librechat/chat/react';
 import {
   useRecoilCallback,
   useRecoilState,
@@ -17,11 +22,6 @@ import type {
   MessagePartsHost,
 } from '~/hooks/Chat/contract';
 import type { Artifact } from '~/common';
-import {
-  liveAppliedSteerFamily,
-  liveAppliedSteerIdsAtom,
-  escalatingSteerFamily,
-} from '~/store/steer';
 import store, { ptcTraceByToolCallId, ptcTraceKey, sandboxStartingByToolCallId } from '~/store';
 import { useMessageContext, useFileMapContext, useAgentsMapContext } from '~/Providers';
 import { getAppPartRenderers } from '~/components/Chat/Messages/Content/Parts/slots';
@@ -124,8 +124,7 @@ export const appMessagePartsHost: MessagePartsHost = {
     ),
   useToolArtifactClaim: (artifactId) => useRecoilState(store.toolArtifactClaim(artifactId)),
   useArtifactPanel: useAppArtifactPanel,
-  usePendingSteers: (conversationId) =>
-    useRecoilValue(store.pendingSteersByConvoId(conversationId)),
+  usePendingSteers: (conversationId) => useAtomValue(pendingSteersByConvoId(conversationId)),
   useSteerEscalating: (conversationId) => useAtomValue(escalatingSteerFamily(conversationId)),
   usePaneConversationId: (index) => useRecoilValue(store.conversationIdByIndex(index)),
   useLiveAppliedSteer: useAppLiveAppliedSteer,

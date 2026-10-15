@@ -5,6 +5,7 @@ import { getDefaultStore, useSetAtom } from 'jotai';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { ReasoningEffort } from 'librechat-data-provider';
 import { hasQueuedIntent, releaseQueuedIntent } from '@librechat/chat';
+import { revealedQueuedTurnFamily, resetSteerFamilies } from '@librechat/chat/react';
 import { act, render, screen, within, waitFor, fireEvent } from '@testing-library/react';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
 import type { QueuedMessage } from '~/hooks/Chat/queue';
@@ -13,7 +14,6 @@ import {
   useQueuedTurnPortal,
 } from '~/components/Chat/Steering/QueuedTurnPortal';
 import { queuedMessagesByConvoId, resetQueueFamilies } from '~/hooks/Chat/queue';
-import { revealedQueuedTurnFamily } from '~/store/steer';
 import Queue from '../Queue';
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string, options?: Record<string, string | number>) => {
@@ -201,7 +201,10 @@ function renderQueue(
   );
 }
 
-beforeEach(() => resetQueueFamilies());
+beforeEach(() => {
+  resetQueueFamilies();
+  resetSteerFamilies();
+});
 
 describe('Queue', () => {
   beforeEach(() => jest.clearAllMocks());

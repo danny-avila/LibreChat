@@ -8,6 +8,10 @@ import { QueryKeys, EModelEndpoint } from 'librechat-data-provider';
 import { act, render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { MemoryRouter, useNavigate, useLocation } from 'react-router-dom';
+import {
+  activeGenerationCreatedAtByConvoId,
+  activeGenerationProtocolVersionByConvoId,
+} from '@librechat/chat/react';
 import type { TConversation } from 'librechat-data-provider';
 import type { Transport } from '~/hooks/Chat/contract';
 import type { ChatFormValues } from '~/common';
@@ -167,6 +171,8 @@ function mountComposer(
   const jotaiStore = createStore();
   if (liveRun) {
     jotaiStore.set(showStopButtonByIndex(0), true);
+    jotaiStore.set(activeGenerationCreatedAtByConvoId(conversation.conversationId ?? ''), 1000);
+    jotaiStore.set(activeGenerationProtocolVersionByConvoId(conversation.conversationId ?? ''), 2);
   }
   const wrapper = ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>
@@ -175,14 +181,6 @@ function mountComposer(
           initializeState={({ set }) => {
             if (liveRun) {
               set(store.isSubmittingFamily(0), true);
-              set(
-                store.activeGenerationCreatedAtByConvoId(conversation.conversationId ?? ''),
-                1000,
-              );
-              set(
-                store.activeGenerationProtocolVersionByConvoId(conversation.conversationId ?? ''),
-                2,
-              );
             }
             if (speechSettingsInitialized) {
               set(store.engineSTT, 'external');

@@ -1,8 +1,12 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { useAtom, useSetAtom, useStore } from 'jotai';
 import { useQueryClient } from '@tanstack/react-query';
+import { useAtom, useSetAtom, useStore, useAtomValue } from 'jotai';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import { Constants, QueryKeys, isAssistantsEndpoint } from 'librechat-data-provider';
+import {
+  activeGenerationCreatedAtByConvoId,
+  activeGenerationProtocolVersionByConvoId,
+} from '@librechat/chat/react';
 import type { TMessage } from 'librechat-data-provider';
 import type { ChatContract } from './contract';
 import { stopRequestedByConvoId, drainAfterAbortByIndex, runEndByIndex } from '~/hooks/Chat/queue';
@@ -81,11 +85,11 @@ export default function useChatHelpers(index = 0, paramId?: string): ChatContrac
   const { useCreateConversationAtom } = store;
   const { conversation, setConversation } = useCreateConversationAtom(index);
   const { conversationId, endpoint, endpointType } = conversation ?? {};
-  const activeGenerationCreatedAt = useRecoilValue(
-    store.activeGenerationCreatedAtByConvoId(conversationId ?? Constants.NEW_CONVO),
+  const activeGenerationCreatedAt = useAtomValue(
+    activeGenerationCreatedAtByConvoId(conversationId ?? Constants.NEW_CONVO),
   );
-  const activeGenerationProtocolVersion = useRecoilValue(
-    store.activeGenerationProtocolVersionByConvoId(conversationId ?? Constants.NEW_CONVO),
+  const activeGenerationProtocolVersion = useAtomValue(
+    activeGenerationProtocolVersionByConvoId(conversationId ?? Constants.NEW_CONVO),
   );
 
   /** Use paramId (from URL) as primary source for query key - this must match what ChatView uses

@@ -4,6 +4,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { Constants, ReasoningEffort } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RecoilRoot, useSetRecoilState, type MutableSnapshot } from 'recoil';
+import { revealedQueuedTurnFamily, resetSteerFamilies } from '@librechat/chat/react';
 import {
   claimQueuedIntent,
   releaseQueuedIntent,
@@ -25,7 +26,6 @@ import {
   resetQueueFamilies,
 } from '~/hooks/Chat/queue';
 import { recoveryDispositionsFamily } from '~/components/Chat/Steering/recovery';
-import { revealedQueuedTurnFamily } from '~/store/steer';
 import useQueueDrain from '../useQueueDrain';
 import store from '~/store';
 
@@ -115,7 +115,10 @@ const runEnd = (overrides: Partial<RunEnd> = {}): RunEnd => ({
   ...overrides,
 });
 
-beforeEach(() => resetQueueFamilies());
+beforeEach(() => {
+  resetQueueFamilies();
+  resetSteerFamilies();
+});
 
 describe('useQueueDrain', () => {
   beforeEach(() => {

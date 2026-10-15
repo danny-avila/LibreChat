@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
+import { revealedQueuedTurnFamily } from '@librechat/chat/react';
 import type { TMessage } from 'librechat-data-provider';
 import type { RefObject } from 'react';
 import type { TMessageIcon } from '~/common';
@@ -10,7 +11,6 @@ import { getHeaderPrefixForScreenReader, getMessageAriaLabel } from '~/utils';
 import { messageFooterClasses } from '~/components/Chat/Messages/styles';
 import MessageRow from '~/components/Chat/Messages/ui/MessageRow';
 import MessageIcon from '~/components/Chat/Messages/MessageIcon';
-import { revealedQueuedTurnFamily } from '~/store/steer';
 import { useAuthContext } from '~/hooks/AuthContext';
 import MarkdownLite from './Content/MarkdownLite';
 import { useChatContext } from '~/Providers';

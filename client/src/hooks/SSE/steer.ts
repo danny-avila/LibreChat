@@ -1,6 +1,12 @@
-import { useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { useStore } from 'jotai';
-import { useRecoilCallback } from 'recoil';
+import {
+  pendingSteersByConvoId,
+  appliedSteerIdsByConvoId,
+  acceptedSteerClientIdsByConvoId,
+  activeGenerationCreatedAtByConvoId,
+  activeGenerationProtocolVersionByConvoId,
+} from '@librechat/chat/react';
 import {
   seedPendingSteers,
   settledSteerQuotes,
@@ -23,7 +29,6 @@ import { pendingQuotesByConvoId } from '~/components/Chat/Input/Composer/state';
 import { queuedMessagesByConvoId } from '~/hooks/Chat/queue';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { useFileMapContext } from '~/Providers';
-import store from '~/store';
 
 /**
  * The one place the stream handlers write steer state: pending-steer chips,
@@ -49,117 +54,113 @@ export default function useSteerState() {
    *  stamps these as live-applied only when it actually commits the inline
    *  part, so an abandoned placement or a replayed event cannot arm a draw-in
    *  with no part mounting to consume it. */
-  const resolveSteerChip = useRecoilCallback(
-    ({ snapshot, set }) =>
-      (
-        conversationId: string,
-        steerId: string,
-        clientSteerId?: string,
-        appliedPartQuotes?: string[],
-      ): string[] => {
-        const settledIds = clientSteerId ? [steerId, clientSteerId] : [steerId];
-        /** A part applied by a pre-quotes server carries no quotes while the
-         *  chip being settled may hold the only copy of the user's excerpts
-         *  (its 202 was lost, so the ACK-echo restore never ran). Re-stage
-         *  them before removal; `mergeRestagedQuotes` keeps this idempotent
-         *  with the ACK path for the same excerpts. */
-        if (appliedPartQuotes == null || appliedPartQuotes.length === 0) {
-          const droppedQuotes = settledSteerQuotes(
-            snapshot.getLoadable(store.pendingSteersByConvoId(conversationId)).getValue(),
-            settledIds,
-          );
-          if (droppedQuotes != null) {
-            jotaiStore.set(pendingQuotesByConvoId(conversationId), (prev) =>
-              mergeRestagedQuotes(prev, droppedQuotes),
-            );
-          }
-        }
-        const alreadyApplied = snapshot
-          .getLoadable(store.appliedSteerIdsByConvoId(conversationId))
-          .getValue();
-        const firstApplication = settledIds.filter((id) => !alreadyApplied.includes(id));
-        set(store.appliedSteerIdsByConvoId(conversationId), (prev) =>
-          appendAppliedSteerIds(prev, settledIds),
+  const resolveSteerChip = useCallback(
+    (
+      conversationId: string,
+      steerId: string,
+      clientSteerId?: string,
+      appliedPartQuotes?: string[],
+    ): string[] => {
+      const settledIds = clientSteerId ? [steerId, clientSteerId] : [steerId];
+      /** A part applied by a pre-quotes server carries no quotes while the
+       *  chip being settled may hold the only copy of the user's excerpts
+       *  (its 202 was lost, so the ACK-echo restore never ran). Re-stage
+       *  them before removal; `mergeRestagedQuotes` keeps this idempotent
+       *  with the ACK path for the same excerpts. */
+      if (appliedPartQuotes == null || appliedPartQuotes.length === 0) {
+        const droppedQuotes = settledSteerQuotes(
+          jotaiStore.get(pendingSteersByConvoId(conversationId)),
+          settledIds,
         );
-        set(store.pendingSteersByConvoId(conversationId), (prev) =>
-          removePendingSteers(prev, settledIds),
-        );
-        jotaiStore.set(queuedMessagesByConvoId(conversationId), (prev) =>
-          withoutRecoveredSteers(prev, settledIds),
-        );
-        return firstApplication;
-      },
-    [jotaiStore],
-  );
-
-  /** Capability can change while the same generation resumes after HITL. */
-  const updateSteerChips = useRecoilCallback(
-    ({ set }) =>
-      (event: TSteerUpdatedEvent) => {
-        const acceptedClientIds = acceptedClientSteerIds(event.steers);
-        if (acceptedClientIds.length > 0) {
-          set(store.acceptedSteerClientIdsByConvoId(event.conversationId), (prev) =>
-            appendAppliedSteerIds(prev, acceptedClientIds),
-          );
-        }
-        set(store.pendingSteersByConvoId(event.conversationId), (prev) =>
-          updatePendingSteerLabels(prev, event.steers),
-        );
-      },
-    [],
-  );
-
-  /** Replaces the chip list with the server's still-queued steers (sync, resume). */
-  const seedSteerChips = useRecoilCallback(
-    ({ set }) =>
-      (
-        conversationId: string,
-        steers: TPendingSteer[] | undefined,
-        generationCreatedAt?: number,
-        generationProtocolVersion: GenerationProtocolVersion = 1,
-      ) => {
-        const acceptedClientIds = acceptedClientSteerIds(steers);
-        if (acceptedClientIds.length > 0) {
-          set(store.acceptedSteerClientIdsByConvoId(conversationId), (prev) =>
-            appendAppliedSteerIds(prev, acceptedClientIds),
-          );
-        }
-        set(store.pendingSteersByConvoId(conversationId), (prev) =>
-          seedPendingSteers(prev, steers, {
-            generationCreatedAt,
-            generationProtocolVersion,
-            storedFiles: fileMapRef.current,
-          }),
-        );
-      },
-    [],
-  );
-
-  /** Settles the chips of every steer whose applied part already rides `values`. */
-  const settleAppliedSteerParts = useRecoilCallback(
-    ({ snapshot, set }) =>
-      (conversationId: string, values: unknown[] | undefined) => {
-        const ids = collectAppliedSteerIds(values);
-        if (ids.length === 0) {
-          return;
-        }
-        /** Chips settled by quote-less applied parts hold the only copy of
-         *  their excerpts (a pre-quotes server injected the words bare):
-         *  re-stage them as composer chips before the removal below. */
-        const droppedQuotes = collectDroppedSteerQuotes(
-          values,
-          snapshot.getLoadable(store.pendingSteersByConvoId(conversationId)).getValue(),
-        );
-        if (droppedQuotes.length > 0) {
+        if (droppedQuotes != null) {
           jotaiStore.set(pendingQuotesByConvoId(conversationId), (prev) =>
             mergeRestagedQuotes(prev, droppedQuotes),
           );
         }
-        set(store.appliedSteerIdsByConvoId(conversationId), (prev) =>
-          appendAppliedSteerIds(prev, ids),
+      }
+      const alreadyApplied = jotaiStore.get(appliedSteerIdsByConvoId(conversationId));
+      const firstApplication = settledIds.filter((id) => !alreadyApplied.includes(id));
+      jotaiStore.set(appliedSteerIdsByConvoId(conversationId), (prev) =>
+        appendAppliedSteerIds(prev, settledIds),
+      );
+      jotaiStore.set(pendingSteersByConvoId(conversationId), (prev) =>
+        removePendingSteers(prev, settledIds),
+      );
+      jotaiStore.set(queuedMessagesByConvoId(conversationId), (prev) =>
+        withoutRecoveredSteers(prev, settledIds),
+      );
+      return firstApplication;
+    },
+    [jotaiStore],
+  );
+
+  /** Capability can change while the same generation resumes after HITL. */
+  const updateSteerChips = useCallback(
+    (event: TSteerUpdatedEvent) => {
+      const acceptedClientIds = acceptedClientSteerIds(event.steers);
+      if (acceptedClientIds.length > 0) {
+        jotaiStore.set(acceptedSteerClientIdsByConvoId(event.conversationId), (prev) =>
+          appendAppliedSteerIds(prev, acceptedClientIds),
         );
-        set(store.pendingSteersByConvoId(conversationId), (prev) => removePendingSteers(prev, ids));
-      },
+      }
+      jotaiStore.set(pendingSteersByConvoId(event.conversationId), (prev) =>
+        updatePendingSteerLabels(prev, event.steers),
+      );
+    },
+    [jotaiStore],
+  );
+
+  /** Replaces the chip list with the server's still-queued steers (sync, resume). */
+  const seedSteerChips = useCallback(
+    (
+      conversationId: string,
+      steers: TPendingSteer[] | undefined,
+      generationCreatedAt?: number,
+      generationProtocolVersion: GenerationProtocolVersion = 1,
+    ) => {
+      const acceptedClientIds = acceptedClientSteerIds(steers);
+      if (acceptedClientIds.length > 0) {
+        jotaiStore.set(acceptedSteerClientIdsByConvoId(conversationId), (prev) =>
+          appendAppliedSteerIds(prev, acceptedClientIds),
+        );
+      }
+      jotaiStore.set(pendingSteersByConvoId(conversationId), (prev) =>
+        seedPendingSteers(prev, steers, {
+          generationCreatedAt,
+          generationProtocolVersion,
+          storedFiles: fileMapRef.current,
+        }),
+      );
+    },
+    [jotaiStore],
+  );
+
+  /** Settles the chips of every steer whose applied part already rides `values`. */
+  const settleAppliedSteerParts = useCallback(
+    (conversationId: string, values: unknown[] | undefined) => {
+      const ids = collectAppliedSteerIds(values);
+      if (ids.length === 0) {
+        return;
+      }
+      /** Chips settled by quote-less applied parts hold the only copy of
+       *  their excerpts (a pre-quotes server injected the words bare):
+       *  re-stage them as composer chips before the removal below. */
+      const droppedQuotes = collectDroppedSteerQuotes(
+        values,
+        jotaiStore.get(pendingSteersByConvoId(conversationId)),
+      );
+      if (droppedQuotes.length > 0) {
+        jotaiStore.set(pendingQuotesByConvoId(conversationId), (prev) =>
+          mergeRestagedQuotes(prev, droppedQuotes),
+        );
+      }
+      jotaiStore.set(appliedSteerIdsByConvoId(conversationId), (prev) =>
+        appendAppliedSteerIds(prev, ids),
+      );
+      jotaiStore.set(pendingSteersByConvoId(conversationId), (prev) =>
+        removePendingSteers(prev, ids),
+      );
+    },
     [jotaiStore],
   );
 
@@ -171,78 +172,74 @@ export default function useSteerState() {
    *  server-reported list as a backstop for `failed` chips, which never rode
    *  that list at all. The intentional-abort path passes `statuses: ['failed']`
    *  since the run may still be live server-side there (see its call site). */
-  const convertLocalSteersToQueued = useRecoilCallback(
-    ({ snapshot }) =>
-      (
-        conversationId: string,
-        options?: {
-          claimParked?: boolean;
-          statuses?: readonly PendingSteer['status'][];
-          excludeSteerIds?: Iterable<string>;
-          generationProtocolVersion?: GenerationProtocolVersion;
-        },
-      ) => {
-        const chips = snapshot.getLoadable(store.pendingSteersByConvoId(conversationId)).getValue();
-        const generationProtocolVersion =
-          options?.generationProtocolVersion ??
-          snapshot
-            .getLoadable(store.activeGenerationProtocolVersionByConvoId(conversationId))
-            .getValue();
-        const activeStatuses = options?.statuses ?? RUN_ENDED_STATUSES;
-        const excluded = new Set(options?.excludeSteerIds ?? []);
-        const accepted = selectLocalSteersForQueue(
-          chips,
-          activeStatuses.filter((status) => status === 'pending'),
-          excluded,
-        );
-        if (accepted.length > 0) {
-          convertSteersToQueued(conversationId, accepted, {
-            claimParked: options?.claimParked,
-            generationProtocolVersion,
-          });
-        }
-        const failed = selectLocalSteersForQueue(
-          chips,
-          activeStatuses.filter((status) => status === 'failed'),
-          excluded,
-        );
-        if (failed.length > 0) {
-          convertSteersToQueued(conversationId, failed, {
-            generationProtocolVersion,
-            bindRecoverySource: false,
-            /** Swept out of the chip surface so it cannot render under the next
-             *  reply, but the server refused these words: the rail holds the row
-             *  for Retry or an explicit send instead of draining it automatically. */
-            needsExplicitSend: true,
-          });
-        }
+  const convertLocalSteersToQueued = useCallback(
+    (
+      conversationId: string,
+      options?: {
+        claimParked?: boolean;
+        statuses?: readonly PendingSteer['status'][];
+        excludeSteerIds?: Iterable<string>;
+        generationProtocolVersion?: GenerationProtocolVersion;
       },
-    [convertSteersToQueued],
+    ) => {
+      const chips = jotaiStore.get(pendingSteersByConvoId(conversationId));
+      const generationProtocolVersion =
+        options?.generationProtocolVersion ??
+        jotaiStore.get(activeGenerationProtocolVersionByConvoId(conversationId));
+      const activeStatuses = options?.statuses ?? RUN_ENDED_STATUSES;
+      const excluded = new Set(options?.excludeSteerIds ?? []);
+      const accepted = selectLocalSteersForQueue(
+        chips,
+        activeStatuses.filter((status) => status === 'pending'),
+        excluded,
+      );
+      if (accepted.length > 0) {
+        convertSteersToQueued(conversationId, accepted, {
+          claimParked: options?.claimParked,
+          generationProtocolVersion,
+        });
+      }
+      const failed = selectLocalSteersForQueue(
+        chips,
+        activeStatuses.filter((status) => status === 'failed'),
+        excluded,
+      );
+      if (failed.length > 0) {
+        convertSteersToQueued(conversationId, failed, {
+          generationProtocolVersion,
+          bindRecoverySource: false,
+          /** Swept out of the chip surface so it cannot render under the next
+           *  reply, but the server refused these words: the rail holds the row
+           *  for Retry or an explicit send instead of draining it automatically. */
+          needsExplicitSend: true,
+        });
+      }
+    },
+    [convertSteersToQueued, jotaiStore],
   );
 
   /** Conversation ids are reused by successive agent turns. Keep the exact
    * live epoch beside the UI controls, and only clear it if the terminal event
    * still belongs to the epoch that installed it. */
-  const updateActiveGenerationCreatedAt = useRecoilCallback(
-    ({ snapshot, set }) =>
-      (
-        conversationId: string,
-        next: number | null,
-        expected?: number,
-        generationProtocolVersion: GenerationProtocolVersion = 1,
-      ): boolean => {
-        const state = store.activeGenerationCreatedAtByConvoId(conversationId);
-        if (expected != null && snapshot.getLoadable(state).getValue() !== expected) {
-          return false;
-        }
-        set(state, next);
-        set(
-          store.activeGenerationProtocolVersionByConvoId(conversationId),
-          next == null ? 1 : generationProtocolVersion,
-        );
-        return true;
-      },
-    [],
+  const updateActiveGenerationCreatedAt = useCallback(
+    (
+      conversationId: string,
+      next: number | null,
+      expected?: number,
+      generationProtocolVersion: GenerationProtocolVersion = 1,
+    ): boolean => {
+      const state = activeGenerationCreatedAtByConvoId(conversationId);
+      if (expected != null && jotaiStore.get(state) !== expected) {
+        return false;
+      }
+      jotaiStore.set(state, next);
+      jotaiStore.set(
+        activeGenerationProtocolVersionByConvoId(conversationId),
+        next == null ? 1 : generationProtocolVersion,
+      );
+      return true;
+    },
+    [jotaiStore],
   );
 
   return useMemo(
