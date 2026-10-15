@@ -76,7 +76,6 @@ export function createMCPServerMethods(
   }) => Promise<MCPServerDocument>;
   findMCPServerByServerName: (serverName: string) => Promise<MCPServerDocument | null>;
   findMCPServerByObjectId: (_id: string | Types.ObjectId) => Promise<MCPServerDocument | null>;
-  findMCPServersByAuthor: (authorId: string | Types.ObjectId) => Promise<MCPServerDocument[]>;
   getListMCPServersByIds: ({
     ids,
     otherParams,
@@ -226,20 +225,6 @@ export function createMCPServerMethods(
   ): Promise<MCPServerDocument | null> {
     const MCPServer = mongoose.models.MCPServer as Model<MCPServerDocument>;
     return await MCPServer.findById(_id).lean<MCPServerDocument>();
-  }
-
-  /**
-   * Find MCP servers by author
-   * @param authorId - The author's ObjectId or string
-   * @returns Array of MCP server documents
-   */
-  async function findMCPServersByAuthor(
-    authorId: string | Types.ObjectId,
-  ): Promise<MCPServerDocument[]> {
-    const MCPServer = mongoose.models.MCPServer as Model<MCPServerDocument>;
-    return await MCPServer.find({ author: authorId })
-      .sort({ updatedAt: -1 })
-      .lean<MCPServerDocument[]>();
   }
 
   /**
@@ -493,7 +478,6 @@ export function createMCPServerMethods(
     createMCPServer,
     findMCPServerByServerName,
     findMCPServerByObjectId,
-    findMCPServersByAuthor,
     getListMCPServersByIds,
     getListMCPServersByNames,
     updateMCPServer,

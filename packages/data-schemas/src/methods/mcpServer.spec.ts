@@ -345,69 +345,6 @@ describe('MCPServer Model Tests', () => {
     });
   });
 
-  describe('findMCPServersByAuthor', () => {
-    test('should find all servers by author', async () => {
-      await methods.createMCPServer({
-        config: createSSEConfig('Author Server 1'),
-        author: authorId,
-      });
-      await methods.createMCPServer({
-        config: createSSEConfig('Author Server 2'),
-        author: authorId,
-      });
-      await methods.createMCPServer({
-        config: createSSEConfig('Other Author Server'),
-        author: authorId2,
-      });
-
-      const servers = await methods.findMCPServersByAuthor(authorId);
-
-      expect(servers).toHaveLength(2);
-      expect(servers.every((s) => s.author.toString() === authorId.toString())).toBe(true);
-    });
-
-    test('should return empty array when author has no servers', async () => {
-      const servers = await methods.findMCPServersByAuthor(new mongoose.Types.ObjectId());
-
-      expect(servers).toEqual([]);
-    });
-
-    test('should sort by updatedAt descending', async () => {
-      // Create servers with slight delay to ensure different timestamps
-      const server1 = await methods.createMCPServer({
-        config: createSSEConfig('First Created'),
-        author: authorId,
-      });
-
-      // Update first server to make it most recently updated
-      await MCPServer.findByIdAndUpdate(server1._id, {
-        $set: { 'config.description': 'Updated' },
-      });
-
-      await methods.createMCPServer({
-        config: createSSEConfig('Second Created'),
-        author: authorId,
-      });
-
-      const servers = await methods.findMCPServersByAuthor(authorId);
-
-      expect(servers).toHaveLength(2);
-      // Most recently updated should come first
-      expect(servers[0].serverName).toBe('second-created');
-    });
-
-    test('should handle string author ID', async () => {
-      await methods.createMCPServer({
-        config: createSSEConfig('String Author Server'),
-        author: authorId,
-      });
-
-      const servers = await methods.findMCPServersByAuthor(authorId.toString());
-
-      expect(servers).toHaveLength(1);
-    });
-  });
-
   describe('getListMCPServersByIds', () => {
     let server1: t.MCPServerDocument;
     let server2: t.MCPServerDocument;

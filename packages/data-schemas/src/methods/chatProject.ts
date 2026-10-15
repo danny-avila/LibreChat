@@ -87,7 +87,6 @@ export interface ChatProjectMethods {
     conversationId: string,
     projectId: string | null,
   ): Promise<AssignConversationToProjectResult | null>;
-  refreshChatProjectStats(user: string, projectId: string): Promise<IChatProject | null>;
 }
 
 type ProjectCursor = {
@@ -752,13 +751,6 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
     };
   }
 
-  async function refreshChatProjectStats(
-    user: string,
-    projectId: string,
-  ): Promise<IChatProject | null> {
-    return await refreshChatProjectStatsForUser(mongoose, user, projectId);
-  }
-
   return {
     createChatProject,
     getChatProject,
@@ -769,6 +761,5 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
     addChatProjectFile,
     removeChatProjectFile,
     assignConversationToProject,
-    refreshChatProjectStats,
   };
 }

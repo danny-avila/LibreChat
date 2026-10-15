@@ -128,11 +128,6 @@ export const OWNER_ACL_PERMISSION_BIT_SUPERSETS: readonly number[] =
 const OBJECT_ID_HEX = /^[0-9a-fA-F]{24}$/;
 
 export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
-  findEntriesByPrincipal: (
-    principalType: string,
-    principalId: string | Types.ObjectId,
-    resourceType?: string,
-  ) => Promise<IAclEntry[]>;
   findEntriesByResource: (
     resourceType: string,
     resourceId: string | Types.ObjectId,
@@ -172,13 +167,6 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
     roleId?: string | Types.ObjectId,
     expiredAt?: Date,
   ) => Promise<IAclEntry | null>;
-  revokePermission: (
-    principalType: string,
-    principalId: string | Types.ObjectId | null,
-    resourceType: string,
-    resourceId: string | Types.ObjectId,
-    session?: ClientSession,
-  ) => Promise<DeleteResult>;
   modifyPermissionBits: (
     principalType: string,
     principalId: string | Types.ObjectId | null,
@@ -224,26 +212,6 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
     resourceTypes: string | string[],
   ) => Promise<Types.ObjectId[]>;
 } {
-  /**
-   * Find ACL entries for a specific principal (user or group)
-   * @param principalType - The type of principal ('user', 'group')
-   * @param principalId - The ID of the principal
-   * @param resourceType - Optional filter by resource type
-   * @returns Array of ACL entries
-   */
-  async function findEntriesByPrincipal(
-    principalType: string,
-    principalId: string | Types.ObjectId,
-    resourceType?: string,
-  ): Promise<IAclEntry[]> {
-    const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
-    const query: Record<string, unknown> = { principalType, principalId };
-    if (resourceType) {
-      query.resourceType = resourceType;
-    }
-    return await AclEntry.find(query).lean<IAclEntry[]>();
-  }
-
   /**
    * Find ACL entries for a specific resource
    * @param resourceType - The type of resource ('agent', 'project', 'file')
@@ -469,41 +437,6 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
     };
 
     return await AclEntry.findOneAndUpdate(query, update, options);
-  }
-
-  /**
-   * Revoke permissions from a principal for a resource
-   * @param principalType - The type of principal ('user', 'group', 'public')
-   * @param principalId - The ID of the principal (null for 'public')
-   * @param resourceType - The type of resource
-   * @param resourceId - The ID of the resource
-   * @param session - Optional MongoDB session for transactions
-   * @returns The result of the delete operation
-   */
-  async function revokePermission(
-    principalType: string,
-    principalId: string | Types.ObjectId | null,
-    resourceType: string,
-    resourceId: string | Types.ObjectId,
-    session?: ClientSession,
-  ): Promise<DeleteResult> {
-    const AclEntry = mongoose.models.AclEntry as Model<IAclEntry>;
-    const query: Record<string, unknown> = {
-      principalType,
-      resourceType,
-      resourceId,
-    };
-
-    if (principalType !== PrincipalType.PUBLIC) {
-      query.principalId =
-        typeof principalId === 'string' && principalType !== PrincipalType.ROLE
-          ? new Types.ObjectId(principalId)
-          : principalId;
-    }
-
-    const options = session ? { session } : {};
-
-    return await AclEntry.deleteOne(query, options);
   }
 
   /**
@@ -888,14 +821,12 @@ export function createAclEntryMethods(mongoose: typeof import('mongoose')): {
   }
 
   return {
-    findEntriesByPrincipal,
     findEntriesByResource,
     findEntriesByPrincipalsAndResource,
     hasPermission,
     getEffectivePermissions,
     getEffectivePermissionsForResources,
     grantPermission,
-    revokePermission,
     modifyPermissionBits,
     findAccessibleResources,
     deleteAclEntries,
