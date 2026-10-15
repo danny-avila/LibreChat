@@ -1375,8 +1375,6 @@ export class RedisEventTransport implements IEventTransport {
       deferSequenceDelivery?: boolean;
       replay?: ReplayLimits;
       captureSequenceFrontier?: boolean;
-      /** @deprecated Use deferSequenceDelivery. */
-      deferDeliveryUntilSynchronized?: boolean;
     },
   ): {
     unsubscribe: () => void;
@@ -1394,8 +1392,7 @@ export class RedisEventTransport implements IEventTransport {
     // attachment and must not inherit that prior generation's expected seq.
     if (streamState.count === 0) {
       this.resetReorderBuffer(streamId);
-      streamState.reorderBuffer.deliveryDeferred =
-        options?.deferSequenceDelivery === true || options?.deferDeliveryUntilSynchronized === true;
+      streamState.reorderBuffer.deliveryDeferred = options?.deferSequenceDelivery === true;
     }
     streamState.count++;
     streamState.handlers.set(subscriberId, handlers);
