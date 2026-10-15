@@ -1,21 +1,23 @@
 import React from 'react';
-import { getDefaultStore } from 'jotai';
 import userEvent from '@testing-library/user-event';
 import { RecoilRoot, useRecoilValue } from 'recoil';
+import { getDefaultStore, useAtomValue } from 'jotai';
 import { act, render, screen } from '@testing-library/react';
 import { Constants, ContentTypes, ForkOptions } from 'librechat-data-provider';
 import type { TConversation, TMessage } from 'librechat-data-provider';
 import type { MessagesViewContextValue } from '~/Providers/MessagesViewContext';
 import type { ChatContract } from '~/hooks/Chat/contract';
 import {
+  getReasoningStateKey,
+  pendingQuotesByConvoId,
+  pendingManualSkillsByConvoId,
+  pendingReasoningOverrideFamily,
+} from '~/components/Chat/Input/Composer/state';
+import {
   MessagesViewContext,
   MessagesSubmittingContext,
   MessagesOperationsContext,
 } from '~/Providers/MessagesViewContext';
-import {
-  getReasoningStateKey,
-  pendingReasoningOverrideFamily,
-} from '~/components/Chat/Input/Composer/state';
 import { MessageContext } from '~/Providers/MessageContext';
 import AttachmentRecoveryActions from '../Error/recovery';
 import translation from '~/locales/en/translation.json';
@@ -81,8 +83,8 @@ let composerHandoff: { text?: string; quotes: string[]; skills: string[] } | und
 function ComposerProbe() {
   composerHandoff = {
     text: useRecoilValue(store.pendingComposerTextByConvoId('forked')),
-    quotes: useRecoilValue(store.pendingQuotesByConvoId('forked')),
-    skills: useRecoilValue(store.pendingManualSkillsByConvoId('forked')),
+    quotes: useAtomValue(pendingQuotesByConvoId('forked')),
+    skills: useAtomValue(pendingManualSkillsByConvoId('forked')),
   };
   return null;
 }
@@ -180,6 +182,8 @@ describe('AttachmentRecoveryActions', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     composerHandoff = undefined;
+    getDefaultStore().set(pendingQuotesByConvoId('forked'), []);
+    getDefaultStore().set(pendingManualSkillsByConvoId('forked'), []);
   });
 
   it('retries the failed turn as a new version without any files', async () => {

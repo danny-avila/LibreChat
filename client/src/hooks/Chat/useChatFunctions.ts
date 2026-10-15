@@ -4,7 +4,7 @@ import { cloneDeep } from 'lodash';
 import { useStore, useSetAtom } from 'jotai';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { useSetRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
+import { useSetRecoilState, useRecoilValue } from 'recoil';
 import {
   Constants,
   QueryKeys,
@@ -46,6 +46,8 @@ import {
 } from '~/utils';
 import {
   getReasoningStateKey,
+  pendingQuotesByConvoId,
+  pendingManualSkillsByConvoId,
   pendingReasoningOverrideFamily,
 } from '~/components/Chat/Input/Composer/state';
 import {
@@ -290,8 +292,8 @@ export default function useChatFunctions({
 
   /**
    * Atomically read + reset the per-conversation queue of manually-invoked
-   * skills from the `$` popover. Reading and resetting in a single Recoil
-   * snapshot guarantees that if the user selects more skills between here and
+   * skills from the `$` popover. Reading and resetting in one synchronous
+   * store pass guarantees that if the user selects more skills between here and
    * the next submission, their picks are never silently lost into a reset atom.
    *
    * The `hasValue` guard is defensive: this atom has a synchronous default of
@@ -299,17 +301,15 @@ export default function useChatFunctions({
    * `.contents` on a loading/errored loadable yields a Promise/Error, which
    * would make the `string[]` cast unsound.
    */
-  const drainPendingManualSkills = useRecoilCallback(
-    ({ snapshot, reset }) =>
-      (convoId: string): string[] => {
-        const loadable = snapshot.getLoadable(store.pendingManualSkillsByConvoId(convoId));
-        const skills = loadable.state === 'hasValue' ? (loadable.contents as string[]) : [];
-        if (skills.length > 0) {
-          reset(store.pendingManualSkillsByConvoId(convoId));
-        }
-        return skills;
-      },
-    [],
+  const drainPendingManualSkills = useCallback(
+    (convoId: string): string[] => {
+      const skills = jotaiStore.get(pendingManualSkillsByConvoId(convoId));
+      if (skills.length > 0) {
+        jotaiStore.set(pendingManualSkillsByConvoId(convoId), []);
+      }
+      return skills;
+    },
+    [jotaiStore],
   );
 
   /**
@@ -318,17 +318,15 @@ export default function useChatFunctions({
    * `drainPendingManualSkills`: a single snapshot read + reset so excerpts
    * added between here and submission are never lost into a reset atom.
    */
-  const drainPendingQuotes = useRecoilCallback(
-    ({ snapshot, reset }) =>
-      (convoId: string): string[] => {
-        const loadable = snapshot.getLoadable(store.pendingQuotesByConvoId(convoId));
-        const quotes = loadable.state === 'hasValue' ? (loadable.contents as string[]) : [];
-        if (quotes.length > 0) {
-          reset(store.pendingQuotesByConvoId(convoId));
-        }
-        return quotes;
-      },
-    [],
+  const drainPendingQuotes = useCallback(
+    (convoId: string): string[] => {
+      const quotes = jotaiStore.get(pendingQuotesByConvoId(convoId));
+      if (quotes.length > 0) {
+        jotaiStore.set(pendingQuotesByConvoId(convoId), []);
+      }
+      return quotes;
+    },
+    [jotaiStore],
   );
 
   const drainPendingReasoning = useCallback(

@@ -1,6 +1,7 @@
 import React, { Profiler, useMemo, useState } from 'react';
 import '@testing-library/jest-dom';
 import { DndProvider } from 'react-dnd';
+import { getDefaultStore } from 'jotai';
 import { useForm } from 'react-hook-form';
 import { RecoilRoot, useRecoilState } from 'recoil';
 import userEvent from '@testing-library/user-event';
@@ -12,6 +13,7 @@ import { render, screen, within, waitFor, fireEvent } from '@testing-library/rea
 import type { TFile, TFileUpload, TConversation } from 'librechat-data-provider';
 import type { ChatFormValues, TAskFunction } from '~/common';
 import type { TranslationKeys } from '~/hooks/useLocalize';
+import { pendingQuotesByConvoId } from '~/components/Chat/Input/Composer/state';
 import { getDraft, getPendingDraftId, setDraft } from '~/utils';
 import { ChatContext, ChatFormProvider } from '~/Providers';
 import { AuthContextProvider } from '~/hooks/AuthContext';
@@ -169,13 +171,13 @@ function renderComposer({
   queryClient.setQueryData<TFile[]>([QueryKeys.files], []);
   queryClient.setQueryData([QueryKeys.endpoints], { [EModelEndpoint.openAI]: { order: 0 } });
 
+  getDefaultStore().set(pendingQuotesByConvoId(conversation.conversationId ?? ''), quotes);
   return render(
     <QueryClientProvider client={queryClient}>
       <RecoilRoot
         initializeState={({ set }) => {
           set(store.isSubmittingFamily(0), submitting);
           set(store.speechSettingsInitialized, speechSettingsInitialized);
-          set(store.pendingQuotesByConvoId(conversation.conversationId ?? ''), quotes);
         }}
       >
         <Router>

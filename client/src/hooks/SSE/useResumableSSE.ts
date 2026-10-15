@@ -106,6 +106,7 @@ import useEventHandlers, {
   buildCreatedInitialResponse,
   keepLocalCodeApprovalMode,
 } from './useEventHandlers';
+import { pendingQuotesByConvoId } from '~/components/Chat/Input/Composer/state';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import { abortScrollFamily, showStopButtonByIndex } from '~/store/generation';
 import { withSubmittedCodeDecision } from '~/hooks/Agents/codeDecision';
@@ -1067,7 +1068,7 @@ export default function useResumableSSE(
             (steer) => settledIds.includes(steer.steerId) && (steer.quotes?.length ?? 0) > 0,
           )?.quotes;
           if (droppedQuotes != null && droppedQuotes.length > 0) {
-            set(store.pendingQuotesByConvoId(conversationId), (prev) =>
+            jotaiStore.set(pendingQuotesByConvoId(conversationId), (prev) =>
               mergeRestagedQuotes(prev, droppedQuotes),
             );
           }
@@ -1270,7 +1271,7 @@ export default function useResumableSSE(
           snapshot.getLoadable(store.pendingSteersByConvoId(conversationId)).getValue(),
         );
         if (droppedQuotes.length > 0) {
-          set(store.pendingQuotesByConvoId(conversationId), (prev) =>
+          jotaiStore.set(pendingQuotesByConvoId(conversationId), (prev) =>
             mergeRestagedQuotes(prev, droppedQuotes),
           );
         }

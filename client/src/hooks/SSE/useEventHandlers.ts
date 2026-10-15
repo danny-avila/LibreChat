@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { v4 } from 'uuid';
+import { useSetRecoilState } from 'recoil';
 import { useStore, useSetAtom } from 'jotai';
 import { useQueryClient } from '@tanstack/react-query';
-import { useSetRecoilState, useRecoilCallback } from 'recoil';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import {
   QueryKeys,
@@ -54,6 +54,7 @@ import {
 } from '~/data-provider';
 import {
   getReasoningStateKey,
+  pendingQuotesByConvoId,
   pendingReasoningOverrideFamily,
 } from '~/components/Chat/Input/Composer/state';
 import {
@@ -640,19 +641,18 @@ export default function useEventHandlers({
   /** Re-stage request context when an early abort restores the draft, so a
    *  retry keeps the references and one-shot reasoning selection already
    *  drained from the composer on submit. */
-  const restorePendingContext = useRecoilCallback(
-    ({ set }) =>
-      (convoId: string, quotes?: string[], reasoningOverride?: TMessage['reasoningOverride']) => {
-        if (Array.isArray(quotes) && quotes.length > 0) {
-          set(store.pendingQuotesByConvoId(convoId), quotes);
-        }
-        if (reasoningOverride != null) {
-          const reasoningAtom = pendingReasoningOverrideFamily(
-            getReasoningStateKey(convoId, runIndex),
-          );
-          reasoningStore.set(reasoningAtom, (current) => current ?? reasoningOverride);
-        }
-      },
+  const restorePendingContext = useCallback(
+    (convoId: string, quotes?: string[], reasoningOverride?: TMessage['reasoningOverride']) => {
+      if (Array.isArray(quotes) && quotes.length > 0) {
+        reasoningStore.set(pendingQuotesByConvoId(convoId), quotes);
+      }
+      if (reasoningOverride != null) {
+        const reasoningAtom = pendingReasoningOverrideFamily(
+          getReasoningStateKey(convoId, runIndex),
+        );
+        reasoningStore.set(reasoningAtom, (current) => current ?? reasoningOverride);
+      }
+    },
     [reasoningStore, runIndex],
   );
 
