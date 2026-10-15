@@ -1,3 +1,5 @@
+/** Read by the shadcn lint (`componentImports` in eslint.config.mjs) to resolve these primitives' variants; keep it even without importers. */
+export { Button, FieldMessage } from '@librechat/client';
 export { default as Collapse } from './Collapse';
 export { default as AutoHeight } from './AutoHeight';
 export { default as PanelFooter } from './PanelFooter';
