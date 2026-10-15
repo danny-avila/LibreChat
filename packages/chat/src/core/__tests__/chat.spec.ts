@@ -2379,6 +2379,49 @@ describe('Chat', () => {
       expect(onError).not.toHaveBeenCalled();
     });
 
+    it("stops an Assistants run by the ids its sync frame named, from that frame's own callback", async () => {
+      const stream = createStream();
+      const stops: Promise<unknown>[] = [];
+      const harness: { chat?: Chat } = {};
+      const { chat, transport } = setup(
+        {
+          id: 'new',
+          prepareRequest: jest.fn(() => ({
+            payload: { endpoint: 'assistants', text: 'Hi' } as TPayload,
+            messages: [userMessage, placeholder],
+            responseMessageId: 'response-1',
+          })),
+          onEvent: (event) => {
+            if (event.type === 'sync' && harness.chat) {
+              stops.push(harness.chat.stop());
+            }
+          },
+        },
+        { sendMessages: jest.fn(async () => ({ status: 'stream' as const, stream })) },
+      );
+      harness.chat = chat;
+      transport.abort.mockImplementation(async () => {
+        stream.push(finalEvent({ terminalStatus: 'aborted' }));
+        return { final: true, conversation: {}, runMessages: [] };
+      });
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+
+      stream.push({
+        type: 'sync',
+        data: {
+          conversationId: 'convo-9',
+          responseMessage: { ...placeholder, messageId: 'response-9' },
+        },
+      } as ChatEvent);
+      await sent;
+      await Promise.all(stops);
+
+      expect(transport.abort).toHaveBeenCalledWith(
+        expect.objectContaining({ abortKey: 'convo-9:response-9' }),
+      );
+    });
+
     it('reports nothing to stop as idle', async () => {
       const { chat, transport } = setup();
 

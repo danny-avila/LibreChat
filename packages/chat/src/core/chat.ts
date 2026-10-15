@@ -1145,18 +1145,11 @@ export class Chat {
         }
         await this.executor.run(() => {
           if (!signal.aborted) {
+            /** Recorded first, so a host that stops from the event's own callbacks names the run. */
+            this.track(active, event);
             outcome = this.apply(event);
           }
         });
-        if (event.type === 'pending_action') {
-          active.paused = event.data.actionId;
-        } else if (event.type === 'sync') {
-          /** The server's ids for the turn, which an Assistants stop addresses. */
-          active.conversationId = event.data.conversationId ?? active.conversationId;
-          this.nameResponse(active, event.data.responseMessage?.messageId);
-        } else if (event.type === 'final') {
-          this.nameResponse(active, event.data.responseMessage?.messageId);
-        }
         if (outcome) {
           break;
         }
@@ -1276,6 +1269,19 @@ export class Chat {
       this.decisions.clear();
     }
     this.publish(outcome, active.responseId, active.responseUnknown);
+  }
+
+  /** Records the ids and pause an event reports for the request it arrived on. */
+  private track(active: ActiveRequest, event: ChatEvent): void {
+    if (event.type === 'pending_action') {
+      active.paused = event.data.actionId;
+    } else if (event.type === 'sync') {
+      /** The server's ids for the turn, which an Assistants stop addresses. */
+      active.conversationId = event.data.conversationId ?? active.conversationId;
+      this.nameResponse(active, event.data.responseMessage?.messageId);
+    } else if (event.type === 'final') {
+      this.nameResponse(active, event.data.responseMessage?.messageId);
+    }
   }
 
   /** Records the response a frame named, which makes it known. */
