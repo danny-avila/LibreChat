@@ -153,6 +153,45 @@ describe('tenant-scoped custom endpoints', () => {
   });
 });
 
+describe('per-user endpoint access', () => {
+  it('accepts an exact username allowlist', () => {
+    const config = configSchema.parse({
+      version: '1.0',
+      endpoints: {
+        userAccess: [{ username: 'winston', allowedEndpoints: ['Cogsworth'] }],
+      },
+    });
+
+    expect(config.endpoints?.userAccess).toEqual([
+      { username: 'winston', allowedEndpoints: ['Cogsworth'] },
+    ]);
+  });
+
+  it.each([
+    [{ username: '', allowedEndpoints: ['Cogsworth'] }],
+    [{ username: 'winston', allowedEndpoints: [''] }],
+    [{ username: 'winston', allowedEndpoints: ['Cogsworth'], wildcard: true }],
+  ])('rejects malformed endpoint access rules: %p', (rule) => {
+    expect(
+      configSchema.safeParse({ version: '1.0', endpoints: { userAccess: [rule] } }).success,
+    ).toBe(false);
+  });
+
+  it('rejects duplicate usernames regardless of case', () => {
+    expect(
+      configSchema.safeParse({
+        version: '1.0',
+        endpoints: {
+          userAccess: [
+            { username: 'Winston', allowedEndpoints: ['Cogsworth'] },
+            { username: 'winston', allowedEndpoints: ['Abbenay'] },
+          ],
+        },
+      }).success,
+    ).toBe(false);
+  });
+});
+
 describe('agent model response timeouts', () => {
   it('ships finite defaults and accepts explicit overrides including disabled timeouts', () => {
     expect(agentsEndpointSchema.parse({})).toMatchObject({
@@ -2586,7 +2625,7 @@ describe('MCP Apps configuration', () => {
   });
 
   it('publishes the configured App tool approval allowlist', () => {
-    const appToolApproval = { allow: ['mcp:cogsworth:home_bot_message'] };
+    const appToolApproval = { allow: [{ server: 'cogsworth', tool: 'home_bot_message' }] };
     expect(
       resolveMCPAppsPolicy(
         true,

@@ -1,5 +1,6 @@
 const mockLoadDefaultModels = jest.fn();
 const mockLoadConfigModels = jest.fn();
+const mockGetEndpointsConfig = jest.fn();
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
@@ -10,9 +11,10 @@ jest.mock('@librechat/data-schemas', () => ({
 jest.mock('~/server/services/Config', () => ({
   loadDefaultModels: (...args) => mockLoadDefaultModels(...args),
   loadConfigModels: (...args) => mockLoadConfigModels(...args),
+  getEndpointsConfig: (...args) => mockGetEndpointsConfig(...args),
 }));
 
-const { loadModels } = require('./ModelController');
+const { loadModels, getModelsConfig } = require('./ModelController');
 
 function deferred() {
   let resolve;
@@ -25,6 +27,7 @@ function deferred() {
 describe('loadModels', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGetEndpointsConfig.mockResolvedValue({ openAI: {}, Cogsworth: {} });
   });
 
   it('loads default and configured models concurrently while preserving custom precedence', async () => {
@@ -53,5 +56,15 @@ describe('loadModels', () => {
       anthropic: ['default-anthropic'],
       custom: ['custom-model'],
     });
+  });
+
+  it('filters model groups using the user-scoped endpoint catalog', async () => {
+    const req = { user: { id: 'user-1', username: 'winston' } };
+    mockLoadDefaultModels.mockResolvedValue({ openAI: ['gpt-4o'] });
+    mockLoadConfigModels.mockResolvedValue({ Cogsworth: ['cogsworth'], Abbenay: ['model-a'] });
+    mockGetEndpointsConfig.mockResolvedValue({ Cogsworth: {} });
+
+    await expect(getModelsConfig(req)).resolves.toEqual({ Cogsworth: ['cogsworth'] });
+    expect(mockGetEndpointsConfig).toHaveBeenCalledWith(req);
   });
 });

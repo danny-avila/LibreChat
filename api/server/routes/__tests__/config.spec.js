@@ -530,6 +530,30 @@ describe('GET /api/config', () => {
       expect(response.body.codeEnvironmentDecisionVersion).toBe(1);
     });
 
+    it('filters model specs to endpoints allowed for the authenticated username', async () => {
+      mockGetAppConfig.mockResolvedValue({
+        ...baseAppConfig,
+        endpoints: {
+          userAccess: [{ username: 'winston', allowedEndpoints: ['Cogsworth'] }],
+        },
+        modelSpecs: {
+          list: [
+            { name: 'home-tools', label: 'Home tools', preset: { endpoint: 'Cogsworth' } },
+            { name: 'full-models', label: 'Full models', preset: { endpoint: 'Abbenay' } },
+          ],
+          addedEndpoints: ['Cogsworth', 'Abbenay'],
+        },
+      });
+
+      const response = await request(createApp({ ...mockUser, username: 'Winston' })).get(
+        '/api/config',
+      );
+
+      expect(response.statusCode).toBe(200);
+      expect(response.body.modelSpecs.list.map((spec) => spec.name)).toEqual(['home-tools']);
+      expect(response.body.modelSpecs.addedEndpoints).toEqual(['Cogsworth']);
+    });
+
     it('does not advertise conversation moves unless the effective policy enables them', async () => {
       mockGetAppConfig.mockResolvedValue(baseAppConfig);
       const app = createApp(mockUser);

@@ -3751,6 +3751,29 @@ export const summarizationConfigSchema = z.object({
 export type SummarizationConfig = z.infer<typeof summarizationConfigSchema>;
 
 const customEndpointsSchema = z.array(endpointSchema.partial()).optional();
+const userEndpointAccessSchema = z
+  .array(
+    z
+      .object({
+        username: z.string().trim().min(1).max(128),
+        allowedEndpoints: z.array(z.string().trim().min(1).max(128)),
+      })
+      .strict(),
+  )
+  .superRefine((rules, ctx) => {
+    const usernames = new Set<string>();
+    for (const [index, rule] of rules.entries()) {
+      const username = rule.username.toLowerCase();
+      if (usernames.has(username)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [index, 'username'],
+          message: 'Each username may only have one endpoint access rule.',
+        });
+      }
+      usernames.add(username);
+    }
+  });
 
 /**
  * Validates a messageFilter PII regex at config load. Defaults to native RegExp so browser
@@ -4281,6 +4304,7 @@ export const configSchema = z.object({
        * endpoint > a custom endpoint's own config.
        */
       all: baseEndpointSchema.omit({ baseURL: true }).optional(),
+      userAccess: userEndpointAccessSchema.optional(),
       [EModelEndpoint.openAI]: modelListEndpointSchema.optional(),
       [EModelEndpoint.google]: modelListEndpointSchema.optional(),
       [EModelEndpoint.anthropic]: anthropicEndpointSchema.optional(),

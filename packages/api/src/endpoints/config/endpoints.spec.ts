@@ -54,7 +54,7 @@ function createMockDeps(overrides: Partial<EndpointsConfigDeps> = {}): Endpoints
 type TestRequestOverrides = {
   body?: Partial<ServerRequest['body']>;
   config?: AppConfig;
-  user?: { id?: string; role?: string; tenantId?: string };
+  user?: { id?: string; username?: string; role?: string; tenantId?: string };
 };
 
 function fakeReq(overrides: TestRequestOverrides = {}): ServerRequest {
@@ -77,6 +77,38 @@ describe('createEndpointsConfigService', () => {
 
       expect(result?.[EModelEndpoint.openAI]).toBeDefined();
       expect(result?.myCustom).toBeDefined();
+    });
+
+    it('filters endpoint catalogs for a matching username only', async () => {
+      const deps = createMockDeps({
+        loadDefaultEndpointsConfig: jest.fn().mockResolvedValue({
+          [EModelEndpoint.openAI]: { userProvide: false, order: 0 },
+          [EModelEndpoint.agents]: { userProvide: false, order: 1 },
+        }),
+        loadCustomEndpointsConfig: jest.fn().mockReturnValue({
+          Cogsworth: { userProvide: false, type: EModelEndpoint.custom },
+          Abbenay: { userProvide: false, type: EModelEndpoint.custom },
+        }),
+        getAppConfig: jest.fn().mockResolvedValue(
+          appConfig({
+            endpoints: {
+              userAccess: [{ username: 'winston', allowedEndpoints: ['Cogsworth'] }],
+            },
+          }),
+        ),
+      });
+      const { getEndpointsConfig } = createEndpointsConfigService(deps);
+
+      const restricted = await getEndpointsConfig(fakeReq({ user: { username: 'Winston' } }));
+      const unrestricted = await getEndpointsConfig(fakeReq({ user: { username: 'lorah' } }));
+
+      expect(Object.keys(restricted ?? {})).toEqual(['Cogsworth']);
+      expect(Object.keys(unrestricted ?? {})).toEqual([
+        EModelEndpoint.openAI,
+        EModelEndpoint.agents,
+        'Cogsworth',
+        'Abbenay',
+      ]);
     });
 
     it('adds azureOpenAI when configured', async () => {
