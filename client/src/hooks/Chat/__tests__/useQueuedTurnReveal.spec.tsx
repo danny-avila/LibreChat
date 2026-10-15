@@ -1,6 +1,7 @@
 import React from 'react';
+import { RecoilRoot } from 'recoil';
 import { QueryKeys } from 'librechat-data-provider';
-import { RecoilRoot, useSetRecoilState } from 'recoil';
+import { isSubmittingFamily } from '@librechat/chat/react';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Provider as JotaiProvider, createStore, useSetAtom } from 'jotai';
@@ -19,7 +20,6 @@ import useQueuedTurnReveal, {
 } from '../useQueuedTurnReveal';
 import { agentQueuedTurnsQueryKey } from '~/data-provider/SSE/queuedTurns';
 import { streamStatusQueryKey } from '~/data-provider/SSE/queries';
-import store from '~/store';
 
 const CONVO_ID = 'convo-reveal';
 const RESPONSE_ID = 'response-1';
@@ -182,7 +182,7 @@ describe('useQueuedTurnReveal', () => {
     let setSubmitting: (value: boolean) => void;
     let setEpoch: (value: number | null) => void;
     function StateProbe() {
-      setSubmitting = useSetRecoilState(store.isSubmittingFamily(0));
+      setSubmitting = useSetAtom(isSubmittingFamily(0));
       setEpoch = useSetAtom(activeGenerationCreatedAtByConvoId(CONVO_ID));
       return null;
     }
@@ -214,8 +214,8 @@ describe('useQueuedTurnReveal', () => {
       setMessages,
       current,
       attach: (epoch: number, submitting = true) => {
-        setEpoch(epoch);
         setSubmitting(submitting);
+        setEpoch(epoch);
       },
       setReceipts: (receipts: TAgentQueuedTurnReceipt[]) =>
         queryClient.setQueryData(agentQueuedTurnsQueryKey(CONVO_ID), receipts),

@@ -1,7 +1,6 @@
 import { useRef, useEffect, useMemo, useCallback } from 'react';
-import { useRecoilValue } from 'recoil';
 import { useAtomValue, useStore } from 'jotai';
-import { revealedQueuedTurnFamily } from '@librechat/chat/react';
+import { revealedQueuedTurnFamily, useIsSubmitting } from '@librechat/chat/react';
 import { Constants, DEFAULT_QUEUED_SEND_LOCK_TIMEOUT_MS } from 'librechat-data-provider';
 import { acquireQueueSendLock, releaseQueueSendLock, hasQueuedIntent } from '@librechat/chat';
 import {
@@ -35,7 +34,6 @@ import {
 import { useChatSettings } from '~/Providers/ChatSettingsContext';
 import { useMarkFilesUsageMutation } from '~/data-provider';
 import { mergeQueuedMessages } from '~/utils/queue';
-import store from '~/store';
 
 /**
  * Auto-sends queued follow-up messages when a run finishes.
@@ -63,7 +61,7 @@ export default function useQueueDrain(
   const parkedRunEnd = useAtomValue(
     pendingRunEndByConvoId(activeConversationId ?? Constants.NEW_CONVO),
   );
-  const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
+  const isSubmitting = useIsSubmitting(index);
   /** Keyed by pane, because the contended resource is this pane's submission
    * slot: the rail's "Send now" reaches the same `ask` through the composer. */
   const sendLockKey = String(index);

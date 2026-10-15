@@ -2,10 +2,12 @@ import React from 'react';
 import { TextEncoder } from 'util';
 import { webcrypto } from 'crypto';
 import { RecoilRoot } from 'recoil';
+import { getDefaultStore } from 'jotai';
 import { render, waitFor } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { Constants, QueryKeys } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { isSubmittingFamily, resetSubmitting } from '@librechat/chat/react';
 import type { TMessage, TConversation } from 'librechat-data-provider';
 import { getTTSCacheKey, setCachedTTSAudio, getTTSCacheGeneration } from '~/utils';
 import StreamAudio from '../StreamAudio';
@@ -17,6 +19,10 @@ const conversationId = 'convo-1';
 
 const recording = new Blob(['spoken answer'], { type: 'audio/mpeg' });
 const fetchMock = jest.fn(() => Promise.reject(new Error('not cached')));
+
+afterEach(() => {
+  resetSubmitting(getDefaultStore());
+});
 
 describe('StreamAudio cache', () => {
   beforeAll(() => {
@@ -51,7 +57,7 @@ describe('StreamAudio cache', () => {
               set(store.conversationByIndex(0), { conversationId } as TConversation);
               set(store.activeRunFamily(0), 'run-1');
               set(store.audioRunFamily(0), null);
-              set(store.isSubmittingFamily(0), false);
+              getDefaultStore().set(isSubmittingFamily(0), false);
             }}
           >
             <Routes>

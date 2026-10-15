@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { cloneDeep } from 'lodash';
-import { useSetRecoilState } from 'recoil';
 import { useStore, useSetAtom } from 'jotai';
 import { useNavigate } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
 import { hasPendingAssistantParent } from '@librechat/chat';
-import { revealedQueuedTurnFamily } from '@librechat/chat/react';
+import { revealedQueuedTurnFamily, isSubmittingFamily } from '@librechat/chat/react';
 import {
   Constants,
   QueryKeys,
@@ -46,7 +45,6 @@ import { isHistoryRevalidating } from './ask/guards';
 import { createRegenerate } from './ask/regenerate';
 import useUserKey from '~/hooks/Input/useUserKey';
 import { buildTurn } from './ask/turn';
-import store from '~/store';
 
 export {
   getRegenerateTargetResponseMessage,
@@ -88,7 +86,7 @@ export default function useChatFunctions({
   const agentsMap = useAgentsMapContext();
   const { isTemporary, config, auth, getEphemeralAgent, addedConversation } = useChatSettings();
   const { getExpiry } = useUserKey(immutableConversation?.endpoint ?? '');
-  const setIsSubmitting = useSetRecoilState(store.isSubmittingFamily(index));
+  const setIsSubmitting = useSetAtom(isSubmittingFamily(index));
   const setSubmissionStart = useSetAtom(submissionStartFamily(index));
   const setShowStopButton = useSetAtom(showStopButtonByIndex(index));
   const focusRegeneratedResponse = useFocusRegeneratedResponse();

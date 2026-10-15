@@ -2,6 +2,7 @@ import React from 'react';
 import { RecoilRoot, type MutableSnapshot } from 'recoil';
 import { claimQueuedIntent, releaseQueuedIntent } from '@librechat/chat';
 import { act, render, renderHook, waitFor } from '@testing-library/react';
+import { isSubmittingFamily, resetSubmitting } from '@librechat/chat/react';
 import {
   getDefaultStore,
   Provider as JotaiProvider,
@@ -53,7 +54,6 @@ import { duringRunActionAtom } from '~/store/duringRun';
 import { applyPendingAction } from '~/utils/approval';
 import English from '~/locales/en/translation.json';
 import useQueueDrain from '../useQueueDrain';
-import store from '~/store';
 
 const CONVO_ID = 'convo-steer-ui';
 const UUID_V4_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -228,6 +228,10 @@ beforeEach(() => {
   getDefaultStore().set(pendingManualSkillsByConvoId(CONVO_ID), []);
 });
 
+afterEach(() => {
+  resetSubmitting(getDefaultStore());
+});
+
 describe('useSteering', () => {
   beforeEach(() => {
     getDefaultStore().set(duringRunActionAtom, 'steer');
@@ -305,9 +309,9 @@ describe('useSteering', () => {
       const ask = jest.fn();
       const wrapper = ({ children }: { children: React.ReactNode }) => (
         <RecoilRoot
-          initializeState={withActiveGeneration(({ set }) => {
+          initializeState={withActiveGeneration(() => {
             getDefaultStore().set(queuedMessagesByConvoId(CONVO_ID), [item]);
-            set(store.isSubmittingFamily(0), false);
+            getDefaultStore().set(isSubmittingFamily(0), false);
           })}
         >
           {children}
@@ -396,9 +400,9 @@ describe('useSteering', () => {
       const ask = jest.fn();
       const wrapper = ({ children }: { children: React.ReactNode }) => (
         <RecoilRoot
-          initializeState={withActiveGeneration(({ set }) => {
+          initializeState={withActiveGeneration(() => {
             getDefaultStore().set(queuedMessagesByConvoId(CONVO_ID), [held, first, second]);
-            set(store.isSubmittingFamily(0), false);
+            getDefaultStore().set(isSubmittingFamily(0), false);
           })}
         >
           {children}
@@ -1613,8 +1617,8 @@ describe('useSteering', () => {
       const sendNow = jest.fn();
       const wrapper = ({ children }: { children: React.ReactNode }) => (
         <RecoilRoot
-          initializeState={withActiveGeneration(({ set }) => {
-            set(store.isSubmittingFamily(0), false);
+          initializeState={withActiveGeneration(() => {
+            getDefaultStore().set(isSubmittingFamily(0), false);
             getDefaultStore().set(runEndByIndex(0), {
               conversationId: CONVO_ID,
               outcome: 'completed',

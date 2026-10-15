@@ -3,15 +3,16 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
 import { useStore, useAtom, useSetAtom, useAtomValue } from 'jotai';
 import {
-  revealedQueuedTurnFamily,
-  activeGenerationCreatedAtByConvoId,
-} from '@librechat/chat/react';
-import {
   Constants,
   QueryKeys,
   isAssistantsEndpoint,
   isForcedTemporaryRetention,
 } from 'librechat-data-provider';
+import {
+  revealedQueuedTurnFamily,
+  activeGenerationCreatedAtByConvoId,
+  useIsSubmitting,
+} from '@librechat/chat/react';
 import {
   hasSubmissionUserMessage,
   getGenerationProtocolVersion,
@@ -75,7 +76,7 @@ export default function useResumeOnLoad(
   const setSubmission = useSetRecoilState(store.submissionByIndex(runIndex));
   const setSubmissionStart = useSetAtom(submissionStartFamily(runIndex));
   const currentSubmission = useRecoilValue(store.submissionByIndex(runIndex));
-  const isSubmitting = useRecoilValue(store.isSubmittingFamily(runIndex));
+  const isSubmitting = useIsSubmitting(runIndex);
   const attachedGenerationCreatedAt = useAtomValue(
     activeGenerationCreatedAtByConvoId(conversationId ?? ''),
   );

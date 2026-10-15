@@ -124,7 +124,6 @@ jest.mock('~/Providers/AgentsMapContext', () => ({
 jest.mock('~/store', () => ({
   __esModule: true,
   default: {
-    isSubmittingFamily: () => 'isSubmitting',
     messagesSiblingIdxFamily: () => 'messagesSiblingIdx',
     conversationByKeySelector: () => 'conversation',
   },

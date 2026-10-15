@@ -1,8 +1,10 @@
 import { useCallback } from 'react';
 import { useStore } from 'jotai';
-import { useRecoilCallback } from 'recoil';
-import { pendingSteerCancelClientIdsFamily, pendingSteersByConvoId } from '@librechat/chat/react';
-import type { Snapshot } from 'recoil';
+import {
+  isSubmittingFamily,
+  pendingSteersByConvoId,
+  pendingSteerCancelClientIdsFamily,
+} from '@librechat/chat/react';
 import type { PendingSteer } from '~/hooks/Chat/queue';
 import {
   getSteerErrorCode,
@@ -15,7 +17,6 @@ import { carriedSteerContext, isLegacyDeliveryUncertain } from '~/utils';
 import { useChatSettings } from '~/Providers/ChatSettingsContext';
 import { useSteerRehome } from '~/hooks/Chat/useSteerCancel';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
-import store from '~/store';
 
 /**
  * Retry or re-route a pending steer from OUTSIDE the composer. The thread's
@@ -36,28 +37,25 @@ export default function useSteerRecovery(conversationId: string) {
    *  user navigates away from a run that is still going, and treating that as
    *  the end queued the accepted steer as a follow-up on top of the injection
    *  the server was already making. */
-  const isRunOver = useCallback(
-    (snapshot: Snapshot) => {
-      let held = false;
-      for (const pane of getPaneConversations()) {
-        if (pane.conversationId !== conversationId) {
-          continue;
-        }
-        /* Comparison mode can hold one conversation in several panes, and only
+  const isRunOver = useCallback(() => {
+    let held = false;
+    for (const pane of getPaneConversations()) {
+      if (pane.conversationId !== conversationId) {
+        continue;
+      }
+      /* Comparison mode can hold one conversation in several panes, and only
            the pane that owns the run is submitting: any live pane means the
            run is still going, whichever slot comes first. */
-        if (snapshot.getLoadable(store.isSubmittingFamily(pane.index)).getValue() === true) {
-          return false;
-        }
-        held = true;
+      if (jotaiStore.get(isSubmittingFamily(pane.index)) === true) {
+        return false;
       }
-      /* Held by no slot at all: the user navigated to another chat, which says
+      held = true;
+    }
+    /* Held by no slot at all: the user navigated to another chat, which says
          nothing about the run they left behind. Reading that as the end is the
          same mistake as reading the unmount as the end, one step further out. */
-      return held;
-    },
-    [conversationId, getPaneConversations],
-  );
+    return held;
+  }, [conversationId, getPaneConversations, jotaiStore]);
 
   const markStatus = useCallback(
     (steerId: string, status: PendingSteer['status']) => {
@@ -95,10 +93,9 @@ export default function useSteerRecovery(conversationId: string) {
    *
    * @returns true when the caller must route the steer into the queue.
    */
-  const acknowledgeRetry = useRecoilCallback(
-    ({ snapshot }) =>
-      (localId: string, steer: PendingSteer): boolean =>
-        resolveAcknowledgedSteer(jotaiStore, conversationId, localId, steer, isRunOver(snapshot)),
+  const acknowledgeRetry = useCallback(
+    (localId: string, steer: PendingSteer): boolean =>
+      resolveAcknowledgedSteer(jotaiStore, conversationId, localId, steer, isRunOver()),
     [conversationId, isRunOver, jotaiStore],
   );
 

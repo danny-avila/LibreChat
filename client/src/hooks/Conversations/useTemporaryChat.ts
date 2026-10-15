@@ -1,5 +1,6 @@
 import { useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
+import { useIsSubmitting } from '@librechat/chat/react';
 import { Constants, isForcedTemporaryRetention } from 'librechat-data-provider';
 import { useChatSettings } from '~/Providers/ChatSettingsContext';
 import store from '~/store';
@@ -18,7 +19,7 @@ export type UseTemporaryChatResult = {
 export default function useTemporaryChat(): UseTemporaryChatResult {
   const { isTemporary, setIsTemporary, config } = useChatSettings();
   const conversation = useRecoilValue(store.conversationByIndex(0));
-  const isSubmitting = useRecoilValue(store.isSubmittingFamily(0));
+  const isSubmitting = useIsSubmitting(0);
   const isEnforced = isForcedTemporaryRetention(config.retentionMode);
 
   const toggle = useCallback(() => {

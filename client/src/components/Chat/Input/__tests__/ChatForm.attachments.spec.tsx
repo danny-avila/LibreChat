@@ -1,8 +1,9 @@
 import React, { Profiler, useMemo, useState } from 'react';
+import { isSubmittingFamily, resetSubmitting } from '@librechat/chat/react';
 import '@testing-library/jest-dom';
 import { DndProvider } from 'react-dnd';
-import { getDefaultStore } from 'jotai';
 import { useForm } from 'react-hook-form';
+import { getDefaultStore, useAtom } from 'jotai';
 import { RecoilRoot, useRecoilState } from 'recoil';
 import userEvent from '@testing-library/user-event';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -91,7 +92,7 @@ let commits = 0;
 
 function Harness() {
   const [files, setFiles] = useRecoilState(store.filesByIndex(0));
-  const [isSubmitting, setIsSubmitting] = useRecoilState(store.isSubmittingFamily(0));
+  const [isSubmitting, setIsSubmitting] = useAtom(isSubmittingFamily(0));
   /* ChatView owns this read and passes it in; the harness stands in for it. */
   const [speechSettingsInitialized] = useRecoilState(store.speechSettingsInitialized);
   const [, setFilesLoading] = useState(false);
@@ -176,7 +177,7 @@ function renderComposer({
     <QueryClientProvider client={queryClient}>
       <RecoilRoot
         initializeState={({ set }) => {
-          set(store.isSubmittingFamily(0), submitting);
+          getDefaultStore().set(isSubmittingFamily(0), submitting);
           set(store.speechSettingsInitialized, speechSettingsInitialized);
         }}
       >
@@ -198,6 +199,10 @@ const sendButton = () => screen.getByTestId('send-button');
 const attach = (container: HTMLElement, file: File) =>
   userEvent.upload(container.querySelector('input[type="file"]') as HTMLInputElement, file);
 const image = () => new File(['image-bytes'], 'cat.png', { type: 'image/png' });
+
+afterEach(() => {
+  resetSubmitting(getDefaultStore());
+});
 
 describe('ChatForm attachments', () => {
   beforeEach(() => {
