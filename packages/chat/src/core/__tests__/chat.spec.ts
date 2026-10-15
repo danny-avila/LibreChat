@@ -2222,6 +2222,7 @@ describe('Chat', () => {
           abort: jest.fn(async () => ({
             success: true,
             generationProtocolVersion: 2,
+            aborted: 'convo-1',
             persistenceFailed: true,
           })),
         },
@@ -2244,9 +2245,59 @@ describe('Chat', () => {
         expect.objectContaining({
           isAbort: true,
           isSettled: true,
+          conversationId: 'convo-1',
           reconcileReason: 'abort_persistence_failed',
         }),
       );
+    });
+
+    it('names the conversation an unframed stop of a dropped first turn settled under', async () => {
+      const { chat, stream, transport, onFinish } = setup({ id: 'new' });
+      transport.abort.mockResolvedValue({
+        success: true,
+        generationProtocolVersion: 2,
+        aborted: 'convo-9',
+        persistenceFailed: true,
+      });
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+      await sent;
+
+      await chat.stop();
+
+      expect(onFinish).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          isSettled: true,
+          conversationId: 'convo-9',
+          reconcileReason: 'abort_persistence_failed',
+        }),
+      );
+    });
+
+    it('ends the pause of a generation whose stream failed', async () => {
+      const failing: ChatStream = {
+        streamId: 'convo-1',
+        close: () => undefined,
+        async *[Symbol.asyncIterator]() {
+          yield { type: 'pending_action', data: pausedAction } as ChatEvent;
+          throw new Error('Malformed frame');
+        },
+      };
+      const { chat, transport } = setup();
+      transport.sendMessages.mockResolvedValueOnce({ status: 'stream', stream: failing });
+
+      await chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+
+      expect(chat.status).toBe('error');
+      expect(chat.pendingAction).toBeUndefined();
+      transport.sendMessages.mockResolvedValueOnce({
+        status: 'settled',
+        conversationId: 'convo-1',
+      });
+      await expect(
+        chat.sendMessage({ parts: [{ type: 'text', text: 'Again' }] }),
+      ).resolves.toBeUndefined();
     });
 
     it('reports a continuation that ended while an earlier reconnect was still opening', async () => {

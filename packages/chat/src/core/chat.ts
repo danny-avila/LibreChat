@@ -193,6 +193,8 @@ type ActiveRequest = {
   settledAs?: ChatStreamAbortResult['terminalStatus'];
   /** The stop ended the run without saving its terminal state, which a reconcile frame reports. */
   persistenceFailed?: boolean;
+  /** The conversation a stop's answer named, authoritative while the chat still holds `new`. */
+  stoppedConversationId?: string;
   /** Resolves once a stop sent for this request was answered, either way. */
   stopAnswered?: Promise<void>;
   /** The error the request settled with when its connection dropped. */
@@ -261,27 +263,29 @@ const getErrorMessage = (data: ChatErrorData | null | undefined): string | undef
 };
 
 /** A run that ended on its own before a stop reached it, whose final frame never arrived. */
-const getSettledOutcome = (status: ChatStreamAbortResult['terminalStatus']): Outcome => {
+const getSettledOutcome = (
+  status: ChatStreamAbortResult['terminalStatus'],
+  settled: Settled = {},
+): Outcome => {
   if (status === 'error') {
-    return {
-      kind: 'error',
-      error: new Error('The response failed'),
-      disconnect: false,
-      settled: {},
-    };
+    return { kind: 'error', error: new Error('The response failed'), disconnect: false, settled };
   }
-  return status === 'aborted' ? { kind: 'abort', settled: {} } : { kind: 'complete', settled: {} };
+  return status === 'aborted' ? { kind: 'abort', settled } : { kind: 'complete', settled };
 };
 
 /** What a confirmed stop ends a request with when no terminal frame said otherwise. */
 const getStopOutcome = (stop: {
   settledAs?: ChatStreamAbortResult['terminalStatus'];
   persistenceFailed?: boolean;
+  /** The conversation the stop's answer named, which the host reloads. */
+  stoppedConversationId?: string;
 }): Outcome => {
+  const settled: Settled =
+    stop.stoppedConversationId != null ? { conversationId: stop.stoppedConversationId } : {};
   if (stop.persistenceFailed) {
-    return { kind: 'abort', settled: { reason: 'abort_persistence_failed' } };
+    return { kind: 'abort', settled: { ...settled, reason: 'abort_persistence_failed' } };
   }
-  return stop.settledAs ? getSettledOutcome(stop.settledAs) : { kind: 'abort' };
+  return stop.settledAs ? getSettledOutcome(stop.settledAs, settled) : { kind: 'abort' };
 };
 
 const isStreamAbort = (result: ChatAbortResult): result is ChatStreamAbortResult =>
@@ -592,6 +596,9 @@ export class Chat {
       abortKey: streamId == null ? this.abortKey(active) : undefined,
     }).then((result) => {
       active.stopped = true;
+      if (isStreamAbort(result)) {
+        active.stoppedConversationId = result.aborted;
+      }
       if (isStreamAbort(result) && result.settled) {
         active.settledAs = result.terminalStatus ?? 'complete';
       } else if (isStreamAbort(result) && result.persistenceFailed) {
@@ -716,6 +723,7 @@ export class Chat {
     const outcome = getStopOutcome({
       settledAs: result.settled ? (result.terminalStatus ?? 'complete') : undefined,
       persistenceFailed: result.persistenceFailed,
+      stoppedConversationId: result.aborted,
     });
     this.publish(outcome, responseId);
     return true;
@@ -1151,6 +1159,11 @@ export class Chat {
      * that starts the next turn is not overwritten by this one's terminal state.
      */
     this.active = undefined;
+    if (outcome.kind === 'error' && !outcome.disconnect) {
+      /** A failed generation ends its pause too; only a dropped connection leaves it running. */
+      this.action = undefined;
+      this.decisions.clear();
+    }
     this.publish(outcome, active.responseId);
   }
 
