@@ -1,7 +1,7 @@
 import { StepEvents } from 'librechat-data-provider';
 import type { Agents, TMessage, TPayload, ChatEvent } from 'librechat-data-provider';
 import type { ChatStream, ChatStatus, ChatTransport, ChatConnection } from '../types';
-import type { ChatState, ChatFinishResult } from '../chat';
+import type { ChatState, ChatStopResult, ChatFinishResult } from '../chat';
 import { Chat } from '../chat';
 
 /**
@@ -256,8 +256,9 @@ const states: Record<string, (h: Harness) => Promise<void>> = {
 
 const record = (h: Harness, settle: Promise<unknown>) =>
   settle.then(
-    () => {
-      h.outcome = 'ok';
+    (value) => {
+      const stopped = value as ChatStopResult | undefined;
+      h.outcome = stopped?.status === 'unaddressable' ? 'unaddressable' : 'ok';
     },
     (error: Error) => {
       h.outcome = error.message;
@@ -514,6 +515,12 @@ const table: Array<[keyof typeof states, keyof typeof events, Expected]> = [
   /** Network failures before a stream, and the stop that follows a drop or a restore. */
   ['starting', 'streamEnd', { status: 'error', finishes: 1, last: dropped, abort: NONE }],
   ['starting', 'networkDrop', { status: 'error', finishes: 1, last: dropped, abort: NONE }],
+  /** A start whose response was lost left nothing to address; the caller stops it its own way. */
+  [
+    'starting',
+    'dropThenStop',
+    { status: 'error', finishes: 1, last: dropped, abort: NONE, outcome: 'unaddressable' },
+  ],
   [
     'attached',
     'dropThenStop',

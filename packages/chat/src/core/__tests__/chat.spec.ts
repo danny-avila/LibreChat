@@ -1243,7 +1243,7 @@ describe('Chat', () => {
     const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
     await flush();
 
-    await expect(chat.stop()).resolves.toEqual({});
+    await expect(chat.stop()).resolves.toEqual({ status: 'stopped' });
     await sent;
     expect(chat.status).toBe('ready');
   });
@@ -2227,6 +2227,7 @@ describe('Chat', () => {
       await flush();
 
       await expect(chat.stop()).resolves.toEqual({
+        status: 'stopped',
         conversationId: 'convo-7',
         pendingSteers: [steer],
       });
@@ -2246,9 +2247,45 @@ describe('Chat', () => {
         const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
         await flush();
 
-        await expect(chat.stop()).resolves.toEqual({ conversationId: 'convo-1' });
+        await expect(chat.stop()).resolves.toEqual({
+          status: 'stopped',
+          conversationId: 'convo-1',
+        });
         await sent;
       }
+    });
+
+    it('reports a turn under `new` it saw no frame for as unaddressable, leaving it attached', async () => {
+      const stream = createStream();
+      const { chat, transport } = setup(
+        {
+          id: 'new',
+          prepareRequest: jest.fn(() => ({
+            payload: { endpoint: 'assistants', text: 'Hi' } as TPayload,
+            messages: [userMessage, placeholder],
+            responseMessageId: 'response-1',
+          })),
+        },
+        { sendMessages: jest.fn(async () => ({ status: 'stream' as const, stream })) },
+      );
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push(stepEvent);
+      await flush();
+
+      await expect(chat.stop()).resolves.toEqual({ status: 'unaddressable' });
+
+      expect(transport.abort).not.toHaveBeenCalled();
+      expect(chat.status).toBe('streaming');
+      stream.push(finalEvent());
+      await sent;
+    });
+
+    it('reports nothing to stop as idle', async () => {
+      const { chat, transport } = setup();
+
+      await expect(chat.stop()).resolves.toEqual({ status: 'idle' });
+      expect(transport.abort).not.toHaveBeenCalled();
     });
 
     it('keeps an unsaved stop attached, and reports it unsaved when nothing is left to attach to', async () => {

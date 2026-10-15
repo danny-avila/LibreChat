@@ -1,4 +1,4 @@
-import { ContentTypes } from 'librechat-data-provider';
+import { Constants, ContentTypes } from 'librechat-data-provider';
 import type {
   Agents,
   TPayload,
@@ -107,13 +107,23 @@ export type ChatFinishResult = {
   reconcileReason?: ChatFinalFrame['reconcileReason'];
 };
 
-/** What a stop handed back. */
-export type ChatStopResult = {
-  /** The conversation the server stopped, authoritative while the chat still holds `new`. */
-  conversationId?: string;
-  /** Steers the run never injected, which the host restores as queued turns. */
-  pendingSteers?: TPendingSteer[];
-};
+/**
+ * What a stop did. `stopped` ended the turn, `idle` found nothing to stop, and `unaddressable`
+ * means a generation may still run that this chat saw no frame for (a start whose response was
+ * lost, or a turn under `new` before its sync frame), so the caller stops it on its own abort path.
+ */
+export type ChatStopResult =
+  | {
+      status: 'stopped';
+      /** The conversation the server stopped, authoritative while the chat still holds `new`. */
+      conversationId?: string;
+      /** Steers the run never injected, which the host restores as queued turns. */
+      pendingSteers?: TPendingSteer[];
+    }
+  | { status: 'idle' }
+  | { status: 'unaddressable' };
+
+const unaddressable: ChatStopResult = { status: 'unaddressable' };
 
 export type ChatInit = {
   /** The conversation id, or `new` before the server created one. */
@@ -205,6 +215,8 @@ type ActiveRequest = {
   conversationId?: string;
   /** The response this request produces: its placeholder, then the one its final frame names. */
   responseId?: string;
+  /** Set once the start was handed to the transport, so the server may be running it. */
+  sent?: boolean;
   /** Resolves once the request settled and released the chat. */
   finished: Promise<void>;
   finish: () => void;
@@ -299,10 +311,11 @@ const isStreamAbort = (result: ChatAbortResult): result is ChatStreamAbortResult
  */
 const getStopResult = (result: ChatAbortResult): ChatStopResult => {
   if (!isStreamAbort(result)) {
-    return {};
+    return { status: 'stopped' };
   }
   const ended = !result.settled && !result.persistenceFailed;
   return {
+    status: 'stopped',
     ...(result.aborted != null && { conversationId: result.aborted }),
     ...(ended && result.pendingSteers && { pendingSteers: result.pendingSteers }),
   };
@@ -432,6 +445,8 @@ export class Chat {
   private disposed = false;
   /** A generation whose stream dropped while the server kept it running. */
   private detached?: DetachedGeneration;
+  /** A start that reached the transport and lost its response, with nothing to address it by. */
+  private unaddressed = false;
   private readonly decisions = new Map<string, Agents.ToolApprovalResolution>();
   /** Pauses already resumed, whose replay by a reattached stream is stale. */
   private readonly resumed = new Set<string>();
@@ -508,6 +523,7 @@ export class Chat {
     /** A turn whose stream dropped: finding nothing running means it ended without this chat. */
     const dropped = this.detached;
     this.detached = undefined;
+    this.unaddressed = false;
     const active = createActiveRequest();
     /** Reattaching to a dropped turn's own generation continues it, so it keeps that turn's identity. */
     const continued =
@@ -579,12 +595,16 @@ export class Chat {
    * Stops the turn in flight. A request still starting is cancelled; an attached stream is
    * stopped on the server, and this resolves once the stream reported its end. Rejects when the
    * server refused the stop, leaving the stream attached. Resolves with the steers the run never
-   * injected, for the host to restore.
+   * injected, for the host to restore, or `unaddressable` without contacting the server when the
+   * chat holds no frame-backed identity for the generation.
    */
   async stop(): Promise<ChatStopResult> {
     const active = this.active;
     if (!active && this.detached) {
       return this.stopDetached(this.detached);
+    }
+    if (!active && this.unaddressed) {
+      return unaddressable;
     }
     if (!active) {
       return this.stopPaused();
@@ -592,19 +612,23 @@ export class Chat {
     if (!active.stream && !active.reattach) {
       active.controller.abort();
       await active.finished;
-      return {};
+      return { status: 'stopped' };
     }
     if (!active.endpoint) {
       throw new Error('The generation cannot be stopped without its endpoint');
     }
-    active.paused ??= this.action?.actionId;
     const streamId = active.stream?.streamId ?? active.reattach?.streamId;
-    const answer = this.abortOnServer({
+    const target = {
       endpoint: active.endpoint,
       streamId,
       generationCreatedAt: active.stream?.generationCreatedAt ?? this.generationCreatedAt,
       abortKey: streamId == null ? this.abortKey(active) : undefined,
-    }).then((result) => {
+    };
+    if (!this.isAddressable(target)) {
+      return unaddressable;
+    }
+    active.paused ??= this.action?.actionId;
+    const answer = this.abortOnServer(target).then((result) => {
       active.stopped = true;
       if (isStreamAbort(result)) {
         active.stoppedConversationId = result.aborted;
@@ -684,7 +708,16 @@ export class Chat {
   /** `conversationId:responseMessageId` of a run with no resumable stream (Assistants). */
   private abortKey(active: ActiveRequest): string | undefined {
     const conversationId = active.conversationId ?? this.id;
+    if (conversationId === Constants.NEW_CONVO) {
+      /** Before its sync frame, a turn under `new` has no id the server knows it by. */
+      return undefined;
+    }
     return active.responseId ? `${conversationId}:${active.responseId}` : undefined;
+  }
+
+  /** Whether a stop can name the generation: by its stream, its run key, or a created chat. */
+  private isAddressable(target: Omit<ChatAbortRequest, 'chatId'>): boolean {
+    return target.streamId != null || target.abortKey != null || this.id !== Constants.NEW_CONVO;
   }
 
   /**
@@ -701,6 +734,9 @@ export class Chat {
 
   /** Stops a generation whose stream dropped, which the server keeps running. */
   private async stopDetached(detached: DetachedGeneration): Promise<ChatStopResult> {
+    if (!this.isAddressable(detached.target)) {
+      return unaddressable;
+    }
     const result = await this.abortOnServer(detached.target);
     if (this.disposed || this.detached !== detached) {
       return getStopResult(result);
@@ -748,7 +784,7 @@ export class Chat {
     const action = this.action;
     const endpoint = this.resumeEndpoint();
     if (!action) {
-      return {};
+      return { status: 'idle' };
     }
     if (!endpoint) {
       throw new Error('The paused generation cannot be stopped without its endpoint');
@@ -813,6 +849,8 @@ export class Chat {
     if (this.active) {
       throw new Error('A request is in flight; its stream reports the pause');
     }
+    /** A status read names the running generation, which a stop then addresses. */
+    this.unaddressed = false;
     if (this.detached && this.detached.target.generationCreatedAt !== generationCreatedAt) {
       /** The pause belongs to a newer generation than the one whose stream dropped. */
       this.detached = undefined;
@@ -944,6 +982,7 @@ export class Chat {
     }
     const active = createActiveRequest();
     this.active = active;
+    this.unaddressed = false;
     this.generationCreatedAt = undefined;
     this.detached = undefined;
     this.resumed.clear();
@@ -972,6 +1011,7 @@ export class Chat {
       active.endpoint = prepared.payload.endpoint ?? undefined;
       active.conversationId = prepared.payload.conversationId ?? undefined;
       const { signal } = active.controller;
+      active.sent = true;
       const result = await openUntilAborted(
         this.init.transport.sendMessages({
           ...options,
@@ -1167,6 +1207,9 @@ export class Chat {
           responseId: active.responseId,
           conversationId: active.conversationId,
         };
+      } else if (active.sent && !active.stopped) {
+        /** The start may have reached the server, which answered nothing this chat can address. */
+        this.unaddressed = true;
       }
     }
     /**
