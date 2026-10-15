@@ -25,11 +25,11 @@ import type {
   ChatTransportOptions,
   ChatTransportRequest,
 } from 'librechat-data-provider';
+import type { PendingSteer } from '@librechat/chat';
 import type { MutableSnapshot } from 'recoil';
 import type { StreamStatusResponse } from '~/data-provider';
 import type { ChatContract } from '~/hooks/Chat/contract';
 import type { Transport } from '~/hooks/Chat/contract';
-import type { PendingSteer } from '~/hooks/Chat/queue';
 import { ChatTransportContext } from '~/Providers/ChatTransportContext';
 import { ChatContext, useChatContext } from '~/Providers/ChatContext';
 import { startupConfigKey } from '~/data-provider/Endpoints/queries';
