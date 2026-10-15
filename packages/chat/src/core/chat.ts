@@ -5,6 +5,7 @@ import type {
   TMessage,
   ChatEvent,
   UITextPart,
+  TPendingSteer,
   ChatFinalFrame,
   ChatErrorData,
   UIMessageMetadata,
@@ -106,6 +107,14 @@ export type ChatFinishResult = {
   reconcileReason?: ChatFinalFrame['reconcileReason'];
 };
 
+/** What a stop handed back. */
+export type ChatStopResult = {
+  /** The conversation the server stopped, authoritative while the chat still holds `new`. */
+  conversationId?: string;
+  /** Steers the run never injected, which the host restores as queued turns. */
+  pendingSteers?: TPendingSteer[];
+};
+
 export type ChatInit = {
   /** The conversation id, or `new` before the server created one. */
   id: string;
@@ -163,6 +172,8 @@ type Outcome = { settled?: Settled } & (
 type DetachedGeneration = {
   error: Error;
   target: Omit<ChatAbortRequest, 'chatId'>;
+  /** The response the dropped request was producing, which a settled stop reports. */
+  responseId?: string;
 };
 
 type ActiveRequest = {
@@ -177,6 +188,8 @@ type ActiveRequest = {
   stopped?: boolean;
   /** The terminal status a stop answer reported for a run that had already ended on its own. */
   settledAs?: ChatStreamAbortResult['terminalStatus'];
+  /** The stop ended the run without saving its terminal state, which a reconcile frame reports. */
+  persistenceFailed?: boolean;
   /** Resolves once a stop sent for this request was answered, either way. */
   stopAnswered?: Promise<void>;
   /** The error the request settled with when its connection dropped. */
@@ -255,6 +268,35 @@ const getSettledOutcome = (status: ChatStreamAbortResult['terminalStatus']): Out
     };
   }
   return status === 'aborted' ? { kind: 'abort', settled: {} } : { kind: 'complete', settled: {} };
+};
+
+/** What a confirmed stop ends a request with when no terminal frame said otherwise. */
+const getStopOutcome = (stop: {
+  settledAs?: ChatStreamAbortResult['terminalStatus'];
+  persistenceFailed?: boolean;
+}): Outcome => {
+  if (stop.persistenceFailed) {
+    return { kind: 'abort', settled: { reason: 'abort_persistence_failed' } };
+  }
+  return stop.settledAs ? getSettledOutcome(stop.settledAs) : { kind: 'abort' };
+};
+
+const isStreamAbort = (result: ChatAbortResult): result is ChatStreamAbortResult =>
+  result != null && 'success' in result;
+
+/**
+ * What a stop hands back to the host. Steers come back only from a stop that ended the run: one
+ * that settled first leaves them to its own terminal frame, and an unsaved one has none to trust.
+ */
+const getStopResult = (result: ChatAbortResult): ChatStopResult => {
+  if (!isStreamAbort(result)) {
+    return {};
+  }
+  const ended = !result.settled && !result.persistenceFailed;
+  return {
+    ...(result.aborted != null && { conversationId: result.aborted }),
+    ...(ended && result.pendingSteers && { pendingSteers: result.pendingSteers }),
+  };
 };
 
 const getFinalOutcome = (data: ChatFinalFrame): Outcome => {
@@ -443,7 +485,12 @@ export class Chat {
    * nothing running means the continuation already finished, which the turn reports as settled.
    */
   private async reattach(
-    options: { streamId?: string; generationCreatedAt?: number } & ChatRequestOptions,
+    options: {
+      streamId?: string;
+      generationCreatedAt?: number;
+      /** The conversation the generation runs under, when the server named it. */
+      conversationId?: string;
+    } & ChatRequestOptions,
     continuation: boolean,
   ): Promise<void> {
     if (this.active || this.disposed) {
@@ -467,19 +514,24 @@ export class Chat {
     this.generationCreatedAt =
       options.generationCreatedAt ?? (this.action ? this.generationCreatedAt : undefined);
     this.setConnection('reconnecting');
+    const { conversationId = this.id, ...request } = options;
     try {
       const stream = await openUntilAborted(
         this.init.transport.reconnectToStream({
-          ...options,
-          chatId: this.id,
+          ...request,
+          chatId: conversationId,
           resume: true,
           abortSignal: active.controller.signal,
         }),
         active.controller.signal,
         (opened) => opened?.close(),
       );
+      if (!stream && active.stopped) {
+        this.settle(getStopOutcome(active), active);
+        return;
+      }
       if (!stream && continuation) {
-        this.settle({ kind: 'complete', settled: { conversationId: this.id } }, active);
+        this.settle({ kind: 'complete', settled: { conversationId } }, active);
         return;
       }
       if (!stream) {
@@ -505,22 +557,21 @@ export class Chat {
   /**
    * Stops the turn in flight. A request still starting is cancelled; an attached stream is
    * stopped on the server, and this resolves once the stream reported its end. Rejects when the
-   * server refused the stop, leaving the stream attached.
+   * server refused the stop, leaving the stream attached. Resolves with the steers the run never
+   * injected, for the host to restore.
    */
-  async stop(): Promise<void> {
+  async stop(): Promise<ChatStopResult> {
     const active = this.active;
     if (!active && this.detached) {
-      await this.stopDetached(this.detached);
-      return;
+      return this.stopDetached(this.detached);
     }
     if (!active) {
-      await this.stopPaused();
-      return;
+      return this.stopPaused();
     }
     if (!active.stream && !active.reattach) {
       active.controller.abort();
       await active.finished;
-      return;
+      return {};
     }
     if (!active.endpoint) {
       throw new Error('The generation cannot be stopped without its endpoint');
@@ -534,8 +585,10 @@ export class Chat {
       abortKey: streamId == null ? this.abortKey(active) : undefined,
     }).then((result) => {
       active.stopped = true;
-      if (result && 'settled' in result && result.settled) {
+      if (isStreamAbort(result) && result.settled) {
         active.settledAs = result.terminalStatus ?? 'complete';
+      } else if (isStreamAbort(result) && result.persistenceFailed) {
+        active.persistenceFailed = true;
       }
       return result;
     });
@@ -550,8 +603,11 @@ export class Chat {
       }
       active.controller.abort();
       active.stream?.close();
-    } else if (!active.stream) {
-      /** Still reattaching: nothing will report the end, so the stop ends the request here. */
+    } else if (!active.stream && !active.persistenceFailed) {
+      /**
+       * Still reattaching: nothing will report the end, so the stop ends the request here. An
+       * unsaved stop stays attached for the reconcile frame that reports it.
+       */
       active.controller.abort();
     }
     await active.finished;
@@ -565,6 +621,7 @@ export class Chat {
     } else {
       this.notify();
     }
+    return getStopResult(result);
   }
 
   /**
@@ -619,43 +676,51 @@ export class Chat {
   }
 
   /** Stops a generation whose stream dropped, which the server keeps running. */
-  private async stopDetached(detached: DetachedGeneration): Promise<void> {
+  private async stopDetached(detached: DetachedGeneration): Promise<ChatStopResult> {
     const result = await this.abortOnServer(detached.target);
     if (this.detached !== detached) {
-      return;
+      return getStopResult(result);
     }
     if (result && 'runMessages' in result) {
       await this.mergeRunMessages(result.runMessages);
     }
     this.detached = undefined;
+    this.action = undefined;
+    this.decisions.clear();
+    if (isStreamAbort(result) && (result.settled || result.persistenceFailed)) {
+      /** No terminal frame reaches a dropped stream, so the host reloads what the server kept. */
+      const outcome = getStopOutcome({
+        settledAs: result.settled ? (result.terminalStatus ?? 'complete') : undefined,
+        persistenceFailed: result.persistenceFailed,
+      });
+      this.publish(outcome, detached.responseId);
+      return getStopResult(result);
+    }
     if (this.error === detached.error) {
       this.init.state.error = undefined;
       this.init.state.status = 'ready';
     }
-    if (this.action) {
-      this.clearAction();
-    } else {
-      this.notify();
-    }
+    this.notify();
+    return getStopResult(result);
   }
 
   /** Stops a pause restored without a stream on the server, which frees the chat for a turn. */
-  private async stopPaused(): Promise<void> {
+  private async stopPaused(): Promise<ChatStopResult> {
     const action = this.action;
     const endpoint = this.resumeEndpoint();
     if (!action) {
-      return;
+      return {};
     }
     if (!endpoint) {
       throw new Error('The paused generation cannot be stopped without its endpoint');
     }
-    await this.abortOnServer({
+    const result = await this.abortOnServer({
       endpoint,
       streamId: action.streamId,
       generationCreatedAt: this.generationCreatedAt,
     });
     if (this.action?.actionId !== action.actionId) {
-      return;
+      return getStopResult(result);
     }
     if (this.status === 'error') {
       /** The stop confirmed the end a dropped connection left unknown. */
@@ -663,6 +728,7 @@ export class Chat {
       this.init.state.status = 'ready';
     }
     this.clearAction();
+    return getStopResult(result);
   }
 
   /** The endpoint a generation this chat did not start runs on, as the host selects it. */
@@ -886,6 +952,7 @@ export class Chat {
         active.reattach = { streamId: result.streamId };
         stream = await openUntilAborted(
           this.init.transport.reconnectToStream({
+            ...options,
             chatId: result.conversationId,
             streamId: result.streamId,
             generationCreatedAt: result.generationCreatedAt,
@@ -895,6 +962,10 @@ export class Chat {
           signal,
           (opened) => opened?.close(),
         );
+      }
+      if (!stream && active.stopped) {
+        this.settle(getStopOutcome(active), active);
+        return;
       }
       if (!stream) {
         /** The server finished the turn, or the generation replacing it, before it attached. */
@@ -967,7 +1038,7 @@ export class Chat {
       await active.stopAnswered;
     }
     if (active.stopped && unresolved) {
-      outcome = active.settledAs ? getSettledOutcome(active.settledAs) : { kind: 'abort' };
+      outcome = getStopOutcome(active);
     }
     this.settle(
       outcome ?? {
@@ -1020,7 +1091,7 @@ export class Chat {
 
   private toOutcome(error: unknown, active: ActiveRequest): Outcome {
     if (active.controller.signal.aborted) {
-      return active.settledAs ? getSettledOutcome(active.settledAs) : { kind: 'abort' };
+      return getStopOutcome(active);
     }
     const failure = error instanceof Error ? error : new Error(String(error));
     /** A request that never got a response may still be running on the server. */
@@ -1045,6 +1116,7 @@ export class Chat {
             generationCreatedAt: active.stream?.generationCreatedAt ?? this.generationCreatedAt,
             abortKey: streamId == null ? this.abortKey(active) : undefined,
           },
+          responseId: active.responseId,
         };
       }
     }
@@ -1053,6 +1125,11 @@ export class Chat {
      * that starts the next turn is not overwritten by this one's terminal state.
      */
     this.active = undefined;
+    this.publish(outcome, active.responseId);
+  }
+
+  /** Publishes a turn's terminal state, then tells the host how it ended. */
+  private publish(outcome: Outcome, responseId: string | undefined): void {
     const { state } = this.init;
     const status: ChatStatus = outcome.kind === 'error' ? 'error' : 'ready';
     if (state.connection !== 'idle') {
@@ -1064,8 +1141,8 @@ export class Chat {
     state.error = outcome.kind === 'error' ? outcome.error : undefined;
     const messages = this.messages;
     const message =
-      active.responseId !== undefined
-        ? messages.find((stored) => stored.messageId === active.responseId)
+      responseId !== undefined
+        ? messages.find((stored) => stored.messageId === responseId)
         : messages[messages.length - 1];
     const { settled } = outcome;
     this.notify();
@@ -1130,7 +1207,10 @@ export class Chat {
       }
       if (!this.active && !this.disposed) {
         /** A pause restored after a reload has no stream attached for the continuation. */
-        void this.reattach({ streamId: result.streamId, generationCreatedAt }, true);
+        void this.reattach(
+          { streamId: result.streamId, generationCreatedAt, conversationId: result.conversationId },
+          true,
+        );
       }
       this.clearAction();
     } finally {

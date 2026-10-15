@@ -313,6 +313,38 @@ const events: Record<string, (h: Harness) => Promise<void>> = {
       h.transport.sendMessages.mock.calls.length > before ? `sent:${h.outcome}` : h.outcome;
     await flush();
   },
+  /** A stop the server confirmed without saving its terminal state, as protocol v2 reports. */
+  unsavedStop: async (h) => {
+    const reconcile = finalEvent({
+      reconcile: true,
+      reconcileReason: 'abort_persistence_failed',
+      terminalStatus: 'aborted',
+    });
+    h.transport.abort.mockImplementation(async () => {
+      h.stream?.push(reconcile);
+      return { success: true, generationProtocolVersion: 2, persistenceFailed: true };
+    });
+    const opening = !h.stream && !!h.open;
+    const stopping = record(h, h.chat.stop());
+    await flush();
+    if (opening) {
+      h.open?.();
+      await flush();
+      h.stream?.push(reconcile);
+    }
+    await stopping;
+    await flush();
+  },
+  /** A stop that found the run already finished on its own. */
+  settledStop: async (h) => {
+    h.transport.abort.mockResolvedValue({
+      success: true,
+      generationProtocolVersion: 2,
+      settled: true,
+      terminalStatus: 'complete',
+    });
+    await events.stop(h);
+  },
   restore: async (h) => {
     try {
       h.chat.restorePendingAction({ ...askAction, actionId: 'action-9' }, 900);
@@ -330,7 +362,9 @@ type Expected = {
   /** How many times `onFinish` ran, over the state and the event together. */
   finishes: number;
   /** Flags of the last `onFinish`. */
-  last?: Partial<Pick<ChatFinishResult, 'isAbort' | 'isDisconnect' | 'isError' | 'isSettled'>>;
+  last?: Partial<
+    Pick<ChatFinishResult, 'isAbort' | 'isDisconnect' | 'isError' | 'isSettled' | 'reconcileReason'>
+  >;
   /** What `transport.abort` was asked to stop, or `null` when it was not called. */
   abort?: { streamId?: string; generationCreatedAt?: number } | null;
   action?: string | null;
@@ -343,6 +377,11 @@ const done = { isAbort: false, isDisconnect: false, isError: false, isSettled: f
 const aborted = { ...done, isAbort: true };
 const dropped = { ...done, isError: true, isDisconnect: true };
 const settled = { ...done, isSettled: true };
+const unsaved = {
+  ...aborted,
+  isSettled: true,
+  reconcileReason: 'abort_persistence_failed' as const,
+};
 
 const table: Array<[keyof typeof states, keyof typeof events, Expected]> = [
   ['starting', 'stop', { status: 'ready', finishes: 1, last: aborted, abort: NONE, outcome: 'ok' }],
@@ -539,6 +578,53 @@ const table: Array<[keyof typeof states, keyof typeof events, Expected]> = [
       finishes: 1,
       last: dropped,
       abort: { streamId: 'stream-2', generationCreatedAt: 200 },
+    },
+  ],
+
+  /** Stops the server answered as unsaved or as already settled; neither is a plain abort. */
+  [
+    'attached',
+    'unsavedStop',
+    {
+      status: 'ready',
+      finishes: 1,
+      last: unsaved,
+      abort: { streamId: 'convo-1', generationCreatedAt: 100 },
+      outcome: 'ok',
+    },
+  ],
+  [
+    'reattaching',
+    'unsavedStop',
+    {
+      status: 'ready',
+      connection: 'idle',
+      finishes: 1,
+      last: unsaved,
+      abort: { streamId: 'convo-1', generationCreatedAt: 300 },
+      outcome: 'ok',
+    },
+  ],
+  [
+    'detached',
+    'unsavedStop',
+    {
+      status: 'ready',
+      finishes: 2,
+      last: unsaved,
+      abort: { streamId: 'convo-1', generationCreatedAt: 100 },
+      outcome: 'ok',
+    },
+  ],
+  [
+    'detached',
+    'settledStop',
+    {
+      status: 'ready',
+      finishes: 2,
+      last: settled,
+      abort: { streamId: 'convo-1', generationCreatedAt: 100 },
+      outcome: 'ok',
     },
   ],
 ];

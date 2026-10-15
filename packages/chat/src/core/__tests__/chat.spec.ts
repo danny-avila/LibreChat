@@ -1194,7 +1194,7 @@ describe('Chat', () => {
     const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
     await flush();
 
-    await expect(chat.stop()).resolves.toBeUndefined();
+    await expect(chat.stop()).resolves.toEqual({});
     await sent;
     expect(chat.status).toBe('ready');
   });
@@ -2152,6 +2152,145 @@ describe('Chat', () => {
 
       stream.push(finalEvent());
       await sent;
+    });
+  });
+
+  describe('stop answers and reattachment targets', () => {
+    const steer = { steerId: 'steer-1', text: 'Shorter' };
+    const pausedAction = {
+      actionId: 'action-5',
+      streamId: 'new',
+      createdAt: 1,
+      payload: {
+        type: 'ask_user_question',
+        question: { question: 'Which?' },
+        tool_call_id: 'ask-5',
+      },
+    } as Agents.PendingAction;
+
+    it('hands back the steers a stop found uninjected, under the conversation it stopped', async () => {
+      const { chat, stream, transport } = setup();
+      transport.abort.mockImplementation(async () => {
+        stream.push(finalEvent({ terminalStatus: 'aborted' }));
+        return { success: true, aborted: 'convo-7', pendingSteers: [steer] };
+      });
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+
+      await expect(chat.stop()).resolves.toEqual({
+        conversationId: 'convo-7',
+        pendingSteers: [steer],
+      });
+      await sent;
+    });
+
+    it('hands back no steers from a stop the run had already settled or could not save', async () => {
+      for (const answer of [
+        { settled: true, terminalStatus: 'complete' as const },
+        { persistenceFailed: true },
+      ]) {
+        const { chat, stream, transport } = setup();
+        transport.abort.mockImplementation(async () => {
+          stream.push(finalEvent({ terminalStatus: 'aborted' }));
+          return { success: true, aborted: 'convo-1', pendingSteers: [steer], ...answer };
+        });
+        const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+        await flush();
+
+        await expect(chat.stop()).resolves.toEqual({ conversationId: 'convo-1' });
+        await sent;
+      }
+    });
+
+    it('keeps an unsaved stop attached, and reports it unsaved when nothing is left to attach to', async () => {
+      let open: ((stream: ChatStream | null) => void) | undefined;
+      const { chat, transport, onFinish } = setup(
+        { resumeSelection: () => ({ endpoint: 'agents' }) },
+        {
+          reconnectToStream: jest.fn(
+            () =>
+              new Promise<ChatStream | null>((resolve) => {
+                open = resolve;
+              }),
+          ),
+          abort: jest.fn(async () => ({
+            success: true,
+            generationProtocolVersion: 2,
+            persistenceFailed: true,
+          })),
+        },
+      );
+      const resumed = chat.resumeStream({ streamId: 'convo-1', generationCreatedAt: 300 });
+      await flush();
+
+      const stopped = chat.stop();
+      await flush();
+      const [request] = transport.reconnectToStream.mock.calls[0];
+      expect(request.abortSignal?.aborted).toBe(false);
+      expect(onFinish).not.toHaveBeenCalled();
+
+      open?.(null);
+      await stopped;
+      await resumed;
+      expect(chat.status).toBe('ready');
+      expect(onFinish).toHaveBeenCalledTimes(1);
+      expect(onFinish).toHaveBeenCalledWith(
+        expect.objectContaining({
+          isAbort: true,
+          isSettled: true,
+          reconcileReason: 'abort_persistence_failed',
+        }),
+      );
+    });
+
+    it('sends the request options of a turn to the generation that replaced it', async () => {
+      const stream = createStream();
+      const { chat, transport } = setup(
+        {},
+        {
+          sendMessages: jest.fn(async () => ({
+            status: 'replaced' as const,
+            generationProtocolVersion: 2,
+            conversationId: 'convo-1',
+            streamId: 'stream-2',
+            generationCreatedAt: 200,
+          })),
+          reconnectToStream: jest.fn(async () => stream),
+        },
+      );
+      const options = { headers: { 'x-tenant': 'acme' }, body: { spec: 'a' } };
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] }, options);
+      await flush();
+      stream.push(finalEvent());
+      await sent;
+
+      expect(transport.reconnectToStream).toHaveBeenCalledWith(
+        expect.objectContaining({ ...options, chatId: 'convo-1', streamId: 'stream-2' }),
+      );
+    });
+
+    it('reattaches an answered first-turn pause under the conversation the server assigned', async () => {
+      const { chat, transport, onFinish } = setup(
+        { id: 'new' },
+        {
+          resume: jest.fn(async () => ({
+            streamId: 'convo-9',
+            conversationId: 'convo-9',
+            status: 'resuming' as const,
+          })),
+        },
+      );
+
+      chat.restorePendingAction(pausedAction, 500);
+      await chat.addToolOutput({ toolCallId: 'ask-5', output: 'Blue' });
+      await flush();
+
+      expect(transport.reconnectToStream).toHaveBeenCalledWith(
+        expect.objectContaining({ chatId: 'convo-9', streamId: 'convo-9' }),
+      );
+      expect(onFinish).toHaveBeenCalledWith(
+        expect.objectContaining({ isSettled: true, conversationId: 'convo-9' }),
+      );
     });
   });
 });
