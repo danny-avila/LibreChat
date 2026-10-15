@@ -26,37 +26,43 @@ import {
 } from 'librechat-data-provider';
 import {
   MAX_RETRIES,
-  getReconnectDelay,
-  START_GENERATION_NETWORK_RETRIES,
-  START_GENERATION_READINESS_TIMEOUT_MS,
-  getRecoverySteerId,
-  getPredecessorMismatchStartResponse,
-  isUnnegotiatedV2StartControl,
-  getStartGenerationCreatedAt,
-  getStartGenerationConversationId,
-  getStartGenerationStreamId,
-  isResumedStartResponse,
-  isSettledStartResponse,
-  isReplacedStartResponse,
-  isRetryableNetworkError,
-  isServerNotReadyError,
-  getRetryAfterDelay,
-  waitForRetryDelay,
-  getStreamStartFailureText,
-  isOAuthStepEvent,
   getStepEventId,
   toStartGenerationError,
-  GENERATION_PROTOCOL_VERSION,
-  getGenerationProtocolVersion,
-  supportsGenerationProtocolV2,
-  isInitialNewConversation,
-  completedResponseMessageId,
+  isOAuthStepEvent,
+  getReconnectDelay,
+  waitForRetryDelay,
+  applyPendingAction,
+  getRecoverySteerId,
+  getRetryAfterDelay,
+  mergeResumeMessages,
   preferDefinedString,
+  isServerNotReadyError,
   getOptimisticMessages,
-  buildOptimisticConversation,
-  hydrateSubmissionMessages,
-  buildCreatedInitialResponse,
+  isResumedStartResponse,
+  isSettledStartResponse,
+  isRetryableNetworkError,
+  isReplacedStartResponse,
+  getResumeMessageIndexes,
+  countTaggedApprovalParts,
+  isInitialNewConversation,
+  getStreamStartFailureText,
   keepLocalCodeApprovalMode,
+  hydrateSubmissionMessages,
+  buildResumeEventSubmission,
+  completedResponseMessageId,
+  getStartGenerationStreamId,
+  buildOptimisticConversation,
+  buildCreatedInitialResponse,
+  getGenerationProtocolVersion,
+  GENERATION_PROTOCOL_VERSION,
+  getStartGenerationCreatedAt,
+  isUnnegotiatedV2StartControl,
+  supportsGenerationProtocolV2,
+  findPendingActionMessageIndex,
+  START_GENERATION_NETWORK_RETRIES,
+  getStartGenerationConversationId,
+  getPredecessorMismatchStartResponse,
+  START_GENERATION_READINESS_TIMEOUT_MS,
 } from '@librechat/chat';
 import type {
   Agents,
@@ -86,7 +92,6 @@ import {
   logger,
   clearComposerDrafts,
   applySteerPart,
-  applyPendingAction,
   resolveRunEndTarget,
   findSteerMessageIndex,
   applyActivityLabelPart,
@@ -99,12 +104,9 @@ import {
   removeConvoFromAllQueries,
   upsertConvoInAllQueries,
   invalidateConversationLists,
-  countTaggedApprovalParts,
   countTrailingOutputChars,
   markStreamStartFailedMetadata,
-  findPendingActionMessageIndex,
   insertQueuedOrigin,
-  isCompactionAnchorProjection,
 } from '~/utils';
 import {
   resolveDetachedRunEnd,
@@ -184,217 +186,6 @@ const replaceNewConversationUrl = (conversationId: string) => {
     '',
     `/c/${conversationId}${window.location.search}`,
   );
-};
-
-const buildResumeEventSubmission = (
-  currentSubmission: TSubmission,
-  currentUserMessage: TMessage,
-  resumeState?: Agents.ResumeState | null,
-): EventSubmission => {
-  if (!resumeState) {
-    return { ...currentSubmission, userMessage: currentUserMessage } as EventSubmission;
-  }
-
-  const conversationId =
-    resumeState.conversationId ??
-    resumeState.userMessage?.conversationId ??
-    currentUserMessage.conversationId ??
-    currentSubmission.conversation?.conversationId;
-
-  /**
-   * A compaction submits no user turn: its user-message slot names the LEAF it
-   * summarizes up to, and the server projects that anchor as identity only
-   * (`projectCompactionAnchor` — no parent, no author). Adopting the projection
-   * as a user row would rewrite the leaf into an empty, parentless message, so
-   * an anchored run keeps the identity it resumed with.
-   */
-  /** Read from the projection as well as the flag: a re-attach whose submission
-   *  never learned it was a compaction still has to recognize the anchor. */
-  const anchoredUserMessage =
-    currentSubmission.compact === true || isCompactionAnchorProjection(resumeState.userMessage);
-
-  const userMessage = (
-    anchoredUserMessage
-      ? { ...currentUserMessage, conversationId }
-      : {
-          ...currentUserMessage,
-          ...resumeState.userMessage,
-          conversationId,
-          isCreatedByUser: true,
-        }
-  ) as TMessage;
-
-  const responseMessageId =
-    resumeState.responseMessageId ??
-    currentSubmission.initialResponse?.messageId ??
-    `${userMessage.messageId}_`;
-
-  const initialResponse = {
-    ...(currentSubmission.initialResponse as TMessage),
-    messageId: responseMessageId,
-    parentMessageId: userMessage.messageId,
-    conversationId,
-    content:
-      resumeState.aggregatedContent ??
-      (currentSubmission.initialResponse as TMessage | undefined)?.content,
-    sender: resumeState.sender ?? currentSubmission.initialResponse?.sender,
-    iconURL: preferDefinedString(currentSubmission.initialResponse?.iconURL, resumeState.iconURL),
-    model: preferDefinedString(currentSubmission.initialResponse?.model, resumeState.model),
-    isCreatedByUser: false,
-  } as TMessage;
-
-  return {
-    ...currentSubmission,
-    conversation: {
-      ...currentSubmission.conversation,
-      conversationId,
-    },
-    userMessage,
-    initialResponse,
-    /** Carried so every consumer of the resumed submission — the merges below,
-     *  the abort-error write — reads the same answer this resolved. */
-    ...(anchoredUserMessage && { compact: true }),
-  } as EventSubmission;
-};
-
-type ResumeMessageIndexes = {
-  userIndex: number;
-  responseIndex: number;
-  preliminaryUserIndex: number;
-  preliminaryResponseIndex: number;
-};
-
-const getResumeMessageIndexes = (
-  messages: TMessage[],
-  userMessageId: string,
-  responseMessageId: string,
-  preliminaryUserMessageId?: string,
-  preliminaryResponseMessageId?: string,
-): ResumeMessageIndexes => {
-  let userIndex = -1;
-  let responseIndex = -1;
-  let preliminaryUserIndex = -1;
-  let preliminaryResponseIndex = -1;
-  const hasPreliminaryResponse = preliminaryResponseMessageId?.endsWith('_') === true;
-  const eligiblePreliminaryUserId =
-    hasPreliminaryResponse && preliminaryUserMessageId && preliminaryUserMessageId !== userMessageId
-      ? preliminaryUserMessageId
-      : undefined;
-  const eligiblePreliminaryResponseId =
-    hasPreliminaryResponse && preliminaryResponseMessageId !== responseMessageId
-      ? preliminaryResponseMessageId
-      : undefined;
-
-  for (let index = 0; index < messages.length; index++) {
-    const messageId = messages[index]?.messageId;
-    if (userIndex < 0 && messageId === userMessageId) {
-      userIndex = index;
-    }
-    if (responseIndex < 0 && messageId === responseMessageId) {
-      responseIndex = index;
-    }
-    if (
-      preliminaryUserIndex < 0 &&
-      eligiblePreliminaryUserId &&
-      messageId === eligiblePreliminaryUserId
-    ) {
-      preliminaryUserIndex = index;
-    }
-    if (
-      preliminaryResponseIndex < 0 &&
-      eligiblePreliminaryResponseId &&
-      messageId === eligiblePreliminaryResponseId
-    ) {
-      preliminaryResponseIndex = index;
-    }
-  }
-
-  return { userIndex, responseIndex, preliminaryUserIndex, preliminaryResponseIndex };
-};
-
-const mergeResumeMessages = (
-  messages: TMessage[],
-  userMessage: TMessage,
-  responseMessage: TMessage,
-  indexes: ResumeMessageIndexes,
-  /**
-   * An anchored run — a compaction — owns no user row. Its user-message slot
-   * holds the leaf the summary hangs off, a row the transcript already has:
-   * merging the slot onto it would replace that answer with an empty user
-   * message, and inserting it would duplicate its id. Either way the row loses
-   * its parent and `buildTree` files it as a phantom root, folding the thread.
-   */
-  anchoredUserMessage = false,
-): TMessage[] => {
-  const nextMessages = [...messages];
-  let { userIndex, responseIndex, preliminaryResponseIndex } = indexes;
-  const { preliminaryUserIndex } = indexes;
-
-  if (preliminaryUserIndex >= 0 && !anchoredUserMessage) {
-    if (userIndex >= 0) {
-      nextMessages.splice(preliminaryUserIndex, 1);
-      if (userIndex > preliminaryUserIndex) {
-        userIndex -= 1;
-      }
-      if (responseIndex > preliminaryUserIndex) {
-        responseIndex -= 1;
-      }
-      if (preliminaryResponseIndex > preliminaryUserIndex) {
-        preliminaryResponseIndex -= 1;
-      }
-    } else {
-      nextMessages[preliminaryUserIndex] = {
-        ...nextMessages[preliminaryUserIndex],
-        ...userMessage,
-      };
-      userIndex = preliminaryUserIndex;
-    }
-  }
-
-  if (preliminaryResponseIndex >= 0) {
-    if (responseIndex >= 0) {
-      nextMessages.splice(preliminaryResponseIndex, 1);
-      if (userIndex > preliminaryResponseIndex) {
-        userIndex -= 1;
-      }
-      if (responseIndex > preliminaryResponseIndex) {
-        responseIndex -= 1;
-      }
-    } else {
-      nextMessages[preliminaryResponseIndex] = {
-        ...nextMessages[preliminaryResponseIndex],
-        ...responseMessage,
-      };
-      responseIndex = preliminaryResponseIndex;
-    }
-  }
-
-  if (userIndex >= 0 && !anchoredUserMessage) {
-    nextMessages[userIndex] = { ...nextMessages[userIndex], ...userMessage };
-  }
-
-  if (responseIndex >= 0) {
-    nextMessages[responseIndex] = { ...nextMessages[responseIndex], ...responseMessage };
-  }
-
-  if (anchoredUserMessage) {
-    return responseIndex >= 0 ? nextMessages : [...nextMessages, responseMessage];
-  }
-
-  if (userIndex >= 0 && responseIndex >= 0) {
-    return nextMessages;
-  }
-
-  if (userIndex >= 0) {
-    return [...nextMessages, responseMessage];
-  }
-
-  if (responseIndex >= 0) {
-    nextMessages.splice(responseIndex, 0, userMessage);
-    return nextMessages;
-  }
-
-  return [...nextMessages, userMessage, responseMessage];
 };
 
 export { ABORT_SWEEP_STATUSES, selectLocalSteersForQueue };

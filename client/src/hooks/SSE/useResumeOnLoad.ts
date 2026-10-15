@@ -9,13 +9,19 @@ import {
 import {
   Constants,
   QueryKeys,
-  tMessageSchema,
   isAssistantsEndpoint,
   isForcedTemporaryRetention,
 } from 'librechat-data-provider';
-import type { TMessage, TConversation, TSubmission, Agents } from 'librechat-data-provider';
-import type { GenerationProtocolVersion } from '~/data-provider/SSE/protocol';
-import type { StreamStatusResponse } from '~/data-provider';
+import {
+  hasSubmissionUserMessage,
+  getGenerationProtocolVersion,
+  supportsGenerationProtocolV2,
+  buildMinimalResumeSubmission,
+  resumeStateMatchesSubmission,
+  getResumeBranchTargetMessageId,
+  buildSubmissionFromResumeState,
+} from '@librechat/chat';
+import type { TMessage, Agents } from 'librechat-data-provider';
 import {
   useStreamStatus,
   useActiveJobs,
@@ -27,23 +33,14 @@ import {
   ACTIVE_JOBS_SUCCESSOR_GRACE_MS,
 } from '~/data-provider';
 import {
-  dedupeSteersById,
-  applyPendingAction,
-  getBranchSiblingIndexesForTarget,
-  isCompactionAnchorProjection,
-} from '~/utils';
-import {
   isDetachedRunManual,
   resolveDetachedRunEnd,
   pendingRunEndByConvoId,
   detachedRunByConvoId,
 } from '~/hooks/Chat/queue';
-import {
-  getGenerationProtocolVersion,
-  supportsGenerationProtocolV2,
-} from '~/data-provider/SSE/protocol';
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
+import { dedupeSteersById, getBranchSiblingIndexesForTarget } from '~/utils';
 import { agentQueuedTurnsQueryKey } from '~/data-provider/SSE/queuedTurns';
 import { submissionStartFamily } from '~/store/generation';
 import { resumeRequestsAtom } from '~/hooks/Chat/resume';
@@ -55,229 +52,6 @@ import store from '~/store';
  * faster than the list can change it would only re-read the same snapshot.
  */
 const ACTIVE_JOB_REARM_INTERVAL_MS = 5_000;
-
-function hasSubmissionUserMessage(
-  submission: TSubmission | null,
-  messages: TMessage[] | undefined,
-  conversationId: string | undefined,
-): boolean {
-  const userMessageId = submission?.userMessage?.messageId;
-  if (!userMessageId || !conversationId || !messages?.length) {
-    return false;
-  }
-
-  return messages.some(
-    (message) =>
-      message.isCreatedByUser === true &&
-      message.messageId === userMessageId &&
-      message.conversationId === conversationId,
-  );
-}
-
-function resumeStateMatchesSubmission(
-  streamStatus: StreamStatusResponse | undefined,
-  submission: TSubmission | null,
-): boolean {
-  const resumeState = streamStatus?.resumeState;
-  if (!resumeState || !submission) {
-    return false;
-  }
-
-  const userMessageId = submission.userMessage?.messageId;
-  if (userMessageId && resumeState.userMessage?.messageId === userMessageId) {
-    return true;
-  }
-
-  const responseMessageId = submission.initialResponse?.messageId;
-  return !!responseMessageId && resumeState.responseMessageId === responseMessageId;
-}
-
-/**
- * The row that names the branch a resumed run belongs to when its own response
- * is not in the loaded history yet. A compaction's user-message slot is the leaf
- * it summarizes up to and carries no parent (`projectCompactionAnchor`), so
- * there the anchor itself names the branch — without this the pane restores no
- * sibling selection and a compaction started on an older branch comes back on
- * whichever branch the default lands on.
- */
-function getResumeBranchFallbackMessageId(
-  resumeState: Agents.ResumeState,
-): string | null | undefined {
-  return resumeState.userMessage?.parentMessageId ?? resumeState.userMessage?.messageId;
-}
-
-function getResumeBranchTargetMessageId(
-  resumeState: Agents.ResumeState,
-  messages: TMessage[],
-): string | null | undefined {
-  const responseMessageId = resumeState.responseMessageId;
-  if (!responseMessageId) {
-    return getResumeBranchFallbackMessageId(resumeState);
-  }
-
-  const unpaddedResponseMessageId = responseMessageId.replace(/_+$/, '');
-  let hasResponseMessage = false;
-  let hasUnpaddedResponseMessage = false;
-
-  for (const message of messages) {
-    if (message.messageId === responseMessageId) {
-      hasResponseMessage = true;
-      break;
-    }
-
-    if (message.messageId === unpaddedResponseMessageId) {
-      hasUnpaddedResponseMessage = true;
-    }
-  }
-
-  if (hasResponseMessage) {
-    return responseMessageId;
-  }
-
-  if (hasUnpaddedResponseMessage) {
-    return unpaddedResponseMessageId;
-  }
-
-  return getResumeBranchFallbackMessageId(resumeState);
-}
-
-function preferDefinedString(value?: string | null, fallback?: string): string | undefined {
-  return value != null && value !== '' ? value : fallback;
-}
-
-/**
- * Build a submission object from resume state for reconnected streams.
- * This provides the minimum data needed for useResumableSSE to subscribe.
- */
-function buildSubmissionFromResumeState(
-  resumeState: Agents.ResumeState,
-  streamId: string,
-  messages: TMessage[],
-  conversationId: string,
-  generationCreatedAt?: number,
-  generationProtocolVersion: GenerationProtocolVersion = 1,
-  isTemporary = false,
-): TSubmission {
-  const userMessageData = resumeState.userMessage;
-  const responseMessageId =
-    resumeState.responseMessageId ?? `${userMessageData?.messageId ?? 'resume'}_`;
-
-  /**
-   * The run's user-message slot as the loaded history already holds it. Message
-   * ids are unique per row, so a match is that row whoever wrote it: a
-   * compaction submits no user turn and puts the LEAF it summarizes up to in
-   * this slot (`useCompactConversation` client-side, `projectCompactionAnchor`
-   * server-side), which is usually the assistant answer. Adopting the row keeps
-   * the anchor's own identity — synthesizing an empty, parentless USER row over
-   * it rewrites that answer into a phantom root and folds the thread.
-   */
-  const existingSlotMessage = messages.find((m) => m.messageId === userMessageData?.messageId);
-  /** An anchored run — a compaction — created no user turn: the slot names a row
-   *  the transcript already holds. Judged from the projection's shape, never from
-   *  the anchor's author, which is a user message as often as an answer. Either
-   *  way the run is regenerate-shaped for every consumer: no user turn of its
-   *  own, the response parented onto an existing message. */
-  const isAnchoredRun = isCompactionAnchorProjection(userMessageData);
-
-  // A trailing underscore distinguishes an in-flight regeneration from the persisted
-  // response it replaces. Only the exact response id proves generation ownership.
-  const existingResponseMessage = messages.find(
-    (m) => !m.isCreatedByUser && m.messageId === responseMessageId,
-  );
-  // The persisted row may seed display metadata, but never identity or deduplication.
-  const unpaddedResponseMessageId = responseMessageId.replace(/_+$/, '');
-  const persistedRegenerationResponse =
-    unpaddedResponseMessageId !== responseMessageId
-      ? messages.find((m) => !m.isCreatedByUser && m.messageId === unpaddedResponseMessageId)
-      : undefined;
-  const responseMetadataMessage = existingResponseMessage ?? persistedRegenerationResponse;
-  const isRegenerateResume =
-    resumeState.isRegenerate === true || persistedRegenerationResponse != null || isAnchoredRun;
-  let regenerateMessages: TMessage[] | undefined;
-  if (isRegenerateResume) {
-    regenerateMessages =
-      unpaddedResponseMessageId === responseMessageId
-        ? [...messages]
-        : messages.filter((message) => message.messageId !== responseMessageId);
-  }
-
-  // Create or use the row the slot already names
-  const userMessage: TMessage =
-    existingSlotMessage ??
-    (userMessageData
-      ? (tMessageSchema.parse({
-          messageId: userMessageData.messageId,
-          parentMessageId: userMessageData.parentMessageId ?? Constants.NO_PARENT,
-          conversationId: userMessageData.conversationId ?? conversationId,
-          text: userMessageData.text ?? '',
-          isCreatedByUser: true,
-          role: 'user',
-        }) as TMessage)
-      : (messages[messages.length - 2] ??
-        ({
-          messageId: 'resume_user_msg',
-          conversationId,
-          text: '',
-          isCreatedByUser: true,
-        } as TMessage)));
-
-  // ALWAYS use aggregatedContent from resumeState - it has the latest content from the running job.
-  // DB content may be stale (saved at disconnect, but generation continued).
-  let initialResponse: TMessage = {
-    messageId: existingResponseMessage?.messageId ?? responseMessageId,
-    parentMessageId: existingResponseMessage?.parentMessageId ?? userMessage.messageId,
-    conversationId,
-    text: '',
-    // aggregatedContent is authoritative - it reflects actual job state
-    content: (resumeState.aggregatedContent as TMessage['content']) ?? [],
-    isCreatedByUser: false,
-    role: 'assistant',
-    sender: responseMetadataMessage?.sender ?? resumeState.sender,
-    model: preferDefinedString(responseMetadataMessage?.model, resumeState.model),
-    iconURL: preferDefinedString(responseMetadataMessage?.iconURL, resumeState.iconURL),
-  } as TMessage;
-
-  // Re-paused turn: seed the approval / ask-user controls straight onto the
-  // placeholder so they render on load without waiting for the SSE sync replay.
-  if (resumeState.pendingAction) {
-    initialResponse = applyPendingAction(initialResponse, resumeState.pendingAction);
-  }
-
-  const conversation: TConversation = {
-    conversationId,
-    title: 'Resumed Chat',
-    endpoint: null,
-  } as TConversation;
-
-  // Non-regenerate resumes strip the persisted request/response pair before handlers
-  // re-supply it. A regeneration keeps the original branch for early-abort rollback;
-  // explicit resume metadata covers edited regenerations that reuse the exact response id.
-  const dedupedMessages = messages.filter(
-    (m) =>
-      m.messageId !== initialResponse.messageId &&
-      (isRegenerateResume || m.messageId !== userMessage.messageId),
-  );
-
-  return {
-    messages: dedupedMessages,
-    userMessage,
-    initialResponse,
-    conversation,
-    isRegenerate: isRegenerateResume,
-    ...(isAnchoredRun && { compact: true }),
-    ...(regenerateMessages && { regenerateMessages }),
-    isTemporary,
-    endpointOption: {},
-    // Signal to useResumableSSE to subscribe to existing stream instead of starting new
-    resumeStreamId: streamId,
-    ...(generationCreatedAt != null && { resumeGenerationCreatedAt: generationCreatedAt }),
-    resumeGenerationProtocolVersion: generationProtocolVersion,
-  } as TSubmission & {
-    resumeStreamId: string;
-    resumeGenerationCreatedAt?: number;
-    resumeGenerationProtocolVersion: GenerationProtocolVersion;
-  };
-}
 
 /**
  * Hook to resume streaming if navigating to a conversation with active generation.
@@ -1000,34 +774,17 @@ export default function useResumeOnLoad(
       );
       setSubmission(submission);
     } else {
-      // Minimal submission without resume state
-      const lastUserMessage = [...messages].reverse().find((m) => m.isCreatedByUser);
-      const submission = {
-        messages,
-        userMessage:
-          lastUserMessage ?? ({ messageId: 'resume', conversationId, text: '' } as TMessage),
-        initialResponse: {
-          messageId: 'resume_',
+      setSubmission(
+        buildMinimalResumeSubmission({
+          messages,
           conversationId,
-          text: '',
-          content: streamStatus.aggregatedContent ?? [{ type: 'text', text: '' }],
-        } as TMessage,
-        conversation: { conversationId, title: 'Resumed Chat' } as TConversation,
-        isRegenerate: false,
-        isTemporary: streamStatus.isTemporary === true || isRetentionForced,
-        endpointOption: {},
-        // Signal to useResumableSSE to subscribe to existing stream instead of starting new
-        resumeStreamId: streamStatus.streamId,
-        ...(streamStatus.createdAt != null && {
-          resumeGenerationCreatedAt: streamStatus.createdAt,
+          streamId: streamStatus.streamId,
+          createdAt: streamStatus.createdAt,
+          aggregatedContent: streamStatus.aggregatedContent,
+          isTemporary: streamStatus.isTemporary === true || isRetentionForced,
+          generationProtocolVersion,
         }),
-        resumeGenerationProtocolVersion: generationProtocolVersion,
-      } as TSubmission & {
-        resumeStreamId: string;
-        resumeGenerationCreatedAt?: number;
-        resumeGenerationProtocolVersion: GenerationProtocolVersion;
-      };
-      setSubmission(submission);
+      );
     }
   }, [
     conversationId,

@@ -750,6 +750,24 @@ describe('chat transport boundary', () => {
       await waitFor(() => expect(result.current.status).toBe('error'));
       expect(result.current.error?.message).toContain('Generation failed');
     });
+
+    it('reports a failure on a stream reattached without resume state', async () => {
+      const fake = createFakeTransport();
+      const { result } = renderPane(fake.transport);
+      await waitFor(() => expect(statusReads()).toBe(1));
+      /** An older server answers a running job without the turn it belongs to. */
+      status = { active: true, streamId: 'convo-1', status: 'running', createdAt: 2000 };
+      await act(async () => {
+        await result.current.resumeStream();
+      });
+      await waitFor(() => expect(fake.streams).toHaveLength(1));
+
+      status = { active: false, status: 'error', createdAt: 2000 };
+      act(() => fake.streams[0].options.onEvent({ type: 'error', data: { message: 'x' } }));
+
+      await waitFor(() => expect(result.current.status).toBe('error'));
+      expect(result.current.error?.message).toContain('x');
+    });
   });
 
   describe('useChat', () => {
