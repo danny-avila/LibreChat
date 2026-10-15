@@ -1,17 +1,15 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
-import { useRecoilValue } from 'recoil';
 import { useForm } from 'react-hook-form';
 import { Alert, Button, TextareaAutosize } from '@librechat/client';
 import { useUpdateMessageMutation } from 'librechat-data-provider/react-query';
 import type { TEditProps } from '~/common';
-import { useMessagesOperations, useMessagesConversation } from '~/Providers';
+import { useMessagePartsHost } from '~/Providers/MessagePartsHostContext';
 import useGetAddedConvo from '~/hooks/Conversations/useGetAddedConvo';
 import { cn, isSubmittableMessage } from '~/utils';
 import { findRerunParent } from './rerunParent';
 import { useLocalize } from '~/hooks';
 import Container from './Container';
 import EditFiles from './EditFiles';
-import store from '~/store';
 
 const EditMessage = ({
   text,
@@ -25,8 +23,8 @@ const EditMessage = ({
   const saveButtonRef = useRef<HTMLButtonElement | null>(null);
   const submitButtonRef = useRef<HTMLButtonElement | null>(null);
   const [saveError, setSaveError] = useState(false);
-  const { conversation } = useMessagesConversation();
-  const { getMessages, setMessages } = useMessagesOperations();
+  const { useChatDirection, useMessagesEditing } = useMessagePartsHost();
+  const { conversation, getMessages, setMessages } = useMessagesEditing();
 
   const textAreaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -46,8 +44,7 @@ const EditMessage = ({
   const updateMessageMutation = useUpdateMessageMutation(conversationId ?? '');
   const localize = useLocalize();
 
-  const chatDirection = useRecoilValue(store.chatDirection).toLowerCase();
-  const isRTL = chatDirection === 'rtl';
+  const isRTL = useChatDirection() === 'rtl';
 
   const getAddedConvo = useGetAddedConvo();
 
