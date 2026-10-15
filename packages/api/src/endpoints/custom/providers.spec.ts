@@ -81,13 +81,13 @@ describe('resolveEndpointProviderId', () => {
     expect(resolveEndpointProviderId({ name: 'Local GPU', baseURL })).toBeUndefined();
   });
 
-  it('returns undefined for a self-hosted gateway with no signal', () => {
-    expect(
-      resolveEndpointProviderId({
-        name: 'LiteLLM',
-        baseURL: 'http://localhost:4000/v1',
-      }),
-    ).toBeUndefined();
+  it('brands a renamed local LiteLLM endpoint without branding other localhost services', () => {
+    const baseURL = 'http://localhost:4000/v1';
+    expect(resolveEndpointProviderId({ name: 'Team Gateway', baseURL, iconURL: 'litellm' })).toBe(
+      ProviderId.litellm,
+    );
+    expect(resolveEndpointProviderId({ name: 'LiteLLM', baseURL })).toBe(ProviderId.litellm);
+    expect(resolveEndpointProviderId({ name: 'Team Gateway', baseURL })).toBeUndefined();
   });
 
   it('survives a malformed baseURL', () => {
@@ -106,11 +106,12 @@ describe('resolveEndpointProviderId', () => {
 
   it('carries a host for every provider that one can identify', () => {
     /** Host-unresolvable by nature: bedrock is region-scoped under a shared AWS suffix,
-     *  and Lemonade, MLX and Ollama run on operator-defined hosts. Anything else added
+     *  and Lemonade, LiteLLM, MLX and Ollama run on operator-defined hosts. Anything else added
      *  to ProviderId without a host silently falls through to the generic mark. */
     const hostUnresolvable: ProviderId[] = [
       ProviderId.bedrock,
       ProviderId.lemonade,
+      ProviderId.litellm,
       ProviderId.mlx,
       ProviderId.ollama,
     ];

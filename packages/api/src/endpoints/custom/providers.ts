@@ -31,8 +31,8 @@ export const providerHosts: ReadonlyArray<readonly [string, ProviderId]> = [
 
 /**
  * The remaining providers cannot be identified by host: bedrock's runtime hostname
- * carries a region segment under the shared `amazonaws.com` suffix; Lemonade, MLX and
- * Ollama run on operator-defined hosts. They resolve by iconURL, provider or name.
+ * carries a region segment under the shared `amazonaws.com` suffix; Lemonade, LiteLLM,
+ * MLX and Ollama run on operator-defined hosts. They resolve by iconURL, provider or name.
  */
 
 export function providerFromBaseURL(baseURL?: string): ProviderId | undefined {
