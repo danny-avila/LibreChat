@@ -160,6 +160,13 @@ describe('createGitHubPullRequestSource', () => {
     await expect(find(source)).rejects.toMatchObject({ code: 'RATE_LIMITED' });
   });
 
+  it('maps a 401 to CREDENTIAL_REJECTED, a refusal of the token itself', async () => {
+    const { source } = sourceFor({
+      '/pulls?state=open': () => new Response('', { status: 401 }),
+    });
+    await expect(find(source)).rejects.toMatchObject({ code: 'CREDENTIAL_REJECTED' });
+  });
+
   it.each([
     ['a 500', () => new Response('boom', { status: 500 })],
     ['a plain 403', () => new Response('', { status: 403 })],

@@ -2454,4 +2454,23 @@ describe('deleteUserSkills', () => {
     expect(agentAfter?.skills).toEqual([]);
     expect(agentAfter?.skills_enabled).toBe(false);
   });
+
+  it('fails and keeps the retry anchor when agent allowlist cleanup fails', async () => {
+    const { skill: mine } = await methods.createSkill(makeSkillInput({ name: 'mine' }));
+    await grantOwner(mine._id);
+    const Agent = mongoose.models.Agent;
+    const agent = await Agent.create(makeAgentDoc([mine._id.toString(), 'keep-me']));
+
+    const failure = jest
+      .spyOn(Agent, 'updateMany')
+      .mockRejectedValueOnce(new Error('transient outage'));
+    await expect(methods.deleteUserSkills(owner._id as mongoose.Types.ObjectId)).rejects.toThrow(
+      'Agent skill allowlists could not be cleaned up',
+    );
+    failure.mockRestore();
+
+    await methods.deleteUserSkills(owner._id as mongoose.Types.ObjectId);
+    const agentAfter = (await Agent.findById(agent._id).lean()) as { skills?: string[] } | null;
+    expect(agentAfter?.skills).toEqual(['keep-me']);
+  });
 });

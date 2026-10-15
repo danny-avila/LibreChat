@@ -331,6 +331,12 @@ jobs:
           name: build-data-provider
           path: packages/data-provider/dist
 
+      - name: Download client-package build
+        uses: actions/download-artifact@v7
+        with:
+          name: build-client-package
+          path: packages/client/dist
+
       - name: Use Bun 1.4.3
         uses: oven-sh/setup-bun@v2
         with:

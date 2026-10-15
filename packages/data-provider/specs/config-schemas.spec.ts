@@ -1575,6 +1575,15 @@ describe('interfaceSchema', () => {
     },
   );
 
+  it('accepts the welcome screen heading and footer settings', () => {
+    expect(
+      interfaceSchema.parse({ landingHeading: 'greeting', landingFooter: false }),
+    ).toMatchObject({ landingHeading: 'greeting', landingFooter: false });
+    expect(interfaceSchema.parse({})).not.toHaveProperty('landingHeading');
+    expect(interfaceSchema.safeParse({ landingHeading: 'name' }).success).toBe(false);
+    expect(interfaceSchema.safeParse({ landingFooter: 'false' }).success).toBe(false);
+  });
+
   it('silently strips removed legacy fields', () => {
     const result = interfaceSchema.parse({
       endpointsMenu: true,

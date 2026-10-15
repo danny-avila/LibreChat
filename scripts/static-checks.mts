@@ -1487,11 +1487,16 @@ async function introducedWithinAllowance(
     return [`the base versions could not be linted: ${(error as Error).message}`];
   }
 
+  /** A diagnostic is compared by its first sentence, the violation itself. What follows is the
+   *  remedy, and it depends on where the file sits: a client path is offered the app's own
+   *  compositions (`PanelContent`), a package path is not, so the same violation reads differently
+   *  on either side of a move. */
+  const diagnosis = (message: string): string => /^.*?\.(?=\s|$)/.exec(message)?.[0] ?? message;
   const signatures = (reports: LintReport[]): string[] =>
     reports
       .flatMap((file) => [...file.messages, ...(file.suppressedMessages ?? [])])
       .filter((message) => isDesignRule(message.ruleId))
-      .map((message) => `${message.ruleId}: ${message.message ?? ''}`);
+      .map((message) => `${message.ruleId}: ${diagnosis(message.message ?? '')}`);
 
   /** The record as the base held it: how much an entry grew between there and
    *  here is what this change may add. A count that goes up is a line in the
@@ -1775,6 +1780,7 @@ const BUILD_ORDER = [
   'build:data-schemas',
   'build:api',
   'build:client-package',
+  'build:chat',
 ];
 
 /** Returns the failing build's outcome, or null when every build succeeded. */
@@ -1975,13 +1981,14 @@ const TYPECHECK_PROJECTS = [
     project: 'packages/chat/tsconfig.json',
     paths: [
       'packages/data-provider/**',
+      'packages/client/**',
       'packages/chat/**',
       ...ROOT_MANIFESTS,
       TYPECHECK_SCRIPT,
       FRONTEND_REVIEW,
       '!**.md',
     ],
-    requires: ['build:data-provider'],
+    requires: ['build:data-provider', 'build:client-package'],
   },
   {
     project: 'client/tsconfig.json',
@@ -1989,12 +1996,13 @@ const TYPECHECK_PROJECTS = [
       'client/**',
       'packages/data-provider/**',
       'packages/client/**',
+      'packages/chat/**',
       ...ROOT_MANIFESTS,
       TYPECHECK_SCRIPT,
       FRONTEND_REVIEW,
       '!**.md',
     ],
-    requires: ['build:data-provider', 'build:client-package'],
+    requires: ['build:data-provider', 'build:client-package', 'build:chat'],
   },
 ];
 

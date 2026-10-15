@@ -307,6 +307,10 @@ const lengthWithin =
     const px = parseFloat(value) * (value.endsWith('rem') ? 16 : 1);
     return px >= minPx && px <= maxPx;
   };
+/** A Select list's scroll height, or `none` for no cap of its own, so it fills the room the popper
+ *  leaves. */
+const isListMaxHeight = (value: unknown): value is string =>
+  value === 'none' || lengthWithin(128, 640)(value);
 /** A pointer target never drops under WCAG 2.5.8's 24px minimum, written in px or rem. */
 const isTargetSize = (value: unknown): value is string =>
   isSwitchLength(value) && parseFloat(value) >= (value.endsWith('rem') ? 1.5 : 24);
@@ -433,9 +437,10 @@ const appearanceValidators = {
   tabRadius: isLength,
   tabMinWidth: isTableLength,
   /** A Select list's narrowest width (`0` to size it by its trigger), and the height it scrolls
-   *  past: never under 8rem, so a few options always show, nor over 40rem. */
+   *  past: never under 8rem, so a few options always show, nor over 40rem, or `none` to scroll
+   *  only past the room the popper leaves, which also caps every other value. */
   listMinWidth: isTableLength,
-  listMaxHeight: lengthWithin(128, 640),
+  listMaxHeight: isListMaxHeight,
   radiusSm: isLength,
   radiusMd: isLength,
   radiusLg: isLength,
@@ -566,10 +571,37 @@ export const themeAppearanceTokens = Object.freeze(
 );
 
 /**
+ * A page-readable cookie naming the signed-in session's owner and expiry, set beside the httpOnly
+ * session cookies with the same lifetime and cleared with them. The session cookies are
+ * unreadable, so the theme boot replay reads this one to replay a cached theme only into a live
+ * session of the identity that cached it. It holds no credential.
+ */
+export const SESSION_HINT_COOKIE = 'session_hint';
+
+export type SessionHint = { expires: number; owner: string };
+
+/** The identity a cached deployment theme belongs to, as the cache and the session hint name it. */
+export const themeOwnerKey = (userId: string, tenantId?: string | null): string =>
+  `${tenantId ?? ''}:${userId}`;
+
+/** `<expiry epoch ms>~<owner key>`; the expiry never contains the separator, the owner may. */
+export const formatSessionHint = ({ expires, owner }: SessionHint): string => `${expires}~${owner}`;
+
+/** Reads a decoded session hint value, or `undefined` when it is malformed. */
+export function parseSessionHint(value: string): SessionHint | undefined {
+  const separator = value.indexOf('~');
+  const expires = Number(value.slice(0, separator));
+  if (separator < 1 || !Number.isFinite(expires)) {
+    return undefined;
+  }
+  return { expires, owner: value.slice(separator + 1) };
+}
+
+/**
  * Bumped by hand when a release changes what resolving a theme emits without changing its roles
  * (a palette value, a fallback derivation, an emitted attribute), so cached entries are rebuilt.
  */
-export const THEME_CACHE_EPOCH = 3 as const;
+export const THEME_CACHE_EPOCH = 5 as const;
 
 /**
  * Names the role set a stored resolved theme was built against: any color, brand or appearance
