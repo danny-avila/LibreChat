@@ -1,10 +1,5 @@
 import type { TMessage, TSubmission } from 'librechat-data-provider';
-import type {
-  ResumableHost,
-  TerminalContext,
-  ResumableScheduler,
-  StreamStatusResponse,
-} from '../resumable';
+import type { TerminalContext, StreamStatusResponse } from '../resumable';
 import {
   ResumableRun,
   handoffToReplacement,
@@ -12,90 +7,7 @@ import {
   authorizeTerminalTeardown,
   reconcileGenerationLifecycle,
 } from '../resumable';
-
-/** Timers that run only when the test advances the clock. */
-const createScheduler = () => {
-  let now = 0;
-  const timers = new Map<number, { at: number; callback: () => void }>();
-  let nextId = 1;
-  const scheduler: ResumableScheduler = {
-    setTimeout: (callback, delay) => {
-      const id = nextId++;
-      timers.set(id, { at: now + delay, callback });
-      return id as unknown as ReturnType<typeof setTimeout>;
-    },
-    clearTimeout: (handle) => {
-      timers.delete(handle as unknown as number);
-    },
-    requestFrame: () => nextId++,
-    cancelFrame: () => undefined,
-    now: () => now,
-  };
-  const advance = (ms: number) => {
-    now += ms;
-    for (const [id, timer] of [...timers]) {
-      if (timer.at <= now) {
-        timers.delete(id);
-        timer.callback();
-      }
-    }
-  };
-  return { scheduler, advance };
-};
-
-const createHost = (fetchStatus: jest.Mock<Promise<StreamStatusResponse>, [string]>) => {
-  const host: ResumableHost = {
-    logger: { log: jest.fn(), warn: jest.fn(), error: jest.fn() },
-    visibility: { isVisible: () => true, subscribe: () => () => undefined },
-    fetchStatus,
-    subscribe: jest.fn(),
-    cache: {
-      invalidateMessages: jest.fn(async () => undefined),
-      fetchMessages: jest.fn(async () => [] as TMessage[]),
-      refreshConversation: jest.fn(async () => undefined),
-      refreshConversationLists: jest.fn(async () => undefined),
-      refreshPinnedConversations: jest.fn(async () => undefined),
-      setStreamStatus: jest.fn(),
-      removeStreamStatus: jest.fn(),
-      invalidateStreamStatus: jest.fn(),
-      addActiveJob: jest.fn(),
-      removeActiveJob: jest.fn(),
-      fetchConversation: jest.fn(async () => undefined),
-      setConversation: jest.fn(),
-      upsertConversation: jest.fn(),
-      removeConversation: jest.fn(),
-    },
-    pane: {
-      setIsSubmitting: jest.fn(),
-      setShowStopButton: jest.fn(),
-      setSubmission: jest.fn(),
-      setStreamId: jest.fn(),
-      setGenerationEpoch: jest.fn(() => true),
-      setPendingAction: jest.fn(),
-      clearComposerDrafts: jest.fn(),
-      publishRunEnd: jest.fn(),
-      clearDrainAfterAbort: jest.fn(),
-      refreshBalance: jest.fn(),
-      updateConversation: jest.fn(),
-      resolveDetachedEnd: jest.fn(() => ({ resolvable: false, end: null })),
-    },
-    steers: {
-      seed: jest.fn(),
-      appliedIds: jest.fn(() => []),
-      settleApplied: jest.fn(),
-      convertToQueued: jest.fn(),
-      convertLocalToQueued: jest.fn(),
-    },
-    events: {
-      clearStepMaps: jest.fn(),
-      flushPendingDeltas: jest.fn(),
-      resetLive: jest.fn(),
-      showError: jest.fn(),
-    },
-    messages: { get: jest.fn(() => []), set: jest.fn() },
-  };
-  return host;
-};
+import { createHost, createScheduler } from '../__fixtures__/resumable';
 
 const submission = {
   userMessage: { messageId: 'u-1', conversationId: 'c-1', isCreatedByUser: true } as TMessage,

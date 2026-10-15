@@ -9,11 +9,8 @@ import {
   Constants,
   QueryKeys,
   StepEvents,
-  StepTypes,
   SteerEvents,
   dataService,
-  ContentTypes,
-  ToolCallTypes,
   ActivityLabelEvents,
   ReasoningLabelEvents,
   UsageEvents,
@@ -26,7 +23,6 @@ import {
   toStartGenerationError,
   isOAuthStepEvent,
   waitForRetryDelay,
-  applyPendingAction,
   getRecoverySteerId,
   getRetryAfterDelay,
   mergeResumeMessages,
@@ -38,7 +34,6 @@ import {
   isRetryableNetworkError,
   isReplacedStartResponse,
   getResumeMessageIndexes,
-  countTaggedApprovalParts,
   isInitialNewConversation,
   getStreamStartFailureText,
   keepLocalCodeApprovalMode,
@@ -52,7 +47,6 @@ import {
   getStartGenerationCreatedAt,
   isUnnegotiatedV2StartControl,
   supportsGenerationProtocolV2,
-  findPendingActionMessageIndex,
   START_GENERATION_NETWORK_RETRIES,
   getStartGenerationConversationId,
   getPredecessorMismatchStartResponse,
@@ -63,6 +57,7 @@ import {
   authorizeTerminalTeardown,
   reconcileGenerationLifecycle,
   handleTransportFailure,
+  ResponsePatcher,
   clearPendingApprovalForTerminal,
   clearAttachedGenerationCreatedAt,
 } from '@librechat/chat';
@@ -511,6 +506,9 @@ export default function useResumableSSE(
           },
         },
         steers: {
+          resolve: resolveSteerChip,
+          markLiveApplied: (steerId) =>
+            setLiveAppliedSteerIds((prev) => appendAppliedSteerIds(prev, [steerId])),
           seed: seedSteerChips,
           appliedIds: collectAppliedSteerIds,
           settleApplied: settleAppliedSteerParts,
@@ -518,6 +516,8 @@ export default function useResumableSSE(
           convertLocalToQueued: convertLocalSteersToQueued,
         },
         events: {
+          stepHandler,
+          syncStepMessage,
           clearStepMaps,
           flushPendingDeltas,
           resetLive,
@@ -528,6 +528,15 @@ export default function useResumableSSE(
             }),
         },
         messages: { get: getMessages, set: setMessages },
+        parts: {
+          applySteer: applySteerPart,
+          findSteerTarget: findSteerMessageIndex,
+          applyActivityLabel: applyActivityLabelPart,
+          findActivityLabelTarget: findActivityLabelMessageIndex,
+          offsetActivityPhaseBoundary,
+          applyReasoningLabel,
+          findReasoningLabelTarget: findReasoningLabelMessageIndex,
+        },
       };
       const sub = new ResumableSubscription(run, host, target);
       const {
@@ -591,412 +600,11 @@ export default function useResumableSSE(
         currentStreamId;
       run.bindPrefixState(generationId);
       bindResponse(sub.submission);
-      const replayPreCreatedStepEvents = () => {
-        if (!sub.isCurrent() || sub.preCreatedStepEvents.length === 0) {
-          return;
-        }
-
-        const submission = sub.liveSubmission() as EventSubmission;
-        for (const event of sub.preCreatedStepEvents.splice(0)) {
-          stepHandler(event, submission);
-        }
-      };
-      const applyPendingOAuthPrompt = (
-        prompt: Agents.PendingMCPOAuthPrompt,
-        submission: EventSubmission,
-      ) => {
-        const toolCall: Agents.ToolCall = {
-          id: prompt.toolCallId,
-          name: prompt.toolName,
-          args: '',
-          type: ToolCallTypes.TOOL_CALL,
-        };
-        const toolCallDelta: Agents.ToolCallChunk = {
-          id: prompt.toolCallId,
-          name: prompt.toolName,
-          args: '',
-        };
-        stepHandler(
-          {
-            event: StepEvents.ON_RUN_STEP,
-            data: {
-              id: prompt.stepId,
-              runId: prompt.runId,
-              index: prompt.index,
-              type: StepTypes.TOOL_CALLS,
-              stepDetails: {
-                type: StepTypes.TOOL_CALLS,
-                tool_calls: [toolCall],
-              },
-            },
-          },
-          submission,
-        );
-        stepHandler(
-          {
-            event: StepEvents.ON_RUN_STEP_DELTA,
-            data: {
-              id: prompt.stepId,
-              delta: {
-                type: StepTypes.TOOL_CALLS,
-                tool_calls: [toolCallDelta],
-                auth: prompt.authURL,
-                expires_at: prompt.expiresAt,
-              },
-            },
-          },
-          submission,
-        );
-      };
-
-      /**
-       * Maps a pending action onto the in-flight response message so the
-       * approval / ask-user UI renders. Syncs the result back into the step
-       * handler's map so subsequent deltas build on the approval-tagged content
-       * rather than clobbering it.
-       *
-       * If the mapping is a no-op (the paused tool-call content part hasn't
-       * rendered yet, a pause-before-render race), retry on subsequent frames
-       * so the approval still attaches. `ask_user_question` always applies (it
-       * appends a synthetic part), so only `tool_approval` ever retries.
-       */
-      // Keep retrying across frames (not just once): Recoil/React message updates from
-      // the preceding created/step events are async and can take several frames under
-      // load, so a single retry would drop a valid pause and leave the run with no
-      // approval controls. Bounded so a genuinely-absent target can't spin forever.
-      const PENDING_ACTION_MAX_RETRY_FRAMES = 120;
-      const applyPendingActionToMessages = (pendingAction: Agents.PendingAction, attempt = 0) => {
-        if (!sub.isCurrent()) {
-          return;
-        }
-        const pendingConversationId =
-          pendingAction.conversationId ??
-          sub.submission.conversation?.conversationId ??
-          currentStreamId;
-        jotaiStore.set(pendingApprovalActionFamily(pendingConversationId), pendingAction);
-        const retryNextFrame = () => {
-          if (attempt < PENDING_ACTION_MAX_RETRY_FRAMES) {
-            run.pendingActionRetry = run.scheduler.requestFrame(() => {
-              if (sub.isCurrent()) {
-                applyPendingActionToMessages(pendingAction, attempt + 1);
-              }
-            });
-          }
-        };
-        /** The pause card must attach to the same message state the stream
-         * produced: apply any queued delta before reading the cache, or the
-         * later flush would clobber the card (and `syncStepMessage` below
-         * would sync a pre-delta copy). */
-        flushPendingDeltas();
-        const messages = getMessages() ?? [];
-        const index = findPendingActionMessageIndex(messages, pendingAction);
-        if (index < 0) {
-          retryNextFrame();
-          return;
-        }
-        const updated = applyPendingAction(messages[index], pendingAction);
-        const changed = updated !== messages[index];
-        if (changed) {
-          const nextMessages = [...messages];
-          nextMessages[index] = updated;
-          setMessages(nextMessages);
-          syncStepMessage(updated);
-        }
-        // A `tool_approval` pause can carry several `action_requests` whose tool-call
-        // parts render on different frames; tagging only the first to arrive would leave
-        // late siblings with no approval card, and the resume route then 400s the partial
-        // batch ("every paused tool call must be decided"). Keep retrying (bounded) until
-        // EVERY paused call is tagged. `ask_user_question` applies its single synthetic
-        // part in one shot, so it only needs the original "did anything change" retry.
-        if (pendingAction.payload.type === 'tool_approval') {
-          const expected = pendingAction.payload.action_requests.length;
-          if (countTaggedApprovalParts(updated, pendingAction.actionId) < expected) {
-            retryNextFrame();
-          }
-        } else if (!changed) {
-          retryNextFrame();
-        }
-      };
-
+      const patcher = new ResponsePatcher(sub, host);
       const terminal: TerminalContext = {
         sub,
         host,
-        applyPendingAction: (action) => applyPendingActionToMessages(action),
-      };
-
-      /**
-       * The identities this pane may be rendering the in-flight response under
-       * before the first run step renames it to the server's pre-allocated id:
-       * the submission's placeholder (updated on `created`) and the padded form
-       * of the live user message. Read at call time — `created` reassigns both.
-       */
-      const livePlaceholderIds = () => [
-        sub.submission.initialResponse?.messageId,
-        sub.userMessage?.messageId ? `${sub.userMessage.messageId}_` : undefined,
-      ];
-
-      /**
-       * A regenerate seeds the renamed response from `submission.initialResponse`
-       * rather than the store tail (an edited resubmission seeds from its
-       * content), so a part committed to the placeholder only in the store would
-       * be dropped by the first run step's rename. Keep the submission the step
-       * handler receives in step with the placeholder this pane mutated.
-       */
-      const syncSubmissionPlaceholder = (updated: TMessage) => {
-        if (updated.messageId !== sub.submission.initialResponse?.messageId) {
-          return;
-        }
-        sub.replaceSubmission({ ...sub.submission, initialResponse: updated });
-      };
-
-      /**
-       * Edit-and-resubmit keeps the retained prefix on the client while the
-       * server indexes only the NEW content, so every server-claimed index —
-       * run steps (`useStepHandler`), labels and steers — shifts past it or
-       * lands inside the prefix and overwrites kept content. The captured
-       * length is used over the live array because a resume sync replaces
-       * `initialResponse.content` with the server's completion-local snapshot.
-       */
-      const editPrefixLength = () =>
-        sub.submission.editedContent != null && !run.editPrefixCleared
-          ? (sub.submission.editPrefixLength ??
-            sub.submission.initialResponse?.content?.length ??
-            0)
-          : 0;
-
-      /**
-       * Places an injected steer part on the in-flight response message and
-       * resolves its pending chip. Same bounded next-frame retry as pending
-       * actions for the inject-before-render race (the assistant placeholder
-       * can land a few frames after the created event under load).
-       */
-      const applySteerToMessages = (
-        event: TSteerAppliedEvent,
-        attempt = 0,
-        liveSteerIds: string[] = [],
-      ) => {
-        if (!sub.isCurrent()) {
-          return;
-        }
-        const chipConvoId =
-          event.conversationId ?? sub.submission.conversation?.conversationId ?? currentStreamId;
-        /** The server's applied event settles ownership immediately. Rendering
-         *  the inline part can wait for React to mount the target, but leaving
-         *  the chip pending during that wait lets an intervening error/final
-         *  convert already-applied words into a duplicate queued message. */
-        const firstApplicationIds =
-          attempt === 0
-            ? (resolveSteerChip(
-                chipConvoId,
-                event.steerId,
-                event.clientSteerId,
-                event.part?.quotes,
-              ) ?? [])
-            : liveSteerIds;
-        const retryNextFrame = () => {
-          if (attempt < PENDING_ACTION_MAX_RETRY_FRAMES) {
-            const frameId = run.scheduler.requestFrame(() => {
-              run.steerRetryFrames.delete(frameId);
-              if (sub.isCurrent()) {
-                applySteerToMessages(event, attempt + 1, firstApplicationIds);
-              }
-            });
-            run.steerRetryFrames.add(frameId);
-          }
-        };
-        /** Same boundary as pending actions: land queued deltas before the
-         * steer part is placed and synced. */
-        flushPendingDeltas();
-        const messages = getMessages() ?? [];
-        const index = findSteerMessageIndex(messages, event, livePlaceholderIds());
-        if (index < 0) {
-          retryNextFrame();
-          return;
-        }
-        const prefixLength = editPrefixLength();
-        const updated = applySteerPart(
-          messages[index],
-          typeof event.index === 'number' && prefixLength > 0
-            ? { ...event, index: event.index + prefixLength }
-            : event,
-        );
-        if (updated !== messages[index]) {
-          /** Stamped only when the inline part is actually committed, in the
-           *  same batch, so its first render sees the flag and plays the
-           *  one-shot draw-in (`SteerPart` consumes the id on mount). A
-           *  replayed event is referentially stable here and an abandoned
-           *  placement never reaches this branch, so neither can strand a
-           *  stale id that would animate a historical part on a later visit.
-           *  Only the id the part RENDERS with (`part.steerId`) is stamped:
-           *  the part consumes exactly that id, so a client alias would sit
-           *  in the set forever as dead weight. */
-          const renderedSteerId = event.part?.steerId ?? event.steerId;
-          if (firstApplicationIds.includes(renderedSteerId)) {
-            setLiveAppliedSteerIds((prev) => appendAppliedSteerIds(prev, [renderedSteerId]));
-          }
-          const nextMessages = [...messages];
-          nextMessages[index] = updated;
-          setMessages(nextMessages);
-          syncStepMessage(updated);
-          syncSubmissionPlaceholder(updated);
-        }
-      };
-
-      /**
-       * Places an activity-label part at its claimed content index on the
-       * in-flight response message. Fires twice per block (the empty
-       * reservation at batch end, the generated label on resolve);
-       * `applyActivityLabelPart` is referentially stable on duplicate replays
-       * and refuses to overwrite filled text with a stale placeholder. Same
-       * bounded next-frame retry as steers for the inject-before-render race.
-       */
-      const applyActivityLabelToMessages = (event: TActivityLabelEvent, attempt = 0) => {
-        if (!sub.isCurrent()) {
-          return;
-        }
-        const retryNextFrame = () => {
-          if (attempt < PENDING_ACTION_MAX_RETRY_FRAMES) {
-            const frameId = run.scheduler.requestFrame(() => {
-              run.activityLabelRetryFrames.delete(frameId);
-              if (sub.isCurrent()) {
-                applyActivityLabelToMessages(event, attempt + 1);
-              }
-            });
-            run.activityLabelRetryFrames.add(frameId);
-          }
-        };
-        /** Same boundary as pending actions and steers: land queued deltas
-         * before the label part is placed and synced, or the later flush
-         * would clobber it (and `syncStepMessage` would sync a pre-delta
-         * copy back into the step handler's authoritative map). */
-        flushPendingDeltas();
-        const messages = getMessages() ?? [];
-        const index = findActivityLabelMessageIndex(messages, event, livePlaceholderIds());
-        if (index < 0) {
-          retryNextFrame();
-          return;
-        }
-        /** Edit-and-resubmit replays the kept prefix into the response before
-         *  the run starts, and the server indexes only the NEW content, so
-         *  run steps offset by that prefix (`useStepHandler`). The label index
-         *  is claimed in the same server-side space and needs the identical
-         *  shift, or it lands inside the prefix and overwrites kept content.
-         *
-         *  Uses `editPrefixLength`, captured when the submission was built,
-         *  for the same reason `useStepHandler` does: a resume sync replaces
-         *  `initialResponse.content` with the server's completion-local
-         *  snapshot, so its length no longer describes the retained prefix.
-         *  Tool cards and the label heading them must land in one index
-         *  space: a label shifting differently from its tools would overwrite
-         *  another part, and a gap fill would miss its own reservation and
-         *  leave the placeholder pending forever. */
-        const prefixLength = editPrefixLength();
-        const phasePart = event.part as TActivityLabelEvent['part'] & {
-          activity_label_type?: 'phase';
-          activity_start_index?: number;
-          activity_end_index?: number;
-        };
-        let offsetEvent = event;
-        if (prefixLength > 0) {
-          let offsetPart: TActivityLabelEvent['part'] & {
-            activity_label_type?: 'phase';
-            activity_start_index?: number;
-            activity_end_index?: number;
-          } = phasePart;
-          if (
-            phasePart.activity_label_type === 'phase' &&
-            typeof phasePart.activity_start_index === 'number'
-          ) {
-            let activityStartIndex = phasePart.activity_start_index + prefixLength;
-            const foldedFirstPart = run.editPrefixFirstPartFolded;
-            const targetContent = messages[index]?.content;
-            /** The step handler records an actual server-index-zero text/think
-             *  merge. An empty +prefix slot is insufficient evidence because
-             *  a delayed tool may not have materialized there yet. */
-            if (
-              phasePart.activity_start_index === 0 &&
-              activityStartIndex > 0 &&
-              foldedFirstPart &&
-              targetContent?.[activityStartIndex - 1] != null
-            ) {
-              activityStartIndex -= 1;
-            }
-            offsetPart = {
-              ...phasePart,
-              activity_start_index: activityStartIndex,
-              ...(typeof phasePart.activity_end_index === 'number' && {
-                activity_end_index: offsetActivityPhaseBoundary(
-                  phasePart.activity_end_index,
-                  prefixLength,
-                  foldedFirstPart,
-                ),
-              }),
-            };
-          }
-          offsetEvent = {
-            ...event,
-            index: event.index + prefixLength,
-            part: offsetPart,
-          };
-        }
-        const updated = applyActivityLabelPart(messages[index], offsetEvent);
-        if (updated !== messages[index]) {
-          const nextMessages = [...messages];
-          nextMessages[index] = updated;
-          setMessages(nextMessages);
-          syncStepMessage(updated);
-          syncSubmissionPlaceholder(updated);
-        }
-      };
-
-      /** Patches a generated title onto its existing reasoning part. */
-      const applyReasoningLabelToMessages = (event: TReasoningLabelEvent, attempt = 0) => {
-        if (!sub.isCurrent()) {
-          return;
-        }
-        const retryNextFrame = () => {
-          if (attempt < PENDING_ACTION_MAX_RETRY_FRAMES) {
-            const frameId = run.scheduler.requestFrame(() => {
-              run.activityLabelRetryFrames.delete(frameId);
-              if (sub.isCurrent()) {
-                applyReasoningLabelToMessages(event, attempt + 1);
-              }
-            });
-            run.activityLabelRetryFrames.add(frameId);
-          }
-        };
-        flushPendingDeltas();
-        const messages = getMessages() ?? [];
-        const messageIndex = findReasoningLabelMessageIndex(messages, event);
-        if (messageIndex < 0) {
-          retryNextFrame();
-          return;
-        }
-        const prefixLength = editPrefixLength();
-        let contentIndex = event.index + prefixLength;
-        if (
-          prefixLength > 0 &&
-          event.index === 0 &&
-          run.editPrefixFirstPartFolded &&
-          messages[messageIndex]?.content?.[contentIndex - 1]?.type === ContentTypes.THINK
-        ) {
-          contentIndex -= 1;
-        }
-        const updated = applyReasoningLabel(messages[messageIndex], {
-          ...event,
-          index: contentIndex,
-        });
-        if (updated === messages[messageIndex]) {
-          const part = messages[messageIndex]?.content?.[contentIndex];
-          if (part?.type !== ContentTypes.THINK && attempt < PENDING_ACTION_MAX_RETRY_FRAMES) {
-            retryNextFrame();
-          }
-          return;
-        }
-        const nextMessages = [...messages];
-        nextMessages[messageIndex] = updated;
-        setMessages(nextMessages);
-        syncStepMessage(updated);
+        applyPendingAction: (action) => patcher.applyPendingAction(action),
       };
 
       logger.log('ResumableSSE', 'Subscribing to stream:', sub.url(), { isResume });
@@ -1186,7 +794,7 @@ export default function useResumableSSE(
             run.identityConfirmed = true;
             bindResponse(sub.submission);
             createdHandler(data, sub.submission as EventSubmission);
-            replayPreCreatedStepEvents();
+            patcher.replayPreCreatedStepEvents();
             return;
           }
 
@@ -1214,13 +822,13 @@ export default function useResumableSSE(
           }
 
           if (event.type === 'pending_action') {
-            applyPendingActionToMessages(event.data);
+            patcher.applyPendingAction(event.data);
             setIsSubmitting(true);
             return;
           }
 
           if (event.type === 'steer_applied') {
-            applySteerToMessages(event.data);
+            patcher.applySteer(event.data);
             return;
           }
 
@@ -1230,12 +838,12 @@ export default function useResumableSSE(
           }
 
           if (event.type === 'activity_label') {
-            applyActivityLabelToMessages(event.data);
+            patcher.applyActivityLabel(event.data);
             return;
           }
 
           if (event.type === 'reasoning_label') {
-            applyReasoningLabelToMessages(event.data);
+            patcher.applyReasoningLabel(event.data);
             return;
           }
 
@@ -1438,7 +1046,7 @@ export default function useResumableSSE(
             }
 
             for (const prompt of pendingOAuthPrompts) {
-              applyPendingOAuthPrompt(prompt, resumeSubmission);
+              patcher.applyPendingOAuthPrompt(prompt, resumeSubmission);
             }
 
             /**
@@ -1447,7 +1055,7 @@ export default function useResumableSSE(
              * controls render after a reload or dropped connection.
              */
             if (data.resumeState?.pendingAction) {
-              applyPendingActionToMessages(data.resumeState.pendingAction as Agents.PendingAction);
+              patcher.applyPendingAction(data.resumeState.pendingAction as Agents.PendingAction);
             }
 
             /**
@@ -1505,15 +1113,15 @@ export default function useResumableSSE(
                 } else if (replayEvent.event === ApprovalEvents.ON_PENDING_ACTION) {
                   // A pause that landed after the resume snapshot must still render its
                   // controls (mirror the live handler), not fall through to stepHandler.
-                  applyPendingActionToMessages(replayEvent.data as Agents.PendingAction);
+                  patcher.applyPendingAction(replayEvent.data as Agents.PendingAction);
                 } else if (replayEvent.event === SteerEvents.ON_STEER_APPLIED) {
-                  applySteerToMessages(replayEvent.data as TSteerAppliedEvent);
+                  patcher.applySteer(replayEvent.data as TSteerAppliedEvent);
                 } else if (replayEvent.event === SteerEvents.ON_STEER_UPDATED) {
                   updateSteerChips(replayEvent.data as TSteerUpdatedEvent);
                 } else if (replayEvent.event === ActivityLabelEvents.ON_ACTIVITY_LABEL) {
-                  applyActivityLabelToMessages(replayEvent.data as TActivityLabelEvent);
+                  patcher.applyActivityLabel(replayEvent.data as TActivityLabelEvent);
                 } else if (replayEvent.event === ReasoningLabelEvents.ON_REASONING_LABEL) {
-                  applyReasoningLabelToMessages(replayEvent.data as TReasoningLabelEvent);
+                  patcher.applyReasoningLabel(replayEvent.data as TReasoningLabelEvent);
                 } else if (replayEvent.event === ReasoningLabelEvents.ON_REASONING_LABEL_ATTEMPT) {
                   // Durable provider-call budget reservations never render.
                 } else if (replayEvent.event != null) {
@@ -1555,15 +1163,15 @@ export default function useResumableSSE(
                   // and the subscription here; route it to the same handler as a live event
                   // so the approval / ask-user controls render (else the stream sits paused
                   // with no UI until a full status reload).
-                  applyPendingActionToMessages(pendingEvent.data as Agents.PendingAction);
+                  patcher.applyPendingAction(pendingEvent.data as Agents.PendingAction);
                 } else if (pendingEvent.event === SteerEvents.ON_STEER_APPLIED) {
-                  applySteerToMessages(pendingEvent.data as TSteerAppliedEvent);
+                  patcher.applySteer(pendingEvent.data as TSteerAppliedEvent);
                 } else if (pendingEvent.event === SteerEvents.ON_STEER_UPDATED) {
                   updateSteerChips(pendingEvent.data as TSteerUpdatedEvent);
                 } else if (pendingEvent.event === ActivityLabelEvents.ON_ACTIVITY_LABEL) {
-                  applyActivityLabelToMessages(pendingEvent.data as TActivityLabelEvent);
+                  patcher.applyActivityLabel(pendingEvent.data as TActivityLabelEvent);
                 } else if (pendingEvent.event === ReasoningLabelEvents.ON_REASONING_LABEL) {
-                  applyReasoningLabelToMessages(pendingEvent.data as TReasoningLabelEvent);
+                  patcher.applyReasoningLabel(pendingEvent.data as TReasoningLabelEvent);
                 } else if (pendingEvent.event === ReasoningLabelEvents.ON_REASONING_LABEL_ATTEMPT) {
                   // Durable provider-call budget reservations never render.
                 } else if (pendingEvent.event != null) {
