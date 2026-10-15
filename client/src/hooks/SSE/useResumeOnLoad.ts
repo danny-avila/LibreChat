@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useStore, useAtom, useSetAtom } from 'jotai';
 import { useQueryClient } from '@tanstack/react-query';
-import { useSetRecoilState, useRecoilValue, useRecoilCallback } from 'recoil';
+import { useSetRecoilState, useRecoilValue } from 'recoil';
 import {
   Constants,
   QueryKeys,
@@ -13,18 +13,6 @@ import type { TMessage, TConversation, TSubmission, Agents } from 'librechat-dat
 import type { GenerationProtocolVersion } from '~/data-provider/SSE/protocol';
 import type { StreamStatusResponse } from '~/data-provider';
 import {
-  dedupeSteersById,
-  appendAppliedSteerIds,
-  collectAppliedSteerIds,
-  collectDroppedSteerQuotes,
-  mergeRestagedQuotes,
-  applyPendingAction,
-  carriedSteerContext,
-  getBranchSiblingIndexesForTarget,
-  hydrateFileDeliveryMetadata,
-  isCompactionAnchorProjection,
-} from '~/utils';
-import {
   useStreamStatus,
   useActiveJobs,
   useAgentQueuedTurns,
@@ -34,6 +22,12 @@ import {
   extendActiveJobsGrace,
   ACTIVE_JOBS_SUCCESSOR_GRACE_MS,
 } from '~/data-provider';
+import {
+  dedupeSteersById,
+  applyPendingAction,
+  getBranchSiblingIndexesForTarget,
+  isCompactionAnchorProjection,
+} from '~/utils';
 import {
   isDetachedRunManual,
   resolveDetachedRunEnd,
@@ -45,14 +39,12 @@ import {
   supportsGenerationProtocolV2,
 } from '~/data-provider/SSE/protocol';
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
-import { pendingQuotesByConvoId } from '~/components/Chat/Input/Composer/state';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import { agentQueuedTurnsQueryKey } from '~/data-provider/SSE/queuedTurns';
-import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { submissionStartFamily } from '~/store/generation';
 import { revealedQueuedTurnFamily } from '~/store/steer';
 import { resumeRequestsAtom } from '~/hooks/Chat/resume';
-import { useFileMapContext } from '~/Providers';
+import useSteerState from './steer';
 import store from '~/store';
 
 /**
@@ -301,7 +293,6 @@ export default function useResumeOnLoad(
   runIndex = 0,
   messagesLoaded = true,
 ) {
-  const fileMap = useFileMapContext();
   const jotaiStore = useStore();
   const queryClient = useQueryClient();
   const setSubmission = useSetRecoilState(store.submissionByIndex(runIndex));
@@ -361,128 +352,16 @@ export default function useResumeOnLoad(
   );
 
   /** Restore pending-steer chips for steers the server still has queued
-   *  (injected ones already live inside the resumed aggregatedContent). */
-  const convertSteersToQueued = useSteerConvert();
-
-  const restoreSteerChips = useRecoilCallback(
-    ({ set }) =>
-      (
-        activeConversationId: string,
-        pendingSteers: Agents.ResumeState['pendingSteers'],
-        generationCreatedAt?: number,
-        generationProtocolVersion: GenerationProtocolVersion = 1,
-      ) => {
-        const acceptedClientIds = (pendingSteers ?? []).flatMap((steer) =>
-          steer.clientSteerId ? [steer.clientSteerId] : [],
-        );
-        if (acceptedClientIds.length > 0) {
-          set(store.acceptedSteerClientIdsByConvoId(activeConversationId), (prev) =>
-            appendAppliedSteerIds(prev, acceptedClientIds),
-          );
-        }
-        // Always reconcile against the server's still-queued list (mirrors the
-        // sync-path re-seed in useResumableSSE): a steer applied while this
-        // client was away is absent here (its inline part rides
-        // aggregatedContent instead), so an EMPTY list must clear stale local
-        // pending chips, not leave them stranded beside the applied part.
-        set(store.pendingSteersByConvoId(activeConversationId), (prev) => {
-          const chipById = new Map(prev.map((chip) => [chip.steerId, chip]));
-          const claimedIds = new Set(
-            (pendingSteers ?? []).flatMap((steer) =>
-              steer.clientSteerId ? [steer.steerId, steer.clientSteerId] : [steer.steerId],
-            ),
-          );
-          return [
-            ...(pendingSteers ?? []).map((steer) => {
-              const localChip =
-                chipById.get(steer.steerId) ??
-                (steer.clientSteerId ? chipById.get(steer.clientSteerId) : undefined);
-              const keepLocalPreempt =
-                (localChip?.preemptRevision ?? 0) > (steer.preemptRevision ?? 0);
-              const chipGenerationCreatedAt = generationCreatedAt ?? localChip?.generationCreatedAt;
-              const restoredFiles = hydrateFileDeliveryMetadata(
-                steer.files,
-                localChip?.files,
-                fileMap,
-              );
-              return {
-                steerId: steer.steerId,
-                ...(steer.clientSteerId && { clientSteerId: steer.clientSteerId }),
-                text: steer.text,
-                status: 'pending' as const,
-                createdAt: steer.createdAt ?? Date.now(),
-                ...(restoredFiles && restoredFiles.length > 0 && { files: restoredFiles }),
-                ...((keepLocalPreempt ? localChip?.preempt : steer.preempt) === true && {
-                  preempt: true,
-                }),
-                ...((keepLocalPreempt ? localChip?.preemptRevision : steer.preemptRevision) !=
-                  null && {
-                  preemptRevision: keepLocalPreempt
-                    ? localChip?.preemptRevision
-                    : steer.preemptRevision,
-                }),
-                ...(localChip?.queuedOrigin && { queuedOrigin: localChip.queuedOrigin }),
-                ...(chipGenerationCreatedAt != null && {
-                  generationCreatedAt: chipGenerationCreatedAt,
-                }),
-                generationProtocolVersion,
-                // The local chip carries skill picks the server never sees; a
-                // fresh tab has no chip, so fall back to the server item's
-                // persisted quotes rather than reseeding the chip without them.
-                ...carriedSteerContext(localChip ?? steer),
-              };
-            }),
-            ...prev.filter((steer) => steer.status === 'failed' && !claimedIds.has(steer.steerId)),
-          ];
-        });
-      },
-    [fileMap],
-  );
-
-  const settleAppliedSteerParts = useRecoilCallback(
-    ({ snapshot, set }) =>
-      (activeConversationId: string, values: unknown[] | undefined) => {
-        const ids = collectAppliedSteerIds(values);
-        if (ids.length === 0) {
-          return;
-        }
-        const settled = new Set(ids);
-        /** Chips settled by quote-less applied parts hold the only copy of
-         *  their excerpts (a pre-quotes server injected the words bare) —
-         *  re-stage them as composer chips before the removal below. */
-        const droppedQuotes = collectDroppedSteerQuotes(
-          values,
-          snapshot.getLoadable(store.pendingSteersByConvoId(activeConversationId)).getValue(),
-        );
-        if (droppedQuotes.length > 0) {
-          jotaiStore.set(pendingQuotesByConvoId(activeConversationId), (prev) =>
-            mergeRestagedQuotes(prev, droppedQuotes),
-          );
-        }
-        set(store.appliedSteerIdsByConvoId(activeConversationId), (prev) =>
-          appendAppliedSteerIds(prev, ids),
-        );
-        set(store.pendingSteersByConvoId(activeConversationId), (prev) =>
-          prev.filter((steer) => !settled.has(steer.steerId)),
-        );
-      },
-    [jotaiStore],
-  );
-  const setActiveGenerationCreatedAt = useRecoilCallback(
-    ({ set }) =>
-      (
-        activeConversationId: string,
-        createdAt: number,
-        generationProtocolVersion: GenerationProtocolVersion,
-      ) => {
-        set(store.activeGenerationCreatedAtByConvoId(activeConversationId), createdAt);
-        set(
-          store.activeGenerationProtocolVersionByConvoId(activeConversationId),
-          generationProtocolVersion,
-        );
-      },
-    [],
-  );
+   *  (injected ones already live inside the resumed aggregatedContent). Always
+   *  reconcile against the server's still-queued list (mirrors the sync-path
+   *  re-seed in useResumableSSE): a steer applied while this client was away is
+   *  absent there, so an EMPTY list must clear stale local pending chips. */
+  const {
+    seedSteerChips: restoreSteerChips,
+    settleAppliedSteerParts,
+    convertSteersToQueued,
+    updateActiveGenerationCreatedAt,
+  } = useSteerState();
 
   // Check for active stream when conversation changes
   const submissionConvoId = currentSubmission?.conversation?.conversationId;
@@ -1056,9 +935,10 @@ export default function useResumeOnLoad(
       consumedHandoffGenerationRef.current = handoffGenerationKey;
     }
     if (streamStatus.createdAt != null) {
-      setActiveGenerationCreatedAt(
+      updateActiveGenerationCreatedAt(
         conversationId,
         streamStatus.createdAt,
+        undefined,
         generationProtocolVersion,
       );
     }
@@ -1167,7 +1047,7 @@ export default function useResumeOnLoad(
     restoreSteerChips,
     settleAppliedSteerParts,
     convertSteersToQueued,
-    setActiveGenerationCreatedAt,
+    updateActiveGenerationCreatedAt,
     jotaiStore,
     externalRunArm,
     isRetentionForced,

@@ -1,5 +1,6 @@
 export * from './ack';
 export * from './attempt';
+export * from './chips';
 export * from './dispatch';
 export * from './errors';
 export * from './intent';
