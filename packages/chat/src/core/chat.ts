@@ -1034,7 +1034,7 @@ export class Chat {
     if (signal.aborted) {
       /** The request was cancelled while the stream was still being opened. */
       stream.close();
-      this.settle({ kind: 'abort' }, active);
+      this.settle(getStopOutcome(active), active);
       return;
     }
     active.stream = stream;
