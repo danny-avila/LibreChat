@@ -628,7 +628,11 @@ export class Chat {
     if (!active.stream && !active.reattach) {
       active.controller.abort();
       await active.finished;
-      return { status: 'stopped' };
+      /**
+       * A start already handed to the transport may be running on the server with no frame naming
+       * it; a late stream is stopped by `dropLateStart`, but one that never arrives is the caller's.
+       */
+      return active.sent ? unaddressable : { status: 'stopped' };
     }
     if (!active.endpoint) {
       throw new Error('The generation cannot be stopped without its endpoint');
@@ -662,9 +666,7 @@ export class Chat {
     );
     const result = await answer;
     if (result && 'runMessages' in result) {
-      if (this.active === active) {
-        await this.mergeRunMessages(result.runMessages);
-      }
+      await this.mergeRunMessages(result.runMessages, () => this.active === active);
       active.controller.abort();
       active.stream?.close();
     } else if (!active.stream && !active.persistenceFailed) {
@@ -712,8 +714,12 @@ export class Chat {
   }
 
   /** An Assistants run's stream ends without a final frame; the stop's answer carries it. */
-  private mergeRunMessages(runMessages: TMessage[]): Promise<void> {
+  /** `owns` is checked when the merge runs, so a turn that took over while it queued keeps its list. */
+  private mergeRunMessages(runMessages: TMessage[], owns: () => boolean): Promise<void> {
     return this.executor.run(() => {
+      if (!owns()) {
+        return;
+      }
       const next = mergeById(this.messages, runMessages);
       if (next) {
         this.write(next);
@@ -758,7 +764,7 @@ export class Chat {
       return getStopResult(result);
     }
     if (result && 'runMessages' in result) {
-      await this.mergeRunMessages(result.runMessages);
+      await this.mergeRunMessages(result.runMessages, () => this.detached === detached);
       if (this.detached !== detached) {
         /** A newer generation took over while the merge waited its turn. */
         return getStopResult(result);

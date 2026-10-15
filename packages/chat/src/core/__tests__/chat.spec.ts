@@ -2321,6 +2321,18 @@ describe('Chat', () => {
       await sent;
     });
 
+    it('reports a start cancelled before it reached the transport as stopped', async () => {
+      const { chat, transport } = setup({
+        prepareRequest: jest.fn(() => new Promise<never>(() => undefined)),
+      });
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+
+      await expect(chat.stop()).resolves.toEqual({ status: 'stopped' });
+      await sent.catch(() => undefined);
+      expect(transport.sendMessages).not.toHaveBeenCalled();
+    });
+
     it('reports nothing to stop as idle', async () => {
       const { chat, transport } = setup();
 

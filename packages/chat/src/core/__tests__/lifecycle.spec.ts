@@ -391,7 +391,12 @@ const unsaved = {
 };
 
 const table: Array<[keyof typeof states, keyof typeof events, Expected]> = [
-  ['starting', 'stop', { status: 'ready', finishes: 1, last: aborted, abort: NONE, outcome: 'ok' }],
+  /** The start reached the transport, so the server may run it with nothing this chat can name. */
+  [
+    'starting',
+    'stop',
+    { status: 'ready', finishes: 1, last: aborted, abort: NONE, outcome: 'unaddressable' },
+  ],
   ['starting', 'final', { status: 'ready', finishes: 1, last: done, abort: NONE }],
   ['starting', 'newTurn', { status: 'submitted', finishes: 0, outcome: 'in flight' }],
   ['starting', 'restore', { status: 'submitted', finishes: 0, outcome: 'in flight' }],
