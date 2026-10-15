@@ -1,4 +1,5 @@
 export const GENERATION_PROTOCOL_VERSION = 2 as const;
+export const GENERATION_PROTOCOL_HEADER = 'X-LibreChat-Generation-Protocol';
 
 export type GenerationProtocolVersion = 1 | typeof GENERATION_PROTOCOL_VERSION;
 
@@ -22,3 +23,7 @@ export const getGenerationProtocolVersion = (value: unknown): GenerationProtocol
 
 export const supportsGenerationProtocolV2 = (value: unknown): boolean =>
   getGenerationProtocolVersion(value) === GENERATION_PROTOCOL_VERSION;
+
+export const generationProtocolHeaders = (): Record<string, string> => ({
+  [GENERATION_PROTOCOL_HEADER]: String(GENERATION_PROTOCOL_VERSION),
+});
