@@ -992,6 +992,49 @@ describe('Chat', () => {
     expect(chat.status).toBe('ready');
   });
 
+  it('keeps a newer pause restored while a dropped Assistants run merged its stop', async () => {
+    const stream = createStream();
+    const { chat, transport } = setup(
+      {
+        prepareRequest: jest.fn(() => ({
+          payload: { endpoint: 'assistants', conversationId: 'convo-1', text: 'Hi' } as TPayload,
+          messages: [userMessage, placeholder],
+          responseMessageId: 'response-1',
+        })),
+      },
+      { sendMessages: jest.fn(async () => ({ status: 'stream' as const, stream })) },
+    );
+    transport.abort.mockResolvedValue({
+      final: true,
+      conversation: {},
+      runMessages: [{ ...placeholder, text: 'Partial' }],
+    });
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+    await sent;
+    const newer = {
+      actionId: 'action-newer',
+      streamId: 'convo-1',
+      conversationId: 'convo-1',
+      createdAt: 2,
+      payload: { type: 'ask_user_question', question: { question: 'Which?' }, tool_call_id: 'q' },
+    } as Agents.PendingAction;
+    let restored = false;
+    const unsubscribe = chat.subscribe(() => {
+      if (!restored && chat.messages[1]?.text === 'Partial') {
+        restored = true;
+        chat.restorePendingAction(newer, 900);
+      }
+    });
+
+    await chat.stop();
+    unsubscribe();
+
+    expect(chat.messages[1].text).toBe('Partial');
+    expect(chat.pendingAction?.actionId).toBe('action-newer');
+  });
+
   it('keeps the reattachment target of a reconnect that failed on the network', async () => {
     const failure = Object.assign(new Error('Network Error'), { code: 'ERR_NETWORK' });
     const { chat, transport } = setup(

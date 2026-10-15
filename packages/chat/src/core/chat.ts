@@ -702,6 +702,10 @@ export class Chat {
     }
     if (result && 'runMessages' in result) {
       await this.mergeRunMessages(result.runMessages);
+      if (this.detached !== detached) {
+        /** A newer generation took over while the merge waited its turn. */
+        return getStopResult(result);
+      }
     }
     this.detached = undefined;
     this.action = undefined;
