@@ -15,6 +15,7 @@ const createHost = (fontSize: string): MessagePartsHost => ({
   useShowThinking: () => false,
   useAutoExpandTools: () => false,
   useLaTeXParsing: () => false,
+  useChatDirection: () => 'ltr',
   useUserTextPreferences: () => ({
     usernameDisplay: false,
     enableUserMsgMarkdown: false,

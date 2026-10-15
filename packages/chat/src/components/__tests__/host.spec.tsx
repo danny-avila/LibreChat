@@ -30,6 +30,7 @@ function createHost(enableUserMsgMarkdown = false): MessagePartsHost {
     useShowThinking: () => false,
     useAutoExpandTools: () => false,
     useLaTeXParsing: () => false,
+    useChatDirection: () => 'ltr',
     useUserTextPreferences: () => ({
       usernameDisplay: false,
       enableUserMsgMarkdown,
