@@ -2,13 +2,19 @@ import { ContentTypes } from 'librechat-data-provider';
 import {
   ASK_USER_QUESTION,
   isAskUserQuestionPart,
+  findLiveAskUserQuestion,
   markAskUserQuestionAnswered,
   isAnsweredAskUserQuestionPart,
 } from '@librechat/chat';
 import type { Agents, TMessage, TMessageContentParts } from 'librechat-data-provider';
 import type { AskUserQuestionPart } from '@librechat/chat';
 
-export { ASK_USER_QUESTION, isAskUserQuestionPart, isAnsweredAskUserQuestionPart };
+export {
+  ASK_USER_QUESTION,
+  isAskUserQuestionPart,
+  findLiveAskUserQuestion,
+  isAnsweredAskUserQuestionPart,
+};
 export type { AskUserQuestionPart } from '@librechat/chat';
 
 /**
@@ -439,48 +445,6 @@ export function splitOtherOption(options: Agents.AskUserQuestionOption[] | undef
     choices: list.filter((option) => option !== otherOption),
     otherLabel: otherOption.label,
   };
-}
-
-/**
- * Finds the live (unanswered) ask-user-question pause across a conversation's
- * messages — the newest synthetic part wins. Drives the composer popover: the
- * part exists exactly while a pause is live (applied on `on_pending_action`,
- * stripped when the answer submits), so its presence IS the popover signal.
- *
- * Answered cards are skipped rather than assumed absent: the strip is a store
- * write, and any holder of an older message copy (the SSE step handler's
- * in-flight cache, a replayed event) can put one back. Honouring it would
- * reopen the popover on a question the user already answered.
- */
-export function findLiveAskUserQuestion(messages: TMessage[] | null | undefined): {
-  actionId: string;
-  question: Agents.AskUserQuestionRequest;
-  questions?: Agents.AskUserQuestionBatchItem[];
-  messageId: string;
-} | null {
-  if (!Array.isArray(messages)) {
-    return null;
-  }
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const message = messages[i];
-    const content = message?.content;
-    if (!Array.isArray(content)) {
-      continue;
-    }
-    for (let j = content.length - 1; j >= 0; j--) {
-      const part = content[j];
-      if (isAskUserQuestionPart(part) && !isAnsweredAskUserQuestionPart(part)) {
-        const ask = (part as unknown as AskUserQuestionPart)[ASK_USER_QUESTION];
-        return {
-          actionId: ask.actionId,
-          question: ask.question,
-          questions: ask.questions,
-          messageId: message.messageId,
-        };
-      }
-    }
-  }
-  return null;
 }
 
 /**

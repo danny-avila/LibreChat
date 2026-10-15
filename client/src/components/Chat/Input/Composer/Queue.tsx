@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import * as Ariakit from '@ariakit/react';
 import { useDrag, useDrop } from 'react-dnd';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { claimQueuedIntent, releaseQueuedIntent, hasQueuedIntent } from '@librechat/chat';
 import {
   Button,
   IconButton,
@@ -29,7 +30,6 @@ import type { MenuItemProps } from '@librechat/client';
 import type { RestoreToComposer } from '~/Providers/ComposerRestoreContext';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
 import type { QueuedMessage } from '~/hooks/Chat/queue';
-import { claimQueuedIntent, releaseQueuedIntent, hasQueuedIntent } from '~/utils/queueIntent';
 import { useQueuedTurnPortal } from '~/components/Chat/Steering/QueuedTurnPortal';
 import { escalatingSteerFamily, revealedQueuedTurnFamily } from '~/store/steer';
 import EscalateNowButton from '~/components/Chat/Input/EscalateNowButton';

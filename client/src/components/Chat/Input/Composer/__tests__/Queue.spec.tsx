@@ -4,6 +4,7 @@ import { DndProvider } from 'react-dnd';
 import { getDefaultStore, useSetAtom } from 'jotai';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { ReasoningEffort } from 'librechat-data-provider';
+import { hasQueuedIntent, releaseQueuedIntent } from '@librechat/chat';
 import { act, render, screen, within, waitFor, fireEvent } from '@testing-library/react';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
 import type { QueuedMessage } from '~/hooks/Chat/queue';
@@ -12,7 +13,6 @@ import {
   useQueuedTurnPortal,
 } from '~/components/Chat/Steering/QueuedTurnPortal';
 import { queuedMessagesByConvoId, resetQueueFamilies } from '~/hooks/Chat/queue';
-import { hasQueuedIntent, releaseQueuedIntent } from '~/utils/queueIntent';
 import { revealedQueuedTurnFamily } from '~/store/steer';
 import Queue from '../Queue';
 jest.mock('~/hooks', () => ({

@@ -4,6 +4,12 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { Constants, ReasoningEffort } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RecoilRoot, useSetRecoilState, type MutableSnapshot } from 'recoil';
+import {
+  claimQueuedIntent,
+  releaseQueuedIntent,
+  acquireQueueSendLock,
+  releaseQueueSendLock,
+} from '@librechat/chat';
 import type {
   DrainAfterAbort,
   RunEnd,
@@ -18,12 +24,6 @@ import {
   runEndByIndex,
   resetQueueFamilies,
 } from '~/hooks/Chat/queue';
-import {
-  claimQueuedIntent,
-  releaseQueuedIntent,
-  acquireQueueSendLock,
-  releaseQueueSendLock,
-} from '~/utils/queueIntent';
 import { recoveryDispositionsFamily } from '~/components/Chat/Steering/recovery';
 import { revealedQueuedTurnFamily } from '~/store/steer';
 import useQueueDrain from '../useQueueDrain';

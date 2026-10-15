@@ -1,9 +1,11 @@
 import { useRef, useEffect, useMemo, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useAtomValue, useStore } from 'jotai';
+import { insertQueuedOrigin } from '@librechat/chat';
 import { Constants, DEFAULT_QUEUED_SEND_LOCK_TIMEOUT_MS } from 'librechat-data-provider';
+import { acquireQueueSendLock, releaseQueueSendLock, hasQueuedIntent } from '@librechat/chat';
+import type { QueueSendLock } from '@librechat/chat';
 import type { DrainAfterAbort, QueuedMessage, QueuedMessageOrigin, RunEnd } from './queue';
-import type { QueueSendLock } from '~/utils/queueIntent';
 import type { TAskFunction } from '~/common';
 import {
   settledQueuedTurnReceiptsByConvoId,
@@ -18,13 +20,11 @@ import {
   recoveryDisposition,
   canRestoreRecovery,
 } from '~/components/Chat/Steering/recovery';
-import { acquireQueueSendLock, releaseQueueSendLock, hasQueuedIntent } from '~/utils/queueIntent';
 import { selectQueuedTurnReveal } from '~/hooks/Chat/useQueuedTurnReveal';
 import { useChatSettings } from '~/Providers/ChatSettingsContext';
 import { useMarkFilesUsageMutation } from '~/data-provider';
 import { revealedQueuedTurnFamily } from '~/store/steer';
 import { mergeQueuedMessages } from '~/utils/queue';
-import { insertQueuedOrigin } from '~/utils/steer';
 import store from '~/store';
 
 /** Mirrors the server's per-request cap on a usage touch. */
