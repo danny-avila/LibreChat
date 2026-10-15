@@ -180,8 +180,11 @@ type ActiveRequest = {
   controller: AbortController;
   stream?: ChatStream;
   endpoint?: string;
-  /** Set when reattaching to a generation already running on the server, before it attaches. */
-  reattach?: { streamId?: string };
+  /**
+   * Set when reattaching to a generation already running on the server, before it attaches.
+   * `continuation` marks one whose pause was answered meanwhile, so finding nothing means it ended.
+   */
+  reattach?: { streamId?: string; continuation?: boolean };
   /** The pause this request's generation reported, which a confirmed stop ends. */
   paused?: string;
   /** Set once the server confirmed a stop, so a stream that drops instead of ending aborts. */
@@ -530,7 +533,7 @@ export class Chat {
         this.settle(getStopOutcome(active), active);
         return;
       }
-      if (!stream && continuation) {
+      if (!stream && (continuation || active.reattach.continuation)) {
         this.settle({ kind: 'complete', settled: { conversationId } }, active);
         return;
       }
@@ -678,7 +681,7 @@ export class Chat {
   /** Stops a generation whose stream dropped, which the server keeps running. */
   private async stopDetached(detached: DetachedGeneration): Promise<ChatStopResult> {
     const result = await this.abortOnServer(detached.target);
-    if (this.detached !== detached) {
+    if (this.disposed || this.detached !== detached) {
       return getStopResult(result);
     }
     if (result && 'runMessages' in result) {
@@ -729,7 +732,7 @@ export class Chat {
       streamId: action.streamId,
       generationCreatedAt: this.generationCreatedAt,
     });
-    if (this.action?.actionId !== action.actionId) {
+    if (this.disposed || this.action?.actionId !== action.actionId) {
       return getStopResult(result);
     }
     this.action = undefined;
@@ -1220,7 +1223,10 @@ export class Chat {
       if (this.action?.actionId !== action.actionId) {
         return;
       }
-      if (!this.active && !this.disposed) {
+      if (this.active?.reattach && !this.active.stream) {
+        /** A reconnect already opening attaches to the continuation, or finds it finished. */
+        this.active.reattach.continuation = true;
+      } else if (!this.active && !this.disposed) {
         /** A pause restored after a reload has no stream attached for the continuation. */
         void this.reattach(
           { streamId: result.streamId, generationCreatedAt, conversationId: result.conversationId },

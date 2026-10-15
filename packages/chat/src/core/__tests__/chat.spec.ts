@@ -1,6 +1,12 @@
 import { ContentTypes, StepEvents } from 'librechat-data-provider';
 import type { Agents, TMessage, TPayload, ChatEvent } from 'librechat-data-provider';
-import type { ChatStream, ChatStatus, ChatTransport, ChatConnection } from '../types';
+import type {
+  ChatStream,
+  ChatStatus,
+  ChatTransport,
+  ChatConnection,
+  ChatAbortResult,
+} from '../types';
 import type { ChatState, ChatInit } from '../chat';
 import { Chat } from '../chat';
 
@@ -2241,6 +2247,67 @@ describe('Chat', () => {
           reconcileReason: 'abort_persistence_failed',
         }),
       );
+    });
+
+    it('reports a continuation that ended while an earlier reconnect was still opening', async () => {
+      let open: ((stream: ChatStream | null) => void) | undefined;
+      const { chat, onFinish } = setup(
+        {},
+        {
+          reconnectToStream: jest.fn(
+            () =>
+              new Promise<ChatStream | null>((resolve) => {
+                open = resolve;
+              }),
+          ),
+        },
+      );
+      chat.restorePendingAction({ ...pausedAction, streamId: 'convo-1' }, 500);
+      const resumed = chat.resumeStream({ streamId: 'convo-1', generationCreatedAt: 500 });
+      await flush();
+
+      await chat.addToolOutput({ toolCallId: 'ask-5', output: 'Blue' });
+      open?.(null);
+      await resumed;
+
+      expect(chat.status).toBe('ready');
+      expect(onFinish).toHaveBeenCalledTimes(1);
+      expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isSettled: true }));
+    });
+
+    it('reports nothing for a stop answered after the chat was disposed', async () => {
+      for (const restore of [false, true]) {
+        let answer: ((result: ChatAbortResult) => void) | undefined;
+        const { chat, stream, transport, onFinish } = setup(
+          { resumeSelection: () => ({ endpoint: 'agents' }) },
+          {
+            abort: jest.fn(
+              () =>
+                new Promise((resolve) => {
+                  answer = resolve;
+                }),
+            ),
+          },
+        );
+        if (restore) {
+          chat.restorePendingAction({ ...pausedAction, streamId: 'convo-1' }, 500);
+        } else {
+          const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+          await flush();
+          stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+          await sent;
+        }
+        const finishes = onFinish.mock.calls.length;
+
+        const stopped = chat.stop();
+        await flush();
+        chat.dispose();
+        answer?.({ success: true, persistenceFailed: true });
+        await stopped;
+
+        expect(transport.abort).toHaveBeenCalledTimes(1);
+        expect(onFinish).toHaveBeenCalledTimes(finishes);
+      }
     });
 
     it('sends the request options of a turn to the generation that replaced it', async () => {
