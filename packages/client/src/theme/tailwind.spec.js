@@ -221,6 +221,10 @@ describe('LibreChat Tailwind preset', () => {
       expect(css).toContain(`var(${property}, ${fallback})`);
     });
 
+    expect(rule(css, 'max-h-theme-list')).toContain(
+      'var(--radix-select-content-available-height, 100dvh)',
+    );
+
     /** The tap-target floor is the role's reason to exist, so the floor itself is asserted
      *  rather than only the control-height variable it is built from. */
     expect(css).toContain(
@@ -233,6 +237,19 @@ describe('LibreChat Tailwind preset', () => {
       expect(target).toContain(`${property}: 24px`),
     );
     expect(target).not.toContain('--theme-min-target-size');
+
+    /** The default and `sm` Button heights predate the target validator, so the floor is drawn
+     *  rather than validated: a stored theme naming less still loads. */
+    const buttons = await generate(['h-theme-button', 'h-theme-button-sm', 'size-theme-button']);
+    expect(buttons).toContain(
+      `height: max(var(--theme-button-height, ${defaultAppearance.buttonHeight}), 24px)`,
+    );
+    expect(buttons).toContain(
+      `height: max(var(--theme-button-height-sm, ${defaultAppearance.buttonHeightSm}), 24px)`,
+    );
+    expect(buttons).toContain(
+      `width: max(var(--theme-button-height, ${defaultAppearance.buttonHeight}), 24px)`,
+    );
 
     /** A stylesheet that predates the control spacing roles pads controls with the shared
      *  spacing they read before. */

@@ -585,9 +585,6 @@ export const getGoogleThinkingBudgetBounds = (
   return undefined;
 };
 
-export const getGoogleThinkingBudgetMax = (modelName: string): number | undefined =>
-  getGoogleThinkingBudgetBounds(modelName)?.max;
-
 export const googleSettings = {
   model: {
     default: 'gemini-1.5-flash-latest' as const,
@@ -1576,34 +1573,6 @@ export const googleBaseSchema = tConversationSchema.pick({
 export const googleSchema = googleBaseSchema
   .transform((obj: Partial<TConversation>) => removeNullishValues(obj, true))
   .catch(() => ({}));
-
-/**
-   * TODO: Map the following fields:
-  - presence_penalty -> presencePenalty
-  - frequency_penalty -> frequencyPenalty
-  - stop -> stopSequences
-   */
-export const googleGenConfigSchema = z
-  .object({
-    maxOutputTokens: coerceNumber.optional(),
-    temperature: coerceNumber.optional(),
-    topP: coerceNumber.optional(),
-    topK: coerceNumber.optional(),
-    presencePenalty: coerceNumber.optional(),
-    frequencyPenalty: coerceNumber.optional(),
-    stopSequences: z.array(z.string()).optional(),
-    thinkingConfig: z
-      .object({
-        includeThoughts: z.boolean().optional(),
-        thinkingBudget: coerceNumber.optional(),
-        thinkingLevel: z.string().optional(),
-      })
-      .optional(),
-    web_search: z.boolean().optional(),
-    url_context: z.boolean().optional(),
-  })
-  .strip()
-  .optional();
 
 export function removeNullishValues<T extends Record<string, unknown>>(
   obj: T,

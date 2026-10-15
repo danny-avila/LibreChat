@@ -200,12 +200,3 @@ export function useOptionalMessagesConversation() {
   const conversationId = context?.conversationId;
   return useMemo(() => ({ conversation, conversationId }), [conversation, conversationId]);
 }
-
-/** Hook for components that only need message state */
-export function useMessagesState() {
-  const { index, latestMessageId, latestMessageDepth } = useMessagesViewContext();
-  return useMemo(
-    () => ({ index, latestMessageId, latestMessageDepth }),
-    [index, latestMessageId, latestMessageDepth],
-  );
-}

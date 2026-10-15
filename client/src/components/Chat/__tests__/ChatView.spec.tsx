@@ -46,10 +46,15 @@ jest.mock('../Presentation', () => ({
   default: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 jest.mock('../Header', () => ({ __esModule: true, default: () => <div /> }));
+let mockConfiguredFooter = false;
+let mockLandingFooter = true;
 jest.mock('../Footer', () => ({
   __esModule: true,
-  default: () => <div />,
-  useConfiguredFooter: () => false,
+  default: ({ configuredOnly }: { configuredOnly?: boolean }) => (
+    <div data-testid={configuredOnly ? 'configured-footer' : 'landing-footer'} />
+  ),
+  useConfiguredFooter: () => mockConfiguredFooter,
+  useLandingFooter: () => mockLandingFooter,
 }));
 jest.mock('../Landing', () => ({ __esModule: true, default: () => <div /> }));
 jest.mock('~/components/Lia', () => ({ __esModule: true, default: () => null }));
@@ -211,5 +216,50 @@ describe('ChatView draft saving', () => {
     );
 
     expect(mockAskHostSaveDrafts).toHaveBeenLastCalledWith(saveDrafts);
+  });
+});
+
+describe('ChatView landing footer', () => {
+  beforeEach(() => {
+    mockParams.mockReturnValue({});
+    mockConversation.mockReturnValue(null);
+    mockConfiguredFooter = false;
+    mockLandingFooter = true;
+    mockChatFormProps.mockClear();
+  });
+
+  test('renders the full footer beneath the welcome screen by default', () => {
+    render(<ChatView />);
+
+    expect(screen.getByTestId('landing-footer')).toBeInTheDocument();
+    expect(screen.queryByTestId('configured-footer')).not.toBeInTheDocument();
+    expect(mockChatFormProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ footerBelow: true }),
+    );
+  });
+
+  test('drops the welcome screen footer when the deployment turns it off', () => {
+    mockLandingFooter = false;
+
+    render(<ChatView />);
+
+    expect(screen.queryByTestId('landing-footer')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('configured-footer')).not.toBeInTheDocument();
+    expect(mockChatFormProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ footerBelow: false }),
+    );
+  });
+
+  test('keeps a configured footer on the welcome screen when the full footer is off', () => {
+    mockLandingFooter = false;
+    mockConfiguredFooter = true;
+
+    render(<ChatView />);
+
+    expect(screen.queryByTestId('landing-footer')).not.toBeInTheDocument();
+    expect(screen.getByTestId('configured-footer')).toBeInTheDocument();
+    expect(mockChatFormProps).toHaveBeenLastCalledWith(
+      expect.objectContaining({ footerBelow: true }),
+    );
   });
 });
