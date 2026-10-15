@@ -1,5 +1,10 @@
 import type { TAgentsEndpoint } from 'librechat-data-provider';
-import { resolveRecursionLimit, resolveSubagentMaxTurns } from './config';
+import {
+  resolveStreamLimits,
+  resolveRecursionLimit,
+  resolveSubagentMaxTurns,
+  resolveModelTransportTimeouts,
+} from './config';
 
 describe('resolveRecursionLimit', () => {
   it('returns default 50 when no config or agent provided', () => {
@@ -109,5 +114,78 @@ describe('resolveSubagentMaxTurns', () => {
     const turns = resolveSubagentMaxTurns(config, {});
     expect(turns).toBe(0);
     expect(turns * 3).toBeLessThanOrEqual(2);
+  });
+});
+
+describe('resolveModelTransportTimeouts', () => {
+  it('uses finite defaults and preserves explicit overrides including zero', () => {
+    expect(resolveModelTransportTimeouts(undefined)).toEqual({
+      bodyTimeout: 900_000,
+      headersTimeout: 300_000,
+    });
+    expect(
+      resolveModelTransportTimeouts({
+        modelResponseBodyTimeoutMs: 1_800_000,
+        modelResponseHeadersTimeoutMs: 0,
+      }),
+    ).toEqual({ bodyTimeout: 1_800_000, headersTimeout: 0 });
+  });
+});
+
+describe('resolveStreamLimits', () => {
+  const CREATE_FILE_DEFAULT = { create_file: 131072 };
+
+  it('ships only the create_file override when no yaml fields are set, so SDK defaults apply', () => {
+    expect(resolveStreamLimits(undefined)).toEqual({
+      maxToolCallArgBytesByTool: CREATE_FILE_DEFAULT,
+    });
+    expect(resolveStreamLimits({} as TAgentsEndpoint)).toEqual({
+      maxToolCallArgBytesByTool: CREATE_FILE_DEFAULT,
+    });
+  });
+
+  it('maps both global yaml fields onto the SDK streamLimits shape', () => {
+    const config = {
+      maxToolCallArgBytes: 131072,
+      maxDeltaEventsPerTurn: 100000,
+    } as TAgentsEndpoint;
+    expect(resolveStreamLimits(config)).toEqual({
+      maxToolCallArgBytes: 131072,
+      maxToolCallArgBytesByTool: CREATE_FILE_DEFAULT,
+      maxDeltaEventsPerTurn: 100000,
+    });
+  });
+
+  it('passes each global field independently, omitting the unset one', () => {
+    expect(resolveStreamLimits({ maxToolCallArgBytes: 1024 } as TAgentsEndpoint)).toEqual({
+      maxToolCallArgBytes: 1024,
+      maxToolCallArgBytesByTool: CREATE_FILE_DEFAULT,
+    });
+    expect(resolveStreamLimits({ maxDeltaEventsPerTurn: 5000 } as TAgentsEndpoint)).toEqual({
+      maxToolCallArgBytesByTool: CREATE_FILE_DEFAULT,
+      maxDeltaEventsPerTurn: 5000,
+    });
+  });
+
+  it('passes an explicit 0 through so admins can disable the SDK default', () => {
+    expect(resolveStreamLimits({ maxToolCallArgBytes: 0 } as TAgentsEndpoint)).toEqual({
+      maxToolCallArgBytes: 0,
+      maxToolCallArgBytesByTool: CREATE_FILE_DEFAULT,
+    });
+  });
+
+  it('merges yaml per-tool entries over the shipped create_file default', () => {
+    expect(resolveStreamLimits({ maxToolCallArgBytesByTool: { my_mcp_tool: 32768 } })).toEqual({
+      maxToolCallArgBytesByTool: { create_file: 131072, my_mcp_tool: 32768 },
+    });
+  });
+
+  it('lets a yaml create_file entry replace the shipped default, including 0 to disable', () => {
+    expect(resolveStreamLimits({ maxToolCallArgBytesByTool: { create_file: 262144 } })).toEqual({
+      maxToolCallArgBytesByTool: { create_file: 262144 },
+    });
+    expect(resolveStreamLimits({ maxToolCallArgBytesByTool: { create_file: 0 } })).toEqual({
+      maxToolCallArgBytesByTool: { create_file: 0 },
+    });
   });
 });

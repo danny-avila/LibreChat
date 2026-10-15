@@ -112,7 +112,7 @@ export default function ActionEditor({
       <OGDialogTemplate
         showCloseButton={false}
         title={localize('com_ui_delete_action')}
-        className="max-w-[450px]"
+        className="max-w-[28.125rem]"
         main={
           <Label className="text-left text-sm font-medium">
             {localize('com_ui_delete_action_confirm')}
@@ -132,7 +132,7 @@ export default function ActionEditor({
             });
           },
           selectClasses:
-            'bg-red-700 dark:bg-red-600 hover:bg-red-800 dark:hover:bg-red-800 transition-color duration-200 text-white',
+            'bg-surface-destructive text-text-on-status transition-colors duration-200 hover:bg-surface-destructive-hover',
           selectText: localize('com_ui_delete'),
         }}
       />

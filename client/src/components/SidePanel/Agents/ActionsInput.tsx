@@ -8,10 +8,12 @@ import {
   AuthTypeEnum,
 } from 'librechat-data-provider';
 import {
+  Label,
   Button,
   Spinner,
   Textarea,
   OGDialog,
+  TooltipAnchor,
   OGDialogTitle,
   OGDialogHeader,
   OGDialogContent,
@@ -239,19 +241,24 @@ export default function ActionsInput({
         <div className="mb-1 flex flex-wrap items-center justify-between gap-2">
           <label
             htmlFor="schemaInput"
-            className="whitespace-nowrap text-sm font-medium text-text-primary"
+            className="text-text-primary text-sm font-medium whitespace-nowrap"
           >
             {localize('com_ui_schema')}
           </label>
-          <button
-            type="button"
-            onClick={() => setIsSchemaDialogOpen(true)}
-            aria-label={localize('com_ui_expand_editor')}
-            title={localize('com_ui_expand_editor')}
-            className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-text-secondary transition-colors hover:bg-surface-secondary hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary"
-          >
-            <Maximize2 className="h-4 w-4" strokeWidth={1.75} aria-hidden={true} />
-          </button>
+          <TooltipAnchor
+            side="top"
+            description={localize('com_ui_expand_editor')}
+            render={
+              <button
+                type="button"
+                onClick={() => setIsSchemaDialogOpen(true)}
+                aria-label={localize('com_ui_expand_editor')}
+                className="text-text-secondary hover:bg-surface-secondary hover:text-text-primary focus-visible:ring-text-primary inline-flex h-7 w-7 items-center justify-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:outline-hidden"
+              >
+                <Maximize2 className="h-4 w-4" strokeWidth={1.75} aria-hidden={true} />
+              </button>
+            }
+          />
         </div>
         <Textarea
           id="schemaInput"
@@ -259,10 +266,10 @@ export default function ActionsInput({
           onChange={handleInputChange}
           spellCheck="false"
           placeholder={localize('com_ui_enter_openapi_schema')}
-          className="block min-h-[12rem] w-full resize-y rounded-lg border border-border-light bg-transparent p-3 font-mono text-xs leading-relaxed transition-colors focus-visible:border-border-heavy focus-visible:ring-0"
+          className="border-border-light focus-visible:border-border-heavy block min-h-[12rem] w-full resize-y rounded-lg border bg-transparent p-3 font-mono text-xs leading-relaxed transition-colors focus-visible:ring-0"
         />
         {validationError && (
-          <div className="mt-1.5 text-xs text-red-500">
+          <div className="text-text-destructive mt-1.5 text-xs">
             {validationError.split('\n').map((line: string, i: number) => (
               <div key={i}>{line}</div>
             ))}
@@ -271,9 +278,9 @@ export default function ActionsInput({
       </div>
       {(data || showSkeleton) && (
         <div className="mt-4 flex min-h-0 flex-1 flex-col">
-          <label className="mb-1 block shrink-0 text-sm font-medium text-text-primary">
+          <Label className="mb-1 shrink-0 font-medium">
             {localize('com_assistants_available_actions')}
-          </label>
+          </Label>
           <div className="min-h-0 flex-1 overflow-y-auto">
             {data ? <ActionsTable columns={columns} data={data} /> : <ActionsTableSkeleton />}
           </div>
@@ -289,7 +296,7 @@ export default function ActionsInput({
           variant="submit"
           onClick={saveAction}
           disabled={!functions || !functions.length}
-          className="min-w-[100px]"
+          className="min-w-[6.25rem]"
         >
           {getButtonContent()}
         </Button>
@@ -298,14 +305,14 @@ export default function ActionsInput({
       <OGDialog open={isSchemaDialogOpen} onOpenChange={setIsSchemaDialogOpen}>
         <OGDialogContent className="flex h-[85vh] max-h-[85vh] w-11/12 max-w-5xl flex-col gap-3 p-5">
           <OGDialogHeader className="space-y-0 pr-10">
-            <OGDialogTitle className="text-left text-sm font-medium text-text-primary">
+            <OGDialogTitle className="text-left text-sm font-medium">
               {localize('com_ui_schema')}
             </OGDialogTitle>
             <OGDialogDescription className="sr-only">
               {localize('com_ui_enter_openapi_schema')}
             </OGDialogDescription>
           </OGDialogHeader>
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border-medium bg-surface-secondary focus-within:border-border-heavy">
+          <div className="border-border-medium bg-surface-secondary focus-within:border-border-heavy flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border">
             <Textarea
               value={inputValue}
               onChange={handleInputChange}
@@ -316,7 +323,7 @@ export default function ActionsInput({
             />
           </div>
           {validationError && (
-            <div className="max-h-24 shrink-0 overflow-y-auto text-xs text-red-500">
+            <div className="text-text-destructive max-h-24 shrink-0 overflow-y-auto text-xs">
               {validationError.split('\n').map((line: string, i: number) => (
                 <div key={i}>{line}</div>
               ))}

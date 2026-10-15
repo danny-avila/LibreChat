@@ -1,62 +1,104 @@
-import React, { forwardRef } from 'react';
-import * as Ariakit from '@ariakit/react';
+import React, { forwardRef, useMemo, useRef } from 'react';
 import { useWatch } from 'react-hook-form';
-import { SendIcon } from '@librechat/client';
-import { Zap, Clock, OctagonPause } from 'lucide-react';
+import { Zap, Clock, ZapOff } from 'lucide-react';
+import { composerSubmitClasses, SendActions, SendIcon } from '@librechat/client';
+import type { SendAction } from '@librechat/client';
 import type { Control } from 'react-hook-form';
+import type { ComposerKeyContext, KeyChordSource } from '~/utils/shortcuts';
 import type { SteeringControls } from '~/hooks/Chat/useSteering';
-import { isMacPlatform } from '~/utils/shortcuts';
+import { isMacPlatform, resolveComposerKeyDown } from '~/utils/shortcuts';
+import useComposerBindings from '~/hooks/Input/useComposerBindings';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
 
-const ROW_CLASS =
-  'flex w-full cursor-pointer items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm text-text-primary hover:bg-surface-tertiary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-border-xheavy aria-disabled:cursor-not-allowed aria-disabled:opacity-50';
+/** The rows, the popover and the chord chips are shared with every other chat
+ *  surface that can submit more than one way — see `SendActions`. */
+type ActionRow = SendAction;
 
-function Kbd({ children }: { children: React.ReactNode }) {
-  return (
-    <kbd className="ml-auto rounded-md bg-surface-tertiary px-1.5 py-0.5 font-sans text-xs text-text-secondary">
-      {children}
-    </kbd>
-  );
-}
-
-type ActionRow = {
-  key: string;
-  label: string;
-  kbd: string;
-  icon: React.ReactNode;
-  disabled?: boolean;
-  onClick: () => void;
-};
+const ACTION_LABELS = {
+  steer: 'com_ui_steer_send',
+  interrupt: 'com_ui_interrupt_steer',
+  queue: 'com_ui_queue_send',
+} as const;
 
 type DuringRunSendButtonProps = {
   control: Control<{ text: string }>;
   steering: SteeringControls;
+  isNewConversation: boolean;
   getText: () => string;
   onConsumed: () => void;
   /** External hold (e.g. uploads in flight), mirroring the normal send button. */
   disabled?: boolean;
+  /** Host-owned: whether Enter sends, so the rows advertise what the key handler does. */
+  enterToSend: boolean;
 };
 
-/**
- * The send button while a run is generating: it takes over the send/stop slot
- * (and `submitButtonRef`, so Enter's synthetic click routes here) whenever the
- * composer holds text — submitting steers or queues per the effective action.
- * Hovering it reveals the full action list with its shortcuts: steer, queue
- * (⌘/Ctrl+Enter routes to the non-default action), and interrupt & send
- * (⌥/Alt+Enter). Clearing the composer restores the Stop button.
- */
+/** The active mode owns submission; the menu overrides it for one message. */
 const DuringRunSendButton = React.memo(
   forwardRef((props: DuringRunSendButtonProps, ref: React.ForwardedRef<HTMLButtonElement>) => {
     const localize = useLocalize();
-    const { steering } = props;
+    const { shortcutsEnabled, submitOverride, yieldedChords } = useComposerBindings();
+    const { steering, enterToSend } = props;
+    const disabledRef = useRef(props.disabled);
+    disabledRef.current = props.disabled;
     const data = useWatch({ control: props.control });
     const content = data?.text?.trim();
     const primary = steering.effectiveAction;
     const modEnter = isMacPlatform ? '⌘⏎' : 'Ctrl ⏎';
     const altEnter = isMacPlatform ? '⌥⏎' : 'Alt ⏎';
+    const modShiftEnter = isMacPlatform ? '⌘⇧⏎' : 'Ctrl ⇧ ⏎';
+
+    /**
+     * What each canonical chord actually does right now, asked of the same
+     * decision table the composer executes. A hint only appears on a row its
+     * chord still triggers: a chord rebound to a global shortcut (or claimed
+     * by a rebound submit) is dropped rather than advertised on a row it no
+     * longer reaches, and with Enter-to-send off, plain Enter inserts a
+     * newline during a run, so ⌘/Ctrl+Enter carries the default action.
+     */
+    const verdicts = useMemo(() => {
+      const ctx: ComposerKeyContext = {
+        isComposing: false,
+        isSubmitting: true,
+        allowSubmitWhileGenerating: true,
+        hasDuringRunModifier: true,
+        shortcutsEnabled,
+        enterToSend,
+        submitOverride,
+        yieldedChords,
+      };
+      const chord = (init: Partial<KeyChordSource>) =>
+        resolveComposerKeyDown(
+          { key: 'Enter', altKey: false, ctrlKey: false, metaKey: false, shiftKey: false, ...init },
+          ctx,
+        );
+      const mod = isMacPlatform ? { metaKey: true } : { ctrlKey: true };
+      return {
+        plainEnter: chord({}),
+        modEnter: chord(mod),
+        modShiftEnter: chord({ ...mod, shiftKey: true }),
+        altEnter: chord({ altKey: true }),
+      };
+    }, [enterToSend, shortcutsEnabled, submitOverride, yieldedChords]);
+
+    /** The chord that submits the default action, if any still does. */
+    let submitHint: string | undefined;
+    if (verdicts.plainEnter === 'submit') {
+      submitHint = '⏎';
+    } else if (verdicts.modEnter === 'submit') {
+      submitHint = modEnter;
+    }
+    const alternateHint = verdicts.modEnter === 'other' ? modEnter : undefined;
+    let interruptSteerKbd: string | undefined;
+    if (primary === 'interrupt' && submitHint != null) {
+      interruptSteerKbd = submitHint;
+    } else if (verdicts.modShiftEnter === 'preempt') {
+      interruptSteerKbd = modShiftEnter;
+    }
 
     const runAction = (action: (text: string) => boolean | void) => {
+      if (disabledRef.current) {
+        return;
+      }
       const text = props.getText().trim();
       if (text.length === 0) {
         return;
@@ -66,80 +108,67 @@ const DuringRunSendButton = React.memo(
       }
     };
 
+    let steerKbd: string | undefined = primary === 'queue' ? alternateHint : undefined;
+    if (primary === 'steer') {
+      steerKbd = submitHint;
+    }
+
     const steerRow: ActionRow = {
       key: 'steer',
       label: localize('com_ui_steer'),
-      kbd: primary === 'steer' ? '⏎' : modEnter,
-      icon: <Zap className="h-4 w-4 text-amber-500" aria-hidden="true" />,
-      // Gate on availability, not the default action — the row exists to
-      // override a queue-preferring default with an explicit steer.
-      disabled: !steering.canSteer,
+      kbd: steerKbd,
+      icon: <Zap className="text-status-warning h-4 w-4" aria-hidden="true" />,
+      // A staged reasoning choice is a queued full turn, not a live steer.
+      disabled: props.disabled || !steering.canSteer || steering.pendingReasoningOverride != null,
       onClick: () => runAction((text) => steering.steerFromComposer(text)),
     };
     const queueRow: ActionRow = {
       key: 'queue',
       label: localize('com_ui_queue'),
-      kbd: primary === 'queue' ? '⏎' : modEnter,
-      icon: <Clock className="h-4 w-4 text-cyan-500" aria-hidden="true" />,
+      kbd: primary === 'queue' ? submitHint : alternateHint,
+      icon: <Clock className="text-status-info h-4 w-4" aria-hidden="true" />,
+      disabled: props.disabled,
       onClick: () => runAction((text) => steering.queueFromComposer(text)),
     };
-    const interruptRow: ActionRow = {
-      key: 'interrupt',
-      label: localize('com_ui_interrupt_send'),
-      kbd: altEnter,
-      icon: <OctagonPause className="h-4 w-4 text-red-500" aria-hidden="true" />,
-      onClick: () => runAction((text) => steering.interruptAndSend(text)),
+    /** Interrupt never becomes a stop-and-send fallback. */
+    const interruptSteerRow: ActionRow = {
+      key: 'interrupt-steer',
+      label: localize('com_ui_interrupt_steer'),
+      kbd: interruptSteerKbd,
+      icon: <ZapOff className="text-status-warning h-4 w-4" aria-hidden="true" />,
+      disabled:
+        props.disabled ||
+        steering.pausedOnApproval ||
+        !steering.canSteer ||
+        steering.pendingReasoningOverride != null,
+      onClick: () => runAction((text) => steering.interruptSteer(text)),
     };
-    const rows = primary === 'steer' ? [steerRow, queueRow] : [queueRow, steerRow];
-    rows.push(interruptRow);
-
-    const label =
-      primary === 'steer' ? localize('com_ui_steer_send') : localize('com_ui_queue_send');
+    if (interruptSteerKbd == null && verdicts.altEnter === 'interrupt') {
+      interruptSteerRow.kbd = altEnter;
+    }
+    const rows = [steerRow, interruptSteerRow, queueRow];
+    const label = localize(ACTION_LABELS[primary]);
 
     return (
-      <Ariakit.HovercardProvider placement="top-end" showTimeout={100} hideTimeout={150}>
-        <Ariakit.HovercardAnchor
-          render={
-            <button
-              ref={ref}
-              aria-label={label}
-              id="during-run-send-button"
-              disabled={!content || props.disabled === true}
-              className={cn(
-                'rounded-full bg-text-primary p-1.5 text-text-primary outline-offset-4 transition-all duration-200 disabled:cursor-not-allowed disabled:text-text-secondary disabled:opacity-10',
-              )}
-              data-testid="during-run-send-button"
-              data-during-run-action={primary}
-              type="submit"
-            >
-              <span data-state="closed">
-                <SendIcon size={24} />
-              </span>
-            </button>
-          }
-        />
-        <Ariakit.Hovercard
-          portal
-          gutter={8}
-          unmountOnHide
-          aria-label={localize('com_ui_during_run_actions')}
-          className="z-50 min-w-[12rem] rounded-xl border border-border-light bg-surface-secondary p-1.5 text-text-primary shadow-lg outline-none"
-        >
-          {rows.map((row) => (
-            <button
-              key={row.key}
-              type="button"
-              className={ROW_CLASS}
-              aria-disabled={row.disabled === true}
-              onClick={row.disabled === true ? undefined : row.onClick}
-            >
-              {row.icon}
-              {row.label}
-              <Kbd>{row.kbd}</Kbd>
-            </button>
-          ))}
-        </Ariakit.Hovercard>
-      </Ariakit.HovercardProvider>
+      <SendActions
+        actions={rows}
+        label={localize('com_ui_during_run_actions')}
+        anchor={
+          <button
+            ref={ref}
+            aria-label={label}
+            disabled={!content || props.disabled === true}
+            className={composerSubmitClasses()}
+            data-testid="during-run-send-button"
+            data-during-run-action={primary}
+            type="submit"
+          >
+            <span data-state="closed">
+              <SendIcon className="size-6" />
+            </span>
+          </button>
+        }
+      />
     );
   }),
 );

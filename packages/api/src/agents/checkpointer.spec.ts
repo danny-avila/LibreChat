@@ -2,7 +2,9 @@ import {
   resolveCheckpointerConfig,
   getApprovalTtlMs,
   getAgentCheckpointer,
+  captureAgentCheckpointGeneration,
   deleteAgentCheckpoint,
+  deleteOwnedAgentCheckpoints,
   DEFAULT_CHECKPOINT_TTL_SECONDS,
   __resetCheckpointerForTests,
 } from './checkpointer';
@@ -50,6 +52,22 @@ describe('getApprovalTtlMs', () => {
   });
 });
 
+describe('owner checkpoint cleanup', () => {
+  test('requires an authenticated owner', async () => {
+    await expect(deleteOwnedAgentCheckpoints('', undefined, undefined)).rejects.toThrow('owner');
+  });
+  test('does not require a database in memory mode', async () => {
+    await expect(
+      deleteOwnedAgentCheckpoints('user-1', undefined, undefined, { type: 'memory' }),
+    ).resolves.toBeUndefined();
+  });
+  test('fails closed when the durable database is unavailable', async () => {
+    await expect(deleteOwnedAgentCheckpoints('user-1', undefined, undefined)).rejects.toThrow(
+      'unavailable',
+    );
+  });
+});
+
 describe('getAgentCheckpointer', () => {
   test('returns undefined for the in-memory type (SDK MemorySaver fallback)', async () => {
     await expect(getAgentCheckpointer({ type: 'memory' })).resolves.toBeUndefined();
@@ -68,5 +86,23 @@ describe('deleteAgentCheckpoint', () => {
 
   test('is a no-op (no throw) when no durable saver is available', async () => {
     await expect(deleteAgentCheckpoint('conversation-1')).resolves.toBeUndefined();
+  });
+
+  test('captures an empty generation when no durable saver is available', async () => {
+    await expect(captureAgentCheckpointGeneration('conversation-1')).resolves.toEqual({
+      threadId: 'conversation-1',
+      checkpointIds: [],
+    });
+  });
+
+  test('normalizes an explicit empty namespace to a thread-wide legacy capture', async () => {
+    await expect(
+      captureAgentCheckpointGeneration('conversation-1', undefined, {
+        checkpointNamespace: '',
+      }),
+    ).resolves.toEqual({
+      threadId: 'conversation-1',
+      checkpointIds: [],
+    });
   });
 });

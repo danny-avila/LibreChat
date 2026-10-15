@@ -1,5 +1,5 @@
 import type { TFile } from 'librechat-data-provider';
-import { areMessageFilesEqual } from '../MessageRender';
+import { areMessageFilesEqual } from '~/utils';
 
 const file = (overrides: Partial<TFile> = {}): TFile =>
   ({

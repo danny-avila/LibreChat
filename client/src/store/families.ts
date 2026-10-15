@@ -11,14 +11,10 @@ import {
   useSetRecoilState,
   useRecoilCallback,
 } from 'recoil';
-import type {
-  EModelEndpoint,
-  TConversation,
-  TSubmission,
-  TMessage,
-  TPreset,
-} from 'librechat-data-provider';
+import type { EModelEndpoint, TConversation, TSubmission, TPreset } from 'librechat-data-provider';
+import type { GenerationProtocolVersion } from '~/data-provider/SSE/protocol';
 import type { TOptionSettings, ExtendedFile } from '~/common';
+import type { PendingSteer } from '~/hooks/Chat/queue';
 import {
   clearModelForNonEphemeralAgent,
   createChatSearchParams,
@@ -34,6 +30,23 @@ const submissionKeysAtom = atom<(string | number)[]>({
 
 const submissionByIndex = atomFamily<TSubmission | null, string | number>({
   key: 'submissionByIndex',
+  default: null,
+});
+
+/**
+ * Epoch ms baseline for the streaming elapsed indicator at this chat index.
+ * Stamped when this session submits a generation (every path through `ask`),
+ * cleared by the terminal handlers when that generation ends, and only FILLED
+ * — never overwritten — when resume-on-load attaches a run, preferring the
+ * server-recorded generation start so a reload reports real elapsed time.
+ * The reading therefore survives mid-stream remounts (new-conversation id
+ * hydration, navigating away from a still-live run and back) without a later,
+ * externally-started generation inheriting a stale baseline. Known residual:
+ * a run whose end this pane never observed (left mid-stream, finished
+ * elsewhere) leaves its stamp for the next attach at this index to inherit.
+ */
+const submissionStartFamily = atomFamily<number | null, string | number>({
+  key: 'submissionStartByIndex',
   default: null,
 });
 
@@ -56,7 +69,11 @@ const conversationByIndex = atomFamily<TConversation | null, string | number>({
     ({ onSet, node }) => {
       onSet(async (newValue, oldValue) => {
         const index = Number(node.key.split('__')[1]);
-        logger.log('conversation', 'Setting conversation:', { index, newValue, oldValue });
+        logger.log('conversation', 'Setting conversation:', {
+          index,
+          newValue,
+          oldValue,
+        });
         if (newValue?.assistant_id != null && newValue.assistant_id) {
           localStorage.setItem(
             `${LocalStorageKeys.ASST_ID_PREFIX}${index}${newValue.endpoint}`,
@@ -104,7 +121,11 @@ const conversationByIndex = atomFamily<TConversation | null, string | number>({
           }
           const searchParams = createSearchParams(newParams);
           const url = `${window.location.pathname}?${searchParams.toString()}`;
-          window.history.pushState({}, '', url);
+          /** Mirror, not navigation: Back-worthy entries are minted by real
+           * `navigate()` calls (useNewConvo), and in-place writers like
+           * ProjectLandingChip deliberately replace. Pushing here buried the
+           * Back target under one inert entry per draft edit. */
+          window.history.replaceState({}, '', url);
         }
       });
     },
@@ -273,11 +294,6 @@ const showPromptsPopoverFamily = atomFamily<boolean, string | number | null>({
   default: false,
 });
 
-const showSkillsPopoverFamily = atomFamily<boolean, string | number | null>({
-  key: 'showSkillsPopoverByIndex',
-  default: false,
-});
-
 /**
  * Per-conversation queue of skill names the user invoked manually via the
  * `$` popover for the next submission. Structured channel that the submit
@@ -307,25 +323,23 @@ const pendingQuotesByConvoId = atomFamily<string[], string>({
 });
 
 /**
- * A steer message submitted mid-run. Server truth: `sending` covers the POST
- * in flight, `pending` means the server queued it (awaiting a tool-batch
- * boundary), `failed` keeps the text recoverable after a rejected POST. The
- * chip disappears when `on_steer_applied` lands (the inline content part
- * becomes the durable record).
+ * Text handed to a conversation's composer by a surface the user is leaving —
+ * today, a subagent thread continued into a chat of its own, where the panel
+ * and its composer unmount as the destination opens.
+ *
+ * Keyed by conversation rather than by composer index because the handoff
+ * outlives the navigation that carries it: a first visit resolves its record
+ * before the route moves, so the destination's composer mounts commits later.
+ * `useTextarea` drains it when that conversation's composer is on screen.
+ *
+ * Deliberately in memory rather than in the composer draft store: nothing the
+ * user has not sent should be written to storage they asked not to use, and
+ * draft restoration is itself gated on the Save Drafts preference.
  */
-export type PendingSteer = {
-  steerId: string;
-  text: string;
-  status: 'sending' | 'pending' | 'failed';
-  createdAt: number;
-  /** Attachments steered with the message (refs; already uploaded). */
-  files?: TMessage['files'];
-  /** Quote chips carried by a queued-origin steer (client-only; never sent to
-   *  the server), restored onto the queued item if the run ends first. */
-  quotes?: string[];
-  /** Manual skill picks carried the same way as `quotes`. */
-  manualSkills?: string[];
-};
+const pendingComposerTextByConvoId = atomFamily<string | undefined, string>({
+  key: 'pendingComposerTextByConvoId',
+  default: undefined,
+});
 
 /**
  * Per-conversation steers awaiting injection. Reconciled against the server:
@@ -336,79 +350,6 @@ export type PendingSteer = {
 const pendingSteersByConvoId = atomFamily<PendingSteer[], string>({
   key: 'pendingSteersByConvoId',
   default: [],
-});
-
-/** A message composed during a run, queued to send after it finishes.
- *  Attachments ride the queued item (already uploaded at attach time) and are
- *  passed to `ask` as `overrideFiles` on drain — steering itself is text-only,
- *  so any during-run submit with media routes here as one unit. */
-export type QueuedMessage = {
-  id: string;
-  text: string;
-  createdAt: number;
-  files?: TMessage['files'];
-  /** Quote chips consumed from the composer at enqueue time; passed to `ask`
-   *  as `overrideQuotes` on drain so they pair with THIS message. */
-  quotes?: string[];
-  /** Manual skill picks consumed from the composer at enqueue time; passed
-   *  to `ask` as `overrideManualSkills` on drain. */
-  manualSkills?: string[];
-  /** Front-inserted by "Interrupt & send": stays ahead of chronologically
-   *  older items when leftover steers are merged back into the queue. */
-  priority?: boolean;
-};
-
-/**
- * Per-conversation client-side queue of follow-up messages. Drained one per
- * run completion by `useQueueDrain` (each dequeued message starts a normal
- * turn whose own final event drains the next).
- */
-const queuedMessagesByConvoId = atomFamily<QueuedMessage[], string>({
-  key: 'queuedMessagesByConvoId',
-  default: [],
-});
-
-/**
- * Run-end signals whose conversation was NOT active when they arrived —
- * parked here (keyed by conversation) so a later run finishing on the same
- * chat index cannot overwrite them; `useQueueDrain` consumes the parked
- * signal when the user returns to that conversation.
- */
-const pendingRunEndByConvoId = atomFamily<RunEnd | null, string>({
-  key: 'pendingRunEndByConvoId',
-  default: null,
-});
-
-/**
- * One-shot run-termination signal written by the SSE final/error handlers and
- * consumed (reset to null) by `useQueueDrain`. Keyed by chat index like
- * `isSubmittingFamily`. Carrying the outcome lets the drain skip auto-send on
- * user aborts/errors while `startedAsNewConvo` migrates a queue keyed under
- * `Constants.NEW_CONVO` to the real conversation id.
- */
-export type RunEnd = {
-  conversationId: string | null;
-  outcome: 'completed' | 'aborted' | 'error';
-  startedAsNewConvo?: boolean;
-  endedAt: number;
-  /** Armed "Interrupt & send" flag traveling with a PARKED signal, so
-   *  another run on the same pane can neither consume nor clear it. */
-  interruptArmed?: boolean;
-};
-
-const runEndByIndex = atomFamily<RunEnd | null, string | number>({
-  key: 'runEndByIndex',
-  default: null,
-});
-
-/**
- * One-shot override armed by "interrupt & send": the next `aborted` run-end
- * drains the queue exactly once (a plain Stop press leaves queued chips for
- * manual send).
- */
-const drainAfterAbortByIndex = atomFamily<boolean, string | number>({
-  key: 'drainAfterAbortByIndex',
-  default: false,
 });
 
 /**
@@ -422,6 +363,30 @@ const drainAfterAbortByIndex = atomFamily<boolean, string | number>({
 const appliedSteerIdsByConvoId = atomFamily<string[], string>({
   key: 'appliedSteerIdsByConvoId',
   default: [],
+});
+
+/** Optimistic ids the server has proven accepted via ACK or SYNC. Separate
+ * from `appliedSteerIdsByConvoId`: accepted-but-still-queued steers must not
+ * be suppressed by terminal conversion, but a late POST error must not
+ * resurrect them after Cancel/Edit/Convert removes the visible chip. */
+const acceptedSteerClientIdsByConvoId = atomFamily<string[], string>({
+  key: 'acceptedSteerClientIdsByConvoId',
+  default: [],
+});
+
+/** Server generation epoch currently attached for each conversation. Stream
+ * ids are conversation-scoped and reused by later turns; every mutation that
+ * can affect a live run carries this value as an optimistic concurrency fence. */
+const activeGenerationCreatedAtByConvoId = atomFamily<number | null, string>({
+  key: 'activeGenerationCreatedAtByConvoId',
+  default: null,
+});
+
+/** Negotiated behavior contract for the active generation. Missing echoes are
+ * legacy by definition, so the safe default is always v1. */
+const activeGenerationProtocolVersionByConvoId = atomFamily<GenerationProtocolVersion, string>({
+  key: 'activeGenerationProtocolVersionByConvoId',
+  default: 1,
 });
 
 const globalAudioURLFamily = atomFamily<string | null, string | number | null>({
@@ -449,15 +414,13 @@ const audioRunFamily = atomFamily<string | null, string | number | null>({
   default: null,
 });
 
-const messagesSiblingIdxFamily = atomFamily<number, string | null | undefined>({
-  key: 'messagesSiblingIdx',
-  default: 0,
-});
-
-function useCreateConversationAtom(key: string | number) {
+/** Setter-only access to the conversation atom: registers the key like
+ * `useCreateConversationAtom` but never subscribes to the value, so callers
+ * that only write (navigation, per-row actions) don't re-render on every
+ * conversation update. */
+function useSetConversationAtom(key: string | number) {
   const hasSetConversation = useSetConvoContext();
   const setKeys = useSetRecoilState(conversationKeysAtom);
-  const conversation = useRecoilValue(conversationByIndex(key));
   const setConversation = useSetRecoilState(conversationByIndex(key));
 
   useEffect(() => {
@@ -469,12 +432,14 @@ function useCreateConversationAtom(key: string | number) {
     });
   }, [key, setKeys]);
 
-  return { hasSetConversation, conversation, setConversation };
+  return { hasSetConversation, setConversation };
 }
 
-function useSetConversationAtom(key: string | number) {
-  const { setConversation } = useCreateConversationAtom(key);
-  return { setConversation };
+function useCreateConversationAtom(key: string | number) {
+  const { hasSetConversation, setConversation } = useSetConversationAtom(key);
+  const conversation = useRecoilValue(conversationByIndex(key));
+
+  return { hasSetConversation, conversation, setConversation };
 }
 
 function useClearConvoState() {
@@ -557,13 +522,13 @@ export default {
   filesByIndex,
   presetByIndex,
   submissionByIndex,
+  submissionStartFamily,
   textByIndex,
   showStopButtonByIndex,
   abortScrollFamily,
   isSubmittingFamily,
   optionSettingsFamily,
   showPopoverFamily,
-  messagesSiblingIdxFamily,
   anySubmittingSelector,
   allConversationsSelector,
   conversationIdByIndex,
@@ -587,14 +552,13 @@ export default {
   activePromptByIndex,
   useClearSubmissionState,
   showPromptsPopoverFamily,
-  showSkillsPopoverFamily,
+  pendingComposerTextByConvoId,
   pendingManualSkillsByConvoId,
   pendingQuotesByConvoId,
   pendingSteersByConvoId,
-  queuedMessagesByConvoId,
-  runEndByIndex,
-  pendingRunEndByConvoId,
-  drainAfterAbortByIndex,
   appliedSteerIdsByConvoId,
+  acceptedSteerClientIdsByConvoId,
+  activeGenerationCreatedAtByConvoId,
+  activeGenerationProtocolVersionByConvoId,
   updateConversationSelector,
 };

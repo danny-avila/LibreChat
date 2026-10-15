@@ -24,9 +24,9 @@ function EmptyState({
   const iconWrapBase = 'mb-3 flex h-12 w-12 items-center justify-center rounded-full border';
   const iconWrapTone =
     tone === 'danger'
-      ? 'border-red-200 bg-red-50 text-red-500 dark:border-red-900/50 dark:bg-red-950/30 dark:text-red-400'
+      ? 'border-status-error-border bg-status-error-subtle text-text-destructive'
       : 'border-border-light bg-surface-secondary text-text-secondary';
-  const textTone = tone === 'danger' ? 'text-red-600 dark:text-red-400' : 'text-text-secondary';
+  const textTone = tone === 'danger' ? 'text-text-destructive' : 'text-text-secondary';
 
   return (
     <div className="flex flex-col items-center justify-center px-4 py-12 text-center">

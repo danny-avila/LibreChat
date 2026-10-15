@@ -3,11 +3,46 @@ import { ReasoningResponseKey } from 'librechat-data-provider';
 import { ToolMessage, AIMessage, HumanMessage } from '@librechat/agents/langchain/messages';
 import {
   extractDiscoveredToolsFromHistory,
+  getRunDiscoveredTools,
   getReasoningKey,
   isDeepSeekReasoningProvider,
   shouldReplayReasoningContent,
   anyAgentReplaysReasoningContent,
+  collectRunMCPToolAliases,
 } from './run';
+
+describe('getRunDiscoveredTools', () => {
+  it('uses the run discovery snapshot instead of reconstructing it from messages', () => {
+    const messages = [
+      new ToolMessage({
+        content: JSON.stringify({ tools: [{ name: 'save_project_mcp_linear' }] }),
+        tool_call_id: 'call_1',
+        name: 'tool_search',
+      }),
+    ];
+
+    expect(
+      getRunDiscoveredTools({
+        getDiscoveredTools: () => ['save_issue_mcp_linear'],
+        getRunMessages: () => messages,
+      }),
+    ).toEqual(['save_issue_mcp_linear']);
+  });
+
+  it('falls back to tool-search messages for agents releases without a snapshot API', () => {
+    const messages = [
+      new ToolMessage({
+        content: JSON.stringify({ tools: [{ name: 'save_issue_mcp_linear' }] }),
+        tool_call_id: 'call_1',
+        name: 'tool_search',
+      }),
+    ];
+
+    expect(getRunDiscoveredTools({ getRunMessages: () => messages })).toEqual([
+      'save_issue_mcp_linear',
+    ]);
+  });
+});
 
 describe('extractDiscoveredToolsFromHistory', () => {
   it('extracts tool names from tool_search JSON output', () => {
@@ -347,6 +382,13 @@ describe('anyAgentReplaysReasoningContent', () => {
     expect(anyAgentReplaysReasoningContent([primary])).toBe(true);
   });
 
+  it('returns true when an inert lazy descriptor opts in', () => {
+    const primary = plainAgent('root', {
+      lazySubagentConfigs: [plainAgent('lazy-child', { includeReasoningHistory: true })],
+    });
+    expect(anyAgentReplaysReasoningContent([primary])).toBe(true);
+  });
+
   it('returns false when no reachable agent opts in', () => {
     const primary = plainAgent('root', {
       subagentAgentConfigs: [plainAgent('child')],
@@ -366,5 +408,66 @@ describe('anyAgentReplaysReasoningContent', () => {
     (x as { subagentAgentConfigs?: unknown[] }).subagentAgentConfigs = [y];
     (y as { subagentAgentConfigs?: unknown[] }).subagentAgentConfigs = [x];
     expect(anyAgentReplaysReasoningContent([x])).toBe(false);
+  });
+});
+
+describe('collectRunMCPToolAliases', () => {
+  const alias = { name: 'delete_mcp_acme', aliasName: 'acme_delete_mcp_acme' };
+
+  it('collects and deduplicates aliases from explicit and graph subagents', () => {
+    const root = {
+      id: 'root',
+      subagentAgentConfigs: [
+        {
+          id: 'explicit',
+          mcpToolAliases: [alias],
+        },
+      ],
+      subagentGraphConfigs: [
+        {
+          memberConfigs: [
+            {
+              id: 'graph-member',
+              mcpToolAliases: [alias, { name: 'read_mcp_acme', aliasName: 'acme_read_mcp_acme' }],
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(collectRunMCPToolAliases([root] as never)).toEqual([
+      alias,
+      { name: 'read_mcp_acme', aliasName: 'acme_read_mcp_acme' },
+    ]);
+  });
+
+  it('is cycle-safe across nested subagents', () => {
+    const root: {
+      id: string;
+      mcpToolAliases: (typeof alias)[];
+      subagentAgentConfigs?: unknown[];
+    } = {
+      id: 'root',
+      mcpToolAliases: [alias],
+    };
+    const child = { id: 'child', subagentAgentConfigs: [root] };
+    root.subagentAgentConfigs = [child];
+
+    expect(collectRunMCPToolAliases([root] as never)).toEqual([alias]);
+  });
+
+  it('collects aliases from a graph member duplicated by a lazy descriptor', () => {
+    const graphAlias = { name: 'write_mcp_acme', aliasName: 'acme_write_mcp_acme' };
+    const root = {
+      id: 'root',
+      lazySubagentConfigs: [{ id: 'shared-agent' }],
+      subagentGraphConfigs: [
+        {
+          memberConfigs: [{ id: 'shared-agent', mcpToolAliases: [graphAlias] }],
+        },
+      ],
+    };
+
+    expect(collectRunMCPToolAliases([root] as never)).toEqual([graphAlias]);
   });
 });

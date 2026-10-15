@@ -1,10 +1,13 @@
-import { Radio } from '@librechat/client';
+import { Radio, Checkbox } from '@librechat/client';
 import { useFormContext, useWatch } from 'react-hook-form';
-import { Tools, ArtifactModes, AgentCapabilities } from 'librechat-data-provider';
+import { Tools, MemoryScope, ArtifactModes, AgentCapabilities } from 'librechat-data-provider';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import type { AgentForm, ExtendedFile } from '~/common';
 import type { BuiltinId } from '../../items/types';
+import OrchestrationHub from '../../../Advanced/OrchestrationHub';
 import { useVerifyAgentToolAuth } from '~/data-provider';
+import CodeBackground from '../../../Code/Background';
+import CodeSettings from '../../../Code/Settings';
 import SearchAction from '../../../Search/Action';
 import FileContext from '../../../FileContext';
 import FileSearch from '../../../FileSearch';
@@ -57,7 +60,7 @@ function ArtifactsConfig({ value, onChange }: ArtifactsConfigProps) {
 
   return (
     <div className="flex flex-col gap-3">
-      <span id="artifacts-mode-label" className="text-sm font-medium text-text-primary">
+      <span id="artifacts-mode-label" className="text-text-primary text-sm font-medium">
         {localize('com_ui_artifacts_mode')}
       </span>
       <Radio
@@ -68,15 +71,60 @@ function ArtifactsConfig({ value, onChange }: ArtifactsConfigProps) {
         aria-labelledby="artifacts-mode-label"
       />
       {active?.infoKey ? (
-        <p className="text-sm leading-relaxed text-text-secondary">{localize(active.infoKey)}</p>
+        <p className="text-text-secondary text-sm leading-relaxed">{localize(active.infoKey)}</p>
       ) : null}
+    </div>
+  );
+}
+
+interface MemoryConfigProps {
+  value: string;
+  onChange: (next: MemoryScope) => void;
+}
+
+function MemoryConfig({ value, onChange }: MemoryConfigProps) {
+  const localize = useLocalize();
+  const isolated = value === MemoryScope.agent;
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center">
+        <Checkbox
+          id="memory-scope-checkbox"
+          checked={isolated}
+          onCheckedChange={(checked) =>
+            onChange(checked === true ? MemoryScope.agent : MemoryScope.user)
+          }
+          className="relative float-left mr-2 inline-flex cursor-pointer"
+          value={isolated.toString()}
+          aria-labelledby="memory-scope-label"
+        />
+        <label
+          id="memory-scope-label"
+          htmlFor="memory-scope-checkbox"
+          className="text-text-primary cursor-pointer text-sm font-medium"
+        >
+          {localize('com_agents_memory_scope')}
+        </label>
+      </div>
+      <p className="text-text-secondary text-sm leading-relaxed">
+        {localize('com_agents_memory_scope_info')}
+      </p>
     </div>
   );
 }
 
 function WebSearchConfig() {
   const { data } = useVerifyAgentToolAuth({ toolId: Tools.web_search }, { retry: 1 });
-  return <SearchAction authTypes={data?.authTypes} isToolAuthenticated={data?.authenticated} />;
+  return (
+    <SearchAction
+      authTypes={data?.authTypes}
+      isToolAuthenticated={data?.authenticated}
+      searchProvider={data?.searchProvider}
+      scraperProvider={data?.scraperProvider}
+      rerankerType={data?.rerankerType}
+    />
+  );
 }
 
 export default function BuiltinSection({
@@ -91,11 +139,20 @@ export default function BuiltinSection({
   const { control, setValue } = useFormContext<AgentForm>();
 
   const artifactsValue = (useWatch({ control, name: AgentCapabilities.artifacts }) ?? '') as string;
+  const memoryScope = (useWatch({ control, name: 'memory_scope' }) ?? MemoryScope.user) as string;
 
   let body: React.ReactNode = null;
 
-  if (builtinId === 'execute_code') {
-    body = <CodeFiles agent_id={agentId} files={codeFiles} />;
+  if (builtinId === 'subagents' || builtinId === 'handoffs') {
+    body = <OrchestrationHub currentAgentId={agentId} tool={builtinId} />;
+  } else if (builtinId === 'execute_code') {
+    body = (
+      <div className="flex flex-col gap-4">
+        <CodeSettings />
+        <CodeBackground />
+        <CodeFiles agent_id={agentId} files={codeFiles} />
+      </div>
+    );
   } else if (builtinId === 'web_search') {
     body = <WebSearchConfig />;
   } else if (builtinId === 'file_search') {
@@ -109,14 +166,24 @@ export default function BuiltinSection({
     );
   } else if (builtinId === 'context') {
     body = <FileContext agent_id={agentId} files={contextFiles} showHeader={false} />;
+  } else if (builtinId === 'memory') {
+    body = (
+      <MemoryConfig
+        value={memoryScope}
+        onChange={(next) => setValue('memory_scope', next, { shouldDirty: true })}
+      />
+    );
   }
 
-  const localizedDescription = description ? localize(description as TranslationKeys) : '';
+  const localizedDescription =
+    description && builtinId !== 'subagents' && builtinId !== 'handoffs'
+      ? localize(description as TranslationKeys)
+      : '';
 
   return (
     <div className="flex flex-col gap-5">
       {localizedDescription && (
-        <p className="text-sm leading-relaxed text-text-secondary">{localizedDescription}</p>
+        <p className="text-text-secondary text-sm leading-relaxed">{localizedDescription}</p>
       )}
       {body}
     </div>

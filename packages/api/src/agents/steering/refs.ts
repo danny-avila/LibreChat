@@ -1,5 +1,13 @@
 import type { TFile } from 'librechat-data-provider';
-import type { SteerRequestUser } from './request';
+
+export interface SteerRequestUser {
+  id?: string;
+  tenantId?: string;
+}
+
+function isLlmDeliveryPath(value: unknown): value is NonNullable<TFile['llmDeliveryPath']> {
+  return value === 'provider' || value === 'text' || value === 'none';
+}
 
 /**
  * Copies the display-metadata fields a steer attachment ref may carry,
@@ -25,6 +33,9 @@ export function toSteerFileRef(raw: unknown): Partial<TFile> | null {
     ...(typeof candidate.type === 'string' && { type: candidate.type }),
     ...(typeof candidate.filepath === 'string' && { filepath: candidate.filepath }),
     ...(typeof candidate.filename === 'string' && { filename: candidate.filename }),
+    ...(isLlmDeliveryPath(candidate.llmDeliveryPath) && {
+      llmDeliveryPath: candidate.llmDeliveryPath,
+    }),
     ...(typeof candidate.height === 'number' && { height: candidate.height }),
     ...(typeof candidate.width === 'number' && { width: candidate.width }),
     ...(typeof candidate.bytes === 'number' && { bytes: candidate.bytes }),

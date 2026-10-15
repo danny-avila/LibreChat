@@ -11,7 +11,6 @@ export interface AgentContactSource {
 export interface AgentOwnerContactSource {
   name?: string | null;
   username?: string | null;
-  email?: string | null;
 }
 
 const normalizeContactValue = (value?: string | null): string | undefined => {
@@ -22,6 +21,17 @@ const normalizeContactValue = (value?: string | null): string | undefined => {
   return trimmed.length > 0 ? trimmed : undefined;
 };
 
+/** Auth strategies fall back to the account email for name/username, and legal
+ * email forms include quoted local parts with whitespace, so any '@'-containing
+ * value is treated as email-derived and never used as a public display name. */
+const normalizeDisplayName = (value?: string | null): string | undefined => {
+  const normalized = normalizeContactValue(value);
+  if (normalized == null || normalized.includes('@')) {
+    return undefined;
+  }
+  return normalized;
+};
+
 export const hasSupportContact = (agent: AgentContactSource): boolean => {
   const support = agent.support_contact;
   if (!support) {
@@ -30,6 +40,11 @@ export const hasSupportContact = (agent: AgentContactSource): boolean => {
   return !!normalizeContactValue(support.name) || !!normalizeContactValue(support.email);
 };
 
+/**
+ * Resolves a display-only owner contact for agents without an explicit support contact.
+ * Never includes the owner's account email, nor email-shaped display names; emails are
+ * only exposed when the owner opts in by configuring `support_contact`.
+ */
 export function resolveAgentOwnerContact(
   agent: AgentContactSource,
   owner: AgentOwnerContactSource | null,
@@ -39,17 +54,13 @@ export function resolveAgentOwnerContact(
   }
 
   const name =
-    normalizeContactValue(owner.name) ??
-    normalizeContactValue(owner.username) ??
-    normalizeContactValue(agent.authorName);
-  const email = normalizeContactValue(owner.email);
+    normalizeDisplayName(owner.name) ??
+    normalizeDisplayName(owner.username) ??
+    normalizeDisplayName(agent.authorName);
 
-  if (!name && !email) {
+  if (!name) {
     return undefined;
   }
 
-  return {
-    ...(name ? { name } : {}),
-    ...(email ? { email } : {}),
-  };
+  return { name };
 }

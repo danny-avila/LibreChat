@@ -92,6 +92,14 @@ export function createStreamEventHandlers(res: ServerResponse): {
   };
 }
 
+/**
+ * @deprecated No longer used internally: stream pacing lives in
+ * `@librechat/agents` (adaptive smoothing via `_lc_stream_delay` /
+ * `streamRate`), and LangChain runs callback handlers in the background, so
+ * a sleep here never paced token delivery. Kept as a compatibility shim for
+ * external `@librechat/api` consumers; removal is reserved for a major
+ * release.
+ */
 export function createHandleLLMNewToken(streamRate: number) {
   return async function (): Promise<void> {
     if (streamRate) {
