@@ -416,6 +416,13 @@ export function collectModelBoundHistoricalFileIdState(
   return { fileIds: [...fileIds], overflowed: budget.overflowed };
 }
 
+/** Backward-compatible ID-only view for callers that do not enforce model-bound content. */
+export function collectModelBoundHistoricalFileIds(
+  messages: readonly (StoredMessageContentInput | null | undefined)[],
+): string[] {
+  return collectModelBoundHistoricalFileIdState(messages).fileIds;
+}
+
 /**
  * Builds the security-sensitive provider source/file association in typed
  * backend code. Legacy clients supply runtime state only; this helper owns

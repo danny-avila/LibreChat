@@ -844,7 +844,7 @@ describe('RedisEventTransport', () => {
     const subscription = transport.subscribe(
       streamId,
       { onChunk: (event) => received.push(event as object) },
-      { deferSequenceDelivery: true },
+      { deferDeliveryUntilSynchronized: true },
     );
 
     deliverSequencedMessage(getMessageHandler(mockSubscriber), streamId, {
@@ -876,7 +876,7 @@ describe('RedisEventTransport', () => {
     const subscription = transport.subscribe(
       streamId,
       { onChunk: (event) => received.push(event as object) },
-      { deferSequenceDelivery: true },
+      { deferDeliveryUntilSynchronized: true },
     );
     const messageHandler = getMessageHandler(mockSubscriber);
 
@@ -921,7 +921,7 @@ describe('RedisEventTransport', () => {
     const subscription = transport.subscribe(
       streamId,
       { onChunk: (event) => received.push(event as object) },
-      { deferSequenceDelivery: true },
+      { deferDeliveryUntilSynchronized: true },
     );
     const messageHandler = getMessageHandler(mockSubscriber);
     mockPublisher.get.mockResolvedValueOnce('7');
@@ -960,7 +960,7 @@ describe('RedisEventTransport', () => {
     const subscription = transport.subscribe(
       streamId,
       { onChunk: (event) => received.push(event as object) },
-      { deferSequenceDelivery: true },
+      { deferDeliveryUntilSynchronized: true },
     );
     const messageHandler = getMessageHandler(mockSubscriber);
     mockPublisher.get.mockResolvedValueOnce('7');
@@ -1006,7 +1006,7 @@ describe('RedisEventTransport', () => {
     const subscription = transport.subscribe(
       streamId,
       { onChunk: (event) => received.push(event as object) },
-      { deferSequenceDelivery: true },
+      { deferDeliveryUntilSynchronized: true },
     );
     mockPublisher.get.mockResolvedValueOnce('6');
     await transport.syncReorderBuffer(streamId);
@@ -1045,7 +1045,7 @@ describe('RedisEventTransport', () => {
         onChunk: (event) => received.push(`chunk:${(event as { index: number }).index}`),
         onDone: () => received.push('done'),
       },
-      { deferSequenceDelivery: true },
+      { deferDeliveryUntilSynchronized: true },
     );
     const messageHandler = getMessageHandler(mockSubscriber);
 
