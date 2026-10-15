@@ -5,6 +5,7 @@ import { isSteerRunReplaced, acknowledgeSteerChips } from '@librechat/chat';
 import type { PendingSteer } from '@librechat/chat';
 import type { CallbackInterface } from 'recoil';
 import type { MutableRefObject } from 'react';
+import { pendingQuotesByConvoId } from '~/components/Chat/Input/Composer/state';
 import { appendAppliedSteerIds, mergeRestagedQuotes } from '~/utils';
 import { pendingSteerCancelClientIdsFamily } from '~/store/steer';
 import store from '~/store';
@@ -201,7 +202,9 @@ export default function useSteerChips({
         if (quotes == null || quotes.length === 0) {
           return;
         }
-        set(store.pendingQuotesByConvoId(convoId), (prev) => mergeRestagedQuotes(prev, quotes));
+        jotaiStore.set(pendingQuotesByConvoId(convoId), (prev) =>
+          mergeRestagedQuotes(prev, quotes),
+        );
         set(store.pendingSteersByConvoId(convoId), (prev) => {
           let changed = false;
           const next = prev.map((steer) => {
@@ -223,7 +226,7 @@ export default function useSteerChips({
           return changed ? next : prev;
         });
       },
-    [],
+    [jotaiStore],
   );
 
   return useMemo(

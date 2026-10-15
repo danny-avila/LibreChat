@@ -235,34 +235,6 @@ const showPromptsPopoverFamily = atomFamily<boolean, string | number | null>({
 });
 
 /**
- * Per-conversation queue of skill names the user invoked manually via the
- * `$` popover for the next submission. Structured channel that the submit
- * pipeline (`useChatFunctions.ask`) drains and pins onto the user message's
- * `manualSkills` field (also echoed at the top of the payload for the
- * runtime resolver), then resets to `[]`. Compose-time chips above the
- * textarea read this atom directly so users see (and can dismiss) their
- * current selection before hitting send.
- */
-const pendingManualSkillsByConvoId = atomFamily<string[], string>({
-  key: 'pendingManualSkillsByConvoId',
-  default: [],
-});
-
-/**
- * Per-conversation queue of verbatim excerpts the user quoted via the
- * "Add to chat" selection popup for the next submission. The submit pipeline
- * (`useChatFunctions.ask`) drains this onto the user message's `quotes` field
- * (which the backend merges into the model-facing text and persists for the
- * `MessageQuotes` UI), then resets to `[]`. Compose-time chips above the
- * textarea read this atom directly so users can see and dismiss each quote
- * before sending.
- */
-const pendingQuotesByConvoId = atomFamily<string[], string>({
-  key: 'pendingQuotesByConvoId',
-  default: [],
-});
-
-/**
  * Text handed to a conversation's composer by a surface the user is leaving —
  * today, a subagent thread continued into a chat of its own, where the panel
  * and its composer unmount as the destination opens.
@@ -486,8 +458,6 @@ export default {
   useClearSubmissionState,
   showPromptsPopoverFamily,
   pendingComposerTextByConvoId,
-  pendingManualSkillsByConvoId,
-  pendingQuotesByConvoId,
   pendingSteersByConvoId,
   appliedSteerIdsByConvoId,
   acceptedSteerClientIdsByConvoId,

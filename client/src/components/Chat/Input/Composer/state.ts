@@ -19,6 +19,30 @@ export const pendingReasoningOverrideFamily = atomFamily((_conversationId: strin
   atom<TMessage['reasoningOverride']>(undefined),
 );
 
+/**
+ * Per-conversation queue of skill names the user invoked manually via the
+ * `$` popover for the next submission. Structured channel that the submit
+ * pipeline (`useChatFunctions.ask`) drains and pins onto the user message's
+ * `manualSkills` field (also echoed at the top of the payload for the
+ * runtime resolver), then resets to `[]`. Compose-time chips above the
+ * textarea read this atom directly so users see (and can dismiss) their
+ * current selection before hitting send.
+ */
+export const pendingManualSkillsByConvoId = atomFamily((_conversationId: string) =>
+  atom<string[]>([]),
+);
+
+/**
+ * Per-conversation queue of verbatim excerpts the user quoted via the
+ * "Add to chat" selection popup for the next submission. The submit pipeline
+ * (`useChatFunctions.ask`) drains this onto the user message's `quotes` field
+ * (which the backend merges into the model-facing text and persists for the
+ * `MessageQuotes` UI), then resets to `[]`. Compose-time chips above the
+ * textarea read this atom directly so users can see and dismiss each quote
+ * before sending.
+ */
+export const pendingQuotesByConvoId = atomFamily((_conversationId: string) => atom<string[]>([]));
+
 /** Landing-page lift is composer-owned UI state, scoped to its split pane. */
 export const composerLiftFamily = atomFamily((_index: number) => atom(0));
 

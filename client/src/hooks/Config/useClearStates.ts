@@ -2,6 +2,8 @@ import { useStore } from 'jotai';
 import { useRecoilCallback } from 'recoil';
 import {
   getReasoningStateKey,
+  pendingQuotesByConvoId,
+  pendingManualSkillsByConvoId,
   clearPendingReasoningOverrides,
 } from '~/components/Chat/Input/Composer/state';
 import {
@@ -58,18 +60,18 @@ export default function useClearStates() {
           reset(store.showPlusPopoverFamily(key));
           reset(store.showPromptsPopoverFamily(key));
           jotaiStore.set(showSkillsPopoverFamily(key), false);
-          reset(store.pendingManualSkillsByConvoId(key.toString()));
-          reset(store.pendingQuotesByConvoId(key.toString()));
+          jotaiStore.set(pendingManualSkillsByConvoId(key.toString()), []);
+          jotaiStore.set(pendingQuotesByConvoId(key.toString()), []);
           /**
            * Pending skill/quote queues are keyed by the conversation id the
-           * composer wrote under, not this UI index — also clear by the resolved
-           * id so queued-but-unsent selections don't linger in Recoil.
+           * composer wrote under, not this UI index; also clear by the resolved
+           * id so queued-but-unsent selections don't linger.
            */
           const convoId = (await snapshot.getPromise(store.conversationByIndex(key)))
             ?.conversationId;
           if (convoId != null) {
-            reset(store.pendingManualSkillsByConvoId(convoId));
-            reset(store.pendingQuotesByConvoId(convoId));
+            jotaiStore.set(pendingManualSkillsByConvoId(convoId), []);
+            jotaiStore.set(pendingQuotesByConvoId(convoId), []);
           }
           reset(store.activePromptByIndex(key));
           reset(store.globalAudioURLFamily(key));

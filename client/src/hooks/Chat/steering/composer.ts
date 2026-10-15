@@ -1,13 +1,15 @@
 import { useCallback, useMemo } from 'react';
 import { useStore } from 'jotai';
-import { useRecoilCallback } from 'recoil';
 import type { QueuedMessageContext } from '@librechat/chat';
 import type { TMessage } from 'librechat-data-provider';
 import type { ExtendedFile, FileSetter } from '~/common';
-import { pendingReasoningOverrideFamily } from '~/components/Chat/Input/Composer/state';
+import {
+  pendingQuotesByConvoId,
+  pendingManualSkillsByConvoId,
+  pendingReasoningOverrideFamily,
+} from '~/components/Chat/Input/Composer/state';
 import { markComposerFilesTaken } from '~/utils/composerFiles';
 import { useSetFilesToDelete } from '~/hooks/Files';
-import store from '~/store';
 
 export interface ComposerTake {
   takeComposerFiles: () => TMessage['files'];
@@ -79,54 +81,38 @@ export default function useComposerTake({
   /** Consumes staged quote chips + manual skill picks (mirroring `ask()`'s
    *  fresh-submit drain of the same atoms) so they pair with THIS queued
    *  message instead of gluing onto whatever the user sends next. */
-  const takeComposerContext = useRecoilCallback(
-    ({ snapshot, reset }) =>
-      (): QueuedMessageContext => {
-        const quotes = snapshot
-          .getLoadable(store.pendingQuotesByConvoId(conversationId))
-          .getValue();
-        const manualSkills = snapshot
-          .getLoadable(store.pendingManualSkillsByConvoId(conversationId))
-          .getValue();
-        const reasoningOverride = reasoningStore.get(
-          pendingReasoningOverrideFamily(reasoningStateKey),
-        );
-        if (quotes.length > 0) {
-          reset(store.pendingQuotesByConvoId(conversationId));
-        }
-        if (manualSkills.length > 0) {
-          reset(store.pendingManualSkillsByConvoId(conversationId));
-        }
-        if (reasoningOverride != null) {
-          reasoningStore.set(pendingReasoningOverrideFamily(reasoningStateKey), undefined);
-        }
-        return {
-          ...(quotes.length > 0 && { quotes }),
-          ...(manualSkills.length > 0 && { manualSkills }),
-          ...(reasoningOverride != null && { reasoningOverride }),
-        };
-      },
-    [conversationId, reasoningStateKey, reasoningStore],
-  );
+  const takeComposerContext = useCallback((): QueuedMessageContext => {
+    const quotes = reasoningStore.get(pendingQuotesByConvoId(conversationId));
+    const manualSkills = reasoningStore.get(pendingManualSkillsByConvoId(conversationId));
+    const reasoningOverride = reasoningStore.get(pendingReasoningOverrideFamily(reasoningStateKey));
+    if (quotes.length > 0) {
+      reasoningStore.set(pendingQuotesByConvoId(conversationId), []);
+    }
+    if (manualSkills.length > 0) {
+      reasoningStore.set(pendingManualSkillsByConvoId(conversationId), []);
+    }
+    if (reasoningOverride != null) {
+      reasoningStore.set(pendingReasoningOverrideFamily(reasoningStateKey), undefined);
+    }
+    return {
+      ...(quotes.length > 0 && { quotes }),
+      ...(manualSkills.length > 0 && { manualSkills }),
+      ...(reasoningOverride != null && { reasoningOverride }),
+    };
+  }, [conversationId, reasoningStateKey, reasoningStore]);
 
   /** Quotes-only drain for composer-origin steers: the excerpts ride the steer
    *  POST into the live run, while manual skill picks stay staged: a skill
    *  pick configures a NEW turn's agent run and cannot apply to a mid-run
    *  injection, so it keeps waiting for the next full submission. */
-  const takeComposerQuotes = useRecoilCallback(
-    ({ snapshot, reset }) =>
-      (): QueuedMessageContext => {
-        const quotes = snapshot
-          .getLoadable(store.pendingQuotesByConvoId(conversationId))
-          .getValue();
-        if (quotes.length === 0) {
-          return {};
-        }
-        reset(store.pendingQuotesByConvoId(conversationId));
-        return { quotes };
-      },
-    [conversationId],
-  );
+  const takeComposerQuotes = useCallback((): QueuedMessageContext => {
+    const quotes = reasoningStore.get(pendingQuotesByConvoId(conversationId));
+    if (quotes.length === 0) {
+      return {};
+    }
+    reasoningStore.set(pendingQuotesByConvoId(conversationId), []);
+    return { quotes };
+  }, [conversationId, reasoningStore]);
 
   return useMemo(
     () => ({ takeComposerFiles, takeComposerContext, takeComposerQuotes }),

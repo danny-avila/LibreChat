@@ -30,6 +30,8 @@ import {
 } from '~/hooks/Chat/queue';
 import {
   getReasoningStateKey,
+  pendingQuotesByConvoId,
+  pendingManualSkillsByConvoId,
   pendingReasoningOverrideFamily,
 } from '~/components/Chat/Input/Composer/state';
 import { revealedQueuedTurnFamily, pendingSteerCancelClientIdsFamily } from '~/store/steer';
@@ -206,7 +208,11 @@ function sendFromQueue(
   current.steering.sendQueuedNow(item);
 }
 
-beforeEach(() => resetQueueFamilies());
+beforeEach(() => {
+  resetQueueFamilies();
+  getDefaultStore().set(pendingQuotesByConvoId(CONVO_ID), []);
+  getDefaultStore().set(pendingManualSkillsByConvoId(CONVO_ID), []);
+});
 
 describe('useSteering', () => {
   beforeEach(() => {
@@ -240,9 +246,8 @@ describe('useSteering', () => {
       setFiles,
       consumeDraft,
     };
-    const { result, rerender, stopGenerating, sendNow } = setup(params, ({ set }) => {
-      set(store.pendingQuotesByConvoId(CONVO_ID), ['preserved quote']);
-    });
+    getDefaultStore().set(pendingQuotesByConvoId(CONVO_ID), ['preserved quote']);
+    const { result, rerender, stopGenerating, sendNow } = setup(params);
     const captured = result.current[action];
     params.composerDisabled = true;
     rerender();
@@ -818,10 +823,10 @@ describe('useSteering', () => {
           updatedAt: new Date().toISOString(),
         });
       });
+      getDefaultStore().set(pendingQuotesByConvoId(CONVO_ID), ['quoted context']);
+      getDefaultStore().set(pendingManualSkillsByConvoId(CONVO_ID), ['skill']);
       const { result, unmount } = setup({ isSubmitting: false }, ({ set }) => {
         set(store.activeGenerationCreatedAtByConvoId(CONVO_ID), null);
-        set(store.pendingQuotesByConvoId(CONVO_ID), ['quoted context']);
-        set(store.pendingManualSkillsByConvoId(CONVO_ID), ['skill']);
       });
       expect(result.current.duringRunActive).toBe(true);
       expect(result.current.canSteer).toBe(false);
@@ -4220,8 +4225,8 @@ describe('useSteering', () => {
           queue: useQueue(CONVO_ID),
           setQueue: useSetAtom(queuedMessagesByConvoId(CONVO_ID)),
           chips: useRecoilValue(store.pendingSteersByConvoId(CONVO_ID)),
-          pendingQuotes: useRecoilValue(store.pendingQuotesByConvoId(CONVO_ID)),
-          pendingSkills: useRecoilValue(store.pendingManualSkillsByConvoId(CONVO_ID)),
+          pendingQuotes: useAtomValue(pendingQuotesByConvoId(CONVO_ID)),
+          pendingSkills: useAtomValue(pendingManualSkillsByConvoId(CONVO_ID)),
           pendingReasoning: useAtomValue(pendingReasoningOverrideFamily(CONVO_ID)),
           markApplied: useSetRecoilState(store.appliedSteerIdsByConvoId(CONVO_ID)),
         }),
@@ -4230,9 +4235,9 @@ describe('useSteering', () => {
       return { ...rendered, sendNow, stopGenerating };
     }
 
-    const stageContext = ({ set }: MutableSnapshot) => {
-      set(store.pendingQuotesByConvoId(CONVO_ID), ['quoted excerpt']);
-      set(store.pendingManualSkillsByConvoId(CONVO_ID), ['skill-1']);
+    const stageContext = () => {
+      contextStore.set(pendingQuotesByConvoId(CONVO_ID), ['quoted excerpt']);
+      contextStore.set(pendingManualSkillsByConvoId(CONVO_ID), ['skill-1']);
     };
 
     it('queues rather than steering when reasoning is staged for a new generation', () => {

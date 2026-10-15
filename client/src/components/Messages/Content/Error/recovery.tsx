@@ -19,7 +19,9 @@ import {
   useOptionalMessagesConversation,
 } from '~/Providers/MessagesViewContext';
 import {
+  pendingQuotesByConvoId,
   getReasoningStateKey,
+  pendingManualSkillsByConvoId,
   pendingReasoningOverrideFamily,
 } from '~/components/Chat/Input/Composer/state';
 import { findAttachmentRecovery, isAttachmentError, mayBeAttachmentError } from './attachments';
@@ -103,10 +105,10 @@ function RecoveryActions({
           set(store.pendingComposerTextByConvoId(forkedId), turn.text);
         }
         if ((turn.quotes?.length ?? 0) > 0) {
-          set(store.pendingQuotesByConvoId(forkedId), turn.quotes ?? []);
+          reasoningStore.set(pendingQuotesByConvoId(forkedId), turn.quotes ?? []);
         }
         if ((turn.manualSkills?.length ?? 0) > 0) {
-          set(store.pendingManualSkillsByConvoId(forkedId), turn.manualSkills ?? []);
+          reasoningStore.set(pendingManualSkillsByConvoId(forkedId), turn.manualSkills ?? []);
         }
         if (turn.reasoningOverride != null) {
           reasoningStore.set(

@@ -45,6 +45,7 @@ import {
   supportsGenerationProtocolV2,
 } from '~/data-provider/SSE/protocol';
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
+import { pendingQuotesByConvoId } from '~/components/Chat/Input/Composer/state';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import { agentQueuedTurnsQueryKey } from '~/data-provider/SSE/queuedTurns';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
@@ -454,7 +455,7 @@ export default function useResumeOnLoad(
           snapshot.getLoadable(store.pendingSteersByConvoId(activeConversationId)).getValue(),
         );
         if (droppedQuotes.length > 0) {
-          set(store.pendingQuotesByConvoId(activeConversationId), (prev) =>
+          jotaiStore.set(pendingQuotesByConvoId(activeConversationId), (prev) =>
             mergeRestagedQuotes(prev, droppedQuotes),
           );
         }
@@ -465,7 +466,7 @@ export default function useResumeOnLoad(
           prev.filter((steer) => !settled.has(steer.steerId)),
         );
       },
-    [],
+    [jotaiStore],
   );
   const setActiveGenerationCreatedAt = useRecoilCallback(
     ({ set }) =>
