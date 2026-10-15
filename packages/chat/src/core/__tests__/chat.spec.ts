@@ -2345,6 +2345,40 @@ describe('Chat', () => {
       expect(chat.pendingAction).toBeUndefined();
     });
 
+    it('sends no stop for a late start it cannot name', async () => {
+      let open: ((result: { status: 'stream'; stream: ChatStream }) => void) | undefined;
+      const late = createStream();
+      const { chat, transport, onError } = setup(
+        {
+          id: 'new',
+          prepareRequest: jest.fn(() => ({
+            payload: { endpoint: 'assistants', text: 'Hi' } as TPayload,
+            messages: [userMessage, placeholder],
+            responseMessageId: 'response-1',
+          })),
+        },
+        {
+          sendMessages: jest.fn(
+            () =>
+              new Promise<{ status: 'stream'; stream: ChatStream }>((resolve) => {
+                open = resolve;
+              }),
+          ),
+        },
+      );
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+
+      await expect(chat.stop()).resolves.toEqual({ status: 'unaddressable' });
+      open?.({ status: 'stream', stream: late });
+      await sent.catch(() => undefined);
+      await flush();
+
+      expect(late.closed()).toBe(true);
+      expect(transport.abort).not.toHaveBeenCalled();
+      expect(onError).not.toHaveBeenCalled();
+    });
+
     it('reports nothing to stop as idle', async () => {
       const { chat, transport } = setup();
 

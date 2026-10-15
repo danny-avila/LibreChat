@@ -704,17 +704,24 @@ export class Chat {
     }
     const { streamId, generationCreatedAt } = sent.stream;
     const target = {
+      endpoint: active.endpoint,
       streamId,
       generationCreatedAt,
       abortKey: streamId == null ? this.abortKey(active) : undefined,
     };
-    void this.abortOnServer({ endpoint: active.endpoint, ...target }).catch((error: unknown) =>
+    if (!this.isAddressable(target)) {
+      /** Nothing names it; the stop already reported it unaddressable to the caller. */
+      return;
+    }
+    void this.abortOnServer(target).catch((error: unknown) =>
       this.init.onError?.(error instanceof Error ? error : new Error(String(error))),
     );
   }
 
-  /** An Assistants run's stream ends without a final frame; the stop's answer carries it. */
-  /** `owns` is checked when the merge runs, so a turn that took over while it queued keeps its list. */
+  /**
+   * An Assistants run's stream ends without a final frame; the stop's answer carries it. `owns` is
+   * checked when the merge runs, so a turn that took over while it queued keeps its list.
+   */
   private mergeRunMessages(runMessages: TMessage[], owns: () => boolean): Promise<void> {
     return this.executor.run(() => {
       if (!owns()) {
