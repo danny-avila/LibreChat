@@ -24,6 +24,7 @@ const {
   getCodeFileLocation,
   getMissingCustomUserVars,
   buildWebSearchDynamicContext,
+  isStableContextEnabled,
   getCodeApiAuthHeaders,
   getReplayablePendingMCPOAuthStart,
   getMCPServerNamesFromTools,
@@ -1526,11 +1527,14 @@ async function loadToolDefinitionsWrapper({
   const hasExecuteCode = filteredTools.includes(Tools.execute_code);
 
   if (hasWebSearch) {
-    toolContextMap[Tools.web_search] = buildWebSearchContext();
-    dynamicToolContextMap[Tools.web_search] = buildWebSearchDynamicContext(
-      req.conversationCreatedAt ?? req.turnStartedAt ?? Date.now(),
-      req.body?.timezone,
-    );
+    const stableContext = isStableContextEnabled(req.config);
+    toolContextMap[Tools.web_search] = buildWebSearchContext(stableContext);
+    dynamicToolContextMap[Tools.web_search] = buildWebSearchDynamicContext({
+      turnStartedAt: req.turnStartedAt,
+      conversationStartedAt: req.conversationCreatedAt,
+      timezone: req.body?.timezone,
+      stableContext,
+    });
   }
 
   /**
