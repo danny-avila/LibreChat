@@ -1758,3 +1758,5 @@ endpoints:
 # ACL writes retry only conflicts on an individual document.
 # permissions:
 #   maxWriteAttempts: 3 # Integer 1-100, including the first attempt.
+#   leaseTtlMs: 30000 # Integer 1000-600000. Sharing updates on deployments without transactions hold a per-resource lease this long between renewals.
+#   leaseWaitMs: 3000 # Integer 0-60000. How long an update waits for a contended lease before answering 409.

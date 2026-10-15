@@ -5,7 +5,6 @@ import {
   upsertEntries,
   migrateIndex,
   clearIndex,
-  hasIndex,
   sumBranch,
   mergeUsage,
   setEntryUsage,
@@ -497,7 +496,7 @@ describe('token index', () => {
     buildIndex(Constants.NEW_CONVO, [msg('u1', Constants.NO_PARENT, true, 10)]);
     migrateIndex(Constants.NEW_CONVO, 'convo-2');
 
-    expect(hasIndex(Constants.NEW_CONVO)).toBe(false);
+    expect(sumBranch(Constants.NEW_CONVO, 'u1').input).toBe(0);
     expect(sumBranch('convo-2', 'u1').input).toBe(10);
   });
 });

@@ -27,8 +27,6 @@ export enum QueryKeys {
   reasoningCapabilities = 'reasoningCapabilities',
   presets = 'presets',
   searchResults = 'searchResults',
-  tokenCount = 'tokenCount',
-  availablePlugins = 'availablePlugins',
   startupConfig = 'startupConfig',
   insights = 'insights',
   insightsAccess = 'insightsAccess',

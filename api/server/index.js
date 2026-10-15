@@ -72,6 +72,7 @@ const {
   sweepOrphanedPreviews,
   getRoleByName,
   seedDatabase,
+  recordAuditEntry,
 } = require('~/models');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
 const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
@@ -139,6 +140,7 @@ const configureGenerationStreams = () => {
     cleanupOnComplete: !isEnabled(process.env.STREAM_KEEP_COMPLETED_JOBS),
   });
   GenerationJobManager.setApprovalExpiredHandler(recordExpiredScheduleApproval);
+  GenerationJobManager.setAdmissionGuard(agentEventMethods.isAgentTriggerPrincipalActive);
   GenerationJobManager.setTerminalHostActionHandler(
     createAgentEventTerminalHandler(agentEventMethods, {
       resumeDetachedAction: resumeAgentEventDetachedAction,
@@ -273,7 +275,12 @@ const startServer = async () => {
   });
   await runAsSystem(async () => {
     await performStartupChecks(appConfig);
-    await updateInterfacePermissions({ appConfig, getRoleByName, updateAccessPermissions });
+    await updateInterfacePermissions({
+      appConfig,
+      getRoleByName,
+      updateAccessPermissions,
+      recordAuditEntry,
+    });
   });
 
   /* Route modules build their rate limiters as they load, so they load only after the

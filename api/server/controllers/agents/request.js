@@ -101,7 +101,6 @@ const {
   claimAgentEventActorSuspension,
   settleAgentEventActorSuspension,
   stampConvoLastResponse,
-  isAgentTriggerPrincipalActive,
   isSubagentOwnerAdmissible,
   appendConvoMessageReference,
 } = require('~/models');
@@ -1756,18 +1755,8 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     req.turnStartedAt = jobCreatedAt;
     providerExecutionId = job.metadata?.providerExecutionId;
 
-    /** Authentication can precede a slow admission path. Recheck the durable
-     * account-deletion fence after the job is committed but before execution
-     * starts. This ordering closes both sides of the race for ordinary and
-     * trigger-scoped sessions: a fence that wins first rejects this run; a
-     * fence that starts after this read must observe the already-created job
-     * in account deletion's active-generation drain. */
-    if (!(await isAgentTriggerPrincipalActive(userId))) {
-      throw Object.assign(new Error('Account deletion is in progress'), {
-        code: 'ACCOUNT_DELETION_IN_PROGRESS',
-        status: 409,
-      });
-    }
+    /** Account-deletion admission is enforced inside `createJob`, after the job is committed, so a
+     * fence that wins first refuses this run and one that starts later finds the job in its drain. */
     if (req._agentEventBindingParentConversationId != null) {
       /** The generation job is the durable marker that a deletion on another replica
        * can abort. Recheck only after that marker exists: either the deletion fence

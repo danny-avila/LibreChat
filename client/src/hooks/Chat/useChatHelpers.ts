@@ -128,25 +128,6 @@ export default function useChatHelpers(index = 0, paramId?: string): ChatContrac
     [queryParam, queryClient],
   );
 
-  /* Conversation */
-  // const setActiveConvos = useSetRecoilState(store.activeConversations);
-
-  // const setConversation = useCallback(
-  //   (convoUpdate: TConversation) => {
-  //     _setConversation(prev => {
-  //       const { conversationId: convoId } = prev ?? { conversationId: null };
-  //       const { conversationId: currentId } = convoUpdate;
-  //       if (currentId && convoId && convoId !== 'new' && convoId !== currentId) {
-  //         // for now, we delete the prev convoId from activeConversations
-  //         const newActiveConvos = { [currentId]: true };
-  //         setActiveConvos(newActiveConvos);
-  //       }
-  //       return convoUpdate;
-  //     });
-  //   },
-  //   [_setConversation, setActiveConvos],
-  // );
-
   const setSubmission = useSetRecoilState(store.submissionByIndex(index));
 
   const { ask: _ask, regenerate: _regenerate } = useChatFunctions({

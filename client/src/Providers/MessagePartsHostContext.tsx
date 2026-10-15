@@ -9,6 +9,7 @@ import {
   useResetRecoilState,
   useSetRecoilState,
 } from 'recoil';
+import type { Agent } from 'librechat-data-provider';
 import type {
   MessagePartArtifactPanel,
   MessagePartsUserTextPreferences,
@@ -22,13 +23,20 @@ import {
   escalatingSteerFamily,
 } from '~/store/steer';
 import store, { ptcTraceByToolCallId, ptcTraceKey, sandboxStartingByToolCallId } from '~/store';
-import { useMessageContext, useFileMapContext } from '~/Providers';
+import { useMessageContext, useFileMapContext, useAgentsMapContext } from '~/Providers';
+import { getAppPartRenderers } from '~/components/Chat/Messages/Content/Parts/slots';
+import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
 import { showThinkingAtom } from '~/store/showThinking';
 import { fontSizeAtom } from '~/store/fontSize';
 
 function useAppMessage(): MessagePartMessage {
   const { messageId, isSubmitting, isLatestMessage, nextType } = useMessageContext();
   return { messageId, isSubmitting, isLatestMessage, nextType };
+}
+
+function useAppAgent(agentId: string): Agent | undefined {
+  const agentsMap = useAgentsMapContext();
+  return useMemo(() => agentsMap?.[agentId], [agentsMap, agentId]);
 }
 
 function useAppUserTextPreferences(): MessagePartsUserTextPreferences {
@@ -96,6 +104,10 @@ function useAppLiveAppliedSteer(steerId: string): [boolean, (steerId: string) =>
  */
 export const appMessagePartsHost: MessagePartsHost = {
   useMessage: useAppMessage,
+  renderMarkdown: (props) => getAppPartRenderers().renderMarkdown(props),
+  useSmoothStreaming,
+  useAgent: useAppAgent,
+  renderAgentIcon: (agent) => getAppPartRenderers().renderAgentIcon(agent),
   useFontSize: () => useAtomValue(fontSizeAtom),
   useShowThinking: () => useAtomValue(showThinkingAtom),
   useAutoExpandTools: () => useRecoilValue<boolean>(store.autoExpandTools),

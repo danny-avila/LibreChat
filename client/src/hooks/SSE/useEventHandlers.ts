@@ -689,7 +689,6 @@ export default function useEventHandlers({
     setMessages,
     getMessages,
     announcePolite,
-    setIsSubmitting,
     lastAnnouncementTimeRef,
     onSkillAuthoringComplete,
     onSubagentIndexChange,

@@ -23,11 +23,6 @@ import {
 } from '~/utils';
 import { useSetConvoContext } from '~/Providers/SetConvoContext';
 
-const submissionKeysAtom = atom<(string | number)[]>({
-  key: 'submissionKeys',
-  default: [],
-});
-
 const submissionByIndex = atomFamily<TSubmission | null, string | number>({
   key: 'submissionByIndex',
   default: null,
@@ -38,10 +33,6 @@ const submissionKeysSelector = selector<(string | number)[]>({
   get: ({ get }) => {
     const keys = get(conversationKeysAtom);
     return keys.filter((key) => get(submissionByIndex(key)) !== null);
-  },
-  set: ({ set }, newKeys) => {
-    logger.log('setting submissionKeysAtom', newKeys);
-    set(submissionKeysAtom, newKeys);
   },
 });
 
@@ -125,14 +116,6 @@ const conversationKeysAtom = atom<(string | number)[]>({
   default: [],
 });
 
-const allConversationsSelector = selector({
-  key: 'allConversationsSelector',
-  get: ({ get }) => {
-    const keys = get(conversationKeysAtom);
-    return keys.map((key) => get(conversationByIndex(key))).map((convo) => convo?.conversationId);
-  },
-});
-
 const conversationIdByIndex = selectorFamily<string | null, string | number>({
   key: 'conversationIdByIndex',
   get:
@@ -195,11 +178,6 @@ const conversationAssistantIdByIndex = selectorFamily<string | null, string | nu
 const presetByIndex = atomFamily<TPreset | null, string | number>({
   key: 'presetByIndex',
   default: null,
-});
-
-const textByIndex = atomFamily<string, string | number>({
-  key: 'textByIndex',
-  default: '',
 });
 
 const isSubmittingFamily = atomFamily({
@@ -431,7 +409,7 @@ const conversationByKeySelector = conversationByIndex;
 
 function useClearSubmissionState() {
   const clearAllSubmissions = useRecoilCallback(
-    ({ reset, set, snapshot }) =>
+    ({ reset, snapshot }) =>
       async (skipFirst?: boolean) => {
         const submissionKeys = await snapshot.getPromise(submissionKeysSelector);
         logger.log('submissionKeys', submissionKeys);
@@ -444,8 +422,6 @@ function useClearSubmissionState() {
           logger.log('resetting submission', key);
           reset(submissionByIndex(key));
         }
-
-        set(submissionKeysSelector, []);
       },
     [],
   );
@@ -484,12 +460,10 @@ export default {
   filesByIndex,
   presetByIndex,
   submissionByIndex,
-  textByIndex,
   isSubmittingFamily,
   optionSettingsFamily,
   showPopoverFamily,
   anySubmittingSelector,
-  allConversationsSelector,
   conversationIdByIndex,
   conversationEndpointByIndex,
   effectiveEndpointByIndex,
