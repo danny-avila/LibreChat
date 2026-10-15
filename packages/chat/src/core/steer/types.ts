@@ -174,3 +174,14 @@ export type DetachedRun = {
  *  must not be resolved as detached and drain the queue. Only a different run resets it, so a
  *  stopped run the user leaves, reattaches to and leaves again stays stopped. */
 export type StoppedRun = { generationCreatedAt: number };
+
+/** Composer state consumed into a queued item alongside the text. */
+export interface QueuedMessageContext {
+  quotes?: string[];
+  manualSkills?: string[];
+  reasoningOverride?: TMessage['reasoningOverride'];
+  clientRequestId?: string;
+  recoverySteerId?: string;
+  expectedPredecessorCreatedAt?: number;
+  queuedMessageOrigin?: QueuedMessageOrigin;
+}

@@ -1,18 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { v4 } from 'uuid';
+import { useAtomValue, useStore } from 'jotai';
 import { useToastContext } from '@librechat/client';
-import { useAtomValue, useSetAtom, useStore } from 'jotai';
 import { useRecoilValue, useRecoilCallback } from 'recoil';
 import { hasQueuedIntent, acquireQueueSendLock, releaseQueueSendLock } from '@librechat/chat';
 import {
   Constants,
   isAgentsEndpoint,
   isAssistantsEndpoint,
-  DEFAULT_QUEUED_TURN_RECONCILIATION_TIMEOUT_MS,
   DEFAULT_QUEUED_SEND_LOCK_TIMEOUT_MS,
 } from 'librechat-data-provider';
 import {
-  isSameRunEpoch,
   hasLiveRunPause,
   getSteerErrorCode,
   isSteerRunReplaced,
@@ -21,14 +19,11 @@ import {
   QUEUE_USAGE_MAX_FILES,
   selectLiveMessageState,
   isDefiniteSteerRejection,
-  reconcileServerQueuedTurns,
-  mergeSettledQueuedTurnEvidence,
 } from '@librechat/chat';
-import type { QueueSendLock, SubmitSteerOptions, QueuedTurnReceiptSource } from '@librechat/chat';
+import type { QueueSendLock, SubmitSteerOptions, QueuedMessageContext } from '@librechat/chat';
 import type { TMessage, TConversation, CodeEnvironmentMode } from 'librechat-data-provider';
 import type { CallbackInterface } from 'recoil';
-import type { RunEnd, QueuedMessage, QueuedMessageOrigin } from '~/hooks/Chat/queue';
-import type { AgentQueuedTurnReceipt } from '~/data-provider';
+import type { QueuedMessage, QueuedMessageOrigin } from '~/hooks/Chat/queue';
 import type { ExtendedFile, FileSetter } from '~/common';
 import type { PendingSteer } from '~/hooks/Chat/queue';
 import type { DuringRunAction } from './contract';
@@ -36,7 +31,6 @@ import {
   useCancelSteerMutation,
   useSteerMessageMutation,
   useMarkFilesUsageMutation,
-  useAgentQueuedTurns,
   useCancelAgentQueuedTurnMutation,
   useEnqueueAgentQueuedTurnMutation,
   isDefiniteQueuedTurnRejection,
@@ -44,54 +38,33 @@ import {
   supportsGenerationProtocolV2,
 } from '~/data-provider';
 import {
-  settledQueuedTurnReceiptsByConvoId,
-  pendingQueuedTurnEnqueueIdsByConvoId,
-  pendingRunEndByConvoId,
-  queuedMessagesByConvoId,
-  drainAfterAbortByIndex,
-  runEndByIndex,
-} from '~/hooks/Chat/queue';
-import {
   recoveryDispositionsFamily,
   recoveryDisposition,
   canRestoreRecovery,
   blockRecovery,
 } from '~/components/Chat/Steering/recovery';
 import {
-  appendAppliedSteerIds,
-  carriedSteerContext,
-  insertQueuedOrigin,
-  mergeRestagedQuotes,
-} from '~/utils';
-import {
   getReasoningStateKey,
   pendingReasoningOverrideFamily,
 } from '~/components/Chat/Input/Composer/state';
+import { pendingQueuedTurnEnqueueIdsByConvoId, queuedMessagesByConvoId } from '~/hooks/Chat/queue';
 import { revealedQueuedTurnFamily, pendingSteerCancelClientIdsFamily } from '~/store/steer';
+import { appendAppliedSteerIds, carriedSteerContext, mergeRestagedQuotes } from '~/utils';
 import { useChatSettings } from '~/Providers/ChatSettingsContext';
 import useCodeApprovalMode from '../Agents/useCodeApprovalMode';
-import { markComposerFilesTaken } from '~/utils/composerFiles';
 import { useSteerRehome } from '~/hooks/Chat/useSteerCancel';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
+import useQueuedTurnReceipts from './steering/receipts';
 import { useLatestMessage } from '~/hooks/Messages';
 import { insertQueuedMessage } from '~/utils/queue';
-import { useSetFilesToDelete } from '~/hooks/Files';
-import { useFileMapContext } from '~/Providers';
+import useComposerTake from './steering/composer';
 import useLocalize from '~/hooks/useLocalize';
+import useQueueRows from './steering/rows';
 import store from '~/store';
 
 export type { DuringRunAction };
 
-/** Composer state consumed into a queued item alongside the text. */
-export interface QueuedMessageContext {
-  quotes?: string[];
-  manualSkills?: string[];
-  reasoningOverride?: TMessage['reasoningOverride'];
-  clientRequestId?: string;
-  recoverySteerId?: string;
-  expectedPredecessorCreatedAt?: number;
-  queuedMessageOrigin?: QueuedMessageOrigin;
-}
+export type { QueuedMessageContext } from '@librechat/chat';
 
 export {
   getSteerErrorCode,
@@ -215,11 +188,8 @@ export default function useSteering({
   const localize = useLocalize();
   const composerDisabledRef = useRef(composerDisabled);
   composerDisabledRef.current = composerDisabled;
-  const reasoningStore = useStore();
   const { showToast } = useToastContext();
   const jotaiStore = useStore();
-  const fileMap = useFileMapContext();
-  const setFilesToDelete = useSetFilesToDelete();
   const convertSteersToQueued = useSteerConvert();
   /* The single boundary a steer's words return through, wherever the cancel
      that reclaimed them was decided. */
@@ -251,66 +221,13 @@ export default function useSteering({
   const enabled = steerable && index === 0;
   const queueKey = hasRealConvoId ? conversationId : Constants.NEW_CONVO;
   const reasoningStateKey = getReasoningStateKey(conversationId, index);
-  const queuedMessages = useAtomValue(queuedMessagesByConvoId(queueKey));
-  const pendingReasoningOverride = useAtomValue(pendingReasoningOverrideFamily(reasoningStateKey));
-  const setQueuedMessages = useSetAtom(queuedMessagesByConvoId(queueKey));
-  /** Bound transport-outcome reconciliation while still guaranteeing several
-   * list reads after the enqueue promise settles. Focus/remount remains a later
-   * reconciliation path; a slow proxy or a delayed read replica needs the
-   * operator to widen this rather than wait for one. */
-  const reconciliationWindowMs =
-    config.queuedTurnReconciliationTimeoutMs ?? DEFAULT_QUEUED_TURN_RECONCILIATION_TIMEOUT_MS;
   const sendLockTimeoutMs = config.queuedSendLockTimeoutMs ?? DEFAULT_QUEUED_SEND_LOCK_TIMEOUT_MS;
-  const knownClientRequestIds = useMemo(
-    () =>
-      Array.from(
-        new Set(
-          queuedMessages.flatMap((item) =>
-            item.server != null && item.clientRequestId != null ? [item.clientRequestId] : [],
-          ),
-        ),
-      ).slice(0, 100),
-    [queuedMessages],
-  );
-  const reconciliationUntil = queuedMessages.reduce<number | undefined>((latest, item) => {
-    if (item.server?.status !== 'uncertain' || item.server.uncertainSince == null) {
-      return latest;
-    }
-    const until = item.server.uncertainSince + reconciliationWindowMs;
-    return latest == null ? until : Math.max(latest, until);
-  }, undefined);
-  const nextReconciliationExpiry = queuedMessages.reduce<number | undefined>((earliest, item) => {
-    if (
-      item.server?.status !== 'uncertain' ||
-      item.server.uncertainSince == null ||
-      item.server.reconciliationExpired === true
-    ) {
-      return earliest;
-    }
-    const expiry = item.server.uncertainSince + reconciliationWindowMs;
-    return earliest == null ? expiry : Math.min(earliest, expiry);
-  }, undefined);
-  /** An expired uncertain row is held for manual recovery only; nothing the
-   *  projection can say about it is still expected. */
-  const expectsReceipts = useMemo(
-    () =>
-      queuedMessages.some(
-        (item) =>
-          item.server != null &&
-          (item.server.status === 'sending' ||
-            item.server.status === 'queued' ||
-            item.server.status === 'claimed' ||
-            (item.server.status === 'uncertain' && item.server.reconciliationExpired !== true)),
-      ),
-    [queuedMessages],
-  );
-  const { data: serverQueuedTurns } = useAgentQueuedTurns(
+  const pendingReasoningOverride = useAtomValue(pendingReasoningOverrideFamily(reasoningStateKey));
+  const { applyQueuedTurnReceipts, finishQueuedTurnEnqueue } = useQueuedTurnReceipts({
     conversationId,
+    queueKey,
     serverQueueEnabled,
-    knownClientRequestIds,
-    reconciliationUntil,
-    expectsReceipts,
-  );
+  });
   /** Retain admission ownership through history hydration and stream attach;
    * ordinary sends must not overtake the server-owned successor. */
   const pendingReveal = useAtomValue(revealedQueuedTurnFamily(queueKey));
@@ -322,119 +239,11 @@ export default function useSteering({
     store.activeGenerationProtocolVersionByConvoId(queueKey),
   );
 
-  const applyQueuedTurnReceipts = useCallback(
-    (receipts: AgentQueuedTurnReceipt[], source: QueuedTurnReceiptSource = 'snapshot') => {
-      const previousSettled = jotaiStore.get(settledQueuedTurnReceiptsByConvoId(queueKey));
-      const previousPending = jotaiStore.get(pendingQueuedTurnEnqueueIdsByConvoId(queueKey));
-      const completedRequestIds = new Set(
-        source === 'enqueue' ? receipts.map((receipt) => receipt.clientRequestId) : [],
-      );
-      const nextPending = previousPending.filter((id) => !completedRequestIds.has(id));
-      const settledByRequestId = new Map(
-        previousSettled.map((receipt) => [receipt.clientRequestId, receipt]),
-      );
-      for (const receipt of receipts) {
-        const existing = settledByRequestId.get(receipt.clientRequestId);
-        const settled = mergeSettledQueuedTurnEvidence(existing, receipt, source);
-        if (settled == null) {
-          continue;
-        }
-        settledByRequestId.set(receipt.clientRequestId, settled);
-      }
-      const terminalForReconciliation = new Map(settledByRequestId);
-      const pendingRequestIds = new Set(nextPending);
-      const nextSettled = [...settledByRequestId.values()].filter(
-        (receipt) =>
-          (receipt.status === 'admitted' &&
-            receipt.rootPredecessor !== true &&
-            receipt.boundaryConsumed !== true) ||
-          pendingRequestIds.has(receipt.clientRequestId),
-      );
-      if (source === 'enqueue') {
-        jotaiStore.set(pendingQueuedTurnEnqueueIdsByConvoId(queueKey), nextPending);
-      }
-      if (
-        nextSettled.length !== previousSettled.length ||
-        nextSettled.some((receipt, index) => receipt !== previousSettled[index])
-      ) {
-        jotaiStore.set(settledQueuedTurnReceiptsByConvoId(queueKey), nextSettled);
-      }
-      if (source !== 'direct') {
-        jotaiStore.set(queuedMessagesByConvoId(queueKey), (previous) =>
-          reconcileServerQueuedTurns(
-            previous,
-            receipts,
-            terminalForReconciliation,
-            source === 'snapshot',
-            fileMap,
-          ),
-        );
-      }
-    },
-    [fileMap, queueKey, jotaiStore],
-  );
-
-  const finishQueuedTurnEnqueue = useCallback(
-    (clientRequestId: string): boolean => {
-      const settledReceipts = jotaiStore.get(settledQueuedTurnReceiptsByConvoId(queueKey));
-      const settled = settledReceipts.find(
-        (receipt) => receipt.clientRequestId === clientRequestId,
-      );
-      jotaiStore.set(pendingQueuedTurnEnqueueIdsByConvoId(queueKey), (previous) =>
-        previous.filter((id) => id !== clientRequestId),
-      );
-      if (settled != null && (settled.status !== 'admitted' || settled.boundaryConsumed === true)) {
-        jotaiStore.set(settledQueuedTurnReceiptsByConvoId(queueKey), (previous) =>
-          previous.filter((receipt) => receipt.clientRequestId !== clientRequestId),
-        );
-      }
-      return settled != null;
-    },
-    [queueKey, jotaiStore],
-  );
-
-  useEffect(() => {
-    if (!serverQueueEnabled || serverQueuedTurns == null) {
-      return;
-    }
-    applyQueuedTurnReceipts(serverQueuedTurns);
-  }, [serverQueueEnabled, serverQueuedTurns, applyQueuedTurnReceipts]);
-  useEffect(() => {
-    if (!serverQueueEnabled || nextReconciliationExpiry == null) {
-      return;
-    }
-    const expire = () => {
-      const observedAt = Date.now();
-      setQueuedMessages((previous) =>
-        previous.map((item) => {
-          if (
-            item.server?.status !== 'uncertain' ||
-            item.server.uncertainSince == null ||
-            item.server.reconciliationExpired === true ||
-            item.server.uncertainSince + reconciliationWindowMs > observedAt
-          ) {
-            return item;
-          }
-          return {
-            ...item,
-            server: { ...item.server, reconciliationExpired: true },
-          };
-        }),
-      );
-    };
-    const delay = Math.max(0, nextReconciliationExpiry - Date.now());
-    const timer = window.setTimeout(expire, delay);
-    return () => window.clearTimeout(timer);
-  }, [nextReconciliationExpiry, reconciliationWindowMs, serverQueueEnabled, setQueuedMessages]);
   /** The start POST installs this epoch before any live mutation may be sent.
    * `isSubmitting` flips earlier so the user can keep typing; during that
    * bounded interval submits degrade to the local queue and Stop/steer refuse. */
   const canControlGeneration = activeGenerationCreatedAt != null;
   const duringRunActive = enabled && (isSubmitting || revealPending) && !answerModeActive;
-  /** Queue rows can be sent concurrently. Keep their captured origins while
-   *  absent so a later capture still sees the complete logical queue. Origins
-   *  are isolated per conversation because this hook survives navigation. */
-  const queuedOriginsRef = useRef<Map<string, Map<string, QueuedMessageOrigin>>>(new Map());
   /** First-party FIFO admission: validation inside the steer route can await
    * agent ACL and attachment reads, so overlapping POSTs could otherwise reach
    * the durable queue out of submission order. Keep one request in flight per
@@ -519,30 +328,28 @@ export default function useSteering({
     [isSubmitting, sendLockKey, queueKey],
   );
 
-  /** Keep logical queue origins through the 202 ACK. They are needed to
-   * reconstruct FIFO if several accepted queue items later return as terminal
-   * leftovers. Once no live/failed chip references an origin, application or
-   * conversion has settled it and the reconstruction entry can be released. */
-  useEffect(() => {
-    const origins = queuedOriginsRef.current.get(queueKey);
-    if (origins == null) {
-      return;
-    }
-    const referenced = new Set(
-      pendingSteers.flatMap((steer) =>
-        steer.queuedOrigin != null ? [steer.queuedOrigin.item.id] : [],
-      ),
-    );
-    for (const originId of origins.keys()) {
-      if (!referenced.has(originId)) {
-        origins.delete(originId);
-      }
-    }
-    if (origins.size === 0) {
-      queuedOriginsRef.current.delete(queueKey);
-    }
-  }, [pendingSteers, queueKey]);
-
+  const {
+    updateQueuedMessage,
+    removeQueued,
+    holdQueued,
+    toggleQueuedHold,
+    downgradeServerQueuedTurn,
+    reorderQueued,
+    restoreQueuedOrder,
+    takeQueued,
+    releaseQueuedOrigin,
+    registerQueuedOrigin,
+    restoreQueued,
+    rewakeDrain,
+    armDrainAfterAbort,
+  } = useQueueRows({
+    index,
+    queueKey,
+    conversationId,
+    isSubmitting,
+    pendingSteers,
+    activeGenerationCreatedAt,
+  });
   /** Capture a durable branch anchor into a server queued turn. Optimistic
    * assistant placeholders are siblings of their eventual persisted response,
    * so they anchor through their stable user parent. */
@@ -569,28 +376,6 @@ export default function useSteering({
   isSubmittingRef.current = isSubmitting;
   const visibleConversationRef = useRef(conversationId);
   visibleConversationRef.current = conversationId;
-
-  /**
-   * The most recent run end seen for a conversation: either the live one for
-   * this pane's index, or the copy parked under the conversation when the run
-   * ended while the user was looking elsewhere.
-   *
-   * Keyed by conversation because this hook is REUSED across chats: a single
-   * slot would answer for whichever chat is on screen when the reclaim lands,
-   * not the one the words belong to. An entry is dropped once that conversation
-   * starts another run; an older end no longer describes what is happening.
-   */
-  const runEnd = useAtomValue(runEndByIndex(index));
-  const parkedRunEnd = useAtomValue(pendingRunEndByConvoId(queueKey));
-  const runEndsRef = useRef<Map<string, RunEnd>>(new Map());
-  const observedRunEnd = [runEnd, parkedRunEnd].find(
-    (end) => end != null && end.conversationId === conversationId,
-  );
-  if (observedRunEnd != null) {
-    runEndsRef.current.set(conversationId, observedRunEnd);
-  } else if (isSubmitting) {
-    runEndsRef.current.delete(conversationId);
-  }
 
   const upsertSteerChip = useRecoilCallback(
     ({ set }) =>
@@ -719,21 +504,6 @@ export default function useSteering({
       }
     },
     [markFilesUsage],
-  );
-
-  const updateQueuedMessage = useCallback(
-    (id: string, update: (item: QueuedMessage) => QueuedMessage | null) => {
-      jotaiStore.set(queuedMessagesByConvoId(queueKey), (previous) =>
-        previous.flatMap((item) => {
-          if (item.id !== id) {
-            return [item];
-          }
-          const next = update(item);
-          return next == null ? [] : [next];
-        }),
-      );
-    },
-    [queueKey, jotaiStore],
   );
 
   const enqueue = useCallback(
@@ -905,102 +675,12 @@ export default function useSteering({
     ],
   );
 
-  /** Consumes completed composer attachments into message file refs (clearing
-   *  the composer) so they pair with THIS queued message instead of gluing
-   *  onto whatever `ask` vacuums up next.
-   *
-   *  Cleared by id through a FUNCTIONAL update, never by assigning an empty
-   *  map: uploads dispatch their own functional updates, so a flat overwrite
-   *  drops an attachment the user started after this read, and the upload's
-   *  next callback puts it back on top of the emptied map. Removing exactly
-   *  the ids taken leaves any newer upload alone, and marking them consumed
-   *  stops a late callback for one of THESE files resurrecting it. */
-  const takeComposerFiles = useCallback((): TMessage['files'] => {
-    if (files == null || files.size === 0 || setFiles == null) {
-      return undefined;
-    }
-    const staged = Array.from(files.values());
-    // Completed uploads keep their temporary map key after receiving a server id.
-    const takenIds = Array.from(files.entries()).flatMap(([key, file]) => [
-      key,
-      file.file_id,
-      ...(file.temp_file_id ? [file.temp_file_id] : []),
-    ]);
-    const taken = staged.map((file) => ({
-      file_id: file.file_id,
-      filepath: file.filepath,
-      type: file.type ?? '',
-      height: file.height,
-      width: file.width,
-      // Retained beyond the submission shape so "Edit message" can restore
-      // the attachment into the composer with its real name and size.
-      filename: file.filename,
-      bytes: file.size,
-      llmDeliveryPath: file.llmDeliveryPath,
-    }));
-    markComposerFilesTaken(takenIds);
-    setFiles((previous) => {
-      const remaining = new Map(previous);
-      for (const id of takenIds) {
-        remaining.delete(id);
-      }
-      return remaining;
-    });
-    setFilesToDelete({});
-    return taken;
-  }, [files, setFiles, setFilesToDelete]);
-
-  /** Consumes staged quote chips + manual skill picks (mirroring `ask()`'s
-   *  fresh-submit drain of the same atoms) so they pair with THIS queued
-   *  message instead of gluing onto whatever the user sends next. */
-  const takeComposerContext = useRecoilCallback(
-    ({ snapshot, reset }) =>
-      (): QueuedMessageContext => {
-        const quotes = snapshot
-          .getLoadable(store.pendingQuotesByConvoId(conversationId))
-          .getValue();
-        const manualSkills = snapshot
-          .getLoadable(store.pendingManualSkillsByConvoId(conversationId))
-          .getValue();
-        const reasoningOverride = reasoningStore.get(
-          pendingReasoningOverrideFamily(reasoningStateKey),
-        );
-        if (quotes.length > 0) {
-          reset(store.pendingQuotesByConvoId(conversationId));
-        }
-        if (manualSkills.length > 0) {
-          reset(store.pendingManualSkillsByConvoId(conversationId));
-        }
-        if (reasoningOverride != null) {
-          reasoningStore.set(pendingReasoningOverrideFamily(reasoningStateKey), undefined);
-        }
-        return {
-          ...(quotes.length > 0 && { quotes }),
-          ...(manualSkills.length > 0 && { manualSkills }),
-          ...(reasoningOverride != null && { reasoningOverride }),
-        };
-      },
-    [conversationId, reasoningStateKey, reasoningStore],
-  );
-
-  /** Quotes-only drain for composer-origin steers: the excerpts ride the steer
-   *  POST into the live run, while manual skill picks stay staged — a skill
-   *  pick configures a NEW turn's agent run and cannot apply to a mid-run
-   *  injection, so it keeps waiting for the next full submission. */
-  const takeComposerQuotes = useRecoilCallback(
-    ({ snapshot, reset }) =>
-      (): QueuedMessageContext => {
-        const quotes = snapshot
-          .getLoadable(store.pendingQuotesByConvoId(conversationId))
-          .getValue();
-        if (quotes.length === 0) {
-          return {};
-        }
-        reset(store.pendingQuotesByConvoId(conversationId));
-        return { quotes };
-      },
-    [conversationId],
-  );
+  const { takeComposerFiles, takeComposerContext, takeComposerQuotes } = useComposerTake({
+    conversationId,
+    reasoningStateKey,
+    files,
+    setFiles,
+  });
 
   /** Returns rejected excerpts to the composer chips from the SURVIVING steer
    *  chip — used ONLY for a settled receipt replay, where the steer already
@@ -1047,118 +727,6 @@ export default function useSteering({
         });
       },
     [],
-  );
-
-  /* The draft consumer is the host's (`useAutoSave`'s `consumeDraft`, threaded
-     in as `takeComposerDraft`): the composer clears via the form's `reset()`,
-     which is programmatic and never fires the `input` event `useAutoSave`
-     listens on, so the draft would otherwise outlive the submit and run end
-     would restore text the user already sent. Only autosave knows whether this
-     composer is parked on the pane's pending key or on the conversation key, so
-     the clear belongs there rather than being recomputed here. */
-  const removeQueued = useCallback(
-    (id: string) => {
-      jotaiStore.set(queuedMessagesByConvoId(queueKey), (prev) =>
-        prev.filter((item) => item.id !== id),
-      );
-    },
-    [queueKey, jotaiStore],
-  );
-
-  /** Keeps a row in the queue but out of the run-end drain, for words that
-   *  already reached the composer while their parked copy could not be let go. */
-  const holdQueued = useCallback(
-    (id: string) => updateQueuedMessage(id, (item) => ({ ...item, needsExplicitSend: true })),
-    [updateQueuedMessage],
-  );
-
-  /** The user's own hold on a local row: out of the run-end drain until released.
-   *  A hold that came from a rejected steer is not the user's to release. */
-  const toggleQueuedHold = useCallback(
-    (id: string, held: boolean) =>
-      updateQueuedMessage(id, (item) => {
-        if (held) {
-          return { ...item, needsExplicitSend: true, heldByUser: true };
-        }
-        if (item.heldByUser !== true) {
-          return item;
-        }
-        const { needsExplicitSend: _held, heldByUser: _byUser, ...rest } = item;
-        return rest;
-      }),
-    [updateQueuedMessage],
-  );
-
-  const downgradeServerQueuedTurn = useCallback(
-    (id: string): boolean => {
-      const queue = jotaiStore.get(queuedMessagesByConvoId(queueKey));
-      let found = false;
-      const next = queue.map((item) => {
-        if (item.id !== id) {
-          return item;
-        }
-        found = true;
-        const { server: _server, parentMessageId: _parentMessageId, ...local } = item;
-        return local;
-      });
-      if (found) {
-        jotaiStore.set(queuedMessagesByConvoId(queueKey), next);
-      }
-      return found;
-    },
-    [queueKey, jotaiStore],
-  );
-
-  /**
-   * Moves a queued message to another place in the queue. The drain always
-   * takes the head, so the order of this list is the order the messages will be
-   * sent in: reordering it is the only way to change which one goes next
-   * without sending or deleting anything.
-   *
-   * Addressed by id rather than by the index the caller is holding, which a
-   * drain can invalidate between the drag starting and the drop landing.
-   */
-  const reorderQueued = useCallback(
-    (id: string, targetIndex: number) => {
-      jotaiStore.set(queuedMessagesByConvoId(queueKey), (prev) => {
-        const from = prev.findIndex((item) => item.id === id);
-        const to = Math.min(Math.max(targetIndex, 0), prev.length - 1);
-        if (from === -1 || from === to) {
-          return prev;
-        }
-        const next = prev.slice();
-        const [moved] = next.splice(from, 1);
-        next.splice(to, 0, moved);
-        return next;
-      });
-    },
-    [queueKey, jotaiStore],
-  );
-
-  /**
-   * Puts the queue back in a remembered order, for a drag the user abandoned.
-   * Ids that have since drained are skipped rather than resurrected, and
-   * anything queued mid-drag keeps its place at the back.
-   */
-  const restoreQueuedOrder = useCallback(
-    (ids: readonly string[]) => {
-      jotaiStore.set(queuedMessagesByConvoId(queueKey), (prev) => {
-        const byId = new Map(prev.map((item) => [item.id, item]));
-        const restored: QueuedMessage[] = [];
-        for (const id of ids) {
-          const item = byId.get(id);
-          if (item != null) {
-            restored.push(item);
-            byId.delete(id);
-          }
-        }
-        if (restored.length === 0) {
-          return prev;
-        }
-        return [...restored, ...byId.values()];
-      });
-    },
-    [queueKey, jotaiStore],
   );
 
   /** Settle a queued row's terminal recovery source before an Edit/Remove.
@@ -1295,119 +863,6 @@ export default function useSteering({
     [jotaiStore, queueKey, removeQueued],
   );
 
-  /** Capture-then-remove, including the item's neighbours, so any refused send
-   *  or rejected steer can restore the ORIGINAL item in place even if the run
-   *  drains an adjacent entry while the request is in flight. */
-  const takeQueued = useCallback(
-    (id: string): QueuedMessageOrigin | undefined => {
-      const queue = jotaiStore.get(queuedMessagesByConvoId(queueKey));
-      const index = queue.findIndex((item) => item.id === id);
-      if (index < 0) {
-        return undefined;
-      }
-      const item = queue[index];
-      let queuedOrigins = queuedOriginsRef.current.get(queueKey);
-      if (queuedOrigins == null) {
-        queuedOrigins = new Map();
-        queuedOriginsRef.current.set(queueKey, queuedOrigins);
-      }
-      let logicalQueue = queue;
-      for (const pendingOrigin of queuedOrigins.values()) {
-        logicalQueue = insertQueuedOrigin(logicalQueue, pendingOrigin);
-      }
-      const logicalIndex = logicalQueue.findIndex((queued) => queued.id === id);
-      const origin = {
-        item,
-        beforeIds: logicalQueue.slice(0, logicalIndex).map((queued) => queued.id),
-        afterIds: logicalQueue.slice(logicalIndex + 1).map((queued) => queued.id),
-      };
-      queuedOrigins.set(id, origin);
-      jotaiStore.set(queuedMessagesByConvoId(queueKey), (prev) =>
-        prev.filter((item) => item.id !== id),
-      );
-      return origin;
-    },
-    [queueKey, jotaiStore],
-  );
-
-  const releaseQueuedOrigin = useCallback(
-    (origin: QueuedMessageOrigin) => {
-      const queuedOrigins = queuedOriginsRef.current.get(queueKey);
-      queuedOrigins?.delete(origin.item.id);
-      if (queuedOrigins?.size === 0) {
-        queuedOriginsRef.current.delete(queueKey);
-      }
-    },
-    [queueKey],
-  );
-
-  const registerQueuedOrigin = useCallback(
-    (origin: QueuedMessageOrigin) => {
-      let queuedOrigins = queuedOriginsRef.current.get(queueKey);
-      if (queuedOrigins == null) {
-        queuedOrigins = new Map();
-        queuedOriginsRef.current.set(queueKey, queuedOrigins);
-      }
-      queuedOrigins.set(origin.item.id, origin);
-    },
-    [queueKey],
-  );
-
-  /** Restore the exact item between its nearest surviving original neighbours,
-   *  never duplicated. If every neighbour disappeared, newly front-prioritized
-   *  entries stay ahead while ordinary entries created later stay behind. */
-  const restoreQueued = useCallback(
-    (origin: QueuedMessageOrigin) => {
-      releaseQueuedOrigin(origin);
-      jotaiStore.set(queuedMessagesByConvoId(queueKey), (prev) =>
-        canRestoreRecovery(jotaiStore.get(recoveryDispositionsFamily(queueKey)), origin.item)
-          ? insertQueuedOrigin(prev, origin)
-          : prev,
-      );
-    },
-    [queueKey, releaseQueuedOrigin, jotaiStore],
-  );
-
-  /**
-   * Re-posts a spent run-end signal so the drain wakes and reconsiders the
-   * queue. No-op while a signal for THIS conversation is still armed: that
-   * drain has not run yet and will see the item on its own, so arming a second
-   * carrier would drain twice and send two messages.
-   *
-   * A signal for a DIFFERENT conversation is not that proof. The index slot is
-   * shared, and the drain parks a foreign signal under its own conversation and
-   * then only inspects the active one's queue; this item would never be looked
-   * at. Park ours alongside it.
-   */
-  const rearmDrain = useCallback(
-    (convoId: string, end: RunEnd) => {
-      const indexArmed = jotaiStore.get(runEndByIndex(index));
-      const parkedArmed = jotaiStore.get(pendingRunEndByConvoId(convoId));
-      if (isSameRunEpoch(indexArmed, end) || isSameRunEpoch(parkedArmed, end)) {
-        return;
-      }
-      jotaiStore.set(pendingRunEndByConvoId(convoId), end);
-    },
-    [index, jotaiStore],
-  );
-
-  /**
-   * Re-post the last completion this conversation saw, for the callers that put
-   * words back into the queue after a round-trip. The drain's signal is
-   * one-shot and may well have been spent while that round-trip was in flight,
-   * on a queue where every row was either absent or spoken for. Only a clean
-   * completion counts: an aborted or errored run never drains.
-   */
-  const rewakeDrain = useCallback(
-    (convoId: string) => {
-      const lastRunEnd = runEndsRef.current.get(convoId);
-      if (lastRunEnd?.outcome === 'completed') {
-        rearmDrain(convoId, lastRunEnd);
-      }
-    },
-    [rearmDrain],
-  );
-
   /** Restore a server-owned steer as the same queued follow-up and wake a
    * drain whose one-shot completion signal may already have been consumed
    * while the recovery request was in flight. Shared by reclaim and durable
@@ -1439,16 +894,6 @@ export default function useSteering({
     },
     [conversationId, convertSteersToQueued, rewakeDrain],
   );
-
-  const armDrainAfterAbort = useCallback(() => {
-    if (activeGenerationCreatedAt == null) {
-      return;
-    }
-    jotaiStore.set(drainAfterAbortByIndex(index), {
-      conversationId: queueKey,
-      generationCreatedAt: activeGenerationCreatedAt,
-    });
-  }, [index, queueKey, activeGenerationCreatedAt, jotaiStore]);
 
   /** POSTs a steer (text + files + quotes; the server merges the quotes into
    *  the model-bound turn at the injection boundary). `context` doubles as the
