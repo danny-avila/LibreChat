@@ -1,7 +1,7 @@
 import { useStore } from 'jotai';
 import { useRecoilCallback } from 'recoil';
 import { Constants } from 'librechat-data-provider';
-import { isSubmittingFamily } from '@librechat/chat/react';
+import { isSubmittingFamily, useClearSubmissions } from '@librechat/chat/react';
 import {
   abortScrollFamily,
   showStopButtonByIndex,
@@ -20,7 +20,7 @@ import store from '~/store';
 
 export default function useClearStates() {
   const clearConversations = store.useClearConvoState();
-  const clearSubmissions = store.useClearSubmissionState();
+  const clearSubmissions = useClearSubmissions();
   const jotaiStore = useStore();
 
   const clearStates = useRecoilCallback(

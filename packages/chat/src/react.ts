@@ -51,12 +51,16 @@ export {
   clearPendingReasoningOverrides,
 } from './react/composer';
 export {
+  submissionByIndex,
+  clearSubmissions,
+  useSubmission,
+  useClearSubmissions,
   isSubmittingFamily,
   anySubmittingAtom,
   resetSubmitting,
   useIsSubmitting,
 } from './react/submission';
-export type { PaneIndex } from './react/submission';
+export type { PaneIndex, SubmissionAtom } from './react/submission';
 export {
   submissionStartFamily,
   showStopButtonByIndex,
