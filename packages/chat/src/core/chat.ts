@@ -174,6 +174,8 @@ type DetachedGeneration = {
   target: Omit<ChatAbortRequest, 'chatId'>;
   /** The response the dropped request was producing, which a settled stop reports. */
   responseId?: string;
+  /** The conversation the dropped request's payload or sync frame named. */
+  conversationId?: string;
 };
 
 type ActiveRequest = {
@@ -507,7 +509,10 @@ export class Chat {
     const dropped = this.detached;
     this.detached = undefined;
     const active = createActiveRequest();
+    /** Reattaching to a dropped turn continues it, so it keeps that turn's identity. */
     active.endpoint = this.resumeEndpoint() ?? dropped?.target.endpoint;
+    active.responseId = dropped?.responseId;
+    active.conversationId = dropped?.conversationId;
     active.reattach = { streamId: options.streamId };
     this.active = active;
     if (
@@ -1151,6 +1156,7 @@ export class Chat {
             abortKey: streamId == null ? this.abortKey(active) : undefined,
           },
           responseId: active.responseId,
+          conversationId: active.conversationId,
         };
       }
     }
