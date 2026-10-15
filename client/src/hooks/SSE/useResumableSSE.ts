@@ -49,6 +49,14 @@ import {
   GENERATION_PROTOCOL_VERSION,
   getGenerationProtocolVersion,
   supportsGenerationProtocolV2,
+  isInitialNewConversation,
+  completedResponseMessageId,
+  preferDefinedString,
+  getOptimisticMessages,
+  buildOptimisticConversation,
+  hydrateSubmissionMessages,
+  buildCreatedInitialResponse,
+  keepLocalCodeApprovalMode,
 } from '@librechat/chat';
 import type {
   Agents,
@@ -122,17 +130,13 @@ import {
   canRestoreRecovery,
   blockRecovery,
 } from '~/components/Chat/Steering/recovery';
-import useEventHandlers, {
-  buildCreatedInitialResponse,
-  keepLocalCodeApprovalMode,
-} from './useEventHandlers';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import { abortScrollFamily, showStopButtonByIndex } from '~/store/generation';
-import { withSubmittedCodeDecision } from '~/hooks/Agents/codeDecision';
 import { useChatTransport } from '~/Providers/ChatTransportContext';
 import { reopenTermsOnRefusal } from '~/utils/terms';
 import { useAuthContext } from '~/hooks/AuthContext';
 import { fetchConvoSnapshot } from '~/utils/convos';
+import useEventHandlers from './useEventHandlers';
 import { useFileMapContext } from '~/Providers';
 import useUsageHandler from './useUsageHandler';
 import useLocalize from '~/hooks/useLocalize';
@@ -170,16 +174,6 @@ const getStreamStartFailureData = (errorData?: unknown, termsRefusalText?: strin
     metadata: markStreamStartFailedMetadata(),
   }) as unknown as TResData;
 
-const hasConcreteConversationId = (conversationId?: string | null) =>
-  !!conversationId &&
-  conversationId !== Constants.NEW_CONVO &&
-  conversationId !== Constants.PENDING_CONVO;
-
-const isInitialNewConversation = (submission: TSubmission) => {
-  const conversationId = submission.conversation?.conversationId;
-  return !hasConcreteConversationId(conversationId);
-};
-
 const replaceNewConversationUrl = (conversationId: string) => {
   if (window.location.pathname !== `/c/${Constants.NEW_CONVO}`) {
     return;
@@ -191,104 +185,6 @@ const replaceNewConversationUrl = (conversationId: string) => {
     `/c/${conversationId}${window.location.search}`,
   );
 };
-
-const shouldHydrateMessage = (message: TMessage) =>
-  !hasConcreteConversationId(message.conversationId);
-
-/** Recovery must identify the response itself: regenerations share a user
- * parent, and array order says nothing about which sibling just completed.
- * A fresh-turn placeholder has no server response ID yet; only an unambiguous
- * persisted child can stand in for it. */
-const completedResponseMessageId = (
-  messages: TMessage[] | undefined,
-  userMessageId: string | undefined,
-  responseMessageId: string | undefined,
-): string | undefined => {
-  if (messages == null || userMessageId == null) {
-    return undefined;
-  }
-  const target = responseMessageId?.replace(/_+$/, '');
-  const hasResponseIdentity = target != null && target !== userMessageId;
-  let candidate: string | undefined;
-  let ambiguous = false;
-  for (const message of messages) {
-    if (message.isCreatedByUser !== false || message.parentMessageId !== userMessageId) {
-      continue;
-    }
-    if (hasResponseIdentity) {
-      if (message.messageId === target) {
-        return message.messageId;
-      }
-      continue;
-    }
-    ambiguous ||= candidate != null;
-    candidate = message.messageId;
-  }
-  return hasResponseIdentity || ambiguous ? undefined : candidate;
-};
-
-const hydrateMessageConversationId = (message: TMessage, conversationId: string): TMessage =>
-  shouldHydrateMessage(message) ? { ...message, conversationId } : message;
-
-const preferDefinedString = (value?: string | null, fallback?: string): string | undefined =>
-  value != null && value !== '' ? value : fallback;
-
-const getOptimisticMessages = (
-  submission: TSubmission,
-  conversationId: string,
-  messages?: TMessage[],
-): TMessage[] => {
-  const sourceMessages =
-    messages && messages.length > 0
-      ? messages
-      : [submission.userMessage, submission.initialResponse].filter(
-          (message): message is TMessage => message != null,
-        );
-
-  return sourceMessages.map((message) => hydrateMessageConversationId(message, conversationId));
-};
-
-const buildOptimisticConversation = (
-  submission: TSubmission,
-  conversationId: string,
-): TConversation => {
-  const now = new Date().toISOString();
-  const messageIds = [
-    submission.userMessage?.messageId,
-    submission.initialResponse?.messageId,
-  ].filter((messageId): messageId is string => typeof messageId === 'string' && messageId !== '');
-
-  const conversation = {
-    ...submission.conversation,
-    conversationId,
-    endpoint: submission.conversation.endpoint ?? null,
-    title: submission.conversation.title ?? 'New Chat',
-    messages: messageIds.length > 0 ? messageIds : submission.conversation.messages,
-    createdAt: submission.conversation.createdAt ?? now,
-    updatedAt: now,
-    /** Temporary mode lives on the submission, not on the draft conversation, so
-     * the optimistic record has to carry it forward or every consumer of this
-     * cache entry reads a new temporary chat as an ordinary one. Only stamped
-     * when true, leaving the legacy `expiredAt` inference untouched otherwise. */
-    ...(submission.isTemporary === true ? { isTemporary: true } : {}),
-  } as TConversation;
-  return withSubmittedCodeDecision(conversation, submission)!;
-};
-
-const hydrateSubmissionMessages = (
-  submission: TSubmission,
-  conversationId: string,
-): TSubmission => ({
-  ...submission,
-  conversation: {
-    ...submission.conversation,
-    conversationId,
-  },
-  userMessage: hydrateMessageConversationId(submission.userMessage, conversationId),
-  initialResponse: submission.initialResponse
-    ? hydrateMessageConversationId(submission.initialResponse, conversationId)
-    : submission.initialResponse,
-});
 
 const buildResumeEventSubmission = (
   currentSubmission: TSubmission,
