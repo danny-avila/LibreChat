@@ -2434,6 +2434,39 @@ describe('Chat', () => {
       expect(chat.pendingAction).toBeUndefined();
     });
 
+    it('lets a completion callback start a turn once a stopped pause ended', async () => {
+      const next: Promise<void>[] = [];
+      const { chat, transport } = setup({
+        resumeSelection: () => ({ endpoint: 'agents' }),
+        onFinish: () => {
+          if (next.length > 0) {
+            return;
+          }
+          transport.sendMessages.mockResolvedValueOnce({
+            status: 'settled',
+            conversationId: 'convo-1',
+          });
+          next.push(chat.sendMessage({ parts: [{ type: 'text', text: 'Next' }] }));
+        },
+      });
+      transport.reconnectToStream.mockImplementation(
+        (request) =>
+          new Promise((_resolve, reject) => {
+            request.abortSignal?.addEventListener('abort', () => reject(new Error('aborted')));
+          }),
+      );
+      chat.restorePendingAction({ ...pausedAction, streamId: 'convo-1' }, 500);
+      const resumed = chat.resumeStream({ streamId: 'convo-1', generationCreatedAt: 500 });
+      await flush();
+
+      await chat.stop();
+      await resumed;
+
+      expect(next).toHaveLength(1);
+      await expect(next[0]).resolves.toBeUndefined();
+      expect(chat.pendingAction).toBeUndefined();
+    });
+
     it('reports nothing for a stop answered after the chat was disposed', async () => {
       for (const restore of [false, true]) {
         let answer: ((result: ChatAbortResult) => void) | undefined;

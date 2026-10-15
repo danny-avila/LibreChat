@@ -1169,8 +1169,11 @@ export class Chat {
      * that starts the next turn is not overwritten by this one's terminal state.
      */
     this.active = undefined;
-    if (outcome.kind === 'error' && !outcome.disconnect) {
-      /** A failed generation ends its pause too; only a dropped connection leaves it running. */
+    if (outcome.kind !== 'error' || !outcome.disconnect) {
+      /**
+       * An ended generation ends its pause too, before the host hears of it, so a completion
+       * callback can start the next turn; only a dropped connection leaves it running.
+       */
       this.action = undefined;
       this.decisions.clear();
     }
