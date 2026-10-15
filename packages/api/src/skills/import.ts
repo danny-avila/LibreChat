@@ -1334,48 +1334,6 @@ const MIME_MAP: Record<string, string> = {
   '.pdf': 'application/pdf',
 };
 
-const TEXT_FILE_EXTENSIONS = new Set([
-  '.md',
-  '.txt',
-  '.js',
-  '.ts',
-  '.jsx',
-  '.tsx',
-  '.json',
-  '.yaml',
-  '.yml',
-  '.py',
-  '.sh',
-  '.css',
-  '.html',
-  '.xml',
-  '.csv',
-  '.toml',
-  '.ini',
-  '.svg',
-]);
-
-const TEXT_APPLICATION_MIMES = new Set([
-  'application/json',
-  'application/javascript',
-  'application/xml',
-  'application/x-sh',
-  'application/yaml',
-  'application/toml',
-  'image/svg+xml',
-]);
-
-export function isTextLikeSkillFile(filename: string, mimeType?: string): boolean {
-  const normalizedMime = mimeType?.split(';', 1)[0]?.trim().toLowerCase();
-  if (normalizedMime?.startsWith('text/') === true) {
-    return true;
-  }
-  if (normalizedMime != null && TEXT_APPLICATION_MIMES.has(normalizedMime)) {
-    return true;
-  }
-  return TEXT_FILE_EXTENSIONS.has(path.extname(filename).toLowerCase());
-}
-
 export function guessMimeType(filename: string): string {
   return MIME_MAP[path.extname(filename).toLowerCase()] || 'application/octet-stream';
 }
