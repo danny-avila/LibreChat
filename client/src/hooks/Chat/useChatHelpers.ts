@@ -6,6 +6,8 @@ import { Constants, QueryKeys, isAssistantsEndpoint } from 'librechat-data-provi
 import {
   activeGenerationCreatedAtByConvoId,
   activeGenerationProtocolVersionByConvoId,
+  isSubmittingFamily,
+  useIsSubmitting,
 } from '@librechat/chat/react';
 import type { TMessage } from 'librechat-data-provider';
 import type { ChatContract } from './contract';
@@ -96,7 +98,8 @@ export default function useChatHelpers(index = 0, paramId?: string): ChatContrac
   Falling back to conversationId (Recoil) only if paramId is not available */
   const queryParam = paramId === 'new' ? paramId : (paramId ?? conversationId ?? '');
 
-  const [isSubmitting, setIsSubmitting] = useRecoilState(store.isSubmittingFamily(index));
+  const isSubmitting = useIsSubmitting(index);
+  const setIsSubmitting = useSetAtom(isSubmittingFamily(index));
   const latestMessage = useLatestMessage(index, queryParam);
 
   const latestMessageId = useLatestMessageId(index, queryParam) ?? undefined;

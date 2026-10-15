@@ -211,7 +211,6 @@ jest.mock('~/store', () => ({
   default: {
     conversationIdByIndex: (index: number) => `conversationIdByIndex-${index}`,
     filesByIndex: (index: number) => `files-by-index-${index}`,
-    isSubmittingFamily: (index: number) => `isSubmitting-${index}`,
   },
 }));
 

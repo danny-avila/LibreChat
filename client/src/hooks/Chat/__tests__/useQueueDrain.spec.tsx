@@ -1,9 +1,10 @@
 import React from 'react';
+import { RecoilRoot, type MutableSnapshot } from 'recoil';
 import { getDefaultStore, useAtomValue, useSetAtom } from 'jotai';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { Constants, ReasoningEffort } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { RecoilRoot, useSetRecoilState, type MutableSnapshot } from 'recoil';
+import { isSubmittingFamily, resetSubmitting } from '@librechat/chat/react';
 import { revealedQueuedTurnFamily, resetSteerFamilies } from '@librechat/chat/react';
 import {
   claimQueuedIntent,
@@ -27,7 +28,6 @@ import {
 } from '~/hooks/Chat/queue';
 import { recoveryDispositionsFamily } from '~/components/Chat/Steering/recovery';
 import useQueueDrain from '../useQueueDrain';
-import store from '~/store';
 
 const mockMarkFilesUsage = jest.fn();
 jest.mock('~/data-provider', () => ({
@@ -60,7 +60,7 @@ function setup(
 
   function Harness() {
     setters.setRunEnd = useSetAtom(runEndByIndex(INDEX));
-    setters.setIsSubmitting = useSetRecoilState(store.isSubmittingFamily(INDEX));
+    setters.setIsSubmitting = useSetAtom(isSubmittingFamily(INDEX));
     setters.setQueue = useSetAtom(queuedMessagesByConvoId(CONVO_ID));
     setters.queueRef = {
       current: useAtomValue(queuedMessagesByConvoId(CONVO_ID)),
@@ -120,6 +120,10 @@ beforeEach(() => {
   resetSteerFamilies();
 });
 
+afterEach(() => {
+  resetSubmitting(getDefaultStore());
+});
+
 describe('useQueueDrain', () => {
   beforeEach(() => {
     getDefaultStore().set(recoveryDispositionsFamily(CONVO_ID), {});
@@ -135,10 +139,10 @@ describe('useQueueDrain', () => {
       recoverySteerId: 'source',
     };
     const next: QueuedMessage = { id: 'ordinary', text: 'send after review', createdAt: 2 };
-    const { ask, setters } = setup(({ set }) => {
+    const { ask, setters } = setup(() => {
       getDefaultStore().set(queuedMessagesByConvoId(Constants.NEW_CONVO), [held]);
       getDefaultStore().set(queuedMessagesByConvoId(CONVO_ID), [next]);
-      set(store.isSubmittingFamily(INDEX), false);
+      getDefaultStore().set(isSubmittingFamily(INDEX), false);
     });
     const end = runEnd({ startedAsNewConvo: true });
     act(() => setters.setRunEnd!(end));
@@ -163,9 +167,9 @@ describe('useQueueDrain', () => {
       recoverySteerId: 'source',
     };
     const next: QueuedMessage = { id: 'ordinary', text: 'wait for next run', createdAt: 2 };
-    const { ask, setters } = setup(({ set }) => {
+    const { ask, setters } = setup(() => {
       getDefaultStore().set(queuedMessagesByConvoId(CONVO_ID), [held, next]);
-      set(store.isSubmittingFamily(INDEX), false);
+      getDefaultStore().set(isSubmittingFamily(INDEX), false);
     });
     act(() => setters.setRunEnd!(runEnd({ outcome: 'aborted' })));
     await waitFor(() => expect(setters.runEnd).toBeNull());
@@ -186,9 +190,9 @@ describe('useQueueDrain', () => {
         clientRequestId: 'same-attempt',
       };
       const firstEnd = runEnd();
-      const { ask, setters } = setup(({ set }) => {
+      const { ask, setters } = setup(() => {
         getDefaultStore().set(queuedMessagesByConvoId(CONVO_ID), [item]);
-        set(store.isSubmittingFamily(INDEX), false);
+        getDefaultStore().set(isSubmittingFamily(INDEX), false);
         getDefaultStore().set(runEndByIndex(INDEX), firstEnd);
       });
       await waitFor(() => expect(setters.runEnd).toEqual(firstEnd));
@@ -989,8 +993,8 @@ describe('useQueueDrain', () => {
     const wrapper = ({ children }: { children: React.ReactNode }) => (
       <QueryClientProvider client={queryClient}>
         <RecoilRoot
-          initializeState={({ set }) => {
-            set(store.isSubmittingFamily(INDEX), true);
+          initializeState={() => {
+            getDefaultStore().set(isSubmittingFamily(INDEX), true);
             getDefaultStore().set(queuedMessagesByConvoId(CONVO_A), [
               queuedMessage('qa', 'send for A'),
             ]);
@@ -1010,7 +1014,7 @@ describe('useQueueDrain', () => {
     const { result, rerender } = renderHook(
       ({ activeConversationId }: { activeConversationId: string }) => {
         setRunEnd = useSetAtom(runEndByIndex(INDEX));
-        setIsSubmitting = useSetRecoilState(store.isSubmittingFamily(INDEX));
+        setIsSubmitting = useSetAtom(isSubmittingFamily(INDEX));
         useQueueDrain(INDEX, activeConversationId, ask);
         return {
           indexEnd: useAtomValue(runEndByIndex(INDEX)),
@@ -1069,9 +1073,9 @@ describe('useQueueDrain', () => {
   });
 
   it('waits for isSubmitting to flip false before draining', async () => {
-    const { ask, setters } = setup(({ set }) => {
+    const { ask, setters } = setup(() => {
       getDefaultStore().set(queuedMessagesByConvoId(CONVO_ID), [queuedMessage('q1', 'deferred')]);
-      set(store.isSubmittingFamily(INDEX), true);
+      getDefaultStore().set(isSubmittingFamily(INDEX), true);
     });
 
     act(() => {

@@ -92,7 +92,6 @@ jest.mock('~/store', () => ({
   __esModule: true,
   default: {
     submissionByIndex: jest.fn(),
-    isSubmittingFamily: jest.fn(),
     centerFormOnLanding: {},
   },
 }));
