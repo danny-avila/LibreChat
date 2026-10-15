@@ -198,12 +198,6 @@
  */
 
 /**
- * @exports Ollama
- * @typedef {import('ollama').Ollama} Ollama
- * @memberof typedefs
- */
-
-/**
  * @exports AxiosResponse
  * @typedef {import('axios').AxiosResponse} AxiosResponse
  * @memberof typedefs
@@ -284,12 +278,6 @@
 /**
  * @exports ChatCompletionPayload
  * @typedef {import('openai').OpenAI.ChatCompletionCreateParams} ChatCompletionPayload
- * @memberof typedefs
- */
-
-/**
- * @exports OllamaMessage
- * @typedef {import('ollama').Message} OllamaMessage
  * @memberof typedefs
  */
 
