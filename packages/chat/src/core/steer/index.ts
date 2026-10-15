@@ -2,6 +2,7 @@ export * from './ack';
 export * from './attempt';
 export * from './chips';
 export * from './dispatch';
+export * from './drain';
 export * from './errors';
 export * from './intent';
 export * from './pause';
