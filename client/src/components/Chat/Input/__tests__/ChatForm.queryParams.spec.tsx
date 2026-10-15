@@ -12,6 +12,7 @@ import { Provider as JotaiProvider, createStore, getDefaultStore, useAtom } from
 import {
   activeGenerationCreatedAtByConvoId,
   activeGenerationProtocolVersionByConvoId,
+  showStopButtonByIndex,
 } from '@librechat/chat/react';
 import type { TConversation } from 'librechat-data-provider';
 import type { Transport } from '~/hooks/Chat/contract';
@@ -19,7 +20,6 @@ import type { ChatFormValues } from '~/common';
 import { ChatTransportContext, defaultChatTransport } from '~/Providers/ChatTransportContext';
 import { getNewConversationDraftId, getDraft, setDraft } from '~/utils/drafts';
 import { ChatContext, ChatFormProvider } from '~/Providers';
-import { showStopButtonByIndex } from '~/store/generation';
 import { AuthContextProvider } from '~/hooks/AuthContext';
 import { startupConfigKey } from '~/data-provider';
 import ChatForm from '../ChatForm';

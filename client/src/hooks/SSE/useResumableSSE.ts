@@ -3,8 +3,12 @@ import { v4 } from 'uuid';
 import { useSetRecoilState } from 'recoil';
 import { useStore, useSetAtom } from 'jotai';
 import { useQueryClient } from '@tanstack/react-query';
-import { liveAppliedSteerIdsAtom } from '@librechat/chat/react';
 import { ABORT_SWEEP_STATUSES, selectLocalSteersForQueue } from '@librechat/chat';
+import {
+  liveAppliedSteerIdsAtom,
+  abortScrollFamily,
+  showStopButtonByIndex,
+} from '@librechat/chat/react';
 import {
   Constants,
   QueryKeys,
@@ -139,7 +143,6 @@ import {
   blockRecovery,
 } from '~/components/Chat/Steering/recovery';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
-import { abortScrollFamily, showStopButtonByIndex } from '~/store/generation';
 import { useChatTransport } from '~/Providers/ChatTransportContext';
 import { reopenTermsOnRefusal } from '~/utils/terms';
 import { useAuthContext } from '~/hooks/AuthContext';

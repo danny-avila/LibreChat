@@ -8,6 +8,7 @@ import {
   activeGenerationProtocolVersionByConvoId,
   isSubmittingFamily,
   useIsSubmitting,
+  abortScrollFamily,
 } from '@librechat/chat/react';
 import type { TMessage } from 'librechat-data-provider';
 import type { ChatContract } from './contract';
@@ -18,7 +19,6 @@ import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/
 import { useChatSettings } from '~/Providers/ChatSettingsContext';
 import useChatFunctions from '~/hooks/Chat/useChatFunctions';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
-import { abortScrollFamily } from '~/store/generation';
 import { resolveAbortSteerTarget } from '~/utils';
 import useNewConvo from '~/hooks/useNewConvo';
 import { getMessageCacheIds } from './cache';

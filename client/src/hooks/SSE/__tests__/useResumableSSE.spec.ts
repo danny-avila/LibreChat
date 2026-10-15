@@ -177,7 +177,7 @@ jest.mock('jotai', () => {
       if (atom === queue.drainAfterAbortByIndex(0)) {
         return mockSetDrainAfterAbort;
       }
-      const generation = jest.requireActual('~/store/generation');
+      const generation = jest.requireActual('@librechat/chat/react');
       if (atom === generation.abortScrollFamily(0)) {
         return mockSetAbortScroll;
       }

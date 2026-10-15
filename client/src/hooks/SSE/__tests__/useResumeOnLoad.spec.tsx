@@ -14,6 +14,7 @@ import {
   revealedQueuedTurnFamily,
   pendingSteersByConvoId,
   activeGenerationCreatedAtByConvoId,
+  submissionStartFamily,
 } from '@librechat/chat/react';
 import type { Agents, TMessage, TConversation, TSubmission } from 'librechat-data-provider';
 import type { MutableSnapshot } from 'recoil';
@@ -30,7 +31,6 @@ import {
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import { agentQueuedTurnsQueryKey } from '~/data-provider/SSE/queuedTurns';
-import { submissionStartFamily } from '~/store/generation';
 import useResumeOnLoad from '../useResumeOnLoad';
 import store from '~/store';
 

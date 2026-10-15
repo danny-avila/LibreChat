@@ -12,6 +12,7 @@ import {
   revealedQueuedTurnFamily,
   activeGenerationCreatedAtByConvoId,
   useIsSubmitting,
+  submissionStartFamily,
 } from '@librechat/chat/react';
 import {
   hasSubmissionUserMessage,
@@ -43,7 +44,6 @@ import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import { dedupeSteersById, getBranchSiblingIndexesForTarget } from '~/utils';
 import { agentQueuedTurnsQueryKey } from '~/data-provider/SSE/queuedTurns';
-import { submissionStartFamily } from '~/store/generation';
 import { resumeRequestsAtom } from '~/hooks/Chat/resume';
 import useSteerState from './steer';
 import store from '~/store';
