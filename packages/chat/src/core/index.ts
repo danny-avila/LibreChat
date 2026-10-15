@@ -1,4 +1,5 @@
 export * from './ask';
+export * from './pending';
 export * from './decision';
 export * from './resumable';
 export * from './steps';
