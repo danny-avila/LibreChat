@@ -1,6 +1,5 @@
 import { useCallback, useMemo, useRef } from 'react';
 import { useAtomValue } from 'jotai';
-import { useRecoilValue } from 'recoil';
 import { hasLiveRunPause, selectLiveMessageState } from '@librechat/chat';
 import {
   Constants,
@@ -8,6 +7,12 @@ import {
   isAssistantsEndpoint,
   DEFAULT_QUEUED_SEND_LOCK_TIMEOUT_MS,
 } from 'librechat-data-provider';
+import {
+  revealedQueuedTurnFamily,
+  pendingSteersByConvoId,
+  activeGenerationCreatedAtByConvoId,
+  activeGenerationProtocolVersionByConvoId,
+} from '@librechat/chat/react';
 import type { TMessage, TConversation, CodeEnvironmentMode } from 'librechat-data-provider';
 import type { SubmitSteerOptions, QueuedMessageContext } from '@librechat/chat';
 import type { QueuedMessageOrigin } from '~/hooks/Chat/queue';
@@ -20,7 +25,6 @@ import {
 } from '~/components/Chat/Input/Composer/state';
 import { useChatSettings } from '~/Providers/ChatSettingsContext';
 import useCodeApprovalMode from '../Agents/useCodeApprovalMode';
-import { revealedQueuedTurnFamily } from '~/store/steer';
 import useQueuedTurnReceipts from './steering/receipts';
 import useDuringRunActions from './steering/actions';
 import { useLatestMessage } from '~/hooks/Messages';
@@ -32,7 +36,6 @@ import { carriedSteerContext } from '~/utils';
 import useSteerChips from './steering/chips';
 import useQueuedSend from './steering/send';
 import useQueueRows from './steering/rows';
-import store from '~/store';
 
 export type { DuringRunAction };
 
@@ -137,11 +140,9 @@ export default function useSteering({
    * ordinary sends must not overtake the server-owned successor. */
   const pendingReveal = useAtomValue(revealedQueuedTurnFamily(queueKey));
   const revealPending = pendingReveal != null;
-  const activeGenerationCreatedAt = useRecoilValue(
-    store.activeGenerationCreatedAtByConvoId(queueKey),
-  );
-  const activeGenerationProtocolVersion = useRecoilValue(
-    store.activeGenerationProtocolVersionByConvoId(queueKey),
+  const activeGenerationCreatedAt = useAtomValue(activeGenerationCreatedAtByConvoId(queueKey));
+  const activeGenerationProtocolVersion = useAtomValue(
+    activeGenerationProtocolVersionByConvoId(queueKey),
   );
 
   /** The start POST installs this epoch before any live mutation may be sent.
@@ -149,7 +150,7 @@ export default function useSteering({
    * bounded interval submits degrade to the local queue and Stop/steer refuse. */
   const canControlGeneration = activeGenerationCreatedAt != null;
   const duringRunActive = enabled && (isSubmitting || revealPending) && !answerModeActive;
-  const pendingSteers = useRecoilValue(store.pendingSteersByConvoId(queueKey));
+  const pendingSteers = useAtomValue(pendingSteersByConvoId(queueKey));
 
   const rows = useQueueRows({
     index,

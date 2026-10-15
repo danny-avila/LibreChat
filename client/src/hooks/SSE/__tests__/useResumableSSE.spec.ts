@@ -105,7 +105,6 @@ const mockQueryClient = {
 
 const mockActiveRunAtom = { key: 'activeRun' };
 const mockSubmissionAtom = { key: 'submission' };
-const mockPendingSteersAtom = { key: 'pendingSteers' };
 /** The follow-up queue a restored submission lands back in. */
 const queuedIn = (conversationId: string) =>
   getDefaultStore().get(queuedMessagesByConvoId(conversationId));
@@ -122,18 +121,6 @@ const mockSeedSteerChips = jest.fn();
 const mockSettleAppliedSteerParts = jest.fn();
 const mockConvertLocalSteersToQueued = jest.fn();
 const mockUpdateGenerationEpoch = jest.fn();
-let mockRecoilCallbackIndex = 0;
-const mockRecoilCallbacks = [
-  mockResolveSteerChip,
-  mockUpdateSteerChips,
-  mockSeedSteerChips,
-  mockSettleAppliedSteerParts,
-  mockConvertLocalSteersToQueued,
-  mockUpdateGenerationEpoch,
-];
-function mockUseRecoilCallback() {
-  return mockRecoilCallbacks[mockRecoilCallbackIndex++ % mockRecoilCallbacks.length];
-}
 const mockUseSetRecoilStateMock = jest.fn((atom: unknown) => {
   if (atom === mockActiveRunAtom) {
     return mockSetActiveRun;
@@ -174,9 +161,6 @@ jest.mock('@tanstack/react-query', () => ({
 jest.mock('recoil', () => ({
   ...jest.requireActual('recoil'),
   useSetRecoilState: mockUseSetRecoilState,
-  // The hook's steer-chip/queue callbacks need a RecoilRoot; these tests render
-  // bare, so return stable named spies in the hook's declaration order.
-  useRecoilCallback: mockUseRecoilCallback,
 }));
 
 /** The run-end, interrupt-drain, abort-scroll and stop-button state are Jotai atoms; their pane
@@ -210,7 +194,6 @@ jest.mock('~/store', () => ({
   default: {
     activeRunFamily: jest.fn(() => mockActiveRunAtom),
     submissionByIndex: jest.fn(() => mockSubmissionAtom),
-    pendingSteersByConvoId: jest.fn(() => mockPendingSteersAtom),
   },
 }));
 
@@ -247,6 +230,22 @@ jest.mock('~/data-provider', () => ({
 jest.mock('~/hooks/Chat/useSteerConvert', () => ({
   __esModule: true,
   default: () => mockConvertSteersToQueued,
+}));
+
+/** The steer-chip/queue writers are swapped for stable named spies, so these tests
+ *  assert what the hook hands them rather than the chip state they would write. */
+const mockSteerState = {
+  resolveSteerChip: mockResolveSteerChip,
+  updateSteerChips: mockUpdateSteerChips,
+  seedSteerChips: mockSeedSteerChips,
+  settleAppliedSteerParts: mockSettleAppliedSteerParts,
+  convertSteersToQueued: mockConvertSteersToQueued,
+  convertLocalSteersToQueued: mockConvertLocalSteersToQueued,
+  updateActiveGenerationCreatedAt: mockUpdateGenerationEpoch,
+};
+jest.mock('~/hooks/SSE/steer', () => ({
+  __esModule: true,
+  default: () => mockSteerState,
 }));
 
 const mockErrorHandler = jest.fn();
@@ -451,7 +450,6 @@ describe('useResumableSSE', () => {
     mockConvertLocalSteersToQueued.mockClear();
     mockUpdateGenerationEpoch.mockClear();
     resetQueueFamilies();
-    mockRecoilCallbackIndex = 0;
     mockConvertSteersToQueued.mockClear();
     mockFetchStreamStatus.mockReset();
     mockFetchStreamStatus.mockResolvedValue({ active: false });
@@ -6057,18 +6055,17 @@ describe('useResumableSSE - sync response identity', () => {
 /**
  * `convertLocalSteersToQueued` (the `final` handler and the intentional-close
  * `abort` listener both call it, alongside the two failure-terminal paths
- * covered above) is a thin `useRecoilCallback` wrapper: read the conversation's
+ * covered above) is a thin `useSteerState` callback: read the conversation's
  * chips, run them through this selection, hand the result to `useSteerConvert`.
- * This file's `useRecoilCallback: () => jest.fn()` mock (see above, "the
- * hook's steer-chip/queue callbacks need a RecoilRoot; these tests render
- * bare") makes that wrapper, and every other recoil-callback in this hook
+ * This file's `~/hooks/SSE/steer` mock (see above, `mockSteerState`) makes that
+ * callback, and every other steer-state writer in this hook
  * (`resolveSteerChip`, `seedSteerChips` included; neither has a direct test
  * in this file either), inert: calling it from the `final`/`abort` source
  * lines is invisible to `mockConvertSteersToQueued` assertions here, since the
  * mock discards the real closure before it can ever call through. Covering
  * the selection logic directly (this is the exact piece of logic finding 3
  * was about: which statuses survive a run end) rather than faking a
- * RecoilRoot-backed integration around the rest of this large hook's mocks.
+ * store-backed integration around the rest of this large hook's mocks.
  *
  * The `statuses` parameter pins a second contract: the `final` handler and
  * the two error/404 terminals call `convertLocalSteersToQueued` with no

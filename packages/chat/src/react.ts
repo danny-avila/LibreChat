@@ -13,3 +13,17 @@ export type {
   MessagePartsMarkdownProps,
   MessagePartsUserTextPreferences,
 } from './react/host';
+export {
+  resetSteerFamilies,
+  escalatingSteerFamily,
+  pendingSteersByConvoId,
+  liveAppliedSteerFamily,
+  liveAppliedSteerIdsAtom,
+  appliedSteerIdsByConvoId,
+  revealedQueuedTurnFamily,
+  acceptedSteerClientIdsByConvoId,
+  pendingSteerCancelClientIdsFamily,
+  activeGenerationCreatedAtByConvoId,
+  activeGenerationProtocolVersionByConvoId,
+} from './react/steer/atoms';
+export type { RevealedQueuedTurn } from './react/steer/atoms';

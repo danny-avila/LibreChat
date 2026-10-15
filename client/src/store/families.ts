@@ -12,9 +12,7 @@ import {
   useRecoilCallback,
 } from 'recoil';
 import type { EModelEndpoint, TConversation, TSubmission, TPreset } from 'librechat-data-provider';
-import type { GenerationProtocolVersion } from '~/data-provider/SSE/protocol';
 import type { TOptionSettings, ExtendedFile } from '~/common';
-import type { PendingSteer } from '~/hooks/Chat/queue';
 import {
   clearModelForNonEphemeralAgent,
   createChatSearchParams,
@@ -253,54 +251,6 @@ const pendingComposerTextByConvoId = atomFamily<string | undefined, string>({
   default: undefined,
 });
 
-/**
- * Per-conversation steers awaiting injection. Reconciled against the server:
- * `on_steer_applied` removes its chip; `sync`/`resumeState.pendingSteers`
- * replaces the list on reconnect; run-end reports convert leftovers into
- * `queuedMessagesByConvoId` entries.
- */
-const pendingSteersByConvoId = atomFamily<PendingSteer[], string>({
-  key: 'pendingSteersByConvoId',
-  default: [],
-});
-
-/**
- * Server steer ids whose `on_steer_applied` event already landed. The 202 ACK
- * and the SSE ride different connections, so the applied event can arrive
- * FIRST — the ACK handler checks this set and drops its local chip instead of
- * minting a `pending` chip whose only removal event has already passed. A late
- * ACK can land after the run's final event, so the set is capped
- * (`appendAppliedSteerIds`), never cleared.
- */
-const appliedSteerIdsByConvoId = atomFamily<string[], string>({
-  key: 'appliedSteerIdsByConvoId',
-  default: [],
-});
-
-/** Optimistic ids the server has proven accepted via ACK or SYNC. Separate
- * from `appliedSteerIdsByConvoId`: accepted-but-still-queued steers must not
- * be suppressed by terminal conversion, but a late POST error must not
- * resurrect them after Cancel/Edit/Convert removes the visible chip. */
-const acceptedSteerClientIdsByConvoId = atomFamily<string[], string>({
-  key: 'acceptedSteerClientIdsByConvoId',
-  default: [],
-});
-
-/** Server generation epoch currently attached for each conversation. Stream
- * ids are conversation-scoped and reused by later turns; every mutation that
- * can affect a live run carries this value as an optimistic concurrency fence. */
-const activeGenerationCreatedAtByConvoId = atomFamily<number | null, string>({
-  key: 'activeGenerationCreatedAtByConvoId',
-  default: null,
-});
-
-/** Negotiated behavior contract for the active generation. Missing echoes are
- * legacy by definition, so the safe default is always v1. */
-const activeGenerationProtocolVersionByConvoId = atomFamily<GenerationProtocolVersion, string>({
-  key: 'activeGenerationProtocolVersionByConvoId',
-  default: 1,
-});
-
 const globalAudioURLFamily = atomFamily<string | null, string | number | null>({
   key: 'globalAudioURLByIndex',
   default: null,
@@ -458,10 +408,5 @@ export default {
   useClearSubmissionState,
   showPromptsPopoverFamily,
   pendingComposerTextByConvoId,
-  pendingSteersByConvoId,
-  appliedSteerIdsByConvoId,
-  acceptedSteerClientIdsByConvoId,
-  activeGenerationCreatedAtByConvoId,
-  activeGenerationProtocolVersionByConvoId,
   updateConversationSelector,
 };

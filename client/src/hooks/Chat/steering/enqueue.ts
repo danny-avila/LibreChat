@@ -3,8 +3,8 @@ import { v4 } from 'uuid';
 import { useStore } from 'jotai';
 import { getSteerErrorCode, toQueuedTurnFileRefs, QUEUE_USAGE_MAX_FILES } from '@librechat/chat';
 import type { TMessage, CodeApprovalMode } from 'librechat-data-provider';
+import type { RevealedQueuedTurn } from '@librechat/chat/react';
 import type { QueuedMessage } from '@librechat/chat';
-import type { RevealedQueuedTurn } from '~/store/steer';
 import type { QueuedTurnReceipts } from './receipts';
 import type { QueueRows } from './rows';
 import {

@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useStore, useAtom, useSetAtom } from 'jotai';
 import { useQueryClient } from '@tanstack/react-query';
 import { useSetRecoilState, useRecoilValue } from 'recoil';
+import { useStore, useAtom, useSetAtom, useAtomValue } from 'jotai';
+import {
+  revealedQueuedTurnFamily,
+  activeGenerationCreatedAtByConvoId,
+} from '@librechat/chat/react';
 import {
   Constants,
   QueryKeys,
@@ -42,7 +46,6 @@ import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import { agentQueuedTurnsQueryKey } from '~/data-provider/SSE/queuedTurns';
 import { submissionStartFamily } from '~/store/generation';
-import { revealedQueuedTurnFamily } from '~/store/steer';
 import { resumeRequestsAtom } from '~/hooks/Chat/resume';
 import useSteerState from './steer';
 import store from '~/store';
@@ -299,8 +302,8 @@ export default function useResumeOnLoad(
   const setSubmissionStart = useSetAtom(submissionStartFamily(runIndex));
   const currentSubmission = useRecoilValue(store.submissionByIndex(runIndex));
   const isSubmitting = useRecoilValue(store.isSubmittingFamily(runIndex));
-  const attachedGenerationCreatedAt = useRecoilValue(
-    store.activeGenerationCreatedAtByConvoId(conversationId ?? ''),
+  const attachedGenerationCreatedAt = useAtomValue(
+    activeGenerationCreatedAtByConvoId(conversationId ?? ''),
   );
   const currentConversation = useRecoilValue(store.conversationByIndex(runIndex));
   const endpoint = currentConversation?.endpoint;

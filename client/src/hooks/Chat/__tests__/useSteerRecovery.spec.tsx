@@ -1,14 +1,21 @@
 import React from 'react';
-import { getDefaultStore, useAtomValue } from 'jotai';
 import { act, render, renderHook } from '@testing-library/react';
-import { RecoilRoot, useRecoilValue, useSetRecoilState, type MutableSnapshot } from 'recoil';
+import { getDefaultStore, useAtomValue, useSetAtom } from 'jotai';
+import { RecoilRoot, useSetRecoilState, type MutableSnapshot } from 'recoil';
+import {
+  pendingSteerCancelClientIdsFamily,
+  acceptedSteerClientIdsByConvoId,
+  activeGenerationCreatedAtByConvoId,
+  appliedSteerIdsByConvoId,
+  pendingSteersByConvoId,
+  resetSteerFamilies,
+} from '@librechat/chat/react';
 import type { RewakeDrain } from '~/Providers/ComposerRestoreContext';
 import {
   ComposerRestoreProvider,
   useComposerRestoreHost,
 } from '~/Providers/ComposerRestoreContext';
 import { queuedMessagesByConvoId, resetQueueFamilies } from '~/hooks/Chat/queue';
-import { pendingSteerCancelClientIdsFamily } from '~/store/steer';
 import useSteerRecovery from '../useSteerRecovery';
 import store from '~/store';
 
@@ -62,16 +69,19 @@ function setup(initialize?: (snapshot: MutableSnapshot) => void, rewake?: Rewake
   return renderHook(
     () => ({
       recovery: useSteerRecovery(CONVO_ID),
-      chips: useRecoilValue(store.pendingSteersByConvoId(CONVO_ID)),
+      chips: useAtomValue(pendingSteersByConvoId(CONVO_ID)),
       queue: useAtomValue(queuedMessagesByConvoId(CONVO_ID)),
-      applied: useRecoilValue(store.appliedSteerIdsByConvoId(CONVO_ID)),
-      accepted: useRecoilValue(store.acceptedSteerClientIdsByConvoId(CONVO_ID)),
+      applied: useAtomValue(appliedSteerIdsByConvoId(CONVO_ID)),
+      accepted: useAtomValue(acceptedSteerClientIdsByConvoId(CONVO_ID)),
     }),
     { wrapper },
   );
 }
 
-beforeEach(() => resetQueueFamilies());
+beforeEach(() => {
+  resetQueueFamilies();
+  resetSteerFamilies();
+});
 
 describe('useSteerRecovery', () => {
   beforeEach(() => {
@@ -82,8 +92,8 @@ describe('useSteerRecovery', () => {
   describe('retry', () => {
     it('marks the chip sending immediately', () => {
       mockMutateAsync.mockReturnValue(new Promise(() => undefined));
-      const { result } = setup(({ set }) => {
-        set(store.pendingSteersByConvoId(CONVO_ID), [
+      const { result } = setup(() => {
+        getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
           { steerId: 'local-1', text: 'redo this', status: 'failed', createdAt: 5 },
         ]);
       });
@@ -96,8 +106,8 @@ describe('useSteerRecovery', () => {
     });
 
     it('does not retry an uncertain protocol-v1 delivery', () => {
-      const { result } = setup(({ set }) => {
-        set(store.pendingSteersByConvoId(CONVO_ID), [
+      const { result } = setup(() => {
+        getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
           {
             steerId: 'legacy-uncertain',
             text: 'may already be committed',
@@ -124,8 +134,8 @@ describe('useSteerRecovery', () => {
         position: 1,
         conversationId: CONVO_ID,
       });
-      const { result } = setup(({ set }) => {
-        set(store.pendingSteersByConvoId(CONVO_ID), [
+      const { result } = setup(() => {
+        getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
           { steerId: 'local-1', text: 'redo this', status: 'failed', createdAt: 5 },
         ]);
       });
@@ -147,8 +157,8 @@ describe('useSteerRecovery', () => {
         position: 1,
         conversationId: CONVO_ID,
       });
-      const { result } = setup(({ set }) => {
-        set(store.pendingSteersByConvoId(CONVO_ID), [
+      const { result } = setup(() => {
+        getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
           {
             steerId: 'local-safe',
             text: 'retry safely',
@@ -171,8 +181,8 @@ describe('useSteerRecovery', () => {
 
     it('routes to the queue on NO_ACTIVE_RUN instead of marking it failed again', async () => {
       mockMutateAsync.mockRejectedValue({ response: { data: { code: 'NO_ACTIVE_RUN' } } });
-      const { result } = setup(({ set }) => {
-        set(store.pendingSteersByConvoId(CONVO_ID), [
+      const { result } = setup(() => {
+        getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
           { steerId: 'local-2', text: 'too late', status: 'failed', createdAt: 7 },
         ]);
       });
@@ -192,8 +202,8 @@ describe('useSteerRecovery', () => {
     it('wakes the queue drain when a late retry lands in the queue', async () => {
       mockMutateAsync.mockRejectedValue({ response: { data: { code: 'NO_ACTIVE_RUN' } } });
       const rewake = jest.fn();
-      const { result } = setup(({ set }) => {
-        set(store.pendingSteersByConvoId(CONVO_ID), [
+      const { result } = setup(() => {
+        getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
           { steerId: 'local-late', text: 'after the end', status: 'failed', createdAt: 8 },
         ]);
       }, rewake);
@@ -210,8 +220,8 @@ describe('useSteerRecovery', () => {
     it('leaves the drain alone when a retry is accepted into a live run', async () => {
       mockMutateAsync.mockResolvedValue({ steerId: 'srv-live', preempt: false });
       const rewake = jest.fn();
-      const { result } = setup(({ set }) => {
-        set(store.pendingSteersByConvoId(CONVO_ID), [
+      const { result } = setup(() => {
+        getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
           { steerId: 'local-live', text: 'still running', status: 'failed', createdAt: 9 },
         ]);
       }, rewake);
@@ -244,10 +254,10 @@ describe('useSteerRecovery', () => {
         let cancelLikeTheUiDoes: () => void = () => undefined;
         function Tree() {
           recovery = useSteerRecovery(CONVO_ID);
-          chips = useRecoilValue(store.pendingSteersByConvoId(CONVO_ID));
+          chips = useAtomValue(pendingSteersByConvoId(CONVO_ID));
           queue = useAtomValue(queuedMessagesByConvoId(CONVO_ID));
-          accepted = useRecoilValue(store.acceptedSteerClientIdsByConvoId(CONVO_ID));
-          const setChips = useSetRecoilState(store.pendingSteersByConvoId(CONVO_ID));
+          accepted = useAtomValue(acceptedSteerClientIdsByConvoId(CONVO_ID));
+          const setChips = useSetAtom(pendingSteersByConvoId(CONVO_ID));
           /* What the optimistic cancel does to a `sending` chip: hide it and
              arm the marker the deferred settle has to consult. */
           cancelLikeTheUiDoes = () =>
@@ -259,7 +269,7 @@ describe('useSteerRecovery', () => {
             <RecoilRoot
               initializeState={(snapshot) => {
                 seedRun(snapshot, true);
-                snapshot.set(store.pendingSteersByConvoId(CONVO_ID), [
+                getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
                   {
                     steerId: 'local-race',
                     text: 'changed my mind',
@@ -302,8 +312,8 @@ describe('useSteerRecovery', () => {
       it('settles the steer as live when the racing cancel lost', async () => {
         mockMutateAsync.mockResolvedValue({ steerId: 'srv-kept', preempt: false });
         mockCancelSteer.mockResolvedValue({ removed: false });
-        const { result } = setup(({ set }) => {
-          set(store.pendingSteersByConvoId(CONVO_ID), [
+        const { result } = setup(() => {
+          getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
             { steerId: 'local-kept', text: 'still wanted', status: 'failed', createdAt: 4 },
           ]);
         });
@@ -322,8 +332,8 @@ describe('useSteerRecovery', () => {
       it('treats the steer as live when the racing cancel POST fails', async () => {
         mockMutateAsync.mockResolvedValue({ steerId: 'srv-unknown', preempt: false });
         mockCancelSteer.mockRejectedValue(new Error('network'));
-        const { result } = setup(({ set }) => {
-          set(store.pendingSteersByConvoId(CONVO_ID), [
+        const { result } = setup(() => {
+          getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
             { steerId: 'local-unknown', text: 'unknown outcome', status: 'failed', createdAt: 4 },
           ]);
         });
@@ -350,8 +360,8 @@ describe('useSteerRecovery', () => {
         let dropChip: () => void = () => undefined;
         const Tree = () => {
           recovery = useSteerRecovery(CONVO_ID);
-          chips = useRecoilValue(store.pendingSteersByConvoId(CONVO_ID));
-          const setChips = useSetRecoilState(store.pendingSteersByConvoId(CONVO_ID));
+          chips = useAtomValue(pendingSteersByConvoId(CONVO_ID));
+          const setChips = useSetAtom(pendingSteersByConvoId(CONVO_ID));
           dropChip = () =>
             setChips((prev) => prev.filter((chip) => chip.steerId !== 'local-vanish'));
           return null;
@@ -361,7 +371,7 @@ describe('useSteerRecovery', () => {
             <RecoilRoot
               initializeState={(snapshot) => {
                 seedRun(snapshot, true);
-                snapshot.set(store.pendingSteersByConvoId(CONVO_ID), [
+                getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
                   {
                     steerId: 'local-vanish',
                     text: 'do not lose me',
@@ -399,9 +409,10 @@ describe('useSteerRecovery', () => {
     it('binds a queued retry ack to its receipt only under protocol v2', async () => {
       mockMutateAsync.mockResolvedValue({ steerId: 'srv-bound', preempt: false });
       const bind = async (generationProtocolVersion: 1 | 2) => {
+        resetSteerFamilies();
         const { result, unmount } = setup(({ set }) => {
           set(store.isSubmittingFamily(0), false);
-          set(store.pendingSteersByConvoId(CONVO_ID), [
+          getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
             {
               steerId: `local-v${generationProtocolVersion}`,
               text: 'landed after the end',
@@ -439,8 +450,8 @@ describe('useSteerRecovery', () => {
         /** Each code gets its own render; the queue lives in the shared default store. */
         resetQueueFamilies();
         mockMutateAsync.mockRejectedValue({ response: { data: { code } } });
-        const { result } = setup(({ set }) => {
-          set(store.pendingSteersByConvoId(CONVO_ID), [
+        const { result } = setup(() => {
+          getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
             { steerId: `local-${code}`, text: code, status: 'failed', createdAt: 1 },
           ]);
         });
@@ -454,8 +465,8 @@ describe('useSteerRecovery', () => {
 
     it('marks delivery uncertain after an ambiguous retry error', async () => {
       mockMutateAsync.mockRejectedValue(new Error('network'));
-      const { result } = setup(({ set }) => {
-        set(store.pendingSteersByConvoId(CONVO_ID), [
+      const { result } = setup(() => {
+        getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
           { steerId: 'local-3', text: 'network flake', status: 'failed', createdAt: 1 },
         ]);
       });
@@ -475,8 +486,8 @@ describe('useSteerRecovery', () => {
 
     it('keeps a definite retry rejection ordinary', async () => {
       mockMutateAsync.mockRejectedValue({ response: { status: 400 } });
-      const { result } = setup(({ set }) => {
-        set(store.pendingSteersByConvoId(CONVO_ID), [
+      const { result } = setup(() => {
+        getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
           {
             steerId: 'local-rejected',
             text: 'rejected',
@@ -515,7 +526,7 @@ describe('useSteerRecovery', () => {
       /* Outlives the run, the way the store does: the hook's own tree goes
          away while the conversation's state stays behind to be read. */
       const Observer = () => {
-        chips = useRecoilValue(store.pendingSteersByConvoId(CONVO_ID));
+        chips = useAtomValue(pendingSteersByConvoId(CONVO_ID));
         queue = useAtomValue(queuedMessagesByConvoId(CONVO_ID));
         setSubmitting = useSetRecoilState(store.isSubmittingFamily(0));
         return null;
@@ -524,7 +535,7 @@ describe('useSteerRecovery', () => {
         <RecoilRoot
           initializeState={(snapshot) => {
             seedRun(snapshot, true);
-            snapshot.set(store.pendingSteersByConvoId(CONVO_ID), [
+            getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
               { steerId: 'local-late', text: 'landed too late', status: 'failed', createdAt: 3 },
             ]);
           }}
@@ -580,7 +591,7 @@ describe('useSteerRecovery', () => {
       let queue: unknown[] = [];
       const Tree = () => {
         recovery = useSteerRecovery(CONVO_ID);
-        chips = useRecoilValue(store.pendingSteersByConvoId(CONVO_ID));
+        chips = useAtomValue(pendingSteersByConvoId(CONVO_ID));
         queue = useAtomValue(queuedMessagesByConvoId(CONVO_ID));
         const setConvo = useSetRecoilState(store.conversationByIndex(0));
         navigateAway = () => setConvo({ conversationId: 'a-different-chat' } as never);
@@ -591,7 +602,7 @@ describe('useSteerRecovery', () => {
         <RecoilRoot
           initializeState={(snapshot) => {
             seedRun(snapshot, true);
-            snapshot.set(store.pendingSteersByConvoId(CONVO_ID), [
+            getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
               { steerId: 'local-nav', text: 'still running', status: 'failed', createdAt: 2 },
             ]);
           }}
@@ -623,7 +634,7 @@ describe('useSteerRecovery', () => {
         snapshot.set(store.conversationByIndex(1), { conversationId: CONVO_ID } as never);
         snapshot.set(store.isSubmittingFamily(0), false);
         snapshot.set(store.isSubmittingFamily(1), true);
-        snapshot.set(store.pendingSteersByConvoId(CONVO_ID), [
+        getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
           { steerId: 'local-pane', text: 'second pane owns it', status: 'failed', createdAt: 4 },
         ]);
       });
@@ -652,8 +663,8 @@ describe('useSteerRecovery', () => {
         conversationId: CONVO_ID,
         preempt: true,
       });
-      const { result } = setup(({ set }) => {
-        set(store.pendingSteersByConvoId(CONVO_ID), [
+      const { result } = setup(() => {
+        getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
           {
             steerId: 'local-preempt',
             text: 'stop and read this',
@@ -682,8 +693,8 @@ describe('useSteerRecovery', () => {
         position: 1,
         conversationId: CONVO_ID,
       });
-      const { result } = setup(({ set }) => {
-        set(store.pendingSteersByConvoId(CONVO_ID), [
+      const { result } = setup(() => {
+        getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
           { steerId: 'local-plain', text: 'just a steer', status: 'failed', createdAt: 6 },
         ]);
       });
@@ -704,8 +715,8 @@ describe('useSteerRecovery', () => {
         conversationId: CONVO_ID,
         preempt: false,
       });
-      const { result } = setup(({ set }) => {
-        set(store.pendingSteersByConvoId(CONVO_ID), [
+      const { result } = setup(() => {
+        getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
           {
             steerId: 'local-degraded',
             text: 'seal it',
@@ -733,8 +744,8 @@ describe('useSteerRecovery', () => {
         position: 1,
         conversationId: CONVO_ID,
       });
-      const { result } = setup(({ set }) => {
-        set(store.pendingSteersByConvoId(CONVO_ID), [
+      const { result } = setup(() => {
+        getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
           {
             steerId: 'local-ctx',
             text: 'about that quote',
@@ -774,8 +785,8 @@ describe('useSteerRecovery', () => {
         position: 1,
         conversationId: CONVO_ID,
       });
-      const { result } = setup(({ set }) => {
-        set(store.pendingSteersByConvoId(CONVO_ID), [
+      const { result } = setup(() => {
+        getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
           {
             steerId: 'local-id',
             text: 'pin me to my generation',
@@ -808,8 +819,8 @@ describe('useSteerRecovery', () => {
         position: 1,
         conversationId: CONVO_ID,
       });
-      const { result } = setup(({ set }) => {
-        set(store.pendingSteersByConvoId(CONVO_ID), [
+      const { result } = setup(() => {
+        getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
           {
             steerId: 'srv-known',
             clientSteerId: 'local-known',
@@ -843,9 +854,9 @@ describe('useSteerRecovery', () => {
          is still submitting and looks live. */
       it('queues an ack whose source generation was replaced', async () => {
         mockMutateAsync.mockResolvedValue(ack('srv-epoch'));
-        const { result } = setup(({ set }) => {
-          set(store.activeGenerationCreatedAtByConvoId(CONVO_ID), 900);
-          set(store.pendingSteersByConvoId(CONVO_ID), [
+        const { result } = setup(() => {
+          getDefaultStore().set(activeGenerationCreatedAtByConvoId(CONVO_ID), 900);
+          getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
             {
               steerId: 'local-epoch',
               text: 'older generation',
@@ -869,9 +880,9 @@ describe('useSteerRecovery', () => {
          so the server will inject it and the chip waits for that event. */
       it('keeps an ack pending while its own generation is still the active one', async () => {
         mockMutateAsync.mockResolvedValue(ack('srv-live'));
-        const { result } = setup(({ set }) => {
-          set(store.activeGenerationCreatedAtByConvoId(CONVO_ID), 100);
-          set(store.pendingSteersByConvoId(CONVO_ID), [
+        const { result } = setup(() => {
+          getDefaultStore().set(activeGenerationCreatedAtByConvoId(CONVO_ID), 100);
+          getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
             {
               steerId: 'local-live',
               text: 'same generation',
@@ -898,8 +909,8 @@ describe('useSteerRecovery', () => {
         mockMutateAsync.mockResolvedValue(ack('srv-applied'));
         const { result } = setup(({ set }) => {
           set(store.isSubmittingFamily(0), false);
-          set(store.appliedSteerIdsByConvoId(CONVO_ID), ['srv-applied']);
-          set(store.pendingSteersByConvoId(CONVO_ID), [
+          getDefaultStore().set(appliedSteerIdsByConvoId(CONVO_ID), ['srv-applied']);
+          getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
             { steerId: 'local-applied', text: 'already injected', status: 'failed', createdAt: 3 },
           ]);
         });
@@ -915,8 +926,8 @@ describe('useSteerRecovery', () => {
          for the same attempt cannot re-mint a chip that was already settled. */
       it('records the accepted client id', async () => {
         mockMutateAsync.mockResolvedValue(ack('srv-accepted'));
-        const { result } = setup(({ set }) => {
-          set(store.pendingSteersByConvoId(CONVO_ID), [
+        const { result } = setup(() => {
+          getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
             { steerId: 'local-accepted', text: 'note the id', status: 'failed', createdAt: 4 },
           ]);
         });
@@ -939,8 +950,8 @@ describe('useSteerRecovery', () => {
 
   describe('sendAsNew', () => {
     it('does not reroute an uncertain protocol-v1 delivery', () => {
-      const { result } = setup(({ set }) => {
-        set(store.pendingSteersByConvoId(CONVO_ID), [
+      const { result } = setup(() => {
+        getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
           {
             steerId: 'legacy-uncertain',
             text: 'may already be committed',
@@ -959,8 +970,8 @@ describe('useSteerRecovery', () => {
     });
 
     it('does not reroute an uncertain protocol-v2 delivery as a new turn', () => {
-      const { result } = setup(({ set }) => {
-        set(store.pendingSteersByConvoId(CONVO_ID), [
+      const { result } = setup(() => {
+        getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
           {
             steerId: 'modern-uncertain',
             text: 'retry only under the same id',
@@ -979,8 +990,8 @@ describe('useSteerRecovery', () => {
     });
 
     it('moves the chip to the queue, merged chronologically with existing items', () => {
-      const { result } = setup(({ set }) => {
-        set(store.pendingSteersByConvoId(CONVO_ID), [
+      const { result } = setup(() => {
+        getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
           { steerId: 's-old', text: 'older failed steer', status: 'failed', createdAt: 0 },
         ]);
         getDefaultStore().set(queuedMessagesByConvoId(CONVO_ID), [
@@ -997,8 +1008,8 @@ describe('useSteerRecovery', () => {
     });
 
     it('records the id in appliedSteerIds so a late ACK cannot re-mint the chip', () => {
-      const { result } = setup(({ set }) => {
-        set(store.pendingSteersByConvoId(CONVO_ID), [
+      const { result } = setup(() => {
+        getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
           { steerId: 's-late', text: 'send me', status: 'failed', createdAt: 1 },
         ]);
       });

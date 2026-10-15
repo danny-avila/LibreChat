@@ -1,7 +1,7 @@
 import React from 'react';
+import { RecoilRoot, type MutableSnapshot } from 'recoil';
 import { claimQueuedIntent, releaseQueuedIntent } from '@librechat/chat';
 import { act, render, renderHook, waitFor } from '@testing-library/react';
-import { RecoilRoot, useRecoilValue, useSetRecoilState, type MutableSnapshot } from 'recoil';
 import {
   getDefaultStore,
   Provider as JotaiProvider,
@@ -16,6 +16,16 @@ import {
   LocalStorageKeys,
   ReasoningEffort,
 } from 'librechat-data-provider';
+import {
+  revealedQueuedTurnFamily,
+  pendingSteerCancelClientIdsFamily,
+  acceptedSteerClientIdsByConvoId,
+  activeGenerationCreatedAtByConvoId,
+  activeGenerationProtocolVersionByConvoId,
+  appliedSteerIdsByConvoId,
+  pendingSteersByConvoId,
+  resetSteerFamilies,
+} from '@librechat/chat/react';
 import type { CodeApprovalMode, TConversation, TFile, TMessage } from 'librechat-data-provider';
 import type { QueuedMessage } from '~/hooks/Chat/queue';
 import type { ExtendedFile } from '~/common';
@@ -34,7 +44,6 @@ import {
   pendingManualSkillsByConvoId,
   pendingReasoningOverrideFamily,
 } from '~/components/Chat/Input/Composer/state';
-import { revealedQueuedTurnFamily, pendingSteerCancelClientIdsFamily } from '~/store/steer';
 import useSteering, { hasLiveRunPause, mergeQueuedTurnFileMetadata } from '../useSteering';
 import { clearAllDrafts, getPendingDraftId, getNewConversationDraftId } from '~/utils';
 import { recoveryDispositionsFamily } from '~/components/Chat/Steering/recovery';
@@ -136,10 +145,14 @@ const agentsConversation = {
 type HookParams = Partial<Parameters<typeof useSteering>[0]>;
 
 const withActiveGeneration =
-  (initialize?: (snapshot: MutableSnapshot) => void, conversationId = CONVO_ID) =>
+  (
+    initialize?: (snapshot: MutableSnapshot) => void,
+    conversationId = CONVO_ID,
+    jotaiStore: ReturnType<typeof createStore> = getDefaultStore(),
+  ) =>
   (snapshot: MutableSnapshot) => {
-    snapshot.set(store.activeGenerationCreatedAtByConvoId(conversationId), 41);
-    snapshot.set(store.activeGenerationProtocolVersionByConvoId(conversationId), 2);
+    jotaiStore.set(activeGenerationCreatedAtByConvoId(conversationId), 41);
+    jotaiStore.set(activeGenerationProtocolVersionByConvoId(conversationId), 2);
     initialize?.(snapshot);
   };
 
@@ -148,8 +161,8 @@ function setup(params: HookParams = {}, initialize?: (snapshot: MutableSnapshot)
   const stopGenerating = jest.fn();
   let setGenerationCreatedAt: ((value: number | null) => void) | undefined;
   const GenerationProbe = () => {
-    setGenerationCreatedAt = useSetRecoilState(
-      store.activeGenerationCreatedAtByConvoId(params.conversationId ?? CONVO_ID),
+    setGenerationCreatedAt = useSetAtom(
+      activeGenerationCreatedAtByConvoId(params.conversationId ?? CONVO_ID),
     );
     return null;
   };
@@ -210,6 +223,7 @@ function sendFromQueue(
 
 beforeEach(() => {
   resetQueueFamilies();
+  resetSteerFamilies();
   getDefaultStore().set(pendingQuotesByConvoId(CONVO_ID), []);
   getDefaultStore().set(pendingManualSkillsByConvoId(CONVO_ID), []);
 });
@@ -606,8 +620,8 @@ describe('useSteering', () => {
     });
 
     it('queues during startup and exposes no live mutation until the generation epoch arrives', () => {
-      const { result, stopGenerating, setGenerationCreatedAt } = setup({}, ({ set }) => {
-        set(store.activeGenerationCreatedAtByConvoId(CONVO_ID), null);
+      const { result, stopGenerating, setGenerationCreatedAt } = setup({}, () => {
+        getDefaultStore().set(activeGenerationCreatedAtByConvoId(CONVO_ID), null);
       });
 
       expect(result.current.duringRunActive).toBe(true);
@@ -750,8 +764,8 @@ describe('useSteering', () => {
 
     it('keeps startup turns local until the server generation epoch exists', async () => {
       const { result } = setupServerQueue(
-        withActiveGeneration(({ set }) => {
-          set(store.activeGenerationCreatedAtByConvoId(CONVO_ID), null);
+        withActiveGeneration(() => {
+          getDefaultStore().set(activeGenerationCreatedAtByConvoId(CONVO_ID), null);
         }),
       );
 
@@ -769,8 +783,8 @@ describe('useSteering', () => {
 
     it('keeps a re-queued row durable on its own lineage once the run it waited on has ended', async () => {
       const { result } = setupServerQueue(
-        withActiveGeneration(({ set }) => {
-          set(store.activeGenerationCreatedAtByConvoId(CONVO_ID), null);
+        withActiveGeneration(() => {
+          getDefaultStore().set(activeGenerationCreatedAtByConvoId(CONVO_ID), null);
         }),
       );
 
@@ -825,8 +839,8 @@ describe('useSteering', () => {
       });
       getDefaultStore().set(pendingQuotesByConvoId(CONVO_ID), ['quoted context']);
       getDefaultStore().set(pendingManualSkillsByConvoId(CONVO_ID), ['skill']);
-      const { result, unmount } = setup({ isSubmitting: false }, ({ set }) => {
-        set(store.activeGenerationCreatedAtByConvoId(CONVO_ID), null);
+      const { result, unmount } = setup({ isSubmitting: false }, () => {
+        getDefaultStore().set(activeGenerationCreatedAtByConvoId(CONVO_ID), null);
       });
       expect(result.current.duringRunActive).toBe(true);
       expect(result.current.canSteer).toBe(false);
@@ -2576,11 +2590,11 @@ describe('useSteering', () => {
       const stopGenerating = jest.fn();
       const wrapper = ({ children }: { children: React.ReactNode }) => (
         <RecoilRoot
-          initializeState={({ set }) => {
-            set(store.activeGenerationCreatedAtByConvoId(CONVO_ID), 41);
-            set(store.activeGenerationProtocolVersionByConvoId(CONVO_ID), 2);
-            set(store.activeGenerationCreatedAtByConvoId(otherConversationId), 42);
-            set(store.activeGenerationProtocolVersionByConvoId(otherConversationId), 2);
+          initializeState={() => {
+            getDefaultStore().set(activeGenerationCreatedAtByConvoId(CONVO_ID), 41);
+            getDefaultStore().set(activeGenerationProtocolVersionByConvoId(CONVO_ID), 2);
+            getDefaultStore().set(activeGenerationCreatedAtByConvoId(otherConversationId), 42);
+            getDefaultStore().set(activeGenerationProtocolVersionByConvoId(otherConversationId), 2);
           }}
         >
           {children}
@@ -2662,14 +2676,12 @@ describe('useSteering', () => {
           }),
           queue: useQueue(CONVO_ID),
           setQueue: useSetAtom(queuedMessagesByConvoId(CONVO_ID)),
-          setActiveEpoch: useSetRecoilState(store.activeGenerationCreatedAtByConvoId(CONVO_ID)),
-          setActiveProtocol: useSetRecoilState(
-            store.activeGenerationProtocolVersionByConvoId(CONVO_ID),
-          ),
-          setAcceptedIds: useSetRecoilState(store.acceptedSteerClientIdsByConvoId(CONVO_ID)),
-          chips: useRecoilValue(store.pendingSteersByConvoId(CONVO_ID)),
-          setChips: useSetRecoilState(store.pendingSteersByConvoId(CONVO_ID)),
-          setAppliedIds: useSetRecoilState(store.appliedSteerIdsByConvoId(CONVO_ID)),
+          setActiveEpoch: useSetAtom(activeGenerationCreatedAtByConvoId(CONVO_ID)),
+          setActiveProtocol: useSetAtom(activeGenerationProtocolVersionByConvoId(CONVO_ID)),
+          setAcceptedIds: useSetAtom(acceptedSteerClientIdsByConvoId(CONVO_ID)),
+          chips: useAtomValue(pendingSteersByConvoId(CONVO_ID)),
+          setChips: useSetAtom(pendingSteersByConvoId(CONVO_ID)),
+          setAppliedIds: useSetAtom(appliedSteerIdsByConvoId(CONVO_ID)),
           drainFlag: useAtomValue(drainAfterAbortByIndex(0)),
         }),
         { wrapper },
@@ -2802,8 +2814,8 @@ describe('useSteering', () => {
       mockMutate.mockImplementationOnce((_params, { onError }) =>
         onError(new Error('network disconnected')),
       );
-      const { result } = setupWithState({}, ({ set }) => {
-        set(store.activeGenerationProtocolVersionByConvoId(CONVO_ID), 1);
+      const { result } = setupWithState({}, () => {
+        getDefaultStore().set(activeGenerationProtocolVersionByConvoId(CONVO_ID), 1);
       });
 
       act(() => {
@@ -2914,8 +2926,8 @@ describe('useSteering', () => {
       mockMutate.mockImplementation((_params, { onError }) => {
         onError({ response: { status: 400, data: { code: 'INVALID_STEER' } } });
       });
-      const { result } = setupWithState({}, ({ set }) => {
-        set(store.activeGenerationCreatedAtByConvoId(CONVO_ID), 41);
+      const { result } = setupWithState({}, () => {
+        getDefaultStore().set(activeGenerationCreatedAtByConvoId(CONVO_ID), 41);
       });
 
       act(() => {
@@ -3025,10 +3037,10 @@ describe('useSteering', () => {
           conversationId: CONVO_ID,
         });
       });
-      const { result } = setupWithState({}, ({ set }) => {
+      const { result } = setupWithState({}, () => {
         // seedSteerChips already re-minted this chip from resumeState before
         // the 202 ACK landed; the ACK must upsert, not append.
-        set(store.pendingSteersByConvoId(CONVO_ID), [
+        getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
           {
             steerId: 'srv-3',
             text: 'reseeded',
@@ -3773,7 +3785,7 @@ describe('useSteering', () => {
             initialize === null
               ? undefined
               : (snapshot) => {
-                  snapshot.set(store.activeGenerationCreatedAtByConvoId(CONVO_ID), 41);
+                  getDefaultStore().set(activeGenerationCreatedAtByConvoId(CONVO_ID), 41);
                   initialize?.(snapshot);
                 }
           }
@@ -4203,7 +4215,11 @@ describe('useSteering', () => {
       const wrapper = ({ children }: { children: React.ReactNode }) => (
         <JotaiProvider store={reasoningStore}>
           <RecoilRoot
-            initializeState={withActiveGeneration(initialize, params.conversationId ?? CONVO_ID)}
+            initializeState={withActiveGeneration(
+              initialize,
+              params.conversationId ?? CONVO_ID,
+              reasoningStore,
+            )}
           >
             {children}
           </RecoilRoot>
@@ -4224,11 +4240,11 @@ describe('useSteering', () => {
           }),
           queue: useQueue(CONVO_ID),
           setQueue: useSetAtom(queuedMessagesByConvoId(CONVO_ID)),
-          chips: useRecoilValue(store.pendingSteersByConvoId(CONVO_ID)),
+          chips: useAtomValue(pendingSteersByConvoId(CONVO_ID)),
           pendingQuotes: useAtomValue(pendingQuotesByConvoId(CONVO_ID)),
           pendingSkills: useAtomValue(pendingManualSkillsByConvoId(CONVO_ID)),
           pendingReasoning: useAtomValue(pendingReasoningOverrideFamily(CONVO_ID)),
-          markApplied: useSetRecoilState(store.appliedSteerIdsByConvoId(CONVO_ID)),
+          markApplied: useSetAtom(appliedSteerIdsByConvoId(CONVO_ID)),
         }),
         { wrapper },
       );
@@ -4870,8 +4886,8 @@ describe('useSteering', () => {
           text: 'pending',
           revealedAt: new Date().toISOString(),
         });
-        const { result, unmount } = setup({ isSubmitting: false, filesLoading }, ({ set }) => {
-          set(store.activeGenerationCreatedAtByConvoId(CONVO_ID), null);
+        const { result, unmount } = setup({ isSubmitting: false, filesLoading }, () => {
+          getDefaultStore().set(activeGenerationCreatedAtByConvoId(CONVO_ID), null);
         });
         await act(async () => {
           expect(result.current.submitDuringRun('drafted text')).toBe(!filesLoading);

@@ -2,6 +2,7 @@ import { useRef, useEffect, useMemo, useCallback } from 'react';
 import { useRecoilValue } from 'recoil';
 import { useAtomValue, useStore } from 'jotai';
 import { insertQueuedOrigin } from '@librechat/chat';
+import { revealedQueuedTurnFamily } from '@librechat/chat/react';
 import { Constants, DEFAULT_QUEUED_SEND_LOCK_TIMEOUT_MS } from 'librechat-data-provider';
 import { acquireQueueSendLock, releaseQueueSendLock, hasQueuedIntent } from '@librechat/chat';
 import type { QueueSendLock } from '@librechat/chat';
@@ -23,7 +24,6 @@ import {
 import { selectQueuedTurnReveal } from '~/hooks/Chat/useQueuedTurnReveal';
 import { useChatSettings } from '~/Providers/ChatSettingsContext';
 import { useMarkFilesUsageMutation } from '~/data-provider';
-import { revealedQueuedTurnFamily } from '~/store/steer';
 import { mergeQueuedMessages } from '~/utils/queue';
 import store from '~/store';
 

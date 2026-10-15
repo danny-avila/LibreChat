@@ -1,14 +1,18 @@
 import { useCallback, useMemo } from 'react';
 import { useStore } from 'jotai';
-import { useRecoilCallback } from 'recoil';
 import { isSteerRunReplaced, acknowledgeSteerChips } from '@librechat/chat';
+import {
+  pendingSteerCancelClientIdsFamily,
+  pendingSteersByConvoId,
+  appliedSteerIdsByConvoId,
+  acceptedSteerClientIdsByConvoId,
+  activeGenerationCreatedAtByConvoId,
+} from '@librechat/chat/react';
 import type { PendingSteer } from '@librechat/chat';
-import type { CallbackInterface } from 'recoil';
 import type { MutableRefObject } from 'react';
+import type { createStore } from 'jotai';
 import { pendingQuotesByConvoId } from '~/components/Chat/Input/Composer/state';
 import { appendAppliedSteerIds, mergeRestagedQuotes } from '~/utils';
-import { pendingSteerCancelClientIdsFamily } from '~/store/steer';
-import store from '~/store';
 
 /**
  * Resolves a steer's 202 ACK against the applied-id set and the run's live
@@ -29,27 +33,26 @@ import store from '~/store';
  *
  * @returns true when the caller must route the steer into the queue.
  */
+type JotaiStore = Pick<ReturnType<typeof createStore>, 'get' | 'set'>;
+
 export function resolveAcknowledgedSteer(
-  { snapshot, set }: Pick<CallbackInterface, 'snapshot' | 'set'>,
+  jotaiStore: JotaiStore,
   conversationId: string,
   localId: string,
   steer: PendingSteer,
   ordinaryRunOver: boolean,
 ): boolean {
-  const applied = snapshot.getLoadable(store.appliedSteerIdsByConvoId(conversationId)).getValue();
+  const applied = jotaiStore.get(appliedSteerIdsByConvoId(conversationId));
   const alreadyApplied = applied.includes(steer.steerId) || applied.includes(localId);
-  const alreadyAccepted = snapshot
-    .getLoadable(store.acceptedSteerClientIdsByConvoId(conversationId))
-    .getValue()
+  const alreadyAccepted = jotaiStore
+    .get(acceptedSteerClientIdsByConvoId(conversationId))
     .includes(localId);
-  const activeEpoch = snapshot
-    .getLoadable(store.activeGenerationCreatedAtByConvoId(conversationId))
-    .getValue();
+  const activeEpoch = jotaiStore.get(activeGenerationCreatedAtByConvoId(conversationId));
   const runOver = ordinaryRunOver || isSteerRunReplaced(steer, activeEpoch);
-  set(store.acceptedSteerClientIdsByConvoId(conversationId), (prev) =>
+  jotaiStore.set(acceptedSteerClientIdsByConvoId(conversationId), (prev) =>
     appendAppliedSteerIds(prev, [localId]),
   );
-  set(store.pendingSteersByConvoId(conversationId), (prev) =>
+  jotaiStore.set(pendingSteersByConvoId(conversationId), (prev) =>
     acknowledgeSteerChips(prev, localId, steer, alreadyApplied || alreadyAccepted || runOver),
   );
   /** `alreadyAccepted` can come from the correlation update that precedes the
@@ -77,31 +80,29 @@ export default function useSteerChips({
   isSubmittingRef: MutableRefObject<boolean>;
 }) {
   const jotaiStore = useStore();
-  const upsertSteerChip = useRecoilCallback(
-    ({ set }) =>
-      (convoId: string, steer: PendingSteer) => {
-        set(store.pendingSteersByConvoId(convoId), (prev) => {
-          const existing = prev.findIndex((item) => item.steerId === steer.steerId);
-          if (existing >= 0) {
-            const next = [...prev];
-            next[existing] = steer;
-            return next;
-          }
-          return [...prev, steer];
-        });
-      },
-    [],
+  const upsertSteerChip = useCallback(
+    (convoId: string, steer: PendingSteer) => {
+      jotaiStore.set(pendingSteersByConvoId(convoId), (prev) => {
+        const existing = prev.findIndex((item) => item.steerId === steer.steerId);
+        if (existing >= 0) {
+          const next = [...prev];
+          next[existing] = steer;
+          return next;
+        }
+        return [...prev, steer];
+      });
+    },
+    [jotaiStore],
   );
 
-  const replaceSteerChip = useRecoilCallback(
-    ({ set }) =>
-      (convoId: string, localId: string, steer: PendingSteer | null) => {
-        set(store.pendingSteersByConvoId(convoId), (prev) => {
-          const next = prev.filter((item) => item.steerId !== localId);
-          return steer ? [...next, steer] : next;
-        });
-      },
-    [],
+  const replaceSteerChip = useCallback(
+    (convoId: string, localId: string, steer: PendingSteer | null) => {
+      jotaiStore.set(pendingSteersByConvoId(convoId), (prev) => {
+        const next = prev.filter((item) => item.steerId !== localId);
+        return steer ? [...next, steer] : next;
+      });
+    },
+    [jotaiStore],
   );
 
   /**
@@ -114,57 +115,51 @@ export default function useSteerChips({
    * only be inferred while the callback still belongs to the visible chat.
    * Epoch replacement is derived inside the resolver for every caller.
    */
-  const acknowledgeSteer = useRecoilCallback(
-    (cbInterface) =>
-      (convoId: string, localId: string, steer: PendingSteer): boolean =>
-        resolveAcknowledgedSteer(
-          cbInterface,
-          convoId,
-          localId,
-          steer,
-          visibleConversationRef.current === convoId && !isSubmittingRef.current,
-        ),
-    [],
+  const acknowledgeSteer = useCallback(
+    (convoId: string, localId: string, steer: PendingSteer): boolean =>
+      resolveAcknowledgedSteer(
+        jotaiStore,
+        convoId,
+        localId,
+        steer,
+        visibleConversationRef.current === convoId && !isSubmittingRef.current,
+      ),
+    [jotaiStore, visibleConversationRef, isSubmittingRef],
   );
 
-  const settleReceiptReplay = useRecoilCallback(
-    ({ set }) =>
-      (convoId: string, localId: string, serverId: string) => {
-        set(store.appliedSteerIdsByConvoId(convoId), (prev) =>
-          appendAppliedSteerIds(prev, [localId, serverId]),
-        );
-        set(store.acceptedSteerClientIdsByConvoId(convoId), (prev) =>
-          appendAppliedSteerIds(prev, [localId]),
-        );
-        set(store.pendingSteersByConvoId(convoId), (prev) =>
-          prev.filter((steer) => steer.steerId !== localId && steer.steerId !== serverId),
-        );
-      },
-    [],
+  const settleReceiptReplay = useCallback(
+    (convoId: string, localId: string, serverId: string) => {
+      jotaiStore.set(appliedSteerIdsByConvoId(convoId), (prev) =>
+        appendAppliedSteerIds(prev, [localId, serverId]),
+      );
+      jotaiStore.set(acceptedSteerClientIdsByConvoId(convoId), (prev) =>
+        appendAppliedSteerIds(prev, [localId]),
+      );
+      jotaiStore.set(pendingSteersByConvoId(convoId), (prev) =>
+        prev.filter((steer) => steer.steerId !== localId && steer.steerId !== serverId),
+      );
+    },
+    [jotaiStore],
   );
 
   /** Terminal/applied SSE can settle the optimistic client id before either
    * HTTP callback. Those callbacks must become no-ops or a lost response can
    * resurrect already-delivered words as a failed chip or queued fallback. */
-  const isSteerAcceptedOrSettled = useRecoilCallback(
-    ({ snapshot }) =>
-      (convoId: string, clientSteerId: string) => {
-        const applied = snapshot.getLoadable(store.appliedSteerIdsByConvoId(convoId)).getValue();
-        if (applied.includes(clientSteerId)) {
-          return true;
-        }
-        const accepted = snapshot
-          .getLoadable(store.acceptedSteerClientIdsByConvoId(convoId))
-          .getValue();
-        if (accepted.includes(clientSteerId)) {
-          return true;
-        }
-        return snapshot
-          .getLoadable(store.pendingSteersByConvoId(convoId))
-          .getValue()
-          .some((steer) => steer.status === 'pending' && steer.clientSteerId === clientSteerId);
-      },
-    [],
+  const isSteerAcceptedOrSettled = useCallback(
+    (convoId: string, clientSteerId: string) => {
+      const applied = jotaiStore.get(appliedSteerIdsByConvoId(convoId));
+      if (applied.includes(clientSteerId)) {
+        return true;
+      }
+      const accepted = jotaiStore.get(acceptedSteerClientIdsByConvoId(convoId));
+      if (accepted.includes(clientSteerId)) {
+        return true;
+      }
+      return jotaiStore
+        .get(pendingSteersByConvoId(convoId))
+        .some((steer) => steer.status === 'pending' && steer.clientSteerId === clientSteerId);
+    },
+    [jotaiStore],
   );
   const hasPendingSteerCancel = useCallback(
     (convoId: string, clientSteerId: string) =>
@@ -193,39 +188,36 @@ export default function useSteerChips({
    *  double-deliver. The chip is stripped in the same update (including its
    *  captured queue-origin copy) so the restaged composer chips stay their
    *  single representation. */
-  const reclaimRejectedChipQuotes = useRecoilCallback(
-    ({ snapshot, set }) =>
-      (convoId: string, steerIds: string[]) => {
-        const chips = snapshot.getLoadable(store.pendingSteersByConvoId(convoId)).getValue();
-        const chip = chips.find((steer) => steerIds.includes(steer.steerId));
-        const quotes = chip?.quotes ?? chip?.queuedOrigin?.item.quotes;
-        if (quotes == null || quotes.length === 0) {
-          return;
-        }
-        jotaiStore.set(pendingQuotesByConvoId(convoId), (prev) =>
-          mergeRestagedQuotes(prev, quotes),
-        );
-        set(store.pendingSteersByConvoId(convoId), (prev) => {
-          let changed = false;
-          const next = prev.map((steer) => {
-            const originHasQuotes = steer.queuedOrigin?.item.quotes != null;
-            if (!steerIds.includes(steer.steerId) || (steer.quotes == null && !originHasQuotes)) {
-              return steer;
-            }
-            changed = true;
-            const { quotes: _quotes, ...rest } = steer;
-            if (!originHasQuotes || rest.queuedOrigin == null) {
-              return rest;
-            }
-            const { quotes: _originQuotes, ...originItem } = rest.queuedOrigin.item;
-            return {
-              ...rest,
-              queuedOrigin: { ...rest.queuedOrigin, item: originItem },
-            };
-          });
-          return changed ? next : prev;
+  const reclaimRejectedChipQuotes = useCallback(
+    (convoId: string, steerIds: string[]) => {
+      const chips = jotaiStore.get(pendingSteersByConvoId(convoId));
+      const chip = chips.find((steer) => steerIds.includes(steer.steerId));
+      const quotes = chip?.quotes ?? chip?.queuedOrigin?.item.quotes;
+      if (quotes == null || quotes.length === 0) {
+        return;
+      }
+      jotaiStore.set(pendingQuotesByConvoId(convoId), (prev) => mergeRestagedQuotes(prev, quotes));
+      jotaiStore.set(pendingSteersByConvoId(convoId), (prev) => {
+        let changed = false;
+        const next = prev.map((steer) => {
+          const originHasQuotes = steer.queuedOrigin?.item.quotes != null;
+          if (!steerIds.includes(steer.steerId) || (steer.quotes == null && !originHasQuotes)) {
+            return steer;
+          }
+          changed = true;
+          const { quotes: _quotes, ...rest } = steer;
+          if (!originHasQuotes || rest.queuedOrigin == null) {
+            return rest;
+          }
+          const { quotes: _originQuotes, ...originItem } = rest.queuedOrigin.item;
+          return {
+            ...rest,
+            queuedOrigin: { ...rest.queuedOrigin, item: originItem },
+          };
         });
-      },
+        return changed ? next : prev;
+      });
+    },
     [jotaiStore],
   );
 
