@@ -137,12 +137,10 @@ const {
   filterMalformedContentParts,
   countFormattedMessageTokens,
   prependFileContext,
-  prependContextText,
   prependQuotes,
   applyAttachmentOnlyText,
   hydrateMissingIndexTokenCounts,
-  hasConversationDateContext,
-  buildUserMessageContextUpdates,
+  createHistoryContextUpdates,
   injectSkillPrimes,
   buildAgentEventActorSkillMessages,
   collectFreshSkillPrimeNames,
@@ -2627,7 +2625,6 @@ class AgentClient extends BaseClient {
     const tokenCountMap = {};
     const memoryPayload = [];
     let hasFileContext = false;
-    let hasContextUpdate = false;
     let promptTokenTotal = 0;
     const encoding = this.getEncoding();
     /**
@@ -2658,15 +2655,10 @@ class AgentClient extends BaseClient {
     /** Memory copies built for canonical recounts, reused by the memory payload pass. */
     const memoryFormattedMessages = [];
     /** Date-change and send-time notes, prepended to the prompt copy only. */
-    const req = this.options.req;
-    const contextUpdates = buildUserMessageContextUpdates({
+    const historyContext = createHistoryContextUpdates({
+      req: this.options.req,
       messages: orderedMessages,
-      conversationStartedAt: req.conversationCreatedAt,
-      currentTurnStartedAt: req.turnStartedAt,
-      timezone: req.body?.timezone,
-      trackDateChanges: hasConversationDateContext(allAgents.map(({ agent }) => agent)),
-      includeTimestamps:
-        req.config?.endpoints?.[EModelEndpoint.agents]?.promptMessageTimestamps === true,
+      agents: allAgents.map(({ agent }) => agent),
     });
 
     const formattedMessages = orderedMessages.map((message, i) => {
@@ -2716,11 +2708,7 @@ class AgentClient extends BaseClient {
       const turnFiles = this.message_file_map?.[message.messageId] ?? message.files;
       applyAttachmentOnlyText(formattedMessage, turnFiles);
 
-      const contextUpdate = contextUpdates.get(i);
-      if (contextUpdate) {
-        hasContextUpdate = true;
-        prependContextText(formattedMessage, contextUpdate, '\n\n');
-      }
+      const contextUpdate = historyContext.apply(formattedMessage, i);
 
       /**
        * A summarize round that errored or was cut off never reaches the model:
@@ -2926,7 +2914,7 @@ class AgentClient extends BaseClient {
     }
     /** After the steer stamp, which adds replayed steers' documents of its own. */
     dedupeDocumentNames(payload);
-    const hasPromptOnlyContext = hasFileContext || hasContextUpdate;
+    const hasPromptOnlyContext = hasFileContext || historyContext.hasUpdates;
     if (hasPromptOnlyContext) {
       for (let i = 0; i < orderedMessages.length; i++) {
         memoryPayload.push(
@@ -3105,7 +3093,9 @@ class AgentClient extends BaseClient {
       assertLateBoundContent = false,
     ) => {
       normalizeInstructions(agent);
-      const agentRunContextParts = [sharedRunContext];
+      /** Volatile parts change between turns without a user action (memory is rewritten by the
+       *  memory agent, RAG follows the query); attachment and file context change only on uploads. */
+      const agentRunContextParts = [{ text: sharedRunContext, volatile: true }];
       const agentMemoryContexts = [];
       const agentHasMemory = agentHasInlineMemoryTools(agent);
       if (agentId === this.options.agent.id || memoryAgentEnabled || agentHasMemory) {
@@ -3129,12 +3119,12 @@ class AgentClient extends BaseClient {
           agentHasMemory ? partitionMemories?.withKeys : partitionMemories?.withoutKeys,
         );
         if (agentMemoryContext) {
-          agentRunContextParts.push(agentMemoryContext);
+          agentRunContextParts.push({ text: agentMemoryContext, volatile: true });
         }
       }
       if (scopedContext) {
         modelBoundFileContexts.add(scopedContext);
-        agentRunContextParts.push(scopedContext);
+        agentRunContextParts.push({ text: scopedContext });
       }
 
       await applyContextToAgent({
@@ -3143,7 +3133,7 @@ class AgentClient extends BaseClient {
         logger,
         mcpManager,
         configServers,
-        sharedRunContext: agentRunContextParts.filter(Boolean).join('\n\n'),
+        sharedRunContext: agentRunContextParts,
         ephemeralAgent: agentId === this.options.agent.id ? ephemeralAgent : undefined,
       });
       if (assertLateBoundContent) {
