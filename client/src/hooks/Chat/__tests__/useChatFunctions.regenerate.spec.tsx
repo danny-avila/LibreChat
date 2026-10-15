@@ -24,6 +24,7 @@ import {
   activeUsageResponseIdFamily,
   pendingUsageFamily,
 } from '~/components/Chat/Input/TokenUsage/store';
+import { ChatSettingsContext, defaultChatSettings } from '~/Providers/ChatSettingsContext';
 import { pendingReasoningOverrideFamily } from '~/components/Chat/Input/Composer/state';
 import { submissionStartFamily, showStopButtonByIndex } from '~/store/generation';
 import useChatFunctions from '../useChatFunctions';
@@ -127,7 +128,6 @@ jest.mock('~/store', () => ({
     messagesSiblingIdxFamily: () => 'messagesSiblingIdx',
     conversationByKeySelector: () => 'conversation',
   },
-  useGetEphemeralAgent: () => mockGetEphemeralAgent,
 }));
 jest.mock('~/utils', () => ({
   ...jest.requireActual('~/utils'),
@@ -169,6 +169,14 @@ const conversation = (conversationId: string) =>
     agent_id: 'agent-1',
   }) as TConversation;
 
+const settingsWrapper = ({ children }: { children: ReactNode }) => (
+  <ChatSettingsContext.Provider
+    value={{ ...defaultChatSettings, getEphemeralAgent: mockGetEphemeralAgent }}
+  >
+    {children}
+  </ChatSettingsContext.Provider>
+);
+
 function renderAsk(
   messages: TMessage[] | undefined,
   conversationId = 'conversation-1',
@@ -198,7 +206,11 @@ function renderAsk(
   const reasoningStore = createStore();
   reasoningStore.set(pendingReasoningOverrideFamily(conversationId), options.reasoningOverride);
   const wrapper = ({ children }: { children: ReactNode }) => (
-    <JotaiProvider store={reasoningStore}>{children}</JotaiProvider>
+    <ChatSettingsContext.Provider
+      value={{ ...defaultChatSettings, getEphemeralAgent: mockGetEphemeralAgent }}
+    >
+      <JotaiProvider store={reasoningStore}>{children}</JotaiProvider>
+    </ChatSettingsContext.Provider>
   );
   const hook = renderHook(
     () =>
@@ -1144,18 +1156,20 @@ describe('useChatFunctions ask attachments', () => {
         },
       ],
     ]) as unknown as Parameters<typeof useChatFunctions>[0]['files'];
-    const { result } = renderHook(() =>
-      useChatFunctions({
-        isSubmitting: false,
-        latestMessage: null,
-        conversation: conversation(Constants.NEW_CONVO as string),
-        getMessages: () => [],
-        setMessages,
-        setSubmission,
-        setConversation: mockSetConversation,
-        files,
-        setFiles,
-      }),
+    const { result } = renderHook(
+      () =>
+        useChatFunctions({
+          isSubmitting: false,
+          latestMessage: null,
+          conversation: conversation(Constants.NEW_CONVO as string),
+          getMessages: () => [],
+          setMessages,
+          setSubmission,
+          setConversation: mockSetConversation,
+          files,
+          setFiles,
+        }),
+      { wrapper: settingsWrapper },
     );
     const selectedConversationTools: TEphemeralAgent = {
       skills: true,

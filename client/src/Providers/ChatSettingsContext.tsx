@@ -9,6 +9,8 @@ export const defaultChatSettings: ChatSettings = {
   saveDrafts: true,
   isTemporary: false,
   setIsTemporary: () => undefined,
+  getEphemeralAgent: () => null,
+  addedConversation: null,
   config: { feedbackEnabled: false, canRenameRunningChat: false },
   auth: {},
   getPaneConversations: () => [],

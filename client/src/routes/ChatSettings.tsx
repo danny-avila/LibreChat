@@ -8,8 +8,8 @@ import { ChatTransportContext, defaultChatTransport } from '~/Providers/ChatTran
 import { ChatSettingsContext } from '~/Providers/ChatSettingsContext';
 import { duringRunActionAtom } from '~/store/duringRun';
 import { useGetStartupConfig } from '~/data-provider';
+import store, { useGetEphemeralAgent } from '~/store';
 import { useAuthContext } from '~/hooks/AuthContext';
-import store from '~/store';
 
 /** Reads the conversation each mounted pane shows from the app's pane store, at call time. */
 export function usePaneConversations(): ChatSettings['getPaneConversations'] {
@@ -36,6 +36,8 @@ export default function ChatSettingsProvider({ children }: { children: ReactNode
   const resetVisibleArtifacts = useResetRecoilState(store.visibleArtifacts);
   const saveDrafts = useRecoilValue<boolean>(store.saveDrafts);
   const [isTemporary, setIsTemporary] = useRecoilState<boolean>(store.isTemporary);
+  const getEphemeralAgent = useGetEphemeralAgent();
+  const addedConversation = useRecoilValue(store.conversationByKeySelector(1));
   const { data: startupConfig } = useGetStartupConfig();
   const { user } = useAuthContext();
 
@@ -62,6 +64,8 @@ export default function ChatSettingsProvider({ children }: { children: ReactNode
       saveDrafts,
       isTemporary,
       setIsTemporary,
+      getEphemeralAgent,
+      addedConversation,
       config,
       auth,
       getPaneConversations,
@@ -73,6 +77,8 @@ export default function ChatSettingsProvider({ children }: { children: ReactNode
       saveDrafts,
       isTemporary,
       setIsTemporary,
+      getEphemeralAgent,
+      addedConversation,
       config,
       auth,
       getPaneConversations,
