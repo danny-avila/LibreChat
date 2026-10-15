@@ -1,15 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
-import { v4 } from 'uuid';
 import { useRecoilValue } from 'recoil';
 import { useAtomValue, useStore } from 'jotai';
-import { useToastContext } from '@librechat/client';
+import { hasLiveRunPause, selectLiveMessageState } from '@librechat/chat';
 import { hasQueuedIntent, acquireQueueSendLock, releaseQueueSendLock } from '@librechat/chat';
-import {
-  hasLiveRunPause,
-  getSteerErrorCode,
-  selectLiveMessageState,
-  isDefiniteSteerRejection,
-} from '@librechat/chat';
 import {
   Constants,
   isAgentsEndpoint,
@@ -23,11 +16,6 @@ import type { ExtendedFile, FileSetter } from '~/common';
 import type { PendingSteer } from '~/hooks/Chat/queue';
 import type { DuringRunAction } from './contract';
 import {
-  useCancelSteerMutation,
-  useSteerMessageMutation,
-  supportsGenerationProtocolV2,
-} from '~/data-provider';
-import {
   getReasoningStateKey,
   pendingReasoningOverrideFamily,
 } from '~/components/Chat/Input/Composer/state';
@@ -37,16 +25,14 @@ import {
 } from '~/components/Chat/Steering/recovery';
 import { useChatSettings } from '~/Providers/ChatSettingsContext';
 import useCodeApprovalMode from '../Agents/useCodeApprovalMode';
-import { useSteerRehome } from '~/hooks/Chat/useSteerCancel';
-import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { revealedQueuedTurnFamily } from '~/store/steer';
 import useQueuedTurnReceipts from './steering/receipts';
 import { useLatestMessage } from '~/hooks/Messages';
 import useQueuedRecovery from './steering/recovery';
 import useComposerTake from './steering/composer';
 import useQueueEnqueue from './steering/enqueue';
+import useSubmitSteer from './steering/submit';
 import { carriedSteerContext } from '~/utils';
-import useLocalize from '~/hooks/useLocalize';
 import useSteerChips from './steering/chips';
 import useQueueRows from './steering/rows';
 import store from '~/store';
@@ -121,19 +107,9 @@ export default function useSteering({
   sendNow,
   stopGenerating,
 }: UseSteeringParams) {
-  const localize = useLocalize();
   const composerDisabledRef = useRef(composerDisabled);
   composerDisabledRef.current = composerDisabled;
-  const { showToast } = useToastContext();
   const jotaiStore = useStore();
-  const convertSteersToQueued = useSteerConvert();
-  /* The single boundary a steer's words return through, wherever the cancel
-     that reclaimed them was decided. */
-  const rehomeSteer = useSteerRehome(conversationId);
-  /** `mutate` is a stable callback; the mutation result objects are fresh
-   * every render and would defeat the memoized return value below. */
-  const { mutate: steerMessage } = useSteerMessageMutation();
-  const { mutateAsync: cancelSteer } = useCancelSteerMutation();
   const {
     config,
     duringRunDefaultAction: defaultAction,
@@ -177,66 +153,6 @@ export default function useSteering({
    * bounded interval submits degrade to the local queue and Stop/steer refuse. */
   const canControlGeneration = activeGenerationCreatedAt != null;
   const duringRunActive = enabled && (isSubmitting || revealPending) && !answerModeActive;
-  /** First-party FIFO admission: validation inside the steer route can await
-   * agent ACL and attachment reads, so overlapping POSTs could otherwise reach
-   * the durable queue out of submission order. Keep one request in flight per
-   * conversation; later optimistic chips retain the epoch/id/time captured at
-   * submission and dispatch only after the prior request settles. */
-  const steerDispatchQueuesRef = useRef<
-    Map<
-      string,
-      {
-        active: boolean;
-        pending: Array<(settle: () => void) => void>;
-      }
-    >
-  >(new Map());
-  const scheduleSteerDispatch = useCallback(
-    (convoId: string, dispatch: (settle: () => void) => void) => {
-      const existing = steerDispatchQueuesRef.current.get(convoId);
-      const state = existing ?? { active: false, pending: [] };
-      if (existing == null) {
-        steerDispatchQueuesRef.current.set(convoId, state);
-      }
-      state.pending.push(dispatch);
-
-      const startNext = () => {
-        if (state.active) {
-          return;
-        }
-        const next = state.pending[0];
-        if (next == null) {
-          if (steerDispatchQueuesRef.current.get(convoId) === state) {
-            steerDispatchQueuesRef.current.delete(convoId);
-          }
-          return;
-        }
-        state.active = true;
-        let settled = false;
-        const settle = () => {
-          if (settled) {
-            return;
-          }
-          settled = true;
-          const index = state.pending.indexOf(next);
-          if (index >= 0) {
-            state.pending.splice(index, 1);
-          }
-          state.active = false;
-          startNext();
-        };
-        try {
-          next(settle);
-        } catch (error) {
-          settle();
-          throw error;
-        }
-      };
-
-      startNext();
-    },
-    [],
-  );
   /** `ask()` does not flip `isSubmitting` until the submission effect renders.
    * Two queued-row clicks in the same browser task would otherwise both remove
    * their items and the second submission could overwrite the first; and the
@@ -261,6 +177,14 @@ export default function useSteering({
     [isSubmitting, sendLockKey, queueKey],
   );
 
+  const rows = useQueueRows({
+    index,
+    queueKey,
+    conversationId,
+    isSubmitting,
+    pendingSteers,
+    activeGenerationCreatedAt,
+  });
   const {
     updateQueuedMessage,
     removeQueued,
@@ -271,18 +195,10 @@ export default function useSteering({
     restoreQueuedOrder,
     takeQueued,
     releaseQueuedOrigin,
-    registerQueuedOrigin,
     restoreQueued,
     rewakeDrain,
     armDrainAfterAbort,
-  } = useQueueRows({
-    index,
-    queueKey,
-    conversationId,
-    isSubmitting,
-    pendingSteers,
-    activeGenerationCreatedAt,
-  });
+  } = rows;
   /** Capture a durable branch anchor into a server queued turn. Optimistic
    * assistant placeholders are siblings of their eventual persisted response,
    * so they anchor through their stable user parent. */
@@ -310,16 +226,8 @@ export default function useSteering({
   const visibleConversationRef = useRef(conversationId);
   visibleConversationRef.current = conversationId;
 
-  const {
-    upsertSteerChip,
-    replaceSteerChip,
-    acknowledgeSteer,
-    settleReceiptReplay,
-    isSteerAcceptedOrSettled,
-    hasPendingSteerCancel,
-    clearPendingSteerCancel,
-    reclaimRejectedChipQuotes,
-  } = useSteerChips({ visibleConversationRef, isSubmittingRef });
+  const chips = useSteerChips({ visibleConversationRef, isSubmittingRef });
+  const { replaceSteerChip } = chips;
   const { enqueue } = useQueueEnqueue({
     queueKey,
     conversationId,
@@ -347,436 +255,18 @@ export default function useSteering({
     setFiles,
   });
 
-  /** Restore a server-owned steer as the same queued follow-up and wake a
-   * drain whose one-shot completion signal may already have been consumed
-   * while the recovery request was in flight. Shared by reclaim and durable
-   * receipt replay so neither round-trip can strand accepted words. */
-  const queueRecoveredSteer = useCallback(
-    (steer: PendingSteer) => {
-      convertSteersToQueued(
-        conversationId,
-        [
-          {
-            steerId: steer.steerId,
-            ...(steer.clientSteerId && { clientSteerId: steer.clientSteerId }),
-            text: steer.text,
-            createdAt: steer.createdAt,
-            ...(steer.files && steer.files.length > 0 && { files: steer.files }),
-            ...carriedSteerContext(steer),
-            ...(steer.queuedOrigin && { queuedOrigin: steer.queuedOrigin }),
-          },
-        ],
-        {
-          /** A durable receipt belongs to the generation that produced it. The
-           * visible conversation may already advertise a replacement/legacy
-           * generation by the time this late ACK lands, but that must not strip
-           * the receipt-bound recovery identity from the queued item. */
-          generationProtocolVersion: steer.generationProtocolVersion,
-        },
-      );
-      rewakeDrain(conversationId);
-    },
-    [conversationId, convertSteersToQueued, rewakeDrain],
-  );
-
-  /** POSTs a steer (text + files + quotes; the server merges the quotes into
-   *  the model-bound turn at the injection boundary). `context` doubles as the
-   *  RESTORE payload: every degradation path threads it back into the
-   *  requeue/send fallback so the item's quotes and manual skills survive.
-   *  Skill picks never ride the POST — they configure a NEW turn's run, so a
-   *  queued-origin steer only carries them for restoration. */
-  const submitSteer = useCallback(
-    (
-      text: string,
-      steerFiles?: TMessage['files'],
-      context?: QueuedMessageContext,
-      opts?: SubmitSteerOptions,
-    ): boolean => {
-      const trimmed = text.trim();
-      if (trimmed.length === 0 || !hasRealConvoId) {
-        return false;
-      }
-      const preempt = opts?.preempt === true;
-      const targetGenerationCreatedAt =
-        opts?.generationCreatedAt ?? activeGenerationCreatedAt ?? undefined;
-      if (targetGenerationCreatedAt == null) {
-        return false;
-      }
-      const files = steerFiles && steerFiles.length > 0 ? steerFiles : undefined;
-      const targetGenerationProtocolVersion =
-        opts?.generationProtocolVersion ?? activeGenerationProtocolVersion;
-      /** Rides every chip state so a terminal conversion (late ACK, run-end
-       *  leftover report) can restore the queued item's full context. */
-      const carried = carriedSteerContext(context);
-      const localId = opts?.clientSteerId ?? `local-${v4()}`;
-      /** The true submission time, carried through the ACK and failure chips so
-       *  a later conversion sorts this steer by when it was SENT, not when its
-       *  202 landed; otherwise a draft queued during the round-trip would drain
-       *  ahead of a steer submitted before it. */
-      const createdAt = opts?.createdAt ?? Date.now();
-      /** If the steer loses its race with run finalization, its normal-send
-       * fallback must still be tied to the generation it targeted. Otherwise
-       * a newer run started by another tab can be replaced by this stale
-       * fallback. Every fallback also carries a queue origin: an existing row
-       * keeps its exact logical slot, while a composer-origin steer gets a
-       * stable synthetic row so a predecessor 409 cannot discard its text or
-       * files when the newer run wins. */
-      const fallbackOrigin: QueuedMessageOrigin = opts?.queuedOrigin ?? {
-        item: {
-          id: localId,
-          text: trimmed,
-          createdAt,
-          expectedPredecessorCreatedAt: targetGenerationCreatedAt,
-          ...(files && { files }),
-          ...carried,
-          ...(context?.clientRequestId && {
-            clientRequestId: context.clientRequestId,
-          }),
-          ...(context?.recoverySteerId && {
-            recoverySteerId: context.recoverySteerId,
-          }),
-        },
-        beforeIds: [],
-        afterIds: [],
-      };
-      const fallbackContext: QueuedMessageContext = {
-        ...context,
-        expectedPredecessorCreatedAt: targetGenerationCreatedAt,
-        queuedMessageOrigin: fallbackOrigin,
-      };
-      /** A queued-origin attempt must be reversible as the same queue item,
-       *  not merely reproducible from its text. This preserves its identity,
-       *  timestamp, priority, future fields, and original array position. */
-      const restoreRejectedSteer = () => {
-        if (opts?.queuedOrigin != null) {
-          restoreQueued(opts.queuedOrigin);
-        } else {
-          enqueue(trimmed, { id: localId, createdAt, files, ...context });
-        }
-        rewakeDrain(conversationId);
-      };
-      if (opts?.queuedOrigin != null) {
-        registerQueuedOrigin(opts.queuedOrigin);
-      }
-      upsertSteerChip(conversationId, {
-        steerId: localId,
-        text: trimmed,
-        status: 'sending',
-        createdAt,
-        ...(files && { files }),
-        ...(preempt && { preempt: true }),
-        ...(targetGenerationCreatedAt != null && {
-          generationCreatedAt: targetGenerationCreatedAt,
-        }),
-        generationProtocolVersion: targetGenerationProtocolVersion,
-        ...(opts?.queuedOrigin && { queuedOrigin: opts.queuedOrigin }),
-        ...carried,
-      });
-      scheduleSteerDispatch(conversationId, (settleDispatch) => {
-        steerMessage(
-          {
-            conversationId,
-            clientSteerId: localId,
-            text: trimmed,
-            ...(files && { files }),
-            ...(carried.quotes && { quotes: carried.quotes }),
-            ...(preempt && { preempt }),
-            ...(targetGenerationCreatedAt != null && {
-              generationCreatedAt: targetGenerationCreatedAt,
-            }),
-          },
-          {
-            onSuccess: (response) => {
-              try {
-                const acceptResponse = () => {
-                  /** A 202 without the echo means a pre-quotes replica queued
-                   *  the words without their excerpts. The quotes are NOT
-                   *  re-staged here: the steer has not injected yet, so they
-                   *  stay carried on the pending chip: a quote-less applied
-                   *  event re-stages them at the actual loss, and a terminal
-                   *  leftover conversion carries them onto the recovered row
-                   *  instead (its normal send delivers quotes on any server).
-                   *  Only a settled replay (an already-injected steer with no
-                   *  future event to re-home the chip) reclaims immediately. */
-                  const quotesRejected = carried.quotes != null && response.quotesAccepted !== true;
-                  const canUseV2Receipt =
-                    targetGenerationProtocolVersion === 2 && supportsGenerationProtocolV2(response);
-                  if (canUseV2Receipt && response.settled === true) {
-                    if (response.leftover === true) {
-                      queueRecoveredSteer({
-                        steerId: response.steerId,
-                        clientSteerId: localId,
-                        text: trimmed,
-                        status: 'pending',
-                        createdAt,
-                        ...(files && { files }),
-                        ...(targetGenerationCreatedAt != null && {
-                          generationCreatedAt: targetGenerationCreatedAt,
-                        }),
-                        generationProtocolVersion: targetGenerationProtocolVersion,
-                        ...(opts?.queuedOrigin && {
-                          queuedOrigin: opts.queuedOrigin,
-                        }),
-                        ...carried,
-                      });
-                    } else {
-                      if (quotesRejected) {
-                        reclaimRejectedChipQuotes(conversationId, [localId, response.steerId]);
-                      }
-                      settleReceiptReplay(conversationId, localId, response.steerId);
-                    }
-                    return;
-                  }
-                  /** Unsupported runs retain the words as Steer, but never silently
-                   * claim to have requested tool cancellation. */
-                  if (
-                    preempt &&
-                    response.preempt !== true &&
-                    visibleConversationRef.current === conversationId
-                  ) {
-                    showToast({
-                      message: localize('com_ui_steer_preempt_unsupported'),
-                      status: 'warning',
-                    });
-                  }
-                  const acknowledged = {
-                    steerId: response.steerId,
-                    clientSteerId: localId,
-                    text: trimmed,
-                    status: 'pending',
-                    createdAt,
-                    ...(files && { files }),
-                    ...(response.preempt === true && { preempt: true }),
-                    ...(response.preemptRevision != null && {
-                      preemptRevision: response.preemptRevision,
-                    }),
-                    ...(targetGenerationCreatedAt != null && {
-                      generationCreatedAt: targetGenerationCreatedAt,
-                    }),
-                    generationProtocolVersion: targetGenerationProtocolVersion,
-                    ...(opts?.queuedOrigin && {
-                      queuedOrigin: opts.queuedOrigin,
-                    }),
-                    ...carried,
-                  } satisfies PendingSteer;
-                  if (acknowledgeSteer(conversationId, localId, acknowledged)) {
-                    /** Terminal conversion re-homes the words as a queued
-                     *  follow-up that sends via `ask`; the carried quotes ride
-                     *  it there, so nothing is re-staged. */
-                    queueRecoveredSteer(acknowledged);
-                  }
-                };
-                if (hasPendingSteerCancel(conversationId, localId)) {
-                  void cancelSteer({
-                    conversationId,
-                    steerId: response.steerId,
-                    clientSteerId: localId,
-                    generationCreatedAt:
-                      targetGenerationCreatedAt ?? activeGenerationCreatedAt ?? undefined,
-                  }).then(
-                    ({ removed }) => {
-                      clearPendingSteerCancel(conversationId, localId);
-                      if (removed === true) {
-                        /* Cancel won the race against its own POST. The words are
-                           off the server now, so they go back to the user through
-                           the same boundary as an immediate cancel: whole, and
-                           into the queue when the composer will not take them.
-                           Clearing the marker without this loses the message. */
-                        rehomeSteer({
-                          steerId: response.steerId,
-                          clientSteerId: localId,
-                          text: trimmed,
-                          status: 'pending',
-                          createdAt,
-                          ...(files && { files }),
-                          ...(targetGenerationCreatedAt != null && {
-                            generationCreatedAt: targetGenerationCreatedAt,
-                          }),
-                          generationProtocolVersion: targetGenerationProtocolVersion,
-                          ...(opts?.queuedOrigin && { queuedOrigin: opts.queuedOrigin }),
-                          ...carried,
-                        });
-                        return;
-                      }
-                      /* The server kept the steer: it is live and will still
-                         reach the agent. The chip the optimistic cancel hid
-                         comes back through the ordinary acknowledgement, so it
-                         settles like any other accepted steer. */
-                      acceptResponse();
-                      showToast({
-                        message: localize('com_ui_steer_already_applied'),
-                        status: 'info',
-                      });
-                    },
-                    () => {
-                      clearPendingSteerCancel(conversationId, localId);
-                      /* Unknown outcome, but the POST was accepted: treat the
-                         steer as live rather than claiming it is gone. */
-                      acceptResponse();
-                      showToast({
-                        message: localize('com_ui_steer_cancel_failed'),
-                        status: 'warning',
-                      });
-                    },
-                  );
-                  return;
-                }
-                acceptResponse();
-              } finally {
-                settleDispatch();
-              }
-            },
-            onError: (error) => {
-              try {
-                clearPendingSteerCancel(conversationId, localId);
-                if (isSteerAcceptedOrSettled(conversationId, localId)) {
-                  replaceSteerChip(conversationId, localId, null);
-                  return;
-                }
-                const code = getSteerErrorCode(error);
-                const originStillVisible = visibleConversationRef.current === conversationId;
-                if (code === 'NO_ACTIVE_RUN') {
-                  // The run finished before the steer landed. While the final SSE
-                  // is still settling, `ask()`'s in-flight guard would drop a
-                  // direct send: queue it so the run-end drain fires it instead.
-                  // The explicit empty array stops `ask` from vacuuming composer
-                  // files staged for a DIFFERENT draft. A refused send (`false`)
-                  // falls back to the queue too: the chip is already gone, so
-                  // dropping the text here would lose it silently.
-                  replaceSteerChip(conversationId, localId, null);
-                  if (
-                    !originStillVisible ||
-                    isSubmittingRef.current ||
-                    sendNow(trimmed, files ?? [], fallbackContext) === false
-                  ) {
-                    restoreRejectedSteer();
-                  }
-                  return;
-                }
-                if (
-                  code === 'RUN_PAUSED' ||
-                  code === 'STEER_UNSUPPORTED' ||
-                  code === 'STEER_QUEUE_FULL'
-                ) {
-                  replaceSteerChip(conversationId, localId, null);
-                  // The rejection can land AFTER the final SSE consumed the
-                  // run-end signal (common on an unsupported SDK near run end):
-                  // queueing then has nothing left to drain it, so mirror the
-                  // NO_ACTIVE_RUN fallback and send once submission settled:
-                  // queueing the refusal instead of dropping the text.
-                  if (originStillVisible && !isSubmittingRef.current) {
-                    if (sendNow(trimmed, files ?? [], fallbackContext) === false) {
-                      restoreRejectedSteer();
-                    }
-                    return;
-                  }
-                  restoreRejectedSteer();
-                  showToast({
-                    message: localize('com_ui_steer_paused_queued'),
-                    status: 'info',
-                  });
-                  return;
-                }
-                const errorData = (
-                  error as {
-                    response?: {
-                      data?: { generationProtocolVersion?: unknown };
-                    };
-                  }
-                )?.response?.data;
-                if (
-                  code === 'RUN_REPLACED' &&
-                  targetGenerationProtocolVersion === 2 &&
-                  supportsGenerationProtocolV2(errorData)
-                ) {
-                  /** A different live generation now owns this conversation. A
-                   * normal-send fallback would replace that newer run (especially
-                   * from a stale tab), so retain the instruction for its run-end
-                   * drain regardless of this tab's local submission state. */
-                  replaceSteerChip(conversationId, localId, null);
-                  restoreRejectedSteer();
-                  showToast({
-                    message: localize('com_ui_steer_paused_queued'),
-                    status: 'info',
-                  });
-                  return;
-                }
-                if (isDefiniteSteerRejection(error)) {
-                  // A concrete origin 4xx proves the steer was rejected. Keep the
-                  // ordinary failed controls (edit/queue/remove/retry) instead of
-                  // the locked "delivery unknown" surface reserved for transport
-                  // and 5xx ambiguity.
-                  upsertSteerChip(conversationId, {
-                    steerId: localId,
-                    text: trimmed,
-                    status: 'failed',
-                    createdAt,
-                    ...(files && { files }),
-                    ...(preempt && { preempt: true }),
-                    ...(targetGenerationCreatedAt != null && {
-                      generationCreatedAt: targetGenerationCreatedAt,
-                    }),
-                    generationProtocolVersion: targetGenerationProtocolVersion,
-                    ...(opts?.queuedOrigin && {
-                      queuedOrigin: opts.queuedOrigin,
-                    }),
-                    ...carried,
-                  });
-                  return;
-                }
-                upsertSteerChip(conversationId, {
-                  steerId: localId,
-                  text: trimmed,
-                  status: 'failed',
-                  deliveryUncertain: true,
-                  createdAt,
-                  ...(files && { files }),
-                  ...(preempt && { preempt: true }),
-                  ...(targetGenerationCreatedAt != null && {
-                    generationCreatedAt: targetGenerationCreatedAt,
-                  }),
-                  generationProtocolVersion: targetGenerationProtocolVersion,
-                  ...(opts?.queuedOrigin && {
-                    queuedOrigin: opts.queuedOrigin,
-                  }),
-                  ...carried,
-                });
-              } finally {
-                settleDispatch();
-              }
-            },
-          },
-        );
-      });
-      return true;
-    },
-    [
-      hasRealConvoId,
-      conversationId,
-      upsertSteerChip,
-      replaceSteerChip,
-      acknowledgeSteer,
-      settleReceiptReplay,
-      queueRecoveredSteer,
-      rehomeSteer,
-      reclaimRejectedChipQuotes,
-      steerMessage,
-      sendNow,
-      enqueue,
-      restoreQueued,
-      rewakeDrain,
-      registerQueuedOrigin,
-      isSteerAcceptedOrSettled,
-      hasPendingSteerCancel,
-      clearPendingSteerCancel,
-      cancelSteer,
-      showToast,
-      localize,
-      activeGenerationCreatedAt,
-      activeGenerationProtocolVersion,
-      scheduleSteerDispatch,
-    ],
-  );
+  const submitSteer = useSubmitSteer({
+    conversationId,
+    hasRealConvoId,
+    activeGenerationCreatedAt,
+    activeGenerationProtocolVersion,
+    visibleConversationRef,
+    isSubmittingRef,
+    sendNow,
+    chips,
+    rows,
+    enqueue,
+  });
 
   /** Composer-originated steer: consumes the composer's attachments and quote
    *  chips so they ride the steer as one unit (the server re-fetches + encodes
