@@ -1,17 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
+import { useAtomValue } from 'jotai';
 import { useRecoilValue } from 'recoil';
-import { useAtomValue, useStore } from 'jotai';
 import { hasLiveRunPause, selectLiveMessageState } from '@librechat/chat';
-import { hasQueuedIntent, acquireQueueSendLock, releaseQueueSendLock } from '@librechat/chat';
 import {
   Constants,
   isAgentsEndpoint,
   isAssistantsEndpoint,
   DEFAULT_QUEUED_SEND_LOCK_TIMEOUT_MS,
 } from 'librechat-data-provider';
-import type { QueueSendLock, SubmitSteerOptions, QueuedMessageContext } from '@librechat/chat';
 import type { TMessage, TConversation, CodeEnvironmentMode } from 'librechat-data-provider';
-import type { QueuedMessage, QueuedMessageOrigin } from '~/hooks/Chat/queue';
+import type { SubmitSteerOptions, QueuedMessageContext } from '@librechat/chat';
+import type { QueuedMessageOrigin } from '~/hooks/Chat/queue';
 import type { ExtendedFile, FileSetter } from '~/common';
 import type { PendingSteer } from '~/hooks/Chat/queue';
 import type { DuringRunAction } from './contract';
@@ -19,14 +18,11 @@ import {
   getReasoningStateKey,
   pendingReasoningOverrideFamily,
 } from '~/components/Chat/Input/Composer/state';
-import {
-  recoveryDispositionsFamily,
-  recoveryDisposition,
-} from '~/components/Chat/Steering/recovery';
 import { useChatSettings } from '~/Providers/ChatSettingsContext';
 import useCodeApprovalMode from '../Agents/useCodeApprovalMode';
 import { revealedQueuedTurnFamily } from '~/store/steer';
 import useQueuedTurnReceipts from './steering/receipts';
+import useDuringRunActions from './steering/actions';
 import { useLatestMessage } from '~/hooks/Messages';
 import useQueuedRecovery from './steering/recovery';
 import useComposerTake from './steering/composer';
@@ -34,6 +30,7 @@ import useQueueEnqueue from './steering/enqueue';
 import useSubmitSteer from './steering/submit';
 import { carriedSteerContext } from '~/utils';
 import useSteerChips from './steering/chips';
+import useQueuedSend from './steering/send';
 import useQueueRows from './steering/rows';
 import store from '~/store';
 
@@ -109,7 +106,6 @@ export default function useSteering({
 }: UseSteeringParams) {
   const composerDisabledRef = useRef(composerDisabled);
   composerDisabledRef.current = composerDisabled;
-  const jotaiStore = useStore();
   const {
     config,
     duringRunDefaultAction: defaultAction,
@@ -153,29 +149,7 @@ export default function useSteering({
    * bounded interval submits degrade to the local queue and Stop/steer refuse. */
   const canControlGeneration = activeGenerationCreatedAt != null;
   const duringRunActive = enabled && (isSubmitting || revealPending) && !answerModeActive;
-  /** `ask()` does not flip `isSubmitting` until the submission effect renders.
-   * Two queued-row clicks in the same browser task would otherwise both remove
-   * their items and the second submission could overwrite the first; and the
-   * run-end drain, which submits into the SAME pane slot, cannot see a ref that
-   * lives in this hook. The claim is shared with `useQueueDrain` and keyed by
-   * pane, because the contended resource is `isSubmittingFamily(index)`. */
-  const sendLockKey = String(index);
-  const idleSendLockRef = useRef<QueueSendLock | null>(null);
   const pendingSteers = useRecoilValue(store.pendingSteersByConvoId(queueKey));
-
-  /** Held only until the pane's submission state moves or it changes chat: past
-   * either, both callers gate on `isSubmitting` directly and the claim is spent.
-   *
-   * Released from a cleanup rather than an effect body, because React runs every
-   * cleanup in a commit before any effect body: this can never free a slot the
-   * drain's effect claimed in the same commit. */
-  useEffect(
-    () => () => {
-      releaseQueueSendLock(idleSendLockRef.current);
-      idleSendLockRef.current = null;
-    },
-    [isSubmitting, sendLockKey, queueKey],
-  );
 
   const rows = useQueueRows({
     index,
@@ -193,8 +167,6 @@ export default function useSteering({
     downgradeServerQueuedTurn,
     reorderQueued,
     restoreQueuedOrder,
-    takeQueued,
-    releaseQueuedOrigin,
     restoreQueued,
     rewakeDrain,
     armDrainAfterAbort,
@@ -248,7 +220,7 @@ export default function useSteering({
     downgradeServerQueuedTurn,
     removeQueued,
   });
-  const { takeComposerFiles, takeComposerContext, takeComposerQuotes } = useComposerTake({
+  const composer = useComposerTake({
     conversationId,
     reasoningStateKey,
     files,
@@ -267,66 +239,6 @@ export default function useSteering({
     rows,
     enqueue,
   });
-
-  /** Composer-originated steer: consumes the composer's attachments and quote
-   *  chips so they ride the steer as one unit (the server re-fetches + encodes
-   *  files and merges quotes at the injection boundary). Both are taken only
-   *  after the guards pass — with `canSteer` true, `submitSteer` cannot
-   *  refuse, so the drained context can never be stranded. */
-  const steerFromComposer = useCallback(
-    (text: string, preempt = false): boolean => {
-      const trimmed = text.trim();
-      if (composerDisabledRef.current || trimmed.length === 0 || filesLoading || !canSteer) {
-        return false;
-      }
-      /** A live steer cannot change the provider request already in flight.
-       * Preserve a staged reasoning choice as a full queued turn. */
-      if (pendingReasoningOverride != null) {
-        enqueue(trimmed, {
-          files: takeComposerFiles(),
-          ...takeComposerContext(),
-        });
-        takeComposerDraft();
-        return true;
-      }
-      const consumed = submitSteer(trimmed, takeComposerFiles(), takeComposerQuotes(), {
-        preempt,
-      });
-      if (consumed) {
-        takeComposerDraft();
-      }
-      return consumed;
-    },
-    [
-      filesLoading,
-      canSteer,
-      pendingReasoningOverride,
-      enqueue,
-      takeComposerFiles,
-      takeComposerContext,
-      takeComposerQuotes,
-      takeComposerDraft,
-      submitSteer,
-    ],
-  );
-
-  /** Composer-originated queue: carries the composer's attachments, quote
-   *  chips, and manual skill picks as one unit. */
-  const queueFromComposer = useCallback(
-    (text: string): boolean => {
-      const trimmed = text.trim();
-      if (composerDisabledRef.current || trimmed.length === 0 || filesLoading) {
-        return false;
-      }
-      enqueue(trimmed, {
-        files: takeComposerFiles(),
-        ...takeComposerContext(),
-      });
-      takeComposerDraft();
-      return true;
-    },
-    [filesLoading, enqueue, takeComposerFiles, takeComposerContext, takeComposerDraft],
-  );
 
   /** Retry a failed chip through the normal steer path. */
   const retrySteer = useCallback(
@@ -414,240 +326,41 @@ export default function useSteering({
     [conversationId, replaceSteerChip, restoreQueued, enqueue],
   );
 
-  /** Chip action: send a queued message into the live run instead. Keys on
-   *  steer availability, not the default action: a queue-preferring user
-   *  clicking send-now explicitly asked to inject into the live run. The
-   *  item's attachments ride the steer; its quotes/skills travel as the
-   *  restore context so a degraded steer requeues/sends with them intact.
-   *  `preempt` escalates the steer to interrupt at the next safe token
-   *  boundary; it only means something on the live-run path. */
-  const sendLocalQueuedNow = useCallback(
-    (item: QueuedMessage, opts?: { preempt?: boolean }) => {
-      if (
-        hasQueuedIntent(item.id) ||
-        recoveryDisposition(jotaiStore.get(recoveryDispositionsFamily(queueKey)), item) != null
-      ) {
-        return;
-      }
-      /** In answer mode (and any other submission-owned non-steerable state)
-       * there is no immediate path. Refuse before touching queue state so a
-       * stale/direct caller cannot perform the old remove-and-restore no-op. */
-      if (isSubmitting && (!duringRunActive || !canSteer || item.recoverySteerId != null)) {
-        return;
-      }
-      /** Keep request-scoped reasoning on a new generation; injecting this
-       * item into the active run would silently ignore the selection. */
-      if (duringRunActive && item.reasoningOverride != null) {
-        return;
-      }
-      /* No fallback to the captured item: the only way it is missing is that
-         something else already took it, likely the run-end drain moments before
-         this click landed. Re-sending it would send the same words twice. */
-      const origin = takeQueued(item.id);
-      if (origin == null) {
-        return;
-      }
-      const taken = origin.item;
-      if (duringRunActive && canSteer) {
-        const consumed = submitSteer(
-          taken.text,
-          taken.files,
-          { quotes: taken.quotes, manualSkills: taken.manualSkills },
-          {
-            ...(opts?.preempt === true && { preempt: true }),
-            queuedOrigin: origin,
-          },
-        );
-        if (!consumed) {
-          restoreQueued(origin);
-        }
-        return;
-      }
-      if (!isSubmitting) {
-        const lock = acquireQueueSendLock(sendLockKey, sendLockTimeoutMs);
-        if (lock == null) {
-          restoreQueued(origin);
-          return;
-        }
-        idleSendLockRef.current = lock;
-        const releaseLock = () => {
-          releaseQueueSendLock(lock);
-          if (idleSendLockRef.current === lock) {
-            idleSendLockRef.current = null;
-          }
-        };
-        // Explicit (possibly empty) overrides: the queued item is the full
-        // submission context, never the composer's staged files/quotes/picks.
-        let accepted: false | void;
-        try {
-          accepted = sendNow(taken.text, taken.files ?? [], {
-            quotes: taken.quotes,
-            manualSkills: taken.manualSkills,
-            reasoningOverride: taken.reasoningOverride,
-            clientRequestId: taken.clientRequestId,
-            recoverySteerId: taken.recoverySteerId,
-            expectedPredecessorCreatedAt: taken.expectedPredecessorCreatedAt,
-            queuedMessageOrigin: origin,
-          });
-        } catch (error) {
-          releaseLock();
-          restoreQueued(origin);
-          throw error;
-        }
-        if (accepted === false) {
-          releaseLock();
-          // `ask` refused without sending: restore the chip so the user's
-          // text is never silently dropped (mirrors useQueueDrain).
-          restoreQueued(origin);
-        } else {
-          releaseQueuedOrigin(origin);
-        }
-        return;
-      }
-      /** The run still owns the send slot but cannot accept a steer (approval
-       *  pause/answer transition): put the untouched item back where it was. */
-      restoreQueued(origin);
-    },
-    [
-      takeQueued,
-      jotaiStore,
-      queueKey,
-      duringRunActive,
-      canSteer,
-      submitSteer,
-      isSubmitting,
-      sendNow,
-      sendLockKey,
-      sendLockTimeoutMs,
-      restoreQueued,
-      releaseQueuedOrigin,
-    ],
-  );
-
-  const queuedActionClaimsRef = useRef(new Set<string>());
-  const sendQueuedNow = useCallback(
-    (item: QueuedMessage, opts?: { preempt?: boolean }) => {
-      /* A reasoning override belongs to the next provider request and cannot
-         be injected into the one already running. Refuse before cancelling a
-         durable server row, so it keeps its crash-safe ownership. */
-      if (duringRunActive && item.reasoningOverride != null) {
-        return;
-      }
-      if (item.server == null) {
-        sendLocalQueuedNow(item, opts);
-        return;
-      }
-      if (queuedActionClaimsRef.current.has(item.id)) {
-        return;
-      }
-      queuedActionClaimsRef.current.add(item.id);
-      void discardQueued(item)
-        .then((discarded) => {
-          if (discarded) {
-            sendLocalQueuedNow(item, opts);
-          }
-        })
-        .finally(() => {
-          queuedActionClaimsRef.current.delete(item.id);
-        });
-    },
-    [duringRunActive, discardQueued, sendLocalQueuedNow],
-  );
-
-  /** Abort the current run and auto-send this text once the abort settles. */
-  const interruptAndSend = useCallback(
-    (text: string): boolean => {
-      const trimmed = text.trim();
-      if (
-        composerDisabledRef.current ||
-        trimmed.length === 0 ||
-        filesLoading ||
-        !canControlGeneration
-      ) {
-        return false;
-      }
-      enqueue(trimmed, {
-        front: true,
-        files: takeComposerFiles(),
-        ...takeComposerContext(),
-      });
-      takeComposerDraft();
-      armDrainAfterAbort();
-      stopGenerating();
-      return true;
-    },
-    [
-      filesLoading,
-      canControlGeneration,
-      enqueue,
-      takeComposerFiles,
-      takeComposerContext,
-      takeComposerDraft,
-      armDrainAfterAbort,
-      stopGenerating,
-    ],
-  );
-
-  /** Preempt the active step and continue the same response with the message. */
-  const interruptSteer = useCallback(
-    (text: string): boolean => {
-      const trimmed = text.trim();
-      if (
-        composerDisabledRef.current ||
-        trimmed.length === 0 ||
-        filesLoading ||
-        pausedOnApproval ||
-        !canControlGeneration ||
-        !hasRealConvoId
-      ) {
-        return false;
-      }
-      /* A staged reasoning choice belongs to a new generation, which a steer
-         into the live one cannot carry. Falling back to interruptAndSend here
-         would discard the partial answer this action promises to keep, so
-         decline exactly as the disabled menu row does, on the first turn too,
-         and leave the words in the composer, where Enter queues them as a
-         turn of their own. */
-      if (pendingReasoningOverride != null) {
-        return false;
-      }
-      const consumed = submitSteer(trimmed, takeComposerFiles(), takeComposerQuotes(), {
-        preempt: true,
-      });
-      if (consumed) {
-        takeComposerDraft();
-      }
-      return consumed;
-    },
-    [
-      filesLoading,
-      pausedOnApproval,
-      canControlGeneration,
-      hasRealConvoId,
-      pendingReasoningOverride,
-      takeComposerFiles,
-      takeComposerQuotes,
-      takeComposerDraft,
-      submitSteer,
-    ],
-  );
-
-  /** Routes a during-run submit to the effective action. Returns true when consumed. */
-  const submitDuringRun = useCallback(
-    (text: string): boolean => {
-      if (composerDisabledRef.current || !duringRunActive) {
-        return false;
-      }
-      if (effectiveAction === 'interrupt') {
-        return interruptSteer(text);
-      }
-      if (effectiveAction === 'steer') {
-        return steerFromComposer(text);
-      }
-      return queueFromComposer(text);
-    },
-    [duringRunActive, effectiveAction, interruptSteer, steerFromComposer, queueFromComposer],
-  );
+  const { sendQueuedNow } = useQueuedSend({
+    index,
+    queueKey,
+    isSubmitting,
+    duringRunActive,
+    canSteer,
+    sendLockTimeoutMs,
+    sendNow,
+    submitSteer,
+    rows,
+    discardQueued,
+  });
+  const {
+    steerFromComposer,
+    queueFromComposer,
+    interruptAndSend,
+    interruptSteer,
+    submitDuringRun,
+  } = useDuringRunActions({
+    composerDisabledRef,
+    filesLoading,
+    canSteer,
+    canControlGeneration,
+    hasRealConvoId,
+    duringRunActive,
+    pausedOnApproval,
+    effectiveAction,
+    pendingReasoningOverride,
+    enqueue,
+    composer,
+    takeComposerDraft,
+    submitSteer,
+    armDrainAfterAbort,
+    stopGenerating,
+  });
 
   /** Memoized so consumers like `memo(Bar)` and `memo(Queue)` can bail on the
    * `steering` prop; a fresh literal here would defeat them every render. */
