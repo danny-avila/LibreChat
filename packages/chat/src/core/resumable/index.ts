@@ -3,3 +3,6 @@ export * from './errors';
 export * from './events';
 export * from './resume';
 export * from './messages';
+export * from './run';
+export * from './host';
+export * from './subscription';
