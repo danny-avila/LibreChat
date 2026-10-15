@@ -62,3 +62,22 @@ export const clearPendingReasoningOverrides = (
     pendingReasoningOverrideFamily.remove(key);
   }
 };
+
+/** Release every staged quote and manual skill pick except under the `keep`
+ * keys. Like a reasoning selection, they survive navigation, so conversations
+ * no longer on screen still hold some; clearing only the mounted panes would
+ * carry them across a sign-out. */
+export const clearPendingComposerContext = (
+  jotaiStore: ReturnType<typeof createStore>,
+  keep: ReadonlySet<string> = new Set(),
+) => {
+  for (const family of [pendingQuotesByConvoId, pendingManualSkillsByConvoId]) {
+    for (const key of Array.from(family.getParams())) {
+      if (keep.has(key)) {
+        continue;
+      }
+      jotaiStore.set(family(key), []);
+      family.remove(key);
+    }
+  }
+};
