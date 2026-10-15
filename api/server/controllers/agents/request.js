@@ -60,6 +60,8 @@ const {
   resolveFailedTurnContent,
   savePrivateTextMessage,
   getTurnUserMessageCreatedAt,
+  getTurnContextUpdates,
+  isStableContextEnabled,
   savePrivateTextErrorTurn,
   stampPreliminaryPrivateTextMessage,
   announceReply,
@@ -149,11 +151,24 @@ function getInitializationFailure(error) {
   };
 }
 
-function resolveConversationCreatedAt({ userId, conversationId, isNewConvo, conversation }) {
+function resolveConversationCreatedAt({
+  userId,
+  conversationId,
+  isNewConvo,
+  conversation,
+  config,
+}) {
   return resolveConversationAnchor({
     isNewConversation: isNewConvo,
+    /** The document becomes `req.resolvedConversation`, which carries the turn context anchor. */
     loadConversation: () =>
-      conversation !== undefined ? Promise.resolve(conversation) : getConvo(userId, conversationId),
+      conversation !== undefined
+        ? Promise.resolve(conversation)
+        : getConvo(
+            userId,
+            conversationId,
+            isStableContextEnabled(config) ? '+contextAnchor' : undefined,
+          ),
     onLoadError: (error) => {
       logger.warn('[AgentController] Failed to resolve conversation timestamp anchor', {
         conversationId,
@@ -521,7 +536,11 @@ async function saveErrorTurn(
           error: false,
           unfinished: false,
         },
-        { context, createdAtOnInsert: getTurnUserMessageCreatedAt(req) },
+        {
+          context,
+          createdAtOnInsert: getTurnUserMessageCreatedAt(req),
+          contextUpdates: getTurnContextUpdates(req, userMessage.messageId),
+        },
       );
       if (!savedUserMessage) {
         throw new Error('Failed user message could not be persisted');
@@ -956,6 +975,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
     conversation: Object.prototype.hasOwnProperty.call(req, 'resolvedConversation')
       ? req.resolvedConversation
       : undefined,
+    config: req.config,
   });
   // Resolve the authoritative project context while idempotency and admission
   // gates proceed below. The promise is awaited before createJob, so rejected
@@ -2824,6 +2844,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
                     userMessage,
                     {
                       createdAtOnInsert: getTurnUserMessageCreatedAt(req),
+                      contextUpdates: getTurnContextUpdates(req, userMessage.messageId),
                       context:
                         'api/server/controllers/agents/request.js - user message before HITL pause',
                     },
@@ -3071,6 +3092,7 @@ const ResumableAgentController = async (req, res, next, initializeClient, addTit
             userMessage,
             {
               createdAtOnInsert: getTurnUserMessageCreatedAt(req),
+              contextUpdates: getTurnContextUpdates(req, userMessage.messageId),
               context: 'api/server/controllers/agents/request.js - resumable user message',
             },
           );
