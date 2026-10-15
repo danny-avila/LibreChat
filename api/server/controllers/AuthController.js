@@ -471,9 +471,7 @@ const refreshController = async (req, res) => {
             openidId: claims.sub,
             ...(openidIssuer ? { openidIssuer } : {}),
           });
-          logger.info(
-            `[refreshController] Updated user ${user.email} openidId (${reason}): ${user.openidId ?? 'null'} -> ${claims.sub}`,
-          );
+          logger.info(`[refreshController] Updated user ${user._id} openidId (${reason})`);
         }
 
         if (

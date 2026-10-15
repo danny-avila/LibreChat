@@ -3,6 +3,7 @@ import 'winston-daily-rotate-file';
 import {
   redactFormat,
   redactMessage,
+  redactLogString,
   debugTraverse,
   jsonTruncateFormat,
   stripHeavyErrorFields,
@@ -20,7 +21,13 @@ const useDebugLogging = typeof DEBUG_LOGGING === 'string' && DEBUG_LOGGING.toLow
 
 const useFileLogging = typeof LOG_TO_FILE !== 'string' || LOG_TO_FILE.toLowerCase() !== 'false';
 
-const requestContextFormat = winston.format(attachRequestContext);
+const requestContextFormat = winston.format((info) => {
+  const withContext = attachRequestContext(info);
+  if (typeof withContext.request_path === 'string') {
+    withContext.request_path = redactLogString(withContext.request_path);
+  }
+  return withContext;
+});
 
 winston.addColors({
   info: 'green',
