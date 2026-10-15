@@ -30,8 +30,9 @@ import { showThinkingAtom } from '~/store/showThinking';
 import { fontSizeAtom } from '~/store/fontSize';
 
 function useAppMessage(): MessagePartMessage {
-  const { messageId, isSubmitting, isLatestMessage, nextType } = useMessageContext();
-  return { messageId, isSubmitting, isLatestMessage, nextType };
+  const { messageId, isSubmitting, isLatestMessage, nextType, conversationId, partIndex } =
+    useMessageContext();
+  return { messageId, isSubmitting, isLatestMessage, nextType, conversationId, partIndex };
 }
 
 function useAppAgent(agentId: string): Agent | undefined {
@@ -111,6 +112,7 @@ export const appMessagePartsHost: MessagePartsHost = {
   useFontSize: () => useAtomValue(fontSizeAtom),
   useShowThinking: () => useAtomValue(showThinkingAtom),
   useAutoExpandTools: () => useRecoilValue<boolean>(store.autoExpandTools),
+  useLaTeXParsing: () => useRecoilValue<boolean>(store.LaTeXParsing),
   useUserTextPreferences: useAppUserTextPreferences,
   /* The atom rather than the auth context: AuthContextProvider mirrors the user into it, and the
    * public share route mounts outside that provider. */

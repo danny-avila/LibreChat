@@ -29,6 +29,7 @@ function createHost(enableUserMsgMarkdown = false): MessagePartsHost {
     useFontSize: () => 'text-base',
     useShowThinking: () => false,
     useAutoExpandTools: () => false,
+    useLaTeXParsing: () => false,
     useUserTextPreferences: () => ({
       usernameDisplay: false,
       enableUserMsgMarkdown,
