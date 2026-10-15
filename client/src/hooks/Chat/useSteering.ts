@@ -1,28 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { v4 } from 'uuid';
+import { useRecoilValue } from 'recoil';
 import { useAtomValue, useStore } from 'jotai';
 import { useToastContext } from '@librechat/client';
-import { useRecoilValue, useRecoilCallback } from 'recoil';
 import { hasQueuedIntent, acquireQueueSendLock, releaseQueueSendLock } from '@librechat/chat';
+import {
+  hasLiveRunPause,
+  getSteerErrorCode,
+  selectLiveMessageState,
+  isDefiniteSteerRejection,
+} from '@librechat/chat';
 import {
   Constants,
   isAgentsEndpoint,
   isAssistantsEndpoint,
   DEFAULT_QUEUED_SEND_LOCK_TIMEOUT_MS,
 } from 'librechat-data-provider';
-import {
-  hasLiveRunPause,
-  getSteerErrorCode,
-  isSteerRunReplaced,
-  toQueuedTurnFileRefs,
-  acknowledgeSteerChips,
-  QUEUE_USAGE_MAX_FILES,
-  selectLiveMessageState,
-  isDefiniteSteerRejection,
-} from '@librechat/chat';
 import type { QueueSendLock, SubmitSteerOptions, QueuedMessageContext } from '@librechat/chat';
 import type { TMessage, TConversation, CodeEnvironmentMode } from 'librechat-data-provider';
-import type { CallbackInterface } from 'recoil';
 import type { QueuedMessage, QueuedMessageOrigin } from '~/hooks/Chat/queue';
 import type { ExtendedFile, FileSetter } from '~/common';
 import type { PendingSteer } from '~/hooks/Chat/queue';
@@ -30,41 +25,36 @@ import type { DuringRunAction } from './contract';
 import {
   useCancelSteerMutation,
   useSteerMessageMutation,
-  useMarkFilesUsageMutation,
-  useCancelAgentQueuedTurnMutation,
-  useEnqueueAgentQueuedTurnMutation,
-  isDefiniteQueuedTurnRejection,
-  isDefiniteQueuedTurnsUnsupported,
   supportsGenerationProtocolV2,
 } from '~/data-provider';
-import {
-  recoveryDispositionsFamily,
-  recoveryDisposition,
-  canRestoreRecovery,
-  blockRecovery,
-} from '~/components/Chat/Steering/recovery';
 import {
   getReasoningStateKey,
   pendingReasoningOverrideFamily,
 } from '~/components/Chat/Input/Composer/state';
-import { pendingQueuedTurnEnqueueIdsByConvoId, queuedMessagesByConvoId } from '~/hooks/Chat/queue';
-import { revealedQueuedTurnFamily, pendingSteerCancelClientIdsFamily } from '~/store/steer';
-import { appendAppliedSteerIds, carriedSteerContext, mergeRestagedQuotes } from '~/utils';
+import {
+  recoveryDispositionsFamily,
+  recoveryDisposition,
+} from '~/components/Chat/Steering/recovery';
 import { useChatSettings } from '~/Providers/ChatSettingsContext';
 import useCodeApprovalMode from '../Agents/useCodeApprovalMode';
 import { useSteerRehome } from '~/hooks/Chat/useSteerCancel';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
+import { revealedQueuedTurnFamily } from '~/store/steer';
 import useQueuedTurnReceipts from './steering/receipts';
 import { useLatestMessage } from '~/hooks/Messages';
-import { insertQueuedMessage } from '~/utils/queue';
+import useQueuedRecovery from './steering/recovery';
 import useComposerTake from './steering/composer';
+import useQueueEnqueue from './steering/enqueue';
+import { carriedSteerContext } from '~/utils';
 import useLocalize from '~/hooks/useLocalize';
+import useSteerChips from './steering/chips';
 import useQueueRows from './steering/rows';
 import store from '~/store';
 
 export type { DuringRunAction };
 
 export type { QueuedMessageContext } from '@librechat/chat';
+export { resolveAcknowledgedSteer } from './steering/chips';
 
 export {
   getSteerErrorCode,
@@ -74,60 +64,6 @@ export {
 } from '@librechat/chat';
 export { hydrateFileDeliveryMetadata as mergeQueuedTurnFileMetadata } from '@librechat/chat';
 export type { SteerErrorCode } from '@librechat/chat';
-
-/**
- * Resolves a steer's 202 ACK against the applied-id set and the run's live
- * state: on the common path the local chip is swapped for its server-assigned
- * id (still `pending`, awaiting `on_steer_applied`). If an `on_steer_applied`
- * event already beat the ACK, if the source generation was replaced, or if the
- * run itself ended before the ACK landed, no later SSE event will ever resolve
- * a `pending` chip, so the caller is told to route the words into the queue
- * instead of stranding one.
- *
- * `ordinaryRunOver` is the caller's observation of ordinary terminal state
- * (the visible pane is idle); epoch replacement is derived here so every
- * caller applies the same rule.
- *
- * The single implementation for EVERY 202: the composer's own POST and an ACK
- * originating outside it (`useSteerRecovery`'s retry, for a steer that already
- * failed once) both resolve through this, instead of approximating each other.
- *
- * @returns true when the caller must route the steer into the queue.
- */
-export function resolveAcknowledgedSteer(
-  { snapshot, set }: Pick<CallbackInterface, 'snapshot' | 'set'>,
-  conversationId: string,
-  localId: string,
-  steer: PendingSteer,
-  ordinaryRunOver: boolean,
-): boolean {
-  const applied = snapshot.getLoadable(store.appliedSteerIdsByConvoId(conversationId)).getValue();
-  const alreadyApplied = applied.includes(steer.steerId) || applied.includes(localId);
-  const alreadyAccepted = snapshot
-    .getLoadable(store.acceptedSteerClientIdsByConvoId(conversationId))
-    .getValue()
-    .includes(localId);
-  const activeEpoch = snapshot
-    .getLoadable(store.activeGenerationCreatedAtByConvoId(conversationId))
-    .getValue();
-  const runOver = ordinaryRunOver || isSteerRunReplaced(steer, activeEpoch);
-  set(store.acceptedSteerClientIdsByConvoId(conversationId), (prev) =>
-    appendAppliedSteerIds(prev, [localId]),
-  );
-  set(store.pendingSteersByConvoId(conversationId), (prev) =>
-    acknowledgeSteerChips(prev, localId, steer, alreadyApplied || alreadyAccepted || runOver),
-  );
-  /** `alreadyAccepted` can come from the correlation update that precedes the
-   * delayed HTTP response; it proves server ownership, not delivery. Once the
-   * source epoch is over/replaced we still must recover it. */
-  if (alreadyApplied || !runOver) {
-    return false;
-  }
-  // The server accepted but this run is already terminal. Its terminal close
-  // may have parked the item, so the caller must route it through the recovery
-  // converter (deterministic next-turn id), not an ordinary editable queue row.
-  return true;
-}
 
 export interface UseSteeringParams {
   /** Consume the actual storage key selected by the composer’s autosave owner. */
@@ -198,9 +134,6 @@ export default function useSteering({
    * every render and would defeat the memoized return value below. */
   const { mutate: steerMessage } = useSteerMessageMutation();
   const { mutateAsync: cancelSteer } = useCancelSteerMutation();
-  const { mutate: markFilesUsage } = useMarkFilesUsageMutation();
-  const { mutate: enqueueAgentQueuedTurn } = useEnqueueAgentQueuedTurnMutation();
-  const { mutateAsync: cancelAgentQueuedTurn } = useCancelAgentQueuedTurnMutation();
   const {
     config,
     duringRunDefaultAction: defaultAction,
@@ -377,491 +310,42 @@ export default function useSteering({
   const visibleConversationRef = useRef(conversationId);
   visibleConversationRef.current = conversationId;
 
-  const upsertSteerChip = useRecoilCallback(
-    ({ set }) =>
-      (convoId: string, steer: PendingSteer) => {
-        set(store.pendingSteersByConvoId(convoId), (prev) => {
-          const existing = prev.findIndex((item) => item.steerId === steer.steerId);
-          if (existing >= 0) {
-            const next = [...prev];
-            next[existing] = steer;
-            return next;
-          }
-          return [...prev, steer];
-        });
-      },
-    [],
-  );
-
-  const replaceSteerChip = useRecoilCallback(
-    ({ set }) =>
-      (convoId: string, localId: string, steer: PendingSteer | null) => {
-        set(store.pendingSteersByConvoId(convoId), (prev) => {
-          const next = prev.filter((item) => item.steerId !== localId);
-          return steer ? [...next, steer] : next;
-        });
-      },
-    [],
-  );
-
-  /**
-   * The composer's 202 ACK, resolved by the SHARED implementation so it cannot
-   * drift from the one `useSteerRecovery` uses for a retry's ACK.
-   *
-   * All this call site contributes is its observation of ordinary terminal
-   * state: this hook instance survives navigation, so the visible pane's idle
-   * flag says nothing about an off-screen origin run, and terminal state may
-   * only be inferred while the callback still belongs to the visible chat.
-   * Epoch replacement is derived inside the resolver for every caller.
-   */
-  const acknowledgeSteer = useRecoilCallback(
-    (cbInterface) =>
-      (convoId: string, localId: string, steer: PendingSteer): boolean =>
-        resolveAcknowledgedSteer(
-          cbInterface,
-          convoId,
-          localId,
-          steer,
-          visibleConversationRef.current === convoId && !isSubmittingRef.current,
-        ),
-    [],
-  );
-
-  const settleReceiptReplay = useRecoilCallback(
-    ({ set }) =>
-      (convoId: string, localId: string, serverId: string) => {
-        set(store.appliedSteerIdsByConvoId(convoId), (prev) =>
-          appendAppliedSteerIds(prev, [localId, serverId]),
-        );
-        set(store.acceptedSteerClientIdsByConvoId(convoId), (prev) =>
-          appendAppliedSteerIds(prev, [localId]),
-        );
-        set(store.pendingSteersByConvoId(convoId), (prev) =>
-          prev.filter((steer) => steer.steerId !== localId && steer.steerId !== serverId),
-        );
-      },
-    [],
-  );
-
-  /** Terminal/applied SSE can settle the optimistic client id before either
-   * HTTP callback. Those callbacks must become no-ops or a lost response can
-   * resurrect already-delivered words as a failed chip or queued fallback. */
-  const isSteerAcceptedOrSettled = useRecoilCallback(
-    ({ snapshot }) =>
-      (convoId: string, clientSteerId: string) => {
-        const applied = snapshot.getLoadable(store.appliedSteerIdsByConvoId(convoId)).getValue();
-        if (applied.includes(clientSteerId)) {
-          return true;
-        }
-        const accepted = snapshot
-          .getLoadable(store.acceptedSteerClientIdsByConvoId(convoId))
-          .getValue();
-        if (accepted.includes(clientSteerId)) {
-          return true;
-        }
-        return snapshot
-          .getLoadable(store.pendingSteersByConvoId(convoId))
-          .getValue()
-          .some((steer) => steer.status === 'pending' && steer.clientSteerId === clientSteerId);
-      },
-    [],
-  );
-  const hasPendingSteerCancel = useCallback(
-    (convoId: string, clientSteerId: string) =>
-      jotaiStore.get(pendingSteerCancelClientIdsFamily(convoId)).includes(clientSteerId),
-    [jotaiStore],
-  );
-  const clearPendingSteerCancel = useCallback(
-    (convoId: string, clientSteerId: string) => {
-      jotaiStore.set(pendingSteerCancelClientIdsFamily(convoId), (prev) =>
-        prev.filter((id) => id !== clientSteerId),
-      );
-    },
-    [jotaiStore],
-  );
-
-  /** Fire-and-forget TTL hold for uploads entering the client queue: a
-   *  queued message can outlive the upload window (long run, approval pause)
-   *  and send-time marking only happens at drain. The server extends the
-   *  deadline rather than clearing it, so a queue this tab never drains still
-   *  gets reaped. Failure is tolerated; send-time marking is the backstop. */
-  const markQueuedFilesUsage = useCallback(
-    (files?: TMessage['files']) => {
-      if (files == null || files.length === 0) {
-        return;
-      }
-      const file_ids: string[] = [];
-      for (const file of files) {
-        if (typeof file.file_id === 'string' && file.file_id.length > 0) {
-          file_ids.push(file.file_id);
-        }
-        if (file_ids.length === QUEUE_USAGE_MAX_FILES) {
-          break;
-        }
-      }
-      if (file_ids.length > 0) {
-        markFilesUsage({ file_ids });
-      }
-    },
-    [markFilesUsage],
-  );
-
-  const enqueue = useCallback(
-    (
-      text: string,
-      options?: {
-        front?: boolean;
-        files?: TMessage['files'];
-        quotes?: string[];
-        manualSkills?: string[];
-        reasoningOverride?: TMessage['reasoningOverride'];
-        /** Set when the files were ALREADY queued/steered: their TTL was
-         *  held when they first entered the queue (or at the steer 202). */
-        skipUsageMark?: boolean;
-        id?: string;
-        createdAt?: number;
-        clientRequestId?: string;
-        expectedPredecessorCreatedAt?: number;
-        /** The queue lineage of a row being put back after its parked copy was
-         *  cancelled. The run it waited on may have ended meanwhile, which
-         *  clears the live pair, and the row must stay durable regardless. */
-        lineage?: { parentMessageId: string; predecessorCreatedAt: number };
-      },
-    ) => {
-      const trimmed = text.trim();
-      if (trimmed.length === 0) {
-        return;
-      }
-      const parentMessageId =
-        options?.lineage?.parentMessageId ??
-        (pendingReveal != null
-          ? pendingReveal.queueParentMessageId
-          : liveMessageState?.parentMessageId);
-      const predecessorCreatedAt =
-        options?.lineage?.predecessorCreatedAt ??
-        (pendingReveal != null
-          ? pendingReveal.queuePredecessorCreatedAt
-          : activeGenerationCreatedAt);
-      /** FINAL clears the active epoch before attachment. The revealed
-       * intent retains the queue's original parent/epoch pair. Its display
-       * parent and advancing completion boundary are not queue lineage.
-       * Without an authoritative pair, retain the follow-up locally. */
-      const serverOwned =
-        serverQueueEnabled && parentMessageId != null && predecessorCreatedAt != null;
-      const generatedClientRequestId = options?.clientRequestId == null;
-      const clientRequestId = options?.clientRequestId ?? (serverOwned ? v4() : undefined);
-      const item: QueuedMessage = {
-        id: options?.id ?? v4(),
-        text: trimmed,
-        createdAt: options?.createdAt ?? Date.now(),
-        ...(clientRequestId != null && { clientRequestId }),
-        ...(serverOwned && {
-          parentMessageId,
-          server: { status: 'sending' },
-        }),
-        ...((options?.expectedPredecessorCreatedAt ?? predecessorCreatedAt) != null && {
-          expectedPredecessorCreatedAt:
-            options?.expectedPredecessorCreatedAt ?? predecessorCreatedAt ?? undefined,
-        }),
-        ...(options?.files && options.files.length > 0 && { files: options.files }),
-        ...(options?.quotes && options.quotes.length > 0 && { quotes: options.quotes }),
-        ...(options?.manualSkills &&
-          options.manualSkills.length > 0 && {
-            manualSkills: options.manualSkills,
-          }),
-        ...(options?.reasoningOverride != null && {
-          reasoningOverride: options.reasoningOverride,
-        }),
-        ...(options?.front && { priority: true }),
-      };
-      jotaiStore.set(queuedMessagesByConvoId(queueKey), (prev) => insertQueuedMessage(prev, item));
-      if (options?.skipUsageMark !== true) {
-        markQueuedFilesUsage(options?.files);
-      }
-      if (!serverOwned || clientRequestId == null) {
-        return;
-      }
-      jotaiStore.set(pendingQueuedTurnEnqueueIdsByConvoId(queueKey), (previous) =>
-        previous.includes(clientRequestId) ? previous : [...previous, clientRequestId],
-      );
-      const serverFiles = toQueuedTurnFileRefs(item.files);
-      /** Commit the optimistic Recoil row before mutation callbacks can
-       * reconcile it. This also makes synchronous test/adaptor completions
-       * obey the same ordering as a real network response. */
-      queueMicrotask(() =>
-        enqueueAgentQueuedTurn(
-          {
-            conversationId,
-            clientRequestId,
-            parentMessageId,
-            text: item.text,
-            ...(serverFiles != null && { files: serverFiles }),
-            ...(item.quotes != null && item.quotes.length > 0 && { quotes: item.quotes }),
-            ...(item.manualSkills != null &&
-              item.manualSkills.length > 0 && {
-                manualSkills: item.manualSkills,
-              }),
-            ...(codeApprovalMode != null && { codeApprovalMode }),
-            ...(item.reasoningOverride != null && {
-              reasoningOverride: item.reasoningOverride,
-            }),
-            ...(item.priority === true && { priority: true }),
-            ...(item.expectedPredecessorCreatedAt != null && {
-              expectedPredecessorCreatedAt: item.expectedPredecessorCreatedAt,
-            }),
-          },
-          {
-            onSuccess: (receipt) => {
-              applyQueuedTurnReceipts([receipt], 'enqueue');
-            },
-            onError: (error) => {
-              if (finishQueuedTurnEnqueue(clientRequestId)) {
-                return;
-              }
-              updateQueuedMessage(item.id, (current) => {
-                if (isDefiniteQueuedTurnsUnsupported(error)) {
-                  const {
-                    server: _server,
-                    parentMessageId: _parentMessageId,
-                    clientRequestId: fallbackClientRequestId,
-                    ...legacy
-                  } = current;
-                  return {
-                    ...legacy,
-                    ...(!generatedClientRequestId && fallbackClientRequestId != null
-                      ? { clientRequestId: fallbackClientRequestId }
-                      : {}),
-                  };
-                }
-                if (!isDefiniteQueuedTurnRejection(error)) {
-                  return {
-                    ...current,
-                    server: {
-                      ...current.server,
-                      status: 'uncertain',
-                      uncertainSince: current.server?.uncertainSince ?? Date.now(),
-                    },
-                  };
-                }
-                const code = getSteerErrorCode(error);
-                return {
-                  ...current,
-                  server: {
-                    ...current.server,
-                    status: 'rejected',
-                    ...(code != null && { errorCode: code }),
-                  },
-                };
-              });
-            },
-          },
-        ),
-      );
-    },
-    [
-      queueKey,
-      conversationId,
-      serverQueueEnabled,
-      codeApprovalMode,
-      liveMessageState?.parentMessageId,
-      pendingReveal,
-      markQueuedFilesUsage,
-      activeGenerationCreatedAt,
-      enqueueAgentQueuedTurn,
-      applyQueuedTurnReceipts,
-      finishQueuedTurnEnqueue,
-      updateQueuedMessage,
-      jotaiStore,
-    ],
-  );
-
+  const {
+    upsertSteerChip,
+    replaceSteerChip,
+    acknowledgeSteer,
+    settleReceiptReplay,
+    isSteerAcceptedOrSettled,
+    hasPendingSteerCancel,
+    clearPendingSteerCancel,
+    reclaimRejectedChipQuotes,
+  } = useSteerChips({ visibleConversationRef, isSubmittingRef });
+  const { enqueue } = useQueueEnqueue({
+    queueKey,
+    conversationId,
+    serverQueueEnabled,
+    codeApprovalMode,
+    liveParentMessageId: liveMessageState?.parentMessageId,
+    pendingReveal,
+    activeGenerationCreatedAt,
+    applyQueuedTurnReceipts,
+    finishQueuedTurnEnqueue,
+    updateQueuedMessage,
+  });
+  const { discardQueued, dismissRecovery } = useQueuedRecovery({
+    queueKey,
+    conversationId,
+    hasRealConvoId,
+    applyQueuedTurnReceipts,
+    downgradeServerQueuedTurn,
+    removeQueued,
+  });
   const { takeComposerFiles, takeComposerContext, takeComposerQuotes } = useComposerTake({
     conversationId,
     reasoningStateKey,
     files,
     setFiles,
   });
-
-  /** Returns rejected excerpts to the composer chips from the SURVIVING steer
-   *  chip — used ONLY for a settled receipt replay, where the steer already
-   *  injected in the source generation and no future applied event or
-   *  terminal conversion will ever re-home the chip's quotes. An ordinary
-   *  no-echo ACK deliberately does NOT reclaim: its steer is still queued, so
-   *  the quotes stay carried on the pending chip — the applied-event
-   *  reconciliation re-stages them at the actual moment of loss, while a
-   *  terminal leftover conversion moves them onto the recovered row, which
-   *  sends via `ask` where quotes work on any server. When no chip remains,
-   *  another path already owns the excerpts and re-staging would
-   *  double-deliver. The chip is stripped in the same update (including its
-   *  captured queue-origin copy) so the restaged composer chips stay their
-   *  single representation. */
-  const reclaimRejectedChipQuotes = useRecoilCallback(
-    ({ snapshot, set }) =>
-      (convoId: string, steerIds: string[]) => {
-        const chips = snapshot.getLoadable(store.pendingSteersByConvoId(convoId)).getValue();
-        const chip = chips.find((steer) => steerIds.includes(steer.steerId));
-        const quotes = chip?.quotes ?? chip?.queuedOrigin?.item.quotes;
-        if (quotes == null || quotes.length === 0) {
-          return;
-        }
-        set(store.pendingQuotesByConvoId(convoId), (prev) => mergeRestagedQuotes(prev, quotes));
-        set(store.pendingSteersByConvoId(convoId), (prev) => {
-          let changed = false;
-          const next = prev.map((steer) => {
-            const originHasQuotes = steer.queuedOrigin?.item.quotes != null;
-            if (!steerIds.includes(steer.steerId) || (steer.quotes == null && !originHasQuotes)) {
-              return steer;
-            }
-            changed = true;
-            const { quotes: _quotes, ...rest } = steer;
-            if (!originHasQuotes || rest.queuedOrigin == null) {
-              return rest;
-            }
-            const { quotes: _originQuotes, ...originItem } = rest.queuedOrigin.item;
-            return {
-              ...rest,
-              queuedOrigin: { ...rest.queuedOrigin, item: originItem },
-            };
-          });
-          return changed ? next : prev;
-        });
-      },
-    [],
-  );
-
-  /** Settle a queued row's terminal recovery source before an Edit/Remove.
-   * Ordinary rows have no server copy. A v2 leftover first uses its durable
-   * receipt to atomically discard the parked copy, then becomes an ordinary
-   * local row; the caller decides whether the live composer can consume it.
-   * The cancel deliberately omits the active epoch: the receipt belongs to the
-   * terminal source generation, not whichever run now occupies the chat. */
-  const discardQueued = useCallback(
-    async (item: QueuedMessage): Promise<boolean> => {
-      if (item.server != null) {
-        if (item.server.status === 'rejected' && item.server.id == null) {
-          return downgradeServerQueuedTurn(item.id);
-        }
-        if (item.server.id == null || !hasRealConvoId) {
-          showToast({
-            message: localize('com_ui_steer_cancel_failed'),
-            status: 'error',
-          });
-          return false;
-        }
-        try {
-          const receipt = await cancelAgentQueuedTurn({
-            conversationId,
-            queuedTurnId: item.server.id,
-          });
-          if (receipt.status !== 'cancelled') {
-            showToast({
-              message: localize('com_ui_steer_cancel_failed'),
-              status: 'error',
-            });
-            return false;
-          }
-          applyQueuedTurnReceipts([receipt], 'direct');
-          /** The turn was shown as next; the confirmed cancellation ends that
-           *  at once rather than on the next receipt refetch. */
-          const revealFamily = revealedQueuedTurnFamily(queueKey);
-          if (jotaiStore.get(revealFamily)?.clientRequestId === item.clientRequestId) {
-            jotaiStore.set(revealFamily, null);
-          }
-          return downgradeServerQueuedTurn(item.id);
-        } catch {
-          showToast({
-            message: localize('com_ui_steer_cancel_failed'),
-            status: 'error',
-          });
-          return false;
-        }
-      }
-      if (item.recoverySteerId == null) {
-        return true;
-      }
-      if (item.recoveryClientSteerId == null || !hasRealConvoId) {
-        jotaiStore.set(recoveryDispositionsFamily(queueKey), (previous) =>
-          blockRecovery(previous, item.recoverySteerId!),
-        );
-        showToast({
-          message: localize('com_ui_steer_cancel_failed'),
-          status: 'error',
-        });
-        return false;
-      }
-      const dispositions = recoveryDispositionsFamily(queueKey);
-      const disposition = recoveryDisposition(jotaiStore.get(dispositions), item);
-      if (disposition === 'cancelled') {
-        return true;
-      }
-      if (disposition === 'cancelling') {
-        return false;
-      }
-      if (!canRestoreRecovery(jotaiStore.get(dispositions), item)) {
-        return false;
-      }
-      const steerId = item.recoverySteerId;
-      jotaiStore.set(dispositions, (previous) => ({ ...previous, [steerId]: 'cancelling' }));
-      try {
-        const { removed } = await cancelSteer({
-          conversationId,
-          steerId,
-          clientSteerId: item.recoveryClientSteerId,
-        });
-        if (removed !== true) {
-          showToast({
-            message: localize('com_ui_steer_cancel_failed'),
-            status: 'error',
-          });
-          return false;
-        }
-        jotaiStore.set(dispositions, (previous) => ({ ...previous, [steerId]: 'cancelled' }));
-        // Keep the binding held until the caller's guarded Edit/Remove succeeds.
-        // A newer composer draft must not turn cancelled words into an auto-send.
-        return true;
-      } catch {
-        showToast({
-          message: localize('com_ui_steer_cancel_failed'),
-          status: 'error',
-        });
-        return false;
-      } finally {
-        jotaiStore.set(dispositions, (previous) =>
-          previous[steerId] === 'cancelling' ? { ...previous, [steerId]: 'blocked' } : previous,
-        );
-      }
-    },
-    [
-      cancelSteer,
-      cancelAgentQueuedTurn,
-      applyQueuedTurnReceipts,
-      conversationId,
-      downgradeServerQueuedTurn,
-      hasRealConvoId,
-      localize,
-      showToast,
-      jotaiStore,
-      queueKey,
-    ],
-  );
-
-  const dismissRecovery = useCallback(
-    (item: QueuedMessage) => {
-      const dispositions = recoveryDispositionsFamily(queueKey);
-      if (
-        item.recoverySteerId == null ||
-        !['blocked', 'cancelled'].includes(
-          recoveryDisposition(jotaiStore.get(dispositions), item) ?? '',
-        )
-      ) {
-        return;
-      }
-      const steerId = item.recoverySteerId;
-      jotaiStore.set(dispositions, (previous) => ({ ...previous, [steerId]: 'dismissed' }));
-      removeQueued(item.id);
-    },
-    [jotaiStore, queueKey, removeQueued],
-  );
 
   /** Restore a server-owned steer as the same queued follow-up and wake a
    * drain whose one-shot completion signal may already have been consumed
