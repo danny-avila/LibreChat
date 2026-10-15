@@ -15,7 +15,9 @@ import {
   ComposerRestoreProvider,
   useComposerRestoreHost,
 } from '~/Providers/ComposerRestoreContext';
+import { ChatSettingsContext, defaultChatSettings } from '~/Providers/ChatSettingsContext';
 import { queuedMessagesByConvoId, resetQueueFamilies } from '~/hooks/Chat/queue';
+import { usePaneConversations } from '~/routes/ChatSettings';
 import useSteerRecovery from '../useSteerRecovery';
 import store from '~/store';
 
@@ -53,6 +55,16 @@ function RewakePublisher({ rewake, children }: { rewake: RewakeDrain; children: 
   return <>{children}</>;
 }
 
+/** The app's own pane reader, behind the settings context the hook reads it from. */
+function PaneSettings({ children }: { children: React.ReactNode }) {
+  const getPaneConversations = usePaneConversations();
+  const settings = React.useMemo(
+    () => ({ ...defaultChatSettings, getPaneConversations }),
+    [getPaneConversations],
+  );
+  return <ChatSettingsContext.Provider value={settings}>{children}</ChatSettingsContext.Provider>;
+}
+
 function setup(initialize?: (snapshot: MutableSnapshot) => void, rewake?: RewakeDrain) {
   const wrapper = ({ children }: { children: React.ReactNode }) => (
     <RecoilRoot
@@ -61,9 +73,11 @@ function setup(initialize?: (snapshot: MutableSnapshot) => void, rewake?: Rewake
         initialize?.(snapshot);
       }}
     >
-      <ComposerRestoreProvider>
-        {rewake ? <RewakePublisher rewake={rewake}>{children}</RewakePublisher> : children}
-      </ComposerRestoreProvider>
+      <PaneSettings>
+        <ComposerRestoreProvider>
+          {rewake ? <RewakePublisher rewake={rewake}>{children}</RewakePublisher> : children}
+        </ComposerRestoreProvider>
+      </PaneSettings>
     </RecoilRoot>
   );
   return renderHook(
@@ -279,9 +293,11 @@ describe('useSteerRecovery', () => {
                 ]);
               }}
             >
-              <RewakePublisher rewake={rewake}>
-                <Tree />
-              </RewakePublisher>
+              <PaneSettings>
+                <RewakePublisher rewake={rewake}>
+                  <Tree />
+                </RewakePublisher>
+              </PaneSettings>
             </RecoilRoot>
           </ComposerRestoreProvider>,
         );
@@ -381,7 +397,9 @@ describe('useSteerRecovery', () => {
                 ]);
               }}
             >
-              <Tree />
+              <PaneSettings>
+                <Tree />
+              </PaneSettings>
             </RecoilRoot>
           </ComposerRestoreProvider>,
         );
@@ -540,8 +558,10 @@ describe('useSteerRecovery', () => {
             ]);
           }}
         >
-          <Observer />
-          {live && <Recovery />}
+          <PaneSettings>
+            <Observer />
+            {live && <Recovery />}
+          </PaneSettings>
         </RecoilRoot>
       );
 
@@ -607,7 +627,9 @@ describe('useSteerRecovery', () => {
             ]);
           }}
         >
-          <Tree />
+          <PaneSettings>
+            <Tree />
+          </PaneSettings>
         </RecoilRoot>,
       );
 

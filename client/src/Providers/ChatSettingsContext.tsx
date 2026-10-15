@@ -11,6 +11,7 @@ export const defaultChatSettings: ChatSettings = {
   setIsTemporary: () => undefined,
   config: { feedbackEnabled: false, canRenameRunningChat: false },
   auth: {},
+  getPaneConversations: () => [],
 };
 
 export const ChatSettingsContext = createContext<ChatSettings>(defaultChatSettings);

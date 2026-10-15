@@ -223,6 +223,16 @@ export type ChatSettings = {
   setIsTemporary: Dispatch<SetStateAction<boolean>>;
   config: ChatConfig;
   auth: ChatAuth;
+  /** The conversation each mounted chat pane shows, read when called rather than at render:
+   *  steer recovery asks whether any pane holding a conversation is still running. */
+  getPaneConversations: () => ReadonlyArray<PaneConversation>;
+};
+
+/** One mounted chat pane and the conversation it shows. */
+export type PaneConversation = {
+  /** The pane key, as the app keys its panes (`0` for the main chat). */
+  index: string | number;
+  conversationId: string | null;
 };
 
 /** The assistants abort route and the run it stops. */

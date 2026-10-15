@@ -12,6 +12,7 @@ import {
 import { useSteerMessageMutation, useCancelSteerMutation } from '~/data-provider';
 import { useComposerRestoreHost } from '~/Providers/ComposerRestoreContext';
 import { carriedSteerContext, isLegacyDeliveryUncertain } from '~/utils';
+import { useChatSettings } from '~/Providers/ChatSettingsContext';
 import { useSteerRehome } from '~/hooks/Chat/useSteerCancel';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import store from '~/store';
@@ -28,6 +29,7 @@ export default function useSteerRecovery(conversationId: string) {
   const rehomeSteer = useSteerRehome(conversationId);
   const { rewakeDrain } = useComposerRestoreHost();
   const jotaiStore = useStore();
+  const { getPaneConversations } = useChatSettings();
 
   /** Whether the run this steer belongs to has finished, read live at ack time.
    *  Unmounting is not the same signal: `PendingSteers` also unmounts when the
@@ -36,17 +38,15 @@ export default function useSteerRecovery(conversationId: string) {
    *  the server was already making. */
   const isRunOver = useCallback(
     (snapshot: Snapshot) => {
-      const keys = snapshot.getLoadable(store.conversationKeysAtom).getValue();
       let held = false;
-      for (const key of keys) {
-        const convo = snapshot.getLoadable(store.conversationByIndex(key)).getValue();
-        if (convo?.conversationId !== conversationId) {
+      for (const pane of getPaneConversations()) {
+        if (pane.conversationId !== conversationId) {
           continue;
         }
         /* Comparison mode can hold one conversation in several panes, and only
            the pane that owns the run is submitting: any live pane means the
            run is still going, whichever slot comes first. */
-        if (snapshot.getLoadable(store.isSubmittingFamily(key)).getValue() === true) {
+        if (snapshot.getLoadable(store.isSubmittingFamily(pane.index)).getValue() === true) {
           return false;
         }
         held = true;
@@ -56,7 +56,7 @@ export default function useSteerRecovery(conversationId: string) {
          same mistake as reading the unmount as the end, one step further out. */
       return held;
     },
-    [conversationId],
+    [conversationId, getPaneConversations],
   );
 
   const markStatus = useCallback(
