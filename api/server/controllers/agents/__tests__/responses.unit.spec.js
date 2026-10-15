@@ -518,8 +518,6 @@ jest.mock('~/server/services/Endpoints/agents/skillDeps', () => ({
   getSkillDbMethods: jest.fn(() => ({})),
   canAuthorSkillFiles: mockCanAuthorSkillFiles,
   withDeploymentSkillIds: jest.fn((ids = []) => ids),
-  enrichWithSkillConfigurable: mockEnrichWithSkillConfigurable,
-  buildSkillPrimedIdsByName: mockBuildSkillPrimedIdsByName,
   buildAgentToolContext: mockBuildAgentToolContext,
   resolveMemoryAvailability: mockResolveMemoryAvailability,
   enrichLoadedToolsWithAgentContext: mockEnrichLoadedToolsWithAgentContext,

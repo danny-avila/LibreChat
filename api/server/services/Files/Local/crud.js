@@ -3,7 +3,6 @@ const path = require('path');
 const axios = require('axios');
 const {
   deleteRagFile,
-  moveLocalFile,
   stripCacheBust,
   writeLocalFile,
   assertRemoteFileURL,
@@ -17,41 +16,6 @@ const { EModelEndpoint } = require('librechat-data-provider');
 const { resizeImageBuffer } = require('~/server/services/Files/images/resize');
 const { getBufferMetadata } = require('~/server/utils');
 const paths = require('~/config/paths');
-
-/**
- * Saves a file to a specified output path with a new filename.
- *
- * @param {Express.Multer.File} file - The file object to be saved. Should contain properties like 'originalname' and 'path'.
- * @param {string} outputPath - The path where the file should be saved.
- * @param {string} outputFilename - The new filename for the saved file (without extension).
- * @returns {Promise<string>} The full path of the saved file.
- * @throws Will throw an error if the file saving process fails.
- */
-async function saveLocalFile(file, outputPath, outputFilename) {
-  try {
-    const fileExtension = path.extname(file.originalname);
-    return await moveLocalFile(file.path, outputPath, outputFilename + fileExtension);
-  } catch (error) {
-    logger.error('[saveFile] Error while saving the file:', error);
-    throw error;
-  }
-}
-
-/**
- * Saves an uploaded image file to a specified directory based on the user's ID and a filename.
- *
- * @param {ServerRequest} req - The Express request object, containing the user's information and app configuration.
- * @param {Express.Multer.File} file - The uploaded file object.
- * @param {string} filename - The new filename to assign to the saved image (without extension).
- * @returns {Promise<void>}
- * @throws Will throw an error if the image saving process fails.
- */
-const saveLocalImage = async (req, file, filename) => {
-  const appConfig = req.config;
-  const imagePath = appConfig.paths.imageOutput;
-  const outputPath = path.join(imagePath, req.user.id ?? '');
-  await saveLocalFile(file, outputPath, filename);
-};
 
 /**
  * Saves a buffer to a specified directory on the local file system.
@@ -343,8 +307,6 @@ async function getLocalFileStream(req, requestedFilepath) {
 }
 
 module.exports = {
-  saveLocalFile,
-  saveLocalImage,
   saveLocalBuffer,
   saveFileFromURL,
   getLocalFileURL,
