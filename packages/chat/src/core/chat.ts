@@ -504,10 +504,10 @@ export class Chat {
       return;
     }
     /** A turn whose stream dropped: finding nothing running means it ended without this chat. */
-    const dropped = this.detached !== undefined;
+    const dropped = this.detached;
     this.detached = undefined;
     const active = createActiveRequest();
-    active.endpoint = this.resumeEndpoint();
+    active.endpoint = this.resumeEndpoint() ?? dropped?.target.endpoint;
     active.reattach = { streamId: options.streamId };
     this.active = active;
     if (
@@ -539,7 +539,7 @@ export class Chat {
         this.settle(getStopOutcome(active), active);
         return;
       }
-      if (!stream && (continuation || dropped || active.reattach.continuation)) {
+      if (!stream && (continuation || dropped != null || active.reattach.continuation)) {
         this.action = undefined;
         this.decisions.clear();
         this.settle({ kind: 'complete', settled: { conversationId } }, active);

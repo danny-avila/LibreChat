@@ -2275,6 +2275,29 @@ describe('Chat', () => {
       );
     });
 
+    it('stops a dropped turn it reattached to at the endpoint the turn started on', async () => {
+      const reattached = createStream({ streamId: 'convo-1', generationCreatedAt: 100 });
+      const { chat, stream, transport } = setup();
+      transport.abort.mockImplementation(async () => {
+        reattached.push(finalEvent({ terminalStatus: 'aborted' }));
+        return { success: true };
+      });
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+      await sent;
+      transport.reconnectToStream.mockResolvedValueOnce(reattached);
+      const resumed = chat.resumeStream({ streamId: 'convo-1', generationCreatedAt: 100 });
+      await flush();
+
+      await chat.stop();
+      await resumed;
+
+      expect(transport.abort).toHaveBeenCalledWith(
+        expect.objectContaining({ endpoint: 'agents', streamId: 'convo-1' }),
+      );
+    });
+
     it('ends the pause of a generation whose stream failed', async () => {
       const failing: ChatStream = {
         streamId: 'convo-1',
