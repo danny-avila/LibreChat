@@ -1,4 +1,5 @@
 export * from './ask';
+export * from './resumable';
 export * from './steps';
 export * from './steer';
 export * from './types';
