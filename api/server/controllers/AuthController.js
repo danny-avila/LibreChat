@@ -212,6 +212,8 @@ const assertReusableOpenIDSessionGeneration = async (openidTokens) =>
  * reaches the same flight either tombstones it before this claim or waits for the response to
  * finish before returning. The send callback keeps the final authorization check adjacent to the
  * synchronous Express write while allowing callers to do slow preparation under the lease.
+ * A response whose client already disconnected never emits `finish` or `close` again, so its
+ * lease is released directly after the send instead of through response listeners.
  */
 const withOpenIDResponseDelivery = async ({ res, openidTokens, context }, operation) => {
   let delivery;
@@ -260,7 +262,7 @@ const withOpenIDResponseDelivery = async ({ res, openidTokens, context }, operat
     const sendAuthorized = async (send) => {
       if (delivery) {
         await assertOpenIDRefreshFlightDeliveryAvailable(delivery);
-        if (!listenersArmed && typeof res.once === 'function') {
+        if (!listenersArmed && typeof res.once === 'function' && !res.closed) {
           listenersArmed = true;
           res.once('finish', () => void releaseDelivery());
           res.once('close', () => void releaseDelivery());
@@ -270,7 +272,7 @@ const withOpenIDResponseDelivery = async ({ res, openidTokens, context }, operat
       }
       const response = send();
       responseSent = true;
-      if (delivery && typeof res.once !== 'function') {
+      if (delivery && !listenersArmed) {
         await releaseDelivery();
       }
       return response;
