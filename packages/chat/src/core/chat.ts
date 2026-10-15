@@ -687,13 +687,7 @@ export class Chat {
     this.detached = undefined;
     this.action = undefined;
     this.decisions.clear();
-    if (isStreamAbort(result) && (result.settled || result.persistenceFailed)) {
-      /** No terminal frame reaches a dropped stream, so the host reloads what the server kept. */
-      const outcome = getStopOutcome({
-        settledAs: result.settled ? (result.terminalStatus ?? 'complete') : undefined,
-        persistenceFailed: result.persistenceFailed,
-      });
-      this.publish(outcome, detached.responseId);
+    if (this.publishUnframedStop(result, detached.responseId)) {
       return getStopResult(result);
     }
     if (this.error === detached.error) {
@@ -702,6 +696,22 @@ export class Chat {
     }
     this.notify();
     return getStopResult(result);
+  }
+
+  /**
+   * Reports a stop whose end no attached stream will frame: one the run had already settled, or
+   * one the server could not save. The host reloads what the server kept. Returns whether it did.
+   */
+  private publishUnframedStop(result: ChatAbortResult, responseId: string | undefined): boolean {
+    if (!isStreamAbort(result) || (!result.settled && !result.persistenceFailed)) {
+      return false;
+    }
+    const outcome = getStopOutcome({
+      settledAs: result.settled ? (result.terminalStatus ?? 'complete') : undefined,
+      persistenceFailed: result.persistenceFailed,
+    });
+    this.publish(outcome, responseId);
+    return true;
   }
 
   /** Stops a pause restored without a stream on the server, which frees the chat for a turn. */
@@ -722,12 +732,17 @@ export class Chat {
     if (this.action?.actionId !== action.actionId) {
       return getStopResult(result);
     }
+    this.action = undefined;
+    this.decisions.clear();
+    if (this.publishUnframedStop(result, undefined)) {
+      return getStopResult(result);
+    }
     if (this.status === 'error') {
       /** The stop confirmed the end a dropped connection left unknown. */
       this.init.state.error = undefined;
       this.init.state.status = 'ready';
     }
-    this.clearAction();
+    this.notify();
     return getStopResult(result);
   }
 

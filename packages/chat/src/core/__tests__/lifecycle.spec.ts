@@ -617,6 +617,30 @@ const table: Array<[keyof typeof states, keyof typeof events, Expected]> = [
     },
   ],
   [
+    'restored',
+    'unsavedStop',
+    {
+      status: 'ready',
+      finishes: 1,
+      last: unsaved,
+      action: NONE,
+      abort: { streamId: 'convo-1', generationCreatedAt: 500 },
+      outcome: 'ok',
+    },
+  ],
+  [
+    'restored',
+    'settledStop',
+    {
+      status: 'ready',
+      finishes: 1,
+      last: settled,
+      action: NONE,
+      abort: { streamId: 'convo-1', generationCreatedAt: 500 },
+      outcome: 'ok',
+    },
+  ],
+  [
     'detached',
     'settledStop',
     {
