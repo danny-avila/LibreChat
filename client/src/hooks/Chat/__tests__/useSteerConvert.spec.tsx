@@ -11,8 +11,8 @@ import {
 } from '@librechat/chat/react';
 import { recoveryDispositionsFamily } from '~/components/Chat/Steering/recovery';
 import { queuedMessagesByConvoId } from '~/hooks/Chat/queue';
-import useSteerConvert from '../useSteerConvert';
 import '~/Providers/SteerHostContext';
+import { useSteerConvert } from '@librechat/chat/react';
 
 const mockFetchStreamStatus = jest.fn();
 let mockFileMap: Record<string, { llmDeliveryPath: 'text' }> = {};

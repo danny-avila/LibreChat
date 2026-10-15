@@ -11,7 +11,7 @@ import {
   resetSteerFamilies,
   resetQueueFamilies,
 } from '@librechat/chat/react';
-import type { SteeringControls } from '~/hooks/Chat/useSteering';
+import type { SteeringControls } from '@librechat/chat/react';
 import type { QueuedMessage } from '~/hooks/Chat/queue';
 import {
   QueuedTurnPortalProvider,
