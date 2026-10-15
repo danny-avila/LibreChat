@@ -132,6 +132,9 @@ if (useDebugConsole) {
 // Create logger
 const logger: winston.Logger = winston.createLogger({
   level: level(),
+  // Transports sanitize and serialize. Winston otherwise JSON-serializes raw
+  // errors here, walking the shared HTTP agent graph before those guards run.
+  format: winston.format((info) => info)(),
   levels: logLevels,
   transports,
 });
