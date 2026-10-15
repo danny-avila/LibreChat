@@ -18,8 +18,8 @@ import { findConvoInAllQueries, isTemporaryConversation, hasRealTitle } from '~/
 import DeleteButton from '~/components/Conversations/ConvoOptions/DeleteButton';
 import { useLocalize, useNavigateToConvo, useNewConvo } from '~/hooks';
 import { useChatSettings } from '~/Providers/ChatSettingsContext';
+import useProjectMenuItem from '~/hooks/Chat/useProjectMenuItem';
 import { useChatContext, useLiveAnnouncer } from '~/Providers';
-import useProjectMenuItem from './useProjectMenuItem';
 import { NotificationSeverity } from '~/common';
 import useExportShare from './useExportShare';
 import Rename from '~/components/Chat/Rename';

@@ -23,12 +23,12 @@ import {
   pendingReasoningOverrideFamily,
 } from '~/components/Chat/Input/Composer/state';
 import { findAttachmentRecovery, isAttachmentError, mayBeAttachmentError } from './attachments';
+import useGetAddedConvo from '~/hooks/Conversations/useGetAddedConvo';
 import { useMessageContext } from '~/Providers/MessageContext';
 import { useLocalize, useNavigateToConvo } from '~/hooks';
 import { useForkConvoMutation } from '~/data-provider';
 import { ChatContext } from '~/Providers/ChatContext';
 import { ErrorAction, ErrorActions } from './parts';
-import { useGetAddedConvo } from '~/hooks/Chat';
 import store from '~/store';
 
 /** What the card says the actions do, matched to the ones it offers. */

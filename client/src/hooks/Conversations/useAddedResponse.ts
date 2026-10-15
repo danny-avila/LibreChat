@@ -9,7 +9,7 @@ import {
 } from 'librechat-data-provider';
 import type { TEndpointsConfig, EModelEndpoint, TConversation } from 'librechat-data-provider';
 import type { AssistantListItem, NewConversationParams } from '~/common';
-import type { AddedChatContract } from './contract';
+import type { AddedChatContract } from '~/hooks/Chat/contract';
 import useAssistantListMap from '~/hooks/Assistants/useAssistantListMap';
 import { buildDefaultConvo, getDefaultEndpoint } from '~/utils';
 import { useGetEndpointsQuery } from '~/data-provider';

@@ -56,7 +56,7 @@ export default function useExportShare({
     {
       label: localize('com_ui_share'),
       onClick: () => setShowShareDialog(true),
-      icon: <Share2 className="size-4 text-text-secondary" />,
+      icon: <Share2 className="text-text-secondary size-4" />,
       show: isSharedButtonEnabled && canCreateSharedLinks,
       /** NOTE: THE FOLLOWING PROPS ARE REQUIRED FOR MENU ITEMS THAT OPEN DIALOGS */
       hideOnClick: false,
@@ -66,7 +66,7 @@ export default function useExportShare({
     {
       label: localize('com_endpoint_export'),
       onClick: () => setShowExports(true),
-      icon: <Upload className="size-4 text-text-secondary" />,
+      icon: <Upload className="text-text-secondary size-4" />,
       /** NOTE: THE FOLLOWING PROPS ARE REQUIRED FOR MENU ITEMS THAT OPEN DIALOGS */
       hideOnClick: false,
       ref: exportButtonRef,

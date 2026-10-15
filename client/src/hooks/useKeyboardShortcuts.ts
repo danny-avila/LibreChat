@@ -19,9 +19,9 @@ import { useArchiveConvoMutation, useGetStartupConfig } from '~/data-provider';
 import { mainTextareaId, NotificationSeverity } from '~/common';
 import useSidebarToggle from '~/hooks/Nav/useSidebarToggle';
 import { showFilesDialogAtom } from '~/store/filesDialog';
+import useNewChat from '~/hooks/Conversations/useNewChat';
 import { useHasAccess, useLocalize } from '~/hooks';
 import { getFocusedChatPane } from '~/utils/pane';
-import useNewChat from '~/hooks/Chat/useNewChat';
 import store from '~/store';
 
 const isMac = isMacPlatform;
