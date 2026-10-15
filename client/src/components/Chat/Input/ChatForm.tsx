@@ -258,7 +258,7 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
     return (
       <div
         className={cn(
-          'mx-auto flex w-full flex-row gap-3 transition-[max-width] duration-300 sm:mb-10 sm:px-2',
+          'mx-auto flex w-full flex-row gap-3 transition-[max-width] duration-300 sm:mb-16 sm:px-2',
           maximizeChatSpace ? 'max-w-full' : 'md:max-w-3xl xl:max-w-4xl',
         )}
       >
@@ -282,7 +282,10 @@ const ChatForm = memo(({ index = 0 }: { index?: number }) => {
           !isSubmitting &&
           conversation?.messages?.length === 0
           ? 'transition-all duration-200 sm:mb-28'
-          : 'sm:mb-10',
+          : // 대화 중에는 Footer(Chat/Footer.tsx)가 이 아래 여백 안에 absolute 로
+            // 올라앉는다. BKL 푸터는 버전·태그라인·스펙트럼 띠 3층(≈54px)이라
+            // 업스트림 기본값 mb-10(40px)이면 입력창 밑변을 덮는다.
+            'sm:mb-16',
       )}
     >
       <div className="relative flex h-full flex-1 items-stretch md:flex-col">
