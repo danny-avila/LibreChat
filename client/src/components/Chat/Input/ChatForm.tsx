@@ -91,26 +91,6 @@ import Bar from './Composer/Bar';
 import Mention from './Mention';
 import store from '~/store';
 
-export function toRestoredComposerFile(
-  file: NonNullable<TMessage['files']>[number],
-): ExtendedFile | null {
-  if (!file.file_id) {
-    return null;
-  }
-  return {
-    file_id: file.file_id,
-    filename: file.filename,
-    filepath: file.filepath,
-    type: file.type ?? '',
-    height: file.height,
-    width: file.width,
-    size: file.bytes ?? 0,
-    progress: 1,
-    attached: true,
-    llmDeliveryPath: file.llmDeliveryPath,
-  };
-}
-
 interface ChatFormProps {
   index: number;
   placeholder?: string;
