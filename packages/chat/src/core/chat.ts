@@ -886,8 +886,12 @@ export class Chat {
       return;
     }
     if (action.expiresAt != null && action.expiresAt <= Date.now()) {
-      /** An expired pause is stale: the server will refuse its resume. */
-      if (this.action?.actionId === action.actionId) {
+      /**
+       * An expired pause is stale: the server will refuse its resume. It also supersedes a pause
+       * restored for an older generation, which no longer runs.
+       */
+      const superseded = this.action != null && generationCreatedAt !== this.generationCreatedAt;
+      if (this.action?.actionId === action.actionId || superseded) {
         this.clearAction();
       }
       return;

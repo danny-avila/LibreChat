@@ -2333,6 +2333,18 @@ describe('Chat', () => {
       expect(transport.sendMessages).not.toHaveBeenCalled();
     });
 
+    it('drops a restored pause once a newer generation is restored with an expired one', async () => {
+      const { chat } = setup();
+      chat.restorePendingAction({ ...pausedAction, streamId: 'convo-1' }, 500);
+
+      chat.restorePendingAction(
+        { ...pausedAction, actionId: 'action-6', streamId: 'convo-1', expiresAt: 1 },
+        900,
+      );
+
+      expect(chat.pendingAction).toBeUndefined();
+    });
+
     it('reports nothing to stop as idle', async () => {
       const { chat, transport } = setup();
 
