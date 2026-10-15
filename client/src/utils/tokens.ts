@@ -404,10 +404,6 @@ export function clearIndex(conversationId: string): void {
   usageHistory.delete(conversationId);
 }
 
-export function hasIndex(conversationId: string): boolean {
-  return registry.has(conversationId);
-}
-
 /** O(depth) walk from the branch tail up the parent chain */
 export function sumBranch(
   conversationId: string,
@@ -654,45 +650,6 @@ export function collectAnchorSeries(
     currentId = entry.parentMessageId;
   }
   return series.reverse();
-}
-
-/**
- * The branch's largest messages (context contributions), largest first — the
- * "what is eating my window" list. Same contribution rule as `sumBranch`:
- * stored `tokenCount` when counted, else the char-based `estTokens`.
- */
-export function topBranchMessages(
-  conversationId: string,
-  tailId: string | null | undefined,
-  limit = 3,
-): Array<{ role: 'user' | 'assistant'; tokens: number }> {
-  const index = registry.get(conversationId);
-  if (!index || !tailId) {
-    return [];
-  }
-
-  const items: Array<{ role: 'user' | 'assistant'; tokens: number }> = [];
-  let currentId: string | null = tailId;
-  let guard = index.size;
-  let contextCapped = false;
-
-  while (currentId && currentId !== Constants.NO_PARENT && guard-- > 0) {
-    const entry: TokenEntry | undefined = index.get(currentId);
-    if (!entry) {
-      break;
-    }
-    if (!contextCapped) {
-      const contribution = entry.tokenCount > 0 ? entry.tokenCount : entry.estTokens;
-      if (contribution > 0) {
-        items.push({ role: entry.isCreatedByUser ? 'user' : 'assistant', tokens: contribution });
-      }
-    }
-    if (!contextCapped && entry.summaryUsedTokens != null && entry.summaryUsedTokens > 0) {
-      contextCapped = true;
-    }
-    currentId = entry.parentMessageId;
-  }
-  return items.sort((a, b) => b.tokens - a.tokens).slice(0, limit);
 }
 
 /**
