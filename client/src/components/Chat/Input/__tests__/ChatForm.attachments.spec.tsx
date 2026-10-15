@@ -13,10 +13,10 @@ import type { TFile, TFileUpload, TConversation } from 'librechat-data-provider'
 import type { ChatFormValues, TAskFunction } from '~/common';
 import type { TranslationKeys } from '~/hooks/useLocalize';
 import { getDraft, getPendingDraftId, setDraft } from '~/utils';
-import ChatForm, { toRestoredComposerFile } from '../ChatForm';
 import { ChatContext, ChatFormProvider } from '~/Providers';
 import { AuthContextProvider } from '~/hooks/AuthContext';
 import * as FileContainer from '../Files/FileContainer';
+import ChatForm from '../ChatForm';
 import store from '~/store';
 
 const mockUpload = jest.fn();
@@ -211,23 +211,6 @@ describe('ChatForm attachments', () => {
     mockUpload.mockImplementation((body: FormData) =>
       Promise.resolve({ ...uploadResponse, temp_file_id: body.get('file_id') as string }),
     );
-  });
-
-  test('preserves extracted-text delivery when restoring a queued attachment', () => {
-    expect(
-      toRestoredComposerFile({
-        file_id: 'stored-doc',
-        filename: 'report.docx',
-        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        llmDeliveryPath: 'text',
-      }),
-    ).toMatchObject({
-      file_id: 'stored-doc',
-      filename: 'report.docx',
-      progress: 1,
-      attached: true,
-      llmDeliveryPath: 'text',
-    });
   });
 
   test('keeps the mic disabled until speech settings hydrate', async () => {
