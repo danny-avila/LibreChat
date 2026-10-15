@@ -309,8 +309,8 @@ export type UpdatePermResponse = r.TRole;
 
 /**
  * Cache entries that can appear under the `[QueryKeys.skills, ...]` key prefix.
- * Flat responses come from `useListSkillsQuery`; infinite responses come from
- * `useSkillsInfiniteQuery`. The context carries both shapes for rollback.
+ * Infinite responses come from `useSkillsInfiniteQuery`; flat responses may also
+ * be cached under this prefix. The context carries both shapes for rollback.
  */
 export type TSkillCacheEntry = TSkillListResponse | InfiniteData<TSkillListResponse> | undefined;
 
