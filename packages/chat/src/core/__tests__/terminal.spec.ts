@@ -60,6 +60,10 @@ const createHost = (fetchStatus: jest.Mock<Promise<StreamStatusResponse>, [strin
       invalidateStreamStatus: jest.fn(),
       addActiveJob: jest.fn(),
       removeActiveJob: jest.fn(),
+      fetchConversation: jest.fn(async () => undefined),
+      setConversation: jest.fn(),
+      upsertConversation: jest.fn(),
+      removeConversation: jest.fn(),
     },
     pane: {
       setIsSubmitting: jest.fn(),
@@ -71,6 +75,9 @@ const createHost = (fetchStatus: jest.Mock<Promise<StreamStatusResponse>, [strin
       clearComposerDrafts: jest.fn(),
       publishRunEnd: jest.fn(),
       clearDrainAfterAbort: jest.fn(),
+      refreshBalance: jest.fn(),
+      updateConversation: jest.fn(),
+      resolveDetachedEnd: jest.fn(() => ({ resolvable: false, end: null })),
     },
     steers: {
       seed: jest.fn(),
@@ -79,7 +86,13 @@ const createHost = (fetchStatus: jest.Mock<Promise<StreamStatusResponse>, [strin
       convertToQueued: jest.fn(),
       convertLocalToQueued: jest.fn(),
     },
-    events: { clearStepMaps: jest.fn(), flushPendingDeltas: jest.fn(), resetLive: jest.fn() },
+    events: {
+      clearStepMaps: jest.fn(),
+      flushPendingDeltas: jest.fn(),
+      resetLive: jest.fn(),
+      showError: jest.fn(),
+    },
+    messages: { get: jest.fn(() => []), set: jest.fn() },
   };
   return host;
 };

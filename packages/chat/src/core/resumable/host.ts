@@ -1,4 +1,10 @@
-import type { Agents, TSubmission, TPendingSteer } from 'librechat-data-provider';
+import type {
+  Agents,
+  TMessage,
+  TSubmission,
+  TConversation,
+  TPendingSteer,
+} from 'librechat-data-provider';
 import type { GenerationProtocolVersion } from '../protocol';
 import type { RunEnd } from '../steer/types';
 
@@ -139,6 +145,13 @@ export interface ResumableCache {
   invalidateStreamStatus: (conversationId: string) => void;
   addActiveJob: (streamId: string) => void;
   removeActiveJob: (streamId: string) => void;
+  /** Reads the conversation's saved record; rejects with the HTTP failure, a 404 included. */
+  fetchConversation: (conversationId: string) => Promise<TConversation | undefined>;
+  setConversation: (conversationId: string, conversation: TConversation) => void;
+  /** Places the conversation's snapshot into every conversation list. */
+  upsertConversation: (conversation: TConversation) => void;
+  /** Drops the conversation from every conversation list. */
+  removeConversation: (conversationId: string) => void;
 }
 
 /** The pane's controls and run bookkeeping a resumable run drives. */
@@ -164,6 +177,18 @@ export interface ResumablePane {
   publishRunEnd: (end: RunEnd, options?: { retainDetached?: boolean }) => void;
   /** Consumes an armed "interrupt & send" for exactly this generation. */
   clearDrainAfterAbort: (conversationId: string, generationCreatedAt?: number) => void;
+  /** Refreshes the token balance, when the deployment tracks one. */
+  refreshBalance: () => void;
+  /** Updates the pane's conversation; absent for a pane that only adds a comparison response. */
+  updateConversation?: (update: (current: TConversation | null) => TConversation | null) => void;
+  /**
+   * The end of a run this pane left mid-stream and is now reattached to, as `messages` record
+   * it. `resolvable` is false when no such run is remembered or the user stopped it.
+   */
+  resolveDetachedEnd: (
+    conversationId: string,
+    messages: TMessage[] | undefined,
+  ) => { resolvable: boolean; end: RunEnd | null };
 }
 
 /** What the event handlers that render the stream expose to the run. */
@@ -172,6 +197,14 @@ export interface ResumableEvents {
   flushPendingDeltas: () => void;
   /** Discards the live usage estimate for a run that stopped streaming. */
   resetLive: (submission: TSubmission) => void;
+  /** Writes the failed turn's error card from the text (or raw error value) the server sent. */
+  showError: (text: string | boolean | { message?: string }, submission: TSubmission) => void;
+}
+
+/** The pane's message list. */
+export interface ResumableMessages {
+  get: () => TMessage[] | undefined;
+  set: (messages: TMessage[]) => void;
 }
 
 /** Everything a resumable run needs from the app it runs in. */
@@ -180,4 +213,5 @@ export interface ResumableHost extends SubscriptionHost {
   pane: ResumablePane;
   steers: ResumableSteers;
   events: ResumableEvents;
+  messages: ResumableMessages;
 }

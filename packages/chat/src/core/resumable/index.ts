@@ -8,3 +8,6 @@ export * from './host';
 export * from './subscription';
 export * from './terminal';
 export * from './reconcile';
+export * from './failure';
+export * from './missing';
+export * from './ceiling';
