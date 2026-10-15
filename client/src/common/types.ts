@@ -1,7 +1,7 @@
 import { RefObject } from 'react';
 import { FileSources, isEphemeralAgentId } from 'librechat-data-provider';
 import type { UseMutationResult } from '@tanstack/react-query';
-import type { SetterOrUpdater, RecoilState } from 'recoil';
+import type { SetterOrUpdater } from 'recoil';
 import type * as t from 'librechat-data-provider';
 import type { LucideIcon } from 'lucide-react';
 import type { TranslationKeys } from '~/hooks';
@@ -41,14 +41,6 @@ export enum TTSEndpoints {
   browser = 'browser',
   external = 'external',
 }
-
-export type BadgeItem = {
-  id: string;
-  icon: React.ComponentType<any>;
-  label: string;
-  atom: RecoilState<boolean>;
-  isAvailable: boolean;
-};
 
 export type AssistantListItem = {
   id: string;
