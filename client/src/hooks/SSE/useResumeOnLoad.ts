@@ -26,9 +26,10 @@ import {
 import type { TMessage, Agents } from 'librechat-data-provider';
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
-import { useStreamStatus, useGetStartupConfig } from '~/data-provider';
+import { useChatSettings } from '~/Providers/ChatSettingsContext';
 import { getBranchSiblingIndexesForTarget } from '~/utils';
 import useResumeAnnouncements from './announcements';
+import { useStreamStatus } from '~/data-provider';
 import { settleFinishedRun } from './finished';
 import useOwedSuccessor from './successor';
 import useSteerState from './steer';
@@ -65,8 +66,9 @@ export default function useResumeOnLoad(
   const endpointType = currentConversation?.endpointType;
   const actualEndpoint = endpointType ?? endpoint;
   const resumableEnabled = !isAssistantsEndpoint(actualEndpoint);
-  const { data: startupConfig, isFetched: startupConfigSettled } = useGetStartupConfig();
-  const isRetentionForced = isForcedTemporaryRetention(startupConfig?.interface?.retentionMode);
+  const { config } = useChatSettings();
+  const startupConfigSettled = config.loaded !== false;
+  const isRetentionForced = isForcedTemporaryRetention(config.retentionMode);
   // Track conversations we've already processed (either resumed or skipped)
   const processedConvoRef = useRef<string | null>(null);
   /**
