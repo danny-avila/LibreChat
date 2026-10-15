@@ -87,16 +87,17 @@ import {
   stripBackgroundFromToolDefinitions,
 } from '~/agents/background';
 import {
-  createSubagentWakeupHandleHook,
-  agentUsesSubagentCompletionWakeups,
-  usesSubagentCompletionWakeups,
-} from '~/agents/subagentDelivery';
-import {
   resolveStreamLimits,
+  resolveToolOutputReferences,
   resolveModelTransportTimeouts,
   resolveSubagentMaxTurns,
   resolveRecursionLimit,
 } from '~/agents/config';
+import {
+  createSubagentWakeupHandleHook,
+  agentUsesSubagentCompletionWakeups,
+  usesSubagentCompletionWakeups,
+} from '~/agents/subagentDelivery';
 import {
   isSteeringSupported,
   isSteerPreemptSupported,
@@ -3122,7 +3123,7 @@ export async function createRun({
       traceContext: resolveRunTraceContext({ agents, conversationId, requestBody, traceContext }),
     }),
     ...(enableToolOutputReferences && {
-      toolOutputReferences: { enabled: true },
+      toolOutputReferences: resolveToolOutputReferences(agentsEndpointConfig),
     }),
     // Only resumable callers enable real approval interrupts. The PreToolUse policy
     // hook stays in `hooks` for headless callers, where `ask` fails closed.
