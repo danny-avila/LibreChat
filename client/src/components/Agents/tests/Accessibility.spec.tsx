@@ -134,7 +134,6 @@ jest.mock('~/utils/agents', () => ({
 // Mock SmartLoader
 jest.mock('../SmartLoader', () => ({
   SmartLoader: ({ children, isLoading }: any) => (isLoading ? <div>Loading...</div> : children),
-  useHasData: jest.fn(() => true),
 }));
 
 // Mock AgentDetailContent to avoid testing dialog internals

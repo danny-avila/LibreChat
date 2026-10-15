@@ -469,22 +469,6 @@ export type TConfigProps = {
   endpoint: t.EModelEndpoint | string;
 };
 
-export type TDangerButtonProps = {
-  id: string;
-  confirmClear: boolean;
-  className?: string;
-  disabled?: boolean;
-  showText?: boolean;
-  mutation?: UseMutationResult<unknown>;
-  onClick: () => void;
-  infoTextCode: TranslationKeys;
-  actionTextCode: TranslationKeys;
-  dataTestIdInitial: string;
-  dataTestIdConfirm: string;
-  infoDescriptionCode?: TranslationKeys;
-  confirmActionTextCode?: TranslationKeys;
-};
-
 export type TDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
