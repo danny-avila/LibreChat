@@ -1,10 +1,10 @@
 import React from 'react';
 import { act, render, renderHook } from '@testing-library/react';
 import { getDefaultStore, useAtomValue, useSetAtom } from 'jotai';
-import { isSubmittingFamily, resetSubmitting } from '@librechat/chat/react';
 import { RecoilRoot, useSetRecoilState, type MutableSnapshot } from 'recoil';
 import { queuedMessagesByConvoId, resetQueueFamilies } from '@librechat/chat/react';
 import { ComposerRestoreProvider, useComposerRestoreHost } from '@librechat/chat/react';
+import { useSteerRecovery, isSubmittingFamily, resetSubmitting } from '@librechat/chat/react';
 import {
   pendingSteerCancelClientIdsFamily,
   acceptedSteerClientIdsByConvoId,
@@ -17,7 +17,6 @@ import type { RewakeDrain } from '@librechat/chat/react';
 import { ChatSettingsContext, defaultChatSettings } from '~/Providers/ChatSettingsContext';
 import { usePaneConversations } from '~/routes/ChatSettings';
 import { SteerHostTestProvider } from 'test/steerHost';
-import useSteerRecovery from '../useSteerRecovery';
 import store from '~/store';
 
 const mockMutateAsync = jest.fn();
@@ -165,6 +164,27 @@ describe('useSteerRecovery', () => {
       // The old local id must be gone entirely: leaving it behind is what let
       // the applied SteerPart and a stale pending copy render together.
       expect(result.current.chips).toEqual([
+        expect.objectContaining({ steerId: 'srv-9', text: 'redo this', status: 'pending' }),
+      ]);
+    });
+
+    it('settles a retry whose row unmounted before the server answered', async () => {
+      let answer: (result: unknown) => void = () => undefined;
+      mockMutateAsync.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+      const { result, unmount } = setup(() => {
+        getDefaultStore().set(pendingSteersByConvoId(CONVO_ID), [
+          { steerId: 'local-1', text: 'redo this', status: 'failed', createdAt: 5 },
+        ]);
+      });
+      act(() => {
+        result.current.recovery.retry('local-1');
+      });
+      unmount();
+
+      answer({ steerId: 'srv-9', status: 'queued', position: 1, conversationId: CONVO_ID });
+      await flush();
+
+      expect(getDefaultStore().get(pendingSteersByConvoId(CONVO_ID))).toEqual([
         expect.objectContaining({ steerId: 'srv-9', text: 'redo this', status: 'pending' }),
       ]);
     });
