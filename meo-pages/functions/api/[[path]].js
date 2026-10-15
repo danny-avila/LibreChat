@@ -9,9 +9,10 @@ const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}
 const timestampPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 
 class ApiFailure extends Error {
-  constructor(status, message) {
+  constructor(status, message, code = null) {
     super(message);
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -26,6 +27,16 @@ function upstreamFailure(status, fallback) {
     status >= 500 && status <= 599 ? status : 502,
     '服务暂时不可用，请稍后再试。',
   );
+}
+
+async function rejectedUpstream(response, fallback) {
+  if (response.status === 403) {
+    const payload = await response.json().catch(() => null);
+    const code = payload?.error?.code;
+    if (['email_verification_required', 'account_activation_required'].includes(code))
+      return new ApiFailure(403, '请前往 Meo Account 完成账号验证。', code);
+  }
+  return upstreamFailure(response.status, fallback);
 }
 
 export function parseConversationCursor(cursor) {
@@ -142,7 +153,7 @@ async function meoApi(request, env, session, path, init = {}) {
 }
 
 async function responseJson(response, fallback) {
-  if (!response.ok) throw upstreamFailure(response.status, fallback);
+  if (!response.ok) throw await rejectedUpstream(response, fallback);
   if (response.status === 204) return null;
   try {
     return await response.json();
@@ -290,7 +301,7 @@ async function route(request, env, session, user, pathname) {
     ) {
       throw upstream.ok
         ? new ApiFailure(502, 'AI 服务没有返回有效的数据流。')
-        : upstreamFailure(upstream.status, 'AI 服务拒绝了本次请求。');
+        : await rejectedUpstream(upstream, 'AI 服务拒绝了本次请求。');
     }
     return new Response(upstream.body, {
       status: upstream.status,
@@ -318,7 +329,11 @@ export async function onRequest({ request, env }) {
     if (cookie) result.headers.append('Set-Cookie', cookie);
     return result;
   } catch (error) {
-    if (error instanceof ApiFailure) return json({ error: error.message }, error.status);
+    if (error instanceof ApiFailure)
+      return json(
+        { error: error.message, ...(error.code ? { code: error.code } : {}) },
+        error.status,
+      );
     return json({ error: 'Meo AI 暂时无法完成请求，请稍后再试。' }, 502);
   }
 }

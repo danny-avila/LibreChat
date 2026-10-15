@@ -44,7 +44,7 @@ User-selected provider/model
 
 Conversation history
   ↓
-Meo Cloud / Supabase
+Meo API / Neon PostgreSQL
 ```
 
 Provider credentials are not entered directly into this web UI. Connections are managed through Meo Account, and each AI request uses the consent flow exposed by the Account broker.

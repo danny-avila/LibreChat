@@ -107,3 +107,25 @@ test('stream failure keeps status and hides provider response text', async (t) =
   assert.equal(result.status, 429);
   assert.doesNotMatch(JSON.stringify(await result.json()), /private provider diagnostic/);
 });
+
+for (const code of [
+  'email_verification_required',
+  'account_activation_required',
+  'unknown_private_code',
+]) {
+  test(`Account restriction exposes only approved code: ${code}`, async (t) => {
+    const originalFetch = globalThis.fetch;
+    t.after(() => {
+      globalThis.fetch = originalFetch;
+    });
+    globalThis.fetch = async (input) => {
+      if (String(input).endsWith('/v1/auth/oauth2/userinfo')) return Response.json(oidcUser());
+      return Response.json({ error: { code, detail: 'private diagnostic' } }, { status: 403 });
+    };
+    const result = await onRequest({ request: await request('/api/conversations'), env });
+    assert.equal(result.status, 403);
+    const payload = await result.json();
+    assert.equal(payload.code, code === 'unknown_private_code' ? undefined : code);
+    assert.doesNotMatch(JSON.stringify(payload), /private diagnostic|unknown_private_code/);
+  });
+}

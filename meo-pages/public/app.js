@@ -27,6 +27,7 @@ const state = {
   draft: '',
   retryAvailable: false,
   error: '',
+  accountAction: '',
   notice: '',
   mobileMenu: false,
   abortController: null,
@@ -76,6 +77,7 @@ async function api(path, init = {}) {
     const data = await response.json().catch(() => null);
     const error = new Error(data?.error ?? `Request failed (${response.status})`);
     error.status = response.status;
+    error.code = data?.code;
     throw error;
   }
   return response;
@@ -86,6 +88,10 @@ async function json(path, init) {
 }
 
 function friendlyError(error) {
+  if (error?.code === 'account_activation_required')
+    return '请完成人机验证，激活云端功能。草稿仍然保留。';
+  if (error?.code === 'email_verification_required')
+    return '请先验证 Meo Account 邮箱。草稿仍然保留。';
   if (error?.name === 'AbortError' || error?.message === 'Request cancelled') {
     return '这次请求已取消。已保存的会话内容不会受到影响。你可以修改内容后重新发送。';
   }
@@ -103,6 +109,9 @@ function friendlyError(error) {
 
 function setError(error) {
   state.error = friendlyError(error);
+  state.accountAction = '';
+  if (error?.code === 'account_activation_required') state.accountAction = '/auth/activate';
+  if (error?.code === 'email_verification_required') state.accountAction = '/auth/check-email';
 }
 
 function deepLink() {
@@ -793,7 +802,21 @@ function renderMain() {
       text: 'AI 回复可能不准确。Enter 发送，Shift+Enter 换行；发送前会显示本次授权摘要。',
     }),
     ...(state.error
-      ? [el('div', { class: 'notice error', role: 'alert', text: state.error })]
+      ? [
+          el('div', { class: 'notice error', role: 'alert' }, [
+            el('span', { text: state.error }),
+            ...(state.accountAction
+              ? [
+                  el('a', {
+                    href: `https://account.meoarch.org${state.accountAction}`,
+                    text: ' 前往 Meo Account',
+                    target: '_blank',
+                    rel: 'noopener noreferrer',
+                  }),
+                ]
+              : []),
+          ]),
+        ]
       : []),
     ...(state.notice ? [el('div', { class: 'notice', role: 'status', text: state.notice })] : []),
   ]);
