@@ -1234,6 +1234,46 @@ describe('Chat', () => {
     );
   });
 
+  it('settles a reattachment the stop cancelled as it opened by the stop answer', async () => {
+    let open: ((stream: ChatStream) => void) | undefined;
+    let answer: ((result: ChatAbortResult) => void) | undefined;
+    const opened = createStream({ streamId: 'convo-1' });
+    const { chat, onFinish } = setup(
+      { resumeSelection: () => ({ endpoint: 'agents' }) },
+      {
+        reconnectToStream: jest.fn(
+          () =>
+            new Promise<ChatStream>((resolve) => {
+              open = resolve;
+            }),
+        ),
+        abort: jest.fn(
+          () =>
+            new Promise<ChatAbortResult>((resolve) => {
+              answer = resolve;
+            }),
+        ),
+      },
+    );
+    const resumed = chat.resumeStream({ streamId: 'convo-1' });
+    await flush();
+    const stopped = chat.stop();
+    await flush();
+
+    /** The answer lands one microtask before the stream opens, so the stop cancels the open. */
+    answer?.({ success: false, settled: true, terminalStatus: 'complete' });
+    await Promise.resolve();
+    open?.(opened);
+    await stopped;
+    await resumed;
+
+    expect(opened.closed()).toBe(true);
+    expect(onFinish).toHaveBeenCalledTimes(1);
+    expect(onFinish).toHaveBeenCalledWith(
+      expect.objectContaining({ isAbort: false, isSettled: true }),
+    );
+  });
+
   it('accepts a stop the run had already settled', async () => {
     const { chat, stream, transport } = setup();
     transport.abort.mockImplementation(async () => {
@@ -2435,6 +2475,84 @@ describe('Chat', () => {
           isAbort: true,
           message: expect.objectContaining({ messageId: 'response-2' }),
         }),
+      );
+    });
+
+    it('reports the response of a replacement that ended before any frame named it as unknown', async () => {
+      const replacing = () => {
+        const stream = createStream({ streamId: 'stream-2', generationCreatedAt: 200 });
+        const harness = setup(
+          {
+            prepareRequest: jest.fn(() => ({
+              payload,
+              messages: [userMessage, placeholder],
+              responseMessageId: placeholder.messageId,
+            })),
+          },
+          {
+            sendMessages: jest.fn(async () => ({
+              status: 'replaced' as const,
+              generationProtocolVersion: 2,
+              conversationId: 'convo-1',
+              streamId: 'stream-2',
+              generationCreatedAt: 200,
+            })),
+            reconnectToStream: jest.fn(async () => stream),
+          },
+        );
+        return { ...harness, stream };
+      };
+
+      const early = replacing();
+      const sent = early.chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      early.stream.push({ type: 'abort', data: {} } as ChatEvent);
+      await sent;
+      expect(early.onFinish).toHaveBeenLastCalledWith(
+        expect.objectContaining({ isAbort: true, isResponseUnknown: true, message: undefined }),
+      );
+
+      const named = replacing();
+      const replacement: TMessage = { ...placeholder, messageId: 'response-2' };
+      const sentNamed = named.chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      named.state.replaceMessages([...named.chat.messages, replacement]);
+      named.stream.push({
+        type: 'sync',
+        data: { conversationId: 'convo-1', responseMessage: replacement },
+      } as ChatEvent);
+      named.stream.push({ type: 'abort', data: {} } as ChatEvent);
+      await sentNamed;
+      expect(named.onFinish).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          isResponseUnknown: false,
+          message: expect.objectContaining({ messageId: 'response-2' }),
+        }),
+      );
+    });
+
+    it('reports the response unknown when a reattachment without a timestamp finds another generation', async () => {
+      const reattached = createStream({ streamId: 'convo-1', generationCreatedAt: 200 });
+      const { chat, stream, transport, onFinish } = setup({
+        prepareRequest: jest.fn(() => ({
+          payload,
+          messages: [userMessage, placeholder],
+          responseMessageId: placeholder.messageId,
+        })),
+      });
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+      await sent;
+      transport.reconnectToStream.mockResolvedValueOnce(reattached);
+      const resumed = chat.resumeStream({ streamId: 'convo-1' });
+      await flush();
+
+      reattached.push({ type: 'abort', data: {} } as ChatEvent);
+      await resumed;
+
+      expect(onFinish).toHaveBeenLastCalledWith(
+        expect.objectContaining({ isAbort: true, isResponseUnknown: true, message: undefined }),
       );
     });
 

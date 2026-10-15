@@ -98,6 +98,11 @@ export type ChatFinishResult = {
    * what the chat held; the host reloads the conversation to reconcile them.
    */
   isSettled: boolean;
+  /**
+   * No frame named this turn's response, as when a generation replacing it ended before its sync
+   * frame. `message` is then `undefined` rather than a guess at the list's tail.
+   */
+  isResponseUnknown: boolean;
   /** The conversation the server settled the turn under, when it said. */
   conversationId?: string;
   /**
@@ -184,6 +189,8 @@ type DetachedGeneration = {
   target: Omit<ChatAbortRequest, 'chatId'>;
   /** The response the dropped request was producing, which a settled stop reports. */
   responseId?: string;
+  /** No frame named the dropped request's response, so a settled stop reports it unknown. */
+  responseUnknown?: boolean;
   /** The conversation the dropped request's payload or sync frame named. */
   conversationId?: string;
 };
@@ -215,6 +222,13 @@ type ActiveRequest = {
   conversationId?: string;
   /** The response this request produces: its placeholder, then the one its final frame names. */
   responseId?: string;
+  /**
+   * The request follows a generation this chat did not prepare (a replacement, or a reattachment
+   * that found another generation) and no frame has named its response yet.
+   */
+  responseUnknown?: boolean;
+  /** The generation a reattachment inherited its response from; another one drops it. */
+  inheritedGeneration?: number;
   /** Set once the start was handed to the transport, so the server may be running it. */
   sent?: boolean;
   /** Resolves once the request settled and released the chat. */
@@ -533,7 +547,9 @@ export class Chat {
         : undefined;
     active.endpoint = this.resumeEndpoint() ?? dropped?.target.endpoint;
     active.responseId = continued?.responseId;
+    active.responseUnknown = continued?.responseUnknown;
     active.conversationId = continued?.conversationId;
+    active.inheritedGeneration = continued?.target.generationCreatedAt;
     active.reattach = { streamId: options.streamId };
     this.active = active;
     if (
@@ -751,7 +767,7 @@ export class Chat {
     this.detached = undefined;
     this.action = undefined;
     this.decisions.clear();
-    if (this.publishUnframedStop(result, detached.responseId)) {
+    if (this.publishUnframedStop(result, detached.responseId, detached.responseUnknown)) {
       return getStopResult(result);
     }
     if (this.error === detached.error) {
@@ -766,7 +782,11 @@ export class Chat {
    * Reports a stop whose end no attached stream will frame: one the run had already settled, or
    * one the server could not save. The host reloads what the server kept. Returns whether it did.
    */
-  private publishUnframedStop(result: ChatAbortResult, responseId: string | undefined): boolean {
+  private publishUnframedStop(
+    result: ChatAbortResult,
+    responseId: string | undefined,
+    responseUnknown?: boolean,
+  ): boolean {
     if (!isStreamAbort(result) || (!result.settled && !result.persistenceFailed)) {
       return false;
     }
@@ -775,7 +795,7 @@ export class Chat {
       persistenceFailed: result.persistenceFailed,
       stoppedConversationId: result.aborted,
     });
-    this.publish(outcome, responseId);
+    this.publish(outcome, responseId, responseUnknown);
     return true;
   }
 
@@ -1038,6 +1058,9 @@ export class Chat {
         this.setConnection('reconnecting');
         this.generationCreatedAt = result.generationCreatedAt ?? undefined;
         active.reattach = { streamId: result.streamId };
+        /** The replacement's response is not this turn's placeholder; its first frame names it. */
+        active.responseId = undefined;
+        active.responseUnknown = true;
         stream = await openUntilAborted(
           this.init.transport.reconnectToStream({
             ...options,
@@ -1079,6 +1102,15 @@ export class Chat {
     }
     active.stream = stream;
     this.detached = undefined;
+    if (
+      active.inheritedGeneration != null &&
+      stream.generationCreatedAt != null &&
+      stream.generationCreatedAt !== active.inheritedGeneration
+    ) {
+      /** The reattachment found another generation, whose response no frame has named yet. */
+      active.responseId = undefined;
+      active.responseUnknown = true;
+    }
     if (stream.generationCreatedAt != null) {
       const previous = this.generationCreatedAt;
       this.generationCreatedAt = stream.generationCreatedAt;
@@ -1104,9 +1136,9 @@ export class Chat {
         } else if (event.type === 'sync') {
           /** The server's ids for the turn, which an Assistants stop addresses. */
           active.conversationId = event.data.conversationId ?? active.conversationId;
-          active.responseId = event.data.responseMessage?.messageId ?? active.responseId;
-        } else if (event.type === 'final' && event.data.responseMessage?.messageId) {
-          active.responseId = event.data.responseMessage.messageId;
+          this.nameResponse(active, event.data.responseMessage?.messageId);
+        } else if (event.type === 'final') {
+          this.nameResponse(active, event.data.responseMessage?.messageId);
         }
         if (outcome) {
           break;
@@ -1205,6 +1237,7 @@ export class Chat {
             abortKey: streamId == null ? this.abortKey(active) : undefined,
           },
           responseId: active.responseId,
+          responseUnknown: active.responseUnknown,
           conversationId: active.conversationId,
         };
       } else if (active.sent && !active.stopped) {
@@ -1225,11 +1258,20 @@ export class Chat {
       this.action = undefined;
       this.decisions.clear();
     }
-    this.publish(outcome, active.responseId);
+    this.publish(outcome, active.responseId, active.responseUnknown);
+  }
+
+  /** Records the response a frame named, which makes it known. */
+  private nameResponse(active: ActiveRequest, messageId: string | undefined): void {
+    if (!messageId) {
+      return;
+    }
+    active.responseId = messageId;
+    active.responseUnknown = false;
   }
 
   /** Publishes a turn's terminal state, then tells the host how it ended. */
-  private publish(outcome: Outcome, responseId: string | undefined): void {
+  private publish(outcome: Outcome, responseId: string | undefined, responseUnknown = false): void {
     const { state } = this.init;
     const status: ChatStatus = outcome.kind === 'error' ? 'error' : 'ready';
     if (state.connection !== 'idle') {
@@ -1240,10 +1282,12 @@ export class Chat {
     }
     state.error = outcome.kind === 'error' ? outcome.error : undefined;
     const messages = this.messages;
-    const message =
-      responseId !== undefined
-        ? messages.find((stored) => stored.messageId === responseId)
-        : messages[messages.length - 1];
+    let message: TMessage | undefined;
+    if (responseId !== undefined) {
+      message = messages.find((stored) => stored.messageId === responseId);
+    } else if (!responseUnknown) {
+      message = messages[messages.length - 1];
+    }
     const { settled } = outcome;
     this.notify();
     if (outcome.kind === 'error') {
@@ -1256,6 +1300,7 @@ export class Chat {
       isDisconnect: outcome.kind === 'error' && outcome.disconnect,
       isError: outcome.kind === 'error',
       isSettled: settled !== undefined,
+      isResponseUnknown: responseUnknown,
       ...(settled?.conversationId !== undefined && { conversationId: settled.conversationId }),
       ...(settled?.reason !== undefined && { reconcileReason: settled.reason }),
     });
