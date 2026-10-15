@@ -2422,6 +2422,40 @@ describe('Chat', () => {
       );
     });
 
+    it('reports a restored pause a reconnect finds finished elsewhere as settled', async () => {
+      const { chat, transport, onFinish } = setup();
+      chat.restorePendingAction({ ...pausedAction, streamId: 'convo-1' }, 500);
+      transport.reconnectToStream.mockResolvedValueOnce(null);
+
+      await chat.resumeStream({ streamId: 'convo-1', generationCreatedAt: 500 });
+
+      expect(chat.pendingAction).toBeUndefined();
+      expect(onFinish).toHaveBeenCalledTimes(1);
+      expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isSettled: true }));
+    });
+
+    it('reattaches a dropped first turn under the conversation its sync frame assigned', async () => {
+      const { chat, stream, transport, onFinish } = setup({ id: 'new' });
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push({
+        type: 'sync',
+        data: { conversationId: 'convo-9', responseMessage: placeholder },
+      } as ChatEvent);
+      stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+      await sent;
+      transport.reconnectToStream.mockResolvedValueOnce(null);
+
+      await chat.resumeStream({ streamId: 'convo-1' });
+
+      expect(transport.reconnectToStream).toHaveBeenLastCalledWith(
+        expect.objectContaining({ chatId: 'convo-9' }),
+      );
+      expect(onFinish).toHaveBeenLastCalledWith(
+        expect.objectContaining({ isSettled: true, conversationId: 'convo-9' }),
+      );
+    });
+
     it('reports nothing to stop as idle', async () => {
       const { chat, transport } = setup();
 

@@ -564,8 +564,10 @@ export class Chat {
     /** Only a restored pause vouches for the timestamp of the generation it belongs to. */
     this.generationCreatedAt =
       options.generationCreatedAt ?? (this.action ? this.generationCreatedAt : undefined);
+    /** A restored pause names a running generation, so finding nothing means it ended elsewhere. */
+    const restored = this.action !== undefined;
     this.setConnection('reconnecting');
-    const { conversationId = this.id, ...request } = options;
+    const { conversationId = continued?.conversationId ?? this.id, ...request } = options;
     try {
       const stream = await openUntilAborted(
         this.init.transport.reconnectToStream({
@@ -581,20 +583,19 @@ export class Chat {
         this.settle(getStopOutcome(active), active);
         return;
       }
-      if (!stream && (continuation || dropped != null || active.reattach.continuation)) {
+      const ended = continuation || restored || dropped != null || active.reattach.continuation;
+      if (!stream && ended) {
         this.action = undefined;
         this.decisions.clear();
         this.settle({ kind: 'complete', settled: { conversationId } }, active);
         return;
       }
       if (!stream) {
-        /** Nothing is running, so a restored pause ended elsewhere; published as one change. */
+        /** Nothing is running and nothing said it was; published as one change. */
         if (this.status === 'submitted' || this.status === 'streaming') {
           this.init.state.status = 'ready';
         }
         this.init.state.connection = 'idle';
-        this.action = undefined;
-        this.decisions.clear();
         this.release(active);
         this.notify();
         return;
