@@ -24,6 +24,32 @@ import {
   ViolationTypes,
   removeNullishValues,
 } from 'librechat-data-provider';
+import {
+  MAX_RETRIES,
+  getReconnectDelay,
+  START_GENERATION_NETWORK_RETRIES,
+  START_GENERATION_READINESS_TIMEOUT_MS,
+  getRecoverySteerId,
+  getPredecessorMismatchStartResponse,
+  isUnnegotiatedV2StartControl,
+  getStartGenerationCreatedAt,
+  getStartGenerationConversationId,
+  getStartGenerationStreamId,
+  isResumedStartResponse,
+  isSettledStartResponse,
+  isReplacedStartResponse,
+  isRetryableNetworkError,
+  isServerNotReadyError,
+  getRetryAfterDelay,
+  waitForRetryDelay,
+  getStreamStartFailureText,
+  isOAuthStepEvent,
+  getStepEventId,
+  toStartGenerationError,
+  GENERATION_PROTOCOL_VERSION,
+  getGenerationProtocolVersion,
+  supportsGenerationProtocolV2,
+} from '@librechat/chat';
 import type {
   Agents,
   TMessage,
@@ -43,9 +69,9 @@ import type {
   TContextUsageEvent,
   ChatStreamConnection,
 } from 'librechat-data-provider';
+import type { GenerationProtocolVersion, StartGenerationResult } from '@librechat/chat';
 import type { QueuedMessageOrigin, DrainAfterAbort, RunEnd } from '~/hooks/Chat/queue';
 import type { ActiveJobsResponse, StreamStatusResponse } from '~/data-provider';
-import type { GenerationProtocolVersion } from '~/data-provider';
 import type { EventHandlerParams } from './useEventHandlers';
 import type { TResData, TFinalResData } from '~/common';
 import {
@@ -73,18 +99,6 @@ import {
   isCompactionAnchorProjection,
 } from '~/utils';
 import {
-  useGetUserBalance,
-  fetchStreamStatus,
-  useGetStartupConfig,
-  queueTitleGeneration,
-  streamStatusQueryKey,
-  generationProtocolHeaders,
-  getGenerationProtocolVersion,
-  supportsGenerationProtocolV2,
-  fetchConversationMessages,
-  GENERATION_PROTOCOL_VERSION,
-} from '~/data-provider';
-import {
   resolveDetachedRunEnd,
   isDetachedRunManual,
   stopRequestedByConvoId,
@@ -94,6 +108,15 @@ import {
   queuedMessagesByConvoId,
   runEndByIndex,
 } from '~/hooks/Chat/queue';
+import {
+  useGetUserBalance,
+  fetchStreamStatus,
+  useGetStartupConfig,
+  queueTitleGeneration,
+  streamStatusQueryKey,
+  generationProtocolHeaders,
+  fetchConversationMessages,
+} from '~/data-provider';
 import {
   recoveryDispositionsFamily,
   canRestoreRecovery,
@@ -141,292 +164,11 @@ const clearMatchingDrainAfterAbort = (
     ? false
     : armed;
 
-const MAX_RETRIES = 5;
-const RECONNECT_BASE_DELAY_MS = 1000;
-const RECONNECT_MAX_DELAY_MS = 30000;
-const getReconnectDelay = (attempt: number) =>
-  Math.min(RECONNECT_BASE_DELAY_MS * Math.pow(2, attempt - 1), RECONNECT_MAX_DELAY_MS);
-const START_GENERATION_NETWORK_RETRIES = 3;
-const START_GENERATION_READINESS_TIMEOUT_MS = 120000;
-const SERVER_NOT_READY_CODE = 'SERVER_NOT_READY';
-const PREDECESSOR_MISMATCH_CODE = 'GENERATION_PREDECESSOR_MISMATCH';
-const STEER_RECOVERY_REQUEST_PREFIX = 'steer-recovery:';
-
-type StartGenerationError = {
-  code?: string;
-  response?: {
-    status?: number;
-    data?: unknown;
-    headers?: Record<string, string | number | string[] | undefined>;
-  };
-};
-
-const toStartGenerationError = (error: unknown): StartGenerationError | undefined =>
-  error != null && typeof error === 'object' ? (error as StartGenerationError) : undefined;
-
-const getStartGenerationStreamId = (data: unknown): string | null => {
-  if (data == null || typeof data !== 'object' || !('streamId' in data)) {
-    return null;
-  }
-
-  const streamId = (data as { streamId?: unknown }).streamId;
-  return typeof streamId === 'string' && streamId.length > 0 ? streamId : null;
-};
-
-/** The server returns `status: 'resumed'` when a duplicate start request was deduped to an
- *  already-running stream: the client must subscribe with resume=true to replay its state
- *  (prior content and any pending-action) rather than only receiving live events. */
-const isResumedStartResponse = (data: unknown): boolean =>
-  data != null && typeof data === 'object' && (data as { status?: unknown }).status === 'resumed';
-
-const isSettledStartResponse = (data: unknown): boolean =>
-  supportsGenerationProtocolV2(data) &&
-  data != null &&
-  typeof data === 'object' &&
-  (data as { status?: unknown }).status === 'settled';
-
-const isReplacedStartResponse = (data: unknown): boolean =>
-  supportsGenerationProtocolV2(data) &&
-  data != null &&
-  typeof data === 'object' &&
-  (data as { status?: unknown }).status === 'replaced';
-
-const isUnnegotiatedV2StartControl = (data: unknown): boolean => {
-  if (supportsGenerationProtocolV2(data) || data == null || typeof data !== 'object') {
-    return false;
-  }
-  const status = (data as { status?: unknown }).status;
-  return status === 'settled' || status === 'replaced';
-};
-
-const getStartGenerationConversationId = (data: unknown): string | null => {
-  if (data == null || typeof data !== 'object' || !('conversationId' in data)) {
-    return null;
-  }
-  const conversationId = (data as { conversationId?: unknown }).conversationId;
-  return typeof conversationId === 'string' && conversationId.length > 0 ? conversationId : null;
-};
-
-const getStartGenerationCreatedAt = (data: unknown): number | null => {
-  if (data == null || typeof data !== 'object' || !('generationCreatedAt' in data)) {
-    return null;
-  }
-  const createdAt = (data as { generationCreatedAt?: unknown }).generationCreatedAt;
-  return typeof createdAt === 'number' && Number.isSafeInteger(createdAt) && createdAt >= 0
-    ? createdAt
-    : null;
-};
-
-type PredecessorMismatchStartResponse = {
-  streamId: string;
-  conversationId: string;
-  generationCreatedAt: number;
-  active: boolean;
-};
-
-const getPredecessorMismatchStartResponse = (
-  error: unknown,
-): PredecessorMismatchStartResponse | null => {
-  const startError = toStartGenerationError(error);
-  const data = startError?.response?.data;
-  if (
-    startError?.response?.status !== 409 ||
-    data == null ||
-    typeof data !== 'object' ||
-    (data as { status?: unknown }).status !== 'predecessor_mismatch' ||
-    (data as { code?: unknown }).code !== PREDECESSOR_MISMATCH_CODE
-  ) {
-    return null;
-  }
-
-  const streamId = getStartGenerationStreamId(data);
-  const conversationId = getStartGenerationConversationId(data);
-  if (!streamId || !conversationId) {
-    return null;
-  }
-
-  const generationCreatedAt = getStartGenerationCreatedAt(data);
-  const active = (data as { active?: unknown }).active;
-  if (generationCreatedAt == null || typeof active !== 'boolean') {
-    return null;
-  }
-  return {
-    streamId,
-    conversationId,
-    generationCreatedAt,
-    active,
-  };
-};
-
-/** Recovery submissions use a deterministic request id tied to the parked
- * source. A status read performed only after this exact submission is proven
- * terminal may authorize that source past the client-side live-event
- * tombstone; unrelated status snapshots must remain deduped. */
-const getRecoverySteerId = (submission: TSubmission): string | null => {
-  if (typeof submission.recoverySteerId === 'string' && submission.recoverySteerId.length > 0) {
-    return submission.recoverySteerId;
-  }
-  const clientRequestId = submission.clientRequestId;
-  if (
-    typeof clientRequestId !== 'string' ||
-    !clientRequestId.startsWith(STEER_RECOVERY_REQUEST_PREFIX)
-  ) {
-    return null;
-  }
-  const steerId = clientRequestId.slice(STEER_RECOVERY_REQUEST_PREFIX.length);
-  return steerId.length > 0 ? steerId : null;
-};
-
-type StartGenerationResult =
-  | {
-      status: 'stream';
-      streamId: string;
-      resumed: boolean;
-      generationCreatedAt?: number;
-      generationProtocolVersion: GenerationProtocolVersion;
-    }
-  | {
-      status: 'settled';
-      conversationId: string;
-      generationProtocolVersion: typeof GENERATION_PROTOCOL_VERSION;
-    }
-  | {
-      status: 'replaced';
-      streamId: string;
-      conversationId: string;
-      generationCreatedAt: number;
-      generationProtocolVersion: typeof GENERATION_PROTOCOL_VERSION;
-    }
-  | {
-      status: 'predecessor_mismatch';
-      streamId: string;
-      conversationId: string;
-      generationCreatedAt: number;
-      active: boolean;
-      generationProtocolVersion: typeof GENERATION_PROTOCOL_VERSION;
-    };
-
-const parseSSEErrorData = (body: string): unknown | null => {
-  const blocks = body.split(/\r?\n\r?\n/);
-  for (const block of blocks) {
-    const lines = block.split(/\r?\n/);
-    const event = lines
-      .find((line) => line.startsWith('event:'))
-      ?.slice('event:'.length)
-      .trim();
-    if (event !== 'error') {
-      continue;
-    }
-
-    const data = lines
-      .filter((line) => line.startsWith('data:'))
-      .map((line) => line.slice('data:'.length).trimStart())
-      .join('\n')
-      .trim();
-
-    if (!data) {
-      return null;
-    }
-
-    try {
-      return JSON.parse(data);
-    } catch {
-      return data;
-    }
-  }
-
-  return null;
-};
-
-const getSSEErrorText = (payload: unknown): string | null => {
-  if (typeof payload === 'string') {
-    return payload;
-  }
-
-  if (payload == null || typeof payload !== 'object') {
-    return null;
-  }
-
-  const record = payload as Record<string, unknown>;
-  const text = record.text ?? record.message ?? record.error;
-  return typeof text === 'string' && text.length > 0 ? text : null;
-};
-
-const getStreamStartFailureText = (errorData?: unknown): string => {
-  if (typeof errorData === 'string') {
-    const sseErrorData = parseSSEErrorData(errorData);
-    if (sseErrorData != null) {
-      return getSSEErrorText(sseErrorData) ?? JSON.stringify(sseErrorData);
-    }
-
-    return errorData || 'Error connecting to server, try refreshing the page.';
-  }
-
-  return errorData
-    ? JSON.stringify(errorData)
-    : 'Error connecting to server, try refreshing the page.';
-};
-
 const getStreamStartFailureData = (errorData?: unknown, termsRefusalText?: string): TResData =>
   ({
     text: termsRefusalText ?? getStreamStartFailureText(errorData),
     metadata: markStreamStartFailedMetadata(),
   }) as unknown as TResData;
-
-const isRetryableNetworkError = (error: unknown) => {
-  if (!(error instanceof Error)) {
-    return false;
-  }
-
-  const { code } = toStartGenerationError(error) ?? {};
-  return code === 'ERR_NETWORK' || code === 'ERR_INTERNET_DISCONNECTED';
-};
-
-const isServerNotReadyError = (error: unknown) => {
-  const candidate = toStartGenerationError(error);
-  const data = candidate?.response?.data;
-  const code =
-    data != null && typeof data === 'object' && 'code' in data
-      ? (data as { code?: unknown }).code
-      : undefined;
-  return candidate?.response?.status === 503 && code === SERVER_NOT_READY_CODE;
-};
-
-const getRetryAfterDelay = (error: unknown, fallbackDelay: number) => {
-  const headers = toStartGenerationError(error)?.response?.headers;
-  const rawValue = headers?.['retry-after'] ?? headers?.['Retry-After'];
-  const retryAfter = Array.isArray(rawValue) ? rawValue[0] : rawValue;
-  const seconds = typeof retryAfter === 'number' ? retryAfter : Number(retryAfter);
-
-  if (!Number.isFinite(seconds) || seconds < 0) {
-    return fallbackDelay;
-  }
-
-  return Math.min(seconds * 1000, 30000);
-};
-
-const waitForRetryDelay = (delay: number, signal?: AbortSignal): Promise<boolean> =>
-  new Promise((resolve) => {
-    if (signal?.aborted) {
-      resolve(false);
-      return;
-    }
-
-    function cleanup() {
-      signal?.removeEventListener('abort', onAbort);
-    }
-    function onAbort() {
-      clearTimeout(timeout);
-      cleanup();
-      resolve(false);
-    }
-    const timeout = setTimeout(() => {
-      cleanup();
-      resolve(true);
-    }, delay);
-
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
 
 const hasConcreteConversationId = (conversationId?: string | null) =>
   !!conversationId &&
@@ -436,81 +178,6 @@ const hasConcreteConversationId = (conversationId?: string | null) =>
 const isInitialNewConversation = (submission: TSubmission) => {
   const conversationId = submission.conversation?.conversationId;
   return !hasConcreteConversationId(conversationId);
-};
-
-const getToolCallName = (toolCall: unknown) =>
-  toolCall != null && typeof toolCall === 'object' && 'name' in toolCall
-    ? (toolCall.name as unknown)
-    : undefined;
-
-const isOAuthToolCallName = (name: unknown) =>
-  typeof name === 'string' && name.startsWith(`oauth${Constants.mcp_delimiter}`);
-
-const hasOAuthToolCall = (toolCalls: unknown) =>
-  Array.isArray(toolCalls) &&
-  toolCalls.some((toolCall) => isOAuthToolCallName(getToolCallName(toolCall)));
-
-const isOAuthStepEvent = (data: unknown) => {
-  if (data == null || typeof data !== 'object' || !('event' in data)) {
-    return false;
-  }
-
-  const event = data.event;
-  const payload = 'data' in data ? data.data : undefined;
-  if (payload == null || typeof payload !== 'object') {
-    return false;
-  }
-
-  if (event === StepEvents.ON_RUN_STEP) {
-    const stepDetails = 'stepDetails' in payload ? payload.stepDetails : undefined;
-    return (
-      stepDetails != null &&
-      typeof stepDetails === 'object' &&
-      'tool_calls' in stepDetails &&
-      hasOAuthToolCall(stepDetails.tool_calls)
-    );
-  }
-
-  if (event === StepEvents.ON_RUN_STEP_DELTA) {
-    const delta = 'delta' in payload ? payload.delta : undefined;
-    if (delta == null || typeof delta !== 'object') {
-      return false;
-    }
-    return (
-      ('auth' in delta && delta.auth != null) ||
-      ('tool_calls' in delta && hasOAuthToolCall(delta.tool_calls))
-    );
-  }
-
-  if (event === StepEvents.ON_RUN_STEP_COMPLETED) {
-    const result = 'result' in payload ? payload.result : undefined;
-    if (result == null || typeof result !== 'object' || !('tool_call' in result)) {
-      return false;
-    }
-    return isOAuthToolCallName(getToolCallName(result.tool_call));
-  }
-
-  return false;
-};
-
-const getStepEventId = (event: unknown): string | undefined => {
-  if (event == null || typeof event !== 'object' || !('data' in event)) {
-    return undefined;
-  }
-  const data = event.data;
-  if (data == null || typeof data !== 'object') {
-    return undefined;
-  }
-  if ('id' in data && typeof data.id === 'string') {
-    return data.id;
-  }
-  const result = 'result' in data ? data.result : undefined;
-  return result != null &&
-    typeof result === 'object' &&
-    'id' in result &&
-    typeof result.id === 'string'
-    ? result.id
-    : undefined;
 };
 
 const replaceNewConversationUrl = (conversationId: string) => {
