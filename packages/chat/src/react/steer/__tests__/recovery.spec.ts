@@ -1,10 +1,11 @@
+/** @jest-environment jsdom */
 import { createStore } from 'jotai';
 import {
   blockRecovery,
   canRestoreRecovery,
   recoveryDisposition,
-  recoveryDispositionsFamily,
-} from './recovery';
+} from '../../../core/steer/recovery';
+import { recoveryDispositionsFamily } from '../recovery';
 
 const item = { recoverySteerId: 'source' };
 

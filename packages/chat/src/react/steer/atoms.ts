@@ -4,11 +4,7 @@ import type { TMessage } from 'librechat-data-provider';
 import type { Atom, PrimitiveAtom } from 'jotai';
 import type { GenerationProtocolVersion } from '../../core/protocol';
 import type { PendingSteer } from '../../core/steer/types';
-
-/** One atom per key, created on first read; `getParams`/`remove` let tests and teardown drop them. */
-type Family<Value, AtomType extends Atom<Value> = PrimitiveAtom<Value>> = ReturnType<
-  typeof atomFamily<string, AtomType>
->;
+import type { Family } from './family';
 
 /**
  * Set synchronously before a bubble's arm request and cleared on settlement.
