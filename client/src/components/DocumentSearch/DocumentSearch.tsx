@@ -541,18 +541,17 @@ type SearchTip = {
     | 'com_document_search_tip_and_desc'
     | 'com_document_search_tip_comma_desc'
     | 'com_document_search_tip_phrase_desc'
-    | 'com_document_search_tip_exclude_desc'
-    | 'com_document_search_tip_or_desc'
-    | 'com_document_search_tip_proximity_desc';
+    | 'com_document_search_tip_filename_desc';
 };
 
+// 2026-10-15: 제외(-), OR(|), 근접("…"~N) 연산자는 지원하지 않는다 — 파일명
+// 3분의 2가 '-' 를 포함해 연산자로 읽으면 멀쩡한 질의가 깨진다 (서버 플래그
+// PHRASE 만). 안내도 실제로 되는 것만 보여준다.
 const SEARCH_TIPS: SearchTip[] = [
   { example: '세종텔레콤 알뜰폰', descKey: 'com_document_search_tip_and_desc' },
   { example: '세종텔레콤, 아이즈비전', descKey: 'com_document_search_tip_comma_desc' },
   { example: '"주주간 계약 해지"', descKey: 'com_document_search_tip_phrase_desc' },
-  { example: '주식매매 -우선주', descKey: 'com_document_search_tip_exclude_desc' },
-  { example: '합병 | 분할', descKey: 'com_document_search_tip_or_desc' },
-  { example: '"신탁 위반"~5', descKey: 'com_document_search_tip_proximity_desc' },
+  { example: '주식매매계약서_최종.docx', descKey: 'com_document_search_tip_filename_desc' },
 ];
 
 // 설명 문자열 안의 백틱(`...`)을 <code> 엘리먼트로 렌더링한다.
