@@ -509,10 +509,15 @@ export class Chat {
     const dropped = this.detached;
     this.detached = undefined;
     const active = createActiveRequest();
-    /** Reattaching to a dropped turn continues it, so it keeps that turn's identity. */
+    /** Reattaching to a dropped turn's own generation continues it, so it keeps that turn's identity. */
+    const continued =
+      options.generationCreatedAt == null ||
+      options.generationCreatedAt === dropped?.target.generationCreatedAt
+        ? dropped
+        : undefined;
     active.endpoint = this.resumeEndpoint() ?? dropped?.target.endpoint;
-    active.responseId = dropped?.responseId;
-    active.conversationId = dropped?.conversationId;
+    active.responseId = continued?.responseId;
+    active.conversationId = continued?.conversationId;
     active.reattach = { streamId: options.streamId };
     this.active = active;
     if (

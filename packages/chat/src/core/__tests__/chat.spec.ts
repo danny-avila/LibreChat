@@ -2371,6 +2371,36 @@ describe('Chat', () => {
       );
     });
 
+    it('does not report a dropped turn response for a reattachment to another generation', async () => {
+      const reattached = createStream({ streamId: 'convo-1', generationCreatedAt: 200 });
+      const { chat, stream, transport, state, onFinish } = setup({
+        prepareRequest: jest.fn(() => ({
+          payload,
+          messages: [userMessage, placeholder],
+          responseMessageId: placeholder.messageId,
+        })),
+      });
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+      await sent;
+      const newer: TMessage = { ...placeholder, messageId: 'response-2', text: 'Newer' };
+      state.replaceMessages([...chat.messages, newer]);
+      transport.reconnectToStream.mockResolvedValueOnce(reattached);
+      const resumed = chat.resumeStream({ streamId: 'convo-1', generationCreatedAt: 200 });
+      await flush();
+
+      reattached.push({ type: 'abort', data: {} } as ChatEvent);
+      await resumed;
+
+      expect(onFinish).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          isAbort: true,
+          message: expect.objectContaining({ messageId: 'response-2' }),
+        }),
+      );
+    });
+
     it('ends the pause of a generation whose stream failed', async () => {
       const failing: ChatStream = {
         streamId: 'convo-1',
