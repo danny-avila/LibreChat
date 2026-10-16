@@ -1004,6 +1004,19 @@ describe('theme registry', () => {
     });
   });
 
+  it('writes a zero Button height as a length the 24px floor can compare', () => {
+    const { appearance } = resolveTheme(
+      {
+        version: 1,
+        name: 'zero-buttons',
+        modes: { light: { appearance: { buttonHeight: '0', buttonHeightSm: '0' } } },
+      },
+      'light',
+    );
+
+    expect(appearance).toMatchObject({ buttonHeight: '0px', buttonHeightSm: '0px' });
+  });
+
   it('keeps LibreChat’s button weight and heights by default', () => {
     expect(defaultAppearance).toMatchObject({
       controlFontWeight: '500',
@@ -1548,8 +1561,10 @@ describe('theme registry', () => {
 
     expect(issues({ listMinWidth: '0', listMaxHeight: '8rem' })).toEqual([]);
     expect(issues({ listMinWidth: '12rem', listMaxHeight: '640px' })).toEqual([]);
+    expect(issues({ listMaxHeight: 'none' })).toEqual([]);
     [
       { listMinWidth: 'auto' },
+      { listMaxHeight: 'auto' },
       { listMinWidth: '-1rem' },
       { listMaxHeight: '0' },
       { listMaxHeight: '7rem' },
@@ -2395,4 +2410,14 @@ describe('appearance families substitute through the emitted variables', () => {
       expect(themed.get(property)).not.toBe(base.get(property));
     },
   );
+
+  it('writes a `none` list height as the viewport height its available-height cap undercuts', () => {
+    const uncapped = emitted({
+      ...reference,
+      modes: { light: { appearance: { listMaxHeight: 'none' } } },
+    });
+
+    expect(emitted(libreChatTheme).get('--theme-list-max-height')).toBe('24rem');
+    expect(uncapped.get('--theme-list-max-height')).toBe('100dvh');
+  });
 });

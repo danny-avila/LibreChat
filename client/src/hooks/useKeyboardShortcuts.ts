@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo } from 'react';
 import { useSetAtom } from 'jotai';
 import copy from 'copy-to-clipboard';
 import { useToastContext } from '@librechat/client';
+import { useIsSubmitting } from '@librechat/chat/react';
 import { useMatch, useNavigate } from 'react-router-dom';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import { PermissionTypes, Permissions, isForcedTemporaryRetention } from 'librechat-data-provider';
@@ -19,9 +20,9 @@ import { useArchiveConvoMutation, useGetStartupConfig } from '~/data-provider';
 import { mainTextareaId, NotificationSeverity } from '~/common';
 import useSidebarToggle from '~/hooks/Nav/useSidebarToggle';
 import { showFilesDialogAtom } from '~/store/filesDialog';
+import useNewChat from '~/hooks/Conversations/useNewChat';
 import { useHasAccess, useLocalize } from '~/hooks';
 import { getFocusedChatPane } from '~/utils/pane';
-import useNewChat from '~/hooks/Chat/useNewChat';
 import store from '~/store';
 
 const isMac = isMacPlatform;
@@ -545,7 +546,7 @@ export function useShortcutActions(): ShortcutAction[] {
   const routeMatch = useMatch('/c/:conversationId');
   const routeConvoId = routeMatch?.params.conversationId ?? null;
   const conversation = useRecoilValue(store.conversationByIndex(0));
-  const isSubmitting = useRecoilValue(store.isSubmittingFamily(0));
+  const isSubmitting = useIsSubmitting(0);
   const sidebarExpanded = useRecoilValue(store.sidebarExpanded);
   const { setSidebarOpen, toggleSidebar } = useSidebarToggle();
   const setShowShortcutsDialog = useSetRecoilState(store.showShortcutsDialog);

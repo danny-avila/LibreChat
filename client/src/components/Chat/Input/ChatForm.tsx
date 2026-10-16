@@ -3,6 +3,7 @@ import { useAtom } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { useWatch } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
+import { showStopButtonByIndex } from '@librechat/chat/react';
 import {
   composerSurfaceClasses,
   composerSurfaceShadow,
@@ -61,7 +62,6 @@ import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskUserQuestionPopover from './AskUserQuestionPopover';
 import useComposerItems from '~/hooks/Input/useComposerItems';
 import useAttachTarget from '~/hooks/Input/useAttachTarget';
-import { showStopButtonByIndex } from '~/store/generation';
 import Hints, { composerHintId } from './Composer/Hints';
 import PastedTextDialog from './Files/PastedTextDialog';
 import DuringRunSendButton from './DuringRunSendButton';
@@ -77,6 +77,7 @@ import PromptsCommand from './PromptsCommand';
 import { submitFromComposer } from './submit';
 import SkillsCommand from './SkillsCommand';
 import AutoPlayAudio from './AutoPlayAudio';
+import composerClearance from './clearance';
 import Waveform from './Composer/Waveform';
 import { mainTextareaId } from '~/common';
 import CollapseChat from './CollapseChat';
@@ -89,26 +90,6 @@ import Tray from './Composer/Tray';
 import Bar from './Composer/Bar';
 import Mention from './Mention';
 import store from '~/store';
-
-export function toRestoredComposerFile(
-  file: NonNullable<TMessage['files']>[number],
-): ExtendedFile | null {
-  if (!file.file_id) {
-    return null;
-  }
-  return {
-    file_id: file.file_id,
-    filename: file.filename,
-    filepath: file.filepath,
-    type: file.type ?? '',
-    height: file.height,
-    width: file.width,
-    size: file.bytes ?? 0,
-    progress: 1,
-    attached: true,
-    llmDeliveryPath: file.llmDeliveryPath,
-  };
-}
 
 interface ChatFormProps {
   index: number;
@@ -712,22 +693,11 @@ const ChatForm = memo(function ChatForm({
     [isCollapsed],
   );
 
-  /* From `sm` up the band leaves room under itself for the disclaimer, which only
-     the landing page carries — doubled while the centred landing composer floats,
-     and dropped back the moment a submission starts the thread. A started
-     conversation has nothing beneath it, so it keeps only enough to clear the
-     surface's own shadow. Below `sm` the composer runs to the viewport floor in
-     every state. */
-  const landingClearance =
-    centerFormOnLanding && !isSubmitting ? 'transition-all duration-200 sm:mb-28' : 'sm:mb-10';
-  let bottomClearance = 'sm:mb-4';
-  if (isLandingPage) {
-    bottomClearance = landingClearance;
-  } else if (footerBelow) {
-    /* A conversation that carries a configured footer keeps the band that bar
-       needs, exactly as the welcome screen does. */
-    bottomClearance = 'sm:mb-10';
-  }
+  const bottomClearance = composerClearance({
+    isLandingPage,
+    footerBelow,
+    floating: centerFormOnLanding && !isSubmitting,
+  });
 
   /** Answer mode, then during-run steering or queueing (a run in flight, or a
    *  queued follow-up about to start), then an ordinary send: the same route

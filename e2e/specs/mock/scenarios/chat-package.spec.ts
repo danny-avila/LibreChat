@@ -247,7 +247,7 @@ test.describe('the built @librechat/chat package', () => {
         return resolveFilename.call(this, request, ...rest);
       };
       const core = require('@librechat/chat');
-      const names = ['createSSETransport', 'normalizeFrame', 'applyMessageDelta', 'applyToolCallDelta', 'isAnsweredAskUserQuestionPart'];
+      const names = ['createSSETransport', 'normalizeFrame', 'applyMessageDelta', 'applyToolCallDelta', 'isAnsweredAskUserQuestionPart', 'reduceStep', 'createStreamState'];
       const answer = { entry: require.resolve('@librechat/chat'), cjs: {}, esm: {} };
       for (const name of names) answer.cjs[name] = typeof core[name];
       import('@librechat/chat').then((esm) => {
@@ -264,7 +264,7 @@ test.describe('the built @librechat/chat package', () => {
     };
     expect(answer.entry).toBe(resolve(dist, 'index.cjs'));
     for (const exports of [answer.cjs, answer.esm]) {
-      expect(Object.values(exports)).toEqual(Array(5).fill('function'));
+      expect(Object.values(exports)).toEqual(Array(7).fill('function'));
     }
   });
 });

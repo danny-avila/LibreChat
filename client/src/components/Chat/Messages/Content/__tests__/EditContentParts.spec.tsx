@@ -57,8 +57,9 @@ jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
 }));
 
-jest.mock('~/hooks/Chat', () => ({
-  useGetAddedConvo: () => () => null,
+jest.mock('~/hooks/Conversations/useGetAddedConvo', () => ({
+  __esModule: true,
+  default: () => () => null,
 }));
 
 const content = [

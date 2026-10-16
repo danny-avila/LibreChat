@@ -33,6 +33,7 @@ import UnifiedPeopleSearch from './PeoplePicker/UnifiedPeopleSearch';
 import PeoplePickerAdminSettings from './PeoplePickerAdminSettings';
 import PublicSharingToggle from './PublicSharingToggle';
 import { SelectedPrincipalsList } from './PeoplePicker';
+import { permissionErrorKey } from './errors';
 import { cn } from '~/utils';
 
 export default function GenericGrantAccessDialog({
@@ -220,7 +221,7 @@ export default function GenericGrantAccessDialog({
     } catch (error) {
       console.error('Error updating permissions:', error);
       showToast({
-        message: localize('com_ui_permissions_failed_update'),
+        message: localize(permissionErrorKey(error)),
         status: 'error',
       });
     }
