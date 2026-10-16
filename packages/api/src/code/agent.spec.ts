@@ -255,6 +255,30 @@ describe('stateful default profile setting', () => {
     expect(optsOutOfAttachedCodeEnvironment(toggleOff, withoutAttached, environments)).toBe(true);
     expect(optsOutOfAttachedCodeEnvironment(toggleOff, {}, environments)).toBe(false);
   });
+
+  it('keeps code on a toggle-off agent when the capability is off or no stateful route exists', () => {
+    process.env.LIBRECHAT_CODE_DEFAULT_PROFILE = 'stateful';
+    const params = { agent: toggleOff, requestBody: withoutAttached, codeExecutionAvailable: true };
+
+    expect(resolveAgentCodeFlags({ ...params, statefulSessionsAvailable: false })).toMatchObject({
+      attachedEnvironmentOptOut: false,
+      codeEnvAvailable: true,
+      statefulSessions: false,
+    });
+    expect(resolveAgentCodeFlags({ ...params, statefulSessionsAvailable: true })).toMatchObject({
+      attachedEnvironmentOptOut: false,
+      codeEnvAvailable: true,
+      statefulSessions: true,
+    });
+  });
+
+  it('still opts a toggle-off agent with an attached default out when the capability is on', () => {
+    process.env.LIBRECHAT_CODE_DEFAULT_PROFILE = 'stateful';
+
+    expect(
+      resolveAgentCodeFlags({ ...baseParams, agent: toggleOff, requestBody: withoutAttached }),
+    ).toMatchObject({ attachedEnvironmentOptOut: true, codeEnvAvailable: false });
+  });
 });
 
 describe('withRequestCodeInputs', () => {

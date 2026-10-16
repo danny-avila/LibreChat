@@ -43,16 +43,19 @@ export function optsOutOfAttachedCodeEnvironment(
   requestBody: CodeEnvironmentDecisionCarrier | null | undefined,
   environments: readonly CodeEnvironmentConfig[] | undefined,
   implicitStatefulRouteAvailable = false,
+  statefulSessionsAvailable = true,
 ): boolean {
   if (agent == null || !runsWithoutAttachedCodeEnvironments(requestBody)) return false;
   const configured = agent.code_environment_id
     ? environments?.find(({ id }) => id === agent.code_environment_id)
     : environments?.find(({ default: isDefault }) => isDefault === true);
+  const attached = configured?.type === 'attached';
   return (
-    (agent.stateful_code_sessions === true || isStatefulCodeDefaultProfile()) &&
-    (configured?.type === 'attached' ||
-      (configured == null &&
-        (Boolean(agent.code_environment_id) || !implicitStatefulRouteAvailable)))
+    (agent.stateful_code_sessions === true &&
+      (attached ||
+        (configured == null &&
+          (Boolean(agent.code_environment_id) || !implicitStatefulRouteAvailable)))) ||
+    (attached && statefulSessionsAvailable && isStatefulCodeDefaultProfile())
   );
 }
 
@@ -105,6 +108,7 @@ export function resolveAgentCodeFlags(params: AgentCodeFlagsParams): AgentCodeFl
       params.requestBody,
       params.environments,
       params.implicitStatefulRouteAvailable === true,
+      params.statefulSessionsAvailable,
     );
   const codeEnvAvailable =
     params.codeExecutionAvailable &&
