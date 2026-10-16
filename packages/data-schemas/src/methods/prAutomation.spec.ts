@@ -525,6 +525,75 @@ describe('enabling for a conversation or owner that no longer exists', () => {
     expect(await claim(1, { binding: pullTwo })).not.toMatchObject({ ok: true });
   });
 
+  /**
+   * Enables `binding` and runs `during` at the enable's second owner read: its writes are done
+   * and its rollback is next. Account deletion starts right after `during`.
+   */
+  const enableCrossedBy = async (during: () => Promise<unknown>, binding = pullTwo) => {
+    const User = mongoose.models.User;
+    const original = User.findById.bind(User);
+    let reads = 0;
+    const hook = async () => {
+      await during();
+      await startAccountDeletionNow();
+    };
+    const spy = jest.spyOn(User, 'findById').mockImplementation(((
+      ...args: Parameters<typeof User.findById>
+    ) => {
+      const query = original(...args);
+      if (++reads !== 2) {
+        return query;
+      }
+      const lean = query.lean.bind(query);
+      query.lean = ((...leanArgs: Parameters<typeof query.lean>) => ({
+        then: (resolve: (value: unknown) => unknown, reject: (error: unknown) => unknown) =>
+          hook()
+            .then(() => lean(...leanArgs))
+            .then(resolve, reject),
+      })) as unknown as typeof query.lean;
+      return query;
+    }) as typeof User.findById);
+    try {
+      return await enableOpen({ ...key, binding });
+    } finally {
+      spy.mockRestore();
+      await cancelAccountDeletion();
+    }
+  };
+
+  test('keeps a user stop that lands while a rejected enable rolls back', async () => {
+    await enable(pullOne);
+    const result = await enableCrossedBy(() => methods.stopPRAutomation(key, 'user_stopped'));
+    expect(result).toEqual({ ok: false, error: { code: 'owner_inactive' } });
+    expect(await methods.getPRAutomation(key)).toMatchObject({
+      state: 'stopped',
+      stopCode: 'user_stopped',
+    });
+    expect(await claim(1)).not.toMatchObject({ ok: true });
+  });
+
+  test('keeps a trust change that lands while a rejected enable rolls back', async () => {
+    await enable(pullOne);
+    const result = await enableCrossedBy(() =>
+      methods.setPRAutomationTrust(key, 'collaborators', 'anyone'),
+    );
+    expect(result).toEqual({ ok: false, error: { code: 'owner_inactive' } });
+    const record = await methods.getPRAutomation(key);
+    expect(record).toMatchObject({ trust: 'collaborators', ...pullOne, state: 'idle' });
+    expect(record?.pending).toBeUndefined();
+    expect((await claim(1)).ok).toBe(true);
+  });
+
+  test('keeps a trust change on a record a rejected first enable inserted', async () => {
+    await PRAutomation.deleteMany({});
+    await enableCrossedBy(
+      () => methods.setPRAutomationTrust(key, 'collaborators', 'anyone'),
+      pullOne,
+    );
+    expect(await methods.getPRAutomation(key)).toMatchObject({ trust: 'collaborators' });
+    expect(await claim(1)).not.toMatchObject({ ok: true });
+  });
+
   test('does not report success when another enable replaced its write before it committed', async () => {
     await enable(pullOne);
     /** Another enable's write lands between this enable's second check and its commit. */

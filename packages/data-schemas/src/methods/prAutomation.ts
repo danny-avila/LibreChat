@@ -27,6 +27,8 @@ const COMMIT_SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
  */
 type Liveness = 'live' | 'conversation_gone' | 'owner_gone' | 'owner_inactive';
 type Gone = Extract<Liveness, 'conversation_gone' | 'owner_gone'>;
+/** Field values an enable attempt left on the record; `undefined` marks a field it removed. */
+type Written = Record<string, unknown>;
 const CLAIMABLE_STATES: PRAutomationState[] = ['idle', 'waiting'];
 const SETTLEABLE_STATES: PRAutomationState[] = ['fixing', 'needs_user'];
 const SETTLED_STATES: PRAutomationState[] = ['waiting', 'needs_user'];
@@ -328,6 +330,17 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
       runReset(attempt, { ...fields, pending: attempt });
     const options = { runValidators: true };
     let undo: { previous: t.IPRAutomation | null } | undefined;
+    /** Every field this attempt wrote, with the value it left; `undefined` means it unset it. */
+    const written: Written = {};
+    const track = (update: {
+      $set?: Record<string, unknown>;
+      $unset?: Record<string, unknown>;
+    }) => {
+      Object.assign(written, update.$set);
+      for (const field of Object.keys(update.$unset ?? {})) {
+        written[field] = undefined;
+      }
+    };
     /** Whether any write of this attempt applied; an enable that changed nothing has no commit. */
     let wrote = false;
     const write = async (condition: Record<string, unknown>, update: Record<string, unknown>) => {
@@ -339,29 +352,31 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
         return;
       }
       wrote = true;
+      track(update);
       if (before.epoch !== attempt) {
         undo = { previous: before };
       }
     };
+    const inserted = {
+      state: 'idle',
+      round: 0,
+      trustedBots: [],
+      claimedHeads: [],
+      epoch: attempt,
+      pending: attempt,
+      trust: clampPRAutomationTrust(trust, maxTrust),
+      ...binding,
+    };
     const existing = await PRAutomation.findOneAndUpdate(
       filter,
       {
-        $setOnInsert: {
-          ...filter,
-          state: 'idle',
-          round: 0,
-          trustedBots: [],
-          claimedHeads: [],
-          epoch: attempt,
-          pending: attempt,
-          trust: clampPRAutomationTrust(trust, maxTrust),
-          ...binding,
-        },
+        $setOnInsert: { ...filter, ...inserted },
       },
       { upsert: true, new: false, ...options },
     ).lean<t.IPRAutomation>();
     if (existing == null) {
       wrote = true;
+      track({ $set: inserted });
       undo = { previous: null };
     }
     /** A trust level passed with the request applies to every write that starts a run. */
@@ -398,7 +413,7 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
     }
     if (after !== 'live') {
       if (undo != null) {
-        await undoEnable({ ...filter, epoch: attempt }, undo.previous);
+        await undoEnable(filter, written, undo.previous);
       }
       return { ok: false, error: { code: after } };
     }
@@ -424,20 +439,38 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
   }
 
   /**
-   * Puts the record back as this enable's own write found it when an account deletion started
-   * during the write, which can still be cancelled. `guard` names the epoch only this attempt
-   * wrote, so a record a later enable already replaced is left alone.
+   * Puts back what this enable wrote when an account deletion started during the write, which
+   * can still be cancelled. Only the fields the attempt wrote are restored, and only while every
+   * one of them still holds the value the attempt left, its epoch and pending mark included. A
+   * later enable that replaced the record, a stop, or a trust change made meanwhile therefore
+   * survives, and the record then stays pending, which nothing claims.
    */
   async function undoEnable(
-    guard: ReturnType<typeof keyFilter> & { epoch: string },
+    key: ReturnType<typeof keyFilter>,
+    written: Written,
     previous: t.IPRAutomation | null,
   ): Promise<void> {
     const PRAutomation = mongoose.models.PRAutomation;
+    const guard: Record<string, unknown> = { ...key };
+    for (const [field, value] of Object.entries(written)) {
+      guard[field] = value === undefined ? { $exists: false } : value;
+    }
     if (previous == null) {
       await PRAutomation.deleteOne(guard);
       return;
     }
-    await PRAutomation.replaceOne(guard, previous);
+    const $set: Record<string, unknown> = {};
+    const $unset: Record<string, ''> = {};
+    const stored = new Map<string, unknown>(Object.entries(previous));
+    for (const field of Object.keys(written)) {
+      if (stored.get(field) === undefined) {
+        $unset[field] = '';
+      } else {
+        $set[field] = stored.get(field);
+      }
+    }
+    const update = Object.keys($unset).length > 0 ? { $set, $unset } : { $set };
+    await PRAutomation.updateOne(guard, update, { timestamps: false });
   }
 
   async function disablePRAutomation(key: t.PRAutomationKey): Promise<{ removed: boolean }> {
