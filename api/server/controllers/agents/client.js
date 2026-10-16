@@ -143,6 +143,7 @@ const {
   planSendContext,
   isStableContextEnabled,
   getReasoningReplayTarget,
+  dropReasoningReplayOutsideSegment,
   attachProviderItems,
   getMCPServerInstructions,
   prepareResumedTurnContext,
@@ -2974,6 +2975,13 @@ class AgentClient extends BaseClient {
     const turnContext = preparedTurnContext?.plan ?? null;
     this.pendingContextAnchor = preparedTurnContext?.pending;
     this.promptCacheReset = preparedTurnContext?.promptCacheReset;
+    dropReasoningReplayOutsideSegment({
+      config: this.options.req?.config,
+      provider: this.options.agent?.provider,
+      formattedMessages,
+      segmentStart: turnContext?.segmentStart,
+      summaryPartIndex: turnContext?.summaryPartIndex,
+    });
     promptTokens += addedTokens;
     const hasPromptOnlyContext = hasFileContext || applied;
     if (hasPromptOnlyContext) {
