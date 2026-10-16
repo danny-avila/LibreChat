@@ -1,9 +1,17 @@
 /**
  * @jest-environment jsdom
  */
-import { useAtom, useAtomValue } from 'jotai';
 import { act, render, renderHook, screen } from '@testing-library/react';
-import { anySubmittingAtom, isSubmittingFamily } from '../submission';
+import { Provider, createStore, useAtom, useAtomValue, useSetAtom } from 'jotai';
+import type { TSubmission } from 'librechat-data-provider';
+import type { ReactNode } from 'react';
+import {
+  clearSubmissions,
+  submissionByIndex,
+  isSubmittingFamily,
+  anySubmittingAtom,
+  useClearSubmissions,
+} from '../submission';
 
 function Indicator({ index }: { index: number }) {
   const isSubmitting = useAtomValue(isSubmittingFamily(index));
@@ -62,5 +70,46 @@ describe('anySubmittingAtom', () => {
 
     act(() => result.current.first[1](false));
     expect(result.current.any).toBe(false);
+  });
+});
+
+describe('submissionByIndex', () => {
+  const run = (id: string) => ({ userMessage: { messageId: id } }) as unknown as TSubmission;
+
+  it('shows a component and a hook in the same store the same submission', () => {
+    function Probe() {
+      const submission = useAtomValue(submissionByIndex(30));
+      return <p>{submission?.userMessage.messageId ?? 'none'}</p>;
+    }
+    render(<Probe />);
+    const { result } = renderHook(() => useSetAtom(submissionByIndex(30)));
+    act(() => result.current(run('m1')));
+    expect(screen.getByText('m1')).toBeInTheDocument();
+    act(() => result.current(null));
+    expect(screen.getByText('none')).toBeInTheDocument();
+  });
+
+  it('clears every pane, or every pane but the first when asked', () => {
+    const store = createStore();
+    store.set(submissionByIndex(0), run('main'));
+    store.set(submissionByIndex(1), run('added'));
+
+    clearSubmissions(store, true);
+    expect(store.get(submissionByIndex(0))).not.toBeNull();
+    expect(store.get(submissionByIndex(1))).toBeNull();
+
+    clearSubmissions(store);
+    expect(store.get(submissionByIndex(0))).toBeNull();
+  });
+
+  it('clears through the store the caller renders in', () => {
+    const store = createStore();
+    store.set(submissionByIndex(2), run('x'));
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <Provider store={store}>{children}</Provider>
+    );
+    const { result } = renderHook(() => useClearSubmissions(), { wrapper });
+    act(() => result.current());
+    expect(store.get(submissionByIndex(2))).toBeNull();
   });
 });

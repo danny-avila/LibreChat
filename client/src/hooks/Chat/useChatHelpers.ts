@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useRecoilState, useRecoilValue } from 'recoil';
 import { useAtom, useSetAtom, useStore, useAtomValue } from 'jotai';
-import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import { Constants, QueryKeys, isAssistantsEndpoint } from 'librechat-data-provider';
 import {
   activeGenerationCreatedAtByConvoId,
@@ -9,6 +9,8 @@ import {
   isSubmittingFamily,
   useIsSubmitting,
   abortScrollFamily,
+  submissionByIndex,
+  useClearSubmissions,
 } from '@librechat/chat/react';
 import type { TMessage } from 'librechat-data-provider';
 import type { ChatContract } from './contract';
@@ -30,7 +32,7 @@ const useLiveAttachments = () => useRecoilValue(store.messageAttachmentsMap);
 
 // this to be set somewhere else
 export default function useChatHelpers(index = 0, paramId?: string): ChatContract {
-  const clearAllSubmissions = store.useClearSubmissionState();
+  const clearAllSubmissions = useClearSubmissions();
   const [files, setFiles] = useRecoilState(store.filesByIndex(index));
   const [filesLoading, setFilesLoading] = useState(false);
 
@@ -135,7 +137,7 @@ export default function useChatHelpers(index = 0, paramId?: string): ChatContrac
     [queryParam, queryClient],
   );
 
-  const setSubmission = useSetRecoilState(store.submissionByIndex(index));
+  const setSubmission = useSetAtom(submissionByIndex(index));
 
   const { ask: _ask, regenerate: _regenerate } = useChatFunctions({
     index,

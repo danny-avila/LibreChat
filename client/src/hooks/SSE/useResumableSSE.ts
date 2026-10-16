@@ -5,6 +5,7 @@ import { useStore, useSetAtom } from 'jotai';
 import { useQueryClient } from '@tanstack/react-query';
 import { ABORT_SWEEP_STATUSES, selectLocalSteersForQueue } from '@librechat/chat';
 import {
+  submissionByIndex,
   liveAppliedSteerIdsAtom,
   abortScrollFamily,
   showStopButtonByIndex,
@@ -329,7 +330,7 @@ export default function useResumableSSE(
   const [_completed, setCompleted] = useState(new Set());
   const [streamId, setStreamId] = useState<string | null>(null);
   const setAbortScroll = useSetAtom(abortScrollFamily(runIndex));
-  const setSubmission = useSetRecoilState(store.submissionByIndex(runIndex));
+  const setSubmission = useSetAtom(submissionByIndex(runIndex));
   const setShowStopButton = useSetAtom(showStopButtonByIndex(runIndex));
   const setLiveAppliedSteerIds = useSetAtom(liveAppliedSteerIdsAtom);
 
