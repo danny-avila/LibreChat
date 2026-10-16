@@ -4,6 +4,7 @@ import { useRecoilValue } from 'recoil';
 import { useForm } from 'react-hook-form';
 import { Spinner } from '@librechat/client';
 import { useParams } from 'react-router-dom';
+import { useIsSubmitting } from '@librechat/chat/react';
 import { Constants, buildTree } from 'librechat-data-provider';
 import type { TChatProject } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
@@ -68,7 +69,7 @@ function ChatView({
   const { conversationId } = useParams();
   const localize = useLocalize();
   const rootSubmission = useRecoilValue(store.submissionByIndex(index));
-  const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
+  const isSubmitting = useIsSubmitting(index);
   const { saveDrafts } = useChatSettings();
   const enterToSend = useRecoilValue(store.enterToSend);
   const autoSendText = useRecoilValue(store.autoSendText);

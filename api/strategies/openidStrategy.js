@@ -749,11 +749,11 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     if (adminRoles && (adminRoles === true || adminRoleValues.includes(adminRole))) {
       user.role = SystemRoles.ADMIN;
       adminRoleGranted = true;
-      logger.info(`[openidStrategy] User ${username} is an admin based on role: ${adminRole}`);
+      logger.info(`[openidStrategy] User ${user._id} is an admin based on role: ${adminRole}`);
     } else if (user.role === SystemRoles.ADMIN) {
       user.role = SystemRoles.USER;
       logger.info(
-        `[openidStrategy] User ${username} demoted from admin - role no longer present in token`,
+        `[openidStrategy] User ${user._id} demoted from admin - role no longer present in token`,
       );
     }
   }
@@ -829,17 +829,7 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     tenantId: user.tenantId,
   });
 
-  logger.info(
-    `[openidStrategy] login success openidId: ${user.openidId} | email: ${user.email} | username: ${user.username} `,
-    {
-      user: {
-        openidId: user.openidId,
-        username: user.username,
-        email: user.email,
-        name: user.name,
-      },
-    },
-  );
+  logger.info(`[openidStrategy] login success for user: ${user._id}`);
 
   return {
     ...user,
