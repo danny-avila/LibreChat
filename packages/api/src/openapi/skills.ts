@@ -3,12 +3,14 @@ import type { ZodTypeAny } from 'zod';
 import type { EndpointContract } from './adapter';
 import {
   skillManagementUpdateSchema,
+  skillManagementCreateSchema,
   skillManagementResponseSchema,
   skillSummarySchema,
   skillFileSchema,
   skillFileContentSchema,
   skillFileUpdateSchema,
   skillFrontmatterValueSchema,
+  skillFileDeleteResponseSchema,
 } from '../skills/management';
 import {
   errorMessageResponseSchema,
@@ -42,12 +44,14 @@ export const skillComponentSchemas: Record<string, ZodTypeAny> = {
   SkillFrontmatterValue: skillFrontmatterValueSchema,
   Skill: skillManagementResponseSchema,
   SkillList: skillListResponseSchema,
+  SkillCreateRequest: skillManagementCreateSchema,
   SkillUpdateRequest: skillManagementUpdateSchema,
   SkillFile: skillFileSchema,
   SkillFileList: skillFileListResponseSchema,
   SkillFileContent: skillFileContentSchema,
   SkillFileUpdateRequest: skillFileUpdateSchema,
   SkillFileUpdated: skillFileUpdatedSchema,
+  SkillFileDeleted: skillFileDeleteResponseSchema,
 };
 
 const errorResponses = [
@@ -93,6 +97,24 @@ export const skillContracts: EndpointContract[] = [
     responses: [
       { status: 200, description: 'A page of skills', schema: skillListResponseSchema },
       ...errorResponses,
+    ],
+  },
+  {
+    operationId: 'createSkill',
+    method: 'post',
+    path: '/skills',
+    tags: [TAG],
+    summary: 'Create a skill',
+    security: SECURITY,
+    body: skillManagementCreateSchema,
+    responses: [
+      { status: 201, description: 'The created skill', schema: skillManagementResponseSchema },
+      ...errorResponses,
+      {
+        status: 409,
+        description: 'The Skill name already exists, or the bound account is being deleted',
+        schema: z.union([agentManagementErrorSchema, accountDeletionResponseSchema]),
+      },
     ],
   },
   {
@@ -155,6 +177,28 @@ export const skillContracts: EndpointContract[] = [
     responses: [
       { status: 200, description: 'The file content', schema: skillFileContentSchema },
       ...errorResponses,
+    ],
+  },
+  {
+    operationId: 'deleteSkillFile',
+    method: 'delete',
+    path: '/skills/{id}/files/{relativePath}',
+    tags: [TAG],
+    summary: "Delete a skill's file",
+    security: SECURITY,
+    pathParams: [
+      { name: 'id', description: 'The skill id' },
+      { name: 'relativePath', description: 'The file path within the skill' },
+    ],
+    responses: [
+      { status: 200, description: 'The file was deleted', schema: skillFileDeleteResponseSchema },
+      ...errorResponses,
+      {
+        status: 409,
+        description:
+          'The file changed while it was being deleted, or the bound account is being deleted',
+        schema: z.union([agentManagementErrorSchema, accountDeletionResponseSchema]),
+      },
     ],
   },
   {

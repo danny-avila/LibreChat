@@ -14,11 +14,13 @@ jest.mock('@librechat/api', () => ({
     mockDeps = deps;
     return {
       list: mockList,
+      create: mockWrite,
       get: mockList,
       update: mockWrite,
       listFiles: mockList,
       getFile: mockList,
       updateFile: mockWrite,
+      deleteFile: mockWrite,
     };
   },
   mapAgentManagementError: () => ({ status: 404, body: { error: { code: 'not_found' } } }),

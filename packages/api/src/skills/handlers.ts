@@ -49,6 +49,13 @@ type SkillValidationError = Error & { code?: string; issues?: ValidationIssue[] 
 /** Mongo duplicate-key shape. */
 type DuplicateKeyError = Error & { code?: number | string };
 
+/** Only authorized, loaded SkillFile records may select another storage owner. */
+function skillFileDeletionRequest(req: ServerRequest, file: ISkillFile): ServerRequest {
+  const ownerId = file.author?.toString();
+  if (!ownerId || !req.user) throw new Error('Skill file has no storage owner');
+  return { ...req, user: { ...req.user, id: ownerId, _id: file.author } } as ServerRequest;
+}
+
 /**
  * All dependencies required to serve skill HTTP requests. Every dep is resolved
  * from the legacy api layer (`~/models`, `PermissionService`) so the TS handlers
@@ -71,6 +78,7 @@ export interface SkillsHandlersDeps {
   deleteSkillFile: (
     skillId: string | Types.ObjectId,
     relativePath: string,
+    expectedFileId?: string,
   ) => Promise<{ deleted: boolean }>;
 
   /** Access-control primitives from PermissionService. */
@@ -622,7 +630,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
           if (!deleteBlob) {
             throw new Error(`No delete strategy for ${file.source}`);
           }
-          await deleteBlob(req, {
+          await deleteBlob(skillFileDeletionRequest(req, file), {
             filepath: file.filepath,
             storageKey: file.storageKey,
             storageRegion: file.storageRegion,
@@ -852,21 +860,22 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
         return res.status(404).json({ error: 'Skill file not found' });
       }
 
-      const result = await deleteSkillFile(id, decodedPath);
-      if (!result.deleted) {
-        return res.status(404).json({ error: 'Skill file not found' });
-      }
-
-      // Clean up the stored blob — fire-and-forget so the response isn't delayed
       const { deleteFile: deleteBlob } = getStrategyFunctions(file.source);
-      if (deleteBlob) {
-        deleteBlob(req, {
-          filepath: file.filepath,
-          storageKey: file.storageKey,
-          storageRegion: file.storageRegion,
-          user: file.author?.toString?.(),
-          tenantId: file.tenantId?.toString?.(),
-        }).catch((e) => logger.error('[deleteFile] Storage cleanup failed:', e));
+      if (!deleteBlob) {
+        logger.error(`[deleteFile] No delete strategy for ${file.source}`);
+        return res.status(500).json({ error: 'Error deleting skill file' });
+      }
+      await deleteBlob(skillFileDeletionRequest(req, file), {
+        filepath: file.filepath,
+        storageKey: file.storageKey,
+        storageRegion: file.storageRegion,
+        user: file.author?.toString?.(),
+        tenantId: file.tenantId?.toString?.(),
+      });
+
+      const result = await deleteSkillFile(id, decodedPath, file.file_id);
+      if (!result.deleted) {
+        return res.status(409).json({ error: 'Skill file changed while it was being deleted' });
       }
 
       const response: TDeleteSkillFileResponse = {
