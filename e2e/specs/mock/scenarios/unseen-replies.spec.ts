@@ -491,6 +491,7 @@ test.describe('unseen replies', () => {
     const id = conversationId();
     const title = `Withheld reply ${id.slice(0, 8)}`;
     const replyAt = new Date(Date.now() - 2_000);
+    let completedReplyAt: Date;
     await page.addInitScript(() => {
       const constructions: string[] = [];
       const calls: string[] = [];
@@ -569,7 +570,10 @@ test.describe('unseen replies', () => {
         await second.bringToFront();
         await unfocus(page);
         await sendMessageAndWaitForCompletion(second, `E2E_REPLY:withheld-${id.slice(0, 8)}`);
-        await restoreUnreadBaseline(id, now(), replyAt);
+        const completed = await readConversation(id);
+        if (completed?.lastResponseAt == null) throw new Error('Reply timestamp was not saved');
+        completedReplyAt = new Date(completed.lastResponseAt);
+        await restoreUnreadBaseline(id, completedReplyAt, replyAt);
       } finally {
         await second.evaluate(() => window.dispatchEvent(new Event('blur'))).catch(() => {});
         await second.close();
@@ -589,7 +593,7 @@ test.describe('unseen replies', () => {
           window as Window & { __grantNotificationPermission: () => void }
         ).__grantNotificationPermission();
       });
-      await restoreUnreadBaseline(id, now(), replyAt);
+      await restoreUnreadBaseline(id, completedReplyAt, replyAt);
       /* `sidebarExpanded` is stored per browser, so the reply tab's own mobile shell closed this
          list while it was open. Looking at the list again is what a reader does, and it is where
          the dot has to show. */
