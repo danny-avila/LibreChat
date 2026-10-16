@@ -601,6 +601,28 @@ describe('ToolCallGroup image hoisting', () => {
     expect(screen.queryByTestId('compact-reasoning')).not.toBeInTheDocument();
   });
 
+  it('delegates an encrypted-reasoning part to the standalone renderer', () => {
+    const encryptedPart = {
+      type: ContentTypes.THINK,
+      [ContentTypes.THINK]: Buffer.from(
+        Array.from({ length: 900 }, (_, i) => (i * 37 + 3) % 256),
+      ).toString('base64'),
+    } as TMessageContentParts;
+
+    renderGroup({
+      ...baseProps,
+      parts: [
+        { part: makePart('t1'), idx: 0 },
+        { part: encryptedPart, idx: 1 },
+      ],
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /^Fetch_image/ }));
+
+    expect(screen.getByTestId('inner-1')).toBeInTheDocument();
+    expect(screen.queryByTestId('compact-reasoning')).not.toBeInTheDocument();
+  });
+
   it('unmounts tool bodies after a collapsed group finishes transitioning', () => {
     renderGroup(baseProps);
 
