@@ -1,7 +1,8 @@
 import { RefObject } from 'react';
-import { FileSources, isEphemeralAgentId } from 'librechat-data-provider';
+import { isEphemeralAgentId } from 'librechat-data-provider';
 import type { PaneOptionSettings } from '@librechat/chat/react';
 import type { UseMutationResult } from '@tanstack/react-query';
+import type { ExtendedFile } from '@librechat/chat';
 import type * as t from 'librechat-data-provider';
 import type { LucideIcon } from 'lucide-react';
 import type { SetterOrUpdater } from 'recoil';
@@ -509,25 +510,7 @@ export type PromptOption = MentionOption & {
 
 export type TOptionSettings = PaneOptionSettings;
 
-export interface ExtendedFile {
-  file?: File;
-  file_id: string;
-  temp_file_id?: string;
-  type?: string;
-  filepath?: string;
-  filename?: string;
-  width?: number;
-  height?: number;
-  size: number;
-  preview?: string;
-  progress: number;
-  source?: FileSources;
-  attached?: boolean;
-  embedded?: boolean;
-  llmDeliveryPath?: t.TFile['llmDeliveryPath'];
-  tool_resource?: string;
-  metadata?: t.TFile['metadata'];
-}
+export type { ExtendedFile };
 
 export type TLoginLayoutContext = {
   startupConfig: t.TStartupConfig | null;

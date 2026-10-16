@@ -1,9 +1,10 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { useRecoilValue } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
-import { useRecoilState, useRecoilValue } from 'recoil';
 import { useAtom, useSetAtom, useStore, useAtomValue } from 'jotai';
 import { Constants, QueryKeys, isAssistantsEndpoint } from 'librechat-data-provider';
 import {
+  filesFamily,
   presetFamily,
   optionSettingsFamily,
   activeGenerationCreatedAtByConvoId,
@@ -35,7 +36,7 @@ const useLiveAttachments = () => useRecoilValue(store.messageAttachmentsMap);
 // this to be set somewhere else
 export default function useChatHelpers(index = 0, paramId?: string): ChatContract {
   const clearAllSubmissions = useClearSubmissions();
-  const [files, setFiles] = useRecoilState(store.filesByIndex(index));
+  const [files, setFiles] = useAtom(filesFamily(index));
   const [filesLoading, setFilesLoading] = useState(false);
 
   const queryClient = useQueryClient();

@@ -11,7 +11,6 @@ import {
   useRecoilCallback,
 } from 'recoil';
 import type { EModelEndpoint, TConversation } from 'librechat-data-provider';
-import type { ExtendedFile } from '~/common';
 import {
   clearModelForNonEphemeralAgent,
   createChatSearchParams,
@@ -88,11 +87,6 @@ const conversationByIndex = atomFamily<TConversation | null, string | number>({
       });
     },
   ] as const,
-});
-
-const filesByIndex = atomFamily<Map<string, ExtendedFile>, string | number>({
-  key: 'filesByIndex',
-  default: new Map(),
 });
 
 const conversationKeysAtom = atom<(string | number)[]>({
@@ -304,7 +298,6 @@ const updateConversationSelector = selectorFamily({
 export default {
   conversationKeysAtom,
   conversationByIndex,
-  filesByIndex,
   conversationIdByIndex,
   conversationEndpointByIndex,
   effectiveEndpointByIndex,
