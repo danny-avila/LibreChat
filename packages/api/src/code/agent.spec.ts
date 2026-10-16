@@ -265,7 +265,13 @@ describe('stateful default profile setting', () => {
       codeEnvAvailable: true,
       statefulSessions: false,
     });
-    expect(resolveAgentCodeFlags({ ...params, statefulSessionsAvailable: true })).toMatchObject({
+    expect(
+      resolveAgentCodeFlags({
+        ...params,
+        agent: { ...toggleOff, code_environment_id: undefined },
+        statefulSessionsAvailable: true,
+      }),
+    ).toMatchObject({
       attachedEnvironmentOptOut: false,
       codeEnvAvailable: true,
       statefulSessions: true,
@@ -278,6 +284,57 @@ describe('stateful default profile setting', () => {
     expect(
       resolveAgentCodeFlags({ ...baseParams, agent: toggleOff, requestBody: withoutAttached }),
     ).toMatchObject({ attachedEnvironmentOptOut: true, codeEnvAvailable: false });
+  });
+
+  describe('toggle-off agent whose code environment is gone', () => {
+    const staleMachines: CodeEnvironmentConfig[] = [
+      {
+        id: 'm1',
+        name: 'Machine',
+        type: 'attached',
+        baseURL: 'https://bridge.example/v1/',
+        workerId: 'worker-m1',
+        owner: 'deployment',
+        default: true,
+      },
+    ];
+    const staleAgent: AgentCodeRouteAgent = {
+      ...toggleOff,
+      code_environment_id: 'gone',
+    };
+    const staleParams = {
+      ...baseParams,
+      environments: staleMachines,
+      agent: staleAgent,
+      requestBody: withoutAttached,
+    };
+
+    it('opts out of a no-workspace conversation when the setting is stateful', () => {
+      process.env.LIBRECHAT_CODE_DEFAULT_PROFILE = 'stateful';
+
+      expect(resolveAgentCodeFlags(staleParams)).toMatchObject({
+        attachedEnvironmentOptOut: true,
+        codeEnvAvailable: false,
+      });
+      expect(
+        resolveAgentCodeFlags({
+          ...staleParams,
+          agent: { ...staleAgent, stateful_code_sessions: true },
+        }),
+      ).toMatchObject({ attachedEnvironmentOptOut: true, codeEnvAvailable: false });
+    });
+
+    it('keeps code on the default profile when the deployment capability is off', () => {
+      process.env.LIBRECHAT_CODE_DEFAULT_PROFILE = 'stateful';
+
+      expect(
+        resolveAgentCodeFlags({ ...staleParams, statefulSessionsAvailable: false }),
+      ).toMatchObject({
+        attachedEnvironmentOptOut: false,
+        codeEnvAvailable: true,
+        statefulSessions: false,
+      });
+    });
   });
 });
 

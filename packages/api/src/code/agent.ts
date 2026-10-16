@@ -55,7 +55,9 @@ export function optsOutOfAttachedCodeEnvironment(
       (attached ||
         (configured == null &&
           (Boolean(agent.code_environment_id) || !implicitStatefulRouteAvailable)))) ||
-    (attached && statefulSessionsAvailable && isStatefulCodeDefaultProfile())
+    (statefulSessionsAvailable &&
+      isStatefulCodeDefaultProfile() &&
+      (attached || (configured == null && Boolean(agent.code_environment_id))))
   );
 }
 
