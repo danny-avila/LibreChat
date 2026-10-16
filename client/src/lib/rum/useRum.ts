@@ -26,12 +26,16 @@ type HyperDXBrowser = HyperDXActionClient & {
     apiKey: string;
     consoleCapture: boolean;
     disableReplay: boolean;
+    maskAllInputs: boolean;
+    maskAllText: boolean;
     service: string;
     tracePropagationTargets?: string[];
     url: string;
   }) => void;
   setGlobalAttributes: (attributes: Record<string, string>) => void;
   getSessionId?: () => string | undefined;
+  stopSessionRecorder: () => void;
+  resumeSessionRecorder: () => void;
 };
 
 function shouldInitializeRum(config: TRumConfig | undefined, token: string | undefined): boolean {
@@ -186,6 +190,7 @@ export default function useRum(): void {
   useEffect(
     () => () => {
       stopClientLogs();
+      hyperDxRef.current?.stopSessionRecorder();
       hyperDxRef.current = undefined;
       initializedKeyRef.current = undefined;
     },
@@ -197,12 +202,14 @@ export default function useRum(): void {
       if (startupConfigFetched) {
         discardEarlyRumQueue();
         stopClientLogs();
+        hyperDxRef.current?.stopSessionRecorder();
       }
       return;
     }
 
     if (!shouldInitializeRum(rumConfig, token)) {
       stopClientLogs();
+      hyperDxRef.current?.stopSessionRecorder();
       if (rumConfig?.authMode === 'proxy') {
         rumProxyToken = undefined;
         hyperDxRef.current = undefined;
@@ -222,12 +229,22 @@ export default function useRum(): void {
     }
 
     const identity = config.authMode === 'proxy' ? JSON.stringify([user?.tenantId, user?.id]) : '';
-    const initKey = [config.url, config.serviceName, config.authMode, apiKey, identity].join(':');
+    const initKey = [
+      config.url,
+      config.serviceName,
+      config.authMode,
+      apiKey,
+      identity,
+      config.disableReplay ?? true,
+    ].join(':');
     const getSessionId = () => hyperDxRef.current?.getSessionId?.();
 
     if (initializedKeyRef.current === initKey) {
       if (hyperDxRef.current) {
         restoreRumEmitter(hyperDxRef.current);
+        if (config.disableReplay === false) {
+          hyperDxRef.current.resumeSessionRecorder();
+        }
       }
       syncClientLogs(config, getSessionId);
       return;
@@ -236,6 +253,7 @@ export default function useRum(): void {
     if (sampledInitKeyRef.current !== initKey) {
       /* Retire the previous account's queue and correlation before accepting new records. */
       stopClientLogs();
+      hyperDxRef.current?.stopSessionRecorder();
       hyperDxRef.current = undefined;
       initializedKeyRef.current = undefined;
       sampledInitKeyRef.current = initKey;
@@ -264,6 +282,9 @@ export default function useRum(): void {
           apiKey,
           consoleCapture: config.consoleCapture ?? false,
           disableReplay: config.disableReplay ?? true,
+          // Mask chat text and typed values before replay events leave the browser.
+          maskAllInputs: true,
+          maskAllText: true,
           service: config.serviceName,
           tracePropagationTargets: config.tracePropagationTargets,
           url: config.url,
@@ -272,6 +293,9 @@ export default function useRum(): void {
         hyperDxRef.current = HyperDX;
         initializedKeyRef.current = initKey;
         HyperDX.setGlobalAttributes(buildGlobalAttributes(user, config, routeRef.current));
+        if (config.disableReplay === false) {
+          HyperDX.resumeSessionRecorder();
+        }
         startRumDiagnostics(HyperDX, () => routeRef.current);
       })
       .catch(() => undefined);
