@@ -17,6 +17,7 @@ const {
   verifyAgentUploadPermission,
   createCodeExecutionRouteKey,
   getCodeExecutionBaseUrl,
+  getCodeDefaultProfile,
   assertUploadContentAllowed,
   hasActiveFilePolicy,
   sanitizeFilename,
@@ -375,7 +376,7 @@ router.get('/code/download/:session_id/:fileId', async (req, res) => {
       logger.debug(`${logPrefix} invalid execution_profile`);
       return res.status(400).send('Bad request');
     }
-    const executionProfile = requestedProfile ?? 'default';
+    const executionProfile = requestedProfile ?? getCodeDefaultProfile();
     const requestedRouteKey = req.query.execution_route_key;
     if (
       requestedRouteKey != null &&
