@@ -23,10 +23,12 @@ it('records failed cleanup attempts before releasing the claim', async () => {
     }),
     beginSkillDeletion: jest.fn(async () => journal),
     getSkillDeletion: jest.fn(async (): Promise<typeof journal | null> => journal),
-    listSkillFiles: jest.fn(async () => {
-      throw new Error('storage unavailable');
+    iterateSkillCleanupFiles: jest.fn(async function* () {
+      yield await Promise.reject(new Error('storage unavailable'));
     }),
-    listSkillUploadIntents: jest.fn(async () => []),
+    iterateSkillCleanupIntents: jest.fn(async function* () {}),
+    hasInFlightSkillUploads: jest.fn(async () => false),
+    listExistingSkillFileIds: jest.fn(async () => []),
     deleteSkillFileAfterBlob: jest.fn(async () => true),
     finalizeSkillDeletion: jest.fn(async () => ({
       deleted: true,
@@ -92,8 +94,10 @@ it.each([false, true])(
       releaseSkillDeletionClaim: jest.fn(async () => undefined),
       beginSkillDeletion: jest.fn(async () => null),
       getSkillDeletion: jest.fn(async () => null),
-      listSkillFiles: jest.fn(async () => []),
-      listSkillUploadIntents: jest.fn(async () => []),
+      iterateSkillCleanupFiles: jest.fn(async function* () {}),
+      iterateSkillCleanupIntents: jest.fn(async function* () {}),
+      hasInFlightSkillUploads: jest.fn(async () => false),
+      listExistingSkillFileIds: jest.fn(async () => []),
       deleteSkillFileAfterBlob: jest.fn(async () => true),
       finalizeSkillDeletion: jest.fn(async () => ({
         deleted: false,
@@ -163,8 +167,12 @@ function claimedServiceHarness() {
     scheduleSkillDeletionRecheck: jest.fn(async () => true),
     beginSkillDeletion: jest.fn(async () => journal),
     getSkillDeletion: jest.fn(async (): Promise<typeof journal | null> => journal),
-    listSkillFiles: jest.fn(async () => files),
-    listSkillUploadIntents: jest.fn(async () => []),
+    iterateSkillCleanupFiles: jest.fn(async function* () {
+      yield [...files];
+    }),
+    iterateSkillCleanupIntents: jest.fn(async function* () {}),
+    hasInFlightSkillUploads: jest.fn(async () => false),
+    listExistingSkillFileIds: jest.fn(async () => []),
     deleteSkillFileAfterBlob: jest.fn(async () => {
       files.length = 0;
       return true;
@@ -276,20 +284,22 @@ it('processes independent deletion tombstones with bounded concurrency', async (
   );
   h.persistence.claimSkillDeletion.mockResolvedValue(true);
   h.persistence.refreshSkillDeletionClaim.mockResolvedValue(true);
-  h.persistence.listSkillFiles.mockImplementation(async () => [
-    {
-      file_id: 'file-1',
-      filepath: '/uploads/file-1',
-      source: 'local',
-      author: '507f1f77bcf86cd799439012',
-    },
-    {
-      file_id: 'file-2',
-      filepath: '/uploads/file-2',
-      source: 'local',
-      author: '507f1f77bcf86cd799439012',
-    },
-  ]);
+  h.persistence.iterateSkillCleanupFiles.mockImplementation(async function* () {
+    yield [
+      {
+        file_id: 'file-1',
+        filepath: '/uploads/file-1',
+        source: 'local',
+        author: '507f1f77bcf86cd799439012',
+      },
+      {
+        file_id: 'file-2',
+        filepath: '/uploads/file-2',
+        source: 'local',
+        author: '507f1f77bcf86cd799439012',
+      },
+    ];
+  });
   h.persistence.deleteSkillFileAfterBlob.mockResolvedValue(true);
   h.loadConfig.mockResolvedValue({
     skillDeletion: { finalizationEnabled: true },

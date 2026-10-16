@@ -56,6 +56,9 @@ complete cleanup. If cleanup is still pending, it returns `cleanupComplete: fals
 hidden immediately, and the background sweeper retries durable cleanup after transient failures.
 Physical finalization requires `skillDeletion.finalizationEnabled: true` after older Skill writers
 have drained; without it, deletion stays pending.
+Cleanup reads file metadata and upload intents in cursor batches bounded by
+`skillDeletion.batchSize` (default 100), settling each batch before fetching the next.
+File content is not loaded, and failed provider deletions retain their persisted references for retry.
 
 Text-file writes accept `{ "content": "replacement text" }`, capped at 1 MiB of UTF-8 data.
 Use a relative path such as `references/guide.md`. Absolute paths, traversal, and NUL bytes are

@@ -28,6 +28,37 @@ export interface SkillDeletionFileRecord {
 }
 
 type Source = {
+  iterateSkillCleanupFiles: (
+    id: string,
+    batchSize: number,
+  ) => AsyncIterable<
+    Array<
+      Pick<
+        ISkillFile,
+        'file_id' | 'filepath' | 'source' | 'storageKey' | 'storageRegion' | 'author' | 'tenantId'
+      >
+    >
+  >;
+  iterateSkillCleanupIntents: (
+    id: string,
+    batchSize: number,
+  ) => AsyncIterable<
+    Array<
+      Pick<
+        ISkillUploadIntent,
+        | 'skillId'
+        | 'author'
+        | 'fileId'
+        | 'source'
+        | 'storageKey'
+        | 'tenantId'
+        | 'state'
+        | 'cleanedAt'
+      >
+    >
+  >;
+  hasInFlightSkillUploads: (id: string) => Promise<boolean>;
+  listExistingSkillFileIds: (id: string, fileIds: string[]) => Promise<string[]>;
   beginSkillDeletion: (
     id: string,
   ) => Promise<Pick<ISkillDeletion, 'skillId' | 'completedAt'> | null>;
@@ -123,6 +154,16 @@ function file(
 
 /** Project database records once, before they cross into the storage-independent API service. */
 export function createSkillDeletionPersistenceAdapter(source: Source): {
+  iterateSkillCleanupFiles: (
+    id: string,
+    batchSize: number,
+  ) => AsyncIterable<SkillDeletionFileRecord[]>;
+  iterateSkillCleanupIntents: (
+    id: string,
+    batchSize: number,
+  ) => AsyncIterable<SkillUploadIntentRecord[]>;
+  hasInFlightSkillUploads: (id: string) => Promise<boolean>;
+  listExistingSkillFileIds: (id: string, fileIds: string[]) => Promise<string[]>;
   beginSkillDeletion: (id: string) => Promise<SkillDeletionRecord | null>;
   getSkillDeletion: (id: string) => Promise<SkillDeletionRecord | null>;
   listSkillDeletionTombstones: (limit: number) => Promise<SkillDeletionRecord[]>;
@@ -131,6 +172,15 @@ export function createSkillDeletionPersistenceAdapter(source: Source): {
   listSkillFiles: (id: string) => Promise<SkillDeletionFileRecord[]>;
 } {
   return {
+    iterateSkillCleanupFiles: async function* (id, batchSize) {
+      for await (const rows of source.iterateSkillCleanupFiles(id, batchSize)) yield rows.map(file);
+    },
+    iterateSkillCleanupIntents: async function* (id, batchSize) {
+      for await (const rows of source.iterateSkillCleanupIntents(id, batchSize))
+        yield rows.map(intent);
+    },
+    hasInFlightSkillUploads: (id) => source.hasInFlightSkillUploads(id),
+    listExistingSkillFileIds: (id, fileIds) => source.listExistingSkillFileIds(id, fileIds),
     beginSkillDeletion: async (id: string): Promise<SkillDeletionRecord | null> => {
       const row = await source.beginSkillDeletion(id);
       return row ? journal(row) : null;

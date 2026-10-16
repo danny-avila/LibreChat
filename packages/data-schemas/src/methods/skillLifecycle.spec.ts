@@ -55,6 +55,98 @@ async function completeWithClaim(skillId: mongoose.Types.ObjectId) {
 }
 
 describe('Skill deletion journal', () => {
+  it('pages real file and intent cursors without skipping records changed during cleanup', async () => {
+    const { skill, author } = await makeSkill();
+    await mongoose.models.SkillFile.insertMany(
+      Array.from({ length: 205 }, (_, index) => ({
+        skillId: skill._id,
+        file_id: `paged-${index}`,
+        relativePath: `${index}.md`,
+        filename: `${index}.md`,
+        filepath: `/uploads/${author}/${index}`,
+        source: 'local',
+        mimeType: 'text/markdown',
+        bytes: 4,
+        content: 'must not be loaded during cleanup',
+        author,
+        tenantId: 'tenant-a',
+      })),
+    );
+    await lifecycle.beginSkillDeletion(skill.id);
+    const seen = new Set<string>();
+    for await (const files of lifecycle.iterateSkillCleanupFiles(skill.id, 17)) {
+      expect(files.length).toBeLessThanOrEqual(17);
+      for (const file of files) {
+        expect(file.content).toBeUndefined();
+        expect(seen.has(file.file_id)).toBe(false);
+        seen.add(file.file_id);
+        await mongoose.models.SkillFile.deleteOne({ file_id: file.file_id });
+      }
+    }
+    expect(seen.size).toBe(205);
+    expect(await lifecycle.hasInFlightSkillUploads(skill.id)).toBe(false);
+    const cleaned = new Set<string>();
+    for await (const intents of lifecycle.iterateSkillCleanupIntents(skill.id, 17)) {
+      expect(intents.length).toBeLessThanOrEqual(17);
+      expect(
+        await lifecycle.listExistingSkillFileIds(
+          skill.id,
+          intents.map((intent) => intent.fileId),
+        ),
+      ).toEqual([]);
+      for (const intent of intents) {
+        expect(cleaned.has(intent.fileId)).toBe(false);
+        cleaned.add(intent.fileId);
+        await lifecycle.markSkillUploadIntentCleaned(intent.fileId);
+      }
+    }
+    expect(cleaned.size).toBe(205);
+    for await (const _batch of lifecycle.iterateSkillCleanupIntents(skill.id, 17)) {
+      throw new Error('Cleaned committed history must not be yielded');
+    }
+  });
+
+  it.each(['break', 'throw'] as const)(
+    'closes a Mongo cleanup cursor when its consumer exits with %s',
+    async (mode) => {
+      const { skill, author } = await makeSkill();
+      await mongoose.models.SkillUploadIntent.insertMany(
+        Array.from({ length: 7 }, (_, index) => ({
+          skillId: skill._id,
+          author,
+          fileId: `close-${index}`,
+          source: 'local',
+          storageKey: `/uploads/${index}`,
+          writerId: 'writer',
+          state: 'abandoned',
+        })),
+      );
+      const query = mongoose.models.SkillUploadIntent.find();
+      const find = jest.spyOn(mongoose.models.SkillUploadIntent, 'find').mockReturnValueOnce(query);
+      const cursor = jest.spyOn(query, 'cursor');
+      const pages = lifecycle.iterateSkillCleanupIntents(skill.id, 2);
+      expect(cursor).not.toHaveBeenCalled();
+      await pages[Symbol.asyncIterator]().next();
+      const close = jest.spyOn(cursor.mock.results[0].value, 'close');
+      try {
+        const consume = async () => {
+          for await (const batch of pages) {
+            expect(batch).toHaveLength(2);
+            if (mode === 'throw') throw new Error('consumer failure');
+            break;
+          }
+        };
+        if (mode === 'throw') await expect(consume()).rejects.toThrow('consumer failure');
+        else await consume();
+        expect(close).toHaveBeenCalledTimes(1);
+      } finally {
+        close.mockRestore();
+        cursor.mockRestore();
+        find.mockRestore();
+      }
+    },
+  );
+
   it('indexes only marked Skills for startup and periodic deletion discovery', () => {
     expect(mongoose.models.Skill.schema.indexes()).toContainEqual([
       { deletionNeedsJournal: 1, deletionJournalAttemptAt: 1, deletingAt: 1 },

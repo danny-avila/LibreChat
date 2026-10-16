@@ -202,6 +202,7 @@ export function createSkillDeletionService(deps: SkillDeletionServiceDeps): Skil
         config?.fileConfig?.skills?.deletionCleanupConcurrency,
         assertClaim,
         journal,
+        config?.skillDeletion?.batchSize,
       );
       if (progress.cleanupComplete) {
         await assertClaim();

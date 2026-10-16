@@ -5,7 +5,7 @@ import type {
   ISkillUploadIntent,
   ISkillUploadIntentDocument,
 } from '~/types/skillDeletion';
-import type { ISkillFileDocument } from '~/types/skill';
+import type { ISkillFile, ISkillFileDocument } from '~/types/skill';
 import type { ISkillDocument } from '~/types/skill';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { runAsSystem } from '~/config/tenantContext';
@@ -13,6 +13,9 @@ import logger from '~/config/winston';
 
 type SkillRow = ISkillDocument & { _id: Types.ObjectId };
 const LEGACY_BACKFILL_BATCH_SIZE = 100;
+const pendingCleanupFilter = {
+  $or: [{ state: { $ne: 'committed' } }, { state: 'committed', cleanedAt: { $exists: false } }],
+};
 type IntentInput = {
   skillId: string;
   author: string;
@@ -22,6 +25,27 @@ type IntentInput = {
   tenantId?: string;
   writerId: string;
 };
+
+async function* cleanupCursorBatches<Row>(
+  cursor: { next: () => Promise<Row | null>; close: () => Promise<void> },
+  batchSize: number,
+): AsyncGenerator<Row[]> {
+  try {
+    if (!Number.isInteger(batchSize) || batchSize < 1)
+      throw new Error('Invalid cleanup batch size');
+    let batch: Row[] = [];
+    for (let row = await cursor.next(); row != null; row = await cursor.next()) {
+      batch.push(row);
+      if (batch.length === batchSize) {
+        yield batch;
+        batch = [];
+      }
+    }
+    if (batch.length > 0) yield batch;
+  } finally {
+    await cursor.close();
+  }
+}
 
 export type StoppedSkillUploadRecovery =
   | { status: 'missing' | 'changed' }
@@ -67,6 +91,13 @@ export interface SkillLifecycleMethods {
     skillId: string | Types.ObjectId,
     options?: { cleanupOnly?: boolean },
   ) => Promise<ISkillUploadIntent[]>;
+  iterateSkillCleanupFiles: (skillId: string, batchSize: number) => AsyncIterable<ISkillFile[]>;
+  iterateSkillCleanupIntents: (
+    skillId: string,
+    batchSize: number,
+  ) => AsyncIterable<ISkillUploadIntent[]>;
+  hasInFlightSkillUploads: (skillId: string) => Promise<boolean>;
+  listExistingSkillFileIds: (skillId: string, fileIds: string[]) => Promise<string[]>;
   getSkillUploadIntent: (fileId: string) => Promise<ISkillUploadIntent | null>;
   recoverStoppedSkillUploadIntent: (
     fileId: string,
@@ -376,20 +407,54 @@ export function createSkillLifecycleMethods(
     return (await intentModel()
       .find({
         skillId,
-        ...(options.cleanupOnly
-          ? {
-              $or: [
-                { state: { $ne: 'committed' } },
-                { state: 'committed', cleanedAt: { $exists: false } },
-              ],
-            }
-          : {}),
+        ...(options.cleanupOnly ? pendingCleanupFilter : {}),
       })
       .lean()) as ISkillUploadIntent[];
   }
 
   async function getSkillUploadIntent(fileId: string): Promise<ISkillUploadIntent | null> {
     return (await intentModel().findOne({ fileId }).lean()) as ISkillUploadIntent | null;
+  }
+
+  async function* iterateSkillCleanupFiles(
+    skillId: string,
+    batchSize: number,
+  ): AsyncGenerator<ISkillFile[]> {
+    const cursor = skillFileModel()
+      .find({ skillId })
+      .select('-content')
+      .lean()
+      .cursor({ batchSize });
+    yield* cleanupCursorBatches<ISkillFile>(cursor, batchSize);
+  }
+
+  async function* iterateSkillCleanupIntents(
+    skillId: string,
+    batchSize: number,
+  ): AsyncGenerator<ISkillUploadIntent[]> {
+    const cursor = intentModel()
+      .find({
+        skillId,
+        ...pendingCleanupFilter,
+      })
+      .lean()
+      .cursor({ batchSize });
+    yield* cleanupCursorBatches<ISkillUploadIntent>(cursor, batchSize);
+  }
+
+  async function hasInFlightSkillUploads(skillId: string): Promise<boolean> {
+    return Boolean(
+      await intentModel().exists({ skillId, state: { $in: ['uploading', 'committing'] } }),
+    );
+  }
+
+  async function listExistingSkillFileIds(skillId: string, fileIds: string[]): Promise<string[]> {
+    if (fileIds.length === 0) return [];
+    const rows = await skillFileModel()
+      .find({ skillId, file_id: { $in: fileIds } })
+      .select('file_id')
+      .lean();
+    return rows.map((row) => row.file_id);
   }
 
   /** Operator-only recovery: call only after independently confirming the writer has stopped. */
@@ -605,6 +670,10 @@ export function createSkillLifecycleMethods(
     reserveSkillUploadIntent,
     transitionSkillUploadIntent,
     listSkillUploadIntents,
+    iterateSkillCleanupFiles,
+    iterateSkillCleanupIntents,
+    hasInFlightSkillUploads,
+    listExistingSkillFileIds,
     getSkillUploadIntent,
     recoverStoppedSkillUploadIntent,
     finishSkillUploadCleanupHold,

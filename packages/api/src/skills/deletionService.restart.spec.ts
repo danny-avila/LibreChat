@@ -145,4 +145,56 @@ describe('Skill cleanup across a worker restart', () => {
       sweep.stop();
     }
   });
+
+  it('cleans a multi-page manifest and retries only the failed file with real persistence', async () => {
+    const db = createMethods(mongoose);
+    const author = new Types.ObjectId();
+    const { skill } = await db.createSkill({
+      name: 'paged-cleanup',
+      description: 'Paged cleanup retry.',
+      body: '',
+      author,
+      authorName: 'Test',
+    });
+    await mongoose.models.SkillFile.insertMany(
+      Array.from({ length: 37 }, (_, index) => ({
+        skillId: skill._id,
+        file_id: `paged-retry-${index}`,
+        relativePath: `${index}.md`,
+        filename: `${index}.md`,
+        filepath: `uploads/${author}/${index}`,
+        source: 's3',
+        mimeType: 'text/markdown',
+        bytes: 4,
+        author,
+      })),
+    );
+    let available = false;
+    const deleted = new Map<string, number>();
+    const deleteFile = jest.fn(async (_request, file: { file_id?: string; filepath: string }) => {
+      const key = file.filepath;
+      if (!available && key.endsWith('/23')) throw new Error('temporary provider failure');
+      deleted.set(key, (deleted.get(key) ?? 0) + 1);
+    });
+    const makeService = () =>
+      createSkillDeletionService({
+        persistence: { ...db, ...createSkillDeletionPersistenceAdapter(db) },
+        loadConfig: async () =>
+          ({ skillDeletion: { finalizationEnabled: true, batchSize: 5 } }) as unknown as AppConfig,
+        getStrategyFunctions: () => ({ deleteFile }),
+        runAsSystem: async (callback) => callback(),
+        logger: { error: jest.fn(), warn: jest.fn() },
+      });
+    const first = await makeService().deleteSkillById(skill._id.toString());
+    expect(first.cleanupComplete).toBe(false);
+    expect(await mongoose.models.SkillFile.countDocuments({ skillId: skill._id })).toBe(1);
+    expect(deleted.size).toBe(36);
+    available = true;
+    expect((await makeService().deleteSkillById(skill._id.toString())).cleanupComplete).toBe(true);
+    expect(await mongoose.models.SkillFile.countDocuments({ skillId: skill._id })).toBe(0);
+    expect(await mongoose.models.Skill.findById(skill._id)).toBeNull();
+    expect(deleted.size).toBe(37);
+    expect([...deleted.values()].every((count) => count === 1)).toBe(true);
+    expect(deleteFile).toHaveBeenCalledTimes(38);
+  });
 });

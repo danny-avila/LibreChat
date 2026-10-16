@@ -45,6 +45,7 @@ export const AGENT_BACKGROUND_COMPLETION_RESULT_MAX_CHARS_HARD_MAX = 64 * 1024;
 /** Coalesces a conversation's ready background results into one wake-up turn. */
 export const AGENT_BACKGROUND_COMPLETION_RECEIPT_BATCHING_DEFAULT: boolean = true;
 export const AGENT_BACKGROUND_SHUTDOWN_INTERRUPT_GRACE_MS_DEFAULT = 5_000;
+export const DEFAULT_SKILL_DELETION_BATCH_SIZE = 100;
 import {
   DEFAULT_MCP_APP_CSP_LIMITS,
   resolveMCPAppCspLimits,
@@ -4086,7 +4087,8 @@ export const configSchema = z.object({
       finalizationEnabled: z.boolean().default(false),
       sweepIntervalMs: z.number().int().min(1_000).default(60_000),
       claimLeaseMs: z.number().int().min(1_000).default(120_000),
-      batchSize: z.number().int().min(1).max(1_000).default(100),
+      /** Bounds both sweep candidates and per-Skill manifest batches. */
+      batchSize: z.number().int().min(1).max(1_000).default(DEFAULT_SKILL_DELETION_BATCH_SIZE),
       recheckIntervalMs: z.number().int().min(60_000).default(3_600_000),
     })
     .strict()
@@ -4094,7 +4096,7 @@ export const configSchema = z.object({
       finalizationEnabled: false,
       sweepIntervalMs: 60_000,
       claimLeaseMs: 120_000,
-      batchSize: 100,
+      batchSize: DEFAULT_SKILL_DELETION_BATCH_SIZE,
       recheckIntervalMs: 3_600_000,
     })),
   secureImageLinks: z.boolean().optional(),
