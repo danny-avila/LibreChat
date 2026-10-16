@@ -370,7 +370,7 @@ describe('stateful default profile setting', () => {
           agent: { ...settingForced, stateful_code_sessions: true },
           allowedStatefulCodeEnvironments: ['conversation'],
         }),
-      ).toThrow();
+      ).toThrow('Stateful code environment is not allowed by this deployment: user');
     });
   });
 
