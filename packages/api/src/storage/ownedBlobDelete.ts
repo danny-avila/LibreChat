@@ -10,7 +10,7 @@ interface OwnedBlobDeleteDependencies {
   deleteRagFile: (args: { userId: string; file: StoredBlobFile }) => Promise<unknown>;
 }
 
-/** Storage cleanup uses the persisted owner, not the authorized caller's identity. */
+/** File descriptors cannot override the storage owner supplied by the request. */
 export function createOwnedBlobFileDeleter({
   extractPath,
   deleteBlob,
@@ -18,7 +18,7 @@ export function createOwnedBlobFileDeleter({
   deleteRagFile,
 }: OwnedBlobDeleteDependencies) {
   return async (req: { user: { id: string } }, file: StoredBlobFile): Promise<void> => {
-    const ownerId = file.user?.toString() || req.user.id;
+    const ownerId = req.user.id;
     const blobPath = extractPath(file.filepath);
     const segments = blobPath.split('/');
     // saveBuffer stores at <basePath>/<ownerId>/<filename>; the exact owner segment

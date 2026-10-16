@@ -48,14 +48,18 @@ describe('local file deletion', () => {
     expect(fs.existsSync(directory)).toBe(true);
   });
 
-  it('uses the recorded owner for managers and rejects another owner namespace', async () => {
+  it('keeps deletion scoped to the request owner, not descriptor metadata', async () => {
     const file = uploadedFile('managed.txt', 'user-2');
-    req.user.id = 'manager-1';
+    await expect(remove(req, file)).rejects.toThrow('Invalid file path');
+    expect(deleteRagFile).not.toHaveBeenCalled();
+    expect(fs.existsSync(path.join(root, 'uploads', 'user-2', 'managed.txt'))).toBe(true);
+
+    req.user.id = 'user-2';
     await remove(req, file);
     expect(deleteRagFile).toHaveBeenCalledWith({ userId: 'user-2', file });
 
     const other = uploadedFile('protected.txt', 'user-2');
-    other.user = 'user-3';
+    req.user.id = 'user-3';
     deleteRagFile.mockClear();
     await expect(remove(req, other)).rejects.toThrow('Invalid file path');
     expect(deleteRagFile).not.toHaveBeenCalled();
@@ -64,6 +68,14 @@ describe('local file deletion', () => {
   it('cleans up RAG data for a legacy agent record without a disk path', async () => {
     const file = { file_id: 'file-1', filepath: 'agents', user: 'user-2' };
     await remove(req, file);
-    expect(deleteRagFile).toHaveBeenCalledWith({ userId: 'user-2', file });
+    expect(deleteRagFile).toHaveBeenCalledWith({ userId: 'user-1', file });
+  });
+
+  it('rejects an empty request owner before touching storage or RAG data', async () => {
+    const file = uploadedFile('retained.txt');
+    req.user.id = '';
+    await expect(remove(req, file)).rejects.toThrow('Invalid file owner');
+    expect(deleteRagFile).not.toHaveBeenCalled();
+    expect(fs.existsSync(path.join(root, 'uploads', 'user-1', 'retained.txt'))).toBe(true);
   });
 });

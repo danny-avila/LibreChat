@@ -49,6 +49,13 @@ type SkillValidationError = Error & { code?: string; issues?: ValidationIssue[] 
 /** Mongo duplicate-key shape. */
 type DuplicateKeyError = Error & { code?: number | string };
 
+/** Only authorized, loaded SkillFile records may select another storage owner. */
+function skillFileDeletionRequest(req: ServerRequest, file: ISkillFile): ServerRequest {
+  const ownerId = file.author?.toString();
+  if (!ownerId || !req.user) throw new Error('Skill file has no storage owner');
+  return { ...req, user: { ...req.user, id: ownerId, _id: file.author } } as ServerRequest;
+}
+
 /**
  * All dependencies required to serve skill HTTP requests. Every dep is resolved
  * from the legacy api layer (`~/models`, `PermissionService`) so the TS handlers
@@ -623,7 +630,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
           if (!deleteBlob) {
             throw new Error(`No delete strategy for ${file.source}`);
           }
-          await deleteBlob(req, {
+          await deleteBlob(skillFileDeletionRequest(req, file), {
             filepath: file.filepath,
             storageKey: file.storageKey,
             storageRegion: file.storageRegion,
@@ -858,7 +865,7 @@ export function createSkillsHandlers(deps: SkillsHandlersDeps): {
         logger.error(`[deleteFile] No delete strategy for ${file.source}`);
         return res.status(500).json({ error: 'Error deleting skill file' });
       }
-      await deleteBlob(req, {
+      await deleteBlob(skillFileDeletionRequest(req, file), {
         filepath: file.filepath,
         storageKey: file.storageKey,
         storageRegion: file.storageRegion,

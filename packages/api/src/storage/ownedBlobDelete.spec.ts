@@ -24,14 +24,14 @@ describe.each([
     deleteRagFile,
     isMissing: (error) => (error as { code?: string }).code === 'missing',
   });
-  const req = { user: { id: 'manager-1' } };
+  const req = { user: { id: 'author-1' } };
 
   beforeEach(() => {
     deleteBlob.mockReset().mockResolvedValue(undefined);
     deleteRagFile.mockClear();
   });
 
-  it("deletes another author's file under the persisted owner", async () => {
+  it('deletes a file under the request owner', async () => {
     const file = { filepath, user: 'author-1' };
     await remove(req, file);
     expect(deleteBlob).toHaveBeenCalledWith('uploads/author-1/file.txt');
@@ -39,7 +39,24 @@ describe.each([
   });
 
   it('rejects an owner mismatch before deleting either blob or RAG data', async () => {
-    await expect(remove(req, { filepath, user: 'author-2' })).rejects.toThrow('Invalid file path');
+    await expect(
+      remove({ user: { id: 'author-2' } }, { filepath, user: 'author-1' }),
+    ).rejects.toThrow('Invalid file path');
+    expect(deleteBlob).not.toHaveBeenCalled();
+    expect(deleteRagFile).not.toHaveBeenCalled();
+  });
+
+  it('does not let descriptor ownership change the request owner', async () => {
+    const file = { filepath, user: 'descriptor-owner' };
+    await remove(req, file);
+    expect(deleteBlob).toHaveBeenCalledWith('uploads/author-1/file.txt');
+    expect(deleteRagFile).toHaveBeenCalledWith({ userId: 'author-1', file });
+  });
+
+  it('rejects an empty request owner without invoking either provider', async () => {
+    await expect(remove({ user: { id: '' } }, { filepath, user: 'author-1' })).rejects.toThrow(
+      'Invalid file path',
+    );
     expect(deleteBlob).not.toHaveBeenCalled();
     expect(deleteRagFile).not.toHaveBeenCalled();
   });

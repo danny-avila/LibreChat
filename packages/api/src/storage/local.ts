@@ -25,7 +25,7 @@ interface LocalFileDeleteDependencies {
   logger: { warn: (...args: unknown[]) => void; error: (...args: unknown[]) => void };
 }
 
-/** Deletes only within the persisted owner's namespace, and reports storage failures to callers. */
+/** Deletes only within the request owner's namespace, and reports storage failures to callers. */
 export function createLocalFileDeleter({ deleteRagFile, logger }: LocalFileDeleteDependencies) {
   const unlinkStoredFile = async (filepath: string) => {
     try {
@@ -42,7 +42,8 @@ export function createLocalFileDeleter({ deleteRagFile, logger }: LocalFileDelet
 
   return async (req: LocalDeleteRequest, file: LocalFile): Promise<void> => {
     const { publicPath, uploads } = req.config.paths;
-    const ownerId = file.user?.toString() || req.user.id;
+    const ownerId = req.user.id;
+    if (!ownerId) throw new Error('Invalid file owner');
     const cleanFilepath = stripCacheBust(file.filepath);
     const uploadPrefix = `/uploads/${ownerId}/`;
 

@@ -1,4 +1,7 @@
+import os from 'os';
+import path from 'path';
 import { Types } from 'mongoose';
+import { promises as fs } from 'fs';
 import type { DeleteSkillResult, ISkillFile } from '@librechat/data-schemas';
 import type { Response } from 'express';
 import type { SkillsHandlersDeps } from './handlers';
@@ -8,6 +11,7 @@ import {
   extractAzureBlobPath,
   extractFirebaseBlobPath,
 } from '~/storage/ownedBlobDelete';
+import { createLocalFileDeleter } from '~/storage/local';
 import { createSkillsHandlers } from './handlers';
 
 function mockResponse(): Response {
@@ -38,6 +42,7 @@ describe('skill delete handler', () => {
       relativePath: 'references/query.sql',
       filepath: '/uploads/query.sql',
       source: 'local',
+      author: new Types.ObjectId(),
     } as ISkillFile & { _id: Types.ObjectId };
     const handlers = createSkillsHandlers({
       deleteSkill,
@@ -45,7 +50,7 @@ describe('skill delete handler', () => {
       getStrategyFunctions: jest.fn(() => ({ deleteFile: deleteBlob })),
       isValidObjectIdString: jest.fn(() => true),
     } as unknown as SkillsHandlersDeps);
-    const req = { params: { id } } as unknown as ServerRequest;
+    const req = { params: { id }, user: { id: 'manager-1' } } as unknown as ServerRequest;
     const res = mockResponse();
 
     await handlers.delete(req, res);
@@ -98,12 +103,13 @@ describe('skill delete handler', () => {
           relativePath: 'references/query.sql',
           filepath: '/uploads/query.sql',
           source: 'local',
+          author: new Types.ObjectId(),
         } as ISkillFile & { _id: Types.ObjectId },
       ]),
       getStrategyFunctions: jest.fn(() => ({ deleteFile: deleteBlob })),
       isValidObjectIdString: jest.fn(() => true),
     } as unknown as SkillsHandlersDeps);
-    const req = { params: { id } } as unknown as ServerRequest;
+    const req = { params: { id }, user: { id: 'manager-1' } } as unknown as ServerRequest;
     const res = mockResponse();
 
     await handlers.delete(req, res);
@@ -149,14 +155,15 @@ describe.each([
         isMissing: () => false,
       });
       const deleteSkillFile = jest.fn().mockResolvedValue({ deleted: true });
+      const storageDeleteSpy = jest.fn(storageDelete);
       const handlers = createSkillsHandlers({
         getSkillFileByPath: jest.fn().mockResolvedValue(file),
-        getStrategyFunctions: jest.fn(() => ({ deleteFile: storageDelete })),
+        getStrategyFunctions: jest.fn(() => ({ deleteFile: storageDeleteSpy })),
         deleteSkillFile,
       } as unknown as SkillsHandlersDeps);
       const req = {
         params: { id: skillId, relativePath: 'references/file.txt' },
-        user: { id: 'manager-1' },
+        user: { id: 'manager-1', tenantId: 'tenant-1' },
       } as unknown as ServerRequest;
       const res = mockResponse();
 
@@ -169,9 +176,90 @@ describe.each([
       });
       expect(deleteSkillFile).toHaveBeenCalledWith(skillId, 'references/file.txt', 'file-1');
       expect(res.status).toHaveBeenCalledWith(200);
+      expect(storageDeleteSpy.mock.calls[0][0]).toMatchObject({
+        user: { id: ownerId, tenantId: 'tenant-1' },
+      });
+      expect(req.user).toEqual({ id: 'manager-1', tenantId: 'tenant-1' });
     });
   },
 );
+
+describe('Skill file storage ownership', () => {
+  it('deletes a loaded cross-author Local file without changing the authenticated request', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'skill-owner-'));
+    try {
+      const author = new Types.ObjectId();
+      const ownerId = author.toString();
+      const uploads = path.join(root, 'uploads');
+      const diskPath = path.join(uploads, ownerId, 'file.txt');
+      await fs.mkdir(path.dirname(diskPath), { recursive: true });
+      await fs.writeFile(diskPath, 'contents');
+      const file = {
+        file_id: 'file-1',
+        filepath: `/uploads/${ownerId}/file.txt`,
+        source: 'local',
+        author,
+      } as ISkillFile & { _id: Types.ObjectId };
+      const deleteRagFile = jest.fn().mockResolvedValue(undefined);
+      const storageDelete = createLocalFileDeleter({
+        deleteRagFile,
+        logger: { warn: jest.fn(), error: jest.fn() },
+      });
+      const handlers = createSkillsHandlers({
+        getSkillFileByPath: jest.fn().mockResolvedValue(file),
+        getStrategyFunctions: () => ({ deleteFile: storageDelete }),
+        deleteSkillFile: jest.fn().mockResolvedValue({ deleted: true }),
+      } as unknown as SkillsHandlersDeps);
+      const req = {
+        params: { id: new Types.ObjectId().toString(), relativePath: 'file.txt' },
+        user: { id: 'manager-1', tenantId: 'tenant-1' },
+        config: { paths: { uploads, publicPath: path.join(root, 'public') } },
+      } as unknown as ServerRequest;
+      const res = mockResponse();
+
+      await handlers.deleteFile(req, res);
+
+      await expect(fs.access(diskPath)).rejects.toMatchObject({ code: 'ENOENT' });
+      expect(deleteRagFile).toHaveBeenCalledWith({
+        userId: ownerId,
+        file: expect.objectContaining({ user: ownerId }),
+      });
+      expect(req.user).toEqual({ id: 'manager-1', tenantId: 'tenant-1' });
+      expect(res.status).toHaveBeenCalledWith(200);
+    } finally {
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it.each([undefined, ''])(
+    'does not fall back to the manager for a missing author (%s)',
+    async (author) => {
+      const deleteBlob = jest.fn();
+      const deleteSkillFile = jest.fn();
+      const handlers = createSkillsHandlers({
+        getSkillFileByPath: jest.fn().mockResolvedValue({
+          file_id: 'file-1',
+          filepath: '/uploads/manager-1/file.txt',
+          source: 'local',
+          author,
+        }),
+        getStrategyFunctions: () => ({ deleteFile: deleteBlob }),
+        deleteSkillFile,
+      } as unknown as SkillsHandlersDeps);
+      const req = {
+        params: { id: new Types.ObjectId().toString(), relativePath: 'file.txt' },
+        user: { id: 'manager-1' },
+      } as unknown as ServerRequest;
+      const res = mockResponse();
+
+      await handlers.deleteFile(req, res);
+
+      expect(deleteBlob).not.toHaveBeenCalled();
+      expect(deleteSkillFile).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(500);
+    },
+  );
+});
 
 describe('skill create handler', () => {
   it('retries dependent cleanup after owner permission setup fails', async () => {
@@ -226,6 +314,7 @@ describe('skill file delete handler', () => {
   } as ISkillFile & { _id: Types.ObjectId };
   const req = {
     params: { id, relativePath: 'references/guide.md' },
+    user: { id: 'manager-1', tenantId: 'tenant-1' },
   } as unknown as ServerRequest;
 
   it('waits for blob cleanup before conditionally deleting the file record', async () => {
