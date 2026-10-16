@@ -26,6 +26,7 @@ const {
   createPullRequestLookupStore,
   keyvRedisClient,
   cacheConfig,
+  createPullRequestUserTokenFromEnv,
   createConversationPullRequestsHandler,
   backgroundTaskRegistry,
   createSubagentThreadViewHandler,
@@ -180,17 +181,24 @@ const pullRequestLookup = createPullRequestLookup({
   source: createPullRequestSource({ fetchFn: createProxyAwareFetch() }),
   store: createPullRequestLookupStore({ client: keyvRedisClient, config: cacheConfig }),
 });
+const pullRequestUserToken = createPullRequestUserTokenFromEnv({
+  store: db,
+  fetchFn: createProxyAwareFetch(),
+  env: process.env,
+});
 const conversationPullRequestHandler = createConversationPullRequestHandler({
   getConvoLaneGit: db.getConvoLaneGit,
   getAppConfig,
   lookup: pullRequestLookup,
   env: process.env,
+  userToken: pullRequestUserToken,
 });
 const conversationPullRequestsHandler = createConversationPullRequestsHandler({
   getConvosLaneGit: db.getConvosLaneGit,
   getAppConfig,
   lookup: pullRequestLookup,
   env: process.env,
+  userToken: pullRequestUserToken,
 });
 router.use(requireJwtAuth);
 

@@ -222,6 +222,11 @@ describe('createBitbucketPullRequestSource', () => {
     expect(urlsOf(fetchFn)[0]).not.toContain('"');
   });
 
+  it('maps a 401 to CREDENTIAL_REJECTED, a refusal of the token itself', async () => {
+    const { source } = sourceFor({ 'state=OPEN': () => new Response('', { status: 401 }) });
+    await expect(find(source)).rejects.toMatchObject({ code: 'CREDENTIAL_REJECTED' });
+  });
+
   it.each([
     ['another host', 'https://evil.example/w/r/pull-requests/7'],
     ['plain http', 'http://bitbucket.org/w/r/pull-requests/7'],

@@ -12,6 +12,7 @@ import { createSkillSyncStatusModel } from './skillSyncStatus';
 import { createConversationTagModel } from './conversationTag';
 import { createCodeEnvironmentModel } from './codeEnvironment';
 import { createAgentCategoryModel } from './agentCategory';
+import { createResourceLockModel } from './resourceLock';
 import { createChatProjectModel } from './chatProject';
 import { createAgentApiKeyModel } from './agentApiKey';
 import { createTransactionModel } from './transaction';
@@ -101,6 +102,7 @@ export function createModels(mongoose: typeof import('mongoose')): {
   ScheduleRun: ReturnType<typeof createScheduleRunModel>;
   RefreshTokenBridge: ReturnType<typeof createRefreshTokenBridgeModel>;
   OpenIDRefreshFlight: ReturnType<typeof createOpenIDRefreshFlightModel>;
+  ResourceLock: ReturnType<typeof createResourceLockModel>;
 } {
   const models = {
     User: createUserModel(mongoose),
@@ -152,6 +154,7 @@ export function createModels(mongoose: typeof import('mongoose')): {
     ScheduleRun: createScheduleRunModel(mongoose),
     RefreshTokenBridge: createRefreshTokenBridgeModel(mongoose),
     OpenIDRefreshFlight: createOpenIDRefreshFlightModel(mongoose),
+    ResourceLock: createResourceLockModel(mongoose),
   };
   /**
    * Background index builds fail silently unless an 'index' listener is

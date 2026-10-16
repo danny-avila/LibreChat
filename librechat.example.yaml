@@ -29,6 +29,14 @@ projects:
 #   outputChars: 512   # characters of each output kept, half from the start and half from the end
 #   argsChars: 512     # characters of serialized arguments kept; JSON stays valid JSON
 
+# Stored user credentials (tool and web search keys, MCP custom user variables) are
+# written with a random IV per value ("v3", the default). Both formats are always read.
+# During a rolling upgrade of a multi-replica deployment, set "legacy" until every
+# replica runs a release that reads v3, then remove it. A rollback to a release that
+# predates v3 cannot read credentials saved in the v3 format.
+# credentials:
+#   writeFormat: v3
+
 # Langfuse connections are managed through Settings > Langfuse when available.
 # That flow verifies the credentials and stores the secret key encrypted; do not
 # place a plaintext langfuse.secretKey in this file. Environment-managed central
@@ -167,6 +175,13 @@ projects:
 # Custom interface configuration
 interface:
   customWelcome: 'Welcome to LibreChat! Enjoy your experience.'
+  # What heads the welcome screen when an agent, assistant or model spec is selected (default: entity).
+  # 'entity' shows its name; 'greeting' shows the time-of-day greeting (or customWelcome) with the
+  # user's name, for deployments where the header selector already names the agent.
+  # landingHeading: entity
+  # Show the generic disclaimer and policy links beneath the welcome screen's composer (default: true).
+  # When false, a CUSTOM_FOOTER still renders there, as it does in conversations.
+  # landingFooter: true
   # Allow renaming a running chat or one with a placeholder title (default: true).
   # Set to false during a rolling upgrade, until ALL API replicas are upgraded and old
   # title-generation jobs have drained. While false, rename is disabled for running chats
@@ -952,6 +967,19 @@ endpoints:
   #     # host: "github.example.com"
   #     # Environment variable reference only, never the token itself. Optional, see above.
   #     token: "${GITHUB_PULL_REQUEST_TOKEN}"
+  #     # Let each user connect their own account, so lookups use their token, rate limit and
+  #     # repository access instead of the server's (read from this file only). Register
+  #     # <DOMAIN_SERVER>/api/pull-requests/oauth/callback as the app's callback URL. On GitHub a
+  #     # GitHub App with read-only Pull requests, Checks and Contents permissions is recommended.
+  #     # Changing clientId, provider or host asks users to connect again; a changed scope only
+  #     # applies to new connections. Disconnecting removes every grant of the user.
+  #     # oauth:
+  #     #   clientId: "${GITHUB_PR_OAUTH_CLIENT_ID}"
+  #     #   clientSecret: "${GITHUB_PR_OAUTH_CLIENT_SECRET}"
+  #     #   scope: "repo" # only for a classic OAuth app; GitLab defaults to read_api
+  #     #   flowTimeoutMinutes: 10 # time to approve at the provider
+  #     #   requestTimeoutSeconds: 10 # per code exchange or token refresh
+  #     #   retentionDays: 180 # an unused connection is removed after this; each use extends it
   #     # Repositories the token may be used for, as owner/name or owner/*. A worker reports its
   #     # own repository, and only these are ever looked up with the server's token.
   #     allowedRepositories: ["LibreChat-AI/LibreChat"]
@@ -1723,3 +1751,5 @@ endpoints:
 # ACL writes retry only conflicts on an individual document.
 # permissions:
 #   maxWriteAttempts: 3 # Integer 1-100, including the first attempt.
+#   leaseTtlMs: 30000 # Integer 1000-600000. Sharing updates on deployments without transactions hold a per-resource lease this long between renewals.
+#   leaseWaitMs: 3000 # Integer 0-60000. How long an update waits for a contended lease before answering 409.

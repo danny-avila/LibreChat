@@ -71,6 +71,22 @@ describe('ChatSettingsProvider', () => {
     expect(result.current.visibleArtifacts).toBeNull();
   });
 
+  it('reports the conversation each mounted pane shows when asked', () => {
+    const { result } = renderSettings(({ set }) => {
+      set(store.conversationKeysAtom, [0, 1]);
+      set(store.conversationByIndex(0), { conversationId: 'convo-a' } as never);
+    });
+
+    expect(result.current.settings.getPaneConversations()).toEqual([
+      { index: 0, conversationId: 'convo-a' },
+      { index: 1, conversationId: null },
+    ]);
+  });
+
+  it('knows no panes when no host supplies settings', () => {
+    expect(defaultChatSettings.getPaneConversations()).toEqual([]);
+  });
+
   it('keeps feedback and running-chat rename off until the deployment answers', () => {
     const { result } = renderSettings();
 

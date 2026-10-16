@@ -312,17 +312,6 @@ export interface MCPConnectionStatusResponse {
   oauthTimeout?: number;
 }
 
-export interface MCPServerConnectionStatusResponse {
-  success: boolean;
-  serverName: string;
-  requiresOAuth: boolean;
-  requestScoped?: boolean;
-  configurationState?: MCPServerStatus['configurationState'];
-  connectionStatus: 'disconnected' | 'connecting' | 'connected' | 'error';
-  authorizationState?: MCPServerStatus['authorizationState'];
-  authorizationGeneration?: string;
-}
-
 export interface MCPAuthValuesResponse {
   success: boolean;
   serverName: string;

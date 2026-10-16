@@ -124,10 +124,6 @@ jest.mock('@librechat/api', () => ({
 
 jest.mock('~/server/cleanup', () => ({
   disposeClient: jest.fn(),
-  clientRegistry: null,
-  requestDataMap: {
-    set: jest.fn(),
-  },
 }));
 
 jest.mock('~/server/middleware', () => ({
