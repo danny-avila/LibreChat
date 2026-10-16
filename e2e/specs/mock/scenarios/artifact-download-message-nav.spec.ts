@@ -158,7 +158,7 @@ test('artifact downloads stay clickable beneath the message navigation rail acro
       const center = { x: box!.x + box!.width / 2, y: box!.y + box!.height / 2 };
       expect(center.y).toBeGreaterThan(railBox!.y);
       expect(center.y).toBeLessThan(railBox!.y + railBox!.height);
-      expect(box!.x + box!.width).toBeLessThan(railBox!.x);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(railBox!.x - 7);
       await page.mouse.click(center.x, center.y);
       await expect.poll(() => downloadRequests).toBe(1);
     }
