@@ -7,9 +7,9 @@ import {
   useRef,
   useState,
 } from 'react';
-import { useRecoilValue } from 'recoil';
-import { useAtom, useStore } from 'jotai';
 import { Constants } from 'librechat-data-provider';
+import { useAtom, useStore, useAtomValue } from 'jotai';
+import { activeGenerationCreatedAtByConvoId } from '@librechat/chat/react';
 import type { Agents } from 'librechat-data-provider';
 import type { AskAnswerStatus } from '~/components/Chat/ask/state';
 import {
@@ -22,7 +22,6 @@ import { askSubmitStatusAtom } from '~/components/Chat/ask/state';
 import { resolveAskUserQuestionPart } from '~/utils/approval';
 import { ChatContext } from '~/Providers/ChatContext';
 import { useGetEphemeralAgent } from '~/store/agents';
-import store from '~/store';
 
 /** Shared read/write for the ask-answer submit status. */
 export function useAskSubmitStatus(): {
@@ -438,8 +437,8 @@ export function useResumeSubmit() {
   /** Ask status lives in Jotai so it works from the composer (outside the
    *  provider); tool-approval status stays on the context. */
   const { setAskStatus } = useAskSubmitStatus();
-  const activeGenerationCreatedAt = useRecoilValue(
-    store.activeGenerationCreatedAtByConvoId(conversation?.conversationId ?? Constants.NEW_CONVO),
+  const activeGenerationCreatedAt = useAtomValue(
+    activeGenerationCreatedAtByConvoId(conversation?.conversationId ?? Constants.NEW_CONVO),
   );
 
   const buildResumeFields = useCallback((): ResumeAgentFields | null => {

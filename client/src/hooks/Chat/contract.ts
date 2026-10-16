@@ -6,6 +6,7 @@ import type {
   TAttachment,
   RetentionMode,
   TConversation,
+  TEphemeralAgent,
   ChatTransport,
   ChatTransportRequest,
 } from 'librechat-data-provider';
@@ -221,8 +222,22 @@ export type ChatSettings = {
   isTemporary: boolean;
   /** Turns temporary chat on or off for the next conversation. */
   setIsTemporary: Dispatch<SetStateAction<boolean>>;
+  /** Reads the ephemeral agent (tool toggles) staged for a conversation, `null` when none. */
+  getEphemeralAgent: (conversationId: string) => TEphemeralAgent | null;
+  /** The conversation open in the added (multi-convo) pane, `null` when there is none. */
+  addedConversation: TConversation | null;
   config: ChatConfig;
   auth: ChatAuth;
+  /** The conversation each mounted chat pane shows, read when called rather than at render:
+   *  steer recovery asks whether any pane holding a conversation is still running. */
+  getPaneConversations: () => ReadonlyArray<PaneConversation>;
+};
+
+/** One mounted chat pane and the conversation it shows. */
+export type PaneConversation = {
+  /** The pane key, as the app keys its panes (`0` for the main chat). */
+  index: string | number;
+  conversationId: string | null;
 };
 
 /** The assistants abort route and the run it stops. */
