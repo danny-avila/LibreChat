@@ -550,35 +550,20 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
        * round, so the state before the claim follows from the claimed record. A record whose
        * conversation or owner is gone is removed.
        */
-      const after = await checkLiveness(key);
+      let after: Liveness;
+      try {
+        after = await checkLiveness(key);
+      } catch (error) {
+        /** A check that fails leaves no answer to act on, so the round is handed back. */
+        await releaseClaim(key, claimed, runId).catch(() => undefined);
+        throw error;
+      }
       if (after === 'live') {
         return { ok: true, value: { ...claimed, runId } };
       }
-      const previousHeads = claimed.claimedHeads.slice(0, -1);
-      const lastHeadSha = previousHeads[previousHeads.length - 1];
-      /**
-       * Fenced on the claim's own run identity rather than the version: a trust or bot change
-       * made meanwhile touches nothing the claim owns, and must not strand the round.
-       */
-      const undone = await PRAutomation.findOneAndUpdate(
-        { ...keyFilter(key), runId, state: 'fixing', round: claimed.round },
-        {
-          ...BUMP,
-          $set: {
-            state: lastHeadSha == null ? 'idle' : 'waiting',
-            round: claimed.round - 1,
-            claimedHeads: previousHeads,
-            ...(lastHeadSha != null && { lastHeadSha }),
-          },
-          $unset: {
-            runId: '',
-            ...(lastHeadSha == null && { startedAt: '', lastHeadSha: '' }),
-          },
-        },
-        { new: true, projection: { _id: 0, version: 1 } },
-      ).lean<{ version: number }>();
+      const released = await releaseClaim(key, claimed, runId);
       /** Only a claim that undid itself knows the version it left; otherwise the reaper decides. */
-      return refuseClaim(key, after, undone?.version);
+      return refuseClaim(key, after, released?.version);
     }
 
     const current = await getPRAutomation(key);
@@ -610,6 +595,38 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
     }
     /** Every condition passes now, so the record changed between the write and this read. */
     return { ok: false, error: { code: 'conflict' } };
+  }
+
+  /**
+   * Undoes a claim that will not run. It is fenced on the claim's own run identity rather than
+   * the version: a trust or bot change made meanwhile touches nothing the claim owns, and must
+   * not strand the round. Rounds and heads are claimed one for one and the window opens with the
+   * first round, so the state before the claim follows from the claimed record.
+   */
+  async function releaseClaim(
+    key: t.PRAutomationKey,
+    claimed: t.IPRAutomation,
+    runId: string,
+  ): Promise<{ version: number } | null> {
+    const previousHeads = claimed.claimedHeads.slice(0, -1);
+    const lastHeadSha = previousHeads[previousHeads.length - 1];
+    return mongoose.models.PRAutomation.findOneAndUpdate(
+      { ...keyFilter(key), runId, state: 'fixing', round: claimed.round },
+      {
+        ...BUMP,
+        $set: {
+          state: lastHeadSha == null ? 'idle' : 'waiting',
+          round: claimed.round - 1,
+          claimedHeads: previousHeads,
+          ...(lastHeadSha != null && { lastHeadSha }),
+        },
+        $unset: {
+          runId: '',
+          ...(lastHeadSha == null && { startedAt: '', lastHeadSha: '' }),
+        },
+      },
+      { new: true, projection: { _id: 0, version: 1 } },
+    ).lean<{ version: number }>();
   }
 
   /**

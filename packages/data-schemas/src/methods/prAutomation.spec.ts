@@ -342,6 +342,28 @@ describe('claiming while the owner is being deleted', () => {
     expect((await claim(1)).ok).toBe(true);
   });
 
+  test('hands the round back when the check after the claim fails', async () => {
+    await enable(pullOne);
+    const Conversation = mongoose.models.Conversation;
+    const original = Conversation.aggregate.bind(Conversation);
+    let calls = 0;
+    const spy = jest.spyOn(Conversation, 'aggregate').mockImplementation(((
+      ...args: Parameters<typeof Conversation.aggregate>
+    ) => {
+      if (++calls === 2) {
+        throw new Error('synthetic read failure');
+      }
+      return original(...args);
+    }) as typeof Conversation.aggregate);
+    try {
+      await expect(claim(1)).rejects.toThrow('synthetic read failure');
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await methods.getPRAutomation(key)).toMatchObject({ state: 'idle', round: 0 });
+    expect((await claim(1)).ok).toBe(true);
+  });
+
   test('refuses a claim for an owner that no longer exists', async () => {
     await enable(pullOne);
     await mongoose.models.User.deleteMany({});
