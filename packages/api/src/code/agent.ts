@@ -8,8 +8,8 @@ import {
   normalizeStatefulCodeEnvironment,
   resolveCodeExecutionWorkspaceSelections,
 } from '~/agents/execution';
+import { isImplicitStatefulCodeRouteAvailable, isStatefulCodeDefaultProfile } from './config';
 import { createStatefulCodeEnvironmentPolicyError } from '~/agents/errors';
-import { isImplicitStatefulCodeRouteAvailable } from './config';
 
 /** The saved agent fields that decide where an agent runs code. */
 export type AgentCodeRouteAgent = Partial<
@@ -49,7 +49,7 @@ export function optsOutOfAttachedCodeEnvironment(
     ? environments?.find(({ id }) => id === agent.code_environment_id)
     : environments?.find(({ default: isDefault }) => isDefault === true);
   return (
-    agent.stateful_code_sessions === true &&
+    (agent.stateful_code_sessions === true || isStatefulCodeDefaultProfile()) &&
     (configured?.type === 'attached' ||
       (configured == null &&
         (Boolean(agent.code_environment_id) || !implicitStatefulRouteAvailable)))
@@ -111,7 +111,9 @@ export function resolveAgentCodeFlags(params: AgentCodeFlagsParams): AgentCodeFl
     agent?.tools?.includes(Tools.execute_code) === true &&
     !attachedEnvironmentOptOut;
   const statefulSessions =
-    codeEnvAvailable && params.statefulSessionsAvailable && agent?.stateful_code_sessions === true;
+    codeEnvAvailable &&
+    params.statefulSessionsAvailable &&
+    (agent?.stateful_code_sessions === true || isStatefulCodeDefaultProfile());
   const statefulCodeEnvironment = normalizeStatefulCodeEnvironment(
     agent?.stateful_code_environment,
   );

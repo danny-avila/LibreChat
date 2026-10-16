@@ -403,6 +403,54 @@ describe('resolveSubagentCodeWorkspaceInheritance', () => {
     expect(peak).toBeGreaterThan(1);
   });
 
+  it('routes a subagent whose flag is saved off or unset with its parent only when the setting is stateful', async () => {
+    const lia = await seed(LIA, { subagents: { enabled: true, agent_ids: [REVIEWER] } });
+    const resolve = () =>
+      resolveSubagentCodeWorkspaceInheritance({
+        selections: incident,
+        roots: [root(lia)],
+        loadSubagent,
+        environments,
+        allowEnvironmentSelection: true,
+        codeExecutionAvailable: true,
+      });
+
+    try {
+      for (const stateful_code_sessions of [false, undefined]) {
+        await mongoose.models.Agent.deleteOne({ id: REVIEWER });
+        await seed(REVIEWER, { stateful_code_sessions });
+        delete process.env.LIBRECHAT_CODE_DEFAULT_PROFILE;
+        expect((await resolve()).size).toBe(0);
+        process.env.LIBRECHAT_CODE_DEFAULT_PROFILE = 'default';
+        expect((await resolve()).size).toBe(0);
+        process.env.LIBRECHAT_CODE_DEFAULT_PROFILE = 'stateful';
+        expect(await resolve()).toEqual(new Map([[REVIEWER, LIA_RAG]]));
+      }
+    } finally {
+      delete process.env.LIBRECHAT_CODE_DEFAULT_PROFILE;
+    }
+  });
+
+  it('never routes a subagent without execute_code with its parent, whatever the setting', async () => {
+    const lia = await seed(LIA, { subagents: { enabled: true, agent_ids: [REVIEWER] } });
+    await seed(REVIEWER, { stateful_code_sessions: false, tools: [] });
+    process.env.LIBRECHAT_CODE_DEFAULT_PROFILE = 'stateful';
+
+    try {
+      const inheritance = await resolveSubagentCodeWorkspaceInheritance({
+        selections: incident,
+        roots: [root(lia)],
+        loadSubagent,
+        environments,
+        allowEnvironmentSelection: true,
+        codeExecutionAvailable: true,
+      });
+      expect(inheritance.size).toBe(0);
+    } finally {
+      delete process.env.LIBRECHAT_CODE_DEFAULT_PROFILE;
+    }
+  });
+
   it('reads nothing when the run cannot use stateful code or holds no selection', async () => {
     const lia = await seed(LIA, { subagents: { enabled: true, agent_ids: [REVIEWER] } });
     for (const [selections, codeExecutionAvailable] of [

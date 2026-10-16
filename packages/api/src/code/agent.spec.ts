@@ -193,6 +193,70 @@ describe('resolveAgentCodeExecution', () => {
   });
 });
 
+describe('stateful default profile setting', () => {
+  const toggleOff: AgentCodeRouteAgent = { ...terra, stateful_code_sessions: false };
+  const toggleUnset: AgentCodeRouteAgent = { ...terra, stateful_code_sessions: undefined };
+  const withoutAttached = { codeEnvironmentMode: 'without_attached' as const };
+
+  afterEach(() => {
+    delete process.env.LIBRECHAT_CODE_DEFAULT_PROFILE;
+  });
+
+  it('runs a toggle-off or unset agent stateful when the setting is stateful', () => {
+    process.env.LIBRECHAT_CODE_DEFAULT_PROFILE = 'stateful';
+
+    for (const agent of [toggleOff, toggleUnset]) {
+      expect(resolveAgentCodeFlags({ ...baseParams, agent }).statefulSessions).toBe(true);
+      expect(resolveAgentCodeExecution({ ...baseParams, agent }).context).toEqual(
+        expect.objectContaining({ executionProfile: 'stateful', statefulSessions: true }),
+      );
+    }
+  });
+
+  it('keeps a toggle-off or unset agent on the default profile when the setting is unset or default', () => {
+    for (const setting of [undefined, 'default']) {
+      if (setting == null) delete process.env.LIBRECHAT_CODE_DEFAULT_PROFILE;
+      else process.env.LIBRECHAT_CODE_DEFAULT_PROFILE = setting;
+      for (const agent of [toggleOff, toggleUnset]) {
+        expect(resolveAgentCodeFlags({ ...baseParams, agent }).statefulSessions).toBe(false);
+        expect(resolveAgentCodeExecution({ ...baseParams, agent }).context).toEqual(
+          expect.objectContaining({ executionProfile: 'default', statefulSessions: false }),
+        );
+      }
+      expect(resolveAgentCodeFlags({ ...baseParams, agent: terra }).statefulSessions).toBe(true);
+    }
+  });
+
+  it('picks the default profile when the deployment capability is off, whatever the setting', () => {
+    process.env.LIBRECHAT_CODE_DEFAULT_PROFILE = 'stateful';
+
+    expect(
+      resolveAgentCodeFlags({ ...baseParams, agent: toggleOff, statefulSessionsAvailable: false }),
+    ).toMatchObject({ codeEnvAvailable: true, statefulSessions: false });
+  });
+
+  it('gives no stateful sessions without execute_code or the grant, whatever the setting', () => {
+    process.env.LIBRECHAT_CODE_DEFAULT_PROFILE = 'stateful';
+
+    expect(
+      resolveAgentCodeFlags({ ...baseParams, agent: { ...toggleOff, tools: [] } }).statefulSessions,
+    ).toBe(false);
+    expect(
+      resolveAgentCodeFlags({ ...baseParams, agent: toggleOff, codeExecutionAvailable: false })
+        .statefulSessions,
+    ).toBe(false);
+  });
+
+  it('opts a toggle-off agent with an attached default out of a no-workspace conversation only when the setting is stateful', () => {
+    expect(optsOutOfAttachedCodeEnvironment(toggleOff, withoutAttached, environments)).toBe(false);
+
+    process.env.LIBRECHAT_CODE_DEFAULT_PROFILE = 'stateful';
+
+    expect(optsOutOfAttachedCodeEnvironment(toggleOff, withoutAttached, environments)).toBe(true);
+    expect(optsOutOfAttachedCodeEnvironment(toggleOff, {}, environments)).toBe(false);
+  });
+});
+
 describe('withRequestCodeInputs', () => {
   afterEach(() => {
     delete process.env.CODE_ENVIRONMENT_DECISION_VERSION;
