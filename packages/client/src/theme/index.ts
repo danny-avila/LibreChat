@@ -16,13 +16,19 @@ export {
   default as applyTheme,
   applyResolvedTheme,
   clearAppliedTheme,
+  describeResolvedTheme,
   themeOwnedProperties,
+  THEME_BOOT_ATTRIBUTE,
 } from './utils/applyTheme';
+export type { ResolvedThemeStyle } from './utils/applyTheme';
 
 export {
   HIGH_CONTRAST_THEME_NAME,
   THEME_VERSION,
+  collectThemeWarnings,
+  darkAppearanceDefaults,
   defaultAppearance,
+  defaultAppearanceFor,
   defaultBrands,
   fromLegacyTheme,
   highContrastTheme,
@@ -31,11 +37,15 @@ export {
   themeAppearanceProperties,
   themeBrandTokens,
   themeColorTokens,
+  renamedColorTokens,
   validateThemeDefinition,
 } from './registry';
 
 // Export theme atoms for persistence
 export { themeModeAtom, themeColorsAtom, themeNameAtom } from './atoms/themeAtoms';
+
+// Read a theme color role for code that paints outside the stylesheet
+export { readThemeColor } from './utils/color';
 
 // Export predefined themes
 export * from './themes';

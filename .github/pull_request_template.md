@@ -1,6 +1,6 @@
 # Pull Request
 
-> Before submitting, please review the [Contributing Guide](https://github.com/danny-avila/LibreChat/blob/main/.github/CONTRIBUTING.md).
+> Before submitting, please review the [Contributing Guide](https://github.com/LibreChat-AI/LibreChat/blob/main/.github/CONTRIBUTING.md).
 >
 > Documentation changes belong in the [LibreChat documentation repository](https://github.com/LibreChat-AI/librechat.ai).
 
@@ -26,7 +26,7 @@ introduced a regression is the exception: that is history the reader needs.
 Link related issues, and name any dependency this change needs:
 Fixes #123
 Related to #123
-Depends on danny-avila/agents#123
+Depends on LibreChat-AI/agents#123
 -->
 
 ## How it works

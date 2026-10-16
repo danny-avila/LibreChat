@@ -10,9 +10,11 @@ import type { AllMethods, MCPServerDocument, IAgent } from '@librechat/data-sche
 import type { IServerConfigsRepositoryInterface } from '~/mcp/registry/ServerConfigsRepositoryInterface';
 import type { ParsedServerConfig, AddServerResult } from '~/mcp/types';
 import type { ResolvedPrincipal } from '~/types/principal';
-import { requireApiKeyReentryForRebinding } from '~/mcp/registry/binding';
-import { MCPOAuthSecretReentryRequiredError } from '~/mcp/errors';
+import { getUserApiKeyVariable, requireApiKeyReentryForRebinding } from '~/mcp/registry/binding';
+import { MCPCommittedWriteError, MCPOAuthSecretReentryRequiredError } from '~/mcp/errors';
+import { normalizeLegacyHeaderMaps } from '~/mcp/registry/compat';
 import { AccessControlService } from '~/acl/accessControlService';
+import { isGeneratedUserApiKeyVariable } from '~/mcp/headers';
 
 /**
  * Regex patterns for credential/env placeholders that should not be allowed in user-provided configs.
@@ -62,20 +64,21 @@ function sanitizeCredentialPlaceholders(
  * Sanitizes every header map a shared config carries. `requestHeaders` is
  * included because it reaches the upstream server exactly like `headers` does:
  * left unsanitized, a user-managed config could name a privileged placeholder
- * there and have the runtime resolve it at chat time.
+ * there and have the runtime resolve it at chat time. Absent maps stay omitted
+ * because BSON can serialize explicit undefined properties as null.
  */
-function sanitizeConfigHeaderMaps(config: ParsedServerConfig): {
-  headers?: Record<string, string>;
-  requestHeaders?: Record<string, string>;
-} {
-  const carrier = config as ParsedServerConfig & {
+function sanitizeConfigHeaderMaps(config: ParsedServerConfig): ParsedServerConfig {
+  const { headers, requestHeaders, ...rest } = config as ParsedServerConfig & {
     headers?: Record<string, string>;
     requestHeaders?: Record<string, string>;
   };
   return {
-    headers: sanitizeCredentialPlaceholders(carrier.headers),
-    requestHeaders: sanitizeCredentialPlaceholders(carrier.requestHeaders),
-  };
+    ...rest,
+    ...(headers != null && { headers: sanitizeCredentialPlaceholders(headers) }),
+    ...(requestHeaders != null && {
+      requestHeaders: sanitizeCredentialPlaceholders(requestHeaders),
+    }),
+  } as ParsedServerConfig;
 }
 
 function stripBlockedOAuthEndpointParams(url?: string): string | undefined {
@@ -115,19 +118,6 @@ function sanitizeUserManagedOAuthConfig(config: ParsedServerConfig): ParsedServe
       }),
     },
   };
-}
-
-/** Normalizes legacy values that predate the current runtime config schemas. */
-function normalizePersistedConfig(config: ParsedServerConfig): ParsedServerConfig {
-  const persistedConfig = config as ParsedServerConfig & {
-    headers?: Record<string, string> | null;
-  };
-  if (persistedConfig.headers !== null) {
-    return config;
-  }
-
-  const { headers: _legacyNullHeaders, ...normalizedConfig } = persistedConfig;
-  return normalizedConfig as ParsedServerConfig;
 }
 
 function normalizeOAuthUrl(value?: string): string | undefined {
@@ -315,10 +305,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
       );
     }
 
-    const sanitizedConfig = sanitizeUserManagedOAuthConfig({
-      ...config,
-      ...sanitizeConfigHeaderMaps(config),
-    } as ParsedServerConfig);
+    const sanitizedConfig = sanitizeUserManagedOAuthConfig(sanitizeConfigHeaderMaps(config));
 
     /** Transformed user-provided API key config (adds customUserVars and headers) */
     const transformedConfig = this.transformUserApiKeyConfig(sanitizedConfig);
@@ -329,18 +316,24 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
       author: userId,
       reservedServerNames,
     });
-    await this._aclService.grantPermission({
-      principalType: PrincipalType.USER,
-      principalId: userId,
-      resourceType: ResourceType.MCPSERVER,
-      resourceId: createdServer._id,
-      accessRoleId: AccessRoleIds.MCPSERVER_OWNER,
-      grantedBy: userId,
-    });
-    return {
+    const created = {
       serverName: createdServer.serverName,
       config: await this.mapDBServerToParsedConfig(createdServer),
     };
+    try {
+      await this._aclService.grantPermission({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+        resourceType: ResourceType.MCPSERVER,
+        resourceId: createdServer._id,
+        accessRoleId: AccessRoleIds.MCPSERVER_OWNER,
+        grantedBy: userId,
+      });
+    } catch (error) {
+      /** The server exists already, so the failure must not read as a create that never happened. */
+      throw new MCPCommittedWriteError(created, error);
+    }
+    return created;
   }
 
   /**
@@ -353,7 +346,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
     serverName: string,
     config: ParsedServerConfig,
     userId?: string,
-  ): Promise<void> {
+  ): Promise<ParsedServerConfig> {
     if (!userId) {
       throw new Error(
         '[ServerConfigsDB.update] User ID is required to update a database-stored MCP server.',
@@ -366,13 +359,9 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
       requireApiKeyReentryForRebinding(existingServer.config, config);
     }
 
-    let configToSave: ParsedServerConfig = sanitizeUserManagedOAuthConfig({
-      ...config,
-      ...sanitizeConfigHeaderMaps(config),
-    } as ParsedServerConfig);
-
-    /** Transformed user-provided API key config (adds customUserVars and headers) */
-    configToSave = this.transformUserApiKeyConfig(configToSave);
+    let configToSave: ParsedServerConfig = sanitizeUserManagedOAuthConfig(
+      sanitizeConfigHeaderMaps(config),
+    );
 
     const existingOAuth = existingServer?.config?.oauth;
     const existingOAuthSecret = existingOAuth?.client_secret;
@@ -388,6 +377,9 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
         throw new MCPOAuthSecretReentryRequiredError(changedFields);
       }
     }
+
+    /** Transformed user-provided API key config (adds customUserVars and headers) */
+    configToSave = this.transformUserApiKeyConfig(configToSave, existingServer?.config);
 
     /** Encrypted config before storing in database */
     configToSave = await this.encryptConfig(configToSave);
@@ -419,7 +411,11 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
       };
     }
 
-    await this._dbMethods.updateMCPServer(serverName, { config: configToSave });
+    const saved = await this._dbMethods.updateMCPServer(serverName, { config: configToSave });
+    if (!saved) {
+      throw new Error(`[ServerConfigsDB.update] MCP server "${serverName}" no longer exists.`);
+    }
+    return await this.mapDBServerToParsedConfig(saved);
   }
 
   /**
@@ -438,7 +434,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
           'Config-source servers should use configCacheRepo, not dbConfigsRepo.',
       );
     }
-    return this.update(serverName, config, userId);
+    await this.update(serverName, config, userId);
   }
 
   /**
@@ -446,18 +442,23 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
    * @param serverName - The serverName of the server to remove
    * @param userId - User performing the deletion (for logging)
    */
-  public async remove(serverName: string, userId?: string): Promise<void> {
+  public async remove(serverName: string, userId?: string): Promise<boolean> {
     logger.debug(`[ServerConfigsDB.remove] removing ${serverName}. UserId: ${userId}`);
     const deletedServer = await this._dbMethods.deleteMCPServer(serverName);
     if (deletedServer && deletedServer._id) {
       logger.debug(`[ServerConfigsDB.remove] removing all permissions entries of ${serverName}.`);
-      await this._aclService.removeAllPermissions({
-        resourceType: ResourceType.MCPSERVER,
-        resourceId: deletedServer._id!,
-      });
-      return;
+      try {
+        await this._aclService.removeAllPermissions({
+          resourceType: ResourceType.MCPSERVER,
+          resourceId: deletedServer._id!,
+        });
+      } catch (error) {
+        throw new MCPCommittedWriteError(true, error);
+      }
+      return true;
     }
     logger.warn(`[ServerConfigsDB.remove] server with serverName ${serverName} does not exist`);
+    return false;
   }
 
   /**
@@ -661,7 +662,7 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
       ...(authorId ? { author: authorId } : {}),
     };
     return sanitizeUserManagedOAuthConfig(
-      await this.decryptConfig(normalizePersistedConfig(config)),
+      await this.decryptConfig(normalizeLegacyHeaderMaps(config)),
     );
   }
 
@@ -671,7 +672,10 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
    * @param config - The server config to transform
    * @returns The transformed config with customUserVars and headers set up
    */
-  private transformUserApiKeyConfig(config: ParsedServerConfig): ParsedServerConfig {
+  private transformUserApiKeyConfig(
+    config: ParsedServerConfig,
+    existingConfig?: ParsedServerConfig,
+  ): ParsedServerConfig {
     if (!config.apiKey || config.apiKey.source !== 'user') {
       return config;
     }
@@ -682,18 +686,28 @@ export class ServerConfigsDB implements IServerConfigsRepositoryInterface {
         ? result.apiKey!.custom_header || 'X-Api-Key'
         : 'Authorization';
 
+    const variable = getUserApiKeyVariable(config, existingConfig);
+    const placeholder = `{{${variable}}}`;
     let headerValue: string;
     if (result.apiKey!.authorization_type === 'basic') {
-      headerValue = 'Basic {{MCP_API_KEY}}';
+      headerValue = `Basic ${placeholder}`;
     } else if (result.apiKey!.authorization_type === 'bearer') {
-      headerValue = 'Bearer {{MCP_API_KEY}}';
+      headerValue = `Bearer ${placeholder}`;
     } else {
-      headerValue = '{{MCP_API_KEY}}';
+      headerValue = placeholder;
     }
 
-    result.customUserVars = {
+    const customUserVars: NonNullable<ParsedServerConfig['customUserVars']> = {
       ...result.customUserVars,
-      MCP_API_KEY: {
+    };
+    for (const name of Object.keys(customUserVars)) {
+      if (isGeneratedUserApiKeyVariable(name)) {
+        delete customUserVars[name];
+      }
+    }
+    result.customUserVars = {
+      ...customUserVars,
+      [variable]: {
         title: 'API Key',
         description: 'Your API key for this MCP server',
       },

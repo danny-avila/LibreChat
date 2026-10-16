@@ -8,8 +8,7 @@ import {
   Constants,
   EModelEndpoint,
   PermissionBits,
-  isAgentsEndpoint,
-  isEphemeralAgentId,
+  isForcedTemporaryRetention,
 } from 'librechat-data-provider';
 import type { TPreset, TAgentsMap } from 'librechat-data-provider';
 import {
@@ -80,10 +79,7 @@ export default function ChatRoute() {
   } else if (routeState.pending && conversation?.conversationId === conversationId) {
     setRouteState({ conversationId, pending: false });
   }
-  const mcpWarmupAllowed =
-    conversation != null &&
-    !(isAgentsEndpoint(conversation.endpoint) && isEphemeralAgentId(conversation.agent_id ?? ''));
-  useAppStartup({ startupConfig, user, mcpWarmupAllowed });
+  useAppStartup({ startupConfig, user });
   const { newConversation } = useNewConvo();
   const { showToast } = useToastContext();
   const localize = useLocalize();
@@ -151,8 +147,8 @@ export default function ChatRoute() {
   const assistantListMap = useAssistantListMap();
   /** The map comes from Root's shared context (one mapping pass app-wide); the
    * select-less observer only tracks settle state. Only a loaded list may
-   * invalidate a stored agent pick: on a transient catalog failure (retries are
-   * disabled) the map stays unknown, the pick stays trusted, and the gate below
+   * invalidate a stored agent pick: on a transient catalog failure after retries,
+   * the map stays unknown, the pick stays trusted, and the gate below
    * releases so the landing never hangs on the error. */
   const agentsMap: TAgentsMap | undefined = useAgentsMapContext();
   const agentsQuery = useListAgentsQuery(
@@ -161,16 +157,17 @@ export default function ChatRoute() {
   );
 
   const isTemporaryChat = isTemporaryConversation(conversation);
+  const forceTemporaryChat = isForcedTemporaryRetention(startupConfig?.interface?.retentionMode);
 
   useEffect(() => {
     if (conversationId === Constants.NEW_CONVO) {
-      setIsTemporary(defaultTemporaryChat);
-    } else if (isTemporaryChat) {
-      setIsTemporary(isTemporaryChat);
+      setIsTemporary(forceTemporaryChat || defaultTemporaryChat);
+    } else if (forceTemporaryChat || isTemporaryChat) {
+      setIsTemporary(true);
     } else {
       setIsTemporary(false);
     }
-  }, [conversationId, isTemporaryChat, setIsTemporary, defaultTemporaryChat]);
+  }, [conversationId, isTemporaryChat, setIsTemporary, defaultTemporaryChat, forceTemporaryChat]);
 
   /** This effect is mainly for the first conversation state change on first load of the page.
    *  Adjusting this may have unintended consequences on the conversation state.
@@ -347,7 +344,7 @@ export default function ChatRoute() {
   if (endpointsQuery.isLoading || modelsQuery.isLoading) {
     return (
       <div className="flex h-screen items-center justify-center" aria-live="polite" role="status">
-        <Spinner className="text-text-primary" />
+        <Spinner tone="primary" />
       </div>
     );
   }
@@ -381,12 +378,16 @@ export default function ChatRoute() {
               </Button>
             </div>
           ) : (
-            <Spinner className="text-text-primary" />
+            <Spinner tone="primary" />
           )}
         </div>
       )}
       <div hidden={routeState.pending} className={routeState.pending ? 'hidden' : 'contents'}>
-        <ChatView index={index} project={verifiedChatProjectId ? projectQuery.data : undefined} />
+        <ChatView
+          index={index}
+          project={verifiedChatProjectId ? projectQuery.data : undefined}
+          routePending={routeState.pending}
+        />
       </div>
     </ToolCallsMapProvider>
   );

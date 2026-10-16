@@ -1,6 +1,11 @@
 import { createHash } from 'crypto';
-import { isProcessMCPServerConfig } from 'librechat-data-provider';
 import { logger, encryptV2, decryptV2, scopedCacheKey } from '@librechat/data-schemas';
+import {
+  DEFAULT_MCP_APPS_POLICY,
+  isProcessMCPServerConfig,
+  resolveMCPAppsPolicy,
+} from 'librechat-data-provider';
+import type { TMCPAppsPolicy } from 'librechat-data-provider';
 import type { IServerConfigsRepositoryInterface } from './ServerConfigsRepositoryInterface';
 import type { ReadThroughTransforms, FillToken } from './cache/ReadThroughAllCache';
 import type * as t from '~/mcp/types';
@@ -9,7 +14,12 @@ import {
   APP_CACHE_NAMESPACE,
   CONFIG_CACHE_NAMESPACE,
 } from './cache/ServerConfigsCacheFactory';
-import { MCPInspectionFailedError, isMCPDomainNotAllowedError } from '~/mcp/errors';
+import {
+  MCPCommittedWriteError,
+  MCPInspectionFailedError,
+  isMCPDomainNotAllowedError,
+} from '~/mcp/errors';
+import { normalizeLegacyHeaderMaps, normalizeLegacyHeaderMapsIn } from './compat';
 import { canBackfillSharedServerInstructions, isUserSourced } from '~/mcp/utils';
 import { ReadThroughAllCache } from './cache/ReadThroughAllCache';
 import { isPluginSourced, MCP_PLUGIN_SOURCE } from '~/utils/env';
@@ -17,6 +27,7 @@ import { requireApiKeyReentryForRebinding } from './binding';
 import { ReadThroughCache } from './cache/ReadThroughCache';
 import { MCPServerInspector } from './MCPServerInspector';
 import { ServerConfigsDB } from './db/ServerConfigsDB';
+import { getSafeErrorMetadata } from '~/utils/errors';
 import { cacheConfig } from '~/cache';
 import { withTimeout } from '~/utils';
 
@@ -29,11 +40,19 @@ export class MCPConfigInitializationCanceledError extends Error {}
 
 /** Cached configs carry decrypted oauth/apiKey credentials, so the shared
  *  stores only ever see ciphertext; plaintext stays in process memory,
- *  exactly where it lived before these caches became shared. */
-function encryptedStoreTransforms<T>(): ReadThroughTransforms<T> {
+ *  exactly where it lived before these caches became shared.
+ *
+ *  Decoding also normalizes legacy header maps, because a replica running older
+ *  code fills these stores from its own database reads: without it, a rolling
+ *  deployment would keep serving a config the runtime schemas reject, from a
+ *  cache hit that never reaches the repository's own normalization. */
+function serverMapStoreTransforms(): ReadThroughTransforms<Record<string, t.ParsedServerConfig>> {
   return {
     encode: async (value) => encryptV2(JSON.stringify(value)),
-    decode: async (raw) => JSON.parse(await decryptV2(raw)),
+    decode: async (raw) =>
+      normalizeLegacyHeaderMapsIn(
+        JSON.parse(await decryptV2(raw)) as Record<string, t.ParsedServerConfig>,
+      ),
   };
 }
 
@@ -46,7 +65,7 @@ function perServerStoreTransforms(): ReadThroughTransforms<t.ParsedServerConfig 
       const decoded = JSON.parse(await decryptV2(raw)) as {
         config: t.ParsedServerConfig | null;
       };
-      return decoded.config ?? undefined;
+      return decoded.config == null ? undefined : normalizeLegacyHeaderMaps(decoded.config);
     },
   };
 }
@@ -192,9 +211,11 @@ export interface MCPAllowlistContext {
  * dependency. Reads the ALS tenant context internally; pass the acting user to also pick up
  * user/role-scoped overrides.
  */
-export type MCPAllowlistResolver = (
-  ctx?: MCPAllowlistContext,
-) => Promise<{ allowedDomains?: string[] | null; allowedAddresses?: string[] | null }>;
+export type MCPAllowlistResolver = (ctx?: MCPAllowlistContext) => Promise<{
+  allowedDomains?: string[] | null;
+  allowedAddresses?: string[] | null;
+  mcpApps: TMCPAppsPolicy;
+}>;
 
 /** Effective allowlists resolved for a request. */
 interface ResolvedMCPAllowlists {
@@ -230,6 +251,7 @@ export class MCPServersRegistry {
   /** YAML-derived base allowlists; used at boot and as the fallback when no resolver is set. */
   private readonly allowedDomains?: string[] | null;
   private readonly allowedAddresses?: string[] | null;
+  private readonly mcpApps: TMCPAppsPolicy;
   /** Resolves the per-request (tenant-scoped) merged allowlists; falls back to the base above. */
   private readonly allowlistResolver?: MCPAllowlistResolver;
   private readonly readThroughCache: ReadThroughCache<t.ParsedServerConfig | undefined>;
@@ -264,6 +286,7 @@ export class MCPServersRegistry {
     allowedDomains?: string[] | null,
     allowedAddresses?: string[] | null,
     allowlistResolver?: MCPAllowlistResolver,
+    mcpApps: TMCPAppsPolicy = resolveMCPAppsPolicy(),
   ) {
     this.dbConfigsRepo = new ServerConfigsDB(mongoose);
     this.cacheConfigsRepo = ServerConfigsCacheFactory.create(APP_CACHE_NAMESPACE, false);
@@ -271,6 +294,7 @@ export class MCPServersRegistry {
     this.allowedDomains = allowedDomains;
     this.allowedAddresses = allowedAddresses;
     this.allowlistResolver = allowlistResolver;
+    this.mcpApps = mcpApps;
 
     const ttl = cacheConfig.MCP_REGISTRY_CACHE_TTL;
 
@@ -284,7 +308,7 @@ export class MCPServersRegistry {
     this.readThroughCacheAll = new ReadThroughAllCache<Record<string, t.ParsedServerConfig>>(
       'mcp-registry-read-through-all',
       ttl,
-      encryptedStoreTransforms<Record<string, t.ParsedServerConfig>>(),
+      serverMapStoreTransforms(),
     );
   }
 
@@ -294,6 +318,7 @@ export class MCPServersRegistry {
     allowedDomains?: string[] | null,
     allowedAddresses?: string[] | null,
     allowlistResolver?: MCPAllowlistResolver,
+    mcpApps?: TMCPAppsPolicy,
   ): MCPServersRegistry {
     if (!mongoose) {
       throw new Error(
@@ -311,6 +336,7 @@ export class MCPServersRegistry {
       allowedDomains,
       allowedAddresses,
       allowlistResolver,
+      mcpApps,
     );
     return MCPServersRegistry.instance;
   }
@@ -333,6 +359,11 @@ export class MCPServersRegistry {
     return this.allowedAddresses;
   }
 
+  /** YAML base executable-UI policy used when no request resolver is available. */
+  public getMCPAppsPolicy(): TMCPAppsPolicy {
+    return this.mcpApps;
+  }
+
   /** Returns true when no explicit allowedDomains allowlist is configured, enabling SSRF TOCTOU protection */
   public shouldEnableSSRFProtection(): boolean {
     return !Array.isArray(this.allowedDomains) || this.allowedDomains.length === 0;
@@ -353,24 +384,82 @@ export class MCPServersRegistry {
     allowedDomains?: string[] | null;
     allowedAddresses?: string[] | null;
     useSSRFProtection: boolean;
+    mcpApps: TMCPAppsPolicy;
   }> {
     let allowedDomains = this.allowedDomains;
     let allowedAddresses = this.allowedAddresses;
+    let mcpApps = this.getMCPAppsPolicy();
     if (this.allowlistResolver) {
       try {
         const resolved = await this.allowlistResolver(ctx);
         allowedDomains = resolved.allowedDomains;
         allowedAddresses = resolved.allowedAddresses;
+        mcpApps = resolved.mcpApps;
       } catch {
         logger.warn(
-          '[MCPServersRegistry] Allowlist resolver failed; falling back to YAML base allowlists',
+          '[MCPServersRegistry] Allowlist resolver failed; falling back to YAML base allowlists and disabling apps',
         );
+        // Allowlists fall back to the operator baseline, but apps fail CLOSED: a scope that disabled
+        // them would otherwise get inline app HTML persisted and rendered, and the gated endpoints
+        // cannot retract HTML that already reached the transcript.
+        mcpApps = DEFAULT_MCP_APPS_POLICY;
       }
     }
     return {
       allowedDomains,
       allowedAddresses,
       useSSRFProtection: !Array.isArray(allowedDomains) || allowedDomains.length === 0,
+      mcpApps,
+    };
+  }
+
+  /**
+   * Resolves an App validation target from configuration already admitted and cached by the host.
+   * This path never initializes, reinspects, recovers, or connects to an MCP server. A config-tier
+   * entry that is absent or failed therefore stays unavailable instead of silently rebinding a
+   * persisted App to a same-name base server.
+   */
+  public async resolveCachedAppServerConfig({
+    serverName,
+    userId,
+    role,
+    mcpConfig,
+    allowedDomains,
+    allowedAddresses,
+  }: {
+    serverName: string;
+    userId: string;
+    role?: string;
+    mcpConfig: Record<string, t.MCPOptions>;
+    allowedDomains?: string[] | null;
+    allowedAddresses?: string[] | null;
+  }): Promise<t.MCPConnectionTarget | undefined> {
+    const baseConfigs = await this.getBaseServerConfigs(userId, role);
+    const base = baseConfigs[serverName];
+    const rawConfig = mcpConfig[serverName];
+    let selectedConfig = base;
+
+    if (rawConfig && base?.source !== 'user' && !isProcessMCPServerConfig(base)) {
+      const yamlSnapshot = await this.cacheConfigsRepo.getAll();
+      if (!this.isUnmodifiedYamlServer(yamlSnapshot, serverName, rawConfig)) {
+        const cached = await this.configCacheRepo.get(
+          this.configCacheKey(serverName, rawConfig, { allowedDomains, allowedAddresses }),
+        );
+        if (!cached || cached.inspectionFailed) {
+          return undefined;
+        }
+        selectedConfig = base ? { ...cached, source: overlaySource(base, cached) } : cached;
+      }
+    }
+
+    if (!selectedConfig || selectedConfig.inspectionFailed) {
+      return undefined;
+    }
+    return {
+      serverConfig: selectedConfig,
+      connectionOwner: (await this.isAppServerConfig(serverName, selectedConfig))
+        ? 'operator'
+        : 'principal',
     };
   }
 
@@ -588,20 +677,71 @@ export class MCPServersRegistry {
       ...parsedConfig,
       source,
     };
-    const result =
-      storageLocation === 'DB'
-        ? await this.dbConfigsRepo.add(
-            serverName,
-            tagged,
-            userId,
-            await this.getOperatorManagedServerNames(reservedServerNames),
-          )
-        : await configRepo.add(serverName, tagged, userId);
-    await this.invalidateServerReadCaches(result.serverName, userId, storageLocation);
+    let result: t.AddServerResult;
+    try {
+      result =
+        storageLocation === 'DB'
+          ? await this.dbConfigsRepo.add(
+              serverName,
+              tagged,
+              userId,
+              await this.getOperatorManagedServerNames(reservedServerNames),
+            )
+          : await configRepo.add(serverName, tagged, userId);
+    } catch (error) {
+      await this.invalidateAfterCommittedFailure(error, serverName, userId, storageLocation);
+      throw error;
+    }
+    await this.invalidateCommitted(result, () =>
+      this.invalidateServerReadCaches(result.serverName, userId, storageLocation),
+    );
     if (storageLocation === 'CACHE') {
       this.resetYamlServerNamesMemo();
     }
     return result;
+  }
+
+  /**
+   * A repository step after a committed write failed (for example permission bookkeeping),
+   * so the stored config changed even though the call rejects: refresh the read caches
+   * best-effort before the failure propagates, or they would keep serving the old state.
+   */
+  private async invalidateAfterCommittedFailure(
+    error: unknown,
+    serverName: string,
+    userId: string | undefined,
+    storageLocation: 'CACHE' | 'DB',
+  ): Promise<void> {
+    if (!(error instanceof MCPCommittedWriteError)) {
+      return;
+    }
+    const committed = error.committed as t.AddServerResult | undefined;
+    await this.invalidateServerReadCaches(
+      committed?.serverName ?? serverName,
+      userId,
+      storageLocation,
+    ).catch((invalidationError) =>
+      logger.error(
+        '[MCPServersRegistry] cache invalidation failed after a committed write error:',
+        getSafeErrorMetadata(invalidationError),
+      ),
+    );
+  }
+
+  /**
+   * Runs the cache invalidation that follows a committed write. A failure is rethrown as
+   * `MCPCommittedWriteError` carrying what was persisted, so the caller can record
+   * the committed change instead of mistaking it for a write that never happened.
+   */
+  private async invalidateCommitted<T>(
+    committed: T | undefined,
+    invalidate: () => Promise<void>,
+  ): Promise<void> {
+    try {
+      await invalidate();
+    } catch (error) {
+      throw new MCPCommittedWriteError(committed, error);
+    }
   }
 
   /**
@@ -975,9 +1115,11 @@ export class MCPServersRegistry {
     userId?: string,
   ): Promise<t.ParsedServerConfig> {
     const configRepo = this.getConfigRepository(storageLocation);
-    await configRepo.update(serverName, parsedConfig, userId);
-    await this.invalidateServerReadCaches(serverName, userId, storageLocation);
-    return parsedConfig;
+    const persisted = (await configRepo.update(serverName, parsedConfig, userId)) ?? parsedConfig;
+    await this.invalidateCommitted(persisted, () =>
+      this.invalidateServerReadCaches(serverName, userId, storageLocation),
+    );
+    return persisted;
   }
 
   public async updateServer(
@@ -1239,13 +1381,22 @@ export class MCPServersRegistry {
     serverName: string,
     storageLocation: 'CACHE' | 'DB',
     userId?: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const configRepo = this.getConfigRepository(storageLocation);
-    await configRepo.remove(serverName, userId);
-    await this.invalidateServerReadCaches(serverName, userId, storageLocation);
+    let removed: boolean | void;
+    try {
+      removed = await configRepo.remove(serverName, userId);
+    } catch (error) {
+      await this.invalidateAfterCommittedFailure(error, serverName, userId, storageLocation);
+      throw error;
+    }
+    await this.invalidateCommitted(removed !== false, () =>
+      this.invalidateServerReadCaches(serverName, userId, storageLocation),
+    );
     if (storageLocation === 'CACHE') {
       this.resetYamlServerNamesMemo();
     }
+    return removed !== false;
   }
 
   private getConfigRepository(storageLocation: 'CACHE' | 'DB'): IServerConfigsRepositoryInterface {

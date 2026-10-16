@@ -7,6 +7,7 @@ import {
   messagesView,
   requestJson,
   sendMessageAndWaitForCompletion,
+  uploadViaLegacyOption,
 } from './helpers';
 
 /**
@@ -41,9 +42,13 @@ const TURN2_MARKER_NEEDLE = 'turn1-proof-42';
 const uniqueName = (prefix: string) => `${prefix} ${Date.now()}-${Math.floor(Math.random() * 1e4)}`;
 const modelTrigger = (page: Page) => page.getByRole('button', { name: 'Select a model' }).first();
 
+/** Restores the Enter opt-in from global setup, since the send helpers press Enter. */
 async function startFresh(page: Page) {
   await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
-  await page.evaluate(() => localStorage.clear());
+  await page.evaluate(() => {
+    localStorage.clear();
+    localStorage.setItem('enterToSend', 'true');
+  });
   await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
 }
 
@@ -74,28 +79,14 @@ async function selectAgent(page: Page, agentName: string) {
   await expect(modelTrigger(page)).toContainText(agentName);
 }
 
-/** Attaches a CSV through the real attach menu → Code Environment target,
+/** Attaches a CSV through the palette's Code Environment destination row,
  *  which uploads it to the live Code API before the message is ever sent. */
 async function attachCodeFile(page: Page) {
-  const [chooser] = await Promise.all([
-    page.waitForEvent('filechooser'),
-    (async () => {
-      await page.getByRole('button', { name: 'Attach File Options' }).click();
-      await page.getByRole('menuitem', { name: 'Upload to Code Environment' }).click();
-    })(),
-  ]);
-  const [upload] = await Promise.all([
-    page.waitForResponse(
-      (response) =>
-        new URL(response.url()).pathname === '/api/files' && response.request().method() === 'POST',
-      { timeout: 60_000 },
-    ),
-    chooser.setFiles({
-      name: FILE_NAME,
-      mimeType: 'text/csv',
-      buffer: Buffer.from(FILE_CONTENT),
-    }),
-  ]);
+  const upload = await uploadViaLegacyOption(page, 'Upload to Code Environment', {
+    name: FILE_NAME,
+    mimeType: 'text/csv',
+    content: FILE_CONTENT,
+  });
   expect(upload.ok(), `code file upload returned ${upload.status()}`).toBeTruthy();
   await expect(page.getByText(FILE_NAME).first()).toBeVisible();
 }
