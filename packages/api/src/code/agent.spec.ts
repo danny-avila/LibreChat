@@ -202,12 +202,16 @@ describe('stateful default profile setting', () => {
     delete process.env.LIBRECHAT_CODE_DEFAULT_PROFILE;
   });
 
-  it('runs a toggle-off or unset agent stateful when the setting is stateful', () => {
+  it('runs a toggle-off or unset agent on a managed machine stateful when the setting is stateful', () => {
     process.env.LIBRECHAT_CODE_DEFAULT_PROFILE = 'stateful';
+    const managedParams = { ...baseParams, environments: [{ ...environments[0], default: true }] };
 
-    for (const agent of [toggleOff, toggleUnset]) {
-      expect(resolveAgentCodeFlags({ ...baseParams, agent }).statefulSessions).toBe(true);
-      expect(resolveAgentCodeExecution({ ...baseParams, agent }).context).toEqual(
+    for (const agent of [toggleOff, toggleUnset].map((a) => ({
+      ...a,
+      code_environment_id: undefined,
+    }))) {
+      expect(resolveAgentCodeFlags({ ...managedParams, agent }).statefulSessions).toBe(true);
+      expect(resolveAgentCodeExecution({ ...managedParams, agent }).context).toEqual(
         expect.objectContaining({ executionProfile: 'stateful', statefulSessions: true }),
       );
     }
@@ -247,13 +251,14 @@ describe('stateful default profile setting', () => {
     ).toBe(false);
   });
 
-  it('opts a toggle-off agent with an attached default out of a no-workspace conversation only when the setting is stateful', () => {
-    expect(optsOutOfAttachedCodeEnvironment(toggleOff, withoutAttached, environments)).toBe(false);
-
-    process.env.LIBRECHAT_CODE_DEFAULT_PROFILE = 'stateful';
-
-    expect(optsOutOfAttachedCodeEnvironment(toggleOff, withoutAttached, environments)).toBe(true);
-    expect(optsOutOfAttachedCodeEnvironment(toggleOff, {}, environments)).toBe(false);
+  it('never opts a toggle-off agent with an attached default out under the setting', () => {
+    for (const setting of [undefined, 'default', 'stateful']) {
+      if (setting == null) delete process.env.LIBRECHAT_CODE_DEFAULT_PROFILE;
+      else process.env.LIBRECHAT_CODE_DEFAULT_PROFILE = setting;
+      expect(optsOutOfAttachedCodeEnvironment(toggleOff, withoutAttached, environments)).toBe(
+        false,
+      );
+    }
   });
 
   it('keeps code on a toggle-off agent when the capability is off or no stateful route exists', () => {
@@ -278,12 +283,38 @@ describe('stateful default profile setting', () => {
     });
   });
 
-  it('still opts a toggle-off agent with an attached default out when the capability is on', () => {
+  it('keeps a toggle-off agent on an attached machine on the default profile under the setting', () => {
     process.env.LIBRECHAT_CODE_DEFAULT_PROFILE = 'stateful';
 
+    for (const requestBody of [withoutAttached, {}]) {
+      expect(resolveAgentCodeFlags({ ...baseParams, agent: toggleOff, requestBody })).toMatchObject(
+        {
+          attachedEnvironmentOptOut: false,
+          codeEnvAvailable: true,
+          statefulSessions: false,
+        },
+      );
+    }
+  });
+
+  it('runs a toggle-off agent on a managed default stateful under the setting', () => {
+    process.env.LIBRECHAT_CODE_DEFAULT_PROFILE = 'stateful';
+    const managedDefault: CodeEnvironmentConfig[] = [{ ...environments[0], default: true }];
+
     expect(
-      resolveAgentCodeFlags({ ...baseParams, agent: toggleOff, requestBody: withoutAttached }),
-    ).toMatchObject({ attachedEnvironmentOptOut: true, codeEnvAvailable: false });
+      resolveAgentCodeFlags({
+        ...baseParams,
+        environments: managedDefault,
+        agent: { ...toggleOff, code_environment_id: undefined },
+      }),
+    ).toMatchObject({ codeEnvAvailable: true, statefulSessions: true });
+    expect(
+      resolveAgentCodeFlags({
+        ...baseParams,
+        environments: managedDefault,
+        agent: { ...toggleOff, code_environment_id: 'managed' },
+      }),
+    ).toMatchObject({ codeEnvAvailable: true, statefulSessions: true });
   });
 
   describe('toggle-off agent whose code environment is gone', () => {
@@ -309,12 +340,13 @@ describe('stateful default profile setting', () => {
       requestBody: withoutAttached,
     };
 
-    it('opts out of a no-workspace conversation when the setting is stateful', () => {
+    it('keeps code on the default profile in a no-workspace conversation under the setting', () => {
       process.env.LIBRECHAT_CODE_DEFAULT_PROFILE = 'stateful';
 
       expect(resolveAgentCodeFlags(staleParams)).toMatchObject({
-        attachedEnvironmentOptOut: true,
-        codeEnvAvailable: false,
+        attachedEnvironmentOptOut: false,
+        codeEnvAvailable: true,
+        statefulSessions: false,
       });
       expect(
         resolveAgentCodeFlags({
@@ -322,6 +354,14 @@ describe('stateful default profile setting', () => {
           agent: { ...staleAgent, stateful_code_sessions: true },
         }),
       ).toMatchObject({ attachedEnvironmentOptOut: true, codeEnvAvailable: false });
+    });
+
+    it('resolves its execution without throwing under the setting', () => {
+      process.env.LIBRECHAT_CODE_DEFAULT_PROFILE = 'stateful';
+
+      expect(resolveAgentCodeExecution(staleParams).context).toEqual(
+        expect.objectContaining({ executionProfile: 'default', statefulSessions: false }),
+      );
     });
 
     it('keeps code on the default profile when the deployment capability is off', () => {
