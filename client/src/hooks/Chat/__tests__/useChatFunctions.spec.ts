@@ -1,7 +1,7 @@
 import { EModelEndpoint } from 'librechat-data-provider';
 import type { TMessage, TUser } from 'librechat-data-provider';
+import { resolvePayloadPromptPrefix } from '../ask/turn';
 import {
-  resolvePayloadPromptPrefix,
   getRegenerateSubmissionMessages,
   getPreliminaryRegenerateResponseMessageId,
   getRegenerateTargetResponseMessage,

@@ -135,9 +135,7 @@ async function abortMessage(req, res) {
     responseMessage: { ...responseMessage, content: stripProviderItems(responseMessage.content) },
   };
 
-  logger.debug(
-    `[abortMessage] ID: ${userId} | ${req.user.email} | Aborted request: ${conversationId}`,
-  );
+  logger.debug(`[abortMessage] ID: ${userId} | Aborted request: ${conversationId}`);
 
   if (res.headersSent) {
     return sendEvent(res, finalEvent);
