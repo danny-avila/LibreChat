@@ -2,6 +2,7 @@ import { useStore } from 'jotai';
 import { useRecoilCallback } from 'recoil';
 import { Constants } from 'librechat-data-provider';
 import {
+  filesFamily,
   presetFamily,
   abortScrollFamily,
   isSubmittingFamily,
@@ -59,7 +60,7 @@ export default function useClearStates() {
             continue;
           }
 
-          reset(store.filesByIndex(key));
+          jotaiStore.set(filesFamily(key), new Map());
           jotaiStore.set(presetFamily(key), null);
           jotaiStore.set(showStopButtonByIndex(key), false);
           jotaiStore.set(abortScrollFamily(key), false);

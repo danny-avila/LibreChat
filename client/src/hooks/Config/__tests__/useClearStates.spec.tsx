@@ -4,6 +4,7 @@ import { act, renderHook } from '@testing-library/react';
 import { createStore, Provider as JotaiProvider } from 'jotai';
 import { Constants, ReasoningEffort } from 'librechat-data-provider';
 import {
+  filesFamily,
   presetFamily,
   abortScrollFamily,
   optionSettingsFamily,
@@ -11,6 +12,7 @@ import {
   submissionStartFamily,
 } from '@librechat/chat/react';
 import type { TPreset } from 'librechat-data-provider';
+import type { ExtendedFile } from '~/common';
 import {
   pendingQuotesByConvoId,
   pendingManualSkillsByConvoId,
@@ -122,16 +124,17 @@ describe('useClearStates', () => {
       expected.map((kept) => (kept ? 1000 : null)),
     );
   });
-  /* The preset and option toggles of each pane are per-session choices: a pane
-     that survives sign-out must not hand them to the next account. */
+  /* The preset, option toggles and staged files of each pane are per-session
+     state: a pane that survives sign-out must not hand them to the next account. */
   it.each([
     [false, [null, null]],
     [true, ['kept', null]],
-  ])('resets per-pane preset and option settings (skipFirst %s)', async (skipFirst, expected) => {
+  ])('resets per-pane preset, options and files (skipFirst %s)', async (skipFirst, expected) => {
     const jotaiStore = createStore();
     for (const key of [0, 1]) {
       jotaiStore.set(presetFamily(key), { title: 'kept' } as TPreset);
       jotaiStore.set(optionSettingsFamily(key), { showExamples: true });
+      jotaiStore.set(filesFamily(key), new Map([['kept', { file_id: 'kept' } as ExtendedFile]]));
     }
     const wrapper = ({ children }: { children: React.ReactNode }) => (
       <JotaiProvider store={jotaiStore}>
@@ -150,5 +153,8 @@ describe('useClearStates', () => {
     expect(
       [0, 1].map((key) => jotaiStore.get(optionSettingsFamily(key)).showExamples ?? null),
     ).toEqual(expected.map((kept) => (kept ? true : null)));
+    expect([0, 1].map((key) => jotaiStore.get(filesFamily(key)).has('kept') || null)).toEqual(
+      expected.map((kept) => (kept ? true : null)),
+    );
   });
 });

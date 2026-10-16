@@ -1,10 +1,10 @@
 import React, { useMemo, useState } from 'react';
-import { useAtom } from 'jotai';
-import { isSubmittingFamily } from '@librechat/chat/react';
+import { getDefaultStore, useAtom } from 'jotai';
+import { filesFamily, isSubmittingFamily } from '@librechat/chat/react';
 import '@testing-library/jest-dom';
+import { RecoilRoot } from 'recoil';
 import { DndProvider } from 'react-dnd';
 import { useForm } from 'react-hook-form';
-import { RecoilRoot, useRecoilState } from 'recoil';
 import userEvent from '@testing-library/user-event';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { render, screen } from '@testing-library/react';
@@ -16,7 +16,6 @@ import type { ChatFormValues } from '~/common';
 import { ChatContext, ChatFormProvider } from '~/Providers';
 import { AuthContextProvider } from '~/hooks/AuthContext';
 import ChatForm from '../ChatForm';
-import store from '~/store';
 import '~/Providers/SteerHostContext';
 
 const conversation = {
@@ -32,7 +31,7 @@ const conversation = {
  * passes it, not the atom it used to read directly, so each value is covered.
  */
 function Harness({ enterToSend }: { enterToSend: boolean }) {
-  const [files, setFiles] = useRecoilState(store.filesByIndex(0));
+  const [files, setFiles] = useAtom(filesFamily(0));
   const [isSubmitting] = useAtom(isSubmittingFamily(0));
   const [, setFilesLoading] = useState(false);
   const methods = useForm<ChatFormValues>({ defaultValues: { text: '' } });
@@ -105,6 +104,10 @@ function renderComposer({ enterToSend }: { enterToSend: boolean }) {
     </QueryClientProvider>,
   );
 }
+
+afterEach(() => {
+  getDefaultStore().set(filesFamily(0), new Map());
+});
 
 describe('ChatForm enterToSend prop', () => {
   beforeEach(() => {
