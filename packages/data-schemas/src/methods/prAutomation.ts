@@ -29,8 +29,13 @@ const REAP_CONCURRENCY = 8;
  */
 type Liveness = 'live' | 'conversation_gone' | 'owner_gone' | 'owner_inactive';
 type Gone = Extract<Liveness, 'conversation_gone' | 'owner_gone'>;
-/** The tenant a record belongs to; `null` or absent is a record stored without one. */
-type LivenessScope = { tenantId?: string | null };
+/**
+ * What a liveness check is judged against. `tenantId`, when the key is present, is the record's
+ * tenant (`null` for one stored without one). `conversationRef` is the `_id` of the conversation
+ * document the record was enabled for: a conversation deleted and saved again under the same id
+ * is a different document, so a record of the old one does not belong to it.
+ */
+type LivenessScope = { tenantId?: string | null; conversationRef?: string };
 const CLAIMABLE_STATES: PRAutomationState[] = ['idle', 'waiting'];
 const SETTLEABLE_STATES: PRAutomationState[] = ['fixing', 'needs_user'];
 const SETTLED_STATES: PRAutomationState[] = ['waiting', 'needs_user'];
@@ -48,6 +53,7 @@ const BUMP = { $inc: { version: 1 } };
 /** GitHub compares `owner/name` without case, so records store and match the lower case form. */
 const canonicalRepository = (repository: string) => repository.toLowerCase();
 const LINK_FIELDS = [
+  '_id',
   'conversationId',
   'user',
   'tenantId',
@@ -69,7 +75,7 @@ function lineagePipeline(
   { userId, conversationId }: t.PRAutomationKey,
   scope?: LivenessScope,
 ): PipelineStage[] {
-  const tenant = scope == null ? {} : { tenantId: scope.tenantId ?? null };
+  const tenant = scope != null && 'tenantId' in scope ? { tenantId: scope.tenantId ?? null } : {};
   const stages: PipelineStage[] = [
     { $match: { user: userId, conversationId, ...tenant } },
     { $limit: 1 },
@@ -125,7 +131,11 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
       fence: t.PRAutomationRunFence,
     ): Promise<t.IPRAutomation | null>;
   };
-  deletePRAutomations: (userId: string, conversationIds?: string[]) => Promise<void>;
+  deletePRAutomations: (
+    userId: string,
+    conversationIds?: string[],
+    conversationRefs?: string[],
+  ) => Promise<void>;
   reapPRAutomations: (params?: t.ReapPRAutomationsParams) => Promise<t.ReapPRAutomationsResult>;
   setPRAutomationTrust: (
     key: t.PRAutomationKey,
@@ -180,11 +190,21 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
    * instead.
    */
   async function checkLiveness(key: t.PRAutomationKey, scope?: LivenessScope): Promise<Liveness> {
+    return (await inspectLiveness(key, scope)).liveness;
+  }
+
+  /** `checkLiveness`, also naming the conversation document a live check found. */
+  async function inspectLiveness(
+    key: t.PRAutomationKey,
+    scope?: LivenessScope,
+  ): Promise<{ liveness: Liveness; conversationRef?: string }> {
+    const judged = (liveness: Liveness) => ({ liveness });
     if (!isValidObjectIdString(key.userId)) {
-      return 'owner_inactive';
+      return judged('owner_inactive');
     }
     const Conversation = mongoose.models.Conversation;
     type Link = {
+      _id?: unknown;
       conversationId: string;
       user: string;
       tenantId?: string | null;
@@ -198,10 +218,10 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
       Conversation.aggregate<Record<string, Link | undefined>>(lineagePipeline(key, scope)),
     ]);
     if (owner == null) {
-      return 'owner_gone';
+      return judged('owner_gone');
     }
     if (owner.agentTriggerDeletionStartedAt != null) {
-      return 'owner_inactive';
+      return judged('owner_inactive');
     }
     /**
      * Links of other users or other tenants never count: a lookup by `conversationId` is scoped
@@ -222,20 +242,24 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
     }
     const conversation = links.get(key.conversationId);
     if (conversation == null) {
-      return 'conversation_gone';
+      return judged('conversation_gone');
     }
     let current: Link | undefined = conversation;
     for (let hops = 0; current?.subagentThread?.parentConversationId != null; hops++) {
       if (hops >= MAX_SUBAGENT_DEPTH) {
-        return 'conversation_gone';
+        return judged('conversation_gone');
       }
       current = links.get(current.subagentThread.parentConversationId);
     }
     const root = conversation.subagentThread?.rootConversationId;
     if (current == null || (root != null && current.conversationId !== root)) {
-      return 'conversation_gone';
+      return judged('conversation_gone');
     }
-    return 'live';
+    const conversationRef = String(conversation._id);
+    if (scope?.conversationRef != null && scope.conversationRef !== conversationRef) {
+      return judged('conversation_gone');
+    }
+    return { liveness: 'live', conversationRef };
   }
 
   /** A missing owner reads as inactive to callers; the distinction only decides removal. */
@@ -327,7 +351,7 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
         ? undefined
         : { ...requested, repository: canonicalRepository(requested.repository) };
     const trust = requestedTrust == null ? undefined : boundTrust(requestedTrust, maxTrust);
-    const before = await checkLiveness(key);
+    const { liveness: before, conversationRef } = await inspectLiveness(key);
     if (before !== 'live') {
       return { ok: false, error: { code: isGone(before) ? goneCode(before) : before } };
     }
@@ -348,26 +372,44 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
     const observed = await PRAutomation.findOne(filter).lean<t.IPRAutomation & { _id: unknown }>();
     let written: number;
     let restartedRun = true;
+    const fresh = (version: number) => ({
+      ...filter,
+      state: 'idle',
+      round: 0,
+      trustedBots: [],
+      claimedHeads: [],
+      epoch: attempt,
+      pending: attempt,
+      version,
+      conversationRef,
+      trust: clampPRAutomationTrust(trust, maxTrust),
+      ...binding,
+    });
+    /** A record of an earlier conversation saved under the same id starts over for this one. */
+    const replaced =
+      observed?.conversationRef != null && observed.conversationRef !== conversationRef;
     if (observed == null) {
       written = 1;
       try {
-        await PRAutomation.create({
-          ...filter,
-          state: 'idle',
-          round: 0,
-          trustedBots: [],
-          claimedHeads: [],
-          epoch: attempt,
-          pending: attempt,
-          version: written,
-          trust: clampPRAutomationTrust(trust, maxTrust),
-          ...binding,
-        });
+        await PRAutomation.create(fresh(written));
       } catch (error) {
         if ((error as { code?: number }).code === DUPLICATE_KEY) {
           return { ok: false, error: { code: 'conflict' } };
         }
         throw error;
+      }
+    } else if (replaced) {
+      written = observed.version + 1;
+      const applied = await PRAutomation.replaceOne(
+        { ...filter, version: observed.version },
+        {
+          ...fresh(written),
+          ...(observed.tenantId != null && { tenantId: observed.tenantId }),
+        },
+        { runValidators: true },
+      );
+      if (applied.matchedCount === 0) {
+        return { ok: false, error: { code: 'conflict' } };
       }
     } else {
       written = observed.version + 1;
@@ -375,17 +417,18 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
       restartedRun = restart != null;
       /** An enable also narrows a stored level the current ceiling no longer allows. */
       const narrowed = clampPRAutomationTrust(observed.trust, maxTrust);
-      const update = restart ?? (narrowed === observed.trust ? {} : { $set: { trust: narrowed } });
+      const update: { $set?: Record<string, unknown>; $unset?: Record<string, string> } =
+        restart ?? (narrowed === observed.trust ? {} : { $set: { trust: narrowed } });
       const applied = await PRAutomation.updateOne(
         { ...filter, version: observed.version },
-        { ...update, ...BUMP },
+        { ...update, $set: { ...update.$set, conversationRef }, ...BUMP },
         { runValidators: true },
       );
       if (applied.matchedCount === 0) {
         return { ok: false, error: { code: 'conflict' } };
       }
     }
-    const after = await checkLiveness(key);
+    const after = await checkLiveness(key, { conversationRef });
     if (isGone(after)) {
       await PRAutomation.deleteOne({ ...filter, version: written });
       return { ok: false, error: { code: goneCode(after) } };
@@ -512,9 +555,9 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
      * `deleteConvos`, so liveness is checked here rather than trusted to a cascade.
      */
     const seen = await PRAutomation.findOne(keyFilter(key))
-      .select({ _id: 0, version: 1 })
-      .lean<{ version: number }>();
-    const before = await checkLiveness(key);
+      .select({ _id: 0, version: 1, conversationRef: 1 })
+      .lean<{ version: number; conversationRef?: string }>();
+    const before = await checkLiveness(key, { conversationRef: seen?.conversationRef });
     if (before !== 'live') {
       return refuseClaim(key, before, seen?.version);
     }
@@ -554,7 +597,7 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
        */
       let after: Liveness;
       try {
-        after = await checkLiveness(key);
+        after = await checkLiveness(key, { conversationRef: claimed.conversationRef });
       } catch (error) {
         /** A check that fails leaves no answer to act on, so the round is handed back. */
         await releaseClaim(key, claimed, runId).catch(() => undefined);
@@ -699,9 +742,15 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
   /**
    * Removes every record of a user, or of the listed conversations, in bounded batches.
    * Cleanup only: it creates nothing, so a deployment that never used the feature pays one
-   * indexed delete that matches no document.
+   * indexed delete that matches no document. `conversationRefs`, aligned with
+   * `conversationIds`, names the conversation documents that were deleted, so a record enabled
+   * for a conversation saved again under the same id meanwhile is kept.
    */
-  async function deletePRAutomations(userId: string, conversationIds?: string[]): Promise<void> {
+  async function deletePRAutomations(
+    userId: string,
+    conversationIds?: string[],
+    conversationRefs?: string[],
+  ): Promise<void> {
     const PRAutomation = mongoose.models.PRAutomation;
     if (PRAutomation == null || conversationIds?.length === 0) {
       return;
@@ -711,9 +760,13 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
       return;
     }
     for (let start = 0; start < conversationIds.length; start += DELETE_BATCH) {
+      const refs = conversationRefs?.slice(start, start + DELETE_BATCH);
       await PRAutomation.deleteMany({
         user: userId,
         conversationId: { $in: conversationIds.slice(start, start + DELETE_BATCH) },
+        ...(refs != null && {
+          $or: [{ conversationRef: { $in: refs } }, { conversationRef: { $exists: false } }],
+        }),
       });
     }
   }
@@ -732,19 +785,21 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
     const page = await PRAutomation.find(after == null ? {} : { _id: { $gt: after } })
       .sort({ _id: 1 })
       .limit(limit)
-      .select({ _id: 1, user: 1, tenantId: 1, conversationId: 1, version: 1 })
+      .select({ _id: 1, user: 1, tenantId: 1, conversationId: 1, conversationRef: 1, version: 1 })
       .lean<
         Array<{
           _id: Types.ObjectId;
           user: string;
           tenantId?: string;
           conversationId: string;
+          conversationRef?: string;
           version: number;
         }>
       >();
     const reap = async (record: (typeof page)[number]): Promise<number> => {
       const key = { userId: String(record.user), conversationId: record.conversationId };
-      if (!isGone(await checkLiveness(key, { tenantId: record.tenantId }))) {
+      const scope = { tenantId: record.tenantId, conversationRef: record.conversationRef };
+      if (!isGone(await checkLiveness(key, scope))) {
         return 0;
       }
       /** A record written after the check, a renewed enable included, has a new version. */

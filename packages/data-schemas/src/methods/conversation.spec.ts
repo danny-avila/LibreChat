@@ -3743,6 +3743,43 @@ describe('Conversation Operations', () => {
       expect(await PRAutomation.countDocuments({ conversationId: keptConversationId })).toBe(1);
     });
 
+    it('keeps a record enabled for the conversation saved again before the cleanup', async () => {
+      const conversationId = uuidv4();
+      const PRAutomation = mongoose.models.PRAutomation;
+      const deleted = await Conversation.create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'agents',
+      });
+      await PRAutomation.create({
+        user: 'user123',
+        conversationId,
+        conversationRef: String(deleted._id),
+      });
+      const original = Conversation.deleteMany.bind(Conversation);
+      const spy = jest.spyOn(Conversation, 'deleteMany').mockImplementationOnce(((
+        ...args: Parameters<typeof Conversation.deleteMany>
+      ) =>
+        original(...args).then(async (result) => {
+          const renewed = await Conversation.create({
+            conversationId,
+            user: 'user123',
+            endpoint: 'agents',
+          });
+          await PRAutomation.updateOne(
+            { user: 'user123', conversationId },
+            { $set: { conversationRef: String(renewed._id) } },
+          );
+          return result;
+        })) as unknown as typeof Conversation.deleteMany);
+      try {
+        await deleteConvos('user123', { conversationId });
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await PRAutomation.countDocuments({ user: 'user123', conversationId })).toBe(1);
+    });
+
     describe('when the conversation delete fails', () => {
       const user = 'user123';
       const setup = async () => {

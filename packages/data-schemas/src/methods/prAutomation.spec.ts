@@ -474,6 +474,38 @@ describe('a deletion that lands while a claim is in flight', () => {
   });
 });
 
+describe('a conversation deleted and saved again under the same id', () => {
+  const recreate = async () => {
+    await mongoose.models.Conversation.deleteMany({});
+    await seedConversation();
+  };
+
+  test('refuses a claim for the record of the earlier conversation', async () => {
+    await enable(pullOne);
+    await recreate();
+    expect(await claim(1)).toEqual({ ok: false, error: { code: 'conversation_gone' } });
+    expect(await methods.getPRAutomation(key)).toBeNull();
+  });
+
+  test('starts a new run for the new conversation when enabled', async () => {
+    await enableWith({ ...key, binding: pullOne, trust: 'anyone' });
+    await addBot(7);
+    await recreate();
+    const record = await enableWith({ ...key, binding: otherRepository });
+    const conversation = await mongoose.models.Conversation.findOne({
+      conversationId: key.conversationId,
+    }).lean<{ _id: unknown }>();
+    expect(record).toMatchObject({
+      ...otherRepository,
+      trust: 'approvedBots',
+      trustedBots: [],
+      round: 0,
+      conversationRef: String(conversation?._id),
+    });
+    expect((await claim(1, { binding: otherRepository })).ok).toBe(true);
+  });
+});
+
 describe('enabling under a lowered trust ceiling', () => {
   test('restarts a stopped record at the current ceiling when no trust is requested', async () => {
     await enableWith({ ...key, binding: pullOne, trust: 'anyone' });
@@ -1261,8 +1293,10 @@ describe('claiming for a conversation that no longer exists', () => {
 
   test('accepts a claim while the conversation retention date is still ahead', async () => {
     await enable();
-    await mongoose.models.Conversation.deleteMany({});
-    await seedConversation({ expiredAt: new Date(Date.now() + 3_600_000) });
+    await mongoose.models.Conversation.updateOne(
+      { conversationId: key.conversationId },
+      { $set: { expiredAt: new Date(Date.now() + 3_600_000) } },
+    );
     expect((await claim(1)).ok).toBe(true);
   });
 
@@ -1383,6 +1417,14 @@ describe('reaping records the retention index left behind', () => {
     }
     expect(peak).toBeGreaterThan(1);
     expect(peak).toBeLessThanOrEqual(8);
+  });
+
+  test('removes a record of a conversation deleted and saved again under the same id', async () => {
+    await enable();
+    await mongoose.models.Conversation.deleteMany({});
+    await seedConversation();
+    expect(await methods.reapPRAutomations()).toEqual({ scanned: 1, removed: 1 });
+    expect(await methods.getPRAutomation(key)).toBeNull();
   });
 
   test('pages through every record', async () => {

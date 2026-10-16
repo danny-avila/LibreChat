@@ -14,6 +14,11 @@ export interface IPRAutomation {
   user: string;
   tenantId?: string;
   conversationId: string;
+  /**
+   * The `_id` of the conversation document the record was enabled for. A conversation deleted
+   * and saved again under the same id is a different document, and the record does not carry over.
+   */
+  conversationRef?: string;
   /** `owner/name` of the repository the pull request belongs to. */
   repository?: string;
   pullNumber?: number;

@@ -36,6 +36,8 @@ const prAutomationSchema: Schema<IPRAutomationDocument> = new Schema(
     },
     /** Unbounded, like the conversation schema it mirrors, so every stored conversation can enable. */
     conversationId: { type: String, required: true },
+    /** The `_id` of the conversation document the record was enabled for. */
+    conversationRef: { type: String, maxlength: 64 },
     repository: { type: String, maxlength: 256 },
     pullNumber: {
       type: Number,

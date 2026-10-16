@@ -4027,7 +4027,7 @@ export function createConversationMethods(
       const userFilter = { ...filter, user };
       type DeletionConversation = Pick<
         IConversation,
-        'conversationId' | 'tenantId' | 'chatProjectId' | 'tags'
+        '_id' | 'conversationId' | 'tenantId' | 'chatProjectId' | 'tags'
       >;
       const retryCascadeOperation = async <T>(operation: () => PromiseLike<T> | T): Promise<T> => {
         let lastError: unknown;
@@ -4146,9 +4146,11 @@ export function createConversationMethods(
         /** Only after the delete committed, so a failed delete keeps the user's automation.
          * A claim refuses any record whose conversation is gone and removes it, so a cleanup
          * that still fails after its retry converges on the next claim. */
-        await retryCascadeOperation(() => prAutomation.deletePRAutomations(user, waveIds)).catch(
-          (error) =>
-            logger.warn('[deleteConvos] PR automation cleanup deferred to its next claim', error),
+        const waveRefs = wave.map((conversation) => String(conversation._id));
+        await retryCascadeOperation(() =>
+          prAutomation.deletePRAutomations(user, waveIds, waveRefs),
+        ).catch((error) =>
+          logger.warn('[deleteConvos] PR automation cleanup deferred to its next claim', error),
         );
         if (result.deletedCount > 0) {
           /** Result erasure is irreversible. Keep receipts intact when a
