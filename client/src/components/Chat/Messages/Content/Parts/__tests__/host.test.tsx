@@ -40,6 +40,7 @@ function createHost(overrides: Partial<MessagePartsHost> = {}): MessagePartsHost
     useFontSize: () => 'text-base',
     useShowThinking: () => false,
     useAutoExpandTools: () => false,
+    useLaTeXParsing: () => false,
     useUserTextPreferences: () => ({
       usernameDisplay: false,
       enableUserMsgMarkdown: false,
