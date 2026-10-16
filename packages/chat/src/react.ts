@@ -74,3 +74,5 @@ export type {
   SteerNotification,
   SteerRequestCallbacks,
 } from './react/steer/host';
+export { presetFamily, optionSettingsFamily } from './react/pane';
+export type { PaneOptionSettings } from './react/pane';

@@ -1,5 +1,6 @@
 import { RefObject } from 'react';
 import { FileSources, isEphemeralAgentId } from 'librechat-data-provider';
+import type { PaneOptionSettings } from '@librechat/chat/react';
 import type { UseMutationResult } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 import type { LucideIcon } from 'lucide-react';
@@ -506,10 +507,7 @@ export type PromptOption = MentionOption & {
   id: string;
 };
 
-export type TOptionSettings = {
-  showExamples?: boolean;
-  isCodeChat?: boolean;
-};
+export type TOptionSettings = PaneOptionSettings;
 
 export interface ExtendedFile {
   file?: File;

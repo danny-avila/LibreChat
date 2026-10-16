@@ -4,6 +4,8 @@ import { useRecoilState, useRecoilValue } from 'recoil';
 import { useAtom, useSetAtom, useStore, useAtomValue } from 'jotai';
 import { Constants, QueryKeys, isAssistantsEndpoint } from 'librechat-data-provider';
 import {
+  presetFamily,
+  optionSettingsFamily,
   activeGenerationCreatedAtByConvoId,
   activeGenerationProtocolVersionByConvoId,
   isSubmittingFamily,
@@ -382,10 +384,9 @@ export default function useChatHelpers(index = 0, paramId?: string): ChatContrac
     [continueGeneration],
   );
 
-  const [preset, setPreset] = useRecoilState(store.presetByIndex(index));
-  const [showPopover, setShowPopover] = useRecoilState(store.showPopoverFamily(index));
+  const [preset, setPreset] = useAtom(presetFamily(index));
   const [abortScroll, setAbortScroll] = useAtom(abortScrollFamily(index));
-  const [optionSettings, setOptionSettings] = useRecoilState(store.optionSettingsFamily(index));
+  const [optionSettings, setOptionSettings] = useAtom(optionSettingsFamily(index));
 
   /** Read once per chat rather than per message row: message rows never unmount, so a
    *  per-row settings read would accumulate for the length of the conversation. */
@@ -412,8 +413,6 @@ export default function useChatHelpers(index = 0, paramId?: string): ChatContrac
       handleStopGenerating,
       handleRegenerate,
       handleContinue,
-      showPopover,
-      setShowPopover,
       abortScroll,
       setAbortScroll,
       preset,
@@ -445,8 +444,6 @@ export default function useChatHelpers(index = 0, paramId?: string): ChatContrac
       handleStopGenerating,
       handleRegenerate,
       handleContinue,
-      showPopover,
-      setShowPopover,
       abortScroll,
       setAbortScroll,
       preset,

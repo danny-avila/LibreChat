@@ -86,8 +86,6 @@ function Harness({
       ask: onAsk,
       regenerate: () => undefined,
       setSiblingIdx: () => undefined,
-      showPopover: false,
-      setShowPopover: () => undefined,
       abortScroll: false,
       setAbortScroll: () => undefined,
       preset: null,

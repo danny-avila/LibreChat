@@ -10,8 +10,8 @@ import {
   useSetRecoilState,
   useRecoilCallback,
 } from 'recoil';
-import type { EModelEndpoint, TConversation, TPreset } from 'librechat-data-provider';
-import type { TOptionSettings, ExtendedFile } from '~/common';
+import type { EModelEndpoint, TConversation } from 'librechat-data-provider';
+import type { ExtendedFile } from '~/common';
 import {
   clearModelForNonEphemeralAgent,
   createChatSearchParams,
@@ -157,21 +157,6 @@ const conversationAssistantIdByIndex = selectorFamily<string | null, string | nu
     (index: string | number) =>
     ({ get }) =>
       get(conversationByIndex(index))?.assistant_id ?? null,
-});
-
-const presetByIndex = atomFamily<TPreset | null, string | number>({
-  key: 'presetByIndex',
-  default: null,
-});
-
-const optionSettingsFamily = atomFamily<TOptionSettings, string | number>({
-  key: 'optionSettingsByIndex',
-  default: {},
-});
-
-const showPopoverFamily = atomFamily({
-  key: 'showPopoverByIndex',
-  default: false,
 });
 
 const activePromptByIndex = atomFamily<string | undefined, string | number | null>({
@@ -320,9 +305,6 @@ export default {
   conversationKeysAtom,
   conversationByIndex,
   filesByIndex,
-  presetByIndex,
-  optionSettingsFamily,
-  showPopoverFamily,
   conversationIdByIndex,
   conversationEndpointByIndex,
   effectiveEndpointByIndex,
