@@ -3,8 +3,8 @@ import { logger, createModels } from '..';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import type { PRAutomationStopCode } from 'librechat-data-provider';
 import type { PRAutomationEventStopCode } from '~/types/prAutomation';
+import { runAsSystem, tenantStorage } from '~/config/tenantContext';
 import { createPRAutomationMethods } from './prAutomation';
-import { tenantStorage } from '~/config/tenantContext';
 
 logger.silent = true;
 
@@ -72,6 +72,7 @@ const addBot = async (id: number, login?: string, limit = maxBots, repository = 
     repository,
     epoch: (await methods.getPRAutomation(key))?.epoch ?? 'none',
   });
+const keyFilterOf = ({ userId: user, conversationId }: typeof key) => ({ user, conversationId });
 const seedConversation = (fields: Record<string, unknown> = {}) =>
   mongoose.models.Conversation.create({
     conversationId: key.conversationId,
@@ -827,6 +828,17 @@ describe('pull request numbers', () => {
 });
 
 describe('index guarantees', () => {
+  test('keeps one record per tenant for the same user and conversation id', async () => {
+    const inTenant = <T>(tenantId: string, run: () => Promise<T>) =>
+      tenantStorage.run({ tenantId }, run);
+    await inTenant('tenant-a', () => PRAutomation.create(keyFilterOf(key)));
+    await inTenant('tenant-b', () => PRAutomation.create(keyFilterOf(key)));
+    await expect(inTenant('tenant-b', () => PRAutomation.create(keyFilterOf(key)))).rejects.toThrow(
+      /E11000/,
+    );
+    expect(await runAsSystem(() => PRAutomation.countDocuments({}))).toBe(2);
+  });
+
   test('builds the unique index before the first write when automatic indexing is off', async () => {
     await PRAutomation.collection.dropIndexes();
     const fresh = createPRAutomationMethods(mongoose);
@@ -1188,6 +1200,21 @@ describe('reaping records the retention index left behind', () => {
     await cancelAccountDeletion();
     expect(await methods.reapPRAutomations()).toEqual({ scanned: 2, removed: 1 });
     expect(await methods.getPRAutomation(liveKey)).not.toBeNull();
+  });
+
+  test('judges each record by its own tenant when the same chat exists in two', async () => {
+    const inTenant = <T>(tenantId: string, run: () => Promise<T>) =>
+      tenantStorage.run({ tenantId }, run);
+    await mongoose.models.Conversation.deleteMany({});
+    await inTenant('tenant-b', () => seedConversation());
+    await inTenant('tenant-a', () => PRAutomation.create({ ...keyFilterOf(key), ...pullOne }));
+    await inTenant('tenant-b', () => PRAutomation.create({ ...keyFilterOf(key), ...pullOne }));
+    expect(await runAsSystem(() => methods.reapPRAutomations())).toEqual({
+      scanned: 2,
+      removed: 1,
+    });
+    const left = await runAsSystem(() => PRAutomation.find({}).lean<{ tenantId?: string }[]>());
+    expect(left.map((record) => record.tenantId)).toEqual(['tenant-b']);
   });
 
   test('pages through every record', async () => {

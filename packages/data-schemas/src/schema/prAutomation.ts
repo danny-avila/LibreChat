@@ -24,7 +24,7 @@ const trustedBotSchema = new Schema(
 
 const prAutomationSchema: Schema<IPRAutomationDocument> = new Schema(
   {
-    /** Served by the unique `{ user, conversationId }` index below; a second index only adds
+    /** Served by the unique `{ user, tenantId, conversationId }` index below; a second index only adds
      *  write cost. */
     user: {
       type: String,
@@ -78,10 +78,11 @@ const prAutomationSchema: Schema<IPRAutomationDocument> = new Schema(
 );
 
 /**
- * One automation per user and conversation. The unique index makes enabling
- * idempotent and race-free. It excludes `tenantId` for the same reason as
- * `ToolFavorite`: user ObjectIds are globally unique.
+ * One automation per conversation, keyed like the conversation it belongs to:
+ * `{ conversationId, user, tenantId }` is unique there, so the same user and
+ * conversation id can exist in two tenants. The unique index makes enabling
+ * idempotent and race-free within a tenant.
  */
-prAutomationSchema.index({ user: 1, conversationId: 1 }, { unique: true });
+prAutomationSchema.index({ user: 1, tenantId: 1, conversationId: 1 }, { unique: true });
 
 export default prAutomationSchema;

@@ -29,6 +29,8 @@ type Liveness = 'live' | 'conversation_gone' | 'owner_gone' | 'owner_inactive';
 type Gone = Extract<Liveness, 'conversation_gone' | 'owner_gone'>;
 /** Field values an enable attempt left on the record; `undefined` marks a field it removed. */
 type Written = Record<string, unknown>;
+/** The tenant a record belongs to; `null` or absent is a record stored without one. */
+type LivenessScope = { tenantId?: string | null };
 const CLAIMABLE_STATES: PRAutomationState[] = ['idle', 'waiting'];
 const SETTLEABLE_STATES: PRAutomationState[] = ['fixing', 'needs_user'];
 const SETTLED_STATES: PRAutomationState[] = ['waiting', 'needs_user'];
@@ -53,11 +55,17 @@ const LINK_FIELDS = [
  * `$lookup` per generation, so a liveness check is one round trip at any depth. `$graphLookup`
  * would be shorter but Amazon DocumentDB rejects it. Each lookup is served by the unique
  * `{ conversationId, user, tenantId }` index. Nested lookups bypass the tenant plugin, so
- * ownership, tenant and retention are all judged on the result.
+ * ownership, tenant and retention are all judged on the result. The first match is scoped by
+ * the tenant plugin inside a tenant context; a caller without one, such as the reaper, names the
+ * record's tenant, since the same user and conversation id may exist in more than one tenant.
  */
-function lineagePipeline({ userId, conversationId }: t.PRAutomationKey): PipelineStage[] {
+function lineagePipeline(
+  { userId, conversationId }: t.PRAutomationKey,
+  scope?: LivenessScope,
+): PipelineStage[] {
+  const tenant = scope == null ? {} : { tenantId: scope.tenantId ?? null };
   const stages: PipelineStage[] = [
-    { $match: { user: userId, conversationId } },
+    { $match: { user: userId, conversationId, ...tenant } },
     { $limit: 1 },
     {
       $project: {
@@ -133,7 +141,7 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
   let indexesPromise: Promise<void> | null = null;
 
   /**
-   * The unique `{ user, conversationId }` index is what keeps concurrent first-time enables
+   * The unique `{ user, tenantId, conversationId }` index is what keeps concurrent first-time enables
    * from inserting two records that are then claimed independently and exceed the round cap.
    * With `MONGO_AUTO_INDEX=false` the schema declaration alone never builds it, so it is
    * ensured before the first write.
@@ -165,7 +173,7 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
    * Deletions do not fence the record; enable and claim ask this on both sides of their write
    * instead.
    */
-  async function checkLiveness(key: t.PRAutomationKey): Promise<Liveness> {
+  async function checkLiveness(key: t.PRAutomationKey, scope?: LivenessScope): Promise<Liveness> {
     if (!isValidObjectIdString(key.userId)) {
       return 'owner_inactive';
     }
@@ -181,7 +189,7 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
       mongoose.models.User.findById(key.userId)
         .select('agentTriggerDeletionStartedAt')
         .lean<{ agentTriggerDeletionStartedAt?: Date }>(),
-      Conversation.aggregate<Record<string, Link | undefined>>(lineagePipeline(key)),
+      Conversation.aggregate<Record<string, Link | undefined>>(lineagePipeline(key, scope)),
     ]);
     if (owner == null) {
       return 'owner_gone';
@@ -715,12 +723,14 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
     const page = await PRAutomation.find(after == null ? {} : { _id: { $gt: after } })
       .sort({ _id: 1 })
       .limit(limit)
-      .select({ _id: 1, user: 1, conversationId: 1 })
-      .lean<Array<{ _id: Types.ObjectId; user: string; conversationId: string }>>();
+      .select({ _id: 1, user: 1, tenantId: 1, conversationId: 1 })
+      .lean<
+        Array<{ _id: Types.ObjectId; user: string; tenantId?: string; conversationId: string }>
+      >();
     let removed = 0;
     for (const record of page) {
       const key = { userId: String(record.user), conversationId: record.conversationId };
-      if (!isGone(await checkLiveness(key))) {
+      if (!isGone(await checkLiveness(key, { tenantId: record.tenantId }))) {
         continue;
       }
       const result = await PRAutomation.deleteOne({ _id: record._id, ...keyFilter(key) });

@@ -1,10 +1,21 @@
-import { reapOrphanedPRAutomations, startPRAutomationReaper } from './automation';
+import {
+  startPRAutomationReaper,
+  reapOrphanedPRAutomations,
+  createClusteredPRAutomationReaper,
+} from './automation';
 import { isLeader } from '~/cluster';
 
 jest.mock('~/cluster', () => ({ isLeader: jest.fn() }));
 
+const emptyPage = () => jest.fn().mockResolvedValue({ scanned: 0, removed: 0 });
+
 describe('PR automation reaper', () => {
+  let stop: (() => void) | undefined;
+
   afterEach(() => {
+    stop?.();
+    stop = undefined;
+    jest.mocked(isLeader).mockReset();
     jest.clearAllTimers();
     jest.useRealTimers();
   });
@@ -23,14 +34,43 @@ describe('PR automation reaper', () => {
     jest.useFakeTimers();
     const leader = jest.mocked(isLeader);
     leader.mockResolvedValueOnce(false).mockResolvedValueOnce(true);
-    const reapPRAutomations = jest.fn().mockResolvedValue({ scanned: 0, removed: 0 });
+    const reapPRAutomations = emptyPage();
 
-    startPRAutomationReaper({ reapPRAutomations });
+    stop = startPRAutomationReaper({ reapPRAutomations });
     await jest.advanceTimersByTimeAsync(0);
     expect(reapPRAutomations).not.toHaveBeenCalled();
 
     await jest.advanceTimersByTimeAsync(60 * 60_000);
     expect(leader).toHaveBeenCalledTimes(2);
+    expect(reapPRAutomations).toHaveBeenCalledTimes(1);
+  });
+
+  test('without Redis, waits in a worker until the primary assigns it', async () => {
+    jest.useFakeTimers();
+    jest.mocked(isLeader).mockResolvedValue(true);
+    const reapPRAutomations = emptyPage();
+    const reaper = createClusteredPRAutomationReaper(false, { reapPRAutomations });
+
+    stop = reaper.stop;
+    reaper.start();
+    await jest.advanceTimersByTimeAsync(0);
+    expect(reapPRAutomations).not.toHaveBeenCalled();
+
+    reaper.assign();
+    stop = reaper.stop;
+    await jest.advanceTimersByTimeAsync(0);
+    expect(reapPRAutomations).toHaveBeenCalledTimes(1);
+  });
+
+  test('with Redis, every worker starts and leader election picks one', async () => {
+    jest.useFakeTimers();
+    jest.mocked(isLeader).mockResolvedValue(true);
+    const reapPRAutomations = emptyPage();
+    const reaper = createClusteredPRAutomationReaper(true, { reapPRAutomations });
+
+    reaper.start();
+    stop = reaper.stop;
+    await jest.advanceTimersByTimeAsync(0);
     expect(reapPRAutomations).toHaveBeenCalledTimes(1);
   });
 });
