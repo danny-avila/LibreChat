@@ -56,6 +56,10 @@ jest.mock('@librechat/api', () => ({
   }),
 }));
 
+jest.mock('~/server/services/Config', () => ({
+  checkCapability: jest.fn().mockResolvedValue(false),
+}));
+
 jest.mock('~/cache', () => ({
   getLogStores: jest.fn(() => ({
     get: jest.fn(),
@@ -74,6 +78,7 @@ jest.mock('~/config', () => ({
 const { processDeleteRequest } = require('~/server/services/Files/process');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { createCodeExecutionRouteKey } = require('@librechat/api');
+const { checkCapability } = require('~/server/services/Config');
 
 // Import the router after mocks
 const router = require('./files');
@@ -1658,11 +1663,49 @@ describe('File Routes - Delete with Agent Access', () => {
       beforeEach(() => {
         process.env.LIBRECHAT_CODE_DEFAULT_PROFILE = 'stateful';
         process.env.LIBRECHAT_CODE_BASEURL_STATEFUL = 'https://code-stateful.example.com/v1';
+        checkCapability.mockResolvedValue(true);
       });
 
       afterEach(() => {
         delete process.env.LIBRECHAT_CODE_DEFAULT_PROFILE;
         delete process.env.LIBRECHAT_CODE_BASEURL_STATEFUL;
+        checkCapability.mockResolvedValue(false);
+      });
+
+      it('keeps a download with no profile on the default Code API when the capability is off', async () => {
+        // catches: setting applied without checking the stateful_code_sessions capability
+        checkCapability.mockResolvedValue(false);
+        const getDownloadStream = jest.fn().mockResolvedValue({ data: Readable.from(['out']) });
+        getStrategyFunctions.mockReturnValue({ getDownloadStream });
+
+        const response = await request(app).get(`/files/code/download/${sessionId}/${codeFileId}`);
+
+        expect(response.status).toBe(200);
+        expect(getDownloadStream).toHaveBeenCalledWith(
+          `${sessionId}/${codeFileId}`,
+          { kind: 'user', id: otherUserId.toString() },
+          expect.any(Object),
+          { baseUrl: 'https://code-default.example.com/v1', executionProfile: 'default' },
+        );
+      });
+
+      it('keeps an explicit stateful profile on the stateful Code API when the capability is off', async () => {
+        // catches: capability gate overriding an explicit profile
+        checkCapability.mockResolvedValue(false);
+        const getDownloadStream = jest.fn().mockResolvedValue({ data: Readable.from(['out']) });
+        getStrategyFunctions.mockReturnValue({ getDownloadStream });
+
+        const response = await request(app).get(
+          `/files/code/download/${sessionId}/${codeFileId}?execution_profile=stateful`,
+        );
+
+        expect(response.status).toBe(200);
+        expect(getDownloadStream).toHaveBeenCalledWith(
+          `${sessionId}/${codeFileId}`,
+          { kind: 'user', id: otherUserId.toString() },
+          expect.any(Object),
+          { baseUrl: 'https://code-stateful.example.com/v1', executionProfile: 'stateful' },
+        );
       });
 
       it('routes a download with no profile to the stateful Code API', async () => {
