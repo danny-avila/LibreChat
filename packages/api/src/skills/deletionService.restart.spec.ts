@@ -23,6 +23,56 @@ describe('Skill cleanup across a worker restart', () => {
     await mongo.stop();
   });
 
+  it('finishes a superseded committed upload without reporting successful cleanup as a lost claim', async () => {
+    const db = createMethods(mongoose);
+    const author = new Types.ObjectId();
+    const { skill } = await db.createSkill({
+      name: 'completed-upload',
+      description: 'Exercise cleanup completion with real persistence.',
+      body: 'Instructions.',
+      author,
+      authorName: 'Test',
+    });
+    const fileId = 'completed-upload-file';
+    await mongoose.models.SkillUploadIntent.create({
+      skillId: skill._id,
+      fileId,
+      source: 's3',
+      storageKey: `uploads/${author}/old.txt`,
+      author,
+      writerId: 'finished-writer',
+      state: 'committed',
+      cleanupRequestedAt: new Date(),
+    });
+    const deleteFile = jest.fn(async () => undefined);
+    const logger = { error: jest.fn(), warn: jest.fn() };
+    const service = createSkillDeletionService({
+      persistence: { ...db, ...createSkillDeletionPersistenceAdapter(db) },
+      loadConfig: async () => undefined,
+      getStrategyFunctions: () => ({ deleteFile }),
+      runAsSystem: async (callback) => callback(),
+      logger,
+    });
+    const sweep = service.startSkillDeletionSweep();
+    try {
+      for (let attempt = 0; attempt < 100; attempt++) {
+        const intent = await db.getSkillUploadIntent(fileId);
+        if (intent?.lastCleanupAttemptAt && !intent.claimOwner) break;
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      const intent = await db.getSkillUploadIntent(fileId);
+      expect(intent?.cleanedAt).toBeInstanceOf(Date);
+      expect(intent?.lastCleanupAttemptAt).toBeInstanceOf(Date);
+      expect(intent?.claimOwner).toBeUndefined();
+      expect(intent?.nextCheckAt).toBeInstanceOf(Date);
+      expect(await db.listAbandonedSkillUploadIntents()).toEqual([]);
+      expect(deleteFile).toHaveBeenCalledTimes(1);
+      expect(logger.error).not.toHaveBeenCalled();
+    } finally {
+      sweep.stop();
+    }
+  });
+
   it('retains a failed S3 deletion and retries it with a new worker instance', async () => {
     const db = createMethods(mongoose);
     const author = new Types.ObjectId();

@@ -8,7 +8,7 @@ it('projects deletion persistence records into plain string-ID API records', asy
     beginSkillDeletion: async () => ({ skillId, author, startedAt: new Date() }),
     getSkillDeletion: async () => ({ skillId, author, startedAt: new Date() }),
     listSkillDeletionTombstones: async () => [{ skillId, author, startedAt: new Date() }],
-    listSkillUploadIntents: async () => [
+    listSkillUploadIntents: jest.fn(async () => [
       {
         skillId,
         author,
@@ -18,7 +18,7 @@ it('projects deletion persistence records into plain string-ID API records', asy
         writerId: 'writer',
         state: 'committed' as const,
       },
-    ],
+    ]),
     listAbandonedSkillUploadIntents: async () => [
       {
         skillId,
@@ -51,6 +51,9 @@ it('projects deletion persistence records into plain string-ID API records', asy
     skillId: skillId.toString(),
     author: author.toString(),
     fileId: 'file-1',
+  });
+  expect(source.listSkillUploadIntents).toHaveBeenCalledWith(skillId.toString(), {
+    cleanupOnly: true,
   });
   expect((await adapter.listAbandonedSkillUploadIntents(1))[0].author).toBe(author.toString());
   expect((await adapter.listSkillFiles(skillId.toString()))[0]).toEqual({

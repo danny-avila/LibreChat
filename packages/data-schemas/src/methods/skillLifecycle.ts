@@ -63,7 +63,10 @@ export interface SkillLifecycleMethods {
     from: ISkillUploadIntent['state'],
     to: ISkillUploadIntent['state'],
   ) => Promise<boolean>;
-  listSkillUploadIntents: (skillId: string | Types.ObjectId) => Promise<ISkillUploadIntent[]>;
+  listSkillUploadIntents: (
+    skillId: string | Types.ObjectId,
+    options?: { cleanupOnly?: boolean },
+  ) => Promise<ISkillUploadIntent[]>;
   getSkillUploadIntent: (fileId: string) => Promise<ISkillUploadIntent | null>;
   recoverStoppedSkillUploadIntent: (
     fileId: string,
@@ -148,7 +151,7 @@ export function createSkillLifecycleMethods(
       // The marker also covers crashes after the journal insert but before
       // every legacy file has a durable blob reference.
       let writes: AnyBulkWriteOperation[] = [];
-      for await (const file of skillFileModel().find({ skillId }).cursor()) {
+      for await (const file of skillFileModel().find({ skillId }).select('-content').cursor()) {
         writes.push({
           updateOne: {
             filter: {
@@ -368,8 +371,21 @@ export function createSkillLifecycleMethods(
 
   async function listSkillUploadIntents(
     skillId: string | Types.ObjectId,
+    options: { cleanupOnly?: boolean } = {},
   ): Promise<ISkillUploadIntent[]> {
-    return (await intentModel().find({ skillId }).lean()) as ISkillUploadIntent[];
+    return (await intentModel()
+      .find({
+        skillId,
+        ...(options.cleanupOnly
+          ? {
+              $or: [
+                { state: { $ne: 'committed' } },
+                { state: 'committed', cleanedAt: { $exists: false } },
+              ],
+            }
+          : {}),
+      })
+      .lean()) as ISkillUploadIntent[];
   }
 
   async function getSkillUploadIntent(fileId: string): Promise<ISkillUploadIntent | null> {
@@ -493,6 +509,7 @@ export function createSkillLifecycleMethods(
     owner: string,
     leaseMs: number,
   ): Promise<boolean> {
+    // Finishing cleanup changes eligibility for a new claim, not ownership of this lease.
     const result = await intentModel().updateOne(
       {
         fileId,
@@ -504,7 +521,6 @@ export function createSkillLifecycleMethods(
           {
             state: 'committed',
             cleanupRequestedAt: { $exists: true },
-            cleanedAt: { $exists: false },
           },
         ],
       },
@@ -565,7 +581,6 @@ export function createSkillLifecycleMethods(
           {
             state: 'committed',
             cleanupRequestedAt: { $exists: true },
-            cleanedAt: { $exists: false },
           },
         ],
       },

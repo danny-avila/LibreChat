@@ -1934,7 +1934,9 @@ export function createSkillMethods(
         skillId: row.skillId,
         relativePath: row.relativePath,
         ...(row.expectedFileId != null ? { file_id: row.expectedFileId } : {}),
-      }).lean();
+      })
+        .select('-content')
+        .lean();
       if (
         previous &&
         previous.file_id === row.file_id &&

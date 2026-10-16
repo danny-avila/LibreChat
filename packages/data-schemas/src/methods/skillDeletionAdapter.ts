@@ -37,6 +37,7 @@ type Source = {
   ) => Promise<Array<Pick<ISkillDeletion, 'skillId' | 'completedAt'>>>;
   listSkillUploadIntents: (
     id: string,
+    options?: { cleanupOnly?: boolean },
   ) => Promise<
     Array<
       Pick<
@@ -141,7 +142,7 @@ export function createSkillDeletionPersistenceAdapter(source: Source): {
     listSkillDeletionTombstones: async (limit: number): Promise<SkillDeletionRecord[]> =>
       (await source.listSkillDeletionTombstones(limit)).map(journal),
     listSkillUploadIntents: async (id: string): Promise<SkillUploadIntentRecord[]> =>
-      (await source.listSkillUploadIntents(id)).map(intent),
+      (await source.listSkillUploadIntents(id, { cleanupOnly: true })).map(intent),
     listAbandonedSkillUploadIntents: async (limit: number): Promise<SkillUploadIntentRecord[]> =>
       (await source.listAbandonedSkillUploadIntents(limit)).map(intent),
     listSkillFiles: async (id: string): Promise<SkillDeletionFileRecord[]> =>
