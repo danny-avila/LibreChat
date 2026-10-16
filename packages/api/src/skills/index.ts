@@ -11,3 +11,5 @@ export * from './sync';
 export * from './management';
 export * from './upload';
 export * from './save';
+export * from './intent';
+export * from './reservation';
