@@ -579,6 +579,10 @@ export class Chat {
         active.controller.signal,
         (opened) => opened?.close(),
       );
+      if (!stream && active.stopAnswered) {
+        /** A stop still in flight decides how an empty reconnect ended. */
+        await active.stopAnswered;
+      }
       if (!stream && active.stopped) {
         this.settle(getStopOutcome(active), active);
         return;
@@ -1093,6 +1097,10 @@ export class Chat {
           signal,
           (opened) => opened?.close(),
         );
+      }
+      if (!stream && active.stopAnswered) {
+        /** A stop still in flight decides how an empty reconnect ended. */
+        await active.stopAnswered;
       }
       if (!stream && active.stopped) {
         this.settle(getStopOutcome(active), active);

@@ -811,6 +811,60 @@ describe('Chat', () => {
     expect(chat.status).toBe('ready');
   });
 
+  it('settles a replacement that finds nothing by the answer of a stop still in flight', async () => {
+    let open: ((stream: ChatStream | null) => void) | undefined;
+    let answer: ((result: ChatAbortResult) => void) | undefined;
+    const { chat, onFinish } = setup(
+      {},
+      {
+        sendMessages: jest.fn(async () => ({
+          status: 'replaced' as const,
+          generationProtocolVersion: 2,
+          conversationId: 'convo-1',
+          streamId: 'stream-2',
+          generationCreatedAt: 200,
+        })),
+        reconnectToStream: jest.fn(
+          () =>
+            new Promise<ChatStream | null>((resolve) => {
+              open = resolve;
+            }),
+        ),
+        abort: jest.fn(
+          () =>
+            new Promise<ChatAbortResult>((resolve) => {
+              answer = resolve;
+            }),
+        ),
+      },
+    );
+
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    const stopped = chat.stop();
+    await flush();
+    open?.(null);
+    await flush();
+    expect(onFinish).not.toHaveBeenCalled();
+
+    answer?.({
+      success: true,
+      generationProtocolVersion: 2,
+      aborted: 'convo-1',
+      persistenceFailed: true,
+    });
+    await stopped;
+    await sent;
+    expect(onFinish).toHaveBeenCalledTimes(1);
+    expect(onFinish).toHaveBeenCalledWith(
+      expect.objectContaining({
+        isAbort: true,
+        isSettled: true,
+        reconcileReason: 'abort_persistence_failed',
+      }),
+    );
+  });
+
   it('does not carry a finished generation timestamp into a fresh reattachment', async () => {
     const resumed = createStream({ streamId: 'convo-1' });
     const { chat, stream, transport } = setup(
@@ -2553,6 +2607,55 @@ describe('Chat', () => {
       expect(onFinish).not.toHaveBeenCalled();
 
       open?.(null);
+      await stopped;
+      await resumed;
+      expect(chat.status).toBe('ready');
+      expect(onFinish).toHaveBeenCalledTimes(1);
+      expect(onFinish).toHaveBeenCalledWith(
+        expect.objectContaining({
+          isAbort: true,
+          isSettled: true,
+          conversationId: 'convo-1',
+          reconcileReason: 'abort_persistence_failed',
+        }),
+      );
+    });
+
+    it('settles a reconnect that finds nothing by the answer of a stop still in flight', async () => {
+      let open: ((stream: ChatStream | null) => void) | undefined;
+      let answer: ((result: ChatAbortResult) => void) | undefined;
+      const { chat, onFinish } = setup(
+        { resumeSelection: () => ({ endpoint: 'agents' }) },
+        {
+          reconnectToStream: jest.fn(
+            () =>
+              new Promise<ChatStream | null>((resolve) => {
+                open = resolve;
+              }),
+          ),
+          abort: jest.fn(
+            () =>
+              new Promise<ChatAbortResult>((resolve) => {
+                answer = resolve;
+              }),
+          ),
+        },
+      );
+      const resumed = chat.resumeStream({ streamId: 'convo-1', generationCreatedAt: 300 });
+      await flush();
+
+      const stopped = chat.stop();
+      await flush();
+      open?.(null);
+      await flush();
+      expect(onFinish).not.toHaveBeenCalled();
+
+      answer?.({
+        success: true,
+        generationProtocolVersion: 2,
+        aborted: 'convo-1',
+        persistenceFailed: true,
+      });
       await stopped;
       await resumed;
       expect(chat.status).toBe('ready');
