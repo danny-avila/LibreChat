@@ -633,6 +633,10 @@ test.describe('the recorded design-rule backlog', () => {
       join(emptyRoot, 'scripts/diagnostics.mts'),
     );
     copyFileSync(
+      resolve(repoRoot, 'scripts/diagnostics.test.mts'),
+      join(emptyRoot, 'scripts/diagnostics.test.mts'),
+    );
+    copyFileSync(
       resolve(repoRoot, 'scripts/typecheck.mts'),
       join(emptyRoot, 'scripts/typecheck.mts'),
     );
@@ -1113,6 +1117,8 @@ function syntheticRoot(): string {
   for (const file of [
     'scripts/static-checks.mts',
     'scripts/diagnostics.mts',
+    /** The suppressions check runs the comparison's spec before it reads the baseline. */
+    'scripts/diagnostics.test.mts',
     'scripts/i18n.mts',
     'scripts/typecheck.mts',
     /** The local design rules the config registers and the runner validates against. */
