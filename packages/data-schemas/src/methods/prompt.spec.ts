@@ -1,5 +1,6 @@
 import mongoose from 'mongoose';
 import { ObjectId } from 'mongodb';
+import { logger, createModels } from '..';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import {
   SystemRoles,
@@ -10,7 +11,6 @@ import {
 } from 'librechat-data-provider';
 import type { IPromptGroup, AccessRole as TAccessRole, AclEntry as TAclEntry } from '..';
 import { createAclEntryMethods } from './aclEntry';
-import { logger, createModels } from '..';
 import { createMethods } from './index';
 
 // Disable console for tests
@@ -621,5 +621,211 @@ describe('Prompt ACL Permissions', () => {
       expect(prompt).toBeTruthy();
       expect(String(prompt!._id)).toBe(String(legacyPrompt._id));
     });
+  });
+});
+
+describe('Prompt method failure contracts', () => {
+  const dbError = new Error('database unavailable');
+
+  afterEach(() => {
+    jest.restoreAllMocks();
+  });
+
+  async function createGroupWithPrompt(name: string, category = '') {
+    const { prompt, group } = await methods.createPromptGroup({
+      prompt: { prompt: `${name} text`, type: 'text' },
+      group: { name, category },
+      author: String(testUsers.owner._id),
+      authorName: testUsers.owner.name ?? '',
+    });
+    return {
+      groupId: String((group as { _id: unknown })._id),
+      promptId: String((prompt as { _id: unknown })._id),
+    };
+  }
+
+  it('returns null for an absent group or revision', async () => {
+    await expect(methods.getPromptGroup({ _id: new ObjectId().toString() })).resolves.toBeNull();
+    await expect(methods.getPrompt({ _id: new ObjectId() })).resolves.toBeNull();
+  });
+
+  it('throws database failures from reads instead of returning data', async () => {
+    jest.spyOn(PromptGroup, 'aggregate').mockImplementationOnce(() => {
+      throw dbError;
+    });
+    await expect(methods.getPromptGroup({ _id: new ObjectId().toString() })).rejects.toBe(dbError);
+
+    jest.spyOn(Prompt, 'findOne').mockImplementationOnce(() => {
+      throw dbError;
+    });
+    await expect(methods.getPrompt({ _id: new ObjectId() })).rejects.toBe(dbError);
+
+    jest.spyOn(Prompt, 'find').mockImplementationOnce(() => {
+      throw dbError;
+    });
+    await expect(methods.getPrompts({ groupId: new ObjectId() })).rejects.toBe(dbError);
+  });
+
+  it('saves a revision as plain data and throws save failures', async () => {
+    const { groupId } = await createGroupWithPrompt('Save contract');
+    const { prompt } = await methods.savePrompt({
+      prompt: { prompt: 'second', type: 'chat', groupId },
+      author: String(testUsers.owner._id),
+    });
+    expect(prompt).not.toBeInstanceOf(mongoose.Document);
+    expect(String(prompt.groupId)).toBe(groupId);
+
+    jest.spyOn(Prompt, 'create').mockImplementationOnce(() => {
+      throw dbError;
+    });
+    await expect(
+      methods.savePrompt({
+        prompt: { prompt: 'third', type: 'text', groupId },
+        author: String(testUsers.owner._id),
+      }),
+    ).rejects.toBe(dbError);
+  });
+
+  it('keeps the index repair retry when saving a revision', async () => {
+    const { groupId } = await createGroupWithPrompt('Index repair');
+    const dropIndex = jest.fn().mockResolvedValue(undefined);
+    jest
+      .spyOn(Prompt.db, 'collection')
+      .mockReturnValueOnce({ dropIndex } as unknown as ReturnType<typeof Prompt.db.collection>);
+    const create = jest.spyOn(Prompt, 'create');
+    create.mockImplementationOnce(() => {
+      throw new Error('E11000 duplicate key error index: groupId_1_version_1');
+    });
+
+    const { prompt } = await methods.savePrompt({
+      prompt: { prompt: 'retried', type: 'text', groupId },
+      author: String(testUsers.owner._id),
+    });
+
+    expect(dropIndex).toHaveBeenCalledWith('groupId_1_version_1');
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(prompt.prompt).toBe('retried');
+  });
+
+  it('returns the updated group as plain data and throws update failures', async () => {
+    const { groupId } = await createGroupWithPrompt('Update contract');
+    const updated = await methods.updatePromptGroup({ _id: groupId }, { name: 'Renamed' });
+    expect(updated).not.toBeInstanceOf(mongoose.Document);
+    expect(updated.name).toBe('Renamed');
+
+    await expect(
+      methods.updatePromptGroup({ _id: new ObjectId().toString() }, { name: 'Missing' }),
+    ).rejects.toThrow('Prompt group not found');
+
+    jest.spyOn(PromptGroup, 'findOneAndUpdate').mockImplementationOnce(() => {
+      throw dbError;
+    });
+    await expect(methods.updatePromptGroup({ _id: groupId }, { name: 'x' })).rejects.toBe(dbError);
+  });
+
+  it('distinguishes a missing promotion revision from a database failure', async () => {
+    const { groupId, promptId } = await createGroupWithPrompt('Promotion contract');
+    const { prompt } = await methods.savePrompt({
+      prompt: { prompt: 'next', type: 'text', groupId },
+      author: String(testUsers.owner._id),
+    });
+
+    await expect(methods.makePromptProduction(String(prompt._id))).resolves.toEqual({
+      message: 'Prompt production made successfully',
+    });
+    const group = (await methods.getPromptGroup({ _id: groupId })) as { productionId: unknown };
+    expect(String(group.productionId)).toBe(String(prompt._id));
+
+    await expect(methods.makePromptProduction(new ObjectId().toString())).rejects.toThrow(
+      'Prompt not found',
+    );
+
+    jest.spyOn(Prompt, 'findById').mockImplementationOnce(() => {
+      throw dbError;
+    });
+    await expect(methods.makePromptProduction(promptId)).rejects.toBe(dbError);
+  });
+
+  it('filters the access listing by plain name and category inputs', async () => {
+    const first = await createGroupWithPrompt('Listing Alpha (v1)', 'writing');
+    const second = await createGroupWithPrompt('Listing Beta', '');
+    const accessibleIds = [first.groupId, second.groupId];
+
+    const byName = await methods.getListPromptGroupsByAccess({
+      accessibleIds,
+      name: 'alpha (v1',
+    });
+    expect(byName.data.map((group) => String(group._id))).toEqual([first.groupId]);
+
+    const uncategorized = await methods.getListPromptGroupsByAccess({
+      accessibleIds,
+      category: '',
+    });
+    expect(uncategorized.data.map((group) => String(group._id))).toEqual([second.groupId]);
+
+    const all = await methods.getListPromptGroupsByAccess({ accessibleIds });
+    expect(all.data).toHaveLength(2);
+  });
+
+  it('keeps a sole-owned group discoverable when the prompt delete fails, so a retry erases it', async () => {
+    const { groupId, promptId } = await createGroupWithPrompt('erase retry');
+    await grantPermission({
+      principalType: PrincipalType.USER,
+      principalId: testUsers.owner._id,
+      resourceType: ResourceType.PROMPTGROUP,
+      resourceId: groupId,
+      accessRoleId: AccessRoleIds.PROMPTGROUP_OWNER,
+      grantedBy: testUsers.owner._id,
+    });
+
+    jest.spyOn(Prompt, 'deleteMany').mockRejectedValueOnce(dbError);
+    await expect(methods.deleteUserPrompts(String(testUsers.owner._id))).rejects.toBe(dbError);
+
+    await methods.deleteUserPrompts(String(testUsers.owner._id));
+    expect(await Prompt.findById(promptId)).toBeNull();
+    expect(await PromptGroup.findById(groupId)).toBeNull();
+    expect(await AclEntry.countDocuments({ resourceId: new ObjectId(groupId) })).toBe(0);
+  });
+});
+
+describe('Prompt group list projections include `command`', () => {
+  let commandGroupId: string;
+
+  beforeEach(async () => {
+    const group = (
+      await PromptGroup.create({
+        name: 'Command Projection Group',
+        command: 'mytest-cmd',
+        productionId: new ObjectId(),
+        author: testUsers.owner._id,
+        authorName: testUsers.owner.name,
+      })
+    ).toObject() as unknown as LeanPromptGroup;
+    commandGroupId = String(group._id);
+  });
+
+  afterEach(async () => {
+    await PromptGroup.deleteMany({});
+  });
+
+  it('getPromptGroups includes command in the list projection', async () => {
+    const result = await methods.getPromptGroups({
+      pageNumber: 1,
+      pageSize: 10,
+      name: 'Command Projection',
+    });
+    if (!('promptGroups' in result)) {
+      throw new Error(`Expected prompt groups, received: ${JSON.stringify(result)}`);
+    }
+    expect(result.promptGroups).toHaveLength(1);
+    expect(result.promptGroups[0].command).toBe('mytest-cmd');
+  });
+
+  it('getListPromptGroupsByAccess includes command in the list projection', async () => {
+    const result = await methods.getListPromptGroupsByAccess({
+      accessibleIds: [commandGroupId],
+    });
+    expect(result.data).toHaveLength(1);
+    expect(result.data[0].command).toBe('mytest-cmd');
   });
 });

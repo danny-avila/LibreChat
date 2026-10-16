@@ -33,12 +33,13 @@ jest.mock('react-router-dom', () => ({
   useSearchParams: () => [new URLSearchParams()],
 }));
 
+jest.mock('~/Providers/ChatSettingsContext', () => ({
+  useChatSettings: () => ({ saveDrafts: false }),
+}));
+
 jest.mock('recoil', () => ({
   useRecoilState: () => [mockFiles, mockSetFiles],
   useRecoilValue: (key: string) => {
-    if (key === 'saveDrafts') {
-      return false;
-    }
     if (key === 'saveBadgesState') {
       return true;
     }
@@ -97,7 +98,6 @@ jest.mock('../Assistants/useAssistantListMap', () => ({
   default: () => ({}),
 }));
 jest.mock('../Files/useFileHandling', () => ({ clearUploadRecovery: jest.fn() }));
-jest.mock('../useChatBadges', () => ({ useResetChatBadges: () => jest.fn() }));
 jest.mock('../Agents', () => ({ useApplyModelSpecEffects: () => jest.fn() }));
 jest.mock('../Audio', () => ({ usePauseGlobalAudio: () => ({ pauseGlobalAudio: jest.fn() }) }));
 jest.mock('~/Providers', () => ({ useAgentsMapContext: () => ({}) }));
@@ -107,7 +107,6 @@ jest.mock('~/store', () => ({
   default: {
     defaultPreset: 'defaultPreset',
     saveBadgesState: 'saveBadgesState',
-    saveDrafts: 'saveDrafts',
     filesByIndex: () => 'filesByIndex',
     submissionByIndex: () => 'submissionByIndex',
     useClearConvoState: () => jest.fn(),

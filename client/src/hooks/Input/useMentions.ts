@@ -46,7 +46,7 @@ const assistantMapFn =
     description: description ?? '',
     icon: EndpointIcon({
       conversation: { assistant_id: id, endpoint },
-      containerClassName: 'shadow-stroke overflow-hidden rounded-full',
+      containerClassName: 'avatar-stroke overflow-hidden rounded-full',
       endpointsConfig: endpointsConfig,
       context: 'menu-item',
       assistantMap,
@@ -120,7 +120,7 @@ export default function useMentions({
               endpoint: EModelEndpoint.agents,
               iconURL: avatar?.filepath,
             },
-            containerClassName: 'shadow-stroke overflow-hidden rounded-full',
+            containerClassName: 'avatar-stroke overflow-hidden rounded-full',
             endpointsConfig: endpointsConfig,
             context: 'menu-item',
             size: 20,
@@ -250,7 +250,7 @@ export default function useMentions({
         description: getPresetTitle(preset, true),
         icon: EndpointIcon({
           conversation: preset,
-          containerClassName: 'shadow-stroke overflow-hidden rounded-full',
+          containerClassName: 'avatar-stroke overflow-hidden rounded-full',
           endpointsConfig: endpointsConfig,
           context: 'menu-item',
           assistantMap,

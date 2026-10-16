@@ -68,7 +68,9 @@ function createHandlers(overrides = {}) {
       .mockResolvedValue({ _id: 'c1', tombstones: ['mcpServers.github'] }),
     unsetConfigField: jest.fn().mockResolvedValue({ _id: 'c1', overrides: {} }),
     deleteConfig: jest.fn().mockResolvedValue({ _id: 'c1' }),
-    toggleConfigActive: jest.fn().mockResolvedValue({ _id: 'c1', isActive: false }),
+    toggleConfigActiveTracked: jest
+      .fn()
+      .mockResolvedValue({ config: { _id: 'c1', isActive: false }, changed: true }),
     hasConfigCapability: jest.fn().mockResolvedValue(true),
     hasAnyConfigReadAccess: jest.fn().mockResolvedValue(true),
     hasCapability: jest.fn().mockResolvedValue(true),
@@ -110,7 +112,7 @@ describe('createAdminConfigHandlers', () => {
       }>;
       expect(configs[0].overrides.langfuse).toEqual({
         publicKey: 'pk-lf-1',
-        secretKeyPreview: 'sk-lf-...cret',
+        secretKeyPreview: '*************',
       });
     });
   });
@@ -664,14 +666,14 @@ describe('createAdminConfigHandlers', () => {
       const savedOverrides = deps.upsertConfig.mock.calls[0][3];
       const [saved, envRef] = savedOverrides.endpoints.custom as Array<Record<string, string>>;
       expect(saved.apiKey).toBe('v3:test:sk-or-secret-key');
-      expect(saved.apiKeyPreview).toBe('sk-or-...-key');
+      expect(saved.apiKeyPreview).toBe('...-key');
       expect(envRef.apiKey).toBe('${OPENROUTER_KEY}');
       expect(envRef.apiKeyPreview).toBeUndefined();
       const responseConfig = res.body!.config as {
         overrides: { endpoints: { custom: Array<Record<string, string>> } };
       };
       expect(responseConfig.overrides.endpoints.custom[0].apiKey).toBeUndefined();
-      expect(responseConfig.overrides.endpoints.custom[0].apiKeyPreview).toBe('sk-or-...-key');
+      expect(responseConfig.overrides.endpoints.custom[0].apiKeyPreview).toBe('...-key');
       expect(responseConfig.overrides.endpoints.custom[1].apiKey).toBe('${OPENROUTER_KEY}');
     });
 
@@ -1455,7 +1457,8 @@ describe('createAdminConfigHandlers', () => {
       expect(res.statusCode).toBe(200);
       const [, , , , priorityArg] = deps.patchConfigFields.mock.calls[0];
       expect(priorityArg).toBe(999);
-      expect(deps.findConfigByPrincipal).not.toHaveBeenCalled();
+      /** Read once to validate the write on top of the stored fields, not for its priority. */
+      expect(deps.findConfigByPrincipal).toHaveBeenCalledTimes(1);
     });
 
     it('preserves priority 0 when broad caller supplies it', async () => {
@@ -1859,7 +1862,7 @@ describe('createAdminConfigHandlers', () => {
       await handlers.toggleConfig(req, res);
 
       expect(res.statusCode).toBe(200);
-      expect(deps.toggleConfigActive).toHaveBeenCalled();
+      expect(deps.toggleConfigActiveTracked).toHaveBeenCalled();
     });
 
     it('rejects toggle when caller has neither broad manage nor ASSIGN_CONFIGS', async () => {
@@ -1876,7 +1879,7 @@ describe('createAdminConfigHandlers', () => {
       await handlers.toggleConfig(req, res);
 
       expect(res.statusCode).toBe(403);
-      expect(deps.toggleConfigActive).not.toHaveBeenCalled();
+      expect(deps.toggleConfigActiveTracked).not.toHaveBeenCalled();
     });
   });
 
@@ -1990,7 +1993,7 @@ describe('createAdminConfigHandlers', () => {
       await handlers.toggleConfig(req, res);
 
       expect(res.statusCode).toBe(403);
-      expect(deps.toggleConfigActive).not.toHaveBeenCalled();
+      expect(deps.toggleConfigActiveTracked).not.toHaveBeenCalled();
     });
 
     it('upsert against __base__ succeeds for broad-manage caller', async () => {
@@ -2133,8 +2136,10 @@ describe('createAdminConfigHandlers', () => {
       const { handlers, deps } = createHandlers({
         hasConfigCapability: jest.fn().mockResolvedValue(false),
         hasCapability: jest.fn().mockResolvedValue(true),
-        toggleConfigActive: jest.fn(async (_pt, _pi, _isActive, _session, opts) => {
-          return opts?.expectEmpty ? null : { _id: 'c1', isActive: false };
+        toggleConfigActiveTracked: jest.fn(async (_pt, _pi, _isActive, opts) => {
+          return opts?.expectEmpty
+            ? null
+            : { config: { _id: 'c1', isActive: false }, changed: true };
         }),
         findConfigByPrincipal: jest.fn().mockResolvedValue({
           _id: 'c1',
@@ -2150,11 +2155,10 @@ describe('createAdminConfigHandlers', () => {
       await handlers.toggleConfig(req, res);
 
       expect(res.statusCode).toBe(403);
-      expect(deps.toggleConfigActive).toHaveBeenCalledWith(
+      expect(deps.toggleConfigActiveTracked).toHaveBeenCalledWith(
         expect.anything(),
         expect.anything(),
         expect.anything(),
-        undefined,
         { expectEmpty: true },
       );
     });
@@ -2228,7 +2232,10 @@ describe('createAdminConfigHandlers', () => {
         tombstoneConfigField: jest.fn(),
         unsetConfigField: jest.fn(),
         deleteConfig: jest.fn().mockResolvedValue({ _id: 'c1' }),
-        toggleConfigActive: jest.fn().mockResolvedValue({ _id: 'c1', isActive: false }),
+        /** The document as it was before the write. */
+        toggleConfigActiveTracked: jest
+          .fn()
+          .mockResolvedValue({ config: { _id: 'c1', isActive: false }, changed: true }),
         hasConfigCapability: jest.fn().mockResolvedValue(false),
       };
       const handlers = createAdminConfigHandlers(deps);
@@ -2391,11 +2398,11 @@ describe('createAdminConfigHandlers', () => {
       };
       expect(responseConfig.langfuse).toEqual({
         publicKey: 'pk-lf-1',
-        secretKeyPreview: 'sk-lf-...cret',
+        secretKeyPreview: '*************',
       });
       expect(responseConfig.config.langfuse).toEqual({
         publicKey: 'pk-lf-1',
-        secretKeyPreview: 'sk-lf-...cret',
+        secretKeyPreview: '*************',
       });
     });
 
@@ -2432,6 +2439,346 @@ describe('createAdminConfigHandlers', () => {
         expect(res.statusCode).toBe(200);
         expect(getAppConfig).toHaveBeenCalledWith(expect.objectContaining({ baseOnly: false }));
       }
+    });
+  });
+
+  describe('override validation against configSchema', () => {
+    it('rejects a whole-document write with an invalid field and stores nothing', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          overrides: { registration: { oauthStateTtlMs: 5 }, interface: { modelSelect: false } },
+        },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({
+        error: 'Invalid config override',
+        code: 'CONFIG_OVERRIDE_INVALID',
+        issues: [{ path: 'registration.oauthStateTtlMs', code: 'too_small' }],
+      });
+      expect(deps.upsertConfig).not.toHaveBeenCalled();
+    });
+
+    it('validates a whole-document write on the base its retained tombstones leave', async () => {
+      const base = {
+        config: {
+          cloudfront: { domain: 'https://cdn.example.com', imageSigning: 'cookies' },
+        },
+      };
+      const body = { overrides: { cloudfront: { requireSignedAccess: true } } };
+      const params = { principalType: 'role', principalId: 'admin' };
+
+      const kept = createHandlers({ getAppConfig: jest.fn().mockResolvedValue(base) });
+      const keptRes = mockRes();
+      await kept.handlers.upsertConfigOverrides(mockReq({ params, body }), keptRes);
+      expect(keptRes.statusCode).toBe(201);
+
+      const tombstoned = createHandlers({
+        getAppConfig: jest.fn().mockResolvedValue(base),
+        findConfigByPrincipal: jest
+          .fn()
+          .mockResolvedValue({ overrides: {}, tombstones: ['cloudfront.imageSigning'] }),
+      });
+      const tombstonedRes = mockRes();
+      await tombstoned.handlers.upsertConfigOverrides(mockReq({ params, body }), tombstonedRes);
+      expect(tombstonedRes.statusCode).toBe(400);
+      expect(tombstonedRes.body?.issues).toEqual([
+        expect.objectContaining({ path: 'cloudfront.requireSignedAccess' }),
+      ]);
+      expect(tombstoned.deps.upsertConfig).not.toHaveBeenCalled();
+    });
+
+    it('accepts a partial section whose provided fields are valid', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          overrides: {
+            registration: { oauthStateTtlMs: 120_000 },
+            mcpServers: { github: { timeout: 5000 } },
+            endpoints: { custom: [{ name: 'groq', apiKey: 'sk-test' }] },
+          },
+        },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(201);
+      expect(deps.upsertConfig).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects a field patch with an invalid value and writes no entry', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: {
+          entries: [
+            { fieldPath: 'interface.customWelcome', value: 'hi' },
+            { fieldPath: 'registration.oauthStateTtlMs', value: 'soon' },
+          ],
+        },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body?.issues).toEqual([
+        expect.objectContaining({ path: 'registration.oauthStateTtlMs' }),
+      ]);
+      expect(deps.patchConfigFields).not.toHaveBeenCalled();
+    });
+
+    it('validates an object patch as a partial of the addressed section', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { entries: [{ fieldPath: 'interface.schedules', value: { maxPerUser: 'x' } }] },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body?.issues).toEqual([
+        expect.objectContaining({ path: 'interface.schedules.maxPerUser' }),
+      ]);
+      expect(deps.patchConfigFields).not.toHaveBeenCalled();
+    });
+
+    it('rejects a patch that addresses a custom endpoint by index', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { entries: [{ fieldPath: 'endpoints.custom.0.models', value: { default: ['m'] } }] },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body?.issues).toEqual([
+        { path: 'endpoints.custom', code: 'indexed_merge_key_write' },
+      ]);
+      expect(deps.patchConfigFields).not.toHaveBeenCalled();
+    });
+
+    it('accepts a secret field cleared with a non-string value', async () => {
+      const { handlers, deps } = createHandlers();
+      const req = mockReq({
+        params: { principalType: 'role', principalId: 'admin' },
+        body: { entries: [{ fieldPath: 'ocr.apiKey', value: null }] },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(deps.patchConfigFields).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('audit entries', () => {
+    const target = { type: 'config', id: 'role:editor', name: 'role:editor' };
+    const params = { principalType: 'role', principalId: 'editor' };
+
+    it('records a partial secret-field delete when the preview write fails', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const invalidateConfigCaches = jest.fn().mockResolvedValue(undefined);
+      const { handlers } = createHandlers({
+        recordAuditEntry,
+        invalidateConfigCaches,
+        unsetConfigField: jest
+          .fn()
+          .mockResolvedValueOnce({ _id: 'c1', overrides: {} })
+          .mockRejectedValueOnce(new Error('preview write failed')),
+      });
+      const req = mockReq({ params, query: { fieldPath: 'ocr.apiKey' } });
+      const res = mockRes();
+
+      await handlers.deleteConfigField(req, res);
+
+      expect(res.statusCode).toBe(500);
+      expect(invalidateConfigCaches).toHaveBeenCalled();
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'config.updated',
+          target,
+          metadata: { operation: 'unset', fieldPath: 'ocr.apiKey', partial: true },
+        }),
+      );
+    });
+
+    it('records config.created for a new override document', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const { handlers } = createHandlers({
+        recordAuditEntry,
+        upsertConfig: jest.fn().mockResolvedValue({ _id: 'c1', configVersion: 1, priority: 10 }),
+      });
+      const req = mockReq({
+        params,
+        body: { overrides: { interface: { modelSelect: false } } },
+      });
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(req, res);
+
+      expect(res.statusCode).toBe(201);
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'config.created',
+          actor: expect.objectContaining({ type: 'user', id: 'u1' }),
+          target,
+          metadata: { operation: 'replace', sections: 'interface', priority: 10 },
+        }),
+      );
+    });
+
+    it('records config.updated for a patch with field paths but no values', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const { handlers } = createHandlers({
+        recordAuditEntry,
+        findConfigByPrincipal: jest.fn().mockResolvedValue({ _id: 'c1', overrides: {} }),
+      });
+      const req = mockReq({
+        params,
+        body: { entries: [{ fieldPath: 'registration.enabled', value: false }] },
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(req, res);
+
+      expect(res.statusCode).toBe(200);
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'config.updated',
+          target,
+          metadata: { operation: 'patch', fieldPaths: 'registration.enabled' },
+        }),
+      );
+    });
+
+    it('records config.created when the first tombstone creates the document', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const { handlers } = createHandlers({
+        recordAuditEntry,
+        tombstoneConfigField: jest.fn().mockResolvedValue({ _id: 'c1', configVersion: 1 }),
+      });
+      const res = mockRes();
+
+      await handlers.tombstoneConfigField(
+        mockReq({ params, body: { fieldPath: 'mcpServers.github' } }),
+        res,
+      );
+
+      expect(recordAuditEntry).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'config.created' }),
+      );
+    });
+
+    it('records tombstone and unset field operations', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const { handlers } = createHandlers({ recordAuditEntry });
+
+      const tombstoneRes = mockRes();
+      await handlers.tombstoneConfigField(
+        mockReq({ params, body: { fieldPath: 'mcpServers.github' } }),
+        tombstoneRes,
+      );
+      const unsetRes = mockRes();
+      await handlers.deleteConfigField(
+        mockReq({ params, query: { fieldPath: 'registration.enabled' } }),
+        unsetRes,
+      );
+
+      expect(tombstoneRes.statusCode).toBe(200);
+      expect(unsetRes.statusCode).toBe(200);
+      expect(recordAuditEntry).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({
+          action: 'config.updated',
+          metadata: { operation: 'tombstone', fieldPath: 'mcpServers.github' },
+        }),
+      );
+      expect(recordAuditEntry).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          action: 'config.updated',
+          metadata: { operation: 'unset', fieldPath: 'registration.enabled' },
+        }),
+      );
+    });
+
+    it('records config.deleted and config.toggled', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const { handlers } = createHandlers({ recordAuditEntry });
+
+      await handlers.deleteConfigOverrides(mockReq({ params }), mockRes());
+      await handlers.toggleConfig(mockReq({ params, body: { isActive: false } }), mockRes());
+
+      expect(recordAuditEntry).toHaveBeenNthCalledWith(
+        1,
+        expect.objectContaining({ action: 'config.deleted', target }),
+      );
+      expect(recordAuditEntry).toHaveBeenNthCalledWith(
+        2,
+        expect.objectContaining({
+          action: 'config.toggled',
+          target,
+          metadata: { isActive: false },
+        }),
+      );
+    });
+
+    it('does not record a toggle that leaves isActive unchanged', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const { handlers } = createHandlers({
+        recordAuditEntry,
+        toggleConfigActiveTracked: jest
+          .fn()
+          .mockResolvedValue({ config: { _id: 'c1', isActive: false }, changed: false }),
+      });
+      const res = mockRes();
+
+      await handlers.toggleConfig(mockReq({ params, body: { isActive: false } }), res);
+
+      expect(res.statusCode).toBe(200);
+      expect(recordAuditEntry).not.toHaveBeenCalled();
+    });
+
+    it('does not record when the override document is missing', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const { handlers } = createHandlers({
+        recordAuditEntry,
+        deleteConfig: jest.fn().mockResolvedValue(null),
+      });
+      const res = mockRes();
+
+      await handlers.deleteConfigOverrides(mockReq({ params }), res);
+
+      expect(res.statusCode).toBe(404);
+      expect(recordAuditEntry).not.toHaveBeenCalled();
+    });
+
+    it('does not record a denied mutation', async () => {
+      const recordAuditEntry = jest.fn().mockResolvedValue(undefined);
+      const { handlers } = createHandlers({
+        recordAuditEntry,
+        hasConfigCapability: jest.fn().mockResolvedValue(false),
+        hasCapability: jest.fn().mockResolvedValue(false),
+      });
+      const res = mockRes();
+
+      await handlers.toggleConfig(mockReq({ params, body: { isActive: true } }), res);
+
+      expect(res.statusCode).toBe(403);
+      expect(recordAuditEntry).not.toHaveBeenCalled();
     });
   });
 });

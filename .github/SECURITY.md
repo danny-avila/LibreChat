@@ -8,7 +8,7 @@ At LibreChat, we prioritize the security of our project and value the contributi
 
 When reporting a security vulnerability, you have the following options to reach out to us:
 
-- **Option 1: GitHub Private Vulnerability Reporting**: Submit sensitive vulnerability details through LibreChat's [private vulnerability reporting form](https://github.com/danny-avila/LibreChat/security/advisories/new). This sends the report confidentially to the project maintainers.
+- **Option 1: GitHub Private Vulnerability Reporting**: Submit sensitive vulnerability details through LibreChat's [private vulnerability reporting form](https://github.com/LibreChat-AI/LibreChat/security/advisories/new). This sends the report confidentially to the project maintainers.
 
 - **Option 2: GitHub Issues**: You can initiate first contact via GitHub Issues. However, please note that initial contact through GitHub Issues should not include any sensitive details.
 
@@ -43,7 +43,7 @@ This security policy applies to the following GitHub repository:
 
 ## Contact
 
-If you have any questions or concerns regarding the security of our project, please join our [Discord community](https://discord.librechat.ai) and report them in the appropriate channel. You can also reach out to us by [opening an issue](https://github.com/danny-avila/LibreChat/issues/new) on GitHub. Please note that the response time may vary depending on the nature and severity of the inquiry.
+If you have any questions or concerns regarding the security of our project, please join our [Discord community](https://discord.librechat.ai) and report them in the appropriate channel. You can also reach out to us by [opening an issue](https://github.com/LibreChat-AI/LibreChat/issues/new) on GitHub. Please note that the response time may vary depending on the nature and severity of the inquiry.
 
 ## Acknowledgments
 

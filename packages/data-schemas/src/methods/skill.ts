@@ -746,6 +746,10 @@ function getAlwaysApplyFrontmatterValue(
 }
 
 export type UpsertSkillFileInput = {
+  /** When supplied, replace only this stored revision; never recreate a deleted file. */
+  expectedFileId?: string;
+  /** Insert only when the path is absent, even if another writer creates it first. */
+  createOnly?: boolean;
   skillId: Types.ObjectId | string;
   relativePath: string;
   file_id: string;
@@ -758,7 +762,7 @@ export type UpsertSkillFileInput = {
   mimeType: string;
   bytes: number;
   isExecutable?: boolean;
-  author: Types.ObjectId;
+  author: Types.ObjectId | string;
   tenantId?: string;
 };
 
@@ -999,30 +1003,6 @@ export async function filterExistingSkillIds(
   return candidates.filter((id) => existing.has(id) || isExternalSkillId?.(id) === true);
 }
 
-/**
- * Validate the `always-apply` value that would be derived from the
- * SKILL.md body's inline frontmatter. Only reports an issue when the
- * key is present with an unparseable value — absent / valid / empty
- * all pass silently so mid-edit saves that haven't touched the flag
- * yet don't get rejected. Wired into both `createSkill` and
- * `updateSkill` so a body PATCH carrying `always-apply: tru` (typo)
- * surfaces as 400 instead of drifting the indexed column.
- */
-export function validateAlwaysApplyInBody(body: string | undefined): ValidationIssue[] {
-  const result = extractAlwaysApplyFromBody(body);
-  if (result.status === 'invalid') {
-    return [
-      {
-        field: 'body.frontmatter.alwaysApply',
-        code: 'INVALID_TYPE',
-        message:
-          '"always-apply" or "alwaysApply" in SKILL.md frontmatter must be a boolean (true or false)',
-      },
-    ];
-  }
-  return [];
-}
-
 export function createSkillMethods(
   mongoose: typeof import('mongoose'),
   deps: SkillDeps,
@@ -1095,6 +1075,7 @@ export function createSkillMethods(
     skillId: Types.ObjectId | string,
     relativePath: string,
     update: { content?: string; isBinary?: boolean },
+    expectedFileId?: string,
   ) => Promise<void>;
   updateSkillFileCodeEnvIds: (
     updates: Array<{
@@ -1618,7 +1599,7 @@ export function createSkillMethods(
            `alwaysApply: true` would keep auto-priming after the user
            removed the declaration from SKILL.md — a persistent,
            invisible mismatch between the file and runtime behavior.
-           `invalid` is rejected upstream by `validateAlwaysApplyInBody`
+           `invalid` is rejected by the inline check above
            so this branch only handles the legitimate absence case. */
         derivedAlwaysApply = false;
       }
@@ -1767,19 +1748,25 @@ export function createSkillMethods(
     const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
     await SkillFile.deleteMany({ skillId: { $in: soleOwned } });
     const res = await Skill.deleteMany({ _id: { $in: soleOwned } });
-    await removeSkillsFromAgentAllowlists(soleOwned.map((rid) => rid.toString()));
-    await Promise.allSettled(
+    if (!(await removeSkillsFromAgentAllowlists(soleOwned.map((rid) => rid.toString())))) {
+      throw new Error('Agent skill allowlists could not be cleaned up');
+    }
+    /** Permission entries are the retry discovery key for sole-owned skills, so a failure keeps them. */
+    const permissionResults = await Promise.allSettled(
       soleOwned.map((rid) =>
-        deps
-          .removeAllPermissions({
-            resourceType: ResourceType.SKILL,
-            resourceId: rid.toString(),
-          })
-          .catch((error) =>
-            logger.error(`[deleteUserSkills] Error removing permissions for ${rid}:`, error),
-          ),
+        deps.removeAllPermissions({
+          resourceType: ResourceType.SKILL,
+          resourceId: rid.toString(),
+        }),
       ),
     );
+    const failedPermission = permissionResults.find(
+      (result): result is PromiseRejectedResult => result.status === 'rejected',
+    );
+    if (failedPermission) {
+      logger.error('[deleteUserSkills] Error removing permissions:', failedPermission.reason);
+      throw failedPermission.reason;
+    }
     return res.deletedCount ?? 0;
   }
 
@@ -1867,32 +1854,59 @@ export function createSkillMethods(
       throw error;
     }
     const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
-    const category = inferSkillFileCategory(row.relativePath);
+    const fields = {
+      skillId: row.skillId,
+      relativePath: row.relativePath,
+      file_id: row.file_id,
+      filename: row.filename,
+      filepath: row.filepath,
+      storageKey: row.storageKey,
+      storageRegion: row.storageRegion,
+      source: row.source,
+      sourceMetadata: row.sourceMetadata,
+      mimeType: row.mimeType,
+      bytes: row.bytes,
+      category: inferSkillFileCategory(row.relativePath),
+      isExecutable: row.isExecutable ?? false,
+      author: row.author,
+      tenantId: row.tenantId,
+    };
+    if (row.createOnly) {
+      if (row.expectedFileId != null) {
+        throw new Error('A file cannot require both an absent path and an existing revision');
+      }
+      let created: ISkillFileDocument;
+      try {
+        created = await SkillFile.create(fields);
+      } catch (error) {
+        if (error instanceof Error && 'code' in error && error.code === 11000) {
+          throw Object.assign(new Error('Skill file was created by another writer'), {
+            code: 'SKILL_FILE_CONFLICT',
+          });
+        }
+        throw error;
+      }
+      await bumpSkillVersionAndAdjustFileCount(row.skillId, 1);
+      return created.toObject() as unknown as ISkillFile & { _id: Types.ObjectId };
+    }
     const result = (await SkillFile.findOneAndUpdate(
-      { skillId: row.skillId, relativePath: row.relativePath },
       {
-        $set: {
-          skillId: row.skillId,
-          relativePath: row.relativePath,
-          file_id: row.file_id,
-          filename: row.filename,
-          filepath: row.filepath,
-          storageKey: row.storageKey,
-          storageRegion: row.storageRegion,
-          source: row.source,
-          sourceMetadata: row.sourceMetadata,
-          mimeType: row.mimeType,
-          bytes: row.bytes,
-          category,
-          isExecutable: row.isExecutable ?? false,
-          author: row.author,
-          tenantId: row.tenantId,
-        },
+        skillId: row.skillId,
+        relativePath: row.relativePath,
+        ...(row.expectedFileId != null ? { file_id: row.expectedFileId } : {}),
+      },
+      {
+        $set: fields,
         $unset: { content: '', isBinary: '', codeEnvRef: '', codeEnvRefs: '' },
       },
-      { new: true, upsert: true, includeResultMetadata: true },
+      { new: true, upsert: row.expectedFileId == null, includeResultMetadata: true },
     ).lean()) as unknown as SkillFileUpsertResult;
     const current = result.value;
+    if (!current && row.expectedFileId != null) {
+      throw Object.assign(new Error('Skill file changed since it was read'), {
+        code: 'SKILL_FILE_CONFLICT',
+      });
+    }
     if (!current) {
       const error = new Error('Skill file upsert failed to read the saved file row');
       (error as Error & { code?: string }).code = 'SKILL_FILE_UPSERT_NOT_FOUND';
@@ -1930,9 +1944,13 @@ export function createSkillMethods(
     skillId: Types.ObjectId | string,
     relativePath: string,
     update: { content?: string; isBinary?: boolean },
+    expectedFileId?: string,
   ): Promise<void> {
     const SkillFile = mongoose.models.SkillFile as Model<ISkillFileDocument>;
-    await SkillFile.updateOne({ skillId, relativePath }, { $set: update });
+    await SkillFile.updateOne(
+      { skillId, relativePath, ...(expectedFileId != null ? { file_id: expectedFileId } : {}) },
+      { $set: update },
+    );
   }
 
   async function updateSkillFileCodeEnvIds(

@@ -76,6 +76,27 @@ export const messages = (params: q.MessagesListParams) => {
 
 export const messagesArtifacts = (messageId: string) => `${messagesRoot}/artifact/${messageId}`;
 
+/** One tool-call part of a stored message, in full. */
+export const messageToolCallPart = ({
+  conversationId,
+  messageId,
+  partIndex,
+  toolCallId,
+  stepId,
+  agentId,
+}: q.ToolCallPartParams) => {
+  const path = `${messagesRoot}/${encodeURIComponent(conversationId)}/${encodeURIComponent(messageId)}/parts/${partIndex}`;
+  const query = [
+    ['toolCallId', toolCallId],
+    ['stepId', stepId],
+    ['agentId', agentId],
+  ]
+    .filter((entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1] !== '')
+    .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
+    .join('&');
+  return query === '' ? path : `${path}?${query}`;
+};
+
 export const messagesBranch = () => `${messagesRoot}/branch`;
 
 const shareRoot = `${BASE_URL}/api/share`;
@@ -141,6 +162,25 @@ export const subagentThread = (
 export const subagentControl = (parentConversationId: string, threadId: string) =>
   `${conversationsRoot}/${encodeURIComponent(parentConversationId)}/subagents/${encodeURIComponent(threadId)}/control`;
 
+export const backgroundTasks = (conversationId: string) =>
+  `${conversationsRoot}/${encodeURIComponent(conversationId)}/background-tasks`;
+
+export const backgroundTasksCancel = (conversationId: string) =>
+  `${backgroundTasks(conversationId)}/cancel`;
+
+export const conversationPullRequest = (conversationId: string) =>
+  `${conversationsRoot}/${encodeURIComponent(conversationId)}/pull-request`;
+
+export const conversationPullRequests = () => `${conversationsRoot}/pull-requests`;
+
+const pullRequestOAuthRoot = `${BASE_URL}/api/pull-requests/oauth`;
+
+export const pullRequestConnection = () => `${pullRequestOAuthRoot}/status`;
+
+export const pullRequestConnect = () => `${pullRequestOAuthRoot}/connect`;
+
+export const pullRequestDisconnect = () => pullRequestOAuthRoot;
+
 export const genTitle = (conversationId: string) =>
   `${conversationsRoot}/gen_title/${encodeURIComponent(conversationId)}`;
 
@@ -149,6 +189,8 @@ export const updateConversation = () => `${conversationsRoot}/update`;
 export const archiveConversation = () => `${conversationsRoot}/archive`;
 export const archiveAllConversations = () => `${conversationsRoot}/archive/all`;
 export const pinConversation = () => `${conversationsRoot}/pin`;
+export const markConversationSeen = () => `${conversationsRoot}/seen`;
+export const markConversationUnread = () => `${conversationsRoot}/unread`;
 
 export const deleteConversation = () => `${conversationsRoot}`;
 
@@ -168,6 +210,15 @@ export const projects = (params: q.ProjectListParams = {}) => {
 
 export const projectById = (id: string) => `${projectsRoot}/${encodeURIComponent(id)}`;
 
+export const projectFiles = (projectId: string) => `${projectById(projectId)}/files`;
+export const projectAvailableFiles = (
+  projectId: string,
+  params: q.ProjectAvailableFilesParams = {},
+) => `${projectById(projectId)}/files/available${buildQuery(params)}`;
+
+export const projectFile = (projectId: string, fileId: string) =>
+  `${projectFiles(projectId)}/${encodeURIComponent(fileId)}`;
+
 export const projectConversation = (conversationId: string) =>
   `${projectsRoot}/conversations/${encodeURIComponent(conversationId)}`;
 
@@ -184,19 +235,16 @@ export const aiEndpoints = () => `${BASE_URL}/api/endpoints`;
 
 export const tokenConfig = () => `${BASE_URL}/api/endpoints/token-config`;
 
-export const models = () => `${BASE_URL}/api/models`;
+export const reasoningCapabilities = (endpoint: string) =>
+  `${BASE_URL}/api/endpoints/reasoning-capabilities?endpoint=${encodeURIComponent(endpoint)}`;
 
-export const tokenizer = () => `${BASE_URL}/api/tokenizer`;
+export const models = () => `${BASE_URL}/api/models`;
 
 export const login = () => `${BASE_URL}/api/auth/login`;
 
 export const logout = () => `${BASE_URL}/api/auth/logout`;
 
 export const register = () => `${BASE_URL}/api/auth/register`;
-
-export const loginFacebook = () => `${BASE_URL}/api/auth/facebook`;
-
-export const loginGoogle = () => `${BASE_URL}/api/auth/google`;
 
 export const refreshToken = (retry?: boolean) =>
   `${BASE_URL}/api/auth/refresh${retry === true ? '?retry=true' : ''}`;
@@ -206,6 +254,10 @@ export const requestPasswordReset = () => `${BASE_URL}/api/auth/requestPasswordR
 export const resetPassword = () => `${BASE_URL}/api/auth/resetPassword`;
 
 export const verifyEmail = () => `${BASE_URL}/api/user/verify`;
+
+export const requestEmailChange = () => `${BASE_URL}/api/user/email/change`;
+
+export const confirmEmailChange = () => `${BASE_URL}/api/user/email/verify`;
 
 // Auth page URLs (for client-side navigation and redirects)
 export const loginPage = () => `${BASE_URL}/login`;
@@ -239,13 +291,9 @@ export function buildLoginRedirectUrl(pathname?: string, search?: string, hash?:
 
 export const resendVerificationEmail = () => `${BASE_URL}/api/user/verify/resend`;
 
-export const plugins = () => `${BASE_URL}/api/plugins`;
-
 export const mcpReinitialize = (serverName: string) =>
   `${BASE_URL}/api/mcp/${serverName}/reinitialize`;
 export const mcpConnectionStatus = () => `${BASE_URL}/api/mcp/connection/status`;
-export const mcpServerConnectionStatus = (serverName: string) =>
-  `${BASE_URL}/api/mcp/connection/status/${serverName}`;
 export const mcpAuthValues = (serverName: string) => {
   return `${BASE_URL}/api/mcp/${serverName}/auth-values`;
 };
@@ -322,7 +370,8 @@ export const agents = ({ path = '', options }: { path?: string; options?: object
 export const activeJobs = () => `${BASE_URL}/api/agents/chat/active`;
 
 const agentQueuedTurnsRoot = `${BASE_URL}/api/agents/chat/queued-turns`;
-export const agentQueuedTurns = () => agentQueuedTurnsRoot;
+export const agentQueuedTurns = (protocolVersion?: 2) =>
+  protocolVersion === 2 ? `${agentQueuedTurnsRoot}/v2` : agentQueuedTurnsRoot;
 export const agentQueuedTurnsByConversation = (
   conversationId: string,
   clientRequestIds: string[] = [],
@@ -436,6 +485,7 @@ export const getAllPromptGroups = () => `${prompts()}/all`;
 /* Scheduled chats */
 export const schedules = () => `${BASE_URL}/api/schedules`;
 export const schedule = (id: string) => `${schedules()}/${encodeURIComponent(id)}`;
+export const scheduleMCPConsent = (id: string) => `${schedule(id)}/mcp-consent`;
 export const runSchedule = (id: string) => `${schedule(id)}/run`;
 
 /* Skills */
@@ -545,11 +595,6 @@ export const updateSkillPermissions = (roleName: string) => `${getRole(roleName)
 export const conversationTags = (tag?: string) =>
   `${BASE_URL}/api/tags${tag != null && tag ? `/${encodeURIComponent(tag)}` : ''}`;
 
-export const conversationTagsList = (pageNumber: string, sort?: string, order?: string) =>
-  `${conversationTags()}/list?pageNumber=${pageNumber}${sort ? `&sort=${sort}` : ''}${
-    order ? `&order=${order}` : ''
-  }`;
-
 export const addTagToConversation = (conversationId: string) =>
   `${conversationTags()}/convo/${conversationId}`;
 
@@ -563,11 +608,23 @@ export const feedback = (conversationId: string, messageId: string) =>
 
 // Two-Factor Endpoints
 export const enableTwoFactor = () => `${BASE_URL}/api/auth/2fa/enable`;
+export const enableTwoFactorSetup = () => `${BASE_URL}/api/auth/2fa/setup`;
+export const confirmTwoFactorSetup = () => `${BASE_URL}/api/auth/2fa/setup/confirm`;
+export const acknowledgeTwoFactorSetup = () => `${BASE_URL}/api/auth/2fa/setup/acknowledge`;
+export const finalizeTwoFactorSetup = () => `${BASE_URL}/api/auth/2fa/setup/finalize`;
 export const verifyTwoFactor = () => `${BASE_URL}/api/auth/2fa/verify`;
 export const confirmTwoFactor = () => `${BASE_URL}/api/auth/2fa/confirm`;
 export const disableTwoFactor = () => `${BASE_URL}/api/auth/2fa/disable`;
 export const regenerateBackupCodes = () => `${BASE_URL}/api/auth/2fa/backup/regenerate`;
 export const verifyTwoFactorTemp = () => `${BASE_URL}/api/auth/2fa/verify-temp`;
+
+// Passkey (WebAuthn) Endpoints
+export const passkeys = () => `${BASE_URL}/api/auth/passkey`;
+export const passkey = (passkeyId: string) => `${passkeys()}/${encodeURIComponent(passkeyId)}`;
+export const passkeyRegistrationOptions = () => `${passkeys()}/register/options`;
+export const passkeyRegistrationVerify = () => `${passkeys()}/register/verify`;
+export const passkeyLoginOptions = () => `${passkeys()}/login/options`;
+export const passkeyLoginVerify = () => `${passkeys()}/login/verify`;
 
 /* Memories */
 export const memories = () => `${BASE_URL}/api/memories`;
@@ -610,3 +667,5 @@ export const getAllEffectivePermissions = (resourceType: ResourceType) =>
 // SharePoint Graph API Token
 export const graphToken = (scopes: string) =>
   `${BASE_URL}/api/auth/graph-token?scopes=${encodeURIComponent(scopes)}`;
+
+export const resetToolApprovalGrants = (): string => `${BASE_URL}/api/agents/tools/approvals/reset`;

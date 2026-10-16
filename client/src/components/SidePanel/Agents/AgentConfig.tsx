@@ -1,6 +1,7 @@
 import { Input, Label } from '@librechat/client';
 import { getEndpointField } from 'librechat-data-provider';
 import { Controller, useWatch, useFormContext } from 'react-hook-form';
+import type { InstructionsPromptStatus } from './Instructions';
 import type { AgentForm } from '~/common';
 import { ResolvedProviderIcon } from '~/components/Endpoints/ResolvedProviderIcon';
 import AgentCategorySelector from './AgentCategorySelector';
@@ -13,11 +14,18 @@ import { validateEmail, getModelLabel, cn } from '~/utils';
 import Instructions from './Instructions';
 import FileContext from './FileContext';
 import AgentAvatar from './AgentAvatar';
+import Starters from './Starters';
 import { Panel } from '~/common';
 
 const fieldClass = 'h-9';
 
-export default function AgentConfig() {
+export default function AgentConfig({
+  instructionsPromptStatus,
+  onRetryInstructionsPrompt,
+}: {
+  instructionsPromptStatus?: InstructionsPromptStatus;
+  onRetryInstructionsPrompt?: () => void;
+}) {
   const localize = useLocalize();
   const methods = useFormContext<AgentForm>();
   const { setActivePanel, endpointsConfig, agentsConfig } = useAgentPanelContext();
@@ -44,8 +52,8 @@ export default function AgentConfig() {
   return (
     <div className="h-auto pt-1">
       {/* IDENTITY — flat header, always visible, avatar inline */}
-      <div className="mb-3 mt-1 flex items-center gap-3">
-        <div className="flex-shrink-0">
+      <div className="mt-1 mb-3 flex items-center gap-3">
+        <div className="shrink-0">
           <AgentAvatar avatar={agent?.['avatar'] ?? null} />
         </div>
         <div className="flex min-w-0 flex-1 flex-col gap-2">
@@ -70,7 +78,7 @@ export default function AgentConfig() {
                 {errors.name && (
                   <div
                     id="agent-name-error"
-                    className="mt-1 text-xs text-text-destructive"
+                    className="text-text-destructive mt-1 text-xs"
                     role="alert"
                   >
                     {errors.name.message}
@@ -102,7 +110,8 @@ export default function AgentConfig() {
       <div className="mb-3 grid grid-cols-2 gap-2">
         <div className="flex min-w-0 flex-col">
           <Label
-            className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-text-secondary"
+            variant="secondary"
+            className="text-2xs mb-1 block font-medium tracking-wide uppercase"
             htmlFor="provider"
           >
             {localize('com_ui_model')} <span className="text-text-destructive">*</span>
@@ -113,13 +122,13 @@ export default function AgentConfig() {
             onClick={() => setActivePanel(Panel.model)}
             title={modelDisplayName}
             className={cn(
-              'relative flex h-9 w-full min-w-0 items-center overflow-hidden rounded-lg border border-border-light bg-surface-secondary text-sm font-medium text-text-primary transition-colors hover:bg-surface-tertiary focus:outline-none focus-visible:ring-2 focus-visible:ring-ring-primary',
+              'border-border-control bg-surface-secondary text-text-primary hover:bg-surface-tertiary focus-visible:ring-ring-primary relative flex h-9 w-full min-w-0 items-center overflow-hidden rounded-lg border text-sm font-medium transition-colors focus:outline-hidden focus-visible:ring-2',
               model != null && model ? 'px-1' : 'px-3',
             )}
           >
             <div className="flex w-full min-w-0 items-center gap-2">
               {providerValue !== undefined && (
-                <div className="shadow-stroke relative flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-white text-black dark:bg-white">
+                <div className="avatar-stroke bg-surface-primary text-text-primary relative flex h-6 w-6 shrink-0 items-center justify-center rounded-full">
                   <ResolvedProviderIcon
                     provider={providerId}
                     imageURL={imageURL}
@@ -136,7 +145,8 @@ export default function AgentConfig() {
         </div>
         <div className="flex flex-col">
           <Label
-            className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-text-secondary"
+            variant="secondary"
+            className="text-2xs mb-1 block font-medium tracking-wide uppercase"
             htmlFor="category-selector"
           >
             {localize('com_ui_category')} <span className="text-text-destructive">*</span>
@@ -146,7 +156,10 @@ export default function AgentConfig() {
       </div>
 
       {/* INSTRUCTIONS */}
-      <Instructions />
+      <Instructions
+        promptStatus={instructionsPromptStatus}
+        onRetryLoad={onRetryInstructionsPrompt}
+      />
 
       {/* TOOLS — unified built-ins / tools / actions / mcp / skills */}
       <ToolsSection agentId={agent_id} />
@@ -158,9 +171,15 @@ export default function AgentConfig() {
         </div>
       )}
 
+      {/* CONVERSATION STARTERS */}
+      <Starters />
+
       {/* SUPPORT CONTACT */}
       <div className="mb-3 flex flex-col">
-        <Label className="mb-1 block text-[11px] font-medium uppercase tracking-wide text-text-secondary">
+        <Label
+          variant="secondary"
+          className="text-2xs mb-1 block font-medium tracking-wide uppercase"
+        >
           {localize('com_ui_support_contact')}
         </Label>
         <div className="space-y-2">
@@ -178,7 +197,7 @@ export default function AgentConfig() {
                 <Input
                   {...field}
                   value={field.value ?? ''}
-                  className={cn(fieldClass, error && 'border-2 border-border-destructive')}
+                  className={cn(fieldClass, error && 'border-border-destructive border-2')}
                   id="support-contact-name"
                   type="text"
                   placeholder={localize('com_ui_support_contact_name_placeholder')}
@@ -189,7 +208,7 @@ export default function AgentConfig() {
                 {error && (
                   <span
                     id="support-contact-name-error"
-                    className="mt-1 text-xs text-text-destructive"
+                    className="text-text-destructive mt-1 text-xs"
                     role="alert"
                     aria-live="polite"
                   >
@@ -211,7 +230,7 @@ export default function AgentConfig() {
                 <Input
                   {...field}
                   value={field.value ?? ''}
-                  className={cn(fieldClass, error && 'border-2 border-border-destructive')}
+                  className={cn(fieldClass, error && 'border-border-destructive border-2')}
                   id="support-contact-email"
                   type="email"
                   placeholder={localize('com_ui_support_contact_email_placeholder')}
@@ -222,7 +241,7 @@ export default function AgentConfig() {
                 {error && (
                   <span
                     id="support-contact-email-error"
-                    className="mt-1 text-xs text-text-destructive"
+                    className="text-text-destructive mt-1 text-xs"
                     role="alert"
                     aria-live="polite"
                   >

@@ -43,10 +43,19 @@ describe('shared header glyphs', () => {
       expect(container.querySelector('img')).toBeNull();
       expect(container.querySelector('.animate-pulse')).toBeNull();
       expect(
-        container.querySelector(status === 'failed' ? '.lucide-triangle-alert' : '.lucide-x'),
+        container.querySelector(status === 'failed' ? '.lucide-circle-x' : '.lucide-x'),
       ).not.toBeNull();
     },
   );
+
+  it.each([
+    ['create_file', 'lucide-file-plus-2'],
+    ['edit_file', 'lucide-file-pen-line'],
+  ])('renders %s with the same glyph as its file row', (name, glyph) => {
+    const { container } = render(<StackedToolIcons toolNames={[name]} />);
+    expect(container.querySelector(`.${glyph}`)).not.toBeNull();
+    expect(container.querySelector('.lucide-wrench')).toBeNull();
+  });
 
   it('retains a bounded stack and overflow count', () => {
     const { container } = render(

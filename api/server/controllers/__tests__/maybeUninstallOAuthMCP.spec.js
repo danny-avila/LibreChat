@@ -31,6 +31,11 @@ jest.mock('@librechat/data-schemas', () => ({
 jest.mock('@librechat/api', () => {
   return {
     ...jest.requireActual('@librechat/api'),
+    createEmailChangeService: jest.fn(() => ({
+      requestEmailChange: jest.fn(),
+      confirmEmailChange: jest.fn(),
+    })),
+    createEmailChangeDeps: jest.fn(() => ({})),
     MCPOAuthHandler: {
       revokeOAuthToken: (...args) => mockRevokeOAuthToken(...args),
       deleteFlowAndStateMapping: (...args) => mockDeleteFlowAndStateMapping(...args),
@@ -152,6 +157,8 @@ jest.mock('~/models', () => ({
   removeUserFromAllGroups: jest.fn(),
   deleteAclEntries: jest.fn(),
   getSoleOwnedResourceIds: jest.fn().mockResolvedValue([]),
+  findUserErasableMCPServers: jest.fn().mockResolvedValue([]),
+  deleteMCPServersWithAcl: jest.fn(),
 }));
 
 const { maybeUninstallOAuthMCP } = require('~/server/controllers/UserController');

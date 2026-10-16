@@ -4,7 +4,7 @@
  * These handlers convert LibreChat's internal graph events into OpenAI-compatible
  * streaming format (SSE with chat.completion.chunk objects).
  */
-import type { Response as ServerResponse } from 'express';
+import { createOpenAIToolCallStream as createAcceptedToolCallStream } from '@librechat/agents/openai';
 import type { Agents } from 'librechat-data-provider';
 import type { Graph } from '@librechat/agents';
 import type {
@@ -44,15 +44,14 @@ export function createChunk(
   };
 }
 
-/**
- * Write an SSE event to the response
- */
-export function writeSSE(res: ServerResponse, data: ChatCompletionChunk | string): void {
-  if (typeof data === 'string') {
-    res.write(`data: ${data}\n\n`);
-  } else {
-    res.write(`data: ${JSON.stringify(data)}\n\n`);
-  }
+/** One synchronous output frame; HTTP connection and lifecycle stay with the caller. */
+export interface OpenAIWriter {
+  write(frame: string): boolean | void;
+}
+
+/** Write one Chat Completions frame through a caller-owned transport. */
+export function writeSSE(writer: OpenAIWriter, data: ChatCompletionChunk | string): void {
+  writer.write(`data: ${typeof data === 'string' ? data : JSON.stringify(data)}\n\n`);
 }
 
 /**
@@ -158,14 +157,24 @@ export function createOpenAIContentAggregator(): OpenAIContentAggregator {
   };
 }
 
-/**
- * Handler configuration for OpenAI streaming
- */
+/** Legacy stream configuration; retained for existing package consumers. */
 export interface OpenAIStreamHandlerConfig {
   signal?: AbortSignal;
-  res: ServerResponse;
+  res: OpenAIWriter;
   context: OpenAIResponseContext;
   tracker: OpenAIStreamTracker;
+}
+
+/** Transport-neutral stream configuration for new callers. */
+export type OpenAIStreamWriterConfig = Omit<OpenAIStreamHandlerConfig, 'res'> & {
+  writer: OpenAIWriter;
+  res?: never;
+};
+
+type OpenAIContentStreamConfig = OpenAIStreamHandlerConfig | OpenAIStreamWriterConfig;
+
+function getStreamWriter(config: OpenAIContentStreamConfig): OpenAIWriter {
+  return 'writer' in config ? config.writer : config.res;
 }
 
 /**
@@ -181,6 +190,8 @@ export const GraphEvents = {
   ON_MESSAGE_DELTA: 'on_message_delta',
   ON_REASONING_DELTA: 'on_reasoning_delta',
   ON_TOOL_EXECUTE: 'on_tool_execute',
+  ON_MODEL_RESPONSE: 'on_model_response',
+  ON_MODEL_TOOLS_CLAIMED: 'on_model_tools_claimed',
 } as const;
 
 /**
@@ -639,7 +650,7 @@ export class OpenAIMessageDeltaHandler implements EventHandler {
         }
         this.config.tracker.addText();
         const chunk = createChunk(this.config.context, { content: part.text });
-        writeSSE(this.config.res, chunk);
+        writeSSE(getStreamWriter(this.config), chunk);
       }
     }
   }
@@ -742,7 +753,7 @@ export class OpenAIReasoningDeltaHandler implements EventHandler {
 
         // Stream as delta.reasoning (OpenRouter convention)
         const chunk = createChunk(this.config.context, { reasoning: text });
-        writeSSE(this.config.res, chunk);
+        writeSSE(getStreamWriter(this.config), chunk);
       }
     }
   }
@@ -756,29 +767,26 @@ export interface OpenAIAggregationHandlerConfig {
   signal?: AbortSignal;
 }
 
-type OpenAIContentHandlerConfig = OpenAIStreamHandlerConfig | OpenAIAggregationHandlerConfig;
+type OpenAIContentHandlerConfig = OpenAIContentStreamConfig | OpenAIAggregationHandlerConfig;
 
 export function createOpenAIHandlers(
   config: OpenAIContentHandlerConfig,
   toolExecuteOptions?: ToolExecuteOptions,
 ): Record<string, EventHandler> {
-  /** One projection across both events, so a call keeps a single outward index. */
-  const toolCallStream = createOpenAIToolCallStream({
+  const target = 'aggregator' in config ? config.aggregator : config.tracker;
+  const toolCallProjection = createAcceptedToolCallStream({
     signal: config.signal,
-    toolCalls: 'aggregator' in config ? config.aggregator.toolCalls : config.tracker.toolCalls,
+    toolCalls: target.toolCalls,
     emit:
       'aggregator' in config
         ? undefined
-        : (delta) => writeSSE(config.res, createChunk(config.context, delta)),
+        : (delta) => writeSSE(getStreamWriter(config), createChunk(config.context, delta)),
   });
-  const target = 'aggregator' in config ? config.aggregator : config.tracker;
-  target.finishToolCalls = toolCallStream.finish;
-  target.abortToolCalls = toolCallStream.abort;
+  target.finishToolCalls = toolCallProjection.finish;
+  target.abortToolCalls = toolCallProjection.abort;
   const handlers: Record<string, EventHandler> = {
+    ...toolCallProjection.handlers,
     [GraphEvents.ON_MESSAGE_DELTA]: new OpenAIMessageDeltaHandler(config),
-    [GraphEvents.ON_RUN_STEP_DELTA]: new OpenAIRunStepDeltaHandler(toolCallStream),
-    [GraphEvents.ON_RUN_STEP]: new OpenAIRunStepHandler(toolCallStream),
-    [GraphEvents.ON_RUN_STEP_COMPLETED]: new OpenAIRunStepHandler(toolCallStream),
     [GraphEvents.CHAT_MODEL_END]: new OpenAIModelEndHandler(config),
     [GraphEvents.CHAT_MODEL_STREAM]: new OpenAIChatModelStreamHandler(),
     [GraphEvents.TOOL_END]: new OpenAIToolEndHandler(),
@@ -796,16 +804,19 @@ export function createOpenAIHandlers(
  * Send the final chunk with finish_reason and optional usage
  */
 export function sendFinalChunk(
-  config: OpenAIStreamHandlerConfig,
+  config: OpenAIContentStreamConfig,
   finishReason: ChatCompletionChunkChoice['finish_reason'] = 'stop',
   usageOverride?: CompletionUsage,
+  /** True when the map contains only accepted client-owned calls, not legacy run-step history. */
+  acceptedToolCallsOnly = false,
 ): void {
-  const { res, context, tracker } = config;
+  const { context, tracker } = config;
+  const writer = getStreamWriter(config);
   tracker.finishToolCalls?.();
 
-  // Determine finish reason based on content
+  // Legacy run-step history followed by text stays 'stop'; accepted client calls must be executed.
   let reason = finishReason;
-  if (tracker.toolCalls.size > 0 && !tracker.hasText) {
+  if (tracker.toolCalls.size > 0 && (acceptedToolCallsOnly || !tracker.hasText)) {
     reason = 'tool_calls';
   }
 
@@ -824,10 +835,10 @@ export function sendFinalChunk(
   }
 
   const finalChunk = createChunk(context, {}, reason, usage);
-  writeSSE(res, finalChunk);
+  writeSSE(writer, finalChunk);
 
   // Send [DONE] marker
-  writeSSE(res, '[DONE]');
+  writeSSE(writer, '[DONE]');
 }
 
 /** Build provider-normalized chat-completion usage from every billed call. */
