@@ -81,6 +81,38 @@ export async function deleteConversations(conversationIds: string[]): Promise<vo
   });
 }
 
+/** Seed sidebar projects and return their IDs for targeted cleanup. */
+export async function seedProjects(userEmail: string, names: string[]): Promise<string[]> {
+  return withMongo(async (db) => {
+    const user = await resolveUserId(db, userEmail);
+    const now = new Date();
+    const result = await db.collection('chatprojects').insertMany(
+      names.map((name) => ({
+        name,
+        user,
+        description: '',
+        instructions: '',
+        contextRevision: 0,
+        file_ids: [],
+        conversationCount: 0,
+        lastConversationAt: null,
+        lastConversationId: null,
+        createdAt: now,
+        updatedAt: now,
+      })),
+    );
+    return Object.values(result.insertedIds).map((id) => id.toHexString());
+  });
+}
+
+export async function deleteProjects(projectIds: string[]): Promise<void> {
+  await withMongo((db) =>
+    db
+      .collection('chatprojects')
+      .deleteMany({ _id: { $in: projectIds.map((id) => new ObjectId(id)) } }),
+  );
+}
+
 export interface SeedMessage {
   messageId: string;
   parentMessageId: string;
