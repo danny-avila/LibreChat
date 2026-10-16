@@ -7,7 +7,7 @@ import type { TConversation, TModelSpec } from 'librechat-data-provider';
 import type { MutableSnapshot } from 'recoil';
 import type { ChatSettings } from '../contract';
 import { ChatSettingsContext, defaultChatSettings } from '~/Providers/ChatSettingsContext';
-import useTemporaryChat from '../useTemporaryChat';
+import useTemporaryChat from '~/hooks/Conversations/useTemporaryChat';
 import useChatHelpers from '../useChatHelpers';
 import useTokenLimits from '../useTokenLimits';
 import store from '~/store';

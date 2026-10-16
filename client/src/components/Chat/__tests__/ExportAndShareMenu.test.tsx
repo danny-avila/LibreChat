@@ -26,7 +26,7 @@ jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
 }));
 
-jest.mock('~/hooks/Chat/useChatOptions', () => ({
+jest.mock('~/hooks/Sharing/useChatOptions', () => ({
   __esModule: true,
   default: (args: unknown) => {
     mockUseChatOptions(args);
