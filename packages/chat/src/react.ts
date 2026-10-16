@@ -51,14 +51,26 @@ export {
   clearPendingReasoningOverrides,
 } from './react/composer';
 export {
+  submissionByIndex,
+  clearSubmissions,
+  useSubmission,
+  useClearSubmissions,
   isSubmittingFamily,
   anySubmittingAtom,
   resetSubmitting,
   useIsSubmitting,
 } from './react/submission';
-export type { PaneIndex } from './react/submission';
+export type { PaneIndex, SubmissionAtom } from './react/submission';
 export {
   submissionStartFamily,
   showStopButtonByIndex,
   abortScrollFamily,
 } from './react/generation';
+export { SteerHostProvider, setDefaultSteerHost, useSteerHost } from './react/steer/host';
+export type {
+  SteerHost,
+  SteerSettings,
+  SteerMessageKey,
+  SteerNotification,
+  SteerRequestCallbacks,
+} from './react/steer/host';

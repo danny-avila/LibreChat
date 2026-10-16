@@ -89,12 +89,14 @@ type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 
 /** Longest first: the shadcn artifacts prompt starts with the default one. */
 const PLACEHOLDERS: Array<[string, string]> = [
-  ...(['openAI', EModelEndpoint.anthropic] as const).flatMap((endpoint) =>
-    [ArtifactModes.DEFAULT, ArtifactModes.SHADCNUI].map((mode): [string, string] => [
-      generateArtifactsPrompt({ endpoint, artifacts: mode }) ?? '',
-      `<artifacts:${mode}:${endpoint}>`,
-    ]),
-  ),
+  [
+    generateArtifactsPrompt({ endpoint: 'openAI', artifacts: ArtifactModes.DEFAULT }) ?? '',
+    '<artifacts:default>',
+  ] as [string, string],
+  ...(['openAI', EModelEndpoint.anthropic] as const).map((endpoint): [string, string] => [
+    generateArtifactsPrompt({ endpoint, artifacts: ArtifactModes.SHADCNUI }) ?? '',
+    `<artifacts:${ArtifactModes.SHADCNUI}:${endpoint}>`,
+  ]),
   [buildWebSearchContext(true), '<web_search:instructions:stable>'] as [string, string],
   [buildWebSearchContext(false), '<web_search:instructions>'] as [string, string],
   [memoryInstructions, '<memory:instructions>'] as [string, string],
