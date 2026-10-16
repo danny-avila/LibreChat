@@ -144,10 +144,6 @@ export type ChatFilesContract = {
 
 /** Chat-scoped view state that has no AI SDK counterpart. */
 export type ChatViewContract = {
-  /** Whether the pane's settings popover is open. */
-  showPopover: boolean;
-  /** Opens or closes the pane's settings popover. */
-  setShowPopover: Dispatch<SetStateAction<boolean>>;
   /** Whether message feedback controls are enabled by the startup config. */
   feedbackEnabled: boolean;
 };
