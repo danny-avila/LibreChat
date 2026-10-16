@@ -126,16 +126,33 @@ const buildToolCallStepOwners = (
   return owners;
 };
 
-const collectMessageAppAttachments = (
+const collectMessageContent = (
   content: Array<TMessageContentParts | undefined> | undefined,
   attachments: TAttachment[] | undefined,
-): { attachments: TAttachment[]; atIndex: Map<number, TAttachment[]> } => {
+  contentIndexOffset = 0,
+  contentIndices?: ReadonlyArray<number>,
+): {
+  attachments: TAttachment[];
+  atIndex: Map<number, TAttachment[]>;
+  resumeAuthors: ReadonlyMap<number, string | undefined>;
+} => {
+  const resumeAuthors = new Map<number, string | undefined>();
+  let prevType: string | undefined;
+  let activeAgentId: string | undefined;
   const atIndex = new Map<number, TAttachment[]>();
   const attachmentMap = mapAttachments(attachments ?? []);
   const ownersByToolCallId = buildToolCallStepOwners(content);
   const collected = new Set<TAttachment>();
   (content ?? []).forEach((part, index) => {
     if (part == null) return;
+    // Attribute the resume point before applying a handoff on that same part.
+    if (prevType === ContentTypes.STEER && part.type !== ContentTypes.STEER) {
+      resumeAuthors.set(contentIndices?.[index] ?? index + contentIndexOffset, activeAgentId);
+    }
+    if (part.type === ContentTypes.AGENT_UPDATE) {
+      activeAgentId = part[ContentTypes.AGENT_UPDATE]?.agentId || undefined;
+    }
+    prevType = part.type;
     const routed = filterAttachmentsForPart(
       attachmentMap[getToolCallId(part)],
       getPartAgentId(part),
@@ -155,7 +172,7 @@ const collectMessageAppAttachments = (
       }
     }
   });
-  return { attachments: Array.from(collected), atIndex };
+  return { attachments: Array.from(collected), atIndex, resumeAuthors };
 };
 
 const getToolGroupId = (parts: PartWithIndex[], fallbackScope: number): string => {
@@ -393,7 +410,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
   toolGroupExpansionState,
   toolGroupOccurrenceByIndex,
   toolCallStepOwnersById,
-}: ContentPartsProps) {
+}: ContentPartsProps & { resumeAuthors: ReadonlyMap<number, string | undefined> }) {
   const { inlineAttachments, workspaceChanges } = useMemo(
     () =>
       workspaceAttachmentsPartitioned
@@ -716,38 +733,15 @@ const ContentPartsBody = memo(function ContentPartsBody({
     ],
   );
 
-  /** `postSteerAuthors` marks each part that resumes the response after a
-   *  steer block — where attribution is re-rendered. The value is the ACTIVE
-   *  agent id when a preceding AGENT_UPDATE handed the run off (the resumed
-   *  content belongs to that agent, not the message-level author), undefined
-   *  for the top-level `authorHeader`. Read BEFORE applying the current
-   *  part's own handoff, so a resume point that IS an agent update keeps the
-   *  pre-handoff author and lets the real marker announce the transition. */
-  const { sequentialParts, detectedResumeAuthors } = useMemo(() => {
+  const sequentialParts = useMemo(() => {
     const parts: PartWithIndex[] = [];
-    const authors = new Map<number, string | undefined>();
-    if (!content) {
-      return { sequentialParts: parts, detectedResumeAuthors: authors };
-    }
-    let prevType: string | undefined;
-    let activeAgentId: string | undefined;
-    content.forEach((part, localIdx) => {
-      if (!part) {
-        return;
+    content?.forEach((part, localIdx) => {
+      if (part != null) {
+        parts.push({ part, idx: absoluteIndexAt(localIdx) });
       }
-      const idx = absoluteIndexAt(localIdx);
-      if (prevType === ContentTypes.STEER && part.type !== ContentTypes.STEER) {
-        authors.set(idx, activeAgentId);
-      }
-      if (part.type === ContentTypes.AGENT_UPDATE) {
-        activeAgentId = part[ContentTypes.AGENT_UPDATE]?.agentId || undefined;
-      }
-      prevType = part.type;
-      parts.push({ part, idx });
     });
-    return { sequentialParts: parts, detectedResumeAuthors: authors };
+    return parts;
   }, [absoluteIndexAt, content]);
-  const postSteerAuthors = resumeAuthors ?? detectedResumeAuthors;
 
   const resolvedToolGroupOccurrences = useMemo(() => {
     if (toolGroupOccurrenceByIndex != null) {
@@ -805,16 +799,16 @@ const ContentPartsBody = memo(function ContentPartsBody({
    *  by the sequential path and the parallel renderer's sequential stretches. */
   const renderResumeAttribution = useCallback(
     (idx: number, keyIdx: number = idx): ReactElement | null => {
-      if (authorHeader == null || !postSteerAuthors.has(idx)) {
+      if (authorHeader == null || !resumeAuthors.has(idx)) {
         return null;
       }
-      const activeAgentId = postSteerAuthors.get(idx);
+      const activeAgentId = resumeAuthors.get(idx);
       if (activeAgentId != null) {
         return <AgentUpdate key={`author-${messageId}-${keyIdx}`} currentAgentId={activeAgentId} />;
       }
       return <Fragment key={`author-${messageId}-${keyIdx}`}>{authorHeader}</Fragment>;
     },
-    [authorHeader, postSteerAuthors, messageId],
+    [authorHeader, resumeAuthors, messageId],
   );
 
   // Early return: no content to render AND no pending skill cards
@@ -1020,7 +1014,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
           contentIndexOffset={segmentStartIndex}
           contentIndices={segmentIndices}
           laneGroups={messageLaneGroups}
-          resumeAuthors={postSteerAuthors}
+          resumeAuthors={resumeAuthors}
           toolGroupExpansionState={expansionState}
           toolGroupOccurrenceByIndex={resolvedToolGroupOccurrences}
           toolCallStepOwnersById={resolvedToolCallStepOwners}
@@ -1230,9 +1224,6 @@ const ContentPartsBody = memo(function ContentPartsBody({
   const sequentialContent = (
     <SearchContext.Provider value={{ searchResults }}>
       {!nestedActivityPhase && !continuation && <MemoryArtifacts attachments={attachments} />}
-      {phaseContent != null && hasParallelContent && !continuation && (
-        <Sources messageId={messageId} conversationId={conversationId || undefined} />
-      )}
       {!nestedActivityPhase && !continuation && renderPendingSkills()}
       {showEmptyCursor && (
         <Container>
@@ -1339,13 +1330,19 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
     previousIdentity.isSubmitting = isSubmitting;
   }
   const appRenderScope = appRenderIdentity.current!.scope;
-  const messageApps = useMemo(
-    () => collectMessageAppAttachments(props.content, attachments),
-    [props.content, attachments],
+  const messageContent = useMemo(
+    () =>
+      collectMessageContent(
+        props.content,
+        attachments,
+        props.contentIndexOffset,
+        props.contentIndices,
+      ),
+    [props.content, attachments, props.contentIndexOffset, props.contentIndices],
   );
   const suppressedAppAttachments = useMemo<ReadonlySet<TAttachment>>(
-    () => new Set(messageApps.attachments),
-    [messageApps.attachments],
+    () => new Set(messageContent.attachments),
+    [messageContent.attachments],
   );
   const messageContext = useMemo(
     () => ({
@@ -1388,7 +1385,7 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
   }
   const reasoningDisclosures = reasoningState.current.disclosures;
   const appContent = useMemo(() => {
-    if (!appsEnabled || messageApps.atIndex.size === 0 || props.edit) return null;
+    if (!appsEnabled || messageContent.atIndex.size === 0 || props.edit) return null;
     const owners = buildToolCallStepOwners(props.content);
     const lanes = parallelLaneGroups(props.content);
     const { inlineAttachments, workspaceChanges } = partitionWorkspaceChanges(attachments);
@@ -1396,7 +1393,7 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
       TAttachment,
       Array<{ resource: MCPAppResourceOccurrence; ordinal: number }>
     >();
-    selectToolCallUIResources(messageApps.attachments).forEach((resource, index) => {
+    selectToolCallUIResources(messageContent.attachments).forEach((resource, index) => {
       const entries = resourcesByAttachment.get(resource.attachment) ?? [];
       entries.push({ resource, ordinal: index + 1 });
       resourcesByAttachment.set(resource.attachment, entries);
@@ -1423,13 +1420,14 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
               continuation={start > 0}
               isLast={props.isLast && end === props.content?.length}
               laneGroups={lanes}
+              resumeAuthors={props.resumeAuthors ?? messageContent.resumeAuthors}
               toolCallStepOwnersById={owners}
             />
           </SoleToolContext.Provider>
         </MCPAppSuppressionContext.Provider>,
       );
     };
-    for (const [index, appAttachments] of messageApps.atIndex) {
+    for (const [index, appAttachments] of messageContent.atIndex) {
       renderSlice(index + 1);
       for (const attachment of appAttachments) {
         for (const { resource, ordinal } of resourcesByAttachment.get(attachment) ?? []) {
@@ -1447,7 +1445,7 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
     renderSlice(props.content?.length ?? 0);
     rows.push(<WorkspaceChanges key="workspace" attachments={workspaceChanges} />);
     return rows;
-  }, [props, attachments, messageApps, suppressedAppAttachments, appRenderScope, appsEnabled]);
+  }, [props, attachments, messageContent, suppressedAppAttachments, appRenderScope, appsEnabled]);
   /** Published once for the whole message so every markdown block below —
    *  including the ones nested inside phase cards — resolves a bare
    *  `![DTI](5_dti.png)` against the files this turn actually produced.
@@ -1468,10 +1466,18 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
       <MediaContext.Provider value={media}>
         <ReasoningDisclosureContext.Provider value={reasoningDisclosures}>
           <ToolDisclosureContext.Provider value={toolDisclosures}>
+            {!props.edit && hasParallelLanes(props.content, props.laneGroups) && (
+              <SearchContext.Provider value={{ searchResults: props.searchResults }}>
+                <Sources messageId={messageId} conversationId={conversationId || undefined} />
+              </SearchContext.Provider>
+            )}
             {appContent ?? (
               <MCPAppSuppressionContext.Provider value={suppressedAppAttachments}>
                 <SoleToolContext.Provider value={undefined}>
-                  <ContentPartsBody {...props} />
+                  <ContentPartsBody
+                    {...props}
+                    resumeAuthors={props.resumeAuthors ?? messageContent.resumeAuthors}
+                  />
                 </SoleToolContext.Provider>
               </MCPAppSuppressionContext.Provider>
             )}

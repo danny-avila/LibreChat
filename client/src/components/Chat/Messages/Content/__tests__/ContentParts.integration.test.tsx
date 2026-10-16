@@ -153,15 +153,35 @@ jest.mock('../Parts', () => ({
   },
   ExecuteCode: () => <div data-testid="execute-code" />,
   ImageGen: () => <div data-testid="image-gen" />,
-  AgentUpdate: () => <div data-testid="agent-update" />,
+  AgentUpdate: ({ currentAgentId }: { currentAgentId?: string }) => (
+    <div data-testid="agent-update" data-agent-id={currentAgentId} />
+  ),
   EmptyText: () => <div data-testid="empty-text" />,
   Reasoning: () => <div data-testid="reasoning" />,
   ReasoningCompact: () => <div data-testid="compact-reasoning" />,
   Summary: () => <div data-testid="summary" />,
+  SteerPart: () => <div data-testid="steer" />,
   Text: jest.fn(({ text }: { text?: string }) => <div data-testid="text">{text}</div>),
   MemoryCall: ({ attachments }: { attachments?: TAttachment[] }) => (
     <div data-testid="memory-call" data-count={attachments?.length ?? 0} />
   ),
+}));
+
+jest.mock('~/components/Web/Sources', () => ({
+  __esModule: true,
+  default: ({ messageId, conversationId }: { messageId?: string; conversationId?: string }) => {
+    const { searchResults } = jest
+      .requireActual<typeof import('~/Providers/SearchContext')>('~/Providers/SearchContext')
+      .useSearchContext();
+    return (
+      <div
+        data-testid="sources"
+        data-message-id={messageId}
+        data-conversation-id={conversationId}
+        data-search-keys={Object.keys(searchResults ?? {}).join(',')}
+      />
+    );
+  },
 }));
 
 jest.mock('../MemoryArtifacts', () => ({
@@ -556,6 +576,132 @@ describe('ContentParts integration: MCP image hoist and grouping', () => {
       '1',
       '1',
     ]);
+  });
+
+  const appAttachment = (toolCallId: string): TAttachment =>
+    ({
+      type: Tools.ui_resources,
+      toolCallId,
+      ui_resources: [
+        {
+          resourceId: toolCallId,
+          uri: 'ui://demo/view',
+          mimeType: 'text/html;profile=mcp-app',
+          toolName: 'show_app',
+          serverName: 'demo',
+        },
+      ],
+    }) as TAttachment;
+
+  it.each([false, true])(
+    'retains the handed-off author after an App with phase %s',
+    (withPhase) => {
+      const handoff: TMessageContentParts = {
+        type: ContentTypes.AGENT_UPDATE,
+        agent_update: { agentId: 'agent_b', index: 1, runId: 'run' },
+      };
+      renderContentParts({
+        ...baseProps,
+        authorHeader: <div data-testid="top-level-author" />,
+        content: [
+          handoff,
+          makeMcpToolCall('app'),
+          undefined,
+          { type: ContentTypes.STEER, steer: 'continue' },
+          undefined,
+          makeTextPart('resumed answer'),
+          ...(withPhase ? [makePhasePart(3, 6, 'Resumed work')] : []),
+        ],
+        attachments: [appAttachment('app')],
+      });
+      if (withPhase) fireEvent.click(screen.getByRole('button', { name: /Resumed work/ }));
+      const markers = screen.getAllByTestId('agent-update');
+      expect(markers).toHaveLength(2);
+      expect(markers[1]).toHaveAttribute('data-agent-id', 'agent_b');
+      expect(screen.queryByTestId('top-level-author')).toBeNull();
+      expect(markers[1].compareDocumentPosition(screen.getByText('resumed answer'))).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+    },
+  );
+
+  it.each(['before', 'after', 'between', 'phase', 'none'])(
+    'renders Sources once with Apps %s parallel content',
+    (layout) => {
+      const lanes: TMessageContentParts[] = [
+        { ...makeTextPart('lane A'), agentId: 'agent_a', groupId: 1 },
+        { ...makeTextPart('lane B'), agentId: 'agent_b', groupId: 1 },
+      ];
+      const app = makeMcpToolCall('app');
+      const layouts: Record<string, TMessageContentParts[]> = {
+        before: [app, ...lanes],
+        after: [...lanes, app],
+        between: [app, ...lanes, makeMcpToolCall('second-app')],
+        phase: [app, ...lanes, makePhasePart(1, 3, 'Parallel research')],
+        none: lanes,
+      };
+      renderContentParts({
+        ...baseProps,
+        conversationId: 'conversation',
+        content: layouts[layout],
+        attachments: [appAttachment('app'), appAttachment('second-app')],
+        searchResults: { search: { organic: [] } },
+      });
+      expect(screen.getAllByTestId('sources')).toHaveLength(1);
+      expect(screen.getByTestId('sources')).toHaveAttribute('data-message-id', 'msg1');
+      expect(screen.getByTestId('sources')).toHaveAttribute('data-conversation-id', 'conversation');
+      expect(screen.getByTestId('sources')).toHaveAttribute('data-search-keys', 'search');
+    },
+  );
+
+  it('updates Sources as parallel content streams after an App', () => {
+    const frame = (content: TMessageContentParts[]) => (
+      <RecoilRoot>
+        <ContentParts {...baseProps} content={content} attachments={[appAttachment('app')]} />
+      </RecoilRoot>
+    );
+    const app = makeMcpToolCall('app');
+    const { rerender } = render(frame([app]));
+    expect(screen.queryByTestId('sources')).toBeNull();
+    const lanes: TMessageContentParts[] = [
+      { ...makeTextPart('lane A'), agentId: 'agent_a', groupId: 1 },
+      { ...makeTextPart('lane B'), agentId: 'agent_b', groupId: 1 },
+    ];
+    rerender(frame([app, ...lanes]));
+    const sources = screen.getByTestId('sources');
+    rerender(frame([app, ...lanes, makeTextPart('answer')]));
+    expect(screen.getAllByTestId('sources')).toEqual([sources]);
+  });
+
+  it('uses the latest handoff across multiple Apps and a subsequent handoff to the top-level author', () => {
+    const handoff = (agentId: string): TMessageContentParts => ({
+      type: ContentTypes.AGENT_UPDATE,
+      agent_update: { agentId, index: 1, runId: 'run' },
+    });
+    const steer: TMessageContentParts = { type: ContentTypes.STEER, steer: 'continue' };
+    renderContentParts({
+      ...baseProps,
+      authorHeader: <div data-testid="top-level-author" />,
+      content: [
+        handoff('agent_a'),
+        makeMcpToolCall('app'),
+        handoff('agent_b'),
+        makeMcpToolCall('second-app'),
+        steer,
+        makeTextPart('agent answer'),
+        handoff(''),
+        steer,
+        makeTextPart('top-level answer'),
+      ],
+      attachments: [appAttachment('app'), appAttachment('second-app')],
+    });
+    expect(screen.getAllByTestId('agent-update').map((marker) => marker.dataset.agentId)).toEqual([
+      'agent_a',
+      'agent_b',
+      'agent_b',
+      '',
+    ]);
+    expect(screen.getAllByTestId('top-level-author')).toHaveLength(1);
   });
 
   it('routes repeated App call ids by agent and exact-or-fallback host step', () => {
