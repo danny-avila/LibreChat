@@ -9,6 +9,7 @@ import type { AllMethods, IRole, IUser } from '@librechat/data-schemas';
 import type { FiltersConfig } from 'librechat-data-provider';
 import type { RequestHandler } from 'express';
 import type { SkillManagementDeps } from './management';
+import type { SkillsHandlers } from './handlers';
 import type { ServerRequest } from '~/types';
 import { createSkillManagementHandlers } from './management';
 import { createSkillsHandlers } from './handlers';
@@ -21,6 +22,7 @@ let db: AllMethods;
 let app: express.Express;
 let skillId: string;
 let allowEdit: boolean;
+let allowDelete: boolean;
 let allowView: boolean;
 let allowUse: boolean;
 let allowCreate: boolean;
@@ -36,6 +38,7 @@ let publiclyAccessible: jest.Mock;
 let publicStatus: jest.Mock;
 let capabilityCheck: jest.Mock;
 let originalStrict: string | undefined;
+let skillHandlers: SkillsHandlers;
 const inTenant = <T>(fn: () => T) => tenantStorage.run({ tenantId }, fn);
 
 beforeAll(async () => {
@@ -55,6 +58,7 @@ afterAll(async () => {
 beforeEach(async () => {
   await mongoose.connection.dropDatabase();
   allowEdit = true;
+  allowDelete = true;
   allowView = true;
   allowUse = true;
   allowCreate = true;
@@ -83,7 +87,7 @@ beforeEach(async () => {
   publiclyAccessible = jest.fn(async () => []);
   publicStatus = jest.fn(async () => false);
   capabilityCheck = jest.fn(async () => canManage);
-  const handlers = createSkillsHandlers({
+  skillHandlers = createSkillsHandlers({
     ...db,
     findAccessibleResources: accessible,
     findPubliclyAccessibleResources: publiclyAccessible,
@@ -93,7 +97,7 @@ beforeEach(async () => {
     isValidObjectIdString: (id) => typeof id === 'string' && /^[a-f\d]{24}$/i.test(id),
   });
   const management = createSkillManagementHandlers({
-    handlers,
+    handlers: skillHandlers,
     beforeList,
     fileWriteLimiters: [uploadLimiter],
     getSkillById: db.getSkillById,
@@ -108,6 +112,7 @@ beforeEach(async () => {
       }) as IRole,
     checkPermission: async ({ requiredPermission }) => {
       if (requiredPermission === PermissionBits.EDIT) return allowEdit;
+      if (requiredPermission === PermissionBits.DELETE) return allowDelete;
       return allowView;
     },
     saveFile,
@@ -131,6 +136,9 @@ beforeEach(async () => {
   });
   app.patch('/skills/:id', async (req, res) => {
     await management.update(req, res);
+  });
+  app.delete('/skills/:id', async (req, res) => {
+    await management.delete(req, res);
   });
   app.get('/skills/:id/files', async (req, res) => {
     await management.listFiles(req, res);
@@ -187,6 +195,44 @@ it('requires create capability for management mutations', async () => {
     .patch(`/skills/${skillId}`)
     .send({ expectedVersion: 1, body: 'Denied' })
     .expect(403);
+  await request(app).delete(`/skills/${skillId}`).expect(403);
+});
+it('deletes an inline Skill through the existing cleanup handler', async () => {
+  const result = await request(app).delete(`/skills/${skillId.toUpperCase()}`).expect(200);
+  expect(result.body).toEqual({ id: skillId, deleted: true, cleanupComplete: true });
+  expect(await inTenant(() => db.getSkillById(skillId))).toBeNull();
+  await request(app).delete(`/skills/${skillId}`).expect(404);
+});
+it('requires DELETE access and hides missing or cross-tenant Skills', async () => {
+  allowDelete = false;
+  await request(app).delete(`/skills/${skillId}`).expect(404);
+  allowDelete = true;
+  await request(app).delete(`/skills/${new Types.ObjectId()}`).expect(404);
+  const { skill } = await tenantStorage.run({ tenantId: 'foreign' }, () =>
+    db.createSkill({
+      name: 'foreign',
+      description: 'Foreign tenant Skill for deletion isolation tests.',
+      body: 'secret',
+      author,
+      authorName: 'Foreign',
+      tenantId: 'foreign',
+    }),
+  );
+  await request(app).delete(`/skills/${skill._id}`).expect(404);
+  expect(
+    await tenantStorage.run({ tenantId: 'foreign' }, () => db.getSkillById(skill._id)),
+  ).not.toBeNull();
+});
+it('preserves the existing incomplete-cleanup result without exposing storage details', async () => {
+  jest
+    .spyOn(skillHandlers, 'delete')
+    .mockImplementationOnce(async (_req, res) =>
+      res
+        .status(200)
+        .json({ id: skillId, deleted: true, cleanupComplete: false, storageKey: 'hidden' }),
+    );
+  const result = await request(app).delete(`/skills/${skillId}`).expect(200);
+  expect(result.body).toEqual({ id: skillId, deleted: true, cleanupComplete: false });
 });
 
 it('lists and retrieves stable representations without ownership or storage internals', async () => {
@@ -254,6 +300,7 @@ it.each([
 it('hides inaccessible and cross-tenant Skills, including on file writes', async () => {
   allowView = false;
   allowEdit = false;
+  allowDelete = false;
   await request(app).get(`/skills/${skillId}`).expect(404);
   await request(app)
     .patch(`/skills/${skillId}`)
@@ -264,6 +311,7 @@ it('hides inaccessible and cross-tenant Skills, including on file writes', async
     .send({ content: 'x' })
     .expect(404);
   await request(app).delete(`/skills/${skillId}/files/reference.md`).expect(404);
+  await request(app).delete(`/skills/${skillId}`).expect(404);
   expect(saveFile).not.toHaveBeenCalled();
   allowView = true;
   allowEdit = true;
@@ -282,6 +330,7 @@ it('hides inaccessible and cross-tenant Skills, including on file writes', async
     .patch(`/skills/${skill._id}`)
     .send({ expectedVersion: 1, body: 'x' })
     .expect(404);
+  await request(app).delete(`/skills/${skill._id}`).expect(404);
 });
 it('allows viewing without allowing editing', async () => {
   allowEdit = false;
@@ -312,6 +361,7 @@ it('keeps synchronized Skill content and files read-only', async () => {
     .send({ content: 'x' })
     .expect(403);
   await request(app).delete(`/skills/${skillId}/files/reference.md`).expect(403);
+  await request(app).delete(`/skills/${skillId}`).expect(403);
   expect(saveFile).not.toHaveBeenCalled();
 });
 it('writes nested text files through existing storage and rejects unsafe paths', async () => {

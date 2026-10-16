@@ -266,6 +266,7 @@ describe('Agents OpenAPI actual HTTP contract', () => {
       fileHandlers.upload,
     );
     app.post('/api/agents/v1/skills', skillHandlers.create);
+    app.delete('/api/agents/v1/skills/:id', skillHandlers.delete);
     app.put('/api/agents/v1/skills/:id/files/*relativePath', skillHandlers.updateFile);
     app.delete('/api/agents/v1/skills/:id/files/*relativePath', skillHandlers.deleteFile);
     app.get('/api/agents/v1/agents/:id', (_req, _res, next) =>
@@ -357,7 +358,7 @@ describe('Agents OpenAPI actual HTTP contract', () => {
     expect(fs.readFileSync(diskPath, 'utf8')).toBe(content);
   });
 
-  it('documents and validates Skill creation and file deletion', async () => {
+  it('documents and validates Skill creation, file deletion, and whole-Skill deletion', async () => {
     const created = await request(app)
       .post('/api/agents/v1/skills')
       .set('Authorization', `Bearer ${token}`)
@@ -389,6 +390,18 @@ describe('Agents OpenAPI actual HTTP contract', () => {
         relativePath: 'references/delete-me.md',
       }).lean(),
     ).toBeNull();
+
+    const deletedSkill = await request(app)
+      .delete(`/api/agents/v1/skills/${created.body.id.toUpperCase()}`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(deletedSkill.status).toBe(200);
+    expectResponseToMatchSpec(spec, 'deleteSkill', deletedSkill);
+    expect(deletedSkill.body).toEqual({
+      id: created.body.id,
+      deleted: true,
+      cleanupComplete: true,
+    });
+    expect(await mongoose.models.Skill.findById(created.body.id).lean()).toBeNull();
   });
 
   it('validates parser and normalized management errors against their documented JSON forms', async () => {

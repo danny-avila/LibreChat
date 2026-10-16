@@ -9,6 +9,7 @@ import {
 import type {
   SkillFrontmatterValue,
   TCreateSkill,
+  TDeleteSkillResponse,
   TDeleteSkillFileResponse,
   TSkill,
   TUpdateSkillPayload,
@@ -130,6 +131,11 @@ export const skillFileDeleteResponseSchema: z.ZodType<TDeleteSkillFileResponse> 
   relativePath: z.string(),
   deleted: z.literal(true),
 });
+export const skillDeleteResponseSchema: z.ZodType<TDeleteSkillResponse> = z.object({
+  id: idSchema,
+  deleted: z.literal(true),
+  cleanupComplete: z.boolean(),
+});
 const listSchema = agentManagementListSchema;
 
 type ManagementRequest = Request &
@@ -233,7 +239,15 @@ async function admitFileWrite(req: Request, res: Response, limiters: RequestHand
 export function createSkillManagementHandlers(
   deps: SkillManagementDeps,
 ): Record<
-  'list' | 'create' | 'get' | 'update' | 'listFiles' | 'getFile' | 'updateFile' | 'deleteFile',
+  | 'list'
+  | 'create'
+  | 'get'
+  | 'update'
+  | 'delete'
+  | 'listFiles'
+  | 'getFile'
+  | 'updateFile'
+  | 'deleteFile',
   (request: Request, res: Response) => Promise<Response>
 > {
   async function canManageSkills(req: ManagementRequest): Promise<boolean> {
@@ -248,7 +262,7 @@ export function createSkillManagementHandlers(
   function wrap(
     permission: PermissionBits | undefined,
     operation: (req: ManagementRequest, res: Response) => Promise<Response>,
-    options: { mutation?: boolean } = {},
+    options: { mutation?: boolean; canonicalizeId?: boolean } = {},
   ) {
     return async (request: Request, res: Response): Promise<Response> => {
       const req = request as ManagementRequest;
@@ -264,6 +278,7 @@ export function createSkillManagementHandlers(
         });
         if (!allowed) return sendError(res, 'permission_denied');
         if (permission !== undefined) {
+          if (options.canonicalizeId) req.params.id = req.params.id.toLowerCase();
           if (!idSchema.safeParse(req.params.id).success) return sendError(res, 'not_found');
           const [skill, canManage] = await Promise.all([
             deps.getSkillById(req.params.id),
@@ -367,6 +382,12 @@ export function createSkillManagementHandlers(
         );
       },
       { mutation: true },
+    ),
+    delete: wrap(
+      PermissionBits.DELETE,
+      (req, res) =>
+        runHandler(req, res, deps.handlers.delete, (body) => skillDeleteResponseSchema.parse(body)),
+      { mutation: true, canonicalizeId: true },
     ),
     listFiles: wrap(PermissionBits.VIEW, (req, res) =>
       runHandler(req, res, deps.handlers.listFiles, (body) => ({

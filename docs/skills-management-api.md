@@ -10,6 +10,7 @@ execution router and does not accept browser sessions or execution API keys as f
 | POST   | `/api/agents/v1/skills`                         | Create an inline Skill                        |
 | GET    | `/api/agents/v1/skills/:id`                     | Read Skill metadata, body, and frontmatter    |
 | PATCH  | `/api/agents/v1/skills/:id`                     | Update an inline Skill                        |
+| DELETE | `/api/agents/v1/skills/:id`                     | Delete an inline Skill                        |
 | GET    | `/api/agents/v1/skills/:id/files`               | List file metadata                            |
 | GET    | `/api/agents/v1/skills/:id/files/*relativePath` | Read a file as JSON                           |
 | PUT    | `/api/agents/v1/skills/:id/files/*relativePath` | Create or replace a text file                 |
@@ -48,6 +49,11 @@ Editable fields are `name`, `displayTitle`, `description`, `body`, `frontmatter`
 A stale version returns HTTP 409 with `error.code: "conflict"`; retrieve the current Skill before
 retrying. Skill reads require VIEW access; updates require EDIT and the Skills USE/CREATE role
 permissions. Inaccessible and cross-tenant IDs return the same 404 envelope.
+
+Whole-Skill deletion requires DELETE access and the same Skills USE/CREATE role permissions as
+other mutations. It returns `{ "id": "...", "deleted": true, "cleanupComplete": true }` on
+complete cleanup. If the existing deletion handler removes the Skill but cannot finish dependent
+cleanup, it returns `cleanupComplete: false`; that result does not promise an automatic retry.
 
 Text-file writes accept `{ "content": "replacement text" }`, capped at 1 MiB of UTF-8 data.
 Use a relative path such as `references/guide.md`. Absolute paths, traversal, and NUL bytes are
