@@ -2658,21 +2658,39 @@ describe('deleteUserSkills', () => {
     expect(agentAfter?.skills_enabled).toBe(true);
   });
 
-  it('fails and keeps the retry anchor when agent allowlist cleanup fails', async () => {
+  it('retains the durable retry anchor when account-deletion allowlist cleanup fails', async () => {
     const { skill: mine } = await methods.createSkill(makeSkillInput({ name: 'mine' }));
     await grantOwner(mine._id);
     const Agent = mongoose.models.Agent;
     const agent = await Agent.create(makeAgentDoc([mine._id.toString(), 'keep-me']));
 
+    expect(await methods.deleteUserSkills(owner._id as mongoose.Types.ObjectId)).toBe(1);
+    expect(await Skill.findById(mine._id).lean()).toMatchObject({
+      deletionNeedsJournal: true,
+    });
+    // Account erasure removes principal ACLs before the background reconciler runs.
+    await AclEntry.deleteMany({ principalId: owner._id });
+    const lifecycle = createSkillLifecycleMethods(mongoose);
+    await lifecycle.discoverUnjournaledDeletions();
+
     const failure = jest
       .spyOn(Agent, 'updateMany')
       .mockRejectedValueOnce(new Error('transient outage'));
-    await expect(methods.deleteUserSkills(owner._id as mongoose.Types.ObjectId)).rejects.toThrow(
-      'Agent skill allowlists could not be cleaned up',
-    );
-    failure.mockRestore();
+    try {
+      expect(await methods.finalizeSkillDeletion(mine._id.toString())).toMatchObject({
+        cleanupComplete: false,
+        failedCleanupSteps: ['agent_allowlists'],
+      });
+    } finally {
+      failure.mockRestore();
+    }
+    expect(await Skill.findById(mine._id).lean()).not.toBeNull();
+    expect(await lifecycle.getSkillDeletion(mine._id.toString())).not.toBeNull();
 
-    await methods.deleteUserSkills(owner._id as mongoose.Types.ObjectId);
+    expect(await methods.finalizeSkillDeletion(mine._id.toString())).toMatchObject({
+      cleanupComplete: true,
+    });
+    expect(await Skill.findById(mine._id).lean()).toBeNull();
     const agentAfter = (await Agent.findById(agent._id).lean()) as { skills?: string[] } | null;
     expect(agentAfter?.skills).toEqual(['keep-me']);
   });
