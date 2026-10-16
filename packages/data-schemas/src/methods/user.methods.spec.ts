@@ -8,6 +8,7 @@ import {
 import type * as t from '~/types';
 import { createToolApprovalGrantModel } from '~/models/toolApprovalGrant';
 import { createUserMethods, USER_DELETION_FENCE_STALE_MS } from './user';
+import { runAsSystem, tenantStorage } from '~/config/tenantContext';
 import { createPRAutomationModel } from '~/models/prAutomation';
 import { createConversationModel } from '~/models/convo';
 import balanceSchema from '~/schema/balance';
@@ -2204,6 +2205,18 @@ describe('User Methods - Database Tests', () => {
 });
 
 describe('PR automation cleanup on account deletion', () => {
+  it('removes the records in every tenant when the deletion runs in one', async () => {
+    const user = await User.create({ email: 'delete-pr-tenants@example.com', provider: 'local' });
+    const id = user._id.toString();
+    const PRAutomation = mongoose.models.PRAutomation;
+    const inTenant = <T>(tenantId: string, run: () => Promise<T>) =>
+      tenantStorage.run({ tenantId }, run);
+    await inTenant('tenant-a', () => PRAutomation.create({ user: id, conversationId: 'chat-a' }));
+    await inTenant('tenant-b', () => PRAutomation.create({ user: id, conversationId: 'chat-a' }));
+    await inTenant('tenant-a', () => methods.deleteUserById(id));
+    expect(await runAsSystem(() => PRAutomation.countDocuments({ user: id }))).toBe(0);
+  });
+
   it('keeps the records exactly as they were when the account delete fails', async () => {
     const user = await User.create({ email: 'delete-pr-fail@example.com', provider: 'local' });
     const id = user._id.toString();

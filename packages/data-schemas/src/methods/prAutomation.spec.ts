@@ -88,7 +88,7 @@ const seedConversation = (fields: Record<string, unknown> = {}) =>
 function interleave(
   during: () => Promise<unknown>,
   model: mongoose.Model<unknown> = PRAutomation,
-  method: 'findOneAndUpdate' | 'findById' = 'findOneAndUpdate',
+  method: 'findOneAndUpdate' | 'findById' | 'findOne' = 'findOneAndUpdate',
 ) {
   const original = (model[method] as typeof PRAutomation.findOneAndUpdate).bind(model);
   return jest.spyOn(model, method as 'findOneAndUpdate').mockImplementationOnce(((
@@ -111,6 +111,43 @@ function interleave(
     }) as typeof query.lean;
     return query;
   }) as typeof PRAutomation.findOneAndUpdate);
+}
+/**
+ * Runs `during` right before the `nth` owner read. An enable reads the owner once before its
+ * write and once after it, so the second read of an enable is where its rollback is decided.
+ */
+function beforeOwnerRead(during: () => Promise<unknown>, nth = 2) {
+  const User = mongoose.models.User;
+  const original = User.findById.bind(User);
+  let reads = 0;
+  return jest.spyOn(User, 'findById').mockImplementation(((
+    ...args: Parameters<typeof User.findById>
+  ) => {
+    const query = original(...args);
+    if (++reads !== nth) {
+      return query;
+    }
+    const lean = query.lean.bind(query);
+    query.lean = ((...leanArgs: Parameters<typeof query.lean>) => ({
+      then: (resolve: (value: unknown) => unknown, reject: (error: unknown) => unknown) =>
+        during()
+          .then(() => lean(...leanArgs))
+          .then(resolve, reject),
+    })) as unknown as typeof query.lean;
+    return query;
+  }) as typeof User.findById);
+}
+/** Runs `during` right before the next `replaceOne` of the record, which is an enable's rollback. */
+function beforeRollback(during: () => Promise<unknown>) {
+  const original = PRAutomation.replaceOne.bind(PRAutomation);
+  return jest.spyOn(PRAutomation, 'replaceOne').mockImplementationOnce(((
+    ...args: Parameters<typeof PRAutomation.replaceOne>
+  ) => ({
+    then: (resolve: (value: unknown) => unknown, reject: (error: unknown) => unknown) =>
+      during()
+        .then(() => original(...args))
+        .then(resolve, reject),
+  })) as unknown as typeof PRAutomation.replaceOne);
 }
 /** What an event handler captured about the run it acts on. */
 const fenceFor = async (binding = pullOne) => ({
@@ -284,6 +321,27 @@ describe('claiming while the owner is being deleted', () => {
     expect(await methods.getPRAutomation(key)).toMatchObject({ state: 'idle', round: 0 });
   });
 
+  test('undoes a rejected claim even when a trust change landed after it', async () => {
+    await enable(pullOne);
+    const spy = interleave(async () => {
+      await methods.setPRAutomationTrust(key, 'collaborators', 'anyone');
+      await startAccountDeletion();
+    });
+    try {
+      expect(await claim(1)).toEqual({ ok: false, error: { code: 'owner_inactive' } });
+    } finally {
+      spy.mockRestore();
+    }
+    await cancelAccountDeletion();
+    expect(await methods.getPRAutomation(key)).toMatchObject({
+      state: 'idle',
+      round: 0,
+      claimedHeads: [],
+      trust: 'collaborators',
+    });
+    expect((await claim(1)).ok).toBe(true);
+  });
+
   test('refuses a claim for an owner that no longer exists', async () => {
     await enable(pullOne);
     await mongoose.models.User.deleteMany({});
@@ -394,6 +452,21 @@ describe('a deletion that lands while a claim is in flight', () => {
   });
 });
 
+describe('enabling under a lowered trust ceiling', () => {
+  test('restarts a stopped record at the current ceiling when no trust is requested', async () => {
+    await enableWith({ ...key, binding: pullOne, trust: 'anyone' });
+    await methods.stopPRAutomation(key, 'user_stopped');
+    await enableWith({ ...key, binding: pullOne, maxTrust: 'approvedBots' });
+    expect(await methods.getPRAutomation(key)).toMatchObject({ trust: 'approvedBots' });
+  });
+
+  test('narrows a running record when it is enabled again', async () => {
+    await enableWith({ ...key, binding: pullOne, trust: 'anyone' });
+    await enableWith({ ...key, binding: pullOne, maxTrust: 'collaborators' });
+    expect(await methods.getPRAutomation(key)).toMatchObject({ trust: 'collaborators' });
+  });
+});
+
 describe('enabling for a conversation or owner that no longer exists', () => {
   test('does not leave a record behind for a deleted conversation', async () => {
     await mongoose.models.Conversation.deleteMany({});
@@ -409,8 +482,8 @@ describe('enabling for a conversation or owner that no longer exists', () => {
     });
   });
 
-  /** Runs `during` right after the enable's first write, before it checks again. */
-  const interleaveEnable = (during: () => Promise<unknown>) => interleave(during);
+  /** Runs `during` right after the enable's write, before it checks again. */
+  const interleaveEnable = (during: () => Promise<unknown>) => beforeOwnerRead(during);
 
   test('rejects an enable once account deletion started mid-write', async () => {
     const spy = interleaveEnable(startAccountDeletionNow);
@@ -437,23 +510,18 @@ describe('enabling for a conversation or owner that no longer exists', () => {
 
   test('does not roll back an enable that landed after the crossing enable was rejected', async () => {
     await enable(pullOne);
-    const spy = interleaveEnable(async () => {
-      await startAccountDeletionNow();
-      /** After the rejected enable reads the owner, the deletion is cancelled and a newer
-       * enable rebinds the record before the rejected one undoes its write. */
-      interleave(
-        async () => {
-          await cancelAccountDeletion();
-          await enable(pullTwo);
-        },
-        mongoose.models.User as mongoose.Model<unknown>,
-        'findById',
-      );
+    const spy = interleaveEnable(startAccountDeletionNow);
+    /** After the rejected enable reads the owner, the deletion is cancelled and a newer
+     * enable rebinds the record before the rejected one undoes its write. */
+    const rollback = beforeRollback(async () => {
+      await cancelAccountDeletion();
+      await enable(pullTwo);
     });
     try {
-      await enableOpen({ ...key, binding: pullOne });
+      await enableOpen({ ...key, binding: otherRepository });
     } finally {
       spy.mockRestore();
+      rollback.mockRestore();
     }
     expect((await methods.getPRAutomation(key))?.pullNumber).toBe(2);
   });
@@ -531,29 +599,10 @@ describe('enabling for a conversation or owner that no longer exists', () => {
    * and its rollback is next. Account deletion starts right after `during`.
    */
   const enableCrossedBy = async (during: () => Promise<unknown>, binding = pullTwo) => {
-    const User = mongoose.models.User;
-    const original = User.findById.bind(User);
-    let reads = 0;
-    const hook = async () => {
+    const spy = beforeOwnerRead(async () => {
       await during();
       await startAccountDeletionNow();
-    };
-    const spy = jest.spyOn(User, 'findById').mockImplementation(((
-      ...args: Parameters<typeof User.findById>
-    ) => {
-      const query = original(...args);
-      if (++reads !== 2) {
-        return query;
-      }
-      const lean = query.lean.bind(query);
-      query.lean = ((...leanArgs: Parameters<typeof query.lean>) => ({
-        then: (resolve: (value: unknown) => unknown, reject: (error: unknown) => unknown) =>
-          hook()
-            .then(() => lean(...leanArgs))
-            .then(resolve, reject),
-      })) as unknown as typeof query.lean;
-      return query;
-    }) as typeof User.findById);
+    });
     try {
       return await enableOpen({ ...key, binding });
     } finally {
@@ -561,6 +610,52 @@ describe('enabling for a conversation or owner that no longer exists', () => {
       await cancelAccountDeletion();
     }
   };
+
+  test('keeps a user stop that lands between an enable reading the record and writing it', async () => {
+    await enable(pullOne);
+    const spy = interleave(
+      () => methods.stopPRAutomation(key, 'user_stopped'),
+      PRAutomation,
+      'findOne',
+    );
+    try {
+      expect(await enableOpen({ ...key, binding: pullTwo })).toEqual({
+        ok: false,
+        error: { code: 'conflict' },
+      });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await methods.getPRAutomation(key)).toMatchObject({
+      ...pullOne,
+      state: 'stopped',
+      stopCode: 'user_stopped',
+    });
+  });
+
+  test('moves the version on every write', async () => {
+    const versions: number[] = [];
+    const read = async () => versions.push((await methods.getPRAutomation(key))?.version ?? -1);
+    await enable(pullOne);
+    await read();
+    await enable(pullOne);
+    await read();
+    await methods.setPRAutomationTrust(key, 'collaborators', 'anyone');
+    await read();
+    await addBot(7);
+    await read();
+    const run = await startRound(1);
+    await read();
+    await settle(run.round, run.runId);
+    await read();
+    await methods.removePRAutomationBot(key, 7, await fenceFor());
+    await read();
+    await methods.stopPRAutomation(key, 'user_stopped');
+    await read();
+    expect(versions.every((version, index) => index === 0 || version > versions[index - 1])).toBe(
+      true,
+    );
+  });
 
   test('keeps a user stop that lands while a rejected enable rolls back', async () => {
     await enable(pullOne);
@@ -579,9 +674,13 @@ describe('enabling for a conversation or owner that no longer exists', () => {
       methods.setPRAutomationTrust(key, 'collaborators', 'anyone'),
     );
     expect(result).toEqual({ ok: false, error: { code: 'owner_inactive' } });
-    const record = await methods.getPRAutomation(key);
-    expect(record).toMatchObject({ trust: 'collaborators', ...pullOne, state: 'idle' });
-    expect(record?.pending).toBeUndefined();
+    expect(await methods.getPRAutomation(key)).toMatchObject({ trust: 'collaborators' });
+    expect(await claim(1, { binding: pullTwo })).not.toMatchObject({ ok: true });
+    await enable(pullOne);
+    expect(await methods.getPRAutomation(key)).toMatchObject({
+      trust: 'collaborators',
+      ...pullOne,
+    });
     expect((await claim(1)).ok).toBe(true);
   });
 
@@ -598,16 +697,12 @@ describe('enabling for a conversation or owner that no longer exists', () => {
   test('does not report success when another enable replaced its write before it committed', async () => {
     await enable(pullOne);
     /** Another enable's write lands between this enable's second check and its commit. */
-    const original = PRAutomation.updateOne.bind(PRAutomation);
-    const spy = jest
-      .spyOn(PRAutomation, 'updateOne')
-      .mockImplementationOnce(((...args: Parameters<typeof PRAutomation.updateOne>) =>
-        PRAutomation.collection
-          .updateOne(
-            { user: userId, conversationId: key.conversationId },
-            { $set: { epoch: 'other-attempt', pending: 'other-attempt' } },
-          )
-          .then(() => original(...args))) as unknown as typeof PRAutomation.updateOne);
+    const spy = beforeOwnerRead(() =>
+      PRAutomation.collection.updateOne(
+        { user: userId, conversationId: key.conversationId },
+        { $set: { epoch: 'other-attempt', pending: 'other-attempt' }, $inc: { version: 1 } },
+      ),
+    );
     try {
       const result = await methods.enablePRAutomation({
         ...key,
@@ -1215,6 +1310,28 @@ describe('reaping records the retention index left behind', () => {
     });
     const left = await runAsSystem(() => PRAutomation.find({}).lean<{ tenantId?: string }[]>());
     expect(left.map((record) => record.tenantId)).toEqual(['tenant-b']);
+  });
+
+  test('keeps a record renewed between its check and its delete', async () => {
+    await enable();
+    await mongoose.models.Conversation.deleteMany({});
+    const original = PRAutomation.deleteOne.bind(PRAutomation);
+    const spy = jest.spyOn(PRAutomation, 'deleteOne').mockImplementationOnce(((
+      ...args: Parameters<typeof PRAutomation.deleteOne>
+    ) => ({
+      then: (resolve: (value: unknown) => unknown, reject: (error: unknown) => unknown) =>
+        seedConversation()
+          .then(() => enable())
+          .then(() => original(...args))
+          .then(resolve, reject),
+    })) as unknown as typeof PRAutomation.deleteOne);
+    try {
+      expect(await methods.reapPRAutomations()).toEqual({ scanned: 1, removed: 0 });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await methods.getPRAutomation(key)).toMatchObject(pullOne);
+    expect((await claim(1)).ok).toBe(true);
   });
 
   test('pages through every record', async () => {

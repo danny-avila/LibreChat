@@ -73,6 +73,8 @@ const prAutomationSchema: Schema<IPRAutomationDocument> = new Schema(
     runId: { type: String, maxlength: 64 },
     epoch: { type: String, maxlength: 64, required: true, default: () => randomUUID() },
     pending: { type: String, maxlength: 64 },
+    /** Moves on every write, so a write based on an earlier read can be fenced on it. */
+    version: { type: Number, default: 0, min: 0, required: true },
   },
   { timestamps: true },
 );

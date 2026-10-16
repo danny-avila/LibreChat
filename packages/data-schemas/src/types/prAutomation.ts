@@ -51,6 +51,8 @@ export interface IPRAutomation {
    * one entry per round, so the round cap bounds it.
    */
   claimedHeads: string[];
+  /** Moves on every write; a write based on an earlier read is fenced on it. */
+  version: number;
   createdAt?: Date;
   updatedAt?: Date;
 }

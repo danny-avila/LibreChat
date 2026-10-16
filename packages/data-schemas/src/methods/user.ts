@@ -17,6 +17,7 @@ import type {
 import type { TwoFactorEnrollmentGuard, TwoFactorEnrollmentUpdate } from '~/types';
 import type { CacheStore } from '~/types';
 import { createPRAutomationMethods } from './prAutomation';
+import { runAsSystem } from '~/config/tenantContext';
 import { evictAuthUserDocs } from '~/utils/eviction';
 import { escapeRegExp } from '~/utils/string';
 import { signPayload } from '~/crypto';
@@ -656,7 +657,8 @@ export function createUserMethods(
        * failed: the next claim removes any record whose owner no longer exists. A retry on an
        * account that was already gone has committed nothing, so its failure still throws. */
       try {
-        await prAutomation.deletePRAutomations(userId);
+        /** The account is gone in every tenant, so its automation is removed from all of them. */
+        await runAsSystem(() => prAutomation.deletePRAutomations(userId));
       } catch (error) {
         if (result.deletedCount === 0) {
           throw error;

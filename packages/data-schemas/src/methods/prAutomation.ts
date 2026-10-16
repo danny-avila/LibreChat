@@ -15,11 +15,11 @@ import { isValidObjectIdString } from '~/utils/objectId';
 import { createIndexesWithRetry } from '~/utils/retry';
 
 const PROJECTION = '-_id -__v';
-const RESTARTABLE = { state: 'stopped' };
 /** Records removed per write, so a cleanup never holds one unbounded `$in`. */
 const DELETE_BATCH = 1000;
 /** A full SHA-1 or SHA-256 commit id; anything else is refused before it is stored. */
 const COMMIT_SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
+const DUPLICATE_KEY = 11000;
 
 /**
  * `owner_inactive` is an account deletion in progress, which can still be cancelled, so the
@@ -27,8 +27,6 @@ const COMMIT_SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
  */
 type Liveness = 'live' | 'conversation_gone' | 'owner_gone' | 'owner_inactive';
 type Gone = Extract<Liveness, 'conversation_gone' | 'owner_gone'>;
-/** Field values an enable attempt left on the record; `undefined` marks a field it removed. */
-type Written = Record<string, unknown>;
 /** The tenant a record belongs to; `null` or absent is a record stored without one. */
 type LivenessScope = { tenantId?: string | null };
 const CLAIMABLE_STATES: PRAutomationState[] = ['idle', 'waiting'];
@@ -39,6 +37,12 @@ const runReset = (epoch: string, fields: Record<string, unknown> = {}) => ({
   $set: { state: 'idle', round: 0, claimedHeads: [], epoch, ...fields },
   $unset: { stopCode: '', startedAt: '', lastHeadSha: '', runId: '' },
 });
+/**
+ * Every write to a record goes through `$inc: { version: 1 }`. A write that acts on a record it
+ * read first names the version it read, so any change in between, a stop or a trust change
+ * included, makes it miss instead of being overwritten.
+ */
+const BUMP = { $inc: { version: 1 } };
 /** GitHub compares `owner/name` without case, so records store and match the lower case form. */
 const canonicalRepository = (repository: string) => repository.toLowerCase();
 const LINK_FIELDS = [
@@ -238,16 +242,22 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
 
   /**
    * A record whose conversation or owner is gone can never run again, so it is removed. This
-   * also converges a cleanup that failed after the delete committed.
+   * also converges a cleanup that failed after the delete committed. The delete names the
+   * version read before the liveness check, so a record renewed after the check is kept; without
+   * one nothing is removed and the reaper decides later.
    */
   async function refuseClaim(
     key: t.PRAutomationKey,
     liveness: Exclude<Liveness, 'live'>,
+    version: number | undefined,
   ): Promise<t.ClaimPRAutomationRoundResult> {
     if (!isGone(liveness)) {
       return { ok: false, error: { code: liveness } };
     }
-    const removed = await mongoose.models.PRAutomation.deleteOne(keyFilter(key));
+    const removed =
+      version == null
+        ? { deletedCount: 0 }
+        : await mongoose.models.PRAutomation.deleteOne({ ...keyFilter(key), version });
     return {
       ok: false,
       error: { code: removed.deletedCount > 0 ? goneCode(liveness) : 'not_found' },
@@ -301,7 +311,8 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
    * recreate a record nobody will clean up.
    *
    * `maxTrust` is the administrator ceiling, resolved by the caller. A requested trust level
-   * is clamped to it before any write, so no record stores a level the deployment forbids.
+   * is clamped to it before any write, and a stored level above it is narrowed, so an enabled
+   * record never keeps a level the deployment now forbids.
    */
   async function enablePRAutomation({
     trust: requestedTrust,
@@ -322,118 +333,71 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
     const PRAutomation = mongoose.models.PRAutomation;
     const filter = keyFilter(key);
     /**
-     * Every write of this attempt stamps the same new epoch, so the record carries it only when
-     * this attempt changed it. Each write returns the record as it was just before that write,
-     * atomically with it, and the last one this attempt did not already own is what a crossed
-     * deletion restores: a later enable that landed between this attempt's read and write is
-     * kept, and nothing a later enable wrote afterwards is reverted.
-     *
-     * The writes also mark the record `pending` with the attempt, and nothing claims a pending
-     * record. Only an attempt that passes its second liveness check clears the mark. A preimage
-     * that another rejected attempt left is therefore still pending when it is restored, so two
+     * The enable reads the record once and makes at most one write, fenced on the version it
+     * read, so a stop, a trust change or another enable that lands in between makes it report a
+     * retryable `conflict` instead of reviving or overwriting what that change left. The write
+     * marks the record `pending` with the attempt, and nothing claims a pending record. Only an
+     * attempt that passes its second liveness check clears the mark; one that sees an account
+     * deletion start puts the record back as it read it, fenced on the version it wrote. A
+     * preimage another rejected attempt left is still pending when it is restored, so two
      * enables crossing the same deletion leave nothing claimable.
      */
     const attempt = randomUUID();
-    const reset = (fields: Record<string, unknown>) =>
-      runReset(attempt, { ...fields, pending: attempt });
-    const options = { runValidators: true };
-    let undo: { previous: t.IPRAutomation | null } | undefined;
-    /** Every field this attempt wrote, with the value it left; `undefined` means it unset it. */
-    const written: Written = {};
-    const track = (update: {
-      $set?: Record<string, unknown>;
-      $unset?: Record<string, unknown>;
-    }) => {
-      Object.assign(written, update.$set);
-      for (const field of Object.keys(update.$unset ?? {})) {
-        written[field] = undefined;
+    const observed = await PRAutomation.findOne(filter).lean<t.IPRAutomation & { _id: unknown }>();
+    let written: number;
+    let restartedRun = true;
+    if (observed == null) {
+      written = 1;
+      try {
+        await PRAutomation.create({
+          ...filter,
+          state: 'idle',
+          round: 0,
+          trustedBots: [],
+          claimedHeads: [],
+          epoch: attempt,
+          pending: attempt,
+          version: written,
+          trust: clampPRAutomationTrust(trust, maxTrust),
+          ...binding,
+        });
+      } catch (error) {
+        if ((error as { code?: number }).code === DUPLICATE_KEY) {
+          return { ok: false, error: { code: 'conflict' } };
+        }
+        throw error;
       }
-    };
-    /** Whether any write of this attempt applied; an enable that changed nothing has no commit. */
-    let wrote = false;
-    const write = async (condition: Record<string, unknown>, update: Record<string, unknown>) => {
-      const before = await PRAutomation.findOneAndUpdate({ ...filter, ...condition }, update, {
-        ...options,
-        new: false,
-      }).lean<t.IPRAutomation>();
-      if (before == null) {
-        return;
-      }
-      wrote = true;
-      track(update);
-      if (before.epoch !== attempt) {
-        undo = { previous: before };
-      }
-    };
-    const inserted = {
-      state: 'idle',
-      round: 0,
-      trustedBots: [],
-      claimedHeads: [],
-      epoch: attempt,
-      pending: attempt,
-      trust: clampPRAutomationTrust(trust, maxTrust),
-      ...binding,
-    };
-    const existing = await PRAutomation.findOneAndUpdate(
-      filter,
-      {
-        $setOnInsert: { ...filter, ...inserted },
-      },
-      { upsert: true, new: false, ...options },
-    ).lean<t.IPRAutomation>();
-    if (existing == null) {
-      wrote = true;
-      track({ $set: inserted });
-      undo = { previous: null };
-    }
-    /** A trust level passed with the request applies to every write that starts a run. */
-    const revive = trust != null ? { trust } : {};
-    if (binding == null) {
-      await write(RESTARTABLE, reset(revive));
     } else {
-      const { repository } = binding;
-      const otherRepository = { repository: { $ne: repository } };
-      await write(
-        { ...RESTARTABLE, ...otherRepository },
-        reset({ ...revive, ...binding, trustedBots: [] }),
+      written = observed.version + 1;
+      const restart = enableRestart(observed, attempt, binding, trust ?? observed.trust, maxTrust);
+      restartedRun = restart != null;
+      /** An enable also narrows a stored level the current ceiling no longer allows. */
+      const narrowed = clampPRAutomationTrust(observed.trust, maxTrust);
+      const update = restart ?? (narrowed === observed.trust ? {} : { $set: { trust: narrowed } });
+      const applied = await PRAutomation.updateOne(
+        { ...filter, version: observed.version },
+        { ...update, ...BUMP },
+        { runValidators: true },
       );
-      await write({ ...RESTARTABLE, repository }, reset({ ...revive, ...binding }));
-      await write(
-        { state: { $ne: 'stopped' }, ...otherRepository },
-        reset({ ...revive, ...binding, trustedBots: [] }),
-      );
-      await write(
-        { state: { $ne: 'stopped' }, repository, pullNumber: { $ne: binding.pullNumber } },
-        reset({ ...revive, ...binding }),
-      );
+      if (applied.matchedCount === 0) {
+        return { ok: false, error: { code: 'conflict' } };
+      }
     }
-    /**
-     * A record still pending for another attempt is either in flight or was left by an attempt
-     * that never finished. Taking it over under this attempt's epoch recovers the second case,
-     * and the in-flight attempt's own undo then misses on its epoch, so this attempt decides.
-     */
-    await write({ pending: { $exists: true, $ne: attempt } }, reset({ ...revive, ...binding }));
     const after = await checkLiveness(key);
     if (isGone(after)) {
-      await PRAutomation.deleteOne(filter);
+      await PRAutomation.deleteOne({ ...filter, version: written });
       return { ok: false, error: { code: goneCode(after) } };
     }
     if (after !== 'live') {
-      if (undo != null) {
-        await undoEnable(filter, written, undo.previous);
+      if (restartedRun) {
+        await undoEnable(filter, written, observed);
       }
       return { ok: false, error: { code: after } };
     }
-    /**
-     * Commits only if this attempt's write is still the record. A later enable that replaced it
-     * decides the outcome instead, so this attempt reports a retryable conflict rather than a
-     * success that a rollback of the later enable could leave unclaimable.
-     */
-    if (wrote) {
+    if (restartedRun) {
       const committed = await PRAutomation.updateOne(
-        { ...filter, epoch: attempt, pending: attempt },
-        { $unset: { pending: '' } },
+        { ...filter, version: written, pending: attempt },
+        { $unset: { pending: '' }, ...BUMP },
       );
       if (committed.matchedCount === 0) {
         return { ok: false, error: { code: 'conflict' } };
@@ -447,38 +411,54 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
   }
 
   /**
-   * Puts back what this enable wrote when an account deletion started during the write, which
-   * can still be cancelled. Only the fields the attempt wrote are restored, and only while every
-   * one of them still holds the value the attempt left, its epoch and pending mark included. A
-   * later enable that replaced the record, a stop, or a trust change made meanwhile therefore
-   * survives, and the record then stays pending, which nothing claims.
+   * The run-starting write an enable makes on an existing record, or `null` when the record is
+   * already running on the requested binding. A stopped record, a different binding, or a record
+   * another attempt left pending starts a fresh run under the attempt's epoch. A different
+   * repository also clears the approved bots, which belong to one repository. The run starts
+   * with the requested trust, or the stored one, clamped to the current ceiling.
+   */
+  function enableRestart(
+    current: t.IPRAutomation,
+    attempt: string,
+    binding: t.PRAutomationBinding | undefined,
+    trust: PRAutomationTrustLevel,
+    maxTrust: PRAutomationTrustLevel,
+  ): ReturnType<typeof runReset> | null {
+    const otherRepository = binding != null && current.repository !== binding.repository;
+    const restart =
+      current.state === 'stopped' ||
+      current.pending != null ||
+      otherRepository ||
+      (binding != null && current.pullNumber !== binding.pullNumber);
+    if (!restart) {
+      return null;
+    }
+    return runReset(attempt, {
+      trust: clampPRAutomationTrust(trust, maxTrust),
+      ...binding,
+      ...(otherRepository && { trustedBots: [] }),
+      pending: attempt,
+    });
+  }
+
+  /**
+   * Puts the record back as the enable read it when an account deletion started during the
+   * write, which can still be cancelled. It applies only while the record still carries the
+   * version the enable wrote, so anything that changed it since, a stop, a trust change or a
+   * later enable, is kept, and the record then stays pending, which nothing claims.
    */
   async function undoEnable(
     key: ReturnType<typeof keyFilter>,
-    written: Written,
-    previous: t.IPRAutomation | null,
+    written: number,
+    previous: (t.IPRAutomation & { _id: unknown }) | null,
   ): Promise<void> {
     const PRAutomation = mongoose.models.PRAutomation;
-    const guard: Record<string, unknown> = { ...key };
-    for (const [field, value] of Object.entries(written)) {
-      guard[field] = value === undefined ? { $exists: false } : value;
-    }
+    const guard = { ...key, version: written };
     if (previous == null) {
       await PRAutomation.deleteOne(guard);
       return;
     }
-    const $set: Record<string, unknown> = {};
-    const $unset: Record<string, ''> = {};
-    const stored = new Map<string, unknown>(Object.entries(previous));
-    for (const field of Object.keys(written)) {
-      if (stored.get(field) === undefined) {
-        $unset[field] = '';
-      } else {
-        $set[field] = stored.get(field);
-      }
-    }
-    const update = Object.keys($unset).length > 0 ? { $set, $unset } : { $set };
-    await PRAutomation.updateOne(guard, update, { timestamps: false });
+    await PRAutomation.replaceOne(guard, { ...previous, version: written + 1 });
   }
 
   async function disablePRAutomation(key: t.PRAutomationKey): Promise<{ removed: boolean }> {
@@ -529,9 +509,12 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
      * Conversations also leave through the retention index, which never runs
      * `deleteConvos`, so liveness is checked here rather than trusted to a cascade.
      */
+    const seen = await PRAutomation.findOne(keyFilter(key))
+      .select({ _id: 0, version: 1 })
+      .lean<{ version: number }>();
     const before = await checkLiveness(key);
     if (before !== 'live') {
-      return refuseClaim(key, before);
+      return refuseClaim(key, before, seen?.version);
     }
 
     /**
@@ -551,7 +534,7 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
       },
       {
         $min: { startedAt: now },
-        $inc: { round: 1 },
+        $inc: { round: 1, version: 1 },
         $set: { state: 'fixing', lastHeadSha: headSha, runId },
         $push: { claimedHeads: headSha },
         $unset: { stopCode: '' },
@@ -573,9 +556,14 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
       }
       const previousHeads = claimed.claimedHeads.slice(0, -1);
       const lastHeadSha = previousHeads[previousHeads.length - 1];
-      await PRAutomation.updateOne(
+      /**
+       * Fenced on the claim's own run identity rather than the version: a trust or bot change
+       * made meanwhile touches nothing the claim owns, and must not strand the round.
+       */
+      const undone = await PRAutomation.findOneAndUpdate(
         { ...keyFilter(key), runId, state: 'fixing', round: claimed.round },
         {
+          ...BUMP,
           $set: {
             state: lastHeadSha == null ? 'idle' : 'waiting',
             round: claimed.round - 1,
@@ -587,8 +575,10 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
             ...(lastHeadSha == null && { startedAt: '', lastHeadSha: '' }),
           },
         },
-      );
-      return refuseClaim(key, after);
+        { new: true, projection: { _id: 0, version: 1 } },
+      ).lean<{ version: number }>();
+      /** Only a claim that undid itself knows the version it left; otherwise the reaper decides. */
+      return refuseClaim(key, after, undone?.version);
     }
 
     const current = await getPRAutomation(key);
@@ -645,7 +635,7 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
     const PRAutomation = mongoose.models.PRAutomation;
     return PRAutomation.findOneAndUpdate(
       { ...keyFilter(key), state: { $in: SETTLEABLE_STATES }, round, runId },
-      { $set: { state } },
+      { $set: { state }, ...BUMP },
       { new: true, select: PROJECTION },
     ).lean<t.IPRAutomation>();
   }
@@ -682,7 +672,7 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
     const PRAutomation = mongoose.models.PRAutomation;
     return PRAutomation.findOneAndUpdate(
       { ...keyFilter(key), ...condition, state: { $ne: 'stopped' } },
-      { $set: { state: 'stopped', stopCode } },
+      { $set: { state: 'stopped', stopCode }, ...BUMP },
       { new: true, select: PROJECTION },
     ).lean<t.IPRAutomation>();
   }
@@ -723,9 +713,15 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
     const page = await PRAutomation.find(after == null ? {} : { _id: { $gt: after } })
       .sort({ _id: 1 })
       .limit(limit)
-      .select({ _id: 1, user: 1, tenantId: 1, conversationId: 1 })
+      .select({ _id: 1, user: 1, tenantId: 1, conversationId: 1, version: 1 })
       .lean<
-        Array<{ _id: Types.ObjectId; user: string; tenantId?: string; conversationId: string }>
+        Array<{
+          _id: Types.ObjectId;
+          user: string;
+          tenantId?: string;
+          conversationId: string;
+          version: number;
+        }>
       >();
     let removed = 0;
     for (const record of page) {
@@ -733,7 +729,12 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
       if (!isGone(await checkLiveness(key, { tenantId: record.tenantId }))) {
         continue;
       }
-      const result = await PRAutomation.deleteOne({ _id: record._id, ...keyFilter(key) });
+      /** A record written after the check, a renewed enable included, has a new version. */
+      const result = await PRAutomation.deleteOne({
+        _id: record._id,
+        ...keyFilter(key),
+        version: record.version,
+      });
       removed += result.deletedCount;
     }
     const last = page.length === limit ? page[page.length - 1] : undefined;
@@ -753,7 +754,7 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
     const PRAutomation = mongoose.models.PRAutomation;
     return PRAutomation.findOneAndUpdate(
       keyFilter(key),
-      { $set: { trust: boundTrust(trust, maxTrust) } },
+      { $set: { trust: boundTrust(trust, maxTrust) }, ...BUMP },
       { new: true, select: PROJECTION, runValidators: true },
     ).lean<t.IPRAutomation>();
   }
@@ -786,7 +787,7 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
         'trustedBots.id': { $ne: bot.id },
         [`trustedBots.${maxBots - 1}`]: { $exists: false },
       },
-      { $push: { trustedBots: bot } },
+      { $push: { trustedBots: bot }, ...BUMP },
       { new: true, select: PROJECTION, runValidators: true },
     ).lean<t.IPRAutomation>();
     if (updated != null) {
@@ -818,7 +819,7 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
     const PRAutomation = mongoose.models.PRAutomation;
     return PRAutomation.findOneAndUpdate(
       { ...keyFilter(key), repository: canonicalRepository(repository), epoch },
-      { $pull: { trustedBots: { id: botId } } },
+      { $pull: { trustedBots: { id: botId } }, ...BUMP },
       { new: true, select: PROJECTION },
     ).lean<t.IPRAutomation>();
   }
