@@ -914,6 +914,65 @@ describe('claiming for a subagent thread whose root conversation is gone', () =>
       headSha: head(1),
     });
 
+  const recreateRoot = async () => {
+    await mongoose.models.Conversation.deleteOne({ conversationId: key.conversationId });
+    await seedConversation();
+  };
+
+  test('refuses and reaps a child whose root was deleted and saved again', async () => {
+    await seedChild();
+    await enableOpen({ ...childKey, binding: pullOne });
+    await recreateRoot();
+    expect(await methods.reapPRAutomations()).toEqual({ scanned: 1, removed: 1 });
+    await enableOpen({ ...childKey, binding: pullOne });
+    await recreateRoot();
+    expect(await claimChild()).toEqual({ ok: false, error: { code: 'conversation_gone' } });
+  });
+
+  test('refuses a grandchild whose middle ancestor was deleted and saved again', async () => {
+    const leafKey = { userId, conversationId: 'leaf-1' };
+    const thread = (parent: string) => ({
+      rootConversationId: key.conversationId,
+      parentConversationId: parent,
+      parentMessageId: 'message-1',
+      parentToolCallId: 'call-1',
+      subagentType: 'agent-child',
+      subagentKind: 'agent',
+      depth: 1,
+    });
+    await seedChild();
+    await mongoose.models.Conversation.create({
+      conversationId: leafKey.conversationId,
+      user: userId,
+      endpoint: 'agents',
+      subagentThread: { ...thread(childKey.conversationId), depth: 2 },
+    });
+    await enableOpen({ ...leafKey, binding: pullOne });
+    await mongoose.models.Conversation.deleteOne({ conversationId: childKey.conversationId });
+    await seedChild();
+    expect(
+      await methods.claimPRAutomationRound({
+        ...leafKey,
+        ...limits,
+        binding: { ...pullOne, epoch: await currentEpoch(leafKey) },
+        headSha: head(1),
+      }),
+    ).toEqual({ ok: false, error: { code: 'conversation_gone' } });
+  });
+
+  test('starts a child over for the root saved again when it is enabled', async () => {
+    await seedChild();
+    await enableOpen({ ...childKey, binding: pullOne, trust: 'anyone' });
+    const before = await methods.getPRAutomation(childKey);
+    await recreateRoot();
+    await enableOpen({ ...childKey, binding: pullOne });
+    const after = await methods.getPRAutomation(childKey);
+    expect(after?.epoch).not.toBe(before?.epoch);
+    expect(after?.lineageRefs).not.toEqual(before?.lineageRefs);
+    expect(after).toMatchObject({ trust: 'approvedBots', round: 0 });
+    expect((await claimChild()).ok).toBe(true);
+  });
+
   test('rejects a claim for a child once its root was deleted', async () => {
     await seedChild();
     await enableOpen({ ...childKey, binding: pullOne });

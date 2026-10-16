@@ -33,9 +33,12 @@ type Gone = Extract<Liveness, 'conversation_gone' | 'owner_gone'>;
  * What a liveness check is judged against. `tenantId`, when the key is present, is the record's
  * tenant (`null` for one stored without one). `conversationRef` is the `_id` of the conversation
  * document the record was enabled for: a conversation deleted and saved again under the same id
- * is a different document, so a record of the old one does not belong to it.
+ * is a different document, so a record of the old one does not belong to it. `lineageRefs`
+ * does the same for a subagent thread's ancestors, parent first and root last.
  */
-type LivenessScope = { tenantId?: string | null; conversationRef?: string };
+type LivenessScope = { tenantId?: string | null; conversationRef?: string; lineageRefs?: string[] };
+/** The conversation documents a live check found: the record's own and its ancestors'. */
+type Lineage = { conversationRef: string; lineageRefs: string[] };
 const CLAIMABLE_STATES: PRAutomationState[] = ['idle', 'waiting'];
 const SETTLEABLE_STATES: PRAutomationState[] = ['fixing', 'needs_user'];
 const SETTLED_STATES: PRAutomationState[] = ['waiting', 'needs_user'];
@@ -61,6 +64,7 @@ const REAP_FIELDS = {
   tenantId: 1,
   conversationId: 1,
   conversationRef: 1,
+  lineageRefs: 1,
   version: 1,
 };
 type ReapCandidate = RecordFence & {
@@ -68,6 +72,7 @@ type ReapCandidate = RecordFence & {
   tenantId?: string;
   conversationId: string;
   conversationRef?: string;
+  lineageRefs?: string[];
 };
 /** GitHub compares `owner/name` without case, so records store and match the lower case form. */
 const canonicalRepository = (repository: string) => repository.toLowerCase();
@@ -128,6 +133,9 @@ function lineagePipeline(
   stages.push({ $project: { _id: 0, ...keep } });
   return stages;
 }
+
+const sameRefs = (a: string[], b: string[]) =>
+  a.length === b.length && a.every((ref, index) => ref === b[index]);
 
 const isGone = (liveness: Liveness): liveness is Gone =>
   liveness === 'conversation_gone' || liveness === 'owner_gone';
@@ -217,7 +225,7 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
   async function inspectLiveness(
     key: t.PRAutomationKey,
     scope?: LivenessScope,
-  ): Promise<{ liveness: Liveness; conversationRef?: string }> {
+  ): Promise<{ liveness: Liveness } & Partial<Lineage>> {
     const judged = (liveness: Liveness) => ({ liveness });
     if (!isValidObjectIdString(key.userId)) {
       return judged('owner_inactive');
@@ -265,11 +273,15 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
       return judged('conversation_gone');
     }
     let current: Link | undefined = conversation;
+    const lineageRefs: string[] = [];
     for (let hops = 0; current?.subagentThread?.parentConversationId != null; hops++) {
       if (hops >= MAX_SUBAGENT_DEPTH) {
         return judged('conversation_gone');
       }
       current = links.get(current.subagentThread.parentConversationId);
+      if (current != null) {
+        lineageRefs.push(String(current._id));
+      }
     }
     const root = conversation.subagentThread?.rootConversationId;
     if (current == null || (root != null && current.conversationId !== root)) {
@@ -279,7 +291,11 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
     if (scope?.conversationRef != null && scope.conversationRef !== conversationRef) {
       return judged('conversation_gone');
     }
-    return { liveness: 'live', conversationRef };
+    /** An ancestor deleted and saved again under the same id no longer controls the record. */
+    if (scope?.lineageRefs != null && !sameRefs(scope.lineageRefs, lineageRefs)) {
+      return judged('conversation_gone');
+    }
+    return { liveness: 'live', conversationRef, lineageRefs };
   }
 
   /** A missing owner reads as inactive to callers; the distinction only decides removal. */
@@ -375,7 +391,7 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
         ? undefined
         : { ...requested, repository: canonicalRepository(requested.repository) };
     const trust = requestedTrust == null ? undefined : boundTrust(requestedTrust, maxTrust);
-    const { liveness: before, conversationRef } = await inspectLiveness(key);
+    const { liveness: before, conversationRef, lineageRefs } = await inspectLiveness(key);
     if (before !== 'live') {
       return { ok: false, error: { code: isGone(before) ? goneCode(before) : before } };
     }
@@ -407,12 +423,14 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
       pending: attempt,
       version,
       conversationRef,
+      lineageRefs,
       trust: clampPRAutomationTrust(trust, maxTrust),
       ...binding,
     });
     /** A record of an earlier conversation saved under the same id starts over for this one. */
     const replaced =
-      observed?.conversationRef != null && observed.conversationRef !== conversationRef;
+      (observed?.conversationRef != null && observed.conversationRef !== conversationRef) ||
+      (observed?.lineageRefs != null && !sameRefs(observed.lineageRefs, lineageRefs ?? []));
     if (observed == null) {
       written = 1;
       try {
@@ -446,14 +464,14 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
         restart ?? (narrowed === observed.trust ? {} : { $set: { trust: narrowed } });
       const applied = await PRAutomation.updateOne(
         { ...filter, _id: observed._id, version: observed.version },
-        { ...update, $set: { ...update.$set, conversationRef }, ...BUMP },
+        { ...update, $set: { ...update.$set, conversationRef, lineageRefs }, ...BUMP },
         { runValidators: true },
       );
       if (applied.matchedCount === 0) {
         return { ok: false, error: { code: 'conflict' } };
       }
     }
-    const after = await checkLiveness(key, { conversationRef });
+    const after = await checkLiveness(key, { conversationRef, lineageRefs });
     if (isGone(after)) {
       await PRAutomation.deleteOne({ ...filter, _id: recordId, version: written });
       return { ok: false, error: { code: goneCode(after) } };
@@ -580,9 +598,12 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
      * `deleteConvos`, so liveness is checked here rather than trusted to a cascade.
      */
     const seen = await PRAutomation.findOne(keyFilter(key))
-      .select({ _id: 1, version: 1, conversationRef: 1 })
-      .lean<RecordFence & { conversationRef?: string }>();
-    const before = await checkLiveness(key, { conversationRef: seen?.conversationRef });
+      .select({ _id: 1, version: 1, conversationRef: 1, lineageRefs: 1 })
+      .lean<RecordFence & { conversationRef?: string; lineageRefs?: string[] }>();
+    const before = await checkLiveness(key, {
+      conversationRef: seen?.conversationRef,
+      lineageRefs: seen?.lineageRefs,
+    });
     if (before !== 'live') {
       return refuseClaim(key, before, seen);
     }
@@ -622,7 +643,10 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
        */
       let after: Liveness;
       try {
-        after = await checkLiveness(key, { conversationRef: claimed.conversationRef });
+        after = await checkLiveness(key, {
+          conversationRef: claimed.conversationRef,
+          lineageRefs: claimed.lineageRefs,
+        });
       } catch (error) {
         /** A check that fails leaves no answer to act on, so the round is handed back. */
         await releaseClaim(key, claimed, runId).catch(() => undefined);
@@ -857,7 +881,11 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
 
   async function reapCandidate(record: ReapCandidate): Promise<number> {
     const key = { userId: String(record.user), conversationId: record.conversationId };
-    const scope = { tenantId: record.tenantId, conversationRef: record.conversationRef };
+    const scope = {
+      tenantId: record.tenantId,
+      conversationRef: record.conversationRef,
+      lineageRefs: record.lineageRefs,
+    };
     if (!isGone(await checkLiveness(key, scope))) {
       return 0;
     }

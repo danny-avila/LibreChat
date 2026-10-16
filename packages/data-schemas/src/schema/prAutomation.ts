@@ -38,6 +38,8 @@ const prAutomationSchema: Schema<IPRAutomationDocument> = new Schema(
     conversationId: { type: String, required: true },
     /** The `_id` of the conversation document the record was enabled for. */
     conversationRef: { type: String, maxlength: 64 },
+    /** The `_id` of each ancestor of a subagent thread, parent first and root last. */
+    lineageRefs: { type: [{ type: String, maxlength: 64 }], default: undefined },
     repository: { type: String, maxlength: 256 },
     pullNumber: {
       type: Number,

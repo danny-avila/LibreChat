@@ -19,6 +19,8 @@ export interface IPRAutomation {
    * and saved again under the same id is a different document, and the record does not carry over.
    */
   conversationRef?: string;
+  /** The same for each ancestor of a subagent thread, parent first and root last. */
+  lineageRefs?: string[];
   /** `owner/name` of the repository the pull request belongs to. */
   repository?: string;
   pullNumber?: number;
