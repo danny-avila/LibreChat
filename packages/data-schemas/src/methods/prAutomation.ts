@@ -50,6 +50,11 @@ const runReset = (epoch: string, fields: Record<string, unknown> = {}) => ({
  * included, makes it miss instead of being overwritten.
  */
 const BUMP = { $inc: { version: 1 } };
+/**
+ * One record as a write saw it. The version alone is not an identity: a record deleted and
+ * enabled again starts its count over, so a fence names the document `_id` as well.
+ */
+type RecordFence = { _id: unknown; version: number };
 /** GitHub compares `owner/name` without case, so records store and match the lower case form. */
 const canonicalRepository = (repository: string) => repository.toLowerCase();
 const LINK_FIELDS = [
@@ -269,21 +274,25 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
   /**
    * A record whose conversation or owner is gone can never run again, so it is removed. This
    * also converges a cleanup that failed after the delete committed. The delete names the
-   * version read before the liveness check, so a record renewed after the check is kept; without
+   * record and version read before the liveness check, so a record renewed after the check is kept; without
    * one nothing is removed and the reaper decides later.
    */
   async function refuseClaim(
     key: t.PRAutomationKey,
     liveness: Exclude<Liveness, 'live'>,
-    version: number | undefined,
+    fence: RecordFence | null | undefined,
   ): Promise<t.ClaimPRAutomationRoundResult> {
     if (!isGone(liveness)) {
       return { ok: false, error: { code: liveness } };
     }
     const removed =
-      version == null
+      fence == null
         ? { deletedCount: 0 }
-        : await mongoose.models.PRAutomation.deleteOne({ ...keyFilter(key), version });
+        : await mongoose.models.PRAutomation.deleteOne({
+            ...keyFilter(key),
+            _id: fence._id,
+            version: fence.version,
+          });
     return {
       ok: false,
       error: { code: removed.deletedCount > 0 ? goneCode(liveness) : 'not_found' },
@@ -371,6 +380,7 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
     const attempt = randomUUID();
     const observed = await PRAutomation.findOne(filter).lean<t.IPRAutomation & { _id: unknown }>();
     let written: number;
+    let recordId: unknown = observed?._id;
     let restartedRun = true;
     const fresh = (version: number) => ({
       ...filter,
@@ -391,7 +401,7 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
     if (observed == null) {
       written = 1;
       try {
-        await PRAutomation.create(fresh(written));
+        recordId = (await PRAutomation.create(fresh(written)))._id;
       } catch (error) {
         if ((error as { code?: number }).code === DUPLICATE_KEY) {
           return { ok: false, error: { code: 'conflict' } };
@@ -430,18 +440,18 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
     }
     const after = await checkLiveness(key, { conversationRef });
     if (isGone(after)) {
-      await PRAutomation.deleteOne({ ...filter, version: written });
+      await PRAutomation.deleteOne({ ...filter, _id: recordId, version: written });
       return { ok: false, error: { code: goneCode(after) } };
     }
     if (after !== 'live') {
       if (restartedRun) {
-        await undoEnable(filter, written, observed);
+        await undoEnable(filter, { _id: recordId, version: written }, observed);
       }
       return { ok: false, error: { code: after } };
     }
     if (restartedRun) {
       const committed = await PRAutomation.updateOne(
-        { ...filter, version: written, pending: attempt },
+        { ...filter, _id: recordId, version: written, pending: attempt },
         { $unset: { pending: '' }, ...BUMP },
       );
       if (committed.matchedCount === 0) {
@@ -494,16 +504,16 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
    */
   async function undoEnable(
     key: ReturnType<typeof keyFilter>,
-    written: number,
+    written: RecordFence,
     previous: (t.IPRAutomation & { _id: unknown }) | null,
   ): Promise<void> {
     const PRAutomation = mongoose.models.PRAutomation;
-    const guard = { ...key, version: written };
+    const guard = { ...key, _id: written._id, version: written.version };
     if (previous == null) {
       await PRAutomation.deleteOne(guard);
       return;
     }
-    await PRAutomation.replaceOne(guard, { ...previous, version: written + 1 });
+    await PRAutomation.replaceOne(guard, { ...previous, version: written.version + 1 });
   }
 
   async function disablePRAutomation(key: t.PRAutomationKey): Promise<{ removed: boolean }> {
@@ -555,11 +565,11 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
      * `deleteConvos`, so liveness is checked here rather than trusted to a cascade.
      */
     const seen = await PRAutomation.findOne(keyFilter(key))
-      .select({ _id: 0, version: 1, conversationRef: 1 })
-      .lean<{ version: number; conversationRef?: string }>();
+      .select({ _id: 1, version: 1, conversationRef: 1 })
+      .lean<RecordFence & { conversationRef?: string }>();
     const before = await checkLiveness(key, { conversationRef: seen?.conversationRef });
     if (before !== 'live') {
-      return refuseClaim(key, before, seen?.version);
+      return refuseClaim(key, before, seen);
     }
 
     /**
@@ -608,7 +618,7 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
       }
       const released = await releaseClaim(key, claimed, runId);
       /** Only a claim that undid itself knows the version it left; otherwise the reaper decides. */
-      return refuseClaim(key, after, released?.version);
+      return refuseClaim(key, after, released);
     }
 
     const current = await getPRAutomation(key);
@@ -652,7 +662,7 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
     key: t.PRAutomationKey,
     claimed: t.IPRAutomation,
     runId: string,
-  ): Promise<{ version: number } | null> {
+  ): Promise<RecordFence | null> {
     const previousHeads = claimed.claimedHeads.slice(0, -1);
     const lastHeadSha = previousHeads[previousHeads.length - 1];
     return mongoose.models.PRAutomation.findOneAndUpdate(
@@ -670,8 +680,8 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
           ...(lastHeadSha == null && { startedAt: '', lastHeadSha: '' }),
         },
       },
-      { new: true, projection: { _id: 0, version: 1 } },
-    ).lean<{ version: number }>();
+      { new: true, projection: { _id: 1, version: 1 } },
+    ).lean<RecordFence>();
   }
 
   /**

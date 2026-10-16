@@ -487,6 +487,31 @@ describe('a conversation deleted and saved again under the same id', () => {
     expect(await methods.getPRAutomation(key)).toBeNull();
   });
 
+  test('keeps the new record when a claim for the old one refuses after a re-enable', async () => {
+    await enable(pullOne);
+    const before = await methods.getPRAutomation(key);
+    const spy = interleave(
+      async () => {
+        await recreate();
+        await PRAutomation.deleteMany({});
+        await enable(pullOne);
+      },
+      PRAutomation,
+      'findOne',
+    );
+    try {
+      expect(await claim(1, { epoch: before?.epoch })).toEqual({
+        ok: false,
+        error: { code: 'not_found' },
+      });
+    } finally {
+      spy.mockRestore();
+    }
+    const renewed = await methods.getPRAutomation(key);
+    expect(renewed?.version).toBe(before?.version);
+    expect(renewed?.epoch).not.toBe(before?.epoch);
+  });
+
   test('starts a new run for the new conversation when enabled', async () => {
     await enableWith({ ...key, binding: pullOne, trust: 'anyone' });
     await addBot(7);
