@@ -98,7 +98,6 @@ jest.mock('../Assistants/useAssistantListMap', () => ({
   default: () => ({}),
 }));
 jest.mock('../Files/useFileHandling', () => ({ clearUploadRecovery: jest.fn() }));
-jest.mock('../useChatBadges', () => ({ useResetChatBadges: () => jest.fn() }));
 jest.mock('../Agents', () => ({ useApplyModelSpecEffects: () => jest.fn() }));
 jest.mock('../Audio', () => ({ usePauseGlobalAudio: () => ({ pauseGlobalAudio: jest.fn() }) }));
 jest.mock('~/Providers', () => ({ useAgentsMapContext: () => ({}) }));
@@ -109,7 +108,6 @@ jest.mock('~/store', () => ({
     defaultPreset: 'defaultPreset',
     saveBadgesState: 'saveBadgesState',
     filesByIndex: () => 'filesByIndex',
-    submissionByIndex: () => 'submissionByIndex',
     useClearConvoState: () => jest.fn(),
     useSetConversationAtom: () => ({ setConversation: jest.fn() }),
   },

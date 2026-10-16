@@ -105,6 +105,41 @@ describe('reconcileThemeCache', () => {
     ).toEqual({ theme: undefined, cache: 'keep' });
   });
 
+  it("lets the shell's base theme stand in wherever nothing else would paint", () => {
+    const shell = 'clickhouse';
+    expect(reconcileThemeCache({ shell })).toEqual({ theme: 'clickhouse', cache: 'keep' });
+    expect(reconcileThemeCache({ owner: OWNER, shell })).toEqual({
+      theme: 'clickhouse',
+      cache: 'keep',
+    });
+    expect(
+      reconcileThemeCache({ owner: OWNER, answer: { theme: 'librechat', current: false }, shell }),
+    ).toEqual({ theme: 'clickhouse', cache: 'keep' });
+    expect(reconcileThemeCache({ cached, owner: 'tenant-b:user-1', shell })).toEqual({
+      theme: 'clickhouse',
+      cache: 'disown',
+    });
+    expect(reconcileThemeCache({ cached: { ...cached, disowned: true }, shell })).toEqual({
+      theme: 'clickhouse',
+      cache: 'keep',
+    });
+  });
+
+  it("ranks the shell's base theme below the owner's cache and any answer", () => {
+    const shell = 'librechat';
+    expect(reconcileThemeCache({ cached, owner: OWNER, shell }).theme).toBe('clickhouse');
+    expect(reconcileThemeCache({ answer: { theme: undefined, current: true }, shell })).toEqual({
+      theme: undefined,
+      cache: 'keep',
+    });
+    expect(
+      reconcileThemeCache({
+        answer: { theme: 'clickhouse', current: false, signedOut: true },
+        shell,
+      }).theme,
+    ).toBe('clickhouse');
+  });
+
   it('stamps entries with a version derived from the registry roles', () => {
     expect(cached.v).toBe(themeRoleFingerprint());
     expect(THEME_CACHE_VERSION).toBe(themeRoleFingerprint());
@@ -189,7 +224,7 @@ describe('theme cache storage', () => {
  * - definitions with one or both mode blocks absent.
  * A new role, or a new fallback, joins by construction.
  */
-const PIN = { fingerprint: '1.4.dxwdxg', digest: '39up6s' };
+const PIN = { fingerprint: '1.5.dxwdxg', digest: '1n3ywnj' };
 
 const digestOf = (text: string): string => {
   let hash = 5381;

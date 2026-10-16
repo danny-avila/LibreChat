@@ -347,6 +347,14 @@ export default [
             'hover-button-active',
             'open',
             'split-parent',
+            // Message-text markers the app's stylesheet paints; a @librechat/chat source cannot see
+            // that stylesheet, so its lint has no Tailwind entry that declares them.
+            'markdown',
+            'prose',
+            'message-content',
+            'submitting',
+            'result-streaming',
+            'result-thinking',
           ],
         },
       ],
@@ -463,7 +471,7 @@ export default [
     files: ['**/*.ts', '**/*.tsx'],
     // Package, E2E, and root integration tests are not part of the client
     // TypeScript project. They still get the recommended rules above.
-    ignores: ['packages/**/*', 'client/vite.config.ts', 'e2e/**/*', 'src/tests/**/*'],
+    ignores: ['packages/**/*', 'client/vite.config.ts', 'e2e/**/*'],
     plugins: {
       '@typescript-eslint': typescriptEslintEslintPlugin,
       jest: fixupPluginRules(jest),
@@ -538,14 +546,6 @@ export default [
           destructuredArrayIgnorePattern: '^_',
         },
       ],
-    },
-  },
-  {
-    files: ['./config/translations/**/*.ts'],
-    languageOptions: {
-      parser: tsParser,
-      ecmaVersion: 5,
-      sourceType: 'script',
     },
   },
   {

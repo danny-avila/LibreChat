@@ -204,6 +204,37 @@ describe('ServerConfigsDB', () => {
       expect(retrieved?.description).toBe('Updated description');
     });
 
+    it('returns the config as persisted, so an overlapping update is not mistaken for this one', async () => {
+      const created = await serverConfigsDB.add(
+        'temp-name',
+        createSSEConfig('Title', 'First'),
+        userId,
+      );
+
+      const firstWrite = await serverConfigsDB.update(
+        created.serverName,
+        createSSEConfig('Title', 'Second'),
+        userId,
+      );
+      await serverConfigsDB.update(created.serverName, createSSEConfig('Title', 'Third'), userId);
+
+      expect(firstWrite?.description).toBe('Second');
+      expect((await serverConfigsDB.get(created.serverName, userId))?.description).toBe('Third');
+    });
+
+    it('rejects an update when the server was deleted after the lookup', async () => {
+      const created = await serverConfigsDB.add(
+        'temp-name',
+        createSSEConfig('Title', 'First'),
+        userId,
+      );
+      await serverConfigsDB.remove(created.serverName, userId);
+
+      await expect(
+        serverConfigsDB.update(created.serverName, createSSEConfig('Title', 'Second'), userId),
+      ).rejects.toThrow('no longer exists');
+    });
+
     it('should preserve oauth.client_secret when not provided in update', async () => {
       const config: ParsedServerConfig = {
         type: 'sse',
@@ -1427,12 +1458,40 @@ describe('ServerConfigsDB', () => {
     });
   });
 
+  describe('post-write failures', () => {
+    it('reports the created server when granting its owner access fails', async () => {
+      jest
+        .spyOn(serverConfigsDB['_aclService'], 'grantPermission')
+        .mockRejectedValueOnce(new Error('acl down'));
+
+      const failure = await serverConfigsDB
+        .add('temp-name', createSSEConfig('Orphan Risk'), userId)
+        .catch((error) => error);
+
+      expect(failure.name).toBe('MCPCommittedWriteError');
+      expect(failure.committed.config.title).toBe('Orphan Risk');
+      expect(await mongoose.models.MCPServer.countDocuments({})).toBe(1);
+    });
+
+    it('reports the removal when cleaning up its permissions fails', async () => {
+      const created = await serverConfigsDB.add('temp-name', createSSEConfig('Remove Me'), userId);
+      jest
+        .spyOn(serverConfigsDB['_aclService'], 'removeAllPermissions')
+        .mockRejectedValueOnce(new Error('acl down'));
+
+      await expect(serverConfigsDB.remove(created.serverName, userId)).rejects.toMatchObject({
+        name: 'MCPCommittedWriteError',
+      });
+      expect(await mongoose.models.MCPServer.countDocuments({})).toBe(0);
+    });
+  });
+
   describe('remove()', () => {
     it('should delete server from database', async () => {
       const config = createSSEConfig('Delete Test');
       const created = await serverConfigsDB.add('temp-name', config, userId);
 
-      await serverConfigsDB.remove(created.serverName, userId);
+      await expect(serverConfigsDB.remove(created.serverName, userId)).resolves.toBe(true);
 
       const MCPServer = mongoose.models.MCPServer;
       const server = await MCPServer.findOne({ serverName: created.serverName });
@@ -1461,8 +1520,8 @@ describe('ServerConfigsDB', () => {
     });
 
     it('should handle non-existent server gracefully', async () => {
-      // Should not throw
-      await expect(serverConfigsDB.remove('non-existent-server', userId)).resolves.toBeUndefined();
+      // Should not throw, and reports that nothing was removed
+      await expect(serverConfigsDB.remove('non-existent-server', userId)).resolves.toBe(false);
     });
   });
 

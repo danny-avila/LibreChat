@@ -229,11 +229,6 @@
       "count": 2
     }
   },
-  "client/src/components/Chat/Menus/UI/MenuItem.tsx": {
-    "design/disabled-recipe": {
-      "count": 1
-    }
-  },
   "client/src/components/Chat/Messages/Content/ActivityPhaseGroup.tsx": {
     "shadcn/no-arbitrary-values": {
       "count": 2
@@ -325,11 +320,6 @@
       "count": 1
     }
   },
-  "client/src/components/Chat/Messages/Content/Parts/CollapsibleText.tsx": {
-    "shadcn/no-restyle": {
-      "count": 2
-    }
-  },
   "client/src/components/Chat/Messages/Content/Parts/ExecuteCode.tsx": {
     "shadcn/no-inline-styles": {
       "count": 1
@@ -365,20 +355,6 @@
   },
   "client/src/components/Chat/Messages/Content/Parts/SubagentCall.tsx": {
     "design/disabled-recipe": {
-      "count": 1
-    }
-  },
-  "client/src/components/Chat/Messages/Content/Parts/Summary.tsx": {
-    "shadcn/no-arbitrary-values": {
-      "count": 1
-    },
-    "shadcn/no-inline-styles": {
-      "count": 1
-    },
-    "shadcn/no-restyle": {
-      "count": 9
-    },
-    "shadcn/require-static-classes": {
       "count": 1
     }
   },
@@ -631,11 +607,6 @@
       "count": 5
     }
   },
-  "client/src/components/Conversations/Pages.tsx": {
-    "shadcn/require-static-classes": {
-      "count": 2
-    }
-  },
   "client/src/components/Conversations/ProjectsSection.tsx": {
     "shadcn/no-restyle": {
       "count": 7
@@ -669,17 +640,6 @@
   "client/src/components/Endpoints/SaveAsPresetDialog.tsx": {
     "shadcn/no-restyle": {
       "count": 1
-    }
-  },
-  "client/src/components/Endpoints/Settings/Advanced.tsx": {
-    "design/disabled-recipe": {
-      "count": 2
-    },
-    "shadcn/no-restyle": {
-      "count": 18
-    },
-    "shadcn/require-static-classes": {
-      "count": 4
     }
   },
   "client/src/components/Endpoints/Settings/Assistants.tsx": {
@@ -832,11 +792,6 @@
       "count": 9
     }
   },
-  "client/src/components/Nav/NavLink.tsx": {
-    "design/disabled-recipe": {
-      "count": 1
-    }
-  },
   "client/src/components/Nav/NavToggle.tsx": {
     "shadcn/no-inline-styles": {
       "count": 4
@@ -889,14 +844,6 @@
   },
   "client/src/components/Nav/SettingsTabs/ApiKeys/Reveal.tsx": {
     "shadcn/no-restyle": {
-      "count": 1
-    }
-  },
-  "client/src/components/Nav/SettingsTabs/DangerButton.tsx": {
-    "shadcn/no-restyle": {
-      "count": 5
-    },
-    "shadcn/require-static-classes": {
       "count": 1
     }
   },
@@ -1489,7 +1436,26 @@
   },
   "client/src/utils/index.ts": {
     "design/disabled-recipe": {
+      "count": 1
+    }
+  },
+  "packages/chat/src/components/CollapsibleText.tsx": {
+    "shadcn/no-restyle": {
       "count": 2
+    }
+  },
+  "packages/chat/src/components/Summary.tsx": {
+    "shadcn/no-arbitrary-values": {
+      "count": 1
+    },
+    "shadcn/no-inline-styles": {
+      "count": 1
+    },
+    "shadcn/no-restyle": {
+      "count": 9
+    },
+    "shadcn/require-static-classes": {
+      "count": 1
     }
   },
   "packages/client/src/components/Badge.tsx": {

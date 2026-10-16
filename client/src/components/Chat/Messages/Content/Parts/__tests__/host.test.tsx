@@ -10,8 +10,8 @@ import type { Artifact, PtcTrace } from '~/common';
 import { MessagePartsHostProvider, appMessagePartsHost } from '~/Providers/MessagePartsHostContext';
 import { SoleToolContext, useToolAutoExpand } from '../../disclosure';
 import ToolArtifactCard from '../ToolArtifactCard';
+import { Text as TextPart } from '../index';
 import PtcToolTrace from '../PtcToolTrace';
-import TextPart from '../Text';
 
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
@@ -40,6 +40,7 @@ function createHost(overrides: Partial<MessagePartsHost> = {}): MessagePartsHost
     useFontSize: () => 'text-base',
     useShowThinking: () => false,
     useAutoExpandTools: () => false,
+    useLaTeXParsing: () => false,
     useUserTextPreferences: () => ({
       usernameDisplay: false,
       enableUserMsgMarkdown: false,

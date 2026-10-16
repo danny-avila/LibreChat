@@ -31,13 +31,13 @@
     "rebase:deployed": "node config/deployed-update.js --rebase",
     "start:deployed": "docker compose -f ./deploy-compose.yml up -d || docker-compose -f ./deploy-compose.yml up -d",
     "stop:deployed": "docker compose -f ./deploy-compose.yml down || docker-compose -f ./deploy-compose.yml down",
-    "upgrade": "node config/upgrade.js",
     "create-user": "node config/create-user.js",
     "invite-user": "node config/invite-user.js",
     "list-users": "node config/list-users.js",
     "reset-password": "node config/reset-password.js",
     "ban-user": "node config/ban-user.js",
     "delete-user": "node config/delete-user.js",
+    "recover-skill-upload": "npm run recover-skill-upload --workspace api --",
     "reset-meili-sync": "node config/reset-meili-sync.js",
     "create-error-convo": "node config/create-error-convo.js",
     "update-banner": "node config/update-banner.js",
@@ -244,13 +244,13 @@
     "mdast-util-gfm": {
       "mdast-util-gfm-autolink-literal": "2.0.0"
     },
-    "katex": "^0.16.21",
+    "katex": "^0.18.2",
     "rehype-katex": {
-      "katex": "^0.16.21"
+      "katex": "^0.18.2"
     },
     "remark-math": {
       "micromark-extension-math": {
-        "katex": "^0.16.21"
+        "katex": "^0.18.2"
       }
     },
     "eslint": {
