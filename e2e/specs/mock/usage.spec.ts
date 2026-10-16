@@ -265,6 +265,7 @@ test.describe('context usage gauge', () => {
     await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
     await sendAndAwaitReply(page, 'hello');
     const popover = await openBreakdown(page);
+    await expect(popover).toHaveCSS('container-type', 'inline-size');
     const dialog = page.getByRole('dialog', { name: 'Context usage' });
     const details = popover.getByTestId('context-details');
     const lastTurn = popover.getByTestId('token-usage-last-turn');
