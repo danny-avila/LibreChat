@@ -105,6 +105,11 @@ describe('createGitLabPullRequestSource', () => {
     expect(urls.every((url) => url.startsWith(`https://${host}/api/`))).toBe(true);
   });
 
+  it('maps a 401 to CREDENTIAL_REJECTED, a refusal of the token itself', async () => {
+    const { source } = sourceFor({ 'state=opened': () => new Response('', { status: 401 }) });
+    await expect(find(source)).rejects.toMatchObject({ code: 'CREDENTIAL_REJECTED' });
+  });
+
   it.each([
     ['another host', 'https://evil.example/g/r/-/merge_requests/7'],
     ['plain http', 'http://gitlab.com/g/r/-/merge_requests/7'],

@@ -7,3 +7,4 @@ export * from './principals';
 export * from './pullRequests';
 export * from './redisUtils';
 export * from './redisTelemetry';
+export * from './audit';
