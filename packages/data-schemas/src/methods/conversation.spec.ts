@@ -19,6 +19,7 @@ import type {
 } from '../types';
 import { ConversationMethods, createConversationMethods } from './conversation';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
+import { createPRAutomationMethods } from './prAutomation';
 import { createChatProjectMethods } from './chatProject';
 import { createModels } from '../models';
 
@@ -3727,6 +3728,154 @@ describe('Conversation Operations', () => {
   });
 
   describe('deleteConvos', () => {
+    it('removes the PR automation record of a deleted conversation and keeps the others', async () => {
+      const conversationId = uuidv4();
+      const keptConversationId = uuidv4();
+      const PRAutomation = mongoose.models.PRAutomation;
+      for (const id of [conversationId, keptConversationId]) {
+        await Conversation.create({ conversationId: id, user: 'user123', endpoint: 'agents' });
+        await PRAutomation.create({ user: 'user123', conversationId: id });
+      }
+
+      await deleteConvos('user123', { conversationId });
+
+      expect(await PRAutomation.countDocuments({ conversationId })).toBe(0);
+      expect(await PRAutomation.countDocuments({ conversationId: keptConversationId })).toBe(1);
+    });
+
+    it('keeps a record enabled for the conversation saved again before the cleanup', async () => {
+      const conversationId = uuidv4();
+      const PRAutomation = mongoose.models.PRAutomation;
+      const deleted = await Conversation.create({
+        conversationId,
+        user: 'user123',
+        endpoint: 'agents',
+      });
+      await PRAutomation.create({
+        user: 'user123',
+        conversationId,
+        conversationRef: String(deleted._id),
+      });
+      const original = Conversation.deleteMany.bind(Conversation);
+      const spy = jest.spyOn(Conversation, 'deleteMany').mockImplementationOnce(((
+        ...args: Parameters<typeof Conversation.deleteMany>
+      ) =>
+        original(...args).then(async (result) => {
+          const renewed = await Conversation.create({
+            conversationId,
+            user: 'user123',
+            endpoint: 'agents',
+          });
+          await PRAutomation.updateOne(
+            { user: 'user123', conversationId },
+            { $set: { conversationRef: String(renewed._id) } },
+          );
+          return result;
+        })) as unknown as typeof Conversation.deleteMany);
+      try {
+        await deleteConvos('user123', { conversationId });
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await PRAutomation.countDocuments({ user: 'user123', conversationId })).toBe(1);
+    });
+
+    describe('when the conversation delete fails', () => {
+      const user = 'user123';
+      const setup = async () => {
+        const conversationId = uuidv4();
+        await Conversation.create({ conversationId, user, endpoint: EModelEndpoint.agents });
+        const automation = createPRAutomationMethods(mongoose);
+        await mongoose.models.PRAutomation.create({
+          user,
+          conversationId,
+          repository: 'acme/one',
+          pullNumber: 1,
+        });
+        jest.spyOn(Conversation, 'deleteMany').mockRejectedValueOnce(new Error('delete failed'));
+        await expect(deleteConvos(user, { conversationId })).rejects.toThrow('delete failed');
+        return { conversationId, automation };
+      };
+
+      it('keeps the PR automation record', async () => {
+        const { conversationId, automation } = await setup();
+        expect(await automation.getPRAutomation({ userId: user, conversationId })).not.toBeNull();
+        expect(await Conversation.exists({ conversationId })).not.toBeNull();
+      });
+
+      it('leaves the record exactly as it was, so the kept conversation keeps working', async () => {
+        const { conversationId, automation } = await setup();
+        expect(await automation.getPRAutomation({ userId: user, conversationId })).toMatchObject({
+          state: 'idle',
+          repository: 'acme/one',
+          pullNumber: 1,
+        });
+      });
+    });
+
+    it('writes nothing for a conversation that never had an automation', async () => {
+      const conversationId = uuidv4();
+      await Conversation.create({ conversationId, user: 'user123', endpoint: 'agents' });
+      const PRAutomation = mongoose.models.PRAutomation;
+      const writes = ['updateOne', 'updateMany', 'bulkWrite', 'insertMany', 'create'].map(
+        (method) => jest.spyOn(PRAutomation, method as 'updateOne'),
+      );
+      try {
+        await deleteConvos('user123', { conversationId });
+        for (const write of writes) {
+          expect(write).not.toHaveBeenCalled();
+        }
+        expect(await PRAutomation.countDocuments({ user: 'user123', conversationId })).toBe(0);
+      } finally {
+        writes.forEach((write) => write.mockRestore());
+      }
+    });
+
+    it('still reports a deletion that committed when the record cleanup keeps failing', async () => {
+      const conversationId = uuidv4();
+      await Conversation.create({ conversationId, user: 'user123', endpoint: 'agents' });
+      const PRAutomation = mongoose.models.PRAutomation;
+      await PRAutomation.create({ user: 'user123', conversationId });
+      const cleanup = jest
+        .spyOn(PRAutomation, 'deleteMany')
+        .mockRejectedValue(new Error('cleanup unavailable'));
+      try {
+        await expect(deleteConvos('user123', { conversationId })).resolves.toMatchObject({
+          deletedCount: 1,
+        });
+        expect(cleanup.mock.calls.length).toBeGreaterThan(1);
+      } finally {
+        cleanup.mockRestore();
+      }
+    });
+
+    it('removes the PR automation record of a root that a previous attempt already deleted', async () => {
+      /** The reaper judges the owner too, so the record names a real account id. */
+      const owner = new mongoose.Types.ObjectId().toString();
+      const rootId = uuidv4();
+      const childId = uuidv4();
+      const PRAutomation = mongoose.models.PRAutomation;
+      await Conversation.create({
+        conversationId: childId,
+        user: owner,
+        endpoint: EModelEndpoint.agents,
+        subagentThread: {
+          rootConversationId: rootId,
+          parentConversationId: rootId,
+          parentMessageId: 'message-1',
+          parentToolCallId: 'call-1',
+          subagentType: 'agent-child',
+          subagentKind: 'agent',
+          depth: 1,
+        },
+      });
+      await PRAutomation.create({ user: owner, conversationId: rootId });
+
+      await deleteConvos(owner, { conversationId: rootId }, { allowEmpty: true });
+
+      expect(await PRAutomation.countDocuments({ conversationId: rootId })).toBe(0);
+    });
+
     it('retires queued-turn work before each conversation deletion wave', async () => {
       const conversationId = uuidv4();
       await Conversation.create({

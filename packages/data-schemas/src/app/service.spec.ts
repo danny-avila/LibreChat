@@ -220,6 +220,18 @@ describe('loadFiltersConfig', () => {
   });
 });
 
+describe('AppService PR automation config', () => {
+  it('carries the yaml reaper interval onto the app config', async () => {
+    const config = {
+      endpoints: { [EModelEndpoint.agents]: { prAutomation: { reaperIntervalMinutes: 15 } } },
+    } as DeepPartial<TCustomConfig>;
+
+    const result = await AppService({ config });
+
+    expect(result.endpoints?.[EModelEndpoint.agents]?.prAutomation?.reaperIntervalMinutes).toBe(15);
+  });
+});
+
 describe('AppService assistants config', () => {
   it('preserves configured Assistants API versions', async () => {
     const config = {

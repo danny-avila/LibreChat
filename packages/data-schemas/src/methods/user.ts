@@ -16,6 +16,8 @@ import type {
 } from '~/types';
 import type { TwoFactorEnrollmentGuard, TwoFactorEnrollmentUpdate } from '~/types';
 import type { CacheStore } from '~/types';
+import { createPRAutomationMethods } from './prAutomation';
+import { runAsSystem } from '~/config/tenantContext';
 import { evictAuthUserDocs } from '~/utils/eviction';
 import { escapeRegExp } from '~/utils/string';
 import { signPayload } from '~/crypto';
@@ -220,6 +222,8 @@ export function createUserMethods(
     }
     return normalized;
   }
+
+  const prAutomation = createPRAutomationMethods(mongoose);
 
   /**
    * Search for a single user based on partial data and return matching user document as plain object.
@@ -644,10 +648,26 @@ export function createUserMethods(
       const User = mongoose.models.User;
       await mongoose.models.ToolApprovalGrant?.deleteMany({ user: userId });
       const result = await User.deleteOne({ _id: userId });
+      if (result.deletedCount > 0) {
+        /** Before any fallible cleanup, so a stale cached `req.user` cannot outlive the account. */
+        await invalidateAuthUserDocCache(userId);
+      }
+      /** Removed only after the account delete committed, so a failed delete keeps the user's
+       * automation. Once the account is gone a cleanup failure must not report the deletion as
+       * failed: the next claim removes any record whose owner no longer exists. A retry on an
+       * account that was already gone has committed nothing, so its failure still throws. */
+      try {
+        /** The account is gone in every tenant, so its automation is removed from all of them. */
+        await runAsSystem(() => prAutomation.deletePRAutomations(userId));
+      } catch (error) {
+        if (result.deletedCount === 0) {
+          throw error;
+        }
+        logger.warn('[deleteUserById] PR automation cleanup deferred to its next claim', error);
+      }
       if (result.deletedCount === 0) {
         return { deletedCount: 0, message: 'No user found with that ID.' };
       }
-      await invalidateAuthUserDocCache(userId);
       return { deletedCount: result.deletedCount, message: 'User was deleted successfully.' };
     } catch (error: unknown) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';

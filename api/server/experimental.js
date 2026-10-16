@@ -54,6 +54,7 @@ const {
   GenerationJobManager,
   createAgentEventTerminalHandler,
   startCodeEnvironmentLifecycleReconciler,
+  createClusteredPRAutomationReaper,
   waitForKeyvRedisClient,
   createCodeApiUploadRegistry,
   cacheConfig,
@@ -80,6 +81,7 @@ const {
   seedDatabase,
   recordAuditEntry,
   sweepOrphanedPreviews,
+  reapPRAutomations,
 } = require('~/models');
 const { checkMigrations } = require('./services/start/migration');
 const initializeMCPs = require('./services/initializeMCPs');
@@ -407,6 +409,9 @@ if (cluster.isMaster) {
   // Tear down stream resources before shared caches and telemetry exporters shut down.
   registerShutdownTask('generation job manager', destroyGenerationJobManager, { priority: 100 });
   const expiredFileSweep = createClusteredFileSweep(cacheConfig.USE_REDIS, startExpiredFileSweep);
+  const prAutomationReaper = createClusteredPRAutomationReaper(cacheConfig.USE_REDIS, {
+    reapPRAutomations,
+  });
   const SCHEDULE_ENGINE_OPTIONAL_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'DELETE']);
 
   const rejectScheduleWritesUntilReady = (req, res, next) => {
@@ -438,6 +443,7 @@ if (cluster.isMaster) {
     if (msg.type === 'file-retention-sweep-worker') {
       logger.info(wrapLogMessage(`Worker ${process.pid} is assigned file-retention sweep`));
       expiredFileSweep.assign();
+      prAutomationReaper.assign();
     }
   });
   const startServer = async () => {
@@ -505,6 +511,7 @@ if (cluster.isMaster) {
     // principal) still merges DB `__base__` overrides, which must not drive which hook
     // modules load in every worker (matches api/server/index.js's baseOnly usage).
     const baseAppConfig = await getAppConfig({ baseOnly: true });
+    prAutomationReaper.start(baseAppConfig);
     await configureSubagentTaskRouting(baseAppConfig?.endpoints?.agents?.subagentActivity);
     registerBackgroundTaskShutdown({
       interruptGraceMs: baseAppConfig?.endpoints?.agents?.backgroundTasks?.shutdownInterruptGraceMs,

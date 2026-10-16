@@ -69,6 +69,14 @@ import {
 } from './types/pullRequest';
 import type { PullRequestProvider } from './types/pullRequest';
 import { isActionTool } from './types/tools';
+import {
+  MAX_PR_AUTOMATION_BOTS,
+  PR_AUTOMATION_TRUST_LEVELS,
+  DEFAULT_PR_AUTOMATION_BOTS,
+  MIN_PR_AUTOMATION_REAPER_MINUTES,
+  MAX_PR_AUTOMATION_REAPER_MINUTES,
+  DEFAULT_PR_AUTOMATION_REAPER_MINUTES,
+} from './types/prAutomation';
 import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
 import { MCPServersSchema } from './mcp';
@@ -2012,6 +2020,38 @@ export const agentsEndpointSchema = baseEndpointSchema
            *  each goes in a slot picked from its key, replacing what was there. Read from the
            *  YAML only, so every replica and principal addresses the same slot for a lookup. */
           sharedCacheSlots: z.number().int().min(64).max(1_000_000).optional().default(65_536),
+        })
+        .optional(),
+      /** Auto-fix CI and address review comments on a conversation's pull request. Off unless an
+       *  administrator opts in; a user can only narrow `maxTrust`, never widen it. */
+      prAutomation: z
+        .object({
+          enabled: z.boolean().optional().default(false),
+          /** Fix rounds one pull request may run before the automation stops. */
+          maxRounds: z.number().int().min(1).max(20).optional().default(5),
+          /** Wall-clock minutes from the first automated round before the automation stops. */
+          maxMinutes: z.number().int().min(5).max(1440).optional().default(120),
+          /** Bots one user may approve for one repository. */
+          maxBots: z
+            .number()
+            .int()
+            .min(1)
+            .max(MAX_PR_AUTOMATION_BOTS)
+            .optional()
+            .default(DEFAULT_PR_AUTOMATION_BOTS),
+          /** Widest author trust a user may select: `approvedBots` acts on the linked account and
+           *  allowlisted bots only, `collaborators` adds write-access users, `anyone` acts on all. */
+          maxTrust: z.enum(PR_AUTOMATION_TRUST_LEVELS).optional().default('approvedBots'),
+          /** Minutes between passes that remove records whose conversation or owner is gone,
+           *  including conversations the retention index deleted. Runs whether or not `enabled`
+           *  is set, so records from an earlier opt-in are still cleaned up. */
+          reaperIntervalMinutes: z
+            .number()
+            .int()
+            .min(MIN_PR_AUTOMATION_REAPER_MINUTES)
+            .max(MAX_PR_AUTOMATION_REAPER_MINUTES)
+            .optional()
+            .default(DEFAULT_PR_AUTOMATION_REAPER_MINUTES),
         })
         .optional(),
       /** Conversational background-task delivery policy. Automatic completion wakeups are

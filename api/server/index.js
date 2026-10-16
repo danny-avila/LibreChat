@@ -62,6 +62,7 @@ const {
   createAgentEventTerminalHandler,
   createScheduleWriteGate,
   startCodeEnvironmentLifecycleReconciler,
+  startPRAutomationReaper,
   waitForKeyvRedisClient,
   warnOnUnreachableDeliveryPaths,
   createCodeApiUploadRegistry,
@@ -73,6 +74,7 @@ const {
   getRoleByName,
   seedDatabase,
   recordAuditEntry,
+  reapPRAutomations,
 } = require('~/models');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
 const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
@@ -236,6 +238,7 @@ const startServer = async () => {
     logger.error('[sweepOrphanedPreviews] Background sweep failed:', err);
   });
   const appConfig = await getAppConfig({ baseOnly: true });
+  startPRAutomationReaper({ reapPRAutomations }, appConfig);
   await configureSubagentTaskRouting(appConfig?.endpoints?.agents?.subagentActivity);
   registerBackgroundTaskShutdown({
     interruptGraceMs: appConfig?.endpoints?.agents?.backgroundTasks?.shutdownInterruptGraceMs,
