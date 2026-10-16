@@ -4,7 +4,16 @@ import type {
   TSubmission,
   TConversation,
   TPendingSteer,
+  TAttachment,
+  ChatTransport,
+  ChatTitleFrame,
+  ChatFinalFrame,
   EventSubmission,
+  ChatCreatedFrame,
+  ChatContentFrame,
+  TTokenUsageEvent,
+  TContextUsageEvent,
+  TSteerUpdatedEvent,
   TSteerAppliedEvent,
   TActivityLabelEvent,
   TReasoningLabelEvent,
@@ -116,6 +125,8 @@ export interface ResumableSteers {
   ) => string[];
   /** Marks the steer whose inline part just mounted, so it plays its draw-in once. */
   markLiveApplied: (steerId: string) => void;
+  /** Patches the chips the server re-labelled (preempt capability); never removes one. */
+  update: (event: TSteerUpdatedEvent) => void;
   /** Re-seeds the chips from the server's still-queued steers. */
   seed: (
     conversationId: string,
@@ -196,6 +207,15 @@ export interface ResumablePane {
   clearDrainAfterAbort: (conversationId: string, generationCreatedAt?: number) => void;
   /** Refreshes the token balance, when the deployment tracks one. */
   refreshBalance: () => void;
+  setAbortScroll: (abort: boolean) => void;
+  /** Starts a new identity for the run the pane displays (a `created` or resume `sync`). */
+  renewActiveRun: () => void;
+  /** Where a run's end lands: an early-aborted first turn keys under the new-chat id. */
+  runEndTarget: (params: {
+    conversationId: string;
+    earlyAbort: boolean;
+    startedAsNewConvo: boolean;
+  }) => { conversationId: string; startedAsNewConvo: boolean };
   /** Updates the pane's conversation; absent for a pane that only adds a comparison response. */
   updateConversation?: (update: (current: TConversation | null) => TConversation | null) => void;
   /**
@@ -211,6 +231,16 @@ export interface ResumablePane {
 /** What the event handlers that render the stream expose to the run. */
 export interface ResumableEvents {
   stepHandler: (event: StepEvent, submission: EventSubmission) => void;
+  finalHandler: (data: ChatFinalFrame, submission: EventSubmission) => void;
+  createdHandler: (data: ChatCreatedFrame, submission: EventSubmission) => void;
+  attachmentHandler: (params: { data: TAttachment; submission: EventSubmission }) => void;
+  titleHandler: (data: ChatTitleFrame) => void;
+  contentHandler: (params: { data: ChatContentFrame; submission: EventSubmission }) => void;
+  /** Legacy streams' cumulative text. */
+  messageHandler: (text: string | undefined, submission: EventSubmission) => void;
+  /** Marks programmatic tool calls a resume cannot rebuild as interrupted. */
+  prunePtcTraces: () => void;
+  resetContentHandler: () => void;
   /** Replaces the step handler's copy of a message the run patched outside it. */
   syncStepMessage: (message: TMessage) => void;
   clearStepMaps: () => void;
@@ -219,6 +249,19 @@ export interface ResumableEvents {
   resetLive: (submission: TSubmission) => void;
   /** Writes the failed turn's error card from the text (or raw error value) the server sent. */
   showError: (text: string | boolean | { message?: string }, submission: TSubmission) => void;
+}
+
+/** The run's token usage: the live estimate while it streams and the totals it settles to. */
+export interface ResumableUsage {
+  bindResponse: (submission: TSubmission) => void;
+  contextHandler: (data: TContextUsageEvent, submission: TSubmission) => void;
+  usageHandler: (data: TTokenUsageEvent, submission: TSubmission) => void;
+  tapStream: (data: { delta?: { content?: unknown } }, submission: TSubmission) => void;
+  tapContent: (text: unknown, submission: TSubmission) => void;
+  finalizeUsage: (data: ChatFinalFrame, submission: TSubmission) => void;
+  backfillUsage: (entries: TTokenUsageEvent[], submission: TSubmission) => void;
+  /** Seeds the live estimate with the output a resume snapshot already holds. */
+  seedLiveFromContent: (content: unknown[] | undefined, submission: TSubmission) => void;
 }
 
 /** The pane's message list. */
@@ -262,4 +305,9 @@ export interface ResumableHost extends SubscriptionHost {
   events: ResumableEvents;
   messages: ResumableMessages;
   parts: ResumableParts;
+  usage: ResumableUsage;
+  /** The stream side of the app's transport, bound to the signed-in user. */
+  stream: ChatTransport;
+  /** Receives the dev-only controls that simulate a dropped or a clean close. */
+  exposeDebugControls?: (controls: { killNetwork: () => void; closeClean: () => void }) => void;
 }

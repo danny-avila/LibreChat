@@ -104,7 +104,6 @@ const mockQueryClient = {
 };
 
 const mockActiveRunAtom = { key: 'activeRun' };
-const mockSubmissionAtom = { key: 'submission' };
 /** The follow-up queue a restored submission lands back in. */
 const queuedIn = (conversationId: string) =>
   getDefaultStore().get(queuedMessagesByConvoId(conversationId));
@@ -124,9 +123,6 @@ const mockUpdateGenerationEpoch = jest.fn();
 const mockUseSetRecoilStateMock = jest.fn((atom: unknown) => {
   if (atom === mockActiveRunAtom) {
     return mockSetActiveRun;
-  }
-  if (atom === mockSubmissionAtom) {
-    return mockSetSubmission;
   }
   return jest.fn();
 });
@@ -178,6 +174,9 @@ jest.mock('jotai', () => {
         return mockSetDrainAfterAbort;
       }
       const generation = jest.requireActual('@librechat/chat/react');
+      if (atom === generation.submissionByIndex(0)) {
+        return mockSetSubmission;
+      }
       if (atom === generation.abortScrollFamily(0)) {
         return mockSetAbortScroll;
       }
@@ -193,7 +192,6 @@ jest.mock('~/store', () => ({
   __esModule: true,
   default: {
     activeRunFamily: jest.fn(() => mockActiveRunAtom),
-    submissionByIndex: jest.fn(() => mockSubmissionAtom),
   },
 }));
 
