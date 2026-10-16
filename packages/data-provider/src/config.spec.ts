@@ -1199,6 +1199,22 @@ describe('agent pull request config', () => {
     expect(parse({ ...enabled, provider }).success).toBe(true);
   });
 
+  it('accepts an OAuth app given by environment references', () => {
+    const oauth = { clientId: '${GH_CLIENT_ID}', clientSecret: '${GH_CLIENT_SECRET}' };
+    expect(parse({ ...enabled, oauth }).success).toBe(true);
+    expect(parse({ ...enabled, oauth: { ...oauth, scope: 'read_api read_user' } }).success).toBe(
+      true,
+    );
+  });
+
+  it.each([
+    ['a literal secret', { clientId: '${ID}', clientSecret: 'shhh' }],
+    ['a missing secret', { clientId: '${ID}' }],
+    ['a scope with odd characters', { clientId: '${ID}', clientSecret: '${S}', scope: 'a;b' }],
+  ])('rejects an OAuth app with %s', (_label, oauth) => {
+    expect(parse({ ...enabled, oauth }).success).toBe(false);
+  });
+
   it('rejects a provider it does not know', () => {
     expect(parse({ ...enabled, provider: 'gitea' }).success).toBe(false);
   });

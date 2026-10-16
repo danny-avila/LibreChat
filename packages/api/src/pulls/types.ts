@@ -5,6 +5,9 @@ export const PULL_REQUEST_ERROR_CODES = [
   'NOT_CONFIGURED',
   'RATE_LIMITED',
   'UPSTREAM_ERROR',
+  /** The provider refused the token itself (401). Answered to clients as `UPSTREAM_ERROR`; a
+   *  user's own token is also invalidated, so the account reads as disconnected. */
+  'CREDENTIAL_REJECTED',
 ] as const;
 export type PullRequestErrorCode = (typeof PULL_REQUEST_ERROR_CODES)[number];
 

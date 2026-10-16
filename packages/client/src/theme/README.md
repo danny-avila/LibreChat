@@ -391,14 +391,19 @@ Each status family has a foreground, a `-subtle` background, a `-border`, and a
   the dialog's close icon, `h-theme-field-lg` (`fieldHeightLg`) the large `title`
   input, and `h-theme-target` the switch's hit area, and `min-w-theme-tab` (`tabMinWidth`, `0` to size a tab by its label) the tab
   trigger. `min-w-theme-list` and `max-h-theme-list` (`listMinWidth`, `0` to size the list by
-  its trigger, and `listMaxHeight`, 8 to 40rem) bound the Select's list. Every default is the size the primitive drew before. The icon and checkbox roles
+  its trigger, and `listMaxHeight`, 8 to 40rem or `none`) bound the Select's list, which never
+  grows past the room the popper leaves between its trigger and the viewport's edge, so `none`
+  drops the fixed cap and keeps only that one. Every default is the size the primitive drew before. The icon and checkbox roles
   are bounded to the room their layouts leave: `iconSize` 0.75 to 1.25rem, `iconSizeMd` (the
   exported Dialog's close glyph) 1.25 to 1.5rem, `iconSizeLg` 1 to 2rem, `checkboxSize` 1 to
   1.5rem. The target floor (`h-theme-target`, `min-h-theme-target`, `min-w-theme-target`) is
   a fixed 24px, WCAG 2.5.8's minimum, not a role, so a theme cannot lower it. The Button's
   `xs`, `lg`, `compact` and `icon-sm` heights and `fieldHeightLg` reject a value under 24px;
-  `controlHeight`, `buttonHeight`, `buttonHeightSm` and `fieldHeight` predate the floor and
-  keep their earlier validation.
+  `buttonHeight` and `buttonHeightSm` predate the floor, so they keep their earlier validation
+  and are floored where they are drawn instead: `h-theme-button`, `h-theme-button-sm` and
+  `size-theme-button` never draw under 24px, so a stored theme naming less still loads.
+  `controlHeight` and `fieldHeight` keep their earlier validation. The exported Dialog's close
+  button takes the same 24px floor around its `iconSizeMd` glyph.
 - `bg-field-fill` / `text-field-text` - A form field's fill and typed value. The
   ink follows `text-primary` and the fill follows `surface-primary` when a theme
   names those and not these. Fields stay clear unless the theme's
