@@ -31,6 +31,7 @@ import type {
   Artifact,
   PtcTrace,
 } from '~/common';
+import type { MessagesEditing } from '~/Providers/MessagesViewContext';
 import type { PendingSteer } from './queue';
 
 /** Options accepted by {@link ChatConversationContract.newConversation}: the shared params plus
@@ -328,5 +329,9 @@ declare module '@librechat/chat/react' {
     useArtifactPanel: (artifactId: string) => MessagePartArtifactPanel;
     /** Steers sent to a conversation that the server has not confirmed yet. */
     usePendingSteers: (conversationId: string) => PendingSteer[];
+    /** The messages view an inline editor reads and writes; only rendered inside one. */
+    useMessagesEditing: () => MessagesEditing;
+    /** The messages view's `ask`, or one that does nothing outside a messages view. */
+    useMessagesAsk: () => MessagesEditing['ask'];
   }
 }

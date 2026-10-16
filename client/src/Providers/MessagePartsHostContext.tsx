@@ -21,9 +21,17 @@ import type {
   MessagePartMessage,
   MessagePartsHost,
 } from '~/hooks/Chat/contract';
+import type { MessagesEditing } from './MessagesViewContext';
 import type { Artifact } from '~/common';
+import {
+  useMessageContext,
+  useFileMapContext,
+  useAgentsMapContext,
+  useMessagesOperations,
+  useMessagesConversation,
+  useOptionalMessagesOperations,
+} from '~/Providers';
 import store, { ptcTraceByToolCallId, ptcTraceKey, sandboxStartingByToolCallId } from '~/store';
-import { useMessageContext, useFileMapContext, useAgentsMapContext } from '~/Providers';
 import { getAppPartRenderers } from '~/components/Chat/Messages/Content/Parts/slots';
 import useSmoothStreaming from '~/hooks/Messages/useSmoothStreaming';
 import { showThinkingAtom } from '~/store/showThinking';
@@ -33,6 +41,15 @@ function useAppMessage(): MessagePartMessage {
   const { messageId, isSubmitting, isLatestMessage, nextType, conversationId, partIndex } =
     useMessageContext();
   return { messageId, isSubmitting, isLatestMessage, nextType, conversationId, partIndex };
+}
+
+function useAppMessagesEditing(): MessagesEditing {
+  const { conversation } = useMessagesConversation();
+  const { ask, getMessages, setMessages } = useMessagesOperations();
+  return useMemo(
+    () => ({ conversation, ask, getMessages, setMessages }),
+    [conversation, ask, getMessages, setMessages],
+  );
 }
 
 function useAppAgent(agentId: string): Agent | undefined {
@@ -113,6 +130,8 @@ export const appMessagePartsHost: MessagePartsHost = {
   useShowThinking: () => useAtomValue(showThinkingAtom),
   useAutoExpandTools: () => useRecoilValue<boolean>(store.autoExpandTools),
   useLaTeXParsing: () => useRecoilValue<boolean>(store.LaTeXParsing),
+  useChatDirection: () =>
+    useRecoilValue<string>(store.chatDirection).toLowerCase() === 'rtl' ? 'rtl' : 'ltr',
   useUserTextPreferences: useAppUserTextPreferences,
   /* The atom rather than the auth context: AuthContextProvider mirrors the user into it, and the
    * public share route mounts outside that provider. */
@@ -130,6 +149,8 @@ export const appMessagePartsHost: MessagePartsHost = {
   useSteerEscalating: (conversationId) => useAtomValue(escalatingSteerFamily(conversationId)),
   usePaneConversationId: (index) => useRecoilValue(store.conversationIdByIndex(index)),
   useLiveAppliedSteer: useAppLiveAppliedSteer,
+  useMessagesEditing: useAppMessagesEditing,
+  useMessagesAsk: () => useOptionalMessagesOperations().ask,
 };
 
 setDefaultMessagePartsHost(appMessagePartsHost);
