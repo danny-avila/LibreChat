@@ -7,14 +7,7 @@
     "server-dev": "echo 'please run this from the root directory'",
     "test": "cross-env NODE_ENV=test jest",
     "b:test": "NODE_ENV=test bun jest",
-    "test:ci": "jest --ci --logHeapUsage",
-    "add-balance": "node ./add-balance.js",
-    "list-balances": "node ./list-balances.js",
-    "user-stats": "node ./user-stats.js",
-    "create-user": "node ./create-user.js",
-    "invite-user": "node ./invite-user.js",
-    "ban-user": "node ./ban-user.js",
-    "delete-user": "node ./delete-user.js"
+    "test:ci": "jest --ci --logHeapUsage"
   },
   "repository": {
     "type": "git",
@@ -111,7 +104,6 @@
     "nanoid": "^3.3.18",
     "node-fetch": "^2.7.0",
     "nodemailer": "^10.0.2",
-    "ollama": "^0.5.0",
     "openai": "5.8.2",
     "openid-client": "^6.5.0",
     "passport": "^0.6.0",

@@ -144,39 +144,6 @@ describe('userGroup methods', () => {
     });
   });
 
-  describe('findGroupsByMemberId', () => {
-    it('returns groups the user is a member of via idOnTheSource', async () => {
-      const user = await createTestUser({ idOnTheSource: 'user-ext-1' });
-      await Group.create([
-        { name: 'Group A', source: 'local', memberIds: ['user-ext-1'] },
-        { name: 'Group B', source: 'local', memberIds: ['user-ext-1'] },
-        { name: 'Group C', source: 'local', memberIds: ['other-user'] },
-      ]);
-
-      const groups = await methods.findGroupsByMemberId(user._id);
-      expect(groups).toHaveLength(2);
-      const names = groups.map((g) => g.name).sort();
-      expect(names).toEqual(['Group A', 'Group B']);
-    });
-
-    it('returns empty array when user does not exist', async () => {
-      const groups = await methods.findGroupsByMemberId(new Types.ObjectId());
-      expect(groups).toEqual([]);
-    });
-
-    it('falls back to userId string when user has no idOnTheSource', async () => {
-      const user = await createTestUser();
-      await Group.create({
-        name: 'Group X',
-        source: 'local',
-        memberIds: [user._id.toString()],
-      });
-
-      const groups = await methods.findGroupsByMemberId(user._id);
-      expect(groups).toHaveLength(1);
-    });
-  });
-
   describe('createGroup', () => {
     it('creates a group and returns the document', async () => {
       const group = await methods.createGroup({ name: 'New Group', source: 'local' });
@@ -297,17 +264,6 @@ describe('userGroup methods', () => {
       await expect(
         methods.removeUserFromAllGroups(new Types.ObjectId().toString()),
       ).resolves.not.toThrow();
-    });
-  });
-
-  describe('getUserGroups', () => {
-    it('delegates to findGroupsByMemberId', async () => {
-      const user = await createTestUser({ idOnTheSource: 'user-ext-1' });
-      await Group.create({ name: 'Team', source: 'local', memberIds: ['user-ext-1'] });
-
-      const groups = await methods.getUserGroups(user._id);
-      expect(groups).toHaveLength(1);
-      expect(groups[0].name).toBe('Team');
     });
   });
 
@@ -1261,129 +1217,6 @@ describe('userGroup methods', () => {
 
       expect(cache.clear).not.toHaveBeenCalled();
       expect(cache.delete).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('syncUserEntraGroups', () => {
-    it('creates new groups and adds user as member', async () => {
-      const user = await createTestUser({ idOnTheSource: 'user-ext-1' });
-
-      const { addedGroups, removedGroups } = await methods.syncUserEntraGroups(user._id, [
-        { id: 'entra-g1', name: 'Entra Group 1' },
-        { id: 'entra-g2', name: 'Entra Group 2', description: 'desc', email: 'g2@co.com' },
-      ]);
-
-      expect(addedGroups).toHaveLength(2);
-      expect(removedGroups).toHaveLength(0);
-
-      const groups = await Group.find({ source: 'entra' });
-      expect(groups).toHaveLength(2);
-      expect(groups.every((g) => g.memberIds!.includes('user-ext-1'))).toBe(true);
-    });
-
-    it('adds user to existing group they are not a member of', async () => {
-      const user = await createTestUser({ idOnTheSource: 'user-ext-1' });
-      await Group.create({
-        name: 'Existing Entra Group',
-        source: 'entra',
-        idOnTheSource: 'entra-g1',
-        memberIds: ['other-user'],
-      });
-
-      const { addedGroups } = await methods.syncUserEntraGroups(user._id, [
-        { id: 'entra-g1', name: 'Existing Entra Group' },
-      ]);
-
-      expect(addedGroups).toHaveLength(1);
-      const group = await Group.findOne({ idOnTheSource: 'entra-g1' });
-      expect(group!.memberIds).toContain('user-ext-1');
-      expect(group!.memberIds).toContain('other-user');
-    });
-
-    it('skips groups the user is already a member of', async () => {
-      const user = await createTestUser({ idOnTheSource: 'user-ext-1' });
-      await Group.create({
-        name: 'Already Member',
-        source: 'entra',
-        idOnTheSource: 'entra-g1',
-        memberIds: ['user-ext-1'],
-      });
-
-      const { addedGroups } = await methods.syncUserEntraGroups(user._id, [
-        { id: 'entra-g1', name: 'Already Member' },
-      ]);
-
-      expect(addedGroups).toHaveLength(0);
-    });
-
-    it('removes user from stale entra groups', async () => {
-      const user = await createTestUser({ idOnTheSource: 'user-ext-1' });
-      await Group.create({
-        name: 'Stale Group',
-        source: 'entra',
-        idOnTheSource: 'entra-stale',
-        memberIds: ['user-ext-1'],
-      });
-
-      const { removedGroups } = await methods.syncUserEntraGroups(user._id, []);
-
-      expect(removedGroups).toHaveLength(1);
-      expect(removedGroups[0].name).toBe('Stale Group');
-      const group = await Group.findOne({ idOnTheSource: 'entra-stale' });
-      expect(group!.memberIds).not.toContain('user-ext-1');
-    });
-
-    it('handles add-and-remove in one sync call', async () => {
-      const user = await createTestUser({ idOnTheSource: 'user-ext-1' });
-
-      await Group.create({
-        name: 'Keep Group',
-        source: 'entra',
-        idOnTheSource: 'entra-keep',
-        memberIds: ['user-ext-1'],
-      });
-      await Group.create({
-        name: 'Remove Group',
-        source: 'entra',
-        idOnTheSource: 'entra-remove',
-        memberIds: ['user-ext-1'],
-      });
-
-      const { addedGroups, removedGroups } = await methods.syncUserEntraGroups(user._id, [
-        { id: 'entra-keep', name: 'Keep Group' },
-        { id: 'entra-new', name: 'New Group' },
-      ]);
-
-      expect(addedGroups).toHaveLength(1);
-      expect(addedGroups[0].name).toBe('New Group');
-      expect(removedGroups).toHaveLength(1);
-      expect(removedGroups[0].name).toBe('Remove Group');
-    });
-
-    it('preserves local groups during entra sync', async () => {
-      const user = await createTestUser({ idOnTheSource: 'user-ext-1' });
-      await Group.create({
-        name: 'Local Group',
-        source: 'local',
-        memberIds: ['user-ext-1'],
-      });
-
-      await methods.syncUserEntraGroups(user._id, []);
-
-      const localGroup = await Group.findOne({ name: 'Local Group' });
-      expect(localGroup!.memberIds).toContain('user-ext-1');
-    });
-
-    it('throws when user does not exist', async () => {
-      await expect(
-        methods.syncUserEntraGroups(new Types.ObjectId(), [{ id: 'g1', name: 'Group' }]),
-      ).rejects.toThrow(/User not found/);
-    });
-
-    it('returns the updated user document', async () => {
-      const user = await createTestUser({ idOnTheSource: 'user-ext-1' });
-      const { user: updatedUser } = await methods.syncUserEntraGroups(user._id, []);
-      expect((updatedUser._id as Types.ObjectId).toString()).toBe(user._id.toString());
     });
   });
 
