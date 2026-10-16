@@ -128,6 +128,7 @@ import { buildEffectiveToolApprovalPolicy } from '~/agents/hitl/allow';
 import { prepareQueuedCodeFileContext } from '~/files/code/queued';
 import { getBuiltInBaseURL } from '~/endpoints/openai/initialize';
 import { getProviderConfig } from '~/endpoints/config/providers';
+import { createSafeUser, createSafeAgent } from '~/utils/env';
 import { buildToolApprovalHooks } from '~/agents/hitl/hooks';
 import { getAgentCheckpointer } from '~/agents/checkpointer';
 import { getPluginHookSource } from '~/agents/hooks/source';
@@ -137,7 +138,6 @@ import { buildHITLRunWiring } from '~/agents/hitl/runtime';
 import { buildLangfuseConfig } from '~/langfuse/config';
 import { applyTestRunHook } from '~/agents/testHook';
 import { isUserProvided } from '~/utils/common';
-import { createSafeUser } from '~/utils/env';
 
 /** Expected shape of JSON tool search results */
 interface ToolSearchJsonResult {
@@ -908,7 +908,12 @@ function resolveOpenAISummarization(
   model: string,
   appConfig: AppConfig | undefined,
   parameters: SummarizationConfig['parameters'],
-  headerContext: { user?: IUser; tenantId?: string; requestBody?: t.RequestBody },
+  headerContext: {
+    user?: IUser;
+    tenantId?: string;
+    requestBody?: t.RequestBody;
+    agent?: Partial<Agent>;
+  },
 ): { provider: string; clientOverrides: SummarizationClientOverrides } | undefined {
   const overrides = summarizationTransportOverrides(parameters);
   const baseURL = overrides.baseURL ?? getBuiltInBaseURL(EModelEndpoint.openAI);
@@ -947,6 +952,7 @@ function resolveOpenAISummarization(
         user: createSafeUser(headerContext.user),
         tenantId: headerContext.tenantId,
         body: headerContext.requestBody,
+        agent: headerContext.agent,
       }),
       transportTimeouts: resolveModelTransportTimeouts(appConfig?.endpoints?.agents),
     },
@@ -1040,7 +1046,12 @@ function resolveAzureSummarization(
   model: string,
   appConfig: AppConfig | undefined,
   parameters: SummarizationConfig['parameters'],
-  headerContext: { user?: IUser; tenantId?: string; requestBody?: t.RequestBody },
+  headerContext: {
+    user?: IUser;
+    tenantId?: string;
+    requestBody?: t.RequestBody;
+    agent?: Partial<Agent>;
+  },
   source?: RunAgent,
 ): { provider: string; clientOverrides: SummarizationClientOverrides } | undefined {
   const sourceOptions = source?.model_parameters as Partial<t.OAIClientOptions> | undefined;
@@ -1088,6 +1099,7 @@ function resolveAzureSummarization(
         user: createSafeUser(headerContext.user),
         tenantId: headerContext.tenantId,
         body: headerContext.requestBody,
+        agent: headerContext.agent,
       });
   const { llmConfig, configOptions } = getOpenAIConfig(
     azureOptions.azureOpenAIApiKey,
@@ -1173,7 +1185,12 @@ function resolveAzureSummarization(
 function resolveSummarizationProvider(
   rawProvider: string,
   appConfig: AppConfig | undefined,
-  headerContext: { user?: IUser; tenantId?: string; requestBody?: t.RequestBody },
+  headerContext: {
+    user?: IUser;
+    tenantId?: string;
+    requestBody?: t.RequestBody;
+    agent?: Partial<Agent>;
+  },
   target: {
     model?: string;
     parameters?: SummarizationConfig['parameters'];
@@ -1239,6 +1256,7 @@ function resolveSummarizationProvider(
             user: createSafeUser(headerContext.user),
             tenantId: headerContext.tenantId,
             body: headerContext.requestBody,
+            agent: headerContext.agent,
           })
         : undefined;
     /**
@@ -1351,7 +1369,12 @@ function shapeSummarizationConfig(
   fallbackModel: string | undefined,
   appConfig: AppConfig | undefined,
   agentEndpoint: string | undefined,
-  headerContext: { user?: IUser; tenantId?: string; requestBody?: t.RequestBody },
+  headerContext: {
+    user?: IUser;
+    tenantId?: string;
+    requestBody?: t.RequestBody;
+    agent?: Partial<Agent>;
+  },
   agent?: RunAgent,
 ) {
   const rawProvider = config?.provider ?? fallbackProvider;
@@ -2379,6 +2402,9 @@ export async function createRun({
   /** Admin kill switch for the ask tool — see {@link isAskUserQuestionAdminDisabled}. */
   const askToolAdminDisabled = isAskUserQuestionAdminDisabled(appConfig);
 
+  /** Resolves `{{LIBRECHAT_AGENT_ID}}`; derived once so subagent steps share the turn's id. */
+  const safePrimaryAgent = createSafeAgent(agents[0]);
+
   // Independently initialized agents must reserve the same live paths before advertising uploads.
   const codeFileAgents = new Map<string, RunAgent>();
   const visitedCodeFileAgents = new Set<string>();
@@ -2442,6 +2468,7 @@ export async function createRun({
       user: createSafeUser(user),
       tenantId,
       body: requestBody,
+      agent: safePrimaryAgent,
     });
 
     const modelParameters = normalizeAgentModelParameters(agent.model_parameters);
@@ -2451,7 +2478,7 @@ export async function createRun({
       selfModel,
       appConfig,
       agent.endpoint ?? undefined,
-      { user, tenantId, requestBody },
+      { user, tenantId, requestBody, agent: safePrimaryAgent },
       agent,
     );
     const summarization = modelCallbacks?.length

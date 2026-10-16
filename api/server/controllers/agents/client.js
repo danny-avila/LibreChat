@@ -11,6 +11,7 @@ const {
   sanitizeTitle,
   payloadParser,
   createSafeUser,
+  createSafeAgent,
   initializeAgent,
   resolveConfigHeaders,
   resolveRequestTenantId,
@@ -3479,6 +3480,7 @@ class AgentClient extends BaseClient {
       req: this.options.req,
       res: this.options.res,
       user: createSafeUser(this.options.req.user),
+      primaryAgent: createSafeAgent(this.options.agent),
       tenantId: resolveRequestTenantId(this.options.req),
     });
 
@@ -6267,6 +6269,7 @@ class AgentClient extends BaseClient {
         conversationId: this.conversationId,
         parentMessageId: this.parentMessageId,
       },
+      agent: createSafeAgent(this.options.agent),
     });
 
     try {
