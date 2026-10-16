@@ -1309,6 +1309,61 @@ describe('SubagentThreadPanel', () => {
     },
   );
 
+  describe.each([false, true])('focus return with mobile = %s', (mobile) => {
+    it.each([
+      'available',
+      'hidden',
+      'inert',
+      'aria-hidden',
+      'aria-disabled',
+      'disabled',
+      'removed',
+    ])(
+      'prefers the explicit opener when it is %s, otherwise falls back to the message card',
+      async (openerState) => {
+        mockIsMobile = mobile;
+        mockUseSubagentThreadQuery.mockReturnValue({
+          data: completedView,
+          isLoading: false,
+          isError: false,
+          isReadinessPending: false,
+        });
+        const disclosure = document.createElement('button');
+        const messageCard = document.createElement('button');
+        disclosure.id = 'popup-opener';
+        disclosure.dataset.testid = 'header-background-tasks-button';
+        messageCard.id = 'loaded-message-card';
+        messageCard.dataset.subagentToolCall = selection.toolCallId;
+        messageCard.dataset.subagentParentMessage = selection.parentMessageId;
+        messageCard.dataset.subagentPartIndex = String(selection.partIndex);
+        document.body.append(disclosure, messageCard);
+        disclosure.focus();
+        const PanelHost = () => {
+          const selected = useAtomValue(activeSubagentPanel);
+          return selected == null ? null : <SubagentThreadPanel selection={selected} />;
+        };
+        try {
+          render(
+            <Root seed={(store) => store.set(activeSubagentPanel, selection)}>
+              <PanelHost />
+            </Root>,
+          );
+          if (openerState === 'removed') disclosure.remove();
+          else if (openerState === 'disabled') disclosure.disabled = true;
+          else if (openerState !== 'available') {
+            disclosure.setAttribute(openerState, openerState.startsWith('aria-') ? 'true' : '');
+          }
+          fireEvent.click(screen.getByRole('button', { name: 'com_ui_close' }));
+          const destination = openerState === 'available' ? disclosure : messageCard;
+          await waitFor(() => expect(destination).toHaveFocus());
+        } finally {
+          disclosure.remove();
+          messageCard.remove();
+        }
+      },
+    );
+  });
+
   it('does not steal main-chat focus when the selected task advances', () => {
     mockUseSubagentThreadQuery.mockReturnValue({
       data: completedView,

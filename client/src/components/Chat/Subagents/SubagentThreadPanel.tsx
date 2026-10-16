@@ -798,8 +798,8 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         '[data-testid="header-background-tasks-button"]',
       );
       const destination =
-        trigger ??
         (available(returnFocusRef.current) ? returnFocusRef.current : null) ??
+        trigger ??
         (available(disclosure) ? disclosure : null);
       destination?.focus({ preventScroll: true });
     });
