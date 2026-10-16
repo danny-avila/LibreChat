@@ -1,5 +1,5 @@
 /** React bindings for the core `Chat`: providers and `useChat`. Populated as the hooks move in. */
-export { MessageContext, useMessageContext } from './react/message';
+export { MessageContext, MessagePartIndex, useMessageContext } from './react/message';
 export {
   useMessagePartsHost,
   MessagePartsHostProvider,
