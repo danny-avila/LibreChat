@@ -17,6 +17,9 @@ interface:
   # control in the composer. Mock Provider A resolves Anthropic's adaptive
   # `effort` setting through its custom endpoint configuration below.
   parameters: true
+  # Opts the shell into the `?theme=` colour-mode handoff (off by default).
+  # color-mode-handoff.spec.ts follows links that carry it.
+  colorModeFromUrl: true
   # Grants MULTI_CONVO.USE so the composer's `+` command opens the added-model
   # popover. agent-skills-added.spec.ts drives that flow; without an explicit
   # value the permission falls through to the seeded role default and
@@ -74,6 +77,22 @@ mcpServers:
     # __E2E_DYNAMIC_MCP_STDIO_ENV__
     title: E2E Memory
     description: Local MCP fixture used by mock end-to-end tests.
+    timeout: 30000
+  e2e-user-vars:
+    type: stdio
+    command: node
+    args:
+      - e2e/setup/fake-mcp-server.js
+    startup: false
+    env:
+      E2E_MCP_USER_TOKEN: '{{E2E_MCP_USER_TOKEN}}'
+      E2E_MCP_EXPECTED_USER_TOKEN: e2e-user-token-secret
+    customUserVars:
+      E2E_MCP_USER_TOKEN:
+        title: E2E User Token
+        description: Per-user token the fixture refuses to start without.
+    title: E2E User Vars
+    description: Stdio MCP fixture that starts only with the expected per-user token.
     timeout: 30000
   e2e-http:
     type: streamable-http

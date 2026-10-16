@@ -55,6 +55,7 @@ jest.mock('~/server/middleware', () => ({
   moderateText: (req, res, next) => next(),
   messageIpLimiter: (req, res, next) => next(),
   configMiddleware: (req, res, next) => next(),
+  requireTermsAcceptance: (req, res, next) => next(),
   loadStreamKeepaliveMs: (req) =>
     jest
       .requireActual('@librechat/api')
