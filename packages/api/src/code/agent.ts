@@ -124,19 +124,18 @@ export function resolveAgentCodeFlags(params: AgentCodeFlagsParams): AgentCodeFl
     params.codeExecutionAvailable &&
     agent?.tools?.includes(Tools.execute_code) === true &&
     !attachedEnvironmentOptOut;
+  const statefulCodeEnvironment = normalizeStatefulCodeEnvironment(
+    agent?.stateful_code_environment,
+  );
+  const scopeAllowed =
+    params.allowedStatefulCodeEnvironments == null ||
+    params.allowedStatefulCodeEnvironments.includes(statefulCodeEnvironment);
   const statefulSessions =
     codeEnvAvailable &&
     params.statefulSessionsAvailable &&
     (agent?.stateful_code_sessions === true ||
-      isStatefulDefaultEligible(agent, params.environments));
-  const statefulCodeEnvironment = normalizeStatefulCodeEnvironment(
-    agent?.stateful_code_environment,
-  );
-  if (
-    statefulSessions &&
-    params.allowedStatefulCodeEnvironments != null &&
-    !params.allowedStatefulCodeEnvironments.includes(statefulCodeEnvironment)
-  ) {
+      (scopeAllowed && isStatefulDefaultEligible(agent, params.environments)));
+  if (statefulSessions && !scopeAllowed) {
     throw createStatefulCodeEnvironmentPolicyError(statefulCodeEnvironment);
   }
   return { attachedEnvironmentOptOut, codeEnvAvailable, statefulSessions, statefulCodeEnvironment };
