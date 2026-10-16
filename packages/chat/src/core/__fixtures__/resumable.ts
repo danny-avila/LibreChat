@@ -99,10 +99,17 @@ export const createHost = (
       refreshBalance: jest.fn(),
       updateConversation: jest.fn(),
       resolveDetachedEnd: jest.fn(() => ({ resolvable: false, end: null })),
+      setAbortScroll: jest.fn(),
+      renewActiveRun: jest.fn(),
+      runEndTarget: jest.fn((params) => ({
+        conversationId: params.conversationId,
+        startedAsNewConvo: params.startedAsNewConvo,
+      })),
     },
     steers: {
       resolve: jest.fn(() => []),
       markLiveApplied: jest.fn(),
+      update: jest.fn(),
       seed: jest.fn(),
       appliedIds: jest.fn(() => []),
       settleApplied: jest.fn(),
@@ -111,6 +118,14 @@ export const createHost = (
     },
     events: {
       stepHandler: jest.fn(),
+      finalHandler: jest.fn(),
+      createdHandler: jest.fn(),
+      attachmentHandler: jest.fn(),
+      titleHandler: jest.fn(),
+      contentHandler: jest.fn(),
+      messageHandler: jest.fn(),
+      prunePtcTraces: jest.fn(),
+      resetContentHandler: jest.fn(),
       syncStepMessage: jest.fn(),
       clearStepMaps: jest.fn(),
       flushPendingDeltas: jest.fn(),
@@ -132,6 +147,17 @@ export const createHost = (
       applyReasoningLabel: jest.fn((message) => message),
       findReasoningLabelTarget: jest.fn(() => -1),
     },
+    usage: {
+      bindResponse: jest.fn(),
+      contextHandler: jest.fn(),
+      usageHandler: jest.fn(),
+      tapStream: jest.fn(),
+      tapContent: jest.fn(),
+      finalizeUsage: jest.fn(),
+      backfillUsage: jest.fn(),
+      seedLiveFromContent: jest.fn(),
+    },
+    stream: { send: jest.fn(), reconnectToStream: jest.fn(() => ({ closed: false })) },
   };
   return host;
 };

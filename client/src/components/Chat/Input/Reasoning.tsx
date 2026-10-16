@@ -1,7 +1,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
-import { useRecoilValue } from 'recoil';
-import { useAtom, useStore } from 'jotai';
 import * as Popover from '@radix-ui/react-popover';
+import { useAtom, useStore, useAtomValue } from 'jotai';
+import { submissionByIndex } from '@librechat/chat/react';
 import { Button, Input, Slider } from '@librechat/client';
 import { BrainCircuit, ChevronDown, X } from 'lucide-react';
 import {
@@ -28,7 +28,6 @@ import { useModelReasoning } from '~/hooks/Endpoint/useModelReasoning';
 import { formatTokens, resolveAgentTarget } from '~/utils';
 import { useAgentsMapContext } from '~/Providers';
 import { useLocalize } from '~/hooks';
-import store from '~/store';
 
 type ReasoningControlProps = {
   index: number;
@@ -279,7 +278,7 @@ export function useComposerReasoning({
   const [value, setValue] = useAtom(pendingReasoningOverrideFamily(reasoningStateKey));
   const reasoningStore = useStore();
   const placeholderStateKey = getReasoningStateKey(null, index);
-  const submission = useRecoilValue(store.submissionByIndex(index));
+  const submission = useAtomValue(submissionByIndex(index));
   const submissionConversationId =
     submission?.conversation?.conversationId ?? submission?.userMessage?.conversationId;
   const submittedConversationRef = useRef<string | null>(null);

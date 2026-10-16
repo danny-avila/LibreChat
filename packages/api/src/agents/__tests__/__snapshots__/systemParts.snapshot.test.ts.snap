@@ -35,7 +35,7 @@ Only use the \`set_memory\` and \`delete_memory\` tools when the user explicitly
 
 Base. Today is 2026-03-09 (Monday).
 
-<artifacts:default:anthropic>
+<artifacts:default>
 
 ## Available Skills
 
@@ -113,7 +113,7 @@ Project guidance (user-provided context; subordinate to system, platform, agent,
 Use metric units.
 
 
-<artifacts:default:anthropic>",
+<artifacts:default>",
     "agentId": "agent_main",
     "instructions": "<web_search:instructions>
 Base.",
@@ -125,7 +125,7 @@ Base.",
 exports[`system prompt assembly is byte-identical to string concatenation (stableContext false) artifacts default 1`] = `
 [
   {
-    "additional_instructions": "<artifacts:default:openAI>",
+    "additional_instructions": "<artifacts:default>",
     "agentId": "agent_main",
     "instructions": "Base.",
     "subagents": [],
@@ -194,7 +194,7 @@ Only use the \`set_memory\` and \`delete_memory\` tools when the user explicitly
 
 Base. Today is 2026-03-09 (Monday).
 
-<artifacts:default:openAI>
+<artifacts:default>
 
 ## Available Skills
 
@@ -225,7 +225,7 @@ exports[`system prompt assembly is byte-identical to string concatenation (stabl
   {
     "additional_instructions": "# \`web_search\` Runtime Context
 Conversation Date & Time: 2026-03-09T20:30:00.000Z
-<artifacts:default:openAI>",
+<artifacts:default>",
     "agentId": "agent_router",
     "instructions": "<web_search:instructions>
 Route.",
@@ -263,7 +263,7 @@ Parent.",
       {
         "additional_instructions": "# \`web_search\` Runtime Context
 Conversation Date & Time: 2026-03-09T20:30:00.000Z
-<artifacts:default:anthropic>
+<artifacts:default>
 
 <memory:instructions>
 
@@ -301,7 +301,7 @@ Parent.",
       {
         "additional_instructions": "# \`web_search\` Runtime Context
 Conversation Date & Time: 2026-03-09T20:30:00.000Z
-<artifacts:default:anthropic>
+<artifacts:default>
 
 <memory:instructions>
 
@@ -340,7 +340,7 @@ favorite_color: blue",
 exports[`system prompt assembly is byte-identical to string concatenation (stableContext false) openrouter promptCache: memory, RAG and agent files 1`] = `
 [
   {
-    "additional_instructions": "<artifacts:default:openAI>
+    "additional_instructions": "<artifacts:default>
 
 
 Retrieved context:
@@ -410,7 +410,7 @@ favorite_color: blue",
 exports[`system prompt assembly is byte-identical to string concatenation (stableContext false) rag with surrounding whitespace 1`] = `
 [
   {
-    "additional_instructions": "<artifacts:default:openAI>
+    "additional_instructions": "<artifacts:default>
 
 
 Retrieved context:

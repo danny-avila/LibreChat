@@ -5,11 +5,8 @@ import {
   resolveToolApprovalPolicy,
   isHITLEnabled,
   healToolApprovalPolicy,
-  collectAliasMatcherNames,
-  buildAliasMatcherPattern,
   mapToolApprovalPolicy,
   buildToolApprovalPayload,
-  buildAskUserQuestionPayload,
   buildPendingAction,
   isToolApprovalPayloadValid,
   toClientPendingAction,
@@ -266,26 +263,6 @@ describe('buildToolApprovalPayload', () => {
         allowed_decisions: ['approve', 'reject', 'edit'],
       },
     ]);
-  });
-});
-
-describe('buildAskUserQuestionPayload', () => {
-  test('produces an ask_user_question-discriminated payload', () => {
-    const payload = buildAskUserQuestionPayload({
-      question: 'Which environment?',
-      options: [
-        { label: 'Staging', value: 'staging' },
-        { label: 'Production', value: 'production' },
-      ],
-    });
-    expect(payload.type).toBe('ask_user_question');
-    expect(payload.question.question).toBe('Which environment?');
-    expect(payload.question.options).toHaveLength(2);
-  });
-
-  test('options are optional', () => {
-    const payload = buildAskUserQuestionPayload({ question: 'Free-form?' });
-    expect(payload.question.options).toBeUndefined();
   });
 });
 
@@ -1165,35 +1142,6 @@ describe('healToolApprovalPolicy reverse direction', () => {
     );
 
     expect(healed?.deny).toEqual(['search_mcp_acme', 'acme_search_mcp_acme']);
-  });
-});
-
-describe('collectAliasMatcherNames', () => {
-  const aliases = [
-    { name: 'search_mcp_acme', aliasName: 'acme_search_mcp_acme' },
-    { name: 'acme_list_mcp_acme', aliasName: 'list_mcp_acme' },
-  ];
-
-  it('returns names whose alias matches the regex while the name does not', () => {
-    expect(collectAliasMatcherNames('^acme_search_mcp_acme$', aliases)).toEqual([
-      'search_mcp_acme',
-    ]);
-    expect(collectAliasMatcherNames('^list_mcp_acme$', aliases)).toEqual(['acme_list_mcp_acme']);
-  });
-
-  it('skips names the matcher already matches and invalid patterns', () => {
-    expect(collectAliasMatcherNames('_mcp_acme$', aliases)).toEqual([]);
-    expect(collectAliasMatcherNames('(unclosed', aliases)).toEqual([]);
-    expect(collectAliasMatcherNames(undefined, aliases)).toEqual([]);
-  });
-
-  it('builds an anchored exact-name pattern with escaped names', () => {
-    const pattern = buildAliasMatcherPattern(['a.b_mcp_acme', 'c_mcp_acme']);
-    const regex = new RegExp(pattern);
-    expect(regex.test('a.b_mcp_acme')).toBe(true);
-    expect(regex.test('axb_mcp_acme')).toBe(false);
-    expect(regex.test('c_mcp_acme')).toBe(true);
-    expect(regex.test('xc_mcp_acme')).toBe(false);
   });
 });
 

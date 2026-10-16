@@ -1,8 +1,8 @@
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { useAtomValue, getDefaultStore } from 'jotai';
+import { RecoilRoot, useSetRecoilState } from 'recoil';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Tools, QueryKeys, ContentTypes, EModelEndpoint, request } from 'librechat-data-provider';
 import {
@@ -10,6 +10,8 @@ import {
   activeGenerationProtocolVersionByConvoId,
   pendingSteersByConvoId,
   resetSteerFamilies,
+  submissionByIndex,
+  clearSubmissions,
 } from '@librechat/chat/react';
 import type {
   TEnqueueAgentQueuedTurnRequest,
@@ -37,6 +39,7 @@ import useSteering from '~/hooks/Chat/useSteering';
 import { useChat } from '~/hooks/Chat/facade';
 import useSSE from '~/hooks/SSE/useSSE';
 import store from '~/store';
+import '~/Providers/SteerHostContext';
 
 jest.mock('~/hooks/AuthContext', () => {
   const { createContext } = jest.requireActual('react');
@@ -201,6 +204,10 @@ function ChatHost({ children }: { children: React.ReactNode }) {
 beforeEach(() => {
   resetQueueFamilies();
   resetSteerFamilies();
+});
+
+afterEach(() => {
+  clearSubmissions(getDefaultStore());
 });
 
 describe('chat transport boundary', () => {
@@ -520,7 +527,7 @@ describe('chat transport boundary', () => {
     const useResumablePane = () => {
       const helpers = useChatContext();
       useResumeOnLoad('convo-1', helpers.getMessages, 0, true);
-      const submission = useRecoilValue(store.submissionByIndex(0));
+      const submission = useAtomValue(submissionByIndex(0));
       useResumableSSE(submission, helpers, false, 0);
       const showConversation = useSetRecoilState(store.conversationByIndex(0));
       return { ...useChat(), showConversation };
@@ -780,7 +787,7 @@ describe('chat transport boundary', () => {
      */
     const usePane = () => {
       const helpers = useChatContext();
-      const submission = useRecoilValue(store.submissionByIndex(0));
+      const submission = useAtomValue(submissionByIndex(0));
       useResumableSSE(submission, helpers, false, 0);
       const steering = useSteering({
         consumeDraft,
