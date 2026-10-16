@@ -9,7 +9,7 @@ import {
 import type { PRAutomationTrustLevel } from 'librechat-data-provider';
 import type { PRAutomationStopCode } from 'librechat-data-provider';
 import type { PRAutomationState } from 'librechat-data-provider';
-import type { PipelineStage } from 'mongoose';
+import type { PipelineStage, Types } from 'mongoose';
 import type * as t from '~/types/prAutomation';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { createIndexesWithRetry } from '~/utils/retry';
@@ -110,6 +110,7 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
     ): Promise<t.IPRAutomation | null>;
   };
   deletePRAutomations: (userId: string, conversationIds?: string[]) => Promise<void>;
+  reapPRAutomations: (params?: t.ReapPRAutomationsParams) => Promise<t.ReapPRAutomationsResult>;
   setPRAutomationTrust: (
     key: t.PRAutomationKey,
     trust: PRAutomationTrustLevel,
@@ -667,6 +668,39 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
     }
   }
 
+  /**
+   * Removes records whose conversation, an ancestor of it, or owner is gone, one page at a time
+   * in `_id` order. The retention index deletes conversations without running `deleteConvos`,
+   * so an idle record would otherwise outlive its conversation; this is the periodic pass that
+   * catches it. A deletion in progress keeps its records, as it does for a claim.
+   */
+  async function reapPRAutomations({
+    after,
+    limit = 100,
+  }: t.ReapPRAutomationsParams = {}): Promise<t.ReapPRAutomationsResult> {
+    const PRAutomation = mongoose.models.PRAutomation;
+    const page = await PRAutomation.find(after == null ? {} : { _id: { $gt: after } })
+      .sort({ _id: 1 })
+      .limit(limit)
+      .select({ _id: 1, user: 1, conversationId: 1 })
+      .lean<Array<{ _id: Types.ObjectId; user: string; conversationId: string }>>();
+    let removed = 0;
+    for (const record of page) {
+      const key = { userId: String(record.user), conversationId: record.conversationId };
+      if (!isGone(await checkLiveness(key))) {
+        continue;
+      }
+      const result = await PRAutomation.deleteOne({ _id: record._id, ...keyFilter(key) });
+      removed += result.deletedCount;
+    }
+    const last = page.length === limit ? page[page.length - 1] : undefined;
+    return {
+      scanned: page.length,
+      removed,
+      ...(last == null ? {} : { next: String(last._id) }),
+    };
+  }
+
   /** `maxTrust` is the administrator ceiling; a wider request is stored as the ceiling. */
   async function setPRAutomationTrust(
     key: t.PRAutomationKey,
@@ -754,6 +788,7 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
     settlePRAutomationRound,
     stopPRAutomation,
     deletePRAutomations,
+    reapPRAutomations,
     setPRAutomationTrust,
     addPRAutomationBot,
     removePRAutomationBot,

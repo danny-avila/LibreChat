@@ -62,6 +62,7 @@ const {
   createAgentEventTerminalHandler,
   createScheduleWriteGate,
   startCodeEnvironmentLifecycleReconciler,
+  startPRAutomationReaper,
   waitForKeyvRedisClient,
   warnOnUnreachableDeliveryPaths,
   createCodeApiUploadRegistry,
@@ -73,6 +74,7 @@ const {
   getRoleByName,
   seedDatabase,
   recordAuditEntry,
+  reapPRAutomations,
 } = require('~/models');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
 const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
@@ -202,6 +204,7 @@ const startServer = async () => {
 
   logger.info('Connected to MongoDB');
   startCodeEnvironmentLifecycleReconciler({ mongoose });
+  startPRAutomationReaper({ reapPRAutomations });
   indexSync().catch((err) => {
     logger.error('[indexSync] Background sync failed:', err);
   });

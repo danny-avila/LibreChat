@@ -54,6 +54,7 @@ const {
   GenerationJobManager,
   createAgentEventTerminalHandler,
   startCodeEnvironmentLifecycleReconciler,
+  startPRAutomationReaper,
   waitForKeyvRedisClient,
   createCodeApiUploadRegistry,
   cacheConfig,
@@ -80,6 +81,7 @@ const {
   seedDatabase,
   recordAuditEntry,
   sweepOrphanedPreviews,
+  reapPRAutomations,
 } = require('~/models');
 const { checkMigrations } = require('./services/start/migration');
 const initializeMCPs = require('./services/initializeMCPs');
@@ -453,6 +455,7 @@ if (cluster.isMaster) {
     await connectDb();
     logger.info(`Worker ${process.pid}: Connected to MongoDB`);
     startCodeEnvironmentLifecycleReconciler({ mongoose });
+    startPRAutomationReaper({ reapPRAutomations });
 
     /** Background index sync (non-blocking) */
     indexSync().catch((err) => {

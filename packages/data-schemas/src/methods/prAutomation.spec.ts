@@ -1090,6 +1090,55 @@ describe('claiming for a conversation that no longer exists', () => {
   });
 });
 
+describe('reaping records the retention index left behind', () => {
+  test('removes an idle record once its conversation was purged, with no delivery', async () => {
+    await enable();
+    await mongoose.models.Conversation.deleteMany({});
+    expect(await methods.reapPRAutomations()).toEqual({ scanned: 1, removed: 1 });
+    expect(await methods.getPRAutomation(key)).toBeNull();
+  });
+
+  test('removes a record whose conversation is past its retention date', async () => {
+    await enable();
+    await mongoose.models.Conversation.updateOne(
+      { conversationId: key.conversationId },
+      { $set: { expiredAt: new Date(Date.now() - 60_000) } },
+    );
+    await methods.reapPRAutomations();
+    expect(await methods.getPRAutomation(key)).toBeNull();
+  });
+
+  test('keeps live records and records whose owner deletion can still be cancelled', async () => {
+    await enable();
+    const liveKey = { userId, conversationId: 'convo-live' };
+    await seedConversation({ conversationId: liveKey.conversationId });
+    await enableOpen({ ...liveKey, binding: pullOne });
+    await mongoose.models.Conversation.deleteMany({ conversationId: key.conversationId });
+    await startAccountDeletionNow();
+    expect(await methods.reapPRAutomations()).toEqual({ scanned: 2, removed: 0 });
+    await cancelAccountDeletion();
+    expect(await methods.reapPRAutomations()).toEqual({ scanned: 2, removed: 1 });
+    expect(await methods.getPRAutomation(liveKey)).not.toBeNull();
+  });
+
+  test('pages through every record', async () => {
+    const ids = Array.from({ length: 5 }, (_, index) => `orphan-${index}`);
+    await PRAutomation.insertMany(ids.map((conversationId) => ({ user: userId, conversationId })));
+    let next: string | undefined;
+    let removed = 0;
+    let pages = 0;
+    do {
+      const result = await methods.reapPRAutomations({ after: next, limit: 2 });
+      removed += result.removed;
+      next = result.next;
+      pages++;
+    } while (next != null);
+    expect(pages).toBe(3);
+    expect(removed).toBe(5);
+    expect(await PRAutomation.countDocuments({})).toBe(0);
+  });
+});
+
 describe('settlePRAutomationRound', () => {
   test('settles the round that owns it, including from needs_user', async () => {
     await enable();

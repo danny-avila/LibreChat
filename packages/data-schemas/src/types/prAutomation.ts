@@ -135,3 +135,16 @@ export type ClaimPRAutomationRoundResult =
 export type PRAutomationBotResult =
   | { ok: true; value: IPRAutomation }
   | { ok: false; error: { code: 'not_found' | 'bot_limit' | 'binding_mismatch' } };
+
+export interface ReapPRAutomationsParams {
+  /** Continue after this record, as returned in `next` by the previous call. */
+  after?: string;
+  limit?: number;
+}
+
+export interface ReapPRAutomationsResult {
+  scanned: number;
+  removed: number;
+  /** Where the next call continues; absent once every record has been read. */
+  next?: string;
+}
