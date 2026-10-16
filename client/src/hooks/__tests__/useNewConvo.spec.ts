@@ -108,7 +108,6 @@ jest.mock('~/store', () => ({
     defaultPreset: 'defaultPreset',
     saveBadgesState: 'saveBadgesState',
     filesByIndex: () => 'filesByIndex',
-    submissionByIndex: () => 'submissionByIndex',
     useClearConvoState: () => jest.fn(),
     useSetConversationAtom: () => ({ setConversation: jest.fn() }),
   },

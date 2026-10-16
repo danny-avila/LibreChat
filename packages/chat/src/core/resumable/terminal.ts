@@ -3,6 +3,7 @@ import type { Agents, TPendingSteer } from 'librechat-data-provider';
 import type { ResumableHost, StreamStatusResponse } from './host';
 import type { GenerationProtocolVersion } from '../protocol';
 import type { ResumableSubscription } from './subscription';
+import type { ResponsePatcher } from './patches';
 import { GENERATION_PROTOCOL_VERSION, supportsGenerationProtocolV2 } from '../protocol';
 
 /** One subscription's terminal handling: the attachment, the app around it, and how a pending
@@ -11,6 +12,11 @@ export interface TerminalContext {
   sub: ResumableSubscription;
   host: ResumableHost;
   applyPendingAction: (action: Agents.PendingAction) => void;
+}
+
+/** A subscription's terminal handling, plus the patcher that lands its side events. */
+export interface StreamContext extends TerminalContext {
+  patcher: ResponsePatcher;
 }
 
 /**
