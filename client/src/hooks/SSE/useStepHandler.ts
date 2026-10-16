@@ -16,7 +16,6 @@ import type {
   PtcToolCallEvent,
 } from 'librechat-data-provider';
 import type { StepEvent, StepEffect, StepContext, StreamState } from '@librechat/chat';
-import type { SetterOrUpdater } from 'recoil';
 import type { AnnounceOptions } from '~/common';
 import {
   closeParentSubagentProgress,
@@ -40,8 +39,6 @@ type TUseStepHandler = {
   announcePolite: (options: AnnounceOptions) => void;
   setMessages: (messages: TMessage[]) => void;
   getMessages: () => TMessage[] | undefined;
-  /** @deprecated - isSubmitting should be derived from submission state */
-  setIsSubmitting?: SetterOrUpdater<boolean>;
   lastAnnouncementTimeRef: React.MutableRefObject<number>;
   /**
    * Fired when a completed `create_file`/`edit_file` call targeted a

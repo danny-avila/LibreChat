@@ -1,16 +1,4 @@
 import React from 'react';
-import { handleDoubleClick } from '~/utils';
-
-export const CodeVariableGfm: React.ElementType = ({ children }: { children: React.ReactNode }) => {
-  return (
-    <code
-      onDoubleClick={handleDoubleClick}
-      className="bg-surface-primary-alt text-text-secondary rounded-md p-1 text-xs md:text-sm"
-    >
-      {children}
-    </code>
-  );
-};
 
 const variableRegex = /{{(.*?)}}/g;
 

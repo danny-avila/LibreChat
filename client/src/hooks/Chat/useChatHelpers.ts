@@ -1,8 +1,15 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { useAtom, useSetAtom, useStore } from 'jotai';
 import { useQueryClient } from '@tanstack/react-query';
+import { useAtom, useSetAtom, useStore, useAtomValue } from 'jotai';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import { Constants, QueryKeys, isAssistantsEndpoint } from 'librechat-data-provider';
+import {
+  activeGenerationCreatedAtByConvoId,
+  activeGenerationProtocolVersionByConvoId,
+  isSubmittingFamily,
+  useIsSubmitting,
+  abortScrollFamily,
+} from '@librechat/chat/react';
 import type { TMessage } from 'librechat-data-provider';
 import type { ChatContract } from './contract';
 import { stopRequestedByConvoId, drainAfterAbortByIndex, runEndByIndex } from '~/hooks/Chat/queue';
@@ -12,7 +19,6 @@ import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/
 import { useChatSettings } from '~/Providers/ChatSettingsContext';
 import useChatFunctions from '~/hooks/Chat/useChatFunctions';
 import useSteerConvert from '~/hooks/Chat/useSteerConvert';
-import { abortScrollFamily } from '~/store/generation';
 import { resolveAbortSteerTarget } from '~/utils';
 import useNewConvo from '~/hooks/useNewConvo';
 import { getMessageCacheIds } from './cache';
@@ -81,18 +87,19 @@ export default function useChatHelpers(index = 0, paramId?: string): ChatContrac
   const { useCreateConversationAtom } = store;
   const { conversation, setConversation } = useCreateConversationAtom(index);
   const { conversationId, endpoint, endpointType } = conversation ?? {};
-  const activeGenerationCreatedAt = useRecoilValue(
-    store.activeGenerationCreatedAtByConvoId(conversationId ?? Constants.NEW_CONVO),
+  const activeGenerationCreatedAt = useAtomValue(
+    activeGenerationCreatedAtByConvoId(conversationId ?? Constants.NEW_CONVO),
   );
-  const activeGenerationProtocolVersion = useRecoilValue(
-    store.activeGenerationProtocolVersionByConvoId(conversationId ?? Constants.NEW_CONVO),
+  const activeGenerationProtocolVersion = useAtomValue(
+    activeGenerationProtocolVersionByConvoId(conversationId ?? Constants.NEW_CONVO),
   );
 
   /** Use paramId (from URL) as primary source for query key - this must match what ChatView uses
   Falling back to conversationId (Recoil) only if paramId is not available */
   const queryParam = paramId === 'new' ? paramId : (paramId ?? conversationId ?? '');
 
-  const [isSubmitting, setIsSubmitting] = useRecoilState(store.isSubmittingFamily(index));
+  const isSubmitting = useIsSubmitting(index);
+  const setIsSubmitting = useSetAtom(isSubmittingFamily(index));
   const latestMessage = useLatestMessage(index, queryParam);
 
   const latestMessageId = useLatestMessageId(index, queryParam) ?? undefined;
@@ -127,25 +134,6 @@ export default function useChatHelpers(index = 0, paramId?: string): ChatContrac
     },
     [queryParam, queryClient],
   );
-
-  /* Conversation */
-  // const setActiveConvos = useSetRecoilState(store.activeConversations);
-
-  // const setConversation = useCallback(
-  //   (convoUpdate: TConversation) => {
-  //     _setConversation(prev => {
-  //       const { conversationId: convoId } = prev ?? { conversationId: null };
-  //       const { conversationId: currentId } = convoUpdate;
-  //       if (currentId && convoId && convoId !== 'new' && convoId !== currentId) {
-  //         // for now, we delete the prev convoId from activeConversations
-  //         const newActiveConvos = { [currentId]: true };
-  //         setActiveConvos(newActiveConvos);
-  //       }
-  //       return convoUpdate;
-  //     });
-  //   },
-  //   [_setConversation, setActiveConvos],
-  // );
 
   const setSubmission = useSetRecoilState(store.submissionByIndex(index));
 

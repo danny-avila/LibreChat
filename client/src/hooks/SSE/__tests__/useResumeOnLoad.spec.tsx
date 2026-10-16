@@ -1,8 +1,21 @@
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Provider as JotaiProvider, createStore, useAtomValue } from 'jotai';
+import { isSubmittingFamily, resetSubmitting } from '@librechat/chat/react';
 import { Constants, ContentTypes, QueryKeys } from 'librechat-data-provider';
+import {
+  Provider as JotaiProvider,
+  createStore,
+  useAtomValue,
+  useSetAtom,
+  getDefaultStore,
+} from 'jotai';
+import {
+  revealedQueuedTurnFamily,
+  pendingSteersByConvoId,
+  activeGenerationCreatedAtByConvoId,
+  submissionStartFamily,
+} from '@librechat/chat/react';
 import type { Agents, TMessage, TConversation, TSubmission } from 'librechat-data-provider';
 import type { MutableSnapshot } from 'recoil';
 import type { ReactNode } from 'react';
@@ -18,8 +31,6 @@ import {
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import { agentQueuedTurnsQueryKey } from '~/data-provider/SSE/queuedTurns';
-import { submissionStartFamily } from '~/store/generation';
-import { revealedQueuedTurnFamily } from '~/store/steer';
 import useResumeOnLoad from '../useResumeOnLoad';
 import store from '~/store';
 
@@ -145,6 +156,10 @@ function renderUseResumeOnLoad({
   if (detachedRun != null) {
     jotaiStore.set(detachedRunByConvoId(conversationId), detachedRun);
   }
+  jotaiStore.set(activeGenerationCreatedAtByConvoId(conversationId), attachedGenerationCreatedAt);
+  if (pendingSteers) {
+    jotaiStore.set(pendingSteersByConvoId(conversationId), pendingSteers);
+  }
   seedJotai?.(jotaiStore);
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -156,23 +171,14 @@ function renderUseResumeOnLoad({
   const initializeState = (snapshot: MutableSnapshot) => {
     snapshot.set(store.conversationByIndex(0), buildConversation(conversationId));
     snapshot.set(store.submissionByIndex(0), submission);
-    snapshot.set(store.isSubmittingFamily(0), isSubmitting);
-    snapshot.set(
-      store.activeGenerationCreatedAtByConvoId(conversationId),
-      attachedGenerationCreatedAt,
-    );
-    if (pendingSteers) {
-      snapshot.set(store.pendingSteersByConvoId(conversationId), pendingSteers);
-    }
+    jotaiStore.set(isSubmittingFamily(0), isSubmitting);
   };
 
   const SubmissionProbe = () => {
     const currentSubmission = useRecoilValue(store.submissionByIndex(0));
     setSubmissionState = useSetRecoilState(store.submissionByIndex(0));
-    setIsSubmittingState = useSetRecoilState(store.isSubmittingFamily(0));
-    setAttachedEpochState = useSetRecoilState(
-      store.activeGenerationCreatedAtByConvoId(conversationId),
-    );
+    setIsSubmittingState = useSetAtom(isSubmittingFamily(0));
+    setAttachedEpochState = useSetAtom(activeGenerationCreatedAtByConvoId(conversationId));
     onSubmission?.(currentSubmission);
     return null;
   };
@@ -182,7 +188,7 @@ function renderUseResumeOnLoad({
     return null;
   };
   const PendingSteersProbe = () => {
-    const steers = useRecoilValue(store.pendingSteersByConvoId(conversationId));
+    const steers = useAtomValue(pendingSteersByConvoId(conversationId));
     onPendingSteers?.(steers);
     return null;
   };
@@ -230,6 +236,10 @@ function renderUseResumeOnLoad({
 }
 
 beforeEach(() => resetQueueFamilies());
+
+afterEach(() => {
+  resetSubmitting(getDefaultStore());
+});
 
 describe('useResumeOnLoad', () => {
   beforeEach(() => {

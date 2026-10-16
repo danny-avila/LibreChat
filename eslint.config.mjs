@@ -549,14 +549,6 @@ export default [
     },
   },
   {
-    files: ['./config/translations/**/*.ts'],
-    languageOptions: {
-      parser: tsParser,
-      ecmaVersion: 5,
-      sourceType: 'script',
-    },
-  },
-  {
     files: ['./packages/data-provider/specs/**/*.ts'],
     languageOptions: {
       ecmaVersion: 5,

@@ -766,6 +766,26 @@ describe('Prompt method failure contracts', () => {
     const all = await methods.getListPromptGroupsByAccess({ accessibleIds });
     expect(all.data).toHaveLength(2);
   });
+
+  it('keeps a sole-owned group discoverable when the prompt delete fails, so a retry erases it', async () => {
+    const { groupId, promptId } = await createGroupWithPrompt('erase retry');
+    await grantPermission({
+      principalType: PrincipalType.USER,
+      principalId: testUsers.owner._id,
+      resourceType: ResourceType.PROMPTGROUP,
+      resourceId: groupId,
+      accessRoleId: AccessRoleIds.PROMPTGROUP_OWNER,
+      grantedBy: testUsers.owner._id,
+    });
+
+    jest.spyOn(Prompt, 'deleteMany').mockRejectedValueOnce(dbError);
+    await expect(methods.deleteUserPrompts(String(testUsers.owner._id))).rejects.toBe(dbError);
+
+    await methods.deleteUserPrompts(String(testUsers.owner._id));
+    expect(await Prompt.findById(promptId)).toBeNull();
+    expect(await PromptGroup.findById(groupId)).toBeNull();
+    expect(await AclEntry.countDocuments({ resourceId: new ObjectId(groupId) })).toBe(0);
+  });
 });
 
 describe('Prompt group list projections include `command`', () => {
