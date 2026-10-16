@@ -235,45 +235,6 @@ export function healToolApprovalPolicy(
   };
 }
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-/**
- * Names whose OTHER spelling matches a programmatic hook's regex matcher
- * while their own name does not — the hook must also fire for these or its
- * argument-, user-, or tenant-specific deny/ask decisions are silently
- * skipped for renamed tools. Mirrors the SDK's unanchored `new RegExp(pattern)`
- * matcher semantics; an invalid pattern matches nothing there, so it aliases
- * nothing here.
- */
-export function collectAliasMatcherNames(
-  matcher: string | undefined,
-  aliases: readonly MCPToolAlias[],
-): string[] {
-  if (!matcher || aliases.length === 0) {
-    return [];
-  }
-  let regex: RegExp;
-  try {
-    regex = new RegExp(matcher);
-  } catch {
-    return [];
-  }
-  const names: string[] = [];
-  for (const { name, aliasName } of aliases) {
-    if (name !== aliasName && !regex.test(name) && regex.test(aliasName)) {
-      names.push(name);
-    }
-  }
-  return names;
-}
-
-/** Anchored exact-name pattern for the alias-matched names of one hook matcher. */
-export function buildAliasMatcherPattern(names: readonly string[]): string {
-  return `^(?:${names.map(escapeRegExp).join('|')})$`;
-}
-
 export function mapToolApprovalPolicy(
   policy: TToolApprovalPolicy | undefined,
 ): ToolPolicyConfig | undefined {
@@ -367,16 +328,6 @@ export function isToolApprovalPayloadValid(payload: Agents.ToolApprovalInterrupt
   }
 
   return true;
-}
-
-/** Build an ask-user-question interrupt payload. */
-export function buildAskUserQuestionPayload(
-  question: Agents.AskUserQuestionRequest,
-): Agents.AskUserQuestionInterruptPayload {
-  return {
-    type: 'ask_user_question',
-    question,
-  };
 }
 
 /** Job-context fields wrapped around a {@link Agents.HumanInterruptPayload}. */

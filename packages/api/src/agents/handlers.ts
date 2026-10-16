@@ -1,6 +1,6 @@
 import yaml from 'js-yaml';
 import { Types } from 'mongoose';
-import { GraphEvents, Constants, ToolEndHandler } from '@librechat/agents';
+import { Constants, ToolEndHandler } from '@librechat/agents';
 import {
   logger,
   normalizeSkillFrontmatterKeys,
@@ -7858,17 +7858,5 @@ export function createToolExecuteHandler(options: ToolExecuteOptions): EventHand
         reject(outerError as Error);
       }
     },
-  };
-}
-
-/**
- * Creates a handlers object that includes ON_TOOL_EXECUTE.
- * Can be merged with other handler objects.
- */
-export function createToolExecuteHandlers(
-  options: ToolExecuteOptions,
-): Record<string, EventHandler> {
-  return {
-    [GraphEvents.ON_TOOL_EXECUTE]: createToolExecuteHandler(options),
   };
 }
