@@ -134,11 +134,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
   const { navigateToConvo } = useNavigateToConvo();
   const navigate = useNavigate();
   const panelRef = useRef<HTMLDivElement>(null);
-  const returnFocusRef = useRef(
-    document.activeElement instanceof HTMLElement && document.activeElement !== document.body
-      ? document.activeElement
-      : null,
-  );
+  const returnFocusRef = useRef<HTMLElement | null>(null);
   const isMobile = useScaledMaxWidth(ARTIFACTS_SHEET_MAX_WIDTH);
   /** Two reasons the send control's action list cannot be used where it hangs.
    *  Without hover, a tap on its anchor submits instead of opening it. And
@@ -808,6 +804,17 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
       destination?.focus({ preventScroll: true });
     });
   }, [resetSelection, selection.parentMessageId, selection.partIndex, selection.toolCallId]);
+
+  useEffect(() => {
+    const activeElement = document.activeElement;
+    if (
+      activeElement instanceof HTMLElement &&
+      activeElement !== document.body &&
+      !panelRef.current?.contains(activeElement)
+    ) {
+      returnFocusRef.current = activeElement;
+    }
+  }, [focusRequest]);
 
   /** Escape is handled on the element rather than through the trap's own
    *  native listener: that listener sits on this `aside`, so it runs BEFORE any

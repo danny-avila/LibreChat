@@ -1245,6 +1245,70 @@ describe('SubagentThreadPanel', () => {
     expect(screen.getByRole('region', { name: 'com_ui_subagent_thread_panel' })).toHaveFocus();
   });
 
+  it.each(['same', 'different'] as const)(
+    'returns focus to the latest opener after explicitly opening the %s task',
+    async (target) => {
+      mockUseSubagentThreadQuery.mockReturnValue({
+        data: completedView,
+        isLoading: false,
+        isError: false,
+        isReadinessPending: false,
+      });
+      const firstOpener = document.createElement('button');
+      const latestOpener = document.createElement('button');
+      firstOpener.id = 'first-opener';
+      latestOpener.id = 'latest-opener';
+      document.body.append(firstOpener, latestOpener);
+      firstOpener.focus();
+      const nextSelection: ActiveSubagentPanel =
+        target === 'same'
+          ? selection
+          : {
+              ...selection,
+              parentMessageId: 'unloaded-message',
+              toolCallId: 'other-call',
+              durable: { threadId: 'other-thread', taskId: 'other-task' },
+            };
+      const openTaskLabel = 'Open task';
+      const PanelHost = () => {
+        const selected = useAtomValue(activeSubagentPanel);
+        const open = useOpenSubagentPanel();
+        return (
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                latestOpener.focus();
+                open?.(nextSelection);
+              }}
+            >
+              {openTaskLabel}
+            </button>
+            {selected != null && <SubagentThreadPanel selection={selected} />}
+          </>
+        );
+      };
+      try {
+        render(
+          <Root seed={(store) => store.set(activeSubagentPanel, selection)}>
+            <PanelHost />
+          </Root>,
+        );
+        const panel = screen.getByRole('region', { name: 'com_ui_subagent_thread_panel' });
+        expect(panel).toHaveFocus();
+        fireEvent.click(screen.getByRole('button', { name: openTaskLabel }));
+        expect(screen.getByRole('region', { name: 'com_ui_subagent_thread_panel' })).toBe(panel);
+        expect(panel).toHaveFocus();
+        fireEvent.click(screen.getByRole('button', { name: 'com_ui_close' }));
+        await waitFor(() => expect(latestOpener).toHaveFocus());
+        expect(firstOpener).not.toHaveFocus();
+      } finally {
+        firstOpener.remove();
+        latestOpener.remove();
+      }
+    },
+  );
+
   it('does not steal main-chat focus when the selected task advances', () => {
     mockUseSubagentThreadQuery.mockReturnValue({
       data: completedView,
