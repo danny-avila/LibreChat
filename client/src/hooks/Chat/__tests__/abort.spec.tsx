@@ -4,6 +4,11 @@ import { useAtomValue, useSetAtom, getDefaultStore } from 'jotai';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { RecoilRoot, useSetRecoilState, useRecoilValue } from 'recoil';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import {
+  resetSteerFamilies,
+  activeGenerationCreatedAtByConvoId,
+  activeGenerationProtocolVersionByConvoId,
+} from '@librechat/chat/react';
 import type { TSubmission, TConversation } from 'librechat-data-provider';
 import type { DrainAfterAbort, RunEnd } from '~/hooks/Chat/queue';
 import {
@@ -94,7 +99,10 @@ function setup() {
   return { handles, current };
 }
 
-beforeEach(() => resetQueueFamilies());
+beforeEach(() => {
+  resetQueueFamilies();
+  resetSteerFamilies();
+});
 
 describe('useAbortCleanup', () => {
   it('clears all submissions when the captured submission is still current', async () => {
@@ -214,8 +222,11 @@ describe('useChatHelpers stopGenerating (abort steer targeting)', () => {
               generationCreatedAt: 41,
             });
             if (generationCreatedAt != null) {
-              set(store.activeGenerationCreatedAtByConvoId(conversationId), generationCreatedAt);
-              set(store.activeGenerationProtocolVersionByConvoId(conversationId), 2);
+              getDefaultStore().set(
+                activeGenerationCreatedAtByConvoId(conversationId),
+                generationCreatedAt,
+              );
+              getDefaultStore().set(activeGenerationProtocolVersionByConvoId(conversationId), 2);
             }
           }}
         >

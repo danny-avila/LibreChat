@@ -12,9 +12,7 @@ import {
   useRecoilCallback,
 } from 'recoil';
 import type { EModelEndpoint, TConversation, TSubmission, TPreset } from 'librechat-data-provider';
-import type { GenerationProtocolVersion } from '~/data-provider/SSE/protocol';
 import type { TOptionSettings, ExtendedFile } from '~/common';
-import type { PendingSteer } from '~/hooks/Chat/queue';
 import {
   clearModelForNonEphemeralAgent,
   createChatSearchParams,
@@ -180,30 +178,6 @@ const presetByIndex = atomFamily<TPreset | null, string | number>({
   default: null,
 });
 
-const isSubmittingFamily = atomFamily({
-  key: 'isSubmittingByIndex',
-  default: false,
-  effects: [
-    ({ onSet, node }) => {
-      onSet(async (newValue) => {
-        const key = Number(node.key.split(Constants.COMMON_DIVIDER)[1]);
-        logger.log('message_stream', 'Recoil Effect: Setting isSubmittingByIndex', {
-          key,
-          newValue,
-        });
-      });
-    },
-  ],
-});
-
-const anySubmittingSelector = selector<boolean>({
-  key: 'anySubmittingSelector',
-  get: ({ get }) => {
-    const keys = get(conversationKeysAtom);
-    return keys.some((key) => get(isSubmittingFamily(key)) === true);
-  },
-});
-
 const optionSettingsFamily = atomFamily<TOptionSettings, string | number>({
   key: 'optionSettingsByIndex',
   default: {},
@@ -235,34 +209,6 @@ const showPromptsPopoverFamily = atomFamily<boolean, string | number | null>({
 });
 
 /**
- * Per-conversation queue of skill names the user invoked manually via the
- * `$` popover for the next submission. Structured channel that the submit
- * pipeline (`useChatFunctions.ask`) drains and pins onto the user message's
- * `manualSkills` field (also echoed at the top of the payload for the
- * runtime resolver), then resets to `[]`. Compose-time chips above the
- * textarea read this atom directly so users see (and can dismiss) their
- * current selection before hitting send.
- */
-const pendingManualSkillsByConvoId = atomFamily<string[], string>({
-  key: 'pendingManualSkillsByConvoId',
-  default: [],
-});
-
-/**
- * Per-conversation queue of verbatim excerpts the user quoted via the
- * "Add to chat" selection popup for the next submission. The submit pipeline
- * (`useChatFunctions.ask`) drains this onto the user message's `quotes` field
- * (which the backend merges into the model-facing text and persists for the
- * `MessageQuotes` UI), then resets to `[]`. Compose-time chips above the
- * textarea read this atom directly so users can see and dismiss each quote
- * before sending.
- */
-const pendingQuotesByConvoId = atomFamily<string[], string>({
-  key: 'pendingQuotesByConvoId',
-  default: [],
-});
-
-/**
  * Text handed to a conversation's composer by a surface the user is leaving —
  * today, a subagent thread continued into a chat of its own, where the panel
  * and its composer unmount as the destination opens.
@@ -279,54 +225,6 @@ const pendingQuotesByConvoId = atomFamily<string[], string>({
 const pendingComposerTextByConvoId = atomFamily<string | undefined, string>({
   key: 'pendingComposerTextByConvoId',
   default: undefined,
-});
-
-/**
- * Per-conversation steers awaiting injection. Reconciled against the server:
- * `on_steer_applied` removes its chip; `sync`/`resumeState.pendingSteers`
- * replaces the list on reconnect; run-end reports convert leftovers into
- * `queuedMessagesByConvoId` entries.
- */
-const pendingSteersByConvoId = atomFamily<PendingSteer[], string>({
-  key: 'pendingSteersByConvoId',
-  default: [],
-});
-
-/**
- * Server steer ids whose `on_steer_applied` event already landed. The 202 ACK
- * and the SSE ride different connections, so the applied event can arrive
- * FIRST — the ACK handler checks this set and drops its local chip instead of
- * minting a `pending` chip whose only removal event has already passed. A late
- * ACK can land after the run's final event, so the set is capped
- * (`appendAppliedSteerIds`), never cleared.
- */
-const appliedSteerIdsByConvoId = atomFamily<string[], string>({
-  key: 'appliedSteerIdsByConvoId',
-  default: [],
-});
-
-/** Optimistic ids the server has proven accepted via ACK or SYNC. Separate
- * from `appliedSteerIdsByConvoId`: accepted-but-still-queued steers must not
- * be suppressed by terminal conversion, but a late POST error must not
- * resurrect them after Cancel/Edit/Convert removes the visible chip. */
-const acceptedSteerClientIdsByConvoId = atomFamily<string[], string>({
-  key: 'acceptedSteerClientIdsByConvoId',
-  default: [],
-});
-
-/** Server generation epoch currently attached for each conversation. Stream
- * ids are conversation-scoped and reused by later turns; every mutation that
- * can affect a live run carries this value as an optimistic concurrency fence. */
-const activeGenerationCreatedAtByConvoId = atomFamily<number | null, string>({
-  key: 'activeGenerationCreatedAtByConvoId',
-  default: null,
-});
-
-/** Negotiated behavior contract for the active generation. Missing echoes are
- * legacy by definition, so the safe default is always v1. */
-const activeGenerationProtocolVersionByConvoId = atomFamily<GenerationProtocolVersion, string>({
-  key: 'activeGenerationProtocolVersionByConvoId',
-  default: 1,
 });
 
 const globalAudioURLFamily = atomFamily<string | null, string | number | null>({
@@ -460,10 +358,8 @@ export default {
   filesByIndex,
   presetByIndex,
   submissionByIndex,
-  isSubmittingFamily,
   optionSettingsFamily,
   showPopoverFamily,
-  anySubmittingSelector,
   conversationIdByIndex,
   conversationEndpointByIndex,
   effectiveEndpointByIndex,
@@ -486,12 +382,5 @@ export default {
   useClearSubmissionState,
   showPromptsPopoverFamily,
   pendingComposerTextByConvoId,
-  pendingManualSkillsByConvoId,
-  pendingQuotesByConvoId,
-  pendingSteersByConvoId,
-  appliedSteerIdsByConvoId,
-  acceptedSteerClientIdsByConvoId,
-  activeGenerationCreatedAtByConvoId,
-  activeGenerationProtocolVersionByConvoId,
   updateConversationSelector,
 };

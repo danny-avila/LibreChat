@@ -1,4 +1,6 @@
 import React, { useMemo, useState } from 'react';
+import { useAtom } from 'jotai';
+import { isSubmittingFamily } from '@librechat/chat/react';
 import '@testing-library/jest-dom';
 import { DndProvider } from 'react-dnd';
 import { useForm } from 'react-hook-form';
@@ -30,7 +32,7 @@ const conversation = {
  */
 function Harness({ enterToSend }: { enterToSend: boolean }) {
   const [files, setFiles] = useRecoilState(store.filesByIndex(0));
-  const [isSubmitting] = useRecoilState(store.isSubmittingFamily(0));
+  const [isSubmitting] = useAtom(isSubmittingFamily(0));
   const [, setFilesLoading] = useState(false);
   const methods = useForm<ChatFormValues>({ defaultValues: { text: '' } });
 
