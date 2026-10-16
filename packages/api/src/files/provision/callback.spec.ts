@@ -1,5 +1,5 @@
 import { Constants } from '@librechat/agents';
-import { EToolResources, FileContext, Tools } from 'librechat-data-provider';
+import { EToolResources, FileContext, FileSources, Tools } from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
 import type { ProvisionState } from '~/agents/resources';
 import type { ProvisionToolContext } from './callback';
@@ -1131,7 +1131,7 @@ describe('provisioning under the stateful default profile setting', () => {
         [
           toggleOff.id,
           {
-            provisionState: state([makeFile({ source: 'local' })], []),
+            provisionState: state([makeFile({ source: FileSources.local })], []),
             codeExecutionContext: context,
           },
         ],
