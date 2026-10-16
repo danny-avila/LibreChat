@@ -23,7 +23,7 @@ jest.mock('react-router-dom', () => ({
 }));
 jest.mock('~/store', () => ({
   __esModule: true,
-  default: { abortScroll: 'abortScroll', submissionStartFamily: () => 'start' },
+  default: { abortScroll: 'abortScroll' },
 }));
 jest.mock('~/hooks/AuthContext', () => ({ useAuthContext: () => ({}) }));
 jest.mock('~/Providers', () => ({ useLiveAnnouncer: () => ({ announcePolite: jest.fn() }) }));
@@ -49,6 +49,7 @@ jest.mock('~/data-provider', () => ({
   startupConfigKey: ['startup'],
   queueTitleGeneration: jest.fn(),
   markTitleGenerationProcessed: jest.fn(),
+  isTitleGenerationProcessed: () => false,
 }));
 jest.mock('~/utils', () => ({
   logger: { log: jest.fn(), info: jest.fn(), debug: jest.fn(), error: jest.fn() },
@@ -63,7 +64,8 @@ jest.mock('~/utils', () => ({
   upsertConvoInAllQueries: jest.fn(),
   updateConvoInAllQueries: jest.fn(),
   removeConvoFromAllQueries: jest.fn(),
-  findConversationInInfinite: () => undefined,
+  findConvoInAllQueries: () => undefined,
+  findManualConvoTitleInAllQueries: () => undefined,
   preserveStreamedContentIdentity: (_old: unknown, current: unknown) => current,
   isEmptyContentPart: () => false,
   getPartKeyIndex: jest.fn(),

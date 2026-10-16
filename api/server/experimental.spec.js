@@ -85,7 +85,9 @@ describe('Experimental server configuration', () => {
 
   it('configures routed subagent controls before a worker accepts requests', () => {
     const redisReadyIndex = source.indexOf('await waitForKeyvRedisClient();');
-    const routingIndex = source.indexOf('await configureSubagentTaskRouting();');
+    const routingIndex = source.indexOf(
+      'await configureSubagentTaskRouting(baseAppConfig?.endpoints?.agents?.subagentActivity);',
+    );
     const listenIndex = source.indexOf('const server = app.listen');
 
     expect(redisReadyIndex).toBeGreaterThan(-1);
@@ -117,6 +119,9 @@ describe('Experimental server configuration', () => {
       expect(start).toBeGreaterThan(-1);
       const call = entrypoint.slice(start, entrypoint.indexOf('});', start));
       expect(call).toContain(`idlePolling: ${config}?.endpoints?.agents?.eventDriven?.idlePolling`);
+      expect(call.replace(/\s+/g, ' ')).toContain(
+        `deadLetterRetentionDays: ${config}?.endpoints?.agents?.eventDriven?.deadLetterRetentionDays`,
+      );
     }
   });
 

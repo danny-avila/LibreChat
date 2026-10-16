@@ -1,5 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { CODE_APPROVAL_MODES } from 'librechat-data-provider';
+import { reasoningOverrideSchema } from 'librechat-data-provider';
+import type { TReasoningOverride } from 'librechat-data-provider';
 import type { CodeApprovalMode } from 'librechat-data-provider';
 import type { FilterQuery, Model, Types } from 'mongoose';
 import type {
@@ -113,6 +115,7 @@ export interface EnqueueAgentQueuedTurnInput extends AgentQueuedTurnConversation
   codeApprovalMode?: CodeApprovalMode;
   /** Internal publication fence, committed with approval-bearing rows. */
   deliveryReservation?: { queuedTurnId: string; deliveryKey: string };
+  reasoningOverride?: TReasoningOverride;
   expectedPredecessorCreatedAt?: number;
   priority?: boolean;
   availableAt?: Date;
@@ -312,12 +315,6 @@ export interface AgentQueuedTurnMethods {
       allowLegacyPredecessorInference?: boolean;
     },
   ) => Promise<AgentQueuedTurnPredecessor | null>;
-  drainAgentQueuedTurns: (
-    input: AgentQueuedTurnOwnerScope & {
-      conversationId?: string;
-      settledAt?: Date;
-    },
-  ) => Promise<number>;
   deleteAgentQueuedTurns: (
     input: AgentQueuedTurnOwnerScope & { conversationId?: string },
   ) => Promise<number>;
@@ -521,6 +518,15 @@ function normalizeText(text: string): string {
   return normalized;
 }
 
+function normalizeReasoningOverride(
+  reasoningOverride: TReasoningOverride | undefined,
+): TReasoningOverride | undefined {
+  if (reasoningOverride == null) {
+    return undefined;
+  }
+  return reasoningOverrideSchema.parse(reasoningOverride);
+}
+
 function normalizePredecessor(value: number | undefined): number | undefined {
   if (value == null) {
     return undefined;
@@ -550,6 +556,7 @@ function normalizeEnqueue(input: EnqueueAgentQueuedTurnInput) {
     ...(input.codeApprovalMode != null && {
       codeApprovalMode: requireCodeApprovalMode(input.codeApprovalMode),
     }),
+    reasoningOverride: normalizeReasoningOverride(input.reasoningOverride),
     expectedPredecessorCreatedAt: normalizePredecessor(input.expectedPredecessorCreatedAt),
     priority: input.priority === true,
   };
@@ -623,6 +630,7 @@ function toRecord(turn: IAgentQueuedTurn): AgentQueuedTurnRecord {
     ...(turn.quotes != null && { quotes: turn.quotes }),
     ...(turn.manualSkills != null && { manualSkills: turn.manualSkills }),
     ...(turn.codeApprovalMode != null && { codeApprovalMode: turn.codeApprovalMode }),
+    ...(turn.reasoningOverride != null && { reasoningOverride: turn.reasoningOverride }),
     ...(turn.expectedPredecessorCreatedAt != null && {
       expectedPredecessorCreatedAt: turn.expectedPredecessorCreatedAt,
     }),
@@ -685,6 +693,7 @@ function toActiveRecord(turn: IAgentQueuedTurn): AgentQueuedTurnActiveRecord {
     ...(record.quotes != null && { quotes: record.quotes }),
     ...(record.manualSkills != null && { manualSkills: record.manualSkills }),
     ...(record.codeApprovalMode != null && { codeApprovalMode: record.codeApprovalMode }),
+    ...(record.reasoningOverride != null && { reasoningOverride: record.reasoningOverride }),
     ...(record.expectedPredecessorCreatedAt != null && {
       expectedPredecessorCreatedAt: record.expectedPredecessorCreatedAt,
     }),
@@ -2665,57 +2674,6 @@ export function createAgentQueuedTurnMethods(
     };
   }
 
-  async function drainAgentQueuedTurns(
-    input: AgentQueuedTurnOwnerScope & {
-      conversationId?: string;
-      settledAt?: Date;
-    },
-  ): Promise<number> {
-    const settledAt = input.settledAt ?? new Date();
-    const result = await Turn().updateMany(
-      {
-        ...ownerScope(input),
-        ...(input.conversationId != null && {
-          conversationId: requireBoundedString(input.conversationId, 256),
-        }),
-        status: { $in: ['queued', 'claimed'] },
-        admissionStartedAt: { $exists: false },
-      },
-      {
-        $set: {
-          status: 'cancelled',
-          terminalReceipt: {
-            outcome: 'cancelled',
-            settledAt,
-            failure: {
-              code: 'OWNER_DRAINED',
-              message: 'Queued turn owner was drained',
-            },
-          },
-        },
-        $unset: {
-          activeSlot: 1,
-          admissionSlot: 1,
-          claimId: 1,
-          claimBy: 1,
-          claimUntil: 1,
-        },
-      },
-    );
-    await Turn().updateMany(
-      {
-        ...ownerScope(input),
-        ...(input.conversationId != null && {
-          conversationId: requireBoundedString(input.conversationId, 256),
-        }),
-        status: 'cancelled',
-        deliveryKey: { $exists: false },
-      },
-      { $set: { deliveryState: 'retired' } },
-    );
-    return result.modifiedCount;
-  }
-
   async function deleteAgentQueuedTurns(
     input: AgentQueuedTurnOwnerScope & { conversationId?: string },
   ): Promise<number> {
@@ -2998,7 +2956,6 @@ export function createAgentQueuedTurnMethods(
     hasAgentQueuedTurnAdmissionReceipt,
     deadLetterAgentQueuedTurn,
     getEffectiveAgentQueuedTurnPredecessor,
-    drainAgentQueuedTurns,
     deleteAgentQueuedTurns,
     prepareAgentQueuedTurnConversationDeletion,
     deletePreparedAgentQueuedTurnConversations,

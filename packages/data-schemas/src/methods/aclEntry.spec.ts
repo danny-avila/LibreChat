@@ -7,7 +7,11 @@ import {
   PermissionBits,
 } from 'librechat-data-provider';
 import type * as t from '~/types';
-import { createAclEntryMethods, permissionBitSupersets } from './aclEntry';
+import {
+  OWNER_ACL_PERMISSION_BITS,
+  createAclEntryMethods,
+  permissionBitSupersets,
+} from './aclEntry';
 import aclEntrySchema from '~/schema/aclEntry';
 
 let mongoServer: MongoMemoryServer;
@@ -93,39 +97,6 @@ describe('AclEntry Model Tests', () => {
       expect(entry?.principalModel).toBeUndefined();
     });
 
-    test('should find entries by principal', async () => {
-      /** Create two different permissions for the same user */
-      await methods.grantPermission(
-        PrincipalType.USER,
-        userId,
-        ResourceType.AGENT,
-        resourceId,
-        PermissionBits.VIEW,
-        grantedById,
-      );
-      await methods.grantPermission(
-        PrincipalType.USER,
-        userId,
-        'project',
-        new mongoose.Types.ObjectId(),
-        PermissionBits.EDIT,
-        grantedById,
-      );
-
-      /** Find all entries for the user */
-      const entries = await methods.findEntriesByPrincipal(PrincipalType.USER, userId);
-      expect(entries).toHaveLength(2);
-
-      /** Find entries filtered by resource type */
-      const agentEntries = await methods.findEntriesByPrincipal(
-        PrincipalType.USER,
-        userId,
-        ResourceType.AGENT,
-      );
-      expect(agentEntries).toHaveLength(1);
-      expect(agentEntries[0].resourceType).toBe(ResourceType.AGENT);
-    });
-
     test('should find entries by resource', async () => {
       /** Grant permissions to different principals for the same resource */
       await methods.grantPermission(
@@ -201,6 +172,25 @@ describe('AclEntry Model Tests', () => {
         resourceId,
       );
       expect(entries).toHaveLength(2);
+    });
+
+    test('reads mutation snapshots from the primary even when a session is supplied', async () => {
+      const read = jest.spyOn(mongoose.Query.prototype, 'read');
+      const session = await mongoose.startSession();
+      try {
+        const entries = await methods.findEntriesByPrincipalsAndResource(
+          [{ principalType: PrincipalType.USER, principalId: userId }],
+          ResourceType.AGENT,
+          resourceId,
+          session,
+          true,
+        );
+        expect(entries).toHaveLength(1);
+        expect(read).toHaveBeenCalledWith('primary');
+      } finally {
+        read.mockRestore();
+        await session.endSession();
+      }
     });
 
     test('should check if user has permission', async () => {
@@ -289,35 +279,6 @@ describe('AclEntry Model Tests', () => {
   });
 
   describe('Permission Modification', () => {
-    test('should revoke permission', async () => {
-      /** Grant permission first */
-      await methods.grantPermission(
-        PrincipalType.USER,
-        userId,
-        ResourceType.AGENT,
-        resourceId,
-        PermissionBits.VIEW,
-        grantedById,
-      );
-
-      /** Check it exists */
-      const entriesBefore = await methods.findEntriesByPrincipal(PrincipalType.USER, userId);
-      expect(entriesBefore).toHaveLength(1);
-
-      /** Revoke it */
-      const result = await methods.revokePermission(
-        PrincipalType.USER,
-        userId,
-        ResourceType.AGENT,
-        resourceId,
-      );
-      expect(result.deletedCount).toBe(1);
-
-      /** Verify it's gone */
-      const entriesAfter = await methods.findEntriesByPrincipal(PrincipalType.USER, userId);
-      expect(entriesAfter).toHaveLength(0);
-    });
-
     test('should modify permission bits - add permissions', async () => {
       /** Start with VIEW permission */
       await methods.grantPermission(
@@ -453,32 +414,6 @@ describe('AclEntry Model Tests', () => {
       expect(entry?.principalModel).toBe(PrincipalModel.ROLE);
     });
 
-    test('should handle string principalId in revokePermission', async () => {
-      // First grant permission with ObjectId
-      await methods.grantPermission(
-        PrincipalType.USER,
-        userId,
-        ResourceType.AGENT,
-        resourceId,
-        PermissionBits.VIEW,
-        grantedById,
-      );
-
-      // Then revoke with string ID
-      const result = await methods.revokePermission(
-        PrincipalType.USER,
-        userId.toString(), // Pass string
-        ResourceType.AGENT,
-        resourceId,
-      );
-
-      expect(result.deletedCount).toBe(1);
-
-      // Verify it's actually deleted
-      const entries = await methods.findEntriesByPrincipal(PrincipalType.USER, userId);
-      expect(entries).toHaveLength(0);
-    });
-
     test('should handle string principalId in modifyPermissionBits', async () => {
       // First grant permission with ObjectId
       await methods.grantPermission(
@@ -575,8 +510,11 @@ describe('AclEntry Model Tests', () => {
       );
 
       // Should still only be one entry
-      const entries = await methods.findEntriesByPrincipal(PrincipalType.USER, userId);
-      expect(entries).toHaveLength(1);
+      const entryCount = await AclEntry.countDocuments({
+        principalType: PrincipalType.USER,
+        principalId: userId,
+      });
+      expect(entryCount).toBe(1);
     });
   });
 
@@ -1274,6 +1212,85 @@ describe('AclEntry Model Tests', () => {
         { $match: { principalType: 'nonexistent' } },
       ]);
       expect(results).toEqual([]);
+    });
+  });
+
+  describe('getFirstOwnerIdsByResource', () => {
+    test('answers with the earliest owner when a transfer left two owner entries behind', async () => {
+      const formerOwner = new mongoose.Types.ObjectId();
+      const currentOwner = new mongoose.Types.ObjectId();
+      await methods.grantPermission(
+        PrincipalType.USER,
+        formerOwner,
+        ResourceType.AGENT,
+        resourceId,
+        OWNER_ACL_PERMISSION_BITS,
+        grantedById,
+      );
+      await methods.grantPermission(
+        PrincipalType.USER,
+        currentOwner,
+        ResourceType.AGENT,
+        resourceId,
+        OWNER_ACL_PERMISSION_BITS,
+        grantedById,
+      );
+
+      const owners = await methods.getFirstOwnerIdsByResource(ResourceType.AGENT, [resourceId]);
+
+      expect(owners.get(resourceId.toString())).toBe(formerOwner.toString());
+    });
+
+    /* Granting Agent Insights ORs VIEW_INSIGHTS into the owner's role bits, so an owner
+       entry is not always exactly OWNER_ACL_PERMISSION_BITS. */
+    test('recognises an owner whose entry also carries the insights bit', async () => {
+      const owner = new mongoose.Types.ObjectId();
+      await methods.grantPermission(
+        PrincipalType.USER,
+        owner,
+        ResourceType.AGENT,
+        resourceId,
+        OWNER_ACL_PERMISSION_BITS | PermissionBits.VIEW_INSIGHTS,
+        grantedById,
+      );
+
+      const owners = await methods.getFirstOwnerIdsByResource(ResourceType.AGENT, [resourceId]);
+
+      expect(owners.get(resourceId.toString())).toBe(owner.toString());
+    });
+
+    /* An agent and its remote counterpart share one id, so a lookup that ignored the
+       resource type would let a revoked remote owner decide the agent's public author. */
+    test('ignores an owner entry stored against another resource type with the same id', async () => {
+      const remoteOwner = new mongoose.Types.ObjectId();
+      await methods.grantPermission(
+        PrincipalType.USER,
+        remoteOwner,
+        ResourceType.MCPSERVER,
+        resourceId,
+        OWNER_ACL_PERMISSION_BITS,
+        grantedById,
+      );
+
+      const owners = await methods.getFirstOwnerIdsByResource(ResourceType.AGENT, [resourceId]);
+
+      expect(owners.size).toBe(0);
+    });
+
+    test('ignores a viewer and asks nothing of the database for an empty page', async () => {
+      await methods.grantPermission(
+        PrincipalType.USER,
+        userId,
+        ResourceType.AGENT,
+        resourceId,
+        PermissionBits.VIEW,
+        grantedById,
+      );
+
+      expect(
+        (await methods.getFirstOwnerIdsByResource(ResourceType.AGENT, [resourceId])).size,
+      ).toBe(0);
+      expect((await methods.getFirstOwnerIdsByResource(ResourceType.AGENT, [])).size).toBe(0);
     });
   });
 
