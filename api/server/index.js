@@ -204,7 +204,6 @@ const startServer = async () => {
 
   logger.info('Connected to MongoDB');
   startCodeEnvironmentLifecycleReconciler({ mongoose });
-  startPRAutomationReaper({ reapPRAutomations });
   indexSync().catch((err) => {
     logger.error('[indexSync] Background sync failed:', err);
   });
@@ -239,6 +238,7 @@ const startServer = async () => {
     logger.error('[sweepOrphanedPreviews] Background sweep failed:', err);
   });
   const appConfig = await getAppConfig({ baseOnly: true });
+  startPRAutomationReaper({ reapPRAutomations }, appConfig);
   await configureSubagentTaskRouting(appConfig?.endpoints?.agents?.subagentActivity);
   registerBackgroundTaskShutdown({
     interruptGraceMs: appConfig?.endpoints?.agents?.backgroundTasks?.shutdownInterruptGraceMs,

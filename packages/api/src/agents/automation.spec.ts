@@ -1,3 +1,4 @@
+import { AppService } from '@librechat/data-schemas';
 import {
   startPRAutomationReaper,
   reapOrphanedPRAutomations,
@@ -43,6 +44,20 @@ describe('PR automation reaper', () => {
     await jest.advanceTimersByTimeAsync(60 * 60_000);
     expect(leader).toHaveBeenCalledTimes(2);
     expect(reapPRAutomations).toHaveBeenCalledTimes(1);
+  });
+
+  test('runs at the interval the yaml sets', async () => {
+    jest.useFakeTimers();
+    jest.mocked(isLeader).mockResolvedValue(true);
+    const reapPRAutomations = emptyPage();
+    const appConfig = await AppService({
+      config: { endpoints: { agents: { prAutomation: { reaperIntervalMinutes: 15 } } } },
+    });
+
+    stop = startPRAutomationReaper({ reapPRAutomations }, appConfig);
+    await jest.advanceTimersByTimeAsync(0);
+    await jest.advanceTimersByTimeAsync(15 * 60_000);
+    expect(reapPRAutomations).toHaveBeenCalledTimes(2);
   });
 
   test('without Redis, waits in a worker until the primary assigns it', async () => {

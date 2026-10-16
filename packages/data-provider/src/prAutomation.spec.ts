@@ -45,7 +45,16 @@ describe('agent PR automation config', () => {
       maxMinutes: 120,
       maxBots: 20,
       maxTrust: 'approvedBots',
+      reaperIntervalMinutes: 60,
     });
+  });
+
+  it.each([4, 1441, 1.5])('rejects a %s minute reaper interval', (reaperIntervalMinutes) => {
+    expect(parse({ reaperIntervalMinutes }).success).toBe(false);
+  });
+
+  it('accepts a shorter reaper interval', () => {
+    expect(parse({ reaperIntervalMinutes: 15 }).success).toBe(true);
   });
 
   it('accepts an administrator raising the limits and the ceiling', () => {

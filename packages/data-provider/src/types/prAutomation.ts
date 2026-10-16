@@ -18,6 +18,10 @@ export const PR_AUTOMATION_STOP_CODES = [
 /** Largest per-repository bot allowlist a deployment can configure. */
 export const MAX_PR_AUTOMATION_BOTS = 100;
 export const DEFAULT_PR_AUTOMATION_BOTS = 20;
+/** Minutes between passes that remove records whose conversation or owner is gone. */
+export const DEFAULT_PR_AUTOMATION_REAPER_MINUTES = 60;
+export const MIN_PR_AUTOMATION_REAPER_MINUTES = 5;
+export const MAX_PR_AUTOMATION_REAPER_MINUTES = 1440;
 
 /** Ordered from narrowest to widest: who may be acted on. */
 export const PR_AUTOMATION_TRUST_LEVELS = ['approvedBots', 'collaborators', 'anyone'] as const;

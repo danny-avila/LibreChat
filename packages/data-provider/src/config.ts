@@ -70,9 +70,12 @@ import {
 import type { PullRequestProvider } from './types/pullRequest';
 import { isActionTool } from './types/tools';
 import {
+  MAX_PR_AUTOMATION_BOTS,
   PR_AUTOMATION_TRUST_LEVELS,
   DEFAULT_PR_AUTOMATION_BOTS,
-  MAX_PR_AUTOMATION_BOTS,
+  MIN_PR_AUTOMATION_REAPER_MINUTES,
+  MAX_PR_AUTOMATION_REAPER_MINUTES,
+  DEFAULT_PR_AUTOMATION_REAPER_MINUTES,
 } from './types/prAutomation';
 import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
@@ -2039,6 +2042,16 @@ export const agentsEndpointSchema = baseEndpointSchema
           /** Widest author trust a user may select: `approvedBots` acts on the linked account and
            *  allowlisted bots only, `collaborators` adds write-access users, `anyone` acts on all. */
           maxTrust: z.enum(PR_AUTOMATION_TRUST_LEVELS).optional().default('approvedBots'),
+          /** Minutes between passes that remove records whose conversation or owner is gone,
+           *  including conversations the retention index deleted. Runs whether or not `enabled`
+           *  is set, so records from an earlier opt-in are still cleaned up. */
+          reaperIntervalMinutes: z
+            .number()
+            .int()
+            .min(MIN_PR_AUTOMATION_REAPER_MINUTES)
+            .max(MAX_PR_AUTOMATION_REAPER_MINUTES)
+            .optional()
+            .default(DEFAULT_PR_AUTOMATION_REAPER_MINUTES),
         })
         .optional(),
       /** Conversational background-task delivery policy. Automatic completion wakeups are
