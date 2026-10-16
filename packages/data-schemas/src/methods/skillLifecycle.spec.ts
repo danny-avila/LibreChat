@@ -55,11 +55,207 @@ async function completeWithClaim(skillId: mongoose.Types.ObjectId) {
 }
 
 describe('Skill deletion journal', () => {
+  it('pages real file and intent cursors without skipping records changed during cleanup', async () => {
+    const { skill, author } = await makeSkill();
+    await mongoose.models.SkillFile.insertMany(
+      Array.from({ length: 205 }, (_, index) => ({
+        skillId: skill._id,
+        file_id: `paged-${index}`,
+        relativePath: `${index}.md`,
+        filename: `${index}.md`,
+        filepath: `/uploads/${author}/${index}`,
+        source: 'local',
+        mimeType: 'text/markdown',
+        bytes: 4,
+        content: 'must not be loaded during cleanup',
+        author,
+        tenantId: 'tenant-a',
+      })),
+    );
+    await lifecycle.beginSkillDeletion(skill.id);
+    const seen = new Set<string>();
+    for await (const files of lifecycle.iterateSkillCleanupFiles(skill.id, 17)) {
+      expect(files.length).toBeLessThanOrEqual(17);
+      for (const file of files) {
+        expect(file.content).toBeUndefined();
+        expect(seen.has(file.file_id)).toBe(false);
+        seen.add(file.file_id);
+        await mongoose.models.SkillFile.deleteOne({ file_id: file.file_id });
+      }
+    }
+    expect(seen.size).toBe(205);
+    expect(await lifecycle.hasInFlightSkillUploads(skill.id)).toBe(false);
+    const cleaned = new Set<string>();
+    for await (const intents of lifecycle.iterateSkillCleanupIntents(skill.id, 17)) {
+      expect(intents.length).toBeLessThanOrEqual(17);
+      expect(
+        await lifecycle.listExistingSkillFileIds(
+          skill.id,
+          intents.map((intent) => intent.fileId),
+        ),
+      ).toEqual([]);
+      for (const intent of intents) {
+        expect(cleaned.has(intent.fileId)).toBe(false);
+        cleaned.add(intent.fileId);
+        await lifecycle.markSkillUploadIntentCleaned(intent.fileId);
+      }
+    }
+    expect(cleaned.size).toBe(205);
+    for await (const _batch of lifecycle.iterateSkillCleanupIntents(skill.id, 17)) {
+      throw new Error('Cleaned committed history must not be yielded');
+    }
+  });
+
+  it.each(['break', 'throw'] as const)(
+    'closes a Mongo cleanup cursor when its consumer exits with %s',
+    async (mode) => {
+      const { skill, author } = await makeSkill();
+      await mongoose.models.SkillUploadIntent.insertMany(
+        Array.from({ length: 7 }, (_, index) => ({
+          skillId: skill._id,
+          author,
+          fileId: `close-${index}`,
+          source: 'local',
+          storageKey: `/uploads/${index}`,
+          writerId: 'writer',
+          state: 'abandoned',
+        })),
+      );
+      const query = mongoose.models.SkillUploadIntent.find();
+      const find = jest.spyOn(mongoose.models.SkillUploadIntent, 'find').mockReturnValueOnce(query);
+      const cursor = jest.spyOn(query, 'cursor');
+      const pages = lifecycle.iterateSkillCleanupIntents(skill.id, 2);
+      expect(cursor).not.toHaveBeenCalled();
+      await pages[Symbol.asyncIterator]().next();
+      const close = jest.spyOn(cursor.mock.results[0].value, 'close');
+      try {
+        const consume = async () => {
+          for await (const batch of pages) {
+            expect(batch).toHaveLength(2);
+            if (mode === 'throw') throw new Error('consumer failure');
+            break;
+          }
+        };
+        if (mode === 'throw') await expect(consume()).rejects.toThrow('consumer failure');
+        else await consume();
+        expect(close).toHaveBeenCalledTimes(1);
+      } finally {
+        close.mockRestore();
+        cursor.mockRestore();
+        find.mockRestore();
+      }
+    },
+  );
+
   it('indexes only marked Skills for startup and periodic deletion discovery', () => {
     expect(mongoose.models.Skill.schema.indexes()).toContainEqual([
       { deletionNeedsJournal: 1, deletionJournalAttemptAt: 1, deletingAt: 1 },
       expect.objectContaining({ sparse: true }),
     ]);
+  });
+
+  it('skips not-due completed history instead of scanning the idle tombstone corpus', async () => {
+    const model = mongoose.models.SkillDeletion;
+    await model.init();
+    const now = new Date();
+    await model.insertMany(
+      Array.from({ length: 1_000 }, () => ({
+        skillId: new mongoose.Types.ObjectId(),
+        author: new mongoose.Types.ObjectId(),
+        startedAt: now,
+        completedAt: now,
+        lastAttemptAt: now,
+        nextCheckAt: new Date(now.getTime() + 3_600_000),
+      })),
+    );
+    const find = jest.spyOn(model.collection, 'find');
+    expect(await lifecycle.listSkillDeletionTombstones()).toEqual([]);
+    const filter = find.mock.calls[0][0];
+    if (!filter) throw new Error('Expected the lifecycle query to reach MongoDB');
+    find.mockRestore();
+    const plan = await model.collection
+      .find(filter)
+      .sort({ lastAttemptAt: 1, startedAt: 1 })
+      .limit(100)
+      .explain('executionStats');
+    expect(plan.executionStats.nReturned).toBe(0);
+    expect(plan.executionStats.totalDocsExamined).toBeLessThan(50);
+    expect(plan.executionStats.totalKeysExamined).toBeLessThan(50);
+  });
+
+  it('excludes healthy committed uploads without scanning every live upload during idle cleanup', async () => {
+    const model = mongoose.models.SkillUploadIntent;
+    await model.init();
+    const skillId = new mongoose.Types.ObjectId();
+    const author = new mongoose.Types.ObjectId();
+    await model.insertMany(
+      Array.from({ length: 1_000 }, (_, index) => ({
+        skillId,
+        author,
+        fileId: `healthy-${index}`,
+        writerId: 'finished-writer',
+        state: 'committed',
+        source: 'local',
+        storageKey: `/uploads/${author}/healthy-${index}`,
+      })),
+    );
+    const find = jest.spyOn(model.collection, 'find');
+    expect(await lifecycle.listAbandonedSkillUploadIntents()).toEqual([]);
+    const filter = find.mock.calls[0][0];
+    if (!filter) throw new Error('Expected the lifecycle query to reach MongoDB');
+    find.mockRestore();
+    const plan = await model.collection
+      .find(filter)
+      .sort({ lastCleanupAttemptAt: 1, createdAt: 1 })
+      .limit(100)
+      .explain('executionStats');
+    expect(plan.executionStats.nReturned).toBe(0);
+    expect(plan.executionStats.totalDocsExamined).toBeLessThan(50);
+    expect(plan.executionStats.totalKeysExamined).toBeLessThan(50);
+  });
+
+  it('keeps inspection history while cleanup excludes only already-cleaned committed uploads', async () => {
+    const model = mongoose.models.SkillUploadIntent;
+    await model.init();
+    const skillId = new mongoose.Types.ObjectId();
+    const author = new mongoose.Types.ObjectId();
+    const base = {
+      skillId,
+      author,
+      writerId: 'writer',
+      source: 'local',
+      storageKey: '/uploads/fixture',
+    };
+    await model.insertMany([
+      ...Array.from({ length: 1_000 }, (_, index) => ({
+        ...base,
+        fileId: `history-${index}`,
+        state: 'committed',
+        cleanedAt: new Date(),
+      })),
+      { ...base, fileId: 'uploading', state: 'uploading' },
+      { ...base, fileId: 'committing', state: 'committing' },
+      { ...base, fileId: 'uncleaned-committed', state: 'committed' },
+      { ...base, fileId: 'abandoned', state: 'abandoned' },
+      { ...base, fileId: 'cleaned-abandoned', state: 'abandoned', cleanedAt: new Date() },
+    ]);
+    expect(await lifecycle.listSkillUploadIntents(skillId)).toHaveLength(1_005);
+    const find = jest.spyOn(model.collection, 'find');
+    const cleanup = await lifecycle.listSkillUploadIntents(skillId, { cleanupOnly: true });
+    const filter = find.mock.calls[0][0];
+    find.mockRestore();
+    expect(cleanup.map((intent) => intent.fileId).sort()).toEqual([
+      'abandoned',
+      'cleaned-abandoned',
+      'committing',
+      'uncleaned-committed',
+      'uploading',
+    ]);
+    if (!filter) throw new Error('Expected the cleanup query to reach MongoDB');
+    const plan = await model.collection.find(filter).explain('executionStats');
+    expect(plan.executionStats.nReturned).toBe(5);
+    expect(plan.executionStats.totalDocsExamined).toBeLessThan(50);
+    expect(plan.executionStats.totalKeysExamined).toBeLessThan(50);
   });
 
   it('marks a skill before recording its retryable tombstone', async () => {
@@ -677,6 +873,58 @@ describe('Skill upload intents', () => {
     ).toBeInstanceOf(Date);
   });
 
+  it('retains an existing cleanup lease after cleaning a committed intent without making it claimable again', async () => {
+    const { skill, author } = await makeSkill();
+    const fileId = 'cleaned-committed';
+    await mongoose.models.SkillUploadIntent.create({
+      skillId: skill._id,
+      fileId,
+      source: 'local',
+      storageKey: `/uploads/${author}/${fileId}`,
+      author,
+      writerId: 'finished-writer',
+      state: 'committed',
+      cleanupRequestedAt: new Date(),
+    });
+    expect(await lifecycle.claimAbandonedSkillUploadIntent(fileId, 'worker-a', 60_000)).toBe(true);
+    await lifecycle.markSkillUploadIntentCleaned(fileId);
+    expect(await lifecycle.refreshAbandonedSkillUploadIntentClaim(fileId, 'worker-a', 60_000)).toBe(
+      true,
+    );
+    expect(await lifecycle.refreshAbandonedSkillUploadIntentClaim(fileId, 'worker-b', 60_000)).toBe(
+      false,
+    );
+    expect(
+      await lifecycle.scheduleAbandonedSkillUploadIntentRecheck(fileId, 'worker-b', 60_000),
+    ).toBe(false);
+    expect(
+      await lifecycle.scheduleAbandonedSkillUploadIntentRecheck(fileId, 'worker-a', 60_000),
+    ).toBe(true);
+    await lifecycle.noteAbandonedSkillUploadIntentAttempt(fileId);
+    const completed = await lifecycle.getSkillUploadIntent(fileId);
+    expect(completed?.cleanedAt).toBeInstanceOf(Date);
+    expect(completed?.lastCleanupAttemptAt).toBeInstanceOf(Date);
+
+    await mongoose.models.SkillUploadIntent.updateOne(
+      { fileId },
+      { $set: { claimExpiresAt: new Date(Date.now() - 1) } },
+    );
+    expect(await lifecycle.refreshAbandonedSkillUploadIntentClaim(fileId, 'worker-a', 60_000)).toBe(
+      false,
+    );
+    expect(
+      await lifecycle.scheduleAbandonedSkillUploadIntentRecheck(fileId, 'worker-a', 60_000),
+    ).toBe(false);
+    await lifecycle.releaseAbandonedSkillUploadIntentClaim(fileId, 'worker-a');
+    await mongoose.models.SkillUploadIntent.updateOne(
+      { fileId },
+      { $set: { nextCheckAt: new Date(Date.now() - 1) } },
+    );
+    expect(await lifecycle.listAbandonedSkillUploadIntents()).toEqual([]);
+    expect(await lifecycle.claimAbandonedSkillUploadIntent(fileId, 'worker-b', 60_000)).toBe(false);
+    expect((await lifecycle.getSkillUploadIntent(fileId))?.claimOwner).toBeUndefined();
+  });
+
   it('keeps cleaned abandoned intents as deferred late-upload sentinels', async () => {
     const { skill, author } = await makeSkill();
     await lifecycle.reserveSkillUploadIntent({
@@ -741,5 +989,132 @@ describe('Skill upload intents', () => {
       { $set: { nextCheckAt: new Date(Date.now() - 1) } },
     );
     expect(await lifecycle.listAbandonedSkillUploadIntents()).toHaveLength(1);
+  });
+
+  it('keeps a held committed intent outside every cleanup sweep path until its owner releases it', async () => {
+    const { skill, author } = await makeSkill();
+    await mongoose.models.SkillUploadIntent.create({
+      skillId: skill._id,
+      fileId: 'held-file',
+      source: 'local',
+      storageKey: `/uploads/${author}/held-file`,
+      author,
+      writerId: 'old-writer',
+      state: 'committed',
+      cleanupRequestedAt: new Date(),
+      cleanupHoldOwner: 'replacement-writer',
+      claimOwner: 'sweeper',
+      claimExpiresAt: new Date(Date.now() + 60_000),
+    });
+
+    expect(await lifecycle.listAbandonedSkillUploadIntents()).toEqual([]);
+    expect(await lifecycle.claimAbandonedSkillUploadIntent('held-file', 'sweeper', 60_000)).toBe(
+      false,
+    );
+    expect(
+      await lifecycle.refreshAbandonedSkillUploadIntentClaim('held-file', 'sweeper', 60_000),
+    ).toBe(false);
+    expect(
+      await lifecycle.scheduleAbandonedSkillUploadIntentRecheck('held-file', 'sweeper', 60_000),
+    ).toBe(false);
+    expect(await lifecycle.finishSkillUploadCleanupHold('held-file', 'wrong-writer', true)).toBe(
+      false,
+    );
+    expect(
+      await lifecycle.finishSkillUploadCleanupHold('held-file', 'replacement-writer', false),
+    ).toBe(true);
+    expect((await lifecycle.getSkillUploadIntent('held-file'))?.cleanupRequestedAt).toBeUndefined();
+    expect((await lifecycle.getSkillUploadIntent('held-file'))?.cleanupHoldOwner).toBeUndefined();
+    expect(await lifecycle.listAbandonedSkillUploadIntents()).toEqual([]);
+    expect(
+      await lifecycle.finishSkillUploadCleanupHold('held-file', 'replacement-writer', true),
+    ).toBe(false);
+  });
+
+  it('releases a held original for cleanup when the replacement removed its file row', async () => {
+    const { skill, author } = await makeSkill();
+    await mongoose.models.SkillUploadIntent.create({
+      skillId: skill._id,
+      fileId: 'replaced-file',
+      source: 'local',
+      storageKey: `/uploads/${author}/replaced-file`,
+      author,
+      writerId: 'old-writer',
+      state: 'committed',
+      cleanupHoldOwner: 'replacement-writer',
+      nextCheckAt: new Date(Date.now() + 3_600_000),
+    });
+
+    expect(
+      await lifecycle.finishSkillUploadCleanupHold('replaced-file', 'replacement-writer', true),
+    ).toBe(true);
+    const intent = await lifecycle.getSkillUploadIntent('replaced-file');
+    expect(intent?.cleanupHoldOwner).toBeUndefined();
+    expect(intent?.cleanupRequestedAt).toBeInstanceOf(Date);
+    expect(intent?.nextCheckAt).toBeUndefined();
+    expect(
+      (await lifecycle.listAbandonedSkillUploadIntents()).map((item) => item.fileId),
+    ).toContain('replaced-file');
+  });
+
+  it('recovers a stopped cleanup hold according to the original file row', async () => {
+    const { skill, author } = await makeSkill();
+    await mongoose.models.SkillUploadIntent.create([
+      {
+        skillId: skill._id,
+        fileId: 'still-present',
+        source: 'local',
+        storageKey: `/uploads/${author}/still-present`,
+        author,
+        writerId: 'old-writer',
+        state: 'committed',
+        cleanupHoldOwner: 'stopped-writer',
+      },
+      {
+        skillId: skill._id,
+        fileId: 'removed',
+        source: 'local',
+        storageKey: `/uploads/${author}/removed`,
+        author,
+        writerId: 'old-writer',
+        state: 'committed',
+        cleanupHoldOwner: 'stopped-writer',
+      },
+    ]);
+    await mongoose.models.SkillFile.create({
+      skillId: skill._id,
+      file_id: 'still-present',
+      relativePath: 'references/still-present.md',
+      filename: 'still-present.md',
+      filepath: `/uploads/${author}/still-present`,
+      source: 'local',
+      mimeType: 'text/markdown',
+      bytes: 4,
+      author,
+    });
+
+    expect(
+      await lifecycle.recoverStoppedSkillUploadCleanupHold('missing', 'stopped-writer'),
+    ).toEqual({
+      status: 'missing',
+    });
+    expect(
+      await lifecycle.recoverStoppedSkillUploadCleanupHold('still-present', 'wrong-writer'),
+    ).toEqual({ status: 'changed' });
+    expect(
+      await lifecycle.recoverStoppedSkillUploadCleanupHold('still-present', 'stopped-writer'),
+    ).toEqual({ status: 'recovered', cleanup: false });
+    expect(
+      (await lifecycle.getSkillUploadIntent('still-present'))?.cleanupRequestedAt,
+    ).toBeUndefined();
+    expect(
+      await lifecycle.recoverStoppedSkillUploadCleanupHold('removed', 'stopped-writer'),
+    ).toEqual({
+      status: 'recovered',
+      cleanup: true,
+    });
+    expect((await lifecycle.listAbandonedSkillUploadIntents()).map((item) => item.fileId)).toEqual([
+      'removed',
+    ]);
   });
 });

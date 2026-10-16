@@ -19,5 +19,7 @@ const skillDeletionSchema: Schema<ISkillDeletionDocument> = new Schema<ISkillDel
 // The sweep rotates attempted rows and sorts by these fields before its batch limit.
 skillDeletionSchema.index({ lastAttemptAt: 1, startedAt: 1, claimExpiresAt: 1 });
 skillDeletionSchema.index({ completedAt: 1, nextCheckAt: 1 });
+// Let idle sweeps skip completed history whose next audit is not due.
+skillDeletionSchema.index({ nextCheckAt: 1 });
 
 export default skillDeletionSchema;

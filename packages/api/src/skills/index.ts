@@ -12,4 +12,7 @@ export * from './management';
 export * from './upload';
 export * from './save';
 export * from './intent';
+export * from './deletion';
+export * from './deletionService';
+export * from './recoveryCli';
 export * from './reservation';

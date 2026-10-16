@@ -5,7 +5,7 @@ import type {
   ISkillUploadIntent,
   ISkillUploadIntentDocument,
 } from '~/types/skillDeletion';
-import type { ISkillFileDocument } from '~/types/skill';
+import type { ISkillFile, ISkillFileDocument } from '~/types/skill';
 import type { ISkillDocument } from '~/types/skill';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { runAsSystem } from '~/config/tenantContext';
@@ -13,6 +13,9 @@ import logger from '~/config/winston';
 
 type SkillRow = ISkillDocument & { _id: Types.ObjectId };
 const LEGACY_BACKFILL_BATCH_SIZE = 100;
+const pendingCleanupFilter = {
+  $or: [{ state: { $ne: 'committed' } }, { state: 'committed', cleanedAt: { $exists: false } }],
+};
 type IntentInput = {
   skillId: string;
   author: string;
@@ -23,9 +26,34 @@ type IntentInput = {
   writerId: string;
 };
 
+async function* cleanupCursorBatches<Row>(
+  cursor: { next: () => Promise<Row | null>; close: () => Promise<void> },
+  batchSize: number,
+): AsyncGenerator<Row[]> {
+  try {
+    if (!Number.isInteger(batchSize) || batchSize < 1)
+      throw new Error('Invalid cleanup batch size');
+    let batch: Row[] = [];
+    for (let row = await cursor.next(); row != null; row = await cursor.next()) {
+      batch.push(row);
+      if (batch.length === batchSize) {
+        yield batch;
+        batch = [];
+      }
+    }
+    if (batch.length > 0) yield batch;
+  } finally {
+    await cursor.close();
+  }
+}
+
 export type StoppedSkillUploadRecovery =
   | { status: 'missing' | 'changed' }
   | { status: 'recovered'; state: 'committed' | 'abandoned' };
+
+export type StoppedSkillUploadCleanupHoldRecovery =
+  | { status: 'missing' | 'changed' }
+  | { status: 'recovered'; cleanup: boolean };
 
 export interface SkillLifecycleMethods {
   beginSkillDeletion: (id: string) => Promise<ISkillDeletion | null>;
@@ -59,12 +87,31 @@ export interface SkillLifecycleMethods {
     from: ISkillUploadIntent['state'],
     to: ISkillUploadIntent['state'],
   ) => Promise<boolean>;
-  listSkillUploadIntents: (skillId: string | Types.ObjectId) => Promise<ISkillUploadIntent[]>;
+  listSkillUploadIntents: (
+    skillId: string | Types.ObjectId,
+    options?: { cleanupOnly?: boolean },
+  ) => Promise<ISkillUploadIntent[]>;
+  iterateSkillCleanupFiles: (skillId: string, batchSize: number) => AsyncIterable<ISkillFile[]>;
+  iterateSkillCleanupIntents: (
+    skillId: string,
+    batchSize: number,
+  ) => AsyncIterable<ISkillUploadIntent[]>;
+  hasInFlightSkillUploads: (skillId: string) => Promise<boolean>;
+  listExistingSkillFileIds: (skillId: string, fileIds: string[]) => Promise<string[]>;
   getSkillUploadIntent: (fileId: string) => Promise<ISkillUploadIntent | null>;
   recoverStoppedSkillUploadIntent: (
     fileId: string,
     expectedWriterId: string,
   ) => Promise<StoppedSkillUploadRecovery>;
+  finishSkillUploadCleanupHold: (
+    fileId: string,
+    owner: string,
+    cleanup: boolean,
+  ) => Promise<boolean>;
+  recoverStoppedSkillUploadCleanupHold: (
+    fileId: string,
+    expectedOwner: string,
+  ) => Promise<StoppedSkillUploadCleanupHoldRecovery>;
   listAbandonedSkillUploadIntents: (limit?: number) => Promise<ISkillUploadIntent[]>;
   claimAbandonedSkillUploadIntent: (
     fileId: string,
@@ -135,7 +182,7 @@ export function createSkillLifecycleMethods(
       // The marker also covers crashes after the journal insert but before
       // every legacy file has a durable blob reference.
       let writes: AnyBulkWriteOperation[] = [];
-      for await (const file of skillFileModel().find({ skillId }).cursor()) {
+      for await (const file of skillFileModel().find({ skillId }).select('-content').cursor()) {
         writes.push({
           updateOne: {
             filter: {
@@ -355,12 +402,59 @@ export function createSkillLifecycleMethods(
 
   async function listSkillUploadIntents(
     skillId: string | Types.ObjectId,
+    options: { cleanupOnly?: boolean } = {},
   ): Promise<ISkillUploadIntent[]> {
-    return (await intentModel().find({ skillId }).lean()) as ISkillUploadIntent[];
+    return (await intentModel()
+      .find({
+        skillId,
+        ...(options.cleanupOnly ? pendingCleanupFilter : {}),
+      })
+      .lean()) as ISkillUploadIntent[];
   }
 
   async function getSkillUploadIntent(fileId: string): Promise<ISkillUploadIntent | null> {
     return (await intentModel().findOne({ fileId }).lean()) as ISkillUploadIntent | null;
+  }
+
+  async function* iterateSkillCleanupFiles(
+    skillId: string,
+    batchSize: number,
+  ): AsyncGenerator<ISkillFile[]> {
+    const cursor = skillFileModel()
+      .find({ skillId })
+      .select('-content')
+      .lean()
+      .cursor({ batchSize });
+    yield* cleanupCursorBatches<ISkillFile>(cursor, batchSize);
+  }
+
+  async function* iterateSkillCleanupIntents(
+    skillId: string,
+    batchSize: number,
+  ): AsyncGenerator<ISkillUploadIntent[]> {
+    const cursor = intentModel()
+      .find({
+        skillId,
+        ...pendingCleanupFilter,
+      })
+      .lean()
+      .cursor({ batchSize });
+    yield* cleanupCursorBatches<ISkillUploadIntent>(cursor, batchSize);
+  }
+
+  async function hasInFlightSkillUploads(skillId: string): Promise<boolean> {
+    return Boolean(
+      await intentModel().exists({ skillId, state: { $in: ['uploading', 'committing'] } }),
+    );
+  }
+
+  async function listExistingSkillFileIds(skillId: string, fileIds: string[]): Promise<string[]> {
+    if (fileIds.length === 0) return [];
+    const rows = await skillFileModel()
+      .find({ skillId, file_id: { $in: fileIds } })
+      .select('file_id')
+      .lean();
+    return rows.map((row) => row.file_id);
   }
 
   /** Operator-only recovery: call only after independently confirming the writer has stopped. */
@@ -385,11 +479,52 @@ export function createSkillLifecycleMethods(
     return result.modifiedCount === 1 ? { status: 'recovered', state } : { status: 'changed' };
   }
 
+  async function finishSkillUploadCleanupHold(
+    fileId: string,
+    owner: string,
+    cleanup: boolean,
+  ): Promise<boolean> {
+    const result = await intentModel().updateOne(
+      { fileId, state: 'committed', cleanupHoldOwner: owner },
+      cleanup
+        ? {
+            $set: { cleanupRequestedAt: new Date() },
+            $unset: { cleanupHoldOwner: '', nextCheckAt: '' },
+          }
+        : { $unset: { cleanupHoldOwner: '', cleanupRequestedAt: '' } },
+    );
+    return result.matchedCount === 1;
+  }
+
+  /** Operator-only recovery after confirming the replacement writer has stopped. */
+  async function recoverStoppedSkillUploadCleanupHold(
+    fileId: string,
+    expectedOwner: string,
+  ): Promise<StoppedSkillUploadCleanupHoldRecovery> {
+    const intent = await getSkillUploadIntent(fileId);
+    if (!intent) return { status: 'missing' };
+    if (intent.state !== 'committed' || intent.cleanupHoldOwner !== expectedOwner) {
+      return { status: 'changed' };
+    }
+    const rowExists = await skillFileExistsForIntent(intent.skillId.toString(), fileId);
+    const cleanup = !rowExists;
+    const released = await finishSkillUploadCleanupHold(fileId, expectedOwner, cleanup);
+    return released ? { status: 'recovered', cleanup } : { status: 'changed' };
+  }
+
   async function listAbandonedSkillUploadIntents(limit = 100): Promise<ISkillUploadIntent[]> {
     const now = new Date();
     return (await intentModel()
       .find({
-        state: 'abandoned',
+        cleanupHoldOwner: { $exists: false },
+        $or: [
+          { state: 'abandoned' },
+          {
+            state: 'committed',
+            cleanupRequestedAt: { $exists: true },
+            cleanedAt: { $exists: false },
+          },
+        ],
         $and: [
           { $or: [{ claimExpiresAt: { $exists: false } }, { claimExpiresAt: { $lte: now } }] },
           { $or: [{ nextCheckAt: { $exists: false } }, { nextCheckAt: { $lte: now } }] },
@@ -409,7 +544,15 @@ export function createSkillLifecycleMethods(
     const result = await intentModel().updateOne(
       {
         fileId,
-        state: 'abandoned',
+        cleanupHoldOwner: { $exists: false },
+        $or: [
+          { state: 'abandoned' },
+          {
+            state: 'committed',
+            cleanupRequestedAt: { $exists: true },
+            cleanedAt: { $exists: false },
+          },
+        ],
         $and: [
           {
             $or: [
@@ -431,8 +574,21 @@ export function createSkillLifecycleMethods(
     owner: string,
     leaseMs: number,
   ): Promise<boolean> {
+    // Finishing cleanup changes eligibility for a new claim, not ownership of this lease.
     const result = await intentModel().updateOne(
-      { fileId, state: 'abandoned', claimOwner: owner, claimExpiresAt: { $gt: new Date() } },
+      {
+        fileId,
+        cleanupHoldOwner: { $exists: false },
+        claimOwner: owner,
+        claimExpiresAt: { $gt: new Date() },
+        $or: [
+          { state: 'abandoned' },
+          {
+            state: 'committed',
+            cleanupRequestedAt: { $exists: true },
+          },
+        ],
+      },
       { $set: { claimExpiresAt: new Date(Date.now() + leaseMs) } },
     );
     return result.matchedCount === 1;
@@ -482,9 +638,16 @@ export function createSkillLifecycleMethods(
     const result = await intentModel().updateOne(
       {
         fileId,
-        state: 'abandoned',
+        cleanupHoldOwner: { $exists: false },
         claimOwner: owner,
         claimExpiresAt: { $gt: now },
+        $or: [
+          { state: 'abandoned' },
+          {
+            state: 'committed',
+            cleanupRequestedAt: { $exists: true },
+          },
+        ],
       },
       { $set: { nextCheckAt: new Date(now.getTime() + delayMs) } },
     );
@@ -507,8 +670,14 @@ export function createSkillLifecycleMethods(
     reserveSkillUploadIntent,
     transitionSkillUploadIntent,
     listSkillUploadIntents,
+    iterateSkillCleanupFiles,
+    iterateSkillCleanupIntents,
+    hasInFlightSkillUploads,
+    listExistingSkillFileIds,
     getSkillUploadIntent,
     recoverStoppedSkillUploadIntent,
+    finishSkillUploadCleanupHold,
+    recoverStoppedSkillUploadCleanupHold,
     listAbandonedSkillUploadIntents,
     claimAbandonedSkillUploadIntent,
     refreshAbandonedSkillUploadIntentClaim,
