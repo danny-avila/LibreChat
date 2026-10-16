@@ -47,12 +47,15 @@ function setup(
     laneGit?: Lane;
     lookup?: jest.Mock;
     env?: Record<string, string | undefined>;
+    userToken?: jest.Mock;
   } = {},
 ) {
   /** `null` means the block is absent; omitting the option means the enabled default. */
   const settings = options.settings === undefined ? enabled : (options.settings ?? undefined);
   const laneGit: Lane =
-    options.laneGit === undefined ? { branch: 'feat/x', head: null, repo: 'o/r' } : options.laneGit;
+    options.laneGit === undefined
+      ? { branch: 'feat/x', head: 'c0ffee1', repo: 'o/r' }
+      : options.laneGit;
   const lookup = options.lookup ?? jest.fn().mockResolvedValue({ ok: true, value: pr });
   const env = options.env ?? { GH_TOKEN: 'ghp_secret' };
   const getConvoLaneGit = jest.fn().mockResolvedValue(laneGit);
@@ -61,6 +64,7 @@ function setup(
     getAppConfig: jest.fn().mockResolvedValue(configWith(settings)),
     lookup,
     env,
+    ...(options.userToken ? { userToken: options.userToken } : {}),
   });
   const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
   const run = (params: { conversationId?: string } = { conversationId: 'c1' }, user = 'u1') =>
@@ -89,7 +93,7 @@ describe('createConversationPullRequestHandler', () => {
       repo: 'o/r',
       branch: 'feat/x',
       token: 'ghp_secret',
-      head: null,
+      head: 'c0ffee1',
       provider: 'github',
       host: 'github.com',
       ttlMs: 30_000,
@@ -122,7 +126,9 @@ describe('createConversationPullRequestHandler', () => {
   async function hostFor(base: Record<string, unknown>, override: Record<string, unknown>) {
     const lookup = jest.fn().mockResolvedValue({ ok: true, value: pr });
     const handler = createConversationPullRequestHandler({
-      getConvoLaneGit: jest.fn().mockResolvedValue({ branch: 'feat/x', head: null, repo: 'o/r' }),
+      getConvoLaneGit: jest
+        .fn()
+        .mockResolvedValue({ branch: 'feat/x', head: 'c0ffee1', repo: 'o/r' }),
       getAppConfig: jest
         .fn()
         .mockImplementation(async (options: { baseOnly?: boolean }) =>
@@ -142,7 +148,9 @@ describe('createConversationPullRequestHandler', () => {
   it('takes the provider from the operator config, never from a database override', async () => {
     const lookup = jest.fn().mockResolvedValue({ ok: true, value: pr });
     const handler = createConversationPullRequestHandler({
-      getConvoLaneGit: jest.fn().mockResolvedValue({ branch: 'feat/x', head: null, repo: 'o/r' }),
+      getConvoLaneGit: jest
+        .fn()
+        .mockResolvedValue({ branch: 'feat/x', head: 'c0ffee1', repo: 'o/r' }),
       getAppConfig: jest
         .fn()
         .mockImplementation(async (options: { baseOnly?: boolean }) =>
@@ -159,6 +167,138 @@ describe('createConversationPullRequestHandler', () => {
     expect(lookup).toHaveBeenCalledWith(
       expect.objectContaining({ provider: 'github', host: 'github.com', token: 'ghp_secret' }),
     );
+  });
+
+  describe('with users connecting their own accounts', () => {
+    const connectable = {
+      ...enabled,
+      token: undefined,
+      oauth: { clientId: '${GH_CLIENT_ID}', clientSecret: '${GH_CLIENT_SECRET}' },
+    };
+    const oauthEnv = { GH_CLIENT_ID: 'id', GH_CLIENT_SECRET: 'secret' };
+
+    it("looks up with the user's own token, in any repository that user can see", async () => {
+      const { run, lookup } = setup({
+        settings: connectable,
+        env: { ...oauthEnv, GH_TOKEN: 'ghp_server' },
+        laneGit: { branch: 'feat/x', head: 'c0ffee1', repo: 'elsewhere/private' },
+        userToken: jest.fn().mockResolvedValue('gho_user'),
+      });
+      await run();
+      expect(lookup).toHaveBeenCalledWith(
+        expect.objectContaining({
+          token: 'gho_user',
+          repo: 'elsewhere/private',
+          allowedRepositories: ['*/*'],
+        }),
+      );
+    });
+
+    it("does not read the user's token for a lane with no commit yet", async () => {
+      const userToken = jest.fn().mockResolvedValue('gho_user');
+      const { run, res } = setup({
+        settings: connectable,
+        env: oauthEnv,
+        laneGit: { branch: 'feat/x', head: null, repo: 'o/r' },
+        userToken,
+      });
+      await run();
+      expect(userToken).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith({ pullRequest: null });
+    });
+
+    it.each([
+      ["the user's own token", true],
+      ["the server's token", false],
+    ])('invalidates %s only when the provider refuses it', async (_label, personal) => {
+      const userToken = Object.assign(jest.fn().mockResolvedValue(personal ? 'gho_user' : null), {
+        reject: jest.fn().mockResolvedValue(undefined),
+      });
+      const { run, res } = setup({
+        settings: personal ? connectable : enabled,
+        env: { ...oauthEnv, GH_TOKEN: 'ghp_server' },
+        lookup: jest.fn().mockResolvedValue({ ok: false, error: { code: 'CREDENTIAL_REJECTED' } }),
+        userToken,
+      });
+      await run();
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'UPSTREAM_ERROR' }));
+      if (personal) {
+        expect(userToken.reject).toHaveBeenCalledWith('u1', expect.anything(), 'gho_user');
+      } else {
+        expect(userToken.reject).not.toHaveBeenCalled();
+      }
+    });
+
+    it("falls back to the server's token, still held to its list, for a user who has not connected", async () => {
+      const { run, lookup, res } = setup({
+        settings: connectable,
+        env: { ...oauthEnv, GH_TOKEN: 'ghp_server' },
+        laneGit: { branch: 'feat/x', head: 'c0ffee1', repo: 'elsewhere/private' },
+        userToken: jest.fn().mockResolvedValue(null),
+      });
+      await run();
+      expect(lookup).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith({ pullRequest: null });
+    });
+
+    it('answers no pull request, not a configuration error, when nothing can look up', async () => {
+      const { run, lookup, res } = setup({
+        settings: connectable,
+        env: oauthEnv,
+        userToken: jest.fn().mockResolvedValue(null),
+      });
+      await run();
+      expect(lookup).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({ pullRequest: null });
+    });
+
+    it("does not read the user's token while the feature is turned off", async () => {
+      const userToken = jest.fn().mockResolvedValue('gho_user');
+      const { run, res } = setup({
+        settings: { ...connectable, enabled: false },
+        env: { ...oauthEnv, GH_TOKEN: 'ghp_server' },
+        userToken,
+      });
+      await run();
+      expect(userToken).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith({ pullRequest: null });
+    });
+
+    it.each([
+      ['no lane', null],
+      ['a lane without a branch', { branch: null, head: 'c0ffee1', repo: 'o/r' }],
+    ])(
+      "answers no pull request for %s without reading the user's token",
+      async (_label, laneGit) => {
+        const userToken = jest.fn().mockRejectedValue(new Error('key unavailable'));
+        const { run, lookup, res } = setup({
+          settings: connectable,
+          env: { ...oauthEnv, GH_TOKEN: 'ghp_server' },
+          laneGit: laneGit as Lane,
+          userToken,
+        });
+        await run();
+        expect(userToken).not.toHaveBeenCalled();
+        expect(lookup).not.toHaveBeenCalled();
+        expect(res.status).toHaveBeenCalledWith(200);
+        expect(res.json).toHaveBeenCalledWith({ pullRequest: null });
+      },
+    );
+
+    it("answers unavailable, not the server's token or no pull request, when the user's cannot be read", async () => {
+      const { run, lookup, res } = setup({
+        settings: connectable,
+        env: { ...oauthEnv, GH_TOKEN: 'ghp_server' },
+        userToken: jest.fn().mockRejectedValue(new Error('mongodb://secret@host')),
+      });
+      await run();
+      expect(lookup).not.toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ code: 'UPSTREAM_ERROR' }));
+      expect(JSON.stringify(res.json.mock.calls)).not.toContain('secret@host');
+    });
   });
 
   it('looks a GitLab lane up with the GitLab token on the GitLab host', async () => {
@@ -192,7 +332,7 @@ describe('createConversationPullRequestHandler', () => {
 
   it('passes the pull request the conversation linked to', async () => {
     const { run, lookup } = setup({
-      laneGit: { branch: 'feat/x', head: null, repo: 'o/r', pullRequest: 7 },
+      laneGit: { branch: 'feat/x', head: 'c0ffee1', repo: 'o/r', pullRequest: 7 },
     });
     await run();
     expect(lookup).toHaveBeenCalledWith(expect.objectContaining({ pullRequest: 7 }));
@@ -275,7 +415,7 @@ describe('createConversationPullRequestHandler', () => {
   });
 
   describe('allowAllRepositories', () => {
-    const lane = { branch: 'feat/x', head: null, repo: 'someone/else' };
+    const lane = { branch: 'feat/x', head: 'c0ffee1', repo: 'someone/else' };
     const open = { allowAllRepositories: true };
 
     it('looks up a repository nobody listed, when the administrator opted in', async () => {
@@ -310,7 +450,7 @@ describe('createConversationPullRequestHandler', () => {
   });
 
   describe('repository allowlist', () => {
-    const lane = (repo: string) => ({ branch: 'feat/x', head: null, repo });
+    const lane = (repo: string) => ({ branch: 'feat/x', head: 'c0ffee1', repo });
 
     it.each([
       ['an exact match', ['o/r'], 'o/r'],
@@ -374,7 +514,7 @@ describe('createConversationPullRequestHandler', () => {
     );
     const getConvoLaneGit = jest.fn(async () => {
       order.push('lane:start');
-      return { branch: 'feat/x', head: null, repo: 'o/r' };
+      return { branch: 'feat/x', head: 'c0ffee1', repo: 'o/r' };
     });
     const handler = createConversationPullRequestHandler({
       getConvoLaneGit,
@@ -397,8 +537,8 @@ describe('createConversationPullRequestHandler', () => {
 
   it.each([
     ['no stored lane', null],
-    ['a detached lane', { branch: null, head: null, repo: 'o/r' }],
-    ['a lane with no repository', { branch: 'main', head: null }],
+    ['a detached lane', { branch: null, head: 'c0ffee1', repo: 'o/r' }],
+    ['a lane with no repository', { branch: 'main', head: 'c0ffee1' }],
   ])('answers null for %s without calling GitHub', async (_label, laneGit) => {
     const { run, res, lookup } = setup({ laneGit });
     await run();
@@ -468,7 +608,7 @@ describe('createConversationPullRequestsHandler', () => {
   };
   const lane = (conversationId: string, repo = 'o/r', branch = `feat/${conversationId}`): Row => ({
     conversationId,
-    laneGit: { branch, head: null, repo },
+    laneGit: { branch, head: 'c0ffee1', repo },
   });
 
   function batch(
@@ -477,17 +617,25 @@ describe('createConversationPullRequestsHandler', () => {
       lanes?: Row[];
       lookup?: jest.Mock;
       env?: Record<string, string | undefined>;
+      userToken?: jest.Mock;
+      /** Answers the config read only when this resolves. */
+      configGate?: Promise<void>;
     } = {},
   ) {
     const settings = options.settings === undefined ? enabled : (options.settings ?? undefined);
     const lanes = options.lanes ?? [lane('a'), lane('b')];
+    const gate = options.configGate;
     const lookup = options.lookup ?? jest.fn().mockResolvedValue({ ok: true, value: pr });
     const getConvosLaneGit = jest.fn().mockResolvedValue(lanes);
     const handler = createConversationPullRequestsHandler({
       getConvosLaneGit,
-      getAppConfig: jest.fn().mockResolvedValue(configWith(settings)),
+      getAppConfig: jest.fn().mockImplementation(async () => {
+        await gate;
+        return configWith(settings);
+      }),
       lookup,
       env: options.env ?? { GH_TOKEN: 'ghp_secret' },
+      ...(options.userToken ? { userToken: options.userToken } : {}),
     });
     const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
     const run = (...args: [body?: unknown, user?: string | null]) => {
@@ -501,6 +649,165 @@ describe('createConversationPullRequestsHandler', () => {
     };
     return { run, res, lookup, getConvosLaneGit };
   }
+
+  describe('a token read the request no longer waits for', () => {
+    const connectable = {
+      ...enabled,
+      oauth: { clientId: '${GH_CLIENT_ID}', clientSecret: '${GH_CLIENT_SECRET}' },
+    };
+    const env = { GH_CLIENT_ID: 'id', GH_CLIENT_SECRET: 'secret' };
+
+    it('is not started once the configured deadline has passed', async () => {
+      let open: () => void = () => undefined;
+      const configGate = new Promise<void>((resolve) => (open = resolve));
+      const userToken = jest.fn().mockResolvedValue('gho_user');
+      const { run, res } = batch({
+        settings: { ...connectable, batchTimeoutSeconds: 1 },
+        env,
+        userToken,
+        configGate,
+      });
+      const running = run();
+      await new Promise((resolve) => setTimeout(resolve, 1_100));
+      open();
+      await running;
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(res.status).toHaveBeenCalledWith(503);
+      expect(userToken).not.toHaveBeenCalled();
+    });
+
+    it('is not started after the request was answered for a config read that took too long', async () => {
+      jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+      try {
+        let open: () => void = () => undefined;
+        const configGate = new Promise<void>((resolve) => (open = resolve));
+        const userToken = jest.fn().mockResolvedValue('gho_user');
+        const { run, res } = batch({
+          settings: { ...connectable, batchTimeoutSeconds: 120 },
+          env,
+          userToken,
+          configGate,
+        });
+        const running = run();
+        await jest.advanceTimersByTimeAsync(20_001);
+        await running;
+        expect(res.status).toHaveBeenCalledWith(503);
+        /** The config arrives within its own, longer deadline, but nobody is waiting any more. */
+        open();
+        for (let i = 0; i < 5; i++) await new Promise((resolve) => setImmediate(resolve));
+        expect(userToken).not.toHaveBeenCalled();
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+  });
+
+  it("looks the batch up with the user's own token", async () => {
+    const { run, lookup } = batch({
+      settings: {
+        ...enabled,
+        token: undefined,
+        oauth: { clientId: '${GH_CLIENT_ID}', clientSecret: '${GH_CLIENT_SECRET}' },
+      },
+      env: { GH_CLIENT_ID: 'id', GH_CLIENT_SECRET: 'secret' },
+      userToken: jest.fn().mockResolvedValue('gho_user'),
+    });
+    await run({ conversationIds: ['a', 'b'] });
+    expect(lookup).toHaveBeenCalledWith(expect.objectContaining({ token: 'gho_user' }));
+  });
+
+  it("does not read the user's token for a batch whose lanes have no commit yet", async () => {
+    const userToken = jest.fn().mockResolvedValue('gho_user');
+    const { run } = batch({
+      settings: {
+        ...enabled,
+        token: undefined,
+        oauth: { clientId: '${GH_CLIENT_ID}', clientSecret: '${GH_CLIENT_SECRET}' },
+      },
+      env: { GH_CLIENT_ID: 'id', GH_CLIENT_SECRET: 'secret' },
+      lanes: [{ conversationId: 'a', laneGit: { branch: 'feat/a', head: null, repo: 'o/r' } }],
+      userToken,
+    });
+    await run({ conversationIds: ['a'] });
+    expect(userToken).not.toHaveBeenCalled();
+  });
+
+  it("does not read the user's token for a batch while the feature is turned off", async () => {
+    const userToken = jest.fn().mockResolvedValue('gho_user');
+    const { run } = batch({
+      settings: {
+        ...enabled,
+        enabled: false,
+        oauth: { clientId: '${GH_CLIENT_ID}', clientSecret: '${GH_CLIENT_SECRET}' },
+      },
+      env: { GH_CLIENT_ID: 'id', GH_CLIENT_SECRET: 'secret' },
+      userToken,
+    });
+    await run({ conversationIds: ['a', 'b'] });
+    expect(userToken).not.toHaveBeenCalled();
+  });
+
+  it("does not read the user's token for a batch with no lane to look up", async () => {
+    const userToken = jest.fn().mockResolvedValue('gho_user');
+    const { run, res } = batch({
+      settings: {
+        ...enabled,
+        oauth: { clientId: '${GH_CLIENT_ID}', clientSecret: '${GH_CLIENT_SECRET}' },
+      },
+      env: { GH_CLIENT_ID: 'id', GH_CLIENT_SECRET: 'secret' },
+      lanes: [{ conversationId: 'b', laneGit: { branch: null, head: 'c0ffee1' } }],
+      userToken,
+    });
+    await run({ conversationIds: ['a', 'b'] });
+    expect(userToken).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it("invalidates the user's own token when a batch lookup is refused with it", async () => {
+    const userToken = Object.assign(jest.fn().mockResolvedValue('gho_user'), {
+      reject: jest.fn().mockResolvedValue(undefined),
+    });
+    const { run, res } = batch({
+      settings: {
+        ...enabled,
+        oauth: { clientId: '${GH_CLIENT_ID}', clientSecret: '${GH_CLIENT_SECRET}' },
+      },
+      env: { GH_CLIENT_ID: 'id', GH_CLIENT_SECRET: 'secret' },
+      lanes: [lane('a', 'o/r')],
+      lookup: jest.fn().mockResolvedValue({ ok: false, error: { code: 'CREDENTIAL_REJECTED' } }),
+      userToken,
+    });
+    await run({ conversationIds: ['a'] });
+    expect(userToken.reject).toHaveBeenCalledTimes(1);
+    expect(userToken.reject).toHaveBeenCalledWith('u1', expect.anything(), 'gho_user');
+    expect(res.json).toHaveBeenCalledWith({
+      results: [{ conversationId: 'a', error: { code: 'UPSTREAM_ERROR' } }],
+    });
+  });
+
+  it("answers the batch's lanes unavailable when the user's own token cannot be read", async () => {
+    const { run, lookup, res } = batch({
+      settings: {
+        ...enabled,
+        oauth: { clientId: '${GH_CLIENT_ID}', clientSecret: '${GH_CLIENT_SECRET}' },
+      },
+      env: { GH_CLIENT_ID: 'id', GH_CLIENT_SECRET: 'secret', GH_TOKEN: 'ghp_server' },
+      lanes: [
+        lane('a', 'elsewhere/private'),
+        { conversationId: 'b', laneGit: { branch: null, head: 'c0ffee1' } },
+      ],
+      userToken: jest.fn().mockRejectedValue(new Error('refresh timed out')),
+    });
+    await run({ conversationIds: ['a', 'b'] });
+    expect(lookup).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      results: [
+        { conversationId: 'a', error: { code: 'UPSTREAM_ERROR' } },
+        { conversationId: 'b', pullRequest: null },
+      ],
+    });
+  });
 
   it('takes the host from the operator config for the batch too', async () => {
     const lookup = jest.fn().mockResolvedValue({ ok: true, value: pr });
@@ -525,7 +832,7 @@ describe('createConversationPullRequestsHandler', () => {
   it('keeps conversations on one lane apart when they linked different pull requests', async () => {
     const linked = (conversationId: string, pullRequest: number) => ({
       conversationId,
-      laneGit: { branch: 'feat/x', head: null, repo: 'o/r', pullRequest },
+      laneGit: { branch: 'feat/x', head: 'c0ffee1', repo: 'o/r', pullRequest },
     });
     const { run, lookup } = batch({ lanes: [linked('a', 7), linked('b', 9)] });
     await run({ conversationIds: ['a', 'b'] });
@@ -538,7 +845,10 @@ describe('createConversationPullRequestsHandler', () => {
     const { run, lookup } = batch({
       settings: { allowAllRepositories: true },
       lanes: [
-        { conversationId: 'a', laneGit: { branch: 'feat/x', head: null, repo: 'someone/else' } },
+        {
+          conversationId: 'a',
+          laneGit: { branch: 'feat/x', head: 'c0ffee1', repo: 'someone/else' },
+        },
       ],
       env: { GITHUB_TOKEN: 'ghp_deploy' },
     });
@@ -1240,7 +1550,7 @@ describe('createConversationPullRequestsHandler', () => {
   });
 
   it('uses the same lookup input as the single route', async () => {
-    const single = setup({ laneGit: { branch: 'feat/a', head: null, repo: 'o/r' } });
+    const single = setup({ laneGit: { branch: 'feat/a', head: 'c0ffee1', repo: 'o/r' } });
     await single.run();
     const many = batch({ lanes: [lane('a')] });
     await many.run({ conversationIds: ['a'] });

@@ -98,7 +98,6 @@ jest.mock('../Assistants/useAssistantListMap', () => ({
   default: () => ({}),
 }));
 jest.mock('../Files/useFileHandling', () => ({ clearUploadRecovery: jest.fn() }));
-jest.mock('../useChatBadges', () => ({ useResetChatBadges: () => jest.fn() }));
 jest.mock('../Agents', () => ({ useApplyModelSpecEffects: () => jest.fn() }));
 jest.mock('../Audio', () => ({ usePauseGlobalAudio: () => ({ pauseGlobalAudio: jest.fn() }) }));
 jest.mock('~/Providers', () => ({ useAgentsMapContext: () => ({}) }));

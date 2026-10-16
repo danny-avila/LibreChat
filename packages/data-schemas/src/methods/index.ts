@@ -18,6 +18,7 @@ import {
   createOpenIDRefreshFlightMethods,
   type OpenIDRefreshFlightMethods,
 } from './openidRefreshFlight';
+import { createResourceLockMethods, type ResourceLockMethods } from './resourceLock';
 export {
   createMCPAuthorizationFenceRetryStorage,
   type MCPAuthorizationFenceRetryStorage,
@@ -30,6 +31,7 @@ import { createSessionMethods, DEFAULT_REFRESH_TOKEN_EXPIRY, type SessionMethods
 import { createPasskeyMethods, type PasskeyMethods } from './passkey';
 import { createUserMethods, DEFAULT_SESSION_EXPIRY, type UserMethods } from './user';
 import { createTokenMethods, type TokenMethods } from './token';
+import { createTokenListMethods, type TokenListMethods } from './tokenList';
 import { createRoleMethods, RoleConflictError } from './role';
 import { createKeyMethods, type KeyMethods } from './key';
 import { createFileMethods } from './file';
@@ -252,8 +254,10 @@ export type AllMethods = ToolApprovalGrantStorage &
   UserMethods &
   SessionMethods &
   TokenMethods &
+  TokenListMethods &
   RefreshTokenBridgeMethods &
   OpenIDRefreshFlightMethods &
+  ResourceLockMethods &
   PasskeyMethods &
   RoleMethods &
   KeyMethods &
@@ -490,8 +494,10 @@ export function createMethods(
     ...createToolApprovalGrantMethods(mongoose),
     ...createSessionMethods(mongoose),
     ...createTokenMethods(mongoose),
+    ...createTokenListMethods(mongoose),
     ...createRefreshTokenBridgeMethods(mongoose),
     ...createOpenIDRefreshFlightMethods(mongoose),
+    ...createResourceLockMethods(mongoose),
     ...createPasskeyMethods(mongoose),
     ...roleMethods,
     ...createKeyMethods(mongoose),
@@ -500,7 +506,9 @@ export function createMethods(
     ...createToolFavoriteMethods(mongoose),
     ...createAgentCategoryMethods(mongoose),
     ...createAgentApiKeyMethods(mongoose),
-    ...createMCPServerMethods(mongoose),
+    ...createMCPServerMethods(mongoose, {
+      getSoleOwnedResourceIds: aclEntryMethods.getSoleOwnedResourceIds,
+    }),
     ...createCodeEnvironmentMethods(mongoose),
     ...createAccessRoleMethods(mongoose),
     ...userGroupMethods,
@@ -558,6 +566,7 @@ export type {
   TokenMethods,
   RefreshTokenBridgeMethods,
   OpenIDRefreshFlightMethods,
+  ResourceLockMethods,
   RoleMethods,
   KeyMethods,
   MemoryMethods,
