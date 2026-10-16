@@ -3850,12 +3850,14 @@ describe('Conversation Operations', () => {
     });
 
     it('removes the PR automation record of a root that a previous attempt already deleted', async () => {
+      /** The reaper judges the owner too, so the record names a real account id. */
+      const owner = new mongoose.Types.ObjectId().toString();
       const rootId = uuidv4();
       const childId = uuidv4();
       const PRAutomation = mongoose.models.PRAutomation;
       await Conversation.create({
         conversationId: childId,
-        user: 'user123',
+        user: owner,
         endpoint: EModelEndpoint.agents,
         subagentThread: {
           rootConversationId: rootId,
@@ -3867,9 +3869,9 @@ describe('Conversation Operations', () => {
           depth: 1,
         },
       });
-      await PRAutomation.create({ user: 'user123', conversationId: rootId });
+      await PRAutomation.create({ user: owner, conversationId: rootId });
 
-      await deleteConvos('user123', { conversationId: rootId }, { allowEmpty: true });
+      await deleteConvos(owner, { conversationId: rootId }, { allowEmpty: true });
 
       expect(await PRAutomation.countDocuments({ conversationId: rootId })).toBe(0);
     });

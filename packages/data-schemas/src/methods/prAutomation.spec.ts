@@ -512,6 +512,17 @@ describe('a conversation deleted and saved again under the same id', () => {
     expect(renewed?.epoch).not.toBe(before?.epoch);
   });
 
+  test('reaps only the listed records whose conversation is gone', async () => {
+    await enable(pullOne);
+    const orphan = { userId, conversationId: 'orphan-1' };
+    await PRAutomation.create({ user: userId, conversationId: orphan.conversationId });
+    expect(
+      await methods.reapPRAutomationsOf(userId, [key.conversationId, orphan.conversationId]),
+    ).toBe(1);
+    expect(await methods.getPRAutomation(key)).not.toBeNull();
+    expect(await methods.getPRAutomation(orphan)).toBeNull();
+  });
+
   test('starts a new run for the new conversation when enabled', async () => {
     await enableWith({ ...key, binding: pullOne, trust: 'anyone' });
     await addBot(7);
@@ -734,6 +745,32 @@ describe('enabling for a conversation or owner that no longer exists', () => {
     expect(versions.every((version, index) => index === 0 || version > versions[index - 1])).toBe(
       true,
     );
+  });
+
+  test('does not write over a record disabled and enabled again after its read', async () => {
+    await enable(pullOne);
+    const before = await methods.getPRAutomation(key);
+    const spy = interleave(
+      async () => {
+        await methods.disablePRAutomation(key);
+        await enable(pullOne);
+      },
+      PRAutomation,
+      'findOne',
+    );
+    try {
+      expect(await enableOpen({ ...key, binding: pullTwo })).toEqual({
+        ok: false,
+        error: { code: 'conflict' },
+      });
+    } finally {
+      spy.mockRestore();
+    }
+    const renewed = await methods.getPRAutomation(key);
+    expect(renewed?.version).toBe(before?.version);
+    expect(renewed).toMatchObject(pullOne);
+    expect(renewed?.pending).toBeUndefined();
+    expect((await claim(1)).ok).toBe(true);
   });
 
   test('keeps a user stop that lands while a rejected enable rolls back', async () => {

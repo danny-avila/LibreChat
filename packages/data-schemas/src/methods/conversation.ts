@@ -4185,8 +4185,9 @@ export function createConversationMethods(
       ];
 
       if (recoveryConversationIds.length > 0) {
+        /** The deleted documents are unknown here, so only records whose conversation is gone go. */
         await retryCascadeOperation(() =>
-          prAutomation.deletePRAutomations(user, recoveryConversationIds),
+          prAutomation.reapPRAutomationsOf(user, recoveryConversationIds),
         ).catch((error) =>
           logger.warn('[deleteConvos] PR automation cleanup deferred to its next claim', error),
         );

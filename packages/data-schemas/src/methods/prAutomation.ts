@@ -9,7 +9,7 @@ import {
 import type { PRAutomationTrustLevel } from 'librechat-data-provider';
 import type { PRAutomationStopCode } from 'librechat-data-provider';
 import type { PRAutomationState } from 'librechat-data-provider';
-import type { PipelineStage, Types } from 'mongoose';
+import type { PipelineStage } from 'mongoose';
 import type * as t from '~/types/prAutomation';
 import { isValidObjectIdString } from '~/utils/objectId';
 import { createIndexesWithRetry } from '~/utils/retry';
@@ -55,6 +55,20 @@ const BUMP = { $inc: { version: 1 } };
  * enabled again starts its count over, so a fence names the document `_id` as well.
  */
 type RecordFence = { _id: unknown; version: number };
+const REAP_FIELDS = {
+  _id: 1,
+  user: 1,
+  tenantId: 1,
+  conversationId: 1,
+  conversationRef: 1,
+  version: 1,
+};
+type ReapCandidate = RecordFence & {
+  user: string;
+  tenantId?: string;
+  conversationId: string;
+  conversationRef?: string;
+};
 /** GitHub compares `owner/name` without case, so records store and match the lower case form. */
 const canonicalRepository = (repository: string) => repository.toLowerCase();
 const LINK_FIELDS = [
@@ -142,6 +156,7 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
     conversationRefs?: string[],
   ) => Promise<void>;
   reapPRAutomations: (params?: t.ReapPRAutomationsParams) => Promise<t.ReapPRAutomationsResult>;
+  reapPRAutomationsOf: (userId: string, conversationIds: string[]) => Promise<number>;
   setPRAutomationTrust: (
     key: t.PRAutomationKey,
     trust: PRAutomationTrustLevel,
@@ -411,7 +426,7 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
     } else if (replaced) {
       written = observed.version + 1;
       const applied = await PRAutomation.replaceOne(
-        { ...filter, version: observed.version },
+        { ...filter, _id: observed._id, version: observed.version },
         {
           ...fresh(written),
           ...(observed.tenantId != null && { tenantId: observed.tenantId }),
@@ -430,7 +445,7 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
       const update: { $set?: Record<string, unknown>; $unset?: Record<string, string> } =
         restart ?? (narrowed === observed.trust ? {} : { $set: { trust: narrowed } });
       const applied = await PRAutomation.updateOne(
-        { ...filter, version: observed.version },
+        { ...filter, _id: observed._id, version: observed.version },
         { ...update, $set: { ...update.$set, conversationRef }, ...BUMP },
         { runValidators: true },
       );
@@ -791,49 +806,68 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
     after,
     limit = 100,
   }: t.ReapPRAutomationsParams = {}): Promise<t.ReapPRAutomationsResult> {
-    const PRAutomation = mongoose.models.PRAutomation;
-    const page = await PRAutomation.find(after == null ? {} : { _id: { $gt: after } })
+    const page = await mongoose.models.PRAutomation.find(
+      after == null ? {} : { _id: { $gt: after } },
+    )
       .sort({ _id: 1 })
       .limit(limit)
-      .select({ _id: 1, user: 1, tenantId: 1, conversationId: 1, conversationRef: 1, version: 1 })
-      .lean<
-        Array<{
-          _id: Types.ObjectId;
-          user: string;
-          tenantId?: string;
-          conversationId: string;
-          conversationRef?: string;
-          version: number;
-        }>
-      >();
-    const reap = async (record: (typeof page)[number]): Promise<number> => {
-      const key = { userId: String(record.user), conversationId: record.conversationId };
-      const scope = { tenantId: record.tenantId, conversationRef: record.conversationRef };
-      if (!isGone(await checkLiveness(key, scope))) {
-        return 0;
-      }
-      /** A record written after the check, a renewed enable included, has a new version. */
-      const result = await PRAutomation.deleteOne({
-        _id: record._id,
-        ...keyFilter(key),
-        version: record.version,
-      });
-      return result.deletedCount;
-    };
-    let removed = 0;
-    /** A few checks at a time, so a large page neither runs serially nor floods the database. */
-    for (let start = 0; start < page.length; start += REAP_CONCURRENCY) {
-      const counts = await Promise.all(page.slice(start, start + REAP_CONCURRENCY).map(reap));
-      for (const count of counts) {
-        removed += count;
-      }
-    }
+      .select(REAP_FIELDS)
+      .lean<ReapCandidate[]>();
+    const removed = await reapCandidates(page);
     const last = page.length === limit ? page[page.length - 1] : undefined;
     return {
       scanned: page.length,
       removed,
       ...(last == null ? {} : { next: String(last._id) }),
     };
+  }
+
+  /**
+   * Reaps the records of the listed conversations only, for a cleanup that knows the ids but
+   * not the conversation documents they belonged to: a record whose conversation was saved again
+   * under the same id belongs to the new one, is live, and is kept.
+   */
+  async function reapPRAutomationsOf(userId: string, conversationIds: string[]): Promise<number> {
+    let removed = 0;
+    for (let start = 0; start < conversationIds.length; start += DELETE_BATCH) {
+      const records = await mongoose.models.PRAutomation.find({
+        user: userId,
+        conversationId: { $in: conversationIds.slice(start, start + DELETE_BATCH) },
+      })
+        .select(REAP_FIELDS)
+        .lean<ReapCandidate[]>();
+      removed += await reapCandidates(records);
+    }
+    return removed;
+  }
+
+  /** Checks a few records at a time, so a large batch neither runs serially nor floods the database. */
+  async function reapCandidates(records: ReapCandidate[]): Promise<number> {
+    let removed = 0;
+    for (let start = 0; start < records.length; start += REAP_CONCURRENCY) {
+      const counts = await Promise.all(
+        records.slice(start, start + REAP_CONCURRENCY).map(reapCandidate),
+      );
+      for (const count of counts) {
+        removed += count;
+      }
+    }
+    return removed;
+  }
+
+  async function reapCandidate(record: ReapCandidate): Promise<number> {
+    const key = { userId: String(record.user), conversationId: record.conversationId };
+    const scope = { tenantId: record.tenantId, conversationRef: record.conversationRef };
+    if (!isGone(await checkLiveness(key, scope))) {
+      return 0;
+    }
+    /** A record written after the check, a renewed enable included, has a new version. */
+    const result = await mongoose.models.PRAutomation.deleteOne({
+      _id: record._id,
+      ...keyFilter(key),
+      version: record.version,
+    });
+    return result.deletedCount;
   }
 
   /** `maxTrust` is the administrator ceiling; a wider request is stored as the ceiling. */
@@ -924,6 +958,7 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
     stopPRAutomation,
     deletePRAutomations,
     reapPRAutomations,
+    reapPRAutomationsOf,
     setPRAutomationTrust,
     addPRAutomationBot,
     removePRAutomationBot,
