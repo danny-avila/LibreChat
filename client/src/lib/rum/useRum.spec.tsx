@@ -153,7 +153,8 @@ describe('useRum', () => {
           url: '/api/rum',
           serviceName: 'librechat-web',
           authMode: 'proxy',
-          disableReplay: false,
+          sessionReplay: { enabled: true },
+          disableReplay: true,
         },
       },
     });
@@ -165,6 +166,27 @@ describe('useRum', () => {
     );
     unmount();
     expect(mockStopSessionRecorder).toHaveBeenCalledTimes(1);
+  });
+
+  it('honors an explicit replay-off policy over a legacy replay opt-in', async () => {
+    mockUseGetStartupConfig.mockReturnValue({
+      isFetched: true,
+      data: {
+        rum: {
+          provider: 'hyperdx',
+          enabled: true,
+          url: '/api/rum',
+          serviceName: 'librechat-web',
+          authMode: 'proxy',
+          sessionReplay: { enabled: false },
+          disableReplay: false,
+        },
+      },
+    });
+    renderHook(() => useRum());
+    await waitFor(() => expect(mockInit).toHaveBeenCalled());
+    expect(mockInit).toHaveBeenCalledWith(expect.objectContaining({ disableReplay: true }));
+    expect(mockResumeSessionRecorder).not.toHaveBeenCalled();
   });
 
   it('stops recording when proxy authentication is lost', async () => {
@@ -208,6 +230,32 @@ describe('useRum', () => {
     expect(mockStopSessionRecorder).toHaveBeenCalledTimes(1);
     expect(mockResumeSessionRecorder).toHaveBeenCalledTimes(1);
     expect(mockInit).toHaveBeenLastCalledWith(expect.objectContaining({ disableReplay: true }));
+  });
+
+  it('does not re-sample general RUM when replay policy changes', async () => {
+    const random = jest.spyOn(Math, 'random').mockReturnValueOnce(0.1).mockReturnValue(0.9);
+    try {
+      let rum = {
+        provider: 'hyperdx',
+        enabled: true,
+        url: '/api/rum',
+        serviceName: 'librechat-web',
+        authMode: 'proxy',
+        sessionReplay: { enabled: true },
+        sampleRate: 0.5,
+      };
+      mockUseGetStartupConfig.mockImplementation(() => ({ isFetched: true, data: { rum } }));
+      const { rerender } = renderHook(() => useRum());
+      await waitFor(() => expect(mockInit).toHaveBeenCalledTimes(1));
+      rum = { ...rum, sessionReplay: { enabled: false } };
+      rerender();
+      await waitFor(() => expect(mockInit).toHaveBeenCalledTimes(2));
+      expect(random).toHaveBeenCalledTimes(1);
+      expect(mockStopSessionRecorder).toHaveBeenCalledTimes(1);
+      expect(mockInit).toHaveBeenLastCalledWith(expect.objectContaining({ disableReplay: true }));
+    } finally {
+      random.mockRestore();
+    }
   });
 
   it('discards the early RUM queue when sampling excludes the page', async () => {
