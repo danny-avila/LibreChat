@@ -7,8 +7,8 @@
  */
 export const TOOL_ROW_CLASSES = 'relative my-1.5 flex h-5 shrink-0 items-center gap-2.5';
 
-/** Keep artifact actions clear of MessageNav's 68px hit area in full-width chat. */
-export const ARTIFACT_ROW_NAV_SPACING = 'pr-3 md:pr-20';
+/** Leave an 8px gap beside MessageNav's hit area in full-width chat. */
+export const ARTIFACT_ROW_NAV_SPACING = 'pr-3 md:pr-17';
 
 /** Behavior hook for header glyphs, independent of their layout. */
 export const FOLD_GLYPH_CLASS = 'fold-glyph';
