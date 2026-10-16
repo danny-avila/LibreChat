@@ -1356,6 +1356,35 @@ describe('reaping records the retention index left behind', () => {
     expect((await claim(1)).ok).toBe(true);
   });
 
+  test('checks a few records at a time within a page', async () => {
+    const ids = Array.from({ length: 20 }, (_, index) => `orphan-${index}`);
+    await PRAutomation.insertMany(ids.map((conversationId) => ({ user: userId, conversationId })));
+    const Conversation = mongoose.models.Conversation;
+    const original = Conversation.aggregate.bind(Conversation);
+    let inFlight = 0;
+    let peak = 0;
+    const spy = jest.spyOn(Conversation, 'aggregate').mockImplementation(((
+      ...args: Parameters<typeof Conversation.aggregate>
+    ) => {
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      const query = original(...args);
+      const exec = query.exec.bind(query);
+      query.exec = (() =>
+        exec().finally(() => {
+          inFlight--;
+        })) as typeof query.exec;
+      return query;
+    }) as typeof Conversation.aggregate);
+    try {
+      expect(await methods.reapPRAutomations()).toEqual({ scanned: 20, removed: 20 });
+    } finally {
+      spy.mockRestore();
+    }
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(8);
+  });
+
   test('pages through every record', async () => {
     const ids = Array.from({ length: 5 }, (_, index) => `orphan-${index}`);
     await PRAutomation.insertMany(ids.map((conversationId) => ({ user: userId, conversationId })));

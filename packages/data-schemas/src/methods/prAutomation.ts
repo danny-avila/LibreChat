@@ -20,6 +20,8 @@ const DELETE_BATCH = 1000;
 /** A full SHA-1 or SHA-256 commit id; anything else is refused before it is stored. */
 const COMMIT_SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i;
 const DUPLICATE_KEY = 11000;
+/** Liveness checks the reaper runs at once within a page. */
+const REAP_CONCURRENCY = 8;
 
 /**
  * `owner_inactive` is an account deletion in progress, which can still be cancelled, so the
@@ -740,11 +742,10 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
           version: number;
         }>
       >();
-    let removed = 0;
-    for (const record of page) {
+    const reap = async (record: (typeof page)[number]): Promise<number> => {
       const key = { userId: String(record.user), conversationId: record.conversationId };
       if (!isGone(await checkLiveness(key, { tenantId: record.tenantId }))) {
-        continue;
+        return 0;
       }
       /** A record written after the check, a renewed enable included, has a new version. */
       const result = await PRAutomation.deleteOne({
@@ -752,7 +753,15 @@ export function createPRAutomationMethods(mongoose: typeof import('mongoose')): 
         ...keyFilter(key),
         version: record.version,
       });
-      removed += result.deletedCount;
+      return result.deletedCount;
+    };
+    let removed = 0;
+    /** A few checks at a time, so a large page neither runs serially nor floods the database. */
+    for (let start = 0; start < page.length; start += REAP_CONCURRENCY) {
+      const counts = await Promise.all(page.slice(start, start + REAP_CONCURRENCY).map(reap));
+      for (const count of counts) {
+        removed += count;
+      }
     }
     const last = page.length === limit ? page[page.length - 1] : undefined;
     return {
