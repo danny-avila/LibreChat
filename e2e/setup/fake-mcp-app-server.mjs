@@ -77,6 +77,7 @@ const appHtml = `<!doctype html>
       <button data-testid="list-resources" type="button">List resources</button>
       <button data-testid="send-message" type="button">Send message</button>
       <button data-testid="open-link" type="button">Open permitted link</button>
+      <button data-testid="detach-view" type="button">Send pagehide signal</button>
       <button data-testid="navigate-view" type="button">Navigate away from App</button>
       <output data-testid="operation"></output>
     </main>
@@ -158,6 +159,9 @@ const appHtml = `<!doctype html>
         });
         return 'message-sent';
       }));
+      byTestId('detach-view').addEventListener('click', () =>
+        dispatchEvent(new PageTransitionEvent('pagehide')),
+      );
       byTestId('navigate-view').addEventListener('click', () => location.replace('about:blank'));
       byTestId('open-link').addEventListener('click', () => run(async () => {
         return app.openLink({ url: '${LINK_ORIGIN}/opened' });
