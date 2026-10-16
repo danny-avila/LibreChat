@@ -1,13 +1,15 @@
 import React from 'react';
+import { RecoilRoot } from 'recoil';
 import { Constants } from 'librechat-data-provider';
 import { useAtomValue, useSetAtom, getDefaultStore } from 'jotai';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { RecoilRoot, useSetRecoilState, useRecoilValue } from 'recoil';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   resetSteerFamilies,
   activeGenerationCreatedAtByConvoId,
   activeGenerationProtocolVersionByConvoId,
+  submissionByIndex,
+  clearSubmissions,
 } from '@librechat/chat/react';
 import type { TSubmission, TConversation } from 'librechat-data-provider';
 import type { DrainAfterAbort, RunEnd } from '~/hooks/Chat/queue';
@@ -77,10 +79,10 @@ function setup() {
     const cleanup = useAbortCleanup(INDEX);
     handles.captureSubmission = cleanup.captureSubmission;
     handles.clearSubmissionsUnlessReplaced = cleanup.clearSubmissionsUnlessReplaced;
-    handles.setSubmission = useSetRecoilState(store.submissionByIndex(INDEX));
-    handles.setOtherSubmission = useSetRecoilState(store.submissionByIndex(OTHER_INDEX));
-    current.submission = useRecoilValue(store.submissionByIndex(INDEX));
-    current.otherSubmission = useRecoilValue(store.submissionByIndex(OTHER_INDEX));
+    handles.setSubmission = useSetAtom(submissionByIndex(INDEX));
+    handles.setOtherSubmission = useSetAtom(submissionByIndex(OTHER_INDEX));
+    current.submission = useAtomValue(submissionByIndex(INDEX));
+    current.otherSubmission = useAtomValue(submissionByIndex(OTHER_INDEX));
     return null;
   }
 
@@ -102,6 +104,10 @@ function setup() {
 beforeEach(() => {
   resetQueueFamilies();
   resetSteerFamilies();
+});
+
+afterEach(() => {
+  clearSubmissions(getDefaultStore());
 });
 
 describe('useAbortCleanup', () => {
@@ -199,7 +205,7 @@ describe('useChatHelpers stopGenerating (abort steer targeting)', () => {
     let setDrainAfterAbort: ((value: DrainAfterAbort | false) => void) | undefined;
     const stoppedSubmission = submission('stopped-run');
     function RunEndProbe() {
-      currentSubmission = useRecoilValue(store.submissionByIndex(INDEX));
+      currentSubmission = useAtomValue(submissionByIndex(INDEX));
       observed.runEnd = useAtomValue(runEndByIndex(INDEX));
       observed.drainAfterAbort = useAtomValue(drainAfterAbortByIndex(INDEX));
       setDrainAfterAbort = useSetAtom(drainAfterAbortByIndex(INDEX));
@@ -211,7 +217,7 @@ describe('useChatHelpers stopGenerating (abort steer targeting)', () => {
         <RecoilRoot
           initializeState={({ set }) => {
             set(store.conversationKeysAtom, [INDEX]);
-            set(store.submissionByIndex(INDEX), stoppedSubmission);
+            getDefaultStore().set(submissionByIndex(INDEX), stoppedSubmission);
             set(store.conversationByIndex(INDEX), {
               conversationId,
               endpoint: 'agents',

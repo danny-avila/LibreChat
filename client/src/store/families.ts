@@ -3,7 +3,6 @@ import { createSearchParams } from 'react-router-dom';
 import { LocalStorageKeys, isEphemeralAgentId, Constants } from 'librechat-data-provider';
 import {
   atom,
-  selector,
   atomFamily,
   DefaultValue,
   selectorFamily,
@@ -11,7 +10,7 @@ import {
   useSetRecoilState,
   useRecoilCallback,
 } from 'recoil';
-import type { EModelEndpoint, TConversation, TSubmission, TPreset } from 'librechat-data-provider';
+import type { EModelEndpoint, TConversation, TPreset } from 'librechat-data-provider';
 import type { TOptionSettings, ExtendedFile } from '~/common';
 import {
   clearModelForNonEphemeralAgent,
@@ -20,19 +19,6 @@ import {
   logger,
 } from '~/utils';
 import { useSetConvoContext } from '~/Providers/SetConvoContext';
-
-const submissionByIndex = atomFamily<TSubmission | null, string | number>({
-  key: 'submissionByIndex',
-  default: null,
-});
-
-const submissionKeysSelector = selector<(string | number)[]>({
-  key: 'submissionKeysSelector',
-  get: ({ get }) => {
-    const keys = get(conversationKeysAtom);
-    return keys.filter((key) => get(submissionByIndex(key)) !== null);
-  },
-});
 
 const conversationByIndex = atomFamily<TConversation | null, string | number>({
   key: 'conversationByIndex',
@@ -305,28 +291,6 @@ function useClearConvoState() {
 
 const conversationByKeySelector = conversationByIndex;
 
-function useClearSubmissionState() {
-  const clearAllSubmissions = useRecoilCallback(
-    ({ reset, snapshot }) =>
-      async (skipFirst?: boolean) => {
-        const submissionKeys = await snapshot.getPromise(submissionKeysSelector);
-        logger.log('submissionKeys', submissionKeys);
-
-        for (const key of submissionKeys) {
-          if (skipFirst === true && key == 0) {
-            continue;
-          }
-
-          logger.log('resetting submission', key);
-          reset(submissionByIndex(key));
-        }
-      },
-    [],
-  );
-
-  return clearAllSubmissions;
-}
-
 const updateConversationSelector = selectorFamily({
   key: 'updateConversationSelector',
   get: () => () => null as Partial<TConversation> | null,
@@ -357,7 +321,6 @@ export default {
   conversationByIndex,
   filesByIndex,
   presetByIndex,
-  submissionByIndex,
   optionSettingsFamily,
   showPopoverFamily,
   conversationIdByIndex,
@@ -379,7 +342,6 @@ export default {
   globalAudioFetchingFamily,
   showPlusPopoverFamily,
   activePromptByIndex,
-  useClearSubmissionState,
   showPromptsPopoverFamily,
   pendingComposerTextByConvoId,
   updateConversationSelector,
