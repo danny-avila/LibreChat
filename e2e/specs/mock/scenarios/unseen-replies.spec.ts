@@ -578,6 +578,11 @@ test.describe('unseen replies', () => {
         await second.evaluate(() => window.dispatchEvent(new Event('blur'))).catch(() => {});
         await second.close();
       }
+      /* The reply tab may collapse the shared sidebar; observe the arrival before granting. */
+      await openSidebar(page);
+      await expect(row.locator('span[aria-hidden="true"].bg-status-info')).toBeVisible({
+        timeout: 45_000,
+      });
       await expect
         .poll(() =>
           page.evaluate(
@@ -594,13 +599,6 @@ test.describe('unseen replies', () => {
         ).__grantNotificationPermission();
       });
       await restoreUnreadBaseline(id, completedReplyAt, replyAt);
-      /* `sidebarExpanded` is stored per browser, so the reply tab's own mobile shell closed this
-         list while it was open. Looking at the list again is what a reader does, and it is where
-         the dot has to show. */
-      await openSidebar(page);
-      await expect(row.locator('span[aria-hidden="true"].bg-status-info')).toBeVisible({
-        timeout: 45_000,
-      });
       /* Other scenarios leave unseen history for this user; only this reply must notify once. */
       await expect
         .poll(() =>
