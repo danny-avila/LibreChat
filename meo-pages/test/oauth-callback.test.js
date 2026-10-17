@@ -73,7 +73,10 @@ async function exerciseSuccessfulCallback(cookieName) {
 
     assert.equal(response.status, 302);
     assert.equal(response.headers.get('Location'), flow.returnTo);
-    assert.match(response.headers.get('Set-Cookie') ?? '', /^__Host-meo-oauth=/);
+    const setCookie = response.headers.get('Set-Cookie') ?? '';
+    assert.match(setCookie, /^__Host-meo-session=/);
+    assert.doesNotMatch(setCookie, /^__Host-meo-oauth=/);
+    assert.match(setCookie, /Path=\/;/);
     assert.deepEqual(response.headers.getSetCookie?.(), [response.headers.get('Set-Cookie')]);
     assert.deepEqual(warnings, []);
   } finally {
