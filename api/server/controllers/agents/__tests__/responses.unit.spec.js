@@ -203,6 +203,7 @@ jest.mock('@librechat/api', () => ({
   getConversationWriteContext: (...args) =>
     jest.requireActual('@librechat/api').getConversationWriteContext(...args),
   isTemporaryTurn: (...args) => jest.requireActual('@librechat/api').isTemporaryTurn(...args),
+  getModelEndUsage: (...args) => jest.requireActual('@librechat/api').getModelEndUsage(...args),
   announceReply: jest.fn().mockResolvedValue(undefined),
   /* Provisioning moved into this package; the controllers build the callback from it. */
   createProvisionFilesCallback: () => async () => {},

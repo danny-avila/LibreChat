@@ -58,6 +58,41 @@ const MCP_LINK_APP_MARKER = 'E2E_MCP_LINK_APP:';
 const MCP_LEGACY_MARKER = 'E2E_MCP_LEGACY:';
 const MCP_LEGACY_MIMELESS_MARKER = 'E2E_MCP_LEGACY_MIMELESS:';
 const MCP_LEGACY_ACTION_MARKER = 'E2E_LEGACY_ACTION';
+/** `E2E_CACHE_USAGE: 1h` or `5m`: the final usage reports Anthropic-style cache
+ *  writes (3000, of which 2000 are 1-hour for `1h`) and 500 cache reads, with
+ *  the TTL split on `response_metadata.usage` where the agents SDK leaves it. */
+const CACHE_USAGE_MARKER = 'E2E_CACHE_USAGE:';
+const CACHE_USAGE_WRITES = 3000;
+const CACHE_USAGE_READS = 500;
+
+function cacheUsageFields(messages, input_tokens, output_tokens) {
+  const ttl = getMarkerValue(getLatestUserText(messages), CACHE_USAGE_MARKER);
+  if (ttl !== '1h' && ttl !== '5m') {
+    return {
+      usage_metadata: { input_tokens, output_tokens, total_tokens: input_tokens + output_tokens },
+    };
+  }
+  const oneHour = ttl === '1h' ? 2000 : 0;
+  const cachedInput = input_tokens + CACHE_USAGE_WRITES + CACHE_USAGE_READS;
+  return {
+    usage_metadata: {
+      input_tokens: cachedInput,
+      output_tokens,
+      total_tokens: cachedInput + output_tokens,
+      input_token_details: { cache_creation: CACHE_USAGE_WRITES, cache_read: CACHE_USAGE_READS },
+    },
+    response_metadata: {
+      usage: {
+        cache_creation_input_tokens: CACHE_USAGE_WRITES,
+        cache_read_input_tokens: CACHE_USAGE_READS,
+        cache_creation: {
+          ephemeral_5m_input_tokens: CACHE_USAGE_WRITES - oneHour,
+          ephemeral_1h_input_tokens: oneHour,
+        },
+      },
+    },
+  };
+}
 const STEER_SPLIT_REPLY_MARKER = 'E2E_STEER_SPLIT_REPLY:';
 const STEER_LATE_REPLY_MARKER = 'E2E_STEER_LATE_REPLY:';
 const ACTIVITY_REPLY_MARKER = 'E2E_ACTIVITY_REPLY:';
@@ -964,7 +999,7 @@ class UsageEmittingFakeChatModel extends FakeChatModel {
       text: '',
       message: new AIMessageChunk({
         content: '',
-        usage_metadata: { input_tokens, output_tokens, total_tokens: input_tokens + output_tokens },
+        ...cacheUsageFields(messages, input_tokens, output_tokens),
       }),
     });
   }

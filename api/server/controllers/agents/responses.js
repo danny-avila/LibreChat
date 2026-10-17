@@ -92,6 +92,7 @@ const {
   announceReply,
   getConversationWriteContext,
   isTemporaryTurn,
+  getModelEndUsage,
 } = require('@librechat/api');
 const {
   createResponsesToolEndCallback,
@@ -1315,7 +1316,7 @@ const executeResponse = async (envelope, { req, res }) => {
           on_chat_model_end: {
             handle: (event, data, metadata, graph) => {
               responsesHandlers.on_chat_model_end.handle(event, data);
-              const usage = data?.output?.usage_metadata;
+              const usage = getModelEndUsage(data?.output);
               if (usage) {
                 const agentContext = graph?.getAgentContext?.(metadata);
                 const taggedUsage = contextualizeModelUsage(usage, metadata, agentContext);
@@ -1558,7 +1559,7 @@ const executeResponse = async (envelope, { req, res }) => {
           on_chat_model_end: {
             handle: (event, data, metadata, graph) => {
               aggregatorHandlers.on_chat_model_end.handle(event, data);
-              const usage = data?.output?.usage_metadata;
+              const usage = getModelEndUsage(data?.output);
               if (usage) {
                 const agentContext = graph?.getAgentContext?.(metadata);
                 const taggedUsage = contextualizeModelUsage(usage, metadata, agentContext);

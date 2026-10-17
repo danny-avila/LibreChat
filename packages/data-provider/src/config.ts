@@ -2205,6 +2205,8 @@ export const endpointSchema = baseEndpointSchema.merge(
           context: z.number(),
           cacheRead: z.number().optional(),
           cacheWrite: z.number().optional(),
+          /** 1-hour prompt cache writes; defaults to twice `prompt` */
+          cacheWrite1h: z.number().optional(),
         }),
       )
       .optional(),

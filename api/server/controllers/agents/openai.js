@@ -76,6 +76,7 @@ const {
   resolveAdmittedCodeEnvironmentDecision,
   createTerminalRunErrorObserver,
   isTemporaryTurn,
+  getModelEndUsage,
 } = require('@librechat/api');
 const {
   buildSummarizationHandlers,
@@ -1054,7 +1055,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         // Usage tracking
         on_chat_model_end: {
           handle: (_event, data, metadata, graph) => {
-            const usage = data?.output?.usage_metadata;
+            const usage = getModelEndUsage(data?.output);
             if (usage) {
               const agentContext = graph?.getAgentContext?.(metadata);
               const taggedUsage = contextualizeModelUsage(usage, metadata, agentContext);

@@ -6,6 +6,7 @@ import {
   cacheTokenValues,
   premiumTokenValues,
   premiumCacheTokenValues,
+  ONE_HOUR_CACHE_WRITE_FACTOR,
   defaultRate,
 } from './tx';
 import { matchModelName, findMatchingPattern } from './test-helpers';
@@ -3081,6 +3082,67 @@ describe('Long-Context Premium Cache Pricing', () => {
       expect(getCacheMultiplier({ model, cacheType: 'read', inputTokenCount: 5_000_000 })).toBe(
         getCacheMultiplier({ model, cacheType: 'read' }),
       );
+    }
+  });
+});
+
+describe('One-Hour Cache Write Pricing', () => {
+  const claudeModels = [
+    'claude-sonnet-5-5',
+    'claude-opus-5-5',
+    'claude-haiku-4-5',
+    'claude-haiku-5-5',
+  ];
+
+  it('prices 1-hour writes at the prompt rate times the 1-hour factor', () => {
+    for (const model of claudeModels) {
+      expect(getCacheMultiplier({ model, cacheType: 'write1h' })).toBeCloseTo(
+        getMultiplier({ model, tokenType: 'prompt' }) * ONE_HOUR_CACHE_WRITE_FACTOR,
+      );
+    }
+  });
+
+  it('keeps the 5-minute write rate below the 1-hour rate', () => {
+    for (const model of claudeModels) {
+      expect(getCacheMultiplier({ model, cacheType: 'write' })).toBeLessThan(
+        getCacheMultiplier({ model, cacheType: 'write1h' }) as number,
+      );
+    }
+  });
+
+  it('follows the long-context prompt tier above the premium threshold', () => {
+    const model = 'claude-haiku-5-5';
+    const { threshold } = premiumTokenValues[model];
+    expect(
+      getCacheMultiplier({ model, cacheType: 'write1h', inputTokenCount: threshold + 1 }),
+    ).toBe(premiumTokenValues[model].prompt * ONE_HOUR_CACHE_WRITE_FACTOR);
+    expect(getCacheMultiplier({ model, cacheType: 'write1h', inputTokenCount: threshold })).toBe(
+      tokenValues[model].prompt * ONE_HOUR_CACHE_WRITE_FACTOR,
+    );
+  });
+
+  it('uses an endpoint write1h override, else twice the configured prompt rate', () => {
+    const model = 'custom-claude';
+    const prompt = tokenValues['claude-sonnet-5-5'].prompt;
+    expect(
+      getCacheMultiplier({
+        model,
+        cacheType: 'write1h',
+        endpointTokenConfig: { [model]: { prompt, completion: prompt, write1h: prompt * 3 } },
+      }),
+    ).toBe(prompt * 3);
+    expect(
+      getCacheMultiplier({
+        model,
+        cacheType: 'write1h',
+        endpointTokenConfig: { [model]: { prompt, completion: prompt } },
+      }),
+    ).toBe(prompt * ONE_HOUR_CACHE_WRITE_FACTOR);
+  });
+
+  it('leaves the 5-minute write rate unchanged', () => {
+    for (const model of claudeModels) {
+      expect(getCacheMultiplier({ model, cacheType: 'write' })).toBe(cacheTokenValues[model].write);
     }
   });
 });
