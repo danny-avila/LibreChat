@@ -2,58 +2,27 @@ import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import type { TMessage } from 'librechat-data-provider';
 import {
+  MOCK_ENDPOINTS,
   NEW_CHAT_PATH,
   fetchJson,
   getAccessToken,
-  selectModelSpec,
+  selectMockEndpoint,
   sendMessageAndWaitForCompletion,
 } from '../helpers';
 
-const PROVIDER = 'Mock Provider A';
-const MODEL = 'claude-sonnet-5-5';
-const SPEC_LABEL = 'E2E Claude Sonnet 5.5';
-/** Published Claude Sonnet 5.5 rates per million tokens: 5-minute writes 2.50, 1-hour writes 4 */
-const WRITE_5M = 2.5;
-const WRITE_1H = 4;
+/** `mock-model-a` has no price table, so its prompt costs the default rate (6 per
+ *  million), its 5-minute writes fall back to that input rate, and its 1-hour writes
+ *  cost twice the prompt rate, as Anthropic bills them. */
+const DEFAULT_RATE = 6;
+const WRITE_5M = DEFAULT_RATE;
+const WRITE_1H = DEFAULT_RATE * 2;
 /** The fake model reports 2000 of its cache writes as 1-hour for `E2E_CACHE_USAGE: 1h` */
 const ONE_HOUR_WRITES = 2000;
 
-/** Pins Mock Provider A to a Claude model through a model spec so the usage is
- *  priced with that model's tables, as a real Anthropic call would be. */
-async function openClaudeChat(page: Page): Promise<void> {
-  await page.route(
-    (url) => url.pathname === '/api/models',
-    async (route) => {
-      const response = await route.fetch();
-      const models = await response.json();
-      models[PROVIDER] = [...(models[PROVIDER] ?? []), MODEL];
-      await route.fulfill({ response, json: models });
-    },
-  );
-  await page.route(
-    (url) => url.pathname === '/api/config',
-    async (route) => {
-      const response = await route.fetch();
-      const config = await response.json();
-      const list = Array.isArray(config.modelSpecs?.list) ? config.modelSpecs.list : [];
-      const spec = {
-        name: 'e2e-claude-sonnet-5-5',
-        label: SPEC_LABEL,
-        preset: { endpoint: PROVIDER, model: MODEL },
-      };
-      await route.fulfill({
-        response,
-        json: { ...config, modelSpecs: { ...(config.modelSpecs ?? {}), list: [...list, spec] } },
-      });
-    },
-  );
-  await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
-  await selectModelSpec(page, SPEC_LABEL);
-}
-
 /** The persisted cost of the reply to `text`, sent in a new chat */
 async function replyCost(page: Page, text: string): Promise<number> {
-  await openClaudeChat(page);
+  await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+  await selectMockEndpoint(page, MOCK_ENDPOINTS[0]);
   const response = await sendMessageAndWaitForCompletion(page, text);
   const { conversationId } = (await response.json()) as { conversationId: string };
   const token = await getAccessToken(page);
