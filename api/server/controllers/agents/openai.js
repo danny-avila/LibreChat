@@ -75,6 +75,7 @@ const {
   resolveApiConversationProject,
   resolveAdmittedCodeEnvironmentDecision,
   createTerminalRunErrorObserver,
+  isTemporaryTurn,
 } = require('@librechat/api');
 const {
   buildSummarizationHandlers,
@@ -1140,6 +1141,7 @@ const executeOpenAIChatCompletion = async (envelope, { req, res }) => {
         user: { ...createSafeUser(req.user), id: userId },
         traceContext: { endpoint: EModelEndpoint.agents },
         tenantId: principal.tenantId,
+        isTemporary: isTemporaryTurn(req),
         /** Bills subagent child-run model calls (reported outside the
          *  streamEvents loop) into the same collectedUsage array. */
         subagentUsageSink: createSubagentUsageSink(collectedUsage),

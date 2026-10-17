@@ -784,6 +784,7 @@ router.put(
           destinationIds: updatedMessage.langfuseDestinationIds,
           feedback: updatedMessage.feedback,
           appConfig: req.config,
+          isTemporary: updatedMessage.isTemporary,
           metadata: {
             messageId: updatedMessage.messageId ?? messageId,
             parentMessageId: updatedMessage.parentMessageId,

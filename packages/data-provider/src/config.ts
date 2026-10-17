@@ -3918,6 +3918,12 @@ export const langfuseTraceConfigSchema = z.object({
   conversationMetadataFields: z
     .array(z.enum(LANGFUSE_TRACE_CONVERSATION_METADATA_FIELDS))
     .optional(),
+  /**
+   * Whether temporary chats, including chats forced temporary by
+   * `interface.retentionMode: "ephemeral"`, are traced and receive feedback
+   * scores. Defaults to false: a temporary chat reaches no Langfuse destination.
+   */
+  temporaryChats: z.boolean().optional(),
 });
 
 export type LangfuseTraceConfig = z.infer<typeof langfuseTraceConfigSchema>;
