@@ -133,6 +133,9 @@ export namespace Agents {
     subagentContentOmitted?: true;
     /** Number of top-level parts in the omitted `subagent_content`. */
     subagentContentParts?: number;
+    /** Ids of tool calls inside the omitted `subagent_content` that the message's attachments
+     *  were saved under, so those files still route to this call before the transcript loads. */
+    subagentAttachmentToolCallIds?: string[];
     /** When the stored message last changed, set on previews so a client cache of the full part
      *  is keyed to the stored version it came from. */
     previewRevision?: string;

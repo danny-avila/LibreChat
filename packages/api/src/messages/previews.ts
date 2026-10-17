@@ -73,6 +73,7 @@ interface StoredToolCall extends ToolCallPreviewMarkers {
   args?: unknown;
   approval?: unknown;
   subagent_content?: unknown;
+  subagentAttachmentToolCallIds?: string[];
 }
 
 interface StoredToolCallPart {
@@ -81,9 +82,10 @@ interface StoredToolCallPart {
   tool_call?: StoredToolCall;
 }
 
-/** A message as read for a client; only `content` is inspected. */
+/** A message as read for a client; `content` is previewed and `attachments` only read. */
 export interface PreviewableMessage {
   content?: unknown[] | null;
+  attachments?: unknown[] | null;
   /** Stamped onto each preview as `previewRevision`, so clients key fetched parts to it. */
   updatedAt?: Date | string | number | null;
 }
@@ -159,6 +161,45 @@ function hasPendingApproval(parts: unknown[]): boolean {
     }
   }
   return false;
+}
+
+/** Tool call ids anywhere in the parts, including inside nested subagent runs, that `wanted` names. */
+function nestedToolCallIds(parts: unknown[], wanted: ReadonlySet<string>): string[] {
+  const found: string[] = [];
+  const stack: unknown[][] = [parts];
+  while (stack.length > 0) {
+    const current = stack.pop() ?? [];
+    for (const part of current) {
+      if (!isToolCallPart(part)) {
+        continue;
+      }
+      const { id, subagent_content } = part.tool_call;
+      if (typeof id === 'string' && wanted.has(id)) {
+        found.push(id);
+      }
+      if (Array.isArray(subagent_content)) {
+        stack.push(subagent_content);
+      }
+    }
+  }
+  return found;
+}
+
+/** The tool call ids a message's attachments were saved under. */
+function attachmentToolCallIds(message: PreviewableMessage): ReadonlySet<string> | undefined {
+  if (!Array.isArray(message.attachments) || message.attachments.length === 0) {
+    return undefined;
+  }
+  const ids = new Set<string>();
+  for (const attachment of message.attachments) {
+    const toolCallId = isObject(attachment)
+      ? (attachment as { toolCallId?: unknown }).toolCallId
+      : undefined;
+    if (typeof toolCallId === 'string' && toolCallId !== '') {
+      ids.add(toolCallId);
+    }
+  }
+  return ids.size > 0 ? ids : undefined;
 }
 
 /** Cuts at `end` without splitting a surrogate pair. */
@@ -444,12 +485,15 @@ export function previewToolCallOutput(
 /**
  * Returns the tool call with long content replaced by previews, or the same object when nothing
  * needed shortening. Only settled calls change: a call still waiting on output, approval or a
- * reader's answer keeps every field, since its card acts on them.
+ * reader's answer keeps every field, since its card acts on them. When the subagent transcript is
+ * left out, the ids of its tool calls that `attachmentIds` names stay on the call, so the files
+ * those calls saved still route to it before the transcript loads.
  */
 export function previewToolCall<T extends StoredToolCall>(
   toolCall: T,
   limits: ToolCallPreviewLimits,
   revision = '',
+  attachmentIds?: ReadonlySet<string>,
 ): T {
   if (!isAgentToolCall(toolCall) || !isSettled(toolCall) || !hasIdentity(toolCall)) {
     return toolCall;
@@ -486,6 +530,11 @@ export function previewToolCall<T extends StoredToolCall>(
     delete next.subagent_content;
     next.subagentContentOmitted = true;
     next.subagentContentParts = (subagentContent as unknown[]).length;
+    const childIds =
+      attachmentIds == null ? [] : nestedToolCallIds(subagentContent as unknown[], attachmentIds);
+    if (childIds.length > 0) {
+      next.subagentAttachmentToolCallIds = childIds;
+    }
   }
   if (revision !== '') {
     next.previewRevision = revision;
@@ -501,9 +550,10 @@ function previewToolCallSafely<T extends StoredToolCall>(
   toolCall: T,
   limits: ToolCallPreviewLimits,
   revision: string,
+  attachmentIds?: ReadonlySet<string>,
 ): T {
   try {
-    return previewToolCall(toolCall, limits, revision);
+    return previewToolCall(toolCall, limits, revision, attachmentIds);
   } catch (error) {
     logger.warn('[toolCallPreviews] Sending a tool call in full; its preview failed', error);
     return toolCall;
@@ -515,6 +565,7 @@ export function previewContentToolCalls(
   content: unknown[],
   limits: ToolCallPreviewLimits,
   revision = '',
+  attachmentIds?: ReadonlySet<string>,
 ): unknown[] {
   let result: unknown[] | undefined;
   /** First index of each identity; a repeat sends both calls whole (see `toolCallIdentity`). */
@@ -537,7 +588,7 @@ export function previewContentToolCalls(
       continue;
     }
     firstIndex.set(identity, i);
-    const toolCall = previewToolCallSafely(part.tool_call, limits, revision);
+    const toolCall = previewToolCallSafely(part.tool_call, limits, revision, attachmentIds);
     if (toolCall === part.tool_call) {
       continue;
     }
@@ -566,7 +617,12 @@ export function previewMessagesToolCalls<T extends PreviewableMessage>(
     if (!Array.isArray(message?.content)) {
       continue;
     }
-    const content = previewContentToolCalls(message.content, limits, messageRevision(message));
+    const content = previewContentToolCalls(
+      message.content,
+      limits,
+      messageRevision(message),
+      attachmentToolCallIds(message),
+    );
     if (content === message.content) {
       continue;
     }

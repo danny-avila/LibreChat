@@ -734,6 +734,42 @@ describe('ContentParts — activity phase state', () => {
     expect(screen.getByTestId('tool-call-group')).toHaveAttribute('data-attachments', '');
   });
 
+  it('hoists a grouped subagent file whose transcript the server left out of the preview', () => {
+    jest
+      .mocked(groupSequentialToolCalls)
+      .mockImplementation((parts) => [{ type: 'tool-group', parts }]);
+    const content = [
+      {
+        type: ContentTypes.TOOL_CALL,
+        [ContentTypes.TOOL_CALL]: {
+          id: 'subagent-previewed',
+          name: 'subagent',
+          args: {},
+          output: 'done',
+          progress: 1,
+          subagentContentOmitted: true,
+          subagentContentParts: 3,
+          subagentAttachmentToolCallIds: ['omitted-image'],
+        },
+      },
+    ] as unknown as TMessageContentParts[];
+    const attachments = [
+      {
+        filename: 'previewed-cat.png',
+        filepath: '/images/previewed-cat.png',
+        conversationId: 'conversation-1',
+        messageId: 'msg-1',
+        toolCallId: 'omitted-image',
+      },
+    ] as TAttachment[];
+
+    render(<ContentParts {...baseProps} content={content} attachments={attachments} />);
+    expect(screen.getByTestId('tool-call-group')).toHaveAttribute(
+      'data-attachments',
+      'previewed-cat.png',
+    );
+  });
+
   it('hoists files from a grouped subagent run that is still streaming', () => {
     jest
       .mocked(groupSequentialToolCalls)
@@ -761,7 +797,8 @@ describe('ContentParts — activity phase state', () => {
       subagentProgressKey('msg-1', 'subagent-live', 0),
     );
 
-    render(<ContentParts {...baseProps} content={content} attachments={attachments} />);
+    const streaming = { ...baseProps, isSubmitting: true, isLatestMessage: true };
+    render(<ContentParts {...streaming} content={content} attachments={attachments} />);
     expect(screen.getByTestId('tool-call-group')).toHaveAttribute('data-attachments', '');
 
     act(() => {

@@ -1,22 +1,31 @@
 import { expect, test } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
+import type { SeedMessage } from '../db';
+import {
+  seedMessages,
+  seedConversations,
+  deleteConversations,
+  deleteMessagesByConversation,
+} from '../db';
+import { getE2EUser } from '../../../setup/user';
 
 const NO_PARENT = '00000000-0000-0000-0000-000000000000';
-/** 1x1 transparent PNG, enough for the browser to decode the image. */
+/** 8x8 opaque PNG, enough for the browser to decode the image. */
 const PNG = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+  'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAIAAABLbSncAAAAEUlEQVR4nGO4o6aGFTEMLQkAF/tKAS/fz4YAAAAASUVORK5CYII=',
   'base64',
 );
 
-const imageAttachment = (conversationId: string, toolCallId: string, filename: string) => ({
+const imageAttachment = (conversationId: string, messageId: string, toolCallId: string) => ({
   file_id: `${toolCallId}-file`,
-  filename,
-  filepath: `/images/e2e-subagent/${filename}`,
+  filename: `${toolCallId}.png`,
+  filepath: `/images/e2e-subagent/${toolCallId}.png`,
   type: 'image/png',
   source: 'local',
   bytes: PNG.length,
-  width: 1,
-  height: 1,
-  messageId: `${conversationId}-assistant`,
+  width: 8,
+  height: 8,
+  messageId,
   conversationId,
   toolCallId,
 });
@@ -26,42 +35,38 @@ const imageToolCall = (id: string) => ({
   tool_call: { id, name: 'image_gen_oai', args: '{}', output: 'Image generated', progress: 1 },
 });
 
-/** The subagent's own tool calls exist only inside `subagent_content`, the
- *  shape the backend persists at save time, so the conversation is served
- *  from that stored shape rather than produced by the mock model. */
+/** The subagent's own tool calls exist only inside `subagent_content`, the shape
+ *  the backend persists at save time, so the turn is seeded in that stored shape
+ *  and read back through the messages route, whose previews leave the
+ *  transcript out of settled subagent calls. */
 test('an image a subagent tool saved renders once under the subagent after reload @scenario:subagent-nested-tool-images-render', async ({
   page,
 }) => {
-  const conversationId = `subagent-images-${Date.now()}`;
-  const parentCall = `${conversationId}-subagent`;
-  const childCall = `${conversationId}-child-image`;
-  const grandchildCall = `${conversationId}-grandchild-image`;
-  const directCall = `${conversationId}-direct-image`;
-  const now = new Date(0).toISOString();
-  const base = { conversationId, createdAt: now, updatedAt: now };
+  const conversationId = randomUUID();
+  const userMessageId = randomUUID();
+  const messageId = randomUUID();
+  const childCall = `child-image-${conversationId.slice(0, 8)}`;
+  const grandchildCall = `grandchild-image-${conversationId.slice(0, 8)}`;
+  const directCall = `direct-image-${conversationId.slice(0, 8)}`;
   const messages = [
     {
-      ...base,
-      messageId: `${conversationId}-user`,
+      messageId: userMessageId,
       parentMessageId: NO_PARENT,
       isCreatedByUser: true,
       sender: 'User',
       text: 'Ask the illustrator for a red cat.',
     },
     {
-      ...base,
-      messageId: `${conversationId}-assistant`,
-      parentMessageId: `${conversationId}-user`,
+      messageId,
+      parentMessageId: userMessageId,
       isCreatedByUser: false,
       sender: 'Assistant',
-      endpoint: 'Mock Provider A',
-      model: 'mock-model-a',
       text: '',
       content: [
         {
           type: 'tool_call',
           tool_call: {
-            id: parentCall,
+            id: `subagent-${conversationId.slice(0, 8)}`,
             name: 'subagent',
             args: JSON.stringify({ subagent_type: 'self', description: 'Draw a red cat' }),
             output: 'The illustrator drew a red cat.',
@@ -71,7 +76,7 @@ test('an image a subagent tool saved renders once under the subagent after reloa
               {
                 type: 'tool_call',
                 tool_call: {
-                  id: `${conversationId}-nested-subagent`,
+                  id: `nested-subagent-${conversationId.slice(0, 8)}`,
                   name: 'subagent',
                   args: JSON.stringify({ subagent_type: 'self', description: 'Add a hat' }),
                   output: 'Added a hat.',
@@ -86,44 +91,45 @@ test('an image a subagent tool saved renders once under the subagent after reloa
         { type: 'text', text: 'Here is the red cat.' },
       ],
       attachments: [
-        imageAttachment(conversationId, childCall, 'red-cat.png'),
-        imageAttachment(conversationId, grandchildCall, 'red-cat-hat.png'),
-        imageAttachment(conversationId, directCall, 'direct-cat.png'),
+        imageAttachment(conversationId, messageId, childCall),
+        imageAttachment(conversationId, messageId, grandchildCall),
+        imageAttachment(conversationId, messageId, directCall),
       ],
     },
-  ];
-  const conversation = {
-    ...base,
-    title: 'Subagent images',
-    endpoint: 'Mock Provider A',
-    endpointType: 'custom',
-    model: 'mock-model-a',
-  };
-  await page.route(`**/api/convos/${conversationId}*`, (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(conversation),
-    }),
-  );
-  await page.route(`**/api/messages/${conversationId}*`, (route) =>
-    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(messages) }),
-  );
+  ] as SeedMessage[];
+
+  await seedConversations(getE2EUser().email, [
+    { conversationId, title: 'Subagent images', updatedAt: new Date() },
+  ]);
+  await seedMessages(getE2EUser().email, conversationId, messages);
   await page.route('**/images/e2e-subagent/**', (route) =>
     route.fulfill({ status: 200, contentType: 'image/png', body: PNG }),
   );
 
-  await page.goto(`/c/${conversationId}`);
-  const message = page.locator(`[id="${conversationId}-assistant"]`);
-  await expect(message.getByText('Here is the red cat.')).toBeVisible();
+  try {
+    const loaded = page.waitForResponse(
+      (response) =>
+        response.url().includes(`/api/messages/${conversationId}`) && response.status() === 200,
+    );
+    await page.goto(`/c/${conversationId}`);
+    /** The scenario is only meaningful while the route sends the subagent call
+     *  as a preview: that is the default load, and the shape that omits the
+     *  transcript the child tool calls live in. */
+    expect(JSON.stringify(await (await loaded).json())).toContain('"subagentContentOmitted":true');
 
-  for (const filename of ['red-cat.png', 'red-cat-hat.png', 'direct-cat.png']) {
-    const image = message.getByRole('img', { name: filename });
-    await expect(image).toHaveCount(1);
-    await expect(image).toBeVisible();
+    const message = page.locator(`[id="${messageId}"]`);
+    await expect(message.getByText('Here is the red cat.')).toBeVisible();
+    for (const id of [childCall, grandchildCall, directCall]) {
+      const image = message.getByRole('img', { name: `${id}.png` });
+      await expect(image).toHaveCount(1);
+      await expect(image).toBeVisible();
+    }
+
+    await page.reload();
+    await expect(message.getByRole('img', { name: `${childCall}.png` })).toHaveCount(1);
+    await expect(message.getByRole('img', { name: `${grandchildCall}.png` })).toHaveCount(1);
+  } finally {
+    await deleteMessagesByConversation([conversationId]);
+    await deleteConversations([conversationId]);
   }
-
-  await page.reload();
-  await expect(message.getByRole('img', { name: 'red-cat.png' })).toHaveCount(1);
-  await expect(message.getByRole('img', { name: 'red-cat-hat.png' })).toHaveCount(1);
 });

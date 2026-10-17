@@ -32,6 +32,7 @@ type TestToolCall = {
   outputTruncated?: true;
   argsTruncated?: true;
   subagentContentOmitted?: true;
+  subagentAttachmentToolCallIds?: string[];
   function?: unknown;
 };
 
@@ -413,6 +414,43 @@ describe('previewMessagesToolCalls', () => {
     expect(result[1].content?.[2]).toBe(smallPart);
     expect(result[1].content?.[1]).toMatchObject({ tool_call: { outputTruncated: true } });
     expect(bigPart.tool_call.output).toHaveLength(10_000);
+  });
+
+  it('keeps the nested tool call ids an omitted transcript saved attachments under', () => {
+    const transcript = [
+      toolPart({ id: 'child_image', output: 'Image generated' }),
+      toolPart({
+        id: 'child_subagent',
+        name: 'subagent',
+        output: 'done',
+        subagent_content: [
+          toolPart({ id: 'grandchild_image', output: 'Image generated' }),
+          toolPart({ id: 'grandchild_search', output: 'found' }),
+        ],
+      }),
+    ];
+    const subagent = toolPart({
+      name: 'subagent',
+      output: 'summary',
+      subagent_content: transcript,
+    });
+    const attachments = [
+      { file_id: 'f1', toolCallId: 'child_image' },
+      { file_id: 'f2', toolCallId: 'grandchild_image' },
+      { file_id: 'f3', toolCallId: 'unrelated' },
+    ];
+    const [message] = previewMessagesToolCalls([{ content: [subagent], attachments }], limits);
+    const [part] = message.content as Array<{ tool_call: TestToolCall }>;
+    expect(part.tool_call).not.toHaveProperty('subagent_content');
+    expect(part.tool_call.subagentAttachmentToolCallIds?.sort()).toEqual([
+      'child_image',
+      'grandchild_image',
+    ]);
+
+    const [bare] = previewMessagesToolCalls([{ content: [subagent] }], limits);
+    const [barePart] = bare.content as Array<{ tool_call: TestToolCall }>;
+    expect(barePart.tool_call).toMatchObject({ subagentContentOmitted: true });
+    expect(barePart.tool_call).not.toHaveProperty('subagentAttachmentToolCallIds');
   });
 
   it('previews a call only when its identity is unique in the message', () => {
