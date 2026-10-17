@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState, useCallback, useEffect } from 'react';
 import copy from 'copy-to-clipboard';
+import { Button } from '@librechat/client';
 import type { TAttachment, PartMetadata } from 'librechat-data-provider';
 import { toolPanelSpacingClassName, useToolContentPending } from '../disclosure';
 import { parseBackgroundHandle, splitBackgroundAttachments } from './handle';
@@ -18,6 +19,7 @@ import { AttachmentGroup } from './Attachment';
 import { parseCommandOutput } from './command';
 import { useToolCallIntent } from './intent';
 import PtcToolTrace from './PtcToolTrace';
+import BareStatus from './BareStatus';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -39,6 +41,7 @@ export default function BashCall({
   hideAttachments = false,
   onExpand,
   toolCallId,
+  stepId,
 }: {
   initialProgress: number;
   isSubmitting: boolean;
@@ -54,8 +57,10 @@ export default function BashCall({
   hideAttachments?: boolean;
   onExpand?: () => void;
   toolCallId?: string;
+  stepId?: string;
 }) {
   const localize = useLocalize();
+  const [showTimeoutDetails, setShowTimeoutDetails] = useState(false);
   const command = useMemo(() => parseJsonField(args, commandField), [args, commandField]);
   const isWritingCommand = !command || !areToolCallArgsComplete(args);
   const { useSandboxStarting } = useMessagePartsHost();
@@ -92,9 +97,11 @@ export default function BashCall({
               text: result.stderr,
               className: result.failed ? 'text-status-error' : 'text-text-secondary',
             },
-            { text: result.trailer, className: 'text-text-tertiary' },
+            ...(!result.timedOut || showTimeoutDetails
+              ? [{ text: result.trailer, className: 'text-text-tertiary' }]
+              : []),
           ],
-    [result],
+    [result, showTimeoutDetails],
   );
   /** A backgrounded call's persisted output stays the dispatch handle until
    *  the detached run settles and patches it; render a background state
@@ -120,16 +127,21 @@ export default function BashCall({
       )
     : null;
 
-  const { showCode, toggleCode, expandStyle, expandRef, phase, hasOutput } = useToolCallState({
-    initialProgress,
-    isSubmitting,
-    output,
-    hasInput: !!command,
-    onExpand,
-    runStepStatus,
-    extraError: backgroundFailed || result?.failed === true,
-    extraCancelled: cancelledInBackground,
-  });
+  /** The model-authored `intent` is the settled label too, and only the row
+   *  renders it, so a call that carries one keeps its row. */
+  const intent = useToolCallIntent(args);
+  const { showCode, toggleCode, expandStyle, expandRef, phase, hasOutput, bare, rowRef } =
+    useToolCallState({
+      initialProgress,
+      isSubmitting,
+      output,
+      hasInput: !!command,
+      onExpand,
+      runStepStatus,
+      extraError: backgroundFailed || result?.failed === true,
+      extraCancelled: cancelledInBackground,
+      keepRow: backgroundHandle != null || intent != null,
+    });
 
   const highlighted = useLazyHighlight(showCode ? command || undefined : undefined, 'bash');
   const { ref: commandPaneRef, onScroll: onCommandPaneScroll } = useFollowScroll<HTMLDivElement>(
@@ -157,7 +169,6 @@ export default function BashCall({
    *  live label from the earliest delta — before the command exists and while
    *  it runs. It persists as the settled label too (completion is a UI state,
    *  not a tense change); the generic texts are the no-intent fallback. */
-  const intent = useToolCallIntent(args);
   const inProgressText = (() => {
     if (intent != null) {
       return intent;
@@ -171,41 +182,50 @@ export default function BashCall({
     return localize('com_ui_running_command');
   })();
 
+  const finishedText =
+    phase === 'cancelled'
+      ? localize('com_ui_cancelled')
+      : (backgroundFinishedText ?? intent ?? localize('com_ui_command_finished'));
+
   return (
     <>
-      <div className={TOOL_ROW_CLASSES}>
-        <ProgressText
-          phase={phase}
-          onClick={toggleCode}
-          inProgressText={inProgressText}
-          finishedText={
-            phase === 'cancelled'
-              ? localize('com_ui_cancelled')
-              : (backgroundFinishedText ?? intent ?? localize('com_ui_command_finished'))
-          }
-          /** A backgrounded call's run step closes when dispatch returns the
-           *  handle, so its duration is the dispatch time — showing it would
-           *  misstate a detached task's runtime as seconds. The handle check
-           *  covers the live card; the persisted `backgrounded` marker covers
-           *  the card after harvest replaces the handle with real stdout
-           *  (and after any reload), when no transient signal survives. */
-          durationMs={
-            backgroundHandle == null && backgrounded !== true ? runStepDurationMs : undefined
-          }
-          icon={
-            <LangIcon
-              lang="bash"
-              className={cn(
-                'text-text-secondary size-4 shrink-0',
-                phase === 'running' && 'animate-pulse',
-              )}
-            />
-          }
-          hasInput={!!command || hasOutput}
-          isExpanded={showCode}
-          verdict={verdict}
-        />
-      </div>
+      <BareStatus active={bare} text={finishedText} />
+      {!bare && (
+        <div
+          className={TOOL_ROW_CLASSES}
+          ref={rowRef}
+          data-task-tool-call={toolCallId}
+          data-task-step={stepId}
+        >
+          <ProgressText
+            phase={phase}
+            onClick={toggleCode}
+            inProgressText={inProgressText}
+            finishedText={finishedText}
+            /** A backgrounded call's run step closes when dispatch returns the
+             *  handle, so its duration is the dispatch time, and showing it would
+             *  misstate a detached task's runtime as seconds. The handle check
+             *  covers the live card; the persisted `backgrounded` marker covers
+             *  the card after harvest replaces the handle with real stdout
+             *  (and after any reload), when no transient signal survives. */
+            durationMs={
+              backgroundHandle == null && backgrounded !== true ? runStepDurationMs : undefined
+            }
+            icon={
+              <LangIcon
+                lang="bash"
+                className={cn(
+                  'text-text-secondary size-4 shrink-0',
+                  phase === 'running' && 'animate-pulse',
+                )}
+              />
+            }
+            hasInput={!!command || hasOutput}
+            isExpanded={showCode}
+            verdict={verdict}
+          />
+        </div>
+      )}
       <div style={expandStyle}>
         <div className="overflow-hidden" ref={expandRef}>
           <div
@@ -250,10 +270,10 @@ export default function BashCall({
             <PtcToolTrace
               toolCallId={toolCallId}
               expanded={showCode}
-              className={cn(command && 'border-border-light border-t')}
+              className={cn(command && 'border-border-inset border-t')}
             />
             {hasOutput && backgroundHandle == null && (
-              <div className={cn('px-3 py-2.5', command && 'border-border-light border-t')}>
+              <div className={cn('px-3 py-2.5', command && 'border-border-inset border-t')}>
                 {outputIsEmpty ? (
                   <p className="text-text-secondary text-xs italic">
                     {localize('com_ui_no_output')}
@@ -266,6 +286,22 @@ export default function BashCall({
                     segments={outputSegments}
                     variant="terminal"
                   />
+                )}
+                {result?.timedOut === true && (
+                  <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+                    <span className="text-text-secondary">
+                      {localize('com_ui_command_timeout_note')}
+                    </span>
+                    <Button
+                      type="button"
+                      variant="inline-link"
+                      size="bare"
+                      aria-expanded={showTimeoutDetails}
+                      onClick={() => setShowTimeoutDetails((previous) => !previous)}
+                    >
+                      {localize(showTimeoutDetails ? 'com_ui_hide' : 'com_ui_details')}
+                    </Button>
+                  </div>
                 )}
               </div>
             )}

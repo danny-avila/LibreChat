@@ -124,7 +124,7 @@ describe('SubagentConversation', () => {
     expect(briefing).toHaveClass('justify-end');
     expect(within(briefing).getByRole('heading', { name: /Lia$/ })).toBeInTheDocument();
     expect(within(briefing).getByTestId('parent-face')).toBeInTheDocument();
-    expect(within(briefing).getByTestId('message-body')).toHaveClass('bg-surface-tertiary');
+    expect(within(briefing).getByTestId('message-body')).toHaveClass('bg-surface-user-message');
     expect(screen.queryByText('com_ui_subagent_trigger_parent_dispatch')).not.toBeInTheDocument();
     expect(screen.getByText('com_ui_subagent_trigger_external_event')).toBeInTheDocument();
     expect(screen.getAllByRole('heading', { name: /^com_ui_system_event/ })).toHaveLength(1);
@@ -140,7 +140,7 @@ describe('SubagentConversation', () => {
     expect(screen.getAllByTestId('child-face')).toHaveLength(2);
     expect(screen.getByTestId('thinking-cursor')).toHaveAttribute('data-under-header-icon', 'true');
     expect(container.querySelectorAll('.message-render')).toHaveLength(4);
-    expect(container.querySelectorAll('.user-turn')).toHaveLength(2);
+    expect(container.querySelectorAll('.user-turn')).toHaveLength(1);
     expect(container.querySelectorAll('.agent-turn')).toHaveLength(2);
     expect(container.querySelector('[data-subagent-conversation]')).toBeInTheDocument();
     expect(screen.queryByText('com_ui_prompt')).not.toBeInTheDocument();

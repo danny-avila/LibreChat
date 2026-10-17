@@ -74,8 +74,8 @@ export const CustomMenu = React.forwardRef<HTMLDivElement, CustomMenuProps>(func
         className={cn(
           parent ? 'animate-popover-left ml-3' : 'animate-popover',
           'z-40 flex max-h-[min(28.125rem,var(--popover-available-height))] w-full outline-hidden!',
-          'border-border-light w-[var(--menu-width,auto)] min-w-[min(18.75rem,90vw)] flex-col overflow-auto rounded-xl border',
-          'bg-presentation text-text-primary text-sm shadow-lg',
+          'border-border-menu rounded-theme-menu-panel w-[var(--menu-width,auto)] min-w-[min(18.75rem,90vw)] flex-col overflow-auto border',
+          'bg-surface-menu text-text-primary text-sm shadow-lg',
           parent ? 'px-0.5 py-0.5' : 'px-3 py-2',
           'max-w-[calc(100vw-4rem)] sm:max-h-[calc(65vh)] sm:max-w-[25rem]',
           searchable && 'p-0',
@@ -92,11 +92,11 @@ export const CustomMenu = React.forwardRef<HTMLDivElement, CustomMenuProps>(func
                     className={cn(
                       'peer flex h-10 w-full items-center justify-center rounded-lg border-none bg-transparent px-2 text-base',
                       'sm:h-8 sm:text-sm',
-                      'focus-visible:ring-text-primary focus:ring-0 focus:outline-hidden focus-visible:ring-2',
+                      'focus-visible:ring-focus-control focus:ring-0 focus:outline-hidden focus-visible:ring-2',
                     )}
                   />
                   {comboboxLabel && (
-                    <label className="text-text-secondary peer-[:not(:placeholder-shown)]:bg-presentation pointer-events-none absolute top-2.5 left-2.5 text-sm transition-all duration-200 peer-[:not(:placeholder-shown)]:-top-1.5 peer-[:not(:placeholder-shown)]:left-1.5 peer-[:not(:placeholder-shown)]:text-xs sm:top-1.5">
+                    <label className="text-text-secondary peer-[:not(:placeholder-shown)]:bg-surface-menu pointer-events-none absolute top-2.5 left-2.5 text-sm transition-all duration-200 peer-[:not(:placeholder-shown)]:-top-1.5 peer-[:not(:placeholder-shown)]:left-1.5 peer-[:not(:placeholder-shown)]:text-xs sm:top-1.5">
                       {comboboxLabel}
                     </label>
                   )}
@@ -136,25 +136,6 @@ export const CustomMenuSeparator = React.forwardRef<HTMLHRElement, Ariakit.MenuS
         {...props}
         className={cn('border-border-light my-0.5 h-0 w-full border-t', props.className)}
       />
-    );
-  },
-);
-
-export interface CustomMenuGroupProps extends Ariakit.MenuGroupProps {
-  label?: React.ReactNode;
-}
-
-export const CustomMenuGroup = React.forwardRef<HTMLDivElement, CustomMenuGroupProps>(
-  function CustomMenuGroup({ label, ...props }, ref) {
-    return (
-      <Ariakit.MenuGroup ref={ref} {...props} className={cn('', props.className)}>
-        {label && (
-          <Ariakit.MenuGroupLabel className="cursor-default p-2 text-sm font-medium opacity-60 sm:py-1 sm:text-xs">
-            {label}
-          </Ariakit.MenuGroupLabel>
-        )}
-        {props.children}
-      </Ariakit.MenuGroup>
     );
   },
 );

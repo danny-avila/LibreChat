@@ -1,6 +1,7 @@
 export * from './app';
 export * from './acl/accessControlService';
 export * from './acl/insightsPermissions';
+export * from './acl/audit';
 export * from './acl/middleware';
 export * from './acl/principals';
 export * from './acl/search';
@@ -11,6 +12,7 @@ export * from './artifacts';
 export * from './admin';
 export * from './cdn';
 export * from './code';
+export * from './pulls';
 /* Auth */
 export * from './auth';
 /* API Keys */
@@ -27,6 +29,7 @@ export * from './mcp/oauth';
 export * from './mcp/auth';
 export * from './mcp/zod';
 export * from './mcp/errors';
+export * from './mcp/audit';
 export * from './mcp/loading';
 export * from './mcp/openid';
 export * from './mcp/cache';

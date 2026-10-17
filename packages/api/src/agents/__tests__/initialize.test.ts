@@ -110,9 +110,7 @@ jest.mock('~/endpoints', () => ({
 }));
 
 jest.mock('~/files', () => ({
-  filterFilesByEndpointConfig: jest.fn(() => []),
   filterFilesByEndpointRuntimeConfig: jest.fn(() => []),
-  isLegacyFileUploadUX: jest.fn(() => false),
 }));
 
 jest.mock('~/prompts', () => ({
@@ -3367,6 +3365,9 @@ describe('initializeAgent — execute_code capability expansion', () => {
     const primeCall = primeResources.mock.calls[primeResources.mock.calls.length - 1][0];
     expect(primeCall.enabledToolResources.has(EToolResources.execute_code)).toBe(false);
     expect(primeCall.tool_resources).not.toHaveProperty(EToolResources.execute_code);
+    expect(loadTools).toHaveBeenLastCalledWith(
+      expect.objectContaining({ attachedEnvironmentOptOut: true }),
+    );
   });
 
   it('does not disable managed code tools for the without-attached decision', async () => {
@@ -3413,6 +3414,9 @@ describe('initializeAgent — execute_code capability expansion', () => {
     expect(result.codeEnvAvailable).toBe(true);
     expect(result.toolDefinitions?.map(({ name }) => name)).toEqual(
       expect.arrayContaining(['bash_tool', 'read_file']),
+    );
+    expect(loadTools).toHaveBeenLastCalledWith(
+      expect.objectContaining({ attachedEnvironmentOptOut: false }),
     );
   });
 
@@ -4615,6 +4619,40 @@ describe('initializeAgent — code-generated file thread filter (regression)', (
       expect.anything(),
       expect.objectContaining({ code: true }),
     );
+  });
+
+  it('takes no conversation files for a turn sent at the root', async () => {
+    /* A root turn has no history: the conversation's file refs belong to sibling roots, such
+     * as the first message edited or retried without its files, and must not come back. */
+    const { agent, req, res, loadTools, db } = setupExecuteCodeAgent();
+
+    const getMessages = jest.fn().mockResolvedValue([]);
+    const getConvoFiles = jest.fn().mockResolvedValue(['sibling-root-file']);
+    const getDeferredProvisionFiles = jest.fn().mockResolvedValue([]);
+    const getToolFilesByIds = jest.fn().mockResolvedValue([]);
+
+    await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        conversationId: 'conv-1',
+        parentMessageId: Constants.NO_PARENT as string,
+        allowedProviders: new Set([Providers.OPENAI]),
+        isInitialAgent: true,
+        codeEnvAvailable: true,
+      },
+      { ...db, getMessages, getConvoFiles, getDeferredProvisionFiles, getToolFilesByIds },
+    );
+
+    expect(getConvoFiles).not.toHaveBeenCalled();
+    expect(getMessages).not.toHaveBeenCalled();
+    expect(getDeferredProvisionFiles).not.toHaveBeenCalled();
+    for (const [ids] of getToolFilesByIds.mock.calls) {
+      expect(ids).toEqual([]);
+    }
   });
 
   it('keeps an anchored branch scoped to itself when it references no files', async () => {

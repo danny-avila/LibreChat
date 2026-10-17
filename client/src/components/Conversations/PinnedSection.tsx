@@ -203,7 +203,7 @@ const DraggablePinnedRow = ({
   return (
     <div
       ref={ref}
-      style={{ opacity: isDragging ? 0 : 1 }}
+      className={isDragging ? 'opacity-0' : undefined}
       data-handler-id={handlerId}
       onKeyDown={handleKeyDown}
     >
@@ -716,7 +716,7 @@ const PinnedSection = ({
       <div
         className={cn(
           'flex h-8 w-full items-center pr-1',
-          isPinOver && canPin && 'bg-surface-active-alt rounded-lg',
+          isPinOver && canPin && 'bg-surface-nav-selected rounded-lg',
         )}
       >
         <button
@@ -744,7 +744,7 @@ const PinnedSection = ({
               className={cn(
                 'text-text-secondary flex h-9 items-center justify-center rounded-lg border border-dashed text-xs',
                 isPinOver && canPin
-                  ? 'border-border-medium bg-surface-active-alt text-text-primary'
+                  ? 'border-border-medium bg-surface-nav-selected text-text-primary'
                   : 'border-border-light',
               )}
               aria-hidden="true"

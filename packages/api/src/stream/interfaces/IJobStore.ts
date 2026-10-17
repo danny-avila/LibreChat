@@ -172,6 +172,9 @@ export interface SerializableJobData {
 
   /** Whether this generation replaces an existing assistant branch. */
   isRegenerate?: boolean;
+  /** Whether this generation is a manual context compaction; the abort paths
+   * read it to stamp the stopped row with the compaction's identity. */
+  compact?: boolean;
   /** Exact normalized MCP placeholder identity for this turn. */
   mcpRequestBody?: MCPRuntimeRequestBody;
   /** Exact assistant-message fields authored by the user during this running job. */
@@ -457,11 +460,34 @@ export class JobPredecessorMismatchError extends Error {
   }
 }
 
+/** Thrown by `createJob` when the owner's account deletion began before the job could be admitted. */
+export class GenerationAdmissionDeniedError extends Error {
+  readonly code = 'ACCOUNT_DELETION_IN_PROGRESS';
+  readonly status = 409;
+
+  constructor() {
+    super('Account deletion is in progress');
+    this.name = 'GenerationAdmissionDeniedError';
+  }
+}
+
+/** Thrown by `createJob` when the account admission check itself failed; carries no lookup diagnostics. */
+export class GenerationAdmissionUnavailableError extends Error {
+  readonly code = 'GENERATION_ADMISSION_UNAVAILABLE';
+  readonly status = 503;
+
+  constructor() {
+    super('Generation admission could not be verified');
+    this.name = 'GenerationAdmissionUnavailableError';
+  }
+}
+
 export type JobMetadataPatch = Partial<
   Pick<
     SerializableJobData,
     | 'responseMessageId'
     | 'isRegenerate'
+    | 'compact'
     | 'mcpRequestBody'
     | 'userSubmittedPaths'
     | 'userSubmittedMessageFieldPaths'

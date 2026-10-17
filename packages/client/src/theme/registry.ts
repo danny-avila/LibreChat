@@ -6,12 +6,14 @@ import {
   collectThemeWarningIssues,
   defaultSwitchSize,
   themeColorTokens as sharedColorTokens,
+  renamedThemeColorTokens,
   themeBrandTokens as sharedBrandTokens,
 } from 'librechat-data-provider';
 import type {
   ThemeColorToken,
   ThemeBrandToken,
   ThemeAppearanceToken,
+  RenamedThemeColorToken,
 } from 'librechat-data-provider';
 import type {
   IThemeAppearance,
@@ -118,6 +120,39 @@ export function primaryButtonFallbacks(colors: IThemeRGB): IThemeRGB {
   };
 }
 
+/**
+ * Layering roles split out of the surface a component painted before each had a name: the role,
+ * and the surface it followed in light and in dark. A theme that repaints the surface keeps the
+ * layer on it, unless it names the role.
+ */
+export const layerRoleSources: ReadonlyArray<
+  readonly [keyof IThemeRGB, keyof IThemeRGB, keyof IThemeRGB]
+> = [
+  ['rgb-surface-canvas', 'rgb-surface-primary-alt', 'rgb-surface-primary-alt'],
+  ['rgb-page-canvas', 'rgb-surface-primary-alt', 'rgb-surface-primary-alt'],
+  ['rgb-surface-user-message', 'rgb-surface-tertiary', 'rgb-surface-tertiary'],
+  ['rgb-surface-card', 'rgb-surface-secondary', 'rgb-surface-secondary'],
+  ['rgb-surface-card-hover', 'rgb-surface-tertiary', 'rgb-surface-tertiary'],
+  ['rgb-surface-nav-hover', 'rgb-surface-active-alt', 'rgb-surface-active-alt'],
+  ['rgb-surface-nav-selected', 'rgb-surface-active-alt', 'rgb-surface-active-alt'],
+  ['rgb-surface-tab-selected', 'rgb-surface-tertiary', 'rgb-surface-tertiary'],
+  ['rgb-surface-menu', 'rgb-presentation', 'rgb-presentation'],
+  ['rgb-surface-popover', 'rgb-surface-primary', 'rgb-surface-secondary'],
+  ['rgb-border-menu', 'rgb-border-light', 'rgb-border-light'],
+  ['rgb-surface-composer', 'rgb-surface-chat', 'rgb-surface-chat'],
+  ['rgb-surface-search', 'rgb-surface-secondary', 'rgb-surface-secondary'],
+  ['rgb-surface-sidebar', 'rgb-surface-primary-alt', 'rgb-surface-primary-alt'],
+];
+
+export function layerRoleFallbacks(colors: IThemeRGB, mode: ThemeMode): IThemeRGB {
+  return Object.fromEntries(
+    layerRoleSources.flatMap(([role, light, dark]) => {
+      const source = colors[mode === 'dark' ? dark : light];
+      return colors[role] === undefined && source !== undefined ? [[role, source]] : [];
+    }),
+  );
+}
+
 /** Inks split out of the primary one: dialog titles, badge labels, the default avatar's glyph and
  *  a field's typed value were all set in it. */
 export const primaryInkRoles: ReadonlyArray<keyof IThemeRGB> = [
@@ -134,6 +169,31 @@ export function primaryInkFallbacks(colors: IThemeRGB): IThemeRGB {
     primaryInkRoles.flatMap((role) => {
       const ink = colors[role] ?? primary;
       return ink === undefined ? [] : [[role, ink]];
+    }),
+  );
+}
+
+/** Roles that were painted in another role before they had their own. */
+export const overlayFallbackSources: ReadonlyArray<readonly [keyof IThemeRGB, keyof IThemeRGB]> = [
+  ['rgb-surface-tooltip', 'rgb-surface-primary'],
+  ['rgb-text-tooltip', 'rgb-text-primary'],
+  ['rgb-alert-error-fill', 'rgb-status-error-subtle'],
+  ['rgb-alert-error-border', 'rgb-status-error-border'],
+  ['rgb-category-icon-1', 'rgb-series-1'],
+  ['rgb-category-icon-2', 'rgb-series-2'],
+  ['rgb-category-icon-4', 'rgb-series-4'],
+  ['rgb-category-icon-5', 'rgb-series-5'],
+  ['rgb-category-icon-6', 'rgb-series-6'],
+  ['rgb-category-icon-7', 'rgb-series-7'],
+];
+
+/** A theme that repaints a source role keeps the tooltip, the error alert and the category icons on
+ *  it, unless it names them. */
+export function overlayFallbacks(colors: IThemeRGB): IThemeRGB {
+  return Object.fromEntries(
+    overlayFallbackSources.flatMap(([role, source]) => {
+      const value = colors[source];
+      return colors[role] === undefined && value !== undefined ? [[role, value]] : [];
     }),
   );
 }
@@ -164,7 +224,14 @@ export const themeAppearanceProperties: Readonly<
   surfaceRadius: '--theme-surface-radius',
   largeSurfaceRadius: '--theme-large-surface-radius',
   menuRadius: '--theme-menu-radius',
+  popoverRadius: '--theme-popover-radius',
+  menuPanelRadius: '--theme-menu-panel-radius',
+  composerActionRadius: '--theme-composer-action-radius',
+  inlineCodeWeight: '--theme-inline-code-weight',
   tooltipRadius: '--theme-tooltip-radius',
+  tooltipPaddingX: '--theme-tooltip-padding-x',
+  tooltipPaddingY: '--theme-tooltip-padding-y',
+  tooltipTextSize: '--theme-tooltip-text-size',
   tabRadius: '--theme-tab-radius',
   tabMinWidth: '--theme-tab-min-width',
   listMinWidth: '--theme-list-min-width',
@@ -177,6 +244,7 @@ export const themeAppearanceProperties: Readonly<
   radius3xl: '--theme-radius-3xl',
   controlHeight: '--theme-control-height',
   controlPaddingX: '--theme-control-padding-x',
+  buttonPaddingX: '--theme-button-padding-x',
   controlGap: '--theme-control-gap',
   iconSize: '--theme-icon-size',
   iconSizeMd: '--theme-icon-size-md',
@@ -190,6 +258,11 @@ export const themeAppearanceProperties: Readonly<
   iconButtonSizeSm: '--theme-icon-button-size-sm',
   fieldHeight: '--theme-field-height',
   fieldHeightLg: '--theme-field-height-lg',
+  authFieldHeight: '--theme-auth-field-height',
+  authButtonHeight: '--theme-auth-button-height',
+  authControlRadius: '--theme-auth-control-radius',
+  authActionHeight: '--theme-auth-action-height',
+  authActionRadius: '--theme-auth-action-radius',
   fieldPaddingY: '--theme-field-padding-y',
   fieldFocusStyle: '--theme-field-focus-style',
   fieldFillStyle: '--theme-field-fill-style',
@@ -201,6 +274,8 @@ export const themeAppearanceProperties: Readonly<
   switchWidth: '--theme-switch-width',
   switchHeight: '--theme-switch-height',
   checkboxSize: '--theme-checkbox-size',
+  checkboxRadius: '--theme-checkbox-radius',
+  checkboxFillStyle: '--theme-checkbox-fill-style',
   tableCellSpaceY: '--theme-table-cell-space-y',
   tableRowStroke: '--theme-table-row-stroke',
   spaceCompact: '--theme-space-compact',
@@ -215,12 +290,18 @@ export const themeAppearanceProperties: Readonly<
   textLg: '--theme-text-lg',
   textXl: '--theme-text-xl',
   text2xl: '--theme-text-2xl',
+  text3xs: '--theme-text-3xs',
+  text2xs: '--theme-text-2xs',
+  text1xs: '--theme-text-1xs',
+  text1sm: '--theme-text-1sm',
+  text3xl: '--theme-text-3xl',
   leadingXs: '--theme-text-xs-leading',
   leadingSm: '--theme-text-sm-leading',
   leadingBase: '--theme-text-base-leading',
   leadingLg: '--theme-text-lg-leading',
   leadingXl: '--theme-text-xl-leading',
   leading2xl: '--theme-text-2xl-leading',
+  leading3xl: '--theme-text-3xl-leading',
   dialogStroke: '--theme-dialog-stroke',
   dialogPaddingX: '--theme-dialog-padding-x',
   dialogHeaderGap: '--theme-dialog-header-gap',
@@ -231,6 +312,7 @@ export const themeAppearanceProperties: Readonly<
   scrimOpacity: '--theme-scrim-opacity',
   alertScrimOpacity: '--theme-alert-scrim-opacity',
   modalScrimOpacity: '--theme-modal-scrim-opacity',
+  buttonNeutralBorderOpacity: '--theme-button-neutral-border-opacity',
   elevationSurface: '--theme-elevation-surface',
   elevationDrag: '--theme-elevation-drag',
   shadow2xs: '--theme-shadow-2xs',
@@ -244,6 +326,9 @@ export const themeAppearanceProperties: Readonly<
   tooltipShadow: '--theme-tooltip-shadow',
   motionFast: '--theme-motion-fast',
   motionNormal: '--theme-motion-normal',
+  chromeBorderAlpha: '--theme-border-chrome-alpha',
+  insetBorderAlpha: '--theme-border-inset-alpha',
+  destructiveStyle: '--theme-destructive-style',
 });
 
 export const defaultAppearance: IThemeAppearance = Object.freeze({
@@ -252,7 +337,14 @@ export const defaultAppearance: IThemeAppearance = Object.freeze({
   surfaceRadius: '1rem',
   largeSurfaceRadius: '1.5rem',
   menuRadius: '0.7rem',
+  popoverRadius: '1rem',
+  menuPanelRadius: '0.75rem',
+  composerActionRadius: '9999px',
+  inlineCodeWeight: '600',
   tooltipRadius: '0.275rem',
+  tooltipPaddingX: '0.5rem',
+  tooltipPaddingY: '0.25rem',
+  tooltipTextSize: '1rem',
   tabRadius: '0.185rem',
   tabMinWidth: '100px',
   listMinWidth: '8rem',
@@ -265,6 +357,7 @@ export const defaultAppearance: IThemeAppearance = Object.freeze({
   radius3xl: '1.5rem',
   controlHeight: '2.25rem',
   controlPaddingX: '0.75rem',
+  buttonPaddingX: '1rem',
   controlGap: '0.375rem',
   iconSize: '1rem',
   iconSizeMd: '1.25rem',
@@ -278,6 +371,11 @@ export const defaultAppearance: IThemeAppearance = Object.freeze({
   iconButtonSizeSm: '2rem',
   fieldHeight: '2.5rem',
   fieldHeightLg: '3rem',
+  authFieldHeight: '2.75rem',
+  authButtonHeight: '3rem',
+  authControlRadius: '1rem',
+  authActionHeight: '2.5rem',
+  authActionRadius: '0.5rem',
   fieldPaddingY: '0.5rem',
   fieldFocusStyle: 'ring',
   fieldFillStyle: 'transparent',
@@ -288,6 +386,8 @@ export const defaultAppearance: IThemeAppearance = Object.freeze({
   labelFontWeight: 'inherit',
   ...defaultSwitchSize,
   checkboxSize: '1rem',
+  checkboxRadius: 'calc(0.5rem - 4px)',
+  checkboxFillStyle: 'transparent',
   tableCellSpaceY: '1rem',
   tableRowStroke: '0px',
   spaceCompact: '0.375rem',
@@ -303,12 +403,18 @@ export const defaultAppearance: IThemeAppearance = Object.freeze({
   textLg: '1.125rem',
   textXl: '1.25rem',
   text2xl: '1.5rem',
+  text3xs: '0.625rem',
+  text2xs: '0.6875rem',
+  text1xs: '0.8125rem',
+  text1sm: '0.9375rem',
+  text3xl: '1.875rem',
   leadingXs: 'calc(1 / 0.75)',
   leadingSm: 'calc(1.25 / 0.875)',
   leadingBase: 'calc(1.5 / 1)',
   leadingLg: 'calc(1.75 / 1.125)',
   leadingXl: 'calc(1.75 / 1.25)',
   leading2xl: 'calc(2 / 1.5)',
+  leading3xl: 'calc(2.25 / 1.875)',
   dialogStroke: '0px',
   dialogPaddingX: '1.5rem',
   dialogHeaderGap: '0.375rem',
@@ -319,6 +425,7 @@ export const defaultAppearance: IThemeAppearance = Object.freeze({
   scrimOpacity: '0.8',
   alertScrimOpacity: '0.9',
   modalScrimOpacity: '0.65',
+  buttonNeutralBorderOpacity: '0.1',
   elevationSurface: '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)',
   elevationDrag: '0 10px 25px rgb(0 0 0 / 0.1)',
   shadow2xs: '0 1px rgb(0 0 0 / 0.05)',
@@ -332,6 +439,9 @@ export const defaultAppearance: IThemeAppearance = Object.freeze({
   tooltipShadow: '0 2px 4px 0 rgb(0 0 0 / 0.25)',
   motionFast: '150ms',
   motionNormal: '200ms',
+  chromeBorderAlpha: '1',
+  insetBorderAlpha: '1',
+  destructiveStyle: 'fill',
 });
 
 /**
@@ -342,6 +452,7 @@ export const defaultAppearance: IThemeAppearance = Object.freeze({
 export const darkAppearanceDefaults: Readonly<Partial<IThemeAppearance>> = Object.freeze({
   menuShadow: '0 10px 15px -3px rgb(0 0 0 / 0.25), 0 4px 6px -4px rgb(0 0 0 / 0.1)',
   tooltipShadow: '0 1px 2px 0 rgb(0 0 0 / 0.35)',
+  buttonNeutralBorderOpacity: '1',
 });
 
 /** Every appearance default in `mode`. */
@@ -443,13 +554,30 @@ function definedEntries<T extends object>(values?: Partial<T>): Partial<T> {
   ) as Partial<T>;
 }
 
+/** Roles that shipped under another name, each paired with the name it has now. */
+export const renamedColorTokens: ReadonlyArray<readonly [RenamedThemeColorToken, keyof IThemeRGB]> =
+  renamedThemeColorTokens;
+
+/** Colors as a theme written before a rename may carry them. */
+export type RenamedThemeRGB = IThemeRGB & Partial<Record<RenamedThemeColorToken, string>>;
+
+/** Carries a renamed role to its current name, unless the colors name that too, so every reader
+ *  that keeps only known tokens keeps the value. */
+export function withRenamedColors(colors: RenamedThemeRGB): IThemeRGB {
+  const renamed = renamedColorTokens.flatMap(([from, to]) => {
+    const value = colors[from];
+    return value !== undefined && colors[to] === undefined ? [[to, value] as const] : [];
+  });
+  return renamed.length > 0 ? { ...colors, ...Object.fromEntries(renamed) } : colors;
+}
+
 /** A color token this reader does not know passed validation as a warning; it never reaches the DOM. */
-function knownColors(colors?: IThemeRGB): IThemeRGB | undefined {
+function knownColors(colors?: RenamedThemeRGB): IThemeRGB | undefined {
   if (!colors) {
     return colors;
   }
   return Object.fromEntries(
-    Object.entries(colors).filter(([key]) => colorTokenSet.has(key)),
+    Object.entries(withRenamedColors(colors)).filter(([key]) => colorTokenSet.has(key)),
   ) as IThemeRGB;
 }
 
@@ -479,12 +607,27 @@ function withComposableShadows(appearance: IThemeAppearance): IThemeAppearance {
   );
 }
 
+/** The Button heights are drawn inside `max()` to hold the 24px target floor, where a unitless
+ *  `0` is a number and would void the declaration, so it is written as the length it means. */
+const flooredAppearanceKeys: ReadonlyArray<keyof IThemeAppearance> = [
+  'buttonHeight',
+  'buttonHeightSm',
+];
+
+function withFloorableLengths(appearance: IThemeAppearance): IThemeAppearance {
+  return flooredAppearanceKeys.reduce<IThemeAppearance>(
+    (result, key) => (result[key].trim() === '0' ? { ...result, [key]: '0px' } : result),
+    appearance,
+  );
+}
+
 /**
  * Roles split out of a broader one, each paired with the role it read before. Headings drew the UI
  * family before the display role existed, theme-sized controls were padded by the shared spacing,
- * and dialog titles were set in the `text-lg` step and the display family, so a theme that names
+ * and dialog titles were set in the `text-lg` step and the display family, the composer's popovers, the model selector and the send button drew `rounded-2xl`, `rounded-xl` and the round control corner, and the sign-in controls drew `rounded-2xl` and the other sign-in actions the default Button's height and corner, and the checkbox `rounded-sm`, so a theme that names
  * the broader role and not the split one keeps what it drew. Pairs resolve in order, so a role can
- * follow one that is itself inherited.
+ * follow one that is itself inherited; the other sign-in actions resolve before the sign-in corner
+ * is derived, so they follow only a corner the theme names and otherwise keep `radiusLg`.
  */
 const inheritedAppearance: ReadonlyArray<[keyof IThemeAppearance, keyof IThemeAppearance]> = [
   ['displayFontFamily', 'fontFamily'],
@@ -493,6 +636,15 @@ const inheritedAppearance: ReadonlyArray<[keyof IThemeAppearance, keyof IThemeAp
   ['labelSize', 'textSm'],
   ['dialogTitleSize', 'textLg'],
   ['dialogTitleFontFamily', 'displayFontFamily'],
+  ['popoverRadius', 'radius2xl'],
+  ['menuPanelRadius', 'radiusXl'],
+  ['composerActionRadius', 'roundControlRadius'],
+  ['authActionRadius', 'authControlRadius'],
+  ['authActionRadius', 'radiusLg'],
+  ['authControlRadius', 'radius2xl'],
+  ['authActionHeight', 'authButtonHeight'],
+  ['authActionHeight', 'buttonHeight'],
+  ['checkboxRadius', 'radiusSm'],
 ];
 
 /**
@@ -599,6 +751,29 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
       ? { 'rgb-link-prose': proseLinkSource }
       : {};
   /**
+   * The list marker, the blockquote bar and the inline code chip read border and surface roles
+   * before they had their own, so a theme that names none of the three keeps what it painted:
+   * `border-medium` for the marker, `border-light` in light and `border-medium` in dark for the
+   * bar, and `surface-active-alt` in light and `surface-hover-alt` in dark for the chip.
+   */
+  const proseBulletSource = customColors?.['rgb-border-medium'];
+  const proseQuoteBarSource = customColors?.['rgb-border-medium'];
+  const codeInlineSource =
+    mode === 'dark'
+      ? customColors?.['rgb-surface-hover-alt']
+      : customColors?.['rgb-surface-active-alt'];
+  const proseFallback: IThemeRGB = {
+    ...(customColors?.['rgb-prose-bullet'] === undefined && proseBulletSource !== undefined
+      ? { 'rgb-prose-bullet': proseBulletSource }
+      : {}),
+    ...(customColors?.['rgb-prose-quote-bar'] === undefined && proseQuoteBarSource !== undefined
+      ? { 'rgb-prose-quote-bar': proseQuoteBarSource }
+      : {}),
+    ...(customColors?.['rgb-surface-code-inline'] === undefined && codeInlineSource !== undefined
+      ? { 'rgb-surface-code-inline': codeInlineSource }
+      : {}),
+  };
+  /**
    * Agent and assistant avatars sat on `surface-secondary` in light and `surface-tertiary` in dark
    * before they had a role, so a theme that repaints the one its mode used keeps that backdrop.
    */
@@ -617,7 +792,7 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
   const drawerEdgeSource =
     mode === 'dark'
       ? customColors?.['rgb-border-xheavy']
-      : customColors?.['rgb-surface-primary-alt'];
+      : (customColors?.['rgb-surface-sidebar'] ?? customColors?.['rgb-surface-primary-alt']);
   const drawerEdgeFallback: Partial<IThemeRGB> =
     customColors?.['rgb-drawer-edge'] === undefined && drawerEdgeSource !== undefined
       ? { 'rgb-drawer-edge': drawerEdgeSource }
@@ -642,6 +817,13 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
     customColors?.['rgb-surface-primary'] !== undefined
       ? { 'rgb-field-fill': customColors['rgb-surface-primary'] }
       : {};
+  /** A checkbox fill only shows under `checkboxFillStyle: 'fill'`, on the theme's own canvas by
+   *  default. */
+  const checkboxFillFallback: IThemeRGB =
+    customColors?.['rgb-checkbox-fill'] === undefined &&
+    customColors?.['rgb-surface-primary'] !== undefined
+      ? { 'rgb-checkbox-fill': customColors['rgb-surface-primary'] }
+      : {};
   /** Table column names were `text-secondary` before they had a role. */
   const tableHeaderTextFallback: IThemeRGB =
     customColors?.['rgb-table-header-text'] === undefined &&
@@ -659,15 +841,23 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
     customColors?.['rgb-border-light'] !== undefined
       ? { 'rgb-chart-widget-stroke': customColors['rgb-border-light'] }
       : {};
+  const focusSubtleFallback: IThemeRGB =
+    customColors?.['rgb-focus-subtle'] === undefined &&
+    customColors?.['rgb-border-heavy'] !== undefined
+      ? { 'rgb-focus-subtle': customColors['rgb-border-heavy'] }
+      : {};
   const borderControlSource =
     customColors != null ? controlBorderFallback(customColors) : undefined;
   const borderControlFallback: IThemeRGB =
     borderControlSource !== undefined ? { 'rgb-border-control': borderControlSource } : {};
+  const layerFallback: IThemeRGB =
+    customColors != null ? layerRoleFallbacks(customColors, mode) : {};
   const focusFallback: IThemeRGB = customColors != null ? focusFallbacks(customColors) : {};
   const pressedFallback: IThemeRGB = customColors != null ? pressedFallbacks(customColors) : {};
   const primaryButtonFallback: IThemeRGB =
     customColors != null ? primaryButtonFallbacks(customColors) : {};
   const primaryInks: IThemeRGB = customColors != null ? primaryInkFallbacks(customColors) : {};
+  const overlayFallback: IThemeRGB = customColors != null ? overlayFallbacks(customColors) : {};
   /**
    * Slot 8 arrived after the seven-slot scale shipped, so a stored or
    * environment theme that paints its own scale cannot name it. Filling the
@@ -726,12 +916,17 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
       ...shimmerBaseFallback,
       ...textMutedFallback,
       ...proseLinkFallback,
+      ...proseFallback,
       ...avatarPlaceholderFallback,
       ...drawerEdgeFallback,
       ...chartWidgetSurfaceFallback,
       ...chartWidgetStrokeFallback,
+      ...focusSubtleFallback,
       ...switchThumbFallback,
       ...fieldFillFallback,
+      ...checkboxFillFallback,
+      ...overlayFallback,
+      ...layerFallback,
       ...tableHeaderTextFallback,
       ...tableHeaderFillFallback,
       ...borderControlFallback,
@@ -742,7 +937,9 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
       ...seriesEightFallback,
       ...verifiedFallback,
     } as Required<IThemeRGB>,
-    appearance: withComposableShadows(withInheritedRoles(mode, definition?.appearance)),
+    appearance: withFloorableLengths(
+      withComposableShadows(withInheritedRoles(mode, definition?.appearance)),
+    ),
     /** Mode last: a mode override is more specific than the theme-wide set. */
     brands: {
       ...defaultBrands,
@@ -752,10 +949,11 @@ export function resolveTheme(theme: ThemeDefinition, mode: ThemeMode): ResolvedT
   };
 }
 
-export function fromLegacyTheme(colors: IThemeRGB, name = 'custom'): ThemeDefinition {
+export function fromLegacyTheme(colors: RenamedThemeRGB, name = 'custom'): ThemeDefinition {
   const legacyName = name.trim() || 'custom';
+  const current = withRenamedColors(colors);
   const sanitizedColors = themeColorTokens.reduce<IThemeRGB>((result, token) => {
-    const value = colors[token];
+    const value = current[token];
     if (isThemeRGB(value)) {
       result[token] = value;
     }

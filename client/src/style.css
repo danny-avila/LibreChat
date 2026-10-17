@@ -39,9 +39,6 @@
 
 /* Custom Variables */
 :root {
-  --gizmo-gray-500: 153 153 153;
-  --gizmo-gray-600: 102 102 102;
-  --gizmo-gray-950: 15 15 15;
   --font-size-xs: 0.75rem;
   --font-size-sm: 0.875rem;
   --font-size-base: 1rem;
@@ -122,41 +119,6 @@ html {
     transition: none !important;
     transform: none !important;
   }
-}
-
-.gizmo {
-  --text-primary: var(--gizmo-gray-950);
-  --text-secondary: var(--gizmo-gray-600);
-  --text-tertiary: var(--gizmo-gray-500);
-  --text-muted: 105 110 121; /* Click UI global.color.text.muted #696e79 */
-  --surface-primary: var(--white);
-  --chart-widget-surface: 255 255 255; /* Click UI dashboards.chartWidget.color.background.default #ffffff */
-  --chart-widget-stroke: 230 231 233; /* Click UI dashboards.chartWidget.color.stroke.default #e6e7e9 */
-  --surface-secondary: var(--gray-50);
-  --surface-tertiary: var(--gray-100);
-  --border-light: 0 0 0;
-  --border-light-alpha: 0.1;
-  --border-medium: 0 0 0;
-  --border-medium-alpha: 0.15;
-  --border-heavy: 0 0 0;
-  --border-heavy-alpha: 0.2;
-  --border-xheavy: 0 0 0;
-  --border-xheavy-alpha: 0.25;
-}
-.gizmo.dark {
-  --text-primary: var(--gray-100);
-  --text-secondary: var(--gray-300);
-  --text-tertiary: var(--gizmo-gray-500);
-  --text-muted: 179 182 189; /* Click UI global.color.text.muted #b3b6bd */
-  --surface-primary: var(--gray-900);
-  --chart-widget-surface: 40 40 40; /* Click UI dashboards.chartWidget.color.background.default #282828 */
-  --chart-widget-stroke: 50 50 50; /* Click UI dashboards.chartWidget.color.stroke.default #323232 */
-  --surface-secondary: var(--gray-800);
-  --surface-tertiary: var(--gray-700);
-  --border-light: 217 217 227;
-  --border-medium: 217 217 227;
-  --border-heavy: 217 217 227;
-  --border-xheavy: 217 217 227;
 }
 
 /* High contrast appearance modes.
@@ -348,8 +310,8 @@ html.high-contrast.dark .btn-neutral:hover {
   width: 2rem;
 }
 
-/* Forced-colors overrides the inline `background-color: currentColor` a masked
- * CustomIcon paints with; `!important` is needed to beat that inline style. */
+/* Forced-colors overrides the `background-color: currentColor` a masked CustomIcon
+ * paints with. */
 @media (forced-colors: active) {
   .custom-icon-tint {
     background-color: CanvasText !important;
@@ -377,23 +339,13 @@ html.high-contrast.dark .btn-neutral:hover {
     background-repeat: no-repeat;
     background-size: 1.5em 1.5em;
     padding-right: 2.5rem;
-    background-color: #fff;
-    border-color: #8e8ea0;
+    background-color: rgb(var(--select-fill));
+    border-color: rgb(var(--select-edge));
     border-radius: 0;
     border-width: 1px;
     font-size: 1rem;
     line-height: 1.5rem;
   }
-}
-
-.reset-rc-number-input input {
-  width: 100%;
-  border: none !important;
-  background: transparent;
-}
-
-.reset-rc-number-input-text-right input {
-  text-align: right;
 }
 
 p > small {
@@ -444,8 +396,10 @@ p > small {
   }
 }
 
-/* Show the message time when the row is hovered. Tailwind group-hover
-   loses to `[@media(hover:hover)]:opacity-0` (same specificity, :where()).
+/* Show the message time when the row is hovered. Hidden only where hover
+   exists and no pointer is coarse: `(hover: hover)` alone is true on a 2-in-1,
+   whose trackpad hovers while its touchscreen cannot, and the coarse check
+   alone matches pointerless and print contexts, where nothing reveals it.
 
    Keyboard focus reveals it too, but only `:focus-visible`: a pointer that
    clicks a tool card or an expand toggle inside the row leaves focus sitting
@@ -458,15 +412,17 @@ p > small {
    match `:focus-visible` on a plain mouse click. See `revealOnRowHoverClasses`
    in `components/Chat/Messages/styles.ts` for the full reasoning. */
 @media (hover: hover) {
-  .message-render .message-timestamp {
-    opacity: 0;
-  }
+  @media not all and (any-pointer: coarse) {
+    .message-render .message-timestamp {
+      opacity: 0;
+    }
 
-  .message-render:hover .message-timestamp,
-  .message-render:focus-visible .message-timestamp,
-  .message-render:has(:focus-visible:not(:is(input, textarea, [contenteditable])))
-    .message-timestamp {
-    opacity: 1;
+    .message-render:hover .message-timestamp,
+    .message-render:focus-visible .message-timestamp,
+    .message-render:has(:focus-visible:not(:is(input, textarea, [contenteditable])))
+      .message-timestamp {
+      opacity: 1;
+    }
   }
 }
 
@@ -647,13 +603,10 @@ p > small {
 .prose :where(code):not(:where([class~='not-prose'] *)) {
   color: var(--tw-prose-code);
   font-size: 0.875em;
-  font-weight: 600;
-  background-color: rgb(var(--surface-active-alt));
+  font-weight: var(--theme-inline-code-weight, 600);
+  background-color: rgb(var(--surface-code-inline));
   padding: 0.125rem 0.25rem;
   border-radius: 0.35rem;
-}
-.dark .prose :where(code):not(:where([class~='not-prose'] *)):not(:where(pre *)) {
-  background-color: rgb(var(--surface-hover-alt));
 }
 .prose :where(a code):not(:where([class~='not-prose'] *)) {
   color: inherit;
@@ -755,7 +708,7 @@ p > small {
   --tw-prose-links: rgb(var(--link-prose));
   --tw-prose-bold: rgb(var(--text-primary));
   --tw-prose-counters: rgb(var(--text-tertiary));
-  --tw-prose-bullets: rgb(var(--border-medium));
+  --tw-prose-bullets: rgb(var(--prose-bullet));
   --tw-prose-hr: rgb(var(--border-medium));
   --tw-prose-quotes: rgb(var(--text-primary));
   --tw-prose-quote-borders: rgb(var(--border-light));
@@ -771,7 +724,7 @@ p > small {
   --tw-prose-invert-links: rgb(var(--link-prose));
   --tw-prose-invert-bold: rgb(var(--text-primary));
   --tw-prose-invert-counters: rgb(var(--text-tertiary));
-  --tw-prose-invert-bullets: rgb(var(--border-medium));
+  --tw-prose-invert-bullets: rgb(var(--prose-bullet));
   --tw-prose-invert-hr: rgb(var(--border-medium));
   --tw-prose-invert-quotes: rgb(var(--text-primary));
   --tw-prose-invert-quote-borders: rgb(var(--border-medium));
@@ -1001,68 +954,13 @@ pre[class*='language-'] {
   cursor: not-allowed;
   opacity: 0.5;
 }
-.btn-primary {
-  --tw-bg-opacity: 1;
-  --tw-text-opacity: 1;
-  background-color: rgba(16, 163, 127, var(--tw-bg-opacity));
-  color: rgba(255, 255, 255, var(--tw-text-opacity));
-}
-.btn-primary:hover {
-  --tw-bg-opacity: 1;
-  background-color: rgba(26, 127, 100, var(--tw-bg-opacity));
-}
-.btn-primary:focus {
-  --tw-ring-offset-shadow: var(--tw-ring-inset) 0 0 0 var(--tw-ring-offset-width)
-    var(--tw-ring-offset-color);
-  --tw-ring-shadow: var(--tw-ring-inset) 0 0 0 calc(2px + var(--tw-ring-offset-width))
-    var(--tw-ring-color);
-  --tw-ring-offset-width: 2px;
-  box-shadow:
-    var(--tw-ring-offset-shadow),
-    var(--tw-ring-shadow),
-    0 0 transparent;
-  box-shadow:
-    var(--tw-ring-offset-shadow), var(--tw-ring-shadow), var(--tw-shadow, 0 0 transparent);
-}
-.btn-primary.focus-visible {
-  --tw-ring-opacity: 1;
-  --tw-ring-color: rgba(25, 195, 125, var(--tw-ring-opacity));
-}
-.btn-primary:focus-visible {
-  --tw-ring-opacity: 1;
-  --tw-ring-color: rgba(25, 195, 125, var(--tw-ring-opacity));
-}
-.btn-primary:disabled:hover {
-  --tw-bg-opacity: 1;
-  background-color: rgba(16, 163, 127, var(--tw-bg-opacity));
-}
-.btn-secondary {
-  --tw-border-opacity: 1;
-  --tw-bg-opacity: 1;
-  --tw-text-opacity: 1;
-  background-color: transparent;
-  background-color: rgba(16, 163, 156, var(--tw-bg-opacity));
-  color: rgba(255, 255, 255, var(--tw-text-opacity));
-}
-.btn-secondary:hover {
-  --tw-bg-opacity: 1;
-  border-color: rgba(0, 0, 0, 0.1);
-  color: rgba(64, 65, 79, var(--tw-text-opacity));
-  background-color: rgba(236, 236, 241, var(--tw-bg-opacity));
-}
-.dark .btn-secondary:hover {
-  --tw-bg-opacity: 1;
-  border-color: rgba(8, 82, 78, var(--tw-border-opacity));
-  color: rgba(255, 255, 240, var(--tw-text-opacity));
-  background-color: rgba(8, 82, 78, var(--tw-bg-opacity));
-}
 .btn-neutral {
   --tw-bg-opacity: 1;
   --tw-text-opacity: 1;
   background-color: rgb(var(--surface-secondary));
-  border-color: rgba(0, 0, 0, 0.1);
+  border-color: rgb(var(--button-neutral-border) / var(--theme-button-neutral-border-opacity, 0.1));
   border-width: 1px;
-  color: rgba(64, 65, 79, var(--tw-text-opacity));
+  color: rgb(var(--button-neutral-text) / var(--tw-text-opacity));
   font-size: 0.875rem;
   line-height: 1.25rem;
   transition: all 0.1s ease-in-out;
@@ -1070,7 +968,7 @@ pre[class*='language-'] {
 
 .btn-neutral:hover {
   --tw-bg-opacity: 1;
-  background-color: rgba(236, 236, 241, var(--tw-bg-opacity));
+  background-color: rgb(var(--button-neutral-hover) / var(--tw-bg-opacity));
 }
 
 .btn-neutral:focus {
@@ -1079,17 +977,16 @@ pre[class*='language-'] {
 }
 
 .dark .btn-neutral {
-  --tw-border-opacity: 1;
   --tw-bg-opacity: 1;
   --tw-text-opacity: 1;
   background-color: transparent;
-  border-color: rgba(66, 66, 66, var(--tw-border-opacity));
-  color: rgba(255, 255, 240, var(--tw-text-opacity));
+  border-color: rgb(var(--button-neutral-border) / var(--theme-button-neutral-border-opacity, 1));
+  color: rgb(var(--button-neutral-text) / var(--tw-text-opacity));
 }
 
 .dark .btn-neutral:hover {
   --tw-bg-opacity: 1;
-  background-color: rgba(66, 66, 66, var(--tw-bg-opacity));
+  background-color: rgb(var(--button-neutral-hover) / var(--tw-bg-opacity));
 }
 
 .dark .btn-neutral:focus {
@@ -1113,12 +1010,12 @@ pre[class*='language-'] {
 }
 
 ::-webkit-scrollbar-thumb {
-  background-color: rgba(0, 0, 0, 0.1);
+  background-color: rgb(var(--scrollbar-thumb) / var(--scrollbar-thumb-alpha));
   border-radius: 9999px;
 }
 
 .dark ::-webkit-scrollbar-thumb {
-  background-color: hsla(0, 0%, 100%, 0.1);
+  background-color: rgb(var(--scrollbar-thumb) / var(--scrollbar-thumb-alpha));
 }
 
 ::-webkit-scrollbar-track {
@@ -1184,12 +1081,6 @@ html[data-drawer-nav] body {
   overscroll-behavior: none;
 }
 
-.dark body,
-.dark html {
-  --tw-bg-opacity: 1;
-  background-color: rgba(23, 23, 23, var(--tw-bg-opacity));
-}
-
 #__next,
 #root {
   height: 100%;
@@ -1238,7 +1129,7 @@ html[data-drawer-nav] body {
 
 .markdown blockquote {
   --tw-border-opacity: 1;
-  border-color: rgb(var(--border-medium));
+  border-color: rgb(var(--prose-quote-bar));
   border-left-width: 2px;
   line-height: 1rem;
   padding-left: 1rem;
@@ -1288,6 +1179,29 @@ html[data-drawer-nav] body {
   border-bottom-right-radius: 0.375rem;
 }
 
+/* The column rules take the inset share of the border-medium edge, so a theme that draws no inset
+ * border keeps the row rules and the outer frame only. Every side edge takes the inset share and
+ * the frame, the first cell's start edge and the last cell's end edge, is put back whole in
+ * logical terms, so a table laid out right-to-left, even under a left-to-right page, keeps the
+ * edge that is visually outermost with no selector on direction. The selectors outrank the cell
+ * rules above, which restate the edge in one declaration, and leave high contrast to its own. */
+html:not(.high-contrast) .markdown :is(th, td) {
+  border-left-color: rgb(
+    var(--border-medium) / calc(var(--border-medium-alpha, 1) * var(--theme-border-inset-alpha, 1))
+  );
+  border-right-color: rgb(
+    var(--border-medium) / calc(var(--border-medium-alpha, 1) * var(--theme-border-inset-alpha, 1))
+  );
+}
+
+html:not(.high-contrast) .markdown :is(th, td):first-child {
+  border-inline-start-color: rgb(var(--border-medium) / var(--border-medium-alpha, 1));
+}
+
+html:not(.high-contrast) .markdown :is(th, td):last-child {
+  border-inline-end-color: rgb(var(--border-medium) / var(--border-medium-alpha, 1));
+}
+
 .markdown a {
   text-decoration-line: underline;
   text-underline-offset: 2px;
@@ -1296,20 +1210,7 @@ html[data-drawer-nav] body {
 .group:hover .group-hover\:visible {
   visibility: visible;
 }
-.group:hover .group-hover\:from-\[\#2A2B32\] {
-  --tw-gradient-from: #2a2b32;
-  --tw-gradient-to: rgba(42, 43, 50, 0);
-  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to);
-}
-.group:hover .group-hover\:text-gray-500 {
-  --tw-text-opacity: 1;
-  color: rgba(142, 142, 160, var(--tw-text-opacity));
-}
-.group:hover .group-hover\:text-gray-700 {
-  --tw-text-opacity: 1;
-  color: rgba(64, 65, 79, var(--tw-text-opacity));
-}
-.dark .dark\:prose-invert {
+.dark .prose {
   --tw-prose-body: var(--tw-prose-invert-body);
   --tw-prose-headings: var(--tw-prose-invert-headings);
   --tw-prose-lead: var(--tw-prose-invert-lead);
@@ -1347,7 +1248,7 @@ html {
 }
 .dark body,
 .dark html {
-  background-color: rgb(var(--surface-primary-alt));
+  background-color: rgb(var(--page-canvas));
 }
 #__next,
 #root {
@@ -1381,7 +1282,7 @@ html {
 }
 .markdown blockquote {
   --tw-border-opacity: 1;
-  border-color: rgb(var(--border-medium));
+  border-color: rgb(var(--prose-quote-bar));
   border-left-width: 2px;
   line-height: 1rem;
   padding-left: 1rem;
@@ -1453,8 +1354,8 @@ html {
 }
 .toast-root .alert-root {
   box-shadow:
-    0 0 1px rgba(67, 90, 111, 0.3),
-    0 5px 8px -4px rgba(67, 90, 111, 0.3);
+    0 0 1px rgb(var(--toast-edge) / 0.3),
+    0 5px 8px -4px rgb(var(--toast-edge) / 0.3);
   flex-shrink: 0;
   pointer-events: all;
 }
@@ -1540,11 +1441,11 @@ html {
   }
 }
 
-.shadow-stroke {
+.avatar-stroke {
   position: relative;
 }
-.shadow-stroke:after {
-  --tw-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.1);
+.avatar-stroke:after {
+  --tw-shadow: inset 0 0 0 1px rgb(var(--stroke-ink) / var(--stroke-ink-alpha));
   --tw-shadow-colored: inset 0 0 0 1px var(--tw-shadow-color);
   border-radius: 9999px;
   bottom: 0;
@@ -1554,8 +1455,8 @@ html {
   right: 0;
   top: 0;
 }
-.dark .shadow-stroke:after,
-.shadow-stroke:after {
+.dark .avatar-stroke:after,
+.avatar-stroke:after {
   box-shadow:
     0 0 transparent,
     0 0 transparent,
@@ -1564,9 +1465,18 @@ html {
     var(--tw-ring-offset-shadow, 0 0 transparent), var(--tw-ring-shadow, 0 0 transparent),
     var(--tw-shadow);
 }
-.dark .shadow-stroke:after {
-  --tw-shadow: inset 0 0 0 1px hsla(0, 0%, 100%, 0.3);
+.dark .avatar-stroke:after {
+  --tw-shadow: inset 0 0 0 1px rgb(var(--stroke-ink) / var(--stroke-ink-alpha));
   --tw-shadow-colored: inset 0 0 0 1px var(--tw-shadow-color);
+}
+
+/* Auto-height reveals over a grid (rows 0fr to 1fr) share the resize tween with
+ * `Collapse`, `McpOAuthDialog`, `MCPToolItem` and `McpSection`; pair with
+ * `motion-reduce:transition-none`. */
+@utility resize-rows {
+  transition-property: grid-template-rows;
+  transition-duration: var(--resize-dur);
+  transition-timing-function: var(--resize-ease);
 }
 
 .assistant-item {
@@ -1574,7 +1484,7 @@ html {
 }
 
 .assistant-item:after {
-  --tw-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+  --tw-shadow: inset 0 0 0 1px rgb(var(--black) / 0.25);
   --tw-shadow-colored: inset 0 0 0 1px var(--tw-shadow-color);
   border-radius: 9999px;
   bottom: 0;
@@ -1593,7 +1503,7 @@ html {
 }
 
 .dark .assistant-item:after {
-  --tw-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.25);
+  --tw-shadow: inset 0 0 0 1px rgb(var(--black) / 0.25);
   --tw-shadow-colored: inset 0 0 0 0 1px var(--tw-shadow-color);
 }
 
@@ -1704,19 +1614,6 @@ html {
   [data-lc-fade] {
     animation: none;
   }
-}
-
-.webkit-dark-styles,
-.webkit-dark-styles:focus {
-  background-clip: content-box;
-  -webkit-box-shadow: 0 0 0 50vh #fff inset;
-}
-
-.dark .webkit-dark-styles,
-.dark .webkit-dark-styles:focus {
-  -webkit-text-fill-color: #fff;
-  background-clip: content-box;
-  -webkit-box-shadow: 0 0 0 50vh #0d0d0d inset;
 }
 
 /* Ordered Listing */
@@ -1932,6 +1829,14 @@ html {
   font-size: calc(0.9 * var(--markdown-font-size, var(--font-size-base)));
 }
 
+/* iOS zooms into a focused field under 16px and the installed PWA never zooms back out. */
+@media (any-pointer: coarse) {
+  .message-editor-text,
+  .composer-text {
+    font-size: max(16px, var(--markdown-font-size, var(--font-size-base)));
+  }
+}
+
 .message-content pre {
   font-size: var(--markdown-font-size, var(--font-size-base));
 }
@@ -1970,19 +1875,19 @@ html {
   z-index: 150;
   cursor: pointer;
   border-radius: var(--theme-tooltip-radius, 0.275rem);
-  background-color: rgb(var(--surface-primary));
-  padding-top: 0.25rem;
-  padding-bottom: 0.25rem;
-  padding-left: 0.5rem;
-  padding-right: 0.5rem;
-  font-size: 1rem;
-  line-height: 1.5rem;
-  color: rgb(var(--text-primary));
-  box-shadow: var(--theme-tooltip-shadow, 0 2px 4px 0 rgb(0 0 0 / 0.25));
+  background-color: rgb(var(--surface-tooltip, var(--surface-primary)));
+  padding-top: var(--theme-tooltip-padding-y, 0.25rem);
+  padding-bottom: var(--theme-tooltip-padding-y, 0.25rem);
+  padding-left: var(--theme-tooltip-padding-x, 0.5rem);
+  padding-right: var(--theme-tooltip-padding-x, 0.5rem);
+  font-size: var(--theme-tooltip-text-size, 1rem);
+  line-height: 1.5;
+  color: rgb(var(--text-tooltip, var(--text-primary)));
+  box-shadow: var(--theme-tooltip-shadow, 0 2px 4px 0 rgb(var(--black) / 0.25));
 }
 
 .tooltip:where(.dark, .dark *) {
-  box-shadow: var(--theme-tooltip-shadow, 0 1px 2px 0 rgb(0 0 0 / 0.35));
+  box-shadow: var(--theme-tooltip-shadow, 0 1px 2px 0 rgb(var(--black) / 0.35));
 }
 
 @layer base {
@@ -2049,7 +1954,10 @@ html[data-input-modality='keyboard']
   }
 }
 
-.dark :focus-visible {
+/* A control that declares its own focus outline utility (`focus-visible:outline-hidden`,
+ * `focus-visible:outline-2 focus-visible:outline-focus-subtle`) keeps it: this rule is unlayered,
+ * so it would otherwise outrank every outline utility and repaint the global role over them. */
+.dark :focus-visible:not([class*='focus-visible:outline-'], [class*='focus:outline-']) {
   outline: var(--theme-focus-ring-width, 2px) solid rgb(var(--focus-outline));
   outline-offset: var(--theme-focus-ring-offset, 2px);
 }
@@ -2063,15 +1971,15 @@ html[data-input-modality='keyboard']
   border-radius: var(--theme-menu-radius, 0.7rem);
   border-width: 1px;
   border-style: solid;
-  border-color: rgb(var(--border-light) / var(--border-light-alpha, 1));
-  background-color: rgb(var(--surface-primary));
+  border-color: rgb(var(--border-menu) / var(--border-menu-alpha, var(--border-light-alpha, 1)));
+  background-color: rgb(var(--surface-popover));
   padding: 0.5rem;
   color: rgb(var(--text-primary));
   /* The `menuShadow` role, whose light default is this literal. */
   box-shadow: var(
     --theme-menu-shadow,
-    0 10px 15px -3px rgb(0 0 0 / 0.1),
-    0 4px 6px -4px rgb(0 0 0 / 0.1)
+    0 10px 15px -3px rgb(var(--black) / 0.1),
+    0 4px 6px -4px rgb(var(--black) / 0.1)
   );
   transform-origin: var(--popover-transform-origin, top);
   opacity: 0;
@@ -2102,12 +2010,12 @@ html[data-input-modality='keyboard']
 }
 
 .popover-ui:where(.dark, .dark *) {
-  background-color: rgb(var(--surface-secondary));
+  background-color: rgb(var(--surface-popover));
   color: rgb(var(--text-secondary));
   box-shadow: var(
     --theme-menu-shadow,
-    0 10px 15px -3px rgb(0 0 0 / 0.25),
-    0 4px 6px -4px rgb(0 0 0 / 0.1)
+    0 10px 15px -3px rgb(var(--black) / 0.25),
+    0 4px 6px -4px rgb(var(--black) / 0.1)
   );
 }
 
@@ -2207,6 +2115,10 @@ html[data-input-modality='keyboard']
     opacity 190ms cubic-bezier(0.32, 0.72, 0, 1),
     transform 260ms cubic-bezier(0.32, 0.72, 0, 1);
   will-change: transform, opacity;
+}
+/* Resizable anchored panels share the composer entrance and exit clock. */
+.animate-composer-popover-resize {
+  transition-property: opacity, transform, width, max-height;
 }
 .animate-composer-popover[data-enter] {
   opacity: 1;

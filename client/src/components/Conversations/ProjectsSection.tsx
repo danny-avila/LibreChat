@@ -155,10 +155,10 @@ const ProjectChatsInline = memo(function ProjectChatsInline({
       {hasMore && (
         <Button
           type="button"
-          variant="ghost"
+          variant="quiet"
           size="sm"
           onClick={onShowAll}
-          className="text-text-secondary hover:text-text-primary mt-0.5 ml-1 h-auto rounded-md px-2 py-1 text-xs font-medium transition-colors"
+          className="mt-0.5 ml-1 h-auto rounded-md px-2 py-1 text-xs font-medium"
         >
           {localize('com_ui_show_all')}
         </Button>
@@ -304,10 +304,11 @@ const ProjectItem = memo(
       <li className="max-w-full min-w-0 list-none" ref={projectRowRef}>
         <div
           className={cn(
-            'group text-text-primary hover:bg-surface-active-alt relative flex h-9 max-w-full min-w-0 items-center rounded-lg text-sm',
-            isActive && 'bg-surface-active-alt hover:bg-surface-active-alt',
-            !isActive && isMenuOpen && 'bg-surface-active-alt',
-            isDropOver && canDrop && 'bg-surface-active-alt ring-border-medium ring-1 ring-inset',
+            'group text-text-primary relative flex h-9 max-w-full min-w-0 items-center rounded-lg text-sm',
+            isActive || isMenuOpen || (isDropOver && canDrop)
+              ? 'bg-surface-nav-selected'
+              : 'hover:bg-surface-nav-hover',
+            isDropOver && canDrop && 'ring-border-medium ring-1 ring-inset',
           )}
         >
           <button
@@ -454,7 +455,7 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
     if (isLoading && projects.length === 0) {
       return (
         <div className="flex justify-start py-2 pl-2">
-          <Spinner className="text-text-secondary h-4 w-4" />
+          <Spinner tone="secondary" className="h-4 w-4" />
         </div>
       );
     }
@@ -478,7 +479,7 @@ const ProjectsSection = ({ toggleNav, isAuthenticated }: ProjectsSectionProps) =
     }
 
     return (
-      <ul className="m-0 list-none p-0">
+      <ul className="m-0 flex list-none flex-col gap-1 p-0">
         {projects.map((project) => (
           <ProjectItem
             key={project._id}

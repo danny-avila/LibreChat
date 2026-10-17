@@ -147,6 +147,15 @@ module.exports = {
       () => (_req, res) => res.status(200).json({ tasks: [] }),
     ),
     createBackgroundTaskPolicyMiddleware: jest.fn(() => (_req, _res, next) => next()),
+    createPullRequestSource: jest.fn(() => ({ find: jest.fn() })),
+    createProxyAwareFetch: jest.fn(() => jest.fn()),
+    createPullRequestLookup: jest.fn(() => jest.fn()),
+    createPullRequestLookupStore: jest.fn(() => undefined),
+    createPullRequestUserTokenFromEnv: jest.fn(() => undefined),
+    createConversationPullRequestsHandler: jest.fn(() => jest.fn()),
+    createConversationPullRequestHandler: jest.fn(
+      () => (_req, res) => res.status(200).json({ pullRequest: null }),
+    ),
     createBackgroundTaskCancelHandler: jest.fn(
       () => (_req, res) => res.status(200).json({ results: [] }),
     ),

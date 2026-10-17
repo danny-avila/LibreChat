@@ -1,6 +1,9 @@
 export * from './domain';
 export * from './openid';
 export * from './saml';
+export * from './ldap';
+export * from './social';
+export * from './provision';
 export * from './proxy';
 export * from './exchange';
 export * from './refresh';
@@ -10,7 +13,6 @@ export * from './password';
 export * from './recovery';
 export * from './passkey';
 export * from './passkey/handlers';
-export * from './credentials';
 export * from './verification';
 export * from './invite';
 export * from './codeapi';

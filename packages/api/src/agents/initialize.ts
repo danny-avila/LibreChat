@@ -65,6 +65,7 @@ import type { TextContentFragment } from '../protection/types';
 import type { CheckAccessParams } from '../middleware/access';
 import type { GetProjectFiles } from '../projects/resources';
 import type { MCPToolAlias } from '~/tools/classification';
+import type { CodeExecutionContext } from './execution';
 import type { AgentExecutionContext } from './runtime';
 import {
   injectSkillCatalog,
@@ -75,13 +76,6 @@ import {
   unionPrimeAllowedTools,
   MAX_PRIMED_SKILLS_PER_TURN,
 } from './skills';
-import {
-  normalizeStatefulCodeEnvironment,
-  resolveCodeExecutionContext,
-  resolveCodeExecutionWorkspaceSelections,
-  type CodeEnvironmentConfig,
-  type CodeExecutionContext,
-} from './execution';
 import {
   resolveChatProjectFiles,
   resolveChatProjectPolicyFiles,
@@ -120,10 +114,6 @@ import {
   formatChatProjectInstructions,
   hydrateChatProjectContextResources,
 } from '../projects/context';
-import {
-  createStatefulCodeEnvironmentPolicyError,
-  isFatalAgentInitializationError,
-} from './errors';
 import { assertChatProjectInstructions, ChatProjectResourcesChangedError } from '../projects/turn';
 import { extractAgentContent, extractSkillContent } from '../protection/adapters/submissions';
 import { createConfiguredContentInspector, inspectContent } from '../protection/runtime';
@@ -131,9 +121,9 @@ import { assertAgentAttachmentLimits, isModelBoundAttachmentFile } from './attac
 import { assertModelBoundContent } from '../middleware/modelBoundContent';
 import { resolveAttachedWorkspaceReadFileLines } from '~/code/workspace';
 import { isValidInstructionsPromptLink } from './instructions/linked';
-import { isImplicitStatefulCodeRouteAvailable } from '../code/config';
 import { PARTIAL_RESOLVED_CONVERSATION } from './conversationSymbols';
 import { registerMemoryTools, memoryToolUsageGuard } from './memory';
+import { isImplicitStatefulCodeRouteAvailable } from '~/code/config';
 import { applyIntentLabels, sanitizeIntentLabels } from './intent';
 import { prepareQueuedCodeFileContext } from '~/files/code/queued';
 import { ContentFilterError } from '../middleware/contentFilter';
@@ -141,7 +131,9 @@ import { resolveToolRoleGrants } from '~/tools/rolePermissions';
 import { createRequestAgentExecutionContext } from './runtime';
 import { resolveTurnDeliveryRouting } from './files/delivery';
 import { filterFilesByEndpointRuntimeConfig } from '~/files';
+import { isFatalAgentInitializationError } from './errors';
 import { hasActiveFilePolicy } from '../protection/files';
+import { resolveAgentCodeExecution } from '~/code/agent';
 import { hasActiveFileFieldPolicy } from '~/protection';
 import { applyBackgroundToolCalls } from './background';
 import { applyTurnDelivery } from './files/delivery';
@@ -898,25 +890,6 @@ export type InitializedAgent = Agent & {
 };
 
 export const DEFAULT_MAX_CONTEXT_TOKENS = 32000;
-/** Returns true when a conversation-level choice disables an attached environment. */
-export function optsOutOfAttachedCodeEnvironment(
-  agent: Agent,
-  requestBody: RequestBody | undefined,
-  environments: readonly CodeEnvironmentConfig[] | undefined,
-  implicitStatefulRouteAvailable = false,
-): boolean {
-  if (requestBody?.codeEnvironmentMode !== 'without_attached') return false;
-  const configured = agent.code_environment_id
-    ? environments?.find(({ id }) => id === agent.code_environment_id)
-    : environments?.find(({ default: isDefault }) => isDefault === true);
-  return (
-    agent.stateful_code_sessions === true &&
-    (configured?.type === 'attached' ||
-      (configured == null &&
-        (Boolean(agent.code_environment_id) || !implicitStatefulRouteAvailable)))
-  );
-}
-
 /**
  * Parameters for initializing an agent
  * Matches the CJS signature from api/server/services/Endpoints/agents/agent.js
@@ -953,6 +926,8 @@ export interface InitializeAgentParams {
     requestBody?: RequestBody;
     /** Trusted endpoint/profile resolved for this agent before any code-file priming. */
     codeExecutionContext: CodeExecutionContext;
+    /** The conversation's "No workspace" decision removed this agent's code tools. */
+    attachedEnvironmentOptOut?: boolean;
     /** Full accessible MCP server names (operator + user DB) when the heal
      *  already fetched them — lets execution-side collision guards see
      *  cross-tier shadowing without another registry round-trip. */
@@ -1622,46 +1597,31 @@ export async function initializeAgent(
   const agentRequestsCodeExec = (agent.tools ?? []).includes(Tools.execute_code);
   const configuredCodeEnvironments =
     appConfig?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.environments;
-  const attachedEnvironmentOptOut = optsOutOfAttachedCodeEnvironment(
+  const {
+    attachedEnvironmentOptOut,
+    codeEnvAvailable: effectiveCodeEnvAvailable,
+    statefulSessions: effectiveStatefulSessions,
+    statefulCodeEnvironment,
+    context: codeExecutionContext,
+  } = resolveAgentCodeExecution({
     agent,
     requestBody,
-    configuredCodeEnvironments,
-    isImplicitStatefulCodeRouteAvailable(
+    conversation: runtime.resolvedConversation,
+    codeExecutionAvailable: params.codeEnvAvailable === true,
+    statefulSessionsAvailable: params.statefulSessionsAvailable === true,
+    allowedStatefulCodeEnvironments: resolveAllowedStatefulCodeEnvironments(
+      params.allowedStatefulCodeEnvironments ??
+        appConfig?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.allowedEnvironments,
+    ),
+    allowEnvironmentSelection:
+      appConfig?.endpoints?.agents?.statefulCodeSessions?.allowEnvironmentSelection,
+    inheritedEnvironments: runtime.codeWorkspaceInheritance,
+    environments: configuredCodeEnvironments,
+    implicitStatefulRouteAvailable: isImplicitStatefulCodeRouteAvailable(
       process.env.CODE_ENVIRONMENT_DECISION_VERSION,
       process.env.LIBRECHAT_CODE_BASEURL_STATEFUL,
     ),
-  );
-  const effectiveCodeEnvAvailable =
-    params.codeEnvAvailable === true && agentRequestsCodeExec && !attachedEnvironmentOptOut;
-  const effectiveStatefulSessions =
-    effectiveCodeEnvAvailable &&
-    params.statefulSessionsAvailable === true &&
-    agent.stateful_code_sessions === true;
-  const statefulCodeEnvironment = normalizeStatefulCodeEnvironment(agent.stateful_code_environment);
-  if (effectiveStatefulSessions) {
-    const allowedStatefulCodeEnvironments = resolveAllowedStatefulCodeEnvironments(
-      params.allowedStatefulCodeEnvironments ??
-        appConfig?.endpoints?.[EModelEndpoint.agents]?.statefulCodeSessions?.allowedEnvironments,
-    );
-    if (!allowedStatefulCodeEnvironments.includes(statefulCodeEnvironment)) {
-      throw createStatefulCodeEnvironmentPolicyError(statefulCodeEnvironment);
-    }
-  }
-  const codeExecutionContext = resolveCodeExecutionContext({
-    statefulSessions: effectiveStatefulSessions,
-    environment: statefulCodeEnvironment,
-    environmentId: agent.code_environment_id,
-    environmentIds: agent.code_environment_ids,
-    allowEnvironmentSelection:
-      appConfig?.endpoints?.agents?.statefulCodeSessions?.allowEnvironmentSelection,
-    workspaceSelections: resolveCodeExecutionWorkspaceSelections({
-      conversation: runtime.resolvedConversation,
-      request: requestBody,
-    }),
-    inheritedEnvironments: runtime.codeWorkspaceInheritance,
-    environments: configuredCodeEnvironments,
     userId: requestFileOwnerId,
-    agentId: agent.id,
     conversationId,
   });
   const attachedWorkspaceTools =
@@ -1723,6 +1683,10 @@ export async function initializeAgent(
     /** Falsy anchors cannot match a parent chain, so they get no walk. */
     const threadAnchor =
       parentMessageId && parentMessageId !== Constants.NO_PARENT ? parentMessageId : null;
+    /* A turn sent at the root has no history at all. The conversation's file refs then
+     * belong to sibling roots (an edited first message, or one retried without its files),
+     * so a root turn takes none of them, unlike a continuation that names no anchor. */
+    const isRootTurn = parentMessageId === Constants.NO_PARENT;
     /* Either provisioning resource needs the anchor: deferred attachments for
      * file_search are found by thread file ids just as code files are. */
     const needsThreadWalk = wantsProvisioning && threadAnchor != null && getThreadMessages != null;
@@ -1738,7 +1702,10 @@ export async function initializeAgent(
      * every code-output ref.
      */
     const [convoFileIds, threadMessages] = await Promise.all([
-      readResolvedConversationFiles(runtime, conversationId) ?? db.getConvoFiles(conversationId),
+      isRootTurn
+        ? []
+        : (readResolvedConversationFiles(runtime, conversationId) ??
+          db.getConvoFiles(conversationId)),
       needsThreadWalk && getThreadMessages
         ? getThreadMessages({ conversationId }, 'messageId parentMessageId files attachments')
         : null,
@@ -2166,6 +2133,7 @@ export async function initializeAgent(
       tool_resources: runtimeToolResources,
       requestBody,
       codeExecutionContext,
+      attachedEnvironmentOptOut,
       accessibleMcpServerNames: resolvedAuditNames,
     });
 

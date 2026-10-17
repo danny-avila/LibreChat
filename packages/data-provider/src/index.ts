@@ -17,6 +17,7 @@ export * from './errors';
 export * from './runSteps';
 /* ui parts */
 export * from './parts';
+export * from './reasoning';
 export * from './toolTiming';
 /* artifacts  */
 export * from './artifacts';
@@ -64,6 +65,7 @@ export type {
 } from './types/protection';
 export * from './types/subagents';
 export * from './types/background';
+export * from './types/pullRequest';
 export * from './types/queuedTurns';
 /* access permissions */
 export * from './accessPermissions';

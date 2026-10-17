@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { EmptyText } from '@librechat/chat/components';
 import { MessageCircleQuestion, TriangleAlert } from 'lucide-react';
 import type { Agents, PartMetadata } from 'librechat-data-provider';
 import {
@@ -10,7 +11,6 @@ import AskUserQuestionProgress from './AskUserQuestionProgress';
 import { useLocalize, useExpandCollapse } from '~/hooks';
 import { useToolExpansion } from './disclosure';
 import ProgressText from './ProgressText';
-import EmptyText from './Parts/EmptyText';
 import { TOOL_ROW_CLASSES } from './rows';
 import Container from './Container';
 
@@ -173,7 +173,7 @@ export default function AskUserQuestionCall({
               batch.questions.map((item, index) => (
                 <div
                   key={item.id}
-                  className={index > 0 ? 'border-border-light border-t pt-4' : undefined}
+                  className={index > 0 ? 'border-border-inset border-t pt-4' : undefined}
                 >
                   {item.header != null && (
                     <p className="text-text-secondary mb-1 text-xs font-medium">{item.header}</p>

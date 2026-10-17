@@ -103,6 +103,12 @@ function extractText(raw: string, verbatim = false): ExtractedText {
   return { text: trimmed, rawError: '', error: false, isJson: false };
 }
 
+/** Whether the default renderer would draw anything for this output. Callers
+ *  that decide a panel is worth showing use it, so the two cannot disagree. */
+export function hasRenderableOutput(raw?: string | null): boolean {
+  return extractText(raw ?? '').text.length > 0;
+}
+
 export interface OutputSegment {
   text: string;
   className?: string;
@@ -213,8 +219,8 @@ export default function OutputRenderer({
       {error && rawError && rawError !== displayText && (
         <Button
           variant="link"
-          size="sm"
-          className="text-text-secondary focus-visible:ring-border-heavy mt-1 block h-auto p-0 text-xs underline focus-visible:ring-2"
+          size="bare"
+          className="text-text-secondary mt-1 block text-xs underline"
           onClick={() => setShowErrorDetails((prev) => !prev)}
         >
           {localize('com_ui_details')}

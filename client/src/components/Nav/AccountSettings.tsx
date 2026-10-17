@@ -55,7 +55,7 @@ function HelpSubmenu({
       <Menu.Menu
         portal
         gutter={12}
-        className="account-settings-popover popover-ui popover-from-left z-[126] w-[min(15.25rem,90vw)] rounded-lg"
+        className="popover-ui popover-from-left z-[126] w-[min(15.25rem,90vw)] rounded-lg"
       >
         {hasHelpFaq && (
           <Menu.MenuItem
@@ -113,8 +113,8 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
         data-testid="nav-user"
         className={
           collapsed
-            ? 'hover:bg-surface-active-alt aria-[expanded=true]:bg-surface-active-alt flex h-9 w-9 items-center justify-center rounded-lg transition-colors'
-            : 'hover:bg-surface-active-alt aria-[expanded=true]:bg-surface-active-alt flex h-auto w-full items-center gap-2 rounded-xl p-2 text-sm transition-all duration-200 ease-in-out'
+            ? 'hover:bg-surface-nav-hover aria-[expanded=true]:bg-surface-nav-selected flex h-9 w-9 items-center justify-center rounded-lg transition-colors'
+            : 'hover:bg-surface-nav-hover aria-[expanded=true]:bg-surface-nav-selected flex h-auto w-full items-center gap-2 rounded-xl p-2 text-sm transition-all duration-200 ease-in-out'
         }
       >
         <div className={collapsed ? 'size-7 shrink-0' : 'h-8 w-8 shrink-0'}>
@@ -133,7 +133,7 @@ function AccountSettings({ collapsed = false }: { collapsed?: boolean }) {
       </Menu.MenuButton>
       <Menu.Menu
         portal
-        className="account-settings-popover popover-ui z-[125] w-[min(19.0625rem,90vw)] rounded-lg md:w-[min(15.25rem,90vw)]"
+        className="popover-ui z-[125] w-[min(19.0625rem,90vw)] rounded-lg md:w-[min(15.25rem,90vw)]"
         style={{
           transformOrigin: collapsed ? 'left bottom' : 'bottom',
           translate: collapsed ? '4px 0' : '0 -4px',

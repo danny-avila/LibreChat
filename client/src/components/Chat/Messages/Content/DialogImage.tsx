@@ -5,6 +5,9 @@ import { X, ArrowDownToLine, RotateCcw } from 'lucide-react';
 import { Button, MorphIcon, TooltipAnchor, useMediaQuery, useRemScale } from '@librechat/client';
 import { useLocalize } from '~/hooks';
 
+/** The lightbox is z-250 and not an OGDialog, so its tooltips would keep the default 150 and sit behind it. */
+const TOOLTIP_Z_INDEX = 300;
+
 const imageSizeCache = new Map<string, string>();
 
 const getQualityStyles = (quality: string): string => {
@@ -282,13 +285,15 @@ export default function DialogImage({
           {/* Close button - top left */}
           <div className="absolute top-4 left-4 z-20">
             <TooltipAnchor
+              zIndex={TOOLTIP_Z_INDEX}
               description={localize('com_ui_close')}
               render={
                 <Button
                   ref={closeButtonRef}
                   onClick={() => onOpenChange(false)}
                   variant="media"
-                  className="h-10 w-10 p-0"
+                  size="bare"
+                  className="h-10 w-10"
                   aria-label={localize('com_ui_close')}
                 >
                   <X className="size-6" aria-hidden="true" />
@@ -303,12 +308,14 @@ export default function DialogImage({
           >
             {zoom > 1 && (
               <TooltipAnchor
+                zIndex={TOOLTIP_Z_INDEX}
                 description={localize('com_ui_reset_zoom')}
                 render={
                   <Button
                     onClick={resetZoom}
                     variant="media"
-                    className="h-10 w-10 p-0"
+                    size="bare"
+                    className="h-10 w-10"
                     aria-label={localize('com_ui_reset_zoom')}
                   >
                     <RotateCcw className="size-5" aria-hidden="true" />
@@ -317,12 +324,14 @@ export default function DialogImage({
               />
             )}
             <TooltipAnchor
+              zIndex={TOOLTIP_Z_INDEX}
               description={localize('com_ui_download')}
               render={
                 <Button
                   onClick={() => downloadImage()}
                   variant="media"
-                  className="h-10 w-10 p-0"
+                  size="bare"
+                  className="h-10 w-10"
                   aria-label={localize('com_ui_download')}
                 >
                   <ArrowDownToLine className="size-5" aria-hidden="true" />
@@ -331,12 +340,14 @@ export default function DialogImage({
             />
             {showDetails && (
               <TooltipAnchor
+                zIndex={TOOLTIP_Z_INDEX}
                 description={imageDetailsLabel}
                 render={
                   <Button
                     onClick={() => setIsPromptOpen(!isPromptOpen)}
                     variant="media"
-                    className="h-10 w-10 p-0"
+                    size="bare"
+                    className="h-10 w-10"
                     aria-label={imageDetailsLabel}
                   >
                     <MorphIcon
@@ -404,7 +415,8 @@ export default function DialogImage({
                   <Button
                     onClick={() => setIsPromptOpen(false)}
                     variant="ghost"
-                    className={detailsBeside ? 'hidden' : 'h-10 w-10 p-0'}
+                    size="bare"
+                    className={detailsBeside ? 'hidden' : 'h-10 w-10'}
                     aria-label={localize('com_ui_hide_image_details')}
                   >
                     <X className="size-5" aria-hidden="true" />
