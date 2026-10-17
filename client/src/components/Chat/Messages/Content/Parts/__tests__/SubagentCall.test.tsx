@@ -8,6 +8,8 @@ import type {
   SubagentIdentity,
   SubagentUpdateEvent,
   ParentSubagentSummary,
+  TMessageContentParts,
+  TAttachment,
 } from 'librechat-data-provider';
 import type {
   SubagentAggregatorState,
@@ -26,6 +28,7 @@ import {
   subagentProgressByToolCallId,
   subagentProgressKey,
 } from '~/components/Chat/Subagents/state';
+import { SubagentAttachmentsContext } from '~/components/Chat/Subagents/attachments';
 import SubagentCall, { SUBAGENT_TICKER_THROTTLE_MS } from '../SubagentCall';
 import { MessageContext } from '~/Providers/MessageContext';
 import { FailedRevealContext } from '../../reveal';
@@ -141,6 +144,9 @@ function renderWithState(args: {
   subagentIdentity?: SubagentIdentity;
   runStepStatus?: PartMetadata['runStepStatus'];
   selection?: ActiveSubagentPanel;
+  attachments?: TAttachment[];
+  persistedContent?: TMessageContentParts[];
+  unclaimedAttachments?: TAttachment[];
 }) {
   const setter = { current: null as null | ((next: SubagentProgress | null) => void) };
   let selection: ActiveSubagentPanel | null = null;
@@ -171,15 +177,19 @@ function renderWithState(args: {
             }}
           >
             <FailedRevealContext.Provider value={{ tick, claimFocus: () => true }}>
-              <SubagentCall
-                toolCallId={args.toolCallId}
-                initialProgress={args.initialProgress}
-                isSubmitting={args.isSubmitting ?? false}
-                args={args.toolArgs ?? { subagent_type: 'self', description: 'compute' }}
-                output={args.output}
-                runStepStatus={args.runStepStatus}
-                subagentIdentity={args.subagentIdentity}
-              />
+              <SubagentAttachmentsContext.Provider value={args.unclaimedAttachments ?? []}>
+                <SubagentCall
+                  toolCallId={args.toolCallId}
+                  initialProgress={args.initialProgress}
+                  isSubmitting={args.isSubmitting ?? false}
+                  args={args.toolArgs ?? { subagent_type: 'self', description: 'compute' }}
+                  output={args.output}
+                  runStepStatus={args.runStepStatus}
+                  subagentIdentity={args.subagentIdentity}
+                  attachments={args.attachments}
+                  persistedContent={args.persistedContent}
+                />
+              </SubagentAttachmentsContext.Provider>
             </FailedRevealContext.Provider>
           </MessageContext.Provider>
         </RecoilRoot>
@@ -210,6 +220,81 @@ const event = (
 });
 
 describe('SubagentCall', () => {
+  describe('nested tool attachments', () => {
+    const image = (toolCallId: string): TAttachment =>
+      ({
+        file_id: `file-${toolCallId}`,
+        filename: 'cat.png',
+        filepath: '/images/cat.png',
+        type: 'image/png',
+        toolCallId,
+        messageId: 'parent-message',
+        conversationId: 'parent-conversation',
+      }) as unknown as TAttachment;
+    const toolCallPart = (id: string, extra: Record<string, unknown> = {}) =>
+      ({
+        type: 'tool_call',
+        tool_call: { id, name: 'image_gen_oai', args: '{}', progress: 1, ...extra },
+      }) as unknown as TMessageContentParts;
+    const renderedIds = () =>
+      (JSON.parse(screen.getByTestId('attachment-group').textContent ?? '[]') as TAttachment[]).map(
+        (attachment) => attachment.toolCallId,
+      );
+
+    it('renders files saved by a tool call in the persisted child run', () => {
+      renderWithState({
+        toolCallId: 'parent-call',
+        initialProgress: 1,
+        persistedContent: [toolCallPart('child-call')],
+        unclaimedAttachments: [image('child-call'), image('unrelated-call')],
+      });
+      expect(renderedIds()).toEqual(['child-call']);
+    });
+
+    it('renders files saved by a tool call nested two subagents deep', () => {
+      renderWithState({
+        toolCallId: 'parent-call',
+        initialProgress: 1,
+        persistedContent: [
+          toolCallPart('middle-call', { subagent_content: [toolCallPart('grandchild-call')] }),
+        ],
+        unclaimedAttachments: [image('grandchild-call')],
+      });
+      expect(renderedIds()).toEqual(['grandchild-call']);
+    });
+
+    it('renders files saved by a tool call in the live child run', () => {
+      const progress = progressFromEvents({
+        subagentRunId: 'child-run',
+        subagentType: 'self',
+        status: 'run_step',
+        events: [],
+      });
+      renderWithState({
+        toolCallId: 'parent-call',
+        initialProgress: 0.1,
+        isSubmitting: true,
+        attachments: [image('parent-call')],
+        progress: {
+          ...progress,
+          contentParts: [toolCallPart('child-call') as unknown as SubagentContentPart],
+        },
+        unclaimedAttachments: [image('child-call')],
+      });
+      expect(renderedIds()).toEqual(['parent-call', 'child-call']);
+    });
+
+    it('renders nothing when no unclaimed file belongs to the child run', () => {
+      renderWithState({
+        toolCallId: 'parent-call',
+        initialProgress: 1,
+        persistedContent: [toolCallPart('child-call')],
+        unclaimedAttachments: [image('other-call')],
+      });
+      expect(screen.queryByTestId('attachment-group')).not.toBeInTheDocument();
+    });
+  });
+
   it('registers its existing header glyph for both containing fold rails', () => {
     renderWithState({ toolCallId: 'fold-glyph', initialProgress: 1 });
     const row = screen.getByRole('button', { name: 'Ran agent' }).cloneNode(true) as HTMLElement;

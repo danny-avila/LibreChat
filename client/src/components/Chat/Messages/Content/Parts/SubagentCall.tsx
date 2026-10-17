@@ -15,6 +15,10 @@ import {
   subagentProgressKey,
   useSubagentProgress,
 } from '~/components/Chat/Subagents/state';
+import {
+  SubagentAttachmentsContext,
+  selectNestedAttachments,
+} from '~/components/Chat/Subagents/attachments';
 import { useParentSubagents } from '~/components/Chat/Subagents/ParentSubagentsProvider';
 import { isSelfSpawn as isSelfSpawnType } from '~/components/Chat/Subagents/author';
 import { adaptLivePersistedActivity } from '~/components/Chat/Subagents/adapters';
@@ -199,6 +203,23 @@ export default function SubagentCall({
   const parentConversationId = parentMessageContext.conversationId?.trim() ?? '';
   const canOpenDurablePanel =
     isSharedConvo !== true && backgroundHandle != null && parentConversationId !== '';
+
+  const unclaimedAttachments = useContext(SubagentAttachmentsContext);
+  const liveContentParts = progress?.contentParts;
+  /** Files a tool saved inside the child run carry the child tool call id, so
+   *  they are matched through the child's tool calls rather than this one. */
+  const displayedAttachments = useMemo(() => {
+    const nested = selectNestedAttachments(
+      unclaimedAttachments,
+      persistedContent,
+      liveContentParts,
+    );
+    if (nested.length === 0) {
+      return attachments;
+    }
+    const own = attachments ?? [];
+    return [...own, ...nested.filter((attachment) => !own.includes(attachment))];
+  }, [attachments, unclaimedAttachments, persistedContent, liveContentParts]);
 
   const subagentType = progress?.subagentType ?? extractSubagentType(args);
   const isSelfSpawn = isSelfSpawnType(
@@ -524,8 +545,8 @@ export default function SubagentCall({
         </ul>
       </button>
 
-      {!hideAttachments && attachments && attachments.length > 0 && (
-        <AttachmentGroup attachments={attachments} />
+      {!hideAttachments && displayedAttachments && displayedAttachments.length > 0 && (
+        <AttachmentGroup attachments={displayedAttachments} />
       )}
     </>
   );

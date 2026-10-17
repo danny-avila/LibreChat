@@ -28,6 +28,10 @@ import {
   SoleToolContext,
 } from './disclosure';
 import {
+  SubagentAttachmentsContext,
+  selectUnclaimedAttachments,
+} from '~/components/Chat/Subagents/attachments';
+import {
   groupActivityPhases,
   lastCursorContentIdx,
   getActivityLabelText,
@@ -1461,6 +1465,14 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
    *  value at every markdown block in the message. */
   const attachmentsByName = useMemo(() => buildAttachmentsByName(attachments), [attachments]);
   const media = useMemo(() => ({ attachmentsByName }), [attachmentsByName]);
+  const unclaimedAttachments = useMemo(
+    () =>
+      selectUnclaimedAttachments(
+        props.content,
+        partitionWorkspaceChanges(attachments).inlineAttachments,
+      ),
+    [props.content, attachments],
+  );
   return (
     <MessageContext.Provider value={messageContext}>
       <MediaContext.Provider value={media}>
@@ -1474,10 +1486,12 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
             {appContent ?? (
               <MCPAppSuppressionContext.Provider value={suppressedAppAttachments}>
                 <SoleToolContext.Provider value={undefined}>
-                  <ContentPartsBody
-                    {...props}
-                    resumeAuthors={props.resumeAuthors ?? messageContent.resumeAuthors}
-                  />
+                  <SubagentAttachmentsContext.Provider value={unclaimedAttachments}>
+                    <ContentPartsBody
+                      {...props}
+                      resumeAuthors={props.resumeAuthors ?? messageContent.resumeAuthors}
+                    />
+                  </SubagentAttachmentsContext.Provider>
                 </SoleToolContext.Provider>
               </MCPAppSuppressionContext.Provider>
             )}
