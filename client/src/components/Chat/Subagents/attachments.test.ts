@@ -159,6 +159,20 @@ describe('subagent attachments', () => {
     ]);
   });
 
+  it('gives restored child files to the run whose stored identity owns them', () => {
+    const run = (id: string, agent: string) =>
+      toolCall(id, {
+        name: 'subagent',
+        subagentIdentity: { subagentKind: 'agent', subagentAgentId: agent },
+        subagent_content: [toolCall('shared-child')],
+      });
+    const content = [run('first', 'agent-a'), run('second', 'agent-b')];
+    const fromB = { ...file('shared-child'), agentId: 'agent-b' } as TAttachment;
+    const assigned = assignNestedAttachments(content, [fromB], new Map());
+    expect(ids(assigned, content[0])).toEqual([]);
+    expect(ids(assigned, content[1])).toEqual(['shared-child']);
+  });
+
   it('keeps the files of two subagent calls that share an id apart', () => {
     const content = [
       subagent('same-id', [toolCall('first-child')]),

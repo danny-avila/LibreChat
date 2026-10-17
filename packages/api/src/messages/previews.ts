@@ -79,6 +79,7 @@ interface StoredToolCall extends ToolCallPreviewMarkers {
   subagent_content?: unknown;
   subagentAttachmentCalls?: Agents.SubagentAttachmentCall[];
   agentId?: unknown;
+  subagentIdentity?: unknown;
 }
 
 interface StoredToolCallPart {
@@ -179,6 +180,12 @@ const scopeAgrees = (call: AttachmentScope, file: AttachmentScope): boolean =>
   (call.agentId == null || file.agentId == null || call.agentId === file.agentId) &&
   (call.stepId == null || file.stepId == null || call.stepId === file.stepId);
 
+/** The agent a stored subagent call ran, from its persisted identity. */
+const runAgentId = (toolCall: StoredToolCall): string | undefined => {
+  const identity = toolCall.subagentIdentity as { subagentAgentId?: unknown } | undefined;
+  return typeof identity?.subagentAgentId === 'string' ? identity.subagentAgentId : undefined;
+};
+
 /** Whether the call carries every scope the attachment does. */
 const scopeMatches = (call: AttachmentScope, file: AttachmentScope): boolean =>
   (file.agentId == null || call.agentId === file.agentId) &&
@@ -194,13 +201,15 @@ const scopeMatches = (call: AttachmentScope, file: AttachmentScope): boolean =>
 function nestedAttachmentCalls(
   parts: unknown[],
   wanted: AttachmentScopes,
+  ownerAgentId?: string,
 ): Agents.SubagentAttachmentCall[] {
   const found = new Map<string, Agents.SubagentAttachmentCall>();
   const exactFor = new Set<AttachmentScope>();
   const agreeingFor = new Set<AttachmentScope>();
-  const stack: unknown[][] = [parts];
+  /** Each level carries the agent of the run it belongs to, for parts that do not stamp one. */
+  const stack: Array<[unknown[], string | undefined]> = [[parts, ownerAgentId]];
   while (stack.length > 0) {
-    const current = stack.pop() ?? [];
+    const [current, levelOwner] = stack.pop() ?? [[], undefined];
     for (const part of current) {
       if (!isToolCallPart(part)) {
         continue;
@@ -208,8 +217,8 @@ function nestedAttachmentCalls(
       const { id, stepId, subagent_content } = part.tool_call;
       const scopes = typeof id === 'string' ? wanted.get(id) : undefined;
       if (scopes != null) {
-        /** The owner is stored on the part, or on the call when the part carries none. */
-        const owner = part.agentId ?? part.tool_call.agentId;
+        /** The owner is stored on the part, on the call, or on the run that holds it. */
+        const owner = part.agentId ?? part.tool_call.agentId ?? levelOwner;
         const call: Agents.SubagentAttachmentCall = {
           id: id as string,
           ...(typeof owner === 'string' ? { agentId: owner } : {}),
@@ -232,7 +241,7 @@ function nestedAttachmentCalls(
         }
       }
       if (Array.isArray(subagent_content)) {
-        stack.push(subagent_content);
+        stack.push([subagent_content, runAgentId(part.tool_call)]);
       }
     }
   }
@@ -598,7 +607,7 @@ export function previewToolCall<T extends StoredToolCall>(
     const childCalls =
       attachmentIds == null
         ? []
-        : nestedAttachmentCalls(subagentContent as unknown[], attachmentIds);
+        : nestedAttachmentCalls(subagentContent as unknown[], attachmentIds, runAgentId(toolCall));
     if (childCalls.length > 0) {
       next.subagentAttachmentCalls = childCalls;
     }

@@ -494,6 +494,7 @@ type NestedToolCallFields = {
   name?: string;
   stepId?: string;
   agentId?: string;
+  subagentIdentity?: { subagentAgentId?: string };
   subagent_content?: TMessageContentParts[];
   subagentAttachmentCalls?: Agents.SubagentAttachmentCall[];
 };
@@ -508,9 +509,10 @@ export const nestedToolCallOf = (
 
 /**
  * The tool calls of a subagent transcript, nested runs included, with their
- * scope: the owner on the part, or on the call when the part has none, or
- * `ownerAgentId` for the transcript's own top-level calls. A preview that left
- * a transcript out names the calls its files were saved under in
+ * scope: the owner on the part, or on the call when the part has none, or the
+ * agent of the run the call belongs to (`ownerAgentId` for `parts` itself, the
+ * stored `subagentIdentity` of each nested run). A preview that left a
+ * transcript out names the calls its files were saved under in
  * `subagentAttachmentCalls`.
  */
 export function collectNestedCalls(
@@ -518,13 +520,14 @@ export function collectNestedCalls(
   calls: Agents.SubagentAttachmentCall[] = [],
   ownerAgentId?: string,
 ): Agents.SubagentAttachmentCall[] {
-  /** An explicit stack, in transcript order: stored chains can nest thousands deep. */
+  /** An explicit stack, in transcript order: stored chains can nest thousands deep. Each level
+   *  carries the agent of the run it belongs to, for parts that do not stamp their own. */
   const stack: Array<
-    [ReadonlyArray<TMessageContentParts | SubagentContentPart | undefined>, number]
-  > = parts == null ? [] : [[parts, 0]];
+    [ReadonlyArray<TMessageContentParts | SubagentContentPart | undefined>, number, string?]
+  > = parts == null ? [] : [[parts, 0, ownerAgentId]];
   while (stack.length > 0) {
     const frame = stack[stack.length - 1];
-    const [current, index] = frame;
+    const [current, index, levelOwner] = frame;
     if (index >= current.length) {
       stack.pop();
       continue;
@@ -533,11 +536,8 @@ export function collectNestedCalls(
     const part = current[index];
     const toolCall = nestedToolCallOf(part);
     if (toolCall?.id) {
-      /** `ownerAgentId` stands in for the run's own parts, which live activity does not stamp. */
       const agentId =
-        (part as { agentId?: string } | undefined)?.agentId ??
-        toolCall.agentId ??
-        (stack.length === 1 ? ownerAgentId : undefined);
+        (part as { agentId?: string } | undefined)?.agentId ?? toolCall.agentId ?? levelOwner;
       calls.push({
         id: toolCall.id,
         ...(agentId == null ? {} : { agentId }),
@@ -546,7 +546,7 @@ export function collectNestedCalls(
     }
     calls.push(...(toolCall?.subagentAttachmentCalls ?? []));
     if (Array.isArray(toolCall?.subagent_content)) {
-      stack.push([toolCall.subagent_content, 0]);
+      stack.push([toolCall.subagent_content, 0, toolCall.subagentIdentity?.subagentAgentId]);
     }
   }
   return calls;

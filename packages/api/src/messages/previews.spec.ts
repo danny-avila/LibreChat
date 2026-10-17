@@ -34,6 +34,7 @@ type TestToolCall = {
   subagentContentOmitted?: true;
   subagentAttachmentCalls?: Array<{ id: string; agentId?: string; stepId?: string }>;
   agentId?: string;
+  subagentIdentity?: { subagentKind?: string; subagentAgentId?: string };
   function?: unknown;
 };
 
@@ -489,6 +490,23 @@ describe('previewMessagesToolCalls', () => {
     );
     const [part] = message.content as Array<{ tool_call: TestToolCall }>;
     expect(part.tool_call.subagentAttachmentCalls).toHaveLength(1);
+  });
+
+  it('scopes hints to the agent a stored subagent call ran', () => {
+    const subagent = toolPart({
+      name: 'subagent',
+      output: 'summary',
+      subagentIdentity: { subagentKind: 'agent', subagentAgentId: 'agent_child' },
+      subagent_content: [toolPart({ id: 'call_0', output: 'done' })],
+    });
+    const [message] = previewMessagesToolCalls(
+      [{ content: [subagent], attachments: [{ toolCallId: 'call_0', agentId: 'agent_child' }] }],
+      limits,
+    );
+    const [part] = message.content as Array<{ tool_call: TestToolCall }>;
+    expect(part.tool_call.subagentAttachmentCalls).toEqual([
+      { id: 'call_0', agentId: 'agent_child' },
+    ]);
   });
 
   it('keeps hints for a mutation response that leaves its attachments out', () => {

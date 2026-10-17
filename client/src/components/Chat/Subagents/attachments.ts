@@ -71,7 +71,11 @@ function collectNestedOwners(
     if (toolCall == null) {
       return;
     }
-    const calls = collectNestedCalls(toolCall.subagent_content);
+    const calls = collectNestedCalls(
+      toolCall.subagent_content,
+      [],
+      toolCall.subagentIdentity?.subagentAgentId,
+    );
     calls.push(...(toolCall.subagentAttachmentCalls ?? []), ...(live.get(index) ?? []));
     if (calls.length > 0) {
       owners.push([part, calls]);
