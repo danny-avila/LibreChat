@@ -195,6 +195,18 @@ describe('hasEntityEmbeddings', () => {
     await expect(hasEntityEmbeddings(params)).resolves.toBe(false);
   });
 
+  it('passes the timeout to the request', async () => {
+    mockedAxios.post.mockResolvedValueOnce({ data: [] });
+
+    await hasEntityEmbeddings({ ...params, timeoutMs: 1234 });
+
+    expect(mockedAxios.post).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.any(Object),
+      expect.objectContaining({ timeout: 1234 }),
+    );
+  });
+
   it('rejects when RAG cannot be asked', async () => {
     mockedAxios.post.mockRejectedValueOnce(new Error('connect ECONNREFUSED'));
 

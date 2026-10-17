@@ -106,7 +106,11 @@ export type THasEntityEmbeddings = (params: {
   file_id: string;
   entity_id: string;
   query: string;
+  timeoutMs?: number;
 }) => Promise<boolean>;
+
+/** How long priming waits on a legacy File Search check before embedding the file anyway. */
+const DEFAULT_LEGACY_SEARCH_PROBE_TIMEOUT_MS = 5000;
 
 /** State computed during primeResources for lazy provisioning at tool invocation time */
 export type ProvisionState = {
@@ -448,6 +452,7 @@ const computeProvisionState = async ({
   persistedResourceMembership,
   adoptLegacySearchEmbeddings,
   hasEntityEmbeddings,
+  legacySearchProbeTimeoutMs = DEFAULT_LEGACY_SEARCH_PROBE_TIMEOUT_MS,
   staleSafeWindowMs,
 }: {
   req?: ServerRequest;
@@ -470,6 +475,7 @@ const computeProvisionState = async ({
   persistedResourceMembership?: ReadonlyMap<EToolResources, ReadonlySet<string>>;
   adoptLegacySearchEmbeddings?: TAdoptLegacySearchEmbeddings;
   hasEntityEmbeddings?: THasEntityEmbeddings;
+  legacySearchProbeTimeoutMs?: number;
   staleSafeWindowMs?: number;
 }): Promise<ProvisionState | undefined> => {
   if (!enabledToolResources || enabledToolResources.size === 0 || attachments.length === 0) {
@@ -545,6 +551,7 @@ const computeProvisionState = async ({
           file_id: file.file_id,
           entity_id: agentId,
           query: file.filename || file.file_id,
+          timeoutMs: legacySearchProbeTimeoutMs,
         }).catch((error) => {
           logger.error(
             `[primeResources] Could not check legacy embeddings for file ${file.file_id}`,
@@ -1043,6 +1050,7 @@ export const primeResources = async ({
         persistedResourceMembership,
         adoptLegacySearchEmbeddings,
         hasEntityEmbeddings,
+        legacySearchProbeTimeoutMs: appConfig?.fileConfig?.legacySearchProbeTimeoutMs,
         staleSafeWindowMs: appConfig?.fileConfig?.codeEnvLivenessSafeWindowMs,
       });
       return {
@@ -1111,6 +1119,7 @@ export const primeResources = async ({
       persistedResourceMembership,
       adoptLegacySearchEmbeddings,
       hasEntityEmbeddings,
+      legacySearchProbeTimeoutMs: appConfig?.fileConfig?.legacySearchProbeTimeoutMs,
       staleSafeWindowMs: appConfig?.fileConfig?.codeEnvLivenessSafeWindowMs,
     });
 

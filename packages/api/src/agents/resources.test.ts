@@ -2717,6 +2717,7 @@ describe('primeResources', () => {
           file_id: 'legacy-search',
           entity_id: 'agent1',
           query: 'handbook.pdf',
+          timeoutMs: 5000,
         });
         expect(adopt).toHaveBeenCalledWith({
           files: [{ file_id: 'legacy-search', user: 'user1' }],
@@ -2726,6 +2727,30 @@ describe('primeResources', () => {
         expect(result.tool_resources?.[EToolResources.file_search]?.file_ids).toEqual([
           'legacy-search',
         ]);
+      });
+
+      it('bounds the check by the configured timeout', async () => {
+        const probe = jest.fn().mockResolvedValue(true);
+        mockGetFiles.mockResolvedValue([legacySearchFile()]);
+
+        await primeResources({
+          req: mockReq,
+          appConfig: {
+            ...mockAppConfig,
+            fileConfig: { ...mockAppConfig.fileConfig, legacySearchProbeTimeoutMs: 1234 },
+          } as AppConfig,
+          getFiles: mockGetFiles,
+          filterFiles: mockFilterFiles,
+          tool_resources: { [EToolResources.file_search]: { file_ids: ['legacy-search'] } },
+          attachments: undefined,
+          requestFileSet,
+          agentId: 'agent1',
+          enabledToolResources: new Set([EToolResources.file_search]),
+          hasEntityEmbeddings: probe,
+          adoptLegacySearchEmbeddings: jest.fn().mockResolvedValue(['legacy-search']),
+        });
+
+        expect(probe).toHaveBeenCalledWith(expect.objectContaining({ timeoutMs: 1234 }));
       });
 
       it("embeds a file whose vectors are not in this agent's namespace", async () => {

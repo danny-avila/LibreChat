@@ -67,6 +67,8 @@ interface EntityEmbeddingsParams {
   entity_id: string;
   /** Any non-empty text; RAG needs one to rank chunks. */
   query: string;
+  /** How long to wait for RAG before giving up; a stalled check rejects. */
+  timeoutMs?: number;
 }
 
 /**
@@ -80,6 +82,7 @@ export async function hasEntityEmbeddings({
   file_id,
   entity_id,
   query,
+  timeoutMs,
 }: EntityEmbeddingsParams): Promise<boolean> {
   if (!process.env.RAG_API_URL) {
     return false;
@@ -92,6 +95,7 @@ export async function hasEntityEmbeddings({
         Authorization: `Bearer ${generateShortLivedToken(userId)}`,
         'Content-Type': 'application/json',
       },
+      ...(timeoutMs != null ? { timeout: timeoutMs } : {}),
     },
   );
   return Array.isArray(data) && data.some(([chunk]) => chunk?.metadata?.user_id === entity_id);

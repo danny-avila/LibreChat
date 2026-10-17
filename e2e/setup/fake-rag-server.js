@@ -10,10 +10,10 @@
  * - `POST /embed`: embed an uploaded file (`uploadVectors`); returns
  *   `known_type: true` so the file is marked `embedded`.
  * - `POST /query`: semantic query from the `file_search` tool; returns an
- *   empty result set (valid, handled gracefully). A one-chunk
- *   query (`k: 1`) is a presence check and is answered from the
- *   stored embeds the way RAG authorizes chunks: a hit only when
- *   the file was embedded under the queried `entity_id`.
+ *   empty result set (valid, handled gracefully). A one-chunk query (`k: 1`)
+ *   is a presence check, recorded under `probes` and answered from the stored
+ *   embeds the way RAG authorizes chunks: a hit only when the file was
+ *   embedded under the queried `entity_id`.
  * - `DELETE /documents`: delete embeddings (`deleteVectors`).
  *
  * Every embed is recorded and surfaced at `GET /__debug/embedded` so specs can
@@ -30,8 +30,10 @@ const HOST = '127.0.0.1';
 
 /** @type {Array<{ file_id: string; filename: string; entity_id: string; bytes: number; auth: string }>} */
 const embedded = [];
-/** @type {Array<{ file_id: string; query: string; k: number | null; entity_id: string }>} */
+/** @type {Array<{ file_id: string; query: string }>} */
 const queries = [];
+/** @type {Array<{ file_id: string; entity_id: string; present: boolean }>} */
+const probes = [];
 /** @type {Array<{ file_id: string; entity_id: string }>} */
 const stored = [];
 /** @type {string[]} */
@@ -101,15 +103,15 @@ async function handleEmbed(req, res) {
 async function handleQuery(req, res) {
   const body = await readJson(req);
   const entityId = body.entity_id || '';
-  queries.push({
-    file_id: body.file_id || '',
-    query: body.query || '',
-    k: typeof body.k === 'number' ? body.k : null,
-    entity_id: entityId,
-  });
-  const present =
-    body.k === 1 &&
-    stored.some((entry) => entry.file_id === body.file_id && entry.entity_id === entityId);
+  if (body.k !== 1) {
+    queries.push({ file_id: body.file_id || '', query: body.query || '' });
+    sendJson(res, 200, []);
+    return;
+  }
+  const present = stored.some(
+    (entry) => entry.file_id === body.file_id && entry.entity_id === entityId,
+  );
+  probes.push({ file_id: body.file_id || '', entity_id: entityId, present });
   sendJson(
     res,
     200,
@@ -153,13 +155,14 @@ const server = http.createServer((req, res) => {
     }
 
     if (pathname === '/__debug/embedded' && req.method === 'GET') {
-      sendJson(res, 200, { embedded, queries, deleted });
+      sendJson(res, 200, { embedded, queries, probes, deleted });
       return;
     }
 
     if (pathname === '/__debug/reset' && req.method === 'POST') {
       embedded.length = 0;
       queries.length = 0;
+      probes.length = 0;
       deleted.length = 0;
       sendJson(res, 200, { ok: true });
       return;
