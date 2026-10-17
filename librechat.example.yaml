@@ -76,8 +76,8 @@ projects:
 # librechat.endpoint.type, librechat.provider, librechat.model,
 # librechat.model.label, librechat.spec.
 #
-# Temporary chats, including chats interface.retentionMode "ephemeral" forces
-# temporary, are not traced and their feedback is not scored unless
+# Temporary chats, including every chat when interface.retentionMode is
+# "ephemeral", are not traced and their feedback is not scored unless
 # langfuse.trace.temporaryChats is true.
 #
 # langfuse:

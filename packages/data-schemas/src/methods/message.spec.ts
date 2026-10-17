@@ -1194,6 +1194,17 @@ describe('Message Operations', () => {
       expect(result?.langfuseRunId).toBe('run-1');
     });
 
+    it('returns the temporary flag with feedback updates', async () => {
+      await saveMessage({ ...mockCtx, isTemporary: true }, mockMessageData);
+
+      const result = await updateMessage(mockCtx.userId, {
+        messageId: 'msg123',
+        feedback: { rating: 'thumbsDown', tag: undefined },
+      });
+
+      expect(result?.isTemporary).toBe(true);
+    });
+
     it('should throw an error if message is not found', async () => {
       await expect(
         updateMessage(mockCtx.userId, { messageId: 'nonexistent', text: 'Test' }),

@@ -274,6 +274,26 @@ describe('Langfuse feedback scores', () => {
     expect(getFetchMock()).toHaveBeenCalledTimes(1);
   });
 
+  it('does not score a stored permanent row once retention forces chats temporary', async () => {
+    const { sendFeedbackScore } = await loadFeedback();
+    const score = { traceId: 'trace-id', feedback: { rating: 'thumbsUp' as const } };
+    const interfaceConfig = { retentionMode: 'ephemeral' };
+
+    await sendFeedbackScore({
+      ...score,
+      isTemporary: false,
+      appConfig: { interfaceConfig } as AppConfig,
+    });
+    expect(getFetchMock()).not.toHaveBeenCalled();
+
+    await sendFeedbackScore({
+      ...score,
+      isTemporary: false,
+      appConfig: { interfaceConfig, langfuse: { trace: { temporaryChats: true } } } as AppConfig,
+    });
+    expect(getFetchMock()).toHaveBeenCalledTimes(1);
+  });
+
   it('preserves a sampled trace when the sample rate decreases', async () => {
     process.env.LANGFUSE_SAMPLE_RATE = '0.1';
     const { sendFeedbackScore } = await loadFeedback();

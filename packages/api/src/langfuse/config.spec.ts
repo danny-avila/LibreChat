@@ -202,6 +202,20 @@ describe('buildLangfuseConfig', () => {
     });
   });
 
+  it('does not trace a run when retention forces every chat temporary', async () => {
+    delete process.env.TENANT_ISOLATION_STRICT;
+    process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
+    process.env.LANGFUSE_SECRET_KEY = 'sk-env';
+    const { buildLangfuseConfig } = await import('./config');
+
+    expect(
+      buildLangfuseConfig({
+        runId: 'run-1',
+        appConfig: { interfaceConfig: { retentionMode: 'ephemeral' } } as unknown as AppConfig,
+      }),
+    ).toMatchObject({ enabled: false });
+  });
+
   it('traces a temporary chat when the deployment opts in', async () => {
     delete process.env.TENANT_ISOLATION_STRICT;
     process.env.LANGFUSE_PUBLIC_KEY = 'pk-env';
