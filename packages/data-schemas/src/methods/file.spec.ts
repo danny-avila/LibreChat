@@ -47,6 +47,84 @@ describe('File Methods', () => {
     await File.deleteMany({});
   });
 
+  describe('adoptLegacySearchEmbeddings', () => {
+    const Agent = () => mongoose.models.Agent as mongoose.Model<unknown>;
+    const author = new mongoose.Types.ObjectId();
+
+    const createAgent = (id: string, searchFileIds: string[]) =>
+      Agent().create({
+        id,
+        name: id,
+        provider: 'openai',
+        model: 'gpt-4o',
+        author,
+        tool_resources: { [EToolResources.file_search]: { file_ids: searchFileIds } },
+      });
+
+    const createLegacyFile = (fileId: string, metadata?: Record<string, unknown>) =>
+      File.create({
+        file_id: fileId,
+        user: author,
+        filename: `${fileId}.pdf`,
+        filepath: `/uploads/${fileId}.pdf`,
+        type: 'application/pdf',
+        bytes: 1024,
+        embedded: true,
+        context: FileContext.agents,
+        ...(metadata ? { metadata } : {}),
+      });
+
+    afterEach(async () => {
+      await Agent().deleteMany({});
+    });
+
+    it('records the namespace of a legacy file only this agent holds', async () => {
+      const fileId = uuidv4();
+      await createAgent('agent_owner', [fileId]);
+      await createLegacyFile(fileId);
+
+      const adopted = await fileMethods.adoptLegacySearchEmbeddings({
+        file_ids: [fileId],
+        agentId: 'agent_owner',
+      });
+
+      expect(adopted).toEqual([fileId]);
+      const stored = (await File.findOne({ file_id: fileId }).lean()) as IMongoFile | null;
+      expect(stored?.metadata?.embeddedEntities).toEqual(['agent_owner']);
+    });
+
+    it('leaves a legacy file another agent also holds unrecorded', async () => {
+      const fileId = uuidv4();
+      await createAgent('agent_owner', [fileId]);
+      await createAgent('agent_other', [fileId]);
+      await createLegacyFile(fileId);
+
+      const adopted = await fileMethods.adoptLegacySearchEmbeddings({
+        file_ids: [fileId],
+        agentId: 'agent_owner',
+      });
+
+      expect(adopted).toEqual([]);
+      const stored = (await File.findOne({ file_id: fileId }).lean()) as IMongoFile | null;
+      expect(stored?.metadata?.embeddedEntities).toBeUndefined();
+    });
+
+    it('does not touch a file whose namespaces are already recorded', async () => {
+      const fileId = uuidv4();
+      await createAgent('agent_owner', [fileId]);
+      await createLegacyFile(fileId, { embeddedEntities: ['agent_source'] });
+
+      const adopted = await fileMethods.adoptLegacySearchEmbeddings({
+        file_ids: [fileId],
+        agentId: 'agent_owner',
+      });
+
+      expect(adopted).toEqual([]);
+      const stored = (await File.findOne({ file_id: fileId }).lean()) as IMongoFile | null;
+      expect(stored?.metadata?.embeddedEntities).toEqual(['agent_source']);
+    });
+  });
+
   describe('createFile', () => {
     it('should create a new file with TTL', async () => {
       const fileId = uuidv4();

@@ -805,6 +805,7 @@ const executeResponse = async (envelope, { req, res }) => {
         getUserCodeFiles: db.getUserCodeFiles,
         getDeferredProvisionFiles: db.getDeferredProvisionFiles,
         checkSessionsAlive,
+        adoptLegacySearchEmbeddings: db.adoptLegacySearchEmbeddings,
         loadCodeApiKey,
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,

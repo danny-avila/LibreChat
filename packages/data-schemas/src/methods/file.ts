@@ -348,6 +348,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     file_id: string;
     entityId: string;
   }) => Promise<IMongoFile | null>;
+  adoptLegacySearchEmbeddings: (data: { file_ids: string[]; agentId: string }) => Promise<string[]>;
   updateFileUsage: (data: {
     file_id: string;
     inc?: number;
@@ -1223,6 +1224,62 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   }
 
   /**
+   * Records the namespace of embedded files that predate namespace tracking, for the files
+   * only this agent holds as File Search files. Before namespaces were recorded, a file
+   * joined an agent's File Search resources only by being embedded for that agent, so when
+   * no other agent holds it, its vectors are this agent's. A file another agent also holds
+   * stays unrecorded, since either agent may be the one that embedded it.
+   *
+   * @param data - Candidate file ids, and the agent whose File Search resources hold them
+   * @returns The file ids now recorded under the agent's namespace
+   */
+  async function adoptLegacySearchEmbeddings(data: {
+    file_ids: string[];
+    agentId: string;
+  }): Promise<string[]> {
+    if (data.file_ids.length === 0) {
+      return [];
+    }
+    const Agent = mongoose.models.Agent as Model<{
+      id: string;
+      tool_resources?: { file_search?: { file_ids?: string[] } };
+    }>;
+    const File = mongoose.models.File as Model<IMongoFile>;
+    const holders = await Agent.find(
+      {
+        id: { $ne: data.agentId },
+        'tool_resources.file_search.file_ids': { $in: data.file_ids },
+      },
+      { 'tool_resources.file_search.file_ids': 1 },
+    ).lean();
+    const shared = new Set(
+      holders.flatMap((agent) => agent.tool_resources?.file_search?.file_ids ?? []),
+    );
+    const candidates = data.file_ids.filter((fileId) => !shared.has(fileId));
+    if (candidates.length === 0) {
+      return [];
+    }
+    const legacyFilter = {
+      file_id: { $in: candidates },
+      context: FileContext.agents,
+      embedded: true,
+      'metadata.embeddedEntities': { $exists: false },
+    };
+    const legacy = await File.find(legacyFilter, { file_id: 1 }).lean<
+      Array<Pick<IMongoFile, 'file_id'>>
+    >();
+    const adopted = legacy.map((file) => file.file_id);
+    if (adopted.length === 0) {
+      return [];
+    }
+    await File.updateMany(
+      { ...legacyFilter, file_id: { $in: adopted } },
+      { $set: { 'metadata.embeddedEntities': [data.agentId] } },
+    );
+    return adopted;
+  }
+
+  /**
    * Increments the usage of a file identified by file_id.
    * @param data - The data to update, must contain file_id and the increment value for usage
    * @returns A promise that resolves to the updated file document
@@ -1569,6 +1626,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     updateFile,
     updateFileCodeEnvRef,
     addFileEmbeddedEntity,
+    adoptLegacySearchEmbeddings,
     updateFileUsage,
     deleteFile,
     deleteFiles,

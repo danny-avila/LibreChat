@@ -87,6 +87,17 @@ export type TCheckSessionsAlive = (params: {
 /** Loads CODE_API_KEY for a user. Call once per request. */
 export type TLoadCodeApiKey = (userId: string) => Promise<string>;
 
+/**
+ * Records the agent's namespace on legacy embedded File Search files no other agent holds,
+ * and returns the ids it recorded. Before namespaces were tracked, such a file was embedded
+ * for the one agent holding it, so embedding it again stores a second copy under the same
+ * file_id and every search returns both. A file another agent also holds is left alone.
+ */
+export type TAdoptLegacySearchEmbeddings = (params: {
+  file_ids: string[];
+  agentId: string;
+}) => Promise<string[]>;
+
 /** State computed during primeResources for lazy provisioning at tool invocation time */
 export type ProvisionState = {
   /** Files that need uploading to the code execution environment */
@@ -202,7 +213,7 @@ export const isAgentScopedFile = (file: Pick<TFile, 'context'>): boolean =>
  * trusting the flag registers it for a namespace that holds none of its vectors and the
  * search returns nothing. Records embedded before namespaces were tracked carry no entity
  * list and are re-embedded once per namespace, which repairs the record as it goes, unless
- * the agent already holds them as File Search files (see isLegacySearchResourceEmbedding).
+ * they are adopted first (see isLegacySearchCandidate).
  */
 const isEmbeddedForNamespace = (file: TFile, namespaceId?: string): boolean => {
   if (!isAgentScopedFile(file)) {
@@ -212,16 +223,15 @@ const isEmbeddedForNamespace = (file: TFile, namespaceId?: string): boolean => {
 };
 
 /**
- * Whether an embedded record that predates namespace tracking is already searchable as one
- * of the agent's own File Search files. Before namespaces were recorded, a file reached an
- * agent's `file_search` resources only by being embedded for it, so its vectors exist.
- * Embedding it again stores a second copy under the same `file_id`, and every later search
- * returns both.
+ * Whether an agent file was embedded before namespaces were tracked and is held by the
+ * active agent as a File Search file. Such a record may belong to this agent's namespace,
+ * which only the stored set of agents holding it can settle; see TAdoptLegacySearchEmbeddings.
  */
-const isLegacySearchResourceEmbedding = (
+const isLegacySearchCandidate = (
   file: TFile,
   membership?: ReadonlyMap<EToolResources, ReadonlySet<string>>,
 ): boolean =>
+  isAgentScopedFile(file) &&
   file.embedded === true &&
   file.metadata?.embeddedEntities == null &&
   file.file_id != null &&
@@ -426,6 +436,7 @@ const computeProvisionState = async ({
   codeBridgeWorkerId,
   agentScopedFileIds,
   persistedResourceMembership,
+  adoptLegacySearchEmbeddings,
   staleSafeWindowMs,
 }: {
   req?: ServerRequest;
@@ -446,6 +457,7 @@ const computeProvisionState = async ({
   loadCodeApiKey?: TLoadCodeApiKey;
   /** Which resource each persisted file is filed under, before categorization mutates it. */
   persistedResourceMembership?: ReadonlyMap<EToolResources, ReadonlySet<string>>;
+  adoptLegacySearchEmbeddings?: TAdoptLegacySearchEmbeddings;
   staleSafeWindowMs?: number;
 }): Promise<ProvisionState | undefined> => {
   if (!enabledToolResources || enabledToolResources.size === 0 || attachments.length === 0) {
@@ -548,6 +560,25 @@ const computeProvisionState = async ({
     });
   }
 
+  const legacySearchFileIds =
+    needsVectorDB && agentId != null && adoptLegacySearchEmbeddings
+      ? new Set(
+          provisionable
+            .filter((file) => isLegacySearchCandidate(file, persistedResourceMembership))
+            .map((file) => file.file_id),
+        )
+      : new Set<string>();
+  if (agentId != null && adoptLegacySearchEmbeddings && legacySearchFileIds.size > 0) {
+    const adopted = new Set(
+      await adoptLegacySearchEmbeddings({ file_ids: [...legacySearchFileIds], agentId }),
+    );
+    for (const file of provisionable) {
+      if (adopted.has(file.file_id)) {
+        file.metadata = { ...file.metadata, embeddedEntities: [agentId] };
+      }
+    }
+  }
+
   const scopedIds = agentScopedFileIds ?? new Set<string>();
   const codeEnvFiles: TFile[] = [];
   const codeEnvRecoveryNames: NonNullable<ProvisionState['codeEnvRecoveryNames']> = new Map();
@@ -641,7 +672,6 @@ const computeProvisionState = async ({
       allowsResource(file, EToolResources.file_search) &&
       canToolResourceConsume(EToolResources.file_search, file.type ?? '') &&
       !isEmbeddedForNamespace(file, namespaceId) &&
-      !isLegacySearchResourceEmbedding(file, persistedResourceMembership) &&
       !processedResourceFiles.has(`${EToolResources.file_search}:${file.file_id}`)
     ) {
       vectorDBFiles.push(file);
@@ -675,6 +705,7 @@ export const primeResources = async ({
   loadCodeApiKey,
   provisionCandidates,
   screenPersistentFiles,
+  adoptLegacySearchEmbeddings,
   codeRouteKey,
   codeBaseUrl,
   codeExecutionProfile,
@@ -705,6 +736,8 @@ export const primeResources = async ({
    *  and a configuration or policy change since they were attached would otherwise let
    *  their bytes reach the model, the Code API or RAG. */
   screenPersistentFiles?: (files: Array<TFile>) => Array<TFile>;
+  /** Records the agent's namespace on legacy File Search embeddings only it holds. */
+  adoptLegacySearchEmbeddings?: TAdoptLegacySearchEmbeddings;
   /** The code deployment this turn will execute on, which decides whether an existing
    *  sandbox reference is usable here. */
   codeRouteKey?: string;
@@ -948,6 +981,7 @@ export const primeResources = async ({
         codeBridgeWorkerId,
         agentScopedFileIds: persistedResourceFileIds,
         persistedResourceMembership,
+        adoptLegacySearchEmbeddings,
         staleSafeWindowMs: appConfig?.fileConfig?.codeEnvLivenessSafeWindowMs,
       });
       return {
@@ -1014,6 +1048,7 @@ export const primeResources = async ({
       codeBridgeWorkerId,
       agentScopedFileIds: persistedResourceFileIds,
       persistedResourceMembership,
+      adoptLegacySearchEmbeddings,
       staleSafeWindowMs: appConfig?.fileConfig?.codeEnvLivenessSafeWindowMs,
     });
 

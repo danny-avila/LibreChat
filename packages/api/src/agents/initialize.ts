@@ -37,6 +37,7 @@ import type {
   TFilterFilesByAgentAccess,
   TProvisionToCodeEnv,
   TProvisionToVectorDB,
+  TAdoptLegacySearchEmbeddings,
   TCheckSessionsAlive,
   TLoadCodeApiKey,
 } from './resources';
@@ -1142,6 +1143,8 @@ export interface InitializeAgentDbMethods extends EndpointDbMethods {
   provisionToVectorDB?: TProvisionToVectorDB;
   /** Optional: batch-check code env file liveness */
   checkSessionsAlive?: TCheckSessionsAlive;
+  /** Optional: record the agent's namespace on legacy File Search embeddings only it holds */
+  adoptLegacySearchEmbeddings?: TAdoptLegacySearchEmbeddings;
   /** Optional: load CODE_API_KEY once per request */
   loadCodeApiKey?: TLoadCodeApiKey;
   /** Optional: persist file metadata updates after provisioning */
@@ -2047,6 +2050,7 @@ export async function initializeAgent(
     enabledToolResources: toolResourceSet,
     checkSessionsAlive: db.checkSessionsAlive,
     loadCodeApiKey: db.loadCodeApiKey,
+    adoptLegacySearchEmbeddings: db.adoptLegacySearchEmbeddings,
     provisionCandidates: deferredProvisionFiles as unknown as TFile[],
     codeRouteKey: codeExecutionContext.executionRouteKey ?? codeExecutionContext.executionProfile,
     codeBaseUrl: codeExecutionContext.baseUrl,

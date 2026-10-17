@@ -2667,41 +2667,64 @@ describe('primeResources', () => {
       ]);
     });
 
-    it('does not re-embed a legacy File Search file the agent already holds', async () => {
+    describe('legacy File Search files held by the agent', () => {
       /* Before namespaces were tracked, a file joined an agent's file_search resources only
        * by being embedded for it. Embedding it again stores a second copy under the same
        * file_id, and every search returns each passage twice. */
-      const legacySearchFile = {
-        user: 'user1',
-        file_id: 'legacy-search',
-        filename: 'handbook.pdf',
-        filepath: '/uploads/handbook.pdf',
-        object: 'file',
-        type: 'application/pdf',
-        bytes: 2048,
-        embedded: true,
-        usage: 0,
-        source: FileSources.local,
-        context: FileContext.agents,
-      } as TFile;
-      mockGetFiles.mockResolvedValue([legacySearchFile]);
+      const legacySearchFile = (): TFile =>
+        ({
+          user: 'user1',
+          file_id: 'legacy-search',
+          filename: 'handbook.pdf',
+          filepath: '/uploads/handbook.pdf',
+          object: 'file',
+          type: 'application/pdf',
+          bytes: 2048,
+          embedded: true,
+          usage: 0,
+          source: FileSources.local,
+          context: FileContext.agents,
+        }) as TFile;
 
-      const result = await primeResources({
-        req: mockReq,
-        appConfig: mockAppConfig,
-        getFiles: mockGetFiles,
-        filterFiles: mockFilterFiles,
-        tool_resources: { [EToolResources.file_search]: { file_ids: ['legacy-search'] } },
-        attachments: undefined,
-        requestFileSet,
-        agentId: 'agent1',
-        enabledToolResources: new Set([EToolResources.file_search]),
+      const primeLegacy = (adoptLegacySearchEmbeddings: jest.Mock) => {
+        mockGetFiles.mockResolvedValue([legacySearchFile()]);
+        return primeResources({
+          req: mockReq,
+          appConfig: mockAppConfig,
+          getFiles: mockGetFiles,
+          filterFiles: mockFilterFiles,
+          tool_resources: { [EToolResources.file_search]: { file_ids: ['legacy-search'] } },
+          attachments: undefined,
+          requestFileSet,
+          agentId: 'agent1',
+          enabledToolResources: new Set([EToolResources.file_search]),
+          adoptLegacySearchEmbeddings,
+        });
+      };
+
+      it('does not re-embed a file only this agent holds', async () => {
+        const adopt = jest.fn().mockResolvedValue(['legacy-search']);
+
+        const result = await primeLegacy(adopt);
+
+        expect(adopt).toHaveBeenCalledWith({ file_ids: ['legacy-search'], agentId: 'agent1' });
+        expect(result.provisionState).toBeUndefined();
+        expect(result.tool_resources?.[EToolResources.file_search]?.file_ids).toEqual([
+          'legacy-search',
+        ]);
       });
 
-      expect(result.provisionState).toBeUndefined();
-      expect(result.tool_resources?.[EToolResources.file_search]?.file_ids).toEqual([
-        'legacy-search',
-      ]);
+      it('still embeds a file another agent also holds', async () => {
+        /* Either agent may be the one that embedded it, so this agent's namespace may hold
+         * none of its vectors and search would return nothing. */
+        const adopt = jest.fn().mockResolvedValue([]);
+
+        const result = await primeLegacy(adopt);
+
+        expect(result.provisionState?.vectorDBFiles.map((f) => f.file_id)).toEqual([
+          'legacy-search',
+        ]);
+      });
     });
 
     it('leaves a file alone whose destination came from the legacy chooser', async () => {
