@@ -2,11 +2,16 @@ import React from 'react';
 import { getDefaultStore } from 'jotai';
 import { ContentTypes, Tools } from 'librechat-data-provider';
 import { act, fireEvent, render, screen } from '@testing-library/react';
-import type { TMessageContentParts, TAttachment } from 'librechat-data-provider';
+import type {
+  TMessageContentParts,
+  SubagentUpdateEvent,
+  TAttachment,
+} from 'librechat-data-provider';
 import type { SubagentProgress } from '~/components/Chat/Subagents/state';
 import {
-  subagentProgressByToolCallId,
   subagentProgressKey,
+  reduceSubagentProgress,
+  subagentProgressByToolCallId,
 } from '~/components/Chat/Subagents/state';
 import { preserveStreamedContentIdentity } from '~/utils/messages';
 import { mapAttachments, groupSequentialToolCalls } from '~/utils';
@@ -1104,6 +1109,58 @@ describe('ContentParts — activity phase state', () => {
     expect(screen.getByTestId('tool-call-group')).toHaveAttribute(
       'data-attachments',
       'early-cat.png',
+    );
+    act(() => getDefaultStore().set(progressAtom, null));
+  });
+
+  it('keeps a shown file owner through reduced progress that replays its eviction list', () => {
+    jest
+      .mocked(groupSequentialToolCalls)
+      .mockImplementation((parts) => [{ type: 'tool-group', parts }]);
+    const content = [
+      {
+        type: ContentTypes.TOOL_CALL,
+        [ContentTypes.TOOL_CALL]: { id: 'subagent-reduced', name: 'subagent', args: {} },
+      },
+    ] as unknown as TMessageContentParts[];
+    const progressAtom = subagentProgressByToolCallId(
+      subagentProgressKey('msg-1', 'subagent-reduced', 0),
+    );
+    const runStep = (id: string, sequence: number) =>
+      ({
+        runId: 'parent-run',
+        subagentRunId: 'child-run',
+        subagentType: 'self',
+        phase: 'run_step',
+        activityEventId: `reduced-${sequence}`,
+        data: { stepDetails: { type: 'tool_calls', tool_calls: [{ id, name: 'bash_tool' }] } },
+        timestamp: '',
+      }) as unknown as SubagentUpdateEvent;
+    const files = [
+      {
+        filename: 'reduced-cat.png',
+        filepath: '/images/reduced-cat.png',
+        conversationId: 'conversation-1',
+        messageId: 'msg-1',
+        toolCallId: 'reduced-image',
+      },
+    ] as TAttachment[];
+    act(() => {
+      getDefaultStore().set(progressAtom, (previous) =>
+        reduceSubagentProgress(previous, [runStep('reduced-image', 0)]),
+      );
+    });
+    render(<ContentParts {...baseProps} content={content} attachments={files} />);
+    for (let index = 1; index <= 600; index++) {
+      act(() => {
+        getDefaultStore().set(progressAtom, (previous) =>
+          reduceSubagentProgress(previous, [runStep(`reduced-later-${index}`, index)]),
+        );
+      });
+    }
+    expect(screen.getByTestId('tool-call-group')).toHaveAttribute(
+      'data-attachments',
+      'reduced-cat.png',
     );
     act(() => getDefaultStore().set(progressAtom, null));
   });

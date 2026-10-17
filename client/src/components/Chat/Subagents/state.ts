@@ -595,17 +595,23 @@ const seenSubagentChildCalls = new Map<string, Map<string, Agents.SubagentAttach
 
 /**
  * Adds `calls` to what the invocation has shown, keeping the most recent `MAX_EVICTED_TOOL_CALLS`
- * like the eviction list it is fed from.
+ * like the eviction list it is fed from. A call already remembered keeps its place, since every
+ * write replays the eviction list; `refresh` moves the given calls to the newest end instead, for
+ * the owners of files a message shows.
  */
 export function rememberSubagentChildCalls(
   invocationKey: string,
   calls: Agents.SubagentAttachmentCall[],
+  refresh = false,
 ): void {
   if (calls.length === 0) return;
   const seen = seenSubagentChildCalls.get(invocationKey) ?? new Map();
   for (const call of calls) {
     const identity = [call.id, call.agentId ?? '', call.stepId ?? ''].join('\u0000');
-    seen.delete(identity);
+    if (seen.has(identity)) {
+      if (!refresh) continue;
+      seen.delete(identity);
+    }
     seen.set(identity, call);
   }
   for (const identity of seen.keys()) {
