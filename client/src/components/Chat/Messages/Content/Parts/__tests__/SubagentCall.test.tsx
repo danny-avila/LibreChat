@@ -96,6 +96,7 @@ jest.mock('~/hooks/MCP', () => ({ useMCPServerNames: () => mockMCPServerNames })
 jest.mock('~/utils', () => ({
   ...jest.requireActual('~/utils/toolLabels'),
   cn: (...classes: unknown[]) => classes.filter(Boolean).join(' '),
+  attachmentRenderKey: jest.requireActual('~/utils/media').attachmentRenderKey,
   logger: { log: jest.fn() },
 }));
 
@@ -241,26 +242,15 @@ describe('SubagentCall', () => {
         (attachment) => attachment.toolCallId,
       );
 
-    it('renders files saved by a tool call in the persisted child run', () => {
+    it('leaves persisted child-run files to the attachments it is given', () => {
       renderWithState({
         toolCallId: 'parent-call',
         initialProgress: 1,
+        attachments: [image('child-call')],
         persistedContent: [toolCallPart('child-call')],
-        unclaimedAttachments: [image('child-call'), image('unrelated-call')],
+        unclaimedAttachments: [image('child-call')],
       });
       expect(renderedIds()).toEqual(['child-call']);
-    });
-
-    it('renders files saved by a tool call nested two subagents deep', () => {
-      renderWithState({
-        toolCallId: 'parent-call',
-        initialProgress: 1,
-        persistedContent: [
-          toolCallPart('middle-call', { subagent_content: [toolCallPart('grandchild-call')] }),
-        ],
-        unclaimedAttachments: [image('grandchild-call')],
-      });
-      expect(renderedIds()).toEqual(['grandchild-call']);
     });
 
     it('renders files saved by a tool call in the live child run', () => {
@@ -285,10 +275,20 @@ describe('SubagentCall', () => {
     });
 
     it('renders nothing when no unclaimed file belongs to the child run', () => {
+      const progress = progressFromEvents({
+        subagentRunId: 'child-run',
+        subagentType: 'self',
+        status: 'run_step',
+        events: [],
+      });
       renderWithState({
         toolCallId: 'parent-call',
-        initialProgress: 1,
-        persistedContent: [toolCallPart('child-call')],
+        initialProgress: 0.1,
+        isSubmitting: true,
+        progress: {
+          ...progress,
+          contentParts: [toolCallPart('child-call') as unknown as SubagentContentPart],
+        },
         unclaimedAttachments: [image('other-call')],
       });
       expect(screen.queryByTestId('attachment-group')).not.toBeInTheDocument();

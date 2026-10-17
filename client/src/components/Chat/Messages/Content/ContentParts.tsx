@@ -28,6 +28,7 @@ import {
   SoleToolContext,
 } from './disclosure';
 import {
+  selectNestedAttachments,
   SubagentAttachmentsContext,
   selectUnclaimedAttachments,
 } from '~/components/Chat/Subagents/attachments';
@@ -429,15 +430,24 @@ const ContentPartsBody = memo(function ContentPartsBody({
     }
     return buildToolCallStepOwners(content);
   }, [toolCallStepOwnersById, content]);
+  const unclaimedAttachments = useContext(SubagentAttachmentsContext);
   const attachmentsForPart = useCallback(
-    (part: TMessageContentParts): TAttachment[] | undefined =>
-      filterAttachmentsForPart(
+    (part: TMessageContentParts): TAttachment[] | undefined => {
+      const own = filterAttachmentsForPart(
         attachmentMap[getToolCallId(part)],
         getPartAgentId(part),
         getPartStepId(part),
         getSiblingStepIds(part, resolvedToolCallStepOwners),
-      ),
-    [attachmentMap, resolvedToolCallStepOwners],
+      );
+      /** A tool run inside a subagent saves its files under the child tool
+       *  call id, which only the persisted `subagent_content` carries. */
+      const nested = selectNestedAttachments(unclaimedAttachments, [part]);
+      if (nested.length === 0) {
+        return own;
+      }
+      return own == null ? nested : [...own, ...nested.filter((file) => !own.includes(file))];
+    },
+    [attachmentMap, resolvedToolCallStepOwners, unclaimedAttachments],
   );
   const disclosureStore = useStore();
   const reasoningDisclosures = useContext(ReasoningDisclosureContext);

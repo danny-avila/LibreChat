@@ -82,12 +82,15 @@ jest.mock('../ToolCallGroup', () => ({
   default: ({
     initialExpansionState,
     onExpansionChange,
+    groupAttachments,
   }: {
     initialExpansionState?: { isExpanded: boolean; userOverride: boolean };
     onExpansionChange?: (state: { isExpanded: boolean; userOverride: boolean }) => void;
+    groupAttachments?: TAttachment[];
   }) => (
     <button
       data-testid="tool-call-group"
+      data-attachments={(groupAttachments ?? []).map((file) => file.filename).join(',')}
       data-initial-expanded={
         initialExpansionState == null ? 'unset' : String(initialExpansionState.isExpanded)
       }
@@ -677,6 +680,52 @@ describe('ContentParts — activity phase state', () => {
     );
 
     expect(screen.getByTestId('parallel-renderer')).toHaveAttribute('data-index-offset', '1');
+  });
+
+  it('hoists files a tool saved inside a grouped subagent run onto the group', () => {
+    jest
+      .mocked(groupSequentialToolCalls)
+      .mockImplementation((parts) => [{ type: 'tool-group', parts }]);
+    const childImage = (subagent_content?: unknown[]) =>
+      [
+        {
+          type: ContentTypes.TOOL_CALL,
+          [ContentTypes.TOOL_CALL]: {
+            id: 'subagent-1',
+            name: 'subagent',
+            args: {},
+            output: 'done',
+            subagent_content,
+          },
+        },
+        {
+          type: ContentTypes.TOOL_CALL,
+          [ContentTypes.TOOL_CALL]: { id: 'tool-2', name: 'search', args: {}, output: 'two' },
+        },
+      ] as unknown as TMessageContentParts[];
+    const attachments = [
+      {
+        filename: 'cat.png',
+        filepath: '/images/cat.png',
+        conversationId: 'conversation-1',
+        messageId: 'msg-1',
+        toolCallId: 'child-image',
+      },
+    ] as TAttachment[];
+    const nested = [
+      {
+        type: ContentTypes.TOOL_CALL,
+        [ContentTypes.TOOL_CALL]: { id: 'child-image', name: 'image_gen_oai', args: {} },
+      },
+    ];
+
+    const { rerender } = render(
+      <ContentParts {...baseProps} content={childImage(nested)} attachments={attachments} />,
+    );
+    expect(screen.getByTestId('tool-call-group')).toHaveAttribute('data-attachments', 'cat.png');
+
+    rerender(<ContentParts {...baseProps} content={childImage()} attachments={attachments} />);
+    expect(screen.getByTestId('tool-call-group')).toHaveAttribute('data-attachments', '');
   });
 
   it('retains a tool-group expansion override when a completed phase remounts the group', () => {
