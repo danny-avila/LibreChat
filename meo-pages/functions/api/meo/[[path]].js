@@ -114,8 +114,15 @@ export async function onRequest({ request, env }) {
     headers: downstreamHeaders(upstream),
   });
   if (cookie) response.headers.append('Set-Cookie', cookie);
+
+  // A 401 from api.meoarch.org means the API rejected the forwarded OAuth
+  // access token. It does not prove that the browser's encrypted Meo session
+  // cookie is invalid: loadSession already established that separately. Clearing
+  // browser cookies here turns a resource-server configuration bug into an
+  // apparent sign-out loop, so preserve the browser session and let the client
+  // surface the upstream error instead.
   if (upstream.status === 401) {
-    for (const value of clearCookies()) response.headers.append('Set-Cookie', value);
+    response.headers.set('X-Meo-Upstream-Auth-Failure', '1');
   }
   return response;
 }
