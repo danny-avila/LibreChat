@@ -24,7 +24,6 @@ const MODEL_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9._-]*(?:\/[a-zA-Z0-9][a-zA-Z0-9.
 const SIZE_PATTERN = /^[1-9]\d{1,4}\*[1-9]\d{1,4}$/;
 
 const POLL_INTERVAL_MS = 1000;
-const MAX_POLL_ATTEMPTS = 600;
 /** Per-request timeout so a hung socket cannot block the tool forever. */
 const REQUEST_TIMEOUT_MS = 30_000;
 /** Consecutive transient poll failures tolerated before giving up on a status check. */
@@ -99,6 +98,24 @@ type TextResponse = Array<{
 }>;
 
 type WaveSpeedToolOutput = string | TFile | [string | TextResponse, ImageArtifact | object];
+
+/** Resolves true after `ms`, or false early if `signal` aborts. */
+const sleep = (ms: number, signal?: AbortSignal): Promise<boolean> =>
+  new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve(false);
+      return;
+    }
+    const onAbort = () => {
+      clearTimeout(timer);
+      resolve(false);
+    };
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve(true);
+    }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
 
 const getDetails = (value: unknown): string => {
   if (typeof value === 'string') {
@@ -236,7 +253,12 @@ export class WaveSpeedAPI extends StructuredTool<ExtendedJsonSchema> {
     return [displayMessage, value as unknown as ImageArtifact];
   }
 
-  protected async _call(data: WaveSpeedToolInput): Promise<WaveSpeedToolOutput> {
+  protected async _call(
+    data: WaveSpeedToolInput,
+    _runManager?: unknown,
+    parentConfig?: { signal?: AbortSignal },
+  ): Promise<WaveSpeedToolOutput> {
+    const signal = parentConfig?.signal;
     const { prompt, model, size } = data;
 
     if (!prompt) {
@@ -310,14 +332,24 @@ export class WaveSpeedAPI extends StructuredTool<ExtendedJsonSchema> {
 
     const resultUrl = `${this.baseUrl}/api/v3/predictions/${taskId}/result`;
 
+    /**
+     * No overall attempt cap: tasks can legitimately run for hours. The loop
+     * ends on a terminal status, a non-retryable poll failure, or the caller
+     * aborting the run.
+     */
     let resultData: WaveSpeedPrediction | null = null;
-    for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
-      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
+    while (!resultData) {
+      if (!(await sleep(POLL_INTERVAL_MS, signal))) {
+        return this.abortedValue(taskId);
+      }
 
       let resultResponse;
       try {
-        resultResponse = await this.fetchResultWithRetry(resultUrl, requestApiKey);
+        resultResponse = await this.fetchResultWithRetry(resultUrl, requestApiKey, signal);
       } catch (error) {
+        if (signal?.aborted) {
+          return this.abortedValue(taskId);
+        }
         const details = describeError(error);
         logger.error(`[WaveSpeedAPI] Error while getting result for task ${taskId}:`, details);
         return this.returnValue(
@@ -330,10 +362,8 @@ export class WaveSpeedAPI extends StructuredTool<ExtendedJsonSchema> {
       const status = prediction?.status;
 
       if (status === 'completed') {
-        resultData = prediction ?? null;
-        break;
-      }
-      if (status != null && TERMINAL_FAILURE_STATUSES.has(status)) {
+        resultData = prediction ?? {};
+      } else if (status != null && TERMINAL_FAILURE_STATUSES.has(status)) {
         logger.error('[WaveSpeedAPI] Error in task:', resultResponse.data);
         return this.returnValue(
           `An error occurred during image generation (task ${taskId}): prediction ${status}${
@@ -341,18 +371,6 @@ export class WaveSpeedAPI extends StructuredTool<ExtendedJsonSchema> {
           }`,
         );
       }
-    }
-
-    /**
-     * Exhausting the poll loop is a timeout, not a missing-output error; the
-     * job may well still be running. Reporting it as "no image data" sends the
-     * model down the wrong path.
-     */
-    if (!resultData) {
-      logger.error('[WaveSpeedAPI] Timed out waiting for the prediction to finish.');
-      return this.returnValue(
-        `Timed out waiting for WaveSpeed task ${taskId} to finish. The task may still be running and may be charged. Do NOT resubmit; ask the user to check this task id in their WaveSpeed predictions.`,
-      );
     }
 
     if (!resultData.outputs || !resultData.outputs.length) {
@@ -373,7 +391,7 @@ export class WaveSpeedAPI extends StructuredTool<ExtendedJsonSchema> {
    * Read-only status poll. Tolerates transient 429/5xx and network errors with
    * linear backoff; anything else (401, 404, ...) fails immediately.
    */
-  private async fetchResultWithRetry(resultUrl: string, apiKey: string) {
+  private async fetchResultWithRetry(resultUrl: string, apiKey: string, signal?: AbortSignal) {
     for (let retry = 0; ; retry++) {
       try {
         return await axios.get<WaveSpeedEnvelope>(resultUrl, {
@@ -382,9 +400,13 @@ export class WaveSpeedAPI extends StructuredTool<ExtendedJsonSchema> {
             Accept: 'application/json',
           },
           timeout: REQUEST_TIMEOUT_MS,
+          signal,
           ...this.getAxiosConfig(),
         });
       } catch (error) {
+        if (signal?.aborted) {
+          throw error;
+        }
         if (retry >= POLL_TRANSIENT_RETRIES || !isTransientPollError(error)) {
           throw error;
         }
@@ -392,9 +414,18 @@ export class WaveSpeedAPI extends StructuredTool<ExtendedJsonSchema> {
           `[WaveSpeedAPI] Transient poll error (retry ${retry + 1}/${POLL_TRANSIENT_RETRIES}):`,
           describeError(error),
         );
-        await new Promise((resolve) => setTimeout(resolve, POLL_RETRY_BASE_MS * (retry + 1)));
+        if (!(await sleep(POLL_RETRY_BASE_MS * (retry + 1), signal))) {
+          throw error;
+        }
       }
     }
+  }
+
+  private abortedValue(taskId: string): WaveSpeedToolOutput {
+    logger.warn(`[WaveSpeedAPI] Polling for task ${taskId} stopped: the run was aborted.`);
+    return this.returnValue(
+      `Stopped waiting for WaveSpeed task ${taskId} because the run was cancelled. The task may still be running and may be charged. Do NOT resubmit; ask the user to check this task id in their WaveSpeed predictions.`,
+    );
   }
 
   private async encodeForAgent(imageUrl: string): Promise<WaveSpeedToolOutput> {

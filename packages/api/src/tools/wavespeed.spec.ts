@@ -253,15 +253,42 @@ describe('WaveSpeedAPI', () => {
     expect(mockedAxios.post).not.toHaveBeenCalled();
   });
 
-  it('reports a poll timeout as a timeout rather than missing image data', async () => {
-    mockedAxios.get.mockResolvedValue({ data: { data: { status: 'processing' } } });
+  it('keeps polling a long-running task far past 600 polls until it completes', async () => {
+    const processing = { data: { data: { status: 'processing' } } };
+    const done = {
+      data: { data: { status: 'completed', outputs: ['https://example.com/image.png'] } },
+    };
+    for (let i = 0; i < 1500; i++) {
+      mockedAxios.get.mockResolvedValueOnce(processing);
+    }
+    mockedAxios.get.mockResolvedValueOnce(done);
 
     const wavespeed = new WaveSpeedAPI({ isAgent: true });
     const invokePromise = wavespeed.invoke(makeToolCall('wavespeed', { prompt: 'a box' }));
     await jest.runAllTimersAsync();
-    const result = await invokePromise;
+    const result = (await invokePromise) as ToolMessage;
 
-    expect(JSON.stringify(result)).toContain('Timed out');
+    expect(mockedAxios.get).toHaveBeenCalledTimes(1501);
+    expect(artifactContentOf(result)?.[0].type).toBe(ContentTypes.IMAGE_URL);
+  });
+
+  it('stops polling when the run is aborted', async () => {
+    mockedAxios.get.mockResolvedValue({ data: { data: { status: 'processing' } } });
+    const controller = new AbortController();
+
+    const wavespeed = new WaveSpeedAPI({ isAgent: true });
+    const invokePromise = wavespeed.invoke(makeToolCall('wavespeed', { prompt: 'a box' }), {
+      signal: controller.signal,
+    });
+    invokePromise.catch(() => undefined);
+    await jest.advanceTimersByTimeAsync(5000);
+    controller.abort();
+    await jest.advanceTimersByTimeAsync(5000);
+    const callsAtAbort = mockedAxios.get.mock.calls.length;
+    await jest.advanceTimersByTimeAsync(60_000);
+
+    expect(mockedAxios.get.mock.calls.length).toBe(callsAtAbort);
+    expect(callsAtAbort).toBeGreaterThan(0);
   });
 
   it('does not encode a failed image download as an image artifact', async () => {
