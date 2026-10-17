@@ -160,7 +160,9 @@ export const useMessagePreviewHintsQuery = (
       refetchOnWindowFocus: true,
       refetchOnReconnect: true,
       refetchInterval: (message, query) => {
-        if (message == null || query.state.dataUpdateCount >= PREVIEW_HINTS_POLLS) {
+        /** Failed reads count too: a failing read keeps the earlier message as its data. */
+        const reads = query.state.dataUpdateCount + query.state.errorUpdateCount;
+        if (message == null || reads >= PREVIEW_HINTS_POLLS) {
           return false;
         }
         const saved = new Set(

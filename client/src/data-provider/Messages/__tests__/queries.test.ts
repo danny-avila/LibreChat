@@ -724,4 +724,38 @@ describe('useMessagePreviewHintsQuery', () => {
     queryClient.clear();
     jest.useRealTimers();
   });
+
+  it('stops reading again once its reads are spent, failed reads included', async () => {
+    const queryClient = new QueryClient();
+    const before = message({ messageId: 'message-id', isCreatedByUser: false, attachments: [] });
+    jest
+      .mocked(dataService.getMessageById)
+      .mockReset()
+      .mockResolvedValueOnce([before])
+      .mockRejectedValue(new Error('unavailable'));
+    jest.useFakeTimers();
+
+    const { result, unmount } = renderHook(
+      () => useMessagePreviewHintsQuery('convo-id', 'message-id', ['late-file'], true),
+      { wrapper: createWrapper(queryClient, '/c/convo-id') },
+    );
+    await waitFor(() => expect(result.current.data).toEqual(before));
+    /** One timer step per tick, so each read, retry and poll settles before the next. */
+    for (let i = 0; i < 400; i++) {
+      await act(async () => {
+        jest.advanceTimersByTime(5_000);
+      });
+    }
+    const spent = jest.mocked(dataService.getMessageById).mock.calls.length;
+    for (let i = 0; i < 100; i++) {
+      await act(async () => {
+        jest.advanceTimersByTime(5_000);
+      });
+    }
+    expect(jest.mocked(dataService.getMessageById).mock.calls.length).toBe(spent);
+    expect(result.current.data).toEqual(before);
+    unmount();
+    queryClient.clear();
+    jest.useRealTimers();
+  });
 });
