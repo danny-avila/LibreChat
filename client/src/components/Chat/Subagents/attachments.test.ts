@@ -119,6 +119,12 @@ describe('subagent attachments', () => {
     expect(ids(assigned, legacy)).toEqual(['legacy-child']);
   });
 
+  it('reads a child call owner stored on the call when the part has none', () => {
+    expect(collectNestedCalls([toolCall('child', { agentId: 'agent-on-call' })])).toEqual([
+      { id: 'child', agentId: 'agent-on-call' },
+    ]);
+  });
+
   it('keeps the files of two subagent calls that share an id apart', () => {
     const content = [
       subagent('same-id', [toolCall('first-child')]),

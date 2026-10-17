@@ -932,6 +932,48 @@ describe('ContentParts — activity phase state', () => {
     act(() => getDefaultStore().set(progressAtom, null));
   });
 
+  it('reads live progress under the index a compacted part streamed at', () => {
+    jest
+      .mocked(groupSequentialToolCalls)
+      .mockImplementation((parts) => [{ type: 'tool-group', parts }]);
+    const content = [
+      {
+        type: ContentTypes.TOOL_CALL,
+        streamedIndex: 1,
+        [ContentTypes.TOOL_CALL]: { id: 'subagent-compacted', name: 'subagent', args: {} },
+      },
+    ] as unknown as TMessageContentParts[];
+    const progressAtom = subagentProgressByToolCallId(
+      subagentProgressKey('msg-1', 'subagent-compacted', 1),
+    );
+    act(() => {
+      getDefaultStore().set(progressAtom, {
+        contentParts: [
+          {
+            type: ContentTypes.TOOL_CALL,
+            [ContentTypes.TOOL_CALL]: { id: 'compacted-child', name: 'bash_tool', args: '' },
+          },
+        ],
+      } as unknown as SubagentProgress);
+    });
+    const files = [
+      {
+        filename: 'compacted.csv',
+        filepath: '/files/compacted.csv',
+        conversationId: 'conversation-1',
+        messageId: 'msg-1',
+        toolCallId: 'compacted-child',
+      },
+    ] as TAttachment[];
+
+    render(<ContentParts {...baseProps} content={content} attachments={files} />);
+    expect(screen.getByTestId('tool-call-group')).toHaveAttribute(
+      'data-attachments',
+      'compacted.csv',
+    );
+    act(() => getDefaultStore().set(progressAtom, null));
+  });
+
   it('frees the progress member of a streaming subagent no update reached', () => {
     jest
       .mocked(groupSequentialToolCalls)

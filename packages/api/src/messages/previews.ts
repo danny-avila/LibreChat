@@ -78,6 +78,7 @@ interface StoredToolCall extends ToolCallPreviewMarkers {
   approval?: unknown;
   subagent_content?: unknown;
   subagentAttachmentCalls?: Agents.SubagentAttachmentCall[];
+  agentId?: unknown;
 }
 
 interface StoredToolCallPart {
@@ -185,9 +186,11 @@ function nestedAttachmentCalls(
       }
       const { id, stepId, subagent_content } = part.tool_call;
       if (typeof id === 'string' && wanted.has(id)) {
+        /** The owner is stored on the part, or on the call when the part carries none. */
+        const agentId = part.agentId ?? part.tool_call.agentId;
         found.push({
           id,
-          ...(typeof part.agentId === 'string' ? { agentId: part.agentId } : {}),
+          ...(typeof agentId === 'string' ? { agentId } : {}),
           ...(typeof stepId === 'string' ? { stepId } : {}),
         });
       }

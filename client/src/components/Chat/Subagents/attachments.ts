@@ -9,6 +9,7 @@ import {
   rememberSubagentChildCalls,
   subagentProgressByToolCallId,
 } from './state';
+import { getPartKeyIndex } from '~/utils/messages';
 
 type NestedPart = TMessageContentParts | SubagentContentPart | undefined;
 /** A tool call inside a subagent run, with the scope its files may carry. */
@@ -17,6 +18,7 @@ type ToolCallFields = {
   id?: string;
   name?: string;
   stepId?: string;
+  agentId?: string;
   subagent_content?: TMessageContentParts[];
   subagentAttachmentCalls?: NestedCall[];
 };
@@ -51,7 +53,7 @@ export function collectNestedCalls(
   for (const part of parts ?? []) {
     const toolCall = toolCallOf(part);
     if (toolCall?.id) {
-      const agentId = (part as { agentId?: string } | undefined)?.agentId;
+      const agentId = (part as { agentId?: string } | undefined)?.agentId ?? toolCall.agentId;
       calls.push({
         id: toolCall.id,
         ...(agentId == null ? {} : { agentId }),
@@ -149,7 +151,7 @@ export function assignNestedAttachments(
  * saved.
  */
 export function useLiveSubagentToolCalls(
-  content: ReadonlyArray<NestedPart> | undefined,
+  content: ReadonlyArray<TMessageContentParts | undefined> | undefined,
   messageId: string,
   contentIndices: ReadonlyArray<number> | undefined,
   contentIndexOffset: number,
@@ -166,7 +168,7 @@ export function useLiveSubagentToolCalls(
           subagentProgressKey(
             messageId,
             toolCall.id,
-            contentIndices?.[index] ?? index + contentIndexOffset,
+            getPartKeyIndex(part, contentIndices?.[index] ?? index + contentIndexOffset),
           ),
         ]);
       }

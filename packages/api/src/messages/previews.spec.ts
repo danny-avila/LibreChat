@@ -33,6 +33,7 @@ type TestToolCall = {
   argsTruncated?: true;
   subagentContentOmitted?: true;
   subagentAttachmentCalls?: Array<{ id: string; agentId?: string; stepId?: string }>;
+  agentId?: string;
   function?: unknown;
 };
 
@@ -418,7 +419,12 @@ describe('previewMessagesToolCalls', () => {
 
   it('keeps the nested tool call ids an omitted transcript saved attachments under', () => {
     const transcript = [
-      toolPart({ id: 'child_image', stepId: 'step_child', output: 'Image generated' }),
+      toolPart({
+        id: 'child_image',
+        stepId: 'step_child',
+        agentId: 'agent_on_call',
+        output: 'Image generated',
+      }),
       toolPart({
         id: 'child_subagent',
         name: 'subagent',
@@ -447,7 +453,7 @@ describe('previewMessagesToolCalls', () => {
     expect(part.tool_call).not.toHaveProperty('subagent_content');
     expect(part.tool_call.subagentAttachmentCalls).toEqual(
       expect.arrayContaining([
-        { id: 'child_image', stepId: 'step_child' },
+        { id: 'child_image', stepId: 'step_child', agentId: 'agent_on_call' },
         { id: 'grandchild_image', agentId: 'agent_grandchild' },
       ]),
     );
