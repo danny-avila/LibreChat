@@ -7,8 +7,8 @@ import { inOneProject, repoRoot, run } from './lint.helpers';
  * Controls sit on the sidebar as well as the page, the panels and the dialog, so
  * the ClickHouse boundary check measures `surface-sidebar` too. The sidebar holds
  * Click UI's background, so its sub-floor boundary pairs are the page's, pinned by
- * the same owner decision. The check runs the whole spec in file order, since the
- * pinning test reads what the palette tests measured.
+ * the same owner decision. The check runs the whole spec, so the pinning test
+ * compares the pins against the full matrix with the sidebar in it.
  */
 
 const clientRoot = resolve(repoRoot, 'packages/client');
@@ -25,5 +25,10 @@ test.describe('ClickHouse control boundaries on the sidebar', () => {
     expect(result.status, output).toBe(0);
     expect(output.match(/✓ keeps control boundaries and rings at the 3:1 floor/g)).toHaveLength(2);
     expect(output.match(/✓ pins every pair that sits below its floor/g)).toHaveLength(2);
+    expect(
+      output.match(
+        /✓ measures control boundaries on the sidebar, below the floor only in its two/g,
+      ),
+    ).toHaveLength(2);
   });
 });

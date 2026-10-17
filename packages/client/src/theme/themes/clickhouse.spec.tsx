@@ -505,6 +505,16 @@ describe.each(modes)('clickhouse %s palette', (mode, theme) => {
     expect(belowPinned(mode, theme, floorChecks.controlBoundaries)).toEqual([]);
   });
 
+  it('measures control boundaries on the sidebar, below the floor only in its two pinned pairs', () => {
+    const sidebarPins = clickUiBelowFloor[mode].filter((pair) =>
+      pair.includes(' on rgb-surface-sidebar: '),
+    );
+    expect(sidebarPins).toHaveLength(2);
+    expect(below(theme, WCAG_NON_TEXT, boundaryTokens, ['rgb-surface-sidebar'])).toEqual(
+      sidebarPins,
+    );
+  });
+
   it('keeps the unchecked switch track at the 3:1 floor against the thumb and the checked fill', () => {
     expect(belowPinned(mode, theme, floorChecks.switchTrack)).toEqual([]);
   });
