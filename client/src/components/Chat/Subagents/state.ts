@@ -477,13 +477,19 @@ export const subagentControlStateByTask = atomFamily<
 /** Stable identity for one subagent invocation in the parent conversation. */
 export { subagentProgressKey } from '@librechat/chat';
 
-/** The tool calls of live child activity, with the step scope their files may carry. */
+/** The tool calls of live child activity, with the agent and step scope their files may carry. */
 const childCallsOf = (parts: SubagentContentPart[]): Agents.SubagentAttachmentCall[] => {
   const calls: Agents.SubagentAttachmentCall[] = [];
   for (const part of parts) {
     if (part.type !== ContentTypes.TOOL_CALL || !part.tool_call?.id) continue;
     const { id, stepId } = part.tool_call;
-    calls.push(stepId == null ? { id } : { id, stepId });
+    const agentId =
+      (part as { agentId?: string }).agentId ?? (part.tool_call as { agentId?: string }).agentId;
+    calls.push({
+      id,
+      ...(agentId == null ? {} : { agentId }),
+      ...(stepId == null ? {} : { stepId }),
+    });
   }
   return calls;
 };

@@ -950,6 +950,7 @@ describe('ContentParts — activity phase state', () => {
         contentParts: [
           {
             type: ContentTypes.TOOL_CALL,
+            agentId: 'agent-unread',
             [ContentTypes.TOOL_CALL]: { id: 'unread-child', name: 'image_gen_oai', args: '' },
           },
         ],
@@ -966,6 +967,7 @@ describe('ContentParts — activity phase state', () => {
         conversationId: 'conversation-1',
         messageId: 'msg-1',
         toolCallId: 'unread-child',
+        agentId: 'agent-unread',
       },
     ] as TAttachment[];
 
