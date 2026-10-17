@@ -139,11 +139,13 @@ export function useLiveSubagentToolCalls(
   contentIndexOffset: number,
   enabled: boolean,
 ): ReadonlyMap<number, NestedCall[]> {
-  const keys = useMemo(() => {
-    const entries: Array<[number, string]> = [];
+  /** A string, so the keys (and the atom reading them) survive the content
+   *  array changing on every streamed delta. */
+  const keySignature = useMemo(() => {
     if (!enabled) {
-      return entries;
+      return '';
     }
+    const entries: Array<[number, string]> = [];
     (content ?? []).forEach((part, index) => {
       const toolCall = toolCallOf(part);
       if (toolCall?.id && toolCall.name === Constants.SUBAGENT) {
@@ -157,13 +159,37 @@ export function useLiveSubagentToolCalls(
         ]);
       }
     });
-    return entries;
+    return entries.length === 0 ? '' : JSON.stringify(entries);
   }, [content, messageId, contentIndices, contentIndexOffset, enabled]);
+  const keys = useMemo(
+    () => (keySignature === '' ? [] : (JSON.parse(keySignature) as Array<[number, string]>)),
+    [keySignature],
+  );
   const store = useStore();
+  /** Retained one key at a time: releasing a key that is still read would free
+   *  the member under the atom subscribed to it. */
+  const retained = useRef(new Map<string, () => void>());
   useEffect(() => {
-    const releases = keys.map(([, key]) => retainSubagentProgress(store, key));
-    return () => releases.forEach((release) => release());
+    const next = new Set(keys.map(([, key]) => key));
+    for (const [key, release] of retained.current) {
+      if (!next.has(key)) {
+        release();
+        retained.current.delete(key);
+      }
+    }
+    for (const key of next) {
+      if (!retained.current.has(key)) {
+        retained.current.set(key, retainSubagentProgress(store, key));
+      }
+    }
   }, [keys, store]);
+  useEffect(() => {
+    const held = retained.current;
+    return () => {
+      held.forEach((release) => release());
+      held.clear();
+    };
+  }, []);
   const signatureAtom = useMemo(
     () =>
       atom((get) => {

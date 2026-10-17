@@ -798,8 +798,12 @@ describe('ContentParts — activity phase state', () => {
     );
 
     const streaming = { ...baseProps, isSubmitting: true, isLatestMessage: true };
-    render(<ContentParts {...streaming} content={content} attachments={attachments} />);
+    const { rerender } = render(
+      <ContentParts {...streaming} content={content} attachments={attachments} />,
+    );
     expect(screen.getByTestId('tool-call-group')).toHaveAttribute('data-attachments', '');
+    /** A streamed delta replaces the content array before the first progress update. */
+    rerender(<ContentParts {...streaming} content={[...content]} attachments={attachments} />);
 
     act(() => {
       getDefaultStore().set(progressAtom, {
