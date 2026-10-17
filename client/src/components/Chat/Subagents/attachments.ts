@@ -273,12 +273,12 @@ const partIdentity = (part: NestedPart): string | undefined => {
  * Child calls the server now hints for each previewed subagent call in `content` whose
  * transcript it left out, keyed by the call's index in `content`. A file a background task
  * delivers after the message loaded names a child call the cached preview never hinted; while
- * `fileIds` (the files whose owner is in doubt) is not empty, the stored message is read back once
+ * `fileIds` (the saved files whose owner is in doubt) is not empty, the stored message is read back
  * as a preview, whose hints are computed from the files now saved on it.
  */
 export function useStoredSubagentHints(
   content: ReadonlyArray<TMessageContentParts | undefined> | undefined,
-  fileIds: string,
+  fileIds: ReadonlyArray<string>,
   conversationId: string | null | undefined,
   messageId: string,
 ): ReadonlyMap<number, NestedCall[]> {
@@ -294,7 +294,7 @@ export function useStoredSubagentHints(
     conversationId ?? '',
     messageId,
     fileIds,
-    previewed && fileIds !== '' && !!conversationId && !!messageId,
+    previewed && fileIds.length > 0 && !!conversationId && !!messageId,
   );
   const stored = query.data?.content;
   return useMemo(() => {
@@ -303,7 +303,17 @@ export function useStoredSubagentHints(
     }
     const hints = new Map<string, NestedCall[]>();
     for (const part of stored) {
-      const calls = nestedToolCallOf(part)?.subagentAttachmentCalls;
+      const toolCall = nestedToolCallOf(part);
+      /** A read the server sent in full (previews off, or a call it could not preview) carries
+       *  the transcript itself rather than hints. */
+      const calls =
+        toolCall?.subagent_content != null
+          ? collectNestedCalls(
+              toolCall.subagent_content,
+              [],
+              toolCall.subagentIdentity?.subagentAgentId,
+            )
+          : toolCall?.subagentAttachmentCalls;
       const identity = partIdentity(part);
       if (identity != null && calls != null && calls.length > 0) {
         hints.set(identity, calls);

@@ -125,21 +125,27 @@ export const useToolCallPartQuery = (
   );
 };
 
+/** How often, and how many times, a read that does not yet hold every file it resolves is repeated. */
+const PREVIEW_HINTS_POLL_MS = 5_000;
+const PREVIEW_HINTS_POLLS = 12;
+
 /**
  * One stored message read back as a preview, for the `subagentAttachmentCalls` hints its previewed
  * subagent calls now carry: a file that reached the message after it loaded has no hint in the
  * cached preview. `fileIds` names the files the caller is resolving and keys the read, so a newer
- * file reads the message again. Nothing is written to `[messages, id]`. No reader is there to press
- * retry, so a failed read retries with backoff and runs again on focus and reconnect.
+ * file reads the message again. Nothing is written to `[messages, id]`. A background task can
+ * stream its file before the file is saved on the message, so a read that does not hold every
+ * file yet is repeated for a while; a failed read retries with backoff and runs again on focus
+ * and reconnect.
  */
 export const useMessagePreviewHintsQuery = (
   conversationId: string,
   messageId: string,
-  fileIds: string,
+  fileIds: ReadonlyArray<string>,
   enabled: boolean,
 ): QueryObserverResult<t.TMessage | null> =>
   useQuery<t.TMessage | null>(
-    [QueryKeys.messagePreviewHints, conversationId, messageId, fileIds],
+    [QueryKeys.messagePreviewHints, conversationId, messageId, fileIds.join(',')],
     async () => {
       const messages = await dataService.getMessageById(conversationId, messageId, {
         toolPreviews: true,
@@ -153,6 +159,15 @@ export const useMessagePreviewHintsQuery = (
       refetchOnMount: false,
       refetchOnWindowFocus: true,
       refetchOnReconnect: true,
+      refetchInterval: (message, query) => {
+        if (message == null || query.state.dataUpdateCount >= PREVIEW_HINTS_POLLS) {
+          return false;
+        }
+        const saved = new Set(
+          (message.attachments ?? []).map((file) => (file as { file_id?: string }).file_id),
+        );
+        return fileIds.every((id) => saved.has(id)) ? false : PREVIEW_HINTS_POLL_MS;
+      },
     },
   );
 

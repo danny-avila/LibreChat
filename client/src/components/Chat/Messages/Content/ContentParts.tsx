@@ -1585,13 +1585,11 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
     () =>
       [
         ...new Set(
-          liveRouting.inDoubt.map(
-            (file) => `${file.toolCallId}:${(file as { file_id?: string }).file_id ?? ''}`,
-          ),
+          liveRouting.inDoubt
+            .map((file) => (file as { file_id?: string }).file_id)
+            .filter((id): id is string => !!id),
         ),
-      ]
-        .sort()
-        .join(','),
+      ].sort(),
     [liveRouting],
   );
   const storedSubagentHints = useStoredSubagentHints(

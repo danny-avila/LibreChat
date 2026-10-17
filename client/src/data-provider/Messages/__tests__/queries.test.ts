@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { Constants, QueryKeys, dataService } from 'librechat-data-provider';
 import { QueryClient, focusManager, QueryClientProvider } from '@tanstack/react-query';
-import type { TMessage } from 'librechat-data-provider';
+import type { TAttachment, TMessage } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import {
   getStableMessages,
@@ -649,7 +649,11 @@ describe('useMessagePreviewHintsQuery', () => {
 
   it('reads the message back as a preview, again on focus after the read failed, and not once it loaded', async () => {
     const queryClient = new QueryClient();
-    const stored = message({ messageId: 'message-id', isCreatedByUser: false });
+    const stored = message({
+      messageId: 'message-id',
+      isCreatedByUser: false,
+      attachments: [{ file_id: 'late-file' } as TAttachment],
+    });
     /** The first read and its three retries fail; the next one succeeds. */
     jest
       .mocked(dataService.getMessageById)
@@ -662,7 +666,7 @@ describe('useMessagePreviewHintsQuery', () => {
     jest.useFakeTimers();
 
     const { result, unmount } = renderHook(
-      () => useMessagePreviewHintsQuery('convo-id', 'message-id', 'child:file', true),
+      () => useMessagePreviewHintsQuery('convo-id', 'message-id', ['late-file'], true),
       { wrapper: createWrapper(queryClient, '/c/convo-id') },
     );
 
@@ -682,6 +686,40 @@ describe('useMessagePreviewHintsQuery', () => {
       focusManager.setFocused(true);
     });
     expect(dataService.getMessageById).toHaveBeenCalledTimes(5);
+    unmount();
+    queryClient.clear();
+    jest.useRealTimers();
+  });
+
+  it('reads again while the file it resolves is not saved on the message yet, then stops', async () => {
+    const queryClient = new QueryClient();
+    const before = message({ messageId: 'message-id', isCreatedByUser: false, attachments: [] });
+    const after = message({
+      messageId: 'message-id',
+      isCreatedByUser: false,
+      attachments: [{ file_id: 'late-file' } as TAttachment],
+    });
+    jest
+      .mocked(dataService.getMessageById)
+      .mockReset()
+      .mockResolvedValueOnce([before])
+      .mockResolvedValue([after]);
+    jest.useFakeTimers();
+
+    const { result, unmount } = renderHook(
+      () => useMessagePreviewHintsQuery('convo-id', 'message-id', ['late-file'], true),
+      { wrapper: createWrapper(queryClient, '/c/convo-id') },
+    );
+
+    await waitFor(() => expect(result.current.data).toEqual(before));
+    await act(async () => {
+      jest.advanceTimersByTime(5_000);
+    });
+    await waitFor(() => expect(result.current.data).toEqual(after));
+    await act(async () => {
+      jest.advanceTimersByTime(30_000);
+    });
+    expect(dataService.getMessageById).toHaveBeenCalledTimes(2);
     unmount();
     queryClient.clear();
     jest.useRealTimers();
