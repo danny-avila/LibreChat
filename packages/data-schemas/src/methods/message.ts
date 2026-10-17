@@ -320,6 +320,18 @@ function buildMessageSaveUpdate(
   };
 }
 
+/**
+ * A legacy temporary message stores only its deadline; hydration then fills
+ * `isTemporary` with the schema default `false`, which must not read as permanent.
+ */
+function isTemporaryMessage(message: IMessage): boolean {
+  if (message.isTemporary === true) {
+    return true;
+  }
+  const implicit = message.isTemporary == null || message.$isDefault?.('isTemporary') === true;
+  return implicit && message.expiredAt != null;
+}
+
 async function findOneAndMergeMessageProvenance(
   Message: Model<IMessage>,
   identity: FilterQuery<IMessage>,
@@ -2542,7 +2554,7 @@ export function createMessageMethods(
         tokenCount: updatedMessage.tokenCount,
         feedback: updatedMessage.feedback,
         endpoint: updatedMessage.endpoint,
-        isTemporary: updatedMessage.isTemporary,
+        isTemporary: isTemporaryMessage(updatedMessage),
         langfuseSampled: updatedMessage.langfuseSampled,
         langfuseDestinationIds: updatedMessage.langfuseDestinationIds,
         langfuseRunId: updatedMessage.langfuseRunId,
