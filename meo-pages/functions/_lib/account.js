@@ -125,18 +125,27 @@ export async function loadSession(request, env) {
   const { cookieValue, sessionCookieName, seal, unseal, sessionCookieHeader } = await import(
     './session.js'
   );
-  const existing = await unseal(cookieValue(request, sessionCookieName), env);
-  if (
-    !existing ||
-    typeof existing.accessToken !== 'string' ||
-    typeof existing.refreshToken !== 'string'
-  ) {
-    return { session: null, cookie: null };
+  const rawCookie = cookieValue(request, sessionCookieName);
+  if (!rawCookie) return { session: null, cookie: null, reason: 'cookie_missing' };
+
+  const existing = await unseal(rawCookie, env);
+  if (!existing) return { session: null, cookie: null, reason: 'cookie_unseal_failed' };
+  if (typeof existing.accessToken !== 'string') {
+    return { session: null, cookie: null, reason: 'access_token_missing' };
   }
+  if (typeof existing.refreshToken !== 'string') {
+    return { session: null, cookie: null, reason: 'refresh_token_missing' };
+  }
+
   const expiresAt = Number(existing.expiresAt ?? 0);
-  if (expiresAt > Math.floor(Date.now() / 1000) + 60) return { session: existing, cookie: null };
+  if (expiresAt > Math.floor(Date.now() / 1000) + 60) {
+    return { session: existing, cookie: null, reason: 'ok' };
+  }
+
   const refreshed = await refreshTokens(env, existing.refreshToken);
-  if (!refreshed?.access_token || !refreshed?.refresh_token) return { session: null, cookie: null };
+  if (!refreshed?.access_token || !refreshed?.refresh_token) {
+    return { session: null, cookie: null, reason: 'refresh_failed' };
+  }
   const session = {
     accessToken: refreshed.access_token,
     refreshToken: refreshed.refresh_token,
@@ -146,5 +155,5 @@ export async function loadSession(request, env) {
     userId: existing.userId,
   };
   const cookie = sessionCookieHeader(await seal(session, env));
-  return { session, cookie };
+  return { session, cookie, reason: 'refreshed' };
 }
