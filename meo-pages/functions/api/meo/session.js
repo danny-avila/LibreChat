@@ -1,23 +1,41 @@
 import { accountUser, loadSession } from '../../_lib/account.js';
 
-const headers = {
+const baseHeaders = {
   'Cache-Control': 'no-store',
   'Content-Type': 'application/json; charset=utf-8',
   'X-Content-Type-Options': 'nosniff',
 };
 
-function json(body, status = 200) {
-  return Response.json(body, { status, headers });
+function json(body, status = 200, extraHeaders = {}) {
+  return Response.json(body, {
+    status,
+    headers: { ...baseHeaders, ...extraHeaders },
+  });
+}
+
+function fail(reason, code = 'unauthenticated') {
+  console.warn('meo_session_failed', { reason });
+  return json(
+    { error: { code } },
+    401,
+    {
+      'X-Meo-Session-Failure': reason,
+    },
+  );
 }
 
 export async function onRequestGet({ request, env }) {
-  const { session, cookie } = await loadSession(request, env);
-  if (!session) return json({ error: { code: 'unauthenticated' } }, 401);
+  const { session, cookie, reason } = await loadSession(request, env);
+  if (!session) return fail(reason ?? 'session_unavailable');
 
-  const account = await accountUser(env, session.accessToken).catch(() => null);
-  if (!account || account.id !== session.userId) {
-    return json({ error: { code: 'invalid_session' } }, 401);
+  let account;
+  try {
+    account = await accountUser(env, session.accessToken);
+  } catch {
+    return fail('userinfo_request_failed', 'invalid_session');
   }
+  if (!account) return fail('userinfo_invalid', 'invalid_session');
+  if (account.id !== session.userId) return fail('subject_mismatch', 'invalid_session');
 
   const response = json({
     user: {
@@ -29,7 +47,7 @@ export async function onRequestGet({ request, env }) {
         : {}),
       ...(typeof account.picture === 'string' ? { picture: account.picture } : {}),
     },
-  });
+  }, 200, { 'X-Meo-Session-Status': reason ?? 'ok' });
   if (cookie) response.headers.append('Set-Cookie', cookie);
   return response;
 }
