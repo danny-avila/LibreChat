@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
 import type { AgentDetail } from '../agents.helpers';
+import type { UploadedFile } from '../helpers';
 import { cleanupAgent } from '../agents.helpers';
 import { withMongo } from '../db';
 import {
@@ -45,7 +46,6 @@ test.describe('legacy File Search embeddings', () => {
       });
       agentId = agent.id;
 
-      const fileId = randomUUID();
       const upload = await page.request.post('/api/files', {
         headers: { Authorization: `Bearer ${token}` },
         multipart: {
@@ -53,7 +53,7 @@ test.describe('legacy File Search embeddings', () => {
           endpointType: 'custom',
           agent_id: agentId,
           tool_resource: 'file_search',
-          file_id: fileId,
+          file_id: randomUUID(),
           file: {
             name: `${uniqueName('legacy-search')}.txt`,
             mimeType: 'text/plain',
@@ -62,6 +62,9 @@ test.describe('legacy File Search embeddings', () => {
         },
       });
       expect(upload.ok(), await upload.text()).toBeTruthy();
+      /* The server assigns the stored id; the fake RAG records it rather than a name. */
+      const fileId = ((await upload.json()) as UploadedFile).file_id as string;
+      expect(fileId, 'upload response should include a file_id').toBeTruthy();
       await expect
         .poll(async () => (await getRagEmbedded(page)).map((e) => e.file_id), { timeout: 15000 })
         .toContain(fileId);
@@ -124,7 +127,6 @@ test.describe('legacy File Search embeddings', () => {
       sourceId = (await createSearchAgent('legacy-source-agent')).id;
       inheritorId = (await createSearchAgent('legacy-inheritor-agent')).id;
 
-      const fileId = randomUUID();
       const upload = await page.request.post('/api/files', {
         headers: { Authorization: `Bearer ${token}` },
         multipart: {
@@ -132,7 +134,7 @@ test.describe('legacy File Search embeddings', () => {
           endpointType: 'custom',
           agent_id: sourceId,
           tool_resource: 'file_search',
-          file_id: fileId,
+          file_id: randomUUID(),
           file: {
             name: `${uniqueName('legacy-shared')}.txt`,
             mimeType: 'text/plain',
@@ -141,6 +143,9 @@ test.describe('legacy File Search embeddings', () => {
         },
       });
       expect(upload.ok(), await upload.text()).toBeTruthy();
+      /* The server assigns the stored id; the fake RAG records it rather than a name. */
+      const fileId = ((await upload.json()) as UploadedFile).file_id as string;
+      expect(fileId, 'upload response should include a file_id').toBeTruthy();
       await expect
         .poll(async () => (await getRagEmbedded(page)).map((e) => e.file_id), { timeout: 15000 })
         .toContain(fileId);
