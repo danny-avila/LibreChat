@@ -51,7 +51,7 @@ async function exerciseSuccessfulCallback(cookieName) {
     }
     if (input === `${env.MEO_ACCOUNT_URL}/v1/auth/oauth2/userinfo`) {
       assert.equal(init.headers.Authorization, 'Bearer opaque-access-token');
-      return Response.json({ sub: 'account-user-id' });
+      return Response.json({ sub: '11111111-1111-4111-8111-111111111111' });
     }
     throw new Error('Unexpected callback fetch');
   };
@@ -74,6 +74,7 @@ async function exerciseSuccessfulCallback(cookieName) {
     assert.equal(response.status, 302);
     assert.equal(response.headers.get('Location'), flow.returnTo);
     assert.match(response.headers.get('Set-Cookie') ?? '', /^__Host-meo-session=/);
+    assert.deepEqual(response.headers.getSetCookie?.(), [response.headers.get('Set-Cookie')]);
     assert.deepEqual(warnings, []);
   } finally {
     globalThis.fetch = originalFetch;

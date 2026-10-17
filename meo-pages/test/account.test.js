@@ -106,12 +106,15 @@ test('OAuth UserInfo lookup uses bearer token and OIDC subject identity', async 
     assert.equal(input, `${env.MEO_ACCOUNT_URL}/v1/auth/oauth2/userinfo`);
     assert.equal(init.headers.Authorization, 'Bearer opaque-access');
     assert.equal(init.headers.apikey, undefined);
-    return Response.json({ sub: 'user-uuid', email: 'user@example.com' });
+    return Response.json({
+      sub: '11111111-1111-4111-8111-111111111111',
+      email: 'user@example.com',
+    });
   };
 
   const user = await accountUser(env, 'opaque-access');
-  assert.equal(user.id, 'user-uuid');
-  assert.equal(user.sub, 'user-uuid');
+  assert.equal(user.id, '11111111-1111-4111-8111-111111111111');
+  assert.equal(user.sub, '11111111-1111-4111-8111-111111111111');
 });
 
 test('OAuth UserInfo lookup rejects payloads without an OIDC subject', async (t) => {
