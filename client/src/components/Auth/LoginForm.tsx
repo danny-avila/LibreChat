@@ -81,11 +81,11 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
   return (
     <>
       {showResendLink && (
-        <div className="border-status-success-border bg-status-success-subtle text-text-secondary mt-2 rounded-md border px-3 py-2 text-sm">
+        <div className="border-status-success-border bg-status-success-subtle text-text-secondary mt-2 rounded-2xl border px-3 py-2.5 text-sm">
           {localize('com_auth_email_verification_resend_prompt')}
           <button
             type="button"
-            className="text-link ml-2 hover:underline"
+            className="text-link ml-2 font-medium hover:underline"
             onClick={handleResendEmail}
             disabled={resendLinkMutation.isLoading}
           >
@@ -96,7 +96,9 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
       <form
         className="mt-6"
         aria-label="Login form"
+        aria-busy={isSubmitting}
         method="POST"
+        noValidate
         onSubmit={handleSubmit((data) => onSubmit(data))}
       >
         <div className="mb-4">
@@ -105,7 +107,11 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
               colorTransition
               type="text"
               id="email"
+              autoFocus
               autoComplete={emailAutoComplete}
+              autoCapitalize="none"
+              spellCheck={false}
+              inputMode={useUsernameLogin ? undefined : 'email'}
               aria-label={localize('com_auth_email')}
               {...register('email', {
                 required: localize('com_auth_email_required'),
@@ -153,12 +159,14 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
           {renderError('password')}
         </div>
         {startupConfig.passwordResetEnabled && (
-          <a
-            href="/forgot-password"
-            className="text-accent-primary hover:text-accent-primary-hover hover:decoration-accent-primary-hover focus:text-accent-primary-hover focus:decoration-accent-primary-hover inline-flex p-1 text-sm font-medium underline decoration-transparent transition-all duration-200"
-          >
-            {localize('com_auth_password_forgot')}
-          </a>
+          <div className="flex justify-end">
+            <a
+              href="/forgot-password"
+              className="text-accent-primary hover:text-accent-primary-hover hover:decoration-accent-primary-hover focus:text-accent-primary-hover focus:decoration-accent-primary-hover inline-flex p-1 text-sm font-medium underline decoration-transparent transition-all duration-200"
+            >
+              {localize('com_auth_password_forgot')}
+            </a>
+          </div>
         )}
 
         {requireCaptcha && (
@@ -183,7 +191,7 @@ const LoginForm: React.FC<TLoginFormProps> = ({ onSubmit, startupConfig, error, 
             type="submit"
             disabled={(requireCaptcha && !turnstileToken) || isSubmitting}
             variant="submit"
-            className="h-12 w-full rounded-2xl"
+            className="h-12 w-full rounded-2xl font-semibold"
           >
             {isSubmitting ? <Spinner /> : localize('com_auth_continue')}
           </Button>

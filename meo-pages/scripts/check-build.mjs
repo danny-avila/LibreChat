@@ -1,26 +1,21 @@
-import { access } from 'node:fs/promises';
-import { execFileSync } from 'node:child_process';
+import { access, readFile } from 'node:fs/promises';
 
 for (const path of [
-  'public/index.html',
-  'public/404.html',
-  'public/_redirects',
-  'public/app.js',
-  'public/core.js',
-  'public/style.css',
+  'dist/index.html',
+  'dist/assets',
   'functions/api/[[path]].js',
+  'functions/oauth/openid/index.js',
+  'functions/oauth/openid/callback.js',
 ]) {
   await access(new URL(`../${path}`, import.meta.url));
 }
 
-execFileSync(process.execPath, ['--check', new URL('../public/app.js', import.meta.url).pathname], {
-  stdio: 'inherit',
-});
-execFileSync(process.execPath, ['--check', new URL('../public/core.js', import.meta.url).pathname], {
-  stdio: 'inherit',
-});
+const html = await readFile(new URL('../dist/index.html', import.meta.url), 'utf8');
+if (/\/app\.js|\/core\.js|\/style\.css/.test(html)) {
+  throw new Error('Pages output still references the legacy meo-pages UI.');
+}
 
 await import('../functions/api/[[path]].js');
 await import('../functions/oauth/openid/index.js');
 await import('../functions/oauth/openid/callback.js');
-console.log('Meo Pages source is ready for Cloudflare Pages.');
+console.log('React Meo AI Web output and temporary Pages auth edge are ready.');

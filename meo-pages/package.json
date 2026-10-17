@@ -4,6 +4,6 @@
   "type": "module",
   "scripts": {
     "test": "node --test",
-    "build": "node --check ./public/app.js && node ./scripts/check-build.mjs"
+    "build": "node ./scripts/build-react.mjs && node ./scripts/check-build.mjs"
   }
 }

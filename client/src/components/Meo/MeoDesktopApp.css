@@ -1,0 +1,253 @@
+.meo-desktop-workspace {
+  --meo-radius-pane: 26px;
+  --meo-radius-control: 18px;
+  display: grid;
+  grid-template-columns: 248px minmax(0, 1fr);
+  gap: 12px;
+  width: 100%;
+  height: 100dvh;
+  min-height: 500px;
+  padding: 12px;
+  overflow: hidden;
+  background: rgb(var(--surface-secondary));
+  color: rgb(var(--text-primary));
+}
+
+.meo-desktop-sidebar,
+.meo-desktop-main-pane,
+.meo-desktop-inspector {
+  min-width: 0;
+  border-radius: var(--meo-radius-pane);
+}
+
+.meo-desktop-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 22px 14px 14px;
+  background: rgb(var(--surface-secondary));
+  transition: width 180ms ease, opacity 140ms ease, padding 180ms ease;
+}
+
+.meo-desktop-sidebar.is-hidden {
+  width: 0;
+  opacity: 0;
+  padding-left: 0;
+  padding-right: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.meo-desktop-workspace:has(.meo-desktop-sidebar.is-hidden) {
+  grid-template-columns: 0 minmax(0, 1fr);
+}
+
+.meo-desktop-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+  margin: 0 8px 18px;
+}
+
+.meo-desktop-logo {
+  display: grid;
+  place-items: center;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  border-radius: 15px;
+  background: rgb(var(--accent-primary));
+  color: rgb(var(--surface-primary));
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .03em;
+}
+
+.meo-desktop-brand-copy,
+.meo-desktop-device-card > div,
+.meo-desktop-header-copy,
+.meo-desktop-inspector-head > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.meo-desktop-brand-copy strong { font-size: 16px; line-height: 1.25; }
+.meo-desktop-brand-copy span,
+.meo-desktop-header-copy span,
+.meo-desktop-device-card span,
+.meo-desktop-inspector-head span {
+  color: rgb(var(--text-secondary));
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.meo-desktop-nav-list { display: grid; gap: 4px; }
+.meo-desktop-nav {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  color: rgb(var(--text-primary));
+  text-align: left;
+  font-size: 14px;
+  cursor: pointer;
+}
+.meo-desktop-nav:hover { background: rgb(var(--surface-tertiary)); }
+.meo-desktop-nav.is-active { background: rgb(var(--surface-tertiary)); }
+.meo-desktop-nav-primary {
+  margin-bottom: 2px;
+  background: rgb(var(--accent-primary));
+  color: rgb(var(--surface-primary));
+  font-weight: 650;
+}
+.meo-desktop-nav-primary:hover { filter: brightness(.97); background: rgb(var(--accent-primary)); }
+.meo-desktop-icon { width: 21px; height: 21px; flex: 0 0 21px; }
+
+.meo-desktop-current-chat { margin-top: 18px; }
+.meo-desktop-section-label {
+  display: block;
+  margin: 0 12px 7px;
+  color: rgb(var(--text-secondary));
+  font-size: 12px;
+  font-weight: 550;
+}
+.meo-desktop-sidebar-spacer { flex: 1; }
+
+.meo-desktop-device-card {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 8px;
+  align-items: center;
+  gap: 12px;
+  min-height: 76px;
+  margin-top: 2px;
+  padding: 12px;
+  border-radius: 20px;
+  background: rgb(var(--surface-tertiary));
+}
+.meo-desktop-device-card strong { font-size: 13px; }
+.meo-desktop-device-card > i,
+.meo-desktop-work-target > i {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgb(var(--accent-primary));
+}
+
+.meo-desktop-main-pane {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: rgb(var(--surface-primary));
+}
+.meo-desktop-header {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: 10px;
+  min-height: 76px;
+  padding: 0 28px;
+}
+.meo-desktop-header-copy strong { font-size: 15px; line-height: 1.25; }
+.meo-desktop-icon-button {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: rgb(var(--text-primary));
+  cursor: pointer;
+}
+.meo-desktop-icon-button:hover,
+.meo-desktop-icon-button.is-active { background: rgb(var(--surface-tertiary)); }
+.meo-desktop-content { min-height: 0; flex: 1; overflow: hidden; }
+.meo-desktop-chat-host { height: 100%; min-height: 0; }
+.meo-desktop-chat-host > main { max-width: none !important; height: 100%; padding-top: 0 !important; }
+
+.meo-desktop-inspector {
+  position: absolute;
+  z-index: 40;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  width: min(340px, calc(100vw - 40px));
+  padding: 18px;
+  border: 1px solid rgb(var(--border-light));
+  background: rgb(var(--surface-primary));
+  box-shadow: 0 18px 60px rgba(0,0,0,.12);
+}
+.meo-desktop-inspector-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.meo-desktop-inspector-head button {
+  width: 32px; height: 32px; border: 0; border-radius: 12px;
+  background: rgb(var(--surface-secondary)); color: rgb(var(--text-primary)); font-size: 20px; cursor: pointer;
+}
+.meo-desktop-inspector-tabs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin: 20px 0; padding: 4px; border-radius: 15px; background: rgb(var(--surface-secondary)); }
+.meo-desktop-inspector-tabs button { border: 0; border-radius: 11px; padding: 8px 4px; background: transparent; color: rgb(var(--text-secondary)); font-size: 12px; cursor: pointer; }
+.meo-desktop-inspector-tabs button.is-active { background: rgb(var(--surface-primary)); color: rgb(var(--text-primary)); }
+.meo-desktop-inspector-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; height: calc(100% - 120px); padding: 30px; text-align: center; color: rgb(var(--text-secondary)); }
+.meo-desktop-inspector-empty strong { color: rgb(var(--text-primary)); }
+.meo-desktop-inspector-empty .meo-desktop-icon { width: 32px; height: 32px; margin-bottom: 4px; }
+.meo-desktop-inspector-empty span { font-size: 13px; line-height: 1.5; }
+
+.meo-desktop-mode-landing {
+  width: min(720px, calc(100% - 48px));
+  margin: 0 auto;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.meo-desktop-mode-icon { display: grid; place-items: center; width: 64px; height: 64px; border-radius: 22px; background: rgb(var(--surface-tertiary)); color: rgb(var(--accent-primary)); }
+.meo-desktop-mode-icon .meo-desktop-icon { width: 32px; height: 32px; }
+.meo-desktop-mode-landing h1 { margin: 18px 0 0; font-size: 28px; font-weight: 650; }
+.meo-desktop-mode-landing > p { max-width: 640px; margin: 10px 0 0; color: rgb(var(--text-secondary)); line-height: 1.65; }
+.meo-desktop-work-target { display: grid; grid-template-columns: 44px minmax(0,1fr) 9px; align-items: center; gap: 12px; width: 100%; margin-top: 24px; padding: 14px; border: 1px solid rgb(var(--border-light)); border-radius: 22px; background: rgb(var(--surface-secondary)); text-align: left; }
+.meo-desktop-work-target > .meo-desktop-icon { width: 26px; height: 26px; color: rgb(var(--accent-primary)); }
+.meo-desktop-work-target div { display: flex; flex-direction: column; }
+.meo-desktop-work-target span { margin-top: 3px; color: rgb(var(--text-secondary)); font-size: 12px; }
+.meo-desktop-open-existing { margin-top: 18px; border: 0; border-radius: 15px; padding: 10px 16px; background: rgb(var(--surface-tertiary)); color: rgb(var(--text-primary)); cursor: pointer; }
+
+@media (min-width: 1280px) {
+  .meo-desktop-workspace:has(.meo-desktop-inspector) { grid-template-columns: 248px minmax(0, 1fr) 340px; }
+  .meo-desktop-inspector { position: static; width: auto; box-shadow: none; }
+}
+
+@media (max-width: 1119px) {
+  .meo-desktop-workspace { grid-template-columns: 72px minmax(0, 1fr); }
+  .meo-desktop-sidebar { padding-left: 10px; padding-right: 10px; }
+  .meo-desktop-brand { justify-content: center; margin-left: 0; margin-right: 0; }
+  .meo-desktop-brand-copy,
+  .meo-desktop-nav span,
+  .meo-desktop-section-label,
+  .meo-desktop-device-card > div { display: none; }
+  .meo-desktop-nav { justify-content: center; padding-left: 0; padding-right: 0; }
+  .meo-desktop-device-card { grid-template-columns: 1fr; place-items: center; padding: 12px 0; }
+  .meo-desktop-device-card > i { position: absolute; transform: translate(14px, 14px); }
+}
+
+@media (max-width: 759px) {
+  .meo-desktop-workspace { display: block; padding: 8px; }
+  .meo-desktop-sidebar { display: none; }
+  .meo-desktop-main-pane { height: calc(100dvh - 16px); border-radius: 22px; }
+  .meo-desktop-header { grid-template-columns: 32px minmax(0,1fr) 36px; min-height: 68px; padding: 0 18px; }
+  .meo-desktop-sidebar-toggle { visibility: hidden; }
+  .meo-desktop-inspector { top: 8px; right: 8px; bottom: 8px; width: min(440px, calc(100vw - 16px)); border-radius: 22px; }
+}

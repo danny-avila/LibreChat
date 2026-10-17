@@ -1,14 +1,22 @@
 # Meo AI on Cloudflare Pages
 
-This is a small Cloudflare Pages app for `chat.meoarch.org`. It uses Meo Account for OAuth and Meo API for provider-key operations and conversation history. The browser only calls same-origin Pages Functions; the server-side functions exchange tokens and call versioned Meo endpoints.
+> **Legacy UI / temporary browser edge.** The canonical Meo AI Web is the React/TypeScript application under `client/`. Do not add new Chat, Projects, Work, Skills, Memory, Agent, model-routing, or other product behavior to `meo-pages/public/*`. During migration this directory keeps the browser OAuth/session Pages Functions and a rollback copy of the old static UI only. See `../docs/meo-web-architecture.md`.
 
-## Free-tier deployment
+`chat.meoarch.org` currently uses this Cloudflare Pages project. The migration target is to serve the React build from `client/` while temporarily retaining the same-origin Pages Functions for OAuth/session handling.
 
-Cloudflare Pages serves the static UI and runs the small `/api/*` and `/oauth/*` handlers as Pages Functions. Pages Free includes 100,000 dynamic requests per day; static asset requests are free. The app does not need a continuously running container, MongoDB, a paid Workers plan, or additional domain/DNS purchases. Provider inference remains subject to the selected provider's existing billing and usage limits.
+The `cutover/react-web-pages` branch is the Pages preview lane for this migration. Production auto-deploy remains disabled while the React build is verified; the existing production deployment stays live until the cutover is explicitly promoted.
 
-In the Cloudflare Pages project, set the root directory to `meo-pages`, build command to `npm run build`, and output directory to `public`. Builds run on Cloudflare's build infrastructure. Deploy the `main` branch after GitHub Actions passes.
+## React cutover deployment
 
-The repository build watch include is `meo-pages/*` (`*` matches nested paths in Pages build watch rules), so LibreChat upstream-only commits do not consume Pages builds.
+Cloudflare Pages keeps the project root at `meo-pages` temporarily so the existing `functions/oauth/*` and minimal `functions/api/*` browser edge continue to work.
+
+The Pages build command is `npm run build`. That command installs the repository workspaces, builds the canonical React client from `../client`, and stages its static output into `meo-pages/dist`.
+
+The Pages output directory must therefore be `dist`, **not** `public`.
+
+`meo-pages/public/*` is no longer the intended production build output. It remains only during the rollback window and will be deleted after the React production cutover is proven stable.
+
+Build watch paths should include the React client and the shared packages required by the client, plus the temporary Pages edge. Changes to those paths must trigger a Pages build; legacy static-UI-only changes should not be a reason to expand product behavior there.
 
 ## Runtime variables
 
@@ -21,23 +29,18 @@ Set these for Production (and Preview only when using a registered OAuth callbac
 | `MEO_OAUTH_CLIENT_ID` | `8f2e0255-187d-448f-9e25-bc275d1b6015` |
 | `SESSION_SECRET` | A random 32-byte base64url secret stored as a Cloudflare secret; never commit or print it |
 
-The public OAuth client must register `https://chat.meoarch.org/oauth/openid/callback` with the new Meo Account OAuth server and request `https://api.meoarch.org` as its resource. The app uses PKCE. Access and refresh tokens are encrypted in a `Secure`, `HttpOnly`, `SameSite=Lax` cookie and are never exposed to browser JavaScript or local storage. Provider keys never leave Meo Account/Meo API.
+The public OAuth client must register `https://chat.meoarch.org/oauth/openid/callback` with the Meo Account OAuth server and request `https://api.meoarch.org` as its resource. The app uses PKCE. Access and refresh tokens are encrypted in a `Secure`, `HttpOnly`, `SameSite=Lax` cookie and are never exposed to browser JavaScript or local storage. Provider keys never leave Meo Account/Meo API.
 
-The authorization request includes `offline_access`, which Better Auth requires
-to issue the refresh token used by this app. The client ID must also exist in
-the Account production `oauth_client` table: configuring the Pages variable
-alone does not register it. Meo API auth migration
-`0005_meo_ai_web_client.sql` owns the production Web registration. Missing Pages
-client configuration returns a local 503 instead of sending a broken OAuth
-request to Account.
+The authorization request includes `offline_access`, which Better Auth requires to issue the refresh token used by this app. The client ID must also exist in the Account production `oauth_client` table: configuring the Pages variable alone does not register it. Meo API auth migration `0005_meo_ai_web_client.sql` owns the production Web registration. Missing Pages client configuration returns a local 503 instead of sending a broken OAuth request to Account.
 
 ## Local checks
 
-No package installation is needed. Run `npm test` and `npm run build` from this directory. The build command is a lightweight source-layout check; Cloudflare performs the actual Pages build remotely.
+The Pages build now depends on the repository workspaces because it builds `client/`. Run `npm run build` from `meo-pages` to reproduce the Pages staging step. The build validates that `dist/index.html` comes from the React client and that the temporary OAuth/API Functions still import successfully.
 
 ## Runtime contract
 
-- Browser → same-origin Pages Functions → Meo API `/v1/ai/provider-broker` for connection metadata, model discovery, consent and streaming inference.
-- Streaming responses are passed through as SSE; request abort signals propagate to the broker fetch.
-- Browser → same-origin Pages Functions → Meo API `/v1/conversations*` for conversation and message rows. Meo API authenticates the account token and enforces ownership in each query.
-- `?connection=<credential-id>&model=<model-id>` is validated against the signed-in user's accessible connections and available models. Invalid values fall back to the selector.
+- Browser UI: canonical React app from `client/`.
+- Browser auth edge: temporary same-origin Pages Functions under `/oauth/*`.
+- Browser API edge: temporary minimal same-origin Pages Functions under `/api/*`, forwarding to Meo API where required.
+- Meo API / Neon remain authoritative for account-owned Chat, Project, context, file metadata, usage and device/runtime state.
+- The Pages edge must not grow a second copy of Chat, Projects, Work, Skills, Memory or Agent business logic.

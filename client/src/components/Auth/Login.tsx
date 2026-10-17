@@ -32,6 +32,7 @@ function Login() {
   const location = useLocation();
   const postLoginRedirect = peekPostLoginRedirect(searchParams) ?? undefined;
   const disableAutoRedirect = searchParams.get('redirect') === 'false';
+  const isMeoAi = startupConfig?.appTitle === 'Meo AI';
 
   const [isAutoRedirectDisabled, setIsAutoRedirectDisabled] = useState(disableAutoRedirect);
 
@@ -87,29 +88,55 @@ function Login() {
 
   if (shouldAutoRedirect) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center p-4">
-        <p className="text-lg font-semibold">
-          {localize('com_ui_redirecting_to_provider', { 0: startupConfig.openidLabel })}
+      <div className="flex min-h-32 flex-col items-center justify-center p-4">
+        <p className="text-text-secondary text-sm">
+          {isMeoAi
+            ? 'Opening Meo Account…'
+            : localize('com_ui_redirecting_to_provider', { 0: startupConfig.openidLabel })}
         </p>
-        <div className="mt-4">
-          <SocialButton
-            key="openid"
-            enabled={startupConfig.openidLoginEnabled}
-            serverDomain={startupConfig.serverDomain}
-            oauthPath="openid"
-            Icon={() =>
-              startupConfig.openidImageUrl ? (
-                <img src={startupConfig.openidImageUrl} alt="OpenID Logo" className="h-5 w-5" />
-              ) : (
-                <OpenIDIcon />
-              )
-            }
-            label={startupConfig.openidLabel}
-            id="openid"
-            redirectTo={postLoginRedirect}
-          />
-        </div>
       </div>
+    );
+  }
+
+  if (isMeoAi) {
+    const meoAccountReady = Boolean(
+      startupConfig?.openidLoginEnabled && startupConfig?.serverDomain,
+    );
+
+    return (
+      <>
+        {error != null && <ErrorMessage>{localize(getLoginError(error))}</ErrorMessage>}
+        {meoAccountReady ? (
+          <>
+            <SocialButton
+              enabled={true}
+              serverDomain={startupConfig!.serverDomain}
+              oauthPath="openid"
+              Icon={() =>
+                startupConfig?.openidImageUrl ? (
+                  <img
+                    src={startupConfig.openidImageUrl}
+                    alt="Meo Account"
+                    className="h-5 w-5 rounded-md"
+                  />
+                ) : (
+                  <OpenIDIcon />
+                )
+              }
+              label="Continue with Meo Account"
+              id="meo-account"
+              redirectTo={postLoginRedirect}
+            />
+            <p className="text-text-secondary mt-4 text-center text-xs leading-5">
+              Sign in or create your account on Meo Account. Meo AI never keeps a separate password.
+            </p>
+          </>
+        ) : (
+          <ErrorMessage>
+            Meo Account sign-in is not configured. Enable the Meo Account OpenID provider for this deployment.
+          </ErrorMessage>
+        )}
+      </>
     );
   }
 
