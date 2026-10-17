@@ -120,14 +120,18 @@ test('an image a subagent tool saved renders once under the subagent after reloa
     const message = page.locator(`[id="${messageId}"]`);
     await expect(message.getByText('Here is the red cat.')).toBeVisible();
     for (const id of [childCall, grandchildCall, directCall]) {
-      const image = message.getByRole('img', { name: `${id}.png` });
+      const image = message.getByRole('img', { name: `${id}.png`, exact: true });
       await expect(image).toHaveCount(1);
       await expect(image).toBeVisible();
     }
 
     await page.reload();
-    await expect(message.getByRole('img', { name: `${childCall}.png` })).toHaveCount(1);
-    await expect(message.getByRole('img', { name: `${grandchildCall}.png` })).toHaveCount(1);
+    await expect(message.getByRole('img', { name: `${childCall}.png`, exact: true })).toHaveCount(
+      1,
+    );
+    await expect(
+      message.getByRole('img', { name: `${grandchildCall}.png`, exact: true }),
+    ).toHaveCount(1);
   } finally {
     await deleteMessagesByConversation([conversationId]);
     await deleteConversations([conversationId]);
