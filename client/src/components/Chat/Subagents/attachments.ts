@@ -200,14 +200,18 @@ export function useLiveSubagentToolCalls(
       held.clear();
     };
   }, []);
+  /** Built from everything the invocation has shown, not only its current
+   *  activity: a write the progress setter remembered and a later write that
+   *  evicted the same call can land in one batch. */
   const signatureAtom = useMemo(
     () =>
       atom((get) => {
-        const live: Array<[string, NestedCall[]]> = [];
-        for (const [, key] of keys) {
-          const calls = collectNestedCalls(get(subagentProgressByToolCallId(key))?.contentParts);
+        const live: Array<[number, NestedCall[]]> = [];
+        for (const [index, key] of keys) {
+          const current = collectNestedCalls(get(subagentProgressByToolCallId(key))?.contentParts);
+          const calls = rememberSubagentChildCalls(key, current);
           if (calls.length > 0) {
-            live.push([key, calls]);
+            live.push([index, calls]);
           }
         }
         return live.length === 0 ? '' : JSON.stringify(live);
@@ -215,17 +219,11 @@ export function useLiveSubagentToolCalls(
     [keys],
   );
   const signature = useAtomValue(signatureAtom);
-  return useMemo(() => {
-    const current = new Map<string, NestedCall[]>(
-      signature === '' ? [] : (JSON.parse(signature) as Array<[string, NestedCall[]]>),
-    );
-    const live = new Map<number, NestedCall[]>();
-    for (const [index, key] of keys) {
-      const calls = rememberSubagentChildCalls(key, current.get(key) ?? []);
-      if (calls.length > 0) {
-        live.set(index, calls);
-      }
-    }
-    return live.size > 0 ? live : NO_LIVE_CALLS;
-  }, [signature, keys]);
+  return useMemo(
+    () =>
+      signature === ''
+        ? NO_LIVE_CALLS
+        : new Map(JSON.parse(signature) as Array<[number, NestedCall[]]>),
+    [signature],
+  );
 }

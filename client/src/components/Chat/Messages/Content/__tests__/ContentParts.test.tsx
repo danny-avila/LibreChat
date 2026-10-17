@@ -979,6 +979,52 @@ describe('ContentParts — activity phase state', () => {
     act(() => getDefaultStore().set(progressAtom, null));
   });
 
+  it('routes a live child file when one batch shows and evicts its call while mounted', () => {
+    jest
+      .mocked(groupSequentialToolCalls)
+      .mockImplementation((parts) => [{ type: 'tool-group', parts }]);
+    const content = [
+      {
+        type: ContentTypes.TOOL_CALL,
+        [ContentTypes.TOOL_CALL]: { id: 'subagent-batched', name: 'subagent', args: {} },
+      },
+    ] as unknown as TMessageContentParts[];
+    const progressAtom = subagentProgressByToolCallId(
+      subagentProgressKey('msg-1', 'subagent-batched', 0),
+    );
+    const files = [
+      {
+        filename: 'batched-cat.png',
+        filepath: '/images/batched-cat.png',
+        conversationId: 'conversation-1',
+        messageId: 'msg-1',
+        toolCallId: 'batched-child',
+      },
+    ] as TAttachment[];
+    const streaming = { ...baseProps, isSubmitting: true, isLatestMessage: true };
+    const { rerender } = render(<ContentParts {...streaming} content={content} />);
+    act(() => {
+      getDefaultStore().set(progressAtom, {
+        contentParts: [
+          {
+            type: ContentTypes.TOOL_CALL,
+            [ContentTypes.TOOL_CALL]: { id: 'batched-child', name: 'image_gen_oai', args: '' },
+          },
+        ],
+      } as unknown as SubagentProgress);
+      getDefaultStore().set(progressAtom, (previous) => ({
+        ...(previous as SubagentProgress),
+        contentParts: [{ type: ContentTypes.TEXT, text: 'later output' }],
+      }));
+    });
+    rerender(<ContentParts {...streaming} content={content} attachments={files} />);
+    expect(screen.getByTestId('tool-call-group')).toHaveAttribute(
+      'data-attachments',
+      'batched-cat.png',
+    );
+    act(() => getDefaultStore().set(progressAtom, null));
+  });
+
   it('routes a file from a nested subagent run the live activity evicted', () => {
     jest
       .mocked(groupSequentialToolCalls)
