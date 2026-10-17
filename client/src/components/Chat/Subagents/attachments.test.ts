@@ -62,6 +62,17 @@ describe('subagent attachments', () => {
     expect(ids(assigned, content[3])).toEqual(['live-child']);
   });
 
+  it('gives a child id two subagents share to the run whose step saved the file', () => {
+    const content = [
+      subagent('first', [toolCall('shared-child', { stepId: 'step-a' })]),
+      subagent('second', [toolCall('shared-child', { stepId: 'step-b' })]),
+    ];
+    const fromB = { ...file('shared-child'), stepId: 'step-b' } as TAttachment;
+    const assigned = assignNestedAttachments(content, [fromB], new Map());
+    expect(ids(assigned, content[0])).toEqual([]);
+    expect(ids(assigned, content[1])).toEqual(['shared-child']);
+  });
+
   it('keeps the files of two subagent calls that share an id apart', () => {
     const content = [
       subagent('same-id', [toolCall('first-child')]),

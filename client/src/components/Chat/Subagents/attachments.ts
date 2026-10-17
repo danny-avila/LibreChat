@@ -9,6 +9,7 @@ type NestedPart = TMessageContentParts | SubagentContentPart | undefined;
 type ToolCallFields = {
   id?: string;
   name?: string;
+  stepId?: string;
   subagent_content?: TMessageContentParts[];
   subagentAttachmentToolCallIds?: string[];
 };
@@ -54,6 +55,43 @@ export function collectToolCallIds(
   return ids;
 }
 
+/** A tool call inside a subagent run, with the scope its files may carry. */
+type NestedCall = { id: string; agentId?: string; stepId?: string };
+
+/** The tool calls of a subagent transcript, nested runs included, with their scope. */
+function collectNestedCalls(
+  parts: ReadonlyArray<NestedPart> | undefined,
+  calls: NestedCall[] = [],
+): NestedCall[] {
+  for (const part of parts ?? []) {
+    const toolCall = toolCallOf(part);
+    if (toolCall?.id) {
+      calls.push({
+        id: toolCall.id,
+        agentId: (part as { agentId?: string } | undefined)?.agentId,
+        stepId: toolCall.stepId,
+      });
+    }
+    for (const id of toolCall?.subagentAttachmentToolCallIds ?? []) {
+      calls.push({ id });
+    }
+    if (Array.isArray(toolCall?.subagent_content)) {
+      collectNestedCalls(toolCall.subagent_content, calls);
+    }
+  }
+  return calls;
+}
+
+/** The ownership rule top-level parts apply: a scope both sides carry must agree. */
+const ownsAttachment = (call: NestedCall, attachment: TAttachment): boolean => {
+  const { agentId, stepId } = attachment as { agentId?: string; stepId?: string };
+  return (
+    call.id === attachment.toolCallId &&
+    (call.agentId == null || agentId == null || call.agentId === agentId) &&
+    (call.stepId == null || stepId == null || call.stepId === stepId)
+  );
+};
+
 /** Tool attachments that `claimed` (what the top-level parts accept) leaves out. */
 export function selectUnclaimedAttachments(
   attachments: TAttachment[],
@@ -68,9 +106,10 @@ export function selectUnclaimedAttachments(
 /**
  * Hands each unclaimed attachment to the first tool call part in `content`
  * whose transcript (stored, previewed, or streaming in `live`, keyed by content
- * index) holds the tool call it was saved under. The map is keyed by the part
- * itself, so two calls sharing an id keep their own files, and the first owner
- * wins, so a child id two subagents share still renders the file once.
+ * index) holds the tool call it was saved under, under the same agent and step
+ * scope rule top-level parts apply. The map is keyed by the part itself, so two
+ * calls sharing an id keep their own files, and the first owner wins, so a
+ * child id two subagents share still renders the file once.
  */
 export function assignNestedAttachments(
   content: ReadonlyArray<NestedPart> | undefined,
@@ -87,18 +126,18 @@ export function assignNestedAttachments(
     if (!toolCall?.id) {
       return;
     }
-    const childIds = collectToolCallIds(toolCall.subagent_content);
+    const calls = collectNestedCalls(toolCall.subagent_content);
     for (const id of toolCall.subagentAttachmentToolCallIds ?? []) {
-      childIds.add(id);
+      calls.push({ id });
     }
     for (const id of live.get(index) ?? []) {
-      childIds.add(id);
+      calls.push({ id });
     }
-    if (childIds.size === 0) {
+    if (calls.length === 0) {
       return;
     }
     for (const attachment of unclaimed) {
-      if (taken.has(attachment) || !childIds.has(attachment.toolCallId ?? '')) {
+      if (taken.has(attachment) || !calls.some((call) => ownsAttachment(call, attachment))) {
         continue;
       }
       taken.add(attachment);
@@ -112,8 +151,8 @@ export function assignNestedAttachments(
 
 /**
  * Child tool call ids of each subagent call in `content` that is still
- * streaming, keyed by the call's index in `content`. Until the run is saved those calls
- * exist only in the live progress atom. The atom yields a signature string so
+ * streaming, keyed by the call's index in `content`. Until the run is saved
+ * those calls exist only in the live progress atom. The atom yields a signature string so
  * the caller re-renders when a child call appears, not on every delta. Only the
  * message that is streaming reads progress (`enabled`): reading creates the
  * atom family member, which nothing would release for a settled message.
