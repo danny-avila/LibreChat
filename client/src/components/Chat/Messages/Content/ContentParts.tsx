@@ -1532,6 +1532,7 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
   const media = useMemo(() => ({ attachmentsByName }), [attachmentsByName]);
   const liveSubagentToolCalls = useLiveSubagentToolCalls(
     props.content,
+    attachments,
     messageId,
     props.contentIndices,
     props.contentIndexOffset ?? 0,

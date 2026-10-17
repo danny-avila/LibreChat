@@ -546,10 +546,14 @@ export const subagentProgressByToolCallId = atomFamily((key: string) => {
     (get, set, next: SetStateAction<SubagentProgress | null>) => {
       const value = typeof next === 'function' ? next(get(progress)) : next;
       if (value != null) {
-        rememberSubagentChildCalls(key, [
-          ...(value.aggregatorState?.evictedToolCalls ?? []),
-          ...collectNestedCalls(value.contentParts),
-        ]);
+        const segments = [value, ...(value.replaySegments ?? []).map(({ progress }) => progress)];
+        rememberSubagentChildCalls(
+          key,
+          segments.flatMap((segment) => [
+            ...(segment.aggregatorState?.evictedToolCalls ?? []),
+            ...collectNestedCalls(segment.contentParts),
+          ]),
+        );
       }
       set(progress, value);
     },
@@ -589,19 +593,36 @@ export function listRegisteredSubagentProgressKeys(): string[] {
  */
 const seenSubagentChildCalls = new Map<string, Map<string, Agents.SubagentAttachmentCall>>();
 
-/** Adds `calls` to what the invocation has shown and returns everything it has shown. */
+/**
+ * Adds `calls` to what the invocation has shown, keeping the most recent `MAX_EVICTED_TOOL_CALLS`
+ * like the eviction list it is fed from.
+ */
 export function rememberSubagentChildCalls(
   invocationKey: string,
   calls: Agents.SubagentAttachmentCall[],
-): Agents.SubagentAttachmentCall[] {
+): void {
+  if (calls.length === 0) return;
   const seen = seenSubagentChildCalls.get(invocationKey) ?? new Map();
   for (const call of calls) {
-    seen.set([call.id, call.agentId ?? '', call.stepId ?? ''].join('\u0000'), call);
+    const identity = [call.id, call.agentId ?? '', call.stepId ?? ''].join('\u0000');
+    seen.delete(identity);
+    seen.set(identity, call);
   }
-  if (seen.size > 0) {
-    seenSubagentChildCalls.set(invocationKey, seen);
+  for (const identity of seen.keys()) {
+    if (seen.size <= MAX_EVICTED_TOOL_CALLS) break;
+    seen.delete(identity);
   }
-  return [...seen.values()];
+  seenSubagentChildCalls.set(invocationKey, seen);
+}
+
+/** The remembered child calls of an invocation whose id is in `ids`. */
+export function rememberedSubagentChildCalls(
+  invocationKey: string,
+  ids: ReadonlySet<string>,
+): Agents.SubagentAttachmentCall[] {
+  const seen = seenSubagentChildCalls.get(invocationKey);
+  if (seen == null || ids.size === 0) return [];
+  return [...seen.values()].filter((call) => ids.has(call.id));
 }
 
 /** Frees idle invocation members; mounted readers retain their stream identity. */

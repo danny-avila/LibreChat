@@ -9,6 +9,7 @@ import {
   subagentProgressKey,
   retainSubagentProgress,
   rememberSubagentChildCalls,
+  rememberedSubagentChildCalls,
   subagentProgressByToolCallId,
 } from './state';
 
@@ -148,10 +149,21 @@ export function assignNestedAttachments(
  */
 export function useLiveSubagentToolCalls(
   content: ReadonlyArray<TMessageContentParts | undefined> | undefined,
+  attachments: ReadonlyArray<TAttachment> | undefined,
   messageId: string,
   contentIndices: ReadonlyArray<number> | undefined,
   contentIndexOffset: number,
 ): ReadonlyMap<number, NestedCall[]> {
+  /** Only calls a file of this message names matter for routing, so the
+   *  signature carries those rather than the invocation's whole history. */
+  const idSignature = useMemo(
+    () =>
+      [...new Set((attachments ?? []).map((attachment) => attachment.toolCallId ?? ''))]
+        .filter(Boolean)
+        .sort()
+        .join('\u0000'),
+    [attachments],
+  );
   /** A string, so the keys (and the atom reading them) survive the content
    *  array changing on every streamed delta. */
   const keySignature = useMemo(() => {
@@ -206,17 +218,19 @@ export function useLiveSubagentToolCalls(
   const signatureAtom = useMemo(
     () =>
       atom((get) => {
+        const ids = new Set(idSignature === '' ? [] : idSignature.split('\u0000'));
         const live: Array<[number, NestedCall[]]> = [];
         for (const [index, key] of keys) {
-          const current = collectNestedCalls(get(subagentProgressByToolCallId(key))?.contentParts);
-          const calls = rememberSubagentChildCalls(key, current);
+          const progress = get(subagentProgressByToolCallId(key));
+          rememberSubagentChildCalls(key, collectNestedCalls(progress?.contentParts));
+          const calls = rememberedSubagentChildCalls(key, ids);
           if (calls.length > 0) {
             live.push([index, calls]);
           }
         }
         return live.length === 0 ? '' : JSON.stringify(live);
       }),
-    [keys],
+    [keys, idSignature],
   );
   const signature = useAtomValue(signatureAtom);
   return useMemo(
