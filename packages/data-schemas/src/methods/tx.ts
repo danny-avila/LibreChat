@@ -507,6 +507,12 @@ export const premiumCacheTokenValues: Record<
   'grok-4-7': { threshold: 199999, write: 4, read: 1 },
 };
 
+/** `write1h` prices Anthropic's 1-hour prompt cache writes; `write` is the 5-minute rate */
+type CacheType = 'write' | 'read' | 'write1h';
+
+/** Anthropic bills 1-hour cache writes at 2x the input rate on every model and tier */
+export const ONE_HOUR_CACHE_WRITE_FACTOR = 2;
+
 export function createTxMethods(
   _mongoose: typeof import('mongoose'),
   txDeps: TxDeps,
@@ -556,7 +562,7 @@ export function createTxMethods(
     inputTokenCount,
   }: {
     valueKey?: string;
-    cacheType?: 'write' | 'read';
+    cacheType?: CacheType;
     model?: string;
     endpoint?: string;
     endpointTokenConfig?: Record<string, Record<string, number>>;
@@ -704,7 +710,9 @@ export function createTxMethods(
   /**
    * Retrieves the cache multiplier for a given value key and token type.
    * When `inputTokenCount` crosses a model's long-context threshold, the
-   * premium cache rate applies instead of the standard one.
+   * premium cache rate applies instead of the standard one. A `write1h`
+   * rate comes from an explicit endpoint override, otherwise it is the
+   * prompt rate of the same tier times {@link ONE_HOUR_CACHE_WRITE_FACTOR}.
    */
   function getCacheMultiplier({
     valueKey,
@@ -715,12 +723,28 @@ export function createTxMethods(
     inputTokenCount,
   }: {
     valueKey?: string;
-    cacheType?: 'write' | 'read';
+    cacheType?: CacheType;
     model?: string;
     endpoint?: string;
     endpointTokenConfig?: Record<string, Record<string, number>>;
     inputTokenCount?: number | null;
   }): number | null {
+    if (cacheType === 'write1h') {
+      const override = model ? endpointTokenConfig?.[model]?.write1h : undefined;
+      if (override != null) {
+        return override;
+      }
+      const promptRate = getMultiplier({
+        model,
+        valueKey,
+        endpoint,
+        tokenType: 'prompt',
+        inputTokenCount: inputTokenCount ?? undefined,
+        endpointTokenConfig,
+      });
+      return promptRate * ONE_HOUR_CACHE_WRITE_FACTOR;
+    }
+
     if (endpointTokenConfig && model) {
       const modelConfig = endpointTokenConfig[model];
       /** Models absent from a partial override fall through to standard
