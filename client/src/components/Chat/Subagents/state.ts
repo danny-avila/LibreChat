@@ -515,7 +515,19 @@ export function collectNestedCalls(
   parts: ReadonlyArray<TMessageContentParts | SubagentContentPart | undefined> | undefined,
   calls: Agents.SubagentAttachmentCall[] = [],
 ): Agents.SubagentAttachmentCall[] {
-  for (const part of parts ?? []) {
+  /** An explicit stack, in transcript order: stored chains can nest thousands deep. */
+  const stack: Array<
+    [ReadonlyArray<TMessageContentParts | SubagentContentPart | undefined>, number]
+  > = parts == null ? [] : [[parts, 0]];
+  while (stack.length > 0) {
+    const frame = stack[stack.length - 1];
+    const [current, index] = frame;
+    if (index >= current.length) {
+      stack.pop();
+      continue;
+    }
+    frame[1] = index + 1;
+    const part = current[index];
     const toolCall = nestedToolCallOf(part);
     if (toolCall?.id) {
       const agentId = (part as { agentId?: string } | undefined)?.agentId ?? toolCall.agentId;
@@ -527,7 +539,7 @@ export function collectNestedCalls(
     }
     calls.push(...(toolCall?.subagentAttachmentCalls ?? []));
     if (Array.isArray(toolCall?.subagent_content)) {
-      collectNestedCalls(toolCall.subagent_content, calls);
+      stack.push([toolCall.subagent_content, 0]);
     }
   }
   return calls;

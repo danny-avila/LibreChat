@@ -465,6 +465,19 @@ describe('previewMessagesToolCalls', () => {
     expect(barePart.tool_call).not.toHaveProperty('subagentAttachmentCalls');
   });
 
+  it('keeps one hint per owning identity when a provider reuses a child id', () => {
+    const reused = Array.from({ length: 50 }, (_, index) =>
+      toolPart({ id: 'call_0', stepId: `step_${index}`, output: 'done' }),
+    );
+    const subagent = toolPart({ name: 'subagent', output: 'summary', subagent_content: reused });
+    const [message] = previewMessagesToolCalls(
+      [{ content: [subagent], attachments: [{ toolCallId: 'call_0', stepId: 'step_7' }] }],
+      limits,
+    );
+    const [part] = message.content as Array<{ tool_call: TestToolCall }>;
+    expect(part.tool_call.subagentAttachmentCalls).toEqual([{ id: 'call_0', stepId: 'step_7' }]);
+  });
+
   it('keeps hints for a mutation response that leaves its attachments out', () => {
     const subagent = toolPart({
       name: 'subagent',

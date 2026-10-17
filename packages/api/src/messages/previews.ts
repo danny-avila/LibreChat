@@ -168,15 +168,27 @@ function hasPendingApproval(parts: unknown[]): boolean {
   return false;
 }
 
+/** The agent and step scope an attachment was saved with. */
+type AttachmentScope = { agentId?: string; stepId?: string };
+
+/** Each tool call id a message's attachments were saved under, with the scopes saved with it. */
+type AttachmentScopes = ReadonlyMap<string, readonly AttachmentScope[]>;
+
+/** A scope both sides carry must agree: the ownership rule the client applies. */
+const scopeAgrees = (call: AttachmentScope, file: AttachmentScope): boolean =>
+  (call.agentId == null || file.agentId == null || call.agentId === file.agentId) &&
+  (call.stepId == null || file.stepId == null || call.stepId === file.stepId);
+
 /**
- * Tool calls anywhere in the parts, including inside nested subagent runs, whose id `wanted`
- * names, with the agent and step scope a client checks an attachment against.
+ * Tool calls anywhere in the parts, including inside nested subagent runs, that one of the
+ * message's attachments can belong to, with the agent and step scope a client checks it against.
+ * Equivalent identities are kept once, so a reused id does not grow the hint with the transcript.
  */
 function nestedAttachmentCalls(
   parts: unknown[],
-  wanted: ReadonlySet<string>,
+  wanted: AttachmentScopes,
 ): Agents.SubagentAttachmentCall[] {
-  const found: Agents.SubagentAttachmentCall[] = [];
+  const found = new Map<string, Agents.SubagentAttachmentCall>();
   const stack: unknown[][] = [parts];
   while (stack.length > 0) {
     const current = stack.pop() ?? [];
@@ -185,38 +197,54 @@ function nestedAttachmentCalls(
         continue;
       }
       const { id, stepId, subagent_content } = part.tool_call;
-      if (typeof id === 'string' && wanted.has(id)) {
+      const scopes = typeof id === 'string' ? wanted.get(id) : undefined;
+      if (scopes != null) {
         /** The owner is stored on the part, or on the call when the part carries none. */
-        const agentId = part.agentId ?? part.tool_call.agentId;
-        found.push({
-          id,
-          ...(typeof agentId === 'string' ? { agentId } : {}),
+        const owner = part.agentId ?? part.tool_call.agentId;
+        const call: Agents.SubagentAttachmentCall = {
+          id: id as string,
+          ...(typeof owner === 'string' ? { agentId: owner } : {}),
           ...(typeof stepId === 'string' ? { stepId } : {}),
-        });
+        };
+        const identity = [call.id, call.agentId ?? '', call.stepId ?? ''].join('\u0000');
+        if (!found.has(identity) && scopes.some((scope) => scopeAgrees(call, scope))) {
+          found.set(identity, call);
+        }
       }
       if (Array.isArray(subagent_content)) {
         stack.push(subagent_content);
       }
     }
   }
-  return found;
+  return [...found.values()];
 }
 
-/** The tool call ids a message's attachments were saved under. */
-function attachmentToolCallIds(message: PreviewableMessage): ReadonlySet<string> | undefined {
+/** The tool call ids a message's attachments were saved under, with their scopes. */
+function attachmentToolCallIds(message: PreviewableMessage): AttachmentScopes | undefined {
   if (!Array.isArray(message.attachments) || message.attachments.length === 0) {
     return undefined;
   }
-  const ids = new Set<string>();
+  const scopes = new Map<string, AttachmentScope[]>();
   for (const attachment of message.attachments) {
-    const toolCallId = isObject(attachment)
-      ? (attachment as { toolCallId?: unknown }).toolCallId
-      : undefined;
-    if (typeof toolCallId === 'string' && toolCallId !== '') {
-      ids.add(toolCallId);
+    if (!isObject(attachment)) {
+      continue;
     }
+    const { toolCallId, agentId, stepId } = attachment as {
+      toolCallId?: unknown;
+      agentId?: unknown;
+      stepId?: unknown;
+    };
+    if (typeof toolCallId !== 'string' || toolCallId === '') {
+      continue;
+    }
+    const entries = scopes.get(toolCallId) ?? [];
+    entries.push({
+      ...(typeof agentId === 'string' ? { agentId } : {}),
+      ...(typeof stepId === 'string' ? { stepId } : {}),
+    });
+    scopes.set(toolCallId, entries);
   }
-  return ids.size > 0 ? ids : undefined;
+  return scopes.size > 0 ? scopes : undefined;
 }
 
 /** Cuts at `end` without splitting a surrogate pair. */
@@ -510,7 +538,7 @@ export function previewToolCall<T extends StoredToolCall>(
   toolCall: T,
   limits: ToolCallPreviewLimits,
   revision = '',
-  attachmentIds?: ReadonlySet<string>,
+  attachmentIds?: AttachmentScopes,
 ): T {
   if (!isAgentToolCall(toolCall) || !isSettled(toolCall) || !hasIdentity(toolCall)) {
     return toolCall;
@@ -569,7 +597,7 @@ function previewToolCallSafely<T extends StoredToolCall>(
   toolCall: T,
   limits: ToolCallPreviewLimits,
   revision: string,
-  attachmentIds?: ReadonlySet<string>,
+  attachmentIds?: AttachmentScopes,
 ): T {
   try {
     return previewToolCall(toolCall, limits, revision, attachmentIds);
@@ -584,7 +612,7 @@ export function previewContentToolCalls(
   content: unknown[],
   limits: ToolCallPreviewLimits,
   revision = '',
-  attachmentIds?: ReadonlySet<string>,
+  attachmentIds?: AttachmentScopes,
 ): unknown[] {
   let result: unknown[] | undefined;
   /** First index of each identity; a repeat sends both calls whole (see `toolCallIdentity`). */

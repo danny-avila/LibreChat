@@ -135,6 +135,16 @@ describe('subagent attachments', () => {
     );
   });
 
+  it('collects child calls of a chain nested thousands deep', () => {
+    let deepest = toolCall('deepest-call');
+    for (let depth = 0; depth < 10_000; depth++) {
+      deepest = subagent(`level-${depth}`, [deepest]);
+    }
+    const calls = collectNestedCalls([deepest]);
+    expect(calls).toHaveLength(10_001);
+    expect(calls.at(-1)).toEqual({ id: 'deepest-call' });
+  });
+
   it('keeps the files of two subagent calls that share an id apart', () => {
     const content = [
       subagent('same-id', [toolCall('first-child')]),
