@@ -15,10 +15,6 @@ import {
   subagentProgressKey,
   useSubagentProgress,
 } from '~/components/Chat/Subagents/state';
-import {
-  SubagentAttachmentsContext,
-  selectNestedAttachments,
-} from '~/components/Chat/Subagents/attachments';
 import { useParentSubagents } from '~/components/Chat/Subagents/ParentSubagentsProvider';
 import { isSelfSpawn as isSelfSpawnType } from '~/components/Chat/Subagents/author';
 import { adaptLivePersistedActivity } from '~/components/Chat/Subagents/adapters';
@@ -26,7 +22,6 @@ import { resolveSubagentAgentId } from '~/components/Chat/Subagents/identity';
 import { subagentStatusLabelKey } from '~/components/Chat/Subagents/status';
 import { useOpenSubagentPanel } from '~/components/Chat/Subagents/surface';
 import { getSubagentPrompt } from '~/components/Chat/Subagents/prompt';
-import { cn, parseToolName, attachmentRenderKey } from '~/utils';
 import { MessageContext } from '~/Providers/MessageContext';
 import { useShareContext } from '~/Providers/ShareContext';
 import MessageIcon from '~/components/Share/MessageIcon';
@@ -38,6 +33,7 @@ import { useMCPServerNames } from '~/hooks/MCP';
 import { AttachmentGroup } from './Attachment';
 import { useToolCallIntent } from './intent';
 import { useFailedReveal } from '../reveal';
+import { cn, parseToolName } from '~/utils';
 import { FOLD_GLYPH_CLASS } from '../rows';
 import { useLocalize } from '~/hooks';
 
@@ -203,26 +199,6 @@ export default function SubagentCall({
   const parentConversationId = parentMessageContext.conversationId?.trim() ?? '';
   const canOpenDurablePanel =
     isSharedConvo !== true && backgroundHandle != null && parentConversationId !== '';
-
-  const unclaimedAttachments = useContext(SubagentAttachmentsContext);
-  const liveContentParts = progress?.contentParts;
-  /** Persisted child-run files arrive through `attachments`; while the child
-   *  still streams, its tool calls exist only in the live progress. */
-  const displayedAttachments = useMemo(() => {
-    const nested = selectNestedAttachments(unclaimedAttachments, liveContentParts);
-    if (nested.length === 0) {
-      return attachments;
-    }
-    const own = attachments ?? [];
-    const ownKeys = new Set(own.map(attachmentRenderKey));
-    return [
-      ...own,
-      ...nested.filter((attachment) => {
-        const key = attachmentRenderKey(attachment);
-        return key == null || !ownKeys.has(key);
-      }),
-    ];
-  }, [attachments, unclaimedAttachments, liveContentParts]);
 
   const subagentType = progress?.subagentType ?? extractSubagentType(args);
   const isSelfSpawn = isSelfSpawnType(
@@ -548,8 +524,8 @@ export default function SubagentCall({
         </ul>
       </button>
 
-      {!hideAttachments && displayedAttachments && displayedAttachments.length > 0 && (
-        <AttachmentGroup attachments={displayedAttachments} />
+      {!hideAttachments && attachments && attachments.length > 0 && (
+        <AttachmentGroup attachments={attachments} />
       )}
     </>
   );

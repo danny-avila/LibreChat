@@ -1,7 +1,13 @@
 import React from 'react';
+import { getDefaultStore } from 'jotai';
 import { ContentTypes, Tools } from 'librechat-data-provider';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import type { TMessageContentParts, TAttachment } from 'librechat-data-provider';
+import type { SubagentProgress } from '~/components/Chat/Subagents/state';
+import {
+  subagentProgressByToolCallId,
+  subagentProgressKey,
+} from '~/components/Chat/Subagents/state';
 import { preserveStreamedContentIdentity } from '~/utils/messages';
 import { groupSequentialToolCalls } from '~/utils';
 
@@ -726,6 +732,53 @@ describe('ContentParts — activity phase state', () => {
 
     rerender(<ContentParts {...baseProps} content={childImage()} attachments={attachments} />);
     expect(screen.getByTestId('tool-call-group')).toHaveAttribute('data-attachments', '');
+  });
+
+  it('hoists files from a grouped subagent run that is still streaming', () => {
+    jest
+      .mocked(groupSequentialToolCalls)
+      .mockImplementation((parts) => [{ type: 'tool-group', parts }]);
+    const content = [
+      {
+        type: ContentTypes.TOOL_CALL,
+        [ContentTypes.TOOL_CALL]: { id: 'subagent-live', name: 'subagent', args: {} },
+      },
+      {
+        type: ContentTypes.TOOL_CALL,
+        [ContentTypes.TOOL_CALL]: { id: 'tool-2', name: 'search', args: {}, output: 'two' },
+      },
+    ] as unknown as TMessageContentParts[];
+    const attachments = [
+      {
+        filename: 'live-cat.png',
+        filepath: '/images/live-cat.png',
+        conversationId: 'conversation-1',
+        messageId: 'msg-1',
+        toolCallId: 'live-child-image',
+      },
+    ] as TAttachment[];
+    const progressAtom = subagentProgressByToolCallId(
+      subagentProgressKey('msg-1', 'subagent-live', 0),
+    );
+
+    render(<ContentParts {...baseProps} content={content} attachments={attachments} />);
+    expect(screen.getByTestId('tool-call-group')).toHaveAttribute('data-attachments', '');
+
+    act(() => {
+      getDefaultStore().set(progressAtom, {
+        contentParts: [
+          {
+            type: ContentTypes.TOOL_CALL,
+            [ContentTypes.TOOL_CALL]: { id: 'live-child-image', name: 'image_gen_oai', args: '' },
+          },
+        ],
+      } as unknown as SubagentProgress);
+    });
+    expect(screen.getByTestId('tool-call-group')).toHaveAttribute(
+      'data-attachments',
+      'live-cat.png',
+    );
+    act(() => getDefaultStore().set(progressAtom, null));
   });
 
   it('retains a tool-group expansion override when a completed phase remounts the group', () => {

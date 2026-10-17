@@ -1,5 +1,9 @@
 import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
-import { selectNestedAttachments, selectUnclaimedAttachments } from './attachments';
+import {
+  collectToolCallIds,
+  selectNestedAttachments,
+  selectUnclaimedAttachments,
+} from './attachments';
 
 const file = (toolCallId?: string) =>
   ({ file_id: `file-${toolCallId}`, toolCallId }) as TAttachment;
@@ -20,14 +24,19 @@ describe('subagent attachments', () => {
   });
 
   it('keeps a file whose child id duplicates a top-level id on the top-level part', () => {
-    const content = [toolCall('subagent-call', [toolCall('shared-id')]), toolCall('shared-id')];
-    const unclaimed = selectUnclaimedAttachments(content, [file('shared-id')]);
-    expect(selectNestedAttachments(unclaimed, content[0] ? [content[0]] : [])).toEqual([]);
+    const subagent = toolCall('subagent-call', [toolCall('shared-id')]);
+    const unclaimed = selectUnclaimedAttachments(
+      [subagent, toolCall('shared-id')],
+      [file('shared-id')],
+    );
+    expect(selectNestedAttachments(unclaimed, collectToolCallIds([subagent]))).toEqual([]);
   });
 
-  it('matches nested files from every source', () => {
-    const unclaimed = [file('persisted'), file('live'), file('other')];
-    const nested = selectNestedAttachments(unclaimed, [toolCall('persisted')], [toolCall('live')]);
-    expect(nested.map((attachment) => attachment.toolCallId)).toEqual(['persisted', 'live']);
+  it('collects child ids through nested subagent runs', () => {
+    const ids = collectToolCallIds([
+      toolCall('subagent-call', [toolCall('child-call', [toolCall('grandchild-call')])]),
+    ]);
+    const nested = selectNestedAttachments([file('grandchild-call'), file('other')], ids);
+    expect(nested.map((attachment) => attachment.toolCallId)).toEqual(['grandchild-call']);
   });
 });

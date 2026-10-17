@@ -13,6 +13,13 @@ import type { ToolCallGroupExpansionState } from './ToolCallGroup';
 import type { ActivityPhaseSegment } from '~/utils/activityLabels';
 import type { MCPAppResourceOccurrence } from '~/utils/mcpApps';
 import {
+  collectToolCallIds,
+  selectNestedAttachments,
+  useLiveSubagentToolCalls,
+  SubagentAttachmentsContext,
+  selectUnclaimedAttachments,
+} from '~/components/Chat/Subagents/attachments';
+import {
   mapAttachments,
   getPartKeyIndex,
   attachmentRenderKey,
@@ -27,11 +34,6 @@ import {
   ToolDisclosureKeyContext,
   SoleToolContext,
 } from './disclosure';
-import {
-  selectNestedAttachments,
-  SubagentAttachmentsContext,
-  selectUnclaimedAttachments,
-} from '~/components/Chat/Subagents/attachments';
 import {
   groupActivityPhases,
   lastCursorContentIdx,
@@ -431,6 +433,12 @@ const ContentPartsBody = memo(function ContentPartsBody({
     return buildToolCallStepOwners(content);
   }, [toolCallStepOwnersById, content]);
   const unclaimedAttachments = useContext(SubagentAttachmentsContext);
+  const liveSubagentToolCalls = useLiveSubagentToolCalls(
+    content,
+    messageId,
+    contentIndices,
+    contentIndexOffset,
+  );
   const attachmentsForPart = useCallback(
     (part: TMessageContentParts): TAttachment[] | undefined => {
       const own = filterAttachmentsForPart(
@@ -440,14 +448,19 @@ const ContentPartsBody = memo(function ContentPartsBody({
         getSiblingStepIds(part, resolvedToolCallStepOwners),
       );
       /** A tool run inside a subagent saves its files under the child tool
-       *  call id, which only the persisted `subagent_content` carries. */
-      const nested = selectNestedAttachments(unclaimedAttachments, [part]);
+       *  call id, which only the persisted `subagent_content` or, while the
+       *  child streams, its live progress carries. */
+      const childIds = collectToolCallIds([part]);
+      for (const id of liveSubagentToolCalls.get(getToolCallId(part)) ?? []) {
+        childIds.add(id);
+      }
+      const nested = selectNestedAttachments(unclaimedAttachments, childIds);
       if (nested.length === 0) {
         return own;
       }
       return own == null ? nested : [...own, ...nested.filter((file) => !own.includes(file))];
     },
-    [attachmentMap, resolvedToolCallStepOwners, unclaimedAttachments],
+    [attachmentMap, resolvedToolCallStepOwners, unclaimedAttachments, liveSubagentToolCalls],
   );
   const disclosureStore = useStore();
   const reasoningDisclosures = useContext(ReasoningDisclosureContext);
