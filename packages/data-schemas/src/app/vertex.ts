@@ -26,6 +26,7 @@ export const defaultVertexModels: string[] = [
   'claude-opus-4-6',
   'claude-sonnet-5',
   'claude-sonnet-4-6',
+  'claude-haiku-5-5',
   'claude-3-7-sonnet-20250219',
   'claude-3-5-sonnet-v2@20241022',
   'claude-3-5-sonnet@20240620',
