@@ -1,9 +1,9 @@
-import { createContext, useMemo } from 'react';
-import { atom, useAtomValue } from 'jotai';
+import { createContext, useEffect, useMemo, useRef } from 'react';
+import { atom, useStore, useAtomValue } from 'jotai';
 import { Constants, ContentTypes } from 'librechat-data-provider';
 import type { TAttachment, TMessageContentParts, Agents } from 'librechat-data-provider';
 import type { SubagentContentPart } from '~/utils/subagentContent';
-import { subagentProgressByToolCallId, subagentProgressKey } from './state';
+import { subagentProgressKey, retainSubagentProgress, subagentProgressByToolCallId } from './state';
 
 type NestedPart = TMessageContentParts | SubagentContentPart | undefined;
 /** A tool call inside a subagent run, with the scope its files may carry. */
@@ -127,8 +127,10 @@ export function assignNestedAttachments(
  * keyed by the call's index in `content`. Until the run is saved those calls
  * exist only in the live progress atom. The atom yields a signature string so
  * the caller re-renders when a child call appears, not on every delta. Only the
- * message that is streaming reads progress (`enabled`): reading creates the
- * atom family member, which nothing would release for a settled message.
+ * message that is streaming reads progress (`enabled`), and each member it
+ * reads is retained like a card's, so one no update ever reached is freed on
+ * unmount. Calls already seen are kept while the invocation streams, since the
+ * bounded live activity evicts early parts before the transcript is saved.
  */
 export function useLiveSubagentToolCalls(
   content: ReadonlyArray<NestedPart> | undefined,
@@ -157,14 +159,19 @@ export function useLiveSubagentToolCalls(
     });
     return entries;
   }, [content, messageId, contentIndices, contentIndexOffset, enabled]);
+  const store = useStore();
+  useEffect(() => {
+    const releases = keys.map(([, key]) => retainSubagentProgress(store, key));
+    return () => releases.forEach((release) => release());
+  }, [keys, store]);
   const signatureAtom = useMemo(
     () =>
       atom((get) => {
-        const live: Array<[number, NestedCall[]]> = [];
-        for (const [index, key] of keys) {
+        const live: Array<[string, NestedCall[]]> = [];
+        for (const [, key] of keys) {
           const calls = collectNestedCalls(get(subagentProgressByToolCallId(key))?.contentParts);
           if (calls.length > 0) {
-            live.push([index, calls]);
+            live.push([key, calls]);
           }
         }
         return live.length === 0 ? '' : JSON.stringify(live);
@@ -172,11 +179,29 @@ export function useLiveSubagentToolCalls(
     [keys],
   );
   const signature = useAtomValue(signatureAtom);
-  return useMemo(
-    () =>
-      signature === ''
-        ? NO_LIVE_CALLS
-        : new Map(JSON.parse(signature) as Array<[number, NestedCall[]]>),
-    [signature],
-  );
+  const seenCalls = useRef(new Map<string, Map<string, NestedCall>>());
+  return useMemo(() => {
+    const current = new Map<string, NestedCall[]>(
+      signature === '' ? [] : (JSON.parse(signature) as Array<[string, NestedCall[]]>),
+    );
+    const seen = seenCalls.current;
+    const active = new Set(keys.map(([, key]) => key));
+    for (const key of seen.keys()) {
+      if (!active.has(key)) {
+        seen.delete(key);
+      }
+    }
+    const live = new Map<number, NestedCall[]>();
+    for (const [index, key] of keys) {
+      const calls = seen.get(key) ?? new Map<string, NestedCall>();
+      for (const call of current.get(key) ?? []) {
+        calls.set([call.id, call.agentId ?? '', call.stepId ?? ''].join('\u0000'), call);
+      }
+      if (calls.size > 0) {
+        seen.set(key, calls);
+        live.set(index, [...calls.values()]);
+      }
+    }
+    return live.size > 0 ? live : NO_LIVE_CALLS;
+  }, [signature, keys]);
 }

@@ -815,7 +815,36 @@ describe('ContentParts — activity phase state', () => {
       'data-attachments',
       'live-cat.png',
     );
+
+    /** The bounded live activity evicts early parts as later ones arrive. */
+    act(() => {
+      getDefaultStore().set(progressAtom, {
+        contentParts: [{ type: ContentTypes.TEXT, text: 'later output' }],
+      } as unknown as SubagentProgress);
+    });
+    expect(screen.getByTestId('tool-call-group')).toHaveAttribute(
+      'data-attachments',
+      'live-cat.png',
+    );
     act(() => getDefaultStore().set(progressAtom, null));
+  });
+
+  it('frees the progress member of a streaming subagent no update reached', () => {
+    jest
+      .mocked(groupSequentialToolCalls)
+      .mockImplementation((parts) => parts.map((part) => ({ type: 'single', part })));
+    const key = subagentProgressKey('msg-1', 'subagent-silent', 0);
+    const content = [
+      {
+        type: ContentTypes.TOOL_CALL,
+        [ContentTypes.TOOL_CALL]: { id: 'subagent-silent', name: 'subagent', args: {} },
+      },
+    ] as unknown as TMessageContentParts[];
+    const streaming = { ...baseProps, isSubmitting: true, isLatestMessage: true };
+    const { unmount } = render(<ContentParts {...streaming} content={content} />);
+    expect([...subagentProgressByToolCallId.getParams()]).toContain(key);
+    unmount();
+    expect([...subagentProgressByToolCallId.getParams()]).not.toContain(key);
   });
 
   it('retains a tool-group expansion override when a completed phase remounts the group', () => {

@@ -533,24 +533,27 @@ const subagentProgressReaders = new Map<string, number>();
  */
 export function useSubagentProgress(invocationKey: string): SubagentProgress | null {
   const store = useStore();
-  useEffect(() => {
-    subagentProgressReaders.set(
-      invocationKey,
-      (subagentProgressReaders.get(invocationKey) ?? 0) + 1,
-    );
-    return () => {
-      const remaining = (subagentProgressReaders.get(invocationKey) ?? 1) - 1;
-      if (remaining > 0) {
-        subagentProgressReaders.set(invocationKey, remaining);
-        return;
-      }
-      subagentProgressReaders.delete(invocationKey);
-      if (registeredSubagentProgressKeys.has(invocationKey)) return;
-      if (store.get(subagentProgressByToolCallId(invocationKey)) != null) return;
-      removeSubagentProgressAtoms(invocationKey);
-    };
-  }, [invocationKey, store]);
+  useEffect(() => retainSubagentProgress(store, invocationKey), [invocationKey, store]);
   return useAtomValue(subagentProgressByToolCallId(invocationKey));
+}
+
+/** Counts one reader of an invocation's member; the returned release applies the rules above. */
+export function retainSubagentProgress(
+  store: ReturnType<typeof useStore>,
+  invocationKey: string,
+): () => void {
+  subagentProgressReaders.set(invocationKey, (subagentProgressReaders.get(invocationKey) ?? 0) + 1);
+  return () => {
+    const remaining = (subagentProgressReaders.get(invocationKey) ?? 1) - 1;
+    if (remaining > 0) {
+      subagentProgressReaders.set(invocationKey, remaining);
+      return;
+    }
+    subagentProgressReaders.delete(invocationKey);
+    if (registeredSubagentProgressKeys.has(invocationKey)) return;
+    if (store.get(subagentProgressByToolCallId(invocationKey)) != null) return;
+    removeSubagentProgressAtoms(invocationKey);
+  };
 }
 
 const validActivitySequence = (value: number | undefined): value is number =>
