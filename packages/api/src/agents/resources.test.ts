@@ -2794,6 +2794,20 @@ describe('primeResources', () => {
         ]);
       });
 
+      it('logs a failed check without the vector store response body', async () => {
+        const error = Object.assign(new Error('Request failed with status code 500'), {
+          response: { status: 500, data: { detail: 'upstream secret text' } },
+        });
+        const probe = jest.fn().mockRejectedValue(error);
+
+        await primeLegacy(probe, jest.fn());
+
+        expect(logger.error).toHaveBeenCalled();
+        expect(JSON.stringify((logger.error as jest.Mock).mock.calls)).not.toContain(
+          'upstream secret text',
+        );
+      });
+
       it('keeps the file queued when the vector store cannot be asked', async () => {
         const probe = jest.fn().mockRejectedValue(new Error('connect ECONNREFUSED'));
         const adopt = jest.fn();

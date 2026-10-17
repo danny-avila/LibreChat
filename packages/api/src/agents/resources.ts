@@ -21,6 +21,7 @@ import type { FilterQuery, QueryOptions, ProjectionType } from 'mongoose';
 import type { CodeExecutionContext } from './execution';
 import type { ServerRequest } from '~/types';
 
+import { getSafeErrorMetadata } from '~/utils/errors';
 import { TOOL_RESOURCE_KEYS } from './orphans';
 
 /** Removes runtime-only file records before persisted Agent resources enter tool initialization. */
@@ -559,7 +560,7 @@ const computeProvisionState = async ({
         }).catch((error) => {
           logger.error(
             `[primeResources] Could not check legacy embeddings for file ${file.file_id}`,
-            error,
+            getSafeErrorMetadata(error),
           );
           return false;
         }),
@@ -579,14 +580,20 @@ const computeProvisionState = async ({
       })),
       agentId,
     }).catch((error) => {
-      logger.error('[primeResources] Failed to record legacy File Search namespaces', error);
+      logger.error(
+        '[primeResources] Failed to record legacy File Search namespaces',
+        getSafeErrorMetadata(error),
+      );
     });
     return new Set(confirmed.map((file) => file.file_id));
   };
   const legacyAdoption: Promise<Set<string>> =
     legacySearchFiles.length > 0
       ? adoptLegacy().catch((error) => {
-          logger.error('[primeResources] Failed to adopt legacy File Search embeddings', error);
+          logger.error(
+            '[primeResources] Failed to adopt legacy File Search embeddings',
+            getSafeErrorMetadata(error),
+          );
           return new Set<string>();
         })
       : Promise.resolve(new Set<string>());

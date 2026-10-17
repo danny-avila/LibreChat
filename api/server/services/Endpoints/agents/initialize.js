@@ -1996,6 +1996,8 @@ const initializeClientWithProvider = async ({
       updateFile: db.updateFile,
       updateCodeEnvRef: db.updateFileCodeEnvRef,
       addEmbeddedEntity: db.addFileEmbeddedEntity,
+      hasEntityEmbeddings,
+      adoptLegacySearchEmbeddings: db.adoptLegacySearchEmbeddings,
     },
     fileMethods: {
       claimRunArtifactFile: db.claimRunArtifactFile,
