@@ -201,7 +201,8 @@ export const isAgentScopedFile = (file: Pick<TFile, 'context'>): boolean =>
  * setup file attached to a second agent is embedded under the first agent's entity, so
  * trusting the flag registers it for a namespace that holds none of its vectors and the
  * search returns nothing. Records embedded before namespaces were tracked carry no entity
- * list and are re-embedded once per namespace, which repairs the record as it goes.
+ * list and are re-embedded once per namespace, which repairs the record as it goes, unless
+ * the agent already holds them as File Search files (see isLegacySearchResourceEmbedding).
  */
 const isEmbeddedForNamespace = (file: TFile, namespaceId?: string): boolean => {
   if (!isAgentScopedFile(file)) {
@@ -209,6 +210,22 @@ const isEmbeddedForNamespace = (file: TFile, namespaceId?: string): boolean => {
   }
   return namespaceId != null && file.metadata?.embeddedEntities?.includes(namespaceId) === true;
 };
+
+/**
+ * Whether an embedded record that predates namespace tracking is already searchable as one
+ * of the agent's own File Search files. Before namespaces were recorded, a file reached an
+ * agent's `file_search` resources only by being embedded for it, so its vectors exist.
+ * Embedding it again stores a second copy under the same `file_id`, and every later search
+ * returns both.
+ */
+const isLegacySearchResourceEmbedding = (
+  file: TFile,
+  membership?: ReadonlyMap<EToolResources, ReadonlySet<string>>,
+): boolean =>
+  file.embedded === true &&
+  file.metadata?.embeddedEntities == null &&
+  file.file_id != null &&
+  membership?.get(EToolResources.file_search)?.has(file.file_id) === true;
 
 /** The scope a code upload would be filed under this turn, mirroring what
  *  provisionToCodeEnv records: an agent's own resource file belongs to the agent, and
@@ -624,6 +641,7 @@ const computeProvisionState = async ({
       allowsResource(file, EToolResources.file_search) &&
       canToolResourceConsume(EToolResources.file_search, file.type ?? '') &&
       !isEmbeddedForNamespace(file, namespaceId) &&
+      !isLegacySearchResourceEmbedding(file, persistedResourceMembership) &&
       !processedResourceFiles.has(`${EToolResources.file_search}:${file.file_id}`)
     ) {
       vectorDBFiles.push(file);
