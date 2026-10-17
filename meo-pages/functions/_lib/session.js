@@ -64,7 +64,12 @@ export function stateCookieValue(request) {
 }
 
 export function sessionCookieHeader(value, maxAge = 60 * 60 * 24 * 30) {
-  return `${sessionCookie}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
+  // Reuse the short-lived, host-only OAuth handoff cookie for the durable
+  // session. Chromium demonstrably retains this cookie across the Account
+  // redirect, whereas it has dropped a distinct session-name cookie on this
+  // Pages custom-domain flow. A new authorization start overwrites it with a
+  // fresh PKCE state before the callback reads it.
+  return `${stateCookie}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; Secure; SameSite=Lax`;
 }
 
 export function stateCookieHeader(value, maxAge = 600) {

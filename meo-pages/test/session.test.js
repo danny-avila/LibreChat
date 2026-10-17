@@ -17,6 +17,7 @@ test('session payload is authenticated encryption and cookie is HttpOnly', async
   const [iv, ciphertext] = sealed.split('.');
   const alteredCiphertext = `${ciphertext[0] === 'A' ? 'B' : 'A'}${ciphertext.slice(1)}`;
   assert.equal(await unseal(`${iv}.${alteredCiphertext}`, env), null);
+  assert.match(sessionCookieHeader(sealed), /^__Host-meo-oauth=/);
   assert.match(sessionCookieHeader(sealed), /HttpOnly; Secure; SameSite=Lax/);
   assert.match(
     stateCookieHeader(sealed),

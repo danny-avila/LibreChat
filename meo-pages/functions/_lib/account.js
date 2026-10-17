@@ -85,13 +85,9 @@ export async function accountUser(env, accessToken) {
   if (!user || typeof user !== 'object') return null;
 
   const id =
-    typeof user.sub === 'string' && user.sub
-      ? user.sub
-      : typeof user.id === 'string' && user.id
-        ? user.id
-        : typeof user.user_id === 'string' && user.user_id
-          ? user.user_id
-          : '';
+    [user.sub, user.id, user.user_id].find(
+      (candidate) => typeof candidate === 'string' && candidate,
+    ) ?? '';
   if (!uuidPattern.test(id)) return null;
 
   return { ...user, id };
@@ -122,10 +118,13 @@ export async function refreshTokens(env, refreshToken) {
 }
 
 export async function loadSession(request, env) {
-  const { cookieValue, sessionCookieName, seal, unseal, sessionCookieHeader } = await import(
-    './session.js'
-  );
-  const rawCookie = cookieValue(request, sessionCookieName);
+  const { cookieValue, sessionCookieName, stateCookieName, seal, unseal, sessionCookieHeader } =
+    await import('./session.js');
+  // Current Pages sessions are stored in the OAuth handoff cookie because it
+  // is the host-only cookie Chromium keeps across the cross-origin callback.
+  // Continue accepting the former dedicated name during the rollout.
+  const rawCookie =
+    cookieValue(request, stateCookieName) || cookieValue(request, sessionCookieName);
   if (!rawCookie) return { session: null, cookie: null, reason: 'cookie_missing' };
 
   const existing = await unseal(rawCookie, env);
