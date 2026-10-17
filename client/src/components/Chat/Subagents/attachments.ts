@@ -226,7 +226,10 @@ export function useLiveSubagentToolCalls(
           /** The owners of this message's files are refreshed as the newest
            *  entries, so the bounded history cannot age them out while it shows. */
           rememberSubagentChildCalls(key, owners, true);
-          rememberSubagentChildCalls(key, collectNestedCalls(progress?.contentParts));
+          rememberSubagentChildCalls(
+            key,
+            collectNestedCalls(progress?.contentParts, [], progress?.subagentAgentId),
+          );
           const calls = rememberedSubagentChildCalls(key, ids);
           if (calls.length > 0) {
             live.push([index, calls]);

@@ -145,6 +145,20 @@ describe('subagent attachments', () => {
     expect(calls.at(-1)).toEqual({ id: 'deepest-call' });
   });
 
+  it('uses the run owner for its own top-level calls only', () => {
+    expect(
+      collectNestedCalls(
+        [toolCall('own-call'), subagent('nested-run', [toolCall('nested-call')])],
+        [],
+        'run-agent',
+      ),
+    ).toEqual([
+      { id: 'own-call', agentId: 'run-agent' },
+      { id: 'nested-run', agentId: 'run-agent' },
+      { id: 'nested-call' },
+    ]);
+  });
+
   it('keeps the files of two subagent calls that share an id apart', () => {
     const content = [
       subagent('same-id', [toolCall('first-child')]),

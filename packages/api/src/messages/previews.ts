@@ -179,16 +179,25 @@ const scopeAgrees = (call: AttachmentScope, file: AttachmentScope): boolean =>
   (call.agentId == null || file.agentId == null || call.agentId === file.agentId) &&
   (call.stepId == null || file.stepId == null || call.stepId === file.stepId);
 
+/** Whether the call carries every scope the attachment does. */
+const scopeMatches = (call: AttachmentScope, file: AttachmentScope): boolean =>
+  (file.agentId == null || call.agentId === file.agentId) &&
+  (file.stepId == null || call.stepId === file.stepId);
+
 /**
  * Tool calls anywhere in the parts, including inside nested subagent runs, that one of the
  * message's attachments can belong to, with the agent and step scope a client checks it against.
- * Equivalent identities are kept once, so a reused id does not grow the hint with the transcript.
+ * For each attachment scope only the first call matching it exactly and the first call agreeing
+ * with it are kept (the two a client can choose between), so a reused id, or an attachment with
+ * no scope to narrow it, does not grow the hint with the transcript.
  */
 function nestedAttachmentCalls(
   parts: unknown[],
   wanted: AttachmentScopes,
 ): Agents.SubagentAttachmentCall[] {
   const found = new Map<string, Agents.SubagentAttachmentCall>();
+  const exactFor = new Set<AttachmentScope>();
+  const agreeingFor = new Set<AttachmentScope>();
   const stack: unknown[][] = [parts];
   while (stack.length > 0) {
     const current = stack.pop() ?? [];
@@ -206,8 +215,19 @@ function nestedAttachmentCalls(
           ...(typeof owner === 'string' ? { agentId: owner } : {}),
           ...(typeof stepId === 'string' ? { stepId } : {}),
         };
+        let useful = false;
+        for (const scope of scopes) {
+          if (!exactFor.has(scope) && scopeMatches(call, scope)) {
+            exactFor.add(scope);
+            useful = true;
+          }
+          if (!agreeingFor.has(scope) && scopeAgrees(call, scope)) {
+            agreeingFor.add(scope);
+            useful = true;
+          }
+        }
         const identity = [call.id, call.agentId ?? '', call.stepId ?? ''].join('\u0000');
-        if (!found.has(identity) && scopes.some((scope) => scopeAgrees(call, scope))) {
+        if (useful && !found.has(identity)) {
           found.set(identity, call);
         }
       }

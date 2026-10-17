@@ -208,6 +208,7 @@ const boundSingletonPart = (part: SubagentContentPart): SubagentContentPart => {
 const boundContentParts = (
   parts: SubagentContentPart[],
   state: SubagentAggregatorState,
+  ownerAgentId?: string,
 ): { parts: SubagentContentPart[]; state: SubagentAggregatorState } => {
   const start = Math.max(0, parts.length - MAX_LIVE_ACTIVITY_ITEMS);
   let offset = parts.length;
@@ -239,7 +240,7 @@ const boundContentParts = (
     ),
   );
   const dropped = bounded.length === 0 ? parts : parts.slice(0, offset);
-  const evicted = collectNestedCalls(dropped);
+  const evicted = collectNestedCalls(dropped, [], ownerAgentId);
   return {
     parts: bounded,
     state: {
@@ -507,13 +508,15 @@ export const nestedToolCallOf = (
 
 /**
  * The tool calls of a subagent transcript, nested runs included, with their
- * scope: the owner on the part, or on the call when the part has none. A
- * preview that left a transcript out names the calls its files were saved
- * under in `subagentAttachmentCalls`.
+ * scope: the owner on the part, or on the call when the part has none, or
+ * `ownerAgentId` for the transcript's own top-level calls. A preview that left
+ * a transcript out names the calls its files were saved under in
+ * `subagentAttachmentCalls`.
  */
 export function collectNestedCalls(
   parts: ReadonlyArray<TMessageContentParts | SubagentContentPart | undefined> | undefined,
   calls: Agents.SubagentAttachmentCall[] = [],
+  ownerAgentId?: string,
 ): Agents.SubagentAttachmentCall[] {
   /** An explicit stack, in transcript order: stored chains can nest thousands deep. */
   const stack: Array<
@@ -530,7 +533,11 @@ export function collectNestedCalls(
     const part = current[index];
     const toolCall = nestedToolCallOf(part);
     if (toolCall?.id) {
-      const agentId = (part as { agentId?: string } | undefined)?.agentId ?? toolCall.agentId;
+      /** `ownerAgentId` stands in for the run's own parts, which live activity does not stamp. */
+      const agentId =
+        (part as { agentId?: string } | undefined)?.agentId ??
+        toolCall.agentId ??
+        (stack.length === 1 ? ownerAgentId : undefined);
       calls.push({
         id: toolCall.id,
         ...(agentId == null ? {} : { agentId }),
@@ -563,7 +570,7 @@ export const subagentProgressByToolCallId = atomFamily((key: string) => {
           key,
           segments.flatMap((segment) => [
             ...(segment.aggregatorState?.evictedToolCalls ?? []),
-            ...collectNestedCalls(segment.contentParts),
+            ...collectNestedCalls(segment.contentParts, [], segment.subagentAgentId),
           ]),
         );
       }
@@ -822,6 +829,7 @@ const foldAcceptedSubagentEvents = (
   ({ parts: contentParts, state: aggregatorState } = boundContentParts(
     contentParts,
     aggregatorState,
+    events[events.length - 1].subagentAgentId ?? previous?.subagentAgentId,
   ));
   tickerState = boundTickerState(tickerState);
   const last = events[events.length - 1];
@@ -1095,23 +1103,27 @@ function prependSubagentReplay(
     } else target = part.type === ContentTypes.TEXT ? state.openTextIdx! : state.openThinkIdx!;
     indices.set(index, target);
   }
-  const bounded = boundContentParts(parts, {
-    ...previous.aggregatorState,
-    messagePhaseByStepId: inheritMessagePhases
-      ? {
-          ...prefix.aggregatorState.messagePhaseByStepId,
-          ...previous.aggregatorState.messagePhaseByStepId,
-        }
-      : previous.aggregatorState.messagePhaseByStepId,
-    openTextIdx:
-      previous.aggregatorState.openTextIdx == null
-        ? null
-        : (indices.get(previous.aggregatorState.openTextIdx) ?? null),
-    openThinkIdx:
-      previous.aggregatorState.openThinkIdx == null
-        ? null
-        : (indices.get(previous.aggregatorState.openThinkIdx) ?? null),
-  });
+  const bounded = boundContentParts(
+    parts,
+    {
+      ...previous.aggregatorState,
+      messagePhaseByStepId: inheritMessagePhases
+        ? {
+            ...prefix.aggregatorState.messagePhaseByStepId,
+            ...previous.aggregatorState.messagePhaseByStepId,
+          }
+        : previous.aggregatorState.messagePhaseByStepId,
+      openTextIdx:
+        previous.aggregatorState.openTextIdx == null
+          ? null
+          : (indices.get(previous.aggregatorState.openTextIdx) ?? null),
+      openThinkIdx:
+        previous.aggregatorState.openThinkIdx == null
+          ? null
+          : (indices.get(previous.aggregatorState.openThinkIdx) ?? null),
+    },
+    previous.subagentAgentId,
+  );
   const offset = prefix.tickerState.lines.length;
   return {
     ...previous,
@@ -1410,7 +1422,7 @@ function reconcileReplayTiming(
   const bounded =
     parts === progress.contentParts
       ? { parts, state: phased.state }
-      : boundContentParts(parts, phased.state);
+      : boundContentParts(parts, phased.state, progress.subagentAgentId);
   return {
     ...progress,
     contentParts: bounded.parts,
