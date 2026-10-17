@@ -71,8 +71,8 @@ interface EntityEmbeddingsParams {
 
 /**
  * Whether RAG holds chunks of a file under an entity's namespace. RAG filters a query by
- * file_id and returns chunks only when they were embedded under the entity it names (or
- * under the requesting user), so a single result is positive evidence that they exist.
+ * file_id and also returns chunks owned by the requesting user, so a result counts only
+ * when its recorded owner is the entity itself.
  * Rejects when RAG cannot be asked; the caller chooses the fallback.
  */
 export async function hasEntityEmbeddings({
@@ -84,7 +84,7 @@ export async function hasEntityEmbeddings({
   if (!process.env.RAG_API_URL) {
     return false;
   }
-  const { data } = await axios.post<unknown[]>(
+  const { data } = await axios.post<Array<[{ metadata?: { user_id?: string } }, number]>>(
     `${process.env.RAG_API_URL}/query`,
     { file_id, query, k: 1, entity_id },
     {
@@ -94,5 +94,5 @@ export async function hasEntityEmbeddings({
       },
     },
   );
-  return Array.isArray(data) && data.length > 0;
+  return Array.isArray(data) && data.some(([chunk]) => chunk?.metadata?.user_id === entity_id);
 }

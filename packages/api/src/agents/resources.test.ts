@@ -2754,16 +2754,14 @@ describe('primeResources', () => {
         ]);
       });
 
-      it('keeps the file queued when recording the namespace fails', async () => {
-        /* Adoption only spares a re-embed; failing it must not leave search without vectors. */
+      it('uses confirmed vectors even when recording the namespace fails', async () => {
+        /* The vectors are there; embedding again would store the duplicate copy. */
         const probe = jest.fn().mockResolvedValue(true);
         const adopt = jest.fn().mockRejectedValue(new Error('database unavailable'));
 
         const result = await primeLegacy(probe, adopt);
 
-        expect(result.provisionState?.vectorDBFiles.map((f) => f.file_id)).toEqual([
-          'legacy-search',
-        ]);
+        expect(result.provisionState).toBeUndefined();
       });
 
       it('starts the legacy check before the code liveness probe settles', async () => {

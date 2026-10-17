@@ -558,15 +558,19 @@ const computeProvisionState = async ({
     if (confirmed.length === 0) {
       return new Set();
     }
-    const adopted = await adoptLegacySearchEmbeddings({
+    /* The vector store has confirmed the vectors, so this turn uses them whether or not the
+     * namespace is recorded; recording only spares the next turn the same check. */
+    await adoptLegacySearchEmbeddings({
       files: confirmed.map((file) => ({
         file_id: file.file_id,
         user: String(file.user),
         ...(file.tenantId ? { tenantId: file.tenantId } : {}),
       })),
       agentId,
+    }).catch((error) => {
+      logger.error('[primeResources] Failed to record legacy File Search namespaces', error);
     });
-    return new Set(adopted);
+    return new Set(confirmed.map((file) => file.file_id));
   };
   const legacyAdoption: Promise<Set<string>> =
     legacySearchFiles.length > 0

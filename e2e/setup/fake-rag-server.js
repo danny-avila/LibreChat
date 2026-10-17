@@ -113,7 +113,17 @@ async function handleQuery(req, res) {
   sendJson(
     res,
     200,
-    present ? [[{ page_content: '', metadata: { source: '', file_id: body.file_id } }, 0]] : [],
+    present
+      ? [
+          [
+            {
+              page_content: '',
+              metadata: { source: '', file_id: body.file_id, user_id: entityId },
+            },
+            0,
+          ],
+        ]
+      : [],
   );
 }
 

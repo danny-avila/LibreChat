@@ -164,7 +164,9 @@ describe('hasEntityEmbeddings', () => {
   });
 
   it('asks for one chunk of the file under the entity', async () => {
-    mockedAxios.post.mockResolvedValueOnce({ data: [[{ page_content: 'x' }, 0.1]] });
+    mockedAxios.post.mockResolvedValueOnce({
+      data: [[{ page_content: 'x', metadata: { user_id: 'agent1' } }, 0.1]],
+    });
 
     await expect(hasEntityEmbeddings(params)).resolves.toBe(true);
     expect(mockedAxios.post).toHaveBeenCalledWith(
@@ -177,6 +179,14 @@ describe('hasEntityEmbeddings', () => {
         },
       },
     );
+  });
+
+  it("ignores chunks RAG returns because they are the requesting user's own", async () => {
+    mockedAxios.post.mockResolvedValueOnce({
+      data: [[{ page_content: 'x', metadata: { user_id: 'user1' } }, 0.1]],
+    });
+
+    await expect(hasEntityEmbeddings(params)).resolves.toBe(false);
   });
 
   it('reports no embeddings when RAG returns no chunks', async () => {
