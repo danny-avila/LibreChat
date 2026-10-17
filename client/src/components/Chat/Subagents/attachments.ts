@@ -1,21 +1,23 @@
 import { createContext, useMemo } from 'react';
 import { atom, useAtomValue } from 'jotai';
 import { Constants, ContentTypes } from 'librechat-data-provider';
-import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
+import type { TAttachment, TMessageContentParts, Agents } from 'librechat-data-provider';
 import type { SubagentContentPart } from '~/utils/subagentContent';
 import { subagentProgressByToolCallId, subagentProgressKey } from './state';
 
 type NestedPart = TMessageContentParts | SubagentContentPart | undefined;
+/** A tool call inside a subagent run, with the scope its files may carry. */
+export type NestedCall = Agents.SubagentAttachmentCall;
 type ToolCallFields = {
   id?: string;
   name?: string;
   stepId?: string;
   subagent_content?: TMessageContentParts[];
-  subagentAttachmentToolCallIds?: string[];
+  subagentAttachmentCalls?: NestedCall[];
 };
 
 const EMPTY: TAttachment[] = [];
-const NO_LIVE_CALLS: ReadonlyMap<number, string[]> = new Map();
+const NO_LIVE_CALLS: ReadonlyMap<number, NestedCall[]> = new Map();
 const NO_NESTED: ReadonlyMap<NestedPart, TAttachment[]> = new Map();
 
 /**
@@ -32,49 +34,25 @@ const toolCallOf = (part: NestedPart): ToolCallFields | undefined =>
     : undefined;
 
 /**
- * Every tool call id in `parts`, descending into nested `subagent_content`. A
- * preview that left the transcript out still names the ids its files were
- * saved under in `subagentAttachmentToolCallIds`.
+ * The tool calls of a subagent transcript, nested runs included, with their
+ * scope. A preview that left a transcript out names the calls its files were
+ * saved under in `subagentAttachmentCalls`.
  */
-export function collectToolCallIds(
-  parts: ReadonlyArray<NestedPart> | undefined,
-  ids: Set<string> = new Set(),
-): Set<string> {
-  for (const part of parts ?? []) {
-    const toolCall = toolCallOf(part);
-    if (toolCall?.id) {
-      ids.add(toolCall.id);
-    }
-    for (const id of toolCall?.subagentAttachmentToolCallIds ?? []) {
-      ids.add(id);
-    }
-    if (Array.isArray(toolCall?.subagent_content)) {
-      collectToolCallIds(toolCall.subagent_content, ids);
-    }
-  }
-  return ids;
-}
-
-/** A tool call inside a subagent run, with the scope its files may carry. */
-type NestedCall = { id: string; agentId?: string; stepId?: string };
-
-/** The tool calls of a subagent transcript, nested runs included, with their scope. */
-function collectNestedCalls(
+export function collectNestedCalls(
   parts: ReadonlyArray<NestedPart> | undefined,
   calls: NestedCall[] = [],
 ): NestedCall[] {
   for (const part of parts ?? []) {
     const toolCall = toolCallOf(part);
     if (toolCall?.id) {
+      const agentId = (part as { agentId?: string } | undefined)?.agentId;
       calls.push({
         id: toolCall.id,
-        agentId: (part as { agentId?: string } | undefined)?.agentId,
-        stepId: toolCall.stepId,
+        ...(agentId == null ? {} : { agentId }),
+        ...(toolCall.stepId == null ? {} : { stepId: toolCall.stepId }),
       });
     }
-    for (const id of toolCall?.subagentAttachmentToolCallIds ?? []) {
-      calls.push({ id });
-    }
+    calls.push(...(toolCall?.subagentAttachmentCalls ?? []));
     if (Array.isArray(toolCall?.subagent_content)) {
       collectNestedCalls(toolCall.subagent_content, calls);
     }
@@ -114,7 +92,7 @@ export function selectUnclaimedAttachments(
 export function assignNestedAttachments(
   content: ReadonlyArray<NestedPart> | undefined,
   unclaimed: TAttachment[],
-  live: ReadonlyMap<number, string[]>,
+  live: ReadonlyMap<number, NestedCall[]>,
 ): ReadonlyMap<NestedPart, TAttachment[]> {
   if (unclaimed.length === 0) {
     return NO_NESTED;
@@ -127,12 +105,7 @@ export function assignNestedAttachments(
       return;
     }
     const calls = collectNestedCalls(toolCall.subagent_content);
-    for (const id of toolCall.subagentAttachmentToolCallIds ?? []) {
-      calls.push({ id });
-    }
-    for (const id of live.get(index) ?? []) {
-      calls.push({ id });
-    }
+    calls.push(...(toolCall.subagentAttachmentCalls ?? []), ...(live.get(index) ?? []));
     if (calls.length === 0) {
       return;
     }
@@ -150,9 +123,9 @@ export function assignNestedAttachments(
 }
 
 /**
- * Child tool call ids of each subagent call in `content` that is still
- * streaming, keyed by the call's index in `content`. Until the run is saved
- * those calls exist only in the live progress atom. The atom yields a signature string so
+ * Child tool calls of each subagent call in `content` that is still streaming,
+ * keyed by the call's index in `content`. Until the run is saved those calls
+ * exist only in the live progress atom. The atom yields a signature string so
  * the caller re-renders when a child call appears, not on every delta. Only the
  * message that is streaming reads progress (`enabled`): reading creates the
  * atom family member, which nothing would release for a settled message.
@@ -163,7 +136,7 @@ export function useLiveSubagentToolCalls(
   contentIndices: ReadonlyArray<number> | undefined,
   contentIndexOffset: number,
   enabled: boolean,
-): ReadonlyMap<number, string[]> {
+): ReadonlyMap<number, NestedCall[]> {
   const keys = useMemo(() => {
     const entries: Array<[number, string]> = [];
     if (!enabled) {
@@ -186,29 +159,24 @@ export function useLiveSubagentToolCalls(
   }, [content, messageId, contentIndices, contentIndexOffset, enabled]);
   const signatureAtom = useMemo(
     () =>
-      atom((get) =>
-        keys
-          .map(([index, key]) => {
-            const childIds = collectToolCallIds(
-              get(subagentProgressByToolCallId(key))?.contentParts,
-            );
-            return childIds.size === 0 ? '' : [index, ...childIds].join('\u0000');
-          })
-          .filter(Boolean)
-          .join('\n'),
-      ),
+      atom((get) => {
+        const live: Array<[number, NestedCall[]]> = [];
+        for (const [index, key] of keys) {
+          const calls = collectNestedCalls(get(subagentProgressByToolCallId(key))?.contentParts);
+          if (calls.length > 0) {
+            live.push([index, calls]);
+          }
+        }
+        return live.length === 0 ? '' : JSON.stringify(live);
+      }),
     [keys],
   );
   const signature = useAtomValue(signatureAtom);
-  return useMemo(() => {
-    if (signature === '') {
-      return NO_LIVE_CALLS;
-    }
-    return new Map(
-      signature.split('\n').map((entry) => {
-        const [index, ...childIds] = entry.split('\u0000');
-        return [Number(index), childIds];
-      }),
-    );
-  }, [signature]);
+  return useMemo(
+    () =>
+      signature === ''
+        ? NO_LIVE_CALLS
+        : new Map(JSON.parse(signature) as Array<[number, NestedCall[]]>),
+    [signature],
+  );
 }

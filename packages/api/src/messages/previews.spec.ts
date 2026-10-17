@@ -32,7 +32,7 @@ type TestToolCall = {
   outputTruncated?: true;
   argsTruncated?: true;
   subagentContentOmitted?: true;
-  subagentAttachmentToolCallIds?: string[];
+  subagentAttachmentCalls?: Array<{ id: string; agentId?: string; stepId?: string }>;
   function?: unknown;
 };
 
@@ -418,13 +418,16 @@ describe('previewMessagesToolCalls', () => {
 
   it('keeps the nested tool call ids an omitted transcript saved attachments under', () => {
     const transcript = [
-      toolPart({ id: 'child_image', output: 'Image generated' }),
+      toolPart({ id: 'child_image', stepId: 'step_child', output: 'Image generated' }),
       toolPart({
         id: 'child_subagent',
         name: 'subagent',
         output: 'done',
         subagent_content: [
-          toolPart({ id: 'grandchild_image', output: 'Image generated' }),
+          {
+            ...toolPart({ id: 'grandchild_image', output: 'Image generated' }),
+            agentId: 'agent_grandchild',
+          },
           toolPart({ id: 'grandchild_search', output: 'found' }),
         ],
       }),
@@ -442,15 +445,18 @@ describe('previewMessagesToolCalls', () => {
     const [message] = previewMessagesToolCalls([{ content: [subagent], attachments }], limits);
     const [part] = message.content as Array<{ tool_call: TestToolCall }>;
     expect(part.tool_call).not.toHaveProperty('subagent_content');
-    expect(part.tool_call.subagentAttachmentToolCallIds?.sort()).toEqual([
-      'child_image',
-      'grandchild_image',
-    ]);
+    expect(part.tool_call.subagentAttachmentCalls).toEqual(
+      expect.arrayContaining([
+        { id: 'child_image', stepId: 'step_child' },
+        { id: 'grandchild_image', agentId: 'agent_grandchild' },
+      ]),
+    );
+    expect(part.tool_call.subagentAttachmentCalls).toHaveLength(2);
 
     const [bare] = previewMessagesToolCalls([{ content: [subagent] }], limits);
     const [barePart] = bare.content as Array<{ tool_call: TestToolCall }>;
     expect(barePart.tool_call).toMatchObject({ subagentContentOmitted: true });
-    expect(barePart.tool_call).not.toHaveProperty('subagentAttachmentToolCallIds');
+    expect(barePart.tool_call).not.toHaveProperty('subagentAttachmentCalls');
   });
 
   it('previews a call only when its identity is unique in the message', () => {

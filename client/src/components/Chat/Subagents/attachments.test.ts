@@ -1,6 +1,6 @@
 import type { TAttachment, TMessageContentParts } from 'librechat-data-provider';
 import {
-  collectToolCallIds,
+  collectNestedCalls,
   assignNestedAttachments,
   selectUnclaimedAttachments,
 } from './attachments';
@@ -36,26 +36,51 @@ describe('subagent attachments', () => {
     ]);
   });
 
-  it('collects child ids through nested runs and previewed transcripts', () => {
+  it('collects child calls with their scope through nested runs and previews', () => {
+    const scoped = {
+      type: 'tool_call',
+      agentId: 'agent-child',
+      tool_call: { id: 'grandchild-call', stepId: 'step-1' },
+    } as unknown as TMessageContentParts;
     expect(
-      collectToolCallIds([
-        subagent('subagent-call', [subagent('child-call', [toolCall('grandchild-call')])]),
-        toolCall('previewed-call', { subagentAttachmentToolCallIds: ['omitted-call'] }),
+      collectNestedCalls([
+        subagent('child-call', [scoped]),
+        toolCall('previewed-call', {
+          subagentAttachmentCalls: [{ id: 'omitted-call', stepId: 'step-2' }],
+        }),
       ]),
-    ).toEqual(
-      new Set(['subagent-call', 'child-call', 'grandchild-call', 'previewed-call', 'omitted-call']),
-    );
+    ).toEqual([
+      { id: 'child-call' },
+      { id: 'grandchild-call', agentId: 'agent-child', stepId: 'step-1' },
+      { id: 'previewed-call' },
+      { id: 'omitted-call', stepId: 'step-2' },
+    ]);
+  });
+
+  it('keeps a previewed scope apart when two subagents share a child id', () => {
+    const content = [
+      toolCall('first', { subagentAttachmentCalls: [{ id: 'shared', stepId: 'step-a' }] }),
+      toolCall('second', { subagentAttachmentCalls: [{ id: 'shared', stepId: 'step-b' }] }),
+    ];
+    const fromB = { ...file('shared'), stepId: 'step-b' } as TAttachment;
+    const assigned = assignNestedAttachments(content, [fromB], new Map());
+    expect(ids(assigned, content[0])).toEqual([]);
+    expect(ids(assigned, content[1])).toEqual(['shared']);
   });
 
   it('routes previewed, live and stored child files, each to one owner', () => {
     const content = [
       subagent('first', [toolCall('shared-child')]),
       subagent('second', [toolCall('shared-child')]),
-      toolCall('previewed', { name: 'subagent', subagentAttachmentToolCallIds: ['omitted'] }),
+      toolCall('previewed', { name: 'subagent', subagentAttachmentCalls: [{ id: 'omitted' }] }),
       toolCall('streaming', { name: 'subagent' }),
     ];
     const unclaimed = [file('shared-child'), file('omitted'), file('live-child'), file('other')];
-    const assigned = assignNestedAttachments(content, unclaimed, new Map([[3, ['live-child']]]));
+    const assigned = assignNestedAttachments(
+      content,
+      unclaimed,
+      new Map([[3, [{ id: 'live-child' }]]]),
+    );
     expect(ids(assigned, content[0])).toEqual(['shared-child']);
     expect(ids(assigned, content[1])).toEqual([]);
     expect(ids(assigned, content[2])).toEqual(['omitted']);

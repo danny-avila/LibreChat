@@ -9,7 +9,11 @@ import {
   hasToolCallPreview,
   toolCallPreviewsConfigSchema,
 } from 'librechat-data-provider';
-import type { TToolCallPreviewsConfig, ToolCallPreviewMarkers } from 'librechat-data-provider';
+import type {
+  Agents,
+  ToolCallPreviewMarkers,
+  TToolCallPreviewsConfig,
+} from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { AppConfigUserLike, GetAppConfigOptions } from '~/app/service';
 import { getAppConfigOptionsFromUser } from '~/app/service';
@@ -73,7 +77,7 @@ interface StoredToolCall extends ToolCallPreviewMarkers {
   args?: unknown;
   approval?: unknown;
   subagent_content?: unknown;
-  subagentAttachmentToolCallIds?: string[];
+  subagentAttachmentCalls?: Agents.SubagentAttachmentCall[];
 }
 
 interface StoredToolCallPart {
@@ -163,9 +167,15 @@ function hasPendingApproval(parts: unknown[]): boolean {
   return false;
 }
 
-/** Tool call ids anywhere in the parts, including inside nested subagent runs, that `wanted` names. */
-function nestedToolCallIds(parts: unknown[], wanted: ReadonlySet<string>): string[] {
-  const found: string[] = [];
+/**
+ * Tool calls anywhere in the parts, including inside nested subagent runs, whose id `wanted`
+ * names, with the agent and step scope a client checks an attachment against.
+ */
+function nestedAttachmentCalls(
+  parts: unknown[],
+  wanted: ReadonlySet<string>,
+): Agents.SubagentAttachmentCall[] {
+  const found: Agents.SubagentAttachmentCall[] = [];
   const stack: unknown[][] = [parts];
   while (stack.length > 0) {
     const current = stack.pop() ?? [];
@@ -173,9 +183,13 @@ function nestedToolCallIds(parts: unknown[], wanted: ReadonlySet<string>): strin
       if (!isToolCallPart(part)) {
         continue;
       }
-      const { id, subagent_content } = part.tool_call;
+      const { id, stepId, subagent_content } = part.tool_call;
       if (typeof id === 'string' && wanted.has(id)) {
-        found.push(id);
+        found.push({
+          id,
+          ...(typeof part.agentId === 'string' ? { agentId: part.agentId } : {}),
+          ...(typeof stepId === 'string' ? { stepId } : {}),
+        });
       }
       if (Array.isArray(subagent_content)) {
         stack.push(subagent_content);
@@ -486,8 +500,8 @@ export function previewToolCallOutput(
  * Returns the tool call with long content replaced by previews, or the same object when nothing
  * needed shortening. Only settled calls change: a call still waiting on output, approval or a
  * reader's answer keeps every field, since its card acts on them. When the subagent transcript is
- * left out, the ids of its tool calls that `attachmentIds` names stay on the call, so the files
- * those calls saved still route to it before the transcript loads.
+ * left out, its tool calls that `attachmentIds` names stay on the call with their scope, so the
+ * files those calls saved still route to it before the transcript loads.
  */
 export function previewToolCall<T extends StoredToolCall>(
   toolCall: T,
@@ -530,10 +544,12 @@ export function previewToolCall<T extends StoredToolCall>(
     delete next.subagent_content;
     next.subagentContentOmitted = true;
     next.subagentContentParts = (subagentContent as unknown[]).length;
-    const childIds =
-      attachmentIds == null ? [] : nestedToolCallIds(subagentContent as unknown[], attachmentIds);
-    if (childIds.length > 0) {
-      next.subagentAttachmentToolCallIds = childIds;
+    const childCalls =
+      attachmentIds == null
+        ? []
+        : nestedAttachmentCalls(subagentContent as unknown[], attachmentIds);
+    if (childCalls.length > 0) {
+      next.subagentAttachmentCalls = childCalls;
     }
   }
   if (revision !== '') {

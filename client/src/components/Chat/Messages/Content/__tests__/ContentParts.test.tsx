@@ -749,7 +749,7 @@ describe('ContentParts — activity phase state', () => {
           progress: 1,
           subagentContentOmitted: true,
           subagentContentParts: 3,
-          subagentAttachmentToolCallIds: ['omitted-image'],
+          subagentAttachmentCalls: [{ id: 'omitted-image' }],
         },
       },
     ] as unknown as TMessageContentParts[];
