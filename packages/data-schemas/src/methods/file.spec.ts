@@ -146,6 +146,35 @@ describe('File Methods', () => {
       expect(adopted).toEqual([fileId]);
     });
 
+    it('reports a committed adoption when a sibling write fails', async () => {
+      const adoptedId = uuidv4();
+      const failingId = uuidv4();
+      await createAgent('agent_owner', [adoptedId, failingId]);
+      await createLegacyFile(adoptedId);
+      await createLegacyFile(failingId);
+      const original = File.findOneAndUpdate.bind(File);
+      const spy = jest
+        .spyOn(File, 'findOneAndUpdate')
+        .mockImplementation(((filter: { file_id?: string }, ...rest: unknown[]) =>
+          filter.file_id === failingId
+            ? { lean: () => Promise.reject(new Error('write failed')) }
+            : (original as (...args: unknown[]) => unknown)(filter, ...rest)) as never);
+
+      try {
+        const adopted = await fileMethods.adoptLegacySearchEmbeddings({
+          files: [
+            { file_id: adoptedId, user: author.toString() },
+            { file_id: failingId, user: author.toString() },
+          ],
+          agentId: 'agent_owner',
+        });
+
+        expect(adopted).toEqual([adoptedId]);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+
     it('does not touch a file whose namespaces are already recorded', async () => {
       const fileId = uuidv4();
       await createAgent('agent_owner', [fileId]);
