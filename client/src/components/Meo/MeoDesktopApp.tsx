@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuthContext } from '~/hooks/AuthContext';
 import MeoChat from './MeoChat';
-import { useMeoSession } from './session';
 import './MeoDesktopApp.css';
 
 type PrimaryMode = 'chat' | 'work' | 'projects' | 'skills';
@@ -59,7 +59,7 @@ const modeCopy: Record<Exclude<PrimaryMode, 'chat'>, { title: string; descriptio
 
 export default function MeoDesktopApp() {
   const navigate = useNavigate();
-  const { user } = useMeoSession();
+  const { user } = useAuthContext();
   const [mode, setMode] = useState<PrimaryMode>('chat');
   const [sidebarHidden, setSidebarHidden] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
@@ -76,10 +76,7 @@ export default function MeoDesktopApp() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [navigate]);
 
-  const accountLabel = useMemo(
-    () => user?.name || user?.preferred_username || user?.email || 'Meo Account',
-    [user],
-  );
+  const accountLabel = useMemo(() => user?.name || user?.email || 'Meo Account', [user]);
 
   const selectMode = (next: PrimaryMode) => {
     setMode(next);
