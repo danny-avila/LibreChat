@@ -110,6 +110,8 @@ const vertexMultiRegionEndpoints = new Map([
   ['global', 'aiplatform.googleapis.com'],
 ]);
 
+const vertexMultiRegionEndpointHosts = new Set(vertexMultiRegionEndpoints.values());
+
 const blockedModelOptionParams = [
   'apiKey',
   'baseUrl',
@@ -404,6 +406,21 @@ function hasAllowedVertexEndpoint(config: Record<string, unknown>): boolean {
 
   config.endpoint = normalizedEndpoint;
   return true;
+}
+
+/**
+ * Whether `endpoint` is a public regional Vertex host (`us-central1-aiplatform.googleapis.com`
+ * or `aiplatform.europe-west4.rep.googleapis.com`). Multi-region-only models cannot be served
+ * from one, so it yields to the multi-region endpoint; private hosts are kept as configured.
+ */
+function isPublicRegionalVertexEndpoint(endpoint: unknown): boolean {
+  if (typeof endpoint !== 'string' || vertexMultiRegionEndpointHosts.has(endpoint)) {
+    return false;
+  }
+  return (
+    /^[a-z0-9-]+-aiplatform\.googleapis\.com$/.test(endpoint) ||
+    /^aiplatform\.[a-z0-9-]+\.rep\.googleapis\.com$/.test(endpoint)
+  );
 }
 
 function applyVertexMultiRegionEndpoint(config: VertexAIClientOptions & { endpoint?: string }) {
@@ -749,8 +766,20 @@ export function getGoogleConfig(
     dropParams: Array.isArray(options.dropParams) ? options.dropParams : undefined,
   });
 
-  if (provider === Providers.VERTEXAI && shouldSyncVertexEndpoint && !hasCustomVertexEndpoint) {
-    applyVertexMultiRegionEndpoint(llmConfig as VertexAIClientOptions & { endpoint?: string });
+  if (provider === Providers.VERTEXAI) {
+    const vertexConfig = llmConfig as VertexAIClientOptions & { endpoint?: string };
+    const model = vertexConfig.model ?? '';
+    /** The location is the resource path, so it resolves even when a custom endpoint is kept */
+    if (typeof vertexConfig.location === 'string') {
+      vertexConfig.location = resolveVertexModelLocation(model, vertexConfig.location);
+    }
+    const overridesRegionalEndpoint =
+      hasCustomVertexEndpoint &&
+      isVertexMultiRegionOnlyModel(model) &&
+      isPublicRegionalVertexEndpoint(vertexConfig.endpoint);
+    if (shouldSyncVertexEndpoint && (!hasCustomVertexEndpoint || overridesRegionalEndpoint)) {
+      applyVertexMultiRegionEndpoint(vertexConfig);
+    }
   }
 
   const tools: GoogleAIToolType[] = [];

@@ -1345,6 +1345,82 @@ describe('getGoogleConfig', () => {
       });
     });
 
+    it.each([
+      [
+        'us-central1',
+        'us-central1-aiplatform.googleapis.com',
+        'us',
+        'aiplatform.us.rep.googleapis.com',
+      ],
+      [
+        'europe-west4',
+        'aiplatform.europe-west4.rep.googleapis.com',
+        'eu',
+        'aiplatform.eu.rep.googleapis.com',
+      ],
+    ])(
+      'should replace a regional %s endpoint override for Gemini 4 Argon',
+      (location, endpoint, expectedLocation, expectedEndpoint) => {
+        process.env.GOOGLE_LOC = location;
+        const credentials = {
+          [AuthKeys.GOOGLE_SERVICE_KEY]: {
+            project_id: 'test-project',
+          },
+        };
+
+        const result = getGoogleConfig(credentials, {
+          modelOptions: { model: 'gemini-4-argon' },
+          addParams: { endpoint },
+        });
+
+        expect(result.llmConfig).toMatchObject({
+          location: expectedLocation,
+          endpoint: expectedEndpoint,
+        });
+      },
+    );
+
+    it.each([
+      ['a Private Service Connect', 'gemini-4-argon', 'aiplatform-genai1.p.googleapis.com'],
+      ['a regional', 'gemini-3.8-flash', 'us-central1-aiplatform.googleapis.com'],
+    ])('should keep %s endpoint override for %s', (_kind, model, endpoint) => {
+      process.env.GOOGLE_LOC = 'us-central1';
+      const credentials = {
+        [AuthKeys.GOOGLE_SERVICE_KEY]: {
+          project_id: 'test-project',
+        },
+      };
+
+      const result = getGoogleConfig(credentials, {
+        modelOptions: { model },
+        addParams: { endpoint },
+      });
+
+      expect((result.llmConfig as Record<string, unknown>).endpoint).toBe(endpoint);
+    });
+
+    it.each([
+      ['a multi-region', 'aiplatform.us.rep.googleapis.com'],
+      ['a Private Service Connect', 'aiplatform-genai1.p.googleapis.com'],
+    ])(
+      'should resolve the Gemini 4 Argon location when %s endpoint override is kept',
+      (_kind, endpoint) => {
+        process.env.GOOGLE_LOC = 'us-central1';
+        const credentials = {
+          [AuthKeys.GOOGLE_SERVICE_KEY]: {
+            project_id: 'test-project',
+          },
+        };
+
+        const result = getGoogleConfig(credentials, {
+          modelOptions: { model: 'gemini-4-argon' },
+          addParams: { endpoint },
+        });
+
+        expect(result.llmConfig).toMatchObject({ location: 'us', endpoint });
+      },
+    );
+
     it('should keep a configured regional Vertex AI location for older Gemini models', () => {
       process.env.GOOGLE_LOC = 'europe-west1';
       const credentials = {
