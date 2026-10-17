@@ -12,7 +12,12 @@ import { getE2EUser } from '../../../setup/user';
 
 const NO_PARENT = '00000000-0000-0000-0000-000000000000';
 
-const appAttachment = (conversationId: string, messageId: string, toolCallId: string) => ({
+const appAttachment = (
+  conversationId: string,
+  messageId: string,
+  toolCallId: string,
+  toolName = toolCallId,
+) => ({
   type: 'ui_resources',
   messageId,
   conversationId,
@@ -22,7 +27,7 @@ const appAttachment = (conversationId: string, messageId: string, toolCallId: st
       uri: `ui://e2e-app/${toolCallId}`,
       mimeType: 'text/html;profile=mcp-app',
       text: '<p>app</p>',
-      toolName: toolCallId,
+      toolName,
       serverName: 'e2e-app',
     },
   ],
@@ -110,6 +115,57 @@ async function seedTurn() {
   return { conversationId, messageId, calls };
 }
 
+/** Two standalone subagent runs, kept apart by prose, whose tools each open the same App. */
+async function seedSeparateRuns() {
+  const conversationId = randomUUID();
+  const userMessageId = randomUUID();
+  const messageId = randomUUID();
+  const suffix = conversationId.slice(0, 8);
+  const children = [`first-app-${suffix}`, `second-app-${suffix}`];
+  const run = (index: number) => ({
+    type: 'tool_call',
+    tool_call: {
+      id: `subagent-${index}-${suffix}`,
+      name: 'subagent',
+      args: JSON.stringify({ subagent_type: 'self', description: `Open dashboard ${index}` }),
+      output: `Opened dashboard ${index}.`,
+      progress: 1,
+      subagent_content: [appToolCall(children[index])],
+    },
+  });
+  const messages = [
+    {
+      messageId: userMessageId,
+      parentMessageId: NO_PARENT,
+      isCreatedByUser: true,
+      sender: 'User',
+      text: 'Open both dashboards.',
+    },
+    {
+      messageId,
+      parentMessageId: userMessageId,
+      isCreatedByUser: false,
+      sender: 'Assistant',
+      text: '',
+      content: [
+        run(0),
+        { type: 'text', text: 'The first dashboard is open.' },
+        run(1),
+        { type: 'text', text: 'Both dashboards are open.' },
+      ],
+      attachments: children.map((id) =>
+        appAttachment(conversationId, messageId, id, 'show_dashboard'),
+      ),
+    },
+  ] as SeedMessage[];
+
+  await seedConversations(getE2EUser().email, [
+    { conversationId, title: 'Separate subagent Apps', updatedAt: new Date() },
+  ]);
+  await seedMessages(getE2EUser().email, conversationId, messages);
+  return { conversationId, messageId };
+}
+
 async function openTurn(page: Page, conversationId: string) {
   const loaded = page.waitForResponse(
     (response) =>
@@ -162,6 +218,31 @@ test('a subagent MCP App stays hidden while the deployment disables MCP Apps @sc
     await expect(message.getByText('Here is the dashboard.')).toBeVisible();
     await expect(message.getByText('The helper is done.')).toBeVisible();
     await expect(message.locator('[data-mcp-app-view]')).toHaveCount(0);
+  } finally {
+    await deleteMessagesByConversation([conversationId]);
+    await deleteConversations([conversationId]);
+  }
+});
+
+test('the same App opened by two separate subagent runs gets a distinct control name for each @scenario:subagent-nested-mcp-apps-distinct-names', async ({
+  page,
+}) => {
+  const { conversationId, messageId } = await seedSeparateRuns();
+  await setMCPAppsPolicy(page, true);
+
+  try {
+    await openTurn(page, conversationId);
+    const message = page.locator(`[id="${messageId}"]`);
+    await expect(message.getByText('Both dashboards are open.')).toBeVisible();
+    await expect(message.locator('[data-mcp-app-view="show_dashboard"]')).toHaveCount(2);
+    for (const ordinal of [1, 2]) {
+      await expect(
+        message.getByRole('button', {
+          name: `Open app: show_dashboard (${ordinal})`,
+          exact: true,
+        }),
+      ).toBeVisible();
+    }
   } finally {
     await deleteMessagesByConversation([conversationId]);
     await deleteConversations([conversationId]);

@@ -139,6 +139,7 @@ const buildToolCallStepOwners = (
 const collectMessageContent = (
   content: Array<TMessageContentParts | undefined> | undefined,
   attachments: TAttachment[] | undefined,
+  nested: Pick<ReadonlyMap<TMessageContentParts, TAttachment[]>, 'get'>,
   contentIndexOffset = 0,
   contentIndices?: ReadonlyArray<number>,
 ): {
@@ -169,7 +170,10 @@ const collectMessageContent = (
       getPartStepId(part),
       getSiblingStepIds(part, ownersByToolCallId),
     );
-    for (const attachment of routed ?? []) {
+    /** A subagent's child-call Apps render beside the subagent row, like its
+     *  own, so regrouping the row while it streams never remounts them. */
+    const owned = nested.get(part);
+    for (const attachment of owned == null ? (routed ?? []) : [...(routed ?? []), ...owned]) {
       if (
         attachment.type === Tools.ui_resources &&
         !collected.has(attachment) &&
@@ -1430,15 +1434,64 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
     previousIdentity.isSubmitting = isSubmitting;
   }
   const appRenderScope = appRenderIdentity.current!.scope;
+  const liveSubagentToolCalls = useLiveSubagentToolCalls(
+    props.content,
+    attachments,
+    messageId,
+    props.contentIndices,
+    props.contentIndexOffset ?? 0,
+  );
+  const inlineAttachments = useMemo(
+    () => partitionWorkspaceChanges(attachments).inlineAttachments,
+    [attachments],
+  );
+  const liveRouting = useMemo(
+    () => routeNestedAttachments(props.content, inlineAttachments, liveSubagentToolCalls),
+    [props.content, inlineAttachments, liveSubagentToolCalls],
+  );
+  /** A file no part owns under its full scope may belong to a child call of a previewed subagent
+   *  run whose transcript was left out, such as one a background task delivered after this load. */
+  const filesInDoubt = useMemo(() => {
+    const files = new Map<string, SubagentAttachmentFile>();
+    for (const file of liveRouting.inDoubt) {
+      const { toolCallId, agentId, stepId } = file as SubagentAttachmentFile;
+      const entry = {
+        toolCallId,
+        ...(agentId != null ? { agentId } : {}),
+        ...(stepId != null ? { stepId } : {}),
+      };
+      files.set(JSON.stringify(entry), entry);
+    }
+    return [...files.keys()].sort().map((key) => files.get(key) as SubagentAttachmentFile);
+  }, [liveRouting]);
+  const storedSubagentHints = useStoredSubagentHints(
+    props.content,
+    filesInDoubt,
+    conversationId,
+    messageId,
+  );
+  /** Assigned once for the whole message: the bodies an MCP App or a phase
+   *  splits it into each see a slice, and must agree on every file's owner. */
+  const nestedAttachments = useMemo(() => {
+    if (storedSubagentHints.size === 0) {
+      return liveRouting.nested;
+    }
+    const calls = new Map(liveSubagentToolCalls);
+    for (const [index, stored] of storedSubagentHints) {
+      calls.set(index, [...(calls.get(index) ?? []), ...stored]);
+    }
+    return routeNestedAttachments(props.content, inlineAttachments, calls).nested;
+  }, [props.content, inlineAttachments, liveRouting, liveSubagentToolCalls, storedSubagentHints]);
   const messageContent = useMemo(
     () =>
       collectMessageContent(
         props.content,
         attachments,
+        nestedAttachments,
         props.contentIndexOffset,
         props.contentIndices,
       ),
-    [props.content, attachments, props.contentIndexOffset, props.contentIndices],
+    [props.content, attachments, nestedAttachments, props.contentIndexOffset, props.contentIndices],
   );
   const suppressedAppAttachments = useMemo<ReadonlySet<TAttachment>>(
     () => new Set(messageContent.attachments),
@@ -1561,54 +1614,6 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
    *  value at every markdown block in the message. */
   const attachmentsByName = useMemo(() => buildAttachmentsByName(attachments), [attachments]);
   const media = useMemo(() => ({ attachmentsByName }), [attachmentsByName]);
-  const liveSubagentToolCalls = useLiveSubagentToolCalls(
-    props.content,
-    attachments,
-    messageId,
-    props.contentIndices,
-    props.contentIndexOffset ?? 0,
-  );
-  const inlineAttachments = useMemo(
-    () => partitionWorkspaceChanges(attachments).inlineAttachments,
-    [attachments],
-  );
-  const liveRouting = useMemo(
-    () => routeNestedAttachments(props.content, inlineAttachments, liveSubagentToolCalls),
-    [props.content, inlineAttachments, liveSubagentToolCalls],
-  );
-  /** A file no part owns under its full scope may belong to a child call of a previewed subagent
-   *  run whose transcript was left out, such as one a background task delivered after this load. */
-  const filesInDoubt = useMemo(() => {
-    const files = new Map<string, SubagentAttachmentFile>();
-    for (const file of liveRouting.inDoubt) {
-      const { toolCallId, agentId, stepId } = file as SubagentAttachmentFile;
-      const entry = {
-        toolCallId,
-        ...(agentId != null ? { agentId } : {}),
-        ...(stepId != null ? { stepId } : {}),
-      };
-      files.set(JSON.stringify(entry), entry);
-    }
-    return [...files.keys()].sort().map((key) => files.get(key) as SubagentAttachmentFile);
-  }, [liveRouting]);
-  const storedSubagentHints = useStoredSubagentHints(
-    props.content,
-    filesInDoubt,
-    conversationId,
-    messageId,
-  );
-  /** Assigned once for the whole message: the bodies an MCP App or a phase
-   *  splits it into each see a slice, and must agree on every file's owner. */
-  const nestedAttachments = useMemo(() => {
-    if (storedSubagentHints.size === 0) {
-      return liveRouting.nested;
-    }
-    const calls = new Map(liveSubagentToolCalls);
-    for (const [index, stored] of storedSubagentHints) {
-      calls.set(index, [...(calls.get(index) ?? []), ...stored]);
-    }
-    return routeNestedAttachments(props.content, inlineAttachments, calls).nested;
-  }, [props.content, inlineAttachments, liveRouting, liveSubagentToolCalls, storedSubagentHints]);
   return (
     <MessageContext.Provider value={messageContext}>
       <MediaContext.Provider value={media}>
