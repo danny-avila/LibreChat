@@ -507,8 +507,8 @@ test.describe('unseen replies', () => {
         }
         close() {}
         onclick: (() => void) | null = null;
-        constructor() {
-          constructions.push('notification');
+        constructor(_title: string, options?: NotificationOptions) {
+          constructions.push(options?.tag ?? '');
         }
       }
       Object.defineProperty(window, 'Notification', {
@@ -601,15 +601,18 @@ test.describe('unseen replies', () => {
       await expect(row.locator('span[aria-hidden="true"].bg-status-info')).toBeVisible({
         timeout: 45_000,
       });
+      /* Other scenarios leave unseen history for this user; only this reply must notify once. */
       await expect
         .poll(() =>
           page.evaluate(
-            () =>
-              (window as Window & { __notificationConstructions: string[] })
-                .__notificationConstructions,
+            (conversationId) =>
+              (
+                window as Window & { __notificationConstructions: string[] }
+              ).__notificationConstructions.filter((tag) => tag === conversationId),
+            id,
           ),
         )
-        .toEqual(['notification']);
+        .toEqual([id]);
     } finally {
       await cleanup(id);
     }
