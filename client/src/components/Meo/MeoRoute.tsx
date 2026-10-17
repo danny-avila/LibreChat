@@ -19,16 +19,17 @@ function MeoSessionGate() {
           <div className="bg-accent-primary text-surface-primary mx-auto grid size-12 place-items-center rounded-2xl text-xs font-extrabold">
             AI
           </div>
-          <h1 className="text-text-primary mt-5 text-2xl font-semibold">Meo AI</h1>
+          <h1 className="text-text-primary mt-5 text-2xl font-semibold">Meo AI couldn’t open</h1>
           <p className="text-text-secondary mt-2 text-sm leading-6">
-            {error ?? 'Sign in with Meo Account to continue.'}
+            {error ?? 'Your Meo Account session could not be checked.'}
           </p>
-          <a
+          <button
             className="bg-accent-primary text-surface-primary mt-6 inline-flex h-11 items-center justify-center rounded-2xl px-5 font-semibold"
-            href="/oauth/openid?return=%2Fnew"
+            type="button"
+            onClick={() => window.location.reload()}
           >
-            Continue with Meo Account
-          </a>
+            Try again
+          </button>
         </section>
       </main>
     );
