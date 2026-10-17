@@ -1,4 +1,5 @@
 import { Providers, getChatModelClass } from '@librechat/agents';
+import { AIMessage, HumanMessage } from '@langchain/core/messages';
 import {
   AuthKeys,
   AnthropicEffort,
@@ -2512,5 +2513,48 @@ describe('getLLMConfig', () => {
 
       expect(result.llmConfig).not.toHaveProperty('clientOptions');
     });
+  });
+});
+
+describe('assistant prefill', () => {
+  const sendAndCaptureMessages = async (model: string) => {
+    const { llmConfig } = getLLMConfig('test-key', { modelOptions: { model, thinking: false } });
+    const bodies: Array<{ messages: Array<{ role: string }> }> = [];
+    const fetch = jest.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return new Response(
+        JSON.stringify({
+          id: 'msg_test',
+          type: 'message',
+          role: 'assistant',
+          model,
+          content: [{ type: 'text', text: 'ok' }],
+          stop_reason: 'end_turn',
+          stop_sequence: null,
+          usage: { input_tokens: 1, output_tokens: 1 },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    });
+    const Anthropic = getChatModelClass(Providers.ANTHROPIC);
+    const llm = new Anthropic({
+      ...llmConfig,
+      streaming: false,
+      maxTokens: 1024,
+      clientOptions: { ...llmConfig.clientOptions, fetch },
+    });
+    await llm.invoke([new HumanMessage('Hello'), new AIMessage('Sure,')]);
+    return bodies[0].messages.map((message) => message.role);
+  };
+
+  it.each(['claude-haiku-5-5', 'claude-sonnet-5-5', 'claude-opus-5-5', 'claude-fable-5-1'])(
+    'drops the trailing assistant turn for %s',
+    async (model) => {
+      expect(await sendAndCaptureMessages(model)).toEqual(['user']);
+    },
+  );
+
+  it('keeps the trailing assistant turn for claude-haiku-4-5', async () => {
+    expect(await sendAndCaptureMessages('claude-haiku-4-5')).toEqual(['user', 'assistant']);
   });
 });
