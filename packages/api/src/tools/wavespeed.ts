@@ -25,6 +25,23 @@ const SIZE_PATTERN = /^[1-9]\d{1,4}\*[1-9]\d{1,4}$/;
 
 const POLL_INTERVAL_MS = 1000;
 const MAX_POLL_ATTEMPTS = 600;
+/** Per-request timeout so a hung socket cannot block the tool forever. */
+const REQUEST_TIMEOUT_MS = 30_000;
+/** Consecutive transient poll failures tolerated before giving up on a status check. */
+const POLL_TRANSIENT_RETRIES = 5;
+const POLL_RETRY_BASE_MS = 1500;
+const TRANSIENT_HTTP_STATUS = new Set([429, 500, 502, 503, 504]);
+const TRANSIENT_NETWORK_CODES = new Set([
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'ECONNABORTED',
+  'ECONNREFUSED',
+  'EAI_AGAIN',
+  'EPIPE',
+  'ENETUNREACH',
+  'ERR_NETWORK',
+]);
+const TERMINAL_FAILURE_STATUSES = new Set(['failed', 'cancelled', 'timeout', 'deleted']);
 
 const displayMessage =
   "WaveSpeed displayed an image. All generated images are already plainly visible, so don't repeat the descriptions in detail. Do not list download links as they are available in the UI already. The user may download the images by clicking on them, but do not mention anything about downloading to the user.";
@@ -102,10 +119,32 @@ const describeError = (error: unknown): string => {
   return getDetails((error as Error)?.message ?? 'No additional error details.');
 };
 
+const getHttpStatus = (error: unknown): number | undefined =>
+  (error as { response?: { status?: number } })?.response?.status;
+
+/** Transient = worth retrying a read-only status check: 429/5xx or a network-level failure. */
+const isTransientPollError = (error: unknown): boolean => {
+  const status = getHttpStatus(error);
+  if (status != null) {
+    return TRANSIENT_HTTP_STATUS.has(status);
+  }
+  const code = (error as { code?: string })?.code;
+  /** No HTTP response and no recognised code: the request got nothing back, treat as network. */
+  return code != null ? TRANSIENT_NETWORK_CODES.has(code) : true;
+};
+
+/** The submit may have reached WaveSpeed: no response at all, or a 5xx. */
+const isAmbiguousSubmitError = (error: unknown): boolean => {
+  const status = getHttpStatus(error);
+  return status == null || status >= 500;
+};
+
 /**
  * Generates images from text prompts with the WaveSpeed AI API by submitting a
  * prediction and polling until it reaches a terminal status. Each call
  * generates one image; multiple images require multiple consecutive calls.
+ * The submit is single-shot and never retried automatically (a retry could
+ * create a second paid task); only the read-only status poll retries.
  *
  * Extends `StructuredTool` rather than `Tool` because the tool takes an object
  * input described by a JSON schema, which is what `StructuredTool` is typed for.
@@ -117,7 +156,7 @@ export class WaveSpeedAPI extends StructuredTool<ExtendedJsonSchema> {
 
   name = 'wavespeed';
   description =
-    'Use WaveSpeed AI to generate images from text descriptions. Each call creates one image. For multiple images, make multiple consecutive calls.';
+    'Use WaveSpeed AI to generate images from text descriptions. Each call creates one image. For multiple images, make multiple consecutive calls. Never call again just to retry a failed or unknown-outcome call: a task may already exist and be charged.';
 
   description_for_model = `// Generate images from text prompts with WaveSpeed AI. Follow these rules:
     // 1. Prompts should be detailed and descriptive, covering subject, composition, lighting, mood, and style.
@@ -242,14 +281,21 @@ export class WaveSpeedAPI extends StructuredTool<ExtendedJsonSchema> {
           'Content-Type': 'application/json',
           Accept: 'application/json',
         },
+        timeout: REQUEST_TIMEOUT_MS,
         ...this.getAxiosConfig(),
       });
     } catch (error) {
       const details = describeError(error);
       logger.error('[WaveSpeedAPI] Error while submitting task:', details);
 
+      if (isAmbiguousSubmitError(error)) {
+        return this.returnValue(
+          `Submission outcome unknown: the task may already exist and be charged. Do NOT retry automatically; ask the user to check their recent WaveSpeed predictions first.
+        Error Message: ${details}`,
+        );
+      }
       return this.returnValue(
-        `Something went wrong when trying to generate the image. The WaveSpeed API may be unavailable:
+        `Something went wrong when trying to generate the image. The WaveSpeed API rejected the request and no task was created. Do not retry unless the cause below is fixed:
         Error Message: ${details}`,
       );
     }
@@ -257,40 +303,43 @@ export class WaveSpeedAPI extends StructuredTool<ExtendedJsonSchema> {
     const taskId = taskResponse.data?.data?.id;
     if (!taskId) {
       logger.error('[WaveSpeedAPI] No prediction ID received from API:', taskResponse.data);
-      return this.returnValue('No prediction ID received from the WaveSpeed API.');
+      return this.returnValue(
+        'No prediction ID received from the WaveSpeed API. Submission outcome unknown: the task may already exist and be charged. Do NOT retry automatically; ask the user to check their recent WaveSpeed predictions first.',
+      );
     }
 
     const resultUrl = `${this.baseUrl}/api/v3/predictions/${taskId}/result`;
 
     let resultData: WaveSpeedPrediction | null = null;
     for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
-      try {
-        await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
-        const resultResponse = await axios.get<WaveSpeedEnvelope>(resultUrl, {
-          headers: {
-            Authorization: `Bearer ${requestApiKey}`,
-            Accept: 'application/json',
-          },
-          ...this.getAxiosConfig(),
-        });
-        const prediction = resultResponse.data?.data;
-        const status = prediction?.status;
+      await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
 
-        if (status === 'completed') {
-          resultData = prediction ?? null;
-          break;
-        }
-        if (status === 'failed' || status === 'cancelled' || status === 'timeout') {
-          logger.error('[WaveSpeedAPI] Error in task:', resultResponse.data);
-          return this.returnValue(
-            `An error occurred during image generation: prediction ${status}${
-              prediction?.error ? ` - ${prediction.error}` : ''
-            }`,
-          );
-        }
+      let resultResponse;
+      try {
+        resultResponse = await this.fetchResultWithRetry(resultUrl, requestApiKey);
       } catch (error) {
-        logger.error('[WaveSpeedAPI] Error while getting result:', describeError(error));
-        return this.returnValue('An error occurred while retrieving the image.');
+        const details = describeError(error);
+        logger.error(`[WaveSpeedAPI] Error while getting result for task ${taskId}:`, details);
+        return this.returnValue(
+          `Status check failed for WaveSpeed task ${taskId}: the task may still be running and may be charged. Do NOT resubmit; ask the user to check this task id in their WaveSpeed predictions.
+        Error Message: ${details}`,
+        );
+      }
+
+      const prediction = resultResponse.data?.data;
+      const status = prediction?.status;
+
+      if (status === 'completed') {
+        resultData = prediction ?? null;
+        break;
+      }
+      if (status != null && TERMINAL_FAILURE_STATUSES.has(status)) {
+        logger.error('[WaveSpeedAPI] Error in task:', resultResponse.data);
+        return this.returnValue(
+          `An error occurred during image generation (task ${taskId}): prediction ${status}${
+            prediction?.error ? ` - ${prediction.error}` : ''
+          }`,
+        );
       }
     }
 
@@ -302,7 +351,7 @@ export class WaveSpeedAPI extends StructuredTool<ExtendedJsonSchema> {
     if (!resultData) {
       logger.error('[WaveSpeedAPI] Timed out waiting for the prediction to finish.');
       return this.returnValue(
-        'Timed out waiting for the WaveSpeed prediction to finish. The job may still be running; please try again.',
+        `Timed out waiting for WaveSpeed task ${taskId} to finish. The task may still be running and may be charged. Do NOT resubmit; ask the user to check this task id in their WaveSpeed predictions.`,
       );
     }
 
@@ -318,6 +367,34 @@ export class WaveSpeedAPI extends StructuredTool<ExtendedJsonSchema> {
     }
 
     return this.saveImage(imageUrl);
+  }
+
+  /**
+   * Read-only status poll. Tolerates transient 429/5xx and network errors with
+   * linear backoff; anything else (401, 404, ...) fails immediately.
+   */
+  private async fetchResultWithRetry(resultUrl: string, apiKey: string) {
+    for (let retry = 0; ; retry++) {
+      try {
+        return await axios.get<WaveSpeedEnvelope>(resultUrl, {
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            Accept: 'application/json',
+          },
+          timeout: REQUEST_TIMEOUT_MS,
+          ...this.getAxiosConfig(),
+        });
+      } catch (error) {
+        if (retry >= POLL_TRANSIENT_RETRIES || !isTransientPollError(error)) {
+          throw error;
+        }
+        logger.warn(
+          `[WaveSpeedAPI] Transient poll error (retry ${retry + 1}/${POLL_TRANSIENT_RETRIES}):`,
+          describeError(error),
+        );
+        await new Promise((resolve) => setTimeout(resolve, POLL_RETRY_BASE_MS * (retry + 1)));
+      }
+    }
   }
 
   private async encodeForAgent(imageUrl: string): Promise<WaveSpeedToolOutput> {

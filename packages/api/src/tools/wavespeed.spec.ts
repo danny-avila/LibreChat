@@ -291,7 +291,7 @@ describe('WaveSpeedAPI', () => {
     const result = (await invokePromise) as ToolMessage;
 
     expect(result).toBeInstanceOf(ToolMessage);
-    expect(contentStringOf(result)).toContain('Something went wrong');
+    expect(contentStringOf(result)).toContain('Submission outcome unknown');
     expect(result.artifact).toBeDefined();
   });
 
@@ -322,5 +322,108 @@ describe('WaveSpeedAPI', () => {
 
     expect(result).toBeInstanceOf(ToolMessage);
     expect(contentStringOf(result)).toContain('No image data received');
+  });
+
+  describe('transient error handling', () => {
+    const httpError = (status: number) =>
+      Object.assign(new Error(`HTTP ${status}`), { response: { status, data: { message: 'x' } } });
+    const done = {
+      data: {
+        code: 200,
+        data: { status: 'completed', outputs: ['https://example.com/image.png'] },
+      },
+    };
+    const run = async (tool: WaveSpeedAPI) => {
+      const p = tool.invoke(makeToolCall('wavespeed', { prompt: 'a box' }));
+      await jest.runAllTimersAsync();
+      return (await p) as ToolMessage;
+    };
+
+    it('retries the poll through 502, 502, then succeeds', async () => {
+      mockedAxios.get
+        .mockRejectedValueOnce(httpError(502))
+        .mockRejectedValueOnce(httpError(502))
+        .mockResolvedValueOnce(done);
+      const result = await run(new WaveSpeedAPI({ isAgent: true }));
+      expect(mockedAxios.get).toHaveBeenCalledTimes(3);
+      expect(artifactContentOf(result)?.[0].type).toBe(ContentTypes.IMAGE_URL);
+    });
+
+    it('retries the poll on network resets', async () => {
+      mockedAxios.get
+        .mockRejectedValueOnce(Object.assign(new Error('reset'), { code: 'ECONNRESET' }))
+        .mockResolvedValueOnce(done);
+      const result = await run(new WaveSpeedAPI({ isAgent: true }));
+      expect(mockedAxios.get).toHaveBeenCalledTimes(2);
+      expect(artifactContentOf(result)?.[0].type).toBe(ContentTypes.IMAGE_URL);
+    });
+
+    it('persistent 502 on poll fails with the task id and says it may still be running', async () => {
+      mockedAxios.get.mockRejectedValue(httpError(502));
+      const result = await run(new WaveSpeedAPI({ isAgent: true }));
+      expect(mockedAxios.get).toHaveBeenCalledTimes(6);
+      const text = contentStringOf(result);
+      expect(text).toContain('prediction-123');
+      expect(text).toContain('may still be running');
+      expect(text).toContain('Do NOT resubmit');
+      expect(mockedAxios.post).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not retry a 401 on poll, and still reports the task id', async () => {
+      mockedAxios.get.mockRejectedValue(httpError(401));
+      const result = await run(new WaveSpeedAPI({ isAgent: true }));
+      expect(mockedAxios.get).toHaveBeenCalledTimes(1);
+      expect(contentStringOf(result)).toContain('prediction-123');
+    });
+
+    it('never retries the submit and reports an unknown outcome on 502', async () => {
+      mockedAxios.post.mockRejectedValue(httpError(502));
+      const result = await run(new WaveSpeedAPI({ isAgent: true }));
+      expect(mockedAxios.post).toHaveBeenCalledTimes(1);
+      expect(mockedAxios.get).not.toHaveBeenCalled();
+      const text = contentStringOf(result);
+      expect(text).toContain('Submission outcome unknown');
+      expect(text).toContain('may already exist');
+      expect(text).toContain('do NOT retry automatically'.replace('do', 'Do'));
+    });
+
+    it('reports an unknown outcome when the submit gets no response', async () => {
+      mockedAxios.post.mockRejectedValue(
+        Object.assign(new Error('timeout'), { code: 'ECONNABORTED' }),
+      );
+      const result = await run(new WaveSpeedAPI({ isAgent: true }));
+      expect(contentStringOf(result)).toContain('Submission outcome unknown');
+    });
+
+    it('treats a 400 submit rejection as definitive', async () => {
+      mockedAxios.post.mockRejectedValue(httpError(400));
+      const result = await run(new WaveSpeedAPI({ isAgent: true }));
+      expect(contentStringOf(result)).not.toContain('Submission outcome unknown');
+      expect(contentStringOf(result)).toContain('no task was created');
+    });
+
+    it('sets a per-request timeout on submit and poll', async () => {
+      await run(new WaveSpeedAPI({ isAgent: true }));
+      expect(mockedAxios.post).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.anything(),
+        expect.objectContaining({ timeout: 30000 }),
+      );
+      expect(mockedAxios.get).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({ timeout: 30000 }),
+      );
+    });
+
+    it.each(['cancelled', 'timeout', 'deleted'])(
+      'treats %s as terminal with the task id',
+      async (status) => {
+        mockedAxios.get.mockResolvedValue({ data: { data: { status } } });
+        const result = await run(new WaveSpeedAPI({ isAgent: true }));
+        expect(mockedAxios.get).toHaveBeenCalledTimes(1);
+        expect(contentStringOf(result)).toContain(status);
+        expect(contentStringOf(result)).toContain('prediction-123');
+      },
+    );
   });
 });

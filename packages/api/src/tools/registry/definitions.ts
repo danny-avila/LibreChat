@@ -377,7 +377,7 @@ export const toolDefinitions: Record<string, ToolRegistryDefinition> = {
   wavespeed: {
     name: 'wavespeed',
     description:
-      'Use WaveSpeed AI to generate images from text descriptions. Each call generates one image; for multiple images, make multiple consecutive calls.',
+      'Use WaveSpeed AI to generate images from text descriptions. Each call generates one image; for multiple images, make multiple consecutive calls. Never call again just to retry a failed or unknown-outcome call: a task may already exist and be charged.',
     schema: waveSpeedSchema,
     toolType: 'builtin',
   },
