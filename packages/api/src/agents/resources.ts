@@ -511,6 +511,30 @@ const computeProvisionState = async ({
     return undefined;
   }
 
+  /* Started before the liveness probe, with which it shares nothing. Adoption only spares a
+   * re-embed, so a failure leaves the files queued rather than failing priming. */
+  const legacySearchFiles =
+    needsVectorDB && agentId != null && adoptLegacySearchEmbeddings
+      ? provisionable.filter((file) => isLegacySearchCandidate(file, persistedResourceMembership))
+      : [];
+  const legacyAdoption: Promise<Set<string>> =
+    agentId != null && adoptLegacySearchEmbeddings && legacySearchFiles.length > 0
+      ? adoptLegacySearchEmbeddings({
+          files: legacySearchFiles.map((file) => ({
+            file_id: file.file_id,
+            user: String(file.user),
+            ...(file.tenantId ? { tenantId: file.tenantId } : {}),
+          })),
+          agentId,
+        }).then(
+          (ids) => new Set(ids),
+          (error) => {
+            logger.error('[primeResources] Failed to adopt legacy File Search embeddings', error);
+            return new Set<string>();
+          },
+        )
+      : Promise.resolve(new Set<string>());
+
   const activeCodeRouteKey = codeRouteKey ?? 'default';
 
   /** Batch staleness check: identify which code env files are still alive. Only files
@@ -560,25 +584,10 @@ const computeProvisionState = async ({
     });
   }
 
-  const legacySearchFiles =
-    needsVectorDB && agentId != null && adoptLegacySearchEmbeddings
-      ? provisionable.filter((file) => isLegacySearchCandidate(file, persistedResourceMembership))
-      : [];
-  if (agentId != null && adoptLegacySearchEmbeddings && legacySearchFiles.length > 0) {
-    const adopted = new Set(
-      await adoptLegacySearchEmbeddings({
-        files: legacySearchFiles.map((file) => ({
-          file_id: file.file_id,
-          user: String(file.user),
-          ...(file.tenantId ? { tenantId: file.tenantId } : {}),
-        })),
-        agentId,
-      }),
-    );
-    for (const file of provisionable) {
-      if (adopted.has(file.file_id)) {
-        file.metadata = { ...file.metadata, embeddedEntities: [agentId] };
-      }
+  const adopted = await legacyAdoption;
+  for (const file of provisionable) {
+    if (agentId != null && adopted.has(file.file_id)) {
+      file.metadata = { ...file.metadata, embeddedEntities: [agentId] };
     }
   }
 

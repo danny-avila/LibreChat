@@ -2717,6 +2717,59 @@ describe('primeResources', () => {
         ]);
       });
 
+      it('keeps the file queued when adoption fails', async () => {
+        /* Adoption only spares a re-embed; failing it must not leave search without vectors. */
+        const adopt = jest.fn().mockRejectedValue(new Error('database unavailable'));
+
+        const result = await primeLegacy(adopt);
+
+        expect(result.provisionState?.vectorDBFiles.map((f) => f.file_id)).toEqual([
+          'legacy-search',
+        ]);
+      });
+
+      it('starts adoption before the code liveness probe settles', async () => {
+        const adopt = jest.fn().mockResolvedValue(['legacy-search']);
+        let adoptionStartedFirst = false;
+        const checkSessionsAlive = jest.fn(async () => {
+          adoptionStartedFirst = adopt.mock.calls.length === 1;
+          return new Set(['legacy-search']);
+        });
+        mockGetFiles.mockResolvedValue([
+          {
+            ...legacySearchFile(),
+            metadata: {
+              codeEnvRef: {
+                kind: 'agent',
+                id: 'agent1',
+                storage_session_id: 'sess',
+                file_id: 'fid',
+              },
+            },
+          } as TFile,
+        ]);
+
+        await primeResources({
+          req: mockReq,
+          appConfig: mockAppConfig,
+          getFiles: mockGetFiles,
+          filterFiles: mockFilterFiles,
+          tool_resources: {
+            [EToolResources.file_search]: { file_ids: ['legacy-search'] },
+            [EToolResources.execute_code]: { file_ids: ['legacy-search'] },
+          },
+          attachments: undefined,
+          requestFileSet,
+          agentId: 'agent1',
+          enabledToolResources: new Set([EToolResources.file_search, EToolResources.execute_code]),
+          checkSessionsAlive,
+          adoptLegacySearchEmbeddings: adopt,
+        });
+
+        expect(checkSessionsAlive).toHaveBeenCalled();
+        expect(adoptionStartedFirst).toBe(true);
+      });
+
       it('still embeds a file another agent also holds', async () => {
         /* Either agent may be the one that embedded it, so this agent's namespace may hold
          * none of its vectors and search would return nothing. */
