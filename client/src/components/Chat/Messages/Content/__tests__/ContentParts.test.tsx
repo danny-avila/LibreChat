@@ -979,6 +979,61 @@ describe('ContentParts — activity phase state', () => {
     act(() => getDefaultStore().set(progressAtom, null));
   });
 
+  it('routes a file from a nested subagent run the live activity evicted', () => {
+    jest
+      .mocked(groupSequentialToolCalls)
+      .mockImplementation((parts) => [{ type: 'tool-group', parts }]);
+    const content = [
+      {
+        type: ContentTypes.TOOL_CALL,
+        [ContentTypes.TOOL_CALL]: { id: 'subagent-outer', name: 'subagent', args: {} },
+      },
+    ] as unknown as TMessageContentParts[];
+    const progressAtom = subagentProgressByToolCallId(
+      subagentProgressKey('msg-1', 'subagent-outer', 0),
+    );
+    act(() => {
+      getDefaultStore().set(progressAtom, {
+        contentParts: [
+          {
+            type: ContentTypes.TOOL_CALL,
+            [ContentTypes.TOOL_CALL]: {
+              id: 'inner-subagent',
+              name: 'subagent',
+              args: '',
+              subagent_content: [
+                {
+                  type: ContentTypes.TOOL_CALL,
+                  [ContentTypes.TOOL_CALL]: { id: 'inner-image', name: 'image_gen_oai' },
+                },
+              ],
+            },
+          },
+        ],
+      } as unknown as SubagentProgress);
+      getDefaultStore().set(progressAtom, (previous) => ({
+        ...(previous as SubagentProgress),
+        contentParts: [{ type: ContentTypes.TEXT, text: 'later output' }],
+      }));
+    });
+    const files = [
+      {
+        filename: 'inner-cat.png',
+        filepath: '/images/inner-cat.png',
+        conversationId: 'conversation-1',
+        messageId: 'msg-1',
+        toolCallId: 'inner-image',
+      },
+    ] as TAttachment[];
+
+    render(<ContentParts {...baseProps} content={content} attachments={files} />);
+    expect(screen.getByTestId('tool-call-group')).toHaveAttribute(
+      'data-attachments',
+      'inner-cat.png',
+    );
+    act(() => getDefaultStore().set(progressAtom, null));
+  });
+
   it('reads live progress under the index a compacted part streamed at', () => {
     jest
       .mocked(groupSequentialToolCalls)

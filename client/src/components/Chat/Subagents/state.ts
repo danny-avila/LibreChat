@@ -477,22 +477,50 @@ export const subagentControlStateByTask = atomFamily<
 /** Stable identity for one subagent invocation in the parent conversation. */
 export { subagentProgressKey } from '@librechat/chat';
 
-/** The tool calls of live child activity, with the agent and step scope their files may carry. */
-const childCallsOf = (parts: SubagentContentPart[]): Agents.SubagentAttachmentCall[] => {
-  const calls: Agents.SubagentAttachmentCall[] = [];
-  for (const part of parts) {
-    if (part.type !== ContentTypes.TOOL_CALL || !part.tool_call?.id) continue;
-    const { id, stepId } = part.tool_call;
-    const agentId =
-      (part as { agentId?: string }).agentId ?? (part.tool_call as { agentId?: string }).agentId;
-    calls.push({
-      id,
-      ...(agentId == null ? {} : { agentId }),
-      ...(stepId == null ? {} : { stepId }),
-    });
+type NestedToolCallFields = {
+  id?: string;
+  name?: string;
+  stepId?: string;
+  agentId?: string;
+  subagent_content?: TMessageContentParts[];
+  subagentAttachmentCalls?: Agents.SubagentAttachmentCall[];
+};
+
+/** The tool call of a content part, read with the fields nested runs carry. */
+export const nestedToolCallOf = (
+  part: TMessageContentParts | SubagentContentPart | undefined,
+): NestedToolCallFields | undefined =>
+  part?.type === ContentTypes.TOOL_CALL
+    ? (part[ContentTypes.TOOL_CALL] as NestedToolCallFields | undefined)
+    : undefined;
+
+/**
+ * The tool calls of a subagent transcript, nested runs included, with their
+ * scope: the owner on the part, or on the call when the part has none. A
+ * preview that left a transcript out names the calls its files were saved
+ * under in `subagentAttachmentCalls`.
+ */
+export function collectNestedCalls(
+  parts: ReadonlyArray<TMessageContentParts | SubagentContentPart | undefined> | undefined,
+  calls: Agents.SubagentAttachmentCall[] = [],
+): Agents.SubagentAttachmentCall[] {
+  for (const part of parts ?? []) {
+    const toolCall = nestedToolCallOf(part);
+    if (toolCall?.id) {
+      const agentId = (part as { agentId?: string } | undefined)?.agentId ?? toolCall.agentId;
+      calls.push({
+        id: toolCall.id,
+        ...(agentId == null ? {} : { agentId }),
+        ...(toolCall.stepId == null ? {} : { stepId: toolCall.stepId }),
+      });
+    }
+    calls.push(...(toolCall?.subagentAttachmentCalls ?? []));
+    if (Array.isArray(toolCall?.subagent_content)) {
+      collectNestedCalls(toolCall.subagent_content, calls);
+    }
   }
   return calls;
-};
+}
 
 /**
  * Progress state keyed by one concrete tool-call content-part occurrence. Every write also
@@ -507,7 +535,7 @@ export const subagentProgressByToolCallId = atomFamily((key: string) => {
     (get, set, next: SetStateAction<SubagentProgress | null>) => {
       const value = typeof next === 'function' ? next(get(progress)) : next;
       if (value != null) {
-        rememberSubagentChildCalls(key, childCallsOf(value.contentParts));
+        rememberSubagentChildCalls(key, collectNestedCalls(value.contentParts));
       }
       set(progress, value);
     },

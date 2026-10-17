@@ -1,27 +1,23 @@
 import { createContext, useEffect, useMemo, useRef } from 'react';
+import { Constants } from 'librechat-data-provider';
 import { atom, useStore, useAtomValue } from 'jotai';
-import { Constants, ContentTypes } from 'librechat-data-provider';
 import type { TAttachment, TMessageContentParts, Agents } from 'librechat-data-provider';
 import type { SubagentContentPart } from '~/utils/subagentContent';
 import {
+  nestedToolCallOf,
+  collectNestedCalls,
   subagentProgressKey,
   retainSubagentProgress,
   rememberSubagentChildCalls,
   subagentProgressByToolCallId,
 } from './state';
+
+export { collectNestedCalls };
 import { getPartKeyIndex } from '~/utils/messages';
 
 type NestedPart = TMessageContentParts | SubagentContentPart | undefined;
 /** A tool call inside a subagent run, with the scope its files may carry. */
 export type NestedCall = Agents.SubagentAttachmentCall;
-type ToolCallFields = {
-  id?: string;
-  name?: string;
-  stepId?: string;
-  agentId?: string;
-  subagent_content?: TMessageContentParts[];
-  subagentAttachmentCalls?: NestedCall[];
-};
 
 const EMPTY: TAttachment[] = [];
 const NO_LIVE_CALLS: ReadonlyMap<number, NestedCall[]> = new Map();
@@ -35,38 +31,6 @@ const NO_NESTED: ReadonlyMap<NestedPart, TAttachment[]> = new Map();
  */
 export const SubagentAttachmentsContext =
   createContext<ReadonlyMap<NestedPart, TAttachment[]>>(NO_NESTED);
-
-const toolCallOf = (part: NestedPart): ToolCallFields | undefined =>
-  part?.type === ContentTypes.TOOL_CALL
-    ? (part[ContentTypes.TOOL_CALL] as ToolCallFields | undefined)
-    : undefined;
-
-/**
- * The tool calls of a subagent transcript, nested runs included, with their
- * scope. A preview that left a transcript out names the calls its files were
- * saved under in `subagentAttachmentCalls`.
- */
-export function collectNestedCalls(
-  parts: ReadonlyArray<NestedPart> | undefined,
-  calls: NestedCall[] = [],
-): NestedCall[] {
-  for (const part of parts ?? []) {
-    const toolCall = toolCallOf(part);
-    if (toolCall?.id) {
-      const agentId = (part as { agentId?: string } | undefined)?.agentId ?? toolCall.agentId;
-      calls.push({
-        id: toolCall.id,
-        ...(agentId == null ? {} : { agentId }),
-        ...(toolCall.stepId == null ? {} : { stepId: toolCall.stepId }),
-      });
-    }
-    calls.push(...(toolCall?.subagentAttachmentCalls ?? []));
-    if (Array.isArray(toolCall?.subagent_content)) {
-      collectNestedCalls(toolCall.subagent_content, calls);
-    }
-  }
-  return calls;
-}
 
 /**
  * The ownership rule top-level parts apply: a scope both sides carry must
@@ -102,7 +66,7 @@ function collectNestedOwners(
 ): Array<[NestedPart, NestedCall[]]> {
   const owners: Array<[NestedPart, NestedCall[]]> = [];
   (content ?? []).forEach((part, index) => {
-    const toolCall = toolCallOf(part);
+    const toolCall = nestedToolCallOf(part);
     if (toolCall == null) {
       return;
     }
@@ -193,7 +157,7 @@ export function useLiveSubagentToolCalls(
   const keySignature = useMemo(() => {
     const entries: Array<[number, string]> = [];
     (content ?? []).forEach((part, index) => {
-      const toolCall = toolCallOf(part);
+      const toolCall = nestedToolCallOf(part);
       if (toolCall?.id && toolCall.name === Constants.SUBAGENT) {
         entries.push([
           index,
