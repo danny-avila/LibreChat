@@ -1279,7 +1279,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     }
     /* One conditional write per record, so a namespace recorded concurrently by another
      * writer is never overwritten and never reported back as adopted here. */
-    const adopted = await Promise.all(
+    const written = await Promise.all(
       records.map((record) =>
         File.findOneAndUpdate(
           {
@@ -1293,7 +1293,18 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
         ).lean<Pick<IMongoFile, 'file_id'>>(),
       ),
     );
-    return adopted.flatMap((file) => (file ? [file.file_id] : []));
+    const adopted = written.flatMap((file) => (file ? [file.file_id] : []));
+    const missed = records.filter((_record, index) => written[index] == null);
+    if (missed.length === 0) {
+      return adopted;
+    }
+    /* A concurrent turn for the same agent may have won the write; its namespace is this
+     * agent's all the same, so the file must not be embedded again. */
+    const recorded = await File.find(
+      { $or: missed, 'metadata.embeddedEntities': data.agentId },
+      { file_id: 1 },
+    ).lean<Array<Pick<IMongoFile, 'file_id'>>>();
+    return [...adopted, ...recorded.map((file) => file.file_id)];
   }
 
   /**

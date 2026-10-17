@@ -133,6 +133,19 @@ describe('File Methods', () => {
       expect(foreign?.metadata?.embeddedEntities).toBeUndefined();
     });
 
+    it('reports a file a concurrent turn already adopted for the same agent', async () => {
+      const fileId = uuidv4();
+      await createAgent('agent_owner', [fileId]);
+      await createLegacyFile(fileId, { embeddedEntities: ['agent_owner'] });
+
+      const adopted = await fileMethods.adoptLegacySearchEmbeddings({
+        files: [{ file_id: fileId, user: author.toString() }],
+        agentId: 'agent_owner',
+      });
+
+      expect(adopted).toEqual([fileId]);
+    });
+
     it('does not touch a file whose namespaces are already recorded', async () => {
       const fileId = uuidv4();
       await createAgent('agent_owner', [fileId]);
