@@ -14,7 +14,7 @@ import { Text } from '../Parts';
 
 /** No previewed subagent run here leaves a file in doubt, so no owner is ever asked for. */
 jest.mock('~/data-provider', () => ({
-  useSubagentAttachmentCallsQuery: () => ({ data: undefined }),
+  useSubagentAttachmentCallsQueries: () => [],
 }));
 
 jest.mock('~/hooks', () => ({

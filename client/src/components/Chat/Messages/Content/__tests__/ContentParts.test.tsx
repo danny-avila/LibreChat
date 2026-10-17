@@ -172,15 +172,14 @@ jest.mock('../Part', () => {
 
 /** What the server answers when asked which subagent transcripts hold the files in doubt. */
 let mockOwners: unknown;
-const mockUseSubagentAttachmentCallsQuery = jest.fn(
-  (_params: { files: unknown[] }, enabled: boolean) => ({
-    data: enabled ? mockOwners : undefined,
-  }),
+const mockUseSubagentAttachmentCallsQueries = jest.fn(
+  (params: { files: unknown[] }, enabled: boolean) =>
+    params.files.length === 0 ? [] : [{ data: enabled ? mockOwners : undefined }],
 );
 jest.mock('~/data-provider', () => ({
-  useSubagentAttachmentCallsQuery: (
-    ...args: Parameters<typeof mockUseSubagentAttachmentCallsQuery>
-  ) => mockUseSubagentAttachmentCallsQuery(...args),
+  useSubagentAttachmentCallsQueries: (
+    ...args: Parameters<typeof mockUseSubagentAttachmentCallsQueries>
+  ) => mockUseSubagentAttachmentCallsQueries(...args),
 }));
 
 jest.mock('../ParallelContent', () => ({
@@ -823,7 +822,7 @@ describe('ContentParts — activity phase state', () => {
     const props = { ...baseProps, conversationId: 'conversation-1', content };
 
     const { rerender } = render(<ContentParts {...props} attachments={[]} />);
-    expect(mockUseSubagentAttachmentCallsQuery).toHaveBeenLastCalledWith(
+    expect(mockUseSubagentAttachmentCallsQueries).toHaveBeenLastCalledWith(
       { conversationId: 'conversation-1', messageId: 'msg-1', files: [] },
       false,
     );
@@ -832,7 +831,7 @@ describe('ContentParts — activity phase state', () => {
     rerender(
       <ContentParts {...props} attachments={[lateFile('background-child', 'late-chart.png')]} />,
     );
-    expect(mockUseSubagentAttachmentCallsQuery).toHaveBeenLastCalledWith(
+    expect(mockUseSubagentAttachmentCallsQueries).toHaveBeenLastCalledWith(
       {
         conversationId: 'conversation-1',
         messageId: 'msg-1',
@@ -877,7 +876,7 @@ describe('ContentParts — activity phase state', () => {
         attachments={[lateFile('call_0', 'child-chart.png', 'child-agent')]}
       />,
     );
-    expect(mockUseSubagentAttachmentCallsQuery).toHaveBeenCalledWith(
+    expect(mockUseSubagentAttachmentCallsQueries).toHaveBeenCalledWith(
       expect.objectContaining({ files: [{ toolCallId: 'call_0', agentId: 'child-agent' }] }),
       true,
     );

@@ -7,6 +7,7 @@ import type {
   FullToolCall,
   TMessageContentParts,
   SubagentAttachmentFile,
+  SubagentAttachmentCallsResponse,
 } from 'librechat-data-provider';
 import type { SubagentContentPart } from '~/utils/subagentContent';
 import {
@@ -18,7 +19,7 @@ import {
   rememberedSubagentChildCalls,
   subagentProgressByToolCallId,
 } from './state';
-import { useSubagentAttachmentCallsQuery } from '~/data-provider';
+import { useSubagentAttachmentCallsQueries } from '~/data-provider';
 
 export { collectNestedCalls };
 import { getPartKeyIndex } from '~/utils/messages';
@@ -268,7 +269,7 @@ const identityOf = (toolCallId: string, stepId?: string, agentId?: string) =>
  * Child calls of the stored transcripts of the previewed subagent calls in `content`, for the
  * files whose owner is in doubt, keyed by the call's index in `content`. A file a background task
  * delivers after the message loaded names a child call the cached preview never hinted; while
- * `files` is not empty, the server is asked once which transcript holds each of them.
+ * `files` is not empty, the server is asked (in bounded batches) which transcript holds each.
  */
 export function useStoredSubagentHints(
   content: ReadonlyArray<TMessageContentParts | undefined> | undefined,
@@ -284,21 +285,24 @@ export function useStoredSubagentHints(
       ),
     [content],
   );
-  const query = useSubagentAttachmentCallsQuery(
+  const results = useSubagentAttachmentCallsQueries(
     { conversationId: conversationId ?? '', messageId, files },
     previewed && files.length > 0 && !!conversationId && !!messageId,
   );
-  const parts = query.data?.parts;
+  /** A string, so the routing changes only when an answer does. */
+  const answers = JSON.stringify(results.map((result) => result.data?.parts ?? null));
   return useMemo(() => {
-    if (parts == null || parts.length === 0 || !previewed) {
+    const parts = (
+      JSON.parse(answers) as Array<SubagentAttachmentCallsResponse['parts'] | null>
+    ).flatMap((batch) => batch ?? []);
+    if (parts.length === 0 || !previewed) {
       return NO_LIVE_CALLS;
     }
-    const byIdentity = new Map(
-      parts.map((entry) => [
-        identityOf(entry.toolCallId, entry.stepId, entry.agentId),
-        entry.calls,
-      ]),
-    );
+    const byIdentity = new Map<string, NestedCall[]>();
+    for (const entry of parts) {
+      const identity = identityOf(entry.toolCallId, entry.stepId, entry.agentId);
+      byIdentity.set(identity, [...(byIdentity.get(identity) ?? []), ...entry.calls]);
+    }
     const byIndex = new Map<number, NestedCall[]>();
     (content ?? []).forEach((part, index) => {
       const toolCall = nestedToolCallOf(part) as FullToolCall | undefined;
@@ -313,5 +317,5 @@ export function useStoredSubagentHints(
       }
     });
     return byIndex.size > 0 ? byIndex : NO_LIVE_CALLS;
-  }, [parts, previewed, content]);
+  }, [answers, previewed, content]);
 }

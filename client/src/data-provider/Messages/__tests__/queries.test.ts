@@ -8,7 +8,7 @@ import type { ReactNode } from 'react';
 import {
   getStableMessages,
   shouldPreserveMessagesOnNotFound,
-  useSubagentAttachmentCallsQuery,
+  useSubagentAttachmentCallsQueries,
   useGetMessagesByConvoId,
 } from '../queries';
 import { clearMessagesCache, logger } from '~/utils';
@@ -641,7 +641,7 @@ describe('useGetMessagesByConvoId', () => {
   });
 });
 
-describe('useSubagentAttachmentCallsQuery', () => {
+describe('useSubagentAttachmentCallsQueries', () => {
   afterEach(() => {
     jest.useRealTimers();
     focusManager.setFocused(undefined);
@@ -666,18 +666,18 @@ describe('useSubagentAttachmentCallsQuery', () => {
       .mockResolvedValue(answer);
     jest.useFakeTimers();
 
-    const { result, unmount } = renderHook(() => useSubagentAttachmentCallsQuery(params, true), {
+    const { result, unmount } = renderHook(() => useSubagentAttachmentCallsQueries(params, true), {
       wrapper: createWrapper(queryClient, '/c/convo-id'),
     });
 
-    await waitFor(() => expect(result.current.isError).toBe(true), { timeout: 20_000 });
+    await waitFor(() => expect(result.current[0].isError).toBe(true), { timeout: 20_000 });
     expect(dataService.getSubagentAttachmentCalls).toHaveBeenCalledTimes(4);
     expect(dataService.getSubagentAttachmentCalls).toHaveBeenCalledWith(params);
     act(() => {
       focusManager.setFocused(false);
       focusManager.setFocused(true);
     });
-    await waitFor(() => expect(result.current.data).toEqual(answer));
+    await waitFor(() => expect(result.current[0].data).toEqual(answer));
 
     act(() => {
       focusManager.setFocused(false);
@@ -687,5 +687,31 @@ describe('useSubagentAttachmentCallsQuery', () => {
     unmount();
     queryClient.clear();
     jest.useRealTimers();
+  });
+
+  it('asks for more files than one lookup names in bounded batches', async () => {
+    const queryClient = new QueryClient();
+    jest
+      .mocked(dataService.getSubagentAttachmentCalls)
+      .mockReset()
+      .mockResolvedValue({ parts: [] });
+    const files = Array.from({ length: 40 }, (_, i) => ({ toolCallId: `child-${i}` }));
+
+    const { result, unmount } = renderHook(
+      () =>
+        useSubagentAttachmentCallsQueries(
+          { conversationId: 'convo-id', messageId: 'message-id', files },
+          true,
+        ),
+      { wrapper: createWrapper(queryClient, '/c/convo-id') },
+    );
+
+    await waitFor(() => expect(result.current.every((query) => query.isSuccess)).toBe(true));
+    const batches = jest
+      .mocked(dataService.getSubagentAttachmentCalls)
+      .mock.calls.map(([params]) => params.files.length);
+    expect(batches).toEqual([32, 8]);
+    unmount();
+    queryClient.clear();
   });
 });
