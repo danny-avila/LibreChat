@@ -1513,7 +1513,6 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
     messageId,
     props.contentIndices,
     props.contentIndexOffset ?? 0,
-    isSubmitting && isLatestMessage === true,
   );
   /** Assigned once for the whole message: the bodies an MCP App or a phase
    *  splits it into each see a slice, and must agree on every file's owner. */

@@ -108,7 +108,7 @@ export function assignNestedAttachments(
   const owners: Array<[NestedPart, NestedCall[]]> = [];
   (content ?? []).forEach((part, index) => {
     const toolCall = toolCallOf(part);
-    if (!toolCall?.id) {
+    if (toolCall == null) {
       return;
     }
     const calls = collectNestedCalls(toolCall.subagent_content);
@@ -133,28 +133,24 @@ export function assignNestedAttachments(
 }
 
 /**
- * Child tool calls of each subagent call in `content` that is still streaming,
- * keyed by the call's index in `content`. Until the run is saved those calls
- * exist only in the live progress atom. The atom yields a signature string so
- * the caller re-renders when a child call appears, not on every delta. Only the
- * message that is streaming reads progress (`enabled`), and each member it
- * reads is retained like a card's, so one no update ever reached is freed on
- * unmount. Calls already seen are kept while the invocation streams, since the
- * bounded live activity evicts early parts before the transcript is saved.
+ * Child tool calls the live progress of each subagent call in `content` holds,
+ * keyed by the call's index in `content`. Until the run is saved, and for a
+ * file a background task delivers after the message settled, those calls exist
+ * only there. The atom yields a signature string so the caller re-renders when
+ * a child call appears, not on every delta. Each member it reads is retained
+ * like a card's, so one no update ever reached is freed on unmount. Calls
+ * already seen are kept while mounted, since the bounded live activity evicts
+ * early parts before the transcript is saved.
  */
 export function useLiveSubagentToolCalls(
   content: ReadonlyArray<NestedPart> | undefined,
   messageId: string,
   contentIndices: ReadonlyArray<number> | undefined,
   contentIndexOffset: number,
-  enabled: boolean,
 ): ReadonlyMap<number, NestedCall[]> {
   /** A string, so the keys (and the atom reading them) survive the content
    *  array changing on every streamed delta. */
   const keySignature = useMemo(() => {
-    if (!enabled) {
-      return '';
-    }
     const entries: Array<[number, string]> = [];
     (content ?? []).forEach((part, index) => {
       const toolCall = toolCallOf(part);
@@ -170,7 +166,7 @@ export function useLiveSubagentToolCalls(
       }
     });
     return entries.length === 0 ? '' : JSON.stringify(entries);
-  }, [content, messageId, contentIndices, contentIndexOffset, enabled]);
+  }, [content, messageId, contentIndices, contentIndexOffset]);
   const keys = useMemo(
     () => (keySignature === '' ? [] : (JSON.parse(keySignature) as Array<[number, string]>)),
     [keySignature],

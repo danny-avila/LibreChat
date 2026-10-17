@@ -110,6 +110,15 @@ describe('subagent attachments', () => {
     expect(assigned.get(content[1])).toEqual([fromB]);
   });
 
+  it('routes child files of a stored subagent call that has no id', () => {
+    const legacy = {
+      type: 'tool_call',
+      tool_call: { name: 'subagent', subagent_content: [toolCall('legacy-child')] },
+    } as unknown as TMessageContentParts;
+    const assigned = assignNestedAttachments([legacy], [file('legacy-child')], new Map());
+    expect(ids(assigned, legacy)).toEqual(['legacy-child']);
+  });
+
   it('keeps the files of two subagent calls that share an id apart', () => {
     const content = [
       subagent('same-id', [toolCall('first-child')]),

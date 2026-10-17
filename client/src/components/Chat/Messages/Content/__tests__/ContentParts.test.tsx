@@ -833,6 +833,54 @@ describe('ContentParts — activity phase state', () => {
     act(() => getDefaultStore().set(progressAtom, null));
   });
 
+  it('hoists a file a settled message receives late through its subagent progress', () => {
+    jest
+      .mocked(groupSequentialToolCalls)
+      .mockImplementation((parts) => [{ type: 'tool-group', parts }]);
+    const content = [
+      {
+        type: ContentTypes.TOOL_CALL,
+        [ContentTypes.TOOL_CALL]: {
+          id: 'subagent-settled',
+          name: 'subagent',
+          args: {},
+          output: 'done',
+          progress: 1,
+          subagentContentOmitted: true,
+        },
+      },
+    ] as unknown as TMessageContentParts[];
+    const progressAtom = subagentProgressByToolCallId(
+      subagentProgressKey('msg-1', 'subagent-settled', 0),
+    );
+    act(() => {
+      getDefaultStore().set(progressAtom, {
+        contentParts: [
+          {
+            type: ContentTypes.TOOL_CALL,
+            [ContentTypes.TOOL_CALL]: { id: 'late-child', name: 'bash_tool', args: '' },
+          },
+        ],
+      } as unknown as SubagentProgress);
+    });
+    const late = [
+      {
+        filename: 'late-report.csv',
+        filepath: '/files/late-report.csv',
+        conversationId: 'conversation-1',
+        messageId: 'msg-1',
+        toolCallId: 'late-child',
+      },
+    ] as TAttachment[];
+
+    render(<ContentParts {...baseProps} content={content} attachments={late} />);
+    expect(screen.getByTestId('tool-call-group')).toHaveAttribute(
+      'data-attachments',
+      'late-report.csv',
+    );
+    act(() => getDefaultStore().set(progressAtom, null));
+  });
+
   it('frees the progress member of a streaming subagent no update reached', () => {
     jest
       .mocked(groupSequentialToolCalls)
