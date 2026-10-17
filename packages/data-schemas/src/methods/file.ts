@@ -1277,23 +1277,23 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     if (records.length === 0) {
       return [];
     }
-    const legacyFilter = {
-      $or: records,
-      context: FileContext.agents,
-      embedded: true,
-      'metadata.embeddedEntities': { $exists: false },
-    };
-    const legacy = await File.find(legacyFilter, { _id: 1, file_id: 1 }).lean<
-      Array<Pick<IMongoFile, '_id' | 'file_id'>>
-    >();
-    if (legacy.length === 0) {
-      return [];
-    }
-    await File.updateMany(
-      { ...legacyFilter, _id: { $in: legacy.map((file) => file._id) } },
-      { $set: { 'metadata.embeddedEntities': [data.agentId] } },
+    /* One conditional write per record, so a namespace recorded concurrently by another
+     * writer is never overwritten and never reported back as adopted here. */
+    const adopted = await Promise.all(
+      records.map((record) =>
+        File.findOneAndUpdate(
+          {
+            ...record,
+            context: FileContext.agents,
+            embedded: true,
+            'metadata.embeddedEntities': { $exists: false },
+          },
+          { $set: { 'metadata.embeddedEntities': [data.agentId] } },
+          { projection: { file_id: 1 } },
+        ).lean<Pick<IMongoFile, 'file_id'>>(),
+      ),
     );
-    return legacy.map((file) => file.file_id);
+    return adopted.flatMap((file) => (file ? [file.file_id] : []));
   }
 
   /**
