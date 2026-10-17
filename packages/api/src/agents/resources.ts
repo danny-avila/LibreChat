@@ -227,7 +227,7 @@ export const isAgentScopedFile = (file: Pick<TFile, 'context'>): boolean =>
  * trusting the flag registers it for a namespace that holds none of its vectors and the
  * search returns nothing. Records embedded before namespaces were tracked carry no entity
  * list and are re-embedded once per namespace, which repairs the record as it goes, unless
- * they are adopted first (see isLegacySearchCandidate).
+ * the vector store confirms the vectors are already there (see isUnrecordedSearchFile).
  */
 const isEmbeddedForNamespace = (file: TFile, namespaceId?: string): boolean => {
   if (!isAgentScopedFile(file)) {
@@ -237,17 +237,19 @@ const isEmbeddedForNamespace = (file: TFile, namespaceId?: string): boolean => {
 };
 
 /**
- * Whether an agent file was embedded before namespaces were tracked and is held by the
- * active agent as a File Search file. Such a record may or may not have vectors in this
- * agent's namespace, which only the vector store can answer; see THasEntityEmbeddings.
+ * Whether an embedded File Search file of the active agent records no embedding for its
+ * namespace. Records from before namespaces were tracked can hold vectors there regardless:
+ * a file another agent embedded first lists only that agent, while this agent's own older
+ * vectors went unrecorded. Only the vector store can say; see THasEntityEmbeddings.
  */
-const isLegacySearchCandidate = (
+const isUnrecordedSearchFile = (
   file: TFile,
+  agentId: string,
   membership?: ReadonlyMap<EToolResources, ReadonlySet<string>>,
 ): boolean =>
   isAgentScopedFile(file) &&
   file.embedded === true &&
-  file.metadata?.embeddedEntities == null &&
+  !isEmbeddedForNamespace(file, agentId) &&
   file.file_id != null &&
   membership?.get(EToolResources.file_search)?.has(file.file_id) === true;
 
@@ -533,7 +535,9 @@ const computeProvisionState = async ({
    * re-embed, so a failure at any step leaves the files queued rather than failing priming. */
   const legacySearchFiles =
     needsVectorDB && agentId != null && resourcePrincipal?.id != null
-      ? provisionable.filter((file) => isLegacySearchCandidate(file, persistedResourceMembership))
+      ? provisionable.filter((file) =>
+          isUnrecordedSearchFile(file, agentId, persistedResourceMembership),
+        )
       : [];
   const adoptLegacy = async (): Promise<Set<string>> => {
     if (
@@ -639,7 +643,9 @@ const computeProvisionState = async ({
   const adopted = await legacyAdoption;
   for (const file of provisionable) {
     if (agentId != null && adopted.has(file.file_id)) {
-      file.metadata = { ...file.metadata, embeddedEntities: [agentId] };
+      const recorded = new Set(file.metadata?.embeddedEntities ?? []);
+      recorded.add(agentId);
+      file.metadata = { ...file.metadata, embeddedEntities: [...recorded] };
     }
   }
 

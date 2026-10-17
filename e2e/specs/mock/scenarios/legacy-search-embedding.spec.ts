@@ -100,7 +100,7 @@ test.describe('legacy File Search embeddings', () => {
     }
   });
 
-  test('a legacy file another agent also holds is embedded for the agent searching it @scenario:legacy-search-file-shared-re-embedded', async ({
+  test('a legacy file another agent also holds is embedded for that agent only @scenario:legacy-search-file-shared-re-embedded', async ({
     page,
   }) => {
     test.setTimeout(180000);
@@ -183,6 +183,23 @@ test.describe('legacy File Search embeddings', () => {
       await expect
         .poll(async () => (await getRagQueries(page)).filter((q) => q.file_id === fileId).length)
         .toBeGreaterThan(0);
+
+      /* The record now lists only the inheritor, yet the source agent's own vectors are still
+       * there, so its next search must not embed a second copy. */
+      await resetProvisioning(page);
+      await page.goto(`${NEW_CHAT_PATH}?agent_id=${encodeURIComponent(sourceId)}`, {
+        timeout: 10000,
+      });
+      await sendMessageAndWaitForCompletion(page, `E2E_FILE_SEARCH:${uniqueName('source')}`);
+      await expect
+        .poll(async () => (await getRagQueries(page)).filter((q) => q.file_id === fileId).length, {
+          timeout: 30000,
+        })
+        .toBeGreaterThan(0);
+      expect(
+        (await getRagEmbedded(page)).filter((e) => e.file_id === fileId),
+        'the agent that embedded the file must not embed it again',
+      ).toHaveLength(0);
     } finally {
       await cleanupAgent(page, inheritorId);
       await cleanupAgent(page, sourceId);

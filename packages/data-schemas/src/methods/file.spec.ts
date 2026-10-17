@@ -192,9 +192,8 @@ describe('File Methods', () => {
       }
     });
 
-    it('does not touch a file whose namespaces are already recorded', async () => {
+    it('keeps the namespaces already recorded', async () => {
       const fileId = uuidv4();
-      await createAgent('agent_owner', [fileId]);
       await createLegacyFile(fileId, { embeddedEntities: ['agent_source'] });
 
       const adopted = await fileMethods.adoptLegacySearchEmbeddings({
@@ -202,9 +201,9 @@ describe('File Methods', () => {
         agentId: 'agent_owner',
       });
 
-      expect(adopted).toEqual([]);
+      expect(adopted).toEqual([fileId]);
       const stored = (await File.findOne({ file_id: fileId }).lean()) as IMongoFile | null;
-      expect(stored?.metadata?.embeddedEntities).toEqual(['agent_source']);
+      expect(stored?.metadata?.embeddedEntities).toEqual(['agent_source', 'agent_owner']);
     });
   });
 

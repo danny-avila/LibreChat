@@ -2753,6 +2753,33 @@ describe('primeResources', () => {
         expect(probe).toHaveBeenCalledWith(expect.objectContaining({ timeoutMs: 1234 }));
       });
 
+      it('checks a file another agent recorded first before embedding it here', async () => {
+        /* An inheriting agent embedded and recorded it first; this agent's own older vectors
+         * went unrecorded, so embedding again would duplicate them. */
+        const probe = jest.fn().mockResolvedValue(true);
+        const adopt = jest.fn().mockResolvedValue(['legacy-search']);
+        mockGetFiles.mockResolvedValue([
+          { ...legacySearchFile(), metadata: { embeddedEntities: ['agent2'] } } as TFile,
+        ]);
+
+        const result = await primeResources({
+          req: mockReq,
+          appConfig: mockAppConfig,
+          getFiles: mockGetFiles,
+          filterFiles: mockFilterFiles,
+          tool_resources: { [EToolResources.file_search]: { file_ids: ['legacy-search'] } },
+          attachments: undefined,
+          requestFileSet,
+          agentId: 'agent1',
+          enabledToolResources: new Set([EToolResources.file_search]),
+          hasEntityEmbeddings: probe,
+          adoptLegacySearchEmbeddings: adopt,
+        });
+
+        expect(probe).toHaveBeenCalledWith(expect.objectContaining({ entity_id: 'agent1' }));
+        expect(result.provisionState).toBeUndefined();
+      });
+
       it("embeds a file whose vectors are not in this agent's namespace", async () => {
         /* Another agent embedded it, so this agent's namespace holds none of its vectors and
          * search would return nothing. */

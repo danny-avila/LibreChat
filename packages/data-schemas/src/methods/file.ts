@@ -1234,10 +1234,9 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   }
 
   /**
-   * Records an agent's namespace on embedded files that predate namespace tracking, once the
-   * caller has confirmed their vectors are in that namespace. Each record is matched by its
-   * owner and tenant as well as its `file_id`, which is not unique on its own, and only while
-   * it still records no namespace, so a namespace written concurrently is never overwritten.
+   * Records an agent's namespace on embedded files whose vectors the caller has confirmed are
+   * in it, keeping any namespaces already recorded. Each record is matched by its owner and
+   * tenant as well as its `file_id`, which is not unique on its own.
    *
    * @param data - Verified file records, and the agent whose namespace holds their vectors
    * @returns The file ids that now record the agent's namespace
@@ -1251,61 +1250,35 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     }
     const File = mongoose.models.File as Model<IMongoFile>;
     /* An untenanted record is matched as untenanted: omitting the predicate would let a
-     * same-id record under a tenant match instead. */
-    const records = data.files.map((file) => ({
-      file_id: file.file_id,
-      user: file.user,
-      tenantId: file.tenantId ?? null,
-    }));
-    /* One conditional write per record, so a namespace recorded concurrently by another
-     * writer is never overwritten and never reported back as adopted here. Each write
-     * settles on its own: a committed adoption is reported even when a sibling fails,
-     * and a failed record stays unadopted, which leaves it queued for embedding. */
+     * same-id record under a tenant match instead. Each write settles on its own, so a
+     * committed one is reported even when a sibling fails. */
     const settled = await Promise.allSettled(
-      records.map((record) =>
+      data.files.map((file) =>
         File.findOneAndUpdate(
           {
-            ...record,
+            file_id: file.file_id,
+            user: file.user,
+            tenantId: file.tenantId ?? null,
             context: FileContext.agents,
             embedded: true,
-            'metadata.embeddedEntities': { $exists: false },
           },
-          { $set: { 'metadata.embeddedEntities': [data.agentId] } },
+          { $addToSet: { 'metadata.embeddedEntities': data.agentId } },
           { projection: { file_id: 1 } },
         ).lean<Pick<IMongoFile, 'file_id'>>(),
       ),
     );
     const adopted: string[] = [];
-    const missed: typeof records = [];
     settled.forEach((result, index) => {
       if (result.status === 'rejected') {
-        logger.error('[adoptLegacySearchEmbeddings] Failed to adopt a legacy embedding', {
-          file_id: records[index].file_id,
+        logger.error('[adoptLegacySearchEmbeddings] Failed to record a confirmed embedding', {
+          file_id: data.files[index].file_id,
           error: (result.reason as Error)?.message,
         });
       } else if (result.value) {
         adopted.push(result.value.file_id);
-      } else {
-        missed.push(records[index]);
       }
     });
-    if (missed.length === 0) {
-      return adopted;
-    }
-    /* A concurrent turn for the same agent may have won the write; its namespace is this
-     * agent's all the same, so the file must not be embedded again. */
-    try {
-      const recorded = await File.find(
-        { $or: missed, 'metadata.embeddedEntities': data.agentId },
-        { file_id: 1 },
-      ).lean<Array<Pick<IMongoFile, 'file_id'>>>();
-      return [...adopted, ...recorded.map((file) => file.file_id)];
-    } catch (error) {
-      logger.error('[adoptLegacySearchEmbeddings] Failed to read back concurrent adoptions', {
-        error: (error as Error)?.message,
-      });
-      return adopted;
-    }
+    return adopted;
   }
 
   /**
