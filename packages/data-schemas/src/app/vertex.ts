@@ -44,7 +44,7 @@ const MULTI_REGION_LOCATIONS = new Set(['global', 'us', 'eu']);
  * and return 404 for anything newer.
  */
 const REQUIRES_MULTI_REGION =
-  /^claude-(?:opus-(?:4-[7-9]|[5-9])|sonnet-[5-9]|fable-[5-9]|mythos-[5-9])/;
+  /^claude-(?:opus-(?:4-[7-9]|[5-9])|sonnet-[5-9]|haiku-(?:5-[5-9]|[6-9])|fable-[5-9]|mythos-[5-9])/;
 
 /**
  * Whether the configured location can serve models that require `global` or a
