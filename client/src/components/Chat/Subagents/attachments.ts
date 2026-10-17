@@ -21,12 +21,13 @@ const NO_LIVE_CALLS: ReadonlyMap<number, NestedCall[]> = new Map();
 const NO_NESTED: ReadonlyMap<NestedPart, TAttachment[]> = new Map();
 
 /**
- * Attachments no top-level part of the message accepts. A tool run inside a
- * subagent saves its files under the child tool call id, which only appears
- * inside the parent `subagent` call, so that call's part claims its files out
- * of this list.
+ * The files each tool call part of the message owns through its subagent run,
+ * keyed by the part. A tool run inside a subagent saves its files under the
+ * child tool call id, which only appears inside the parent `subagent` call. The
+ * message assigns them once, so every body it splits into reads one answer.
  */
-export const SubagentAttachmentsContext = createContext<TAttachment[]>(EMPTY);
+export const SubagentAttachmentsContext =
+  createContext<ReadonlyMap<NestedPart, TAttachment[]>>(NO_NESTED);
 
 const toolCallOf = (part: NestedPart): ToolCallFields | undefined =>
   part?.type === ContentTypes.TOOL_CALL
@@ -60,13 +61,19 @@ export function collectNestedCalls(
   return calls;
 }
 
-/** The ownership rule top-level parts apply: a scope both sides carry must agree. */
-const ownsAttachment = (call: NestedCall, attachment: TAttachment): boolean => {
+/**
+ * The ownership rule top-level parts apply: a scope both sides carry must
+ * agree. `exact` also requires the call to carry every scope the file does, so
+ * a call whose scope is still unknown cannot take a file a scoped call owns.
+ */
+const ownsAttachment = (call: NestedCall, attachment: TAttachment, exact: boolean): boolean => {
   const { agentId, stepId } = attachment as { agentId?: string; stepId?: string };
+  const agrees = (own: string | undefined, file: string | undefined) =>
+    file == null || (own == null ? !exact : own === file);
   return (
     call.id === attachment.toolCallId &&
-    (call.agentId == null || agentId == null || call.agentId === agentId) &&
-    (call.stepId == null || stepId == null || call.stepId === stepId)
+    agrees(call.agentId, agentId) &&
+    agrees(call.stepId, stepId)
   );
 };
 
@@ -82,12 +89,13 @@ export function selectUnclaimedAttachments(
 }
 
 /**
- * Hands each unclaimed attachment to the first tool call part in `content`
- * whose transcript (stored, previewed, or streaming in `live`, keyed by content
- * index) holds the tool call it was saved under, under the same agent and step
- * scope rule top-level parts apply. The map is keyed by the part itself, so two
- * calls sharing an id keep their own files, and the first owner wins, so a
- * child id two subagents share still renders the file once.
+ * Hands each unclaimed attachment to one tool call part of the message whose
+ * transcript (stored, previewed, or streaming in `live`, keyed by content
+ * index) holds the tool call it was saved under. A part whose call matches the
+ * file's full scope is preferred over one whose scope is still unknown; within
+ * each pass the first part in message order wins, so a child id two subagents
+ * share renders the file once. The map is keyed by the part itself, so two
+ * calls sharing an id keep their own files.
  */
 export function assignNestedAttachments(
   content: ReadonlyArray<NestedPart> | undefined,
@@ -97,8 +105,7 @@ export function assignNestedAttachments(
   if (unclaimed.length === 0) {
     return NO_NESTED;
   }
-  const assigned = new Map<NestedPart, TAttachment[]>();
-  const taken = new Set<TAttachment>();
+  const owners: Array<[NestedPart, NestedCall[]]> = [];
   (content ?? []).forEach((part, index) => {
     const toolCall = toolCallOf(part);
     if (!toolCall?.id) {
@@ -106,19 +113,22 @@ export function assignNestedAttachments(
     }
     const calls = collectNestedCalls(toolCall.subagent_content);
     calls.push(...(toolCall.subagentAttachmentCalls ?? []), ...(live.get(index) ?? []));
-    if (calls.length === 0) {
-      return;
-    }
-    for (const attachment of unclaimed) {
-      if (taken.has(attachment) || !calls.some((call) => ownsAttachment(call, attachment))) {
-        continue;
-      }
-      taken.add(attachment);
-      const files = assigned.get(part) ?? [];
-      files.push(attachment);
-      assigned.set(part, files);
+    if (calls.length > 0) {
+      owners.push([part, calls]);
     }
   });
+  const assigned = new Map<NestedPart, TAttachment[]>();
+  for (const attachment of unclaimed) {
+    const owner =
+      owners.find(([, calls]) => calls.some((call) => ownsAttachment(call, attachment, true))) ??
+      owners.find(([, calls]) => calls.some((call) => ownsAttachment(call, attachment, false)));
+    if (owner == null) {
+      continue;
+    }
+    const files = assigned.get(owner[0]) ?? [];
+    files.push(attachment);
+    assigned.set(owner[0], files);
+  }
   return assigned.size > 0 ? assigned : NO_NESTED;
 }
 

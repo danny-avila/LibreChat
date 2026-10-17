@@ -456,18 +456,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
     }
     return buildToolCallStepOwners(content);
   }, [toolCallStepOwnersById, content]);
-  const unclaimedAttachments = useContext(SubagentAttachmentsContext);
-  const liveSubagentToolCalls = useLiveSubagentToolCalls(
-    content,
-    messageId,
-    contentIndices,
-    contentIndexOffset,
-    isSubmitting && isLatestMessage === true,
-  );
-  const nestedAttachments = useMemo(
-    () => assignNestedAttachments(content, unclaimedAttachments, liveSubagentToolCalls),
-    [content, unclaimedAttachments, liveSubagentToolCalls],
-  );
+  const nestedAttachments = useContext(SubagentAttachmentsContext);
   const attachmentsForPart = useCallback(
     (part: TMessageContentParts): TAttachment[] | undefined => {
       const own = filterAttachmentsForPart(
@@ -1519,6 +1508,19 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
       collectClaimedAttachments(props.content, inlineAttachments),
     );
   }, [props.content, attachments]);
+  const liveSubagentToolCalls = useLiveSubagentToolCalls(
+    props.content,
+    messageId,
+    props.contentIndices,
+    props.contentIndexOffset ?? 0,
+    isSubmitting && isLatestMessage === true,
+  );
+  /** Assigned once for the whole message: the bodies an MCP App or a phase
+   *  splits it into each see a slice, and must agree on every file's owner. */
+  const nestedAttachments = useMemo(
+    () => assignNestedAttachments(props.content, unclaimedAttachments, liveSubagentToolCalls),
+    [props.content, unclaimedAttachments, liveSubagentToolCalls],
+  );
   return (
     <MessageContext.Provider value={messageContext}>
       <MediaContext.Provider value={media}>
@@ -1529,7 +1531,7 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
                 <Sources messageId={messageId} conversationId={conversationId || undefined} />
               </SearchContext.Provider>
             )}
-            <SubagentAttachmentsContext.Provider value={unclaimedAttachments}>
+            <SubagentAttachmentsContext.Provider value={nestedAttachments}>
               {appContent ?? (
                 <MCPAppSuppressionContext.Provider value={suppressedAppAttachments}>
                   <SoleToolContext.Provider value={undefined}>

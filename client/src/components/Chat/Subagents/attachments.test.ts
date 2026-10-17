@@ -98,6 +98,18 @@ describe('subagent attachments', () => {
     expect(ids(assigned, content[1])).toEqual(['shared-child']);
   });
 
+  it('prefers the run whose call carries the file scope over one whose scope is unknown', () => {
+    const content = [
+      subagent('first', [toolCall('shared-child')]),
+      subagent('second', [toolCall('shared-child', { stepId: 'step-b' })]),
+    ];
+    const fromB = { ...file('shared-child'), stepId: 'step-b' } as TAttachment;
+    const unscoped = file('shared-child');
+    const assigned = assignNestedAttachments(content, [fromB, unscoped], new Map());
+    expect(assigned.get(content[0])).toEqual([unscoped]);
+    expect(assigned.get(content[1])).toEqual([fromB]);
+  });
+
   it('keeps the files of two subagent calls that share an id apart', () => {
     const content = [
       subagent('same-id', [toolCall('first-child')]),

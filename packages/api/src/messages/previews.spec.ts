@@ -459,6 +459,22 @@ describe('previewMessagesToolCalls', () => {
     expect(barePart.tool_call).not.toHaveProperty('subagentAttachmentCalls');
   });
 
+  it('keeps hints for a mutation response that leaves its attachments out', () => {
+    const subagent = toolPart({
+      name: 'subagent',
+      output: 'summary',
+      subagent_content: [toolPart({ id: 'child_image', output: 'Image generated' })],
+    });
+    const req = { query: { toolPreviews: '1' }, config: {} } as unknown as Parameters<
+      typeof withMessageToolCallPreviews
+    >[0];
+    const response = { conversationId: 'c1', content: [subagent], text: '' };
+    const previewed = withMessageToolCallPreviews(req, response, [{ toolCallId: 'child_image' }]);
+    const [part] = previewed.content as Array<{ tool_call: TestToolCall }>;
+    expect(part.tool_call.subagentAttachmentCalls).toEqual([{ id: 'child_image' }]);
+    expect(previewed).not.toHaveProperty('attachments');
+  });
+
   it('previews a call only when its identity is unique in the message', () => {
     const repeated = (agentId: string) => ({
       ...toolPart({ id: 'call_dup', stepId: 'step_1', output: 'o'.repeat(10_000) }),

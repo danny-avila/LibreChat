@@ -785,16 +785,28 @@ export function withToolCallPreviews<T extends MessagesResult>(
 
 /**
  * Previews one message a mutation returns (an artifact edit's content, a branched response), so
- * a client that asked for previews merges a bounded copy into its conversation cache.
+ * a client that asked for previews merges a bounded copy into its conversation cache. A response
+ * that leaves out the stored `attachments` passes them separately: they only decide which
+ * subagent child calls the preview keeps as hints, and are not added to the response.
  */
 export function withMessageToolCallPreviews<T extends PreviewableMessage>(
   req: PreviewableResultRequest,
   message: T,
+  attachments?: unknown[] | null,
 ): T {
   if (message == null || !Array.isArray(message.content)) {
     return message;
   }
-  return withToolCallPreviews(req, { messages: [message] }).messages[0];
+  if (attachments == null || message.attachments != null) {
+    return withToolCallPreviews(req, { messages: [message] }).messages[0];
+  }
+  const withAttachments = { ...message, attachments };
+  const previewed = withToolCallPreviews(req, { messages: [withAttachments] }).messages[0];
+  if (previewed === withAttachments) {
+    return message;
+  }
+  const { attachments: _attachments, ...rest } = previewed;
+  return rest as T;
 }
 
 interface MessageWriteRequest {
