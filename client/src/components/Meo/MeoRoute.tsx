@@ -1,6 +1,15 @@
 import MeoDesktopApp from './MeoDesktopApp';
 import { MeoSessionProvider, useMeoSession } from './session';
 
+function restartSessionCheck() {
+  try {
+    window.sessionStorage.removeItem('meo:oauth-round-trip');
+  } catch {
+    // Ignore browsers that block session storage.
+  }
+  window.location.reload();
+}
+
 function MeoSessionGate() {
   const { user, loading, error } = useMeoSession();
 
@@ -26,9 +35,9 @@ function MeoSessionGate() {
           <button
             className="bg-accent-primary text-surface-primary mt-6 inline-flex h-11 items-center justify-center rounded-2xl px-5 font-semibold"
             type="button"
-            onClick={() => window.location.reload()}
+            onClick={restartSessionCheck}
           >
-            Try again
+            Try sign-in again
           </button>
         </section>
       </main>
