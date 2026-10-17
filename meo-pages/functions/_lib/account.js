@@ -66,17 +66,33 @@ async function tokenRequest(env, body) {
 }
 
 export async function accountUser(env, accessToken) {
-  const response = await fetch(`${accountUrl(env)}/v1/auth/oauth2/userinfo`, {
+  // OAuth access tokens issued for Meo AI are resource-bound to
+  // https://api.meoarch.org. Validate/read the actor through that resource
+  // instead of sending an API-audience token to the Account UserInfo endpoint.
+  const response = await fetch(`${apiUrl(env)}/v1/me`, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
+      Accept: 'application/json',
+      'Cache-Control': 'no-store',
     },
   });
   if (!response.ok) return null;
-  const user = await response.json().catch(() => null);
-  if (!user || typeof user.sub !== 'string' || !user.sub) return null;
-  // Keep the internal session shape stable for existing callers while using
-  // the standards-compliant OIDC subject as the account identity.
-  return { ...user, id: user.sub };
+
+  const payload = await response.json().catch(() => null);
+  const user = payload?.user ?? payload?.account ?? payload;
+  if (!user || typeof user !== 'object') return null;
+
+  const id =
+    typeof user.id === 'string' && user.id
+      ? user.id
+      : typeof user.user_id === 'string' && user.user_id
+        ? user.user_id
+        : typeof user.sub === 'string' && user.sub
+          ? user.sub
+          : '';
+  if (!id) return null;
+
+  return { ...user, id };
 }
 
 export async function exchangeCode(env, code, verifier, redirectUri) {
