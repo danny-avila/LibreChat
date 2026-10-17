@@ -59,6 +59,14 @@ export async function deleteRagFile({ userId, file }: DeleteRagFileParams): Prom
   }
 }
 
+/**
+ * Chunks a presence check asks for. RAG ranks chunks across every owner of a file_id and,
+ * once the top one is authorized, returns all of them, so a copy of the same file embedded
+ * for the requesting user ties with the entity's copy; asking for several keeps the
+ * entity's chunks in the answer whichever copy ranks first.
+ */
+export const ENTITY_EMBEDDINGS_PROBE_K = 10;
+
 interface EntityEmbeddingsParams {
   /** The requesting user, whose token authorizes the query. */
   userId: string;
@@ -89,7 +97,7 @@ export async function hasEntityEmbeddings({
   }
   const { data } = await axios.post<Array<[{ metadata?: { user_id?: string } }, number]>>(
     `${process.env.RAG_API_URL}/query`,
-    { file_id, query, k: 1, entity_id },
+    { file_id, query, k: ENTITY_EMBEDDINGS_PROBE_K, entity_id },
     {
       headers: {
         Authorization: `Bearer ${generateShortLivedToken(userId)}`,

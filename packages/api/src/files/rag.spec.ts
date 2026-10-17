@@ -163,7 +163,7 @@ describe('hasEntityEmbeddings', () => {
     process.env = originalEnv;
   });
 
-  it('asks for one chunk of the file under the entity', async () => {
+  it('asks RAG for chunks of the file under the entity', async () => {
     mockedAxios.post.mockResolvedValueOnce({
       data: [[{ page_content: 'x', metadata: { user_id: 'agent1' } }, 0.1]],
     });
@@ -171,7 +171,7 @@ describe('hasEntityEmbeddings', () => {
     await expect(hasEntityEmbeddings(params)).resolves.toBe(true);
     expect(mockedAxios.post).toHaveBeenCalledWith(
       'http://localhost:8000/query',
-      { file_id: 'file1', query: 'notes.pdf', k: 1, entity_id: 'agent1' },
+      { file_id: 'file1', query: 'notes.pdf', k: 10, entity_id: 'agent1' },
       {
         headers: {
           Authorization: 'Bearer mock-jwt-token',
@@ -187,6 +187,17 @@ describe('hasEntityEmbeddings', () => {
     });
 
     await expect(hasEntityEmbeddings(params)).resolves.toBe(false);
+  });
+
+  it("finds the entity's chunks behind a requesting user's copy of the file", async () => {
+    mockedAxios.post.mockResolvedValueOnce({
+      data: [
+        [{ page_content: 'x', metadata: { user_id: 'user1' } }, 0.1],
+        [{ page_content: 'x', metadata: { user_id: 'agent1' } }, 0.1],
+      ],
+    });
+
+    await expect(hasEntityEmbeddings(params)).resolves.toBe(true);
   });
 
   it('reports no embeddings when RAG returns no chunks', async () => {

@@ -10,9 +10,9 @@
  * - `POST /embed`: embed an uploaded file (`uploadVectors`); returns
  *   `known_type: true` so the file is marked `embedded`.
  * - `POST /query`: semantic query from the `file_search` tool; returns an
- *   empty result set (valid, handled gracefully). A one-chunk query (`k: 1`)
- *   is a presence check, recorded under `probes` and answered from the stored
- *   embeds the way RAG authorizes chunks: a hit only when the file was
+ *   empty result set (valid, handled gracefully). A query for `PROBE_K` chunks
+ *   is priming's presence check, recorded under `probes` and answered from the
+ *   stored embeds the way RAG authorizes chunks: a hit only when the file was
  *   embedded under the queried `entity_id`.
  * - `DELETE /documents`: delete embeddings (`deleteVectors`).
  *
@@ -26,6 +26,8 @@ const http = require('http');
 const busboy = require('busboy');
 
 const PORT = parseInt(process.env.E2E_RAG_API_PORT || '8791', 10);
+/** Mirrors ENTITY_EMBEDDINGS_PROBE_K in packages/api/src/files/rag.ts; file_search asks for 5. */
+const PROBE_K = 10;
 const HOST = '127.0.0.1';
 
 /** @type {Array<{ file_id: string; filename: string; entity_id: string; bytes: number; auth: string }>} */
@@ -103,7 +105,7 @@ async function handleEmbed(req, res) {
 async function handleQuery(req, res) {
   const body = await readJson(req);
   const entityId = body.entity_id || '';
-  if (body.k !== 1) {
+  if (body.k !== PROBE_K) {
     queries.push({ file_id: body.file_id || '', query: body.query || '' });
     sendJson(res, 200, []);
     return;
