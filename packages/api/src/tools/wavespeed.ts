@@ -26,6 +26,8 @@ const SIZE_PATTERN = /^[1-9]\d{1,4}\*[1-9]\d{1,4}$/;
 const POLL_INTERVAL_MS = 1000;
 /** Per-request timeout so a hung socket cannot block the tool forever. */
 const REQUEST_TIMEOUT_MS = 30_000;
+/** Submit gets more headroom: a timeout here is an ambiguous outcome (the task may exist). */
+const SUBMIT_TIMEOUT_MS = 60_000;
 /** Consecutive transient poll failures tolerated before giving up on a status check. */
 const POLL_TRANSIENT_RETRIES = 5;
 const POLL_RETRY_BASE_MS = 1500;
@@ -303,7 +305,7 @@ export class WaveSpeedAPI extends StructuredTool<ExtendedJsonSchema> {
           'Content-Type': 'application/json',
           Accept: 'application/json',
         },
-        timeout: REQUEST_TIMEOUT_MS,
+        timeout: SUBMIT_TIMEOUT_MS,
         ...this.getAxiosConfig(),
       });
     } catch (error) {

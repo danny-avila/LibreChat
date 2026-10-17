@@ -429,12 +429,12 @@ describe('WaveSpeedAPI', () => {
       expect(contentStringOf(result)).toContain('no task was created');
     });
 
-    it('sets a per-request timeout on submit and poll', async () => {
+    it('sets a 60s timeout on submit and 30s on poll', async () => {
       await run(new WaveSpeedAPI({ isAgent: true }));
       expect(mockedAxios.post).toHaveBeenCalledWith(
         expect.any(String),
         expect.anything(),
-        expect.objectContaining({ timeout: 30000 }),
+        expect.objectContaining({ timeout: 60000 }),
       );
       expect(mockedAxios.get).toHaveBeenCalledWith(
         expect.any(String),
