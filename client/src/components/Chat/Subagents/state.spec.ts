@@ -384,6 +384,26 @@ describe('reduceSubagentProgress', () => {
     ).toBeLessThanOrEqual(64 * 1024);
   });
 
+  it('keeps the calls one batch evicts so their files keep an owner', () => {
+    const toolEvents = Array.from({ length: 120 }, (_, index) =>
+      update({
+        activityEventId: `evicting-tool-${index}`,
+        phase: 'run_step',
+        data: {
+          stepDetails: {
+            type: 'tool_calls',
+            tool_calls: [{ id: `evicting-call-${index}`, name: 'search', args: { index } }],
+          },
+        },
+      }),
+    );
+    const bounded = reduceSubagentProgress(null, toolEvents);
+    expect(bounded?.contentParts).toHaveLength(100);
+    expect(bounded?.aggregatorState.evictedToolCalls?.map((call) => call.id)).toEqual(
+      Array.from({ length: 20 }, (_, index) => `evicting-call-${index}`),
+    );
+  });
+
   it('keeps only the newest bounded activity and continues folding afterward', () => {
     const toolEvents = Array.from({ length: 120 }, (_, index) =>
       update({

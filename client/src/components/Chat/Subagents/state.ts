@@ -100,6 +100,8 @@ const MAX_RECENT_EVENT_KEYS = 256;
 const MAX_PENDING_SEQUENCE_EVENTS = 100;
 const MAX_PENDING_SEQUENCE_BYTES = 128 * 1024;
 const MAX_LIVE_ACTIVITY_ITEMS = 100;
+/** Evicted child calls kept per invocation for routing their files. */
+const MAX_EVICTED_TOOL_CALLS = 500;
 const MAX_LIVE_ACTIVITY_BYTES = 64 * 1024;
 const MAX_SINGLE_ACTIVITY_ENCODED_BYTES = MAX_LIVE_ACTIVITY_BYTES - 2;
 const MAX_SINGLE_ACTIVITY_TEXT_BYTES = 60 * 1024;
@@ -236,6 +238,8 @@ const boundContentParts = (
       part.type === ContentTypes.TOOL_CALL ? [[part.tool_call.id, index]] : [],
     ),
   );
+  const dropped = bounded.length === 0 ? parts : parts.slice(0, offset);
+  const evicted = collectNestedCalls(dropped);
   return {
     parts: bounded,
     state: {
@@ -243,6 +247,13 @@ const boundContentParts = (
       openTextIdx: rebase(state.openTextIdx),
       openThinkIdx: rebase(state.openThinkIdx),
       toolCallIndexById,
+      ...(evicted.length === 0
+        ? {}
+        : {
+            evictedToolCalls: [...(state.evictedToolCalls ?? []), ...evicted].slice(
+              -MAX_EVICTED_TOOL_CALLS,
+            ),
+          }),
     },
   };
 };
@@ -535,7 +546,10 @@ export const subagentProgressByToolCallId = atomFamily((key: string) => {
     (get, set, next: SetStateAction<SubagentProgress | null>) => {
       const value = typeof next === 'function' ? next(get(progress)) : next;
       if (value != null) {
-        rememberSubagentChildCalls(key, collectNestedCalls(value.contentParts));
+        rememberSubagentChildCalls(key, [
+          ...(value.aggregatorState?.evictedToolCalls ?? []),
+          ...collectNestedCalls(value.contentParts),
+        ]);
       }
       set(progress, value);
     },
