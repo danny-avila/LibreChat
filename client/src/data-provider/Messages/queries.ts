@@ -2,7 +2,12 @@ import { useLayoutEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys, dataService } from 'librechat-data-provider';
-import type { UseQueryOptions, QueryObserverResult, QueryClient } from '@tanstack/react-query';
+import type {
+  Query,
+  QueryClient,
+  UseQueryOptions,
+  QueryObserverResult,
+} from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 import {
   beginMessagesReplyFetch,
@@ -129,22 +134,35 @@ export const useToolCallPartQuery = (
 const PREVIEW_HINTS_POLL_MS = 5_000;
 const PREVIEW_HINTS_POLLS = 12;
 
+/** Whether a read of the message misses one of the files it was asked to resolve. */
+const missesFiles = (message: t.TMessage | null | undefined, fileIds: ReadonlyArray<string>) => {
+  const saved = new Set(
+    (message?.attachments ?? []).map((file) => (file as { file_id?: string }).file_id),
+  );
+  return fileIds.some((id) => !saved.has(id));
+};
+
 /**
  * One stored message read back as a preview, for the `subagentAttachmentCalls` hints its previewed
  * subagent calls now carry: a file that reached the message after it loaded has no hint in the
  * cached preview. `fileIds` names the files the caller is resolving and keys the read, so a newer
  * file reads the message again. Nothing is written to `[messages, id]`. A background task can
  * stream its file before the file is saved on the message, so a read that does not hold every
- * file yet is repeated for a while; a failed read retries with backoff and runs again on focus
- * and reconnect.
+ * file yet is repeated for a while, and again on focus, reconnect and remount after that; a
+ * failed read retries with backoff and runs again on the same events. A read holding every file
+ * is final.
  */
 export const useMessagePreviewHintsQuery = (
   conversationId: string,
   messageId: string,
   fileIds: ReadonlyArray<string>,
   enabled: boolean,
-): QueryObserverResult<t.TMessage | null> =>
-  useQuery<t.TMessage | null>(
+): QueryObserverResult<t.TMessage | null> => {
+  /** `always` refetches a read that is fresh but still misses a file; `true` refetches only a
+   *  stale one, which here is a read that never succeeded. */
+  const recover = (query: Query<t.TMessage | null>) =>
+    missesFiles(query.state.data, fileIds) ? ('always' as const) : true;
+  return useQuery<t.TMessage | null>(
     [QueryKeys.messagePreviewHints, conversationId, messageId, fileIds.join(',')],
     async () => {
       const messages = await dataService.getMessageById(conversationId, messageId, {
@@ -156,22 +174,21 @@ export const useMessagePreviewHintsQuery = (
       enabled,
       staleTime: Infinity,
       retry: 3,
-      refetchOnMount: false,
-      refetchOnWindowFocus: true,
-      refetchOnReconnect: true,
+      refetchOnMount: (query) =>
+        missesFiles(query.state.data, fileIds) && query.state.data != null ? 'always' : false,
+      refetchOnWindowFocus: recover,
+      refetchOnReconnect: recover,
       refetchInterval: (message, query) => {
         /** Failed reads count too: a failing read keeps the earlier message as its data. */
         const reads = query.state.dataUpdateCount + query.state.errorUpdateCount;
         if (message == null || reads >= PREVIEW_HINTS_POLLS) {
           return false;
         }
-        const saved = new Set(
-          (message.attachments ?? []).map((file) => (file as { file_id?: string }).file_id),
-        );
-        return fileIds.every((id) => saved.has(id)) ? false : PREVIEW_HINTS_POLL_MS;
+        return missesFiles(message, fileIds) ? PREVIEW_HINTS_POLL_MS : false;
       },
     },
   );
+};
 
 function hasActiveJob(queryClient: QueryClient, id: string) {
   if (!id) {

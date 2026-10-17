@@ -725,7 +725,7 @@ describe('useMessagePreviewHintsQuery', () => {
     jest.useRealTimers();
   });
 
-  it('stops reading again once its reads are spent, failed reads included', async () => {
+  it('stops polling once its reads are spent, failed reads included, and recovers on focus', async () => {
     const queryClient = new QueryClient();
     const before = message({ messageId: 'message-id', isCreatedByUser: false, attachments: [] });
     jest
@@ -754,6 +754,25 @@ describe('useMessagePreviewHintsQuery', () => {
     }
     expect(jest.mocked(dataService.getMessageById).mock.calls.length).toBe(spent);
     expect(result.current.data).toEqual(before);
+
+    /** Once the file is saved, coming back to the window reads it again and resolves it. */
+    const after = message({
+      messageId: 'message-id',
+      isCreatedByUser: false,
+      attachments: [{ file_id: 'late-file' } as TAttachment],
+    });
+    jest.mocked(dataService.getMessageById).mockResolvedValue([after]);
+    act(() => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+    await waitFor(() => expect(result.current.data).toEqual(after));
+    const resolved = jest.mocked(dataService.getMessageById).mock.calls.length;
+    act(() => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+    expect(jest.mocked(dataService.getMessageById).mock.calls.length).toBe(resolved);
     unmount();
     queryClient.clear();
     jest.useRealTimers();
