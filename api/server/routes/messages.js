@@ -617,6 +617,7 @@ router.post('/:conversationId', storedMessageMutationMiddleware, async (req, res
 router.get('/:conversationId/:messageId', validateMessageReq, async (req, res) => {
   try {
     const { conversationId, messageId } = req.params;
+    const previewToolCalls = prepareToolCallPreviews(req, toolCallPreviewDeps);
     const message = await db.getMessages(
       { conversationId, messageId, user: req.user.id },
       CLIENT_MESSAGE_SELECT,
@@ -624,7 +625,7 @@ router.get('/:conversationId/:messageId', validateMessageReq, async (req, res) =
     if (!message) {
       return res.status(404).json({ error: 'Message not found' });
     }
-    res.status(200).json(message);
+    res.status(200).json(await previewToolCalls(message));
   } catch (error) {
     logger.error('Error fetching message:', error);
     res.status(500).json({ error: 'Internal server error' });

@@ -12,9 +12,9 @@ import { FOLD_GLYPH_CLASS } from '../rows';
 import { litFoldPath } from '../rail';
 import { Text } from '../Parts';
 
-/** No previewed subagent run here needs its stored part, so the message never fetches one. */
+/** No previewed subagent run here leaves a file in doubt, so the message is never read back. */
 jest.mock('~/data-provider', () => ({
-  useToolCallPartQueries: (parts: unknown[]) => parts.map(() => ({ data: undefined })),
+  useMessagePreviewHintsQuery: () => ({ data: undefined }),
 }));
 
 jest.mock('~/hooks', () => ({

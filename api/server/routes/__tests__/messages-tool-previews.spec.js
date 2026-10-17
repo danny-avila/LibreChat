@@ -219,6 +219,40 @@ describe('tool-call previews on the message routes', () => {
     expect(message.content[1].tool_call.outputTruncated).toBe(true);
   });
 
+  it('reads one message back as a preview whose hints name the files saved on it since', async () => {
+    const childCallId = transcript.find((part) => part.type === 'tool_call').tool_call.id;
+    await mongoose.models.Message.updateOne(
+      { messageId: responseId },
+      {
+        $set: {
+          attachments: [
+            {
+              file_id: 'late-file',
+              filename: 'late.png',
+              toolCallId: childCallId,
+              messageId: responseId,
+            },
+          ],
+        },
+      },
+    );
+    const url = `/api/messages/${conversationId}/${responseId}`;
+    const previewed = await request(app).get(`${url}?toolPreviews=1`);
+    expect(previewed.status).toBe(200);
+    expect(previewed.body).toHaveLength(1);
+    const subagent = previewed.body[0].content[2].tool_call;
+    expect(subagent).toMatchObject({ subagentContentOmitted: true });
+    expect(subagent).not.toHaveProperty('subagent_content');
+    expect(subagent.subagentAttachmentCalls).toEqual([
+      expect.objectContaining({ id: childCallId }),
+    ]);
+
+    const full = await request(app).get(url);
+    expect(full.body[0].content[2].tool_call.subagent_content).toEqual(transcript);
+    const other = await request(app).get(`${url}?toolPreviews=1`).set('x-user', OTHER);
+    expect(other.status).toBe(404);
+  });
+
   it('serves the full part to its owner and nobody else', async () => {
     const url = `/api/messages/${conversationId}/${responseId}/parts/1?toolCallId=call_bash&agentId=agent_a`;
     const owner = await request(app).get(url);

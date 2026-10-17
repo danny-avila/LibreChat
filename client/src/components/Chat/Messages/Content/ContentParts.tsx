@@ -17,7 +17,7 @@ import {
   assignNestedAttachments,
   useLiveSubagentToolCalls,
   SubagentAttachmentsContext,
-  useStoredSubagentToolCalls,
+  useStoredSubagentHints,
   selectExactlyNestedAttachments,
   selectUnclaimedAttachments,
 } from '~/components/Chat/Subagents/attachments';
@@ -240,8 +240,10 @@ const collectClaimedAttachments = (
   content: Array<TMessageContentParts | undefined> | undefined,
   attachments: TAttachment[],
   reserved: ReadonlySet<TAttachment>,
-): ReadonlySet<TAttachment> => {
+): { claimed: ReadonlySet<TAttachment>; exact: ReadonlySet<TAttachment> } => {
   const claimed = new Set<TAttachment>();
+  /** Claimed by a part carrying the file's full scope, not only by a part missing some of it. */
+  const exact = new Set<TAttachment>();
   const attachmentMap = mapAttachments(attachments);
   const owners = buildToolCallStepOwners(content);
   for (const part of content ?? []) {
@@ -255,13 +257,17 @@ const collectClaimedAttachments = (
       getSiblingStepIds(part, owners),
     );
     for (const attachment of accepted ?? []) {
-      if (reserved.has(attachment) && !carriesScopeOf(part, attachment)) {
+      const scoped = carriesScopeOf(part, attachment);
+      if (reserved.has(attachment) && !scoped) {
         continue;
       }
       claimed.add(attachment);
+      if (scoped) {
+        exact.add(attachment);
+      }
     }
   }
-  return claimed;
+  return { claimed, exact };
 };
 
 /** Whether the part carries every agent and step scope the attachment does. */
@@ -275,7 +281,9 @@ const carriesScopeOf = (part: TMessageContentParts, attachment: TAttachment): bo
 
 /**
  * The tool attachments no top-level part accepts, and the subagent call part each of them goes
- * to, given the child calls each subagent part holds outside its stored transcript.
+ * to, given the child calls each subagent part holds outside its stored transcript. `inDoubt`
+ * lists the files no part owns under their full scope: those nothing took, and those only a part
+ * missing some of their scope took, which a child call of an omitted transcript may own instead.
  */
 const routeNestedAttachments = (
   content: Array<TMessageContentParts | undefined> | undefined,
@@ -283,11 +291,18 @@ const routeNestedAttachments = (
   calls: ReadonlyMap<number, NestedCall[]>,
 ) => {
   const reserved = selectExactlyNestedAttachments(content, attachments, calls);
-  const unclaimed = selectUnclaimedAttachments(
-    attachments,
-    collectClaimedAttachments(content, attachments, reserved),
+  const { claimed, exact } = collectClaimedAttachments(content, attachments, reserved);
+  const unclaimed = selectUnclaimedAttachments(attachments, claimed);
+  const nested = assignNestedAttachments(content, unclaimed, calls);
+  const assigned = new Set([...nested.values()].flat());
+  const inDoubt = attachments.filter(
+    (attachment) =>
+      attachment.toolCallId != null &&
+      !exact.has(attachment) &&
+      !reserved.has(attachment) &&
+      !assigned.has(attachment),
   );
-  return { unclaimed, nested: assignNestedAttachments(content, unclaimed, calls) };
+  return { nested, inDoubt };
 };
 
 const PartWithContext = memo(function PartWithContext({
@@ -1564,39 +1579,39 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
     () => routeNestedAttachments(props.content, inlineAttachments, liveSubagentToolCalls),
     [props.content, inlineAttachments, liveSubagentToolCalls],
   );
-  /** A file no part of the message owns may belong to a child call of a previewed subagent run
-   *  whose transcript was left out, such as one a background task delivered after this load. */
-  const hasOrphanedAttachment = useMemo(() => {
-    const assigned = new Set([...liveRouting.nested.values()].flat());
-    return liveRouting.unclaimed.some((attachment) => !assigned.has(attachment));
-  }, [liveRouting]);
-  const storedSubagentToolCalls = useStoredSubagentToolCalls(
+  /** A file no part owns under its full scope may belong to a child call of a previewed subagent
+   *  run whose transcript was left out, such as one a background task delivered after this load. */
+  const filesInDoubt = useMemo(
+    () =>
+      [
+        ...new Set(
+          liveRouting.inDoubt.map(
+            (file) => `${file.toolCallId}:${(file as { file_id?: string }).file_id ?? ''}`,
+          ),
+        ),
+      ]
+        .sort()
+        .join(','),
+    [liveRouting],
+  );
+  const storedSubagentHints = useStoredSubagentHints(
     props.content,
-    inlineAttachments,
-    hasOrphanedAttachment,
+    filesInDoubt,
     conversationId,
     messageId,
-    props.contentIndices,
-    props.contentIndexOffset ?? 0,
   );
   /** Assigned once for the whole message: the bodies an MCP App or a phase
    *  splits it into each see a slice, and must agree on every file's owner. */
   const nestedAttachments = useMemo(() => {
-    if (storedSubagentToolCalls.size === 0) {
+    if (storedSubagentHints.size === 0) {
       return liveRouting.nested;
     }
     const calls = new Map(liveSubagentToolCalls);
-    for (const [index, stored] of storedSubagentToolCalls) {
+    for (const [index, stored] of storedSubagentHints) {
       calls.set(index, [...(calls.get(index) ?? []), ...stored]);
     }
     return routeNestedAttachments(props.content, inlineAttachments, calls).nested;
-  }, [
-    props.content,
-    inlineAttachments,
-    liveRouting,
-    liveSubagentToolCalls,
-    storedSubagentToolCalls,
-  ]);
+  }, [props.content, inlineAttachments, liveRouting, liveSubagentToolCalls, storedSubagentHints]);
   return (
     <MessageContext.Provider value={messageContext}>
       <MediaContext.Provider value={media}>

@@ -2,6 +2,8 @@ export enum QueryKeys {
   messages = 'messages',
   /* Full content of one tool-call part, fetched when its preview is not enough */
   toolCallPart = 'toolCallPart',
+  /* A stored message read back as a preview, for the subagent file hints it now carries */
+  messagePreviewHints = 'messagePreviewHints',
   ownerMessageTexts = 'ownerMessageTexts',
   sharedMessages = 'sharedMessages',
   sharedStartupConfig = 'sharedStartupConfig',

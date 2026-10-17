@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
+import type { Page } from '@playwright/test';
 import type { SeedMessage } from '../db';
 import {
   withMongo,
@@ -19,24 +20,29 @@ const PNG = Buffer.from(
   'base64',
 );
 
+type LateFile = {
+  /** The child call of the subagent run the file was saved under. */
+  childCall: string;
+  /** The agent the subagent run belongs to, stamped on its part and on the file. */
+  childAgent?: string;
+  /** Whether a top-level call of the response reuses the child's provider id. */
+  reused?: boolean;
+};
+
 /** A subagent's background tool can deliver its file after the conversation was loaded: the
  *  load previewed the settled subagent call before any file existed, so the preview names no
  *  child call to route it to, and only the stored transcript holds that call. The file is
  *  persisted onto the original message (as the harvest does) and re-emitted on a later turn's
  *  live stream, the way a `check_background_task` poll delivers it. */
-test('a file a subagent background tool delivers after the load renders under the subagent @scenario:subagent-late-background-file-renders', async ({
-  page,
-}) => {
-  test.setTimeout(120_000);
+async function deliverLateFile(page: Page, { childCall, childAgent, reused }: LateFile) {
   const conversationId = randomUUID();
   const userMessageId = randomUUID();
   const messageId = randomUUID();
   const suffix = conversationId.slice(0, 8);
-  const childCall = `background-child-${suffix}`;
   const attachment = {
-    file_id: `${childCall}-file`,
-    filename: `${childCall}.png`,
-    filepath: `/images/e2e-subagent-late/${childCall}.png`,
+    file_id: `${childCall}-${suffix}-file`,
+    filename: `${childCall}-${suffix}.png`,
+    filepath: `/images/e2e-subagent-late/${childCall}-${suffix}.png`,
     type: 'image/png',
     source: 'local',
     bytes: PNG.length,
@@ -45,7 +51,15 @@ test('a file a subagent background tool delivers after the load renders under th
     messageId,
     conversationId,
     toolCallId: childCall,
+    ...(childAgent != null ? { agentId: childAgent } : {}),
   };
+  const codeCall = (output: string) => ({
+    id: childCall,
+    name: 'execute_code',
+    args: '{}',
+    output,
+    progress: 1,
+  });
   const messages = [
     {
       messageId: userMessageId,
@@ -61,6 +75,12 @@ test('a file a subagent background tool delivers after the load renders under th
       sender: 'Assistant',
       text: '',
       content: [
+        ...(reused === true
+          ? [
+              { type: 'tool_call', tool_call: codeCall('Loaded the data.') },
+              { type: 'text', text: 'Data loaded.' },
+            ]
+          : []),
         {
           type: 'tool_call',
           tool_call: {
@@ -72,13 +92,8 @@ test('a file a subagent background tool delivers after the load renders under th
             subagent_content: [
               {
                 type: 'tool_call',
-                tool_call: {
-                  id: childCall,
-                  name: 'execute_code',
-                  args: '{}',
-                  output: 'Started background task bg_1.',
-                  progress: 1,
-                },
+                ...(childAgent != null ? { agentId: childAgent } : {}),
+                tool_call: codeCall('Started background task bg_1.'),
               },
             ],
           },
@@ -95,11 +110,23 @@ test('a file a subagent background tool delivers after the load renders under th
   await page.route('**/images/e2e-subagent-late/**', (route) =>
     route.fulfill({ status: 200, contentType: 'image/png', body: PNG }),
   );
+  /** Every read of this conversation's single messages or parts the client makes. */
+  const reads: string[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.startsWith(`/api/messages/${conversationId}/`)) {
+      reads.push(request.url());
+    }
+  });
+  const cleanup = async () => {
+    await deleteMessagesByConversation([conversationId]);
+    await deleteConversations([conversationId]);
+  };
 
   try {
     const loaded = page.waitForResponse(
       (response) =>
-        response.url().includes(`/api/messages/${conversationId}`) && response.status() === 200,
+        new URL(response.url()).pathname === `/api/messages/${conversationId}` &&
+        response.status() === 200,
     );
     await page.goto(`/c/${conversationId}`);
     /** The load previews the subagent call with no file to hint: the shape this covers. */
@@ -146,10 +173,48 @@ test('a file a subagent background tool delivers after the load renders under th
     });
     expect(injected).toBe(true);
 
+    return { message, image, reads, messageId, cleanup };
+  } catch (error) {
+    await cleanup();
+    throw error;
+  }
+}
+
+test('a file a subagent background tool delivers after the load renders under the subagent @scenario:subagent-late-background-file-renders', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const { image, reads, messageId, cleanup } = await deliverLateFile(page, {
+    childCall: 'background-child',
+  });
+  try {
     await expect(image).toHaveCount(1);
     await expect(image).toBeVisible();
+    /** One previewed read of the message places the file; no omitted transcript is loaded. */
+    expect(reads.filter((url) => url.includes('/parts/'))).toEqual([]);
+    expect(reads.filter((url) => url.includes(`/${messageId}?toolPreviews=`))).toHaveLength(1);
   } finally {
-    await deleteMessagesByConversation([conversationId]);
-    await deleteConversations([conversationId]);
+    await cleanup();
+  }
+});
+
+test('a late subagent file whose id an earlier top-level call reuses renders under the subagent @scenario:subagent-late-file-reused-id-routes-to-subagent', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const { message, image, cleanup } = await deliverLateFile(page, {
+    childCall: 'call_0',
+    childAgent: 'e2e-illustrator',
+    reused: true,
+  });
+  try {
+    await expect(image).toHaveCount(1);
+    await expect(image).toBeVisible();
+    /** The reusing call renders above "Data loaded."; the subagent's files render below it. */
+    const between = await message.getByText('Data loaded.').boundingBox();
+    const imageBox = await image.boundingBox();
+    expect(between != null && imageBox != null && imageBox.y > between.y).toBe(true);
+  } finally {
+    await cleanup();
   }
 });
