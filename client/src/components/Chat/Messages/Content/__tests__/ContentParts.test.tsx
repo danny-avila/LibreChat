@@ -170,6 +170,19 @@ jest.mock('../Part', () => {
   };
 });
 
+/** Stored parts the message fetches back for a file no part owns, keyed by tool call id. */
+const mockStoredParts = new Map<string, unknown>();
+const mockUseToolCallPartQueries = jest.fn(
+  (parts: Array<{ params: { toolCallId?: string } }>, enabled: boolean) =>
+    parts.map(({ params }) => ({
+      data: enabled ? mockStoredParts.get(params.toolCallId ?? '') : undefined,
+    })),
+);
+jest.mock('~/data-provider', () => ({
+  useToolCallPartQueries: (...args: Parameters<typeof mockUseToolCallPartQueries>) =>
+    mockUseToolCallPartQueries(...args),
+}));
+
 jest.mock('../ParallelContent', () => ({
   /** Invokes `renderResumeAttribution` per content index like the real
    *  renderer does for its sequential stretches, so the wiring is testable. */
@@ -773,6 +786,70 @@ describe('ContentParts — activity phase state', () => {
       'data-attachments',
       'previewed-cat.png',
     );
+  });
+
+  it('fetches a previewed subagent run back to route a file it delivered after the load', () => {
+    jest
+      .mocked(groupSequentialToolCalls)
+      .mockImplementation((parts) => [{ type: 'tool-group', parts }]);
+    const content = [
+      {
+        type: ContentTypes.TOOL_CALL,
+        [ContentTypes.TOOL_CALL]: {
+          id: 'subagent-reloaded',
+          name: 'subagent',
+          args: {},
+          output: 'done',
+          progress: 1,
+          subagentContentOmitted: true,
+          subagentContentParts: 1,
+        },
+      },
+    ] as unknown as TMessageContentParts[];
+    mockStoredParts.set('subagent-reloaded', {
+      tool_call: {
+        id: 'subagent-reloaded',
+        name: 'subagent',
+        subagent_content: [
+          {
+            type: ContentTypes.TOOL_CALL,
+            [ContentTypes.TOOL_CALL]: { id: 'background-child', name: 'bash_tool', args: '' },
+          },
+        ],
+      },
+    });
+    const props = { ...baseProps, conversationId: 'conversation-1', content };
+
+    const { rerender } = render(<ContentParts {...props} attachments={[]} />);
+    expect(mockUseToolCallPartQueries).toHaveBeenLastCalledWith(
+      [expect.objectContaining({ params: expect.objectContaining({ partIndex: 0 }) })],
+      false,
+    );
+    expect(screen.getByTestId('tool-call-group')).toHaveAttribute('data-attachments', '');
+
+    const late = [
+      {
+        filename: 'late-chart.png',
+        filepath: '/images/late-chart.png',
+        conversationId: 'conversation-1',
+        messageId: 'msg-1',
+        toolCallId: 'background-child',
+      },
+    ] as TAttachment[];
+    rerender(<ContentParts {...props} attachments={late} />);
+    expect(mockUseToolCallPartQueries).toHaveBeenCalledWith(
+      [
+        expect.objectContaining({
+          params: expect.objectContaining({ toolCallId: 'subagent-reloaded' }),
+        }),
+      ],
+      true,
+    );
+    expect(screen.getByTestId('tool-call-group')).toHaveAttribute(
+      'data-attachments',
+      'late-chart.png',
+    );
+    mockStoredParts.clear();
   });
 
   it('hoists files from a grouped subagent run that is still streaming', () => {

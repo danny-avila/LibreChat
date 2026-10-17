@@ -1,7 +1,13 @@
 import { createContext, useEffect, useMemo, useRef } from 'react';
-import { Constants } from 'librechat-data-provider';
 import { atom, useStore, useAtomValue } from 'jotai';
-import type { TAttachment, TMessageContentParts, Agents } from 'librechat-data-provider';
+import { Constants, getToolCallPreviewRevision } from 'librechat-data-provider';
+import type {
+  Agents,
+  TAttachment,
+  FullToolCall,
+  ToolCallPartParams,
+  TMessageContentParts,
+} from 'librechat-data-provider';
 import type { SubagentContentPart } from '~/utils/subagentContent';
 import {
   nestedToolCallOf,
@@ -12,6 +18,7 @@ import {
   rememberedSubagentChildCalls,
   subagentProgressByToolCallId,
 } from './state';
+import { useToolCallPartQueries } from '~/data-provider';
 
 export { collectNestedCalls };
 import { getPartKeyIndex } from '~/utils/messages';
@@ -244,6 +251,78 @@ export function useLiveSubagentToolCalls(
     [keys, idSignature],
   );
   const signature = useAtomValue(signatureAtom);
+  return useMemo(
+    () =>
+      signature === ''
+        ? NO_LIVE_CALLS
+        : new Map(JSON.parse(signature) as Array<[number, NestedCall[]]>),
+    [signature],
+  );
+}
+
+/**
+ * Child tool calls of each previewed subagent call in `content` whose transcript the server left
+ * out, read from its stored part and keyed by the call's index in `content`. A file a background
+ * task delivers after the conversation loaded names a child call the preview never hinted, so
+ * while `wanted` (some file of the message has no owner) the stored parts are fetched, under the
+ * same cache entries a card opening the call reads. Only calls a file of the message names are
+ * kept, so the result stays as small as the routing needs.
+ */
+export function useStoredSubagentToolCalls(
+  content: ReadonlyArray<TMessageContentParts | undefined> | undefined,
+  attachments: ReadonlyArray<TAttachment>,
+  wanted: boolean,
+  conversationId: string | null | undefined,
+  messageId: string,
+  contentIndices: ReadonlyArray<number> | undefined,
+  contentIndexOffset: number,
+): ReadonlyMap<number, NestedCall[]> {
+  const parts = useMemo(() => {
+    const previewed: Array<{ index: number; params: ToolCallPartParams; revision: string }> = [];
+    if (!conversationId || !messageId) {
+      return previewed;
+    }
+    (content ?? []).forEach((part, index) => {
+      const toolCall = nestedToolCallOf(part) as FullToolCall | undefined;
+      if (toolCall?.subagentContentOmitted !== true || !toolCall.id) {
+        return;
+      }
+      previewed.push({
+        index,
+        params: {
+          conversationId,
+          messageId,
+          partIndex: getPartKeyIndex(part, contentIndices?.[index] ?? index + contentIndexOffset),
+          toolCallId: toolCall.id,
+          stepId: toolCall.stepId,
+          agentId: (part as { agentId?: string }).agentId,
+        },
+        revision: getToolCallPreviewRevision(toolCall),
+      });
+    });
+    return previewed;
+  }, [content, conversationId, messageId, contentIndices, contentIndexOffset]);
+  const results = useToolCallPartQueries(parts, wanted && parts.length > 0);
+  const ids = new Set(attachments.map((attachment) => attachment.toolCallId ?? ''));
+  const stored: Array<[number, NestedCall[]]> = [];
+  results.forEach((result, position) => {
+    const toolCall = result.data?.tool_call as
+      | (FullToolCall & { subagentIdentity?: { subagentAgentId?: string } })
+      | undefined;
+    if (toolCall?.subagent_content == null) {
+      return;
+    }
+    const calls = collectNestedCalls(
+      toolCall.subagent_content as TMessageContentParts[],
+      [],
+      toolCall.subagentIdentity?.subagentAgentId,
+    ).filter((call) => ids.has(call.id));
+    if (calls.length > 0) {
+      stored.push([parts[position].index, calls]);
+    }
+  });
+  /** A string, so the map (and what the message routes from it) changes only with its calls. */
+  const signature = stored.length === 0 ? '' : JSON.stringify(stored);
   return useMemo(
     () =>
       signature === ''

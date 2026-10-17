@@ -1,7 +1,7 @@
 import { useLayoutEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Constants, QueryKeys, dataService } from 'librechat-data-provider';
+import { useQuery, useQueries, useQueryClient } from '@tanstack/react-query';
 import type { UseQueryOptions, QueryObserverResult, QueryClient } from '@tanstack/react-query';
 import type * as t from 'librechat-data-provider';
 import {
@@ -95,16 +95,13 @@ export function fetchConversationMessages(conversationId: string): Promise<t.TMe
  * the conversation cache keeps only previews. `revision` (see `getToolCallPreviewRevision`) is
  * part of the key, so a stored call that changes after it was fetched is fetched again.
  */
-export const useToolCallPartQuery = (
-  params: t.ToolCallPartParams,
-  config?: UseQueryOptions<t.ToolCallPartResponse>,
-  revision = '',
-): QueryObserverResult<t.ToolCallPartResponse> => {
+/** The cache entry of one tool-call part, shared by every reader that fetches it back. */
+const toolCallPartQuery = (params: t.ToolCallPartParams, revision: string) => {
   /** The index only rides along in the request; the server locates the call by identity, so the
    *  cache does too, and a shifted index cannot fetch the same part twice. */
   const { conversationId, messageId, toolCallId, stepId, agentId } = params;
-  return useQuery<t.ToolCallPartResponse>(
-    [
+  return {
+    queryKey: [
       QueryKeys.toolCallPart,
       conversationId,
       messageId,
@@ -113,17 +110,35 @@ export const useToolCallPartQuery = (
       agentId ?? '',
       revision,
     ],
-    () => dataService.getToolCallPart(params),
-    {
-      staleTime: Infinity,
-      retry: 1,
-      refetchOnWindowFocus: false,
-      refetchOnReconnect: false,
-      refetchOnMount: false,
-      ...config,
-    },
-  );
+    queryFn: () => dataService.getToolCallPart(params),
+    staleTime: Infinity,
+    retry: 1,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchOnMount: false,
+  };
 };
+
+export const useToolCallPartQuery = (
+  params: t.ToolCallPartParams,
+  config?: UseQueryOptions<t.ToolCallPartResponse>,
+  revision = '',
+): QueryObserverResult<t.ToolCallPartResponse> => {
+  const { queryKey, queryFn, ...options } = toolCallPartQuery(params, revision);
+  return useQuery<t.ToolCallPartResponse>(queryKey, queryFn, { ...options, ...config });
+};
+
+/** Several stored parts at once, under the same cache entries `useToolCallPartQuery` reads. */
+export const useToolCallPartQueries = (
+  parts: ReadonlyArray<{ params: t.ToolCallPartParams; revision: string }>,
+  enabled: boolean,
+): QueryObserverResult<t.ToolCallPartResponse>[] =>
+  useQueries({
+    queries: parts.map(({ params, revision }) => ({
+      ...toolCallPartQuery(params, revision),
+      enabled,
+    })),
+  });
 
 function hasActiveJob(queryClient: QueryClient, id: string) {
   if (!id) {

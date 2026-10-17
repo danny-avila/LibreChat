@@ -9,6 +9,7 @@ import type {
 } from 'librechat-data-provider';
 import type { ReactNode, ReactElement } from 'react';
 import type { ReasoningDisclosures, ToolDisclosures } from './disclosure';
+import type { NestedCall } from '~/components/Chat/Subagents/attachments';
 import type { ToolCallGroupExpansionState } from './ToolCallGroup';
 import type { ActivityPhaseSegment } from '~/utils/activityLabels';
 import type { MCPAppResourceOccurrence } from '~/utils/mcpApps';
@@ -16,6 +17,7 @@ import {
   assignNestedAttachments,
   useLiveSubagentToolCalls,
   SubagentAttachmentsContext,
+  useStoredSubagentToolCalls,
   selectExactlyNestedAttachments,
   selectUnclaimedAttachments,
 } from '~/components/Chat/Subagents/attachments';
@@ -269,6 +271,23 @@ const carriesScopeOf = (part: TMessageContentParts, attachment: TAttachment): bo
     (agentId == null || getPartAgentId(part) === agentId) &&
     (stepId == null || getPartStepId(part) === stepId)
   );
+};
+
+/**
+ * The tool attachments no top-level part accepts, and the subagent call part each of them goes
+ * to, given the child calls each subagent part holds outside its stored transcript.
+ */
+const routeNestedAttachments = (
+  content: Array<TMessageContentParts | undefined> | undefined,
+  attachments: TAttachment[],
+  calls: ReadonlyMap<number, NestedCall[]>,
+) => {
+  const reserved = selectExactlyNestedAttachments(content, attachments, calls);
+  const unclaimed = selectUnclaimedAttachments(
+    attachments,
+    collectClaimedAttachments(content, attachments, reserved),
+  );
+  return { unclaimed, nested: assignNestedAttachments(content, unclaimed, calls) };
 };
 
 const PartWithContext = memo(function PartWithContext({
@@ -1537,24 +1556,47 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
     props.contentIndices,
     props.contentIndexOffset ?? 0,
   );
-  const unclaimedAttachments = useMemo(() => {
-    const { inlineAttachments } = partitionWorkspaceChanges(attachments);
-    const reserved = selectExactlyNestedAttachments(
-      props.content,
-      inlineAttachments,
-      liveSubagentToolCalls,
-    );
-    return selectUnclaimedAttachments(
-      inlineAttachments,
-      collectClaimedAttachments(props.content, inlineAttachments, reserved),
-    );
-  }, [props.content, attachments, liveSubagentToolCalls]);
+  const inlineAttachments = useMemo(
+    () => partitionWorkspaceChanges(attachments).inlineAttachments,
+    [attachments],
+  );
+  const liveRouting = useMemo(
+    () => routeNestedAttachments(props.content, inlineAttachments, liveSubagentToolCalls),
+    [props.content, inlineAttachments, liveSubagentToolCalls],
+  );
+  /** A file no part of the message owns may belong to a child call of a previewed subagent run
+   *  whose transcript was left out, such as one a background task delivered after this load. */
+  const hasOrphanedAttachment = useMemo(() => {
+    const assigned = new Set([...liveRouting.nested.values()].flat());
+    return liveRouting.unclaimed.some((attachment) => !assigned.has(attachment));
+  }, [liveRouting]);
+  const storedSubagentToolCalls = useStoredSubagentToolCalls(
+    props.content,
+    inlineAttachments,
+    hasOrphanedAttachment,
+    conversationId,
+    messageId,
+    props.contentIndices,
+    props.contentIndexOffset ?? 0,
+  );
   /** Assigned once for the whole message: the bodies an MCP App or a phase
    *  splits it into each see a slice, and must agree on every file's owner. */
-  const nestedAttachments = useMemo(
-    () => assignNestedAttachments(props.content, unclaimedAttachments, liveSubagentToolCalls),
-    [props.content, unclaimedAttachments, liveSubagentToolCalls],
-  );
+  const nestedAttachments = useMemo(() => {
+    if (storedSubagentToolCalls.size === 0) {
+      return liveRouting.nested;
+    }
+    const calls = new Map(liveSubagentToolCalls);
+    for (const [index, stored] of storedSubagentToolCalls) {
+      calls.set(index, [...(calls.get(index) ?? []), ...stored]);
+    }
+    return routeNestedAttachments(props.content, inlineAttachments, calls).nested;
+  }, [
+    props.content,
+    inlineAttachments,
+    liveRouting,
+    liveSubagentToolCalls,
+    storedSubagentToolCalls,
+  ]);
   return (
     <MessageContext.Provider value={messageContext}>
       <MediaContext.Provider value={media}>
