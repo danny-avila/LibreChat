@@ -120,11 +120,14 @@ export async function refreshTokens(env, refreshToken) {
 export async function loadSession(request, env) {
   const { cookieValue, sessionCookieName, stateCookieName, seal, unseal, sessionCookieHeader } =
     await import('./session.js');
-  // Current Pages sessions are stored in the OAuth handoff cookie because it
-  // is the host-only cookie Chromium keeps across the cross-origin callback.
-  // Continue accepting the former dedicated name during the rollout.
-  const rawCookie =
-    cookieValue(request, stateCookieName) || cookieValue(request, sessionCookieName);
+
+  // The durable session has its own cookie. During rollout, accept the old
+  // OAuth-handoff cookie only as a fallback and migrate it immediately. Never
+  // prefer the state cookie: while an OAuth flow is in progress it contains
+  // PKCE state rather than a browser session.
+  const primaryCookie = cookieValue(request, sessionCookieName);
+  const legacyCookie = primaryCookie ? '' : cookieValue(request, stateCookieName);
+  const rawCookie = primaryCookie || legacyCookie;
   if (!rawCookie) return { session: null, cookie: null, reason: 'cookie_missing' };
 
   const existing = await unseal(rawCookie, env);
@@ -138,7 +141,12 @@ export async function loadSession(request, env) {
 
   const expiresAt = Number(existing.expiresAt ?? 0);
   if (expiresAt > Math.floor(Date.now() / 1000) + 60) {
-    return { session: existing, cookie: null, reason: 'ok' };
+    const cookie = legacyCookie ? sessionCookieHeader(await seal(existing, env)) : null;
+    return {
+      session: existing,
+      cookie,
+      reason: legacyCookie ? 'migrated_legacy_cookie' : 'ok',
+    };
   }
 
   const refreshed = await refreshTokens(env, existing.refreshToken);
