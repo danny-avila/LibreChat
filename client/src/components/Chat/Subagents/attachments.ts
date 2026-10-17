@@ -222,7 +222,13 @@ export function useLiveSubagentToolCalls(
         const live: Array<[number, NestedCall[]]> = [];
         for (const [index, key] of keys) {
           const progress = get(subagentProgressByToolCallId(key));
-          rememberSubagentChildCalls(key, collectNestedCalls(progress?.contentParts));
+          const owners = rememberedSubagentChildCalls(key, ids);
+          /** The owners of this message's files are refreshed as the newest
+           *  entries, so the bounded history cannot age them out while it shows. */
+          rememberSubagentChildCalls(key, [
+            ...collectNestedCalls(progress?.contentParts),
+            ...owners,
+          ]);
           const calls = rememberedSubagentChildCalls(key, ids);
           if (calls.length > 0) {
             live.push([index, calls]);

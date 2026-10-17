@@ -1062,6 +1062,52 @@ describe('ContentParts — activity phase state', () => {
     act(() => getDefaultStore().set(progressAtom, null));
   });
 
+  it('keeps the owner of a shown file past the bounded call history', () => {
+    jest
+      .mocked(groupSequentialToolCalls)
+      .mockImplementation((parts) => [{ type: 'tool-group', parts }]);
+    const content = [
+      {
+        type: ContentTypes.TOOL_CALL,
+        [ContentTypes.TOOL_CALL]: { id: 'subagent-long', name: 'subagent', args: {} },
+      },
+    ] as unknown as TMessageContentParts[];
+    const progressAtom = subagentProgressByToolCallId(
+      subagentProgressKey('msg-1', 'subagent-long', 0),
+    );
+    const call = (id: string) => ({
+      type: ContentTypes.TOOL_CALL,
+      [ContentTypes.TOOL_CALL]: { id, name: 'bash_tool', args: '' },
+    });
+    const files = [
+      {
+        filename: 'early-cat.png',
+        filepath: '/images/early-cat.png',
+        conversationId: 'conversation-1',
+        messageId: 'msg-1',
+        toolCallId: 'early-image',
+      },
+    ] as TAttachment[];
+    act(() => {
+      getDefaultStore().set(progressAtom, {
+        contentParts: [call('early-image')],
+      } as unknown as SubagentProgress);
+    });
+    render(<ContentParts {...baseProps} content={content} attachments={files} />);
+    for (let batch = 0; batch < 6; batch++) {
+      act(() => {
+        getDefaultStore().set(progressAtom, {
+          contentParts: Array.from({ length: 100 }, (_, index) => call(`later-${batch}-${index}`)),
+        } as unknown as SubagentProgress);
+      });
+    }
+    expect(screen.getByTestId('tool-call-group')).toHaveAttribute(
+      'data-attachments',
+      'early-cat.png',
+    );
+    act(() => getDefaultStore().set(progressAtom, null));
+  });
+
   it('routes a file from a nested subagent run the live activity evicted', () => {
     jest
       .mocked(groupSequentialToolCalls)
