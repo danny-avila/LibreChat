@@ -128,7 +128,11 @@ export const useToolCallPartQuery = (
   return useQuery<t.ToolCallPartResponse>(queryKey, queryFn, { ...options, ...config });
 };
 
-/** Several stored parts at once, under the same cache entries `useToolCallPartQuery` reads. */
+/**
+ * Several stored parts at once, under the same cache entries `useToolCallPartQuery` reads. No
+ * reader is there to press retry, so a failed lookup retries with backoff and runs again on focus
+ * and reconnect; a part once fetched stays fresh, so only a failed one is ever fetched again.
+ */
 export const useToolCallPartQueries = (
   parts: ReadonlyArray<{ params: t.ToolCallPartParams; revision: string }>,
   enabled: boolean,
@@ -136,6 +140,9 @@ export const useToolCallPartQueries = (
   useQueries({
     queries: parts.map(({ params, revision }) => ({
       ...toolCallPartQuery(params, revision),
+      retry: 3,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
       enabled,
     })),
   });

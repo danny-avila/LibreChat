@@ -1,13 +1,14 @@
 import { createElement } from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Constants, QueryKeys, dataService } from 'librechat-data-provider';
+import { QueryClient, focusManager, QueryClientProvider } from '@tanstack/react-query';
 import type { TMessage } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import {
   getStableMessages,
   shouldPreserveMessagesOnNotFound,
+  useToolCallPartQueries,
   useGetMessagesByConvoId,
 } from '../queries';
 import { clearMessagesCache, logger } from '~/utils';
@@ -19,6 +20,7 @@ jest.mock('librechat-data-provider', () => {
     dataService: {
       ...actual.dataService,
       getMessagesByConvoId: jest.fn(),
+      getToolCallPart: jest.fn(),
     },
   };
 });
@@ -636,5 +638,55 @@ describe('useGetMessagesByConvoId', () => {
     );
 
     unmount();
+  });
+});
+
+describe('useToolCallPartQueries', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+    focusManager.setFocused(undefined);
+  });
+
+  it('fetches a stored part again on focus after its lookup failed, and not once it loaded', async () => {
+    const queryClient = new QueryClient();
+    const params = {
+      conversationId: 'convo-id',
+      messageId: 'message-id',
+      partIndex: 0,
+      toolCallId: 'subagent-call',
+    };
+    const stored = { conversationId: 'convo-id', messageId: 'message-id', partIndex: 0 };
+    /** The first lookup and its three retries fail; the next one succeeds. */
+    jest
+      .mocked(dataService.getToolCallPart)
+      .mockReset()
+      .mockRejectedValueOnce(new Error('unavailable'))
+      .mockRejectedValueOnce(new Error('unavailable'))
+      .mockRejectedValueOnce(new Error('unavailable'))
+      .mockRejectedValueOnce(new Error('unavailable'))
+      .mockResolvedValue(stored as Awaited<ReturnType<typeof dataService.getToolCallPart>>);
+    jest.useFakeTimers();
+
+    const { result, unmount } = renderHook(
+      () => useToolCallPartQueries([{ params, revision: 'r1' }], true),
+      { wrapper: createWrapper(queryClient, '/c/convo-id') },
+    );
+
+    await waitFor(() => expect(result.current[0].isError).toBe(true), { timeout: 20_000 });
+    expect(dataService.getToolCallPart).toHaveBeenCalledTimes(4);
+    act(() => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+    await waitFor(() => expect(result.current[0].data).toEqual(stored));
+
+    act(() => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+    expect(dataService.getToolCallPart).toHaveBeenCalledTimes(5);
+    unmount();
+    queryClient.clear();
+    jest.useRealTimers();
   });
 });
