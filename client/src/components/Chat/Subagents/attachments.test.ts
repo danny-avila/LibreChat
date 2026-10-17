@@ -14,7 +14,7 @@ const toolCall = (id: string, fields: Record<string, unknown> = {}) =>
 const subagent = (id: string, subagent_content: TMessageContentParts[]) =>
   toolCall(id, { name: 'subagent', subagent_content });
 
-const ids = (map: ReadonlyMap<string, TAttachment[]>, owner: string) =>
+const ids = (map: ReadonlyMap<unknown, TAttachment[]>, owner: TMessageContentParts) =>
   (map.get(owner) ?? []).map((attachment) => attachment.toolCallId);
 
 describe('subagent attachments', () => {
@@ -31,7 +31,7 @@ describe('subagent attachments', () => {
     const rejected = file('shared-id');
     const unclaimed = selectUnclaimedAttachments([rejected], new Set());
     const content = [subagent('subagent-call', [toolCall('shared-id')]), toolCall('shared-id')];
-    expect(ids(assignNestedAttachments(content, unclaimed, new Map()), 'subagent-call')).toEqual([
+    expect(ids(assignNestedAttachments(content, unclaimed, new Map()), content[0])).toEqual([
       'shared-id',
     ]);
   });
@@ -55,14 +55,24 @@ describe('subagent attachments', () => {
       toolCall('streaming', { name: 'subagent' }),
     ];
     const unclaimed = [file('shared-child'), file('omitted'), file('live-child'), file('other')];
+    const assigned = assignNestedAttachments(content, unclaimed, new Map([[3, ['live-child']]]));
+    expect(ids(assigned, content[0])).toEqual(['shared-child']);
+    expect(ids(assigned, content[1])).toEqual([]);
+    expect(ids(assigned, content[2])).toEqual(['omitted']);
+    expect(ids(assigned, content[3])).toEqual(['live-child']);
+  });
+
+  it('keeps the files of two subagent calls that share an id apart', () => {
+    const content = [
+      subagent('same-id', [toolCall('first-child')]),
+      subagent('same-id', [toolCall('second-child')]),
+    ];
     const assigned = assignNestedAttachments(
       content,
-      unclaimed,
-      new Map([['streaming', ['live-child']]]),
+      [file('first-child'), file('second-child')],
+      new Map(),
     );
-    expect(ids(assigned, 'first')).toEqual(['shared-child']);
-    expect(ids(assigned, 'second')).toEqual([]);
-    expect(ids(assigned, 'previewed')).toEqual(['omitted']);
-    expect(ids(assigned, 'streaming')).toEqual(['live-child']);
+    expect(ids(assigned, content[0])).toEqual(['first-child']);
+    expect(ids(assigned, content[1])).toEqual(['second-child']);
   });
 });

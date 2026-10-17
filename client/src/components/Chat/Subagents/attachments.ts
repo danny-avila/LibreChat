@@ -14,8 +14,8 @@ type ToolCallFields = {
 };
 
 const EMPTY: TAttachment[] = [];
-const NO_LIVE_CALLS: ReadonlyMap<string, string[]> = new Map();
-const NO_NESTED: ReadonlyMap<string, TAttachment[]> = new Map();
+const NO_LIVE_CALLS: ReadonlyMap<number, string[]> = new Map();
+const NO_NESTED: ReadonlyMap<NestedPart, TAttachment[]> = new Map();
 
 /**
  * Attachments no top-level part of the message accepts. A tool run inside a
@@ -67,51 +67,52 @@ export function selectUnclaimedAttachments(
 
 /**
  * Hands each unclaimed attachment to the first tool call part in `content`
- * whose transcript (stored, previewed, or streaming in `live`) holds the tool
- * call it was saved under, keyed by that part's tool call id. The first owner
+ * whose transcript (stored, previewed, or streaming in `live`, keyed by content
+ * index) holds the tool call it was saved under. The map is keyed by the part
+ * itself, so two calls sharing an id keep their own files, and the first owner
  * wins, so a child id two subagents share still renders the file once.
  */
 export function assignNestedAttachments(
   content: ReadonlyArray<NestedPart> | undefined,
   unclaimed: TAttachment[],
-  live: ReadonlyMap<string, string[]>,
-): ReadonlyMap<string, TAttachment[]> {
+  live: ReadonlyMap<number, string[]>,
+): ReadonlyMap<NestedPart, TAttachment[]> {
   if (unclaimed.length === 0) {
     return NO_NESTED;
   }
-  const assigned = new Map<string, TAttachment[]>();
+  const assigned = new Map<NestedPart, TAttachment[]>();
   const taken = new Set<TAttachment>();
-  for (const part of content ?? []) {
+  (content ?? []).forEach((part, index) => {
     const toolCall = toolCallOf(part);
     if (!toolCall?.id) {
-      continue;
+      return;
     }
     const childIds = collectToolCallIds(toolCall.subagent_content);
     for (const id of toolCall.subagentAttachmentToolCallIds ?? []) {
       childIds.add(id);
     }
-    for (const id of live.get(toolCall.id) ?? []) {
+    for (const id of live.get(index) ?? []) {
       childIds.add(id);
     }
     if (childIds.size === 0) {
-      continue;
+      return;
     }
     for (const attachment of unclaimed) {
       if (taken.has(attachment) || !childIds.has(attachment.toolCallId ?? '')) {
         continue;
       }
       taken.add(attachment);
-      const files = assigned.get(toolCall.id) ?? [];
+      const files = assigned.get(part) ?? [];
       files.push(attachment);
-      assigned.set(toolCall.id, files);
+      assigned.set(part, files);
     }
-  }
+  });
   return assigned.size > 0 ? assigned : NO_NESTED;
 }
 
 /**
  * Child tool call ids of each subagent call in `content` that is still
- * streaming, keyed by the subagent call id. Until the run is saved those calls
+ * streaming, keyed by the call's index in `content`. Until the run is saved those calls
  * exist only in the live progress atom. The atom yields a signature string so
  * the caller re-renders when a child call appears, not on every delta. Only the
  * message that is streaming reads progress (`enabled`): reading creates the
@@ -123,9 +124,9 @@ export function useLiveSubagentToolCalls(
   contentIndices: ReadonlyArray<number> | undefined,
   contentIndexOffset: number,
   enabled: boolean,
-): ReadonlyMap<string, string[]> {
+): ReadonlyMap<number, string[]> {
   const keys = useMemo(() => {
-    const entries: Array<[string, string]> = [];
+    const entries: Array<[number, string]> = [];
     if (!enabled) {
       return entries;
     }
@@ -133,7 +134,7 @@ export function useLiveSubagentToolCalls(
       const toolCall = toolCallOf(part);
       if (toolCall?.id && toolCall.name === Constants.SUBAGENT) {
         entries.push([
-          toolCall.id,
+          index,
           subagentProgressKey(
             messageId,
             toolCall.id,
@@ -148,11 +149,11 @@ export function useLiveSubagentToolCalls(
     () =>
       atom((get) =>
         keys
-          .map(([id, key]) => {
+          .map(([index, key]) => {
             const childIds = collectToolCallIds(
               get(subagentProgressByToolCallId(key))?.contentParts,
             );
-            return childIds.size === 0 ? '' : [id, ...childIds].join('\u0000');
+            return childIds.size === 0 ? '' : [index, ...childIds].join('\u0000');
           })
           .filter(Boolean)
           .join('\n'),
@@ -166,8 +167,8 @@ export function useLiveSubagentToolCalls(
     }
     return new Map(
       signature.split('\n').map((entry) => {
-        const [id, ...childIds] = entry.split('\u0000');
-        return [id, childIds];
+        const [index, ...childIds] = entry.split('\u0000');
+        return [Number(index), childIds];
       }),
     );
   }, [signature]);

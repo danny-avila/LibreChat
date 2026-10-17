@@ -478,7 +478,7 @@ const ContentPartsBody = memo(function ContentPartsBody({
       );
       /** A tool run inside a subagent saves its files under the child tool
        *  call id, which only the subagent call's transcript carries. */
-      const nested = nestedAttachments.get(getToolCallId(part));
+      const nested = nestedAttachments.get(part);
       if (nested == null) {
         return own;
       }
