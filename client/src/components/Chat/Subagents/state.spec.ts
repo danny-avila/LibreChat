@@ -465,6 +465,32 @@ describe('useSubagentProgress', () => {
     expect(subagentProgressByToolCallId(key)).not.toBe(held);
   });
 
+  it('keeps retained readers and stream writers together after navigation', () => {
+    const key = subagentProgressKey('retained-message', 'retained-call', 0);
+    const store = createStore();
+    const wrapper = ({ children }: { children: React.ReactNode }) =>
+      React.createElement(JotaiProvider, { store }, children);
+    const { result, unmount } = renderHook(() => useSubagentProgress(key), { wrapper });
+    const held = subagentProgressByToolCallId(key);
+    const streamOpen = subagentParentStreamOpenByToolCallId(key);
+    registerSubagentProgressKey(key);
+    act(() => {
+      for (const drained of takeRegisteredSubagentProgressKeys()) {
+        store.set(subagentProgressByToolCallId(drained), null);
+        store.set(subagentParentStreamOpenByToolCallId(drained), false);
+        removeSubagentProgressAtoms(drained);
+      }
+    });
+    expect(subagentProgressByToolCallId(key)).toBe(held);
+    expect(subagentParentStreamOpenByToolCallId(key)).toBe(streamOpen);
+    act(() => store.set(held, reduceSubagentProgress(null, [update()])));
+    expect(result.current?.contentParts).toEqual([{ type: ContentTypes.TEXT, text: 'Working.' }]);
+    act(() => store.set(held, null));
+    unmount();
+    expect(subagentProgressByToolCallId(key)).not.toBe(held);
+    expect(subagentParentStreamOpenByToolCallId(key)).not.toBe(streamOpen);
+  });
+
   /** The drain owns a streaming key; freeing it here would race that boundary. */
   it('leaves a key the stream registered to the drain', () => {
     const key = subagentProgressKey('live-message', 'live-call', 0);
