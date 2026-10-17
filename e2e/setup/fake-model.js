@@ -498,10 +498,11 @@ const SAMPLING_PARAM_KEYS = ['temperature', 'topP', 'topK', 'presencePenalty', '
 /**
  * Reports the provider request the primary agent resolved, before the fake
  * model replaced it: the model, which sampling params survived (top level or
- * `modelKwargs`), and the context budget left for input.
+ * `modelKwargs`), and the context budget left for input. Reads the graph's
+ * agent context because the hook's `agents` are the unresolved agent configs.
  */
-function llmConfigReportResponses(agents) {
-  const agent = agents?.[0];
+function llmConfigReportResponses(graph) {
+  const agent = graph?.agentContexts?.values().next().value;
   const clientOptions = agent?.clientOptions ?? {};
   const modelKwargs = clientOptions.modelKwargs ?? {};
   const sampling = SAMPLING_PARAM_KEYS.filter(
@@ -3473,7 +3474,7 @@ function codeExecResponses({ filename, toolCallId, finalText, code }, toolNames)
   };
 }
 
-function resolveResponses({ agents, graph, messages, text, toolNames }) {
+function resolveResponses({ graph, messages, text, toolNames }) {
   const lifecycle = runFileLifecycle.responsesForText(text);
   if (lifecycle) return lifecycle;
 
@@ -3657,7 +3658,7 @@ function resolveResponses({ agents, graph, messages, text, toolNames }) {
   }
 
   if (text.includes(REPORT_LLM_CONFIG_MARKER)) {
-    return llmConfigReportResponses(agents);
+    return llmConfigReportResponses(graph);
   }
 
   if (text.includes(ASSERT_AGENT_CONTEXT_MARKER)) {
@@ -3811,7 +3812,6 @@ module.exports = function fakeModelHook(run, context) {
   } = handoffScript
     ? buildHandoffResponses(graph, handoffScript)
     : resolveResponses({
-        agents: context?.agents,
         graph,
         messages: context?.messages,
         text,
