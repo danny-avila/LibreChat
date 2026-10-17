@@ -932,6 +932,51 @@ describe('ContentParts — activity phase state', () => {
     act(() => getDefaultStore().set(progressAtom, null));
   });
 
+  it('routes a live child file whose call was evicted before the message mounted', () => {
+    jest
+      .mocked(groupSequentialToolCalls)
+      .mockImplementation((parts) => [{ type: 'tool-group', parts }]);
+    const content = [
+      {
+        type: ContentTypes.TOOL_CALL,
+        [ContentTypes.TOOL_CALL]: { id: 'subagent-unread', name: 'subagent', args: {} },
+      },
+    ] as unknown as TMessageContentParts[];
+    const progressAtom = subagentProgressByToolCallId(
+      subagentProgressKey('msg-1', 'subagent-unread', 0),
+    );
+    act(() => {
+      getDefaultStore().set(progressAtom, {
+        contentParts: [
+          {
+            type: ContentTypes.TOOL_CALL,
+            [ContentTypes.TOOL_CALL]: { id: 'unread-child', name: 'image_gen_oai', args: '' },
+          },
+        ],
+      } as unknown as SubagentProgress);
+      getDefaultStore().set(progressAtom, (previous) => ({
+        ...(previous as SubagentProgress),
+        contentParts: [{ type: ContentTypes.TEXT, text: 'later output' }],
+      }));
+    });
+    const files = [
+      {
+        filename: 'unread-cat.png',
+        filepath: '/images/unread-cat.png',
+        conversationId: 'conversation-1',
+        messageId: 'msg-1',
+        toolCallId: 'unread-child',
+      },
+    ] as TAttachment[];
+
+    render(<ContentParts {...baseProps} content={content} attachments={files} />);
+    expect(screen.getByTestId('tool-call-group')).toHaveAttribute(
+      'data-attachments',
+      'unread-cat.png',
+    );
+    act(() => getDefaultStore().set(progressAtom, null));
+  });
+
   it('reads live progress under the index a compacted part streamed at', () => {
     jest
       .mocked(groupSequentialToolCalls)

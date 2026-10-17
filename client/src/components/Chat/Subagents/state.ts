@@ -477,10 +477,36 @@ export const subagentControlStateByTask = atomFamily<
 /** Stable identity for one subagent invocation in the parent conversation. */
 export { subagentProgressKey } from '@librechat/chat';
 
-/** Progress state keyed by one concrete tool-call content-part occurrence. */
-export const subagentProgressByToolCallId = atomFamily((_key: string) =>
-  atom<SubagentProgress | null>(null),
-);
+/** The tool calls of live child activity, with the step scope their files may carry. */
+const childCallsOf = (parts: SubagentContentPart[]): Agents.SubagentAttachmentCall[] => {
+  const calls: Agents.SubagentAttachmentCall[] = [];
+  for (const part of parts) {
+    if (part.type !== ContentTypes.TOOL_CALL || !part.tool_call?.id) continue;
+    const { id, stepId } = part.tool_call;
+    calls.push(stepId == null ? { id } : { id, stepId });
+  }
+  return calls;
+};
+
+/**
+ * Progress state keyed by one concrete tool-call content-part occurrence. Every write also
+ * records the child tool calls the activity shows (`rememberSubagentChildCalls`), whether or not
+ * anything reads the member, since the bounded activity can evict a call that saved a file
+ * before a reader mounts.
+ */
+export const subagentProgressByToolCallId = atomFamily((key: string) => {
+  const progress = atom<SubagentProgress | null>(null);
+  return atom(
+    (get) => get(progress),
+    (get, set, next: SetStateAction<SubagentProgress | null>) => {
+      const value = typeof next === 'function' ? next(get(progress)) : next;
+      if (value != null) {
+        rememberSubagentChildCalls(key, childCallsOf(value.contentParts));
+      }
+      set(progress, value);
+    },
+  );
+});
 
 /** Parent delivery remains authoritative until its ordered SSE close boundary. */
 export const subagentParentStreamOpenByToolCallId = atomFamily((_key: string) => atom(false));
