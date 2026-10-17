@@ -11,18 +11,21 @@ import {
 
 const env = { SESSION_SECRET: 'A'.repeat(43) };
 
-test('session payload is authenticated encryption and cookie is HttpOnly', async () => {
+test('session payload is authenticated encryption and cookies stay separated', async () => {
   const sealed = await seal({ accessToken: 'secret-token', userId: 'user-1' }, env);
   assert.deepEqual(await unseal(sealed, env), { accessToken: 'secret-token', userId: 'user-1' });
   const [iv, ciphertext] = sealed.split('.');
   const alteredCiphertext = `${ciphertext[0] === 'A' ? 'B' : 'A'}${ciphertext.slice(1)}`;
   assert.equal(await unseal(`${iv}.${alteredCiphertext}`, env), null);
-  assert.match(sessionCookieHeader(sealed), /^__Host-meo-oauth=/);
-  assert.match(sessionCookieHeader(sealed), /HttpOnly; Secure; SameSite=Lax/);
-  assert.match(
-    stateCookieHeader(sealed),
-    /^__Host-meo-oauth=.*Path=\/;.*HttpOnly; Secure;.*SameSite=Lax/,
-  );
+
+  const sessionHeader = sessionCookieHeader(sealed);
+  const stateHeader = stateCookieHeader(sealed);
+  assert.match(sessionHeader, /^__Host-meo-session=/);
+  assert.match(sessionHeader, /Path=\/;/);
+  assert.match(sessionHeader, /HttpOnly; Secure; SameSite=Lax/);
+  assert.doesNotMatch(sessionHeader, /^__Host-meo-oauth=/);
+  assert.match(stateHeader, /^__Host-meo-oauth=.*Path=\/;.*HttpOnly; Secure;.*SameSite=Lax/);
+
   assert.equal(
     cookieValue(
       new Request('https://chat.meoarch.org', {
