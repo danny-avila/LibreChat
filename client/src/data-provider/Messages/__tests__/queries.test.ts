@@ -3,12 +3,12 @@ import { MemoryRouter } from 'react-router-dom';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { Constants, QueryKeys, dataService } from 'librechat-data-provider';
 import { QueryClient, focusManager, QueryClientProvider } from '@tanstack/react-query';
-import type { TAttachment, TMessage } from 'librechat-data-provider';
+import type { TMessage } from 'librechat-data-provider';
 import type { ReactNode } from 'react';
 import {
   getStableMessages,
   shouldPreserveMessagesOnNotFound,
-  useMessagePreviewHintsQuery,
+  useSubagentAttachmentCallsQuery,
   useGetMessagesByConvoId,
 } from '../queries';
 import { clearMessagesCache, logger } from '~/utils';
@@ -20,7 +20,7 @@ jest.mock('librechat-data-provider', () => {
     dataService: {
       ...actual.dataService,
       getMessagesByConvoId: jest.fn(),
-      getMessageById: jest.fn(),
+      getSubagentAttachmentCalls: jest.fn(),
     },
   };
 });
@@ -641,138 +641,49 @@ describe('useGetMessagesByConvoId', () => {
   });
 });
 
-describe('useMessagePreviewHintsQuery', () => {
+describe('useSubagentAttachmentCallsQuery', () => {
   afterEach(() => {
     jest.useRealTimers();
     focusManager.setFocused(undefined);
   });
 
-  it('reads the message back as a preview, again on focus after the read failed, and not once it loaded', async () => {
+  it('asks again on focus after the read failed, and not once it answered', async () => {
     const queryClient = new QueryClient();
-    const stored = message({
+    const answer = { parts: [{ toolCallId: 'subagent', calls: [{ id: 'child' }] }] };
+    const params = {
+      conversationId: 'convo-id',
       messageId: 'message-id',
-      isCreatedByUser: false,
-      attachments: [{ file_id: 'late-file' } as TAttachment],
-    });
+      files: [{ toolCallId: 'child' }],
+    };
     /** The first read and its three retries fail; the next one succeeds. */
     jest
-      .mocked(dataService.getMessageById)
+      .mocked(dataService.getSubagentAttachmentCalls)
       .mockReset()
       .mockRejectedValueOnce(new Error('unavailable'))
       .mockRejectedValueOnce(new Error('unavailable'))
       .mockRejectedValueOnce(new Error('unavailable'))
       .mockRejectedValueOnce(new Error('unavailable'))
-      .mockResolvedValue([stored]);
+      .mockResolvedValue(answer);
     jest.useFakeTimers();
 
-    const { result, unmount } = renderHook(
-      () => useMessagePreviewHintsQuery('convo-id', 'message-id', ['late-file'], true),
-      { wrapper: createWrapper(queryClient, '/c/convo-id') },
-    );
+    const { result, unmount } = renderHook(() => useSubagentAttachmentCallsQuery(params, true), {
+      wrapper: createWrapper(queryClient, '/c/convo-id'),
+    });
 
     await waitFor(() => expect(result.current.isError).toBe(true), { timeout: 20_000 });
-    expect(dataService.getMessageById).toHaveBeenCalledTimes(4);
-    expect(dataService.getMessageById).toHaveBeenCalledWith('convo-id', 'message-id', {
-      toolPreviews: true,
-    });
+    expect(dataService.getSubagentAttachmentCalls).toHaveBeenCalledTimes(4);
+    expect(dataService.getSubagentAttachmentCalls).toHaveBeenCalledWith(params);
     act(() => {
       focusManager.setFocused(false);
       focusManager.setFocused(true);
     });
-    await waitFor(() => expect(result.current.data).toEqual(stored));
+    await waitFor(() => expect(result.current.data).toEqual(answer));
 
     act(() => {
       focusManager.setFocused(false);
       focusManager.setFocused(true);
     });
-    expect(dataService.getMessageById).toHaveBeenCalledTimes(5);
-    unmount();
-    queryClient.clear();
-    jest.useRealTimers();
-  });
-
-  it('reads again while the file it resolves is not saved on the message yet, then stops', async () => {
-    const queryClient = new QueryClient();
-    const before = message({ messageId: 'message-id', isCreatedByUser: false, attachments: [] });
-    const after = message({
-      messageId: 'message-id',
-      isCreatedByUser: false,
-      attachments: [{ file_id: 'late-file' } as TAttachment],
-    });
-    jest
-      .mocked(dataService.getMessageById)
-      .mockReset()
-      .mockResolvedValueOnce([before])
-      .mockResolvedValue([after]);
-    jest.useFakeTimers();
-
-    const { result, unmount } = renderHook(
-      () => useMessagePreviewHintsQuery('convo-id', 'message-id', ['late-file'], true),
-      { wrapper: createWrapper(queryClient, '/c/convo-id') },
-    );
-
-    await waitFor(() => expect(result.current.data).toEqual(before));
-    await act(async () => {
-      jest.advanceTimersByTime(5_000);
-    });
-    await waitFor(() => expect(result.current.data).toEqual(after));
-    await act(async () => {
-      jest.advanceTimersByTime(30_000);
-    });
-    expect(dataService.getMessageById).toHaveBeenCalledTimes(2);
-    unmount();
-    queryClient.clear();
-    jest.useRealTimers();
-  });
-
-  it('stops polling once its reads are spent, failed reads included, and recovers on focus', async () => {
-    const queryClient = new QueryClient();
-    const before = message({ messageId: 'message-id', isCreatedByUser: false, attachments: [] });
-    jest
-      .mocked(dataService.getMessageById)
-      .mockReset()
-      .mockResolvedValueOnce([before])
-      .mockRejectedValue(new Error('unavailable'));
-    jest.useFakeTimers();
-
-    const { result, unmount } = renderHook(
-      () => useMessagePreviewHintsQuery('convo-id', 'message-id', ['late-file'], true),
-      { wrapper: createWrapper(queryClient, '/c/convo-id') },
-    );
-    await waitFor(() => expect(result.current.data).toEqual(before));
-    /** One timer step per tick, so each read, retry and poll settles before the next. */
-    for (let i = 0; i < 400; i++) {
-      await act(async () => {
-        jest.advanceTimersByTime(5_000);
-      });
-    }
-    const spent = jest.mocked(dataService.getMessageById).mock.calls.length;
-    for (let i = 0; i < 100; i++) {
-      await act(async () => {
-        jest.advanceTimersByTime(5_000);
-      });
-    }
-    expect(jest.mocked(dataService.getMessageById).mock.calls.length).toBe(spent);
-    expect(result.current.data).toEqual(before);
-
-    /** Once the file is saved, coming back to the window reads it again and resolves it. */
-    const after = message({
-      messageId: 'message-id',
-      isCreatedByUser: false,
-      attachments: [{ file_id: 'late-file' } as TAttachment],
-    });
-    jest.mocked(dataService.getMessageById).mockResolvedValue([after]);
-    act(() => {
-      focusManager.setFocused(false);
-      focusManager.setFocused(true);
-    });
-    await waitFor(() => expect(result.current.data).toEqual(after));
-    const resolved = jest.mocked(dataService.getMessageById).mock.calls.length;
-    act(() => {
-      focusManager.setFocused(false);
-      focusManager.setFocused(true);
-    });
-    expect(jest.mocked(dataService.getMessageById).mock.calls.length).toBe(resolved);
+    expect(dataService.getSubagentAttachmentCalls).toHaveBeenCalledTimes(5);
     unmount();
     queryClient.clear();
     jest.useRealTimers();

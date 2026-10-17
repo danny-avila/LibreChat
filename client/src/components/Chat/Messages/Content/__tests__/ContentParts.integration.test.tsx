@@ -12,9 +12,9 @@ import { FOLD_GLYPH_CLASS } from '../rows';
 import { litFoldPath } from '../rail';
 import { Text } from '../Parts';
 
-/** No previewed subagent run here leaves a file in doubt, so the message is never read back. */
+/** No previewed subagent run here leaves a file in doubt, so no owner is ever asked for. */
 jest.mock('~/data-provider', () => ({
-  useMessagePreviewHintsQuery: () => ({ data: undefined }),
+  useSubagentAttachmentCallsQuery: () => ({ data: undefined }),
 }));
 
 jest.mock('~/hooks', () => ({

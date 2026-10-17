@@ -2,6 +2,7 @@ import { memo, useRef, useMemo, useEffect, useCallback, useContext, Fragment } f
 import { useStore } from 'jotai';
 import { Constants, ContentTypes, Tools } from 'librechat-data-provider';
 import type {
+  SubagentAttachmentFile,
   TMessageContentParts,
   SearchResultData,
   TAttachment,
@@ -280,10 +281,10 @@ const carriesScopeOf = (part: TMessageContentParts, attachment: TAttachment): bo
 };
 
 /**
- * The tool attachments no top-level part accepts, and the subagent call part each of them goes
- * to, given the child calls each subagent part holds outside its stored transcript. `inDoubt`
- * lists the files no part owns under their full scope: those nothing took, and those only a part
- * missing some of their scope took, which a child call of an omitted transcript may own instead.
+ * The subagent call part each tool attachment no top-level part accepts goes to, given the child
+ * calls each subagent part holds outside its stored transcript. `inDoubt` lists the files no call
+ * owns under their full scope, top-level or nested: one taken only by a call missing some of its
+ * scope may belong to a child call of a transcript the preview left out.
  */
 const routeNestedAttachments = (
   content: Array<TMessageContentParts | undefined> | undefined,
@@ -294,13 +295,9 @@ const routeNestedAttachments = (
   const { claimed, exact } = collectClaimedAttachments(content, attachments, reserved);
   const unclaimed = selectUnclaimedAttachments(attachments, claimed);
   const nested = assignNestedAttachments(content, unclaimed, calls);
-  const assigned = new Set([...nested.values()].flat());
   const inDoubt = attachments.filter(
     (attachment) =>
-      attachment.toolCallId != null &&
-      !exact.has(attachment) &&
-      !reserved.has(attachment) &&
-      !assigned.has(attachment),
+      attachment.toolCallId != null && !exact.has(attachment) && !reserved.has(attachment),
   );
   return { nested, inDoubt };
 };
@@ -1581,17 +1578,19 @@ const ContentParts = memo(function ContentParts(props: ContentPartsProps) {
   );
   /** A file no part owns under its full scope may belong to a child call of a previewed subagent
    *  run whose transcript was left out, such as one a background task delivered after this load. */
-  const filesInDoubt = useMemo(
-    () =>
-      [
-        ...new Set(
-          liveRouting.inDoubt
-            .map((file) => (file as { file_id?: string }).file_id)
-            .filter((id): id is string => !!id),
-        ),
-      ].sort(),
-    [liveRouting],
-  );
+  const filesInDoubt = useMemo(() => {
+    const files = new Map<string, SubagentAttachmentFile>();
+    for (const file of liveRouting.inDoubt) {
+      const { toolCallId, agentId, stepId } = file as SubagentAttachmentFile;
+      const entry = {
+        toolCallId,
+        ...(agentId != null ? { agentId } : {}),
+        ...(stepId != null ? { stepId } : {}),
+      };
+      files.set(JSON.stringify(entry), entry);
+    }
+    return [...files.keys()].sort().map((key) => files.get(key) as SubagentAttachmentFile);
+  }, [liveRouting]);
   const storedSubagentHints = useStoredSubagentHints(
     props.content,
     filesInDoubt,

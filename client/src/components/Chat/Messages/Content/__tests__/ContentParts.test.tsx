@@ -170,16 +170,17 @@ jest.mock('../Part', () => {
   };
 });
 
-/** The stored message, read back as a preview, for a file whose owner is in doubt. */
-let mockStoredMessage: unknown;
-const mockUseMessagePreviewHintsQuery = jest.fn(
-  (_conversationId: string, _messageId: string, _fileIds: string[], enabled: boolean) => ({
-    data: enabled ? mockStoredMessage : undefined,
+/** What the server answers when asked which subagent transcripts hold the files in doubt. */
+let mockOwners: unknown;
+const mockUseSubagentAttachmentCallsQuery = jest.fn(
+  (_params: { files: unknown[] }, enabled: boolean) => ({
+    data: enabled ? mockOwners : undefined,
   }),
 );
 jest.mock('~/data-provider', () => ({
-  useMessagePreviewHintsQuery: (...args: Parameters<typeof mockUseMessagePreviewHintsQuery>) =>
-    mockUseMessagePreviewHintsQuery(...args),
+  useSubagentAttachmentCallsQuery: (
+    ...args: Parameters<typeof mockUseSubagentAttachmentCallsQuery>
+  ) => mockUseSubagentAttachmentCallsQuery(...args),
 }));
 
 jest.mock('../ParallelContent', () => ({
@@ -787,131 +788,66 @@ describe('ContentParts — activity phase state', () => {
     );
   });
 
-  it('reads the message back to route a file a previewed subagent run delivered after the load', () => {
-    jest
-      .mocked(groupSequentialToolCalls)
-      .mockImplementation((parts) => [{ type: 'tool-group', parts }]);
-    const subagent = {
-      id: 'subagent-reloaded',
+  const previewedSubagent = (id: string, extra: Record<string, unknown> = {}) => ({
+    type: ContentTypes.TOOL_CALL,
+    [ContentTypes.TOOL_CALL]: {
+      id,
       name: 'subagent',
       args: {},
       output: 'done',
       progress: 1,
       subagentContentOmitted: true,
       subagentContentParts: 1,
-    };
-    const content = [
-      { type: ContentTypes.TOOL_CALL, [ContentTypes.TOOL_CALL]: subagent },
-    ] as unknown as TMessageContentParts[];
-    mockStoredMessage = {
+      ...extra,
+    },
+  });
+  const lateFile = (toolCallId: string, filename: string, agentId?: string) =>
+    ({
+      file_id: `${filename}-id`,
+      filename,
+      filepath: `/images/${filename}`,
+      conversationId: 'conversation-1',
       messageId: 'msg-1',
-      content: [
-        {
-          type: ContentTypes.TOOL_CALL,
-          [ContentTypes.TOOL_CALL]: {
-            ...subagent,
-            subagentAttachmentCalls: [{ id: 'background-child' }],
-          },
-        },
-      ],
+      toolCallId,
+      ...(agentId != null ? { agentId } : {}),
+    }) as TAttachment;
+
+  it('asks the server which transcript holds a file a previewed subagent run delivered late', () => {
+    jest
+      .mocked(groupSequentialToolCalls)
+      .mockImplementation((parts) => [{ type: 'tool-group', parts }]);
+    const content = [previewedSubagent('subagent-reloaded')] as unknown as TMessageContentParts[];
+    mockOwners = {
+      parts: [{ toolCallId: 'subagent-reloaded', calls: [{ id: 'background-child' }] }],
     };
     const props = { ...baseProps, conversationId: 'conversation-1', content };
 
     const { rerender } = render(<ContentParts {...props} attachments={[]} />);
-    expect(mockUseMessagePreviewHintsQuery).toHaveBeenLastCalledWith(
-      'conversation-1',
-      'msg-1',
-      [],
+    expect(mockUseSubagentAttachmentCallsQuery).toHaveBeenLastCalledWith(
+      { conversationId: 'conversation-1', messageId: 'msg-1', files: [] },
       false,
     );
     expect(screen.getByTestId('tool-call-group')).toHaveAttribute('data-attachments', '');
 
-    const late = [
+    rerender(
+      <ContentParts {...props} attachments={[lateFile('background-child', 'late-chart.png')]} />,
+    );
+    expect(mockUseSubagentAttachmentCallsQuery).toHaveBeenLastCalledWith(
       {
-        file_id: 'late-file',
-        filename: 'late-chart.png',
-        filepath: '/images/late-chart.png',
         conversationId: 'conversation-1',
         messageId: 'msg-1',
-        toolCallId: 'background-child',
+        files: [{ toolCallId: 'background-child' }],
       },
-    ] as TAttachment[];
-    rerender(<ContentParts {...props} attachments={late} />);
-    expect(mockUseMessagePreviewHintsQuery).toHaveBeenCalledWith(
-      'conversation-1',
-      'msg-1',
-      ['late-file'],
       true,
     );
     expect(screen.getByTestId('tool-call-group')).toHaveAttribute(
       'data-attachments',
       'late-chart.png',
     );
-    mockStoredMessage = undefined;
+    mockOwners = undefined;
   });
 
-  it('routes a late file through the transcript of a read the server sent in full', () => {
-    jest
-      .mocked(groupSequentialToolCalls)
-      .mockImplementation((parts) => [{ type: 'tool-group', parts }]);
-    const subagent = {
-      id: 'subagent-full',
-      name: 'subagent',
-      args: {},
-      output: 'done',
-      progress: 1,
-      subagentContentOmitted: true,
-      subagentContentParts: 1,
-    };
-    const { subagentContentOmitted: _omitted, subagentContentParts: _parts, ...full } = subagent;
-    mockStoredMessage = {
-      messageId: 'msg-1',
-      content: [
-        {
-          type: ContentTypes.TOOL_CALL,
-          [ContentTypes.TOOL_CALL]: {
-            ...full,
-            subagent_content: [
-              {
-                type: ContentTypes.TOOL_CALL,
-                [ContentTypes.TOOL_CALL]: { id: 'full-child', name: 'bash_tool', args: '' },
-              },
-            ],
-          },
-        },
-      ],
-    };
-    const late = [
-      {
-        file_id: 'full-file',
-        filename: 'full-chart.png',
-        filepath: '/images/full-chart.png',
-        conversationId: 'conversation-1',
-        messageId: 'msg-1',
-        toolCallId: 'full-child',
-      },
-    ] as TAttachment[];
-
-    render(
-      <ContentParts
-        {...baseProps}
-        conversationId="conversation-1"
-        content={
-          [
-            { type: ContentTypes.TOOL_CALL, [ContentTypes.TOOL_CALL]: subagent },
-          ] as unknown as TMessageContentParts[]
-        }
-        attachments={late}
-      />,
-    );
-    expect(screen.getByTestId('tool-call-group')).toHaveAttribute(
-      'data-attachments',
-      'full-chart.png',
-    );
-    mockStoredMessage = undefined;
-  });
-
-  it('reads the message back when only an unscoped call reusing the id took a scoped late file', () => {
+  it('asks for a scoped late file an unscoped call reusing its id took', () => {
     jest
       .mocked(mapAttachments)
       .mockImplementation(
@@ -920,65 +856,64 @@ describe('ContentParts — activity phase state', () => {
     jest
       .mocked(groupSequentialToolCalls)
       .mockImplementation((parts) => parts.map((part) => ({ type: 'tool-group', parts: [part] })));
-    const subagent = {
-      id: 'subagent-reloaded',
-      name: 'subagent',
-      args: {},
-      output: 'done',
-      progress: 1,
-      subagentContentOmitted: true,
-      subagentContentParts: 1,
-    };
     const content = [
       {
         type: ContentTypes.TOOL_CALL,
         [ContentTypes.TOOL_CALL]: { id: 'call_0', name: 'search', args: {}, output: 'top' },
       },
-      { type: ContentTypes.TOOL_CALL, [ContentTypes.TOOL_CALL]: subagent },
+      previewedSubagent('subagent-reloaded'),
     ] as unknown as TMessageContentParts[];
-    mockStoredMessage = {
-      messageId: 'msg-1',
-      content: [
-        content[0],
-        {
-          type: ContentTypes.TOOL_CALL,
-          [ContentTypes.TOOL_CALL]: {
-            ...subagent,
-            subagentAttachmentCalls: [{ id: 'call_0', agentId: 'child-agent' }],
-          },
-        },
+    mockOwners = {
+      parts: [
+        { toolCallId: 'subagent-reloaded', calls: [{ id: 'call_0', agentId: 'child-agent' }] },
       ],
     };
-    const late = [
-      {
-        file_id: 'child-file',
-        filename: 'child-chart.png',
-        filepath: '/images/child-chart.png',
-        conversationId: 'conversation-1',
-        messageId: 'msg-1',
-        toolCallId: 'call_0',
-        agentId: 'child-agent',
-      },
-    ] as TAttachment[];
 
     render(
       <ContentParts
         {...baseProps}
         conversationId="conversation-1"
         content={content}
-        attachments={late}
+        attachments={[lateFile('call_0', 'child-chart.png', 'child-agent')]}
       />,
     );
-    expect(mockUseMessagePreviewHintsQuery).toHaveBeenCalledWith(
-      'conversation-1',
-      'msg-1',
-      ['child-file'],
+    expect(mockUseSubagentAttachmentCallsQuery).toHaveBeenCalledWith(
+      expect.objectContaining({ files: [{ toolCallId: 'call_0', agentId: 'child-agent' }] }),
       true,
     );
     const [topLevel, subagentGroup] = screen.getAllByTestId('tool-call-group');
     expect(topLevel).toHaveAttribute('data-attachments', '');
     expect(subagentGroup).toHaveAttribute('data-attachments', 'child-chart.png');
-    mockStoredMessage = undefined;
+    mockOwners = undefined;
+  });
+
+  it('asks for a scoped late file only an unscoped hint of another subagent matched', () => {
+    jest
+      .mocked(groupSequentialToolCalls)
+      .mockImplementation((parts) => parts.map((part) => ({ type: 'tool-group', parts: [part] })));
+    const content = [
+      previewedSubagent('subagent-a', { subagentAttachmentCalls: [{ id: 'shared' }] }),
+      previewedSubagent('subagent-b'),
+    ] as unknown as TMessageContentParts[];
+    mockOwners = {
+      parts: [
+        { toolCallId: 'subagent-a', calls: [{ id: 'shared' }] },
+        { toolCallId: 'subagent-b', calls: [{ id: 'shared', agentId: 'agent-b' }] },
+      ],
+    };
+
+    render(
+      <ContentParts
+        {...baseProps}
+        conversationId="conversation-1"
+        content={content}
+        attachments={[lateFile('shared', 'b-chart.png', 'agent-b')]}
+      />,
+    );
+    const [first, second] = screen.getAllByTestId('tool-call-group');
+    expect(first).toHaveAttribute('data-attachments', '');
+    expect(second).toHaveAttribute('data-attachments', 'b-chart.png');
+    mockOwners = undefined;
   });
 
   it('hoists files from a grouped subagent run that is still streaming', () => {

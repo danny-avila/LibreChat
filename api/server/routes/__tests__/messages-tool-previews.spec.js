@@ -219,38 +219,39 @@ describe('tool-call previews on the message routes', () => {
     expect(message.content[1].tool_call.outputTruncated).toBe(true);
   });
 
-  it('reads one message back as a preview whose hints name the files saved on it since', async () => {
-    const childCallId = transcript.find((part) => part.type === 'tool_call').tool_call.id;
-    await mongoose.models.Message.updateOne(
-      { messageId: responseId },
-      {
-        $set: {
-          attachments: [
-            {
-              file_id: 'late-file',
-              filename: 'late.png',
-              toolCallId: childCallId,
-              messageId: responseId,
-            },
-          ],
-        },
-      },
-    );
-    const url = `/api/messages/${conversationId}/${responseId}`;
-    const previewed = await request(app).get(`${url}?toolPreviews=1`);
-    expect(previewed.status).toBe(200);
-    expect(previewed.body).toHaveLength(1);
-    const subagent = previewed.body[0].content[2].tool_call;
-    expect(subagent).toMatchObject({ subagentContentOmitted: true });
-    expect(subagent).not.toHaveProperty('subagent_content');
-    expect(subagent.subagentAttachmentCalls).toEqual([
-      expect.objectContaining({ id: childCallId }),
-    ]);
+  const subagentCallsUrl = (convo, message, files) =>
+    `/api/messages/${convo}/${message}/subagent-calls?files=${encodeURIComponent(JSON.stringify(files))}`;
 
-    const full = await request(app).get(url);
-    expect(full.body[0].content[2].tool_call.subagent_content).toEqual(transcript);
-    const other = await request(app).get(`${url}?toolPreviews=1`).set('x-user', OTHER);
-    expect(other.status).toBe(404);
+  it('names the subagent child calls queried files belong to, to the owner only', async () => {
+    const url = subagentCallsUrl(conversationId, responseId, [
+      { toolCallId: 'child_1' },
+      { toolCallId: 'not-in-any-transcript' },
+    ]);
+    const owner = await request(app).get(url);
+    expect(owner.status).toBe(200);
+    expect(owner.body).toEqual({
+      parts: [{ toolCallId: 'call_sub', agentId: 'agent_a', calls: [{ id: 'child_1' }] }],
+    });
+    expect(JSON.stringify(owner.body)).not.toContain('child is reading');
+
+    expect((await request(app).get(url).set('x-user', OTHER)).status).toBe(404);
+  });
+
+  it('refuses a malformed or oversized files query', async () => {
+    const base = `/api/messages/${conversationId}/${responseId}/subagent-calls`;
+    expect((await request(app).get(base)).status).toBe(400);
+    expect((await request(app).get(`${base}?files=not-json`)).status).toBe(400);
+    expect((await request(app).get(subagentCallsUrl(conversationId, responseId, []))).status).toBe(
+      400,
+    );
+    const many = Array.from({ length: 33 }, (_, i) => ({ toolCallId: `c${i}` }));
+    expect(
+      (await request(app).get(subagentCallsUrl(conversationId, responseId, many))).status,
+    ).toBe(400);
+    expect(
+      (await request(app).get(subagentCallsUrl(conversationId, responseId, [{ toolCallId: 7 }])))
+        .status,
+    ).toBe(400);
   });
 
   it('serves the full part to its owner and nobody else', async () => {
@@ -301,6 +302,12 @@ describe('tool-call previews on the message routes', () => {
       const part = await request(app).get(partUrl());
       expect(part.status).toBe(200);
       expect(part.body.tool_call.output).toBe(fullOutput);
+
+      const owners = await request(app).get(
+        subagentCallsUrl(liveConversationId, 'live-response', [{ toolCallId: 'child_1' }]),
+      );
+      expect(owners.status).toBe(200);
+      expect(owners.body.parts[0].calls).toEqual([{ id: 'child_1' }]);
     });
 
     it("refuses another user's job and a job from another tenant", async () => {

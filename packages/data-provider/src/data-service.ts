@@ -1175,13 +1175,14 @@ export function getToolCallPart(params: q.ToolCallPartParams): Promise<q.ToolCal
   return request.get(endpoints.messageToolCallPart(params));
 }
 
-export function getMessageById(
-  conversationId: string,
-  messageId: string,
-  options?: { toolPreviews?: boolean },
-): Promise<s.TMessage[]> {
-  const url = endpoints.messages({ conversationId, messageId });
-  return request.get(options?.toolPreviews === true ? withToolCallPreviews(url) : url);
+export function getSubagentAttachmentCalls(
+  params: q.SubagentAttachmentCallsParams,
+): Promise<q.SubagentAttachmentCallsResponse> {
+  return request.get(endpoints.messageSubagentAttachmentCalls(params));
+}
+
+export function getMessageById(conversationId: string, messageId: string): Promise<s.TMessage[]> {
+  return request.get(endpoints.messages({ conversationId, messageId }));
 }
 
 export function getParentSubagents(parentConversationId: string): Promise<t.ParentSubagentIndex> {

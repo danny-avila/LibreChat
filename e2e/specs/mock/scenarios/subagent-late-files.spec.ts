@@ -27,14 +27,19 @@ type LateFile = {
   childAgent?: string;
   /** Whether a top-level call of the response reuses the child's provider id. */
   reused?: boolean;
+  /** Whether the file is saved on the message before it streams; a harvest can stream it first. */
+  saved?: boolean;
 };
 
 /** A subagent's background tool can deliver its file after the conversation was loaded: the
  *  load previewed the settled subagent call before any file existed, so the preview names no
  *  child call to route it to, and only the stored transcript holds that call. The file is
- *  persisted onto the original message (as the harvest does) and re-emitted on a later turn's
- *  live stream, the way a `check_background_task` poll delivers it. */
-async function deliverLateFile(page: Page, { childCall, childAgent, reused }: LateFile) {
+ *  persisted onto the original message (as the harvest does, unless `saved` is false) and
+ *  re-emitted on a later turn's live stream, the way a `check_background_task` poll delivers it. */
+async function deliverLateFile(
+  page: Page,
+  { childCall, childAgent, reused, saved = true }: LateFile,
+) {
   const conversationId = randomUUID();
   const userMessageId = randomUUID();
   const messageId = randomUUID();
@@ -140,9 +145,11 @@ async function deliverLateFile(page: Page, { childCall, childAgent, reused }: La
     await expect(image).toHaveCount(0);
 
     /** The background task finished: its file is saved onto the original message. */
-    await withMongo((db) =>
-      db.collection('messages').updateOne({ messageId }, { $set: { attachments: [attachment] } }),
-    );
+    if (saved) {
+      await withMongo((db) =>
+        db.collection('messages').updateOne({ messageId }, { $set: { attachments: [attachment] } }),
+      );
+    }
 
     /** The next turn's stream re-emits that file for the original message, as a poll does. */
     let injected = false;
@@ -190,15 +197,15 @@ test('a file a subagent background tool delivers after the load renders under th
   try {
     await expect(image).toHaveCount(1);
     await expect(image).toBeVisible();
-    /** One previewed read of the message places the file; no omitted transcript is loaded. */
+    /** One owner lookup places the file; no omitted transcript is loaded. */
     expect(reads.filter((url) => url.includes('/parts/'))).toEqual([]);
-    expect(reads.filter((url) => url.includes(`/${messageId}?toolPreviews=`))).toHaveLength(1);
+    expect(reads.filter((url) => url.includes(`/${messageId}/subagent-calls?`))).toHaveLength(1);
   } finally {
     await cleanup();
   }
 });
 
-test('a late subagent file whose id an earlier top-level call reuses renders under the subagent @scenario:subagent-late-file-reused-id-routes-to-subagent', async ({
+test('a late subagent file whose id an earlier top-level call reuses renders under the subagent, even before it is saved @scenario:subagent-late-file-reused-id-routes-to-subagent', async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -206,6 +213,7 @@ test('a late subagent file whose id an earlier top-level call reuses renders und
     childCall: 'call_0',
     childAgent: 'e2e-illustrator',
     reused: true,
+    saved: false,
   });
   try {
     await expect(image).toHaveCount(1);
