@@ -833,6 +833,57 @@ describe('ContentParts — activity phase state', () => {
     act(() => getDefaultStore().set(progressAtom, null));
   });
 
+  it('keeps a live child file routed when the message remounts after eviction', () => {
+    jest
+      .mocked(groupSequentialToolCalls)
+      .mockImplementation((parts) => [{ type: 'tool-group', parts }]);
+    const content = [
+      {
+        type: ContentTypes.TOOL_CALL,
+        [ContentTypes.TOOL_CALL]: { id: 'subagent-remount', name: 'subagent', args: {} },
+      },
+    ] as unknown as TMessageContentParts[];
+    const attachments = [
+      {
+        filename: 'remount-cat.png',
+        filepath: '/images/remount-cat.png',
+        conversationId: 'conversation-1',
+        messageId: 'msg-1',
+        toolCallId: 'remount-child',
+      },
+    ] as TAttachment[];
+    const progressAtom = subagentProgressByToolCallId(
+      subagentProgressKey('msg-1', 'subagent-remount', 0),
+    );
+    const streaming = { ...baseProps, isSubmitting: true, isLatestMessage: true };
+    act(() => {
+      getDefaultStore().set(progressAtom, {
+        contentParts: [
+          {
+            type: ContentTypes.TOOL_CALL,
+            [ContentTypes.TOOL_CALL]: { id: 'remount-child', name: 'image_gen_oai', args: '' },
+          },
+        ],
+      } as unknown as SubagentProgress);
+    });
+    const first = render(
+      <ContentParts {...streaming} content={content} attachments={attachments} />,
+    );
+    first.unmount();
+    act(() => {
+      getDefaultStore().set(progressAtom, {
+        contentParts: [{ type: ContentTypes.TEXT, text: 'later output' }],
+      } as unknown as SubagentProgress);
+    });
+
+    render(<ContentParts {...streaming} content={content} attachments={attachments} />);
+    expect(screen.getByTestId('tool-call-group')).toHaveAttribute(
+      'data-attachments',
+      'remount-cat.png',
+    );
+    act(() => getDefaultStore().set(progressAtom, null));
+  });
+
   it('hoists a file a settled message receives late through its subagent progress', () => {
     jest
       .mocked(groupSequentialToolCalls)

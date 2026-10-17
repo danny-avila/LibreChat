@@ -3,7 +3,12 @@ import { atom, useStore, useAtomValue } from 'jotai';
 import { Constants, ContentTypes } from 'librechat-data-provider';
 import type { TAttachment, TMessageContentParts, Agents } from 'librechat-data-provider';
 import type { SubagentContentPart } from '~/utils/subagentContent';
-import { subagentProgressKey, retainSubagentProgress, subagentProgressByToolCallId } from './state';
+import {
+  subagentProgressKey,
+  retainSubagentProgress,
+  rememberSubagentChildCalls,
+  subagentProgressByToolCallId,
+} from './state';
 
 type NestedPart = TMessageContentParts | SubagentContentPart | undefined;
 /** A tool call inside a subagent run, with the scope its files may carry. */
@@ -139,8 +144,9 @@ export function assignNestedAttachments(
  * only there. The atom yields a signature string so the caller re-renders when
  * a child call appears, not on every delta. Each member it reads is retained
  * like a card's, so one no update ever reached is freed on unmount. Calls
- * already seen are kept while mounted, since the bounded live activity evicts
- * early parts before the transcript is saved.
+ * already seen are kept with the invocation (`rememberSubagentChildCalls`),
+ * since the bounded live activity evicts early parts before the transcript is
+ * saved.
  */
 export function useLiveSubagentToolCalls(
   content: ReadonlyArray<NestedPart> | undefined,
@@ -211,27 +217,15 @@ export function useLiveSubagentToolCalls(
     [keys],
   );
   const signature = useAtomValue(signatureAtom);
-  const seenCalls = useRef(new Map<string, Map<string, NestedCall>>());
   return useMemo(() => {
     const current = new Map<string, NestedCall[]>(
       signature === '' ? [] : (JSON.parse(signature) as Array<[string, NestedCall[]]>),
     );
-    const seen = seenCalls.current;
-    const active = new Set(keys.map(([, key]) => key));
-    for (const key of seen.keys()) {
-      if (!active.has(key)) {
-        seen.delete(key);
-      }
-    }
     const live = new Map<number, NestedCall[]>();
     for (const [index, key] of keys) {
-      const calls = seen.get(key) ?? new Map<string, NestedCall>();
-      for (const call of current.get(key) ?? []) {
-        calls.set([call.id, call.agentId ?? '', call.stepId ?? ''].join('\u0000'), call);
-      }
-      if (calls.size > 0) {
-        seen.set(key, calls);
-        live.set(index, [...calls.values()]);
+      const calls = rememberSubagentChildCalls(key, current.get(key) ?? []);
+      if (calls.length > 0) {
+        live.set(index, calls);
       }
     }
     return live.size > 0 ? live : NO_LIVE_CALLS;

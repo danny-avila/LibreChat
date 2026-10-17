@@ -3,6 +3,7 @@ import { atomFamily } from 'jotai/utils';
 import { atom, useAtomValue, useStore } from 'jotai';
 import { ContentTypes, getToolTimingDurations } from 'librechat-data-provider';
 import type {
+  Agents,
   PartMetadata,
   SubagentControlReceipt,
   SubagentControlRequest,
@@ -507,11 +508,34 @@ export function listRegisteredSubagentProgressKeys(): string[] {
   return [...registeredSubagentProgressKeys];
 }
 
+/**
+ * Child tool calls each invocation's live activity has shown, kept with the invocation rather
+ * than a reader: the bounded activity evicts early parts, and a reader that remounts after that
+ * still has to route the files those calls saved. Freed with the invocation's members.
+ */
+const seenSubagentChildCalls = new Map<string, Map<string, Agents.SubagentAttachmentCall>>();
+
+/** Adds `calls` to what the invocation has shown and returns everything it has shown. */
+export function rememberSubagentChildCalls(
+  invocationKey: string,
+  calls: Agents.SubagentAttachmentCall[],
+): Agents.SubagentAttachmentCall[] {
+  const seen = seenSubagentChildCalls.get(invocationKey) ?? new Map();
+  for (const call of calls) {
+    seen.set([call.id, call.agentId ?? '', call.stepId ?? ''].join('\u0000'), call);
+  }
+  if (seen.size > 0) {
+    seenSubagentChildCalls.set(invocationKey, seen);
+  }
+  return [...seen.values()];
+}
+
 /** Frees idle invocation members; mounted readers retain their stream identity. */
 export function removeSubagentProgressAtoms(invocationKey: string): void {
   if (subagentProgressReaders.has(invocationKey)) return;
   subagentProgressByToolCallId.remove(invocationKey);
   subagentParentStreamOpenByToolCallId.remove(invocationKey);
+  seenSubagentChildCalls.delete(invocationKey);
 }
 
 /** How many mounted readers hold each invocation's member. Removing one while
