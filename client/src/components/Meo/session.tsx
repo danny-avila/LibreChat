@@ -16,10 +16,44 @@ type MeoSessionState = {
 };
 
 const MeoSessionContext = createContext<MeoSessionState | null>(null);
+const oauthRoundTripKey = 'meo:oauth-round-trip';
+const oauthRoundTripWindowMs = 2 * 60 * 1000;
 
 function loginReturnPath(): string {
   const path = `${window.location.pathname}${window.location.search}`;
   return path.startsWith('/new') && !path.startsWith('//') ? path : '/new';
+}
+
+function recentOauthRoundTrip(): boolean {
+  try {
+    const value = Number(window.sessionStorage.getItem(oauthRoundTripKey));
+    return Number.isFinite(value) && Date.now() - value < oauthRoundTripWindowMs;
+  } catch {
+    return false;
+  }
+}
+
+function markOauthRoundTrip(): void {
+  try {
+    window.sessionStorage.setItem(oauthRoundTripKey, String(Date.now()));
+  } catch {
+    // Session storage is an optimization only; OAuth still works without it.
+  }
+}
+
+function clearOauthRoundTrip(): void {
+  try {
+    window.sessionStorage.removeItem(oauthRoundTripKey);
+  } catch {
+    // Ignore browsers that block session storage.
+  }
+}
+
+function sessionFailureMessage(response: Response): string {
+  const reason = response.headers.get('X-Meo-Session-Failure');
+  const safeReason =
+    reason && /^[a-z0-9_]{1,64}$/.test(reason) ? reason : 'session_unavailable';
+  return `Meo Account sign-in completed, but Meo AI could not restore this browser session. Reference: ${safeReason}.`;
 }
 
 export function MeoSessionProvider({ children }: { children: ReactNode }) {
@@ -37,6 +71,10 @@ export function MeoSessionProvider({ children }: { children: ReactNode }) {
     })
       .then(async (response) => {
         if (response.status === 401) {
+          if (recentOauthRoundTrip()) {
+            throw new Error(sessionFailureMessage(response));
+          }
+          markOauthRoundTrip();
           const returnTo = encodeURIComponent(loginReturnPath());
           window.location.replace(`/oauth/openid?return=${returnTo}`);
           return null;
@@ -45,6 +83,7 @@ export function MeoSessionProvider({ children }: { children: ReactNode }) {
         if (!response.ok || !payload?.user?.id) {
           throw new Error('Meo Account session is unavailable.');
         }
+        clearOauthRoundTrip();
         return payload.user as MeoSessionUser;
       })
       .then((sessionUser) => {
