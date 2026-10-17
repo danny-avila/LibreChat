@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { onRequest } from '../functions/api/[[path]].js';
+import { onRequest as meoOnRequest } from '../functions/api/meo/[[path]].js';
 import { seal, sessionCookieHeader } from '../functions/_lib/session.js';
 
 const env = {
@@ -106,6 +107,43 @@ test('stream failure keeps status and hides provider response text', async (t) =
   });
   assert.equal(result.status, 429);
   assert.doesNotMatch(JSON.stringify(await result.json()), /private provider diagnostic/);
+});
+
+test('Meo chat routes translate to the AI broker protocol', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  let upstream;
+  globalThis.fetch = async (input, init) => {
+    upstream = { url: String(input), init };
+    return Response.json({ consent: { requestId: 'request-1' } });
+  };
+  const response = await meoOnRequest({
+    request: await request('/api/meo/chat/prepare', {
+      method: 'POST',
+      body: JSON.stringify({
+        credentialId: 'credential-1',
+        model: 'model-1',
+        prompt: 'hello',
+      }),
+    }),
+    env,
+  });
+  assert.equal(response.status, 200);
+  assert.equal(upstream.url, 'https://api.meoarch.org/v1/ai/provider-broker');
+  assert.equal(upstream.init.method, 'POST');
+  assert.deepEqual(JSON.parse(upstream.init.body), {
+    action: 'prepare_inference',
+    credentialId: 'credential-1',
+    clientId: 'public-test-client',
+    purpose: 'meo_ai_web_chat',
+    dataCategories: ['chat_text'],
+    model: 'model-1',
+    userPrompt: 'hello',
+    temperature: 0.7,
+    maxOutputTokens: 2048,
+  });
 });
 
 for (const code of [
