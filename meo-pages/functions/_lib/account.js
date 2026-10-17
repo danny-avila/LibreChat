@@ -65,11 +65,13 @@ async function tokenRequest(env, body) {
   return payload;
 }
 
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 export async function accountUser(env, accessToken) {
-  // OAuth access tokens issued for Meo AI are resource-bound to
-  // https://api.meoarch.org. Validate/read the actor through that resource
-  // instead of sending an API-audience token to the Account UserInfo endpoint.
-  const response = await fetch(`${apiUrl(env)}/v1/me`, {
+  // UserInfo is the identity endpoint for the OAuth/OIDC flow. Keep API resource
+  // tokens for meo-api calls, but use the provider's UserInfo response to bind
+  // the browser session to the Meo Account subject.
+  const response = await fetch(`${accountUrl(env)}/v1/auth/oauth2/userinfo`, {
     headers: {
       Authorization: `Bearer ${accessToken}`,
       Accept: 'application/json',
@@ -83,14 +85,14 @@ export async function accountUser(env, accessToken) {
   if (!user || typeof user !== 'object') return null;
 
   const id =
-    typeof user.id === 'string' && user.id
-      ? user.id
-      : typeof user.user_id === 'string' && user.user_id
-        ? user.user_id
-        : typeof user.sub === 'string' && user.sub
-          ? user.sub
+    typeof user.sub === 'string' && user.sub
+      ? user.sub
+      : typeof user.id === 'string' && user.id
+        ? user.id
+        : typeof user.user_id === 'string' && user.user_id
+          ? user.user_id
           : '';
-  if (!id) return null;
+  if (!uuidPattern.test(id)) return null;
 
   return { ...user, id };
 }
