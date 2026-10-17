@@ -2686,7 +2686,10 @@ describe('primeResources', () => {
           context: FileContext.agents,
         }) as TFile;
 
-      const primeLegacy = (adoptLegacySearchEmbeddings: jest.Mock) => {
+      const primeLegacy = (
+        hasEntityEmbeddings: jest.Mock,
+        adoptLegacySearchEmbeddings: jest.Mock,
+      ) => {
         mockGetFiles.mockResolvedValue([legacySearchFile()]);
         return primeResources({
           req: mockReq,
@@ -2698,15 +2701,23 @@ describe('primeResources', () => {
           requestFileSet,
           agentId: 'agent1',
           enabledToolResources: new Set([EToolResources.file_search]),
+          hasEntityEmbeddings,
           adoptLegacySearchEmbeddings,
         });
       };
 
-      it('does not re-embed a file only this agent holds', async () => {
+      it("does not re-embed a file whose vectors are in this agent's namespace", async () => {
+        const probe = jest.fn().mockResolvedValue(true);
         const adopt = jest.fn().mockResolvedValue(['legacy-search']);
 
-        const result = await primeLegacy(adopt);
+        const result = await primeLegacy(probe, adopt);
 
+        expect(probe).toHaveBeenCalledWith({
+          userId: 'user1',
+          file_id: 'legacy-search',
+          entity_id: 'agent1',
+          query: 'handbook.pdf',
+        });
         expect(adopt).toHaveBeenCalledWith({
           files: [{ file_id: 'legacy-search', user: 'user1' }],
           agentId: 'agent1',
@@ -2717,22 +2728,50 @@ describe('primeResources', () => {
         ]);
       });
 
-      it('keeps the file queued when adoption fails', async () => {
+      it("embeds a file whose vectors are not in this agent's namespace", async () => {
+        /* Another agent embedded it, so this agent's namespace holds none of its vectors and
+         * search would return nothing. */
+        const probe = jest.fn().mockResolvedValue(false);
+        const adopt = jest.fn();
+
+        const result = await primeLegacy(probe, adopt);
+
+        expect(adopt).not.toHaveBeenCalled();
+        expect(result.provisionState?.vectorDBFiles.map((f) => f.file_id)).toEqual([
+          'legacy-search',
+        ]);
+      });
+
+      it('keeps the file queued when the vector store cannot be asked', async () => {
+        const probe = jest.fn().mockRejectedValue(new Error('connect ECONNREFUSED'));
+        const adopt = jest.fn();
+
+        const result = await primeLegacy(probe, adopt);
+
+        expect(adopt).not.toHaveBeenCalled();
+        expect(result.provisionState?.vectorDBFiles.map((f) => f.file_id)).toEqual([
+          'legacy-search',
+        ]);
+      });
+
+      it('keeps the file queued when recording the namespace fails', async () => {
         /* Adoption only spares a re-embed; failing it must not leave search without vectors. */
+        const probe = jest.fn().mockResolvedValue(true);
         const adopt = jest.fn().mockRejectedValue(new Error('database unavailable'));
 
-        const result = await primeLegacy(adopt);
+        const result = await primeLegacy(probe, adopt);
 
         expect(result.provisionState?.vectorDBFiles.map((f) => f.file_id)).toEqual([
           'legacy-search',
         ]);
       });
 
-      it('starts adoption before the code liveness probe settles', async () => {
+      it('starts the legacy check before the code liveness probe settles', async () => {
+        const probe = jest.fn().mockResolvedValue(true);
         const adopt = jest.fn().mockResolvedValue(['legacy-search']);
-        let adoptionStartedFirst = false;
+        let checkStartedFirst = false;
         const checkSessionsAlive = jest.fn(async () => {
-          adoptionStartedFirst = adopt.mock.calls.length === 1;
+          checkStartedFirst = probe.mock.calls.length === 1;
           return new Set(['legacy-search']);
         });
         mockGetFiles.mockResolvedValue([
@@ -2763,23 +2802,12 @@ describe('primeResources', () => {
           agentId: 'agent1',
           enabledToolResources: new Set([EToolResources.file_search, EToolResources.execute_code]),
           checkSessionsAlive,
+          hasEntityEmbeddings: probe,
           adoptLegacySearchEmbeddings: adopt,
         });
 
         expect(checkSessionsAlive).toHaveBeenCalled();
-        expect(adoptionStartedFirst).toBe(true);
-      });
-
-      it('still embeds a file another agent also holds', async () => {
-        /* Either agent may be the one that embedded it, so this agent's namespace may hold
-         * none of its vectors and search would return nothing. */
-        const adopt = jest.fn().mockResolvedValue([]);
-
-        const result = await primeLegacy(adopt);
-
-        expect(result.provisionState?.vectorDBFiles.map((f) => f.file_id)).toEqual([
-          'legacy-search',
-        ]);
+        expect(checkStartedFirst).toBe(true);
       });
     });
 

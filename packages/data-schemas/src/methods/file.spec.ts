@@ -82,7 +82,7 @@ describe('File Methods', () => {
       await Agent().deleteMany({});
     });
 
-    it('records the namespace of a legacy file only this agent holds', async () => {
+    it('records the namespace of a verified legacy file', async () => {
       const fileId = uuidv4();
       await createAgent('agent_owner', [fileId]);
       await createLegacyFile(fileId);
@@ -97,10 +97,22 @@ describe('File Methods', () => {
       expect(stored?.metadata?.embeddedEntities).toEqual(['agent_owner']);
     });
 
-    it('leaves a legacy file another agent also holds unrecorded', async () => {
+    it('does not touch a tenant record that shares an untenanted file_id', async () => {
       const fileId = uuidv4();
-      await createAgent('agent_owner', [fileId]);
-      await createAgent('agent_other', [fileId]);
+      await File.collection.insertOne({
+        file_id: fileId,
+        user: author,
+        tenantId: 'tenant-b',
+        filename: `${fileId}.pdf`,
+        filepath: `/uploads/${fileId}.pdf`,
+        type: 'application/pdf',
+        bytes: 1024,
+        embedded: true,
+        context: FileContext.agents,
+        object: 'file',
+        usage: 0,
+      });
+      /* Inserted second, so an unscoped match would land on the tenant record first. */
       await createLegacyFile(fileId);
 
       const adopted = await fileMethods.adoptLegacySearchEmbeddings({
@@ -108,9 +120,14 @@ describe('File Methods', () => {
         agentId: 'agent_owner',
       });
 
-      expect(adopted).toEqual([]);
-      const stored = (await File.findOne({ file_id: fileId }).lean()) as IMongoFile | null;
-      expect(stored?.metadata?.embeddedEntities).toBeUndefined();
+      expect(adopted).toEqual([fileId]);
+      const tenantRecord = await File.collection.findOne({ file_id: fileId, tenantId: 'tenant-b' });
+      expect(tenantRecord?.metadata?.embeddedEntities).toBeUndefined();
+      const untenanted = (await File.findOne({
+        file_id: fileId,
+        tenantId: { $exists: false },
+      }).lean()) as IMongoFile | null;
+      expect(untenanted?.metadata?.embeddedEntities).toEqual(['agent_owner']);
     });
 
     it("does not touch another owner's record that shares the file_id", async () => {

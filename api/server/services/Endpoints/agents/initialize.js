@@ -55,6 +55,7 @@ const {
   getScheduleMCPExecution,
   getMCPRequestContext,
   createSubagentCodeRouting,
+  hasEntityEmbeddings,
 } = require('@librechat/api');
 const {
   ResourceType,
@@ -822,6 +823,7 @@ const initializeClientWithProvider = async ({
       provisionToVectorDB,
       checkSessionsAlive,
       adoptLegacySearchEmbeddings: db.adoptLegacySearchEmbeddings,
+      hasEntityEmbeddings,
       loadCodeApiKey,
       updateFile: db.updateFile,
       getRoleByName: db.getRoleByName,
@@ -918,6 +920,7 @@ const initializeClientWithProvider = async ({
         provisionToVectorDB,
         checkSessionsAlive,
         adoptLegacySearchEmbeddings: db.adoptLegacySearchEmbeddings,
+        hasEntityEmbeddings,
         loadCodeApiKey,
         updateFile: db.updateFile,
         getRoleByName: db.getRoleByName,
@@ -1462,6 +1465,7 @@ const initializeClientWithProvider = async ({
             provisionToVectorDB,
             checkSessionsAlive,
             adoptLegacySearchEmbeddings: db.adoptLegacySearchEmbeddings,
+            hasEntityEmbeddings,
             loadCodeApiKey,
             updateFile: db.updateFile,
             getRoleByName: db.getRoleByName,

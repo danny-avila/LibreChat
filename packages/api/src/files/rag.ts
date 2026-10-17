@@ -58,3 +58,41 @@ export async function deleteRagFile({ userId, file }: DeleteRagFileParams): Prom
     }
   }
 }
+
+interface EntityEmbeddingsParams {
+  /** The requesting user, whose token authorizes the query. */
+  userId: string;
+  file_id: string;
+  /** The namespace to look in, such as an agent id. */
+  entity_id: string;
+  /** Any non-empty text; RAG needs one to rank chunks. */
+  query: string;
+}
+
+/**
+ * Whether RAG holds chunks of a file under an entity's namespace. RAG filters a query by
+ * file_id and returns chunks only when they were embedded under the entity it names (or
+ * under the requesting user), so a single result is positive evidence that they exist.
+ * Rejects when RAG cannot be asked; the caller chooses the fallback.
+ */
+export async function hasEntityEmbeddings({
+  userId,
+  file_id,
+  entity_id,
+  query,
+}: EntityEmbeddingsParams): Promise<boolean> {
+  if (!process.env.RAG_API_URL) {
+    return false;
+  }
+  const { data } = await axios.post<unknown[]>(
+    `${process.env.RAG_API_URL}/query`,
+    { file_id, query, k: 1, entity_id },
+    {
+      headers: {
+        Authorization: `Bearer ${generateShortLivedToken(userId)}`,
+        'Content-Type': 'application/json',
+      },
+    },
+  );
+  return Array.isArray(data) && data.length > 0;
+}

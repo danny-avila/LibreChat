@@ -1234,14 +1234,13 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
   }
 
   /**
-   * Records the namespace of embedded files that predate namespace tracking, for the files
-   * only this agent holds as File Search files. Before namespaces were recorded, a file
-   * joined an agent's File Search resources only by being embedded for that agent, so when
-   * no other agent holds it, its vectors are this agent's. A file another agent also holds
-   * stays unrecorded, since either agent may be the one that embedded it.
+   * Records an agent's namespace on embedded files that predate namespace tracking, once the
+   * caller has confirmed their vectors are in that namespace. Each record is matched by its
+   * owner and tenant as well as its `file_id`, which is not unique on its own, and only while
+   * it still records no namespace, so a namespace written concurrently is never overwritten.
    *
-   * @param data - Candidate file records, and the agent whose File Search resources hold them
-   * @returns The file ids now recorded under the agent's namespace
+   * @param data - Verified file records, and the agent whose namespace holds their vectors
+   * @returns The file ids that now record the agent's namespace
    */
   async function adoptLegacySearchEmbeddings(data: {
     files: LegacySearchFileRef[];
@@ -1250,33 +1249,14 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     if (data.files.length === 0) {
       return [];
     }
-    const Agent = mongoose.models.Agent as Model<{
-      id: string;
-      tool_resources?: { file_search?: { file_ids?: string[] } };
-    }>;
     const File = mongoose.models.File as Model<IMongoFile>;
-    const holders = await Agent.find(
-      {
-        id: { $ne: data.agentId },
-        'tool_resources.file_search.file_ids': { $in: data.files.map((file) => file.file_id) },
-      },
-      { 'tool_resources.file_search.file_ids': 1 },
-    ).lean();
-    const shared = new Set(
-      holders.flatMap((agent) => agent.tool_resources?.file_search?.file_ids ?? []),
-    );
-    /* `file_id` is not unique on its own, so each record is matched by its owner and tenant
-     * as well: only the records this turn loaded and authorized are ever rewritten. */
-    const records = data.files
-      .filter((file) => !shared.has(file.file_id))
-      .map((file) => ({
-        file_id: file.file_id,
-        user: file.user,
-        ...(file.tenantId ? { tenantId: file.tenantId } : {}),
-      }));
-    if (records.length === 0) {
-      return [];
-    }
+    /* An untenanted record is matched as untenanted: omitting the predicate would let a
+     * same-id record under a tenant match instead. */
+    const records = data.files.map((file) => ({
+      file_id: file.file_id,
+      user: file.user,
+      tenantId: file.tenantId ?? null,
+    }));
     /* One conditional write per record, so a namespace recorded concurrently by another
      * writer is never overwritten and never reported back as adopted here. Each write
      * settles on its own: a committed adoption is reported even when a sibling fails,

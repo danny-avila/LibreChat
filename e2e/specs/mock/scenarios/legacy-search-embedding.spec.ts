@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { expect, test } from '@playwright/test';
+import type { RagQueryRecord, UploadedFile } from '../helpers';
 import type { AgentDetail } from '../agents.helpers';
-import type { UploadedFile } from '../helpers';
 import { cleanupAgent } from '../agents.helpers';
 import { withMongo } from '../db';
 import {
@@ -21,6 +21,10 @@ import {
  * `metadata.embeddedEntities`. They must stay searchable without being embedded a second
  * time, which would store a duplicate copy under the same file_id (#16843).
  */
+/** A file_search query, as opposed to the one-chunk presence check priming sends. */
+const isSearchOf = (query: RagQueryRecord, fileId: string) =>
+  query.file_id === fileId && query.k !== 1;
+
 test.describe('legacy File Search embeddings', () => {
   test('an agent file embedded before namespace tracking is searched without re-embedding @scenario:legacy-search-file-not-re-embedded', async ({
     page,
@@ -87,7 +91,7 @@ test.describe('legacy File Search embeddings', () => {
       await sendMessageAndWaitForCompletion(page, `E2E_FILE_SEARCH:${uniqueName('legacy')}`);
 
       await expect
-        .poll(async () => (await getRagQueries(page)).filter((q) => q.file_id === fileId).length, {
+        .poll(async () => (await getRagQueries(page)).filter((q) => isSearchOf(q, fileId)).length, {
           timeout: 30000,
         })
         .toBeGreaterThan(0);
@@ -173,15 +177,15 @@ test.describe('legacy File Search embeddings', () => {
       });
       await sendMessageAndWaitForCompletion(page, `E2E_FILE_SEARCH:${uniqueName('shared')}`);
 
-      /* Either agent may hold its vectors, so the searching agent gets its own embedding
-       * rather than querying a namespace that may hold none. */
+      /* Its vectors are in the source agent's namespace, so the searching agent gets its
+       * own embedding rather than querying a namespace that holds none. */
       await expect
         .poll(async () => (await getRagEmbedded(page)).filter((e) => e.file_id === fileId).length, {
           timeout: 30000,
         })
         .toBe(1);
       await expect
-        .poll(async () => (await getRagQueries(page)).filter((q) => q.file_id === fileId).length)
+        .poll(async () => (await getRagQueries(page)).filter((q) => isSearchOf(q, fileId)).length)
         .toBeGreaterThan(0);
     } finally {
       await cleanupAgent(page, inheritorId);

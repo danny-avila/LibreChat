@@ -7,14 +7,19 @@
  * implements just enough of the contract to exercise the vector-DB provisioning
  * path end to end (real backend + DB) without a live embedding service:
  *
- * - `POST   /embed`      — embed an uploaded file (`uploadVectors`); returns
- *                          `known_type: true` so the file is marked `embedded`.
- * - `POST   /query`      — semantic query from the `file_search` tool; returns an
- *                          empty result set (valid, handled gracefully).
- * - `DELETE /documents`  — delete embeddings (`deleteVectors`).
+ * - `POST /embed`: embed an uploaded file (`uploadVectors`); returns
+ *   `known_type: true` so the file is marked `embedded`.
+ * - `POST /query`: semantic query from the `file_search` tool; returns an
+ *   empty result set (valid, handled gracefully). A one-chunk
+ *   query (`k: 1`) is a presence check and is answered from the
+ *   stored embeds the way RAG authorizes chunks: a hit only when
+ *   the file was embedded under the queried `entity_id`.
+ * - `DELETE /documents`: delete embeddings (`deleteVectors`).
  *
  * Every embed is recorded and surfaced at `GET /__debug/embedded` so specs can
  * assert a file's bytes actually reached the RAG env, independent of the DB write.
+ * `/__debug/reset` clears those recordings only; the stored embeds behind presence
+ * checks persist like real vectors until `DELETE /documents` removes them.
  */
 
 const http = require('http');
@@ -25,8 +30,10 @@ const HOST = '127.0.0.1';
 
 /** @type {Array<{ file_id: string; filename: string; entity_id: string; bytes: number; auth: string }>} */
 const embedded = [];
-/** @type {Array<{ file_id: string; query: string }>} */
+/** @type {Array<{ file_id: string; query: string; k: number | null; entity_id: string }>} */
 const queries = [];
+/** @type {Array<{ file_id: string; entity_id: string }>} */
+const stored = [];
 /** @type {string[]} */
 const deleted = [];
 
@@ -87,19 +94,39 @@ async function handleEmbed(req, res) {
     bytes: files[0]?.bytes ?? 0,
     auth: req.headers['authorization'] || '',
   });
+  stored.push({ file_id: fields.file_id || '', entity_id: fields.entity_id || '' });
   sendJson(res, 200, { status: true, known_type: true });
 }
 
 async function handleQuery(req, res) {
   const body = await readJson(req);
-  queries.push({ file_id: body.file_id || '', query: body.query || '' });
-  sendJson(res, 200, []);
+  const entityId = body.entity_id || '';
+  queries.push({
+    file_id: body.file_id || '',
+    query: body.query || '',
+    k: typeof body.k === 'number' ? body.k : null,
+    entity_id: entityId,
+  });
+  const present =
+    body.k === 1 &&
+    stored.some((entry) => entry.file_id === body.file_id && entry.entity_id === entityId);
+  sendJson(
+    res,
+    200,
+    present ? [[{ page_content: '', metadata: { source: '', file_id: body.file_id } }, 0]] : [],
+  );
 }
 
 async function handleDeleteDocuments(req, res) {
   const body = await readJson(req);
   if (Array.isArray(body)) {
-    deleted.push(...body.map(String));
+    const ids = body.map(String);
+    deleted.push(...ids);
+    for (let i = stored.length - 1; i >= 0; i--) {
+      if (ids.includes(stored[i].file_id)) {
+        stored.splice(i, 1);
+      }
+    }
   }
   sendJson(res, 200, { status: true });
 }

@@ -409,7 +409,13 @@ export type CodeProvisionRecord = {
 };
 
 export type RagEmbedRecord = { file_id: string; filename: string; entity_id: string };
-export type RagQueryRecord = { file_id: string; query: string };
+export type RagQueryRecord = {
+  file_id: string;
+  query: string;
+  /** Chunks asked for; `1` marks a presence check rather than a file_search query. */
+  k: number | null;
+  entity_id: string;
+};
 
 /** Every `/query` the fake RAG service received from file_search. */
 export async function getRagQueries(page: Page): Promise<RagQueryRecord[]> {

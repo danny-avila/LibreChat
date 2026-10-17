@@ -12,6 +12,7 @@ jest.mock('~/crypto/jwt', () => ({
 
 jest.mock('axios', () => ({
   delete: jest.fn(),
+  post: jest.fn(),
   interceptors: {
     request: { use: jest.fn(), eject: jest.fn() },
     response: { use: jest.fn(), eject: jest.fn() },
@@ -19,7 +20,7 @@ jest.mock('axios', () => ({
 }));
 
 import axios from 'axios';
-import { deleteRagFile } from './rag';
+import { deleteRagFile, hasEntityEmbeddings } from './rag';
 import { logger } from '@librechat/data-schemas';
 import { generateShortLivedToken } from '~/crypto/jwt';
 
@@ -146,5 +147,54 @@ describe('deleteRagFile', () => {
       expect(result).toBe(false);
       expect(mockedLogger.error).toHaveBeenCalledWith('[deleteRagFile] No user ID provided');
     });
+  });
+});
+
+describe('hasEntityEmbeddings', () => {
+  const originalEnv = process.env;
+  const params = { userId: 'user1', file_id: 'file1', entity_id: 'agent1', query: 'notes.pdf' };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    process.env = { ...originalEnv, RAG_API_URL: 'http://localhost:8000' };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it('asks for one chunk of the file under the entity', async () => {
+    mockedAxios.post.mockResolvedValueOnce({ data: [[{ page_content: 'x' }, 0.1]] });
+
+    await expect(hasEntityEmbeddings(params)).resolves.toBe(true);
+    expect(mockedAxios.post).toHaveBeenCalledWith(
+      'http://localhost:8000/query',
+      { file_id: 'file1', query: 'notes.pdf', k: 1, entity_id: 'agent1' },
+      {
+        headers: {
+          Authorization: 'Bearer mock-jwt-token',
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+  });
+
+  it('reports no embeddings when RAG returns no chunks', async () => {
+    mockedAxios.post.mockResolvedValueOnce({ data: [] });
+
+    await expect(hasEntityEmbeddings(params)).resolves.toBe(false);
+  });
+
+  it('rejects when RAG cannot be asked', async () => {
+    mockedAxios.post.mockRejectedValueOnce(new Error('connect ECONNREFUSED'));
+
+    await expect(hasEntityEmbeddings(params)).rejects.toThrow('connect ECONNREFUSED');
+  });
+
+  it('reports no embeddings without asking when RAG is not configured', async () => {
+    delete process.env.RAG_API_URL;
+
+    await expect(hasEntityEmbeddings(params)).resolves.toBe(false);
+    expect(mockedAxios.post).not.toHaveBeenCalled();
   });
 });

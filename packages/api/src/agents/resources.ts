@@ -88,15 +88,25 @@ export type TCheckSessionsAlive = (params: {
 export type TLoadCodeApiKey = (userId: string) => Promise<string>;
 
 /**
- * Records the agent's namespace on legacy embedded File Search files no other agent holds,
- * and returns the ids it recorded. Before namespaces were tracked, such a file was embedded
- * for the one agent holding it, so embedding it again stores a second copy under the same
- * file_id and every search returns both. A file another agent also holds is left alone.
+ * Records the agent's namespace on legacy embedded files already confirmed to have vectors
+ * there, and returns the ids it recorded.
  */
 export type TAdoptLegacySearchEmbeddings = (params: {
   files: Array<{ file_id: string; user: string; tenantId?: string }>;
   agentId: string;
 }) => Promise<string[]>;
+
+/**
+ * Whether the vector store holds chunks of a file in an entity's namespace. Records from
+ * before namespaces were tracked say only that a file was embedded somewhere, so this is
+ * the evidence that decides whether embedding it again would store a second copy.
+ */
+export type THasEntityEmbeddings = (params: {
+  userId: string;
+  file_id: string;
+  entity_id: string;
+  query: string;
+}) => Promise<boolean>;
 
 /** State computed during primeResources for lazy provisioning at tool invocation time */
 export type ProvisionState = {
@@ -224,8 +234,8 @@ const isEmbeddedForNamespace = (file: TFile, namespaceId?: string): boolean => {
 
 /**
  * Whether an agent file was embedded before namespaces were tracked and is held by the
- * active agent as a File Search file. Such a record may belong to this agent's namespace,
- * which only the stored set of agents holding it can settle; see TAdoptLegacySearchEmbeddings.
+ * active agent as a File Search file. Such a record may or may not have vectors in this
+ * agent's namespace, which only the vector store can answer; see THasEntityEmbeddings.
  */
 const isLegacySearchCandidate = (
   file: TFile,
@@ -437,6 +447,7 @@ const computeProvisionState = async ({
   agentScopedFileIds,
   persistedResourceMembership,
   adoptLegacySearchEmbeddings,
+  hasEntityEmbeddings,
   staleSafeWindowMs,
 }: {
   req?: ServerRequest;
@@ -458,6 +469,7 @@ const computeProvisionState = async ({
   /** Which resource each persisted file is filed under, before categorization mutates it. */
   persistedResourceMembership?: ReadonlyMap<EToolResources, ReadonlySet<string>>;
   adoptLegacySearchEmbeddings?: TAdoptLegacySearchEmbeddings;
+  hasEntityEmbeddings?: THasEntityEmbeddings;
   staleSafeWindowMs?: number;
 }): Promise<ProvisionState | undefined> => {
   if (!enabledToolResources || enabledToolResources.size === 0 || attachments.length === 0) {
@@ -512,27 +524,56 @@ const computeProvisionState = async ({
   }
 
   /* Started before the liveness probe, with which it shares nothing. Adoption only spares a
-   * re-embed, so a failure leaves the files queued rather than failing priming. */
+   * re-embed, so a failure at any step leaves the files queued rather than failing priming. */
   const legacySearchFiles =
-    needsVectorDB && agentId != null && adoptLegacySearchEmbeddings
+    needsVectorDB && agentId != null && resourcePrincipal?.id != null
       ? provisionable.filter((file) => isLegacySearchCandidate(file, persistedResourceMembership))
       : [];
+  const adoptLegacy = async (): Promise<Set<string>> => {
+    if (
+      agentId == null ||
+      resourcePrincipal?.id == null ||
+      !hasEntityEmbeddings ||
+      !adoptLegacySearchEmbeddings
+    ) {
+      return new Set();
+    }
+    const present = await Promise.all(
+      legacySearchFiles.map((file) =>
+        hasEntityEmbeddings({
+          userId: resourcePrincipal.id as string,
+          file_id: file.file_id,
+          entity_id: agentId,
+          query: file.filename || file.file_id,
+        }).catch((error) => {
+          logger.error(
+            `[primeResources] Could not check legacy embeddings for file ${file.file_id}`,
+            error,
+          );
+          return false;
+        }),
+      ),
+    );
+    const confirmed = legacySearchFiles.filter((_file, index) => present[index]);
+    if (confirmed.length === 0) {
+      return new Set();
+    }
+    const adopted = await adoptLegacySearchEmbeddings({
+      files: confirmed.map((file) => ({
+        file_id: file.file_id,
+        user: String(file.user),
+        ...(file.tenantId ? { tenantId: file.tenantId } : {}),
+      })),
+      agentId,
+    });
+    return new Set(adopted);
+  };
   const legacyAdoption: Promise<Set<string>> =
-    agentId != null && adoptLegacySearchEmbeddings && legacySearchFiles.length > 0
-      ? adoptLegacySearchEmbeddings({
-          files: legacySearchFiles.map((file) => ({
-            file_id: file.file_id,
-            user: String(file.user),
-            ...(file.tenantId ? { tenantId: file.tenantId } : {}),
-          })),
-          agentId,
-        }).then(
-          (ids) => new Set(ids),
-          (error) => {
-            logger.error('[primeResources] Failed to adopt legacy File Search embeddings', error);
-            return new Set<string>();
-          },
-        )
+    legacySearchFiles.length > 0
+      ? adoptLegacy().catch((error) => {
+          logger.error('[primeResources] Failed to adopt legacy File Search embeddings', error);
+          return new Set<string>();
+        })
       : Promise.resolve(new Set<string>());
 
   const activeCodeRouteKey = codeRouteKey ?? 'default';
@@ -718,6 +759,7 @@ export const primeResources = async ({
   provisionCandidates,
   screenPersistentFiles,
   adoptLegacySearchEmbeddings,
+  hasEntityEmbeddings,
   codeRouteKey,
   codeBaseUrl,
   codeExecutionProfile,
@@ -748,8 +790,10 @@ export const primeResources = async ({
    *  and a configuration or policy change since they were attached would otherwise let
    *  their bytes reach the model, the Code API or RAG. */
   screenPersistentFiles?: (files: Array<TFile>) => Array<TFile>;
-  /** Records the agent's namespace on legacy File Search embeddings only it holds. */
+  /** Records the agent's namespace on legacy File Search embeddings confirmed to be there. */
   adoptLegacySearchEmbeddings?: TAdoptLegacySearchEmbeddings;
+  /** Asks the vector store whether a legacy file's chunks are in the agent's namespace. */
+  hasEntityEmbeddings?: THasEntityEmbeddings;
   /** The code deployment this turn will execute on, which decides whether an existing
    *  sandbox reference is usable here. */
   codeRouteKey?: string;
@@ -994,6 +1038,7 @@ export const primeResources = async ({
         agentScopedFileIds: persistedResourceFileIds,
         persistedResourceMembership,
         adoptLegacySearchEmbeddings,
+        hasEntityEmbeddings,
         staleSafeWindowMs: appConfig?.fileConfig?.codeEnvLivenessSafeWindowMs,
       });
       return {
@@ -1061,6 +1106,7 @@ export const primeResources = async ({
       agentScopedFileIds: persistedResourceFileIds,
       persistedResourceMembership,
       adoptLegacySearchEmbeddings,
+      hasEntityEmbeddings,
       staleSafeWindowMs: appConfig?.fileConfig?.codeEnvLivenessSafeWindowMs,
     });
 
