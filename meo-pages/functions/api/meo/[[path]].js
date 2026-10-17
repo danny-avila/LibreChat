@@ -60,6 +60,11 @@ function targetFor(request, env, relativePath) {
 function forwardedHeaders(request, accessToken, hasBody) {
   const headers = new Headers();
   headers.set('Authorization', `Bearer ${accessToken}`);
+  // Meo Account uses a secure cross-subdomain browser session. Preserve it
+  // when the Pages BFF calls the first-party API so its session authenticator
+  // can validate the same user before considering the OAuth bearer fallback.
+  const cookie = request.headers.get('Cookie');
+  if (cookie) headers.set('Cookie', cookie);
   headers.set('Cache-Control', 'no-store');
   const accept = request.headers.get('Accept');
   if (accept) headers.set('Accept', accept);
