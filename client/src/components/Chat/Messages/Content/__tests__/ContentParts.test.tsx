@@ -9,11 +9,11 @@ import {
   subagentProgressKey,
 } from '~/components/Chat/Subagents/state';
 import { preserveStreamedContentIdentity } from '~/utils/messages';
-import { groupSequentialToolCalls } from '~/utils';
+import { mapAttachments, groupSequentialToolCalls } from '~/utils';
 
 jest.mock('~/utils', () => ({
   cn: (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(' '),
-  mapAttachments: () => ({}),
+  mapAttachments: jest.fn(() => ({})),
   filterAttachmentsForPart: (attachments: unknown) => attachments,
   groupSequentialToolCalls: jest.fn(),
   hasPendingApprovalInPart: jest.requireActual('~/utils/groupToolCalls').hasPendingApprovalInPart,
@@ -972,6 +972,62 @@ describe('ContentParts — activity phase state', () => {
       'compacted.csv',
     );
     act(() => getDefaultStore().set(progressAtom, null));
+  });
+
+  it('keeps a scoped child file off an unscoped top-level call that reuses its id', () => {
+    jest
+      .mocked(groupSequentialToolCalls)
+      .mockImplementation((parts) => parts.map((part) => ({ type: 'tool-group', parts: [part] })));
+    jest.mocked(mapAttachments).mockImplementation((files) => {
+      const map: Record<string, TAttachment[] | undefined> = {};
+      for (const file of files) {
+        if (file?.toolCallId != null) {
+          (map[file.toolCallId] ??= []).push(file);
+        }
+      }
+      return map;
+    });
+    const content = [
+      {
+        type: ContentTypes.TOOL_CALL,
+        [ContentTypes.TOOL_CALL]: {
+          id: 'subagent-owner',
+          name: 'subagent',
+          args: {},
+          output: 'done',
+          subagent_content: [
+            {
+              type: ContentTypes.TOOL_CALL,
+              [ContentTypes.TOOL_CALL]: {
+                id: 'reused-id',
+                name: 'bash_tool',
+                stepId: 'step-child',
+              },
+            },
+          ],
+        },
+      },
+      {
+        type: ContentTypes.TOOL_CALL,
+        [ContentTypes.TOOL_CALL]: { id: 'reused-id', name: 'search', args: {}, output: 'x' },
+      },
+    ] as unknown as TMessageContentParts[];
+    const files = [
+      {
+        filename: 'child.csv',
+        filepath: '/files/child.csv',
+        conversationId: 'conversation-1',
+        messageId: 'msg-1',
+        toolCallId: 'reused-id',
+        stepId: 'step-child',
+      },
+    ] as TAttachment[];
+
+    render(<ContentParts {...baseProps} content={content} attachments={files} />);
+    const [subagentGroup, topLevelGroup] = screen.getAllByTestId('tool-call-group');
+    expect(subagentGroup).toHaveAttribute('data-attachments', 'child.csv');
+    expect(topLevelGroup).toHaveAttribute('data-attachments', '');
+    jest.mocked(mapAttachments).mockImplementation(() => ({}));
   });
 
   it('frees the progress member of a streaming subagent no update reached', () => {

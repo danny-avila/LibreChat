@@ -3,6 +3,7 @@ import {
   collectNestedCalls,
   assignNestedAttachments,
   selectUnclaimedAttachments,
+  selectExactlyNestedAttachments,
 } from './attachments';
 
 const file = (toolCallId?: string) =>
@@ -123,6 +124,15 @@ describe('subagent attachments', () => {
     expect(collectNestedCalls([toolCall('child', { agentId: 'agent-on-call' })])).toEqual([
       { id: 'child', agentId: 'agent-on-call' },
     ]);
+  });
+
+  it('reserves a file a child call owns under its full scope', () => {
+    const content = [subagent('runner', [toolCall('reused', { stepId: 'step-child' })])];
+    const scoped = { ...file('reused'), stepId: 'step-child' } as TAttachment;
+    const other = { ...file('reused'), stepId: 'step-other' } as TAttachment;
+    expect(selectExactlyNestedAttachments(content, [scoped, other], new Map())).toEqual(
+      new Set([scoped]),
+    );
   });
 
   it('keeps the files of two subagent calls that share an id apart', () => {

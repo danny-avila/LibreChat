@@ -95,6 +95,49 @@ export function selectUnclaimedAttachments(
   return unclaimed.length > 0 ? unclaimed : EMPTY;
 }
 
+/** Each tool call part of `content` with the child calls of its stored, previewed or live run. */
+function collectNestedOwners(
+  content: ReadonlyArray<NestedPart> | undefined,
+  live: ReadonlyMap<number, NestedCall[]>,
+): Array<[NestedPart, NestedCall[]]> {
+  const owners: Array<[NestedPart, NestedCall[]]> = [];
+  (content ?? []).forEach((part, index) => {
+    const toolCall = toolCallOf(part);
+    if (toolCall == null) {
+      return;
+    }
+    const calls = collectNestedCalls(toolCall.subagent_content);
+    calls.push(...(toolCall.subagentAttachmentCalls ?? []), ...(live.get(index) ?? []));
+    if (calls.length > 0) {
+      owners.push([part, calls]);
+    }
+  });
+  return owners;
+}
+
+/**
+ * Attachments a child call inside some subagent run owns under its full scope.
+ * A top-level call that only matches them by id, without that scope, must not
+ * take them first.
+ */
+export function selectExactlyNestedAttachments(
+  content: ReadonlyArray<NestedPart> | undefined,
+  attachments: TAttachment[],
+  live: ReadonlyMap<number, NestedCall[]>,
+): ReadonlySet<TAttachment> {
+  const owners = collectNestedOwners(content, live);
+  const reserved = new Set<TAttachment>();
+  if (owners.length === 0) {
+    return reserved;
+  }
+  for (const attachment of attachments) {
+    if (owners.some(([, calls]) => calls.some((call) => ownsAttachment(call, attachment, true)))) {
+      reserved.add(attachment);
+    }
+  }
+  return reserved;
+}
+
 /**
  * Hands each unclaimed attachment to one tool call part of the message whose
  * transcript (stored, previewed, or streaming in `live`, keyed by content
@@ -112,18 +155,7 @@ export function assignNestedAttachments(
   if (unclaimed.length === 0) {
     return NO_NESTED;
   }
-  const owners: Array<[NestedPart, NestedCall[]]> = [];
-  (content ?? []).forEach((part, index) => {
-    const toolCall = toolCallOf(part);
-    if (toolCall == null) {
-      return;
-    }
-    const calls = collectNestedCalls(toolCall.subagent_content);
-    calls.push(...(toolCall.subagentAttachmentCalls ?? []), ...(live.get(index) ?? []));
-    if (calls.length > 0) {
-      owners.push([part, calls]);
-    }
-  });
+  const owners = collectNestedOwners(content, live);
   const assigned = new Map<NestedPart, TAttachment[]>();
   for (const attachment of unclaimed) {
     const owner =
