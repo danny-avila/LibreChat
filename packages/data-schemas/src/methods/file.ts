@@ -17,6 +17,13 @@ import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { escapeRegExp } from '~/utils/string';
 import logger from '../config/winston';
 
+/** A loaded file record, named by the fields that identify it: `file_id` is not unique alone. */
+export type LegacySearchFileRef = {
+  file_id: string;
+  user: string;
+  tenantId?: string;
+};
+
 export const DEFAULT_AVAILABLE_PROJECT_FILES_LIMIT = 20;
 export const MAX_AVAILABLE_PROJECT_FILES_LIMIT = 50;
 
@@ -348,7 +355,10 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     file_id: string;
     entityId: string;
   }) => Promise<IMongoFile | null>;
-  adoptLegacySearchEmbeddings: (data: { file_ids: string[]; agentId: string }) => Promise<string[]>;
+  adoptLegacySearchEmbeddings: (data: {
+    files: LegacySearchFileRef[];
+    agentId: string;
+  }) => Promise<string[]>;
   updateFileUsage: (data: {
     file_id: string;
     inc?: number;
@@ -1230,14 +1240,14 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
    * no other agent holds it, its vectors are this agent's. A file another agent also holds
    * stays unrecorded, since either agent may be the one that embedded it.
    *
-   * @param data - Candidate file ids, and the agent whose File Search resources hold them
+   * @param data - Candidate file records, and the agent whose File Search resources hold them
    * @returns The file ids now recorded under the agent's namespace
    */
   async function adoptLegacySearchEmbeddings(data: {
-    file_ids: string[];
+    files: LegacySearchFileRef[];
     agentId: string;
   }): Promise<string[]> {
-    if (data.file_ids.length === 0) {
+    if (data.files.length === 0) {
       return [];
     }
     const Agent = mongoose.models.Agent as Model<{
@@ -1248,35 +1258,42 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     const holders = await Agent.find(
       {
         id: { $ne: data.agentId },
-        'tool_resources.file_search.file_ids': { $in: data.file_ids },
+        'tool_resources.file_search.file_ids': { $in: data.files.map((file) => file.file_id) },
       },
       { 'tool_resources.file_search.file_ids': 1 },
     ).lean();
     const shared = new Set(
       holders.flatMap((agent) => agent.tool_resources?.file_search?.file_ids ?? []),
     );
-    const candidates = data.file_ids.filter((fileId) => !shared.has(fileId));
-    if (candidates.length === 0) {
+    /* `file_id` is not unique on its own, so each record is matched by its owner and tenant
+     * as well: only the records this turn loaded and authorized are ever rewritten. */
+    const records = data.files
+      .filter((file) => !shared.has(file.file_id))
+      .map((file) => ({
+        file_id: file.file_id,
+        user: file.user,
+        ...(file.tenantId ? { tenantId: file.tenantId } : {}),
+      }));
+    if (records.length === 0) {
       return [];
     }
     const legacyFilter = {
-      file_id: { $in: candidates },
+      $or: records,
       context: FileContext.agents,
       embedded: true,
       'metadata.embeddedEntities': { $exists: false },
     };
-    const legacy = await File.find(legacyFilter, { file_id: 1 }).lean<
-      Array<Pick<IMongoFile, 'file_id'>>
+    const legacy = await File.find(legacyFilter, { _id: 1, file_id: 1 }).lean<
+      Array<Pick<IMongoFile, '_id' | 'file_id'>>
     >();
-    const adopted = legacy.map((file) => file.file_id);
-    if (adopted.length === 0) {
+    if (legacy.length === 0) {
       return [];
     }
     await File.updateMany(
-      { ...legacyFilter, file_id: { $in: adopted } },
+      { ...legacyFilter, _id: { $in: legacy.map((file) => file._id) } },
       { $set: { 'metadata.embeddedEntities': [data.agentId] } },
     );
-    return adopted;
+    return legacy.map((file) => file.file_id);
   }
 
   /**

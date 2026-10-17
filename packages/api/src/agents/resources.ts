@@ -94,7 +94,7 @@ export type TLoadCodeApiKey = (userId: string) => Promise<string>;
  * file_id and every search returns both. A file another agent also holds is left alone.
  */
 export type TAdoptLegacySearchEmbeddings = (params: {
-  file_ids: string[];
+  files: Array<{ file_id: string; user: string; tenantId?: string }>;
   agentId: string;
 }) => Promise<string[]>;
 
@@ -560,17 +560,20 @@ const computeProvisionState = async ({
     });
   }
 
-  const legacySearchFileIds =
+  const legacySearchFiles =
     needsVectorDB && agentId != null && adoptLegacySearchEmbeddings
-      ? new Set(
-          provisionable
-            .filter((file) => isLegacySearchCandidate(file, persistedResourceMembership))
-            .map((file) => file.file_id),
-        )
-      : new Set<string>();
-  if (agentId != null && adoptLegacySearchEmbeddings && legacySearchFileIds.size > 0) {
+      ? provisionable.filter((file) => isLegacySearchCandidate(file, persistedResourceMembership))
+      : [];
+  if (agentId != null && adoptLegacySearchEmbeddings && legacySearchFiles.length > 0) {
     const adopted = new Set(
-      await adoptLegacySearchEmbeddings({ file_ids: [...legacySearchFileIds], agentId }),
+      await adoptLegacySearchEmbeddings({
+        files: legacySearchFiles.map((file) => ({
+          file_id: file.file_id,
+          user: String(file.user),
+          ...(file.tenantId ? { tenantId: file.tenantId } : {}),
+        })),
+        agentId,
+      }),
     );
     for (const file of provisionable) {
       if (adopted.has(file.file_id)) {

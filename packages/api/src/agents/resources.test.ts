@@ -2707,7 +2707,10 @@ describe('primeResources', () => {
 
         const result = await primeLegacy(adopt);
 
-        expect(adopt).toHaveBeenCalledWith({ file_ids: ['legacy-search'], agentId: 'agent1' });
+        expect(adopt).toHaveBeenCalledWith({
+          files: [{ file_id: 'legacy-search', user: 'user1' }],
+          agentId: 'agent1',
+        });
         expect(result.provisionState).toBeUndefined();
         expect(result.tool_resources?.[EToolResources.file_search]?.file_ids).toEqual([
           'legacy-search',

@@ -61,10 +61,14 @@ describe('File Methods', () => {
         tool_resources: { [EToolResources.file_search]: { file_ids: searchFileIds } },
       });
 
-    const createLegacyFile = (fileId: string, metadata?: Record<string, unknown>) =>
+    const createLegacyFile = (
+      fileId: string,
+      metadata?: Record<string, unknown>,
+      owner: mongoose.Types.ObjectId = author,
+    ) =>
       File.create({
         file_id: fileId,
-        user: author,
+        user: owner,
         filename: `${fileId}.pdf`,
         filepath: `/uploads/${fileId}.pdf`,
         type: 'application/pdf',
@@ -84,7 +88,7 @@ describe('File Methods', () => {
       await createLegacyFile(fileId);
 
       const adopted = await fileMethods.adoptLegacySearchEmbeddings({
-        file_ids: [fileId],
+        files: [{ file_id: fileId, user: author.toString() }],
         agentId: 'agent_owner',
       });
 
@@ -100,7 +104,7 @@ describe('File Methods', () => {
       await createLegacyFile(fileId);
 
       const adopted = await fileMethods.adoptLegacySearchEmbeddings({
-        file_ids: [fileId],
+        files: [{ file_id: fileId, user: author.toString() }],
         agentId: 'agent_owner',
       });
 
@@ -109,13 +113,33 @@ describe('File Methods', () => {
       expect(stored?.metadata?.embeddedEntities).toBeUndefined();
     });
 
+    it("does not touch another owner's record that shares the file_id", async () => {
+      const fileId = uuidv4();
+      const otherOwner = new mongoose.Types.ObjectId();
+      await createAgent('agent_owner', [fileId]);
+      await createLegacyFile(fileId);
+      await createLegacyFile(fileId, undefined, otherOwner);
+
+      const adopted = await fileMethods.adoptLegacySearchEmbeddings({
+        files: [{ file_id: fileId, user: author.toString() }],
+        agentId: 'agent_owner',
+      });
+
+      expect(adopted).toEqual([fileId]);
+      const foreign = (await File.findOne({
+        file_id: fileId,
+        user: otherOwner,
+      }).lean()) as IMongoFile | null;
+      expect(foreign?.metadata?.embeddedEntities).toBeUndefined();
+    });
+
     it('does not touch a file whose namespaces are already recorded', async () => {
       const fileId = uuidv4();
       await createAgent('agent_owner', [fileId]);
       await createLegacyFile(fileId, { embeddedEntities: ['agent_source'] });
 
       const adopted = await fileMethods.adoptLegacySearchEmbeddings({
-        file_ids: [fileId],
+        files: [{ file_id: fileId, user: author.toString() }],
         agentId: 'agent_owner',
       });
 

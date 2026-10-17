@@ -3423,6 +3423,7 @@ class AgentClient extends BaseClient {
       {
         getProjectFiles: db.getProjectFiles,
         getFiles: db.getFiles,
+        adoptLegacySearchEmbeddings: db.adoptLegacySearchEmbeddings,
         getUserKey: db.getUserKey,
         getConvoFiles: db.getConvoFiles,
         getAccessibleMcpServerNames,
