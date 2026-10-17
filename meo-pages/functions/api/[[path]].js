@@ -130,12 +130,14 @@ function chatInput(body) {
 }
 
 async function broker(request, env, session, body, acceptStream = false) {
+  const forwardedCookie = request.headers.get('Cookie');
   return fetch(brokerUrl(env), {
     method: 'POST',
     headers: authHeaders(env, session.accessToken, {
       'Content-Type': 'application/json',
       ...(acceptStream ? { Accept: 'text/event-stream' } : {}),
       'Cache-Control': 'no-store',
+      ...(forwardedCookie ? { Cookie: forwardedCookie } : {}),
     }),
     body: JSON.stringify(body),
   });

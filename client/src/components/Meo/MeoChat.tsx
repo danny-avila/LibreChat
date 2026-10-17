@@ -68,7 +68,8 @@ function requestError(value: unknown, status: number): string {
 
 async function json<T>(url: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
-  if (init?.body != null && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
+  if (init?.body != null && !headers.has('Content-Type'))
+    headers.set('Content-Type', 'application/json');
   const response = await fetch(url, {
     ...init,
     credentials: 'same-origin',
@@ -325,15 +326,13 @@ export default function MeoChat() {
     setError('');
     setBusy(true);
     const nextMessages: Message[] = [...messages, { role: 'user', content: prompt }];
-    const contextConversationId = activeConversationId || null;
     try {
-      const prepared = await json<{ consent: MeoConsent }>('/api/meo/chat/prepare', {
+      const prepared = await json<{ consent: MeoConsent }>('/api/chat/prepare', {
         method: 'POST',
         body: JSON.stringify({
           credentialId,
           model: model.trim(),
-          conversationId: contextConversationId,
-          prompt,
+          messages: nextMessages,
         }),
       });
       const consent = prepared.consent;
@@ -342,15 +341,14 @@ export default function MeoChat() {
 
       const abortController = new AbortController();
       streamAbortRef.current = abortController;
-      const response = await fetch('/api/meo/chat/stream', {
+      const response = await fetch('/api/chat/stream', {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
         body: JSON.stringify({
           credentialId,
           model: model.trim(),
-          conversationId: contextConversationId,
-          prompt,
+          messages: nextMessages,
           consent,
         }),
         signal: abortController.signal,
