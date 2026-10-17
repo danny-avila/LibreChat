@@ -33,18 +33,6 @@ const AuthLayout = () => (
   </AuthContextProvider>
 );
 
-/**
- * Meo has its own server-backed session gate, but it reuses shared LibreChat
- * components that call useAuthContext(). Keep a real AuthContext above those
- * components without letting the legacy auth provider take over navigation;
- * MeoSessionProvider remains responsible for redirecting to Meo Account.
- */
-const MeoAuthLayout = () => (
-  <AuthContextProvider authConfig={{ optional: true }}>
-    <Outlet />
-  </AuthContextProvider>
-);
-
 const loadInlinePromptsView = () =>
   importWithRecovery(() => import('~/components/Prompts/layouts/InlinePromptsView')).then((m) => ({
     Component: m.default,
@@ -86,20 +74,14 @@ const baseHref = baseEl?.getAttribute('href') || '/';
 export const router = createBrowserRouter(
   [
     {
-      element: <MeoAuthLayout />,
+      path: 'new',
+      lazy: loadMeoView,
       errorElement: <RouteErrorBoundary />,
-      children: [
-        {
-          path: 'new',
-          lazy: loadMeoView,
-          errorElement: <RouteErrorBoundary />,
-        },
-        {
-          path: 'meo',
-          lazy: loadMeoView,
-          errorElement: <RouteErrorBoundary />,
-        },
-      ],
+    },
+    {
+      path: 'meo',
+      lazy: loadMeoView,
+      errorElement: <RouteErrorBoundary />,
     },
     {
       path: 'share/:shareId',
