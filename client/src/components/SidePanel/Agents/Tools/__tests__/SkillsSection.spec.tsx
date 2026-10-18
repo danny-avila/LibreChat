@@ -359,7 +359,7 @@ describe('SkillsSection All mode body', () => {
 
     renderSection();
 
-    expect(screen.getByText('com_ui_skills_available_count')).toBeInTheDocument();
+    expect(screen.getByText('com_ui_skills_available_count_other')).toBeInTheDocument();
     expect(screen.queryByText('com_ui_skills_available_count_one')).not.toBeInTheDocument();
   });
 
@@ -370,7 +370,7 @@ describe('SkillsSection All mode body', () => {
     renderSection();
 
     expect(screen.getByText('com_ui_skills_available_count_one')).toBeInTheDocument();
-    expect(screen.queryByText('com_ui_skills_available_count')).not.toBeInTheDocument();
+    expect(screen.queryByText('com_ui_skills_available_count_other')).not.toBeInTheDocument();
   });
 
   test('expands the available skills list from its header button', () => {
@@ -416,7 +416,7 @@ describe('SkillsSection All mode body', () => {
     renderSection();
 
     expect(screen.getByText('com_ui_skills_available_count_loaded_one')).toBeInTheDocument();
-    expect(screen.queryByText('com_ui_skills_available_count')).not.toBeInTheDocument();
+    expect(screen.queryByText('com_ui_skills_available_count_other')).not.toBeInTheDocument();
     expect(screen.queryByText('com_ui_skills_available_count_one')).not.toBeInTheDocument();
   });
 
@@ -427,7 +427,7 @@ describe('SkillsSection All mode body', () => {
 
     renderSection();
 
-    expect(screen.getByText('com_ui_skills_available_count_loaded')).toBeInTheDocument();
+    expect(screen.getByText('com_ui_skills_available_count_loaded_other')).toBeInTheDocument();
     expect(screen.queryByText('com_ui_skills_available_count_loaded_one')).not.toBeInTheDocument();
   });
 
@@ -453,7 +453,7 @@ describe('SkillsSection All mode body', () => {
     renderSection();
 
     expect(screen.getByRole('alert')).toHaveTextContent('com_ui_skills_load_error');
-    expect(screen.queryByText('com_ui_skills_available_count')).not.toBeInTheDocument();
+    expect(screen.queryByText('com_ui_skills_available_count_other')).not.toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: /com_ui_skills_available_count/ }),
     ).not.toBeInTheDocument();
@@ -478,7 +478,7 @@ describe('SkillsSection All mode body', () => {
     renderSection();
 
     expect(screen.getByText('com_ui_loading')).toBeInTheDocument();
-    expect(screen.queryByText('com_ui_skills_available_count')).not.toBeInTheDocument();
+    expect(screen.queryByText('com_ui_skills_available_count_other')).not.toBeInTheDocument();
   });
 
   test('counts and lists only the skills the runtime would inject', () => {

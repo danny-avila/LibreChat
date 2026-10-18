@@ -183,8 +183,8 @@ type DateLabelProps = {
 };
 
 const statusSectionLabels: Record<string, TranslationKeys> = {
-  [RUNNING_CHATS_GROUP]: 'com_a11y_chats_running_section',
-  [FINISHED_CHATS_GROUP]: 'com_a11y_chats_finished_section',
+  [RUNNING_CHATS_GROUP]: 'com_a11y_chats_running_section_other',
+  [FINISHED_CHATS_GROUP]: 'com_a11y_chats_finished_section_other',
 };
 
 const DateLabel: FC<DateLabelProps> = memo(

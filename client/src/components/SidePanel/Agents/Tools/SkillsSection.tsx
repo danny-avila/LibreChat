@@ -48,9 +48,9 @@ function availableCountKey(count: number, hasMore: boolean): TranslationKeys {
   if (hasMore) {
     return count === 1
       ? 'com_ui_skills_available_count_loaded_one'
-      : 'com_ui_skills_available_count_loaded';
+      : 'com_ui_skills_available_count_loaded_other';
   }
-  return count === 1 ? 'com_ui_skills_available_count_one' : 'com_ui_skills_available_count';
+  return count === 1 ? 'com_ui_skills_available_count_one' : 'com_ui_skills_available_count_other';
 }
 
 function SkillIcon({ item }: { item: AgentItem }) {

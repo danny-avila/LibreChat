@@ -711,7 +711,7 @@ describe('Error — user key and limits', () => {
     );
 
     expect(
-      screen.getByText(localized('com_error_message_limit', '40', '60 minutes')),
+      screen.getByText(localized('com_error_message_limit_other', '40', '60 minutes')),
     ).toBeInTheDocument();
     expect(screen.queryByText(/You can send another message/)).not.toBeInTheDocument();
   });

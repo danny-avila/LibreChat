@@ -135,7 +135,9 @@ export default function VersionPanel() {
   const countLabel =
     versionCount > 0
       ? localize(
-          versionCount === 1 ? 'com_ui_agent_version_count_one' : 'com_ui_agent_version_count',
+          versionCount === 1
+            ? 'com_ui_agent_version_count_one'
+            : 'com_ui_agent_version_count_other',
           { count: versionCount },
         )
       : null;

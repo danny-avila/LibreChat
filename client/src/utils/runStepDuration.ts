@@ -69,12 +69,12 @@ export function getRunStepDurationLabels(
       key: 'com_ui_duration_seconds',
       values: { 0: formatted },
       /** The caller picks the plural form explicitly, matching the
-       *  `com_ui_tools_count` / `_one` convention already used across the
+       *  `com_ui_tools_count_one` / `_other` convention already used across the
        *  locale files, rather than relying on i18next's plural resolution. */
       announcedKey:
         seconds === 1
           ? 'com_ui_duration_announced_seconds_one'
-          : 'com_ui_duration_announced_seconds',
+          : 'com_ui_duration_announced_seconds_other',
       announcedValues: { count: formatted },
     };
   }
@@ -92,7 +92,7 @@ export function getRunStepDurationLabels(
     announcedKey:
       announcedMinutes === 1
         ? 'com_ui_duration_announced_minutes_one'
-        : 'com_ui_duration_announced_minutes',
+        : 'com_ui_duration_announced_minutes_other',
     announcedValues: { count: formatDurationValue(announcedMinutes, language) },
   };
 }
@@ -117,7 +117,9 @@ export function getElapsedDurationLabels(
       key,
       values,
       announcedKey:
-        seconds === 1 ? 'com_ui_elapsed_announced_seconds_one' : 'com_ui_elapsed_announced_seconds',
+        seconds === 1
+          ? 'com_ui_elapsed_announced_seconds_one'
+          : 'com_ui_elapsed_announced_seconds_other',
       announcedValues: { count: formatDurationValue(seconds, language) },
     };
   }
@@ -129,7 +131,7 @@ export function getElapsedDurationLabels(
     announcedKey:
       announcedMinutes === 1
         ? 'com_ui_elapsed_announced_minutes_one'
-        : 'com_ui_elapsed_announced_minutes',
+        : 'com_ui_elapsed_announced_minutes_other',
     announcedValues: { count: formatDurationValue(announcedMinutes, language) },
   };
 }

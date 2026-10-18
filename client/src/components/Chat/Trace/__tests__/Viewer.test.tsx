@@ -991,7 +991,7 @@ describe('Trace Viewer', () => {
       expect(await recordRow('com_ui_model: Let me look that up\\.')).toBeInTheDocument();
       const turn = screen.getByRole('treeitem', { name: /^com_ui_trace_turn/ });
       expect(turn).toHaveAccessibleName(/Where does the trace viewer read from\?/);
-      expect(turn).toHaveAccessibleName(/com_ui_trace_model_calls_count 2/);
+      expect(turn).toHaveAccessibleName(/com_ui_trace_model_calls_count_other 2/);
       expect(turn).toHaveAccessibleName(/com_ui_trace_tool_calls_count_one 1/);
       expect(
         screen.getByRole('treeitem', {

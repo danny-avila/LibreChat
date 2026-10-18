@@ -86,7 +86,7 @@ export function composeHint(
       text: localize(
         state.uploadingCount === 1
           ? 'com_ui_composer_hint_uploading_one'
-          : 'com_ui_composer_hint_uploading',
+          : 'com_ui_composer_hint_uploading_other',
         { count: state.uploadingCount },
       ),
       kind: 'state',

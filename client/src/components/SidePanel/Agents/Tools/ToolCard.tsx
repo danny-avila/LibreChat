@@ -183,7 +183,7 @@ function ToolCardImpl({
                 {localize(
                   item.endpointCount === 1
                     ? 'com_ui_tools_endpoint_count_one'
-                    : 'com_ui_tools_endpoint_count',
+                    : 'com_ui_tools_endpoint_count_other',
                   { count: item.endpointCount },
                 )}
               </span>

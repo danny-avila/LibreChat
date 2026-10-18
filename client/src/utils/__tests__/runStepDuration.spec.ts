@@ -28,7 +28,9 @@ describe('getRunStepDurationLabels', () => {
       expect(getRunStepDurationLabels(1000).announcedKey).toBe(
         'com_ui_duration_announced_seconds_one',
       );
-      expect(getRunStepDurationLabels(1400).announcedKey).toBe('com_ui_duration_announced_seconds');
+      expect(getRunStepDurationLabels(1400).announcedKey).toBe(
+        'com_ui_duration_announced_seconds_other',
+      );
     });
   });
 
@@ -69,7 +71,7 @@ describe('getRunStepDurationLabels', () => {
         announcedValues: { count: '1' },
       });
       expect(getRunStepDurationLabels(150_000, 'en')).toMatchObject({
-        announcedKey: 'com_ui_duration_announced_minutes',
+        announcedKey: 'com_ui_duration_announced_minutes_other',
         announcedValues: { count: '3' },
       });
     });
@@ -88,7 +90,7 @@ describe('getElapsedDurationLabels', () => {
     expect(getElapsedDurationLabels(5_000, 'en')).toEqual({
       key: 'com_ui_duration_seconds',
       values: { 0: '5' },
-      announcedKey: 'com_ui_elapsed_announced_seconds',
+      announcedKey: 'com_ui_elapsed_announced_seconds_other',
       announcedValues: { count: '5' },
     });
   });
@@ -106,7 +108,7 @@ describe('getElapsedDurationLabels', () => {
     expect(getElapsedDurationLabels(90_000, 'en')).toMatchObject({
       key: 'com_ui_duration_minutes',
       values: { 0: '1', 1: '30' },
-      announcedKey: 'com_ui_elapsed_announced_minutes',
+      announcedKey: 'com_ui_elapsed_announced_minutes_other',
       announcedValues: { count: '2' },
     });
   });

@@ -1446,7 +1446,7 @@ export default function SubagentThreadPanel({ selection }: { selection: ActiveSu
         {localize(
           progress!.droppedCount === 1
             ? 'com_ui_subagent_activity_dropped_one'
-            : 'com_ui_subagent_activity_dropped',
+            : 'com_ui_subagent_activity_dropped_other',
           { count: progress!.droppedCount! },
         )}
       </div>

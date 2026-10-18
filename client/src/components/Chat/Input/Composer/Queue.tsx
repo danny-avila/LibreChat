@@ -635,7 +635,7 @@ function QueueRow({
             </span>
             <span aria-hidden="true">
               {localize(
-                fileCount === 1 ? 'com_ui_attachment_count_one' : 'com_ui_attachment_count',
+                fileCount === 1 ? 'com_ui_attachment_count_one' : 'com_ui_attachment_count_other',
                 {
                   count: fileCount,
                 },

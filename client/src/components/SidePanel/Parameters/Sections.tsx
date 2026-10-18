@@ -53,7 +53,7 @@ export default function Sections({
                     {localize(
                       changed === 1
                         ? 'com_ui_params_changed_count_one'
-                        : 'com_ui_params_changed_count',
+                        : 'com_ui_params_changed_count_other',
                       { count: changed },
                     )}
                   </span>

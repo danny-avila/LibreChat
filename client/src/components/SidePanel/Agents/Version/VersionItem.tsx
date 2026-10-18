@@ -69,7 +69,7 @@ export default function VersionItem({
   if (toolsCount > 0) {
     summaryChips.push({
       key: 'tools',
-      label: localize(toolsCount === 1 ? 'com_ui_tools_count_one' : 'com_ui_tools_count', {
+      label: localize(toolsCount === 1 ? 'com_ui_tools_count_one' : 'com_ui_tools_count_other', {
         count: toolsCount,
       }),
     });
@@ -78,7 +78,9 @@ export default function VersionItem({
     summaryChips.push({
       key: 'capabilities',
       label: localize(
-        capabilitiesCount === 1 ? 'com_ui_capabilities_count_one' : 'com_ui_capabilities_count',
+        capabilitiesCount === 1
+          ? 'com_ui_capabilities_count_one'
+          : 'com_ui_capabilities_count_other',
         { count: capabilitiesCount },
       ),
     });

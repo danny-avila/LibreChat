@@ -68,7 +68,7 @@ describe('ToolCard', () => {
       toolCount: 14,
     };
     render(<ToolCard item={mcp} selected={false} onToggle={jest.fn()} />);
-    expect(screen.queryByText('com_ui_tools_count[count=14]')).not.toBeInTheDocument();
+    expect(screen.queryByText('com_ui_tools_count_other[count=14]')).not.toBeInTheDocument();
   });
 
   test('renders public and shared-author badges for another user public skill', () => {

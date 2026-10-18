@@ -192,12 +192,14 @@ describe('Conversations: live running order', () => {
     const groupConversationsMock = jest.requireMock('~/utils').groupConversations as jest.Mock;
     groupConversationsMock.mockClear();
     expect(rowOrder()).toEqual(['Newer idle chat', 'Older running chat']);
-    expect(screen.queryByRole('heading', { name: 'com_a11y_chats_running_section' })).toBeNull();
+    expect(
+      screen.queryByRole('heading', { name: 'com_a11y_chats_running_section_other' }),
+    ).toBeNull();
 
     mockActiveJobIds = ['running'];
     view.rerender(renderList());
     expect(
-      screen.getByRole('heading', { name: 'com_a11y_chats_running_section' }),
+      screen.getByRole('heading', { name: 'com_a11y_chats_running_section_other' }),
     ).toBeInTheDocument();
     expect(rowOrder()).toEqual(['Older running chat', 'Newer idle chat']);
     expect(groupConversationsMock).not.toHaveBeenCalled();
@@ -209,7 +211,9 @@ describe('Conversations: live running order', () => {
 
     mockActiveJobIds = [];
     view.rerender(renderList());
-    expect(screen.queryByRole('heading', { name: 'com_a11y_chats_running_section' })).toBeNull();
+    expect(
+      screen.queryByRole('heading', { name: 'com_a11y_chats_running_section_other' }),
+    ).toBeNull();
     expect(rowOrder()).toEqual(['Newer idle chat', 'Older running chat']);
     expect(conversations).toEqual([newer, running]);
   });
@@ -283,7 +287,7 @@ describe('Conversations: pinned chats live in PinnedSection', () => {
         'Pinned Chat',
       ]);
       expect(
-        screen.getByRole('heading', { name: 'com_a11y_chats_running_section' }),
+        screen.getByRole('heading', { name: 'com_a11y_chats_running_section_other' }),
       ).toBeInTheDocument();
     } finally {
       mockActiveJobIds = [];
@@ -562,7 +566,7 @@ describe('Conversations: Running lists chats outside the Chats list', () => {
 
     expect(mockRunningConversationsQuery).toHaveBeenLastCalledWith(['project-chat']);
     expect(
-      screen.getByRole('heading', { name: 'com_a11y_chats_running_section' }),
+      screen.getByRole('heading', { name: 'com_a11y_chats_running_section_other' }),
     ).toBeInTheDocument();
     const rows = screen.getAllByTestId('convo');
     expect(rows.map((row) => row.textContent)).toEqual(['Project chat', 'Idle chat']);
@@ -579,7 +583,9 @@ describe('Conversations: Running lists chats outside the Chats list', () => {
       renderList();
 
       expect(mockRunningConversationsQuery).toHaveBeenLastCalledWith([]);
-      expect(screen.queryByRole('heading', { name: 'com_a11y_chats_running_section' })).toBeNull();
+      expect(
+        screen.queryByRole('heading', { name: 'com_a11y_chats_running_section_other' }),
+      ).toBeNull();
     } finally {
       jotaiStore.set(chatSortAtom, previous);
     }
@@ -589,7 +595,9 @@ describe('Conversations: Running lists chats outside the Chats list', () => {
     renderList('Idle');
 
     expect(mockRunningConversationsQuery).toHaveBeenLastCalledWith([]);
-    expect(screen.queryByRole('heading', { name: 'com_a11y_chats_running_section' })).toBeNull();
+    expect(
+      screen.queryByRole('heading', { name: 'com_a11y_chats_running_section_other' }),
+    ).toBeNull();
     expect(screen.getAllByTestId('convo').map((row) => row.textContent)).toEqual(['Idle chat']);
   });
 });
