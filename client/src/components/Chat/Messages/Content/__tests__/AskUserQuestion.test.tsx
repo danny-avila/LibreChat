@@ -2,10 +2,10 @@ import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { Agents } from 'librechat-data-provider';
+import { ChatSurfaceProvider } from '~/components/Chat/Subagents/surface';
 import { ASK_USER_DECLINED_ANSWER } from '~/utils/approval';
 import ApprovalProvider from '../ApprovalContext';
 import AskUserQuestion from '../AskUserQuestion';
-import store from '~/store';
 
 const mockSubmitAnswer = jest.fn();
 const mockSetAnswerText = jest.fn();
@@ -66,15 +66,28 @@ jest.mock('~/Providers/ChatContext', () => ({
   }),
 }));
 
+const yieldedChords = new Set<string>();
+
 const tree = (
   key: string,
   question: Agents.AskUserQuestionRequest = { question: 'Which environment?' },
   enterToSend = true,
 ) => (
-  <RecoilRoot initializeState={({ set }) => set(store.enterToSend, enterToSend)}>
-    <ApprovalProvider>
-      <AskUserQuestion key={key} actionId="ask-1" question={question} />
-    </ApprovalProvider>
+  <RecoilRoot>
+    <ChatSurfaceProvider
+      value={{
+        enterToSend,
+        maximizeChatSpace: false,
+        showScrollButton: false,
+        composerBindings: { shortcutsEnabled: true, submitOverride: undefined, yieldedChords },
+        claimForeground: jest.fn(),
+        handOffComposerText: jest.fn(),
+      }}
+    >
+      <ApprovalProvider>
+        <AskUserQuestion key={key} actionId="ask-1" question={question} />
+      </ApprovalProvider>
+    </ChatSurfaceProvider>
   </RecoilRoot>
 );
 

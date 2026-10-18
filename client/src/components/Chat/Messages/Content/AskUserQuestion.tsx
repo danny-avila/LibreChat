@@ -1,20 +1,26 @@
 import { useContext, useMemo, useState } from 'react';
-import { useRecoilValue } from 'recoil';
 import { Button, TextareaAutosize, TooltipAnchor } from '@librechat/client';
 import { ChevronDown, MessageCircleQuestion, TriangleAlert } from 'lucide-react';
 import type { Agents } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
+import type { ComposerBindings } from '~/hooks/Input/useComposerBindings';
 import { useApprovalContext, useAskSubmitStatus, useResumeSubmit } from './ApprovalContext';
 import { splitOtherOption, ASK_USER_DECLINED_ANSWER } from '~/utils/approval';
+import { useOptionalChatSurface } from '~/components/Chat/Subagents/surface';
 import { isCancelKey, resolveComposerKeyDown } from '~/utils/shortcuts';
-import useComposerBindings from '~/hooks/Input/useComposerBindings';
 import { cn, forceResize, insertTextAtCursor } from '~/utils';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskOptions from '~/components/Chat/ask/options';
 import { ChatContext } from '~/Providers/ChatContext';
 import AskUserQuestions from './AskUserQuestions';
 import { useLocalize } from '~/hooks';
-import store from '~/store';
+
+/** Stock preferences for a card rendered outside a chat surface. */
+const NO_HOST_BINDINGS: ComposerBindings = {
+  shortcutsEnabled: true,
+  submitOverride: undefined,
+  yieldedChords: new Set(),
+};
 
 /**
  * Renders an `ask_user_question` pause: the prompt, optional description, any
@@ -128,8 +134,10 @@ function AskUserQuestionSingle({
   const { submitAskAnswer } = useResumeSubmit();
   const [answer, setAnswer] = useState(() => getAskAnswerDraft(actionId));
   const [localChecked, setLocalChecked] = useState<number[]>([]);
-  const enterToSend = useRecoilValue(store.enterToSend);
-  const { shortcutsEnabled, submitOverride, yieldedChords } = useComposerBindings();
+  const surface = useOptionalChatSurface();
+  const enterToSend = surface?.enterToSend ?? false;
+  const { shortcutsEnabled, submitOverride, yieldedChords } =
+    surface?.composerBindings ?? NO_HOST_BINDINGS;
   /**
    * The composer popover is the primary answer surface — while it's VISIBLE
    * for this pause, rendering the card too duplicates the question. The card
