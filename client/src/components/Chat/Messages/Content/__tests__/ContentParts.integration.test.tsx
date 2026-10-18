@@ -12,6 +12,11 @@ import { FOLD_GLYPH_CLASS } from '../rows';
 import { litFoldPath } from '../rail';
 import { Text } from '../Parts';
 
+/** No previewed subagent run here leaves a file in doubt, so no owner is ever asked for. */
+jest.mock('~/data-provider', () => ({
+  useSubagentAttachmentCallsQueries: () => [],
+}));
+
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string, values?: Record<string | number, string>) => {
     if (key === 'com_ui_ran_n_actions') {

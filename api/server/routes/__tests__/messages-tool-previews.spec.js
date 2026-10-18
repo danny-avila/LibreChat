@@ -219,6 +219,41 @@ describe('tool-call previews on the message routes', () => {
     expect(message.content[1].tool_call.outputTruncated).toBe(true);
   });
 
+  const subagentCallsUrl = (convo, message, files) =>
+    `/api/messages/${convo}/${message}/subagent-calls?files=${encodeURIComponent(JSON.stringify(files))}`;
+
+  it('names the subagent child calls queried files belong to, to the owner only', async () => {
+    const url = subagentCallsUrl(conversationId, responseId, [
+      { toolCallId: 'child_1' },
+      { toolCallId: 'not-in-any-transcript' },
+    ]);
+    const owner = await request(app).get(url);
+    expect(owner.status).toBe(200);
+    expect(owner.body).toEqual({
+      parts: [{ toolCallId: 'call_sub', agentId: 'agent_a', calls: [{ id: 'child_1' }] }],
+    });
+    expect(JSON.stringify(owner.body)).not.toContain('child is reading');
+
+    expect((await request(app).get(url).set('x-user', OTHER)).status).toBe(404);
+  });
+
+  it('refuses a malformed or oversized files query', async () => {
+    const base = `/api/messages/${conversationId}/${responseId}/subagent-calls`;
+    expect((await request(app).get(base)).status).toBe(400);
+    expect((await request(app).get(`${base}?files=not-json`)).status).toBe(400);
+    expect((await request(app).get(subagentCallsUrl(conversationId, responseId, []))).status).toBe(
+      400,
+    );
+    const many = Array.from({ length: 33 }, (_, i) => ({ toolCallId: `c${i}` }));
+    expect(
+      (await request(app).get(subagentCallsUrl(conversationId, responseId, many))).status,
+    ).toBe(400);
+    expect(
+      (await request(app).get(subagentCallsUrl(conversationId, responseId, [{ toolCallId: 7 }])))
+        .status,
+    ).toBe(400);
+  });
+
   it('serves the full part to its owner and nobody else', async () => {
     const url = `/api/messages/${conversationId}/${responseId}/parts/1?toolCallId=call_bash&agentId=agent_a`;
     const owner = await request(app).get(url);
@@ -267,6 +302,12 @@ describe('tool-call previews on the message routes', () => {
       const part = await request(app).get(partUrl());
       expect(part.status).toBe(200);
       expect(part.body.tool_call.output).toBe(fullOutput);
+
+      const owners = await request(app).get(
+        subagentCallsUrl(liveConversationId, 'live-response', [{ toolCallId: 'child_1' }]),
+      );
+      expect(owners.status).toBe(200);
+      expect(owners.body.parts[0].calls).toEqual([{ id: 'child_1' }]);
     });
 
     it("refuses another user's job and a job from another tenant", async () => {
