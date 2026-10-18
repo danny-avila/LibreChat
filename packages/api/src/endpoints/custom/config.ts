@@ -95,6 +95,22 @@ function withOpenRouterReasoning(
   } as TEndpoint['customParams'];
 }
 
+/** The trusted parameter profile shared by discovery, write validation, and execution. */
+export function resolveCustomEndpointParameters(
+  endpoint: Pick<TEndpoint, 'provider' | 'customParams' | 'dropParams'>,
+  resolvedBaseURL: string,
+): TEndpoint['customParams'] {
+  const { provider, customParams } = endpoint;
+  if (
+    provider != null &&
+    (customParams?.defaultParamsEndpoint == null ||
+      customParams.defaultParamsEndpoint === EModelEndpoint.custom)
+  ) {
+    return { ...customParams, defaultParamsEndpoint: provider };
+  }
+  return withOpenRouterReasoning(endpoint, resolvedBaseURL);
+}
+
 /**
  * Load config endpoints from the cached configuration object
  * @param customEndpointsConfig - The configuration object
@@ -142,12 +158,10 @@ export function loadCustomEndpointsConfig(
        * (e.g. `maxOutputTokens`/`thinking` for Anthropic, not OpenAI `max_tokens`),
        * unless an admin explicitly chose a non-default `defaultParamsEndpoint`.
        */
-      const resolvedCustomParams =
-        provider != null &&
-        (customParams?.defaultParamsEndpoint == null ||
-          customParams.defaultParamsEndpoint === EModelEndpoint.custom)
-          ? { ...customParams, defaultParamsEndpoint: provider }
-          : withOpenRouterReasoning({ provider, customParams, dropParams }, resolvedBaseURL);
+      const resolvedCustomParams = resolveCustomEndpointParameters(
+        { provider, customParams, dropParams },
+        resolvedBaseURL,
+      );
 
       customEndpointsConfig[name] = {
         type: EModelEndpoint.custom,

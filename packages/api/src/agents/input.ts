@@ -1,24 +1,30 @@
 import { z } from 'zod';
-import { normalizeEndpointName } from 'librechat-data-provider';
+import { normalizeEndpointName, extractEnvVariable } from 'librechat-data-provider';
 import type { AppConfig } from '@librechat/data-schemas';
 import type { TEndpoint } from 'librechat-data-provider';
+import { resolveCustomEndpointParameters } from '../endpoints/custom/config';
 import { resolveAgentInferenceParameters } from './inference';
 
-/** Configuration is already resolved for the authenticated caller; this performs no reads. */
+/** Uses the caller's loaded configuration without database reads or credential resolution. */
 export function getAgentInferencePolicy(
   provider: string,
   appConfig?: Pick<AppConfig, 'endpoints'>,
+  customEndpoint?: Partial<TEndpoint>,
 ): {
   provider: string;
   customParams?: TEndpoint['customParams'];
   availableRegions?: readonly string[];
 } {
-  const endpoint = appConfig?.endpoints?.custom?.find(
-    (entry) => normalizeEndpointName(entry.name) === normalizeEndpointName(provider),
-  );
+  const endpoint =
+    customEndpoint ??
+    appConfig?.endpoints?.custom?.find(
+      (entry) => normalizeEndpointName(entry.name) === normalizeEndpointName(provider),
+    );
   return {
     provider: endpoint?.provider ?? provider,
-    customParams: endpoint?.customParams,
+    customParams: endpoint
+      ? resolveCustomEndpointParameters(endpoint, extractEnvVariable(endpoint.baseURL ?? ''))
+      : undefined,
     availableRegions: appConfig?.endpoints?.bedrock?.availableRegions,
   };
 }

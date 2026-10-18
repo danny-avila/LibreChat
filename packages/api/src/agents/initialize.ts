@@ -144,6 +144,7 @@ import { hasActiveFileFieldPolicy } from '~/protection';
 import { applyBackgroundToolCalls } from './background';
 import { applyTurnDelivery } from './files/delivery';
 import { generateArtifactsPrompt } from '~/prompts';
+import { getAgentInferencePolicy } from './input';
 import { getProviderConfig } from '~/endpoints';
 import { primeResources } from './resources';
 import { pinAgentModel } from './pin';
@@ -1525,10 +1526,8 @@ export async function initializeAgent(
       ...agent.model_parameters,
       ...(isInitialAgent === true ? endpointOption?.model_parameters : undefined),
     },
-    provider: customEndpointConfig?.provider ?? overrideProvider,
+    ...getAgentInferencePolicy(provider, appConfig, customEndpointConfig),
     model: agent.model ?? '',
-    customParams: customEndpointConfig?.customParams,
-    availableRegions: appConfig?.endpoints?.bedrock?.availableRegions,
   });
   const { resendFiles, maxContextTokens, imageDetail, modelOptions } = extractLibreChatParams(
     inference.parameters,

@@ -6376,6 +6376,58 @@ describe('initializeAgent — inference trust boundary', () => {
     },
   );
 
+  it('uses the trusted URL profile before projecting saved and request caching controls', async () => {
+    const key = 'TEST_INFERENCE_GATEWAY_URL';
+    const previous = process.env[key];
+    process.env[key] = 'https://openrouter.ai/api/v1';
+    try {
+      const { agent, req, res, loadTools, db } = createMocks({
+        provider: 'Gateway',
+        overrideProvider: Providers.OPENAI,
+        model: 'permitted',
+      });
+      Object.assign(agent.model_parameters, { promptCache: false, promptCacheTtl: '1h' });
+      const endpoint = {
+        name: 'Gateway',
+        apiKey: 'synthetic-key',
+        baseURL: '${TEST_INFERENCE_GATEWAY_URL}',
+        models: { default: ['permitted'], fetch: false },
+      };
+      if (req.config == null) throw new Error('Expected the request configuration fixture');
+      req.config.endpoints = { custom: [endpoint] };
+      const getOptions = jest
+        .fn()
+        .mockResolvedValue({ llmConfig: { model: 'permitted', promptCache: false } });
+      mockGetProviderConfig.mockReturnValue({
+        getOptions,
+        overrideProvider: Providers.OPENAI,
+        customEndpointConfig: endpoint,
+      });
+      mockExtractLibreChatParams.mockImplementation(realUtils.extractLibreChatParams);
+      await initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI, 'Gateway']),
+          isInitialAgent: true,
+        },
+        db,
+      );
+      expect(getOptions).toHaveBeenCalledWith(
+        expect.objectContaining({
+          endpoint: 'Gateway',
+          model_parameters: { model: 'permitted', promptCache: false, promptCacheTtl: '1h' },
+        }),
+      );
+    } finally {
+      if (previous === undefined) delete process.env[key];
+      else process.env[key] = previous;
+    }
+  });
+
   it('constructs custom request kwargs only from administrator-declared inference values', async () => {
     const { agent, req, res, loadTools, db } = createMocks({
       provider: 'Gateway',
