@@ -69,7 +69,8 @@ export function getTokenConfigKey(
 
 /**
  * Maps an admin-facing static `tokenConfig` to the billing shape: the UI uses
- * `cacheWrite`/`cacheRead`, but `getCacheMultiplier` indexes `write`/`read`.
+ * `cacheWrite`/`cacheWrite1h`/`cacheRead`, but `getCacheMultiplier` indexes
+ * `write`/`write1h`/`read`.
  * Adds those keys (preserving the originals) so cache tokens bill at the
  * configured rate instead of the prompt-rate fallback.
  */
@@ -81,6 +82,9 @@ function toBillingTokenConfig(
     const mapped = { ...rates } as Record<string, number>;
     if (rates.cacheWrite != null) {
       mapped.write = rates.cacheWrite;
+    }
+    if (rates.cacheWrite1h != null) {
+      mapped.write1h = rates.cacheWrite1h;
     }
     if (rates.cacheRead != null) {
       mapped.read = rates.cacheRead;

@@ -1,7 +1,6 @@
 export { isStoppedRun, resolveDetachedRunEnd } from '@librechat/chat';
 export {
   runEndByIndex,
-  resetQueueFamilies,
   isDetachedRunManual,
   detachedRunByConvoId,
   drainAfterAbortByIndex,

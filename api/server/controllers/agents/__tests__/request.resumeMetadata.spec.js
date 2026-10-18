@@ -323,6 +323,7 @@ jest.mock('@librechat/api', () => ({
   logGenerationStartFailure: jest.requireActual('@librechat/api').logGenerationStartFailure,
   resolveFailedTurnContent: jest.requireActual('@librechat/api').resolveFailedTurnContent,
   getFailedTurnTraceFields: (...args) => mockGetFailedTurnTraceFields(...args),
+  isTemporaryTurn: jest.requireActual('@librechat/api').isTemporaryTurn,
   startAgentProjectContextResolution:
     jest.requireActual('@librechat/api').startAgentProjectContextResolution,
   assertChatProjectInstructions: jest.requireActual('@librechat/api').assertChatProjectInstructions,
@@ -4038,6 +4039,7 @@ describe('ResumableAgentController resume metadata', () => {
         messageId: 'server-user_',
         runId: 'server-response-uuid',
         runCreated: true,
+        isTemporary: false,
       });
       expect(errorRow).toMatchObject({ error: true, isCreatedByUser: false, ...traceFields });
     });
