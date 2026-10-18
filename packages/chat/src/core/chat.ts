@@ -841,12 +841,14 @@ export class Chat {
       /** A reattachment took the generation over while the stop was in flight; it ends with it. */
       return this.endStopped(active, result);
     }
-    if (this.disposed || this.detached !== detached) {
+    /** The dropped generation owns the chat only while no newer request does, such as a retry. */
+    const owns = () => this.detached === detached && !this.active;
+    if (this.disposed || !owns()) {
       return getStopResult(result);
     }
     if (result && 'runMessages' in result) {
-      await this.mergeRunMessages(result.runMessages, () => this.detached === detached);
-      if (this.detached !== detached) {
+      await this.mergeRunMessages(result.runMessages, owns);
+      if (!owns()) {
         /** A newer generation took over while the merge waited its turn. */
         return getStopResult(result);
       }

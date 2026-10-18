@@ -7,7 +7,7 @@ import type {
   ChatConnection,
   ChatAbortResult,
 } from '../types';
-import type { ChatState, ChatInit } from '../chat';
+import type { ChatState, ChatInit, ChatPreparedRequest } from '../chat';
 import { Chat } from '../chat';
 
 /** A stream the test feeds event by event; closing it ends the iteration. */
@@ -3370,6 +3370,50 @@ describe('Chat', () => {
       expect(transport.abort).toHaveBeenCalledWith(
         expect.objectContaining({ streamId: 'convo-1', generationCreatedAt: 100 }),
       );
+    });
+
+    it('does not let an older stop of a dropped Assistants run overwrite a retry in flight', async () => {
+      const stream = createStream();
+      const prepareRequest = jest.fn(
+        (): ChatPreparedRequest => ({
+          payload: { endpoint: 'assistants', conversationId: 'convo-1', text: 'Hi' } as TPayload,
+          messages: [userMessage, placeholder],
+          responseMessageId: 'response-1',
+        }),
+      );
+      const { chat, transport } = setup(
+        { prepareRequest },
+        { sendMessages: jest.fn(async () => ({ status: 'stream' as const, stream })) },
+      );
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+      await sent;
+
+      let answer: (result: ChatAbortResult) => void = () => undefined;
+      transport.abort.mockImplementationOnce(
+        () =>
+          new Promise<ChatAbortResult>((resolve) => {
+            answer = resolve;
+          }),
+      );
+      const stopped = chat.stop();
+      await flush();
+      const retry: TMessage = { ...placeholder, messageId: 'response-2' };
+      transport.sendMessages.mockImplementationOnce(() => new Promise(() => undefined));
+      prepareRequest.mockImplementationOnce(() => ({
+        payload: { endpoint: 'assistants', conversationId: 'convo-1', text: 'Again' } as TPayload,
+        messages: [userMessage, retry],
+        responseMessageId: 'response-2',
+      }));
+      void chat.sendMessage({ parts: [{ type: 'text', text: 'Again' }] });
+      await flush();
+
+      answer({ final: true, conversation: {}, runMessages: [userMessage, placeholder] });
+      await stopped;
+
+      expect(chat.messages).toEqual([userMessage, retry]);
+      expect(chat.status).toBe('submitted');
     });
 
     it('sends one stop for a generation stopped again once a reattachment took it over', async () => {
