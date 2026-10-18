@@ -1250,6 +1250,43 @@ describe('Message Operations', () => {
       expect(result?.langfuseRunId).toBe('run-1');
     });
 
+    it('returns the temporary flag with feedback updates', async () => {
+      await saveMessage({ ...mockCtx, isTemporary: true }, mockMessageData);
+
+      const result = await updateMessage(mockCtx.userId, {
+        messageId: 'msg123',
+        feedback: { rating: 'thumbsDown', tag: undefined },
+      });
+
+      expect(result?.isTemporary).toBe(true);
+    });
+
+    it('reads a legacy deadline-only row as temporary with feedback updates', async () => {
+      const expiredAt = new Date(Date.now() + 60 * 60 * 1000);
+      await Message.collection.insertMany([
+        { ...mockMessageData, user: mockCtx.userId, expiredAt },
+        {
+          ...mockMessageData,
+          messageId: 'msg-permanent',
+          user: mockCtx.userId,
+          isTemporary: false,
+          expiredAt,
+        },
+      ]);
+
+      const legacy = await updateMessage(mockCtx.userId, {
+        messageId: 'msg123',
+        feedback: { rating: 'thumbsDown', tag: undefined },
+      });
+      const permanent = await updateMessage(mockCtx.userId, {
+        messageId: 'msg-permanent',
+        feedback: { rating: 'thumbsDown', tag: undefined },
+      });
+
+      expect(legacy?.isTemporary).toBe(true);
+      expect(permanent?.isTemporary).toBe(false);
+    });
+
     it('should throw an error if message is not found', async () => {
       await expect(
         updateMessage(mockCtx.userId, { messageId: 'nonexistent', text: 'Test' }),

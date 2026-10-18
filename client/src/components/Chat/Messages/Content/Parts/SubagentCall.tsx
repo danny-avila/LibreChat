@@ -386,13 +386,26 @@ export default function SubagentCall({
 
   useEffect(() => {
     setSelectedSubagent((current) =>
-      current?.parentMessageId === parentMessageId &&
+      current?.host === panelSelection.host &&
+      current.shareId === panelSelection.shareId &&
+      current.parentConversationId === parentConversationId &&
+      current.parentMessageId === parentMessageId &&
       current.toolCallId === toolCallId &&
-      current.partIndex === partIndex
+      current.partIndex === partIndex &&
+      (current.durable == null ||
+        (current.durable.threadId === panelSelection.durable?.threadId &&
+          current.durable.taskId === panelSelection.durable?.taskId))
         ? panelSelection
         : current,
     );
-  }, [panelSelection, parentMessageId, partIndex, setSelectedSubagent, toolCallId]);
+  }, [
+    panelSelection,
+    parentConversationId,
+    parentMessageId,
+    partIndex,
+    setSelectedSubagent,
+    toolCallId,
+  ]);
 
   const openDetails = useCallback(() => {
     if (!canOpenDetails || openPanel == null) return;
