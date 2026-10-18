@@ -109,41 +109,63 @@ test('stream failure keeps status and hides provider response text', async (t) =
   assert.doesNotMatch(JSON.stringify(await result.json()), /private provider diagnostic/);
 });
 
-test('Meo chat routes translate to the AI broker protocol', async (t) => {
+test('Meo chat forwards conversation identity and consent to shared Meo API', async (t) => {
   const originalFetch = globalThis.fetch;
-  t.after(() => {
-    globalThis.fetch = originalFetch;
-  });
-  let upstream;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const upstream = [];
   globalThis.fetch = async (input, init) => {
-    upstream = { url: String(input), init };
+    upstream.push({ url: String(input), method: init.method, body: JSON.parse(new TextDecoder().decode(init.body)) });
     return Response.json({ consent: { requestId: 'request-1' } });
   };
-  const response = await meoOnRequest({
-    request: await request('/api/meo/chat/prepare', {
-      method: 'POST',
-      body: JSON.stringify({
-        credentialId: 'credential-1',
-        model: 'model-1',
-        prompt: 'hello',
-      }),
-    }),
-    env,
+  const conversationId = '00000000-0000-4000-8000-000000000099';
+  const requestBody = { credentialId: 'credential-1', model: 'model-1', prompt: 'hello', conversationId };
+  const prep = await meoOnRequest({
+    request: await request('/api/meo/chat/prepare', { method: 'POST', body: JSON.stringify(requestBody) }), env,
   });
-  assert.equal(response.status, 200);
-  assert.equal(upstream.url, 'https://api.meoarch.org/v1/ai/provider-broker');
-  assert.equal(upstream.init.method, 'POST');
-  assert.deepEqual(JSON.parse(upstream.init.body), {
-    action: 'prepare_inference',
-    credentialId: 'credential-1',
-    clientId: 'public-test-client',
-    purpose: 'meo_ai_web_chat',
-    dataCategories: ['chat_text'],
-    model: 'model-1',
-    userPrompt: 'hello',
-    temperature: 0.7,
-    maxOutputTokens: 2048,
+  assert.equal(prep.status, 200);
+  const consent = { requestId: 'request-1', payloadSha256: 'hash', confirmationVersion: 1 };
+  const stream = await meoOnRequest({
+    request: await request('/api/meo/chat/stream', {
+      method: 'POST', body: JSON.stringify({ ...requestBody, consent }),
+    }), env,
   });
+  assert.equal(stream.status, 200);
+  assert.deepEqual(upstream, [
+    { url: 'https://api.meoarch.org/v1/chat/prepare', method: 'POST', body: requestBody },
+    { url: 'https://api.meoarch.org/v1/chat/stream', method: 'POST', body: { ...requestBody, consent } },
+  ]);
+});
+
+test('Meo settings and memories use the owner-authenticated shared API', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const upstream = [];
+  globalThis.fetch = async (input, init) => {
+    upstream.push({ url: String(input), method: init.method, authorization: init.headers.get('Authorization') });
+    return Response.json({ ok: true });
+  };
+  const id = '00000000-0000-4000-8000-000000000021';
+  for (const [path, method, body] of [
+    ['/api/meo/settings', 'GET', undefined],
+    ['/api/meo/settings', 'PATCH', JSON.stringify({ expectedVersion: 0, memoryEnabled: false })],
+    ['/api/meo/memories?archived=true', 'GET', undefined],
+    ['/api/meo/memories', 'POST', JSON.stringify({ kind: 'preference', content: 'Test' })],
+    [`/api/meo/memories/${id}`, 'PATCH', JSON.stringify({ expectedVersion: 1, enabled: false })],
+    [`/api/meo/memories/${id}`, 'DELETE', undefined],
+  ]) {
+    const response = await meoOnRequest({ request: await request(path, { method, body }), env });
+    assert.equal(response.status, 200);
+  }
+  assert.deepEqual(upstream.map((v) => [new URL(v.url).pathname, v.method]), [
+    ['/v1/ai/settings', 'GET'],
+    ['/v1/ai/settings', 'PATCH'],
+    ['/v1/ai/memories', 'GET'],
+    ['/v1/ai/memories', 'POST'],
+    [`/v1/ai/memories/${id}`, 'PATCH'],
+    [`/v1/ai/memories/${id}`, 'DELETE'],
+  ]);
+  assert.equal(new URL(upstream[2].url).searchParams.get('archived'), 'true');
+  assert.ok(upstream.every((v) => v.authorization === 'Bearer test-access'));
 });
 
 for (const code of [
