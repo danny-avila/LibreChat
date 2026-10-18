@@ -2,10 +2,11 @@ import { useCallback, useEffect, useId, useMemo, useRef } from 'react';
 import { TriangleAlert } from 'lucide-react';
 import { Input, Button } from '@librechat/client';
 import type { Agents } from 'librechat-data-provider';
-import type { ReactNode } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 import useAskQuestionsForm from '~/hooks/Input/useAskQuestionsForm';
 import AskOptions from '~/components/Chat/ask/options';
 import { splitOtherOption } from '~/utils/approval';
+import { isCancelKey } from '~/utils/shortcuts';
 import { AutoHeight } from '~/components/ui';
 import { mainTextareaId } from '~/common';
 import { useLocalize } from '~/hooks';
@@ -28,6 +29,7 @@ export default function AskUserQuestions({
   className,
   headerAction,
   focusOnArrival = false,
+  onEscape,
 }: {
   actionId: string;
   questions: Agents.AskUserQuestionBatchItem[];
@@ -38,6 +40,8 @@ export default function AskUserQuestions({
   /** The surface's own control (move to chat, move back), set in the
    *  question's header row so it shares the form's inset. */
   headerAction?: ReactNode;
+  /** Escape on this surface. Without one, Escape skips the batch. */
+  onEscape?: () => void;
 }) {
   const localize = useLocalize();
   const promptId = useId();
@@ -120,8 +124,8 @@ export default function AskUserQuestions({
 
   /**
    * An arriving batch puts the user on the first question's controls, but
-   * only when focus is idle — nowhere, or the empty composer that just sent
-   * the turn — so a draft or any other control the user is in keeps focus.
+   * only when focus is idle (nowhere, or the empty composer that just sent
+   * the turn), so a draft or any other control the user is in keeps focus.
    * It happens once per batch: moving it between the popover and the chat
    * remounts it, and that is not a new arrival.
    */
@@ -186,8 +190,29 @@ export default function AskUserQuestions({
     form.submit();
   };
 
+  /**
+   * Escape is the surface's way out when it has one (the popover moves the
+   * batch to the chat), else Skip. Skip only fires before anything is
+   * answered, so a stray Escape cannot discard answers and resume the run.
+   */
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!isCancelKey(event.nativeEvent) || event.nativeEvent.isComposing) {
+      return;
+    }
+    if (onEscape != null) {
+      event.preventDefault();
+      onEscape();
+      return;
+    }
+    if (form.locked || Object.keys(form.answers).length > 0) {
+      return;
+    }
+    event.preventDefault();
+    form.skip();
+  };
+
   return (
-    <div className={cn('flex min-h-0 flex-col', className)}>
+    <div className={cn('flex min-h-0 flex-col', className)} onKeyDown={handleKeyDown}>
       {/* Only the active step renders, laid out at its final size at once.
           One `AutoHeight` holds everything above the buttons and clips only at
           its bottom edge, so the header and title stay put and the footer
@@ -270,7 +295,8 @@ export default function AskUserQuestions({
               /* Picking and confirming stay separate (WCAG 3.2.2): Enter on an
                  option is its click, so a pick never submits by itself. Enter
                  on the single-select option that is ALREADY the answer confirms
-                 it — the next step, or the batch — like Enter in the field. */
+                 that answer, like Enter in the field: the next step, or the
+                 batch. */
               const target = event.target;
               if (
                 event.key !== 'Enter' ||

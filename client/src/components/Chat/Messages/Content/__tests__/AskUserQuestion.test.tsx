@@ -2,6 +2,7 @@ import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { Agents } from 'librechat-data-provider';
+import { ASK_USER_DECLINED_ANSWER } from '~/utils/approval';
 import ApprovalProvider from '../ApprovalContext';
 import AskUserQuestion from '../AskUserQuestion';
 import store from '~/store';
@@ -164,6 +165,50 @@ describe('AskUserQuestion', () => {
     test('does not submit an empty answer', () => {
       render(liveTree(true, '   '));
       fireEvent.keyDown(answerBox(), { key: 'Enter' });
+      expect(mockSubmitAnswer).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Escape', () => {
+    const liveTree = (answerText = '') => {
+      mockCollapsed = true;
+      mockLiveActionId = 'ask-1';
+      mockAnswerText = answerText;
+      return tree('live', { question: 'Which environment?' });
+    };
+    const answerBox = () => screen.getByRole('textbox', { name: 'Your answer' });
+
+    test('skips the question when nothing is entered', () => {
+      render(liveTree());
+      fireEvent.keyDown(answerBox(), { key: 'Escape' });
+      expect(mockSubmitAnswer).toHaveBeenCalledWith([ASK_USER_DECLINED_ANSWER]);
+    });
+
+    test('keeps a typed answer instead of skipping', () => {
+      render(liveTree('Use staging first'));
+      fireEvent.keyDown(answerBox(), { key: 'Escape' });
+      expect(mockSubmitAnswer).not.toHaveBeenCalled();
+    });
+
+    test('keeps checked options instead of skipping', () => {
+      mockCollapsed = true;
+      mockLiveActionId = 'ask-1';
+      mockChecked = [0];
+      render(
+        tree('live', {
+          question: 'Choose a source',
+          multiSelect: true,
+          options: [{ label: 'Public data', value: 'public' }],
+        }),
+      );
+      fireEvent.keyDown(answerBox(), { key: 'Escape' });
+      expect(mockSubmitAnswer).not.toHaveBeenCalled();
+    });
+
+    test('ignores Escape that cancels an IME composition or carries a modifier', () => {
+      render(liveTree());
+      fireEvent.keyDown(answerBox(), { key: 'Escape', isComposing: true });
+      fireEvent.keyDown(answerBox(), { key: 'Escape', shiftKey: true });
       expect(mockSubmitAnswer).not.toHaveBeenCalled();
     });
   });

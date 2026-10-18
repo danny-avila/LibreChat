@@ -2,15 +2,15 @@ import { useContext, useMemo, useState } from 'react';
 import { useRecoilValue } from 'recoil';
 import { Button, TextareaAutosize, TooltipAnchor } from '@librechat/client';
 import { ChevronDown, MessageCircleQuestion, TriangleAlert } from 'lucide-react';
-import type { KeyboardEvent } from 'react';
 import type { Agents } from 'librechat-data-provider';
+import type { KeyboardEvent } from 'react';
 import { useApprovalContext, useAskSubmitStatus, useResumeSubmit } from './ApprovalContext';
 import { splitOtherOption, ASK_USER_DECLINED_ANSWER } from '~/utils/approval';
+import { isCancelKey, resolveComposerKeyDown } from '~/utils/shortcuts';
 import useComposerBindings from '~/hooks/Input/useComposerBindings';
 import { cn, forceResize, insertTextAtCursor } from '~/utils';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskOptions from '~/components/Chat/ask/options';
-import { resolveComposerKeyDown } from '~/utils/shortcuts';
 import { ChatContext } from '~/Providers/ChatContext';
 import AskUserQuestions from './AskUserQuestions';
 import { useLocalize } from '~/hooks';
@@ -256,6 +256,19 @@ function AskUserQuestionSingle({
     }
   };
 
+  /** Escape skips, but only before anything is entered, so a stray Escape
+   *  cannot discard an answer and resume the run. */
+  const handleCardKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (!isCancelKey(e.nativeEvent) || e.nativeEvent.isComposing) {
+      return;
+    }
+    if (locked || trimmed.length > 0 || (multiSelect && checkedIndices.length > 0)) {
+      return;
+    }
+    e.preventDefault();
+    handleSkip();
+  };
+
   /**
    * The live card shares its view-transition-name with the popover panel, so
    * collapse/expand morphs one surface into the other. The placeholder copy
@@ -273,6 +286,7 @@ function AskUserQuestionSingle({
         isLivePause && !showPlaceholder && '[view-transition-name:ask-question]',
       )}
       aria-hidden={showPlaceholder || undefined}
+      onKeyDown={handleCardKeyDown}
     >
       <div className="text-text-secondary flex items-start justify-between gap-2">
         <div className="min-w-0 pt-1">

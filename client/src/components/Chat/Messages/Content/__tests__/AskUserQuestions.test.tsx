@@ -533,4 +533,47 @@ describe('AskUserQuestions', () => {
       expect.objectContaining({ onSuccess: expect.any(Function) }),
     );
   });
+
+  describe('Escape', () => {
+    test('skips the batch when nothing is answered yet', () => {
+      renderBatch('ask-escape-skip');
+      fireEvent.keyDown(screen.getByRole('button', { name: /Staging/ }), { key: 'Escape' });
+      expect(mockSubmitAskAnswer).toHaveBeenCalledWith(
+        'ask-escape-skip',
+        { environment: ASK_USER_DECLINED_ANSWER, window: ASK_USER_DECLINED_ANSWER },
+        expect.objectContaining({ onSuccess: expect.any(Function) }),
+      );
+    });
+
+    test('keeps partial answers instead of skipping', () => {
+      renderBatch('ask-escape-partial');
+      fireEvent.click(screen.getByRole('button', { name: /Staging/ }));
+      fireEvent.keyDown(screen.getByRole('textbox', { name: /Your answer/ }), { key: 'Escape' });
+      expect(mockSubmitAskAnswer).not.toHaveBeenCalled();
+    });
+
+    test('ignores Escape that cancels an IME composition or carries a modifier', () => {
+      renderBatch('ask-escape-ime', [{ id: 'window', question: 'Which time window?' }]);
+      const field = screen.getByRole('textbox', { name: /Your answer/ });
+      fireEvent.keyDown(field, { key: 'Escape', isComposing: true });
+      fireEvent.keyDown(field, { key: 'Escape', shiftKey: true });
+      expect(mockSubmitAskAnswer).not.toHaveBeenCalled();
+    });
+
+    test('hands Escape to the surface instead of skipping when it supplies one', () => {
+      const onEscape = jest.fn();
+      render(
+        <RecoilRoot>
+          <AskUserQuestions
+            actionId="ask-escape-surface"
+            questions={questions}
+            onEscape={onEscape}
+          />
+        </RecoilRoot>,
+      );
+      fireEvent.keyDown(screen.getByRole('button', { name: /Staging/ }), { key: 'Escape' });
+      expect(onEscape).toHaveBeenCalledTimes(1);
+      expect(mockSubmitAskAnswer).not.toHaveBeenCalled();
+    });
+  });
 });
