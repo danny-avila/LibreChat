@@ -7,6 +7,7 @@ import {
   getSettingsKeys,
   normalizeEndpointName,
   resolveDropParamsUIKeys,
+  ReasoningParameterFormat,
 } from 'librechat-data-provider';
 import type {
   AgentModelParameters,
@@ -35,6 +36,12 @@ export type ResolvedAgentParameterSettings = {
 };
 
 const NON_CONTROL_PARAMETER_KEYS = new Set<keyof AgentModelParameters>(['model']);
+const REASONING_PARAMETER_KEYS = new Set([
+  'reasoning_effort',
+  'reasoning_summary',
+  'reasoning_mode',
+  'reasoning_context',
+]);
 
 export function resolveAgentParameterSettings({
   endpointsConfig,
@@ -95,7 +102,12 @@ export function resolveAgentParameterSettings({
     modelReasoning,
   )
     .map(applyOverride)
-    .filter((param) => param.key !== 'web_search' || webSearchAllowed);
+    .filter((param) => param.key !== 'web_search' || webSearchAllowed)
+    .filter(
+      (param) =>
+        customParams?.reasoningFormat !== ReasoningParameterFormat.disabled ||
+        !REASONING_PARAMETER_KEYS.has(param.key),
+    );
 
   return {
     schemaResolved: defaultParams != null || overriddenParams != null,

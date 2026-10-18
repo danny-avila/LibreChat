@@ -866,13 +866,19 @@ export function getOpenAILLMConfig({
      * `include_reasoning` is legacy compat that maps to `{ enabled: true }` only when
      * no `reasoning` object is present, so we intentionally omit it here.
      */
-    hasModelKwargs =
-      applyOpenRouterReasoningConfig({
-        reasoningEffort,
-        model: modelOptions.model,
-        modelKwargs,
-        llmConfig,
-      }) || hasModelKwargs;
+    if (reasoningFormat === ReasoningParameterFormat.disabled) {
+      removeReasoningPayload(llmConfig as Record<string, unknown>);
+      removeReasoningPayload(modelKwargs);
+      delete llmConfig.include_reasoning;
+    } else {
+      hasModelKwargs =
+        applyOpenRouterReasoningConfig({
+          reasoningEffort,
+          model: modelOptions.model,
+          modelKwargs,
+          llmConfig,
+        }) || hasModelKwargs;
+    }
   }
 
   if (llmConfig.max_tokens != null) {

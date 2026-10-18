@@ -3,6 +3,7 @@ import {
   EModelEndpoint,
   SettingTypes,
   ComponentTypes,
+  ReasoningParameterFormat,
 } from 'librechat-data-provider';
 import type { AgentModelParameters, TModelReasoning } from 'librechat-data-provider';
 import { pruneAgentModelParameters, resolveAgentParameterSettings } from '../parameters';
@@ -263,4 +264,34 @@ describe('administrator-declared inference controls', () => {
       'fast',
     );
   });
+});
+
+describe('OpenRouter cache preferences do not depend on reasoning', () => {
+  it.each(['reasoning', 'reasoning_effort'])(
+    'keeps cache controls when %s is dropped',
+    (dropped) => {
+      const settings = resolveAgentParameterSettings({
+        provider: 'Gateway',
+        model: 'permitted',
+        webSearchAllowed: true,
+        endpointsConfig: {
+          Gateway: {
+            order: 0,
+            type: EModelEndpoint.custom,
+            customParams: {
+              defaultParamsEndpoint: 'openrouter',
+              reasoningFormat: ReasoningParameterFormat.disabled,
+            },
+          },
+        },
+        startupConfig: { endpointsDropParamsMap: { Gateway: [dropped] } },
+      });
+      expect(settings.visibleParameters.map(({ key }) => key)).toEqual(
+        expect.arrayContaining(['promptCache', 'promptCacheTtl']),
+      );
+      expect(settings.visibleParameters.map(({ key }) => key)).not.toContain('reasoning_effort');
+      const saved = { ...defaults, promptCache: false, promptCacheTtl: '1h' as const };
+      expect(pruneAgentModelParameters(saved, settings)).toBe(saved);
+    },
+  );
 });

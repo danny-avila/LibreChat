@@ -23,18 +23,15 @@ type CustomParams = NonNullable<TEndpoint['customParams']>;
  * Whether an endpoint is OpenRouter's, from its resolved base URL host or from the administrator
  * marking its parameter set as OpenRouter's (a proxy in front of OpenRouter has another host). A
  * name or icon says nothing about what the server behind it accepts, so neither counts. Anything
- * the administrator stated wins: a native `provider`, another params endpoint, or disabled
- * reasoning. Only OpenRouter takes an effort for every model it serves: OpenAI and xAI depend on the
- * model (gpt-4o takes no effort, grok-4.6 and grok-4.7 take different sets, GPT-5.6 with tools
- * needs a Responses route a custom endpoint does not get), and this is decided per endpoint, before
- * a model is chosen.
+ * the administrator stated wins: a native `provider` or another params endpoint. Disabling
+ * reasoning does not change the endpoint's identity or caching controls.
  */
 export function isOpenRouterEndpoint(
   endpoint: Pick<TEndpoint, 'provider' | 'customParams'>,
   resolvedBaseURL: string,
 ): boolean {
   const params = endpoint.customParams as Partial<CustomParams> | undefined;
-  if (endpoint.provider != null || params?.reasoningFormat === ReasoningParameterFormat.disabled) {
+  if (endpoint.provider != null) {
     return false;
   }
   const paramsEndpoint = params?.defaultParamsEndpoint;
@@ -58,37 +55,35 @@ export function usesOpenRouterCatalog(
 ): boolean {
   return (
     isOpenRouterEndpoint(endpoint, resolvedBaseURL) &&
+    endpoint.customParams?.reasoningFormat !== ReasoningParameterFormat.disabled &&
     !hasExplicitReasoningEffort(endpoint.customParams?.paramDefinitions) &&
     endpoint.dropParams?.some((param) => reasoningDropParams.has(param)) !== true
   );
 }
 
 /**
- * Declares reasoning support for an OpenRouter endpoint so the effort control appears without
- * per-endpoint config, and marks the endpoint's parameter set as OpenRouter's so the client knows to
- * read the catalog. The marking comes from the resolved host: the config loader only sees the
- * unresolved name and URL. A `reasoningFormat` the administrator set is kept, and reasoning
- * parameter definitions suppress only the format. An endpoint that drops the effort is left alone.
+ * Preserve the OpenRouter parameter profile independently of its reasoning capability.
+ * Drops disable reasoning advertisement, not caching; explicit formats and definitions otherwise win.
  */
 function withOpenRouterReasoning(
   endpoint: Pick<TEndpoint, 'provider' | 'customParams' | 'dropParams'>,
   resolvedBaseURL: string,
 ): TEndpoint['customParams'] {
   const customParams = endpoint.customParams;
-  if (
-    !isOpenRouterEndpoint(endpoint, resolvedBaseURL) ||
-    endpoint.dropParams?.some((param) => reasoningDropParams.has(param)) === true
-  ) {
+  if (!isOpenRouterEndpoint(endpoint, resolvedBaseURL)) {
     return customParams;
   }
   const params = (customParams ?? {}) as Partial<CustomParams>;
+  const dropsReasoning = endpoint.dropParams?.some((param) => reasoningDropParams.has(param));
   const declaresReasoning = params.paramDefinitions?.some((setting) =>
     reasoningSettingKeys.some((key) => key === setting.key),
   );
   return {
     ...params,
     defaultParamsEndpoint: ProviderId.openrouter,
-    ...(params.reasoningFormat == null &&
+    ...(dropsReasoning === true && { reasoningFormat: ReasoningParameterFormat.disabled }),
+    ...(dropsReasoning !== true &&
+      params.reasoningFormat == null &&
       declaresReasoning !== true && {
         reasoningFormat: ReasoningParameterFormat.reasoningEffort,
       }),

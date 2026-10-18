@@ -1,5 +1,6 @@
 import yaml from 'js-yaml';
-import { Providers, initializeModel } from '@librechat/agents';
+import { HumanMessage, SystemMessage } from '@langchain/core/messages';
+import { Providers, initializeModel, addTailCacheControl } from '@librechat/agents';
 import {
   endpointSchema,
   extractEnvVariable,
@@ -7,8 +8,8 @@ import {
   ReasoningParameterFormat,
 } from 'librechat-data-provider';
 import type { TEndpoint } from 'librechat-data-provider';
+import { loadCustomEndpointsConfig, usesOpenRouterCatalog } from '../endpoints/custom/config';
 import { getAgentInferencePolicy, parseAgentInferenceInput } from './input';
-import { loadCustomEndpointsConfig } from '../endpoints/custom/config';
 import { resolveAgentInferenceParameters } from './inference';
 import { getOpenAIConfig } from '../endpoints/openai/config';
 import { createCustomConfigLoader } from '../app/loader';
@@ -112,13 +113,6 @@ describe('trusted inference profile consistency', () => {
   it.each([
     { customParams: { defaultParamsEndpoint: EModelEndpoint.google } },
     { provider: EModelEndpoint.anthropic as const },
-    {
-      customParams: {
-        defaultParamsEndpoint: 'custom',
-        reasoningFormat: ReasoningParameterFormat.disabled,
-      },
-    },
-    { dropParams: ['reasoning'] },
   ])('preserves explicit profile and capability decisions: %j', (overrides) => {
     process.env[variable] = 'https://openrouter.ai/api/v1';
     const loaded = endpointSchema.parse(endpoint(overrides));
@@ -145,4 +139,119 @@ describe('trusted inference profile consistency', () => {
       }),
     ).toThrow();
   });
+});
+
+describe('OpenRouter identity is independent of reasoning capability', () => {
+  const policies: Array<Partial<TEndpoint> & { name: string }> = [
+    { name: 'reasoning object drop', dropParams: ['reasoning'] },
+    { name: 'effort drop', dropParams: ['reasoning_effort'] },
+    {
+      name: 'disabled reasoning',
+      customParams: {
+        defaultParamsEndpoint: 'custom',
+        reasoningFormat: ReasoningParameterFormat.disabled,
+      },
+    },
+  ];
+  const cases = ['literal', 'environment'].flatMap((urlKind) =>
+    [undefined, 'custom', 'openrouter'].flatMap((profile) =>
+      policies.flatMap((policy) =>
+        [false, true].map((cache) => ({ urlKind, profile, policy, cache })),
+      ),
+    ),
+  );
+
+  it.each(cases)(
+    '$urlKind, $profile, $policy.name, cache=$cache',
+    async ({ urlKind, profile, policy, cache }) => {
+      process.env[variable] = 'https://openrouter.ai/api/v1';
+      const configured = endpoint({
+        ...policy,
+        name: 'Gateway',
+        baseURL:
+          urlKind === 'literal' ? 'https://openrouter.ai/api/v1' : '${TEST_INFERENCE_GATEWAY_URL}',
+        customParams: {
+          ...policy.customParams,
+          defaultParamsEndpoint: profile ?? policy.customParams?.defaultParamsEndpoint ?? 'custom',
+        },
+      });
+      const text = yaml.dump({ version: '1.3.17', endpoints: { custom: [configured] } });
+      const config = await createCustomConfigLoader({
+        defaultConfigPath: 'cache-reasoning.yaml',
+        loadLocal: () => text,
+        redactConfig: (value) => value,
+      })(false);
+      const loaded = endpointSchema.parse(config?.endpoints?.custom?.[0]);
+      const appConfig = { endpoints: { custom: [loaded] } };
+      const advertised = loadCustomEndpointsConfig([loaded])?.Gateway?.customParams;
+      const effective = getAgentInferencePolicy('Gateway', appConfig);
+      expect(effective.customParams).toEqual(advertised);
+      expect(effective.customParams?.defaultParamsEndpoint).toBe('openrouter');
+      expect(effective.customParams?.reasoningFormat).toBe(ReasoningParameterFormat.disabled);
+      expect(usesOpenRouterCatalog(loaded, extractEnvVariable(loaded.baseURL))).toBe(false);
+      const values = { promptCache: cache, promptCacheTtl: '1h' };
+      expect(
+        parseAgentInferenceInput({
+          provider: 'Gateway',
+          model: 'permitted',
+          parameters: values,
+          appConfig,
+        }),
+      ).toEqual(values);
+      const projected = resolveAgentInferenceParameters({
+        ...effective,
+        model: 'permitted',
+        parameters: { ...values, reasoning_effort: 'high' },
+      });
+      expect(projected.parameters).toMatchObject(values);
+      const result = getOpenAIConfig(
+        'synthetic-key',
+        {
+          reverseProxyUrl: extractEnvVariable(loaded.baseURL),
+          customParams: effective.customParams,
+          dropParams: loaded.dropParams,
+          modelOptions: { ...projected.parameters, model: 'permitted' },
+        },
+        'Gateway',
+      );
+      expect(result.llmConfig.promptCache === true).toBe(cache);
+      const bodies: Record<string, unknown>[] = [];
+      const client = initializeModel({
+        provider: result.provider ?? Providers.OPENAI,
+        clientOptions: {
+          ...result.llmConfig,
+          streaming: false,
+          configuration: {
+            ...result.configOptions,
+            fetch: async (_url: unknown, init: { body?: unknown } | undefined) => {
+              bodies.push(JSON.parse(String(init?.body)));
+              return Response.json({
+                id: 'chatcmpl-policy',
+                object: 'chat.completion',
+                created: 1,
+                model: 'permitted',
+                choices: [
+                  {
+                    index: 0,
+                    message: { role: 'assistant', content: 'ok' },
+                    finish_reason: 'stop',
+                  },
+                ],
+                usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+              });
+            },
+          },
+        },
+      });
+      const messages = [new SystemMessage('Synthetic system context'), new HumanMessage('hello')];
+      const prepared =
+        result.llmConfig.promptCache === true ? addTailCacheControl(messages, '1h') : messages;
+      await client.invoke(prepared);
+      expect(bodies).toHaveLength(1);
+      expect(JSON.stringify(bodies[0]).includes('cache_control')).toBe(cache);
+      expect(bodies[0]).not.toHaveProperty('reasoning');
+      expect(bodies[0]).not.toHaveProperty('reasoning_effort');
+      expect(bodies[0]).not.toHaveProperty('include_reasoning');
+    },
+  );
 });
