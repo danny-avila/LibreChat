@@ -10,7 +10,6 @@ import {
   appliedSteerIdsByConvoId,
   pendingSteersByConvoId,
   resetSteerFamilies,
-  resetQueueFamilies,
 } from '@librechat/chat/react';
 import type { RewakeDrain } from '~/Providers/ComposerRestoreContext';
 import {
@@ -18,11 +17,11 @@ import {
   useComposerRestoreHost,
 } from '~/Providers/ComposerRestoreContext';
 import { ChatSettingsContext, defaultChatSettings } from '~/Providers/ChatSettingsContext';
-import { queuedMessagesByConvoId } from '~/hooks/Chat/queue';
 import { usePaneConversations } from '~/routes/ChatSettings';
 import useSteerRecovery from '../useSteerRecovery';
 import store from '~/store';
 import '~/Providers/SteerHostContext';
+import { queuedMessagesByConvoId, resetQueueFamilies } from '@librechat/chat/react';
 
 const mockMutateAsync = jest.fn();
 const mockCancelSteer = jest.fn();
