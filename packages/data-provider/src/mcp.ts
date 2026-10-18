@@ -194,18 +194,25 @@ export const MCP_SERVER_TITLE_PATTERN = new RegExp(
 export const MCP_SERVER_TITLE_ERROR =
   'Title must start with a letter or number and can include spaces, hyphens, and apostrophes';
 
-type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue };
+const ToolSchemaScalarSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
 
-const JsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
-  z.union([
-    z.null(),
-    z.boolean(),
-    z.number(),
-    z.string(),
-    z.array(JsonValueSchema),
-    z.record(z.string(), JsonValueSchema),
-  ]),
-);
+/**
+ * One input of a declared tool. Bounded rather than full JSON Schema: it only has to tell tool
+ * search and the model what to pass, and the server validates the real call after sign-in.
+ */
+const DeclaredToolPropertySchema = z.object({
+  type: z.union([z.string(), z.array(z.string())]).optional(),
+  description: z.string().optional(),
+  enum: z.array(ToolSchemaScalarSchema).optional(),
+  default: ToolSchemaScalarSchema.optional(),
+  items: z
+    .object({
+      type: z.union([z.string(), z.array(z.string())]).optional(),
+      description: z.string().optional(),
+      enum: z.array(ToolSchemaScalarSchema).optional(),
+    })
+    .optional(),
+});
 
 const BaseOptionsSchema = z.object({
   /** Display name for the MCP server */
@@ -285,7 +292,7 @@ const BaseOptionsSchema = z.object({
         inputSchema: z
           .object({
             type: z.literal('object'),
-            properties: z.record(z.string(), z.record(z.string(), JsonValueSchema)).optional(),
+            properties: z.record(z.string(), DeclaredToolPropertySchema).optional(),
             required: z.array(z.string()).optional(),
           })
           .optional(),
