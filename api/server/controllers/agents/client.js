@@ -218,6 +218,8 @@ const {
   markCompactionOutcome,
   resolvePersistableCodeEnvironmentDecision,
   getChatProjectContextKey,
+  isTemporaryTurn,
+  hasEntityEmbeddings,
 } = require('@librechat/api');
 const {
   Run,
@@ -3497,6 +3499,8 @@ class AgentClient extends BaseClient {
       {
         getProjectFiles: db.getProjectFiles,
         getFiles: db.getFiles,
+        adoptLegacySearchEmbeddings: db.adoptLegacySearchEmbeddings,
+        hasEntityEmbeddings,
         getUserKey: db.getUserKey,
         getConvoFiles: db.getConvoFiles,
         getAccessibleMcpServerNames,
@@ -5125,6 +5129,7 @@ class AgentClient extends BaseClient {
           // Conversation-stable identity for the e2e run hook; a resumed run
           // carries no messages, so history cannot identify the conversation.
           conversationId: this.conversationId,
+          isTemporary: isTemporaryTurn(this.options.req),
           messages,
           discoveredToolNames:
             this.eventActorContinuation === 'warm' ? this.eventActorDiscoveredToolNames : undefined,
@@ -5959,6 +5964,7 @@ class AgentClient extends BaseClient {
         ),
         agents,
         conversationId: this.conversationId,
+        isTemporary: isTemporaryTurn(this.options.req),
         modelCallbacks: [
           modelBoundCallback,
           attachmentMemoryCallback,

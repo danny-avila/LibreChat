@@ -5,7 +5,11 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { Constants, ReasoningEffort } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { isSubmittingFamily, resetSubmitting } from '@librechat/chat/react';
-import { revealedQueuedTurnFamily, resetSteerFamilies } from '@librechat/chat/react';
+import {
+  revealedQueuedTurnFamily,
+  resetSteerFamilies,
+  resetQueueFamilies,
+} from '@librechat/chat/react';
 import {
   claimQueuedIntent,
   releaseQueuedIntent,
@@ -24,7 +28,6 @@ import {
   pendingRunEndByConvoId,
   drainAfterAbortByIndex,
   runEndByIndex,
-  resetQueueFamilies,
 } from '~/hooks/Chat/queue';
 import { recoveryDispositionsFamily } from '~/components/Chat/Steering/recovery';
 import useQueueDrain from '../useQueueDrain';
