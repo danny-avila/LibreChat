@@ -51,6 +51,7 @@ const {
   isFatalAgentInitializationError,
   codeExecutionAuthHeaders,
   createLaneGitRecorder,
+  resolvePullRequestRecording,
   createAttachedWorkspaceBashTool,
   createRepositoryInstructionSource,
   createRepositoryInstructionLoader,
@@ -784,8 +785,6 @@ const isExpectedMCPTool = (toolName) =>
   toolName?.includes(Constants.mcp_delimiter) &&
   !toolName.startsWith(mcpServerPinPrefix) &&
   !isActionTool(toolName);
-const isExpectedMCPToolsUnavailableError = (error) =>
-  error?.code === AGENT_EXPECTED_MCP_TOOLS_UNAVAILABLE;
 const createExpectedMCPToolsUnavailableError = (agentName, cause) => {
   const subject = agentName ? `Agent "${agentName}"` : 'The agent';
   const error = new Error(
@@ -2368,7 +2367,10 @@ async function loadToolsForExecution({
               workspaceId: codeExecutionContext.codeWorkspace.workspaceId,
               workspaceInstanceId: codeExecutionContext.codeWorkspace.workspaceInstanceId,
               onLaneGit: await createLaneGitRecorder({
-                enabled: req.config?.endpoints?.agents?.pullRequests?.enabled === true,
+                ...resolvePullRequestRecording(
+                  req.config?.endpoints?.agents?.pullRequests,
+                  process.env,
+                ),
                 user: req.user.id,
                 conversationId: conversationId ?? runtimeRequestBody?.conversationId,
                 repo: codeExecutionContext.codeWorkspace.environment?.repo,
@@ -2376,6 +2378,7 @@ async function loadToolsForExecution({
                   environmentId: codeExecutionContext.codeWorkspace.environmentId,
                   workspaceId: codeExecutionContext.codeWorkspace.workspaceId,
                 },
+                admittedEpoch: req.resolvedConversation?.codeAttachmentEpoch,
                 getConvoLaneContext,
                 reserveConvoLaneGitSeq,
                 setConvoLaneGit,
@@ -2699,7 +2702,6 @@ module.exports = {
   processRequiredActions,
   resolveAgentCapabilities,
   isFatalAgentInitializationError,
-  isExpectedMCPToolsUnavailableError,
   /** Re-exported for controllers that already depend on (and mock) this
    *  module, avoiding a fresh heavy `services/MCP` require chain there. */
   getAccessibleMcpServerNames,
