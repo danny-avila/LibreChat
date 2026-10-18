@@ -3035,5 +3035,114 @@ describe('Chat', () => {
         expect.objectContaining({ isSettled: true, conversationId: 'convo-9' }),
       );
     });
+
+    it('keeps the assigned conversation of a continuation that dropped before its sync frame', async () => {
+      const continuation = createStream({ streamId: 'convo-9', generationCreatedAt: 500 });
+      const { chat, transport, onFinish } = setup(
+        { id: 'new', resumeSelection: () => ({ endpoint: 'agents' }) },
+        {
+          resume: jest.fn(async () => ({
+            streamId: 'convo-9',
+            conversationId: 'convo-9',
+            status: 'resuming' as const,
+          })),
+          reconnectToStream: jest.fn(async () => continuation),
+        },
+      );
+      chat.restorePendingAction(pausedAction, 500);
+      await chat.addToolOutput({ toolCallId: 'ask-5', output: 'Blue' });
+      await flush();
+      continuation.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+      await flush();
+      expect(onFinish).toHaveBeenLastCalledWith(expect.objectContaining({ isDisconnect: true }));
+      transport.reconnectToStream.mockResolvedValueOnce(null);
+
+      await chat.resumeStream();
+
+      expect(transport.reconnectToStream).toHaveBeenLastCalledWith(
+        expect.objectContaining({ chatId: 'convo-9' }),
+      );
+      expect(onFinish).toHaveBeenLastCalledWith(
+        expect.objectContaining({ isSettled: true, conversationId: 'convo-9' }),
+      );
+    });
+
+    it('ends a reattachment of the same generation by a detached stop answered after it', async () => {
+      const { chat, stream, transport, onFinish } = setup({
+        resumeSelection: () => ({ endpoint: 'agents' }),
+      });
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push({ type: 'pending_action', data: pausedAction });
+      stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+      await sent;
+      expect(chat.pendingAction?.actionId).toBe('action-5');
+
+      let answer: (result: ChatAbortResult) => void = () => undefined;
+      transport.abort.mockImplementationOnce(
+        () =>
+          new Promise<ChatAbortResult>((resolve) => {
+            answer = resolve;
+          }),
+      );
+      const stopped = chat.stop();
+      await flush();
+      const reattached = createStream({ streamId: 'convo-1', generationCreatedAt: 100 });
+      transport.reconnectToStream.mockResolvedValueOnce(reattached);
+      const resumed = chat.resumeStream({ streamId: 'convo-1', generationCreatedAt: 100 });
+      await flush();
+      expect(chat.connection).toBe('live');
+
+      answer({ success: true });
+      await flush();
+      reattached.close();
+      await resumed;
+
+      await expect(stopped).resolves.toEqual({ status: 'stopped' });
+      expect(transport.abort).toHaveBeenCalledTimes(1);
+      expect(chat.status).toBe('ready');
+      expect(chat.pendingAction).toBeUndefined();
+      expect(onFinish).toHaveBeenLastCalledWith(
+        expect.objectContaining({ isAbort: true, isDisconnect: false }),
+      );
+    });
+
+    it('sends one stop for a generation stopped again once a reattachment took it over', async () => {
+      const { chat, stream, transport } = setup({
+        resumeSelection: () => ({ endpoint: 'agents' }),
+      });
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+      await sent;
+
+      let answer: (result: ChatAbortResult) => void = () => undefined;
+      transport.abort.mockImplementationOnce(
+        () =>
+          new Promise<ChatAbortResult>((resolve) => {
+            answer = resolve;
+          }),
+      );
+      const first = chat.stop();
+      await flush();
+      const reattached = createStream({ streamId: 'convo-1', generationCreatedAt: 100 });
+      transport.reconnectToStream.mockResolvedValueOnce(reattached);
+      const resumed = chat.resumeStream({ streamId: 'convo-1', generationCreatedAt: 100 });
+      await flush();
+      const second = chat.stop();
+      await flush();
+
+      answer({ success: true });
+      await flush();
+      reattached.push({ type: 'abort', data: {} } as ChatEvent);
+      await resumed;
+
+      await expect(Promise.all([first, second])).resolves.toEqual([
+        { status: 'stopped' },
+        { status: 'stopped' },
+      ]);
+      expect(transport.abort).toHaveBeenCalledTimes(1);
+      expect(chat.status).toBe('ready');
+    });
   });
 });
