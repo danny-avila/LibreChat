@@ -4,6 +4,8 @@ import {
   THINKING_BINDING_BETA,
   ThinkingDisplay,
   SettingTypes,
+  bedrockInputParser,
+  bedrockOutputParser,
 } from 'librechat-data-provider';
 import type { Agent, TEndpoint } from 'librechat-data-provider';
 import type { OpenAIConfigOptions, OpenAIConfiguration } from '~/types';
@@ -194,6 +196,106 @@ describe('canonical runtime inference provenance', () => {
       agentInferenceSource: { provider: 'Gateway', parameters: { min_p: 0.7 } },
     });
     expect(restoreAgentInferenceInput(lookalike)).toBe(lookalike);
+  });
+});
+
+describe('legacy Bedrock inference preferences', () => {
+  it.each([
+    ['us.anthropic.claude-sonnet-5', { type: 'disabled' }, 'disabled'],
+    ['us.anthropic.claude-sonnet-5-5', { type: 'between_tools' }, 'between_tools'],
+    [
+      'us.anthropic.claude-opus-5-5',
+      { type: 'adaptive', display: 'omitted', block_binding: THINKING_BLOCK_BINDING },
+      'adaptive',
+    ],
+    ['us.anthropic.claude-3-7-sonnet', { type: 'enabled', budget_tokens: 4096 }, 'enabled'],
+  ])(
+    'recovers only known preferences from a legacy record for %s',
+    (model, thinking, expectedType) => {
+      const parameters = {
+        additionalModelRequestFields: {
+          thinking,
+          output_config: { effort: 'low' },
+          apiKey: 'untrusted',
+          model: 'restricted',
+          configuration: { baseURL: 'https://unchecked.invalid' },
+        },
+      };
+      const projected = resolveAgentInferenceParameters({ provider: 'bedrock', model, parameters });
+      expect(projected.parameters.thinking).toBe(
+        !['disabled', 'between_tools'].includes(expectedType),
+      );
+      expect(projected.parameters).not.toHaveProperty('additionalModelRequestFields');
+      expect(projected.parameters).not.toHaveProperty('apiKey');
+      expect(projected.parameters).not.toHaveProperty('configuration');
+      expect(projected.issues).toEqual([
+        { path: ['additionalModelRequestFields'], code: 'unsupported_parameter' },
+      ]);
+      const configured = bedrockOutputParser(
+        bedrockInputParser.parse({ ...projected.parameters, model }),
+      );
+      expect(configured.additionalModelRequestFields).toMatchObject({
+        thinking: { type: expectedType },
+      });
+      expect(JSON.stringify(configured)).not.toContain('untrusted');
+      if (expectedType === 'adaptive') {
+        expect(configured.additionalModelRequestFields).toMatchObject({
+          thinking: { display: 'omitted', block_binding: THINKING_BLOCK_BINDING },
+          output_config: { effort: 'low' },
+        });
+      }
+      if (expectedType === 'enabled') {
+        expect(configured.additionalModelRequestFields).toMatchObject({
+          thinking: { budget_tokens: 4096 },
+        });
+      }
+    },
+  );
+
+  it('keeps flat preferences authoritative and drops malformed nested values', () => {
+    const projected = resolveAgentInferenceParameters({
+      provider: 'bedrock',
+      model: 'us.anthropic.claude-sonnet-5',
+      parameters: {
+        thinking: false,
+        effort: 'medium',
+        additionalModelRequestFields: {
+          thinking: { type: 'adaptive' },
+          output_config: { effort: 'low' },
+        },
+      },
+    });
+    expect(projected.parameters).toMatchObject({ thinking: false, effort: 'medium' });
+    expect(
+      resolveAgentInferenceParameters({
+        provider: 'bedrock',
+        model: 'us.anthropic.claude-sonnet-5',
+        parameters: {
+          additionalModelRequestFields: {
+            thinking: { type: 'disabled', unknownControl: true },
+            output_config: { effort: 'invalid' },
+          },
+        },
+      }).parameters,
+    ).toEqual({});
+  });
+
+  it('recovers a recognized non-Anthropic reasoning preference without forwarding its envelope', () => {
+    const projected = resolveAgentInferenceParameters({
+      provider: 'bedrock',
+      model: 'moonshot.kimi',
+      parameters: {
+        additionalModelRequestFields: {
+          reasoning_config: 'low',
+          configuration: { apiKey: 'untrusted' },
+        },
+      },
+    });
+    expect(projected.parameters).toEqual({ reasoning_effort: 'low' });
+    const configured = bedrockOutputParser(
+      bedrockInputParser.parse({ ...projected.parameters, model: 'moonshot.kimi' }),
+    );
+    expect(configured.additionalModelRequestFields).toEqual({ reasoning_config: 'low' });
   });
 });
 

@@ -100,6 +100,16 @@ describe('Agent inference input', () => {
     ).toThrow(z.ZodError);
   });
 
+  it('still rejects Bedrock SDK envelopes on new writes despite recovering known legacy preferences', () => {
+    expect(() =>
+      parseAgentInferenceInput({
+        provider: 'bedrock',
+        model: 'us.anthropic.claude-sonnet-5',
+        parameters: { additionalModelRequestFields: { thinking: { type: 'disabled' } } },
+      }),
+    ).toThrow(z.ZodError);
+  });
+
   it('validates a custom value against administrator constraints', () => {
     expect(() =>
       parseAgentInferenceInput({

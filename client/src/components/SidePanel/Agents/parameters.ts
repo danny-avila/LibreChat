@@ -1,6 +1,7 @@
 import keyBy from 'lodash/keyBy';
 import {
   agentParamSettings,
+  tConversationSchema,
   applyModelAwareDefaults,
   getEndpointField,
   getSettingsKeys,
@@ -73,7 +74,14 @@ export function resolveAgentParameterSettings({
   const overriddenParamsMap = keyBy(overriddenParams ?? [], 'key');
   /** Keep endpoint-recognized keys independent of model visibility. Only explicit
    * administrator drops remove keys from the schema used by both save paths. */
-  const endpointParams = (defaultParams ?? []).filter(
+  const declaredExtras = (overriddenParams ?? []).filter(
+    (param): param is SettingDefinition =>
+      param.key != null &&
+      param.type != null &&
+      param.component != null &&
+      !Object.prototype.hasOwnProperty.call(tConversationSchema.shape, param.key),
+  );
+  const endpointParams = [...(defaultParams ?? []), ...declaredExtras].filter(
     (param) => param != null && !dropParamsSet.has(param.key),
   );
   const applyOverride = (param: SettingDefinition) =>

@@ -421,6 +421,18 @@ function customSchema(
   }
 }
 
+/** Extra YAML controls must satisfy the same policy used to project their wire values. */
+export function isAgentInferenceExtension(definition: CustomDefinition): boolean {
+  if (!isCustomKey(definition.key) || builtinKeys.has(definition.key)) {
+    return false;
+  }
+  const schema = customSchema(definition);
+  return (
+    schema != null &&
+    (definition.default === undefined || schema.safeParse(definition.default).success)
+  );
+}
+
 /** Projects persisted or submitted settings without admitting SDK constructor options. */
 export function resolveAgentInferenceParameters({
   parameters,
@@ -463,6 +475,30 @@ export function resolveAgentInferenceParameters({
     return result;
   }
   const source = { ...parameters };
+  const stored = source.additionalModelRequestFields;
+  if (
+    family === 'bedrock' &&
+    stored != null &&
+    typeof stored === 'object' &&
+    !Array.isArray(stored)
+  ) {
+    const preferences = stored as Record<string, unknown>;
+    if (fields === bedrockAnthropic) {
+      const thinking = legacyThinking.safeParse(preferences.thinking);
+      if (source.thinking === undefined && thinking.success) {
+        source.thinking = thinking.data;
+      }
+      const output = z.object({ effort: flat.effort }).safeParse(preferences.output_config);
+      if (source.effort === undefined && output.success) {
+        source.effort = output.data.effort;
+      }
+    } else {
+      const effort = flat.reasoning_effort.safeParse(preferences.reasoning_config);
+      if (source.reasoning_effort === undefined && effort.success) {
+        source.reasoning_effort = effort.data;
+      }
+    }
+  }
   if (family === 'anthropic' || (family === 'bedrock' && fields === bedrockAnthropic)) {
     const thinking = legacyThinking.safeParse(source.thinking);
     if (thinking.success) {

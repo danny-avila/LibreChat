@@ -1,4 +1,9 @@
-import { agentParamSettings, EModelEndpoint } from 'librechat-data-provider';
+import {
+  agentParamSettings,
+  EModelEndpoint,
+  SettingTypes,
+  ComponentTypes,
+} from 'librechat-data-provider';
 import type { AgentModelParameters, TModelReasoning } from 'librechat-data-provider';
 import { pruneAgentModelParameters, resolveAgentParameterSettings } from '../parameters';
 
@@ -186,5 +191,76 @@ describe('resolveAgentParameterSettings: OpenRouter reasoning efforts', () => {
 
     const effort = settings.visibleParameters.find(({ key }) => key === 'reasoning_effort');
     expect(effort?.options).toEqual(['', 'low', 'high']);
+  });
+});
+
+describe('administrator-declared inference controls', () => {
+  const endpointsConfig = {
+    Gateway: {
+      order: 0,
+      type: EModelEndpoint.custom,
+      customParams: {
+        defaultParamsEndpoint: 'custom',
+        paramDefinitions: [
+          {
+            key: 'min_p',
+            type: SettingTypes.Number,
+            component: ComponentTypes.Input,
+            label: 'Minimum Probability',
+            default: 0.1,
+          },
+          {
+            key: 'foo_generation_mode',
+            type: SettingTypes.Enum,
+            component: ComponentTypes.Dropdown,
+            label: 'Generation Mode',
+            options: ['fast', 'accurate'],
+            default: 'accurate',
+          },
+          { key: 'modelLabel', type: SettingTypes.String, component: ComponentTypes.Input },
+        ],
+      },
+    },
+  };
+  const stored = {
+    temperature: 0.3,
+    maxContextTokens: null,
+    max_context_tokens: null,
+    max_output_tokens: null,
+    top_p: null,
+    frequency_penalty: null,
+    presence_penalty: null,
+    min_p: 0.7,
+    foo_generation_mode: 'fast',
+  };
+  const resolve = (drops: string[] = []) =>
+    resolveAgentParameterSettings({
+      provider: 'Gateway',
+      model: 'permitted',
+      webSearchAllowed: true,
+      endpointsConfig,
+      startupConfig: { endpointsDropParamsMap: { Gateway: drops } },
+    });
+
+  it('offers typed controls and retains their saved values on unrelated edits', () => {
+    const settings = resolve();
+    expect(settings.visibleParameters).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ key: 'min_p', label: 'Minimum Probability' }),
+        expect.objectContaining({ key: 'foo_generation_mode', options: ['fast', 'accurate'] }),
+      ]),
+    );
+    expect(settings.parameters.map(({ key }) => key)).not.toContain('modelLabel');
+    expect(pruneAgentModelParameters(stored, settings)).toBe(stored);
+  });
+
+  it('honors administrator drops for both rendering and persistence', () => {
+    const settings = resolve(['min_p']);
+    expect(settings.visibleParameters.map(({ key }) => key)).not.toContain('min_p');
+    expect(pruneAgentModelParameters(stored, settings)).not.toHaveProperty('min_p');
+    expect(pruneAgentModelParameters(stored, settings)).toHaveProperty(
+      'foo_generation_mode',
+      'fast',
+    );
   });
 });
