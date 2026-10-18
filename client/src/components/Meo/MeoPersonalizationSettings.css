@@ -1,0 +1,73 @@
+.meo-personalization {
+  height: 100%;
+  overflow: auto;
+  background: rgb(var(--surface-primary));
+  color: rgb(var(--text-primary));
+}
+.meo-personalization-content {
+  width: min(750px, 100%);
+  margin: 0 auto;
+  padding: 20px 28px 64px;
+}
+.meo-personalization h1 { font-size: 26px; font-weight: 650; margin: 6px 0 8px; }
+.meo-personalization h2 { font-size: 18px; font-weight: 620; margin: 0 0 8px; }
+.meo-personalization h3 { font-size: 14px; font-weight: 620; }
+.meo-personalization p { line-height: 1.55; overflow-wrap: anywhere; }
+.meo-personalization header > p,
+.meo-personalization section > p,
+.meo-personalization small { color: rgb(var(--text-secondary)); font-size: 13px; }
+.meo-personalization section {
+  padding: 28px 0;
+  border-bottom: 1px solid rgb(var(--border-light));
+}
+.meo-personalization textarea {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 14px 0 6px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgb(var(--border-light));
+  background: rgb(var(--surface-secondary));
+  color: rgb(var(--text-primary));
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+}
+.meo-personalization button {
+  min-height: 36px;
+  border: 1px solid rgb(var(--border-light));
+  border-radius: 12px;
+  padding: 7px 12px;
+  background: rgb(var(--surface-secondary));
+  color: rgb(var(--text-primary));
+  cursor: pointer;
+  font-size: 13px;
+}
+.meo-personalization button.primary {
+  background: rgb(var(--accent-primary));
+  color: rgb(var(--surface-primary));
+  border-color: transparent;
+  font-weight: 620;
+}
+.meo-personalization button:disabled { opacity: .45; cursor: not-allowed; }
+.meo-personalization button:not(:disabled):hover { filter: brightness(.97); }
+.meo-personalization-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; flex-wrap: wrap; }
+.meo-personalization-actions > small,
+.meo-personalization-actions > h3 { margin-right: auto; }
+.meo-personalization-switch { display: flex; gap: 10px; align-items: center; margin: 14px 0; font-size: 14px; }
+.meo-personalization-switch input { accent-color: rgb(var(--accent-primary)); width: 18px; height: 18px; }
+.meo-personalization-add { margin: 18px 0; }
+.meo-personalization-memories { padding: 0; margin: 12px 0; list-style: none; display: grid; gap: 10px; }
+.meo-personalization-memories li { border-radius: 16px; border: 1px solid rgb(var(--border-light)); padding: 16px; }
+.meo-personalization-memories li > p { white-space: pre-wrap; margin: 10px 0 16px; font-size: 14px; }
+.meo-personalization-error,
+.meo-personalization-notice { padding: 12px 14px; background: rgb(var(--surface-secondary)); border-radius: 12px; font-size: 13px; }
+.meo-personalization-error { border: 1px solid rgb(var(--border-light)); }
+@media(max-width:759px) {
+  .meo-personalization-content { padding: 12px 18px 48px; }
+  .meo-personalization section { padding: 22px 0; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .meo-personalization * { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+}
