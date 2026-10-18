@@ -1847,7 +1847,68 @@ describe('processAgentFileUpload', () => {
     });
   });
 
-  describe('explicit legacy tool delivery path', () => {
+  describe('explicit tool delivery path', () => {
+    test.each([undefined, 'agent_saved01'])(
+      'embeds a unified chat upload only when File Search was chosen (agent=%s)',
+      async (agent_id) => {
+        const storageUpload = setupStoredFileUpload({ embedded: false });
+        mergeFileConfig.mockReturnValue({
+          ...makeFileConfig(),
+          endpoints: { openAI: { legacyFileUploadUX: false } },
+        });
+        const req = makeReq({ body: { endpoint: EModelEndpoint.openAI } });
+        const metadata = {
+          endpoint: EModelEndpoint.openAI,
+          effectiveEndpoint: EModelEndpoint.openAI,
+          agent_id,
+          agentTools: [EToolResources.file_search],
+          message_file: 'true',
+          file_id: 'f-explicit-search',
+          tool_resource: EToolResources.file_search,
+        };
+
+        await processAgentFileUpload({ req, res: mockRes, metadata });
+
+        expect(uploadVectors).toHaveBeenCalledTimes(1);
+        expect(uploadVectors).toHaveBeenCalledWith({
+          req,
+          file: req.file,
+          file_id: metadata.file_id,
+          entity_id: undefined,
+        });
+        expect(storageUpload).toHaveBeenCalledTimes(1);
+        expect(db.createFile).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            file_id: metadata.file_id,
+            embedded: true,
+            llmDeliveryPath: 'none',
+            metadata: expect.objectContaining({ destinationChosen: true }),
+          }),
+          true,
+        );
+        expect(db.addAgentResourceFile).not.toHaveBeenCalled();
+        expect(mockRes.status).toHaveBeenCalledWith(200);
+
+        jest.clearAllMocks();
+        await processAgentFileUpload({
+          req,
+          res: mockRes,
+          metadata: { ...metadata, file_id: 'f-normal-upload', tool_resource: undefined },
+        });
+
+        expect(uploadVectors).not.toHaveBeenCalled();
+        expect(db.createFile).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            file_id: 'f-normal-upload',
+            embedded: false,
+            llmDeliveryPath: 'provider',
+            metadata: expect.objectContaining({ destinationChosen: false }),
+          }),
+          true,
+        );
+      },
+    );
+
     test('persists llmDeliveryPath none for explicit file_search uploads', async () => {
       const { createFile } = require('~/models');
       const storageUpload = jest.fn().mockResolvedValue({

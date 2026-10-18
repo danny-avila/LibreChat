@@ -1,8 +1,9 @@
 import React from 'react';
-import { RecoilRoot } from 'recoil';
+import { RecoilRoot, useRecoilValue } from 'recoil';
 import { act, renderHook } from '@testing-library/react';
 import { Tools, EToolResources, EModelEndpoint } from 'librechat-data-provider';
 import type { TConversation, EndpointFileConfig } from 'librechat-data-provider';
+import { ephemeralAgentByConvoId } from '~/store';
 import useAttachItems from '../useAttachItems';
 
 /**
@@ -31,11 +32,11 @@ jest.mock('~/hooks/Files', () => ({
 jest.mock('~/hooks/Files/useSharePointFileHandling', () => ({
   __esModule: true,
   default: jest.fn(),
-  useSharePointFileHandlingNoChatContext: () => ({
-    handleSharePointFiles: jest.fn(),
+  useSharePointFileHandlingNoChatContext: jest.fn(() => ({
+    handleSharePointFiles: jest.fn().mockResolvedValue(undefined),
     isProcessing: false,
     downloadProgress: undefined,
-  }),
+  })),
 }));
 
 jest.mock('~/data-provider', () => ({
@@ -122,11 +123,13 @@ function renderAttach(options: Options = {}) {
     codeEnabled: options.codeEnabled ?? true,
   });
   mockUseGetAgentsConfig.mockReturnValue({ agentsConfig: { capabilities: [] } });
-  mockUseGetStartupConfig.mockReturnValue({ data: { sharePointFilePickerEnabled: false } });
+  mockUseGetStartupConfig.mockReturnValue({
+    data: { sharePointFilePickerEnabled: options.sharePointEnabled ?? false },
+  });
 
   return renderHook(
-    () =>
-      useAttachItems({
+    () => {
+      const attach = useAttachItems({
         agentId: options.agentId ?? null,
         endpoint: options.endpoint ?? null,
         endpointType: options.endpointType,
@@ -138,7 +141,10 @@ function renderAttach(options: Options = {}) {
         files: new Map(),
         setFiles: jest.fn(),
         setFilesLoading: jest.fn(),
-      }),
+      });
+      const ephemeralAgent = useRecoilValue(ephemeralAgentByConvoId('convo-1'));
+      return { ...attach, ephemeralAgent };
+    },
     {
       wrapper: ({ children }: { children: React.ReactNode }) => <RecoilRoot>{children}</RecoilRoot>,
     },
@@ -213,7 +219,7 @@ describe('useAttachItems', () => {
     it('reads a provider whatever its casing, which OpenRouter arrives in', () => {
       expect(renderEntries({ provider: 'OpenRouter' })).toContain('local:provider');
     });
-    it('offers local and SharePoint sources without destination choices in unified mode', () => {
+    it('keeps implicit upload first and restores explicit tool destinations in unified mode', () => {
       expect(
         renderEntries({
           isUnifiedMode: true,
@@ -222,7 +228,85 @@ describe('useAttachItems', () => {
           fileSearchEnabled: true,
           codeEnabled: true,
         }),
+      ).toEqual([
+        'local:unified',
+        'local:file_search',
+        'local:execute_code',
+        'sharepoint:unified',
+        'sharepoint:file_search',
+        'sharepoint:execute_code',
+      ]);
+    });
+  });
+
+  describe('unified destinations', () => {
+    it('does not offer disabled capabilities', () => {
+      expect(renderEntries({ isUnifiedMode: true })).toEqual(['local:unified']);
+    });
+
+    it('only offers the tools a saved agent allows', () => {
+      expect(
+        renderEntries({
+          ...allCapabilities,
+          isUnifiedMode: true,
+          agentId: SAVED_AGENT,
+          tools: [Tools.file_search],
+        }),
+      ).toEqual(['local:unified', 'local:file_search']);
+    });
+
+    it.each([EModelEndpoint.assistants, EModelEndpoint.azureAssistants])(
+      'keeps %s on its own upload path',
+      (endpoint) => {
+        expect(renderEntries({ ...allCapabilities, isUnifiedMode: true, endpoint })).toEqual([
+          'local:assistants',
+        ]);
+      },
+    );
+
+    it('labels and folds SharePoint tool destinations separately from local uploads', () => {
+      const { result } = renderAttach({ isUnifiedMode: true, sharePointEnabled: true });
+      expect(
+        result.current.entries.filter((entry) => entry.primary).map((entry) => entry.id),
       ).toEqual(['local:unified', 'sharepoint:unified']);
+      expect(
+        result.current.entries.find((entry) => entry.id === 'sharepoint:file_search'),
+      ).toMatchObject({ label: 'com_ui_upload_file_search (com_files_upload_sharepoint)' });
+    });
+
+    it.each([EToolResources.file_search, EToolResources.execute_code] as const)(
+      'carries explicit %s through the picker, enables it, and resets the next upload',
+      (resource) => {
+        const { result } = renderAttach({ isUnifiedMode: true });
+        const input = document.createElement('input');
+        Object.defineProperty(result.current.inputRef, 'current', { value: input, writable: true });
+
+        act(() => {
+          result.current.entries.find((entry) => entry.id === `local:${resource}`)?.onSelect();
+        });
+        act(() => pickFile(input, result.current.onFileChange));
+        expect(mockHandleFileChange).toHaveBeenLastCalledWith(expect.anything(), resource);
+        expect(result.current.ephemeralAgent?.[resource]).toBe(true);
+
+        act(() => {
+          result.current.entries.find((entry) => entry.id === 'local:unified')?.onSelect();
+        });
+        act(() => pickFile(input, result.current.onFileChange));
+        expect(mockHandleFileChange).toHaveBeenLastCalledWith(expect.anything(), undefined);
+      },
+    );
+
+    it('passes a SharePoint File Search choice to its upload handler', () => {
+      const { result } = renderAttach({ isUnifiedMode: true, sharePointEnabled: true });
+      const sharePoint = jest.requireMock('~/hooks/Files/useSharePointFileHandling');
+      act(() => {
+        result.current.entries.find((entry) => entry.id === 'sharepoint:file_search')?.onSelect();
+      });
+      expect(result.current.isSharePointDialogOpen).toBe(true);
+      expect(sharePoint.useSharePointFileHandlingNoChatContext).toHaveBeenLastCalledWith(
+        { toolResource: EToolResources.file_search },
+        expect.anything(),
+      );
     });
   });
 
