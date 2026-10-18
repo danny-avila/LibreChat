@@ -216,6 +216,12 @@ describe('English plural key families', () => {
     await changeLanguageSafely('en');
     expect(i18n.t('com_ui_tools_count', { count: 1 })).toBe('1 tool');
     expect(i18n.t('com_ui_tools_count', { count: 2 })).toBe('2 tools');
+    expect(i18n.t('com_ui_duration_announced_seconds', { count: 1, value: '1' })).toBe(
+      'took 1 second',
+    );
+    expect(i18n.t('com_ui_duration_announced_seconds', { count: 1.4, value: '1.4' })).toBe(
+      'took 1.4 seconds',
+    );
 
     /** German still carries the pre-rename base key until Locize fills `_other`. */
     await changeLanguageSafely('de');
