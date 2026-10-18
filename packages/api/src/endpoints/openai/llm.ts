@@ -203,6 +203,7 @@ function removeReasoningField(target: Record<string, unknown>, field: string) {
 function removeReasoningPayload(target: Record<string, unknown>) {
   delete target.reasoning;
   delete target.reasoning_effort;
+  delete target.include_reasoning;
 }
 
 function deleteConfigParam({
@@ -214,6 +215,13 @@ function deleteConfigParam({
   llmConfig: OpenAILLMConfig;
   modelKwargs: Record<string, unknown>;
 }) {
+  if (param === 'top_p' || param === 'topP') {
+    delete llmConfig.topP;
+    delete llmConfig.top_p;
+    delete modelKwargs.topP;
+    delete modelKwargs.top_p;
+    return;
+  }
   if (param === 'reasoning_effort') {
     removeReasoningPayload(llmConfig as Record<string, unknown>);
     removeReasoningPayload(modelKwargs);
@@ -869,7 +877,6 @@ export function getOpenAILLMConfig({
     if (reasoningFormat === ReasoningParameterFormat.disabled) {
       removeReasoningPayload(llmConfig as Record<string, unknown>);
       removeReasoningPayload(modelKwargs);
-      delete llmConfig.include_reasoning;
     } else {
       hasModelKwargs =
         applyOpenRouterReasoningConfig({

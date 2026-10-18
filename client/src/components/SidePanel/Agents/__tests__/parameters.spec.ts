@@ -295,3 +295,41 @@ describe('OpenRouter cache preferences do not depend on reasoning', () => {
     },
   );
 });
+
+describe('legacy reasoning control visibility', () => {
+  it.each([false, true])(
+    'preserves stored values but hides an explicitly disabled legacy control (%s)',
+    (disabled) => {
+      const settings = resolveAgentParameterSettings({
+        provider: 'Gateway',
+        model: 'permitted',
+        webSearchAllowed: true,
+        endpointsConfig: {
+          Gateway: {
+            order: 0,
+            type: EModelEndpoint.custom,
+            customParams: {
+              defaultParamsEndpoint: 'openrouter',
+              reasoningFormat: disabled
+                ? ReasoningParameterFormat.disabled
+                : ReasoningParameterFormat.reasoningEffort,
+              paramDefinitions: [
+                {
+                  key: 'include_reasoning',
+                  type: SettingTypes.Boolean,
+                  component: ComponentTypes.Checkbox,
+                },
+              ],
+            },
+          },
+        },
+      });
+      expect(settings.visibleParameters.some(({ key }) => key === 'include_reasoning')).toBe(
+        !disabled,
+      );
+      expect(settings.parameters.some(({ key }) => key === 'include_reasoning')).toBe(true);
+      const saved = { ...defaults, include_reasoning: true, promptCache: false };
+      expect(pruneAgentModelParameters(saved, settings)).toBe(saved);
+    },
+  );
+});

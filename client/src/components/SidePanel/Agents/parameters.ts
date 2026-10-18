@@ -37,6 +37,7 @@ export type ResolvedAgentParameterSettings = {
 
 const NON_CONTROL_PARAMETER_KEYS = new Set<keyof AgentModelParameters>(['model']);
 const REASONING_PARAMETER_KEYS = new Set([
+  'include_reasoning',
   'reasoning_effort',
   'reasoning_summary',
   'reasoning_mode',

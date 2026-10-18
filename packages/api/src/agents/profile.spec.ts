@@ -6,6 +6,8 @@ import {
   extractEnvVariable,
   EModelEndpoint,
   ReasoningParameterFormat,
+  SettingTypes,
+  ComponentTypes,
 } from 'librechat-data-provider';
 import type { TEndpoint } from 'librechat-data-provider';
 import { loadCustomEndpointsConfig, usesOpenRouterCatalog } from '../endpoints/custom/config';
@@ -252,6 +254,95 @@ describe('OpenRouter identity is independent of reasoning capability', () => {
       expect(bodies[0]).not.toHaveProperty('reasoning');
       expect(bodies[0]).not.toHaveProperty('reasoning_effort');
       expect(bodies[0]).not.toHaveProperty('include_reasoning');
+    },
+  );
+});
+
+describe('disabled reasoning owns all legacy wire aliases', () => {
+  it.each([false, true])(
+    'suppresses a declared legacy opt-in while retaining cache=%s',
+    async (cache) => {
+      const configured = endpoint({
+        baseURL: 'https://openrouter.ai/api/v1',
+        customParams: {
+          defaultParamsEndpoint: 'openrouter',
+          reasoningFormat: ReasoningParameterFormat.disabled,
+          paramDefinitions: [
+            {
+              key: 'include_reasoning',
+              type: SettingTypes.Boolean,
+              component: ComponentTypes.Checkbox,
+              default: false,
+            },
+          ],
+        },
+      });
+      const text = yaml.dump({ version: '1.3.17', endpoints: { custom: [configured] } });
+      const config = await createCustomConfigLoader({
+        defaultConfigPath: 'legacy-reasoning.yaml',
+        loadLocal: () => text,
+        redactConfig: (value) => value,
+      })(false);
+      const loaded = endpointSchema.parse(config?.endpoints?.custom?.[0]);
+      const appConfig = { endpoints: { custom: [loaded] } };
+      const policy = getAgentInferencePolicy('Gateway', appConfig);
+      const input = parseAgentInferenceInput({
+        provider: 'Gateway',
+        model: 'permitted',
+        appConfig,
+        parameters: { promptCache: cache, include_reasoning: true },
+      });
+      const projected = resolveAgentInferenceParameters({
+        ...policy,
+        model: 'permitted',
+        parameters: input,
+      });
+      expect(projected.customParameters).toEqual({ include_reasoning: true });
+      const result = getOpenAIConfig(
+        'synthetic-key',
+        {
+          reverseProxyUrl: loaded.baseURL,
+          customParams: policy.customParams,
+          modelOptions: { ...projected.parameters, model: 'permitted' },
+          inferenceParameters: projected.customParameters,
+        },
+        'Gateway',
+      );
+      const bodies: Record<string, unknown>[] = [];
+      const client = initializeModel({
+        provider: result.provider ?? Providers.OPENAI,
+        clientOptions: {
+          ...result.llmConfig,
+          streaming: false,
+          configuration: {
+            ...result.configOptions,
+            fetch: async (_url: unknown, init: { body?: unknown } | undefined) => {
+              bodies.push(JSON.parse(String(init?.body)));
+              return Response.json({
+                id: 'chatcmpl-legacy-flag',
+                object: 'chat.completion',
+                created: 1,
+                model: 'permitted',
+                choices: [
+                  {
+                    index: 0,
+                    message: { role: 'assistant', content: 'ok' },
+                    finish_reason: 'stop',
+                  },
+                ],
+                usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+              });
+            },
+          },
+        },
+      });
+      const messages = [new SystemMessage('Synthetic system context'), new HumanMessage('hello')];
+      await client.invoke(cache ? addTailCacheControl(messages, '1h') : messages);
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0]).not.toHaveProperty('include_reasoning');
+      expect(bodies[0]).not.toHaveProperty('reasoning');
+      expect(bodies[0]).not.toHaveProperty('reasoning_effort');
+      expect(JSON.stringify(bodies[0]).includes('cache_control')).toBe(cache);
     },
   );
 });
