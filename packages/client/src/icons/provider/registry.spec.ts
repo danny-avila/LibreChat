@@ -43,6 +43,45 @@ describe('providerIcons', () => {
     expect(getProviderIconDef(ProviderId.google, 'some-other-model').label).toBe('Google');
   });
 
+  it.each([
+    [ProviderId.openrouter, 'anthropic/claude-sonnet-4.5', 'Anthropic'],
+    [ProviderId.bedrock, 'us.anthropic.claude-opus-5-5-v1:0', 'Anthropic'],
+    [ProviderId.azure, 'gpt-5.6', 'OpenAI'],
+    [ProviderId.openrouter, 'openai/o4-mini', 'OpenAI'],
+    [ProviderId.ollama, 'gemma4:12b-it-qat', 'Gemma'],
+    [ProviderId.openrouter, 'google/gemini-3.7-flash', 'Gemini'],
+    [ProviderId.openrouter, 'x-ai/grok-4', 'xAI'],
+    [ProviderId.openrouter, 'moonshotai/kimi-k2', 'Moonshot'],
+    [ProviderId.groq, 'qwen/qwen3-32b', 'Qwen'],
+    [ProviderId.openrouter, 'mistralai/devstral-small', 'Mistral'],
+    [ProviderId.openrouter, 'cohere/command-a', 'Cohere'],
+    [ProviderId.openrouter, 'perplexity/sonar-pro', 'Perplexity'],
+    [ProviderId.groq, 'llama-3.3-70b-versatile', 'Meta'],
+    [ProviderId.ollama, 'llama3.1:8b', 'Meta'],
+    [ProviderId.together, 'deepseek-ai/DeepSeek-R1-Distill-Llama-70B', 'DeepSeek'],
+    [ProviderId.openrouter, 'nvidia/llama-3.1-nemotron-70b-instruct', 'NVIDIA'],
+    [ProviderId.openrouter, 'minimax/minimax-m3', 'MiniMax'],
+    [null, 'gpt-4o', 'OpenAI'],
+  ])('shows the maker for %s serving %s', (provider, model, label) => {
+    expect(getProviderIconDef(provider, model).label).toBe(label);
+  });
+
+  it.each([
+    [ProviderId.anthropic, 'claude-opus-5-5', 'Anthropic'],
+    [ProviderId.ollama, 'phi4:14b', 'Ollama'],
+    [ProviderId.ollama, 'my-ollama-finetune', 'Ollama'],
+    [ProviderId.openrouter, 'openrouter/auto', 'OpenRouter'],
+    [ProviderId.groq, 'yolo1-vision', 'Groq'],
+  ])('keeps the host for %s serving %s', (provider, model, label) => {
+    expect(getProviderIconDef(provider, model).label).toBe(label);
+  });
+
+  it('keeps the OpenAI tile color rule for OpenAI models on another host', () => {
+    expect(getProviderIconDef(ProviderId.openrouter, 'openai/o4-mini').brandColor).toBe(
+      'var(--provider-openai-reasoning, #000000)',
+    );
+  });
+
   it('varies the OpenAI tile color by model generation', () => {
     const gpt4 = getProviderIconDef(ProviderId.openai, 'gpt-4o');
     const gpt5 = getProviderIconDef(ProviderId.openai, 'gpt-5.6');
