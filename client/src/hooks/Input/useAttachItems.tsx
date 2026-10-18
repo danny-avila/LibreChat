@@ -341,7 +341,8 @@ export default function useAttachItems({
         });
       }
 
-      if (codeEnabled && codeAllowedByAgent) {
+      /* Unified code uploads defer provisioning to the environment selected for the turn. */
+      if (!isUnifiedMode && codeEnabled && codeAllowedByAgent) {
         items.push({
           id: `${prefix}:execute_code`,
           label: localize('com_ui_upload_code_environment'),

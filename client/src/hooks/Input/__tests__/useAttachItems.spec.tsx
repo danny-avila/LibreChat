@@ -63,6 +63,8 @@ interface Options {
   fileSearchEnabled?: boolean;
   codeEnabled?: boolean;
   sharePointEnabled?: boolean;
+  codeEnvironmentId?: string;
+  statefulCodeSessionsAllowedByAgent?: boolean;
 }
 
 /** Row ids, which are what the palette keys and folds on. */
@@ -116,7 +118,12 @@ const allCapabilities = { contextEnabled: true, fileSearchEnabled: true, codeEna
 
 /** The hook, not just its entry labels, so a destination can be chosen. */
 function renderAttach(options: Options = {}) {
-  mockUseAgentToolPermissions.mockReturnValue({ tools: options.tools, provider: options.provider });
+  mockUseAgentToolPermissions.mockReturnValue({
+    tools: options.tools,
+    provider: options.provider,
+    codeEnvironmentId: options.codeEnvironmentId,
+    statefulCodeSessionsAllowedByAgent: options.statefulCodeSessionsAllowedByAgent,
+  });
   mockUseAgentCapabilities.mockReturnValue({
     contextEnabled: options.contextEnabled ?? true,
     fileSearchEnabled: options.fileSearchEnabled ?? true,
@@ -219,7 +226,7 @@ describe('useAttachItems', () => {
     it('reads a provider whatever its casing, which OpenRouter arrives in', () => {
       expect(renderEntries({ provider: 'OpenRouter' })).toContain('local:provider');
     });
-    it('keeps implicit upload first and restores explicit tool destinations in unified mode', () => {
+    it('keeps implicit upload first and restores only explicit File Search in unified mode', () => {
       expect(
         renderEntries({
           isUnifiedMode: true,
@@ -231,20 +238,20 @@ describe('useAttachItems', () => {
       ).toEqual([
         'local:unified',
         'local:file_search',
-        'local:execute_code',
         'sharepoint:unified',
         'sharepoint:file_search',
-        'sharepoint:execute_code',
       ]);
     });
   });
 
   describe('unified destinations', () => {
-    it('does not offer disabled capabilities', () => {
-      expect(renderEntries({ isUnifiedMode: true })).toEqual(['local:unified']);
+    it('keeps both sources implicit when File Search is disabled, even with code enabled', () => {
+      expect(
+        renderEntries({ isUnifiedMode: true, sharePointEnabled: true, codeEnabled: true }),
+      ).toEqual(['local:unified', 'sharepoint:unified']);
     });
 
-    it('only offers the tools a saved agent allows', () => {
+    it('offers File Search only when a saved agent allows it', () => {
       expect(
         renderEntries({
           ...allCapabilities,
@@ -253,6 +260,53 @@ describe('useAttachItems', () => {
           tools: [Tools.file_search],
         }),
       ).toEqual(['local:unified', 'local:file_search']);
+    });
+
+    it('does not offer explicit destinations for an agent with only code enabled', () => {
+      expect(
+        renderEntries({
+          ...allCapabilities,
+          isUnifiedMode: true,
+          sharePointEnabled: true,
+          agentId: SAVED_AGENT,
+          tools: [Tools.execute_code],
+        }),
+      ).toEqual(['local:unified', 'sharepoint:unified']);
+    });
+
+    it('keeps both sources implicit for the selected stateful code environment', () => {
+      const { result } = renderAttach({
+        isUnifiedMode: true,
+        sharePointEnabled: true,
+        agentId: SAVED_AGENT,
+        tools: [Tools.file_search, Tools.execute_code],
+        codeEnvironmentId: 'stateful-only',
+        statefulCodeSessionsAllowedByAgent: true,
+      });
+      expect(result.current.entries.map((entry) => entry.id)).toEqual([
+        'local:unified',
+        'local:file_search',
+        'sharepoint:unified',
+        'sharepoint:file_search',
+      ]);
+      const input = document.createElement('input');
+      Object.defineProperty(result.current.inputRef, 'current', { value: input, writable: true });
+
+      act(() => {
+        result.current.entries.find((entry) => entry.id === 'local:unified')?.onSelect();
+      });
+      act(() => pickFile(input, result.current.onFileChange));
+      expect(mockHandleFileChange).toHaveBeenLastCalledWith(expect.anything(), undefined);
+
+      act(() => {
+        result.current.entries.find((entry) => entry.id === 'sharepoint:unified')?.onSelect();
+      });
+      const sharePoint = jest.requireMock('~/hooks/Files/useSharePointFileHandling');
+      expect(result.current.isSharePointDialogOpen).toBe(true);
+      expect(sharePoint.useSharePointFileHandlingNoChatContext).toHaveBeenLastCalledWith(
+        { toolResource: undefined },
+        expect.anything(),
+      );
     });
 
     it.each([EModelEndpoint.assistants, EModelEndpoint.azureAssistants])(
@@ -279,27 +333,27 @@ describe('useAttachItems', () => {
       ).toMatchObject({ label: 'com_ui_upload_file_search (com_files_upload_sharepoint)' });
     });
 
-    it.each([EToolResources.file_search, EToolResources.execute_code] as const)(
-      'carries explicit %s through the picker, enables it, and resets the next upload',
-      (resource) => {
-        const { result } = renderAttach({ isUnifiedMode: true });
-        const input = document.createElement('input');
-        Object.defineProperty(result.current.inputRef, 'current', { value: input, writable: true });
+    it('carries File Search through the picker, enables it, and resets the next upload', () => {
+      const { result } = renderAttach({ isUnifiedMode: true });
+      const input = document.createElement('input');
+      Object.defineProperty(result.current.inputRef, 'current', { value: input, writable: true });
 
-        act(() => {
-          result.current.entries.find((entry) => entry.id === `local:${resource}`)?.onSelect();
-        });
-        act(() => pickFile(input, result.current.onFileChange));
-        expect(mockHandleFileChange).toHaveBeenLastCalledWith(expect.anything(), resource);
-        expect(result.current.ephemeralAgent?.[resource]).toBe(true);
+      act(() => {
+        result.current.entries.find((entry) => entry.id === 'local:file_search')?.onSelect();
+      });
+      act(() => pickFile(input, result.current.onFileChange));
+      expect(mockHandleFileChange).toHaveBeenLastCalledWith(
+        expect.anything(),
+        EToolResources.file_search,
+      );
+      expect(result.current.ephemeralAgent?.[EToolResources.file_search]).toBe(true);
 
-        act(() => {
-          result.current.entries.find((entry) => entry.id === 'local:unified')?.onSelect();
-        });
-        act(() => pickFile(input, result.current.onFileChange));
-        expect(mockHandleFileChange).toHaveBeenLastCalledWith(expect.anything(), undefined);
-      },
-    );
+      act(() => {
+        result.current.entries.find((entry) => entry.id === 'local:unified')?.onSelect();
+      });
+      act(() => pickFile(input, result.current.onFileChange));
+      expect(mockHandleFileChange).toHaveBeenLastCalledWith(expect.anything(), undefined);
+    });
 
     it('passes a SharePoint File Search choice to its upload handler', () => {
       const { result } = renderAttach({ isUnifiedMode: true, sharePointEnabled: true });
@@ -372,6 +426,49 @@ describe('useAttachItems', () => {
       expect(ids).not.toContain('local:file_search');
       expect(ids).not.toContain('local:execute_code');
       expect(ids).toContain('local:context');
+    });
+  });
+
+  describe('legacy code destinations', () => {
+    it('keeps explicit local and SharePoint code uploads in nonunified mode', () => {
+      const { result } = renderAttach({ isUnifiedMode: false, sharePointEnabled: true });
+      expect(result.current.entries.map((entry) => entry.id)).toEqual(
+        expect.arrayContaining(['local:execute_code', 'sharepoint:execute_code']),
+      );
+      const input = document.createElement('input');
+      Object.defineProperty(result.current.inputRef, 'current', { value: input, writable: true });
+
+      act(() => {
+        result.current.entries.find((entry) => entry.id === 'local:execute_code')?.onSelect();
+      });
+      act(() => pickFile(input, result.current.onFileChange));
+      expect(mockHandleFileChange).toHaveBeenLastCalledWith(
+        expect.anything(),
+        EToolResources.execute_code,
+      );
+
+      act(() => {
+        result.current.entries.find((entry) => entry.id === 'sharepoint:execute_code')?.onSelect();
+      });
+      const sharePoint = jest.requireMock('~/hooks/Files/useSharePointFileHandling');
+      expect(sharePoint.useSharePointFileHandlingNoChatContext).toHaveBeenLastCalledWith(
+        { toolResource: EToolResources.execute_code },
+        expect.anything(),
+      );
+    });
+
+    it.each([
+      { codeEnabled: false, tools: [Tools.execute_code] },
+      { codeEnabled: true, tools: [Tools.file_search] },
+    ])('keeps legacy code capability and agent gates (%j)', (options) => {
+      const ids = renderEntries({
+        ...options,
+        isUnifiedMode: false,
+        sharePointEnabled: true,
+        agentId: SAVED_AGENT,
+      });
+      expect(ids).not.toContain('local:execute_code');
+      expect(ids).not.toContain('sharepoint:execute_code');
     });
   });
 
