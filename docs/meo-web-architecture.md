@@ -128,3 +128,31 @@ The intended migration order is:
 7. Keep only a thin `web-edge` for browser auth/session transport if it remains useful; remove the rest of the legacy Pages structure.
 
 Do not add new product features to `meo-pages/public` while this migration is in progress.
+
+## Chat transport contract
+
+The canonical React client calls the same-origin edge with JSON:
+`credentialId`, `model`, optional `conversationId`, `prompt`, and (for streaming)
+`consent`. The edge forwards the body unchanged:
+
+| Browser route                | Owning API route        |
+| ---------------------------- | ----------------------- |
+| `POST /api/meo/chat/prepare` | `POST /v1/chat/prepare` |
+| `POST /api/meo/chat/stream`  | `POST /v1/chat/stream`  |
+
+Do not translate these requests into direct broker inference in Pages Functions.
+That drops conversation identity and bypasses server-owned history/Project context.
+Meo API owns request validation, context assembly, consent payload binding and
+provider options. Connection/model discovery may continue using the broker.
+
+The edge retains same-origin checks, forwards the encrypted session's access
+token, renews its HttpOnly cookie after refresh, and passes through stream bodies,
+statuses and cancellation signals. A resource-server 401 must not erase a valid
+browser session. Passing an AbortSignal locally does not prove production model
+cancellation; verify Stop through the deployed Cloudflare/provider path.
+
+Run `npm test --prefix meo-pages` for transport regressions. Real-account tests
+must additionally verify a follow-up turn uses saved context and that the consent
+shown for Project context matches the eventual stream request. History persistence
+is still performed separately by React; this transport change does not make Chat
+a durable background AgentRun or guarantee history after closing the tab.

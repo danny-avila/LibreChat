@@ -1,3 +1,7 @@
+# Meo product migration boundary (2026-10-18)
+
+The user selected one product repository for desktop, Web, Android and shared Rust Core. Meo-owned Web source is being consolidated into sibling `meo-ai/meo/web/client`. New Meo product behavior belongs there, not in this rollback/deployment fork. Preserve this repository, all existing work and deployment history. Do not disable the old production path or delete the legacy UI without explicit cutover authorization. The upstream rules below still govern maintenance changes here.
+
 # LibreChat contributor and agent guidance
 
 `AGENTS.md` is the repository's contributor guidance. Backend code lives in `packages/api`
