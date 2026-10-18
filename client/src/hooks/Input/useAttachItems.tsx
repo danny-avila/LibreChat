@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import {
   Providers,
+  Permissions,
+  PermissionTypes,
   EToolResources,
   EModelEndpoint,
   getConfiguredMimeAccept,
@@ -27,8 +29,13 @@ import type {
 } from 'librechat-data-provider';
 import type { SharePointFile } from '~/data-provider/Files/sharepoint';
 import type { ExtendedFile, FileSetter } from '~/common';
+import {
+  useHasAccess,
+  useAgentToolPermissions,
+  useAgentCapabilities,
+  useGetAgentsConfig,
+} from '~/hooks';
 import { useSharePointFileHandlingNoChatContext } from '~/hooks/Files/useSharePointFileHandling';
-import { useAgentToolPermissions, useAgentCapabilities, useGetAgentsConfig } from '~/hooks';
 import { useFileHandlingNoChatContext } from '~/hooks/Files';
 import { useGetStartupConfig } from '~/data-provider';
 import { getUploadToolAllowances } from '~/utils';
@@ -162,6 +169,10 @@ export default function useAttachItems({
   const { contextEnabled, fileSearchEnabled, codeEnabled } = useAgentCapabilities(
     agentsConfig?.capabilities ?? defaultAgentCapabilities,
   );
+  const canUseFileSearch = useHasAccess({
+    permissionType: PermissionTypes.FILE_SEARCH,
+    permission: Permissions.USE,
+  });
   const { tools, provider } = useAgentToolPermissions(agentId, ephemeralAgent);
   /* The same allowances the drag-and-drop router resolves, so a file reaches
      the same destinations whether it is dropped on the composer or picked
@@ -328,7 +339,7 @@ export default function useAttachItems({
         }
       }
 
-      if (fileSearchEnabled && fileSearchAllowedByAgent) {
+      if (fileSearchEnabled && canUseFileSearch && fileSearchAllowedByAgent) {
         items.push({
           id: `${prefix}:file_search`,
           label: localize('com_ui_upload_file_search'),
@@ -390,6 +401,7 @@ export default function useAttachItems({
     codeEnabled,
     contextEnabled,
     fileSearchEnabled,
+    canUseFileSearch,
     useResponsesApi,
     isUnifiedMode,
     handleUploadClick,

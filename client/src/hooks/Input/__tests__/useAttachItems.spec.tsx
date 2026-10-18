@@ -1,8 +1,17 @@
 import React from 'react';
 import { RecoilRoot, useRecoilValue } from 'recoil';
 import { act, renderHook } from '@testing-library/react';
-import { Tools, EToolResources, EModelEndpoint } from 'librechat-data-provider';
+import {
+  Tools,
+  Permissions,
+  roleDefaults,
+  PermissionTypes,
+  EToolResources,
+  EModelEndpoint,
+} from 'librechat-data-provider';
 import type { TConversation, EndpointFileConfig } from 'librechat-data-provider';
+import type { TAuthContext } from '~/common';
+import { AuthContext } from '~/hooks/AuthContext';
 import { ephemeralAgentByConvoId } from '~/store';
 import useAttachItems from '../useAttachItems';
 
@@ -14,10 +23,16 @@ import useAttachItems from '../useAttachItems';
  */
 
 jest.mock('~/hooks', () => ({
+  useHasAccess: jest.fn(jest.requireActual('~/hooks/Roles/useHasAccess').default),
   useAgentToolPermissions: jest.fn(),
   useAgentCapabilities: jest.fn(),
   useGetAgentsConfig: jest.fn(),
 }));
+
+jest.mock('~/hooks/AuthContext', () => {
+  const { createContext } = jest.requireActual('react');
+  return { AuthContext: createContext(undefined) };
+});
 
 jest.mock('~/hooks/useLocalize', () => ({
   __esModule: true,
@@ -65,7 +80,47 @@ interface Options {
   sharePointEnabled?: boolean;
   codeEnvironmentId?: string;
   statefulCodeSessionsAllowedByAgent?: boolean;
+  authContext?: TAuthContext;
 }
+
+function accessContext(canUseFileSearch?: boolean): TAuthContext {
+  return {
+    user: {
+      id: 'user-1',
+      username: 'reader',
+      email: 'reader@example.com',
+      name: 'Reader',
+      avatar: '',
+      role: 'reader',
+      provider: 'local',
+      createdAt: '2026-10-18T00:00:00Z',
+      updatedAt: '2026-10-18T00:00:00Z',
+    },
+    roles:
+      canUseFileSearch === undefined
+        ? undefined
+        : {
+            reader: {
+              ...roleDefaults.USER,
+              name: 'reader',
+              permissions: {
+                ...roleDefaults.USER.permissions,
+                [PermissionTypes.FILE_SEARCH]: { [Permissions.USE]: canUseFileSearch },
+              },
+            },
+          },
+    token: undefined,
+    isAuthenticated: true,
+    isAuthReady: true,
+    error: undefined,
+    login: jest.fn(),
+    logout: jest.fn(),
+    completeAuthentication: jest.fn(),
+    setError: jest.fn(),
+  };
+}
+
+const allowedAccess = accessContext(true);
 
 /** Row ids, which are what the palette keys and folds on. */
 function renderEntries(options: Options = {}): string[] {
@@ -107,7 +162,11 @@ function renderEntries(options: Options = {}): string[] {
         setFilesLoading: jest.fn(),
       }),
     {
-      wrapper: ({ children }: { children: React.ReactNode }) => <RecoilRoot>{children}</RecoilRoot>,
+      wrapper: ({ children }: { children: React.ReactNode }) => (
+        <AuthContext.Provider value={options.authContext ?? allowedAccess}>
+          <RecoilRoot>{children}</RecoilRoot>
+        </AuthContext.Provider>
+      ),
     },
   );
 
@@ -153,7 +212,11 @@ function renderAttach(options: Options = {}) {
       return { ...attach, ephemeralAgent };
     },
     {
-      wrapper: ({ children }: { children: React.ReactNode }) => <RecoilRoot>{children}</RecoilRoot>,
+      wrapper: ({ children }: { children: React.ReactNode }) => (
+        <AuthContext.Provider value={options.authContext ?? allowedAccess}>
+          <RecoilRoot>{children}</RecoilRoot>
+        </AuthContext.Provider>
+      ),
     },
   );
 }
@@ -242,6 +305,47 @@ describe('useAttachItems', () => {
         'sharepoint:file_search',
       ]);
     });
+  });
+
+  describe.each([false, true])('File Search role access (unified=%s)', (isUnifiedMode) => {
+    it.each([null, SAVED_AGENT])(
+      'fails closed while roles load and respects permission changes (agent=%s)',
+      (agentId) => {
+        const options: Options = {
+          ...allCapabilities,
+          isUnifiedMode,
+          agentId,
+          tools: [Tools.file_search, Tools.execute_code],
+          sharePointEnabled: true,
+          authContext: accessContext(),
+        };
+        const { result, rerender } = renderAttach(options);
+        const ids = () => result.current.entries.map((entry) => entry.id);
+        const fileSearchIds = ['local:file_search', 'sharepoint:file_search'];
+
+        for (const id of fileSearchIds) {
+          expect(ids()).not.toContain(id);
+        }
+
+        options.authContext = accessContext(true);
+        rerender();
+        expect(ids()).toEqual(expect.arrayContaining(fileSearchIds));
+
+        options.authContext = accessContext(false);
+        rerender();
+        for (const id of fileSearchIds) {
+          expect(ids()).not.toContain(id);
+        }
+        expect(ids()).toEqual(
+          expect.arrayContaining([
+            `local:${isUnifiedMode ? 'unified' : 'image'}`,
+            `sharepoint:${isUnifiedMode ? 'unified' : 'image'}`,
+          ]),
+        );
+        expect(ids().includes('local:execute_code')).toBe(!isUnifiedMode);
+        expect(ids().includes('sharepoint:execute_code')).toBe(!isUnifiedMode);
+      },
+    );
   });
 
   describe('unified destinations', () => {
@@ -516,7 +620,9 @@ describe('useAttachItems', () => {
           }),
         {
           wrapper: ({ children }: { children: React.ReactNode }) => (
-            <RecoilRoot>{children}</RecoilRoot>
+            <AuthContext.Provider value={allowedAccess}>
+              <RecoilRoot>{children}</RecoilRoot>
+            </AuthContext.Provider>
           ),
         },
       );
