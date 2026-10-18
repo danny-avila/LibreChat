@@ -2822,7 +2822,7 @@ describe('Chat', () => {
       );
     });
 
-    it('does not report a dropped turn response for a reattachment to another generation', async () => {
+    it('reports the response of a reattachment to another generation as unknown, not the dropped turn', async () => {
       const reattached = createStream({ streamId: 'convo-1', generationCreatedAt: 200 });
       const { chat, stream, transport, state, onFinish } = setup({
         prepareRequest: jest.fn(() => ({
@@ -2845,10 +2845,7 @@ describe('Chat', () => {
       await resumed;
 
       expect(onFinish).toHaveBeenLastCalledWith(
-        expect.objectContaining({
-          isAbort: true,
-          message: expect.objectContaining({ messageId: 'response-2' }),
-        }),
+        expect.objectContaining({ isAbort: true, isResponseUnknown: true, message: undefined }),
       );
     });
 

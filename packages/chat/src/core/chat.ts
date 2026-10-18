@@ -574,6 +574,10 @@ export class Chat {
     this.restored = undefined;
     const active = createActiveRequest(continued?.generation ?? paused?.generation);
     const { generation } = active;
+    if (dropped && !continued) {
+      /** Another generation than the one that dropped: no frame has named its response yet. */
+      generation.responseUnknown = true;
+    }
     generation.endpoint = this.resumeEndpoint() ?? dropped?.target.endpoint;
     generation.conversationId = options.conversationId ?? generation.conversationId;
     active.inheritedGeneration = continued?.target.generationCreatedAt ?? paused?.createdAt;
