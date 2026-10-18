@@ -2,6 +2,9 @@ import { useStore } from 'jotai';
 import { useRecoilCallback } from 'recoil';
 import { Constants } from 'librechat-data-provider';
 import {
+  getReasoningStateKey,
+  clearPendingComposerContext,
+  clearPendingReasoningOverrides,
   filesFamily,
   presetFamily,
   abortScrollFamily,
@@ -11,11 +14,6 @@ import {
   submissionStartFamily,
   useClearSubmissions,
 } from '@librechat/chat/react';
-import {
-  getReasoningStateKey,
-  clearPendingComposerContext,
-  clearPendingReasoningOverrides,
-} from '~/components/Chat/Input/Composer/state';
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
 import { showFilesDialogAtom, filesDialogTriggerAtom } from '~/store/filesDialog';
 import { showSkillsPopoverFamily } from '~/components/Chat/Input/skillsState';
