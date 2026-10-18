@@ -306,6 +306,26 @@ describe('AskUserQuestions', () => {
     expect(mockSubmitAskAnswer).toHaveBeenCalledTimes(1);
   });
 
+  test('modified or repeated Enter in an answer field keeps the enclosing form from submitting', () => {
+    const onSubmit = jest.fn((event: React.FormEvent) => event.preventDefault());
+    render(
+      <RecoilRoot>
+        <form onSubmit={onSubmit}>
+          <AskUserQuestions actionId="ask-implicit-submit" questions={questions} />
+        </form>
+      </RecoilRoot>,
+    );
+    const first = screen.getByRole('textbox', { name: /Where should this run/ });
+    fireEvent.change(first, { target: { value: 'Locally' } });
+
+    for (const init of [{ shiftKey: true }, { altKey: true }, { repeat: true }]) {
+      /* fireEvent returns false when the default (implicit submit) was prevented. */
+      expect(fireEvent.keyDown(first, { key: 'Enter', ...init })).toBe(false);
+    }
+    expect(isShown('Where should this run?')).toBe(true);
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
   describe('focus on arrival', () => {
     afterEach(() => {
       document.getElementById('prompt-textarea')?.remove();
@@ -403,6 +423,29 @@ describe('AskUserQuestions', () => {
         { window: 'Today', environment: 'staging' },
         expect.objectContaining({ onSuccess: expect.any(Function) }),
       );
+    });
+
+    test('a held Enter that picks an option on the last question does not also submit', () => {
+      renderBatch('ask-option-held-last', [
+        {
+          id: 'environment',
+          question: 'Where should this run?',
+          options: [
+            { label: 'Staging', value: 'staging' },
+            { label: 'Production', value: 'production' },
+          ],
+        },
+      ]);
+      const staging = screen.getByRole('button', { name: /Staging/ });
+      pressEnter(staging);
+      expect(staging).toHaveAttribute('aria-pressed', 'true');
+
+      fireEvent.keyDown(staging, { key: 'Enter', repeat: true });
+      fireEvent.keyDown(staging, { key: 'Enter', repeat: true });
+      expect(mockSubmitAskAnswer).not.toHaveBeenCalled();
+
+      pressEnter(staging);
+      expect(mockSubmitAskAnswer).toHaveBeenCalledTimes(1);
     });
 
     test('a held or double-tapped Enter from the answer field never picks the next options', () => {

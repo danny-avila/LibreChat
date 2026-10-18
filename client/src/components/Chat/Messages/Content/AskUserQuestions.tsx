@@ -12,11 +12,6 @@ import { mainTextareaId } from '~/common';
 import { useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
-/** Batches whose arrival already placed focus. A batch remounts when it moves
- *  between the composer popover and the chat card; only its first arrival may
- *  take focus, or every move would pull the user back onto its options. */
-const arrivalFocused = new Set<string>();
-
 /**
  * One bounded batch of `ask_user_question` items, presented a single question at
  * a time. The batch arrives as one interrupt and submits as one answer map — the
@@ -130,7 +125,7 @@ export default function AskUserQuestions({
    * remounts it, and that is not a new arrival.
    */
   useEffect(() => {
-    if (!focusOnArrival || form.locked || arrivalFocused.has(actionId)) {
+    if (!focusOnArrival || form.locked || form.arrivalFocused) {
       return;
     }
     const active = document.activeElement;
@@ -145,7 +140,7 @@ export default function AskUserQuestions({
     }
     focusStep({ firstOption: true, preventScroll: true });
     if (stepRef.current?.contains(document.activeElement) === true) {
-      arrivalFocused.add(actionId);
+      form.markArrivalFocused();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- arrival only
   }, []);
@@ -300,6 +295,7 @@ export default function AskUserQuestions({
               const target = event.target;
               if (
                 event.key !== 'Enter' ||
+                event.repeat ||
                 event.shiftKey ||
                 event.altKey ||
                 question.multiSelect === true ||
@@ -335,19 +331,22 @@ export default function AskUserQuestions({
                 /* The composer popover sits inside the chat form, where Enter in a
                    single-line field would submit the composer draft instead.
                    Enter (or Ctrl/Cmd+Enter) confirms this answer: the next step,
-                   or the batch. Shift+Enter never submits, as in the composer. An
-                   Enter that confirms an IME composition is left alone, with the
-                   same Safari fallback as the composer. */
+                   or the batch. Shift+Enter and Alt+Enter never submit, as in the
+                   composer, and neither does a held Enter repeating into the next
+                   step; those are still kept from submitting the form. An Enter
+                   that confirms an IME composition is left alone, with the same
+                   Safari fallback as the composer. */
                 if (
                   event.key !== 'Enter' ||
-                  event.shiftKey ||
-                  event.altKey ||
                   event.nativeEvent.isComposing ||
                   event.nativeEvent.keyCode === 229
                 ) {
                   return;
                 }
                 event.preventDefault();
+                if (event.repeat || event.shiftKey || event.altKey) {
+                  return;
+                }
                 confirmStep();
               }}
               placeholder={otherLabel ?? localize('com_ui_your_answer')}

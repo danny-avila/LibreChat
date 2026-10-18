@@ -198,7 +198,7 @@ function AskUserQuestionPopoverPanel({
       <div
         className="popover border-border-light bg-surface-secondary rounded-theme-popover flex max-h-[60vh] flex-col border p-2 shadow-lg [view-transition-name:ask-question]"
         onKeyDown={(e) => {
-          if (isCancelKey(e.nativeEvent)) {
+          if (isCancelKey(e.nativeEvent) && !e.nativeEvent.isComposing) {
             e.preventDefault();
             onEscape();
             return;

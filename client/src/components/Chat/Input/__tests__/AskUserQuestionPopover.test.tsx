@@ -114,6 +114,15 @@ describe('AskUserQuestionPopover Escape', () => {
     expect(composer).toHaveFocus();
   });
 
+  test('leaves an Escape that cancels an IME composition alone', () => {
+    render(<Host textAreaRef={createRef<HTMLTextAreaElement>()} />);
+    fireEvent.keyDown(screen.getByRole('button', { name: /Staging/ }), {
+      key: 'Escape',
+      isComposing: true,
+    });
+    expect(mockCollapse).not.toHaveBeenCalled();
+  });
+
   test('passes other keys through to the popover shortcuts', () => {
     render(<Host textAreaRef={createRef<HTMLTextAreaElement>()} />);
     fireEvent.keyDown(screen.getByRole('button', { name: /Staging/ }), { key: '1' });
