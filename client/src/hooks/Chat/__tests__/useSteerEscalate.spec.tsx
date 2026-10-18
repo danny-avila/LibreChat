@@ -9,9 +9,10 @@ import {
   pendingSteersByConvoId,
   resetSteerFamilies,
 } from '@librechat/chat/react';
-import type { PendingSteer } from '~/hooks/Chat/queue';
 import { ChatSettingsContext, defaultChatSettings } from '~/Providers/ChatSettingsContext';
-import useSteerEscalate from '../useSteerEscalate';
+import '~/Providers/SteerHostContext';
+import { useSteerEscalate } from '@librechat/chat/react';
+import type { PendingSteer } from '@librechat/chat';
 
 const mockArmMutateAsync = jest.fn();
 const mockShowToast = jest.fn();

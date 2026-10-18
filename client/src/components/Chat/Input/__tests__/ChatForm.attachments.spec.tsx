@@ -1,5 +1,5 @@
 import React, { Profiler, useMemo, useState } from 'react';
-import { isSubmittingFamily, resetSubmitting } from '@librechat/chat/react';
+import { filesFamily, isSubmittingFamily, resetSubmitting } from '@librechat/chat/react';
 import '@testing-library/jest-dom';
 import { DndProvider } from 'react-dnd';
 import { useForm } from 'react-hook-form';
@@ -14,13 +14,14 @@ import { render, screen, within, waitFor, fireEvent } from '@testing-library/rea
 import type { TFile, TFileUpload, TConversation } from 'librechat-data-provider';
 import type { ChatFormValues, TAskFunction } from '~/common';
 import type { TranslationKeys } from '~/hooks/useLocalize';
-import { pendingQuotesByConvoId } from '~/components/Chat/Input/Composer/state';
 import { getDraft, getPendingDraftId, setDraft } from '~/utils';
 import { ChatContext, ChatFormProvider } from '~/Providers';
 import { AuthContextProvider } from '~/hooks/AuthContext';
 import * as FileContainer from '../Files/FileContainer';
 import ChatForm from '../ChatForm';
 import store from '~/store';
+import '~/Providers/SteerHostContext';
+import { pendingQuotesByConvoId } from '@librechat/chat/react';
 
 const mockUpload = jest.fn();
 const mockAsk = jest.fn();
@@ -91,7 +92,7 @@ class StubImage {
 let commits = 0;
 
 function Harness() {
-  const [files, setFiles] = useRecoilState(store.filesByIndex(0));
+  const [files, setFiles] = useAtom(filesFamily(0));
   const [isSubmitting, setIsSubmitting] = useAtom(isSubmittingFamily(0));
   /* ChatView owns this read and passes it in; the harness stands in for it. */
   const [speechSettingsInitialized] = useRecoilState(store.speechSettingsInitialized);
@@ -124,8 +125,6 @@ function Harness() {
         },
         regenerate: () => undefined,
         setSiblingIdx: () => undefined,
-        showPopover: false,
-        setShowPopover: () => undefined,
         abortScroll: false,
         setAbortScroll: () => undefined,
         preset: null,
@@ -202,6 +201,7 @@ const image = () => new File(['image-bytes'], 'cat.png', { type: 'image/png' });
 
 afterEach(() => {
   resetSubmitting(getDefaultStore());
+  getDefaultStore().set(filesFamily(0), new Map());
 });
 
 describe('ChatForm attachments', () => {

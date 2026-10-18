@@ -1,6 +1,8 @@
+import { useCallback } from 'react';
 import { atomFamily } from 'jotai/utils';
 import { atom, useAtomValue, useStore } from 'jotai';
 import type { Atom, WritableAtom, createStore } from 'jotai';
+import type { TSubmission } from 'librechat-data-provider';
 import type { SetStateAction } from 'react';
 
 /** Pane index a generation runs in: `0` for the main chat, `1` for the added one. */
@@ -55,4 +57,56 @@ export function useIsSubmitting(index: PaneIndex): boolean {
   const store = useStore();
   useAtomValue(isSubmittingFamily(index));
   return store.get(isSubmittingFamily(index));
+}
+
+const submissionIndexesAtom = atom<ReadonlySet<PaneIndex>>(new Set<PaneIndex>());
+
+/** The submission a pane is running, or `null`; setting a new value is what sends a message. */
+export type SubmissionAtom = WritableAtom<
+  TSubmission | null,
+  [SetStateAction<TSubmission | null>],
+  void
+>;
+
+export const submissionByIndex: (index: PaneIndex) => SubmissionAtom = atomFamily(
+  (index: PaneIndex): SubmissionAtom => {
+    const valueAtom = atom<TSubmission | null>(null);
+    return atom(
+      (get) => get(valueAtom),
+      (get, set, update: SetStateAction<TSubmission | null>) => {
+        const next = typeof update === 'function' ? update(get(valueAtom)) : update;
+        set(valueAtom, next);
+        const indexes = new Set(get(submissionIndexesAtom));
+        if (next === null) {
+          indexes.delete(index);
+        } else {
+          indexes.add(index);
+        }
+        set(submissionIndexesAtom, indexes);
+      },
+    );
+  },
+);
+
+/** Drops every pane's submission, keeping the main pane's when `skipFirst` is set. */
+export function clearSubmissions(store: Pick<Store, 'get' | 'set'>, skipFirst?: boolean): void {
+  store.get(submissionIndexesAtom).forEach((index) => {
+    if (skipFirst === true && index == 0) {
+      return;
+    }
+    store.set(submissionByIndex(index), null);
+  });
+}
+
+/** Stable callback that clears the submissions of the store the caller renders in. */
+export function useClearSubmissions(): (skipFirst?: boolean) => void {
+  const store = useStore();
+  return useCallback((skipFirst?: boolean) => clearSubmissions(store, skipFirst), [store]);
+}
+
+/** The pane's submission read from the store at render time, for the same reason as `useIsSubmitting`. */
+export function useSubmission(index: PaneIndex): TSubmission | null {
+  const store = useStore();
+  useAtomValue(submissionByIndex(index));
+  return store.get(submissionByIndex(index));
 }

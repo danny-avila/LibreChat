@@ -11,6 +11,7 @@ import type {
   ChatTransportRequest,
 } from 'librechat-data-provider';
 import type { SetStateAction, Dispatch, MouseEvent } from 'react';
+import type { PendingSteer } from '@librechat/chat';
 import type {
   ArmSteerParams,
   ArmSteerResponse,
@@ -31,7 +32,7 @@ import type {
   Artifact,
   PtcTrace,
 } from '~/common';
-import type { PendingSteer } from './queue';
+import type { MessagesEditing } from '~/Providers/MessagesViewContext';
 
 /** Options accepted by {@link ChatConversationContract.newConversation}: the shared params plus
  *  the two flags only the root pane's generator honors. */
@@ -144,10 +145,6 @@ export type ChatFilesContract = {
 
 /** Chat-scoped view state that has no AI SDK counterpart. */
 export type ChatViewContract = {
-  /** Whether the pane's settings popover is open. */
-  showPopover: boolean;
-  /** Opens or closes the pane's settings popover. */
-  setShowPopover: Dispatch<SetStateAction<boolean>>;
   /** Whether message feedback controls are enabled by the startup config. */
   feedbackEnabled: boolean;
 };
@@ -328,5 +325,9 @@ declare module '@librechat/chat/react' {
     useArtifactPanel: (artifactId: string) => MessagePartArtifactPanel;
     /** Steers sent to a conversation that the server has not confirmed yet. */
     usePendingSteers: (conversationId: string) => PendingSteer[];
+    /** The messages view an inline editor reads and writes; only rendered inside one. */
+    useMessagesEditing: () => MessagesEditing;
+    /** The messages view's `ask`, or one that does nothing outside a messages view. */
+    useMessagesAsk: () => MessagesEditing['ask'];
   }
 }

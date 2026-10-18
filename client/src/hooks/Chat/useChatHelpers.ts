@@ -1,24 +1,31 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
+import { useRecoilValue } from 'recoil';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAtom, useSetAtom, useStore, useAtomValue } from 'jotai';
-import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
 import { Constants, QueryKeys, isAssistantsEndpoint } from 'librechat-data-provider';
 import {
+  filesFamily,
+  presetFamily,
+  optionSettingsFamily,
+  stopRequestedByConvoId,
+  drainAfterAbortByIndex,
+  runEndByIndex,
   activeGenerationCreatedAtByConvoId,
   activeGenerationProtocolVersionByConvoId,
   isSubmittingFamily,
   useIsSubmitting,
   abortScrollFamily,
+  submissionByIndex,
+  useClearSubmissions,
+  useSteerConvert,
 } from '@librechat/chat/react';
 import type { TMessage } from 'librechat-data-provider';
 import type { ChatContract } from './contract';
-import { stopRequestedByConvoId, drainAfterAbortByIndex, runEndByIndex } from '~/hooks/Chat/queue';
 import { useLatestMessage, useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
 import { useAbortStreamMutation, supportsGenerationProtocolV2 } from '~/data-provider';
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
 import { useChatSettings } from '~/Providers/ChatSettingsContext';
 import useChatFunctions from '~/hooks/Chat/useChatFunctions';
-import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { resolveAbortSteerTarget } from '~/utils';
 import useNewConvo from '~/hooks/useNewConvo';
 import { getMessageCacheIds } from './cache';
@@ -30,8 +37,8 @@ const useLiveAttachments = () => useRecoilValue(store.messageAttachmentsMap);
 
 // this to be set somewhere else
 export default function useChatHelpers(index = 0, paramId?: string): ChatContract {
-  const clearAllSubmissions = store.useClearSubmissionState();
-  const [files, setFiles] = useRecoilState(store.filesByIndex(index));
+  const clearAllSubmissions = useClearSubmissions();
+  const [files, setFiles] = useAtom(filesFamily(index));
   const [filesLoading, setFilesLoading] = useState(false);
 
   const queryClient = useQueryClient();
@@ -135,7 +142,7 @@ export default function useChatHelpers(index = 0, paramId?: string): ChatContrac
     [queryParam, queryClient],
   );
 
-  const setSubmission = useSetRecoilState(store.submissionByIndex(index));
+  const setSubmission = useSetAtom(submissionByIndex(index));
 
   const { ask: _ask, regenerate: _regenerate } = useChatFunctions({
     index,
@@ -380,10 +387,9 @@ export default function useChatHelpers(index = 0, paramId?: string): ChatContrac
     [continueGeneration],
   );
 
-  const [preset, setPreset] = useRecoilState(store.presetByIndex(index));
-  const [showPopover, setShowPopover] = useRecoilState(store.showPopoverFamily(index));
+  const [preset, setPreset] = useAtom(presetFamily(index));
   const [abortScroll, setAbortScroll] = useAtom(abortScrollFamily(index));
-  const [optionSettings, setOptionSettings] = useRecoilState(store.optionSettingsFamily(index));
+  const [optionSettings, setOptionSettings] = useAtom(optionSettingsFamily(index));
 
   /** Read once per chat rather than per message row: message rows never unmount, so a
    *  per-row settings read would accumulate for the length of the conversation. */
@@ -410,8 +416,6 @@ export default function useChatHelpers(index = 0, paramId?: string): ChatContrac
       handleStopGenerating,
       handleRegenerate,
       handleContinue,
-      showPopover,
-      setShowPopover,
       abortScroll,
       setAbortScroll,
       preset,
@@ -443,8 +447,6 @@ export default function useChatHelpers(index = 0, paramId?: string): ChatContrac
       handleStopGenerating,
       handleRegenerate,
       handleContinue,
-      showPopover,
-      setShowPopover,
       abortScroll,
       setAbortScroll,
       preset,

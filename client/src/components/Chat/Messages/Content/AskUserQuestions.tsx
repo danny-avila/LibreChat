@@ -252,7 +252,7 @@ export default function AskUserQuestions({
             >
               {localize(
                 remaining === 1 ? 'com_ui_questions_remaining_one' : 'com_ui_questions_remaining',
-                { 0: remaining },
+                { count: remaining, 0: remaining },
               )}
             </button>
           )}

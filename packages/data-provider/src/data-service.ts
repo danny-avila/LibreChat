@@ -1175,6 +1175,12 @@ export function getToolCallPart(params: q.ToolCallPartParams): Promise<q.ToolCal
   return request.get(endpoints.messageToolCallPart(params));
 }
 
+export function getSubagentAttachmentCalls(
+  params: q.SubagentAttachmentCallsParams,
+): Promise<q.SubagentAttachmentCallsResponse> {
+  return request.get(endpoints.messageSubagentAttachmentCalls(params));
+}
+
 export function getMessageById(conversationId: string, messageId: string): Promise<s.TMessage[]> {
   return request.get(endpoints.messages({ conversationId, messageId }));
 }
