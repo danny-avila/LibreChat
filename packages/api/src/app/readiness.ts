@@ -1,36 +1,51 @@
-import type { RedisClientType, RedisClusterType } from '@redis/client';
+import type { RedisClientType } from '@redis/client';
 import type { Request, Response } from 'express';
 import type { Redis, Cluster } from 'ioredis';
-import { ioredisClient, keyvRedisClient } from '~/cache/redisClients';
-import { cacheConfig } from '~/cache/cacheConfig';
+
+type NodeRedisReadiness = Pick<RedisClientType, 'isReady'>;
+
+/** The subset of a Node Redis cluster that reports per-master connectivity. */
+type NodeRedisClusterReadiness = {
+  isOpen: boolean;
+  masters: ReadonlyArray<{ client?: NodeRedisReadiness }>;
+};
 
 export type RedisReadinessClients = {
   useRedis: boolean;
   ioredis: Pick<Redis | Cluster, 'status'> | null;
-  keyv: Pick<RedisClientType, 'isReady'> | Pick<RedisClusterType, 'isOpen'> | null;
+  keyv: NodeRedisReadiness | NodeRedisClusterReadiness | null;
 };
+
+/**
+ * A Node Redis cluster stays `isOpen` while an individual master reconnects, and every
+ * key in that master's slots fails meanwhile. Masters connect eagerly (the client does
+ * not set `minimizeConnections`), so each one must have a ready client.
+ */
+function isKeyvReady(keyv: NodeRedisReadiness | NodeRedisClusterReadiness): boolean {
+  if ('isReady' in keyv) {
+    return keyv.isReady;
+  }
+  return (
+    keyv.isOpen &&
+    keyv.masters.length > 0 &&
+    keyv.masters.every((master) => master.client?.isReady === true)
+  );
+}
 
 /**
  * Whether the shared Redis clients can serve commands. Always true when Redis is disabled.
  * A configured client that is missing, reconnecting, closed or ended counts as not ready,
  * because requests that touch the cache (sessions, OAuth state, rate limits) fail until it
- * recovers. Node Redis clusters expose only `isOpen`, so that is the signal used for them.
+ * recovers.
  */
-export function isRedisReady(
-  clients: RedisReadinessClients = {
-    useRedis: cacheConfig.USE_REDIS,
-    ioredis: ioredisClient,
-    keyv: keyvRedisClient,
-  },
-): boolean {
-  if (!clients.useRedis) {
+export function isRedisReady({ useRedis, ioredis, keyv }: RedisReadinessClients): boolean {
+  if (!useRedis) {
     return true;
   }
-  const { ioredis, keyv } = clients;
   if (ioredis?.status !== 'ready' || keyv == null) {
     return false;
   }
-  return 'isReady' in keyv ? keyv.isReady : keyv.isOpen;
+  return isKeyvReady(keyv);
 }
 
 /**
@@ -40,9 +55,9 @@ export function isRedisReady(
  * trigger a liveness restart loop.
  */
 export const createReadinessHandler =
-  (isServerReady: () => boolean, isDependencyReady: () => boolean = isRedisReady) =>
+  (isServerReady: () => boolean, redis: RedisReadinessClients) =>
   (_req: Request, res: Response): void => {
-    if (!isServerReady() || !isDependencyReady()) {
+    if (!isServerReady() || !isRedisReady(redis)) {
       res.status(503).send('NOT_READY');
       return;
     }

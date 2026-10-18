@@ -110,11 +110,23 @@ async function until(check, expected, timeoutMs = 15000) {
   const express = require('express');
   const { logger } = require('@librechat/data-schemas');
   logger.silent = true;
-  const { createReadinessHandler } = require('@librechat/api');
+  const {
+    cacheConfig,
+    ioredisClient,
+    keyvRedisClient,
+    createReadinessHandler,
+  } = require('@librechat/api');
 
   const app = express();
   app.get('/livez', (_req, res) => res.status(200).send('OK'));
-  app.get('/readyz', createReadinessHandler(() => true));
+  app.get(
+    '/readyz',
+    createReadinessHandler(() => true, {
+      useRedis: cacheConfig.USE_REDIS,
+      ioredis: ioredisClient,
+      keyv: keyvRedisClient,
+    }),
+  );
   const listener = app.listen(0, '127.0.0.1');
   await new Promise((ready) => listener.once('listening', ready));
   const appPort = listener.address().port;

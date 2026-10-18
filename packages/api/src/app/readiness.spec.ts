@@ -39,9 +39,17 @@ describe('isRedisReady', () => {
     expect(isRedisReady(clients({ keyv: null }))).toBe(false);
   });
 
-  it('uses isOpen for a Keyv cluster client', () => {
-    expect(isRedisReady(clients({ keyv: { isOpen: true } }))).toBe(true);
-    expect(isRedisReady(clients({ keyv: { isOpen: false } }))).toBe(false);
+  it('requires every master of a Keyv cluster to be ready', () => {
+    const ready = { isReady: true };
+    const down = { isReady: false };
+    const cluster = (isOpen: boolean, masters: { client?: { isReady: boolean } }[]) =>
+      isRedisReady(clients({ keyv: { isOpen, masters } }));
+
+    expect(cluster(true, [{ client: ready }, { client: ready }])).toBe(true);
+    expect(cluster(true, [{ client: ready }, { client: down }])).toBe(false);
+    expect(cluster(true, [{ client: ready }, {}])).toBe(false);
+    expect(cluster(true, [])).toBe(false);
+    expect(cluster(false, [{ client: ready }])).toBe(false);
   });
 });
 
@@ -86,36 +94,38 @@ describe('createReadinessHandler', () => {
     handler({} as Request, res as unknown as Response);
     return { code: res.status.mock.calls[0][0], body: res.send.mock.calls[0][0] };
   };
-  const probe = (serverReady: boolean, redisReady: boolean) =>
-    respond(
-      createReadinessHandler(
-        () => serverReady,
-        () => redisReady,
-      ),
-    );
+  const probe = (serverReady: boolean, redis: RedisReadinessClients) =>
+    respond(createReadinessHandler(() => serverReady, redis));
 
   it('returns 503 before startup completes', () => {
-    expect(probe(false, true)).toEqual({ code: 503, body: 'NOT_READY' });
+    expect(probe(false, clients())).toEqual({ code: 503, body: 'NOT_READY' });
   });
 
   it('returns 503 after startup when Redis drops', () => {
-    expect(probe(true, false)).toEqual({ code: 503, body: 'NOT_READY' });
+    expect(probe(true, clients({ ioredis: { status: 'reconnecting' } }))).toEqual({
+      code: 503,
+      body: 'NOT_READY',
+    });
   });
 
   it('returns 200 when started and Redis is connected', () => {
-    expect(probe(true, true)).toEqual({ code: 200, body: 'OK' });
+    expect(probe(true, clients())).toEqual({ code: 200, body: 'OK' });
+  });
+
+  it('returns 200 when started with Redis disabled', () => {
+    expect(probe(true, { useRedis: false, ioredis: null, keyv: null })).toEqual({
+      code: 200,
+      body: 'OK',
+    });
   });
 
   it('re-evaluates readiness on every request', () => {
-    let redisUp = true;
-    const handler = createReadinessHandler(
-      () => true,
-      () => redisUp,
-    );
+    const keyv = { isReady: true };
+    const handler = createReadinessHandler(() => true, clients({ keyv }));
     expect(respond(handler).code).toBe(200);
-    redisUp = false;
+    keyv.isReady = false;
     expect(respond(handler).code).toBe(503);
-    redisUp = true;
+    keyv.isReady = true;
     expect(respond(handler).code).toBe(200);
   });
 });

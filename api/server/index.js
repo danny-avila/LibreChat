@@ -55,6 +55,9 @@ const {
   registerBackgroundTaskShutdown,
   configureServerTimeouts,
   createReadinessHandler,
+  keyvRedisClient,
+  ioredisClient,
+  cacheConfig,
   setupGracefulShutdown,
   updateInterfacePermissions,
   configureMessageFilterRegexValidator,
@@ -353,7 +356,11 @@ const startServer = async () => {
   app.get('/livez', (_req, res) => res.status(200).send('OK'));
   app.get(
     '/readyz',
-    createReadinessHandler(() => serverReady),
+    createReadinessHandler(() => serverReady, {
+      useRedis: cacheConfig.USE_REDIS,
+      ioredis: ioredisClient,
+      keyv: keyvRedisClient,
+    }),
   );
 
   /* Middleware */
