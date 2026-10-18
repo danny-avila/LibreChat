@@ -772,18 +772,17 @@ export class Chat {
   }
 
   /**
-   * An Assistants run's stream ends without a final frame; the stop's answer carries it. `owns` is
-   * checked when the merge runs, so a turn that took over while it queued keeps its list.
+   * An Assistants run's stream ends without a final frame; the stop's answer carries it as the
+   * conversation's stored messages, so they replace the list and rows the run deleted go with it.
+   * `owns` is checked when the write runs, so a turn that took over while it queued keeps its list.
    */
   private mergeRunMessages(runMessages: TMessage[], owns: () => boolean): Promise<void> {
     return this.executor.run(() => {
-      if (!owns()) {
+      if (!owns() || runMessages.length === 0) {
         return;
       }
-      const next = mergeById(this.messages, runMessages);
-      if (next) {
-        this.write(next);
-      }
+      const local = new Map(this.messages.map((message) => [message.messageId, message]));
+      this.write(runMessages.map((message) => ({ ...local.get(message.messageId), ...message })));
     });
   }
 

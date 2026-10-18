@@ -967,7 +967,7 @@ describe('Chat', () => {
     transport.abort.mockResolvedValue({
       final: true,
       conversation: {},
-      runMessages: [{ ...placeholder, text: 'Partial' }],
+      runMessages: [userMessage, { ...placeholder, text: 'Partial' }],
     });
 
     const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
@@ -981,6 +981,30 @@ describe('Chat', () => {
     expect(chat.messages[1].text).toBe('Partial');
     expect(chat.status).toBe('ready');
     expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isAbort: true }));
+  });
+
+  it('replaces the list with the run messages a stop returns, dropping rows the run deleted', async () => {
+    const stream = createStream();
+    const unfinished: TMessage = { ...placeholder, messageId: 'tool-1', text: '' };
+    const { chat, transport } = setup(
+      {
+        prepareRequest: jest.fn(() => ({
+          payload: { endpoint: 'assistants', conversationId: 'convo-1', text: 'Hi' } as TPayload,
+          messages: [userMessage, placeholder, unfinished],
+          responseMessageId: 'response-1',
+        })),
+      },
+      { sendMessages: jest.fn(async () => ({ status: 'stream' as const, stream })) },
+    );
+    const runMessages = [userMessage, { ...placeholder, text: 'Partial' }];
+    transport.abort.mockResolvedValue({ final: true, conversation: {}, runMessages });
+
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    await chat.stop();
+    await sent;
+
+    expect(chat.messages).toEqual(runMessages);
   });
 
   it('stops a late Assistants start by its abort key', async () => {
@@ -1030,7 +1054,7 @@ describe('Chat', () => {
     transport.abort.mockResolvedValue({
       final: true,
       conversation: {},
-      runMessages: [{ ...placeholder, text: 'Partial' }],
+      runMessages: [userMessage, { ...placeholder, text: 'Partial' }],
     });
     const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
     await flush();
@@ -1061,7 +1085,7 @@ describe('Chat', () => {
     transport.abort.mockResolvedValue({
       final: true,
       conversation: {},
-      runMessages: [{ ...placeholder, text: 'Partial' }],
+      runMessages: [userMessage, { ...placeholder, text: 'Partial' }],
     });
     const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
     await flush();
