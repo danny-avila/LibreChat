@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMeoSession } from './session';
 import MeoChat from './MeoChat';
+import MeoPersonalizationSettings from './MeoPersonalizationSettings';
 import './MeoDesktopApp.css';
 
 type PrimaryMode = 'chat' | 'work' | 'projects' | 'skills';
@@ -63,12 +64,14 @@ export default function MeoDesktopApp() {
   const [mode, setMode] = useState<PrimaryMode>('chat');
   const [sidebarHidden, setSidebarHidden] = useState(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'n') {
         event.preventDefault();
         setMode('chat');
+        setSettingsOpen(false);
         navigate('/new');
       }
     };
@@ -79,6 +82,8 @@ export default function MeoDesktopApp() {
   const accountLabel = useMemo(() => user?.name || user?.email || 'Meo Account', [user]);
 
   const selectMode = (next: PrimaryMode) => {
+    setSettingsOpen(false);
+    setSidebarHidden(false);
     setMode(next);
     setInspectorOpen(false);
   };
@@ -94,7 +99,7 @@ export default function MeoDesktopApp() {
           </div>
         </div>
 
-        <button className="meo-desktop-nav meo-desktop-nav-primary" type="button" onClick={() => navigate('/new')}>
+        <button className="meo-desktop-nav meo-desktop-nav-primary" type="button" onClick={() => { setMode('chat'); setSettingsOpen(false); navigate('/new'); }}>
           <Icon name="add" /><span>New chat</span>
         </button>
 
@@ -108,7 +113,7 @@ export default function MeoDesktopApp() {
             <button
               key={key}
               type="button"
-              className={`meo-desktop-nav ${mode === key ? 'is-active' : ''}`}
+              className={`meo-desktop-nav ${!settingsOpen && mode === key ? 'is-active' : ''}`}
               onClick={() => selectMode(key)}
             >
               <Icon name={icon} /><span>{label}</span>
@@ -116,7 +121,7 @@ export default function MeoDesktopApp() {
           ))}
         </nav>
 
-        {mode === 'chat' && (
+        {!settingsOpen && mode === 'chat' && (
           <div className="meo-desktop-current-chat">
             <span className="meo-desktop-section-label">This conversation</span>
             <button className="meo-desktop-nav is-active" type="button" onClick={() => selectMode('chat')}>
@@ -127,7 +132,7 @@ export default function MeoDesktopApp() {
 
         <div className="meo-desktop-sidebar-spacer" />
 
-        <button className="meo-desktop-nav" type="button" onClick={() => setInspectorOpen(true)}>
+        <button className={`meo-desktop-nav ${settingsOpen ? 'is-active' : ''}`} type="button" onClick={() => { setSettingsOpen(true); setSidebarHidden(false); setInspectorOpen(false); }}>
           <Icon name="settings" /><span>AI settings</span>
         </button>
 
@@ -152,9 +157,11 @@ export default function MeoDesktopApp() {
             <Icon name="menu" />
           </button>
           <div className="meo-desktop-header-copy">
-            <strong>{mode === 'chat' ? 'Your space to think' : modeCopy[mode].title}</strong>
+            <strong>{settingsOpen ? 'Settings' : mode === 'chat' ? 'Your space to think' : modeCopy[mode].title}</strong>
             <span>
-              {mode === 'chat'
+              {settingsOpen
+                ? 'Account preferences and memory'
+                : mode === 'chat'
                 ? 'Ready'
                 : mode === 'work'
                   ? 'Choose where Meo AI can act'
@@ -174,7 +181,9 @@ export default function MeoDesktopApp() {
         </header>
 
         <div className="meo-desktop-content">
-          {mode === 'chat' ? (
+          {settingsOpen ? (
+            <MeoPersonalizationSettings />
+          ) : mode === 'chat' ? (
             <div className="meo-desktop-chat-host">
               <MeoChat />
             </div>
