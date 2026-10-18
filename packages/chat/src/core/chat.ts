@@ -625,11 +625,8 @@ export class Chat {
     this.restored = undefined;
     const active = createActiveRequest(continued?.generation ?? paused?.generation);
     const { generation } = active;
-    if (!continued && generation.responseId === undefined) {
-      /**
-       * A reattachment this chat did not prepare has no response until a frame names one. A
-       * continued local turn keeps the list-tail fallback its own request had.
-       */
+    if (generation.responseId === undefined) {
+      /** A reattachment this chat did not prepare has no response until a frame names one. */
       generation.responseUnknown = true;
     }
     generation.endpoint = this.resumeEndpoint() ?? dropped?.target.endpoint;
@@ -1558,6 +1555,13 @@ export class Chat {
   private track(active: ActiveRequest, event: ChatEvent): void {
     if (event.type === 'pending_action') {
       active.generation.paused = event.data.actionId;
+    } else if (event.type === 'created') {
+      /** A legacy first turn names its conversation here, with no sync frame to follow. */
+      const named = event.data.message?.conversationId;
+      const known = active.generation.conversationId;
+      if (named && (known == null || known === Constants.NEW_CONVO)) {
+        active.generation.conversationId = named;
+      }
     } else if (event.type === 'sync') {
       /** The server's ids for the turn, which an Assistants stop addresses. */
       active.generation.conversationId =

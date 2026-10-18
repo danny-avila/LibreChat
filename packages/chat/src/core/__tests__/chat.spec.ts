@@ -3815,6 +3815,75 @@ describe('Chat', () => {
       expect(chat.status).toBe('submitted');
     });
 
+    it('stops a legacy first turn by the conversation its created frame named', async () => {
+      const stream = createStream();
+      const { chat, transport } = setup(
+        {
+          id: 'new',
+          prepareRequest: jest.fn(() => ({
+            payload: { ...payload, conversationId: 'new' },
+            messages: [userMessage, placeholder],
+            responseMessageId: 'response-1',
+          })),
+        },
+        { sendMessages: jest.fn(async () => ({ status: 'stream' as const, stream })) },
+      );
+      transport.abort.mockImplementation(async () => {
+        stream.push({ type: 'abort', data: {} } as ChatEvent);
+        return { success: true };
+      });
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push({
+        type: 'created',
+        data: { created: true, message: { ...userMessage, conversationId: 'convo-9' } },
+      } as ChatEvent);
+      await flush();
+
+      await expect(chat.stop()).resolves.toEqual({ status: 'stopped' });
+      await sent;
+      expect(transport.abort).toHaveBeenCalledWith(
+        expect.objectContaining({ abortKey: 'convo-9:response-1' }),
+      );
+    });
+
+    it('keeps the stop target of a dropped generation when a stale pause of a stopped one is read', async () => {
+      const { chat, stream, transport } = setup({
+        resumeSelection: () => ({ endpoint: 'agents' }),
+      });
+      chat.restorePendingAction(pausedAction, 500);
+      await chat.stop();
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+      await sent;
+
+      chat.restorePendingAction(pausedAction, 500);
+
+      await expect(chat.stop()).resolves.toEqual({ status: 'stopped' });
+      expect(transport.abort).toHaveBeenLastCalledWith(
+        expect.objectContaining({ streamId: 'convo-1', generationCreatedAt: 100 }),
+      );
+    });
+
+    it('reports the response of a resumed generation no frame named as unknown', async () => {
+      const resumed = createStream({ streamId: 'convo-1', generationCreatedAt: 300 });
+      const { chat, state, transport, onFinish } = setup({
+        resumeSelection: () => ({ endpoint: 'agents' }),
+      });
+      state.replaceMessages([userMessage, { ...placeholder, messageId: 'other-branch' }]);
+      transport.reconnectToStream.mockResolvedValueOnce(resumed);
+
+      const attached = chat.resumeStream({ streamId: 'convo-1', generationCreatedAt: 300 });
+      await flush();
+      resumed.push({ type: 'abort', data: {} } as ChatEvent);
+      await attached;
+
+      expect(onFinish).toHaveBeenLastCalledWith(
+        expect.objectContaining({ isAbort: true, isResponseUnknown: true, message: undefined }),
+      );
+    });
+
     it('sends one stop for a generation stopped again once a reattachment took it over', async () => {
       const { chat, stream, transport } = setup({
         resumeSelection: () => ({ endpoint: 'agents' }),
