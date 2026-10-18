@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form';
 import { Spinner } from '@librechat/client';
 import { useParams } from 'react-router-dom';
 import { Constants, buildTree } from 'librechat-data-provider';
-import { useIsSubmitting, submissionByIndex } from '@librechat/chat/react';
+import { useIsSubmitting, submissionByIndex, ComposerRestoreProvider } from '@librechat/chat/react';
 import type { TChatProject } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
 import {
@@ -18,13 +18,7 @@ import {
   useQueuedTurnReveal,
   useLocalize,
 } from '~/hooks';
-import {
-  ChatContext,
-  AddedChatContext,
-  ChatFormProvider,
-  useFileMapContext,
-  ComposerRestoreProvider,
-} from '~/Providers';
+import { ChatContext, AddedChatContext, ChatFormProvider, useFileMapContext } from '~/Providers';
 import Footer, { useLandingFooter, useConfiguredFooter } from './Footer';
 import { QueuedTurnPortalProvider } from './Steering/QueuedTurnPortal';
 import { useChatSettings } from '~/Providers/ChatSettingsContext';
