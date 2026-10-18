@@ -69,6 +69,7 @@ const {
   settleExistingRowsBeforeErrorTurn,
   resolveDisconnectSnapshotMode,
   markAbortedCompactionContent,
+  isTemporaryTurn,
 } = require('@librechat/api');
 const { disposeClient } = require('~/server/cleanup');
 const {
@@ -549,6 +550,7 @@ async function saveErrorTurn(
       messageId: errorMessageId,
       runId: liveResponseMessageId,
       runCreated,
+      isTemporary: isTemporaryTurn(req),
     });
     const savedErrorMessage = await saveMessage(
       reqCtx,

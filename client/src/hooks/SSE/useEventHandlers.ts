@@ -549,7 +549,7 @@ export default function useEventHandlers({
     if (
       shouldResetSubagentAtomsOnConversationChange(previous, paramId, preserveNewConversationId)
     ) {
-      resetSubagentAtoms();
+      resetSubagentAtoms({ preserveSelectedTask: true });
       /** PTC traces are live-only for the same reason and share the boundary:
        *  keep them through a run so a finished program stays auditable, drop
        *  them when the conversation changes. */

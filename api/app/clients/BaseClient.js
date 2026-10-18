@@ -43,6 +43,7 @@ const {
   rejectPrivateTextAdmission,
   bindPrivateTextPersistenceAbort,
   persistedReasoningOverrideFields,
+  isTemporaryTurn,
 } = require('@librechat/api');
 const {
   Constants,
@@ -1074,7 +1075,9 @@ class BaseClient {
     const isAgentResponse =
       this.clientName === EModelEndpoint.agents || isAgentsEndpoint(this.options.endpoint);
     const langfuseTraceFields = isAgentResponse
-      ? await getLangfuseTraceMessageFields(appConfig, responseMessageId)
+      ? await getLangfuseTraceMessageFields(appConfig, responseMessageId, {
+          isTemporary: isTemporaryTurn(this.options.req),
+        })
       : undefined;
 
     /** @type {TMessage} */
