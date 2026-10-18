@@ -118,6 +118,27 @@ mcpServers:
       authorization_url: http://127.0.0.1:8767/authorize
       token_url: http://127.0.0.1:8767/token
       client_id: e2e-oauth-client
+  e2e-oauth-deferred:
+    type: streamable-http
+    url: http://127.0.0.1:8767/mcp
+    startup: false
+    title: E2E OAuth Deferred
+    description: Protected MCP fixture whose sign-in waits for the first tool call.
+    timeout: 30000
+    requiresOAuth: true
+    oauthPrompt: on_use
+    oauthToolCatalog:
+      - name: echo
+        description: Echo the given text back.
+        inputSchema:
+          type: object
+          properties:
+            text: { type: string }
+          required: [text]
+    oauth:
+      authorization_url: http://127.0.0.1:8767/authorize
+      token_url: http://127.0.0.1:8767/token
+      client_id: e2e-oauth-client
   # __E2E_DYNAMIC_MCP_NETWORK_SERVERS__
   # __E2E_MCP_APPS_SERVER__
 
