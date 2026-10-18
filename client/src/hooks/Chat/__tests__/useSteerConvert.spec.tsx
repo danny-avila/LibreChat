@@ -7,9 +7,10 @@ import {
   appliedSteerIdsByConvoId,
   pendingSteersByConvoId,
   resetSteerFamilies,
+  resetQueueFamilies,
 } from '@librechat/chat/react';
 import { recoveryDispositionsFamily } from '~/components/Chat/Steering/recovery';
-import { queuedMessagesByConvoId, resetQueueFamilies } from '~/hooks/Chat/queue';
+import { queuedMessagesByConvoId } from '~/hooks/Chat/queue';
 import useSteerConvert from '../useSteerConvert';
 import '~/Providers/SteerHostContext';
 

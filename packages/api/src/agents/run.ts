@@ -2151,6 +2151,7 @@ export async function createRun({
   user,
   tenantId,
   centralTraceExportEnabled,
+  isTemporary,
   traceContext,
   tokenCounter,
   customHandlers,
@@ -2202,6 +2203,8 @@ export async function createRun({
    * run. Tenant fanout can still export when tenant routing is available.
    */
   centralTraceExportEnabled?: boolean;
+  /** A temporary chat's run is not traced unless `langfuse.trace.temporaryChats` opts in. */
+  isTemporary?: boolean;
   /**
    * Exact tool names the owner approved for the rest of this conversation, read from the
    * stored conversation (never from the request body). Honored only when
@@ -3163,6 +3166,7 @@ export async function createRun({
       runId: resolvedRunId,
       tenantId: tenantId ?? user?.tenantId,
       centralTraceExportEnabled,
+      isTemporary,
       user,
       traceContext: resolveRunTraceContext({ agents, conversationId, requestBody, traceContext }),
     }),
