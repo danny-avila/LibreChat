@@ -111,9 +111,7 @@ export default function MeoDesktopApp() {
               key={item.id}
               type="button"
               className={`meo-desktop-nav ${!settingsOpen && mode === item.id ? 'is-active' : ''}`}
-              onClick={() => item.id === 'settings'
-                ? setSettingsOpen(true)
-                : selectMode(item.id)}
+              onClick={() => selectMode(item.id)}
             >
               <Icon name={item.icon} /><span>{item.label}</span>
             </button>
@@ -202,7 +200,7 @@ export default function MeoDesktopApp() {
           ) : mode === 'projects' ? (
             <MeoProjects />
           ) : (
-            <ModeLanding mode={mode} onOpenExisting={() => navigate(mode === 'projects' ? '/projects' : mode === 'skills' ? '/skills' : '/activity')} />
+            <ModeLanding mode={mode} onOpenExisting={() => navigate(mode === 'skills' ? '/skills' : '/activity')} />
           )}
         </div>
       </section>
