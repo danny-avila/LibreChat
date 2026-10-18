@@ -14,7 +14,7 @@ FROM node:24.16.0-alpine AS base-min
 ARG NPM_CI_TIMEOUT_SECONDS=1500
 ARG NPM_CI_ATTEMPTS=2
 RUN apk upgrade --no-cache
-RUN apk add --no-cache jemalloc
+RUN apk add --no-cache bash jemalloc
 # Set environment variable to use jemalloc
 ENV LD_PRELOAD=/usr/lib/libjemalloc.so.2
 # Disable dependency installation analytics before any npm lifecycle scripts run.
