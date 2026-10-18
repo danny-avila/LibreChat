@@ -519,11 +519,15 @@ router.post('/artifact/:messageId', configMiddleware, async (req, res) => {
     });
 
     res.status(200).json(
-      withMessageToolCallPreviews(req, {
-        conversationId: savedMessage.conversationId,
-        content: savedMessage.content,
-        text: savedMessage.text,
-      }),
+      withMessageToolCallPreviews(
+        req,
+        {
+          conversationId: savedMessage.conversationId,
+          content: savedMessage.content,
+          text: savedMessage.text,
+        },
+        message.attachments,
+      ),
     );
   } catch (error) {
     if (isContentFilterError(error)) {
@@ -784,6 +788,7 @@ router.put(
           destinationIds: updatedMessage.langfuseDestinationIds,
           feedback: updatedMessage.feedback,
           appConfig: req.config,
+          isTemporary: updatedMessage.isTemporary,
           metadata: {
             messageId: updatedMessage.messageId ?? messageId,
             parentMessageId: updatedMessage.parentMessageId,

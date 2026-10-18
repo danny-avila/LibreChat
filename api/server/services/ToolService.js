@@ -472,7 +472,6 @@ async function processRequiredActions(client, requiredActions) {
     user: client.req.user.id,
     model: client.req.body.model ?? 'gpt-4o-mini',
     tools,
-    functions: true,
     endpoint: client.req.body.endpoint,
     options: {
       processFileURL,
@@ -1856,7 +1855,6 @@ async function loadAgentTools({
     agent,
     signal,
     userMCPAuthMap,
-    functions: true,
     user: req.user.id,
     tools: _agentTools,
     options: {
@@ -2496,7 +2494,6 @@ async function loadToolsForExecution({
       agent,
       signal,
       userMCPAuthMap,
-      functions: true,
       tools: regularToolNames,
       user: req.user.id,
       options: {

@@ -15,6 +15,7 @@ import {
   pendingSteersByConvoId,
   activeGenerationCreatedAtByConvoId,
   submissionStartFamily,
+  resetQueueFamilies,
 } from '@librechat/chat/react';
 import type { Agents, TMessage, TConversation, TSubmission } from 'librechat-data-provider';
 import type { MutableSnapshot } from 'recoil';
@@ -26,7 +27,6 @@ import {
   stopRequestedByConvoId,
   pendingRunEndByConvoId,
   detachedRunByConvoId,
-  resetQueueFamilies,
 } from '~/hooks/Chat/queue';
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';

@@ -140,6 +140,7 @@ function renderWithState(args: {
   toolArgs?: Record<string, unknown>;
   subagentIdentity?: SubagentIdentity;
   runStepStatus?: PartMetadata['runStepStatus'];
+  selection?: ActiveSubagentPanel;
 }) {
   const setter = { current: null as null | ((next: SubagentProgress | null) => void) };
   let selection: ActiveSubagentPanel | null = null;
@@ -158,7 +159,7 @@ function renderWithState(args: {
   };
   const tree = (tick: number) => (
     <MemoryRouter>
-      <ChatSurfaceHarness>
+      <ChatSurfaceHarness seed={(store) => store.set(activeSubagentPanel, args.selection ?? null)}>
         <RecoilRoot>
           <SeedHelper />
           <SelectionObserver />
@@ -491,6 +492,38 @@ describe('SubagentCall', () => {
       }),
     );
     expect((selection as ActiveSubagentPanel | null)?.durable).toBeUndefined();
+  });
+
+  it.each([
+    { threadId: 'child-thread-1', taskId: 'task-2', parentConversationId: 'parent-conversation' },
+    { threadId: 'child-thread-2', taskId: 'task-1', parentConversationId: 'parent-conversation' },
+    { threadId: 'child-thread-1', taskId: 'task-1', parentConversationId: 'other-conversation' },
+  ])('does not replace a retained task on dispatch remount: %p', (identity) => {
+    const retained: ActiveSubagentPanel = {
+      host: 'conversation',
+      parentConversationId: identity.parentConversationId,
+      parentMessageId: 'parent-message',
+      toolCallId: 'detached-call',
+      partIndex: 0,
+      subagentType: 'self',
+      initialProgress: 0,
+      isSubmitting: false,
+      durable: { threadId: identity.threadId, taskId: identity.taskId },
+    };
+    const rendered = renderWithState({
+      toolCallId: 'detached-call',
+      initialProgress: 1,
+      output: JSON.stringify({
+        background_task_id: 'task-1',
+        subagent_thread_id: 'child-thread-1',
+        tool: 'subagent',
+        subagent_type: 'self',
+        status: 'running',
+      }),
+      toolArgs: { subagent_type: 'self', run_in_background: true },
+      selection: retained,
+    });
+    expect(rendered.getSelection()).toBe(retained);
   });
 
   it('opens an exact host-issued detached invocation in the same panel', () => {
