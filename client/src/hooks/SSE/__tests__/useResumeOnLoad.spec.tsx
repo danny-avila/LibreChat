@@ -15,25 +15,25 @@ import {
   pendingSteersByConvoId,
   activeGenerationCreatedAtByConvoId,
   submissionStartFamily,
-  resetQueueFamilies,
 } from '@librechat/chat/react';
-import type { Agents, TMessage, TConversation, TSubmission } from 'librechat-data-provider';
-import type { MutableSnapshot } from 'recoil';
-import type { ReactNode } from 'react';
-import type { QueuedMessage, PendingSteer, DetachedRun } from '~/hooks/Chat/queue';
 import {
   settledQueuedTurnReceiptsByConvoId,
   queuedMessagesByConvoId,
   stopRequestedByConvoId,
   pendingRunEndByConvoId,
   detachedRunByConvoId,
-} from '~/hooks/Chat/queue';
+  resetQueueFamilies,
+} from '@librechat/chat/react';
+import type { Agents, TMessage, TConversation, TSubmission } from 'librechat-data-provider';
+import type { QueuedMessage, PendingSteer, DetachedRun } from '@librechat/chat';
+import type { MutableSnapshot } from 'recoil';
+import type { ReactNode } from 'react';
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
 import { pendingApprovalActionFamily } from '~/components/Chat/approval/state';
 import { agentQueuedTurnsQueryKey } from '~/data-provider/SSE/queuedTurns';
+import { SteerHostTestProvider } from 'test/steerHost';
 import useResumeOnLoad from '../useResumeOnLoad';
 import store from '~/store';
-import '~/Providers/SteerHostContext';
 
 const mockUseStreamStatus = jest.fn();
 const mockUseActiveJobs = jest.fn();
@@ -210,12 +210,14 @@ function renderUseResumeOnLoad({
     <QueryClientProvider client={queryClient}>
       <JotaiProvider store={jotaiStore}>
         <RecoilRoot initializeState={initializeState}>
-          <SubmissionProbe />
-          <SubmissionStartProbe />
-          <SiblingIndexProbe />
-          <PendingSteersProbe />
-          <QueuedMessagesProbe />
-          {children}
+          <SteerHostTestProvider>
+            <SubmissionProbe />
+            <SubmissionStartProbe />
+            <SiblingIndexProbe />
+            <PendingSteersProbe />
+            <QueuedMessagesProbe />
+            {children}
+          </SteerHostTestProvider>
         </RecoilRoot>
       </JotaiProvider>
     </QueryClientProvider>
