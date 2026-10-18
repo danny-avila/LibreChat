@@ -1,6 +1,6 @@
 import { Constants } from 'librechat-data-provider';
 import type { AgentToolOptions } from 'librechat-data-provider';
-import type { ParsedServerConfig } from '~/mcp/types';
+import type { LCAvailableTools, ParsedServerConfig } from '~/mcp/types';
 import { createMCPOAuthDeferral, shouldDeferMCPOAuthSignIn } from './defer';
 
 const key = (tool: string, server: string) => `${tool}${Constants.mcp_delimiter}${server}`;
@@ -72,44 +72,81 @@ describe('shouldDeferMCPOAuthSignIn', () => {
 });
 
 describe('createMCPOAuthDeferral', () => {
-  const deferral = () =>
-    createMCPOAuthDeferral({
+  const declaredCatalog: LCAvailableTools = {
+    [key('read', 'sheets')]: {
+      type: 'function',
+      ['function']: {
+        name: key('read', 'sheets'),
+        description: 'Read a sheet',
+        parameters: { type: 'object', properties: {} },
+      },
+    },
+  };
+
+  const create = () => {
+    const pendingOAuthServers = new Set(['sheets']);
+    const pendingOAuthStarts = new Map<string, unknown>([['sheets', { authURL: 'x' }]]);
+    const rememberAvailableTools = jest.fn();
+    const tracker = createMCPOAuthDeferral({
       tools: sheetsTools,
       toolOptions: deferredOptions,
       deferredToolsEnabled: true,
       knownServerNames: ['sheets'],
+      pendingOAuthServers,
+      pendingOAuthStarts,
+      rememberAvailableTools,
     });
+    return { tracker, pendingOAuthServers, pendingOAuthStarts, rememberAvailableTools };
+  };
 
-  it('defers with the catalog the operator declared', () => {
-    const tracker = deferral();
-    const catalog = tracker.takeDeclaredCatalog('sheets', onUseConfig);
+  it('withdraws the turn-start prompt and offers the declared catalog', () => {
+    const { tracker, pendingOAuthServers, pendingOAuthStarts, rememberAvailableTools } = create();
 
-    expect(catalog).toEqual({
-      [key('read', 'sheets')]: {
-        type: 'function',
-        ['function']: {
-          name: key('read', 'sheets'),
-          description: 'Read a sheet',
-          parameters: { type: 'object', properties: {} },
-        },
-      },
-    });
-    expect(tracker.isDeferred('sheets')).toBe(true);
+    expect(tracker.deferSignIn('sheets', onUseConfig)).toEqual(declaredCatalog);
+    expect(pendingOAuthServers.has('sheets')).toBe(false);
+    expect(pendingOAuthStarts.has('sheets')).toBe(false);
+    expect(rememberAvailableTools).toHaveBeenCalledWith('sheets', declaredCatalog);
+    expect(tracker.hasSignInDecision('sheets')).toBe(true);
   });
 
-  it('keeps the prompt for a server that does not qualify', () => {
-    const tracker = deferral();
+  it('keeps the turn-start prompt for a server that does not qualify', () => {
+    const { tracker, pendingOAuthServers, rememberAvailableTools } = create();
     const onStart = { ...onUseConfig, oauthPrompt: 'on_start' as const };
 
-    expect(tracker.takeDeclaredCatalog('sheets', onStart)).toBeNull();
+    expect(tracker.deferSignIn('sheets', onStart)).toBeNull();
     expect(tracker.defer('sheets', onStart)).toBe(false);
-    expect(tracker.isDeferred('sheets')).toBe(false);
+    expect(pendingOAuthServers.has('sheets')).toBe(true);
+    expect(rememberAvailableTools).not.toHaveBeenCalled();
+  });
+
+  it('defers after a reconnect that found no tools while sign-in is pending', () => {
+    const { tracker } = create();
+
+    expect(tracker.resolveReconnectTools('sheets', onUseConfig, {})).toEqual(declaredCatalog);
+  });
+
+  it('keeps the tools a reconnect found', () => {
+    const { tracker, pendingOAuthServers } = create();
+
+    expect(tracker.resolveReconnectTools('sheets', onUseConfig, declaredCatalog)).toBe(
+      declaredCatalog,
+    );
+    expect(pendingOAuthServers.has('sheets')).toBe(true);
+  });
+
+  it('does not defer a reconnect that failed without a pending sign-in', () => {
+    const { tracker, pendingOAuthServers } = create();
+    pendingOAuthServers.delete('sheets');
+
+    expect(tracker.resolveReconnectTools('sheets', onUseConfig, null)).toBeNull();
+    expect(tracker.hasSignInDecision('sheets')).toBe(false);
   });
 
   it('records a server deferred with its own catalog', () => {
-    const tracker = deferral();
+    const { tracker, pendingOAuthServers } = create();
+    pendingOAuthServers.delete('sheets');
 
     expect(tracker.defer('sheets', onUseConfig)).toBe(true);
-    expect(tracker.isDeferred('sheets')).toBe(true);
+    expect(tracker.hasSignInDecision('sheets')).toBe(true);
   });
 });

@@ -1172,6 +1172,9 @@ async function loadToolDefinitionsWrapper({
     toolOptions: agent.tool_options,
     deferredToolsEnabled,
     knownServerNames: [...(mcpServerNames ?? []), ...mcpRawServerNames],
+    pendingOAuthServers,
+    pendingOAuthStarts,
+    rememberAvailableTools: rememberMCPAvailableTools,
   });
   const getOrFetchMCPServerTools = async (userId, serverName) => {
     const addPendingOAuthServer = async () => {
@@ -1230,18 +1233,6 @@ async function loadToolDefinitionsWrapper({
       return mcpAvailableTools[serverName];
     }
 
-    /** Sign-in waits for the first tool call; a missing catalog keeps the turn-start prompt. */
-    const deferSignIn = () => {
-      const catalog = oauthDeferral.takeDeclaredCatalog(serverName, serverConfig);
-      if (!catalog) {
-        return null;
-      }
-      pendingOAuthServers.delete(serverName);
-      pendingOAuthStarts.delete(serverName);
-      rememberMCPAvailableTools(serverName, catalog);
-      return catalog;
-    };
-
     const cached = await getMCPServerTools(userId, serverName, serverConfig, capabilityProfile);
     if (cached) {
       rememberMCPAvailableTools(serverName, cached);
@@ -1252,7 +1243,7 @@ async function loadToolDefinitionsWrapper({
     }
 
     if (await addPendingOAuthServer()) {
-      return deferSignIn();
+      return oauthDeferral.deferSignIn(serverName, serverConfig);
     }
 
     const oauthStart = async (authURL, options) => {
@@ -1282,18 +1273,11 @@ async function loadToolDefinitionsWrapper({
     });
 
     rememberMCPAvailableTools(serverName, result?.availableTools);
-    const resolvedTools = result?.availableTools;
-    if (
-      (resolvedTools == null || Object.keys(resolvedTools).length === 0) &&
-      pendingOAuthServers.has(serverName)
-    ) {
-      return deferSignIn();
-    }
-    return result?.availableTools || null;
+    return oauthDeferral.resolveReconnectTools(serverName, serverConfig, result?.availableTools);
   };
 
   const refreshMCPServerTools = async (_userId, serverName) => {
-    if (pendingOAuthServers.has(serverName) || oauthDeferral.isDeferred(serverName)) {
+    if (oauthDeferral.hasSignInDecision(serverName)) {
       return null;
     }
 
@@ -1430,7 +1414,7 @@ async function loadToolDefinitionsWrapper({
   /** OAuth discovery must not reconnect (or prompt for) a server whose
    *  definitions the collision filter deliberately rejected. */
   for (const serverName of getMCPServerNamesFromTools(defsFilteredTools, mcpServerNames)) {
-    if (pendingOAuthServers.has(serverName) || oauthDeferral.isDeferred(serverName)) {
+    if (oauthDeferral.hasSignInDecision(serverName)) {
       continue;
     }
 
