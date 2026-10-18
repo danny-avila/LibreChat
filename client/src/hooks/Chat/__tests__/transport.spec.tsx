@@ -37,10 +37,10 @@ import useResumableSSE from '~/hooks/SSE/useResumableSSE';
 import useResumeOnLoad from '~/hooks/SSE/useResumeOnLoad';
 import useChatHelpers from '~/hooks/Chat/useChatHelpers';
 import { resumeRequestsAtom } from '~/hooks/Chat/resume';
+import { SteerHostTestProvider } from 'test/steerHost';
 import { useChat } from '~/hooks/Chat/facade';
 import useSSE from '~/hooks/SSE/useSSE';
 import store from '~/store';
-import '~/Providers/SteerHostContext';
 
 jest.mock('~/hooks/AuthContext', () => {
   const { createContext } = jest.requireActual('react');
@@ -110,9 +110,11 @@ function createWrapper(
               seed?.(state);
             }}
           >
-            <ChatTransportContext.Provider value={transport}>
-              {children}
-            </ChatTransportContext.Provider>
+            <SteerHostTestProvider>
+              <ChatTransportContext.Provider value={transport}>
+                {children}
+              </ChatTransportContext.Provider>
+            </SteerHostTestProvider>
           </RecoilRoot>
         </QueryClientProvider>
       </MemoryRouter>
