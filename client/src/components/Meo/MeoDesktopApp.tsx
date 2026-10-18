@@ -62,7 +62,7 @@ export default function MeoDesktopApp() {
   const navigate = useNavigate();
   const { user } = useMeoSession();
   const [mode, setMode] = useState<PrimaryMode>('chat');
-  const [sidebarHidden, setSidebarHidden] = useState(false);
+  const [sidebarHidden, setSidebarHidden] = useState(() => window.matchMedia('(max-width: 759px)').matches);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -83,7 +83,7 @@ export default function MeoDesktopApp() {
 
   const selectMode = (next: PrimaryMode) => {
     setSettingsOpen(false);
-    setSidebarHidden(false);
+    if (window.matchMedia('(max-width: 759px)').matches) setSidebarHidden(true);
     setMode(next);
     setInspectorOpen(false);
   };
@@ -99,7 +99,7 @@ export default function MeoDesktopApp() {
           </div>
         </div>
 
-        <button className="meo-desktop-nav meo-desktop-nav-primary" type="button" onClick={() => { setMode('chat'); setSettingsOpen(false); navigate('/new'); }}>
+        <button className="meo-desktop-nav meo-desktop-nav-primary" type="button" onClick={() => { setMode('chat'); setSettingsOpen(false); if (window.matchMedia('(max-width: 759px)').matches) setSidebarHidden(true); navigate('/new'); }}>
           <Icon name="add" /><span>New chat</span>
         </button>
 
@@ -132,7 +132,7 @@ export default function MeoDesktopApp() {
 
         <div className="meo-desktop-sidebar-spacer" />
 
-        <button className={`meo-desktop-nav ${settingsOpen ? 'is-active' : ''}`} type="button" onClick={() => { setSettingsOpen(true); setSidebarHidden(false); setInspectorOpen(false); }}>
+        <button className={`meo-desktop-nav ${settingsOpen ? 'is-active' : ''}`} type="button" onClick={() => { setSettingsOpen(true); if (window.matchMedia('(max-width: 759px)').matches) setSidebarHidden(true); setInspectorOpen(false); }}>
           <Icon name="settings" /><span>AI settings</span>
         </button>
 
