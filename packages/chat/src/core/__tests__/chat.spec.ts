@@ -3312,6 +3312,28 @@ describe('Chat', () => {
       await expect(sent).resolves.toBeUndefined();
     });
 
+    it('ignores a late status read restoring a streamed pause of a stopped dropped generation', async () => {
+      const { chat, stream, transport } = setup({
+        resumeSelection: () => ({ endpoint: 'agents' }),
+      });
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push({ type: 'pending_action', data: pausedAction });
+      stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+      await sent;
+      await expect(chat.stop()).resolves.toEqual({ status: 'stopped' });
+
+      chat.restorePendingAction(pausedAction, 100);
+
+      expect(chat.pendingAction).toBeUndefined();
+      const next = createStream({ streamId: 'convo-1', generationCreatedAt: 200 });
+      transport.sendMessages.mockResolvedValueOnce({ status: 'stream', stream: next });
+      const again = chat.sendMessage({ parts: [{ type: 'text', text: 'Next' }] });
+      await flush();
+      next.push(finalEvent());
+      await expect(again).resolves.toBeUndefined();
+    });
+
     it('sends one stop for a generation stopped again once a reattachment took it over', async () => {
       const { chat, stream, transport } = setup({
         resumeSelection: () => ({ endpoint: 'agents' }),

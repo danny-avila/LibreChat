@@ -471,6 +471,8 @@ export class Chat {
   private disposed = false;
   /** A generation whose stream dropped while the server kept it running. */
   private detached?: DetachedGeneration;
+  /** The timestamp of the last generation a stop ended, whose later pauses are stale. */
+  private stoppedGeneration?: number;
   /** The generation a restored pause belongs to, which a reattachment to it continues. */
   private restored?: { createdAt: number; generation: Generation };
   /** A start that reached the transport and lost its response, with nothing to address it by. */
@@ -699,6 +701,7 @@ export class Chat {
     }
     const answer = this.abortOnServer(target).then((result) => {
       generation.stopped = true;
+      this.stoppedGeneration = target.generationCreatedAt ?? this.stoppedGeneration;
       if (isStreamAbort(result)) {
         generation.stoppedConversationId = result.aborted;
       }
@@ -965,7 +968,7 @@ export class Chat {
       /** A status read before the answer landed reports a pause this chat already resumed. */
       return;
     }
-    if (this.restored?.createdAt === generationCreatedAt && this.restored.generation.stopped) {
+    if (generationCreatedAt === this.stoppedGeneration) {
       /** A status read before the stop landed reports a pause of a generation it ended. */
       return;
     }
