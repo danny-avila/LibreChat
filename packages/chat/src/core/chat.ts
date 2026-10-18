@@ -965,6 +965,10 @@ export class Chat {
       /** A status read before the answer landed reports a pause this chat already resumed. */
       return;
     }
+    if (this.restored?.createdAt === generationCreatedAt && this.restored.generation.stopped) {
+      /** A status read before the stop landed reports a pause of a generation it ended. */
+      return;
+    }
     if (action.expiresAt != null && action.expiresAt <= Date.now()) {
       /**
        * An expired pause is stale: the server will refuse its resume. It also supersedes a pause

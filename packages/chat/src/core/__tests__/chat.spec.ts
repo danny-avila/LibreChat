@@ -3298,6 +3298,20 @@ describe('Chat', () => {
       );
     });
 
+    it('ignores a late status read restoring a pause whose generation was stopped', async () => {
+      const { chat, stream } = setup({ resumeSelection: () => ({ endpoint: 'agents' }) });
+      chat.restorePendingAction(pausedAction, 500);
+      await expect(chat.stop()).resolves.toEqual({ status: 'stopped' });
+
+      chat.restorePendingAction(pausedAction, 500);
+
+      expect(chat.pendingAction).toBeUndefined();
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Next' }] });
+      await flush();
+      stream.push(finalEvent());
+      await expect(sent).resolves.toBeUndefined();
+    });
+
     it('sends one stop for a generation stopped again once a reattachment took it over', async () => {
       const { chat, stream, transport } = setup({
         resumeSelection: () => ({ endpoint: 'agents' }),
