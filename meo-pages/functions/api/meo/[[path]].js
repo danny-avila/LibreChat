@@ -49,9 +49,21 @@ function targetFor(request, env, relativePath) {
 
   if (
     relativePath === '/conversations' ||
-    /^\/conversations\/[^/]+\/messages$/.test(relativePath)
+    /^\/conversations\/[^/]+\/messages$/.test(relativePath) ||
+    // Reuse the existing account-scoped Project API rather than inventing
+    // a separate Web-only store. The API owns project membership checks.
+    ((relativePath === '/projects' ||
+      /^\/projects\/[0-9a-f-]{36}(?:\/memories)?$/i.test(relativePath)) &&
+      ['GET', 'POST', 'PATCH'].includes(method)) ||
+    relativePath === '/settings' ||
+    relativePath === '/memories' ||
+    /^\/memories\/[0-9a-f-]{36}$/i.test(relativePath)
   ) {
-    const target = new URL(`${apiUrl(env)}/v1${relativePath}`);
+    // Account-owned settings and memory use the AI API namespace.
+    const upstreamPath = relativePath === '/settings' || relativePath.startsWith('/memories')
+      ? `/v1/ai${relativePath}`
+      : `/v1${relativePath}`;
+    const target = new URL(`${apiUrl(env)}${upstreamPath}`);
     target.search = new URL(request.url).search;
     return { url: target.toString(), method, body: null };
   }

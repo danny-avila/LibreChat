@@ -246,8 +246,23 @@
 @media (max-width: 759px) {
   .meo-desktop-workspace { display: block; padding: 8px; }
   .meo-desktop-sidebar { display: none; }
+  .meo-desktop-sidebar:not(.is-hidden) {
+    position: fixed;
+    z-index: 50;
+    left: 8px;
+    top: 8px;
+    bottom: 8px;
+    width: min(300px, calc(100vw - 16px));
+    display: flex;
+    opacity: 1;
+    pointer-events: auto;
+    overflow-y: auto;
+    box-shadow: 0 14px 50px rgba(0,0,0,.2);
+    background: rgb(var(--surface-secondary));
+  }
+  .meo-desktop-sidebar.is-hidden { display: none; }
   .meo-desktop-main-pane { height: calc(100dvh - 16px); border-radius: 22px; }
   .meo-desktop-header { grid-template-columns: 32px minmax(0,1fr) 36px; min-height: 68px; padding: 0 18px; }
-  .meo-desktop-sidebar-toggle { visibility: hidden; }
+  .meo-desktop-sidebar-toggle { visibility: visible; }
   .meo-desktop-inspector { top: 8px; right: 8px; bottom: 8px; width: min(440px, calc(100vw - 16px)); border-radius: 22px; }
 }

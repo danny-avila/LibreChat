@@ -224,6 +224,118 @@ test('Meo shared Chat rejects cross-origin writes before forwarding', async (t) 
   assert.equal(response.status, 403);
 });
 
+test('Meo chat forwards conversation identity and consent to shared Meo API', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const upstream = [];
+  globalThis.fetch = async (input, init) => {
+    upstream.push({ url: String(input), method: init.method, body: JSON.parse(new TextDecoder().decode(init.body)) });
+    return Response.json({ consent: { requestId: 'request-1' } });
+  };
+  const conversationId = '00000000-0000-4000-8000-000000000099';
+  const requestBody = { credentialId: 'credential-1', model: 'model-1', prompt: 'hello', conversationId };
+  const prep = await meoOnRequest({
+    request: await request('/api/meo/chat/prepare', { method: 'POST', body: JSON.stringify(requestBody) }), env,
+  });
+  assert.equal(prep.status, 200);
+  const consent = { requestId: 'request-1', payloadSha256: 'hash', confirmationVersion: 1 };
+  const stream = await meoOnRequest({
+    request: await request('/api/meo/chat/stream', {
+      method: 'POST', body: JSON.stringify({ ...requestBody, consent }),
+    }), env,
+  });
+  assert.equal(stream.status, 200);
+  assert.deepEqual(upstream, [
+    { url: 'https://api.meoarch.org/v1/chat/prepare', method: 'POST', body: requestBody },
+    { url: 'https://api.meoarch.org/v1/chat/stream', method: 'POST', body: { ...requestBody, consent } },
+  ]);
+});
+
+test('Meo settings and memories use the owner-authenticated shared API', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const upstream = [];
+  globalThis.fetch = async (input, init) => {
+    upstream.push({ url: String(input), method: init.method, authorization: init.headers.get('Authorization') });
+    return Response.json({ ok: true });
+  };
+  const id = '00000000-0000-4000-8000-000000000021';
+  for (const [path, method, body] of [
+    ['/api/meo/settings', 'GET', undefined],
+    ['/api/meo/settings', 'PATCH', JSON.stringify({ expectedVersion: 0, memoryEnabled: false })],
+    ['/api/meo/memories?archived=true', 'GET', undefined],
+    ['/api/meo/memories', 'POST', JSON.stringify({ kind: 'preference', content: 'Test' })],
+    [`/api/meo/memories/${id}`, 'PATCH', JSON.stringify({ expectedVersion: 1, enabled: false })],
+    [`/api/meo/memories/${id}`, 'DELETE', undefined],
+  ]) {
+    const response = await meoOnRequest({ request: await request(path, { method, body }), env });
+    assert.equal(response.status, 200);
+  }
+  assert.deepEqual(upstream.map((v) => [new URL(v.url).pathname, v.method]), [
+    ['/v1/ai/settings', 'GET'],
+    ['/v1/ai/settings', 'PATCH'],
+    ['/v1/ai/memories', 'GET'],
+    ['/v1/ai/memories', 'POST'],
+    [`/v1/ai/memories/${id}`, 'PATCH'],
+    [`/v1/ai/memories/${id}`, 'DELETE'],
+  ]);
+  assert.equal(new URL(upstream[2].url).searchParams.get('archived'), 'true');
+  assert.ok(upstream.every((v) => v.authorization === 'Bearer test-access'));
+});
+
+test('Meo Projects routes use the shared owner-scoped API', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const upstream = [];
+  globalThis.fetch = async (input, init) => {
+    upstream.push({
+      url: String(input),
+      method: init.method,
+      authorization: init.headers.get('Authorization'),
+      body: init.body instanceof ArrayBuffer
+        ? new TextDecoder().decode(init.body)
+        : typeof init.body === 'string' ? init.body : '',
+    });
+    return Response.json({ ok: true });
+  };
+  const id = '00000000-0000-4000-8000-000000000044';
+  const cases = [
+    ['/api/meo/projects?cursor=page2', 'GET', undefined],
+    ['/api/meo/projects', 'POST', { name: 'Project A' }],
+    [`/api/meo/projects/${id}`, 'GET', undefined],
+    [`/api/meo/projects/${id}`, 'PATCH', { instructions: 'Be concise' }],
+    [`/api/meo/projects/${id}/memories`, 'GET', undefined],
+    [`/api/meo/projects/${id}/memories`, 'POST', { content: 'Project note' }],
+  ];
+  for (const [path, method, payload] of cases) {
+    const response = await meoOnRequest({
+      request: await request(path, {
+        method,
+        ...(payload ? { body: JSON.stringify(payload) } : {}),
+      }),
+      env,
+    });
+    assert.equal(response.status, 200, `${method} ${path}`);
+  }
+  assert.deepEqual(upstream.map(({ url, method }) => [new URL(url).pathname, method]), [
+    ['/v1/projects', 'GET'], ['/v1/projects', 'POST'],
+    [`/v1/projects/${id}`, 'GET'], [`/v1/projects/${id}`, 'PATCH'],
+    [`/v1/projects/${id}/memories`, 'GET'],
+    [`/v1/projects/${id}/memories`, 'POST'],
+  ]);
+  assert.equal(new URL(upstream[0].url).searchParams.get('cursor'), 'page2');
+  assert.deepEqual(JSON.parse(upstream[1].body), { name: 'Project A' });
+  assert.ok(upstream.every((item) => item.authorization === 'Bearer test-access'));
+
+  const before = upstream.length;
+  const invalid = await meoOnRequest({
+    request: await request('/api/meo/projects/../account', { method: 'PATCH', body: '{}' }),
+    env,
+  });
+  assert.equal(invalid.status, 404);
+  assert.equal(upstream.length, before);
+});
+
 for (const code of [
   'email_verification_required',
   'account_activation_required',

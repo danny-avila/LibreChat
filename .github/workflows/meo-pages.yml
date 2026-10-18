@@ -3,9 +3,9 @@ name: Meo Pages
 on:
   push:
     branches: [main]
-    paths: ['meo-pages/**', '.github/workflows/meo-pages.yml']
+    paths: ['meo-pages/**', 'client/src/components/Meo/**', '.github/workflows/meo-pages.yml']
   pull_request:
-    paths: ['meo-pages/**', '.github/workflows/meo-pages.yml']
+    paths: ['meo-pages/**', 'client/src/components/Meo/**', '.github/workflows/meo-pages.yml']
   workflow_dispatch:
 
 jobs:
@@ -19,5 +19,13 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - uses: actions/checkout@v4
+        with:
+          repository: QwQdoge/meo-ai
+          ref: main
+          path: canonical-meo-ai
+          persist-credentials: false
+      - name: Check shared UI navigation schema parity
+        run: node ../canonical-meo-ai/meo/ui-schema/generate.mjs --check --web-output ../client/src/components/Meo/uiNavigation.generated.ts
       - run: npm test
       - run: npm run build

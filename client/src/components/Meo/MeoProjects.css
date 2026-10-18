@@ -1,0 +1,37 @@
+.meo-projects { height: 100%; overflow: auto; background: rgb(var(--surface-primary)); color: rgb(var(--text-primary)); }
+.meo-projects-content { width: min(1100px,100%); margin: 0 auto; padding: 24px 28px 64px; }
+.meo-projects-header { display:flex; justify-content:space-between; align-items:center; gap:16px; margin-bottom:26px; }
+.meo-projects h1 { font-size:26px; font-weight:650; margin:0 0 6px; }
+.meo-projects h2 { font-size:20px; margin:0 0 20px; }
+.meo-projects h3 { font-size:17px; margin:0 0 4px; }
+.meo-projects p { line-height:1.55; overflow-wrap:anywhere; }
+.meo-projects-header p,.meo-projects-hint { font-size:13px; color:rgb(var(--text-secondary)); }
+.meo-projects button { min-height:36px; border:1px solid rgb(var(--border-light)); border-radius:12px; padding:8px 13px; color:rgb(var(--text-primary)); background:rgb(var(--surface-secondary)); cursor:pointer; }
+.meo-projects button:disabled { cursor:not-allowed; opacity:.45; }
+.meo-projects button.primary { background:rgb(var(--accent-primary)); color:rgb(var(--surface-primary)); font-weight:600; border-color:transparent; }
+.meo-projects-layout { display:grid; grid-template-columns:minmax(180px,240px) minmax(0,1fr); gap:24px; }
+.meo-projects-list { display:flex; flex-direction:column; gap:5px; }
+.meo-projects-list > p { font-size:13px; color:rgb(var(--text-secondary)); }
+.meo-projects-list button { border:0; text-align:left; background:transparent; display:flex; flex-direction:column; gap:4px; width:100%; }
+.meo-projects-list button.is-active { background:rgb(var(--surface-secondary)); }
+.meo-projects-list button strong { font-size:14px; font-weight:600; overflow-wrap:anywhere; }
+.meo-projects-list button span { font-size:12px; color:rgb(var(--text-secondary)); line-height:1.3; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
+.meo-projects-editor { min-width:0; padding:22px; border:1px solid rgb(var(--border-light)); border-radius:20px; }
+.meo-projects-editor form { display:flex; flex-direction:column; gap:10px; }
+.meo-projects-editor label { font-size:13px; font-weight:600; margin-top:6px; }
+.meo-projects-editor input,.meo-projects-editor textarea { box-sizing:border-box; width:100%; border:1px solid rgb(var(--border-light)); background:rgb(var(--surface-secondary)); color:rgb(var(--text-primary)); font:inherit; font-size:14px; border-radius:12px; padding:12px; resize:vertical; }
+.meo-projects-actions { display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end; margin-top:7px; }
+.meo-projects-memory { margin-top:34px; border-top:1px solid rgb(var(--border-light)); padding-top:24px; }
+.meo-projects-memory ul { list-style:none; padding:0; display:grid; gap:10px; }
+.meo-projects-memory li { border:1px solid rgb(var(--border-light)); padding:12px 14px; border-radius:12px; }
+.meo-projects-memory li small { color:rgb(var(--text-secondary)); }
+.meo-projects-memory li p { white-space:pre-wrap; margin:8px 0 0; font-size:14px; }
+.meo-projects-alert,.meo-projects-notice { font-size:13px; background:rgb(var(--surface-secondary)); border-radius:12px; padding:12px 14px; }
+.meo-projects-alert { border:1px solid rgb(var(--border-light)); }
+@media(max-width:759px) {
+  .meo-projects-content { padding:18px 14px 50px; }
+  .meo-projects-layout { grid-template-columns:1fr; gap:14px; }
+  .meo-projects-list { flex-direction:row; overflow-x:auto; }
+  .meo-projects-list button { min-width:130px; max-width:200px; }
+  .meo-projects-editor { padding:16px; }
+}
