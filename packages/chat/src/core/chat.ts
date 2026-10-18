@@ -465,6 +465,8 @@ export class Chat {
   private disposed = false;
   /** A generation whose stream dropped while the server kept it running. */
   private detached?: DetachedGeneration;
+  /** The generation a restored pause belongs to, which a reattachment to it continues. */
+  private restored?: { createdAt: number; generation: Generation };
   /** A start that reached the transport and lost its response, with nothing to address it by. */
   private unaddressed = false;
   private readonly decisions = new Map<string, Agents.ToolApprovalResolution>();
@@ -553,11 +555,20 @@ export class Chat {
       options.generationCreatedAt === dropped?.target.generationCreatedAt
         ? dropped
         : undefined;
-    const active = createActiveRequest(continued?.generation);
+    /** Reattaching to a restored pause's generation continues its record the same way. */
+    const paused =
+      !continued &&
+      this.action &&
+      (options.generationCreatedAt == null ||
+        options.generationCreatedAt === this.restored?.createdAt)
+        ? this.restored
+        : undefined;
+    this.restored = undefined;
+    const active = createActiveRequest(continued?.generation ?? paused?.generation);
     const { generation } = active;
     generation.endpoint = this.resumeEndpoint() ?? dropped?.target.endpoint;
     generation.conversationId = options.conversationId ?? generation.conversationId;
-    active.inheritedGeneration = continued?.target.generationCreatedAt;
+    active.inheritedGeneration = continued?.target.generationCreatedAt ?? paused?.createdAt;
     active.reattach = { streamId: options.streamId };
     this.active = active;
     if (
@@ -867,11 +878,17 @@ export class Chat {
     if (!endpoint) {
       throw new Error('The paused generation cannot be stopped without its endpoint');
     }
-    const result = await this.abortOnServer({
+    const generation = this.restored?.generation ?? {};
+    const result = await this.stopGeneration(generation, {
       endpoint,
       streamId: action.streamId,
       generationCreatedAt: this.generationCreatedAt,
     });
+    const active = this.active;
+    if (!this.disposed && active?.generation === generation) {
+      /** A reattachment took the generation over while the stop was in flight; it ends with it. */
+      return this.endStopped(active, result);
+    }
     if (this.disposed || this.action?.actionId !== action.actionId) {
       return getStopResult(result);
     }
@@ -953,6 +970,12 @@ export class Chat {
     }
     this.action = action;
     this.generationCreatedAt = generationCreatedAt;
+    if (this.restored?.createdAt !== generationCreatedAt) {
+      this.restored = {
+        createdAt: generationCreatedAt,
+        generation: { conversationId: action.conversationId, paused: action.actionId },
+      };
+    }
     this.notify();
   }
 

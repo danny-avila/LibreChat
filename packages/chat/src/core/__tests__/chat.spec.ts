@@ -3107,6 +3107,67 @@ describe('Chat', () => {
       );
     });
 
+    it('ends a reattachment of a restored pause by the stop answered after it', async () => {
+      const { chat, transport, onFinish } = setup({
+        resumeSelection: () => ({ endpoint: 'agents' }),
+      });
+      chat.restorePendingAction(pausedAction, 500);
+      let answer: (result: ChatAbortResult) => void = () => undefined;
+      transport.abort.mockImplementationOnce(
+        () =>
+          new Promise<ChatAbortResult>((resolve) => {
+            answer = resolve;
+          }),
+      );
+      const stopped = chat.stop();
+      await flush();
+      const reattached = createStream({ streamId: 'convo-1', generationCreatedAt: 500 });
+      transport.reconnectToStream.mockResolvedValueOnce(reattached);
+      const resumed = chat.resumeStream({ streamId: 'convo-1', generationCreatedAt: 500 });
+      await flush();
+      expect(chat.connection).toBe('live');
+
+      answer({ success: true });
+      await flush();
+      reattached.close();
+      await resumed;
+
+      await expect(stopped).resolves.toEqual({ status: 'stopped' });
+      expect(transport.abort).toHaveBeenCalledTimes(1);
+      expect(chat.status).toBe('ready');
+      expect(chat.pendingAction).toBeUndefined();
+      expect(onFinish).toHaveBeenLastCalledWith(
+        expect.objectContaining({ isAbort: true, isDisconnect: false }),
+      );
+    });
+
+    it('does not end another generation a restored pause reattachment found by its stop', async () => {
+      const { chat, transport, onFinish } = setup({
+        resumeSelection: () => ({ endpoint: 'agents' }),
+      });
+      chat.restorePendingAction(pausedAction, 500);
+      let answer: (result: ChatAbortResult) => void = () => undefined;
+      transport.abort.mockImplementationOnce(
+        () =>
+          new Promise<ChatAbortResult>((resolve) => {
+            answer = resolve;
+          }),
+      );
+      const stopped = chat.stop();
+      await flush();
+      const newer = createStream({ streamId: 'convo-1', generationCreatedAt: 700 });
+      transport.reconnectToStream.mockResolvedValueOnce(newer);
+      const resumed = chat.resumeStream({ streamId: 'convo-1' });
+      await flush();
+
+      answer({ success: true });
+      await stopped;
+      newer.close();
+      await resumed;
+
+      expect(onFinish).toHaveBeenLastCalledWith(expect.objectContaining({ isDisconnect: true }));
+    });
+
     it('sends one stop for a generation stopped again once a reattachment took it over', async () => {
       const { chat, stream, transport } = setup({
         resumeSelection: () => ({ endpoint: 'agents' }),
