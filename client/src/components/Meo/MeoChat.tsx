@@ -326,13 +326,15 @@ export default function MeoChat() {
     setError('');
     setBusy(true);
     const nextMessages: Message[] = [...messages, { role: 'user', content: prompt }];
+    const contextConversationId = activeConversationId || null;
     try {
-      const prepared = await json<{ consent: MeoConsent }>('/api/chat/prepare', {
+      const prepared = await json<{ consent: MeoConsent }>('/api/meo/chat/prepare', {
         method: 'POST',
         body: JSON.stringify({
           credentialId,
           model: model.trim(),
-          messages: nextMessages,
+          conversationId: contextConversationId,
+          prompt,
         }),
       });
       const consent = prepared.consent;
@@ -341,14 +343,15 @@ export default function MeoChat() {
 
       const abortController = new AbortController();
       streamAbortRef.current = abortController;
-      const response = await fetch('/api/chat/stream', {
+      const response = await fetch('/api/meo/chat/stream', {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
         body: JSON.stringify({
           credentialId,
           model: model.trim(),
-          messages: nextMessages,
+          conversationId: contextConversationId,
+          prompt,
           consent,
         }),
         signal: abortController.signal,
