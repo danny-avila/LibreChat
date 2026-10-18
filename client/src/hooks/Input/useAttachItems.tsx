@@ -211,24 +211,6 @@ export default function useAttachItems({
 
     const build = (onAction: (fileType?: FileUploadType) => void, prefix: string) => {
       const items: AttachEntry[] = [];
-      /* Assistants own their own file handling: whatever the assistant is
-         configured to accept goes up unfiltered, and none of the tool
-         destinations below apply. Scoping this to the image capability, as the
-         provider check would, silently dropped PDF support. */
-      if (isAssistantsEndpoint(endpoint)) {
-        items.push({
-          id: `${prefix}:assistants`,
-          label: localize('com_sidepanel_attach_files'),
-          primary: true,
-          icon: <FileImageIcon className="icon-md" aria-hidden="true" />,
-          onSelect: () => {
-            setToolResource(undefined);
-            onAction();
-          },
-        });
-        return items;
-      }
-
       /* Keep implicit attachment as the default; tool destinations below are
          deliberate opt-ins, not a reason to embed every upload. */
       if (isUnifiedMode) {
@@ -254,7 +236,28 @@ export default function useAttachItems({
             }
           },
         });
+        if (isAssistantsEndpoint(endpoint)) {
+          return items;
+        }
       } else {
+        /* Assistants own their own file handling: whatever the assistant is
+           configured to accept goes up unfiltered, and none of the tool
+           destinations below apply. Scoping this to the image capability, as the
+           provider check would, silently dropped PDF support. */
+        if (isAssistantsEndpoint(endpoint)) {
+          items.push({
+            id: `${prefix}:assistants`,
+            label: localize('com_sidepanel_attach_files'),
+            primary: true,
+            icon: <FileImageIcon className="icon-md" aria-hidden="true" />,
+            onSelect: () => {
+              setToolResource(undefined);
+              onAction();
+            },
+          });
+          return items;
+        }
+
         let currentProvider = provider || endpoint;
 
         // This will be removed in a future PR to formally normalize Providers comparisons to be case insensitive

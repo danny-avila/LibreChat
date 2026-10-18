@@ -256,11 +256,16 @@ describe('useAttachItems', () => {
     });
 
     it.each([EModelEndpoint.assistants, EModelEndpoint.azureAssistants])(
-      'keeps %s on its own upload path',
+      'keeps unified %s uploads on their existing source rows',
       (endpoint) => {
-        expect(renderEntries({ ...allCapabilities, isUnifiedMode: true, endpoint })).toEqual([
-          'local:assistants',
-        ]);
+        expect(
+          renderEntries({
+            ...allCapabilities,
+            isUnifiedMode: true,
+            sharePointEnabled: true,
+            endpoint,
+          }),
+        ).toEqual(['local:unified', 'sharepoint:unified']);
       },
     );
 
