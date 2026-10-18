@@ -49,10 +49,14 @@ export function shouldDeferMCPOAuthSignIn({
 
 export interface MCPOAuthDeferral {
   /**
-   * Defers the server's sign-in when it qualifies; for a caller that already holds the
-   * user's own catalog, so only the turn-start prompt is skipped.
+   * For a caller that already holds the user's own catalog: queues the turn-start sign-in
+   * through `prompt` unless the server defers it.
    */
-  defer: (serverName: string, serverConfig: ParsedServerConfig) => boolean;
+  promptUnlessDeferred: (
+    serverName: string,
+    serverConfig: ParsedServerConfig,
+    prompt: () => Promise<unknown>,
+  ) => Promise<void>;
   /**
    * Defers a qualifying server that is waiting on sign-in, offering the tool catalog its
    * operator declared and withdrawing the turn-start prompt. Null keeps that prompt.
@@ -118,13 +122,18 @@ export function createMCPOAuthDeferral({
     rememberAvailableTools(serverName, catalog);
     return catalog;
   };
+  const defer = (serverName: string, serverConfig: ParsedServerConfig): boolean => {
+    if (!qualifies(serverName, serverConfig)) {
+      return false;
+    }
+    deferred.add(serverName);
+    return true;
+  };
   return {
-    defer: (serverName, serverConfig) => {
-      if (!qualifies(serverName, serverConfig)) {
-        return false;
+    promptUnlessDeferred: async (serverName, serverConfig, prompt) => {
+      if (!defer(serverName, serverConfig)) {
+        await prompt();
       }
-      deferred.add(serverName);
-      return true;
     },
     deferSignIn,
     resolveReconnectTools: (serverName, serverConfig, availableTools) => {

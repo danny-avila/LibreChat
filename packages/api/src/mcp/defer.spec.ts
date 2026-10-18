@@ -114,7 +114,6 @@ describe('createMCPOAuthDeferral', () => {
     const onStart = { ...onUseConfig, oauthPrompt: 'on_start' as const };
 
     expect(tracker.deferSignIn('sheets', onStart)).toBeNull();
-    expect(tracker.defer('sheets', onStart)).toBe(false);
     expect(pendingOAuthServers.has('sheets')).toBe(true);
     expect(rememberAvailableTools).not.toHaveBeenCalled();
   });
@@ -142,11 +141,26 @@ describe('createMCPOAuthDeferral', () => {
     expect(tracker.hasSignInDecision('sheets')).toBe(false);
   });
 
-  it('records a server deferred with its own catalog', () => {
+  it('queues the turn-start prompt only for a server that does not defer', async () => {
+    const { tracker } = create();
+    const prompt = jest.fn().mockResolvedValue(true);
+
+    await tracker.promptUnlessDeferred('sheets', onUseConfig, prompt);
+    expect(prompt).not.toHaveBeenCalled();
+
+    await tracker.promptUnlessDeferred(
+      'sheets',
+      { ...onUseConfig, oauthPrompt: 'on_start' },
+      prompt,
+    );
+    expect(prompt).toHaveBeenCalledTimes(1);
+  });
+
+  it('records a server deferred with its own catalog', async () => {
     const { tracker, pendingOAuthServers } = create();
     pendingOAuthServers.delete('sheets');
 
-    expect(tracker.defer('sheets', onUseConfig)).toBe(true);
+    await tracker.promptUnlessDeferred('sheets', onUseConfig, jest.fn());
     expect(tracker.hasSignInDecision('sheets')).toBe(true);
   });
 });
