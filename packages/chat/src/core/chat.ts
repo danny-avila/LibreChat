@@ -571,18 +571,21 @@ export class Chat {
     active.inheritedGeneration = continued?.target.generationCreatedAt ?? paused?.createdAt;
     active.reattach = { streamId: options.streamId };
     this.active = active;
-    if (
+    const superseded =
       this.action &&
       options.generationCreatedAt != null &&
       this.generationCreatedAt != null &&
-      options.generationCreatedAt !== this.generationCreatedAt
-    ) {
+      options.generationCreatedAt !== this.generationCreatedAt;
+    /**
+     * Only a restored pause vouches for the timestamp of the generation it belongs to. Stored
+     * before clearing a superseded pause notifies, so a stop made then addresses this generation.
+     */
+    this.generationCreatedAt =
+      options.generationCreatedAt ?? (this.action ? this.generationCreatedAt : undefined);
+    if (superseded) {
       /** A restored pause belongs to the generation it was restored with, not this one. */
       this.clearAction();
     }
-    /** Only a restored pause vouches for the timestamp of the generation it belongs to. */
-    this.generationCreatedAt =
-      options.generationCreatedAt ?? (this.action ? this.generationCreatedAt : undefined);
     /** A restored pause names a running generation, so finding nothing means it ended elsewhere. */
     const restored = this.action !== undefined;
     this.setConnection('reconnecting');

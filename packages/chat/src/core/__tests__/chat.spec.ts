@@ -3168,6 +3168,27 @@ describe('Chat', () => {
       expect(onFinish).toHaveBeenLastCalledWith(expect.objectContaining({ isDisconnect: true }));
     });
 
+    it('addresses a stop made as a newer reattachment clears a restored pause to that one', async () => {
+      const { chat, transport } = setup({
+        resumeSelection: () => ({ endpoint: 'agents' }),
+      });
+      transport.reconnectToStream.mockImplementationOnce(() => new Promise(() => undefined));
+      chat.restorePendingAction(pausedAction, 100);
+      const stops: Promise<unknown>[] = [];
+      chat.subscribe(() => {
+        if (!chat.pendingAction && stops.length === 0) {
+          stops.push(chat.stop().catch(() => undefined));
+        }
+      });
+
+      void chat.resumeStream({ streamId: 'convo-1', generationCreatedAt: 200 });
+      await Promise.all(stops);
+
+      expect(transport.abort).toHaveBeenCalledWith(
+        expect.objectContaining({ generationCreatedAt: 200 }),
+      );
+    });
+
     it('sends one stop for a generation stopped again once a reattachment took it over', async () => {
       const { chat, stream, transport } = setup({
         resumeSelection: () => ({ endpoint: 'agents' }),
