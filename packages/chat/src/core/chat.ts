@@ -1091,7 +1091,6 @@ export class Chat {
     this.active = active;
     this.unaddressed = false;
     this.generationCreatedAt = undefined;
-    this.detached = undefined;
     this.resumed.clear();
     this.init.state.error = undefined;
     this.setStatus('submitted');
@@ -1135,6 +1134,11 @@ export class Chat {
         this.dropLateStart(active, result);
         throw signal.reason;
       }
+      /**
+       * The server took the start, so it owns or superseded a generation whose stream dropped.
+       * Until then that generation stays the stop target, in case the start fails.
+       */
+      this.detached = undefined;
       let stream: ChatStream | null = null;
       if (result.status === 'stream') {
         stream = result.stream;

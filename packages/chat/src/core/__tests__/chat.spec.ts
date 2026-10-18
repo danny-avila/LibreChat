@@ -3213,6 +3213,40 @@ describe('Chat', () => {
       );
     });
 
+    it.each([
+      ['its preparation fails', 'prepare'],
+      ['the server refuses its start', 'start'],
+    ])('still stops a dropped generation after a retry where %s', async (_label, failure) => {
+      const prepareRequest = jest.fn(() => ({ payload, messages: [userMessage, placeholder] }));
+      const { chat, stream, transport } = setup({
+        prepareRequest,
+        resumeSelection: () => ({ endpoint: 'agents' }),
+      });
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+      await sent;
+
+      if (failure === 'prepare') {
+        prepareRequest.mockImplementationOnce(() => {
+          throw new Error('Preparation failed');
+        });
+      } else {
+        transport.sendMessages.mockRejectedValueOnce(new Error('A run is already in progress'));
+      }
+      await chat.sendMessage({ parts: [{ type: 'text', text: 'Again' }] });
+      expect(chat.status).toBe('error');
+
+      await expect(chat.stop()).resolves.toEqual({ status: 'stopped' });
+      expect(transport.abort).toHaveBeenCalledWith(
+        expect.objectContaining({
+          endpoint: 'agents',
+          streamId: 'convo-1',
+          generationCreatedAt: 100,
+        }),
+      );
+    });
+
     it('sends one stop for a generation stopped again once a reattachment took it over', async () => {
       const { chat, stream, transport } = setup({
         resumeSelection: () => ({ endpoint: 'agents' }),
