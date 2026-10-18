@@ -111,6 +111,7 @@
     "test:packages:chat": "npm run build:data-provider && cd packages/chat && npm run test:ci",
     "test:config": "jest --config config/jest.config.js",
     "test:mutation": "stryker run",
+    "test:mutation:api": "stryker run stryker.api.config.mjs",
     "test:all": "npm run test:client && npm run test:api && npm run test:packages:api && npm run test:packages:data-provider && npm run test:packages:data-schemas && npm run test:packages:chat",
     "test:turbo": "turbo run test:ci --concurrency=2 --filter=@librechat/frontend --filter=@librechat/client --filter=@librechat/backend --filter=@librechat/api --filter=librechat-data-provider --filter=@librechat/data-schemas --filter=@librechat/chat",
     "e2e:update": "npm run e2e:prepare && playwright test --config=e2e/playwright.config.local.ts --update-snapshots",

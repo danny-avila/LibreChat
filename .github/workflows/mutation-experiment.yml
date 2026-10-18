@@ -1,0 +1,102 @@
+name: API Mutation Experiment
+
+on:
+  push:
+    branches: [experiment/stryker-mutation-testing]
+    paths:
+      - 'stryker*.config.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'packages/api/**'
+      - 'packages/data-provider/**'
+      - 'packages/data-schemas/**'
+      - '.github/stryker-report.crt'
+      - '.github/workflows/mutation-experiment.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mutation-experiment-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      SCARF_ANALYTICS: 'false'
+      NODE_ENV: test
+      NODE_OPTIONS: '--max-old-space-size=4096'
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Use the backend CI Node version
+        uses: actions/setup-node@v5
+        with:
+          node-version: '24.16.0'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build dependencies and API fixtures
+        run: |
+          npm run build:data-provider
+          npm run build:data-schemas
+          npm run build:api
+
+      - name: Cache MongoDB test binaries
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/mongodb-binaries
+          key: mongodb-binaries-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            mongodb-binaries-${{ runner.os }}-
+
+      - name: Prepare MongoDB before timed tests
+        run: node --input-type=module -e "import setup from './packages/data-schemas/jest.globalSetup.mjs'; await setup();"
+
+      - name: Run all API mutations for up to 45 minutes
+        shell: bash
+        run: |
+          mkdir -p reports/mutation/api
+          printf '%s\n' "$GITHUB_SHA" > reports/mutation/api/commit.txt
+          set +e
+          timeout --foreground --signal=INT --kill-after=60s 45m \
+            node node_modules/@stryker-mutator/core/bin/stryker.js run \
+            stryker.api.config.mjs --concurrency 1 \
+            > reports/mutation/api/run.log 2>&1
+          result=$?
+          printf '%s\n' "$result" > reports/mutation/api/exit-code.txt
+          if [ "$result" -eq 124 ] || [ "$result" -eq 137 ]; then
+            echo 'Time limit reached. Any saved results are partial, not a complete API score.' >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$result" -ne 0 ]; then
+            echo 'Stryker failed. Inspect the encrypted log before interpreting any results.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo 'Stryker completed. The report is in the encrypted artifact.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$result"
+
+      - name: Encrypt reports before uploading
+        if: ${{ always() && !cancelled() }}
+        shell: bash
+        run: |
+          if [ ! -d reports/mutation/api ]; then
+            exit 0
+          fi
+          tar -czf "$RUNNER_TEMP/mutation-api.tar.gz" -C reports/mutation api
+          openssl cms -encrypt -binary -aes-256-cbc \
+            -in "$RUNNER_TEMP/mutation-api.tar.gz" \
+            -out "$RUNNER_TEMP/mutation-api.tar.gz.cms" -outform DER \
+            .github/stryker-report.crt
+          rm "$RUNNER_TEMP/mutation-api.tar.gz"
+
+      - name: Upload encrypted report
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: mutation-api-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/mutation-api.tar.gz.cms
+          if-no-files-found: ignore
+          retention-days: 14
