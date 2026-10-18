@@ -202,6 +202,10 @@ describe('useQueryParams', () => {
       modelSpecs?: Partial<NonNullable<TStartupConfig['modelSpecs']>>;
       interface?: Partial<NonNullable<TStartupConfig['interface']>>;
     } | null = { modelSpecs: { list: [] } },
+    options: {
+      conversation?: Partial<TConversation>;
+      queryClient?: Record<string, unknown>;
+    } = {},
   ) => {
     const textAreaRef = { current: document.createElement('textarea') };
     const mockSetValue = jest.fn((_field: string, text: string) => {
@@ -222,6 +226,7 @@ describe('useQueryParams', () => {
         }
         return null;
       }),
+      ...options.queryClient,
     });
     (useChatFormContext as jest.Mock).mockReturnValue({
       setValue: mockSetValue,
@@ -235,7 +240,9 @@ describe('useQueryParams', () => {
         newConversation: mockNewConversation,
       });
     };
-    updateConversation({ endpoint: EModelEndpoint.openAI, model: 'gpt-4o' });
+    updateConversation(
+      options.conversation ?? { endpoint: EModelEndpoint.openAI, model: 'gpt-4o' },
+    );
     const hook = renderHook(() => useQueryParams({ textAreaRef }));
     act(() => jest.advanceTimersByTime(100));
     return {
@@ -596,6 +603,55 @@ describe('useQueryParams', () => {
     expect(hook.mockSubmitMessage).toHaveBeenCalledTimes(1);
     expect(hook.textAreaRef.current.value).toBe('hi');
     expect(hook.result.current.isPreparing).toBe(false);
+  });
+
+  /** Mounts a prompt URL on an existing chat whose history query has not resolved yet. */
+  const mountExistingChat = () => {
+    (useLocation as jest.Mock).mockReturnValue({ pathname: '/c/convo-1', key: 'origin' });
+    const history: { state?: { status: string; data?: unknown } } = {};
+    const listeners = new Set<() => void>();
+    const hook = mountQuery({ q: 'hi', submit: 'true' }, undefined, {
+      conversation: { conversationId: 'convo-1', endpoint: EModelEndpoint.openAI },
+      queryClient: {
+        getQueryState: jest.fn(() => history.state),
+        getQueryCache: () => ({
+          subscribe: (listener: () => void) => {
+            listeners.add(listener);
+            return () => listeners.delete(listener);
+          },
+        }),
+      },
+    });
+    const notify = () => act(() => listeners.forEach((listener) => listener()));
+    return { hook, history, listeners, notify };
+  };
+
+  it('waits for an existing chat history to load before auto-submitting', () => {
+    const { hook, history, listeners, notify } = mountExistingChat();
+    act(() => jest.advanceTimersByTime(1000));
+    expect(hook.textAreaRef.current.value).toBe('hi');
+    expect(hook.mockSubmitMessage).not.toHaveBeenCalled();
+    expect(hook.result.current.isPreparing).toBe(true);
+    expect(listeners.size).toBe(1);
+
+    history.state = { status: 'success', data: [] };
+    notify();
+    expect(hook.mockSubmitMessage).toHaveBeenCalledTimes(1);
+    expect(hook.mockSubmitMessage).toHaveBeenCalledWith({ text: 'hi' });
+    expect(listeners.size).toBe(0);
+    expect(hook.mockSetSearchParams).toHaveBeenCalled();
+  });
+
+  it('stops waiting for chat history when the history request fails', () => {
+    const { hook, history, listeners, notify } = mountExistingChat();
+    hook.mockSubmitMessage.mockReturnValue(false);
+    history.state = { status: 'error' };
+    notify();
+    hook.rerender();
+    expect(hook.mockSubmitMessage).toHaveBeenCalledTimes(1);
+    expect(hook.textAreaRef.current.value).toBe('hi');
+    expect(hook.result.current.isPreparing).toBe(false);
+    expect(listeners.size).toBe(0);
   });
 
   it('clears the pending timer on unmount', () => {

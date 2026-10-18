@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useLocation, useSearchParams } from 'react-router-dom';
 import {
   QueryKeys,
+  Constants,
   parseConvo,
   EModelEndpoint,
   PermissionBits,
@@ -32,6 +33,7 @@ import {
 import { useAuthContext, useAgentsMap, useDefaultConvo, useSubmitMessage } from '~/hooks';
 import { startupConfigKey, useGetAgentByIdQuery } from '~/data-provider';
 import { useChatContext, useChatFormContext } from '~/Providers';
+import { isHistoryRevalidating } from '~/hooks/Chat/ask/guards';
 import store from '~/store';
 
 const PROJECT_ID_SEARCH_PARAM = 'projectId';
@@ -76,6 +78,7 @@ export default function useQueryParams({
   const promptTextRef = useRef<string | null>(null);
   const validSettingsRef = useRef<TPreset | null>(null);
   const settingsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const historyWaitRef = useRef<(() => void) | null>(null);
   const requestIdRef = useRef(0);
   const [submissionStatus, setSubmissionStatus] = useState<'idle' | 'preparing' | 'failed'>('idle');
 
@@ -189,7 +192,26 @@ export default function useQueryParams({
     };
   }, []);
 
+  const stopHistoryWait = useCallback(() => {
+    historyWaitRef.current?.();
+    historyWaitRef.current = null;
+  }, []);
+
+  /** Existing chats refuse sends until their history has loaded and settled. */
+  const isHistoryPending = useCallback(() => {
+    const conversationId = conversationRef.current?.conversationId;
+    if (conversationId == null || conversationId === Constants.NEW_CONVO) {
+      return false;
+    }
+    const state = queryClient.getQueryState([QueryKeys.messages, conversationId]);
+    if (state?.status === 'error') {
+      return false;
+    }
+    return state?.data == null || isHistoryRevalidating(queryClient, conversationId);
+  }, [queryClient]);
+
   const cancelRequest = useCallback(() => {
+    stopHistoryWait();
     requestIdRef.current += 1;
     cancelledRef.current = true;
     processedRef.current = true;
@@ -201,7 +223,7 @@ export default function useQueryParams({
       settingsTimeoutRef.current = null;
     }
     setSubmissionStatus('idle');
-  }, []);
+  }, [stopHistoryWait]);
 
   useEffect(() => {
     const identityChanged = previousRequestIdentityRef.current !== requestIdentity;
@@ -213,6 +235,7 @@ export default function useQueryParams({
         clearTimeout(settingsTimeoutRef.current);
         settingsTimeoutRef.current = null;
       }
+      stopHistoryWait();
       requestIdRef.current += 1;
       attemptsRef.current = 0;
       processedRef.current = false;
@@ -243,6 +266,7 @@ export default function useQueryParams({
     ownsComposer,
     ownsRequest,
     cancelRequest,
+    stopHistoryWait,
   ]);
 
   const areSettingsApplied = useCallback(() => {
@@ -432,14 +456,27 @@ export default function useQueryParams({
       return;
     }
 
-    submissionHandledRef.current = true;
-    pendingSubmitRef.current = false;
-
     setSubmissionStatus('preparing');
     if (settingsTimeoutRef.current) {
       clearTimeout(settingsTimeoutRef.current);
       settingsTimeoutRef.current = null;
     }
+
+    if (isHistoryPending()) {
+      if (historyWaitRef.current == null) {
+        historyWaitRef.current = queryClient.getQueryCache().subscribe(() => {
+          if (!isHistoryPending()) {
+            stopHistoryWait();
+            processSubmissionRef.current();
+          }
+        });
+      }
+      return;
+    }
+    stopHistoryWait();
+
+    submissionHandledRef.current = true;
+    pendingSubmitRef.current = false;
 
     restoreUrlPrompt();
     const requestId = requestIdRef.current;
@@ -482,12 +519,17 @@ export default function useQueryParams({
     )();
   }, [
     methods,
+    queryClient,
     ownsRequest,
+    stopHistoryWait,
+    isHistoryPending,
     areSettingsApplied,
     getPreservedSearchParams,
     restoreUrlPrompt,
     settlePrompt,
   ]);
+  const processSubmissionRef = useRef(processSubmission);
+  processSubmissionRef.current = processSubmission;
 
   useEffect(() => {
     const processQueryParams = () => {
@@ -662,11 +704,12 @@ export default function useQueryParams({
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      stopHistoryWait();
       if (settingsTimeoutRef.current) {
         clearTimeout(settingsTimeoutRef.current);
       }
     };
-  }, []);
+  }, [stopHistoryWait]);
 
   const { isAuthenticated } = useAuthContext();
   const agentsMap = useAgentsMap({ isAuthenticated });
