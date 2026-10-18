@@ -51,6 +51,11 @@ function targetFor(request, env, relativePath) {
   if (
     relativePath === '/conversations' ||
     /^\/conversations\/[^/]+\/messages$/.test(relativePath) ||
+    // Reuse the existing account-scoped Project API rather than inventing
+    // a separate Web-only store. The API owns project membership checks.
+    ((relativePath === '/projects' ||
+      /^\/projects\/[0-9a-f-]{36}(?:\/memories)?$/i.test(relativePath)) &&
+      ['GET', 'POST', 'PATCH'].includes(method)) ||
     relativePath === '/settings' ||
     relativePath === '/memories' ||
     /^\/memories\/[0-9a-f-]{36}$/i.test(relativePath)
