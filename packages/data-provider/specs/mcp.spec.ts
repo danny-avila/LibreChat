@@ -962,6 +962,11 @@ describe('oauthToolCatalog', () => {
     expect(MCPOptionsSchema.safeParse({ ...server, oauthToolCatalog: nested }).success).toBe(false);
   });
 
+  it('rejects a misspelled catalog entry key', () => {
+    const typo = [{ name: 'read_sheet', input_schema: { type: 'object' } }];
+    expect(MCPOptionsSchema.safeParse({ ...server, oauthToolCatalog: typo }).success).toBe(false);
+  });
+
   it('rejects an input schema that is not an object schema', () => {
     const invalid = [{ name: 'read_sheet', inputSchema: { type: 'string' } }];
     expect(MCPOptionsSchema.safeParse({ ...server, oauthToolCatalog: invalid }).success).toBe(

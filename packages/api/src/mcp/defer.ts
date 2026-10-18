@@ -7,6 +7,7 @@ import {
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { LCAvailableTools, ParsedServerConfig } from '~/mcp/types';
 import { canDeferOAuthSignIn, isMCPAllPlaceholder } from '~/mcp/utils';
+import { resolveToolOption } from '~/agents/selection';
 import { formatMCPServerTools } from '~/mcp/tools';
 
 const serverPinPrefix = `${Constants.mcp_server}${Constants.mcp_delimiter}`;
@@ -21,8 +22,10 @@ function catalogHasTool(
   toolPart: string,
   keyServerName: string,
 ): boolean {
-  if (catalog[tool] != null) {
-    return true;
+  const direct = catalog[tool];
+  if (direct != null) {
+    /** A stripped key can stand for another upstream tool; only its own spelling counts. */
+    return direct.serverToolName == null || direct.serverToolName === toolPart;
   }
   const strippedPart = stripServerNamePrefix(toolPart, keyServerName);
   if (strippedPart === toolPart) {
@@ -78,7 +81,8 @@ export function shouldDeferMCPOAuthSignIn({
     if (
       isMCPAllPlaceholder(tool) ||
       options?.defer_loading !== true ||
-      (backgroundToolsEnabled && options.run_in_background === true)
+      (backgroundToolsEnabled &&
+        resolveToolOption(tool, 'run_in_background', toolOptions)?.value === true)
     ) {
       return false;
     }

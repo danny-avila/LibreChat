@@ -290,18 +290,20 @@ const BaseOptionsSchema = z.object({
    */
   oauthToolCatalog: z
     .array(
-      z.object({
-        name: z.string().min(1),
-        description: z.string().optional(),
-        inputSchema: z
-          .object({
-            type: z.literal('object'),
-            properties: z.record(z.string(), DeclaredToolPropertySchema).optional(),
-            required: z.array(z.string()).optional(),
-          })
-          .strict()
-          .optional(),
-      }),
+      z
+        .object({
+          name: z.string().min(1),
+          description: z.string().optional(),
+          inputSchema: z
+            .object({
+              type: z.literal('object'),
+              properties: z.record(z.string(), DeclaredToolPropertySchema).optional(),
+              required: z.array(z.string()).optional(),
+            })
+            .strict()
+            .optional(),
+        })
+        .strict(),
     )
     .optional(),
   /**
