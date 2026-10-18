@@ -3349,6 +3349,29 @@ describe('Chat', () => {
       );
     });
 
+    it('still stops a dropped generation after a retry rejected as an unnegotiated replacement', async () => {
+      const { chat, stream, transport } = setup({
+        resumeSelection: () => ({ endpoint: 'agents' }),
+      });
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+      await sent;
+      transport.sendMessages.mockResolvedValueOnce({
+        status: 'replaced',
+        streamId: 'stream-2',
+        conversationId: 'convo-1',
+      } as Awaited<ReturnType<ChatTransport['sendMessages']>>);
+
+      await chat.sendMessage({ parts: [{ type: 'text', text: 'Again' }] });
+      expect(chat.status).toBe('error');
+
+      await expect(chat.stop()).resolves.toEqual({ status: 'stopped' });
+      expect(transport.abort).toHaveBeenCalledWith(
+        expect.objectContaining({ streamId: 'convo-1', generationCreatedAt: 100 }),
+      );
+    });
+
     it('sends one stop for a generation stopped again once a reattachment took it over', async () => {
       const { chat, stream, transport } = setup({
         resumeSelection: () => ({ endpoint: 'agents' }),

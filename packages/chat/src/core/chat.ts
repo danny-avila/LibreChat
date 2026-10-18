@@ -1161,6 +1161,10 @@ export class Chat {
         this.dropLateStart(active, result);
         throw signal.reason;
       }
+      if (result.status === 'replaced' && result.generationProtocolVersion !== 2) {
+        /** Only protocol v2 vouches for a replacement; an older server reported a conflict. */
+        throw new Error('Another generation is running in this conversation');
+      }
       /**
        * The server took the start, so it owns or superseded a generation whose stream dropped.
        * Until then that generation stays the stop target, in case the start fails.
@@ -1169,9 +1173,6 @@ export class Chat {
       let stream: ChatStream | null = null;
       if (result.status === 'stream') {
         stream = result.stream;
-      } else if (result.status === 'replaced' && result.generationProtocolVersion !== 2) {
-        /** Only protocol v2 vouches for a replacement; an older server reported a conflict. */
-        throw new Error('Another generation is running in this conversation');
       } else if (result.status === 'replaced') {
         /** The target is recorded before anyone hears of the reconnect, so a stop can reach it. */
         this.generationCreatedAt = result.generationCreatedAt ?? undefined;
