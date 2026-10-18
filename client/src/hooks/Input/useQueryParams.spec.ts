@@ -19,7 +19,7 @@ jest.mock('~/store', () => ({
 
 import { renderHook, act } from '@testing-library/react';
 import { useLocation, useSearchParams } from 'react-router-dom';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useRecoilValue } from 'recoil';
 import { EModelEndpoint, parseConvo } from 'librechat-data-provider';
 import type { TConversation, TStartupConfig } from 'librechat-data-provider';
@@ -115,6 +115,7 @@ describe('useQueryParams', () => {
   // Setup common mocks before each test
   beforeEach(() => {
     jest.useFakeTimers();
+    (useQuery as jest.Mock).mockReturnValue({ status: 'loading', fetchStatus: 'idle' });
     (useLocation as jest.Mock).mockReturnValue({ pathname: '/c/new', key: 'origin' });
 
     // Reset mock for window.history.replaceState
@@ -609,49 +610,42 @@ describe('useQueryParams', () => {
   const mountExistingChat = () => {
     (useLocation as jest.Mock).mockReturnValue({ pathname: '/c/convo-1', key: 'origin' });
     const history: { state?: { status: string; data?: unknown } } = {};
-    const listeners = new Set<() => void>();
     const hook = mountQuery({ q: 'hi', submit: 'true' }, undefined, {
       conversation: { conversationId: 'convo-1', endpoint: EModelEndpoint.openAI },
-      queryClient: {
-        getQueryState: jest.fn(() => history.state),
-        getQueryCache: () => ({
-          subscribe: (listener: () => void) => {
-            listeners.add(listener);
-            return () => listeners.delete(listener);
-          },
-        }),
-      },
+      queryClient: { getQueryState: jest.fn(() => history.state) },
     });
-    const notify = () => act(() => listeners.forEach((listener) => listener()));
-    return { hook, history, listeners, notify };
+    /** The history observer re-renders the hook once the messages query settles. */
+    const settle = (state: { status: string; data?: unknown }) => {
+      history.state = state;
+      (useQuery as jest.Mock).mockReturnValue({ ...state, fetchStatus: 'idle', dataUpdatedAt: 1 });
+      hook.rerender();
+    };
+    return { hook, settle };
   };
 
   it('waits for an existing chat history to load before auto-submitting', () => {
-    const { hook, history, listeners, notify } = mountExistingChat();
+    const { hook, settle } = mountExistingChat();
     act(() => jest.advanceTimersByTime(1000));
     expect(hook.textAreaRef.current.value).toBe('hi');
     expect(hook.mockSubmitMessage).not.toHaveBeenCalled();
     expect(hook.result.current.isPreparing).toBe(true);
-    expect(listeners.size).toBe(1);
 
-    history.state = { status: 'success', data: [] };
-    notify();
+    settle({ status: 'success', data: [] });
     expect(hook.mockSubmitMessage).toHaveBeenCalledTimes(1);
     expect(hook.mockSubmitMessage).toHaveBeenCalledWith({ text: 'hi' });
-    expect(listeners.size).toBe(0);
     expect(hook.mockSetSearchParams).toHaveBeenCalled();
+    hook.rerender();
+    expect(hook.mockSubmitMessage).toHaveBeenCalledTimes(1);
   });
 
   it('stops waiting for chat history when the history request fails', () => {
-    const { hook, history, listeners, notify } = mountExistingChat();
+    const { hook, settle } = mountExistingChat();
     hook.mockSubmitMessage.mockReturnValue(false);
-    history.state = { status: 'error' };
-    notify();
+    settle({ status: 'error' });
     hook.rerender();
     expect(hook.mockSubmitMessage).toHaveBeenCalledTimes(1);
     expect(hook.textAreaRef.current.value).toBe('hi');
     expect(hook.result.current.isPreparing).toBe(false);
-    expect(listeners.size).toBe(0);
   });
 
   it('clears the pending timer on unmount', () => {

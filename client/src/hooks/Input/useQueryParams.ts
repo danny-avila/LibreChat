@@ -1,8 +1,8 @@
 import { useEffect, useCallback, useRef, useState, useMemo } from 'react';
 import isEqual from 'lodash/isEqual';
 import { useRecoilValue } from 'recoil';
-import { useQueryClient } from '@tanstack/react-query';
 import { useLocation, useSearchParams } from 'react-router-dom';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   QueryKeys,
   Constants,
@@ -15,6 +15,7 @@ import {
 import type {
   AgentListResponse,
   TEndpointsConfig,
+  TMessage,
   TConversation,
   TStartupConfig,
   TPreset,
@@ -78,7 +79,7 @@ export default function useQueryParams({
   const promptTextRef = useRef<string | null>(null);
   const validSettingsRef = useRef<TPreset | null>(null);
   const settingsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const historyWaitRef = useRef<(() => void) | null>(null);
+  const awaitingHistoryRef = useRef(false);
   const requestIdRef = useRef(0);
   const [submissionStatus, setSubmissionStatus] = useState<'idle' | 'preparing' | 'failed'>('idle');
 
@@ -192,11 +193,6 @@ export default function useQueryParams({
     };
   }, []);
 
-  const stopHistoryWait = useCallback(() => {
-    historyWaitRef.current?.();
-    historyWaitRef.current = null;
-  }, []);
-
   /** Existing chats refuse sends until their history has loaded and settled. */
   const isHistoryPending = useCallback(() => {
     const conversationId = conversationRef.current?.conversationId;
@@ -211,7 +207,6 @@ export default function useQueryParams({
   }, [queryClient]);
 
   const cancelRequest = useCallback(() => {
-    stopHistoryWait();
     requestIdRef.current += 1;
     cancelledRef.current = true;
     processedRef.current = true;
@@ -223,7 +218,7 @@ export default function useQueryParams({
       settingsTimeoutRef.current = null;
     }
     setSubmissionStatus('idle');
-  }, [stopHistoryWait]);
+  }, []);
 
   useEffect(() => {
     const identityChanged = previousRequestIdentityRef.current !== requestIdentity;
@@ -235,9 +230,9 @@ export default function useQueryParams({
         clearTimeout(settingsTimeoutRef.current);
         settingsTimeoutRef.current = null;
       }
-      stopHistoryWait();
       requestIdRef.current += 1;
       attemptsRef.current = 0;
+      awaitingHistoryRef.current = false;
       processedRef.current = false;
       submissionHandledRef.current = false;
       pendingSubmitRef.current = false;
@@ -266,7 +261,6 @@ export default function useQueryParams({
     ownsComposer,
     ownsRequest,
     cancelRequest,
-    stopHistoryWait,
   ]);
 
   const areSettingsApplied = useCallback(() => {
@@ -462,18 +456,10 @@ export default function useQueryParams({
       settingsTimeoutRef.current = null;
     }
 
-    if (isHistoryPending()) {
-      if (historyWaitRef.current == null) {
-        historyWaitRef.current = queryClient.getQueryCache().subscribe(() => {
-          if (!isHistoryPending()) {
-            stopHistoryWait();
-            processSubmissionRef.current();
-          }
-        });
-      }
+    awaitingHistoryRef.current = isHistoryPending();
+    if (awaitingHistoryRef.current) {
       return;
     }
-    stopHistoryWait();
 
     submissionHandledRef.current = true;
     pendingSubmitRef.current = false;
@@ -519,17 +505,33 @@ export default function useQueryParams({
     )();
   }, [
     methods,
-    queryClient,
     ownsRequest,
-    stopHistoryWait,
     isHistoryPending,
     areSettingsApplied,
     getPreservedSearchParams,
     restoreUrlPrompt,
     settlePrompt,
   ]);
-  const processSubmissionRef = useRef(processSubmission);
-  processSubmissionRef.current = processSubmission;
+
+  /** Observes the history the composer sends from, so a retry runs after the
+   * render that derives the latest message from it, not during the cache write. */
+  const historyKey = [QueryKeys.messages, conversation?.conversationId ?? ''];
+  const history = useQuery<TMessage[]>(
+    historyKey,
+    async () => queryClient.getQueryData<TMessage[]>(historyKey) ?? [],
+    { enabled: false },
+  );
+  useEffect(() => {
+    if (awaitingHistoryRef.current && !isHistoryPending()) {
+      processSubmission();
+    }
+  }, [
+    history.status,
+    history.fetchStatus,
+    history.dataUpdatedAt,
+    isHistoryPending,
+    processSubmission,
+  ]);
 
   useEffect(() => {
     const processQueryParams = () => {
@@ -704,12 +706,11 @@ export default function useQueryParams({
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      stopHistoryWait();
       if (settingsTimeoutRef.current) {
         clearTimeout(settingsTimeoutRef.current);
       }
     };
-  }, [stopHistoryWait]);
+  }, []);
 
   const { isAuthenticated } = useAuthContext();
   const agentsMap = useAgentsMap({ isAuthenticated });
