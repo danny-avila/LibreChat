@@ -43,59 +43,30 @@ function targetFor(request, env, relativePath) {
     };
   }
 
-  if (relativePath === '/chat/prepare' && method === 'POST') {
-    return { url: brokerUrl(env), method: 'POST', brokerAction: 'prepare_inference' };
-  }
-
-  if (relativePath === '/chat/stream' && method === 'POST') {
-    return { url: brokerUrl(env), method: 'POST', brokerAction: 'stream_invoke' };
+  // Chat orchestration and context assembly belong to Meo API, not the browser edge.
+  if ((relativePath === '/chat/prepare' || relativePath === '/chat/stream') && method === 'POST') {
+    return { url: `${apiUrl(env)}/v1${relativePath}`, method, body: null };
   }
 
   if (
     relativePath === '/conversations' ||
-    /^\/conversations\/[^/]+\/messages$/.test(relativePath)
+    /^\/conversations\/[^/]+\/messages$/.test(relativePath) ||
+    relativePath === '/settings' ||
+    relativePath === '/memories' ||
+    /^\/memories\/[0-9a-f-]{36}$/i.test(relativePath)
   ) {
-    const target = new URL(`${apiUrl(env)}/v1${relativePath}`);
+    // Account-owned settings and memory use the AI API namespace.
+    const upstreamPath = relativePath === '/settings' || relativePath.startsWith('/memories')
+      ? `/v1/ai${relativePath}`
+      : `/v1${relativePath}`;
+    const target = new URL(`${apiUrl(env)}${upstreamPath}`);
     target.search = new URL(request.url).search;
     return { url: target.toString(), method, body: null };
   }
 
-  return null;
-}
 
-function chatBrokerBody(body, action, env) {
-  if (!body || typeof body !== 'object' || Array.isArray(body))
-    throw new Error('invalid_chat_request');
-  const credentialId = typeof body.credentialId === 'string' ? body.credentialId.trim() : '';
-  const model = typeof body.model === 'string' ? body.model.trim() : '';
-  const userPrompt = typeof body.prompt === 'string' ? body.prompt.trim() : '';
-  if (!credentialId || !model || !userPrompt || userPrompt.length > 40_000)
-    throw new Error('invalid_chat_request');
-  const payload = {
-    action,
-    credentialId,
-    clientId: env.MEO_OAUTH_CLIENT_ID,
-    purpose: 'meo_ai_web_chat',
-    dataCategories: ['chat_text'],
-    model,
-    userPrompt,
-    temperature: 0.7,
-    maxOutputTokens: 2048,
-  };
-  if (action !== 'stream_invoke') return payload;
-  const consent = body.consent;
-  if (!consent || typeof consent !== 'object' || Array.isArray(consent))
-    throw new Error('invalid_chat_consent');
-  return {
-    ...payload,
-    consent: {
-      approved: true,
-      confirmedAt: new Date().toISOString(),
-      requestId: consent.requestId,
-      payloadSha256: consent.payloadSha256,
-      confirmationVersion: consent.confirmationVersion,
-    },
-  };
+
+  return null;
 }
 
 function forwardedHeaders(request, accessToken, hasBody) {
@@ -144,13 +115,6 @@ export async function onRequest({ request, env }) {
   }
 
   let body = route.body;
-  if (route.brokerAction) {
-    try {
-      body = JSON.stringify(chatBrokerBody(await request.json(), route.brokerAction, env));
-    } catch {
-      return json({ error: { code: 'invalid_chat_request' } }, 400);
-    }
-  }
   if (body == null && !['GET', 'HEAD'].includes(route.method)) {
     body = await request.arrayBuffer();
   }
