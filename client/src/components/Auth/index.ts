@@ -5,3 +5,6 @@ export { default as VerifyEmail } from './VerifyEmail';
 export { default as RequestPasswordReset } from './RequestPasswordReset';
 export { default as TwoFactorScreen } from './TwoFactorScreen';
 export { default as TwoFactorSetupScreen } from './TwoFactorSetupScreen';
+export { default as Onboarding } from './Onboarding';
+export { default as OrganizationInvite } from './OrganizationInvite';
+export { default as AcceptOrganizationInvite } from './AcceptOrganizationInvite';

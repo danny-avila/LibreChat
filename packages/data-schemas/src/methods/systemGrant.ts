@@ -1,8 +1,9 @@
 import { PrincipalType, SystemRoles } from 'librechat-data-provider';
 import type { Types, Model, ClientSession, FilterQuery } from 'mongoose';
-import type { SystemCapability } from '~/types/admin';
+import type { SystemCapability } from '~/admin/capabilities';
 import type { ISystemGrant } from '~/types';
 import { SystemCapabilities, CapabilityImplications } from '~/admin/capabilities';
+import { runInTenant, isReservedTenantId } from '~/config/tenantContext';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
 import { normalizePrincipalId } from '~/utils/principal';
 import logger from '~/config/winston';
@@ -51,7 +52,15 @@ function getParentCapabilities(capability: string): string[] {
   return parents;
 }
 
-export function createSystemGrantMethods(mongoose: typeof import('mongoose')): {
+export interface SystemGrantDeps {
+  /** Whether platform role and group grants stop applying inside tenants (organizations mode). */
+  isolatePlatformRoleGrants?: () => boolean;
+}
+
+export function createSystemGrantMethods(
+  mongoose: typeof import('mongoose'),
+  deps: SystemGrantDeps = {},
+): {
   grantCapability: (
     {
       principalType,
@@ -144,11 +153,53 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')): {
     principalId: string | Types.ObjectId,
     options?: { tenantId?: string },
   ) => Promise<ISystemGrant[]>;
+  deleteTenantGrants: (tenantId: string) => Promise<number>;
+  syncOrganizationAdminGrants: (
+    tenantId: string,
+    capabilities: readonly SystemCapability[],
+  ) => Promise<{ granted: number; revoked: number }>;
 } {
   function tenantCondition(tenantId?: string): FilterQuery<ISystemGrant> {
     return tenantId != null
       ? { $and: [{ $or: [{ tenantId }, { tenantId: { $exists: false } }] }] }
       : { tenantId: { $exists: false } };
+  }
+
+  /**
+   * Whether platform grants to roles and groups stop applying inside a tenant. In
+   * organizations mode every tenant is self-service: anyone who registers becomes the ADMIN
+   * of their own organization, so the platform ADMIN role's grants (every capability,
+   * `manage:configs` included) must not follow the role name into it. A platform grant to a
+   * specific user still applies, mirroring `platformOnly` checks.
+   */
+  function isolatesPlatformRoleGrants(tenantId?: string): tenantId is string {
+    return tenantId != null && (deps.isolatePlatformRoleGrants?.() ?? false);
+  }
+
+  /** Grant scope for a principal-matching query: which tenants' grants each principal sees. */
+  function principalScopeCondition(
+    principalsQuery: Array<{ principalType: PrincipalType; principalId: unknown }>,
+    tenantId?: string,
+  ): FilterQuery<ISystemGrant> {
+    if (!isolatesPlatformRoleGrants(tenantId)) {
+      return { $or: principalsQuery, ...tenantCondition(tenantId) };
+    }
+    const userPrincipals = principalsQuery.filter((p) => p.principalType === PrincipalType.USER);
+    const scopes: FilterQuery<ISystemGrant>[] = [{ tenantId, $or: principalsQuery }];
+    if (userPrincipals.length) {
+      scopes.push({ tenantId: { $exists: false }, $or: userPrincipals });
+    }
+    return { $or: scopes };
+  }
+
+  /** Grant scope for a listing that names no principals. */
+  function listingScopeCondition(tenantId?: string): FilterQuery<ISystemGrant> {
+    if (!isolatesPlatformRoleGrants(tenantId)) {
+      return tenantCondition(tenantId);
+    }
+    return {
+      $or: [{ tenantId }, { tenantId: { $exists: false }, principalType: PrincipalType.USER }],
+    };
   }
 
   const CONFIG_READ_ACCESS_PATTERN = /^(?:read|manage):configs(?::\w+)?$/;
@@ -190,9 +241,8 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')): {
 
     const query: FilterQuery<ISystemGrant> = {
       $and: [
-        { $or: principalsQuery },
+        principalScopeCondition(principalsQuery, tenantId),
         { capability: CONFIG_READ_ACCESS_PATTERN },
-        tenantCondition(tenantId),
       ],
     };
 
@@ -239,9 +289,8 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')): {
     const capabilityQuery = allMatches.length > 1 ? { $in: allMatches } : capability;
 
     const query: FilterQuery<ISystemGrant> = {
-      $or: principalsQuery,
+      ...principalScopeCondition(principalsQuery, tenantId),
       capability: capabilityQuery,
-      ...tenantCondition(tenantId),
     };
 
     const doc = await SystemGrant.exists(query);
@@ -286,9 +335,8 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')): {
 
     const docs = await SystemGrant.find(
       {
-        $or: principalsQuery,
+        ...principalScopeCondition(principalsQuery, tenantId),
         capability: { $in: [...allCaps] },
-        ...tenantCondition(tenantId),
       },
       { capability: 1, _id: 0 },
     ).lean();
@@ -433,11 +481,10 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')): {
   }): Promise<ISystemGrant[]> {
     const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
 
-    const filter: FilterQuery<ISystemGrant> = {
-      principalType,
-      principalId: normalizePrincipalId(principalId, principalType),
-      ...tenantCondition(tenantId),
-    };
+    const filter = principalScopeCondition(
+      [{ principalType, principalId: normalizePrincipalId(principalId, principalType) }],
+      tenantId,
+    );
 
     return await SystemGrant.find(filter).lean<ISystemGrant[]>();
   }
@@ -456,7 +503,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')): {
     const offset = options?.offset ?? 0;
     const filter: FilterQuery<ISystemGrant> = {
       ...(options?.principalTypes?.length && { principalType: { $in: options.principalTypes } }),
-      ...tenantCondition(options?.tenantId),
+      ...listingScopeCondition(options?.tenantId),
     };
 
     return SystemGrant.find(filter)
@@ -473,7 +520,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')): {
     const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
     const filter: FilterQuery<ISystemGrant> = {
       ...(options?.principalTypes?.length && { principalType: { $in: options.principalTypes } }),
-      ...tenantCondition(options?.tenantId),
+      ...listingScopeCondition(options?.tenantId),
     };
 
     return SystemGrant.countDocuments(filter);
@@ -502,10 +549,7 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')): {
       return [];
     }
 
-    const filter: FilterQuery<ISystemGrant> = {
-      $or: principalsQuery,
-      ...tenantCondition(tenantId),
-    };
+    const filter = principalScopeCondition(principalsQuery, tenantId);
 
     return await SystemGrant.find(filter).lean<ISystemGrant[]>();
   }
@@ -609,7 +653,62 @@ export function createSystemGrantMethods(mongoose: typeof import('mongoose')): {
     }).lean<ISystemGrant[]>();
   }
 
+  /**
+   * Makes an organization's ADMIN role hold exactly `capabilities` inside that organization:
+   * missing grants are inserted and grants outside the set are removed, so narrowing
+   * `organizations.adminCapabilities` takes effect on the next reconcile. Only tenant-scoped
+   * ROLE:ADMIN grants of this one tenant are touched. Idempotent and safe to run concurrently.
+   */
+  async function syncOrganizationAdminGrants(
+    tenantId: string,
+    capabilities: readonly SystemCapability[],
+  ): Promise<{ granted: number; revoked: number }> {
+    if (!tenantId || isReservedTenantId(tenantId)) {
+      throw new Error('[syncOrganizationAdminGrants] A real organization tenant id is required');
+    }
+    const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
+    const scope = { principalType: PrincipalType.ROLE, principalId: SystemRoles.ADMIN, tenantId };
+    const now = new Date();
+    const desired = [...new Set(capabilities)];
+
+    return runInTenant(tenantId, async () => {
+      const result = desired.length
+        ? await tenantSafeBulkWrite(
+            SystemGrant,
+            desired.map((capability) => ({
+              updateOne: {
+                filter: { ...scope, capability },
+                update: { $setOnInsert: { ...scope, capability, grantedAt: now } },
+                upsert: true,
+              },
+            })),
+            { ordered: false },
+          )
+        : undefined;
+      /* Only what this sync provisioned (it records no grantor): a grant the operator assigned
+       * by hand names its grantor and survives the reconcile at every restart. */
+      const removed = await SystemGrant.deleteMany({
+        ...scope,
+        capability: { $nin: desired },
+        grantedBy: { $exists: false },
+      });
+      return { granted: result?.upsertedCount ?? 0, revoked: removed.deletedCount ?? 0 };
+    });
+  }
+
+  /** Removes every grant inside an organization, for its deletion; never a platform grant. */
+  async function deleteTenantGrants(tenantId: string): Promise<number> {
+    if (!tenantId || isReservedTenantId(tenantId)) {
+      throw new Error('[deleteTenantGrants] A real organization tenant id is required');
+    }
+    const SystemGrant = mongoose.models.SystemGrant as Model<ISystemGrant>;
+    const removed = await SystemGrant.deleteMany({ tenantId });
+    return removed.deletedCount ?? 0;
+  }
+
   return {
+    deleteTenantGrants,
+    syncOrganizationAdminGrants,
     grantCapability,
     seedSystemGrants,
     revokeCapability,

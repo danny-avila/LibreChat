@@ -57,8 +57,11 @@ export {
   createMCPAuthorityCredentialRevision,
   createMCPAuthorityDatabaseSourceRevision,
   digestMCPAuthorityValue,
+  generateOrganizationTenantId,
+  ORGANIZATION_TENANT_PREFIX,
 } from './methods';
 export { FAVORITE_ITEM_TYPES } from './types/favorite';
+export { OrganizationStatus } from './types/organization';
 export {
   AGENT_EVENT_ACTOR_SUMMARY_VERSION,
   MAX_AGENT_EVENT_ACTOR_DISCOVERED_TOOLS,
@@ -105,9 +108,16 @@ export {
   getRequestId,
   getRequestMethod,
   getRequestPath,
+  isOperatorActing,
   runAsSystem,
+  runInTenant,
+  runInAccounts,
+  runInPlatform,
   scopedCacheKey,
+  isReservedTenantId,
   SYSTEM_TENANT_ID,
+  ACCOUNTS_TENANT_ID,
+  PLATFORM_TENANT_ID,
 } from './config/tenantContext';
 export type { TenantContext } from './config/tenantContext';
 export {

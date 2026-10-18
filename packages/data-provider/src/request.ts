@@ -2,9 +2,10 @@
 import axios from 'axios';
 import type { AxiosRequestConfig, AxiosResponse } from 'axios';
 import type * as t from './types';
+import { setTokenHeader, getExpectedTenantHeader } from './headers-helpers';
 import { TWO_FACTOR_ENROLLMENT_REQUIRED_CODE } from './config';
+import { OrganizationErrorCode } from './types/organizations';
 import { persistTwoFactorSetupToken } from './twoFactor';
-import { setTokenHeader } from './headers-helpers';
 import * as endpoints from './api-endpoints';
 
 async function _get<T>(url: string, options?: AxiosRequestConfig): Promise<T> {
@@ -22,7 +23,7 @@ async function _getResponse<T = unknown>(
 async function _post(url: string, data?: any, options?: AxiosRequestConfig) {
   const response = await axios.post(url, JSON.stringify(data), {
     ...options,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { ...options?.headers, 'Content-Type': 'application/json' },
   });
   return response.data;
 }
@@ -44,9 +45,10 @@ async function _postTTS(url: string, formData: FormData, options?: AxiosRequestC
   return response.data;
 }
 
-async function _put(url: string, data?: any) {
+async function _put(url: string, data?: any, options?: AxiosRequestConfig) {
   const response = await axios.put(url, JSON.stringify(data), {
-    headers: { 'Content-Type': 'application/json' },
+    ...options,
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
   });
   return response.data;
 }
@@ -61,9 +63,10 @@ async function _deleteWithOptions<T>(url: string, options?: AxiosRequestConfig):
   return response.data;
 }
 
-async function _patch(url: string, data?: any) {
+async function _patch(url: string, data?: any, options?: AxiosRequestConfig) {
   const response = await axios.patch(url, JSON.stringify(data), {
-    headers: { 'Content-Type': 'application/json' },
+    ...options,
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
   });
   return response.data;
 }
@@ -332,6 +335,17 @@ const redirectToLoginOnce = () => {
   window.location.href = href;
 };
 
+let organizationReloadStarted = false;
+
+/** Reloads the document once, however many in-flight requests report the change. */
+const reloadForOrganizationChangeOnce = () => {
+  if (organizationReloadStarted) {
+    return;
+  }
+  organizationReloadStarted = true;
+  window.location.reload();
+};
+
 const getBearerToken = () => {
   const authorization = axios.defaults.headers.common['Authorization'];
   if (typeof authorization !== 'string' || !authorization.startsWith('Bearer ')) {
@@ -393,6 +407,9 @@ const refreshBeforeRequest = async (url?: string) => {
 
 const withAuthorization = (options: RequestInit | undefined, token: string | null): RequestInit => {
   const headers = new Headers(options?.headers);
+  for (const [name, value] of Object.entries(getExpectedTenantHeader())) {
+    headers.set(name, value);
+  }
   if (token) {
     headers.set('Authorization', `Bearer ${token}`);
   }
@@ -412,6 +429,28 @@ const redirectIfTwoFactorSetupPayload = (payload: unknown): boolean => {
   }
 
   redirectToTwoFactorSetupOnce(setupToken);
+  return true;
+};
+
+/**
+ * The raw transports (the SSE stream, `_authenticatedFetch`) have no axios interceptor in front
+ * of them, so they hand a failure here: a 409 saying another tab moved this browser's session to
+ * a different organization reloads this tab once instead of acting in the wrong organization.
+ */
+const reloadIfOrganizationChanged = (status: number | undefined, payload: unknown): boolean => {
+  if (status !== 409) {
+    return false;
+  }
+  const body = parseSetupPayload(payload);
+  if (
+    typeof body !== 'object' ||
+    body === null ||
+    !('code' in body) ||
+    body.code !== OrganizationErrorCode.ORGANIZATION_CHANGED
+  ) {
+    return false;
+  }
+  reloadForOrganizationChangeOnce();
   return true;
 };
 
@@ -436,6 +475,18 @@ async function _authenticatedFetch(url: string, options?: RequestInit): Promise<
   const token = (await refreshBeforeRequest(url)) ?? getBearerToken();
   const response = await fetch(url, withAuthorization(options, token));
   if (await redirectIfTwoFactorSetupRequired(response)) {
+    return response;
+  }
+  if (
+    response.status === 409 &&
+    reloadIfOrganizationChanged(
+      response.status,
+      await response
+        .clone()
+        .json()
+        .catch(() => null),
+    )
+  ) {
     return response;
   }
   if (
@@ -492,6 +543,16 @@ if (typeof window !== 'undefined') {
           redirectToTwoFactorSetupOnce(setupToken);
           return Promise.reject(error);
         }
+      }
+
+      /** Another tab switched this browser's session to a different organization: reload so
+       *  this tab shows the organization the session now acts in, never a mix of both. */
+      if (
+        error.response.status === 409 &&
+        error.response.data?.code === OrganizationErrorCode.ORGANIZATION_CHANGED
+      ) {
+        reloadForOrganizationChangeOnce();
+        return Promise.reject(error);
       }
 
       const isRefreshRequest = originalRequest.url?.includes('/api/auth/refresh') === true;
@@ -569,4 +630,5 @@ export default {
   refreshToken,
   dispatchTokenUpdatedEvent,
   redirectIfTwoFactorSetupPayload,
+  reloadIfOrganizationChanged,
 };

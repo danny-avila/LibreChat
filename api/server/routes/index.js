@@ -1,7 +1,6 @@
 const accessPermissions = require('./accessPermissions');
 const assistants = require('./assistants');
 const categories = require('./categories');
-const adminAuth = require('./admin/auth');
 const adminConfig = require('./admin/config');
 const adminCodeEnvironments = require('./admin/code');
 const codeEnvironments = require('./code-environments');
@@ -12,6 +11,11 @@ const adminRoles = require('./admin/roles');
 const adminSkills = require('./admin/skills');
 const adminUsers = require('./admin/users');
 const adminAuditLog = require('./admin/audit');
+const adminSession = require('./admin/session');
+const {
+  organizations: adminOrganizations,
+  accounts: adminAccounts,
+} = require('./admin/organizations');
 const endpoints = require('./endpoints');
 const staticRoute = require('./static');
 const messages = require('./messages');
@@ -44,14 +48,15 @@ const user = require('./user');
 const mcp = require('./mcp');
 const rum = require('./rum');
 const insights = require('./insights');
+const organizations = require('./organizations');
 
 module.exports = {
+  organizations,
   pullRequests,
   insights,
   rum,
   mcp,
   auth,
-  adminAuth,
   adminConfig,
   adminCodeEnvironments,
   codeEnvironments,
@@ -62,6 +67,9 @@ module.exports = {
   adminSkills,
   adminUsers,
   adminAuditLog,
+  adminOrganizations,
+  adminAccounts,
+  adminSession,
   keys,
   apiKeys,
   user,

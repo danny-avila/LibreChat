@@ -163,10 +163,10 @@ Read the [full v0.8.8 changelog](https://www.librechat.ai/changelog/v0.8.8).
   - Multi-User, Secure Authentication with OAuth2, LDAP, & Email Login Support
   - Built-in Moderation, and Token spend tools
 
-- 🎛️ **[Admin Panel](https://www.librechat.ai/docs/features/admin_panel)**:
-  - Browser-based UI to manage users, groups, roles, and configuration overrides
+- 🎛️ **Built-in Admin Panel** (at `/admin`):
+  - Manage users, groups, roles, grants, and configuration overrides in the app itself
   - Edit settings and per-role/group permissions live, without redeploying
-  - Bundled with the Docker Compose stacks for one-command setup
+  - In organizations mode, the platform operator manages every organization from it
 
 - ⚙️ **Configuration & Deployment**:  
   - Configure Proxy, Reverse Proxy, Docker, & many Deployment options  

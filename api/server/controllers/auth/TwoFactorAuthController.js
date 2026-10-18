@@ -5,8 +5,9 @@ const {
   verifyBackupCode,
   generateBackupCodes,
 } = require('~/server/services/twoFactorService');
-const { setAuthTokens } = require('~/server/services/AuthService');
-const { getUserById, updateTwoFactorEnrollment, deleteAllUserSessions } = require('~/models');
+const { setAuthTokens, issueAuthTokens } = require('~/server/services/AuthService');
+const { deleteAllPrincipalSessions } = require('~/server/services/AuthSessions');
+const { getUserById, updateTwoFactorEnrollment } = require('~/models');
 
 module.exports = createEnrollmentControllers({
   getUserById,
@@ -15,7 +16,8 @@ module.exports = createEnrollmentControllers({
   verifyBackupCode,
   generateBackupCodes,
   updateTwoFactorEnrollment,
-  deleteAllUserSessions,
+  deleteAllUserSessions: deleteAllPrincipalSessions,
   setAuthTokens,
+  issueAuthTokens,
   clearCloudFrontCookies,
 });

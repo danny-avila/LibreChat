@@ -93,6 +93,8 @@ export interface EmailChangeRuntime {
   getAppConfig: (options: GetAppConfigOptions) => Promise<AppConfig | undefined>;
   clientDomain: string;
   appName: string;
+  /** Runs once a change commits; see `EmailChangeDeps.onEmailChanged`. */
+  onEmailChanged?: (userId: string, email: string) => Promise<unknown>;
 }
 
 const USER_FIELDS = 'email _id name username provider role tenantId idOnTheSource +password';
@@ -217,5 +219,6 @@ export function createEmailChangeDeps(runtime: EmailChangeRuntime): EmailChangeD
     },
     clientDomain: runtime.clientDomain,
     appName: runtime.appName,
+    onEmailChanged: runtime.onEmailChanged,
   };
 }

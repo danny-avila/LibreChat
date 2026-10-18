@@ -144,7 +144,7 @@ jest.mock('openid-client', () => {
 });
 
 jest.mock('openid-client/passport', () => {
-  /** Store callbacks by strategy name - 'openid' and 'openidAdmin' */
+  /** Store callbacks by strategy name */
   const verifyCallbacks = {};
   const strategies = {};
   let lastVerifyCallback;
@@ -280,8 +280,7 @@ describe('setupOpenId', () => {
 
     resizeAvatar.mockResolvedValue(Buffer.from('safe avatar'));
 
-    // Call the setup function and capture the verify callback for the regular 'openid' strategy
-    // (not 'openidAdmin' which requires existing users)
+    // Call the setup function and capture the verify callback for the 'openid' strategy
     await setupOpenId();
     verifyCallback = require('openid-client/passport').__getVerifyCallbackByName('openid');
   });

@@ -12,7 +12,6 @@ const getProfileDetails = ({ profile }) => ({
 });
 
 const googleLogin = socialLogin('google', getProfileDetails);
-const googleAdminLogin = socialLogin('google', getProfileDetails, { existingUsersOnly: true });
 
 const getGoogleConfig = (callbackURL) => ({
   clientID: process.env.GOOGLE_CLIENT_ID,
@@ -31,11 +30,4 @@ const googleStrategy = (stateOptions) =>
     googleLogin,
   );
 
-const googleAdminStrategy = () =>
-  new GoogleStrategy(
-    getGoogleConfig(`${process.env.DOMAIN_SERVER}/api/admin/oauth/google/callback`),
-    googleAdminLogin,
-  );
-
 module.exports = googleStrategy;
-module.exports.googleAdminLogin = googleAdminStrategy;

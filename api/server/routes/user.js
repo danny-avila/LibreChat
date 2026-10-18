@@ -1,5 +1,9 @@
 const express = require('express');
-const { createUserPreferencesHandler } = require('@librechat/api');
+const {
+  actAsAccount,
+  createUserPreferencesHandler,
+  accountRouteTenantMiddleware,
+} = require('@librechat/api');
 const {
   updateUserPluginsController,
   resendVerificationController,
@@ -42,17 +46,29 @@ router.delete('/delete', requireJwtAuth, canDeleteAccount, configMiddleware, del
 router.post(
   '/email/change',
   requireJwtAuth,
+  actAsAccount,
   emailChangeLimiter,
   strictConfigMiddleware,
   requestEmailChangeController,
 );
 router.post(
   '/email/verify',
+  accountRouteTenantMiddleware,
   emailChangeSubmissionIpLimiter,
   emailChangeSubmissionLimiter,
   confirmEmailChangeController,
 );
-router.post('/verify', verifyEmailSubmissionLimiter, verifyEmailController);
-router.post('/verify/resend', verifyEmailLimiter, resendVerificationController);
+router.post(
+  '/verify',
+  accountRouteTenantMiddleware,
+  verifyEmailSubmissionLimiter,
+  verifyEmailController,
+);
+router.post(
+  '/verify/resend',
+  accountRouteTenantMiddleware,
+  verifyEmailLimiter,
+  resendVerificationController,
+);
 
 module.exports = router;

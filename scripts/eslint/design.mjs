@@ -366,6 +366,8 @@ const HELPER_SOURCES = new Set([
   '@librechat/client',
   '~/utils',
   '~/utils/',
+  /* The built-in admin panel's `cn`, a plain `clsx` join. */
+  '~/admin/utils',
 ]);
 const isHelperSource = (from, filename) =>
   HELPER_SOURCES.has(from) ||

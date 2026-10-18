@@ -69,6 +69,7 @@ import {
   PULL_REQUEST_BATCH_TIMEOUT_MAX_SECONDS,
 } from './types/pullRequest';
 import type { PullRequestProvider } from './types/pullRequest';
+import type { TStartupOrganizationsConfig } from './types/organizations';
 import { isActionTool } from './types/tools';
 import { apiBaseUrl } from './api-endpoints';
 import { FileSources } from './types/files';
@@ -113,7 +114,9 @@ export function isTwoFactorPolicyProvider(provider: string | null | undefined): 
 /** How long a started social login may take to return to its callback before its `state` expires. */
 export const DEFAULT_OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
-export const BASE_ONLY_CONFIG_SECTIONS = ['filters', 'mcpAppSandbox'] as const;
+/** Sections only the operator's YAML sets. `organizations` decides tenant boundaries and what
+ * an organization's own admins may hold, so no config document inside a tenant can change it. */
+export const BASE_ONLY_CONFIG_SECTIONS = ['filters', 'mcpAppSandbox', 'organizations'] as const;
 /** Sections that may be stored in the tenant's base config document but must
  * not be overridden or tombstoned by role, group, or user config documents. */
 export const BASE_PRINCIPAL_CONFIG_SECTIONS = ['langfuse'] as const;
@@ -2482,6 +2485,8 @@ export enum RateLimitPrefix {
   STT = 'STT',
   EMAIL_CHANGE = 'EMAIL_CHANGE',
   EMAIL_CHANGE_CONFIRM = 'EMAIL_CHANGE_CONFIRM',
+  ORGANIZATION_CREATE = 'ORGANIZATION_CREATE',
+  ORGANIZATION_INVITE = 'ORGANIZATION_INVITE',
 }
 
 export const mcpAppRateLimitSchema = z
@@ -2548,6 +2553,23 @@ export const rateLimitSchema = z.object({
     .optional(),
   /** Confirming one; the endpoint is unauthenticated, so the source address is bounded too. */
   emailChangeConfirm: z
+    .object({
+      ipMax: z.number().optional(),
+      ipWindowInMinutes: z.number().optional(),
+      userMax: z.number().optional(),
+      userWindowInMinutes: z.number().optional(),
+    })
+    .optional(),
+  /** Creating organizations; keyed by the login account. */
+  organizationCreate: z
+    .object({
+      userMax: z.number().optional(),
+      userWindowInMinutes: z.number().optional(),
+    })
+    .optional(),
+  /** Sending invites (keyed by the inviting member) and opening or accepting invite links
+   *  (keyed by source address, since a link can be opened before signing in). */
+  organizationInvites: z
     .object({
       ipMax: z.number().optional(),
       ipWindowInMinutes: z.number().optional(),
@@ -3384,6 +3406,8 @@ export type TStartupConfig = {
   serverDomain: string;
   emailLoginEnabled: boolean;
   registrationEnabled: boolean;
+  /** Present only when the deployment runs in organizations mode. */
+  organizations?: TStartupOrganizationsConfig;
   socialLoginEnabled: boolean;
   passwordResetEnabled: boolean;
   twoFactorAuthenticationRequired?: boolean;
@@ -3391,8 +3415,6 @@ export type TStartupConfig = {
   allowEmailChange: boolean;
   showBirthdayIcon: boolean;
   helpAndFaqURL: string;
-  /** Admin panel link, only present for users with admin access */
-  adminPanelURL?: string;
   customFooter?: string;
   modelSpecs?: TSpecsConfig;
   projects?: TChatProjectsConfig;
@@ -4013,6 +4035,86 @@ export const chatProjectsConfigSchema = z
 
 export type TChatProjectsConfig = z.infer<typeof chatProjectsConfigSchema>;
 
+/**
+ * Capabilities an organization's admins may hold inside their own organization. Deployment
+ * configuration (endpoints, MCP servers, file storage, balance), config assignment, Code API
+ * workers and the admin panel stay platform-managed, so they are deliberately absent: an
+ * allowlist cannot be widened by a typo the way a denylist can.
+ */
+export const organizationAdminCapabilities = [
+  'read:users',
+  'manage:users',
+  'read:groups',
+  'manage:groups',
+  'read:roles',
+  'manage:roles',
+  'read:agents',
+  'manage:agents',
+  'read:prompts',
+  'manage:prompts',
+  'read:skills',
+  'manage:skills',
+  'read:sharedlinks',
+  'manage:sharedlinks',
+  'read:usage',
+  'read:insights',
+  'read:audit_log',
+] as const;
+
+export type TOrganizationAdminCapability = (typeof organizationAdminCapabilities)[number];
+
+const defaultOrganizationAdminCapabilities: TOrganizationAdminCapability[] = [
+  'read:users',
+  'manage:users',
+  'read:groups',
+  'manage:groups',
+  'read:roles',
+  'manage:roles',
+  'read:agents',
+  'manage:agents',
+  'read:prompts',
+  'manage:prompts',
+  'read:skills',
+  'manage:skills',
+  'read:sharedlinks',
+  'manage:sharedlinks',
+  'read:audit_log',
+];
+
+/** Lifetime ceiling for any organization invite: 30 days. */
+const MAX_ORGANIZATION_INVITE_HOURS = 24 * 30;
+
+/**
+ * Organizations (multi-tenancy). Read from the base config only: whether the deployment runs
+ * in organizations mode is a process-wide decision, not something a tenant override can flip.
+ * Disabled by default, which keeps today's single-tenant behavior.
+ */
+export const organizationsConfigSchema = z
+  .object({
+    enabled: z.boolean().default(false),
+    /** Whether an existing account may create further organizations from the switcher. */
+    allowCreate: z.boolean().default(true),
+    /** Organizations one account may belong to, counting the ones it created. */
+    maxPerAccount: z.number().int().min(1).max(1_000).default(10),
+    invites: z
+      .object({
+        emailExpiryHours: z.number().int().min(1).max(MAX_ORGANIZATION_INVITE_HOURS).default(168),
+        linkExpiryHours: z.number().int().min(1).max(MAX_ORGANIZATION_INVITE_HOURS).default(168),
+        allowLinkInvites: z.boolean().default(true),
+        defaultMaxLinkUses: z.number().int().min(1).max(10_000).default(25),
+      })
+      .strict()
+      .default({}),
+    /** Capabilities granted to an organization's ADMIN role inside that organization. */
+    adminCapabilities: z
+      .array(z.enum(organizationAdminCapabilities))
+      .default(defaultOrganizationAdminCapabilities),
+  })
+  .strict()
+  .default({});
+
+export type TOrganizationsConfig = z.infer<typeof organizationsConfigSchema>;
+
 /** Maximum CAS attempts per ACL document, including the initial attempt. */
 export const permissionWriteAttemptsSchema = z.number().int().min(1).max(100).default(3);
 
@@ -4067,6 +4169,7 @@ export const configSchema = z.object({
     .optional(),
   cache: z.boolean().default(true),
   projects: chatProjectsConfigSchema,
+  organizations: organizationsConfigSchema,
   ocr: ocrSchema.optional(),
   webSearch: webSearchSchema.optional(),
   githubCompare: z
@@ -4829,10 +4932,6 @@ export enum CacheKeys {
    */
   SAML_SESSION = 'SAML_SESSION',
   /**
-   * Key for admin panel OAuth exchange codes (one-time-use, short TTL).
-   */
-  ADMIN_OAUTH_EXCHANGE = 'ADMIN_OAUTH_EXCHANGE',
-  /**
    * Key for pending WebAuthn (passkey) ceremony challenges (one-time-use, short TTL).
    */
   PASSKEY_CHALLENGE = 'PASSKEY_CHALLENGE',
@@ -5133,6 +5232,10 @@ export enum SettingsTabValues {
    * Tab for About / Build Info
    */
   ABOUT = 'about',
+  /**
+   * Tab for the current organization: members and invitations (organizations mode)
+   */
+  ORGANIZATION = 'organization',
 }
 
 export enum STTProviders {

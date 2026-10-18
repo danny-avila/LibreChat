@@ -21,7 +21,7 @@ const getLogStores = require('./cache/getLogStores');
   logger.info = capture;
   logger.debug = capture;
   console.log = capture;
-  const store = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
+  const store = getLogStores(CacheKeys.OPENID_EXCHANGED_TOKENS);
   await store.set('probe-user-key-1234', { access_token: 'probe-secret-token' });
   getLogStores.auditCache();
   process.stdout.write('RESULT' + JSON.stringify(lines));

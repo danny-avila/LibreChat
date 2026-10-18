@@ -1,8 +1,10 @@
 import type { AnyBulkWriteOperation, Model, MongooseBulkWriteOptions } from 'mongoose';
 import type { BulkWriteResult } from 'mongodb';
-import type { TenantScope, TenantUpdate } from '~/tenant/policy';
+import type { TenantScope, TenantUpdate, TenantFilter, TenantDocument } from '~/tenant/policy';
 import {
+  tenantFilter,
   resolveTenantScope,
+  stampTenantOnDocument,
   resetTenantStrictCache,
   sanitizeTenantMutation,
   isTenantIsolationStrict,
@@ -32,6 +34,8 @@ export function _resetBulkWriteStrictCache(): void {
  *
  * Behavior:
  * - **tenantId present** (normal request): sanitize + inject into filters/documents.
+ * - **PLATFORM_TENANT_ID**: sanitize + restrict filters to untenanted records; inserts and
+ *   replacements must not name a tenant.
  * - **SYSTEM_TENANT_ID**: sanitize only, skip injection (cross-tenant system op).
  * - **No tenantId + strict mode**: throws (fail-closed, same as the plugin).
  * - **No tenantId + non-strict**: sanitize only, no injection (backward compat).
@@ -49,8 +53,8 @@ export async function tenantSafeBulkWrite<T>(
     .map((op) => sanitizeBulkOp(op, scope))
     .filter((op): op is AnyBulkWriteOperation => op != null);
 
-  const prepared =
-    scope.kind === 'scoped' ? sanitized.map((op) => injectTenantId(op, scope.tenantId)) : sanitized;
+  const filter = tenantFilter(scope);
+  const prepared = filter ? sanitized.map((op) => injectTenantScope(op, scope, filter)) : sanitized;
 
   return prepared.length > 0 ? model.bulkWrite(prepared, options) : EMPTY_BULK_RESULT;
 }
@@ -86,34 +90,48 @@ function sanitizeBulkOp(
   return op;
 }
 
+/** The document an insert or replacement writes in `scope`: stamped, or checked untenanted. */
+function scopeDocument<D extends object>(document: D, scope: TenantScope): D {
+  const scoped = { ...document } as D & TenantDocument;
+  if (scope.kind === 'scoped') {
+    return { ...scoped, tenantId: scope.tenantId };
+  }
+  stampTenantOnDocument(scope, scoped);
+  return scoped;
+}
+
 /**
- * Injects tenantId into every operation's filter and document.
+ * Restricts every operation's filter to the active scope and scopes its documents.
  * Assumes update payloads have already been sanitized by `sanitizeBulkOp`.
  * Returns a new operation object — does not mutate the original.
  */
-function injectTenantId(op: AnyBulkWriteOperation, tenantId: string): AnyBulkWriteOperation {
+function injectTenantScope(
+  op: AnyBulkWriteOperation,
+  scope: TenantScope,
+  scopeFilter: TenantFilter,
+): AnyBulkWriteOperation {
   if ('insertOne' in op) {
-    return { insertOne: { document: { ...op.insertOne.document, tenantId } } };
+    return { insertOne: { document: scopeDocument(op.insertOne.document, scope) } };
   }
 
   if ('updateOne' in op) {
     const { filter, ...rest } = op.updateOne;
-    return { updateOne: { ...rest, filter: { ...filter, tenantId } } };
+    return { updateOne: { ...rest, filter: { ...filter, ...scopeFilter } } };
   }
 
   if ('updateMany' in op) {
     const { filter, ...rest } = op.updateMany;
-    return { updateMany: { ...rest, filter: { ...filter, tenantId } } };
+    return { updateMany: { ...rest, filter: { ...filter, ...scopeFilter } } };
   }
 
   if ('deleteOne' in op) {
     const { filter, ...rest } = op.deleteOne;
-    return { deleteOne: { ...rest, filter: { ...filter, tenantId } } };
+    return { deleteOne: { ...rest, filter: { ...filter, ...scopeFilter } } };
   }
 
   if ('deleteMany' in op) {
     const { filter, ...rest } = op.deleteMany;
-    return { deleteMany: { ...rest, filter: { ...filter, tenantId } } };
+    return { deleteMany: { ...rest, filter: { ...filter, ...scopeFilter } } };
   }
 
   if ('replaceOne' in op) {
@@ -121,8 +139,8 @@ function injectTenantId(op: AnyBulkWriteOperation, tenantId: string): AnyBulkWri
     return {
       replaceOne: {
         ...rest,
-        filter: { ...filter, tenantId },
-        replacement: { ...replacement, tenantId },
+        filter: { ...filter, ...scopeFilter },
+        replacement: scopeDocument(replacement, scope),
       },
     };
   }

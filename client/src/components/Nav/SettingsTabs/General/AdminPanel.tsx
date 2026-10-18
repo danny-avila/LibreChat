@@ -1,25 +1,21 @@
-import { ExternalLink } from 'lucide-react';
+import { useSetAtom } from 'jotai';
+import { Link } from 'react-router-dom';
 import { Label, Button } from '@librechat/client';
-import { useGetStartupConfig } from '~/data-provider';
+import { settingsOpenAtom } from '~/components/Nav/Settings';
 import { useLocalize } from '~/hooks';
 
+/** Opens the built-in admin panel; the registry shows it only to someone who can use it. */
 export default function AdminPanel() {
   const localize = useLocalize();
-  const { data: startupConfig } = useGetStartupConfig();
-  const adminPanelURL = startupConfig?.adminPanelURL ?? '';
-
-  if (!adminPanelURL) {
-    return null;
-  }
+  const setShowSettings = useSetAtom(settingsOpenAtom);
 
   return (
     <div className="flex items-center justify-between">
       <Label id="admin-panel-label">{localize('com_ui_admin_panel')}</Label>
       <Button asChild variant="outline" aria-labelledby="admin-panel-label">
-        <a href={adminPanelURL} target="_blank" rel="noopener noreferrer">
+        <Link to="/admin" onClick={() => setShowSettings(false)}>
           {localize('com_ui_open_var', { 0: localize('com_ui_admin_panel') })}
-          <ExternalLink className="size-4" aria-hidden="true" />
-        </a>
+        </Link>
       </Button>
     </div>
   );

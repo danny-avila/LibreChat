@@ -6,7 +6,7 @@ describe('auditCache', () => {
   it('logs counts and TTL info without cache keys or values', async () => {
     const secretKey = 'user-id-1234567890';
     const secretValue = 'super-secret-access-token';
-    const store = getLogStores(CacheKeys.ADMIN_OAUTH_EXCHANGE);
+    const store = getLogStores(CacheKeys.OPENID_EXCHANGED_TOKENS);
     await store.set(secretKey, { access_token: secretValue });
 
     const info = jest.spyOn(logger, 'info').mockImplementation(() => {});
@@ -14,7 +14,7 @@ describe('auditCache', () => {
     getLogStores.auditCache();
 
     const output = JSON.stringify(info.mock.calls);
-    expect(output).toContain(CacheKeys.ADMIN_OAUTH_EXCHANGE);
+    expect(output).toContain(CacheKeys.OPENID_EXCHANGED_TOKENS);
     expect(output).toContain('count=1');
     expect(output).not.toContain(secretValue);
     expect(output).not.toContain(secretKey);

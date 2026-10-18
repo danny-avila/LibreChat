@@ -1,7 +1,7 @@
 import mongoose, { Types } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { PrincipalType, SystemRoles } from 'librechat-data-provider';
-import type { SystemCapability } from '~/types/admin';
+import type { SystemCapability } from '~/admin/capabilities';
 import type * as t from '~/types';
 import { SystemCapabilities, CapabilityImplications } from '~/admin/capabilities';
 import { createSystemGrantMethods } from './systemGrant';

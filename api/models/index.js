@@ -4,6 +4,7 @@ const {
   matchModelName,
   findMatchingPattern,
   isDeploymentSkillId,
+  isOrganizationsEnabled,
   createMessageBudgetReader,
 } = require('@librechat/api');
 const getLogStores = require('~/cache/getLogStores');
@@ -16,6 +17,7 @@ const methods = createMethods(mongoose, {
   isExternalSkillId: isDeploymentSkillId,
   getCache: getLogStores,
   getMCPAppMessageBudget: messageBudget.getBudget,
+  isolatePlatformRoleGrants: isOrganizationsEnabled,
 });
 
 const seedDatabase = async () => {

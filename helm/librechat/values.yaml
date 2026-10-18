@@ -37,12 +37,6 @@ global:
     #        key: client_id
 
 librechat:
-  # External admin panel base URL used for admin OAuth/SSO redirects.
-  # Required when deploying the admin panel on a separate URL.
-  # May include a path. Do not include a trailing slash.
-  # Example: https://admin.example.com/admin
-  adminPanelUrl: ""
-
   # Inject MONGO_URI / REDIS_PASSWORD built from the bundled subchart Secrets. Set a
   # key to false when that database's settings come from global.librechat.existingSecretName.
   injectBundledCredentials:

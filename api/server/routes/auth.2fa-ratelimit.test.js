@@ -18,6 +18,8 @@ const mockAcknowledge2FASetup = jest.fn((req, res) => res.status(204).end());
 const mockFinalize2FASetup = jest.fn((req, res) => res.status(204).end());
 
 jest.mock('@librechat/api', () => ({
+  /** Passes through for a single-tenant user, which these tests sign in as. */
+  actAsAccount: (req, res, next) => next(),
   limiterCache: jest.fn(() => undefined),
   createTwoFactorManagementLimiter: (...args) =>
     require('../../../packages/api/src/middleware/twoFactor').createTwoFactorManagementLimiter(
@@ -104,6 +106,7 @@ jest.mock('~/server/middleware', () => {
     requireLdapAuth: pass,
     registerLimiter: pass,
     checkInviteUser: pass,
+    checkOrganizationInvite: pass,
     validateRegistration: pass,
     resetPasswordLimiter: pass,
     resetPasswordSubmissionLimiter: pass,

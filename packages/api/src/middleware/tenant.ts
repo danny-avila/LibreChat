@@ -1,7 +1,13 @@
 import { randomUUID } from 'crypto';
 import { unlink } from 'fs/promises';
 import { isMainThread } from 'worker_threads';
-import { tenantStorage, logger, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
+import { OrganizationErrorCode, EXPECTED_TENANT_HEADER } from 'librechat-data-provider';
+import {
+  logger,
+  tenantStorage,
+  SYSTEM_TENANT_ID,
+  isReservedTenantId,
+} from '@librechat/data-schemas';
 import type { TenantContext } from '@librechat/data-schemas';
 import type { Response, NextFunction } from 'express';
 import type { ServerRequest } from '~/types/http';
@@ -11,6 +17,8 @@ type ContextUser = {
   tenantId?: string;
   id?: string;
   _id?: { toString: () => string };
+  /** The platform operator's hidden access to an organization (a loaded member record). */
+  operatorAccess?: boolean;
 } | null;
 
 export type ContextRequest = {
@@ -30,6 +38,16 @@ export type ContextRequest = {
 };
 
 const SYSTEM_TENANT_REJECTION_MESSAGE = 'System tenant is not allowed for request-scoped routes';
+const RESERVED_TENANT_REJECTION_MESSAGE =
+  'Reserved tenant is not allowed for request-scoped routes';
+
+/** The 403 message for a reserved tenant on a request-scoped route, or `undefined` if allowed. */
+function reservedTenantRejection(tenantId: string | undefined): string | undefined {
+  if (tenantId === SYSTEM_TENANT_ID) {
+    return SYSTEM_TENANT_REJECTION_MESSAGE;
+  }
+  return isReservedTenantId(tenantId) ? RESERVED_TENANT_REJECTION_MESSAGE : undefined;
+}
 
 let _checkedThread = false;
 
@@ -71,6 +89,7 @@ export function buildTenantContext(
     ...buildRequestContext(req),
     tenantId: normalizeContextValue(tenantId),
     userId: getUserId(req.user ?? null),
+    ...(req.user?.operatorAccess === true ? { operatorActing: true } : {}),
   };
 }
 
@@ -146,11 +165,12 @@ export function tenantContextMiddleware(
   const context = buildTenantContext(req);
   const { tenantId } = context;
 
-  if (tenantId === SYSTEM_TENANT_ID) {
-    logger.warn('[tenantContextMiddleware] Rejected system tenant for request route', {
+  const rejection = reservedTenantRejection(tenantId);
+  if (rejection) {
+    logger.warn(`[tenantContextMiddleware] Rejected ${tenantId} tenant for request route`, {
       path: req.path,
     });
-    res.status(403).json({ error: SYSTEM_TENANT_REJECTION_MESSAGE });
+    res.status(403).json({ error: rejection });
     return;
   }
 
@@ -165,6 +185,14 @@ export function tenantContextMiddleware(
       return;
     }
     runWithTenantContext(context, next);
+    return;
+  }
+
+  /* The UI names the organization it was rendered for. When the session now acts in another
+   * one (another tab switched), refuse rather than read or write the wrong organization. */
+  const expected = req.headers[EXPECTED_TENANT_HEADER];
+  if (typeof expected === 'string' && expected && expected !== tenantId) {
+    res.status(409).json({ code: OrganizationErrorCode.ORGANIZATION_CHANGED });
     return;
   }
 
@@ -280,11 +308,13 @@ export function restoreTenantContextFromReq(
     return;
   }
 
-  if (resolvedTenantId === SYSTEM_TENANT_ID) {
-    logger.warn('[restoreTenantContextFromReq] Rejected system tenant for request route', {
-      path: req.path,
-    });
-    return rejectRequestWithUploadCleanup(req, res, SYSTEM_TENANT_REJECTION_MESSAGE);
+  const rejection = reservedTenantRejection(resolvedTenantId);
+  if (rejection) {
+    logger.warn(
+      `[restoreTenantContextFromReq] Rejected ${resolvedTenantId} tenant for request route`,
+      { path: req.path },
+    );
+    return rejectRequestWithUploadCleanup(req, res, rejection);
   }
 
   const currentContext = tenantStorage.getStore();

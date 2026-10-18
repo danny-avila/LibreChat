@@ -119,6 +119,12 @@ export interface AdminUsersDeps {
   deletePasskeysByUser: (userId: string) => Promise<number>;
 }
 
+/**
+ * Users an admin listing shows. The platform operator's hidden access to an organization is a
+ * user record there too, but it is not one of the organization's users.
+ */
+const LISTED_USER: FilterQuery<IUser> = { operatorAccess: { $ne: true } };
+
 export function createAdminUsersHandlers(deps: AdminUsersDeps): {
   listUsers: (req: ServerRequest, res: Response) => Promise<Response>;
   searchUsers: (req: ServerRequest, res: Response) => Promise<Response>;
@@ -151,8 +157,8 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
     try {
       const { limit, offset } = parsePagination(req.query);
       const [users, total] = await Promise.all([
-        findUsers({}, USER_LIST_FIELDS, { limit, offset, sort: { createdAt: -1 } }),
-        countUsers(),
+        findUsers(LISTED_USER, USER_LIST_FIELDS, { limit, offset, sort: { createdAt: -1 } }),
+        countUsers(LISTED_USER),
       ]);
 
       const mapped: AdminUserListItem[] = users.map((u) => ({
@@ -199,7 +205,7 @@ export function createAdminUsersHandlers(deps: AdminUsersDeps): {
       const searchLimit = Math.min(Math.max(1, parseInt(limitStr, 10) || 20), 50);
       const filter = buildUserSearchFilter(trimmed, { legacyPrefix: true });
       const users = filter
-        ? await findUsers(filter, '_id name email username avatar', {
+        ? await findUsers({ ...filter, ...LISTED_USER }, '_id name email username avatar', {
             limit: searchLimit,
             sort: { name: 1 },
           })

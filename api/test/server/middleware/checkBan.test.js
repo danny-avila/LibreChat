@@ -41,6 +41,8 @@ jest.mock('@librechat/api', () => ({
   },
   keyvMongo: {},
   getBanIp: jest.requireActual('../../../../packages/api/src/middleware/ban').getBanIp,
+  getViolationSubjectId: jest.requireActual('../../../../packages/api/src/organizations/identity')
+    .getViolationSubjectId,
   removePorts: jest.fn((req) => req.ip),
   redirectToAuthFailure: (res, { clientDomain, authFailedError }) =>
     res.redirect(`${clientDomain}/login?redirect=false&error=${authFailedError}`),

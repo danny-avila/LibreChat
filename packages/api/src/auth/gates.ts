@@ -14,7 +14,10 @@ import {
 type AuthUser = Pick<
   TwoFactorAccount,
   '_id' | 'id' | 'provider' | 'tenantId' | 'orgId' | 'storageRegion' | 'twoFactorEnabled'
->;
+> & {
+  /** Organizations mode: the login account behind a member; it owns 2FA enrollment. */
+  identityId?: { toString(): string } | null;
+};
 
 type AuthRequest = Request & { user?: AuthUser; authStrategy?: string };
 
@@ -88,8 +91,10 @@ export function createRequiredTwoFactorGate(deps: TwoFactorGateDependencies) {
         tenantId: user?.tenantId ?? user?.orgId,
         storageRegion: user?.storageRegion,
       });
+      /* Enrollment writes the second factor to the account that signs in, which for an
+       * organization member is its login account, not the member record. */
       const tempToken = (deps.generateSetupToken ?? generateTwoFactorSetupToken)(
-        userId,
+        user?.identityId?.toString() ?? userId,
         process.env.JWT_SECRET as string,
       );
       /** Tenant context is established only after this gate, as the JWT strategy's own read is. */

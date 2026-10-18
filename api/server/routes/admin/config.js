@@ -9,7 +9,7 @@ const {
   getReadableConfigSections,
 } = require('~/server/middleware/roles/capabilities');
 const { getAppConfig, invalidateConfigCaches } = require('~/server/services/Config');
-const { requireJwtAuth } = require('~/server/middleware');
+const { requireAdminAuth } = require('~/server/middleware');
 const db = require('~/models');
 
 const router = express.Router();
@@ -35,7 +35,7 @@ const handlers = createAdminConfigHandlers({
   auditFailClosed: process.env.AUDIT_LOG_FAIL_CLOSED === 'true',
 });
 
-router.use(requireJwtAuth, requireAdminAccess);
+router.use(requireAdminAuth, requireAdminAccess);
 
 router.get('/', handlers.listConfigs);
 router.get('/base', handlers.getBaseConfig);

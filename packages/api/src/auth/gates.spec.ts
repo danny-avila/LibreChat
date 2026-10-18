@@ -58,4 +58,28 @@ describe('required two-factor gate', () => {
     expect(onAllowed).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
   });
+
+  it('mints the setup token for the login account behind an organization member', async () => {
+    const generateSetupToken = jest.fn(() => 'setup-token');
+    const getUserById = jest.fn(async () => ({}));
+    const gate = createRequiredTwoFactorGate({
+      clearCloudFrontCookies: jest.fn(),
+      warn: jest.fn(),
+      generateSetupToken,
+      getUserById,
+    });
+    const { res } = createResponse();
+    const req = {
+      path: '/api/convos',
+      headers: {},
+      user: { id: 'member-1', provider: 'local', identityId: 'account-1', tenantId: 'org_a' },
+    } as unknown as Request;
+
+    gate(req, res, jest.fn() as NextFunction, jest.fn());
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(generateSetupToken).toHaveBeenCalledWith('account-1', process.env.JWT_SECRET);
+    /* The retirement cutoff is still read for the member, whose loader answers with the account's. */
+    expect(getUserById).toHaveBeenCalledWith('member-1', expect.any(String));
+  });
 });

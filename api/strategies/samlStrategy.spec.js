@@ -102,7 +102,7 @@ jest.mocked(fs).readFileSync = jest.fn();
 
 const verifyCallbacks = new Map();
 SamlStrategy.mockImplementation((options, verify) => {
-  const strategyName = options.callbackUrl?.includes('/api/admin/') ? 'samlAdmin' : 'saml';
+  const strategyName = 'saml';
   verifyCallbacks.set(strategyName, verify);
   return { name: strategyName, options, verify };
 });
@@ -641,23 +641,6 @@ u7wlOSk+oFzDIO/UILIA
     expect(claimSamlIdentity).not.toHaveBeenCalled();
   });
 
-  it('should enforce the NameID binding for the admin SAML callback', async () => {
-    const { findUser, claimSamlIdentity } = require('~/models');
-    const existingUser = {
-      _id: 'existing-admin-id',
-      provider: 'saml',
-      email: baseProfile.email,
-      samlId: 'original-name-id',
-    };
-    findUser.mockResolvedValueOnce(null).mockResolvedValueOnce(existingUser);
-
-    const result = await validate(baseProfile, 'samlAdmin');
-
-    expect(result.user).toBe(false);
-    expect(result.details.message).toBe(require('librechat-data-provider').ErrorTypes.AUTH_FAILED);
-    expect(claimSamlIdentity).not.toHaveBeenCalled();
-  });
-
   it('should block login when email exists with different provider', async () => {
     // Set up findUser to return a user with different provider
     const { findUser } = require('~/models');
@@ -735,20 +718,18 @@ u7wlOSk+oFzDIO/UILIA
     expect(fetch).not.toHaveBeenCalled();
   });
 
-  it('should pass the configured NameID format to both SAML strategies', async () => {
+  it('should pass the configured NameID format to the SAML strategy', async () => {
     process.env.SAML_NAME_ID_FORMAT = 'urn:oasis:names:tc:SAML:2.0:nameid-format:persistent';
     process.env.SAML_IDP_ISSUER = 'https://idp.example.com';
 
     await setupSaml();
 
-    const calls = SamlStrategy.mock.calls.slice(-2);
-    for (const [options] of calls) {
-      expect(options).toEqual(
-        expect.objectContaining({
-          identifierFormat: 'urn:oasis:names:tc:SAML:2.0:nameid-format:persistent',
-        }),
-      );
-    }
+    const [options] = SamlStrategy.mock.calls.at(-1);
+    expect(options).toEqual(
+      expect.objectContaining({
+        identifierFormat: 'urn:oasis:names:tc:SAML:2.0:nameid-format:persistent',
+      }),
+    );
   });
 
   it('should refuse to configure a transient NameID format', async () => {

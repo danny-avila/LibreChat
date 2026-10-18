@@ -1,5 +1,5 @@
 export * from './access';
-export * from './admin';
+export * from './account';
 export * from './error';
 export * from './email';
 export * from './notFound';
@@ -8,6 +8,7 @@ export * from './balance';
 export * from './ban';
 export * from './json';
 export * from './capabilities';
+export * from './operator';
 export * from './auth';
 export {
   requestContextMiddleware,
@@ -15,7 +16,11 @@ export {
   restoreTenantContextFromReq,
   resolveRequestTenantId,
 } from './tenant';
-export { preAuthTenantMiddleware } from './preAuthTenant';
+export {
+  preAuthTenantMiddleware,
+  accountsTenantMiddleware,
+  accountRouteTenantMiddleware,
+} from './preAuthTenant';
 export * from './concurrency';
 export * from './checkBalance';
 export * from './remoteAgentAuth';

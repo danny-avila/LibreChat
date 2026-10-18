@@ -6,6 +6,7 @@ import type {
   TCustomConfig,
   TCredentialsConfig,
   TChatProjectsConfig,
+  TOrganizationsConfig,
   TMemoryConfig,
   EModelEndpoint,
   TVertexAIConfig,
@@ -92,6 +93,8 @@ export interface AppConfig {
   cloudfront?: CloudFrontConfig;
   /** Chat Projects limits resolved from the deployment configuration */
   projects?: TChatProjectsConfig;
+  /** Organizations (multi-tenancy) settings; only the base config sets them */
+  organizations?: TOrganizationsConfig;
   /** Registration configurations */
   registration?: TCustomConfig['registration'];
   /** Changing the registered email address */

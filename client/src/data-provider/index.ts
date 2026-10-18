@@ -1,3 +1,4 @@
+export * from './Admin';
 export * from './Auth';
 export * from './Agents';
 export * from './Endpoints';
@@ -9,6 +10,7 @@ export * from './Insights';
 export * from './Memories';
 export * from './Messages';
 export * from './Misc';
+export * from './Organizations';
 export * from './Projects';
 /* Scheduled chats */
 export * from './Schedules';

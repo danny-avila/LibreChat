@@ -43,6 +43,85 @@ const tenantModelRestrictions = [
   },
 ];
 
+/** Classes Tailwind generates no CSS for that are still meant: plain selectors in files loaded
+ * separately (style.css families, the library's component CSS) and classes a third party puts in
+ * the DOM. `shadcn/no-unknown-classes` reports any other class that generates nothing. */
+const UNGENERATED_CLASSES = [
+  // client/src/style.css and the library's component CSS
+  'icon-*',
+  'hover-button',
+  'toast-root',
+  'alert-root',
+  'tooltip',
+  'spinner',
+  'popover-ui',
+  'select-item',
+  'reset-rc-number-input',
+  'reset-rc-number-input-text-right',
+  'assistant-item',
+  'animated-tab',
+  'animated-tab-list',
+  'animated-tab-panel',
+  'animated-panels',
+  'animate-popover',
+  'animate-popover-bottom',
+  'animate-pulse-slow',
+  'animate-gradient-x',
+  'animate-fadeIn',
+  'slow-pulse',
+  'hide-scrollbar',
+  'scrollbar-gutter-spacer',
+  'active',
+  // put in the DOM by a dependency, not by Tailwind
+  'lucide',
+  'lucide-*',
+  'language-*',
+  'i-heroicons-*',
+  'form-check-label',
+  // Markers a selector reads rather than Tailwind styling: each one is queried by a
+  // stylesheet, a component, or an e2e spec, so it carries no CSS of its own.
+  'popover',
+  'user-turn',
+  'agent-turn',
+  'final-completion',
+  'sibling-content-group',
+  'scroll-animation',
+  'hover-button-active',
+  'open',
+  'split-parent',
+  // Message-text markers the app's stylesheet paints; a @librechat/chat source cannot see
+  // that stylesheet, so its lint has no Tailwind entry that declares them.
+  'markdown',
+  'prose',
+  'message-content',
+  'submitting',
+  'result-streaming',
+  'result-thinking',
+];
+
+/** The built-in admin panel's layout classes, from `client/src/admin/admin.css`, which loads
+ * with the panel's own chunk rather than through the app stylesheet Tailwind reads. */
+const ADMIN_PANEL_CLASSES = [
+  'admin-*',
+  'audit-*',
+  'badge-*',
+  'cmdk-*',
+  'config-*',
+  'cui-field',
+  'entry-marker-*',
+  'form-dialog-*',
+  'scope-*',
+  'select-field-a11y',
+  'settings-*',
+  'state-chip',
+  'state-chip-*',
+  'static-value',
+  'static-value-*',
+  'toc-*',
+  'trash-btn',
+  'user-dropdown',
+];
+
 /** Attributes a person reads or hears; a literal in one ships untranslated copy. */
 const chatLiteralAttributeNames =
   '/^(title|alt|placeholder|label|aria-label|aria-description|aria-placeholder|aria-roledescription|aria-valuetext)$/';
@@ -77,6 +156,7 @@ export default [
       '**/node_modules/**/*',
       'venv/**/*',
       '.devcontainer/**/*',
+      'admin-panel-main/**/*',
     ],
   },
   ...fixupConfigRules(
@@ -304,59 +384,18 @@ export default [
       'shadcn/no-unknown-classes': [
         'error',
         {
-          allow: [
-            // client/src/style.css and the library's component CSS
-            'icon-*',
-            'hover-button',
-            'toast-root',
-            'alert-root',
-            'tooltip',
-            'spinner',
-            'popover-ui',
-            'select-item',
-            'reset-rc-number-input',
-            'reset-rc-number-input-text-right',
-            'assistant-item',
-            'animated-tab',
-            'animated-tab-list',
-            'animated-tab-panel',
-            'animated-panels',
-            'animate-popover',
-            'animate-popover-bottom',
-            'animate-pulse-slow',
-            'animate-gradient-x',
-            'animate-fadeIn',
-            'slow-pulse',
-            'hide-scrollbar',
-            'scrollbar-gutter-spacer',
-            'active',
-            // put in the DOM by a dependency, not by Tailwind
-            'lucide',
-            'lucide-*',
-            'language-*',
-            'i-heroicons-*',
-            'form-check-label',
-            // Markers a selector reads rather than Tailwind styling: each one is queried by a
-            // stylesheet, a component, or an e2e spec, so it carries no CSS of its own.
-            'popover',
-            'user-turn',
-            'agent-turn',
-            'final-completion',
-            'sibling-content-group',
-            'scroll-animation',
-            'hover-button-active',
-            'open',
-            'split-parent',
-            // Message-text markers the app's stylesheet paints; a @librechat/chat source cannot see
-            // that stylesheet, so its lint has no Tailwind entry that declares them.
-            'markdown',
-            'prose',
-            'message-content',
-            'submitting',
-            'result-streaming',
-            'result-thinking',
-          ],
+          allow: UNGENERATED_CLASSES,
         },
+      ],
+    },
+  },
+  {
+    // The admin panel's own layout classes live in its lazily loaded stylesheet.
+    files: ['client/src/admin/**/*.{ts,tsx}'],
+    rules: {
+      'shadcn/no-unknown-classes': [
+        'error',
+        { allow: [...UNGENERATED_CLASSES, ...ADMIN_PANEL_CLASSES] },
       ],
     },
   },

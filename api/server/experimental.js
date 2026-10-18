@@ -42,6 +42,10 @@ const {
   readBundledThemeBoot,
   createDeploymentThemeShell,
   preAuthTenantMiddleware,
+  accountsTenantMiddleware,
+  configureOrganizations,
+  isOrganizationsEnabled,
+  assertOrganizationsRuntime,
   requestContextMiddleware,
   configureServerTimeouts,
   setupGracefulShutdown,
@@ -507,6 +511,8 @@ if (cluster.isMaster) {
     // principal) still merges DB `__base__` overrides, which must not drive which hook
     // modules load in every worker (matches api/server/index.js's baseOnly usage).
     const baseAppConfig = await getAppConfig({ baseOnly: true });
+    assertOrganizationsRuntime(baseAppConfig, process.env);
+    configureOrganizations(baseAppConfig.organizations);
     await configureSubagentTaskRouting(baseAppConfig?.endpoints?.agents?.subagentActivity);
     registerBackgroundTaskShutdown({
       interruptGraceMs: baseAppConfig?.endpoints?.agents?.backgroundTasks?.shutdownInterruptGraceMs,
@@ -650,10 +656,13 @@ if (cluster.isMaster) {
     app.use(capabilityContextMiddleware);
 
     /** Routes */
-    app.use('/oauth', preAuthTenantMiddleware, routes.oauth);
-    app.use('/api/auth', preAuthTenantMiddleware, routes.auth);
+    /* Organizations mode resolves login accounts on credential routes (see api/server/index.js). */
+    const credentialTenantMiddleware = isOrganizationsEnabled()
+      ? accountsTenantMiddleware
+      : preAuthTenantMiddleware;
+    app.use('/oauth', credentialTenantMiddleware, routes.oauth);
+    app.use('/api/auth', credentialTenantMiddleware, routes.auth);
     app.use('/api/insights', routes.insights);
-    app.use('/api/admin', routes.adminAuth);
     app.use('/api/admin/skills', routes.adminSkills);
     app.use('/api/admin/code-environments', routes.adminCodeEnvironments);
     app.use('/api/code-environments', routes.codeEnvironments);
@@ -661,6 +670,7 @@ if (cluster.isMaster) {
     app.use('/api/keys', routes.keys);
     app.use('/api/api-keys', routes.apiKeys);
     app.use('/api/user', routes.user);
+    app.use('/api/organizations', routes.organizations);
     app.use('/api/search', routes.search);
     app.use('/api/messages', routes.messages);
     app.use('/api/convos', routes.convos);

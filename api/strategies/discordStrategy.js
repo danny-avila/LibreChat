@@ -23,7 +23,6 @@ const getProfileDetails = ({ profile }) => {
 };
 
 const discordLogin = socialLogin('discord', getProfileDetails);
-const discordAdminLogin = socialLogin('discord', getProfileDetails, { existingUsersOnly: true });
 
 const getDiscordConfig = (callbackURL) => ({
   clientID: process.env.DISCORD_CLIENT_ID,
@@ -43,11 +42,4 @@ const discordStrategy = (stateOptions) =>
     discordLogin,
   );
 
-const discordAdminStrategy = () =>
-  new DiscordStrategy(
-    getDiscordConfig(`${process.env.DOMAIN_SERVER}/api/admin/oauth/discord/callback`),
-    discordAdminLogin,
-  );
-
 module.exports = discordStrategy;
-module.exports.discordAdminLogin = discordAdminStrategy;

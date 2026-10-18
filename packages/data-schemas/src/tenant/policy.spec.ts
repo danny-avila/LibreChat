@@ -10,7 +10,7 @@ import {
   tenantWritePredicate,
   resetTenantStrictCache,
 } from './policy';
-import { tenantStorage, SYSTEM_TENANT_ID } from '~/config/tenantContext';
+import { tenantStorage, SYSTEM_TENANT_ID, PLATFORM_TENANT_ID } from '~/config/tenantContext';
 
 /**
  * The tenant policy is engine-neutral: these tests run with no database and no
@@ -21,6 +21,7 @@ import { tenantStorage, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 const SCOPED: TenantScope = { kind: 'scoped', tenantId: 'tenant-a' };
 const SYSTEM: TenantScope = { kind: 'system' };
 const UNSCOPED: TenantScope = { kind: 'unscoped' };
+const PLATFORM: TenantScope = { kind: 'platform' };
 
 const withStrict = async (value: boolean, fn: () => void | Promise<void>): Promise<void> => {
   const previous = process.env.TENANT_ISOLATION_STRICT;
@@ -40,6 +41,50 @@ const withStrict = async (value: boolean, fn: () => void | Promise<void>): Promi
 
 afterEach(() => {
   resetTenantStrictCache();
+});
+
+describe('platform scope', () => {
+  it('resolves from the platform sentinel', async () => {
+    await tenantStorage.run({ tenantId: PLATFORM_TENANT_ID }, async () => {
+      expect(currentTenantScope()).toEqual(PLATFORM);
+    });
+  });
+
+  it('filters to rows with no tenant', () => {
+    expect(tenantFilter(PLATFORM)).toEqual({ tenantId: { $in: [null, ''] } });
+  });
+
+  it('refuses an update that assigns a tenant, and strips an empty one', () => {
+    expect(() =>
+      sanitizeTenantMutation(PLATFORM, { $set: { name: 'x', tenantId: 'tenant-a' } }, 'guard'),
+    ).toThrow(TenantIsolationError);
+    expect(
+      sanitizeTenantMutation(PLATFORM, { $set: { name: 'x', tenantId: null } }, 'guard').update,
+    ).toEqual({ $set: { name: 'x' } });
+  });
+
+  it('refuses a replacement or an insert that names a tenant', () => {
+    expect(() => scopeReplacement(PLATFORM, { name: 'x', tenantId: 'tenant-a' })).toThrow(
+      TenantIsolationError,
+    );
+    expect(scopeReplacement(PLATFORM, { name: 'x' })).toEqual({
+      replacement: { name: 'x' },
+      changed: false,
+    });
+    expect(() => stampTenantOnDocument(PLATFORM, { tenantId: 'tenant-a' })).toThrow(
+      TenantIsolationError,
+    );
+    const document: Record<string, unknown> = { name: 'x' };
+    stampTenantOnDocument(PLATFORM, document);
+    expect(document).toEqual({ name: 'x' });
+  });
+
+  it('keeps a save of a persisted row on untenanted rows only', () => {
+    expect(tenantWritePredicate(PLATFORM, false, undefined)).toEqual({
+      tenantId: { $in: [null, ''] },
+    });
+    expect(() => tenantWritePredicate(PLATFORM, true, 'tenant-a')).toThrow(TenantIsolationError);
+  });
 });
 
 describe('currentTenantScope', () => {

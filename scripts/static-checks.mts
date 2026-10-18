@@ -1751,6 +1751,8 @@ function runConfigTests(): CheckOutcome {
 
 const TOKEN_PATTERN = /[A-Za-z0-9_]+/g;
 const CATEGORY_LOOKUP = /category\.(label|description).*startsWith.*['"]com_/;
+/** A template literal that builds an admin panel key: `com_admin_config_field_${...}`. */
+const ADMIN_KEY_TEMPLATE = /`(com_admin_[a-z0-9_]+_)\$\{/g;
 
 /**
  * CI greps every key across the source dirs one key at a time. This collects
@@ -1774,11 +1776,14 @@ async function findUnusedI18nKeys(): Promise<CheckOutcome> {
 
   const shortestKey = keys.reduce((shortest, key) => Math.min(shortest, key.length), Infinity);
   const tokens = new Set<string>();
+  /** Prefixes the built-in admin panel composes its keys from (`com_admin_config_field_${key}`). */
+  const adminPrefixes = new Set<string>();
   let hasCategoryLookup = false;
 
   for (const file of await collectFiles(I18N_SOURCE_DIRS, SOURCE_EXTENSIONS)) {
     const content = await readFile(file, 'utf8');
     if (!hasCategoryLookup) hasCategoryLookup = CATEGORY_LOOKUP.test(content);
+    for (const match of content.matchAll(ADMIN_KEY_TEMPLATE)) adminPrefixes.add(match[1]);
     for (const token of content.match(TOKEN_PATTERN) ?? []) {
       if (token.length >= shortestKey) tokens.add(token);
     }
@@ -1792,6 +1797,8 @@ async function findUnusedI18nKeys(): Promise<CheckOutcome> {
   };
 
   const unused = keys.filter((key) => {
+    // The admin panel's schema-driven labels are built from a prefix and a config key.
+    if ([...adminPrefixes].some((prefix) => key.startsWith(prefix))) return false;
     // Special variable labels are built dynamically from TSpecialVarLabel.
     if (key.startsWith('com_ui_special_var_') && tokens.has('TSpecialVarLabel')) return false;
     // Agent category keys are read back from the database.

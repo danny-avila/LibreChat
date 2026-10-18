@@ -3,6 +3,7 @@ import type {
   RefillIntervalUnit,
   BalanceRefillMode,
   StatefulCodeEnvironment,
+  TOrganizationMemberStatus,
 } from 'librechat-data-provider';
 import type { Document, Types } from 'mongoose';
 
@@ -88,6 +89,20 @@ export interface IUser extends Document {
   updatedAt?: Date;
   /** Field for external source identification (for consistency with TPrincipal schema) */
   idOnTheSource?: string;
+  /** On an organization member: the login account it belongs to. */
+  identityId?: Types.ObjectId;
+  /** On an organization member; absent means active. */
+  status?: TOrganizationMemberStatus;
+  /** On a login account: the organization the next sign-in opens. */
+  lastActiveTenantId?: string;
+  /** On a login account: the organization to create once the email is verified. */
+  pendingOrganization?: { name: string };
+  /** On a login account: the link invite to redeem once the email is verified. */
+  pendingInviteId?: Types.ObjectId;
+  /** On a login account: the platform operator (at most one account). */
+  isPlatformOperator?: boolean;
+  /** On a member record: the operator's hidden access to an organization it is not part of. */
+  operatorAccess?: boolean;
   tenantId?: string;
   /** Derived search tokens (see `~/utils/search`); `select: false`. */
   nameTokens?: string[];

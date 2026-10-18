@@ -7,6 +7,7 @@ import { useShortcutAriaKey, useShortcutHint } from '~/hooks/useKeyboardShortcut
 import { useActivePanel, resolveActivePanel, DEFAULT_PANEL } from '~/Providers';
 import AgentMarketplaceButton from '~/components/Nav/AgentMarketplaceButton';
 import { CLOSE_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
+import { OrganizationSwitcher } from '~/components/Nav/Organizations';
 import useNewChat from '~/hooks/Conversations/useNewChat';
 import { lazyWithRecovery } from '~/lib/assets/lazy';
 import { useLocalize } from '~/hooks';
@@ -167,6 +168,7 @@ function ExpandedPanel({
           </Button>
         }
       />
+      <OrganizationSwitcher />
       <NewChatButton setActive={setActive} switchToHistory={switchToHistory} />
       <AgentMarketplaceButton />
       <div className="border-border-inset mx-2 border-b" />

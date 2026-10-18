@@ -1,6 +1,8 @@
 import { PrincipalType } from 'librechat-data-provider';
 import {
   configCapability,
+  SYSTEM_TENANT_ID,
+  ACCOUNTS_TENANT_ID,
   SystemCapabilities,
   readConfigCapability,
 } from '@librechat/data-schemas';
@@ -73,6 +75,26 @@ describe('generateCapabilityCheck', () => {
       });
       expect(mockHasCapabilityForPrincipals).not.toHaveBeenCalled();
     });
+  });
+
+  describe('reserved tenants', () => {
+    it.each([ACCOUNTS_TENANT_ID, SYSTEM_TENANT_ID])(
+      'denies every capability to a principal in %s without querying grants',
+      async (tenantId) => {
+        mockGetUserPrincipals.mockResolvedValue(adminPrincipals);
+        mockHasCapabilityForPrincipals.mockResolvedValue(true);
+        mockGetHeldCapabilities.mockResolvedValue(new Set([SystemCapabilities.ACCESS_ADMIN]));
+        const account = { id: 'account-1', role: 'ADMIN', tenantId };
+
+        await expect(hasCapability(account, SystemCapabilities.ACCESS_ADMIN)).resolves.toBe(false);
+        await expect(
+          getHeldCapabilities(account, [SystemCapabilities.ACCESS_ADMIN]),
+        ).resolves.toEqual(new Set());
+        expect(mockGetUserPrincipals).not.toHaveBeenCalled();
+        expect(mockHasCapabilityForPrincipals).not.toHaveBeenCalled();
+        expect(mockGetHeldCapabilities).not.toHaveBeenCalled();
+      },
+    );
   });
 
   describe('hasCapability', () => {

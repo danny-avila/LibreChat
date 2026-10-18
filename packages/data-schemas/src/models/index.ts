@@ -5,6 +5,7 @@ import { getTenantIndexMigrationHint } from '~/migrations/tenantIndexes';
 import { createSkillSyncCredentialModel } from './skillSyncCredential';
 import { createOpenIDRefreshFlightModel } from './openidRefreshFlight';
 import { createAgentTriggerUserPurgeModel } from './triggerUserPurge';
+import { createOrganizationInviteModel } from './organizationInvite';
 import { createRefreshTokenBridgeModel } from './refreshTokenBridge';
 import { createAgentTriggerDeliveryModel } from './triggerDelivery';
 import { createToolApprovalGrantModel } from './toolApprovalGrant';
@@ -14,6 +15,7 @@ import { createConversationTagModel } from './conversationTag';
 import { createCodeEnvironmentModel } from './codeEnvironment';
 import { createSkillDeletionModel } from './skillDeletion';
 import { createAgentCategoryModel } from './agentCategory';
+import { createOrganizationModel } from './organization';
 import { createResourceLockModel } from './resourceLock';
 import { createChatProjectModel } from './chatProject';
 import { createAgentApiKeyModel } from './agentApiKey';
@@ -59,6 +61,8 @@ export function createModels(mongoose: typeof import('mongoose')): {
   ToolApprovalGrant: ReturnType<typeof createToolApprovalGrantModel>;
   Token: ReturnType<typeof createTokenModel>;
   Session: ReturnType<typeof createSessionModel>;
+  Organization: ReturnType<typeof createOrganizationModel>;
+  OrganizationInvite: ReturnType<typeof createOrganizationInviteModel>;
   Passkey: ReturnType<typeof createPasskeyModel>;
   Balance: ReturnType<typeof createBalanceModel>;
   Conversation: ReturnType<typeof createConversationModel>;
@@ -113,6 +117,8 @@ export function createModels(mongoose: typeof import('mongoose')): {
     ToolApprovalGrant: createToolApprovalGrantModel(mongoose),
     Token: createTokenModel(mongoose),
     Session: createSessionModel(mongoose),
+    Organization: createOrganizationModel(mongoose),
+    OrganizationInvite: createOrganizationInviteModel(mongoose),
     Passkey: createPasskeyModel(mongoose),
     Balance: createBalanceModel(mongoose),
     Conversation: createConversationModel(mongoose),

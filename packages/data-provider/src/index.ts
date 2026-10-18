@@ -46,6 +46,11 @@ export * from './types/mutations';
 export * from './types/queries';
 export * from './types/schedules';
 export * from './cadence';
+export * from './types/organizations';
+export * from './types/admin';
+/* Admin capabilities and audit vocabulary, shared by the server and the admin panel. */
+export * from './admin/capabilities';
+export * from './admin/audit';
 export * from './types/skills';
 export * from './types/runs';
 export * from './types/web';

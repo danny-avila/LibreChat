@@ -12,9 +12,10 @@ import {
   InputOTPGroup,
   InputOTPSeparator,
 } from '@librechat/client';
+import { useLocalize, getOrganizationErrorCode, useOrganizationErrorMessage } from '~/hooks';
 import { useVerifyTwoFactorTempMutation } from '~/data-provider';
+import { startOrganizationOnboarding } from '~/utils';
 import BackupCodeInput from './BackupCodeInput';
-import { useLocalize } from '~/hooks';
 
 interface VerifyPayload {
   tempToken: string;
@@ -39,10 +40,14 @@ const TwoFactorScreen: React.FC = React.memo(() => {
   } = useForm<TwoFactorFormInputs>();
   const localize = useLocalize();
   const { showToast } = useToastContext();
+  const getOrganizationError = useOrganizationErrorMessage();
   const [useBackup, setUseBackup] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const { mutate: verifyTempMutate } = useVerifyTwoFactorTempMutation({
     onSuccess: (result) => {
+      if (startOrganizationOnboarding(result)) {
+        return;
+      }
       if (result.token != null && result.token !== '') {
         window.location.href = '/';
       }
@@ -56,6 +61,10 @@ const TwoFactorScreen: React.FC = React.memo(() => {
         .response?.data;
       if (data?.code === ErrorTypes.AUTH_CROSS_ORIGIN) {
         showToast({ message: localize('com_auth_error_login_cross_origin'), status: 'error' });
+        return;
+      }
+      if (getOrganizationErrorCode(error)) {
+        showToast({ message: getOrganizationError(error), status: 'error' });
         return;
       }
       const errorMsg = typeof data?.message === 'string' ? data.message : 'Error verifying 2FA';

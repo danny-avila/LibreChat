@@ -26,6 +26,10 @@ const mockMethods = {
   deleteAgentTriggerDeliveriesByUser: jest.fn(),
   cancelAgentTriggerUserPurge: jest.fn(),
   cancelAgentTriggerUserDeletion: jest.fn(),
+  listMembershipsForIdentity: jest.fn(),
+  deletePasskeysByUser: jest.fn(),
+  deleteTokens: jest.fn(),
+  deleteAllAccountSessions: jest.fn(),
 };
 const mockGetCleanupBlockingJobIdsForUser = jest.fn();
 const mockAbortJob = jest.fn();
@@ -40,6 +44,8 @@ const mockInvalidateCachedTools = jest.fn();
 const mockInitializeFileStorage = jest.fn();
 const mockOpenCheckpointDeletion = jest.fn();
 const mockDeleteAllSharedLinksWithCleanup = jest.fn();
+const mockApplyOrganizationsMode = jest.fn();
+const mockAccountsTenant = '__ACCOUNTS__';
 
 jest.mock('../connect', () => jest.fn(async () => undefined));
 jest.mock('mongoose', () => ({ disconnect: jest.fn(async () => undefined) }));
@@ -47,7 +53,12 @@ jest.mock('@librechat/data-schemas', () => ({
   createModels: () => new Proxy({}, { get: (_target, prop) => mockModelFor(prop) }),
   createMethods: () => mockMethods,
   runAsSystem: (operation) => operation(),
+  runInTenant: (tenantId, operation) => mockTenantStorage.run({ tenantId }, operation),
+  runInAccounts: (operation) => mockTenantStorage.run({ tenantId: mockAccountsTenant }, operation),
+  isReservedTenantId: (tenantId) => tenantId === mockAccountsTenant,
+  logger: { info: jest.fn(), warn: jest.fn(), error: jest.fn() },
   tenantStorage: mockTenantStorage,
+  ACCOUNTS_TENANT_ID: mockAccountsTenant,
 }));
 jest.mock('@librechat/api', () => ({
   waitForKeyvRedisClient: jest.fn(async () => undefined),
@@ -64,6 +75,12 @@ jest.mock('@librechat/api', () => ({
   initializeFileStorage: (...args) => mockInitializeFileStorage(...args),
   openCheckpointDeletion: mockOpenCheckpointDeletion,
   deleteAllSharedLinksWithCleanup: mockDeleteAllSharedLinksWithCleanup,
+  createAccountEraser: jest.requireActual('../../packages/api/src/organizations/erase.ts')
+    .createAccountEraser,
+}));
+jest.mock('../organizations', () => ({
+  applyOrganizationsMode: (...args) => mockApplyOrganizationsMode(...args),
+  inLoginContext: (operation) => operation(),
 }));
 jest.mock('~/cache/getLogStores', () => jest.fn());
 jest.mock('~/server/services/Config', () => ({
@@ -138,6 +155,11 @@ describe('Delete user CLI', () => {
     mockProcessDeleteRequest.mockReset().mockResolvedValue({ deletedFileIds: [] });
     mockInvalidateCachedTools.mockReset().mockResolvedValue(undefined);
     mockInitializeFileStorage.mockReset();
+    mockApplyOrganizationsMode.mockReset().mockResolvedValue(false);
+    mockMethods.listMembershipsForIdentity.mockReset().mockResolvedValue([]);
+    mockMethods.deletePasskeysByUser.mockReset().mockResolvedValue(undefined);
+    mockMethods.deleteTokens.mockReset().mockResolvedValue(undefined);
+    mockMethods.deleteAllAccountSessions.mockReset().mockResolvedValue(undefined);
     mockAskQuestion.mockReset().mockResolvedValueOnce('y').mockResolvedValueOnce('n');
   });
 
@@ -401,5 +423,71 @@ describe('Delete user CLI', () => {
     const deletionFence = mockMethods.beginAgentTriggerUserDeletion.mock.calls[0][1];
     expect(mockMethods.cancelAgentTriggerUserPurge).toHaveBeenCalledWith(USER_ID, deletionFence);
     expect(mockMethods.cancelAgentTriggerUserDeletion).toHaveBeenCalledWith(USER_ID, deletionFence);
+  });
+
+  describe('in organizations mode', () => {
+    const ACCOUNT_ID = 'account-1';
+    const memberships = [
+      { _id: { toString: () => 'member-a' }, tenantId: 'org_a', role: 'ADMIN' },
+      { _id: { toString: () => 'member-b' }, tenantId: 'org_b', role: 'USER' },
+    ];
+
+    beforeEach(() => {
+      mockApplyOrganizationsMode.mockResolvedValue(true);
+      mockModelFor('User').findOne.mockResolvedValue({
+        _id: { toString: () => ACCOUNT_ID },
+        email: 'deleted@example.com',
+        tenantId: mockAccountsTenant,
+      });
+      mockMethods.listMembershipsForIdentity.mockResolvedValue(memberships);
+    });
+
+    it('erases every membership inside its own organization, then the account', async () => {
+      const tenantsSeen = [];
+      mockEraseUserData.mockImplementation(async () => {
+        tenantsSeen.push(mockTenantStorage.getStore()?.tenantId);
+      });
+
+      expect(await runCli()).toBe(0);
+
+      expect(mockMethods.listMembershipsForIdentity).toHaveBeenCalledWith(ACCOUNT_ID);
+      expect(mockEraseUserData.mock.calls.map(([input]) => [input.userId, input.tenantId])).toEqual(
+        [
+          ['member-a', 'org_a'],
+          ['member-b', 'org_b'],
+        ],
+      );
+      expect(tenantsSeen).toEqual(['org_a', 'org_b']);
+      expect(mockMethods.beginAgentTriggerUserDeletion.mock.calls.map(([id]) => id)).toEqual([
+        'member-a',
+        'member-b',
+      ]);
+      expect(mockMethods.deleteUserById.mock.calls.map(([id]) => id)).toEqual([
+        'member-a',
+        'member-b',
+        ACCOUNT_ID,
+      ]);
+      expect(mockMethods.deleteAllAccountSessions).toHaveBeenCalledWith(ACCOUNT_ID);
+      expect(mockMethods.deletePasskeysByUser).toHaveBeenCalledWith(ACCOUNT_ID);
+      expect(mockMethods.deleteTokens).toHaveBeenCalledWith({ userId: ACCOUNT_ID });
+      expect(mockDestroy).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the account, and the memberships not yet erased, when one fails', async () => {
+      mockEraseUserData
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new Error('storage unavailable'));
+
+      expect(await runCli()).toBe(1);
+
+      expect(mockMethods.deleteUserById.mock.calls.map(([id]) => id)).toEqual(['member-a']);
+      expect(mockMethods.deleteAllAccountSessions).not.toHaveBeenCalled();
+      const failedFence = mockMethods.beginAgentTriggerUserDeletion.mock.calls[1][1];
+      expect(mockMethods.cancelAgentTriggerUserDeletion).toHaveBeenCalledWith(
+        'member-b',
+        failedFence,
+      );
+      expect(mockDestroy).toHaveBeenCalledTimes(1);
+    });
   });
 });

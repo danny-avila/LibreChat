@@ -1,12 +1,15 @@
 import { createBrowserRouter, Navigate, Outlet } from 'react-router-dom';
 import {
   Login,
+  Onboarding,
   VerifyEmail,
   Registration,
   ResetPassword,
   TwoFactorScreen,
   TwoFactorSetupScreen,
   RequestPasswordReset,
+  OrganizationInvite,
+  AcceptOrganizationInvite,
 } from '~/components/Auth';
 import { OAuthSuccess, OAuthError } from '~/components/OAuth';
 import { AuthContextProvider } from '~/hooks/AuthContext';
@@ -55,6 +58,12 @@ const loadProjectWorkspace = () =>
     Component: m.ProjectWorkspace,
   }));
 
+/** The built-in admin panel: the platform operator's, or without organizations an admin's. */
+const loadAdminPanel = () =>
+  importWithRecovery(() => import('~/admin/App')).then((m) => ({
+    Component: m.default,
+  }));
+
 const baseEl = document.querySelector('base');
 const baseHref = baseEl?.getAttribute('href') || '/';
 
@@ -96,6 +105,14 @@ export const router = createBrowserRouter(
           path: 'reset-password',
           element: <ResetPassword />,
         },
+        {
+          path: 'onboarding',
+          element: <Onboarding />,
+        },
+        {
+          path: 'invite/:token',
+          element: <OrganizationInvite />,
+        },
       ],
     },
     {
@@ -128,7 +145,15 @@ export const router = createBrowserRouter(
                 },
               ],
             },
+            {
+              path: 'invite/:token/accept',
+              element: <AcceptOrganizationInvite />,
+            },
             dashboardRoutes,
+            {
+              path: 'admin/*',
+              lazy: loadAdminPanel,
+            },
             {
               path: '/',
               element: <Root />,

@@ -1,7 +1,9 @@
 const { isEnabled } = require('@librechat/api');
 
 function validateRegistration(req, res, next) {
-  if (req.invite) {
+  /* A platform invite, or (in organizations mode) an organization invite, admits a
+   * registration even where open registration is off. */
+  if (req.invite || req.organizationInvite) {
     return next();
   }
 

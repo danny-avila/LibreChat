@@ -6,14 +6,13 @@ const {
   isEnabled,
 } = require('@librechat/api');
 const {
-  findSession,
   getAgent,
   getAssistant,
-  getUserById,
   getUserPrincipals,
   hasCapabilityForPrincipals,
   hasPermission,
 } = require('~/models');
+const { getAuthUserById, findAuthSession } = require('~/server/services/AuthSessions');
 const { getAppConfig } = require('~/server/services/Config');
 
 const getAssistantEndpointConfigs = (appConfig) =>
@@ -42,10 +41,10 @@ function createValidateImageRequest(config = {}) {
     parseCookies: cookie.parse,
     isOpenIdReuseEnabled: () => isEnabled(process.env.OPENID_REUSE_TOKENS),
     getBasePath,
-    findSession,
+    findSession: findAuthSession,
     getAgent,
     getAssistant,
-    getUserById,
+    getUserById: getAuthUserById,
     getUserPrincipals,
     hasCapabilityForPrincipals,
     hasPermission,

@@ -2,7 +2,13 @@ const { Keyv } = require('keyv');
 const uap = require('ua-parser-js');
 const { logger } = require('@librechat/data-schemas');
 const { ErrorTypes, ViolationTypes } = require('librechat-data-provider');
-const { isEnabled, keyvMongo, removePorts, getBanIp } = require('@librechat/api');
+const {
+  isEnabled,
+  getBanIp,
+  keyvMongo,
+  removePorts,
+  getViolationSubjectId,
+} = require('@librechat/api');
 const { getLogStores } = require('~/cache');
 const { isOAuthNavigation, redirectOAuthFailure } = require('./oauthNavigation');
 const denyRequest = require('./denyRequest');
@@ -89,7 +95,7 @@ const checkBan = async (req, res, next = () => {}) => {
 
     req.ip = removePorts(req);
     const banIp = getBanIp(req);
-    let userId = req.user?.id ?? req.user?._id?.toString() ?? null;
+    let userId = getViolationSubjectId(req.user) ?? null;
 
     if (!userId && req?.body?.email) {
       const user = await findUser({ email: req.body.email }, '_id');

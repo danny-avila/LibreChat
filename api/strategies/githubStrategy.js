@@ -12,7 +12,6 @@ const getProfileDetails = ({ profile }) => ({
 });
 
 const githubLogin = socialLogin('github', getProfileDetails);
-const githubAdminLogin = socialLogin('github', getProfileDetails, { existingUsersOnly: true });
 
 const getGitHubConfig = (callbackURL) => ({
   clientID: process.env.GITHUB_CLIENT_ID,
@@ -41,11 +40,4 @@ const githubStrategy = (stateOptions) =>
     githubLogin,
   );
 
-const githubAdminStrategy = () =>
-  new GitHubStrategy(
-    getGitHubConfig(`${process.env.DOMAIN_SERVER}/api/admin/oauth/github/callback`),
-    githubAdminLogin,
-  );
-
 module.exports = githubStrategy;
-module.exports.githubAdminLogin = githubAdminStrategy;

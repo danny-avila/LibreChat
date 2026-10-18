@@ -1,6 +1,11 @@
 import { Types } from 'mongoose';
 import { AsyncLocalStorage } from 'async_hooks';
-import { CacheKeys, PrincipalType, SystemRoles } from 'librechat-data-provider';
+import {
+  CacheKeys,
+  SystemRoles,
+  PrincipalType,
+  OrganizationMemberStatus,
+} from 'librechat-data-provider';
 import type { TPrincipalSearchResult } from 'librechat-data-provider';
 import type { Model, ClientSession, FilterQuery } from 'mongoose';
 import type { CacheStore, IGroup, IRole, IUser } from '~/types';
@@ -972,7 +977,15 @@ export function createUserGroupMethods(
     if (userFilter && (!typeFilter || typeFilter.includes(PrincipalType.USER))) {
       const userFields = 'name email username avatar provider idOnTheSource role';
       const User = mongoose.models.User as Model<IUser>;
-      const userQuery = User.find(userFilter).select(userFields).limit(limitPerType);
+      /* A deactivated member cannot act in the organization, and the platform operator's access
+       * to it is invisible there, so nobody can pick either. */
+      const userQuery = User.find({
+        ...userFilter,
+        status: { $ne: OrganizationMemberStatus.DEACTIVATED },
+        operatorAccess: { $ne: true },
+      })
+        .select(userFields)
+        .limit(limitPerType);
 
       if (session) {
         userQuery.session(session);

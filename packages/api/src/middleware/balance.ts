@@ -1,5 +1,5 @@
-import { logger } from '@librechat/data-schemas';
 import { isBalanceRefillDue } from 'librechat-data-provider';
+import { logger, isReservedTenantId } from '@librechat/data-schemas';
 import type {
   IBalanceUpdate,
   BalanceConfig,
@@ -142,6 +142,11 @@ export function createSetBalanceConfig({
     try {
       const balanceLocals = res.locals as BalanceLocals;
       const user = req.user as IUser & { _id: string | ObjectId };
+      /* A login account holds no balance: usage belongs to its organization members, whose
+       * balances this same middleware initializes on their first request. */
+      if (isReservedTenantId(user?.tenantId)) {
+        return next();
+      }
       const appConfig = await getAppConfig({
         role: user?.role,
         userId: user?.id,

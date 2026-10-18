@@ -3,6 +3,7 @@ import { TWO_FACTOR_FEDERATED_LOGIN_BLOCKED_CODE } from 'librechat-data-provider
 import type { TwoFactorEnrollmentUpdate } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import type { TwoFactorEnrollmentDependencies, StoredTwoFactorAccount } from './twoFactor';
+import type { IssuedAuth, AuthUserRecord, IssueAuthTokens } from '~/organizations/types';
 import type { UserDocumentId } from '~/auth/verification';
 import {
   TOKEN_RETIREMENT_FIELDS,
@@ -18,6 +19,11 @@ import {
   withdrawMintedSession,
   verifyTwoFactorLoginChallengeToken,
 } from './twoFactor';
+import {
+  issueAuth,
+  sendOrganizationRefusal,
+  organizationOnboardingResponse,
+} from '~/organizations/issue';
 import { sanitizeUserForResponse } from './user';
 import { clearCloudFrontCookies } from '~/cdn';
 
@@ -56,6 +62,8 @@ export interface EnrollmentControllerDependencies
     unused: null,
     req: Request,
   ) => Promise<string>;
+  /** Organizations mode: issues for the account's member and names it in the response. */
+  issueAuthTokens?: IssueAuthTokens;
 }
 
 interface EnrollmentControllers {
@@ -68,10 +76,19 @@ interface EnrollmentControllers {
 export function createEnrollmentControllers(
   deps: EnrollmentControllerDependencies,
 ): EnrollmentControllers {
-  const sanitizeUser = (user: StoredTwoFactorAccount) => ({
+  const sanitizeUser = (user: StoredTwoFactorAccount | AuthUserRecord) => ({
     ...sanitizeUserForResponse(user),
     id: user._id.toString(),
   });
+
+  /** The sign-in body: the issued member when there is one, onboarding when there is none. */
+  const signedInBody = (
+    issued: IssuedAuth,
+    account: StoredTwoFactorAccount & { emailVerified?: boolean },
+  ) =>
+    issued.onboardingToken
+      ? organizationOnboardingResponse(issued.onboardingToken, account.emailVerified !== false)
+      : { token: issued.token, user: sanitizeUser(issued.user ?? account) };
 
   const revokeMintedSession = (
     res: Response,
@@ -128,8 +145,7 @@ export function createEnrollmentControllers(
         return res.status(401).json({ message: 'Invalid 2FA code or backup code' });
       }
 
-      const userData = sanitizeUser(user);
-      const authToken = await deps.setAuthTokens(user._id, res, null, req);
+      const issued = await issueAuth(deps, user._id, res, null, req);
       const retirement = await recheckMintedCredential(
         () => deps.getUserById(credential.userId, TOKEN_RETIREMENT_FIELDS),
         () => revokeMintedSession(res, user, credential.userId),
@@ -142,8 +158,12 @@ export function createEnrollmentControllers(
         return res.status(401).json({ message: 'Invalid or expired temporary token' });
       }
 
-      return res.status(200).json({ token: authToken, user: userData });
+      return res.status(200).json(signedInBody(issued, user));
     } catch (err) {
+      const refused = sendOrganizationRefusal(res, err);
+      if (refused) {
+        return refused;
+      }
       logger.error('[verify2FAWithTempToken]', err);
       return res.status(500).json({ message: 'Something went wrong' });
     }
@@ -216,9 +236,8 @@ export function createEnrollmentControllers(
         return res.status(result.status).json({ message: result.message });
       }
 
-      const userData = sanitizeUser(result.user);
       await deps.deleteAllUserSessions({ userId: result.user._id.toString() });
-      const authToken = await deps.setAuthTokens(result.user._id, res, null, req);
+      const issued = await issueAuth(deps, result.user._id, res, null, req);
       const retirement = await recheckMintedCredential(
         () => deps.getUserById(userId, TOKEN_RETIREMENT_FIELDS),
         () => revokeMintedSession(res, result.user, userId),
@@ -235,8 +254,12 @@ export function createEnrollmentControllers(
           .json({ message: 'Password was reset during setup, please sign in again' });
       }
 
-      return res.status(200).json({ token: authToken, user: userData });
+      return res.status(200).json(signedInBody(issued, result.user));
     } catch (err) {
+      const refused = sendOrganizationRefusal(res, err);
+      if (refused) {
+        return refused;
+      }
       logger.error('[finalize2FASetup]', err);
       return res.status(500).json({ message: 'Something went wrong' });
     }

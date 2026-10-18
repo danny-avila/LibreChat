@@ -1,6 +1,6 @@
 import { createElement } from 'react';
-import { MessageSquare, Info } from 'lucide-react';
 import { SettingsTabValues } from 'librechat-data-provider';
+import { MessageSquare, Info, Building2 } from 'lucide-react';
 import { GearIcon, DataIcon, UserIcon, SpeechIcon } from '@librechat/client';
 import type { ComponentType, ReactNode } from 'react';
 import type { TranslationKeys } from '~/hooks';
@@ -12,6 +12,7 @@ export type SettingsTab =
   | SettingsTabValues.LANGFUSE
   | SettingsTabValues.DATA
   | SettingsTabValues.ACCOUNT
+  | SettingsTabValues.ORGANIZATION
   | SettingsTabValues.ABOUT;
 
 export type SectionId =
@@ -37,6 +38,9 @@ export type SectionId =
   | 'security'
   | 'connections'
   | 'billing'
+  | 'orgGeneral'
+  | 'orgMembers'
+  | 'orgInvites'
   | 'about';
 
 export interface SettingsContextValue {
@@ -60,11 +64,18 @@ export interface SettingsContextValue {
   mascotAllowed: boolean;
   engineTTS: string;
   langfuseConnectionAccess: boolean;
-  adminPanelURL: string;
+  /** The signed-in person can open the built-in admin panel. */
+  adminPanel: boolean;
   replyTabBadgeAllowed: boolean;
   replyNotificationsAllowed: boolean;
   replyNotificationSoundAllowed: boolean;
   analyticsConfigured: boolean;
+  /** Organizations mode: the deployment runs organizations. */
+  organizationsEnabled: boolean;
+  /** Organizations mode: the signed-in member administers its current organization. */
+  isOrganizationAdmin: boolean;
+  /** Organizations mode: the session is a membership the person can leave, not an operator visit. */
+  canLeaveOrganization: boolean;
 }
 
 export interface SettingEntry {
@@ -173,6 +184,17 @@ export const TABS: TabMeta[] = [
       { id: 'billing', labelKey: 'com_ui_settings_section_billing' },
       { id: 'danger', labelKey: 'com_ui_settings_section_danger_zone', danger: true },
     ],
+  },
+  {
+    id: SettingsTabValues.ORGANIZATION,
+    labelKey: 'com_nav_setting_organization',
+    icon: createElement(Building2, { className: 'icon-sm', 'aria-hidden': true }),
+    sections: [
+      { id: 'orgGeneral', labelKey: 'com_ui_settings_section_org_general' },
+      { id: 'orgMembers', labelKey: 'com_ui_settings_section_org_members' },
+      { id: 'orgInvites', labelKey: 'com_ui_settings_section_org_invites' },
+    ],
+    show: (ctx) => ctx.organizationsEnabled,
   },
   {
     id: SettingsTabValues.ABOUT,

@@ -4,6 +4,7 @@ import {
   TWO_FACTOR_FEDERATED_LOGIN_BLOCKED_CODE,
 } from 'librechat-data-provider';
 import type { Request, Response } from 'express';
+import type { IssueAuthTokens } from '~/organizations/types';
 import type { StoredTwoFactorAccount } from './twoFactor';
 import type { UserDocumentId } from '~/auth/verification';
 import {
@@ -15,9 +16,15 @@ import {
   isCredentialLoginBlockedByTwoFactorPolicy,
   isTwoFactorEnrollmentRequired,
 } from './twoFactor';
+import {
+  issueAuth,
+  sendOrganizationRefusal,
+  organizationOnboardingResponse,
+} from '~/organizations/issue';
+import { sanitizeUserForAuthResponse } from './localRefresh';
 import { clearCloudFrontCookies } from '~/cdn';
 
-type LoginUser = StoredTwoFactorAccount & { __v?: number };
+type LoginUser = StoredTwoFactorAccount & { __v?: number; emailVerified?: boolean };
 type LoginRequest = Request & { user?: LoginUser };
 
 export interface LoginDependencies {
@@ -31,6 +38,8 @@ export interface LoginDependencies {
     unused: null,
     req: Request,
   ) => Promise<string>;
+  /** Organizations mode: issues for the account's member and names it in the response. */
+  issueAuthTokens?: IssueAuthTokens;
 }
 
 export function createLoginController(deps: LoginDependencies) {
@@ -98,7 +107,7 @@ export function createLoginController(deps: LoginDependencies) {
       user.id = user._id.toString();
 
       const loginUser = req.user;
-      const token = await deps.setAuthTokens(loginUser._id, res, null, req);
+      const issued = await issueAuth(deps, loginUser._id, res, null, req);
       const revoked = await recheckMintedCredential(
         () => wasPasswordRevokedDuringLogin(loginUser),
         () => withdrawLoginSession(res, loginUser),
@@ -108,8 +117,25 @@ export function createLoginController(deps: LoginDependencies) {
         return refuseRevokedLogin(res, loginUser);
       }
 
-      return res.status(200).send({ token, user });
+      if (issued.onboardingToken) {
+        return res
+          .status(200)
+          .send(
+            organizationOnboardingResponse(
+              issued.onboardingToken,
+              loginUser.emailVerified !== false,
+            ),
+          );
+      }
+      const responseUser = issued.user
+        ? { ...sanitizeUserForAuthResponse(issued.user), id: issued.user._id.toString() }
+        : user;
+      return res.status(200).send({ token: issued.token, user: responseUser });
     } catch (err) {
+      const refused = sendOrganizationRefusal(res, err);
+      if (refused) {
+        return refused;
+      }
       logger.error('[loginController]', err);
       return res.status(500).json({ message: 'Something went wrong' });
     }

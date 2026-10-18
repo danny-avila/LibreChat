@@ -353,3 +353,10 @@ export type GraphTokenResponse = {
   expires_in: number;
   scope: string;
 };
+
+export type OrganizationMembersParams = {
+  limit?: number;
+  /** Id of the last member on the previous page. */
+  after?: string;
+  search?: string;
+};

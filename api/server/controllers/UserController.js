@@ -22,6 +22,9 @@ const {
   revokeUserCodeEnvironmentWorkers,
   finalizeMCPAuthorizationMutation,
   clearSessionHintCookie,
+  getAuthIdentity,
+  createAccountEraser,
+  createCredentialOwnerLoader,
 } = require('@librechat/api');
 const { Tools, Constants, FileSources } = require('librechat-data-provider');
 const { updateUserPluginAuth, deleteUserPluginAuth } = require('~/server/services/PluginService');
@@ -51,6 +54,8 @@ const {
 const { sendEmail } = require('~/server/utils');
 const db = require('~/models');
 
+const loadCredentialOwner = createCredentialOwnerLoader({ getUserById: db.getUserById });
+
 const emailChangeService = createEmailChangeService(
   createEmailChangeDeps({
     store: {
@@ -69,6 +74,7 @@ const emailChangeService = createEmailChangeService(
     getAppConfig,
     clientDomain: process.env.DOMAIN_CLIENT ?? 'http://localhost:3080',
     appName: process.env.APP_TITLE || 'LibreChat',
+    onEmailChanged: (userId, email) => db.syncAccountProfileToMembers(userId, { email }),
   }),
 );
 
@@ -360,30 +366,19 @@ const updateUserPluginsController = async (req, res) => {
   }
 };
 
-const deleteUserController = async (req, res) => {
-  const { user } = req;
+/**
+ * The full erasure cascade for one user record: fences trigger admission, suspends schedules,
+ * stops generations, erases the data and deletes the record. Throws when the deletion must be
+ * retried, after restoring what this attempt suspended. `user` is the record being erased:
+ * the signed-in user, or, for an organization account, each of its members in turn.
+ */
+const eraseUserRecord = async (req, res, user, requestConfig) => {
   const tenantId = user.tenantId || undefined;
   let triggerDeletionFence;
   let scheduleSuspensionToken;
   let userDeleted = false;
 
   try {
-    const existingUser = await db.getUserById(
-      user.id,
-      '+totpSecret +backupCodes _id twoFactorEnabled',
-    );
-    if (existingUser && existingUser.twoFactorEnabled) {
-      const { token, backupCode } = req.body;
-      const result = await verifyOTPOrBackupCode({ user: existingUser, token, backupCode });
-
-      if (!result.verified) {
-        const msg =
-          result.message ??
-          'TOTP token or backup code is required to delete account with 2FA enabled';
-        return res.status(result.status ?? 400).json({ message: msg });
-      }
-    }
-
     // Block new trigger admissions across replicas while preserving the user
     // principal so a transient cleanup failure remains retryable.
     triggerDeletionFence = new Date();
@@ -412,7 +407,7 @@ const deleteUserController = async (req, res) => {
     await stopUserGenerations(user.id, tenantId, GenerationJobManager);
 
     const appConfig =
-      req.config ??
+      requestConfig ??
       (await getAppConfig({
         role: user.role,
         userId: user.id,
@@ -430,7 +425,10 @@ const deleteUserController = async (req, res) => {
         deleteSharedLinks: (id) => deleteAllSharedLinksWithCleanup(id, { awaitCleanup: true }),
         /** The DELETE carries no body without 2FA, and account erasure targets no assistant. */
         deleteStoredFiles: (files) =>
-          processDeleteRequest({ req: Object.assign(Object.create(req), { body: {} }), files }),
+          processDeleteRequest({
+            req: Object.assign(Object.create(req), { body: {}, user, config: appConfig }),
+            files,
+          }),
         ...createMCPServerCleanup(user.id),
         onSessionsDeleted: () => clearSessionHintCookie(res),
       },
@@ -463,7 +461,6 @@ const deleteUserController = async (req, res) => {
     });
     await purgeAgentTriggerDeliveriesForUser(user.id);
     logger.info(`User deleted account. ID: ${user.id} Tenant: ${tenantId ?? 'none'}`);
-    res.status(200).send({ message: 'User deleted' });
   } catch (err) {
     // The account survives this failed attempt, so its schedules must too: restore the
     // exact rows this attempt suspended (re-enabled/re-armed from their snapshot). Fenced
@@ -507,6 +504,45 @@ const deleteUserController = async (req, res) => {
         logger.error('[deleteUserController] Failed to release trigger deletion fence', fenceError);
       }
     }
+    throw err;
+  }
+};
+
+const deleteUserController = async (req, res) => {
+  const { user } = req;
+  try {
+    /* An organization member's credentials (and so its second factor) are its account's. */
+    const credentialOwner = await loadCredentialOwner(
+      user,
+      '+totpSecret +backupCodes _id twoFactorEnabled',
+    );
+    if (credentialOwner && credentialOwner.twoFactorEnabled) {
+      const { token, backupCode } = req.body;
+      const result = await verifyOTPOrBackupCode({ user: credentialOwner, token, backupCode });
+
+      if (!result.verified) {
+        const msg =
+          result.message ??
+          'TOTP token or backup code is required to delete account with 2FA enabled';
+        return res.status(result.status ?? 400).json({ message: msg });
+      }
+    }
+
+    const account = getAuthIdentity(user);
+    if (account) {
+      await createAccountEraser({
+        listMembershipsForIdentity: db.listMembershipsForIdentity,
+        eraseMember: (member) => eraseUserRecord(req, res, member),
+        deletePasskeysByUser: db.deletePasskeysByUser,
+        deleteTokens: db.deleteTokens,
+        deleteAllAccountSessions: db.deleteAllAccountSessions,
+        deleteUserById: db.deleteUserById,
+      })(account._id.toString());
+    } else {
+      await eraseUserRecord(req, res, user, req.config);
+    }
+    res.status(200).send({ message: 'User deleted' });
+  } catch (err) {
     logger.error('[deleteUserController]', err);
     return res.status(500).json({ message: 'Something went wrong.' });
   }
@@ -577,6 +613,7 @@ module.exports = {
   getTermsStatusController,
   acceptTermsController,
   deleteUserController,
+  eraseUserRecord,
   verifyEmailController,
   requestEmailChangeController,
   confirmEmailChangeController,

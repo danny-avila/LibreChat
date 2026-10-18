@@ -15,7 +15,7 @@
  * `models/plugins/tenantIsolation.spec.ts`.
  */
 
-import { tenantStorage, SYSTEM_TENANT_ID } from '~/config/tenantContext';
+import { tenantStorage, SYSTEM_TENANT_ID, PLATFORM_TENANT_ID } from '~/config/tenantContext';
 import { resetTenantStrictCache } from './policy';
 
 /** A row as the engine stores it. */
@@ -75,6 +75,8 @@ export function describeTenantIsolationConformance(harness: TenantEngineHarness)
   const asA = <T>(fn: () => Promise<T>): Promise<T> => tenantStorage.run({ tenantId: A }, fn);
   const asSystem = <T>(fn: () => Promise<T>): Promise<T> =>
     tenantStorage.run({ tenantId: SYSTEM_TENANT_ID }, fn);
+  const asPlatform = <T>(fn: () => Promise<T>): Promise<T> =>
+    tenantStorage.run({ tenantId: PLATFORM_TENANT_ID }, fn);
 
   describe(`tenant isolation conformance: ${harness.name}`, () => {
     beforeAll(() => harness.setup());
@@ -182,6 +184,66 @@ export function describeTenantIsolationConformance(harness: TenantEngineHarness)
 
         const rows = await harness.readAllUnscoped();
         expect(rows[0]).toEqual(expect.objectContaining({ name: 'mine', tenantId: A }));
+      });
+    });
+
+    /**
+     * The platform scope is the operator's deployment-wide view: only untenanted rows, in both
+     * directions. It must never see, change or claim a tenant's rows, and a tenant must never
+     * see the platform's.
+     */
+    describe('platform scope', () => {
+      it('sees only untenanted rows', async () => {
+        await harness.seed([{ name: 'platform' }, { name: 'mine', tenantId: A }]);
+
+        expect(await asPlatform(() => harness.findNames())).toEqual(['platform']);
+        expect(await asPlatform(() => harness.count())).toBe(1);
+        expect(await asA(() => harness.findNames())).toEqual(['mine']);
+      });
+
+      it('inserts without stamping a tenant', async () => {
+        await asPlatform(() => harness.insert({ name: 'fresh' }));
+
+        const rows = await harness.readAllUnscoped();
+        expect(rows).toHaveLength(1);
+        expect(rows[0].tenantId).toBeUndefined();
+      });
+
+      it('refuses an insert that names a tenant', async () => {
+        await expect(
+          asPlatform(() => harness.insert({ name: 'smuggled', tenantId: A })),
+        ).rejects.toThrow('[TenantIsolation]');
+
+        expect(await harness.readAllUnscoped()).toHaveLength(0);
+      });
+
+      it('cannot rename or delete a tenant row', async () => {
+        await harness.seed([{ name: 'mine', tenantId: A }]);
+
+        await asPlatform(() => harness.rename('mine', 'stolen'));
+        await asPlatform(() => harness.remove('mine'));
+
+        expect(await harness.readAllUnscoped()).toEqual([
+          expect.objectContaining({ name: 'mine', tenantId: A }),
+        ]);
+      });
+
+      it('refuses an update that assigns a tenant', async () => {
+        await harness.seed([{ name: 'platform' }]);
+
+        await expect(
+          asPlatform(() => harness.renameAndReassign('platform', 'moved', A)),
+        ).rejects.toThrow('[TenantIsolation]');
+
+        const rows = await harness.readAllUnscoped();
+        expect(rows[0].name).toBe('platform');
+        expect(rows[0].tenantId).toBeUndefined();
+      });
+
+      it('is an explicit context that strict mode lets through', async () => {
+        await withStrict(true, async () => {
+          await expect(asPlatform(() => harness.findNames())).resolves.toEqual([]);
+        });
       });
     });
 

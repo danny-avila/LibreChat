@@ -5,6 +5,7 @@ import {
   logger,
   configCapability,
   SystemCapabilities,
+  isReservedTenantId,
   readConfigCapability,
 } from '@librechat/data-schemas';
 import type { SystemCapability, ConfigSection } from '@librechat/data-schemas';
@@ -12,6 +13,7 @@ import type { NextFunction, Response } from 'express';
 import type { Types, ClientSession } from 'mongoose';
 import type { ResolvedPrincipal } from '~/types/principal';
 import type { ServerRequest } from '~/types/http';
+import { isOperatorPrincipal } from './operator';
 
 interface CapabilityDeps {
   getUserPrincipals: (
@@ -179,6 +181,12 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
 
   /** Whether the user holds any config-read capability at all, broad or section-scoped. */
   async function hasAnyConfigReadAccess(user: CapabilityUser): Promise<boolean> {
+    if (isReservedTenantId(user.tenantId)) {
+      return false;
+    }
+    if (isOperatorPrincipal(user.id)) {
+      return true;
+    }
     const principals = await resolvePrincipals(user);
     return checkAny({ principals, tenantId: user.tenantId });
   }
@@ -187,6 +195,12 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
     user: CapabilityUser,
     capabilities: SystemCapability[],
   ): Promise<Set<SystemCapability>> {
+    if (isReservedTenantId(user.tenantId)) {
+      return new Set();
+    }
+    if (isOperatorPrincipal(user.id)) {
+      return new Set(capabilities);
+    }
     const principals = await resolvePrincipals(user);
     return getHeldCaps({ principals, capabilities, tenantId: user.tenantId });
   }
@@ -218,6 +232,14 @@ export function generateCapabilityCheck(deps: CapabilityDeps): {
     capability: SystemCapability,
     { platformOnly = false }: { platformOnly?: boolean } = {},
   ): Promise<boolean> {
+    /** A login account (or a system sentinel) is never an actor inside a tenant. */
+    if (isReservedTenantId(user.tenantId)) {
+      return false;
+    }
+    /** The platform operator, acting through the admin panel, holds every capability. */
+    if (isOperatorPrincipal(user.id)) {
+      return true;
+    }
     if (!isMainThread && !workerWarned) {
       workerWarned = true;
       logger.warn(

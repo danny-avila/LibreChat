@@ -2,7 +2,7 @@ const express = require('express');
 const { createAdminSkillsSyncAccess, createAdminSkillsSyncHandlers } = require('@librechat/api');
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const { hasCapability, requireCapability } = require('~/server/middleware/roles/capabilities');
-const { requireJwtAuth } = require('~/server/middleware');
+const { requireAdminAuth } = require('~/server/middleware');
 const {
   upsertSkillSyncCredential,
   deleteSkillSyncCredential,
@@ -28,7 +28,7 @@ const handlers = createAdminSkillsSyncHandlers({
 });
 
 router.use(
-  requireJwtAuth,
+  requireAdminAuth,
   requireAdminAccess,
   configMiddleware,
   syncAccess.attachBaseSkillSyncConfig,

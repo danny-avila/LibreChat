@@ -1,13 +1,18 @@
 import { useMemo } from 'react';
 import { useRecoilValue } from 'recoil';
 import {
+  SystemRoles,
   AgentCapabilities,
   Permissions,
   PermissionTypes,
   isTwoFactorPolicyProvider,
 } from 'librechat-data-provider';
 import type { SettingsContextValue } from './types';
-import { useGetStartupConfig, usePullRequestConnectionStatus } from '~/data-provider';
+import {
+  useGetStartupConfig,
+  useAdminSessionQuery,
+  usePullRequestConnectionStatus,
+} from '~/data-provider';
 import useProviderKeys from '../SettingsTabs/ProviderKeys/useProviderKeys';
 import { useHasAccess, useAuthContext, useGetAgentsConfig } from '~/hooks';
 import usePersonalizationAccess from '~/hooks/usePersonalizationAccess';
@@ -36,7 +41,6 @@ export function useSettingsContext(): SettingsContextValue {
 
   const balanceEnabled = startupConfig?.balance?.enabled === true;
   const langfuseConnectionAccess = startupConfig?.langfuseConnectionAccess === true;
-  const adminPanelURL = startupConfig?.adminPanelURL ?? '';
   const isLocalProvider = user?.provider === 'local';
   const emailEnabled = startupConfig?.emailEnabled === true;
   const allowEmailChange = startupConfig?.allowEmailChange === true;
@@ -62,6 +66,16 @@ export function useSettingsContext(): SettingsContextValue {
   const replyNotificationSoundAllowed =
     replyConfigLoaded && replyNotificationsConfig?.sound !== false;
   const analyticsConfigured = hasAnalyticsGtmId(startupConfig?.analyticsGtmId);
+  const organizationsEnabled = startupConfig?.organizations?.enabled === true;
+  /* In organizations mode only the platform operator can open the panel, so no one else asks. */
+  const { data: adminSession } = useAdminSessionQuery({
+    enabled: startupConfig != null && (!organizationsEnabled || user?.isPlatformOperator === true),
+  });
+  const adminPanel = adminSession != null;
+  /* The server checks the capability; the role decides only what the tab offers. */
+  const isOrganizationAdmin = organizationsEnabled && user?.role === SystemRoles.ADMIN;
+  /* The operator's visit is not a membership, so there is nothing to leave. */
+  const canLeaveOrganization = organizationsEnabled && user?.operatorAccess !== true;
   const hasRemoteAgentsBool = hasRemoteAgents === true;
   const hasMultiConvoBool = hasMultiConvo === true;
   const hasPromptsBool = hasPrompts === true;
@@ -92,11 +106,14 @@ export function useSettingsContext(): SettingsContextValue {
       mascotAllowed,
       engineTTS,
       langfuseConnectionAccess,
-      adminPanelURL,
+      adminPanel,
       replyTabBadgeAllowed,
       replyNotificationsAllowed,
       replyNotificationSoundAllowed,
       analyticsConfigured,
+      organizationsEnabled,
+      isOrganizationAdmin,
+      canLeaveOrganization,
     }),
     [
       balanceEnabled,
@@ -119,11 +136,14 @@ export function useSettingsContext(): SettingsContextValue {
       mascotAllowed,
       engineTTS,
       langfuseConnectionAccess,
-      adminPanelURL,
+      adminPanel,
       replyTabBadgeAllowed,
       replyNotificationsAllowed,
       replyNotificationSoundAllowed,
       analyticsConfigured,
+      organizationsEnabled,
+      isOrganizationAdmin,
+      canLeaveOrganization,
     ],
   );
 }

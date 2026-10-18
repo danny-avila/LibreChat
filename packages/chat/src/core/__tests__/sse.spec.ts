@@ -1,4 +1,4 @@
-import { request } from 'librechat-data-provider';
+import { request, setExpectedTenantHeader } from 'librechat-data-provider';
 import type { ChatEvent, TPayload } from 'librechat-data-provider';
 import { createSSETransport } from '../transport';
 
@@ -73,6 +73,7 @@ const enrollmentPayload = {
   tempToken: 'setup-token',
 };
 const enrollmentBody = JSON.stringify(enrollmentPayload);
+const organizationChangedBody = JSON.stringify({ code: 'ORGANIZATION_CHANGED' });
 
 const turn = {
   server: '/api/assistants/v2/chat',
@@ -226,6 +227,30 @@ describe('createSSETransport', () => {
     current().write(enrollmentBody);
 
     expect(redirect).toHaveBeenCalledWith(enrollmentBody);
+    expect(events).toEqual([]);
+  });
+
+  it('names the organization the page shows so a switched session is refused', () => {
+    setExpectedTenantHeader('org_a');
+    try {
+      send();
+      expect(current().headers).toEqual({
+        'Content-Type': 'application/json',
+        Authorization: 'Bearer token-1',
+        'x-expected-tenant': 'org_a',
+      });
+    } finally {
+      setExpectedTenantHeader(undefined);
+    }
+  });
+
+  it('reloads instead of reporting an error when another tab switched organization', () => {
+    const reload = jest.spyOn(request, 'reloadIfOrganizationChanged').mockReturnValue(true);
+    send();
+    current().status = 409;
+    current().write(organizationChangedBody);
+
+    expect(reload).toHaveBeenCalledWith(409, organizationChangedBody);
     expect(events).toEqual([]);
   });
 
@@ -544,6 +569,30 @@ describe('createSSETransport().reconnectToStream', () => {
     current().write(enrollmentBody);
 
     expect(redirect).toHaveBeenCalledWith(enrollmentBody);
+    expect(events).toEqual([]);
+  });
+
+  it('reattaches inside the organization the page shows', () => {
+    setExpectedTenantHeader('org_a');
+    try {
+      attach();
+      expect(current().headers).toEqual({
+        Authorization: 'Bearer token-1',
+        'x-expected-tenant': 'org_a',
+        'X-LibreChat-Generation-Protocol': '2',
+      });
+    } finally {
+      setExpectedTenantHeader(undefined);
+    }
+  });
+
+  it('reloads instead of reporting a failure when another tab switched organization', () => {
+    const reload = jest.spyOn(request, 'reloadIfOrganizationChanged').mockReturnValue(true);
+    attach();
+    current().status = 409;
+    current().write(organizationChangedBody);
+
+    expect(reload).toHaveBeenCalledWith(409, organizationChangedBody);
     expect(events).toEqual([]);
   });
 

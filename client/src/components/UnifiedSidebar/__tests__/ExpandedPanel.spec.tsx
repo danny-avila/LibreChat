@@ -12,6 +12,9 @@ import { ActivePanelProvider, DEFAULT_PANEL, activePanelAtom } from '~/Providers
 const mockNewConversation = jest.fn();
 const mockClearMessagesCache = jest.fn();
 
+/** The switcher has its own tests; here it only has to stay out of the way. */
+jest.mock('~/components/Nav/Organizations', () => ({ OrganizationSwitcher: () => null }));
+
 jest.mock('~/store', () => {
   const { atom } = jest.requireActual('recoil');
   let counter = 0;

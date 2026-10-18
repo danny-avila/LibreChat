@@ -35,7 +35,6 @@ const getProfileDetails = ({ idToken, profile }) => {
 
 // Initialize the social login handler for Apple
 const appleLogin = socialLogin('apple', getProfileDetails);
-const appleAdminLogin = socialLogin('apple', getProfileDetails, { existingUsersOnly: true });
 
 const getAppleConfig = (callbackURL) => ({
   clientID: process.env.APPLE_CLIENT_ID,
@@ -62,11 +61,4 @@ const appleStrategy = (stateOptions) => {
   return strategy;
 };
 
-const appleAdminStrategy = () =>
-  new AppleStrategy(
-    getAppleConfig(`${process.env.DOMAIN_SERVER}/api/admin/oauth/apple/callback`),
-    appleAdminLogin,
-  );
-
 module.exports = appleStrategy;
-module.exports.appleAdminLogin = appleAdminStrategy;

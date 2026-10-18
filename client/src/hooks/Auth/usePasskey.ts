@@ -24,6 +24,7 @@ import {
   REDIRECT_PARAM,
   persistRedirectToSession,
 } from '~/utils/redirect';
+import { startOrganizationOnboarding } from '~/utils/organizations';
 import { useRegisterPasskeyMutation } from '~/data-provider';
 import { importWithRecovery } from '~/lib/assets/lazy';
 import useLocalize from '~/hooks/useLocalize';
@@ -129,6 +130,9 @@ export function usePasskeySignIn({ enabled }: { enabled: boolean }) {
     async (credential: TPasskeyAuthenticationResponse, sessionId: string) => {
       const result = await dataService.verifyPasskeyLogin({ credential, sessionId });
       clearTwoFactorSetupToken();
+      if (startOrganizationOnboarding(result)) {
+        return;
+      }
       if (result.twoFASetupRequired === true && result.tempToken != null) {
         const redirectTo = new URLSearchParams(window.location.search).get(REDIRECT_PARAM);
         if (redirectTo) {

@@ -1,8 +1,8 @@
 import mongoose, { Schema } from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { tenantStorage, runAsSystem, SYSTEM_TENANT_ID } from '~/config/tenantContext';
 import { applyTenantIsolation, _resetStrictCache } from '~/models/plugins/tenantIsolation';
 import { tenantSafeBulkWrite, _resetBulkWriteStrictCache } from './tenantBulkWrite';
+import { runAsSystem, tenantStorage, runInPlatform } from '~/config/tenantContext';
 
 let mongoServer: InstanceType<typeof MongoMemoryServer>;
 
@@ -40,6 +40,43 @@ afterEach(() => {
 });
 
 describe('tenantSafeBulkWrite', () => {
+  describe('in the platform scope', () => {
+    it('writes only untenanted rows and never stamps a tenant', async () => {
+      const Model = createTestModel('platform');
+      await runAsSystem(async () => {
+        await Model.create([
+          { name: 'shared', value: 1 },
+          { name: 'shared', value: 1, tenantId: 'tenant-a' },
+        ]);
+      });
+
+      await runInPlatform(async () => {
+        await tenantSafeBulkWrite(Model, [
+          { updateMany: { filter: { name: 'shared' }, update: { $set: { value: 7 } } } },
+          { insertOne: { document: { name: 'fresh' } } },
+          { deleteMany: { filter: { name: 'nothing-here' } } },
+        ]);
+      });
+
+      const docs = await runAsSystem(async () => Model.find({}).lean());
+      expect(docs.find((d) => d.tenantId === 'tenant-a')?.value).toBe(1);
+      expect(docs.find((d) => d.name === 'shared' && !d.tenantId)?.value).toBe(7);
+      expect(docs.find((d) => d.name === 'fresh')?.tenantId).toBeUndefined();
+    });
+
+    it('refuses an insert that names a tenant', async () => {
+      const Model = createTestModel('platformInsert');
+
+      await expect(
+        runInPlatform(async () =>
+          tenantSafeBulkWrite(Model, [
+            { insertOne: { document: { name: 'smuggled', tenantId: 'tenant-a' } } },
+          ]),
+        ),
+      ).rejects.toThrow('[TenantIsolation]');
+    });
+  });
+
   describe('with tenant context', () => {
     it('injects tenantId into updateOne filters', async () => {
       const Model = createTestModel('updateOne');

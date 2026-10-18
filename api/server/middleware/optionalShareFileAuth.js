@@ -7,12 +7,12 @@ const {
   isTokenRetired,
   isEnabled,
 } = require('@librechat/api');
-const { getUserById, findSession } = require('~/models');
+const { getAuthUserById, findAuthSession } = require('~/server/services/AuthSessions');
 
 module.exports = createOptionalShareFileAuth({
   parseCookie: cookie.parse,
-  getUserById,
-  findSession,
+  getUserById: getAuthUserById,
+  findSession: findAuthSession,
   runAsSystem,
   clearCloudFrontCookies,
   enrollmentRequired: isTwoFactorEnrollmentRequired,

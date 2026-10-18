@@ -78,6 +78,13 @@ jest.mock('@librechat/api', () => ({
   },
   getOwnedAgentCheckpointScope: jest.fn(() => undefined),
   deleteOwnedAgentCheckpoints: jest.fn(),
+  getAuthIdentity: jest.requireActual('../../../../packages/api/src/organizations/identity.ts')
+    .getAuthIdentity,
+  createAccountEraser: jest.requireActual('../../../../packages/api/src/organizations/erase.ts')
+    .createAccountEraser,
+  createCredentialOwnerLoader: jest.requireActual(
+    '../../../../packages/api/src/organizations/erase.ts',
+  ).createCredentialOwnerLoader,
   stopUserGenerations: jest.requireActual('../../../../packages/api/src/user/generations.ts')
     .stopUserGenerations,
   openCheckpointDeletion: jest.fn(async (userId, tenantId, _root, cfg) => ({

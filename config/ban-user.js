@@ -3,12 +3,14 @@ const mongoose = require('mongoose');
 const { User } = require('@librechat/data-schemas').createModels(mongoose);
 const { ViolationTypes } = require('librechat-data-provider');
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
+const { applyOrganizationsMode, inLoginContext } = require('./organizations');
 const { askQuestion, silentExit } = require('./helpers');
 const banViolation = require('~/cache/banViolation');
 const connect = require('./connect');
 
 (async () => {
   await connect();
+  await applyOrganizationsMode();
 
   console.purple('---------------------');
   console.purple('Ban a user account!');
@@ -46,7 +48,9 @@ const connect = require('./connect');
     silentExit(1);
   }
 
-  const user = await User.findOne({ email }).lean();
+  /** In organizations mode the ban is on the login account, so it holds in every organization
+   *  the person belongs to and switching organizations cannot step around it. */
+  const user = await inLoginContext(() => User.findOne({ email }).lean());
   if (!user) {
     console.red('Error: No user with that email was found!');
     silentExit(1);

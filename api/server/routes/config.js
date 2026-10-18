@@ -24,6 +24,8 @@ const {
   resolveCodeEnvironmentTransitionVersion,
   loadConversationListLimits,
   resolvePullRequestCapabilities,
+  getPublicOrganizationsConfig,
+  createAdminPanelAccess,
 } = require('@librechat/api');
 const {
   DEFAULT_MCP_APP_CSP_LIMITS,
@@ -36,6 +38,8 @@ const { hasCapability, hasConfigCapability } = require('~/server/middleware/role
 const { getLdapConfig } = require('~/server/services/Config/ldap');
 const { getRumConfig } = require('~/server/services/Config/rum');
 const { getAppConfig } = require('~/server/services/Config/app');
+
+const canOpenAdminPanel = createAdminPanelAccess({ hasCapability });
 
 const router = express.Router();
 const emailLoginEnabled =
@@ -108,6 +112,7 @@ function buildPreLoginPayload() {
     serverDomain: process.env.DOMAIN_SERVER || 'http://localhost:3080',
     emailLoginEnabled,
     registrationEnabled: !ldap?.enabled && isEnabled(process.env.ALLOW_REGISTRATION),
+    organizations: getPublicOrganizationsConfig(),
     socialLoginEnabled: isEnabled(process.env.ALLOW_SOCIAL_LOGIN),
     emailEnabled: checkEmailConfig(),
     passwordResetEnabled,
@@ -364,24 +369,14 @@ router.get('/', async function (req, res) {
       payload.buildInfo = buildInfo;
     }
 
-    const adminPanelURL = process.env.ADMIN_PANEL_URL;
-    if (adminPanelURL || !payload.allowAccountDeletion) {
+    /* Only when deletion is otherwise off: the check costs a capability read on startup. */
+    if (!payload.allowAccountDeletion) {
       try {
-        const userId = req.user.id ?? req.user._id?.toString();
-        if (userId) {
-          const hasAdminAccess = await hasCapability(
-            { id: userId, role: req.user.role ?? '', tenantId: req.user.tenantId },
-            SystemCapabilities.ACCESS_ADMIN,
-          );
-          if (hasAdminAccess && adminPanelURL) {
-            payload.adminPanelURL = adminPanelURL;
-          }
-          if (hasAdminAccess && !payload.allowAccountDeletion) {
-            payload.allowAccountDeletion = true;
-          }
+        if (await canOpenAdminPanel(req.user)) {
+          payload.allowAccountDeletion = true;
         }
       } catch (err) {
-        logger.warn(`[config] ACCESS_ADMIN capability check failed: ${err.message}`);
+        logger.warn(`[config] Admin panel access check failed: ${err.message}`);
       }
     }
 

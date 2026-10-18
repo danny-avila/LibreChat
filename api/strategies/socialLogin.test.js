@@ -177,7 +177,7 @@ describe('socialLogin', () => {
       expect(callback).toHaveBeenCalledWith(null, existingUser);
     });
 
-    it('does not migrate the provider id on the chat path (only admin path migrates)', async () => {
+    it('does not migrate the provider id when it finds the user by email', async () => {
       const { updateUser } = require('~/models');
       const provider = 'google';
       const googleId = 'google-user-chat';
@@ -206,109 +206,6 @@ describe('socialLogin', () => {
       expect(updateUser).not.toHaveBeenCalled();
       expect(handleExistingUser).toHaveBeenCalled();
       expect(callback).toHaveBeenCalledWith(null, existingUser);
-    });
-
-    it('migrates the missing provider id when finding by email fallback (admin path)', async () => {
-      const { updateUser } = require('~/models');
-      const provider = 'google';
-      const googleId = 'google-user-789';
-      const email = 'admin@example.com';
-
-      const existingUser = {
-        _id: 'admin789',
-        email: email,
-        provider: 'google',
-      };
-
-      findUser.mockResolvedValueOnce(null).mockResolvedValueOnce(existingUser);
-
-      const mockProfile = {
-        id: googleId,
-        emails: [{ value: email, verified: true }],
-        photos: [{ value: 'https://example.com/avatar.png' }],
-        name: { givenName: 'Admin', familyName: 'User' },
-      };
-
-      const loginFn = socialLogin(provider, mockGetProfileDetails, { existingUsersOnly: true });
-      const callback = jest.fn();
-
-      await loginFn(null, null, null, mockProfile, callback);
-
-      expect(updateUser).toHaveBeenCalledWith('admin789', { googleId });
-      expect(existingUser.googleId).toBe(googleId);
-      expect(handleExistingUser).toHaveBeenCalled();
-      expect(callback).toHaveBeenCalledWith(null, existingUser);
-    });
-
-    it('blocks migration via email fallback for a tenanted user (no tenant scope in OAuth callback)', async () => {
-      const { updateUser } = require('~/models');
-      const provider = 'google';
-      const googleId = 'google-user-cross';
-      const email = 'admin@tenantb.example.com';
-
-      const tenantedUser = {
-        _id: 'tenant-b-user',
-        email: email,
-        provider: 'google',
-        tenantId: 'tenant-b',
-      };
-
-      findUser.mockResolvedValueOnce(null).mockResolvedValueOnce(tenantedUser);
-
-      const mockProfile = {
-        id: googleId,
-        emails: [{ value: email, verified: true }],
-        photos: [{ value: 'https://example.com/avatar.png' }],
-        name: { givenName: 'Admin', familyName: 'User' },
-      };
-
-      const loginFn = socialLogin(provider, mockGetProfileDetails, { existingUsersOnly: true });
-      const callback = jest.fn();
-
-      await loginFn(null, null, null, mockProfile, callback);
-
-      expect(updateUser).not.toHaveBeenCalled();
-      expect(callback).toHaveBeenCalledWith(
-        expect.objectContaining({ code: ErrorTypes.AUTH_FAILED }),
-      );
-      expect(logger.warn).toHaveBeenCalledWith(
-        expect.stringContaining('Admin migrate blocked for tenanted user'),
-      );
-    });
-
-    it('rejects the admin email fallback when stored provider id differs from the current sub', async () => {
-      const provider = 'google';
-      const googleId = 'google-user-new';
-      const email = 'admin@example.com';
-
-      const existingUser = {
-        _id: 'admin789',
-        email: email,
-        provider: 'google',
-        googleId: 'google-user-old',
-      };
-
-      findUser.mockResolvedValueOnce(null).mockResolvedValueOnce(existingUser);
-
-      const mockProfile = {
-        id: googleId,
-        emails: [{ value: email, verified: true }],
-        photos: [{ value: 'https://example.com/avatar.png' }],
-        name: { givenName: 'Admin', familyName: 'User' },
-      };
-
-      const loginFn = socialLogin(provider, mockGetProfileDetails, { existingUsersOnly: true });
-      const callback = jest.fn();
-
-      await loginFn(null, null, null, mockProfile, callback);
-
-      expect(logger.warn).toHaveBeenCalledWith(
-        `[${provider}Login] Rejected admin email fallback for ${email}: stored ${provider}Id does not match`,
-      );
-      expect(handleExistingUser).not.toHaveBeenCalled();
-      expect(callback).toHaveBeenCalledWith(
-        expect.objectContaining({ code: ErrorTypes.AUTH_FAILED }),
-      );
     });
 
     it('should create new user if not found by provider ID or email', async () => {

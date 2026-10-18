@@ -24,6 +24,8 @@ export { default as refreshTokenBridgeSchema } from './refreshTokenBridge';
 export { default as roleSchema } from './role';
 export { default as passkeySchema } from './passkey';
 export { default as sessionSchema } from './session';
+export { default as organizationSchema, ORGANIZATION_NAME_MAX_LENGTH } from './organization';
+export { default as organizationInviteSchema } from './organizationInvite';
 export { default as shareSchema } from './share';
 export { default as skillSyncCredentialSchema } from './skillSyncCredential';
 export { default as skillSyncStatusSchema } from './skillSyncStatus';

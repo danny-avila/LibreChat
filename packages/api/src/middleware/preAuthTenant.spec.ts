@@ -1,6 +1,12 @@
-import { getTenantId, getUserId, getRequestId, logger } from '@librechat/data-schemas';
+import {
+  logger,
+  getUserId,
+  getTenantId,
+  getRequestId,
+  ACCOUNTS_TENANT_ID,
+} from '@librechat/data-schemas';
 import type { Request, Response, NextFunction } from 'express';
-import { preAuthTenantMiddleware } from './preAuthTenant';
+import { preAuthTenantMiddleware, accountsTenantMiddleware } from './preAuthTenant';
 
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),
@@ -182,5 +188,54 @@ describe('preAuthTenantMiddleware', () => {
       expect.stringContaining('malformed'),
       expect.objectContaining({ ip: '192.168.1.1', length: 200, path: '/api/share/abc' }),
     );
+  });
+
+  it('ignores the accounts tenant sentinel even from a trusted header', () => {
+    process.env.TRUST_TENANT_HEADER = 'true';
+    req.headers = { 'x-tenant-id': ACCOUNTS_TENANT_ID };
+    let capturedTenantId: string | undefined = 'sentinel';
+    const capturedNext: NextFunction = () => {
+      capturedTenantId = getTenantId();
+    };
+
+    preAuthTenantMiddleware(req as Request, res as Response, capturedNext);
+    expect(capturedTenantId).toBeUndefined();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining(ACCOUNTS_TENANT_ID),
+      expect.any(Object),
+    );
+  });
+});
+
+describe('accountsTenantMiddleware', () => {
+  const originalTrustTenantHeader = process.env.TRUST_TENANT_HEADER;
+
+  afterEach(() => {
+    if (originalTrustTenantHeader === undefined) {
+      delete process.env.TRUST_TENANT_HEADER;
+      return;
+    }
+    process.env.TRUST_TENANT_HEADER = originalTrustTenantHeader;
+  });
+
+  it('runs credential routes in the accounts tenant', () => {
+    const req = { headers: { 'x-request-id': 'req-login' } } as unknown as Request;
+    let captured: { tenantId?: string; requestId?: string } = {};
+    accountsTenantMiddleware(req, {} as Response, () => {
+      captured = { tenantId: getTenantId(), requestId: getRequestId() };
+    });
+
+    expect(captured).toEqual({ tenantId: ACCOUNTS_TENANT_ID, requestId: 'req-login' });
+  });
+
+  it('never reads X-Tenant-Id, even when the deployment trusts it', () => {
+    process.env.TRUST_TENANT_HEADER = 'true';
+    const req = { headers: { 'x-tenant-id': 'org_other' } } as unknown as Request;
+    let capturedTenantId: string | undefined;
+    accountsTenantMiddleware(req, {} as Response, () => {
+      capturedTenantId = getTenantId();
+    });
+
+    expect(capturedTenantId).toBe(ACCOUNTS_TENANT_ID);
   });
 });

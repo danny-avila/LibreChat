@@ -4,8 +4,6 @@ metadata:
   name: {{ include "librechat.fullname" $ }}-configenv
 data:
   {{- $configEnv := default dict .Values.librechat.configEnv }}
-  {{- $adminPanelUrl := .Values.librechat.adminPanelUrl }}
-  {{- $configAdminPanelUrl := get $configEnv "ADMIN_PANEL_URL" }}
   {{- if (index .Values "librechat-rag-api" "enabled") }}
   RAG_API_URL: http://{{ include "rag.fullname" (index .Subcharts "librechat-rag-api") | lower }}.{{ .Release.Namespace | lower }}.svc.cluster.local:8000 
   {{- end }}
@@ -20,9 +18,6 @@ data:
   {{- end }}
   {{- if and (not (get $configEnv "REDIS_URI")) .Values.redis.enabled }}
   REDIS_URI: {{ include "librechat.bundledRedisURI" . }}
-  {{- end }}
-  {{- if and $adminPanelUrl (not $configAdminPanelUrl) }}
-  ADMIN_PANEL_URL: {{ $adminPanelUrl | quote }}
   {{- end }}
   {{- if and .Values.langfuseFanout.enabled (not (hasKey $configEnv "LANGFUSE_FANOUT_ENABLED")) }}
   LANGFUSE_FANOUT_ENABLED: "true"
@@ -39,11 +34,5 @@ data:
   LANGFUSE_FANOUT_TENANT_DESTINATIONS: {{ join "," $tenantDestinations | quote }}
   {{- end }}
   {{- if $configEnv }}
-  {{- $renderedConfigEnv := $configEnv }}
-  {{- if and $adminPanelUrl (hasKey $configEnv "ADMIN_PANEL_URL") (not $configAdminPanelUrl) }}
-  {{- $renderedConfigEnv = omit $configEnv "ADMIN_PANEL_URL" }}
-  {{- end }}
-  {{- if $renderedConfigEnv }}
-  {{- toYaml $renderedConfigEnv | nindent 2 }}
-  {{- end }}
+  {{- toYaml $configEnv | nindent 2 }}
   {{- end }}

@@ -1,5 +1,5 @@
 import { MemoryRouter } from 'react-router-dom';
-import { ErrorTypes } from 'librechat-data-provider';
+import { ErrorTypes, OrganizationErrorCode } from 'librechat-data-provider';
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import TwoFactorScreen from '../TwoFactorScreen';
 
@@ -12,9 +12,15 @@ jest.mock('@librechat/client', () => ({
   useToastContext: () => ({ showToast: mockShowToast }),
 }));
 
-jest.mock('~/hooks', () => ({
-  useLocalize: () => (key: string) => key,
-}));
+jest.mock('~/hooks', () => {
+  const organizations = jest.requireActual('~/hooks/Organizations/useOrganizationErrorMessage');
+  return {
+    useLocalize: () => (key: string) => key,
+    getOrganizationErrorCode: organizations.getOrganizationErrorCode,
+    useOrganizationErrorMessage: () => (error: unknown) =>
+      `com_error_org_${organizations.getOrganizationErrorCode(error)}`,
+  };
+});
 
 jest.mock('~/data-provider', () => ({
   useVerifyTwoFactorTempMutation: (options: { onError: (error: unknown) => void }) => {
@@ -67,6 +73,21 @@ describe('TwoFactorScreen verification errors', () => {
 
     expect(mockShowToast).toHaveBeenCalledWith({
       message: 'com_auth_error_login_cross_origin',
+      status: 'error',
+    });
+  });
+
+  it('explains a suspended organization instead of showing a raw failure', () => {
+    renderScreen();
+
+    act(() => {
+      mockVerifyOptions?.onError({
+        response: { data: { code: OrganizationErrorCode.ORGANIZATION_SUSPENDED } },
+      });
+    });
+
+    expect(mockShowToast).toHaveBeenCalledWith({
+      message: 'com_error_org_ORGANIZATION_SUSPENDED',
       status: 'error',
     });
   });

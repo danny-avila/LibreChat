@@ -1,9 +1,10 @@
-import { ErrorTypes } from 'librechat-data-provider';
+import { ErrorTypes, OrganizationErrorCode } from 'librechat-data-provider';
 import getLoginError from './getLoginError';
 
 describe('getLoginError', () => {
   it.each([
     [ErrorTypes.AUTH_CROSS_ORIGIN, 'com_auth_error_login_cross_origin'],
+    [OrganizationErrorCode.ORGANIZATION_SUSPENDED, 'com_error_org_ORGANIZATION_SUSPENDED'],
     ['Request failed with status code 403', 'com_auth_error_login_ban'],
     ['Request failed with status code 429', 'com_auth_error_login_rl'],
     ['Request failed with status code 422', 'com_auth_error_login_unverified'],

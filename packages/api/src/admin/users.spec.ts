@@ -119,7 +119,7 @@ describe('createAdminUsersHandlers', () => {
       expect(response.users[0]).toHaveProperty('role');
     });
 
-    it('passes pagination params to findUsers and unfiltered count', async () => {
+    it('passes pagination params to findUsers and counts the same listed users', async () => {
       const findUsers = jest.fn().mockResolvedValue([]);
       const countUsers = jest.fn().mockResolvedValue(0);
       const deps = createDeps({ findUsers, countUsers });
@@ -128,12 +128,14 @@ describe('createAdminUsersHandlers', () => {
 
       await handlers.listUsers(req, res);
 
-      expect(findUsers).toHaveBeenCalledWith({}, expect.any(String), {
+      /* The platform operator's hidden access to an organization is never listed. */
+      const listed = { operatorAccess: { $ne: true } };
+      expect(findUsers).toHaveBeenCalledWith(listed, expect.any(String), {
         limit: 10,
         offset: 20,
         sort: { createdAt: -1 },
       });
-      expect(countUsers).toHaveBeenCalledWith();
+      expect(countUsers).toHaveBeenCalledWith(listed);
     });
 
     it('returns empty list when no users', async () => {
@@ -215,7 +217,10 @@ describe('createAdminUsersHandlers', () => {
       await handlers.searchUsers(req, res);
 
       const filter = findUsers.mock.calls[0][0];
-      expect(filter).toEqual(buildUserSearchFilter('Test', { legacyPrefix: true }));
+      expect(filter).toEqual({
+        ...buildUserSearchFilter('Test', { legacyPrefix: true }),
+        operatorAccess: { $ne: true },
+      });
       expect(filter.$or).toEqual(
         expect.arrayContaining([
           { nameTokens: /^test/ },

@@ -1,6 +1,7 @@
-import { logger } from '@librechat/data-schemas';
+import { logger, ACCOUNTS_TENANT_ID } from '@librechat/data-schemas';
 import type { Request, Response, NextFunction } from 'express';
 import { buildRequestContext, runWithTenantContext } from './tenant';
+import { isOrganizationsEnabled } from '~/organizations/mode';
 import { rejectTenantHeader } from './tenantHeader';
 import { isEnabled } from '~/utils';
 
@@ -50,9 +51,10 @@ export function preAuthTenantMiddleware(req: Request, res: Response, next: NextF
   }
 
   const rejection = rejectTenantHeader(tenantId);
-  if (rejection === 'system') {
+  if (rejection === 'system' || rejection === 'reserved') {
     runWithTenantContext(requestContext, () => {
-      logger.warn('[preAuthTenant] Rejected __SYSTEM__ sentinel in X-Tenant-Id header', {
+      /* `tenantId` is one of the fixed sentinel constants here, so it is safe to log. */
+      logger.warn(`[preAuthTenant] Rejected ${tenantId} sentinel in X-Tenant-Id header`, {
         ip: req.ip,
         path: req.path,
       });
@@ -74,4 +76,33 @@ export function preAuthTenantMiddleware(req: Request, res: Response, next: NextF
   }
 
   runWithTenantContext({ ...requestContext, tenantId }, next);
+}
+
+/**
+ * Pre-authentication context for organizations mode. Credential routes (login, registration,
+ * password reset, email verification, passkey sign-in) resolve login accounts, never an
+ * organization's members, so they always run in the accounts tenant and never read
+ * `X-Tenant-Id`. Authenticated routes mounted below re-enter the member's own tenant through
+ * `tenantContextMiddleware`, whose context replaces this one.
+ */
+export function accountsTenantMiddleware(req: Request, _res: Response, next: NextFunction): void {
+  runWithTenantContext({ ...buildRequestContext(req), tenantId: ACCOUNTS_TENANT_ID }, next);
+}
+
+/**
+ * For a credential route that otherwise runs without any tenant context (email verification,
+ * email-change confirmation): in organizations mode it resolves login accounts, so it runs in
+ * the accounts tenant; otherwise it passes through unchanged. Decided per request because
+ * route modules can load before the base config applies organizations mode.
+ */
+export function accountRouteTenantMiddleware(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+): void {
+  if (!isOrganizationsEnabled()) {
+    next();
+    return;
+  }
+  accountsTenantMiddleware(req, res, next);
 }

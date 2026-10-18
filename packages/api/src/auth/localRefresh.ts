@@ -3,6 +3,7 @@ import { TWO_FACTOR_ENROLLMENT_REQUIRED_CODE } from 'librechat-data-provider';
 import type { ISession, OIDCTokens } from '@librechat/data-schemas';
 import type { Request, Response } from 'express';
 import type { TokenIssuance, TwoFactorAccount } from './twoFactor';
+import type { IssueAuthTokens } from '~/organizations/types';
 import {
   generateTwoFactorSetupToken,
   isTokenRetired,
@@ -12,6 +13,7 @@ import {
   TOKEN_RETIREMENT_FIELDS,
 } from './twoFactor';
 import { clearSessionHintCookie } from '~/oauth/csrf';
+import { issueAuth } from '~/organizations/issue';
 
 const EXPIRED_REFRESH_MESSAGE = 'Refresh token expired or not found for this user';
 
@@ -27,7 +29,10 @@ type RefreshUser = Pick<
   | 'twoFactorEnabled'
   | 'twoFactorEnrolledAt'
   | 'credentialsChangedAt'
->;
+> & {
+  /** Organizations mode: the login account a member belongs to; it owns 2FA enrollment. */
+  identityId?: UserIdentifier | null;
+};
 
 type RefreshSession = Pick<ISession, 'expiration'> & { _id: UserIdentifier };
 type SessionDeletionResult = { deletedCount?: number };
@@ -46,6 +51,8 @@ interface LocalRefreshDependencies {
     session: RefreshSession | null,
     req: Request,
   ) => Promise<string>;
+  /** Organizations mode: re-issues a member's session inside its own tenant. */
+  issueAuthTokens?: IssueAuthTokens;
   deleteSession: (query: { sessionId: string }) => Promise<SessionDeletionResult>;
   deleteAllUserSessions: (query: { userId: string }) => Promise<SessionDeletionResult>;
   clearCloudFrontCookies: (
@@ -149,7 +156,7 @@ export function createLocalRefreshHandler(deps: LocalRefreshDependencies) {
       }
 
       if (process.env.NODE_ENV === 'CI') {
-        const token = await deps.setAuthTokens(userId, res, null, req);
+        const { token } = await issueAuth(deps, userId, res, null, req);
         return res.status(200).send({ token, user: sanitizeUserForAuthResponse(user) });
       }
 
@@ -164,8 +171,12 @@ export function createLocalRefreshHandler(deps: LocalRefreshDependencies) {
             tenantId: user.tenantId ?? user.orgId,
             storageRegion: user.storageRegion,
           });
-          /** The setup token outranks the refresh credential that bought it. */
-          const tempToken = mintSetupToken(userId, process.env.JWT_SECRET ?? '');
+          /** The setup token outranks the refresh credential that bought it. It names the
+           * account that owns enrollment: the login account behind a member. */
+          const tempToken = mintSetupToken(
+            user.identityId?.toString() ?? userId,
+            process.env.JWT_SECRET ?? '',
+          );
           if (await isCredentialRetired(userId, credential)) {
             return withdrawSession(res, user, userId);
           }
@@ -177,7 +188,7 @@ export function createLocalRefreshHandler(deps: LocalRefreshDependencies) {
           });
         }
 
-        const token = await deps.setAuthTokens(userId, res, session, req);
+        const { token } = await issueAuth(deps, userId, res, session, req);
         const retired = await recheckMintedCredential(
           () => isCredentialRetired(userId, credential),
           () => revokeSession(res, user, userId),

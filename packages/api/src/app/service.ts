@@ -12,12 +12,15 @@ import {
   mergeConfigOverrides,
   loadDefaultInterface,
   tenantStorage,
-  BASE_CONFIG_PRINCIPAL_ID,
+  runInPlatform,
   SYSTEM_TENANT_ID,
+  isReservedTenantId,
+  BASE_CONFIG_PRINCIPAL_ID,
 } from '@librechat/data-schemas';
 import type { AppConfig, IConfig } from '@librechat/data-schemas';
 import type { Types } from 'mongoose';
 import type { CustomConfigLoadMode } from './loader';
+import { isOrganizationsEnabled } from '~/organizations/mode';
 import { checkAppConfigTheme } from './theme';
 
 const BASE_CONFIG_KEY = '_BASE_';
@@ -578,12 +581,34 @@ export function createAppConfigService(deps: AppConfigServiceDeps): {
 
     let merged = scopedBaseConfig;
     try {
-      const configs = await getApplicableConfigs(principals);
-      if (configs.length > 0) {
+      /**
+       * Organizations mode: an organization inherits the platform defaults the operator set
+       * (the base principal and role names, which mean the same in every organization) beneath
+       * its own overrides. Read in the same parallel round, never merged by a shared priority:
+       * an organization's own value always wins.
+       */
+      const layersPlatform =
+        isOrganizationsEnabled() && !!effectiveTenantId && !isReservedTenantId(effectiveTenantId);
+      const [platformConfigs, configs] = await Promise.all([
+        layersPlatform
+          ? runInPlatform(() =>
+              getApplicableConfigs(
+                principals.filter(({ principalType }) => principalType === PrincipalType.ROLE),
+              ),
+            )
+          : Promise.resolve([] as IConfig[]),
+        getApplicableConfigs(principals),
+      ]);
+      if (platformConfigs.length > 0 || configs.length > 0) {
         merged = scopeCustomEndpoints(
           checkOverrideTheme(
             scopedBaseConfig,
-            materializeConfigModelSpecs(mergeConfigOverrides(scopedBaseConfig, configs)),
+            materializeConfigModelSpecs(
+              mergeConfigOverrides(
+                mergeConfigOverrides(scopedBaseConfig, platformConfigs),
+                configs,
+              ),
+            ),
           ),
           effectiveTenantId,
           hiddenEndpoints,

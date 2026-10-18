@@ -4,6 +4,8 @@ export interface ISession extends Document {
   refreshTokenHash: string;
   expiration: Date;
   user: Types.ObjectId;
+  /** Organizations mode: the login account behind the member in `user`. */
+  identity?: Types.ObjectId;
   tenantId?: string;
 }
 
@@ -11,6 +13,8 @@ export interface CreateSessionOptions {
   expiration?: Date;
   /** Duration in milliseconds for session expiry. Default: 7 days */
   expiresIn?: number;
+  /** Organizations mode: the login account behind the member the session is for. */
+  identityId?: string;
 }
 
 export interface UpsertSessionOptions {

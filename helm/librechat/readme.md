@@ -98,27 +98,6 @@ kind: Secret
 
 4. Fill out values.yaml and apply the Chart to the Cluster
 
-## Admin Panel SSO
-
-Set `librechat.adminPanelUrl` to the admin panel base URL used for OAuth/SSO
-redirect, whether the admin panel is deployed on a separate origin
-or on the same origin under an admin subpath.
-
-It may include a path, but it should not
-end with a trailing `/` because LibreChat appends `/auth/...` callback paths.
-
-```yaml
-librechat:
-  adminPanelUrl: https://admin.example.com/admin
-```
-
-This renders `ADMIN_PANEL_URL` for LibreChat's admin OAuth flow. For OpenID SSO,
-also register this LibreChat callback URL with your identity provider:
-
-```text
-https://<librechat-domain>/api/admin/oauth/openid/callback
-```
-
 ## Generation protocol compatibility
 
 Generation protocol v2 is selected automatically; no deployment setting is

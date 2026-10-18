@@ -5,6 +5,7 @@ import type * as t from '~/types';
 import auditLogSchema, { GENESIS_HASH, PLATFORM_CHAIN_KEY } from '~/schema/auditLog';
 import { AUDIT_ACTIONS, AUDIT_ACTION_CATEGORY } from '~/types/admin';
 import { auditChainKey, createAuditLogMethods } from './auditLog';
+import { tenantStorage } from '~/config/tenantContext';
 import logger from '~/config/winston';
 
 jest.mock('~/config/winston', () => ({
@@ -121,6 +122,17 @@ describe('auditLog methods', () => {
       expect(b?.seq).toBe(1);
       expect(platform?.seq).toBe(1);
       expect(platform?.tenantId).toBeUndefined();
+    });
+
+    it('records what the platform operator does in an organization on the platform chain only', async () => {
+      await tenantStorage.run({ tenantId: 'tenant-a', operatorActing: true }, () =>
+        methods.recordAuditEntry(baseInput({ tenantId: 'tenant-a' })),
+      );
+
+      await expect(AuditLog.countDocuments({ chainKey: CK_A })).resolves.toBe(0);
+      const platform = await AuditLog.findOne({ chainKey: PLATFORM_CHAIN_KEY }).lean();
+      expect(platform?.tenantId).toBeUndefined();
+      expect(platform?.metadata).toEqual({ capability: 'manage:users', organization: 'tenant-a' });
     });
 
     it('treats a blank tenantId as platform scope (no literal "" stored)', async () => {

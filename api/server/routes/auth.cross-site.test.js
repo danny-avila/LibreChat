@@ -88,6 +88,7 @@ jest.mock('~/server/middleware', () => {
     requireLdapAuth: (...args) => mockRequireLocalAuth(...args),
     registerLimiter: pass,
     checkInviteUser: pass,
+    checkOrganizationInvite: pass,
     validateRegistration: pass,
     resetPasswordLimiter: pass,
     resetPasswordSubmissionLimiter: pass,
@@ -99,7 +100,8 @@ jest.mock('~/server/middleware', () => {
 const ORIGINAL_ENV = process.env;
 const APP_ORIGIN = 'https://chat.example.com';
 const OTHER_ORIGIN = 'https://other-site.example.net';
-const ADMIN_PANEL_ORIGIN = 'https://admin.example.com';
+/** Where the retired external admin panel ran; an old `.env` can still name it. */
+const RETIRED_PANEL_ORIGIN = 'https://admin.example.com';
 
 describe('local login endpoints reject cross-site submissions', () => {
   let app;
@@ -109,7 +111,7 @@ describe('local login endpoints reject cross-site submissions', () => {
       ...ORIGINAL_ENV,
       DOMAIN_CLIENT: APP_ORIGIN,
       DOMAIN_SERVER: APP_ORIGIN,
-      ADMIN_PANEL_URL: `${ADMIN_PANEL_ORIGIN}/`,
+      ADMIN_PANEL_URL: `${RETIRED_PANEL_ORIGIN}/`,
     };
     app = express();
     app.use(express.json());
@@ -200,16 +202,16 @@ describe('local login endpoints reject cross-site submissions', () => {
     expect(mockVerify2FAWithTempToken).toHaveBeenCalledTimes(1);
   });
 
-  it('accepts a login posted from the configured admin panel origin', async () => {
+  it('no longer trusts the retired admin panel origin, even when an old env names it', async () => {
     await request(app)
       .post('/api/auth/login')
       .set('Host', 'chat.example.com')
       .set('Sec-Fetch-Site', 'same-site')
-      .set('Origin', ADMIN_PANEL_ORIGIN)
+      .set('Origin', RETIRED_PANEL_ORIGIN)
       .send({ email: 'admin@example.com', password: 'password' })
-      .expect(204);
+      .expect(403);
 
-    expect(mockLoginController).toHaveBeenCalledTimes(1);
+    expect(mockLoginController).not.toHaveBeenCalled();
   });
 
   it('accepts a server-side client that sends no browser headers', async () => {

@@ -171,6 +171,10 @@ export interface EmailChangeDeps {
    * group, or user override has since disabled. */
   resolvePolicy: (user: EmailChangeUser) => Promise<EmailChangePolicy>;
   sendEmail: (data: EmailData) => Promise<void>;
+  /** Runs once a change commits. Organizations mode copies the address onto every member
+   * record of the account, which people search and invites read. Best effort: the change
+   * itself has already succeeded. */
+  onEmailChanged?: (userId: string, email: string) => Promise<unknown>;
   /** The deployment default, which answers only for a link that resolves to no owner: a
    * disabled deployment reports an unavailable endpoint rather than an invalid token. It
    * never decides a link that does resolve; `resolvePolicy` owns that. */
@@ -698,6 +702,17 @@ export function createEmailChangeService(deps: EmailChangeDeps): {
       );
       await restoreClaimedToken(deps, emailChangeToken, scope, tenantId);
       return result(500, 'Failed to change email address');
+    }
+
+    if (deps.onEmailChanged) {
+      try {
+        await deps.onEmailChanged(userId, email);
+      } catch (error) {
+        logger.error(
+          `[emailChange] Could not propagate the new address [User ID: ${userId}]`,
+          getSafeErrorMetadata(error),
+        );
+      }
     }
 
     /** After the commit only. Restricted to the address that moved, address-less typed

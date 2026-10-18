@@ -29,6 +29,11 @@ warnOnInvalidStrictSetting();
 
 const TENANT_ISOLATION_APPLIED = Symbol.for('librechat:tenantIsolation');
 
+/** Whether a schema carries this plugin, i.e. every record of its model belongs to a tenant. */
+export function isTenantIsolatedSchema(schema: Schema): boolean {
+  return (schema as Schema & { [key: symbol]: boolean })[TENANT_ISOLATION_APPLIED] === true;
+}
+
 interface TenantWhereDocument {
   $where?: Record<string, unknown>;
 }

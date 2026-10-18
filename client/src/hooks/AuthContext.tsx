@@ -18,8 +18,11 @@ import {
   setTokenHeader,
   isSystemRoleName,
   buildLoginRedirectUrl,
+  OrganizationErrorCode,
+  setExpectedTenantHeader,
   clearTwoFactorSetupToken,
   persistTwoFactorSetupToken,
+  ORGANIZATION_ONBOARDING_REQUIRED_CODE,
   TWO_FACTOR_FEDERATED_LOGIN_BLOCKED_CODE,
 } from 'librechat-data-provider';
 import type * as t from 'librechat-data-provider';
@@ -34,6 +37,8 @@ import {
   clearComposerDraftStorage,
   clearRetainedFileDeletions,
   openFileDeletionRetention,
+  persistOnboardingToken,
+  onOrganizationSessionChanged,
   isRequiredTwoFactorSetupRoute,
 } from '~/utils';
 import {
@@ -79,7 +84,9 @@ const isPrerendering = (): boolean =>
  */
 const getLoginErrorText = (error: TResError): string | undefined => {
   const code = error?.response?.data?.code;
-  return code === ErrorTypes.AUTH_CROSS_ORIGIN || code === TWO_FACTOR_FEDERATED_LOGIN_BLOCKED_CODE
+  return code === ErrorTypes.AUTH_CROSS_ORIGIN ||
+    code === TWO_FACTOR_FEDERATED_LOGIN_BLOCKED_CODE ||
+    code === OrganizationErrorCode.ORGANIZATION_SUSPENDED
     ? code
     : error?.message;
 };
@@ -115,6 +122,33 @@ const AuthContextProvider = ({
   });
 
   const navigate = useNavigate();
+
+  /**
+   * Every request names the organization this tab shows, so the server refuses one sent after
+   * another tab moved the session elsewhere. A user that arrives for a different organization
+   * than the one on screen (a refresh after such a switch) reloads the app rather than mixing
+   * the two, as does a switch announced by another tab.
+   */
+  const shownTenantRef = useRef<string | undefined>(undefined);
+  const userTenantId = user?.tenantId;
+  useEffect(() => {
+    setExpectedTenantHeader(userTenantId);
+    /* Signing out (no user) resets it, so the next sign-in is not mistaken for a switch. */
+    const shown = shownTenantRef.current;
+    shownTenantRef.current = userTenantId;
+    if (shown && userTenantId && shown !== userTenantId) {
+      window.location.reload();
+    }
+  }, [userTenantId]);
+  useEffect(
+    () =>
+      onOrganizationSessionChanged((tenantId) => {
+        if (shownTenantRef.current && tenantId !== shownTenantRef.current) {
+          window.location.reload();
+        }
+      }),
+    [],
+  );
 
   const setUserContext = useMemo(
     () =>
@@ -179,6 +213,11 @@ const AuthContextProvider = ({
        * setup route finish the previous user's enrollment and take the tab as them.
        */
       clearTwoFactorSetupToken();
+      if (data.code === ORGANIZATION_ONBOARDING_REQUIRED_CODE && data.onboardingToken) {
+        persistOnboardingToken(data.onboardingToken);
+        navigate('/onboarding', { replace: true });
+        return;
+      }
       if (twoFASetupRequired) {
         const redirectTo = new URLSearchParams(window.location.search).get('redirect_to');
         if (redirectTo) {

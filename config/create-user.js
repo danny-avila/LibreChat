@@ -1,13 +1,18 @@
 const path = require('path');
 const mongoose = require('mongoose');
+const { OrganizationErrorCode } = require('librechat-data-provider');
 const { User } = require('@librechat/data-schemas').createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
+const { organizations } = require('~/server/services/Organizations');
+const { findPlatformOperator, claimPlatformOperator } = require('~/models');
+const { applyOrganizationsMode, inLoginContext } = require('./organizations');
 const { registerUser } = require('~/server/services/AuthService');
 const { askQuestion, silentExit } = require('./helpers');
 const connect = require('./connect');
 
 (async () => {
   await connect();
+  const organizationsMode = await applyOrganizationsMode();
 
   console.purple('--------------------------');
   console.purple('Create a new user account!');
@@ -15,19 +20,33 @@ const connect = require('./connect');
 
   if (process.argv.length < 5) {
     console.orange(
-      'Usage: npm run create-user -- <email> <name> <username> [--email-verified=false]',
+      'Usage: npm run create-user -- <email> <name> <username> [--email-verified=false] [--organization="<name>"] [--operator]',
     );
     console.orange('Note: if you do not pass in the arguments, you will be prompted for them.');
     console.orange(
       'If you really need to pass in the password, you can do so as the 4th argument (not recommended for security).',
     );
     console.orange('Use --email-verified=false to set emailVerified to false. Default is true.');
+    if (organizationsMode) {
+      console.orange(
+        'Organizations are enabled: --organization names the organization the account creates and administers.',
+      );
+      console.orange(
+        '--operator makes the account the platform operator when there is none (the first account becomes it automatically).',
+      );
+    }
     console.purple('--------------------------');
   }
 
   // Parse command line arguments
-  let email, password, name, username, emailVerified, provider;
+  let email, password, name, username, emailVerified, provider, organizationName;
+  let operator = false;
   for (let i = 2; i < process.argv.length; i++) {
+    if (process.argv[i] === '--operator') {
+      operator = true;
+      continue;
+    }
+
     if (process.argv[i].startsWith('--email-verified=')) {
       emailVerified = process.argv[i].split('=')[1].toLowerCase() !== 'false';
       continue;
@@ -35,6 +54,11 @@ const connect = require('./connect');
 
     if (process.argv[i].startsWith('--provider=')) {
       provider = process.argv[i].split('=')[1];
+      continue;
+    }
+
+    if (process.argv[i].startsWith('--organization=')) {
+      organizationName = process.argv[i].slice('--organization='.length);
       continue;
     }
 
@@ -56,6 +80,27 @@ const connect = require('./connect');
   if (!email.includes('@')) {
     console.red('Error: Invalid email address!');
     silentExit(1);
+  }
+
+  if (organizationName !== undefined && !organizationsMode) {
+    console.red('Error: --organization requires organizations to be enabled in librechat.yaml.');
+    return silentExit(1);
+  }
+  if (operator && !organizationsMode) {
+    console.red('Error: --operator requires organizations to be enabled in librechat.yaml.');
+    return silentExit(1);
+  }
+  if (operator) {
+    const current = await findPlatformOperator();
+    if (current) {
+      console.red(
+        `Error: ${current.email} is already the platform operator. Use npm run set-operator to hand the role over.`,
+      );
+      return silentExit(1);
+    }
+  }
+  if (organizationsMode && !organizationName) {
+    organizationName = await askQuestion('Organization name:');
   }
 
   const defaultName = email.split('@')[0];
@@ -99,13 +144,20 @@ or the user will need to attempt logging in to have a verification link sent to 
     }
   }
 
-  const userExists = await User.findOne({ $or: [{ email }, { username }] });
+  const userExists = await inLoginContext(() => User.findOne({ $or: [{ email }, { username }] }));
   if (userExists) {
     console.red('Error: A user with that email or username already exists!');
     silentExit(1);
   }
 
-  const user = { email, password, name, username, confirm_password: password };
+  const user = {
+    email,
+    password,
+    name,
+    username,
+    confirm_password: password,
+    ...(organizationsMode ? { organization: { name: organizationName } } : {}),
+  };
   const additionalData = { emailVerified, ...(provider !== undefined ? { provider } : {}) };
   let result;
   try {
@@ -116,14 +168,39 @@ or the user will need to attempt logging in to have a verification link sent to 
   }
 
   if (result.status !== 200) {
-    console.red('Error: ' + result.message);
+    console.red(
+      result.code === OrganizationErrorCode.ORG_NAME_INVALID
+        ? 'Error: Invalid organization name!'
+        : 'Error: ' + result.message,
+    );
     silentExit(1);
   }
 
-  const userCreated = await User.findOne({ $or: [{ email }, { username }] });
+  const userCreated = await inLoginContext(() =>
+    User.findOne({ $or: [{ email }, { username }] }).lean(),
+  );
   if (userCreated) {
     console.green('User created successfully!');
     console.green(`Email verified: ${userCreated.emailVerified}`);
+    const isOperator =
+      userCreated.isPlatformOperator === true ||
+      (operator && (await claimPlatformOperator(userCreated._id)));
+    if (operator && !isOperator) {
+      console.red('Error: Another account became the platform operator first.');
+      return silentExit(1);
+    }
+    if (isOperator) {
+      console.green(`${email} is the platform operator and can open the admin panel.`);
+    }
+    if (organizationsMode && userCreated.emailVerified) {
+      /* Created now rather than at the first sign-in, so the operator can invite people to it. */
+      await organizations.materializePendingAccess(userCreated);
+      console.green(`Organization "${organizationName}" created, with ${email} as its admin.`);
+    } else if (organizationsMode) {
+      console.orange(
+        `Organization "${organizationName}" is created when ${email} first signs in after verifying their email.`,
+      );
+    }
     silentExit(0);
   }
 })();

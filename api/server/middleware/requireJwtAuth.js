@@ -17,8 +17,8 @@ const {
   createTermsAcceptanceGate,
   isTwoFactorEnrollmentRequired,
 } = require('@librechat/api');
+const { getAuthUserById } = require('~/server/services/AuthSessions');
 const { getAppConfig } = require('~/server/services/Config');
-const { getUserById } = require('~/models');
 
 const hasPassportStrategy = (strategy) =>
   typeof passport._strategy === 'function' && passport._strategy(strategy) != null;
@@ -76,7 +76,7 @@ const isOpenIdReuseUser = (strategy, user, openIdReuseUserId) =>
 
 const requiredTwoFactorGate = createRequiredTwoFactorGate({
   clearCloudFrontCookies,
-  getUserById,
+  getUserById: getAuthUserById,
   warn: (message) => logger.warn(message),
   generateSetupToken: generateTwoFactorSetupToken,
   enrollmentRequired: isTwoFactorEnrollmentRequired,

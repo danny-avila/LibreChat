@@ -15,6 +15,8 @@ export * from './code';
 export * from './pulls';
 /* Auth */
 export * from './auth';
+/* Organizations */
+export * from './organizations';
 /* API Keys */
 export * from './apiKeys';
 /* MCP */

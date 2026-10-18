@@ -16,6 +16,7 @@ import type {
 } from '~/types';
 import type { IndexBuildOptions } from '~/utils/retry';
 import { GENESIS_HASH, PLATFORM_CHAIN_KEY } from '~/schema/auditLog';
+import { isOperatorActing } from '~/config/tenantContext';
 import { createIndexesWithRetry } from '~/utils/retry';
 import { AUDIT_ACTION_CATEGORY } from '~/types/admin';
 import logger from '~/config/winston';
@@ -339,8 +340,14 @@ export function createAuditLogMethods(
     options?: RecordAuditEntryOptions,
   ): Promise<IAuditLog | null> {
     const AuditLog = model();
-    const tenantId = normalizeTenantId(input.tenantId);
-    const chainKey = auditChainKey(input.tenantId);
+    /**
+     * The platform operator is invisible inside the organizations it enters: what it does there
+     * is recorded on the platform chain, which only the operator reads, naming the organization.
+     */
+    const operatorActing = isOperatorActing();
+    const organizationId = normalizeTenantId(input.tenantId);
+    const tenantId = operatorActing ? undefined : organizationId;
+    const chainKey = auditChainKey(tenantId);
     const category = input.category ?? AUDIT_ACTION_CATEGORY[input.action];
     const outcome = input.outcome ?? 'success';
     const severity =
@@ -355,7 +362,11 @@ export function createAuditLogMethods(
       ...(input.target.id != null ? { id: idToString(input.target.id) } : {}),
       ...(input.target.name != null ? { name: input.target.name } : {}),
     };
-    const metadata = normalizeMetadata(input.metadata);
+    const metadata = normalizeMetadata(
+      operatorActing && organizationId
+        ? { ...input.metadata, organization: organizationId }
+        : input.metadata,
+    );
     const context = normalizeContext(input.context);
 
     for (let attempt = 0; attempt < MAX_APPEND_RETRIES; attempt++) {

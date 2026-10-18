@@ -1,0 +1,1552 @@
+/**
+ * The built-in admin panel's layout: the configuration editor's row grid, sections, chips,
+ * banners, command menu and drawers, carried over from the external panel it replaces.
+ *
+ * Why custom CSS: the editor lays out hundreds of schema-driven rows on one fixed label track,
+ * with container queries, sticky nested headers and collapsible grids that `@librechat/client`
+ * has no primitive for. Only layout lives here. Every color, radius, font and shadow is read
+ * from SassyChat's theme tokens below, so the panel follows light, dark, high-contrast and
+ * custom themes, and the names the panel's components were written against (`--cui-*`,
+ * `--settings-*`) are aliases of those tokens, never values of their own.
+ *
+ * Loaded with the panel's lazy chunk, so the chat never downloads it.
+ */
+
+:root {
+  /* Stacking inside the panel. */
+  --z-sticky: 10;
+  --z-floating: 20;
+  --z-overlay: 60;
+  --z-command-overlay: 69;
+  --z-command: 70;
+  --z-toast: 80;
+
+  /* Drawers slide in from the edge; reduced motion turns them off where they are used. */
+  --admin-drawer-in: drawer-slide-in 240ms cubic-bezier(0.32, 0.72, 0, 1);
+  --admin-drawer-out: drawer-slide-out 200ms cubic-bezier(0.32, 0.72, 0, 1);
+  --admin-overlay-in: overlay-fade-in 240ms ease-out;
+  --admin-overlay-out: overlay-fade-out 200ms ease-out;
+
+  --cui-color-stroke-default: rgb(var(--border-light) / var(--border-light-alpha, 1));
+  --cui-color-stroke-muted: rgb(var(--border-light) / var(--border-light-alpha, 1));
+  --cui-color-stroke-intense: rgb(var(--border-medium) / var(--border-medium-alpha, 1));
+  --cui-color-background-default: rgb(var(--surface-primary));
+  --cui-color-background-muted: rgb(var(--surface-secondary));
+  --cui-color-background-panel: rgb(var(--surface-primary));
+  --cui-color-background-hover: rgb(var(--surface-hover));
+  --cui-color-background-active: rgb(var(--surface-active));
+  --cui-color-background-secondary: rgb(var(--surface-secondary));
+  --cui-color-text-default: rgb(var(--text-primary));
+  --cui-color-text-muted: rgb(var(--text-secondary));
+  --cui-color-text-disabled: rgb(var(--text-tertiary));
+  --cui-color-text-primary: rgb(var(--accent-primary));
+  --cui-color-text-link: rgb(var(--link-inline));
+  --cui-color-text-danger: rgb(var(--text-destructive));
+  --cui-color-text-on-accent: rgb(var(--text-inverted));
+  --cui-color-title-default: rgb(var(--text-primary));
+  --cui-color-title-muted: rgb(var(--text-secondary));
+  --cui-color-accent: rgb(var(--accent-primary));
+  --cui-color-outline: rgb(var(--focus-control));
+  --cui-color-accent-success: rgb(var(--status-success));
+  --cui-color-accent-warning: rgb(var(--status-warning));
+  --cui-color-accent-info: rgb(var(--status-info));
+  --cui-color-accent-danger: rgb(var(--status-error));
+  --cui-color-accent-user: rgb(var(--brand-purple));
+  --cui-color-feedback-info-bg: rgb(var(--status-info-subtle));
+  --cui-color-feedback-info-fg: rgb(var(--status-info-strong));
+  --cui-color-feedback-success-bg: rgb(var(--status-success-subtle));
+  --cui-color-feedback-success-fg: rgb(var(--status-success-strong));
+  --cui-color-feedback-warning-bg: rgb(var(--status-warning-subtle));
+  --cui-color-feedback-warning-fg: rgb(var(--status-warning-strong));
+  --cui-color-feedback-danger-bg: rgb(var(--status-error-subtle));
+  --cui-color-feedback-danger-fg: rgb(var(--status-error-strong));
+  --cui-color-feedback-user-bg: rgb(var(--brand-purple) / 0.15);
+  --cui-color-feedback-user-fg: rgb(var(--brand-purple));
+  --cui-radii-sm: var(--theme-radius-md);
+  --cui-font-family-mono: var(--theme-mono-font-family);
+
+  /* The settings visual system: one row grid and its state colors. */
+  --settings-label-col: 240px;
+  --settings-col-gap: 24px;
+  --settings-row-px: 16px;
+  --settings-row-py: 10px;
+  --settings-nest-step: 20px;
+  --settings-control-h: 32px;
+  --settings-content-max: 1040px;
+  --settings-radius: var(--theme-radius-lg);
+
+  --control-w-s: 160px;
+  --control-w-m: 320px;
+  --control-w-l: 640px;
+
+  --settings-fs-section: 1rem;
+  --settings-fs-group: 0.875rem;
+  --settings-fs-label: 0.875rem;
+  --settings-fs-help: 0.8125rem;
+  --settings-fs-meta: 0.75rem;
+
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+  --focus-ring-color: var(--cui-color-outline);
+
+  --settings-accent: rgb(var(--accent-primary));
+  --settings-accent-fg: rgb(var(--status-info-strong));
+  --settings-accent-bg: rgb(var(--status-info-subtle));
+  --settings-accent-solid-bg: rgb(var(--accent-primary));
+  --settings-accent-solid-fg: rgb(var(--text-inverted));
+  --settings-neutral-fg: rgb(var(--status-neutral));
+  --settings-neutral-bg: rgb(var(--status-neutral-subtle));
+  --settings-muted-fg: rgb(var(--text-secondary));
+  --settings-warn-fg: rgb(var(--status-warning-strong));
+  --settings-warn-bg: rgb(var(--status-warning-subtle));
+  --settings-warn-mark: rgb(var(--status-warning));
+  --settings-danger-fg: rgb(var(--status-error-strong));
+  --settings-danger-bg: rgb(var(--status-error-subtle));
+  --settings-danger-mark: rgb(var(--status-error));
+  --settings-success-fg: rgb(var(--status-success-strong));
+  --settings-success-bg: rgb(var(--status-success-subtle));
+  --settings-info-fg: rgb(var(--status-info-strong));
+  --settings-info-bg: rgb(var(--status-info-subtle));
+  --settings-info-border: rgb(var(--status-info-border));
+  --settings-switch-off: rgb(var(--border-heavy) / var(--border-heavy-alpha, 1));
+}
+
+@keyframes drawer-slide-in {
+  from {
+    transform: translateX(100%);
+  }
+  to {
+    transform: translateX(0);
+  }
+}
+
+@keyframes drawer-slide-out {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes overlay-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes overlay-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.user-dropdown [role='menuitem'] {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+}
+
+.cmdk-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgb(var(--surface-overlay) / var(--theme-modal-scrim-opacity, 0.65));
+  z-index: var(--z-command-overlay);
+  animation: cmdk-fade-in 150ms ease;
+}
+
+.cmdk-content {
+  position: fixed;
+  top: 20%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(640px, calc(100vw - 2rem));
+  background: var(--cui-color-background-default);
+  border: 1px solid var(--cui-color-stroke-default);
+  border-radius: 12px;
+  box-shadow: var(--theme-shadow-2xl);
+  z-index: var(--z-command);
+  overflow: hidden;
+  animation: cmdk-scale-in 150ms ease;
+}
+
+.cmdk-group [cmdk-group-heading] {
+  padding: 0.5rem 0.75rem 0.25rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--cui-color-text-muted);
+  user-select: none;
+}
+
+.cmdk-group + .cmdk-group {
+  border-top: 1px solid var(--cui-color-stroke-default);
+  margin-top: 0.25rem;
+  padding-top: 0.25rem;
+}
+
+@keyframes cmdk-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes cmdk-scale-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+}
+
+@keyframes cmdk-flash {
+  0%,
+  80% {
+    outline: 2px solid var(--cui-color-accent);
+    outline-offset: 4px;
+    border-radius: var(--cui-radii-sm);
+  }
+  100% {
+    outline-color: transparent;
+  }
+}
+
+.cmdk-highlight {
+  animation: cmdk-flash 3s ease forwards;
+}
+
+.admin-tab-fade-both {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    rgb(var(--black)) 2rem,
+    rgb(var(--black)) calc(100% - 2rem),
+    transparent
+  );
+}
+
+.admin-tab-fade-start {
+  mask-image: linear-gradient(to right, transparent, rgb(var(--black)) 2rem);
+}
+
+.admin-tab-fade-end {
+  mask-image: linear-gradient(to left, transparent, rgb(var(--black)) 2rem);
+}
+
+.admin-slide-up {
+  animation: slideUp 200ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-slide-up {
+    animation: none;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.admin-panel *,
+.admin-panel *::before,
+.admin-panel *::after {
+  outline-color: var(--focus-ring-color);
+}
+
+/* One focus ring (VS-5): 2px plus offset for buttons, links, tabs, switches,
+   TOC items and select triggers; click-ui inputs ring their bordered wrapper. */
+.admin-panel button,
+.admin-panel a,
+.admin-panel summary,
+.admin-panel [role='button'],
+.admin-panel [role='tab'] {
+  outline: var(--focus-ring-width) solid transparent !important;
+  outline-offset: var(--focus-ring-offset) !important;
+}
+
+.admin-panel button:focus-visible,
+.admin-panel a:focus-visible,
+.admin-panel summary:focus-visible,
+.admin-panel [role='button']:focus-visible,
+.admin-panel [role='tab']:focus-visible,
+.admin-panel [role='switch']:focus-visible,
+.admin-panel [role='checkbox']:focus-visible,
+.admin-panel [role='radio']:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color) !important;
+  outline-offset: var(--focus-ring-offset) !important;
+  position: relative;
+  z-index: 1;
+}
+
+/* click-ui DatePicker: round the PopoverTrigger button so the global
+   focus-visible outline matches the input wrapper's border-radius. */
+.audit-date-cell button {
+  border-radius: 4px;
+}
+
+.admin-panel input:not([cmdk-input]):focus-visible,
+.admin-panel textarea:focus-visible,
+.admin-panel select:focus-visible {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color) !important;
+  outline-offset: 1px !important;
+}
+
+/* CUI input components draw their border on a wrapper: ring the wrapper
+   instead of the bare input so the ring follows the visible field. */
+.cui-field input:focus-visible,
+.cui-field textarea:focus-visible {
+  outline: none !important;
+}
+
+.cui-field :has(> input:focus-visible),
+.cui-field :has(> textarea:focus-visible) {
+  outline: var(--focus-ring-width) solid var(--focus-ring-color);
+  outline-offset: 1px;
+}
+
+.select-field-a11y button:focus-visible {
+  outline-offset: 1px !important;
+}
+
+.auth-card {
+  box-sizing: border-box;
+}
+
+@media (max-width: 400px) {
+  .auth-card {
+    padding-left: 0.75rem !important;
+    padding-right: 0.75rem !important;
+  }
+}
+
+.auth-card :has(> input:focus-visible),
+.auth-card :has(> textarea:focus-visible) {
+  border-color: var(--cui-color-outline) !important;
+}
+
+.auth-card input:focus-visible,
+.auth-card textarea:focus-visible,
+.password-field-a11y input:focus-visible {
+  outline: none !important;
+}
+
+.password-field-a11y button {
+  padding-inline: 4px;
+}
+
+.password-field-a11y button:focus-visible {
+  outline-offset: -2px !important;
+  border-radius: var(--cui-radii-sm) !important;
+}
+
+.scope-selector-dialog {
+  width: min(640px, calc(100vw - 2rem));
+}
+
+.scope-item {
+  display: flex;
+  cursor: pointer;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: var(--cui-radii-sm);
+  padding: 0.5rem 0.75rem;
+  text-decoration: none;
+}
+
+/* The highlighted option's secondary text reads in the default color: muted text on the active background is below 4.5:1. */
+.scope-item[aria-selected='true'] {
+  --cui-color-text-muted: var(--cui-color-text-default);
+  background: var(--cui-color-background-active);
+}
+
+.scope-item[data-active='true'] {
+  background: var(--cui-color-background-hover);
+}
+
+.scope-action {
+  display: flex;
+  flex-shrink: 0;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--cui-radii-sm);
+  padding: 0 0.25rem;
+  color: var(--cui-color-text-muted);
+}
+
+.scope-action[aria-selected='true'] {
+  background: var(--cui-color-background-active);
+  opacity: 1;
+}
+
+.scope-action[aria-disabled='true'] {
+  cursor: not-allowed;
+}
+
+/** The look of a switch for the Active option (the option itself is the control). */
+.scope-switch {
+  position: relative;
+  width: 1.75rem;
+  height: 1rem;
+  border-radius: 9999px;
+  background: var(--cui-color-stroke-default);
+  transition: background-color 150ms;
+}
+
+.scope-switch::after {
+  content: '';
+  position: absolute;
+  top: 0.125rem;
+  left: 0.125rem;
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 9999px;
+  background: var(--cui-color-background-default);
+  transition: transform 150ms;
+}
+
+.scope-switch[data-checked='true'] {
+  background: var(--settings-accent-solid-bg);
+}
+
+.scope-switch[data-checked='true']::after {
+  transform: translateX(0.75rem);
+}
+
+.scope-icon {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--cui-radii-sm);
+  background: var(--cui-color-background-secondary);
+}
+
+.scope-preview-banner {
+  background: var(--cui-color-background-secondary);
+  border: 1px solid var(--cui-color-stroke-default);
+}
+
+.scope-preview-dimmed {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.scope-preview-highlighted {
+  position: relative;
+}
+
+.scope-preview-highlighted::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: var(--cui-radii-sm);
+  border: 1px solid var(--cui-color-accent-info);
+  pointer-events: none;
+}
+
+.static-value {
+  display: block;
+  min-height: 1.5rem;
+  padding-top: 0.25rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  color: var(--cui-color-text-default);
+  overflow-wrap: anywhere;
+}
+
+.static-value-unset {
+  color: var(--cui-color-text-muted);
+}
+
+.static-value-block {
+  white-space: pre-wrap;
+  font-family: var(--cui-font-family-mono, ui-monospace, monospace);
+  font-size: 0.8125rem;
+}
+
+.static-value-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin: 0;
+  padding: 0.125rem 0 0;
+  list-style: none;
+}
+
+.static-value-chip {
+  padding: 1px 8px;
+  border: 1px solid var(--cui-color-stroke-default);
+  border-radius: 9999px;
+  font-size: 0.8125rem;
+  line-height: 1.25rem;
+  color: var(--cui-color-text-default);
+}
+
+.profile-indicator {
+  display: inline-flex;
+  align-items: center;
+}
+
+.profile-indicator-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  cursor: pointer;
+  border: 1px solid var(--cui-color-stroke-muted);
+  background: var(--cui-color-background-muted);
+  padding: 2px 6px;
+  margin-left: auto;
+  border-radius: 9999px;
+  transition:
+    background 150ms ease,
+    border-color 150ms ease;
+}
+
+.profile-indicator-btn:hover {
+  background: var(--cui-color-background-hover);
+  border-color: var(--cui-color-stroke-intense);
+}
+
+.config-input {
+  border-radius: var(--cui-radii-sm);
+  border: 1px solid var(--cui-color-stroke-default);
+  background: var(--cui-color-background-default);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  color: var(--cui-color-text-default);
+  outline: none;
+}
+
+.config-input:focus {
+  border-color: var(--cui-color-stroke-intense);
+}
+
+.config-input:disabled {
+  background: transparent;
+  cursor: default;
+  border-color: transparent;
+}
+
+/* Hide native number input spinners */
+input[type='number'].config-input {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+input[type='number'].config-input::-webkit-inner-spin-button,
+input[type='number'].config-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.config-input-mono {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.625;
+}
+
+.config-input.config-input-error {
+  border-color: var(--cui-color-text-danger);
+}
+
+.config-input-ghost {
+  border: none;
+  border-bottom: 1px solid var(--cui-color-stroke-intense);
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  color: var(--cui-color-text-default);
+  outline: none;
+}
+
+.trash-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  padding: 4px;
+  border-radius: var(--cui-radii-sm);
+  color: var(--cui-color-text-muted);
+  cursor: pointer;
+  transition:
+    color 150ms ease,
+    background 150ms ease;
+}
+
+.trash-btn:hover {
+  background: var(--cui-color-background-hover);
+  color: var(--cui-color-accent-danger);
+}
+
+.icon-btn {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  padding: 4px;
+  border-radius: var(--cui-radii-sm);
+  color: var(--cui-color-text-muted);
+  cursor: pointer;
+  transition:
+    color 150ms ease,
+    background 150ms ease;
+}
+
+.icon-btn-xs {
+  padding: 2px;
+}
+
+.icon-btn:not(:disabled):hover {
+  background: var(--cui-color-background-hover);
+  color: var(--cui-color-text-default);
+}
+
+.icon-btn-danger:not(:disabled):hover {
+  color: var(--cui-color-accent-danger);
+}
+
+.icon-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* ── Toasts naming config paths: wrap long dotted paths, one per line ── */
+
+.toast-wrap,
+.toast-wrap * {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.toast-wrap [class*='description-content'] {
+  white-space: pre-line;
+}
+
+/* The panel's toasts stack above the unsaved-changes bar while it is shown (useToastClearance). */
+.admin-toaster {
+  bottom: calc(1rem + var(--toast-bottom-offset, 0px));
+}
+
+/* ── Config section collapse (grid-rows trick for auto height) ── */
+
+/* minmax(0, 1fr) and min-width: 0 keep nowrap content (entry-card summaries,
+   long URLs) from widening the column past its container on narrow screens. */
+.config-section-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  transition: grid-template-rows 250ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.config-section-grid-open {
+  grid-template-rows: 1fr;
+}
+
+.config-section-grid-open > .config-section-inner {
+  opacity: 1;
+  overflow: visible;
+}
+
+.config-section-grid-closed {
+  grid-template-rows: 0fr;
+}
+
+.config-section-inner {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  transition: opacity 200ms ease;
+}
+
+.config-section-grid-closed > .config-section-inner {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ── Table of contents ──────────────────────────────────────── */
+
+.toc-list {
+  position: relative;
+}
+
+.toc-list::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--cui-color-stroke-default);
+}
+
+.toc-item {
+  position: relative;
+}
+
+.toc-item-parent {
+  border-left: 2px solid transparent;
+}
+
+.toc-item-child {
+  border-left: 2px solid transparent;
+}
+
+.toc-item[data-toc-active] {
+  color: var(--cui-color-text-default);
+  border-left-color: var(--settings-accent);
+}
+
+.toc-item-parent[data-toc-active] {
+  font-weight: 600;
+}
+
+/* ── Configured count badges (sections, groups, tabs) ──────────
+   12px minimum and AA contrast. Counts are metadata: neutral, so the blue
+   Admin override chip is the only blue status on a row. */
+
+.config-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border-radius: 9999px;
+  font-size: var(--settings-fs-meta);
+  font-weight: 600;
+  line-height: 1.125rem;
+  min-width: 1.5rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.config-count-badge-active {
+  background-color: var(--settings-neutral-bg);
+  color: var(--settings-neutral-fg);
+}
+
+.config-count-badge-muted {
+  border: 1px solid var(--cui-color-stroke-default);
+  color: var(--settings-muted-fg);
+}
+
+.config-count-badge-override {
+  margin-left: 4px;
+  background-color: var(--settings-accent-solid-bg);
+  color: var(--settings-accent-solid-fg);
+}
+
+/* ── Inline add button (section / group headers) ────────────── */
+
+.config-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 4px;
+  padding: 4px 12px 4px 8px;
+  border-radius: 6px;
+  border: 1px solid color-mix(in srgb, var(--cui-color-text-muted) 40%, transparent);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--cui-color-text-muted);
+  background-color: var(--cui-color-background-default);
+  cursor: pointer;
+  user-select: none;
+  transition:
+    color 0.15s,
+    border-color 0.15s,
+    background-color 0.15s;
+}
+
+.config-add-btn:hover {
+  color: var(--cui-color-text-default);
+  border-color: var(--cui-color-text-muted);
+  background-color: var(--cui-color-background-hover);
+}
+
+.config-add-btn-block {
+  justify-content: center;
+  width: 100%;
+  height: 36px;
+  padding: 6px 12px;
+  margin-left: 0;
+  border-color: color-mix(in srgb, var(--cui-color-text-muted) 40%, transparent);
+}
+
+/* ── Tab configured counts ───────────────────────────────────── */
+
+.config-tab-count {
+  /* Contains its screen-reader text, so it scrolls (and clips) with the tab list. */
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 5px;
+  border-radius: 9999px;
+  font-size: var(--settings-fs-meta);
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.config-tab-count-active {
+  background-color: var(--settings-neutral-bg);
+  color: var(--settings-neutral-fg);
+}
+
+.config-tab-count-zero {
+  border: 1px solid var(--cui-color-stroke-default);
+  color: var(--settings-muted-fg);
+}
+
+.config-tab-count-override {
+  background-color: var(--settings-accent-solid-bg);
+  color: var(--settings-accent-solid-fg);
+}
+
+/* ── Toggle list items ───────────────────────────────────────── */
+
+.config-toggle-item {
+  transition: opacity 150ms ease;
+}
+
+.preview-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  border: none;
+  background: none;
+  padding: 4px;
+  border-radius: var(--cui-radii-sm);
+  color: var(--cui-color-text-muted);
+  transition:
+    color 150ms ease,
+    background 150ms ease;
+}
+
+.preview-action-btn:hover {
+  color: var(--cui-color-text-default);
+  background: var(--cui-color-background-hover);
+}
+
+.badge-role {
+  background-color: var(--cui-color-feedback-info-bg);
+  color: var(--cui-color-feedback-info-fg);
+}
+
+.badge-group {
+  background-color: var(--cui-color-feedback-success-bg);
+  color: var(--cui-color-feedback-success-fg);
+}
+
+.badge-profile {
+  background-color: var(--cui-color-feedback-user-bg);
+  color: var(--cui-color-feedback-user-fg);
+}
+
+.badge-admin {
+  background-color: var(--cui-color-feedback-warning-bg);
+  color: var(--cui-color-feedback-warning-fg);
+}
+
+.badge-user {
+  background-color: var(--cui-color-feedback-user-bg);
+  color: var(--cui-color-feedback-user-fg);
+}
+
+/* ── Content column ─────────────────────────────────────────────── */
+
+.settings-content {
+  container-type: inline-size;
+  width: 100%;
+  max-width: var(--settings-content-max);
+}
+
+/* ── Row grid: label | control | trailing (chips and actions) ──────
+   The label track is fixed, so every control on a tab starts at the same
+   x; nesting indents the label text and the group rule, never the track. */
+
+.settings-row {
+  display: grid;
+  grid-template-columns: var(--settings-label-col) minmax(0, 1fr) auto;
+  grid-template-areas: 'label control trailing';
+  column-gap: var(--settings-col-gap);
+  row-gap: 6px;
+  align-items: start;
+  padding: var(--settings-row-py) var(--settings-row-px);
+  border-radius: 8px;
+  position: relative;
+}
+
+.settings-row[data-marker]::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 3px;
+}
+
+.settings-row[data-marker='edited']::before {
+  background: var(--settings-warn-mark);
+}
+
+.settings-row[data-marker='pending']::before {
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--settings-warn-mark) 0 4px,
+    transparent 4px 7px
+  );
+}
+
+.settings-row[data-marker='error']::before {
+  background: var(--settings-danger-mark);
+}
+
+.settings-row-label {
+  grid-area: label;
+  min-width: 0;
+  padding-top: 6px;
+  padding-left: var(--settings-indent, 0px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-row-control {
+  grid-area: control;
+  min-width: 0;
+  min-height: var(--settings-control-h);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  --settings-control-w: var(--control-w-m);
+}
+
+.settings-row-control[data-width='S'] {
+  --settings-control-w: var(--control-w-s);
+}
+
+.settings-row-control[data-width='L'] {
+  --settings-control-w: var(--control-w-l);
+}
+
+/* Text and number fields default to max-w-75; the width token widens or narrows
+   them. Without a token (auto), number inputs take S and everything else M. */
+.settings-row-control[data-width] > .cui-field {
+  max-width: min(100%, var(--settings-control-w));
+}
+
+.settings-row-control[data-width='auto'] > .cui-field:has(input[type='number']) {
+  max-width: min(100%, var(--control-w-s));
+}
+
+.settings-row-trailing {
+  grid-area: trailing;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-height: var(--settings-control-h);
+  max-width: 260px;
+}
+
+.settings-label {
+  font-size: var(--settings-fs-label);
+  font-weight: 500;
+  line-height: 1.25rem;
+  color: var(--cui-color-text-default);
+  overflow-wrap: anywhere;
+}
+
+.settings-required {
+  margin-left: 2px;
+  color: var(--settings-danger-fg);
+}
+
+.settings-hint {
+  font-size: var(--settings-fs-meta);
+  line-height: 1rem;
+  color: var(--cui-color-text-muted);
+}
+
+.settings-help {
+  margin: 2px 0 0;
+  font-size: var(--settings-fs-help);
+  line-height: 1.125rem;
+  color: var(--cui-color-text-muted);
+  overflow-wrap: anywhere;
+}
+
+.settings-help a {
+  font-weight: 500;
+  color: var(--cui-color-text-link);
+}
+
+.settings-help a:hover {
+  text-decoration: underline;
+}
+
+.settings-error {
+  font-size: var(--settings-fs-meta);
+  line-height: 1rem;
+  color: var(--settings-danger-fg);
+}
+
+/* List and key/value rows inside a control wrap instead of overflowing on
+   narrow screens (VS-3): inputs keep a usable minimum and the row breaks. */
+.settings-row-control [role='listitem'],
+.settings-row-control [role='listitem'] > div {
+  flex-wrap: wrap;
+}
+
+.settings-row-control [role='listitem'] :is(input, select).config-input {
+  min-width: 7rem;
+}
+
+/* Single-field section: the section heading is the row's label column, and
+   the field row lends its control and trailing cells to that header row. */
+.settings-row-sole {
+  display: contents;
+}
+
+.settings-section-sole > .settings-row > :not(.settings-row-label, .settings-row-sole) {
+  grid-column: 2 / -1;
+}
+
+/* Narrow containers and phones: label above a full-width control. */
+@container (max-width: 559.98px) {
+  .settings-section-sole > .settings-row > :not(.settings-row-label, .settings-row-sole) {
+    grid-column: 1 / -1;
+  }
+
+  .settings-row {
+    grid-template-columns: minmax(7.5rem, 1fr) minmax(0, max-content);
+    grid-template-areas:
+      'label trailing'
+      'control control';
+    row-gap: 8px;
+  }
+
+  .settings-row-label {
+    padding-top: 0;
+  }
+
+  .settings-row-control {
+    margin-left: var(--settings-indent, 0px);
+  }
+
+  .settings-row-trailing {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 639.98px) {
+  .settings-section-sole > .settings-row > :not(.settings-row-label, .settings-row-sole) {
+    grid-column: 1 / -1;
+  }
+
+  .settings-row {
+    grid-template-columns: minmax(7.5rem, 1fr) minmax(0, max-content);
+    grid-template-areas:
+      'label trailing'
+      'control control';
+    row-gap: 8px;
+  }
+
+  .settings-row-label {
+    padding-top: 0;
+  }
+
+  .settings-row-control {
+    margin-left: var(--settings-indent, 0px);
+  }
+
+  .settings-row-trailing {
+    min-height: 0;
+  }
+
+  .settings-row-control[data-width] > :is(.cui-field, .select-field-a11y) {
+    max-width: 100%;
+  }
+}
+
+/* ── Section card (h2) and nested group (h3) ───────────────────── */
+
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--cui-color-stroke-default);
+  border-radius: var(--settings-radius);
+  background: var(--cui-color-background-panel);
+}
+
+.settings-section-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px var(--settings-row-px);
+  border-radius: var(--settings-radius);
+  background: var(--cui-color-background-panel);
+}
+
+.settings-section-header[data-sticky='true'] {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+  box-shadow: 0 1px 0 var(--cui-color-stroke-default);
+}
+
+.settings-section-headtext {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-heading {
+  margin: 0;
+  font: inherit;
+  min-width: 0;
+}
+
+.settings-section-title {
+  font-size: var(--settings-fs-section);
+  font-weight: 600;
+  line-height: 1.5rem;
+  color: var(--cui-color-title-default);
+}
+
+.settings-group-title {
+  font-size: var(--settings-fs-group);
+  font-weight: 600;
+  line-height: 1.25rem;
+  color: var(--cui-color-title-default);
+}
+
+.settings-trigger {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-chevron {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--cui-color-text-muted);
+  transition: transform 200ms ease;
+}
+
+.settings-trigger[aria-expanded='true'] .settings-chevron {
+  transform: rotate(90deg);
+}
+
+/* Section cards put the chevron at the trailing edge (down when closed, up when
+   open) so the title lines up with the row labels below it. */
+.settings-section-trigger {
+  min-height: 1.5rem;
+}
+
+.settings-section-trigger .settings-chevron {
+  margin-left: auto;
+  transform: rotate(90deg);
+}
+
+.settings-section-trigger[aria-expanded='true'] .settings-chevron {
+  transform: rotate(-90deg);
+}
+
+.settings-section-actions,
+.settings-group-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-section-body {
+  display: flex;
+  flex-direction: column;
+  padding: 0 0 8px;
+}
+
+/* Sole-field section: the header row is itself a settings row. */
+.settings-section-sole {
+  padding: 6px 0;
+}
+
+.settings-section-sole .settings-row-label {
+  padding-top: 4px;
+}
+
+.settings-group {
+  --settings-indent: var(--settings-nest-step);
+  display: flex;
+  flex-direction: column;
+  margin-top: 4px;
+}
+
+.settings-group .settings-group {
+  --settings-indent: calc(var(--settings-nest-step) * 2);
+}
+
+.settings-group .settings-group .settings-group {
+  --settings-indent: calc(var(--settings-nest-step) * 3);
+}
+
+.settings-group .settings-group .settings-group .settings-group {
+  --settings-indent: calc(var(--settings-nest-step) * 4);
+}
+
+.settings-group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 2.5rem;
+  padding: 0 var(--settings-row-px) 0
+    calc(var(--settings-row-px) + var(--settings-indent) - var(--settings-nest-step));
+}
+
+.settings-group-header .settings-heading {
+  flex: 1;
+}
+
+.settings-group-header .settings-trigger {
+  gap: 6px;
+  padding: 6px 0;
+}
+
+.settings-group-body {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The containment rule hangs under the group chevron. */
+.settings-group-body::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 8px;
+  left: calc(var(--settings-row-px) + var(--settings-indent) - var(--settings-nest-step) + 6px);
+  width: 1px;
+  background: var(--cui-color-stroke-default);
+  pointer-events: none;
+}
+
+.settings-group-desc {
+  margin: 0;
+  padding: 0 var(--settings-row-px) 4px calc(var(--settings-row-px) + var(--settings-indent));
+  font-size: var(--settings-fs-help);
+  color: var(--cui-color-text-muted);
+}
+
+/* Banners, entry cards and other free-form content inside a section body line
+   up with the rows; max-width keeps full-width children inside the card. */
+.settings-section-body > :not(.settings-row, .settings-group, .settings-row-sole) {
+  margin-inline: var(--settings-row-px);
+  max-width: calc(100% - 2 * var(--settings-row-px));
+}
+
+.settings-group-body > :not(.settings-row, .settings-group) {
+  margin-left: calc(var(--settings-row-px) + var(--settings-indent));
+  margin-right: var(--settings-row-px);
+  max-width: calc(100% - 2 * var(--settings-row-px) - var(--settings-indent));
+}
+
+/* ── State chips ───────────────────────────────────────────────── */
+
+.state-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 1.375rem;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 9999px;
+  font-size: var(--settings-fs-meta);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.state-chip-default,
+.state-chip-inherited {
+  border-color: var(--cui-color-stroke-default);
+  color: var(--cui-color-text-muted);
+}
+
+.state-chip-yaml {
+  background: var(--settings-neutral-bg);
+  color: var(--settings-neutral-fg);
+}
+
+/* A saved override is the one solid blue status, set apart from the neutral counts. */
+.state-chip-override,
+.state-chip-scope {
+  background: var(--settings-accent-solid-bg);
+  color: var(--settings-accent-solid-fg);
+  font-weight: 600;
+}
+
+/* A change kind in the review: the accent tint, lighter than a saved override. */
+.state-chip-changed {
+  background: var(--settings-accent-bg);
+  color: var(--settings-accent-fg);
+}
+
+.state-chip-edited,
+.state-chip-pendingRevert {
+  background: var(--settings-warn-bg);
+  color: var(--settings-warn-fg);
+}
+
+.state-chip-error {
+  background: var(--settings-danger-bg);
+  color: var(--settings-danger-fg);
+}
+
+.state-chip-added {
+  background: var(--settings-success-bg);
+  color: var(--settings-success-fg);
+}
+
+.state-chip-warning {
+  background: var(--settings-warn-bg);
+  color: var(--settings-warn-fg);
+}
+
+/* A value that is ignored because another setting wins: neutral, not a status. */
+.state-chip-shadowed {
+  border-color: color-mix(in srgb, var(--settings-muted-fg) 70%, transparent);
+  border-style: dashed;
+  color: var(--settings-muted-fg);
+}
+
+.state-chip-hidden {
+  border-color: var(--settings-warn-mark);
+  border-style: dashed;
+  color: var(--settings-warn-fg);
+}
+
+.state-chip-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: var(--settings-warn-mark);
+}
+
+.state-chip-pendingRevert .state-chip-dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--settings-warn-mark);
+}
+
+/* An entry header's state chips in a narrow card: a dot each, named by its tooltip. */
+.entry-marker-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+}
+
+.entry-marker-dot-override {
+  background: var(--settings-accent-solid-bg);
+}
+
+.entry-marker-dot-edited {
+  background: var(--settings-warn-mark);
+}
+
+.state-chip-undo,
+.settings-row-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 1.5rem;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--cui-color-text-muted);
+  font-size: var(--settings-fs-meta);
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* Revert labels name the value they go back to; let them wrap in a narrow trailing column. */
+.settings-row-action {
+  white-space: normal;
+  text-align: end;
+}
+
+.state-chip-undo:hover,
+.settings-row-action:hover {
+  background: var(--cui-color-background-hover);
+  color: var(--cui-color-text-default);
+}
+
+/* ── Info banner (VS-10) ────────────────────────────────────────── */
+
+.settings-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--settings-info-border);
+  border-radius: 8px;
+  background: var(--settings-info-bg);
+  color: var(--settings-info-fg);
+  font-size: var(--settings-fs-help);
+  line-height: 1.25rem;
+}
+
+.settings-banner-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  padding-top: 1px;
+}
+
+.settings-banner-text {
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+}
+
+.settings-banner-text a {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.settings-banner-dismiss {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin: -2px -4px -2px 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.settings-banner-dismiss:hover {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+/* ── Form dialog: scrolling body between a fixed header and footer (VS-11) ── */
+
+.form-dialog-content[role='dialog'] {
+  display: flex;
+  flex-direction: column;
+  max-height: min(88dvh, 960px);
+  overflow: hidden;
+}
+
+.form-dialog-content[role='dialog'] > :not(form) {
+  flex-shrink: 0;
+}
+
+.form-dialog-form {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.form-dialog-body {
+  container-type: inline-size;
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 20px;
+  margin-inline: calc(-1 * var(--click-dialog-space-x, 1.5rem));
+  padding: 4px var(--click-dialog-space-x, 1.5rem) 16px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.form-dialog-footer {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 12px;
+  margin-inline: calc(-1 * var(--click-dialog-space-x, 1.5rem));
+  padding: 16px var(--click-dialog-space-x, 1.5rem) 0;
+  border-top: 1px solid var(--cui-color-stroke-default);
+}
+
+@media (max-width: 640px) {
+  .form-dialog-content[role='dialog'] {
+    max-height: 100dvh;
+  }
+}
+
+/* ── Reduced motion (VS-5) ─────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .admin-panel *,
+  .admin-panel *::before,
+  .admin-panel *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,5 +1,5 @@
 import { SSE } from 'sse.js';
-import { request } from 'librechat-data-provider';
+import { request, getExpectedTenantHeader } from 'librechat-data-provider';
 import type {
   ChatFrame,
   ChatEvent,
@@ -13,9 +13,12 @@ type StreamErrorEvent = MessageEvent & { responseCode?: number };
 type ReadyStateChangeEvent = Event & { readyState?: number };
 type EventCallback = (event: ChatEvent) => void;
 
+/** The expected tenant lets the server refuse a turn meant for an organization this browser's
+ *  session has since left (another tab switched), instead of writing it into the new one. */
 const jsonHeaders = (token?: string) => ({
   'Content-Type': 'application/json',
   Authorization: `Bearer ${token}`,
+  ...getExpectedTenantHeader(),
 });
 
 /** Parses one `message` event and emits it normalized; a frame that is not JSON is skipped. */
@@ -63,6 +66,11 @@ async function refreshToken(): Promise<string | null | false> {
  */
 const isTwoFactorSetupRefusal = (e: StreamErrorEvent): boolean =>
   e.responseCode === 403 && request.redirectIfTwoFactorSetupPayload(e.data);
+
+/** Refusals the page answers itself by leaving: two-factor setup, or a reload into the
+ *  organization another tab switched this browser's session to. */
+const isPageLeavingRefusal = (e: StreamErrorEvent): boolean =>
+  isTwoFactorSetupRefusal(e) || request.reloadIfOrganizationChanged(e.responseCode, e.data);
 
 /**
  * An HTTP failure body is often empty or HTML, so one that is not JSON is
@@ -116,7 +124,7 @@ export function createSSETransport({ token }: { token?: string }): ChatTransport
        * live until the retry settles, so an abort meanwhile must still cancel. */
       let refreshing = false;
       sse.addEventListener('error', async (e: StreamErrorEvent) => {
-        if (isTwoFactorSetupRefusal(e)) {
+        if (isPageLeavingRefusal(e)) {
           return;
         }
         if (e.responseCode === 401 && !refreshed) {
@@ -171,7 +179,7 @@ export function createSSETransport({ token }: { token?: string }): ChatTransport
       }
 
       const sse = new SSE(url, {
-        headers: { Authorization: `Bearer ${token}`, ...headers },
+        headers: { Authorization: `Bearer ${token}`, ...getExpectedTenantHeader(), ...headers },
         method: 'GET',
       });
 
@@ -201,7 +209,7 @@ export function createSSETransport({ token }: { token?: string }): ChatTransport
       let refreshed = false;
       sse.addEventListener('error', async (e: StreamErrorEvent) => {
         failureSeen = true;
-        if (isTwoFactorSetupRefusal(e)) {
+        if (isPageLeavingRefusal(e)) {
           return;
         }
         if (e.responseCode === 401 && !refreshed) {

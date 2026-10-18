@@ -15,6 +15,7 @@ import { TOOL_CALL_PREVIEWS_PARAM, TOOL_CALL_PREVIEWS_VERSION } from './previews
 import * as permissions from './accessPermissions';
 import * as endpoints from './api-endpoints';
 import { uploadEventStream } from './upload';
+import * as o from './types/organizations';
 import * as mcp from './types/mcpServers';
 import * as qt from './types/queuedTurns';
 import * as sch from './types/schedules';
@@ -23,6 +24,7 @@ import * as m from './types/mutations';
 import * as ag from './types/agents';
 import * as q from './types/queries';
 import * as sk from './types/skills';
+import * as ad from './types/admin';
 import * as f from './types/files';
 import * as config from './config';
 import request from './request';
@@ -285,6 +287,130 @@ export function getSearchEnabled(): Promise<boolean> {
 
 export function getUser(): Promise<t.TUser> {
   return request.get(endpoints.user());
+}
+
+/* Organizations */
+
+/** An onboarding token (an account with no organization yet) instead of the session bearer. */
+const asAccount = (onboardingToken?: string) =>
+  onboardingToken ? { headers: { Authorization: `Bearer ${onboardingToken}` } } : undefined;
+
+export function getOrganizations(onboardingToken?: string): Promise<o.TOrganizationsResponse> {
+  return request.get(endpoints.organizations(), asAccount(onboardingToken));
+}
+
+export function createOrganization(
+  payload: o.TCreateOrganizationRequest,
+  onboardingToken?: string,
+): Promise<o.TOrganizationSessionResponse> {
+  return request.post(endpoints.organizations(), payload, asAccount(onboardingToken));
+}
+
+export function switchOrganization(
+  organizationId: string,
+): Promise<o.TOrganizationSessionResponse> {
+  return request.post(endpoints.organizationSwitch(), { organizationId });
+}
+
+export function getCurrentOrganization(): Promise<o.TCurrentOrganizationResponse> {
+  return request.get(endpoints.currentOrganization());
+}
+
+export function renameOrganization(payload: { name: string }): Promise<{
+  organization: o.TOrganization;
+}> {
+  return request.patch(endpoints.currentOrganization(), payload);
+}
+
+export function leaveOrganization(): Promise<o.TLeaveOrganizationResponse> {
+  return request.post(endpoints.currentOrganizationLeave());
+}
+
+export function getOrganizationMembers(
+  params: q.OrganizationMembersParams = {},
+): Promise<o.TOrganizationMembersResponse> {
+  return request.get(endpoints.organizationMembers(params));
+}
+
+export function updateOrganizationMember(
+  memberId: string,
+  payload: o.TUpdateOrganizationMemberRequest,
+): Promise<{ member: o.TOrganizationMember }> {
+  return request.patch(endpoints.organizationMember(memberId), payload);
+}
+
+export function deactivateOrganizationMember(
+  memberId: string,
+): Promise<{ member: o.TOrganizationMember }> {
+  return request.delete(endpoints.organizationMember(memberId));
+}
+
+export function getOrganizationInvites(): Promise<o.TOrganizationInvitesResponse> {
+  return request.get(endpoints.organizationInvites());
+}
+
+export function createOrganizationInvite(
+  payload: o.TCreateOrganizationInviteRequest,
+): Promise<o.TCreateOrganizationInviteResponse> {
+  return request.post(endpoints.organizationInvites(), payload);
+}
+
+export function revokeOrganizationInvite(inviteId: string): Promise<{ revoked: true }> {
+  return request.delete(endpoints.organizationInvite(inviteId));
+}
+
+export function resendOrganizationInvite(
+  inviteId: string,
+): Promise<o.TCreateOrganizationInviteResponse> {
+  return request.post(endpoints.organizationInviteResend(inviteId));
+}
+
+export function previewOrganizationInvite(token: string): Promise<o.TOrganizationInvitePreview> {
+  return request.get(endpoints.organizationInvitePreview(token));
+}
+
+export function acceptOrganizationInvite(
+  token: string,
+  onboardingToken?: string,
+): Promise<o.TOrganizationSessionResponse> {
+  return request.post(
+    endpoints.organizationInviteAccept(token),
+    undefined,
+    asAccount(onboardingToken),
+  );
+}
+
+export function getPendingOrganizationInvites(
+  onboardingToken?: string,
+): Promise<o.TPendingOrganizationInvitesResponse> {
+  return request.get(endpoints.pendingOrganizationInvites(), asAccount(onboardingToken));
+}
+
+export function acceptPendingOrganizationInvite(
+  inviteId: string,
+  onboardingToken?: string,
+): Promise<o.TOrganizationSessionResponse> {
+  return request.post(
+    endpoints.pendingOrganizationInviteAccept(inviteId),
+    undefined,
+    asAccount(onboardingToken),
+  );
+}
+
+/* Built-in admin panel: asked at the platform, so a chosen organization never decides access */
+
+const atPlatform = { headers: { [ad.ADMIN_SCOPE_HEADER]: ad.ADMIN_PLATFORM_SCOPE } };
+
+/** Answers only for someone who can open the admin panel; anyone else gets a 403. */
+export function getAdminSession(): Promise<ad.TAdminSession> {
+  return request.get(endpoints.adminSession(), atPlatform);
+}
+
+/** Every organization on the platform; the platform operator only. */
+export function getAdminOrganizations(
+  params: ad.TAdminOrganizationsQuery = {},
+): Promise<ad.TAdminOrganizationsResponse> {
+  return request.get(endpoints.adminOrganizations(params), atPlatform);
 }
 
 export function updateUserPreferences(

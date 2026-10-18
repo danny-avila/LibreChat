@@ -1,5 +1,11 @@
 import { getMaxSubagents, setMaxSubagents } from 'librechat-data-provider';
-import { AppService, getTenantId, tenantStorage, SYSTEM_TENANT_ID } from '@librechat/data-schemas';
+import {
+  AppService,
+  getTenantId,
+  tenantStorage,
+  SYSTEM_TENANT_ID,
+  PLATFORM_TENANT_ID,
+} from '@librechat/data-schemas';
 import type { AppConfig } from '@librechat/data-schemas';
 import {
   createAppConfigService,
@@ -8,6 +14,7 @@ import {
   getAppConfigOptionsFromUser,
 } from './service';
 import { getProviderConfig } from '~/endpoints/config/providers';
+import { configureOrganizations } from '~/organizations/mode';
 
 /** Extends AppConfig with mock fields used by merge behavior tests. */
 interface TestConfig extends AppConfig {
@@ -898,6 +905,63 @@ describe('createAppConfigService', () => {
       const merged = config as TestConfig;
       expect(merged.interfaceConfig?.modelSelect).toBe(false);
       expect(merged.endpoints).toEqual(['openAI']);
+    });
+
+    describe('platform defaults in organizations mode', () => {
+      afterEach(() => configureOrganizations(undefined));
+
+      /** Platform overrides come from the platform scope, an organization's from its own. */
+      const calls: Array<{ tenantId?: string; types: string[] }> = [];
+      beforeEach(() => {
+        calls.length = 0;
+      });
+      const layered = () =>
+        jest.fn(async (principals: Array<{ principalType: string }> = []) => {
+          calls.push({ tenantId: getTenantId(), types: principals.map((p) => p.principalType) });
+          if (getTenantId() === PLATFORM_TENANT_ID) {
+            return [
+              { priority: 90, overrides: { interface: { modelSelect: false } }, isActive: true },
+              { priority: 90, overrides: { x: 'platform' }, isActive: true },
+            ];
+          }
+          return [{ priority: 1, overrides: { x: 'organization' }, isActive: true }];
+        });
+
+      it('layers the platform defaults beneath the organization, which always wins', async () => {
+        configureOrganizations({ enabled: true });
+        const deps = createDeps({ getApplicableConfigs: layered() });
+        const { getAppConfig } = createAppConfigService(deps);
+
+        const config = (await tenantStorage.run({ tenantId: 'org_acme' }, () =>
+          getAppConfig({ role: 'USER', userId: 'uid1' }),
+        )) as TestConfig;
+
+        /* Set only at the platform: inherited. Set at both, even at a lower priority: the org. */
+        expect(config.interfaceConfig?.modelSelect).toBe(false);
+        expect(config.x).toBe('organization');
+        expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(2);
+        /* The platform layer reads by role name only: user and group ids are per organization. */
+        expect(calls.find((call) => call.tenantId === PLATFORM_TENANT_ID)?.types).toEqual(['role']);
+      });
+
+      it('reads only the platform layer in the platform scope, and none without organizations', async () => {
+        configureOrganizations({ enabled: true });
+        const platformDeps = createDeps({ getApplicableConfigs: layered() });
+        const atPlatform = (await tenantStorage.run({ tenantId: PLATFORM_TENANT_ID }, () =>
+          createAppConfigService(platformDeps).getAppConfig({ role: 'ADMIN', userId: 'u' }),
+        )) as TestConfig;
+        expect(atPlatform.x).toBe('platform');
+        expect(platformDeps.getApplicableConfigs).toHaveBeenCalledTimes(1);
+
+        configureOrganizations(undefined);
+        const plainDeps = createDeps({ getApplicableConfigs: layered() });
+        const plain = (await tenantStorage.run({ tenantId: 'org_acme' }, () =>
+          createAppConfigService(plainDeps).getAppConfig({ role: 'USER', userId: 'uid1' }),
+        )) as TestConfig;
+        expect(plain.x).toBe('organization');
+        expect(plain.interfaceConfig?.modelSelect).toBe(true);
+        expect(plainDeps.getApplicableConfigs).toHaveBeenCalledTimes(1);
+      });
     });
 
     it('caches merged result with TTL', async () => {

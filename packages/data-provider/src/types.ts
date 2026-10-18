@@ -324,6 +324,10 @@ export type TUser = {
   role: string;
   provider: string;
   tenantId?: string;
+  /** Organizations mode: the platform operator, who runs the admin panel. */
+  isPlatformOperator?: boolean;
+  /** Organizations mode: the operator is visiting this organization, not a member of it. */
+  operatorAccess?: boolean;
   plugins?: string[];
   twoFactorEnabled?: boolean;
   backupCodes?: TBackupCode[];
@@ -775,6 +779,8 @@ export type TTokenConfigMap = Record<string, Record<string, TModelTokenomics>>;
 
 export type TRegisterUserResponse = {
   message: string;
+  /** A stable organization error code when organizations mode refused the registration. */
+  code?: string;
 };
 
 export type TRegisterUser = {
@@ -784,6 +790,10 @@ export type TRegisterUser = {
   password: string;
   confirm_password?: string;
   token?: string;
+  /** Organizations mode: the organization this account will create. */
+  organization?: { name: string };
+  /** Organizations mode: an invite link token; joins its organization instead. */
+  organizationInvite?: string;
 };
 
 export type TLoginUser = {
@@ -799,7 +809,11 @@ export type TLoginResponse = {
   twoFAPending?: boolean;
   twoFASetupRequired?: boolean;
   tempToken?: string;
-  code?: 'TWO_FACTOR_ENROLLMENT_REQUIRED';
+  code?: 'TWO_FACTOR_ENROLLMENT_REQUIRED' | 'ORGANIZATION_ONBOARDING_REQUIRED';
+  /** Organizations mode: the account belongs to no organization yet; this token can only
+   *  create one or accept an invite. */
+  onboardingToken?: string;
+  emailVerified?: boolean;
 };
 
 /** Shared payload for any operation that requires OTP or backup-code verification. */
@@ -842,10 +856,17 @@ export type TFinalize2FASetupRequest = {
   finalizationToken: string;
 };
 
+/** Organizations mode: an account with no organization yet gets `onboardingToken` instead. */
+export type TOrganizationOnboardingFields = {
+  code?: string;
+  onboardingToken?: string;
+  emailVerified?: boolean;
+};
+
 export type TFinalize2FASetupResponse = {
   token: string;
   user: TUser;
-};
+} & TOrganizationOnboardingFields;
 
 export type TVerify2FARequest = TOTPVerificationPayload;
 
@@ -862,7 +883,7 @@ export type TVerify2FATempResponse = {
   token?: string;
   user?: TUser;
   message?: string;
-};
+} & TOrganizationOnboardingFields;
 
 /* Passkeys (WebAuthn) */
 

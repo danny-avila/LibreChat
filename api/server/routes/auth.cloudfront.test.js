@@ -4,6 +4,8 @@ const request = require('supertest');
 const mockForceRefreshCloudFrontAuthCookies = jest.fn();
 
 jest.mock('@librechat/api', () => ({
+  /** Passes through for a single-tenant user, which these tests sign in as. */
+  actAsAccount: (req, res, next) => next(),
   limiterCache: jest.fn(),
   createTwoFactorManagementLimiter: jest.fn(() => (req, res, next) => next()),
   createSetBalanceConfig: jest.fn(() => (req, res, next) => next()),
@@ -84,6 +86,7 @@ jest.mock('~/server/middleware', () => {
     requireLdapAuth: pass,
     registerLimiter: pass,
     checkInviteUser: pass,
+    checkOrganizationInvite: pass,
     validateRegistration: pass,
     resetPasswordLimiter: pass,
     resetPasswordSubmissionLimiter: pass,

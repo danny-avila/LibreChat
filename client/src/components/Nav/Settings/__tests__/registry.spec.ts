@@ -28,11 +28,14 @@ const settingsContext: SettingsContextValue = {
   mascotAllowed: true,
   engineTTS: 'browser',
   langfuseConnectionAccess: false,
-  adminPanelURL: '',
+  adminPanel: false,
   replyTabBadgeAllowed: true,
   replyNotificationsAllowed: true,
   replyNotificationSoundAllowed: true,
   analyticsConfigured: false,
+  organizationsEnabled: false,
+  isOrganizationAdmin: false,
+  canLeaveOrganization: false,
 };
 
 const policyProviders = ['local', 'ldap', null, undefined];
@@ -67,6 +70,19 @@ describe('settings registry', () => {
     for (const entry of registry) {
       expect(isValidElementType(entry.Component)).toBe(true);
     }
+  });
+
+  it('offers the built-in admin panel only to someone who can open it', () => {
+    const entry = registry.find((e) => e.id === 'adminPanel');
+    expect(entry?.show?.(settingsContext)).toBe(false);
+    expect(entry?.show?.({ ...settingsContext, adminPanel: true })).toBe(true);
+  });
+
+  it('offers leaving an organization only for a membership, never an operator visit', () => {
+    const entry = registry.find((e) => e.id === 'leaveOrganization');
+    const organizations = { ...settingsContext, organizationsEnabled: true };
+    expect(entry?.show?.(organizations)).toBe(false);
+    expect(entry?.show?.({ ...organizations, canLeaveOrganization: true })).toBe(true);
   });
 
   it('offers the analytics consent toggle only when GTM is configured', () => {

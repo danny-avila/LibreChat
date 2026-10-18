@@ -126,8 +126,12 @@ describe('Experimental server configuration', () => {
   });
 
   it('matches the standard server pre-authentication tenant routes', () => {
-    expect(source).toContain("app.use('/oauth', preAuthTenantMiddleware, routes.oauth);");
-    expect(source).toContain("app.use('/api/auth', preAuthTenantMiddleware, routes.auth);");
+    /* Credential routes resolve login accounts in organizations mode. */
+    expect(source).toMatch(
+      /credentialTenantMiddleware = isOrganizationsEnabled\(\)\s*\?\s*accountsTenantMiddleware\s*:\s*preAuthTenantMiddleware;/,
+    );
+    expect(source).toContain("app.use('/oauth', credentialTenantMiddleware, routes.oauth);");
+    expect(source).toContain("app.use('/api/auth', credentialTenantMiddleware, routes.auth);");
     expect(source).toContain(
       "app.use('/api/config', preAuthTenantMiddleware, optionalJwtAuth, routes.config);",
     );

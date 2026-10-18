@@ -565,10 +565,9 @@ async function applyOpenIdRoleSync({
  * Can be reused by both the passport strategy and proxy authentication
  *
  * @param {Object} tokenset - The OpenID tokenset containing access_token, id_token, etc.
- * @param {boolean} existingUsersOnly - If true, only existing users will be processed
  * @returns {Promise<Object>} The authenticated user object with tokenset
  */
-async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
+async function processOpenIDAuth(tokenset) {
   const claims = tokenset.claims ? tokenset.claims() : tokenset;
   const userinfo = {
     ...claims,
@@ -681,10 +680,6 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
     username = convertToUsername(
       userinfo.preferred_username || userinfo.username || userinfo.email,
     );
-  }
-
-  if (existingUsersOnly && !user) {
-    throw new Error('User does not exist');
   }
 
   const profile = {
@@ -843,13 +838,10 @@ async function processOpenIDAuth(tokenset, existingUsersOnly = false) {
   };
 }
 
-/**
- * @param {boolean | undefined} [existingUsersOnly]
- */
-function createOpenIDCallback(existingUsersOnly) {
+function createOpenIDCallback() {
   return async (tokenset, done) => {
     try {
-      const user = await processOpenIDAuth(tokenset, existingUsersOnly);
+      const user = await processOpenIDAuth(tokenset);
       done(null, user);
     } catch (err) {
       if (err.message === 'Email domain not allowed') {
@@ -866,33 +858,6 @@ function createOpenIDCallback(existingUsersOnly) {
     }
   };
 }
-
-/**
- * Sets up the OpenID strategy specifically for admin authentication.
- * @param {Configuration} openidConfig
- */
-const setupOpenIdAdmin = (openidConfig) => {
-  try {
-    if (!openidConfig) {
-      throw new Error('OpenID configuration not initialized');
-    }
-
-    const openidAdminLogin = new CustomOpenIDStrategy(
-      {
-        config: openidConfig,
-        scope: process.env.OPENID_SCOPE,
-        usePKCE: isEnabled(process.env.OPENID_USE_PKCE),
-        clockTolerance: process.env.OPENID_CLOCK_TOLERANCE || 300,
-        callbackURL: process.env.DOMAIN_SERVER + '/api/admin/oauth/openid/callback',
-      },
-      createOpenIDCallback(true),
-    );
-
-    passport.use('openidAdmin', openidAdminLogin);
-  } catch (err) {
-    logger.error('[openidStrategy] setupOpenIdAdmin', err);
-  }
-};
 
 /**
  * Sets up the OpenID strategy for authentication.
@@ -956,7 +921,6 @@ async function setupOpenId() {
       createOpenIDCallback(),
     );
     passport.use('openid', openidLogin);
-    setupOpenIdAdmin(openidConfig);
     return openidConfig;
   } catch (err) {
     logger.error('[openidStrategy]', err);

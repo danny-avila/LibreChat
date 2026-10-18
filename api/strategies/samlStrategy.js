@@ -184,10 +184,9 @@ function convertToUsername(input, defaultValue = '') {
 
 /**
  * Creates a SAML authentication callback.
- * @param {boolean} [existingUsersOnly=false] - If true, only existing users will be authenticated.
  * @returns {Function} The SAML callback function for passport.
  */
-function createSamlCallback(existingUsersOnly = false) {
+function createSamlCallback() {
   return async (profile, done) => {
     try {
       const subject = resolveSamlSubject(profile, process.env.SAML_IDP_ISSUER);
@@ -228,11 +227,6 @@ function createSamlCallback(existingUsersOnly = false) {
       const username = convertToUsername(
         getUserName(profile) || getGivenName(profile) || getEmail(profile),
       );
-
-      if (!user && existingUsersOnly) {
-        logger.error('[samlStrategy] Admin auth blocked because the user does not exist');
-        return done(null, false, { message: 'User does not exist' });
-      }
 
       const provisioned = await provisionSamlUser({
         user,
@@ -291,7 +285,7 @@ function createSamlCallback(existingUsersOnly = false) {
 }
 
 /**
- * Returns the base SAML configuration shared by both regular and admin strategies.
+ * Returns the SAML configuration every SAML strategy starts from.
  * @returns {object} The SAML configuration object.
  */
 function getBaseSamlConfig() {
@@ -317,29 +311,9 @@ async function setupSaml() {
       callbackUrl: process.env.SAML_CALLBACK_URL,
     };
 
-    passport.use('saml', new SamlStrategy(samlConfig, createSamlCallback(false)));
-    setupSamlAdmin(baseConfig);
+    passport.use('saml', new SamlStrategy(samlConfig, createSamlCallback()));
   } catch (err) {
     logger.error('[samlStrategy]', err);
-  }
-}
-
-/**
- * Sets up the SAML strategy specifically for admin authentication.
- * Rejects users that don't already exist.
- * @param {object} [baseConfig] - Pre-parsed base SAML config to avoid redundant cert parsing.
- */
-function setupSamlAdmin(baseConfig) {
-  try {
-    const samlAdminConfig = {
-      ...(baseConfig ?? getBaseSamlConfig()),
-      callbackUrl: `${process.env.DOMAIN_SERVER}/api/admin/oauth/saml/callback`,
-    };
-
-    passport.use('samlAdmin', new SamlStrategy(samlAdminConfig, createSamlCallback(true)));
-    logger.info('[samlStrategy] Admin SAML strategy registered.');
-  } catch (err) {
-    logger.error('[samlStrategy] setupSamlAdmin', err);
   }
 }
 

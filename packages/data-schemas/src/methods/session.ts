@@ -1,5 +1,6 @@
 import type * as t from '~/types/session';
 import { createIndexesWithRetry } from '~/utils/retry';
+import { runAsSystem } from '~/config/tenantContext';
 import { signPayload, hashToken } from '~/crypto';
 import logger from '~/config/winston';
 
@@ -36,6 +37,10 @@ export function createSessionMethods(mongoose: typeof import('mongoose')): {
     userId: string | { userId: string },
     options?: t.DeleteAllSessionsOptions,
   ) => Promise<{ deletedCount?: number }>;
+  deleteAllAccountSessions: (
+    accountId: string,
+    options?: t.DeleteAllSessionsOptions,
+  ) => Promise<{ deletedCount?: number }>;
 } {
   let sessionIndexesPromise: Promise<void> | null = null;
 
@@ -68,6 +73,7 @@ export function createSessionMethods(mongoose: typeof import('mongoose')): {
       const currentSession = new Session({
         user: userId,
         expiration: options.expiration || new Date(Date.now() + expiresIn),
+        ...(options.identityId ? { identity: options.identityId } : {}),
       });
       const refreshToken = await generateRefreshToken(currentSession);
 
@@ -249,6 +255,34 @@ export function createSessionMethods(mongoose: typeof import('mongoose')): {
   }
 
   /**
+   * Deletes every session an account holds, in every organization it belongs to, and any
+   * session issued to the account record itself. Credential changes, bans and 2FA enrollment
+   * revoke through this, since a per-organization `deleteAllUserSessions` would only reach the
+   * member of the tenant it runs in. Runs cross-tenant by design.
+   */
+  async function deleteAllAccountSessions(
+    accountId: string,
+    options: t.DeleteAllSessionsOptions = {},
+  ): Promise<{ deletedCount?: number }> {
+    if (!accountId || !mongoose.Types.ObjectId.isValid(accountId)) {
+      throw new SessionError('Invalid account ID format', 'INVALID_USER_ID_FORMAT');
+    }
+    try {
+      const Session = mongoose.models.Session;
+      const query: Record<string, unknown> = {
+        $or: [{ user: accountId }, { identity: accountId }],
+      };
+      if (options.excludeCurrentSession && options.currentSessionId) {
+        query._id = { $ne: options.currentSessionId };
+      }
+      return await runAsSystem(async () => Session.deleteMany(query));
+    } catch (error) {
+      logger.error('[deleteAllAccountSessions] Error deleting account sessions:', error);
+      throw new SessionError('Failed to delete account sessions', 'DELETE_ALL_SESSIONS_FAILED');
+    }
+  }
+
+  /**
    * Generates a refresh token for a session
    */
   async function generateRefreshToken(session: t.ISession): Promise<string> {
@@ -269,6 +303,11 @@ export function createSessionMethods(mongoose: typeof import('mongoose')): {
         payload: {
           id: session.user,
           sessionId: session._id,
+          /** Organizations mode: the account behind the member, so refresh can load both at once. */
+          ...(session.identity ? { aid: session.identity } : {}),
+          /** Organizations mode: the member's organization, so refresh can read its status in the
+           *  same parallel round (a suspended organization refuses the refresh). */
+          ...(session.identity && session.tenantId ? { tid: session.tenantId } : {}),
           /** `iat` is whole seconds, too coarse to order this token against a password reset that
            * lands in the same second. `isTokenRetired` reads this claim to settle that exactly. */
           issuedAtMs: Date.now(),
@@ -296,6 +335,7 @@ export function createSessionMethods(mongoose: typeof import('mongoose')): {
     ensureSessionIndexes,
     generateRefreshToken,
     deleteAllUserSessions,
+    deleteAllAccountSessions,
   };
 }
 

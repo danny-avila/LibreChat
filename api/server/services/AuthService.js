@@ -4,6 +4,7 @@ const { webcrypto } = require('node:crypto');
 const {
   logger,
   getTenantId,
+  runInAccounts,
   DEFAULT_SESSION_EXPIRY,
   DEFAULT_REFRESH_TOKEN_EXPIRY,
 } = require('@librechat/data-schemas');
@@ -33,6 +34,9 @@ const {
   resolveAppConfigForUser,
   commitPasswordReset,
   getSafeErrorMetadata,
+  createAuthIssuer,
+  isOrganizationsEnabled,
+  generateOrganizationOnboardingToken,
 } = require('@librechat/api');
 const {
   findUser,
@@ -49,8 +53,12 @@ const {
   upsertSession,
   generateToken,
   deleteUserById,
+  setLastActiveTenant,
   generateRefreshToken,
+  listMembershipsForIdentity,
 } = require('~/models');
+const { organizations, planOrganizationRegistration } = require('~/server/services/Organizations');
+const organizationStatus = require('~/server/services/OrganizationStatus');
 const { registerSchema } = require('~/strategies/validators');
 const { getAppConfig } = require('~/server/services/Config');
 const { sendEmail } = require('~/server/utils');
@@ -373,12 +381,18 @@ const verifyEmail = async (req) => {
 };
 
 /**
- * Register a new user.
+ * Register a new user. With organizations enabled the user is a login account, so the
+ * registration runs in the accounts tenant whoever calls it (the route, or a CLI script).
  * @param {IUser} user <email, password, name, username>
  * @param {Partial<IUser>} [additionalData={}] Trusted server-provided fields, such as CLI overrides.
  * @returns {Promise<{status: number, message: string, user?: IUser}>}
  */
-const registerUser = async (user, additionalData = {}) => {
+const registerUser = (user, additionalData = {}) =>
+  isOrganizationsEnabled()
+    ? runInAccounts(() => registerUserInContext(user, additionalData))
+    : registerUserInContext(user, additionalData);
+
+const registerUserInContext = async (user, additionalData = {}) => {
   const result = registerSchema.safeParse(user);
   if (!result.success) {
     const errorMessage = errorsToString(result.error.errors);
@@ -404,6 +418,15 @@ const registerUser = async (user, additionalData = {}) => {
       return { status: 403, message: errorMessage };
     }
 
+    /** Organizations mode: the organization this account will run, or the invite it joins. */
+    const organizationPlan = isOrganizationsEnabled()
+      ? await planOrganizationRegistration(user, email)
+      : null;
+    if (organizationPlan && !organizationPlan.ok) {
+      const { code, status } = organizationPlan.error;
+      return { status, message: code, code };
+    }
+
     const existingUser = await findUser({ email }, 'email _id');
 
     if (existingUser) {
@@ -415,8 +438,9 @@ const registerUser = async (user, additionalData = {}) => {
     }
 
     // Only the first user in the unscoped, single-tenant deployment bootstraps ADMIN.
-    // Tenant administrators must be provisioned through a trusted administrative flow.
-    const isFirstRegisteredUser = !tenantId && (await countUsers()) === 0;
+    // Tenant administrators must be provisioned through a trusted administrative flow;
+    // an organization's admin is its member, never a login account.
+    const isFirstRegisteredUser = !organizationPlan && !tenantId && (await countUsers()) === 0;
 
     const salt = bcrypt.genSaltSync(10);
     const newUserData = {
@@ -428,13 +452,17 @@ const registerUser = async (user, additionalData = {}) => {
       role: isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER,
       password: bcrypt.hashSync(password, salt),
       ...trustedAdditionalData,
+      ...organizationPlan?.value.accountFields,
     };
 
     const emailEnabled = checkEmailConfig();
     const disableTTL = isEnabled(process.env.ALLOW_UNVERIFIED_EMAIL_LOGIN);
 
-    const newUser = await createUser(newUserData, appConfig.balance, disableTTL, true);
+    /* A login account holds no balance; its organization members do. */
+    const balanceConfig = organizationPlan ? undefined : appConfig.balance;
+    const newUser = await createUser(newUserData, balanceConfig, disableTTL, true);
     newUserId = newUser._id;
+    await organizationPlan?.value.onAccountCreated?.(newUser);
     if (emailEnabled && !newUser.emailVerified) {
       await sendVerificationEmail({
         _id: newUserId,
@@ -697,44 +725,38 @@ const setCloudFrontAuthCookies = (req, res, user, options = {}) => {
   return cookiesSet;
 };
 
+/** Issues app sessions; with organizations enabled, a signed-in account gets its member's. */
+const issueAuthTokens = createAuthIssuer({
+  getUserById,
+  createSession,
+  generateRefreshToken,
+  generateToken,
+  setLocalSessionCookies,
+  setCloudFrontAuthCookies,
+  listMembershipsForIdentity,
+  setLastActiveTenant,
+  generateOnboardingToken: (accountId) =>
+    generateOrganizationOnboardingToken(accountId, process.env.JWT_SECRET),
+  getExpiries: () => ({
+    refreshTokenMs: math(process.env.REFRESH_TOKEN_EXPIRY, DEFAULT_REFRESH_TOKEN_EXPIRY),
+    sessionMs: math(process.env.SESSION_EXPIRY, DEFAULT_SESSION_EXPIRY),
+  }),
+  materializePending: (account) => organizations.materializePendingAccess(account),
+  getOrganizationStatus: organizationStatus.getStatus,
+});
+
 /**
  * Set Auth Tokens
  * @param {String | ObjectId} userId
  * @param {ServerResponse} res
- * @param {ISession | null} [_session=null]
+ * @param {ISession | null} [session=null]
  * @param {ServerRequest | null} [req=null]
- * @returns
+ * @returns {Promise<string | undefined>} The access token; undefined when the account must
+ *   first create or join an organization (callers that can say so use `issueAuthTokens`).
  */
-const setAuthTokens = async (userId, res, _session = null, req = null) => {
+const setAuthTokens = async (userId, res, session = null, req = null) => {
   try {
-    let session = _session;
-    let refreshToken;
-    let refreshTokenExpires;
-    const expiresIn = math(process.env.REFRESH_TOKEN_EXPIRY, DEFAULT_REFRESH_TOKEN_EXPIRY);
-
-    if (session && session._id && session.expiration != null) {
-      refreshTokenExpires = session.expiration.getTime();
-      refreshToken = await generateRefreshToken(session);
-    } else {
-      const result = await createSession(userId, { expiresIn });
-      session = result.session;
-      refreshToken = result.refreshToken;
-      refreshTokenExpires = session.expiration.getTime();
-    }
-
-    const user = await getUserById(userId);
-    const sessionExpiry = math(process.env.SESSION_EXPIRY, DEFAULT_SESSION_EXPIRY);
-    const token = await generateToken(user, sessionExpiry);
-
-    setLocalSessionCookies(res, {
-      refreshToken,
-      expires: new Date(refreshTokenExpires),
-      userId: user?._id ?? userId,
-      tenantId: user?.tenantId,
-    });
-
-    setCloudFrontAuthCookies(req, res, user, { userId: user?._id ?? userId });
-
+    const { token } = await issueAuthTokens(userId, res, session, req);
     return token;
   } catch (error) {
     logger.error('[setAuthTokens] Error in setting authentication tokens:', error);
@@ -1022,6 +1044,7 @@ module.exports = {
   verifyEmail,
   registerUser,
   setAuthTokens,
+  issueAuthTokens,
   resetPassword,
   clearOpenIDAuthTokens,
   getOpenIDAppAuthToken,

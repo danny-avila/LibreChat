@@ -39,6 +39,7 @@ jest.mock('~/server/middleware/roles/capabilities', () => ({
 
 jest.mock('~/server/middleware', () => ({
   requireJwtAuth: mockRequireJwtAuth,
+  requireAdminAuth: mockRequireJwtAuth,
 }));
 
 jest.mock('~/server/services/Config', () => ({

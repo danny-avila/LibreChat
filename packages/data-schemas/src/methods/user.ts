@@ -1,5 +1,9 @@
 import mongoose, { FilterQuery } from 'mongoose';
-import { AUTH_USER_DOC_CACHE_TTL_MS, CacheKeys } from 'librechat-data-provider';
+import {
+  CacheKeys,
+  AUTH_USER_DOC_CACHE_TTL_MS,
+  OrganizationMemberStatus,
+} from 'librechat-data-provider';
 import type {
   BalanceRefillMode,
   RefillIntervalUnit,
@@ -86,6 +90,8 @@ export function createUserMethods(
     options?: { preserveExpiresAt?: boolean },
   ) => Promise<IUser | null>;
   awaitAuthUserDocEviction: (userId: string) => Promise<void>;
+  /** Evicts a user's cached auth documents; resolves `false` when some could not be removed. */
+  invalidateAuthUserDocCache: (userId: string) => Promise<boolean>;
   consumeBackupCode: (userId: string, codeHash: string) => Promise<boolean>;
   claimSamlIdentity: (
     userId: string,
@@ -711,11 +717,15 @@ export function createUserMethods(
     return false;
   }
 
+  /** False during account deletion and for a deactivated organization member. */
   async function isAgentTriggerPrincipalActive(userId: string): Promise<boolean> {
     const User = mongoose.models.User;
     return (
-      (await User.exists({ _id: userId, agentTriggerDeletionStartedAt: { $exists: false } })) !=
-      null
+      (await User.exists({
+        _id: userId,
+        agentTriggerDeletionStartedAt: { $exists: false },
+        status: { $ne: OrganizationMemberStatus.DEACTIVATED },
+      })) != null
     );
   }
 
@@ -802,13 +812,15 @@ export function createUserMethods(
     }
   }
 
-  /** True while this owner may admit a new child: no account deletion, no live fence. */
+  /** True while this owner may admit a new child: no account deletion, not a deactivated
+   *  organization member, no live fence. */
   async function isSubagentOwnerAdmissible(userId: string): Promise<boolean> {
     const User = mongoose.models.User;
     return (
       (await User.exists({
         _id: userId,
         agentTriggerDeletionStartedAt: { $exists: false },
+        status: { $ne: OrganizationMemberStatus.DEACTIVATED },
         subagentAdmissionFences: { $not: { $elemMatch: { expiresAt: { $gt: new Date() } } } },
       })) != null
     );
@@ -829,6 +841,11 @@ export function createUserMethods(
     return await signPayload({
       payload: {
         id: user._id,
+        /** Organizations mode: the login account behind this member, so request auth loads
+         *  the member and the account in one parallel round instead of two serial reads. */
+        ...(user.identityId ? { aid: user.identityId.toString() } : {}),
+        /** The member's organization, read in that same round to refuse a suspended one. */
+        ...(user.identityId && user.tenantId ? { tid: user.tenantId } : {}),
         username: user.username,
         provider: user.provider,
         email: user.email,
@@ -981,7 +998,13 @@ export function createUserMethods(
     }
     const User = mongoose.models.User;
 
-    const query = User.find(filter).limit(limit * 2); // Get more results to allow for relevance sorting
+    /* A deactivated member cannot act in the organization, and the platform operator's access
+     * to it is invisible there, so nobody can pick either. */
+    const query = User.find({
+      ...filter,
+      status: { $ne: OrganizationMemberStatus.DEACTIVATED },
+      operatorAccess: { $ne: true },
+    }).limit(limit * 2); // Get more results to allow for relevance sorting
 
     if (fieldsToSelect) {
       query.select(fieldsToSelect);
@@ -1039,6 +1062,7 @@ export function createUserMethods(
     createUserIfAbsent,
     updateUser,
     awaitAuthUserDocEviction,
+    invalidateAuthUserDocCache,
     consumeBackupCode,
     claimSamlIdentity,
     updateTwoFactorEnrollment,

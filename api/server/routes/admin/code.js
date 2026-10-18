@@ -3,7 +3,7 @@ const { createAdminCodeEnvironmentHandlers, isAuditFailClosed } = require('@libr
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const { requireCapability } = require('~/server/middleware/roles/capabilities');
 const { getAppConfig } = require('~/server/services/Config');
-const { requireJwtAuth } = require('~/server/middleware');
+const { requireAdminAuth } = require('~/server/middleware');
 const db = require('~/models');
 
 const router = express.Router();
@@ -18,7 +18,7 @@ const handlers = createAdminCodeEnvironmentHandlers({
   auditFailClosed: isAuditFailClosed(),
 });
 
-router.use(requireJwtAuth, requireAdminAccess, requireCodeEnvironmentManage);
+router.use(requireAdminAuth, requireAdminAccess, requireCodeEnvironmentManage);
 router.post('/:environmentId/pairings', handlers.createPairing);
 router.post('/:environmentId/revoke', handlers.revokeWorker);
 

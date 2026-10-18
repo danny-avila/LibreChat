@@ -1,3 +1,4 @@
+import type { TAdminOrganizationsQuery } from './types/admin';
 import type { StartupConfigContext } from './config';
 import type { AssistantsEndpoint } from './schemas';
 import { ResourceType } from './accessPermissions';
@@ -43,6 +44,33 @@ const buildQuery = (params: Record<string, unknown>): string => {
 export const health = () => `${BASE_URL}/health`;
 export const user = () => `${BASE_URL}/api/user`;
 export const userPreferences = () => `${user()}/preferences`;
+
+/* Organizations */
+export const organizations = () => `${BASE_URL}/api/organizations`;
+export const organizationSwitch = () => `${organizations()}/switch`;
+export const currentOrganization = () => `${organizations()}/current`;
+export const currentOrganizationLeave = () => `${currentOrganization()}/leave`;
+export const organizationMembers = (params: q.OrganizationMembersParams = {}) =>
+  `${currentOrganization()}/members${buildQuery(params)}`;
+export const organizationMember = (memberId: string) =>
+  `${currentOrganization()}/members/${encodeURIComponent(memberId)}`;
+export const organizationInvites = () => `${currentOrganization()}/invites`;
+export const organizationInvite = (inviteId: string) =>
+  `${organizationInvites()}/${encodeURIComponent(inviteId)}`;
+export const organizationInviteResend = (inviteId: string) =>
+  `${organizationInvite(inviteId)}/resend`;
+export const organizationInvitePreview = (token: string) =>
+  `${organizations()}/invites/${encodeURIComponent(token)}`;
+export const organizationInviteAccept = (token: string) =>
+  `${organizationInvitePreview(token)}/accept`;
+export const pendingOrganizationInvites = () => `${organizations()}/pending-invites`;
+export const pendingOrganizationInviteAccept = (inviteId: string) =>
+  `${pendingOrganizationInvites()}/${encodeURIComponent(inviteId)}/accept`;
+
+/* Built-in admin panel */
+export const adminSession = () => `${BASE_URL}/api/admin/session`;
+export const adminOrganizations = (params: TAdminOrganizationsQuery = {}) =>
+  `${BASE_URL}/api/admin/organizations${buildQuery({ ...params })}`;
 
 export const balance = () => `${BASE_URL}/api/balance`;
 

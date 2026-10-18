@@ -1,5 +1,9 @@
 import { Schema } from 'mongoose';
-import { SystemRoles, STATEFUL_CODE_ENVIRONMENTS } from 'librechat-data-provider';
+import {
+  SystemRoles,
+  OrganizationMemberStatus,
+  STATEFUL_CODE_ENVIRONMENTS,
+} from 'librechat-data-provider';
 import { applySearchTokens } from '~/models/plugins/searchTokens';
 import { USER_SEARCH_TOKEN_FIELDS } from '~/utils/search';
 import { IUser } from '~/types';
@@ -229,6 +233,44 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
       type: String,
       sparse: true,
     },
+    /** Organizations mode, on a member record: the login account (in the accounts tenant) this
+     *  membership belongs to. Absent on login accounts and on single-tenant users. */
+    identityId: {
+      type: Schema.Types.ObjectId,
+      ref: 'User',
+    },
+    /** Organizations mode, on a member record. Absent means active, so records that predate
+     *  memberships keep working; `deactivated` blocks sign-in and background admission. */
+    status: {
+      type: String,
+      enum: Object.values(OrganizationMemberStatus),
+    },
+    /** Organizations mode, on a login account: the organization the next sign-in opens. */
+    lastActiveTenantId: {
+      type: String,
+    },
+    /** Organizations mode, on a login account: the organization requested at registration,
+     *  created on the first sign-in after the email is verified. */
+    pendingOrganization: {
+      type: new Schema({ name: { type: String, required: true, maxlength: 80 } }, { _id: false }),
+      default: undefined,
+    },
+    /** Organizations mode, on a login account: the link invite used at registration,
+     *  redeemed on the first sign-in after the email is verified. */
+    pendingInviteId: {
+      type: Schema.Types.ObjectId,
+    },
+    /** Organizations mode, on a login account: the platform operator, the one person who runs
+     *  the admin panel and may enter any organization. At most one account carries it. */
+    isPlatformOperator: {
+      type: Boolean,
+    },
+    /** Organizations mode, on a member record: the operator's access to an organization it does
+     *  not belong to. The organization never sees it: it is left out of every member listing,
+     *  people search and admin count, and no organization admin can change it. */
+    operatorAccess: {
+      type: Boolean,
+    },
     tenantId: {
       type: String,
       index: true,
@@ -239,6 +281,17 @@ const userSchema: Schema<IUser> = new Schema<IUser>(
 
 userSchema.index({ email: 1, tenantId: 1 }, { unique: true });
 userSchema.index({ role: 1, tenantId: 1 });
+/* One member record per account per organization. Leading with `identityId` also serves the
+   cross-organization membership listing, which filters on it alone. */
+userSchema.index(
+  { identityId: 1, tenantId: 1 },
+  { unique: true, partialFilterExpression: { identityId: { $exists: true } } },
+);
+/* There is only ever one platform operator; this settles two first registrations racing. */
+userSchema.index(
+  { isPlatformOperator: 1 },
+  { unique: true, partialFilterExpression: { isPlatformOperator: true } },
+);
 userSchema.index({ idOnTheSource: 1, openidIssuer: 1, tenantId: 1 });
 /* Tenant first: the popular sort's only predicates are the caller's tenant and
    `favorites.agentId: { $exists: true }`, and a multikey existence field in the leading

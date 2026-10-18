@@ -2,6 +2,7 @@ import { memo, Suspense, useEffect, useRef } from 'react';
 import { Button, Sidebar, Skeleton } from '@librechat/client';
 import type { NavLink } from '~/common';
 import { CLOSE_SIDEBAR_ID } from '~/components/Chat/Menus/OpenSidebar';
+import { OrganizationSwitcher } from '~/components/Nav/Organizations';
 import { useShortcutAriaKey } from '~/hooks/useKeyboardShortcuts';
 import { lazyWithRecovery } from '~/lib/assets/lazy';
 import { useLocalize } from '~/hooks';
@@ -81,6 +82,7 @@ function Header({
         routeActiveId={routeActiveId}
       />
       <NewChat onNewChat={onNewChat} switchToHistory={switchToHistory} />
+      <OrganizationSwitcher />
       <Suspense fallback={<Skeleton className="size-9 rounded-lg" />}>
         <AccountSettings collapsed />
       </Suspense>

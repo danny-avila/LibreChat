@@ -23,6 +23,9 @@ jest.mock('@librechat/api', () => ({
   AGENT_TRIGGER_SCOPE: 'agent_trigger',
   isTokenRetired: jest.requireActual('@librechat/api').isTokenRetired,
   continueAfterBearerRetirement: jest.requireActual('@librechat/api').continueAfterBearerRetirement,
+  createAuthSessionHelpers: jest.requireActual('@librechat/api').createAuthSessionHelpers,
+  createOrganizationStatusCache: jest.requireActual('@librechat/api').createOrganizationStatusCache,
+  isOrganizationsEnabled: () => false,
 }));
 
 jest.mock('~/models', () => ({

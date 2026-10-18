@@ -22,6 +22,12 @@ import {
   AutoSendTextSelector,
   DecibelSelector,
 } from '../SettingsTabs/Speech/STT';
+import {
+  OrganizationName,
+  LeaveOrganization,
+  OrganizationMembers,
+  OrganizationInvites,
+} from '../SettingsTabs/Organization';
 import DisplayUsernameMessages from '../SettingsTabs/Account/DisplayUsernameMessages';
 import ConversationModeSwitch from '../SettingsTabs/Speech/ConversationModeSwitch';
 import EnableTwoFactorItem from '../SettingsTabs/Account/TwoFactorAuthentication';
@@ -67,7 +73,7 @@ import MemoryToggle from './MemoryToggle';
 import { TTSEndpoints } from '~/common';
 import store from '~/store';
 
-const { GENERAL, CHAT, SPEECH, DATA, ACCOUNT, ABOUT } = SettingsTabValues;
+const { GENERAL, CHAT, SPEECH, DATA, ACCOUNT, ORGANIZATION, ABOUT } = SettingsTabValues;
 
 export const registry: SettingEntry[] = [
   // General · Appearance
@@ -279,7 +285,7 @@ export const registry: SettingEntry[] = [
     labelKey: 'com_ui_admin_panel',
     keywords: ['admin', 'panel', 'dashboard'],
     Component: AdminPanel,
-    show: (ctx) => ctx.adminPanelURL !== '',
+    show: (ctx) => ctx.adminPanel,
   },
 
   // Chat · Sending
@@ -865,6 +871,44 @@ export const registry: SettingEntry[] = [
     labelKey: 'com_ui_settings_label_delete_account',
     show: (ctx) => ctx.allowAccountDeletion,
     Component: DeleteAccount,
+  },
+
+  // Organization (organizations mode)
+  {
+    id: 'organizationName',
+    tab: ORGANIZATION,
+    section: 'orgGeneral',
+    labelKey: 'com_ui_org_name',
+    keywords: ['organization', 'workspace', 'team', 'rename'],
+    show: (ctx) => ctx.organizationsEnabled,
+    Component: OrganizationName,
+  },
+  {
+    id: 'leaveOrganization',
+    tab: ORGANIZATION,
+    section: 'orgGeneral',
+    labelKey: 'com_ui_org_leave',
+    keywords: ['organization', 'leave'],
+    show: (ctx) => ctx.canLeaveOrganization,
+    Component: LeaveOrganization,
+  },
+  {
+    id: 'organizationMembers',
+    tab: ORGANIZATION,
+    section: 'orgMembers',
+    labelKey: 'com_ui_org_members',
+    keywords: ['organization', 'members', 'people', 'roles', 'admin', 'remove'],
+    show: (ctx) => ctx.isOrganizationAdmin,
+    Component: OrganizationMembers,
+  },
+  {
+    id: 'organizationInvites',
+    tab: ORGANIZATION,
+    section: 'orgInvites',
+    labelKey: 'com_ui_settings_section_org_invites',
+    keywords: ['organization', 'invite', 'invitation', 'link', 'email'],
+    show: (ctx) => ctx.isOrganizationAdmin,
+    Component: OrganizationInvites,
   },
 
   // About

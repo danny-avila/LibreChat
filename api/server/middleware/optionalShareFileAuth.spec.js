@@ -13,6 +13,9 @@ jest.mock('@librechat/api', () => ({
   clearCloudFrontCookies: (...args) => mockClearCloudFrontCookies(...args),
   isTwoFactorEnrollmentRequired: (...args) => mockIsTwoFactorEnrollmentRequired(...args),
   isTokenRetired: (...args) => mockIsTokenRetired(...args),
+  createAuthSessionHelpers: jest.requireActual('@librechat/api').createAuthSessionHelpers,
+  createOrganizationStatusCache: jest.requireActual('@librechat/api').createOrganizationStatusCache,
+  isOrganizationsEnabled: () => false,
 }));
 jest.mock('@librechat/data-schemas', () => ({
   ...jest.requireActual('@librechat/data-schemas'),

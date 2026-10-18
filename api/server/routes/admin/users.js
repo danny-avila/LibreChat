@@ -10,7 +10,7 @@ const {
 } = require('@librechat/api');
 const { SystemCapabilities, runAsSystem, tenantStorage } = require('@librechat/data-schemas');
 const { requireCapability } = require('~/server/middleware/roles/capabilities');
-const { requireJwtAuth } = require('~/server/middleware');
+const { requireAdminAuth } = require('~/server/middleware');
 const {
   drainAgentTriggerDeliveriesForUser,
   prepareAgentTriggerUserPurge,
@@ -81,7 +81,7 @@ const handlers = createAdminUsersHandlers({
   generationJobs: GenerationJobManager,
 });
 
-router.use(requireJwtAuth, requireAdminAccess);
+router.use(requireAdminAuth, requireAdminAccess);
 
 router.get('/', requireReadUsers, handlers.listUsers);
 router.get('/search', requireReadUsers, handlers.searchUsers);

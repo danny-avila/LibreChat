@@ -1,4 +1,4 @@
-import { getTenantId, SYSTEM_TENANT_ID } from '~/config/tenantContext';
+import { getTenantId, SYSTEM_TENANT_ID, PLATFORM_TENANT_ID } from '~/config/tenantContext';
 import logger from '~/config/winston';
 
 /**
@@ -13,8 +13,16 @@ import logger from '~/config/winston';
 /** Resolved tenant scope for the current async context. */
 export type TenantScope =
   | { readonly kind: 'scoped'; readonly tenantId: string }
+  /** Untenanted records only: the platform operator's deployment-wide scope. */
+  | { readonly kind: 'platform' }
   | { readonly kind: 'system' }
   | { readonly kind: 'unscoped' };
+
+/** Values that mean "no tenant"; pre-tenancy rows may carry `null` or an empty string. */
+const UNTENANTED: [null, ''] = [null, ''];
+
+/** The filter fragment a scope adds to reads and writes. */
+export type TenantFilter = { tenantId: string } | { tenantId: { $in: [null, ''] } };
 
 /** A document-shaped payload the policy may stamp or inspect. */
 export type TenantDocument = Record<string, unknown> & { tenantId?: unknown };
@@ -38,6 +46,7 @@ export class TenantIsolationError extends Error {
 }
 
 const SYSTEM_SCOPE: TenantScope = { kind: 'system' };
+const PLATFORM_SCOPE: TenantScope = { kind: 'platform' };
 const UNSCOPED: TenantScope = { kind: 'unscoped' };
 
 const VALUE_OPERATORS = ['$set', '$setOnInsert'] as const;
@@ -77,6 +86,9 @@ export function currentTenantScope(): TenantScope {
   if (tenantId === SYSTEM_TENANT_ID) {
     return SYSTEM_SCOPE;
   }
+  if (tenantId === PLATFORM_TENANT_ID) {
+    return PLATFORM_SCOPE;
+  }
   return { kind: 'scoped', tenantId };
 }
 
@@ -94,9 +106,20 @@ export function resolveTenantScope(operation: string): TenantScope {
   return scope;
 }
 
-/** The filter fragment that restricts reads and writes to the active tenant. */
-export function tenantFilter(scope: TenantScope): { tenantId: string } | undefined {
-  return scope.kind === 'scoped' ? { tenantId: scope.tenantId } : undefined;
+/** The filter fragment that restricts reads and writes to the active scope. */
+export function tenantFilter(scope: TenantScope): TenantFilter | undefined {
+  if (scope.kind === 'scoped') {
+    return { tenantId: scope.tenantId };
+  }
+  if (scope.kind === 'platform') {
+    return { tenantId: { $in: UNTENANTED } };
+  }
+  return undefined;
+}
+
+/** Whether a stored or supplied `tenantId` names a tenant at all. */
+function namesTenant(value: unknown): boolean {
+  return value != null && value !== '';
 }
 
 /** Result of sanitizing an update payload against the active scope. */
@@ -184,7 +207,10 @@ function assertSameTenant(scope: TenantScope, value: unknown, mode: TenantMutati
   if (mode === 'strip') {
     return;
   }
-  if (scope.kind === 'scoped' && value !== scope.tenantId) {
+  if (
+    (scope.kind === 'scoped' && value !== scope.tenantId) ||
+    (scope.kind === 'platform' && namesTenant(value))
+  ) {
     throw new TenantIsolationError(
       '[TenantIsolation] Cross-tenant tenantId mutation is not allowed',
     );
@@ -204,6 +230,15 @@ export function scopeReplacement(
 ): { readonly replacement: TenantDocument | null; readonly changed: boolean } {
   if (!replacement || scope.kind === 'system') {
     return { replacement: replacement ?? null, changed: false };
+  }
+
+  if (scope.kind === 'platform') {
+    if (namesTenant(replacement.tenantId)) {
+      throw new TenantIsolationError(
+        '[TenantIsolation] Modifying tenantId via replacement is not allowed',
+      );
+    }
+    return { replacement, changed: false };
   }
 
   const tenantId = scope.kind === 'scoped' ? scope.tenantId : undefined;
@@ -234,15 +269,21 @@ export function tenantWritePredicate(
   scope: TenantScope,
   tenantIdModified: boolean,
   tenantId: unknown,
-): { tenantId: { $in: [string, null, ''] } } | undefined {
+): { tenantId: { $in: [string, null, ''] | [null, ''] } } | undefined {
   if (
     tenantIdModified &&
     scope.kind !== 'system' &&
-    (scope.kind !== 'scoped' || tenantId !== scope.tenantId)
+    (scope.kind === 'platform'
+      ? namesTenant(tenantId)
+      : scope.kind !== 'scoped' || tenantId !== scope.tenantId)
   ) {
     throw new TenantIsolationError(
       '[TenantIsolation] Cross-tenant tenantId mutation is not allowed',
     );
+  }
+  if (scope.kind === 'platform') {
+    /* A platform save may only ever land on an untenanted row, never claim a tenant's. */
+    return { tenantId: { $in: UNTENANTED } };
   }
   if (scope.kind !== 'scoped') {
     return undefined;
@@ -258,6 +299,14 @@ export function tenantWritePredicate(
  * Mutates in place — insert paths own the documents they hand us.
  */
 export function stampTenantOnDocument(scope: TenantScope, document: TenantDocument): void {
+  if (scope.kind === 'platform') {
+    if (namesTenant(document.tenantId)) {
+      throw new TenantIsolationError(
+        '[TenantIsolation] A platform-scoped insert cannot name a tenant',
+      );
+    }
+    return;
+  }
   if (scope.kind !== 'scoped') {
     return;
   }

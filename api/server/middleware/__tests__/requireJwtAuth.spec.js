@@ -81,6 +81,9 @@ jest.mock('@librechat/api', () => {
     normalizeContextValue(req.headers?.['x-correlation-id']);
   return {
     isEnabled: jest.fn(() => false),
+    createAuthSessionHelpers: actualApi.createAuthSessionHelpers,
+    createOrganizationStatusCache: actualApi.createOrganizationStatusCache,
+    isOrganizationsEnabled: () => false,
     createRequiredTwoFactorGate: actualApi.createRequiredTwoFactorGate,
     createTermsAcceptanceGate: actualApi.createTermsAcceptanceGate,
     afterTermsGate: actualApi.afterTermsGate,

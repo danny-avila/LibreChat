@@ -6,7 +6,8 @@ const {
   isTokenRetired,
   continueAfterBearerRetirement,
 } = require('@librechat/api');
-const { getUserById, updateUser } = require('~/models');
+const { getAuthUserById } = require('~/server/services/AuthSessions');
+const { updateUser } = require('~/models');
 
 const AGENT_TRIGGER_ADMISSION_PATHS = ['/api/agents/chat/agents', '/api/agents/chat/steer/deliver'];
 
@@ -38,10 +39,15 @@ const jwtLogin = () =>
           done(null, false, { message: 'Agent trigger token is not valid for this endpoint' });
           return;
         }
+        /* With organizations, `aid` names the member's login account and `tid` its organization,
+         * so all three load in one parallel round; a token naming an account itself, the wrong
+         * one, or a suspended organization finds no user. */
         const user = await runAsSystem(() =>
-          getUserById(
+          getAuthUserById(
             payload?.id,
             '-password -__v -totpSecret -backupCodes +agentTriggerDeletionStartedAt',
+            typeof payload?.aid === 'string' ? payload.aid : undefined,
+            typeof payload?.tid === 'string' ? payload.tid : undefined,
           ),
         );
         if (user?.agentTriggerDeletionStartedAt != null) {

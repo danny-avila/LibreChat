@@ -6,6 +6,7 @@ import {
   getRequestMethod,
   getRequestPath,
   SYSTEM_TENANT_ID,
+  ACCOUNTS_TENANT_ID,
   logger,
 } from '@librechat/data-schemas';
 import type { Response, NextFunction } from 'express';
@@ -282,6 +283,55 @@ describe('tenantContextMiddleware', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it('refuses a request rendered for another organization than the session acts in', async () => {
+    const req = mockReqWithHeaders(
+      { tenantId: 'org_b', role: 'user' },
+      { 'x-expected-tenant': 'org_a' },
+    );
+    const res = mockRes();
+    const next: NextFunction = jest.fn();
+
+    await tenantContextMiddleware(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(409);
+    expect(res.json).toHaveBeenCalledWith({ code: 'ORGANIZATION_CHANGED' });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('admits a request whose expected organization matches the session', async () => {
+    const req = mockReqWithHeaders(
+      { tenantId: 'org_a', role: 'user' },
+      { 'x-expected-tenant': 'org_a' },
+    );
+
+    await expect(runMiddleware(req, mockRes())).resolves.toBe('org_a');
+  });
+
+  it('rejects a login account (accounts tenant) on authenticated routes', async () => {
+    const req = mockReq({ tenantId: ACCOUNTS_TENANT_ID, role: 'user' });
+    const res = mockRes();
+    const next: NextFunction = jest.fn();
+
+    await tenantContextMiddleware(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'Reserved tenant is not allowed for request-scoped routes',
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('rejects the accounts tenant even when it arrives as req.tenantId', async () => {
+    const req = mockTenantReq({ tenantId: 'org_member', role: 'user' }, ACCOUNTS_TENANT_ID);
+    const res = mockRes();
+    const next: NextFunction = jest.fn();
+
+    await tenantContextMiddleware(req, res, next);
+
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it('different requests get independent tenant contexts', async () => {
     const runRequest = (tid: string) => {
       const req = mockReq({ tenantId: tid, role: 'user' });
@@ -448,6 +498,24 @@ describe('restoreTenantContextFromReq', () => {
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.json).toHaveBeenCalledWith({
       error: 'System tenant is not allowed for request-scoped routes',
+    });
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('rejects the accounts tenant for request-owned work and removes uploads', async () => {
+    const req = {
+      ...mockReq({ tenantId: ACCOUNTS_TENANT_ID, role: 'user' }),
+      file: { path: '/tmp/accounts-tenant-upload' },
+    } as ServerRequest;
+    const res = mockRes();
+    const next: NextFunction = jest.fn();
+
+    await restoreTenantContextFromReq(req, res, next);
+
+    expect(unlinkMock).toHaveBeenCalledWith('/tmp/accounts-tenant-upload');
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'Reserved tenant is not allowed for request-scoped routes',
     });
     expect(next).not.toHaveBeenCalled();
   });

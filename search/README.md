@@ -80,7 +80,6 @@ compose files. Existing ports (unchanged by this stack):
 |---|---|---|
 | 3080 | LibreChat API | `docker-compose.yml`, `deploy-compose.yml` |
 | 80, 443 | nginx client | `deploy-compose.yml`, `utils/docker/test-compose.yml` |
-| 3000 | admin-panel | `docker-compose.yml`, `deploy-compose.yml` |
 | 27018 | mongodb (optional host expose) | `docker-compose.override.yml`, `utils/docker/test-compose.yml` |
 | 7700 | meilisearch | `docker-compose.override.yml`, `utils/docker/test-compose.yml` |
 | 5432 | `vectordb` (pgvector, pg15) | `docker-compose.override.yml` |

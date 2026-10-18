@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react';
 import { createSSETransport } from '@librechat/chat';
-import { EndpointURLs } from 'librechat-data-provider';
+import { EndpointURLs, getExpectedTenantHeader } from 'librechat-data-provider';
 import type { Transport } from '~/hooks/Chat/contract';
 import * as requests from '~/data-provider';
 
@@ -20,6 +20,7 @@ export const defaultChatTransport: Transport = {
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${token}`,
+        ...getExpectedTenantHeader(),
       },
       body: JSON.stringify({ abortKey, endpoint }),
     }),

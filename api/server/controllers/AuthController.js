@@ -28,15 +28,19 @@ const {
   setCloudFrontAuthCookies,
   resetPassword,
   setAuthTokens,
+  issueAuthTokens,
   registerUser,
 } = require('~/server/services/AuthService');
 const {
-  deleteAllUserSessions,
+  getAuthUserById,
+  findAuthSession,
+  deleteAuthSession,
+  deleteAllPrincipalSessions,
+} = require('~/server/services/AuthSessions');
+const {
   deletePasskeysByUser,
   awaitAuthUserDocEviction,
-  deleteSession,
   getUserById,
-  findSession,
   updateUser,
   deleteTokens,
 } = require('~/models');
@@ -82,7 +86,7 @@ const registrationController = async (req, res) => {
         );
       }
     }
-    res.status(status).send({ message });
+    res.status(status).send({ message, ...(response.code ? { code: response.code } : {}) });
   } catch (err) {
     logger.error('[registrationController]', getSafeErrorMetadata(err));
     return res.status(500).json({ message: 'Something went wrong' });
@@ -218,18 +222,19 @@ const resetPasswordRequestController = async (req, res) => {
 
 const resetPasswordController = createResetPasswordController({
   resetPassword,
-  deleteAllUserSessions,
+  deleteAllUserSessions: deleteAllPrincipalSessions,
   deletePasskeysByUser,
   awaitAuthUserDocEviction,
 });
 
 const refreshLocalSession = createLocalRefreshHandler({
   userProjection: AUTH_REFRESH_USER_PROJECTION,
-  getUserById,
-  findSession,
+  getUserById: getAuthUserById,
+  findSession: findAuthSession,
   setAuthTokens,
-  deleteAllUserSessions,
-  deleteSession,
+  issueAuthTokens,
+  deleteAllUserSessions: deleteAllPrincipalSessions,
+  deleteSession: deleteAuthSession,
   generateTwoFactorSetupToken,
   isTwoFactorEnrollmentRequired,
   clearCloudFrontCookies,

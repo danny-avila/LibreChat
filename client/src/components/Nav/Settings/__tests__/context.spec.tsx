@@ -1,6 +1,11 @@
 import { RecoilRoot } from 'recoil';
 import { renderHook } from '@testing-library/react';
-import type { TPullRequestConnection, TStartupConfig, TUser } from 'librechat-data-provider';
+import type {
+  TUser,
+  TAdminSession,
+  TStartupConfig,
+  TPullRequestConnection,
+} from 'librechat-data-provider';
 import type { PropsWithChildren } from 'react';
 import { useSettingsContext } from '../context';
 
@@ -9,6 +14,10 @@ type LegacyProviderUser = Omit<TUser, 'provider'> & { provider?: string | null }
 let mockUser: LegacyProviderUser | undefined;
 let mockStartup: Partial<TStartupConfig> | undefined;
 let mockConnection: TPullRequestConnection | undefined;
+let mockAdminSession: TAdminSession | undefined;
+const mockAdminSessionQuery = jest.fn((_options?: { enabled?: boolean }) => ({
+  data: mockAdminSession,
+}));
 
 jest.mock('~/hooks', () => ({
   useAuthContext: () => ({ user: mockUser }),
@@ -24,6 +33,7 @@ jest.mock('~/hooks/usePersonalizationAccess', () => () => ({
 jest.mock('~/data-provider', () => ({
   useGetStartupConfig: () => ({ data: mockStartup }),
   usePullRequestConnectionStatus: () => mockConnection,
+  useAdminSessionQuery: (options?: { enabled?: boolean }) => mockAdminSessionQuery(options),
 }));
 
 jest.mock('../../SettingsTabs/ProviderKeys/useProviderKeys', () => () => []);
@@ -115,5 +125,44 @@ describe('useSettingsContext connected accounts', () => {
   it('never offers the section when the deployment advertises no app', () => {
     mockConnection = { configured: true, provider: 'github', connected: false };
     expect(hasConnect()).toBe(false);
+  });
+});
+
+describe('useSettingsContext admin panel', () => {
+  const settings = () => renderHook(() => useSettingsContext(), { wrapper }).result.current;
+  const askedForSession = () => mockAdminSessionQuery.mock.calls.at(-1)?.[0]?.enabled;
+
+  afterEach(() => {
+    mockUser = undefined;
+    mockStartup = undefined;
+    mockAdminSession = undefined;
+    mockAdminSessionQuery.mockClear();
+  });
+
+  it('offers the panel only once the server answers the session check', () => {
+    mockUser = { ...baseUser, provider: 'local' };
+    mockStartup = {};
+    expect(settings().adminPanel).toBe(false);
+    expect(askedForSession()).toBe(true);
+
+    mockAdminSession = { user: { id: 'user-1' }, organizations: false };
+    expect(settings().adminPanel).toBe(true);
+  });
+
+  it('never asks for anyone but the platform operator in organizations mode', () => {
+    mockUser = { ...baseUser, provider: 'local' };
+    mockStartup = { organizations: { enabled: true } as TStartupConfig['organizations'] };
+    settings();
+    expect(askedForSession()).toBe(false);
+
+    mockUser = { ...baseUser, provider: 'local', isPlatformOperator: true };
+    settings();
+    expect(askedForSession()).toBe(true);
+  });
+
+  it('waits for the startup config before asking', () => {
+    mockUser = { ...baseUser, provider: 'local' };
+    settings();
+    expect(askedForSession()).toBe(false);
   });
 });

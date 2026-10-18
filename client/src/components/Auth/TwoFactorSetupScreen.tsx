@@ -18,9 +18,9 @@ import {
   SetupPhase,
   VerifyPhase,
 } from '~/components/Nav/SettingsTabs/Account/TwoFactorPhases';
+import { isSafeRedirect, startOrganizationOnboarding } from '~/utils';
 import { useAuthContext, useLocalize } from '~/hooks';
 import { ErrorMessage } from './ErrorMessage';
-import { isSafeRedirect } from '~/utils';
 
 type SetupPhaseName = 'setup' | 'qr' | 'verify' | 'backup';
 
@@ -193,7 +193,11 @@ const TwoFactorSetupScreen: React.FC = React.memo(() => {
       finalizeSetup(
         { finalizationToken: token },
         {
-          onSuccess: ({ token: authToken, user }) => completeAuthentication(authToken, user),
+          onSuccess: (result) => {
+            if (!startOrganizationOnboarding(result)) {
+              completeAuthentication(result.token, result.user);
+            }
+          },
           onError: (mutationError) => {
             if (!restartLoginWhenSpent(mutationError)) {
               setError(localize('com_auth_two_factor_setup_finalize_error'));

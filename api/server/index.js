@@ -49,6 +49,10 @@ const {
   readBundledThemeBoot,
   createDeploymentThemeShell,
   preAuthTenantMiddleware,
+  accountsTenantMiddleware,
+  configureOrganizations,
+  assertOrganizationsRuntime,
+  reconcileOrganizationAdminGrants,
   requestContextMiddleware,
   registerShutdownTask,
   getRemainingShutdownMs,
@@ -73,6 +77,8 @@ const {
   getRoleByName,
   seedDatabase,
   recordAuditEntry,
+  listOrganizationTenantIds,
+  syncOrganizationAdminGrants,
 } = require('~/models');
 const initializeOAuthReconnectManager = require('./services/initializeOAuthReconnectManager');
 const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
@@ -84,6 +90,7 @@ const { resumeAgentEventDetachedAction } = require('./services/Agents/detachedAc
 const { initializeScheduleEngine, recordExpiredScheduleApproval } = require('./services/Schedules');
 const { jwtLogin, ldapLogin, passportLogin } = require('~/strategies');
 const { startExpiredFileSweep } = require('./services/Files/process');
+const { resumePendingDeletions } = require('./services/OrganizationDeletion');
 const { checkMigrations } = require('./services/start/migration');
 const optionalJwtAuth = require('./middleware/optionalJwtAuth');
 const initializeMCPs = require('./services/initializeMCPs');
@@ -237,6 +244,15 @@ const startServer = async () => {
     logger.error('[sweepOrphanedPreviews] Background sweep failed:', err);
   });
   const appConfig = await getAppConfig({ baseOnly: true });
+  assertOrganizationsRuntime(appConfig, process.env);
+  configureOrganizations(appConfig.organizations);
+  reconcileOrganizationAdminGrants({
+    listOrganizationTenantIds,
+    syncOrganizationAdminGrants,
+    config: appConfig.organizations,
+  }).catch((err) => {
+    logger.error('[organizations] Admin capability reconcile failed:', err);
+  });
   await configureSubagentTaskRouting(appConfig?.endpoints?.agents?.subagentActivity);
   registerBackgroundTaskShutdown({
     interruptGraceMs: appConfig?.endpoints?.agents?.backgroundTasks?.shutdownInterruptGraceMs,
@@ -244,6 +260,12 @@ const startServer = async () => {
   configureAgentEventRuntime(appConfig?.endpoints?.agents?.eventDriven);
   warnOnUnreachableDeliveryPaths(appConfig);
   initializeFileStorage(appConfig);
+  if (appConfig.organizations?.enabled) {
+    /* After file storage: the erasure cascade deletes an organization's files through it. */
+    resumePendingDeletions().catch((err) => {
+      logger.error('[organizations] Resuming organization deletions failed:', err);
+    });
+  }
   const projectRoot = path.resolve(__dirname, '../..');
   // Plugin hooks execute only when the operator opts in via DEPLOYMENT_PLUGIN_HOOKS;
   // without it, declared hook documents load as parsed-but-inert with a warning.
@@ -421,12 +443,16 @@ const startServer = async () => {
   app.use(capabilityContextMiddleware);
 
   /* Pre-auth tenant context for unauthenticated routes that need tenant scoping.
-   * The reverse proxy / auth gateway sets `X-Tenant-Id` header for multi-tenant deployments. */
-  app.use('/oauth', preAuthTenantMiddleware, routes.oauth);
+   * The reverse proxy / auth gateway sets `X-Tenant-Id` header for multi-tenant deployments.
+   * With organizations enabled, credential routes resolve login accounts instead, so they
+   * always run in the accounts tenant and never read the header. */
+  const credentialTenantMiddleware = appConfig.organizations?.enabled
+    ? accountsTenantMiddleware
+    : preAuthTenantMiddleware;
+  app.use('/oauth', credentialTenantMiddleware, routes.oauth);
   /* API Endpoints */
-  app.use('/api/auth', preAuthTenantMiddleware, routes.auth);
+  app.use('/api/auth', credentialTenantMiddleware, routes.auth);
   app.use('/api/insights', routes.insights);
-  app.use('/api/admin', routes.adminAuth);
   app.use('/api/admin/config', routes.adminConfig);
   app.use('/api/admin/code-environments', routes.adminCodeEnvironments);
   app.use('/api/code-environments', routes.codeEnvironments);
@@ -437,10 +463,14 @@ const startServer = async () => {
   app.use('/api/admin/skills', routes.adminSkills);
   app.use('/api/admin/users', routes.adminUsers);
   app.use('/api/admin/audit-log', routes.adminAuditLog);
+  app.use('/api/admin/organizations', routes.adminOrganizations);
+  app.use('/api/admin/accounts', routes.adminAccounts);
+  app.use('/api/admin/session', routes.adminSession);
   app.use('/api/actions', routes.actions);
   app.use('/api/keys', routes.keys);
   app.use('/api/api-keys', routes.apiKeys);
   app.use('/api/user', routes.user);
+  app.use('/api/organizations', routes.organizations);
   app.use('/api/search', routes.search);
   app.use('/api/messages', routes.messages);
   app.use('/api/convos', routes.convos);

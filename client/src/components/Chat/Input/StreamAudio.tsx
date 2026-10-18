@@ -1,8 +1,8 @@
 import { useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, getSpeechText } from 'librechat-data-provider';
 import { useRecoilState, useRecoilValue, useSetRecoilState } from 'recoil';
+import { QueryKeys, getSpeechText, getExpectedTenantHeader } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import {
   useCustomAudioRef,
@@ -92,7 +92,11 @@ export default function StreamAudio({ index = 0 }) {
         logger.log('Fetching audio...', navigator.userAgent);
         const response = await fetch('/api/files/speech/tts', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+            ...getExpectedTenantHeader(),
+          },
           body: JSON.stringify({ messageId: latestMessage?.messageId, runId: activeRunId, voice }),
         });
 

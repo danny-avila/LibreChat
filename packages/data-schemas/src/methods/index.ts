@@ -28,6 +28,12 @@ import {
   type RefreshTokenBridgeMethods,
 } from './refreshTokenBridge';
 import { createSessionMethods, DEFAULT_REFRESH_TOKEN_EXPIRY, type SessionMethods } from './session';
+import {
+  createOrganizationInviteMethods,
+  type OrganizationInviteMethods,
+} from './organizationInvite';
+import { createOrganizationMethods, type OrganizationMethods } from './organization';
+import { createPlatformMethods, type PlatformMethods } from './platform';
 import { createPasskeyMethods, type PasskeyMethods } from './passkey';
 import { createUserMethods, DEFAULT_SESSION_EXPIRY, type UserMethods } from './user';
 import { createTokenMethods, type TokenMethods } from './token';
@@ -213,6 +219,7 @@ import {
 /* Insights */
 import { createInsightsMethods, type InsightsMethods } from './insights';
 
+export { generateOrganizationTenantId, ORGANIZATION_TENANT_PREFIX } from './organization';
 export {
   runAfterTransaction,
   RoleConflictError,
@@ -262,6 +269,9 @@ export {
 export type AllMethods = ToolApprovalGrantStorage &
   UserMethods &
   SessionMethods &
+  OrganizationMethods &
+  PlatformMethods &
+  OrganizationInviteMethods &
   TokenMethods &
   TokenListMethods &
   RefreshTokenBridgeMethods &
@@ -328,6 +338,9 @@ export interface CreateMethodsDeps {
   getMCPAppMessageBudget?: () => Promise<number | undefined>;
   /** Recognizes agent skill IDs supplied by an external, non-database registry. */
   isExternalSkillId?: AgentDeps['isExternalSkillId'];
+  /** Organizations mode: platform role/group grants stop applying inside tenants. Read lazily,
+   *  since the methods are built before the base config is loaded. From @librechat/api. */
+  isolatePlatformRoleGrants?: () => boolean;
 }
 
 /**
@@ -447,7 +460,9 @@ export function createMethods(
   // ACL entry methods (used internally for removeAllPermissions)
   const aclEntryMethods = createAclEntryMethods(mongoose);
 
-  const systemGrantMethods = createSystemGrantMethods(mongoose);
+  const systemGrantMethods = createSystemGrantMethods(mongoose, {
+    isolatePlatformRoleGrants: deps.isolatePlatformRoleGrants,
+  });
 
   // Internal removeAllPermissions: use deleteAclEntries from aclEntryMethods
   // instead of requiring it as an external dep from PermissionService
@@ -499,10 +514,17 @@ export function createMethods(
     isExternalSkillId: deps.isExternalSkillId,
   };
   const agentMethods = createAgentMethods(mongoose, agentDeps);
+  const userMethods = createUserMethods(mongoose, { getCache: deps.getCache });
   return {
-    ...createUserMethods(mongoose, { getCache: deps.getCache }),
+    ...userMethods,
     ...createToolApprovalGrantMethods(mongoose),
     ...createSessionMethods(mongoose),
+    ...createOrganizationMethods(mongoose, {
+      createUser: userMethods.createUser,
+      invalidateAuthUserDocCache: userMethods.invalidateAuthUserDocCache,
+    }),
+    ...createOrganizationInviteMethods(mongoose),
+    ...createPlatformMethods(mongoose),
     ...createTokenMethods(mongoose),
     ...createTokenListMethods(mongoose),
     ...createRefreshTokenBridgeMethods(mongoose),

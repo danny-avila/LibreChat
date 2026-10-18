@@ -6,6 +6,7 @@ const { createPasswordResetUpdate } = require('@librechat/api');
 const { createModels, createMethods } = require('@librechat/data-schemas');
 const { User, Passkey, Session } = createModels(mongoose);
 require('module-alias')({ base: path.resolve(__dirname, '..', 'api') });
+const { applyOrganizationsMode, inLoginContext } = require('./organizations');
 const getLogStores = require('~/cache/getLogStores');
 const { askSilentQuestion } = require('./helpers');
 const connect = require('./connect');
@@ -29,9 +30,11 @@ const question = (query) => {
 const resetPassword = async () => {
   try {
     await connect();
+    const organizationsMode = await applyOrganizationsMode();
 
     const email = await question('Enter user email: ');
-    const user = await User.findOne({ email });
+    /** In organizations mode the password lives on the login account, never on a member. */
+    const user = await inLoginContext(() => User.findOne({ email }));
 
     if (!user) {
       console.error('User not found!');
@@ -66,12 +69,14 @@ const resetPassword = async () => {
      * cached document that keeps pre-reset access tokens verifying for the
      * cache TTL.
      */
-    const updated = await methods.updateUser(
-      user._id.toString(),
-      /** Stamps credentialsChangedAt and drops any staged enrollment, as the web reset does. */
-      createPasswordResetUpdate(hashedPassword),
-      {},
-      { preserveExpiresAt: true },
+    const updated = await inLoginContext(() =>
+      methods.updateUser(
+        user._id.toString(),
+        /** Stamps credentialsChangedAt and drops any staged enrollment, as the web reset does. */
+        createPasswordResetUpdate(hashedPassword),
+        {},
+        { preserveExpiresAt: true },
+      ),
     );
 
     if (!updated) {
@@ -85,9 +90,14 @@ const resetPassword = async () => {
      */
     let deletedCount;
     try {
-      ({ deletedCount } = await Passkey.deleteMany({ user: user._id }));
-      /** A refresh session outlives the stamp: refreshing mints a token issued after it. */
-      await Session.deleteMany({ user: user._id });
+      ({ deletedCount } = await inLoginContext(() => Passkey.deleteMany({ user: user._id })));
+      /** A refresh session outlives the stamp: refreshing mints a token issued after it. An
+       *  account's sessions belong to its members, one set in every organization it is in. */
+      if (organizationsMode) {
+        await methods.deleteAllAccountSessions(user._id.toString());
+      } else {
+        await Session.deleteMany({ user: user._id });
+      }
     } finally {
       /** The password is already changed, so the cache settles even when a revocation fails. */
       await methods.awaitAuthUserDocEviction(user._id.toString());

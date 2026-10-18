@@ -3,7 +3,12 @@ import { SSE } from 'sse.js';
 import { selectAtom } from 'jotai/utils';
 import { useAtomValue, useSetAtom } from 'jotai';
 import { useQueryClient } from '@tanstack/react-query';
-import { QueryKeys, StepEvents, apiBaseUrl } from 'librechat-data-provider';
+import {
+  QueryKeys,
+  StepEvents,
+  apiBaseUrl,
+  getExpectedTenantHeader,
+} from 'librechat-data-provider';
 import type { SubagentUpdateEvent } from 'librechat-data-provider';
 import type { ActiveSubagentPanel } from '~/components/Chat/Subagents/state';
 import {
@@ -118,7 +123,7 @@ export default function useSubagentActivityStream(
       if (disposed || terminal) return;
       const next = new SSE(endpoint, {
         method: 'GET',
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${token}`, ...getExpectedTenantHeader() },
       });
       stream = next;
 

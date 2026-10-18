@@ -22,7 +22,9 @@ const accessResources = require('./accessResources');
 const requireLdapAuth = require('./requireLdapAuth');
 const abortMiddleware = require('./abortMiddleware');
 const checkInviteUser = require('./checkInviteUser');
+const checkOrganizationInvite = require('./checkOrganizationInvite');
 const requireJwtAuth = require('./requireJwtAuth');
+const requireAdminAuth = require('./requireAdminAuth');
 const { requireRumProxyAuth, requireTermsAcceptance } = require('./requireJwtAuth');
 const configMiddleware = require('./config/app');
 const { strictConfigMiddleware, loadStreamKeepaliveMs } = require('./config/app');
@@ -50,6 +52,7 @@ module.exports = {
   moderateText,
   validateModel,
   requireJwtAuth,
+  requireAdminAuth,
   requireRumProxyAuth,
   requireTermsAcceptance,
   setTwoFactorTempUser,
@@ -57,6 +60,7 @@ module.exports = {
   setTwoFactorFinalizationTempUser,
   blockRetiredSetupToken,
   checkInviteUser,
+  checkOrganizationInvite,
   requireLdapAuth,
   requireLocalAuth,
   requireSameOrigin,

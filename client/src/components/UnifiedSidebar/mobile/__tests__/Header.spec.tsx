@@ -3,6 +3,9 @@ import { MemoryRouter } from 'react-router-dom';
 import { render, screen } from '@testing-library/react';
 import type { NavLink } from '~/common';
 
+/** The switcher has its own tests; here it only has to stay out of the way. */
+jest.mock('~/components/Nav/Organizations', () => ({ OrganizationSwitcher: () => null }));
+
 jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
 }));

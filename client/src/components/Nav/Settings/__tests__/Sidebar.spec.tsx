@@ -26,11 +26,14 @@ const ctx: SettingsContextValue = {
   mascotAllowed: true,
   engineTTS: 'browser',
   langfuseConnectionAccess: false,
-  adminPanelURL: '',
+  adminPanel: false,
   replyTabBadgeAllowed: true,
   replyNotificationsAllowed: true,
   replyNotificationSoundAllowed: true,
   analyticsConfigured: false,
+  organizationsEnabled: false,
+  isOrganizationAdmin: false,
+  canLeaveOrganization: false,
 };
 
 function setup(extra: Partial<SettingsContextValue> = {}, query = '') {

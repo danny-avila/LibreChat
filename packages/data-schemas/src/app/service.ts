@@ -2,6 +2,7 @@ import {
   AgentCapabilities,
   EModelEndpoint,
   chatProjectsConfigSchema,
+  organizationsConfigSchema,
   configSchema,
   filtersConfigSchema,
   conversationListConfigSchema,
@@ -197,6 +198,7 @@ export const AppService = async (params?: {
   const emailChange = config.emailChange;
   const interfaceConfig = await loadDefaultInterface({ config, configDefaults });
   const projects = chatProjectsConfigSchema.parse(config.projects ?? {});
+  const organizations = organizationsConfigSchema.parse(config.organizations ?? {});
   const turnstileConfig = loadTurnstileConfig(config, configDefaults);
   const speech = config.speech;
   const filters = loadFiltersConfig(config);
@@ -219,6 +221,7 @@ export const AppService = async (params?: {
     mcpAppSandbox,
     fileStrategy,
     projects,
+    organizations,
     registration,
     emailChange,
     passkeys: config.passkeys,

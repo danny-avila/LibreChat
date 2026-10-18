@@ -28,6 +28,7 @@ tester.run('design/disabled-recipe', design.rules['disabled-recipe'], {
     "cn('data-[disabled]:opacity-50 aria-[disabled=true]:opacity-40', disabledFillClasses)",
     "cva('', { variants: { size: { sm: 'px-2' } }, compoundVariants: [{ disabled: [true, false], class: 'opacity-50' }] })",
     "import { cn } from '~/utils'; cn('disabled:opacity-50', disabledFillClasses)",
+    "import { cn } from '~/admin/utils'; import { disabledInkClasses } from '@librechat/client'; cn('aria-disabled:opacity-50', disabledInkClasses)",
     "const faded = 'opacity-50'; <button className={faded} />",
     "cn('supports-[selector(:disabled)]:opacity-50 data-[state=disabled-preview]:opacity-50')",
     "cn('disabled:opacity-[100%] disabled:opacity-[1]')",

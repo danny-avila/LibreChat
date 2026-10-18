@@ -7,7 +7,7 @@ const {
   getBanIp,
   clearSessionHintCookie,
 } = require('@librechat/api');
-const { deleteAllUserSessions } = require('~/models');
+const { deleteAllPrincipalSessions } = require('~/server/services/AuthSessions');
 const getLogStores = require('./getLogStores');
 
 const { BAN_VIOLATIONS, BAN_INTERVAL } = process.env ?? {};
@@ -51,7 +51,7 @@ const banViolation = async (req, res, errorMessage) => {
     return;
   }
 
-  await deleteAllUserSessions({ userId: user_id });
+  await deleteAllPrincipalSessions({ userId: user_id });
 
   /** Clear OpenID session tokens if present */
   if (req.session?.openidTokens) {

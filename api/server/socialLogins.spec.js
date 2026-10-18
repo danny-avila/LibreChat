@@ -60,16 +60,11 @@ jest.mock('~/cache', () => ({ getLogStores: (...args) => mockGetLogStores(...arg
 jest.mock('~/strategies', () => ({
   openIdJwtLogin: (...args) => mockOpenIdJwtLogin(...args),
   facebookLogin: jest.fn(),
-  facebookAdminLogin: jest.fn(),
   discordLogin: jest.fn(),
-  discordAdminLogin: jest.fn(),
   setupOpenId: (...args) => mockSetupOpenId(...args),
   googleLogin: jest.fn(),
-  googleAdminLogin: jest.fn(),
   githubLogin: jest.fn(),
-  githubAdminLogin: jest.fn(),
   appleLogin: jest.fn(),
-  appleAdminLogin: jest.fn(),
   setupSaml: (...args) => mockSetupSaml(...args),
 }));
 
@@ -192,7 +187,7 @@ describe('configureSocialLogins OAuth state options', () => {
     process.env = ORIGINAL_ENV;
   });
 
-  it('passes the cookie security setting and configured state lifetime to user strategies', async () => {
+  it('passes the cookie security setting and configured state lifetime to the strategies', async () => {
     const strategies = require('~/strategies');
     const app = { use: jest.fn() };
 
@@ -201,8 +196,6 @@ describe('configureSocialLogins OAuth state options', () => {
     const expected = { secret: 'jwt-secret', secureCookie: true, maxAgeMs: 120000 };
     expect(strategies.githubLogin).toHaveBeenCalledWith(expected);
     expect(strategies.appleLogin).toHaveBeenCalledWith(expected);
-    expect(strategies.githubAdminLogin).toHaveBeenCalledWith();
-    expect(strategies.appleAdminLogin).toHaveBeenCalledWith();
   });
 
   it('leaves the state lifetime to the store default when the config omits it', async () => {

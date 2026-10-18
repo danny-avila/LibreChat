@@ -2,7 +2,7 @@ const express = require('express');
 const { createAdminRolesHandlers } = require('@librechat/api');
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const { requireCapability } = require('~/server/middleware/roles/capabilities');
-const { requireJwtAuth } = require('~/server/middleware');
+const { requireAdminAuth } = require('~/server/middleware');
 const db = require('~/models');
 
 const router = express.Router();
@@ -37,7 +37,7 @@ const handlers = createAdminRolesHandlers({
   invalidatePromptGroupAccessContext: db.invalidatePromptGroupAccessContext,
 });
 
-router.use(requireJwtAuth, requireAdminAccess);
+router.use(requireAdminAuth, requireAdminAccess);
 
 router.get('/', requireReadRoles, handlers.listRoles);
 router.post('/', requireManageRoles, handlers.createRole);

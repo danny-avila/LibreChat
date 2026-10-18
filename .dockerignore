@@ -9,6 +9,7 @@
 # Specific patterns to ignore
 data-node
 meili_data*
+admin-panel-main
 librechat*
 Dockerfile*
 docs

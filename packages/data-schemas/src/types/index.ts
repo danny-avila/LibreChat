@@ -12,6 +12,7 @@ export * from './resourceLock';
 export * from './convo';
 export * from './chatProject';
 export * from './session';
+export * from './organization';
 export * from './passkey';
 export * from './balance';
 export * from './banner';

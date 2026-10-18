@@ -12,7 +12,6 @@ const getProfileDetails = ({ profile }) => ({
 });
 
 const facebookLogin = socialLogin('facebook', getProfileDetails);
-const facebookAdminLogin = socialLogin('facebook', getProfileDetails, { existingUsersOnly: true });
 
 const getFacebookConfig = (callbackURL) => ({
   clientID: process.env.FACEBOOK_CLIENT_ID,
@@ -33,11 +32,4 @@ const facebookStrategy = (stateOptions) =>
     facebookLogin,
   );
 
-const facebookAdminStrategy = () =>
-  new FacebookStrategy(
-    getFacebookConfig(`${process.env.DOMAIN_SERVER}/api/admin/oauth/facebook/callback`),
-    facebookAdminLogin,
-  );
-
 module.exports = facebookStrategy;
-module.exports.facebookAdminLogin = facebookAdminStrategy;

@@ -2,7 +2,7 @@ const express = require('express');
 const { createAdminGroupsHandlers } = require('@librechat/api');
 const { SystemCapabilities } = require('@librechat/data-schemas');
 const { requireCapability } = require('~/server/middleware/roles/capabilities');
-const { requireJwtAuth } = require('~/server/middleware');
+const { requireAdminAuth } = require('~/server/middleware');
 const db = require('~/models');
 
 const router = express.Router();
@@ -30,7 +30,7 @@ const handlers = createAdminGroupsHandlers({
   auditFailClosed: process.env.AUDIT_LOG_FAIL_CLOSED === 'true',
 });
 
-router.use(requireJwtAuth, requireAdminAccess);
+router.use(requireAdminAuth, requireAdminAccess);
 
 router.get('/', requireReadGroups, handlers.listGroups);
 router.post('/', requireManageGroups, handlers.createGroup);

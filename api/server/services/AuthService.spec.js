@@ -4,6 +4,7 @@ jest.mock(
   () => ({
     logger: { info: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() },
     runAsSystem: (callback) => callback(),
+    runInAccounts: (callback) => callback(),
     getTenantId: jest.fn(() => undefined),
     DEFAULT_SESSION_EXPIRY: 900000,
     DEFAULT_REFRESH_TOKEN_EXPIRY: 604800000,
@@ -97,6 +98,11 @@ jest.mock(
       })),
       parseCloudFrontCookieScope: jest.fn(() => null),
       CLOUDFRONT_SCOPE_COOKIE: 'LibreChat-CloudFront-Scope',
+      /** The real issuer, so `setAuthTokens` is exercised end to end. */
+      createAuthIssuer: jest.requireActual('../../../packages/api/src/organizations/issue.ts')
+        .createAuthIssuer,
+      generateOrganizationOnboardingToken: jest.fn(() => 'onboarding-token'),
+      isOrganizationsEnabled: jest.fn(() => false),
     };
   },
   { virtual: false },
@@ -117,6 +123,8 @@ jest.mock('~/models', () => ({
   generateToken: jest.fn(),
   deleteUserById: jest.fn(),
   generateRefreshToken: jest.fn(),
+  setLastActiveTenant: jest.fn(),
+  listMembershipsForIdentity: jest.fn(async () => []),
 }));
 jest.mock('~/strategies/validators', () => ({
   registerSchema: {
@@ -134,9 +142,19 @@ jest.mock('~/strategies/validators', () => ({
 }));
 jest.mock('~/server/services/Config', () => ({ getAppConfig: jest.fn() }));
 jest.mock('~/server/utils', () => ({ sendEmail: jest.fn() }));
+jest.mock('~/server/services/OrganizationStatus', () => ({
+  getStatus: jest.fn(async () => 'active'),
+  evict: jest.fn(),
+}));
+jest.mock('~/server/services/Organizations', () => ({
+  organizations: { materializePendingAccess: jest.fn() },
+  planOrganizationRegistration: jest.fn(),
+}));
 
 let checkEmailConfig;
 let isEmailDomainAllowed;
+let isOrganizationsEnabled;
+let planOrganizationRegistration;
 let resolveAppConfigForUser;
 let setRefreshTokenCookie;
 let setOpenIDMarkerCookies;
@@ -190,7 +208,9 @@ jest.isolateModules(() => {
     getCloudFrontConfig,
     parseCloudFrontCookieScope,
     storeOpenIdSession,
+    isOrganizationsEnabled,
   } = require('@librechat/api'));
+  ({ planOrganizationRegistration } = require('~/server/services/Organizations'));
   jwt = require('jsonwebtoken');
   ({ registerSchema } = require('~/strategies/validators'));
   ({ logger, getTenantId } = require('@librechat/data-schemas'));
@@ -1835,5 +1855,78 @@ describe('registerUser - allowedDomains admin-panel override', () => {
     expect(result.message).toMatch(/cannot be used/i);
     // Domain check must happen before any DB user lookup.
     expect(findUser).not.toHaveBeenCalled();
+  });
+});
+
+describe('registerUser - organizations mode', () => {
+  const registration = {
+    name: 'New User',
+    username: 'new-user',
+    email: 'new@example.com',
+    password: 'Password123!',
+    confirm_password: 'Password123!',
+    organization: { name: 'Acme' },
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    isOrganizationsEnabled.mockReturnValue(true);
+    /* Without email the account is verified on the spot; the verification mail is covered above. */
+    checkEmailConfig.mockReturnValue(false);
+    isEmailDomainAllowed.mockReturnValue(true);
+    getAppConfig.mockResolvedValue({ balance: { enabled: true, startBalance: 1000 } });
+    findUser.mockResolvedValue(null);
+    countUsers.mockResolvedValue(0);
+    createUser.mockResolvedValue({ _id: 'account-id', emailVerified: false });
+    updateUser.mockResolvedValue({ _id: 'account-id', emailVerified: true });
+  });
+
+  afterAll(() => {
+    isOrganizationsEnabled.mockReturnValue(false);
+  });
+
+  it('refuses a registration the plan rejects, with its code, before any lookup', async () => {
+    planOrganizationRegistration.mockResolvedValue({
+      ok: false,
+      error: { code: 'ORG_NAME_INVALID', status: 400 },
+    });
+
+    const result = await registerUser(registration);
+
+    expect(result).toEqual({ status: 400, message: 'ORG_NAME_INVALID', code: 'ORG_NAME_INVALID' });
+    expect(findUser).not.toHaveBeenCalled();
+    expect(createUser).not.toHaveBeenCalled();
+  });
+
+  it('creates a balance-free login account carrying the pending organization', async () => {
+    planOrganizationRegistration.mockResolvedValue({
+      ok: true,
+      value: { accountFields: { pendingOrganization: { name: 'Acme' } } },
+    });
+
+    const result = await registerUser(registration);
+
+    expect(result).toMatchObject({ status: 200, userCreated: true });
+    expect(planOrganizationRegistration).toHaveBeenCalledWith(registration, registration.email);
+    const [data, balanceConfig] = createUser.mock.calls[0];
+    expect(data).toMatchObject({ pendingOrganization: { name: 'Acme' }, provider: 'local' });
+    /* No first-user platform admin from an organizations registration. */
+    expect(data.role).toBe('USER');
+    expect(balanceConfig).toBeUndefined();
+  });
+
+  it('joins an email invite organization once the account exists, and undoes it on failure', async () => {
+    const onAccountCreated = jest.fn().mockRejectedValueOnce(new Error('membership failed'));
+    planOrganizationRegistration.mockResolvedValue({
+      ok: true,
+      value: { accountFields: { emailVerified: true }, onAccountCreated },
+    });
+    deleteUserById.mockResolvedValue({ deletedCount: 1 });
+
+    const result = await registerUser({ ...registration, organizationInvite: 'token' });
+
+    expect(onAccountCreated).toHaveBeenCalledWith(expect.objectContaining({ _id: 'account-id' }));
+    expect(result.status).toBe(500);
+    expect(deleteUserById).toHaveBeenCalledWith('account-id');
   });
 });

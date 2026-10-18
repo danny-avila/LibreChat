@@ -1,5 +1,6 @@
 const express = require('express');
 const {
+  actAsAccount,
   limiterCache,
   createSetBalanceConfig,
   requireTwoFactorSetupToken,
@@ -97,6 +98,7 @@ router.post(
   middleware.registerLimiter,
   middleware.checkBan,
   middleware.checkInviteUser,
+  middleware.checkOrganizationInvite,
   middleware.validateRegistration,
   registrationController,
 );
@@ -115,8 +117,20 @@ router.post(
   resetPasswordController,
 );
 
-router.post('/2fa/enable', middleware.requireJwtAuth, twoFactorManagementLimiter, enable2FA);
-router.post('/2fa/verify', middleware.requireJwtAuth, twoFactorManagementLimiter, verify2FA);
+router.post(
+  '/2fa/enable',
+  middleware.requireJwtAuth,
+  actAsAccount,
+  twoFactorManagementLimiter,
+  enable2FA,
+);
+router.post(
+  '/2fa/verify',
+  middleware.requireJwtAuth,
+  actAsAccount,
+  twoFactorManagementLimiter,
+  verify2FA,
+);
 router.post(
   '/2fa/setup',
   middleware.setTwoFactorTempUser,
@@ -159,10 +173,17 @@ router.post(
   middleware.checkBan,
   verify2FAWithTempToken,
 );
-router.post('/2fa/confirm', middleware.requireJwtAuth, twoFactorManagementLimiter, confirm2FA);
+router.post(
+  '/2fa/confirm',
+  middleware.requireJwtAuth,
+  actAsAccount,
+  twoFactorManagementLimiter,
+  confirm2FA,
+);
 router.post(
   '/2fa/disable',
   middleware.requireJwtAuth,
+  actAsAccount,
   twoFactorManagementLimiter,
   blockTwoFactorDisableWhenRequired,
   disable2FA,
@@ -170,6 +191,7 @@ router.post(
 router.post(
   '/2fa/backup/regenerate',
   middleware.requireJwtAuth,
+  actAsAccount,
   twoFactorManagementLimiter,
   regenerateBackupCodes,
 );
@@ -192,23 +214,26 @@ router.post(
   setBalanceConfig,
   loginController,
 );
-router.get('/passkey', middleware.requireJwtAuth, listPasskeys);
+router.get('/passkey', middleware.requireJwtAuth, actAsAccount, listPasskeys);
 router.post(
   '/passkey/register/options',
   middleware.requireJwtAuth,
+  actAsAccount,
   middleware.passkeyStepUpLimiter,
   registerPasskeyOptions,
 );
 router.post(
   '/passkey/register/verify',
   middleware.requireJwtAuth,
+  actAsAccount,
   middleware.passkeyStepUpLimiter,
   registerPasskeyVerify,
 );
-router.patch('/passkey/:passkeyId', middleware.requireJwtAuth, updatePasskey);
+router.patch('/passkey/:passkeyId', middleware.requireJwtAuth, actAsAccount, updatePasskey);
 router.delete(
   '/passkey/:passkeyId',
   middleware.requireJwtAuth,
+  actAsAccount,
   middleware.passkeyStepUpLimiter,
   removePasskey,
 );
