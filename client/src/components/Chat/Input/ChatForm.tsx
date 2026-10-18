@@ -3,7 +3,7 @@ import { useAtom } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { useWatch } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
-import { useSteering, showStopButtonByIndex } from '@librechat/chat/react';
+import { useSteering, showStopButtonByIndex, useComposerRestoreHost } from '@librechat/chat/react';
 import {
   composerSurfaceClasses,
   composerSurfaceShadow,
@@ -48,7 +48,6 @@ import {
   useChatFormContext,
   useAddedChatContext,
   useAssistantsMapContext,
-  useComposerRestoreHost,
   BadgeRowProvider,
 } from '~/Providers';
 import {
