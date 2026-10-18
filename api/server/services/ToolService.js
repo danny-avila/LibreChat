@@ -1236,7 +1236,12 @@ async function loadToolDefinitionsWrapper({
     const cached = await getMCPServerTools(userId, serverName, serverConfig, capabilityProfile);
     if (cached) {
       rememberMCPAvailableTools(serverName, cached);
-      await oauthDeferral.promptUnlessDeferred(serverName, serverConfig, addPendingOAuthServer);
+      await oauthDeferral.promptUnlessDeferred(
+        serverName,
+        serverConfig,
+        cached,
+        addPendingOAuthServer,
+      );
       return cached;
     }
 

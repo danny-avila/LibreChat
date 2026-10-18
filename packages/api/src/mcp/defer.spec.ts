@@ -1,6 +1,6 @@
-import { Constants } from 'librechat-data-provider';
+import { Constants, normalizeServerName } from 'librechat-data-provider';
 import type { AgentToolOptions } from 'librechat-data-provider';
-import type { LCAvailableTools, ParsedServerConfig } from '~/mcp/types';
+import type { LCAvailableTools, LCFunctionTool, ParsedServerConfig } from '~/mcp/types';
 import { createMCPOAuthDeferral, shouldDeferMCPOAuthSignIn } from './defer';
 
 const key = (tool: string, server: string) => `${tool}${Constants.mcp_delimiter}${server}`;
@@ -11,7 +11,10 @@ const onUseConfig: ParsedServerConfig = {
   source: 'yaml',
   requiresOAuth: true,
   oauthPrompt: 'on_use',
-  oauthToolCatalog: [{ name: 'read', description: 'Read a sheet' }],
+  oauthToolCatalog: [
+    { name: 'read', description: 'Read a sheet' },
+    { name: 'write', description: 'Write a sheet' },
+  ],
 };
 
 const sheetsTools = [key('read', 'sheets'), key('write', 'sheets')];
@@ -65,6 +68,24 @@ describe('shouldDeferMCPOAuthSignIn', () => {
     expect(decide({ serverConfig: { ...onUseConfig, oauthPrompt: 'on_start' } })).toBe(false);
   });
 
+  it('matches tools keyed by a normalized server name', () => {
+    const serverName = 'Connector: Company';
+    const tool = key('read', normalizeServerName(serverName));
+    expect(
+      decide({
+        serverName,
+        tools: [tool],
+        toolOptions: { [tool]: { defer_loading: true } },
+        knownServerNames: [serverName],
+      }),
+    ).toBe(true);
+  });
+
+  it('keeps the turn-start prompt when the offered catalog misses a selected tool', () => {
+    const catalog = { [key('read', 'sheets')]: {} } as LCAvailableTools;
+    expect(decide({ catalog })).toBe(false);
+  });
+
   it('keeps the turn-start prompt without a declared catalog', () => {
     expect(decide({ serverConfig: { ...onUseConfig, oauthToolCatalog: undefined } })).toBe(false);
     expect(decide({ serverConfig: { ...onUseConfig, oauthToolCatalog: [] } })).toBe(false);
@@ -72,16 +93,19 @@ describe('shouldDeferMCPOAuthSignIn', () => {
 });
 
 describe('createMCPOAuthDeferral', () => {
-  const declaredCatalog: LCAvailableTools = {
-    [key('read', 'sheets')]: {
-      type: 'function',
-      ['function']: {
-        name: key('read', 'sheets'),
-        description: 'Read a sheet',
-        parameters: { type: 'object', properties: {} },
-      },
+  const declared = (name: string, description: string): LCFunctionTool => ({
+    type: 'function',
+    ['function']: {
+      name: key(name, 'sheets'),
+      description,
+      parameters: { type: 'object', properties: {} },
     },
+  });
+  const declaredCatalog: LCAvailableTools = {
+    [key('read', 'sheets')]: declared('read', 'Read a sheet'),
+    [key('write', 'sheets')]: declared('write', 'Write a sheet'),
   };
+  const ownCatalog = declaredCatalog;
 
   const create = () => {
     const pendingOAuthServers = new Set(['sheets']);
@@ -118,6 +142,15 @@ describe('createMCPOAuthDeferral', () => {
     expect(rememberAvailableTools).not.toHaveBeenCalled();
   });
 
+  it('keeps the turn-start prompt when the declared catalog misses a selected tool', () => {
+    const { tracker, pendingOAuthServers } = create();
+    const partial = { ...onUseConfig, oauthToolCatalog: [{ name: 'read' }] };
+
+    expect(tracker.deferSignIn('sheets', partial)).toBeNull();
+    expect(pendingOAuthServers.has('sheets')).toBe(true);
+    expect(tracker.hasSignInDecision('sheets')).toBe(true);
+  });
+
   it('defers after a reconnect that found no tools while sign-in is pending', () => {
     const { tracker } = create();
 
@@ -145,22 +178,23 @@ describe('createMCPOAuthDeferral', () => {
     const { tracker } = create();
     const prompt = jest.fn().mockResolvedValue(true);
 
-    await tracker.promptUnlessDeferred('sheets', onUseConfig, prompt);
+    await tracker.promptUnlessDeferred('sheets', onUseConfig, ownCatalog, prompt);
     expect(prompt).not.toHaveBeenCalled();
 
-    await tracker.promptUnlessDeferred(
-      'sheets',
-      { ...onUseConfig, oauthPrompt: 'on_start' },
-      prompt,
-    );
+    const onStart = { ...onUseConfig, oauthPrompt: 'on_start' as const };
+    await tracker.promptUnlessDeferred('sheets', onStart, ownCatalog, prompt);
     expect(prompt).toHaveBeenCalledTimes(1);
+
+    const partial = { [key('read', 'sheets')]: ownCatalog[key('read', 'sheets')] };
+    await tracker.promptUnlessDeferred('sheets', onUseConfig, partial, prompt);
+    expect(prompt).toHaveBeenCalledTimes(2);
   });
 
   it('records a server deferred with its own catalog', async () => {
     const { tracker, pendingOAuthServers } = create();
     pendingOAuthServers.delete('sheets');
 
-    await tracker.promptUnlessDeferred('sheets', onUseConfig, jest.fn());
+    await tracker.promptUnlessDeferred('sheets', onUseConfig, ownCatalog, jest.fn());
     expect(tracker.hasSignInDecision('sheets')).toBe(true);
   });
 });
