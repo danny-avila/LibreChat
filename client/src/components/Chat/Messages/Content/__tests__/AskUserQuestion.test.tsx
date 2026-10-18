@@ -2,6 +2,7 @@ import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { Agents } from 'librechat-data-provider';
+import type { ShortcutBinding } from '~/utils/shortcuts';
 import { ChatSurfaceProvider } from '~/components/Chat/Subagents/surface';
 import { ASK_USER_DECLINED_ANSWER } from '~/utils/approval';
 import ApprovalProvider from '../ApprovalContext';
@@ -67,6 +68,7 @@ jest.mock('~/Providers/ChatContext', () => ({
 }));
 
 const yieldedChords = new Set<string>();
+let submitOverride: ShortcutBinding | undefined;
 
 const tree = (
   key: string,
@@ -79,7 +81,7 @@ const tree = (
         enterToSend,
         maximizeChatSpace: false,
         showScrollButton: false,
-        composerBindings: { shortcutsEnabled: true, submitOverride: undefined, yieldedChords },
+        composerBindings: { shortcutsEnabled: true, submitOverride, yieldedChords },
         claimForeground: jest.fn(),
         handOffComposerText: jest.fn(),
       }}
@@ -99,6 +101,7 @@ describe('AskUserQuestion', () => {
     mockLiveActionId = null;
     mockChecked = [];
     mockAnswerText = '';
+    submitOverride = undefined;
   });
 
   test('restores a typed answer after the card remounts inside the same message', () => {
@@ -173,6 +176,13 @@ describe('AskUserQuestion', () => {
       render(liveTree(true));
       fireEvent.keyDown(answerBox(), { key: 'Enter', keyCode: 229 });
       expect(mockSubmitAnswer).not.toHaveBeenCalled();
+    });
+
+    test('a submit shortcut rebound off Enter submits the answer', () => {
+      submitOverride = { meta: false, ctrl: true, alt: false, shift: false, key: 'J' };
+      render(liveTree(true));
+      fireEvent.keyDown(answerBox(), { key: 'j', ctrlKey: true });
+      expect(mockSubmitAnswer).toHaveBeenCalledWith(['Use staging first']);
     });
 
     test('does not submit an empty answer', () => {

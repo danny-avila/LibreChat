@@ -4,10 +4,10 @@ import { ChevronDown, MessageCircleQuestion, TriangleAlert } from 'lucide-react'
 import type { Agents } from 'librechat-data-provider';
 import type { KeyboardEvent } from 'react';
 import type { ComposerBindings } from '~/hooks/Input/useComposerBindings';
+import { isCancelKey, isReboundSubmitChord, resolveComposerKeyDown } from '~/utils/shortcuts';
 import { useApprovalContext, useAskSubmitStatus, useResumeSubmit } from './ApprovalContext';
 import { splitOtherOption, ASK_USER_DECLINED_ANSWER } from '~/utils/approval';
 import { useOptionalChatSurface } from '~/components/Chat/Subagents/surface';
-import { isCancelKey, resolveComposerKeyDown } from '~/utils/shortcuts';
 import { cn, forceResize, insertTextAtCursor } from '~/utils';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskOptions from '~/components/Chat/ask/options';
@@ -240,8 +240,16 @@ function AskUserQuestionSingle({
    * steer/queue actions.
    */
   const handleAnswerKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    const isComposing = e.nativeEvent.isComposing || e.key === 'Process' || e.keyCode === 229;
+    if (!isComposing && isReboundSubmitChord(e.nativeEvent, { shortcutsEnabled, submitOverride })) {
+      e.preventDefault();
+      if (canSubmit && !locked) {
+        submitCombined();
+      }
+      return;
+    }
     const action = resolveComposerKeyDown(e.nativeEvent, {
-      isComposing: e.nativeEvent.isComposing || e.key === 'Process' || e.keyCode === 229,
+      isComposing,
       isSubmitting: false,
       allowSubmitWhileGenerating: false,
       hasDuringRunModifier: false,

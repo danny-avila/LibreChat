@@ -2,6 +2,7 @@ import React from 'react';
 import { RecoilRoot } from 'recoil';
 import { fireEvent, render, screen } from '@testing-library/react';
 import type { Agents } from 'librechat-data-provider';
+import { ChatSurfaceProvider } from '~/components/Chat/Subagents/surface';
 import { ASK_USER_DECLINED_ANSWER } from '~/utils/approval';
 import AskUserQuestions from '../AskUserQuestions';
 
@@ -324,6 +325,38 @@ describe('AskUserQuestions', () => {
     }
     expect(isShown('Where should this run?')).toBe(true);
     expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  test('a submit shortcut rebound off Enter confirms the answer like Enter', () => {
+    render(
+      <RecoilRoot>
+        <ChatSurfaceProvider
+          value={{
+            enterToSend: false,
+            maximizeChatSpace: false,
+            showScrollButton: false,
+            composerBindings: {
+              shortcutsEnabled: true,
+              submitOverride: { meta: false, ctrl: true, alt: false, shift: false, key: 'J' },
+              yieldedChords: new Set(),
+            },
+            claimForeground: jest.fn(),
+            handOffComposerText: jest.fn(),
+          }}
+        >
+          <AskUserQuestions actionId="ask-rebound-submit" questions={questions} />
+        </ChatSurfaceProvider>
+      </RecoilRoot>,
+    );
+    const first = screen.getByRole('textbox', { name: /Where should this run/ });
+    fireEvent.change(first, { target: { value: 'Locally' } });
+    fireEvent.keyDown(first, { key: 'j', ctrlKey: true });
+    expect(isShown('Which time window?')).toBe(true);
+
+    const last = screen.getByRole('textbox', { name: /Which time window/ });
+    fireEvent.change(last, { target: { value: 'Today' } });
+    fireEvent.keyDown(last, { key: 'j', ctrlKey: true });
+    expect(mockSubmitAskAnswer).toHaveBeenCalledTimes(1);
   });
 
   describe('focus on arrival', () => {

@@ -3,10 +3,11 @@ import { TriangleAlert } from 'lucide-react';
 import { Input, Button } from '@librechat/client';
 import type { Agents } from 'librechat-data-provider';
 import type { KeyboardEvent, ReactNode } from 'react';
+import { useOptionalChatSurface } from '~/components/Chat/Subagents/surface';
+import { isCancelKey, isReboundSubmitChord } from '~/utils/shortcuts';
 import useAskQuestionsForm from '~/hooks/Input/useAskQuestionsForm';
 import AskOptions from '~/components/Chat/ask/options';
 import { splitOtherOption } from '~/utils/approval';
-import { isCancelKey } from '~/utils/shortcuts';
 import { AutoHeight } from '~/components/ui';
 import { mainTextareaId } from '~/common';
 import { useLocalize } from '~/hooks';
@@ -41,6 +42,7 @@ export default function AskUserQuestions({
   const localize = useLocalize();
   const promptId = useId();
   const form = useAskQuestionsForm(actionId, questions);
+  const composerBindings = useOptionalChatSurface()?.composerBindings;
   const { goToStep, selectOption } = form;
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -331,16 +333,26 @@ export default function AskUserQuestions({
                 /* The composer popover sits inside the chat form, where Enter in a
                    single-line field would submit the composer draft instead.
                    Enter (or Ctrl/Cmd+Enter) confirms this answer: the next step,
-                   or the batch. Shift+Enter and Alt+Enter never submit, as in the
+                   or the batch, and so does a submit shortcut rebound off Enter.
+                   Shift+Enter and Alt+Enter never submit, as in the
                    composer, and neither does a held Enter repeating into the next
                    step; those are still kept from submitting the form. An Enter
                    that confirms an IME composition is left alone, with the same
                    Safari fallback as the composer. */
+                const composing =
+                  event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229;
                 if (
-                  event.key !== 'Enter' ||
-                  event.nativeEvent.isComposing ||
-                  event.nativeEvent.keyCode === 229
+                  !composing &&
+                  composerBindings != null &&
+                  isReboundSubmitChord(event.nativeEvent, composerBindings)
                 ) {
+                  event.preventDefault();
+                  if (!event.repeat) {
+                    confirmStep();
+                  }
+                  return;
+                }
+                if (event.key !== 'Enter' || composing) {
                   return;
                 }
                 event.preventDefault();
