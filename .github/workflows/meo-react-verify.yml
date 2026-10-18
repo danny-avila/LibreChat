@@ -1,0 +1,35 @@
+name: Meo React UI verification
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'client/src/components/Meo/**'
+      - '.github/workflows/meo-react-verify.yml'
+  pull_request:
+    paths:
+      - 'client/src/components/Meo/**'
+      - '.github/workflows/meo-react-verify.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: meo-react-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build:packages
+      - name: Type-check React application
+        run: npm run typecheck --workspace client
