@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useMeoSession } from './session';
 import MeoChat from './MeoChat';
+import MeoProjects from './MeoProjects';
 import MeoPersonalizationSettings from './MeoPersonalizationSettings';
 import './MeoDesktopApp.css';
 
@@ -187,6 +188,8 @@ export default function MeoDesktopApp() {
             <div className="meo-desktop-chat-host">
               <MeoChat />
             </div>
+          ) : mode === 'projects' ? (
+            <MeoProjects />
           ) : (
             <ModeLanding mode={mode} onOpenExisting={() => navigate(mode === 'projects' ? '/projects' : mode === 'skills' ? '/skills' : '/activity')} />
           )}
