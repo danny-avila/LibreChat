@@ -680,6 +680,19 @@ actions:
 #     oauthRefreshWaitTimeout: 15000
 #     # Callback/adoption persistence wait; raise for longer publication budgets (max 840000 ms).
 #     oauthPersistenceWaitTimeout: 15000
+#     # When to ask users to sign in. `on_start` (default) asks when the turn starts. `on_use`
+#     # waits for the agent's first call to one of this server's tools, but only when every tool
+#     # the agent selected from it is deferred. Until a user signs in, tool search offers the
+#     # tools listed in `oauthToolCatalog`; without one the turn-start prompt is kept.
+#     # oauthPrompt: on_use
+#     # oauthToolCatalog:
+#     #   - name: read_sheet
+#     #     description: Read the values in a spreadsheet range
+#     #     inputSchema:
+#     #       type: object
+#     #       properties:
+#     #         range: { type: string }
+#     #       required: [range]
 #   private-openid:
 #     type: streamable-http
 #     url: https://mcp.example.com/mcp

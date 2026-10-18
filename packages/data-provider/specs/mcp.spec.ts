@@ -882,6 +882,8 @@ describe('MCP_USER_INPUT_FIELDS', () => {
     expect(MCP_USER_INPUT_FIELDS.has('requiresOAuth')).toBe(false);
     expect(MCP_USER_INPUT_FIELDS.has('customUserVars')).toBe(false);
     expect(MCP_USER_INPUT_FIELDS.has('oauth_headers')).toBe(false);
+    expect(MCP_USER_INPUT_FIELDS.has('oauthPrompt')).toBe(false);
+    expect(MCP_USER_INPUT_FIELDS.has('oauthToolCatalog')).toBe(false);
 
     // Stdio is intentionally excluded from MCPServerUserInputSchema (security
     // posture), so its transport-only fields should not be in the set either.
@@ -920,5 +922,43 @@ describe('OAuth coordination rollout configuration', () => {
     });
     expect(user).not.toHaveProperty('oauthRefreshCoordination');
     expect(user).not.toHaveProperty('oauthPersistenceWaitTimeout');
+  });
+});
+
+describe('oauthToolCatalog', () => {
+  const server = {
+    type: 'streamable-http',
+    url: 'https://mcp.example.com/mcp',
+    oauthPrompt: 'on_use',
+  };
+  const catalog = [
+    {
+      name: 'read_sheet',
+      description: 'Read the values in a spreadsheet range',
+      inputSchema: {
+        type: 'object',
+        properties: { range: { type: 'string', enum: ['A1', 'B2'] } },
+        required: ['range'],
+      },
+    },
+  ];
+
+  it('accepts an operator-declared catalog', () => {
+    expect(
+      MCPOptionsSchema.parse({ ...server, oauthToolCatalog: catalog }).oauthToolCatalog,
+    ).toEqual(catalog);
+  });
+
+  it('rejects an input schema that is not an object schema', () => {
+    const invalid = [{ name: 'read_sheet', inputSchema: { type: 'string' } }];
+    expect(MCPOptionsSchema.safeParse({ ...server, oauthToolCatalog: invalid }).success).toBe(
+      false,
+    );
+  });
+
+  it('is not part of the user-managed server schema', () => {
+    const parsed = MCPServerUserInputSchema.parse({ ...server, oauthToolCatalog: catalog });
+    expect(parsed).not.toHaveProperty('oauthToolCatalog');
+    expect(parsed).not.toHaveProperty('oauthPrompt');
   });
 });
