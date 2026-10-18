@@ -4,6 +4,7 @@ export * from './code';
 export * from './citations';
 export * from './context';
 export * from './deletion';
+export * from './storage';
 export * from './orphan';
 export * from './extract';
 export * from './documents/crud';

@@ -121,6 +121,7 @@ jest.mock('@librechat/api', () => {
     },
   );
   return {
+    ...jest.requireActual('../../../../packages/api/src/files/storage'),
     sanitizeFilename: jest.fn((n) => n),
     /** Grants both; these specs vary the capability set, not the role. */
     resolveToolRoleGrants: jest.fn(async () => ({ runCode: true, fileSearch: true })),
@@ -2698,7 +2699,7 @@ describe('processDeleteRequest', () => {
     expect(result).toEqual({ deletedFileIds: ['embedded-file'], failedFileIds: [] });
   });
 
-  it('keeps embedded file metadata when vector deletion fails', async () => {
+  it('keeps primary storage and metadata when vector deletion fails', async () => {
     const primaryDelete = jest.fn().mockResolvedValue(undefined);
     const vectorDelete = jest.fn().mockRejectedValue(new Error('rag unavailable'));
     getStrategyFunctions.mockImplementation((source) =>
@@ -2720,10 +2721,66 @@ describe('processDeleteRequest', () => {
 
     const result = await processDeleteRequest({ req, files: [file] });
 
-    expect(primaryDelete).toHaveBeenCalledWith(req, file, undefined);
+    expect(primaryDelete).not.toHaveBeenCalled();
     expect(vectorDelete).toHaveBeenCalledWith(req, file);
     expect(db.deleteFiles).not.toHaveBeenCalled();
     expect(result).toEqual({ deletedFileIds: [], failedFileIds: ['embedded-file'] });
+  });
+
+  it('retains primary storage, metadata and agent references through a partial cleanup retry', async () => {
+    const primaryDelete = jest.fn().mockResolvedValue(undefined);
+    const vectorDelete = jest
+      .fn()
+      .mockResolvedValueOnce(undefined)
+      .mockRejectedValueOnce(Object.assign(new Error('already gone'), { status: 404 }));
+    const codeDelete = jest
+      .fn()
+      .mockRejectedValueOnce(
+        Object.assign(new Error('code unavailable'), { response: { status: 500 } }),
+      )
+      .mockResolvedValueOnce(undefined);
+    getStrategyFunctions.mockImplementation((source) => ({
+      deleteFile:
+        source === FileSources.vectordb
+          ? vectorDelete
+          : source === FileSources.execute_code
+            ? codeDelete
+            : primaryDelete,
+    }));
+    const req = {
+      body: { agent_id: 'agent_1', tool_resource: 'file_search' },
+      config: {},
+      user: { id: 'user-123', tenantId: 'tenant-a' },
+    };
+    const file = {
+      file_id: 'retry-file',
+      filepath: '/uploads/retry.png',
+      source: FileSources.local,
+      embedded: true,
+      metadata: { codeEnvRefs: { default: { file_id: 'code-copy' } } },
+    };
+
+    expect(await processDeleteRequest({ req, files: [file] })).toEqual({
+      deletedFileIds: [],
+      failedFileIds: ['retry-file'],
+    });
+    expect(primaryDelete).not.toHaveBeenCalled();
+    expect(db.deleteFiles).not.toHaveBeenCalled();
+    expect(db.removeAgentResourceFilesFromAllAgents).not.toHaveBeenCalled();
+
+    db.deleteFiles.mockResolvedValue({ deletedCount: 1 });
+    expect(await processDeleteRequest({ req, files: [file] })).toEqual({
+      deletedFileIds: ['retry-file'],
+      failedFileIds: [],
+    });
+    expect(primaryDelete).toHaveBeenCalledTimes(1);
+    expect(primaryDelete).toHaveBeenCalledWith(req, file, undefined);
+    expect(vectorDelete).toHaveBeenCalledTimes(2);
+    expect(codeDelete).toHaveBeenCalledTimes(2);
+    expect(db.deleteFiles).toHaveBeenCalledWith(['retry-file']);
+    expect(db.removeAgentResourceFilesFromAllAgents).toHaveBeenCalledWith({
+      file_ids: ['retry-file'],
+    });
   });
 
   it('keeps a failed agent file attached so the delete can be retried', async () => {
@@ -2809,7 +2866,7 @@ describe('processDeleteRequest', () => {
     expect(db.removeAgentResourceFilesFromAllAgents).not.toHaveBeenCalled();
   });
 
-  it('does not delete vector storage when primary embedded file deletion fails', async () => {
+  it('retains metadata when primary deletion fails after secondary cleanup', async () => {
     const primaryDelete = jest.fn().mockRejectedValue(new Error('permission denied'));
     const vectorDelete = jest.fn().mockResolvedValue(undefined);
     getStrategyFunctions.mockImplementation((source) =>
@@ -2832,7 +2889,7 @@ describe('processDeleteRequest', () => {
     const result = await processDeleteRequest({ req, files: [file] });
 
     expect(primaryDelete).toHaveBeenCalledWith(req, file, undefined);
-    expect(vectorDelete).not.toHaveBeenCalled();
+    expect(vectorDelete).toHaveBeenCalledWith(req, file);
     expect(db.deleteFiles).not.toHaveBeenCalled();
     expect(result).toEqual({ deletedFileIds: [], failedFileIds: ['embedded-file'] });
   });

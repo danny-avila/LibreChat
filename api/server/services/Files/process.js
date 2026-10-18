@@ -30,6 +30,8 @@ const {
 const { logger, runAsSystem } = require('@librechat/data-schemas');
 const {
   sanitizeFilename,
+  isMissingStorageError,
+  createDeleteFileWithSecondaryStorage,
   parseText,
   processAudioFile,
   extractInspectableFileText,
@@ -95,20 +97,6 @@ const createSanitizedUploadWrapper = (uploadFunction) => {
 
     return uploadFunction({ req, file: sanitizedFile, file_id, ...restParams });
   };
-};
-
-const hasCodeEnvRef = (file) =>
-  file?.metadata?.codeEnvRef != null || file?.metadata?.codeEnvRefs != null;
-
-const isMissingStorageError = (err) => {
-  const code = err?.code ?? err?.status ?? err?.statusCode ?? err?.response?.status;
-  if ([404, '404', 'ENOENT', 'NoSuchKey', 'NotFound', 'ResourceNotFound'].includes(code)) {
-    return true;
-  }
-
-  return /(?:file|object|blob|key|resource) (?:not found|does not exist)|no such (?:file|key)/i.test(
-    String(err?.message ?? ''),
-  );
 };
 
 /**
@@ -189,35 +177,6 @@ const getDeleteMethod = ({ source, deletionMethods }) => {
 
   deletionMethods[source] = deleteFile;
   return deleteFile;
-};
-
-const createDeleteFileWithSecondaryStorage = ({ source, deleteFile, deletionMethods }) => {
-  return async (req, file, openai) => {
-    const secondaryDeleteMethods = [];
-    if (file.embedded === true && source !== FileSources.vectordb) {
-      secondaryDeleteMethods.push(
-        getDeleteMethod({ source: FileSources.vectordb, deletionMethods }),
-      );
-    }
-    if (hasCodeEnvRef(file) && source !== FileSources.execute_code) {
-      secondaryDeleteMethods.push(
-        getDeleteMethod({ source: FileSources.execute_code, deletionMethods }),
-      );
-    }
-
-    try {
-      await deleteFile(req, file, openai);
-    } catch (err) {
-      if (!isMissingStorageError(err)) {
-        throw err;
-      }
-      logger.warn('Primary file storage was already missing during delete', err);
-    }
-
-    await Promise.all(
-      secondaryDeleteMethods.map((secondaryDeleteFile) => secondaryDeleteFile(req, file)),
-    );
-  };
 };
 
 const resolveUploadDeleteFile = (source) =>
@@ -307,7 +266,12 @@ const processDeleteRequest = async ({ req, files }) => {
     enqueueDeleteOperation({
       req,
       file,
-      deleteFile: createDeleteFileWithSecondaryStorage({ source, deleteFile, deletionMethods }),
+      deleteFile: createDeleteFileWithSecondaryStorage({
+        source,
+        deleteFile,
+        getDeleteFile: (src) => getDeleteMethod({ source: src, deletionMethods }),
+        logger,
+      }),
       promises,
       resolvedFileIds,
       failedFileIds,
