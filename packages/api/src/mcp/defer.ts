@@ -22,10 +22,8 @@ function catalogHasTool(
   toolPart: string,
   keyServerName: string,
 ): boolean {
-  const direct = catalog[tool];
-  if (direct != null) {
-    /** A stripped key can stand for another upstream tool; only its own spelling counts. */
-    return direct.serverToolName == null || direct.serverToolName === toolPart;
+  if (catalog[tool] != null) {
+    return true;
   }
   const strippedPart = stripServerNamePrefix(toolPart, keyServerName);
   if (strippedPart === toolPart) {

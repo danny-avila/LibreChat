@@ -100,12 +100,12 @@ describe('shouldDeferMCPOAuthSignIn', () => {
     expect(decide({ toolOptions, backgroundToolsEnabled: true })).toBe(false);
   });
 
-  it('rejects a direct key whose entry calls another upstream tool', () => {
+  it('accepts a canonical key whose entry keeps the prefixed upstream name', () => {
     const catalog = {
       [key('read', 'sheets')]: { serverToolName: 'sheets_read' },
       [key('write', 'sheets')]: {},
     } as unknown as LCAvailableTools;
-    expect(decide({ catalog })).toBe(false);
+    expect(decide({ catalog })).toBe(true);
   });
 
   it('matches a stored pre-strip key against its catalog entry', () => {
