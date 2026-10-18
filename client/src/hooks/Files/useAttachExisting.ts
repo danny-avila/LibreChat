@@ -116,7 +116,7 @@ export default function useAttachExisting(context: AttachExistingContext): (file
           message: localize(
             endpointFileConfig.fileLimit === 1
               ? 'com_ui_attach_error_file_limit_one'
-              : 'com_ui_attach_error_file_limit_other',
+              : 'com_ui_attach_error_file_limit',
             { count: endpointFileConfig.fileLimit, 0: endpoint },
           ),
           status: 'error',

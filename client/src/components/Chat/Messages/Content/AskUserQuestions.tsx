@@ -251,10 +251,8 @@ export default function AskUserQuestions({
               onClick={() => goToStep(firstUnanswered)}
             >
               {localize(
-                remaining === 1
-                  ? 'com_ui_questions_remaining_one'
-                  : 'com_ui_questions_remaining_other',
-                { 0: remaining },
+                remaining === 1 ? 'com_ui_questions_remaining_one' : 'com_ui_questions_remaining',
+                { count: remaining, 0: remaining },
               )}
             </button>
           )}

@@ -223,7 +223,7 @@ describe('composeHint', () => {
 
     it('reports uploads ahead of the during-run modifiers', () => {
       expect(hint({ uploadingCount: 2, duringRunActive: true, hasText: true })).toBe(
-        'com_ui_composer_hint_uploading_other:2',
+        'com_ui_composer_hint_uploading:2',
       );
       /* One file is one file, not "1 file(s)". */
       expect(hint({ uploadingCount: 1, duringRunActive: true, hasText: true })).toBe(

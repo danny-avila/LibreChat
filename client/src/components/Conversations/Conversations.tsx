@@ -182,29 +182,19 @@ type DateLabelProps = {
   count?: number;
 };
 
-const statusSectionLabels: Record<string, { one: TranslationKeys; other: TranslationKeys }> = {
-  [RUNNING_CHATS_GROUP]: {
-    one: 'com_a11y_chats_running_section_one',
-    other: 'com_a11y_chats_running_section_other',
-  },
-  [FINISHED_CHATS_GROUP]: {
-    one: 'com_a11y_chats_finished_section_one',
-    other: 'com_a11y_chats_finished_section_other',
-  },
+const statusSectionLabels: Record<string, TranslationKeys> = {
+  [RUNNING_CHATS_GROUP]: 'com_a11y_chats_running_section',
+  [FINISHED_CHATS_GROUP]: 'com_a11y_chats_finished_section',
 };
 
 const DateLabel: FC<DateLabelProps> = memo(
   ({ groupName, isFirst, isAlphabetical = false, count }) => {
     const localize = useLocalize();
     const displayName = localize(groupName as TranslationKeys) || groupName;
-    const statusLabels = statusSectionLabels[groupName] as
-      | { one: TranslationKeys; other: TranslationKeys }
-      | undefined;
+    const statusLabel = statusSectionLabels[groupName] as TranslationKeys | undefined;
     let ariaLabel: string;
-    if (statusLabels) {
-      ariaLabel = localize(count === 1 ? statusLabels.one : statusLabels.other, {
-        count: count ?? 0,
-      });
+    if (statusLabel) {
+      ariaLabel = localize(statusLabel, { count: count ?? 0 });
     } else if (isAlphabetical) {
       ariaLabel = localize('com_a11y_chats_alpha_section', { letter: displayName });
     } else {

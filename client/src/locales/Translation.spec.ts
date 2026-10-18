@@ -210,4 +210,16 @@ describe('English plural key families', () => {
     expect(keys.has(`${base}_other`)).toBe(true);
     expect(keys.has(base)).toBe(false);
   });
+
+  it('resolves the form from the base key and count, keeping older base translations', async () => {
+    await initializeI18n();
+    await changeLanguageSafely('en');
+    expect(i18n.t('com_ui_tools_count', { count: 1 })).toBe('1 tool');
+    expect(i18n.t('com_ui_tools_count', { count: 2 })).toBe('2 tools');
+
+    /** German still carries the pre-rename base key until Locize fills `_other`. */
+    await changeLanguageSafely('de');
+    expect(i18n.t('com_ui_tools_count', { count: 2 })).toBe('2 Tools');
+    await changeLanguageSafely('en');
+  });
 });

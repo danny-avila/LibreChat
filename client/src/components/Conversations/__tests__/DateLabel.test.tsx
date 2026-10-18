@@ -8,9 +8,8 @@ jest.mock('~/hooks', () => ({
     const translations: Record<string, string> = {
       com_a11y_chats_date_section: `Chats from ${params?.date ?? ''}`,
       com_a11y_chats_alpha_section: `Chats with titles starting with ${params?.letter ?? ''}`,
-      com_a11y_chats_running_section_one: `${params?.count} running chat`,
-      com_a11y_chats_running_section_other: `${params?.count} running chats`,
-      com_a11y_chats_finished_section_other: `${params?.count} finished chats with unread replies`,
+      com_a11y_chats_running_section: `${params?.count} running chats`,
+      com_a11y_chats_finished_section: `${params?.count} finished chats with unread replies`,
       com_ui_running_chats: 'Running',
       com_ui_finished_chats: 'Finished',
       com_ui_date_today: 'Today',
@@ -32,11 +31,6 @@ describe('DateLabel', () => {
     expect(screen.getByRole('heading', { level: 2, name: '4 running chats' })).toHaveTextContent(
       'Running · 4',
     );
-  });
-
-  it('announces a single running chat in the singular', () => {
-    render(<DateLabel groupName="com_ui_running_chats" count={1} />);
-    expect(screen.getByRole('heading', { level: 2, name: '1 running chat' })).toBeInTheDocument();
   });
 
   it('announces the finished group with its count', () => {

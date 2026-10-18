@@ -302,13 +302,11 @@ function Ledger({
       localize(
         turn.generations === 1
           ? 'com_ui_trace_model_calls_count_one'
-          : 'com_ui_trace_model_calls_count_other',
+          : 'com_ui_trace_model_calls_count',
         { count: turn.generations },
       ),
       localize(
-        toolCalls === 1
-          ? 'com_ui_trace_tool_calls_count_one'
-          : 'com_ui_trace_tool_calls_count_other',
+        toolCalls === 1 ? 'com_ui_trace_tool_calls_count_one' : 'com_ui_trace_tool_calls_count',
         { count: toolCalls },
       ),
       ...(asked ? [localize('com_ui_trace_asked', { 0: asked })] : []),

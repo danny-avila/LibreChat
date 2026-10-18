@@ -34,8 +34,12 @@ jest.mock('~/hooks', () => ({
   useLocalize:
     () =>
     (key: string, values?: Record<string, unknown>): string => {
-      const template =
-        (jest.requireActual('~/locales/en/translation.json') as Record<string, string>)[key] ?? key;
+      const catalog = jest.requireActual('~/locales/en/translation.json') as Record<string, string>;
+      /** Mirrors i18next's English plural resolution for a base key with a numeric count. */
+      const count = values?.count;
+      const plural =
+        typeof count === 'number' ? catalog[`${key}_${count === 1 ? 'one' : 'other'}`] : undefined;
+      const template = plural ?? catalog[key] ?? key;
       if (!values) {
         return template;
       }

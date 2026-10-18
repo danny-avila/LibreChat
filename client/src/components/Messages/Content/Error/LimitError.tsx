@@ -131,7 +131,8 @@ export default function LimitError({ json, message }: ErrorRendererProps) {
       } else if (max === 1) {
         headline = localize('com_error_message_limit_one', { 0: windowLabel });
       } else if (max != null) {
-        headline = localize('com_error_message_limit_other', {
+        headline = localize('com_error_message_limit', {
+          count: max,
           0: formatNumber(max),
           1: windowLabel,
         });
@@ -142,7 +143,7 @@ export default function LimitError({ json, message }: ErrorRendererProps) {
     case ViolationTypes.CONCURRENT:
       headline =
         limit != null && limit > 1
-          ? localize('com_error_concurrent_other', { 0: formatNumber(limit) })
+          ? localize('com_error_concurrent', { count: limit, 0: formatNumber(limit) })
           : localize('com_error_concurrent_one');
       break;
     case ViolationTypes.FILE_UPLOAD_LIMIT:

@@ -886,7 +886,7 @@ describe('Queue', () => {
 
   it('shows an attachment count when files ride along', () => {
     renderQueue([queued({ files: [{ file_id: 'f1' }, { file_id: 'f2' }] as never })]);
-    const attachmentLabel = screen.getByText('com_ui_attachment_count_other:2');
+    const attachmentLabel = screen.getByText('com_ui_attachment_count:2');
     expect(attachmentLabel).toBeInTheDocument();
     expect(attachmentLabel.parentElement).toHaveAttribute(
       'title',

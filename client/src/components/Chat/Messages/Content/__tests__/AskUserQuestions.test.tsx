@@ -22,7 +22,7 @@ jest.mock('~/hooks', () => ({
       com_ui_question_step_unanswered: `Go to question ${values?.[0] ?? ''}, not answered`,
       com_ui_question_navigation: 'Question navigation',
       com_ui_questions_remaining_one: `${values?.[0] ?? ''} question still needs an answer`,
-      com_ui_questions_remaining_other: `${values?.[0] ?? ''} questions still need an answer`,
+      com_ui_questions_remaining: `${values?.[0] ?? ''} questions still need an answer`,
       com_ui_your_answer: 'Your answer',
       com_ui_back: 'Back',
       com_ui_next: 'Next',
