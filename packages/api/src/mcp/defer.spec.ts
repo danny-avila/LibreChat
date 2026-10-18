@@ -86,6 +86,18 @@ describe('shouldDeferMCPOAuthSignIn', () => {
     expect(decide({ catalog })).toBe(false);
   });
 
+  it('keeps the turn-start prompt when a selected tool may run in the background', () => {
+    const toolOptions = {
+      ...deferredOptions,
+      [key('write', 'sheets')]: { defer_loading: true, run_in_background: true },
+    };
+    expect(decide({ toolOptions })).toBe(false);
+  });
+
+  it('does not require OAuth to be configured up front', () => {
+    expect(decide({ serverConfig: { ...onUseConfig, requiresOAuth: false } })).toBe(true);
+  });
+
   it('keeps the turn-start prompt without a declared catalog', () => {
     expect(decide({ serverConfig: { ...onUseConfig, oauthToolCatalog: undefined } })).toBe(false);
     expect(decide({ serverConfig: { ...onUseConfig, oauthToolCatalog: [] } })).toBe(false);
@@ -157,13 +169,28 @@ describe('createMCPOAuthDeferral', () => {
     expect(tracker.resolveReconnectTools('sheets', onUseConfig, {})).toEqual(declaredCatalog);
   });
 
-  it('keeps the tools a reconnect found', () => {
-    const { tracker, pendingOAuthServers } = create();
+  it('withdraws the prompt when discovery without a token finds the selected tools', () => {
+    const { tracker, pendingOAuthServers, rememberAvailableTools } = create();
 
-    expect(tracker.resolveReconnectTools('sheets', onUseConfig, declaredCatalog)).toBe(
-      declaredCatalog,
-    );
+    expect(tracker.resolveReconnectTools('sheets', onUseConfig, ownCatalog)).toBe(ownCatalog);
+    expect(pendingOAuthServers.has('sheets')).toBe(false);
+    expect(rememberAvailableTools).toHaveBeenCalledWith('sheets', ownCatalog);
+  });
+
+  it('keeps the prompt when the tools a reconnect found do not qualify', () => {
+    const { tracker, pendingOAuthServers } = create();
+    const onStart = { ...onUseConfig, oauthPrompt: 'on_start' as const };
+
+    expect(tracker.resolveReconnectTools('sheets', onStart, ownCatalog)).toBe(ownCatalog);
     expect(pendingOAuthServers.has('sheets')).toBe(true);
+  });
+
+  it('keeps the tools a reconnect found without a pending sign-in', () => {
+    const { tracker, pendingOAuthServers } = create();
+    pendingOAuthServers.delete('sheets');
+
+    expect(tracker.resolveReconnectTools('sheets', onUseConfig, ownCatalog)).toBe(ownCatalog);
+    expect(tracker.hasSignInDecision('sheets')).toBe(false);
   });
 
   it('does not defer a reconnect that failed without a pending sign-in', () => {

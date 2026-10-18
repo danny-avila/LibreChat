@@ -627,15 +627,15 @@ export function canUseAppConnection(config: UserScopedConnectionConfig): boolean
 }
 
 /**
- * Whether an OAuth server defers sign-in to its first tool call, offering a user who has not
- * signed in yet the tool catalog the operator declared. Limited to operator-owned servers whose
- * tools cannot vary by request or user input.
+ * Whether a server defers sign-in to its first tool call, offering a user who has not signed in
+ * yet the tool catalog the operator declared. Limited to operator-owned servers whose tools
+ * cannot vary by request or user input. OAuth itself is not required up front: it is often only
+ * discovered when the connection is refused, and the caller only asks once a sign-in is pending.
  */
 export function canDeferOAuthSignIn(config: ParsedServerConfig): boolean {
   return (
     config.oauthPrompt === 'on_use' &&
     (config.oauthToolCatalog?.length ?? 0) > 0 &&
-    isOAuthServer(config) &&
     !isUserSourced(config) &&
     config.obo == null &&
     !hasCustomUserVars(config) &&

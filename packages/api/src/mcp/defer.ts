@@ -44,7 +44,13 @@ export function shouldDeferMCPOAuthSignIn({
     if (toolServerName !== serverName && toolServerName !== keyServerName) {
       continue;
     }
-    if (isMCPAllPlaceholder(tool) || toolOptions?.[tool]?.defer_loading !== true) {
+    const options = toolOptions?.[tool];
+    /** A background call runs detached and could not pause for the sign-in it would trigger. */
+    if (
+      isMCPAllPlaceholder(tool) ||
+      options?.defer_loading !== true ||
+      options.run_in_background === true
+    ) {
       return false;
     }
     if (catalog && catalog[tool] == null) {
@@ -72,8 +78,9 @@ export interface MCPOAuthDeferral {
    */
   deferSignIn: (serverName: string, serverConfig: ParsedServerConfig) => LCAvailableTools | null;
   /**
-   * The tools a reconnect attempt yields: the declared catalog when the attempt found none
-   * because the server is waiting on a sign-in this turn may defer, otherwise its own tools.
+   * The tools a reconnect attempt yields. While a sign-in this turn may defer is pending, the
+   * prompt is withdrawn and the attempt's own tools, or the declared catalog when it found
+   * none, are offered instead.
    */
   resolveReconnectTools: (
     serverName: string,
@@ -119,6 +126,14 @@ export function createMCPOAuthDeferral({
       knownServerNames,
       catalog,
     });
+  /** Leaves the server's sign-in to its first tool call, withdrawing any turn-start prompt. */
+  const withdrawPrompt = (serverName: string, catalog: LCAvailableTools): LCAvailableTools => {
+    deferred.add(serverName);
+    pendingOAuthServers.delete(serverName);
+    pendingOAuthStarts.delete(serverName);
+    rememberAvailableTools(serverName, catalog);
+    return catalog;
+  };
   const deferSignIn = (
     serverName: string,
     serverConfig: ParsedServerConfig,
@@ -130,11 +145,7 @@ export function createMCPOAuthDeferral({
     if (!qualifies(serverName, serverConfig, catalog)) {
       return null;
     }
-    deferred.add(serverName);
-    pendingOAuthServers.delete(serverName);
-    pendingOAuthStarts.delete(serverName);
-    rememberAvailableTools(serverName, catalog);
-    return catalog;
+    return withdrawPrompt(serverName, catalog);
   };
   return {
     promptUnlessDeferred: async (serverName, serverConfig, catalog, prompt) => {
@@ -146,11 +157,16 @@ export function createMCPOAuthDeferral({
     },
     deferSignIn,
     resolveReconnectTools: (serverName, serverConfig, availableTools) => {
-      const found = availableTools != null && Object.keys(availableTools).length > 0;
-      if (!found && pendingOAuthServers.has(serverName)) {
+      if (!pendingOAuthServers.has(serverName)) {
+        return availableTools || null;
+      }
+      if (availableTools == null || Object.keys(availableTools).length === 0) {
         return deferSignIn(serverName, serverConfig);
       }
-      return availableTools || null;
+      /** Discovery without a token can still list the tools; the call will need the sign-in. */
+      return qualifies(serverName, serverConfig, availableTools)
+        ? withdrawPrompt(serverName, availableTools)
+        : availableTools;
     },
     hasSignInDecision: (serverName) =>
       pendingOAuthServers.has(serverName) || deferred.has(serverName),
