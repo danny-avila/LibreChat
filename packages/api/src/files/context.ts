@@ -1,6 +1,11 @@
 import { logger } from '@librechat/data-schemas';
-import { FileSources, mergeFileConfig } from 'librechat-data-provider';
-import type { TFile } from 'librechat-data-provider';
+import {
+  FileSources,
+  hasTurnFileConsumer,
+  mergeFileConfig,
+  resolveSandboxFilename,
+} from 'librechat-data-provider';
+import type { TFile, TurnDeliveryFile, TurnFileConsumers } from 'librechat-data-provider';
 import type { TokenCountFn } from '~/utils/text';
 import type { ServerRequest } from '~/types';
 import { processTextWithTokenLimit } from '~/utils/text';
@@ -94,4 +99,75 @@ export async function extractFileContext({
   }
 
   return undefined;
+}
+
+/** The attachment fields the manifest reads; satisfied by every hydrated record. */
+type ManifestAttachment = Pick<TFile, 'filename' | 'type' | 'bytes'> & TurnDeliveryFile;
+
+/** Human-readable size for one manifest line; uploads always carry bytes, records may not. */
+function formatAttachmentSize(bytes?: number | null): string {
+  if (typeof bytes !== 'number' || !Number.isFinite(bytes) || bytes < 0) {
+    return 'unknown size';
+  }
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  const units = ['KB', 'MB', 'GB'];
+  let size = bytes / 1024;
+  let unit = 0;
+  while (size >= 1024 && unit < units.length - 1) {
+    size /= 1024;
+    unit++;
+  }
+  return `${parseFloat(size.toFixed(1))} ${units[unit]}`;
+}
+
+/**
+ * Manifest for attachments the caller has resolved to out-of-band delivery on this turn:
+ * they reach a tool's own store (code environment sandbox, file search vectors) instead of
+ * the prompt, so without this they leave no trace in the turn and the model cannot know
+ * they exist. One line per file the turn's tools can actually read names the file and
+ * where to read it, so a turn that only says "analyze this" stays actionable.
+ *
+ * Reachability reuses {@link hasTurnFileConsumer}: run code claims a file its first call
+ * would upload, file search only one the record shows a store holding. Files nothing can
+ * read produce no line rather than a promise the tools cannot keep. The code environment
+ * path follows {@link resolveSandboxFilename}, the same rule provisioning derives the
+ * mount name from, so the advertised path is the one the first upload mounts at.
+ */
+export function buildAttachmentManifest({
+  attachments,
+  fileConsumers,
+}: {
+  attachments: readonly ManifestAttachment[];
+  fileConsumers?: TurnFileConsumers | null;
+}): string | undefined {
+  if (!attachments?.length || !fileConsumers) {
+    return undefined;
+  }
+
+  const lines: string[] = [];
+  for (const file of attachments) {
+    const mimeType = file.type ?? '';
+    if (!mimeType || !file.filename) {
+      continue;
+    }
+    if (fileConsumers.executeCode && hasTurnFileConsumer(mimeType, fileConsumers)) {
+      const sandboxName = resolveSandboxFilename(file.filename, mimeType);
+      lines.push(
+        `- \`${file.filename}\` (${mimeType}, ${formatAttachmentSize(file.bytes)}) — ` +
+          `in the code environment at \`/mnt/data/${sandboxName}\``,
+      );
+    } else if (fileConsumers.fileSearch && hasTurnFileConsumer(mimeType, fileConsumers, file)) {
+      lines.push(
+        `- \`${file.filename}\` (${mimeType}, ${formatAttachmentSize(file.bytes)}) — ` +
+          'available to the file_search tool',
+      );
+    }
+  }
+
+  if (!lines.length) {
+    return undefined;
+  }
+  return `Attached file(s) delivered out-of-band to this turn's tools:\n${lines.join('\n')}`;
 }

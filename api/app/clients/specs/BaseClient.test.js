@@ -4531,6 +4531,82 @@ describe('BaseClient', () => {
       expect(TestClient.addDocuments).toHaveBeenCalledWith(message, [file]);
     });
   });
+
+  describe('addFileContextToMessage attachment manifest', () => {
+    /* Explicit upload destinations (`destinationChosen`) keep their stored route on every
+     * turn, so no routing setup is needed to resolve these files. */
+    const nonePdf = {
+      user: 'user1',
+      file_id: 'manifest-pdf',
+      filename: 'report.pdf',
+      filepath: '/uploads/report.pdf',
+      type: 'application/pdf',
+      bytes: 2048,
+      source: 'local',
+      llmDeliveryPath: 'none',
+      metadata: { destinationChosen: true },
+    };
+    const textCsv = {
+      user: 'user1',
+      file_id: 'manifest-csv',
+      filename: 'sales.csv',
+      filepath: '/uploads/sales.csv',
+      type: 'text/csv',
+      bytes: 64,
+      source: 'local',
+      text: 'region,total',
+      llmDeliveryPath: 'text',
+      metadata: { destinationChosen: true },
+    };
+    const codeConsumers = { executeCode: true, fileSearch: false };
+
+    beforeEach(() => {
+      TestClient.options = {
+        endpoint: EModelEndpoint.openAI,
+        agent: { provider: EModelEndpoint.openAI, fileConsumers: codeConsumers },
+      };
+      jest.spyOn(Tokenizer, 'initEncoding').mockResolvedValue(undefined);
+      jest.spyOn(Tokenizer, 'getTokenCount').mockReturnValue(4);
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    test('appends the manifest for files resolved to out-of-band delivery', async () => {
+      const message = {};
+
+      await TestClient.addFileContextToMessage(message, [nonePdf], codeConsumers);
+
+      expect(message.fileContext).toBe(
+        "Attached file(s) delivered out-of-band to this turn's tools:\n" +
+          '- `report.pdf` (application/pdf, 2 KB) — in the code environment at `/mnt/data/report.pdf`',
+      );
+    });
+
+    test('joins extracted text and the manifest in one file context', async () => {
+      const message = {};
+
+      await TestClient.addFileContextToMessage(message, [nonePdf, textCsv], codeConsumers);
+
+      expect(message.fileContext).toContain('Attached document(s):');
+      expect(message.fileContext).toContain('# "sales.csv"');
+      expect(message.fileContext).toContain('/mnt/data/report.pdf');
+    });
+
+    test('leaves fileContext unset when nothing is extractable or reachable', async () => {
+      const noConsumers = { executeCode: false, fileSearch: false };
+      TestClient.options.agent = {
+        provider: EModelEndpoint.openAI,
+        fileConsumers: noConsumers,
+      };
+      const message = {};
+
+      await TestClient.addFileContextToMessage(message, [nonePdf], noConsumers);
+
+      expect(message.fileContext).toBeUndefined();
+    });
+  });
 });
 
 describe('BaseClient compaction turns', () => {

@@ -7,6 +7,7 @@ const {
   getBalanceConfig,
   buildMessageFiles,
   sanitizeFileForTransmit,
+  buildAttachmentManifest,
   extractFileContext,
   getReferencedQuotes,
   applyTurnDelivery,
@@ -1798,9 +1799,19 @@ class BaseClient {
       req: this.options?.req,
       tokenCountFn: (text) => countTokens(text),
     });
+    /* Out-of-band files (code environment, file search) otherwise leave no trace
+     * in the turn; the manifest tells the model they exist and where to read them. */
+    const attachmentManifest = buildAttachmentManifest({
+      attachments: attachments.filter(
+        (file) => this.getAttachmentDeliveryPath(file, fileConsumers) === 'none',
+      ),
+      fileConsumers,
+    });
 
-    if (fileContext) {
-      message.fileContext = fileContext;
+    const combinedContext = [fileContext, attachmentManifest].filter(Boolean).join('\n\n');
+
+    if (combinedContext) {
+      message.fileContext = combinedContext;
     }
   }
 
