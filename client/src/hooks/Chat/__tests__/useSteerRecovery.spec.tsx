@@ -3,6 +3,8 @@ import { act, render, renderHook } from '@testing-library/react';
 import { getDefaultStore, useAtomValue, useSetAtom } from 'jotai';
 import { isSubmittingFamily, resetSubmitting } from '@librechat/chat/react';
 import { RecoilRoot, useSetRecoilState, type MutableSnapshot } from 'recoil';
+import { queuedMessagesByConvoId, resetQueueFamilies } from '@librechat/chat/react';
+import { ComposerRestoreProvider, useComposerRestoreHost } from '@librechat/chat/react';
 import {
   pendingSteerCancelClientIdsFamily,
   acceptedSteerClientIdsByConvoId,
@@ -10,19 +12,13 @@ import {
   appliedSteerIdsByConvoId,
   pendingSteersByConvoId,
   resetSteerFamilies,
-  resetQueueFamilies,
 } from '@librechat/chat/react';
-import type { RewakeDrain } from '~/Providers/ComposerRestoreContext';
-import {
-  ComposerRestoreProvider,
-  useComposerRestoreHost,
-} from '~/Providers/ComposerRestoreContext';
+import type { RewakeDrain } from '@librechat/chat/react';
 import { ChatSettingsContext, defaultChatSettings } from '~/Providers/ChatSettingsContext';
-import { queuedMessagesByConvoId } from '~/hooks/Chat/queue';
 import { usePaneConversations } from '~/routes/ChatSettings';
+import { SteerHostTestProvider } from 'test/steerHost';
 import useSteerRecovery from '../useSteerRecovery';
 import store from '~/store';
-import '~/Providers/SteerHostContext';
 
 const mockMutateAsync = jest.fn();
 const mockCancelSteer = jest.fn();
@@ -76,11 +72,13 @@ function setup(initialize?: (snapshot: MutableSnapshot) => void, rewake?: Rewake
         initialize?.(snapshot);
       }}
     >
-      <PaneSettings>
-        <ComposerRestoreProvider>
-          {rewake ? <RewakePublisher rewake={rewake}>{children}</RewakePublisher> : children}
-        </ComposerRestoreProvider>
-      </PaneSettings>
+      <SteerHostTestProvider>
+        <PaneSettings>
+          <ComposerRestoreProvider>
+            {rewake ? <RewakePublisher rewake={rewake}>{children}</RewakePublisher> : children}
+          </ComposerRestoreProvider>
+        </PaneSettings>
+      </SteerHostTestProvider>
     </RecoilRoot>
   );
   return renderHook(
@@ -300,11 +298,13 @@ describe('useSteerRecovery', () => {
                 ]);
               }}
             >
-              <PaneSettings>
-                <RewakePublisher rewake={rewake}>
-                  <Tree />
-                </RewakePublisher>
-              </PaneSettings>
+              <SteerHostTestProvider>
+                <PaneSettings>
+                  <RewakePublisher rewake={rewake}>
+                    <Tree />
+                  </RewakePublisher>
+                </PaneSettings>
+              </SteerHostTestProvider>
             </RecoilRoot>
           </ComposerRestoreProvider>,
         );
@@ -404,9 +404,11 @@ describe('useSteerRecovery', () => {
                 ]);
               }}
             >
-              <PaneSettings>
-                <Tree />
-              </PaneSettings>
+              <SteerHostTestProvider>
+                <PaneSettings>
+                  <Tree />
+                </PaneSettings>
+              </SteerHostTestProvider>
             </RecoilRoot>
           </ComposerRestoreProvider>,
         );
@@ -565,10 +567,12 @@ describe('useSteerRecovery', () => {
             ]);
           }}
         >
-          <PaneSettings>
-            <Observer />
-            {live && <Recovery />}
-          </PaneSettings>
+          <SteerHostTestProvider>
+            <PaneSettings>
+              <Observer />
+              {live && <Recovery />}
+            </PaneSettings>
+          </SteerHostTestProvider>
         </RecoilRoot>
       );
 
@@ -634,9 +638,11 @@ describe('useSteerRecovery', () => {
             ]);
           }}
         >
-          <PaneSettings>
-            <Tree />
-          </PaneSettings>
+          <SteerHostTestProvider>
+            <PaneSettings>
+              <Tree />
+            </PaneSettings>
+          </SteerHostTestProvider>
         </RecoilRoot>,
       );
 
