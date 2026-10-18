@@ -1133,6 +1133,57 @@ describe('Chat', () => {
     );
   });
 
+  it('keeps a dropped generation stoppable when reattaching to it fails on the server', async () => {
+    const { chat, stream, transport, onFinish } = setup({
+      resumeSelection: () => ({ endpoint: 'agents' }),
+    });
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+    await sent;
+    transport.reconnectToStream.mockRejectedValueOnce(new Error('Service Unavailable'));
+
+    await chat.resumeStream();
+    expect(onFinish).toHaveBeenLastCalledWith(
+      expect.objectContaining({ isError: true, isDisconnect: true }),
+    );
+
+    await expect(chat.stop()).resolves.toEqual({ status: 'stopped' });
+    expect(transport.abort).toHaveBeenCalledWith(
+      expect.objectContaining({
+        endpoint: 'agents',
+        streamId: 'convo-1',
+        generationCreatedAt: 100,
+      }),
+    );
+  });
+
+  it.each([
+    ['404', { response: { status: 404, data: null, headers: {} } }],
+    ['410', { response: { status: 410, data: null, headers: {} } }],
+    ['NO_ACTIVE_RUN', { code: 'NO_ACTIVE_RUN' }],
+  ])(
+    'settles a reattachment the server answered %s as an error, not a disconnect',
+    async (_label, gone) => {
+      const { chat, stream, transport, onFinish } = setup({
+        resumeSelection: () => ({ endpoint: 'agents' }),
+      });
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+      await sent;
+      transport.reconnectToStream.mockRejectedValueOnce(Object.assign(new Error('Gone'), gone));
+
+      await chat.resumeStream();
+
+      expect(onFinish).toHaveBeenLastCalledWith(
+        expect.objectContaining({ isError: true, isDisconnect: false }),
+      );
+      await expect(chat.stop()).resolves.toEqual({ status: 'idle' });
+      expect(transport.abort).not.toHaveBeenCalled();
+    },
+  );
+
   it('does not merge a delayed stop of a dropped run into a newer turn', async () => {
     const first = createStream();
     const second = createStream();

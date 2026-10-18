@@ -322,6 +322,12 @@ const getStopOutcome = (stop: {
   return stop.settledAs ? getSettledOutcome(stop.settledAs, settled) : { kind: 'abort' };
 };
 
+/** The server answered that no such generation runs, rather than failing to answer. */
+const isGone = (error: ChatTransportError): boolean =>
+  error.code === 'NO_ACTIVE_RUN' ||
+  error.response?.status === 404 ||
+  error.response?.status === 410;
+
 const isStreamAbort = (result: ChatAbortResult): result is ChatStreamAbortResult =>
   result != null && 'success' in result;
 
@@ -569,7 +575,7 @@ export class Chat {
     generation.endpoint = this.resumeEndpoint() ?? dropped?.target.endpoint;
     generation.conversationId = options.conversationId ?? generation.conversationId;
     active.inheritedGeneration = continued?.target.generationCreatedAt ?? paused?.createdAt;
-    active.reattach = { streamId: options.streamId };
+    active.reattach = { streamId: options.streamId ?? continued?.target.streamId };
     this.active = active;
     const superseded =
       this.action &&
@@ -669,7 +675,10 @@ export class Chat {
     const target = {
       endpoint: generation.endpoint,
       streamId,
-      generationCreatedAt: active.stream?.generationCreatedAt ?? this.generationCreatedAt,
+      generationCreatedAt:
+        active.stream?.generationCreatedAt ??
+        this.generationCreatedAt ??
+        active.inheritedGeneration,
       abortKey: streamId == null ? this.abortKey(generation) : undefined,
     };
     if (!this.isAddressable(target)) {
@@ -1307,8 +1316,14 @@ export class Chat {
       return getStopOutcome(active.generation);
     }
     const failure = error instanceof Error ? error : new Error(String(error));
-    /** A request that never got a response may still be running on the server. */
-    const disconnect = (failure as ChatTransportError).code === 'ERR_NETWORK';
+    /**
+     * A request that never got a response may still be running on the server, and so may a
+     * generation a failed attachment never reached, unless the server answered that it is gone.
+     */
+    const attaching = active.reattach != null && !active.stream;
+    const disconnect =
+      (failure as ChatTransportError).code === 'ERR_NETWORK' ||
+      (attaching && !isGone(failure as ChatTransportError));
     return { kind: 'error', error: failure, disconnect };
   }
 
@@ -1330,7 +1345,10 @@ export class Chat {
           target: {
             endpoint: active.generation.endpoint,
             streamId,
-            generationCreatedAt: active.stream?.generationCreatedAt ?? this.generationCreatedAt,
+            generationCreatedAt:
+              active.stream?.generationCreatedAt ??
+              this.generationCreatedAt ??
+              active.inheritedGeneration,
             abortKey: streamId == null ? this.abortKey(active.generation) : undefined,
           },
           generation: active.generation,
