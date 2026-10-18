@@ -1098,6 +1098,8 @@ export class Chat {
     this.active = undefined;
     active?.controller.abort();
     active?.stream?.close();
+    /** The chat holds no stream; the turn's status stays, since the server keeps running it. */
+    this.setConnection('idle');
     this.listeners.clear();
     this.releaseState?.();
     this.releaseState = undefined;

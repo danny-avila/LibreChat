@@ -691,6 +691,25 @@ describe('Chat', () => {
     await sent;
   });
 
+  it.each([
+    ['live', 'attached'],
+    ['reconnecting', 'reattaching'],
+  ])('returns a %s connection to idle on dispose', async (connection, phase) => {
+    const { chat, transport } = setup({ resumeSelection: () => ({ endpoint: 'agents' }) });
+    if (phase === 'attached') {
+      void chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    } else {
+      transport.reconnectToStream.mockImplementationOnce(() => new Promise(() => undefined));
+      void chat.resumeStream({ streamId: 'convo-1', generationCreatedAt: 300 });
+    }
+    await flush();
+    expect(chat.connection).toBe(connection);
+
+    chat.dispose();
+
+    expect(chat.connection).toBe('idle');
+  });
+
   it('drops its stream on dispose without reporting an error', async () => {
     const { chat, stream, onError, onFinish } = setup();
 
