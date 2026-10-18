@@ -36,6 +36,8 @@ export class ReactQueryChatState implements ChatState {
   connection: ChatConnection = 'idle';
   readonly queryHash: string;
   private readonly options: ReactQueryChatStateOptions;
+  /** Set while the chat's own write runs, whose change the chat already announced. */
+  private writing = false;
 
   constructor(options: ReactQueryChatStateOptions) {
     this.options = options;
@@ -63,26 +65,35 @@ export class ReactQueryChatState implements ChatState {
 
   replaceMessages(messages: TMessage[]): void {
     const { write, queryClient, key } = this.options;
-    if (write) {
-      write(messages);
-      return;
+    this.writing = true;
+    try {
+      if (write) {
+        write(messages);
+        return;
+      }
+      queryClient.setQueryData<TMessage[]>([QueryKeys.messages, key], messages);
+    } finally {
+      this.writing = false;
     }
-    queryClient.setQueryData<TMessage[]>([QueryKeys.messages, key], messages);
   }
 
   /**
-   * Reports writes to the key's data. The cache notifies synchronously, including from inside
-   * another component's render when an observer mounts with initial data, so the listener runs on
-   * the next microtask instead.
+   * Reports writes to the key's data made outside the chat; the chat announces its own. The cache
+   * notifies synchronously, including from inside another component's render when an observer
+   * mounts with initial data, so the listener runs on the next microtask instead.
    */
   subscribe(listener: () => void): () => void {
     let active = true;
-    const deliver = () =>
+    const deliver = () => {
+      if (this.writing) {
+        return;
+      }
       queueMicrotask(() => {
         if (active) {
           listener();
         }
       });
+    };
     const unsubscribe = this.options.queryClient.getQueryCache().subscribe((event) => {
       if (event.query.queryHash === this.queryHash && dataEvents.has(event.type)) {
         deliver();

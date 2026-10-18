@@ -28,7 +28,7 @@ describe('ReactQueryChatState', () => {
     expect(state.version).toBe(1);
   });
 
-  it('reads back its writes and reports them under a host key hash', async () => {
+  it('reads back its writes and reports other writes under a host key hash', async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { queryKeyHashFn: (key) => `custom:${JSON.stringify(key)}` } },
     });
@@ -41,7 +41,11 @@ describe('ReactQueryChatState', () => {
 
     expect(state.messages).toEqual([message('a')]);
     expect(state.version).toBe(1);
-    expect(listener).toHaveBeenCalled();
+    expect(listener).not.toHaveBeenCalled();
+
+    queryClient.setQueryData([QueryKeys.messages, 'convo-1'], [message('b')]);
+    await flushMicrotasks();
+    expect(listener).toHaveBeenCalledTimes(1);
     unsubscribe();
   });
 
@@ -97,8 +101,13 @@ describe('ReactQueryChatState', () => {
 
     state.replaceMessages([message('b')]);
     await flushMicrotasks();
-    expect(listener).toHaveBeenCalledTimes(1);
+    expect(listener).not.toHaveBeenCalled();
     expect(state.messages).toEqual([message('b')]);
+
+    stored = [message('c')];
+    hostListeners.forEach((notify) => notify());
+    await flushMicrotasks();
+    expect(listener).toHaveBeenCalledTimes(1);
 
     unsubscribe();
     expect(hostListeners.size).toBe(0);
