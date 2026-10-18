@@ -3334,6 +3334,24 @@ describe('Chat', () => {
       await expect(again).resolves.toBeUndefined();
     });
 
+    it('answers a first-turn pause under the conversation its sync frame assigned', async () => {
+      const { chat, stream, transport } = setup({ id: 'new' });
+      void chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push({
+        type: 'sync',
+        data: { conversationId: 'convo-9', responseMessage: placeholder },
+      } as ChatEvent);
+      stream.push({ type: 'pending_action', data: pausedAction });
+      await flush();
+
+      await chat.addToolOutput({ toolCallId: 'ask-5', output: 'Blue' });
+
+      expect(transport.resume).toHaveBeenCalledWith(
+        expect.objectContaining({ conversationId: 'convo-9', actionId: 'action-5' }),
+      );
+    });
+
     it('sends one stop for a generation stopped again once a reattachment took it over', async () => {
       const { chat, stream, transport } = setup({
         resumeSelection: () => ({ endpoint: 'agents' }),

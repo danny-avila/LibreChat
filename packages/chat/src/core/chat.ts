@@ -920,6 +920,13 @@ export class Chat {
     return getStopResult(result);
   }
 
+  /** The conversation the paused generation's record names, which a frame may have assigned. */
+  private pausedConversationId(): string | undefined {
+    const generation =
+      this.active?.generation ?? this.detached?.generation ?? this.restored?.generation;
+    return generation?.conversationId;
+  }
+
   /** The endpoint a generation this chat did not start runs on, as the host selects it. */
   private resumeEndpoint(): string | undefined {
     return this.init.resumeSelection?.().endpoint ?? undefined;
@@ -1475,7 +1482,7 @@ export class Chat {
       const result = await resume.call(this.init.transport, {
         ...this.init.resumeSelection?.(),
         ...resolution,
-        conversationId: action.conversationId ?? this.id,
+        conversationId: action.conversationId ?? this.pausedConversationId() ?? this.id,
         generationCreatedAt,
         actionId: action.actionId,
       });
