@@ -7,6 +7,9 @@ import {
   filesFamily,
   presetFamily,
   optionSettingsFamily,
+  stopRequestedByConvoId,
+  drainAfterAbortByIndex,
+  runEndByIndex,
   activeGenerationCreatedAtByConvoId,
   activeGenerationProtocolVersionByConvoId,
   isSubmittingFamily,
@@ -14,16 +17,15 @@ import {
   abortScrollFamily,
   submissionByIndex,
   useClearSubmissions,
+  useSteerConvert,
 } from '@librechat/chat/react';
 import type { TMessage } from 'librechat-data-provider';
 import type { ChatContract } from './contract';
-import { stopRequestedByConvoId, drainAfterAbortByIndex, runEndByIndex } from '~/hooks/Chat/queue';
 import { useLatestMessage, useLatestMessageId } from '~/hooks/Messages/useLatestMessage';
 import { useAbortStreamMutation, supportsGenerationProtocolV2 } from '~/data-provider';
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
 import { useChatSettings } from '~/Providers/ChatSettingsContext';
 import useChatFunctions from '~/hooks/Chat/useChatFunctions';
-import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { resolveAbortSteerTarget } from '~/utils';
 import useNewConvo from '~/hooks/useNewConvo';
 import { getMessageCacheIds } from './cache';
