@@ -15,9 +15,9 @@ import {
   ComposerRestoreProvider,
   useComposerRestoreHost,
 } from '~/Providers/ComposerRestoreContext';
-import useSteerCancel, { useSteerMoveToQueue } from '../useSteerCancel';
-import '~/Providers/SteerHostContext';
 import { queuedMessagesByConvoId } from '~/hooks/Chat/queue';
+import '~/Providers/SteerHostContext';
+import { useSteerCancel, useSteerMoveToQueue } from '@librechat/chat/react';
 
 const mockCancelAsync = jest.fn();
 

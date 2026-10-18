@@ -14,6 +14,7 @@ import {
   abortScrollFamily,
   submissionByIndex,
   useClearSubmissions,
+  useSteerConvert,
 } from '@librechat/chat/react';
 import type { TMessage } from 'librechat-data-provider';
 import type { ChatContract } from './contract';
@@ -23,7 +24,6 @@ import { useAbortStreamMutation, supportsGenerationProtocolV2 } from '~/data-pro
 import { siblingIdxFamily, siblingKey } from '~/components/Chat/Messages/Thread/state';
 import { useChatSettings } from '~/Providers/ChatSettingsContext';
 import useChatFunctions from '~/hooks/Chat/useChatFunctions';
-import useSteerConvert from '~/hooks/Chat/useSteerConvert';
 import { resolveAbortSteerTarget } from '~/utils';
 import useNewConvo from '~/hooks/useNewConvo';
 import { getMessageCacheIds } from './cache';
