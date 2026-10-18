@@ -283,7 +283,10 @@ export default function useAttachItems({
             onSelect: () => {
               setToolResource(undefined);
               let fileType: Exclude<FileUploadType, 'image' | 'document'> = 'image_document';
-              if (currentProvider === Providers.GOOGLE || currentProvider === Providers.OPENROUTER) {
+              if (
+                currentProvider === Providers.GOOGLE ||
+                currentProvider === Providers.OPENROUTER
+              ) {
                 fileType = 'image_document_video_audio';
               } else if (
                 currentProvider === Providers.BEDROCK ||
