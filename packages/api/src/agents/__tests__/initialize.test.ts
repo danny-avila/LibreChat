@@ -6246,3 +6246,186 @@ describe('initializeAgent turn delivery routing', () => {
     expect(filesOrder).toBeLessThan(toolsOrder);
   });
 });
+
+describe('initializeAgent — inference trust boundary', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it.each([true, false])(
+    'projects saved settings and request overrides (initial: %s)',
+    async (isInitialAgent) => {
+      const { agent, req, res, loadTools, db } = createMocks({
+        provider: Providers.OPENAI,
+        model: 'gpt-4o-mini',
+      });
+      Object.assign(agent.model_parameters, {
+        temperature: 0.2,
+        apiKey: 'untrusted-secret',
+        modelKwargs: { model: 'gpt-4o', service_tier: 'flex' },
+        configuration: { baseURL: 'https://unchecked.invalid' },
+        callbacks: ['not-user-configurable'],
+        fallbacks: [{ provider: 'openAI', clientOptions: { model: 'gpt-4o' } }],
+        unknownConstructorField: true,
+      });
+      mockExtractLibreChatParams.mockImplementation(realUtils.extractLibreChatParams);
+
+      await initializeAgent(
+        {
+          req,
+          res,
+          agent,
+          loadTools,
+          endpointOption: {
+            endpoint: EModelEndpoint.agents,
+            model_parameters: { temperature: 0.4, modelKwargs: { model: 'gpt-4o' } },
+          },
+          allowedProviders: new Set([Providers.OPENAI]),
+          isInitialAgent,
+        },
+        db,
+      );
+
+      const { results } = mockGetProviderConfig.mock;
+      const { getOptions } = results[results.length - 1].value;
+      expect(getOptions).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model_parameters: {
+            model: 'gpt-4o-mini',
+            temperature: isInitialAgent ? 0.4 : 0.2,
+          },
+        }),
+      );
+    },
+  );
+
+  it.each(['custom', 'anthropic', 'google'])(
+    'retains canonical settings and endpoint identity for same-agent memory reentry (%s)',
+    async (mode) => {
+      const { agent, req, res, loadTools, db } = createMocks({
+        provider: 'Gateway',
+        overrideProvider: Providers.OPENAI,
+        model: 'permitted',
+      });
+      Object.assign(agent.model_parameters, { min_p: 0.7, modelKwargs: { min_p: 0.9 } });
+      const getOptions = jest
+        .fn()
+        .mockImplementation(async ({ model_parameters, inferenceParameters }) => ({
+          llmConfig: {
+            model: model_parameters.model,
+            apiKey: 'trusted-key',
+            modelKwargs: { min_p: inferenceParameters?.min_p ?? 0.1 },
+          },
+          configOptions: { baseURL: 'https://trusted.invalid' },
+        }));
+      mockGetProviderConfig.mockImplementation(({ provider }) => {
+        if (provider !== 'Gateway') throw new Error('Lost original endpoint identity');
+        return {
+          getOptions,
+          overrideProvider: Providers.OPENAI,
+          customEndpointConfig: {
+            customParams: {
+              defaultParamsEndpoint: mode,
+              paramDefinitions: [
+                { key: 'min_p', type: 'number', default: 0.1, range: { min: 0, max: 1 } },
+              ],
+            },
+          },
+        };
+      });
+      mockExtractLibreChatParams.mockImplementation(realUtils.extractLibreChatParams);
+      const params = {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI, 'Gateway']),
+        isInitialAgent: true,
+      };
+      const main = await initializeAgent(params, db);
+      const mainConfig = main.model_parameters;
+      expect(mainConfig).toMatchObject({ modelKwargs: { min_p: 0.7 } });
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const memory = await initializeAgent(
+          { ...params, agent: { ...main }, isInitialAgent: false },
+          db,
+        );
+        expect(memory.model_parameters).toMatchObject({ modelKwargs: { min_p: 0.7 } });
+        expect(memory).not.toBe(main);
+        expect(main.model_parameters).toBe(mainConfig);
+        expect(getOptions).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            endpoint: 'Gateway',
+            model_parameters: { model: 'permitted' },
+            inferenceParameters: { min_p: 0.7 },
+          }),
+        );
+      }
+      await expect(
+        initializeAgent(
+          {
+            ...params,
+            agent: main,
+            allowedProviders: new Set([Providers.OPENAI]),
+            isInitialAgent: false,
+          },
+          db,
+        ),
+      ).rejects.toThrow('invalid_agent_provider');
+    },
+  );
+
+  it('constructs custom request kwargs only from administrator-declared inference values', async () => {
+    const { agent, req, res, loadTools, db } = createMocks({
+      provider: 'Gateway',
+      overrideProvider: Providers.OPENAI,
+      model: 'permitted',
+    });
+    Object.assign(agent.model_parameters, { min_p: 0.1, modelKwargs: { model: 'restricted' } });
+    const getOptions = jest.fn().mockResolvedValue({
+      llmConfig: {
+        model: 'permitted',
+        apiKey: 'trusted-key',
+        configuration: { baseURL: 'https://trusted.invalid' },
+        modelKwargs: { seed: 7 },
+      },
+    });
+    mockGetProviderConfig.mockReturnValue({
+      getOptions,
+      overrideProvider: Providers.OPENAI,
+      customEndpointConfig: {
+        customParams: {
+          defaultParamsEndpoint: 'custom',
+          paramDefinitions: [{ key: 'min_p', type: 'number', range: { min: 0, max: 1 } }],
+        },
+      },
+    });
+    mockExtractLibreChatParams.mockImplementation(realUtils.extractLibreChatParams);
+    const initialized = await initializeAgent(
+      {
+        req,
+        res,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI, 'Gateway']),
+        isInitialAgent: true,
+      },
+      db,
+    );
+
+    expect(getOptions).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model_parameters: { model: 'permitted' },
+        inferenceParameters: { min_p: 0.1 },
+      }),
+    );
+    expect(initialized.model_parameters).toMatchObject({
+      model: 'permitted',
+      apiKey: 'trusted-key',
+      configuration: { baseURL: 'https://trusted.invalid' },
+      modelKwargs: { seed: 7 },
+    });
+  });
+});

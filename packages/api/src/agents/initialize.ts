@@ -112,6 +112,11 @@ import {
   resolveAttachedWorkspaceCommandTimeoutDefault,
 } from '~/code/command';
 import {
+  resolveAgentInferenceParameters,
+  restoreAgentInferenceInput,
+  retainAgentInferenceInput,
+} from './inference';
+import {
   formatChatProjectInstructions,
   hydrateChatProjectContextResources,
 } from '../projects/context';
@@ -141,6 +146,7 @@ import { applyTurnDelivery } from './files/delivery';
 import { generateArtifactsPrompt } from '~/prompts';
 import { getProviderConfig } from '~/endpoints';
 import { primeResources } from './resources';
+import { pinAgentModel } from './pin';
 
 /**
  * Fraction of context budget reserved as headroom when no explicit maxContextTokens is set.
@@ -1174,7 +1180,7 @@ export async function initializeAgent(
   db?: InitializeAgentDbMethods,
 ): Promise<InitializedAgent> {
   const {
-    agent: inputAgent,
+    agent: suppliedAgent,
     loadTools,
     requestFiles = [],
     authorizedRunFiles,
@@ -1193,6 +1199,7 @@ export async function initializeAgent(
   }
   const shouldUseChatProjectContext =
     useChatProjectContext ?? params.req?.chatProjectContextEnabled === true;
+  const inputAgent = restoreAgentInferenceInput(suppliedAgent);
   const agent = shouldUseChatProjectContext ? { ...inputAgent } : inputAgent;
   const { user, appConfig } = runtime;
   const requestFileOwnerId = user?.id;
@@ -1498,18 +1505,6 @@ export async function initializeAgent(
   const effectiveToolNames =
     extraAllowedToolNames.length > 0 ? [...baseToolNames, ...extraAllowedToolNames] : baseToolNames;
   const requestedToolNames = effectiveToolNames;
-  const _modelOptions = structuredClone(
-    Object.assign(
-      { model: agent.model },
-      agent.model_parameters ?? { model: agent.model },
-      isInitialAgent === true ? endpointOption?.model_parameters : {},
-    ),
-  );
-
-  const { resendFiles, maxContextTokens, imageDetail, modelOptions } = extractLibreChatParams(
-    _modelOptions as Record<string, unknown>,
-  );
-
   const provider = agent.provider;
   agent.endpoint = provider;
 
@@ -1525,10 +1520,20 @@ export async function initializeAgent(
     agent.provider = overrideProvider;
   }
 
-  const finalModelOptions = {
-    ...modelOptions,
-    model: agent.model,
-  };
+  const inference = resolveAgentInferenceParameters({
+    parameters: {
+      ...agent.model_parameters,
+      ...(isInitialAgent === true ? endpointOption?.model_parameters : undefined),
+    },
+    provider: customEndpointConfig?.provider ?? overrideProvider,
+    model: agent.model ?? '',
+    customParams: customEndpointConfig?.customParams,
+    availableRegions: appConfig?.endpoints?.bedrock?.availableRegions,
+  });
+  const { resendFiles, maxContextTokens, imageDetail, modelOptions } = extractLibreChatParams(
+    inference.parameters,
+  );
+  const finalModelOptions = pinAgentModel(modelOptions, agent.model);
 
   const options: InitializeResultBase = await getOptions({
     runtime: {
@@ -1538,6 +1543,7 @@ export async function initializeAgent(
     },
     endpoint: provider,
     model_parameters: finalModelOptions,
+    inferenceParameters: inference.customParameters,
     db,
   });
 
@@ -2502,6 +2508,10 @@ export async function initializeAgent(
   if (options.configOptions) {
     (agent.model_parameters as Record<string, unknown>).configuration = options.configOptions;
   }
+  retainAgentInferenceInput(agent, provider, {
+    ...inference.parameters,
+    ...inference.customParameters,
+  });
 
   /**
    * Resolves an `instructionsPrompt` link before special-vars substitution, so

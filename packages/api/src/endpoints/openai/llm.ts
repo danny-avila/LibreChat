@@ -599,6 +599,7 @@ export function getOpenAILLMConfig({
   addParams,
   dropParams,
   defaultParams,
+  inferenceParameters,
   useOpenRouter,
   reasoningFormat = ReasoningParameterFormat.reasoningEffort,
   modelOptions: _modelOptions,
@@ -611,6 +612,7 @@ export function getOpenAILLMConfig({
   addParams?: Record<string, unknown>;
   dropParams?: string[];
   defaultParams?: Record<string, unknown>;
+  inferenceParameters?: Record<string, unknown>;
   useOpenRouter?: boolean;
   reasoningFormat?: ReasoningParameterFormat;
   azure?: false | t.AzureOptions;
@@ -634,9 +636,15 @@ export function getOpenAILLMConfig({
     promptCacheTtl,
     frequency_penalty,
     presence_penalty,
+    top_p,
+    modelKwargs: _untrustedModelKwargs,
     ...modelOptions
   } = cleanedModelOptions as Partial<
-    t.OpenAIParameters & { promptCache?: boolean; promptCacheTtl?: '5m' | '1h' }
+    t.OpenAIParameters & {
+      promptCache?: boolean;
+      promptCacheTtl?: '5m' | '1h';
+      modelKwargs?: unknown;
+    }
   >;
 
   const llmConfig = Object.assign(
@@ -647,6 +655,9 @@ export function getOpenAILLMConfig({
     modelOptions,
   ) as OpenAILLMConfig;
 
+  if (top_p != null) {
+    llmConfig.topP = top_p;
+  }
   if (frequency_penalty != null) {
     llmConfig.frequencyPenalty = frequency_penalty;
   }
@@ -654,8 +665,8 @@ export function getOpenAILLMConfig({
     llmConfig.presencePenalty = presence_penalty;
   }
 
-  const modelKwargs: Record<string, unknown> = {};
-  let hasModelKwargs = false;
+  const modelKwargs: Record<string, unknown> = { ...inferenceParameters };
+  let hasModelKwargs = Object.keys(modelKwargs).length > 0;
   let reasoningEffort = reasoning_effort;
   let reasoningSummary = reasoning_summary;
   let reasoningMode = reasoning_mode;
@@ -729,6 +740,24 @@ export function getOpenAILLMConfig({
         continue;
       }
 
+      if (
+        key === 'modelKwargs' &&
+        value != null &&
+        typeof value === 'object' &&
+        !Array.isArray(value)
+      ) {
+        applyDefaultParams(modelKwargs, value as Record<string, unknown>);
+        hasModelKwargs = true;
+        continue;
+      }
+      if (key === 'seed' && inferenceParameters != null) {
+        applyDefaultParams(modelKwargs, { [key]: value });
+        hasModelKwargs = true;
+        continue;
+      }
+      if (modelKwargs[key] !== undefined) {
+        continue;
+      }
       if (knownOpenAIParams.has(key)) {
         applyDefaultParams(llmConfig as Record<string, unknown>, { [key]: value });
       } else {
@@ -797,7 +826,31 @@ export function getOpenAILLMConfig({
           }) || hasModelKwargs;
         continue;
       }
+      if (
+        key === 'modelKwargs' &&
+        value != null &&
+        typeof value === 'object' &&
+        !Array.isArray(value)
+      ) {
+        Object.assign(modelKwargs, value);
+        hasModelKwargs = true;
+        continue;
+      }
+      if (
+        inferenceParameters != null &&
+        Object.prototype.hasOwnProperty.call(inferenceParameters, key)
+      ) {
+        modelKwargs[key] = value;
+        hasModelKwargs = true;
+        continue;
+      }
+      if (key === 'seed' && inferenceParameters != null) {
+        modelKwargs[key] = value;
+        hasModelKwargs = true;
+        continue;
+      }
       if (knownOpenAIParams.has(key)) {
+        delete modelKwargs[key];
         (llmConfig as Record<string, unknown>)[key] = value;
       } else {
         hasModelKwargs = true;
@@ -1067,7 +1120,11 @@ export function getOpenAILLMConfig({
     hasModelKwargs = true;
   }
 
-  if (hasModelKwargs && Object.keys(modelKwargs).length > 0) {
+  if (
+    hasModelKwargs &&
+    Object.keys(modelKwargs).length > 0 &&
+    !dropParams?.includes('modelKwargs')
+  ) {
     llmConfig.modelKwargs = modelKwargs;
   }
 

@@ -140,6 +140,7 @@ function buildAnthropicCustomConfig({
   apiKey,
   baseURL,
   modelOptions,
+  inferenceParameters,
   endpointConfig,
   userProvidesURL,
   allowedAddresses,
@@ -147,12 +148,14 @@ function buildAnthropicCustomConfig({
   apiKey: string;
   baseURL: string;
   modelOptions: AnthropicModelOptions;
+  inferenceParameters?: Record<string, unknown>;
   endpointConfig: Partial<TEndpoint>;
   userProvidesURL: boolean;
   allowedAddresses?: string[] | null;
 }): InitializeResultBase {
   const result = getAnthropicLLMConfig(apiKey, {
     modelOptions,
+    inferenceParameters,
     proxy: PROXY ?? undefined,
     reverseProxyUrl: baseURL,
     baseURLIsUserProvided: userProvidesURL,
@@ -183,7 +186,7 @@ function buildAnthropicCustomConfig({
 export async function initializeCustom(
   params: ProviderInitializeParams,
 ): Promise<InitializeResultBase> {
-  const { endpoint, model_parameters, db } = params;
+  const { endpoint, model_parameters, inferenceParameters, db } = params;
   const { appConfig, user, requestBody } = resolveEndpointRuntime(params);
   const { key: expiresAt } = requestBody;
 
@@ -347,6 +350,7 @@ export async function initializeCustom(
       apiKey,
       baseURL,
       modelOptions: modelOptions as AnthropicModelOptions,
+      inferenceParameters,
       endpointConfig,
       userProvidesURL,
       allowedAddresses: appConfig?.endpoints?.allowedAddresses,
@@ -354,8 +358,9 @@ export async function initializeCustom(
     options.endpointTokenConfig = endpointTokenConfig;
   } else {
     const finalClientOptions = {
-      modelOptions,
       ...clientOptions,
+      modelOptions,
+      inferenceParameters,
     };
     options = getOpenAIConfig(apiKey, finalClientOptions, endpoint);
     if (options != null) {

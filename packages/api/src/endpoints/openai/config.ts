@@ -103,6 +103,7 @@ export function getOpenAIConfig(
     directEndpoint,
     streaming = true,
     modelOptions = {},
+    inferenceParameters,
     reverseProxyUrl: baseURL,
   } = options;
   const shouldProtectUserBaseURL = options.baseURLIsUserProvided === true && !!baseURL;
@@ -135,6 +136,7 @@ export function getOpenAIConfig(
   if (isAnthropic) {
     const anthropicResult = getAnthropicLLMConfig(apiKey, {
       modelOptions,
+      inferenceParameters,
       proxy: options.proxy,
       reverseProxyUrl: baseURL,
       addParams,
@@ -184,6 +186,7 @@ export function getOpenAIConfig(
       ),
       dropParams,
       defaultParams,
+      inferenceParameters,
       tools: googleResult.tools,
       llmConfig: googleResult.llmConfig,
       fromEndpoint: EModelEndpoint.google,
@@ -200,6 +203,7 @@ export function getOpenAIConfig(
       addParams,
       dropParams,
       defaultParams,
+      inferenceParameters,
       modelOptions,
       useOpenRouter,
       reasoningFormat: getReasoningFormat({
