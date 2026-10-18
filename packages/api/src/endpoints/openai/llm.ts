@@ -200,7 +200,7 @@ function removeReasoningField(target: Record<string, unknown>, field: string) {
   target.reasoning = rest;
 }
 
-function removeReasoningPayload(target: Record<string, unknown>) {
+export function removeReasoningPayload(target: Record<string, unknown>): void {
   delete target.reasoning;
   delete target.reasoning_effort;
   delete target.include_reasoning;
@@ -867,25 +867,23 @@ export function getOpenAILLMConfig({
     }
   }
 
-  if (useOpenRouter) {
+  if (reasoningFormat === ReasoningParameterFormat.disabled) {
+    removeReasoningPayload(llmConfig as Record<string, unknown>);
+    removeReasoningPayload(modelKwargs);
+  } else if (useOpenRouter) {
     /**
      * OpenRouter uses a `reasoning` object — `summary` is not supported.
      * ChatOpenRouter treats `reasoning` and `include_reasoning` as mutually exclusive:
      * `include_reasoning` is legacy compat that maps to `{ enabled: true }` only when
      * no `reasoning` object is present, so we intentionally omit it here.
      */
-    if (reasoningFormat === ReasoningParameterFormat.disabled) {
-      removeReasoningPayload(llmConfig as Record<string, unknown>);
-      removeReasoningPayload(modelKwargs);
-    } else {
-      hasModelKwargs =
-        applyOpenRouterReasoningConfig({
-          reasoningEffort,
-          model: modelOptions.model,
-          modelKwargs,
-          llmConfig,
-        }) || hasModelKwargs;
-    }
+    hasModelKwargs =
+      applyOpenRouterReasoningConfig({
+        reasoningEffort,
+        model: modelOptions.model,
+        modelKwargs,
+        llmConfig,
+      }) || hasModelKwargs;
   }
 
   if (llmConfig.max_tokens != null) {

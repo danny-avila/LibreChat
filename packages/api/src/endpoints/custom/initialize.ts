@@ -21,6 +21,7 @@ import { isUserProvided, checkUserKeyExpiry } from '~/utils';
 import { withSupportedEffort } from '~/endpoints/reasoning';
 import { getOpenAIConfig } from '~/endpoints/openai/config';
 import { getScopedTokenConfigKey } from '~/endpoints/keys';
+import { resolveCustomEndpointParameters } from './config';
 import { getCustomEndpointConfig } from '~/app/config';
 import { resolveEndpointRuntime } from '~/types';
 import { fetchModels } from '~/endpoints/models';
@@ -190,17 +191,17 @@ export async function initializeCustom(
   const { appConfig, user, requestBody } = resolveEndpointRuntime(params);
   const { key: expiresAt } = requestBody;
 
-  const endpointConfig = getCustomEndpointConfig({
+  const configuredEndpoint = getCustomEndpointConfig({
     endpoint,
     appConfig,
   });
 
-  if (!endpointConfig) {
+  if (!configuredEndpoint) {
     throw new Error(`Config not found for the ${endpoint} custom endpoint.`);
   }
 
-  const CUSTOM_API_KEY = extractEnvVariable(endpointConfig.apiKey ?? '');
-  const CUSTOM_BASE_URL = extractEnvVariable(endpointConfig.baseURL ?? '');
+  const CUSTOM_API_KEY = extractEnvVariable(configuredEndpoint.apiKey ?? '');
+  const CUSTOM_BASE_URL = extractEnvVariable(configuredEndpoint.baseURL ?? '');
 
   if (CUSTOM_API_KEY.match(envVarRegex)) {
     throw new Error(`Missing API Key for ${endpoint}.`);
@@ -210,6 +211,10 @@ export async function initializeCustom(
     throw new Error(`Missing Base URL for ${endpoint}.`);
   }
 
+  const endpointConfig = {
+    ...configuredEndpoint,
+    customParams: resolveCustomEndpointParameters(configuredEndpoint, CUSTOM_BASE_URL),
+  };
   const userProvidesKey = isUserProvided(CUSTOM_API_KEY);
   const userProvidesURL = isUserProvided(CUSTOM_BASE_URL);
 

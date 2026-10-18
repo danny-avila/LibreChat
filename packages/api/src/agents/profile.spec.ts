@@ -8,10 +8,14 @@ import {
   ReasoningParameterFormat,
   SettingTypes,
   ComponentTypes,
+  EImageOutputType,
+  FileSources,
 } from 'librechat-data-provider';
 import type { TEndpoint } from 'librechat-data-provider';
+import type { AppConfig } from '@librechat/data-schemas';
 import { loadCustomEndpointsConfig, usesOpenRouterCatalog } from '../endpoints/custom/config';
 import { getAgentInferencePolicy, parseAgentInferenceInput } from './input';
+import { initializeCustom } from '../endpoints/custom/initialize';
 import { resolveAgentInferenceParameters } from './inference';
 import { getOpenAIConfig } from '../endpoints/openai/config';
 import { createCustomConfigLoader } from '../app/loader';
@@ -343,6 +347,184 @@ describe('disabled reasoning owns all legacy wire aliases', () => {
       expect(bodies[0]).not.toHaveProperty('reasoning');
       expect(bodies[0]).not.toHaveProperty('reasoning_effort');
       expect(JSON.stringify(bodies[0]).includes('cache_control')).toBe(cache);
+    },
+  );
+});
+
+describe('enabled generic inference extensions', () => {
+  it('preserves a declared legacy opt-in when reasoning is not disabled', async () => {
+    const configured = endpointSchema.parse(
+      endpoint({
+        baseURL: 'https://gateway.invalid/v1',
+        customParams: {
+          defaultParamsEndpoint: 'custom',
+          reasoningFormat: ReasoningParameterFormat.reasoningEffort,
+          paramDefinitions: [
+            {
+              key: 'include_reasoning',
+              type: SettingTypes.Boolean,
+              component: ComponentTypes.Checkbox,
+            },
+          ],
+        },
+      }),
+    );
+    const appConfig: AppConfig = {
+      config: {},
+      fileStrategy: FileSources.local,
+      imageOutputType: EImageOutputType.PNG,
+      endpoints: { custom: [configured] },
+    };
+    const values = parseAgentInferenceInput({
+      provider: 'Gateway',
+      model: 'permitted',
+      appConfig,
+      parameters: { include_reasoning: true },
+    });
+    const projected = resolveAgentInferenceParameters({
+      ...getAgentInferencePolicy('Gateway', appConfig),
+      model: 'permitted',
+      parameters: values,
+    });
+    const result = await initializeCustom({
+      runtime: { appConfig, requestBody: {} },
+      endpoint: 'Gateway',
+      model_parameters: { ...projected.parameters, model: 'permitted' },
+      inferenceParameters: projected.customParameters,
+      db: {
+        getUserKey: jest.fn().mockResolvedValue(''),
+        getUserKeyValues: jest.fn().mockResolvedValue({}),
+      },
+    });
+    expect(result.llmConfig).toMatchObject({ modelKwargs: { include_reasoning: true } });
+    expect(configured.customParams?.reasoningFormat).toBe(ReasoningParameterFormat.reasoningEffort);
+  });
+});
+
+describe('production custom initialization owns the effective inference profile', () => {
+  const cases = [
+    {
+      name: 'OpenRouter reasoning drop',
+      url: 'https://openrouter.ai/api/v1',
+      dropParams: ['reasoning'],
+    },
+    {
+      name: 'OpenRouter effort drop',
+      url: 'https://openrouter.ai/api/v1',
+      dropParams: ['reasoning_effort'],
+    },
+    ...['custom', 'openrouter', 'google', 'anthropic'].map((profile) => ({
+      name: `explicit disabled ${profile}`,
+      url: profile === 'openrouter' ? 'https://openrouter.ai/api/v1' : 'https://gateway.invalid/v1',
+      customParams: {
+        defaultParamsEndpoint: profile,
+        reasoningFormat: ReasoningParameterFormat.disabled,
+      },
+    })),
+  ];
+
+  it.each(
+    ['literal', 'environment'].flatMap((urlKind) => cases.map((policy) => ({ urlKind, policy }))),
+  )(
+    '$urlKind, $policy.name applies the same policy through initializeCustom and SDK construction',
+    async ({ urlKind, policy }) => {
+      process.env[variable] = policy.url;
+      const configured = endpoint({
+        baseURL: urlKind === 'literal' ? policy.url : '${TEST_INFERENCE_GATEWAY_URL}',
+        ...('dropParams' in policy ? { dropParams: policy.dropParams } : {}),
+        customParams: {
+          ...('customParams' in policy ? policy.customParams : { defaultParamsEndpoint: 'custom' }),
+          paramDefinitions: [
+            {
+              key: 'include_reasoning',
+              type: SettingTypes.Boolean,
+              component: ComponentTypes.Checkbox,
+              default: false,
+            },
+          ],
+        },
+      });
+      const text = yaml.dump({ version: '1.3.17', endpoints: { custom: [configured] } });
+      const config = await createCustomConfigLoader({
+        defaultConfigPath: 'production-profile.yaml',
+        loadLocal: () => text,
+        redactConfig: (value) => value,
+      })(false);
+      const loaded = endpointSchema.parse(config?.endpoints?.custom?.[0]);
+      const appConfig: AppConfig = {
+        config: {},
+        fileStrategy: FileSources.local,
+        imageOutputType: EImageOutputType.PNG,
+        endpoints: { custom: [loaded] },
+      };
+      const effective = getAgentInferencePolicy('Gateway', appConfig);
+      expect(effective.customParams?.reasoningFormat).toBe(ReasoningParameterFormat.disabled);
+      const hasCacheProfile = effective.customParams?.defaultParamsEndpoint === 'openrouter';
+      const supplied = {
+        ...(hasCacheProfile ? { promptCache: false, promptCacheTtl: '1h' } : {}),
+        include_reasoning: true,
+      };
+      const parsed = parseAgentInferenceInput({
+        provider: 'Gateway',
+        model: 'permitted',
+        parameters: supplied,
+        appConfig,
+      });
+      const projected = resolveAgentInferenceParameters({
+        ...effective,
+        model: 'permitted',
+        parameters: parsed,
+      });
+      const db = {
+        getUserKey: jest.fn().mockResolvedValue(''),
+        getUserKeyValues: jest.fn().mockResolvedValue({}),
+      };
+      const result = await initializeCustom({
+        runtime: { appConfig, requestBody: {} },
+        endpoint: 'Gateway',
+        db,
+        model_parameters: { ...projected.parameters, model: 'permitted' },
+        inferenceParameters: projected.customParameters,
+      });
+      expect(db.getUserKeyValues).not.toHaveBeenCalled();
+      if (hasCacheProfile) {
+        expect(result.llmConfig).not.toHaveProperty('promptCache', true);
+      }
+      const bodies: Record<string, unknown>[] = [];
+      const client = initializeModel({
+        provider: result.provider ?? Providers.OPENAI,
+        clientOptions: {
+          ...result.llmConfig,
+          streaming: false,
+          configuration: {
+            ...result.configOptions,
+            fetch: async (_url: unknown, init: { body?: unknown } | undefined) => {
+              bodies.push(JSON.parse(String(init?.body)));
+              return Response.json({
+                id: 'chatcmpl-real-initializer',
+                object: 'chat.completion',
+                created: 1,
+                model: 'permitted',
+                choices: [
+                  {
+                    index: 0,
+                    message: { role: 'assistant', content: 'ok' },
+                    finish_reason: 'stop',
+                  },
+                ],
+                usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+              });
+            },
+          },
+        },
+      });
+      await client.invoke('hello');
+      expect(bodies).toHaveLength(1);
+      expect(bodies[0]).not.toHaveProperty('reasoning');
+      expect(bodies[0]).not.toHaveProperty('reasoning_effort');
+      expect(bodies[0]).not.toHaveProperty('include_reasoning');
+      expect(JSON.stringify(bodies[0])).not.toContain('apiKey');
+      expect(loaded.customParams).toEqual(config?.endpoints?.custom?.[0].customParams);
     },
   );
 });
