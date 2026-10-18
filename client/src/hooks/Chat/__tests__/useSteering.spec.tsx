@@ -26,6 +26,7 @@ import {
   appliedSteerIdsByConvoId,
   pendingSteersByConvoId,
   resetSteerFamilies,
+  resetQueueFamilies,
 } from '@librechat/chat/react';
 import type { CodeApprovalMode, TConversation, TFile, TMessage } from 'librechat-data-provider';
 import type { QueuedMessage } from '~/hooks/Chat/queue';
@@ -37,7 +38,6 @@ import {
   pendingRunEndByConvoId,
   drainAfterAbortByIndex,
   runEndByIndex,
-  resetQueueFamilies,
 } from '~/hooks/Chat/queue';
 import {
   getReasoningStateKey,

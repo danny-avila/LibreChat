@@ -1,5 +1,5 @@
 import React, { Profiler, useMemo, useState } from 'react';
-import { isSubmittingFamily, resetSubmitting } from '@librechat/chat/react';
+import { filesFamily, isSubmittingFamily, resetSubmitting } from '@librechat/chat/react';
 import '@testing-library/jest-dom';
 import { DndProvider } from 'react-dnd';
 import { useForm } from 'react-hook-form';
@@ -92,7 +92,7 @@ class StubImage {
 let commits = 0;
 
 function Harness() {
-  const [files, setFiles] = useRecoilState(store.filesByIndex(0));
+  const [files, setFiles] = useAtom(filesFamily(0));
   const [isSubmitting, setIsSubmitting] = useAtom(isSubmittingFamily(0));
   /* ChatView owns this read and passes it in; the harness stands in for it. */
   const [speechSettingsInitialized] = useRecoilState(store.speechSettingsInitialized);
@@ -125,8 +125,6 @@ function Harness() {
         },
         regenerate: () => undefined,
         setSiblingIdx: () => undefined,
-        showPopover: false,
-        setShowPopover: () => undefined,
         abortScroll: false,
         setAbortScroll: () => undefined,
         preset: null,
@@ -203,6 +201,7 @@ const image = () => new File(['image-bytes'], 'cat.png', { type: 'image/png' });
 
 afterEach(() => {
   resetSubmitting(getDefaultStore());
+  getDefaultStore().set(filesFamily(0), new Map());
 });
 
 describe('ChatForm attachments', () => {
