@@ -44,7 +44,7 @@ function scheduleRequest() {
 }
 
 describe('trusted continuation model specs', () => {
-  it.each(['queued-turn', 'subagent-completion', 'background-tool-completion'])(
+  it.each(['agent-queued-turn', 'subagent-completion', 'background-tool-completion'])(
     'restores the owned conversation spec for %s without using event metadata',
     (source) => {
       const req = request();

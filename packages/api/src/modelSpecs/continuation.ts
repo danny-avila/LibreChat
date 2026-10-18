@@ -5,7 +5,7 @@ import { readScheduleFireContext } from '~/schedules/trigger';
 interface AgentTriggerModelSpecRequest {
   _isAgentTrigger?: boolean;
   user?: { id?: string; tenantId?: string };
-  config?: { modelSpecs?: TSpecsConfig | null };
+  config?: { modelSpecs?: Pick<TSpecsConfig, 'enforce' | 'list'> | null };
   body?: Record<string, unknown>;
   resolvedConversation?: {
     user?: string;

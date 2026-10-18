@@ -817,9 +817,14 @@ describe('buildEndpointOption - enforced server continuations', () => {
     else process.env.JWT_SECRET = originalSecret;
   });
 
-  it.each(['queued-turn', 'subagent-completion', 'background-tool-completion', 'schedule'])(
+  it.each([
+    ['agent-queued-turn', 'agent.queued-turn'],
+    ['subagent-completion', 'subagent.completion'],
+    ['background-tool-completion', 'background-tool.completion'],
+    ['schedule', 'schedule.occurrence'],
+  ])(
     'admits a signed %s through the normal enforced endpoint builder',
-    async (source) => {
+    async (source, eventType) => {
       const getConvo = jest.fn(async () => conversation);
       const guard = createSubagentThreadTurnGuard({
         getConvo,
@@ -875,7 +880,7 @@ describe('buildEndpointOption - enforced server continuations', () => {
         },
         event: {
           id: 'event-1',
-          type: scheduled ? 'schedule.occurrence' : 'agent.completion',
+          type: eventType,
           occurredAt: 1_000,
           source: { id: source, type: scheduled ? 'schedule' : 'internal' },
           payload: { spec: 'forged-spec' },
@@ -896,7 +901,7 @@ describe('buildEndpointOption - enforced server continuations', () => {
         agent_id: 'agent-1',
         conversationId: 'conversation-1',
         _isAgentTrigger: true,
-        agentContinuationAdmission: { source: 'queued-turn', spec: savedSpec.name },
+        agentContinuationAdmission: { source: 'agent-queued-turn', spec: savedSpec.name },
         agentCompletion: { version: 1, sourceId: 'subagent-completion' },
         agentTrigger: {
           version: 1,
