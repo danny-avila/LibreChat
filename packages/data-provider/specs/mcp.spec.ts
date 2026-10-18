@@ -962,6 +962,19 @@ describe('oauthToolCatalog', () => {
     expect(MCPOptionsSchema.safeParse({ ...server, oauthToolCatalog: nested }).success).toBe(false);
   });
 
+  it.each([
+    ['an unknown type', { type: 'strng' }],
+    ['an empty type list', { type: [] }],
+    ['an empty enum', { type: 'string', enum: [] }],
+  ])('rejects a property with %s', (_label, property) => {
+    const invalid = [
+      { name: 'read_sheet', inputSchema: { type: 'object', properties: { range: property } } },
+    ];
+    expect(MCPOptionsSchema.safeParse({ ...server, oauthToolCatalog: invalid }).success).toBe(
+      false,
+    );
+  });
+
   it('rejects a misspelled catalog entry key', () => {
     const typo = [{ name: 'read_sheet', input_schema: { type: 'object' } }];
     expect(MCPOptionsSchema.safeParse({ ...server, oauthToolCatalog: typo }).success).toBe(false);

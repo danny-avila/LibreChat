@@ -195,6 +195,17 @@ export const MCP_SERVER_TITLE_ERROR =
   'Title must start with a letter or number and can include spaces, hyphens, and apostrophes';
 
 const ToolSchemaScalarSchema = z.union([z.string(), z.number(), z.boolean(), z.null()]);
+const ToolSchemaTypeSchema = z.enum([
+  'string',
+  'number',
+  'integer',
+  'boolean',
+  'object',
+  'array',
+  'null',
+]);
+const ToolSchemaTypesSchema = z.union([ToolSchemaTypeSchema, z.array(ToolSchemaTypeSchema).min(1)]);
+const ToolSchemaEnumSchema = z.array(ToolSchemaScalarSchema).min(1);
 
 /**
  * One input of a declared tool. Bounded rather than full JSON Schema: it only has to tell tool
@@ -203,15 +214,15 @@ const ToolSchemaScalarSchema = z.union([z.string(), z.number(), z.boolean(), z.n
  */
 const DeclaredToolPropertySchema = z
   .object({
-    type: z.union([z.string(), z.array(z.string())]).optional(),
+    type: ToolSchemaTypesSchema.optional(),
     description: z.string().optional(),
-    enum: z.array(ToolSchemaScalarSchema).optional(),
+    enum: ToolSchemaEnumSchema.optional(),
     default: ToolSchemaScalarSchema.optional(),
     items: z
       .object({
-        type: z.union([z.string(), z.array(z.string())]).optional(),
+        type: ToolSchemaTypesSchema.optional(),
         description: z.string().optional(),
-        enum: z.array(ToolSchemaScalarSchema).optional(),
+        enum: ToolSchemaEnumSchema.optional(),
       })
       .strict()
       .optional(),
