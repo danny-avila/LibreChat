@@ -2739,13 +2739,12 @@ describe('processDeleteRequest', () => {
         Object.assign(new Error('code unavailable'), { response: { status: 500 } }),
       )
       .mockResolvedValueOnce(undefined);
+    const deleteMethods = {
+      [FileSources.vectordb]: vectorDelete,
+      [FileSources.execute_code]: codeDelete,
+    };
     getStrategyFunctions.mockImplementation((source) => ({
-      deleteFile:
-        source === FileSources.vectordb
-          ? vectorDelete
-          : source === FileSources.execute_code
-            ? codeDelete
-            : primaryDelete,
+      deleteFile: deleteMethods[source] ?? primaryDelete,
     }));
     const req = {
       body: { agent_id: 'agent_1', tool_resource: 'file_search' },
