@@ -13,6 +13,9 @@ import { chatSortAtom } from '../chatFilters';
 import Conversations from '../Conversations';
 import store from '~/store';
 
+/** The Running heading names its count, so it resolves to the _one or _other key. */
+const RUNNING_SECTION_HEADING = /^com_a11y_chats_running_section_(one|other)$/;
+
 /* The section resolves a conversation's project from the query cache, so the
  * tree needs a client even though the data hooks themselves are mocked. */
 const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -192,15 +195,11 @@ describe('Conversations: live running order', () => {
     const groupConversationsMock = jest.requireMock('~/utils').groupConversations as jest.Mock;
     groupConversationsMock.mockClear();
     expect(rowOrder()).toEqual(['Newer idle chat', 'Older running chat']);
-    expect(
-      screen.queryByRole('heading', { name: 'com_a11y_chats_running_section_other' }),
-    ).toBeNull();
+    expect(screen.queryByRole('heading', { name: RUNNING_SECTION_HEADING })).toBeNull();
 
     mockActiveJobIds = ['running'];
     view.rerender(renderList());
-    expect(
-      screen.getByRole('heading', { name: 'com_a11y_chats_running_section_other' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: RUNNING_SECTION_HEADING })).toBeInTheDocument();
     expect(rowOrder()).toEqual(['Older running chat', 'Newer idle chat']);
     expect(groupConversationsMock).not.toHaveBeenCalled();
 
@@ -211,9 +210,7 @@ describe('Conversations: live running order', () => {
 
     mockActiveJobIds = [];
     view.rerender(renderList());
-    expect(
-      screen.queryByRole('heading', { name: 'com_a11y_chats_running_section_other' }),
-    ).toBeNull();
+    expect(screen.queryByRole('heading', { name: RUNNING_SECTION_HEADING })).toBeNull();
     expect(rowOrder()).toEqual(['Newer idle chat', 'Older running chat']);
     expect(conversations).toEqual([newer, running]);
   });
@@ -286,9 +283,7 @@ describe('Conversations: pinned chats live in PinnedSection', () => {
         'Running match',
         'Pinned Chat',
       ]);
-      expect(
-        screen.getByRole('heading', { name: 'com_a11y_chats_running_section_other' }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: RUNNING_SECTION_HEADING })).toBeInTheDocument();
     } finally {
       mockActiveJobIds = [];
     }
@@ -565,9 +560,7 @@ describe('Conversations: Running lists chats outside the Chats list', () => {
     renderList();
 
     expect(mockRunningConversationsQuery).toHaveBeenLastCalledWith(['project-chat']);
-    expect(
-      screen.getByRole('heading', { name: 'com_a11y_chats_running_section_other' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: RUNNING_SECTION_HEADING })).toBeInTheDocument();
     const rows = screen.getAllByTestId('convo');
     expect(rows.map((row) => row.textContent)).toEqual(['Project chat', 'Idle chat']);
     /* Project chats list under Chats too, so every row may badge; the row draws it only
@@ -583,9 +576,7 @@ describe('Conversations: Running lists chats outside the Chats list', () => {
       renderList();
 
       expect(mockRunningConversationsQuery).toHaveBeenLastCalledWith([]);
-      expect(
-        screen.queryByRole('heading', { name: 'com_a11y_chats_running_section_other' }),
-      ).toBeNull();
+      expect(screen.queryByRole('heading', { name: RUNNING_SECTION_HEADING })).toBeNull();
     } finally {
       jotaiStore.set(chatSortAtom, previous);
     }
@@ -595,9 +586,7 @@ describe('Conversations: Running lists chats outside the Chats list', () => {
     renderList('Idle');
 
     expect(mockRunningConversationsQuery).toHaveBeenLastCalledWith([]);
-    expect(
-      screen.queryByRole('heading', { name: 'com_a11y_chats_running_section_other' }),
-    ).toBeNull();
+    expect(screen.queryByRole('heading', { name: RUNNING_SECTION_HEADING })).toBeNull();
     expect(screen.getAllByTestId('convo').map((row) => row.textContent)).toEqual(['Idle chat']);
   });
 });
