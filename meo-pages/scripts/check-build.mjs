@@ -16,6 +16,7 @@ if (/\/app\.js|\/core\.js|\/style\.css/.test(html)) {
 }
 
 await import('../functions/api/[[path]].js');
+await import('../functions/api/meo/[[path]].js');
 await import('../functions/oauth/openid/index.js');
 await import('../functions/oauth/openid/callback.js');
 console.log('React Meo AI Web output and temporary Pages auth edge are ready.');
