@@ -199,20 +199,24 @@ const ToolSchemaScalarSchema = z.union([z.string(), z.number(), z.boolean(), z.n
 /**
  * One input of a declared tool. Bounded rather than full JSON Schema: it only has to tell tool
  * search and the model what to pass, and the server validates the real call after sign-in.
+ * Strict, so a keyword it cannot carry fails config validation instead of being dropped.
  */
-const DeclaredToolPropertySchema = z.object({
-  type: z.union([z.string(), z.array(z.string())]).optional(),
-  description: z.string().optional(),
-  enum: z.array(ToolSchemaScalarSchema).optional(),
-  default: ToolSchemaScalarSchema.optional(),
-  items: z
-    .object({
-      type: z.union([z.string(), z.array(z.string())]).optional(),
-      description: z.string().optional(),
-      enum: z.array(ToolSchemaScalarSchema).optional(),
-    })
-    .optional(),
-});
+const DeclaredToolPropertySchema = z
+  .object({
+    type: z.union([z.string(), z.array(z.string())]).optional(),
+    description: z.string().optional(),
+    enum: z.array(ToolSchemaScalarSchema).optional(),
+    default: ToolSchemaScalarSchema.optional(),
+    items: z
+      .object({
+        type: z.union([z.string(), z.array(z.string())]).optional(),
+        description: z.string().optional(),
+        enum: z.array(ToolSchemaScalarSchema).optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
 
 const BaseOptionsSchema = z.object({
   /** Display name for the MCP server */
@@ -295,6 +299,7 @@ const BaseOptionsSchema = z.object({
             properties: z.record(z.string(), DeclaredToolPropertySchema).optional(),
             required: z.array(z.string()).optional(),
           })
+          .strict()
           .optional(),
       }),
     )

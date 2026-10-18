@@ -124,6 +124,8 @@ mcpServers:
     startup: false
     title: E2E OAuth Deferred
     description: Protected MCP fixture whose sign-in waits for the first tool call.
+    # Reached through agent tools only; kept out of the composer so palette specs keep their layout.
+    chatMenu: false
     timeout: 30000
     requiresOAuth: true
     oauthPrompt: on_use

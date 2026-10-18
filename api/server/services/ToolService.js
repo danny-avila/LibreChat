@@ -1171,6 +1171,7 @@ async function loadToolDefinitionsWrapper({
     tools: defsFilteredTools,
     toolOptions: agent.tool_options,
     deferredToolsEnabled,
+    backgroundToolsEnabled: checkCapability(AgentCapabilities.run_in_background),
     knownServerNames: [...(mcpServerNames ?? []), ...mcpRawServerNames],
     pendingOAuthServers,
     pendingOAuthStarts,

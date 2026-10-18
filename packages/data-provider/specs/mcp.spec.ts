@@ -949,6 +949,19 @@ describe('oauthToolCatalog', () => {
     ).toEqual(catalog);
   });
 
+  it('rejects schema keywords it cannot carry instead of dropping them', () => {
+    const nested = [
+      {
+        name: 'read_sheet',
+        inputSchema: {
+          type: 'object',
+          properties: { range: { type: 'object', properties: { a1: { type: 'string' } } } },
+        },
+      },
+    ];
+    expect(MCPOptionsSchema.safeParse({ ...server, oauthToolCatalog: nested }).success).toBe(false);
+  });
+
   it('rejects an input schema that is not an object schema', () => {
     const invalid = [{ name: 'read_sheet', inputSchema: { type: 'string' } }];
     expect(MCPOptionsSchema.safeParse({ ...server, oauthToolCatalog: invalid }).success).toBe(

@@ -1,10 +1,36 @@
-import { Constants, normalizeServerName, splitMCPToolKey } from 'librechat-data-provider';
+import {
+  Constants,
+  normalizeServerName,
+  splitMCPToolKey,
+  stripServerNamePrefix,
+} from 'librechat-data-provider';
 import type { AgentToolOptions } from 'librechat-data-provider';
 import type { LCAvailableTools, ParsedServerConfig } from '~/mcp/types';
 import { canDeferOAuthSignIn, isMCPAllPlaceholder } from '~/mcp/utils';
 import { formatMCPServerTools } from '~/mcp/tools';
 
 const serverPinPrefix = `${Constants.mcp_server}${Constants.mcp_delimiter}`;
+
+/**
+ * Whether the catalog holds a selected tool, matching the definitions loader: the key itself,
+ * or the server-prefix-stripped key whose entry keeps the stored spelling as `serverToolName`.
+ */
+function catalogHasTool(
+  catalog: LCAvailableTools,
+  tool: string,
+  toolPart: string,
+  keyServerName: string,
+): boolean {
+  if (catalog[tool] != null) {
+    return true;
+  }
+  const strippedPart = stripServerNamePrefix(toolPart, keyServerName);
+  if (strippedPart === toolPart) {
+    return false;
+  }
+  const entry = catalog[`${strippedPart}${Constants.mcp_delimiter}${keyServerName}`];
+  return entry?.serverToolName === toolPart;
+}
 
 /**
  * Whether a turn may skip the up-front sign-in for a server and leave it to the server's
@@ -19,6 +45,7 @@ export function shouldDeferMCPOAuthSignIn({
   tools,
   toolOptions,
   deferredToolsEnabled,
+  backgroundToolsEnabled = false,
   knownServerNames,
   catalog,
 }: {
@@ -27,6 +54,8 @@ export function shouldDeferMCPOAuthSignIn({
   tools: readonly string[];
   toolOptions?: AgentToolOptions;
   deferredToolsEnabled: boolean;
+  /** Whether the `run_in_background` capability lets opted-in tools run detached. */
+  backgroundToolsEnabled?: boolean;
   knownServerNames?: readonly string[];
   catalog?: LCAvailableTools;
 }): boolean {
@@ -40,7 +69,7 @@ export function shouldDeferMCPOAuthSignIn({
     if (tool.startsWith(serverPinPrefix)) {
       continue;
     }
-    const [, toolServerName] = splitMCPToolKey(tool, knownServerNames);
+    const [toolPart, toolServerName] = splitMCPToolKey(tool, knownServerNames);
     if (toolServerName !== serverName && toolServerName !== keyServerName) {
       continue;
     }
@@ -49,11 +78,11 @@ export function shouldDeferMCPOAuthSignIn({
     if (
       isMCPAllPlaceholder(tool) ||
       options?.defer_loading !== true ||
-      options.run_in_background === true
+      (backgroundToolsEnabled && options.run_in_background === true)
     ) {
       return false;
     }
-    if (catalog && catalog[tool] == null) {
+    if (catalog && !catalogHasTool(catalog, tool, toolPart, keyServerName)) {
       return false;
     }
     selected++;
@@ -96,6 +125,7 @@ export function createMCPOAuthDeferral({
   tools,
   toolOptions,
   deferredToolsEnabled,
+  backgroundToolsEnabled,
   knownServerNames,
   pendingOAuthServers,
   pendingOAuthStarts,
@@ -104,6 +134,7 @@ export function createMCPOAuthDeferral({
   tools: readonly string[];
   toolOptions?: AgentToolOptions;
   deferredToolsEnabled: boolean;
+  backgroundToolsEnabled?: boolean;
   knownServerNames?: readonly string[];
   /** Servers whose turn-start sign-in prompt is queued. */
   pendingOAuthServers: Pick<Set<string>, 'has' | 'delete'>;
@@ -123,6 +154,7 @@ export function createMCPOAuthDeferral({
       tools,
       toolOptions,
       deferredToolsEnabled,
+      backgroundToolsEnabled,
       knownServerNames,
       catalog,
     });

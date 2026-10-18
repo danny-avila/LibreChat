@@ -91,7 +91,24 @@ describe('shouldDeferMCPOAuthSignIn', () => {
       ...deferredOptions,
       [key('write', 'sheets')]: { defer_loading: true, run_in_background: true },
     };
-    expect(decide({ toolOptions })).toBe(false);
+    expect(decide({ toolOptions, backgroundToolsEnabled: true })).toBe(false);
+    expect(decide({ toolOptions, backgroundToolsEnabled: false })).toBe(true);
+  });
+
+  it('matches a stored pre-strip key against its catalog entry', () => {
+    const stored = key('sheets_read', 'sheets');
+    const catalog = {
+      [key('read', 'sheets')]: { serverToolName: 'sheets_read' },
+    } as unknown as LCAvailableTools;
+    const options = { [stored]: { defer_loading: true } };
+    expect(decide({ tools: [stored], toolOptions: options, catalog })).toBe(true);
+    expect(
+      decide({
+        tools: [stored],
+        toolOptions: options,
+        catalog: { [key('read', 'sheets')]: {} } as LCAvailableTools,
+      }),
+    ).toBe(false);
   });
 
   it('does not require OAuth to be configured up front', () => {
