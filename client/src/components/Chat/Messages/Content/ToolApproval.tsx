@@ -10,13 +10,22 @@ import {
   TriangleAlert,
 } from 'lucide-react';
 import type { Agents } from 'librechat-data-provider';
+import type { KeyboardEvent } from 'react';
 import type { TranslationKeys } from '~/hooks';
+import {
+  isReboundSubmitChord,
+  resolveComposerKeyDown,
+  bindingFromEvent,
+  bindingHash,
+} from '~/utils/shortcuts';
 import { useComposerPresentsApproval } from '~/components/Chat/approval/state';
+import { useOptionalChatSurface } from '~/components/Chat/Subagents/surface';
 import { boundApprovalLabel } from '~/components/Chat/approval/preview';
 import { useApprovalContext, useResumeSubmit } from './ApprovalContext';
+import { cn, forceResize, insertTextAtCursor, logger } from '~/utils';
+import { NO_HOST_BINDINGS } from '~/hooks/Input/useComposerBindings';
 import { ChatContext } from '~/Providers/ChatContext';
 import { useLocalize } from '~/hooks';
-import { cn, logger } from '~/utils';
 
 /**
  * The resume route rejects an `edit` whose `editedArguments` isn't a plain object
@@ -125,6 +134,10 @@ export default function ToolApproval({
     getRegisteredCount,
   } = useApprovalContext();
   const { submitToolApproval } = useResumeSubmit();
+  const chatSurface = useOptionalChatSurface();
+  const enterToSend = chatSurface?.enterToSend ?? false;
+  const { shortcutsEnabled, submitOverride, yieldedChords } =
+    chatSurface?.composerBindings ?? NO_HOST_BINDINGS;
 
   const retainedDecision = getDecision(actionId, toolCallId);
   const initialDecision =
@@ -252,6 +265,72 @@ export default function ToolApproval({
     return null;
   }
 
+  /** Every card submits the whole batch, the same as the lead card's button,
+   *  so a field can submit from any card once every call has a decision. */
+  const submitFromField = (repeat: boolean) => {
+    if (!repeat && ready && !locked) {
+      submitToolApproval(actionId);
+    }
+  };
+
+  const isComposingKey = (e: KeyboardEvent<HTMLTextAreaElement>) =>
+    e.nativeEvent.isComposing || e.key === 'Process' || e.keyCode === 229;
+
+  /** The reason and response fields are prose, so they follow the composer's
+   *  Enter table, Enter-to-send included. */
+  const handleTextKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    const isComposing = isComposingKey(e);
+    if (!isComposing && isReboundSubmitChord(e.nativeEvent, { shortcutsEnabled, submitOverride })) {
+      e.preventDefault();
+      submitFromField(e.repeat);
+      return;
+    }
+    const action = resolveComposerKeyDown(e.nativeEvent, {
+      isComposing,
+      isSubmitting: false,
+      allowSubmitWhileGenerating: false,
+      hasDuringRunModifier: false,
+      shortcutsEnabled,
+      enterToSend,
+      submitOverride,
+      yieldedChords,
+    });
+    if (action === 'none') {
+      return;
+    }
+    e.preventDefault();
+    if (action === 'newline') {
+      insertTextAtCursor(e.currentTarget, '\n');
+      forceResize(e.currentTarget);
+      return;
+    }
+    if (action === 'submit') {
+      submitFromField(e.repeat);
+    }
+  };
+
+  /** The edit field holds JSON, where Enter is always a newline; only
+   *  Ctrl/Cmd+Enter, or a submit shortcut rebound off Enter, submits. */
+  const handleEditKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (isComposingKey(e)) {
+      return;
+    }
+    if (isReboundSubmitChord(e.nativeEvent, { shortcutsEnabled, submitOverride })) {
+      e.preventDefault();
+      submitFromField(e.repeat);
+      return;
+    }
+    if (e.key !== 'Enter' || !(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey) {
+      return;
+    }
+    const binding = bindingFromEvent(e.nativeEvent);
+    if (binding != null && yieldedChords.has(bindingHash(binding))) {
+      return;
+    }
+    e.preventDefault();
+    submitFromField(e.repeat);
+  };
+
   const descriptionNode = safeDescription != null && safeDescription.length > 0 && (
     <p className="text-text-secondary text-sm">{safeDescription}</p>
   );
@@ -348,6 +427,7 @@ export default function ToolApproval({
             value={editText}
             disabled={locked}
             onChange={(e) => updateDecisionDraft({ editText: e.target.value })}
+            onKeyDown={handleEditKeyDown}
             minRows={3}
             maxRows={16}
             className={cn(fieldClasses, 'font-mono text-xs')}
@@ -368,6 +448,7 @@ export default function ToolApproval({
           value={responseText}
           disabled={locked}
           onChange={(e) => updateDecisionDraft({ responseText: e.target.value })}
+          onKeyDown={handleTextKeyDown}
           minRows={2}
           maxRows={12}
           placeholder={localize('com_ui_tool_response_placeholder')}
@@ -381,6 +462,7 @@ export default function ToolApproval({
           value={reason}
           disabled={locked}
           onChange={(e) => updateDecisionDraft({ reason: e.target.value })}
+          onKeyDown={handleTextKeyDown}
           minRows={1}
           maxRows={6}
           placeholder={localize('com_ui_reject_reason_placeholder')}
