@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useMeoSession } from './session';
 import MeoChat from './MeoChat';
 import MeoProjects from './MeoProjects';
+import { uiNavigation } from './uiNavigation.generated';
 import MeoPersonalizationSettings from './MeoPersonalizationSettings';
 import './MeoDesktopApp.css';
 
@@ -105,19 +106,16 @@ export default function MeoDesktopApp() {
         </button>
 
         <nav className="meo-desktop-nav-list" aria-label="Meo AI">
-          {([
-            ['chat', 'Chat', 'chat'],
-            ['work', 'Work', 'work'],
-            ['projects', 'Projects', 'projects'],
-            ['skills', 'Skills', 'skills'],
-          ] as const).map(([key, label, icon]) => (
+          {uiNavigation.filter(item => item.placement === 'primary').map(item => (
             <button
-              key={key}
+              key={item.id}
               type="button"
-              className={`meo-desktop-nav ${!settingsOpen && mode === key ? 'is-active' : ''}`}
-              onClick={() => selectMode(key)}
+              className={`meo-desktop-nav ${!settingsOpen && mode === item.id ? 'is-active' : ''}`}
+              onClick={() => item.id === 'settings'
+                ? setSettingsOpen(true)
+                : selectMode(item.id)}
             >
-              <Icon name={icon} /><span>{label}</span>
+              <Icon name={item.icon} /><span>{item.label}</span>
             </button>
           ))}
         </nav>
@@ -133,9 +131,22 @@ export default function MeoDesktopApp() {
 
         <div className="meo-desktop-sidebar-spacer" />
 
-        <button className={`meo-desktop-nav ${settingsOpen ? 'is-active' : ''}`} type="button" onClick={() => { setSettingsOpen(true); if (window.matchMedia('(max-width: 759px)').matches) setSidebarHidden(true); setInspectorOpen(false); }}>
-          <Icon name="settings" /><span>AI settings</span>
-        </button>
+        {uiNavigation.filter(item => item.placement === 'secondary').map(item => (
+          <button key={item.id}
+            className={`meo-desktop-nav ${item.id === 'settings' ? (settingsOpen ? 'is-active' : '') : (!settingsOpen && mode === item.id ? 'is-active' : '')}`}
+            type="button"
+            onClick={() => {
+              if (item.id === 'settings') {
+                setSettingsOpen(true);
+                if (window.matchMedia('(max-width: 759px)').matches) setSidebarHidden(true);
+                setInspectorOpen(false);
+              } else {
+                selectMode(item.id);
+              }
+            }}>
+            <Icon name={item.icon} /><span>{item.label}</span>
+          </button>
+        ))}
 
         <div className="meo-desktop-device-card">
           <Icon name="computer" />
