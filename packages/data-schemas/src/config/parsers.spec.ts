@@ -63,6 +63,9 @@ describe('redactMessage', () => {
     expect(redactMessage('https://example.test/?api_key=secretvalue&next=true')).toBe(
       'https://example.test/?api_key=[REDACTED]&next=true',
     );
+    expect(redactMessage('https://example.test/?input=x&appid=secretvalue&limit=1')).toBe(
+      'https://example.test/?input=x&appid=[REDACTED]&limit=1',
+    );
   });
 
   it('masks email addresses in messages', () => {

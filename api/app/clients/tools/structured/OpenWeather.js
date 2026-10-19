@@ -1,4 +1,5 @@
 const fetch = require('node-fetch');
+const { redactMessage } = require('@librechat/data-schemas');
 const { Tool } = require('@librechat/agents/langchain/tools');
 const { getEnvironmentVariable } = require('@librechat/agents/langchain/utils/env');
 
@@ -347,7 +348,7 @@ class OpenWeather extends Tool {
       const roundedJson = roundTemperatures(json);
       return JSON.stringify(roundedJson);
     } catch (err) {
-      return `Error: ${err.message}`;
+      return `Error: ${redactMessage(err.message)}`;
     }
   }
 }
