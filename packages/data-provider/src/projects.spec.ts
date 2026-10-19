@@ -15,9 +15,9 @@ describe('project file destinations', () => {
     expect(getProjectUploadResource(type, { fileSearch: true, codeExecution: true })).toBe(
       EToolResources.execute_code,
     );
-    expect(
-      getProjectUploadResource(type, { fileSearch: true, codeExecution: false }),
-    ).toBeUndefined();
+    expect(getProjectUploadResource(type, { fileSearch: true, codeExecution: false })).toBe(
+      EToolResources.file_search,
+    );
   });
 
   it('keeps searchable documents on File Search and supports code-only permissions', () => {

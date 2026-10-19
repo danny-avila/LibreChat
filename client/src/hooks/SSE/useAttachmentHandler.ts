@@ -59,6 +59,7 @@ export default function useAttachmentHandler(queryClient?: QueryClient) {
           | 'com_ui_project_output_added'
           | 'com_ui_project_output_limit'
           | 'com_ui_project_output_changed'
+          | 'com_ui_project_output_unavailable'
           | 'com_ui_project_output_failed' = 'com_ui_project_output_failed';
         if (status === 'added') {
           messageKey = 'com_ui_project_output_added';
@@ -66,6 +67,8 @@ export default function useAttachmentHandler(queryClient?: QueryClient) {
           messageKey = 'com_ui_project_output_limit';
         } else if (code === 'project_changed') {
           messageKey = 'com_ui_project_output_changed';
+        } else if (code === 'project_file_unavailable') {
+          messageKey = 'com_ui_project_output_unavailable';
         }
         showToast({
           message: localize(messageKey, { filename: fileData.filename }),

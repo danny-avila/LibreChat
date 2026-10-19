@@ -18,7 +18,10 @@ import ProjectResources from './ProjectResources';
 const mockUploadMutateAsync = jest.fn();
 const mockCanUseFileSearch = jest.fn(() => true);
 const mockCanUseCode = jest.fn(() => true);
-const mockStartupConfig = jest.fn(() => ({ projects: { codeExecution: false } }));
+const mockStartupConfig = jest.fn(() => ({
+  ragEnabled: true,
+  projects: { codeExecution: false },
+}));
 const mockAddMutateAsync = jest.fn();
 const mockRemoveMutateAsync = jest.fn();
 const mockRefetch = jest.fn();
@@ -176,7 +179,7 @@ describe('ProjectResources', () => {
     };
     mockCanUseFileSearch.mockReturnValue(true);
     mockCanUseCode.mockReturnValue(true);
-    mockStartupConfig.mockReturnValue({ projects: { codeExecution: false } });
+    mockStartupConfig.mockReturnValue({ ragEnabled: true, projects: { codeExecution: false } });
     mockAddMutateAsync.mockResolvedValue({});
     mockRemoveMutateAsync.mockResolvedValue({});
   });
@@ -208,7 +211,7 @@ describe('ProjectResources', () => {
   ])(
     'uploads %s to Run Code and associates the unindexed canonical file',
     async (filename, type) => {
-      mockStartupConfig.mockReturnValue({ projects: { codeExecution: true } });
+      mockStartupConfig.mockReturnValue({ ragEnabled: true, projects: { codeExecution: true } });
       mockUploadMutateAsync.mockResolvedValue({
         ...uploadedFile,
         filename,
@@ -234,7 +237,7 @@ describe('ProjectResources', () => {
   );
 
   it('keeps document uploads on File Search when project code is enabled', async () => {
-    mockStartupConfig.mockReturnValue({ projects: { codeExecution: true } });
+    mockStartupConfig.mockReturnValue({ ragEnabled: true, projects: { codeExecution: true } });
     mockUploadMutateAsync.mockResolvedValue(uploadedFile);
     renderResources();
     fireEvent.change(screen.getByTestId('project-upload-input'), {
@@ -245,8 +248,30 @@ describe('ProjectResources', () => {
     expect(form.get('tool_resource')).toBe('file_search');
   });
 
+  it.each([
+    ['report.pdf', 'application/pdf'],
+    ['report.txt', 'text/plain'],
+  ])('uploads %s to Run Code when File Search is unavailable', async (filename, type) => {
+    mockStartupConfig.mockReturnValue({ ragEnabled: false, projects: { codeExecution: true } });
+    mockUploadMutateAsync.mockResolvedValue({
+      ...uploadedFile,
+      filename,
+      type,
+      embedded: false,
+      source: FileSources.local,
+    });
+    renderResources();
+    fireEvent.change(screen.getByTestId('project-upload-input'), {
+      target: { files: [new File(['reference'], filename, { type })] },
+    });
+    await waitFor(() => expect(mockAddMutateAsync).toHaveBeenCalled());
+    const [form] = mockUploadMutateAsync.mock.calls[0] as [FormData];
+    expect(form.get('tool_resource')).toBe('execute_code');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+  });
+
   it('supports code-only upload permissions and reports sandbox upload failure', async () => {
-    mockStartupConfig.mockReturnValue({ projects: { codeExecution: true } });
+    mockStartupConfig.mockReturnValue({ ragEnabled: true, projects: { codeExecution: true } });
     mockCanUseFileSearch.mockReturnValue(false);
     mockUploadMutateAsync.mockRejectedValue(new Error('Provider unavailable'));
     renderResources();
@@ -263,18 +288,22 @@ describe('ProjectResources', () => {
     expect(screen.getByRole('button', { name: 'Retry' })).toBeEnabled();
   });
 
-  it('refuses data uploads without the Run Code grant and retains a useful failure state', async () => {
-    mockStartupConfig.mockReturnValue({ projects: { codeExecution: true } });
+  it('retains spreadsheet uploads for File Search users without the Run Code grant', async () => {
+    mockStartupConfig.mockReturnValue({ ragEnabled: true, projects: { codeExecution: true } });
     mockCanUseCode.mockReturnValue(false);
+    mockUploadMutateAsync.mockResolvedValue({
+      ...uploadedFile,
+      filename: 'data.csv',
+      type: 'text/csv',
+    });
     renderResources();
     fireEvent.change(screen.getByTestId('project-upload-input'), {
       target: { files: [new File(['data'], 'data.csv', { type: 'text/csv' })] },
     });
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      "This file type can't be attached here.",
-    );
-    expect(mockUploadMutateAsync).not.toHaveBeenCalled();
-    expect(mockAddMutateAsync).not.toHaveBeenCalled();
+    await waitFor(() => expect(mockAddMutateAsync).toHaveBeenCalled());
+    const [form] = mockUploadMutateAsync.mock.calls[0] as [FormData];
+    expect(form.get('tool_resource')).toBe('file_search');
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });
 
   it('uses the canonical upload identity and exposes pending and failed attempts', async () => {

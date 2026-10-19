@@ -102,6 +102,7 @@ interface PrimedCodeFile {
 export async function selectCodeFiles({
   files,
   privateFileIds,
+  projectFileIds = [],
   routeKey,
   getFileInfo,
   concurrency,
@@ -109,6 +110,7 @@ export async function selectCodeFiles({
 }: {
   files: Array<TFile | null | undefined>;
   privateFileIds?: ReadonlySet<string>;
+  projectFileIds?: readonly string[];
   routeKey: string;
   getFileInfo: (ref: CodeEnvRef) => Promise<CodeFileInfo | null>;
   concurrency?: number;
@@ -116,6 +118,7 @@ export async function selectCodeFiles({
 }): Promise<{ selected: PrimedCodeFile[]; skippedNoRef: number; skippedSuperseded: number }> {
   let skippedNoRef = 0;
   let skippedSuperseded = 0;
+  const projectIds = new Set(projectFileIds);
   const candidates = [];
   const registry = createCodeApiUploadRegistry();
   for (const file of sortCodeFilesByDestinationPriority(files, privateFileIds)) {
@@ -166,15 +169,21 @@ export async function selectCodeFiles({
       };
     }),
   );
-  /** Collapse confirmed source-path collisions before renaming recovery files.
-   * Distinct old paths that normalize alike are independent inputs, not superseded copies. */
+  /** A stored path is superseded only within its originating chat. Project files
+   * from other chats (or uploads without a chat) remain independent inputs. */
   const storedDestinations = new Set<string>();
   const surviving = resolved.filter((candidate) => {
-    if (candidate.storedName && storedDestinations.has(candidate.storedName)) {
+    const scope =
+      projectIds.size === 0
+        ? ''
+        : (candidate.file.conversationId ??
+          (projectIds.has(candidate.file.file_id) ? candidate.file.file_id : ''));
+    const storedDestination = JSON.stringify([scope, candidate.storedName]);
+    if (candidate.storedName && storedDestinations.has(storedDestination)) {
       skippedSuperseded++;
       return false;
     }
-    if (candidate.storedName) storedDestinations.add(candidate.storedName);
+    if (candidate.storedName) storedDestinations.add(storedDestination);
     return true;
   });
   /** Keep shared files independent of each agent's private set. Within each
@@ -195,6 +204,21 @@ export async function selectCodeFiles({
       continue;
     }
     if (!reserveCodeDestination(destinations, candidate.sandboxName)) {
+      if (projectIds.size > 0) {
+        // Live objects mount at their stored path, so a displaced input needs a new upload.
+        selected.push({
+          ...candidate,
+          isActive: false,
+          sandboxName: claimCodeDestination(
+            destinations,
+            getCodeEnvUploadFilename(
+              resolveSandboxFilename(candidate.sandboxName, candidate.file.type),
+            ),
+            candidate.file.file_id,
+          ),
+        });
+        continue;
+      }
       skippedSuperseded++;
       continue;
     }

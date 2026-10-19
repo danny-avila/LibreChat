@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { FileContext, FileSources } from 'librechat-data-provider';
 import { createModels, createMethods } from '@librechat/data-schemas';
+import { configSchema, FileContext, FileSources } from 'librechat-data-provider';
 import type { IChatProject, IMongoFile } from '@librechat/data-schemas';
 import {
   getChatProjectFileAvailability,
@@ -9,6 +9,7 @@ import {
   resolveChatProjectFiles,
 } from './resources';
 import { getChatProjectContextKey, resolveChatProjectContext } from './context';
+import { hasResumeProjectContextChanged } from './resume';
 
 let mongoServer: InstanceType<typeof MongoMemoryServer>;
 let File: mongoose.Model<IMongoFile>;
@@ -63,6 +64,73 @@ const getProjectFiles: ReturnType<typeof createMethods>['getProjectFiles'] = (op
   createMethods(mongoose).getProjectFiles(options);
 
 describe('ChatProject resource hydration', () => {
+  it.each(['atomic', 'legacy'])(
+    'resumes a project approval after %s sandbox reprovisioning',
+    async (writer) => {
+      const owner = new mongoose.Types.ObjectId().toString();
+      const methods = createMethods(mongoose);
+      await File.create(file('data', owner, { embedded: false, type: 'text/csv' }));
+      const contentTime = new Date('2025-01-01T00:00:00Z');
+      await File.updateOne(
+        { file_id: 'data' },
+        { $set: { updatedAt: contentTime } },
+        { timestamps: false },
+      );
+      const project = await methods.createChatProject(owner, { name: 'Code approval' });
+      const projectId = project._id!.toString();
+      await methods.addChatProjectFile(owner, projectId, 'data', { codeExecution: true });
+      await mongoose.models.Conversation.create({
+        user: owner,
+        conversationId: 'approval-chat',
+        endpoint: 'agents',
+        chatProjectId: projectId,
+      });
+      const before = await resolveChatProjectContext(
+        { userId: owner, conversationId: 'approval-chat', codeExecution: true },
+        methods,
+      );
+      const ref = {
+        kind: 'user' as const,
+        id: owner,
+        storage_session_id: 'fresh-session',
+        file_id: 'fresh-storage-file',
+      };
+      if (writer === 'atomic') {
+        await methods.updateFileCodeEnvRef({
+          file_id: 'data',
+          routeKey: 'default',
+          ref,
+          legacyRef: ref,
+        });
+      } else {
+        const pointers = {
+          file_id: 'data',
+          'metadata.codeEnvRef': ref,
+          'metadata.codeEnvRefs.default': ref,
+        };
+        await methods.updateFile(pointers);
+      }
+      const req = {
+        user: { id: owner },
+        config: configSchema.parse({ version: '1.3.11', projects: { codeExecution: true } }),
+      };
+      const logger = { warn: jest.fn(), error: jest.fn() };
+      expect(
+        await hasResumeProjectContextChanged(
+          { req, conversationId: 'approval-chat', expectedKey: getChatProjectContextKey(before) },
+          { ...methods, logger },
+        ),
+      ).toBe(false);
+      await methods.updateFile({ file_id: 'data', bytes: 24 });
+      expect(
+        await hasResumeProjectContextChanged(
+          { req, conversationId: 'approval-chat', expectedKey: getChatProjectContextKey(before) },
+          { ...methods, logger },
+        ),
+      ).toBe(true);
+    },
+  );
+
   it('keeps a generated file compatible when only its deferred preview finishes', async () => {
     const owner = new mongoose.Types.ObjectId().toString();
     const methods = createMethods(mongoose);

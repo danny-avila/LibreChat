@@ -46,15 +46,18 @@ export function createProjectOutputSaver({ addGeneratedProjectFile, logger }: Ou
           return { projectId, status: 'failed', code: result.error.code };
         }
         const { project, file: canonicalFile } = result.value;
-        const resource = toCanonicalProjectResource(canonicalFile, true);
-        const existingIndex = context.resources.findIndex(
-          (entry) => entry.file_id === resource.file_id,
-        );
-        const resources = [...context.resources];
-        if (existingIndex < 0) {
-          resources.push(resource);
-        } else {
-          resources[existingIndex] = resource;
+        let resources = context.resources;
+        // Keep a guidance-only snapshot complete at its own level for approval resumes.
+        if (resources.length === new Set(context.file_ids).size) {
+          const resource = toCanonicalProjectResource(canonicalFile, true);
+          const existingIndex = resources.findIndex((entry) => entry.file_id === resource.file_id);
+          const updatedResources = [...resources];
+          if (existingIndex < 0) {
+            updatedResources.push(resource);
+          } else {
+            updatedResources[existingIndex] = resource;
+          }
+          resources = updatedResources;
         }
         context.contextRevision = project.contextRevision ?? 0;
         context.file_ids = [...(project.file_ids ?? [])];

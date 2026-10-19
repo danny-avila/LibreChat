@@ -759,6 +759,7 @@ const primeFiles = async (options) => {
   const { selected, skippedNoRef, skippedSuperseded } = await selectCodeFiles({
     files: dbFiles,
     privateFileIds: agentResourceIds,
+    projectFileIds: req.chatProjectContext?.file_ids,
     routeKey: executionRouteKey,
     getFileInfo: (ref) => getSessionFileInfo(ref, req, codeApiRoute, signal),
     concurrency: uploadOptions.concurrency,

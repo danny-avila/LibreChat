@@ -106,7 +106,8 @@ export default function ProjectResources({ project }: ProjectResourcesProps) {
     permissionType: PermissionTypes.RUN_CODE,
     permission: Permissions.USE,
   });
-  const canUploadForSearch = fileSearchEnabled && canUseFileSearch;
+  const canUploadForSearch =
+    startupConfig?.ragEnabled === true && fileSearchEnabled && canUseFileSearch;
   const canUploadForCode = projectCodeExecution && codeEnabled && canUseCode;
   const canUploadFromDevice = canUploadForSearch || canUploadForCode;
   const { showToast } = useToastContext();

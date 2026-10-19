@@ -129,6 +129,21 @@ describe('useAttachmentHandler upsert-by-file_id', () => {
     },
   );
 
+  it('keeps an unavailable output in the chat without suggesting an ineligible picker entry', () => {
+    const ctx = setup();
+    ctx.handle(
+      makeAttachment({
+        projectFile: { projectId: 'analysis', status: 'failed', code: 'project_file_unavailable' },
+      }),
+    );
+    expect(ctx.list).toHaveLength(1);
+    expect(mockShowToast).toHaveBeenCalledWith({
+      message:
+        "data.xlsx was saved to this chat. This file is not available for the project's file tools.",
+      severity: 'warning',
+    });
+  });
+
   it('appends a new attachment when no record with the same file_id exists', () => {
     const ctx = setup();
     ctx.handle(makeAttachment({ status: 'pending' }));

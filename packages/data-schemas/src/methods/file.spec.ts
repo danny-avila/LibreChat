@@ -1836,6 +1836,46 @@ describe('File Methods', () => {
       );
     });
 
+    it.each(['atomic', 'legacy'])(
+      'preserves the content timestamp when refreshing %s sandbox pointers',
+      async (writer) => {
+        const ownerId = new mongoose.Types.ObjectId();
+        const fileId = uuidv4();
+        await makeRefFile(fileId, ownerId);
+        const contentTime = new Date('2025-01-01T00:00:00Z');
+        await runAsSystem(() =>
+          File.updateOne(
+            { file_id: fileId },
+            { $set: { updatedAt: contentTime } },
+            { timestamps: false },
+          ),
+        );
+        const pointers = {
+          file_id: fileId,
+          'metadata.codeEnvRef': ref('default', 'new-remote'),
+          'metadata.codeEnvRefs.default': ref('default', 'new-remote'),
+        };
+        await runAsSystem(() =>
+          writer === 'atomic'
+            ? fileMethods.updateFileCodeEnvRef({
+                file_id: fileId,
+                routeKey: 'default',
+                ref: ref('default', 'new-remote'),
+                legacyRef: ref('default', 'new-remote'),
+              })
+            : fileMethods.updateFile(pointers),
+        );
+        const refreshed = await runAsSystem(() => fileMethods.findFileById(fileId));
+        expect(refreshed?.updatedAt).toEqual(contentTime);
+        expect((refreshed?.metadata?.codeEnvRef as { file_id: string } | undefined)?.file_id).toBe(
+          'new-remote',
+        );
+        await runAsSystem(() => fileMethods.updateFile({ file_id: fileId, bytes: 200 }));
+        const rewritten = await runAsSystem(() => fileMethods.findFileById(fileId));
+        expect(rewritten?.updatedAt!.getTime()).toBeGreaterThan(contentTime.getTime());
+      },
+    );
+
     it('rejects a route key that would write outside its entry', async () => {
       const ownerId = new mongoose.Types.ObjectId();
       const fileId = uuidv4();

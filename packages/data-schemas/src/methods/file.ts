@@ -1181,9 +1181,13 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       $unset: { expiresAt: '' },
     };
     const query: FilterQuery<IMongoFile> = extraFilter ? { file_id, ...extraFilter } : { file_id };
+    // Sandbox pointer refreshes do not change the file content used by project approvals.
+    const updatesContent = Object.keys(update).some(
+      (key) => key !== 'metadata.codeEnvRef' && !key.startsWith('metadata.codeEnvRefs.'),
+    );
     return File.findOneAndUpdate(query, updateOperation, {
       new: true,
-      timestamps: Object.keys(update).length > 0,
+      timestamps: updatesContent,
     }).lean<IMongoFile>();
   }
 
@@ -1235,7 +1239,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     return File.findOneAndUpdate(
       { file_id },
       { $set: update, $unset: { expiresAt: '' } },
-      { new: true },
+      { new: true, timestamps: false },
     ).lean<IMongoFile>();
   }
 

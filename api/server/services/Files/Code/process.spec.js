@@ -4321,6 +4321,64 @@ describe('Code Process', () => {
     const bySession = (result) =>
       Object.fromEntries(result.files.map((f) => [f.storage_session_id, f.name]));
 
+    it('reuploads a colliding project output from another chat before advertising an alias', async () => {
+      const upload = jest.fn().mockImplementation(async ({ filename }) => ({
+        storage_session_id: `fresh-${filename}`,
+        file_id: `fresh-${filename}`,
+        filename,
+      }));
+      getStrategyFunctions.mockImplementation(() => ({
+        getDownloadStream: jest.fn().mockResolvedValue('backed original bytes'),
+        handleFileUpload: upload,
+      }));
+      mockAxios.mockResolvedValue({
+        data: { originalFilename: 'results.csv', lastModified: new Date().toISOString() },
+      });
+      getFiles.mockResolvedValue([
+        {
+          ...codeFile({
+            file_id: 'older',
+            filename: 'results.csv',
+            storage_session_id: 'old',
+            context: 'execute_code',
+            createdAt: new Date('2025-01-01'),
+          }),
+          conversationId: 'chat-a',
+          type: 'text/csv',
+        },
+        {
+          ...codeFile({
+            file_id: 'newer',
+            filename: 'results.csv',
+            storage_session_id: 'new',
+            context: 'execute_code',
+            createdAt: new Date('2025-01-02'),
+          }),
+          conversationId: 'chat-b',
+          type: 'text/csv',
+        },
+      ]);
+      const result = await primeFiles({
+        req: {
+          user: { id: 'user-123', role: 'USER' },
+          chatProjectContext: { file_ids: ['older', 'newer'] },
+        },
+        tool_resources: { execute_code: { file_ids: ['older', 'newer'] } },
+        agentId: 'agent-id',
+      });
+      expect(result.files).toHaveLength(2);
+      expect(upload).toHaveBeenCalledTimes(1);
+      const alias = upload.mock.calls[0][0].filename;
+      expect(alias).toMatch(/^results-.+\.csv$/);
+      expect(result.files).toContainEqual(
+        expect.objectContaining({ id: `fresh-${alias}`, name: alias }),
+      );
+      expect(result.files).toContainEqual(
+        expect.objectContaining({ id: 'newer-sandbox', name: 'results.csv' }),
+      );
+      expect(result.toolContext).toContain(`/mnt/data/${alias} (project file)`);
+    });
+
     it.each([false, true])('keeps a provisioned alias when expired=%s', async (expired) => {
       setupActiveSessions();
       const upload = jest.fn().mockImplementation(async ({ filename }) => ({

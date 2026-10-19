@@ -63,5 +63,8 @@ export function getProjectUploadResource(
   if (permissions.codeExecution && canToolResourceConsume(EToolResources.execute_code, mimeType)) {
     return EToolResources.execute_code;
   }
+  if (permissions.fileSearch && canToolResourceConsume(EToolResources.file_search, mimeType)) {
+    return EToolResources.file_search;
+  }
   return undefined;
 }

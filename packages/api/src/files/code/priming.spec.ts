@@ -75,6 +75,73 @@ describe('selectCodeFiles', () => {
     expect(getFileInfo).toHaveBeenCalledTimes(2);
   });
 
+  it.each([false, true])(
+    'keeps same-named project outputs from different chats reachable (expired=%s)',
+    async (expired) => {
+      const first = {
+        ...file('first', 'results.csv', { sandboxFilename: 'results.csv' }),
+        conversationId: 'chat-a',
+      };
+      const second = {
+        ...file('second', 'results.csv', { sandboxFilename: 'results.csv' }, 2),
+        conversationId: 'chat-b',
+      };
+      const result = await selectCodeFiles({
+        files: [first, second],
+        projectFileIds: ['first', 'second'],
+        privateFileIds: new Set(['first', 'second']),
+        routeKey: 'default',
+        getFileInfo: async () => (expired ? null : fresh),
+      });
+      expect(result.selected).toHaveLength(2);
+      expect(result.skippedSuperseded).toBe(0);
+      expect(result.selected.find((entry) => entry.file.file_id === 'second')?.sandboxName).toBe(
+        'results.csv',
+      );
+      expect(result.selected.find((entry) => entry.file.file_id === 'first')?.sandboxName).toMatch(
+        /^results-.+\.csv$/,
+      );
+      expect(result.selected.find((entry) => entry.file.file_id === 'first')?.isActive).toBe(false);
+      expect(result.selected.find((entry) => entry.file.file_id === 'second')?.isActive).toBe(
+        !expired,
+      );
+    },
+  );
+
+  it('keeps independent project uploads without a conversation reachable', async () => {
+    const result = await selectCodeFiles({
+      files: [
+        file('first', 'results.csv', { sandboxFilename: 'results.csv' }),
+        file('second', 'results.csv', { sandboxFilename: 'results.csv' }, 2),
+      ],
+      projectFileIds: ['first', 'second'],
+      routeKey: 'default',
+      getFileInfo: async () => fresh,
+    });
+    expect(result.selected).toHaveLength(2);
+    expect(new Set(result.selected.map((entry) => entry.sandboxName)).size).toBe(2);
+  });
+
+  it('still supersedes an earlier project file at the same path in the same chat', async () => {
+    const result = await selectCodeFiles({
+      files: [
+        {
+          ...file('first', 'results.csv', { sandboxFilename: 'results.csv' }),
+          conversationId: 'chat-a',
+        },
+        {
+          ...file('second', 'results.csv', { sandboxFilename: 'results.csv' }, 2),
+          conversationId: 'chat-a',
+        },
+      ],
+      projectFileIds: ['first', 'second'],
+      routeKey: 'default',
+      getFileInfo: async () => fresh,
+    });
+    expect(result.selected.map((entry) => entry.file.file_id)).toEqual(['second']);
+    expect(result.skippedSuperseded).toBe(1);
+  });
+
   it('lets an output supersede an aliased upload at its actual destination', async () => {
     const result = await selectCodeFiles({
       files: [

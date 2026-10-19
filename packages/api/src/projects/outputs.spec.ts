@@ -131,6 +131,39 @@ it('does no project mutation with the capability disabled or outside a project',
   ).toEqual([]);
 });
 
+it('keeps a guidance-only snapshot compatible after saving an output to a nonempty project', async () => {
+  const { req, outputs, methods, save, logger } = await setup();
+  await save(req, outputs[0]);
+  req.chatProjectContext = await resolveChatProjectContext(
+    {
+      userId: req.user.id,
+      conversationId: 'analysis-chat',
+      includeResources: false,
+      codeExecution: true,
+    },
+    methods,
+  );
+  expect(req.chatProjectContext?.file_ids).toEqual(['first']);
+  expect(req.chatProjectContext?.resources).toEqual([]);
+  expect(await save(req, outputs[1])).toEqual({
+    projectId: req.chatProjectContext!.projectId,
+    status: 'added',
+  });
+  const restored = await resolveChatProjectContext(
+    {
+      userId: req.user.id,
+      conversationId: 'analysis-chat',
+      includeResources: false,
+      codeExecution: true,
+    },
+    methods,
+  );
+  expect(req.chatProjectContext?.file_ids).toEqual(['first', 'second']);
+  expect(req.chatProjectContext?.resources).toEqual([]);
+  expect(getChatProjectContextKey(req.chatProjectContext)).toBe(getChatProjectContextKey(restored));
+  expect(logger.warn).not.toHaveBeenCalled();
+});
+
 it('preserves the chat output and translates an operational failure into a safe project-save code', async () => {
   const { req, outputs, logger } = await setup();
   const save = createProjectOutputSaver({
