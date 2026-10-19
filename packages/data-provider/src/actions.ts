@@ -171,14 +171,22 @@ class RequestConfig {
  * The abort signal for one action call: `timeout` alone only fires on an idle socket, so a
  * deadline signal caps the whole exchange, combined with the caller's own `signal`.
  */
-function requestSignal(timeout?: number, signal?: AbortSignal): { signal?: AbortSignal } {
-  const signals = [signal, timeout != null ? AbortSignal.timeout(timeout) : undefined].filter(
-    (value): value is AbortSignal => value != null,
-  );
-  if (signals.length === 0) {
-    return {};
+function requestSignal(
+  timeout?: number,
+  signal?: AbortSignal,
+): { signal?: AbortSignal; timeoutErrorMessage?: string } {
+  if (timeout == null) {
+    return signal ? { signal } : {};
   }
-  return { signal: signals.length === 1 ? signals[0] : AbortSignal.any(signals) };
+  /** Named like `OUTBOUND_TIMEOUT_ERROR` in `@librechat/api`, so a timeout is never read as a stop. */
+  const message = `Exceeded timeouts.actionsMs (${timeout} ms); raise it in librechat.yaml if this upstream is legitimately slow`;
+  const controller = new AbortController();
+  const reason = Object.assign(new Error(message), { name: 'OutboundTimeoutError' });
+  setTimeout(() => controller.abort(reason), timeout).unref?.();
+  return {
+    signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
+    timeoutErrorMessage: message,
+  };
 }
 
 class RequestExecutor {

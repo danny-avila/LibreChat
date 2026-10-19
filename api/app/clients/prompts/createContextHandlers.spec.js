@@ -45,5 +45,6 @@ it('still fetches context on file-only messages in full-document mode', async ()
     headers: { Authorization: 'Bearer signed-token' },
     timeout: 30_000,
     signal: expect.any(AbortSignal),
+    timeoutErrorMessage: expect.any(String),
   });
 });

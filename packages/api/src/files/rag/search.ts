@@ -95,7 +95,7 @@ export async function executeFileSearchQuery({
           Authorization: `Bearer ${jwtToken}`,
           'Content-Type': 'application/json',
         },
-        ...outboundRequestBudget(timeout),
+        ...outboundRequestBudget(timeout, 'ragMs'),
       })
       .then((result) => ({ data: result.data, file_id: file.file_id }))
       .catch((error) => {

@@ -173,6 +173,7 @@ describe('encodeAndFormatImages', () => {
       responseType: 'arraybuffer',
       timeout: 30_000,
       signal: expect.any(AbortSignal),
+      timeoutErrorMessage: expect.any(String),
     });
     expect(memoryGuard.runGuardedEncode).toHaveBeenCalledWith(file.bytes, expect.any(Function));
   });

@@ -142,7 +142,7 @@ export async function encodeAndFormatImages(
         try {
           const response = await httpClient.get<ArrayBuffer>(imageURL, {
             responseType: 'arraybuffer',
-            ...outboundRequestBudget(fetchTimeoutMs),
+            ...outboundRequestBudget(fetchTimeoutMs, 'imageFetchMs'),
           });
           return [preparedFile, Buffer.from(response.data).toString('base64')];
         } catch (error) {

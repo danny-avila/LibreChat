@@ -221,7 +221,7 @@ export async function refreshAccessToken(
       maxRedirects: 0,
       httpsAgent: getActionOAuthAgents(allowedAddresses).httpsAgent,
       data: params.toString(),
-      ...outboundRequestBudget(timeout),
+      ...outboundRequestBudget(timeout, 'actionsMs'),
     });
     await processAccessTokens(
       response.data,

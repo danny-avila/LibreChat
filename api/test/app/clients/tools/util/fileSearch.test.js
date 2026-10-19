@@ -179,6 +179,7 @@ describe('fileSearch.js - tuple return validation', () => {
           },
           timeout: 30_000,
           signal: expect.any(AbortSignal),
+          timeoutErrorMessage: expect.any(String),
         },
       );
     });

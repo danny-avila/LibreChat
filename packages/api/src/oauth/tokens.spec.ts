@@ -177,7 +177,7 @@ describe('action OAuth token exchange validation', () => {
     expect(params.get('grant_type')).toBe('refresh_token');
     expect(params.get('client_id')).toBe('client-id');
     expect(params.get('client_secret')).toBe('client-secret');
-    expect(config.timeout).toBe(60_000);
+    expect(config.timeout).toBe(300_000);
   });
 
   it('bounds the refresh-token exchange by the caller timeout', async () => {

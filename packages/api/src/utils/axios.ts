@@ -3,6 +3,7 @@ import { Buffer } from 'buffer';
 import { logger } from '@librechat/data-schemas';
 import type { AxiosInstance, AxiosProxyConfig, AxiosError } from 'axios';
 import { isClientDisconnect } from './streams';
+import { getOutboundTimeout } from './timeouts';
 
 /**
  * Render `error.response.data` as a small, log-safe value. Axios surfaces
@@ -54,6 +55,12 @@ export const logAxiosError = ({
   }
   let logMessage = message;
   try {
+    const timeout = getOutboundTimeout(error);
+    if (timeout) {
+      logMessage = `${message} ${timeout.message}`;
+      logger.warn(logMessage);
+      return logMessage;
+    }
     const stack =
       error != null
         ? (error as Error | AxiosError)?.stack || 'No stack trace available'

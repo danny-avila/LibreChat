@@ -73,7 +73,7 @@ export function createRagContextHandlers({
         headers: {
           Authorization: `Bearer ${jwtToken}`,
         },
-        ...outboundRequestBudget(timeout),
+        ...outboundRequestBudget(timeout, 'ragMs'),
       });
     }
 
@@ -89,7 +89,7 @@ export function createRagContextHandlers({
           Authorization: `Bearer ${jwtToken}`,
           'Content-Type': 'application/json',
         },
-        ...outboundRequestBudget(timeout),
+        ...outboundRequestBudget(timeout, 'ragMs'),
       },
     );
   };

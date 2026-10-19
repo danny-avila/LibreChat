@@ -63,6 +63,7 @@ describe('legacy RAG context', () => {
         headers: { Authorization: 'Bearer signed-token', 'Content-Type': 'application/json' },
         timeout: 30_000,
         signal: expect.any(AbortSignal),
+        timeoutErrorMessage: expect.any(String),
       },
     );
   });
@@ -86,6 +87,7 @@ describe('legacy RAG context', () => {
       headers: { Authorization: 'Bearer signed-token' },
       timeout: 30_000,
       signal: expect.any(AbortSignal),
+      timeoutErrorMessage: expect.any(String),
     });
   });
 

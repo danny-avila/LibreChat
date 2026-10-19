@@ -544,7 +544,7 @@ registration:
 # timeouts:
 #   ragMs: 30000 # RAG API queries for file search and message context
 #   ocrMs: 300000 # each OCR provider call
-#   actionsMs: 60000 # each action (OpenAPI tool) HTTP call
+#   actionsMs: 300000 # each action (OpenAPI tool) HTTP call
 #   moderationMs: 10000 # the OpenAI moderation check before a chat turn
 #   imageFetchMs: 30000 # fetching a stored image to encode it for a provider
 
