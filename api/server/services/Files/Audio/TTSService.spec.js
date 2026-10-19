@@ -132,4 +132,22 @@ describe('TTSService input cap', () => {
     expect(ttsRequest.mock.calls[0][2]).toEqual({ input: 'a'.repeat(10), voice: 'alloy' });
     expect(res.status).not.toHaveBeenCalled();
   });
+
+  it('refuses a non-text body before calling any provider', async () => {
+    const service = new TTSService();
+    const ttsRequest = jest.spyOn(service, 'ttsRequest');
+    const res = { status: jest.fn().mockReturnThis(), send: jest.fn(), setHeader: jest.fn() };
+
+    await service.processTextToSpeech(
+      {
+        body: { input: ['a'.repeat(30_000)] },
+        config: { speech: { tts: { openai: { apiKey: 'sk', model: 'tts-1' } } } },
+      },
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.send).toHaveBeenCalledWith('Missing text in request body');
+    expect(ttsRequest).not.toHaveBeenCalled();
+  });
 });

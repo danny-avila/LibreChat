@@ -298,10 +298,6 @@ class TTSService {
   async processTextToSpeech(req, res) {
     const { input, voice: requestVoice } = req.body;
 
-    if (!input) {
-      return res.status(400).send('Missing text in request body');
-    }
-
     const appConfig =
       req.config ??
       (await getAppConfig({
@@ -310,6 +306,9 @@ class TTSService {
         tenantId: req.user?.tenantId,
       }));
     const text = capSpeechInput(input, appConfig?.speech?.tts);
+    if (!text) {
+      return res.status(400).send('Missing text in request body');
+    }
     try {
       res.setHeader('Content-Type', 'audio/mpeg');
       const provider = this.getProvider(appConfig);

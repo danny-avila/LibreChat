@@ -103,7 +103,11 @@ export function createSpeechChunkProcessor({
  * one request cannot fan out into an unbounded number of paid provider calls. Longer text is
  * read up to the cap, the same as automatic playback of a long message.
  */
-export function capSpeechInput(input: string, ttsConfig?: { maxInputChars?: number }): string {
+export function capSpeechInput(input: unknown, ttsConfig?: { maxInputChars?: number }): string {
+  /** A request body can carry any JSON; only text is spoken, so the cap always counts characters. */
+  if (typeof input !== 'string') {
+    return '';
+  }
   const maxInputChars = ttsConfig?.maxInputChars ?? DEFAULT_TTS_MAX_INPUT_CHARS;
   return input.length > maxInputChars ? input.slice(0, maxInputChars) : input;
 }

@@ -136,6 +136,13 @@ describe('capSpeechInput', () => {
     expect(capSpeechInput(text)).toBe(text);
   });
 
+  it.each([['a', 'b'], { length: 5 }, 42, undefined])(
+    'treats a non-text body (%j) as empty',
+    (input) => {
+      expect(capSpeechInput(input)).toBe('');
+    },
+  );
+
   it('reads text over the configured cap only up to the cap', () => {
     expect(capSpeechInput('a'.repeat(11), { maxInputChars: 10 })).toBe('a'.repeat(10));
   });
