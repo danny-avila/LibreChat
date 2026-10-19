@@ -93,7 +93,7 @@ export function createResetPasswordController(deps: PasswordResetControllerDeps)
       return res.status(200).json(result);
     } catch (error) {
       logger.error('[resetPasswordController]', error);
-      return res.status(400).json({ message: error instanceof Error ? error.message : undefined });
+      return res.status(400).json({ message: 'Password reset failed' });
     }
   };
 }
