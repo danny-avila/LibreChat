@@ -271,7 +271,7 @@ const AgentDetailContent: React.FC<AgentDetailContentProps> = ({
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="-me-2 -mt-2 shrink-0 rtl:-ms-2 rtl:me-0"
+                className="-me-2 -mt-2 shrink-0"
                 aria-label={localize('com_ui_close')}
               >
                 <X className="size-4" aria-hidden="true" />

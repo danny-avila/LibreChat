@@ -8,6 +8,7 @@ import {
   selectMockEndpoint,
   sendMessageAndWaitForCompletion,
 } from '../helpers';
+import { cleanupAgent, uniqueAgentName, waitForPersistedAgent } from '../agents.helpers';
 
 /**
  * Under a right-to-left interface the split views mirror: the panel that sits at the
@@ -149,6 +150,53 @@ test('a shared link mirrors its artifacts pane under RTL and its separator follo
     expect((await box(artifacts)).x).toBeLessThan((await box(content)).x);
   } finally {
     await readerContext.close();
+  }
+});
+
+test('the agent detail close button bleeds past the inline end under RTL @scenario:rtl-agent-detail-close-at-inline-end', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.goto(NEW_CHAT_PATH, { timeout: 10_000 });
+  const token = await getAccessToken(page);
+  const name = uniqueAgentName('E2E RTL Detail');
+  const description = 'An agent whose detail dialog is opened under RTL.';
+  const agent = await requestJson<{ id: string }>(page, {
+    path: '/api/agents',
+    token,
+    method: 'POST',
+    body: {
+      name,
+      description,
+      instructions: 'Use the mock model.',
+      provider: MOCK_ENDPOINTS[0].label,
+      model: MOCK_ENDPOINTS[0].model,
+      model_parameters: {},
+      tools: [],
+      category: 'general',
+    },
+  });
+
+  try {
+    await waitForPersistedAgent(page, name, description);
+    await page.goto(`/agents/all?q=${encodeURIComponent(name)}`, { timeout: 10_000 });
+    await setDirection(page, 'rtl');
+    await page.getByRole('button', { name, exact: true }).click();
+
+    const dialog = page.getByRole('dialog');
+    const close = dialog.getByRole('button', { name: 'Close' }).first();
+    await expect(close).toBeVisible();
+    /* The negative end margin pulls the button outward, onto the left edge in RTL, so it
+     * starts before its wrapper; a margin on the start side would push it into the header. */
+    const offset = await close.evaluate((node) => {
+      const wrapper = node.parentElement?.getBoundingClientRect();
+      const rect = node.getBoundingClientRect();
+      return { start: (wrapper?.left ?? 0) - rect.left, end: rect.right - (wrapper?.right ?? 0) };
+    });
+    expect(offset.start).toBeGreaterThan(4);
+    expect(offset.end).toBeLessThanOrEqual(0.5);
+  } finally {
+    await cleanupAgent(page, agent.id).catch(() => undefined);
   }
 });
 
