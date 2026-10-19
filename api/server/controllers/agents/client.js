@@ -145,6 +145,7 @@ const {
   prepareResumedTurnContext,
   readConversationAnchor,
   applyTurnContextToRuntime,
+  applyTurnMemoryToAgent,
   getConversationAgents,
   injectSkillPrimes,
   buildAgentEventActorSkillMessages,
@@ -3123,6 +3124,16 @@ class AgentClient extends BaseClient {
       this.agentConfigs?.values(),
     );
 
+    /** A handoff target on the primary agent's memory partition reads the memory the turn context
+     *  anchors, as the primary does, rather than a live copy in its per-turn tail. */
+    const sharesTurnMemory = (agent) =>
+      turnContext != null &&
+      agent !== this.options.agent &&
+      conversationAgents.has(agent) &&
+      (memoryAgentEnabled || agentHasInlineMemoryTools(agent)) &&
+      getMemoryAgentId(agent) === loadedMemoryAgentId &&
+      agentHasInlineMemoryTools(agent) === agentHasInlineMemoryTools(this.options.agent);
+
     const prepareRuntimeAgent = async (
       { agent, agentId },
       scopedContext,
@@ -3134,7 +3145,10 @@ class AgentClient extends BaseClient {
       };
       const agentMemoryContexts = [];
       const agentHasMemory = agentHasInlineMemoryTools(agent);
-      if (agentId === this.options.agent.id || memoryAgentEnabled || agentHasMemory) {
+      if (
+        !sharesTurnMemory(agent) &&
+        (agentId === this.options.agent.id || memoryAgentEnabled || agentHasMemory)
+      ) {
         const partitionMemories = await getAgentPartitionMemories(agent);
         const canonicalMemories =
           partitionMemories != null ? await getCanonicalAgentMemories(agent) : undefined;
@@ -3205,6 +3219,11 @@ class AgentClient extends BaseClient {
         memories: modelBoundMemoryContexts,
         files: modelBoundFileContexts,
       });
+      for (const agent of conversationAgents) {
+        if (sharesTurnMemory(agent)) {
+          applyTurnMemoryToAgent(agent, turnContext);
+        }
+      }
     }
     this.modelBoundMemoryContexts = [...modelBoundMemoryContexts];
     this.modelBoundFileContexts = [...modelBoundFileContexts];
