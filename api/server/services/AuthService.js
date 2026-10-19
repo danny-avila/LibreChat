@@ -1,4 +1,3 @@
-const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { webcrypto } = require('node:crypto');
 const {
@@ -33,6 +32,8 @@ const {
   resolveAppConfigForUser,
   commitPasswordReset,
   getSafeErrorMetadata,
+  hashSecret,
+  compareSecret,
 } = require('@librechat/api');
 const {
   findUser,
@@ -259,7 +260,7 @@ const logoutUser = async (req, refreshToken) => {
  */
 const createTokenHash = async () => {
   const token = Buffer.from(webcrypto.getRandomValues(new Uint8Array(32))).toString('hex');
-  const hash = await bcrypt.hash(token, 10);
+  const hash = await hashSecret(token);
   return [token, hash];
 };
 
@@ -345,7 +346,7 @@ const verifyEmail = async (req) => {
     return new Error(invalidEmailVerificationMessage);
   }
 
-  const isValid = await bcrypt.compare(token, emailVerificationData.token);
+  const isValid = await compareSecret(token, emailVerificationData.token);
 
   if (!isValid) {
     logger.warn(
@@ -418,7 +419,6 @@ const registerUser = async (user, additionalData = {}) => {
     // Tenant administrators must be provisioned through a trusted administrative flow.
     const isFirstRegisteredUser = !tenantId && (await countUsers()) === 0;
 
-    const salt = await bcrypt.genSalt(10);
     const newUserData = {
       provider: provider ?? 'local',
       email,
@@ -426,7 +426,7 @@ const registerUser = async (user, additionalData = {}) => {
       name,
       avatar: null,
       role: isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER,
-      password: await bcrypt.hash(password, salt),
+      password: await hashSecret(password),
       ...trustedAdditionalData,
     };
 
@@ -581,8 +581,8 @@ const resetPassword = async (userId, token, password) => {
       getUserById,
       updateUser,
       deleteTokens,
-      compareToken: (candidate, storedHash) => bcrypt.compare(candidate, storedHash),
-      hashPassword: (plain) => bcrypt.hash(plain, 10),
+      compareToken: compareSecret,
+      hashPassword: hashSecret,
     },
     { userId, token, password },
   );
