@@ -424,3 +424,7 @@ modelSpecs:
       preset:
         endpoint: 'Mock Provider A'
         model: 'mock-model-a'
+
+# Short enough that a stalled fake RAG query fails the tool call well inside a test.
+timeouts:
+  ragMs: 3000
