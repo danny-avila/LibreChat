@@ -5,8 +5,13 @@ jest.mock('@librechat/api', () => ({
   logAxiosError: jest.fn(),
   applyAxiosProxyConfig: jest.fn(),
   resolveConfigSecret: jest.fn(),
+  validateTTSInput: jest.requireActual('@librechat/api').validateTTSInput,
+  pipeSegment: jest.fn(),
+  pipeToResponse: jest.fn(),
 }));
 jest.mock('librechat-data-provider', () => ({
+  /** Real constants: `validateTTSInput` comes from the built `@librechat/api`, which reads them. */
+  ...jest.requireActual('librechat-data-provider'),
   extractEnvVariable: jest.fn((value) => value),
   /* Real selection logic: these tests are about which provider a schema resolves to. */
   listConfiguredSpeechProviders:
@@ -103,5 +108,27 @@ describe('TTSService getProvider detection', () => {
         }),
       ),
     ).rejects.toThrow('Multiple providers are set');
+  });
+});
+
+describe('TTSService input cap', () => {
+  it('refuses text over the configured cap before calling any provider', async () => {
+    const service = new TTSService();
+    const ttsRequest = jest.spyOn(service, 'ttsRequest');
+    const res = { status: jest.fn().mockReturnThis(), send: jest.fn(), setHeader: jest.fn() };
+
+    await service.processTextToSpeech(
+      {
+        body: { input: 'a'.repeat(11) },
+        config: {
+          speech: { tts: { maxInputChars: 10, openai: { apiKey: 'sk', model: 'tts-1' } } },
+        },
+      },
+      res,
+    );
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.send).toHaveBeenCalledWith('Text exceeds the 10-character limit for speech');
+    expect(ttsRequest).not.toHaveBeenCalled();
   });
 });

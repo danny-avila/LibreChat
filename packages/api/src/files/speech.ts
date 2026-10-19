@@ -87,3 +87,24 @@ export function createSpeechChunkProcessor({
     return chunks;
   };
 }
+
+/** Default cap on the text one text-to-speech request may synthesize. */
+export const DEFAULT_TTS_MAX_INPUT_CHARS = 20_000;
+
+/**
+ * Why a text-to-speech request body cannot be synthesized, or `null` when it can. The cap keeps
+ * one request from fanning out into an unbounded number of paid provider calls.
+ */
+export function validateTTSInput(
+  input: unknown,
+  ttsConfig?: { maxInputChars?: number },
+): string | null {
+  if (typeof input !== 'string' || input.length === 0) {
+    return 'Missing text in request body';
+  }
+  const maxInputChars = ttsConfig?.maxInputChars ?? DEFAULT_TTS_MAX_INPUT_CHARS;
+  if (input.length > maxInputChars) {
+    return `Text exceeds the ${maxInputChars}-character limit for speech`;
+  }
+  return null;
+}

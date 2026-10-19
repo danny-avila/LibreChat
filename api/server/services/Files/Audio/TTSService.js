@@ -6,6 +6,9 @@ const {
   applyAxiosProxyConfig,
   resolveConfigSecret,
   applySSRFSafeAgentIfDirect,
+  pipeSegment,
+  pipeToResponse,
+  validateTTSInput,
 } = require('@librechat/api');
 const {
   TTSProviders,
@@ -295,10 +298,6 @@ class TTSService {
   async processTextToSpeech(req, res) {
     const { input, voice: requestVoice } = req.body;
 
-    if (!input) {
-      return res.status(400).send('Missing text in request body');
-    }
-
     const appConfig =
       req.config ??
       (await getAppConfig({
@@ -306,6 +305,10 @@ class TTSService {
         userId: req.user?.id,
         tenantId: req.user?.tenantId,
       }));
+    const invalidInput = validateTTSInput(input, appConfig?.speech?.tts);
+    if (invalidInput) {
+      return res.status(400).send(invalidInput);
+    }
     try {
       res.setHeader('Content-Type', 'audio/mpeg');
       const provider = this.getProvider(appConfig);
@@ -320,7 +323,9 @@ class TTSService {
           { input, voice },
           allowedAddresses,
         );
-        response.data.pipe(res);
+        pipeToResponse(response.data, res, (error) =>
+          logAxiosError({ message: '[TTS] Audio stream failed:', error }),
+        );
         return;
       }
 
@@ -340,10 +345,7 @@ class TTSService {
           );
 
           logger.debug(`[textToSpeech] user: ${req?.user?.id} | writing audio stream`);
-          await new Promise((resolve) => {
-            response.data.pipe(res, { end: chunk.isFinished });
-            response.data.on('end', resolve);
-          });
+          await pipeSegment(response.data, res, { end: chunk.isFinished });
 
           if (chunk.isFinished) {
             break;
@@ -432,10 +434,7 @@ class TTSService {
             }
 
             logger.debug(`[streamAudio] user: ${req?.user?.id} | writing audio stream`);
-            await new Promise((resolve) => {
-              response.data.pipe(res, { end: update.isFinished });
-              response.data.on('end', resolve);
-            });
+            await pipeSegment(response.data, res, { end: update.isFinished });
 
             if (update.isFinished) {
               shouldContinue = false;

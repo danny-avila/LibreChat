@@ -226,6 +226,10 @@ async function handleExec(req, res) {
   sendJson(res, 200, { stdout: 'E2E code exec ok\n', stderr: '', files: [] });
 }
 
+/** Set through `POST /__debug/corrupt-downloads`: downloads then claim gzip but send bytes that
+ *  are not, so the client's decompression fails mid-body. Reset clears it. */
+let corruptDownloads = false;
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const { pathname } = url;
@@ -242,7 +246,14 @@ const server = http.createServer((req, res) => {
       return;
     }
 
+    if (pathname === '/__debug/corrupt-downloads' && req.method === 'POST') {
+      corruptDownloads = (await readJson(req)).corrupt === true;
+      sendJson(res, 200, { ok: true, corrupt: corruptDownloads });
+      return;
+    }
+
     if (pathname === '/__debug/reset' && req.method === 'POST') {
+      corruptDownloads = false;
       sessions.clear();
       generated.clear();
       uploads.length = 0;
@@ -267,6 +278,11 @@ const server = http.createServer((req, res) => {
     }
 
     const downloadMatch = pathname.match(/^\/v1\/download\/([^/]+)\/([^/]+)$/);
+    if (downloadMatch && req.method === 'GET' && corruptDownloads) {
+      res.writeHead(200, { 'Content-Type': 'text/csv', 'Content-Encoding': 'gzip' });
+      res.end(Buffer.from('this body is not gzip'));
+      return;
+    }
     if (downloadMatch && req.method === 'GET') {
       const key = `${decodeURIComponent(downloadMatch[1])}/${decodeURIComponent(downloadMatch[2])}`;
       const file = generated.get(key);

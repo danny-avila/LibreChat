@@ -1,7 +1,11 @@
 import { ContentTypes } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { SpeechMessageCache } from './speech';
-import { createSpeechChunkProcessor } from './speech';
+import {
+  validateTTSInput,
+  createSpeechChunkProcessor,
+  DEFAULT_TTS_MAX_INPUT_CHARS,
+} from './speech';
 
 const messageId = 'message-id';
 
@@ -112,5 +116,21 @@ describe('createSpeechChunkProcessor', () => {
     } as TMessage);
 
     expect(await processChunks()).toEqual([{ text: 'The answer is 4.', isFinished: true }]);
+  });
+});
+
+describe('validateTTSInput', () => {
+  it.each([undefined, '', 42])('rejects a missing text body (%j)', (input) => {
+    expect(validateTTSInput(input)).toBe('Missing text in request body');
+  });
+
+  it('accepts text within the default cap', () => {
+    expect(validateTTSInput('a'.repeat(DEFAULT_TTS_MAX_INPUT_CHARS))).toBeNull();
+  });
+
+  it('rejects text over the configured cap', () => {
+    expect(validateTTSInput('a'.repeat(11), { maxInputChars: 10 })).toBe(
+      'Text exceeds the 10-character limit for speech',
+    );
   });
 });
