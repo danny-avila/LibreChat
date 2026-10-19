@@ -1,10 +1,17 @@
 import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { ResourceType, PrincipalType } from 'librechat-data-provider';
-import { createModels, createMethods, tenantStorage } from '@librechat/data-schemas';
+import {
+  createModels,
+  createMethods,
+  tenantStorage,
+  createSkillDeletionPersistenceAdapter,
+} from '@librechat/data-schemas';
+import type { AppConfig } from '@librechat/data-schemas';
 import type { CheckpointDeletion } from '~/agents/checkpoints/deletion';
 import type { UserErasureDeps } from './erasure';
 import { deleteAllSharedLinksWithCleanup } from '~/shared-links/service';
+import { createSkillDeletionService } from '../skills/deletionService';
 import { eraseUserData } from './erasure';
 
 const OWNER_BITS = 15;
@@ -38,7 +45,14 @@ async function seedUser(userId: mongoose.Types.ObjectId) {
   const legacyServerId = new mongoose.Types.ObjectId();
 
   await model('Skill').insertOne({ _id: skillId, name: `skill-${user}`, author: userId });
-  await model('SkillFile').insertOne({ skillId, relativePath: 'notes.md', author: userId });
+  await model('SkillFile').insertOne({
+    skillId,
+    relativePath: 'notes.md',
+    file_id: `skill-file-${user}`,
+    filepath: `/uploads/${user}/notes.md`,
+    source: 'local',
+    author: userId,
+  });
   await methods.grantPermission(
     PrincipalType.USER,
     userId,
@@ -109,6 +123,30 @@ function createDeps() {
   return { deps, checkpointDeletion, order };
 }
 
+async function finishSkillCleanup(skillId: mongoose.Types.ObjectId) {
+  const deleteFile = jest.fn(async () => undefined);
+  const worker = createSkillDeletionService({
+    persistence: { ...methods, ...createSkillDeletionPersistenceAdapter(methods) },
+    loadConfig: async () =>
+      ({ skillDeletion: { finalizationEnabled: true } }) as unknown as AppConfig,
+    getStrategyFunctions: () => ({ deleteFile }),
+    runAsSystem: async (callback) => callback(),
+    logger: { error: jest.fn(), warn: jest.fn() },
+  });
+  const sweep = worker.startSkillDeletionSweep({ sweepIntervalMs: 1_000 });
+  try {
+    for (let attempt = 0; attempt < 50; attempt++) {
+      if ((await count('Skill', { _id: skillId })) === 0) break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    expect(await count('Skill', { _id: skillId })).toBe(0);
+    expect(await count('SkillFile', { skillId })).toBe(0);
+    expect(deleteFile).toHaveBeenCalledTimes(1);
+  } finally {
+    sweep.stop();
+  }
+}
+
 describe('eraseUserData', () => {
   it('clears skills, MCP servers, shared links, file objects and checkpoints', async () => {
     const userId = new mongoose.Types.ObjectId();
@@ -135,8 +173,9 @@ describe('eraseUserData', () => {
     ]);
     expect(await count('File', { user: userId })).toBe(0);
 
-    expect(await count('Skill', { _id: skillId })).toBe(0);
-    expect(await count('SkillFile', { skillId })).toBe(0);
+    expect(await methods.getSkillById(skillId)).toBeNull();
+    expect(await count('Skill', { _id: skillId, deletionNeedsJournal: true })).toBe(1);
+    expect(await count('SkillFile', { skillId })).toBe(1);
     expect(await count('MCPServer', { author: userId })).toBe(0);
     expect(deps.invalidateMCPServerTools).toHaveBeenCalledWith(`acl-${user}`);
     expect(deps.invalidateMCPServerTools).toHaveBeenCalledWith(`legacy-${user}`);
@@ -144,6 +183,7 @@ describe('eraseUserData', () => {
     expect(deps.disconnectMCPServer).toHaveBeenCalledWith(`legacy-${user}`);
     expect(await count('SharedLink', { user })).toBe(0);
     expect(await count('AclEntry', { principalId: userId })).toBe(0);
+    await finishSkillCleanup(skillId);
     expect(await count('Transaction', { user: userId })).toBe(0);
     expect(await count('ToolFavorite', { user: userId })).toBe(0);
     expect(await count('ChatProject', { user })).toBe(0);
@@ -414,14 +454,16 @@ describe('eraseUserData', () => {
 
   it('still erases the account when the storage provider fails', async () => {
     const userId = new mongoose.Types.ObjectId();
-    await seedUser(userId);
+    const { skillId } = await seedUser(userId);
     const { deps } = createDeps();
     (deps.deleteStoredFiles as jest.Mock).mockRejectedValueOnce(new Error('provider down'));
 
     await eraseUserData({ userId: userId.toString() }, deps);
 
     expect(await count('File', { user: userId })).toBe(0);
-    expect(await count('Skill', { author: userId })).toBe(0);
+    expect(await methods.getSkillById(skillId)).toBeNull();
+    expect(await count('AclEntry', { principalId: userId })).toBe(0);
+    await finishSkillCleanup(skillId);
   });
 
   for (const modelName of ['Agent', 'PromptGroup']) {

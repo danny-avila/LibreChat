@@ -12,3 +12,6 @@ export * from './failure';
 export * from './missing';
 export * from './ceiling';
 export * from './patches';
+export * from './frames';
+export * from './sync';
+export * from './attach';

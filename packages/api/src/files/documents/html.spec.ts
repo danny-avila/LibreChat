@@ -9,7 +9,6 @@ import {
   excelSheetToHtml,
   officeHtmlBucket,
   pptxToHtml,
-  pptxToSlideListHtml,
   sanitizeOfficeHtml,
   wordDocToHtml,
 } from './html';
@@ -19,6 +18,21 @@ import * as metafiles from './metafiles';
 
 const fixturesDir = __dirname;
 const readFixture = (name: string): Buffer => fs.readFileSync(path.join(fixturesDir, name));
+
+/** Renders the text-only slide-list preview, which `pptxToHtml` selects when the CDN is disabled. */
+const pptxToSlideListHtml = async (buffer: Buffer): Promise<string> => {
+  const previous = process.env.OFFICE_PREVIEW_DISABLE_CDN;
+  process.env.OFFICE_PREVIEW_DISABLE_CDN = 'true';
+  try {
+    return await pptxToHtml(buffer);
+  } finally {
+    if (previous === undefined) {
+      delete process.env.OFFICE_PREVIEW_DISABLE_CDN;
+    } else {
+      process.env.OFFICE_PREVIEW_DISABLE_CDN = previous;
+    }
+  }
+};
 
 describe('Office HTML producers', () => {
   describe('wordDocToHtml', () => {
