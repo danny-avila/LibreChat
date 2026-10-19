@@ -25,6 +25,11 @@ describe('FluxAPI result polling', () => {
 
     expect(result).toBe('No image data received from Flux API.');
     expect(axios.get.mock.calls.length).toBeLessThanOrEqual(2);
-    expect(axios.post.mock.calls[0][2]).toMatchObject({ timeout: 2_500 });
+    const submitTimeout = axios.post.mock.calls[0][2].timeout;
+    expect(submitTimeout).toBeGreaterThan(0);
+    expect(submitTimeout).toBeLessThanOrEqual(2_500);
+    for (const [, options] of axios.get.mock.calls) {
+      expect(options.timeout).toBeLessThanOrEqual(2_500);
+    }
   }, 15_000);
 });

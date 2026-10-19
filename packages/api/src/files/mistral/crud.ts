@@ -612,7 +612,7 @@ export const uploadAzureMistralOCR = async (
 /**
  * Loads Google service account configuration
  */
-async function loadGoogleAuthConfig(): Promise<{
+async function loadGoogleAuthConfig(timeout: number): Promise<{
   serviceAccount: GoogleServiceAccount;
   accessToken: string;
 }> {
@@ -634,7 +634,7 @@ async function loadGoogleAuthConfig(): Promise<{
   }
 
   const jwt = await createJWT(serviceKey as GoogleServiceAccount);
-  const accessToken = await exchangeJWTForAccessToken(jwt);
+  const accessToken = await exchangeJWTForAccessToken(jwt, timeout);
 
   return {
     serviceAccount: serviceKey as GoogleServiceAccount,
@@ -679,9 +679,9 @@ async function createJWT(serviceKey: GoogleServiceAccount): Promise<string> {
 /**
  * Exchanges JWT for access token
  */
-async function exchangeJWTForAccessToken(jwt: string): Promise<string> {
+async function exchangeJWTForAccessToken(jwt: string, timeout: number): Promise<string> {
   const config: AxiosRequestConfig = {
-    timeout: DEFAULT_OUTBOUND_TIMEOUTS_MS.ocrMs,
+    timeout,
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
     },
@@ -810,7 +810,8 @@ export const uploadGoogleVertexMistralOCR = async (
 ): Promise<MistralOCRUploadResult> => {
   const contentProtected = hasActiveFilePolicy(context.req.config?.filters);
   try {
-    const { serviceAccount, accessToken } = await loadGoogleAuthConfig();
+    const timeout = getOutboundTimeoutMs(context.req.config, 'ocrMs');
+    const { serviceAccount, accessToken } = await loadGoogleAuthConfig(timeout);
     const model = getModelConfig(context.req.config?.ocr);
 
     const { content: buffer } = await readFileAsBuffer(context.file.path, {
@@ -827,7 +828,7 @@ export const uploadGoogleVertexMistralOCR = async (
       model,
       documentType,
       contentProtected,
-      timeout: getOutboundTimeoutMs(context.req.config, 'ocrMs'),
+      timeout,
     });
 
     if (!ocrResult || !ocrResult.pages || ocrResult.pages.length === 0) {

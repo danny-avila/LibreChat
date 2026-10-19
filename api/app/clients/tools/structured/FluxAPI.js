@@ -247,6 +247,9 @@ class FluxAPI extends Tool {
     logger.debug('[FluxAPI] Generating image with payload:', payload);
     logger.debug('[FluxAPI] Using endpoint:', generateUrl);
 
+    /** One budget covers submission and polling; statuses such as `Content Moderated` or
+     *  `Task not found` never become Ready. */
+    const deadline = startOutboundDeadline(this.appConfig, 'imageGenerationMs');
     let taskResponse;
     try {
       taskResponse = await axios.post(generateUrl, payload, {
@@ -256,6 +259,7 @@ class FluxAPI extends Tool {
           Accept: 'application/json',
         },
         ...this.getAxiosConfig(),
+        timeout: deadline.remainingMs(),
       });
     } catch (error) {
       const details = this.getDetails(error?.response?.data || error.message);
@@ -272,8 +276,6 @@ class FluxAPI extends Tool {
     // Polling for the result
     let status = 'Pending';
     let resultData = null;
-    /** Statuses such as `Content Moderated` or `Task not found` never become Ready. */
-    const deadline = startOutboundDeadline(this.appConfig, 'imageGenerationMs');
     while (status !== 'Ready' && status !== 'Error' && !deadline.expired()) {
       try {
         // Wait 2 seconds between polls
@@ -285,6 +287,7 @@ class FluxAPI extends Tool {
           },
           params: { id: taskId },
           ...this.getAxiosConfig(),
+          timeout: deadline.remainingMs(),
         });
         status = resultResponse.data.status;
 
@@ -484,6 +487,9 @@ class FluxAPI extends Tool {
     logger.debug('[FluxAPI] Generating finetuned image with payload:', payload);
     logger.debug('[FluxAPI] Using endpoint:', generateUrl);
 
+    /** One budget covers submission and polling; statuses such as `Content Moderated` or
+     *  `Task not found` never become Ready. */
+    const deadline = startOutboundDeadline(this.appConfig, 'imageGenerationMs');
     let taskResponse;
     try {
       taskResponse = await axios.post(generateUrl, payload, {
@@ -493,6 +499,7 @@ class FluxAPI extends Tool {
           Accept: 'application/json',
         },
         ...this.getAxiosConfig(),
+        timeout: deadline.remainingMs(),
       });
     } catch (error) {
       const details = this.getDetails(error?.response?.data || error.message);
@@ -508,8 +515,6 @@ class FluxAPI extends Tool {
     // Polling for the result
     let status = 'Pending';
     let resultData = null;
-    /** Statuses such as `Content Moderated` or `Task not found` never become Ready. */
-    const deadline = startOutboundDeadline(this.appConfig, 'imageGenerationMs');
     while (status !== 'Ready' && status !== 'Error' && !deadline.expired()) {
       try {
         // Wait 2 seconds between polls
@@ -521,6 +526,7 @@ class FluxAPI extends Tool {
           },
           params: { id: taskId },
           ...this.getAxiosConfig(),
+          timeout: deadline.remainingMs(),
         });
         status = resultResponse.data.status;
 

@@ -24,8 +24,11 @@ describe('outbound timeouts', () => {
         'imageGenerationMs',
       );
       expect(deadline.expired()).toBe(false);
-      jest.advanceTimersByTime(1_000);
+      jest.advanceTimersByTime(400);
+      expect(deadline.remainingMs()).toBe(600);
+      jest.advanceTimersByTime(600);
       expect(deadline.expired()).toBe(true);
+      expect(deadline.remainingMs()).toBe(1);
     } finally {
       jest.useRealTimers();
     }

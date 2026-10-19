@@ -20,11 +20,18 @@ export function getOutboundTimeoutMs(
   return appConfig?.timeouts?.[key] ?? DEFAULT_OUTBOUND_TIMEOUTS_MS[key];
 }
 
-/** A deadline for a poll loop: `expired()` turns true once the budget for `key` is spent. */
+/**
+ * A deadline shared by several calls: `expired()` turns true once the budget for `key` is
+ * spent, and `remainingMs()` is the budget left for the next call (at least 1, since axios
+ * reads 0 as no timeout).
+ */
 export function startOutboundDeadline(
   appConfig: Pick<AppConfig, 'timeouts'> | null | undefined,
   key: OutboundTimeout,
-): { expired: () => boolean } {
+): { expired: () => boolean; remainingMs: () => number } {
   const deadline = Date.now() + getOutboundTimeoutMs(appConfig, key);
-  return { expired: () => Date.now() >= deadline };
+  return {
+    expired: () => Date.now() >= deadline,
+    remainingMs: () => Math.max(1, deadline - Date.now()),
+  };
 }
