@@ -411,7 +411,7 @@ const table: Array<[keyof typeof states, keyof typeof events, Expected]> = [
   [
     'starting',
     'stop',
-    { status: 'ready', finishes: 1, last: aborted, abort: NONE, outcome: 'unaddressable' },
+    { status: 'error', finishes: 1, last: dropped, abort: NONE, outcome: 'unaddressable' },
   ],
   ['starting', 'final', { status: 'ready', finishes: 1, last: done, abort: NONE }],
   ['starting', 'newTurn', { status: 'submitted', finishes: 0, outcome: 'in flight' }],

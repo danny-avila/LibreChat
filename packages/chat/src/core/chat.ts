@@ -523,8 +523,8 @@ export class Chat {
   private readonly lifetime = new AbortController();
   /** A generation whose stream dropped while the server kept it running. */
   private detached?: DetachedGeneration;
-  /** The timestamp of the last generation a stop ended, whose later pauses are stale. */
-  private stoppedGeneration?: number;
+  /** The timestamps of the generations a stop ended, whose later pauses are stale. */
+  private readonly stoppedGenerations = new Set<number>();
   /** The generation a restored pause belongs to, which a reattachment to it continues. */
   private restored?: { createdAt: number; generation: Generation };
   /** A start that reached the transport and lost its response, with nothing to address it by. */
@@ -642,11 +642,13 @@ export class Chat {
       this.generationCreatedAt != null &&
       options.generationCreatedAt !== this.generationCreatedAt;
     /**
-     * Only a restored pause vouches for the timestamp of the generation it belongs to. Stored
+     * Only the generation this continues, or a restored pause, vouches for a timestamp. Stored
      * before clearing a superseded pause notifies, so a stop made then addresses this generation.
      */
     this.generationCreatedAt =
-      options.generationCreatedAt ?? (this.action ? this.generationCreatedAt : undefined);
+      options.generationCreatedAt ??
+      active.inheritedGeneration ??
+      (this.action ? this.generationCreatedAt : undefined);
     /** A restored pause names a running generation, so finding nothing means it ended elsewhere. */
     const restored = !superseded && this.action !== undefined;
     const { conversationId = generation.conversationId ?? this.id, ...request } = options;
@@ -773,7 +775,9 @@ export class Chat {
     }
     const answer = this.abortOnServer(target).then((result) => {
       generation.stopped = true;
-      this.stoppedGeneration = target.generationCreatedAt ?? this.stoppedGeneration;
+      if (target.generationCreatedAt != null) {
+        this.stoppedGenerations.add(target.generationCreatedAt);
+      }
       if (isStreamAbort(result)) {
         generation.stoppedConversationId = this.stoppedConversationId(generation, result);
       }
@@ -1079,7 +1083,7 @@ export class Chat {
       /** A status read before the answer landed reports a pause this chat already resumed. */
       return;
     }
-    if (generationCreatedAt === this.stoppedGeneration) {
+    if (this.stoppedGenerations.has(generationCreatedAt)) {
       /** A status read before the stop landed reports a pause of a generation it ended. */
       return;
     }
@@ -1304,6 +1308,7 @@ export class Chat {
        * The server took the start, so it owns or superseded a generation whose stream dropped.
        * Until then that generation stays the stop target, in case the start fails.
        */
+      const dropped = this.detached;
       this.detached = undefined;
       /** Likewise a lost start stays the caller's to stop until the server takes this one. */
       this.unaddressed = false;
@@ -1311,15 +1316,23 @@ export class Chat {
       if (result.status === 'stream') {
         stream = result.stream;
       } else if (result.status === 'replaced') {
+        const generationCreatedAt = result.generationCreatedAt ?? undefined;
         /** The target is recorded before anyone hears of the reconnect, so a stop can reach it. */
-        this.generationCreatedAt = result.generationCreatedAt ?? undefined;
-        /** The replacement it names, so a stream of yet another generation gets its own record. */
-        active.inheritedGeneration = this.generationCreatedAt;
+        this.generationCreatedAt = generationCreatedAt;
         active.reattach = { streamId: result.streamId };
+        if (
+          generationCreatedAt != null &&
+          generationCreatedAt === dropped?.target.generationCreatedAt
+        ) {
+          /** The dropped generation itself: its record carries the stop still in flight for it. */
+          active.generation = dropped.generation;
+          active.inheritedGeneration = generationCreatedAt;
+        } else {
+          /** The replacement's response is not this turn's placeholder; its first frame names it. */
+          active.generation.responseId = undefined;
+          active.generation.responseUnknown = true;
+        }
         active.generation.conversationId = result.conversationId;
-        /** The replacement's response is not this turn's placeholder; its first frame names it. */
-        active.generation.responseId = undefined;
-        active.generation.responseUnknown = true;
         this.setConnection('reconnecting');
         if (signal.aborted) {
           throw signal.reason;
@@ -1488,6 +1501,14 @@ export class Chat {
   }
 
   private toOutcome(error: unknown, active: ActiveRequest): Outcome {
+    if (active.controller.signal.aborted && active.sent && !active.stream && !active.reattach) {
+      /** A start cancelled before its answer may still run on the server, so its end is unknown. */
+      return {
+        kind: 'error',
+        error: new Error('The stop could not reach the generation, which may still be running'),
+        disconnect: true,
+      };
+    }
     if (active.controller.signal.aborted) {
       return getStopOutcome(active.generation);
     }

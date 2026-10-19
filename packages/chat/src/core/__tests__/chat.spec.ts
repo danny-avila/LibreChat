@@ -612,8 +612,11 @@ describe('Chat', () => {
 
     expect(signal?.aborted).toBe(true);
     expect(transport.abort).not.toHaveBeenCalled();
-    expect(chat.status).toBe('ready');
-    expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isAbort: true }));
+    /** The start reached the transport, so the server may run it: its end is unknown. */
+    expect(chat.status).toBe('error');
+    expect(onFinish).toHaveBeenCalledWith(
+      expect.objectContaining({ isAbort: false, isDisconnect: true }),
+    );
   });
 
   it.each(['stop', 'dispose'] as const)(
@@ -642,7 +645,8 @@ describe('Chat', () => {
 
       expect(stream.closed()).toBe(true);
       expect(state.messages[1].text).toBe('');
-      expect(onError).not.toHaveBeenCalled();
+      /** A stop reports the cancelled start as a disconnect; a disposal reports nothing. */
+      expect(onError).toHaveBeenCalledTimes(cancel === 'stop' ? 1 : 0);
       expect(transport.abort).toHaveBeenCalledTimes(cancel === 'stop' ? 1 : 0);
     },
   );
@@ -670,7 +674,8 @@ describe('Chat', () => {
       await flush();
       await chat.stop();
       await started;
-      expect(chat.status).toBe('ready');
+      /** A cancelled start may still run on the server; a reattachment had nothing to start. */
+      expect(chat.status).toBe(opener === 'sendMessages' ? 'error' : 'ready');
       open?.();
       await flush();
 
@@ -680,7 +685,11 @@ describe('Chat', () => {
         expect.objectContaining({ endpoint: 'agents', streamId: 'convo-1' }),
       );
       expect(onFinish).toHaveBeenCalledTimes(1);
-      expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isAbort: true }));
+      expect(onFinish).toHaveBeenCalledWith(
+        expect.objectContaining(
+          opener === 'sendMessages' ? { isDisconnect: true } : { isAbort: true },
+        ),
+      );
     },
   );
 
@@ -2901,7 +2910,7 @@ describe('Chat', () => {
 
       expect(late.closed()).toBe(true);
       expect(transport.abort).not.toHaveBeenCalled();
-      expect(onError).not.toHaveBeenCalled();
+      expect(onError).toHaveBeenCalledTimes(1);
     });
 
     it("stops an Assistants run by the ids its sync frame named, from that frame's own callback", async () => {
@@ -3920,6 +3929,111 @@ describe('Chat', () => {
       ]);
       expect(transport.abort).toHaveBeenCalledTimes(1);
       expect(chat.status).toBe('ready');
+    });
+
+    it('ends a retry that replaced a dropped generation with the unsaved stop sent for it', async () => {
+      let answer: ((result: ChatAbortResult) => void) | undefined;
+      let reconnect: ((stream: ChatStream | null) => void) | undefined;
+      const { chat, stream, transport, onFinish } = setup(
+        {},
+        {
+          abort: jest.fn(
+            () =>
+              new Promise<ChatAbortResult>((resolve) => {
+                answer = resolve;
+              }),
+          ),
+          reconnectToStream: jest.fn(
+            () =>
+              new Promise<ChatStream | null>((resolve) => {
+                reconnect = resolve;
+              }),
+          ),
+        },
+      );
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+      await sent;
+
+      const stopped = chat.stop();
+      await flush();
+      transport.sendMessages.mockResolvedValueOnce({
+        status: 'replaced',
+        generationProtocolVersion: 2,
+        conversationId: 'convo-1',
+        streamId: 'convo-1',
+        generationCreatedAt: 100,
+      });
+      const retry = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      answer?.({ success: true, persistenceFailed: true });
+      await flush();
+      reconnect?.(null);
+      await Promise.all([stopped, retry]);
+
+      expect(transport.abort).toHaveBeenCalledTimes(1);
+      expect(onFinish).toHaveBeenLastCalledWith(
+        expect.objectContaining({ isAbort: true, reconcileReason: 'abort_persistence_failed' }),
+      );
+    });
+
+    it('ignores a late status read for any generation a stop ended, not only the latest', async () => {
+      const { chat, transport } = setup({ resumeSelection: () => ({ endpoint: 'agents' }) });
+      const older = { ...pausedAction, streamId: 'convo-1' };
+      const newer = { ...older, actionId: 'action-6' };
+
+      chat.restorePendingAction(older, 500);
+      await chat.stop();
+      chat.restorePendingAction(newer, 600);
+      await chat.stop();
+      chat.restorePendingAction(older, 500);
+
+      expect(transport.abort).toHaveBeenCalledTimes(2);
+      expect(chat.pendingAction).toBeUndefined();
+    });
+
+    it('reports a cancelled start the server may still run as a disconnect, not an abort', async () => {
+      const { chat, onFinish } = setup(
+        {},
+        { sendMessages: jest.fn(() => new Promise<never>(() => undefined)) },
+      );
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+
+      await expect(chat.stop()).resolves.toEqual({ status: 'unaddressable' });
+      await sent;
+
+      expect(onFinish).toHaveBeenCalledTimes(1);
+      expect(onFinish).toHaveBeenCalledWith(
+        expect.objectContaining({ isAbort: false, isDisconnect: true }),
+      );
+      expect(chat.status).toBe('error');
+      await expect(chat.stop()).resolves.toEqual({ status: 'unaddressable' });
+    });
+
+    it('answers a pause on a reattached stream by the dropped generation it continued', async () => {
+      const reattached = createStream({ streamId: 'convo-1' });
+      const { chat, stream, transport } = setup(
+        { resumeSelection: () => ({ endpoint: 'agents' }) },
+        { reconnectToStream: jest.fn(async () => reattached) },
+      );
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+      await sent;
+
+      const resumed = chat.resumeStream();
+      await flush();
+      reattached.push({ type: 'pending_action', data: { ...pausedAction, streamId: 'convo-1' } });
+      await flush();
+      await chat.addToolOutput({ toolCallId: 'ask-5', output: 'Blue' });
+      reattached.push(finalEvent());
+      await resumed;
+
+      expect(transport.resume).toHaveBeenCalledWith(
+        expect.objectContaining({ actionId: 'action-5', generationCreatedAt: 100 }),
+      );
     });
   });
 
