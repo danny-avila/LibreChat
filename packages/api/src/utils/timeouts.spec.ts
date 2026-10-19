@@ -83,6 +83,19 @@ describe('getOutboundTimeout', () => {
     expect(isAbortError(stopped)).toBe(true);
   });
 
+  it('still reports a deadline wrapped in a cause as a failure', () => {
+    const canceled = {
+      code: 'ERR_CANCELED',
+      message: 'canceled',
+      config: {
+        timeoutErrorMessage,
+        signal: { reason: new DOMException('timed out', 'TimeoutError') },
+      },
+    };
+
+    expect(isAbortError(new Error('tool failed', { cause: canceled }))).toBe(false);
+  });
+
   it('does not read the message of an error without a budget', () => {
     const guarded = Object.defineProperty({}, 'message', {
       get() {

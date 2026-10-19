@@ -123,15 +123,16 @@ export function getSafeErrorText(error: unknown): string {
  * signal state. Walks `cause` because intermediate layers rewrap the rejection.
  */
 export function isAbortError(error: unknown): boolean {
-  /** A request cancelled by its own `timeouts` deadline failed; nobody stopped it. */
-  if (getOutboundTimeout(error)) {
-    return false;
-  }
   const visited = new Set<unknown>();
   let current: unknown = error;
 
   while (current != null && typeof current === 'object' && !visited.has(current)) {
     visited.add(current);
+
+    /** A request cancelled by its own `timeouts` deadline failed; nobody stopped it. */
+    if (getOutboundTimeout(current)) {
+      return false;
+    }
 
     const name = readProperty(current, 'name');
     const code = readProperty(current, 'code');
