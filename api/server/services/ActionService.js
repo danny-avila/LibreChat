@@ -289,6 +289,7 @@ async function createActionTool({
                     redirect_uri: redirectUri,
                     token_exchange_method: metadata.auth.token_exchange_method,
                     allowedAddresses,
+                    timeout: timeoutMs,
                     /** Encrypted values */
                     encrypted_oauth_client_id: encrypted.oauth_client_id,
                     encrypted_oauth_client_secret: encrypted.oauth_client_secret,

@@ -271,6 +271,7 @@ export async function getAccessToken(
     encrypted_oauth_client_id,
     encrypted_oauth_client_secret,
     allowedAddresses,
+    timeout = DEFAULT_OUTBOUND_TIMEOUTS_MS.actionsMs,
   }: {
     code: string;
     userId: string;
@@ -281,6 +282,8 @@ export async function getAccessToken(
     encrypted_oauth_client_id: string;
     encrypted_oauth_client_secret: string;
     allowedAddresses?: string[] | null;
+    /** Milliseconds before the token request is abandoned. */
+    timeout?: number;
   },
   {
     findToken,
@@ -329,6 +332,7 @@ export async function getAccessToken(
       maxRedirects: 0,
       httpsAgent: getActionOAuthAgents(allowedAddresses).httpsAgent,
       data: params.toString(),
+      ...outboundRequestBudget(timeout, 'actionsMs'),
     });
 
     await processAccessTokens(

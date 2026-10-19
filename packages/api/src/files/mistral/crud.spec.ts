@@ -44,6 +44,7 @@ jest.mock('axios', () => {
 
 jest.mock('@librechat/data-schemas', () => ({
   logger: {
+    warn: jest.fn(),
     debug: jest.fn(),
     error: jest.fn(),
   },
@@ -82,6 +83,7 @@ import { decryptConfigSecret, isEncryptedSecretPayload } from '~/admin/secrets';
 import { logAxiosError } from '~/utils/axios';
 import { readFileAsBuffer } from '~/utils/files';
 import { loadServiceKey } from '~/utils/key';
+import { outboundTimeoutMessage } from '~/utils/timeouts';
 import {
   uploadDocumentToMistral,
   uploadAzureMistralOCR,
@@ -525,6 +527,25 @@ describe('MistralOCR Service', () => {
         status: 502,
       });
       expect(JSON.stringify(jest.mocked(mockLogger.error).mock.calls)).not.toContain('PRIVATE');
+    });
+
+    it('keeps the budget hint when a protected OCR call times out', async () => {
+      const timeoutErrorMessage = outboundTimeoutMessage('ocrMs', 300_000);
+      mockAxios.post!.mockRejectedValueOnce({
+        code: 'ECONNABORTED',
+        message: timeoutErrorMessage,
+        config: { timeoutErrorMessage },
+      });
+
+      await expect(
+        performOCR({
+          apiKey: 'test-api-key',
+          url: 'https://document-url.com',
+          contentProtected: true,
+        }),
+      ).rejects.toThrow('Error performing OCR.');
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(`Error performing OCR. ${timeoutErrorMessage}`);
     });
   });
 

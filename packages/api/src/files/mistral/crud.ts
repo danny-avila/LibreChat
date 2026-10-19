@@ -21,6 +21,7 @@ import type {
   OCRImage,
 } from '~/types';
 import {
+  getOutboundTimeout,
   outboundRequestBudget,
   getOutboundTimeoutMs,
   DEFAULT_OUTBOUND_TIMEOUTS_MS,
@@ -70,7 +71,13 @@ function createProtectedProviderError(
   if (!contentProtected) {
     return null;
   }
-  logger.error(message, getSafeErrorMetadata(error));
+  /** The budget message names only the config key, so it is safe to keep. */
+  const timeout = getOutboundTimeout(error);
+  if (timeout) {
+    logger.warn(`${message} ${timeout.message}`);
+  } else {
+    logger.error(message, getSafeErrorMetadata(error));
+  }
   return new Error(message);
 }
 
