@@ -21,6 +21,7 @@ import type { Agent, TConversation } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
 import { ChatContext, ChatFormProvider } from '~/Providers';
 import { AuthContextProvider } from '~/hooks/AuthContext';
+import { SteerHostTestProvider } from 'test/steerHost';
 import ChatForm from '../ChatForm';
 
 const mockApplySwitches = jest.fn();
@@ -126,15 +127,17 @@ function renderComposer(agent?: Partial<Agent>) {
   return render(
     <QueryClientProvider client={queryClient}>
       <RecoilRoot>
-        <Router>
-          <AuthContextProvider authConfig={{ loginRedirect: '', test: true }}>
-            <DndProvider backend={HTML5Backend}>
-              <main>
-                <Harness />
-              </main>
-            </DndProvider>
-          </AuthContextProvider>
-        </Router>
+        <SteerHostTestProvider>
+          <Router>
+            <AuthContextProvider authConfig={{ loginRedirect: '', test: true }}>
+              <DndProvider backend={HTML5Backend}>
+                <main>
+                  <Harness />
+                </main>
+              </DndProvider>
+            </AuthContextProvider>
+          </Router>
+        </SteerHostTestProvider>
       </RecoilRoot>
     </QueryClientProvider>,
   );
