@@ -62,4 +62,13 @@ describe('pipeSegment', () => {
     await expect(pending).rejects.toThrow('Client disconnected');
     expect(source.destroyed).toBe(true);
   });
+
+  it('rejects at once when the client left before the segment started', async () => {
+    const source = new PassThrough();
+    const res = new PassThrough();
+    res.destroy();
+
+    await expect(pipeSegment(source, res, { end: false })).rejects.toThrow('Client disconnected');
+    expect(source.destroyed).toBe(true);
+  });
 });

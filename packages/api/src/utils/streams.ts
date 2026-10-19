@@ -27,6 +27,12 @@ export function pipeSegment(
   { end }: { end: boolean },
 ): Promise<void> {
   return new Promise((resolve, reject) => {
+    /** A client that left while the previous segment was being fetched already emitted close. */
+    if (res.destroyed || res.writableEnded) {
+      source.destroy();
+      reject(new Error('Client disconnected'));
+      return;
+    }
     const cleanup = (): void => {
       source.off('end', onEnd);
       source.off('error', onError);
