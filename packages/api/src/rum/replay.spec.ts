@@ -61,12 +61,27 @@ describe.each(['json', 'protobuf', 'octet-stream'] as const)(
     });
 
     it('drops recorder scopes even when a record has no rr-web attributes', () => {
-      expect(
-        filterReplayLogs(
-          encode(batch([ordinary], '@hyperdx/otel-web-session-recorder')),
-          contentType,
-        ),
-      ).toEqual({ ok: true, body: undefined });
+      expect(filterReplayLogs(encode(batch([ordinary], 'rum.rr-web')), contentType)).toEqual({
+        ok: true,
+        body: undefined,
+      });
+    });
+
+    it('removes the SDK recorder scope while retaining ordinary scopes', () => {
+      const data = batch([ordinary]);
+      data.resourceLogs[0].scopeLogs.push({
+        scope: { name: 'rum.rr-web' },
+        logRecords: [ordinary],
+      });
+      const result = filterReplayLogs(encode(data), contentType);
+      if (!result.ok || !result.body) throw new Error('Expected ordinary log batch');
+      const decoded = decode(result.body);
+      if (encoding === 'json') {
+        expect(decoded.resourceLogs[0].scopeLogs[0].logRecords).toEqual([ordinary]);
+        expect(decoded.resourceLogs[0].scopeLogs[1].logRecords).toEqual([]);
+      } else {
+        expect(decoded).toEqual(batch([ordinary]));
+      }
     });
   },
 );

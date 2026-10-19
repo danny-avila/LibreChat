@@ -36,8 +36,7 @@ const logsSchema = z
   })
   .strict();
 
-const isReplayScope = (name: string | undefined): boolean =>
-  name === '@hyperdx/otel-web-session-recorder';
+const isReplayScope = (name: string | undefined): boolean => name === 'rum.rr-web';
 
 type FilteredMessage = { bytes: Uint8Array; records: number; removed: number };
 
