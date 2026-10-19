@@ -755,6 +755,14 @@ describe('tail ellipsis direction', () => {
 });
 
 describe('strongDirection', () => {
+  it('treats letters of every left-to-right script as strong', () => {
+    expect(strongDirection('\u0928\u093E\u092E \u0645\u0631\u062D\u0628\u0627')).toBe('ltr');
+    expect(strongDirection('\u0E2A\u0E27\u0E31\u0E2A\u0E14\u0E35 \u05E9\u05DC\u05D5\u05DD')).toBe(
+      'ltr',
+    );
+    expect(strongDirection('\u10D2\u10D0 \u0645\u0631\u062D\u0628\u0627')).toBe('ltr');
+  });
+
   it('returns null when the text has no strong character', () => {
     expect(strongDirection('123 \u0661\u0662 \u00D7 ...')).toBeNull();
     expect(strongDirection('')).toBeNull();
