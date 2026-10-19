@@ -1,11 +1,15 @@
 import React from 'react';
 import { useSetAtom } from 'jotai';
 import { RecoilRoot, useSetRecoilState } from 'recoil';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { isSubmittingFamily } from '@librechat/chat/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { TConversation } from 'librechat-data-provider';
+import type { JotaiStore } from 'test/harness';
 import type { Artifact } from '~/common';
+import { prepareUndockedDocument } from '~/components/Artifacts/undockedWindow';
 import { activeSubagentPanel } from '~/components/Chat/Subagents/state';
+import { undockedArtifacts } from '~/components/Artifacts/state';
 import { ChatSurfaceHarness } from 'test/harness';
 import Presentation from './Presentation';
 import store from '~/store';
@@ -45,10 +49,24 @@ jest.mock('~/components/Artifacts/Artifacts', () => {
   };
 });
 
-jest.mock('~/components/Chat/Subagents/SubagentThreadPanel', () => ({
-  __esModule: true,
-  default: () => <aside>{mockChildPanelLabel}</aside>,
-}));
+jest.mock('~/components/Chat/Subagents/SubagentThreadPanel', () => {
+  const { useParentSubagents } = jest.requireActual<
+    typeof import('~/components/Chat/Subagents/ParentSubagentsProvider')
+  >('~/components/Chat/Subagents/ParentSubagentsProvider');
+  return {
+    __esModule: true,
+    default: function MockSubagentThreadPanel() {
+      const parent = useParentSubagents();
+      return (
+        <aside>
+          {mockChildPanelLabel}
+          <span data-testid="panel-parent">{parent.conversationId}</span>
+          <input aria-label="Panel draft" />
+        </aside>
+      );
+    },
+  };
+});
 
 jest.mock('~/components/Chat/Input/Files/DragDropWrapper', () => ({
   __esModule: true,
@@ -69,19 +87,24 @@ jest.mock('~/Providers', () => ({
   EditorProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
-jest.mock('~/hooks/Artifacts/useResetArtifactsOnConversationChange', () => ({
+jest.mock('~/hooks/Artifacts/useArtifactsRegistryLifetime', () => ({
   __esModule: true,
   default: jest.fn(),
 }));
 
 jest.mock('~/data-provider', () => ({
   useDeleteFilesMutation: () => ({ mutateAsync: jest.fn() }),
+  useGetStartupConfig: () => ({ data: undefined }),
   useParentSubagentsQuery: (conversationId: string, config?: unknown, isSubmitting?: boolean) =>
     mockUseParentSubagentsQuery(conversationId, config, isSubmitting),
 }));
 
 jest.mock('~/hooks', () => ({
   useSetFilesToDelete: () => jest.fn(),
+  useLocalize:
+    () =>
+    (key: string): string =>
+      key,
 }));
 
 const OpenArtifactPanel = () => {
@@ -109,7 +132,7 @@ const OpenArtifactPanel = () => {
   );
 };
 
-const OpenSubagentPanel = () => {
+const OpenSubagentPanel = ({ durable = true }: { durable?: boolean }) => {
   const setConversation = useSetRecoilState(store.conversationByIndex(0));
   const setSelection = useSetAtom(activeSubagentPanel);
   const open = () => {
@@ -123,10 +146,7 @@ const OpenSubagentPanel = () => {
       subagentType: 'researcher',
       initialProgress: 1,
       isSubmitting: false,
-      durable: {
-        threadId: 'child-thread',
-        taskId: 'background-task',
-      },
+      durable: durable ? { threadId: 'child-thread', taskId: 'background-task' } : undefined,
     });
   };
   return (
@@ -155,7 +175,7 @@ const SelectAgentConversation = () => {
 };
 
 const StartAgentRun = () => {
-  const setSubmitting = useSetRecoilState(store.isSubmittingFamily(0));
+  const setSubmitting = useSetAtom(isSubmittingFamily(0));
   return (
     <button type="button" onClick={() => setSubmitting(true)}>
       {mockStartAgentRunLabel}
@@ -215,6 +235,66 @@ describe('Presentation Artifact loading', () => {
     );
   });
 
+  it('keeps durable activity and its draft bound to the original parent after navigation', async () => {
+    renderPresentation(
+      <ChatSurfaceHarness>
+        <RecoilRoot>
+          <Presentation>
+            <OpenSubagentPanel />
+            <SelectAgentConversation />
+          </Presentation>
+        </RecoilRoot>
+      </ChatSurfaceHarness>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: mockOpenChildLabel }));
+    expect(await screen.findByText(mockChildPanelLabel)).toBeInTheDocument();
+    const draft = screen.getByLabelText('Panel draft');
+    fireEvent.change(draft, { target: { value: 'Keep this guidance.' } });
+    fireEvent.click(screen.getByRole('button', { name: mockSelectAgentConversationLabel }));
+    expect(screen.getByText(mockChildPanelLabel)).toBeInTheDocument();
+    expect(screen.getByTestId('panel-parent')).toHaveTextContent('parent-conversation');
+    expect(screen.getByLabelText('Panel draft')).toBe(draft);
+    expect(draft).toHaveValue('Keep this guidance.');
+  });
+
+  it('clears the durable selection when its authenticated chat host unmounts', async () => {
+    let atoms: JotaiStore;
+    const view = renderPresentation(
+      <ChatSurfaceHarness
+        seed={(store) => {
+          atoms = store;
+        }}
+      >
+        <RecoilRoot>
+          <Presentation>
+            <OpenSubagentPanel />
+          </Presentation>
+        </RecoilRoot>
+      </ChatSurfaceHarness>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: mockOpenChildLabel }));
+    expect(await screen.findByText(mockChildPanelLabel)).toBeInTheDocument();
+    view.unmount();
+    expect(atoms!.get(activeSubagentPanel)).toBeNull();
+  });
+
+  it('still closes non-durable activity when leaving its parent chat', async () => {
+    renderPresentation(
+      <ChatSurfaceHarness>
+        <RecoilRoot>
+          <Presentation>
+            <OpenSubagentPanel durable={false} />
+            <SelectAgentConversation />
+          </Presentation>
+        </RecoilRoot>
+      </ChatSurfaceHarness>,
+    );
+    fireEvent.click(screen.getByRole('button', { name: mockOpenChildLabel }));
+    expect(await screen.findByText(mockChildPanelLabel)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: mockSelectAgentConversationLabel }));
+    expect(screen.queryByText(mockChildPanelLabel)).not.toBeInTheDocument();
+  });
+
   it('uses one panel slot and lets an opened artifact replace child activity', async () => {
     renderPresentation(
       <ChatSurfaceHarness>
@@ -233,5 +313,46 @@ describe('Presentation Artifact loading', () => {
     fireEvent.click(screen.getByRole('button', { name: mockOpenArtifactLabel }));
     expect(await screen.findByText(mockArtifactPanelLabel)).toBeInTheDocument();
     expect(screen.queryByText(mockChildPanelLabel)).not.toBeInTheDocument();
+  });
+
+  /* Undocked, the artifacts pane is in its own window and the side panel is
+   * free: a child-activity panel opened there has to stay open. */
+  it('keeps child activity in the side panel while the artifacts pane is undocked', async () => {
+    const detachedDocument = document.implementation.createHTMLDocument('');
+    const root = prepareUndockedDocument(document, detachedDocument);
+    const detachedWindow = {
+      document: detachedDocument,
+      closed: false,
+      outerWidth: 900,
+      outerHeight: 700,
+      screenX: 0,
+      screenY: 0,
+      focus: jest.fn(),
+      addEventListener: jest.fn(),
+      removeEventListener: jest.fn(),
+      close: jest.fn(),
+    } as unknown as Window;
+
+    renderPresentation(
+      <ChatSurfaceHarness
+        seed={(store) => store.set(undockedArtifacts, { window: detachedWindow, root })}
+      >
+        <RecoilRoot>
+          <Presentation>
+            <OpenSubagentPanel />
+            <OpenArtifactPanel />
+          </Presentation>
+        </RecoilRoot>
+      </ChatSurfaceHarness>,
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: mockOpenArtifactLabel }));
+    fireEvent.click(screen.getByRole('button', { name: mockOpenChildLabel }));
+
+    expect(await screen.findByText(mockChildPanelLabel)).toBeInTheDocument();
+    expect(screen.queryByText(mockArtifactPanelLabel)).not.toBeInTheDocument();
+    await waitFor(() =>
+      expect(detachedDocument.body.textContent).toContain(mockArtifactPanelLabel),
+    );
   });
 });

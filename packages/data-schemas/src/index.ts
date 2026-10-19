@@ -7,6 +7,9 @@ export * from './utils';
 export { createModels } from './models';
 export {
   createMethods,
+  createSkillDeletionPersistenceAdapter,
+  AGENT_OWNER_CONTACT_RESOLVED_FIELD,
+  AgentSortCursorError,
   CLIENT_MESSAGE_SELECT,
   SUBAGENT_TRANSCRIPT_SOURCE_BYTE_LIMIT,
   RoleConflictError,
@@ -24,6 +27,7 @@ export {
   validateSkillBody,
   validateRelativePath,
   inferSkillFileCategory,
+  filterExistingSkillIds,
   validateSkillFrontmatter,
   getCanonicalSkillFrontmatterKey,
   normalizeSkillFrontmatterKeys,
@@ -44,6 +48,10 @@ export {
   MCPAuthorityProofError,
   createMCPAuthorizationFenceRetryStorage,
   MAX_MCP_AUTHORITY_TARGETS,
+  InvalidAvailableProjectFilesCursorError,
+  parseAvailableProjectFilesCursor,
+  MAX_AVAILABLE_PROJECT_FILES_LIMIT,
+  DEFAULT_AVAILABLE_PROJECT_FILES_LIMIT,
   createMCPAuthorityBootRevision,
   createMCPAuthorityConfigSourceRevision,
   createMCPAuthorityCredentialRevision,
@@ -70,6 +78,7 @@ export {
 export {
   AGENT_BACKGROUND_TOOL_RESULT_STORAGE_MAX_CHARS,
   AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_RECEIPT_V2,
+  AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_BATCH_V3,
   AGENT_TRIGGER_WORKER_CAPABILITY_BACKGROUND_COMPLETION_V1,
   AGENT_TRIGGER_WORKER_CAPABILITY_DETACHED_ACTION_V1,
   AGENT_TRIGGER_WORKER_CAPABILITY_QUEUED_TURN_V1,
@@ -108,4 +117,7 @@ export {
   migrateTenantIndexes,
   dropSupersededPromptGroupIndexes,
   backfillMCPServerNormalizedNames,
+  backfillSearchTokens,
+  warnOnMissingSearchTokens,
 } from './migrations';
+export type { SearchTokenBackfillResult } from './migrations';

@@ -68,6 +68,9 @@ const { getAppConfig, clearAppConfigCache, clearOverrideCache } = createAppConfi
   },
 });
 
+// Config owns the reader; models never import this module to obtain it.
+db.initializeMessageBudget(getAppConfig);
+
 /**
  * Invalidate all config-related caches after an admin config mutation.
  * Clears the base config, per-principal override caches, tool caches,
@@ -96,8 +99,6 @@ async function invalidateConfigCaches(tenantId) {
 
 module.exports = {
   getAppConfig,
-  clearAppConfigCache,
-  clearOverrideCache,
   invalidateConfigCaches,
   getCodeEnvironmentRegistry,
   invalidateCodeEnvironmentConfigCache,

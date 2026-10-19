@@ -14,11 +14,6 @@ jest.mock('~/hooks', () => ({
   useLocalize: () => (key: string) => key,
 }));
 
-jest.mock('~/components/Chat/Messages/Content/Parts/Text', () => ({
-  __esModule: true,
-  default: ({ text }: { text: string }) => <div>{text}</div>,
-}));
-
 jest.mock('~/components/Chat/Messages/Content/Parts', () => ({
   EmptyText: () => <div data-testid="thinking-cursor" />,
 }));
@@ -215,6 +210,19 @@ const base: ChildActivity = {
     { type: 'writing', text: 'Final answer.' },
   ],
 };
+
+it('keeps a host notice inside the floating-header clearance', () => {
+  const activity: ChildActivity = { title: 'Review', status: 'running', items: [] };
+  const { container } = render(
+    <SubagentActivity
+      activity={activity}
+      headerInset
+      notice={<div role="status">{String(19)}</div>}
+    />,
+  );
+  const inset = container.querySelector('[class~="pt-13"]');
+  expect(inset).toContainElement(screen.getByRole('status'));
+});
 
 describe('SubagentActivity', () => {
   it.each(['failed', 'cancelled'] as const)(

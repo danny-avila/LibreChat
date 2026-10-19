@@ -13,10 +13,8 @@ jest.mock('~/hooks', () => ({
         com_ui_tool_call_time: 'Tool call',
         com_ui_tool_total_time: 'Total elapsed',
         com_ui_duration_minutes: `${values?.[0]}m ${values?.[1]}s`,
-        com_ui_duration_announced_seconds: `took ${values?.count} seconds`,
-        com_ui_duration_announced_seconds_one: `took ${values?.count} second`,
-        com_ui_duration_announced_minutes: `took ${values?.count} minutes`,
-        com_ui_duration_announced_minutes_one: `took ${values?.count} minute`,
+        com_ui_duration_announced_seconds: `took ${values?.value} ${values?.count === 1 ? 'second' : 'seconds'}`,
+        com_ui_duration_announced_minutes: `took ${values?.value} ${values?.count === 1 ? 'minute' : 'minutes'}`,
       };
       return translations[key] ?? key;
     },
@@ -275,5 +273,36 @@ describe('ProgressText fixed siblings', () => {
     expect(box).toContainElement(screen.getByText('a very long subtitle'));
     expect(screen.getByText('· Total elapsed 3.5s').parentElement).toHaveClass('shrink-0');
     expect(container.querySelector('svg')).toHaveClass('shrink-0');
+  });
+});
+
+describe('ProgressText verdict', () => {
+  it('names the failure reason inside the button on a failed card', () => {
+    renderProgressText({ phase: 'failed', verdict: 'exit code 2' });
+    expect(screen.getByRole('button')).toHaveTextContent('Completed foo· exit code 2');
+  });
+
+  it('states the reason in place of the generic failure word', () => {
+    renderProgressText({ phase: 'failed', verdict: 'timed out' });
+    expect(screen.queryByText(/com_ui_tool_failed/)).not.toBeInTheDocument();
+  });
+
+  it('keeps the failure verdict but hides preparation, call, total, and live timers', () => {
+    renderProgressText({
+      phase: 'failed',
+      verdict: 'exit code 2',
+      durationMs: 248_000,
+      toolPreparationDurationMs: 242_000,
+      toolExecutionDurationMs: 5_700,
+      phaseStartAt: 1_000,
+    });
+    expect(screen.getByRole('button')).toHaveTextContent('exit code 2');
+    expect(screen.queryByText(/Preparation|Tool call|Total elapsed|took/)).toBeNull();
+    expect(screen.queryByTestId('stream-elapsed')).toBeNull();
+  });
+
+  it('shows no verdict on a successful card', () => {
+    renderProgressText({ verdict: 'exit code 2' });
+    expect(screen.queryByText(/exit code 2/)).not.toBeInTheDocument();
   });
 });

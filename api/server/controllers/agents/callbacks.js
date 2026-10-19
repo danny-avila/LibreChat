@@ -19,6 +19,7 @@ const {
 } = require('@librechat/agents');
 const {
   sendEvent,
+  getModelEndUsage,
   computeUsageCostUSD,
   GenerationJobManager,
   waitForGenerationSettled,
@@ -33,8 +34,10 @@ const {
   shouldSignalSandboxStart,
   getToolInputValidationDetails,
   captureSubagentIdentity,
+  getAttachmentOwnership,
   collectToolCallIds,
   createToolTimingAdapter,
+  stampCommandExecutor,
 } = require('@librechat/api');
 const { processFileCitations } = require('~/server/services/Files/Citations');
 const { processCodeOutput, runPreviewFinalize } = require('~/server/services/Files/Code/process');
@@ -43,15 +46,6 @@ const { saveBase64Image } = require('~/server/services/Files/process');
 
 function isHostFileAuthoringArtifact(artifact) {
   return artifact?.[HOST_FILE_AUTHORING_ARTIFACT_KEY] === true;
-}
-
-function getAttachmentOwnership(metadata) {
-  const agentId = metadata?.executingAgentId ?? metadata?.agentId ?? metadata?.agent_id;
-  const stepId = metadata?.stepId;
-  return {
-    ...(typeof agentId === 'string' && agentId.length > 0 ? { agentId } : {}),
-    ...(typeof stepId === 'string' && stepId.length > 0 ? { stepId } : {}),
-  };
 }
 
 function addStatefulWorkspaceChange(attachment, artifact, executionProfile) {
@@ -158,7 +152,7 @@ class ModelEndHandler {
         });
       }
 
-      const usage = data?.output?.usage_metadata;
+      const usage = getModelEndUsage(data?.output);
       if (!usage) {
         return;
       }
@@ -195,7 +189,11 @@ class ModelEndHandler {
             total_tokens: taggedUsage.total_tokens,
             input_token_details:
               cache_creation != null || cache_read != null
-                ? { cache_creation, cache_read }
+                ? {
+                    cache_creation,
+                    cache_creation_1h: taggedUsage.input_token_details?.cache_creation_1h,
+                    cache_read,
+                  }
                 : undefined,
             model: taggedUsage.model,
             provider: taggedUsage.provider,
@@ -682,6 +680,7 @@ function getDefaultHandlers({
             toolCall.inputValidationError = true;
           }
         }
+        stampCommandExecutor(toolExecuteOptions?.attachedCommandStepIds, data?.result, toolCall);
         if (data?.result != null) {
           await emitForJob({ event, data });
         } else if (checkIfLastAgent(metadata?.last_agent_id, metadata?.langgraph_node)) {
@@ -1018,6 +1017,7 @@ function createToolEndCallback({ req, res, artifactPromises, streamId = null, jo
         (async () => {
           const attachment = {
             type: Tools.ui_resources,
+            ...getAttachmentOwnership(metadata),
             messageId: metadata.run_id,
             toolCallId: output.tool_call_id,
             conversationId: metadata.thread_id,
@@ -1391,6 +1391,7 @@ function createResponsesToolEndCallback({ req, res, tracker, artifactPromises })
           const attachment = {
             type: Tools.ui_resources,
             toolCallId: output.tool_call_id,
+            ...getAttachmentOwnership(metadata),
             [Tools.ui_resources]: output.artifact[Tools.ui_resources].data,
           };
           // For Responses API, always emit attachment during streaming

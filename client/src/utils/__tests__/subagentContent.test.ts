@@ -1,6 +1,6 @@
 import { ContentTypes } from 'librechat-data-provider';
 import type { SubagentUpdateEvent } from 'librechat-data-provider';
-import { aggregateSubagentContent, buildSubagentTickerLines } from '../subagentContent';
+import { aggregateSubagentContent, buildSubagentTickerLines } from 'test/subagents';
 
 const makeEvent = (overrides: Partial<SubagentUpdateEvent>): SubagentUpdateEvent => ({
   runId: 'parent-run',
@@ -75,8 +75,18 @@ describe('aggregateSubagentContent', () => {
     ]);
 
     expect(parts).toEqual([
-      { type: ContentTypes.TEXT, text: 'Commentary.', phase: 'commentary' },
-      { type: ContentTypes.TEXT, text: 'Final answer.', phase: 'final_answer' },
+      {
+        type: ContentTypes.TEXT,
+        text: 'Commentary.',
+        phase: 'commentary',
+        stepId: 'commentary-step',
+      },
+      {
+        type: ContentTypes.TEXT,
+        text: 'Final answer.',
+        phase: 'final_answer',
+        stepId: 'final-step',
+      },
     ]);
   });
 
@@ -117,7 +127,12 @@ describe('aggregateSubagentContent', () => {
     ];
 
     expect(aggregateSubagentContent(events)).toEqual([
-      { type: ContentTypes.TEXT, text: 'Still commentary.', phase: 'commentary' },
+      {
+        type: ContentTypes.TEXT,
+        text: 'Still commentary.',
+        phase: 'commentary',
+        stepId: 'long-lived-step',
+      },
     ]);
   });
 

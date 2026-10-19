@@ -93,7 +93,7 @@ function EndpointModelItemComponent({
     }
 
     return (
-      <div className="flex h-5 w-5 flex-shrink-0 items-center justify-center overflow-hidden rounded-full">
+      <div className="flex h-5 w-5 shrink-0 items-center justify-center overflow-hidden rounded-full">
         {content}
       </div>
     );
@@ -111,7 +111,7 @@ function EndpointModelItemComponent({
       <div className="flex w-full min-w-0 items-center gap-2 px-1 py-1">
         {renderAvatar()}
         <span className="truncate">{modelName}</span>
-        {isGlobal && <EarthIcon className="ml-1 size-4 text-surface-submit" />}
+        {isGlobal && <EarthIcon className="text-surface-submit ml-1 size-4" />}
       </div>
       <button
         type="button"
@@ -119,22 +119,23 @@ function EndpointModelItemComponent({
         onClick={handleFavoriteClick}
         aria-label={isFavorite ? localize('com_ui_unpin') : localize('com_ui_pin')}
         className={cn(
-          'rounded-md p-1 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring-primary',
+          'hover:bg-surface-hover focus-visible:ring-ring-primary text-text-secondary rounded-md p-1 focus-visible:ring-2 focus-visible:outline-hidden focus-visible:ring-inset',
           isFavorite
             ? 'visible'
             : // Visible by default so it's tappable on touch (no hover to
-              // reveal it); only hidden-until-hover on hover-capable pointers.
+              // reveal it); only hidden-until-hover where no pointer is coarse,
+              // so a 2-in-1's touchscreen keeps it beside its hovering trackpad.
               // A hover-gated child would otherwise make the whole item
               // hover-dependent, so the first tap only reveals it and a second
               // tap is needed to select (the iOS double-tap).
-              'group-focus-within:visible group-hover:visible group-data-[active-item]:visible [@media(hover:hover)]:invisible',
+              'no-touch:invisible group-focus-within:visible group-hover:visible group-data-[active-item]:visible',
         )}
       >
-        <MorphIcon icon={isFavorite ? PinOff : Pin} className="h-4 w-4 text-text-secondary" />
+        <MorphIcon icon={isFavorite ? PinOff : Pin} className="h-4 w-4" />
       </button>
       {isSelected && (
         <>
-          <CheckCircle2 className="size-4 shrink-0 text-text-primary" aria-hidden="true" />
+          <CheckCircle2 className="text-text-primary size-4 shrink-0" aria-hidden="true" />
           <VisuallyHidden>{localize('com_a11y_selected')}</VisuallyHidden>
         </>
       )}

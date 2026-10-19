@@ -4,7 +4,12 @@ import type { AgentSubagentGraph } from './types/agents';
 import type { SearchResultData } from './types/web';
 import type { FunctionTool } from './types/tools';
 import type { TFile } from './types/files';
-import { CODE_ENVIRONMENT_MODES, CODE_WORKSPACE_ID_PATTERN } from './code/workspace';
+import {
+  CODE_ENVIRONMENT_MODES,
+  CODE_WORKSPACE_ID_PATTERN,
+  CODE_WORKSPACE_CHECKOUT_MODES,
+  MAX_AGENT_CODE_ENVIRONMENT_CHOICES,
+} from './code/workspace';
 import { userSubmittedMessageFieldPathSchema } from './filters';
 import { TFeedback, feedbackSchema } from './feedback';
 import { CODE_APPROVAL_MODES } from './code/approval';
@@ -357,6 +362,37 @@ export const eThinkingLevelSchema = z.nativeEnum(ThinkingLevel);
 export const eReasoningModeSchema = z.nativeEnum(ReasoningMode);
 export const eReasoningContextSchema = z.nativeEnum(ReasoningContext);
 
+export const reasoningOverrideSchema = z.discriminatedUnion('key', [
+  z
+    .object({
+      key: z.literal('reasoning_effort'),
+      value: eReasoningEffortSchema,
+    })
+    .strict(),
+  z
+    .object({
+      key: z.literal('effort'),
+      value: eAnthropicEffortSchema,
+    })
+    .strict(),
+  z
+    .object({
+      key: z.literal('thinkingLevel'),
+      value: eThinkingLevelSchema,
+    })
+    .strict(),
+  z
+    .object({
+      key: z.literal('thinkingBudget'),
+      /* No fixed ceiling: an operator's paramDefinitions may widen the range,
+         and the request is checked against the resolved range server-side. */
+      value: z.number().int().min(-1).max(Number.MAX_SAFE_INTEGER),
+    })
+    .strict(),
+]);
+
+export type TReasoningOverride = z.infer<typeof reasoningOverrideSchema>;
+
 export const defaultAssistantFormValues = {
   assistant: '',
   id: '',
@@ -392,6 +428,7 @@ export const defaultAgentFormValues = {
   [Tools.memory]: false,
   stateful_code_environment: 'user' as const,
   code_environment_id: undefined as string | null | undefined,
+  code_environment_ids: [] as string[],
   code_workspace_id: undefined as string | undefined,
   repositoryInstructions: undefined as 'prefer' | 'defer' | 'off' | undefined,
   category: 'general',
@@ -399,6 +436,7 @@ export const defaultAgentFormValues = {
     name: '',
     email: '',
   },
+  conversation_starters: [] as string[],
   /** Optional allowlist. Only applies when `skills_enabled === true`.
    *  Empty/undefined + enabled = full catalog; non-empty + enabled = narrow to ids. */
   skills: undefined as string[] | undefined,
@@ -547,9 +585,6 @@ export const getGoogleThinkingBudgetBounds = (
   return undefined;
 };
 
-export const getGoogleThinkingBudgetMax = (modelName: string): number | undefined =>
-  getGoogleThinkingBudgetBounds(modelName)?.max;
-
 export const googleSettings = {
   model: {
     default: 'gemini-1.5-flash-latest' as const,
@@ -612,6 +647,8 @@ const DEFAULT_MAX_OUTPUT = 8192 as const;
 const LEGACY_ANTHROPIC_MAX_OUTPUT = 4096 as const;
 const CLAUDE_SONNET_128K_OUTPUT_PATTERN =
   /claude-sonnet[-.]?(?:4[-.]?(?:[6-9]|\d{2})|[5-9]|\d{2,})(?=$|[^0-9])/;
+const CLAUDE_HAIKU_128K_OUTPUT_PATTERN =
+  /claude-haiku[-.]?(?:5[-.]?(?:[5-9]|\d{2})|[6-9]|\d{2,})(?=$|[^0-9])/;
 
 /**
  * Claude "Mythos-class" model families — new top-level classes (peers of
@@ -672,7 +709,10 @@ export const anthropicSettings = {
         return ANTHROPIC_MAX_OUTPUT;
       }
 
-      if (CLAUDE_SONNET_128K_OUTPUT_PATTERN.test(modelName)) {
+      if (
+        CLAUDE_SONNET_128K_OUTPUT_PATTERN.test(modelName) ||
+        CLAUDE_HAIKU_128K_OUTPUT_PATTERN.test(modelName)
+      ) {
         return ANTHROPIC_MAX_OUTPUT;
       }
 
@@ -705,7 +745,10 @@ export const anthropicSettings = {
         return value;
       }
 
-      if (CLAUDE_SONNET_128K_OUTPUT_PATTERN.test(modelName)) {
+      if (
+        CLAUDE_SONNET_128K_OUTPUT_PATTERN.test(modelName) ||
+        CLAUDE_HAIKU_128K_OUTPUT_PATTERN.test(modelName)
+      ) {
         if (value > ANTHROPIC_MAX_OUTPUT) {
           return ANTHROPIC_MAX_OUTPUT;
         }
@@ -907,6 +950,8 @@ export const tMessageSchema = z.object({
   /** @deprecated */
   generation: z.string().nullable().optional(),
   isCreatedByUser: z.boolean(),
+  /** Opaque revision of the separately authorized owner display. */
+  privacyRevision: z.string().optional(),
   /** True when the complete stored row came from outside the model. */
   isUserSubmitted: z.boolean().optional(),
   /** JSON pointers to caller-authored fields in an otherwise mixed model response. */
@@ -988,6 +1033,8 @@ export const tMessageSchema = z.object({
    * request time and counted in the user message token count.
    */
   quotes: z.array(z.string()).optional(),
+  /** Request-scoped reasoning selection that produced this user turn. */
+  reasoningOverride: reasoningOverrideSchema.optional(),
 });
 
 /**
@@ -1034,8 +1081,30 @@ export type MemoryArtifact = {
 export type UIResource = {
   resourceId: string;
   uri: string;
+  name?: string;
   mimeType?: string;
   text?: string;
+  serverName?: string;
+  toolName?: string;
+  /** Opaque server-issued binding required for executable MCP App callbacks. */
+  serverBinding?: string;
+  structuredContent?: Record<string, unknown>;
+  content?: unknown[];
+  csp?: {
+    connectDomains?: string[];
+    resourceDomains?: string[];
+    frameDomains?: string[];
+    baseUriDomains?: string[];
+  };
+  permissions?: {
+    camera?: Record<string, never>;
+    microphone?: Record<string, never>;
+    geolocation?: Record<string, never>;
+    clipboardWrite?: Record<string, never>;
+  };
+  toolArgs?: Record<string, unknown>;
+  isError?: boolean;
+  resultMeta?: Record<string, unknown>;
   [key: string]: unknown;
 };
 
@@ -1131,6 +1200,8 @@ export const tConversationSchema = z.object({
   pinned: z.boolean().optional(),
   /** Server-derived: an active shared link exists for this conversation. Not persisted. */
   isShared: z.boolean().optional(),
+  /** Server-derived on list rows: the listing replica returned the code decision. Not persisted. */
+  codeDecisionListed: z.boolean().optional(),
   codeApprovalMode: z.enum(CODE_APPROVAL_MODES).optional(),
   codeEnvironmentMode: z.enum(CODE_ENVIRONMENT_MODES).optional(),
   codeWorkspaces: z
@@ -1139,11 +1210,20 @@ export const tConversationSchema = z.object({
         .object({
           environmentId: z.string().regex(CODE_WORKSPACE_ID_PATTERN),
           workspaceId: z.string().regex(CODE_WORKSPACE_ID_PATTERN),
+          checkout: z.enum(CODE_WORKSPACE_CHECKOUT_MODES).optional(),
+          agentIds: z
+            .array(z.string().regex(CODE_WORKSPACE_ID_PATTERN))
+            .min(1)
+            .max(MAX_AGENT_CODE_ENVIRONMENT_CHOICES)
+            .optional(),
         })
         .strict(),
     )
     .optional(),
   title: z.string().nullable().or(z.literal('New Chat')).default('New Chat'),
+  /** Server-owned title authority; ordinary chat saves cannot set or clear it. */
+  titleSetByUser: z.boolean().optional(),
+  titleRevision: z.number().int().nonnegative().optional(),
   user: z.string().optional(),
   messages: z.array(z.string()).optional(),
   tools: z.union([z.array(tPluginSchema), z.array(z.string())]).optional(),
@@ -1179,6 +1259,16 @@ export const tConversationSchema = z.object({
   chatProjectId: z.string().nullable().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
+  /** Set only when an assistant message is persisted; drives the unseen-reply indicator. */
+  lastResponseAt: z.string().optional(),
+  /** Durable messageId of the assistant reply named by `lastResponseAt`. */
+  lastResponseMessageId: z.string().optional(),
+  /** True only while `lastResponseAt` is the synthetic marker from "mark unread". */
+  lastResponseIsManual: z.boolean().optional(),
+  /** True: manual reminder; false: real reply; absent: legacy/unknown intent. */
+  isMarkedUnread: z.boolean().optional(),
+  /** Read acknowledgement; epoch is the explicit unseen-reply watermark. */
+  lastSeenAt: z.string().optional(),
   /* Files */
   resendFiles: z.boolean().optional(),
   file_ids: z.array(z.string()).optional(),
@@ -1243,6 +1333,15 @@ export const tPresetSchema = tConversationSchema
     createdAt: true,
     updatedAt: true,
     title: true,
+    titleSetByUser: true,
+    titleRevision: true,
+    /* Runtime unseen-reply state must not ride into presets: applying one would stamp
+       stale timestamps back onto conversations. */
+    lastResponseAt: true,
+    lastResponseMessageId: true,
+    lastResponseIsManual: true,
+    isMarkedUnread: true,
+    lastSeenAt: true,
   })
   .merge(
     z.object({
@@ -1482,34 +1581,6 @@ export const googleBaseSchema = tConversationSchema.pick({
 export const googleSchema = googleBaseSchema
   .transform((obj: Partial<TConversation>) => removeNullishValues(obj, true))
   .catch(() => ({}));
-
-/**
-   * TODO: Map the following fields:
-  - presence_penalty -> presencePenalty
-  - frequency_penalty -> frequencyPenalty
-  - stop -> stopSequences
-   */
-export const googleGenConfigSchema = z
-  .object({
-    maxOutputTokens: coerceNumber.optional(),
-    temperature: coerceNumber.optional(),
-    topP: coerceNumber.optional(),
-    topK: coerceNumber.optional(),
-    presencePenalty: coerceNumber.optional(),
-    frequencyPenalty: coerceNumber.optional(),
-    stopSequences: z.array(z.string()).optional(),
-    thinkingConfig: z
-      .object({
-        includeThoughts: z.boolean().optional(),
-        thinkingBudget: coerceNumber.optional(),
-        thinkingLevel: z.string().optional(),
-      })
-      .optional(),
-    web_search: z.boolean().optional(),
-    url_context: z.boolean().optional(),
-  })
-  .strip()
-  .optional();
 
 export function removeNullishValues<T extends Record<string, unknown>>(
   obj: T,

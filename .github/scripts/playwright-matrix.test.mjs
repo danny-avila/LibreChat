@@ -85,19 +85,32 @@ function decision(redis, mcp = true) {
   return { matrix: { 'playwright-mock': { redis_transport: redis, mcp_tool_list_changed: mcp } } };
 }
 
-test('PR selection and fail-open defaults use six memory shards and two Redis transport shards', () => {
+test('PR selection and fail-open defaults use ten memory shards and two Redis transport shards', () => {
   assert.equal(defaults.length, 2);
   assert.deepEqual(defaults[0], prMatrix);
-  assert.equal(prMatrix.include.length, 8);
-  assertPartition(prMatrix, 'memory', 'full', 6);
+  assert.equal(prMatrix.include.length, 12);
+  assertPartition(prMatrix, 'memory', 'full', 10);
   assertPartition(prMatrix, 'redis', 'transport', 2);
 });
 
 test('nightly and default manual runs retain full-suite coverage on both stores', () => {
   assert.equal(workflow.on.workflow_dispatch.inputs.coverage.default, 'full');
-  assert.equal(defaults[1].include.length, 4);
-  assertPartition(defaults[1], 'memory', 'full', 2);
-  assertPartition(defaults[1], 'redis', 'full', 2);
+  assert.equal(defaults[1].include.length, 20);
+  assertPartition(defaults[1], 'memory', 'full', 10);
+  assertPartition(defaults[1], 'redis', 'full', 10);
+});
+
+test('PR and nightly matrices preserve both registered-email change modes on one memory shard', () => {
+  for (const matrix of [prMatrix, ...defaults]) {
+    const emailLanes = matrix.include.filter((lane) => lane.email_change === 'true');
+    assert.equal(emailLanes.length, 1);
+    assert.equal(emailLanes[0].stream_store, 'memory');
+    assert.match(emailLanes[0].shard, /^1\//);
+  }
+  assert.equal(
+    shards.steps.filter((step) => step.if === "matrix.email_change == 'true'").length,
+    2,
+  );
 });
 
 test('manual PR coverage opts into the PR fallback matrix without bypassing the PR author gate', () => {
@@ -119,9 +132,12 @@ test('every shard has a unique job name and artifact namespace', () => {
 });
 
 test('both suite commands consume the matrix shard without increasing worker concurrency', () => {
-  for (const suite of ['full', 'transport']) {
-    const step = shards.steps.find((entry) => entry.if === `matrix.suite == '${suite}'`);
-    assert.match(step.run, /--shard=\$\{\{ matrix\.shard \}\}/);
+  const full = shards.steps.find((entry) => entry.if === "matrix.suite == 'full'");
+  assert.match(full.run, /playwright-shards\.mjs plan[\s\S]*--shard '\$\{\{ matrix\.shard \}\}'/);
+  assert.match(full.run, /--test-list=e2e\/\.generated\/shard-tests\.txt/);
+  const transport = shards.steps.find((entry) => entry.if === "matrix.suite == 'transport'");
+  assert.match(transport.run, /--shard=\$\{\{ matrix\.shard \}\}/);
+  for (const step of [full, transport]) {
     assert.doesNotMatch(step.run, /--workers/);
   }
   const config = readFileSync(
@@ -136,8 +152,8 @@ test('an explicit Redis skip drops both transport shards and no memory shard', (
   const { matrix, outputs } = select(t, decision(false, false));
   assert.equal(outputs.decided, 'true');
   assert.equal(outputs.mcp_run, 'false');
-  assert.equal(matrix.include.length, 6);
-  assertPartition(matrix, 'memory', 'full', 6);
+  assert.equal(matrix.include.length, 10);
+  assertPartition(matrix, 'memory', 'full', 10);
 });
 
 test('missing or non-boolean Redis decisions retain both transport shards', (t) => {
@@ -188,11 +204,17 @@ test('graduated spec skips keep the same pool across shards and remain opt-in', 
 test('the required gate still waits for all shards and rejects failures without fighting cancellation', () => {
   const gate = workflow.jobs.e2e;
   assert.equal(gate.name, 'e2e');
-  assert.deepEqual(gate.needs, ['codegraph_select', 'e2e_shards', 'mcp_tool_list_changed']);
+  assert.deepEqual(gate.needs, [
+    'codegraph_select',
+    'e2e_shards',
+    'mcp_tool_list_changed',
+    'mcp_apps',
+  ]);
   assert.equal(shards.strategy['fail-fast'], false);
   assert.match(gate.if, /!cancelled\(\)/);
   assert.match(shards.if, /!cancelled\(\)/);
   assert.match(gate.steps[0].if, /needs\.e2e_shards\.result != 'success'/);
+  assert.match(gate.steps[0].if, /needs\.mcp_apps\.result != 'success'/);
   assert.match(gate.steps[0].if, /needs\.mcp_tool_list_changed\.result != 'success'/);
   assert.match(gate.steps[0].if, /needs\.codegraph_select\.outputs\.mcp_run == 'false'/);
   assert.equal(gate.steps[0].run, 'exit 1');

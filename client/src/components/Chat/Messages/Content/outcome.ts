@@ -6,12 +6,15 @@ import type {
   FunctionToolCall,
   TMessageContentParts,
 } from 'librechat-data-provider';
+import type { ToolPreparationInput } from './preparation';
 import { backgroundTaskOutcome, parseBackgroundTaskOutput } from './Parts/background';
 import { parseBackgroundHandle, splitBackgroundAttachments } from './Parts/handle';
 import { resolveToolCallPhase } from '~/utils/toolCallPhase';
 import { isMemoryFailureOutput } from './Parts/MemoryCall';
 import { filterAttachmentsForPart } from '~/utils/map';
 import { isBashProgrammaticToolCall } from './routing';
+import { parseCommandOutput } from './Parts/command';
+import { isToolCallPreparing } from './preparation';
 import { isError } from './ToolOutput';
 
 /**
@@ -28,10 +31,18 @@ export interface ToolMeta {
   hasOutput: boolean;
   failed: boolean;
   cancelled: boolean;
+  preparing?: boolean;
   /** Set for a detached task: its dispatch step is long closed, so whether the
    *  WORK is still going is a separate fact — the cards say "Running in
    *  background" until a status marker or harvested files arrive. */
   background?: 'running' | 'finished';
+}
+
+function isPreparingTool(
+  call: ToolPreparationInput,
+  outcome: Pick<ToolMeta, 'hasOutput' | 'failed' | 'cancelled'>,
+): boolean {
+  return !outcome.hasOutput && !outcome.failed && !outcome.cancelled && isToolCallPreparing(call);
 }
 
 function hasFailedOutput(output: unknown): boolean {
@@ -135,7 +146,12 @@ export function getToolMeta(
       name === 'set_memory' || name === 'delete_memory'
         ? isMemoryFailureOutput(name, tc.output ?? '') ||
           (ownAttachments ?? []).some((attachment) => attachment[Tools.memory]?.type === 'error')
-        : hasFailedOutput(tc.output);
+        : hasFailedOutput(tc.output) ||
+          /** `BashCall` fails an attached-workspace command that reports a
+           *  non-zero exit; only the server marker says the trailer is real. */
+          (name === Tools.bash_tool &&
+            toolCall.executor === 'attached_workspace' &&
+            parseCommandOutput(tc.output ?? '')?.failed === true);
     /** A backgrounded bash/code task reports its verdict through a
      *  `background_task_status` attachment, not its output: the dispatch step
      *  keeps a benign handle and usually closes as `completed`. The child card
@@ -154,17 +170,19 @@ export function getToolMeta(
       tc.backgroundTask?.cancelled === true ||
       (backgroundHandle != null && backgroundStatus === 'cancelled') ||
       polledOutcome === 'cancelled';
+    const outcome = resolveOutcome(
+      backgroundCancelled ? 'cancelled' : runStepStatus,
+      completed,
+      failedOutput || backgroundFailed || polledOutcome === 'failed',
+    );
     return {
       name,
       iconName,
       ...(backgroundHandle != null && {
         background: backgroundSettled ? ('finished' as const) : ('running' as const),
       }),
-      ...resolveOutcome(
-        backgroundCancelled ? 'cancelled' : runStepStatus,
-        completed,
-        failedOutput || backgroundFailed || polledOutcome === 'failed',
-      ),
+      ...outcome,
+      ...(isPreparingTool(tc, outcome) && { preparing: true }),
     };
   }
 
@@ -188,10 +206,24 @@ export function getToolMeta(
 
   if (toolCall.type === ToolCallTypes.FUNCTION && ToolCallTypes.FUNCTION in toolCall) {
     const fn = (toolCall as FunctionToolCall).function;
+    const outcome = resolveOutcome(
+      runStepStatus,
+      !!fn.output || toolCall.progress === 1,
+      hasFailedOutput(fn.output),
+    );
+    const call = {
+      args: fn.arguments as string,
+      output: fn.output,
+      progress: toolCall.progress,
+      runStepStatus,
+      toolPreparationStartedAt: toolCall.toolPreparationStartedAt,
+      toolDispatchedAt: toolCall.toolDispatchedAt,
+    };
     return {
       name: fn.name,
       iconName: fn.name,
-      ...resolveOutcome(runStepStatus, !!fn.output, hasFailedOutput(fn.output)),
+      ...outcome,
+      ...(isPreparingTool(call, outcome) && { preparing: true }),
     };
   }
 
@@ -200,12 +232,20 @@ export function getToolMeta(
 
 export type SpanOutcome = { failed: number; cancelled: number };
 
-/** The most severe terminal outcome replaces identity glyphs on every summary. */
+/** True when every call a summary stands for failed: the one case where the
+ *  summary itself, not only the failed rows and the count, reads as failed. */
+export function isSpanFailed(failed: number, total: number): boolean {
+  return failed > 0 && failed >= total;
+}
+
+/** Mixed outcomes keep tool identity. The count still exposes every failed
+ *  call, without turning the whole summary into an error indicator. */
 export function getOutcomeStatus({
   failed,
   cancelled,
-}: SpanOutcome): 'failed' | 'cancelled' | undefined {
-  if (failed > 0) {
+  total,
+}: SpanOutcome & { total: number }): 'failed' | 'cancelled' | undefined {
+  if (isSpanFailed(failed, total)) {
     return 'failed';
   }
   if (cancelled > 0) {

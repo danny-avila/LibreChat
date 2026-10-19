@@ -85,9 +85,15 @@ const {
   executeAgentRun,
   waitForAgentExecutionWrites,
   resolveToolRoleGrants,
+  resolveApiConversationProject,
   resolveAdmittedCodeEnvironmentDecision,
   resolvePersistableCodeEnvironmentDecision,
   createTerminalRunErrorObserver,
+  announceReply,
+  getConversationWriteContext,
+  isTemporaryTurn,
+  getModelEndUsage,
+  hasEntityEmbeddings,
 } = require('@librechat/api');
 const {
   createResponsesToolEndCallback,
@@ -116,6 +122,9 @@ const {
 } = require('~/server/services/Endpoints/agents/skillDeps');
 const { createProvisionFilesCallback } = require('~/server/services/Files/provisionCallback');
 const { checkSessionsAlive, loadCodeApiKey } = require('~/server/services/Files/provision');
+const {
+  getLinkedInstructionsResolver,
+} = require('~/server/services/Endpoints/agents/linkedInstructions');
 const { getModelsConfig } = require('~/server/controllers/ModelController');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
 const { resolveConfigServers, getAccessibleMcpServerNames } = require('~/server/services/MCP');
@@ -178,6 +187,7 @@ function createToolLoader({ req, res, signal, definitionsOnly = true }) {
     tool_resources,
     requestBody,
     codeExecutionContext,
+    attachedEnvironmentOptOut,
     accessibleMcpServerNames,
   }) {
     const agent = { id: agentId, tools, provider, model, tool_options };
@@ -190,6 +200,7 @@ function createToolLoader({ req, res, signal, definitionsOnly = true }) {
         requestBody,
         tool_resources,
         codeExecutionContext,
+        attachedEnvironmentOptOut,
         agentResourceType: ResourceType.REMOTE_AGENT,
         definitionsOnly,
         accessibleMcpServerNames,
@@ -373,7 +384,7 @@ async function saveInputMessages(req, conversationId, inputMessages, agentId) {
   for (const msg of inputMessages) {
     if (msg.role === 'user') {
       await db.saveMessage(
-        req,
+        getConversationWriteContext(req),
         {
           messageId: msg.messageId || nanoid(),
           conversationId,
@@ -420,11 +431,13 @@ async function saveResponseOutput(
     }
   }
 
-  const langfuseTraceFields = await getLangfuseTraceMessageFields(req.config, responseId);
+  const langfuseTraceFields = await getLangfuseTraceMessageFields(req.config, responseId, {
+    isTemporary: isTemporaryTurn(req),
+  });
 
   // Save the assistant message
-  await db.saveMessage(
-    req,
+  return db.saveMessage(
+    getConversationWriteContext(req),
     {
       messageId: responseId,
       conversationId,
@@ -454,12 +467,7 @@ async function saveResponseOutput(
 async function saveConversation(req, conversationId, agentId, agent, codeEnvironmentDecision) {
   const title = resolveConversationTitle(req, agent?.name || 'Open Responses Conversation');
   await db.saveConvo(
-    {
-      userId: req?.user?.id,
-      isTemporary: req?.resolvedConversation?.isTemporary ?? req?.body?.isTemporary,
-      expiredAt: req?.resolvedConversation?.expiredAt,
-      interfaceConfig: req?.config?.interfaceConfig,
-    },
+    getConversationWriteContext(req),
     {
       conversationId,
       endpoint: EModelEndpoint.agents,
@@ -523,16 +531,14 @@ const executeResponse = async (envelope, { req, res }) => {
   // Request-backed tool adapters still observe the validated envelope payload;
   // shared initialization receives the transport-free runtime below.
   req.body = request;
-  req.turnStartedAt = envelope.receivedAt;
-  const agentRuntime = createAgentExecutionContext({
-    user: req.user,
-    appConfig,
-    requestBody: request,
-    turnStartedAt: envelope.receivedAt,
-    conversationCreatedAt: req.conversationCreatedAt,
-    resolvedConversation: req.resolvedConversation,
-    hasResolvedConversation: Object.prototype.hasOwnProperty.call(req, 'resolvedConversation'),
-  });
+  if (request.previous_response_id != null && typeof request.previous_response_id !== 'string') {
+    return sendResponsesErrorResponse(
+      res,
+      400,
+      'previous_response_id must be a string',
+      'invalid_request',
+    );
+  }
   const agentId = request.model;
   const manualSkills = extractManualSkills(req.body);
   const isStreaming = request.stream === true;
@@ -614,18 +620,6 @@ const executeResponse = async (envelope, { req, res }) => {
     );
   }
 
-  // Look up the agent
-  const agent = await db.getAgent({ id: agentId });
-  if (!agent) {
-    return sendResponsesErrorResponse(
-      res,
-      404,
-      `Agent not found: ${agentId}`,
-      'not_found',
-      'model_not_found',
-    );
-  }
-
   // Generate IDs
   const responseId = generateResponseId();
   const terminalRunError = createTerminalRunErrorObserver({
@@ -688,24 +682,27 @@ const executeResponse = async (envelope, { req, res }) => {
       return handleExecutionError({ error, res, appConfig });
     },
     execute: async (execution) => {
+      const agentPromise = db.getAgent({ id: agentId });
+      // Validation may return before this promise is awaited; preserve the original
+      // promise for the later await while avoiding an unhandled speculative rejection.
+      agentPromise.catch(() => {});
       if (request.previous_response_id != null) {
-        if (typeof request.previous_response_id !== 'string') {
-          return sendResponsesErrorResponse(
-            res,
-            400,
-            'previous_response_id must be a string',
-            'invalid_request',
-          );
-        }
-        const previousConversation = await db.getConvo(
-          principal.userId,
-          request.previous_response_id,
+        const project = await resolveApiConversationProject(
+          {
+            userId: principal.userId,
+            tenantId: principal.tenantId,
+            conversationId: request.previous_response_id,
+            rejectSubagentThread: true,
+          },
+          {
+            getConvo: db.getConvo,
+            getChatProject: db.getChatProject,
+            getProjectFiles: db.getProjectFiles,
+            logger,
+            logPrefix: '[Responses API]',
+          },
         );
-        if (!previousConversation) {
-          return sendResponsesErrorResponse(res, 404, 'Conversation not found', 'not_found');
-        }
-        req.resolvedConversation = previousConversation;
-        if (previousConversation.subagentThread != null) {
+        if (!project.ok && project.reason === 'read_only') {
           return sendResponsesErrorResponse(
             res,
             409,
@@ -714,8 +711,30 @@ const executeResponse = async (envelope, { req, res }) => {
             'conversation_read_only',
           );
         }
+        if (!project.ok) {
+          return sendResponsesErrorResponse(
+            res,
+            project.status,
+            project.message,
+            project.reason === 'server_error' ? 'server_error' : 'not_found',
+          );
+        }
+        req.resolvedConversation = project.conversation;
+        req.chatProjectContext = project.context;
       }
 
+      const agent = await agentPromise;
+      if (!agent) {
+        return sendResponsesErrorResponse(
+          res,
+          404,
+          `Agent not found: ${agentId}`,
+          'not_found',
+          'model_not_found',
+        );
+      }
+
+      req.turnStartedAt = envelope.receivedAt;
       const { decision: codeEnvironmentDecision, conversation: admittedConversation } =
         await resolveAdmittedCodeEnvironmentDecision({
           appConfig,
@@ -726,6 +745,17 @@ const executeResponse = async (envelope, { req, res }) => {
           readDecision: (id) => db.readAdmittedConvoCodeEnvironmentDecision(principal.userId, id),
         });
       req.resolvedConversation = admittedConversation;
+      const agentRuntime = createAgentExecutionContext({
+        user: req.user,
+        appConfig,
+        requestBody: request,
+        turnStartedAt: envelope.receivedAt,
+        conversationCreatedAt: req.conversationCreatedAt,
+        resolvedConversation: req.resolvedConversation,
+        hasResolvedConversation: Object.prototype.hasOwnProperty.call(req, 'resolvedConversation'),
+        chatProjectContext: req.chatProjectContext,
+      });
+
       const parentMessageId = null;
       const mcpRequestBody = createMCPRuntimeRequestBody({
         messageId: responseId,
@@ -764,6 +794,7 @@ const executeResponse = async (envelope, { req, res }) => {
       };
 
       const dbMethods = {
+        getProjectFiles: db.getProjectFiles,
         getConvoFiles: db.getConvoFiles,
         getFiles: db.getFiles,
         filterFilesByAgentAccess: filterFilesByRemoteAgentAccess,
@@ -775,6 +806,8 @@ const executeResponse = async (envelope, { req, res }) => {
         getUserCodeFiles: db.getUserCodeFiles,
         getDeferredProvisionFiles: db.getDeferredProvisionFiles,
         checkSessionsAlive,
+        adoptLegacySearchEmbeddings: db.adoptLegacySearchEmbeddings,
+        hasEntityEmbeddings,
         loadCodeApiKey,
         getToolFilesByIds: db.getToolFilesByIds,
         getCodeGeneratedFiles: db.getCodeGeneratedFiles,
@@ -817,6 +850,9 @@ const executeResponse = async (envelope, { req, res }) => {
        *  request instead of issuing its own read. */
       const resolveWebSearchGrant = async () =>
         (await resolveToolRoleGrants({ req, getRoleByName: db.getRoleByName })).webSearch;
+      /** Resolves any agent's `instructionsPrompt` link this run encounters — primary
+       *  or handoff. No default resolution path, unlike `resolveWebSearchGrant`. */
+      const resolveLinkedInstructions = getLinkedInstructionsResolver();
       const skillsCapabilityEnabled = enabledCapabilities.has(AgentCapabilities.skills);
       const ephemeralSkillsToggle = request.ephemeralAgent?.skills === true;
       const accessibleSkillIds = skillsCapabilityEnabled
@@ -873,6 +909,7 @@ const executeResponse = async (envelope, { req, res }) => {
           endpointOption,
           allowedProviders,
           isInitialAgent: true,
+          useChatProjectContext: true,
           accessibleSkillIds: primaryScopedSkillIds,
           skillAuthoringAvailable: canAuthorSkillFiles({
             agent,
@@ -884,6 +921,7 @@ const executeResponse = async (envelope, { req, res }) => {
           codeEnvAvailable,
           fileSearchAvailable,
           resolveWebSearchGrant,
+          resolveLinkedInstructions,
           backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
           toolIntentsAvailable: enabledCapabilities.has(AgentCapabilities.tool_intents),
           statefulSessionsAvailable: enabledCapabilities.has(
@@ -940,6 +978,7 @@ const executeResponse = async (envelope, { req, res }) => {
           requestFiles: [],
           conversationId,
           parentMessageId,
+          useChatProjectContext: true,
           requestBody: mcpRequestBody,
           resourceType: ResourceType.REMOTE_AGENT,
           computeAccessibleSkillIds: (handoffAgent) =>
@@ -967,6 +1006,7 @@ const executeResponse = async (envelope, { req, res }) => {
           codeEnvAvailable,
           fileSearchAvailable,
           resolveWebSearchGrant,
+          resolveLinkedInstructions,
           backgroundToolsAvailable: enabledCapabilities.has(AgentCapabilities.run_in_background),
           toolIntentsAvailable: enabledCapabilities.has(AgentCapabilities.tool_intents),
           statefulSessionsAvailable: enabledCapabilities.has(
@@ -1279,7 +1319,7 @@ const executeResponse = async (envelope, { req, res }) => {
           on_chat_model_end: {
             handle: (event, data, metadata, graph) => {
               responsesHandlers.on_chat_model_end.handle(event, data);
-              const usage = data?.output?.usage_metadata;
+              const usage = getModelEndUsage(data?.output);
               if (usage) {
                 const agentContext = graph?.getAgentContext?.(metadata);
                 const taggedUsage = contextualizeModelUsage(usage, metadata, agentContext);
@@ -1324,6 +1364,7 @@ const executeResponse = async (envelope, { req, res }) => {
           user: { ...createSafeUser(req.user), id: userId },
           traceContext: { endpoint: EModelEndpoint.agents },
           tenantId: principal.tenantId,
+          isTemporary: isTemporaryTurn(req),
           modelCallbacks: [terminalRunError.modelCallback],
           clientToolNames: clientTools.clientToolNames,
           /** Bills subagent child-run model calls (reported outside the
@@ -1415,7 +1456,7 @@ const executeResponse = async (envelope, { req, res }) => {
 
             // Build response for saving (use tracker with buildResponse for streaming)
             const finalResponse = buildResponse(context, tracker, 'completed');
-            await saveResponseOutput(
+            const savedResponse = await saveResponseOutput(
               req,
               conversationId,
               responseId,
@@ -1423,6 +1464,12 @@ const executeResponse = async (envelope, { req, res }) => {
               agentId,
               tracker.usage.outputTokens,
             );
+            await announceReply(db, {
+              userId: req?.user?.id,
+              conversationId,
+              reply: savedResponse,
+              context: 'Responses API - announce stored reply',
+            });
 
             logger.debug(
               `[Responses API] Stored response ${responseId} in conversation ${conversationId}`,
@@ -1515,7 +1562,7 @@ const executeResponse = async (envelope, { req, res }) => {
           on_chat_model_end: {
             handle: (event, data, metadata, graph) => {
               aggregatorHandlers.on_chat_model_end.handle(event, data);
-              const usage = data?.output?.usage_metadata;
+              const usage = getModelEndUsage(data?.output);
               if (usage) {
                 const agentContext = graph?.getAgentContext?.(metadata);
                 const taggedUsage = contextualizeModelUsage(usage, metadata, agentContext);
@@ -1557,6 +1604,7 @@ const executeResponse = async (envelope, { req, res }) => {
           user: { ...createSafeUser(req.user), id: userId },
           traceContext: { endpoint: EModelEndpoint.agents },
           tenantId: principal.tenantId,
+          isTemporary: isTemporaryTurn(req),
           modelCallbacks: [terminalRunError.modelCallback],
           clientToolNames: clientTools.clientToolNames,
           /** Bills subagent child-run model calls (reported outside the
@@ -1649,7 +1697,7 @@ const executeResponse = async (envelope, { req, res }) => {
 
             await saveInputMessages(req, conversationId, inputMessages, agentId);
 
-            await saveResponseOutput(
+            const savedResponse = await saveResponseOutput(
               req,
               conversationId,
               responseId,
@@ -1657,6 +1705,12 @@ const executeResponse = async (envelope, { req, res }) => {
               agentId,
               aggregator.usage.outputTokens,
             );
+            await announceReply(db, {
+              userId: req?.user?.id,
+              conversationId,
+              reply: savedResponse,
+              context: 'Responses API - announce stored reply',
+            });
 
             logger.debug(
               `[Responses API] Stored response ${responseId} in conversation ${conversationId}`,

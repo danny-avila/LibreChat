@@ -44,6 +44,43 @@ describe('mergeConfigOverrides', () => {
     expect(mergeConfigOverrides(baseConfig, undefined as unknown as IConfig[])).toBe(baseConfig);
   });
 
+  it('replaces an inline interface theme whole instead of merging two definitions', () => {
+    const base = {
+      interfaceConfig: {
+        theme: {
+          version: 1,
+          name: 'base',
+          modes: {
+            light: { colors: { 'rgb-surface-primary': '255 255 255' } },
+            dark: { colors: { 'rgb-surface-primary': '0 0 0' } },
+          },
+          brands: { 'provider-openai': '#19C37D' },
+        },
+      },
+    } as unknown as AppConfig;
+    const override = {
+      version: 1,
+      name: 'principal',
+      modes: { light: { colors: { 'rgb-surface-primary': '240 240 240' } } },
+    };
+
+    const result = mergeConfigOverrides(base, [fakeConfig({ interface: { theme: override } }, 10)]);
+
+    expect(result.interfaceConfig?.theme).toEqual(override);
+  });
+
+  it('lets a bundled theme name override an inline base theme', () => {
+    const base = {
+      interfaceConfig: { theme: { version: 1, name: 'base', modes: {} } },
+    } as unknown as AppConfig;
+
+    const result = mergeConfigOverrides(base, [
+      fakeConfig({ interface: { theme: 'clickhouse' } }, 10),
+    ]);
+
+    expect(result.interfaceConfig?.theme).toBe('clickhouse');
+  });
+
   it('does not allow DB overrides or tombstones to weaken base-only filters', () => {
     const base = {
       filters: {
@@ -73,6 +110,91 @@ describe('mergeConfigOverrides', () => {
     ];
 
     expect(mergeConfigOverrides(base, configs).filters).toEqual(base.filters);
+  });
+
+  it('keeps MCP App sandbox limits at deployment scope', () => {
+    const base = {
+      mcpAppSandbox: {
+        url: 'https://mcp-sandbox.example.com/api/mcp/sandbox',
+        maxSourcesPerDirective: 64,
+        maxSerializedLength: 8192,
+        maxAdmissionRequestsPerMinute: 480,
+        maxPersistedMessageBytes: 123456,
+      },
+    } as unknown as AppConfig;
+    const configs = [
+      fakeConfig(
+        {
+          mcpAppSandbox: {
+            url: 'https://user-sandbox.example.com/api/mcp/sandbox',
+            maxSourcesPerDirective: 128,
+            maxSerializedLength: 16384,
+            maxAdmissionRequestsPerMinute: 960,
+            maxPersistedMessageBytes: 200000,
+          },
+        },
+        10,
+        ['mcpAppSandbox.url', 'mcpAppSandbox.maxAdmissionRequestsPerMinute'],
+      ),
+    ];
+
+    expect(mergeConfigOverrides(base, configs).mcpAppSandbox).toEqual(base.mcpAppSandbox);
+  });
+
+  it('keeps the pull request host from the base config whatever an override does', () => {
+    const pullRequests = { host: 'ghe.example.com', allowedRepositories: ['acme/*'] };
+    const base = { endpoints: { agents: { pullRequests } } } as unknown as AppConfig;
+    const read = (configs: IConfig[]) =>
+      (
+        mergeConfigOverrides(base, configs) as unknown as {
+          endpoints: { agents: { pullRequests: Record<string, unknown> } };
+        }
+      ).endpoints.agents.pullRequests;
+
+    const changed = read([
+      fakeConfig(
+        {
+          endpoints: {
+            agents: { pullRequests: { host: 'evil.example.com', cacheTtlSeconds: 60 } },
+          },
+        },
+        10,
+      ),
+    ]);
+    expect(changed).toMatchObject({ host: 'ghe.example.com', cacheTtlSeconds: 60 });
+
+    const provider = read([
+      fakeConfig({ endpoints: { agents: { pullRequests: { provider: 'gitlab' } } } }, 10),
+    ]);
+    expect(provider.provider).toBeUndefined();
+
+    const slots = read([
+      fakeConfig({ endpoints: { agents: { pullRequests: { sharedCacheSlots: 64 } } } }, 10),
+    ]);
+    expect(slots.sharedCacheSlots).toBeUndefined();
+
+    const oauth = read([
+      fakeConfig(
+        {
+          endpoints: {
+            agents: {
+              pullRequests: { oauth: { clientId: 'x', clientSecret: '${OTHER_SECRET}' } },
+            },
+          },
+        },
+        10,
+      ),
+    ]);
+    expect(oauth.oauth).toBeUndefined();
+
+    const removed = read([fakeConfig({}, 10, ['endpoints.agents.pullRequests.host'])]);
+    expect(removed.host).toBe('ghe.example.com');
+
+    const unset = { endpoints: { agents: { pullRequests: {} } } } as unknown as AppConfig;
+    const added = mergeConfigOverrides(unset, [
+      fakeConfig({ endpoints: { agents: { pullRequests: { host: 'evil.example.com' } } } }, 10),
+    ]) as unknown as { endpoints: { agents: { pullRequests: Record<string, unknown> } } };
+    expect(added.endpoints.agents.pullRequests.host).toBeUndefined();
   });
 
   it('applies tenant-wide Langfuse settings only from the base principal', () => {

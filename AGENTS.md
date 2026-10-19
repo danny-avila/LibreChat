@@ -3,7 +3,8 @@
 `AGENTS.md` is the repository's contributor guidance. Backend code lives in `packages/api`
 (TypeScript) and `packages/data-schemas` (database methods); `api` is legacy Express wiring.
 Shared API types and services live in `packages/data-provider`, and the React app lives in
-`client` with shared primitives in `packages/client`.
+`client` with shared primitives in `packages/client`. Chat state, transport and message components
+are moving into `packages/chat` (`@librechat/chat`), which never imports the app.
 
 ## Branching and pull requests
 
@@ -60,7 +61,7 @@ reads and reuse loaded request data. Run `npm run lighthouse` before completion:
 the CI lane adds 250 ms per Mongo query and checks the visible conversation's LCP.
 See [budgets, reproduction and failure diagnosis](e2e/lighthouse/README.md).
 
-A green build is not a typecheck: `packages/api`, `packages/client` and `packages/data-schemas` build
+A green build is not a typecheck: `packages/api`, `packages/client`, `packages/chat` and `packages/data-schemas` build
 with `tsdown`, which emits without checking types. Run `npx tsc --noEmit` in the workspace you
 changed. `packages/client` excludes `*.spec.ts(x)` and `*.test.ts(x)` from typechecking entirely.
 `npm run sort-imports` with no arguments rewrites every source root — pass the paths you touched.
@@ -109,7 +110,7 @@ unsuccessful outcome as an exception:
   successful lookup with no record), never to hide a query failure.
 - For an expected failure the caller can handle without aborting the operation, prefer a typed
   discriminated result such as `{ ok: true; value: T } | { ok: false; error: { code: string;
-  message?: string } }`. Keep an existing domain-specific result shape when changing it would
+message?: string } }`. Keep an existing domain-specific result shape when changing it would
   break callers; do not introduce interchangeable `ok`, `valid`, and bare `{ message }` contracts
   in the same service. Codes should be stable, machine-readable identifiers when the caller
   needs to distinguish failures. Internal validation helpers may use the existing local pattern.
@@ -189,6 +190,12 @@ independent reads in parallel. Do not weaken authorization or tenant checks or w
 before those checks succeed.
 
 ## Frontend rules
+
+Use the chat Share/Export action-menu pattern: `DropdownPopup` from `@librechat/client` with
+`Ariakit.MenuButton` (see `HeaderMenu.tsx` and `useExportShare.tsx`). Never introduce or reintroduce
+the Radix `DropdownMenu` family for app action or sort menus. Preserve the Share/Export
+dialog-item contract (`hideOnClick: false`, item ref, button render, and dialog `triggerRef`)
+when a menu action opens a dialog.
 
 Use `useLocalize()` for all visible copy and update only English keys in
 `client/src/locales/en/translation.json`. Use semantic HTML, keyboard behavior, and ARIA labels.

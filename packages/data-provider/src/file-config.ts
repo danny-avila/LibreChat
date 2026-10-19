@@ -7,6 +7,8 @@ import { normalizeEndpointName } from './utils';
 
 /** Parallel storage deletions during rollback of a failed skill archive import. */
 export const DEFAULT_SKILL_IMPORT_CLEANUP_CONCURRENCY = 8;
+/** Parallel provider deletions during a whole-Skill cleanup pass. */
+export const DEFAULT_SKILL_DELETION_CLEANUP_CONCURRENCY = 8;
 
 export const supportsFiles = {
   [EModelEndpoint.openAI]: true,
@@ -586,6 +588,7 @@ export const fileConfig = {
   skills: {
     fileSizeLimit: defaultSkillImportSizeLimit,
     importCleanupConcurrency: DEFAULT_SKILL_IMPORT_CLEANUP_CONCURRENCY,
+    deletionCleanupConcurrency: DEFAULT_SKILL_DELETION_CLEANUP_CONCURRENCY,
   },
   serverFileSizeLimit: defaultSizeLimit,
   avatarSizeLimit: mbToBytes(2),
@@ -652,6 +655,7 @@ export const endpointFileConfigSchema = z.object({
 const skillFileConfigSchema = z.object({
   fileSizeLimit: z.number().min(0).optional(),
   importCleanupConcurrency: z.number().int().positive().optional(),
+  deletionCleanupConcurrency: z.number().int().positive().optional(),
 });
 
 export const fileConfigSchema = z.object({
@@ -663,6 +667,7 @@ export const fileConfigSchema = z.object({
   fileContextSizeLimit: z.number().min(0).optional(),
   fileContextCharLimit: z.number().min(0).optional(),
   codeEnvLivenessSafeWindowMs: z.number().min(0).optional(),
+  legacySearchProbeTimeoutMs: z.number().min(1).optional(),
   imageGeneration: z
     .object({
       percentage: z.number().min(0).max(100).optional(),
@@ -702,9 +707,17 @@ export type TFileConfig = z.infer<typeof fileConfigSchema>;
  */
 let compileMimeRegex: (pattern: string) => RegexLike = (pattern) => new RegExp(pattern);
 
+type DynamicFileConfig = z.infer<typeof fileConfigSchema>;
+
+/** Merged results are memoized per `dynamic` object identity; callers must treat them as read-only. */
+let mergedConfigCache = new WeakMap<DynamicFileConfig, FileConfig>();
+let staticMergedConfig: FileConfig | undefined;
+
 /** Override the MIME-pattern compiler; the server injects a linear-time engine at startup. */
 export const setFileConfigRegexCompiler = (compile: (pattern: string) => RegexLike): void => {
   compileMimeRegex = compile;
+  mergedConfigCache = new WeakMap();
+  staticMergedConfig = undefined;
 };
 
 /** Returned when every configured pattern fails to compile, so consumers that read an empty
@@ -1220,7 +1233,19 @@ export function getEndpointFileConfig(params: {
   return defaultConfig;
 }
 
-export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | undefined): FileConfig {
+export function mergeFileConfig(dynamic: DynamicFileConfig | undefined): FileConfig {
+  if (!dynamic) {
+    return (staticMergedConfig ??= buildMergedFileConfig(undefined));
+  }
+  let merged = mergedConfigCache.get(dynamic);
+  if (!merged) {
+    merged = buildMergedFileConfig(dynamic);
+    mergedConfigCache.set(dynamic, merged);
+  }
+  return merged;
+}
+
+function buildMergedFileConfig(dynamic: DynamicFileConfig | undefined): FileConfig {
   const mergedConfig: FileConfig = {
     ...fileConfig,
     endpoints: {
@@ -1282,6 +1307,13 @@ export function mergeFileConfig(dynamic: z.infer<typeof fileConfigSchema> | unde
     mergedConfig.skills = {
       ...mergedConfig.skills,
       importCleanupConcurrency: dynamic.skills.importCleanupConcurrency,
+    };
+  }
+
+  if (dynamic.skills?.deletionCleanupConcurrency !== undefined) {
+    mergedConfig.skills = {
+      ...mergedConfig.skills,
+      deletionCleanupConcurrency: dynamic.skills.deletionCleanupConcurrency,
     };
   }
 
