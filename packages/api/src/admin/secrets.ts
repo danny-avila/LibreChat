@@ -71,6 +71,11 @@ interface ArraySecretField {
   isPassthroughValue: (value: string) => boolean;
 }
 
+/** `user_provided` and `${ENV_VAR}`: values that name where a credential comes from, not the credential. */
+function isCredentialReference(value: string): boolean {
+  return isUserProvided(value) || envVarRegex.test(value);
+}
+
 /**
  * Registry of array-item secret locations, the sibling of
  * `CONFIG_SECRET_FIELDS` for secrets that live on entries of an array
@@ -82,9 +87,32 @@ const ARRAY_SECRET_FIELDS: readonly ArraySecretField[] = [
     secretKey: 'apiKey',
     previewKey: 'apiKeyPreview',
     identityKey: 'name',
-    isPassthroughValue: (value) => isUserProvided(value) || envVarRegex.test(value),
+    isPassthroughValue: isCredentialReference,
   },
 ];
+
+/** A credential location in a resolved config; `*` matches every item of an array or value of a record. */
+interface ResolvedSecretField {
+  segments: readonly string[];
+  isPassthroughValue: (value: string) => boolean;
+}
+
+/**
+ * Credentials that reach the resolved config (AppService output, and the raw `librechat.yaml`
+ * copy it carries as `config`) from places the write registry above does not cover yet: Azure
+ * group keys, which `azureConfigSetup` also copies into `groupMap`, and the Vertex service key,
+ * which `vertexConfigSetup` resolves from `${ENV_VAR}` into `vertexConfig`. Reads remove them;
+ * writes to these paths are unchanged.
+ */
+const RESOLVED_SECRET_FIELDS: readonly ResolvedSecretField[] = [
+  { path: 'endpoints.azureOpenAI.groups.*.apiKey', isPassthroughValue: isCredentialReference },
+  { path: 'endpoints.azureOpenAI.groupMap.*.apiKey', isPassthroughValue: isCredentialReference },
+  { path: 'endpoints.anthropic.vertex.serviceKeyFile', isPassthroughValue: isEnvPlaceholder },
+  {
+    path: 'endpoints.anthropic.vertexConfig.serviceKeyFile',
+    isPassthroughValue: isEnvPlaceholder,
+  },
+].map(({ path, isPassthroughValue }) => ({ segments: path.split('.'), isPassthroughValue }));
 
 const SECRET_FIELDS_BY_PATH = new Map<string, ConfigSecretField>(
   CONFIG_SECRET_FIELDS.map((field) => [field.path, field]),
@@ -922,6 +950,53 @@ export function redactConfigSecrets<T>(root: T): T {
         delete entry[field.secretKey];
       }
     }
+  }
+  return root;
+}
+
+/** Deletes the value at `segments` under `node` unless it is empty or a pass-through reference. */
+function redactResolvedSecret(
+  node: unknown,
+  segments: readonly string[],
+  field: ResolvedSecretField,
+): void {
+  const [segment, ...rest] = segments;
+  if (segment === '*') {
+    const children = Array.isArray(node) ? node : Object.values(getPlainRecord(node) ?? {});
+    for (const child of children) {
+      redactResolvedSecret(child, rest, field);
+    }
+    return;
+  }
+  const record = getPlainRecord(node);
+  if (!record || !Object.prototype.hasOwnProperty.call(record, segment)) {
+    return;
+  }
+  if (rest.length > 0) {
+    redactResolvedSecret(record[segment], rest, field);
+    return;
+  }
+  const value = record[segment];
+  if (typeof value === 'string') {
+    const normalized = normalizeSecretString(value);
+    if (normalized == null || field.isPassthroughValue(normalized)) {
+      return;
+    }
+  }
+  delete record[segment];
+}
+
+/**
+ * Deletes, in place, the credentials a resolved config carries outside the write registry
+ * (`RESOLVED_SECRET_FIELDS`), for admin reads of the AppConfig or its raw `config`. Empty
+ * values and pass-through references stay readable; anything else that is not a string is
+ * removed too. Stored override documents are left alone: their writes do not preserve an
+ * omitted value at these paths yet, so redacting them would break a read-then-write round
+ * trip. The caller passes a cloned object.
+ */
+export function redactResolvedConfigSecrets<T>(root: T): T {
+  for (const field of RESOLVED_SECRET_FIELDS) {
+    redactResolvedSecret(root, field.segments, field);
   }
   return root;
 }

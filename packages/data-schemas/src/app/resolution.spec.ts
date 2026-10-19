@@ -6,8 +6,10 @@ import {
   getConfigFieldIssues,
   applyConfigTombstones,
   getConfigOverrideIssues,
+  isAcceptedOverrideSection,
 } from './resolution';
 import { BASE_CONFIG_PRINCIPAL_ID } from '~/admin/capabilities';
+import logger from '~/config/winston';
 
 function fakeConfig(
   overrides: Record<string, unknown>,
@@ -573,13 +575,13 @@ describe('mergeConfigOverrides', () => {
           __proto__: { polluted: true },
           constructor: { bad: true },
           prototype: { evil: true },
-          safe: 'ok',
+          registration: { enabled: false },
         },
         10,
       ),
     ];
     const result = mergeConfigOverrides(baseConfig, configs) as unknown as Record<string, unknown>;
-    expect(result.safe).toBe('ok');
+    expect(result.registration).toEqual({ enabled: false });
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
     expect(Object.prototype.hasOwnProperty.call(result, 'constructor')).toBe(false);
     expect(Object.prototype.hasOwnProperty.call(result, 'prototype')).toBe(false);
@@ -892,21 +894,27 @@ describe('mergeConfigOverrides', () => {
     });
   });
 
-  it('drops process-backed MCP servers supplied through the runtime config alias', () => {
+  it('ignores servers supplied through the runtime config alias, process-backed or not', () => {
+    const base = {
+      mcpConfig: { github: { type: 'streamable-http', url: 'https://github.example.com' } },
+    } as unknown as AppConfig;
     const configs = [
       fakeConfig(
         {
           mcpConfig: {
             injected: { command: '/bin/sh', args: ['-c', 'id'] },
+            remote: { type: 'streamable-http', url: 'https://attacker.example.com' },
           },
         },
         10,
       ),
     ];
 
-    const result = mergeConfigOverrides(baseConfig, configs) as unknown as Record<string, unknown>;
+    const result = mergeConfigOverrides(base, configs) as unknown as Record<string, unknown>;
 
-    expect(result.mcpConfig).toEqual({});
+    expect(result.mcpConfig).toEqual({
+      github: { type: 'streamable-http', url: 'https://github.example.com' },
+    });
   });
 
   it('applies tombstones after remapping YAML paths to AppConfig paths', () => {
@@ -1384,10 +1392,10 @@ describe('getConfigOverrideIssues', () => {
     ).toEqual([expect.objectContaining({ segments: ['mcpServers', 'team.prod', 'timeout'] })]);
   });
 
-  it('accepts keys the schema does not define and stored secret shapes', () => {
-    expect(
-      getConfigOverrideIssues({ unknownSection: 5, registration: { enabled: false } }),
-    ).toEqual([]);
+  it('accepts keys the schema does not define inside a known section, and stored secret shapes', () => {
+    expect(getConfigOverrideIssues({ registration: { enabled: false, futureOption: 5 } })).toEqual(
+      [],
+    );
     expect(
       getConfigOverrideIssues({
         endpoints: {
@@ -1620,5 +1628,130 @@ describe('getConfigFieldIssues', () => {
         stored,
       ),
     ).toEqual([]);
+  });
+});
+
+describe('top-level sections an override may hold', () => {
+  /** Runtime state AppService builds that `configSchema` does not define, so no override may set it. */
+  const RUNTIME_KEYS = [
+    'paths',
+    'config',
+    'availableTools',
+    'interfaceConfig',
+    'turnstileConfig',
+    'mcpConfig',
+  ];
+
+  const base = {
+    paths: { uploads: '/srv/uploads', imageOutput: '/srv/images' },
+    config: { permissions: { leaseTtlMs: 60_000 }, rateLimits: { fileUploads: { ipMax: 100 } } },
+    availableTools: { calculator: { type: 'function' } },
+    interfaceConfig: { modelSelect: true, prompts: true },
+    turnstileConfig: { siteKey: 'site' },
+    mcpConfig: { github: { type: 'streamable-http', url: 'https://github.example.com' } },
+    registration: { enabled: true },
+  } as unknown as AppConfig;
+
+  let warn: jest.SpyInstance;
+  beforeEach(() => {
+    warn = jest.spyOn(logger, 'warn').mockReturnValue(logger);
+  });
+  afterEach(() => {
+    warn.mockRestore();
+  });
+
+  it('accepts exactly the sections configSchema defines', () => {
+    for (const section of ['interface', 'mcpServers', 'turnstile', 'endpoints', 'filters']) {
+      expect(isAcceptedOverrideSection(section)).toBe(true);
+    }
+    for (const key of [...RUNTIME_KEYS, '', 'toString', 'constructor', '__proto__']) {
+      expect(isAcceptedOverrideSection(key)).toBe(false);
+    }
+  });
+
+  it('reports every top-level key outside configSchema as unknown_section', () => {
+    const overrides = Object.fromEntries([
+      ...RUNTIME_KEYS.map((key) => [key, { uploads: '/tmp' }]),
+      ['registration', { enabled: false }],
+    ]);
+
+    expect(getConfigOverrideIssues(overrides)).toEqual(
+      RUNTIME_KEYS.map((key) => ({ path: key, segments: [key], code: 'unknown_section' })),
+    );
+  });
+
+  it('still validates the known sections written next to an unknown one', () => {
+    expect(
+      getConfigOverrideIssues({
+        paths: { uploads: '/tmp' },
+        registration: { oauthStateTtlMs: 5 },
+      }).map(({ path, code }) => ({ path, code })),
+    ).toEqual([
+      { path: 'paths', code: 'unknown_section' },
+      { path: 'registration.oauthStateTtlMs', code: 'too_small' },
+    ]);
+  });
+
+  it('reports a field write under an unknown section', () => {
+    expect(
+      getConfigFieldIssues({ 'interfaceConfig.prompts': false }).map(({ path, code }) => ({
+        path,
+        code,
+      })),
+    ).toEqual([{ path: 'interfaceConfig', code: 'unknown_section' }]);
+  });
+
+  it('does not let an unknown section stored earlier block an unrelated field write', () => {
+    const stored = { overrides: { paths: { uploads: '/tmp' } }, tombstones: ['config'] };
+
+    expect(getConfigFieldIssues({ 'registration.enabled': false }, {}, stored)).toEqual([]);
+  });
+
+  it('ignores stored overrides and tombstones outside configSchema at merge', () => {
+    const merged = mergeConfigOverrides(base, [
+      fakeConfig(
+        {
+          paths: { uploads: '/tmp/attacker' },
+          config: { permissions: { leaseTtlMs: 1 }, rateLimits: {} },
+          availableTools: { injected: { type: 'function' } },
+          interfaceConfig: { prompts: false, modelSelect: false },
+          turnstileConfig: { siteKey: 'attacker' },
+          mcpConfig: { injected: { type: 'streamable-http', url: 'https://attacker.example.com' } },
+          registration: { enabled: false },
+        },
+        10,
+        ['paths', 'config.permissions', 'interfaceConfig.modelSelect', 'mcpConfig.github'],
+      ),
+    ]);
+
+    expect(merged).toEqual({ ...base, registration: { enabled: false } });
+  });
+
+  it('keeps tombstones and overrides of known sections in the same document', () => {
+    const merged = mergeConfigOverrides(base, [
+      fakeConfig({ paths: { uploads: '/tmp' }, interface: { modelSelect: false } }, 10, [
+        'paths.uploads',
+        'mcpServers.github',
+      ]),
+    ]) as unknown as Record<string, unknown>;
+
+    expect(merged.paths).toEqual(base.paths);
+    expect(merged.interfaceConfig).toEqual({ modelSelect: false, prompts: true });
+    expect(merged.mcpConfig).toEqual({});
+  });
+
+  it('warns once per document, naming the ignored sections but none of their values', () => {
+    mergeConfigOverrides(base, [
+      fakeConfig({ paths: { uploads: '/tmp/attacker' }, config: { secret: 'leak' } }, 10, [
+        'paths.uploads',
+        'interfaceConfig.prompts',
+      ]),
+      fakeConfig({ registration: { enabled: false } }, 20, undefined, 'clean'),
+    ]);
+
+    const messages = warn.mock.calls.map(([message]) => String(message));
+    expect(messages).toEqual([
+      '[mergeConfigOverrides] Ignoring unknown config sections paths, config, interfaceConfig for role/test',
+    ]);
   });
 });

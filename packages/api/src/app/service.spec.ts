@@ -10,9 +10,9 @@ import {
 import { getProviderConfig } from '~/endpoints/config/providers';
 
 /** Extends AppConfig with mock fields used by merge behavior tests. */
+/** `version` is a plain string section, so a test can mark which override layer it read. */
 interface TestConfig extends AppConfig {
-  restricted?: boolean;
-  x?: string;
+  version?: string;
 }
 
 /**
@@ -344,7 +344,7 @@ describe('createAppConfigService', () => {
           getApplicableConfigs: jest
             .fn()
             .mockImplementation(async () => [
-              { priority: 10, overrides: { x: getTenantId() }, isActive: true },
+              { priority: 10, overrides: { version: getTenantId() }, isActive: true },
             ]),
         });
         const { getAppConfig, clearOverrideCache } = createAppConfigService(deps);
@@ -352,10 +352,10 @@ describe('createAppConfigService', () => {
           tenantStorage.run({ tenantId: tenant }, () =>
             getAppConfig({ role: 'USER', tenantId: stale }),
           );
-        expect(((await read('tenant-a', 'tenant-b')) as TestConfig).x).toBe('tenant-a');
-        expect(((await read('tenant-b', 'tenant-a')) as TestConfig).x).toBe('tenant-b');
-        expect(((await read('tenant-a', 'tenant-b')) as TestConfig).x).toBe('tenant-a');
-        expect(((await read('tenant-b', 'tenant-a')) as TestConfig).x).toBe('tenant-b');
+        expect(((await read('tenant-a', 'tenant-b')) as TestConfig).version).toBe('tenant-a');
+        expect(((await read('tenant-b', 'tenant-a')) as TestConfig).version).toBe('tenant-b');
+        expect(((await read('tenant-a', 'tenant-b')) as TestConfig).version).toBe('tenant-a');
+        expect(((await read('tenant-b', 'tenant-a')) as TestConfig).version).toBe('tenant-b');
         expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(2);
         await clearOverrideCache('tenant-a');
         await read('tenant-b', 'tenant-a');
@@ -368,31 +368,31 @@ describe('createAppConfigService', () => {
           getApplicableConfigs: jest
             .fn()
             .mockImplementation(async () => [
-              { priority: 10, overrides: { x: getTenantId() ?? 'global' }, isActive: true },
+              { priority: 10, overrides: { version: getTenantId() ?? 'global' }, isActive: true },
             ]),
         });
         const { getAppConfig, clearOverrideCache } = createAppConfigService(deps);
         const global = () => getAppConfig({ role: 'USER' });
         const tenant = () => getAppConfig({ role: 'USER', tenantId: '__default__' });
-        expect(((await global()) as TestConfig).x).toBe('global');
-        expect(((await tenant()) as TestConfig).x).toBe('__default__');
-        expect(((await global()) as TestConfig).x).toBe('global');
+        expect(((await global()) as TestConfig).version).toBe('global');
+        expect(((await tenant()) as TestConfig).version).toBe('__default__');
+        expect(((await global()) as TestConfig).version).toBe('global');
         expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(2);
         await clearOverrideCache('__default__');
         await global();
         expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(2);
-        expect(((await tenant()) as TestConfig).x).toBe('__default__');
+        expect(((await tenant()) as TestConfig).version).toBe('__default__');
         expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(3);
       });
 
       it('ignores override cache entries written by heads with stale tenant-key selection', async () => {
         const deps = createDeps();
-        await deps._cache.set('_OVERRIDE_:tenant-a:USER', { x: 'tenant-b' });
+        await deps._cache.set('_OVERRIDE_:tenant-a:USER', { version: 'tenant-b' });
         const { getAppConfig } = createAppConfigService(deps);
         const config = await tenantStorage.run({ tenantId: 'tenant-a' }, () =>
           getAppConfig({ role: 'USER' }),
         );
-        expect((config as TestConfig).x).toBeUndefined();
+        expect((config as TestConfig).version).toBeUndefined();
         expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(1);
       });
 
@@ -752,6 +752,44 @@ describe('createAppConfigService', () => {
       expect(config.modelSpecs?.list?.[0]?.preset?.agent_id).toBe('agent_abc');
     });
 
+    /**
+     * `paths` drives where uploads are written and deleted, and `config` is the raw
+     * librechat.yaml that operator-only readers trust; neither is a `configSchema` section,
+     * so an override stored under one (or a tombstone on one) must not reach them.
+     */
+    it('ignores stored overrides and tombstones on runtime state outside configSchema', async () => {
+      const baseConfig = {
+        paths: { uploads: '/srv/uploads', imageOutput: '/srv/images' },
+        config: { permissions: { leaseTtlMs: 60_000 } },
+        interfaceConfig: { modelSelect: true, prompts: true },
+      };
+      const deps = createDeps({
+        loadBaseConfig: jest.fn().mockResolvedValue(baseConfig),
+        getApplicableConfigs: jest.fn().mockResolvedValue([
+          {
+            principalType: 'role',
+            principalId: 'USER',
+            priority: 10,
+            isActive: true,
+            overrides: {
+              paths: { uploads: '/tmp/attacker' },
+              config: { permissions: { leaseTtlMs: 1 } },
+              interfaceConfig: { prompts: false },
+              interface: { modelSelect: false },
+            },
+            tombstones: ['paths.imageOutput', 'config'],
+          },
+        ]),
+      });
+      const { getAppConfig } = createAppConfigService(deps);
+
+      const config = await getAppConfig({ role: 'USER' });
+
+      expect(config.paths).toEqual(baseConfig.paths);
+      expect(config.config).toEqual(baseConfig.config);
+      expect(config.interfaceConfig).toEqual({ modelSelect: false, prompts: true });
+    });
+
     it('leaves unknown colors out of a theme a DB override supplies', async () => {
       const deps = createDeps({
         getApplicableConfigs: jest.fn().mockResolvedValue([
@@ -904,7 +942,7 @@ describe('createAppConfigService', () => {
       const deps = createDeps({
         getApplicableConfigs: jest
           .fn()
-          .mockResolvedValue([{ priority: 10, overrides: { x: 1 }, isActive: true }]),
+          .mockResolvedValue([{ priority: 10, overrides: { version: '1' }, isActive: true }]),
       });
       const { getAppConfig } = createAppConfigService(deps);
 
@@ -919,7 +957,7 @@ describe('createAppConfigService', () => {
         getApplicableConfigs: jest
           .fn()
           .mockResolvedValue([
-            { priority: 100, overrides: { x: 'user-specific' }, isActive: true },
+            { priority: 100, overrides: { version: 'user-specific' }, isActive: true },
           ]),
       });
       const { getAppConfig } = createAppConfigService(deps);
@@ -934,7 +972,7 @@ describe('createAppConfigService', () => {
       const deps = createDeps({
         getApplicableConfigs: jest
           .fn()
-          .mockResolvedValue([{ priority: 100, overrides: { y: 1 }, isActive: true }]),
+          .mockResolvedValue([{ priority: 100, overrides: { version: '1' }, isActive: true }]),
       });
       const { getAppConfig } = createAppConfigService(deps);
 
@@ -951,7 +989,7 @@ describe('createAppConfigService', () => {
       const deps = createDeps({
         getApplicableConfigs: jest
           .fn()
-          .mockResolvedValue([{ priority: 10, overrides: { x: 1 }, isActive: true }]),
+          .mockResolvedValue([{ priority: 10, overrides: { version: '1' }, isActive: true }]),
       });
       const { getAppConfig } = createAppConfigService(deps);
 
@@ -969,12 +1007,12 @@ describe('createAppConfigService', () => {
       await getAppConfig();
 
       mockGetConfigs.mockResolvedValueOnce([
-        { priority: 10, overrides: { restricted: true }, isActive: true },
+        { priority: 10, overrides: { secureImageLinks: true }, isActive: true },
       ]);
       const config = await getAppConfig({ role: 'ADMIN' });
 
       expect(mockGetConfigs).toHaveBeenCalledTimes(2);
-      expect((config as TestConfig).restricted).toBe(true);
+      expect((config as TestConfig).secureImageLinks).toBe(true);
     });
 
     it('does not short-circuit other users when one user has no overrides', async () => {
@@ -986,12 +1024,12 @@ describe('createAppConfigService', () => {
       expect(mockGetConfigs).toHaveBeenCalledTimes(1);
 
       mockGetConfigs.mockResolvedValueOnce([
-        { priority: 10, overrides: { x: 'admin-only' }, isActive: true },
+        { priority: 10, overrides: { version: 'admin-only' }, isActive: true },
       ]);
       const config = await getAppConfig({ role: 'ADMIN' });
 
       expect(mockGetConfigs).toHaveBeenCalledTimes(2);
-      expect((config as TestConfig).x).toBe('admin-only');
+      expect((config as TestConfig).version).toBe('admin-only');
     });
 
     it('passes empty principals to getApplicableConfigs when buildPrincipals returns empty', async () => {
@@ -1062,7 +1100,9 @@ describe('createAppConfigService', () => {
         const deps = createDeps({
           getApplicableConfigs: jest
             .fn()
-            .mockResolvedValue([{ priority: 5, overrides: { restricted: true }, isActive: true }]),
+            .mockResolvedValue([
+              { priority: 5, overrides: { secureImageLinks: true }, isActive: true },
+            ]),
         });
         const { getAppConfig } = createAppConfigService(deps);
 
@@ -1071,7 +1111,7 @@ describe('createAppConfigService', () => {
         );
 
         expect(deps.getApplicableConfigs).toHaveBeenCalledWith([]);
-        expect((config as TestConfig).restricted).toBe(true);
+        expect((config as TestConfig).secureImageLinks).toBe(true);
       });
     });
 
@@ -1098,7 +1138,7 @@ describe('createAppConfigService', () => {
         const deps = createDeps({
           getApplicableConfigs: jest
             .fn()
-            .mockResolvedValue([{ priority: 10, overrides: { x: 1 }, isActive: true }]),
+            .mockResolvedValue([{ priority: 10, overrides: { version: '1' }, isActive: true }]),
         });
         const { getAppConfig } = createAppConfigService(deps);
 
@@ -1122,20 +1162,20 @@ describe('createAppConfigService', () => {
           getApplicableConfigs: jest
             .fn()
             .mockImplementation(async () => [
-              { priority: 10, overrides: { whoami: getTenantId() }, isActive: true },
+              { priority: 10, overrides: { version: getTenantId() }, isActive: true },
             ]),
         });
         const { getAppConfig } = createAppConfigService(deps);
 
         const configA = (await tenantStorage.run({ tenantId: 'tenant-a' }, async () =>
           getAppConfig({ role: 'USER' }),
-        )) as TestConfig & { whoami?: string };
+        )) as TestConfig;
         const configB = (await tenantStorage.run({ tenantId: 'tenant-b' }, async () =>
           getAppConfig({ role: 'USER' }),
-        )) as TestConfig & { whoami?: string };
+        )) as TestConfig;
 
-        expect(configA.whoami).toBe('tenant-a');
-        expect(configB.whoami).toBe('tenant-b');
+        expect(configA.version).toBe('tenant-a');
+        expect(configB.version).toBe('tenant-b');
         // A cache collision would short-circuit the second tenant's DB read.
         expect(deps.getApplicableConfigs).toHaveBeenCalledTimes(2);
       });
@@ -1350,7 +1390,7 @@ describe('createAppConfigService', () => {
       const deps = createDeps({
         getApplicableConfigs: jest
           .fn()
-          .mockResolvedValue([{ priority: 10, overrides: { x: 1 }, isActive: true }]),
+          .mockResolvedValue([{ priority: 10, overrides: { version: '1' }, isActive: true }]),
       });
       const { getAppConfig, clearOverrideCache } = createAppConfigService(deps);
 
@@ -1370,7 +1410,7 @@ describe('createAppConfigService', () => {
       const deps = createDeps({
         getApplicableConfigs: jest
           .fn()
-          .mockResolvedValue([{ priority: 10, overrides: { x: 1 }, isActive: true }]),
+          .mockResolvedValue([{ priority: 10, overrides: { version: '1' }, isActive: true }]),
       });
       const { getAppConfig, clearOverrideCache } = createAppConfigService(deps);
 

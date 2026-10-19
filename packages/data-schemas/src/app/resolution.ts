@@ -258,8 +258,9 @@ export type ConfigOverrideIssue = {
   segments: string[];
   /**
    * A stable, machine-readable reason: a zod issue code (`invalid_type`, `custom`, ...),
-   * `missing_merge_key`, `duplicate_merge_key`, `indexed_merge_key_write`, `union_dropped_key`, or `invalid_document`. Schema messages are not carried because
-   * they can echo the submitted values.
+   * `unknown_section`, `missing_merge_key`, `duplicate_merge_key`, `indexed_merge_key_write`,
+   * `union_dropped_key`, or `invalid_document`. Schema messages are not carried because they
+   * can echo the submitted values.
    */
   code: string;
 };
@@ -272,6 +273,16 @@ function isPlainObject(value: unknown): value is AnyObject {
 
 function hasOwn(target: object, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(target, key);
+}
+
+/**
+ * Whether `key` is a top-level section an override may hold: one `configSchema` defines.
+ * Anything else names runtime state the merge would otherwise reach (`paths`, the raw-YAML
+ * `config`, the AppService aliases `interfaceConfig`/`mcpConfig`/`turnstileConfig`), so it is
+ * rejected on write and ignored at merge. Unknown keys inside a known section stay accepted.
+ */
+export function isAcceptedOverrideSection(key: string): boolean {
+  return hasOwn(configSchema.shape, key);
 }
 
 function toIssue(segments: string[], code: string): ConfigOverrideIssue {
@@ -517,7 +528,9 @@ function findUnionDroppedKeys(
  * to the override node that caused it. Unions, refinements, required fields and defaults
  * are therefore judged on the merged result, not on the patch alone. An issue caused only
  * by leaving something out (a required or related field another layer may supply) is not
- * reported, except inside an array the merge replaces, where nothing can supply it. Keys the schema does not define are accepted unchanged.
+ * reported, except inside an array the merge replaces, where nothing can supply it. A top-level
+ * key that is not a `configSchema` section is reported as `unknown_section`; keys the schema
+ * does not define inside a known section are accepted unchanged.
  */
 export function getConfigOverrideIssues(
   overrides: unknown,
@@ -532,6 +545,7 @@ export function getConfigOverrideIssues(
   const shape = configSchema.shape;
   for (const section of Object.keys(overrides)) {
     if (!hasOwn(shape, section)) {
+      issues.push(toIssue([section], 'unknown_section'));
       continue;
     }
     const schema = shape[section as keyof typeof shape] as unknown as SchemaNode;
@@ -759,6 +773,49 @@ function filterMCPServerOverrides(value: unknown, current: unknown): AnyObject {
 }
 
 /**
+ * The document with only what the merge may apply: override keys and tombstones under a
+ * top-level section `configSchema` defines. Anything else was stored before writes were
+ * checked (or by another writer) and would reach runtime state no override may set, so it is
+ * dropped here, which neutralizes it without a migration. One warning per document.
+ */
+function withAcceptedSections(config: IConfig): IConfig {
+  const ignored = new Set<string>();
+  let overrides = config.overrides;
+  if (isPlainObject(overrides)) {
+    const accepted: AnyObject = {};
+    for (const [key, value] of Object.entries(overrides)) {
+      if (isAcceptedOverrideSection(key)) {
+        accepted[key] = value;
+      } else {
+        ignored.add(key);
+      }
+    }
+    overrides = accepted as Partial<TCustomConfig>;
+  }
+  let tombstones = config.tombstones;
+  if (Array.isArray(tombstones)) {
+    tombstones = tombstones.filter((path) => {
+      if (typeof path !== 'string') {
+        return false;
+      }
+      const section = path.split('.')[0];
+      if (isAcceptedOverrideSection(section)) {
+        return true;
+      }
+      ignored.add(section);
+      return false;
+    });
+  }
+  if (ignored.size === 0) {
+    return config;
+  }
+  logger.warn(
+    `[mergeConfigOverrides] Ignoring unknown config sections ${[...ignored].join(', ')} for ${config.principalType}/${config.principalId}`,
+  );
+  return { ...config, overrides, tombstones } as IConfig;
+}
+
+/**
  * Merge DB config overrides into a base AppConfig.
  *
  * Configs are sorted by priority ascending (lowest first, highest wins).
@@ -774,7 +831,8 @@ export function mergeConfigOverrides(baseConfig: AppConfig, configs: IConfig[]):
   let merged = { ...baseConfig };
   /** The YAML-shaped config the next override lands on, for validating it in place. */
   let raw: Partial<TCustomConfig> = baseConfig.config ?? {};
-  for (const config of sorted) {
+  for (const stored of sorted) {
+    const config = withAcceptedSections(stored);
     const isBasePrincipal = config.principalId?.toString() === BASE_CONFIG_PRINCIPAL_ID;
     if (Array.isArray(config.tombstones)) {
       for (const path of config.tombstones) {

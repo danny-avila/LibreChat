@@ -4,6 +4,7 @@ import {
   applyConfigTombstones,
   getConfigOverrideIssues,
   BASE_CONFIG_PRINCIPAL_ID,
+  isAcceptedOverrideSection,
 } from '@librechat/data-schemas';
 import {
   BASE_PRINCIPAL_CONFIG_SECTIONS,
@@ -41,6 +42,7 @@ import {
   isConfigSecretPreservablePatch,
   preserveConfigSecrets,
   redactConfigSecrets,
+  redactResolvedConfigSecrets,
 } from './secrets';
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { createAdminAuditEmitter } from './audit';
@@ -110,7 +112,7 @@ function isBaseOnlyFieldPath(fieldPath: string): boolean {
 
 function isProcessMCPServerFieldPath(fieldPath: string, value: unknown): boolean {
   const [section, _serverName, field] = fieldPath.split('.');
-  if (section !== 'mcpServers' && section !== 'mcpConfig') {
+  if (section !== 'mcpServers') {
     return false;
   }
   if (field == null) {
@@ -432,10 +434,21 @@ function redactConfigForResponse(config: IConfig): IConfig {
 function redactAppConfigForResponse(appConfig: AppConfig): AppConfig {
   const safeConfig = JSON.parse(JSON.stringify(appConfig)) as AppConfig & { config?: unknown };
   redactConfigSecrets(safeConfig);
+  redactResolvedConfigSecrets(safeConfig);
   if (safeConfig.config != null && typeof safeConfig.config === 'object') {
     redactConfigSecrets(safeConfig.config);
+    redactResolvedConfigSecrets(safeConfig.config);
   }
   return safeConfig;
+}
+
+/**
+ * Field writes must address a section `configSchema` defines: anything else (`paths`, the raw
+ * `config`, an AppService alias such as `interfaceConfig`) would reach runtime state. The path
+ * is not echoed back.
+ */
+function unknownSectionResponse(res: Response): Response {
+  return res.status(400).json({ error: 'Unknown config section', code: 'UNKNOWN_SECTION' });
 }
 
 /** Reports only the paths and stable codes: schema messages can echo the submitted values. */
@@ -513,6 +526,37 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
     }
     const appConfig = await getAppConfig({ tenantId, baseOnly: true });
     return appConfig?.config ?? {};
+  }
+
+  /**
+   * Sends a written document the way a read would return it: redacted, then filtered to the
+   * sections the caller can read plus the ones this write just managed (`manage:configs:<section>`
+   * does not imply reading it, and the caller needs to see what it wrote). Broad managers can
+   * read every section, so their response skips the lookup. Redacting first also turns the
+   * hydrated document a write returns into a plain object, which the filter's spread needs:
+   * spreading the document itself would copy its internal `_doc`, every section included.
+   */
+  async function respondWithConfig(
+    res: Response,
+    status: number,
+    user: CapabilityUser,
+    config: IConfig | null,
+    access: { hasBroadManage: boolean; managedSections?: readonly string[] },
+  ): Promise<Response> {
+    if (!config) {
+      return res.status(status).json({ config });
+    }
+    const safeConfig = redactConfigForResponse(config);
+    if (access.hasBroadManage) {
+      return res.status(status).json({ config: safeConfig });
+    }
+    const readable = await getReadableConfigSections(user, [
+      ...new Set(collectConfigSections(safeConfig)),
+    ] as ConfigSection[]);
+    const sections = new Set([...readable.sections, ...(access.managedSections ?? [])]);
+    return res.status(status).json({
+      config: filterConfigDocForReadAccess(safeConfig, { broad: readable.broad, sections }),
+    });
   }
 
   /**
@@ -642,10 +686,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
       }
 
       const rawOverrides = overrides as Record<string, unknown>;
-      if (
-        hasProcessMCPServerConfig(rawOverrides.mcpServers) ||
-        hasProcessMCPServerConfig(rawOverrides.mcpConfig)
-      ) {
+      if (hasProcessMCPServerConfig(rawOverrides.mcpServers)) {
         return res.status(400).json({ error: PROCESS_MCP_CONFIG_ERROR });
       }
 
@@ -834,8 +875,8 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           },
         });
       }
-      return res.status(config?.configVersion === 1 ? 201 : 200).json({
-        config: config ? redactConfigForResponse(config) : config,
+      return await respondWithConfig(res, config?.configVersion === 1 ? 201 : 200, user, config, {
+        hasBroadManage,
       });
     } catch (error) {
       logger.error('[adminConfig] upsertConfigOverrides error:', getSafeErrorMetadata(error));
@@ -881,6 +922,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           return res
             .status(400)
             .json({ error: `Invalid or unsafe field path: ${entry.fieldPath}` });
+        }
+        if (!isAcceptedOverrideSection(getTopLevelSection(entry.fieldPath))) {
+          return unknownSectionResponse(res);
         }
         if (isProcessMCPServerFieldPath(entry.fieldPath, entry.value)) {
           return res.status(400).json({ error: PROCESS_MCP_CONFIG_ERROR });
@@ -1011,7 +1055,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           metadata: { operation: 'patch', fieldPaths: Object.keys(fields).join(',') },
         });
       }
-      return res.status(200).json({ config: config ? redactConfigForResponse(config) : config });
+      return await respondWithConfig(res, 200, user, config, {
+        hasBroadManage,
+        managedSections: [...new Set(Object.keys(fields).map(getTopLevelSection))],
+      });
     } catch (error) {
       logger.error('[adminConfig] patchConfigField error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to patch config fields' });
@@ -1047,6 +1094,9 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
       if (!isValidFieldPath(fieldPath)) {
         return res.status(400).json({ error: `Invalid or unsafe field path: ${fieldPath}` });
+      }
+      if (!isAcceptedOverrideSection(getTopLevelSection(fieldPath))) {
+        return unknownSectionResponse(res);
       }
       const secretInputError = getConfigSecretInputError(fieldPath, undefined);
       if (secretInputError) {
@@ -1152,7 +1202,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           metadata: { operation: 'tombstone', fieldPath },
         });
       }
-      return res.status(200).json({ config: config ? redactConfigForResponse(config) : config });
+      return await respondWithConfig(res, 200, user, config, {
+        hasBroadManage,
+        managedSections: [section],
+      });
     } catch (error) {
       logger.error('[adminConfig] tombstoneConfigField error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to tombstone config field' });
@@ -1161,6 +1214,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
 
   /**
    * DELETE /:principalType/:principalId/fields?fieldPath=dotted.path
+   *
+   * Unlike the writes, a path under an unknown section is accepted: removing it only clears
+   * what an earlier write stored there (the merge ignores it either way), and it is the only
+   * way to drop such a tombstone without deleting the whole document.
    */
   async function deleteConfigField(req: ServerRequest, res: Response): Promise<Response> {
     try {
@@ -1266,7 +1323,10 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
         target: configTarget(principalType, principalId),
         metadata: { operation: 'unset', fieldPath },
       });
-      return res.status(200).json({ config: redactConfigForResponse(config) });
+      return await respondWithConfig(res, 200, user, config, {
+        hasBroadManage,
+        managedSections: [section],
+      });
     } catch (error) {
       logger.error('[adminConfig] deleteConfigField error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to delete config field' });
@@ -1400,7 +1460,7 @@ export function createAdminConfigHandlers(deps: AdminConfigDeps): {
           metadata: { isActive },
         });
       }
-      return res.status(200).json({ config: redactConfigForResponse(config) });
+      return await respondWithConfig(res, 200, user, config, { hasBroadManage });
     } catch (error) {
       logger.error('[adminConfig] toggleConfig error:', getSafeErrorMetadata(error));
       return res.status(500).json({ error: 'Failed to toggle config' });

@@ -499,6 +499,11 @@ describe('createAdminConfigHandlers', () => {
       await handlers.upsertConfigOverrides(req, res);
 
       expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({
+        error: 'Invalid config override',
+        code: 'CONFIG_OVERRIDE_INVALID',
+        issues: [{ path: 'mcpConfig', code: 'unknown_section' }],
+      });
       expect(deps.upsertConfig).not.toHaveBeenCalled();
     });
 
@@ -1193,6 +1198,7 @@ describe('createAdminConfigHandlers', () => {
       await handlers.patchConfigField(req, res);
 
       expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({ error: 'Unknown config section', code: 'UNKNOWN_SECTION' });
       expect(deps.patchConfigFields).not.toHaveBeenCalled();
     });
 
@@ -2779,6 +2785,359 @@ describe('createAdminConfigHandlers', () => {
 
       expect(res.statusCode).toBe(403);
       expect(recordAuditEntry).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('override sections outside configSchema', () => {
+    /** Runtime state AppService builds that `configSchema` does not define, so no override may set it. */
+    const RUNTIME_KEYS = [
+      'paths',
+      'config',
+      'availableTools',
+      'interfaceConfig',
+      'turnstileConfig',
+      'mcpConfig',
+    ];
+    const MARKER = '/tmp/attacker-controlled';
+    const params = { principalType: 'role', principalId: 'admin' };
+    const UNKNOWN_SECTION = { error: 'Unknown config section', code: 'UNKNOWN_SECTION' };
+
+    it.each(RUNTIME_KEYS)('rejects a whole-document write holding `%s`', async (key) => {
+      const { handlers, deps } = createHandlers();
+      const res = mockRes();
+
+      await handlers.upsertConfigOverrides(
+        mockReq({
+          params,
+          body: { overrides: { [key]: { uploads: MARKER }, registration: { enabled: false } } },
+        }),
+        res,
+      );
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({
+        error: 'Invalid config override',
+        code: 'CONFIG_OVERRIDE_INVALID',
+        issues: [{ path: key, code: 'unknown_section' }],
+      });
+      expect(JSON.stringify(res.body)).not.toContain(MARKER);
+      expect(deps.upsertConfig).not.toHaveBeenCalled();
+    });
+
+    it.each([
+      'paths.uploads',
+      'config.permissions',
+      'config',
+      'interfaceConfig.prompts',
+      'turnstileConfig.siteKey',
+      'mcpConfig.remote.url',
+      'availableTools.calculator',
+    ])('rejects a field write to `%s` without echoing the path', async (fieldPath) => {
+      const { handlers, deps } = createHandlers();
+      const res = mockRes();
+
+      await handlers.patchConfigField(
+        mockReq({ params, body: { entries: [{ fieldPath, value: MARKER }] } }),
+        res,
+      );
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual(UNKNOWN_SECTION);
+      expect(deps.patchConfigFields).not.toHaveBeenCalled();
+      expect(deps.findConfigByPrincipal).not.toHaveBeenCalled();
+    });
+
+    it('rejects the whole batch when any entry addresses an unknown section', async () => {
+      const { handlers, deps } = createHandlers();
+      const res = mockRes();
+
+      await handlers.patchConfigField(
+        mockReq({
+          params,
+          body: {
+            entries: [
+              { fieldPath: 'registration.enabled', value: false },
+              { fieldPath: 'paths.uploads', value: MARKER },
+            ],
+          },
+        }),
+        res,
+      );
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual(UNKNOWN_SECTION);
+      expect(deps.patchConfigFields).not.toHaveBeenCalled();
+    });
+
+    it('still accepts keys the schema does not define inside a known section', async () => {
+      const { handlers, deps } = createHandlers();
+      const res = mockRes();
+
+      await handlers.patchConfigField(
+        mockReq({
+          params,
+          body: { entries: [{ fieldPath: 'registration.futureOption', value: 1 }] },
+        }),
+        res,
+      );
+
+      expect(res.statusCode).toBe(200);
+      expect(deps.patchConfigFields).toHaveBeenCalledWith(
+        'role',
+        'admin',
+        expect.anything(),
+        { 'registration.futureOption': 1 },
+        10,
+      );
+    });
+
+    it.each(['paths', 'paths.uploads', 'config.permissions', 'interfaceConfig.prompts'])(
+      'rejects a tombstone on `%s`',
+      async (fieldPath) => {
+        const { handlers, deps } = createHandlers();
+        const res = mockRes();
+
+        await handlers.tombstoneConfigField(mockReq({ params, body: { fieldPath } }), res);
+
+        expect(res.statusCode).toBe(400);
+        expect(res.body).toEqual(UNKNOWN_SECTION);
+        expect(deps.tombstoneConfigField).not.toHaveBeenCalled();
+        expect(deps.findConfigByPrincipal).not.toHaveBeenCalled();
+      },
+    );
+
+    it('lets a broad manager remove a value stored under an unknown section', async () => {
+      const { handlers, deps } = createHandlers({
+        unsetConfigField: jest.fn().mockResolvedValue({ _id: 'c1', overrides: {}, tombstones: [] }),
+      });
+      const res = mockRes();
+
+      await handlers.deleteConfigField(mockReq({ params, query: { fieldPath: 'paths' } }), res);
+
+      expect(res.statusCode).toBe(200);
+      expect(deps.unsetConfigField).toHaveBeenCalledWith('role', 'admin', 'paths');
+    });
+
+    it('does not let a section-scoped manager remove a value under an unknown section', async () => {
+      const { handlers, deps } = createHandlers({
+        hasConfigCapability: jest.fn(async (_user, section) => section === 'memory'),
+      });
+      const res = mockRes();
+
+      await handlers.deleteConfigField(
+        mockReq({ params, query: { fieldPath: 'paths.uploads' } }),
+        res,
+      );
+
+      expect(res.statusCode).toBe(403);
+      expect(deps.unsetConfigField).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('write responses: filtered by read access', () => {
+    const params = { principalType: 'role', principalId: 'editors' };
+
+    function writtenDoc() {
+      return {
+        _id: 'c1',
+        principalType: 'role',
+        principalId: 'editors',
+        priority: 10,
+        configVersion: 2,
+        isActive: true,
+        overrides: {
+          endpoints: {
+            agents: { disableBuilder: true },
+            custom: [{ name: 'groq', apiKey: 'v3:endpoint-cipher', apiKeyPreview: '...abcd' }],
+          },
+          memory: { charLimit: 500 },
+          webSearch: {
+            searchProvider: 'serper',
+            serperApiKey: 'v3:serper-cipher',
+            serperApiKeyPreview: '...wxyz',
+          },
+        },
+        tombstones: ['endpoints.bedrock', 'memory.tokenLimit', 'webSearch.jinaApiUrl'],
+      };
+    }
+
+    /** A caller holding only the listed `<verb>:configs:<section>` grants, never the broad ones. */
+    function scopedCapability(grants: string[]) {
+      return jest.fn(
+        async (_user: unknown, section: string | null, verb = 'manage') =>
+          section != null && grants.includes(`${verb}:${section}`),
+      );
+    }
+
+    type WrittenBody = { overrides: Record<string, unknown>; tombstones: string[] };
+
+    it('PATCH: a section manager sees only the sections it wrote', async () => {
+      const { handlers } = createHandlers({
+        hasConfigCapability: scopedCapability(['manage:endpoints']),
+        patchConfigFields: jest.fn().mockResolvedValue(writtenDoc()),
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(
+        mockReq({
+          params,
+          body: { entries: [{ fieldPath: 'endpoints.agents.disableBuilder', value: true }] },
+        }),
+        res,
+      );
+
+      expect(res.statusCode).toBe(200);
+      const body = res.body!.config as WrittenBody;
+      expect(Object.keys(body.overrides)).toEqual(['endpoints']);
+      expect(body.tombstones).toEqual(['endpoints.bedrock']);
+      expect(body).toMatchObject({ principalId: 'editors', priority: 10, configVersion: 2 });
+      expect(JSON.stringify(res.body)).not.toMatch(/charLimit|serper|cipher/);
+    });
+
+    it('PATCH: adds the other sections the caller can read', async () => {
+      const { handlers } = createHandlers({
+        hasConfigCapability: scopedCapability(['manage:endpoints', 'read:memory']),
+        patchConfigFields: jest.fn().mockResolvedValue(writtenDoc()),
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(
+        mockReq({
+          params,
+          body: { entries: [{ fieldPath: 'endpoints.agents.disableBuilder', value: true }] },
+        }),
+        res,
+      );
+
+      const body = res.body!.config as WrittenBody;
+      expect(Object.keys(body.overrides).sort()).toEqual(['endpoints', 'memory']);
+      expect(body.tombstones).toEqual(['endpoints.bedrock', 'memory.tokenLimit']);
+    });
+
+    it('PATCH: uses the batched read lookup when the deployment provides one', async () => {
+      const getReadableConfigSections = jest
+        .fn()
+        .mockResolvedValue({ broad: false, sections: new Set(['webSearch']) });
+      const { handlers } = createHandlers({
+        hasConfigCapability: scopedCapability(['manage:endpoints']),
+        getReadableConfigSections,
+        patchConfigFields: jest.fn().mockResolvedValue(writtenDoc()),
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(
+        mockReq({
+          params,
+          body: { entries: [{ fieldPath: 'endpoints.agents.disableBuilder', value: true }] },
+        }),
+        res,
+      );
+
+      expect(getReadableConfigSections).toHaveBeenCalledTimes(1);
+      expect([...getReadableConfigSections.mock.calls[0][1]].sort()).toEqual([
+        'endpoints',
+        'memory',
+        'webSearch',
+      ]);
+      const body = res.body!.config as WrittenBody;
+      expect(Object.keys(body.overrides).sort()).toEqual(['endpoints', 'webSearch']);
+      expect(body.overrides.webSearch).toEqual({
+        searchProvider: 'serper',
+        serperApiKeyPreview: '...wxyz',
+      });
+    });
+
+    it('a broad manager gets the whole redacted document without a read lookup', async () => {
+      const hasConfigCapability = jest.fn().mockResolvedValue(true);
+      const getReadableConfigSections = jest.fn();
+      const { handlers } = createHandlers({
+        hasConfigCapability,
+        getReadableConfigSections,
+        patchConfigFields: jest.fn().mockResolvedValue(writtenDoc()),
+      });
+      const res = mockRes();
+
+      await handlers.patchConfigField(
+        mockReq({
+          params,
+          body: { entries: [{ fieldPath: 'endpoints.agents.disableBuilder', value: true }] },
+        }),
+        res,
+      );
+
+      const body = res.body!.config as WrittenBody;
+      expect(Object.keys(body.overrides).sort()).toEqual(['endpoints', 'memory', 'webSearch']);
+      expect(body.tombstones).toHaveLength(3);
+      expect(JSON.stringify(res.body)).not.toContain('cipher');
+      expect(getReadableConfigSections).not.toHaveBeenCalled();
+      expect(hasConfigCapability.mock.calls.every(([, , verb]) => verb !== 'read')).toBe(true);
+    });
+
+    it('tombstone: a section manager sees only the tombstoned section', async () => {
+      const { handlers } = createHandlers({
+        hasConfigCapability: scopedCapability(['manage:memory']),
+        tombstoneConfigField: jest.fn().mockResolvedValue(writtenDoc()),
+      });
+      const res = mockRes();
+
+      await handlers.tombstoneConfigField(
+        mockReq({ params, body: { fieldPath: 'memory.tokenLimit' } }),
+        res,
+      );
+
+      expect(res.statusCode).toBe(200);
+      const body = res.body!.config as WrittenBody;
+      expect(body.overrides).toEqual({ memory: { charLimit: 500 } });
+      expect(body.tombstones).toEqual(['memory.tokenLimit']);
+    });
+
+    it('field delete: a section manager sees only that section, secrets redacted', async () => {
+      const { handlers } = createHandlers({
+        hasConfigCapability: scopedCapability(['manage:webSearch']),
+        unsetConfigField: jest.fn().mockResolvedValue(writtenDoc()),
+      });
+      const res = mockRes();
+
+      await handlers.deleteConfigField(
+        mockReq({ params, query: { fieldPath: 'webSearch.jinaApiUrl' } }),
+        res,
+      );
+
+      expect(res.statusCode).toBe(200);
+      const body = res.body!.config as WrittenBody;
+      expect(body.overrides).toEqual({
+        webSearch: { searchProvider: 'serper', serperApiKeyPreview: '...wxyz' },
+      });
+      expect(body.tombstones).toEqual(['webSearch.jinaApiUrl']);
+    });
+
+    it('toggle and scope creation: an assign-only caller sees no section it cannot read', async () => {
+      const deps = {
+        hasConfigCapability: scopedCapability([]),
+        hasCapability: jest.fn().mockResolvedValue(true),
+        upsertConfig: jest.fn().mockResolvedValue({ ...writtenDoc(), configVersion: 1 }),
+        toggleConfigActiveTracked: jest
+          .fn()
+          .mockResolvedValue({ config: writtenDoc(), changed: true }),
+      };
+      const { handlers } = createHandlers(deps);
+
+      const toggled = mockRes();
+      await handlers.toggleConfig(mockReq({ params, body: { isActive: false } }), toggled);
+      const created = mockRes();
+      await handlers.upsertConfigOverrides(
+        mockReq({ params, body: { overrides: {}, priority: 5 } }),
+        created,
+      );
+
+      expect(toggled.statusCode).toBe(200);
+      expect(created.statusCode).toBe(201);
+      for (const res of [toggled, created]) {
+        const body = res.body!.config as WrittenBody;
+        expect(body.overrides).toEqual({});
+        expect(body.tombstones).toEqual([]);
+        expect(body).toMatchObject({ principalId: 'editors', isActive: true });
+      }
     });
   });
 });

@@ -692,6 +692,10 @@ describe('config secret registry — real handlers against a real Config collect
   });
 
   describe('getBaseConfig', () => {
+    afterEach(() => {
+      delete process.env.WEST_AZURE_API_KEY;
+    });
+
     it('redacts literal secrets sourced from the resolved AppConfig (e.g. YAML literals)', async () => {
       const appConfig = {
         speech: {
@@ -736,6 +740,102 @@ describe('config secret registry — real handlers against a real Config collect
       expect(getAtPath(config, 'speech.tts.openai.apiKeyPreview')).toBe(getSecretPreview(SECRET));
       expect(getAtPath(config, 'langfuse.secretKeyPreview')).toBe('*********');
       expect(getAtPath(config, 'config.speech.tts.openai.apiKey')).toBeUndefined();
+    });
+
+    it('redacts literal Azure group keys and the Vertex service key from what AppService builds', async () => {
+      const AZURE_KEY = 'azure-literal-group-key-0123456789';
+      const PRIVATE_KEY = '-----BEGIN PRIVATE KEY-----vertex-test-key';
+      const { AppService } = await import('@librechat/data-schemas');
+      /** `azureConfigSetup` resolves each group's key reference at load, as a deployment would. */
+      process.env.WEST_AZURE_API_KEY = 'west-env-value';
+      const appConfig = await AppService({
+        config: {
+          endpoints: {
+            azureOpenAI: {
+              groups: [
+                {
+                  group: 'east',
+                  apiKey: AZURE_KEY,
+                  instanceName: 'east-instance',
+                  version: '2024-02-01',
+                  models: { 'gpt-4o': { deploymentName: 'gpt-4o' } },
+                },
+                {
+                  group: 'west',
+                  apiKey: '${WEST_AZURE_API_KEY}',
+                  instanceName: 'west-instance',
+                  version: '2024-02-01',
+                  models: { 'gpt-4o-mini': { deploymentName: 'gpt-4o-mini' } },
+                },
+              ],
+            },
+            anthropic: {
+              vertex: {
+                region: 'us-east5',
+                serviceKeyFile: JSON.stringify({
+                  type: 'service_account',
+                  private_key: PRIVATE_KEY,
+                }),
+                models: ['claude-sonnet-4'],
+              },
+            },
+          },
+        },
+      });
+      expect(JSON.stringify(appConfig)).toContain(AZURE_KEY);
+      expect(JSON.stringify(appConfig)).toContain(PRIVATE_KEY);
+
+      const { createAdminConfigHandlers } = await import('./config');
+      const getAppConfig = jest.fn(async (_options?: { baseOnly?: boolean }) => appConfig);
+      const baseHandlers = createAdminConfigHandlers({
+        listAllConfigs: async () => [],
+        findConfigByPrincipal: async () => null,
+        upsertConfig: async () => null,
+        patchConfigFields: async () => null,
+        tombstoneConfigField: async () => null,
+        unsetConfigField: async () => null,
+        deleteConfig: async () => null,
+        toggleConfigActiveTracked: async () => null,
+        hasConfigCapability: async () => true,
+        hasAnyConfigReadAccess: async () => true,
+        hasCapability: async () => true,
+        getAppConfig,
+      });
+
+      for (const query of [{}, { baseOnly: 'true' }]) {
+        const res = mockRes();
+        await baseHandlers.getBaseConfig(mockReq({ query }), res);
+        expect(res.statusCode).toBe(200);
+        const payload = JSON.stringify(res.body);
+        expect(payload).not.toContain(AZURE_KEY);
+        expect(payload).not.toContain(PRIVATE_KEY);
+
+        const config = res.body!.config as Record<string, unknown>;
+        expect(getAtPath(config, 'endpoints.azureOpenAI.groupMap.east.instanceName')).toBe(
+          'east-instance',
+        );
+        expect(getAtPath(config, 'endpoints.azureOpenAI.groupMap.east.apiKey')).toBeUndefined();
+        expect(getAtPath(config, 'endpoints.azureOpenAI.groupMap.west.apiKey')).toBe(
+          '${WEST_AZURE_API_KEY}',
+        );
+        const yamlGroups = getAtPath(config, 'config.endpoints.azureOpenAI.groups') as Array<
+          Record<string, unknown>
+        >;
+        expect(yamlGroups.map((group) => group.apiKey)).toEqual([
+          undefined,
+          '${WEST_AZURE_API_KEY}',
+        ]);
+        expect(getAtPath(config, 'endpoints.anthropic.vertexConfig.region')).toBe('us-east5');
+        expect(
+          getAtPath(config, 'endpoints.anthropic.vertexConfig.serviceKeyFile'),
+        ).toBeUndefined();
+        expect(getAtPath(config, 'endpoints.anthropic.vertex.serviceKeyFile')).toBeUndefined();
+        expect(
+          getAtPath(config, 'config.endpoints.anthropic.vertex.serviceKeyFile'),
+        ).toBeUndefined();
+      }
+      expect(getAppConfig.mock.calls.map(([options]) => options?.baseOnly)).toEqual([false, true]);
+      expect(JSON.stringify(appConfig)).toContain(AZURE_KEY);
     });
   });
 });
