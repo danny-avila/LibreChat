@@ -1,7 +1,8 @@
 import type { ContextEntry, TurnContextAgent } from './registry';
 import { LEDGER_PART_KEYS, compareContextKeys, findContextSource } from './registry';
 import type { ToolPlan } from './tools';
-import { setConversationContext } from '../systemParts';
+import type { ContextAgent } from '../systemParts';
+import { ContextPartKeys, contributeContext, setConversationContext } from '../systemParts';
 import { applyToolPlan } from './tools';
 
 /** The fields of a history row the turn context reads. */
@@ -90,6 +91,18 @@ export function getConversationAgents<T extends object>(
   others: Iterable<T> = [],
 ): Set<T> {
   return new Set(plan != null ? [primary, ...others] : []);
+}
+
+/**
+ * Gives an agent that reads the conversation without being the primary one (a handoff target) the
+ * segment's anchored memory in its conversation block, where it stays byte-identical until the
+ * next compaction. The memory changes announced on the history messages reach it as they reach
+ * the primary agent, so a live copy in its per-turn tail, which the SDK relocates next to the
+ * newest user message, would move every turn and rewrite what its earlier turns were bound to.
+ * Only for an agent whose memory is the one the plan anchors (same partition and key format).
+ */
+export function applyTurnMemoryToAgent(agent: ContextAgent, plan: { memoryBlock: string }): void {
+  contributeContext(agent, ContextPartKeys.conversation, plan.memoryBlock);
 }
 
 /**
