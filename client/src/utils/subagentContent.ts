@@ -1,5 +1,6 @@
 import { ContentTypes, ToolCallTypes, getToolTimingDurations } from 'librechat-data-provider';
 import type { SubagentUpdateEvent, ToolTimingStamps } from 'librechat-data-provider';
+import { strongDirection } from './direction';
 
 /**
  * Client-side helpers for rendering the live `SubagentCall` UI while
@@ -715,15 +716,8 @@ export function initSubagentTickerState(): SubagentTickerState {
  *  from the oldest side; we deliberately DON'T prepend a data-level `…` on top
  *  of that CSS ellipsis, which would render a stray dot next to the
  *  "Writing:" / "Reasoning:" label. */
-const RTL_CHAR = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/;
-const STRONG_CHAR =
-  /[A-Za-z\u00C0-\u024F\u0370-\u03FF\u0400-\u04FF\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF\u3040-\u9FFF\uAC00-\uD7AF]/;
-
 /** Direction of the first strongly directional character, as the browser's `dir="auto"` resolves it. */
-export const textDirection = (text: string): 'ltr' | 'rtl' => {
-  const match = STRONG_CHAR.exec(text);
-  return match != null && RTL_CHAR.test(match[0]) ? 'rtl' : 'ltr';
-};
+export const textDirection = (text: string): 'ltr' | 'rtl' => strongDirection(text) ?? 'ltr';
 
 /**
  * Direction for the outer box of a tail-ellipsis line. The newest text sits at the

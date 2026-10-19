@@ -35,6 +35,7 @@ const REPLY_TEXT = [
   '> اقتباس عربي قصير',
   '',
   '- البند الأول',
+  '',
   '- البند الثاني',
   '',
   '| العمود الأول | العمود الثاني |',
@@ -80,7 +81,7 @@ async function cleanup({ conversationId }: Seeded) {
 async function openInLanguage(page: Page, lang: string, conversationId: string) {
   await page.addInitScript((value) => window.localStorage.setItem('lang', value), lang);
   await page.goto(`/c/${conversationId}`, { timeout: 10000 });
-  await expect(page.locator('html')).toHaveAttribute('lang', lang);
+  await expect(page.locator('html')).toHaveAttribute('dir', lang === 'ar' ? 'rtl' : 'ltr');
 }
 
 const reply = (page: Page) => messagesView(page).locator('.markdown').last();
@@ -147,6 +148,14 @@ test.describe('RTL chat surface', () => {
         'direction',
         'ltr',
       );
+      /* A quote and a loose list wrap their text in paragraphs; they still follow it, and the
+       * list indents from the side its markers sit on. */
+      await expect(reply(page).locator('blockquote')).toHaveCSS('direction', 'rtl');
+      const list = reply(page).locator('ul').first();
+      await expect(list).toHaveCSS('direction', 'rtl');
+      expect(
+        parseFloat(await list.evaluate((el) => getComputedStyle(el).paddingRight)),
+      ).toBeGreaterThan(0);
     } finally {
       await cleanup(seeded);
     }
@@ -168,6 +177,7 @@ test.describe('RTL chat surface', () => {
       ).toBeGreaterThan(0);
 
       const list = markdown.locator('ul').first();
+      await expect(list).toHaveCSS('direction', 'rtl');
       const listStyle = await list.evaluate((el) => {
         const style = getComputedStyle(el);
         return { left: parseFloat(style.paddingLeft), right: parseFloat(style.paddingRight) };
@@ -240,10 +250,10 @@ test.describe('RTL chat surface', () => {
       expect(previousBox.left).toBeGreaterThan(nextBox.left);
 
       /* The chevrons are mirrored, so "previous" points right, away from the counter. */
-      const mirrored = await previous
+      const scaleX = await previous
         .locator('svg')
-        .evaluate((el) => new DOMMatrix(getComputedStyle(el).transform).a);
-      expect(mirrored).toBe(-1);
+        .evaluate((el) => parseFloat(getComputedStyle(el).scale));
+      expect(scaleX).toBe(-1);
 
       await expect(view.getByRole('status').filter({ hasText: '2 / 2' })).toBeVisible();
       await previous.click();
