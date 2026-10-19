@@ -1,3 +1,4 @@
+import { defaultUrlTransform } from 'react-markdown';
 import { imageExtRegex } from 'librechat-data-provider';
 import type { TAttachment, TFile } from 'librechat-data-provider';
 
@@ -130,10 +131,29 @@ export function attachmentRenderKey(attachment: TAttachment): string | undefined
 export function buildAttachmentsByName(
   attachments: ReadonlyArray<TAttachment> | undefined,
 ): ReadonlyMap<string, TAttachment> {
+  return indexByName(attachments, (attachment) => imageExtRegex.test(attachment.filename ?? ''));
+}
+
+/**
+ * Same index and ambiguity rule as `buildAttachmentsByName`, for every
+ * attachment with a fetchable path whatever its extension. A markdown link
+ * names a `.pptx` the way an image names a `.png`; the image map cannot hold
+ * it because `<img>` cannot display it.
+ */
+export function buildFilesByName(
+  attachments: ReadonlyArray<TAttachment> | undefined,
+): ReadonlyMap<string, TAttachment> {
+  return indexByName(attachments, () => true);
+}
+
+function indexByName(
+  attachments: ReadonlyArray<TAttachment> | undefined,
+  include: (attachment: TAttachment) => boolean,
+): ReadonlyMap<string, TAttachment> {
   const byName = new Map<string, TAttachment>();
   const ambiguous = new Set<string>();
   for (const attachment of attachments ?? []) {
-    if (!attachment?.filepath || !imageExtRegex.test(attachment.filename ?? '')) {
+    if (!attachment?.filepath || !include(attachment)) {
       continue;
     }
     const key = mediaNameKey(attachment.filename ?? '');
@@ -177,11 +197,9 @@ export function toAbsoluteFilePath(path: string, baseUrl: string): string {
  * already an address rather than a name — anything carrying a scheme, or a
  * root-relative path this app serves.
  *
- * A scheme is never looked up, `sandbox:` included. react-markdown's default
- * `urlTransform` allows only http/https/irc/mailto/xmpp, so a `sandbox:`
- * source is blanked before the image component ever sees it; treating it as a
- * name here would claim a file the renderer cannot display. Supporting that
- * form needs a `urlTransform` on the markdown pipeline first. The last case matters: an author writing
+ * A scheme is never looked up. A `sandbox:/mnt/data/…` source never arrives
+ * with its scheme: `sandboxUrlTransform` reduces it to the bare path, which
+ * resolves by name like any other reference. The last case matters: an author writing
  * `/api/files/…/chart.png` addressed one specific file, and reducing that to
  * `chart.png` could resolve it to a different attachment sharing the leaf and
  * display the wrong image.
@@ -213,4 +231,45 @@ export function resolveInlineMedia(
   }
   const key = mediaKeyFromSource(src);
   return key ? byName.get(key) : undefined;
+}
+
+const SANDBOX_PATH_PREFIX = '/mnt/data/';
+const SANDBOX_SCHEME = 'sandbox:';
+
+/**
+ * react-markdown's `urlTransform` for chat messages. The default allows only
+ * http/https/irc/mailto/xmpp and blanks anything else, so a
+ * `sandbox:/mnt/data/…` destination would reach the renderer as `""`. Reducing
+ * it to the bare path lets the anchor and image components resolve it like a
+ * `/mnt/data/…` reference; every other URL gets the default screening.
+ */
+export function sandboxUrlTransform(url: string): string {
+  return url.startsWith(`${SANDBOX_SCHEME}${SANDBOX_PATH_PREFIX}`)
+    ? url.slice(SANDBOX_SCHEME.length)
+    : defaultUrlTransform(url);
+}
+
+/**
+ * Classifies a markdown link destination against the code sandbox. A
+ * `/mnt/data/…` path is where the interpreter wrote the file, never an address
+ * the browser can load, so `isSandboxPath` tells the caller not to emit a raw
+ * anchor; `attachment` is the turn's file it names, when there is one. Other
+ * hrefs are not this function's business and report `isSandboxPath: false`.
+ */
+export function resolveSandboxLink(
+  href: string | undefined,
+  byName: ReadonlyMap<string, TAttachment> | undefined,
+): { isSandboxPath: boolean; attachment?: TAttachment } {
+  const trimmed = href?.trim() ?? '';
+  let decoded = trimmed;
+  try {
+    decoded = decodeURIComponent(trimmed);
+  } catch {
+    /* Match the raw form, as `mediaKeyFromSource` does. */
+  }
+  if (!decoded.startsWith(SANDBOX_PATH_PREFIX)) {
+    return { isSandboxPath: false };
+  }
+  const key = mediaNameKey(decoded.split(/[?#]/, 1)[0]);
+  return { isSandboxPath: true, attachment: key ? byName?.get(key) : undefined };
 }

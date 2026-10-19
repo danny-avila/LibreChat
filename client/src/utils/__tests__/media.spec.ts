@@ -3,7 +3,10 @@ import {
   attachmentIdentity,
   attachmentRenderKey,
   buildAttachmentsByName,
+  buildFilesByName,
+  resolveSandboxLink,
   resolveInlineMedia,
+  sandboxUrlTransform,
   toAbsoluteFilePath,
 } from '~/utils/media';
 
@@ -276,5 +279,68 @@ describe('attachmentRenderKey', () => {
     expect(
       attachmentRenderKey(attachment({ file_id: undefined, filepath: undefined })),
     ).toBeUndefined();
+  });
+});
+
+describe('buildFilesByName', () => {
+  const deck = attachment({
+    filename: 'deck.pptx',
+    filepath: '/api/files/code/download/s/d/deck.pptx',
+  });
+
+  it('indexes non-image files that the image map leaves out', () => {
+    expect(buildFilesByName([deck]).get('deck.pptx')).toBe(deck);
+    expect(buildAttachmentsByName([deck]).size).toBe(0);
+  });
+
+  it('drops a basename two stored files claim', () => {
+    const other = attachment({ filename: 'deck.pptx', filepath: '/api/files/other/deck.pptx' });
+    expect(buildFilesByName([deck, other]).has('deck.pptx')).toBe(false);
+  });
+});
+
+describe('resolveSandboxLink', () => {
+  const deck = attachment({
+    filename: 'deck.pptx',
+    filepath: '/api/files/code/download/s/d/deck.pptx',
+  });
+  const byName = buildFilesByName([deck]);
+
+  it('resolves a sandbox path by case-insensitive basename', () => {
+    expect(resolveSandboxLink('/mnt/data/sub/Deck.PPTX', byName)).toEqual({
+      isSandboxPath: true,
+      attachment: deck,
+    });
+  });
+
+  it.each([
+    '/api/files/x/deck.pptx',
+    'https://example.com/mnt/data/deck.pptx',
+    'deck.pptx',
+    undefined,
+  ])('does not treat %s as a sandbox path', (href) => {
+    expect(resolveSandboxLink(href, byName)).toEqual({ isSandboxPath: false });
+  });
+
+  it('reports an unmatched sandbox path without an attachment', () => {
+    expect(resolveSandboxLink('/mnt/data/missing.pptx', byName)).toEqual({
+      isSandboxPath: true,
+      attachment: undefined,
+    });
+  });
+});
+
+describe('sandboxUrlTransform', () => {
+  it('reduces a sandbox:/mnt/data/ URL to its path', () => {
+    expect(sandboxUrlTransform('sandbox:/mnt/data/deck.pptx')).toBe('/mnt/data/deck.pptx');
+  });
+
+  it.each([
+    ['https://example.com/a', 'https://example.com/a'],
+    ['/mnt/data/deck.pptx', '/mnt/data/deck.pptx'],
+    ['sandbox:/etc/passwd', ''],
+    ['javascript:alert(1)', ''],
+  ])('screens %s like the default transform', (url, expected) => {
+    expect(sandboxUrlTransform(url)).toBe(expected);
   });
 });

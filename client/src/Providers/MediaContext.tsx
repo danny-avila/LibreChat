@@ -9,6 +9,11 @@ type MediaContext = {
    * markdown renderer resolves the reference through this map.
    */
   attachmentsByName?: ReadonlyMap<string, TAttachment>;
+  /**
+   * Every attachment with a path, not just images, for resolving a markdown
+   * link like `[deck.pptx](/mnt/data/deck.pptx)` to the file the run produced.
+   */
+  filesByName?: ReadonlyMap<string, TAttachment>;
 };
 
 export const MediaContext = createContext<MediaContext>({});
