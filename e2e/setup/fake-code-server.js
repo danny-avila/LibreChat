@@ -226,9 +226,11 @@ async function handleExec(req, res) {
   sendJson(res, 200, { stdout: 'E2E code exec ok\n', stderr: '', files: [] });
 }
 
-/** Set through `POST /__debug/corrupt-downloads`: downloads then claim gzip but send bytes that
- *  are not, so the client's decompression fails mid-body. Reset clears it. */
-let corruptDownloads = false;
+/** Set through `POST /__debug/slow-downloads`: downloads then trickle a long body, so a spec can
+ *  disconnect mid-stream. `GET /__debug/downloads` reports how many such bodies were cut off by
+ *  LibreChat closing the upstream connection. Reset clears both. */
+let slowDownloads = false;
+let closedSlowDownloads = 0;
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -246,14 +248,20 @@ const server = http.createServer((req, res) => {
       return;
     }
 
-    if (pathname === '/__debug/corrupt-downloads' && req.method === 'POST') {
-      corruptDownloads = (await readJson(req)).corrupt === true;
-      sendJson(res, 200, { ok: true, corrupt: corruptDownloads });
+    if (pathname === '/__debug/slow-downloads' && req.method === 'POST') {
+      slowDownloads = (await readJson(req)).slow === true;
+      sendJson(res, 200, { ok: true, slow: slowDownloads });
+      return;
+    }
+
+    if (pathname === '/__debug/downloads' && req.method === 'GET') {
+      sendJson(res, 200, { closedSlowDownloads });
       return;
     }
 
     if (pathname === '/__debug/reset' && req.method === 'POST') {
-      corruptDownloads = false;
+      slowDownloads = false;
+      closedSlowDownloads = 0;
       sessions.clear();
       generated.clear();
       uploads.length = 0;
@@ -278,9 +286,20 @@ const server = http.createServer((req, res) => {
     }
 
     const downloadMatch = pathname.match(/^\/v1\/download\/([^/]+)\/([^/]+)$/);
-    if (downloadMatch && req.method === 'GET' && corruptDownloads) {
-      res.writeHead(200, { 'Content-Type': 'text/csv', 'Content-Encoding': 'gzip' });
-      res.end(Buffer.from('this body is not gzip'));
+    if (downloadMatch && req.method === 'GET' && slowDownloads) {
+      res.writeHead(200, { 'Content-Type': 'text/csv' });
+      let sent = 0;
+      const timer = setInterval(() => {
+        res.write(Buffer.alloc(16 * 1024, 'a'));
+        if (++sent >= 600) {
+          clearInterval(timer);
+          res.end();
+        }
+      }, 50);
+      res.on('close', () => {
+        clearInterval(timer);
+        if (!res.writableFinished) closedSlowDownloads++;
+      });
       return;
     }
     if (downloadMatch && req.method === 'GET') {

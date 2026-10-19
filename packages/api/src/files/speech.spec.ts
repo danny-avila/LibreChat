@@ -9,7 +9,7 @@ import {
 
 const messageId = 'message-id';
 
-function setup(stored: TMessage | null = null) {
+function setup(stored: TMessage | null = null, maxInputChars?: number) {
   const entries = new Map<string, Parameters<SpeechMessageCache['set']>[1]>();
   const cache = {
     get: jest.fn(async (key: string) => entries.get(key)),
@@ -23,6 +23,7 @@ function setup(stored: TMessage | null = null) {
     messageId,
     cache,
     getMessage,
+    maxInputChars,
   });
   return { cache, getMessage, processChunks };
 }
@@ -66,6 +67,13 @@ describe('createSpeechChunkProcessor', () => {
     expect(await processChunks()).toEqual([
       { text: 'This is a long message. It should be split into chunks.', isFinished: false },
     ]);
+  });
+
+  it('stops a message longer than the cap at the cap', async () => {
+    const { cache, processChunks } = setup(null, 10);
+    cache.get.mockResolvedValueOnce({ text: 'Twelve chars and then some more', complete: false });
+
+    expect(await processChunks()).toEqual([{ text: 'Twelve cha', isFinished: true }]);
   });
 
   it('sends an incomplete message without separators whole', async () => {

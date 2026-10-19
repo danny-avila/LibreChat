@@ -1,3 +1,4 @@
+import http from 'node:http';
 import { expect, test } from '@playwright/test';
 import { getE2EUser } from '../../../setup/user';
 import { CODE_API_BASE } from '../helpers';
@@ -6,14 +7,31 @@ import { CODE_API_BASE } from '../helpers';
 const SESSION_ID = 'e2esessionstream00001';
 const FILE_ID = 'e2efilestreamfailure1';
 
+/** Starts a download and drops the connection as soon as the first bytes arrive. */
+function downloadAndDisconnect(url: string, token: string): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const req = http.get(url, { headers: { Authorization: `Bearer ${token}` } }, (res) => {
+      if (res.statusCode !== 200) {
+        reject(new Error(`download answered ${res.statusCode}`));
+        return;
+      }
+      res.once('data', () => {
+        req.destroy();
+        resolve();
+      });
+    });
+    req.on('error', () => undefined);
+  });
+}
+
 test.describe('code output downloads', () => {
   test.afterEach(async ({ request }) => {
-    await request.post(`${CODE_API_BASE}/__debug/corrupt-downloads`, { data: { corrupt: false } });
+    await request.post(`${CODE_API_BASE}/__debug/reset`);
   });
 
-  /* The fake code API answers with a body that claims gzip but is not, so decompression fails
-     after the response has started. Unhandled, that stream error took the whole server down. */
-  test('a download that fails mid-stream leaves the server running @scenario:failed-code-download-keeps-server-up', async ({
+  /* The fake code API trickles a long body. Once the browser side leaves, LibreChat must close
+     its upstream download too instead of holding the connection open, paused, until a timeout. */
+  test('leaving a download closes the upstream code download @scenario:abandoned-code-download-closes-upstream', async ({
     playwright,
     baseURL,
     request,
@@ -25,23 +43,26 @@ test.describe('code output downloads', () => {
       expect(login.ok()).toBeTruthy();
       const { token } = (await login.json()) as { token: string };
 
-      const corrupt = await request.post(`${CODE_API_BASE}/__debug/corrupt-downloads`, {
-        data: { corrupt: true },
+      await request.post(`${CODE_API_BASE}/__debug/reset`);
+      const slow = await request.post(`${CODE_API_BASE}/__debug/slow-downloads`, {
+        data: { slow: true },
       });
-      expect(corrupt.ok()).toBeTruthy();
+      expect(slow.ok()).toBeTruthy();
 
-      const download = await client
-        .get(`/api/files/code/download/${SESSION_ID}/${FILE_ID}`, {
-          headers: { Authorization: `Bearer ${token}` },
-          failOnStatusCode: false,
-        })
-        .then((response) => response.body().then(() => 'completed'))
-        .catch(() => 'aborted');
-      expect(['completed', 'aborted']).toContain(download);
+      await downloadAndDisconnect(
+        new URL(`/api/files/code/download/${SESSION_ID}/${FILE_ID}`, baseURL).toString(),
+        token,
+      );
 
-      /* The process survived: it keeps answering, now and a moment later. */
-      expect((await client.get('/health')).status()).toBe(200);
-      await new Promise((resolve) => setTimeout(resolve, 1_000));
+      await expect
+        .poll(
+          async () => {
+            const response = await request.get(`${CODE_API_BASE}/__debug/downloads`);
+            return ((await response.json()) as { closedSlowDownloads: number }).closedSlowDownloads;
+          },
+          { timeout: 5_000, intervals: [250] },
+        )
+        .toBe(1);
       expect((await client.get('/health')).status()).toBe(200);
     } finally {
       await client.dispose();

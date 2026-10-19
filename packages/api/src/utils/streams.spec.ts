@@ -71,4 +71,23 @@ describe('pipeSegment', () => {
     await expect(pipeSegment(source, res, { end: false })).rejects.toThrow('Client disconnected');
     expect(source.destroyed).toBe(true);
   });
+
+  it('tears the response down when the segment fails mid-write', async () => {
+    const res = new PassThrough();
+    res.resume();
+
+    await expect(pipeSegment(failingSource(), res, { end: false })).rejects.toThrow('socket reset');
+    expect(res.destroyed).toBe(true);
+  });
+
+  it('rejects on a response-side error instead of leaving it unhandled', async () => {
+    const source = new PassThrough();
+    const res = new PassThrough();
+    const pending = pipeSegment(source, res, { end: false });
+
+    res.emit('error', new Error('write EPIPE'));
+
+    await expect(pending).rejects.toThrow('write EPIPE');
+    expect(source.destroyed).toBe(true);
+  });
 });

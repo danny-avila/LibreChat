@@ -37,14 +37,17 @@ export function pipeSegment(
       source.off('end', onEnd);
       source.off('error', onError);
       res.off('close', onClose);
+      res.off('error', onError);
     };
     const onEnd = (): void => {
       cleanup();
       resolve();
     };
+    /** Either side failing ends both: a half-written response would otherwise hang the client. */
     const onError = (error: Error): void => {
       cleanup();
       source.destroy();
+      res.destroy();
       reject(error);
     };
     const onClose = (): void => {
@@ -54,6 +57,7 @@ export function pipeSegment(
     };
     source.on('end', onEnd);
     source.on('error', onError);
+    res.on('error', onError);
     res.on('close', onClose);
     source.pipe(res, { end });
   });

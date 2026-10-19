@@ -401,7 +401,11 @@ class TTSService {
       shouldContinue = false;
     });
 
-    const processChunks = createChunkProcessor(req.user.id, req.body.messageId);
+    const processChunks = createChunkProcessor(
+      req.user.id,
+      req.body.messageId,
+      appConfig?.speech?.tts?.maxInputChars,
+    );
 
     try {
       while (shouldContinue) {
