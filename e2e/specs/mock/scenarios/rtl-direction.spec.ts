@@ -47,7 +47,18 @@ async function openSettings(page: Page) {
   await page.getByRole('menuitem', { name: 'Settings' }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByRole('tablist')).toBeVisible({ timeout: 15000 });
+  await openTab(dialog, 'general');
   return dialog;
+}
+
+/** Phones show the tab list and a panel one at a time, so a hidden list is reached through Back. */
+async function openTab(dialog: Locator, id: string) {
+  const tab = dialog.locator(`[role="tab"][id$="-trigger-${id}"]`);
+  if (!(await tab.isVisible())) {
+    await dialog.getByRole('button', { name: /^(Back|عودة)$/ }).click();
+  }
+  await tab.click();
+  await expect(dialog.getByRole('tabpanel')).toBeVisible();
 }
 
 async function chooseOption(page: Page, trigger: Locator, name: string) {
@@ -56,35 +67,42 @@ async function chooseOption(page: Page, trigger: Locator, name: string) {
 }
 
 const languageSelect = (dialog: Locator) =>
-  dialog.locator('[aria-labelledby="language-selector-label"]');
+  dialog.locator('[role="combobox"][aria-labelledby~="language-selector-label"]');
 
-test('a right-to-left locale marks the document rtl before the bundle runs @scenario:rtl-shell-direction-before-bundle', async ({
-  page,
-  context,
-}) => {
-  /* With every module script refused, only the inline shell script can set `dir`. */
-  await page.route(/\/assets\/.*\.js(?:\?.*)?$/, (route: Route) => route.abort());
+test.describe('before the bundle', () => {
+  /* A worker-served reload would bypass the route that holds the bundle back. */
+  test.use({ serviceWorkers: 'block' });
 
-  await seedStorage(page, { lang: JSON.stringify('ar-EG') });
-  await page.goto('/', { timeout: 30000 });
-  expect((await documentDirection(page)).dir).toBe('rtl');
+  test('a right-to-left locale marks the document rtl before the bundle runs @scenario:rtl-shell-direction-before-bundle', async ({
+    page,
+    context,
+  }) => {
+    /* Module scripts are held, never answered: only the inline shell script can set `dir`, and a
+     * refused script would start the stale-asset recovery reload instead. */
+    await page.route(/\/assets\/.*\.js(?:\?.*)?$/, () => new Promise<void>(() => undefined));
+    const load = async () => {
+      await page.goto('/', { timeout: 30000, waitUntil: 'commit' });
+      await page.waitForFunction(() => document.body != null);
+      return (await documentDirection(page)).dir;
+    };
 
-  /* A value stored unquoted by an older client still counts. */
-  await page.evaluate(() => localStorage.setItem('lang', 'he'));
-  await page.reload();
-  expect((await documentDirection(page)).dir).toBe('rtl');
+    await seedStorage(page, { lang: JSON.stringify('ar-EG') });
+    expect(await load()).toBe('rtl');
 
-  /* The cookie wins over storage, as it does in `detectInitialLanguage`. */
-  await page.evaluate(() => localStorage.setItem('lang', JSON.stringify('fa-IR')));
-  const { origin } = new URL(page.url());
-  await context.addCookies([{ name: 'lang', value: 'en-US', url: origin }]);
-  await page.reload();
-  expect((await documentDirection(page)).dir).toBe('');
+    /* A value stored unquoted by an older client still counts. */
+    await page.evaluate(() => localStorage.setItem('lang', 'he'));
+    expect(await load()).toBe('rtl');
 
-  await context.addCookies([{ name: 'lang', value: 'ug', url: origin }]);
-  await page.evaluate(() => localStorage.setItem('lang', JSON.stringify('en-US')));
-  await page.reload();
-  expect((await documentDirection(page)).dir).toBe('rtl');
+    /* The cookie wins over storage, as it does in `detectInitialLanguage`. */
+    await page.evaluate(() => localStorage.setItem('lang', JSON.stringify('fa-IR')));
+    const { origin } = new URL(page.url());
+    await context.addCookies([{ name: 'lang', value: 'en-US', url: origin }]);
+    expect(await load()).toBe('');
+
+    await context.addCookies([{ name: 'lang', value: 'ug', url: origin }]);
+    await page.evaluate(() => localStorage.setItem('lang', JSON.stringify('en-US')));
+    expect(await load()).toBe('rtl');
+  });
 });
 
 test('switching language in Settings leaves the document on the locale shown @scenario:language-switch-sets-document-direction', async ({
@@ -112,16 +130,19 @@ test('Radix subtrees follow a right-to-left interface @scenario:radix-subtrees-f
   await seedStorage(page, { lang: JSON.stringify('en-US') });
   await page.goto('/c/new', { timeout: 30000 });
   const dialog = await openSettings(page);
-  const tablist = dialog.getByRole('tablist');
-  expect(await computedDirection(tablist)).toBe('ltr');
+  const panel = dialog.getByRole('tabpanel');
+  /* The nearest `dir` above the settings body is the one Radix Tabs writes on its root. */
+  const radixDirection = () =>
+    panel.evaluate((element) => element.closest('[dir]')?.getAttribute('dir') ?? null);
+  expect(await radixDirection()).toBe('ltr');
+  expect(await computedDirection(panel)).toBe('ltr');
 
   await chooseOption(page, languageSelect(dialog), 'العربية');
   await expect.poll(() => documentDirection(page)).toEqual({ lang: 'ar', dir: 'rtl' });
 
-  /* Radix Tabs used to write `dir="ltr"` on its root, turning the whole settings body LTR. */
-  await expect.poll(() => computedDirection(tablist)).toBe('rtl');
-  await expect.poll(() => computedDirection(dialog.getByRole('tabpanel'))).toBe('rtl');
-  await expect(dialog.locator('[dir="ltr"]').filter({ has: tablist })).toHaveCount(0);
+  /* Radix Tabs used to write `dir="ltr"` here, turning the whole settings body LTR. */
+  await expect.poll(radixDirection).toBe('rtl');
+  await expect.poll(() => computedDirection(panel)).toBe('rtl');
 });
 
 /** Drags the toast horizontally and reports how Radix settled the swipe (`end` dismisses it). */
@@ -159,7 +180,7 @@ test('a toast swipes away toward the inline end @scenario:toast-swipes-toward-in
 
   /* A failed import raises an error toast; the dialog stays open across the language switch. */
   const raiseToast = async () => {
-    await dialog.locator('[role="tab"][id$="-trigger-data"]').click();
+    await openTab(dialog, 'data');
     await dialog
       .locator('input[type="file"]')
       .first()
@@ -177,7 +198,7 @@ test('a toast swipes away toward the inline end @scenario:toast-swipes-toward-in
   await expect(ltrToast).toHaveAttribute('data-swipe-direction', 'right');
   await expect(ltrToast).toBeHidden({ timeout: 10000 });
 
-  await dialog.locator('[role="tab"][id$="-trigger-general"]').click();
+  await openTab(dialog, 'general');
   await chooseOption(page, languageSelect(dialog), 'العربية');
   await expect.poll(() => documentDirection(page)).toEqual({ lang: 'ar', dir: 'rtl' });
 
