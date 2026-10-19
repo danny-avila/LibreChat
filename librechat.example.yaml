@@ -503,6 +503,7 @@ registration:
 # connect-time guard only covers direct, non-proxied connections.
 # speech:
 #   tts:
+#     maxInputChars: 20000 # longest text one request may synthesize (each 1,000 chars is a provider call)
 #     openai:
 #       url: ''
 #       apiKey: '${TTS_API_KEY}'
