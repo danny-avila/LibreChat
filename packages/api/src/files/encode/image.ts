@@ -138,10 +138,13 @@ export async function encodeAndFormatImages(
     if (source !== FileSources.local && effectiveEndpoint && base64Only.has(effectiveEndpoint)) {
       const entry = await runGuardedEncode<ImageEntry>(file.bytes ?? 0, async () => {
         const [preparedFile, imageURL] = await preparePayload(req, file);
+        const fetchTimeoutMs = getOutboundTimeoutMs(req.config, 'imageFetchMs');
         try {
           const response = await httpClient.get<ArrayBuffer>(imageURL, {
             responseType: 'arraybuffer',
-            timeout: getOutboundTimeoutMs(req.config, 'imageFetchMs'),
+            timeout: fetchTimeoutMs,
+            /** `timeout` only fires on an idle socket; this bounds a slow, steady trickle too. */
+            signal: AbortSignal.timeout(fetchTimeoutMs),
           });
           return [preparedFile, Buffer.from(response.data).toString('base64')];
         } catch (error) {

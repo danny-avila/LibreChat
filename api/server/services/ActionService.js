@@ -360,6 +360,7 @@ async function createActionTool({
                       token_exchange_method: metadata.auth.token_exchange_method,
                       encrypted_oauth_client_secret: encrypted.oauth_client_secret,
                       allowedAddresses,
+                      timeout: timeoutMs,
                     },
                     {
                       findToken,

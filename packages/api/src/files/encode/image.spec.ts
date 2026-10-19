@@ -172,6 +172,7 @@ describe('encodeAndFormatImages', () => {
     expect(httpClient.get).toHaveBeenCalledWith(file.filepath, {
       responseType: 'arraybuffer',
       timeout: 30_000,
+      signal: expect.any(AbortSignal),
     });
     expect(memoryGuard.runGuardedEncode).toHaveBeenCalledWith(file.bytes, expect.any(Function));
   });
