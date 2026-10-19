@@ -76,7 +76,7 @@ const PaginationPrevious: {
     className={cn('gap-1 ps-2.5', className)}
     {...props}
   >
-    <ChevronLeft className="h-4 w-4 rtl:-scale-x-100" aria-hidden="true" />
+    <ChevronLeft className="h-4 w-4 [&:dir(rtl)]:-scale-x-100" aria-hidden="true" />
     <span>Previous</span>
   </PaginationLink>
 );
@@ -93,7 +93,7 @@ const PaginationNext: {
     {...props}
   >
     <span>Next</span>
-    <ChevronRight className="h-4 w-4 rtl:-scale-x-100" aria-hidden="true" />
+    <ChevronRight className="h-4 w-4 [&:dir(rtl)]:-scale-x-100" aria-hidden="true" />
   </PaginationLink>
 );
 PaginationNext.displayName = 'PaginationNext';

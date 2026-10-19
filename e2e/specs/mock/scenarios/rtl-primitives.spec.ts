@@ -100,6 +100,38 @@ async function archivedLayout(dialog: Locator) {
   });
 }
 
+/** Hovers the sidebar's new-chat button, whose tooltip asks for the physical `right` side. */
+async function newChatTooltip(page: Page) {
+  const anchor = page.getByTestId('new-chat-button');
+  await page.mouse.move(0, 0);
+  await expect(page.locator('.tooltip')).toBeHidden();
+  await anchor.hover();
+  const tooltip = page.locator('.tooltip');
+  await expect(tooltip).toBeVisible({ timeout: 10000 });
+  /** Read once the popover has settled where it opens. */
+  let previous = '';
+  await expect
+    .poll(async () => {
+      const [a, t] = await Promise.all([anchor.boundingBox(), tooltip.boundingBox()]);
+      const next = JSON.stringify({
+        anchorLeft: Math.round(a?.x ?? 0),
+        anchorRight: Math.round((a?.x ?? 0) + (a?.width ?? 0)),
+        tooltipLeft: Math.round(t?.x ?? 0),
+        tooltipRight: Math.round((t?.x ?? 0) + (t?.width ?? 0)),
+      });
+      const settled = next === previous;
+      previous = next;
+      return settled;
+    })
+    .toBe(true);
+  return JSON.parse(previous) as {
+    anchorLeft: number;
+    anchorRight: number;
+    tooltipLeft: number;
+    tooltipRight: number;
+  };
+}
+
 test.describe('RTL shared primitives', () => {
   test('a switch thumb travels toward the inline end and stays inside its track in RTL @scenario:rtl-switch-thumb-stays-in-track', async ({
     page,
@@ -116,6 +148,12 @@ test.describe('RTL shared primitives', () => {
       expect(reading.fromLeft).toBeGreaterThanOrEqual(0);
       expect(reading.fromRight).toBeGreaterThanOrEqual(0);
     }
+
+    /** An LTR island inside the RTL page keeps the LTR travel. */
+    await control.evaluate((node) => node.parentElement?.setAttribute('dir', 'ltr'));
+    const island = await bothStates(control);
+    expect(island.checked.fromRight).toBeLessThan(island.checked.fromLeft);
+    expect(island.checked.fromRight).toBeGreaterThanOrEqual(0);
   });
 
   test('a dialog puts its close button on the inline end, clear of its title, in RTL @scenario:rtl-dialog-close-button-mirrors', async ({
@@ -146,5 +184,19 @@ test.describe('RTL shared primitives', () => {
     const layout = await archivedLayout(dialog);
     expect(layout.closeCenter).toBeGreaterThan(layout.dialogWidth / 2);
     expect(layout.textOverlapsClose).toBe(false);
+  });
+
+  test('a side tooltip follows the writing direction when it flips without a reload @scenario:rtl-side-tooltip-follows-direction-switch', async ({
+    page,
+  }) => {
+    await page.goto(NEW_CHAT_PATH, { timeout: 15000 });
+    await setDirection(page, 'ltr');
+    const ltr = await newChatTooltip(page);
+    expect(ltr.tooltipLeft).toBeGreaterThanOrEqual(ltr.anchorRight);
+
+    /** The same mounted anchor, after the document turns RTL the way a language switch does. */
+    await setDirection(page, 'rtl');
+    const rtl = await newChatTooltip(page);
+    expect(rtl.tooltipRight).toBeLessThanOrEqual(rtl.anchorLeft);
   });
 });

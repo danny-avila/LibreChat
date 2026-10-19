@@ -101,6 +101,16 @@ describe('LibreChat Tailwind preset', () => {
     expect(rule(css, '-translate-x-theme-switch-travel')).toContain('* -1)');
   });
 
+  it('mirrors the switch thumb by the element direction, not any RTL ancestor', async () => {
+    const candidate = '[&:dir(rtl)]:data-[state=checked]:-translate-x-theme-switch-travel';
+    const css = await generate([candidate]);
+
+    /** Tailwind's `rtl:` also matches `[dir="rtl"] *`, which reaches into an LTR island. */
+    expect(css).toContain(':dir(rtl)');
+    expect(css).toContain('--theme-switch-width');
+    expect(css).not.toContain('[dir="rtl"] *');
+  });
+
   it('generates every component animation and its keyframes together', async () => {
     const names = ['loading-dot', 'accordion-down', 'accordion-up', 'caret-blink'];
     const css = await generate(names.map((name) => `animate-${name}`));

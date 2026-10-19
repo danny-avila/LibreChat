@@ -1,4 +1,12 @@
-import { useMemo, useState, useRef, memo, useEffect, MemoExoticComponent } from 'react';
+import {
+  useMemo,
+  useState,
+  useRef,
+  memo,
+  useEffect,
+  useLayoutEffect,
+  MemoExoticComponent,
+} from 'react';
 import * as Ariakit from '@ariakit/react';
 import { matchSorter } from 'match-sorter';
 import { Search, ChevronDown } from 'lucide-react';
@@ -124,11 +132,12 @@ function ControlCombobox({
 
   const selectOpen = select.useState('open');
   const selectAnchor = select.useState('anchorElement');
-  useEffect(() => {
+  /** Re-resolved on each open: a language switch flips the direction without remounting. */
+  useLayoutEffect(() => {
     if (placement) {
       select.setState('placement', resolveSide(placement, selectAnchor));
     }
-  }, [select, placement, selectAnchor]);
+  }, [select, placement, selectAnchor, selectOpen]);
   useEffect(() => {
     // The select owns the popover; hiding it does not hide the combobox store.
     if (!selectOpen) {

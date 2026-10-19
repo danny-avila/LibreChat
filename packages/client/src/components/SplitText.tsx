@@ -3,8 +3,8 @@ import { useSprings, animated, SpringConfig } from '@react-spring/web';
 import useRemScale from '~/hooks/useRemScale';
 
 const TEXT_ALIGN: Record<NonNullable<SplitTextProps['textAlign']>, string> = {
-  left: 'text-start',
-  right: 'text-end',
+  left: 'text-left',
+  right: 'text-right',
   center: 'text-center',
   justify: 'text-justify',
   start: 'text-start',
