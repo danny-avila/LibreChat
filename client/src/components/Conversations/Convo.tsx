@@ -3,7 +3,7 @@ import { useDrag } from 'react-dnd';
 import { Link2 } from 'lucide-react';
 import { useRecoilValue } from 'recoil';
 import { useParams } from 'react-router-dom';
-import { Spinner, useToastContext, useMediaQuery } from '@librechat/client';
+import { Spinner, TooltipAnchor, useToastContext, useMediaQuery } from '@librechat/client';
 import {
   Constants,
   PULL_REQUEST_BATCH_VERSION,
@@ -441,7 +441,16 @@ function Conversation({
         </ConvoLink>
       )}
       {isSharedBadgeVisible && (
-        <Link2 className="icon-sm text-text-secondary mr-1 shrink-0" aria-hidden="true" />
+        <TooltipAnchor
+          description={localize('com_ui_chat_is_shared')}
+          side="top"
+          className="mr-1 shrink-0 cursor-help"
+          render={
+            <span className="inline-flex" aria-hidden="true">
+              <Link2 className="icon-sm text-text-secondary" aria-hidden="true" />
+            </span>
+          }
+        />
       )}
       {projectBadgeProjectId && (
         <ProjectBadge projectId={projectBadgeProjectId} labelId={projectLabelId} />
