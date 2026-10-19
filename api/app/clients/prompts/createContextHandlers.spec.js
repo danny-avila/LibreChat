@@ -43,5 +43,6 @@ it('still fetches context on file-only messages in full-document mode', async ()
   expect(axios.post).not.toHaveBeenCalled();
   expect(axios.get).toHaveBeenCalledWith('http://rag/documents/file-1/context', {
     headers: { Authorization: 'Bearer signed-token' },
+    timeout: 30_000,
   });
 });

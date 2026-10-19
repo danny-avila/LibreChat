@@ -1,4 +1,5 @@
 import {
+  pollUntilSettled,
   DEFAULT_OUTBOUND_TIMEOUTS_MS,
   getOutboundTimeoutMs,
   startOutboundDeadline,
@@ -32,5 +33,45 @@ describe('outbound timeouts', () => {
     } finally {
       jest.useRealTimers();
     }
+  });
+
+  it('returns the first settled poll and hands each poll the remaining budget', async () => {
+    const deadline = startOutboundDeadline(
+      { timeouts: { imageGenerationMs: 5_000 } },
+      'imageGenerationMs',
+    );
+    const poll = jest
+      .fn()
+      .mockResolvedValueOnce({ status: 'Pending' })
+      .mockResolvedValueOnce({ status: 'Ready' });
+
+    const result = await pollUntilSettled({
+      deadline,
+      intervalMs: 1,
+      poll,
+      isSettled: (data: { status: string }) => data.status !== 'Pending',
+    });
+
+    expect(result).toEqual({ status: 'Ready' });
+    expect(poll).toHaveBeenCalledTimes(2);
+    expect(poll.mock.calls[0][0]).toBeLessThanOrEqual(5_000);
+  });
+
+  it('gives up at the deadline when no poll settles', async () => {
+    const deadline = startOutboundDeadline(
+      { timeouts: { imageGenerationMs: 30 } },
+      'imageGenerationMs',
+    );
+    const poll = jest.fn().mockResolvedValue({ status: 'Content Moderated' });
+
+    const result = await pollUntilSettled({
+      deadline,
+      intervalMs: 5,
+      poll,
+      isSettled: (data: { status: string }) => data.status === 'Ready',
+    });
+
+    expect(result).toBeUndefined();
+    expect(deadline.expired()).toBe(true);
   });
 });
