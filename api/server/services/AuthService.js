@@ -255,11 +255,11 @@ const logoutUser = async (req, refreshToken) => {
 
 /**
  * Creates Token and corresponding Hash for verification
- * @returns {[string, string]}
+ * @returns {Promise<[string, string]>}
  */
-const createTokenHash = () => {
+const createTokenHash = async () => {
   const token = Buffer.from(webcrypto.getRandomValues(new Uint8Array(32))).toString('hex');
-  const hash = bcrypt.hashSync(token, 10);
+  const hash = await bcrypt.hash(token, 10);
   return [token, hash];
 };
 
@@ -269,7 +269,7 @@ const createTokenHash = () => {
  * @returns {Promise<void>}
  */
 const sendVerificationEmail = async (user) => {
-  const [verifyToken, hash] = createTokenHash();
+  const [verifyToken, hash] = await createTokenHash();
   const email = user.email.toLowerCase();
 
   const verificationLink = `${
@@ -345,7 +345,7 @@ const verifyEmail = async (req) => {
     return new Error(invalidEmailVerificationMessage);
   }
 
-  const isValid = bcrypt.compareSync(token, emailVerificationData.token);
+  const isValid = await bcrypt.compare(token, emailVerificationData.token);
 
   if (!isValid) {
     logger.warn(
@@ -418,7 +418,7 @@ const registerUser = async (user, additionalData = {}) => {
     // Tenant administrators must be provisioned through a trusted administrative flow.
     const isFirstRegisteredUser = !tenantId && (await countUsers()) === 0;
 
-    const salt = bcrypt.genSaltSync(10);
+    const salt = await bcrypt.genSalt(10);
     const newUserData = {
       provider: provider ?? 'local',
       email,
@@ -426,7 +426,7 @@ const registerUser = async (user, additionalData = {}) => {
       name,
       avatar: null,
       role: isFirstRegisteredUser ? SystemRoles.ADMIN : SystemRoles.USER,
-      password: bcrypt.hashSync(password, salt),
+      password: await bcrypt.hash(password, salt),
       ...trustedAdditionalData,
     };
 
@@ -530,7 +530,7 @@ const requestPasswordReset = async (req) => {
     deleteTokens({ userId: user._id, email: null, identifier: null, type: null }),
   ]);
 
-  const [resetToken, hash] = createTokenHash();
+  const [resetToken, hash] = await createTokenHash();
 
   await createToken({
     userId: user._id,
@@ -581,8 +581,8 @@ const resetPassword = async (userId, token, password) => {
       getUserById,
       updateUser,
       deleteTokens,
-      compareToken: (candidate, storedHash) => bcrypt.compareSync(candidate, storedHash),
-      hashPassword: (plain) => bcrypt.hashSync(plain, 10),
+      compareToken: (candidate, storedHash) => bcrypt.compare(candidate, storedHash),
+      hashPassword: (plain) => bcrypt.hash(plain, 10),
     },
     { userId, token, password },
   );
@@ -972,7 +972,7 @@ const resendVerificationEmail = async (req) => {
 
     await deleteEmailVerificationTokens(user);
 
-    const [verifyToken, hash] = createTokenHash();
+    const [verifyToken, hash] = await createTokenHash();
 
     const verificationLink = `${
       domains.client
