@@ -186,6 +186,23 @@ export async function onRequest({ request, env }) {
     }
   }
 
+  // Deployed API v53 lacks the Settings and Memory collection handlers.
+  // A missing ROUTE is a temporary API-version mismatch, not a deleted
+  // account setting or a missing memory. Preserve actual record-level 404s,
+  // all authorization errors and any future working server responses.
+  if (route.method === 'GET' &&
+      ['/settings', '/memories'].includes(relativePath) &&
+      upstream.status === 404) {
+    const detail = await upstream.clone().json().catch(() => null);
+    if (detail?.error?.code === 'not_found') {
+      await upstream.body?.cancel().catch(() => undefined);
+      const unavailable = json({ error: { code: 'personalization_unavailable' } }, 503);
+      unavailable.headers.set('Retry-After', '60');
+      if (cookie) unavailable.headers.append('Set-Cookie', cookie);
+      return unavailable;
+    }
+  }
+
   const response = new Response(upstream.body, {
     status: upstream.status,
     headers: downstreamHeaders(upstream),
