@@ -12,15 +12,28 @@ test.use({ viewport: { width: 1280, height: 800 } });
 
 type Direction = 'ltr' | 'rtl';
 
+/** Pins the document direction the way an RTL language would. The app's language sync stamps
+ *  `dir` from the UI language whenever it runs (at boot, and again as settings mount), so the
+ *  pin re-applies the value after any such write. */
 async function setDirection(page: Page, dir: Direction) {
   await page.evaluate((value) => {
-    document.documentElement.dir = value;
+    const root = document.documentElement;
+    const state = window as unknown as { __e2eDirPin?: MutationObserver };
+    state.__e2eDirPin?.disconnect();
+    root.dir = value;
+    const pin = new MutationObserver(() => {
+      if (root.dir !== value) {
+        root.dir = value;
+      }
+    });
+    pin.observe(root, { attributes: true, attributeFilter: ['dir'] });
+    state.__e2eDirPin = pin;
   }, dir);
+  await expect(page.locator('html')).toHaveAttribute('dir', dir);
 }
 
 async function openGeneralSettings(page: Page, dir: Direction): Promise<Locator> {
   await page.goto(NEW_CHAT_PATH, { timeout: 15000 });
-  await setDirection(page, dir);
   await page.getByTestId('nav-user').click();
   await page.getByRole('menuitem', { name: 'Settings' }).click();
   const dialog = page.getByRole('dialog', { name: 'Settings' });
@@ -28,6 +41,7 @@ async function openGeneralSettings(page: Page, dir: Direction): Promise<Locator>
     timeout: 15000,
   });
   await dialog.getByRole('tab', { name: 'General' }).click();
+  await setDirection(page, dir);
   return dialog;
 }
 
@@ -71,13 +85,13 @@ async function bothStates(control: Locator) {
 
 async function openArchivedChats(page: Page, dir: Direction): Promise<Locator> {
   await page.goto(NEW_CHAT_PATH, { timeout: 15000 });
-  await setDirection(page, dir);
   await page.getByTestId('nav-user').click();
   await page.getByRole('menuitem', { name: 'Archived chats' }).click();
   const dialog = page.getByRole('dialog', { name: 'Archived chats' });
   await expect(dialog.getByRole('heading', { name: 'Archived chats' })).toBeVisible({
     timeout: 15000,
   });
+  await setDirection(page, dir);
   return dialog;
 }
 
@@ -139,6 +153,9 @@ test.describe('RTL shared primitives', () => {
     const dialog = await openGeneralSettings(page, 'rtl');
     const control = dialog.getByRole('switch').first();
     await expect(control).toBeVisible();
+    /** Radix Tabs stamps its resolved direction on the settings panel, which stays `ltr` until the
+     *  app mounts a direction provider, so the switch's own container carries the RTL direction. */
+    await control.evaluate((node) => node.parentElement?.setAttribute('dir', 'rtl'));
 
     const { checked, unchecked } = await bothStates(control);
     /** Unchecked rests on the inline start (the right in RTL), checked on the inline end. */
@@ -190,6 +207,7 @@ test.describe('RTL shared primitives', () => {
     page,
   }) => {
     await page.goto(NEW_CHAT_PATH, { timeout: 15000 });
+    await expect(page.getByTestId('new-chat-button')).toBeVisible({ timeout: 15000 });
     await setDirection(page, 'ltr');
     const ltr = await newChatTooltip(page);
     expect(ltr.tooltipLeft).toBeGreaterThanOrEqual(ltr.anchorRight);
