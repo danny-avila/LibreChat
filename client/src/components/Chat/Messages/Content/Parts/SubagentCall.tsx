@@ -632,8 +632,9 @@ function ToolIdentifier({
  * Renderer for one ticker line. Writing is the default visible activity, so
  * it renders without a redundant prefix. Reasoning retains its semantic label.
  * Streaming bodies run the outer box opposite to the text direction so the
- * oldest characters clip and the newest stay visible; the text itself sits in
- * an isolated `dir="auto"` span so its punctuation is never reordered.
+ * oldest characters clip and the newest stay visible; `text-end` of that box is
+ * the text's own start, so a line that fits stays where it reads from. The text
+ * sits in an isolated `dir="auto"` span so its punctuation is never reordered.
  *
  * Tool lines (`using_tool`, `tool_complete`) go through `ToolIdentifier`
  * so MCP-hosted tools render as `<server> · <tool>` badges and native
@@ -644,7 +645,7 @@ function TailText({ text }: { text: string }): JSX.Element {
   return (
     <span
       dir={tailOverflowDirection(text)}
-      className="min-w-0 flex-1 overflow-hidden text-start text-ellipsis whitespace-nowrap"
+      className="min-w-0 flex-1 overflow-hidden text-end text-ellipsis whitespace-nowrap"
     >
       <bdi dir="auto" className="[unicode-bidi:isolate]">
         {text}
