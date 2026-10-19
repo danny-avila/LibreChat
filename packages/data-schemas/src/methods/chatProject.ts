@@ -66,7 +66,13 @@ export type GeneratedProjectFileInput = {
 };
 
 export type GeneratedProjectFileResult =
-  | { ok: true; value: { project: IChatProject; file: ProjectFileRecord } }
+  | {
+      ok: true;
+      value: {
+        project: Pick<IChatProject, 'contextRevision' | 'file_ids'>;
+        file: ProjectFileRecord;
+      };
+    }
   | {
       ok: false;
       error: { code: 'project_changed' | 'project_file_limit' | 'project_file_unavailable' };
