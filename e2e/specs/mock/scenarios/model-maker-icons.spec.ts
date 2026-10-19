@@ -48,3 +48,22 @@ test('A model with no known maker keeps the endpoint icon @scenario:a-model-with
   await sendMessageAndWaitForCompletion(page, `Host icon ${Date.now()}`);
   await expect(messagesView(page).getByRole('img', { name: 'Custom' }).first()).toBeVisible();
 });
+
+test('Each row of a gateway model list shows its own maker @scenario:model-list-rows-show-each-model-maker', async ({
+  page,
+}) => {
+  await page.goto(NEW_CHAT_PATH, { timeout: 10000 });
+  await modelSelectorTrigger(page).click();
+  await page.getByRole('option', { name: 'Mock Gemini' }).click();
+
+  /** The mark is decorative, so the row keeps the model id as its whole name. */
+  const row = page.getByRole('option', { name: /^gemini-2\.5-pro( Pin)?$/ });
+  await expect(row).toBeVisible({ timeout: 10000 });
+  await expect(row.getByRole('img', { name: 'Gemini', includeHidden: true })).toBeVisible();
+
+  await page.keyboard.press('Escape');
+  await page.getByRole('option', { name: 'Mock Provider C' }).click();
+  const hostRow = page.getByRole('option', { name: /^mock-model-c( Pin)?$/ });
+  await expect(hostRow).toBeVisible({ timeout: 10000 });
+  await expect(hostRow.getByRole('img', { name: 'Custom', includeHidden: true })).toBeVisible();
+});
