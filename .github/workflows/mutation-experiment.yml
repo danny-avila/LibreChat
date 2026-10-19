@@ -12,6 +12,7 @@ on:
       - 'packages/data-schemas/**'
       - '.github/stryker-report.crt'
       - '.github/scripts/mutation-*.mjs'
+      - 'config/jest.mutation-dependencies.cjs'
       - '.github/workflows/mutation-experiment.yml'
 
 permissions:

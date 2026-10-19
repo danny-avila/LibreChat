@@ -2,7 +2,22 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { combine } from './mutation-reports.mjs';
 import { publicProgress } from './mutation-progress.mjs';
-import { partition, createPlan, selectShard, includeUnrelatedTests } from './mutation-shards.mjs';
+import mutationDependencies from '../../config/jest.mutation-dependencies.cjs';
+import { partition, createPlan, selectShard, prepareShard } from './mutation-shards.mjs';
+
+test('related-test discovery retains typed Jest imports without inventing dynamic dependencies', () => {
+  const code = `
+    jest.requireActual<typeof import('./types')>('./runtime');
+    jest.requireMock<{ nested: Array<string> }>(\`./mocked\`);
+    jest.requireActual<typeof Module>(variablePath);
+    // jest.requireActual<Module>('./comment');
+    const text = "jest.requireActual<Module>('./string')";
+  `;
+  assert.deepEqual(
+    [...mutationDependencies.extract(code, 'sample.spec.ts', () => new Set(['./ordinary']))].sort(),
+    ['./mocked', './ordinary', './runtime'],
+  );
+});
 
 test('public progress shows counts but never forwards raw test details', () => {
   assert.equal(
@@ -51,15 +66,19 @@ test('public progress shows counts but never forwards raw test details', () => {
   }
 });
 
-test('test selection retains cross-folder tests and tests with no import-graph edge', () => {
-  assert.deepEqual(
-    includeUnrelatedTests(
-      ['other-folder/cross.spec.ts'],
-      ['local/unit.spec.ts', 'other-folder/cross.spec.ts', 'contracts/read-source.spec.ts'],
-      ['local/unit.spec.ts', 'other-folder/cross.spec.ts'],
-    ),
-    ['contracts/read-source.spec.ts', 'other-folder/cross.spec.ts'],
+test('native selection retains typed imports and cross-folder tests and lists unrelated suites', () => {
+  const plan = createPlan();
+  const index = plan.shards.findIndex((files) =>
+    files.includes('packages/api/src/middleware/code.ts'),
   );
+  const shard = prepareShard(`${index + 1}/${plan.shards.length}`);
+  assert.ok(shard.testFiles.includes('packages/api/src/middleware/code.spec.ts'));
+  assert.ok(
+    shard.testFiles.includes('packages/api/src/mcp/oauth/OAuthReconnectionManager.test.ts'),
+  );
+  assert.ok(shard.unrelatedTestFiles.includes('packages/api/src/cache/redisClients.tls.spec.ts'));
+  assert.ok(!shard.unrelatedTestFiles.includes('packages/api/src/middleware/code.spec.ts'));
+  assert.ok(shard.normalTestFileCount > shard.testFiles.length);
 });
 
 test('uneven shards cover every input exactly once and keep nearby files together', () => {
@@ -162,6 +181,9 @@ test('merging rejects overlapping files, duplicate shards, mixed commits, and mi
   const mixed = fixture(2);
   mixed.manifest.commit = 'different';
   assert.throws(() => combine([fixture(1), mixed]), /different source/);
+  const differentSelection = fixture(2);
+  differentSelection.manifest.testSelection = 'jest-findRelatedTests';
+  assert.throws(() => combine([fixture(1), differentSelection]), /test selection/);
   const overlap = fixture(2);
   overlap.manifest.files = ['src/1.ts'];
   assert.throws(() => combine([fixture(1), overlap]), /assigned twice/);

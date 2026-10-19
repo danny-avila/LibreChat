@@ -10,6 +10,7 @@ export const shardCount = 16;
 // Match the normal API test:ci selection, including its integration-test boundary.
 export const apiJestOptions = {
   testPathIgnorePatterns: [...apiJest.testPathIgnorePatterns, 'integration\\.'],
+  dependencyExtractor: '<rootDir>/../../config/jest.mutation-dependencies.cjs',
 };
 export const apiMutate = [
   'packages/api/src/**/*.{js,jsx,ts,tsx,cjs,mjs,cts,mts}',
@@ -70,14 +71,10 @@ export function selectShard(value, plan = createPlan()) {
     commit: process.env.GITHUB_SHA ?? 'local',
     sourceHash: plan.sourceHash,
     sourceFileCount: plan.files.length,
+    testSelection: 'jest-findRelatedTests',
     files: plan.shards[index - 1],
     directory: `reports/mutation/api-shards/${id}`,
   };
-}
-
-export function includeUnrelatedTests(selected, allTests, allRelatedTests) {
-  const related = new Set(allRelatedTests);
-  return [...new Set([...selected, ...allTests.filter((test) => !related.has(test))])].sort();
 }
 
 export function prepareShard(value) {
@@ -109,12 +106,13 @@ export function prepareShard(value) {
       relative(process.cwd(), file).replaceAll('\\', '/'),
     );
   };
-  // Tests that inspect source text or exercise contracts may have no import graph edge.
-  // Keep them in every shard; never turn an incomplete graph into a test exclusion.
   const allTests = listTests();
   const allRelatedTests = listTests(plan.files);
-  const testFiles = includeUnrelatedTests(listTests(shard.files), allTests, allRelatedTests);
-  return { ...shard, testFiles };
+  const related = new Set(allRelatedTests);
+  // Record suites outside the API source graph instead of silently claiming they ran.
+  const unrelatedTestFiles = allTests.filter((file) => !related.has(file)).sort();
+  const testFiles = listTests(shard.files).sort();
+  return { ...shard, testFiles, unrelatedTestFiles, normalTestFileCount: allTests.length };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {

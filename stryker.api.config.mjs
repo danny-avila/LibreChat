@@ -14,8 +14,8 @@ export default {
         testMatch: shard.testFiles.map((file) => `<rootDir>/${file.slice('packages/api/'.length)}`),
       }),
     },
-    // The shard already has an explicit test list, including tests without import edges.
-    enableFindRelatedTests: false,
+    // Narrow test files for each mutant, then use per-test coverage within those files.
+    enableFindRelatedTests: true,
   },
   mutate: shard?.files ?? apiMutate,
   concurrency: 1,
@@ -44,7 +44,8 @@ export default {
   dryRunTimeoutMinutes: 30,
   reporters: ['progress', 'html', 'json'],
   incremental: true,
-  incrementalFile: `${reportDirectory}/incremental.json`,
+  // Results from the previous all-tests selection must not be reused by this mode.
+  incrementalFile: `${reportDirectory}/incremental-related.json`,
   htmlReporter: { fileName: `${reportDirectory}/index.html` },
   jsonReporter: { fileName: `${reportDirectory}/mutation.json` },
 };

@@ -17,7 +17,12 @@ export function readShard(directory) {
   const exitText = existsSync(exitFile) ? readFileSync(exitFile, 'utf8').trim() : '';
   const exitCode = /^\d+$/.test(exitText) ? Number(exitText) : null;
   const fullReport = join(directory, 'mutation.json');
-  const partialReport = join(directory, 'incremental.json');
+  const partialReport = join(
+    directory,
+    manifest.testSelection === 'jest-findRelatedTests'
+      ? 'incremental-related.json'
+      : 'incremental.json',
+  );
   const report = existsSync(fullReport)
     ? readJson(fullReport)
     : existsSync(partialReport)
@@ -41,10 +46,11 @@ export function combine(shards) {
     if (
       manifest.sourceHash !== first.sourceHash ||
       manifest.commit !== first.commit ||
+      manifest.testSelection !== first.testSelection ||
       manifest.total !== first.total ||
       manifest.sourceFileCount !== first.sourceFileCount
     ) {
-      throw new Error('Cannot merge different source versions or shard plans');
+      throw new Error('Cannot merge different source versions, test selection, or shard plans');
     }
     if (
       !Number.isInteger(manifest.index) ||
