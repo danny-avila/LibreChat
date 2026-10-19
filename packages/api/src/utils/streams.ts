@@ -63,7 +63,10 @@ export function pipeSegment(
     const onError = (error: Error): void => {
       cleanup();
       source.destroy();
-      res.destroy();
+      /** Before any audio went out the caller can still answer with an HTTP error. */
+      if (!('headersSent' in res) || res.headersSent) {
+        res.destroy();
+      }
       reject(error);
     };
     const onClose = (): void => {

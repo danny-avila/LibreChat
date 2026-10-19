@@ -1,11 +1,7 @@
 import { ContentTypes } from 'librechat-data-provider';
 import type { TMessage } from 'librechat-data-provider';
 import type { SpeechMessageCache } from './speech';
-import {
-  validateTTSInput,
-  createSpeechChunkProcessor,
-  DEFAULT_TTS_MAX_INPUT_CHARS,
-} from './speech';
+import { capSpeechInput, createSpeechChunkProcessor, DEFAULT_TTS_MAX_INPUT_CHARS } from './speech';
 
 const messageId = 'message-id';
 
@@ -69,6 +65,13 @@ describe('createSpeechChunkProcessor', () => {
     ]);
   });
 
+  it('finishes a message that reaches the cap exactly', async () => {
+    const { cache, processChunks } = setup(null, 10);
+    cache.get.mockResolvedValueOnce({ text: 'Ten chars.', complete: false });
+
+    expect(await processChunks()).toEqual([{ text: 'Ten chars.', isFinished: true }]);
+  });
+
   it('stops a message longer than the cap at the cap', async () => {
     const { cache, processChunks } = setup(null, 10);
     cache.get.mockResolvedValueOnce({ text: 'Twelve chars and then some more', complete: false });
@@ -127,18 +130,13 @@ describe('createSpeechChunkProcessor', () => {
   });
 });
 
-describe('validateTTSInput', () => {
-  it.each([undefined, '', 42])('rejects a missing text body (%j)', (input) => {
-    expect(validateTTSInput(input)).toBe('Missing text in request body');
+describe('capSpeechInput', () => {
+  it('keeps text within the default cap whole', () => {
+    const text = 'a'.repeat(DEFAULT_TTS_MAX_INPUT_CHARS);
+    expect(capSpeechInput(text)).toBe(text);
   });
 
-  it('accepts text within the default cap', () => {
-    expect(validateTTSInput('a'.repeat(DEFAULT_TTS_MAX_INPUT_CHARS))).toBeNull();
-  });
-
-  it('rejects text over the configured cap', () => {
-    expect(validateTTSInput('a'.repeat(11), { maxInputChars: 10 })).toBe(
-      'Text exceeds the 10-character limit for speech',
-    );
+  it('reads text over the configured cap only up to the cap', () => {
+    expect(capSpeechInput('a'.repeat(11), { maxInputChars: 10 })).toBe('a'.repeat(10));
   });
 });

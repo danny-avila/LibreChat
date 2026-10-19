@@ -66,7 +66,7 @@ export function createSpeechChunkProcessor({
     const fullText = typeof message === 'string' ? message : getSpeechText(message);
     cache.set(cacheKey, { text: fullText, complete: true }, Time.FIVE_MINUTES);
     /** A message longer than the cap is read up to the cap, as if it ended there. */
-    const capped = fullText.length > maxInputChars;
+    const capped = fullText.length >= maxInputChars;
     const text = capped ? fullText.slice(0, maxInputChars) : fullText;
     const complete =
       capped ||
@@ -99,19 +99,11 @@ export function createSpeechChunkProcessor({
 }
 
 /**
- * Why a text-to-speech request body cannot be synthesized, or `null` when it can. The cap keeps
- * one request from fanning out into an unbounded number of paid provider calls.
+ * The part of `input` one text-to-speech request may synthesize: the text up to the cap, so
+ * one request cannot fan out into an unbounded number of paid provider calls. Longer text is
+ * read up to the cap, the same as automatic playback of a long message.
  */
-export function validateTTSInput(
-  input: unknown,
-  ttsConfig?: { maxInputChars?: number },
-): string | null {
-  if (typeof input !== 'string' || input.length === 0) {
-    return 'Missing text in request body';
-  }
+export function capSpeechInput(input: string, ttsConfig?: { maxInputChars?: number }): string {
   const maxInputChars = ttsConfig?.maxInputChars ?? DEFAULT_TTS_MAX_INPUT_CHARS;
-  if (input.length > maxInputChars) {
-    return `Text exceeds the ${maxInputChars}-character limit for speech`;
-  }
-  return null;
+  return input.length > maxInputChars ? input.slice(0, maxInputChars) : input;
 }

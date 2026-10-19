@@ -98,4 +98,12 @@ describe('pipeSegment', () => {
 
     expect(() => res.emit('error', new Error('write EPIPE'))).not.toThrow();
   });
+
+  it('leaves a response with no audio sent yet open for an HTTP error', async () => {
+    const res = Object.assign(new PassThrough(), { headersSent: false });
+    res.resume();
+
+    await expect(pipeSegment(failingSource(), res, { end: false })).rejects.toThrow('socket reset');
+    expect(res.destroyed).toBe(false);
+  });
 });

@@ -8,7 +8,7 @@ const {
   applySSRFSafeAgentIfDirect,
   pipeSegment,
   pipeToResponse,
-  validateTTSInput,
+  capSpeechInput,
 } = require('@librechat/api');
 const {
   TTSProviders,
@@ -298,6 +298,10 @@ class TTSService {
   async processTextToSpeech(req, res) {
     const { input, voice: requestVoice } = req.body;
 
+    if (!input) {
+      return res.status(400).send('Missing text in request body');
+    }
+
     const appConfig =
       req.config ??
       (await getAppConfig({
@@ -305,10 +309,7 @@ class TTSService {
         userId: req.user?.id,
         tenantId: req.user?.tenantId,
       }));
-    const invalidInput = validateTTSInput(input, appConfig?.speech?.tts);
-    if (invalidInput) {
-      return res.status(400).send(invalidInput);
-    }
+    const text = capSpeechInput(input, appConfig?.speech?.tts);
     try {
       res.setHeader('Content-Type', 'audio/mpeg');
       const provider = this.getProvider(appConfig);
@@ -316,11 +317,11 @@ class TTSService {
       const allowedAddresses = appConfig?.speech?.tts?.allowedAddresses;
       const voice = await this.getVoice(ttsSchema, requestVoice);
 
-      if (input.length < 4096) {
+      if (text.length < 4096) {
         const response = await this.ttsRequest(
           provider,
           ttsSchema,
-          { input, voice },
+          { input: text, voice },
           allowedAddresses,
         );
         pipeToResponse(response.data, res, (error) =>
@@ -329,7 +330,7 @@ class TTSService {
         return;
       }
 
-      const textChunks = splitTextIntoChunks(input, 1000);
+      const textChunks = splitTextIntoChunks(text, 1000);
 
       for (const chunk of textChunks) {
         try {
