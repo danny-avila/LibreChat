@@ -1,4 +1,6 @@
+import { useRef } from 'react';
 import { useSetRecoilState } from 'recoil';
+import { useToastContext } from '@librechat/client';
 import { QueryKeys, Tools } from 'librechat-data-provider';
 import type {
   MemoriesResponse,
@@ -9,6 +11,8 @@ import type {
 import type { QueryClient } from '@tanstack/react-query';
 import { invalidateRecentFiles } from '~/utils/files';
 import { handleMemoryArtifact } from '~/utils/memory';
+import { NotificationSeverity } from '~/common';
+import useLocalize from '~/hooks/useLocalize';
 import store from '~/store';
 
 /** Identity of a re-emitted web-search snapshot: its tool call, turn, agent,
@@ -32,12 +36,44 @@ const searchSnapshotKeyOf = (attachment: TAttachment): string | undefined => {
 
 export default function useAttachmentHandler(queryClient?: QueryClient) {
   const setAttachmentsMap = useSetRecoilState(store.messageAttachmentsMap);
+  const projectNotices = useRef(new Set<string>());
+  const localize = useLocalize();
+  const { showToast } = useToastContext();
 
   return ({ data }: { data: TAttachment; submission: EventSubmission }) => {
     const { messageId } = data;
     const fileId = (data as Partial<TFile>).file_id;
 
     const fileData = data as TFile;
+    const projectFile = fileData.projectFile;
+    if (queryClient && fileId && projectFile) {
+      const { projectId, status, code } = projectFile;
+      const noticeKey = `${projectId}:${fileId}:${status}:${code ?? ''}`;
+      if (!projectNotices.current.has(noticeKey)) {
+        projectNotices.current.add(noticeKey);
+        queryClient.invalidateQueries([QueryKeys.projectFiles, projectId]);
+        queryClient.invalidateQueries([QueryKeys.projectAvailableFiles, projectId]);
+        queryClient.invalidateQueries([QueryKeys.project, projectId]);
+        queryClient.invalidateQueries([QueryKeys.projects]);
+        let messageKey:
+          | 'com_ui_project_output_added'
+          | 'com_ui_project_output_limit'
+          | 'com_ui_project_output_changed'
+          | 'com_ui_project_output_failed' = 'com_ui_project_output_failed';
+        if (status === 'added') {
+          messageKey = 'com_ui_project_output_added';
+        } else if (code === 'project_file_limit') {
+          messageKey = 'com_ui_project_output_limit';
+        } else if (code === 'project_changed') {
+          messageKey = 'com_ui_project_output_changed';
+        }
+        showToast({
+          message: localize(messageKey, { filename: fileData.filename }),
+          severity:
+            status === 'added' ? NotificationSeverity.SUCCESS : NotificationSeverity.WARNING,
+        });
+      }
+    }
     if (
       queryClient &&
       fileData?.file_id &&

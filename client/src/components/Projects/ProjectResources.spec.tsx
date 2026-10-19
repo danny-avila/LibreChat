@@ -1,9 +1,15 @@
 import { useState } from 'react';
 import { RecoilRoot } from 'recoil';
 import userEvent from '@testing-library/user-event';
+import { FileSources } from 'librechat-data-provider';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import type { TChatProjectFile, TFile, TFileUpload } from 'librechat-data-provider';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import type {
+  TChatProjectFile,
+  TFile,
+  TFileUpload,
+  PermissionTypes,
+} from 'librechat-data-provider';
 import type * as ClientModule from '@librechat/client';
 import type * as ReactModule from 'react';
 import type { ReactNode } from 'react';
@@ -11,6 +17,8 @@ import ProjectResources from './ProjectResources';
 
 const mockUploadMutateAsync = jest.fn();
 const mockCanUseFileSearch = jest.fn(() => true);
+const mockCanUseCode = jest.fn(() => true);
+const mockStartupConfig = jest.fn(() => ({ projects: { codeExecution: false } }));
 const mockAddMutateAsync = jest.fn();
 const mockRemoveMutateAsync = jest.fn();
 const mockRefetch = jest.fn();
@@ -79,19 +87,21 @@ jest.mock('~/data-provider', () => ({
   useUploadFileMutation: () => ({ mutateAsync: mockUploadMutateAsync, isLoading: false }),
   useAddProjectFileMutation: () => ({ mutateAsync: mockAddMutateAsync, isLoading: false }),
   useRemoveProjectFileMutation: () => ({ mutateAsync: mockRemoveMutateAsync, isLoading: false }),
-  useGetStartupConfig: () => ({ data: undefined }),
+  useGetStartupConfig: () => ({ data: mockStartupConfig() }),
 }));
 
 jest.mock('~/hooks', () => ({
-  useAgentCapabilities: () => ({ fileSearchEnabled: true }),
+  useAgentCapabilities: () => ({ fileSearchEnabled: true, codeEnabled: true }),
   useGetAgentsConfig: () => ({ agentsConfig: { capabilities: ['file_search'] } }),
-  useHasAccess: () => mockCanUseFileSearch(),
+  useHasAccess: ({ permissionType }: { permissionType: PermissionTypes }) =>
+    permissionType === 'RUN_CODE' ? mockCanUseCode() : mockCanUseFileSearch(),
   useAuthContext: () => ({ user: { id: 'user-1' } }),
   useToolFavorites: () => ({ favoriteKeys: new Set(), toggle: jest.fn() }),
   useLocalize: () => (key: string, options?: { count?: number; name?: string }) => {
     const translations: Record<string, string> = {
       com_error_files_upload: 'An error occurred while uploading the file.',
       com_error_files_upload_canceled: 'The file upload was canceled.',
+      com_error_files_unsupported: "This file type can't be attached here.",
       com_ui_project_add_files: 'Add files',
       com_ui_project_files: 'Reference files',
       com_ui_project_files_help: 'Files are searched',
@@ -165,6 +175,8 @@ describe('ProjectResources', () => {
       refetch: mockRefetch,
     };
     mockCanUseFileSearch.mockReturnValue(true);
+    mockCanUseCode.mockReturnValue(true);
+    mockStartupConfig.mockReturnValue({ projects: { codeExecution: false } });
     mockAddMutateAsync.mockResolvedValue({});
     mockRemoveMutateAsync.mockResolvedValue({});
   });
@@ -185,6 +197,84 @@ describe('ProjectResources', () => {
     mockProjectQueryState = { ...mockProjectQueryState, isError: false };
     renderResources();
     expect(screen.getByText('No reference files yet')).toBeInTheDocument();
+  });
+
+  it.each([
+    ['data.csv', 'text/csv'],
+    ['data.tsv', 'text/tab-separated-values'],
+    ['data.xls', 'application/vnd.ms-excel'],
+    ['data.xlsx', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+    ['data.ods', 'application/vnd.oasis.opendocument.spreadsheet'],
+  ])(
+    'uploads %s to Run Code and associates the unindexed canonical file',
+    async (filename, type) => {
+      mockStartupConfig.mockReturnValue({ projects: { codeExecution: true } });
+      mockUploadMutateAsync.mockResolvedValue({
+        ...uploadedFile,
+        filename,
+        type,
+        embedded: false,
+        source: FileSources.local,
+      });
+      renderResources();
+      fireEvent.change(screen.getByTestId('project-upload-input'), {
+        target: { files: [new File(['data'], filename, { type })] },
+      });
+      await waitFor(() =>
+        expect(mockAddMutateAsync).toHaveBeenCalledWith({
+          projectId: project._id,
+          file_id: uploadedFile.file_id,
+        }),
+      );
+      const [form] = mockUploadMutateAsync.mock.calls[0] as [FormData];
+      expect(form.get('tool_resource')).toBe('execute_code');
+      expect(form.get('message_file')).toBe('true');
+      expect(screen.queryByText('Upload failed')).not.toBeInTheDocument();
+    },
+  );
+
+  it('keeps document uploads on File Search when project code is enabled', async () => {
+    mockStartupConfig.mockReturnValue({ projects: { codeExecution: true } });
+    mockUploadMutateAsync.mockResolvedValue(uploadedFile);
+    renderResources();
+    fireEvent.change(screen.getByTestId('project-upload-input'), {
+      target: { files: [new File(['reference'], 'reference.txt', { type: 'text/plain' })] },
+    });
+    await waitFor(() => expect(mockAddMutateAsync).toHaveBeenCalled());
+    const [form] = mockUploadMutateAsync.mock.calls[0] as [FormData];
+    expect(form.get('tool_resource')).toBe('file_search');
+  });
+
+  it('supports code-only upload permissions and reports sandbox upload failure', async () => {
+    mockStartupConfig.mockReturnValue({ projects: { codeExecution: true } });
+    mockCanUseFileSearch.mockReturnValue(false);
+    mockUploadMutateAsync.mockRejectedValue(new Error('Provider unavailable'));
+    renderResources();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Add files' }));
+    expect(screen.getByRole('menuitem', { name: 'Upload file' })).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId('project-upload-input'), {
+      target: { files: [new File(['data'], 'data.csv', { type: 'text/csv' })] },
+    });
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'An error occurred while uploading the file.',
+    );
+    expect(mockAddMutateAsync).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeEnabled();
+  });
+
+  it('refuses data uploads without the Run Code grant and retains a useful failure state', async () => {
+    mockStartupConfig.mockReturnValue({ projects: { codeExecution: true } });
+    mockCanUseCode.mockReturnValue(false);
+    renderResources();
+    fireEvent.change(screen.getByTestId('project-upload-input'), {
+      target: { files: [new File(['data'], 'data.csv', { type: 'text/csv' })] },
+    });
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      "This file type can't be attached here.",
+    );
+    expect(mockUploadMutateAsync).not.toHaveBeenCalled();
+    expect(mockAddMutateAsync).not.toHaveBeenCalled();
   });
 
   it('uses the canonical upload identity and exposes pending and failed attempts', async () => {
@@ -433,10 +523,8 @@ describe('ProjectResources', () => {
 
     /* The current search's page fails, then the earlier search's request succeeds. */
     mockAvailableFilesState = { ...mockAvailableFilesState, isError: true };
-    settles[1]({ isError: true });
-    await Promise.resolve();
-    settles[0]({ isError: false });
-    await Promise.resolve();
+    await act(async () => settles[1]({ isError: true }));
+    await act(async () => settles[0]({ isError: false }));
     view.rerender(<ProjectResources project={project} />);
 
     await user.click(await screen.findByRole('button', { name: 'Retry' }));

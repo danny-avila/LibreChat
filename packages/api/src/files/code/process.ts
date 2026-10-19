@@ -20,6 +20,7 @@ import type {
 import type { sanitizeArtifactPath, flattenArtifactPath } from '~/utils/files';
 import type { classifyCodeArtifact, CodeArtifactCategory } from './classify';
 import type { hasOfficeHtmlPath, getExtractedTextFormat } from './extract';
+import type { createProjectOutputSaver } from '~/projects/outputs';
 import type { RetentionExpiry } from '~/files/retention';
 import type { extractCodeArtifactText } from './extract';
 import type { logAxiosError } from '~/utils/axios';
@@ -90,6 +91,7 @@ export interface CodeOutputProcessorDeps {
   ) => Promise<{ mime: string } | undefined>;
   claimCodeFile: CodeOutputPersistence['claim'];
   commitCodeFile: (data: CodeFileCommitData, sourceDispatchedAt?: number) => Promise<boolean>;
+  saveProjectOutput?: ReturnType<typeof createProjectOutputSaver>;
   finalizePreview: (input: {
     buffer: Buffer;
     leafName: string;
@@ -141,6 +143,7 @@ export async function processCodeOutput(
     determineFileType,
     claimCodeFile,
     commitCodeFile: commitOutput,
+    saveProjectOutput,
     finalizePreview,
     hasOfficeHtmlPath,
     sanitizeArtifactPath,
@@ -261,6 +264,19 @@ export async function processCodeOutput(
       claim: claimCodeFile,
       commit: commitCodeFile,
     });
+    const commitOutputFile = async (file: CodeOutputStoredFile): Promise<boolean> => {
+      if (!(await outputPersistence.commit(file))) {
+        return false;
+      }
+      const projectFile =
+        !isUpdate || req.chatProjectContext?.file_ids.includes(file.file_id)
+          ? await saveProjectOutput?.(req, file)
+          : undefined;
+      if (projectFile != null) {
+        Object.assign(file, { projectFile });
+      }
+      return true;
+    };
     const newFileId = v4();
     const claimed = await outputPersistence.claim({
       filename: safeName,
@@ -379,7 +395,7 @@ export async function processCodeOutput(
         metadata: codeEnvMetadata,
         ...(await retentionExpiryPromise),
       };
-      if (!(await outputPersistence.commit(file))) {
+      if (!(await commitOutputFile(file))) {
         return null;
       }
       return { file: Object.assign(file, { messageId, toolCallId, agentId }) };
@@ -522,7 +538,7 @@ export async function processCodeOutput(
         previewError: null,
         previewRevision,
       } satisfies CodeOutputStoredFile;
-      if (!(await outputPersistence.commit(file))) {
+      if (!(await commitOutputFile(file))) {
         return null;
       }
       return {
@@ -570,7 +586,7 @@ export async function processCodeOutput(
       previewRevision: null,
     };
 
-    if (!(await outputPersistence.commit(file))) {
+    if (!(await commitOutputFile(file))) {
       return null;
     }
     return { file: Object.assign(file, { messageId, toolCallId, agentId }) };

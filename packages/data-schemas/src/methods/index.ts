@@ -108,6 +108,8 @@ import {
 import { createChatProjectMethods, type ChatProjectMethods } from './chatProject';
 export type {
   AssignConversationToProjectResult,
+  GeneratedProjectFileInput,
+  GeneratedProjectFileResult,
   ChatProjectSortBy,
   ChatProjectSortDirection,
   CreateChatProjectInput,

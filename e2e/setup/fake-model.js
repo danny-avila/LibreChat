@@ -3409,6 +3409,18 @@ function provisioningToolResponses({ text, toolNames }) {
   }
 
   const codeLabel = getMarkerValue(text, EXECUTE_CODE_MARKER);
+  const projectOutputLabel = getMarkerValue(text, 'E2E_PROJECT_OUTPUT:');
+  if (projectOutputLabel) {
+    return codeExecResponses(
+      {
+        filename: `e2e-run-files-${projectOutputLabel}.csv`,
+        toolCallId: `call_e2e_project_output_${projectOutputLabel}`,
+        finalText: 'E2E project output complete',
+        code: `printf 'source,count\\npdf,1\\n' > /mnt/data/e2e-run-files-${projectOutputLabel}.csv\n# E2E_RUN_FILE_ARTIFACT:${projectOutputLabel}`,
+      },
+      toolNames,
+    );
+  }
   if (codeLabel) {
     const codeTool = CODE_EXEC_TOOLS.find((tool) => toolNames.has(tool.name));
     if (!codeTool) {

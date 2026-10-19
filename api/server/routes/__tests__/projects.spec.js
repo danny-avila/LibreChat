@@ -69,13 +69,13 @@ const routeCases = [
     name: 'list available project files',
     method: 'get',
     path: '/api/projects/project-id/files/available',
-    resolvesConfig: false,
+    resolvesConfig: true,
   },
   {
     name: 'list project files',
     method: 'get',
     path: '/api/projects/project-id/files',
-    resolvesConfig: false,
+    resolvesConfig: true,
   },
   {
     name: 'add project files',

@@ -1,7 +1,7 @@
 import mongoose from 'mongoose';
 import { v4 as uuidv4 } from 'uuid';
 import { MongoMemoryServer } from 'mongodb-memory-server';
-import { EToolResources, FileContext } from 'librechat-data-provider';
+import { EToolResources, FileContext, FileSources } from 'librechat-data-provider';
 import type { IChatProject, IMongoFile } from '~/types';
 import { _resetStrictCache } from '~/models/plugins/tenantIsolation';
 import { tenantStorage, runAsSystem } from '~/config/tenantContext';
@@ -336,6 +336,51 @@ describe('File Methods', () => {
   });
 
   describe('getAvailableProjectFiles', () => {
+    it('includes sandbox uploads and explicitly saved outputs only with project code enabled', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const base = {
+        user: userId,
+        tenantId: 'tenant-a',
+        filename: 'data.csv',
+        filepath: '/uploads/data.csv',
+        type: 'text/csv',
+        source: FileSources.local,
+        bytes: 10,
+        embedded: false,
+        context: FileContext.message_attachment,
+      };
+      await File.create([
+        { ...base, file_id: 'upload' },
+        { ...base, file_id: 'output', context: FileContext.execute_code },
+        { ...base, file_id: 'artifact', context: FileContext.run_artifact },
+        { ...base, file_id: 'expired', expiredAt: new Date(0) },
+        { ...base, file_id: 'foreign-owner', user: new mongoose.Types.ObjectId().toString() },
+        { ...base, file_id: 'foreign-tenant', tenantId: 'tenant-b' },
+        { ...base, file_id: 'agent', context: FileContext.agents },
+        { ...base, file_id: 'unbacked', source: FileSources.text },
+        { ...base, file_id: 'searchable', type: 'application/pdf', embedded: true },
+      ]);
+      const options = { userId, tenantId: 'tenant-a', limit: 20 };
+      expect(
+        (await fileMethods.getAvailableProjectFiles(options)).files.map((file) => file.file_id),
+      ).toEqual(['searchable']);
+      const enabled = await fileMethods.getAvailableProjectFiles({
+        ...options,
+        codeExecution: true,
+      });
+      expect(enabled.files.map((file) => file.file_id)).toEqual([
+        'searchable',
+        'artifact',
+        'output',
+        'upload',
+      ]);
+      expect(enabled.files.find((file) => file.file_id === 'upload')).toMatchObject({
+        embedded: false,
+        source: FileSources.local,
+        context: FileContext.message_attachment,
+      });
+    });
+
     it('treats an empty tenant id as no tenant, matching project file reads', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
       await File.create({
@@ -444,6 +489,49 @@ describe('File Methods', () => {
   });
 
   describe('getProjectFiles', () => {
+    it('hydrates code file storage metadata without loading its text', async () => {
+      const userId = new mongoose.Types.ObjectId().toString();
+      const metadata = {
+        destinationChosen: true,
+        codeEnvRef: {
+          kind: 'user',
+          id: userId,
+          storage_session_id: 'storage-session',
+          file_id: 'sandbox-file',
+        },
+      };
+      await File.create({
+        file_id: 'data-file',
+        user: userId,
+        type: 'text/csv',
+        bytes: 10,
+        filename: 'data.csv',
+        filepath: 'https://bucket/data.csv',
+        storageKey: 'uploads/data.csv',
+        source: FileSources.s3,
+        embedded: false,
+        context: FileContext.message_attachment,
+        text: 'private data',
+        metadata,
+      });
+      const options = { fileIds: ['data-file'], userId };
+      expect(await fileMethods.getProjectFiles(options)).toEqual([]);
+      const [file] = await fileMethods.getProjectFiles({ ...options, codeExecution: true });
+      expect(file).toMatchObject({
+        embedded: false,
+        source: FileSources.s3,
+        storageKey: 'uploads/data.csv',
+        metadata,
+      });
+      expect(file).not.toHaveProperty('text');
+      const [content] = await fileMethods.getProjectFiles({
+        ...options,
+        codeExecution: true,
+        includeContent: true,
+      });
+      expect(content.text).toBe('private data');
+    });
+
     it('enforces owner scope and only includes content when requested', async () => {
       const userId = new mongoose.Types.ObjectId().toString();
       await File.create([

@@ -65,6 +65,7 @@ const passthroughWithTimeout = async (promise) => promise;
 jest.mock('@librechat/api', () => {
   return {
     processCodeOutput: jest.requireActual('@librechat/api').processCodeOutput,
+    createProjectOutputSaver: jest.requireActual('@librechat/api').createProjectOutputSaver,
     createSandboxTextReader: jest.requireActual('@librechat/api').createSandboxTextReader,
     prepareCodeOutputBufferForInspection:
       jest.requireActual('@librechat/api').prepareCodeOutputBufferForInspection,

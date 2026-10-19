@@ -1,3 +1,4 @@
+import type { AppConfig } from '@librechat/data-schemas';
 import type { TFile } from 'librechat-data-provider';
 import type {
   ConversationSnapshot,
@@ -23,6 +24,7 @@ export const PROJECT_CONTEXT_CHANGED_RESPONSE: Readonly<{ code: string; error: s
 };
 
 export interface ResumeProjectContextRequest extends ChatProjectTenantSource {
+  config?: Pick<AppConfig, 'projects'>;
   chatProjectContext?: ResolvedChatProjectContext | null;
   resolvedConversation?: ConversationSnapshot | null;
   chatProjectContextResourcesPromise?: Promise<ResolvedChatProjectContext>;
@@ -49,6 +51,7 @@ export async function resolveResumeProjectContext(
         tenantId: getChatProjectTenantId(req),
         conversationId,
         includeResources,
+        codeExecution: req.config?.projects?.codeExecution,
       },
       {
         ...deps,
@@ -74,7 +77,7 @@ export async function resolveResumeProjectContext(
 
 /**
  * Compares the claimed pause's recorded project key against the current project context.
- * The originating turn resolves guidance first and hydrates resources only once File Search is
+ * The originating turn resolves guidance first and hydrates resources only once a file tool is
  * known, so a guidance-only mismatch rehydrates resources before the final comparison. A pause
  * recorded before keys existed resumes under the current project context.
  */

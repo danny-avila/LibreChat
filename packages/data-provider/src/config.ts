@@ -3991,6 +3991,8 @@ export const openIdDiscoverySchema = z.object({
 export type TOpenIdDiscoveryConfig = z.infer<typeof openIdDiscoverySchema>;
 export const chatProjectsConfigSchema = z
   .object({
+    /** Share project files with permitted Run Code tools. Off preserves search-only projects. */
+    codeExecution: z.boolean().default(false),
     /** Maximum number of reference files attached to one Chat Project. Defaults to 50. */
     maxFiles: z
       .number()

@@ -257,17 +257,21 @@ export function getCodeFileContextLine(
   agentResourceIds: ReadonlySet<string>,
   destination: string,
   location: CodeFileLocation = 'sandbox',
+  projectFileIds: readonly string[] = [],
 ): string {
   const displaced = destination !== file.filename;
-  if (file.context === FileContext.execute_code && !displaced) {
+  const isProjectFile = projectFileIds.includes(file.file_id);
+  if (file.context === FileContext.execute_code && !displaced && !isProjectFile) {
     return '';
   }
-  const origin =
-    file.context === FileContext.execute_code
-      ? ` (written earlier as ${file.filename})`
-      : `${agentResourceIds.has(file.file_id) ? '' : ' (attached by user)'}${
-          displaced ? ` (uploaded as ${file.filename})` : ''
-        }`;
+  let origin = `${agentResourceIds.has(file.file_id) ? '' : ' (attached by user)'}${
+    displaced ? ` (uploaded as ${file.filename})` : ''
+  }`;
+  if (isProjectFile) {
+    origin = ' (project file)';
+  } else if (file.context === FileContext.execute_code) {
+    origin = ` (written earlier as ${file.filename})`;
+  }
   return `\n\t- ${CODE_FILE_CONTEXT_ROOTS[location]}/${destination}${origin}${getPreviewContextSuffix(file)}`;
 }
 

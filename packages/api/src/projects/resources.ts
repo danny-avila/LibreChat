@@ -1,7 +1,8 @@
 import { createHash } from 'crypto';
-import { FileContext } from 'librechat-data-provider';
+import { FileContext, getProjectFileAvailability } from 'librechat-data-provider';
 import type { TChatProject, TChatProjectFile, TFile } from 'librechat-data-provider';
 import type { IChatProject, ProjectFileRecord } from '@librechat/data-schemas';
+import type { ProjectFileInput } from 'librechat-data-provider';
 export type { ProjectFileRecord } from '@librechat/data-schemas';
 
 export type CanonicalProjectResource = {
@@ -16,32 +17,15 @@ export type GetProjectFiles = (options: {
   userId: string;
   tenantId?: string | null;
   includeContent?: boolean;
+  codeExecution?: boolean;
 }) => Promise<ReadonlyArray<ProjectFileRecord> | null>;
 
-/** Project resources are restricted to owner-scoped, unscoped message attachments. */
+/** Owner and tenant scope are enforced by the canonical database lookup. */
 export function getChatProjectFileAvailability(
-  file:
-    | {
-        embedded?: boolean;
-        context?: string;
-        expiredAt?: Date | number | string | null;
-      }
-    | null
-    | undefined,
+  file: ProjectFileInput | null | undefined,
+  codeExecution = false,
 ): 'ready' | 'unavailable' {
-  if (!file || file.embedded !== true || file.context !== FileContext.message_attachment) {
-    return 'unavailable';
-  }
-
-  if (file.expiredAt != null) {
-    const expiry =
-      file.expiredAt instanceof Date ? file.expiredAt.getTime() : Number(file.expiredAt);
-    if (!Number.isFinite(expiry) || expiry <= Date.now()) {
-      return 'unavailable';
-    }
-  }
-
-  return 'ready';
+  return getProjectFileAvailability(file, codeExecution);
 }
 
 async function loadProjectFiles({
@@ -50,12 +34,14 @@ async function loadProjectFiles({
   tenantId,
   getProjectFiles,
   includeContent = false,
+  codeExecution = false,
 }: {
   project: Pick<IChatProject, 'file_ids'> | Pick<TChatProject, 'file_ids'>;
   userId: string;
   tenantId?: string;
   getProjectFiles: GetProjectFiles;
   includeContent?: boolean;
+  codeExecution?: boolean;
 }): Promise<{ fileIds: string[]; byId: Map<string, ProjectFileRecord> }> {
   const fileIds = [
     ...new Set(
@@ -70,6 +56,7 @@ async function loadProjectFiles({
     userId,
     tenantId,
     includeContent,
+    codeExecution,
   });
   return { fileIds, byId: new Map((files ?? []).map((file) => [file.file_id, file])) };
 }
@@ -79,6 +66,13 @@ function canonicalResourceVersion(
   identity: string,
   availability: 'ready' | 'unavailable',
 ): string {
+  const isGenerated =
+    file.context === FileContext.execute_code || file.context === FileContext.run_artifact;
+  const dispatchedAt = isGenerated ? file.metadata?.sourceDispatchedAt : undefined;
+  const contentTimestamp =
+    dispatchedAt != null && Number.isFinite(dispatchedAt)
+      ? new Date(dispatchedAt).toISOString()
+      : (file.updatedAt?.toISOString() ?? null);
   return createHash('sha256')
     .update(
       JSON.stringify({
@@ -89,9 +83,9 @@ function canonicalResourceVersion(
         context: file.context ?? null,
         expiredAt: file.expiredAt?.toISOString() ?? null,
         createdAt: file.createdAt?.toISOString() ?? null,
-        updatedAt: file.updatedAt?.toISOString() ?? null,
-        previewRevision: file.previewRevision ?? null,
-        status: file.status ?? null,
+        updatedAt: contentTimestamp,
+        previewRevision: isGenerated ? null : (file.previewRevision ?? null),
+        status: isGenerated ? null : (file.status ?? null),
         bytes: file.bytes,
         filename: file.filename,
         type: file.type,
@@ -100,12 +94,15 @@ function canonicalResourceVersion(
     .digest('hex');
 }
 
-export function toCanonicalProjectResource(file: ProjectFileRecord): CanonicalProjectResource {
+export function toCanonicalProjectResource(
+  file: ProjectFileRecord,
+  codeExecution = false,
+): CanonicalProjectResource {
   if (file._id == null) {
     throw new Error('Project file identity unavailable');
   }
   const identity = file._id.toString();
-  const availability = getChatProjectFileAvailability(file);
+  const availability = getChatProjectFileAvailability(file, codeExecution);
   const version = canonicalResourceVersion(file, identity, availability);
   if (availability === 'ready') {
     return { file_id: file.file_id, identity, availability, version, file: toRuntimeFile(file) };
@@ -118,13 +115,14 @@ export async function resolveChatProjectResources(params: {
   userId: string;
   tenantId?: string;
   getProjectFiles: GetProjectFiles;
+  codeExecution?: boolean;
 }): Promise<CanonicalProjectResource[]> {
   const { fileIds, byId } = await loadProjectFiles(params);
   return fileIds.map((fileId) => {
     const file = byId.get(fileId);
     return file == null
       ? { file_id: fileId, identity: 'missing', availability: 'unavailable', version: 'missing' }
-      : toCanonicalProjectResource(file);
+      : toCanonicalProjectResource(file, params.codeExecution);
   });
 }
 
@@ -133,11 +131,15 @@ export async function resolveChatProjectPolicyFiles(params: {
   userId: string;
   tenantId?: string;
   getProjectFiles: GetProjectFiles;
+  codeExecution?: boolean;
 }): Promise<ProjectFileRecord[]> {
   const { fileIds, byId } = await loadProjectFiles({ ...params, includeContent: true });
   return fileIds
     .map((fileId) => byId.get(fileId))
-    .filter((file): file is ProjectFileRecord => getChatProjectFileAvailability(file) === 'ready');
+    .filter(
+      (file): file is ProjectFileRecord =>
+        getChatProjectFileAvailability(file, params.codeExecution) === 'ready',
+    );
 }
 
 type RuntimeFileSource = {
@@ -150,6 +152,12 @@ type RuntimeFileSource = {
   usage: number;
   user: string | { toString(): string };
   tenantId?: string;
+  embedded?: boolean;
+  context?: string;
+  source?: TFile['source'];
+  storageKey?: string;
+  storageRegion?: string;
+  metadata?: TFile['metadata'];
 };
 
 export function toRuntimeFile(file: RuntimeFileSource): TFile {
@@ -161,17 +169,21 @@ export function toRuntimeFile(file: RuntimeFileSource): TFile {
     type: file.type,
     bytes: file.bytes,
     usage: file.usage,
-    embedded: true,
-    context: FileContext.message_attachment,
+    embedded: file.embedded === true,
+    context: Object.values(FileContext).find((context) => context === file.context),
     user: typeof file.user === 'string' ? file.user : file.user.toString(),
     ...(file.tenantId != null ? { tenantId: file.tenantId } : {}),
+    ...(file.source != null ? { source: file.source } : {}),
+    ...(file.storageKey != null ? { storageKey: file.storageKey } : {}),
+    ...(file.storageRegion != null ? { storageRegion: file.storageRegion } : {}),
+    ...(file.metadata != null ? { metadata: structuredClone(file.metadata) } : {}),
   };
 }
 
 /**
  * Resolve resources for Agent runtime. Only currently eligible canonical files are returned,
  * deduplicated and with extracted text omitted. Callers must still intersect these files with
- * the selected Agent's already-enabled file-search capability.
+ * the selected Agent's already-enabled file tools.
  */
 export async function resolveChatProjectFiles(params: {
   project: Pick<IChatProject, 'file_ids'> | Pick<TChatProject, 'file_ids'>;
@@ -179,6 +191,7 @@ export async function resolveChatProjectFiles(params: {
   tenantId?: string;
   getProjectFiles: GetProjectFiles;
   resources?: readonly CanonicalProjectResource[];
+  codeExecution?: boolean;
 }): Promise<TFile[]> {
   const resources =
     params.resources ??
@@ -187,6 +200,7 @@ export async function resolveChatProjectFiles(params: {
       userId: params.userId,
       tenantId: params.tenantId,
       getProjectFiles: params.getProjectFiles,
+      codeExecution: params.codeExecution,
     }));
   const files: TFile[] = [];
   for (const resource of resources) {
@@ -207,6 +221,7 @@ export async function listChatProjectFileViews(params: {
   userId: string;
   tenantId?: string;
   getProjectFiles: GetProjectFiles;
+  codeExecution?: boolean;
 }): Promise<TChatProjectFile[]> {
   const { fileIds, byId } = await loadProjectFiles(params);
   return fileIds.map((file_id) => {
@@ -220,7 +235,7 @@ export async function listChatProjectFileViews(params: {
             ...(typeof file.bytes === 'number' ? { bytes: file.bytes } : {}),
           }
         : {}),
-      availability: getChatProjectFileAvailability(file),
+      availability: getChatProjectFileAvailability(file, params.codeExecution),
     };
   });
 }

@@ -42,6 +42,7 @@ const {
   CODE_OUTPUT_PREFLIGHT_MAX_COUNT,
   normalizeArtifactDeliveryFailure,
   processCodeOutput: processCodeOutputWithDeps,
+  createProjectOutputSaver,
   resolveDownloadPath,
 } = require('@librechat/api');
 const {
@@ -55,7 +56,13 @@ const {
   getEndpointFileConfig,
 } = require('librechat-data-provider');
 const { filterFilesByAgentAccess } = require('~/server/services/Files/permissions');
-const { getFiles, updateFile, claimCodeFile, commitCodeFile } = require('~/models');
+const {
+  getFiles,
+  updateFile,
+  claimCodeFile,
+  commitCodeFile,
+  addGeneratedProjectFile,
+} = require('~/models');
 const { getStrategyFunctions } = require('~/server/services/Files/strategies');
 const { convertImage } = require('~/server/services/Files/images/convert');
 const { getRetentionExpiry } = require('~/server/services/Files/retention');
@@ -585,6 +592,8 @@ const runPreviewFinalize = ({ finalize, fileId, previewRevision, onResolved }) =
     });
 };
 
+const saveProjectOutput = createProjectOutputSaver({ addGeneratedProjectFile, logger });
+
 const processCodeOutput = (params) =>
   processCodeOutputWithDeps(params, {
     getCodeOutputFileSettings,
@@ -596,6 +605,7 @@ const processCodeOutput = (params) =>
     determineFileType,
     claimCodeFile,
     commitCodeFile,
+    saveProjectOutput,
     finalizePreview,
     hasOfficeHtmlPath,
     sanitizeArtifactPath,
@@ -784,7 +794,13 @@ const primeFiles = async (options) => {
        * to follow the same rule provisioning uploaded under. */
       toolContext = appendCodeFileContextLine(
         toolContext,
-        getCodeFileContextLine(file, agentResourceIds, destination, codeFileLocation),
+        getCodeFileContextLine(
+          file,
+          agentResourceIds,
+          destination,
+          codeFileLocation,
+          req.chatProjectContext?.file_ids,
+        ),
         codeFileLocation,
       );
       /* `id` is the storage file_id (drives codeapi's upload-key

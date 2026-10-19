@@ -176,6 +176,16 @@ export type TFile = {
   height?: number;
   expiresAt?: string | Date;
   expiredAt?: string | Date | null;
+  /** Result of automatically saving a generated output to its chat's project. */
+  projectFile?: {
+    projectId: string;
+    status: 'added' | 'failed';
+    code?:
+      | 'project_changed'
+      | 'project_file_limit'
+      | 'project_file_unavailable'
+      | 'project_file_save_failed';
+  };
   preview?: string;
   text?: string;
   /**

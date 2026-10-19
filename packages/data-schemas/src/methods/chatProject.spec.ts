@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import {
   FileContext,
+  FileSources,
   MAX_CHAT_PROJECT_FILES,
   MAX_CHAT_PROJECT_INSTRUCTIONS_LENGTH,
 } from 'librechat-data-provider';
@@ -74,6 +75,114 @@ async function createConversation(user: string, conversationId: string, title: s
 describe('ChatProject methods', () => {
   const user = 'user-1';
   const otherUser = 'user-2';
+
+  describe('automatic generated files', () => {
+    const owner = '507f1f77bcf86cd799439011';
+
+    async function setupOutput() {
+      const project = await methods.createChatProject(owner, { name: 'Code analysis' });
+      const projectId = project._id!.toString();
+      await Conversation.create({
+        user: owner,
+        conversationId: 'output-chat',
+        endpoint: 'agents',
+        chatProjectId: projectId,
+      });
+      await File.create({
+        user: owner,
+        file_id: 'output',
+        filename: 'result.csv',
+        filepath: '/uploads/result.csv',
+        conversationId: 'output-chat',
+        bytes: 10,
+        type: 'text/csv',
+        source: FileSources.local,
+        context: FileContext.execute_code,
+        embedded: false,
+        object: 'file',
+        usage: 1,
+      });
+      return {
+        userId: owner,
+        projectId,
+        conversationId: 'output-chat',
+        fileId: 'output',
+        contextRevision: 0,
+      };
+    }
+
+    it('adds a durable output once, without indexing or returning preview text', async () => {
+      const input = await setupOutput();
+      await File.updateOne({ file_id: 'output' }, { $set: { text: 'private preview' } });
+      const result = await methods.addGeneratedProjectFile(input);
+      expect(result).toMatchObject({
+        ok: true,
+        value: { project: { file_ids: ['output'], contextRevision: 1 }, file: { embedded: false } },
+      });
+      if (!result.ok) throw new Error('The generated output was not added');
+      expect(result.value.file).not.toHaveProperty('text');
+      expect(await methods.addGeneratedProjectFile({ ...input, contextRevision: 1 })).toMatchObject(
+        {
+          ok: true,
+          value: { project: { file_ids: ['output'], contextRevision: 1 } },
+        },
+      );
+    });
+
+    it('rejects a removed output under the old revision and preserves its chat file', async () => {
+      const input = await setupOutput();
+      await methods.addGeneratedProjectFile(input);
+      await methods.removeChatProjectFile(owner, input.projectId, input.fileId);
+      expect(await methods.addGeneratedProjectFile({ ...input, contextRevision: 1 })).toEqual({
+        ok: false,
+        error: { code: 'project_changed' },
+      });
+      expect((await methods.getChatProject(owner, input.projectId))?.file_ids).toEqual([]);
+      expect(await File.exists({ file_id: 'output' })).not.toBeNull();
+    });
+
+    it('keeps the output in the chat when the configured project limit is reached', async () => {
+      const input = await setupOutput();
+      await ChatProject.updateOne({ _id: input.projectId }, { $set: { file_ids: ['existing'] } });
+      expect(await methods.addGeneratedProjectFile({ ...input, maxFiles: 1 })).toEqual({
+        ok: false,
+        error: { code: 'project_file_limit' },
+      });
+      expect((await methods.getChatProject(owner, input.projectId))?.file_ids).toEqual([
+        'existing',
+      ]);
+      expect(await File.exists({ file_id: 'output' })).not.toBeNull();
+    });
+
+    it.each(['user', 'tenant', 'conversation', 'expiry', 'storage'] as const)(
+      'does not add a file outside the authorized %s boundary',
+      async (boundary) => {
+        const input = await setupOutput();
+        const updates = {
+          user: { user: '507f1f77bcf86cd799439012' },
+          tenant: { tenantId: 'another-tenant' },
+          conversation: { conversationId: 'another-chat' },
+          expiry: { expiredAt: new Date(Date.now() - 1000) },
+          storage: { source: FileSources.execute_code },
+        };
+        await File.collection.updateOne({ file_id: 'output' }, { $set: updates[boundary] });
+        expect(await methods.addGeneratedProjectFile(input)).toEqual({
+          ok: false,
+          error: { code: 'project_file_unavailable' },
+        });
+        expect((await methods.getChatProject(owner, input.projectId))?.file_ids).toEqual([]);
+      },
+    );
+
+    it('rejects a conversation moved out of the project during the run', async () => {
+      const input = await setupOutput();
+      await methods.assignConversationToProject(owner, input.conversationId, null);
+      expect(await methods.addGeneratedProjectFile(input)).toEqual({
+        ok: false,
+        error: { code: 'project_changed' },
+      });
+    });
+  });
 
   it('creates, reads, updates, and lists private projects', async () => {
     const project = await methods.createChatProject(user, {
@@ -842,6 +951,30 @@ describe('persistent Project context', () => {
 
     expect((await methods.getChatProject(owner, id))?.file_ids).toEqual([]);
   });
+
+  it.each([FileContext.message_attachment, FileContext.execute_code, FileContext.run_artifact])(
+    'allows explicitly added %s code files without embedding, and removes their project membership',
+    async (context) => {
+      const project = await methods.createChatProject(owner, { name: 'Analysis' });
+      const id = project._id!.toString();
+      await createReference('data', {
+        type: 'text/csv',
+        embedded: false,
+        source: FileSources.local,
+        context,
+      });
+      await expect(methods.addChatProjectFile(owner, id, 'data')).rejects.toThrow(
+        'Project file unavailable',
+      );
+      const added = await methods.addChatProjectFile(owner, id, 'data', { codeExecution: true });
+      expect(added?.file_ids).toEqual(['data']);
+      expect((await File.findOne({ file_id: 'data' }).lean())?.embedded).toBe(false);
+      const removed = await methods.removeChatProjectFile(owner, id, 'data');
+      expect(removed?.file_ids).toEqual([]);
+      expect(removed?.contextRevision).toBe((added?.contextRevision ?? 0) + 1);
+      expect(await File.exists({ file_id: 'data' })).not.toBeNull();
+    },
+  );
 
   it('rejects unauthorized, agent-scoped, unindexed, missing and expired references', async () => {
     const project = await methods.createChatProject(owner, { name: 'Private' });

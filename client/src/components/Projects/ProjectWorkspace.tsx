@@ -87,7 +87,8 @@ export default function ProjectWorkspace() {
   const instructionsButtonRef = useRef<HTMLButtonElement>(null);
   const { data: project, isLoading: isProjectLoading } = useProjectQuery(projectId);
   const { data: startupConfig } = useGetStartupConfig();
-  const isRagEnabled = startupConfig?.ragEnabled === true;
+  const hasFileTools =
+    startupConfig?.ragEnabled === true || startupConfig?.projects?.codeExecution === true;
   const conversation = useRecoilValue(store.conversationByIndex(0));
   const { newConversation } = useNewConvo();
   const activeProjectId = project?._id;
@@ -95,7 +96,7 @@ export default function ProjectWorkspace() {
 
   /** Panel sizes are a workspace-wide preference, so they persist per browser
    *  rather than per project; the files panel keys its own layout so hiding it
-   *  (no RAG service) does not overwrite the split used when it is present. */
+   *  (no project file tools) does not overwrite the split used when it is present. */
   const workspaceLayout = useDefaultLayout({
     id: 'project-workspace-layout',
     panelIds: WORKSPACE_PANEL_IDS,
@@ -103,7 +104,7 @@ export default function ProjectWorkspace() {
   });
   const detailsLayout = useDefaultLayout({
     id: 'project-details-layout',
-    panelIds: isRagEnabled ? DETAILS_PANEL_IDS_WITH_FILES : DETAILS_PANEL_IDS,
+    panelIds: hasFileTools ? DETAILS_PANEL_IDS_WITH_FILES : DETAILS_PANEL_IDS,
     storage: localStorage,
   });
   const { ref: detailsGroupRef, height: detailsGroupHeight } = useElementSize<HTMLDivElement>();
@@ -358,7 +359,7 @@ export default function ProjectWorkspace() {
     </section>
   );
 
-  const filesSection = isRagEnabled ? (
+  const filesSection = hasFileTools ? (
     <ProjectResources key={project._id} project={project} />
   ) : null;
 

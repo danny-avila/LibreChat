@@ -14,6 +14,7 @@ import type {
 } from '~/types/file';
 import type { IChatProjectDocument } from '~/types';
 import { tenantSafeBulkWrite } from '~/utils/tenantBulkWrite';
+import { projectFileFilter } from '~/utils/project';
 import { escapeRegExp } from '~/utils/string';
 import logger from '../config/winston';
 
@@ -42,6 +43,7 @@ export type AvailableProjectFileRecord = {
   context?: string;
   user: string;
   tenantId?: string;
+  source?: FileSources;
 };
 
 type AvailableProjectFileRecordSource = Pick<
@@ -58,6 +60,7 @@ type AvailableProjectFileRecordSource = Pick<
   | 'context'
   | 'user'
   | 'tenantId'
+  | 'source'
 >;
 
 function normalizeAvailableProjectFileRecord(
@@ -76,10 +79,14 @@ function normalizeAvailableProjectFileRecord(
     ...(file.context !== undefined ? { context: file.context } : {}),
     user: file.user.toString(),
     ...(file.tenantId !== undefined ? { tenantId: file.tenantId } : {}),
+    ...(file.source !== undefined
+      ? { source: Object.values(FileSources).find((source) => source === file.source) }
+      : {}),
   };
 }
 
 export type AvailableProjectFilesOptions = FileOwnerScope & {
+  codeExecution?: boolean;
   excludedFileIds?: string[];
   limit?: number;
   cursor?: string | null;
@@ -111,6 +118,11 @@ export type ProjectFileRecord = {
   previewRevision?: string;
   status?: 'pending' | 'ready' | 'failed';
   text?: string;
+  textFormat?: 'html' | 'text';
+  source?: FileSources;
+  storageKey?: string;
+  storageRegion?: string;
+  metadata?: TFile['metadata'];
 };
 
 type ProjectFileRecordSource = Pick<
@@ -133,9 +145,14 @@ type ProjectFileRecordSource = Pick<
   | 'previewRevision'
   | 'status'
   | 'text'
+  | 'textFormat'
+  | 'source'
+  | 'storageKey'
+  | 'storageRegion'
+  | 'metadata'
 >;
 
-function normalizeProjectFileRecord(file: ProjectFileRecordSource): ProjectFileRecord {
+export function normalizeProjectFileRecord(file: ProjectFileRecordSource): ProjectFileRecord {
   return {
     _id: file._id.toString(),
     file_id: file.file_id,
@@ -155,12 +172,20 @@ function normalizeProjectFileRecord(file: ProjectFileRecordSource): ProjectFileR
     ...(file.previewRevision !== undefined ? { previewRevision: file.previewRevision } : {}),
     ...(file.status !== undefined ? { status: file.status } : {}),
     ...(file.text !== undefined ? { text: file.text } : {}),
+    ...(file.textFormat !== undefined ? { textFormat: file.textFormat } : {}),
+    ...(file.source !== undefined
+      ? { source: Object.values(FileSources).find((source) => source === file.source) }
+      : {}),
+    ...(file.storageKey !== undefined ? { storageKey: file.storageKey } : {}),
+    ...(file.storageRegion !== undefined ? { storageRegion: file.storageRegion } : {}),
+    ...(file.metadata !== undefined ? { metadata: file.metadata } : {}),
   };
 }
 
 export type ProjectFilesOptions = FileOwnerScope & {
   fileIds: string[];
   includeContent?: boolean;
+  codeExecution?: boolean;
 };
 
 export class InvalidAvailableProjectFilesCursorError extends Error {
@@ -565,13 +590,13 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     userId,
     tenantId,
     includeContent = false,
+    codeExecution = false,
   }: ProjectFilesOptions): Promise<ProjectFileRecord[]> {
     const File = mongoose.models.File as Model<IMongoFile>;
     const query = File.find({
       file_id: { $in: fileIds },
       user: userId,
-      embedded: true,
-      context: FileContext.message_attachment,
+      ...projectFileFilter(codeExecution),
       // Mongo's null predicate matches explicit null and legacy missing tenant fields.
       tenantId: tenantId != null && tenantId !== '' ? tenantId : null,
     });
@@ -596,6 +621,10 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
         updatedAt: 1,
         previewRevision: 1,
         status: 1,
+        source: 1,
+        storageKey: 1,
+        storageRegion: 1,
+        metadata: 1,
       });
     }
     const files = (await query.lean<ProjectFileRecordSource[]>()) ?? [];
@@ -610,6 +639,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
     cursor,
     search,
     now = new Date(),
+    codeExecution = false,
   }: AvailableProjectFilesOptions): Promise<AvailableProjectFilesResult> {
     if (!Number.isInteger(limit) || limit < 1 || limit > MAX_AVAILABLE_PROJECT_FILES_LIMIT) {
       throw new RangeError('Invalid project file limit');
@@ -620,10 +650,9 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
       {
         user: userId,
         tenantId: tenantId != null && tenantId !== '' ? tenantId : null,
-        embedded: true,
-        context: FileContext.message_attachment,
-        $or: [{ expiredAt: null }, { expiredAt: { $gt: now } }],
+        ...projectFileFilter(codeExecution),
       },
+      { $or: [{ expiredAt: null }, { expiredAt: { $gt: now } }] },
     ];
     if (excludedFileIds.length > 0) {
       filters[0].file_id = { $nin: excludedFileIds };
@@ -654,6 +683,7 @@ export function createFileMethods(mongoose: typeof import('mongoose')): {
         context: 1,
         user: 1,
         tenantId: 1,
+        source: 1,
       })
       .sort({ _id: -1 })
       .limit(limit + 1)

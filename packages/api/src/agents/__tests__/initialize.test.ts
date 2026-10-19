@@ -491,6 +491,7 @@ describe('initializeAgent: ChatProject context', () => {
     createdAt: new Date('2020-01-01'),
     updatedAt: new Date('2020-01-01'),
     text: 'Safe canonical Project content.',
+    textFormat: 'text',
   };
   const projectContext = {
     projectId: 'project-1',
@@ -691,6 +692,148 @@ describe('initializeAgent: ChatProject context', () => {
     expect(agent.tools).toEqual(originalTools);
     expect(agent).not.toHaveProperty('tool_resources');
     expect(db.getFiles).not.toHaveBeenCalled();
+  });
+
+  it('provides indexed and unindexed project inputs to code without adding data files to File Search', async () => {
+    const { agent, loadTools, db } = createMocks();
+    agent.tools = [Tools.execute_code, Tools.file_search];
+    const reference: ProjectFileRecord = { ...canonicalFile, source: FileSources.local };
+    const data: ProjectFileRecord = {
+      ...reference,
+      _id: '507f1f77bcf86cd799439013',
+      file_id: 'project-data',
+      filename: 'data.csv',
+      type: 'text/csv',
+      embedded: false,
+      metadata: { destinationChosen: true },
+    };
+    const runtime = projectRuntime();
+    runtime.appConfig.projects = {
+      codeExecution: true,
+      maxFiles: 50,
+      maxInstructionsLength: 16000,
+      maxDescriptionLength: 1000,
+    };
+    runtime.appConfig.endpoints!.agents!.capabilities = [
+      AgentCapabilities.execute_code,
+      AgentCapabilities.file_search,
+    ];
+    runtime.chatProjectContext = {
+      ...projectContext,
+      file_ids: [reference.file_id, data.file_id],
+      resources: [reference, data].map((file) => toCanonicalProjectResource(file, true)),
+    };
+    const realResources = jest.requireActual<typeof import('../resources')>('../resources');
+    const filters = jest.requireMock('~/files') as {
+      filterFilesByEndpointRuntimeConfig: jest.Mock;
+    };
+    filters.filterFilesByEndpointRuntimeConfig.mockImplementationOnce(
+      jest.requireActual<typeof import('~/files/filter')>('~/files/filter')
+        .filterFilesByEndpointRuntimeConfig,
+    );
+    jest.mocked(primeResources).mockImplementationOnce(realResources.primeResources);
+    const result = await initializeAgent(
+      {
+        runtime,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        useChatProjectContext: true,
+        codeEnvAvailable: true,
+      },
+      db,
+    );
+    expect(result.provisionState?.codeEnvFiles.map((file) => file.file_id)).toEqual([
+      reference.file_id,
+      data.file_id,
+    ]);
+    expect(result.provisionState?.vectorDBFiles).toEqual([]);
+    expect(result.provisionState?.agentScopedFileIds.size).toBe(0);
+    expect(result.tool_resources?.file_search?.files).toEqual([
+      expect.objectContaining({ file_id: reference.file_id, embedded: true }),
+    ]);
+    expect(result.currentRequestAttachments).toEqual([]);
+    expect(agent).not.toHaveProperty('tool_resources');
+    expect(db.getFiles).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['project setting off', false, true],
+    ['Run Code denied', true, false],
+  ])('does not hydrate project resources when %s', async (_label, setting, grant) => {
+    const { agent, loadTools, db } = createMocks();
+    agent.tools = [Tools.execute_code];
+    const runtime = projectRuntime();
+    runtime.appConfig.projects = {
+      codeExecution: setting,
+      maxFiles: 50,
+      maxInstructionsLength: 16000,
+      maxDescriptionLength: 1000,
+    };
+    runtime.appConfig.endpoints!.agents!.capabilities = [AgentCapabilities.execute_code];
+    runtime.chatProjectContext = { ...projectContext, resources: [] };
+    const getProjectFiles = jest.fn().mockRejectedValue(new Error('must not query'));
+    const result = await initializeAgent(
+      {
+        runtime,
+        agent,
+        loadTools,
+        endpointOption: { endpoint: EModelEndpoint.agents },
+        allowedProviders: new Set([Providers.OPENAI]),
+        useChatProjectContext: true,
+        codeEnvAvailable: grant,
+      },
+      { ...db, getProjectFiles },
+    );
+    expect(getProjectFiles).not.toHaveBeenCalled();
+    expect(result.provisionState).toBeUndefined();
+    expect(result.tool_resources?.execute_code).toBeUndefined();
+  });
+
+  it('rejects prohibited project content before a code-only agent starts loading tools', async () => {
+    const { agent, loadTools, db } = createMocks();
+    agent.tools = [Tools.execute_code];
+    const data: ProjectFileRecord = {
+      ...canonicalFile,
+      embedded: false,
+      source: FileSources.local,
+      filename: 'data.csv',
+      type: 'text/csv',
+      text: 'BLOCKED',
+    };
+    const runtime = projectRuntime();
+    runtime.appConfig.projects = {
+      codeExecution: true,
+      maxFiles: 50,
+      maxInstructionsLength: 16000,
+      maxDescriptionLength: 1000,
+    };
+    runtime.appConfig.endpoints!.agents!.capabilities = [AgentCapabilities.execute_code];
+    runtime.appConfig.filters = projectFilePolicy;
+    runtime.chatProjectContext = {
+      ...projectContext,
+      resources: [toCanonicalProjectResource(data, true)],
+    };
+    await expect(
+      initializeAgent(
+        {
+          runtime,
+          agent,
+          loadTools,
+          endpointOption: { endpoint: EModelEndpoint.agents },
+          allowedProviders: new Set([Providers.OPENAI]),
+          useChatProjectContext: true,
+          codeEnvAvailable: true,
+        },
+        { ...db, getProjectFiles: jest.fn().mockResolvedValue([data]) },
+      ),
+    ).rejects.toMatchObject({
+      name: 'ContentFilterError',
+    });
+    expect(loadTools).not.toHaveBeenCalled();
+    expect(primeResources).not.toHaveBeenCalled();
+    expect(db.updateFilesUsage).not.toHaveBeenCalled();
   });
   it('adds Project files for file_search supplied by a manual Skill', async () => {
     const { agent, req, loadTools, db } = createMocks();
@@ -2900,6 +3043,7 @@ describe('initializeAgent — skill `allowed-tools` union (Phase 6)', () => {
       filename: 'project.txt',
       type: 'text/plain',
       embedded: true,
+      context: FileContext.message_attachment,
     } as TFile;
     agent.tools = [];
 

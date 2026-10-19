@@ -451,6 +451,7 @@ const computeProvisionState = async ({
   codeBaseUrl,
   codeExecutionProfile,
   codeBridgeWorkerId,
+  projectCodeFileIds,
   agentScopedFileIds,
   persistedResourceMembership,
   adoptLegacySearchEmbeddings,
@@ -467,6 +468,7 @@ const computeProvisionState = async ({
   /** Wire profile and worker of that deployment, which decide the probe's auth. */
   codeExecutionProfile?: CodeExecutionContext['executionProfile'];
   codeBridgeWorkerId?: string;
+  projectCodeFileIds?: ReadonlySet<string>;
   agentScopedFileIds?: ReadonlySet<string>;
   resourcePrincipal?: Pick<IUser, 'id' | 'role'>;
   enabledToolResources?: Set<EToolResources>;
@@ -508,6 +510,11 @@ const computeProvisionState = async ({
     hasToolResourceProvisioning(file, resourceType);
 
   const allowsResource = (file: TFile, resourceType: EToolResources): boolean => {
+    /* Project membership explicitly grants code reuse, but must never index a
+     * sandbox-only project file merely because File Search is also enabled. */
+    if (file.file_id != null && projectCodeFileIds?.has(file.file_id)) {
+      return resourceType === EToolResources.execute_code;
+    }
     if (!cameFromChooser(file)) {
       return true;
     }
@@ -669,7 +676,8 @@ const computeProvisionState = async ({
     /* Mirrors entityIdForFile in the provisioning callback: membership in the agent's own
      * resources decides both the vector namespace and the sandbox identity, so the queue
      * asks about the scope the upload will actually write under. */
-    const isAgentScoped = scopedIds.has(file.file_id);
+    const isAgentScoped =
+      scopedIds.has(file.file_id) && projectCodeFileIds?.has(file.file_id) !== true;
     const namespaceId = isAgentScoped ? agentId : resourcePrincipal?.id;
     const codeScope: CodeEnvScope = isAgentScoped
       ? { kind: 'agent', id: agentId }
@@ -763,7 +771,9 @@ const computeProvisionState = async ({
     codeEnvRecoveryNames,
     vectorDBFiles,
     aliveFileIds: aliveFileIds ?? new Set(),
-    agentScopedFileIds: new Set(scopedIds),
+    agentScopedFileIds: new Set(
+      [...scopedIds].filter((fileId) => projectCodeFileIds?.has(fileId) !== true),
+    ),
   };
 };
 
@@ -788,6 +798,7 @@ export const primeResources = async ({
   codeBaseUrl,
   codeExecutionProfile,
   codeBridgeWorkerId,
+  projectCodeFiles = [],
 }: {
   req?: ServerRequest;
   principal?: Pick<IUser, 'id' | 'role'>;
@@ -828,6 +839,8 @@ export const primeResources = async ({
    *  its uploads and executions do, so a worker-bound route gets a worker-bound bearer. */
   codeExecutionProfile?: CodeExecutionContext['executionProfile'];
   codeBridgeWorkerId?: string;
+  /** Authorized project inputs for code only; never delivered as message attachments. */
+  projectCodeFiles?: readonly TFile[];
 }): Promise<{
   attachments: Array<TFile | undefined> | undefined;
   requestAttachments: Array<TFile | undefined> | undefined;
@@ -860,6 +873,7 @@ export const primeResources = async ({
      * Prevents the same file from being added multiple times to the same resource
      */
     const processedResourceFiles = new Set<string>();
+    const projectCodeFileIds = new Set(projectCodeFiles.map((file) => file.file_id));
     /**
      * The agent's tool resources object that will be updated with categorized files
      * Create a shallow copy first to avoid mutating the original
@@ -947,6 +961,16 @@ export const primeResources = async ({
       }
     }
     const resourceProvisionCandidates: Array<TFile> = [];
+    for (const file of projectCodeFiles) {
+      if (file.metadata?.codeEnvRef || file.metadata?.codeEnvRefs) {
+        addFileToResource({
+          file,
+          resourceType: EToolResources.execute_code,
+          tool_resources,
+          processedResourceFiles,
+        });
+      }
+    }
 
     if (shouldLoadContext) {
       delete tool_resources[EToolResources.context];
@@ -1046,6 +1070,7 @@ export const primeResources = async ({
         req,
         attachments: withDeferredCandidates(attachments, [
           ...(provisionCandidates ?? []),
+          ...projectCodeFiles,
           ...resourceProvisionCandidates,
         ]),
         resourcePrincipal,
@@ -1059,6 +1084,7 @@ export const primeResources = async ({
         codeBaseUrl,
         codeExecutionProfile,
         codeBridgeWorkerId,
+        projectCodeFileIds,
         agentScopedFileIds: persistedResourceFileIds,
         persistedResourceMembership,
         adoptLegacySearchEmbeddings,
@@ -1115,6 +1141,7 @@ export const primeResources = async ({
       req,
       attachments: withDeferredCandidates(attachments, [
         ...(provisionCandidates ?? []),
+        ...projectCodeFiles,
         ...resourceProvisionCandidates,
       ]),
       resourcePrincipal,
@@ -1128,6 +1155,7 @@ export const primeResources = async ({
       codeBaseUrl,
       codeExecutionProfile,
       codeBridgeWorkerId,
+      projectCodeFileIds,
       agentScopedFileIds: persistedResourceFileIds,
       persistedResourceMembership,
       adoptLegacySearchEmbeddings,
@@ -1146,7 +1174,10 @@ export const primeResources = async ({
       warnings,
     };
   } catch (error) {
-    logger.error('Error priming resources', error);
+    logger.error('Error priming resources', getSafeErrorMetadata(error));
+    if (projectCodeFiles.length > 0) {
+      throw error;
+    }
 
     // Safely try to get attachments without rethrowing
     let safeAttachments: Array<TFile | undefined> = [];

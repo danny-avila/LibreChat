@@ -28,6 +28,14 @@ import type { ReactNode } from 'react';
 import useAttachmentHandler from '../useAttachmentHandler';
 import store from '~/store';
 
+const mockShowToast = jest.fn();
+jest.mock('@librechat/client', () => ({
+  ...jest.requireActual('@librechat/client'),
+  useToastContext: () => ({ showToast: mockShowToast }),
+}));
+
+beforeEach(() => mockShowToast.mockClear());
+
 type AttachmentFixture = TFile & TAttachmentMetadata;
 
 const wrapper = ({ children }: { children: ReactNode }) => <RecoilRoot>{children}</RecoilRoot>;
@@ -66,6 +74,7 @@ function makeAttachment(overrides: Partial<AttachmentFixture>): AttachmentFixtur
 function setup() {
   const queryClient = new QueryClient();
   const removeSpy = jest.spyOn(queryClient, 'removeQueries');
+  const invalidateSpy = jest.spyOn(queryClient, 'invalidateQueries');
   const ref: { current: Record<string, TAttachment[] | undefined> } = { current: {} };
   const { result } = renderHook(
     () => {
@@ -82,10 +91,44 @@ function setup() {
       return ref.current[messageId] ?? [];
     },
     removeSpy,
+    invalidateSpy,
   };
 }
 
 describe('useAttachmentHandler upsert-by-file_id', () => {
+  it('refreshes project files and reports an automatic addition once across preview updates', () => {
+    const ctx = setup();
+    const projectFile = { projectId: 'analysis', status: 'added' as const };
+    ctx.handle(makeAttachment({ projectFile }));
+    ctx.handle(makeAttachment({ projectFile, status: 'ready' }));
+    expect(ctx.invalidateSpy).toHaveBeenCalledWith(['projectFiles', 'analysis']);
+    expect(ctx.invalidateSpy).toHaveBeenCalledWith(['projectAvailableFiles', 'analysis']);
+    expect(mockShowToast).toHaveBeenCalledTimes(1);
+    expect(mockShowToast).toHaveBeenCalledWith({
+      message: 'data.xlsx was added to the project.',
+      severity: 'success',
+    });
+  });
+
+  it.each([
+    ['project_file_limit', 'The project has reached its file limit'],
+    ['project_changed', 'The project changed while code was running'],
+    ['project_file_save_failed', 'could not be added to the project'],
+  ] as const)(
+    'reports %s with safe actionable copy and keeps the chat attachment',
+    (code, copy) => {
+      const ctx = setup();
+      ctx.handle(
+        makeAttachment({ projectFile: { projectId: 'analysis', status: 'failed', code } }),
+      );
+      expect(ctx.list).toHaveLength(1);
+      expect(mockShowToast).toHaveBeenCalledWith({
+        message: expect.stringContaining(copy),
+        severity: 'warning',
+      });
+    },
+  );
+
   it('appends a new attachment when no record with the same file_id exists', () => {
     const ctx = setup();
     ctx.handle(makeAttachment({ status: 'pending' }));

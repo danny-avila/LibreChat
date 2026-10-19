@@ -1,0 +1,171 @@
+import { ObjectId } from 'mongodb';
+import { expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import type { TChatProject, TChatProjectFile, TFile } from 'librechat-data-provider';
+import { getE2EUser } from '../../setup/user';
+import { withMongo } from './db';
+import { loginAdmin } from './content-filters.helpers';
+import {
+  CODE_API_BASE,
+  MOCK_ENDPOINTS,
+  fetchJson,
+  uniqueName,
+  requestJson,
+  getAccessToken,
+  getRagQueries,
+  getRagEmbedded,
+  selectMockEndpoint,
+  resetProvisioning,
+  enableCodeInterpreter,
+  enableFileSearch,
+  sendMessageAndWaitForCompletion,
+} from './helpers';
+
+async function startProjectChat(page: Page, projectId: string): Promise<void> {
+  await page.goto(`/projects/${encodeURIComponent(projectId)}`);
+  await page.getByRole('button', { name: /^New chat in / }).click();
+  await selectMockEndpoint(page, MOCK_ENDPOINTS[1]);
+  await enableCodeInterpreter(page);
+}
+
+async function sandboxFiles(page: Page): Promise<string[][]> {
+  const response = await page.request.get(`${CODE_API_BASE}/__debug/uploads`);
+  expect(response.ok()).toBe(true);
+  const body = (await response.json()) as { execs: Array<{ files?: Array<{ name?: string }> }> };
+  return body.execs.map((exec) => exec.files?.map((file) => file.name ?? '') ?? []);
+}
+
+test('project CSV and generated output are shared across chats, without indexing, until removed', async ({
+  page,
+  request,
+}, testInfo) => {
+  test.setTimeout(180_000);
+  const adminToken = await loginAdmin(request);
+  const user = await withMongo((db) =>
+    db.collection('users').findOne({ email: getE2EUser().email }),
+  );
+  if (!user) throw new Error('The authenticated project user is unavailable');
+  const overridePath = `/api/admin/config/user/${encodeURIComponent(user._id.toString())}`;
+  const adminHeaders = { Authorization: `Bearer ${adminToken}` };
+  let projectId: string | undefined;
+  const label = uniqueName('project-code');
+  const inputName = `${label}.csv`;
+  const outputName = `e2e-run-files-${label}.csv`;
+  const conversationIds: string[] = [];
+  const fileIds: string[] = [];
+  try {
+    const override = await request.put(overridePath, {
+      headers: adminHeaders,
+      data: { overrides: { projects: { codeExecution: true } } },
+    });
+    expect(override.ok(), await override.text()).toBe(true);
+    await page.route(
+      (url) => url.pathname === '/api/config',
+      async (route) => {
+        const response = await route.fetch();
+        await route.fulfill({ response, json: { ...(await response.json()), ragEnabled: false } });
+      },
+    );
+    await page.goto('/projects');
+    const token = await getAccessToken(page);
+    const project = await requestJson<TChatProject>(page, {
+      path: '/api/projects',
+      token,
+      method: 'POST',
+      body: { name: 'Project code analysis' },
+    });
+    projectId = project._id;
+    await page.goto(`/projects/${projectId}`);
+    await expect(page.getByRole('region', { name: 'Files', exact: true })).toBeVisible();
+    await resetProvisioning(page);
+    await page.getByRole('button', { name: 'Add files', exact: true }).click();
+    const [chooser] = await Promise.all([
+      page.waitForEvent('filechooser'),
+      page.getByRole('menuitem', { name: 'Upload from device', exact: true }).click(),
+    ]);
+    const uploaded = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === '/api/files' && response.request().method() === 'POST',
+    );
+    await chooser.setFiles({
+      name: inputName,
+      mimeType: 'text/csv',
+      buffer: Buffer.from('name,count\nalice,2\n'),
+    });
+    const response = await uploaded;
+    expect(response.ok(), await response.text()).toBe(true);
+    const input = (await response.json()) as TFile;
+    fileIds.push(input.file_id);
+    expect(input.embedded).not.toBe(true);
+    await expect(page.getByRole('listitem').filter({ hasText: inputName })).toBeVisible();
+    expect(await getRagEmbedded(page)).toEqual([]);
+    await page.screenshot({ path: testInfo.outputPath('project-code-files.png') });
+
+    await startProjectChat(page, projectId);
+    await sendMessageAndWaitForCompletion(page, `E2E_EXECUTE_CODE:${label}-first`);
+    conversationIds.push(new URL(page.url()).pathname.split('/c/')[1]);
+    expect((await sandboxFiles(page)).some((files) => files.includes(inputName))).toBe(true);
+    expect(await getRagEmbedded(page)).toEqual([]);
+
+    await sendMessageAndWaitForCompletion(page, `E2E_PROJECT_OUTPUT:${label}`);
+    await expect(
+      page.getByText(`${outputName} was added to the project.`, { exact: true }),
+    ).toBeVisible();
+    const projectFiles = await fetchJson<TChatProjectFile[]>(
+      page,
+      `/api/projects/${projectId}/files`,
+      token,
+    );
+    const generated = projectFiles.find((file) => file.filename === outputName);
+    expect(generated).toBeTruthy();
+    fileIds.push(generated!.file_id);
+
+    await startProjectChat(page, projectId);
+    await sendMessageAndWaitForCompletion(page, `E2E_EXECUTE_CODE:${label}-second`);
+    conversationIds.push(new URL(page.url()).pathname.split('/c/')[1]);
+    const latest = (await sandboxFiles(page)).at(-1) ?? [];
+    expect(latest).toContain(inputName);
+    expect(latest).toContain(outputName);
+    await enableFileSearch(page);
+    await sendMessageAndWaitForCompletion(page, `E2E_FILE_SEARCH:${label}`);
+    expect(await getRagEmbedded(page)).toEqual([]);
+    expect(await getRagQueries(page)).toEqual([]);
+
+    await page.goto(`/projects/${projectId}`);
+    await page
+      .getByRole('button', { name: `Remove ${inputName} from project`, exact: true })
+      .click();
+    await expect(
+      page.getByRole('button', { name: `Remove ${inputName} from project`, exact: true }),
+    ).toHaveCount(0);
+    await startProjectChat(page, projectId);
+    await sendMessageAndWaitForCompletion(page, `E2E_EXECUTE_CODE:${label}-removed`);
+    conversationIds.push(new URL(page.url()).pathname.split('/c/')[1]);
+    const afterRemoval = (await sandboxFiles(page)).at(-1) ?? [];
+    expect(afterRemoval).not.toContain(inputName);
+    expect(afterRemoval).toContain(outputName);
+    expect(await getRagEmbedded(page)).toEqual([]);
+
+    await page.goto(`/projects/${projectId}`);
+    await page
+      .getByRole('button', { name: `Remove ${outputName} from project`, exact: true })
+      .click();
+    await expect(
+      page.getByRole('button', { name: `Remove ${outputName} from project`, exact: true }),
+    ).toHaveCount(0);
+    await page.goto(`/c/${conversationIds[0]}`);
+    await sendMessageAndWaitForCompletion(page, `E2E_PROJECT_OUTPUT:${label}`);
+    expect(
+      await fetchJson<TChatProjectFile[]>(page, `/api/projects/${projectId}/files`, token),
+    ).toEqual([]);
+  } finally {
+    await request.delete(overridePath, { headers: adminHeaders });
+    await withMongo(async (db) => {
+      if (projectId)
+        await db.collection('chatprojects').deleteOne({ _id: new ObjectId(projectId) });
+      await db.collection('files').deleteMany({ file_id: { $in: fileIds } });
+      await db.collection('messages').deleteMany({ conversationId: { $in: conversationIds } });
+      await db.collection('conversations').deleteMany({ conversationId: { $in: conversationIds } });
+    });
+  }
+});

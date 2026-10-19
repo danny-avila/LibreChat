@@ -8,8 +8,11 @@ import {
 import type { FilterQuery, Model, SortOrder, Types } from 'mongoose';
 import type { TChatProjectsConfig } from 'librechat-data-provider';
 import type { IChatProject, IChatProjectDocument, IConversation, IMongoFile } from '~/types';
+import type { ProjectFileRecord } from './file';
 import { buildRetentionVisibilityFilter } from '~/utils/retention';
 import { isValidObjectIdString } from '~/utils/objectId';
+import { projectFileFilter } from '~/utils/project';
+import { normalizeProjectFileRecord } from './file';
 import { escapeRegExp } from '~/utils/string';
 import logger from '~/config/winston';
 
@@ -52,6 +55,23 @@ export type AssignConversationToProjectResult = {
   projectId: string | null;
 };
 
+export type GeneratedProjectFileInput = {
+  userId: string;
+  tenantId?: string | null;
+  projectId: string;
+  conversationId: string;
+  fileId: string;
+  contextRevision: number;
+  maxFiles?: number;
+};
+
+export type GeneratedProjectFileResult =
+  | { ok: true; value: { project: IChatProject; file: ProjectFileRecord } }
+  | {
+      ok: false;
+      error: { code: 'project_changed' | 'project_file_limit' | 'project_file_unavailable' };
+    };
+
 export interface ChatProjectMethods {
   createChatProject(
     user: string,
@@ -75,8 +95,9 @@ export interface ChatProjectMethods {
     user: string,
     projectId: string,
     fileId: string,
-    limits?: Partial<ChatProjectLimits>,
+    limits?: Partial<TChatProjectsConfig>,
   ): Promise<IChatProject | null>;
+  addGeneratedProjectFile(input: GeneratedProjectFileInput): Promise<GeneratedProjectFileResult>;
   removeChatProjectFile(
     user: string,
     projectId: string,
@@ -547,7 +568,7 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
     user: string,
     projectId: string,
     fileId: string,
-    limits?: Partial<ChatProjectLimits>,
+    limits?: Partial<TChatProjectsConfig>,
   ): Promise<IChatProject | null> {
     const { maxFiles } = resolveChatProjectLimits(limits);
     const project = await getChatProject(user, projectId);
@@ -567,9 +588,10 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
       file_id: fileId,
       user,
       tenantId: project.tenantId ?? null,
-      embedded: true,
-      context: FileContext.message_attachment,
-      $or: [{ expiredAt: null }, { expiredAt: { $gt: new Date() } }],
+      $and: [
+        projectFileFilter(limits?.codeExecution),
+        { $or: [{ expiredAt: null }, { expiredAt: { $gt: new Date() } }] },
+      ],
     })
       .select('_id file_id expiresAt temp_file_id')
       .lean();
@@ -657,6 +679,83 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
       { new: true },
     ).lean<IChatProject>();
     return project ?? getChatProject(user, projectId);
+  }
+
+  /** Adds a new output only to the unchanged project that still owns its conversation. */
+  async function addGeneratedProjectFile({
+    userId,
+    tenantId,
+    projectId,
+    conversationId,
+    fileId,
+    contextRevision,
+    maxFiles: configuredMaxFiles,
+  }: GeneratedProjectFileInput): Promise<GeneratedProjectFileResult> {
+    if (!isValidObjectIdString(projectId)) {
+      return { ok: false, error: { code: 'project_changed' } };
+    }
+    const { maxFiles } = resolveChatProjectLimits({ maxFiles: configuredMaxFiles });
+    const ChatProject = mongoose.models.ChatProject as Model<IChatProjectDocument>;
+    const Conversation = mongoose.models.Conversation as Model<IConversation>;
+    const File = mongoose.models.File as Model<IMongoFile>;
+    const owner = { user: userId, tenantId: tenantId || null };
+    const projectFilter = { _id: new mongoose.Types.ObjectId(projectId), ...owner };
+    const [conversation, file] = await Promise.all([
+      Conversation.exists({ ...owner, conversationId, chatProjectId: projectId }),
+      File.findOne({
+        ...owner,
+        conversationId,
+        file_id: fileId,
+        context: { $in: [FileContext.execute_code, FileContext.run_artifact] },
+        $and: [
+          projectFileFilter(true),
+          { $or: [{ expiredAt: null }, { expiredAt: { $gt: new Date() } }] },
+        ],
+      })
+        .select('-text -textFormat')
+        .lean<IMongoFile>(),
+    ]);
+    if (!conversation) {
+      return { ok: false, error: { code: 'project_changed' } };
+    }
+    if (!file) {
+      return { ok: false, error: { code: 'project_file_unavailable' } };
+    }
+    const project = await ChatProject.findOneAndUpdate(
+      {
+        ...projectFilter,
+        contextRevision,
+        file_ids: { $ne: fileId },
+        [`file_ids.${maxFiles - 1}`]: { $exists: false },
+      },
+      { $addToSet: { file_ids: fileId }, $inc: { contextRevision: 1 } },
+      { new: true, runValidators: true },
+    ).lean<IChatProject>();
+    if (!project) {
+      const current = await ChatProject.findOne(projectFilter).lean<IChatProject>();
+      if (!current || current.contextRevision !== contextRevision) {
+        return { ok: false, error: { code: 'project_changed' } };
+      }
+      if (current.file_ids?.includes(fileId)) {
+        return { ok: true, value: { project: current, file: normalizeProjectFileRecord(file) } };
+      }
+      return { ok: false, error: { code: 'project_file_limit' } };
+    }
+    const [stillAttached, stillAvailable] = await Promise.all([
+      Conversation.exists({ ...owner, conversationId, chatProjectId: projectId }),
+      File.exists({ _id: file._id, ...owner }),
+    ]);
+    if (!stillAttached || !stillAvailable) {
+      await ChatProject.updateOne(
+        { ...projectFilter, file_ids: fileId },
+        { $pull: { file_ids: fileId }, $inc: { contextRevision: 1 } },
+      );
+      return {
+        ok: false,
+        error: { code: stillAvailable ? 'project_changed' : 'project_file_unavailable' },
+      };
+    }
+    return { ok: true, value: { project, file: normalizeProjectFileRecord(file) } };
   }
 
   async function deleteChatProject(
@@ -759,6 +858,7 @@ export function createChatProjectMethods(mongoose: typeof import('mongoose')): C
     deleteChatProject,
     deleteUserChatProjects,
     addChatProjectFile,
+    addGeneratedProjectFile,
     removeChatProjectFile,
     assignConversationToProject,
   };

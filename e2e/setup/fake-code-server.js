@@ -30,7 +30,7 @@ const HOST = '127.0.0.1';
 const sessions = new Map();
 /** @type {Array<{ filename: string; kind: string; id: string; storage_session_id: string; fileId: string; apiKey: string; userId: string; bytes: number }>} */
 const uploads = [];
-/** @type {Array<{ lang: string; codeLength: number; fileCount: number }>} */
+/** @type {Array<{ lang: string; codeLength: number; fileCount: number; files: Array<{ name?: string }> }>} */
 const execs = [];
 /** @type {Map<string, { name: string; content: Buffer }>} */
 const generated = new Map();
@@ -199,6 +199,7 @@ async function handleExec(req, res) {
     lang: body.lang || '',
     codeLength: typeof body.code === 'string' ? body.code.length : 0,
     fileCount: Array.isArray(body.files) ? body.files.length : 0,
+    files: Array.isArray(body.files) ? body.files.map(({ name }) => ({ name })) : [],
   });
   const versionMarker = body.code?.match(
     /E2E_RUN_FILE_VERSION:([A-Za-z0-9-]+):(write-v1|inspect|write-v2)/,

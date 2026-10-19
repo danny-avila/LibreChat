@@ -32,6 +32,7 @@ export interface ResolveChatProjectContextInput {
   resolvedConversation?: ConversationSnapshot | null;
   /** Trusted server-side control for callers that only need project guidance. */
   includeResources?: boolean;
+  codeExecution?: boolean;
 }
 export interface ResolveChatProjectContextDeps {
   getConvo: (userId: string, conversationId: string) => Promise<ConversationSnapshot | null>;
@@ -80,10 +81,12 @@ export async function hydrateChatProjectContextResources(
     userId,
     tenantId,
     getProjectFiles,
+    codeExecution = false,
   }: {
     userId: string;
     tenantId?: string | null;
     getProjectFiles: GetProjectFiles;
+    codeExecution?: boolean;
   },
 ): Promise<ResolvedChatProjectContext> {
   if (context.resources.length === new Set(context.file_ids).size) {
@@ -96,6 +99,7 @@ export async function hydrateChatProjectContextResources(
       userId,
       tenantId: tenantId ?? undefined,
       getProjectFiles,
+      codeExecution,
     }),
   };
 }
@@ -186,6 +190,7 @@ export async function resolveChatProjectContext(
     requestedProjectId,
     resolvedConversation: suppliedConversation,
     includeResources = true,
+    codeExecution = false,
   } = input;
 
   let conversation: ConversationSnapshot | null | undefined = suppliedConversation;
@@ -256,6 +261,7 @@ export async function resolveChatProjectContext(
           userId,
           tenantId: tenantId ?? undefined,
           getProjectFiles: deps.getProjectFiles,
+          codeExecution,
         });
   return {
     projectId: projectIdFromRecord,

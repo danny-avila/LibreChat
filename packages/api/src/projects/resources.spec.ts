@@ -1,8 +1,8 @@
 import mongoose from 'mongoose';
-import { FileContext } from 'librechat-data-provider';
 import { MongoMemoryServer } from 'mongodb-memory-server';
+import { FileContext, FileSources } from 'librechat-data-provider';
 import { createModels, createMethods } from '@librechat/data-schemas';
-import type { IChatProject, IMongoFile, ProjectFileRecord } from '@librechat/data-schemas';
+import type { IChatProject, IMongoFile } from '@librechat/data-schemas';
 import {
   getChatProjectFileAvailability,
   listChatProjectFileViews,
@@ -36,6 +36,7 @@ afterAll(async () => {
 afterEach(async () => {
   await File.deleteMany({});
   await mongoose.models.ChatProject.deleteMany({});
+  await mongoose.models.Conversation.deleteMany({});
 });
 
 const file = (
@@ -58,49 +59,105 @@ const file = (
   ...overrides,
 });
 
-const getProjectFiles = async ({
-  fileIds,
-  userId,
-  tenantId,
-  includeContent = false,
-}: {
-  fileIds: string[];
-  userId: string;
-  tenantId?: string | null;
-  includeContent?: boolean;
-}): Promise<ProjectFileRecord[]> => {
-  const files = await File.find({
-    file_id: { $in: fileIds },
-    user: userId,
-    embedded: true,
-    context: FileContext.message_attachment,
-    tenantId: tenantId != null && tenantId !== '' ? tenantId : null,
-  })
-    .select(includeContent ? {} : { text: 0 })
-    .lean<IMongoFile[]>();
-  return files.map((file) => ({
-    _id: file._id.toString(),
-    file_id: file.file_id,
-    filename: file.filename,
-    filepath: file.filepath,
-    object: file.object,
-    type: file.type,
-    bytes: file.bytes,
-    usage: file.usage,
-    ...(file.embedded !== undefined ? { embedded: file.embedded } : {}),
-    ...(file.context !== undefined ? { context: file.context } : {}),
-    ...(file.expiredAt !== undefined ? { expiredAt: file.expiredAt } : {}),
-    user: file.user.toString(),
-    ...(file.tenantId !== undefined ? { tenantId: file.tenantId } : {}),
-    ...(file.createdAt !== undefined ? { createdAt: file.createdAt } : {}),
-    ...(file.updatedAt !== undefined ? { updatedAt: file.updatedAt } : {}),
-    ...(file.previewRevision !== undefined ? { previewRevision: file.previewRevision } : {}),
-    ...(file.status !== undefined ? { status: file.status } : {}),
-    ...(file.text !== undefined ? { text: file.text } : {}),
-  }));
-};
+const getProjectFiles: ReturnType<typeof createMethods>['getProjectFiles'] = (options) =>
+  createMethods(mongoose).getProjectFiles(options);
 
 describe('ChatProject resource hydration', () => {
+  it('keeps a generated file compatible when only its deferred preview finishes', async () => {
+    const owner = new mongoose.Types.ObjectId().toString();
+    const methods = createMethods(mongoose);
+    const dispatchedAt = Date.now();
+    await File.create(
+      file('generated-preview', owner, {
+        embedded: false,
+        context: FileContext.execute_code,
+        type: 'text/csv',
+        status: 'pending',
+        previewRevision: 'preview',
+        metadata: { sourceDispatchedAt: dispatchedAt },
+      }),
+    );
+    const project = await methods.createChatProject(owner, { name: 'Deferred output' });
+    const projectId = project._id!.toString();
+    await methods.addChatProjectFile(owner, projectId, 'generated-preview', {
+      codeExecution: true,
+    });
+    const input = { userId: owner, requestedProjectId: projectId, codeExecution: true };
+    const before = await resolveChatProjectContext(input, methods);
+    await methods.updateFile({
+      file_id: 'generated-preview',
+      status: 'ready',
+      text: '<table>preview</table>',
+    });
+    const after = await resolveChatProjectContext(input, methods);
+    expect(getChatProjectContextKey(after)).toBe(getChatProjectContextKey(before));
+    await methods.updateFile({
+      file_id: 'generated-preview',
+      metadata: { sourceDispatchedAt: dispatchedAt + 1 },
+    });
+    const replaced = await resolveChatProjectContext(input, methods);
+    expect(getChatProjectContextKey(replaced)).not.toBe(getChatProjectContextKey(before));
+  });
+  it('reuses unindexed data in separate project chats and stops injecting removed files', async () => {
+    const owner = new mongoose.Types.ObjectId().toString();
+    const methods = createMethods(mongoose);
+    const metadata = {
+      destinationChosen: true,
+      codeEnvRef: {
+        kind: 'user' as const,
+        id: owner,
+        storage_session_id: 'storage',
+        file_id: 'remote',
+      },
+    };
+    await File.create(
+      file('dataset', owner, {
+        embedded: false,
+        type: 'text/csv',
+        source: FileSources.s3,
+        storageKey: 'uploads/dataset.csv',
+        metadata,
+      }),
+    );
+    const project = await methods.createChatProject(owner, { name: 'Analysis' });
+    const projectId = project._id!.toString();
+    await methods.addChatProjectFile(owner, projectId, 'dataset', { codeExecution: true });
+    await mongoose.models.Conversation.create([
+      { conversationId: 'analysis-1', endpoint: 'agents', user: owner, chatProjectId: projectId },
+      { conversationId: 'analysis-2', endpoint: 'agents', user: owner, chatProjectId: projectId },
+    ]);
+    for (const conversationId of ['analysis-1', 'analysis-2']) {
+      const context = await resolveChatProjectContext(
+        { userId: owner, conversationId, codeExecution: true },
+        methods,
+      );
+      const files = await resolveChatProjectFiles({
+        project: context!,
+        resources: context!.resources,
+        userId: owner,
+        getProjectFiles,
+        codeExecution: true,
+      });
+      expect(files).toEqual([
+        expect.objectContaining({
+          file_id: 'dataset',
+          embedded: false,
+          source: FileSources.s3,
+          storageKey: 'uploads/dataset.csv',
+          metadata,
+        }),
+      ]);
+      expect(files[0]).not.toHaveProperty('text');
+    }
+    await methods.removeChatProjectFile(owner, projectId, 'dataset');
+    const context = await resolveChatProjectContext(
+      { userId: owner, conversationId: 'analysis-1', codeExecution: true },
+      methods,
+    );
+    expect(context?.file_ids).toEqual([]);
+    expect(context?.resources).toEqual([]);
+  });
+
   it('preserves Project compatibility when signed file URLs are refreshed', async () => {
     const owner = new mongoose.Types.ObjectId().toString();
     const methods = { ...createMethods(mongoose), getProjectFiles };

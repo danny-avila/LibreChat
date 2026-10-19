@@ -27,13 +27,15 @@ import {
 } from '@librechat/client';
 import {
   defaultAgentCapabilities,
-  EToolResources,
-  FileContext,
+  getProjectFileAvailability,
+  getProjectUploadResource,
+  inferMimeType,
   MAX_CHAT_PROJECT_FILES,
   PermissionTypes,
+  EToolResources,
   Permissions,
 } from 'librechat-data-provider';
-import type { TChatProjectFile, TError, TFile, TFileUpload } from 'librechat-data-provider';
+import type { TChatProjectFile, TError, TFileUpload } from 'librechat-data-provider';
 import type { FileView } from '~/components/Chat/Input/Composer/Files';
 import {
   useAddProjectFileMutation,
@@ -87,23 +89,26 @@ function statusLabel(localize: LocalizeFunction, availability: TChatProjectFile[
     : localize('com_ui_project_file_unavailable');
 }
 
-const isEligibleFile = (file: TFile) =>
-  file.embedded === true &&
-  file.context === FileContext.message_attachment &&
-  (!file.expiredAt || new Date(file.expiredAt).getTime() > Date.now());
 export default function ProjectResources({ project }: ProjectResourcesProps) {
   const localize = useLocalize();
   const { agentsConfig } = useGetAgentsConfig();
-  const { fileSearchEnabled } = useAgentCapabilities(
+  const { fileSearchEnabled, codeEnabled } = useAgentCapabilities(
     agentsConfig?.capabilities ?? defaultAgentCapabilities,
   );
   const { data: startupConfig } = useGetStartupConfig();
   const projectFileLimit = startupConfig?.projects?.maxFiles ?? MAX_CHAT_PROJECT_FILES;
+  const projectCodeExecution = startupConfig?.projects?.codeExecution === true;
   const canUseFileSearch = useHasAccess({
     permissionType: PermissionTypes.FILE_SEARCH,
     permission: Permissions.USE,
   });
-  const canUploadFromDevice = fileSearchEnabled && canUseFileSearch;
+  const canUseCode = useHasAccess({
+    permissionType: PermissionTypes.RUN_CODE,
+    permission: Permissions.USE,
+  });
+  const canUploadForSearch = fileSearchEnabled && canUseFileSearch;
+  const canUploadForCode = projectCodeExecution && codeEnabled && canUseCode;
+  const canUploadFromDevice = canUploadForSearch || canUploadForCode;
   const { showToast } = useToastContext();
   const inputRef = useRef<HTMLInputElement>(null);
   const pickerMenuRef = useRef<HTMLButtonElement>(null);
@@ -262,10 +267,34 @@ export default function ProjectResources({ project }: ProjectResourcesProps) {
         formData.append('file_id', item.id);
         formData.append('endpoint', 'agents');
         formData.append('message_file', 'true');
-        formData.append('tool_resource', EToolResources.file_search);
+        const resource = projectCodeExecution
+          ? getProjectUploadResource(inferMimeType(item.file.name, item.file.type), {
+              fileSearch: canUploadForSearch,
+              codeExecution: canUploadForCode,
+            })
+          : EToolResources.file_search;
+        if (resource == null) {
+          setUploading((current) =>
+            current.map((candidate) =>
+              candidate.id === item.id
+                ? {
+                    ...candidate,
+                    status: 'failed',
+                    errorMessage: localize('com_error_files_unsupported'),
+                  }
+                : candidate,
+            ),
+          );
+          pendingUploadIdsRef.current.delete(item.id);
+          return;
+        }
+        formData.append('tool_resource', resource);
         const uploaded = (await uploadFile.mutateAsync(formData)) as TFileUpload;
-        if (!uploaded.file_id || !isEligibleFile(uploaded)) {
-          throw new Error('Uploaded file is not eligible for project search');
+        if (
+          !uploaded.file_id ||
+          getProjectFileAvailability(uploaded, projectCodeExecution) !== 'ready'
+        ) {
+          throw new Error('Uploaded file is not eligible for the project');
         }
         fileId = uploaded.file_id;
         setUploading((current) =>
@@ -379,7 +408,7 @@ export default function ProjectResources({ project }: ProjectResourcesProps) {
             {localize('com_ui_project_files')}
           </h2>
           <TooltipAnchor
-            description={`${localize('com_ui_project_files_help')} ${localize('com_ui_project_files_retrieval_only')}`}
+            description={`${localize(projectCodeExecution ? 'com_ui_project_files_tools_help' : 'com_ui_project_files_help')} ${localize('com_ui_project_files_retrieval_only')}`}
             render={
               <Button
                 type="button"

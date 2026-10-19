@@ -419,6 +419,7 @@ describe('Chat Projects config', () => {
   it('defaults project limits and accepts operator overrides', () => {
     const defaults = configSchema.parse({ version: '1.2.1' });
     expect(defaults.projects).toEqual({
+      codeExecution: false,
       maxFiles: 50,
       maxInstructionsLength: 16000,
       maxDescriptionLength: 1000,
@@ -427,12 +428,14 @@ describe('Chat Projects config', () => {
     const configured = configSchema.parse({
       version: '1.2.1',
       projects: {
+        codeExecution: true,
         maxFiles: 75,
         maxInstructionsLength: 24000,
         maxDescriptionLength: 2000,
       },
     });
     expect(configured.projects).toEqual({
+      codeExecution: true,
       maxFiles: 75,
       maxInstructionsLength: 24000,
       maxDescriptionLength: 2000,
@@ -2715,7 +2718,10 @@ describe('interface theme config', () => {
 
   it('accepts the ceilings and rejects values above them', () => {
     const atCeiling = { maxFiles: 500, maxInstructionsLength: 200000, maxDescriptionLength: 10000 };
-    expect(chatProjectsConfigSchema.parse(atCeiling)).toEqual(atCeiling);
+    expect(chatProjectsConfigSchema.parse(atCeiling)).toEqual({
+      codeExecution: false,
+      ...atCeiling,
+    });
     expect(chatProjectsConfigSchema.safeParse({ maxFiles: 501 }).success).toBe(false);
     expect(chatProjectsConfigSchema.safeParse({ maxInstructionsLength: 200001 }).success).toBe(
       false,

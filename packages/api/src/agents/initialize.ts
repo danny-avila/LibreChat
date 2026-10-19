@@ -4,6 +4,7 @@ import {
   Tools,
   Constants,
   ErrorTypes,
+  FileContext,
   EModelEndpoint,
   EToolResources,
   paramEndpoints,
@@ -14,6 +15,8 @@ import {
   hasActivePiiPatterns,
   replaceSpecialVars,
   providerEndpointMap,
+  canToolResourceConsume,
+  isProjectFileSource,
 } from 'librechat-data-provider';
 import type {
   AgentToolResources,
@@ -318,7 +321,12 @@ function addProjectFilesToFileSearch(
   const current = resources?.[EToolResources.file_search] ?? {};
   const currentFiles = current.files ?? [];
   const seen = new Set(currentFiles.map((file) => file.file_id));
-  const projectFiles = files.filter((file) => !seen.has(file.file_id));
+  const projectFiles = files.filter(
+    (file) =>
+      file.embedded === true &&
+      file.context === FileContext.message_attachment &&
+      !seen.has(file.file_id),
+  );
   if (projectFiles.length === 0) {
     return resources;
   }
@@ -336,11 +344,13 @@ async function resolveRuntimeProjectFiles({
   scope,
   getProjectFiles,
   filters,
+  codeExecution = false,
 }: {
   context: ResolvedChatProjectContext;
   scope: FileOwnerScope;
   getProjectFiles: GetProjectFiles;
   filters?: AppConfig['filters'];
+  codeExecution?: boolean;
 }): Promise<TFile[]> {
   const files = await resolveChatProjectFiles({
     project: context,
@@ -348,6 +358,7 @@ async function resolveRuntimeProjectFiles({
     userId: scope.userId,
     tenantId: scope.tenantId ?? undefined,
     getProjectFiles,
+    codeExecution,
   });
   if (!hasActiveFilePolicy(filters) || files.length === 0) {
     return files;
@@ -357,6 +368,7 @@ async function resolveRuntimeProjectFiles({
     userId: scope.userId,
     tenantId: scope.tenantId ?? undefined,
     getProjectFiles,
+    codeExecution,
   });
   const admittedById = new Map(context.resources.map((resource) => [resource.file_id, resource]));
   if (policyFiles.length !== files.length) {
@@ -364,7 +376,7 @@ async function resolveRuntimeProjectFiles({
   }
   for (const file of policyFiles) {
     const admitted = admittedById.get(file.file_id);
-    const current = toCanonicalProjectResource(file);
+    const current = toCanonicalProjectResource(file, codeExecution);
     if (
       admitted?.availability !== 'ready' ||
       current.availability !== 'ready' ||
@@ -1454,7 +1466,7 @@ export async function initializeAgent(
    * `allowed-tools` can be unioned into the agent's effective tool set
    * BEFORE project resource hydration and `loadTools` run. Project files
    * must follow this same effective set, otherwise a skill-added
-   * `file_search` tool cannot see its eligible Project files.
+   * file tool cannot see its eligible Project files.
    */
   if (hasSkillAccess) {
     /** Skill `allowed-tools` are legacy-heal candidates too: a raw MCP key
@@ -1973,14 +1985,25 @@ export async function initializeAgent(
     (appConfig?.endpoints?.[EModelEndpoint.agents]?.capabilities ?? []).includes(
       AgentCapabilities.file_search,
     );
+  const projectCodeExecution = appConfig?.projects?.codeExecution === true;
+  const canUseProjectCode =
+    shouldUseChatProjectContext &&
+    projectCodeExecution &&
+    wantsCodeFiles &&
+    effectiveCodeEnvAvailable;
   let projectRuntimeFiles: TFile[] = [];
-  if (canUseProjectFileSearch && runtime.chatProjectContext != null && requestFileOwnerScope) {
+  if (
+    (canUseProjectFileSearch || canUseProjectCode) &&
+    runtime.chatProjectContext != null &&
+    requestFileOwnerScope
+  ) {
     runtime.chatProjectContextResourcesPromise ??=
       params.req?.chatProjectContextResourcesPromise ??
       hydrateChatProjectContextResources(runtime.chatProjectContext, {
         userId: requestFileOwnerScope.userId,
         tenantId: requestFileOwnerScope.tenantId,
         getProjectFiles: db.getProjectFiles,
+        codeExecution: projectCodeExecution,
       });
     if (params.req) {
       params.req.chatProjectContextResourcesPromise = runtime.chatProjectContextResourcesPromise;
@@ -1996,6 +2019,7 @@ export async function initializeAgent(
         getProjectFiles: db.getProjectFiles,
         scope: requestFileOwnerScope,
         filters: appConfig?.filters,
+        codeExecution: projectCodeExecution,
       });
     if (params.req) {
       params.req.chatProjectFilesPromise = runtime.chatProjectFilesPromise;
@@ -2005,6 +2029,30 @@ export async function initializeAgent(
     if (params.req) {
       params.req.chatProjectFiles = projectRuntimeFiles;
     }
+  }
+  let projectCodeFiles: TFile[] = [];
+  if (canUseProjectCode) {
+    const committedFiles = [...(currentFiles ?? []), ...deferredProvisionFiles];
+    const candidates = projectRuntimeFiles.filter(
+      (file) =>
+        isProjectFileSource(file.source) &&
+        canToolResourceConsume(EToolResources.execute_code, file.type),
+    );
+    const { committed, pending } = partitionCommittedFiles(candidates, committedFiles);
+    projectCodeFiles = committed
+      .concat(
+        filterFilesByEndpointRuntimeConfig(appConfig, {
+          files: pending,
+          endpoint: agent.endpoint ?? '',
+          endpointType: endpointFileType,
+          consumedBytes: sumUniqueBytes(committedFiles),
+        }),
+      )
+      .map((file) => ({
+        ...structuredClone(file),
+        // A different project chat needs the path even when this was another chat's output.
+        context: FileContext.message_attachment,
+      }));
   }
 
   /**
@@ -2056,6 +2104,7 @@ export async function initializeAgent(
     adoptLegacySearchEmbeddings: db.adoptLegacySearchEmbeddings,
     hasEntityEmbeddings: db.hasEntityEmbeddings,
     provisionCandidates: deferredProvisionFiles as unknown as TFile[],
+    projectCodeFiles,
     codeRouteKey: codeExecutionContext.executionRouteKey ?? codeExecutionContext.executionProfile,
     codeBaseUrl: codeExecutionContext.baseUrl,
     codeExecutionProfile: codeExecutionContext.executionProfile,
@@ -2066,7 +2115,11 @@ export async function initializeAgent(
        * endpoint policy under the remainder of the one total-size allowance the current
        * and deferred sets have already drawn on, and the same content policy, which can
        * have changed since the file was attached. */
-      const committedFiles = [...(currentFiles ?? []), ...deferredProvisionFiles];
+      const committedFiles = [
+        ...(currentFiles ?? []),
+        ...deferredProvisionFiles,
+        ...projectCodeFiles,
+      ];
       const { committed, pending } = partitionCommittedFiles(files, committedFiles);
       const withinPolicy = filterFilesByEndpointRuntimeConfig(appConfig, {
         files: pending as unknown as IMongoFile[],

@@ -362,6 +362,9 @@ describe('code file context', () => {
   it('omits an undisplaced generated output and names a displaced one', () => {
     const output = { file_id: 'out', filename: 'chart.png', context: FileContext.execute_code };
     expect(getCodeFileContextLine(output, new Set(), 'chart.png', 'programmatic')).toBe('');
+    expect(
+      getCodeFileContextLine(output, new Set(), 'chart.png', 'sandbox', [output.file_id]),
+    ).toBe('\n\t- /mnt/data/chart.png (project file)');
     expect(getCodeFileContextLine(output, new Set(), 'chart-1.png', 'programmatic')).toBe(
       '\n\t- $LIBRECHAT_CODE_DATA_DIR/chart-1.png (written earlier as chart.png)',
     );

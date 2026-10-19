@@ -300,6 +300,24 @@ describe('Run artifact publisher', () => {
     expect(deps.findRunArtifactFile).not.toHaveBeenCalled();
   });
 
+  it('preserves the project-save notice on a newly published artifact', async () => {
+    const projectFile = { projectId: 'project-a', status: 'added' as const };
+    const deps = dependencies();
+    const publish = createRunArtifactPublisher({
+      ...deps,
+      processCodeOutput: async (input) => ({
+        file: {
+          ...(await input.publication.publish({ scope, provenance, file: publishedFile() })),
+          projectFile,
+        },
+      }),
+    });
+    expect(await publish({ scope, provenance, artifact })).toEqual({
+      ...publishedFile(),
+      projectFile,
+    });
+  });
+
   it('fails publication when existing output processing returns a transient download fallback', async () => {
     const deps = dependencies();
     const publish = createRunArtifactPublisher({

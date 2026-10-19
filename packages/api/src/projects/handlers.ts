@@ -316,6 +316,7 @@ export function createProjectHandlers(deps: ProjectHandlerDependencies): {
         userId: getUserId(req),
         tenantId: project.tenantId,
         getProjectFiles: deps.getProjectFiles,
+        codeExecution: req.config?.projects?.codeExecution,
       });
       return res.status(200).json(files);
     } catch (error) {
@@ -350,6 +351,7 @@ export function createProjectHandlers(deps: ProjectHandlerDependencies): {
         limit,
         cursor: cursor ?? null,
         search: queryString(req.query.search),
+        codeExecution: req.config?.projects?.codeExecution,
       });
       return res.status(200).json({
         files: result.files.map(toRuntimeFile),

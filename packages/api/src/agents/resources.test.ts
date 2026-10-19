@@ -1235,7 +1235,7 @@ describe('primeResources', () => {
         tool_resources,
       });
 
-      expect(logger.error).toHaveBeenCalledWith('Error priming resources', error);
+      expect(logger.error).toHaveBeenCalledWith('Error priming resources', { type: 'Error' });
       expect(result.attachments).toEqual(mockFiles);
       expect(result.tool_resources).toEqual({});
     });
@@ -1255,7 +1255,7 @@ describe('primeResources', () => {
       });
 
       // Should log both the main error and the attachment error
-      expect(logger.error).toHaveBeenCalledWith('Error priming resources', error);
+      expect(logger.error).toHaveBeenCalledWith('Error priming resources', { type: 'Error' });
       expect(logger.error).toHaveBeenCalledWith(
         'Error resolving attachments in catch block',
         error,
@@ -1707,7 +1707,7 @@ describe('primeResources', () => {
         agentId: 'agent_test',
       });
 
-      expect(logger.error).toHaveBeenCalledWith('Error priming resources', expect.any(Error));
+      expect(logger.error).toHaveBeenCalledWith('Error priming resources', { type: 'Error' });
       expect(result.tool_resources).toEqual({});
     });
 
@@ -1996,6 +1996,123 @@ describe('primeResources', () => {
       llmDeliveryPath: 'none',
       metadata: { destinationChosen: false },
       ...overrides,
+    });
+
+    it('queues a search-only chooser file for project code without changing File Search', async () => {
+      const projectFile = makeCodeFile({
+        file_id: 'project-reference',
+        embedded: true,
+        type: 'application/pdf',
+        context: FileContext.message_attachment,
+        metadata: { destinationChosen: true },
+      });
+      const result = await primeResources({
+        req: mockReq,
+        appConfig: mockAppConfig,
+        getFiles: mockGetFiles,
+        attachments: undefined,
+        tool_resources: {},
+        requestFileSet,
+        projectCodeFiles: [projectFile],
+        enabledToolResources: new Set([EToolResources.execute_code, EToolResources.file_search]),
+        agentId: 'agent1',
+        codeRouteKey: 'stateful:analysis',
+        codeBaseUrl: 'https://code.example',
+      });
+      expect(result.provisionState?.codeEnvFiles).toEqual([projectFile]);
+      expect(result.provisionState?.vectorDBFiles).toEqual([]);
+      expect(result.provisionState?.agentScopedFileIds.size).toBe(0);
+      expect(result.attachments).toBeUndefined();
+      expect(result.requestAttachments).toBeUndefined();
+      expect(mockGetFiles).not.toHaveBeenCalled();
+      expect(projectFile.metadata).toEqual({ destinationChosen: true });
+    });
+
+    it.each([
+      'text/csv',
+      'text/tab-separated-values',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.oasis.opendocument.spreadsheet',
+    ])('never indexes a %s project data file', async (type) => {
+      const projectFile = makeCodeFile({ type, metadata: { destinationChosen: true } });
+      const result = await primeResources({
+        req: mockReq,
+        getFiles: mockGetFiles,
+        attachments: undefined,
+        tool_resources: {},
+        requestFileSet,
+        projectCodeFiles: [projectFile],
+        enabledToolResources: new Set([EToolResources.execute_code, EToolResources.file_search]),
+      });
+      expect(result.provisionState?.codeEnvFiles).toEqual([projectFile]);
+      expect(result.provisionState?.vectorDBFiles).toEqual([]);
+      expect(result.tool_resources?.file_search).toBeUndefined();
+    });
+
+    it('reuses a live project sandbox reference on the same route and queues another deployment', async () => {
+      const ref = {
+        kind: 'user' as const,
+        id: 'user1',
+        storage_session_id: 'project-storage',
+        file_id: 'project-remote',
+      };
+      const projectFile = makeCodeFile({
+        metadata: { destinationChosen: true, codeEnvRef: ref, codeEnvRefs: { default: ref } },
+      });
+      const checkSessionsAlive = jest.fn().mockResolvedValue(new Set([projectFile.file_id]));
+      const options = {
+        req: mockReq,
+        getFiles: mockGetFiles,
+        attachments: undefined,
+        tool_resources: {},
+        requestFileSet,
+        projectCodeFiles: [projectFile],
+        enabledToolResources: new Set([EToolResources.execute_code]),
+        checkSessionsAlive,
+      };
+      const live = await primeResources(options);
+      expect(live.provisionState).toBeUndefined();
+      expect(live.tool_resources?.execute_code?.files).toEqual([projectFile]);
+      const rerouted = await primeResources({
+        ...options,
+        codeRouteKey: 'stateful:analysis',
+        codeBaseUrl: 'https://code.example',
+      });
+      expect(rerouted.provisionState?.codeEnvFiles).toEqual([projectFile]);
+      expect(rerouted.provisionState?.agentScopedFileIds.size).toBe(0);
+      expect(projectFile.metadata?.codeEnvRefs?.default).toEqual(ref);
+    });
+
+    it('does not provision a project data file on a search-only turn', async () => {
+      const result = await primeResources({
+        req: mockReq,
+        getFiles: mockGetFiles,
+        attachments: undefined,
+        tool_resources: {},
+        requestFileSet,
+        projectCodeFiles: [makeCodeFile()],
+        enabledToolResources: new Set([EToolResources.file_search]),
+      });
+      expect(result.provisionState).toBeUndefined();
+      expect(result.tool_resources?.file_search).toBeUndefined();
+    });
+
+    it('aborts project code priming when a resource lookup fails instead of running without its files', async () => {
+      const error = new Error('database unavailable; private query');
+      mockGetFiles.mockRejectedValueOnce(error);
+      await expect(
+        primeResources({
+          req: mockReq,
+          getFiles: mockGetFiles,
+          attachments: undefined,
+          tool_resources: { execute_code: { file_ids: ['agent-resource'] } },
+          requestFileSet,
+          projectCodeFiles: [makeCodeFile()],
+          enabledToolResources: new Set([EToolResources.execute_code]),
+        }),
+      ).rejects.toBe(error);
+      expect(logger.error).toHaveBeenCalledWith('Error priming resources', { type: 'Error' });
     });
 
     it('populates codeEnvFiles under JWT code auth without a legacy key', async () => {

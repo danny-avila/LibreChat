@@ -10,7 +10,7 @@ import type {
 import type { RunFileProvenance, TFile } from 'librechat-data-provider';
 import type { CodeExecutionContext } from '~/agents/execution';
 
-export type CodeOutputStoredFile = CodeFileCommitData;
+export type CodeOutputStoredFile = CodeFileCommitData & Pick<TFile, 'projectFile'>;
 
 export type CodeOutputDownloadFallback = Pick<TFile, 'filename' | 'filepath' | 'conversationId'> & {
   expiresAt: number;
@@ -316,7 +316,10 @@ export function createRunArtifactPublisher({
       // the attachment still waits for the cancellation check below.
       finalize({ ...result, file });
       signal?.throwIfAborted();
-      return published;
+      return {
+        ...published,
+        ...(file.projectFile != null ? { projectFile: file.projectFile } : {}),
+      };
     } finally {
       // The legacy processor can fail after saving bytes but before it constructs
       // its complete metadata. Its storage notifications make those failures owned
