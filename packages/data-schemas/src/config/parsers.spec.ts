@@ -860,6 +860,7 @@ describe('redactFormat', () => {
   it('redacts values under sensitive splat metadata keys', () => {
     const metadata = {
       apiKey: 'secretvalue',
+      appid: 'secretvalue',
       authorization: 'secretvalue',
       nested: { token: 'secretvalue' },
       safe: 'secretvalue',
@@ -876,6 +877,7 @@ describe('redactFormat', () => {
     const splat = info[SPLAT_SYMBOL] as Array<typeof metadata>;
 
     expect(splat[0].apiKey).toBe('[REDACTED]');
+    expect(splat[0].appid).toBe('[REDACTED]');
     expect(splat[0].authorization).toBe('[REDACTED]');
     expect(splat[0].nested.token).toBe('[REDACTED]');
     expect(splat[0]['x-api-key']).toBe('[REDACTED]');

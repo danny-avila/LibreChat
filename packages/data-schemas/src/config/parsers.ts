@@ -73,7 +73,7 @@ const REDACTION_WINDOW_SLACK = 1024;
 const REDACTED_EMAIL_VALUE = '[REDACTED_EMAIL]';
 
 const sensitiveMetadataKey =
-  /^(authorization|proxy-authorization|cookie|set-cookie|x-api-key|api[-_]?key|access[-_]?token|refresh[-_]?token|id[-_]?token|token|secret|password|assertion|client[-_]?assertion|client[-_]?secret|code[-_]?verifier|credential|signature|connection[-_]?string)$/i;
+  /^(authorization|proxy-authorization|cookie|set-cookie|x-api-key|api[-_]?key|appid|access[-_]?token|refresh[-_]?token|id[-_]?token|token|secret|password|assertion|client[-_]?assertion|client[-_]?secret|code[-_]?verifier|credential|signature|connection[-_]?string)$/i;
 const errorStringProperties = new Set(['name', 'message', 'stack']);
 
 /**
