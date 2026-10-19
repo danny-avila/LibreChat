@@ -3,7 +3,7 @@ import { useAtom } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { useWatch } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
-import { showStopButtonByIndex } from '@librechat/chat/react';
+import { useSteering, showStopButtonByIndex, useComposerRestoreHost } from '@librechat/chat/react';
 import {
   composerSurfaceClasses,
   composerSurfaceShadow,
@@ -19,9 +19,9 @@ import {
   getAgentToolSwitches,
 } from 'librechat-data-provider';
 import type { TChatProject, TMessage, TConversation } from 'librechat-data-provider';
+import type { QueuedMessageContext } from '@librechat/chat';
 import type { SetterOrUpdater } from 'recoil';
 import type { ExtendedFile, FileSetter, ConvoGenerator, TAskFunction } from '~/common';
-import type { QueuedMessageContext } from '~/hooks/Chat/useSteering';
 import {
   useTextarea,
   useAutoSave,
@@ -50,7 +50,6 @@ import {
   useChatFormContext,
   useAddedChatContext,
   useAssistantsMapContext,
-  useComposerRestoreHost,
   BadgeRowProvider,
 } from '~/Providers';
 import {
@@ -72,7 +71,6 @@ import ProjectLandingChip from '../ProjectLandingChip';
 import useHasAccess from '~/hooks/Roles/useHasAccess';
 import useDictation from '~/hooks/Input/useDictation';
 import CodeWorkspaceMenu from './CodeWorkspaceMenu';
-import useSteering from '~/hooks/Chat/useSteering';
 import CodeApprovalMenu from './CodeApprovalMenu';
 import TextareaHeader from './TextareaHeader';
 import PromptsCommand from './PromptsCommand';
@@ -324,6 +322,9 @@ const ChatForm = memo(function ChatForm({
    *  answer box, or is locked behind the batch card that owns the answer. A
    *  collapsed batch is neither, it hands the composer back to the thread. */
   const composerReserved = answerMode.composerAnswers || answerMode.composerLocked;
+  /** A batch card stacks above the composer with its own height cap, so a
+   *  locked composer keeps the draft to one line to leave the card on screen. */
+  const compactComposer = isCollapsed || answerMode.composerLocked;
 
   const { consumeDraft, preserveText, settleText } = useAutoSave({
     index,
@@ -701,10 +702,10 @@ const ChatForm = memo(function ChatForm({
     () =>
       cn(
         'composer-text md:py-3.5 m-0 w-full resize-none py-3.25 placeholder:text-text-tertiary bg-transparent [&:has(textarea:focus)]:shadow-[0_2px_6px_rgba(0,0,0,.05)]',
-        isCollapsed ? 'max-h-[3.25rem]' : 'max-h-[45vh] md:max-h-[55vh]',
+        compactComposer ? 'max-h-[3.25rem]' : 'max-h-[45vh] md:max-h-[55vh]',
         'px-5',
       ),
-    [isCollapsed],
+    [compactComposer],
   );
 
   const bottomClearance = composerClearance({
@@ -883,7 +884,7 @@ const ChatForm = memo(function ChatForm({
                       answerMode.composerLocked && '[&_textarea]:select-none',
                     )}
                     style={
-                      isCollapsed
+                      compactComposer
                         ? {
                             WebkitMaskImage:
                               'linear-gradient(to bottom, black 60%, transparent 90%)',
@@ -953,7 +954,7 @@ const ChatForm = memo(function ChatForm({
                     <div className="absolute right-2 bottom-1 z-10">
                       <CollapseChat
                         isCollapsed={isCollapsed}
-                        isScrollable={isMoreThanThreeRows}
+                        isScrollable={isMoreThanThreeRows && !answerMode.composerLocked}
                         setIsCollapsed={setIsCollapsed}
                       />
                     </div>

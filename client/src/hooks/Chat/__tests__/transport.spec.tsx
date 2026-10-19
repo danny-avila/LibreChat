@@ -1,15 +1,22 @@
 import React from 'react';
 import { MemoryRouter } from 'react-router-dom';
 import { useAtomValue, getDefaultStore } from 'jotai';
+import { RecoilRoot, useSetRecoilState } from 'recoil';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { RecoilRoot, useRecoilValue, useSetRecoilState } from 'recoil';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Tools, QueryKeys, ContentTypes, EModelEndpoint, request } from 'librechat-data-provider';
 import {
   activeGenerationCreatedAtByConvoId,
   activeGenerationProtocolVersionByConvoId,
+  queuedMessagesByConvoId,
   pendingSteersByConvoId,
   resetSteerFamilies,
+  submissionByIndex,
+  clearSubmissions,
+  resetQueueFamilies,
+  useSteerReclaim,
+  useSteerEscalate,
+  useSteering,
 } from '@librechat/chat/react';
 import type {
   TEnqueueAgentQueuedTurnRequest,
@@ -18,22 +25,19 @@ import type {
   ChatTransportOptions,
   ChatTransportRequest,
 } from 'librechat-data-provider';
+import type { PendingSteer } from '@librechat/chat';
 import type { MutableSnapshot } from 'recoil';
 import type { StreamStatusResponse } from '~/data-provider';
 import type { ChatContract } from '~/hooks/Chat/contract';
 import type { Transport } from '~/hooks/Chat/contract';
-import type { PendingSteer } from '~/hooks/Chat/queue';
-import { queuedMessagesByConvoId, resetQueueFamilies } from '~/hooks/Chat/queue';
 import { ChatTransportContext } from '~/Providers/ChatTransportContext';
 import { ChatContext, useChatContext } from '~/Providers/ChatContext';
 import { startupConfigKey } from '~/data-provider/Endpoints/queries';
-import { useSteerReclaim } from '~/hooks/Chat/useSteerCancel';
-import useSteerEscalate from '~/hooks/Chat/useSteerEscalate';
 import useResumableSSE from '~/hooks/SSE/useResumableSSE';
 import useResumeOnLoad from '~/hooks/SSE/useResumeOnLoad';
 import useChatHelpers from '~/hooks/Chat/useChatHelpers';
 import { resumeRequestsAtom } from '~/hooks/Chat/resume';
-import useSteering from '~/hooks/Chat/useSteering';
+import { SteerHostTestProvider } from 'test/steerHost';
 import { useChat } from '~/hooks/Chat/facade';
 import useSSE from '~/hooks/SSE/useSSE';
 import store from '~/store';
@@ -106,9 +110,11 @@ function createWrapper(
               seed?.(state);
             }}
           >
-            <ChatTransportContext.Provider value={transport}>
-              {children}
-            </ChatTransportContext.Provider>
+            <SteerHostTestProvider>
+              <ChatTransportContext.Provider value={transport}>
+                {children}
+              </ChatTransportContext.Provider>
+            </SteerHostTestProvider>
           </RecoilRoot>
         </QueryClientProvider>
       </MemoryRouter>
@@ -201,6 +207,10 @@ function ChatHost({ children }: { children: React.ReactNode }) {
 beforeEach(() => {
   resetQueueFamilies();
   resetSteerFamilies();
+});
+
+afterEach(() => {
+  clearSubmissions(getDefaultStore());
 });
 
 describe('chat transport boundary', () => {
@@ -520,7 +530,7 @@ describe('chat transport boundary', () => {
     const useResumablePane = () => {
       const helpers = useChatContext();
       useResumeOnLoad('convo-1', helpers.getMessages, 0, true);
-      const submission = useRecoilValue(store.submissionByIndex(0));
+      const submission = useAtomValue(submissionByIndex(0));
       useResumableSSE(submission, helpers, false, 0);
       const showConversation = useSetRecoilState(store.conversationByIndex(0));
       return { ...useChat(), showConversation };
@@ -780,7 +790,7 @@ describe('chat transport boundary', () => {
      */
     const usePane = () => {
       const helpers = useChatContext();
-      const submission = useRecoilValue(store.submissionByIndex(0));
+      const submission = useAtomValue(submissionByIndex(0));
       useResumableSSE(submission, helpers, false, 0);
       const steering = useSteering({
         consumeDraft,
