@@ -21,6 +21,7 @@ import {
 import { ChatContext, AddedChatContext, ChatFormProvider, useFileMapContext } from '~/Providers';
 import Footer, { useLandingFooter, useConfiguredFooter } from './Footer';
 import { QueuedTurnPortalProvider } from './Steering/QueuedTurnPortal';
+import { ConversationFilesProvider } from '~/Providers/MediaContext';
 import { useChatSettings } from '~/Providers/ChatSettingsContext';
 import ApprovalProvider from './Messages/Content/ApprovalContext';
 import ConversationStarters from './Input/ConversationStarters';
@@ -233,7 +234,9 @@ function ChatView({
                             conversationId={conversationId}
                             isSubmitting={chatHelpers.isSubmitting}
                           >
-                            {content}
+                            <ConversationFilesProvider messages={messages}>
+                              {content}
+                            </ConversationFilesProvider>
                           </OwnerTextProvider>
                           {/* Named + opaque so a view transition (the ask_user_question
                         popover ⇄ chat-card morph) paints the whole composer band
