@@ -331,13 +331,19 @@ const isGone = (error: ChatTransportError): boolean =>
 const isStreamAbort = (result: ChatAbortResult): result is ChatStreamAbortResult =>
   result != null && 'success' in result;
 
+/** A pause past its expiry, whose resume the server refuses. */
+const isExpired = (action: Agents.PendingAction): boolean =>
+  action.expiresAt != null && action.expiresAt <= Date.now();
+
 /**
  * What a stop hands back to the host. Steers come back only from a stop that ended the run: one
  * that settled first leaves them to its own terminal frame, and an unsaved one has none to trust.
  */
 const getStopResult = (result: ChatAbortResult): ChatStopResult => {
   if (!isStreamAbort(result)) {
-    return { status: 'stopped' };
+    /** An Assistants run's answer carries the conversation, which a first turn's server created. */
+    const conversationId = result?.conversation.conversationId ?? undefined;
+    return { status: 'stopped', ...(conversationId != null && { conversationId }) };
   }
   const ended = !result.settled && !result.persistenceFailed;
   return {
@@ -985,7 +991,7 @@ export class Chat {
       /** A status read before the stop landed reports a pause of a generation it ended. */
       return;
     }
-    if (action.expiresAt != null && action.expiresAt <= Date.now()) {
+    if (isExpired(action)) {
       /**
        * An expired pause is stale: the server will refuse its resume. It also supersedes a pause
        * restored for an older generation, which no longer runs.
@@ -1305,6 +1311,11 @@ export class Chat {
     let outcome: Outcome | undefined;
     if (streamingEvents.has(event.type) && this.status !== 'streaming') {
       this.setStatus('streaming');
+    } else if (event.type === 'pending_action' && isExpired(event.data)) {
+      /** An expired pause a reconnect replays is stale, as one a status read restores is. */
+      if (this.action?.actionId === event.data.actionId) {
+        this.clearAction();
+      }
     } else if (event.type === 'pending_action' && !this.resumed.has(event.data.actionId)) {
       /** A pause this chat already resumed is stale when a reattached stream replays it. */
       if (this.action?.actionId !== event.data.actionId) {

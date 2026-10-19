@@ -278,6 +278,10 @@ export interface ChatTransport {
    * settled first. A request with `abortKey` resolves to a {@link ChatRunAbortResult}.
    */
   abort(request: ChatAbortRequest): Promise<ChatAbortResult>;
+  /**
+   * Releases what the transport holds. Its creator calls it: one transport can serve several chats,
+   * so disposing a chat closes only that chat's stream.
+   */
   close?(): void;
   /** Reads the conversation's generation state; what a reload checks before reattaching. */
   getStatus?(conversationId: string): Promise<ChatStreamStatus>;

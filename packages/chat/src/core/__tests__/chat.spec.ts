@@ -1002,6 +1002,38 @@ describe('Chat', () => {
     expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isAbort: true }));
   });
 
+  it('returns the conversation an Assistants stop created for a first turn under `new`', async () => {
+    const stream = createStream();
+    const { chat, transport } = setup(
+      {
+        id: 'new',
+        prepareRequest: jest.fn(() => ({
+          payload: { endpoint: 'assistants', conversationId: 'new', text: 'Hi' } as TPayload,
+          messages: [userMessage, placeholder],
+          responseMessageId: 'response-1',
+        })),
+      },
+      { sendMessages: jest.fn(async () => ({ status: 'stream' as const, stream })) },
+    );
+    transport.abort.mockResolvedValue({
+      final: true,
+      conversation: { conversationId: 'convo-9' },
+      runMessages: [userMessage, { ...placeholder, text: 'Partial' }],
+    });
+
+    const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    stream.push({
+      type: 'sync',
+      data: { conversationId: 'convo-9', responseMessage: placeholder },
+    } as ChatEvent);
+    await flush();
+    const result = await chat.stop();
+    await sent;
+
+    expect(result).toEqual({ status: 'stopped', conversationId: 'convo-9' });
+  });
+
   it('replaces the list with the run messages a stop returns, dropping rows the run deleted', async () => {
     const stream = createStream();
     const unfinished: TMessage = { ...placeholder, messageId: 'tool-1', text: '' };
@@ -2119,6 +2151,24 @@ describe('Chat', () => {
       expect(chat.pendingAction).toBeUndefined();
       chat.restorePendingAction({ ...approvalAction, expiresAt: Date.now() - 1 }, 500);
       expect(chat.pendingAction).toBeUndefined();
+    });
+
+    it('drops an expired pause a stream replays, and the one it held under that id', async () => {
+      const { chat, stream, sent } = await pause(askAction);
+      expect(chat.pendingAction).toBe(askAction);
+
+      stream.push({ type: 'pending_action', data: { ...askAction, expiresAt: Date.now() - 1 } });
+      await flush();
+      expect(chat.pendingAction).toBeUndefined();
+
+      stream.push({ type: 'pending_action', data: { ...approvalAction, expiresAt: 1 } });
+      await flush();
+      expect(chat.pendingAction).toBeUndefined();
+      stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+      await sent;
+      await expect(chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] })).resolves.toBe(
+        undefined,
+      );
     });
 
     it('stops a restored pause of a newer generation, not an older dropped one', async () => {
