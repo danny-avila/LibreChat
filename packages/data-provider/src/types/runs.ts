@@ -333,6 +333,8 @@ export type TTokenUsageEvent = {
   total_tokens?: number;
   input_token_details?: {
     cache_creation?: number;
+    /** Subset of `cache_creation` written to Anthropic's 1-hour cache */
+    cache_creation_1h?: number;
     cache_read?: number;
   };
   model?: string;

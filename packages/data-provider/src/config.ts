@@ -45,6 +45,7 @@ export const AGENT_BACKGROUND_COMPLETION_RESULT_MAX_CHARS_HARD_MAX = 64 * 1024;
 /** Coalesces a conversation's ready background results into one wake-up turn. */
 export const AGENT_BACKGROUND_COMPLETION_RECEIPT_BATCHING_DEFAULT: boolean = true;
 export const AGENT_BACKGROUND_SHUTDOWN_INTERRUPT_GRACE_MS_DEFAULT = 5_000;
+export const DEFAULT_SKILL_DELETION_BATCH_SIZE = 100;
 import {
   DEFAULT_MCP_APP_CSP_LIMITS,
   resolveMCPAppCspLimits,
@@ -2204,6 +2205,8 @@ export const endpointSchema = baseEndpointSchema.merge(
           context: z.number(),
           cacheRead: z.number().optional(),
           cacheWrite: z.number().optional(),
+          /** 1-hour prompt cache writes; defaults to twice `prompt` */
+          cacheWrite1h: z.number().optional(),
         }),
       )
       .optional(),
@@ -3918,6 +3921,12 @@ export const langfuseTraceConfigSchema = z.object({
   conversationMetadataFields: z
     .array(z.enum(LANGFUSE_TRACE_CONVERSATION_METADATA_FIELDS))
     .optional(),
+  /**
+   * Whether temporary chats, including chats forced temporary by
+   * `interface.retentionMode: "ephemeral"`, are traced and receive feedback
+   * scores. Defaults to false: a temporary chat reaches no Langfuse destination.
+   */
+  temporaryChats: z.boolean().optional(),
 });
 
 export type LangfuseTraceConfig = z.infer<typeof langfuseTraceConfigSchema>;
@@ -4175,6 +4184,24 @@ export const configSchema = z.object({
   memory: memorySchema.optional(),
   summarization: summarizationConfigSchema.optional(),
   skillSync: skillSyncConfigSchema,
+  skillDeletion: z
+    .object({
+      /** Enable only after every server that can write Skill files uses upload intents. */
+      finalizationEnabled: z.boolean().default(false),
+      sweepIntervalMs: z.number().int().min(1_000).default(60_000),
+      claimLeaseMs: z.number().int().min(1_000).default(120_000),
+      /** Bounds both sweep candidates and per-Skill manifest batches. */
+      batchSize: z.number().int().min(1).max(1_000).default(DEFAULT_SKILL_DELETION_BATCH_SIZE),
+      recheckIntervalMs: z.number().int().min(60_000).default(3_600_000),
+    })
+    .strict()
+    .default(() => ({
+      finalizationEnabled: false,
+      sweepIntervalMs: 60_000,
+      claimLeaseMs: 120_000,
+      batchSize: DEFAULT_SKILL_DELETION_BATCH_SIZE,
+      recheckIntervalMs: 3_600_000,
+    })),
   secureImageLinks: z.boolean().optional(),
   imageOutputType: z.nativeEnum(EImageOutputType).default(EImageOutputType.PNG),
   conversationList: conversationListConfigSchema.default(() =>
@@ -4578,6 +4605,7 @@ const sharedAnthropicModels = [
   'claude-opus-4-6',
   'claude-sonnet-4-5',
   'claude-sonnet-4-5-20250929',
+  'claude-haiku-5-5',
   'claude-haiku-4-5',
   'claude-haiku-4-5-20251001',
   'claude-opus-4-1',
@@ -4615,6 +4643,7 @@ export const bedrockModels = [
   'global.anthropic.claude-sonnet-4-6',
   'global.anthropic.claude-opus-4-6-v1',
   'global.anthropic.claude-sonnet-4-5-20250929-v1:0',
+  'global.anthropic.claude-haiku-5-5',
   'global.anthropic.claude-haiku-4-5-20251001-v1:0',
   'us.anthropic.claude-opus-4-1-20250805-v1:0',
   // 'cohere.command-text-v14', // no conversation history
@@ -4651,6 +4680,8 @@ export const defaultModels = {
     ...sharedOpenAIModels,
   ],
   [EModelEndpoint.google]: [
+    // Gemini 4 Models
+    'gemini-4-argon',
     // Gemini 3.8 Models
     'gemini-3.8-flash',
     // Gemini 3.7 Models
