@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import copy from 'copy-to-clipboard';
 import { Download } from 'lucide-react';
-import { useRecoilValue } from 'recoil';
 import {
   Button,
   OGDialog,
@@ -26,11 +25,11 @@ import {
   shouldUseSharedFileDownload,
 } from './preview';
 import { getDownloadFilename, logger, sortPagesByRelevance, triggerDownload } from '~/utils';
+import { useMessagePartsHost } from '~/Providers/MessagePartsHostContext';
 import CopyButton from '~/components/Messages/Content/CopyButton';
-import { useFileMapContext, useShareContext } from '~/Providers';
+import { useShareContext } from '~/Providers';
 import { isCodeOutputAttachment } from './Parts/LogLink';
 import { useLocalize } from '~/hooks';
-import store from '~/store';
 
 interface FilePreviewDialogProps {
   open: boolean;
@@ -113,9 +112,10 @@ export default function FilePreviewDialog({
   triggerRef,
 }: FilePreviewDialogProps) {
   const localize = useLocalize();
-  const user = useRecoilValue(store.user);
+  const { useUser, useFileMap } = useMessagePartsHost();
+  const user = useUser();
   const { shareId } = useShareContext();
-  const fileMap = useFileMapContext();
+  const fileMap = useFileMap();
   const showExtractedText = shouldUseExtractedTextPreview(
     deliveryPath ?? (!shareId && fileId ? fileMap?.[fileId]?.llmDeliveryPath : undefined),
   );

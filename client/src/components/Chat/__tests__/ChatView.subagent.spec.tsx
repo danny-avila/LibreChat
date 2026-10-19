@@ -91,7 +91,6 @@ jest.mock('~/utils', () => ({
 jest.mock('~/store', () => ({
   __esModule: true,
   default: {
-    submissionByIndex: jest.fn(),
     centerFormOnLanding: {},
   },
 }));
