@@ -1,4 +1,4 @@
-import { accountUser, loadSession } from '../../_lib/account.js';
+import { AccountUserInfoUnavailable, accountUser, loadSession } from '../../_lib/account.js';
 
 const baseHeaders = {
   'Cache-Control': 'no-store',
@@ -14,12 +14,17 @@ function json(body, status = 200, extraHeaders = {}) {
 }
 
 function fail(reason, code = 'unauthenticated') {
+  // Never redirect a valid user to login merely because token refresh hit
+  // a transient Account 503. The browser must not receive any user data here.
+  const transient = reason === 'refresh_temporarily_unavailable' ||
+    reason === 'userinfo_temporarily_unavailable';
   console.warn('meo_session_failed', { reason });
   return json(
-    { error: { code } },
-    401,
+    { error: { code: transient ? 'session_temporarily_unavailable' : code } },
+    transient ? 503 : 401,
     {
       'X-Meo-Session-Failure': reason,
+      ...(transient ? { 'Retry-After': '2' } : {}),
     },
   );
 }
@@ -31,7 +36,14 @@ export async function onRequestGet({ request, env }) {
   let account;
   try {
     account = await accountUser(env, session.accessToken);
-  } catch {
+  } catch (error) {
+    if (error instanceof AccountUserInfoUnavailable) {
+      const response = fail('userinfo_temporarily_unavailable');
+      // If the token was successfully refreshed first, persist its rotated
+      // grant even though UserInfo is down, avoiding invalid_grant next time.
+      if (cookie) response.headers.append('Set-Cookie', cookie);
+      return response;
+    }
     return fail('userinfo_request_failed', 'invalid_session');
   }
   if (!account) return fail('userinfo_invalid', 'invalid_session');

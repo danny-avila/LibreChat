@@ -28,6 +28,15 @@ export function authHeaders(env, token, extra = {}) {
   return headers;
 }
 
+// Distinguish an unavailable UserInfo upstream from a rejected identity.
+// A 5xx must never cause an OAuth login loop or delete browser credentials.
+export class AccountUserInfoUnavailable extends Error {
+  constructor() {
+    super('Meo Account UserInfo temporarily unavailable');
+    this.name = 'AccountUserInfoUnavailable';
+  }
+}
+
 export class OAuthTokenExchangeError extends Error {
   constructor(reason) {
     super('Meo Account token exchange failed');
@@ -87,13 +96,22 @@ export async function accountUser(env, accessToken) {
   // UserInfo is the identity endpoint for the OAuth/OIDC flow. Keep API resource
   // tokens for meo-api calls, but use the provider's UserInfo response to bind
   // the browser session to the Meo Account subject.
-  const response = await fetch(`${accountUrl(env)}/v1/auth/oauth2/userinfo`, {
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      Accept: 'application/json',
-      'Cache-Control': 'no-store',
-    },
-  });
+  let response;
+  try {
+    response = await fetch(`${accountUrl(env)}/v1/auth/oauth2/userinfo`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/json',
+        'Cache-Control': 'no-store',
+      },
+    });
+  } catch {
+    throw new AccountUserInfoUnavailable();
+  }
+  if (response.status === 429 || response.status >= 500) {
+    await response.body?.cancel().catch(() => undefined);
+    throw new AccountUserInfoUnavailable();
+  }
   if (!response.ok) return null;
 
   const payload = await response.json().catch(() => null);
@@ -120,6 +138,15 @@ export async function exchangeCode(env, code, verifier, redirectUri) {
   });
 }
 
+// Do not turn a temporary Account outage into an invalid browser session.
+// Invalid grants remain terminal; server/network failures can be retried later
+// with the original, still-secret refresh token.
+function isTransientTokenError(error) {
+  if (!(error instanceof OAuthTokenExchangeError)) return false;
+  return error.reason === 'token_network_error' ||
+    /^token_(?:http_)?(?:429|5[0-9][0-9])(?:_|$)/.test(error.reason);
+}
+
 export async function refreshTokens(env, refreshToken) {
   try {
     return await tokenRequest(env, {
@@ -128,7 +155,8 @@ export async function refreshTokens(env, refreshToken) {
       client_id: env.MEO_OAUTH_CLIENT_ID,
       resource: 'https://api.meoarch.org',
     });
-  } catch {
+  } catch (error) {
+    if (isTransientTokenError(error)) throw error;
     return null;
   }
 }
@@ -165,7 +193,20 @@ export async function loadSession(request, env) {
     };
   }
 
-  const refreshed = await refreshTokens(env, existing.refreshToken);
+  let refreshed;
+  try {
+    refreshed = await refreshTokens(env, existing.refreshToken);
+  } catch (error) {
+    // 503 is not evidence of a revoked session. Return a temporary failure,
+    // preserve the encrypted cookie, and deny access until refresh succeeds.
+    return {
+      session: null,
+      cookie: null,
+      reason: isTransientTokenError(error)
+        ? 'refresh_temporarily_unavailable'
+        : 'refresh_failed',
+    };
+  }
   if (!refreshed?.access_token || !refreshed?.refresh_token) {
     return { session: null, cookie: null, reason: 'refresh_failed' };
   }

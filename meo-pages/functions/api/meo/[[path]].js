@@ -109,8 +109,15 @@ export async function onRequest({ request, env }) {
   const route = targetFor(request, env, relativePath);
   if (!route) return json({ error: { code: 'not_found' } }, 404);
 
-  const { session, cookie } = await loadSession(request, env);
+  const { session, cookie, reason } = await loadSession(request, env);
   if (!session) {
+    if (reason === 'refresh_temporarily_unavailable') {
+      // Fail closed but keep the existing encrypted session cookie so a later
+      // request can retry refresh instead of forcing an unnecessary login.
+      const response = json({ error: { code: 'session_temporarily_unavailable' } }, 503);
+      response.headers.set('Retry-After', '2');
+      return response;
+    }
     const response = json({ error: { code: 'unauthenticated' } }, 401);
     for (const value of clearCookies()) response.headers.append('Set-Cookie', value);
     return response;
