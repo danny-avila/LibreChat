@@ -64,6 +64,20 @@ async function firstVisible(candidates: Locator): Promise<Locator> {
   throw new Error('no visible candidate');
 }
 
+/** Resolves once two reads of the element's box agree, so a transition has finished. */
+async function still(locator: Locator) {
+  let last = '';
+  await expect
+    .poll(async () => {
+      const rect = await box(locator);
+      const current = [rect.x, rect.width].map(Math.round).join(',');
+      const same = current === last;
+      last = current;
+      return same;
+    })
+    .toBe(true);
+}
+
 /**
  * A slide hands its inline transform back to the classes a beat after it lands, and the gesture
  * ignores touches until then, so a swipe waits for that hand-off like a finger would.
@@ -173,6 +187,8 @@ test.describe('desktop', () => {
     await expect.poll(valueOf).toBeLessThan(grown);
 
     /** Pointer: dragging left by 60px widens the sidebar by the same 60px. */
+    await still(sidebar);
+    await still(handle);
     const before = await box(sidebar);
     const grab = await box(handle);
     const x = grab.x + grab.width / 2;
@@ -256,15 +272,7 @@ test.describe('desktop', () => {
     const handle = page.locator('[role="separator"]:not([aria-label="Resize sidebar"])').first();
     await expect(handle).toBeVisible();
     /** The panel opens with a transition; measure once the handle has stopped moving. */
-    let last = -1;
-    await expect
-      .poll(async () => {
-        const current = Math.round((await box(handle)).x);
-        const still = current === last;
-        last = current;
-        return still;
-      })
-      .toBe(true);
+    await still(handle);
     const panelBox = await box(panel);
     const handleBox = await box(handle);
     const messagesBefore = await box(messagesView(page));
