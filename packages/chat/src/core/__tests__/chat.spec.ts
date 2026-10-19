@@ -168,6 +168,44 @@ describe('Chat', () => {
     );
   });
 
+  it('releases a turn whose subscriber threw on the submitted state', async () => {
+    const { chat, stream, onFinish } = setup();
+    let thrown = false;
+    chat.subscribe(() => {
+      if (!thrown && chat.status === 'submitted') {
+        thrown = true;
+        throw new Error('listener failed');
+      }
+    });
+
+    await chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    expect(onFinish).toHaveBeenCalledWith(expect.objectContaining({ isError: true }));
+    await expect(chat.stop()).resolves.toEqual({ status: 'idle' });
+
+    const retry = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+    await flush();
+    stream.push(finalEvent());
+    await retry;
+    expect(chat.status).toBe('ready');
+  });
+
+  it('releases a reattachment whose subscriber threw on the reconnecting state', async () => {
+    const { chat, transport } = setup();
+    let thrown = false;
+    chat.subscribe(() => {
+      if (!thrown && chat.connection === 'reconnecting') {
+        thrown = true;
+        throw new Error('listener failed');
+      }
+    });
+
+    await chat.resumeStream({ streamId: 'convo-1' });
+    await chat.resumeStream({ streamId: 'convo-1' });
+
+    expect(transport.reconnectToStream).toHaveBeenCalledTimes(1);
+    expect(chat.connection).toBe('idle');
+  });
+
   it('notifies subscribers of each change', async () => {
     const { chat, stream } = setup();
     const listener = jest.fn();

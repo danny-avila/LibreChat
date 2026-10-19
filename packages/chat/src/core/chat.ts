@@ -600,15 +600,15 @@ export class Chat {
      */
     this.generationCreatedAt =
       options.generationCreatedAt ?? (this.action ? this.generationCreatedAt : undefined);
-    if (superseded) {
-      /** A restored pause belongs to the generation it was restored with, not this one. */
-      this.clearAction();
-    }
     /** A restored pause names a running generation, so finding nothing means it ended elsewhere. */
-    const restored = this.action !== undefined;
-    this.setConnection('reconnecting');
+    const restored = !superseded && this.action !== undefined;
     const { conversationId = generation.conversationId ?? this.id, ...request } = options;
     try {
+      if (superseded) {
+        /** A restored pause belongs to the generation it was restored with, not this one. */
+        this.clearAction();
+      }
+      this.setConnection('reconnecting');
       const stream = await openUntilAborted(
         this.init.transport.reconnectToStream({
           ...request,
@@ -1129,9 +1129,10 @@ export class Chat {
     this.unaddressed = false;
     this.generationCreatedAt = undefined;
     this.resumed.clear();
-    this.init.state.error = undefined;
-    this.setStatus('submitted');
     try {
+      /** Inside the request's cleanup, so a host listener that throws here cannot strand it. */
+      this.init.state.error = undefined;
+      this.setStatus('submitted');
       if (active.controller.signal.aborted) {
         throw active.controller.signal.reason;
       }
