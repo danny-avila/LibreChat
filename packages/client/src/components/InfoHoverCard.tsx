@@ -3,7 +3,8 @@ import { JSX } from 'react/jsx-runtime';
 import { CircleHelpIcon, InfoIcon } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { HoverCard, HoverCardTrigger, HoverCardPortal, HoverCardContent } from './HoverCard';
-import { resolveSide } from '~/utils';
+/* Relative: client/tsconfig.json also compiles this file, where `~` is the app's own src. */
+import { resolveSide } from '../utils/direction';
 import { ESide } from '~/common';
 
 type InfoHoverCardProps = {
