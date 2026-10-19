@@ -506,6 +506,7 @@ registration:
 # connect-time guard only covers direct, non-proxied connections.
 # speech:
 #   tts:
+#     maxInputChars: 20000 # longest text one request may synthesize (each 1,000 chars is a provider call)
 #     openai:
 #       url: ''
 #       apiKey: '${TTS_API_KEY}'
@@ -537,6 +538,10 @@ registration:
 #   allowedAddresses:
 #     - 'localhost:8080'
 #     - '127.0.0.1:8080'
+
+# Worker threads that hash passwords and auth tokens off the event loop.
+# passwordHashing:
+#   maxWorkers: 2 # default: one less than the CPU count, at most 4
 
 # rateLimits:
 #   # Per-user MCP App browser-route limits. Each limit uses a fixed one-minute window.

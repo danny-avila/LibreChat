@@ -13,6 +13,7 @@ import {
   getLegacyCredentialNames,
 } from '~/credentials';
 import { isEnabled, checkEmailConfig } from '~/utils';
+import { configureHashPool } from '~/auth/hashing';
 import { handleRateLimits } from './limits';
 
 interface CredentialMetadata {
@@ -364,6 +365,7 @@ export async function performStartupChecks(appConfig?: AppConfig): Promise<void>
   if (appConfig?.config?.rateLimits) {
     handleRateLimits(appConfig.config.rateLimits);
   }
+  configureHashPool(appConfig?.config?.passwordHashing);
   await checkHealth();
 }
 
