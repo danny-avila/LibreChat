@@ -378,7 +378,7 @@ export default function AskUserQuestions({
           {showRemaining && (
             <button
               type="button"
-              className="text-text-secondary hover:text-text-primary pt-2 text-left text-xs select-none hover:underline"
+              className="text-text-secondary hover:text-text-primary pt-2 text-start text-xs select-none hover:underline"
               onClick={() => goToStep(firstUnanswered)}
             >
               {localize(

@@ -189,9 +189,40 @@ type TParagraphProps = {
 };
 
 export const p: React.ElementType = memo(function MarkdownParagraph({ children }: TParagraphProps) {
-  return <p className="mb-2 whitespace-pre-wrap">{children}</p>;
+  return (
+    <p dir="auto" className="mb-2 whitespace-pre-wrap">
+      {children}
+    </p>
+  );
 });
 p.displayName = 'MarkdownParagraph';
+
+type TBlockProps = React.HTMLAttributes<HTMLElement> & { node?: unknown };
+
+/** Resolves direction per block so a mixed-language reply is not laid out by its first character. */
+const withAutoDir = (
+  Tag: 'li' | 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'blockquote' | 'td' | 'th',
+) => {
+  const Block: React.ElementType = memo(function MarkdownBlock({
+    node: _node,
+    ...props
+  }: TBlockProps) {
+    return <Tag dir="auto" {...props} />;
+  });
+  Block.displayName = `Markdown${Tag.toUpperCase()}`;
+  return Block;
+};
+
+export const li = withAutoDir('li');
+export const h1 = withAutoDir('h1');
+export const h2 = withAutoDir('h2');
+export const h3 = withAutoDir('h3');
+export const h4 = withAutoDir('h4');
+export const h5 = withAutoDir('h5');
+export const h6 = withAutoDir('h6');
+export const blockquote = withAutoDir('blockquote');
+export const td = withAutoDir('td');
+export const th = withAutoDir('th');
 
 type TTableProps = {
   children: React.ReactNode;

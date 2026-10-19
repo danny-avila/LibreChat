@@ -168,7 +168,7 @@ export const PendingToolApprovalPanel = memo(function PendingToolApprovalPanel({
                 />
               ) : (
                 <p className="text-text-warning mt-2 flex items-center text-xs" role="alert">
-                  <TriangleAlert className="mr-1.5 size-4" aria-hidden="true" />
+                  <TriangleAlert className="me-1.5 size-4" aria-hidden="true" />
                   {localize('com_ui_approval_unavailable')}
                 </p>
               )}
@@ -185,7 +185,7 @@ export const PendingToolApprovalPanel = memo(function PendingToolApprovalPanel({
           <div className="flex items-center gap-2">
             {(status === 'expired' || status === 'error') && (
               <span className="text-text-warning flex items-center text-xs" role="alert">
-                <TriangleAlert className="mr-1.5 size-4" aria-hidden="true" />
+                <TriangleAlert className="me-1.5 size-4" aria-hidden="true" />
                 {localize(
                   status === 'expired' ? 'com_ui_approval_expired' : 'com_ui_approval_error',
                 )}

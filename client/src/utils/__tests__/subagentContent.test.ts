@@ -1,6 +1,7 @@
 import { ContentTypes } from 'librechat-data-provider';
 import type { SubagentUpdateEvent } from 'librechat-data-provider';
 import { aggregateSubagentContent, buildSubagentTickerLines } from 'test/subagents';
+import { tailOverflowDirection, textDirection } from '../subagentContent';
 
 const makeEvent = (overrides: Partial<SubagentUpdateEvent>): SubagentUpdateEvent => ({
   runId: 'parent-run',
@@ -725,5 +726,22 @@ describe('buildSubagentTickerLines', () => {
       makeEvent({ phase: 'error', data: { message: 'recursion limit' } }),
     ]);
     expect(lines).toEqual([{ kind: 'error', message: 'recursion limit' }]);
+  });
+});
+
+describe('tail ellipsis direction', () => {
+  it('runs the outer box right to left for Latin text', () => {
+    expect(tailOverflowDirection('Writing the report, done.')).toBe('rtl');
+    expect(textDirection('123 hello')).toBe('ltr');
+  });
+
+  it('runs the outer box left to right for Arabic and Hebrew text', () => {
+    expect(tailOverflowDirection('كتابة التقرير.')).toBe('ltr');
+    expect(tailOverflowDirection('12 שלום עולם')).toBe('ltr');
+  });
+
+  it('follows the first strong character of mixed text', () => {
+    expect(textDirection('(foo) مرحبا')).toBe('ltr');
+    expect(textDirection('... مرحبا foo')).toBe('rtl');
   });
 });

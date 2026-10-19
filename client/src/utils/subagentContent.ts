@@ -710,11 +710,29 @@ export function initSubagentTickerState(): SubagentTickerState {
 }
 
 /** Generous tail window so wide ticker containers aren't half-empty.
- *  The component applies CSS tail-ellipsis (`dir="rtl"` +
- *  `text-overflow: ellipsis`) so narrow viewports clip from the oldest
- *  side; we deliberately DON'T prepend a data-level `…` on top of that
- *  CSS ellipsis — double-eliding would render a stray dot character
- *  right next to the "Writing:" / "Reasoning:" label. */
+ *  The component applies CSS tail-ellipsis: the outer box runs opposite to the
+ *  text's own direction (see `tailOverflowDirection`) so narrow viewports clip
+ *  from the oldest side; we deliberately DON'T prepend a data-level `…` on top
+ *  of that CSS ellipsis, which would render a stray dot next to the
+ *  "Writing:" / "Reasoning:" label. */
+const RTL_CHAR = /[\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF]/;
+const STRONG_CHAR =
+  /[A-Za-z\u00C0-\u024F\u0370-\u03FF\u0400-\u04FF\u0590-\u08FF\uFB1D-\uFDFF\uFE70-\uFEFF\u3040-\u9FFF\uAC00-\uD7AF]/;
+
+/** Direction of the first strongly directional character, as the browser's `dir="auto"` resolves it. */
+export const textDirection = (text: string): 'ltr' | 'rtl' => {
+  const match = STRONG_CHAR.exec(text);
+  return match != null && RTL_CHAR.test(match[0]) ? 'rtl' : 'ltr';
+};
+
+/**
+ * Direction for the outer box of a tail-ellipsis line. The newest text sits at the
+ * end of the content, so the box runs opposite to the content and the overflow
+ * (and the ellipsis) lands on the oldest side.
+ */
+export const tailOverflowDirection = (text: string): 'ltr' | 'rtl' =>
+  textDirection(text) === 'rtl' ? 'ltr' : 'rtl';
+
 const PREVIEW_MAX_CHARS = 300;
 const PREVIEW_BUFFER_MAX_CHARS = PREVIEW_MAX_CHARS * 4;
 const truncatePreview = (input: string): string => {

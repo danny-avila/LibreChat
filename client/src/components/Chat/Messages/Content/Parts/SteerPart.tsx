@@ -122,7 +122,7 @@ const SteerPart = memo(function SteerPart({
     >
       <div className="user-turn relative flex w-fit max-w-[90%] flex-col items-end sm:max-w-[85%]">
         <h2 className="sr-only">{label}</h2>
-        <div className="rounded-theme-surface rounded-br-theme-control bg-surface-user-message px-theme-normal flex max-w-full flex-col items-start gap-2 py-2.5">
+        <div className="rounded-theme-surface rounded-ee-theme-control bg-surface-user-message px-theme-normal flex max-w-full flex-col items-start gap-2 py-2.5">
           <MessageQuotes quotes={quotes} />
           {(imageFiles.length > 0 || otherFiles.length > 0) && (
             <div className="flex w-full flex-wrap gap-2">
@@ -134,7 +134,7 @@ const SteerPart = memo(function SteerPart({
                 />
               ))}
               {imageFiles.length > 0 && (
-                <div className="ml-auto flex max-w-full flex-wrap justify-end gap-2">
+                <div className="ms-auto flex max-w-full flex-wrap justify-end gap-2">
                   {imageFiles.map((file) => (
                     <Image
                       key={file.file_id}
@@ -165,7 +165,7 @@ const SteerPart = memo(function SteerPart({
          *  park them wherever the hover-revealed time happens to end, and that
          *  width changes as the relative string ticks. */}
         <div className="text-text-secondary mt-1 flex min-h-8 items-center justify-end gap-2">
-          <MessageTimestamp value={timestamp} className="ml-0" />
+          <MessageTimestamp value={timestamp} className="ms-0" />
           <SteerReceipt state={receiptState} live={isSubmitting} animateIn={animateIn} />
         </div>
       </div>

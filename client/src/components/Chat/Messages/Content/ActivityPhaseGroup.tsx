@@ -185,7 +185,7 @@ const PhaseLabel = memo(function PhaseLabel({
   return (
     <span
       className={cn(
-        'tool-status-text relative block min-w-0 overflow-hidden text-left',
+        'tool-status-text relative block min-w-0 overflow-hidden text-start',
         grow && 'flex-1',
       )}
       title={text}
@@ -436,7 +436,7 @@ function LivePhaseHeader({
           {failedNote !== '' && <span className="sr-only">· {failedNote}</span>}
           {cancelledNote !== '' && (
             <>
-              <span className="text-text-secondary mr-1">·</span>
+              <span className="text-text-secondary me-1">·</span>
               <span>{cancelledNote}</span>
             </>
           )}
@@ -503,7 +503,7 @@ function FailedPeek({
       type="button"
       className={cn(
         TOOL_ROW_CLASSES,
-        'text-text-secondary hover:text-text-primary focus-visible:ring-focus-subtle w-full pl-6 text-left focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset',
+        'text-text-secondary hover:text-text-primary focus-visible:ring-focus-subtle w-full ps-6 text-start focus-visible:ring-2 focus-visible:outline-none focus-visible:ring-inset',
       )}
       onClick={onReveal}
       data-testid="activity-phase-failed-peek"
@@ -530,7 +530,7 @@ function FailedPeek({
           {localize('com_ui_plus_n_more', { 0: String(count - 1) })}
         </span>
       )}
-      <span className="ml-auto shrink-0 text-xs font-medium underline underline-offset-2">
+      <span className="ms-auto shrink-0 text-xs font-medium underline underline-offset-2">
         {localize('com_ui_show_error')}
       </span>
     </button>
@@ -801,7 +801,7 @@ export default function ActivityPhaseGroup({
     >
       <PhaseGlyph failed={allFailed} partial={partialMarkerFallback} />
       <span
-        className="tool-status-text min-w-0 flex-1 truncate text-left font-medium"
+        className="tool-status-text min-w-0 flex-1 truncate text-start font-medium"
         role="status"
         title={label}
       >
@@ -840,7 +840,7 @@ export default function ActivityPhaseGroup({
              *  supplies it today; stating it here keeps the requirement with
              *  the element that depends on it. */
             className={cn(
-              'text-text-secondary hover:text-text-primary focus-visible:ring-focus-subtle flex h-auto min-h-7 min-w-0 flex-1 items-center justify-start gap-2 rounded-none bg-transparent p-0 py-1 text-left font-medium hover:bg-transparent focus-visible:ring-2 focus-visible:ring-offset-0 focus-visible:outline-none focus-visible:ring-inset',
+              'text-text-secondary hover:text-text-primary focus-visible:ring-focus-subtle flex h-auto min-h-7 min-w-0 flex-1 items-center justify-start gap-2 rounded-none bg-transparent p-0 py-1 text-start font-medium hover:bg-transparent focus-visible:ring-2 focus-visible:ring-offset-0 focus-visible:outline-none focus-visible:ring-inset',
               /** The open card's title: the one semibold, primary-colour line
                *  in the fold, so the rows under it read as its contents. */
               isExpanded && 'text-text-primary font-semibold',

@@ -85,7 +85,7 @@ function SubagentControlHistory({
               <span className="min-w-0 flex-1 font-medium">
                 {localize(CONTROL_ACTION_LABELS[control.action])}
               </span>
-              <span className="text-text-secondary ml-auto shrink-0 text-xs" aria-live="polite">
+              <span className="text-text-secondary ms-auto shrink-0 text-xs" aria-live="polite">
                 {localize(CONTROL_STATUS_LABELS[control.status])}
               </span>
               {control.status === 'accepted' &&
@@ -106,7 +106,7 @@ function SubagentControlHistory({
               <div className="text-text-secondary mt-1 break-words">
                 {control.message}
                 {control.messageTruncated === true && (
-                  <span className="ml-1 text-xs italic">
+                  <span className="ms-1 text-xs italic">
                     {localize('com_ui_subagent_control_message_truncated')}
                   </span>
                 )}
