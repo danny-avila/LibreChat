@@ -624,7 +624,7 @@
   },
   "client/src/components/Endpoints/ConvoIcon.tsx": {
     "shadcn/no-restyle": {
-      "count": 2
+      "count": 1
     }
   },
   "client/src/components/Endpoints/MessageEndpointIcon.tsx": {

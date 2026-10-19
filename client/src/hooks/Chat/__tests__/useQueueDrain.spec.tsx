@@ -12,12 +12,6 @@ import {
   acquireQueueSendLock,
   releaseQueueSendLock,
 } from '@librechat/chat';
-import type {
-  DrainAfterAbort,
-  RunEnd,
-  QueuedMessage,
-  SettledQueuedTurnReceipt,
-} from '~/hooks/Chat/queue';
 import {
   settledQueuedTurnReceiptsByConvoId,
   queuedMessagesByConvoId,
@@ -25,8 +19,15 @@ import {
   drainAfterAbortByIndex,
   runEndByIndex,
   resetQueueFamilies,
-} from '~/hooks/Chat/queue';
-import { recoveryDispositionsFamily } from '~/components/Chat/Steering/recovery';
+  recoveryDispositionsFamily,
+} from '@librechat/chat/react';
+import type {
+  DrainAfterAbort,
+  RunEnd,
+  QueuedMessage,
+  SettledQueuedTurnReceipt,
+} from '@librechat/chat';
+import { SteerHostTestProvider } from 'test/steerHost';
 import useQueueDrain from '../useQueueDrain';
 
 const mockMarkFilesUsage = jest.fn();
@@ -84,8 +85,10 @@ function setup(
   const wrapper = ({ children }: { children: React.ReactNode }) => (
     <QueryClientProvider client={queryClient}>
       <RecoilRoot initializeState={initialize}>
-        <Harness />
-        {children}
+        <SteerHostTestProvider>
+          <Harness />
+          {children}
+        </SteerHostTestProvider>
       </RecoilRoot>
     </QueryClientProvider>
   );
@@ -1007,7 +1010,7 @@ describe('useQueueDrain', () => {
             });
           }}
         >
-          {children}
+          <SteerHostTestProvider>{children}</SteerHostTestProvider>
         </RecoilRoot>
       </QueryClientProvider>
     );
@@ -1189,8 +1192,10 @@ describe('useQueueDrain', () => {
       const wrapper = ({ children }: { children: React.ReactNode }) => (
         <QueryClientProvider client={queryClient}>
           <RecoilRoot initializeState={initialize}>
-            <Harness />
-            {children}
+            <SteerHostTestProvider>
+              <Harness />
+              {children}
+            </SteerHostTestProvider>
           </RecoilRoot>
         </QueryClientProvider>
       );
