@@ -3,6 +3,7 @@ import { useAtom } from 'jotai';
 import { useRecoilValue } from 'recoil';
 import { useWatch } from 'react-hook-form';
 import { useNavigate } from 'react-router-dom';
+import { useDirection } from '@radix-ui/react-direction';
 import { useSteering, showStopButtonByIndex, useComposerRestoreHost } from '@librechat/chat/react';
 import {
   composerSurfaceClasses,
@@ -491,6 +492,11 @@ const ChatForm = memo(function ChatForm({
   });
 
   const textValue = useWatch({ control: methods.control, name: 'text' });
+  const interfaceDirection = useDirection();
+  /** An empty `dir="auto"` field resolves to LTR, which would park an RTL interface's placeholder on
+   *  the wrong edge, so the empty field follows the interface until text gives it a direction. */
+  const autoDirection = textValue ? 'auto' : interfaceDirection;
+  const textDirection = chatDirection === 'auto' ? autoDirection : chatDirection;
 
   /** The composer commits once per keystroke for the row count and the send
    *  button; a second commit for a row count that did not move (or that no
@@ -878,7 +884,7 @@ const ChatForm = memo(function ChatForm({
                   >
                     <TextareaAutosize
                       {...registerProps}
-                      dir={chatDirection}
+                      dir={textDirection}
                       ref={(e) => {
                         ref(e);
                         (
