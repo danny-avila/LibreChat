@@ -988,15 +988,13 @@ describe('createActionTool request budget', () => {
   });
 
   it('reports a call that hit its deadline as a timeout, not as a stopped run', async () => {
-    const reason = Object.assign(
-      new Error(
-        'Exceeded timeouts.actionsMs (5 ms); raise it in librechat.yaml if this upstream is legitimately slow',
-      ),
-      { name: 'OutboundTimeoutError' },
-    );
     const canceled = Object.assign(new Error('canceled'), {
       code: 'ERR_CANCELED',
-      config: { signal: { reason } },
+      config: {
+        timeoutErrorMessage:
+          'Exceeded timeouts.actionsMs (5 ms); raise it in librechat.yaml if this upstream is legitimately slow',
+        signal: { reason: new DOMException('timed out', 'TimeoutError') },
+      },
     });
     const preparedExecutor = { execute: jest.fn().mockRejectedValue(canceled) };
     const requestBuilder = {

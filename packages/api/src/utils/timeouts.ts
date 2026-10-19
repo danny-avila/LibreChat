@@ -19,9 +19,6 @@ export function getOutboundTimeoutMs(
   return appConfig?.timeouts?.[key] ?? DEFAULT_OUTBOUND_TIMEOUTS_MS[key];
 }
 
-/** The `name` of the error an outbound deadline aborts with, so it is never read as a user stop. */
-export const OUTBOUND_TIMEOUT_ERROR = 'OutboundTimeoutError';
-
 /** What an operator sees when a budget runs out: the key to raise and its current value. */
 export function outboundTimeoutMessage(key: OutboundTimeout, timeoutMs: number): string {
   return `Exceeded timeouts.${key} (${timeoutMs} ms); raise it in librechat.yaml if this upstream is legitimately slow`;
@@ -30,40 +27,44 @@ export function outboundTimeoutMessage(key: OutboundTimeout, timeoutMs: number):
 /**
  * Axios options bounding one request by `timeoutMs`, both as socket idle time (`timeout`) and as
  * wall-clock time (the abort signal), since a response that keeps trickling bytes never goes idle.
- * Either way the request fails with `outboundTimeoutMessage`, and the deadline also follows
- * `signal` when given.
+ * `AbortSignal.timeout` holds its timer weakly, so a finished request leaves nothing scheduled.
+ * Either way the failure carries `outboundTimeoutMessage`, and the deadline also follows `signal`.
  */
 export function outboundRequestBudget(
   timeoutMs: number,
   key: OutboundTimeout,
   signal?: AbortSignal,
 ): { timeout: number; timeoutErrorMessage: string; signal: AbortSignal } {
-  const message = outboundTimeoutMessage(key, timeoutMs);
-  const controller = new AbortController();
-  const reason = Object.assign(new Error(message), { name: OUTBOUND_TIMEOUT_ERROR });
-  setTimeout(() => controller.abort(reason), timeoutMs).unref();
+  const deadline = AbortSignal.timeout(timeoutMs);
   return {
     timeout: timeoutMs,
-    timeoutErrorMessage: message,
-    signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
+    timeoutErrorMessage: outboundTimeoutMessage(key, timeoutMs),
+    signal: signal ? AbortSignal.any([signal, deadline]) : deadline,
   };
 }
 
-/** The budget overrun behind `error`, if it was one: an idle timeout or a passed deadline. */
+/**
+ * The budget overrun behind `error`, if it was one: an idle timeout, which axios reports with
+ * the budget message, or a passed deadline, which cancels with a `TimeoutError` reason.
+ */
 export function getOutboundTimeout(error: unknown): Error | undefined {
   if (error == null || typeof error !== 'object') {
     return undefined;
   }
   const { message, config } = error as {
     message?: unknown;
-    config?: { signal?: { reason?: unknown } };
+    config?: { timeoutErrorMessage?: unknown; signal?: { reason?: unknown } };
   };
-  const reason = config?.signal?.reason;
-  if (reason instanceof Error && reason.name === OUTBOUND_TIMEOUT_ERROR) {
-    return reason;
+  const budgetMessage = config?.timeoutErrorMessage;
+  if (typeof budgetMessage !== 'string' || !budgetMessage.startsWith('Exceeded timeouts.')) {
+    return undefined;
   }
-  if (typeof message === 'string' && message.startsWith('Exceeded timeouts.')) {
+  if (message === budgetMessage) {
     return error as Error;
+  }
+  const reason = config?.signal?.reason as { name?: unknown } | undefined;
+  if (reason?.name === 'TimeoutError') {
+    return Object.assign(new Error(budgetMessage), { name: 'OutboundTimeoutError' });
   }
   return undefined;
 }

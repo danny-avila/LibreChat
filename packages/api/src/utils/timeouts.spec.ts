@@ -23,16 +23,13 @@ describe('outbound timeouts', () => {
 });
 
 describe('outboundRequestBudget', () => {
-  it('aborts at the wall-clock deadline with an error naming the key to raise', async () => {
+  it('aborts at the wall-clock deadline and names the key to raise', async () => {
     const { timeout, timeoutErrorMessage, signal } = outboundRequestBudget(20, 'ragMs');
 
     expect(timeout).toBe(20);
     expect(timeoutErrorMessage).toBe(outboundTimeoutMessage('ragMs', 20));
     await new Promise((resolve) => signal.addEventListener('abort', resolve));
-    expect(signal.reason).toMatchObject({
-      name: 'OutboundTimeoutError',
-      message: expect.stringContaining('timeouts.ragMs (20 ms)'),
-    });
+    expect(signal.reason).toMatchObject({ name: 'TimeoutError' });
   });
 
   it('also follows the caller signal', () => {
@@ -46,18 +43,28 @@ describe('outboundRequestBudget', () => {
 });
 
 describe('getOutboundTimeout', () => {
-  it('recognizes a request cancelled by its deadline', () => {
-    const reason = Object.assign(new Error(outboundTimeoutMessage('actionsMs', 5)), {
-      name: 'OutboundTimeoutError',
-    });
-    const canceled = { code: 'ERR_CANCELED', message: 'canceled', config: { signal: { reason } } };
+  const timeoutErrorMessage = outboundTimeoutMessage('actionsMs', 5);
 
-    expect(getOutboundTimeout(canceled)).toBe(reason);
+  it('recognizes a request cancelled by its deadline', () => {
+    const canceled = {
+      code: 'ERR_CANCELED',
+      message: 'canceled',
+      config: {
+        timeoutErrorMessage,
+        signal: { reason: new DOMException('timed out', 'TimeoutError') },
+      },
+    };
+
+    expect(getOutboundTimeout(canceled)?.message).toBe(timeoutErrorMessage);
     expect(isAbortError(canceled)).toBe(false);
   });
 
   it('recognizes an idle timeout carrying the budget message', () => {
-    const idle = { code: 'ECONNABORTED', message: outboundTimeoutMessage('ocrMs', 5) };
+    const idle = {
+      code: 'ECONNABORTED',
+      message: timeoutErrorMessage,
+      config: { timeoutErrorMessage },
+    };
 
     expect(getOutboundTimeout(idle)).toBe(idle);
   });
@@ -66,7 +73,10 @@ describe('getOutboundTimeout', () => {
     const stopped = {
       code: 'ERR_CANCELED',
       message: 'canceled',
-      config: { signal: { reason: undefined } },
+      config: {
+        timeoutErrorMessage,
+        signal: { reason: new DOMException('stopped', 'AbortError') },
+      },
     };
 
     expect(getOutboundTimeout(stopped)).toBeUndefined();
@@ -78,7 +88,12 @@ describe('logAxiosError on a budget overrun', () => {
   it('warns with the key to raise instead of logging a generic failure', () => {
     const warn = jest.spyOn(logger, 'warn').mockImplementation(() => logger);
     const error = jest.spyOn(logger, 'error').mockImplementation(() => logger);
-    const idle = { code: 'ECONNABORTED', message: outboundTimeoutMessage('ragMs', 30_000) };
+    const timeoutErrorMessage = outboundTimeoutMessage('ragMs', 30_000);
+    const idle = {
+      code: 'ECONNABORTED',
+      message: timeoutErrorMessage,
+      config: { timeoutErrorMessage },
+    };
 
     const message = logAxiosError({ message: 'RAG query failed:', error: idle });
 

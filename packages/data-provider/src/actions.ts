@@ -178,13 +178,11 @@ function requestSignal(
   if (timeout == null) {
     return signal ? { signal } : {};
   }
-  /** Named like `OUTBOUND_TIMEOUT_ERROR` in `@librechat/api`, so a timeout is never read as a stop. */
+  /** Same wording as `outboundTimeoutMessage` in `@librechat/api`, which recognizes it. */
   const message = `Exceeded timeouts.actionsMs (${timeout} ms); raise it in librechat.yaml if this upstream is legitimately slow`;
-  const controller = new AbortController();
-  const reason = Object.assign(new Error(message), { name: 'OutboundTimeoutError' });
-  setTimeout(() => controller.abort(reason), timeout).unref?.();
+  const deadline = AbortSignal.timeout(timeout);
   return {
-    signal: signal ? AbortSignal.any([signal, controller.signal]) : controller.signal,
+    signal: signal ? AbortSignal.any([signal, deadline]) : deadline,
     timeoutErrorMessage: message,
   };
 }
