@@ -2,6 +2,7 @@ import { FileContext } from 'librechat-data-provider';
 import type { TFile } from 'librechat-data-provider';
 import type { CodeFileAgent } from './queued';
 import { planCodeFileUploads, prepareQueuedCodeFileContext } from './queued';
+import { selectCodeFiles } from './priming';
 
 function file(id: string, overrides: Partial<TFile> = {}): TFile {
   return {
@@ -34,6 +35,88 @@ function agent(id: string, files: TFile[]): CodeFileAgent {
 }
 
 describe('queued code-file destinations', () => {
+  it.each(['parent', 'child', 'lazy child'])(
+    'keeps a live project import unchanged when a peer has a private collision (%s first)',
+    async (order) => {
+      const imported = file('imported-live', {
+        conversationId: 'other',
+        metadata: {
+          codeEnvRefs: {
+            default: {
+              kind: 'user',
+              id: 'user-1',
+              storage_session_id: 'shared-store',
+              file_id: 'shared-remote',
+              sandboxFilename: 'data.csv',
+            },
+          },
+        },
+      });
+      const privateFile = file('private', {
+        context: FileContext.agents,
+        metadata: {
+          codeEnvRefs: {
+            default: {
+              kind: 'agent',
+              id: 'child',
+              storage_session_id: 'private-store',
+              file_id: 'private-remote',
+              sandboxFilename: 'data.csv',
+            },
+          },
+        },
+      });
+      const parent = agent('parent', []);
+      const child = agent('child', []);
+      parent.tool_resources = { execute_code: { files: [{ ...imported }] } };
+      child.tool_resources = { execute_code: { files: [{ ...imported }, privateFile] } };
+      for (const current of [parent, child]) {
+        current.provisionState!.project = {
+          projectFileIds: new Set([imported.file_id]),
+          conversationId: 'current',
+        };
+      }
+      child.provisionState!.agentScopedFileIds.add(privateFile.file_id);
+      if (order === 'lazy child') {
+        prepareQueuedCodeFileContext(parent, [parent], 'user-1');
+        prepareQueuedCodeFileContext(child, [parent, child], 'user-1', true);
+      } else {
+        for (const current of order === 'parent' ? [parent, child] : [child, parent]) {
+          prepareQueuedCodeFileContext(current, [parent, child], 'user-1');
+        }
+      }
+      const selected = await selectCodeFiles({
+        files: [imported],
+        project: parent.provisionState!.project,
+        routeKey: 'default',
+        getFileInfo: async () => ({
+          lastModified: new Date().toISOString(),
+          originalFilename: 'data.csv',
+        }),
+      });
+      expect(selected.selected).toEqual([
+        expect.objectContaining({ sandboxName: 'data.csv', isActive: true, temporary: false }),
+      ]);
+      expect(parent.provisionState!.codeEnvFiles).toEqual([]);
+      expect(parent.provisionState!.temporaryCodeFileIds?.size ?? 0).toBe(0);
+      expect(parent.dynamicToolContextMap!.queued_code_files).toBeUndefined();
+      expect(
+        planCodeFileUploads({
+          context: parent,
+          contexts: [parent, child],
+          agentId: parent.id,
+          userId: 'user-1',
+          useAdvertisedNames: true,
+        }),
+      ).toEqual([]);
+      expect(parent.provisionState!.codeEnvFiles).toEqual([]);
+      expect(child.provisionState!.temporaryCodeFileIds).toEqual(new Set([imported.file_id]));
+      expect(child.provisionState!.codeEnvDestinations!.get(imported.file_id)).toMatch(
+        /^data-.+\.csv$/,
+      );
+    },
+  );
+
   it('keeps an advertised shared path when a lazy agent adds a newer colliding input', () => {
     const shared = file('shared', { createdAt: '2026-09-01' });
     const parent = agent('parent', [{ ...shared }]);

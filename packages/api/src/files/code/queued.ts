@@ -55,17 +55,24 @@ function stageProjectImports(
   if (!state?.project) return;
   const queuedIds = new Set(state.codeEnvFiles.map((file) => file.file_id));
   const routeQueuedIds = new Set<string>();
+  const temporaryIds = new Set(state.temporaryCodeFileIds);
   const liveFiles = context.tool_resources?.execute_code?.files ?? [];
   const destinations = createCodeDestinationSet();
   for (const candidate of contexts) {
     const candidateState = candidate.provisionState;
     const pendingFiles = candidateState?.codeEnvFiles ?? [];
-    for (const file of pendingFiles) routeQueuedIds.add(file.file_id);
+    for (const file of pendingFiles) {
+      // A local alias must not force other agents to remount the same input.
+      if (candidateState?.temporaryCodeFileIds?.has(file.file_id) !== true) {
+        routeQueuedIds.add(file.file_id);
+      }
+    }
     for (const file of [
       ...pendingFiles,
       ...(candidate.tool_resources?.execute_code?.files ?? []),
     ]) {
       if (isImportedProjectFile(file, candidateState?.project)) continue;
+      if (candidate !== context && candidateState?.agentScopedFileIds.has(file.file_id)) continue;
       const name =
         candidateState?.codeEnvDestinations?.get(file.file_id) ??
         getCodeEnvRefForProfile(file.metadata, route)?.sandboxFilename ??
@@ -84,10 +91,13 @@ function stageProjectImports(
     const name =
       getCodeEnvRefForProfile(file.metadata, route)?.sandboxFilename ??
       resolveSandboxFilename(file.filename, file.type);
-    if (!routeQueuedIds.has(file.file_id) && reserveCodeDestination(destinations, name)) continue;
+    const keepsName = reserveCodeDestination(destinations, name);
+    if (!routeQueuedIds.has(file.file_id) && keepsName) continue;
     state.codeEnvFiles.push(file);
     queuedIds.add(file.file_id);
+    if (!keepsName) temporaryIds.add(file.file_id);
   }
+  state.temporaryCodeFileIds = temporaryIds;
 }
 
 /** Uses the same destination plan before inference and when files are uploaded lazily. */

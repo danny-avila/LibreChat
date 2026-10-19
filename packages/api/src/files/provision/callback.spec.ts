@@ -113,6 +113,72 @@ function buildHarness({
 }
 
 describe('createProvisionFilesCallback', () => {
+  it('does not upload a live project input solely because a later child has a private collision', async () => {
+    const imported = makeFile({
+      file_id: 'live-project-peer',
+      conversationId: 'other',
+      metadata: {
+        codeEnvRefs: {
+          default: {
+            kind: 'user',
+            id: 'user-1',
+            storage_session_id: 'live-store',
+            file_id: 'live-remote',
+            sandboxFilename: 'data.csv',
+          },
+        },
+      },
+    });
+    const privateFile = makeFile({
+      file_id: 'child-private',
+      context: FileContext.agents,
+      metadata: {
+        codeEnvRefs: {
+          default: {
+            kind: 'agent',
+            id: 'child',
+            storage_session_id: 'private-store',
+            file_id: 'private-remote',
+            sandboxFilename: 'data.csv',
+          },
+        },
+      },
+    });
+    const parent: CodeFileAgent = {
+      id: 'parent',
+      fileConsumers: { executeCode: true, fileSearch: false },
+      tool_resources: { execute_code: { files: [{ ...imported }] } },
+      provisionState: {
+        ...state([], []),
+        project: { projectFileIds: new Set([imported.file_id]), conversationId: 'current' },
+      },
+    };
+    prepareQueuedCodeFileContext(parent, [parent], 'user-1');
+    const child: CodeFileAgent = {
+      id: 'child',
+      fileConsumers: { executeCode: true, fileSearch: false },
+      tool_resources: { execute_code: { files: [{ ...imported }, privateFile] } },
+      provisionState: {
+        ...state([], [], [privateFile.file_id]),
+        project: { projectFileIds: new Set([imported.file_id]), conversationId: 'current' },
+      },
+    };
+    prepareQueuedCodeFileContext(child, [parent, child], 'user-1', true);
+    const codeImpl = jest.fn().mockRejectedValue(new Error('Code API upload unavailable'));
+    const harness = buildHarness({
+      contexts: [
+        [parent.id, parent],
+        [child.id, child],
+      ],
+      codeImpl,
+    });
+    await expect(harness.provisionFiles([Constants.EXECUTE_CODE], parent.id)).resolves.toEqual([]);
+    expect(codeImpl).not.toHaveBeenCalled();
+    expect(harness.updateCodeEnvRef).not.toHaveBeenCalled();
+    expect(parent.provisionState!.codeEnvFiles).toEqual([]);
+    expect(parent.provisionState!.codeEnvDestinations!.size).toBe(0);
+  });
+
   it.each(['first', 'second'])(
     'preserves canonical current-chat paths when %s provisions first on a shared route',
     async (firstAgentId) => {
