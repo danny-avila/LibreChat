@@ -5,6 +5,7 @@ import { useForm } from 'react-hook-form';
 import { Spinner } from '@librechat/client';
 import { useParams } from 'react-router-dom';
 import { Constants, buildTree } from 'librechat-data-provider';
+import { useIsSubmitting, submissionByIndex, ComposerRestoreProvider } from '@librechat/chat/react';
 import type { TChatProject } from 'librechat-data-provider';
 import type { ChatFormValues } from '~/common';
 import {
@@ -17,14 +18,10 @@ import {
   useQueuedTurnReveal,
   useLocalize,
 } from '~/hooks';
-import {
-  ChatContext,
-  AddedChatContext,
-  ChatFormProvider,
-  useFileMapContext,
-  ComposerRestoreProvider,
-} from '~/Providers';
+import { ChatContext, AddedChatContext, ChatFormProvider, useFileMapContext } from '~/Providers';
+import Footer, { useLandingFooter, useConfiguredFooter } from './Footer';
 import { QueuedTurnPortalProvider } from './Steering/QueuedTurnPortal';
+import { useChatSettings } from '~/Providers/ChatSettingsContext';
 import ApprovalProvider from './Messages/Content/ApprovalContext';
 import ConversationStarters from './Input/ConversationStarters';
 import { pendingApprovalActionFamily } from './approval/state';
@@ -32,7 +29,6 @@ import ProjectBadge from '~/components/Projects/ProjectBadge';
 import { composerLiftFamily } from './Input/Composer/state';
 import { OwnerTextProvider } from './Messages/PrivateText';
 import { useGetMessagesByConvoId } from '~/data-provider';
-import Footer, { useConfiguredFooter } from './Footer';
 import { AskAnswerHostProvider } from './ask/state';
 import MessagesView from './Messages/MessagesView';
 import Presentation from './Presentation';
@@ -66,9 +62,9 @@ function ChatView({
 }) {
   const { conversationId } = useParams();
   const localize = useLocalize();
-  const rootSubmission = useRecoilValue(store.submissionByIndex(index));
-  const isSubmitting = useRecoilValue(store.isSubmittingFamily(index));
-  const saveDrafts = useRecoilValue(store.saveDrafts);
+  const rootSubmission = useAtomValue(submissionByIndex(index));
+  const isSubmitting = useIsSubmitting(index);
+  const { saveDrafts } = useChatSettings();
   const enterToSend = useRecoilValue(store.enterToSend);
   const autoSendText = useRecoilValue(store.autoSendText);
   const speechSettingsInitialized = useRecoilValue(store.speechSettingsInitialized);
@@ -85,6 +81,7 @@ function ChatView({
    *  composer's clearance has to account for the bar when it does — including
    *  before the config answers, so a cold load does not jump. */
   const configuredFooter = useConfiguredFooter();
+  const landingFooter = useLandingFooter();
 
   /** Room an open composer popover needs below the composer; see the atom. */
   const composerLift = useAtomValue(composerLiftFamily(index));
@@ -148,11 +145,10 @@ function ChatView({
     (!messagesTree || messagesTree.length === 0) &&
     (conversationId === Constants.NEW_CONVO || !conversationId);
 
-  /** A footer bar renders beneath the composer on the welcome screen always, and
-   *  in a conversation when the deployment configured one. The shell already
-   *  carried that answer, so this is the same value before and after the config
-   *  resolves. */
-  const footerBelow = isLandingPage || configuredFooter;
+  /** The welcome screen carries the full footer unless the deployment turned it
+   *  off; otherwise a footer bar renders only for configured content. */
+  const fullFooter = isLandingPage && landingFooter;
+  const footerBelow = fullFooter || configuredFooter;
   const isNavigating = (!messagesTree || messagesTree.length === 0) && conversationId != null;
   const isProjectLandingPage = isLandingPage && project != null;
 
@@ -279,7 +275,7 @@ function ChatView({
                             {/* The generic disclaimer and the policy links are the
                               welcome screen's; a deployment's own footer stays
                               with the conversation that always showed it. */}
-                            {!isLandingPage && configuredFooter && <Footer configuredOnly />}
+                            {!fullFooter && configuredFooter && <Footer configuredOnly />}
                           </div>
                           <Lia
                             bandRef={composerBandRef}
@@ -287,7 +283,7 @@ function ChatView({
                             submission={rootSubmission}
                           />
                         </div>
-                        {isLandingPage && <Footer />}
+                        {fullFooter && <Footer />}
                       </>
                     </TraceSurface>
                   </Presentation>

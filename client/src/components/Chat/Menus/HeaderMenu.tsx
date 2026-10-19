@@ -7,12 +7,12 @@ import { Ellipsis, PlusCircle, HatGlasses, Check, ChartNoAxesGantt } from 'lucid
 import type { TStartupConfig } from 'librechat-data-provider';
 import type { TraceControl } from '~/components/Chat/Trace';
 import type * as t from '~/common';
+import useTemporaryChat from '~/hooks/Conversations/useTemporaryChat';
 import { usePullRequestMenu } from '~/components/Chat/PullRequest';
+import useBookmarkItems from '~/hooks/Sharing/useBookmarkItems';
+import useMultiConvo from '~/hooks/Conversations/useMultiConvo';
 import { BookmarkContext } from '~/Providers/BookmarkContext';
-import useBookmarkItems from '~/hooks/Chat/useBookmarkItems';
-import useTemporaryChat from '~/hooks/Chat/useTemporaryChat';
-import useChatOptions from '~/hooks/Chat/useChatOptions';
-import useMultiConvo from '~/hooks/Chat/useMultiConvo';
+import useChatOptions from '~/hooks/Sharing/useChatOptions';
 import { useHasAccess, useLocalize } from '~/hooks';
 import { cn } from '~/utils';
 
@@ -169,11 +169,8 @@ export default function HeaderMenu({
                 render={
                   <Button
                     size="icon"
-                    variant="outline"
-                    className={cn(
-                      'bg-presentation hover:bg-surface-active-alt relative size-9 shrink-0 rounded-xl',
-                      className,
-                    )}
+                    variant="header-action"
+                    className={cn('relative size-9 shrink-0', className)}
                   />
                 }
               >

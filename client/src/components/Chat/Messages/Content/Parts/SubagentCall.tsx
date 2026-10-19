@@ -26,6 +26,7 @@ import { MessageContext } from '~/Providers/MessageContext';
 import { useShareContext } from '~/Providers/ShareContext';
 import MessageIcon from '~/components/Share/MessageIcon';
 import { parseSubagentBackgroundHandle } from './handle';
+import { MCPAppViews } from '~/components/MCPUIResource';
 import { isError } from '../ToolOutput/OutputRenderer';
 import { useToolPreparation } from '../preparation';
 import { useAgentsMapContext } from '~/Providers';
@@ -386,13 +387,26 @@ export default function SubagentCall({
 
   useEffect(() => {
     setSelectedSubagent((current) =>
-      current?.parentMessageId === parentMessageId &&
+      current?.host === panelSelection.host &&
+      current.shareId === panelSelection.shareId &&
+      current.parentConversationId === parentConversationId &&
+      current.parentMessageId === parentMessageId &&
       current.toolCallId === toolCallId &&
-      current.partIndex === partIndex
+      current.partIndex === partIndex &&
+      (current.durable == null ||
+        (current.durable.threadId === panelSelection.durable?.threadId &&
+          current.durable.taskId === panelSelection.durable?.taskId))
         ? panelSelection
         : current,
     );
-  }, [panelSelection, parentMessageId, partIndex, setSelectedSubagent, toolCallId]);
+  }, [
+    panelSelection,
+    parentConversationId,
+    parentMessageId,
+    partIndex,
+    setSelectedSubagent,
+    toolCallId,
+  ]);
 
   const openDetails = useCallback(() => {
     if (!canOpenDetails || openPanel == null) return;
@@ -512,7 +526,10 @@ export default function SubagentCall({
       </button>
 
       {!hideAttachments && attachments && attachments.length > 0 && (
-        <AttachmentGroup attachments={attachments} />
+        <>
+          <AttachmentGroup attachments={attachments} />
+          <MCPAppViews attachments={attachments} />
+        </>
       )}
     </>
   );

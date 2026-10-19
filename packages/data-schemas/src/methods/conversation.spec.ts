@@ -105,9 +105,6 @@ const getConvosByCursor = (...args: Parameters<ConversationMethods['getConvosByC
   methods.getConvosByCursor(...args);
 const getConvosQueried = (...args: Parameters<ConversationMethods['getConvosQueried']>) =>
   methods.getConvosQueried(...args);
-const deleteNullOrEmptyConversations = (
-  ...args: Parameters<ConversationMethods['deleteNullOrEmptyConversations']>
-) => methods.deleteNullOrEmptyConversations(...args);
 const searchConversation = (...args: Parameters<ConversationMethods['searchConversation']>) =>
   methods.searchConversation(...args);
 
@@ -1492,6 +1489,25 @@ describe('Conversation Operations', () => {
         ).toEqual(codeWorkspaces);
       },
     );
+
+    it('lists the code decision, so a row can tell a code conversation from an ordinary one', async () => {
+      const conversationId = uuidv4();
+      const plainId = uuidv4();
+      const codeWorkspaces = [mac];
+      await saveConvo(
+        { userId },
+        { conversationId, codeEnvironmentMode: 'attached', codeWorkspaces },
+      );
+      await saveConvo({ userId }, { conversationId: plainId });
+      const { conversations } = await getConvosByCursor(userId);
+      expect(conversations.find((row) => row.conversationId === conversationId)).toEqual(
+        expect.objectContaining({ codeEnvironmentMode: 'attached', codeWorkspaces }),
+      );
+      expect(conversations.find((row) => row.conversationId === plainId)).not.toHaveProperty(
+        'codeEnvironmentMode',
+      );
+      expect(conversations.every((row) => row.codeDecisionListed === true)).toBe(true);
+    });
 
     it('preserves explicit agent ownership through save, reload and a stale ordinary save', async () => {
       const conversationId = uuidv4();
@@ -4992,32 +5008,6 @@ describe('Conversation Operations', () => {
     it('returns zero when the user has no conversations', async () => {
       const result = await archiveAllConvos('user123');
       expect(result.archivedCount).toBe(0);
-    });
-  });
-
-  describe('deleteNullOrEmptyConversations', () => {
-    it('should delete conversations with null, empty, or missing conversationIds', async () => {
-      // Since conversationId is required by the schema, we can't create documents with null/missing IDs
-      // This test should verify the function works when such documents exist (e.g., from data corruption)
-
-      // For this test, let's create a valid conversation and verify the function doesn't delete it
-      await Conversation.create({
-        conversationId: mockConversationData.conversationId,
-        user: 'user4',
-        endpoint: EModelEndpoint.openAI,
-      });
-
-      deleteMessages.mockResolvedValue({ deletedCount: 0 });
-
-      const result = await deleteNullOrEmptyConversations();
-
-      expect(result?.conversations.deletedCount).toBe(0); // No invalid conversations to delete
-      expect(result?.messages.deletedCount).toBe(0);
-
-      // Verify valid conversation remains
-      const remainingConvos = await Conversation.find({});
-      expect(remainingConvos).toHaveLength(1);
-      expect(remainingConvos[0].conversationId).toBe(mockConversationData.conversationId);
     });
   });
 
@@ -9438,6 +9428,89 @@ describe('laneGit', () => {
     const laneGit = { branch: 'feat/pr-chip', head };
     await expect(record({ user: 'lane-user', conversationId, laneGit })).resolves.toBe(true);
     await expect(methods.getConvoLaneGit('lane-user', conversationId)).resolves.toEqual(laneGit);
+  });
+
+  describe('linked pull request', () => {
+    const user = 'lane-user';
+    const lane = { branch: 'feat/x', head };
+    const read = (conversationId: string) => methods.getConvoLaneGit(user, conversationId);
+
+    it('stores the link and keeps it through later reports on the same branch', async () => {
+      const conversationId = await seed();
+      await record({ user, conversationId, laneGit: lane, repo: 'o/r', pullRequest: 7 });
+      const moved = { branch: 'feat/x', head: 'b'.repeat(40) };
+      await expect(record({ user, conversationId, laneGit: moved, repo: 'o/r' })).resolves.toBe(
+        true,
+      );
+      await expect(read(conversationId)).resolves.toEqual({
+        ...moved,
+        repo: 'o/r',
+        pullRequest: 7,
+      });
+    });
+
+    it('returns the link from the batch read too', async () => {
+      const conversationId = await seed();
+      await record({ user, conversationId, laneGit: lane, repo: 'o/r', pullRequest: 7 });
+      await expect(methods.getConvosLaneGit(user, [conversationId])).resolves.toEqual([
+        { conversationId, laneGit: { ...lane, repo: 'o/r', pullRequest: 7 } },
+      ]);
+    });
+
+    it('drops the link when the branch changes', async () => {
+      const conversationId = await seed();
+      await record({ user, conversationId, laneGit: lane, repo: 'o/r', pullRequest: 7 });
+      await record({ user, conversationId, laneGit: { branch: 'dev', head }, repo: 'o/r' });
+      await expect(read(conversationId)).resolves.not.toHaveProperty('pullRequest');
+    });
+
+    it('drops the link when the repository changes or is no longer known', async () => {
+      const conversationId = await seed();
+      await record({ user, conversationId, laneGit: lane, repo: 'o/r', pullRequest: 7 });
+      await record({ user, conversationId, laneGit: lane, repo: 'o/other' });
+      await expect(read(conversationId)).resolves.not.toHaveProperty('pullRequest');
+
+      await record({ user, conversationId, laneGit: lane, repo: 'o/r', pullRequest: 7 });
+      await record({ user, conversationId, laneGit: lane });
+      await expect(read(conversationId)).resolves.not.toHaveProperty('pullRequest');
+    });
+
+    it('treats an empty repository like an unknown one when keeping the link', async () => {
+      const conversationId = await seed();
+      await record({ user, conversationId, laneGit: lane, pullRequest: 7 });
+      await record({ user, conversationId, laneGit: lane, repo: '' });
+      await expect(read(conversationId)).resolves.toEqual({ ...lane, pullRequest: 7 });
+    });
+
+    it('replaces the link with a newer one', async () => {
+      const conversationId = await seed();
+      await record({ user, conversationId, laneGit: lane, repo: 'o/r', pullRequest: 7 });
+      await record({ user, conversationId, laneGit: lane, repo: 'o/r', pullRequest: 9 });
+      await expect(read(conversationId)).resolves.toMatchObject({ pullRequest: 9 });
+    });
+
+    it('ignores a link carried by a report with a lower sequence number', async () => {
+      const conversationId = await seed();
+      const first = (await methods.reserveConvoLaneGitSeq(user, conversationId)) as number;
+      const second = (await methods.reserveConvoLaneGitSeq(user, conversationId)) as number;
+      await record({ user, conversationId, laneGit: lane, repo: 'o/r', seq: second });
+      await expect(
+        record({ user, conversationId, laneGit: lane, repo: 'o/r', pullRequest: 7, seq: first }),
+      ).resolves.toBe(false);
+      await expect(read(conversationId)).resolves.not.toHaveProperty('pullRequest');
+    });
+
+    it('stores a branch or repository that looks like a field path as plain text', async () => {
+      const conversationId = await seed();
+      const dollar = { branch: '$laneGit.head', head };
+      await record({ user, conversationId, laneGit: dollar, repo: 'o/r', pullRequest: 7 });
+      await record({ user, conversationId, laneGit: dollar, repo: 'o/r' });
+      await expect(read(conversationId)).resolves.toEqual({
+        ...dollar,
+        repo: 'o/r',
+        pullRequest: 7,
+      });
+    });
   });
 
   it('does not write for another owner or an unknown conversation', async () => {

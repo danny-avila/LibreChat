@@ -320,6 +320,18 @@ function buildMessageSaveUpdate(
   };
 }
 
+/**
+ * A legacy temporary message stores only its deadline; hydration then fills
+ * `isTemporary` with the schema default `false`, which must not read as permanent.
+ */
+function isTemporaryMessage(message: IMessage): boolean {
+  if (message.isTemporary === true) {
+    return true;
+  }
+  const implicit = message.isTemporary == null || message.$isDefault?.('isTemporary') === true;
+  return implicit && message.expiredAt != null;
+}
+
 async function findOneAndMergeMessageProvenance(
   Message: Model<IMessage>,
   identity: FilterQuery<IMessage>,
@@ -820,15 +832,6 @@ export interface MessageMethods {
     overrideTimestamp?: boolean,
     provenance?: { privateTextTokens: ReadonlyMap<string, readonly string[]> },
   ): Promise<unknown>;
-  recordMessage(params: {
-    user: string;
-    endpoint?: string;
-    messageId: string;
-    conversationId?: string;
-    parentMessageId?: string;
-    [key: string]: unknown;
-  }): Promise<IMessage | null>;
-  updateMessageText(userId: string, params: { messageId: string; text: string }): Promise<void>;
   updateToolCallResult(params: {
     userId: string;
     messageId: string;
@@ -915,10 +918,6 @@ export interface MessageMethods {
     kind: 'manual' | 'wakeup';
     claimId: string;
   }): Promise<boolean>;
-  deleteMessagesSince(
-    userId: string,
-    params: { messageId: string; conversationId: string },
-  ): Promise<DeleteResult>;
   getMessages(
     filter: FilterQuery<IMessage>,
     select?: string,
@@ -1527,83 +1526,6 @@ export function createMessageMethods(
       };
     } catch (err) {
       logger.error('Error saving messages in bulk:', err);
-      throw err;
-    }
-  }
-
-  /**
-   * Records a message in the database (no UUID validation).
-   */
-  async function recordMessage({
-    user,
-    endpoint,
-    messageId,
-    conversationId,
-    parentMessageId,
-    ...rest
-  }: {
-    user: string;
-    endpoint?: string;
-    messageId: string;
-    conversationId?: string;
-    parentMessageId?: string;
-    [key: string]: unknown;
-  }) {
-    try {
-      const provenance = capNormalizedProvenance(
-        normalizeUserSubmittedPaths(rest.userSubmittedPaths),
-        normalizeUserSubmittedMessageFieldPaths(rest.userSubmittedMessageFieldPaths),
-      );
-      const {
-        userSubmittedPaths: _userSubmittedPaths,
-        userSubmittedMessageFieldPaths: _userSubmittedMessageFieldPaths,
-        ...safeRest
-      } = rest;
-      delete safeRest.privateText;
-      delete safeRest.privacyRevision;
-      delete safeRest.privateTextTokens;
-      const message = {
-        user,
-        endpoint,
-        messageId,
-        conversationId,
-        parentMessageId,
-        ...safeRest,
-        ...(provenance.userSubmittedPaths.length > 0 && {
-          userSubmittedPaths: provenance.userSubmittedPaths,
-        }),
-        ...(provenance.userSubmittedMessageFieldPaths.length > 0 && {
-          userSubmittedMessageFieldPaths: provenance.userSubmittedMessageFieldPaths,
-        }),
-        ...(provenance.promoteWholeMessage && { isUserSubmitted: true }),
-      };
-      return await writeMessage({ user, messageId }, message, {
-        upsert: true,
-        unsetPrivateText: Object.prototype.hasOwnProperty.call(safeRest, 'text'),
-        stampModelOutputOnInsert:
-          rest.isCreatedByUser === false && rest.isUserSubmitted === undefined,
-      });
-    } catch (err) {
-      logger.error('Error recording message:', err);
-      throw err;
-    }
-  }
-
-  /**
-   * Updates the text of a message.
-   */
-  async function updateMessageText(
-    userId: string,
-    { messageId, text }: { messageId: string; text: string },
-  ) {
-    try {
-      await writeMessage(
-        { messageId, user: userId },
-        { text },
-        { upsert: false, unsetPrivateText: true },
-      );
-    } catch (err) {
-      logger.error('Error updating message text:', err);
       throw err;
     }
   }
@@ -2632,6 +2554,7 @@ export function createMessageMethods(
         tokenCount: updatedMessage.tokenCount,
         feedback: updatedMessage.feedback,
         endpoint: updatedMessage.endpoint,
+        isTemporary: isTemporaryMessage(updatedMessage),
         langfuseSampled: updatedMessage.langfuseSampled,
         langfuseDestinationIds: updatedMessage.langfuseDestinationIds,
         langfuseRunId: updatedMessage.langfuseRunId,
@@ -3018,30 +2941,6 @@ export function createMessageMethods(
       { $unset: { 'subagentTask.resultClaim': 1 } },
     );
     return result.modifiedCount === 1;
-  }
-
-  /**
-   * Deletes messages in a conversation since a specific message.
-   */
-  async function deleteMessagesSince(
-    userId: string,
-    { messageId, conversationId }: { messageId: string; conversationId: string },
-  ) {
-    try {
-      const Message = mongoose.models.Message as Model<IMessage>;
-      const message = await Message.findOne({ messageId, user: userId }).lean<IMessage>();
-
-      if (message) {
-        const query = Message.find({ conversationId, user: userId });
-        return await query.deleteMany({
-          createdAt: { $gt: message.createdAt },
-        });
-      }
-      return undefined;
-    } catch (err) {
-      logger.error('Error deleting messages:', err);
-      throw err;
-    }
   }
 
   /**
@@ -4360,8 +4259,6 @@ export function createMessageMethods(
     getPrivateMessageTexts,
     saveMessage,
     bulkSaveMessages,
-    recordMessage,
-    updateMessageText,
     updateToolCallResult,
     claimBackgroundToolResults,
     confirmBackgroundToolResultClaim,
@@ -4372,7 +4269,6 @@ export function createMessageMethods(
     getSubagentTaskControlReplay,
     claimSubagentTaskResult,
     releaseSubagentTaskResultClaim,
-    deleteMessagesSince,
     getMessages,
     getConversationTraceRefs,
     hasSampledTraceMessage,

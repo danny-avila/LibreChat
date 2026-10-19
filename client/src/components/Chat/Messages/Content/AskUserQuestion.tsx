@@ -2,14 +2,25 @@ import { useContext, useMemo, useState } from 'react';
 import { Button, TextareaAutosize, TooltipAnchor } from '@librechat/client';
 import { ChevronDown, MessageCircleQuestion, TriangleAlert } from 'lucide-react';
 import type { Agents } from 'librechat-data-provider';
+import type { KeyboardEvent } from 'react';
+import type { ComposerBindings } from '~/hooks/Input/useComposerBindings';
+import { isCancelKey, isReboundSubmitChord, resolveComposerKeyDown } from '~/utils/shortcuts';
 import { useApprovalContext, useAskSubmitStatus, useResumeSubmit } from './ApprovalContext';
 import { splitOtherOption, ASK_USER_DECLINED_ANSWER } from '~/utils/approval';
+import { useOptionalChatSurface } from '~/components/Chat/Subagents/surface';
+import { cn, forceResize, insertTextAtCursor } from '~/utils';
 import useAskAnswerMode from '~/hooks/Input/useAskAnswerMode';
 import AskOptions from '~/components/Chat/ask/options';
 import { ChatContext } from '~/Providers/ChatContext';
 import AskUserQuestions from './AskUserQuestions';
 import { useLocalize } from '~/hooks';
-import { cn } from '~/utils';
+
+/** Stock preferences for a card rendered outside a chat surface. */
+const NO_HOST_BINDINGS: ComposerBindings = {
+  shortcutsEnabled: true,
+  submitOverride: undefined,
+  yieldedChords: new Set(),
+};
 
 /**
  * Renders an `ask_user_question` pause: the prompt, optional description, any
@@ -81,6 +92,7 @@ function AskUserQuestionsCard({
       <AskUserQuestions
         actionId={actionId}
         questions={questions}
+        focusOnArrival={live}
         headerAction={
           onExpand != null && (
             <TooltipAnchor
@@ -122,6 +134,10 @@ function AskUserQuestionSingle({
   const { submitAskAnswer } = useResumeSubmit();
   const [answer, setAnswer] = useState(() => getAskAnswerDraft(actionId));
   const [localChecked, setLocalChecked] = useState<number[]>([]);
+  const surface = useOptionalChatSurface();
+  const enterToSend = surface?.enterToSend ?? false;
+  const { shortcutsEnabled, submitOverride, yieldedChords } =
+    surface?.composerBindings ?? NO_HOST_BINDINGS;
   /**
    * The composer popover is the primary answer surface — while it's VISIBLE
    * for this pause, rendering the card too duplicates the question. The card
@@ -217,6 +233,59 @@ function AskUserQuestionSingle({
   };
 
   /**
+   * The answer box follows the composer's Enter table, so the user's
+   * Enter-to-send preference and any rebound submit chord apply here too. The
+   * run is paused on this question rather than generating, so it resolves as
+   * idle: Ctrl/Cmd+Enter must submit the answer, not reach the during-run
+   * steer/queue actions.
+   */
+  const handleAnswerKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    const isComposing = e.nativeEvent.isComposing || e.key === 'Process' || e.keyCode === 229;
+    if (!isComposing && isReboundSubmitChord(e.nativeEvent, { shortcutsEnabled, submitOverride })) {
+      e.preventDefault();
+      if (canSubmit && !locked) {
+        submitCombined();
+      }
+      return;
+    }
+    const action = resolveComposerKeyDown(e.nativeEvent, {
+      isComposing,
+      isSubmitting: false,
+      allowSubmitWhileGenerating: false,
+      hasDuringRunModifier: false,
+      shortcutsEnabled,
+      enterToSend,
+      submitOverride,
+      yieldedChords,
+    });
+    if (action === 'none') {
+      return;
+    }
+    e.preventDefault();
+    if (action === 'newline') {
+      insertTextAtCursor(e.currentTarget, '\n');
+      forceResize(e.currentTarget);
+      return;
+    }
+    if (action === 'submit' && canSubmit && !locked) {
+      submitCombined();
+    }
+  };
+
+  /** Escape skips, but only before anything is entered, so a stray Escape
+   *  cannot discard an answer and resume the run. */
+  const handleCardKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (!isCancelKey(e.nativeEvent) || e.nativeEvent.isComposing) {
+      return;
+    }
+    if (locked || trimmed.length > 0 || (multiSelect && checkedIndices.length > 0)) {
+      return;
+    }
+    e.preventDefault();
+    handleSkip();
+  };
+
+  /**
    * The live card shares its view-transition-name with the popover panel, so
    * collapse/expand morphs one surface into the other. The placeholder copy
    * is `visibility: hidden` (out of the tab order and the a11y tree) and
@@ -233,6 +302,7 @@ function AskUserQuestionSingle({
         isLivePause && !showPlaceholder && '[view-transition-name:ask-question]',
       )}
       aria-hidden={showPlaceholder || undefined}
+      onKeyDown={handleCardKeyDown}
     >
       <div className="text-text-secondary flex items-start justify-between gap-2">
         <div className="min-w-0 pt-1">
@@ -284,6 +354,7 @@ function AskUserQuestionSingle({
           setAnswerValue(e.target.value);
           setAskAnswerDraft(actionId, e.target.value);
         }}
+        onKeyDown={handleAnswerKeyDown}
         minRows={2}
         maxRows={12}
         placeholder={otherLabel ?? localize('com_ui_your_answer')}
