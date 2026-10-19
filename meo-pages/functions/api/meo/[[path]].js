@@ -1,5 +1,6 @@
 import { apiUrl, brokerUrl, loadSession } from '../../_lib/account.js';
 import { clearCookies } from '../../_lib/session.js';
+import { legacyBrokerChatPayload } from '../../_lib/legacy-chat.js';
 
 const jsonHeaders = {
   'Content-Type': 'application/json; charset=utf-8',
@@ -127,14 +128,63 @@ export async function onRequest({ request, env }) {
   if (body == null && !['GET', 'HEAD'].includes(route.method)) {
     body = await request.arrayBuffer();
   }
+  const isChat = ['/chat/prepare', '/chat/stream'].includes(relativePath);
+  const originalChatBody = isChat && body instanceof ArrayBuffer ? body : null;
+  if (originalChatBody) {
+    try {
+      const parsed = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(originalChatBody));
+      // The native /v1/chat contract owns its conversation context. This
+      // browser-only snapshot is for the legacy broker bridge exclusively;
+      // never send the extra field to a newer native Chat route.
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) &&
+          Object.hasOwn(parsed, 'context')) {
+        const { context: _browserContext, ...nativeRequest } = parsed;
+        body = JSON.stringify(nativeRequest);
+      }
+    } catch {
+      // Preserve original payload; the native API can return its normal 400.
+    }
+  }
 
-  const upstream = await fetch(route.url, {
+  let upstream = await fetch(route.url, {
     method: route.method,
     headers: forwardedHeaders(request, session.accessToken, body != null),
     body: ['GET', 'HEAD'].includes(route.method) ? undefined : body,
     redirect: 'manual',
     signal: request.signal,
   });
+
+  // v53 production API omitted the chat route from its deployed bundle.
+  // Only fall back if the upstream explicitly says the ROUTE is missing,
+  // never for permission errors or missing account-owned resources. Once a
+  // compatible API is deployed its native chat implementation takes priority.
+  if (originalChatBody && upstream.status === 404) {
+    const upstreamError = await upstream.clone().json().catch(() => null);
+    if (upstreamError?.error?.code === 'not_found') {
+      let parsed;
+      try {
+        parsed = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(originalChatBody));
+      } catch {
+        return json({ error: { code: 'invalid_request' } }, 400);
+      }
+      let payload;
+      try {
+        payload = legacyBrokerChatPayload(
+          relativePath, parsed, env.MEO_OAUTH_CLIENT_ID,
+        );
+      } catch {
+        return json({ error: { code: 'invalid_request' } }, 400);
+      }
+      await upstream.body?.cancel().catch(() => undefined);
+      upstream = await fetch(brokerUrl(env), {
+        method: 'POST',
+        headers: forwardedHeaders(request, session.accessToken, true),
+        body: JSON.stringify(payload),
+        redirect: 'manual',
+        signal: request.signal,
+      });
+    }
+  }
 
   const response = new Response(upstream.body, {
     status: upstream.status,

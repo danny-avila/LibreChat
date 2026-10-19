@@ -342,6 +342,11 @@ export default function MeoChat() {
     setBusy(true);
     const nextMessages: Message[] = [...messages, { role: 'user', content: prompt }];
     const contextConversationId = activeConversationId || null;
+    // Snapshot only the latest messages once so prepare and stream have the
+    // same consent-bound context even after React state changes.
+    const recentContext = messages.slice(-12).map(({ role, content }) => ({
+      role, content: content.slice(0, 3000),
+    }));
     try {
       const prepared = await json<{ consent: MeoConsent }>('/api/meo/chat/prepare', {
         method: 'POST',
@@ -350,6 +355,7 @@ export default function MeoChat() {
           model: model.trim(),
           conversationId: contextConversationId,
           prompt,
+          context: recentContext,
         }),
       });
       const consent = prepared.consent;
@@ -367,6 +373,7 @@ export default function MeoChat() {
           model: model.trim(),
           conversationId: contextConversationId,
           prompt,
+          context: recentContext,
           consent,
         }),
         signal: abortController.signal,
