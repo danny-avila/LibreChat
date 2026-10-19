@@ -36,7 +36,7 @@ const Progress: React.ForwardRefExoticComponent<
       ref={ref}
       value={value}
       className={cn(
-        'bg-surface-tertiary relative h-2 w-full overflow-hidden rounded-full',
+        'bg-surface-tertiary relative h-2 w-full overflow-hidden rounded-full rtl:-scale-x-100',
         className,
       )}
       {...props}

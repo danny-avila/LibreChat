@@ -119,7 +119,7 @@ function SelectDropDown({
                   }
                 }}
                 className={cn(
-                  'border-border-control bg-surface-secondary focus-visible:ring-focus-control disabled:bg-surface-secondary relative flex w-full cursor-default flex-col rounded-md border py-2 pr-10 pl-3 text-left focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-hidden sm:text-sm',
+                  'border-border-control bg-surface-secondary focus-visible:ring-focus-control disabled:bg-surface-secondary relative flex w-full cursor-default flex-col rounded-md border py-2 ps-3 pe-10 text-start focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-hidden sm:text-sm',
                   disabledFillClasses,
                   className ?? '',
                 )}
@@ -150,7 +150,7 @@ function SelectDropDown({
                       </span>
                     )}
                     {renderIcon && (
-                      <span className="icon-md absolute right-0 mr-8 flex items-center">
+                      <span className="icon-md absolute inset-e-0 me-8 flex items-center">
                         {(value as OptionWithIcon).icon}
                       </span>
                     )}
@@ -165,7 +165,7 @@ function SelectDropDown({
                     })()}
                   </span>
                 </span>
-                <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
+                <span className="pointer-events-none absolute inset-y-0 inset-e-0 flex items-center pe-2">
                   <svg
                     stroke="currentColor"
                     fill="none"
@@ -202,7 +202,7 @@ function SelectDropDown({
                       key={'listbox-render-option'}
                       value={null}
                       className={cn(
-                        'group text-text-primary hover:bg-surface-hover relative flex h-[2.625rem] cursor-pointer items-center overflow-hidden pr-9 pl-3 select-none',
+                        'group text-text-primary hover:bg-surface-hover relative flex h-[2.625rem] cursor-pointer items-center overflow-hidden ps-3 pe-9 select-none',
                         optionsClass ?? '',
                       )}
                     >
@@ -231,7 +231,7 @@ function SelectDropDown({
                         value={option}
                         className={({ active }) =>
                           cn(
-                            'group text-text-primary hover:bg-surface-hover relative flex h-[2.625rem] cursor-pointer items-center overflow-hidden pr-9 pl-3 select-none',
+                            'group text-text-primary hover:bg-surface-hover relative flex h-[2.625rem] cursor-pointer items-center overflow-hidden ps-3 pe-9 select-none',
                             active ? 'bg-surface-active text-text-primary' : '',
                             optionsClass ?? '',
                           )
@@ -242,14 +242,14 @@ function SelectDropDown({
                             className={cn(
                               'text-text-primary flex h-6 items-center gap-1',
                               option === value ? 'font-semibold' : '',
-                              iconSide === 'left' ? 'ml-4' : '',
+                              iconSide === 'left' ? 'ms-4' : '',
                             )}
                           >
                             {currentIcon != null && (
                               <span
                                 className={cn(
-                                  'mr-1',
-                                  optionIconSide === 'right' ? 'absolute right-0 pr-2' : '',
+                                  'me-1',
+                                  optionIconSide === 'right' ? 'absolute inset-e-0 pe-2' : '',
                                 )}
                               >
                                 {currentIcon}
@@ -261,7 +261,7 @@ function SelectDropDown({
                             <span
                               className={cn(
                                 'text-text-primary absolute inset-y-0 flex items-center',
-                                iconSide === 'left' ? 'left-0 pl-2' : 'right-0 pr-3',
+                                iconSide === 'left' ? 'inset-s-0 ps-2' : 'inset-e-0 pe-3',
                               )}
                             >
                               <CheckMark />

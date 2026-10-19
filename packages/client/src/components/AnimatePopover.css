@@ -47,3 +47,22 @@
     transform: none;
   }
 }
+
+.animate-popover-left:dir(rtl) {
+  transform-origin: right;
+  transform: scale(0.95) translateX(0.5rem);
+}
+
+.animate-popover-left:dir(rtl)[data-enter] {
+  transform: scale(1) translateX(0);
+}
+
+.animate-popover-bottom:dir(rtl) {
+  transform-origin: bottom right;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-popover-bottom:dir(rtl) {
+    transform: none;
+  }
+}

@@ -9,7 +9,7 @@ import useRemScale from '~/hooks/useRemScale';
 import { fieldControl } from './Field';
 import './AnimatePopover.css';
 import { JSX } from 'react/jsx-runtime';
-import { cn, pxToRem } from '~/utils';
+import { cn, pxToRem, resolveSide } from '~/utils';
 
 interface ControlComboboxProps {
   selectedValue: string;
@@ -123,6 +123,12 @@ function ControlCombobox({
   });
 
   const selectOpen = select.useState('open');
+  const selectAnchor = select.useState('anchorElement');
+  useEffect(() => {
+    if (placement) {
+      select.setState('placement', resolveSide(placement, selectAnchor));
+    }
+  }, [select, placement, selectAnchor]);
   useEffect(() => {
     // The select owns the popover; hiding it does not hide the combobox store.
     if (!selectOpen) {
@@ -184,7 +190,7 @@ function ControlCombobox({
     iconClassName,
   );
   const optionIconClassName = cn(
-    'mr-2 flex h-5 w-5 items-center justify-center overflow-hidden rounded-full',
+    'me-2 flex h-5 w-5 items-center justify-center overflow-hidden rounded-full',
     iconClassName,
   );
 
@@ -222,7 +228,7 @@ function ControlCombobox({
         {!isCollapsed && (
           <>
             <span
-              className="grow truncate text-left"
+              className="grow truncate text-start"
               title={(displayValue != null ? displayValue : selectedValue) || undefined}
             >
               {displayValue != null
@@ -266,12 +272,12 @@ function ControlCombobox({
       >
         <div className="shrink-0 py-1.5">
           <div className="relative">
-            <Search className="text-text-primary absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2" />
+            <Search className="text-text-primary absolute inset-s-3 top-1/2 h-4 w-4 -translate-y-1/2" />
             <Ariakit.Combobox
               store={combobox}
               autoSelect
               placeholder={searchPlaceholder}
-              className="bg-surface-secondary text-text-primary w-full rounded-md py-2 pr-3 pl-9 text-sm focus:outline-hidden"
+              className="bg-surface-secondary text-text-primary w-full rounded-md py-2 ps-9 pe-3 text-sm focus:outline-hidden"
             />
           </div>
         </div>
@@ -303,7 +309,7 @@ function ControlCombobox({
                   {icon != null && iconSide === 'left' && (
                     <div className={optionIconClassName}>{icon}</div>
                   )}
-                  <span className="grow truncate text-left">{label}</span>
+                  <span className="grow truncate text-start">{label}</span>
                   {icon != null && iconSide === 'right' && (
                     <div className={optionIconClassName}>{icon}</div>
                   )}

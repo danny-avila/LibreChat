@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useDirection } from '@radix-ui/react-direction';
 import * as SliderPrimitive from '@radix-ui/react-slider';
 import { cn, disabledFillClasses } from '~/utils';
 
@@ -26,39 +27,44 @@ const Slider: React.ForwardRefExoticComponent<SliderProps & React.RefAttributes<
         ...props
       },
       ref,
-    ) => (
-      <SliderPrimitive.Root
-        ref={ref}
-        {...props}
-        {...{
-          className: cn(
-            'relative flex w-full cursor-pointer touch-none select-none items-center',
-            className,
-          ),
-          onDoubleClick,
-        }}
-      >
-        <SliderPrimitive.Track
-          {...{
-            className: 'relative h-2 w-full grow overflow-hidden rounded-full bg-surface-tertiary',
-          }}
-        >
-          <SliderPrimitive.Range {...{ className: 'absolute h-full bg-surface-inverted' }} />
-        </SliderPrimitive.Track>
-        <SliderPrimitive.Thumb
+    ) => {
+      const direction = useDirection();
+      return (
+        <SliderPrimitive.Root
+          ref={ref}
+          dir={direction}
+          {...props}
           {...{
             className: cn(
-              'block h-5 w-5 rounded-full border-2 border-border-xheavy bg-surface-primary ring-offset-surface-primary transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus-control focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
-              disabledFillClasses,
+              'relative flex w-full cursor-pointer touch-none select-none items-center',
+              className,
             ),
-            'aria-labelledby': ariaLabelledBy,
-            'aria-label': ariaLabel,
-            'aria-describedby': ariaDescribedBy,
-            'aria-valuetext': ariaValueText,
+            onDoubleClick,
           }}
-        />
-      </SliderPrimitive.Root>
-    ),
+        >
+          <SliderPrimitive.Track
+            {...{
+              className:
+                'relative h-2 w-full grow overflow-hidden rounded-full bg-surface-tertiary',
+            }}
+          >
+            <SliderPrimitive.Range {...{ className: 'absolute h-full bg-surface-inverted' }} />
+          </SliderPrimitive.Track>
+          <SliderPrimitive.Thumb
+            {...{
+              className: cn(
+                'block h-5 w-5 rounded-full border-2 border-border-xheavy bg-surface-primary ring-offset-surface-primary transition-colors focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-focus-control focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50',
+                disabledFillClasses,
+              ),
+              'aria-labelledby': ariaLabelledBy,
+              'aria-label': ariaLabel,
+              'aria-describedby': ariaDescribedBy,
+              'aria-valuetext': ariaValueText,
+            }}
+          />
+        </SliderPrimitive.Root>
+      );
+    },
   );
 Slider.displayName = SliderPrimitive.Root.displayName;
 

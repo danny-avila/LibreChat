@@ -1,6 +1,7 @@
 import {
   memo,
   forwardRef,
+  useEffect,
   useCallback,
   useMemo,
   RefAttributes,
@@ -12,7 +13,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import type { FocusOutline } from './Focus';
 import { useDialogDepth, usePopoverZIndex } from './OriginalDialog';
 import { focusOutlineVariants } from './Focus';
-import { cn } from '~/utils';
+import { cn, resolveSide } from '~/utils';
 import './Tooltip.css';
 
 interface TooltipAnchorProps extends Ariakit.TooltipAnchorProps {
@@ -149,6 +150,13 @@ export const TooltipAnchor: ForwardRefExoticComponent<
   ref,
 ) {
   const tooltip = Ariakit.useTooltipStore({ placement: side });
+  const anchorElement = Ariakit.useStoreState(tooltip, 'anchorElement');
+
+  /** `side` is physical; resolve it against the anchor's own direction so `right` stays the
+   *  inline-end side in an RTL layout without every caller having to know. */
+  useEffect(() => {
+    tooltip.setState('placement', resolveSide(side, anchorElement));
+  }, [tooltip, side, anchorElement]);
 
   /**
    * `role="button"` renders a plain element with no native activation, so Enter and

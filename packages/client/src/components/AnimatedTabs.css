@@ -55,3 +55,12 @@
 .animated-panels [data-open] ~ .animated-tab-panel {
   translate: 100%;
 }
+
+.animated-panels:dir(rtl):has(> [data-was-open]) > .animated-tab-panel {
+  translate: 100%;
+}
+
+.animated-panels:dir(rtl) [data-was-open] ~ .animated-tab-panel,
+.animated-panels:dir(rtl) [data-open] ~ .animated-tab-panel {
+  translate: -100%;
+}

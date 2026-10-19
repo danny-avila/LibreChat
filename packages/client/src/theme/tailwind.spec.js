@@ -94,6 +94,13 @@ describe('LibreChat Tailwind preset', () => {
     expect(rule(css, 'animate-loading-dot')).toContain('1.2s ease-in-out');
   });
 
+  it('negates the switch thumb travel so an RTL track can mirror it', async () => {
+    const css = await generate(['-translate-x-theme-switch-travel']);
+
+    expect(rule(css, '-translate-x-theme-switch-travel')).toContain('--theme-switch-width');
+    expect(rule(css, '-translate-x-theme-switch-travel')).toContain('* -1)');
+  });
+
   it('generates every component animation and its keyframes together', async () => {
     const names = ['loading-dot', 'accordion-down', 'accordion-up', 'caret-blink'];
     const css = await generate(names.map((name) => `animate-${name}`));
