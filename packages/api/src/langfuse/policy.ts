@@ -1,3 +1,5 @@
+import { isForcedTemporaryRetention } from 'librechat-data-provider';
+import type { AppConfig } from '@librechat/data-schemas';
 import { isFalseEnv, isTrueEnv } from './utils';
 import { normalizeString } from '~/utils/text';
 
@@ -56,6 +58,24 @@ function traceIdAccumulation(traceId: string): number {
     accumulation = (accumulation ^ part) >>> 0;
   }
   return accumulation;
+}
+
+/**
+ * A temporary chat reaches no Langfuse destination unless the deployment opts
+ * in. `interface.retentionMode: "ephemeral"` makes every chat temporary, so it
+ * counts even when the caller only knows a row's stored flag. Read strictly,
+ * since admin config patches persist without validation.
+ */
+export function isLangfuseTraceAllowed(
+  appConfig: AppConfig | undefined,
+  isTemporary?: boolean | null,
+): boolean {
+  if (appConfig?.langfuse?.trace?.temporaryChats === true) {
+    return true;
+  }
+  return (
+    isTemporary !== true && !isForcedTemporaryRetention(appConfig?.interfaceConfig?.retentionMode)
+  );
 }
 
 export function isLangfuseTraceSampled(traceId: string): boolean {

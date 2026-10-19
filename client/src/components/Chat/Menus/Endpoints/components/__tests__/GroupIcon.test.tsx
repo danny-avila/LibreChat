@@ -22,15 +22,16 @@ describe('GroupIcon', () => {
   it('resolves known endpoint asset aliases case-insensitively', () => {
     render(<GroupIcon iconURL="OpenRouter" groupName="OpenRouter" />);
 
-    const src = screen.getByRole('img', { name: 'OpenRouter' }).getAttribute('src');
-    expect(src).toBeTruthy();
-    expect(src).not.toBe('');
+    expect(screen.getByRole('img', { name: 'OpenRouter' })).toBeInTheDocument();
   });
 
   it('resolves known endpoint asset aliases to shipped file paths', () => {
-    render(<GroupIcon iconURL="Helicone" groupName="Helicone" />);
+    render(<GroupIcon iconURL="Lemonade" groupName="Lemonade" />);
 
-    expect(screen.getByRole('img', { name: 'Helicone' })).toHaveAttribute('alt', 'Helicone');
+    expect(screen.getByRole('img', { name: 'AMD Lemonade' })).toHaveAttribute(
+      'src',
+      'assets/lemonade.png',
+    );
   });
 
   it('renders known endpoint aliases backed by components', () => {

@@ -54,6 +54,10 @@ const {
   getRemainingShutdownMs,
   registerBackgroundTaskShutdown,
   configureServerTimeouts,
+  createReadinessHandler,
+  keyvRedisClient,
+  ioredisClient,
+  cacheConfig,
   setupGracefulShutdown,
   updateInterfacePermissions,
   configureMessageFilterRegexValidator,
@@ -78,6 +82,7 @@ const initializeOAuthReconnectManager = require('./services/initializeOAuthRecon
 const { capabilityContextMiddleware } = require('./middleware/roles/capabilities');
 const createValidateImageRequest = require('./middleware/validateImageRequest');
 const { initializeGitHubSkillSync } = require('./services/Skills/sync');
+const { startSkillDeletionSweep } = require('./services/Skills/deletion');
 const { initializeAgentTriggerService } = require('./services/Agents/triggers');
 const { resumeAgentEventDetachedAction } = require('./services/Agents/detachedActionResume');
 const { initializeScheduleEngine, recordExpiredScheduleApproval } = require('./services/Schedules');
@@ -262,6 +267,7 @@ const startServer = async () => {
     additionalSkills: getDeploymentPluginSkills(),
   });
   initializeGitHubSkillSync(appConfig);
+  startSkillDeletionSweep(appConfig.skillDeletion);
   startExpiredFileSweep({ appConfig, loadAppConfig: getAppConfig });
   // Register any programmatic tool-approval policy hooks declared in
   // `endpoints.agents.toolApproval.hooks`. Honor the `enabled` kill switch: when tool
@@ -348,12 +354,14 @@ const startServer = async () => {
 
   app.get('/health', (_req, res) => res.status(200).send('OK'));
   app.get('/livez', (_req, res) => res.status(200).send('OK'));
-  app.get('/readyz', (_req, res) => {
-    if (!serverReady) {
-      return res.status(503).send('NOT_READY');
-    }
-    return res.status(200).send('OK');
-  });
+  app.get(
+    '/readyz',
+    createReadinessHandler(() => serverReady, {
+      useRedis: cacheConfig.USE_REDIS,
+      ioredis: ioredisClient,
+      keyv: keyvRedisClient,
+    }),
+  );
 
   /* Middleware */
   app.use(requestContextMiddleware);

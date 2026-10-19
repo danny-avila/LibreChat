@@ -146,6 +146,7 @@ import {
   validateSkillDescription,
   deriveStructuredFrontmatterFields,
   inferSkillFileCategory,
+  filterExistingSkillIds,
   type SkillMethods,
   type SkillDeps,
   type CreateSkillInput,
@@ -178,6 +179,7 @@ import {
   type AgentEventActorReceiptStorageMetrics,
 } from './triggerDelivery';
 import { createSkillSyncMethods, type SkillSyncMethods } from './skillSync';
+import { createSkillLifecycleMethods, type SkillLifecycleMethods } from './skillLifecycle';
 import type {
   SkillSyncStatusInput,
   SkillSyncCredentialSummary,
@@ -238,12 +240,19 @@ export {
   validateSkillDescription,
   deriveStructuredFrontmatterFields,
   inferSkillFileCategory,
+  filterExistingSkillIds,
 };
 export { AUDIT_SCHEMA_VERSION, MAX_AUDIT_EXPORT_ROWS, MAX_AUDIT_LOG_LIMIT, MAX_AUDIT_VERIFY_ROWS };
 export { MAX_TOOL_FAVORITES };
 export { AgentTriggerDeliveryConflictError };
 export type { PromptGroupListParams };
 export { AGENT_OWNER_CONTACT_RESOLVED_FIELD, AgentSortCursorError } from './agent';
+export { createSkillDeletionPersistenceAdapter } from './skillDeletionAdapter';
+export type {
+  SkillDeletionRecord,
+  SkillUploadIntentRecord,
+  SkillDeletionFileRecord,
+} from './skillDeletionAdapter';
 export {
   AgentQueuedTurnCapacityError,
   AgentQueuedTurnConflictError,
@@ -292,6 +301,7 @@ export type AllMethods = ToolApprovalGrantStorage &
   PromptMethods &
   SkillMethods &
   SkillSyncMethods &
+  SkillLifecycleMethods &
   AgentTriggerDeliveryMethods &
   AgentQueuedTurnMethods &
   ScheduleMCPConsentStorage &
@@ -537,6 +547,7 @@ export function createMethods(
     ...promptMethods,
     ...skillMethods,
     ...createSkillSyncMethods(mongoose),
+    ...createSkillLifecycleMethods(mongoose),
     ...agentTriggerDeliveryMethods,
     ...agentQueuedTurnMethods,
     ...createScheduleMethods(mongoose),
@@ -629,6 +640,7 @@ export type {
   SkillSyncCredentialSummary,
   UpsertSkillSyncCredentialInput,
   SkillSyncMethods,
+  SkillLifecycleMethods,
   AgentTriggerDeliveryMethods,
   AgentQueuedTurnMethods,
   AgentTriggerProducerLeaseStatus,
