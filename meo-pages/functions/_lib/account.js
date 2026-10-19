@@ -42,27 +42,43 @@ function safeOAuthErrorCode(value) {
 }
 
 async function tokenRequest(env, body) {
-  let response;
-  try {
-    response = await fetch(`${accountUrl(env)}/v1/auth/oauth2/token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams(body),
-    });
-  } catch {
-    throw new OAuthTokenExchangeError('token_network_error');
-  }
+  // The production Account Worker sometimes exceeds its CPU budget on this
+  // route and returns 503. Retry that one transient server error at most once;
+  // never retry OAuth 400/401 responses, network errors or authorization policy.
+  // This is a mitigation only: the Worker CPU budget still needs fixing.
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    let response;
+    try {
+      response = await fetch(`${accountUrl(env)}/v1/auth/oauth2/token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Cache-Control': 'no-store',
+        },
+        body: new URLSearchParams(body),
+      });
+    } catch {
+      throw new OAuthTokenExchangeError('token_network_error');
+    }
 
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    const oauthCode = safeOAuthErrorCode(payload?.error);
-    throw new OAuthTokenExchangeError(
-      oauthCode ? `token_${response.status}_${oauthCode}` : `token_http_${response.status}`,
-    );
+    if (response.status === 503 && attempt === 0) {
+      await response.body?.cancel().catch(() => undefined);
+      // Delay consumes wall time, not CPU time, and avoids an immediate retry
+      // in the same hot isolate. Do not log codes, tokens or request bodies.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      continue;
+    }
+
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      const oauthCode = safeOAuthErrorCode(payload?.error);
+      throw new OAuthTokenExchangeError(
+        oauthCode ? `token_${response.status}_${oauthCode}` : `token_http_${response.status}`,
+      );
+    }
+    return payload;
   }
-  return payload;
+  throw new OAuthTokenExchangeError('token_http_503');
 }
 
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
