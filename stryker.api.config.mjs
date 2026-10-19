@@ -1,22 +1,27 @@
 import initialExperiment from './stryker.config.mjs';
-import apiJest from './packages/api/jest.config.mjs';
+import { apiMutate, apiJestOptions, prepareShard } from './.github/scripts/mutation-shards.mjs';
+
+const shard = process.env.MUTATION_SHARD ? prepareShard(process.env.MUTATION_SHARD) : undefined;
+const reportDirectory = shard?.directory ?? 'reports/mutation/api';
 
 export default {
   ...initialExperiment,
   jest: {
     configFile: 'packages/api/jest.config.mjs',
     config: {
-      // Match the normal API test:ci command; service integration tests run separately.
-      testPathIgnorePatterns: [...apiJest.testPathIgnorePatterns, 'integration\\.'],
+      ...apiJestOptions,
+      ...(shard && {
+        testMatch: shard.testFiles.map((file) => `<rootDir>/${file.slice('packages/api/'.length)}`),
+      }),
     },
+    // The shard already has an explicit test list, including tests without import edges.
     enableFindRelatedTests: false,
   },
-  mutate: [
-    'packages/api/src/**/*.{js,jsx,ts,tsx,cjs,mjs,cts,mts}',
-    '!packages/api/src/**/*.{spec,test,helper,dev}.{js,jsx,ts,tsx,cjs,mjs,cts,mts}',
-    '!packages/api/src/**/*.d.{ts,cts,mts}',
-    '!packages/api/src/**/{__tests__,__mocks__,__fixtures__}/**',
-  ],
+  mutate: shard?.files ?? apiMutate,
+  concurrency: 1,
+  testRunnerNodeArgs: ['--max-old-space-size=8192'],
+  // A shard with no related tests must report uncovered mutants, not disappear.
+  allowEmpty: Boolean(shard),
   // Include cross-workspace fixtures and built dependencies used by the API tests.
   ignorePatterns: [
     '**',
@@ -39,7 +44,7 @@ export default {
   dryRunTimeoutMinutes: 30,
   reporters: ['progress', 'html', 'json'],
   incremental: true,
-  incrementalFile: 'reports/mutation/api/incremental.json',
-  htmlReporter: { fileName: 'reports/mutation/api/index.html' },
-  jsonReporter: { fileName: 'reports/mutation/api/mutation.json' },
+  incrementalFile: `${reportDirectory}/incremental.json`,
+  htmlReporter: { fileName: `${reportDirectory}/index.html` },
+  jsonReporter: { fileName: `${reportDirectory}/mutation.json` },
 };
