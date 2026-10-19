@@ -169,7 +169,10 @@ describe('encodeAndFormatImages', () => {
     expect(result.image_urls).toEqual([
       { type: 'image', source: { type: 'base64', media_type: file.type, data: content } },
     ]);
-    expect(httpClient.get).toHaveBeenCalledWith(file.filepath, { responseType: 'arraybuffer' });
+    expect(httpClient.get).toHaveBeenCalledWith(file.filepath, {
+      responseType: 'arraybuffer',
+      timeout: 30_000,
+    });
     expect(memoryGuard.runGuardedEncode).toHaveBeenCalledWith(file.bytes, expect.any(Function));
   });
 

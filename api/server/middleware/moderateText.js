@@ -5,6 +5,7 @@ const {
   mergeQuotedText,
   getBoundedAskUserAnswerValues,
   serializeAskUserAnswerVariants,
+  getOutboundTimeoutMs,
 } = require('@librechat/api');
 const { logger } = require('@librechat/data-schemas');
 const { ErrorTypes } = require('librechat-data-provider');
@@ -96,6 +97,7 @@ async function moderateText(req, res, next) {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${process.env.OPENAI_MODERATION_API_KEY}`,
         },
+        timeout: getOutboundTimeoutMs(req.config, 'moderationMs'),
       },
     );
 

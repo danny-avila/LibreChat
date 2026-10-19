@@ -12,6 +12,7 @@ import type { Agents } from 'librechat-data-provider';
 import type { AxiosInstance } from 'axios';
 import type { ServerRequest, StrategyFunctions } from '~/types';
 import { getFileStream, isAttachmentObjectNotFoundError } from './utils';
+import { getOutboundTimeoutMs } from '~/utils/timeouts';
 import { validateImage } from '~/files/validation';
 import { runGuardedEncode } from './memoryGuard';
 import { logAxiosError } from '~/utils/axios';
@@ -140,6 +141,7 @@ export async function encodeAndFormatImages(
         try {
           const response = await httpClient.get<ArrayBuffer>(imageURL, {
             responseType: 'arraybuffer',
+            timeout: getOutboundTimeoutMs(req.config, 'imageFetchMs'),
           });
           return [preparedFile, Buffer.from(response.data).toString('base64')];
         } catch (error) {

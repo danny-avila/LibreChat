@@ -7,6 +7,8 @@ const {
   applyAxiosProxyConfig,
   createMinimalRetentionRequest,
   getHttpsProxyAgent,
+  getOutboundTimeoutMs,
+  startOutboundDeadline,
 } = require('@librechat/api');
 const { FileContext, ContentTypes } = require('librechat-data-provider');
 
@@ -118,6 +120,7 @@ class FluxAPI extends Tool {
     this.userId = fields.userId;
     this.tenantId = fields.req?.user?.tenantId;
     this.retentionRequest = createMinimalRetentionRequest(fields.req);
+    this.appConfig = fields.req?.config;
     this.fileStrategy = fields.fileStrategy;
 
     /** @type {boolean} **/
@@ -155,7 +158,7 @@ class FluxAPI extends Tool {
   }
 
   getAxiosConfig() {
-    const config = {};
+    const config = { timeout: getOutboundTimeoutMs(this.appConfig, 'imageGenerationMs') };
     return applyAxiosProxyConfig(config, this.baseUrl);
   }
 
@@ -269,7 +272,9 @@ class FluxAPI extends Tool {
     // Polling for the result
     let status = 'Pending';
     let resultData = null;
-    while (status !== 'Ready' && status !== 'Error') {
+    /** Statuses such as `Content Moderated` or `Task not found` never become Ready. */
+    const deadline = startOutboundDeadline(this.appConfig, 'imageGenerationMs');
+    while (status !== 'Ready' && status !== 'Error' && !deadline.expired()) {
       try {
         // Wait 2 seconds between polls
         await new Promise((resolve) => setTimeout(resolve, 2000));
@@ -503,7 +508,9 @@ class FluxAPI extends Tool {
     // Polling for the result
     let status = 'Pending';
     let resultData = null;
-    while (status !== 'Ready' && status !== 'Error') {
+    /** Statuses such as `Content Moderated` or `Task not found` never become Ready. */
+    const deadline = startOutboundDeadline(this.appConfig, 'imageGenerationMs');
+    while (status !== 'Ready' && status !== 'Error' && !deadline.expired()) {
       try {
         // Wait 2 seconds between polls
         await new Promise((resolve) => setTimeout(resolve, 2000));

@@ -2497,6 +2497,25 @@ export const mcpAppRateLimitSchema = z
 
 export type TMCPAppRateLimits = z.infer<typeof mcpAppRateLimitSchema>;
 
+/** Per-integration budgets, in milliseconds, for outbound calls that run inside a request.
+ *  Omitted keys use the server defaults (`DEFAULT_OUTBOUND_TIMEOUTS_MS` in `@librechat/api`). */
+export const outboundTimeoutsSchema = z.object({
+  /** RAG API queries for file search and message context. */
+  ragMs: z.number().int().positive().optional(),
+  /** Each OCR provider call (upload, signed URL, OCR, delete). */
+  ocrMs: z.number().int().positive().optional(),
+  /** Each action (OpenAPI tool) HTTP call. */
+  actionsMs: z.number().int().positive().optional(),
+  /** The OpenAI moderation check that runs before a chat turn. */
+  moderationMs: z.number().int().positive().optional(),
+  /** Fetching a stored image by URL to encode it for a provider. */
+  imageFetchMs: z.number().int().positive().optional(),
+  /** The whole wait for an image generation tool's result, including polling. */
+  imageGenerationMs: z.number().int().positive().optional(),
+});
+
+export type TOutboundTimeouts = z.infer<typeof outboundTimeoutsSchema>;
+
 export const rateLimitSchema = z.object({
   twoFactorManagement: z
     .object({
@@ -4323,6 +4342,7 @@ export const configSchema = z.object({
       maxWorkers: z.number().int().min(1).max(32).optional(),
     })
     .optional(),
+  timeouts: outboundTimeoutsSchema.optional(),
   fileConfig: fileConfigSchema.optional(),
   modelSpecs: specsConfigSchema.optional(),
   filters: filtersConfigSchema.optional(),

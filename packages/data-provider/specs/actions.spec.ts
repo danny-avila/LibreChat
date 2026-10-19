@@ -75,6 +75,25 @@ describe('ActionRequest', () => {
     expect(response.data).toEqual({ success: true, method: 'GET' });
   });
 
+  it('bounds the request by the given timeout and abort signal', async () => {
+    const actionRequest = new ActionRequest(
+      'https://example.com',
+      '/test',
+      'GET',
+      'testOp',
+      false,
+      'application/json',
+    );
+    const executor = actionRequest.setParams({});
+    const { signal } = new AbortController();
+
+    await executor.execute({ timeout: 5_000, signal });
+
+    expect(mockedAxios.create).toHaveBeenLastCalledWith(
+      expect.objectContaining({ timeout: 5_000, signal, maxRedirects: 0 }),
+    );
+  });
+
   describe('ActionRequest', () => {
     beforeEach(() => {
       mockedAxios.get.mockClear();

@@ -283,7 +283,14 @@ class RequestExecutor {
     return this;
   }
 
-  async execute(options?: { httpAgent?: unknown; httpsAgent?: unknown }) {
+  async execute(options?: {
+    httpAgent?: unknown;
+    httpsAgent?: unknown;
+    /** Milliseconds before the request is abandoned; unset waits indefinitely. */
+    timeout?: number;
+    /** Aborts the request, for example when the run that called the action is stopped. */
+    signal?: AbortSignal;
+  }) {
     const url = createURL(this.config.domain, this.path);
     const headers: Record<string, string> = {
       ...this.authHeaders,
@@ -309,6 +316,8 @@ class RequestExecutor {
       validateStatus: (status) => status >= 200 && status < 400,
       ...(options?.httpAgent != null ? { httpAgent: options.httpAgent } : {}),
       ...(options?.httpsAgent != null ? { httpsAgent: options.httpsAgent } : {}),
+      ...(options?.timeout != null ? { timeout: options.timeout } : {}),
+      ...(options?.signal != null ? { signal: options.signal } : {}),
     });
 
     // Initialize separate containers for query and body parameters.

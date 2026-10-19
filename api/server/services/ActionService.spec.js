@@ -964,3 +964,26 @@ describe('backward-compatible tool name matching', () => {
     });
   });
 });
+
+describe('createActionTool request budget', () => {
+  it('passes the configured timeout and the run abort signal to the action call', async () => {
+    const preparedExecutor = { execute: jest.fn().mockResolvedValue({ data: { ok: true } }) };
+    const requestBuilder = {
+      createExecutor: jest.fn(() => ({ setParams: jest.fn(() => preparedExecutor) })),
+    };
+    const actionTool = await createActionTool({
+      userId: 'action-user',
+      res: {},
+      action: { action_id: 'action-1', metadata: { domain: 'https://api.example.com' } },
+      requestBuilder,
+      timeoutMs: 5_000,
+    });
+    const { signal } = new AbortController();
+
+    await actionTool._call({}, { signal });
+
+    expect(preparedExecutor.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ timeout: 5_000, signal }),
+    );
+  });
+});

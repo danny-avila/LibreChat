@@ -75,6 +75,7 @@ const {
   splitAssistantMCPToolResult,
   appendAssistantMCPAppArtifact,
   resolveMCPClientCapabilityProfile,
+  getOutboundTimeoutMs,
 } = require('@librechat/api');
 const {
   Time,
@@ -699,6 +700,7 @@ async function processRequiredActions(client, requiredActions) {
         encrypted, // Pass the encrypted values for OAuth flow
         useSSRFProtection: !Array.isArray(_allowedDomains) || _allowedDomains.length === 0,
         allowedAddresses: _allowedAddresses,
+        timeoutMs: getOutboundTimeoutMs(appConfig, 'actionsMs'),
       });
       if (!tool) {
         logger.warn(
@@ -2077,6 +2079,7 @@ async function loadAgentTools({
       jobCreatedAt,
       useSSRFProtection: !Array.isArray(_allowedDomains) || _allowedDomains.length === 0,
       allowedAddresses: _allowedAddresses,
+      timeoutMs: getOutboundTimeoutMs(appConfig, 'actionsMs'),
     });
 
     if (!tool) {
@@ -2677,6 +2680,7 @@ async function loadActionToolsForExecution({
       description: functionSignature.description,
       useSSRFProtection: !Array.isArray(allowedDomains) || allowedDomains.length === 0,
       allowedAddresses,
+      timeoutMs: getOutboundTimeoutMs(appConfig, 'actionsMs'),
     });
 
     if (!tool) {
