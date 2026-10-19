@@ -138,6 +138,10 @@ const modelMakers: [RegExp, ProviderId | ProviderIconDef][] = [
   [/sonar/, ProviderId.perplexity],
   [/nemotron/, { art: mark('nvidia'), label: 'NVIDIA', mono: true }],
   [/minimax|abab/, { art: mark('minimax'), label: 'MiniMax', mono: true }],
+  [/(^|[^a-z])phi(-?[0-9]|:|$)/, { art: mark('microsoft'), label: 'Microsoft', mono: true }],
+  [/(^|[^a-z])(chat)?glm|codegeex/, { art: mark('zhipu'), label: 'Z.ai', mono: true }],
+  [/granite/, { art: mark('ibm'), label: 'IBM', mono: true }],
+  [/(^|[^a-z])nova-/, { art: mark('amazon'), label: 'Amazon Nova', mono: true }],
   [/(?<!o)llama/, { art: mark('meta'), label: 'Meta', mono: true }],
 ];
 

@@ -46,7 +46,7 @@ describe('FavoriteItem type="model" provider art', () => {
   });
 
   it('falls back to the custom art when neither the endpoint nor the model has a brand', () => {
-    render(<FavoriteItem type="model" item={{ model: 'phi4:14b', endpoint: 'Local' }} />);
+    render(<FavoriteItem type="model" item={{ model: 'starcoder2:15b', endpoint: 'Local' }} />);
     expect(screen.getByRole('img', { name: 'Custom', hidden: true })).toBeInTheDocument();
   });
 });
