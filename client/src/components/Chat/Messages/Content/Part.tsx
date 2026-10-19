@@ -6,6 +6,7 @@ import {
   ContentTypes,
   ToolCallTypes,
   imageGenTools,
+  isOpaqueReasoning,
   isImageVisionTool,
   hasToolCallPreview,
   getToolCallPreviewRevision,
@@ -646,6 +647,9 @@ const renderers: PartRenderers = {
       }
       if (reasoning.trim() === '' && part.reasoning_unavailable === true) {
         return <ReasoningMarker label={part.reasoning_label} />;
+      }
+      if (isOpaqueReasoning(reasoning)) {
+        return <ReasoningMarker encrypted />;
       }
       return (
         <Reasoning

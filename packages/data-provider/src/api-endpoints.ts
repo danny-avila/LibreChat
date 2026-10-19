@@ -76,6 +76,14 @@ export const messages = (params: q.MessagesListParams) => {
 
 export const messagesArtifacts = (messageId: string) => `${messagesRoot}/artifact/${messageId}`;
 
+/** The child calls of a stored message's subagent transcripts that the given files belong to. */
+export const messageSubagentAttachmentCalls = ({
+  conversationId,
+  messageId,
+  files,
+}: q.SubagentAttachmentCallsParams) =>
+  `${messagesRoot}/${encodeURIComponent(conversationId)}/${encodeURIComponent(messageId)}/subagent-calls?files=${encodeURIComponent(JSON.stringify(files))}`;
+
 /** One tool-call part of a stored message, in full. */
 export const messageToolCallPart = ({
   conversationId,
