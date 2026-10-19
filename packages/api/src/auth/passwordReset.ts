@@ -30,8 +30,8 @@ export interface PasswordResetDeps {
     expectedState: { email: string },
   ) => Promise<PasswordResetUser | null>;
   deleteTokens: (query: { userId: string; type: string }) => Promise<unknown>;
-  compareToken: (candidate: string, storedHash: string) => boolean;
-  hashPassword: (password: string) => string;
+  compareToken: (candidate: string, storedHash: string) => Promise<boolean>;
+  hashPassword: (password: string) => Promise<string>;
 }
 
 export interface PasswordResetInput {
@@ -152,7 +152,7 @@ export async function commitPasswordReset(
     deps.getUserById(input.userId, PASSWORD_RESET_USER_FIELDS),
   ]);
 
-  if (!resetToken || !deps.compareToken(input.token, resetToken.token)) {
+  if (!resetToken || !(await deps.compareToken(input.token, resetToken.token))) {
     return { ok: false };
   }
 
@@ -162,7 +162,7 @@ export async function commitPasswordReset(
 
   const user = await deps.updateUser(
     input.userId,
-    createPasswordResetUpdate(deps.hashPassword(input.password)),
+    createPasswordResetUpdate(await deps.hashPassword(input.password)),
     { email: account.email },
   );
   if (!user) {
