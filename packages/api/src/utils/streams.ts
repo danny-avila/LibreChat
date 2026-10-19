@@ -17,6 +17,21 @@ export function pipeToResponse(
   });
 }
 
+const guardedResponses = new WeakSet<Writable>();
+
+/**
+ * A response that outlives one segment can still fail a buffered write after that segment's
+ * listeners are gone. A lasting listener keeps that from becoming an uncaught error; the
+ * failure still destroys the response, which the next segment sees as a closed client.
+ */
+function guardResponse(res: Writable): void {
+  if (guardedResponses.has(res)) {
+    return;
+  }
+  guardedResponses.add(res);
+  res.on('error', () => undefined);
+}
+
 /**
  * Writes one `source` segment into `res`, ending `res` only when `end` is set. Resolves when the
  * segment ends; rejects, destroying `source`, when it fails or the client disconnects first.
@@ -26,6 +41,7 @@ export function pipeSegment(
   res: Writable,
   { end }: { end: boolean },
 ): Promise<void> {
+  guardResponse(res);
   return new Promise((resolve, reject) => {
     /** A client that left while the previous segment was being fetched already emitted close. */
     if (res.destroyed || res.writableEnded) {

@@ -90,4 +90,12 @@ describe('pipeSegment', () => {
     await expect(pending).rejects.toThrow('write EPIPE');
     expect(source.destroyed).toBe(true);
   });
+
+  it('keeps a response write error after a segment from going unhandled', async () => {
+    const res = new PassThrough();
+    res.resume();
+    await pipeSegment(Readable.from([Buffer.from('audio')]), res, { end: false });
+
+    expect(() => res.emit('error', new Error('write EPIPE'))).not.toThrow();
+  });
 });
