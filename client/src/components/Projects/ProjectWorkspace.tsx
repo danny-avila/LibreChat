@@ -366,6 +366,9 @@ export default function ProjectWorkspace() {
     <ProjectResources key={project._id} project={project} />
   ) : null;
 
+  /** react-resizable-panels reads drag deltas physically, so under RTL the group
+   *  stays LTR and renders these in reverse, each panel restoring the document
+   *  direction for its content. */
   const workspacePanels = [
     <ResizablePanel
       key="details"
@@ -518,6 +521,7 @@ export default function ProjectWorkspace() {
           onLayoutChanged={workspaceLayout.onLayoutChanged}
           resizeTargetMinimumSize={RESIZE_TARGET_SIZE}
           className="min-h-0 flex-1"
+          {...(reversed ? { dir: 'ltr' } : {})}
         >
           {reversed ? workspacePanels.reverse() : workspacePanels}
         </ResizablePanelGroup>
