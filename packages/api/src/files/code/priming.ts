@@ -15,6 +15,7 @@ import {
   claimCodeDestination,
   createCodeDestinationSet,
   reserveCodeDestination,
+  isCodeDestinationTaken,
   isImportedProjectFile,
   getCodeFileDestinationScope,
   sortCodeFilesByDestinationPriority,
@@ -102,15 +103,36 @@ interface PrimedCodeFile {
   getUploadTime: () => Promise<string | undefined>;
 }
 
-export function getProjectCodeScope(req: ServerRequest): CodeFileProjectScope | undefined {
+export function getProjectCodeScope(
+  req: ServerRequest,
+  codeSessionKey: string = Tools.execute_code,
+): CodeFileProjectScope | undefined {
   if (req.config?.projects?.codeExecution !== true || req.chatProjectContext == null) {
     return undefined;
   }
   req.codeFileReferences ??= new Map();
+  const sessions = (req.projectCodeSessions ??= new Map());
+  let sessionPlan = sessions.get(codeSessionKey);
+  if (!sessionPlan) {
+    sessionPlan = { destinations: new Map(), mountedNames: new Map(), frozen: false };
+    sessions.set(codeSessionKey, sessionPlan);
+  }
   return {
     projectFileIds: new Set(req.chatProjectContext.file_ids),
     conversationId: req.resolvedConversation?.conversationId ?? req.body?.conversationId,
+    sessionPlan,
   };
+}
+
+/** The storage receipt, rather than the requested name, is the actual mounted path. */
+export function recordProjectCodeMount(
+  project: CodeFileProjectScope | undefined,
+  file: TFile,
+  destination: string,
+): void {
+  if (!isImportedProjectFile(file, project)) {
+    project?.sessionPlan?.mountedNames.set(file.file_id, destination);
+  }
 }
 
 /** Reserve actual storage destinations before recovery so a failed winner never revives stale content. */
@@ -139,6 +161,9 @@ export async function selectCodeFiles({
   const registry = createCodeApiUploadRegistry();
   for (const file of sortCodeFilesByDestinationPriority(files, privateFileIds, project)) {
     if (!file) {
+      continue;
+    }
+    if (project?.sessionPlan?.frozen === false && isImportedProjectFile(file, project)) {
       continue;
     }
     const ref = getCodeEnvRefForProfile(file.metadata, routeKey);
@@ -215,8 +240,36 @@ export async function selectCodeFiles({
    * scope, guessed recovery names cannot displace a confirmed stored path. */
   surviving.sort((a, b) => a.selectionPriority - b.selectionPriority);
   const destinations = createCodeDestinationSet();
+  const fixedProjectPaths = createCodeDestinationSet();
+  const plannedImports = project?.sessionPlan?.frozen
+    ? project.sessionPlan.destinations
+    : new Map<string, string>();
+  for (const name of plannedImports.values()) {
+    reserveCodeDestination(destinations, name);
+    reserveCodeDestination(fixedProjectPaths, name);
+  }
   const selected: PrimedCodeFile[] = [];
   for (const candidate of surviving) {
+    const imported = isImportedProjectFile(candidate.file, project);
+    const plannedName = imported ? plannedImports.get(candidate.file.file_id) : undefined;
+    if (plannedName != null) {
+      const moved = plannedName !== candidate.sandboxName;
+      selected.push({
+        ...candidate,
+        sandboxName: plannedName,
+        isActive: candidate.isActive && !moved,
+        temporary: candidate.temporary || moved,
+      });
+      continue;
+    }
+    if (imported) {
+      // A peer's private file mounts in this session too, even when absent from this agent.
+      for (const name of project?.sessionPlan?.mountedNames.values() ?? []) {
+        reserveCodeDestination(destinations, name);
+      }
+    }
+    const conflictsWithProject =
+      !imported && isCodeDestinationTaken(fixedProjectPaths, candidate.sandboxName);
     if (candidate.assignRecoveryName) {
       const sandboxName = claimCodeDestination(
         destinations,
@@ -228,12 +281,13 @@ export async function selectCodeFiles({
         sandboxName,
         temporary:
           candidate.temporary ||
-          (isImportedProjectFile(candidate.file, project) && sandboxName !== candidate.sandboxName),
+          conflictsWithProject ||
+          (imported && sandboxName !== candidate.sandboxName),
       });
       continue;
     }
     if (!reserveCodeDestination(destinations, candidate.sandboxName)) {
-      if (isImportedProjectFile(candidate.file, project)) {
+      if (imported || conflictsWithProject) {
         // Live objects mount at their stored path, so a displaced input needs a new upload.
         selected.push({
           ...candidate,
@@ -254,6 +308,8 @@ export async function selectCodeFiles({
     }
     selected.push(candidate);
   }
+  for (const candidate of selected)
+    recordProjectCodeMount(project, candidate.file, candidate.sandboxName);
   await Promise.all(
     selected.map(async (candidate) => {
       if (!candidate.temporary) return;

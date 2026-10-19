@@ -135,6 +135,7 @@ import { resolveToolRoleGrants } from '~/tools/rolePermissions';
 import { createRequestAgentExecutionContext } from './runtime';
 import { resolveTurnDeliveryRouting } from './files/delivery';
 import { filterFilesByEndpointRuntimeConfig } from '~/files';
+import { getProjectCodeScope } from '~/files/code/priming';
 import { isFatalAgentInitializationError } from './errors';
 import { hasActiveFilePolicy } from '../protection/files';
 import { resolveAgentCodeExecution } from '~/code/agent';
@@ -2144,6 +2145,11 @@ export async function initializeAgent(
       });
     },
   });
+  if (provisionState?.project && params.req) {
+    provisionState.project =
+      getProjectCodeScope(params.req, codeExecutionContext.codeSessionKey) ??
+      provisionState.project;
+  }
   runtimeToolResources = addProjectFilesToFileSearch(
     tool_resources,
     projectRuntimeFiles,
@@ -2267,6 +2273,11 @@ export async function initializeAgent(
     repositoryInstructionSource: undefined,
   };
   const trustedCodeExecutionContext = loadedCodeExecutionContext ?? codeExecutionContext;
+  if (provisionState?.project && params.req) {
+    provisionState.project =
+      getProjectCodeScope(params.req, trustedCodeExecutionContext.codeSessionKey) ??
+      provisionState.project;
+  }
   const attachedWorkspaceOperations =
     trustedCodeExecutionContext.environmentType === 'attached'
       ? new Set(trustedCodeExecutionContext.codeWorkspace?.operations ?? [])

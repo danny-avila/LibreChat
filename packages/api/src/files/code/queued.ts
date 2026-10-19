@@ -1,10 +1,12 @@
-import { getCodeEnvRefForProfile, resolveSandboxFilename } from 'librechat-data-provider';
+import { Tools, getCodeEnvRefForProfile, resolveSandboxFilename } from 'librechat-data-provider';
 import type { TFile, TurnFileConsumers, AgentToolResources } from 'librechat-data-provider';
-import type { CodeEnvFile } from '@librechat/agents';
+import type { CodeEnvFile, ToolSessionMap, CodeSessionContext } from '@librechat/agents';
 import type { CodeExecutionRoute } from '../provision/service';
 import type { CodeExecutionContext } from '~/agents/execution';
+import type { CodeFileSessionPlan } from './destinations';
 import type { ProvisionState } from '~/agents/resources';
 import {
+  isCodeDestinationTaken,
   claimCodeDestination,
   createCodeDestinationSet,
   reserveCodeDestination,
@@ -20,7 +22,8 @@ export interface ProvisionToolContext {
   provisionState?: ProvisionState;
   tool_resources?: AgentToolResources;
   /** Code API deployment this agent resolved, so uploads land where it will execute. */
-  codeExecutionContext?: CodeExecutionRoute;
+  codeExecutionContext?: CodeExecutionRoute & Partial<Pick<CodeExecutionContext, 'codeSessionKey'>>;
+  codeSessionKey?: string;
   /** Successful refs retained while another file in the same batch awaits retry. */
   pendingProvisionedCodeFiles?: CodeEnvFile[];
 }
@@ -42,6 +45,12 @@ function routeKey(context: ProvisionToolContext): string {
     context.codeExecutionContext?.executionRouteKey ??
     context.codeExecutionContext?.executionProfile ??
     'default'
+  );
+}
+
+function sessionKey(context: ProvisionToolContext): string {
+  return (
+    context.codeSessionKey ?? context.codeExecutionContext?.codeSessionKey ?? Tools.execute_code
   );
 }
 
@@ -72,7 +81,12 @@ function stageProjectImports(
       ...(candidate.tool_resources?.execute_code?.files ?? []),
     ]) {
       if (isImportedProjectFile(file, candidateState?.project)) continue;
-      if (candidate !== context && candidateState?.agentScopedFileIds.has(file.file_id)) continue;
+      if (
+        candidate !== context &&
+        candidateState?.agentScopedFileIds.has(file.file_id) &&
+        sessionKey(candidate) !== sessionKey(context)
+      )
+        continue;
       const name =
         candidateState?.codeEnvDestinations?.get(file.file_id) ??
         getCodeEnvRefForProfile(file.metadata, route)?.sandboxFilename ??
@@ -100,6 +114,114 @@ function stageProjectImports(
   state.temporaryCodeFileIds = temporaryIds;
 }
 
+/** Imports claim paths only after every initial contributor has resolved its own files. */
+function planProjectSession(
+  context: ProvisionToolContext,
+  contexts: readonly ProvisionToolContext[],
+  route: string,
+): CodeFileSessionPlan | undefined {
+  const project = context.provisionState?.project;
+  if (!project?.sessionPlan) return undefined;
+  const plan = project.sessionPlan;
+  const destinations = createCodeDestinationSet();
+  for (const name of plan.mountedNames.values()) reserveCodeDestination(destinations, name);
+  if (plan.frozen) {
+    for (const name of plan.destinations.values()) reserveCodeDestination(destinations, name);
+  } else {
+    plan.destinations.clear();
+  }
+  const imports = new Map<string, { file: TFile; name: string }>();
+  const pending = new Map<string, { file: TFile; name: string }>();
+  const privateIds = new Set<string>();
+  for (const candidate of contexts) {
+    const state = candidate.provisionState;
+    for (const id of state?.agentScopedFileIds ?? []) privateIds.add(id);
+    const queuedIds = new Set(state?.codeEnvFiles.map((file) => file.file_id));
+    for (const file of [
+      ...(state?.codeEnvFiles ?? []),
+      ...(candidate.tool_resources?.execute_code?.files ?? []),
+    ]) {
+      const imported = isImportedProjectFile(file, project);
+      const name =
+        plan.mountedNames.get(file.file_id) ??
+        (!imported ? state?.codeEnvDestinations?.get(file.file_id) : undefined) ??
+        getCodeEnvRefForProfile(file.metadata, route)?.sandboxFilename ??
+        state?.codeEnvRecoveryNames?.get(file.file_id)?.name ??
+        resolveSandboxFilename(file.filename, file.type);
+      if (imported) {
+        if (!imports.has(file.file_id)) imports.set(file.file_id, { file, name });
+      } else if (queuedIds.has(file.file_id) && !plan.mountedNames.has(file.file_id)) {
+        if (!pending.has(file.file_id)) pending.set(file.file_id, { file, name });
+      } else {
+        reserveCodeDestination(destinations, name);
+      }
+    }
+  }
+  // Recovery can convert or sanitize a name; imports must also avoid those planned aliases.
+  for (const file of sortCodeFilesByDestinationPriority(
+    [...pending.values()].map((entry) => entry.file),
+    privateIds,
+    project,
+  )) {
+    if (!file) continue;
+    const entry = pending.get(file.file_id);
+    if (!entry) continue;
+    plan.mountedNames.set(
+      file.file_id,
+      claimCodeDestination(
+        destinations,
+        getCodeEnvUploadFilename(resolveSandboxFilename(entry.name, file.type)),
+        file.file_id,
+      ),
+    );
+  }
+  for (const file of sortCodeFilesByDestinationPriority(
+    [...imports.values()].map((entry) => entry.file),
+    undefined,
+    project,
+  )) {
+    if (!file || (plan.frozen && plan.destinations.has(file.file_id))) continue;
+    const entry = imports.get(file.file_id);
+    if (!entry) continue;
+    plan.destinations.set(
+      file.file_id,
+      claimCodeDestination(
+        destinations,
+        getCodeEnvUploadFilename(resolveSandboxFilename(entry.name, file.type)),
+        file.file_id,
+      ),
+    );
+  }
+  return plan;
+}
+
+/** Later subagents must honor the paths already sent to the parent model. */
+export function freezeProjectCodeSessions(contexts: Iterable<ProvisionToolContext>): void {
+  for (const context of contexts) {
+    const plan = context.provisionState?.project?.sessionPlan;
+    if (plan) plan.frozen = true;
+  }
+}
+
+/** Skill and restored-session mounts have already been selected when the graph is built. */
+export function reserveProjectCodeSessions(
+  contexts: Iterable<ProvisionToolContext>,
+  sessions?: ToolSessionMap,
+): void {
+  if (!sessions) return;
+  const visited = new Set<CodeFileSessionPlan>();
+  for (const context of contexts) {
+    const plan = context.provisionState?.project?.sessionPlan;
+    if (!plan || visited.has(plan)) continue;
+    visited.add(plan);
+    const files = (sessions.get(sessionKey(context)) as CodeSessionContext | undefined)?.files;
+    for (const file of files ?? []) {
+      if (file.name == null) continue;
+      plan.mountedNames.set(JSON.stringify(['seed', file.storage_session_id, file.id]), file.name);
+    }
+  }
+}
+
 /** Uses the same destination plan before inference and when files are uploaded lazily. */
 export function planCodeFileUploads({
   context,
@@ -117,10 +239,15 @@ export function planCodeFileUploads({
   const state = context.provisionState;
   if (!state) return [];
   const route = routeKey(context);
-  const routeContexts = [...contexts].filter((candidate) => routeKey(candidate) === route);
+  const routeContexts = [...contexts].filter(
+    (candidate) =>
+      routeKey(candidate) === route &&
+      (!state.project || sessionKey(candidate) === sessionKey(context)),
+  );
   if (!routeContexts.includes(context)) routeContexts.push(context);
-  // Stage the whole route before any agent freezes names, including live-only agents.
+  // Stage the whole session before any agent freezes names, including live-only agents.
   for (const candidate of routeContexts) stageProjectImports(candidate, route, routeContexts);
+  const projectSession = planProjectSession(context, routeContexts, route);
   if (!state.codeEnvFiles.length) return [];
   const queuedIds = new Set(state.codeEnvFiles.map((file) => file.file_id));
   const liveFiles = context.tool_resources?.execute_code?.files ?? [];
@@ -164,6 +291,13 @@ export function planCodeFileUploads({
   });
 
   const destinations = createCodeDestinationSet();
+  const importedDestinations = new Set<string>();
+  const fixedProjectPaths = createCodeDestinationSet();
+  for (const [id, name] of projectSession?.destinations ?? []) {
+    reserveCodeDestination(destinations, name);
+    reserveCodeDestination(fixedProjectPaths, name);
+    importedDestinations.add(id);
+  }
   const liveNames = new Map<string, string>();
   const reserveLiveFiles = (candidate: ProvisionToolContext): void => {
     const candidateQueuedIds = new Set(
@@ -176,10 +310,15 @@ export function planCodeFileUploads({
       )
         continue;
       const name =
+        projectSession?.mountedNames.get(file.file_id) ??
+        projectSession?.destinations.get(file.file_id) ??
         getCodeEnvRefForProfile(file.metadata, route)?.sandboxFilename ??
         candidate.provisionState?.codeEnvDestinations?.get(file.file_id) ??
         resolveSandboxFilename(file.filename, file.type);
-      if (reserveCodeDestination(destinations, name) && !liveNames.has(file.file_id)) {
+      if (
+        (importedDestinations.has(file.file_id) || reserveCodeDestination(destinations, name)) &&
+        !liveNames.has(file.file_id)
+      ) {
         liveNames.set(file.file_id, name);
       }
     }
@@ -223,6 +362,8 @@ export function planCodeFileUploads({
     if (!file) continue;
     const candidate = queued.get(file.file_id);
     const destination =
+      projectSession?.destinations.get(file.file_id) ??
+      projectSession?.mountedNames.get(file.file_id) ??
       advertisedNames.get(file.file_id) ??
       liveNames.get(file.file_id) ??
       claimCodeDestination(
@@ -240,17 +381,17 @@ export function planCodeFileUploads({
     const selectedFile = selected.get(file.file_id);
     if (selectedFile) {
       uploads.push({ file: selectedFile, destination });
-      const canonicalName = getCodeEnvUploadFilename(
-        resolveSandboxFilename(
-          getCodeEnvRefForProfile(file.metadata, route)?.sandboxFilename ??
-            candidate?.recoveryName ??
-            file.filename,
-          file.type,
-        ),
-      );
+      const canonicalName =
+        getCodeEnvRefForProfile(file.metadata, route)?.sandboxFilename ??
+        candidate?.recoveryName ??
+        getCodeEnvUploadFilename(resolveSandboxFilename(file.filename, file.type));
       if (
-        isImportedProjectFile(file, state.project) &&
-        (state.temporaryCodeFileIds?.has(file.file_id) === true || destination !== canonicalName)
+        (isImportedProjectFile(file, state.project) &&
+          (state.temporaryCodeFileIds?.has(file.file_id) === true ||
+            destination !== canonicalName)) ||
+        (!isImportedProjectFile(file, state.project) &&
+          projectSession?.frozen === true &&
+          isCodeDestinationTaken(fixedProjectPaths, canonicalName))
       ) {
         temporaryCodeFileIds.add(file.file_id);
       }

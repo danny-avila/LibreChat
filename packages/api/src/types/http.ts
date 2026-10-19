@@ -10,6 +10,7 @@ import type {
 import type { IUser, AppConfig, IConversation } from '@librechat/data-schemas';
 import type { Request } from 'express';
 import type { ResolvedChatProjectContext } from '../projects/context';
+import type { CodeFileSessionPlan } from '~/files/code/destinations';
 import type { CodeFileReferences } from '~/files/code/references';
 
 /**
@@ -58,6 +59,8 @@ export type ServerRequest = Request<unknown, unknown, RequestBody> & {
   chatProjectContextEnabled?: boolean;
   /** Turn-scoped sandbox aliases, kept separate from canonical file references. */
   codeFileReferences?: CodeFileReferences;
+  /** Project input names planned in each trusted code-session partition. */
+  projectCodeSessions?: Map<string, CodeFileSessionPlan>;
   /** Subagents that run on their parent's attached machine this turn, keyed by saved agent ID.
    *  Derived per request from the sealed decision and never persisted. */
   codeWorkspaceInheritance?: ReadonlyMap<string, string>;

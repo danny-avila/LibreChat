@@ -57,7 +57,7 @@ function hasTakenAncestor(set: CodeDestinationSet, destination: string): boolean
 
 /** Mirrors codeapi's `validateExecuteFiles` conflict rule: an exact match, or
  *  either destination being a directory prefix of the other. */
-function isTaken(set: CodeDestinationSet, destination: string): boolean {
+export function isCodeDestinationTaken(set: CodeDestinationSet, destination: string): boolean {
   if (set.names.has(destination) || set.ancestors.has(destination)) {
     return true;
   }
@@ -126,13 +126,13 @@ export function claimCodeDestination(
   const base = hasTakenAncestor(set, name)
     ? flattenArtifactPath(name, FILENAME_SEGMENT_MAX_BYTES)
     : name;
-  if (!isTaken(set, base)) {
+  if (!isCodeDestinationTaken(set, base)) {
     take(set, base);
     return base;
   }
   const identitySuffix = `-${deterministicHexSuffix(identity)}`;
   let destination = withSuffix(base, identitySuffix);
-  for (let counter = 2; isTaken(set, destination); counter++) {
+  for (let counter = 2; isCodeDestinationTaken(set, destination); counter++) {
     destination = withSuffix(base, `${identitySuffix}-${counter}`);
   }
   take(set, destination);
@@ -148,7 +148,7 @@ export function claimCodeDestination(
  * nothing.
  */
 export function reserveCodeDestination(set: CodeDestinationSet, name: string): boolean {
-  if (isTaken(set, name)) {
+  if (isCodeDestinationTaken(set, name)) {
     return false;
   }
   take(set, name);
@@ -169,6 +169,16 @@ interface CodeDestinationCandidate {
 export interface CodeFileProjectScope {
   projectFileIds: ReadonlySet<string>;
   conversationId?: string | null;
+  /** Shared by every agent mounting files in the same code session this turn. */
+  sessionPlan?: CodeFileSessionPlan;
+}
+
+export interface CodeFileSessionPlan {
+  /** Imported project paths advertised before inference. */
+  destinations: Map<string, string>;
+  /** Selected non-project mounts and recovery paths, including private files. */
+  mountedNames: Map<string, string>;
+  frozen: boolean;
 }
 
 /** Imports from other project chats must not displace this chat's established paths. */

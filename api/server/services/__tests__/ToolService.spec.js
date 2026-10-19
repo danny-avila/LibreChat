@@ -1083,6 +1083,7 @@ describe('ToolService - Action Capability Gating', () => {
         ...expectedParams,
         codeApiBaseUrl: 'https://api.librechat.ai/v1',
         executionProfile: 'default',
+        codeSessionKey: Tools.execute_code,
         codeFileLocation: 'sandbox',
       });
     });
@@ -1116,6 +1117,7 @@ describe('ToolService - Action Capability Gating', () => {
         agentResourceType: undefined,
         codeApiBaseUrl: 'https://stateful-code.example.com',
         executionProfile: 'stateful',
+        codeSessionKey: 'execute_code:stateful:v2:user:abc',
         bridgeWorkerId: 'worker-abc',
         codeFileLocation: 'sandbox',
       });

@@ -334,6 +334,7 @@ const loadTools = async ({
           codeApiBaseUrl: codeExecutionContext.baseUrl,
           executionProfile: codeExecutionContext.executionProfile,
           executionRouteKey: codeExecutionContext.executionRouteKey,
+          codeSessionKey: codeExecutionContext.codeSessionKey,
           bridgeWorkerId: codeExecutionContext.bridgeWorkerId,
           codeFileLocation: getCodeFileLocation(codeExecutionContext),
         });

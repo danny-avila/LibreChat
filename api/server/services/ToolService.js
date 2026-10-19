@@ -1546,6 +1546,7 @@ async function loadToolDefinitionsWrapper({
         codeApiBaseUrl: resolvedCodeExecutionContext.baseUrl,
         executionProfile: resolvedCodeExecutionContext.executionProfile,
         executionRouteKey: resolvedCodeExecutionContext.executionRouteKey,
+        codeSessionKey: resolvedCodeExecutionContext.codeSessionKey,
         codeFileLocation: getCodeFileLocation(resolvedCodeExecutionContext),
         ...(resolvedCodeExecutionContext.bridgeWorkerId
           ? { bridgeWorkerId: resolvedCodeExecutionContext.bridgeWorkerId }

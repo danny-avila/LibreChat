@@ -1,7 +1,10 @@
+import { randomUUID } from 'node:crypto';
 import { ObjectId } from 'mongodb';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 import type { TChatProject, TChatProjectFile, TFile } from 'librechat-data-provider';
+import type { AgentDetail } from './agents.helpers';
+import { cleanupAgent, openAgentBuilder } from './agents.helpers';
 import { getE2EUser } from '../../setup/user';
 import { login } from '../../setup/authenticate';
 import { withMongo } from './db';
@@ -28,6 +31,152 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/login');
   await login(page, getE2EUser());
   await page.waitForURL(/\/c\/new$/);
+});
+
+test('a handoff preserves both a project file and a same-named private agent file', async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(180_000);
+  const adminToken = await loginAdmin(request);
+  const user = await withMongo((db) =>
+    db.collection('users').findOne({ email: getE2EUser().email }),
+  );
+  if (!user) throw new Error('The authenticated project user is unavailable');
+  const overridePath = `/api/admin/config/user/${encodeURIComponent(user._id.toString())}`;
+  const adminHeaders = { Authorization: `Bearer ${adminToken}` };
+  const label = uniqueName('project-handoff');
+  const conversationIds: string[] = [];
+  const agentIds: string[] = [];
+  const fileIds: string[] = [];
+  let projectId: string | undefined;
+  try {
+    const override = await request.put(overridePath, {
+      headers: adminHeaders,
+      data: { overrides: { projects: { codeExecution: true } } },
+    });
+    expect(override.ok(), await override.text()).toBe(true);
+    await page.goto('/projects');
+    const token = await getAccessToken(page);
+    const project = await requestJson<TChatProject>(page, {
+      path: '/api/projects',
+      token,
+      method: 'POST',
+      body: { name: 'Project handoff paths' },
+    });
+    projectId = project._id;
+    await resetProvisioning(page);
+    await startProjectChat(page, projectId);
+    await sendMessageAndWaitForCompletion(page, `E2E_PROJECT_COLLISION:${label}:first`);
+    conversationIds.push(new URL(page.url()).pathname.split('/c/')[1]);
+    await expect(
+      page.getByText('results.csv was added to the project.', { exact: true }),
+    ).toBeVisible();
+    const projectFiles = await fetchJson<TChatProjectFile[]>(
+      page,
+      `/api/projects/${projectId}/files`,
+      token,
+    );
+    expect(projectFiles).toHaveLength(1);
+    fileIds.push(projectFiles[0].file_id);
+
+    const createAgent = (name: string, edges?: AgentDetail['edges']) =>
+      requestJson<AgentDetail>(page, {
+        path: '/api/agents',
+        token,
+        method: 'POST',
+        body: {
+          name,
+          provider: MOCK_ENDPOINTS[1].label,
+          model: MOCK_ENDPOINTS[1].model,
+          tools: ['execute_code'],
+          edges,
+        },
+      });
+    const child = await createAgent(`${label} specialist`);
+    agentIds.push(child.id);
+    const upload = await page.request.post('/api/files', {
+      headers: { Authorization: `Bearer ${token}` },
+      multipart: {
+        endpoint: 'agents',
+        endpointType: 'agents',
+        agent_id: child.id,
+        tool_resource: 'execute_code',
+        file_id: randomUUID(),
+        file: {
+          name: 'results.csv',
+          mimeType: 'text/csv',
+          buffer: Buffer.from('source,value\nprivate,7\n'),
+        },
+      },
+    });
+    expect(upload.ok(), await upload.text()).toBe(true);
+    const privateFile = (await upload.json()) as TFile;
+    fileIds.push(privateFile.file_id);
+    const privateRef = privateFile.metadata?.codeEnvRef;
+    expect(privateRef).toBeDefined();
+    const parent = await createAgent(`${label} router`, [
+      { from: '', to: child.id, edgeType: 'handoff' },
+    ]);
+    agentIds.push(parent.id);
+    await page.goto(`/projects/${projectId}`);
+    await page.getByRole('button', { name: /^New chat in / }).click();
+    const form = await openAgentBuilder(page, { navigate: false });
+    await form.getByRole('combobox', { name: 'Agent', exact: true }).click();
+    await page.getByRole('option', { name: parent.name, exact: true }).click();
+    await form.getByRole('button', { name: 'Select Agent' }).click();
+    const marker = Buffer.from(
+      JSON.stringify({
+        label,
+        routes: [
+          {
+            from: parent.id,
+            to: child.id,
+            args: {},
+            targetToolCall: {
+              id: `call_project_handoff_${label}`,
+              name: 'bash_tool',
+              args: { command: 'echo e2e' },
+              outputIncludes: 'E2E code exec ok',
+            },
+          },
+        ],
+      }),
+    ).toString('base64url');
+    await sendMessageAndWaitForCompletion(page, `E2E_HANDOFF:${marker}`);
+    conversationIds.push(new URL(page.url()).pathname.split('/c/')[1]);
+    await expect(
+      page.getByText(`E2E handoff tool complete ${label}: agent=${child.id}`, { exact: true }),
+    ).toBeVisible();
+    const debug = await page.request.get(`${CODE_API_BASE}/__debug/uploads`);
+    expect(debug.ok()).toBe(true);
+    const body = (await debug.json()) as {
+      execs: Array<{ files: Array<{ id: string; name: string }> }>;
+    };
+    const files = body.execs.at(-1)!.files;
+    expect(files).toHaveLength(2);
+    expect(files).toContainEqual(
+      expect.objectContaining({ id: privateRef!.file_id, name: 'results.csv' }),
+    );
+    expect(files.filter((file) => /^results-.+\.csv$/.test(file.name))).toHaveLength(1);
+    const canonical = await withMongo((db) =>
+      db.collection('files').findOne({ file_id: projectFiles[0].file_id }),
+    );
+    expect(canonical?.metadata.codeEnvRef.file_id).toBe(`e2e-project-collision-first-${label}`);
+    expect(canonical?.metadata.codeEnvRef.sandboxFilename ?? canonical?.filename).toBe(
+      'results.csv',
+    );
+  } finally {
+    await request.delete(overridePath, { headers: adminHeaders });
+    for (const id of agentIds.reverse()) await cleanupAgent(page, id);
+    await withMongo(async (db) => {
+      if (projectId)
+        await db.collection('chatprojects').deleteOne({ _id: new ObjectId(projectId) });
+      await db.collection('files').deleteMany({ file_id: { $in: fileIds } });
+      await db.collection('messages').deleteMany({ conversationId: { $in: conversationIds } });
+      await db.collection('conversations').deleteMany({ conversationId: { $in: conversationIds } });
+    });
+  }
 });
 
 async function startProjectChat(page: Page, projectId: string): Promise<void> {

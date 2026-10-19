@@ -1,7 +1,15 @@
 import { FileContext } from 'librechat-data-provider';
-import type { TFile } from 'librechat-data-provider';
+import type { CodeEnvFile, CodeSessionContext } from '@librechat/agents';
+import type { CodeEnvRef, TFile } from 'librechat-data-provider';
 import type { CodeFileAgent } from './queued';
-import { planCodeFileUploads, prepareQueuedCodeFileContext } from './queued';
+import type { ServerRequest } from '~/types';
+import {
+  planCodeFileUploads,
+  freezeProjectCodeSessions,
+  prepareQueuedCodeFileContext,
+} from './queued';
+import { buildInitialToolSessions, buildAgentInitialToolSessions } from '~/agents/codeFilesSession';
+import { getProjectCodeScope } from './priming';
 import { selectCodeFiles } from './priming';
 
 function file(id: string, overrides: Partial<TFile> = {}): TFile {
@@ -35,8 +43,146 @@ function agent(id: string, files: TFile[]): CodeFileAgent {
 }
 
 describe('queued code-file destinations', () => {
+  it('plans imported project paths around converted private recovery names', () => {
+    const request = {
+      config: { projects: { codeExecution: true } },
+      chatProjectContext: { file_ids: ['project'] },
+      resolvedConversation: { conversationId: 'current' },
+    } as ServerRequest;
+    const imported = file('project', {
+      filename: 'plot.png',
+      type: 'image/png',
+      conversationId: 'other',
+    });
+    const privateFile = file('private', {
+      filename: 'plot.webp',
+      type: 'image/png',
+      context: FileContext.agents,
+    });
+    const parent = agent('parent', [{ ...imported }]);
+    const child = agent('child', [{ ...imported }, privateFile]);
+    for (const current of [parent, child])
+      current.provisionState!.project = getProjectCodeScope(request);
+    child.provisionState!.agentScopedFileIds.add(privateFile.file_id);
+    for (const current of [parent, child])
+      prepareQueuedCodeFileContext(current, [parent, child], 'user-1');
+    const alias = parent.provisionState!.codeEnvDestinations!.get(imported.file_id)!;
+    expect(child.provisionState!.codeEnvDestinations!.get(privateFile.file_id)).toBe('plot.png');
+    expect(alias).toMatch(/^plot-.+\.png$/);
+    expect(child.provisionState!.codeEnvDestinations!.get(imported.file_id)).toBe(alias);
+    expect(child.provisionState!.temporaryCodeFileIds).toEqual(new Set([imported.file_id]));
+    expect(privateFile.metadata).toBeUndefined();
+  });
+
+  it.each(['parent', 'child'])(
+    'keeps project and private files distinct in a shared stateless session with %s primary',
+    async (primary) => {
+      const request = {
+        config: { projects: { codeExecution: true } },
+        chatProjectContext: { file_ids: ['project'] },
+        resolvedConversation: { conversationId: 'current' },
+      } as ServerRequest;
+      const imported = file('project', {
+        conversationId: 'other',
+        metadata: {
+          codeEnvRef: {
+            kind: 'user',
+            id: 'user-1',
+            storage_session_id: 'project-store',
+            file_id: 'project-remote',
+            sandboxFilename: 'data.csv',
+          },
+        },
+      });
+      const privateFile = file('private', {
+        context: FileContext.agents,
+        metadata: {
+          codeEnvRef: {
+            kind: 'agent',
+            id: 'child',
+            storage_session_id: 'private-store',
+            file_id: 'private-remote',
+            sandboxFilename: 'data.csv',
+          },
+        },
+      });
+      const originals = [structuredClone(imported.metadata), structuredClone(privateFile.metadata)];
+      const parent = {
+        ...agent('parent', [{ ...imported }]),
+        primedCodeFiles: [] as CodeEnvFile[],
+      };
+      const child = { ...agent('child', [{ ...imported }]), primedCodeFiles: [] as CodeEnvFile[] };
+      child.provisionState!.agentScopedFileIds.add(privateFile.file_id);
+      child.tool_resources = { execute_code: { files: [privateFile] } };
+      for (const current of [parent, child]) {
+        current.provisionState!.project = getProjectCodeScope(request);
+      }
+      const getFileInfo = async (ref: CodeEnvRef) => ({
+        lastModified: new Date().toISOString(),
+        originalFilename: ref.sandboxFilename,
+      });
+      // The initial primers resolve every non-project mount before any imported path is advertised.
+      for (const current of [parent, child]) {
+        const initial = await selectCodeFiles({
+          files: current === child ? [imported, privateFile] : [imported],
+          privateFileIds: current.provisionState!.agentScopedFileIds,
+          project: current.provisionState!.project,
+          routeKey: 'default',
+          getFileInfo,
+        });
+        expect(initial.selected.some((entry) => entry.file.file_id === imported.file_id)).toBe(
+          false,
+        );
+      }
+      for (const current of primary === 'parent' ? [parent, child] : [child, parent]) {
+        prepareQueuedCodeFileContext(current, [parent, child], 'user-1');
+      }
+      freezeProjectCodeSessions([parent, child]);
+      const alias = parent.provisionState!.codeEnvDestinations!.get(imported.file_id)!;
+      expect(alias).toMatch(/^data-.+\.csv$/);
+      expect(child.provisionState!.codeEnvDestinations!.get(imported.file_id)).toBe(alias);
+      for (const current of [parent, child]) {
+        const selected = await selectCodeFiles({
+          files: current === child ? [imported, privateFile] : [imported],
+          privateFileIds: current.provisionState!.agentScopedFileIds,
+          project: current.provisionState!.project,
+          routeKey: 'default',
+          getFileInfo,
+        });
+        current.primedCodeFiles = selected.selected.map((entry): CodeEnvFile => {
+          const mounted = {
+            id: entry.temporary ? `alias-${entry.file.file_id}` : entry.sourceRef.file_id,
+            storage_session_id: entry.temporary
+              ? 'alias-store'
+              : entry.sourceRef.storage_session_id,
+            resource_id: entry.sourceRef.id,
+            name: entry.sandboxName,
+          };
+          return entry.sourceRef.kind === 'skill'
+            ? { ...mounted, kind: 'skill', version: entry.sourceRef.version }
+            : { ...mounted, kind: entry.sourceRef.kind };
+        });
+        expect(current.dynamicToolContextMap!.queued_code_files).toContain(`/mnt/data/${alias}`);
+      }
+      const ordered = primary === 'parent' ? [parent, child] : [child, parent];
+      const sessions = buildInitialToolSessions({ agents: ordered });
+      const mounted = (sessions!.get('execute_code') as CodeSessionContext).files!;
+      expect(mounted).toHaveLength(2);
+      expect(mounted.find((entry) => entry.id === 'private-remote')?.name).toBe('data.csv');
+      expect(mounted.find((entry) => entry.id === 'alias-project')?.name).toBe(alias);
+      for (const current of [parent, child]) {
+        const inherited = buildAgentInitialToolSessions(current, sessions)!.get('execute_code')!;
+        expect(inherited.files).toEqual(mounted);
+        for (const advertised of current.primedCodeFiles) {
+          expect(mounted.find((entry) => entry.name === advertised.name)?.id).toBe(advertised.id);
+        }
+      }
+      expect([imported.metadata, privateFile.metadata]).toEqual(originals);
+    },
+  );
+
   it.each(['parent', 'child', 'lazy child'])(
-    'keeps a live project import unchanged when a peer has a private collision (%s first)',
+    'keeps a live project import unchanged in a separate session from a private collision (%s first)',
     async (order) => {
       const imported = file('imported-live', {
         conversationId: 'other',
@@ -68,6 +214,8 @@ describe('queued code-file destinations', () => {
       });
       const parent = agent('parent', []);
       const child = agent('child', []);
+      parent.codeSessionKey = 'execute_code:parent';
+      child.codeSessionKey = 'execute_code:child';
       parent.tool_resources = { execute_code: { files: [{ ...imported }] } };
       child.tool_resources = { execute_code: { files: [{ ...imported }, privateFile] } };
       for (const current of [parent, child]) {

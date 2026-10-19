@@ -34,6 +34,7 @@ const {
   executeWorkspaceTool,
   selectCodeFiles,
   getProjectCodeScope,
+  recordProjectCodeMount,
   getTurnCodeEnvRef,
   saveCodeFileReference,
   getCodeFileInfo,
@@ -710,6 +711,7 @@ const primeFiles = async (options) => {
     codeApiBaseUrl,
     executionProfile = 'default',
     executionRouteKey = executionProfile,
+    codeSessionKey,
     bridgeWorkerId,
     codeFileLocation,
     signal,
@@ -758,7 +760,7 @@ const primeFiles = async (options) => {
   /** All stale-file reuploads in this prime share one live-turn wait cap. */
   const uploadRateLimitBudget = createCodeApiRateLimitBudget(uploadOptions.retryWaitMs);
   let toolContext = '';
-  const projectCodeScope = getProjectCodeScope(req);
+  const projectCodeScope = getProjectCodeScope(req, codeSessionKey);
 
   const { selected, skippedNoRef, skippedSuperseded } = await selectCodeFiles({
     files: dbFiles,
@@ -804,6 +806,7 @@ const primeFiles = async (options) => {
      * tenant prefix from auth context).
      */
     const pushFile = (overrideSessionId, overrideId, destination = sandboxName) => {
+      recordProjectCodeMount(projectCodeScope, file, destination);
       /* The sandbox holds the converted name, not the record's, so the mount path has
        * to follow the same rule provisioning uploaded under. */
       toolContext = appendCodeFileContextLine(
@@ -1692,6 +1695,7 @@ async function writeSandboxFile({
 }
 
 module.exports = {
+  getSessionFileInfo,
   CodeResourceRecoveryError,
   primeFiles,
   checkIfActive,

@@ -5,6 +5,7 @@ import {
   EModelEndpoint,
   EToolResources,
   AgentCapabilities,
+  configSchema,
 } from 'librechat-data-provider';
 import type { TAgentsEndpoint, TFile } from 'librechat-data-provider';
 import type { IUser, AppConfig } from '@librechat/data-schemas';
@@ -1998,6 +1999,49 @@ describe('primeResources', () => {
       llmDeliveryPath: 'none',
       metadata: { destinationChosen: false },
       ...overrides,
+    });
+
+    it('defers live project imports until all code-session contributors have selected their private paths', async () => {
+      const ref = {
+        kind: 'user' as const,
+        id: 'user1',
+        storage_session_id: 'project-store',
+        file_id: 'project-remote',
+        sandboxFilename: 'data.csv',
+      };
+      const imported = makeCodeFile({
+        conversationId: 'other',
+        metadata: { codeEnvRefs: { default: ref } },
+      });
+      const codeConfig: AppConfig = {
+        ...mockAppConfig,
+        projects: { ...configSchema.parse({ version: '1.3.11' }).projects, codeExecution: true },
+      };
+      const request = Object.assign(mockReq, {
+        config: codeConfig,
+        chatProjectContext: {
+          projectId: 'project-1',
+          contextRevision: 1,
+          instructions: '',
+          resources: [],
+          file_ids: [imported.file_id],
+        },
+        resolvedConversation: { conversationId: 'current' },
+      });
+      const result = await primeResources({
+        req: request,
+        getFiles: mockGetFiles,
+        attachments: undefined,
+        tool_resources: {},
+        requestFileSet,
+        projectCodeFiles: [imported],
+        enabledToolResources: new Set([EToolResources.execute_code]),
+        checkSessionsAlive: jest.fn().mockResolvedValue(new Set([imported.file_id])),
+      });
+      expect(result.provisionState!.codeEnvFiles).toEqual([imported]);
+      expect(result.provisionState!.project!.conversationId).toBe('current');
+      expect(imported.metadata!.codeEnvRefs!.default).toEqual(ref);
+      expect(mockGetFiles).not.toHaveBeenCalled();
     });
 
     it('queues a search-only chooser file for project code without changing File Search', async () => {

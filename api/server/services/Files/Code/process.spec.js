@@ -191,6 +191,7 @@ jest.mock('@librechat/api', () => {
     codeServerHttpsAgent: jest.requireActual('@librechat/api').codeServerHttpsAgent,
     selectCodeFiles: jest.requireActual('@librechat/api').selectCodeFiles,
     getProjectCodeScope: jest.requireActual('@librechat/api').getProjectCodeScope,
+    recordProjectCodeMount: jest.requireActual('@librechat/api').recordProjectCodeMount,
     getTurnCodeEnvRef: jest.requireActual('@librechat/api').getTurnCodeEnvRef,
     saveCodeFileReference: jest.requireActual('@librechat/api').saveCodeFileReference,
     getCodeFileInfo: jest.requireActual('@librechat/api').getCodeFileInfo,
@@ -4361,19 +4362,24 @@ describe('Code Process', () => {
           type: 'text/csv',
         },
       ]);
+      const request = {
+        user: { id: 'user-123', role: 'USER' },
+        config: { projects: { codeExecution: true } },
+        chatProjectContext: { file_ids: ['older', 'newer'] },
+      };
+      const scope = require('@librechat/api').getProjectCodeScope(request);
+      scope.sessionPlan.destinations.set('newer', 'results.csv');
+      scope.sessionPlan.destinations.set('older', 'results-import.csv');
+      scope.sessionPlan.frozen = true;
       const result = await primeFiles({
-        req: {
-          user: { id: 'user-123', role: 'USER' },
-          config: { projects: { codeExecution: true } },
-          chatProjectContext: { file_ids: ['older', 'newer'] },
-        },
+        req: request,
         tool_resources: { execute_code: { file_ids: ['older', 'newer'] } },
         agentId: 'agent-id',
       });
       expect(result.files).toHaveLength(2);
       expect(upload).toHaveBeenCalledTimes(1);
       const alias = upload.mock.calls[0][0].filename;
-      expect(alias).toMatch(/^results-.+\.csv$/);
+      expect(alias).toBe('results-import.csv');
       expect(result.files).toContainEqual(
         expect.objectContaining({ id: `fresh-${alias}`, name: alias }),
       );

@@ -51,6 +51,7 @@ function buildHarness({
   codeImpl,
   vectorImpl,
   resolveExecutionContext,
+  getCodeFileInfo,
 }: {
   contexts: Array<[string, ProvisionToolContext]>;
   codeImpl?: jest.Mock;
@@ -58,6 +59,7 @@ function buildHarness({
   resolveExecutionContext?: Parameters<
     typeof createProvisionFilesCallback
   >[0]['resolveExecutionContext'];
+  getCodeFileInfo?: Parameters<typeof createProvisionFilesCallback>[0]['getCodeFileInfo'];
 }) {
   const provisionToCodeEnv =
     codeImpl ??
@@ -108,12 +110,62 @@ function buildHarness({
       updateCodeEnvRef,
       addEmbeddedEntity,
       resolveExecutionContext,
+      getCodeFileInfo,
     }),
   };
 }
 
 describe('createProvisionFilesCallback', () => {
-  it('does not upload a live project input solely because a later child has a private collision', async () => {
+  it.each([true, false])(
+    'reuses a planned project mount only while its stored object is live (%s)',
+    async (live) => {
+      const ref = {
+        kind: 'user' as const,
+        id: 'user-1',
+        storage_session_id: 'store',
+        file_id: 'existing',
+        sandboxFilename: 'data.csv',
+      };
+      const imported = makeFile({
+        file_id: 'project-input',
+        conversationId: 'other',
+        metadata: { codeEnvRefs: { default: ref } },
+      });
+      const current: CodeFileAgent = {
+        id: 'parent',
+        fileConsumers: { executeCode: true, fileSearch: false },
+        provisionState: {
+          ...state([imported], []),
+          project: { projectFileIds: new Set([imported.file_id]), conversationId: 'current' },
+        },
+      };
+      prepareQueuedCodeFileContext(current, [current], 'user-1');
+      const getCodeFileInfo = jest.fn(async () =>
+        live ? { lastModified: new Date().toISOString() } : null,
+      );
+      const codeImpl = jest.fn(async ({ sandboxFilename }: { sandboxFilename: string }) => {
+        const replacement = { ...ref, file_id: 'replacement' };
+        return {
+          referenceSet: { codeEnvRefs: { default: replacement } },
+          refUpdate: { file_id: imported.file_id, routeKey: 'default', ref: replacement },
+          sandboxFilename,
+        };
+      });
+      const harness = buildHarness({
+        contexts: [[current.id, current]],
+        getCodeFileInfo,
+        codeImpl,
+      });
+      const mounted = await harness.provisionFiles([Constants.EXECUTE_CODE], current.id);
+      expect(getCodeFileInfo).toHaveBeenCalledWith(ref, {}, undefined);
+      expect(codeImpl).toHaveBeenCalledTimes(live ? 0 : 1);
+      expect(harness.updateCodeEnvRef).toHaveBeenCalledTimes(live ? 0 : 1);
+      expect(mounted[0]).toMatchObject({ name: 'data.csv', id: live ? 'existing' : 'replacement' });
+      expect(current.provisionState!.codeEnvFiles).toEqual([]);
+    },
+  );
+
+  it('does not upload a live project input for a private collision in a different session', async () => {
     const imported = makeFile({
       file_id: 'live-project-peer',
       conversationId: 'other',
@@ -146,6 +198,7 @@ describe('createProvisionFilesCallback', () => {
     });
     const parent: CodeFileAgent = {
       id: 'parent',
+      codeSessionKey: 'execute_code:parent',
       fileConsumers: { executeCode: true, fileSearch: false },
       tool_resources: { execute_code: { files: [{ ...imported }] } },
       provisionState: {
@@ -156,6 +209,7 @@ describe('createProvisionFilesCallback', () => {
     prepareQueuedCodeFileContext(parent, [parent], 'user-1');
     const child: CodeFileAgent = {
       id: 'child',
+      codeSessionKey: 'execute_code:child',
       fileConsumers: { executeCode: true, fileSearch: false },
       tool_resources: { execute_code: { files: [{ ...imported }, privateFile] } },
       provisionState: {

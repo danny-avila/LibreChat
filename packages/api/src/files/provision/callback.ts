@@ -1,13 +1,16 @@
 import { Constants } from '@librechat/agents';
 import { logger } from '@librechat/data-schemas';
-import { EToolResources, mergeCodeEnvRef } from 'librechat-data-provider';
+import { EToolResources, mergeCodeEnvRef, getCodeEnvRefForProfile } from 'librechat-data-provider';
 import type { CodeEnvFile, SubagentExecutionContext } from '@librechat/agents';
-import type { TFile } from 'librechat-data-provider';
-import type { CodeEnvRefUpdate, ProvisionService } from './service';
+import type { CodeEnvRef, TFile } from 'librechat-data-provider';
+import type { CodeExecutionRoute, CodeEnvRefUpdate, ProvisionService } from './service';
 import type { ProvisionToolContext } from '../code/queued';
+import type { CodeFileInfo } from '../code/priming';
 import type { ServerRequest } from '~/types';
 import { createCodeApiRateLimitBudget, isCodeApiRateLimitError } from '~/utils';
 import { getTurnCodeEnvRef, saveCodeFileReference } from '../code/references';
+import { isImportedProjectFile } from '../code/destinations';
+import { checkCodeFileActive } from '../code/priming';
 import { planCodeFileUploads } from '../code/queued';
 import { isCodeFileToolName } from '~/agents/tools';
 
@@ -54,6 +57,12 @@ export interface ProvisionCallbackDeps {
   updateCodeEnvRef: (update: CodeEnvRefUpdate) => Promise<unknown>;
   /** Records one vector namespace without disturbing the others already recorded. */
   addEmbeddedEntity: (update: { file_id: string; entityId: string }) => Promise<unknown>;
+  /** The selected deployment's metadata probe, with request auth bound by the host. */
+  getCodeFileInfo?: (
+    ref: CodeEnvRef,
+    route: CodeExecutionRoute,
+    signal?: AbortSignal,
+  ) => Promise<CodeFileInfo | null>;
 }
 
 /**
@@ -102,6 +111,7 @@ export function createProvisionFilesCallback({
   updateFile,
   updateCodeEnvRef,
   addEmbeddedEntity,
+  getCodeFileInfo,
 }: ProvisionCallbackDeps): (
   toolNames: string[],
   agentId?: string,
@@ -284,6 +294,24 @@ export function createProvisionFilesCallback({
                   refs: mergeCodeEnvRef(file.metadata, existingRef),
                   sandboxFilename,
                 };
+              }
+              const canonicalRef = getCodeEnvRefForProfile(file.metadata, codeRouteKey);
+              if (
+                canonicalRef?.sandboxFilename === sandboxFilename &&
+                isImportedProjectFile(file, provisionState.project)
+              ) {
+                const info = await getCodeFileInfo?.(
+                  canonicalRef,
+                  ctx.codeExecutionContext ?? {},
+                  signal,
+                );
+                signal?.throwIfAborted();
+                if (checkCodeFileActive(info?.lastModified)) {
+                  return {
+                    refs: mergeCodeEnvRef(file.metadata, canonicalRef),
+                    sandboxFilename,
+                  };
+                }
               }
               const {
                 referenceSet: refs,

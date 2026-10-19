@@ -103,6 +103,11 @@ import {
   isSteerTerminalContinuationSupported,
 } from '~/agents/steering/runtime';
 import {
+  reserveProjectCodeSessions,
+  freezeProjectCodeSessions,
+  prepareQueuedCodeFileContext,
+} from '~/files/code/queued';
+import {
   ASK_USER_QUESTION_TOOL_NAME,
   createAskUserQuestionTool,
 } from '~/agents/hitl/askUserQuestionTool';
@@ -125,7 +130,6 @@ import { buildAgentInitialToolSessions } from '~/agents/codeFilesSession';
 import { getDirectDispatcher, getProxyDispatcher } from '~/utils/proxy';
 import { getAzureCredentials, constructAzureURL } from '~/utils/azure';
 import { buildEffectiveToolApprovalPolicy } from '~/agents/hitl/allow';
-import { prepareQueuedCodeFileContext } from '~/files/code/queued';
 import { getBuiltInBaseURL } from '~/endpoints/openai/initialize';
 import { getProviderConfig } from '~/endpoints/config/providers';
 import { buildToolApprovalHooks } from '~/agents/hitl/hooks';
@@ -2393,16 +2397,20 @@ export async function createRun({
     visitedCodeFileAgents.add(agent.id);
     enqueueSubagentChildren(agent, pendingCodeFileAgents, visitedCodeFileAgents, false, false);
   }
+  reserveProjectCodeSessions(codeFileAgents.values(), initialSessions);
   for (const agent of codeFileAgents.values()) {
     prepareQueuedCodeFileContext(agent, codeFileAgents.values(), user?.id);
   }
+  freezeProjectCodeSessions(codeFileAgents.values());
 
   const preparedCodeFileAgents = new WeakSet(codeFileAgents.values());
   const buildAgentInput = (agent: RunAgent, opts: { isSubagent?: boolean } = {}): AgentInputs => {
     if (!preparedCodeFileAgents.has(agent)) {
       if (agent.provisionState) agent.provisionState.codeEnvDestinations = undefined;
       codeFileAgents.set(agent.id, agent);
+      reserveProjectCodeSessions([agent], initialSessions);
       prepareQueuedCodeFileContext(agent, codeFileAgents.values(), user?.id, true);
+      freezeProjectCodeSessions([agent]);
       preparedCodeFileAgents.add(agent);
     }
     const isSubagent = opts.isSubagent === true;

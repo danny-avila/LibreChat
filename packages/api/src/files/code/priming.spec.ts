@@ -21,6 +21,37 @@ const file = (id: string, name: string, ref: Partial<CodeEnvRef> = {}, time = 1)
 const fresh = { lastModified: new Date().toISOString() };
 
 describe('selectCodeFiles', () => {
+  it('preserves a frozen project path when a lazy agent introduces a colliding private mount', async () => {
+    const privateFile = file('private', 'data.csv', { sandboxFilename: 'data.csv' });
+    const imported = {
+      ...file('imported', 'data.csv', { sandboxFilename: 'data.csv' }),
+      conversationId: 'other',
+    };
+    const project = {
+      projectFileIds: new Set(['imported']),
+      conversationId: 'current',
+      sessionPlan: {
+        destinations: new Map([['imported', 'data.csv']]),
+        mountedNames: new Map<string, string>(),
+        frozen: true,
+      },
+    };
+    const selected = await selectCodeFiles({
+      files: [privateFile, imported],
+      privateFileIds: new Set(['private']),
+      project,
+      routeKey: 'default',
+      getFileInfo: async () => fresh,
+    });
+    const own = selected.selected.find((entry) => entry.file.file_id === 'private')!;
+    const shared = selected.selected.find((entry) => entry.file.file_id === 'imported')!;
+    expect(shared).toMatchObject({ sandboxName: 'data.csv', isActive: true, temporary: false });
+    expect(own).toMatchObject({ isActive: false, temporary: true });
+    expect(own.sandboxName).toMatch(/^data-.+\.csv$/);
+    expect(project.sessionPlan.mountedNames.get('private')).toBe(own.sandboxName);
+    expect(privateFile.metadata!.codeEnvRef!.sandboxFilename).toBe('data.csv');
+  });
+
   it('preserves provisioned aliases across turns and reuses legacy metadata probes', async () => {
     const getFileInfo = jest.fn(async (ref: CodeEnvRef) => ({
       ...fresh,

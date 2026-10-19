@@ -21,6 +21,7 @@ import type { FilterQuery, QueryOptions, ProjectionType } from 'mongoose';
 import type { CodeFileProjectScope } from '~/files/code/destinations';
 import type { CodeExecutionContext } from './execution';
 import type { ServerRequest } from '~/types';
+import { isImportedProjectFile } from '~/files/code/destinations';
 import { getSafeErrorMetadata } from '~/utils/errors';
 import { TOOL_RESOURCE_KEYS } from './orphans';
 
@@ -668,6 +669,15 @@ const computeProvisionState = async ({
   }
 
   const scopedIds = agentScopedFileIds ?? new Set<string>();
+  const project =
+    projectCodeFileIds != null && projectCodeFileIds.size > 0
+      ? {
+          projectFileIds: projectCodeFileIds,
+          conversationId: req?.resolvedConversation?.conversationId ?? req?.body?.conversationId,
+        }
+      : undefined;
+  const deferProjectImports =
+    req?.config?.projects?.codeExecution === true && req.chatProjectContext != null;
   const codeEnvFiles: TFile[] = [];
   const codeEnvRecoveryNames: NonNullable<ProvisionState['codeEnvRecoveryNames']> = new Map();
   const vectorDBFiles: TFile[] = [];
@@ -711,7 +721,10 @@ const computeProvisionState = async ({
        *  added to execute_code resources, so the check runs before the processed
        *  guard. Clear both the legacy ref and its route entry, else getCodeEnvRefs
        *  keeps resolving the dead session over the re-provisioned one. */
-      if (isStale) {
+      if (deferProjectImports && isImportedProjectFile(file, project)) {
+        // Paths must be planned with every contributor to the code session before priming.
+        codeEnvFiles.push(file);
+      } else if (isStale) {
         if (routeRef?.sandboxFilename) {
           codeEnvRecoveryNames.set(file.file_id, {
             name: routeRef.sandboxFilename,
@@ -777,14 +790,7 @@ const computeProvisionState = async ({
   return {
     codeEnvFiles,
     codeEnvRecoveryNames,
-    ...(projectCodeFileIds != null && projectCodeFileIds.size > 0
-      ? {
-          project: {
-            projectFileIds: projectCodeFileIds,
-            conversationId: req?.resolvedConversation?.conversationId ?? req?.body?.conversationId,
-          },
-        }
-      : {}),
+    ...(project ? { project } : {}),
     vectorDBFiles,
     aliveFileIds: aliveFileIds ?? new Set(),
     agentScopedFileIds: new Set(
