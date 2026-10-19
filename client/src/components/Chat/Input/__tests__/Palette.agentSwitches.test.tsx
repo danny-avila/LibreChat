@@ -1,8 +1,10 @@
 import React, { useMemo, useState } from 'react';
+import { getDefaultStore, useAtom } from 'jotai';
+import { filesFamily } from '@librechat/chat/react';
 import '@testing-library/jest-dom';
 import { DndProvider } from 'react-dnd';
 import { useForm } from 'react-hook-form';
-import { RecoilRoot, useRecoilState } from 'recoil';
+import { RecoilRoot } from 'recoil';
 import userEvent from '@testing-library/user-event';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { BrowserRouter as Router } from 'react-router-dom';
@@ -20,7 +22,6 @@ import type { ChatFormValues } from '~/common';
 import { ChatContext, ChatFormProvider } from '~/Providers';
 import { AuthContextProvider } from '~/hooks/AuthContext';
 import ChatForm from '../ChatForm';
-import store from '~/store';
 
 const mockApplySwitches = jest.fn();
 
@@ -61,7 +62,7 @@ const savedAgent: Partial<Agent> = {
 let conversation: TConversation;
 
 function Harness() {
-  const [files, setFiles] = useRecoilState(store.filesByIndex(0));
+  const [files, setFiles] = useAtom(filesFamily(0));
   const [, setFilesLoading] = useState(false);
   const methods = useForm<ChatFormValues>({ defaultValues: { text: '' } });
   const chatHelpers = useMemo(
@@ -148,6 +149,7 @@ describe('Composer palette agent switches', () => {
   beforeEach(() => {
     localStorage.clear();
     jest.clearAllMocks();
+    getDefaultStore().set(filesFamily(0), new Map());
   });
 
   it('seeds a saved agent chat and keeps the surface off for an agent without switches', async () => {
