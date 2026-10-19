@@ -38,7 +38,7 @@ const REPLY_TEXT = [
   '',
   '- البند الثاني',
   '',
-  '| العمود الأول | العمود الثاني |',
+  '| العمود الأول | Second column |',
   '| --- | --- |',
   '| واحد | اثنان |',
 ].join('\n');
@@ -153,6 +153,8 @@ test.describe('RTL chat surface', () => {
       await expect(reply(page).locator('blockquote')).toHaveCSS('direction', 'rtl');
       const list = reply(page).locator('ul').first();
       await expect(list).toHaveCSS('direction', 'rtl');
+      /* A table takes one direction from its content, so an English header shares the frame. */
+      await expect(reply(page).locator('th').nth(1)).toHaveCSS('direction', 'rtl');
       expect(
         parseFloat(await list.evaluate((el) => getComputedStyle(el).paddingRight)),
       ).toBeGreaterThan(0);

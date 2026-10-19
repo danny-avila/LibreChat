@@ -260,6 +260,7 @@ function Timeline({
         )}
       </div>
       <div
+        dir="ltr"
         className="text-text-secondary text-2xs flex justify-between tabular-nums"
         aria-hidden="true"
       >

@@ -20,8 +20,6 @@ import {
   h5,
   h6,
   blockquote,
-  td,
-  th,
 } from './MarkdownComponents';
 import { langSubset, remarkApproxTilde } from '~/utils';
 import { reportBoundaryError } from '~/lib/rum/logs';
@@ -107,8 +105,6 @@ class MarkdownErrorBoundary extends React.Component<
                 h5,
                 h6,
                 blockquote,
-                td,
-                th,
               } as {
                 [nodeType: string]: React.ElementType;
               }

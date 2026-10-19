@@ -202,7 +202,7 @@ p.displayName = 'MarkdownParagraph';
 type TBlockProps = React.HTMLAttributes<HTMLElement> & { node?: Element };
 
 /** Resolves direction per block so a mixed-language reply is not laid out by its first character. */
-const withAutoDir = (Tag: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6' | 'td' | 'th') => {
+const withAutoDir = (Tag: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6') => {
   const Block: React.ElementType = memo(function MarkdownBlock({
     node: _node,
     ...props
@@ -257,16 +257,20 @@ export const h4 = withAutoDir('h4');
 export const h5 = withAutoDir('h5');
 export const h6 = withAutoDir('h6');
 export const blockquote = withContentDir('blockquote');
-export const td = withAutoDir('td');
-export const th = withAutoDir('th');
 
 type TTableProps = {
   children: React.ReactNode;
+  node?: Element;
 };
 
-export const table: React.ElementType = memo(function MarkdownTable({ children }: TTableProps) {
+/** One direction for the whole table, so cell borders and corners stay on a single frame. */
+export const table: React.ElementType = memo(function MarkdownTable({
+  children,
+  node,
+}: TTableProps) {
+  const dir = node != null ? (nodeDirection(node) ?? undefined) : undefined;
   return (
-    <div className="markdown-table-wrapper w-full max-w-full">
+    <div dir={dir} className="markdown-table-wrapper w-full max-w-full">
       <table>{children}</table>
     </div>
   );

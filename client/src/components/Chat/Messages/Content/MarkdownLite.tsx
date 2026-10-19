@@ -22,8 +22,6 @@ import {
   h5,
   h6,
   blockquote,
-  td,
-  th,
 } from './MarkdownComponents';
 import { CodeBlockProvider, ArtifactProvider } from '~/Providers';
 import MarkdownErrorBoundary from './MarkdownErrorBoundary';
@@ -73,8 +71,6 @@ const MarkdownLite = memo(
                   h5,
                   h6,
                   blockquote,
-                  td,
-                  th,
                 } as {
                   [nodeType: string]: React.ElementType;
                 }

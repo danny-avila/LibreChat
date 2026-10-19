@@ -627,7 +627,7 @@ function Ledger({
           <span className="hidden text-end md:block">{localize('com_ui_trace_summary_cost')}</span>
         )}
         {viewDomain ? (
-          <span className="flex justify-between tracking-normal normal-case tabular-nums">
+          <span dir="ltr" className="flex justify-between tracking-normal normal-case tabular-nums">
             <span>{position(viewDomain.start)}</span>
             <span>{position(viewDomain.start + viewDomain.span)}</span>
           </span>

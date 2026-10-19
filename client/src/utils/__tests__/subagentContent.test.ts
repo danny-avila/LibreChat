@@ -2,6 +2,7 @@ import { ContentTypes } from 'librechat-data-provider';
 import type { SubagentUpdateEvent } from 'librechat-data-provider';
 import { aggregateSubagentContent, buildSubagentTickerLines } from 'test/subagents';
 import { tailOverflowDirection, textDirection } from '../subagentContent';
+import { strongDirection } from '../direction';
 
 const makeEvent = (overrides: Partial<SubagentUpdateEvent>): SubagentUpdateEvent => ({
   runId: 'parent-run',
@@ -743,5 +744,19 @@ describe('tail ellipsis direction', () => {
   it('follows the first strong character of mixed text', () => {
     expect(textDirection('(foo) مرحبا')).toBe('ltr');
     expect(textDirection('... مرحبا foo')).toBe('rtl');
+  });
+
+  it('skips Arabic-Indic digits, Arabic separators and marks like dir="auto" does', () => {
+    expect(textDirection('\u0661\u0662\u0663 report done')).toBe('ltr');
+    expect(textDirection('\u06F1\u06F2\u060C step two')).toBe('ltr');
+    expect(tailOverflowDirection('\u0661\u0662 report done')).toBe('rtl');
+    expect(textDirection('\u0661\u0662 \u0645\u0631\u062D\u0628\u0627')).toBe('rtl');
+  });
+});
+
+describe('strongDirection', () => {
+  it('returns null when the text has no strong character', () => {
+    expect(strongDirection('123 \u0661\u0662 \u00D7 ...')).toBeNull();
+    expect(strongDirection('')).toBeNull();
   });
 });

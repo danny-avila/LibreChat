@@ -22,8 +22,6 @@ import {
   h5,
   h6,
   blockquote,
-  td,
-  th,
 } from './MarkdownComponents';
 import {
   mcpUIResourcePlugin,
@@ -85,8 +83,6 @@ export const getMarkdownComponents = (): { [nodeType: string]: ElementType } => 
   h5,
   h6,
   blockquote,
-  td,
-  th,
   artifact: Artifact,
   citation: Citation,
   'highlighted-text': HighlightedText,
