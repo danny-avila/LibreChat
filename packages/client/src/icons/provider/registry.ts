@@ -117,11 +117,47 @@ export const providerIcons: Record<ProviderId, ProviderIconDef> = {
   [ProviderId.unify]: { art: asset('assets/unify.webp'), label: 'Unify' },
 };
 
-/** Merges any model level refinement over the base definition for a provider. */
+/**
+ * The company that makes a model, matched on the model id so a model served by another host
+ * (OpenRouter, Groq, Ollama, Bedrock...) shows its maker. First match wins, so ids that name
+ * two families (`deepseek-r1-distill-llama`, `llama-nemotron`) list the more specific one first.
+ */
+const modelMakers: [RegExp, ProviderId | ProviderIconDef][] = [
+  [/claude/, ProviderId.anthropic],
+  [/(^|[^a-z])(chat)?gpt-|(^|[^a-z0-9])o[1-9](?![0-9])/, ProviderId.openai],
+  [/gemini|gemma|learnlm/, ProviderId.google],
+  [/grok/, ProviderId.xai],
+  [/kimi|moonshot/, ProviderId.moonshot],
+  [/deepseek/, ProviderId.deepseek],
+  [/qwen|qwq/, ProviderId.qwen],
+  [
+    /mi[sx]tral|codestral|devstral|ministral|magistral|mathstral|pixtral|voxtral/,
+    ProviderId.mistral,
+  ],
+  [/command-[ar]|(^|[^a-z])aya-/, ProviderId.cohere],
+  [/sonar/, ProviderId.perplexity],
+  [/nemotron/, { art: mark('nvidia'), label: 'NVIDIA', mono: true }],
+  [/minimax|abab/, { art: mark('minimax'), label: 'MiniMax', mono: true }],
+  [/(?<!o)llama/, { art: mark('meta'), label: 'Meta', mono: true }],
+];
+
+function resolveModelMaker(model: string): ProviderId | ProviderIconDef | undefined {
+  const value = model.toLowerCase();
+  return modelMakers.find(([pattern]) => pattern.test(value))?.[1];
+}
+
+/**
+ * Resolves the icon for a provider, preferring the model's maker when the host only serves it,
+ * then merging any model level refinement over the base definition.
+ */
 export function getProviderIconDef(
   provider?: ProviderId | null,
   model?: string | null,
 ): ProviderIconDef {
+  const maker = model ? resolveModelMaker(model) : undefined;
+  if (maker != null && maker !== provider) {
+    return typeof maker === 'string' ? getProviderIconDef(maker, model) : maker;
+  }
   const base = provider ? providerIcons[provider] : undefined;
   if (!base) {
     return { art: component(CustomMinimalIcon), label: 'Custom', mono: true };
