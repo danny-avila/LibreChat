@@ -76,6 +76,13 @@ class KeyvMongoCustom extends EventEmitter {
         const collection = this.opts.collection || 'keyv';
         const store = db.collection(collection);
         client = { store, db };
+        /** Every read and upsert filters on `key`; unindexed, each one scans the collection.
+         *  Built in the background, and skipped when the deployment disables auto indexing. */
+        if (mongoose.connection.config?.autoIndex !== false) {
+          store.createIndex({ key: 1 }).catch((error: unknown) => {
+            logger.warn(`[KeyvMongo] Could not index "${collection}" by key`, error);
+          });
+        }
       }
 
       storeMap.set(storeKey, client);
