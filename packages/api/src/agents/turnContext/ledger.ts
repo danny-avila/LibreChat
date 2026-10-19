@@ -28,6 +28,8 @@ export interface TurnPlan {
   withheld: Set<string>;
   /** System prompt text of the anchor. */
   block: string;
+  /** System prompt text of the anchored memory; empty when the segment has none or it is withheld. */
+  memoryBlock: string;
   /** Memory texts the request carries, for content inspection. */
   memoryTexts: string[];
   /** Retrieved file context the request carries, for content inspection. */
@@ -264,6 +266,10 @@ export function planTurnContext({
   if (anchorMemory != null && !withheld.has(ContextSourceKeys.memory)) {
     fold.memoryTexts.push(anchorMemory);
   }
+  const memoryBlock =
+    anchorMemory != null && !withheld.has(ContextSourceKeys.memory)
+      ? renderAnchorText(ContextSourceKeys.memory, anchorMemory, sendSnapshot.agent)
+      : '';
   const block = anchor
     .filter(({ key, value }) => value != null && !withheld.has(key))
     .map(({ key, value }) => renderAnchorText(key, value as string, sendSnapshot.agent))
@@ -322,6 +328,7 @@ export function planTurnContext({
     currentEntries,
     withheld,
     block,
+    memoryBlock,
     memoryTexts: fold.memoryTexts,
     ragTexts: fold.ragTexts,
     /** Without any group, now or earlier in the branch, the tools stay as loaded. */
