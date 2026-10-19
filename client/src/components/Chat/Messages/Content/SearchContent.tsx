@@ -1,7 +1,7 @@
 import { Suspense, useMemo, Fragment } from 'react';
-import { useRecoilValue } from 'recoil';
 import { DelayedRender } from '@librechat/client';
 import { ContentTypes } from 'librechat-data-provider';
+import { MessageContext, useMessageContext } from '@librechat/chat/react';
 import type {
   Agents,
   TMessage,
@@ -11,12 +11,12 @@ import type {
 } from 'librechat-data-provider';
 import type { ReactNode, ReactElement } from 'react';
 import { ErrorSourceProvider } from '~/components/Messages/Content/Error/source';
-import { MessageContext, SearchContext, useMessageContext } from '~/Providers';
+import { useMessagePartsHost } from '~/Providers/MessagePartsHostContext';
 import { ErrorMessage, UnfinishedMessage } from './MessageContent';
 import { cn, mapAttachments } from '~/utils';
+import { SearchContext } from '~/Providers';
 import MarkdownLite from './MarkdownLite';
 import { AgentUpdate } from './Parts';
-import store from '~/store';
 import Part from './Part';
 
 /**
@@ -39,7 +39,7 @@ const SearchContent = ({
   /** Author icon + label re-rendered before content that resumes after an inline steer. */
   authorHeader?: ReactNode;
 }) => {
-  const enableUserMsgMarkdown = useRecoilValue(store.enableUserMsgMarkdown);
+  const { enableUserMsgMarkdown } = useMessagePartsHost().useUserTextPreferences();
   const messageContext = useMessageContext();
   const { messageId } = message;
 
@@ -86,7 +86,7 @@ const SearchContent = ({
              *  relying on whichever context happens to be ambient.
              *  An error part additionally resolves the agent a handoff made
              *  active from its own position, which it reads from
-             *  `MessageContext`; persisted content is compacted, so `idx` is
+             *  the message context; persisted content is compacted, so `idx` is
              *  that position in `message.content`. */
             const rendered: ReactElement = (
               <MessageContext.Provider

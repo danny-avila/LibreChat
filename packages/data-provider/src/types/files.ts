@@ -64,6 +64,8 @@ export type FileConfig = {
   skills?: {
     /** Maximum concurrent blob deletions during failed archive import cleanup. */
     importCleanupConcurrency?: number;
+    /** Maximum concurrent blob deletions during whole-Skill cleanup. */
+    deletionCleanupConcurrency?: number;
     fileSizeLimit?: number;
   };
   fileTokenLimit?: number;
@@ -109,6 +111,8 @@ export type FileConfigInput = {
   skills?: {
     /** Maximum concurrent blob deletions during failed archive import cleanup. */
     importCleanupConcurrency?: number;
+    /** Maximum concurrent blob deletions during whole-Skill cleanup. */
+    deletionCleanupConcurrency?: number;
     fileSizeLimit?: number;
   };
   serverFileSizeLimit?: number;
