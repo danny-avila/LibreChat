@@ -4035,6 +4035,46 @@ describe('Chat', () => {
         expect.objectContaining({ actionId: 'action-5', generationCreatedAt: 100 }),
       );
     });
+
+    it('reports the stored tail when a local turn without a named response reattaches', async () => {
+      const reattached = createStream({ streamId: 'convo-1', generationCreatedAt: 100 });
+      const { chat, stream, onFinish } = setup(
+        { resumeSelection: () => ({ endpoint: 'agents' }) },
+        { reconnectToStream: jest.fn(async () => reattached) },
+      );
+      const sent = chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+      await flush();
+      stream.push({ type: 'error', status: 0, data: 'offline' } as ChatEvent);
+      await sent;
+
+      const resumed = chat.resumeStream();
+      await flush();
+      reattached.push({ type: 'abort', data: {} } as ChatEvent);
+      await resumed;
+
+      expect(onFinish).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          isAbort: true,
+          isResponseUnknown: false,
+          message: expect.objectContaining({ messageId: 'response-1' }),
+        }),
+      );
+    });
+
+    it('keeps a lost start unaddressable when a retry fails before the server takes it', async () => {
+      const failure = Object.assign(new Error('Network Error'), { code: 'ERR_NETWORK' });
+      const prepareRequest = jest.fn(() => ({ payload, messages: [userMessage, placeholder] }));
+      const { chat, transport } = setup({ prepareRequest });
+      transport.sendMessages.mockRejectedValueOnce(failure);
+      await chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+
+      prepareRequest.mockImplementationOnce(() => {
+        throw new Error('prepare failed');
+      });
+      await chat.sendMessage({ parts: [{ type: 'text', text: 'Hi' }] });
+
+      await expect(chat.stop()).resolves.toEqual({ status: 'unaddressable' });
+    });
   });
 
   describe('ids a turn reports', () => {

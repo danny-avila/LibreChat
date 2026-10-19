@@ -625,8 +625,11 @@ export class Chat {
     this.restored = undefined;
     const active = createActiveRequest(continued?.generation ?? paused?.generation);
     const { generation } = active;
-    if (generation.responseId === undefined) {
-      /** A reattachment this chat did not prepare has no response until a frame names one. */
+    if (!continued && generation.responseId === undefined) {
+      /**
+       * A reattachment this chat did not prepare has no response until a frame names one. A
+       * continued local turn keeps the list-tail fallback its own request had.
+       */
       generation.responseUnknown = true;
     }
     generation.endpoint = this.resumeEndpoint() ?? dropped?.target.endpoint;
