@@ -81,7 +81,6 @@ function canonicalResourceVersion(
         availability,
         embedded: file.embedded ?? null,
         context: file.context ?? null,
-        conversationId: file.conversationId ?? null,
         expiredAt: file.expiredAt?.toISOString() ?? null,
         createdAt: file.createdAt?.toISOString() ?? null,
         updatedAt: contentTimestamp,

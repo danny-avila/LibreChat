@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { createHash } from 'crypto';
 import { MongoMemoryServer } from 'mongodb-memory-server';
 import { createModels, createMethods } from '@librechat/data-schemas';
 import { configSchema, FileContext, FileSources } from 'librechat-data-provider';
@@ -64,6 +65,54 @@ const getProjectFiles: ReturnType<typeof createMethods>['getProjectFiles'] = (op
   createMethods(mongoose).getProjectFiles(options);
 
 describe('ChatProject resource hydration', () => {
+  it('resumes an unchanged dev-era File Search approval with project code disabled', async () => {
+    const owner = new mongoose.Types.ObjectId().toString();
+    const methods = createMethods(mongoose);
+    const stored = await File.create(file('legacy-upload', owner));
+    const project = await methods.createChatProject(owner, { name: 'Legacy approval' });
+    const projectId = project._id!.toString();
+    await methods.addChatProjectFile(owner, projectId, stored.file_id);
+    await mongoose.models.Conversation.create({
+      user: owner,
+      conversationId: 'legacy-approval',
+      endpoint: 'agents',
+      chatProjectId: projectId,
+    });
+    // This payload is the persisted resource-version contract on dev.
+    const version = createHash('sha256')
+      .update(
+        JSON.stringify({
+          identity: stored._id.toString(),
+          file_id: stored.file_id,
+          availability: 'ready',
+          embedded: stored.embedded ?? null,
+          context: stored.context ?? null,
+          expiredAt: stored.expiredAt?.toISOString() ?? null,
+          createdAt: stored.createdAt?.toISOString() ?? null,
+          updatedAt: stored.updatedAt?.toISOString() ?? null,
+          previewRevision: stored.previewRevision ?? null,
+          status: stored.status ?? null,
+          bytes: stored.bytes,
+          filename: stored.filename,
+          type: stored.type,
+        }),
+      )
+      .digest('hex');
+    const resourceKey = [[stored.file_id, stored._id.toString(), 'ready', version]];
+    const expectedKey = `chat-project:${projectId}:1:${JSON.stringify([stored.file_id])}:${JSON.stringify(resourceKey)}`;
+    const req = {
+      user: { id: owner },
+      config: configSchema.parse({ version: '1.3.11' }),
+    };
+    expect(req.config.projects.codeExecution).toBe(false);
+    expect(
+      await hasResumeProjectContextChanged(
+        { req, conversationId: 'legacy-approval', expectedKey },
+        { ...methods, logger: { warn: jest.fn(), error: jest.fn() } },
+      ),
+    ).toBe(false);
+  });
+
   it.each(['atomic', 'legacy'])(
     'resumes a project approval after %s sandbox reprovisioning',
     async (writer) => {

@@ -182,4 +182,75 @@ describe('queued code-file destinations', () => {
     expect(current.provisionState!.codeEnvFiles.map((file) => file.file_id)).toContain('imported');
     expect(current.provisionState!.temporaryCodeFileIds).toEqual(new Set(['imported']));
   });
+
+  it.each([false, true])(
+    'stages imports across agents before planning an expired own file (second agent pending: %s)',
+    (secondPending) => {
+      const own = file('own', {
+        conversationId: 'current',
+        context: FileContext.execute_code,
+        createdAt: '2026-09-01',
+      });
+      const imported = file('imported', {
+        conversationId: 'other',
+        context: FileContext.execute_code,
+        createdAt: '2026-10-01',
+        metadata: {
+          codeEnvRefs: {
+            default: {
+              kind: 'user',
+              id: 'user-1',
+              storage_session_id: 'store',
+              file_id: 'remote',
+              sandboxFilename: 'data.csv',
+            },
+          },
+        },
+      });
+      const first = agent('first', [{ ...own }]);
+      const second = agent('second', secondPending ? [{ ...own }] : []);
+      for (const current of [first, second]) {
+        current.provisionState!.project = {
+          projectFileIds: new Set(['own', 'imported']),
+          conversationId: 'current',
+        };
+        current.provisionState!.codeEnvRecoveryNames = new Map([
+          ['own', { name: 'data.csv', isTargetScope: true }],
+        ]);
+        current.tool_resources = { execute_code: { files: [{ ...imported }] } };
+      }
+      prepareQueuedCodeFileContext(first, [first, second], 'user-1');
+      const firstPlan = new Map(first.provisionState!.codeEnvDestinations);
+      expect(firstPlan.get('own')).toBe('data.csv');
+      expect(firstPlan.get('imported')).toMatch(/^data-.+\.csv$/);
+      expect(second.provisionState!.codeEnvFiles.map((entry) => entry.file_id)).toContain(
+        'imported',
+      );
+      prepareQueuedCodeFileContext(second, [first, second], 'user-1');
+      expect(first.provisionState!.codeEnvDestinations).toEqual(firstPlan);
+      expect(second.provisionState!.codeEnvDestinations!.get('imported')).toBe(
+        firstPlan.get('imported'),
+      );
+      if (secondPending) {
+        expect(second.provisionState!.codeEnvDestinations!.get('own')).toBe('data.csv');
+      }
+      for (const current of [first, second]) {
+        expect(current.provisionState!.temporaryCodeFileIds).toEqual(new Set(['imported']));
+        expect(current.dynamicToolContextMap!.queued_code_files).toContain(
+          firstPlan.get('imported'),
+        );
+        const uploads = planCodeFileUploads({
+          context: current,
+          contexts: [first, second],
+          agentId: current.id,
+          userId: 'user-1',
+          useAdvertisedNames: true,
+        });
+        expect(uploads.find((upload) => upload.file.file_id === 'imported')?.destination).toBe(
+          firstPlan.get('imported'),
+        );
+        expect(current.provisionState!.temporaryCodeFileIds).toEqual(new Set(['imported']));
+      }
+    },
+  );
 });

@@ -113,6 +113,86 @@ function buildHarness({
 }
 
 describe('createProvisionFilesCallback', () => {
+  it.each(['first', 'second'])(
+    'preserves canonical current-chat paths when %s provisions first on a shared route',
+    async (firstAgentId) => {
+      req.codeFileReferences = undefined;
+      const own = makeFile({
+        file_id: 'own-route',
+        context: FileContext.execute_code,
+        conversationId: 'current',
+        createdAt: '2026-09-01',
+      });
+      const originalRef = {
+        kind: 'user' as const,
+        id: 'user-1',
+        storage_session_id: 'original-store',
+        file_id: 'original-import',
+        sandboxFilename: 'data.csv',
+      };
+      const imported = makeFile({
+        file_id: 'imported-route',
+        context: FileContext.execute_code,
+        conversationId: 'other',
+        createdAt: '2026-10-01',
+        metadata: { codeEnvRefs: { default: originalRef } },
+      });
+      const agents: CodeFileAgent[] = ['first', 'second'].map((id) => ({
+        id,
+        fileConsumers: { executeCode: true, fileSearch: false },
+        tool_resources: { execute_code: { files: [{ ...imported }] } },
+        provisionState: {
+          ...state([{ ...own }], []),
+          project: {
+            projectFileIds: new Set([own.file_id, imported.file_id]),
+            conversationId: 'current',
+          },
+          codeEnvRecoveryNames: new Map([[own.file_id, { name: 'data.csv', isTargetScope: true }]]),
+        },
+      }));
+      for (const agent of agents) prepareQueuedCodeFileContext(agent, agents, req.user?.id);
+      const alias = agents[0].provisionState!.codeEnvDestinations!.get(imported.file_id)!;
+      const codeImpl = jest.fn(
+        async ({ file, sandboxFilename }: { file: TFile; sandboxFilename: string }) => {
+          const ref = {
+            kind: 'user' as const,
+            id: 'user-1',
+            storage_session_id: 'new-store',
+            file_id: `new-${file.file_id}`,
+            sandboxFilename,
+          };
+          return {
+            referenceSet: { codeEnvRefs: { default: ref } },
+            refUpdate: { file_id: file.file_id, routeKey: 'default', ref },
+            sandboxFilename,
+          };
+        },
+      );
+      const harness = buildHarness({
+        contexts: agents.map((agent) => [agent.id, agent]),
+        codeImpl,
+      });
+      for (const id of [firstAgentId, firstAgentId === 'first' ? 'second' : 'first']) {
+        const provisioned = await harness.provisionFiles([Constants.EXECUTE_CODE], id);
+        expect(provisioned.map((entry) => entry.name)).toEqual(
+          expect.arrayContaining(['data.csv', alias]),
+        );
+      }
+      expect(codeImpl).toHaveBeenCalledTimes(2);
+      expect(harness.updateCodeEnvRef).toHaveBeenCalledTimes(1);
+      expect(harness.updateCodeEnvRef).toHaveBeenCalledWith(
+        expect.objectContaining({
+          file_id: own.file_id,
+          ref: expect.objectContaining({ sandboxFilename: 'data.csv' }),
+        }),
+      );
+      expect(imported.metadata!.codeEnvRefs!.default).toEqual(originalRef);
+      expect(getTurnCodeEnvRef(req, 'default', imported, alias)).toMatchObject({
+        sandboxFilename: alias,
+      });
+    },
+  );
+
   it('keeps a project collision alias local to the turn and reuses it after retry', async () => {
     const own = makeFile({ file_id: 'own', conversationId: 'current', createdAt: '2026-09-01' });
     const imported = makeFile({

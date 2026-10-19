@@ -10,6 +10,8 @@ import type { TAgentsEndpoint, TFile } from 'librechat-data-provider';
 import type { IUser, AppConfig } from '@librechat/data-schemas';
 import type { Request as ServerRequest } from 'express';
 import type { TGetFiles, TFilterFilesByAgentAccess } from './resources';
+import type { CodeFileAgent } from '../files/code/queued';
+import { prepareQueuedCodeFileContext } from '../files/code/queued';
 import { primeResources } from './resources';
 
 // Mock logger
@@ -2072,7 +2074,8 @@ describe('primeResources', () => {
         checkSessionsAlive,
       };
       const live = await primeResources(options);
-      expect(live.provisionState).toBeUndefined();
+      expect(live.provisionState?.codeEnvFiles).toEqual([]);
+      expect(live.provisionState?.project?.projectFileIds).toEqual(new Set([projectFile.file_id]));
       expect(live.tool_resources?.execute_code?.files).toEqual([projectFile]);
       const rerouted = await primeResources({
         ...options,
@@ -2096,6 +2099,79 @@ describe('primeResources', () => {
       });
       expect(result.provisionState).toBeUndefined();
       expect(result.tool_resources?.file_search).toBeUndefined();
+    });
+
+    it('keeps live-only project agents in a shared route plan when another agent restores its own output', async () => {
+      const own = makeCodeFile({
+        file_id: 'own-output',
+        context: FileContext.execute_code,
+        conversationId: 'current',
+        createdAt: '2026-09-01',
+        metadata: {
+          codeEnvRefs: {
+            default: {
+              kind: 'user',
+              id: 'user1',
+              storage_session_id: 'own-store',
+              file_id: 'own-remote',
+              sandboxFilename: 'data.csv',
+            },
+          },
+        },
+      });
+      const imported = makeCodeFile({
+        file_id: 'imported-output',
+        context: FileContext.execute_code,
+        conversationId: 'other',
+        createdAt: '2026-10-01',
+        metadata: {
+          codeEnvRefs: {
+            default: {
+              kind: 'user',
+              id: 'user1',
+              storage_session_id: 'import-store',
+              file_id: 'import-remote',
+              sandboxFilename: 'data.csv',
+            },
+          },
+        },
+      });
+      const first = await primeResources({
+        req: mockReq,
+        getFiles: mockGetFiles,
+        attachments: undefined,
+        tool_resources: {},
+        requestFileSet,
+        projectCodeFiles: [own, imported],
+        enabledToolResources: new Set([EToolResources.execute_code]),
+        checkSessionsAlive: jest.fn().mockResolvedValue(new Set([imported.file_id])),
+      });
+      const second = await primeResources({
+        req: mockReq,
+        getFiles: mockGetFiles,
+        attachments: undefined,
+        tool_resources: {},
+        requestFileSet,
+        projectCodeFiles: [imported],
+        enabledToolResources: new Set([EToolResources.execute_code]),
+        checkSessionsAlive: jest.fn().mockResolvedValue(new Set([imported.file_id])),
+      });
+      const agents: CodeFileAgent[] = [first, second].map((result, index) => ({
+        id: String(index),
+        fileConsumers: { executeCode: true, fileSearch: false },
+        tool_resources: result.tool_resources,
+        provisionState: result.provisionState,
+      }));
+      expect(second.provisionState?.codeEnvFiles).toEqual([]);
+      for (const current of agents) {
+        current.provisionState!.project!.conversationId = 'current';
+      }
+      for (const current of agents) prepareQueuedCodeFileContext(current, agents, 'user1');
+      expect(first.provisionState!.codeEnvDestinations!.get(own.file_id)).toBe('data.csv');
+      const alias = first.provisionState!.codeEnvDestinations!.get(imported.file_id)!;
+      expect(alias).toMatch(/^data-.+\.csv$/);
+      expect(second.provisionState!.codeEnvDestinations!.get(imported.file_id)).toBe(alias);
+      expect(second.provisionState!.temporaryCodeFileIds).toEqual(new Set([imported.file_id]));
     });
 
     it('aborts project code priming when a resource lookup fails instead of running without its files', async () => {

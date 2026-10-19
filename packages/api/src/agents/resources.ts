@@ -767,7 +767,11 @@ const computeProvisionState = async ({
     }
   }
 
-  if (codeEnvFiles.length === 0 && vectorDBFiles.length === 0) {
+  if (
+    codeEnvFiles.length === 0 &&
+    vectorDBFiles.length === 0 &&
+    !(needsCodeEnv && projectCodeFileIds != null && projectCodeFileIds.size > 0)
+  ) {
     return undefined;
   }
   return {

@@ -46,20 +46,33 @@ function routeKey(context: ProvisionToolContext): string {
 }
 
 /** Live imports are replaceable mounts; this chat's paths survive partial expiry. */
-function stageProjectImports(context: ProvisionToolContext, route: string): void {
+function stageProjectImports(
+  context: ProvisionToolContext,
+  route: string,
+  contexts: readonly ProvisionToolContext[],
+): void {
   const state = context.provisionState;
-  if (!state?.project || state.codeEnvFiles.length === 0) return;
+  if (!state?.project) return;
   const queuedIds = new Set(state.codeEnvFiles.map((file) => file.file_id));
+  const routeQueuedIds = new Set<string>();
   const liveFiles = context.tool_resources?.execute_code?.files ?? [];
   const destinations = createCodeDestinationSet();
-  for (const file of [...state.codeEnvFiles, ...liveFiles]) {
-    if (isImportedProjectFile(file, state.project)) continue;
-    const name =
-      state.codeEnvDestinations?.get(file.file_id) ??
-      getCodeEnvRefForProfile(file.metadata, route)?.sandboxFilename ??
-      state.codeEnvRecoveryNames?.get(file.file_id)?.name ??
-      resolveSandboxFilename(file.filename, file.type);
-    reserveCodeDestination(destinations, name);
+  for (const candidate of contexts) {
+    const candidateState = candidate.provisionState;
+    const pendingFiles = candidateState?.codeEnvFiles ?? [];
+    for (const file of pendingFiles) routeQueuedIds.add(file.file_id);
+    for (const file of [
+      ...pendingFiles,
+      ...(candidate.tool_resources?.execute_code?.files ?? []),
+    ]) {
+      if (isImportedProjectFile(file, candidateState?.project)) continue;
+      const name =
+        candidateState?.codeEnvDestinations?.get(file.file_id) ??
+        getCodeEnvRefForProfile(file.metadata, route)?.sandboxFilename ??
+        candidateState?.codeEnvRecoveryNames?.get(file.file_id)?.name ??
+        resolveSandboxFilename(file.filename, file.type);
+      reserveCodeDestination(destinations, name);
+    }
   }
   for (const file of sortCodeFilesByDestinationPriority(
     liveFiles,
@@ -71,7 +84,7 @@ function stageProjectImports(context: ProvisionToolContext, route: string): void
     const name =
       getCodeEnvRefForProfile(file.metadata, route)?.sandboxFilename ??
       resolveSandboxFilename(file.filename, file.type);
-    if (reserveCodeDestination(destinations, name)) continue;
+    if (!routeQueuedIds.has(file.file_id) && reserveCodeDestination(destinations, name)) continue;
     state.codeEnvFiles.push(file);
     queuedIds.add(file.file_id);
   }
@@ -92,11 +105,13 @@ export function planCodeFileUploads({
   useAdvertisedNames?: boolean;
 }): CodeFileUpload[] {
   const state = context.provisionState;
-  if (!state?.codeEnvFiles.length) return [];
+  if (!state) return [];
   const route = routeKey(context);
-  stageProjectImports(context, route);
   const routeContexts = [...contexts].filter((candidate) => routeKey(candidate) === route);
   if (!routeContexts.includes(context)) routeContexts.push(context);
+  // Stage the whole route before any agent freezes names, including live-only agents.
+  for (const candidate of routeContexts) stageProjectImports(candidate, route, routeContexts);
+  if (!state.codeEnvFiles.length) return [];
   const queuedIds = new Set(state.codeEnvFiles.map((file) => file.file_id));
   const liveFiles = context.tool_resources?.execute_code?.files ?? [];
   const privateIds = new Set<string>();
@@ -145,7 +160,11 @@ export function planCodeFileUploads({
       candidate.provisionState?.codeEnvFiles.map((file) => file.file_id),
     );
     for (const file of candidate.tool_resources?.execute_code?.files ?? []) {
-      if (candidateQueuedIds.has(file.file_id)) continue;
+      if (
+        candidateQueuedIds.has(file.file_id) ||
+        (isImportedProjectFile(file, candidate.provisionState?.project) && queued.has(file.file_id))
+      )
+        continue;
       const name =
         getCodeEnvRefForProfile(file.metadata, route)?.sandboxFilename ??
         candidate.provisionState?.codeEnvDestinations?.get(file.file_id) ??
