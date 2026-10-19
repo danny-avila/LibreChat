@@ -547,6 +547,33 @@ export function resolvePresetSpec(
   return (modelSpec.preset[target] ?? null) === (preset[target] ?? null) ? modelSpec.name : null;
 }
 
+/**
+ * The preset a user pinned as default, ready to start a new chat from, or `undefined` when
+ * the configured specs decide instead. Only a saved preset counts: the default spec that
+ * `useAppStartup` keeps in the same atom has no `presetId`. While specs are enforced,
+ * prioritized or the model menu is hidden, the pin must carry a spec that is still offered,
+ * so a new chat still always starts on a spec.
+ */
+export function getPinnedNewChatPreset(
+  pinned: t.TPreset | null | undefined,
+  startupConfig?: t.TStartupConfig,
+): t.TPreset | undefined {
+  if (!pinned?.presetId) {
+    return;
+  }
+  const modelSpecs = startupConfig?.modelSpecs;
+  const spec = resolvePresetSpec(pinned, modelSpecs?.list);
+  const requiresSpec =
+    (modelSpecs?.list?.length ?? 0) > 0 &&
+    (modelSpecs?.enforce === true ||
+      modelSpecs?.prioritize === true ||
+      (startupConfig?.interface?.modelSelect ?? true) !== true);
+  if (requiresSpec && spec == null) {
+    return;
+  }
+  return { ...pinned, spec };
+}
+
 /** Fields set by a model spec that should be cleared when switching to a non-spec conversation. */
 export const specDisplayFieldReset = {
   spec: null as string | null,
