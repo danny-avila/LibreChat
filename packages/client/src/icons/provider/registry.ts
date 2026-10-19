@@ -124,13 +124,16 @@ export const providerIcons: Record<ProviderId, ProviderIconDef> = {
  */
 const modelMakers: [RegExp, ProviderId | ProviderIconDef][] = [
   [/claude/, ProviderId.anthropic],
-  [/gpt|(^|[^a-z0-9])o[1-9](?![0-9])/, ProviderId.openai],
+  [/(^|[^a-z])(chat)?gpt-|(^|[^a-z0-9])o[1-9](?![0-9])/, ProviderId.openai],
   [/gemini|gemma|learnlm/, ProviderId.google],
   [/grok/, ProviderId.xai],
   [/kimi|moonshot/, ProviderId.moonshot],
   [/deepseek/, ProviderId.deepseek],
   [/qwen|qwq/, ProviderId.qwen],
-  [/mi[sx]tral|codestral|devstral|ministral|magistral|pixtral|voxtral/, ProviderId.mistral],
+  [
+    /mi[sx]tral|codestral|devstral|ministral|magistral|mathstral|pixtral|voxtral/,
+    ProviderId.mistral,
+  ],
   [/command-[ar]|(^|[^a-z])aya-/, ProviderId.cohere],
   [/sonar/, ProviderId.perplexity],
   [/nemotron/, { art: mark('nvidia'), label: 'NVIDIA', mono: true }],

@@ -54,6 +54,9 @@ describe('providerIcons', () => {
     [ProviderId.openrouter, 'moonshotai/kimi-k2', 'Moonshot'],
     [ProviderId.groq, 'qwen/qwen3-32b', 'Qwen'],
     [ProviderId.openrouter, 'mistralai/devstral-small', 'Mistral'],
+    [ProviderId.ollama, 'mathstral:7b', 'Mistral'],
+    [ProviderId.openrouter, 'openai/chatgpt-4o-latest', 'OpenAI'],
+    [ProviderId.azure, 'gpt-35-turbo', 'OpenAI'],
     [ProviderId.openrouter, 'cohere/command-a', 'Cohere'],
     [ProviderId.openrouter, 'perplexity/sonar-pro', 'Perplexity'],
     [ProviderId.groq, 'llama-3.3-70b-versatile', 'Meta'],
@@ -72,6 +75,8 @@ describe('providerIcons', () => {
     [ProviderId.ollama, 'my-ollama-finetune', 'Ollama'],
     [ProviderId.openrouter, 'openrouter/auto', 'OpenRouter'],
     [ProviderId.groq, 'yolo1-vision', 'Groq'],
+    [ProviderId.ollama, 'gpt4all-j', 'Ollama'],
+    [ProviderId.ollama, 'nomic-ai/gpt4all-falcon', 'Ollama'],
   ])('keeps the host for %s serving %s', (provider, model, label) => {
     expect(getProviderIconDef(provider, model).label).toBe(label);
   });
