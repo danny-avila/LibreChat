@@ -51,15 +51,14 @@ export function getOutboundTimeout(error: unknown): Error | undefined {
   if (error == null || typeof error !== 'object') {
     return undefined;
   }
-  const { message, config } = error as {
-    message?: unknown;
+  const { config } = error as {
     config?: { timeoutErrorMessage?: unknown; signal?: { reason?: unknown } };
   };
   const budgetMessage = config?.timeoutErrorMessage;
   if (typeof budgetMessage !== 'string' || !budgetMessage.startsWith('Exceeded timeouts.')) {
     return undefined;
   }
-  if (message === budgetMessage) {
+  if ((error as { message?: unknown }).message === budgetMessage) {
     return error as Error;
   }
   const reason = config?.signal?.reason as { name?: unknown } | undefined;

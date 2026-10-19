@@ -82,6 +82,16 @@ describe('getOutboundTimeout', () => {
     expect(getOutboundTimeout(stopped)).toBeUndefined();
     expect(isAbortError(stopped)).toBe(true);
   });
+
+  it('does not read the message of an error without a budget', () => {
+    const guarded = Object.defineProperty({}, 'message', {
+      get() {
+        throw new Error('message must not be read');
+      },
+    });
+
+    expect(getOutboundTimeout(guarded)).toBeUndefined();
+  });
 });
 
 describe('logAxiosError on a budget overrun', () => {
