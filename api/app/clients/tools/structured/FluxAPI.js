@@ -7,9 +7,6 @@ const {
   applyAxiosProxyConfig,
   createMinimalRetentionRequest,
   getHttpsProxyAgent,
-  getOutboundTimeoutMs,
-  startOutboundDeadline,
-  pollUntilSettled,
 } = require('@librechat/api');
 const { FileContext, ContentTypes } = require('librechat-data-provider');
 
@@ -121,7 +118,6 @@ class FluxAPI extends Tool {
     this.userId = fields.userId;
     this.tenantId = fields.req?.user?.tenantId;
     this.retentionRequest = createMinimalRetentionRequest(fields.req);
-    this.appConfig = fields.req?.config;
     this.fileStrategy = fields.fileStrategy;
 
     /** @type {boolean} **/
@@ -159,7 +155,7 @@ class FluxAPI extends Tool {
   }
 
   getAxiosConfig() {
-    const config = { timeout: getOutboundTimeoutMs(this.appConfig, 'imageGenerationMs') };
+    const config = {};
     return applyAxiosProxyConfig(config, this.baseUrl);
   }
 
@@ -248,8 +244,6 @@ class FluxAPI extends Tool {
     logger.debug('[FluxAPI] Generating image with payload:', payload);
     logger.debug('[FluxAPI] Using endpoint:', generateUrl);
 
-    /** One budget covers submission and polling. */
-    const deadline = startOutboundDeadline(this.appConfig, 'imageGenerationMs');
     let taskResponse;
     try {
       taskResponse = await axios.post(generateUrl, payload, {
@@ -259,7 +253,6 @@ class FluxAPI extends Tool {
           Accept: 'application/json',
         },
         ...this.getAxiosConfig(),
-        timeout: deadline.remainingMs(),
       });
     } catch (error) {
       const details = this.getDetails(error?.response?.data || error.message);
@@ -273,37 +266,36 @@ class FluxAPI extends Tool {
 
     const taskId = taskResponse.data.id;
 
-    /** Statuses such as `Content Moderated` or `Task not found` never settle; the wait then
-     *  ends at the deadline with no result. */
-    let result;
-    try {
-      result = await pollUntilSettled({
-        deadline,
-        intervalMs: 2000,
-        poll: async (timeout) => {
-          const resultResponse = await axios.get(resultUrl, {
-            headers: {
-              'x-key': requestApiKey,
-              Accept: 'application/json',
-            },
-            params: { id: taskId },
-            ...this.getAxiosConfig(),
-            timeout,
-          });
-          return resultResponse.data;
-        },
-        isSettled: (data) => data?.status === 'Ready' || data?.status === 'Error',
-      });
-    } catch (error) {
-      const details = this.getDetails(error?.response?.data || error.message);
-      logger.error('[FluxAPI] Error while getting result:', details);
-      return this.returnValue('An error occurred while retrieving the image.');
+    // Polling for the result
+    let status = 'Pending';
+    let resultData = null;
+    while (status !== 'Ready' && status !== 'Error') {
+      try {
+        // Wait 2 seconds between polls
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const resultResponse = await axios.get(resultUrl, {
+          headers: {
+            'x-key': requestApiKey,
+            Accept: 'application/json',
+          },
+          params: { id: taskId },
+          ...this.getAxiosConfig(),
+        });
+        status = resultResponse.data.status;
+
+        if (status === 'Ready') {
+          resultData = resultResponse.data.result;
+          break;
+        } else if (status === 'Error') {
+          logger.error('[FluxAPI] Error in task:', resultResponse.data);
+          return this.returnValue('An error occurred during image generation.');
+        }
+      } catch (error) {
+        const details = this.getDetails(error?.response?.data || error.message);
+        logger.error('[FluxAPI] Error while getting result:', details);
+        return this.returnValue('An error occurred while retrieving the image.');
+      }
     }
-    if (result?.status === 'Error') {
-      logger.error('[FluxAPI] Error in task:', result);
-      return this.returnValue('An error occurred during image generation.');
-    }
-    const resultData = result?.status === 'Ready' ? result.result : null;
 
     // If no result data
     if (!resultData || !resultData.sample) {
@@ -487,8 +479,6 @@ class FluxAPI extends Tool {
     logger.debug('[FluxAPI] Generating finetuned image with payload:', payload);
     logger.debug('[FluxAPI] Using endpoint:', generateUrl);
 
-    /** One budget covers submission and polling. */
-    const deadline = startOutboundDeadline(this.appConfig, 'imageGenerationMs');
     let taskResponse;
     try {
       taskResponse = await axios.post(generateUrl, payload, {
@@ -498,7 +488,6 @@ class FluxAPI extends Tool {
           Accept: 'application/json',
         },
         ...this.getAxiosConfig(),
-        timeout: deadline.remainingMs(),
       });
     } catch (error) {
       const details = this.getDetails(error?.response?.data || error.message);
@@ -511,37 +500,36 @@ class FluxAPI extends Tool {
 
     const taskId = taskResponse.data.id;
 
-    /** Statuses such as `Content Moderated` or `Task not found` never settle; the wait then
-     *  ends at the deadline with no result. */
-    let result;
-    try {
-      result = await pollUntilSettled({
-        deadline,
-        intervalMs: 2000,
-        poll: async (timeout) => {
-          const resultResponse = await axios.get(resultUrl, {
-            headers: {
-              'x-key': requestApiKey,
-              Accept: 'application/json',
-            },
-            params: { id: taskId },
-            ...this.getAxiosConfig(),
-            timeout,
-          });
-          return resultResponse.data;
-        },
-        isSettled: (data) => data?.status === 'Ready' || data?.status === 'Error',
-      });
-    } catch (error) {
-      const details = this.getDetails(error?.response?.data || error.message);
-      logger.error('[FluxAPI] Error while getting finetuned result:', details);
-      return this.returnValue('An error occurred while retrieving the finetuned image.');
+    // Polling for the result
+    let status = 'Pending';
+    let resultData = null;
+    while (status !== 'Ready' && status !== 'Error') {
+      try {
+        // Wait 2 seconds between polls
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const resultResponse = await axios.get(resultUrl, {
+          headers: {
+            'x-key': requestApiKey,
+            Accept: 'application/json',
+          },
+          params: { id: taskId },
+          ...this.getAxiosConfig(),
+        });
+        status = resultResponse.data.status;
+
+        if (status === 'Ready') {
+          resultData = resultResponse.data.result;
+          break;
+        } else if (status === 'Error') {
+          logger.error('[FluxAPI] Error in finetuned task:', resultResponse.data);
+          return this.returnValue('An error occurred during finetuned image generation.');
+        }
+      } catch (error) {
+        const details = this.getDetails(error?.response?.data || error.message);
+        logger.error('[FluxAPI] Error while getting finetuned result:', details);
+        return this.returnValue('An error occurred while retrieving the finetuned image.');
+      }
     }
-    if (result?.status === 'Error') {
-      logger.error('[FluxAPI] Error in finetuned task:', result);
-      return this.returnValue('An error occurred during finetuned image generation.');
-    }
-    const resultData = result?.status === 'Ready' ? result.result : null;
 
     // If no result data
     if (!resultData || !resultData.sample) {
