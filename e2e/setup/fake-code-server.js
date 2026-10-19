@@ -226,11 +226,11 @@ async function handleExec(req, res) {
   sendJson(res, 200, { stdout: 'E2E code exec ok\n', stderr: '', files: [] });
 }
 
-/** Set through `POST /__debug/slow-downloads`: downloads then trickle a long body, so a spec can
- *  disconnect mid-stream. `GET /__debug/downloads` reports how many such bodies were cut off by
- *  LibreChat closing the upstream connection. Reset clears both. */
-let slowDownloads = false;
-let closedSlowDownloads = 0;
+/** File ids set through `POST /__debug/slow-downloads` download as a long trickle, so a spec can
+ *  disconnect mid-stream. `GET /__debug/downloads?fileId=` reports how many of those bodies were
+ *  cut off by LibreChat closing the upstream. Keyed by file id so parallel projects stay apart. */
+const slowDownloadFiles = new Set();
+const closedSlowDownloads = new Map();
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
@@ -249,19 +249,22 @@ const server = http.createServer((req, res) => {
     }
 
     if (pathname === '/__debug/slow-downloads' && req.method === 'POST') {
-      slowDownloads = (await readJson(req)).slow === true;
-      sendJson(res, 200, { ok: true, slow: slowDownloads });
+      const { fileId, slow } = await readJson(req);
+      if (slow === true) slowDownloadFiles.add(fileId);
+      else slowDownloadFiles.delete(fileId);
+      sendJson(res, 200, { ok: true });
       return;
     }
 
     if (pathname === '/__debug/downloads' && req.method === 'GET') {
-      sendJson(res, 200, { closedSlowDownloads });
+      const fileId = url.searchParams.get('fileId');
+      sendJson(res, 200, { closed: closedSlowDownloads.get(fileId) ?? 0 });
       return;
     }
 
     if (pathname === '/__debug/reset' && req.method === 'POST') {
-      slowDownloads = false;
-      closedSlowDownloads = 0;
+      slowDownloadFiles.clear();
+      closedSlowDownloads.clear();
       sessions.clear();
       generated.clear();
       uploads.length = 0;
@@ -286,7 +289,8 @@ const server = http.createServer((req, res) => {
     }
 
     const downloadMatch = pathname.match(/^\/v1\/download\/([^/]+)\/([^/]+)$/);
-    if (downloadMatch && req.method === 'GET' && slowDownloads) {
+    const slowFileId = downloadMatch ? decodeURIComponent(downloadMatch[2]) : '';
+    if (downloadMatch && req.method === 'GET' && slowDownloadFiles.has(slowFileId)) {
       res.writeHead(200, { 'Content-Type': 'text/csv' });
       let sent = 0;
       const timer = setInterval(() => {
@@ -298,7 +302,9 @@ const server = http.createServer((req, res) => {
       }, 50);
       res.on('close', () => {
         clearInterval(timer);
-        if (!res.writableFinished) closedSlowDownloads++;
+        if (!res.writableFinished) {
+          closedSlowDownloads.set(slowFileId, (closedSlowDownloads.get(slowFileId) ?? 0) + 1);
+        }
       });
       return;
     }
